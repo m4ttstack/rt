@@ -57,11 +57,10 @@
     "format:write": "prettier --write \"**/*.{ts,tsx}\" --cache",
     "format:check": "prettier --check \"**/*.{ts,tsx}\" --cache",
     "preview": "vite preview",
-    "type-check": "tsc --noEmit",
-    "check": "tsc --noEmit",
-    "prepublishOnly": "bun run check && bun run build",
+    "prepublishOnly": "bun run check-types && bun run build",
     "storybook": "node_modules/.bin/storybook dev -p 6006",
-    "build-storybook": "node_modules/.bin/storybook build"
+    "build-storybook": "node_modules/.bin/storybook build",
+    "check-types": "tsgo --noEmit -p tsconfig.json"
   },
   "peerDependencies": {
     "react": "catalog:",
