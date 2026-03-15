@@ -11,7 +11,9 @@ import { version } from './package.json';
 export default defineConfig({
   plugins: [
     tailwindcss(),
-    react(),
+    react({
+      babel: { plugins: ['babel-plugin-react-compiler'] },
+    }),
     dts({
       tsconfigPath: resolve(__dirname, 'tsconfig.lib.json'),
     }),
