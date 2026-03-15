@@ -4,7 +4,7 @@
  */
 
 import { cn } from '@/utils';
-import type { MRDashboardProps } from '@forge-glance/sdk';
+import type { MRDashboardProps } from '@workforge/glance-sdk';
 
 import { BlockerList } from './BlockerList';
 import { PipelineStatus } from './PipelineStatus';

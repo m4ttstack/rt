@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Smoke tests for @forge-glance/sdk published package.
+ * Smoke tests for @workforge/glance-sdk published package.
  *
  * Tests:
  *  1. All expected exports resolve
@@ -37,7 +37,7 @@ import {
   repoIdProvider,
   parseGitLabRepoId,
   MR_DASHBOARD_FRAGMENT
-} from '@forge-glance/sdk';
+} from '@workforge/glance-sdk';
 
 import type {
   PullRequest,
@@ -65,7 +65,7 @@ import type {
   ActionCableCallbacks,
   ProviderSlug,
   CreatedNote
-} from '@forge-glance/sdk';
+} from '@workforge/glance-sdk';
 
 let passed = 0;
 let failed = 0;

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * Comprehensive integration test for @forge-glance/sdk.
+ * Comprehensive integration test for @workforge/glance-sdk.
  *
  * Tests ALL exported methods against live GitHub + GitLab APIs.
  */
@@ -18,7 +18,7 @@ import {
   type BranchProtectionRule,
   type ForgeLogger,
   type ActionCableCallbacks
-} from '@forge-glance/sdk';
+} from '@workforge/glance-sdk';
 
 // ── Config ───────────────────────────────────────────────────────────────────
 

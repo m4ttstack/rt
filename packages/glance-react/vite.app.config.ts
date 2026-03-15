@@ -9,7 +9,7 @@ import { defineConfig } from 'vite';
  *   bun run dev:app        → imports from lib/ source (local dev)
  *   bun run dev:app:dist   → imports from dist/ (simulates npm consumer)
  *
- * Both use `@forge-glance/react` imports in App.tsx — the alias
+ * Both use `@workforge/glance-react` imports in App.tsx — the alias
  * determines where they resolve to.
  */
 const testDist = process.env.TEST_DIST === '1';
@@ -20,27 +20,27 @@ export default defineConfig({
     alias: testDist
       ? {
           // ── dist mode: resolve to built artifacts ───────────
-          '@forge-glance/react/styles.css': resolve(
+          '@workforge/glance-react/styles.css': resolve(
             __dirname,
             'dist/styles.css'
           ),
-          '@forge-glance/react/tokens.css': resolve(
+          '@workforge/glance-react/tokens.css': resolve(
             __dirname,
             'dist/tokens.css'
           ),
-          '@forge-glance/react': resolve(__dirname, 'dist/main.mjs'),
+          '@workforge/glance-react': resolve(__dirname, 'dist/main.mjs'),
         }
       : {
           // ── source mode: resolve to lib/ source ────────────
-          '@forge-glance/react/styles.css': resolve(
+          '@workforge/glance-react/styles.css': resolve(
             __dirname,
             'lib/css/styles.css'
           ),
-          '@forge-glance/react/tokens.css': resolve(
+          '@workforge/glance-react/tokens.css': resolve(
             __dirname,
             'lib/css/tokens.css'
           ),
-          '@forge-glance/react': resolve(__dirname, 'lib/main.ts'),
+          '@workforge/glance-react': resolve(__dirname, 'lib/main.ts'),
           '@': resolve(__dirname, 'lib'),
         },
   },

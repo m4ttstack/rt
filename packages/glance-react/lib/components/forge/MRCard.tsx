@@ -9,7 +9,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn } from '@/utils';
-import type { MRDashboardActions, MRDashboardProps } from '@forge-glance/sdk';
+import type { MRDashboardActions, MRDashboardProps } from '@workforge/glance-sdk';
 
 import { Row, Stack } from '../ui/flex';
 import { GitHubIcon, GitLabIcon } from './brand-icons';

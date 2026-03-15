@@ -2,7 +2,7 @@
  * BlockerList — static blocker rows (conflicts, rebase, discussions, draft, merge error).
  */
 
-import type { MRDashboardProps } from '@forge-glance/sdk';
+import type { MRDashboardProps } from '@workforge/glance-sdk';
 
 import { Row } from '../ui/flex';
 import {

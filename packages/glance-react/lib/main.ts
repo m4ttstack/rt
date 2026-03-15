@@ -80,7 +80,7 @@ export type {
   ConnectionStatus,
 } from './hooks/useDashboard';
 
-// ── SDK types (re-exported so consumers don't need @forge-glance/sdk) ─────────
+// ── SDK types (re-exported so consumers don't need @workforge/glance-sdk) ─────────
 export type {
   MRStatus,
   MRDashboardProps,
@@ -97,4 +97,4 @@ export type {
   MRState,
   FetchPullRequestsOptions,
   WatcherStatus,
-} from '@forge-glance/sdk';
+} from '@workforge/glance-sdk';

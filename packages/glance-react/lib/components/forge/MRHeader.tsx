@@ -6,7 +6,7 @@
  */
 
 import { cn, formatRelativeTime } from '@/utils';
-import type { MRDashboardProps } from '@forge-glance/sdk';
+import type { MRDashboardProps } from '@workforge/glance-sdk';
 
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { CardHeader } from '../ui/card';

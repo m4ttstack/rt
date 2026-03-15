@@ -1,6 +1,6 @@
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/utils';
-import type { MRDashboardActions, MRDashboardProps } from '@forge-glance/sdk';
+import type { MRDashboardActions, MRDashboardProps } from '@workforge/glance-sdk';
 
 import { Button } from '../ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '../ui/popover';

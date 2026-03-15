@@ -1,7 +1,7 @@
 import { IconButton } from '@/components/ui/icon-button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/utils';
-import type { MRDashboardProps } from '@forge-glance/sdk';
+import type { MRDashboardProps } from '@workforge/glance-sdk';
 
 import { CloseIcon, GitBranchIcon } from './icons';
 import { MRStatusBadge } from './MRStatusBadge';

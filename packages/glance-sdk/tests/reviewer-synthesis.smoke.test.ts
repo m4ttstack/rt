@@ -16,8 +16,8 @@
  *  7. Computed fields (isApproved, given, remaining) stay correct
  */
 
-import { getMRDashboardProps } from '@forge-glance/sdk';
-import type { PullRequest, Reviewer, UserRef } from '@forge-glance/sdk';
+import { getMRDashboardProps } from '@workforge/glance-sdk';
+import type { PullRequest, Reviewer, UserRef } from '@workforge/glance-sdk';
 
 let passed = 0;
 let failed = 0;

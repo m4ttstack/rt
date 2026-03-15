@@ -1,5 +1,5 @@
 /**
- * Demo app — simulates an external consumer of @forge-glance/react.
+ * Demo app — simulates an external consumer of @workforge/glance-react.
  *
  * All imports use the package name, not relative paths to lib/.
  * vite.app.config.ts aliases these to dist/ or lib/ based on mode:
@@ -7,7 +7,7 @@
  *   bun run dev:app        → imports from lib/ source (local dev)
  *   bun run dev:app:dist   → imports from dist/ (simulates npm consumer)
  */
-import '@forge-glance/react/styles.css';
+import '@workforge/glance-react/styles.css';
 
 import {
   Badge,
@@ -17,8 +17,8 @@ import {
   IconButton,
   MRStatusBadge,
   Switch,
-} from '@forge-glance/react';
-import type { MRStatus } from '@forge-glance/react';
+} from '@workforge/glance-react';
+import type { MRStatus } from '@workforge/glance-react';
 
 const statuses: MRStatus[] = [
   'mergeable',
@@ -39,7 +39,7 @@ function App() {
       className="bg-background text-foreground"
     >
       <h1 className="text-xl font-bold mb-6">
-        @forge-glance/react — Consumer Demo
+        @workforge/glance-react — Consumer Demo
       </h1>
 
       {/* ── Primitives ────────────────────────────────────────── */}
