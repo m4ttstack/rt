@@ -1,5 +1,5 @@
 {
-  "name": "@forge-glance/sdk",
+  "name": "@workforge/glance-sdk",
   "version": "0.5.0",
   "description": "GitHub & GitLab API client — REST, GraphQL, and real-time ActionCable subscriptions",
   "type": "module",
