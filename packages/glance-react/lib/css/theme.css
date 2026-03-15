@@ -1,0 +1,90 @@
+/*
+ * GitQ theme — derived from Graphite Design System (variables.css)
+ *
+ * Light mode: default (no class / no data-theme), or data-theme="light".
+ * Dark mode:  .dark class on <html>, or data-theme="dark" (GDS convention).
+ *
+ * All color values reference GDS tokens from variables.css.
+ * Compatible with both shadcn/Tailwind .dark class and GDS data-theme attr.
+ */
+
+:root {
+  /* --- Surfaces --- */
+  --background: var(--color-bg-med);
+  --foreground: var(--text-color-default);
+
+  --card: var(--color-bg-light);
+  --card-foreground: var(--text-color-default);
+
+  --popover: var(--color-bg-light);
+  --popover-foreground: var(--text-color-default);
+
+  /* --- Primary (Emphasis / Blue) --- */
+  --primary: var(--color-emphasis-default);
+  --primary-foreground: #fff;
+
+  /* --- Secondary --- */
+  --secondary: var(--color-alpha-20);
+  --secondary-foreground: var(--text-color-default);
+
+  /* --- Muted --- */
+  --muted: var(--color-bg-dark);
+  --muted-foreground: var(--text-color-low-contrast);
+
+  /* --- Accent --- */
+  --accent: var(--accent-color-info-bg);
+  --accent-foreground: var(--text-color-default);
+
+  /* --- Negative (Red) --- */
+  --negative-accent: var(--color-negative-default);
+  --negative-accent-foreground: #fff;
+
+  /* --- Borders & inputs --- */
+  --border: var(--border-color-default);
+  --input: var(--border-color-default);
+  --ring: var(--color-emphasis-default);
+
+  /* --- Charts --- */
+  --chart-1: var(--color-emphasis-default);
+  --chart-2: var(--color-action-default);
+  --chart-3: var(--color-positive-default);
+  --chart-4: var(--color-caution-default);
+  --chart-5: var(--color-negative-default);
+
+  /* --- Sidebar --- */
+  --sidebar: var(--color-bg-dark);
+  --sidebar-foreground: var(--text-color-default);
+  --sidebar-primary: var(--color-emphasis-default);
+  --sidebar-primary-foreground: #fff;
+  --sidebar-accent: var(--accent-color-info-bg);
+  --sidebar-accent-foreground: var(--text-color-default);
+  --sidebar-border: var(--border-color-default);
+  --sidebar-ring: var(--color-emphasis-default);
+
+  /* --- Typography --- */
+  --font-sans: var(--gds-font-stack);
+  --font-serif: Georgia, serif;
+  --font-mono: 'Fira Code', 'IBM Plex Mono', 'JetBrains Mono', ui-monospace,
+    monospace;
+
+  /* --- Shape --- */
+  --radius: 0.375rem;
+  --spacing: 0.25rem;
+
+  /* ================================================
+   * Graphite-specific brand tokens
+   * (not part of standard shadcn, but available for use)
+   * ================================================ */
+
+  /* Success / positive */
+  --success: var(--color-positive-default);
+  --success-foreground: #fff;
+
+  /* Warning / caution */
+  --warning: var(--color-caution-default);
+  --warning-foreground: #fff;
+
+  /* Merge / stacking accent (action / purple) */
+  --graphite-purple: var(--color-action-default);
+  --graphite-purple-foreground: #fff;
+}

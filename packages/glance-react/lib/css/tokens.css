@@ -1,0 +1,746 @@
+/*
+ * GDS Design Tokens
+ *
+ * Semantic color mappings, dark/light mode switching, and shadcn bridge.
+ * References raw values from palette.css.
+ *
+ * Structure:
+ *   1. System tokens (spacing, radius, borders, typography)
+ *   2. Dark mode (default) — semantic color assignments
+ *   3. shadcn bridge — maps GDS tokens to shadcn convention names
+ *   4. Light mode overrides
+ *   5. Domain-specific tokens (diff, syntax, AI reviewer)
+ */
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * 1. System Tokens
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+@layer gds.tokens, gds.base, gds.components, gds.utilities;
+@layer gds.tokens {
+  :root {
+    --gds-space-4xs: 1px;
+    --gds-space-3xs: 2px;
+    --gds-space-2xs: 3px;
+    --gds-space-xs: 4px;
+    --gds-space-s: 6px;
+    --gds-space-m: 8px;
+    --gds-space-l: 12px;
+    --gds-space-xl: 16px;
+    --gds-space-2xl: 24px;
+    --gds-radius-xs: 2px;
+    --gds-radius-s: 4px;
+    --gds-radius-m: 6px;
+    --gds-radius-l: 12px;
+    --gds-radius-circular: 99999px;
+    --gds-border-width-subtle: 0;
+    --gds-border-width-thin: 1px;
+    --gds-border-width-default: 1px;
+    --gds-border-width-medium: 2px;
+    --gds-border-width-thick: 3px;
+  }
+
+  @media screen and (prefers-contrast: more) {
+    :root {
+      --gds-border-width-subtle: 1px;
+    }
+  }
+
+  @media screen and (-webkit-min-device-pixel-ratio: 2), screen and (min-resolution: 2dppx) {
+    :root {
+      --gds-border-width-subtle: 0.5px;
+      --gds-border-width-thin: 0.5px;
+      --gds-border-width-medium: 1.5px;
+      --gds-border-width-thick: 2.5px;
+    }
+  }
+
+  :root {
+    --gds-font-stack: Inter, system-ui, sans-serif;
+  }
+
+  @supports (font-variation-settings: normal) {
+    :root {
+      --gds-font-stack: InterVariable, system-ui, sans-serif;
+    }
+  }
+
+  :root {
+    --gds-font-size-s: 0.75rem;
+    --gds-font-size-m: 0.8125rem;
+    --gds-font-size-l: 0.875rem;
+    --gds-font-weight-regular: 400;
+    --gds-font-weight-medium: 450;
+    --gds-font-weight-bold: 525;
+    --gds-font-ui: var(--gds-font-weight-regular) var(--gds-font-size-m) / calc(16px / 1em) var(--gds-font-stack);
+    --gds-font-ui-small: var(--gds-font-weight-medium) var(--gds-font-size-s) / calc(16px / 1em) var(--gds-font-stack);
+    --gds-font-ui-large: var(--gds-font-weight-regular) var(--gds-font-size-l) / calc(16px / 1em) var(--gds-font-stack);
+    --gds-font-body: var(--gds-font-weight-regular) 1rem /1.5 var(--gds-font-stack);
+    --gds-font-body-small: var(--gds-font-weight-regular) var(--gds-font-size-m) / calc(20px / 1em)
+      var(--gds-font-stack);
+    --gds-font-caption: var(--gds-font-weight-medium) var(--gds-font-size-m) / calc(20px / 1em) var(--gds-font-stack);
+  }
+}
+
+@layer gds.base {
+  html {
+    font-family: var(--gds-font-stack);
+    -moz-text-size-adjust: none;
+    -webkit-text-size-adjust: none;
+    text-size-adjust: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    font-size: var(--gds-font-size-l);
+  }
+}
+
+/* ── Border shorthands ───────────────────────────────────────────────────── */
+:root {
+  --border-standard: var(--gds-border-width-default) solid var(--border-color-default);
+  --border-thin: var(--gds-border-width-thin) solid var(--border-color-default);
+  --border-dashed: var(--gds-border-width-default) dashed var(--border-color-default);
+  --border-disabled: var(--gds-border-width-default) solid var(--border-color-disabled);
+  --border-hover: var(--gds-border-width-default) solid var(--border-color-hover);
+  --border-pressed: var(--gds-border-width-default) solid var(--border-color-pressed);
+  --border-focused: var(--gds-border-width-default) solid var(--border-color-focused);
+  --border-error: var(--gds-border-width-default) solid var(--border-color-error);
+  --border-selected: var(--gds-border-width-default) solid var(--border-color-selected);
+  --gds-focus-outline: var(--gds-border-width-medium) solid var(--gds-color-focus-outline);
+  --radius: 8px;
+  --loading-progress-bar-bezier-p0: 0.4;
+  --loading-progress-bar-bezier-p1: 0.5;
+}
+
+#__next {
+  display: contents;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * 2. Dark Mode (default) — Semantic Color Assignments
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  color-scheme: dark;
+
+  /* ── Gray aliases (inverted for dark mode) ──────────────────────────────── */
+  --color-gray-00: var(--cool-gray-120);
+  --color-gray-10: var(--cool-gray-110);
+  --color-gray-20: var(--cool-gray-100);
+  --color-gray-30: var(--cool-gray-90);
+  --color-gray-40: var(--cool-gray-80);
+  --color-gray-50: var(--cool-gray-70);
+  --color-gray-60: var(--cool-gray-60);
+  --color-gray-70: var(--cool-gray-50);
+  --color-gray-80: var(--cool-gray-40);
+  --color-gray-90: var(--cool-gray-30);
+  --color-gray-100: var(--cool-gray-20);
+  --color-gray-110: var(--cool-gray-10);
+  --color-gray-120: var(--cool-gray-00);
+
+  /* ── Alpha overlays ────────────────────────────────────────────────────── */
+  --color-alpha-00: var(--lighten-00);
+  --color-alpha-10: var(--lighten-10);
+  --color-alpha-20: var(--lighten-20);
+  --color-alpha-30: var(--lighten-30);
+  --color-alpha-40: var(--lighten-40);
+
+  /* ── Intent: Emphasis (→ Blue) ─────────────────────────────────────────── */
+  --color-emphasis-lowest-contrast: var(--blue-70);
+  --color-emphasis-lower-contrast: var(--blue-60);
+  --color-emphasis-low-contrast: var(--blue-50);
+  --color-emphasis-default: var(--blue-40);
+  --color-emphasis-high-contrast: var(--blue-30);
+  --color-emphasis-higher-contrast: var(--blue-20);
+  --color-emphasis-highest-contrast: var(--blue-10);
+
+  /* ── Intent: Action (→ Purple) ─────────────────────────────────────────── */
+  --color-action-lowest-contrast: var(--purple-70);
+  --color-action-lower-contrast: var(--purple-60);
+  --color-action-low-contrast: var(--purple-50);
+  --color-action-default: var(--purple-40);
+  --color-action-high-contrast: var(--purple-30);
+  --color-action-higher-contrast: var(--purple-20);
+  --color-action-highest-contrast: var(--purple-10);
+
+  /* ── Intent: Positive (→ Green) ────────────────────────────────────────── */
+  --color-positive-lowest-contrast: var(--green-70);
+  --color-positive-lower-contrast: var(--green-60);
+  --color-positive-low-contrast: var(--green-50);
+  --color-positive-default: var(--green-40);
+  --color-positive-high-contrast: var(--green-30);
+  --color-positive-higher-contrast: var(--green-20);
+  --color-positive-highest-contrast: var(--green-10);
+
+  /* ── Intent: Caution (→ Yellow) ────────────────────────────────────────── */
+  --color-caution-lowest-contrast: var(--yellow-70);
+  --color-caution-lower-contrast: var(--yellow-60);
+  --color-caution-low-contrast: var(--yellow-50);
+  --color-caution-default: var(--yellow-40);
+  --color-caution-high-contrast: var(--yellow-30);
+  --color-caution-higher-contrast: var(--yellow-20);
+  --color-caution-highest-contrast: var(--yellow-10);
+
+  /* ── Intent: Negative (→ Red) ──────────────────────────────────────────── */
+  --color-negative-lowest-contrast: var(--red-70);
+  --color-negative-lower-contrast: var(--red-60);
+  --color-negative-low-contrast: var(--red-50);
+  --color-negative-default: var(--red-40);
+  --color-negative-high-contrast: var(--red-30);
+  --color-negative-higher-contrast: var(--red-20);
+  --color-negative-highest-contrast: var(--red-10);
+
+  /* ── Surfaces ──────────────────────────────────────────────────────────── */
+  --color-bg-light: var(--color-gray-20);
+  --color-bg-med: var(--color-gray-10);
+  --color-bg-dark: var(--color-gray-00);
+  --color-bg-inverted: var(--color-gray-90);
+  --color-bg-overlay: var(--black-30);
+  --color-bg-code-block: var(--color-gray-10);
+
+  /* ── Border colors ─────────────────────────────────────────────────────── */
+  --border-color-disabled: var(--color-alpha-10);
+  --border-color-default: var(--color-alpha-30);
+  --border-color-hover: var(--color-alpha-40);
+  --border-color-pressed: var(--color-alpha-30);
+  --border-color-focused: var(--color-emphasis-default);
+  --border-color-error: var(--color-caution-high-contrast);
+  --border-color-selected: var(--color-gray-80);
+  --gds-color-focus-outline: var(--color-emphasis-default);
+
+  /* ── Text colors ───────────────────────────────────────────────────────── */
+  --text-color-disabled: var(--color-gray-60);
+  --text-color-low-contrast: var(--color-gray-80);
+  --text-color-default: var(--color-gray-90);
+  --text-color-high-contrast: var(--color-gray-110);
+  --text-color-emphasis: var(--color-emphasis-higher-contrast);
+  --text-color-inverted: var(--color-gray-10);
+  --text-color-negative: var(--color-negative-higher-contrast);
+  --text-color-positive: var(--color-positive-higher-contrast);
+  --text-color-light: var(--color-gray-110);
+  --text-color-caution: var(--color-caution-higher-contrast);
+  --text-color-action: var(--color-action-higher-contrast);
+  --text-color-code-block: var(--color-gray-90);
+
+  /* ── Icon colors ───────────────────────────────────────────────────────── */
+  --icon-color-disabled: var(--color-gray-50);
+  --icon-color-low-contrast: var(--color-gray-60);
+  --icon-color-default: var(--color-gray-80);
+  --icon-color-high-contrast: var(--color-gray-90);
+  --icon-color-inverted: var(--color-gray-20);
+  --icon-color-positive: var(--color-positive-high-contrast);
+  --icon-color-negative: var(--color-negative-high-contrast);
+  --icon-color-caution: var(--color-caution-high-contrast);
+  --icon-color-emphasis: var(--color-emphasis-high-contrast);
+  --icon-color-action: var(--color-action-high-contrast);
+  --icon-color-light: var(--color-gray-90);
+
+  /* ── Button states ─────────────────────────────────────────────────────── */
+  --btn-color-neutral-disabled: var(--color-alpha-10);
+  --btn-color-neutral-default: var(--color-alpha-20);
+  --btn-color-neutral-hover: var(--color-alpha-40);
+  --btn-color-neutral-pressed: var(--color-alpha-10);
+  --btn-color-neutral-selected: var(--color-alpha-30);
+  --btn-color-emphasis-default: var(--color-emphasis-low-contrast);
+  --btn-color-emphasis-hover: var(--color-emphasis-default);
+  --btn-color-emphasis-pressed: var(--color-emphasis-lower-contrast);
+  --btn-color-danger-default: var(--color-negative-low-contrast);
+  --btn-color-danger-hover: var(--color-negative-default);
+  --btn-color-danger-pressed: var(--color-negative-lower-contrast);
+  --btn-color-merge-default: var(--color-action-low-contrast);
+  --btn-color-merge-hover: var(--color-action-default);
+  --btn-color-merge-pressed: var(--color-action-lower-contrast);
+
+  /* ── Accent regions ────────────────────────────────────────────────────── */
+  --accent-color-info-bg: var(--color-emphasis-lowest-contrast);
+  --accent-color-info-text: var(--color-emphasis-highest-contrast);
+  --accent-color-caution-bg: var(--color-caution-lowest-contrast);
+  --accent-color-caution-text: var(--color-caution-highest-contrast);
+  --accent-color-negative-bg: var(--color-negative-lowest-contrast);
+  --accent-color-negative-text: var(--color-negative-highest-contrast);
+  --accent-color-positive-bg: var(--color-positive-lowest-contrast);
+  --accent-color-positive-text: var(--color-positive-highest-contrast);
+  --accent-color-action-bg: var(--color-action-lowest-contrast);
+  --accent-color-action-text: var(--color-action-highest-contrast);
+  --accent-color-highlight-bg: var(--color-emphasis-lowest-contrast);
+
+  /* ── Misc ──────────────────────────────────────────────────────────────── */
+  --dim-identity-icon: #26262a99;
+
+  /* ── Shadows ───────────────────────────────────────────────────────────── */
+  --shadow-raised-xs: 0 1px 3px 0 #00000029;
+  --shadow-raised-sm: 0 2px 4px 0 #00000014;
+  --shadow-raised-md: 0 10px 20px #00000030, 0 6px 6px #0000003b;
+  --shadow-raised-3d-xs: 0 1px 3px 0 #00000029, 0 -1px 1px -1px #00000029 inset, 0 1px 1px 0 #ffffff1f inset;
+  --shadow-raised-3d-sm: 0 2px 4px 0 #00000014, 0 -1px 2px -1px #00000029 inset, 0 1px 2px 0 #ffffff1f inset;
+  --shadow-raised-3d-md: 0 4px 16px 0 #0000001f, 0 -1px 2px -1px #00000029 inset, 0 1px 2px 0 #ffffff1f inset;
+  --shadow-recessed-xs: 0 1px 2px 0 #00000029 inset;
+  --shadow-recessed-m: 0 2px 6px #0003 inset;
+
+  /* ── Code diff colors (dark) ───────────────────────────────────────────── */
+  --code-bg-unchanged: var(--diff-gray-700);
+  --code-bg-unchanged-number: var(--diff-gray-200);
+  --code-bg-unchanged-selected: var(--diff-blue-900);
+  --code-bg-unchanged-number-selected: var(--diff-blue-800);
+  --code-bg-added: var(--diff-green-800);
+  --code-bg-added-selected: var(--diff-teal-700);
+  --code-bg-added-partial: var(--diff-green-900);
+  --code-bg-added-partial-selected: var(--diff-teal-800);
+  --code-bg-added-partial-highlight: var(--diff-green-600);
+  --code-bg-added-partial-highlight-selected: var(--diff-teal-600);
+  --code-bg-added-number: var(--diff-green-800);
+  --code-bg-added-number-selected: var(--diff-teal-700);
+  --code-bg-removed: var(--diff-red-700);
+  --code-bg-removed-selected: var(--diff-purple-700);
+  --code-bg-removed-partial: var(--diff-red-900);
+  --code-bg-removed-partial-selected: var(--diff-purple-900);
+  --code-bg-removed-partial-highlight: var(--diff-red-600);
+  --code-bg-removed-partial-highlight-selected: var(--diff-purple-600);
+  --code-bg-removed-number: var(--diff-red-700);
+  --code-bg-removed-number-selected: var(--diff-purple-700);
+  --code-bg-expand-line: var(--diff-royal-800);
+  --code-bg-expand-line-number: var(--diff-royal-700);
+  --code-bg-expand-line-number-hover: var(--diff-royal-600);
+
+  /* ── Syntax highlighting (dark) ────────────────────────────────────────── */
+  --mtk1: var(--syntax-cloud);
+  --mtk2: var(--syntax-graphite);
+  --mtk3: var(--syntax-chalk);
+  --mtk4: var(--syntax-salmon);
+  --mtk5: var(--syntax-seafoam);
+  --mtk6: var(--syntax-sky);
+  --mtk7: var(--syntax-lime);
+  --mtk8: var(--syntax-ice);
+  --mtk9: var(--syntax-cloud);
+  --mtk10: var(--syntax-grape);
+  --mtk11: var(--syntax-taro);
+  --mtk12: var(--syntax-salmon);
+  --mtk13: var(--syntax-seafoam);
+  --mtk14: var(--syntax-sky);
+  --mtk15: var(--syntax-ocean);
+  --mtk16: var(--syntax-strawberry);
+  --mtk17: var(--syntax-oyster);
+  --mtk18: var(--syntax-ice);
+  --mtk19: var(--syntax-cloud);
+  --code-default: #e8e8e8;
+  --code-keyword: #ff796c;
+  --code-entity: #de92f2;
+  --code-constant: #3fc1f9;
+  --code-string: #b2d9f7;
+  --code-variable: #f4b452;
+  --code-comment: #c9d1d9;
+  --code-entity-tag: #9fdd6e;
+  --code-subst: #c9d1d9;
+  --code-markup-heading: #2ae8dc;
+  --code-markup-list: #eecf77;
+  --code-markup-inserted: #9ff6a5;
+  --code-markup-deleted: #fcb3a9;
+
+  /* ── AI reviewer badges (dark) ─────────────────────────────────────────── */
+  --color-ai-reviewer-badge-icon-bug: #30ead5;
+  --color-ai-reviewer-badge-text-bug: #e2fffc;
+  --color-ai-reviewer-badge-icon-edge: #ff8632;
+  --color-ai-reviewer-badge-text-edge: #fff0e6;
+  --color-ai-reviewer-badge-icon-security: #73a8ff;
+  --color-ai-reviewer-badge-text-security: #ddeaff;
+  --color-ai-reviewer-badge-icon-accidental: #f252ff;
+  --color-ai-reviewer-badge-text-accidental: #fde6ff;
+  --color-ai-reviewer-badge-icon-performance: #04a9d7;
+  --color-ai-reviewer-badge-text-performance: #c0f1ff;
+  --color-ai-reviewer-badge-icon-style: #ff82a4;
+  --color-ai-reviewer-badge-text-style: #ffeaf0;
+  --color-ai-reviewer-badge-icon-documentation: #ffb7c7;
+  --color-ai-reviewer-badge-text-documentation: #fff1f4;
+
+  /* ── Patterns ──────────────────────────────────────────────────────────── */
+  --pattern-rebase-added: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAABiSURBVHgB7ZPRCQAhDEObrnCj3hw36u2gAUUR8cPGPwMlHw0PwQbW9OR5i/95vuKjljkoYRUog1GuhHHvShhzroTR0YXDMO5hc21/FJSw2QvDJwQlrAfepuzB7DYlDLMTTUkUCHVNzmN76gAAAABJRU5ErkJggg==);
+  --pattern-rebase-removed: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAABiSURBVHgB7ZPRCQAhDEObrnCj3hw36u2gAUUR8cPGPwMlHw0PwQbW9OR5i/95vuKjljkoYRUog1GuhHHvShhzroTR0YXDMO5hc21/FJSw2QvDJwQlrAfepuzB7DYlDLMTTUkUCHVNzmN76gAAAABJRU5ErkJggg==);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * 3. shadcn Bridge — Maps GDS tokens to shadcn convention names
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* --- Surfaces --- */
+  --background: var(--color-bg-med);
+  --foreground: var(--text-color-default);
+
+  --card: var(--color-bg-light);
+  --card-foreground: var(--text-color-default);
+
+  --popover: var(--color-bg-light);
+  --popover-foreground: var(--text-color-default);
+
+  /* --- Primary (Emphasis / Blue) --- */
+  --primary: var(--color-emphasis-default);
+  --primary-foreground: #fff;
+
+  /* --- Secondary --- */
+  --secondary: var(--color-alpha-20);
+  --secondary-foreground: var(--text-color-default);
+
+  /* --- Muted --- */
+  --muted: var(--color-bg-dark);
+  --muted-foreground: var(--text-color-low-contrast);
+
+  /* --- Accent --- */
+  --accent: var(--accent-color-info-bg);
+  --accent-foreground: var(--text-color-default);
+
+  /* --- Negative (Red) --- */
+  --negative-accent: var(--color-negative-default);
+  --negative-accent-foreground: #fff;
+
+  /* --- Borders & inputs --- */
+  --border: var(--border-color-default);
+  --input: var(--border-color-default);
+  --ring: var(--color-emphasis-default);
+
+  /* --- Charts --- */
+  --chart-1: var(--color-emphasis-default);
+  --chart-2: var(--color-action-default);
+  --chart-3: var(--color-positive-default);
+  --chart-4: var(--color-caution-default);
+  --chart-5: var(--color-negative-default);
+
+  /* --- Sidebar --- */
+  --sidebar: var(--color-bg-dark);
+  --sidebar-foreground: var(--text-color-default);
+  --sidebar-primary: var(--color-emphasis-default);
+  --sidebar-primary-foreground: #fff;
+  --sidebar-accent: var(--accent-color-info-bg);
+  --sidebar-accent-foreground: var(--text-color-default);
+  --sidebar-border: var(--border-color-default);
+  --sidebar-ring: var(--color-emphasis-default);
+
+  /* --- Typography --- */
+  --font-sans: var(--gds-font-stack);
+  --font-serif: Georgia, serif;
+  --font-mono: 'Fira Code', 'IBM Plex Mono', 'JetBrains Mono', ui-monospace,
+    monospace;
+
+  /* --- Shape --- */
+  --radius: 0.375rem;
+  --spacing: 0.25rem;
+
+  /* --- Success / positive --- */
+  --success: var(--color-positive-default);
+  --success-foreground: #fff;
+
+  /* --- Warning / caution --- */
+  --warning: var(--color-caution-default);
+  --warning-foreground: #fff;
+
+  /* --- Merge / stacking accent (action / purple) --- */
+  --graphite-purple: var(--color-action-default);
+  --graphite-purple-foreground: #fff;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * 4. Light Mode Overrides
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+html[data-theme='light'],
+html:not(.dark):not([data-theme]) {
+  color-scheme: light;
+
+  /* ── Gray (natural order for light) ────────────────────────────────────── */
+  --color-gray-00: var(--cool-gray-00);
+  --color-gray-10: var(--cool-gray-10);
+  --color-gray-20: var(--cool-gray-20);
+  --color-gray-30: var(--cool-gray-30);
+  --color-gray-40: var(--cool-gray-40);
+  --color-gray-50: var(--cool-gray-50);
+  --color-gray-60: var(--cool-gray-60);
+  --color-gray-70: var(--cool-gray-70);
+  --color-gray-80: var(--cool-gray-80);
+  --color-gray-90: var(--cool-gray-90);
+  --color-gray-100: var(--cool-gray-100);
+  --color-gray-110: var(--cool-gray-110);
+  --color-gray-120: var(--cool-gray-120);
+
+  /* ── Alphas ────────────────────────────────────────────────────────────── */
+  --color-alpha-00: var(--darken-00);
+  --color-alpha-10: var(--darken-10);
+  --color-alpha-20: var(--darken-20);
+  --color-alpha-30: var(--darken-30);
+  --color-alpha-40: var(--darken-40);
+
+  /* ── Intent mappings ───────────────────────────────────────────────────── */
+  --color-emphasis-lowest-contrast: var(--blue-10);
+  --color-emphasis-lower-contrast: var(--blue-20);
+  --color-emphasis-low-contrast: var(--blue-30);
+  --color-emphasis-default: var(--blue-40);
+  --color-emphasis-high-contrast: var(--blue-50);
+  --color-emphasis-higher-contrast: var(--blue-60);
+  --color-emphasis-highest-contrast: var(--blue-70);
+
+  --color-action-lowest-contrast: var(--purple-10);
+  --color-action-lower-contrast: var(--purple-20);
+  --color-action-low-contrast: var(--purple-30);
+  --color-action-default: var(--purple-40);
+  --color-action-high-contrast: var(--purple-50);
+  --color-action-higher-contrast: var(--purple-60);
+  --color-action-highest-contrast: var(--purple-70);
+
+  --color-positive-lowest-contrast: var(--green-10);
+  --color-positive-lower-contrast: var(--green-20);
+  --color-positive-low-contrast: var(--green-30);
+  --color-positive-default: var(--green-40);
+  --color-positive-high-contrast: var(--green-50);
+  --color-positive-higher-contrast: var(--green-60);
+  --color-positive-highest-contrast: var(--green-70);
+
+  --color-caution-lowest-contrast: var(--yellow-10);
+  --color-caution-lower-contrast: var(--yellow-20);
+  --color-caution-low-contrast: var(--yellow-30);
+  --color-caution-default: var(--yellow-40);
+  --color-caution-high-contrast: var(--yellow-50);
+  --color-caution-higher-contrast: var(--yellow-60);
+  --color-caution-highest-contrast: var(--yellow-70);
+
+  --color-negative-lowest-contrast: var(--red-10);
+  --color-negative-lower-contrast: var(--red-20);
+  --color-negative-low-contrast: var(--red-30);
+  --color-negative-default: var(--red-40);
+  --color-negative-high-contrast: var(--red-50);
+  --color-negative-higher-contrast: var(--red-60);
+  --color-negative-highest-contrast: var(--red-70);
+
+  /* ── Surfaces ──────────────────────────────────────────────────────────── */
+  --color-bg-light: var(--color-gray-00);
+  --color-bg-med: var(--color-gray-10);
+  --color-bg-dark: var(--color-gray-20);
+  --color-bg-inverted: var(--color-gray-90);
+  --color-bg-overlay: var(--black-30);
+  --color-bg-code-block: var(--color-gray-20);
+
+  /* ── Border colors ─────────────────────────────────────────────────────── */
+  --border-color-disabled: var(--color-alpha-10);
+  --border-color-default: var(--color-alpha-30);
+  --border-color-hover: var(--color-alpha-40);
+  --border-color-pressed: var(--color-alpha-30);
+  --border-color-focused: var(--color-emphasis-high-contrast);
+  --border-color-error: var(--color-caution-default);
+  --border-color-selected: var(--color-gray-50);
+  --gds-color-focus-outline: var(--color-emphasis-high-contrast);
+
+  /* ── Text colors ───────────────────────────────────────────────────────── */
+  --text-color-disabled: var(--color-gray-60);
+  --text-color-low-contrast: var(--color-gray-80);
+  --text-color-default: var(--color-gray-90);
+  --text-color-high-contrast: var(--color-gray-120);
+  --text-color-emphasis: var(--color-emphasis-high-contrast);
+  --text-color-inverted: var(--color-gray-10);
+  --text-color-negative: var(--color-negative-high-contrast);
+  --text-color-positive: var(--color-positive-high-contrast);
+  --text-color-light: var(--color-gray-10);
+  --text-color-caution: var(--color-caution-high-contrast);
+  --text-color-action: var(--color-action-high-contrast);
+  --text-color-code-block: var(--color-gray-90);
+
+  /* ── Icon colors ───────────────────────────────────────────────────────── */
+  --icon-color-disabled: var(--color-gray-50);
+  --icon-color-low-contrast: var(--color-gray-60);
+  --icon-color-default: var(--color-gray-80);
+  --icon-color-high-contrast: var(--color-gray-90);
+  --icon-color-inverted: var(--color-gray-20);
+  --icon-color-positive: var(--color-positive-default);
+  --icon-color-negative: var(--color-negative-default);
+  --icon-color-caution: var(--color-caution-default);
+  --icon-color-emphasis: var(--color-emphasis-default);
+  --icon-color-action: var(--color-action-default);
+  --icon-color-light: var(--color-gray-20);
+
+  /* ── Button states ─────────────────────────────────────────────────────── */
+  --btn-color-neutral-disabled: var(--color-alpha-10);
+  --btn-color-neutral-default: var(--color-alpha-20);
+  --btn-color-neutral-hover: var(--color-alpha-10);
+  --btn-color-neutral-pressed: var(--color-alpha-30);
+  --btn-color-neutral-selected: var(--color-alpha-10);
+  --btn-color-emphasis-default: var(--color-emphasis-high-contrast);
+  --btn-color-emphasis-hover: var(--color-emphasis-default);
+  --btn-color-emphasis-pressed: var(--color-emphasis-higher-contrast);
+  --btn-color-danger-default: var(--color-negative-high-contrast);
+  --btn-color-danger-hover: var(--color-negative-default);
+  --btn-color-danger-pressed: var(--color-negative-higher-contrast);
+  --btn-color-merge-default: var(--color-action-high-contrast);
+  --btn-color-merge-hover: var(--color-action-default);
+  --btn-color-merge-pressed: var(--color-action-higher-contrast);
+
+  /* ── Accent regions ────────────────────────────────────────────────────── */
+  --accent-color-info-bg: var(--color-emphasis-lowest-contrast);
+  --accent-color-info-text: var(--color-emphasis-highest-contrast);
+  --accent-color-caution-bg: var(--color-caution-lowest-contrast);
+  --accent-color-caution-text: var(--color-caution-highest-contrast);
+  --accent-color-negative-bg: var(--color-negative-lowest-contrast);
+  --accent-color-negative-text: var(--color-negative-highest-contrast);
+  --accent-color-positive-bg: var(--color-positive-lowest-contrast);
+  --accent-color-positive-text: var(--color-positive-highest-contrast);
+  --accent-color-action-bg: var(--color-action-lowest-contrast);
+  --accent-color-action-text: var(--color-action-highest-contrast);
+  --accent-color-highlight-bg: #f7f9ff;
+
+  /* ── Misc ──────────────────────────────────────────────────────────────── */
+  --dim-identity-icon: #fff9;
+
+  /* ── Shadows ───────────────────────────────────────────────────────────── */
+  --shadow-raised-xs: 0 1px 3px 0 #00000029;
+  --shadow-raised-sm: 0 2px 4px 0 #00000014;
+  --shadow-raised-md: 0 4px 16px 0 #0000001f;
+  --shadow-raised-3d-xs: 0 1px 3px 0 #00000029, 0 -1px 1px -1px #00000029 inset, 0 1px 1px 0 #ffffff1f inset;
+  --shadow-raised-3d-sm: 0 2px 4px 0 #00000014, 0 -1px 2px -1px #00000029 inset, 0 1px 2px 0 #ffffff1f inset;
+  --shadow-raised-3d-md: 0 4px 16px 0 #0000001f, 0 -1px 2px -1px #00000029 inset, 0 1px 2px 0 #ffffff1f inset;
+  --shadow-recessed-xs: 0 1px 2px 0 #00000029 inset;
+  --shadow-recessed-m: 0 2px 6px #0003 inset;
+
+  /* ── Code diff colors (light) ──────────────────────────────────────────── */
+  --code-bg-unchanged: var(--white);
+  --code-bg-unchanged-number: var(--diff-gray-100);
+  --code-bg-unchanged-selected: var(--diff-blue-100);
+  --code-bg-unchanged-number-selected: var(--diff-blue-200);
+  --code-bg-added: var(--diff-green-300);
+  --code-bg-added-selected: var(--diff-teal-300);
+  --code-bg-added-partial: var(--diff-green-200);
+  --code-bg-added-partial-selected: var(--diff-teal-200);
+  --code-bg-added-partial-highlight: var(--diff-green-400);
+  --code-bg-added-partial-highlight-selected: var(--diff-teal-400);
+  --code-bg-added-number: var(--diff-green-300);
+  --code-bg-added-number-selected: var(--diff-teal-300);
+  --code-bg-removed: var(--diff-red-300);
+  --code-bg-removed-selected: var(--diff-purple-300);
+  --code-bg-removed-partial: var(--diff-red-200);
+  --code-bg-removed-partial-selected: var(--diff-purple-200);
+  --code-bg-removed-partial-highlight: var(--diff-red-400);
+  --code-bg-removed-partial-highlight-selected: var(--diff-purple-400);
+  --code-bg-removed-number: var(--diff-red-300);
+  --code-bg-removed-number-selected: var(--diff-purple-300);
+  --code-bg-expand-line: var(--diff-sky-200);
+  --code-bg-expand-line-number: var(--diff-sky-300);
+  --code-bg-expand-line-number-hover: var(--diff-sky-400);
+
+  /* ── Syntax highlighting (light) ───────────────────────────────────────── */
+  --mtk1: var(--black);
+  --mtk2: var(--white);
+  --mtk3: var(--syntax-carbon);
+  --mtk4: var(--syntax-apple);
+  --mtk5: var(--syntax-denim);
+  --mtk6: var(--syntax-blueberry);
+  --mtk7: var(--syntax-kiwi);
+  --mtk8: var(--syntax-ocean);
+  --mtk9: var(--black);
+  --mtk10: var(--syntax-graphite);
+  --mtk11: var(--syntax-eggplant);
+  --mtk12: var(--syntax-apple);
+  --mtk13: var(--syntax-denim);
+  --mtk14: var(--syntax-blueberry);
+  --mtk15: var(--syntax-strawberry);
+  --mtk16: var(--syntax-mauve);
+  --mtk17: var(--syntax-blackberry);
+  --mtk18: var(--syntax-ocean);
+  --mtk19: var(--black);
+  --code-default: #24292e;
+  --code-keyword: #d73a49;
+  --code-entity: #6f42c1;
+  --code-constant: #005cc5;
+  --code-string: #032f62;
+  --code-variable: #e36209;
+  --code-comment: #6a737d;
+  --code-entity-tag: #22863a;
+  --code-subst: #24292e;
+  --code-markup-heading: #005cc5;
+  --code-markup-list: #735c0f;
+  --code-markup-inserted: #22863a;
+  --code-markup-deleted: #b31d28;
+
+  /* ── AI reviewer badges (light) ────────────────────────────────────────── */
+  --color-ai-reviewer-badge-icon-bug: #15b8a6;
+  --color-ai-reviewer-badge-text-bug: #074b44;
+  --color-ai-reviewer-badge-icon-edge: #f97315;
+  --color-ai-reviewer-badge-text-edge: #522404;
+  --color-ai-reviewer-badge-icon-security: #3c82f6;
+  --color-ai-reviewer-badge-text-security: #0d1f3b;
+  --color-ai-reviewer-badge-icon-accidental: #861a8f;
+  --color-ai-reviewer-badge-text-accidental: #430d48;
+  --color-ai-reviewer-badge-icon-performance: #0e7490;
+  --color-ai-reviewer-badge-text-performance: #09313c;
+  --color-ai-reviewer-badge-icon-style: #9f1339;
+  --color-ai-reviewer-badge-text-style: #460416;
+  --color-ai-reviewer-badge-icon-documentation: #e11d48;
+  --color-ai-reviewer-badge-text-documentation: #6e031b;
+
+  /* ── Patterns ──────────────────────────────────────────────────────────── */
+  --pattern-rebase-added: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAABRSURBVHgB7dPBCQAgDAPAjNL9l3KUaGufPgTzsGhABA2HjwpkSNpYjTO+GxbZ6t2LZVGGxbkS83soMS9BicULlRhrjdAjWBZlGP9POcZYYoQ6PL7NT7u2pnEAAAAASUVORK5CYII=);
+  --pattern-rebase-removed: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABQAAAAUCAYAAACNiR0NAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAAXNSR0IArs4c6QAAAARnQU1BAACxjwv8YQUAAABRSURBVHgB7ZOxCQAwCAR/DvffIGtkJ6NimSIkX0RQEEGf08IHMlRVLIflzCrYxJHuX1gKabDoM2E+BxPmOjBhcSETVuyF2inXS9spb7AaL7QAtM21t9rBm60AAAAASUVORK5CYII=);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+ * 5. Diff UX Redesign Overrides
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+html[data-theme='dark'] [data-diff-ux-redesign='true'],
+html.dark [data-diff-ux-redesign='true'] {
+  --code-bg-added: #003219;
+  --code-bg-added-partial: #002510;
+  --code-bg-added-partial-highlight: #0e492a;
+  --code-bg-added-number: #0e492a;
+  --code-bg-removed: #45111b;
+  --code-bg-removed-partial: #2e0a10;
+  --code-bg-removed-partial-highlight: #550f1f;
+  --code-bg-removed-number: #550f1f;
+  --code-bg-unchanged: #151515;
+  --code-text-added: #34c486;
+  --code-text-removed: #e66d75;
+  --code-text-low-contrast: #95a0a6;
+  --code-text-normal-contrast: #9898a3;
+  --code-text-high-contrast: #e8e8ed;
+  --code-bg-gutter-selected: #005164;
+  --code-bg-hidden-chunks: var(--diff-gray-200);
+  --code-bg-line-highlight: #00516466;
+  --code-border-line-highlight: #00b3da;
+  --code-bg-line-highlight-hover: #00516466;
+  --code-border-line-highlight-hover: #2ce4ff;
+  --code-bg-line-highlight-selected: #00516466;
+  --code-border-line-highlight-selected: #2ce4ff;
+  --code-bg-line-highlight-dim: #0051641a;
+  --code-border-line-highlight-dim: #005164;
+  --code-bg-empty-stripe: #0a0a0a;
+}
+
+html[data-theme='light'] [data-diff-ux-redesign='true'],
+html:not(.dark):not([data-theme]) [data-diff-ux-redesign='true'] {
+  --code-bg-added: #d0fbdd;
+  --code-bg-added-partial: #eefff3;
+  --code-bg-added-partial-highlight: #c1f7d2;
+  --code-bg-added-number: #c1f7d2;
+  --code-bg-removed: #ffdde4;
+  --code-bg-removed-partial: #ffeff2;
+  --code-bg-removed-partial-highlight: #ffd3dc;
+  --code-bg-removed-number: #ffd3dc;
+  --code-bg-unchanged: var(--white);
+  --code-text-added: #008b52;
+  --code-text-removed: #ca2356;
+  --code-text-low-contrast: #95a0a6;
+  --code-text-normal-contrast: #5e6468;
+  --code-text-high-contrast: #66747c;
+  --code-bg-gutter-selected: #a5ebff;
+  --code-bg-hidden-chunks: var(--diff-gray-100);
+  --code-bg-line-highlight: #a5ebff1a;
+  --code-border-line-highlight: #00b3da;
+  --code-bg-line-highlight-hover: #c3ddff33;
+  --code-border-line-highlight-hover: #0091b3;
+  --code-bg-line-highlight-selected: #c3ddff33;
+  --code-border-line-highlight-selected: #0091b3;
+  --code-bg-line-highlight-dim: #a5ebff1a;
+  --code-border-line-highlight-dim: #a5ebff;
+  --code-bg-empty-stripe: #f2f2f5;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════ */
+
+:where(button) {
+  cursor: pointer;
+}

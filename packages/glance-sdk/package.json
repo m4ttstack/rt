@@ -1,0 +1,38 @@
+{
+  "name": "@forge-glance/sdk",
+  "version": "0.5.0",
+  "description": "GitHub & GitLab API client — REST, GraphQL, and real-time ActionCable subscriptions",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "bun": "./src/index.ts",
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "src",
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "bun build src/index.ts src/types.ts src/logger.ts src/GitProvider.ts src/GitLabProvider.ts src/GitHubProvider.ts src/ActionCableClient.ts src/MRDetailFetcher.ts src/NoteMutator.ts src/providers.ts --outdir dist --root src --target node && tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit -p tsconfig.json",
+    "prepublishOnly": "bun run check && bun run build"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/m4ttheweric/Glance",
+    "directory": "packages/sdk"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

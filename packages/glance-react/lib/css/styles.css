@@ -1,0 +1,450 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import './inter.css';
+@import './mono.css';
+@import './palette.css';
+@import './tokens.css';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  /* ── Disable ALL default Tailwind colors ───────────────────────────────── */
+  --color-*: initial;
+
+  /* ══════════════════════════════════════════════════════════════════════════
+   * TIER 1 — Raw GDS Palette
+   * Shade numbers follow Tailwind convention: 50 (lightest) → 900 (darkest)
+   * Mapped from GDS: 10→50, 20→200, 30→300, 40→500, 50→600, 60→700, 70→900
+   * Usage: bg-blue-500, text-red-200, border-green-700
+   * ══════════════════════════════════════════════════════════════════════════ */
+
+  /* ── Gray (13-step scale: 00–120) ──────────────────────────────────────── */
+  --color-gray-00: var(--color-gray-00);
+  --color-gray-10: var(--color-gray-10);
+  --color-gray-20: var(--color-gray-20);
+  --color-gray-30: var(--color-gray-30);
+  --color-gray-40: var(--color-gray-40);
+  --color-gray-50: var(--color-gray-50);
+  --color-gray-60: var(--color-gray-60);
+  --color-gray-70: var(--color-gray-70);
+  --color-gray-80: var(--color-gray-80);
+  --color-gray-90: var(--color-gray-90);
+  --color-gray-100: var(--color-gray-100);
+  --color-gray-110: var(--color-gray-110);
+  --color-gray-120: var(--color-gray-120);
+
+  /* ── Blue ───────────────────────────────────────────────────────────────── */
+  --color-blue-50: var(--blue-10);
+  --color-blue-200: var(--blue-20);
+  --color-blue-300: var(--blue-30);
+  --color-blue-500: var(--blue-40);
+  --color-blue-600: var(--blue-50);
+  --color-blue-700: var(--blue-60);
+  --color-blue-900: var(--blue-70);
+
+  /* ── Red ────────────────────────────────────────────────────────────────── */
+  --color-red-50: var(--red-10);
+  --color-red-200: var(--red-20);
+  --color-red-300: var(--red-30);
+  --color-red-500: var(--red-40);
+  --color-red-600: var(--red-50);
+  --color-red-700: var(--red-60);
+  --color-red-900: var(--red-70);
+
+  /* ── Green ──────────────────────────────────────────────────────────────── */
+  --color-green-50: var(--green-10);
+  --color-green-200: var(--green-20);
+  --color-green-300: var(--green-30);
+  --color-green-500: var(--green-40);
+  --color-green-600: var(--green-50);
+  --color-green-700: var(--green-60);
+  --color-green-900: var(--green-70);
+
+  /* ── Purple ─────────────────────────────────────────────────────────────── */
+  --color-purple-50: var(--purple-10);
+  --color-purple-200: var(--purple-20);
+  --color-purple-300: var(--purple-30);
+  --color-purple-500: var(--purple-40);
+  --color-purple-600: var(--purple-50);
+  --color-purple-700: var(--purple-60);
+  --color-purple-900: var(--purple-70);
+
+  /* ── Yellow ─────────────────────────────────────────────────────────────── */
+  --color-yellow-50: var(--yellow-10);
+  --color-yellow-200: var(--yellow-20);
+  --color-yellow-300: var(--yellow-30);
+  --color-yellow-500: var(--yellow-40);
+  --color-yellow-600: var(--yellow-50);
+  --color-yellow-700: var(--yellow-60);
+  --color-yellow-900: var(--yellow-70);
+
+  /* ── Teal ───────────────────────────────────────────────────────────────── */
+  --color-teal-50: var(--teal-10);
+  --color-teal-200: var(--teal-20);
+  --color-teal-300: var(--teal-30);
+  --color-teal-500: var(--teal-40);
+  --color-teal-600: var(--teal-50);
+  --color-teal-700: var(--teal-60);
+  --color-teal-900: var(--teal-70);
+
+  /* ── Lime ───────────────────────────────────────────────────────────────── */
+  --color-lime-50: var(--lime-10);
+  --color-lime-200: var(--lime-20);
+  --color-lime-300: var(--lime-30);
+  --color-lime-500: var(--lime-40);
+  --color-lime-600: var(--lime-50);
+  --color-lime-700: var(--lime-60);
+  --color-lime-900: var(--lime-70);
+
+  /* ── Neutrals ──────────────────────────────────────────────────────────── */
+  --color-white: var(--white);
+  --color-black: var(--black);
+
+  /* ══════════════════════════════════════════════════════════════════════════
+   * TIER 2 — Smart Defaults (bare name = theme-appropriate shade)
+   * Usage: bg-blue, text-red, border-green
+   * These resolve to the GDS "default" semantic color, which is theme-aware.
+   * ══════════════════════════════════════════════════════════════════════════ */
+
+  --color-blue: var(--color-emphasis-default);
+  --color-red: var(--color-negative-default);
+  --color-green: var(--color-positive-default);
+  --color-purple: var(--color-action-default);
+  --color-yellow: var(--color-caution-default);
+  --color-teal: var(--teal-40);
+  --color-lime: var(--lime-40);
+  --color-gray: var(--color-gray-60);
+
+  /* ══════════════════════════════════════════════════════════════════════════
+   * TIER 3 — Semantic Tokens (domain vocabulary)
+   * Usage: bg-emphasis, text-positive, border-caution
+   * shadcn surface pairs + GDS intent tokens + button/accent states
+   * ══════════════════════════════════════════════════════════════════════════ */
+
+  /* ── Surface pairs (shadcn convention) ─────────────────────────────────── */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-negative-accent: var(--negative-accent);
+  --color-negative-accent-foreground: var(--negative-accent-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* ── GDS intent tokens (3 contrast levels each) ────────────────────────── */
+  --color-emphasis: var(--color-emphasis-default);
+  --color-emphasis-high: var(--color-emphasis-high-contrast);
+  --color-emphasis-bright: var(--color-emphasis-higher-contrast);
+  --color-emphasis-low: var(--color-emphasis-lowest-contrast);
+
+  --color-positive: var(--color-positive-default);
+  --color-positive-high: var(--color-positive-high-contrast);
+  --color-positive-bright: var(--color-positive-higher-contrast);
+  --color-positive-low: var(--color-positive-lowest-contrast);
+
+  --color-negative: var(--color-negative-default);
+  --color-negative-high: var(--color-negative-high-contrast);
+  --color-negative-bright: var(--color-negative-higher-contrast);
+  --color-negative-low: var(--color-negative-lowest-contrast);
+
+  --color-caution: var(--color-caution-default);
+  --color-caution-high: var(--color-caution-high-contrast);
+  --color-caution-bright: var(--color-caution-higher-contrast);
+  --color-caution-low: var(--color-caution-lowest-contrast);
+
+  --color-action: var(--color-action-default);
+  --color-action-high: var(--color-action-high-contrast);
+  --color-action-bright: var(--color-action-higher-contrast);
+  --color-action-low: var(--color-action-lowest-contrast);
+
+  /* merge = action hue (purple) for git-merge domain vocabulary */
+  --color-merge: var(--color-action-default);
+  --color-merge-high: var(--color-action-high-contrast);
+  --color-merge-bright: var(--color-action-higher-contrast);
+  --color-merge-low: var(--color-action-lowest-contrast);
+
+  /* draft = muted gray for draft/inactive domain state */
+  --color-draft: var(--border);
+
+  /* ── Neutral surface token ─────────────────────────────────────────────── */
+  --color-neutral: var(--btn-color-neutral-default);
+  --color-neutral-hover: var(--btn-color-neutral-hover);
+  --color-neutral-pressed: var(--btn-color-neutral-pressed);
+
+  /* ── Filled button base colors (tuned shade curves for solid fills) ─── */
+  --color-filled-emphasis: var(--btn-color-emphasis-default);
+  --color-filled-emphasis-hover: var(--btn-color-emphasis-hover);
+  --color-filled-emphasis-pressed: var(--btn-color-emphasis-pressed);
+  --color-filled-merge: var(--btn-color-merge-default);
+  --color-filled-merge-hover: var(--btn-color-merge-hover);
+  --color-filled-merge-pressed: var(--btn-color-merge-pressed);
+  --color-filled-danger: var(--btn-color-danger-default);
+  --color-filled-danger-hover: var(--btn-color-danger-hover);
+  --color-filled-danger-pressed: var(--btn-color-danger-pressed);
+
+  /* ── Accent region tokens (banner/badge bg + text pairs) ───────────────── */
+  --color-accent-info-bg: var(--accent-color-info-bg);
+  --color-accent-info-text: var(--accent-color-info-text);
+  --color-accent-caution-bg: var(--accent-color-caution-bg);
+  --color-accent-caution-text: var(--accent-color-caution-text);
+  --color-accent-negative-bg: var(--accent-color-negative-bg);
+  --color-accent-negative-text: var(--accent-color-negative-text);
+  --color-accent-positive-bg: var(--accent-color-positive-bg);
+  --color-accent-positive-text: var(--accent-color-positive-text);
+  --color-accent-action-bg: var(--accent-color-action-bg);
+  --color-accent-action-text: var(--accent-color-action-text);
+
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+
+  /* ── Typography ─────────────────────────────────────────────────────────── */
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-serif: var(--font-serif);
+
+  /* ── Radii ──────────────────────────────────────────────────────────────── */
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* ── Shadows ────────────────────────────────────────────────────────────── */
+  --shadow-2xs: 0 1px #0000000d;
+  --shadow-xs: 0 1px 2px 0 #0000000d;
+  --shadow-sm: 0 1px 3px 0 #0000001a, 0 1px 2px -1px #0000001a;
+  --shadow: 0 1px 3px 0 #0000001a, 0 1px 2px -1px #0000001a;
+  --shadow-md: 0 4px 6px -1px #0000001a, 0 2px 4px -2px #0000001a;
+  --shadow-lg: 0 10px 15px -3px #0000001a, 0 4px 6px -4px #0000001a;
+  --shadow-xl: 0 20px 25px -5px #0000001a, 0 8px 10px -6px #0000001a;
+  --shadow-2xl: 0 25px 50px -12px #00000040;
+
+  /* ── Accordion animations ──────────────────────────────────────────────── */
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+}
+
+/* ── Smart default: bare `rounded` inherits from theme --radius ──────────── */
+@utility rounded {
+  border-radius: var(--radius);
+}
+
+@keyframes accordion-down {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-accordion-content-height);
+  }
+}
+
+@keyframes accordion-up {
+  from {
+    height: var(--radix-accordion-content-height);
+  }
+  to {
+    height: 0;
+  }
+}
+
+/* ── Dark-mode shadows (higher opacity for visibility) ───────────── */
+.dark {
+  --shadow-2xs: 0 1px #0000004d;
+  --shadow-xs: 0 1px 2px 0 #0000004d;
+  --shadow-sm: 0 1px 3px 0 #00000066, 0 1px 2px -1px #00000066;
+  --shadow: 0 1px 3px 0 #00000066, 0 1px 2px -1px #00000066;
+  --shadow-md: 0 4px 6px -1px #00000066, 0 2px 4px -2px #00000066;
+  --shadow-lg: 0 10px 15px -3px #00000066, 0 4px 6px -4px #00000066;
+  --shadow-xl: 0 20px 25px -5px #00000066, 0 8px 10px -6px #00000066;
+  --shadow-2xl: 0 25px 50px -12px #000000b3;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+/* ── Filled surface utilities ──────────────────────────────────────────────
+ * Solid background + white foreground.
+ * Emphasis and merge use tuned shade curves for optimal contrast.
+ * Usage: <button className="filled-emphasis rounded-md px-4">…</button>
+ * ──────────────────────────────────────────────────────────────────────── */
+
+@utility filled-emphasis {
+  @apply bg-filled-emphasis text-primary-foreground;
+}
+@utility filled-merge {
+  @apply bg-filled-merge text-primary-foreground;
+}
+@utility filled-action {
+  @apply bg-action text-primary-foreground;
+}
+@utility filled-positive {
+  @apply bg-positive text-primary-foreground;
+}
+@utility filled-negative {
+  @apply bg-negative text-primary-foreground;
+}
+@utility filled-caution {
+  @apply bg-caution text-primary-foreground;
+}
+@utility filled-neutral {
+  @apply bg-secondary text-secondary-foreground;
+}
+
+/* ── Subtle surface utilities ──────────────────────────────────────────────
+ * Apply a tinted background + high-contrast foreground in one class.
+ * Usage: <div className="subtle-positive rounded-md p-2">…</div>
+ * ──────────────────────────────────────────────────────────────────────── */
+
+@utility subtle-emphasis {
+  @apply bg-emphasis/25 text-emphasis-bright;
+}
+@utility subtle-action {
+  @apply bg-action/25 text-action-bright;
+}
+@utility subtle-merge {
+  @apply bg-merge/25 text-merge-bright;
+}
+@utility subtle-positive {
+  @apply bg-positive/25 text-positive-bright;
+}
+@utility subtle-negative {
+  @apply bg-negative/25 text-negative-bright;
+}
+@utility subtle-caution {
+  @apply bg-caution/25 text-caution-bright;
+}
+@utility subtle-neutral {
+  @apply bg-neutral text-secondary-foreground;
+}
+
+/* ── Subtle HIGH surface utilities ─────────────────────────────────────────
+ * Higher-contrast versions for stacking on already-tinted surfaces.
+ * e.g. an icon circle sitting on a subtle card background.
+ * Usage: <div className="subtle-emphasis-high rounded-full size-5">…</div>
+ * ──────────────────────────────────────────────────────────────────────── */
+
+@utility subtle-emphasis-high {
+  @apply bg-emphasis/40 text-emphasis-bright;
+}
+@utility subtle-action-high {
+  @apply bg-action/40 text-action-bright;
+}
+@utility subtle-merge-high {
+  @apply bg-merge/40 text-merge-bright;
+}
+@utility subtle-positive-high {
+  @apply bg-positive/40 text-positive-bright;
+}
+@utility subtle-negative-high {
+  @apply bg-negative/40 text-negative-bright;
+}
+@utility subtle-caution-high {
+  @apply bg-caution/40 text-caution-bright;
+}
+@utility subtle-neutral-high {
+  @apply bg-foreground/15 text-secondary-foreground;
+}
+
+/* ── Outline surface utilities ─────────────────────────────────────────────
+ * Apply a colored border + high-contrast foreground in one class.
+ * Pair with `bg-transparent` (already set by the outline variant base).
+ * Usage: <span className="outline-positive border rounded-full px-2">…</span>
+ * ──────────────────────────────────────────────────────────────────────── */
+
+@utility outline-emphasis {
+  @apply border-emphasis/40 text-emphasis-bright;
+}
+@utility outline-action {
+  @apply border-action/40 text-action-bright;
+}
+@utility outline-merge {
+  @apply border-merge/40 text-merge-bright;
+}
+@utility outline-positive {
+  @apply border-positive/40 text-positive-bright;
+}
+@utility outline-negative {
+  @apply border-negative/40 text-negative-bright;
+}
+@utility outline-caution {
+  @apply border-caution/40 text-caution-bright;
+}
+@utility outline-neutral {
+  @apply border-input text-secondary-foreground;
+}
+
+/* ── Ghost surface utilities ───────────────────────────────────────────────
+ * Transparent background with colored text. Consumer adds hover.
+ * Usage: <button className="ghost-emphasis hover:bg-emphasis/15">…</button>
+ * ──────────────────────────────────────────────────────────────────────── */
+
+@utility ghost-emphasis {
+  @apply text-emphasis-bright;
+}
+@utility ghost-action {
+  @apply text-action-bright;
+}
+@utility ghost-merge {
+  @apply text-merge-bright;
+}
+@utility ghost-positive {
+  @apply text-positive-bright;
+}
+@utility ghost-negative {
+  @apply text-negative-bright;
+}
+@utility ghost-caution {
+  @apply text-caution-bright;
+}
