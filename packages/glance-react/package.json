@@ -12,12 +12,8 @@
     ".": {
       "types": "./lib/main.ts",
       "bun": "./lib/main.ts",
-      "import": {
-        "default": "./dist/main.mjs"
-      },
-      "require": {
-        "default": "./dist/main.cjs"
-      }
+      "import": "./lib/main.ts",
+      "default": "./lib/main.ts"
     },
     "./styles.css": {
       "bun": "./lib/css/styles.css",
