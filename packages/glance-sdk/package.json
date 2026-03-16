@@ -1,7 +1,7 @@
 {
   "name": "@workforge/glance-sdk",
   "version": "0.5.0",
-  "description": "GitHub & GitLab API client \u2014 REST, GraphQL, and real-time ActionCable subscriptions",
+  "description": "GitHub & GitLab API client — REST, GraphQL, and real-time ActionCable subscriptions",
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -33,6 +33,8 @@
     "node": ">=18"
   },
   "devDependencies": {
-    "typescript": "catalog:"
+    "typescript": "catalog:",
+    "@types/node": "^22.15.21",
+    "@workforge/typescript-config": "workspace:*"
   }
 }

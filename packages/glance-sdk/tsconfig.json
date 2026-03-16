@@ -1,9 +1,15 @@
 {
   "extends": "@workforge/typescript-config/react-library",
   "compilerOptions": {
+    "rootDir": "src",
     "noUncheckedIndexedAccess": true,
     "allowImportingTsExtensions": true,
-    "noEmit": true
+    "noEmit": true,
+    "types": [
+      "node"
+    ]
   },
-  "include": ["src"]
+  "include": [
+    "src"
+  ]
 }
