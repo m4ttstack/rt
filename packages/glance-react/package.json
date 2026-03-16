@@ -5,18 +5,17 @@
   "description": "Forge Glance React component library \u2014 MR dashboards with GDS theming",
   "license": "MIT",
   "type": "module",
-  "main": "./dist/main.cjs",
-  "module": "./dist/main.mjs",
-  "types": "dist/main.d.ts",
+  "main": "./lib/main.ts",
+  "module": "./lib/main.ts",
+  "types": "./lib/main.ts",
   "exports": {
     ".": {
+      "types": "./lib/main.ts",
       "bun": "./lib/main.ts",
       "import": {
-        "types": "./dist/main.d.ts",
         "default": "./dist/main.mjs"
       },
       "require": {
-        "types": "./dist/main.d.ts",
         "default": "./dist/main.cjs"
       }
     },
