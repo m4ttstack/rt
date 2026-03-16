@@ -21,7 +21,7 @@
   "scripts": {
     "build": "bun build src/index.ts src/types.ts src/logger.ts src/GitProvider.ts src/GitLabProvider.ts src/GitHubProvider.ts src/ActionCableClient.ts src/MRDetailFetcher.ts src/NoteMutator.ts src/providers.ts --outdir dist --root src --target node && tsc -p tsconfig.build.json",
     "prepublishOnly": "bun run check-types && bun run build",
-    "check-types": "tsgo --noEmit -p tsconfig.json"
+    "check-types": "tsc --noEmit"
   },
   "license": "MIT",
   "repository": {

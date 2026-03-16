@@ -60,7 +60,7 @@
     "prepublishOnly": "bun run check-types && bun run build",
     "storybook": "node_modules/.bin/storybook dev -p 6006",
     "build-storybook": "node_modules/.bin/storybook build",
-    "check-types": "tsgo --noEmit -p tsconfig.json"
+    "check-types": "tsc --noEmit"
   },
   "peerDependencies": {
     "react": "catalog:",
