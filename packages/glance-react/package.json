@@ -2,7 +2,7 @@
   "name": "@workforge/glance-react",
   "private": false,
   "version": "0.3.0",
-  "description": "Forge Glance React component library \u2014 MR dashboards with GDS theming",
+  "description": "Forge Glance React component library — MR dashboards with GDS theming",
   "license": "MIT",
   "type": "module",
   "main": "./lib/main.ts",
@@ -17,11 +17,15 @@
     },
     "./styles.css": {
       "bun": "./lib/css/styles.css",
-      "default": "./dist/styles.css"
+      "default": "./lib/css/styles.css"
     },
     "./tokens.css": {
       "bun": "./lib/css/tokens.css",
-      "default": "./dist/tokens.css"
+      "default": "./lib/css/tokens.css"
+    },
+    "./utilities.css": {
+      "bun": "./lib/css/utilities.css",
+      "default": "./lib/css/utilities.css"
     }
   },
   "sideEffects": [
@@ -105,6 +109,8 @@
     "typescript-eslint": "^8.23.0",
     "vite": "catalog:",
     "vite-plugin-dts": "^4.5.0",
-    "vitest": "catalog:"
+    "babel-plugin-react-compiler": "catalog:",
+    "vitest": "catalog:",
+    "vite-tsconfig-paths": "catalog:"
   }
 }

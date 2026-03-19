@@ -11,7 +11,7 @@ function getAbsolutePath(value: string) {
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
 const config: StorybookConfig = {
-  stories: ['../lib/**/*.mdx', '../lib/**/*.stories.{js,jsx,mjs,ts,tsx}'],
+  stories: ['../lib/**/*.stories.{js,jsx,mjs,ts,tsx}'],
   addons: [
     getAbsolutePath('@chromatic-com/storybook'),
     getAbsolutePath('@storybook/addon-vitest'),
@@ -27,7 +27,7 @@ const config: StorybookConfig = {
       ...(config.resolve.alias ?? {}),
       '@': resolve(__dirname, '../lib'),
       // Resolve workspace dep from built dist (source uses .ts extensions Vite can't resolve)
-      '@workforge/glance-sdk': resolve(__dirname, '../../sdk/dist/index.js'),
+      '@workforge/glance-sdk': resolve(__dirname, '../../glance-sdk/dist/index.js'),
     };
     return config;
   },

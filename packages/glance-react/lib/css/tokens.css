@@ -375,8 +375,10 @@
   --popover-foreground: var(--text-color-default);
 
   /* --- Primary (Emphasis / Blue) --- */
-  --primary: var(--color-emphasis-default);
-  --primary-foreground: #fff;
+  /* In dark mode, --color-emphasis-default is a background fill token.
+     Use --color-emphasis-higher-contrast for foreground use (links, indicators). */
+  --primary: var(--color-emphasis-higher-contrast);
+  --primary-foreground: var(--color-gray-10);
 
   /* --- Secondary --- */
   --secondary: var(--color-alpha-20);
@@ -394,6 +396,10 @@
   --negative-accent: var(--color-negative-default);
   --negative-accent-foreground: #fff;
 
+  /* --- Destructive (shadcn convention) --- */
+  --destructive: var(--color-negative-default);
+  --destructive-foreground: #fff;
+
   /* --- Borders & inputs --- */
   --border: var(--border-color-default);
   --input: var(--border-color-default);
@@ -409,8 +415,9 @@
   /* --- Sidebar --- */
   --sidebar: var(--color-bg-dark);
   --sidebar-foreground: var(--text-color-default);
-  --sidebar-primary: var(--color-emphasis-default);
-  --sidebar-primary-foreground: #fff;
+  /* Same fix as --primary: use higher-contrast token for foreground indicator use */
+  --sidebar-primary: var(--color-emphasis-higher-contrast);
+  --sidebar-primary-foreground: var(--color-gray-10);
   --sidebar-accent: var(--accent-color-info-bg);
   --sidebar-accent-foreground: var(--text-color-default);
   --sidebar-border: var(--border-color-default);
@@ -426,9 +433,9 @@
   --radius: 0.375rem;
   --spacing: 0.25rem;
 
-  /* --- Success / positive --- */
-  --success: var(--color-positive-default);
-  --success-foreground: #fff;
+  /* --color-positive-default is a bg fill token; use higher-contrast for text/badge foreground */
+  --success: var(--color-positive-higher-contrast);
+  --success-foreground: var(--color-gray-10);
 
   /* --- Warning / caution --- */
   --warning: var(--color-caution-default);
@@ -437,6 +444,17 @@
   /* --- Merge / stacking accent (action / purple) --- */
   --graphite-purple: var(--color-action-default);
   --graphite-purple-foreground: #fff;
+
+  /* --- Filled surface tokens (used by glance-react utility classes) --- */
+  --filled-emphasis: var(--btn-color-emphasis-default);
+  --filled-emphasis-hover: var(--btn-color-emphasis-hover);
+  --filled-emphasis-pressed: var(--btn-color-emphasis-pressed);
+  --filled-merge: var(--btn-color-merge-default);
+  --filled-merge-hover: var(--btn-color-merge-hover);
+  --filled-merge-pressed: var(--btn-color-merge-pressed);
+  --filled-danger: var(--btn-color-danger-default);
+  --filled-danger-hover: var(--btn-color-danger-hover);
+  --filled-danger-pressed: var(--btn-color-danger-pressed);
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

@@ -5,6 +5,9 @@
 @import './palette.css';
 @import './tokens.css';
 
+/* Scan our own compiled components so consumers don't need an @source directive */
+@source '../';
+
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
