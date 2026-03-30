@@ -1,11 +1,17 @@
 # @forge-glance/react
 
+## 0.3.1
+
+### Patch Changes
+
+- Updated dependencies
+  - @workforge/glance-sdk@0.5.1
+
 ## 0.3.0
 
 ### Minor Changes
 
 - ### @forge-glance/sdk
-
   - `fetchPullRequests(options?)` — accepts `state: MRState | MRState[]` to filter by state (fixes merged MRs being invisible) and `iids + projectPath` for batch fetching specific MRs in a single GraphQL query
   - `fetchPullRequestsByBranches(projectPath, branches[])` — batch-resolve MRs by source branch name
   - `createDashboard({ branch })` — new overload that resolves IID from a branch name automatically, re-resolves on each poll
@@ -13,7 +19,6 @@
   - Removed `fetchMultipleMRs` (consolidated into `fetchPullRequests({ iids })`)
 
   ### @forge-glance/react
-
   - `useDashboard` now accepts `{ branch }` as alternative to `{ mrIid }`
   - Re-exports `MRState` and `FetchPullRequestsOptions` from SDK
 
@@ -52,7 +57,6 @@
   ```
 
   **New features:**
-
   - `mrIid` accepts `number | number[]` — array returns `DashboardGroup` with `actionsFor(iid)` and combined `subscribe`
   - All `watchMR` calls share a single ActionCable WebSocket connection (ref-counted)
   - `useDashboard` hook uses `UseDashboardOptions` object

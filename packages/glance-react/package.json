@@ -1,19 +1,19 @@
 {
   "name": "@workforge/glance-react",
   "private": false,
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Forge Glance React component library — MR dashboards with GDS theming",
   "license": "MIT",
   "type": "module",
-  "main": "./lib/main.ts",
-  "module": "./lib/main.ts",
-  "types": "./lib/main.ts",
+  "main": "./dist/main.js",
+  "module": "./dist/main.js",
+  "types": "./dist/main.d.ts",
   "exports": {
     ".": {
-      "types": "./lib/main.ts",
+      "types": "./dist/main.d.ts",
       "bun": "./lib/main.ts",
-      "import": "./lib/main.ts",
-      "default": "./lib/main.ts"
+      "import": "./dist/main.js",
+      "default": "./dist/main.js"
     },
     "./styles.css": {
       "bun": "./lib/css/styles.css",
@@ -39,8 +39,8 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/m4ttheweric/Glance.git",
-    "directory": "packages/ui-react"
+    "url": "https://github.com/m4ttheweric/workforge.git",
+    "directory": "packages/glance-react"
   },
   "engines": {
     "node": ">=18"

@@ -1,11 +1,16 @@
-# @forge-glance/sdk
+# @workforge/glance-sdk
+
+## 0.5.1
+
+### Patch Changes
+
+- Update README: rebrand from @forge-glance/sdk to @workforge/glance-sdk, comprehensive documentation of all exported APIs including Dashboard branch overloads, DashboardGroup.updateIids, discussion/note mutations, connection status, and complete type export list.
 
 ## 0.5.0
 
 ### Minor Changes
 
 - ### @forge-glance/sdk
-
   - `fetchPullRequests(options?)` — accepts `state: MRState | MRState[]` to filter by state (fixes merged MRs being invisible) and `iids + projectPath` for batch fetching specific MRs in a single GraphQL query
   - `fetchPullRequestsByBranches(projectPath, branches[])` — batch-resolve MRs by source branch name
   - `createDashboard({ branch })` — new overload that resolves IID from a branch name automatically, re-resolves on each poll
@@ -13,7 +18,6 @@
   - Removed `fetchMultipleMRs` (consolidated into `fetchPullRequests({ iids })`)
 
   ### @forge-glance/react
-
   - `useDashboard` now accepts `{ branch }` as alternative to `{ mrIid }`
   - Re-exports `MRState` and `FetchPullRequestsOptions` from SDK
 
@@ -27,12 +31,12 @@
 
   ```ts
   // Before
-  createDashboard(provider, "group/project", 42, userId);
+  createDashboard(provider, 'group/project', 42, userId);
 
   // After — single MR
   createDashboard({
     provider,
-    projectPath: "group/project",
+    projectPath: 'group/project',
     mrIid: 42,
     userId,
   });
@@ -40,14 +44,13 @@
   // After — multiple MRs (shared WebSocket)
   createDashboard({
     provider,
-    projectPath: "group/project",
+    projectPath: 'group/project',
     mrIid: [42, 43],
     userId,
   });
   ```
 
   **New features:**
-
   - `mrIid` accepts `number | number[]` — array returns `DashboardGroup` with `actionsFor(iid)` and combined `subscribe`
   - All `watchMR` calls share a single ActionCable WebSocket connection (ref-counted)
   - `useDashboard` hook uses `UseDashboardOptions` object
