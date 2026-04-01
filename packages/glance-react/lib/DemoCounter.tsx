@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-import { DemoComponentProps } from './types';
+import type { DemoComponentProps } from './types';
 
 export function DemoCounter({
   initialCount,
