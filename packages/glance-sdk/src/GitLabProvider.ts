@@ -742,46 +742,37 @@ export class GitLabProvider implements GitProvider {
     projectPath: string,
     branches: string[]
   ): Promise<Map<string, PullRequest | null>> {
-    const encoded = encodeURIComponent(projectPath);
-
-    // Step 1: parallel REST lookups to find IIDs for each branch
-    const branchToIid = new Map<string, number | null>();
-    await Promise.all(
-      branches.map(async (branch) => {
-        try {
-          const url = `${this.baseURL}/api/v4/projects/${encoded}/merge_requests?source_branch=${encodeURIComponent(branch)}&state=opened&per_page=1`;
-          const res = await fetch(url, {
-            headers: { 'PRIVATE-TOKEN': this.token }
-          });
-          if (!res.ok) {
-            branchToIid.set(branch, null);
-            return;
+    // Single GraphQL query using sourceBranches array filter
+    const MR_BY_BRANCHES_QUERY = `
+      query GlanceMRByBranches($projectPath: ID!, $branches: [String!], $state: MergeRequestState) {
+        project(fullPath: $projectPath) {
+          mergeRequests(sourceBranches: $branches, state: $state, first: 100) {
+            nodes {
+              ...MRDashboardFields
+            }
           }
-          const mrs = (await res.json()) as Array<{ iid: number }>;
-          branchToIid.set(branch, mrs[0]?.iid ?? null);
-        } catch {
-          branchToIid.set(branch, null);
         }
-      })
-    );
+      }
+      ${MR_DASHBOARD_FRAGMENT}
+    `;
 
-    // Step 2: batch-fetch the matched MRs
-    const iids = [...branchToIid.values()].filter((iid): iid is number => iid !== null);
-    const prMap = new Map<number, PullRequest>();
-    if (iids.length > 0) {
-      const prs = await this.fetchPullRequests({
-        iids,
-        projectPath,
-        state: 'opened'
-      });
-      for (const pr of prs) prMap.set(pr.iid, pr);
+    const resp = await this.runQuery<MRBatchResponse>(MR_BY_BRANCHES_QUERY, {
+      projectPath,
+      branches,
+      state: 'opened'
+    });
+
+    const nodes = resp.project?.mergeRequests?.nodes ?? [];
+    const prsByBranch = new Map<string, PullRequest>();
+    for (const gql of nodes) {
+      const pr = toMR(gql, 'author', this.baseURL, null, this.token);
+      prsByBranch.set(pr.sourceBranch, pr);
     }
 
-    // Step 3: assemble result map
+    // Assemble result map — null for branches with no MR
     const result = new Map<string, PullRequest | null>();
     for (const branch of branches) {
-      const iid = branchToIid.get(branch) ?? null;
-      result.set(branch, iid !== null ? (prMap.get(iid) ?? null) : null);
+      result.set(branch, prsByBranch.get(branch) ?? null);
     }
     return result;
   }
