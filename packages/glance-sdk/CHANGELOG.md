@@ -1,5 +1,11 @@
 # @workforge/glance-sdk
 
+## 0.5.2
+
+### Patch Changes
+
+- 9fce16c: Optimize fetchPullRequestsByBranches: replace N REST calls + 1 GraphQL batch with a single GraphQL query using the `sourceBranches` array filter. Reduces ~60 HTTP calls to 1 for bulk branch lookups.
+
 ## 0.5.1
 
 ### Patch Changes
