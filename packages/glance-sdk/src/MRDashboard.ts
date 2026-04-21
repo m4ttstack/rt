@@ -139,6 +139,7 @@ export function getMRDashboardProps(
     // Pipeline
     pipeline: mr.pipeline
       ? {
+          id: mr.pipeline.id,
           status: mr.pipeline.status,
           passing,
           failing,
@@ -376,6 +377,14 @@ function buildActions(
     cancelAutoMerge: () => provider.cancelAutoMerge(projectPath, iid),
     retryPipeline: (pipelineId: number) =>
       provider.retryPipeline(projectPath, pipelineId),
+    retryJob: (jobId: number) =>
+      provider.retryJob(projectPath, jobId),
+    fetchJobTrace: (jobId: number) =>
+      provider.fetchJobTrace(projectPath, jobId),
+    fetchDownstreamPipeline: (jobId: number) =>
+      provider.fetchDownstreamPipeline(projectPath, jobId),
+    fetchJobDetail: (jobId: number, pipelineId?: number) =>
+      provider.fetchJobDetail(projectPath, jobId, pipelineId),
     requestReReview: (usernames?: string[]) =>
       provider.requestReReview(projectPath, iid, usernames),
     toggleDraft: (draft: boolean) =>

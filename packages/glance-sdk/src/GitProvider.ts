@@ -2,8 +2,10 @@ import type {
   BranchProtectionRule,
   CreatePullRequestInput,
   Discussion,
+  JobDetail,
   MergePullRequestInput,
   MRDetail,
+  Pipeline,
   ProviderCapabilities,
   PullRequest,
   UpdatePullRequestInput,
@@ -94,7 +96,8 @@ export interface GitProvider {
    */
   fetchPullRequestsByBranches?(
     projectPath: string,
-    branches: string[]
+    branches: string[],
+    state?: MRState | 'all'
   ): Promise<Map<string, PullRequest | null>>;
 
   /**
@@ -219,6 +222,33 @@ export interface GitProvider {
    * On GitHub: POST re-run for the workflow run.
    */
   retryPipeline(projectPath: string, pipelineId: number): Promise<void>;
+
+  /**
+   * Retry a single failed or canceled job.
+   * On GitLab: POST /projects/:id/jobs/:job_id/retry
+   * On GitHub: POST re-run for a specific job.
+   */
+  retryJob(projectPath: string, jobId: number): Promise<void>;
+
+  /**
+   * Fetch the trace/log output for a job.
+   * On GitLab: GET /projects/:id/jobs/:job_id/trace
+   * Returns plain text log content.
+   */
+  fetchJobTrace(projectPath: string, jobId: number): Promise<string>;
+
+  /**
+   * Fetch the child/downstream pipeline for a trigger bridge job.
+   * Returns null if no downstream pipeline exists.
+   */
+  fetchDownstreamPipeline(projectPath: string, jobId: number): Promise<Pipeline | null>;
+
+  /**
+   * Unified job detail fetch — single GET /jobs/:id, discriminated return type.
+   * Pass `pipelineId` as a hint: if /jobs/:id returns 404 (bridge jobs don't appear
+   * there), falls back to scanning /pipelines/:pipelineId/bridges instead.
+   */
+  fetchJobDetail(projectPath: string, jobId: number, pipelineId?: number): Promise<JobDetail>;
 
   // ── Review mutations ────────────────────────────────────────────────────
 

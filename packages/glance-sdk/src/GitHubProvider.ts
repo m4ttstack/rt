@@ -18,6 +18,7 @@ import type {
   CreatePullRequestInput,
   DiffStats,
   Discussion,
+  JobDetail,
   MergePullRequestInput,
   MRDetail,
   Note,
@@ -99,6 +100,8 @@ interface GHCheckRun {
   status: string; // "queued" | "in_progress" | "completed"
   conclusion: string | null; // "success" | "failure" | "neutral" | "cancelled" | "timed_out" | "action_required" | "skipped" | null
   html_url: string;
+  started_at: string | null;
+  completed_at: string | null;
 }
 
 interface GHCheckSuite {
@@ -158,6 +161,9 @@ function toPipeline(
     stage: 'checks', // GitHub doesn't have stages; use a flat stage name
     status: normalizeCheckStatus(cr),
     allowFailure: false,
+    duration: cr.started_at && cr.completed_at
+      ? Math.round((new Date(cr.completed_at).getTime() - new Date(cr.started_at).getTime()) / 1000)
+      : null,
     webUrl: cr.html_url
   }));
 
@@ -801,6 +807,49 @@ export class GitHubProvider implements GitProvider {
         `retryPipeline failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`
       );
     }
+  }
+
+  async retryJob(projectPath: string, jobId: number): Promise<void> {
+    // GitHub Actions: re-run a single job within a workflow run.
+    // jobId maps to the job ID. Requires the workflow run ID which we don't have here.
+    // Use POST /repos/{owner}/{repo}/actions/jobs/{job_id}/rerun
+    const res = await this.api(
+      'POST',
+      `/repos/${projectPath}/actions/jobs/${jobId}/rerun`
+    );
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(
+        `retryJob failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`
+      );
+    }
+  }
+
+  async fetchJobTrace(projectPath: string, jobId: number): Promise<string> {
+    // GitHub Actions: download job logs
+    // GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs
+    const res = await this.api(
+      'GET',
+      `/repos/${projectPath}/actions/jobs/${jobId}/logs`
+    );
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(
+        `fetchJobTrace failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`
+      );
+    }
+    return res.text();
+  }
+
+  async fetchDownstreamPipeline(_projectPath: string, _jobId: number): Promise<Pipeline | null> {
+    // GitHub Actions doesn't have a child/downstream pipeline concept
+    return null;
+  }
+
+  async fetchJobDetail(projectPath: string, jobId: number, _pipelineId?: number): Promise<JobDetail> {
+    // GitHub Actions has no bridge/trigger concept — always return trace
+    const content = await this.fetchJobTrace(projectPath, jobId);
+    return { type: 'trace', content };
   }
 
   // ── Review mutations ────────────────────────────────────────────────────

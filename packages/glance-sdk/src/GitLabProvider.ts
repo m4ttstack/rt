@@ -3,6 +3,7 @@ import type {
   BranchProtectionRule,
   CreatePullRequestInput,
   DiffStats,
+  JobDetail,
   MergeabilityCheck,
   MergePullRequestInput,
   MRDetail,
@@ -80,6 +81,7 @@ export const MR_DASHBOARD_FRAGMENT = `
         name
         jobs(first: 50) { nodes {
           id name status
+          duration
           allowFailure
           webPath
           stage { name }
@@ -142,9 +144,11 @@ interface GQLJob {
   id: string;
   name: string;
   status: string;
+  duration: number | null;
   allowFailure: boolean;
   webPath: string | null;
   stage: { name: string };
+  downstreamPipeline?: GQLPipeline | null;
 }
 
 interface GQLStage {
@@ -268,9 +272,13 @@ function toPipeline(p: GQLPipeline, baseURL: string): Pipeline {
       id: `gitlab:job:${numericId(job.id)}`,
       name: job.name,
       stage: job.stage.name,
-      status: job.status,
+      status: job.status.toLowerCase(),
       allowFailure: job.allowFailure,
-      webUrl: job.webPath ? `${baseURL}${job.webPath}` : null
+      duration: job.duration,
+      webUrl: job.webPath ? `${baseURL}${job.webPath}` : null,
+      downstreamPipeline: job.downstreamPipeline
+        ? toPipeline(job.downstreamPipeline, baseURL)
+        : null
     }))
   );
 
@@ -290,13 +298,14 @@ function toPipeline(p: GQLPipeline, baseURL: string): Pipeline {
  */
 function normalizePipelineStatus(p: GQLPipeline): string {
   const allJobs = p.stages.nodes.flatMap(s => s.jobs.nodes);
+  const status = p.status.toLowerCase();
   const hasAllowFailFailed = allJobs.some(
-    j => j.allowFailure && j.status === 'failed'
+    j => j.allowFailure && j.status.toLowerCase() === 'failed'
   );
-  if (p.status === 'success' && hasAllowFailFailed) {
+  if (status === 'success' && hasAllowFailFailed) {
     return 'success_with_warnings';
   }
-  return p.status;
+  return status;
 }
 
 function toMR(
@@ -326,7 +335,16 @@ function toMR(
     description: gql.description ?? null,
     state: gql.state,
     draft: gql.draft,
-    conflicts: gql.conflicts || gql.detailedMergeStatus === 'conflict',
+    // GitLab's `conflicts` boolean is async — it can briefly return false
+    // while the conflict check re-runs (e.g. after a pipeline update).
+    // `detailedMergeStatus === 'conflict'` only helps when CONFLICT is the
+    // sole blocker; with multiple blockers GitLab surfaces a different status.
+    // The dedicated CONFLICT mergeability check is stable regardless of how
+    // many other blockers are present.
+    conflicts: gql.conflicts
+      || gql.detailedMergeStatus === 'conflict'
+      || (gql.mergeabilityChecks ?? []).some(c => c.identifier === 'CONFLICT' && c.status === 'FAILED'),
+
     webUrl: gql.webUrl,
     sourceBranch: gql.sourceBranch,
     targetBranch: gql.targetBranch,
@@ -740,7 +758,8 @@ export class GitLabProvider implements GitProvider {
 
   async fetchPullRequestsByBranches(
     projectPath: string,
-    branches: string[]
+    branches: string[],
+    state: 'opened' | 'merged' | 'closed' | 'all' = 'opened'
   ): Promise<Map<string, PullRequest | null>> {
     // Single GraphQL query using sourceBranches array filter
     const MR_BY_BRANCHES_QUERY = `
@@ -759,7 +778,7 @@ export class GitLabProvider implements GitProvider {
     const resp = await this.runQuery<MRBatchResponse>(MR_BY_BRANCHES_QUERY, {
       projectPath,
       branches,
-      state: 'opened'
+      state: state === 'all' ? undefined : state
     });
 
     const nodes = resp.project?.mergeRequests?.nodes ?? [];
@@ -1208,6 +1227,135 @@ export class GitLabProvider implements GitProvider {
         `retryPipeline failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`
       );
     }
+  }
+
+  async retryJob(projectPath: string, jobId: number): Promise<void> {
+    const encoded = encodeURIComponent(projectPath);
+    const res = await fetch(
+      `${this.baseURL}/api/v4/projects/${encoded}/jobs/${jobId}/retry`,
+      {
+        method: 'POST',
+        headers: { 'PRIVATE-TOKEN': this.token }
+      }
+    );
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(
+        `retryJob failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`
+      );
+    }
+  }
+
+  /** Build a Pipeline domain object from a downstream_pipeline ref + fetched jobs. */
+  private async buildDownstreamPipeline(encoded: string, dp: any): Promise<Pipeline> {
+    const jobsRes = await fetch(
+      `${this.baseURL}/api/v4/projects/${encoded}/pipelines/${dp.id}/jobs?per_page=100`,
+      { headers: { 'PRIVATE-TOKEN': this.token } }
+    );
+    const pipelineJobs: any[] = jobsRes.ok ? await jobsRes.json() : [];
+    return {
+      id: domainId('pipeline', dp.id),
+      status: (dp.status || '').toLowerCase(),
+      createdAt: dp.created_at || null,
+      webUrl: dp.web_url || null,
+      jobs: pipelineJobs.map((j: any) => ({
+        id: domainId('job', j.id),
+        name: j.name || '',
+        stage: j.stage || '',
+        status: (j.status || '').toLowerCase(),
+        allowFailure: j.allow_failure || false,
+        duration: j.duration ? Math.round(j.duration) : null,
+        webUrl: j.web_url || null,
+      }))
+    };
+  }
+
+  /**
+   * Shared helper: resolve downstream pipeline for a job.
+   *
+   * GitLab bridge/trigger jobs do NOT appear at GET /jobs/:id — that endpoint
+   * returns 404 for them. Strategy:
+   *   1. Try GET /jobs/:id (works for regular jobs, includes downstream_pipeline)
+   *   2. If 404 and pipelineId provided, scan GET /pipelines/:pipelineId/bridges
+   *      and find the bridge whose job id matches.
+   */
+  private async resolveDownstreamPipeline(
+    projectPath: string,
+    jobId: number,
+    pipelineId?: number
+  ): Promise<Pipeline | null> {
+    const encoded = encodeURIComponent(projectPath);
+
+    // Attempt 1: regular job endpoint
+    const jobRes = await fetch(
+      `${this.baseURL}/api/v4/projects/${encoded}/jobs/${jobId}`,
+      { headers: { 'PRIVATE-TOKEN': this.token } }
+    );
+    if (jobRes.ok) {
+      const job: any = await jobRes.json();
+      if (job.downstream_pipeline) {
+        return this.buildDownstreamPipeline(encoded, job.downstream_pipeline);
+      }
+      return null; // Regular job, not a bridge
+    }
+
+    // Attempt 2: bridge endpoint fallback (bridge jobs 404 on /jobs/:id)
+    if (pipelineId) {
+      const bridgesRes = await fetch(
+        `${this.baseURL}/api/v4/projects/${encoded}/pipelines/${pipelineId}/bridges?per_page=100`,
+        { headers: { 'PRIVATE-TOKEN': this.token } }
+      );
+      if (bridgesRes.ok) {
+        const bridges: any[] = await bridgesRes.json();
+        const bridge = bridges.find((b: any) => b.id === jobId);
+        if (bridge?.downstream_pipeline) {
+          return this.buildDownstreamPipeline(encoded, bridge.downstream_pipeline);
+        }
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Fetch the child/downstream pipeline for a bridge/trigger job.
+   * Pass pipelineId when available so the bridges fallback can be used.
+   */
+  async fetchDownstreamPipeline(projectPath: string, jobId: number, pipelineId?: number): Promise<Pipeline | null> {
+    return this.resolveDownstreamPipeline(projectPath, jobId, pipelineId);
+  }
+
+  /**
+   * Unified job detail fetch. Returns a discriminated union:
+   * - { type: 'bridge', downstreamPipeline } — trigger/bridge job
+   * - { type: 'trace', content } — regular job trace log
+   *
+   * Pass pipelineId so bridge jobs (which 404 on /jobs/:id) can be
+   * found via the /pipelines/:id/bridges fallback.
+   */
+  async fetchJobDetail(projectPath: string, jobId: number, pipelineId?: number): Promise<JobDetail> {
+    const downstream = await this.resolveDownstreamPipeline(projectPath, jobId, pipelineId);
+    if (downstream) {
+      return { type: 'bridge', downstreamPipeline: downstream };
+    }
+    // Regular job — fetch trace log
+    const content = await this.fetchJobTrace(projectPath, jobId);
+    return { type: 'trace', content };
+  }
+
+  async fetchJobTrace(projectPath: string, jobId: number): Promise<string> {
+    const encoded = encodeURIComponent(projectPath);
+    const res = await fetch(
+      `${this.baseURL}/api/v4/projects/${encoded}/jobs/${jobId}/trace`,
+      { headers: { 'PRIVATE-TOKEN': this.token } }
+    );
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      throw new Error(
+        `fetchJobTrace failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`
+      );
+    }
+    return res.text();
   }
 
   // ── Review mutations ────────────────────────────────────────────────────

@@ -201,10 +201,17 @@ export function createRealtimeWatcher<T>(params: {
   };
 
   // ── Push connection callbacks ──────────────────────────────────────────────
+  let isFirstConnect = true;
+
   const onConnected = (): void => {
     wsConnected = true;
-    // Immediately refetch to catch any events missed during the outage window.
-    void runFetch('push:reconnect');
+    if (isFirstConnect) {
+      // Skip refetch — init fetch just ran, no events could have been missed
+      isFirstConnect = false;
+    } else {
+      // Reconnect: refetch to catch any events missed during the outage window.
+      void runFetch('push:reconnect');
+    }
     // Switch poll back to slow/healthy rate.
     schedulePoll();
     emitStatus();

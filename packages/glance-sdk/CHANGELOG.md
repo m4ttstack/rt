@@ -1,5 +1,35 @@
 # @workforge/glance-sdk
 
+## 0.7.0
+
+### Minor Changes
+
+- Feat: Add child/downstream pipeline support. Trigger jobs now include `downstreamPipeline` with full stage and job data, fetched eagerly in the initial GraphQL query.
+
+## 0.6.2
+
+### Patch Changes
+
+- Perf: Skip redundant GraphQL refetch on initial WebSocket connect. The init fetch has just completed so no events could have been missed.
+
+## 0.6.1
+
+### Patch Changes
+
+- Fix: Normalize GitLab job statuses to lowercase. GitLab GraphQL returns uppercase enum values (SUCCESS, FAILED) but all downstream code expects lowercase.
+
+## 0.6.0
+
+### Minor Changes
+
+- Add pipeline job detail capabilities: `retryJob()`, `fetchJobTrace()`, and `duration` field on `PipelineJob`.
+
+## 0.5.3
+
+### Patch Changes
+
+- Add `state` parameter to `fetchPullRequestsByBranches` to support fetching merged/closed MRs (defaults to `'opened'` for backward compatibility).
+
 ## 0.5.2
 
 ### Patch Changes

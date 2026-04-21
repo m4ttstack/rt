@@ -77,7 +77,11 @@ export interface PipelineJob {
   /** Normalized status: "success" | "failed" | "running" | "pending" | "canceled" | "skipped" | "manual" | etc. */
   status: string;
   allowFailure: boolean;
+  /** Duration in seconds, null if not yet completed. */
+  duration: number | null;
   webUrl: string | null;
+  /** If this job triggered a child/downstream pipeline, its details are here. */
+  downstreamPipeline?: Pipeline | null;
 }
 
 export interface Pipeline {
@@ -89,6 +93,14 @@ export interface Pipeline {
   webUrl: string | null;
   jobs: PipelineJob[];
 }
+
+/**
+ * Discriminated union returned by `fetchJobDetail`.
+ * Callers switch on `type` — no guessing needed.
+ */
+export type JobDetail =
+  | { type: 'trace'; content: string }
+  | { type: 'bridge'; downstreamPipeline: Pipeline };
 
 export interface DiffStats {
   additions: number;
@@ -225,6 +237,8 @@ export interface MRDashboardProps {
 
   // ── Pipeline ────────────────────────────────────────────────────────────
   pipeline: {
+    /** Scoped provider ID, e.g. \"gitlab:pipeline:12345\". */
+    id: string;
     status: string;
     passing: number;
     failing: number;
@@ -332,6 +346,21 @@ export interface MRDashboardActions {
   setAutoMerge: () => Promise<void>;
   cancelAutoMerge: () => Promise<void>;
   retryPipeline: (pipelineId: number) => Promise<void>;
+  /** Retry a single failed/canceled job. */
+  retryJob: (jobId: number) => Promise<void>;
+  /** Fetch the trace/log output for a job. Returns plain text. */
+  fetchJobTrace: (jobId: number) => Promise<string>;
+  /** Fetch child/downstream pipeline for a bridge/trigger job. */
+  fetchDownstreamPipeline: (jobId: number) => Promise<Pipeline | null>;
+  /**
+   * Unified job detail fetch. Returns a discriminated union:
+   * - `{ type: 'trace', content }` for regular jobs
+   * - `{ type: 'bridge', downstreamPipeline }` for trigger/bridge jobs
+   *
+   * Pass `pipelineId` as a hint so bridge jobs (which 404 on /jobs/:id)
+   * can be found via the /pipelines/:id/bridges fallback.
+   */
+  fetchJobDetail: (jobId: number, pipelineId?: number) => Promise<JobDetail>;
   requestReReview: (usernames?: string[]) => Promise<void>;
   /** Toggle draft / ready-for-review status. */
   toggleDraft: (draft: boolean) => Promise<PullRequest>;
