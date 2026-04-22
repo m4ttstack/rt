@@ -273,6 +273,12 @@ export interface MRDashboardProps {
   /** Raw GitLab detailedMergeStatus for power-user rendering. */
   statusDetail: string;
   isReady: boolean;
+  /**
+   * True when GitLab is asynchronously re-evaluating mergeability
+   * (detailedMergeStatus is "checking", "unchecked", or "approvals_syncing").
+   * The MR may become mergeable momentarily — show a spinner rather than a hard BLOCKED state.
+   */
+  isCheckingMergeability: boolean;
 
   // ── In-progress spinners ────────────────────────────────────────────────
   isMerging: boolean;

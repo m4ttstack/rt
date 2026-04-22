@@ -96,7 +96,15 @@ export function getMRDashboardProps(
     hasMergeError;
 
   // ── Simplified cross-platform status ─────────────────────────────────────
-  const isReady = mr.detailedMergeStatus === 'mergeable';
+  // GitLab runs async merge-checks after pipeline completion. During this window
+  // it returns 'checking', 'unchecked', or 'approvals_syncing' rather than
+  // 'mergeable', causing a false BLOCKED flash. Treat these transitional states
+  // as "not yet decided" and fall back to our own blocker signals.
+  const TRANSITIONAL = new Set(['checking', 'unchecked', 'approvals_syncing']);
+  const isCheckingMergeability =
+    mr.detailedMergeStatus != null && TRANSITIONAL.has(mr.detailedMergeStatus);
+  const isReady = mr.detailedMergeStatus === 'mergeable'
+    || (isCheckingMergeability && !isDraft && !hasConflicts && !pipelineFailing);
   let status: MRDashboardProps['status'];
   if (mr.state === 'merged') status = 'merged';
   else if (mr.state === 'closed') status = 'closed';
@@ -168,6 +176,7 @@ export function getMRDashboardProps(
     status,
     statusDetail: mr.detailedMergeStatus ?? '',
     isReady,
+    isCheckingMergeability,
 
     // Spinner states
     isMerging,
