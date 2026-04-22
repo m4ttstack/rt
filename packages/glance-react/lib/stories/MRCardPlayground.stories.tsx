@@ -63,12 +63,13 @@ function assembleMR(args: PlaygroundArgs): MRDashboardProps {
           const jobNames = ['lint', 'typecheck', 'unit-tests', 'integration-tests', 'e2e-chrome', 'e2e-firefox', 'build', 'deploy-staging'];
           const jobs: NonNullable<MRDashboardProps['pipeline']>['jobs'] = [];
           for (let i = 0; i < args.pipelineFailing; i++) {
-            jobs.push({ id: `mock:f${i}`, name: jobNames[i % jobNames.length], stage: 'test', status: 'failed', allowFailure: false, webUrl: null });
+            jobs.push({ id: `mock:f${i}`, name: jobNames[i % jobNames.length], stage: 'test', status: 'failed', allowFailure: false, webUrl: null, duration: null });
           }
           for (let i = 0; i < args.pipelineRunning; i++) {
-            jobs.push({ id: `mock:r${i}`, name: jobNames[(i + args.pipelineFailing) % jobNames.length], stage: 'test', status: 'running', allowFailure: false, webUrl: null });
+            jobs.push({ id: `mock:r${i}`, name: jobNames[(i + args.pipelineFailing) % jobNames.length], stage: 'test', status: 'running', allowFailure: false, webUrl: null, duration: null });
           }
           return {
+            id: 'mock:pipeline:1',
             status: args.pipelineStatus,
             passing: args.pipelinePassing,
             failing: args.pipelineFailing,

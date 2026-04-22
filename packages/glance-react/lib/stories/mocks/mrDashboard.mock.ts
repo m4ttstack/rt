@@ -58,6 +58,7 @@ const reviewers = [
 ];
 
 const passingPipeline: MRDashboardProps['pipeline'] = {
+  id: 'gl:pipeline:100',
   status: 'success',
   passing: 24,
   failing: 0,
@@ -68,6 +69,7 @@ const passingPipeline: MRDashboardProps['pipeline'] = {
 };
 
 const failingPipeline: MRDashboardProps['pipeline'] = {
+  id: 'gl:pipeline:101',
   status: 'failed',
   passing: 18,
   failing: 3,
@@ -75,13 +77,14 @@ const failingPipeline: MRDashboardProps['pipeline'] = {
   total: 24,
   hasWarnings: false,
   jobs: [
-    { id: 'gl:1001', name: 'unit-tests', stage: 'test', status: 'failed', allowFailure: false, webUrl: null },
-    { id: 'gl:1002', name: 'integration-tests', stage: 'test', status: 'failed', allowFailure: false, webUrl: null },
-    { id: 'gl:1003', name: 'e2e-chrome', stage: 'test', status: 'failed', allowFailure: false, webUrl: null },
+    { id: 'gl:1001', name: 'unit-tests', stage: 'test', status: 'failed', allowFailure: false, webUrl: null, duration: 42 },
+    { id: 'gl:1002', name: 'integration-tests', stage: 'test', status: 'failed', allowFailure: false, webUrl: null, duration: 118 },
+    { id: 'gl:1003', name: 'e2e-chrome', stage: 'test', status: 'failed', allowFailure: false, webUrl: null, duration: 203 },
   ],
 };
 
 const runningPipeline: MRDashboardProps['pipeline'] = {
+  id: 'gl:pipeline:102',
   status: 'running',
   passing: 10,
   failing: 0,
@@ -89,12 +92,12 @@ const runningPipeline: MRDashboardProps['pipeline'] = {
   total: 24,
   hasWarnings: false,
   jobs: [
-    { id: 'gl:2001', name: 'lint', stage: 'test', status: 'running', allowFailure: false, webUrl: null },
-    { id: 'gl:2002', name: 'typecheck', stage: 'test', status: 'running', allowFailure: false, webUrl: null },
-    { id: 'gl:2003', name: 'unit-tests', stage: 'test', status: 'running', allowFailure: false, webUrl: null },
-    { id: 'gl:2004', name: 'integration-tests', stage: 'test', status: 'pending', allowFailure: false, webUrl: null },
-    { id: 'gl:2005', name: 'e2e-chrome', stage: 'test', status: 'pending', allowFailure: false, webUrl: null },
-    { id: 'gl:2006', name: 'deploy-staging', stage: 'deploy', status: 'pending', allowFailure: false, webUrl: null },
+    { id: 'gl:2001', name: 'lint', stage: 'test', status: 'running', allowFailure: false, webUrl: null, duration: null },
+    { id: 'gl:2002', name: 'typecheck', stage: 'test', status: 'running', allowFailure: false, webUrl: null, duration: null },
+    { id: 'gl:2003', name: 'unit-tests', stage: 'test', status: 'running', allowFailure: false, webUrl: null, duration: null },
+    { id: 'gl:2004', name: 'integration-tests', stage: 'test', status: 'pending', allowFailure: false, webUrl: null, duration: null },
+    { id: 'gl:2005', name: 'e2e-chrome', stage: 'test', status: 'pending', allowFailure: false, webUrl: null, duration: null },
+    { id: 'gl:2006', name: 'deploy-staging', stage: 'deploy', status: 'pending', allowFailure: false, webUrl: null, duration: null },
   ],
 };
 
@@ -159,6 +162,7 @@ export const mergeable: MRDashboardProps = {
   status: 'mergeable',
   statusDetail: 'mergeable',
   isReady: true,
+  isCheckingMergeability: false,
   isMerging: false,
   isRebasing: false,
   isLoading: false,

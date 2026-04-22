@@ -37,6 +37,7 @@ function assembleMR(args: PlaygroundArgs): MRDashboardProps {
     args.pipelineStatus === 'none'
       ? null
       : {
+          id: 'mock:pipeline:row',
           status: args.pipelineStatus,
           passing: args.pipelinePassing,
           failing: args.pipelineFailing,

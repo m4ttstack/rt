@@ -21,6 +21,7 @@ export const NoPipeline: Story = { args: { pipeline: null } };
 export const WithWarning: Story = {
   args: {
     pipeline: {
+      id: 'mock:pipeline:warn',
       status: 'success',
       passing: 22,
       failing: 0,
