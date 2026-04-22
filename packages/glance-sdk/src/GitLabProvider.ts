@@ -327,6 +327,10 @@ function toMR(
       }
     : null;
 
+  // GitLab GraphQL returns detailedMergeStatus as an uppercase enum (e.g. MERGEABLE).
+  // Downstream code compares against lowercase values, so normalize at the boundary.
+  const detailedMergeStatus = gql.detailedMergeStatus?.toLowerCase() ?? null;
+
   return {
     id: `gitlab:mr:${numericId(gql.id)}`,
     iid: parseInt(gql.iid, 10),
@@ -342,7 +346,7 @@ function toMR(
     // The dedicated CONFLICT mergeability check is stable regardless of how
     // many other blockers are present.
     conflicts: gql.conflicts
-      || gql.detailedMergeStatus === 'conflict'
+      || detailedMergeStatus === 'conflict'
       || (gql.mergeabilityChecks ?? []).some(c => c.identifier === 'CONFLICT' && c.status === 'FAILED'),
 
     webUrl: gql.webUrl,
@@ -361,7 +365,7 @@ function toMR(
     approved: gql.approved ?? false,
     approvedBy: gql.approvedBy.nodes.map(u => toUserRef(u, baseURL, token)),
     diffStats,
-    detailedMergeStatus: gql.detailedMergeStatus ?? null,
+    detailedMergeStatus,
     autoMergeEnabled: gql.autoMergeEnabled ?? false,
     autoMergeStrategy: gql.autoMergeStrategy ?? null,
     mergeUser: gql.mergeUser ? toUserRef(gql.mergeUser, baseURL, token) : null,

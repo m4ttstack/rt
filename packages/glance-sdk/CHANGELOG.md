@@ -1,5 +1,11 @@
 # @workforge/glance-sdk
 
+## 0.8.1
+
+### Patch Changes
+
+- Fix: Lowercase `detailedMergeStatus` at the GitLab provider boundary. GitLab GraphQL returns this field as an uppercase enum (e.g. `MERGEABLE`), but downstream code (including `MRDashboard` and the `conflicts` derivation) compares against lowercase values. Previously every such comparison silently failed, causing ready-to-merge MRs to render as `BLOCKED`.
+
 ## 0.7.0
 
 ### Minor Changes

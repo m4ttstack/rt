@@ -1,7 +1,7 @@
 {
   "name": "@workforge/glance-react",
   "private": false,
-  "version": "0.3.7",
+  "version": "0.3.8",
   "description": "Forge Glance React component library — MR dashboards with GDS theming",
   "license": "MIT",
   "type": "module",
