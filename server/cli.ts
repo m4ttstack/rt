@@ -1,0 +1,121 @@
+/**
+ * Headless, JSON-driven entry point ... the same pipeline the HTTP server uses, with no
+ * UI. Lets the data + classification be run and evaluated from the terminal.
+ *
+ *   bun server/cli.ts --range 30d                 # ranked standings table
+ *   bun server/cli.ts --range 7d --trend          # include trend deltas
+ *   bun server/cli.ts --range 30d --format json   # raw response JSON
+ *   bun server/cli.ts --range 30d --format validate --refresh   # run the evaluator (exit 1 on error)
+ */
+import { config } from "../config.js";
+import { getLeaderboard } from "./leaderboard.js";
+import { validateLeaderboard } from "./metrics/validate.js";
+import { customWindow, isPreset, resolvePreset } from "./util/window.js";
+import { METRICS, metricRank, metricValue } from "../shared/metrics.js";
+import type { MetricDescriptor } from "../shared/metrics.js";
+import type { LeaderboardResponse, RangePreset, TimeWindow, UserRow } from "../shared/types.js";
+
+interface Args {
+  range: string;
+  start?: string;
+  end?: string;
+  trend: boolean;
+  refresh: boolean;
+  format: "table" | "json" | "validate";
+}
+
+function parseArgs(argv: string[]): Args {
+  const a: Args = { range: config.defaultRange, trend: false, refresh: false, format: "table" };
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i];
+    if (arg === "--range") a.range = argv[++i] ?? a.range;
+    else if (arg === "--start") a.start = argv[++i];
+    else if (arg === "--end") a.end = argv[++i];
+    else if (arg === "--trend") a.trend = true;
+    else if (arg === "--refresh") a.refresh = true;
+    else if (arg === "--format") a.format = (argv[++i] as Args["format"]) ?? "table";
+    else if (arg === "--json") a.format = "json";
+  }
+  return a;
+}
+
+function resolveWindow(a: Args): TimeWindow {
+  if (a.range === "custom" || (a.start && a.end)) {
+    if (!a.start || !a.end) throw new Error("custom range needs --start and --end");
+    return customWindow(new Date(a.start).toISOString(), new Date(a.end).toISOString());
+  }
+  const preset: RangePreset = isPreset(a.range) ? a.range : config.defaultRange;
+  return resolvePreset(preset, new Date());
+}
+
+function fmt(value: number | null, d: MetricDescriptor): string {
+  if (value === null) return "—";
+  if (d.kind === "dist") return `${round(value)}h`;
+  if (d.percent) return `${Math.round(value * 100)}%`;
+  return round(value) + (d.unit ?? "");
+}
+const round = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100));
+
+function printStandings(res: LeaderboardResponse): void {
+  const w = res.window;
+  console.log(`\nForge Leaderboard ... ${scopeLabel(res)}  ${w.start.slice(0, 10)} → ${w.end.slice(0, 10)}`);
+  console.log(`${res.fromCache ? "cached" : "fresh"}${res.hasTrend ? " · trend on" : ""} · ${res.users.filter((u) => u.resolved).length}/${res.users.length} resolved\n`);
+
+  console.log("STANDINGS BY METRIC (1 = best):");
+  for (const d of METRICS) {
+    const ranked = res.users
+      .filter((u) => u.resolved && metricValue(u.metrics, d) !== null)
+      .sort((a, b) => (metricRank(a.metrics, d) ?? 99) - (metricRank(b.metrics, d) ?? 99));
+    const line = ranked
+      .map((u) => `${metricRank(u.metrics, d)}.${u.name ?? u.username}(${fmt(metricValue(u.metrics, d), d)})`)
+      .join("  ");
+    console.log(`  ${d.label.padEnd(16)} ${line || "(no data)"}`);
+  }
+
+  console.log("\nLEADERS:");
+  for (const d of METRICS) {
+    console.log(`  ${d.label.padEnd(16)} ${res.leaders[d.key] ?? "—"}`);
+  }
+
+  if (res.warnings.length) {
+    console.log("\nWARNINGS:");
+    for (const wn of res.warnings) console.log(`  ⚠ [${wn.code}] ${wn.message.slice(0, 160)}`);
+  }
+}
+
+function scopeLabel(res: LeaderboardResponse): string {
+  return res.scope.type === "group" ? res.scope.groupPath ?? "group" : (res.scope.projectPaths ?? []).join(", ");
+}
+
+function printValidation(res: LeaderboardResponse): number {
+  const report = validateLeaderboard(res);
+  console.log(`\nVALIDATION: ${report.ok ? "PASS" : "FAIL"} · ${report.errors} error(s), ${report.warnings} warning(s)`);
+  for (const issue of report.issues) {
+    const icon = issue.severity === "error" ? "✗" : "⚠";
+    console.log(`  ${icon} [${issue.code}] ${issue.message}`);
+  }
+  return report.ok ? 0 : 1;
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  const window = resolveWindow(args);
+  const res = await getLeaderboard({ window, refresh: args.refresh, trend: args.trend });
+
+  if (args.format === "json") {
+    console.log(JSON.stringify(res, null, 2));
+    return;
+  }
+
+  printStandings(res);
+
+  if (args.format === "validate") {
+    const code = printValidation(res);
+    process.exit(code);
+  }
+}
+
+main().catch((err) => {
+  console.error("cli failed:", (err as Error).message);
+  process.exit(1);
+});
