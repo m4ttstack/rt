@@ -4,9 +4,9 @@ import type { Column } from "../columns";
 export function MetricTip({ col }: { col: Column }) {
   return (
     <>
-      <div className="font-semibold text-slate-100">{col.label}</div>
-      <div className="mt-1 text-slate-300">{col.description}</div>
-      <div className="mt-1.5 text-[11px] uppercase tracking-wide text-slate-400">
+      <div className="font-semibold text-popover-foreground">{col.label}</div>
+      <div className="mt-1 text-muted-foreground">{col.description}</div>
+      <div className="mt-1.5 text-[11px] uppercase tracking-wide text-muted-foreground">
         {col.better === "asc" ? "↓ lower is better" : "↑ higher is better"} · {col.group}
       </div>
     </>

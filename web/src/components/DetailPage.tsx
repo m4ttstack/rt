@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { ArrowLeft } from "lucide-react";
+
 import type { MetricGroup } from "../../../shared/metrics";
 import type { MetricKey, UserDetailResponse } from "../../../shared/types";
 import { fetchDetail } from "../api";
@@ -12,6 +14,8 @@ import {
   sortValue,
 } from "../columns";
 import { navigateHome } from "../hooks/useHashRoute";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { EvidenceTable } from "./EvidenceTable";
 
 interface RangeState {
@@ -28,9 +32,9 @@ interface Props {
 }
 
 const GROUPS: { key: MetricGroup; label: string; accent: string }[] = [
-  { key: "volume", label: "Volume", accent: "text-slate-400" },
-  { key: "quality", label: "Quality & consistency", accent: "text-indigo-300/70" },
-  { key: "delivery", label: "Delivery (Linear)", accent: "text-emerald-300/70" },
+  { key: "volume", label: "Volume", accent: "text-muted-foreground" },
+  { key: "quality", label: "Quality & consistency", accent: "text-primary/80" },
+  { key: "delivery", label: "Delivery (Linear)", accent: "text-success/80" },
 ];
 
 export function DetailPage({ username, initialStat, range, trend }: Props) {
@@ -54,7 +58,6 @@ export function DetailPage({ username, initialStat, range, trend }: Props) {
     };
   }, [username, range, trend]);
 
-  // Keep the focused tab in sync if the deep-linked stat changes (navigating between people).
   useEffect(() => {
     if (validInitial) setSelected(validInitial);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -63,34 +66,29 @@ export function DetailPage({ username, initialStat, range, trend }: Props) {
   const col = useMemo(() => COLUMNS.find((c) => c.key === selected) ?? COLUMNS[0]!, [selected]);
 
   return (
-    <div className="mx-auto max-w-7xl px-6 py-8">
-      <button
-        onClick={navigateHome}
-        className="mb-4 text-sm text-slate-400 hover:text-slate-100"
-      >
-        ← Back to leaderboard
-      </button>
+    <div className="mx-auto max-w-[96rem] px-6 py-8">
+      <Button variant="ghost" size="sm" onClick={navigateHome} className="mb-4 -ml-2 text-muted-foreground">
+        <ArrowLeft /> Back to leaderboard
+      </Button>
 
       {error && (
-        <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-200">
+        <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
           <strong>Error:</strong> {error}
         </div>
       )}
-      {loading && !data && <p className="text-slate-500">Loading…</p>}
+      {loading && !data && <p className="text-muted-foreground">Loading…</p>}
 
       {data && (
         <>
           <header className="mb-5">
-            <h1 className="text-2xl font-bold tracking-tight text-slate-100">
+            <h1 className="flex items-center gap-2 text-2xl font-bold tracking-tight text-foreground">
               {data.user.name ?? data.user.username}
-              {data.user.isCurrentUser && (
-                <span className="ml-2 rounded bg-indigo-500/30 px-1.5 py-0.5 text-xs text-indigo-200">you</span>
-              )}
+              {data.user.isCurrentUser && <Badge>you</Badge>}
             </h1>
-            <p className="mt-1 text-sm text-slate-500">
+            <p className="mt-1 text-sm text-muted-foreground">
               @{data.user.username} · {data.window.start.slice(0, 10)} → {data.window.end.slice(0, 10)}
               {data.hasTrend && " · trend on"}
-              {!data.user.resolved && <span className="ml-2 text-amber-400">unresolved on GitLab</span>}
+              {!data.user.resolved && <span className="ml-2 text-amber-500">unresolved on GitLab</span>}
             </p>
           </header>
 
@@ -121,7 +119,7 @@ function StatRail({
         return (
           <div key={g.key}>
             <div className={`mb-1 text-[10px] uppercase tracking-wide ${g.accent}`}>{g.label}</div>
-            <ul className="overflow-hidden rounded-lg border border-white/10">
+            <ul className="overflow-hidden rounded-lg border">
               {cols.map((c) => {
                 const value = sortValue(data.user.metrics, c);
                 const rank = rankValue(data.user.metrics, c);
@@ -131,13 +129,13 @@ function StatRail({
                     <button
                       onClick={() => onSelect(c.key)}
                       className={`flex w-full items-baseline justify-between gap-2 px-3 py-1.5 text-left text-sm ${
-                        active ? "bg-indigo-500/15 text-indigo-100" : "text-slate-300 hover:bg-white/[0.03]"
+                        active ? "bg-primary/15 text-primary" : "text-foreground/90 hover:bg-muted"
                       }`}
                     >
                       <span className="truncate">{c.label}</span>
-                      <span className="shrink-0 font-mono tabular-nums text-slate-200">
+                      <span className="shrink-0 font-mono tabular-nums">
                         {formatValue(value, c)}
-                        {rank !== null && <span className="ml-1 text-[10px] text-slate-500">#{rank}</span>}
+                        {rank !== null && <span className="ml-1 text-[10px] text-muted-foreground">#{rank}</span>}
                       </span>
                     </button>
                   </li>
@@ -161,21 +159,21 @@ function EvidencePanel({ data, col, trend }: { data: UserDetailResponse; col: Co
     <section className="min-w-0">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <div>
-          <h2 className="text-lg font-semibold text-slate-100">{col.label}</h2>
-          <p className="mt-0.5 max-w-2xl text-xs text-slate-500">{col.description}</p>
+          <h2 className="text-lg font-semibold text-foreground">{col.label}</h2>
+          <p className="mt-0.5 max-w-2xl text-xs text-muted-foreground">{col.description}</p>
         </div>
         <div className="flex items-baseline gap-3 font-mono tabular-nums">
-          <span className="text-2xl text-slate-100">{formatValue(value, col)}</span>
-          {rank !== null && <span className="text-sm text-slate-400">#{rank}</span>}
+          <span className="text-2xl text-foreground">{formatValue(value, col)}</span>
+          {rank !== null && <span className="text-sm text-muted-foreground">#{rank}</span>}
           {delta !== null && delta !== 0 && (
-            <span className={`text-sm ${deltaIsGood(delta, col.better) ? "text-emerald-400" : "text-rose-400"}`}>
+            <span className={`text-sm ${deltaIsGood(delta, col.better) ? "text-success" : "text-destructive"}`}>
               {delta > 0 ? "▲" : "▼"} {formatValue(Math.abs(delta), col)}
             </span>
           )}
         </div>
       </div>
 
-      {evidence?.summary && <p className="mb-2 text-sm text-slate-400">{evidence.summary}</p>}
+      {evidence?.summary && <p className="mb-2 text-sm text-muted-foreground">{evidence.summary}</p>}
       <EvidenceTable evidence={evidence} />
     </section>
   );
