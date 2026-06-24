@@ -4,6 +4,7 @@ import { collectConnection, gqlRequest } from "../gitlab/graphql.js";
 import { GitLabApiError } from "../gitlab/errors.js";
 import { applyMrDetail, mapEvent, mapMrListNode, mapPipeline } from "../gitlab/map.js";
 import { revertTarget } from "../metrics/reverts.js";
+import { fetchLinearIssues, type LinearOptions } from "../linear/fetch.js";
 import { GROUP_MRS_QUERY, GROUP_PROJECTS_QUERY, MR_DETAIL_QUERY, PROJECT_MRS_QUERY } from "../gitlab/queries.js";
 import { encodePath, restGetAll, restGetOne } from "../gitlab/rest.js";
 import type { RawEvent, RawMrConnection, RawMrDetail, RawMrListNode, RawPipeline, RawUser } from "../gitlab/raw-types.js";
@@ -17,6 +18,8 @@ export interface FetchOptions {
   window: TimeWindow;
   users: readonly string[];
   concurrency: number;
+  /** Linear source config. null/absent = skip Linear (the "Issues done" metric stays zero). */
+  linear?: LinearOptions | null;
 }
 
 export interface FetchOutcome {
@@ -43,8 +46,12 @@ export async function fetchAll(opts: FetchOptions): Promise<FetchOutcome> {
   const pipelines = await fetchPipelines(env, projectPaths, resolvedUsers, window, concurrency, warnings);
   const pushEvents = await fetchPushEvents(env, identities, projectIds, resolvedUsers, window, concurrency, warnings);
 
+  // Linear is an independent source ... fetched alongside GitLab so it's cached in the
+  // same window envelope. Failures degrade to [] without breaking the GitLab view.
+  const linearIssues = await fetchLinearIssues(opts.linear ?? null, window, warnings);
+
   return {
-    result: { mrs, pipelines, pushEvents, approvalsAvailable: true },
+    result: { mrs, pipelines, pushEvents, linearIssues, approvalsAvailable: true },
     identities,
     warnings,
   };

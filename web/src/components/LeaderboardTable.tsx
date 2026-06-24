@@ -9,6 +9,7 @@ import {
   rankValue,
   sortValue,
 } from "../columns";
+import { navigateToUser } from "../hooks/useHashRoute";
 import { MetricTip } from "./MetricTip";
 import { Tooltip } from "./Tooltip";
 
@@ -47,6 +48,7 @@ export function LeaderboardTable({ data, trend }: Props) {
 
   const volume = COLUMNS.filter((c) => c.group === "volume");
   const quality = COLUMNS.filter((c) => c.group === "quality");
+  const delivery = COLUMNS.filter((c) => c.group === "delivery");
 
   return (
     <div className="overflow-x-auto rounded-xl border border-white/10">
@@ -60,6 +62,11 @@ export function LeaderboardTable({ data, trend }: Props) {
             <th colSpan={quality.length} className="border-l border-white/10 px-3 py-2 text-left text-indigo-300/70">
               Quality &amp; consistency
             </th>
+            {delivery.length > 0 && (
+              <th colSpan={delivery.length} className="border-l border-white/10 px-3 py-2 text-left text-emerald-300/70">
+                Delivery <span className="font-normal text-slate-600">(Linear)</span>
+              </th>
+            )}
           </tr>
           <tr className="border-b border-white/10 text-xs text-slate-400">
             <th className="sticky left-0 bg-[#0b0e14] px-3 py-2 text-left font-medium">Name</th>
@@ -82,7 +89,7 @@ export function LeaderboardTable({ data, trend }: Props) {
         </thead>
         <tbody>
           {rows.map((row) => (
-            <Row key={row.username} row={row} trend={trend} />
+            <Row key={row.username} row={row} trend={trend} sortKey={sortKey} />
           ))}
           {rows.length === 0 && (
             <tr>
@@ -97,7 +104,7 @@ export function LeaderboardTable({ data, trend }: Props) {
   );
 }
 
-function Row({ row, trend }: { row: UserRow; trend: boolean }) {
+function Row({ row, trend, sortKey }: { row: UserRow; trend: boolean; sortKey: string }) {
   return (
     <tr
       className={`border-b border-white/5 last:border-0 ${
@@ -105,16 +112,27 @@ function Row({ row, trend }: { row: UserRow; trend: boolean }) {
       } ${row.resolved ? "" : "opacity-50"}`}
     >
       <td className={`sticky left-0 px-3 py-2 ${row.isCurrentUser ? "bg-[#141a2b]" : "bg-[#0b0e14]"}`}>
-        <span className={row.isCurrentUser ? "font-semibold text-indigo-200" : "text-slate-200"}>
-          {row.name ?? row.username}
-        </span>
-        <span className="ml-1 text-xs text-slate-500">@{row.username}</span>
+        <button
+          onClick={() => navigateToUser(row.username, sortKey)}
+          className="text-left hover:underline"
+          title="View this person's stat details"
+        >
+          <span className={row.isCurrentUser ? "font-semibold text-indigo-200" : "text-slate-200"}>
+            {row.name ?? row.username}
+          </span>
+          <span className="ml-1 text-xs text-slate-500">@{row.username}</span>
+        </button>
         {!row.resolved && <span className="ml-2 text-[10px] text-amber-400">unresolved</span>}
       </td>
       {COLUMNS.map((col, i) => {
         const borderL = i > 0 && COLUMNS[i - 1]!.group !== col.group ? "border-l border-white/10" : "";
         return (
-          <td key={col.key} className={`px-3 py-2 text-right font-mono tabular-nums ${borderL}`}>
+          <td
+            key={col.key}
+            onClick={() => navigateToUser(row.username, col.key)}
+            className={`cursor-pointer px-3 py-2 text-right font-mono tabular-nums hover:bg-indigo-500/10 ${borderL}`}
+            title={`${row.name ?? row.username} · ${col.label} details`}
+          >
             <Cell row={row} col={col} trend={trend} rank={rankValue(row.metrics, col) ?? undefined} />
           </td>
         );

@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import type { LeaderboardResponse } from "../../shared/types";
 import { fetchLeaderboard } from "./api";
 import { Controls, type ViewMode } from "./components/Controls";
+import { DetailPage } from "./components/DetailPage";
 import { LeaderboardTable } from "./components/LeaderboardTable";
 import { MetricCards } from "./components/MetricCards";
+import { useHashRoute } from "./hooks/useHashRoute";
 
 interface RangeState {
   range: string;
@@ -18,6 +20,7 @@ export default function App() {
   const [rangeState, setRangeState] = useState<RangeState>({ range: "30d" });
   const [trend, setTrend] = useState(false);
   const [view, setView] = useState<ViewMode>("table");
+  const route = useHashRoute();
 
   const load = useCallback(
     async (rs: RangeState, refresh: boolean, withTrend: boolean) => {
@@ -39,6 +42,12 @@ export default function App() {
     void load(rangeState, false, trend);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rangeState, trend]);
+
+  if (route.user) {
+    return (
+      <DetailPage username={route.user} initialStat={route.stat} range={rangeState} trend={trend} />
+    );
+  }
 
   return (
     <div className="mx-auto max-w-7xl px-6 py-8">

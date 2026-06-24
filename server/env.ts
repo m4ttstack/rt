@@ -4,6 +4,8 @@ export interface Env {
   baseUrl: string;
   token: string;
   port: number;
+  /** Optional Linear personal API key. Absent = Linear metrics are skipped. */
+  linearApiKey?: string;
 }
 
 export class EnvError extends Error {
@@ -31,5 +33,10 @@ export function getEnv(): Env {
     throw new EnvError(`PORT is not a number: ${process.env.PORT}`);
   }
 
-  return { baseUrl: rawBase.replace(/\/+$/, ""), token, port };
+  // Optional: ignore the placeholder so a copied-but-unedited .env behaves as "unset".
+  const rawLinear = process.env.LINEAR_API_KEY?.trim();
+  const linearApiKey =
+    rawLinear && !rawLinear.startsWith("lin_api_xxxx") ? rawLinear : undefined;
+
+  return { baseUrl: rawBase.replace(/\/+$/, ""), token, port, linearApiKey };
 }

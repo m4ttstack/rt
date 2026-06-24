@@ -115,5 +115,6 @@ function combine(cur: RawUserMetrics, prev: RawUserMetrics | null): UserMetrics 
     currentStreak: mv(cur.currentStreak, prev?.currentStreak),
     longestStreak: mv(cur.longestStreak, prev?.longestStreak),
     reciprocity: mv(cur.reciprocity, prev?.reciprocity),
+    issuesCompleted: mv(cur.issuesCompleted, prev?.issuesCompleted),
   };
 }

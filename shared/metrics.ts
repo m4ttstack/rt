@@ -14,7 +14,7 @@ import type {
 export type MetricKind = "scalar" | "dist";
 /** "desc" = higher is better; "asc" = lower is better (latency, revert rate). */
 export type Better = "asc" | "desc";
-export type MetricGroup = "volume" | "quality";
+export type MetricGroup = "volume" | "quality" | "delivery";
 
 export interface MetricDescriptor {
   key: MetricKey;
@@ -62,6 +62,12 @@ export const METRICS: MetricDescriptor[] = [
     description: "Longest run of consecutive calendar days on which the user merged at least one MR, within the window. E.g. 4 = merged an MR on 4 days in a row at some point. (Based on merges, not pushes.)" },
   { key: "reciprocity", kind: "scalar", label: "Reciprocity", group: "quality", better: "desc",
     description: "Reviews given divided by reviews received ... ~1 means pulling your weight." },
+
+  // --- Delivery (Linear): tickets shipped. A lone volume metric ... read the README's
+  // Goodhart warning; close a pile of tiny tickets and this number climbs with no quality
+  // counterweight. Kept here so it ranks/trends alongside the rest, not as a real scoreboard.
+  { key: "issuesCompleted", kind: "scalar", label: "Issues done", group: "delivery", better: "desc",
+    description: "Linear issues (by assignee, all teams) completed in the window, excluding stale backlog closed long after creation (default: completed within 90 days of being filed). Guards against bulk backlog-grooming inflating the count." },
 ];
 
 // --- Typed accessors so server + UI read scalar vs distribution uniformly ---

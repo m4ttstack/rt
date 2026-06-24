@@ -4,7 +4,7 @@ import { serveStatic } from "hono/bun";
 
 import { config } from "../config.js";
 import { getEnv, EnvError } from "./env.js";
-import { getLeaderboard } from "./leaderboard.js";
+import { getLeaderboard, getUserDetail, UnknownUserError } from "./leaderboard.js";
 import { customWindow, isPreset, resolvePreset } from "./util/window.js";
 import type { RangePreset, TimeWindow } from "../shared/types.js";
 
@@ -33,6 +33,31 @@ app.get("/api/leaderboard", async (c) => {
       return c.json({ error: err.message }, 400);
     }
     console.error("[leaderboard] failed:", err);
+    return c.json({ error: (err as Error).message ?? "Internal error" }, 500);
+  }
+});
+
+app.get("/api/detail", async (c) => {
+  const user = c.req.query("user");
+  if (!user) return c.json({ error: "user query param is required" }, 400);
+
+  let window: TimeWindow;
+  try {
+    window = resolveWindowFromQuery(c.req.query("range"), c.req.query("start"), c.req.query("end"));
+  } catch (err) {
+    return c.json({ error: (err as Error).message }, 400);
+  }
+
+  const refresh = c.req.query("refresh") === "1" || c.req.query("refresh") === "true";
+  const trend = c.req.query("trend") === "1" || c.req.query("trend") === "true";
+
+  try {
+    const result = await getUserDetail({ window, refresh, trend, user });
+    return c.json(result);
+  } catch (err) {
+    if (err instanceof UnknownUserError) return c.json({ error: err.message }, 404);
+    if (err instanceof EnvError) return c.json({ error: err.message }, 400);
+    console.error("[detail] failed:", err);
     return c.json({ error: (err as Error).message ?? "Internal error" }, 500);
   }
 });

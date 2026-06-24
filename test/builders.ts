@@ -26,6 +26,7 @@ export interface MetricInput {
   revertedCount?: number;
   reviewLatencyHours?: number | null;
   responseLatencyHours?: number | null;
+  issuesCompleted?: number;
 }
 
 export function makeMetrics(o: MetricInput = {}): UserMetrics {
@@ -47,6 +48,7 @@ export function makeMetrics(o: MetricInput = {}): UserMetrics {
     currentStreak: mv(o.currentStreak ?? 0),
     longestStreak: mv(o.longestStreak ?? 0),
     reciprocity: mv(o.reciprocity ?? 0),
+    issuesCompleted: mv(o.issuesCompleted ?? 0),
   };
 }
 

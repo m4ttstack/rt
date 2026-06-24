@@ -1,11 +1,13 @@
 import { config } from "../config.js";
 import { cacheKey, readCache, writeCache } from "./cache/store.js";
 import { getEnv, type Env } from "./env.js";
+import { buildUserEvidence } from "./metrics/evidence.js";
 import { computeSnapshot, type Snapshot } from "./metrics/snapshot.js";
 import { buildResponse, type BuildContext } from "./metrics/trend.js";
 import { fetchAll, type FetchOutcome } from "./pipeline/fetch.js";
+import type { LinearOptions } from "./linear/fetch.js";
 import { priorWindow } from "./util/window.js";
-import type { LeaderboardResponse, Scope, TimeWindow } from "../shared/types.js";
+import type { LeaderboardResponse, Scope, TimeWindow, UserDetailResponse } from "../shared/types.js";
 
 export interface LeaderboardOptions {
   window: TimeWindow;
@@ -14,11 +16,29 @@ export interface LeaderboardOptions {
   trend: boolean;
 }
 
+export interface DetailOptions extends LeaderboardOptions {
+  /** GitLab username to drill into. */
+  user: string;
+}
+
+export class UnknownUserError extends Error {
+  override readonly name = "UnknownUserError";
+}
+
 function resolveScope(): Scope {
   if (config.groupPath && config.groupPath.length > 0) {
     return { type: "group", groupPath: config.groupPath };
   }
   return { type: "projects", projectPaths: config.projectPaths ?? [] };
+}
+
+/** Linear is enabled only when both the key (.env) and the email map (config) are present. */
+function resolveLinear(env: Env): LinearOptions | null {
+  const emailByUser = config.linear?.emailByUser;
+  if (!env.linearApiKey || !emailByUser || Object.keys(emailByUser).length === 0) {
+    return null;
+  }
+  return { apiKey: env.linearApiKey, emailByUser };
 }
 
 /** Fetch a window's data, using the .cache/ envelope unless refresh was requested. */
@@ -39,16 +59,28 @@ async function loadOrFetch(
     window,
     users: config.users,
     concurrency: config.concurrency,
+    linear: resolveLinear(env),
   });
   await writeCache(key, outcome);
   return { outcome, fromCache: false };
 }
 
 const snapshotFor = (outcome: FetchOutcome, window: TimeWindow): Snapshot =>
-  computeSnapshot(outcome.result, { window, users: config.users, sizeBand: config.sizeBand });
+  computeSnapshot(outcome.result, {
+    window,
+    users: config.users,
+    sizeBand: config.sizeBand,
+    linearMaxIssueAgeDays: config.linear?.maxIssueAgeDays ?? 90,
+  });
 
-/** Orchestrator: fetch (cached) -> compute current + prior snapshots -> build response with trend. */
-export async function getLeaderboard(opts: LeaderboardOptions): Promise<LeaderboardResponse> {
+/**
+ * Shared core: fetch (cached) -> compute current + prior snapshots -> ranked response.
+ * Returns the current FetchOutcome too, so the detail endpoint can build evidence from the
+ * same raw data without a second cache read.
+ */
+async function buildLeaderboard(
+  opts: LeaderboardOptions,
+): Promise<{ response: LeaderboardResponse; current: FetchOutcome; env: Env }> {
   const env = getEnv();
   const scope = resolveScope();
   const pw = priorWindow(opts.window);
@@ -83,5 +115,46 @@ export async function getLeaderboard(opts: LeaderboardOptions): Promise<Leaderbo
     warnings,
   };
 
-  return buildResponse(snapshotFor(current.outcome, opts.window), priorSnapshot, ctx);
+  return {
+    response: buildResponse(snapshotFor(current.outcome, opts.window), priorSnapshot, ctx),
+    current: current.outcome,
+    env,
+  };
+}
+
+/** Orchestrator: fetch (cached) -> compute current + prior snapshots -> build response with trend. */
+export async function getLeaderboard(opts: LeaderboardOptions): Promise<LeaderboardResponse> {
+  return (await buildLeaderboard(opts)).response;
+}
+
+/**
+ * Per-person drill-down: the same ranked row the leaderboard shows (value + rank + delta for
+ * the rail) plus per-metric evidence built from the same cached raw data.
+ */
+export async function getUserDetail(opts: DetailOptions): Promise<UserDetailResponse> {
+  const { response, current, env } = await buildLeaderboard(opts);
+  const userRow = response.users.find((u) => u.username === opts.user);
+  if (!userRow) {
+    throw new UnknownUserError(`Unknown user "${opts.user}" (not in the configured set).`);
+  }
+
+  const evidence = buildUserEvidence(current.result, opts.user, {
+    window: opts.window,
+    baseUrl: env.baseUrl,
+    sizeBand: config.sizeBand,
+    linearMaxIssueAgeDays: config.linear?.maxIssueAgeDays ?? 90,
+  });
+
+  return {
+    window: response.window,
+    priorWindow: response.priorWindow,
+    hasTrend: response.hasTrend,
+    baseUrl: response.baseUrl,
+    currentUser: response.currentUser,
+    generatedAt: response.generatedAt,
+    fromCache: response.fromCache,
+    user: userRow,
+    evidence,
+    warnings: response.warnings,
+  };
 }

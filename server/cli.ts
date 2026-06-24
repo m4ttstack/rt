@@ -6,14 +6,15 @@
  *   bun server/cli.ts --range 7d --trend          # include trend deltas
  *   bun server/cli.ts --range 30d --format json   # raw response JSON
  *   bun server/cli.ts --range 30d --format validate --refresh   # run the evaluator (exit 1 on error)
+ *   bun server/cli.ts --detail owen-at-acme --range 30d       # per-stat evidence for one person
  */
 import { config } from "../config.js";
-import { getLeaderboard } from "./leaderboard.js";
+import { getLeaderboard, getUserDetail } from "./leaderboard.js";
 import { validateLeaderboard } from "./metrics/validate.js";
 import { customWindow, isPreset, resolvePreset } from "./util/window.js";
-import { METRICS, metricRank, metricValue } from "../shared/metrics.js";
+import { METRICS, metricByKey, metricRank, metricValue } from "../shared/metrics.js";
 import type { MetricDescriptor } from "../shared/metrics.js";
-import type { LeaderboardResponse, RangePreset, TimeWindow, UserRow } from "../shared/types.js";
+import type { LeaderboardResponse, MetricKey, RangePreset, TimeWindow, UserDetailResponse, UserRow } from "../shared/types.js";
 
 interface Args {
   range: string;
@@ -22,6 +23,7 @@ interface Args {
   trend: boolean;
   refresh: boolean;
   format: "table" | "json" | "validate";
+  detail?: string;
 }
 
 function parseArgs(argv: string[]): Args {
@@ -35,6 +37,7 @@ function parseArgs(argv: string[]): Args {
     else if (arg === "--refresh") a.refresh = true;
     else if (arg === "--format") a.format = (argv[++i] as Args["format"]) ?? "table";
     else if (arg === "--json") a.format = "json";
+    else if (arg === "--detail") a.detail = argv[++i];
   }
   return a;
 }
@@ -97,9 +100,42 @@ function printValidation(res: LeaderboardResponse): number {
   return report.ok ? 0 : 1;
 }
 
+function printDetail(res: UserDetailResponse): void {
+  const w = res.window;
+  console.log(`\nDetail · ${res.user.name ?? res.user.username} (@${res.user.username})  ${w.start.slice(0, 10)} → ${w.end.slice(0, 10)}`);
+  console.log(`${res.fromCache ? "cached" : "fresh"}${res.hasTrend ? " · trend on" : ""}\n`);
+
+  for (const d of METRICS) {
+    const ev = res.evidence[d.key as MetricKey];
+    const desc = metricByKey(d.key);
+    const headline = fmt(metricValue(res.user.metrics, d), d);
+    const rank = metricRank(res.user.metrics, d);
+    console.log(`── ${d.label}  =${headline}${rank ? ` (#${rank})` : ""} ${desc ? `· ${desc.group}` : ""}`);
+    if (!ev || ev.rows.length === 0) {
+      console.log(`   ${ev?.summary ?? "(no records)"}\n`);
+      continue;
+    }
+    if (ev.summary) console.log(`   ${ev.summary}`);
+    console.log(`   ${ev.columns.join(" | ")}`);
+    for (const row of ev.rows.slice(0, 15)) {
+      console.log(`   ${row.muted ? "· " : "  "}${row.cells.join(" | ")}`);
+    }
+    if (ev.rows.length > 15) console.log(`   … ${ev.rows.length - 15} more`);
+    console.log("");
+  }
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
   const window = resolveWindow(args);
+
+  if (args.detail) {
+    const detail = await getUserDetail({ window, refresh: args.refresh, trend: args.trend, user: args.detail });
+    if (args.format === "json") console.log(JSON.stringify(detail, null, 2));
+    else printDetail(detail);
+    return;
+  }
+
   const res = await getLeaderboard({ window, refresh: args.refresh, trend: args.trend });
 
   if (args.format === "json") {

@@ -27,7 +27,7 @@ describe("metric metadata coherence", () => {
     for (const d of METRICS) {
       expect(d.label.length, `${d.key} label`).toBeGreaterThan(0);
       expect(d.description.length, `${d.key} description`).toBeGreaterThan(0);
-      expect(["volume", "quality"]).toContain(d.group);
+      expect(["volume", "quality", "delivery"]).toContain(d.group);
       expect(["asc", "desc"]).toContain(d.better);
     }
   });
@@ -43,6 +43,7 @@ describe("metric metadata coherence", () => {
     expect(better("codingDays")).toBe("desc");
     expect(better("reviewDepth")).toBe("desc");
     expect(better("sizeHealthPct")).toBe("desc");
+    expect(better("issuesCompleted")).toBe("desc");
   });
 
   it("rate/health metrics are flagged as percentages", () => {
@@ -50,8 +51,9 @@ describe("metric metadata coherence", () => {
     expect(METRICS.find((d) => d.key === "sizeHealthPct")!.percent).toBe(true);
   });
 
-  it("volume and quality groups are both represented", () => {
+  it("volume, quality, and delivery groups are all represented", () => {
     expect(METRICS.some((d) => d.group === "volume")).toBe(true);
     expect(METRICS.some((d) => d.group === "quality")).toBe(true);
+    expect(METRICS.some((d) => d.group === "delivery")).toBe(true);
   });
 });

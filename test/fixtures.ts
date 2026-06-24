@@ -1,4 +1,4 @@
-import type { FetchResult, NormMr, NormNote } from "../server/pipeline/model.js";
+import type { FetchResult, NormLinearIssue, NormMr, NormNote } from "../server/pipeline/model.js";
 import type { TimeWindow } from "../shared/types.js";
 
 export const WINDOW: TimeWindow = {
@@ -91,8 +91,31 @@ const MR4 = mr({
   deletions: 100,
 });
 
+const li = (
+  identifier: string,
+  assignedUser: string | null,
+  completedAt: string | null,
+): NormLinearIssue => ({
+  id: identifier,
+  identifier,
+  title: `Issue ${identifier}`,
+  url: `https://linear.app/acme/issue/${identifier}`,
+  assignedUser,
+  createdAt: "2026-05-01T00:00:00.000Z",
+  completedAt,
+  teamKey: "ENG",
+});
+
 export const FETCH: FetchResult = {
   mrs: [MR1, MR2, MR3, MR4],
+  linearIssues: [
+    li("ENG-1", "alice", "2026-05-10T12:00:00.000Z"),
+    li("ENG-2", "alice", "2026-05-20T12:00:00.000Z"),
+    li("ENG-3", "bob", "2026-05-15T12:00:00.000Z"),
+    li("ENG-4", "alice", "2026-06-10T12:00:00.000Z"), // out of window ... ignored
+    li("ENG-5", null, "2026-05-12T12:00:00.000Z"), // unmapped assignee ... counts for no one
+    li("ENG-6", "bob", null), // not completed ... ignored
+  ],
   pipelines: [
     { projectPath: "org/app", username: "alice", status: "success", createdAt: "2026-05-10T01:00:00.000Z" },
     { projectPath: "org/app", username: "alice", status: "failed", createdAt: "2026-05-11T01:00:00.000Z" },

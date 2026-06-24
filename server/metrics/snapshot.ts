@@ -28,6 +28,7 @@ export interface RawUserMetrics {
   currentStreak: number;
   longestStreak: number;
   reciprocity: number;
+  issuesCompleted: number;
 }
 
 export interface Snapshot {
@@ -39,9 +40,15 @@ export interface SnapshotOptions {
   window: TimeWindow;
   users: readonly string[];
   sizeBand: { tooSmall: number; tooLarge: number };
+  /**
+   * Exclude stale backlog from issuesCompleted: ignore issues completed more than this many
+   * days after creation. undefined/<=0 = no cap (count every completed issue).
+   */
+  linearMaxIssueAgeDays?: number;
 }
 
 const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
 
 const changedLines = (mr: NormMr): number => mr.additions + mr.deletions;
 
@@ -51,14 +58,27 @@ function emptyStatus(): PipelineStatusBreakdown {
 
 /** Compute every metric for every configured user over one window. Pure. */
 export function computeSnapshot(fetched: FetchResult, opts: SnapshotOptions): Snapshot {
-  const { window, users, sizeBand } = opts;
+  const { window, users, sizeBand, linearMaxIssueAgeDays } = opts;
   const revertedTitles = buildRevertedTitleSet(fetched.mrs);
 
   const byUser: Record<string, RawUserMetrics> = {};
   for (const u of users) {
-    byUser[u] = computeUser(u, fetched, window, sizeBand, revertedTitles);
+    byUser[u] = computeUser(u, fetched, window, sizeBand, revertedTitles, linearMaxIssueAgeDays);
   }
   return { byUser, approvalsAvailable: fetched.approvalsAvailable };
+}
+
+/**
+ * True when an issue is recent enough to count ... i.e. completed within `maxAgeDays` of
+ * being created. Guards against bulk-closed stale backlog inflating the count. A non-positive
+ * or undefined cap disables the check; a missing createdAt fails open (counts).
+ */
+function withinAgeCap(createdAt: string, completedAt: string, maxAgeDays?: number): boolean {
+  if (!maxAgeDays || maxAgeDays <= 0) return true;
+  const created = Date.parse(createdAt);
+  const completed = Date.parse(completedAt);
+  if (Number.isNaN(created) || Number.isNaN(completed)) return true;
+  return completed - created <= maxAgeDays * DAY_MS;
 }
 
 function computeUser(
@@ -67,8 +87,11 @@ function computeUser(
   window: TimeWindow,
   sizeBand: { tooSmall: number; tooLarge: number },
   revertedTitles: Set<string>,
+  linearMaxIssueAgeDays?: number,
 ): RawUserMetrics {
   const { mrs, pipelines, pushEvents } = fetched;
+  // Tolerate older cache envelopes (and tests) that predate the Linear field.
+  const linearIssues = fetched.linearIssues ?? [];
 
   // --- Volume: authored & merged in window (spec 4.1, 4.2) ---
   const authoredMerged = mrs.filter(
@@ -177,6 +200,15 @@ function computeUser(
   // --- Streak: consecutive days with a MERGED MR (delivery, not pushes) ---
   const mergeStreaks = streaks(authoredMerged.map((m) => m.mergedAt ?? "").filter(Boolean));
 
+  // --- Linear issues completed in window (by assignee), excluding stale backlog ---
+  const issuesCompleted = linearIssues.filter(
+    (i) =>
+      i.assignedUser === u &&
+      inWindow(i.completedAt, window) &&
+      i.completedAt !== null &&
+      withinAgeCap(i.createdAt, i.completedAt, linearMaxIssueAgeDays),
+  ).length;
+
   return {
     additions,
     deletions,
@@ -195,6 +227,7 @@ function computeUser(
     currentStreak: mergeStreaks.current,
     longestStreak: mergeStreaks.longest,
     reciprocity,
+    issuesCompleted,
   };
 }
 

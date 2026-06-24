@@ -67,6 +67,10 @@ export interface UserMetrics {
   longestStreak: MetricValue;
   /** reviews given / reviews received. */
   reciprocity: MetricValue;
+
+  // --- Delivery (Linear) ---
+  /** Linear issues assigned to the user that completed in the window. */
+  issuesCompleted: MetricValue;
 }
 
 /** Keys of the scalar (MetricValue) metrics. */
@@ -100,6 +104,39 @@ export interface Scope {
 export interface LeaderboardWarning {
   code: string;
   message: string;
+}
+
+/** One row of a stat's underlying evidence. Cells align to MetricEvidence.columns. */
+export interface EvidenceRow {
+  cells: string[];
+  /** Deep link for the row (GitLab MR, Linear issue). null = not linkable. */
+  href?: string | null;
+  /** Render de-emphasized: the row exists but did NOT count toward the stat (e.g. stale issue). */
+  muted?: boolean;
+}
+
+/** The records behind one person's value for one metric, render-agnostic. */
+export interface MetricEvidence {
+  columns: string[];
+  rows: EvidenceRow[];
+  /** One-line context, e.g. "p50 19.4h over 5 MRs" or "43 of 47 excluded as stale". */
+  summary?: string;
+}
+
+/** Per-person drill-down: the ranked row (for the rail) plus per-metric evidence. */
+export interface UserDetailResponse {
+  window: TimeWindow;
+  priorWindow: TimeWindow | null;
+  hasTrend: boolean;
+  baseUrl: string;
+  currentUser: string;
+  generatedAt: string;
+  fromCache: boolean;
+  /** The same ranked row the leaderboard shows, so the rail has value + rank + delta. */
+  user: UserRow;
+  /** Evidence keyed by metric. A metric may be absent if it has no records. */
+  evidence: Partial<Record<MetricKey, MetricEvidence>>;
+  warnings: LeaderboardWarning[];
 }
 
 export interface LeaderboardResponse {
