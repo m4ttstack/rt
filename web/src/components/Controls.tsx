@@ -1,10 +1,18 @@
 import { useState } from "react";
+import { RefreshCw } from "lucide-react";
+
 import type { LeaderboardResponse, RangePreset } from "../../../shared/types";
+import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export type ViewMode = "table" | "cards";
 
 interface Props {
   range: string;
+  /** Persisted custom-window bounds (ISO), used to pre-fill the date inputs after a reload. */
+  start?: string;
+  end?: string;
   onRange: (range: string, start?: string, end?: string) => void;
   trend: boolean;
   onTrend: (v: boolean) => void;
@@ -17,114 +25,110 @@ interface Props {
 
 const PRESETS: RangePreset[] = ["7d", "30d", "90d"];
 
+/** <input type="date"> wants YYYY-MM-DD; the persisted bounds are full ISO timestamps. */
+const toDateInput = (iso: string | undefined): string => (iso ? iso.slice(0, 10) : "");
+
 export function Controls(props: Props) {
-  const { range, onRange, trend, onTrend, view, onView, refreshing, onRefresh, data } = props;
+  const { range, start: initialStart, end: initialEnd, onRange, trend, onTrend, view, onView, refreshing, onRefresh, data } = props;
   const [customOpen, setCustomOpen] = useState(range === "custom");
-  const [start, setStart] = useState("");
-  const [end, setEnd] = useState("");
+  const [start, setStart] = useState(() => toDateInput(initialStart));
+  const [end, setEnd] = useState(() => toDateInput(initialEnd));
 
   return (
-    <div className="flex flex-col gap-3 border-b border-white/10 pb-4">
+    <div className="flex flex-col gap-3 border-b pb-4">
       <div className="flex flex-wrap items-center gap-3">
-        <div className="flex overflow-hidden rounded-lg border border-white/10">
+        <div className="flex gap-1">
           {PRESETS.map((p) => (
-            <button
+            <Button
               key={p}
-              onClick={() => { setCustomOpen(false); onRange(p); }}
-              className={`px-3 py-1.5 text-sm font-medium transition ${
-                range === p ? "bg-indigo-500 text-white" : "bg-white/5 text-slate-300 hover:bg-white/10"
-              }`}
+              size="sm"
+              variant={range === p ? "default" : "outline"}
+              onClick={() => {
+                setCustomOpen(false);
+                onRange(p);
+              }}
             >
               {p}
-            </button>
+            </Button>
           ))}
-          <button
+          <Button
+            size="sm"
+            variant={range === "custom" ? "default" : "outline"}
             onClick={() => setCustomOpen((o) => !o)}
-            className={`px-3 py-1.5 text-sm font-medium transition ${
-              range === "custom" ? "bg-indigo-500 text-white" : "bg-white/5 text-slate-300 hover:bg-white/10"
-            }`}
           >
             Custom
-          </button>
+          </Button>
         </div>
 
-        <ToggleButton active={trend} onClick={() => onTrend(!trend)}>
-          {trend ? "Trend: vs prior" : "Trend: off"}
-        </ToggleButton>
-
-        <div className="flex overflow-hidden rounded-lg border border-white/10">
-          <button
-            onClick={() => onView("table")}
-            className={`px-3 py-1.5 text-sm ${view === "table" ? "bg-white/15 text-white" : "bg-white/5 text-slate-300 hover:bg-white/10"}`}
-          >
-            Table
-          </button>
-          <button
-            onClick={() => onView("cards")}
-            className={`px-3 py-1.5 text-sm ${view === "cards" ? "bg-white/15 text-white" : "bg-white/5 text-slate-300 hover:bg-white/10"}`}
-          >
-            Cards
-          </button>
+        <div className="flex items-center gap-2">
+          <Switch id="trend" checked={trend} onCheckedChange={onTrend} />
+          <label htmlFor="trend" className="cursor-pointer text-sm text-muted-foreground">
+            Trend vs prior
+          </label>
         </div>
 
-        <button
-          onClick={onRefresh}
-          disabled={refreshing}
-          className="ml-auto rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-slate-200 hover:bg-white/10 disabled:opacity-50"
-        >
-          {refreshing ? "Refreshing…" : "↻ Refresh"}
-        </button>
+        <Tabs value={view} onValueChange={(v) => onView(v as ViewMode)}>
+          <TabsList>
+            <TabsTrigger value="table">Table</TabsTrigger>
+            <TabsTrigger value="cards">Cards</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
+        <Button variant="outline" size="sm" onClick={onRefresh} disabled={refreshing} className="ml-auto">
+          <RefreshCw className={refreshing ? "animate-spin" : ""} />
+          ↻ Refresh
+        </Button>
       </div>
 
       {customOpen && (
         <div className="flex flex-wrap items-end gap-2 text-sm">
-          <label className="flex flex-col gap-1 text-slate-400">
+          <label className="flex flex-col gap-1 text-muted-foreground">
             Start
-            <input type="date" value={start} onChange={(e) => setStart(e.target.value)} className="rounded bg-white/5 px-2 py-1 text-slate-100" />
+            <input
+              type="date"
+              value={start}
+              onChange={(e) => setStart(e.target.value)}
+              className="rounded-md border bg-background px-2 py-1 text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            />
           </label>
-          <label className="flex flex-col gap-1 text-slate-400">
+          <label className="flex flex-col gap-1 text-muted-foreground">
             End
-            <input type="date" value={end} onChange={(e) => setEnd(e.target.value)} className="rounded bg-white/5 px-2 py-1 text-slate-100" />
+            <input
+              type="date"
+              value={end}
+              onChange={(e) => setEnd(e.target.value)}
+              className="rounded-md border bg-background px-2 py-1 text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+            />
           </label>
-          <button
+          <Button
+            size="sm"
             disabled={!start || !end}
             onClick={() => onRange("custom", new Date(start).toISOString(), new Date(end).toISOString())}
-            className="rounded-lg bg-indigo-500 px-3 py-1.5 text-white disabled:opacity-40"
           >
             Apply
-          </button>
+          </Button>
         </div>
       )}
 
       {data && (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-slate-500">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
           <span>
             Scope:{" "}
-            <span className="text-slate-300">
+            <span className="text-foreground">
               {data.scope.type === "group" ? data.scope.groupPath : `${data.scope.projectPaths?.length ?? 0} projects`}
             </span>
           </span>
           <span>
-            Window: <span className="text-slate-300">{fmtDate(data.window.start)} → {fmtDate(data.window.end)}</span>
+            Window:{" "}
+            <span className="text-foreground">
+              {fmtDate(data.window.start)} → {fmtDate(data.window.end)}
+            </span>
           </span>
           <span>{data.fromCache ? "cached" : "fresh"}</span>
-          {data.hasTrend && <span className="text-indigo-300">trend vs {fmtDate(data.priorWindow!.start)}+</span>}
+          {data.hasTrend && <span className="text-primary">trend vs {fmtDate(data.priorWindow!.start)}+</span>}
         </div>
       )}
     </div>
-  );
-}
-
-function ToggleButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      onClick={onClick}
-      className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition ${
-        active ? "border-indigo-400/40 bg-indigo-500/20 text-indigo-200" : "border-white/10 bg-white/5 text-slate-300 hover:bg-white/10"
-      }`}
-    >
-      {children}
-    </button>
   );
 }
 
