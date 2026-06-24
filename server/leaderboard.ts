@@ -9,6 +9,11 @@ import type { LinearOptions } from "./linear/fetch.js";
 import { priorWindow } from "./util/window.js";
 import type { LeaderboardResponse, RefreshProgress, Scope, TimeWindow, UserDetailResponse } from "../shared/types.js";
 
+/** Thrown by loadOrFetch when cacheOnly is set and the window has no cached envelope. */
+export class ColdCacheError extends Error {
+  override readonly name = "ColdCacheError";
+}
+
 export interface LeaderboardOptions {
   window: TimeWindow;
   refresh: boolean;
@@ -16,6 +21,8 @@ export interface LeaderboardOptions {
   trend: boolean;
   signal?: AbortSignal;
   onProgress?: (p: RefreshProgress) => void;
+  /** When true, never fetch: a cache miss throws ColdCacheError instead of hitting the network. */
+  cacheOnly?: boolean;
 }
 
 /** Wrap a window-agnostic reporter to stamp the window. Exported for testing. */
@@ -58,6 +65,7 @@ async function loadOrFetch(
   scope: Scope,
   window: TimeWindow,
   refresh: boolean,
+  cacheOnly: boolean,
   signal?: AbortSignal,
   onProgress?: (p: Omit<RefreshProgress, "window">) => void,
 ): Promise<{ outcome: FetchOutcome; fromCache: boolean }> {
@@ -65,6 +73,7 @@ async function loadOrFetch(
   if (!refresh) {
     const cached = await readCache<FetchOutcome>(key);
     if (cached) return { outcome: cached.data, fromCache: true };
+    if (cacheOnly) throw new ColdCacheError(`no cache for ${key}`);
   }
   const outcome = await fetchAll({
     env,
@@ -100,7 +109,7 @@ async function buildLeaderboard(
   const scope = resolveScope();
   const pw = priorWindow(opts.window);
 
-  const current = await loadOrFetch(env, scope, opts.window, opts.refresh);
+  const current = await loadOrFetch(env, scope, opts.window, opts.refresh, opts.cacheOnly ?? false);
   const warnings = [...current.outcome.warnings];
 
   // Prior window drives the self-vs-self trend. Only fetched when requested (it doubles
@@ -108,7 +117,7 @@ async function buildLeaderboard(
   let priorSnapshot: Snapshot | null = null;
   if (opts.trend) {
     try {
-      const prior = await loadOrFetch(env, scope, pw, false);
+      const prior = await loadOrFetch(env, scope, pw, false, opts.cacheOnly ?? false);
       priorSnapshot = snapshotFor(prior.outcome, pw);
     } catch (err) {
       warnings.push({
@@ -143,13 +152,13 @@ export async function getLeaderboard(opts: LeaderboardOptions): Promise<Leaderbo
   const scope = resolveScope();
   const pw = priorWindow(opts.window);
 
-  const current = await loadOrFetch(env, scope, opts.window, opts.refresh, opts.signal, withWindow("current", opts.onProgress));
+  const current = await loadOrFetch(env, scope, opts.window, opts.refresh, opts.cacheOnly ?? false, opts.signal, withWindow("current", opts.onProgress));
   const warnings = [...current.outcome.warnings];
 
   let priorSnapshot: Snapshot | null = null;
   if (opts.trend) {
     try {
-      const prior = await loadOrFetch(env, scope, pw, false, opts.signal, withWindow("prior", opts.onProgress));
+      const prior = await loadOrFetch(env, scope, pw, false, opts.cacheOnly ?? false, opts.signal, withWindow("prior", opts.onProgress));
       priorSnapshot = snapshotFor(prior.outcome, pw);
     } catch (err) {
       if ((err as Error).name === "AbortError") throw err;
