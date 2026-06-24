@@ -10,7 +10,7 @@ import { encodePath, restGetAll, restGetOne } from "../gitlab/rest.js";
 import type { RawEvent, RawMrConnection, RawMrDetail, RawMrListNode, RawPipeline, RawUser } from "../gitlab/raw-types.js";
 import type { UserIdentity } from "../metrics/trend.js";
 import type { FetchResult, NormMr } from "./model.js";
-import type { LeaderboardWarning, Scope, TimeWindow } from "../../shared/types.js";
+import type { RefreshProgress, LeaderboardWarning, Scope, TimeWindow } from "../../shared/types.js";
 
 export interface FetchOptions {
   env: Env;
@@ -20,6 +20,8 @@ export interface FetchOptions {
   concurrency: number;
   /** Linear source config. null/absent = skip Linear (the "Issues done" metric stays zero). */
   linear?: LinearOptions | null;
+  signal?: AbortSignal;
+  onProgress?: (p: Omit<RefreshProgress, "window">) => void;
 }
 
 export interface FetchOutcome {
@@ -32,23 +34,30 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const dateOnly = (iso: string): string => iso.slice(0, 10);
 
 export async function fetchAll(opts: FetchOptions): Promise<FetchOutcome> {
-  const { env, scope, window, users, concurrency } = opts;
+  const { env, scope, window, users, concurrency, signal, onProgress } = opts;
   const warnings: LeaderboardWarning[] = [];
+  const report = onProgress ?? (() => {});
 
-  const identities = await resolveIdentities(env, users, concurrency, warnings);
+  signal?.throwIfAborted();
+  const identities = await resolveIdentities(env, users, concurrency, warnings, signal, report);
   const resolvedUsers = users.filter((u) => identities[u]?.resolved);
 
-  const mrs = await fetchMergeRequests(env, scope, window, resolvedUsers, concurrency, warnings);
-  const projectPaths = await resolveProjectPaths(env, scope, mrs, warnings);
+  signal?.throwIfAborted();
+  const mrs = await fetchMergeRequests(env, scope, window, resolvedUsers, concurrency, warnings, signal, report);
+  const projectPaths = await resolveProjectPaths(env, scope, mrs, warnings, signal);
 
-  const projectIds = await resolveProjectIds(env, projectPaths, concurrency, warnings);
+  signal?.throwIfAborted();
+  const projectIds = await resolveProjectIds(env, projectPaths, concurrency, warnings, signal);
 
-  const pipelines = await fetchPipelines(env, projectPaths, resolvedUsers, window, concurrency, warnings);
-  const pushEvents = await fetchPushEvents(env, identities, projectIds, resolvedUsers, window, concurrency, warnings);
+  signal?.throwIfAborted();
+  const pipelines = await fetchPipelines(env, projectPaths, resolvedUsers, window, concurrency, warnings, signal, report);
 
-  // Linear is an independent source ... fetched alongside GitLab so it's cached in the
-  // same window envelope. Failures degrade to [] without breaking the GitLab view.
-  const linearIssues = await fetchLinearIssues(opts.linear ?? null, window, warnings);
+  signal?.throwIfAborted();
+  const pushEvents = await fetchPushEvents(env, identities, projectIds, resolvedUsers, window, concurrency, warnings, signal, report);
+
+  signal?.throwIfAborted();
+  report({ phase: "linear", label: "Fetching Linear issues", done: 0, total: 0 });
+  const linearIssues = await fetchLinearIssues(opts.linear ?? null, window, warnings, signal);
 
   return {
     result: { mrs, pipelines, pushEvents, linearIssues, approvalsAvailable: true },
@@ -62,11 +71,16 @@ async function resolveIdentities(
   users: readonly string[],
   concurrency: number,
   warnings: LeaderboardWarning[],
+  signal?: AbortSignal,
+  report: (p: Omit<RefreshProgress, "window">) => void = () => {},
 ): Promise<Record<string, UserIdentity>> {
   const identities: Record<string, UserIdentity> = {};
+  const total = users.length;
+  report({ phase: "users", label: "Resolving users", done: 0, total });
   await mapLimit(users, concurrency, async (username) => {
+    signal?.throwIfAborted();
     try {
-      const matches = await restGetOne<RawUser[]>(env, "/users", { username });
+      const matches = await restGetOne<RawUser[]>(env, "/users", { username }, signal);
       const exact = matches.find((m) => m.username === username) ?? matches[0];
       if (exact) {
         identities[username] = { username, name: exact.name, resolved: true, userId: exact.id };
@@ -75,13 +89,14 @@ async function resolveIdentities(
         warnings.push({ code: "user_unresolved", message: `Username not found: ${username}` });
       }
     } catch (err) {
+      if ((err as Error).name === "AbortError") throw err;
       identities[username] = { username, name: null, resolved: false };
       warnings.push({
         code: "user_lookup_failed",
         message: `Lookup failed for ${username}: ${(err as Error).message}`,
       });
     }
-  });
+  }, (done) => report({ phase: "users", label: "Resolving users", done, total }));
   return identities;
 }
 
@@ -92,21 +107,25 @@ async function fetchMergeRequests(
   users: readonly string[],
   concurrency: number,
   warnings: LeaderboardWarning[],
+  signal?: AbortSignal,
+  report: (p: Omit<RefreshProgress, "window">) => void = () => {},
 ): Promise<NormMr[]> {
   const since = new Date(window.start).getTime();
+  report({ phase: "mrs-list", label: "Listing merge requests", done: 0, total: 0 });
 
   // Phase 1: lightweight MR list (cheap fields only) covering the window.
   const light: RawMrListNode[] = [];
   if (scope.type === "group") {
     if (!scope.groupPath) throw new GitLabApiError("group scope is missing groupPath");
-    light.push(...(await listMrs(env, GROUP_MRS_QUERY, scope.groupPath, "group", since)));
+    light.push(...(await listMrs(env, GROUP_MRS_QUERY, scope.groupPath, "group", since, signal)));
   } else {
     const paths = scope.projectPaths ?? [];
     if (paths.length === 0) throw new GitLabApiError("projects scope has no projectPaths configured");
     for (const path of paths) {
       try {
-        light.push(...(await listMrs(env, PROJECT_MRS_QUERY, path, "project", since)));
+        light.push(...(await listMrs(env, PROJECT_MRS_QUERY, path, "project", since, signal)));
       } catch (err) {
+        if ((err as Error).name === "AbortError") throw err;
         warnings.push({ code: "mr_fetch_failed", message: `MRs for ${path}: ${(err as Error).message}` });
       }
     }
@@ -122,22 +141,27 @@ async function fetchMergeRequests(
   // of 50 does not ... that was the source of the "Timeout on DiffStatsSummary" errors.
   let detailFailures = 0;
   let lastDetailError = "";
+  const total = teamMrs.length;
+  report({ phase: "mrs-detail", label: "Fetching MR details", done: 0, total });
   const mrs = await mapLimit(teamMrs, concurrency, async (node) => {
+    signal?.throwIfAborted();
     const base = mapMrListNode(node);
     try {
       const data = await gqlRequest<{ project: { mergeRequest: RawMrDetail | null } | null }>(
         env,
         MR_DETAIL_QUERY,
         { fullPath: base.projectPath, iid: String(base.iid) },
+        signal,
       );
       const detail = data.project?.mergeRequest;
       return detail ? applyMrDetail(base, detail) : base;
     } catch (err) {
+      if ((err as Error).name === "AbortError") throw err;
       detailFailures++;
       lastDetailError = (err as Error).message;
       return base; // keep the MR with light fields only rather than failing the whole run
     }
-  });
+  }, (done) => report({ phase: "mrs-detail", label: "Fetching MR details", done, total }));
 
   if (detailFailures > 0) {
     warnings.push({
@@ -166,6 +190,7 @@ async function listMrs(
   fullPath: string,
   rootKey: "group" | "project",
   sinceMs: number,
+  signal?: AbortSignal,
 ): Promise<RawMrListNode[]> {
   type MrRoot = { mergeRequests: RawMrConnection } | null;
   type MrQueryData = { group?: MrRoot; project?: MrRoot };
@@ -173,7 +198,7 @@ async function listMrs(
   const nodes: RawMrListNode[] = [];
   let after: string | null = null;
   for (let page = 0; page < 500; page++) {
-    const data: MrQueryData = await gqlRequest<MrQueryData>(env, query, { fullPath, after });
+    const data: MrQueryData = await gqlRequest<MrQueryData>(env, query, { fullPath, after }, signal);
     const conn = data[rootKey]?.mergeRequests;
     if (!conn) break;
     nodes.push(...conn.nodes);
@@ -194,6 +219,7 @@ async function resolveProjectPaths(
   scope: Scope,
   mrs: readonly NormMr[],
   warnings: LeaderboardWarning[],
+  signal?: AbortSignal,
 ): Promise<string[]> {
   if (scope.type === "projects") return scope.projectPaths ?? [];
   if (!scope.groupPath) return [];
@@ -203,12 +229,14 @@ async function resolveProjectPaths(
         env,
         GROUP_PROJECTS_QUERY,
         { fullPath: scope.groupPath, after },
+        signal,
       );
       const conn = data.group?.projects;
       return conn ?? { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } };
     });
     return nodes.map((n) => n.fullPath);
   } catch (err) {
+    if ((err as Error).name === "AbortError") throw err;
     // Fall back to the projects we already saw on the MRs.
     warnings.push({ code: "projects_fetch_failed", message: `Group projects: ${(err as Error).message}` });
     return [...new Set(mrs.map((m) => m.projectPath).filter(Boolean))];
@@ -222,26 +250,32 @@ async function fetchPipelines(
   window: TimeWindow,
   concurrency: number,
   warnings: LeaderboardWarning[],
+  signal?: AbortSignal,
+  report: (p: Omit<RefreshProgress, "window">) => void = () => {},
 ) {
-  const pairs = projectPaths.flatMap((projectPath) =>
-    users.map((username) => ({ projectPath, username })),
-  );
+  const pairs = projectPaths.flatMap((projectPath) => users.map((username) => ({ projectPath, username })));
+  const total = pairs.length;
+  report({ phase: "pipelines", label: "Fetching pipelines", done: 0, total });
   const results = await mapLimit(pairs, concurrency, async ({ projectPath, username }) => {
+    signal?.throwIfAborted();
     try {
       const raws = await restGetAll<RawPipeline>(
         env,
         `/projects/${encodePath(projectPath)}/pipelines`,
         { username, updated_after: window.start, updated_before: window.end },
+        50,
+        signal,
       );
       return raws.map((r) => mapPipeline(r, projectPath, username));
     } catch (err) {
+      if ((err as Error).name === "AbortError") throw err;
       warnings.push({
         code: "pipeline_fetch_failed",
         message: `Pipelines ${projectPath} / ${username}: ${(err as Error).message}`,
       });
       return [];
     }
-  });
+  }, (done) => report({ phase: "pipelines", label: "Fetching pipelines", done, total }));
   return results.flat();
 }
 
@@ -251,13 +285,16 @@ async function resolveProjectIds(
   projectPaths: readonly string[],
   concurrency: number,
   warnings: LeaderboardWarning[],
+  signal?: AbortSignal,
 ): Promise<Set<number>> {
   const ids = new Set<number>();
   await mapLimit(projectPaths, concurrency, async (path) => {
+    signal?.throwIfAborted();
     try {
-      const p = await restGetOne<{ id: number }>(env, `/projects/${encodePath(path)}`);
+      const p = await restGetOne<{ id: number }>(env, `/projects/${encodePath(path)}`, {}, signal);
       ids.add(p.id);
     } catch (err) {
+      if ((err as Error).name === "AbortError") throw err;
       warnings.push({ code: "project_id_failed", message: `Project id for ${path}: ${(err as Error).message}` });
     }
   });
@@ -272,32 +309,31 @@ async function fetchPushEvents(
   window: TimeWindow,
   concurrency: number,
   warnings: LeaderboardWarning[],
+  signal?: AbortSignal,
+  report: (p: Omit<RefreshProgress, "window">) => void = () => {},
 ) {
   // Use the efficient per-user events API (only that user's pushes), then keep only the
   // events in the configured project(s) ... so coding-days/streak don't count pushes to
   // unrelated repos (side projects, forks). Per-user events carry project_id.
   const after = dateOnly(new Date(new Date(window.start).getTime() - DAY_MS).toISOString());
   const before = dateOnly(new Date(new Date(window.end).getTime() + DAY_MS).toISOString());
-
+  const total = users.length;
+  report({ phase: "pushes", label: "Fetching push events", done: 0, total });
   const results = await mapLimit(users, concurrency, async (username) => {
+    signal?.throwIfAborted();
     const id = identities[username]?.userId;
     if (id === undefined) return [];
     try {
-      const raws = await restGetAll<RawEvent>(env, `/users/${id}/events`, {
-        action: "pushed",
-        after,
-        before,
-      });
-      return raws
-        .filter((r) => r.project_id != null && projectIds.has(r.project_id))
-        .map((r) => mapEvent(r, username));
+      const raws = await restGetAll<RawEvent>(env, `/users/${id}/events`, { action: "pushed", after, before }, 50, signal);
+      return raws.filter((r) => r.project_id != null && projectIds.has(r.project_id)).map((r) => mapEvent(r, username));
     } catch (err) {
+      if ((err as Error).name === "AbortError") throw err;
       warnings.push({
         code: "events_fetch_failed",
         message: `Events for ${username}: ${(err as Error).message}`,
       });
       return [];
     }
-  });
+  }, (done) => report({ phase: "pushes", label: "Fetching push events", done, total }));
   return results.flat();
 }

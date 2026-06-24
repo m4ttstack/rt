@@ -7,13 +7,24 @@ import { buildResponse, type BuildContext } from "./metrics/trend.js";
 import { fetchAll, type FetchOutcome } from "./pipeline/fetch.js";
 import type { LinearOptions } from "./linear/fetch.js";
 import { priorWindow } from "./util/window.js";
-import type { LeaderboardResponse, Scope, TimeWindow, UserDetailResponse } from "../shared/types.js";
+import type { LeaderboardResponse, RefreshProgress, Scope, TimeWindow, UserDetailResponse } from "../shared/types.js";
 
 export interface LeaderboardOptions {
   window: TimeWindow;
   refresh: boolean;
   /** When false, the prior window is not fetched (faster) and no deltas are produced. */
   trend: boolean;
+  signal?: AbortSignal;
+  onProgress?: (p: RefreshProgress) => void;
+}
+
+/** Wrap a window-agnostic reporter to stamp the window. Exported for testing. */
+export function withWindow(
+  window: "current" | "prior",
+  onProgress?: (p: RefreshProgress) => void,
+): ((p: Omit<RefreshProgress, "window">) => void) | undefined {
+  if (!onProgress) return undefined;
+  return (p) => onProgress({ ...p, window });
 }
 
 export interface DetailOptions extends LeaderboardOptions {
@@ -47,6 +58,8 @@ async function loadOrFetch(
   scope: Scope,
   window: TimeWindow,
   refresh: boolean,
+  signal?: AbortSignal,
+  onProgress?: (p: Omit<RefreshProgress, "window">) => void,
 ): Promise<{ outcome: FetchOutcome; fromCache: boolean }> {
   const key = cacheKey(scope, window);
   if (!refresh) {
@@ -60,6 +73,8 @@ async function loadOrFetch(
     users: config.users,
     concurrency: config.concurrency,
     linear: resolveLinear(env),
+    signal,
+    onProgress,
   });
   await writeCache(key, outcome);
   return { outcome, fromCache: false };
@@ -124,7 +139,42 @@ async function buildLeaderboard(
 
 /** Orchestrator: fetch (cached) -> compute current + prior snapshots -> build response with trend. */
 export async function getLeaderboard(opts: LeaderboardOptions): Promise<LeaderboardResponse> {
-  return (await buildLeaderboard(opts)).response;
+  const env = getEnv();
+  const scope = resolveScope();
+  const pw = priorWindow(opts.window);
+
+  const current = await loadOrFetch(env, scope, opts.window, opts.refresh, opts.signal, withWindow("current", opts.onProgress));
+  const warnings = [...current.outcome.warnings];
+
+  let priorSnapshot: Snapshot | null = null;
+  if (opts.trend) {
+    try {
+      const prior = await loadOrFetch(env, scope, pw, false, opts.signal, withWindow("prior", opts.onProgress));
+      priorSnapshot = snapshotFor(prior.outcome, pw);
+    } catch (err) {
+      if ((err as Error).name === "AbortError") throw err;
+      warnings.push({
+        code: "trend_unavailable",
+        message: `Prior-window data unavailable, deltas hidden: ${(err as Error).message}`,
+      });
+    }
+  }
+
+  opts.onProgress?.({ phase: "compute", label: "Computing metrics", done: 0, total: 0, window: "current" });
+
+  const ctx: BuildContext = {
+    scope,
+    window: opts.window,
+    priorWindow: priorSnapshot ? pw : null,
+    baseUrl: env.baseUrl,
+    currentUser: config.currentUser,
+    generatedAt: new Date().toISOString(),
+    fromCache: current.fromCache,
+    identities: current.outcome.identities,
+    warnings,
+  };
+
+  return buildResponse(snapshotFor(current.outcome, opts.window), priorSnapshot, ctx);
 }
 
 /**
