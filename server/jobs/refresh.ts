@@ -86,7 +86,14 @@ export function getRefresh(id: string): RefreshJob | null {
 
 export function cancelRefresh(id: string): RefreshJob | null {
   const job = getRefresh(id);
-  if (job && job.status === "running") job.controller.abort();
+  if (job && job.status === "running") {
+    job.controller.abort();
+    // Flip to a terminal state synchronously. The run's rejection handler also sets
+    // "cancelled" once the AbortError unwinds, but doing it here closes the race where a
+    // re-click between abort() and that rejection would see status "running" and re-attach
+    // the aborting job; it also makes the cancel response report "cancelled" immediately.
+    job.status = "cancelled";
+  }
   return job;
 }
 
