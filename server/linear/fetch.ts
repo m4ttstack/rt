@@ -53,6 +53,7 @@ export async function fetchLinearIssues(
     });
     return nodes.map((n) => mapIssue(n, userByEmail));
   } catch (err) {
+    if ((err as Error).name === "AbortError") throw err;
     warnings.push({
       code: "linear_fetch_failed",
       message: `Linear issues unavailable, "Issues done" will be zero: ${(err as Error).message}`,
