@@ -16,13 +16,20 @@ interface RestPage<T> {
   nextPage: number | null;
 }
 
-async function restGet<T>(env: Env, path: string, query: QueryParams): Promise<RestPage<T>> {
+async function restGet<T>(
+  env: Env,
+  path: string,
+  query: QueryParams,
+  signal?: AbortSignal,
+): Promise<RestPage<T>> {
   let res: Response;
   try {
     res = await fetch(buildUrl(env, path, query), {
       headers: { "PRIVATE-TOKEN": env.token },
+      signal,
     });
   } catch (err) {
+    if ((err as Error).name === "AbortError") throw err;
     throw new GitLabApiError(`REST request failed: ${(err as Error).message}`);
   }
   if (!res.ok) {
@@ -37,8 +44,13 @@ async function restGet<T>(env: Env, path: string, query: QueryParams): Promise<R
 }
 
 /** Single-page GET (caller doesn't care about pagination). */
-export async function restGetOne<T>(env: Env, path: string, query: QueryParams = {}): Promise<T> {
-  return (await restGet<T>(env, path, query)).body;
+export async function restGetOne<T>(
+  env: Env,
+  path: string,
+  query: QueryParams = {},
+  signal?: AbortSignal,
+): Promise<T> {
+  return (await restGet<T>(env, path, query, signal)).body;
 }
 
 /** GET a list endpoint across all pages (per_page=100), bounded by maxPages. */
@@ -47,15 +59,12 @@ export async function restGetAll<T>(
   path: string,
   query: QueryParams = {},
   maxPages = 50,
+  signal?: AbortSignal,
 ): Promise<T[]> {
   const all: T[] = [];
   let page = 1;
   for (let i = 0; i < maxPages; i++) {
-    const { body, nextPage } = await restGet<T[]>(env, path, {
-      per_page: 100,
-      page,
-      ...query,
-    });
+    const { body, nextPage } = await restGet<T[]>(env, path, { per_page: 100, page, ...query }, signal);
     all.push(...body);
     if (!nextPage) break;
     page = nextPage;

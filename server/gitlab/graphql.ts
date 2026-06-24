@@ -12,6 +12,7 @@ export async function gqlRequest<T>(
   env: Env,
   query: string,
   variables: Record<string, unknown>,
+  signal?: AbortSignal,
 ): Promise<T> {
   let res: Response;
   try {
@@ -22,8 +23,10 @@ export async function gqlRequest<T>(
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ query, variables }),
+      signal,
     });
   } catch (err) {
+    if ((err as Error).name === "AbortError") throw err;
     throw new GitLabApiError(`GraphQL request failed: ${(err as Error).message}`);
   }
 

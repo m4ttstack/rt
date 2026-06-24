@@ -22,6 +22,7 @@ export async function fetchLinearIssues(
   linear: LinearOptions | null,
   window: TimeWindow,
   warnings: LeaderboardWarning[],
+  signal?: AbortSignal,
 ): Promise<NormLinearIssue[]> {
   if (!linear) return [];
 
@@ -46,6 +47,7 @@ export async function fetchLinearIssues(
         linear.apiKey,
         COMPLETED_ISSUES_QUERY,
         { after, filter },
+        signal,
       );
       return data.issues;
     });
