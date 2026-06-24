@@ -1,5 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { app } from "../server/index.js";
+import { app } from "../server/app.js";
 import { startRefresh, __resetJobs } from "../server/jobs/refresh.js";
 import type { TimeWindow } from "../shared/types.js";
 
