@@ -157,3 +157,26 @@ export interface LeaderboardResponse {
   warnings: LeaderboardWarning[];
 }
 
+/** Live progress for a background refresh run. `total: 0` => indeterminate phase. */
+export interface RefreshProgress {
+  phase: "users" | "mrs-list" | "mrs-detail" | "pipelines" | "pushes" | "linear" | "compute";
+  label: string;
+  done: number;
+  total: number;
+  /** Trend runs the whole pipeline twice; which window this progress belongs to. */
+  window: "current" | "prior";
+}
+
+export type RefreshJobStatus = "running" | "done" | "error" | "cancelled";
+
+/** Response of POST /api/refresh and GET /api/refresh/:id. */
+export interface RefreshStatusResponse {
+  jobId: string;
+  status: RefreshJobStatus;
+  progress: RefreshProgress | null;
+  /** Present only when status === "error". */
+  error?: string;
+  /** Present only when status === "done". */
+  result?: LeaderboardResponse;
+}
+

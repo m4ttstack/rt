@@ -35,7 +35,18 @@ export async function mapLimit<T, R>(
   items: readonly T[],
   limit: number,
   fn: (item: T, index: number) => Promise<R>,
+  onItemDone?: (completed: number, total: number) => void,
 ): Promise<R[]> {
   const schedule = pLimit(limit);
-  return Promise.all(items.map((item, i) => schedule(() => fn(item, i))));
+  const total = items.length;
+  let completed = 0;
+  return Promise.all(
+    items.map((item, i) =>
+      schedule(() => fn(item, i)).then((result) => {
+        completed += 1;
+        onItemDone?.(completed, total);
+        return result;
+      }),
+    ),
+  );
 }
