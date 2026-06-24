@@ -66,6 +66,7 @@ export default function App() {
       .catch((e: unknown) => { if (!cancelled) setError((e as Error).message); })
       .finally(() => { if (!cancelled) setInitialLoading(false); });
     return () => { cancelled = true; };
+    // `data` is read only as a guard for the loading spinner; adding it would re-fetch on every data swap.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rangeState, trend]);
 
@@ -110,11 +111,18 @@ export default function App() {
 
     timer = setTimeout(tick, POLL_MS);
     return () => { stopped = true; clearTimeout(timer); };
+    // rangeState/trend are read via closure inside tick; adding them would restart polling on every change.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
   const onCancel = useCallback(() => {
-    if (jobId) void cancelRefresh(jobId);
+    if (!jobId) return;
+    void cancelRefresh(jobId);
+    // Clear local state immediately so the bar disappears without waiting for the next poll.
+    // Nulling jobId triggers the poll effect's cleanup (stopped=true + clearTimeout), so any
+    // trailing poll response is discarded; the fire-and-forget POST still aborts server-side.
+    setJobId(null);
+    setProgress(null);
   }, [jobId]);
 
   const refreshing = jobId !== null;

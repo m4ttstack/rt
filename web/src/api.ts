@@ -55,5 +55,10 @@ export function pollRefresh(id: string): Promise<RefreshStatusResponse> {
 }
 
 export async function cancelRefresh(id: string): Promise<void> {
-  await fetch(`/api/refresh/${id}/cancel`, { method: "POST" });
+  // Best-effort: a failed cancel shouldn't surface to the user or float an unhandled rejection.
+  try {
+    await fetch(`/api/refresh/${id}/cancel`, { method: "POST" });
+  } catch (e) {
+    console.warn("cancelRefresh failed", e);
+  }
 }

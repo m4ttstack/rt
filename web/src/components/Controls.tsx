@@ -76,7 +76,7 @@ export function Controls(props: Props) {
 
         <Button variant="outline" size="sm" onClick={onRefresh} disabled={refreshing} className="ml-auto">
           <RefreshCw className={refreshing ? "animate-spin" : ""} />
-          ↻ Refresh
+          Refresh
         </Button>
       </div>
 
