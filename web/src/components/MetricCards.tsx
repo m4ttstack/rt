@@ -1,5 +1,5 @@
 import type { LeaderboardResponse, UserRow } from "../../../shared/types";
-import { COLUMNS, type Column, GROUP_META, deltaValue, formatValue, sortValue } from "../columns";
+import { COLUMNS, type Column, GROUP_META, deltaValue, formatValue, rankValue, sortValue } from "../columns";
 import { navigateToUser } from "../hooks/useHashRoute";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { DeltaBadge } from "./DeltaBadge";
@@ -34,19 +34,17 @@ export function MetricCards({ data, trend }: Props) {
 }
 
 function Ranking({ col, users, trend }: { col: Column; users: UserRow[]; trend: boolean }) {
+  // Order and position come from the server-computed rank (ties share a rank),
+  // so the cards never disagree with the table or the detail rail.
   const ranked = [...users]
     .filter((u) => u.resolved && sortValue(u.metrics, col) !== null)
-    .sort((a, b) => {
-      const va = sortValue(a.metrics, col)!;
-      const vb = sortValue(b.metrics, col)!;
-      return col.better === "asc" ? va - vb : vb - va;
-    });
+    .sort((a, b) => (rankValue(a.metrics, col) ?? 99) - (rankValue(b.metrics, col) ?? 99));
 
   if (ranked.length === 0) return <p className="text-xs text-muted-foreground">No data.</p>;
 
   return (
     <ol className="space-y-0.5">
-      {ranked.map((u, i) => {
+      {ranked.map((u) => {
         const d = trend ? deltaValue(u.metrics, col) : null;
         return (
           <li key={u.username}>
@@ -58,7 +56,7 @@ function Ranking({ col, users, trend }: { col: Column; users: UserRow[]; trend: 
               title={`${u.name ?? u.username} · ${col.label} details`}
             >
               <span className="flex items-center gap-2">
-                <span className="w-4 text-right text-xs text-muted-foreground">{i + 1}</span>
+                <span className="w-4 text-right text-xs text-muted-foreground">{rankValue(u.metrics, col) ?? "—"}</span>
                 <span className={u.isCurrentUser ? "font-semibold" : ""}>{u.name ?? u.username}</span>
               </span>
               <span className="flex items-center gap-2 font-mono tabular-nums">
