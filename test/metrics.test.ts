@@ -65,11 +65,9 @@ describe("computeSnapshot", () => {
   it("volume metrics (4.1, 4.2)", () => {
     expect(alice.additions).toBe(105);
     expect(alice.deletions).toBe(22);
-    expect(alice.netLines).toBe(83);
     expect(alice.mrsMerged).toBe(2);
     expect(bob.additions).toBe(70);
     expect(bob.deletions).toBe(150);
-    expect(bob.netLines).toBe(-80);
     expect(bob.mrsMerged).toBe(2);
   });
 

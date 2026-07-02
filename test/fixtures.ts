@@ -24,12 +24,16 @@ const mr = (m: Partial<NormMr> & Pick<NormMr, "iid" | "authorUsername" | "title"
   createdAt: "2026-05-01T00:00:00.000Z",
   preparedAt: null,
   mergedAt: null,
+  sourceBranch: null,
+  description: null,
   labels: [],
   additions: 0,
   deletions: 0,
   fileCount: 1,
   approvedByUsernames: [],
   notes: [],
+  hasTeamTicket: true,
+  diffStats: [],
   ...m,
 });
 
@@ -94,27 +98,24 @@ const MR4 = mr({
 const li = (
   identifier: string,
   assignedUser: string | null,
-  completedAt: string | null,
 ): NormLinearIssue => ({
   id: identifier,
   identifier,
   title: `Issue ${identifier}`,
   url: `https://linear.app/acme/issue/${identifier}`,
   assignedUser,
-  createdAt: "2026-05-01T00:00:00.000Z",
-  completedAt,
-  teamKey: "ENG",
+  linkedMrs: [],
+  stateType: "completed",
+  stateName: "Done",
 });
 
 export const FETCH: FetchResult = {
   mrs: [MR1, MR2, MR3, MR4],
   linearIssues: [
-    li("ENG-1", "alice", "2026-05-10T12:00:00.000Z"),
-    li("ENG-2", "alice", "2026-05-20T12:00:00.000Z"),
-    li("ENG-3", "bob", "2026-05-15T12:00:00.000Z"),
-    li("ENG-4", "alice", "2026-06-10T12:00:00.000Z"), // out of window ... ignored
-    li("ENG-5", null, "2026-05-12T12:00:00.000Z"), // unmapped assignee ... counts for no one
-    li("ENG-6", "bob", null), // not completed ... ignored
+    li("ENG-1", "alice"),
+    li("ENG-2", "alice"),
+    li("ENG-3", "bob"),
+    li("ENG-5", null), // unlinked ticket ... counts for no one
   ],
   pipelines: [
     { projectPath: "org/app", username: "alice", status: "success", createdAt: "2026-05-10T01:00:00.000Z" },

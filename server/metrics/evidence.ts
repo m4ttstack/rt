@@ -7,6 +7,7 @@
 import { inWindow } from "../util/window.js";
 import { buildRevertedTitleSet, isReverted } from "./reverts.js";
 import { isBotUsername, mean, percentile, round, streaks } from "./stats.js";
+import { buildIgnoredMrSet, minimatch } from "./snapshot.js";
 import type { FetchResult, NormMr } from "../pipeline/model.js";
 import type { MetricEvidence, MetricKey, TimeWindow } from "../../shared/types.js";
 
@@ -14,7 +15,11 @@ export interface EvidenceContext {
   window: TimeWindow;
   baseUrl: string;
   sizeBand: { tooSmall: number; tooLarge: number };
-  linearMaxIssueAgeDays?: number;
+  linearTeam?: string;
+  doneStates?: string[];
+  extraBotPatterns?: string[];
+  excludeFilePatterns?: string[];
+  ignoredMrs?: string[];
 }
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -31,11 +36,27 @@ export function buildUserEvidence(
   u: string,
   ctx: EvidenceContext,
 ): Partial<Record<MetricKey, MetricEvidence>> {
-  const { window: w, baseUrl, sizeBand } = ctx;
-  const { mrs, pipelines, pushEvents } = fetched;
+  const { window: w, baseUrl, sizeBand, linearTeam, doneStates, extraBotPatterns, excludeFilePatterns, ignoredMrs } = ctx;
+  const isIgnored = buildIgnoredMrSet(ignoredMrs);
+  // Highest iid first so every MR-keyed table renders newest work at the top.
+  const mrs = fetched.mrs.filter((m) => !isIgnored(m)).sort((a, b) => b.iid - a.iid);
+  const { pipelines, pushEvents } = fetched;
   const linearIssues = fetched.linearIssues ?? [];
   const revertedTitles = buildRevertedTitleSet(mrs);
   const mrUrl = (m: NormMr) => `${baseUrl}/${m.projectPath}/-/merge_requests/${m.iid}`;
+
+  const filteredLines = (m: NormMr): { additions: number; deletions: number } => {
+    if (!excludeFilePatterns || excludeFilePatterns.length === 0 || m.diffStats.length === 0) {
+      return { additions: m.additions, deletions: m.deletions };
+    }
+    let add = 0, del = 0;
+    for (const f of m.diffStats) {
+      if (excludeFilePatterns.some((p) => minimatch(f.path, p))) continue;
+      add += f.additions;
+      del += f.deletions;
+    }
+    return { additions: add, deletions: del };
+  };
 
   const out: Partial<Record<MetricKey, MetricEvidence>> = {};
 
@@ -44,28 +65,37 @@ export function buildUserEvidence(
     (m) => m.authorUsername === u && m.state === "merged" && inWindow(m.mergedAt, w),
   );
 
-  // additions / deletions / netLines / mrsMerged all share the merged-MR list.
-  const mergedRows = authoredMerged.map((m) => ({
-    cells: [`!${m.iid}`, m.title, `+${m.additions}`, `−${m.deletions}`, day(m.mergedAt)],
-    href: mrUrl(m),
-  }));
+  // additions / deletions / mrsMerged all share the merged-MR list.
+  const mergedRows = authoredMerged.map((m) => {
+    const f = filteredLines(m);
+    return {
+      cells: [`!${m.iid}`, m.title, `+${f.additions}`, `−${f.deletions}`, day(m.mergedAt)],
+      href: mrUrl(m),
+    };
+  });
   const mergedCols = ["MR", "Title", "Added", "Deleted", "Merged"];
-  const totalAdd = authoredMerged.reduce((s, m) => s + m.additions, 0);
-  const totalDel = authoredMerged.reduce((s, m) => s + m.deletions, 0);
+  const totalAdd = authoredMerged.reduce((s, m) => s + filteredLines(m).additions, 0);
+  const totalDel = authoredMerged.reduce((s, m) => s + filteredLines(m).deletions, 0);
   out.additions = { columns: mergedCols, rows: mergedRows, summary: `${totalAdd} lines added across ${authoredMerged.length} merged MRs` };
   out.deletions = { columns: mergedCols, rows: mergedRows, summary: `${totalDel} lines deleted across ${authoredMerged.length} merged MRs` };
-  out.netLines = { columns: mergedCols, rows: mergedRows, summary: `net ${totalAdd - totalDel} lines across ${authoredMerged.length} merged MRs` };
   out.mrsMerged = { columns: mergedCols, rows: mergedRows, summary: `${authoredMerged.length} MRs merged` };
 
   // sizeHealthPct: each merged MR's changed lines + whether it's in the band.
-  const healthy = (m: NormMr) => changed(m) >= sizeBand.tooSmall && changed(m) <= sizeBand.tooLarge;
+  const healthy = (m: NormMr) => {
+    const f = filteredLines(m);
+    const c = f.additions + f.deletions;
+    return c >= sizeBand.tooSmall && c <= sizeBand.tooLarge;
+  };
   out.sizeHealthPct = {
     columns: ["MR", "Title", "Changed", "In band?"],
-    rows: authoredMerged.map((m) => ({
-      cells: [`!${m.iid}`, m.title, String(changed(m)), healthy(m) ? "✓" : "✗"],
-      href: mrUrl(m),
-      muted: !healthy(m),
-    })),
+    rows: authoredMerged.map((m) => {
+      const f = filteredLines(m);
+      return {
+        cells: [`!${m.iid}`, m.title, String(f.additions + f.deletions), healthy(m) ? "✓" : "✗"],
+        href: mrUrl(m),
+        muted: !healthy(m),
+      };
+    }),
     summary: `${authoredMerged.filter(healthy).length} of ${authoredMerged.length} MRs in the ${sizeBand.tooSmall}–${sizeBand.tooLarge} line band`,
   };
 
@@ -127,7 +157,7 @@ export function buildUserEvidence(
   };
   out.responseLatencyHours = {
     columns: ["MR", "Title", "Response"],
-    rows: sortByLastHours(responseRows),
+    rows: responseRows,
     summary: distSummary(responseSamples, "first response"),
   };
 
@@ -137,7 +167,7 @@ export function buildUserEvidence(
   const waitSamples: number[] = [];
   for (const m of authoredCohort) {
     const firstTouch = m.notes
-      .filter((n) => !n.system && n.authorUsername !== u && !isBotUsername(n.authorUsername))
+      .filter((n) => !n.system && n.authorUsername !== u && !isBotUsername(n.authorUsername, extraBotPatterns))
       .map((n) => Date.parse(n.createdAt))
       .sort((a, b) => a - b)[0];
     if (firstTouch === undefined) continue;
@@ -150,7 +180,7 @@ export function buildUserEvidence(
   }
   out.reviewLatencyHours = {
     columns: ["MR", "Title", "Wait"],
-    rows: sortByLastHours(waitRows),
+    rows: waitRows,
     summary: distSummary(waitSamples, "first review"),
   };
 
@@ -159,9 +189,9 @@ export function buildUserEvidence(
   for (const m of authoredMerged) {
     const seen = new Set<string>();
     for (const n of m.notes) {
-      if (!n.system && n.authorUsername && n.authorUsername !== u && !isBotUsername(n.authorUsername)) seen.add(n.authorUsername);
+      if (!n.system && n.authorUsername && n.authorUsername !== u && !isBotUsername(n.authorUsername, extraBotPatterns)) seen.add(n.authorUsername);
     }
-    if (fetched.approvalsAvailable) for (const a of m.approvedByUsernames) if (a !== u && !isBotUsername(a)) seen.add(a);
+    if (fetched.approvalsAvailable) for (const a of m.approvedByUsernames) if (a !== u && !isBotUsername(a, extraBotPatterns)) seen.add(a);
     for (const r of seen) reviewers.set(r, (reviewers.get(r) ?? 0) + 1);
   }
   const given = reviewedRows.length;
@@ -169,7 +199,7 @@ export function buildUserEvidence(
   out.reciprocity = {
     columns: ["Reviewer", "Your MRs they reviewed"],
     rows: [...reviewers.entries()].sort((a, b) => b[1] - a[1]).map(([name, n]) => ({ cells: [name, String(n)] })),
-    summary: `gave ${given} reviews, received from ${received} reviewer(s) → ratio ${received === 0 ? given : round(given / received, 2)}`,
+    summary: `gave ${given} reviews, received from ${received} reviewer(s) ... ratio ${received === 0 ? given : round(given / received, 2)}`,
   };
 
   // --- Pipelines triggered ---
@@ -190,7 +220,7 @@ export function buildUserEvidence(
   }
   out.codingDays = {
     columns: ["Date", "Pushes"],
-    rows: [...pushDays.entries()].sort().map(([d, n]) => ({ cells: [d, String(n)] })),
+    rows: [...pushDays.entries()].sort().reverse().map(([d, n]) => ({ cells: [d, String(n)] })),
     summary: `${pushDays.size} distinct days with a push`,
   };
 
@@ -200,28 +230,43 @@ export function buildUserEvidence(
   const ms = streaks(authoredMerged.map((m) => m.mergedAt ?? "").filter(Boolean));
   const mergeDayEvidence = {
     columns: ["Date", "MRs merged"],
-    rows: [...mergeByDay.entries()].sort().map(([d, n]) => ({ cells: [d, String(n)] })),
+    rows: [...mergeByDay.entries()].sort().reverse().map(([d, n]) => ({ cells: [d, String(n)] })),
     summary: `longest run ${ms.longest} day(s), current ${ms.current}, across ${mergeByDay.size} merge day(s)`,
   };
   out.longestStreak = mergeDayEvidence;
   out.currentStreak = mergeDayEvidence;
 
-  // --- Issues done (Linear): completed in window, stale backlog shown but muted ---
-  const maxAge = ctx.linearMaxIssueAgeDays;
-  const completed = linearIssues
-    .filter((i) => i.assignedUser === u && i.completedAt !== null && inWindow(i.completedAt, w))
-    .sort((a, b) => Date.parse(b.completedAt!) - Date.parse(a.completedAt!));
-  let stale = 0;
-  const issueRows = completed.map((i) => {
-    const ageDays = Math.round((Date.parse(i.completedAt!) - Date.parse(i.createdAt)) / DAY_MS);
-    const isStale = !!maxAge && maxAge > 0 && ageDays > maxAge;
-    if (isStale) stale++;
-    return { cells: [i.identifier, i.title, i.teamKey, day(i.completedAt), `${ageDays}d`], href: i.url, muted: isStale };
-  });
+  // --- Issues done (Linear): tickets linked from merged MRs, gated by team + state ---
+  // Gated-out issues (wrong team, not in a done state) are dropped from the rows
+  // entirely — only their counts surface in the summary.
+  // Highest ticket number first, with numeric collation so ACME-2007 outranks ACME-938
+  // (plain string compare would put 9xx after 2xxx).
+  const allUserIssues = linearIssues
+    .filter((i) => i.assignedUser === u)
+    .sort((a, b) => b.identifier.localeCompare(a.identifier, undefined, { numeric: true }));
+  let teamExcluded = 0;
+  let stateExcluded = 0;
+  const issueRows: { cells: string[]; href: string }[] = [];
+  for (const i of allUserIssues) {
+    const teamMatch = !linearTeam || i.identifier.toUpperCase().startsWith(linearTeam.toUpperCase() + "-");
+    const stateMatch = i.stateType === null ||
+      (doneStates && doneStates.length > 0 ? i.stateName !== null && doneStates.includes(i.stateName) : i.stateType === "completed" || i.stateType === "canceled");
+    if (!teamMatch) { teamExcluded++; continue; }
+    if (!stateMatch) { stateExcluded++; continue; }
+    const mrLinks = i.linkedMrs.map((m) => `!${m.iid}`).join(", ");
+    const stateLabel = i.stateName ?? i.stateType ?? "—";
+    issueRows.push({
+      cells: [i.identifier, i.title, stateLabel, mrLinks || "—"],
+      href: i.url,
+    });
+  }
+  const parts: string[] = [`${issueRows.length} counted`];
+  if (teamExcluded > 0) parts.push(`${teamExcluded} excluded by team`);
+  if (stateExcluded > 0) parts.push(`${stateExcluded} excluded by state`);
   out.issuesCompleted = {
-    columns: ["Issue", "Title", "Team", "Completed", "Age"],
+    columns: ["Issue", "Title", "State", "MR(s)"],
     rows: issueRows,
-    summary: `${completed.length - stale} counted${stale > 0 ? ` · ${stale} excluded as stale (>${maxAge}d old)` : ""}`,
+    summary: parts.join(" · "),
   };
 
   // Bound any pathologically large evidence list so a response stays sane.
@@ -235,11 +280,6 @@ export function buildUserEvidence(
   }
 
   return out;
-}
-
-/** Latency rows sort worst-first so the tail driving p90 is visible up top. */
-function sortByLastHours(rows: { cells: string[]; href: string }[]): { cells: string[]; href: string }[] {
-  return [...rows].sort((a, b) => parseFloat(b.cells[2]!) - parseFloat(a.cells[2]!));
 }
 
 function distSummary(samples: number[], label: string): string {

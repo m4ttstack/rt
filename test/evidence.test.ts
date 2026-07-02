@@ -3,17 +3,16 @@ import { describe, expect, it } from "vitest";
 import { buildUserEvidence, type EvidenceContext } from "../server/metrics/evidence.js";
 import { computeSnapshot } from "../server/metrics/snapshot.js";
 import { FETCH, USERS, WINDOW } from "./fixtures.js";
-import type { NormLinearIssue } from "../server/pipeline/model.js";
+import type { FetchResult, NormLinearIssue } from "../server/pipeline/model.js";
 
 const SIZE_BAND = { tooSmall: 10, tooLarge: 400 };
 const CTX: EvidenceContext = {
   window: WINDOW,
   baseUrl: "https://gitlab.com",
   sizeBand: SIZE_BAND,
-  linearMaxIssueAgeDays: 90,
 };
 
-const snap = computeSnapshot(FETCH, { window: WINDOW, users: USERS, sizeBand: SIZE_BAND, linearMaxIssueAgeDays: 90 });
+const snap = computeSnapshot(FETCH, { window: WINDOW, users: USERS, sizeBand: SIZE_BAND });
 const alice = snap.byUser.alice!;
 const ev = buildUserEvidence(FETCH, "alice", CTX);
 
@@ -21,7 +20,6 @@ describe("buildUserEvidence row counts match the snapshot", () => {
   it("merged-MR-backed counts line up", () => {
     expect(ev.mrsMerged!.rows.length).toBe(alice.mrsMerged);
     expect(ev.additions!.rows.length).toBe(alice.mrsMerged);
-    expect(ev.netLines!.rows.length).toBe(alice.mrsMerged);
   });
 
   it("reviewed / pipelines / coding-days counts line up", () => {
@@ -30,9 +28,8 @@ describe("buildUserEvidence row counts match the snapshot", () => {
     expect(ev.codingDays!.rows.length).toBe(alice.codingDays);
   });
 
-  it("issues done: non-muted rows equal the counted value", () => {
-    const counted = ev.issuesCompleted!.rows.filter((r) => !r.muted).length;
-    expect(counted).toBe(alice.issuesCompleted);
+  it("issues done: row count equals the counted value", () => {
+    expect(ev.issuesCompleted!.rows.length).toBe(alice.issuesCompleted);
   });
 
   it("reverted rows that are NOT muted equal revertedCount", () => {
@@ -62,23 +59,63 @@ describe("buildUserEvidence links and flags", () => {
   });
 });
 
-describe("buildUserEvidence stale-issue muting", () => {
-  const stale: NormLinearIssue = {
-    id: "OLD-1",
-    identifier: "OLD-1",
-    title: "Ancient backlog",
-    url: "https://linear.app/acme/issue/OLD-1",
+describe("issuesCompleted drops gated-out issues from the rows", () => {
+  const issue = (identifier: string, over: Partial<NormLinearIssue> = {}): NormLinearIssue => ({
+    id: identifier,
+    identifier,
+    title: `Issue ${identifier}`,
+    url: `https://linear.app/acme/issue/${identifier}`,
     assignedUser: "alice",
-    createdAt: "2025-01-01T00:00:00.000Z",
-    completedAt: "2026-05-15T00:00:00.000Z",
-    teamKey: "ENG",
+    linkedMrs: [],
+    stateType: "completed",
+    stateName: "Done",
+    ...over,
+  });
+  const fetchWithNoise: FetchResult = {
+    ...FETCH,
+    linearIssues: [
+      ...(FETCH.linearIssues ?? []),
+      issue("PLA-9"), // wrong team — mentioned in prose of one of alice's MRs
+      issue("ENG-9", { stateType: "started", stateName: "In Progress" }),
+    ],
   };
-  const fetched = { ...FETCH, linearIssues: [...FETCH.linearIssues, stale] };
-  const e = buildUserEvidence(fetched, "alice", CTX);
+  const gated = buildUserEvidence(fetchWithNoise, "alice", { ...CTX, linearTeam: "ENG" });
 
-  it("shows the stale issue but mutes it and notes the exclusion", () => {
-    const row = e.issuesCompleted!.rows.find((r) => r.cells[0] === "OLD-1");
-    expect(row?.muted).toBe(true);
-    expect(e.issuesCompleted!.summary).toMatch(/excluded as stale/);
+  it("omits issues excluded by team or state", () => {
+    const ids = gated.issuesCompleted!.rows.map((r) => r.cells[0]);
+    expect(ids).toEqual(["ENG-2", "ENG-1"]);
+  });
+
+  it("still tallies the exclusions in the summary", () => {
+    expect(gated.issuesCompleted!.summary).toBe("2 counted · 1 excluded by team · 1 excluded by state");
+  });
+
+  it("sorts by ticket number descending, not lexicographically", () => {
+    const withHighNumber: FetchResult = {
+      ...FETCH,
+      linearIssues: [...(FETCH.linearIssues ?? []), issue("ENG-10")],
+    };
+    const evNum = buildUserEvidence(withHighNumber, "alice", CTX);
+    const ids = evNum.issuesCompleted!.rows.map((r) => r.cells[0]);
+    expect(ids).toEqual(["ENG-10", "ENG-2", "ENG-1"]);
   });
 });
+
+describe("evidence row ordering", () => {
+  it("MR tables sort by MR number, highest first", () => {
+    expect(ev.mrsMerged!.rows.map((r) => r.cells[0])).toEqual(["!2", "!1"]);
+    expect(ev.sizeHealthPct!.rows.map((r) => r.cells[0])).toEqual(["!2", "!1"]);
+    expect(ev.revertedCount!.rows.map((r) => r.cells[0])).toEqual(["!2", "!1"]);
+  });
+
+  it("date tables sort newest day first", () => {
+    expect(ev.codingDays!.rows.map((r) => r.cells[0])).toEqual([
+      "2026-05-20",
+      "2026-05-10",
+      "2026-05-09",
+      "2026-05-08",
+    ]);
+    expect(ev.longestStreak!.rows.map((r) => r.cells[0])).toEqual(["2026-05-11", "2026-05-10"]);
+  });
+});
+

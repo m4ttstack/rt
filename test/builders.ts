@@ -12,7 +12,6 @@ const dv = (p50: number | null): DistributionValue => ({ p50, p90: p50, deltaP50
 export interface MetricInput {
   additions?: number;
   deletions?: number;
-  netLines?: number;
   mrsMerged?: number;
   mrsReviewed?: number;
   pipelines?: number;
@@ -33,7 +32,6 @@ export function makeMetrics(o: MetricInput = {}): UserMetrics {
   return {
     additions: mv(o.additions ?? 0),
     deletions: mv(o.deletions ?? 0),
-    netLines: mv(o.netLines ?? 0),
     mrsMerged: mv(o.mrsMerged ?? 0),
     mrsReviewed: mv(o.mrsReviewed ?? 0),
     pipelines: mv(o.pipelines ?? 0),

@@ -3,8 +3,9 @@ import { mapLimit } from "../util/concurrency.js";
 import { collectConnection, gqlRequest } from "../gitlab/graphql.js";
 import { GitLabApiError } from "../gitlab/errors.js";
 import { applyMrDetail, mapEvent, mapMrListNode, mapPipeline } from "../gitlab/map.js";
+import { getCachedMrKeys, getMrByKey, putMrDetails, getCachedMrList, putMrListNodes, getLastListScan, setLastListScan } from "../cache/mr-store.js";
 import { revertTarget } from "../metrics/reverts.js";
-import { fetchLinearIssues, type LinearOptions } from "../linear/fetch.js";
+import { resolveLinearTickets } from "../linear/fetch.js";
 import { GROUP_MRS_QUERY, GROUP_PROJECTS_QUERY, MR_DETAIL_QUERY, PROJECT_MRS_QUERY } from "../gitlab/queries.js";
 import { encodePath, restGetAll, restGetOne } from "../gitlab/rest.js";
 import type { RawEvent, RawMrConnection, RawMrDetail, RawMrListNode, RawPipeline, RawUser } from "../gitlab/raw-types.js";
@@ -18,8 +19,6 @@ export interface FetchOptions {
   window: TimeWindow;
   users: readonly string[];
   concurrency: number;
-  /** Linear source config. null/absent = skip Linear (the "Issues done" metric stays zero). */
-  linear?: LinearOptions | null;
   signal?: AbortSignal;
   onProgress?: (p: Omit<RefreshProgress, "window">) => void;
 }
@@ -55,9 +54,14 @@ export async function fetchAll(opts: FetchOptions): Promise<FetchOutcome> {
   signal?.throwIfAborted();
   const pushEvents = await fetchPushEvents(env, identities, projectIds, resolvedUsers, window, concurrency, warnings, signal, report);
 
+  // hasTeamTicket is set to true for all MRs here; the snapshot layer recomputes it
+  // from settings so a settings change doesn't require a re-fetch.
+  for (const mr of mrs) mr.hasTeamTicket = true;
+
   signal?.throwIfAborted();
-  report({ phase: "linear", label: "Fetching Linear issues", done: 0, total: 0 });
-  const linearIssues = await fetchLinearIssues(opts.linear ?? null, window, warnings, signal);
+  report({ phase: "linear", label: "Verifying Linear tickets", done: 0, total: 0 });
+  const allMerged = mrs.filter((m) => m.state === "merged");
+  const linearIssues = await resolveLinearTickets(env.linearApiKey, allMerged, warnings, signal, report);
 
   return {
     result: { mrs, pipelines, pushEvents, linearIssues, approvalsAvailable: true },
@@ -111,19 +115,29 @@ async function fetchMergeRequests(
   report: (p: Omit<RefreshProgress, "window">) => void = () => {},
 ): Promise<NormMr[]> {
   const since = new Date(window.start).getTime();
-  report({ phase: "mrs-list", label: "Listing merge requests", done: 0, total: 0 });
 
-  // Phase 1: lightweight MR list (cheap fields only) covering the window.
-  const light: RawMrListNode[] = [];
+  // Phase 1: lightweight MR list. On first run we paginate everything. On subsequent
+  // runs we fetch only MRs updated since the last scan and merge into the cache.
+  const scopeKey = scope.type === "group" ? `g:${scope.groupPath}` : `p:${(scope.projectPaths ?? []).join(",")}`;
+  const lastScan = getLastListScan(scopeKey);
+  const scanStart = new Date().toISOString();
+
+  const onListPage = (found: number) => {
+    const mode = lastScan ? "incremental" : "full scan";
+    report({ phase: "mrs-list", label: `Listing merge requests (${found} found, ${mode})`, done: 0, total: 0 });
+  };
+  report({ phase: "mrs-list", label: lastScan ? "Listing merge requests (incremental)" : "Listing merge requests (full scan)", done: 0, total: 0 });
+
+  const fresh: RawMrListNode[] = [];
   if (scope.type === "group") {
     if (!scope.groupPath) throw new GitLabApiError("group scope is missing groupPath");
-    light.push(...(await listMrs(env, GROUP_MRS_QUERY, scope.groupPath, "group", since, signal)));
+    fresh.push(...(await listMrs(env, GROUP_MRS_QUERY, scope.groupPath, "group", since, signal, onListPage, lastScan)));
   } else {
     const paths = scope.projectPaths ?? [];
     if (paths.length === 0) throw new GitLabApiError("projects scope has no projectPaths configured");
     for (const path of paths) {
       try {
-        light.push(...(await listMrs(env, PROJECT_MRS_QUERY, path, "project", since, signal)));
+        fresh.push(...(await listMrs(env, PROJECT_MRS_QUERY, path, "project", since, signal, onListPage, lastScan)));
       } catch (err) {
         if ((err as Error).name === "AbortError") throw err;
         warnings.push({ code: "mr_fetch_failed", message: `MRs for ${path}: ${(err as Error).message}` });
@@ -131,21 +145,44 @@ async function fetchMergeRequests(
     }
   }
 
+  // Merge fresh results into the cached list and build the full set.
+  if (fresh.length > 0) putMrListNodes(scopeKey, fresh);
+  setLastListScan(scopeKey, scanStart);
+
+  // Build the full list from cache, applying the window filter client-side.
+  const allCached = getCachedMrList(scopeKey);
+  const light = allCached.filter((n) => new Date(n.updatedAt).getTime() >= since);
+
   // Scope the expensive detail fetch to MRs authored by the configured team. This bounds
   // cost on a busy monorepo: "reviewed" therefore means engagement on teammates' MRs.
   const userSet = new Set(users);
   const teamMrs = light.filter((n) => n.author?.username != null && userSet.has(n.author.username));
 
-  // Phase 2: per-MR detail (diffStats, notes, labels, approvedBy), fetched concurrently.
-  // A single MR's diff stats resolve well within GitLab's per-field timeout; a bulk page
-  // of 50 does not ... that was the source of the "Timeout on DiffStatsSummary" errors.
+  // Phase 2: per-MR detail (diffStats, notes, labels, approvedBy).
+  // Merged MRs are immutable, so we check the permanent MR store first and only fetch
+  // details for MRs we haven't seen before. This makes re-refreshes near-instant.
+  const teamBases = teamMrs.map(mapMrListNode);
+  const cachedKeys = await getCachedMrKeys(teamBases);
+
+  const uncached = teamBases.filter((m) => !cachedKeys.has(`${m.projectPath}:${m.iid}`));
+  const fromStore: NormMr[] = [];
+  for (const key of cachedKeys) {
+    const mr = await getMrByKey(key);
+    if (mr) fromStore.push(mr);
+  }
+
   let detailFailures = 0;
   let lastDetailError = "";
-  const total = teamMrs.length;
-  report({ phase: "mrs-detail", label: "Fetching MR details", done: 0, total });
-  const mrs = await mapLimit(teamMrs, concurrency, async (node) => {
+  const total = uncached.length;
+  report({
+    phase: "mrs-detail",
+    label: `Fetching MR details (${cachedKeys.size} cached, ${total} new)`,
+    done: 0,
+    total,
+  });
+
+  const freshlyFetched = await mapLimit(uncached, concurrency, async (base) => {
     signal?.throwIfAborted();
-    const base = mapMrListNode(node);
     try {
       const data = await gqlRequest<{ project: { mergeRequest: RawMrDetail | null } | null }>(
         env,
@@ -159,16 +196,27 @@ async function fetchMergeRequests(
       if ((err as Error).name === "AbortError") throw err;
       detailFailures++;
       lastDetailError = (err as Error).message;
-      return base; // keep the MR with light fields only rather than failing the whole run
+      return base;
     }
-  }, (done) => report({ phase: "mrs-detail", label: "Fetching MR details", done, total }));
+  }, (done) => report({
+    phase: "mrs-detail",
+    label: `Fetching MR details (${cachedKeys.size} cached, ${total} new)`,
+    done,
+    total,
+  }));
+
+  if (freshlyFetched.length > 0) {
+    await putMrDetails(freshlyFetched);
+  }
 
   if (detailFailures > 0) {
     warnings.push({
       code: "mr_detail_partial",
-      message: `Detail fetch failed for ${detailFailures}/${teamMrs.length} MRs (e.g. ${lastDetailError}); those count with zeroed diff/notes.`,
+      message: `Detail fetch failed for ${detailFailures}/${total} MRs (e.g. ${lastDetailError}); those count with zeroed diff/notes.`,
     });
   }
+
+  const mrs = [...fromStore, ...freshlyFetched];
 
   // Include revert MRs authored by ANYONE (light-only ... titles are enough for detection),
   // so reverts of the team's work are caught even when a non-team member did the revert.
@@ -191,6 +239,8 @@ async function listMrs(
   rootKey: "group" | "project",
   sinceMs: number,
   signal?: AbortSignal,
+  onPage?: (totalFound: number) => void,
+  updatedAfter?: string | null,
 ): Promise<RawMrListNode[]> {
   type MrRoot = { mergeRequests: RawMrConnection } | null;
   type MrQueryData = { group?: MrRoot; project?: MrRoot };
@@ -198,16 +248,20 @@ async function listMrs(
   const nodes: RawMrListNode[] = [];
   let after: string | null = null;
   for (let page = 0; page < 500; page++) {
-    const data: MrQueryData = await gqlRequest<MrQueryData>(env, query, { fullPath, after }, signal);
+    signal?.throwIfAborted();
+    const vars: Record<string, unknown> = { fullPath, after };
+    if (updatedAfter) vars.updatedAfter = updatedAfter;
+    const data: MrQueryData = await gqlRequest<MrQueryData>(env, query, vars, signal);
     const conn = data[rootKey]?.mergeRequests;
     if (!conn) break;
     nodes.push(...conn.nodes);
+    onPage?.(nodes.length);
 
     const oldestOnPage = conn.nodes.reduce(
       (min: number, n: RawMrListNode) => Math.min(min, new Date(n.updatedAt).getTime()),
       Number.POSITIVE_INFINITY,
     );
-    if (oldestOnPage < sinceMs) break; // everything past here is older than the window
+    if (oldestOnPage < sinceMs) break;
     if (!conn.pageInfo.hasNextPage || !conn.pageInfo.endCursor) break;
     after = conn.pageInfo.endCursor;
   }

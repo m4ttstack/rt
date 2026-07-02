@@ -26,6 +26,9 @@ export interface NormMr {
   preparedAt: string | null;
   mergedAt: string | null;
   title: string;
+  /** Branch name + description, for Linear ticket detection. */
+  sourceBranch: string | null;
+  description: string | null;
   labels: string[];
   additions: number;
   deletions: number;
@@ -33,6 +36,10 @@ export interface NormMr {
   /** Usernames who approved (may be empty on free tier / when inaccessible). */
   approvedByUsernames: string[];
   notes: NormNote[];
+  /** True when this MR references a ticket for the configured Linear team. */
+  hasTeamTicket: boolean;
+  /** Per-file diff stats for file-pattern exclusion at compute time. */
+  diffStats: { path: string; additions: number; deletions: number }[];
 }
 
 export interface NormPipeline {
@@ -48,7 +55,7 @@ export interface NormPushEvent {
   createdAt: string;
 }
 
-/** A Linear issue, keyed back to the canonical GitLab username via the email map. */
+/** A Linear issue verified to exist, linked from a merged MR. */
 export interface NormLinearIssue {
   id: string;
   /** Human-facing key, e.g. "ENG-123". */
@@ -56,13 +63,13 @@ export interface NormLinearIssue {
   title: string;
   /** Canonical Linear deep link. */
   url: string;
-  /** The configured GitLab username this issue's assignee resolved to. null = unmapped. */
+  /** The GitLab username of the MR author who merged the MR linking this ticket. */
   assignedUser: string | null;
-  createdAt: string;
-  /** null when the issue is not yet completed. */
-  completedAt: string | null;
-  /** Linear team key, e.g. "ENG". */
-  teamKey: string;
+  /** MR(s) that referenced this ticket (iid + projectPath so evidence can build deep links). */
+  linkedMrs: { iid: number; projectPath: string }[];
+  /** Current Linear state. */
+  stateType: string | null;
+  stateName: string | null;
 }
 
 /** Everything the metric layer needs, already filtered to scope (not yet to window). */

@@ -12,10 +12,13 @@ const RAW_LIST: RawMrListNode = {
   mergedAt: "2026-05-12T00:00:00.000Z",
   author: { username: "bob" },
   project: { fullPath: "org/app" },
+  sourceBranch: "feature/thing",
 };
 
 const RAW_DETAIL: RawMrDetail = {
+  description: "Closes ACME-123",
   diffStatsSummary: { additions: 12, deletions: 34, fileCount: 2 },
+  diffStats: [{ path: "src/a.ts", additions: 12, deletions: 34 }],
   labels: { nodes: [{ title: "backend" }, { title: "revert" }] },
   approvedBy: { nodes: [{ username: "alice" }, { username: null }] },
   notes: {
@@ -61,7 +64,9 @@ describe("applyMrDetail", () => {
 
   it("defaults missing detail fields to zero/empty", () => {
     const bare = applyMrDetail(mapMrListNode(RAW_LIST), {
+      description: null,
       diffStatsSummary: null,
+      diffStats: null,
       labels: null,
       approvedBy: null,
       notes: null,

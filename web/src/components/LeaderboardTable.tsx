@@ -54,9 +54,9 @@ export function LeaderboardTable({ data, trend }: Props) {
     }
   };
 
+  const delivery = COLUMNS.filter((c) => c.group === "delivery");
   const volume = COLUMNS.filter((c) => c.group === "volume");
   const quality = COLUMNS.filter((c) => c.group === "quality");
-  const delivery = COLUMNS.filter((c) => c.group === "delivery");
 
   return (
     <div className="rounded-xl border">
@@ -64,17 +64,17 @@ export function LeaderboardTable({ data, trend }: Props) {
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <TableHead className="sticky left-0 z-10 bg-background">Person</TableHead>
+            {delivery.length > 0 && (
+              <TableHead colSpan={delivery.length} className="border-l text-success/80">
+                Delivery <span className="font-normal text-muted-foreground/60">(Linear)</span>
+              </TableHead>
+            )}
             <TableHead colSpan={volume.length} className="border-l text-muted-foreground">
               Volume <span className="font-normal text-muted-foreground/60">(gameable)</span>
             </TableHead>
             <TableHead colSpan={quality.length} className="border-l text-primary/80">
               Quality &amp; consistency
             </TableHead>
-            {delivery.length > 0 && (
-              <TableHead colSpan={delivery.length} className="border-l text-success/80">
-                Delivery <span className="font-normal text-muted-foreground/60">(Linear)</span>
-              </TableHead>
-            )}
           </TableRow>
           <TableRow className="hover:bg-transparent">
             <TableHead className="sticky left-0 z-10 bg-background">Name</TableHead>

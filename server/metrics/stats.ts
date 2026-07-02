@@ -27,15 +27,25 @@ export function mean(values: readonly number[]): number {
  * group/project bots, CI bots). They post non-system notes seconds after MR creation,
  * which would otherwise dominate "first review" timing and reviewer counts.
  */
-export function isBotUsername(username: string | null): boolean {
+export function isBotUsername(username: string | null, extraPatterns?: string[]): boolean {
   if (!username) return false;
   const u = username.toLowerCase();
-  return (
+  if (
     /^(project|group)_\d+_bot/.test(u) ||
     u.includes("_bot_") ||
     u.endsWith("_bot") ||
     u === "ghost"
-  );
+  ) return true;
+  if (extraPatterns && extraPatterns.length > 0) {
+    for (const pat of extraPatterns) {
+      try {
+        if (new RegExp(pat, "i").test(u)) return true;
+      } catch {
+        // Bad regex from user settings ... skip it.
+      }
+    }
+  }
+  return false;
 }
 
 /** UTC calendar-day key (YYYY-MM-DD) for an ISO timestamp. */

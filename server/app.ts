@@ -1,9 +1,13 @@
 import { Hono } from "hono";
 
 import { config } from "../config.js";
-import { EnvError } from "./env.js";
+import { getEnv, EnvError } from "./env.js";
 import { getLeaderboard, getUserDetail, UnknownUserError } from "./leaderboard.js";
 import { startRefresh, getRefresh, cancelRefresh, toStatusResponse } from "./jobs/refresh.js";
+import { clearMrStore, mrStoreSize, linearIdStats, mrListCacheSize } from "./cache/mr-store.js";
+import { getSettings, updateSettings, getDefaults } from "./settings.js";
+import { fetchWorkflowStates } from "./linear/fetch.js";
+import { scanSuspectedBots } from "./bots.js";
 import { customWindow, isPreset, resolvePreset } from "./util/window.js";
 import type { RangePreset, TimeWindow } from "../shared/types.js";
 
@@ -63,6 +67,48 @@ app.get("/api/detail", async (c) => {
 
 app.get("/api/health", (c) => c.json({ ok: true }));
 
+app.get("/api/settings", (c) => {
+  return c.json({ settings: getSettings(), defaults: getDefaults() });
+});
+
+app.get("/api/settings/linear-states", async (c) => {
+  try {
+    const env = getEnv();
+    if (!env.linearApiKey) return c.json({ states: [] });
+    const team = c.req.query("team");
+    const states = await fetchWorkflowStates(env.linearApiKey, team || undefined);
+    return c.json({ states });
+  } catch (err) {
+    console.error("[settings/linear-states] failed:", err);
+    return c.json({ error: "Failed to fetch Linear workflow states" }, 502);
+  }
+});
+
+app.put("/api/settings", async (c) => {
+  try {
+    const body = (await c.req.json()) as Record<string, unknown>;
+    try {
+      const settings = updateSettings(body as Parameters<typeof updateSettings>[0]);
+      return c.json({ settings });
+    } catch (err) {
+      return c.json({ error: (err as Error).message }, 400);
+    }
+  } catch {
+    return c.json({ error: "Invalid JSON body" }, 400);
+  }
+});
+
+app.get("/api/settings/suspected-bots", async (c) => {
+  try {
+    const s = getSettings();
+    const bots = await scanSuspectedBots(s.bots.extraPatterns);
+    return c.json({ bots });
+  } catch (err) {
+    console.error("[settings/suspected-bots] failed:", err);
+    return c.json({ error: "Failed to scan for suspected bots" }, 500);
+  }
+});
+
 app.post("/api/refresh", (c) => {
   let window: TimeWindow;
   try {
@@ -94,6 +140,18 @@ app.post("/api/refresh/:id/cancel", (c) => {
   const job = cancelRefresh(c.req.param("id"));
   if (!job) return c.json({ error: "unknown job" }, 404);
   return c.json(toStatusResponse(job));
+});
+
+app.get("/api/cache/stats", async (c) => {
+  const size = await mrStoreSize();
+  const linear = await linearIdStats();
+  const listSize = await mrListCacheSize();
+  return c.json({ mrDetails: size, mrList: listSize, linearIds: linear });
+});
+
+app.post("/api/cache/clear", async (c) => {
+  await clearMrStore();
+  return c.json({ cleared: true });
 });
 
 export function resolveWindowFromQuery(

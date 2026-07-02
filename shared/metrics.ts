@@ -31,13 +31,15 @@ export interface MetricDescriptor {
 }
 
 export const METRICS: MetricDescriptor[] = [
+  // --- Delivery (Linear): tickets shipped ---
+  { key: "issuesCompleted", kind: "scalar", label: "Issues done", group: "delivery", better: "desc",
+    description: "Linear issues (by assignee, all teams) completed in the window, excluding stale backlog closed long after creation (default: completed within 90 days of being filed). Guards against bulk backlog-grooming inflating the count." },
+
   // --- Volume (spec 4.1-4.4): gameable output counts ---
   { key: "additions", kind: "scalar", label: "Added", group: "volume", better: "desc",
     description: "Lines added across merged MRs the user authored." },
   { key: "deletions", kind: "scalar", label: "Deleted", group: "volume", better: "desc",
     description: "Lines deleted across merged MRs the user authored." },
-  { key: "netLines", kind: "scalar", label: "Net", group: "volume", better: "desc",
-    description: "Additions minus deletions across the user's merged MRs." },
   { key: "mrsMerged", kind: "scalar", label: "MRs merged", group: "volume", better: "desc",
     description: "Count of MRs the user authored that merged in the window." },
   { key: "mrsReviewed", kind: "scalar", label: "MRs reviewed", group: "volume", better: "desc",
@@ -62,12 +64,6 @@ export const METRICS: MetricDescriptor[] = [
     description: "Longest run of consecutive calendar days on which the user merged at least one MR, within the window. E.g. 4 = merged an MR on 4 days in a row at some point. (Based on merges, not pushes.)" },
   { key: "reciprocity", kind: "scalar", label: "Reciprocity", group: "quality", better: "desc",
     description: "Reviews given divided by reviews received ... ~1 means pulling your weight." },
-
-  // --- Delivery (Linear): tickets shipped. A lone volume metric ... read the README's
-  // Goodhart warning; close a pile of tiny tickets and this number climbs with no quality
-  // counterweight. Kept here so it ranks/trends alongside the rest, not as a real scoreboard.
-  { key: "issuesCompleted", kind: "scalar", label: "Issues done", group: "delivery", better: "desc",
-    description: "Linear issues (by assignee, all teams) completed in the window, excluding stale backlog closed long after creation (default: completed within 90 days of being filed). Guards against bulk backlog-grooming inflating the count." },
 ];
 
 // --- Typed accessors so server + UI read scalar vs distribution uniformly ---

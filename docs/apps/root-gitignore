@@ -9,3 +9,6 @@ dist/
 # Local-only process scratch (superpowers specs/plans, SDD ledger). Never committed.
 .local-dev/
 .superpowers/
+
+# Per-user settings (overrides config.ts). Never committed.
+settings.json

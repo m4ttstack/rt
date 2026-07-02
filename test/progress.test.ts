@@ -41,7 +41,6 @@ describe("fetchAll progress emission", () => {
       window: WINDOW,
       users: ["alice"],
       concurrency: 2,
-      linear: null,
       onProgress: (p) => phases.add(p.phase),
     });
     expect(phases.has("users")).toBe(true);

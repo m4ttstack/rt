@@ -1,4 +1,4 @@
-import type { LeaderboardResponse, RefreshStatusResponse, UserDetailResponse } from "../../shared/types";
+import type { AppSettings, LeaderboardResponse, LinearStateInfo, RefreshStatusResponse, UserDetailResponse } from "../../shared/types";
 
 export interface FetchParams {
   range: string;
@@ -61,4 +61,43 @@ export async function cancelRefresh(id: string): Promise<void> {
   } catch (e) {
     console.warn("cancelRefresh failed", e);
   }
+}
+
+export interface SuspectedBot {
+  username: string;
+  matchedPattern: string;
+}
+
+export async function fetchSettings(): Promise<{ settings: AppSettings; defaults: AppSettings }> {
+  return getJson("/api/settings");
+}
+
+export async function fetchLinearStates(): Promise<{ states: LinearStateInfo[] }> {
+  return getJson("/api/settings/linear-states");
+}
+
+export async function fetchSuspectedBots(): Promise<{ bots: SuspectedBot[] }> {
+  return getJson("/api/settings/suspected-bots");
+}
+
+export async function fetchCacheStats(): Promise<{ mrDetails: number; linearIds: { valid: number; invalid: number } }> {
+  return getJson("/api/cache/stats");
+}
+
+export async function clearCache(): Promise<void> {
+  const res = await fetch("/api/cache/clear", { method: "POST" });
+  if (!res.ok) throw new Error("Failed to clear cache");
+}
+
+export async function saveSettings(partial: Partial<AppSettings>): Promise<{ settings: AppSettings }> {
+  const res = await fetch("/api/settings", {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(partial),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `${res.status} ${res.statusText}`);
+  }
+  return (await res.json()) as { settings: AppSettings };
 }

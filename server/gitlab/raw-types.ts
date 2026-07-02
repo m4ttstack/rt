@@ -23,11 +23,20 @@ export interface RawMrListNode {
   preparedAt?: string | null;
   author: RawUserRef | null;
   project: { fullPath: string } | null;
+  sourceBranch: string | null;
+}
+
+export interface RawDiffStat {
+  path: string;
+  additions: number;
+  deletions: number;
 }
 
 /** Expensive per-MR detail (phase 2). */
 export interface RawMrDetail {
+  description: string | null;
   diffStatsSummary: { additions: number; deletions: number; fileCount: number } | null;
+  diffStats: RawDiffStat[] | null;
   labels: { nodes: Array<{ title: string }> } | null;
   approvedBy: { nodes: RawUserRef[] } | null;
   notes: { nodes: RawNoteNode[] } | null;

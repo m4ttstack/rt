@@ -13,7 +13,6 @@ export interface RawDist {
 export interface RawUserMetrics {
   additions: number;
   deletions: number;
-  netLines: number;
   mrsMerged: number;
   mrsReviewed: number;
   pipelines: number;
@@ -40,11 +39,16 @@ export interface SnapshotOptions {
   window: TimeWindow;
   users: readonly string[];
   sizeBand: { tooSmall: number; tooLarge: number };
-  /**
-   * Exclude stale backlog from issuesCompleted: ignore issues completed more than this many
-   * days after creation. undefined/<=0 = no cap (count every completed issue).
-   */
-  linearMaxIssueAgeDays?: number;
+  /** Linear team key — only MRs referencing this team's tickets count. */
+  linearTeam?: string;
+  /** Linear state names that count as "done". Empty = default (completed + canceled types). */
+  doneStates?: string[];
+  /** Additional regex patterns for bot username detection, from settings. */
+  extraBotPatterns?: string[];
+  /** Glob patterns for files to exclude from additions/deletions. */
+  excludeFilePatterns?: string[];
+  /** MR identifiers to exclude from all metrics. Format: "!123" or "project/path!123". */
+  ignoredMrs?: string[];
 }
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -52,33 +56,113 @@ const DAY_MS = 24 * HOUR_MS;
 
 const changedLines = (mr: NormMr): number => mr.additions + mr.deletions;
 
+/** Build a predicate that returns true for MRs matching the ignore list. */
+export function buildIgnoredMrSet(
+  entries: string[] | undefined,
+): (mr: { iid: number; projectPath: string }) => boolean {
+  if (!entries || entries.length === 0) return () => false;
+  const byProject = new Map<string, Set<number>>();
+  const global = new Set<number>();
+  for (const raw of entries) {
+    const s = raw.trim();
+    if (!s) continue;
+    const bangIdx = s.indexOf("!");
+    if (bangIdx >= 1) {
+      const project = s.slice(0, bangIdx);
+      const iid = Number(s.slice(bangIdx + 1));
+      if (Number.isFinite(iid)) {
+        let set = byProject.get(project);
+        if (!set) { set = new Set(); byProject.set(project, set); }
+        set.add(iid);
+      }
+    } else {
+      const iid = Number(s.replace(/^!/, ""));
+      if (Number.isFinite(iid)) global.add(iid);
+    }
+  }
+  return (mr) => global.has(mr.iid) || (byProject.get(mr.projectPath)?.has(mr.iid) ?? false);
+}
+
+/** Compute filtered additions/deletions by excluding files matching any pattern. */
+function filteredLineCounts(
+  mr: NormMr,
+  patterns?: string[],
+): { additions: number; deletions: number } {
+  if (!patterns || patterns.length === 0 || mr.diffStats.length === 0) {
+    return { additions: mr.additions, deletions: mr.deletions };
+  }
+  let additions = 0;
+  let deletions = 0;
+  for (const f of mr.diffStats) {
+    if (patterns.some((p) => minimatch(f.path, p))) continue;
+    additions += f.additions;
+    deletions += f.deletions;
+  }
+  return { additions, deletions };
+}
+
+/** Minimal glob match — supports *, **, and literal segments. */
+export function minimatch(path: string, pattern: string): boolean {
+  // Patterns without a "/" match at any depth (gitignore-style):
+  // "*.json" should match "apps/backend/package.json" and "package.json".
+  const effective = pattern.includes("/") ? pattern : `**/${pattern}`;
+  const re = new RegExp(
+    "^" +
+    effective
+      .replace(/\*\*\//g, "\x00")
+      .replace(/\*\*/g, "\x01")
+      .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+      .replace(/\*/g, "[^/]*")
+      .replace(/\x00/g, "(.*/)?")
+      .replace(/\x01/g, ".*") +
+    "$",
+    "i",
+  );
+  return re.test(path);
+}
+
 function emptyStatus(): PipelineStatusBreakdown {
   return { success: 0, failed: 0, canceled: 0, other: 0 };
 }
 
 /** Compute every metric for every configured user over one window. Pure. */
 export function computeSnapshot(fetched: FetchResult, opts: SnapshotOptions): Snapshot {
-  const { window, users, sizeBand, linearMaxIssueAgeDays } = opts;
-  const revertedTitles = buildRevertedTitleSet(fetched.mrs);
+  const { window, users, sizeBand, linearTeam, doneStates, extraBotPatterns, excludeFilePatterns, ignoredMrs } = opts;
+  const isIgnored = buildIgnoredMrSet(ignoredMrs);
+  const filtered: FetchResult = {
+    ...fetched,
+    mrs: fetched.mrs.filter((m) => !isIgnored(m)),
+  };
+  const revertedTitles = buildRevertedTitleSet(filtered.mrs);
 
   const byUser: Record<string, RawUserMetrics> = {};
   for (const u of users) {
-    byUser[u] = computeUser(u, fetched, window, sizeBand, revertedTitles, linearMaxIssueAgeDays);
+    byUser[u] = computeUser(u, filtered, window, sizeBand, revertedTitles, linearTeam, doneStates, extraBotPatterns, excludeFilePatterns);
   }
-  return { byUser, approvalsAvailable: fetched.approvalsAvailable };
+  return { byUser, approvalsAvailable: filtered.approvalsAvailable };
+}
+
+/** Recompute whether an MR references a team ticket from its title/branch/desc. */
+function teamTicketInMr(mr: { title: string; sourceBranch: string | null; description: string | null }, linearTeam?: string): boolean {
+  if (!linearTeam) return true;
+  const haystack = [mr.title, mr.sourceBranch, mr.description].filter(Boolean).join(" ");
+  return new RegExp(`\\b${escapeRe(linearTeam)}[-:]\\d+\\b`, "i").test(haystack);
+}
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**
- * True when an issue is recent enough to count ... i.e. completed within `maxAgeDays` of
- * being created. Guards against bulk-closed stale backlog inflating the count. A non-positive
- * or undefined cap disables the check; a missing createdAt fails open (counts).
+ * True when a ticket's current state counts as "done". When doneStates is empty,
+ * falls back to type-based default: issues whose stateType is "completed" or "canceled".
  */
-function withinAgeCap(createdAt: string, completedAt: string, maxAgeDays?: number): boolean {
-  if (!maxAgeDays || maxAgeDays <= 0) return true;
-  const created = Date.parse(createdAt);
-  const completed = Date.parse(completedAt);
-  if (Number.isNaN(created) || Number.isNaN(completed)) return true;
-  return completed - created <= maxAgeDays * DAY_MS;
+function isDoneState(stateType: string | null, stateName: string | null, doneStates?: string[]): boolean {
+  if (stateType === null) return true; // missing data — fall open
+  if (doneStates && doneStates.length > 0) {
+    return stateName !== null && doneStates.includes(stateName);
+  }
+  return stateType === "completed" || stateType === "canceled";
 }
 
 function computeUser(
@@ -87,7 +171,10 @@ function computeUser(
   window: TimeWindow,
   sizeBand: { tooSmall: number; tooLarge: number },
   revertedTitles: Set<string>,
-  linearMaxIssueAgeDays?: number,
+  linearTeam?: string,
+  doneStates?: string[],
+  extraBotPatterns?: string[],
+  excludeFilePatterns?: string[],
 ): RawUserMetrics {
   const { mrs, pipelines, pushEvents } = fetched;
   // Tolerate older cache envelopes (and tests) that predate the Linear field.
@@ -95,15 +182,16 @@ function computeUser(
 
   // --- Volume: authored & merged in window (spec 4.1, 4.2) ---
   const authoredMerged = mrs.filter(
-    (m) => m.authorUsername === u && m.state === "merged" && inWindow(m.mergedAt, window),
+    (m) => m.authorUsername === u && m.state === "merged" && teamTicketInMr(m, linearTeam) && inWindow(m.mergedAt, window),
   );
-  const additions = sum(authoredMerged, (m) => m.additions);
-  const deletions = sum(authoredMerged, (m) => m.deletions);
+  const additions = sum(authoredMerged, (m) => filteredLineCounts(m, excludeFilePatterns).additions);
+  const deletions = sum(authoredMerged, (m) => filteredLineCounts(m, excludeFilePatterns).deletions);
   const mrsMerged = authoredMerged.length;
 
   // --- MR size health (spec 4.8): share in the healthy band ---
   const healthy = authoredMerged.filter((m) => {
-    const c = changedLines(m);
+    const f = filteredLineCounts(m, excludeFilePatterns);
+    const c = f.additions + f.deletions;
     return c >= sizeBand.tooSmall && c <= sizeBand.tooLarge;
   }).length;
   const sizeHealthPct = mrsMerged === 0 ? 0 : round(healthy / mrsMerged, 3);
@@ -165,7 +253,7 @@ function computeUser(
   const authorLatencies: number[] = [];
   for (const m of authoredCohort) {
     const firstTouch = m.notes
-      .filter((n) => !n.system && n.authorUsername !== u && !isBotUsername(n.authorUsername))
+      .filter((n) => !n.system && n.authorUsername !== u && !isBotUsername(n.authorUsername, extraBotPatterns))
       .map((n) => Date.parse(n.createdAt))
       .sort((a, b) => a - b)[0];
     if (firstTouch === undefined) continue;
@@ -179,12 +267,12 @@ function computeUser(
   const reviewers = new Set<string>();
   for (const m of authoredMerged) {
     for (const n of m.notes) {
-      if (!n.system && n.authorUsername && n.authorUsername !== u && !isBotUsername(n.authorUsername)) {
+      if (!n.system && n.authorUsername && n.authorUsername !== u && !isBotUsername(n.authorUsername, extraBotPatterns)) {
         reviewers.add(n.authorUsername);
       }
     }
     if (fetched.approvalsAvailable) {
-      for (const a of m.approvedByUsernames) if (a !== u && !isBotUsername(a)) reviewers.add(a);
+      for (const a of m.approvedByUsernames) if (a !== u && !isBotUsername(a, extraBotPatterns)) reviewers.add(a);
     }
   }
   const received = reviewers.size;
@@ -200,19 +288,17 @@ function computeUser(
   // --- Streak: consecutive days with a MERGED MR (delivery, not pushes) ---
   const mergeStreaks = streaks(authoredMerged.map((m) => m.mergedAt ?? "").filter(Boolean));
 
-  // --- Linear issues completed in window (by assignee), excluding stale backlog ---
+  // --- Linear tickets linked from merged MRs, gated by team + state at compute time ---
   const issuesCompleted = linearIssues.filter(
     (i) =>
       i.assignedUser === u &&
-      inWindow(i.completedAt, window) &&
-      i.completedAt !== null &&
-      withinAgeCap(i.createdAt, i.completedAt, linearMaxIssueAgeDays),
+      (!linearTeam || i.identifier.toUpperCase().startsWith(linearTeam.toUpperCase() + "-")) &&
+      isDoneState(i.stateType, i.stateName, doneStates),
   ).length;
 
   return {
     additions,
     deletions,
-    netLines: additions - deletions,
     mrsMerged,
     mrsReviewed,
     pipelines: userPipelines.length,

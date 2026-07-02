@@ -1,11 +1,11 @@
 import { config } from "../config.js";
 import { cacheKey, readCache, writeCache } from "./cache/store.js";
 import { getEnv, type Env } from "./env.js";
+import { getSettings } from "./settings.js";
 import { buildUserEvidence } from "./metrics/evidence.js";
 import { computeSnapshot, type Snapshot } from "./metrics/snapshot.js";
 import { buildResponse, type BuildContext } from "./metrics/trend.js";
 import { fetchAll, type FetchOutcome } from "./pipeline/fetch.js";
-import type { LinearOptions } from "./linear/fetch.js";
 import { priorWindow } from "./util/window.js";
 import type { LeaderboardResponse, RefreshProgress, Scope, TimeWindow, UserDetailResponse } from "../shared/types.js";
 
@@ -50,15 +50,6 @@ function resolveScope(): Scope {
   return { type: "projects", projectPaths: config.projectPaths ?? [] };
 }
 
-/** Linear is enabled only when both the key (.env) and the email map (config) are present. */
-function resolveLinear(env: Env): LinearOptions | null {
-  const emailByUser = config.linear?.emailByUser;
-  if (!env.linearApiKey || !emailByUser || Object.keys(emailByUser).length === 0) {
-    return null;
-  }
-  return { apiKey: env.linearApiKey, emailByUser };
-}
-
 /** Fetch a window's data, using the .cache/ envelope unless refresh was requested. */
 async function loadOrFetch(
   env: Env,
@@ -79,9 +70,8 @@ async function loadOrFetch(
     env,
     scope,
     window,
-    users: config.users,
+    users: getSettings().users,
     concurrency: config.concurrency,
-    linear: resolveLinear(env),
     signal,
     onProgress,
   });
@@ -89,13 +79,19 @@ async function loadOrFetch(
   return { outcome, fromCache: false };
 }
 
-const snapshotFor = (outcome: FetchOutcome, window: TimeWindow): Snapshot =>
-  computeSnapshot(outcome.result, {
+const snapshotFor = (outcome: FetchOutcome, window: TimeWindow): Snapshot => {
+  const s = getSettings();
+  return computeSnapshot(outcome.result, {
     window,
-    users: config.users,
-    sizeBand: config.sizeBand,
-    linearMaxIssueAgeDays: config.linear?.maxIssueAgeDays ?? 90,
+    users: getSettings().users,
+    sizeBand: s.sizeBand,
+    linearTeam: s.linearTeam || undefined,
+    doneStates: s.doneStates,
+    extraBotPatterns: s.bots.extraPatterns,
+    excludeFilePatterns: s.excludeFilePatterns,
+    ignoredMrs: s.ignoredMrs,
   });
+};
 
 /**
  * Shared core: fetch (cached) -> compute current + prior snapshots -> ranked response.
@@ -132,7 +128,7 @@ async function buildLeaderboard(
     window: opts.window,
     priorWindow: priorSnapshot ? pw : null,
     baseUrl: env.baseUrl,
-    currentUser: config.currentUser,
+    currentUser: getSettings().currentUser,
     generatedAt: new Date().toISOString(),
     fromCache: current.fromCache,
     identities: current.outcome.identities,
@@ -176,7 +172,7 @@ export async function getLeaderboard(opts: LeaderboardOptions): Promise<Leaderbo
     window: opts.window,
     priorWindow: priorSnapshot ? pw : null,
     baseUrl: env.baseUrl,
-    currentUser: config.currentUser,
+    currentUser: getSettings().currentUser,
     generatedAt: new Date().toISOString(),
     fromCache: current.fromCache,
     identities: current.outcome.identities,
@@ -197,11 +193,16 @@ export async function getUserDetail(opts: DetailOptions): Promise<UserDetailResp
     throw new UnknownUserError(`Unknown user "${opts.user}" (not in the configured set).`);
   }
 
+  const s = getSettings();
   const evidence = buildUserEvidence(current.result, opts.user, {
     window: opts.window,
     baseUrl: env.baseUrl,
-    sizeBand: config.sizeBand,
-    linearMaxIssueAgeDays: config.linear?.maxIssueAgeDays ?? 90,
+    sizeBand: s.sizeBand,
+    linearTeam: s.linearTeam || undefined,
+    doneStates: s.doneStates,
+    extraBotPatterns: s.bots.extraPatterns,
+    excludeFilePatterns: s.excludeFilePatterns,
+    ignoredMrs: s.ignoredMrs,
   });
 
   return {

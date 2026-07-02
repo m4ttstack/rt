@@ -42,6 +42,8 @@ type Runner = (opts: {
   onProgress: (p: RefreshProgress) => void;
 }) => Promise<LeaderboardResponse>;
 
+const JOB_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+
 // Single-operator app: at most one job exists at a time.
 let currentJob: RefreshJob | null = null;
 
@@ -49,6 +51,7 @@ export function startRefresh(req: RefreshRequest, run: Runner = getLeaderboard):
   if (currentJob && currentJob.status === "running") return currentJob;
 
   const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), JOB_TIMEOUT_MS);
   const job: RefreshJob = {
     id: randomUUID().slice(0, 8),
     status: "running",
@@ -69,13 +72,14 @@ export function startRefresh(req: RefreshRequest, run: Runner = getLeaderboard):
     (result) => { job.status = "done"; job.result = result; },
     (err) => {
       if ((err as Error).name === "AbortError") {
-        job.status = "cancelled";
+        job.status = job.status === "cancelled" ? "cancelled" : "error";
+        if (job.status === "error") job.error = "Refresh timed out";
       } else {
         job.status = "error";
         job.error = (err as Error).message;
       }
     },
-  );
+  ).finally(() => clearTimeout(timeout));
 
   return job;
 }

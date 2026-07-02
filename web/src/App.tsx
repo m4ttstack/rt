@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Settings } from "lucide-react";
 import type { LeaderboardResponse, RefreshProgress } from "../../shared/types";
 import { cancelRefresh, fetchLeaderboard, pollRefresh, startRefresh } from "./api";
 import { Controls, type ViewMode } from "./components/Controls";
@@ -6,7 +7,9 @@ import { DetailPage } from "./components/DetailPage";
 import { LeaderboardTable } from "./components/LeaderboardTable";
 import { MetricCards } from "./components/MetricCards";
 import { RefreshProgress as RefreshProgressBar } from "./components/RefreshProgress";
+import SettingsPage from "./components/SettingsPage";
 import { ThemeToggle } from "./components/ThemeToggle";
+import { Button } from "./components/ui/button";
 import { useHashRoute } from "./hooks/useHashRoute";
 import { usePersistentState } from "./hooks/usePersistentState";
 
@@ -50,7 +53,14 @@ export default function App() {
   );
 
   // Cache-first load on mount / range / trend change. Cold cache auto-starts a refresh.
+  // Cancels any in-flight job first so a stale refresh doesn't linger in the background.
   useEffect(() => {
+    if (jobId) {
+      void cancelRefresh(jobId);
+      setJobId(null);
+      setProgress(null);
+    }
+
     let cancelled = false;
     setError(null);
     if (!data) setInitialLoading(true);
@@ -58,7 +68,7 @@ export default function App() {
       .then((res) => {
         if (cancelled) return;
         if ("cached" in res && res.cached === false) {
-          void startJob(rangeState, trend); // cold cache -> background refresh with progress
+          void startJob(rangeState, trend);
         } else {
           setData(res as LeaderboardResponse);
         }
@@ -66,7 +76,8 @@ export default function App() {
       .catch((e: unknown) => { if (!cancelled) setError((e as Error).message); })
       .finally(() => { if (!cancelled) setInitialLoading(false); });
     return () => { cancelled = true; };
-    // `data` is read only as a guard for the loading spinner; adding it would re-fetch on every data swap.
+    // startJob is stable (empty deps). data/jobId intentionally excluded: data is only
+    // read as a loading-spinner guard; jobId is read once for cleanup, not as a trigger.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rangeState, trend]);
 
@@ -111,7 +122,9 @@ export default function App() {
 
     timer = setTimeout(tick, POLL_MS);
     return () => { stopped = true; clearTimeout(timer); };
-    // rangeState/trend are read via closure inside tick; adding them would restart polling on every change.
+    // rangeState/trend read via closure are stale but only used for the sel match guard,
+    // which correctly rejects results that no longer match the UI. The range-change effect
+    // above cancels stale jobs so this poll won't run long on a mismatch.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobId]);
 
@@ -126,6 +139,10 @@ export default function App() {
   }, [jobId]);
 
   const refreshing = jobId !== null;
+
+  if (route.page === "settings") {
+    return <SettingsPage />;
+  }
 
   if (route.user) {
     return (
@@ -143,7 +160,19 @@ export default function App() {
             them against the quality columns. See the README caveats before this becomes a scoreboard.
           </p>
         </div>
-        <ThemeToggle />
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="icon"
+            onClick={() => {
+              window.location.hash = "#settings";
+            }}
+            aria-label="Settings"
+          >
+            <Settings />
+          </Button>
+          <ThemeToggle />
+        </div>
       </header>
 
       <Controls

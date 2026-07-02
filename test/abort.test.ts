@@ -1,17 +1,34 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { restGetOne } from "../server/gitlab/rest.js";
 import { gqlRequest } from "../server/gitlab/graphql.js";
-import { fetchLinearIssues } from "../server/linear/fetch.js";
+import { resolveLinearTickets } from "../server/linear/fetch.js";
+import type { NormMr } from "../server/pipeline/model.js";
 import type { Env } from "../server/env.js";
-import type { LeaderboardWarning, TimeWindow } from "../shared/types.js";
+import type { LeaderboardWarning } from "../shared/types.js";
 
 const ENV: Env = { baseUrl: "https://gl.example", token: "tkn", port: 0 };
-const WINDOW: TimeWindow = {
-  start: "2026-05-01T00:00:00.000Z",
-  end: "2026-06-01T00:00:00.000Z",
-  key: "30d",
-};
 afterEach(() => vi.unstubAllGlobals());
+
+const mergedMr: NormMr = {
+  iid: 1,
+  projectPath: "org/app",
+  authorUsername: "alice",
+  state: "merged",
+  createdAt: "2026-05-01T00:00:00.000Z",
+  preparedAt: null,
+  mergedAt: "2026-05-10T00:00:00.000Z",
+  sourceBranch: null,
+  description: null,
+  title: "Fix ACME-123 bug",
+  labels: [],
+  additions: 10,
+  deletions: 5,
+  fileCount: 1,
+  approvedByUsernames: [],
+  notes: [],
+  hasTeamTicket: true,
+  diffStats: [],
+};
 
 describe("abort signal threading", () => {
   it("forwards the signal to fetch for REST", async () => {
@@ -39,22 +56,17 @@ describe("abort signal threading", () => {
     await expect(gqlRequest(ENV, "query { x }", {})).rejects.toMatchObject({ name: "AbortError" });
   });
 
-  it("propagates an AbortError from fetchLinearIssues instead of swallowing it", async () => {
-    const inits: RequestInit[] = [];
-    vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
-      inits.push(init);
+  it("propagates an AbortError from resolveLinearTickets instead of swallowing it", async () => {
+    vi.stubGlobal("fetch", async () => {
       const e = new Error("aborted"); e.name = "AbortError"; throw e;
     });
     const warnings: LeaderboardWarning[] = [];
     const c = new AbortController();
-    const options = { apiKey: "lin_key", emailByUser: { alice: "alice@example.com" } };
 
     await expect(
-      fetchLinearIssues(options, WINDOW, warnings, c.signal),
+      resolveLinearTickets("lin_key", [mergedMr], warnings, c.signal),
     ).rejects.toMatchObject({ name: "AbortError" });
     // Cancellation must not degrade to a warning + [].
     expect(warnings).toEqual([]);
-    // The client forwards the signal into fetch.
-    expect(inits[0]?.signal).toBe(c.signal);
   });
 });

@@ -44,7 +44,6 @@ export interface UserMetrics {
   // --- Volume metrics (spec 4.1-4.4) ---
   additions: MetricValue;
   deletions: MetricValue;
-  netLines: MetricValue;
   mrsMerged: MetricValue;
   mrsReviewed: MetricValue;
   pipelines: MetricValue;
@@ -157,6 +156,41 @@ export interface LeaderboardResponse {
   warnings: LeaderboardWarning[];
 }
 
+/** One Linear workflow state, exposed so the settings page can list them. */
+export interface LinearStateInfo {
+  name: string;
+  type: string;
+  teamKey: string;
+  teamName: string;
+}
+
+/**
+ * Server-side settings that the user can tweak via the settings page without a code change.
+ * Defaults come from config.ts; overrides are persisted to settings.json.
+ */
+export interface AppSettings {
+  /** Linear team key to scope ticket counting to. Only tickets with this prefix count. */
+  linearTeam: string;
+  /** Linear state names that count as "done". Empty = use default (completed + canceled types). */
+  doneStates: string[];
+  /** GitLab usernames that appear on the leaderboard. */
+  users: string[];
+  /** The username highlighted as "you" in the UI. Must appear in users. */
+  currentUser: string;
+  sizeBand: {
+    tooSmall: number;
+    tooLarge: number;
+  };
+  bots: {
+    /** Additional regex patterns beyond built-in bot detection. */
+    extraPatterns: string[];
+  };
+  /** Glob patterns for files to exclude from additions/deletions (e.g. "*.json", "generated/*"). */
+  excludeFilePatterns: string[];
+  /** MR identifiers to exclude from all metrics. Format: "!123" or "project/path!123". */
+  ignoredMrs: string[];
+}
+
 /** Live progress for a background refresh run. `total: 0` => indeterminate phase. */
 export interface RefreshProgress {
   phase: "users" | "mrs-list" | "mrs-detail" | "pipelines" | "pushes" | "linear" | "compute";
@@ -179,4 +213,5 @@ export interface RefreshStatusResponse {
   /** Present only when status === "done". */
   result?: LeaderboardResponse;
 }
+
 

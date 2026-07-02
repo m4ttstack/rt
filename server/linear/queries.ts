@@ -1,27 +1,17 @@
 /**
- * Issues completed within a window, by assignee email. Filtering happens server-side via
- * the IssueFilter variable so we page over exactly the issues we care about ... not the
- * whole org's history.
+ * All workflow states across every team (or filtered to one team). Used by the settings
+ * page so the user can pick which state names count as "done" for issuesCompleted.
+ * 500 is enough to cover ~40 teams × ~18 states without pagination.
  */
-export const COMPLETED_ISSUES_QUERY = /* GraphQL */ `
-  query CompletedIssues($after: String, $filter: IssueFilter) {
-    issues(first: 100, after: $after, filter: $filter) {
-      pageInfo {
-        hasNextPage
-        endCursor
-      }
+export const WORKFLOW_STATES_QUERY = /* GraphQL */ `
+  query WorkflowStates($filter: WorkflowStateFilter) {
+    workflowStates(first: 500, filter: $filter) {
       nodes {
-        id
-        identifier
-        title
-        url
-        createdAt
-        completedAt
-        assignee {
-          email
-        }
+        name
+        type
         team {
           key
+          name
         }
       }
     }

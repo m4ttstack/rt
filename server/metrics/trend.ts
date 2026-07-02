@@ -100,7 +100,6 @@ function combine(cur: RawUserMetrics, prev: RawUserMetrics | null): UserMetrics 
   return {
     additions: mv(cur.additions, prev?.additions),
     deletions: mv(cur.deletions, prev?.deletions),
-    netLines: mv(cur.netLines, prev?.netLines),
     mrsMerged: mv(cur.mrsMerged, prev?.mrsMerged),
     mrsReviewed: mv(cur.mrsReviewed, prev?.mrsReviewed),
     pipelines: mv(cur.pipelines, prev?.pipelines),

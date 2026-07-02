@@ -2,24 +2,22 @@ import type { NormLinearIssue } from "../pipeline/model.js";
 import type { RawIssue } from "./raw-types.js";
 
 /**
- * Map a raw Linear issue into the normalized model, resolving the assignee's email back to
- * the canonical GitLab username via `userByEmail`. An issue whose assignee email isn't in
- * the map gets `assignedUser: null` and simply counts for no one ... the metric layer keys
- * everything on the GitLab username, so Linear field names never leak past this boundary.
+ * Map a raw Linear issue (looked up by identifier) into the normalized model,
+ * attributing it to the GitLab username that authored the merged MR.
  */
 export function mapIssue(
   raw: RawIssue,
-  userByEmail: Record<string, string>,
+  assignedUser: string | null,
+  linkedMrs: { iid: number; projectPath: string }[],
 ): NormLinearIssue {
-  const email = raw.assignee?.email?.toLowerCase() ?? null;
   return {
     id: raw.id,
     identifier: raw.identifier,
     title: raw.title,
     url: raw.url,
-    assignedUser: email ? (userByEmail[email] ?? null) : null,
-    createdAt: raw.createdAt,
-    completedAt: raw.completedAt,
-    teamKey: raw.team?.key ?? "",
+    assignedUser,
+    linkedMrs,
+    stateType: raw.state?.type ?? null,
+    stateName: raw.state?.name ?? null,
   };
 }

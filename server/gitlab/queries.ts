@@ -19,12 +19,13 @@ const MR_LIST_FIELDS = `
   mergedAt
   author { username }
   project { fullPath }
+  sourceBranch
 `;
 
 export const GROUP_MRS_QUERY = `
-query GroupMRs($fullPath: ID!, $after: String) {
+query GroupMRs($fullPath: ID!, $after: String, $updatedAfter: Time) {
   group(fullPath: $fullPath) {
-    mergeRequests(includeSubgroups: true, sort: UPDATED_DESC, first: 100, after: $after) {
+    mergeRequests(includeSubgroups: true, sort: UPDATED_DESC, first: 100, after: $after, updatedAfter: $updatedAfter) {
       pageInfo { hasNextPage endCursor }
       nodes { ${MR_LIST_FIELDS} }
     }
@@ -32,9 +33,9 @@ query GroupMRs($fullPath: ID!, $after: String) {
 }`;
 
 export const PROJECT_MRS_QUERY = `
-query ProjectMRs($fullPath: ID!, $after: String) {
+query ProjectMRs($fullPath: ID!, $after: String, $updatedAfter: Time) {
   project(fullPath: $fullPath) {
-    mergeRequests(sort: UPDATED_DESC, first: 100, after: $after) {
+    mergeRequests(sort: UPDATED_DESC, first: 100, after: $after, updatedAfter: $updatedAfter) {
       pageInfo { hasNextPage endCursor }
       nodes { ${MR_LIST_FIELDS} }
     }
@@ -46,7 +47,9 @@ export const MR_DETAIL_QUERY = `
 query MrDetail($fullPath: ID!, $iid: String!) {
   project(fullPath: $fullPath) {
     mergeRequest(iid: $iid) {
+      description
       diffStatsSummary { additions deletions fileCount }
+      diffStats { path additions deletions }
       labels { nodes { title } }
       approvedBy { nodes { username } }
       notes(first: 100) {

@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Settings } from "lucide-react";
 
 import type { MetricGroup } from "../../../shared/metrics";
 import type { MetricKey, UserDetailResponse } from "../../../shared/types";
+import { Button } from "@/components/ui/button";
 import { fetchDetail } from "../api";
 import {
   COLUMNS,
@@ -15,7 +16,6 @@ import {
 } from "../columns";
 import { navigateHome } from "../hooks/useHashRoute";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { EvidenceTable } from "./EvidenceTable";
 
 interface RangeState {
@@ -32,9 +32,9 @@ interface Props {
 }
 
 const GROUPS: { key: MetricGroup; label: string; accent: string }[] = [
+  { key: "delivery", label: "Delivery (Linear)", accent: "text-success/80" },
   { key: "volume", label: "Volume", accent: "text-muted-foreground" },
   { key: "quality", label: "Quality & consistency", accent: "text-primary/80" },
-  { key: "delivery", label: "Delivery (Linear)", accent: "text-success/80" },
 ];
 
 export function DetailPage({ username, initialStat, range, trend }: Props) {
@@ -67,9 +67,19 @@ export function DetailPage({ username, initialStat, range, trend }: Props) {
 
   return (
     <div className="mx-auto max-w-[96rem] px-6 py-8">
-      <Button variant="ghost" size="sm" onClick={navigateHome} className="mb-4 -ml-2 text-muted-foreground">
-        <ArrowLeft /> Back to leaderboard
-      </Button>
+      <div className="mb-4 flex items-center justify-between">
+        <Button variant="ghost" size="sm" onClick={navigateHome} className="-ml-2 text-muted-foreground">
+          <ArrowLeft /> Back to leaderboard
+        </Button>
+        <Button
+          variant="outline"
+          size="icon"
+          onClick={() => { window.location.hash = "#settings"; }}
+          aria-label="Settings"
+        >
+          <Settings />
+        </Button>
+      </div>
 
       {error && (
         <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">

@@ -12,12 +12,16 @@ export function mapMrListNode(raw: RawMrListNode): NormMr {
     preparedAt: raw.preparedAt ?? null,
     mergedAt: raw.mergedAt,
     title: raw.title,
+    sourceBranch: raw.sourceBranch ?? null,
+    description: null, // filled by applyMrDetail
     labels: [],
     additions: 0,
     deletions: 0,
     fileCount: 0,
     approvedByUsernames: [],
     notes: [],
+    hasTeamTicket: true,
+    diffStats: [],
   };
 }
 
@@ -29,9 +33,13 @@ export function applyMrDetail(mr: NormMr, detail: RawMrDetail): NormMr {
     additions: detail.diffStatsSummary?.additions ?? 0,
     deletions: detail.diffStatsSummary?.deletions ?? 0,
     fileCount: detail.diffStatsSummary?.fileCount ?? 0,
+    diffStats: detail.diffStats ?? mr.diffStats,
     approvedByUsernames:
       detail.approvedBy?.nodes.map((u) => u.username).filter((x): x is string => !!x) ?? [],
     notes: (detail.notes?.nodes ?? []).map(mapNote),
+    description: detail.description ?? mr.description,
+    hasTeamTicket: mr.hasTeamTicket,
+    sourceBranch: mr.sourceBranch,
   };
 }
 
