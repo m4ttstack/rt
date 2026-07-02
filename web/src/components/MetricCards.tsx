@@ -1,7 +1,8 @@
 import type { LeaderboardResponse, UserRow } from "../../../shared/types";
-import { COLUMNS, type Column, deltaIsGood, deltaValue, formatValue, sortValue } from "../columns";
+import { COLUMNS, type Column, GROUP_META, deltaValue, formatValue, sortValue } from "../columns";
 import { navigateToUser } from "../hooks/useHashRoute";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { DeltaBadge } from "./DeltaBadge";
 import { MetricTip } from "./MetricTip";
 import { Tooltip } from "./Tooltip";
 
@@ -9,12 +10,6 @@ interface Props {
   data: LeaderboardResponse;
   trend: boolean;
 }
-
-const GROUP_STYLE: Record<string, string> = {
-  volume: "text-muted-foreground",
-  quality: "text-primary",
-  delivery: "text-success",
-};
 
 export function MetricCards({ data, trend }: Props) {
   return (
@@ -25,7 +20,7 @@ export function MetricCards({ data, trend }: Props) {
             <h3 className="text-sm font-semibold text-foreground">
               <Tooltip content={<MetricTip col={col} />}>{col.label}</Tooltip>
             </h3>
-            <span className={`text-[10px] uppercase tracking-wide ${GROUP_STYLE[col.group] ?? "text-muted-foreground"}`}>
+            <span className={`text-[10px] uppercase tracking-wide ${GROUP_META[col.group].accent}`}>
               {col.group}
             </span>
           </CardHeader>
@@ -68,12 +63,7 @@ function Ranking({ col, users, trend }: { col: Column; users: UserRow[]; trend: 
               </span>
               <span className="flex items-center gap-2 font-mono tabular-nums">
                 <span>{formatValue(sortValue(u.metrics, col), col)}</span>
-                {d !== null && d !== 0 && (
-                  <span className={`text-xs ${deltaIsGood(d, col.better) ? "text-success" : "text-destructive"}`}>
-                    {d > 0 ? "▲" : "▼"}
-                    {formatValue(Math.abs(d), col)}
-                  </span>
-                )}
+                {d !== null && d !== 0 && <DeltaBadge delta={d} col={col} className="text-xs" />}
               </span>
             </button>
           </li>

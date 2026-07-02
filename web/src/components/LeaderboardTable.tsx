@@ -3,12 +3,14 @@ import type { LeaderboardResponse, UserRow } from "../../../shared/types";
 import {
   COLUMNS,
   type Column,
-  deltaIsGood,
+  GROUP_META,
+  GROUP_ORDER,
   deltaValue,
   formatValue,
   rankValue,
   sortValue,
 } from "../columns";
+import { DeltaBadge } from "./DeltaBadge";
 import { navigateToUser } from "../hooks/useHashRoute";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -48,27 +50,28 @@ export function LeaderboardTable({ data, trend }: Props) {
     }
   };
 
-  const delivery = COLUMNS.filter((c) => c.group === "delivery");
-  const volume = COLUMNS.filter((c) => c.group === "volume");
-  const quality = COLUMNS.filter((c) => c.group === "quality");
-
   return (
     <div className="rounded-xl border">
       <Table>
         <TableHeader>
           <TableRow className="hover:bg-transparent">
             <TableHead className="sticky left-0 z-10 bg-background">Person</TableHead>
-            {delivery.length > 0 && (
-              <TableHead colSpan={delivery.length} className="border-l text-success/80">
-                Delivery <span className="font-normal text-muted-foreground/60">(Linear)</span>
-              </TableHead>
-            )}
-            <TableHead colSpan={volume.length} className="border-l text-muted-foreground">
-              Volume <span className="font-normal text-muted-foreground/60">(gameable)</span>
-            </TableHead>
-            <TableHead colSpan={quality.length} className="border-l text-primary/80">
-              Quality &amp; consistency
-            </TableHead>
+            {GROUP_ORDER.map((g) => {
+              const cols = COLUMNS.filter((c) => c.group === g);
+              if (cols.length === 0) return null;
+              const meta = GROUP_META[g];
+              return (
+                <TableHead key={g} colSpan={cols.length} className={`border-l ${meta.accent}`}>
+                  {meta.label}
+                  {meta.hint && (
+                    <>
+                      {" "}
+                      <span className="font-normal text-muted-foreground/60">({meta.hint})</span>
+                    </>
+                  )}
+                </TableHead>
+              );
+            })}
           </TableRow>
           <TableRow className="hover:bg-transparent">
             <TableHead className="sticky left-0 z-10 bg-background">Name</TableHead>
@@ -153,13 +156,7 @@ function Cell({
   if (trend) {
     const d = deltaValue(row.metrics, col);
     if (d === null || d === 0) return <span className="text-muted-foreground">{d === 0 ? "→ 0" : "—"}</span>;
-    const good = deltaIsGood(d, col.better);
-    const arrow = d > 0 ? "▲" : "▼";
-    return (
-      <span className={good ? "text-success" : "text-destructive"}>
-        {arrow} {formatValue(Math.abs(d), col)}
-      </span>
-    );
+    return <DeltaBadge delta={d} col={col} />;
   }
 
   const v = sortValue(row.metrics, col);

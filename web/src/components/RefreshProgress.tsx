@@ -5,18 +5,9 @@ interface Props {
   onCancel: () => void;
 }
 
-const PHASE_LABEL: Record<Progress["phase"], string> = {
-  users: "Resolving users",
-  "mrs-list": "Listing merge requests",
-  "mrs-detail": "Fetching MR details",
-  pipelines: "Fetching pipelines",
-  pushes: "Fetching push events",
-  linear: "Fetching Linear issues",
-  compute: "Computing metrics",
-};
-
 export function RefreshProgress({ progress, onCancel }: Props) {
-  const label = progress ? (progress.label || PHASE_LABEL[progress.phase]) : "Starting…";
+  // The server sends a human label with every progress event; phase is the raw fallback.
+  const label = progress ? (progress.label || progress.phase) : "Starting…";
   const determinate = !!progress && progress.total > 0;
   const pct = determinate ? Math.round((progress.done / progress.total) * 100) : null;
   const windowHint = progress?.window === "prior" ? " · trend window (2 of 2)" : "";

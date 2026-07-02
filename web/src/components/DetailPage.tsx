@@ -1,14 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft, Settings } from "lucide-react";
 
-import type { MetricGroup } from "../../../shared/metrics";
 import type { MetricKey, UserDetailResponse } from "../../../shared/types";
 import { Button } from "@/components/ui/button";
 import { fetchDetail } from "../api";
 import {
   COLUMNS,
   type Column,
-  deltaIsGood,
+  GROUP_META,
+  GROUP_ORDER,
   deltaValue,
   formatValue,
   rankValue,
@@ -16,6 +16,7 @@ import {
 } from "../columns";
 import { navigateHome } from "../hooks/useHashRoute";
 import { Badge } from "@/components/ui/badge";
+import { DeltaBadge } from "./DeltaBadge";
 import { EvidenceTable } from "./EvidenceTable";
 
 interface RangeState {
@@ -31,11 +32,10 @@ interface Props {
   trend: boolean;
 }
 
-const GROUPS: { key: MetricGroup; label: string; accent: string }[] = [
-  { key: "delivery", label: "Delivery (Linear)", accent: "text-success/80" },
-  { key: "volume", label: "Volume", accent: "text-muted-foreground" },
-  { key: "quality", label: "Quality & consistency", accent: "text-primary/80" },
-];
+const GROUPS = GROUP_ORDER.map((key) => {
+  const meta = GROUP_META[key];
+  return { key, label: meta.hint ? `${meta.label} (${meta.hint})` : meta.label, accent: meta.accent };
+});
 
 export function DetailPage({ username, initialStat, range, trend }: Props) {
   const [data, setData] = useState<UserDetailResponse | null>(null);
@@ -175,11 +175,7 @@ function EvidencePanel({ data, col, trend }: { data: UserDetailResponse; col: Co
         <div className="flex items-baseline gap-3 font-mono tabular-nums">
           <span className="text-2xl text-foreground">{formatValue(value, col)}</span>
           {rank !== null && <span className="text-sm text-muted-foreground">#{rank}</span>}
-          {delta !== null && delta !== 0 && (
-            <span className={`text-sm ${deltaIsGood(delta, col.better) ? "text-success" : "text-destructive"}`}>
-              {delta > 0 ? "▲" : "▼"} {formatValue(Math.abs(delta), col)}
-            </span>
-          )}
+          {delta !== null && delta !== 0 && <DeltaBadge delta={delta} col={col} className="text-sm" />}
         </div>
       </div>
 
