@@ -36,8 +36,6 @@ export interface NormMr {
   /** Usernames who approved (may be empty on free tier / when inaccessible). */
   approvedByUsernames: string[];
   notes: NormNote[];
-  /** True when this MR references a ticket for the configured Linear team. */
-  hasTeamTicket: boolean;
   /** Per-file diff stats for file-pattern exclusion at compute time. */
   diffStats: { path: string; additions: number; deletions: number }[];
 }

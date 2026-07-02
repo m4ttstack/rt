@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { config } from "../config.js";
 import type { AppSettings } from "../shared/types.js";
 
@@ -105,8 +105,6 @@ function readFromFile(): AppSettings | null {
 
 function writeToFile(s: AppSettings): void {
   try {
-    const dir = SETTINGS_PATH.includes("/") ? SETTINGS_PATH.slice(0, SETTINGS_PATH.lastIndexOf("/")) : ".";
-    if (dir !== ".") mkdirSync(dir, { recursive: true });
     writeFileSync(SETTINGS_PATH, JSON.stringify(s, null, 2) + "\n", "utf8");
   } catch {
     console.error("[settings] failed to write settings.json");

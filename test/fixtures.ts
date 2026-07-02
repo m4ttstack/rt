@@ -32,7 +32,6 @@ const mr = (m: Partial<NormMr> & Pick<NormMr, "iid" | "authorUsername" | "title"
   fileCount: 1,
   approvedByUsernames: [],
   notes: [],
-  hasTeamTicket: true,
   diffStats: [],
   ...m,
 });

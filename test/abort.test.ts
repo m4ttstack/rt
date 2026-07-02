@@ -26,7 +26,6 @@ const mergedMr: NormMr = {
   fileCount: 1,
   approvedByUsernames: [],
   notes: [],
-  hasTeamTicket: true,
   diffStats: [],
 };
 

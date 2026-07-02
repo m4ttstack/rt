@@ -14,11 +14,6 @@ export interface RawPageInfo {
   endCursor: string | null;
 }
 
-export interface RawIssueConnection {
-  pageInfo: RawPageInfo;
-  nodes: RawIssue[];
-}
-
 export interface RawWorkflowState {
   name: string;
   type: string;

@@ -20,12 +20,6 @@ interface Props {
   trend: boolean;
 }
 
-const groupAccent: Record<string, string> = {
-  volume: "text-muted-foreground",
-  quality: "text-primary/80",
-  delivery: "text-success/80",
-};
-
 export function LeaderboardTable({ data, trend }: Props) {
   const [sortKey, setSortKey] = useState<string>("mrsMerged");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");

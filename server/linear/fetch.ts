@@ -3,7 +3,7 @@ import { mapIssue } from "./map.js";
 import { mrTicketHaystack } from "./ticket.js";
 import { mapLimit } from "../util/concurrency.js";
 import { isValidLinearId, putLinearIds } from "../cache/mr-store.js";
-import type { RawIssue, RawWorkflowState, RawWorkflowStateConnection } from "./raw-types.js";
+import type { RawIssue, RawWorkflowStateConnection } from "./raw-types.js";
 import type { NormMr, NormLinearIssue } from "../pipeline/model.js";
 import type { LeaderboardWarning, LinearStateInfo, RefreshProgress } from "../../shared/types.js";
 

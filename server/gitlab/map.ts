@@ -20,7 +20,6 @@ export function mapMrListNode(raw: RawMrListNode): NormMr {
     fileCount: 0,
     approvedByUsernames: [],
     notes: [],
-    hasTeamTicket: true,
     diffStats: [],
   };
 }
@@ -38,8 +37,6 @@ export function applyMrDetail(mr: NormMr, detail: RawMrDetail): NormMr {
       detail.approvedBy?.nodes.map((u) => u.username).filter((x): x is string => !!x) ?? [],
     notes: (detail.notes?.nodes ?? []).map(mapNote),
     description: detail.description ?? mr.description,
-    hasTeamTicket: mr.hasTeamTicket,
-    sourceBranch: mr.sourceBranch,
   };
 }
 

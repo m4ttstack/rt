@@ -54,10 +54,6 @@ export async function fetchAll(opts: FetchOptions): Promise<FetchOutcome> {
   signal?.throwIfAborted();
   const pushEvents = await fetchPushEvents(env, identities, projectIds, resolvedUsers, window, concurrency, warnings, signal, report);
 
-  // hasTeamTicket is set to true for all MRs here; the snapshot layer recomputes it
-  // from settings so a settings change doesn't require a re-fetch.
-  for (const mr of mrs) mr.hasTeamTicket = true;
-
   signal?.throwIfAborted();
   report({ phase: "linear", label: "Verifying Linear tickets", done: 0, total: 0 });
   const allMerged = mrs.filter((m) => m.state === "merged");
