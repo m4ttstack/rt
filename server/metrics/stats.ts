@@ -1,5 +1,7 @@
 /** Pure statistical helpers used across the metric layer. */
 
+import { BUILTIN_BOT_PATTERNS } from "../../shared/bots.js";
+
 /** Linear-interpolated percentile of an unsorted sample. p in [0,1]. null if empty. */
 export function percentile(values: readonly number[], p: number): number | null {
   if (values.length === 0) return null;
@@ -27,16 +29,12 @@ export function mean(values: readonly number[]): number {
  * group/project bots, CI bots). They post non-system notes seconds after MR creation,
  * which would otherwise dominate "first review" timing and reviewer counts.
  */
+const BUILTIN_BOT_RES = BUILTIN_BOT_PATTERNS.map((p) => new RegExp(p.source, "i"));
+
 export function isBotUsername(username: string | null, extraPatterns?: readonly RegExp[]): boolean {
   if (!username) return false;
-  const u = username.toLowerCase();
-  if (
-    /^(project|group)_\d+_bot/.test(u) ||
-    u.includes("_bot_") ||
-    u.endsWith("_bot") ||
-    u === "ghost"
-  ) return true;
-  return extraPatterns !== undefined && extraPatterns.some((re) => re.test(u));
+  if (BUILTIN_BOT_RES.some((re) => re.test(username))) return true;
+  return extraPatterns !== undefined && extraPatterns.some((re) => re.test(username));
 }
 
 /** Compile user-supplied bot patterns, skipping any bad regex from settings. */

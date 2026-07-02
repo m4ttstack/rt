@@ -8,8 +8,7 @@ import { clearCache, fetchCacheStats, fetchLinearStates, fetchSettings, fetchSus
 import type { SuspectedBot } from "@/api";
 import { navigateHome } from "@/hooks/useHashRoute";
 import type { AppSettings, LinearStateInfo } from "../../../shared/types";
-
-const BUILTIN_PATTERNS = ["project_N_bot", "group_N_bot", "*_bot_*", "*_bot", "ghost"];
+import { BUILTIN_BOT_PATTERN_LABELS } from "../../../shared/bots";
 
 function arraysEqual(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i]);
@@ -387,7 +386,7 @@ export default function SettingsPage() {
           )}
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="text-xs text-muted-foreground">Built-in patterns:</span>
-            {BUILTIN_PATTERNS.map((pat) => (
+            {BUILTIN_BOT_PATTERN_LABELS.map((pat) => (
               <Badge key={pat} variant="outline" className="text-xs text-muted-foreground">
                 {pat}
               </Badge>

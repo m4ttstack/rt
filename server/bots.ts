@@ -1,4 +1,6 @@
 import { readdir, readFile } from "node:fs/promises";
+import { compileBotPatterns } from "./metrics/stats.js";
+import { BUILTIN_BOT_PATTERNS } from "../shared/bots.js";
 import type { NormMr } from "./pipeline/model.js";
 import type { UserIdentity } from "./metrics/trend.js";
 import type { SuspectedBot } from "../shared/types.js";
@@ -12,13 +14,6 @@ interface CacheEnvelope {
 
 export type { SuspectedBot };
 
-const BUILTIN_PATTERNS = [
-  /^(project|group)_\d+_bot/i,
-  /_bot_/i,
-  /_bot$/i,
-  /^ghost$/i,
-];
-
 /**
  * Scan the most recent cache file for usernames that match built-in or extra bot
  * patterns, excluding usernames that appear in the configured users list or are
@@ -27,14 +22,10 @@ const BUILTIN_PATTERNS = [
 export async function scanSuspectedBots(
   extraPatterns: string[],
 ): Promise<SuspectedBot[]> {
-  // Compile extra patterns (best-effort; skip bad regexes).
-  const extra: RegExp[] = [];
-  for (const p of extraPatterns) {
-    try {
-      extra.push(new RegExp(p, "i"));
-    } catch { /* skip */ }
-  }
-  const allPatterns = [...BUILTIN_PATTERNS, ...extra];
+  const allPatterns = [
+    ...BUILTIN_BOT_PATTERNS.map((p) => new RegExp(p.source, "i")),
+    ...compileBotPatterns(extraPatterns),
+  ];
 
   // Find the most recent cache file.
   let files: string[];
@@ -67,28 +58,16 @@ export async function scanSuspectedBots(
   const seen = new Set<string>();
   const matches: SuspectedBot[] = [];
 
+  const check = (u: string | null) => {
+    if (!u || seen.has(u) || knownUsers.has(u)) return;
+    seen.add(u);
+    const pat = allPatterns.find((p) => p.test(u));
+    if (pat) matches.push({ username: u, matchedPattern: String(pat) });
+  };
+
   for (const mr of mrs) {
-    for (const note of mr.notes) {
-      const u = note.authorUsername;
-      if (!u || seen.has(u) || knownUsers.has(u)) continue;
-      seen.add(u);
-      for (const pat of allPatterns) {
-        if (pat.test(u)) {
-          matches.push({ username: u, matchedPattern: String(pat) });
-          break;
-        }
-      }
-    }
-    for (const a of mr.approvedByUsernames) {
-      if (seen.has(a) || knownUsers.has(a)) continue;
-      seen.add(a);
-      for (const pat of allPatterns) {
-        if (pat.test(a)) {
-          matches.push({ username: a, matchedPattern: String(pat) });
-          break;
-        }
-      }
-    }
+    for (const note of mr.notes) check(note.authorUsername);
+    for (const a of mr.approvedByUsernames) check(a);
   }
 
   return matches;
