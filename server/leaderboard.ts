@@ -79,19 +79,22 @@ async function loadOrFetch(
   return { outcome, fromCache: false };
 }
 
-const snapshotFor = (outcome: FetchOutcome, window: TimeWindow): Snapshot => {
+/** The settings-derived options shared by snapshot and evidence computation. */
+function metricOptionsFromSettings() {
   const s = getSettings();
-  return computeSnapshot(outcome.result, {
-    window,
-    users: getSettings().users,
+  return {
+    users: s.users,
     sizeBand: s.sizeBand,
     linearTeam: s.linearTeam || undefined,
     doneStates: s.doneStates,
     extraBotPatterns: s.bots.extraPatterns,
     excludeFilePatterns: s.excludeFilePatterns,
     ignoredMrs: s.ignoredMrs,
-  });
-};
+  };
+}
+
+const snapshotFor = (outcome: FetchOutcome, window: TimeWindow): Snapshot =>
+  computeSnapshot(outcome.result, { window, ...metricOptionsFromSettings() });
 
 /**
  * Shared core: fetch (cached) -> compute current + prior snapshots -> ranked response.
@@ -105,52 +108,11 @@ async function buildLeaderboard(
   const scope = resolveScope();
   const pw = priorWindow(opts.window);
 
-  const current = await loadOrFetch(env, scope, opts.window, opts.refresh, opts.cacheOnly ?? false);
+  const current = await loadOrFetch(env, scope, opts.window, opts.refresh, opts.cacheOnly ?? false, opts.signal, withWindow("current", opts.onProgress));
   const warnings = [...current.outcome.warnings];
 
   // Prior window drives the self-vs-self trend. Only fetched when requested (it doubles
   // the work). Compute once, then it's cached. A failure must not break the current view.
-  let priorSnapshot: Snapshot | null = null;
-  if (opts.trend) {
-    try {
-      const prior = await loadOrFetch(env, scope, pw, false, opts.cacheOnly ?? false);
-      priorSnapshot = snapshotFor(prior.outcome, pw);
-    } catch (err) {
-      warnings.push({
-        code: "trend_unavailable",
-        message: `Prior-window data unavailable, deltas hidden: ${(err as Error).message}`,
-      });
-    }
-  }
-
-  const ctx: BuildContext = {
-    scope,
-    window: opts.window,
-    priorWindow: priorSnapshot ? pw : null,
-    baseUrl: env.baseUrl,
-    currentUser: getSettings().currentUser,
-    generatedAt: new Date().toISOString(),
-    fromCache: current.fromCache,
-    identities: current.outcome.identities,
-    warnings,
-  };
-
-  return {
-    response: buildResponse(snapshotFor(current.outcome, opts.window), priorSnapshot, ctx),
-    current: current.outcome,
-    env,
-  };
-}
-
-/** Orchestrator: fetch (cached) -> compute current + prior snapshots -> build response with trend. */
-export async function getLeaderboard(opts: LeaderboardOptions): Promise<LeaderboardResponse> {
-  const env = getEnv();
-  const scope = resolveScope();
-  const pw = priorWindow(opts.window);
-
-  const current = await loadOrFetch(env, scope, opts.window, opts.refresh, opts.cacheOnly ?? false, opts.signal, withWindow("current", opts.onProgress));
-  const warnings = [...current.outcome.warnings];
-
   let priorSnapshot: Snapshot | null = null;
   if (opts.trend) {
     try {
@@ -179,7 +141,16 @@ export async function getLeaderboard(opts: LeaderboardOptions): Promise<Leaderbo
     warnings,
   };
 
-  return buildResponse(snapshotFor(current.outcome, opts.window), priorSnapshot, ctx);
+  return {
+    response: buildResponse(snapshotFor(current.outcome, opts.window), priorSnapshot, ctx),
+    current: current.outcome,
+    env,
+  };
+}
+
+/** Orchestrator: fetch (cached) -> compute current + prior snapshots -> build response with trend. */
+export async function getLeaderboard(opts: LeaderboardOptions): Promise<LeaderboardResponse> {
+  return (await buildLeaderboard(opts)).response;
 }
 
 /**
@@ -193,16 +164,11 @@ export async function getUserDetail(opts: DetailOptions): Promise<UserDetailResp
     throw new UnknownUserError(`Unknown user "${opts.user}" (not in the configured set).`);
   }
 
-  const s = getSettings();
+  const { users: _users, ...evidenceOpts } = metricOptionsFromSettings();
   const evidence = buildUserEvidence(current.result, opts.user, {
     window: opts.window,
     baseUrl: env.baseUrl,
-    sizeBand: s.sizeBand,
-    linearTeam: s.linearTeam || undefined,
-    doneStates: s.doneStates,
-    extraBotPatterns: s.bots.extraPatterns,
-    excludeFilePatterns: s.excludeFilePatterns,
-    ignoredMrs: s.ignoredMrs,
+    ...evidenceOpts,
   });
 
   return {
