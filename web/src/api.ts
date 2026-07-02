@@ -12,8 +12,8 @@ export interface FetchParams {
 /** A cacheOnly read returns the data, or this sentinel when the cache is cold. */
 export type CacheOnlyResult = LeaderboardResponse | { cached: false };
 
-async function getJson<T>(url: string): Promise<T> {
-  const res = await fetch(url);
+async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(url, init);
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     throw new Error(body.error ?? `${res.status} ${res.statusText}`);
@@ -32,26 +32,21 @@ export function buildQuery(p: FetchParams): URLSearchParams {
 }
 
 export function fetchLeaderboard(p: FetchParams): Promise<CacheOnlyResult> {
-  return getJson<CacheOnlyResult>(`/api/leaderboard?${buildQuery(p).toString()}`);
+  return requestJson<CacheOnlyResult>(`/api/leaderboard?${buildQuery(p).toString()}`);
 }
 
 export function fetchDetail(user: string, p: FetchParams): Promise<UserDetailResponse> {
   const q = buildQuery(p);
   q.set("user", user);
-  return getJson<UserDetailResponse>(`/api/detail?${q.toString()}`);
+  return requestJson<UserDetailResponse>(`/api/detail?${q.toString()}`);
 }
 
-export async function startRefresh(p: FetchParams): Promise<RefreshStatusResponse> {
-  const res = await fetch(`/api/refresh?${buildQuery(p).toString()}`, { method: "POST" });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `${res.status} ${res.statusText}`);
-  }
-  return (await res.json()) as RefreshStatusResponse;
+export function startRefresh(p: FetchParams): Promise<RefreshStatusResponse> {
+  return requestJson<RefreshStatusResponse>(`/api/refresh?${buildQuery(p).toString()}`, { method: "POST" });
 }
 
 export function pollRefresh(id: string): Promise<RefreshStatusResponse> {
-  return getJson<RefreshStatusResponse>(`/api/refresh/${id}`);
+  return requestJson<RefreshStatusResponse>(`/api/refresh/${id}`);
 }
 
 export async function cancelRefresh(id: string): Promise<void> {
@@ -66,35 +61,29 @@ export async function cancelRefresh(id: string): Promise<void> {
 export type { SuspectedBot } from "../../shared/types";
 
 export async function fetchSettings(): Promise<{ settings: AppSettings; defaults: AppSettings }> {
-  return getJson("/api/settings");
+  return requestJson("/api/settings");
 }
 
 export async function fetchLinearStates(): Promise<{ states: LinearStateInfo[] }> {
-  return getJson("/api/settings/linear-states");
+  return requestJson("/api/settings/linear-states");
 }
 
 export async function fetchSuspectedBots(): Promise<{ bots: SuspectedBot[] }> {
-  return getJson("/api/settings/suspected-bots");
+  return requestJson("/api/settings/suspected-bots");
 }
 
 export async function fetchCacheStats(): Promise<CacheStatsResponse> {
-  return getJson("/api/cache/stats");
+  return requestJson("/api/cache/stats");
 }
 
 export async function clearCache(): Promise<void> {
-  const res = await fetch("/api/cache/clear", { method: "POST" });
-  if (!res.ok) throw new Error("Failed to clear cache");
+  await requestJson("/api/cache/clear", { method: "POST" });
 }
 
-export async function saveSettings(partial: Partial<AppSettings>): Promise<{ settings: AppSettings }> {
-  const res = await fetch("/api/settings", {
+export function saveSettings(partial: Partial<AppSettings>): Promise<{ settings: AppSettings }> {
+  return requestJson<{ settings: AppSettings }>("/api/settings", {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(partial),
   });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? `${res.status} ${res.statusText}`);
-  }
-  return (await res.json()) as { settings: AppSettings };
 }
