@@ -1,15 +1,12 @@
 import { readdir, readFile } from "node:fs/promises";
 import { compileBotPatterns } from "./metrics/stats.js";
 import { BUILTIN_BOT_PATTERNS } from "../shared/bots.js";
-import type { NormMr } from "./pipeline/model.js";
-import type { UserIdentity } from "./metrics/trend.js";
+import type { FetchOutcome } from "./pipeline/fetch.js";
 import type { SuspectedBot } from "../shared/types.js";
 
+/** The envelope cache/store.ts writes: a FetchOutcome under `data`. */
 interface CacheEnvelope {
-  data: {
-    mrs: NormMr[];
-    identities: Record<string, UserIdentity>;
-  };
+  data: FetchOutcome;
 }
 
 export type { SuspectedBot };
@@ -36,14 +33,14 @@ export async function scanSuspectedBots(
   }
   if (files.length === 0) return [];
 
-  // Sort by mtime descending; read the newest valid one.
+  // Filenames embed the window dates, so descending name order approximates recency.
   files.sort().reverse();
   let envelope: CacheEnvelope | null = null;
   for (const f of files.slice(0, 10)) {
     try {
       const raw = await readFile(`.cache/${f}`, "utf8");
       const parsed = JSON.parse(raw);
-      if (parsed.data?.mrs) {
+      if (parsed.data?.result?.mrs) {
         envelope = parsed;
         break;
       }
@@ -51,7 +48,8 @@ export async function scanSuspectedBots(
   }
   if (!envelope) return [];
 
-  const { mrs, identities } = envelope.data;
+  const { result, identities } = envelope.data;
+  const mrs = result.mrs;
 
   // Gather all usernames from MR notes + approvals, excluding known human users.
   const knownUsers = new Set(Object.keys(identities ?? {}));
