@@ -27,7 +27,7 @@ export function mean(values: readonly number[]): number {
  * group/project bots, CI bots). They post non-system notes seconds after MR creation,
  * which would otherwise dominate "first review" timing and reviewer counts.
  */
-export function isBotUsername(username: string | null, extraPatterns?: string[]): boolean {
+export function isBotUsername(username: string | null, extraPatterns?: readonly RegExp[]): boolean {
   if (!username) return false;
   const u = username.toLowerCase();
   if (
@@ -36,16 +36,20 @@ export function isBotUsername(username: string | null, extraPatterns?: string[])
     u.endsWith("_bot") ||
     u === "ghost"
   ) return true;
-  if (extraPatterns && extraPatterns.length > 0) {
-    for (const pat of extraPatterns) {
-      try {
-        if (new RegExp(pat, "i").test(u)) return true;
-      } catch {
-        // Bad regex from user settings ... skip it.
-      }
+  return extraPatterns !== undefined && extraPatterns.some((re) => re.test(u));
+}
+
+/** Compile user-supplied bot patterns, skipping any bad regex from settings. */
+export function compileBotPatterns(patterns?: readonly string[]): RegExp[] {
+  const compiled: RegExp[] = [];
+  for (const p of patterns ?? []) {
+    try {
+      compiled.push(new RegExp(p, "i"));
+    } catch {
+      // Bad regex from user settings ... skip it.
     }
   }
-  return false;
+  return compiled;
 }
 
 /** UTC calendar-day key (YYYY-MM-DD) for an ISO timestamp. */

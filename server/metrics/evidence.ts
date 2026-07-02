@@ -6,8 +6,8 @@
  */
 import { inWindow } from "../util/window.js";
 import { buildRevertedTitleSet, isReverted } from "./reverts.js";
-import { isBotUsername, mean, percentile, round, streaks } from "./stats.js";
-import { buildIgnoredMrSet, minimatch } from "./snapshot.js";
+import { mean, percentile, round, streaks } from "./stats.js";
+import { buildIgnoredMrSet, buildMetricFilters, isDoneState, matchesTeam } from "./snapshot.js";
 import type { FetchResult, NormMr } from "../pipeline/model.js";
 import type { MetricEvidence, MetricKey, TimeWindow } from "../../shared/types.js";
 
@@ -36,27 +36,15 @@ export function buildUserEvidence(
   u: string,
   ctx: EvidenceContext,
 ): Partial<Record<MetricKey, MetricEvidence>> {
-  const { window: w, baseUrl, sizeBand, linearTeam, doneStates, extraBotPatterns, excludeFilePatterns, ignoredMrs } = ctx;
-  const isIgnored = buildIgnoredMrSet(ignoredMrs);
+  const { window: w, baseUrl, sizeBand, linearTeam, doneStates } = ctx;
+  const isIgnored = buildIgnoredMrSet(ctx.ignoredMrs);
   // Highest iid first so every MR-keyed table renders newest work at the top.
   const mrs = fetched.mrs.filter((m) => !isIgnored(m)).sort((a, b) => b.iid - a.iid);
   const { pipelines, pushEvents } = fetched;
   const linearIssues = fetched.linearIssues ?? [];
   const revertedTitles = buildRevertedTitleSet(mrs);
   const mrUrl = (m: NormMr) => `${baseUrl}/${m.projectPath}/-/merge_requests/${m.iid}`;
-
-  const filteredLines = (m: NormMr): { additions: number; deletions: number } => {
-    if (!excludeFilePatterns || excludeFilePatterns.length === 0 || m.diffStats.length === 0) {
-      return { additions: m.additions, deletions: m.deletions };
-    }
-    let add = 0, del = 0;
-    for (const f of m.diffStats) {
-      if (excludeFilePatterns.some((p) => minimatch(f.path, p))) continue;
-      add += f.additions;
-      del += f.deletions;
-    }
-    return { additions: add, deletions: del };
-  };
+  const { lineCounts: filteredLines, isBot } = buildMetricFilters(ctx);
 
   const out: Partial<Record<MetricKey, MetricEvidence>> = {};
 
@@ -167,7 +155,7 @@ export function buildUserEvidence(
   const waitSamples: number[] = [];
   for (const m of authoredCohort) {
     const firstTouch = m.notes
-      .filter((n) => !n.system && n.authorUsername !== u && !isBotUsername(n.authorUsername, extraBotPatterns))
+      .filter((n) => !n.system && n.authorUsername !== u && !isBot(n.authorUsername))
       .map((n) => Date.parse(n.createdAt))
       .sort((a, b) => a - b)[0];
     if (firstTouch === undefined) continue;
@@ -189,9 +177,9 @@ export function buildUserEvidence(
   for (const m of authoredMerged) {
     const seen = new Set<string>();
     for (const n of m.notes) {
-      if (!n.system && n.authorUsername && n.authorUsername !== u && !isBotUsername(n.authorUsername, extraBotPatterns)) seen.add(n.authorUsername);
+      if (!n.system && n.authorUsername && n.authorUsername !== u && !isBot(n.authorUsername)) seen.add(n.authorUsername);
     }
-    if (fetched.approvalsAvailable) for (const a of m.approvedByUsernames) if (a !== u && !isBotUsername(a, extraBotPatterns)) seen.add(a);
+    if (fetched.approvalsAvailable) for (const a of m.approvedByUsernames) if (a !== u && !isBot(a)) seen.add(a);
     for (const r of seen) reviewers.set(r, (reviewers.get(r) ?? 0) + 1);
   }
   const given = reviewedRows.length;
@@ -248,11 +236,8 @@ export function buildUserEvidence(
   let stateExcluded = 0;
   const issueRows: { cells: string[]; href: string }[] = [];
   for (const i of allUserIssues) {
-    const teamMatch = !linearTeam || i.identifier.toUpperCase().startsWith(linearTeam.toUpperCase() + "-");
-    const stateMatch = i.stateType === null ||
-      (doneStates && doneStates.length > 0 ? i.stateName !== null && doneStates.includes(i.stateName) : i.stateType === "completed" || i.stateType === "canceled");
-    if (!teamMatch) { teamExcluded++; continue; }
-    if (!stateMatch) { stateExcluded++; continue; }
+    if (!matchesTeam(i.identifier, linearTeam)) { teamExcluded++; continue; }
+    if (!isDoneState(i.stateType, i.stateName, doneStates)) { stateExcluded++; continue; }
     const mrLinks = i.linkedMrs.map((m) => `!${m.iid}`).join(", ");
     const stateLabel = i.stateName ?? i.stateType ?? "—";
     issueRows.push({

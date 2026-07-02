@@ -1,5 +1,6 @@
 import { linearRequest } from "./client.js";
 import { mapIssue } from "./map.js";
+import { mrTicketHaystack } from "./ticket.js";
 import { mapLimit } from "../util/concurrency.js";
 import { isValidLinearId, putLinearIds } from "../cache/mr-store.js";
 import type { RawIssue, RawWorkflowState, RawWorkflowStateConnection } from "./raw-types.js";
@@ -16,16 +17,6 @@ const LINEAR_ID_RE = /\b([A-Z]+[-:]\d+)\b/gi;
  * chunk errors, only that chunk is lost rather than the entire result.
  */
 const VALID_LINEAR_ID_RE = /^[A-Z]{2,}-\d+$/;
-
-/** Build a regex that matches a Linear ticket ID for a specific team, e.g. "HUB-123" or "HUB:123". */
-export function teamTicketRegex(team: string): RegExp | null {
-  if (!team) return null;
-  return new RegExp(`\\b${escapeRegex(team)}[-:]\\d+\\b`, "i");
-}
-
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 /**
  * Build a dynamic GraphQL query that looks up each identifier with an alias:
@@ -118,8 +109,7 @@ export async function resolveLinearTickets(
   }
   const ticketMap = new Map<string, TicketRef>();
   for (const mr of mergedMrs) {
-    const haystack = [mr.title, mr.sourceBranch, mr.description].filter(Boolean).join(" ");
-    const ids = extractLinearIds(haystack);
+    const ids = extractLinearIds(mrTicketHaystack(mr));
     for (const id of ids) {
       const normalized = id.toUpperCase().replace(":", "-");
       if (!mr.authorUsername) continue;

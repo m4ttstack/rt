@@ -1,6 +1,7 @@
 import { inWindow } from "../util/window.js";
+import { mrTicketHaystack, teamTicketRegex } from "../linear/ticket.js";
 import { buildRevertedTitleSet, isReverted } from "./reverts.js";
-import { isBotUsername, mean, percentile, round, streaks } from "./stats.js";
+import { compileBotPatterns, isBotUsername, mean, percentile, round, streaks } from "./stats.js";
 import type { FetchResult, NormMr } from "../pipeline/model.js";
 import type { PipelineStatusBreakdown, TimeWindow } from "../../shared/types.js";
 
@@ -83,30 +84,29 @@ export function buildIgnoredMrSet(
   return (mr) => global.has(mr.iid) || (byProject.get(mr.projectPath)?.has(mr.iid) ?? false);
 }
 
-/** Compute filtered additions/deletions by excluding files matching any pattern. */
 function filteredLineCounts(
   mr: NormMr,
-  patterns?: string[],
+  excludeRes: readonly RegExp[],
 ): { additions: number; deletions: number } {
-  if (!patterns || patterns.length === 0 || mr.diffStats.length === 0) {
+  if (excludeRes.length === 0 || mr.diffStats.length === 0) {
     return { additions: mr.additions, deletions: mr.deletions };
   }
   let additions = 0;
   let deletions = 0;
   for (const f of mr.diffStats) {
-    if (patterns.some((p) => minimatch(f.path, p))) continue;
+    if (excludeRes.some((re) => re.test(f.path))) continue;
     additions += f.additions;
     deletions += f.deletions;
   }
   return { additions, deletions };
 }
 
-/** Minimal glob match — supports *, **, and literal segments. */
-export function minimatch(path: string, pattern: string): boolean {
+/** Compile a minimal glob (supports *, **, and literal segments) to a RegExp. */
+export function globToRegExp(pattern: string): RegExp {
   // Patterns without a "/" match at any depth (gitignore-style):
   // "*.json" should match "apps/backend/package.json" and "package.json".
   const effective = pattern.includes("/") ? pattern : `**/${pattern}`;
-  const re = new RegExp(
+  return new RegExp(
     "^" +
     effective
       .replace(/\*\*\//g, "\x00")
@@ -118,7 +118,35 @@ export function minimatch(path: string, pattern: string): boolean {
     "$",
     "i",
   );
-  return re.test(path);
+}
+
+/** Settings-derived predicates, compiled once per snapshot/evidence build. */
+export interface MetricFilters {
+  /** Additions/deletions with excluded files removed, memoized per MR. */
+  lineCounts(mr: NormMr): { additions: number; deletions: number };
+  isBot(username: string | null): boolean;
+  hasTeamTicket(mr: Pick<NormMr, "title" | "sourceBranch" | "description">): boolean;
+}
+
+export function buildMetricFilters(
+  opts: Pick<SnapshotOptions, "linearTeam" | "extraBotPatterns" | "excludeFilePatterns">,
+): MetricFilters {
+  const excludeRes = (opts.excludeFilePatterns ?? []).map(globToRegExp);
+  const extraBots = compileBotPatterns(opts.extraBotPatterns);
+  const ticketRe = opts.linearTeam ? teamTicketRegex(opts.linearTeam) : null;
+  const counts = new WeakMap<NormMr, { additions: number; deletions: number }>();
+  return {
+    lineCounts(mr) {
+      let c = counts.get(mr);
+      if (!c) {
+        c = filteredLineCounts(mr, excludeRes);
+        counts.set(mr, c);
+      }
+      return c;
+    },
+    isBot: (username) => isBotUsername(username, extraBots),
+    hasTeamTicket: (mr) => !ticketRe || ticketRe.test(mrTicketHaystack(mr)),
+  };
 }
 
 function emptyStatus(): PipelineStatusBreakdown {
@@ -127,71 +155,61 @@ function emptyStatus(): PipelineStatusBreakdown {
 
 /** Compute every metric for every configured user over one window. Pure. */
 export function computeSnapshot(fetched: FetchResult, opts: SnapshotOptions): Snapshot {
-  const { window, users, sizeBand, linearTeam, doneStates, extraBotPatterns, excludeFilePatterns, ignoredMrs } = opts;
-  const isIgnored = buildIgnoredMrSet(ignoredMrs);
+  const isIgnored = buildIgnoredMrSet(opts.ignoredMrs);
   const filtered: FetchResult = {
     ...fetched,
     mrs: fetched.mrs.filter((m) => !isIgnored(m)),
   };
   const revertedTitles = buildRevertedTitleSet(filtered.mrs);
+  const filters = buildMetricFilters(opts);
 
   const byUser: Record<string, RawUserMetrics> = {};
-  for (const u of users) {
-    byUser[u] = computeUser(u, filtered, window, sizeBand, revertedTitles, linearTeam, doneStates, extraBotPatterns, excludeFilePatterns);
+  for (const u of opts.users) {
+    byUser[u] = computeUser(u, filtered, opts, revertedTitles, filters);
   }
   return { byUser, approvalsAvailable: filtered.approvalsAvailable };
-}
-
-/** Recompute whether an MR references a team ticket from its title/branch/desc. */
-function teamTicketInMr(mr: { title: string; sourceBranch: string | null; description: string | null }, linearTeam?: string): boolean {
-  if (!linearTeam) return true;
-  const haystack = [mr.title, mr.sourceBranch, mr.description].filter(Boolean).join(" ");
-  return new RegExp(`\\b${escapeRe(linearTeam)}[-:]\\d+\\b`, "i").test(haystack);
-}
-
-function escapeRe(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 /**
  * True when a ticket's current state counts as "done". When doneStates is empty,
  * falls back to type-based default: issues whose stateType is "completed" or "canceled".
  */
-function isDoneState(stateType: string | null, stateName: string | null, doneStates?: string[]): boolean {
-  if (stateType === null) return true; // missing data — fall open
+export function isDoneState(stateType: string | null, stateName: string | null, doneStates?: string[]): boolean {
+  if (stateType === null) return true; // missing data... fall open
   if (doneStates && doneStates.length > 0) {
     return stateName !== null && doneStates.includes(stateName);
   }
   return stateType === "completed" || stateType === "canceled";
 }
 
+/** True when a Linear identifier belongs to the configured team (no team = all match). */
+export function matchesTeam(identifier: string, linearTeam?: string): boolean {
+  return !linearTeam || identifier.toUpperCase().startsWith(linearTeam.toUpperCase() + "-");
+}
+
 function computeUser(
   u: string,
   fetched: FetchResult,
-  window: TimeWindow,
-  sizeBand: { tooSmall: number; tooLarge: number },
+  opts: SnapshotOptions,
   revertedTitles: Set<string>,
-  linearTeam?: string,
-  doneStates?: string[],
-  extraBotPatterns?: string[],
-  excludeFilePatterns?: string[],
+  f: MetricFilters,
 ): RawUserMetrics {
+  const { window, sizeBand, linearTeam, doneStates } = opts;
   const { mrs, pipelines, pushEvents } = fetched;
   // Tolerate older cache envelopes (and tests) that predate the Linear field.
   const linearIssues = fetched.linearIssues ?? [];
 
   // --- Volume: authored & merged in window (spec 4.1, 4.2) ---
   const authoredMerged = mrs.filter(
-    (m) => m.authorUsername === u && m.state === "merged" && teamTicketInMr(m, linearTeam) && inWindow(m.mergedAt, window),
+    (m) => m.authorUsername === u && m.state === "merged" && f.hasTeamTicket(m) && inWindow(m.mergedAt, window),
   );
-  const additions = sum(authoredMerged, (m) => filteredLineCounts(m, excludeFilePatterns).additions);
-  const deletions = sum(authoredMerged, (m) => filteredLineCounts(m, excludeFilePatterns).deletions);
+  const additions = sum(authoredMerged, (m) => f.lineCounts(m).additions);
+  const deletions = sum(authoredMerged, (m) => f.lineCounts(m).deletions);
   const mrsMerged = authoredMerged.length;
 
   // --- MR size health (spec 4.8): share in the healthy band ---
   const healthy = authoredMerged.filter((m) => {
-    const f = filteredLineCounts(m, excludeFilePatterns);
-    const c = f.additions + f.deletions;
+    const c = f.lineCounts(m).additions + f.lineCounts(m).deletions;
     return c >= sizeBand.tooSmall && c <= sizeBand.tooLarge;
   }).length;
   const sizeHealthPct = mrsMerged === 0 ? 0 : round(healthy / mrsMerged, 3);
@@ -253,7 +271,7 @@ function computeUser(
   const authorLatencies: number[] = [];
   for (const m of authoredCohort) {
     const firstTouch = m.notes
-      .filter((n) => !n.system && n.authorUsername !== u && !isBotUsername(n.authorUsername, extraBotPatterns))
+      .filter((n) => !n.system && n.authorUsername !== u && !f.isBot(n.authorUsername))
       .map((n) => Date.parse(n.createdAt))
       .sort((a, b) => a - b)[0];
     if (firstTouch === undefined) continue;
@@ -267,12 +285,12 @@ function computeUser(
   const reviewers = new Set<string>();
   for (const m of authoredMerged) {
     for (const n of m.notes) {
-      if (!n.system && n.authorUsername && n.authorUsername !== u && !isBotUsername(n.authorUsername, extraBotPatterns)) {
+      if (!n.system && n.authorUsername && n.authorUsername !== u && !f.isBot(n.authorUsername)) {
         reviewers.add(n.authorUsername);
       }
     }
     if (fetched.approvalsAvailable) {
-      for (const a of m.approvedByUsernames) if (a !== u && !isBotUsername(a, extraBotPatterns)) reviewers.add(a);
+      for (const a of m.approvedByUsernames) if (a !== u && !f.isBot(a)) reviewers.add(a);
     }
   }
   const received = reviewers.size;
@@ -292,7 +310,7 @@ function computeUser(
   const issuesCompleted = linearIssues.filter(
     (i) =>
       i.assignedUser === u &&
-      (!linearTeam || i.identifier.toUpperCase().startsWith(linearTeam.toUpperCase() + "-")) &&
+      matchesTeam(i.identifier, linearTeam) &&
       isDoneState(i.stateType, i.stateName, doneStates),
   ).length;
 
