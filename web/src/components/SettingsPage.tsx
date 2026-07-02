@@ -14,14 +14,7 @@ function arraysEqual(a: string[], b: string[]): boolean {
   return a.length === b.length && a.every((v, i) => v === b[i]);
 }
 
-function parsePatterns(text: string): string[] {
-  return text
-    .split("\n")
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-function parseUsers(text: string): string[] {
+function parseLines(text: string): string[] {
   return text
     .split("\n")
     .map((s) => s.trim())
@@ -74,6 +67,18 @@ export default function SettingsPage() {
   const [linearIdStats, setLinearIdStats] = useState<{ valid: number; invalid: number } | null>(null);
   const [clearing, setClearing] = useState(false);
 
+  const applyToForm = useCallback((s: AppSettings) => {
+    setLinearTeam(s.linearTeam);
+    setDoneStates([...s.doneStates]);
+    setUsers(s.users.join("\n"));
+    setCurrentUser(s.currentUser);
+    setTooSmall(String(s.sizeBand.tooSmall));
+    setTooLarge(String(s.sizeBand.tooLarge));
+    setExtraBotPatterns(s.bots.extraPatterns.join("\n"));
+    setExcludeFilePatterns(s.excludeFilePatterns.join("\n"));
+    setIgnoredMrs(s.ignoredMrs.join("\n"));
+  }, []);
+
   useEffect(() => {
     setError(null);
     Promise.all([
@@ -85,15 +90,7 @@ export default function SettingsPage() {
       .then(([settingsRes, statesRes, botsRes, cacheRes]) => {
         setSaved(settingsRes.settings);
         setDefaults(settingsRes.defaults);
-        setLinearTeam(settingsRes.settings.linearTeam);
-        setDoneStates([...settingsRes.settings.doneStates]);
-        setUsers(settingsRes.settings.users.join("\n"));
-        setCurrentUser(settingsRes.settings.currentUser);
-        setTooSmall(String(settingsRes.settings.sizeBand.tooSmall));
-        setTooLarge(String(settingsRes.settings.sizeBand.tooLarge));
-        setExtraBotPatterns(settingsRes.settings.bots.extraPatterns.join("\n"));
-        setExcludeFilePatterns(settingsRes.settings.excludeFilePatterns.join("\n"));
-        setIgnoredMrs(settingsRes.settings.ignoredMrs.join("\n"));
+        applyToForm(settingsRes.settings);
         setWorkflowStates(statesRes.states);
         setSuspectedBots(botsRes.bots);
         setCachedMrCount(cacheRes.mrDetails);
@@ -101,7 +98,7 @@ export default function SettingsPage() {
       })
       .catch((e) => setError((e as Error).message))
       .finally(() => setLoading(false));
-  }, []);
+  }, [applyToForm]);
 
   const toggleState = useCallback((name: string) => {
     setDoneStates((prev) =>
@@ -110,17 +107,8 @@ export default function SettingsPage() {
   }, []);
 
   const resetToDefaults = useCallback(() => {
-    if (!defaults) return;
-    setLinearTeam(defaults.linearTeam);
-    setDoneStates([...defaults.doneStates]);
-    setUsers(defaults.users.join("\n"));
-    setCurrentUser(defaults.currentUser);
-    setTooSmall(String(defaults.sizeBand.tooSmall));
-    setTooLarge(String(defaults.sizeBand.tooLarge));
-    setExtraBotPatterns(defaults.bots.extraPatterns.join("\n"));
-    setExcludeFilePatterns(defaults.excludeFilePatterns.join("\n"));
-    setIgnoredMrs(defaults.ignoredMrs.join("\n"));
-  }, [defaults]);
+    if (defaults) applyToForm(defaults);
+  }, [defaults, applyToForm]);
 
   const handleSave = useCallback(async () => {
     if (!saved) return;
@@ -128,8 +116,8 @@ export default function SettingsPage() {
     setError(null);
     setConfirmText(null);
     try {
-      const userList = parseUsers(users);
-      const formPatterns = parsePatterns(extraBotPatterns);
+      const userList = parseLines(users);
+      const formPatterns = parseLines(extraBotPatterns);
 
       if (userList.length === 0) {
         setError("Team members list cannot be empty.");
@@ -151,9 +139,9 @@ export default function SettingsPage() {
       const sizeBandChanged =
         Number(tooSmall) !== saved.sizeBand.tooSmall ||
         Number(tooLarge) !== saved.sizeBand.tooLarge;
-      const formFilePatterns = parsePatterns(excludeFilePatterns);
+      const formFilePatterns = parseLines(excludeFilePatterns);
       const filePatternsChanged = !arraysEqual(formFilePatterns, saved.excludeFilePatterns);
-      const formIgnoredMrs = parsePatterns(ignoredMrs);
+      const formIgnoredMrs = parseLines(ignoredMrs);
       const ignoredMrsChanged = !arraysEqual(formIgnoredMrs, saved.ignoredMrs);
       const botsChanged = !arraysEqual(formPatterns, saved.bots.extraPatterns);
 
@@ -204,7 +192,7 @@ export default function SettingsPage() {
     );
   }
 
-  const userList = parseUsers(users);
+  const userList = parseLines(users);
 
   return (
     <div className="mx-auto max-w-2xl px-6 py-8">

@@ -2,32 +2,21 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { restGetOne } from "../server/gitlab/rest.js";
 import { gqlRequest } from "../server/gitlab/graphql.js";
 import { resolveLinearTickets } from "../server/linear/fetch.js";
-import type { NormMr } from "../server/pipeline/model.js";
+import { mr } from "./fixtures.js";
 import type { Env } from "../server/env.js";
 import type { LeaderboardWarning } from "../shared/types.js";
 
 const ENV: Env = { baseUrl: "https://gl.example", token: "tkn", port: 0 };
 afterEach(() => vi.unstubAllGlobals());
 
-const mergedMr: NormMr = {
+const mergedMr = mr({
   iid: 1,
-  projectPath: "org/app",
   authorUsername: "alice",
-  state: "merged",
-  createdAt: "2026-05-01T00:00:00.000Z",
-  preparedAt: null,
-  mergedAt: "2026-05-10T00:00:00.000Z",
-  sourceBranch: null,
-  description: null,
   title: "Fix ACME-123 bug",
-  labels: [],
+  mergedAt: "2026-05-10T00:00:00.000Z",
   additions: 10,
   deletions: 5,
-  fileCount: 1,
-  approvedByUsernames: [],
-  notes: [],
-  diffStats: [],
-};
+});
 
 describe("abort signal threading", () => {
   it("forwards the signal to fetch for REST", async () => {

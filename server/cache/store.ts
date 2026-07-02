@@ -31,11 +31,14 @@ function sanitize(s: string): string {
   return s.replace(/[^a-z0-9.\-]/gi, "_");
 }
 
+/** Stable string identity for a scope, shared with the incremental MR-list cache. */
+export function scopeKey(scope: Scope): string {
+  return scope.type === "group" ? `g:${scope.groupPath}` : `p:${(scope.projectPaths ?? []).join(",")}`;
+}
+
 /** Cache key for a (scope, window) pair. */
 export function cacheKey(scope: Scope, window: TimeWindow): string {
-  const scopeStr =
-    scope.type === "group" ? `g:${scope.groupPath}` : `p:${(scope.projectPaths ?? []).join(",")}`;
-  return `${hash(scopeStr)}-${sanitize(windowCacheKey(window))}`;
+  return `${hash(scopeKey(scope))}-${sanitize(windowCacheKey(window))}`;
 }
 
 function pathFor(key: string): string {

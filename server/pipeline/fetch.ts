@@ -3,8 +3,9 @@ import { mapLimit } from "../util/concurrency.js";
 import { collectConnection, gqlRequest } from "../gitlab/graphql.js";
 import { GitLabApiError } from "../gitlab/errors.js";
 import { applyMrDetail, mapEvent, mapMrListNode, mapPipeline } from "../gitlab/map.js";
-import { getCachedMrKeys, getMrByKey, putMrDetails, getCachedMrList, putMrListNodes, getLastListScan, setLastListScan } from "../cache/mr-store.js";
-import { revertTarget } from "../metrics/reverts.js";
+import { getCachedMrKeys, getMrByKey, mrKey, putMrDetails, getCachedMrList, putMrListNodes, getLastListScan, setLastListScan } from "../cache/mr-store.js";
+import { scopeKey } from "../cache/store.js";
+import { isRevertTitle } from "../metrics/reverts.js";
 import { resolveLinearTickets } from "../linear/fetch.js";
 import { GROUP_MRS_QUERY, GROUP_PROJECTS_QUERY, MR_DETAIL_QUERY, PROJECT_MRS_QUERY } from "../gitlab/queries.js";
 import { encodePath, restGetAll, restGetOne } from "../gitlab/rest.js";
@@ -114,8 +115,8 @@ async function fetchMergeRequests(
 
   // Phase 1: lightweight MR list. On first run we paginate everything. On subsequent
   // runs we fetch only MRs updated since the last scan and merge into the cache.
-  const scopeKey = scope.type === "group" ? `g:${scope.groupPath}` : `p:${(scope.projectPaths ?? []).join(",")}`;
-  const lastScan = getLastListScan(scopeKey);
+  const listScope = scopeKey(scope);
+  const lastScan = getLastListScan(listScope);
   const scanStart = new Date().toISOString();
 
   const onListPage = (found: number) => {
@@ -142,11 +143,11 @@ async function fetchMergeRequests(
   }
 
   // Merge fresh results into the cached list and build the full set.
-  if (fresh.length > 0) putMrListNodes(scopeKey, fresh);
-  setLastListScan(scopeKey, scanStart);
+  if (fresh.length > 0) putMrListNodes(listScope, fresh);
+  setLastListScan(listScope, scanStart);
 
   // Build the full list from cache, applying the window filter client-side.
-  const allCached = getCachedMrList(scopeKey);
+  const allCached = getCachedMrList(listScope);
   const light = allCached.filter((n) => new Date(n.updatedAt).getTime() >= since);
 
   // Scope the expensive detail fetch to MRs authored by the configured team. This bounds
@@ -160,7 +161,7 @@ async function fetchMergeRequests(
   const teamBases = teamMrs.map(mapMrListNode);
   const cachedKeys = await getCachedMrKeys(teamBases);
 
-  const uncached = teamBases.filter((m) => !cachedKeys.has(`${m.projectPath}:${m.iid}`));
+  const uncached = teamBases.filter((m) => !cachedKeys.has(mrKey(m.projectPath, m.iid)));
   const fromStore: NormMr[] = [];
   for (const key of cachedKeys) {
     const mr = await getMrByKey(key);
@@ -216,10 +217,10 @@ async function fetchMergeRequests(
 
   // Include revert MRs authored by ANYONE (light-only ... titles are enough for detection),
   // so reverts of the team's work are caught even when a non-team member did the revert.
+  // Title-test the raw nodes first so the whole non-team corpus isn't mapped per refresh.
   const extraReverts = light
-    .filter((n) => !(n.author?.username != null && userSet.has(n.author.username)))
-    .map(mapMrListNode)
-    .filter((m) => revertTarget(m) !== null);
+    .filter((n) => !(n.author?.username != null && userSet.has(n.author.username)) && isRevertTitle(n.title))
+    .map(mapMrListNode);
 
   return [...mrs, ...extraReverts];
 }

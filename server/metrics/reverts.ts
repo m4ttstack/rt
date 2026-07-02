@@ -15,6 +15,14 @@ import type { NormMr } from "../pipeline/model.js";
 
 const REVERT_TITLE_RE = /^revert\s+"(.+)"\s*$/i;
 
+/**
+ * Cheap title-only pre-test for raw list nodes. List nodes carry no labels, so for
+ * them this is equivalent to revertTarget(...) !== null without building a NormMr.
+ */
+export function isRevertTitle(title: string): boolean {
+  return REVERT_TITLE_RE.test(title);
+}
+
 /** Extract the original title a revert MR points at, or null if it isn't a revert. */
 export function revertTarget(mr: NormMr): string | null {
   const m = mr.title.match(REVERT_TITLE_RE);

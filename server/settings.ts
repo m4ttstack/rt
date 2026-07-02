@@ -111,6 +111,18 @@ function writeToFile(s: AppSettings): void {
   }
 }
 
+/** Defensive copy so callers can't mutate the in-memory cache through the result. */
+function clone(s: AppSettings): AppSettings {
+  return {
+    ...s,
+    users: [...s.users],
+    sizeBand: { ...s.sizeBand },
+    bots: { ...s.bots },
+    excludeFilePatterns: [...s.excludeFilePatterns],
+    ignoredMrs: [...s.ignoredMrs],
+  };
+}
+
 /** Returns the original defaults from config.ts. */
 export function getDefaults(): AppSettings {
   return configDefaults();
@@ -121,7 +133,7 @@ export function getSettings(): AppSettings {
   if (!cached) {
     cached = readFromFile() ?? configDefaults();
   }
-  return { ...cached, users: [...cached.users], sizeBand: { ...cached.sizeBand }, bots: { ...cached.bots }, excludeFilePatterns: [...cached.excludeFilePatterns], ignoredMrs: [...cached.ignoredMrs] };
+  return clone(cached);
 }
 
 /**
@@ -134,5 +146,5 @@ export function updateSettings(partial: Partial<AppSettings>): AppSettings {
   const merged = merge(current, partial);
   writeToFile(merged);
   cached = merged;
-  return { ...merged, users: [...merged.users], sizeBand: { ...merged.sizeBand }, bots: { ...merged.bots }, excludeFilePatterns: [...merged.excludeFilePatterns], ignoredMrs: [...merged.ignoredMrs] };
+  return clone(merged);
 }

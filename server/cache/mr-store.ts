@@ -25,7 +25,8 @@ interface Store {
   close(): void;
 }
 
-function mrKey(projectPath: string, iid: number): string {
+/** Store key for one MR. Exported so callers test membership with the same identity. */
+export function mrKey(projectPath: string, iid: number): string {
   return `${projectPath}:${iid}`;
 }
 

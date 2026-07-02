@@ -18,7 +18,7 @@ const note = (
   inline: opts.inline ?? false,
 });
 
-const mr = (m: Partial<NormMr> & Pick<NormMr, "iid" | "authorUsername" | "title">): NormMr => ({
+export const mr = (m: Partial<NormMr> & Pick<NormMr, "iid" | "authorUsername" | "title">): NormMr => ({
   projectPath: "org/app",
   state: "merged",
   createdAt: "2026-05-01T00:00:00.000Z",

@@ -38,12 +38,26 @@ export function priorWindow(window: TimeWindow): TimeWindow {
   };
 }
 
+// inWindow runs in per-note/per-MR loops, so the window's bounds are parsed once
+// per TimeWindow object instead of on every call.
+const boundsCache = new WeakMap<TimeWindow, [number, number]>();
+
+function windowBounds(window: TimeWindow): [number, number] {
+  let b = boundsCache.get(window);
+  if (!b) {
+    b = [Date.parse(window.start), Date.parse(window.end)];
+    boundsCache.set(window, b);
+  }
+  return b;
+}
+
 /** Inclusive-start, exclusive-end membership test for an ISO timestamp. */
 export function inWindow(iso: string | null, window: TimeWindow): boolean {
   if (!iso) return false;
-  const t = new Date(iso).getTime();
+  const t = Date.parse(iso);
   if (Number.isNaN(t)) return false;
-  return t >= new Date(window.start).getTime() && t < new Date(window.end).getTime();
+  const [start, end] = windowBounds(window);
+  return t >= start && t < end;
 }
 
 /**
