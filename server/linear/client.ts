@@ -1,53 +1,31 @@
 import { LinearApiError } from "./errors.js";
+import { postGraphql } from "../util/graphql.js";
 import type { RawIssueConnection } from "./raw-types.js";
 
 const LINEAR_ENDPOINT = "https://api.linear.app/graphql";
-
-interface GqlResponse<T> {
-  data?: T;
-  errors?: Array<{ message: string }>;
-}
 
 /**
  * POST a GraphQL query to Linear. The personal API key goes in the Authorization header
  * verbatim (no "Bearer" prefix ... that is Linear's convention). Throws LinearApiError on
  * transport or query errors.
  */
-export async function linearRequest<T>(
+export function linearRequest<T>(
   apiKey: string,
   query: string,
   variables: Record<string, unknown>,
   signal?: AbortSignal,
 ): Promise<T> {
-  let res: Response;
-  try {
-    res = await fetch(LINEAR_ENDPOINT, {
-      method: "POST",
-      headers: {
-        Authorization: apiKey,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ query, variables }),
-      signal,
-    });
-  } catch (err) {
-    if ((err as Error).name === "AbortError") throw err;
-    throw new LinearApiError(`Linear request failed: ${(err as Error).message}`);
-  }
-
-  if (!res.ok) {
-    const body = (await res.text()).slice(0, 300);
-    throw new LinearApiError(`Linear HTTP ${res.status}: ${body}`, res.status);
-  }
-
-  const json = (await res.json()) as GqlResponse<T>;
-  if (!json.data) {
-    const msg = json.errors?.length
-      ? `Linear errors: ${json.errors.map((e) => e.message).join("; ")}`
-      : "Linear response had no data";
-    throw new LinearApiError(msg);
-  }
-  return json.data;
+  return postGraphql<T>(
+    {
+      url: LINEAR_ENDPOINT,
+      headers: { Authorization: apiKey },
+      label: "Linear",
+      makeError: (message, status) => new LinearApiError(message, status),
+    },
+    query,
+    variables,
+    signal,
+  );
 }
 
 /**
