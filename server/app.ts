@@ -9,7 +9,7 @@ import { getSettings, updateSettings, getDefaults } from "./settings.js";
 import { fetchWorkflowStates } from "./linear/fetch.js";
 import { scanSuspectedBots } from "./bots.js";
 import { customWindow, isPreset, resolvePreset } from "./util/window.js";
-import type { RangePreset, TimeWindow } from "../shared/types.js";
+import type { CacheStatsResponse, RangePreset, TimeWindow } from "../shared/types.js";
 
 export const app = new Hono();
 
@@ -143,10 +143,12 @@ app.post("/api/refresh/:id/cancel", (c) => {
 });
 
 app.get("/api/cache/stats", async (c) => {
-  const size = await mrStoreSize();
-  const linear = await linearIdStats();
-  const listSize = await mrListCacheSize();
-  return c.json({ mrDetails: size, mrList: listSize, linearIds: linear });
+  const stats: CacheStatsResponse = {
+    mrDetails: await mrStoreSize(),
+    mrList: await mrListCacheSize(),
+    linearIds: await linearIdStats(),
+  };
+  return c.json(stats);
 });
 
 app.post("/api/cache/clear", async (c) => {

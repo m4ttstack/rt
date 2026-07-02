@@ -1,6 +1,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import type { NormMr } from "./pipeline/model.js";
 import type { UserIdentity } from "./metrics/trend.js";
+import type { SuspectedBot } from "../shared/types.js";
 
 interface CacheEnvelope {
   data: {
@@ -9,10 +10,7 @@ interface CacheEnvelope {
   };
 }
 
-export interface SuspectedBot {
-  username: string;
-  matchedPattern: string;
-}
+export type { SuspectedBot };
 
 const BUILTIN_PATTERNS = [
   /^(project|group)_\d+_bot/i,

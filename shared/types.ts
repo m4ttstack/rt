@@ -203,6 +203,19 @@ export interface RefreshProgress {
 
 export type RefreshJobStatus = "running" | "done" | "error" | "cancelled";
 
+/** Response of GET /api/cache/stats. */
+export interface CacheStatsResponse {
+  mrDetails: number;
+  mrList: number;
+  linearIds: { valid: number; invalid: number };
+}
+
+/** A cached commenter/approver matching a bot pattern that isn't a configured user. */
+export interface SuspectedBot {
+  username: string;
+  matchedPattern: string;
+}
+
 /** Response of POST /api/refresh and GET /api/refresh/:id. */
 export interface RefreshStatusResponse {
   jobId: string;

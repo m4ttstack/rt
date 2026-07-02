@@ -1,4 +1,4 @@
-import type { AppSettings, LeaderboardResponse, LinearStateInfo, RefreshStatusResponse, UserDetailResponse } from "../../shared/types";
+import type { AppSettings, CacheStatsResponse, LeaderboardResponse, LinearStateInfo, RefreshStatusResponse, SuspectedBot, UserDetailResponse } from "../../shared/types";
 
 export interface FetchParams {
   range: string;
@@ -63,10 +63,7 @@ export async function cancelRefresh(id: string): Promise<void> {
   }
 }
 
-export interface SuspectedBot {
-  username: string;
-  matchedPattern: string;
-}
+export type { SuspectedBot } from "../../shared/types";
 
 export async function fetchSettings(): Promise<{ settings: AppSettings; defaults: AppSettings }> {
   return getJson("/api/settings");
@@ -80,7 +77,7 @@ export async function fetchSuspectedBots(): Promise<{ bots: SuspectedBot[] }> {
   return getJson("/api/settings/suspected-bots");
 }
 
-export async function fetchCacheStats(): Promise<{ mrDetails: number; linearIds: { valid: number; invalid: number } }> {
+export async function fetchCacheStats(): Promise<CacheStatsResponse> {
   return getJson("/api/cache/stats");
 }
 

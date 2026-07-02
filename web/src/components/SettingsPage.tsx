@@ -81,7 +81,7 @@ export default function SettingsPage() {
       fetchSettings(),
       fetchLinearStates().catch(() => ({ states: [] })),
       fetchSuspectedBots().catch(() => ({ bots: [] })),
-      fetchCacheStats().catch(() => ({ mrDetails: 0 })),
+      fetchCacheStats().catch(() => ({ mrDetails: 0, mrList: 0, linearIds: { valid: 0, invalid: 0 } })),
     ])
       .then(([settingsRes, statesRes, botsRes, cacheRes]) => {
         setSaved(settingsRes.settings);
