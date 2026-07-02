@@ -46,6 +46,28 @@ export function inWindow(iso: string | null, window: TimeWindow): boolean {
   return t >= new Date(window.start).getTime() && t < new Date(window.end).getTime();
 }
 
+/**
+ * Resolve range/start/end params (HTTP query or CLI flags) into a window.
+ * Custom bounds are validated: both present, parseable, start before end.
+ */
+export function resolveWindowArgs(
+  range: string | undefined,
+  start: string | undefined,
+  end: string | undefined,
+  defaultRange: RangePreset,
+): TimeWindow {
+  if (range === "custom" || (start && end)) {
+    if (!start || !end) throw new Error("custom range requires both start and end (ISO dates)");
+    if (Number.isNaN(Date.parse(start)) || Number.isNaN(Date.parse(end))) {
+      throw new Error("start and end must be valid ISO dates");
+    }
+    if (Date.parse(start) >= Date.parse(end)) throw new Error("start must be before end");
+    return customWindow(new Date(start).toISOString(), new Date(end).toISOString());
+  }
+  const preset: RangePreset = range && isPreset(range) ? range : defaultRange;
+  return resolvePreset(preset, new Date());
+}
+
 /** A short stable key for caching, e.g. "30d:2026-04-29..2026-05-29". */
 export function windowCacheKey(window: TimeWindow): string {
   const d = (iso: string) => iso.slice(0, 10);

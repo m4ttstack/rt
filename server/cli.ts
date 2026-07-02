@@ -11,9 +11,9 @@
 import { config } from "../config.js";
 import { getLeaderboard, getUserDetail } from "./leaderboard.js";
 import { validateLeaderboard } from "./metrics/validate.js";
-import { customWindow, isPreset, resolvePreset } from "./util/window.js";
+import { resolveWindowArgs } from "./util/window.js";
 import { METRICS, formatValue as fmt, metricByKey, metricRank, metricValue } from "../shared/metrics.js";
-import type { LeaderboardResponse, MetricKey, RangePreset, TimeWindow, UserDetailResponse, UserRow } from "../shared/types.js";
+import type { LeaderboardResponse, MetricKey, UserDetailResponse } from "../shared/types.js";
 
 interface Args {
   range: string;
@@ -39,15 +39,6 @@ function parseArgs(argv: string[]): Args {
     else if (arg === "--detail") a.detail = argv[++i];
   }
   return a;
-}
-
-function resolveWindow(a: Args): TimeWindow {
-  if (a.range === "custom" || (a.start && a.end)) {
-    if (!a.start || !a.end) throw new Error("custom range needs --start and --end");
-    return customWindow(new Date(a.start).toISOString(), new Date(a.end).toISOString());
-  }
-  const preset: RangePreset = isPreset(a.range) ? a.range : config.defaultRange;
-  return resolvePreset(preset, new Date());
 }
 
 function printStandings(res: LeaderboardResponse): void {
@@ -118,7 +109,7 @@ function printDetail(res: UserDetailResponse): void {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const window = resolveWindow(args);
+  const window = resolveWindowArgs(args.range, args.start, args.end, config.defaultRange);
 
   if (args.detail) {
     const detail = await getUserDetail({ window, refresh: args.refresh, trend: args.trend, user: args.detail });

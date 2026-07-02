@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import type { Context } from "hono";
 
 import { config } from "../config.js";
 import { getEnv, EnvError } from "./env.js";
@@ -8,26 +9,35 @@ import { clearMrStore, mrStoreSize, linearIdStats, mrListCacheSize } from "./cac
 import { getSettings, updateSettings, getDefaults } from "./settings.js";
 import { fetchWorkflowStates } from "./linear/fetch.js";
 import { scanSuspectedBots } from "./bots.js";
-import { customWindow, isPreset, resolvePreset } from "./util/window.js";
-import type { CacheStatsResponse, RangePreset, TimeWindow } from "../shared/types.js";
+import { resolveWindowArgs } from "./util/window.js";
+import type { CacheStatsResponse, TimeWindow } from "../shared/types.js";
 
 export const app = new Hono();
 
-app.get("/api/leaderboard", async (c) => {
-  let window: TimeWindow;
+const boolQuery = (c: Context, name: string): boolean =>
+  c.req.query(name) === "1" || c.req.query(name) === "true";
+
+/** The window from query params, or the 400 response to return for bad bounds. */
+function windowFromQuery(c: Context): TimeWindow | Response {
   try {
-    window = resolveWindowFromQuery(
+    return resolveWindowArgs(
       c.req.query("range"),
       c.req.query("start"),
       c.req.query("end"),
+      config.defaultRange,
     );
   } catch (err) {
     return c.json({ error: (err as Error).message }, 400);
   }
+}
 
-  const refresh = c.req.query("refresh") === "1" || c.req.query("refresh") === "true";
-  const trend = c.req.query("trend") === "1" || c.req.query("trend") === "true";
-  const cacheOnly = c.req.query("cacheOnly") === "1" || c.req.query("cacheOnly") === "true";
+app.get("/api/leaderboard", async (c) => {
+  const window = windowFromQuery(c);
+  if (window instanceof Response) return window;
+
+  const refresh = boolQuery(c, "refresh");
+  const trend = boolQuery(c, "trend");
+  const cacheOnly = boolQuery(c, "cacheOnly");
 
   try {
     const result = await getLeaderboard({ window, refresh, trend, cacheOnly });
@@ -44,15 +54,11 @@ app.get("/api/detail", async (c) => {
   const user = c.req.query("user");
   if (!user) return c.json({ error: "user query param is required" }, 400);
 
-  let window: TimeWindow;
-  try {
-    window = resolveWindowFromQuery(c.req.query("range"), c.req.query("start"), c.req.query("end"));
-  } catch (err) {
-    return c.json({ error: (err as Error).message }, 400);
-  }
+  const window = windowFromQuery(c);
+  if (window instanceof Response) return window;
 
-  const refresh = c.req.query("refresh") === "1" || c.req.query("refresh") === "true";
-  const trend = c.req.query("trend") === "1" || c.req.query("trend") === "true";
+  const refresh = boolQuery(c, "refresh");
+  const trend = boolQuery(c, "trend");
 
   try {
     const result = await getUserDetail({ window, refresh, trend, user });
@@ -110,13 +116,9 @@ app.get("/api/settings/suspected-bots", async (c) => {
 });
 
 app.post("/api/refresh", (c) => {
-  let window: TimeWindow;
-  try {
-    window = resolveWindowFromQuery(c.req.query("range"), c.req.query("start"), c.req.query("end"));
-  } catch (err) {
-    return c.json({ error: (err as Error).message }, 400);
-  }
-  const trend = c.req.query("trend") === "1" || c.req.query("trend") === "true";
+  const window = windowFromQuery(c);
+  if (window instanceof Response) return window;
+  const trend = boolQuery(c, "trend");
   const job = startRefresh({
     window,
     trend,
@@ -155,20 +157,3 @@ app.post("/api/cache/clear", async (c) => {
   await clearMrStore();
   return c.json({ cleared: true });
 });
-
-export function resolveWindowFromQuery(
-  range: string | undefined,
-  start: string | undefined,
-  end: string | undefined,
-): TimeWindow {
-  if (range === "custom" || (start && end)) {
-    if (!start || !end) throw new Error("custom range requires both start and end (ISO dates)");
-    if (Number.isNaN(Date.parse(start)) || Number.isNaN(Date.parse(end))) {
-      throw new Error("start and end must be valid ISO dates");
-    }
-    if (Date.parse(start) >= Date.parse(end)) throw new Error("start must be before end");
-    return customWindow(new Date(start).toISOString(), new Date(end).toISOString());
-  }
-  const preset: RangePreset = range && isPreset(range) ? range : config.defaultRange;
-  return resolvePreset(preset, new Date());
-}
