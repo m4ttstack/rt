@@ -12,8 +12,7 @@ import { config } from "../config.js";
 import { getLeaderboard, getUserDetail } from "./leaderboard.js";
 import { validateLeaderboard } from "./metrics/validate.js";
 import { customWindow, isPreset, resolvePreset } from "./util/window.js";
-import { METRICS, metricByKey, metricRank, metricValue } from "../shared/metrics.js";
-import type { MetricDescriptor } from "../shared/metrics.js";
+import { METRICS, formatValue as fmt, metricByKey, metricRank, metricValue } from "../shared/metrics.js";
 import type { LeaderboardResponse, MetricKey, RangePreset, TimeWindow, UserDetailResponse, UserRow } from "../shared/types.js";
 
 interface Args {
@@ -50,14 +49,6 @@ function resolveWindow(a: Args): TimeWindow {
   const preset: RangePreset = isPreset(a.range) ? a.range : config.defaultRange;
   return resolvePreset(preset, new Date());
 }
-
-function fmt(value: number | null, d: MetricDescriptor): string {
-  if (value === null) return "—";
-  if (d.kind === "dist") return `${round(value)}h`;
-  if (d.percent) return `${Math.round(value * 100)}%`;
-  return round(value) + (d.unit ?? "");
-}
-const round = (n: number) => (Number.isInteger(n) ? String(n) : String(Math.round(n * 100) / 100));
 
 function printStandings(res: LeaderboardResponse): void {
   const w = res.window;

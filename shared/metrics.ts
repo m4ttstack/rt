@@ -102,3 +102,17 @@ export function deltaIsGood(delta: number, better: Better): boolean {
 export function metricByKey(key: MetricKey): MetricDescriptor | undefined {
   return METRICS.find((d) => d.key === key);
 }
+
+// --- Display formatting, shared so the web UI and the CLI print identical values ---
+
+export function formatValue(value: number | null, d: MetricDescriptor): string {
+  if (value === null) return "—";
+  if (d.kind === "dist") return `${formatNumber(value)}h`;
+  if (d.percent) return `${Math.round(value * 100)}%`;
+  return formatNumber(value) + (d.unit ?? "");
+}
+
+export function formatNumber(n: number): string {
+  if (Number.isInteger(n)) return n.toLocaleString();
+  return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
