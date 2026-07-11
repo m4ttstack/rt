@@ -12,6 +12,30 @@ const cache = new SnapshotCache(async () => {
   return buildGroups(prs, config);
 });
 
+/** The configured user's public identity, for the page header. */
+interface Owner {
+  username: string;
+  name: string | null;
+}
+let owner: Owner = { username: config.username, name: null };
+let ownerFetchedAt = 0;
+const OWNER_TTL_MS = 60 * 60_000;
+
+async function refreshOwner(): Promise<void> {
+  if (Date.now() - ownerFetchedAt < OWNER_TTL_MS) return;
+  ownerFetchedAt = Date.now();
+  try {
+    const res = await provider.restRequest("GET", `/api/v4/users?username=${encodeURIComponent(config.username)}`);
+    const users = (await res.json()) as Array<{ username: string; name?: string; }>;
+    if (users[0]) {
+      owner = { username: users[0].username, name: users[0].name ?? null };
+    }
+  } catch (err) {
+    console.error(`owner lookup failed: ${err instanceof Error ? err.message : err}`);
+  }
+}
+await refreshOwner();
+
 // Bundle the React client once at startup; served from memory.
 const build = await Bun.build({
   entrypoints: [join(import.meta.dir, "client.tsx")],
@@ -84,7 +108,14 @@ const shell = `<!doctype html>
   .tui-prompt { color: var(--accent); }
   .tui-sub { margin: 0.15rem 0 0; }
   .tui-comment { color: var(--muted); font-size: 0.78rem; opacity: 0.9; }
-  .tui-controls { display: flex; gap: 0.6rem; flex-wrap: wrap; }
+  .tui-controls { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; }
+  .tui-author { color: var(--purple); white-space: nowrap; }
+  .tui-mascot {
+    width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--card); border: 1px solid var(--border); margin-left: 0.2rem;
+  }
+  .tui-avatar { width: 20px; height: 20px; }
   .tui-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
   .tui-seg button {
     display: inline-flex; align-items: center; justify-content: center;
@@ -205,7 +236,7 @@ Bun.serve({
         return new Response(appJs, { headers: { "content-type": "text/javascript; charset=utf-8" } });
       case "/data.json": {
         const snapshot = await cache.get();
-        return new Response(JSON.stringify({ title: config.title, ...snapshot }), {
+        return new Response(JSON.stringify({ title: config.title, owner, ...snapshot }), {
           headers: { "content-type": "application/json" },
         });
       }

@@ -5,6 +5,7 @@ import type { BoardMR } from "./data.ts";
 
 interface BoardData {
   title: string;
+  owner: { username: string; name: string | null };
   fetchedAt: number;
   fetchError: string | null;
   groups: { projectPath: string; mrs: BoardMR[] }[];
@@ -65,6 +66,58 @@ function Segmented<T extends string>({
         </button>
       ))}
     </span>
+  );
+}
+
+// ── pixel sprite avatar ────────────────────────────────────────────────────
+
+/** FNV-1a string hash → 32-bit seed. */
+function hashStr(s: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return h >>> 0;
+}
+
+const SPRITE_COLORS = ["--accent", "--green", "--amber", "--purple", "--cyan", "--red"];
+
+/** Hand-designed 8×8 creatures (one byte per row, MSB = left pixel).
+    Curated so every user gets something that reads as a sprite, not noise. */
+const SPRITES: number[][] = [
+  // classic invader
+  [0b00011000, 0b00111100, 0b01111110, 0b11011011, 0b11111111, 0b00100100, 0b01011010, 0b10100101],
+  // crab
+  [0b00100100, 0b01111110, 0b11011011, 0b11111111, 0b11111111, 0b01100110, 0b00100100, 0b01000010],
+  // ghost
+  [0b00111100, 0b01111110, 0b11011011, 0b11111111, 0b11111111, 0b11111111, 0b11111111, 0b10100101],
+  // smiley
+  [0b00111100, 0b01000010, 0b10100101, 0b10000001, 0b10100101, 0b10011001, 0b01000010, 0b00111100],
+  // mech
+  [0b00011000, 0b00011000, 0b01111110, 0b11111111, 0b11111111, 0b01100110, 0b01100110, 0b11100111],
+  // alien
+  [0b01000010, 0b00100100, 0b01111110, 0b11011011, 0b11111111, 0b10100101, 0b00100100, 0b01000010],
+];
+
+/** Deterministic per-username creature: the hash picks one of the designed
+    sprites and its color. Same user, same sprite, forever. */
+function OwnerSprite({ username }: { username: string }) {
+  const seed = hashStr(username);
+  const sprite = SPRITES[seed % SPRITES.length]!;
+  const color = SPRITE_COLORS[(seed >>> 4) % SPRITE_COLORS.length]!;
+  const rects: React.ReactNode[] = [];
+  sprite.forEach((row, y) => {
+    for (let x = 0; x < 8; x++) {
+      if (row & (0x80 >> x)) {
+        rects.push(<rect key={`${x},${y}`} x={x} y={y} width="1" height="1" fill={`var(${color})`} />);
+      }
+    }
+  });
+  return (
+    <svg className="tui-avatar" viewBox="-1 -1 10 10" shapeRendering="crispEdges" aria-hidden>
+      {rects}
+    </svg>
   );
 }
 
@@ -132,7 +185,7 @@ function statusPhrase(mr: BoardMR): { text: string; cls: string } {
   if (mr.reviews.isApproved) return { text: "approved", cls: "t-ok" };
   if (mr.reviews.required > 0 && mr.reviews.given > 0)
     return { text: `${mr.reviews.given}/${mr.reviews.required} approved`, cls: "t-warn" };
-  return { text: "needs review", cls: "t-accent" };
+  return { text: "needs review", cls: "t-muted" };
 }
 
 function StatusPhrase({ mr }: { mr: BoardMR }) {
@@ -209,7 +262,10 @@ function RowView({ mrs, now }: { mrs: BoardMR[]; now: number }) {
             </div>
             <div className="tui-row-2">
               <span className="tui-branch">
-                {mr.sourceBranch} <span className="tui-arrow">→</span> {mr.targetBranch}
+                {mr.sourceBranch}
+                {!["master", "main"].includes(mr.targetBranch) && (
+                  <> <span className="tui-arrow">→</span> {mr.targetBranch}</>
+                )}
               </span>
               <MetaTokens mr={mr} now={now} />
             </div>
@@ -313,7 +369,8 @@ function Board() {
       <header className="tui-header">
         <div>
           <h1>
-            <span className="tui-prompt">❯</span> {data.title.toLowerCase()}
+            <span className="tui-prompt">❯</span> {data.title.toLowerCase()}{" "}
+            <span className="tui-author">--author @{data.owner.username}</span>
           </h1>
           <p className="tui-sub">
             <span className="tui-comment"># {total} awaiting review · pick one, it opens in gitlab</span>
@@ -322,6 +379,9 @@ function Board() {
         <div className="tui-controls">
           <Segmented options={["rows", "grid"] as const} value={view} onChange={pickView} label="view" />
           <Segmented options={["light", "dark", "system"] as const} value={theme} onChange={pickTheme} label="theme" />
+          <span className="tui-mascot" title={data.owner.name ?? data.owner.username}>
+            <OwnerSprite username={data.owner.username} />
+          </span>
         </div>
       </header>
 
@@ -340,7 +400,7 @@ function Board() {
       )}
 
       <footer className="tui-footer">
-        updated {staleMins < 1 ? "just now" : `${staleMins}m ago`} · {total} MR{total === 1 ? "" : "s"}
+        updated {staleMins < 1 ? "just now" : `${staleMins}m ago`}
       </footer>
     </div>
   );

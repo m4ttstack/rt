@@ -4,6 +4,8 @@ a one-page board of your open gitlab merge requests that are ready for review, s
 
 each MR shows a status dot (hover for the full blocker list), title, branch, a single prioritized status phrase (`conflicts` > `ci failing` > `ci running` > `approved` > `n/m approved` > `needs review`), diff size, age, and a linear ticket link when the branch or title carries a ticket id. rows and grid views, light/dark/system theme, refreshes itself every 60s.
 
+the page identifies whose board it is: the title reads `❯ mr ls --ready --author @username`, and the header corner shows a deterministic pixel-sprite avatar derived from the username (every user gets their own creature, no image hosting involved).
+
 ## run it
 
 requires [bun](https://bun.sh).
