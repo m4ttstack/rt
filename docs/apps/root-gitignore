@@ -1,0 +1,5 @@
+.local-dev/
+node_modules/
+config.json
+logs/
+.env
