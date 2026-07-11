@@ -1,7 +1,7 @@
 {
   "gitlabHost": "https://gitlab.com",
   "username": "your-gitlab-username",
-  "projects": ["group/project"],
-  "title": "MRs ready for review",
+  "projects": ["group/project", "group/other-project"],
+  "title": "mr ls --ready",
   "port": 7930
 }

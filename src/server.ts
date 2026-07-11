@@ -42,9 +42,14 @@ const shell = `<!doctype html>
   mq.addEventListener("change", applyTheme);
   window.__applyTheme = applyTheme;
 </script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap">
 <style>
   /* ── palette: tokyo day / tokyo night ─────────────────────────────── */
   :root {
+    --font-mono: "JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
     color-scheme: light;
     --bg: #e1e2e7; --panel: #eff0f5; --border: #c8cad6; --border-soft: #d5d7e2;
     --fg: #343b58; --muted: #8990b3; --accent: #2e7de9; --card: #f6f6fa;
@@ -62,7 +67,7 @@ const shell = `<!doctype html>
   * { box-sizing: border-box; }
   body {
     margin: 0; min-height: 100vh;
-    font: 13.5px/1.55 ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    font: 13.5px/1.55 var(--font-mono);
     background: var(--bg); color: var(--fg);
     background-image:
       linear-gradient(var(--grid-line) 1px, transparent 1px),
@@ -77,11 +82,13 @@ const shell = `<!doctype html>
   .tui-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin-bottom: 1.6rem; }
   .tui-header h1 { font-size: 1.15rem; font-weight: 700; letter-spacing: 0.02em; margin: 0; }
   .tui-prompt { color: var(--accent); }
-  .tui-sub { color: var(--muted); font-size: 0.8rem; margin: 0.15rem 0 0; }
+  .tui-sub { margin: 0.15rem 0 0; }
+  .tui-comment { color: var(--muted); font-size: 0.78rem; opacity: 0.9; }
   .tui-controls { display: flex; gap: 0.6rem; flex-wrap: wrap; }
   .tui-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
   .tui-seg button {
-    font: inherit; font-size: 0.72rem; padding: 0.25rem 0.6rem; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center;
+    padding: 0.3rem 0.45rem; cursor: pointer;
     background: transparent; border: none; color: var(--muted);
   }
   .tui-seg button + button { border-left: 1px solid var(--border); }
@@ -111,7 +118,8 @@ const shell = `<!doctype html>
   .tui-row-1 { display: flex; align-items: baseline; gap: 0.55rem; min-width: 0; }
   .tui-iid { color: var(--muted); font-size: 0.78rem; flex-shrink: 0; }
   .tui-title { font-weight: 600; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .tui-row-2 { color: var(--muted); font-size: 0.76rem; margin-top: 0.1rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tui-row-2 { display: flex; align-items: baseline; gap: 0.55rem; color: var(--muted); font-size: 0.76rem; margin-top: 0.1rem; }
+  .tui-branch { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tui-arrow { color: var(--muted); opacity: 0.7; }
 
   /* ── status dot + tooltip ─────────────────────────────────────────── */
@@ -133,16 +141,18 @@ const shell = `<!doctype html>
   .tui-dot-wrap:hover::after { opacity: 1; visibility: visible; }
 
   /* ── tokens ───────────────────────────────────────────────────────── */
-  .tui-tokens { display: inline-flex; gap: 0.7rem; font-size: 0.76rem; flex-shrink: 0; align-items: baseline; }
+  .tui-phrase { font-size: 0.76rem; flex-shrink: 0; white-space: nowrap; }
+  .tui-meta { display: inline-flex; gap: 0.8rem; font-size: 0.76rem; flex-shrink: 0; white-space: nowrap; }
   .t-ok { color: var(--green); } .t-bad { color: var(--red); } .t-warn { color: var(--amber); }
-  .t-cyan { color: var(--cyan); } .t-muted { color: var(--muted); } .t-diff { white-space: nowrap; }
+  .t-cyan { color: var(--cyan); } .t-muted { color: var(--muted); } .t-accent { color: var(--accent); }
+  .t-dim .t-ok, .t-dim .t-bad { opacity: 0.75; }
 
   /* ── ticket link ──────────────────────────────────────────────────── */
   .tui-ticket { color: var(--purple); opacity: 0.75; flex-shrink: 0; align-self: center; display: inline-flex; padding: 0.15rem; }
   .tui-ticket:hover { opacity: 1; }
 
   /* ── watching strip ───────────────────────────────────────────────── */
-  .tui-watching { color: var(--amber); font-size: 0.76rem; margin-top: 0.2rem; }
+  .tui-watching { color: var(--amber); font: 500 0.78rem/1.5 var(--font-sans); margin-top: 0.2rem; }
 
   /* ── grid / cards ─────────────────────────────────────────────────── */
   .tui-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 1.1rem; padding: 0.5rem 1rem 0.8rem; }
@@ -159,6 +169,7 @@ const shell = `<!doctype html>
     display: inline-flex; gap: 0.4rem; align-items: baseline;
   }
   .tui-card-title { font-weight: 600; font-size: 0.85rem; line-height: 1.4; margin-bottom: 0.2rem; }
+  .tui-card-branch { color: var(--muted); font-size: 0.76rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tui-card-tokens { margin-top: 0.4rem; }
   .tui-blockers { list-style: none; margin: auto 0 0; padding: 0.45rem 0.6rem; border-left: 2px solid var(--amber); background: color-mix(in srgb, var(--amber) 7%, transparent); font-size: 0.75rem; color: var(--fg); }
   .tui-card-tokens { margin-bottom: 0.5rem; }
@@ -167,12 +178,12 @@ const shell = `<!doctype html>
   /* ── chrome ───────────────────────────────────────────────────────── */
   .tui-banner {
     color: var(--amber); border: 1px solid color-mix(in srgb, var(--amber) 45%, transparent);
-    border-radius: 6px; padding: 0.45rem 0.8rem; font-size: 0.8rem; margin-bottom: 1rem;
+    border-radius: 6px; padding: 0.45rem 0.8rem; font: 500 0.82rem/1.5 var(--font-sans); margin-bottom: 1rem;
     background: color-mix(in srgb, var(--amber) 7%, transparent);
   }
-  .tui-empty { color: var(--muted); text-align: center; margin-top: 3.5rem; }
+  .tui-empty { color: var(--muted); font: 500 0.9rem/1.5 var(--font-sans); text-align: center; margin-top: 3.5rem; }
   .tui-loading { color: var(--muted); text-align: center; margin-top: 4rem; }
-  .tui-footer { color: var(--muted); font-size: 0.74rem; text-align: center; margin-top: 2.2rem; opacity: 0.8; }
+  .tui-footer { color: var(--muted); font: 500 0.76rem/1.5 var(--font-sans); text-align: center; margin-top: 2.2rem; opacity: 0.8; }
 </style>
 </head>
 <body>

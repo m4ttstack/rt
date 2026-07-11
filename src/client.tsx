@@ -23,6 +23,23 @@ type ViewMode = "rows" | "grid";
 const THEME_KEY = "mrs-theme";
 const VIEW_KEY = "mrs-view";
 
+function Icon({ d, circle }: { d: string; circle?: boolean }) {
+  return (
+    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      {circle && <circle cx="12" cy="12" r="4" />}
+      <path d={d} />
+    </svg>
+  );
+}
+
+const ICONS: Record<string, React.ReactNode> = {
+  rows: <Icon d="M3 6h18M3 12h18M3 18h18" />,
+  grid: <Icon d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z" />,
+  light: <Icon circle d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />,
+  dark: <Icon d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />,
+  system: <Icon d="M2 4h20v12H2zM8 20h8m-4-4v4" />,
+};
+
 function Segmented<T extends string>({
   options,
   value,
@@ -37,8 +54,14 @@ function Segmented<T extends string>({
   return (
     <span className="tui-seg" role="group" aria-label={label}>
       {options.map((o) => (
-        <button key={o} className={o === value ? "active" : ""} onClick={() => onChange(o)}>
-          {o}
+        <button
+          key={o}
+          className={o === value ? "active" : ""}
+          onClick={() => onChange(o)}
+          title={o}
+          aria-label={o}
+        >
+          {ICONS[o] ?? o}
         </button>
       ))}
     </span>
@@ -78,6 +101,12 @@ function activeReviewers(mr: BoardMR): string[] {
     .map((r) => r.name || r.username);
 }
 
+/** Title with any leading ticket prefix ("ACME-2369: ") removed — the ticket
+    already shows via the Linear link and the branch name. */
+function cleanTitle(title: string): string {
+  return title.replace(/^[A-Za-z]+-\d+:\s*/, "");
+}
+
 function openMR(e: React.MouseEvent, mr: BoardMR) {
   if ((e.target as HTMLElement).closest("a, button")) return;
   if (mr.webUrl) window.open(mr.webUrl, "_blank", "noopener");
@@ -94,29 +123,32 @@ function StatusDot({ mr }: { mr: BoardMR }) {
   );
 }
 
-function Tokens({ mr, now }: { mr: BoardMR; now: number }) {
-  const p = mr.pipeline;
-  const behind = mr.rebaseButton?.behindBy ?? 0;
+/** The single most important state, for the row's right side. */
+function statusPhrase(mr: BoardMR): { text: string; cls: string } {
+  const b = mr.blockers;
+  if (b?.hasConflicts) return { text: "conflicts", cls: "t-bad" };
+  if (b?.pipelineFailing) return { text: "ci failing", cls: "t-bad" };
+  if (b?.pipelineRunning) return { text: "ci running", cls: "t-warn" };
+  if (mr.reviews.isApproved) return { text: "approved", cls: "t-ok" };
+  if (mr.reviews.required > 0 && mr.reviews.given > 0)
+    return { text: `${mr.reviews.given}/${mr.reviews.required} approved`, cls: "t-warn" };
+  return { text: "needs review", cls: "t-accent" };
+}
+
+function StatusPhrase({ mr }: { mr: BoardMR }) {
+  const { text, cls } = statusPhrase(mr);
+  return <span className={`tui-phrase ${cls}`}>{text}</span>;
+}
+
+function MetaTokens({ mr, now }: { mr: BoardMR; now: number }) {
   return (
-    <span className="tui-tokens">
-      {p && (
-        <span className={p.status === "failed" || p.failing > 0 ? "t-bad" : p.status === "running" || p.running > 0 ? "t-warn" : "t-ok"}>
-          ci {p.status === "failed" || p.failing > 0 ? "✗" : p.status === "running" || p.running > 0 ? "…" : "✓"}
-        </span>
-      )}
-      {mr.reviews.required > 0 && (
-        <span className={mr.reviews.isApproved ? "t-ok" : "t-warn"}>
-          {mr.reviews.given}/{mr.reviews.required}
-        </span>
-      )}
-      {mr.unresolvedThreads > 0 && <span className="t-cyan">🗨 {mr.unresolvedThreads}</span>}
-      {behind > 0 && <span className="t-warn">↓{behind}</span>}
+    <span className="tui-meta">
       {mr.diff && (
-        <span className="t-diff">
+        <span className="t-dim" title={`${mr.diff.filesChanged} files changed`}>
           <span className="t-ok">+{mr.diff.additions}</span> <span className="t-bad">−{mr.diff.deletions}</span>
         </span>
       )}
-      <span className="t-muted">{ago(mr.updatedAt, now)}</span>
+      <span className="t-muted" title="last updated">{ago(mr.updatedAt, now)}</span>
     </span>
   );
 }
@@ -171,13 +203,15 @@ function RowView({ mrs, now }: { mrs: BoardMR[]; now: number }) {
           <div key={mr.iid} className="tui-row" onClick={(e) => openMR(e, mr)}>
             <div className="tui-row-1">
               <StatusDot mr={mr} />
-              <span className="tui-iid">!{mr.iid}</span>
-              <span className="tui-title">{mr.title}</span>
-              <Tokens mr={mr} now={now} />
+              <span className="tui-title">{cleanTitle(mr.title)}</span>
+              <StatusPhrase mr={mr} />
               {ticket && <TicketLink ticket={ticket} />}
             </div>
             <div className="tui-row-2">
-              {mr.sourceBranch} <span className="tui-arrow">→</span> {mr.targetBranch}
+              <span className="tui-branch">
+                {mr.sourceBranch} <span className="tui-arrow">→</span> {mr.targetBranch}
+              </span>
+              <MetaTokens mr={mr} now={now} />
             </div>
             <Watching mr={mr} />
           </div>
@@ -199,12 +233,12 @@ function GridView({ mrs, now }: { mrs: BoardMR[]; now: number }) {
               <StatusDot mr={mr} /> !{mr.iid}
               {ticket && <TicketLink ticket={ticket} />}
             </span>
-            <div className="tui-card-title">{mr.title}</div>
-            <div className="tui-row-2">
+            <div className="tui-card-title">{cleanTitle(mr.title)}</div>
+            <div className="tui-card-branch" title={`${mr.sourceBranch} → ${mr.targetBranch}`}>
               {mr.sourceBranch} <span className="tui-arrow">→</span> {mr.targetBranch}
             </div>
             <div className="tui-card-tokens">
-              <Tokens mr={mr} now={now} />
+              <StatusPhrase mr={mr} /> <MetaTokens mr={mr} now={now} />
             </div>
             {reasons.length > 0 && (
               <ul className="tui-blockers">
@@ -282,7 +316,7 @@ function Board() {
             <span className="tui-prompt">❯</span> {data.title.toLowerCase()}
           </h1>
           <p className="tui-sub">
-            {total} open · click a line to open the MR in gitlab
+            <span className="tui-comment"># {total} awaiting review · pick one, it opens in gitlab</span>
           </p>
         </div>
         <div className="tui-controls">
