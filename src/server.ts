@@ -2,7 +2,7 @@ import { join } from "path";
 import { readFileSync } from "fs";
 import { GitLabProvider } from "@forge-glance/sdk";
 import { loadConfig, loadGitLabToken } from "./config.ts";
-import { buildBoard } from "./data.ts";
+import { buildBoard, buildRoster } from "./data.ts";
 import { SnapshotCache } from "./cache.ts";
 
 const cssPath = join(import.meta.dir, "style.css");
@@ -41,21 +41,6 @@ async function refreshMemberNames(): Promise<void> {
   );
 }
 await refreshMemberNames();
-
-interface RosterMember {
-  username: string;
-  name: string | null;
-  count: number;
-}
-
-/** Members in config order, each with a resolved name and open-MR count. */
-function buildRoster(mrs: { author: { username: string } }[]): RosterMember[] {
-  return config.members.map((member) => ({
-    username: member.username,
-    name: memberNames.get(member.username) ?? member.name ?? null,
-    count: mrs.filter((mr) => mr.author.username === member.username).length,
-  }));
-}
 
 // Bundle the React client once at startup; served from memory.
 const build = await Bun.build({
@@ -118,7 +103,7 @@ Bun.serve({
         return new Response(
           JSON.stringify({
             title: config.title,
-            members: buildRoster(snapshot.mrs),
+            members: buildRoster(config.members, snapshot.mrs, memberNames),
             mrs: snapshot.mrs,
             fetchedAt: snapshot.fetchedAt,
             fetchError: snapshot.fetchError,

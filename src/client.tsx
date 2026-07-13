@@ -515,7 +515,7 @@ function Board() {
     mrs: sortMRs(g.mrs, state.sort),
   }));
   const activeMember = state.member === "all" ? null : data.members.find((m) => m.username === state.member) ?? null;
-  const summaryText = boardSummary(filtered);
+  const summaryText = boardSummary(groups.flatMap((g) => g.mrs));
 
   return (
     <div className={view === "grid" ? "tui tui-wide tui-app" : "tui tui-app"}>

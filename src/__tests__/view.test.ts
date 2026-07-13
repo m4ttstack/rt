@@ -100,6 +100,34 @@ describe("groupMRs status", () => {
     const groups = groupMRs(list, "status", [], NOW);
     expect(groups.map((g) => g.label)).toEqual(["conflicts", "needs review", "approved"]);
   });
+
+  test("ci failing: blockers.pipelineFailing true buckets separately from conflicts", () => {
+    const list = [
+      mr({ iid: 1, blockers: { pipelineFailing: true } as any }),
+    ];
+    const groups = groupMRs(list, "status", [], NOW);
+    expect(groups.map((g) => g.label)).toEqual(["ci failing"]);
+  });
+
+  test("in review: some approvals given but not approved, and no conflicts/ci-failing", () => {
+    const list = [
+      mr({ iid: 1, blockers: {} as any, reviews: { required: 2, given: 1, isApproved: false } as any }),
+    ];
+    const groups = groupMRs(list, "status", [], NOW);
+    expect(groups.map((g) => g.label)).toEqual(["in review"]);
+  });
+
+  test("full severity order with all five buckets present", () => {
+    const list = [
+      mr({ iid: 1, blockers: {} as any, reviews: { required: 2, given: 2, isApproved: true } as any }), // approved
+      mr({ iid: 2, blockers: {} as any, reviews: { required: 2, given: 1, isApproved: false } as any }), // in review
+      mr({ iid: 3, blockers: {} as any, reviews: { required: 2, given: 0, isApproved: false } as any }), // needs review
+      mr({ iid: 4, blockers: { pipelineFailing: true } as any }), // ci failing
+      mr({ iid: 5, blockers: { hasConflicts: true } as any }), // conflicts
+    ];
+    const groups = groupMRs(list, "status", [], NOW);
+    expect(groups.map((g) => g.label)).toEqual(["conflicts", "ci failing", "needs review", "in review", "approved"]);
+  });
 });
 
 describe("groupMRs pipeline", () => {

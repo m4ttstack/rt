@@ -38,7 +38,7 @@ the board lists open, non-draft MRs authored by any configured member in one of 
 ## endpoints
 
 - `/` — the board
-- `/data.json` — the snapshot the client renders (title, groups, fetch timestamp)
+- `/data.json` — the snapshot the client renders: `{ title, members, mrs, fetchedAt, fetchError }`
 - `/healthz` — 200 `ok`, for supervisors and tunnels
 
 data is cached in memory for 60s with stale-while-revalidate: bursts of visitors cost one gitlab round trip, and if gitlab is down the board serves the last good snapshot with a "data from N minutes ago" banner.

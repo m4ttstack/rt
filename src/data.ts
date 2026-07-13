@@ -1,5 +1,5 @@
 import { getMRDashboardProps, type MRDashboardProps, type PullRequest } from "@forge-glance/sdk";
-import type { BoardConfig } from "./config.ts";
+import type { BoardConfig, Member } from "./config.ts";
 
 export type PipelineState = "passed" | "running" | "failed" | "none";
 
@@ -59,4 +59,19 @@ export function buildBoard(prs: PullRequest[], config: BoardConfig): BoardMR[] {
     });
   }
   return out;
+}
+
+export interface RosterMember {
+  username: string;
+  name: string | null;
+  count: number;
+}
+
+/** Members in config order, each with a resolved name and open-MR count. */
+export function buildRoster(members: Member[], mrs: BoardMR[], names: Map<string, string | null>): RosterMember[] {
+  return members.map((member) => ({
+    username: member.username,
+    name: names.get(member.username) ?? member.name ?? null,
+    count: mrs.filter((mr) => mr.author.username === member.username).length,
+  }));
 }

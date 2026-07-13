@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { PullRequest } from "@forge-glance/sdk";
-import { buildBoard, projectPathFromWebUrl } from "../data.ts";
+import { buildBoard, buildRoster, projectPathFromWebUrl, type BoardMR } from "../data.ts";
 import { SnapshotCache } from "../cache.ts";
 import type { BoardConfig } from "../config.ts";
 import { extractTicketId } from "../ticket.ts";
@@ -107,6 +107,34 @@ describe("buildBoard", () => {
     expect(mr!.author.username).toBe("alice");
     expect(mr!.createdAt).toBe("2026-07-01T00:00:00Z");
     expect(mr!.pipelineState).toBe("none"); // pipeline: null
+  });
+});
+
+describe("buildRoster", () => {
+  const members = [{ username: "alice" }, { username: "bob", name: "Bobby" }, { username: "carol" }];
+
+  function boardMr(username: string): BoardMR {
+    return { author: { id: username, username, name: username, avatarUrl: null } } as unknown as BoardMR;
+  }
+
+  test("returns members in config order with resolved names and per-member counts", () => {
+    const mrs = [boardMr("alice"), boardMr("bob"), boardMr("alice")];
+    const names = new Map<string, string | null>([["alice", "Alice Resolved"]]);
+    const roster = buildRoster(members, mrs, names);
+    expect(roster.map((r) => r.username)).toEqual(["alice", "bob", "carol"]);
+    expect(roster[0]).toEqual({ username: "alice", name: "Alice Resolved", count: 2 });
+  });
+
+  test("member with zero MRs still appears with count 0", () => {
+    const roster = buildRoster(members, [boardMr("alice")], new Map());
+    expect(roster.find((r) => r.username === "carol")).toEqual({ username: "carol", name: null, count: 0 });
+  });
+
+  test("name falls back from names map to member.name to null", () => {
+    const roster = buildRoster(members, [], new Map([["alice", "Alice Resolved"]]));
+    expect(roster.find((r) => r.username === "alice")?.name).toBe("Alice Resolved"); // from names map
+    expect(roster.find((r) => r.username === "bob")?.name).toBe("Bobby"); // falls back to member.name
+    expect(roster.find((r) => r.username === "carol")?.name).toBeNull(); // falls back to null
   });
 });
 
