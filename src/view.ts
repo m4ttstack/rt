@@ -123,3 +123,41 @@ export function groupMRs(mrs: BoardMR[], group: GroupKey, memberOrder: string[],
       }));
   }
 }
+
+export interface ViewState {
+  member: string;
+  group: GroupKey;
+  sort: SortKey;
+}
+
+export const DEFAULT_VIEW: ViewState = { member: "all", group: "age", sort: "oldest" };
+
+/** URL query params win, then stored localStorage values, then defaults. Invalid values are dropped. */
+export function parseViewState(search: string, stored: Partial<ViewState> | null, validMembers: string[]): ViewState {
+  const params = new URLSearchParams(search);
+  const members = ["all", ...validMembers];
+
+  const resolve = <T extends string>(key: keyof ViewState, valid: readonly T[], fallback: T): T => {
+    const fromUrl = params.get(key);
+    if (fromUrl && valid.includes(fromUrl as T)) return fromUrl as T;
+    const fromStore = stored?.[key];
+    if (typeof fromStore === "string" && valid.includes(fromStore as T)) return fromStore as T;
+    return fallback;
+  };
+
+  return {
+    member: resolve("member", members, "all"),
+    group: resolve("group", GROUP_KEYS, "age"),
+    sort: resolve("sort", SORT_KEYS, "oldest"),
+  };
+}
+
+/** Query string (with leading "?") carrying only non-default values; "" when all default. */
+export function serializeViewState(v: ViewState): string {
+  const params = new URLSearchParams();
+  if (v.member !== DEFAULT_VIEW.member) params.set("member", v.member);
+  if (v.group !== DEFAULT_VIEW.group) params.set("group", v.group);
+  if (v.sort !== DEFAULT_VIEW.sort) params.set("sort", v.sort);
+  const s = params.toString();
+  return s ? `?${s}` : "";
+}

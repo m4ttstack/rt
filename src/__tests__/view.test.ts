@@ -113,3 +113,31 @@ describe("groupMRs pipeline", () => {
     expect(groups.map((g) => g.label)).toEqual(["pipeline failed", "no pipeline", "pipeline passed"]);
   });
 });
+
+import { parseViewState, serializeViewState, DEFAULT_VIEW } from "../view.ts";
+
+describe("parseViewState", () => {
+  const members = ["alice", "bob"];
+  test("defaults when nothing provided", () => {
+    expect(parseViewState("", null, members)).toEqual(DEFAULT_VIEW);
+  });
+  test("URL wins over localStorage", () => {
+    expect(parseViewState("?member=bob&group=status", { member: "alice", sort: "pipeline" }, members)).toEqual({
+      member: "bob",
+      group: "status",
+      sort: "pipeline",
+    });
+  });
+  test("ignores unknown member and invalid group/sort", () => {
+    expect(parseViewState("?member=ghost&group=bogus&sort=bogus", null, members)).toEqual(DEFAULT_VIEW);
+  });
+});
+
+describe("serializeViewState", () => {
+  test("omits defaults", () => {
+    expect(serializeViewState(DEFAULT_VIEW)).toBe("");
+  });
+  test("includes non-defaults", () => {
+    expect(serializeViewState({ member: "bob", group: "status", sort: "oldest" })).toBe("?member=bob&group=status");
+  });
+});
