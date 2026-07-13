@@ -177,7 +177,7 @@ body {
 .tui-side-name { display: inline-flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tui-side-count { color: var(--muted); font-family: var(--font-mono); font-size: 0.85em; }
 .tui-side-empty { opacity: 0.45; }
-.tui-seg-text button { padding: 2px 8px; font-size: 0.8em; }
+.tui-seg-text button { padding: 0.3rem 0.55rem; font-size: 0.8em; }
 @media (max-width: 720px) {
   .tui-app { grid-template-columns: 1fr; }
   .tui-sidebar { position: static; flex-direction: row; flex-wrap: wrap; }
