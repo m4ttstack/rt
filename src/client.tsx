@@ -2,13 +2,21 @@ import { StrictMode, useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { extractTicketId, ticketUrl } from "./ticket.ts";
 import type { BoardMR } from "./data.ts";
+import { filterByMember, sortMRs, groupMRs, parseViewState, serializeViewState, GROUP_KEYS, SORT_KEYS } from "./view.ts";
+import type { GroupKey, SortKey, ViewState } from "./view.ts";
+
+interface RosterMember {
+  username: string;
+  name: string | null;
+  count: number;
+}
 
 interface BoardData {
   title: string;
-  owner: { username: string; name: string | null };
+  members: RosterMember[];
+  mrs: BoardMR[];
   fetchedAt: number;
   fetchError: string | null;
-  groups: { projectPath: string; mrs: BoardMR[] }[];
 }
 
 declare global {
@@ -23,6 +31,44 @@ type ThemeMode = "light" | "dark" | "system";
 type ViewMode = "rows" | "grid";
 const THEME_KEY = "mrs-theme";
 const VIEW_KEY = "mrs-view";
+const STATE_KEY = "mrs-view-state";
+
+const GROUP_LABEL: Record<GroupKey, string> = {
+  age: "age",
+  author: "author",
+  status: "status",
+  pipeline: "pipeline",
+};
+const SORT_LABEL: Record<SortKey, string> = {
+  oldest: "oldest",
+  pipeline: "pipeline",
+  progress: "progress",
+};
+
+/** A labelled segmented control (text labels, unlike the icon-only Segmented). */
+function LabeledSeg<T extends string>({
+  legend,
+  options,
+  labels,
+  value,
+  onChange,
+}: {
+  legend: string;
+  options: readonly T[];
+  labels: Record<T, string>;
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <span className="tui-seg tui-seg-text" role="group" aria-label={legend}>
+      {options.map((o) => (
+        <button key={o} className={o === value ? "active" : ""} onClick={() => onChange(o)}>
+          {labels[o]}
+        </button>
+      ))}
+    </span>
+  );
+}
 
 function Icon({ d, circle }: { d: string; circle?: boolean }) {
   return (
@@ -165,7 +211,48 @@ function openMR(e: React.MouseEvent, mr: BoardMR) {
   if (mr.webUrl) window.open(mr.webUrl, "_blank", "noopener");
 }
 
+// ── slack summary ───────────────────────────────────────────────────────────
+
+/** One MR as plain text: "title: url". No markup, so it survives Slack's rich
+    composer, and Slack auto-links the bare URL. */
+function mrLine(mr: BoardMR): string {
+  return mr.webUrl ? `${cleanTitle(mr.title)}: ${mr.webUrl}` : cleanTitle(mr.title);
+}
+
+/** The current view as text: a count heading, then each MR as a "- title: url" bullet. */
+function boardSummary(mrs: BoardMR[]): string {
+  return [`${mrs.length} MR's ready for review :pray:`, ...mrs.map((mr) => `- ${mrLine(mr)}`)].join("\n");
+}
+
 // ── pieces ─────────────────────────────────────────────────────────────────
+
+const COPY_ICON = "M9 9h10v10H9zM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1";
+const CHECK_ICON = "M20 6 9 17l-5-5";
+
+/** Copies `text` to the clipboard and flashes a check for feedback. */
+function CopyButton({ text, className, title }: { text: string; className: string; title: string }) {
+  const [copied, setCopied] = useState(false);
+  const onClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard?.writeText(text).then(
+      () => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1200);
+      },
+      () => {},
+    );
+  };
+  return (
+    <button
+      className={copied ? `${className} copied` : className}
+      title={copied ? "copied" : title}
+      aria-label={title}
+      onClick={onClick}
+    >
+      <Icon d={copied ? CHECK_ICON : COPY_ICON} />
+    </button>
+  );
+}
 
 function StatusDot({ mr }: { mr: BoardMR }) {
   const cls = !mr.blockers?.any ? "ok" : mr.blockers.hasConflicts || mr.blockers.pipelineFailing ? "bad" : "warn";
@@ -259,6 +346,7 @@ function RowView({ mrs, now }: { mrs: BoardMR[]; now: number }) {
               <span className="tui-title">{cleanTitle(mr.title)}</span>
               <StatusPhrase mr={mr} />
               {ticket && <TicketLink ticket={ticket} />}
+              <CopyButton text={mrLine(mr)} className="tui-copy-inline" title="copy this MR for Slack" />
             </div>
             <div className="tui-row-2">
               <span className="tui-branch">
@@ -285,6 +373,7 @@ function GridView({ mrs, now }: { mrs: BoardMR[]; now: number }) {
         const reasons = mr.blockers?.any ? statusReasons(mr).split("\n").slice(1) : [];
         return (
           <div key={mr.iid} className="tui-card" onClick={(e) => openMR(e, mr)}>
+            <CopyButton text={mrLine(mr)} className="tui-copy-inline tui-copy-card" title="copy this MR for Slack" />
             <span className="tui-card-label">
               <StatusDot mr={mr} /> !{mr.iid}
               {ticket && <TicketLink ticket={ticket} />}
@@ -311,17 +400,63 @@ function GridView({ mrs, now }: { mrs: BoardMR[]; now: number }) {
   );
 }
 
+// ── sidebar ────────────────────────────────────────────────────────────────
+
+function Sidebar({
+  members,
+  total,
+  active,
+  onPick,
+}: {
+  members: RosterMember[];
+  total: number;
+  active: string;
+  onPick: (member: string) => void;
+}) {
+  return (
+    <nav className="tui-sidebar" aria-label="team members">
+      <button className={active === "all" ? "tui-side-item active" : "tui-side-item"} onClick={() => onPick("all")}>
+        <span className="tui-side-name">◉ All</span>
+        <span className="tui-side-count">{total}</span>
+      </button>
+      {members.map((m) => (
+        <button
+          key={m.username}
+          className={
+            (active === m.username ? "tui-side-item active" : "tui-side-item") + (m.count === 0 ? " tui-side-empty" : "")
+          }
+          onClick={() => onPick(m.username)}
+          title={m.name ?? m.username}
+        >
+          <span className="tui-side-name">
+            <OwnerSprite username={m.username} /> {m.name ?? m.username}
+          </span>
+          <span className="tui-side-count">{m.count}</span>
+        </button>
+      ))}
+    </nav>
+  );
+}
+
 // ── board ──────────────────────────────────────────────────────────────────
 
 function Board() {
   const [data, setData] = useState<BoardData | null>(null);
   const [loadError, setLoadError] = useState(false);
-  const [view, setView] = useState<ViewMode>(
-    () => (localStorage.getItem(VIEW_KEY) as ViewMode) ?? "rows",
-  );
-  const [theme, setTheme] = useState<ThemeMode>(
-    () => (localStorage.getItem(THEME_KEY) as ThemeMode) ?? "system",
-  );
+  const [view, setView] = useState<ViewMode>(() => (localStorage.getItem(VIEW_KEY) as ViewMode) ?? "rows");
+  const [theme, setTheme] = useState<ThemeMode>(() => (localStorage.getItem(THEME_KEY) as ThemeMode) ?? "system");
+
+  // View state (member/group/sort). Members are validated once data arrives.
+  const [state, setState] = useState<ViewState>(() => {
+    let stored: Partial<ViewState> | null = null;
+    try {
+      stored = JSON.parse(localStorage.getItem(STATE_KEY) ?? "null");
+    } catch {
+      stored = null;
+    }
+    return parseViewState(location.search, stored, []);
+  });
+
   const pickView = (v: ViewMode) => {
     localStorage.setItem(VIEW_KEY, v);
     setView(v);
@@ -331,15 +466,25 @@ function Board() {
     window.__applyTheme();
     setTheme(m);
   };
+  const update = (patch: Partial<ViewState>) => {
+    setState((prev) => {
+      const next = { ...prev, ...patch };
+      localStorage.setItem(STATE_KEY, JSON.stringify(next));
+      history.replaceState(null, "", serializeViewState(next) || location.pathname);
+      return next;
+    });
+  };
 
   useEffect(() => {
     let timer: ReturnType<typeof setInterval> | undefined;
     const load = () =>
       fetch("/data.json")
         .then((r) => r.json())
-        .then((d) => {
+        .then((d: BoardData) => {
           setData(d);
           setLoadError(false);
+          // Re-validate the member against the real roster (drops stale ?member=).
+          setState((prev) => parseViewState(location.search, prev, d.members.map((m) => m.username)));
         })
         .catch(() => setLoadError(true));
     const onVisible = () => {
@@ -360,48 +505,58 @@ function Board() {
     return <p className="tui-loading">{loadError ? "✗ failed to load board data" : "fetching…"}</p>;
   }
 
-  const total = data.groups.reduce((n, g) => n + g.mrs.length, 0);
+  const total = data.members.reduce((n, m) => n + m.count, 0);
   const staleMins = Math.round((Date.now() - data.fetchedAt) / 60_000);
   const now = Date.now();
 
+  const filtered = filterByMember(data.mrs, state.member);
+  const groups = groupMRs(filtered, state.group, data.members.map((m) => m.username), now).map((g) => ({
+    label: g.label,
+    mrs: sortMRs(g.mrs, state.sort),
+  }));
+  const activeMember = state.member === "all" ? null : data.members.find((m) => m.username === state.member) ?? null;
+  const summaryText = boardSummary(filtered);
+
   return (
-    <div className={view === "grid" ? "tui tui-wide" : "tui"}>
-      <header className="tui-header">
-        <div>
-          <h1>
-            <span className="tui-prompt">❯</span> {data.title.toLowerCase()}{" "}
-            <span className="tui-author">--author @{data.owner.username}</span>
-          </h1>
-          <p className="tui-sub">
-            <span className="tui-comment"># {total} awaiting review · pick one, it opens in gitlab</span>
-          </p>
-        </div>
-        <div className="tui-controls">
-          <Segmented options={["rows", "grid"] as const} value={view} onChange={pickView} label="view" />
-          <Segmented options={["light", "dark", "system"] as const} value={theme} onChange={pickTheme} label="theme" />
-          <span className="tui-mascot" title={data.owner.name ?? data.owner.username}>
-            <OwnerSprite username={data.owner.username} />
-          </span>
-        </div>
-      </header>
+    <div className={view === "grid" ? "tui tui-wide tui-app" : "tui tui-app"}>
+      <Sidebar members={data.members} total={total} active={state.member} onPick={(member) => update({ member })} />
 
-      {data.fetchError && (
-        <div className="tui-banner">⚠ data from {staleMins}m ago — gitlab fetch failing</div>
-      )}
+      <div className="tui-main">
+        <header className="tui-header">
+          <div>
+            <h1>
+              <span className="tui-prompt">❯</span> {data.title.toLowerCase()}{" "}
+              {activeMember && <span className="tui-author">--author @{activeMember.username}</span>}
+            </h1>
+            <p className="tui-sub">
+              <span className="tui-comment"># {filtered.length} awaiting review · pick one, it opens in gitlab</span>
+            </p>
+          </div>
+          <div className="tui-controls">
+            {filtered.length > 0 && (
+              <CopyButton text={summaryText} className="tui-copy" title="copy summary for Slack" />
+            )}
+            <LabeledSeg legend="group" options={GROUP_KEYS} labels={GROUP_LABEL} value={state.group} onChange={(group) => update({ group })} />
+            <LabeledSeg legend="sort" options={SORT_KEYS} labels={SORT_LABEL} value={state.sort} onChange={(sort) => update({ sort })} />
+            <Segmented options={["rows", "grid"] as const} value={view} onChange={pickView} label="view" />
+            <Segmented options={["light", "dark", "system"] as const} value={theme} onChange={pickTheme} label="theme" />
+          </div>
+        </header>
 
-      {total === 0 && !data.fetchError ? (
-        <p className="tui-empty">nothing waiting on review ✓</p>
-      ) : (
-        data.groups.map((g) => (
-          <Panel key={g.projectPath} title={g.projectPath} count={g.mrs.length}>
-            {view === "rows" ? <RowView mrs={g.mrs} now={now} /> : <GridView mrs={g.mrs} now={now} />}
-          </Panel>
-        ))
-      )}
+        {data.fetchError && <div className="tui-banner">⚠ data from {staleMins}m ago — gitlab fetch failing</div>}
 
-      <footer className="tui-footer">
-        updated {staleMins < 1 ? "just now" : `${staleMins}m ago`}
-      </footer>
+        {filtered.length === 0 && !data.fetchError ? (
+          <p className="tui-empty">nothing waiting on review ✓</p>
+        ) : (
+          groups.map((g) => (
+            <Panel key={g.label} title={g.label} count={g.mrs.length}>
+              {view === "rows" ? <RowView mrs={g.mrs} now={now} /> : <GridView mrs={g.mrs} now={now} />}
+            </Panel>
+          ))
+        )}
+
+        <footer className="tui-footer">updated {staleMins < 1 ? "just now" : `${staleMins}m ago`}</footer>
+      </div>
     </div>
   );
 }
