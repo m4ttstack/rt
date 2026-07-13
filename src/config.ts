@@ -2,17 +2,47 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 
+export interface Member {
+  username: string;
+  /** Optional display name; falls back to the GitLab profile lookup, then username. */
+  name?: string;
+}
+
 export interface BoardConfig {
   gitlabHost: string;
-  username: string;
-  /** GitLab project paths in display order, e.g. "acme/acme-dev". */
+  /** GitLab project paths whose MRs are eligible, e.g. "acme/acme-dev". */
   projects: string[];
+  /** Team members whose authored MRs the board shows, in sidebar order. */
+  members: Member[];
   title: string;
   port: number;
 }
 
 const CONFIG_PATH = join(import.meta.dir, "..", "config.json");
 const RT_SECRETS_PATH = join(homedir(), ".rt", "secrets.json");
+
+/** Parse and validate raw config JSON. Separated from file IO for testing. */
+export function parseConfig(raw: string): BoardConfig {
+  const cfg = JSON.parse(raw) as Partial<BoardConfig>;
+  for (const key of ["gitlabHost", "projects", "members"] as const) {
+    const value = cfg[key];
+    if (!value || (Array.isArray(value) && value.length === 0)) {
+      throw new Error(`config.json is missing required field "${key}"`);
+    }
+  }
+  for (const member of cfg.members!) {
+    if (!member || !member.username) {
+      throw new Error(`config.json has a member with no "username"`);
+    }
+  }
+  return {
+    gitlabHost: cfg.gitlabHost!,
+    projects: cfg.projects!,
+    members: cfg.members!,
+    title: cfg.title ?? "MRs ready for review",
+    port: cfg.port ?? 7930,
+  };
+}
 
 export function loadConfig(): BoardConfig {
   let raw: string;
@@ -21,19 +51,7 @@ export function loadConfig(): BoardConfig {
   } catch {
     throw new Error(`config.json not found at ${CONFIG_PATH} — copy config.example.json and fill it in`);
   }
-  const cfg = JSON.parse(raw) as Partial<BoardConfig>;
-  for (const key of ["gitlabHost", "username", "projects"] as const) {
-    if (!cfg[key] || (Array.isArray(cfg[key]) && cfg[key].length === 0)) {
-      throw new Error(`config.json is missing required field "${key}"`);
-    }
-  }
-  return {
-    gitlabHost: cfg.gitlabHost!,
-    username: cfg.username!,
-    projects: cfg.projects!,
-    title: cfg.title ?? "MRs ready for review",
-    port: cfg.port ?? 7930,
-  };
+  return parseConfig(raw);
 }
 
 export function loadGitLabToken(): string {

@@ -1,7 +1,10 @@
 {
   "gitlabHost": "https://gitlab.com",
-  "username": "your-gitlab-username",
-  "projects": ["group/project", "group/other-project"],
-  "title": "mr ls --ready",
+  "projects": ["group/project"],
+  "members": [
+    { "username": "your-gitlab-username", "name": "Your Name" },
+    { "username": "teammate-username" }
+  ],
+  "title": "MR Board",
   "port": 7930
 }
