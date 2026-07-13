@@ -83,8 +83,12 @@ const shell = `<!doctype html>
 </body>
 </html>`;
 
+// $PORT wins over config.port so a deployment (launchd/systemd) can pin the
+// port the tunnel points at, independent of config.json.
+const port = Number(process.env.PORT) || config.port;
+
 Bun.serve({
-  port: config.port,
+  port,
   async fetch(req) {
     const { pathname } = new URL(req.url);
     switch (pathname) {
@@ -118,4 +122,4 @@ Bun.serve({
   },
 });
 
-console.log(`mr-board serving on http://localhost:${config.port}`);
+console.log(`mr-board serving on http://localhost:${port}`);
