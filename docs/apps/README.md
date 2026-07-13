@@ -1,10 +1,10 @@
 # mr-board
 
-a one-page board of your open gitlab merge requests that are ready for review, so you can drop a single link in slack instead of pasting MR urls. terminal-styled (tokyo night), server-rendered data with a small react client, zero database.
+a one-page board of your team's open gitlab merge requests that are ready for review, so you can drop a single link in slack instead of pasting MR urls. terminal-styled (tokyo night), server-rendered data with a small react client, zero database.
 
 each MR shows a status dot (hover for the full blocker list), title, branch, a single prioritized status phrase (`conflicts` > `ci failing` > `ci running` > `approved` > `n/m approved` > `needs review`), diff size, age, and a linear ticket link when the branch or title carries a ticket id. rows and grid views, light/dark/system theme, refreshes itself every 60s.
 
-the page identifies whose board it is: the title reads `❯ mr ls --ready --author @username`, and the header corner shows a deterministic pixel-sprite avatar derived from the username (every user gets their own creature, no image hosting involved).
+each member view shows that member's name and a deterministic pixel-sprite avatar in the header; the **All** view lists all team members' MRs together. every user gets their own creature derived from their username, with no image hosting involved.
 
 ## run it
 
@@ -24,12 +24,12 @@ bun run serve                        # http://localhost:7930
 | field | meaning |
 |---|---|
 | `gitlabHost` | your gitlab instance, e.g. `https://gitlab.com` |
-| `username` | gitlab username whose authored MRs to show |
-| `projects` | project paths to display, in display order; MRs outside this list are hidden |
+| `projects` | project paths whose MRs are eligible |
+| `members` | array of `{ "username", "name"? }` — the teammates whose authored MRs the board shows, in sidebar order |
 | `title` | page heading and tab title |
 | `port` | listen port (default 7930) |
 
-the board lists MRs that are: authored by `username`, open, not draft, in one of `projects`. grouping follows `projects` order; within a group, most recently updated first.
+the board lists open, non-draft MRs authored by any configured member in one of `projects`. a left sidebar switches between **All** (the whole team) and a single member; the **All** view (and each member view) can be grouped by age / author / status / pipeline and sorted by oldest / pipeline / review progress. the current member, grouping, and sort live in the URL (shareable) and are remembered across visits.
 
 ## token
 
