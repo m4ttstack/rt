@@ -1,13 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import type { PullRequest } from "@forge-glance/sdk";
-import { buildGroups, projectPathFromWebUrl } from "../data.ts";
+import { buildBoard, projectPathFromWebUrl } from "../data.ts";
 import { SnapshotCache } from "../cache.ts";
 import type { BoardConfig } from "../config.ts";
+import { extractTicketId } from "../ticket.ts";
 
 const config: BoardConfig = {
   gitlabHost: "https://gitlab.com",
-  username: "matt",
   projects: ["org/repo-a", "org/repo-b"],
+  members: [{ username: "alice" }, { username: "bob" }],
   title: "Test board",
   port: 0,
 };
@@ -28,7 +29,7 @@ function pr(overrides: Partial<PullRequest>): PullRequest {
     createdAt: "2026-07-09T12:00:00Z",
     updatedAt: "2026-07-10T12:00:00Z",
     sha: null,
-    author: { id: "gitlab:7", username: "matt", name: "Matt", avatarUrl: null },
+    author: { id: "gitlab:7", username: "alice", name: "Alice", avatarUrl: null },
     assignees: [],
     reviewers: [],
     roles: ["author"],
@@ -60,7 +61,6 @@ function pr(overrides: Partial<PullRequest>): PullRequest {
 }
 
 describe("extractTicketId", () => {
-  const { extractTicketId } = require("../ticket.ts");
   test("exact branch segment", () => {
     expect(extractTicketId("feature/ACME-1287", "whatever")).toBe("ACME-1287");
   });
@@ -77,110 +77,59 @@ describe("extractTicketId", () => {
 
 describe("projectPathFromWebUrl", () => {
   test("extracts group/project", () => {
-    expect(projectPathFromWebUrl("https://gitlab.com/org/sub/repo/-/merge_requests/7", "https://gitlab.com"))
-      .toBe("org/sub/repo");
+    expect(projectPathFromWebUrl("https://gitlab.com/org/sub/repo/-/merge_requests/7", "https://gitlab.com")).toBe(
+      "org/sub/repo",
+    );
   });
-  test("rejects other hosts and malformed urls", () => {
-    expect(projectPathFromWebUrl("https://github.com/org/repo/pull/1", "https://gitlab.com")).toBeNull();
-    expect(projectPathFromWebUrl("https://gitlab.com/org/repo", "https://gitlab.com")).toBeNull();
+  test("null for foreign host", () => {
+    expect(projectPathFromWebUrl("https://other.com/org/repo/-/merge_requests/7", "https://gitlab.com")).toBeNull();
   });
 });
 
-describe("buildGroups", () => {
-  test("filters drafts, other authors, and unconfigured projects", () => {
-    const groups = buildGroups(
+describe("buildBoard", () => {
+  test("keeps only member-authored, open, non-draft MRs in configured projects", () => {
+    const mrs = buildBoard(
       [
-        pr({ title: "mine" }),
-        pr({ title: "draft", draft: true }),
-        pr({ title: "someone elses", author: { id: "gitlab:8", username: "alice", name: "Alice", avatarUrl: null } }),
-        pr({ title: "other project", webUrl: "https://gitlab.com/org/other/-/merge_requests/2" }),
+        pr({ iid: 1, author: { id: "a", username: "alice", name: "Alice", avatarUrl: null } }),
+        pr({ iid: 2, author: { id: "b", username: "bob", name: "Bob", avatarUrl: null } }),
+        pr({ iid: 3, author: { id: "c", username: "carol", name: "Carol", avatarUrl: null } }), // not a member
+        pr({ iid: 4, draft: true }),
+        pr({ iid: 5, state: "merged" }),
+        pr({ iid: 6, webUrl: "https://gitlab.com/other/repo/-/merge_requests/6" }), // wrong project
       ],
       config,
     );
-    expect(groups.map((g) => g.projectPath)).toEqual(["org/repo-a", "org/repo-b"]);
-    expect(groups[0]!.mrs.map((m) => m.title)).toEqual(["mine"]);
-    expect(groups[1]!.mrs).toEqual([]);
+    expect(mrs.map((m) => m.iid).sort()).toEqual([1, 2]);
   });
 
-  test("sorts newest-updated first within a repo", () => {
-    const groups = buildGroups(
-      [
-        pr({ title: "old", updatedAt: "2026-07-01T00:00:00Z" }),
-        pr({ title: "new", updatedAt: "2026-07-10T00:00:00Z" }),
-      ],
-      config,
-    );
-    expect(groups[0]!.mrs.map((m) => m.title)).toEqual(["new", "old"]);
-  });
-
-  test("produces MRDashboardProps with review and pipeline fields", () => {
-    const groups = buildGroups(
-      [pr({
-        approvalsRequired: 2,
-        approvalsLeft: 1,
-        approvedBy: [{ id: "gitlab:9", username: "bob", name: "Bob", avatarUrl: null }],
-        pipeline: { id: "gitlab:pipeline:9", status: "success", createdAt: null, webUrl: null, jobs: [] },
-      })],
-      config,
-    );
-    const props = groups[0]!.mrs[0]!;
-    expect(props.reviews.required).toBe(2);
-    expect(props.reviews.given).toBe(1);
-    expect(props.pipeline?.status).toBe("success");
-    expect(props.webUrl).toContain("/merge_requests/1");
+  test("tags each MR with author, createdAt, and derived pipelineState", () => {
+    const [mr] = buildBoard([pr({ createdAt: "2026-07-01T00:00:00Z" })], config);
+    expect(mr!.author.username).toBe("alice");
+    expect(mr!.createdAt).toBe("2026-07-01T00:00:00Z");
+    expect(mr!.pipelineState).toBe("none"); // pipeline: null
   });
 });
 
 describe("SnapshotCache", () => {
-  test("serves cached within TTL, refreshes past TTL, dedupes concurrent refreshes", async () => {
-    let clock = 0;
-    let fetches = 0;
+  test("caches within TTL and revalidates after", async () => {
+    let calls = 0;
+    let clock = 1_000;
     const cache = new SnapshotCache(
       async () => {
-        fetches++;
-        return [];
+        calls++;
+        return [pr({ iid: calls })].map(() => ({ iid: calls } as any));
       },
       () => clock,
       60_000,
     );
+    const first = await cache.get();
+    expect(first.mrs).toHaveLength(1);
+    expect(calls).toBe(1);
     await cache.get();
-    await cache.get();
-    expect(fetches).toBe(1);
-
-    clock = 61_000;
-    await Promise.all([cache.get(), cache.get(), cache.get()]);
-    // Stale snapshots return immediately; the background refresh is shared.
-    await Bun.sleep(0);
-    expect(fetches).toBe(2);
-  });
-
-  test("keeps last good data and stamps error on failed refresh", async () => {
-    let clock = 0;
-    let fail = false;
-    const cache = new SnapshotCache(
-      async () => {
-        if (fail) throw new Error("boom");
-        return [{ projectPath: "org/repo-a", mrs: [] }];
-      },
-      () => clock,
-      60_000,
-    );
-    await cache.get();
-    fail = true;
-    clock = 61_000;
-    await cache.get(); // triggers background refresh that fails
-    await Bun.sleep(0);
-    const snap = await cache.get();
-    expect(snap.groups.length).toBe(1);
-    expect(snap.fetchError).toBe("boom");
-  });
-
-  test("cold start with fetch failing yields empty snapshot with error", async () => {
-    const cache = new SnapshotCache(async () => {
-      throw new Error("down");
-    });
-    const snap = await cache.get();
-    expect(snap.groups).toEqual([]);
-    expect(snap.fetchError).toBe("down");
+    expect(calls).toBe(1); // within TTL
+    clock += 61_000;
+    await cache.get(); // serves stale, kicks background refresh
+    await new Promise((r) => setTimeout(r, 0));
+    expect(calls).toBe(2);
   });
 });

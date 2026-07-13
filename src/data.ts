@@ -1,19 +1,18 @@
 import { getMRDashboardProps, type MRDashboardProps, type PullRequest } from "@forge-glance/sdk";
 import type { BoardConfig } from "./config.ts";
 
+export type PipelineState = "passed" | "running" | "failed" | "none";
+
 /** Dashboard props plus the raw fields the board renders that props omit. */
 export type BoardMR = MRDashboardProps & {
   updatedAt: string | null;
+  createdAt: string | null;
   unresolvedThreads: number;
+  pipelineState: PipelineState;
 };
 
-export interface RepoGroup {
-  projectPath: string;
-  mrs: BoardMR[];
-}
-
 export interface Snapshot {
-  groups: RepoGroup[];
+  mrs: BoardMR[];
   fetchedAt: number;
   /** Set when the latest refresh failed and this data is older than it should be. */
   fetchError: string | null;
@@ -27,29 +26,37 @@ export function projectPathFromWebUrl(webUrl: string, gitlabHost: string): strin
   return idx === -1 ? null : rest.slice(0, idx);
 }
 
+/** Collapse the SDK's pipeline signals into one grouping/sorting key. */
+function derivePipelineState(props: MRDashboardProps): PipelineState {
+  if (!props.pipeline) return "none";
+  if (props.blockers.pipelineFailing) return "failed";
+  if (props.blockers.pipelineRunning) return "running";
+  return "passed";
+}
+
 /**
- * Shape raw MRs into the board snapshot: authored by the configured user,
- * open, not draft, grouped by configured project in config order, newest
- * update first, converted to the display props @forge-glance/react consumes.
+ * Shape raw MRs into a flat board list: authored by a configured member, open,
+ * not draft, in a configured project. Each MR is tagged with its author, created
+ * / updated timestamps, unresolved-thread count, and derived pipeline state. The
+ * client owns all grouping and sorting, so this list is unsorted.
  */
-export function buildGroups(prs: PullRequest[], config: BoardConfig): RepoGroup[] {
-  const byProject = new Map<string, PullRequest[]>(config.projects.map((p) => [p, []]));
+export function buildBoard(prs: PullRequest[], config: BoardConfig): BoardMR[] {
+  const members = new Set(config.members.map((m) => m.username));
+  const projects = new Set(config.projects);
+  const out: BoardMR[] = [];
   for (const pr of prs) {
     if (pr.draft || pr.state !== "opened") continue;
-    if (pr.author?.username !== config.username) continue;
+    if (!pr.author || !members.has(pr.author.username)) continue;
     const path = pr.webUrl ? projectPathFromWebUrl(pr.webUrl, config.gitlabHost) : null;
-    if (!path) continue;
-    byProject.get(path)?.push(pr);
-  }
-  for (const list of byProject.values()) {
-    list.sort((a, b) => (b.updatedAt ?? "").localeCompare(a.updatedAt ?? ""));
-  }
-  return config.projects.map((projectPath) => ({
-    projectPath,
-    mrs: byProject.get(projectPath)!.map((pr) => ({
-      ...getMRDashboardProps(pr),
+    if (!path || !projects.has(path)) continue;
+    const props = getMRDashboardProps(pr);
+    out.push({
+      ...props,
       updatedAt: pr.updatedAt,
+      createdAt: pr.createdAt,
       unresolvedThreads: pr.unresolvedThreadCount,
-    })),
-  }));
+      pipelineState: derivePipelineState(props),
+    });
+  }
+  return out;
 }

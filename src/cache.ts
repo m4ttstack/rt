@@ -1,4 +1,4 @@
-import type { Snapshot } from "./data.ts";
+import type { BoardMR, Snapshot } from "./data.ts";
 
 const TTL_MS = 60_000;
 
@@ -14,7 +14,7 @@ export class SnapshotCache {
   private inflight: Promise<Snapshot> | null = null;
 
   constructor(
-    private readonly fetchGroups: () => Promise<Snapshot["groups"]>,
+    private readonly fetchMRs: () => Promise<BoardMR[]>,
     private readonly now: () => number = Date.now,
     private readonly ttlMs: number = TTL_MS,
   ) {}
@@ -34,9 +34,9 @@ export class SnapshotCache {
 
   private refresh(): Promise<Snapshot> {
     if (this.inflight) return this.inflight;
-    this.inflight = this.fetchGroups()
-      .then((groups) => {
-        this.snapshot = { groups, fetchedAt: this.now(), fetchError: null };
+    this.inflight = this.fetchMRs()
+      .then((mrs) => {
+        this.snapshot = { mrs, fetchedAt: this.now(), fetchError: null };
         return this.snapshot;
       })
       .catch((err) => {
@@ -46,7 +46,7 @@ export class SnapshotCache {
           this.snapshot = { ...this.snapshot, fetchError: message };
           return this.snapshot;
         }
-        this.snapshot = { groups: [], fetchedAt: this.now(), fetchError: message };
+        this.snapshot = { mrs: [], fetchedAt: this.now(), fetchError: message };
         return this.snapshot;
       })
       .finally(() => {
