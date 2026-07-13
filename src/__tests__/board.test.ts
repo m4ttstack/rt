@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { PullRequest } from "@forge-glance/sdk";
-import { buildBoard, buildRoster, projectPathFromWebUrl, type BoardMR } from "../data.ts";
+import { buildBoard, buildRoster, memberAuthoredIids, projectPathFromWebUrl, type BoardMR } from "../data.ts";
 import { SnapshotCache } from "../cache.ts";
 import type { BoardConfig } from "../config.ts";
 import { extractTicketId } from "../ticket.ts";
@@ -107,6 +107,25 @@ describe("buildBoard", () => {
     expect(mr!.author.username).toBe("alice");
     expect(mr!.createdAt).toBe("2026-07-01T00:00:00Z");
     expect(mr!.pipelineState).toBe("none"); // pipeline: null
+  });
+});
+
+describe("memberAuthoredIids", () => {
+  const members = [{ username: "alice" }, { username: "bob" }];
+
+  test("keeps opened non-draft MRs authored by a member, drops others", () => {
+    const list = [
+      { iid: 1, author: { username: "alice" }, draft: false },
+      { iid: 2, author: { username: "bob" }, draft: false },
+      { iid: 3, author: { username: "carol" }, draft: false }, // not a member
+      { iid: 4, author: { username: "alice" }, draft: true }, // draft
+      { iid: 5, author: null }, // no author
+    ];
+    expect(memberAuthoredIids(list, members)).toEqual([1, 2]);
+  });
+
+  test("returns empty when no member authored anything", () => {
+    expect(memberAuthoredIids([{ iid: 9, author: { username: "carol" } }], members)).toEqual([]);
   });
 });
 
