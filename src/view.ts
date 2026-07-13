@@ -133,9 +133,15 @@ export interface ViewState {
 export const DEFAULT_VIEW: ViewState = { member: "all", group: "age", sort: "oldest" };
 
 /** URL query params win, then stored localStorage values, then defaults. Invalid values are dropped. */
-export function parseViewState(search: string, stored: Partial<ViewState> | null, validMembers: string[]): ViewState {
+export function parseViewState(
+  search: string,
+  stored: Partial<ViewState> | null,
+  validMembers: string[],
+  defaultMember: string = "all",
+): ViewState {
   const params = new URLSearchParams(search);
   const members = ["all", ...validMembers];
+  const memberFallback = members.includes(defaultMember) ? defaultMember : "all";
 
   const resolve = <T extends string>(key: keyof ViewState, valid: readonly T[], fallback: T): T => {
     const fromUrl = params.get(key);
@@ -146,7 +152,7 @@ export function parseViewState(search: string, stored: Partial<ViewState> | null
   };
 
   return {
-    member: resolve("member", members, "all"),
+    member: resolve("member", members, memberFallback),
     group: resolve("group", GROUP_KEYS, "age"),
     sort: resolve("sort", SORT_KEYS, "oldest"),
   };

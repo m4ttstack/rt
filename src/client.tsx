@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useState } from "react";
+import { StrictMode, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { extractTicketId, ticketUrl } from "./ticket.ts";
 import type { BoardMR } from "./data.ts";
@@ -13,6 +13,7 @@ interface RosterMember {
 
 interface BoardData {
   title: string;
+  defaultMember: string;
   members: RosterMember[];
   mrs: BoardMR[];
   fetchedAt: number;
@@ -456,6 +457,7 @@ function Board() {
     }
     return parseViewState(location.search, stored, []);
   });
+  const validatedOnce = useRef(false);
 
   const pickView = (v: ViewMode) => {
     localStorage.setItem(VIEW_KEY, v);
@@ -483,8 +485,25 @@ function Board() {
         .then((d: BoardData) => {
           setData(d);
           setLoadError(false);
-          // Re-validate the member against the real roster (drops stale ?member=).
-          setState((prev) => parseViewState(location.search, prev, d.members.map((m) => m.username)));
+          const usernames = d.members.map((m) => m.username);
+          if (!validatedOnce.current) {
+            // First load: the real roster and configured default are now known, so
+            // re-resolve from URL/localStorage/defaultMember against them.
+            validatedOnce.current = true;
+            let stored: Partial<ViewState> | null = null;
+            try {
+              stored = JSON.parse(localStorage.getItem(STATE_KEY) ?? "null");
+            } catch {
+              stored = null;
+            }
+            setState(parseViewState(location.search, stored, usernames, d.defaultMember));
+          } else {
+            // Subsequent (periodic) refreshes: keep the user's current selection,
+            // only dropping a member who's no longer on the roster.
+            setState((prev) =>
+              prev.member === "all" || usernames.includes(prev.member) ? prev : { ...prev, member: "all" },
+            );
+          }
         })
         .catch(() => setLoadError(true));
     const onVisible = () => {

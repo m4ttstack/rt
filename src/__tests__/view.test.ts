@@ -159,6 +159,22 @@ describe("parseViewState", () => {
   test("ignores unknown member and invalid group/sort", () => {
     expect(parseViewState("?member=ghost&group=bogus&sort=bogus", null, members)).toEqual(DEFAULT_VIEW);
   });
+
+  test("uses defaultMember when no URL or stored value", () => {
+    expect(parseViewState("", null, members, "bob").member).toBe("bob");
+  });
+
+  test("falls back to all when defaultMember is not in the valid set", () => {
+    expect(parseViewState("", null, members, "ghost").member).toBe("all");
+  });
+
+  test("URL still wins over defaultMember", () => {
+    expect(parseViewState("?member=alice", null, members, "bob").member).toBe("alice");
+  });
+
+  test("stored value still wins over defaultMember", () => {
+    expect(parseViewState("", { member: "alice" }, members, "bob").member).toBe("alice");
+  });
 });
 
 describe("serializeViewState", () => {

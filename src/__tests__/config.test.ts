@@ -29,4 +29,18 @@ describe("parseConfig", () => {
     const { gitlabHost, ...noHost } = base;
     expect(() => parseConfig(JSON.stringify(noHost))).toThrow(/gitlabHost/);
   });
+
+  test("defaultMember defaults to all when absent", () => {
+    const cfg = parseConfig(JSON.stringify(base));
+    expect(cfg.defaultMember).toBe("all");
+  });
+
+  test("accepts a defaultMember matching a member's username", () => {
+    const cfg = parseConfig(JSON.stringify({ ...base, defaultMember: "bob" }));
+    expect(cfg.defaultMember).toBe("bob");
+  });
+
+  test("throws when defaultMember is neither 'all' nor a known member", () => {
+    expect(() => parseConfig(JSON.stringify({ ...base, defaultMember: "ghost" }))).toThrow(/defaultMember/);
+  });
 });

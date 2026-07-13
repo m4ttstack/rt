@@ -14,6 +14,8 @@ export interface BoardConfig {
   projects: string[];
   /** Team members whose authored MRs the board shows, in sidebar order. */
   members: Member[];
+  /** Username of the member the board defaults to (or "all"), absent URL/localStorage overrides. */
+  defaultMember: string;
   title: string;
   port: number;
 }
@@ -35,10 +37,14 @@ export function parseConfig(raw: string): BoardConfig {
       throw new Error(`config.json has a member with no "username"`);
     }
   }
+  if (cfg.defaultMember && cfg.defaultMember !== "all" && !cfg.members!.some((m) => m.username === cfg.defaultMember)) {
+    throw new Error(`config.json "defaultMember" (${cfg.defaultMember}) is not "all" or a known member username`);
+  }
   return {
     gitlabHost: cfg.gitlabHost!,
     projects: cfg.projects!,
     members: cfg.members!,
+    defaultMember: cfg.defaultMember ?? "all",
     title: cfg.title ?? "MRs ready for review",
     port: cfg.port ?? 7930,
   };

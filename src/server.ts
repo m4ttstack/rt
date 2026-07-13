@@ -103,6 +103,7 @@ Bun.serve({
         return new Response(
           JSON.stringify({
             title: config.title,
+            defaultMember: config.defaultMember,
             members: buildRoster(config.members, snapshot.mrs, memberNames),
             mrs: snapshot.mrs,
             fetchedAt: snapshot.fetchedAt,

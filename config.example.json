@@ -5,6 +5,7 @@
     { "username": "your-gitlab-username", "name": "Your Name" },
     { "username": "teammate-username" }
   ],
+  "defaultMember": "your-gitlab-username",
   "title": "MR Board",
   "port": 7930
 }

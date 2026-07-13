@@ -26,6 +26,7 @@ bun run serve                        # http://localhost:7930
 | `gitlabHost` | your gitlab instance, e.g. `https://gitlab.com` |
 | `projects` | project paths whose MRs are eligible |
 | `members` | array of `{ "username", "name"? }` — the teammates whose authored MRs the board shows, in sidebar order |
+| `defaultMember` | member username the board opens to by default (or `"all"`); the URL and remembered state override it |
 | `title` | page heading and tab title |
 | `port` | listen port (default 7930) |
 
