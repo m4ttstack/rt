@@ -9,6 +9,8 @@ const config: BoardConfig = {
   gitlabHost: "https://gitlab.com",
   projects: ["org/repo-a", "org/repo-b"],
   members: [{ username: "alice" }, { username: "bob" }],
+  defaultMember: "all",
+  staleAfterDays: 90,
   title: "Test board",
   port: 0,
 };
@@ -100,6 +102,19 @@ describe("buildBoard", () => {
       config,
     );
     expect(mrs.map((m) => m.iid).sort()).toEqual([1, 2]);
+  });
+
+  test("drops MRs with no activity within the stale window, keeps recently-updated ones", () => {
+    const now = Date.parse("2026-07-13T00:00:00Z");
+    const mrs = buildBoard(
+      [
+        pr({ iid: 1, updatedAt: "2026-07-10T00:00:00Z" }), // 3 days ago — fresh
+        pr({ iid: 2, updatedAt: "2026-01-01T00:00:00Z" }), // ~193 days ago — stale
+      ],
+      config, // staleAfterDays: 90
+      now,
+    );
+    expect(mrs.map((m) => m.iid)).toEqual([1]);
   });
 
   test("tags each MR with author, createdAt, and derived pipelineState", () => {

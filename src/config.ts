@@ -16,6 +16,8 @@ export interface BoardConfig {
   members: Member[];
   /** Username of the member the board defaults to (or "all"), absent URL/localStorage overrides. */
   defaultMember: string;
+  /** Hide MRs with no activity (last update) in more than this many days. */
+  staleAfterDays: number;
   title: string;
   port: number;
 }
@@ -40,11 +42,15 @@ export function parseConfig(raw: string): BoardConfig {
   if (cfg.defaultMember && cfg.defaultMember !== "all" && !cfg.members!.some((m) => m.username === cfg.defaultMember)) {
     throw new Error(`config.json "defaultMember" (${cfg.defaultMember}) is not "all" or a known member username`);
   }
+  if (cfg.staleAfterDays !== undefined && (typeof cfg.staleAfterDays !== "number" || cfg.staleAfterDays <= 0)) {
+    throw new Error(`config.json "staleAfterDays" must be a positive number`);
+  }
   return {
     gitlabHost: cfg.gitlabHost!,
     projects: cfg.projects!,
     members: cfg.members!,
     defaultMember: cfg.defaultMember ?? "all",
+    staleAfterDays: cfg.staleAfterDays ?? 90,
     title: cfg.title ?? "MRs ready for review",
     port: cfg.port ?? 7930,
   };

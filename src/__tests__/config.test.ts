@@ -13,6 +13,16 @@ describe("parseConfig", () => {
     expect(cfg.members).toEqual([{ username: "alice", name: "Alice Ng" }, { username: "bob" }]);
     expect(cfg.title).toBe("MRs ready for review");
     expect(cfg.port).toBe(7930);
+    expect(cfg.staleAfterDays).toBe(90);
+  });
+
+  test("accepts a positive staleAfterDays override", () => {
+    expect(parseConfig(JSON.stringify({ ...base, staleAfterDays: 30 })).staleAfterDays).toBe(30);
+  });
+
+  test("throws when staleAfterDays is not a positive number", () => {
+    expect(() => parseConfig(JSON.stringify({ ...base, staleAfterDays: 0 }))).toThrow(/staleAfterDays/);
+    expect(() => parseConfig(JSON.stringify({ ...base, staleAfterDays: -5 }))).toThrow(/staleAfterDays/);
   });
 
   test("throws when members is missing or empty", () => {

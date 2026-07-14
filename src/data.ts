@@ -40,13 +40,16 @@ function derivePipelineState(props: MRDashboardProps): PipelineState {
  * / updated timestamps, unresolved-thread count, and derived pipeline state. The
  * client owns all grouping and sorting, so this list is unsorted.
  */
-export function buildBoard(prs: PullRequest[], config: BoardConfig): BoardMR[] {
+export function buildBoard(prs: PullRequest[], config: BoardConfig, now: number = Date.now()): BoardMR[] {
   const members = new Set(config.members.map((m) => m.username));
   const projects = new Set(config.projects);
+  const staleCutoff = now - config.staleAfterDays * 86_400_000;
   const out: BoardMR[] = [];
   for (const pr of prs) {
     if (pr.draft || pr.state !== "opened") continue;
     if (!pr.author || !members.has(pr.author.username)) continue;
+    // Drop MRs gone quiet: no activity (last update) within the stale window.
+    if (pr.updatedAt && Date.parse(pr.updatedAt) < staleCutoff) continue;
     const path = pr.webUrl ? projectPathFromWebUrl(pr.webUrl, config.gitlabHost) : null;
     if (!path || !projects.has(path)) continue;
     const props = getMRDashboardProps(pr);
