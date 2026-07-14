@@ -3,3 +3,6 @@ node_modules/
 config.json
 logs/
 .env
+
+# review status files written at runtime
+state/
