@@ -73,10 +73,14 @@ body {
   background: transparent; border: none; color: var(--muted); opacity: 0;
   transition: opacity 0.1s ease;
 }
-.tui-row:hover .tui-copy-inline, .tui-card:hover .tui-copy-inline { opacity: 0.55; }
+.tui-row:hover .tui-copy-inline, .tui-card:hover .tui-copy-inline { opacity: 0.9; }
 .tui-copy-inline:hover { opacity: 1; color: var(--fg); }
 .tui-copy-inline.copied { opacity: 1; color: var(--green); }
 .tui-copy-card { position: absolute; top: 0.45rem; right: 0.45rem; }
+/* Row copy button is always faintly present (not a hidden empty slot), so line
+   1 reaches the right edge like the meta line below it — no phantom gap. It
+   brightens on row hover. */
+.tui-row .tui-copy-inline { opacity: 0.3; }
 
 /* ── panels (TUI frame with label on the border) ──────────────────── */
 .tui-panel {
