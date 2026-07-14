@@ -41,9 +41,18 @@ export interface SlackRef {
   iid: number;
   status: "found" | "notfound";
   channelId?: string;
+  /** The message reactions land on: the request message, or (when that message
+      links several MRs) a threaded reply pinned to this MR. Undefined for a
+      multi-MR message with no reply yet — created on the first reaction. */
   messageTs?: string;
+  /** Set when the request message links multiple MRs: reactions go on a reply. */
+  multi?: boolean;
+  /** The request message's ts (the thread parent) when `multi`. */
+  parentTs?: string;
+  /** Cached for building threaded reply permalinks server-side. */
+  teamDomain?: string;
   permalink?: string;
-  /** Emoji names currently on the message (of the ones we care about). */
+  /** Emoji names currently on the target message (of the ones we care about). */
   reactions?: string[];
   checkedAt: number;
 }
@@ -53,6 +62,19 @@ export interface SlackRef {
 /** Slack archive permalink for a message, built from its ts (no API call). */
 export function buildPermalink(teamDomain: string, channelId: string, ts: string): string {
   return `https://${teamDomain}/archives/${channelId}/p${ts.replace(".", "")}`;
+}
+
+/** Permalink for a threaded reply (opens in-thread), matching Slack's own form. */
+export function buildThreadPermalink(teamDomain: string, channelId: string, replyTs: string, parentTs: string): string {
+  return `https://${teamDomain}/archives/${channelId}/p${replyTs.replace(".", "")}?thread_ts=${parentTs}&cid=${channelId}`;
+}
+
+const MR_URL_RE = /https:\/\/[^\s<>|]+\/-\/merge_requests\/\d+/g;
+
+/** Distinct GitLab MR URLs referenced in a message. More than one means a
+    single message is asking for review of several MRs at once. */
+export function extractMrUrls(text: string): string[] {
+  return [...new Set(text.match(MR_URL_RE) ?? [])];
 }
 
 /**
@@ -180,6 +202,20 @@ export async function addReaction(token: string, channelId: string, ts: string, 
   }
 }
 
+/** Replies in a message's thread (excludes the parent). */
+async function threadReplies(token: string, channelId: string, parentTs: string): Promise<SlackMessage[]> {
+  const data = await call("conversations.replies", token, { channel: channelId, ts: parentTs, limit: "200" });
+  return (data.messages as Array<{ ts: string; user?: string; text?: string }>)
+    .filter((m) => m.ts !== parentTs)
+    .map((m) => ({ ts: m.ts, user: m.user ?? "", text: m.text ?? "" }));
+}
+
+/** Post a reply in a thread; returns the reply's ts. */
+async function postThreadReply(token: string, channelId: string, parentTs: string, text: string): Promise<string> {
+  const data = await call("chat.postMessage", token, { channel: channelId, thread_ts: parentTs, text }, true);
+  return data.ts as string;
+}
+
 // ── per-MR ref state ─────────────────────────────────────────────────────────
 
 export function writeSlackRef(ref: SlackRef): void {
@@ -228,29 +264,66 @@ export async function resolveSlackRef(token: string, mrUrl: string, iid: number,
     writeSlackRef(ref);
     return ref;
   }
-  const reactions = await messageReactions(token, index.channelId, msg.ts);
-  const ref: SlackRef = {
+  const base = {
     mrUrl,
     iid,
-    status: "found",
+    status: "found" as const,
     channelId: index.channelId,
-    messageTs: msg.ts,
-    permalink: buildPermalink(index.teamDomain, index.channelId, msg.ts),
-    reactions,
+    teamDomain: index.teamDomain,
     checkedAt: now,
+  };
+
+  // Single MR in the message: react on the message itself.
+  if (extractMrUrls(msg.text).length <= 1) {
+    const ref: SlackRef = {
+      ...base,
+      messageTs: msg.ts,
+      permalink: buildPermalink(index.teamDomain, index.channelId, msg.ts),
+      reactions: await messageReactions(token, index.channelId, msg.ts),
+    };
+    writeSlackRef(ref);
+    return ref;
+  }
+
+  // Multiple MRs: reactions belong on a per-MR reply. Reuse an existing reply
+  // (ours or a manual one) that references this MR; otherwise defer creating it
+  // to the first reaction so we don't post into threads we never mark.
+  const reply = matchReviewMessage(await threadReplies(token, index.channelId, msg.ts), mrUrl);
+  const ref: SlackRef = {
+    ...base,
+    multi: true,
+    parentTs: msg.ts,
+    messageTs: reply?.ts,
+    permalink: reply
+      ? buildThreadPermalink(index.teamDomain, index.channelId, reply.ts, msg.ts)
+      : buildPermalink(index.teamDomain, index.channelId, msg.ts),
+    reactions: reply ? await messageReactions(token, index.channelId, reply.ts) : [],
   };
   writeSlackRef(ref);
   return ref;
 }
 
-/** Add a reaction to an MR's cached review message and refresh its reactions. */
+/**
+ * Add a reaction to an MR's review signal and refresh its reactions. For a
+ * multi-MR request message with no reply yet, first post a threaded reply
+ * pinned to this MR (matching the manual convention) and react there instead.
+ */
 export async function reactToMR(token: string, mrUrl: string, emoji: string, now: number = Date.now()): Promise<SlackRef> {
   const ref = JSON.parse(readFileSync(slackRefPath(mrUrl), "utf8")) as SlackRef;
-  if (ref.status !== "found" || !ref.channelId || !ref.messageTs) {
+  if (ref.status !== "found" || !ref.channelId) {
     throw new Error("no resolved slack message for this MR");
   }
-  await addReaction(token, ref.channelId, ref.messageTs, emoji);
-  const next: SlackRef = { ...ref, reactions: await messageReactions(token, ref.channelId, ref.messageTs), checkedAt: now };
+  let next = { ...ref };
+  if (ref.multi && !ref.messageTs) {
+    if (!ref.parentTs || !ref.teamDomain) throw new Error("multi-MR ref missing thread parent");
+    const replyTs = await postThreadReply(token, ref.channelId, ref.parentTs, ref.mrUrl);
+    next.messageTs = replyTs;
+    next.permalink = buildThreadPermalink(ref.teamDomain, ref.channelId, replyTs, ref.parentTs);
+  }
+  if (!next.messageTs) throw new Error("no target message for reaction");
+  await addReaction(token, ref.channelId, next.messageTs, emoji);
+  next.reactions = await messageReactions(token, ref.channelId, next.messageTs);
+  next.checkedAt = now;
   writeSlackRef(next);
   return next;
 }

@@ -1,5 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { buildPermalink, matchReviewMessage, slackRefPath, attachSlack, type SlackMessage, type SlackRef } from "../slack.ts";
+import {
+  buildPermalink,
+  buildThreadPermalink,
+  extractMrUrls,
+  matchReviewMessage,
+  slackRefPath,
+  attachSlack,
+  type SlackMessage,
+  type SlackRef,
+} from "../slack.ts";
 
 const URL_A = "https://gitlab.com/acme/acme-dev/-/merge_requests/4821";
 const URL_B = "https://gitlab.com/acme/acme-dev/-/merge_requests/4822";
@@ -36,6 +45,27 @@ describe("matchReviewMessage", () => {
 
   test("returns null when nothing references the url", () => {
     expect(matchReviewMessage([msg("5", "good morning team")], URL_A)).toBeNull();
+  });
+});
+
+describe("buildThreadPermalink", () => {
+  test("includes thread_ts and cid for an in-thread reply", () => {
+    expect(buildThreadPermalink("acme-claims.slack.com", "C08GY807K61", "1784058445.555169", "1783888278.629199")).toBe(
+      "https://acme-claims.slack.com/archives/C08GY807K61/p1784058445555169?thread_ts=1783888278.629199&cid=C08GY807K61",
+    );
+  });
+});
+
+describe("extractMrUrls", () => {
+  test("returns the distinct MR urls in a message", () => {
+    const text = `please review <${URL_A}|!4821> and <${URL_B}|!4822>`;
+    expect(extractMrUrls(text).sort()).toEqual([URL_A, URL_B].sort());
+  });
+  test("collapses a repeated url to one (single-MR message)", () => {
+    expect(extractMrUrls(`${URL_A} ... ${URL_A}`)).toEqual([URL_A]);
+  });
+  test("returns empty for a message with no MR link", () => {
+    expect(extractMrUrls("just chatting")).toEqual([]);
   });
 });
 
