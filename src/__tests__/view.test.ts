@@ -28,11 +28,11 @@ describe("filterByMember", () => {
 });
 
 describe("sortMRs", () => {
-  test("oldest: oldest createdAt first, nulls last", () => {
+  test("oldest: oldest last activity (updatedAt) first, nulls last", () => {
     const list = [
-      mr({ iid: 1, createdAt: "2026-07-05T00:00:00Z" }),
-      mr({ iid: 2, createdAt: null }),
-      mr({ iid: 3, createdAt: "2026-07-01T00:00:00Z" }),
+      mr({ iid: 1, updatedAt: "2026-07-05T00:00:00Z" }),
+      mr({ iid: 2, updatedAt: null }),
+      mr({ iid: 3, updatedAt: "2026-07-01T00:00:00Z" }),
     ];
     expect(sortMRs(list, "oldest").map((m) => m.iid)).toEqual([3, 1, 2]);
   });

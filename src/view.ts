@@ -23,7 +23,10 @@ export function filterByMember(mrs: BoardMR[], member: string): BoardMR[] {
 
 /** Return a new array ordered by the chosen sort. Never mutates the input. */
 export function sortMRs(mrs: BoardMR[], sort: SortKey): BoardMR[] {
-  const byOldest = (a: BoardMR, b: BoardMR) => (a.createdAt ?? LATEST).localeCompare(b.createdAt ?? LATEST);
+  // Order by last activity (updatedAt) — the same axis the row's age token and
+  // the age grouping use — so "oldest" means stalest-first and the visible ages
+  // read in order. (Was createdAt, which mismatched the displayed times.)
+  const byOldest = (a: BoardMR, b: BoardMR) => (a.updatedAt ?? LATEST).localeCompare(b.updatedAt ?? LATEST);
   const copy = [...mrs];
   switch (sort) {
     case "oldest":
