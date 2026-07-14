@@ -19,6 +19,11 @@ export class SnapshotCache {
     private readonly ttlMs: number = TTL_MS,
   ) {}
 
+  /** Drop the cached snapshot so the next get() refetches from scratch. */
+  invalidate(): void {
+    this.snapshot = null;
+  }
+
   async get(): Promise<Snapshot> {
     if (this.snapshot && this.now() - this.snapshot.fetchedAt < this.ttlMs) {
       return this.snapshot;

@@ -24,7 +24,7 @@ export interface BoardConfig {
   port: number;
 }
 
-const CONFIG_PATH = join(import.meta.dir, "..", "config.json");
+export const CONFIG_PATH = join(import.meta.dir, "..", "config.json");
 const RT_SECRETS_PATH = join(homedir(), ".rt", "secrets.json");
 
 /** Parse and validate raw config JSON. Separated from file IO for testing. */

@@ -1,7 +1,7 @@
-import { join } from "path";
-import { readFileSync } from "fs";
+import { join, dirname, basename } from "path";
+import { readFileSync, watch } from "fs";
 import { GitLabProvider, type PullRequest } from "@workforge/glance-sdk";
-import { loadConfig, loadGitLabToken, saveMemberHidden } from "./config.ts";
+import { loadConfig, loadGitLabToken, saveMemberHidden, CONFIG_PATH } from "./config.ts";
 import { buildBoard, buildRoster } from "./data.ts";
 import { SnapshotCache } from "./cache.ts";
 
@@ -179,3 +179,25 @@ console.log(`mr-board serving on http://localhost:${port}`);
 // Warm the cache at startup so the first visitor after a (re)start gets a
 // ready snapshot instead of waiting on the cold fetch.
 void cache.get().catch(() => {});
+
+// Hot-reload config.json so adding/removing members (or any setting) takes
+// effect without a restart. Watch the directory — that survives editors that
+// save atomically by swapping the file — and filter to our file. A mid-edit
+// invalid file is ignored, keeping the last good config.
+let reloadTimer: ReturnType<typeof setTimeout> | undefined;
+watch(dirname(CONFIG_PATH), (_event, filename) => {
+  if (filename && filename !== basename(CONFIG_PATH)) return;
+  clearTimeout(reloadTimer);
+  reloadTimer = setTimeout(() => {
+    try {
+      Object.assign(config, loadConfig());
+      namesFetchedAt = 0; // re-resolve display names, including new members
+      cache.invalidate();
+      void refreshMemberNames();
+      void cache.get().catch(() => {});
+      console.log("config.json changed — reloaded members/settings (no restart needed)");
+    } catch (err) {
+      console.error(`config reload skipped (invalid): ${err instanceof Error ? err.message : err}`);
+    }
+  }, 150);
+});
