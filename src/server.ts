@@ -16,16 +16,29 @@ const provider = new GitLabProvider(config.gitlabHost, loadGitLabToken());
  *
  * The SDK's default `fetchPullRequests()` only returns the *token user's* own
  * MRs, so it can't see teammates' work. The `{ authorUsernames, projectPath }`
- * mode fetches every member's MRs directly (one GraphQL query per author, full
+ * mode fetches members' MRs directly (one GraphQL query per author, full
  * dashboard fields) — no REST discovery pass needed.
+ *
+ * Each of those queries is heavy (pipelines, jobs, mergeability, discussions),
+ * so firing all members at once makes GitLab's GraphQL time out its field
+ * resolvers. Pace them in small concurrent batches instead. Only visible
+ * members are fetched — hidden ones don't render anyway.
  */
+const FETCH_CONCURRENCY = 4;
+
 async function fetchTeamMRs(): Promise<PullRequest[]> {
-  const authorUsernames = config.members.map((m) => m.username);
-  const out: PullRequest[] = [];
+  const authors = config.members.filter((m) => !m.hidden).map((m) => m.username);
+  const byId = new Map<string, PullRequest>();
   for (const projectPath of config.projects) {
-    out.push(...(await provider.fetchPullRequests({ authorUsernames, projectPath, state: "opened" })));
+    for (let i = 0; i < authors.length; i += FETCH_CONCURRENCY) {
+      const chunk = authors.slice(i, i + FETCH_CONCURRENCY);
+      const results = await Promise.all(
+        chunk.map((a) => provider.fetchPullRequests({ authorUsernames: [a], projectPath, state: "opened" })),
+      );
+      for (const pr of results.flat()) byId.set(pr.id, pr);
+    }
   }
-  return out;
+  return [...byId.values()];
 }
 
 const cache = new SnapshotCache(async () => buildBoard(await fetchTeamMRs(), config));
