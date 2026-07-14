@@ -410,5 +410,71 @@ body {
 .tui-review-done { color: var(--dot-ok); border-color: currentColor; }
 .tui-review-error { color: var(--dot-bad); border-color: currentColor; }
 @keyframes tui-review-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-/* hint that modifier-click launches a review (local only) */
-.tui-row[data-local="1"], .tui-card[data-local="1"] { cursor: pointer; }
+
+/* row action menu (right-click) */
+.tui-menu {
+  position: fixed;
+  z-index: 200;
+  min-width: 200px;
+  padding: 4px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.18);
+  font-size: 13px;
+  animation: tui-menu-in 90ms ease-out;
+}
+@keyframes tui-menu-in { from { opacity: 0; transform: scale(0.97) translateY(-2px); } to { opacity: 1; transform: none; } }
+.tui-menu-label {
+  padding: 5px 8px 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--muted);
+  border-bottom: 1px solid var(--border-soft);
+  margin-bottom: 4px;
+}
+.tui-menu-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 7px 8px;
+  background: none;
+  border: none;
+  border-radius: 5px;
+  color: var(--fg);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.tui-menu-item:hover, .tui-menu-item:focus-visible { background: color-mix(in srgb, var(--accent) 16%, transparent); outline: none; }
+.tui-menu-hint { font-family: var(--font-mono); font-size: 10px; color: var(--muted); }
+
+/* transient confirmation toasts */
+.tui-toasts {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 210;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+.tui-toast {
+  padding: 9px 13px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 7px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+  color: var(--fg);
+  font-size: 13px;
+  max-width: 320px;
+  animation: tui-toast-in 140ms ease-out;
+}
+@keyframes tui-toast-in { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
+
+/* rows are clickable (open MR); local rows also right-click for actions */
+.tui-row[data-local="1"], .tui-card[data-local="1"] { cursor: context-menu; }

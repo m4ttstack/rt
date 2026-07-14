@@ -255,21 +255,10 @@ function cleanTitle(title: string): string {
   return title.replace(/^[A-Za-z]+-\d+:\s*/, "");
 }
 
-function launchReview(mr: BoardMR) {
-  fetch("/review", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ mrUrl: mr.webUrl, iid: mr.iid }),
-  }).catch(() => {});
-}
-
-function onRowClick(e: React.MouseEvent, mr: BoardMR, local: boolean) {
+/** Plain click opens the MR in GitLab; right-click opens the row action menu
+    (wired separately). Clicks on inner links/buttons are left to those. */
+function onRowClick(e: React.MouseEvent, mr: BoardMR) {
   if ((e.target as HTMLElement).closest("a, button")) return;
-  if (local && (e.metaKey || e.ctrlKey)) {
-    e.preventDefault();
-    launchReview(mr);
-    return;
-  }
   if (mr.webUrl) window.open(mr.webUrl, "_blank", "noopener");
 }
 
@@ -286,6 +275,115 @@ function ReviewBadge({ review }: { review?: ReviewInfo }) {
     <span className={`tui-review tui-review-${review.status}`} title={review.message || REVIEW_LABEL[review.status]}>
       {REVIEW_LABEL[review.status]}
     </span>
+  );
+}
+
+// ── row action menu (right-click) ────────────────────────────────────────────
+
+interface RowMenuState {
+  x: number;
+  y: number;
+  mr: BoardMR;
+}
+
+/** shadcn-style context menu anchored at the cursor. Dismisses on outside
+    click, Escape, scroll, or resize. `onLaunch`/`onCopy` are provided by the
+    board so the launch can drive optimistic state and a toast. */
+function RowMenu({
+  menu,
+  local,
+  onClose,
+  onLaunch,
+  onCopy,
+}: {
+  menu: RowMenuState;
+  local: boolean;
+  onClose: () => void;
+  onLaunch: (mr: BoardMR) => void;
+  onCopy: (mr: BoardMR) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const onDown = (e: MouseEvent) => {
+      if (!ref.current?.contains(e.target as Node)) onClose();
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    };
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    window.addEventListener("scroll", onClose, true);
+    window.addEventListener("resize", onClose);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+      window.removeEventListener("scroll", onClose, true);
+      window.removeEventListener("resize", onClose);
+    };
+  }, [onClose]);
+
+  const { mr } = menu;
+  // Keep the menu on-screen (estimated size; exact enough near edges).
+  const W = 220;
+  const H = local ? 148 : 112;
+  const left = Math.max(8, Math.min(menu.x, window.innerWidth - W - 8));
+  const top = Math.max(8, Math.min(menu.y, window.innerHeight - H - 8));
+
+  return (
+    <div ref={ref} className="tui-menu" style={{ left, top }} role="menu" aria-label={`actions for !${mr.iid}`}>
+      <div className="tui-menu-label">!{mr.iid}</div>
+      {local && (
+        <button
+          className="tui-menu-item"
+          role="menuitem"
+          onClick={() => {
+            onLaunch(mr);
+            onClose();
+          }}
+        >
+          launch review <span className="tui-menu-hint">herdr</span>
+        </button>
+      )}
+      <button
+        className="tui-menu-item"
+        role="menuitem"
+        onClick={() => {
+          if (mr.webUrl) window.open(mr.webUrl, "_blank", "noopener");
+          onClose();
+        }}
+      >
+        open in gitlab
+      </button>
+      <button
+        className="tui-menu-item"
+        role="menuitem"
+        onClick={() => {
+          onCopy(mr);
+          onClose();
+        }}
+      >
+        copy for slack
+      </button>
+    </div>
+  );
+}
+
+interface Toast {
+  id: number;
+  text: string;
+}
+
+/** Bottom-right stack of transient confirmations. */
+function ToastHost({ toasts }: { toasts: Toast[] }) {
+  if (!toasts.length) return null;
+  return (
+    <div className="tui-toasts" role="status" aria-live="polite">
+      {toasts.map((t) => (
+        <div key={t.id} className="tui-toast">
+          {t.text}
+        </div>
+      ))}
+    </div>
   );
 }
 
@@ -571,7 +669,19 @@ function AuthorTag({ mr }: { mr: BoardMR }) {
   );
 }
 
-function RowView({ mrs, now, showAuthor, local }: { mrs: BoardMR[]; now: number; showAuthor: boolean; local: boolean }) {
+function RowView({
+  mrs,
+  now,
+  showAuthor,
+  local,
+  onContext,
+}: {
+  mrs: BoardMR[];
+  now: number;
+  showAuthor: boolean;
+  local: boolean;
+  onContext: (e: React.MouseEvent, mr: BoardMR) => void;
+}) {
   return (
     <div className="tui-rows">
       {mrs.map((mr) => {
@@ -581,7 +691,9 @@ function RowView({ mrs, now, showAuthor, local }: { mrs: BoardMR[]; now: number;
             key={mr.iid}
             className="tui-row"
             data-local={local ? "1" : undefined}
-            onClick={(e) => onRowClick(e, mr, local)}
+            title={local ? "right-click for actions" : undefined}
+            onClick={(e) => onRowClick(e, mr)}
+            onContextMenu={(e) => onContext(e, mr)}
           >
             <div className="tui-row-1">
               <StatusDot mr={mr} />
@@ -609,7 +721,19 @@ function RowView({ mrs, now, showAuthor, local }: { mrs: BoardMR[]; now: number;
   );
 }
 
-function GridView({ mrs, now, showAuthor, local }: { mrs: BoardMR[]; now: number; showAuthor: boolean; local: boolean }) {
+function GridView({
+  mrs,
+  now,
+  showAuthor,
+  local,
+  onContext,
+}: {
+  mrs: BoardMR[];
+  now: number;
+  showAuthor: boolean;
+  local: boolean;
+  onContext: (e: React.MouseEvent, mr: BoardMR) => void;
+}) {
   return (
     <div className="tui-grid">
       {mrs.map((mr) => {
@@ -620,7 +744,9 @@ function GridView({ mrs, now, showAuthor, local }: { mrs: BoardMR[]; now: number
             key={mr.iid}
             className="tui-card"
             data-local={local ? "1" : undefined}
-            onClick={(e) => onRowClick(e, mr, local)}
+            title={local ? "right-click for actions" : undefined}
+            onClick={(e) => onRowClick(e, mr)}
+            onContextMenu={(e) => onContext(e, mr)}
           >
             <CopyButton text={mrLine(mr)} className="tui-copy-inline tui-copy-card" title="copy this MR for Slack" />
             <span className="tui-card-label">
@@ -903,14 +1029,98 @@ function Board() {
     if (res.ok) await load();
   };
 
-  // Poll faster while a review is actively running, so the badge updates
-  // promptly instead of waiting for the normal 60s cadence.
-  const reviewActive =
-    !!data &&
-    data.mrs.some((mr) => {
-      const s = (mr as BoardMRWithReview).review?.status;
-      return s === "queued" || s === "reviewing";
+  // Row action menu (right-click) and transient toasts.
+  const [rowMenu, setRowMenu] = useState<RowMenuState | null>(null);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastId = useRef(0);
+  const addToast = useCallback((text: string) => {
+    const id = ++toastId.current;
+    setToasts((t) => [...t, { id, text }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3500);
+  }, []);
+
+  // Optimistic review state: show a "queued" badge the instant a launch is
+  // requested, before the server's state file round-trips back via /data.json.
+  // Cleared per MR once the server reports any real review status for it.
+  const [optimistic, setOptimistic] = useState<Record<string, ReviewInfo>>({});
+
+  const openRowMenu = useCallback((e: React.MouseEvent, mr: BoardMR) => {
+    e.preventDefault();
+    setRowMenu({ x: e.clientX, y: e.clientY, mr });
+  }, []);
+
+  const handleLaunch = useCallback(
+    (mr: BoardMR) => {
+      if (!mr.webUrl) return;
+      const url = mr.webUrl;
+      setOptimistic((o) => ({ ...o, [url]: { status: "queued" } }));
+      addToast(`launching review for !${mr.iid}…`);
+      fetch("/review", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mrUrl: url, iid: mr.iid }),
+      })
+        .then(async (r) => {
+          const body = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            setOptimistic((o) => {
+              const next = { ...o };
+              delete next[url];
+              return next;
+            });
+            addToast(`couldn't launch review for !${mr.iid} (${r.status})`);
+            return;
+          }
+          if (body?.focused) addToast(`review already running for !${mr.iid} — focused its tab`);
+          load();
+        })
+        .catch(() => {
+          setOptimistic((o) => {
+            const next = { ...o };
+            delete next[url];
+            return next;
+          });
+          addToast(`couldn't launch review for !${mr.iid}`);
+        });
+    },
+    [addToast, load],
+  );
+
+  const handleCopy = useCallback(
+    (mr: BoardMR) => {
+      navigator.clipboard?.writeText(mrLine(mr)).then(
+        () => addToast(`copied !${mr.iid} for slack`),
+        () => {},
+      );
+    },
+    [addToast],
+  );
+
+  // Drop optimistic entries once the server has a real review for that MR.
+  useEffect(() => {
+    if (!data) return;
+    setOptimistic((o) => {
+      let changed = false;
+      const next = { ...o };
+      for (const mr of data.mrs) {
+        if (mr.webUrl && (mr as BoardMRWithReview).review && next[mr.webUrl]) {
+          delete next[mr.webUrl];
+          changed = true;
+        }
+      }
+      return changed ? next : o;
     });
+  }, [data]);
+
+  // Poll faster while a review is actively running (server- or optimistic-side),
+  // so the badge updates promptly instead of waiting for the normal 60s cadence.
+  const reviewActive =
+    Object.values(optimistic).some((r) => r.status === "queued" || r.status === "reviewing") ||
+    (!!data &&
+      data.mrs.some((mr) => {
+        const s = (mr as BoardMRWithReview).review?.status;
+        return s === "queued" || s === "reviewing";
+      }));
 
   useEffect(() => {
     if (!reviewActive) return;
@@ -928,7 +1138,13 @@ function Board() {
   const staleMins = Math.round((Date.now() - data.fetchedAt) / 60_000);
   const now = Date.now();
 
-  const filtered = filterByMember(data.mrs, state.member);
+  // Server review wins; otherwise show an optimistic "queued" badge if pending.
+  const mrs = data.mrs.map((mr) => {
+    const server = (mr as BoardMRWithReview).review;
+    const opt = mr.webUrl ? optimistic[mr.webUrl] : undefined;
+    return server || !opt ? mr : { ...mr, review: opt };
+  });
+  const filtered = filterByMember(mrs, state.member);
   const groups = groupMRs(filtered, state.group, data.members.map((m) => m.username), now).map((g) => ({
     label: g.label,
     mrs: sortMRs(g.mrs, state.sort),
@@ -992,9 +1208,9 @@ function Board() {
           groups.map((g) => (
             <Panel key={g.label} title={g.label} count={g.mrs.length}>
               {view === "rows" ? (
-                <RowView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} />
+                <RowView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} onContext={openRowMenu} />
               ) : (
-                <GridView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} />
+                <GridView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} onContext={openRowMenu} />
               )}
             </Panel>
           ))
@@ -1033,6 +1249,18 @@ function Board() {
       {showSettings && (
         <SettingsModal members={data.allMembers} onToggle={toggleMember} onClose={() => setShowSettings(false)} />
       )}
+
+      {rowMenu && (
+        <RowMenu
+          menu={rowMenu}
+          local={data.local}
+          onClose={() => setRowMenu(null)}
+          onLaunch={handleLaunch}
+          onCopy={handleCopy}
+        />
+      )}
+
+      <ToastHost toasts={toasts} />
     </div>
   );
 }
