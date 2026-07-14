@@ -2,6 +2,7 @@ import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { extractTicketId, ticketUrl } from "./ticket.ts";
 import type { BoardMR } from "./data.ts";
+import { hasChangesRequested } from "./data.ts";
 import { filterByMember, sortMRs, groupMRs, parseViewState, serializeViewState, GROUP_KEYS, SORT_KEYS } from "./view.ts";
 import type { GroupKey, SortKey, ViewState } from "./view.ts";
 
@@ -310,9 +311,10 @@ function statusPhrase(mr: BoardMR): { text: string; cls: string } {
   if (b?.hasConflicts) return { text: "conflicts", cls: "t-bad" };
   if (b?.pipelineFailing) return { text: "ci failing", cls: "t-bad" };
   if (b?.pipelineRunning) return { text: "ci running", cls: "t-warn" };
+  // Formal "changes requested" reviewer state — a reviewer explicitly blocked it.
+  if (hasChangesRequested(mr)) return { text: "changes requested", cls: "t-bad" };
   if (mr.reviews.isApproved) return { text: "approved", cls: "t-ok" };
-  // Team culture: comments without approval mean changes are needed. Surface
-  // that so a reviewed-with-feedback MR doesn't read the same as an untouched one.
+  // Comments without a formal verdict: someone left feedback to look at.
   if (comments > 0) return { text: `${comments} comment${comments === 1 ? "" : "s"}`, cls: "t-warn" };
   if (mr.reviews.required > 0 && mr.reviews.given > 0)
     return { text: `${mr.reviews.given}/${mr.reviews.required} approved`, cls: "t-warn" };

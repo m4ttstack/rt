@@ -64,6 +64,15 @@ export function buildBoard(prs: PullRequest[], config: BoardConfig, now: number 
   return out;
 }
 
+/**
+ * Whether any assigned reviewer has formally requested changes — the GitLab
+ * "changes requested" review state, distinct from someone merely leaving
+ * comments. Comes from `reviews.reviewers[].reviewState`.
+ */
+export function hasChangesRequested(mr: BoardMR): boolean {
+  return mr.reviews.reviewers?.some((r) => r.reviewState === "REQUESTED_CHANGES") ?? false;
+}
+
 /** A raw GitLab REST merge-request list item — only the fields we select on. */
 export interface RawMRRef {
   iid: number;

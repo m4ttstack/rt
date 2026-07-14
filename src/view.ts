@@ -1,4 +1,5 @@
 import type { BoardMR } from "./data.ts";
+import { hasChangesRequested } from "./data.ts";
 
 export type GroupKey = "age" | "author" | "status";
 export type SortKey = "oldest" | "progress";
@@ -53,15 +54,16 @@ function ageBucket(createdAt: string | null, now: number): { label: string; orde
 }
 
 /** Coarse review-readiness bucket, most-blocking first. Mirrors the row's
-    status label: comments without approval mean changes are needed. */
+    status label: a formal "changes requested" review is distinct from someone
+    just leaving comments. Partial approvals fold into "needs review". */
 function statusBucket(mr: BoardMR): { label: string; order: number } {
   const b = mr.blockers;
   if (b.hasConflicts) return { label: "conflicts", order: 0 };
   if (b.pipelineFailing) return { label: "ci failing", order: 1 };
+  if (hasChangesRequested(mr)) return { label: "changes requested", order: 2 };
   if (mr.reviews.isApproved) return { label: "approved", order: 5 };
-  if (mr.unresolvedThreads > 0) return { label: "changes needed", order: 2 };
-  if (mr.reviews.given > 0) return { label: "in review", order: 4 };
-  return { label: "needs review", order: 3 };
+  if (mr.unresolvedThreads > 0) return { label: "commented", order: 3 };
+  return { label: "needs review", order: 4 };
 }
 
 /** Group by a keyed bucket, ordering groups by the bucket's `order`. */
