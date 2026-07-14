@@ -93,10 +93,26 @@ export async function readServices(): Promise<LaunchdService[]> {
 }
 
 /**
+ * The parent domain to show/link when the board is reached through a real domain
+ * (e.g. a Cloudflare tunnel), or null for local access. Feed it the value portless
+ * forwards as `x-forwarded-host` — the raw `Host` is rewritten to the 127.0.0.1
+ * upstream, so relying on it renders a bogus "0.0.1" suffix.
+ */
+export function publicDomainFor(requestHost?: string): string | null {
+  if (!requestHost) return null;
+  const host = requestHost.replace(/:\d+$/, "");
+  if (host === "localhost" || host.endsWith(".localhost")) return null;
+  if (/^[\d.]+$/.test(host)) return null; // bare IP address, not a domain
+  const parent = host.replace(/^[^.]+\./, "");
+  return parent.includes(".") ? parent : null; // require a real multi-label domain
+}
+
+/**
  * Join routes to services: exact match on the plist's PORT env var first,
  * name overlap as a fallback. Unmatched routes render without service info.
  */
-export function joinApps(routes: PortlessRoute[], services: LaunchdService[]): App[] {
+export function joinApps(routes: PortlessRoute[], services: LaunchdService[], requestHost?: string): App[] {
+  const domain = publicDomainFor(requestHost);
   return routes.map((route) => {
     const name = route.hostname.replace(/\.localhost$/, "");
     const service =
@@ -106,7 +122,8 @@ export function joinApps(routes: PortlessRoute[], services: LaunchdService[]): A
         return s.label.includes(name) || dir.includes(name);
       }) ??
       null;
-    return { name, url: `https://${route.hostname}`, port: route.port, service };
+    const url = domain ? `https://${name}.${domain}` : `https://${route.hostname}`;
+    return { name, url, port: route.port, service };
   });
 }
 
@@ -152,6 +169,20 @@ export async function listenerFor(port: number): Promise<{ pid: number; command:
   const pid = /^p(\d+)$/m.exec(out)?.[1];
   const command = /^c(.+)$/m.exec(out)?.[1];
   return pid ? { pid: Number(pid), command: command ?? "?" } : null;
+}
+
+/**
+ * Restart a launchd service by label via `launchctl kickstart -k` (kills it if
+ * running, then relaunches — picking up any source changes). The caller must
+ * validate `label` against the discovered services first: we never restart an
+ * arbitrary label. Returns true on a clean exit.
+ */
+export async function restartService(label: string): Promise<boolean> {
+  const uid = process.getuid?.() ?? 0;
+  const proc = Bun.spawn(["launchctl", "kickstart", "-k", `gui/${uid}/${label}`], {
+    stderr: "ignore",
+  });
+  return (await proc.exited) === 0;
 }
 
 export function tailFile(path: string | null, lines: number): string[] {

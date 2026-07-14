@@ -1,84 +1,116 @@
+import { readFileSync } from "fs";
+import { join } from "path";
 import {
   checkHealth,
   joinApps,
   listenerFor,
   orphanServices,
+  publicDomainFor,
   readRoutes,
   readServices,
+  restartService,
   tailFile,
-  type App,
   type Health,
   type LaunchdService,
 } from "./discover.ts";
 
 const PORT = Number(process.env.PORT ?? 7940);
+const PLIST_PREFIX = "com.matthewgoodwin.";
+const CLIENT_JS = readFileSync(join(import.meta.dir, "client.js"), "utf8");
 
-function esc(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+interface StatusService {
+  label: string;
+  short: string;
+  pid: number | null;
+  lastExitStatus: number | null;
+  unmanaged: { pid: number; command: string } | null;
+  /** Tail of recent stderr, populated only when the service looks unhealthy. */
+  stderr: string[];
 }
 
-function dot(cls: string, label: string): string {
-  return `<span class="dot ${cls}" title="${esc(label)}"></span>`;
+interface StatusRow {
+  name: string;
+  port: number | null;
+  url: string | null;
+  health: Health | null;
+  service: StatusService | null;
 }
 
-function serviceCell(s: LaunchdService | null): string {
-  if (!s) return `<span class="muted">no launchd service</span>`;
-  const state =
-    s.pid !== null
-      ? `${dot("ok", "running")} pid ${s.pid}`
-      : `${dot("bad", "not running")} stopped${s.lastExitStatus ? ` (exit ${s.lastExitStatus})` : ""}`;
-  return `${state} <span class="muted">· ${esc(s.label.replace("com.matthewgoodwin.", ""))}</span>`;
+interface Status {
+  suffix: string;
+  canRestart: boolean;
+  up: number;
+  total: number;
+  apps: StatusRow[];
+  orphans: StatusRow[];
 }
 
-function healthCell(h: Health): string {
-  if (h.status === null) return `${dot("bad", "no response")} unreachable`;
-  const cls = h.ok ? "ok" : "bad";
-  return `${dot(cls, `HTTP ${h.status}`)} ${h.status} <span class="muted">· ${h.ms}ms</span>`;
+function serviceJson(
+  s: LaunchdService,
+  health: Health | null,
+  unmanaged: { pid: number; command: string } | null,
+): StatusService {
+  // Show logs when the row is in a bad state: an app that failed its health
+  // probe, or an unrouted service that isn't running.
+  const bad = health ? !health.ok : s.pid === null;
+  return {
+    label: s.label,
+    short: s.label.replace(PLIST_PREFIX, ""),
+    pid: s.pid,
+    lastExitStatus: s.lastExitStatus,
+    unmanaged,
+    stderr: bad ? tailFile(s.stderrPath, 12) : [],
+  };
 }
 
-async function appRow(app: App, health: Health): Promise<string> {
-  const showLogs = !health.ok && app.service?.stderrPath;
-  const logs = showLogs ? tailFile(app.service!.stderrPath, 12) : [];
-  // Site responding while its service is stopped means something else holds
-  // the port (e.g. an orphaned dev process) — name it instead of crying wolf.
-  let serviceHtml = serviceCell(app.service);
-  if (health.ok && app.service && app.service.pid === null) {
-    const listener = await listenerFor(app.port);
-    if (listener) {
-      serviceHtml = `${dot("warn", "unmanaged process")} served by unmanaged <code>${esc(listener.command)}</code> pid ${listener.pid} <span class="muted">· service ${esc(app.service.label.replace("com.matthewgoodwin.", ""))} stopped</span>`;
-    }
-  }
-  return `<tr>
-    <td><a href="${esc(app.url)}">${esc(app.name)}<span class="muted">.localhost</span></a></td>
-    <td class="num">${app.port}</td>
-    <td>${healthCell(health)}</td>
-    <td>${serviceHtml}</td>
-  </tr>
-  ${logs.length ? `<tr><td colspan="4"><details open><summary>recent stderr</summary><pre>${esc(logs.join("\n"))}</pre></details></td></tr>` : ""}`;
-}
-
-function orphanRow(s: LaunchdService): string {
-  return `<tr>
-    <td class="muted">${esc(s.label.replace("com.matthewgoodwin.", ""))}</td>
-    <td class="num muted">—</td>
-    <td class="muted">no route</td>
-    <td>${serviceCell(s)}</td>
-  </tr>`;
-}
-
-async function renderPage(): Promise<string> {
+async function buildStatus(requestHost?: string): Promise<Status> {
   const [routes, services] = [readRoutes(), await readServices()];
-  const apps = joinApps(routes, services);
+  const apps = joinApps(routes, services, requestHost);
+  const publicDomain = publicDomainFor(requestHost);
   const orphans = orphanServices(apps, services);
   const healths = await Promise.all(apps.map((a) => checkHealth(a.port)));
-  const up = healths.filter((h) => h.ok).length;
 
-  return `<!doctype html>
+  const appRows: StatusRow[] = await Promise.all(
+    apps.map(async (a, i) => {
+      const health = healths[i]!;
+      // A healthy route whose managed service is stopped means something else
+      // holds the port — name that unmanaged process instead of crying wolf.
+      const unmanaged =
+        health.ok && a.service && a.service.pid === null ? await listenerFor(a.port) : null;
+      return {
+        name: a.name,
+        port: a.port,
+        url: a.url,
+        health,
+        service: a.service ? serviceJson(a.service, health, unmanaged) : null,
+      };
+    }),
+  );
+
+  const orphanRows: StatusRow[] = orphans.map((s) => ({
+    name: s.label.replace(PLIST_PREFIX, ""),
+    port: null,
+    url: null,
+    health: null,
+    service: serviceJson(s, null, null),
+  }));
+
+  return {
+    suffix: publicDomain ?? "localhost",
+    // Restart is a local-only control: never expose it through a public tunnel.
+    canRestart: publicDomain === null,
+    up: healths.filter((h) => h.ok).length,
+    total: apps.length,
+    apps: appRows,
+    orphans: orphanRows,
+  };
+}
+
+const SHELL = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta http-equiv="refresh" content="15">
 <title>local apps</title>
 <style>
   :root { color-scheme: light dark; }
@@ -94,26 +126,61 @@ async function renderPage(): Promise<string> {
   td a:hover { text-decoration: underline; }
   .num { font-family: ui-monospace, monospace; font-size: 0.8rem; }
   .muted { opacity: 0.55; }
+  code { font-family: ui-monospace, monospace; font-size: 0.8rem; }
   .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; }
   .dot.ok { background: #2da44e; } .dot.bad { background: #cf222e; } .dot.warn { background: #bf8700; }
-  details summary { cursor: pointer; font-size: 0.75rem; opacity: 0.7; }
-  pre { font-size: 0.72rem; background: #8881; padding: 0.6rem; border-radius: 6px;
-        overflow-x: auto; margin: 0.4rem 0 0; }
+
+  td.actions { text-align: right; width: 1%; white-space: nowrap; }
+  button.restart { font: inherit; font-size: 0.95rem; line-height: 1; cursor: pointer;
+        background: none; border: 1px solid #8884; border-radius: 6px; padding: 0.15rem 0.45rem;
+        color: inherit; opacity: 0.55; }
+  button.restart:hover { opacity: 1; border-color: #8888; }
+  button.restart:disabled { opacity: 0.35; cursor: default; }
+
+  .spin { display: inline-block; width: 11px; height: 11px; vertical-align: -1px;
+        border: 2px solid #8884; border-top-color: #888; border-radius: 50%;
+        animation: spin 0.7s linear infinite; margin-right: 2px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* stderr hover card over the health status */
+  .status.has-card { cursor: help; border-bottom: 1px dotted #8886; }
+  .status { position: relative; }
+  .status .card { display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 20;
+        min-width: 320px; max-width: 620px; background: Canvas; color: CanvasText;
+        border: 1px solid #8886; border-radius: 8px; padding: 0.5rem 0.6rem;
+        box-shadow: 0 8px 28px #0004; }
+  .status.has-card:hover .card { display: block; }
+  .card-h { display: block; font-size: 0.68rem; text-transform: uppercase; letter-spacing: 0.05em;
+        opacity: 0.55; margin-bottom: 0.35rem; }
+  .card pre { font-family: ui-monospace, monospace; font-size: 0.72rem; white-space: pre;
+        overflow-x: auto; margin: 0; }
+
   h2 { font-size: 0.8rem; opacity: 0.6; text-transform: uppercase; margin-top: 2rem; }
   footer { margin-top: 2rem; font-size: 0.75rem; opacity: 0.45; }
 </style>
 </head>
 <body>
 <h1>local apps</h1>
-<p class="sub">${up}/${apps.length} routes healthy · auto-refreshes every 15s</p>
+<p class="sub" id="sub">loading…</p>
 <table>
-<tr><th>site</th><th>port</th><th>health</th><th>launchd</th></tr>
-${(await Promise.all(apps.map((a, i) => appRow(a, healths[i]!)))).join("\n")}
+<thead><tr><th>site</th><th>port</th><th>health</th><th>launchd</th><th></th></tr></thead>
+<tbody id="apps"></tbody>
 </table>
-${orphans.length ? `<h2>services without routes</h2><table>${orphans.map(orphanRow).join("\n")}</table>` : ""}
+<div id="orphans-wrap" style="display:none">
+<h2>services without routes</h2>
+<table><tbody id="orphans"></tbody></table>
+</div>
 <footer>discovered from ~/.portless/routes.json + ~/Library/LaunchAgents/com.matthewgoodwin.*</footer>
+<noscript><p class="sub">this board needs JavaScript to show live status.</p></noscript>
+<script>${CLIENT_JS}</script>
 </body>
 </html>`;
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json; charset=utf-8" },
+  });
 }
 
 Bun.serve({
@@ -121,10 +188,25 @@ Bun.serve({
   async fetch(req) {
     const { pathname } = new URL(req.url);
     if (pathname === "/healthz") return new Response("ok");
+    if (pathname === "/favicon.ico") return new Response(null, { status: 204 });
+    const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? undefined;
+
+    if (req.method === "POST" && pathname === "/restart") {
+      // Local-only: a board reached through a public tunnel is read-only.
+      if (publicDomainFor(host) !== null) return json({ error: "forbidden" }, 403);
+      const form = await req.formData();
+      const label = String(form.get("label") ?? "");
+      // Whitelist against discovered services — never kickstart an arbitrary label.
+      const known = (await readServices()).some((s) => s.label === label);
+      if (!known) return json({ error: "unknown service" }, 400);
+      const ok = await restartService(label);
+      return json({ ok });
+    }
+
+    if (pathname === "/api/status") return json(await buildStatus(host));
+
     if (pathname !== "/") return new Response("not found", { status: 404 });
-    return new Response(await renderPage(), {
-      headers: { "content-type": "text/html; charset=utf-8" },
-    });
+    return new Response(SHELL, { headers: { "content-type": "text/html; charset=utf-8" } });
   },
 });
 
