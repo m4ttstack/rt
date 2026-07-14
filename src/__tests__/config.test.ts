@@ -14,6 +14,13 @@ describe("parseConfig", () => {
     expect(cfg.title).toBe("MRs ready for review");
     expect(cfg.port).toBe(7930);
     expect(cfg.staleAfterDays).toBe(90);
+    expect(cfg.ticketPrefixes).toEqual([]);
+  });
+
+  test("ticketPrefixes are uppercased and trimmed; rejects non-string entries", () => {
+    expect(parseConfig(JSON.stringify({ ...base, ticketPrefixes: ["cv", " int "] })).ticketPrefixes).toEqual(["CV", "INT"]);
+    expect(() => parseConfig(JSON.stringify({ ...base, ticketPrefixes: "CV" }))).toThrow(/ticketPrefixes/);
+    expect(() => parseConfig(JSON.stringify({ ...base, ticketPrefixes: [""] }))).toThrow(/ticketPrefixes/);
   });
 
   test("accepts a positive staleAfterDays override", () => {

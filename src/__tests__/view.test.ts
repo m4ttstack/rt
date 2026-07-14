@@ -57,13 +57,13 @@ const NOW = Date.parse("2026-07-13T12:00:00Z");
 const daysAgo = (n: number) => new Date(NOW - n * 86_400_000).toISOString();
 
 describe("groupMRs age", () => {
-  test("buckets by day then week, ordered", () => {
+  test("buckets by last activity (updatedAt), by day then week, ordered", () => {
     const list = [
-      mr({ iid: 1, createdAt: daysAgo(0) }),
-      mr({ iid: 2, createdAt: daysAgo(1) }),
-      mr({ iid: 3, createdAt: daysAgo(3) }),
-      mr({ iid: 4, createdAt: daysAgo(9) }),
-      mr({ iid: 5, createdAt: daysAgo(30) }),
+      mr({ iid: 1, updatedAt: daysAgo(0) }),
+      mr({ iid: 2, updatedAt: daysAgo(1) }),
+      mr({ iid: 3, updatedAt: daysAgo(3) }),
+      mr({ iid: 4, updatedAt: daysAgo(9) }),
+      mr({ iid: 5, updatedAt: daysAgo(30) }),
     ];
     const groups = groupMRs(list, "age", [], NOW);
     expect(groups.map((g) => g.label)).toEqual(["Today", "Yesterday", "3 days ago", "Last week", "Older"]);

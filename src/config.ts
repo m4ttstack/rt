@@ -20,6 +20,12 @@ export interface BoardConfig {
   defaultMember: string;
   /** Hide MRs with no activity (last update) in more than this many days. */
   staleAfterDays: number;
+  /**
+   * If non-empty, only show MRs whose Linear ticket key starts with one of
+   * these prefixes (e.g. ["CV"] to show only CV-#### tickets). Case-insensitive.
+   * MRs with no detectable ticket key are hidden when this is set. Empty = show all.
+   */
+  ticketPrefixes: string[];
   title: string;
   port: number;
 }
@@ -50,12 +56,19 @@ export function parseConfig(raw: string): BoardConfig {
   if (cfg.staleAfterDays !== undefined && (typeof cfg.staleAfterDays !== "number" || cfg.staleAfterDays <= 0)) {
     throw new Error(`config.json "staleAfterDays" must be a positive number`);
   }
+  if (cfg.ticketPrefixes !== undefined) {
+    if (!Array.isArray(cfg.ticketPrefixes) || cfg.ticketPrefixes.some((p) => typeof p !== "string" || !p.trim())) {
+      throw new Error(`config.json "ticketPrefixes" must be an array of non-empty strings`);
+    }
+  }
   return {
     gitlabHost: cfg.gitlabHost!,
     projects: cfg.projects!,
     members: cfg.members!,
     defaultMember: cfg.defaultMember ?? "all",
     staleAfterDays: cfg.staleAfterDays ?? 90,
+    // Normalize to uppercase so matching is case-insensitive (ticket keys are uppercased).
+    ticketPrefixes: (cfg.ticketPrefixes ?? []).map((p) => p.trim().toUpperCase()),
     title: cfg.title ?? "MRs ready for review",
     port: cfg.port ?? 7930,
   };

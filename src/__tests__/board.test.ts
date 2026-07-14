@@ -11,6 +11,7 @@ const config: BoardConfig = {
   members: [{ username: "alice" }, { username: "bob" }],
   defaultMember: "all",
   staleAfterDays: 90,
+  ticketPrefixes: [],
   title: "Test board",
   port: 0,
 };
@@ -115,6 +116,28 @@ describe("buildBoard", () => {
       now,
     );
     expect(mrs.map((m) => m.iid)).toEqual([1]);
+  });
+
+  test("ticketPrefixes filter: keeps only matching prefixes, drops other teams and untagged", () => {
+    const withPrefix = { ...config, ticketPrefixes: ["CV"] };
+    const mrs = buildBoard(
+      [
+        pr({ iid: 1, sourceBranch: "feature/ACME-2369-thing" }), // CV — keep
+        pr({ iid: 2, sourceBranch: "ing-595-transition", title: "ING work" }), // ING — drop
+        pr({ iid: 3, sourceBranch: "hotfix", title: "NO-TICKET quick fix" }), // untagged — drop
+        pr({ iid: 4, sourceBranch: "x", title: "ACME-2400: titled" }), // CV via title — keep
+      ],
+      withPrefix,
+    );
+    expect(mrs.map((m) => m.iid).sort()).toEqual([1, 4]);
+  });
+
+  test("empty ticketPrefixes keeps everything regardless of ticket", () => {
+    const mrs = buildBoard(
+      [pr({ iid: 1, sourceBranch: "ing-1-x", title: "ING" }), pr({ iid: 2, sourceBranch: "no-ticket" })],
+      config, // ticketPrefixes: []
+    );
+    expect(mrs.map((m) => m.iid).sort()).toEqual([1, 2]);
   });
 
   test("tags each MR with author, createdAt, and derived pipelineState", () => {

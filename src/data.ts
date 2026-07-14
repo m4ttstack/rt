@@ -1,5 +1,6 @@
 import { getMRDashboardProps, getReviewDisplayState, type MRDashboardProps, type PullRequest } from "@workforge/glance-sdk";
 import type { BoardConfig, Member } from "./config.ts";
+import { extractTicketId } from "./ticket.ts";
 
 export type PipelineState = "passed" | "running" | "failed" | "none";
 
@@ -44,12 +45,20 @@ export function buildBoard(prs: PullRequest[], config: BoardConfig, now: number 
   const members = new Set(config.members.map((m) => m.username));
   const projects = new Set(config.projects);
   const staleCutoff = now - config.staleAfterDays * 86_400_000;
+  const prefixes = new Set(config.ticketPrefixes);
   const out: BoardMR[] = [];
   for (const pr of prs) {
     if (pr.draft || pr.state !== "opened") continue;
     if (!pr.author || !members.has(pr.author.username)) continue;
     // Drop MRs gone quiet: no activity (last update) within the stale window.
     if (pr.updatedAt && Date.parse(pr.updatedAt) < staleCutoff) continue;
+    // Team filter: keep only MRs whose Linear ticket prefix is configured.
+    // No prefixes configured → keep everything. Untagged MRs are dropped.
+    if (prefixes.size > 0) {
+      const ticket = extractTicketId(pr.sourceBranch, pr.title);
+      const prefix = ticket ? ticket.slice(0, ticket.indexOf("-")) : null;
+      if (!prefix || !prefixes.has(prefix)) continue;
+    }
     const path = pr.webUrl ? projectPathFromWebUrl(pr.webUrl, config.gitlabHost) : null;
     if (!path || !projects.has(path)) continue;
     const props = getMRDashboardProps(pr);

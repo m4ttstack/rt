@@ -41,10 +41,12 @@ export interface Group {
   mrs: BoardMR[];
 }
 
-/** Age band for an MR by creation date: by day for the first week, then weekly. */
-function ageBucket(createdAt: string | null, now: number): { label: string; order: number } {
-  if (!createdAt) return { label: "Unknown", order: 1000 };
-  const days = Math.floor((now - Date.parse(createdAt)) / 86_400_000);
+/** Age band by last activity: by day for the first week, then weekly. Uses the
+    same date as the row's "last updated" token and the stale gate, so a group
+    label always matches the age shown on its rows. */
+function ageBucket(lastActivity: string | null, now: number): { label: string; order: number } {
+  if (!lastActivity) return { label: "Unknown", order: 1000 };
+  const days = Math.floor((now - Date.parse(lastActivity)) / 86_400_000);
   if (days <= 0) return { label: "Today", order: 0 };
   if (days === 1) return { label: "Yesterday", order: 1 };
   if (days <= 6) return { label: `${days} days ago`, order: days };
@@ -103,7 +105,7 @@ function groupByAuthor(mrs: BoardMR[], memberOrder: string[]): Group[] {
 export function groupMRs(mrs: BoardMR[], group: GroupKey, memberOrder: string[], now: number): Group[] {
   switch (group) {
     case "age":
-      return groupBy(mrs, (mr) => ageBucket(mr.createdAt, now));
+      return groupBy(mrs, (mr) => ageBucket(mr.updatedAt, now));
     case "author":
       return groupByAuthor(mrs, memberOrder);
     case "status":
