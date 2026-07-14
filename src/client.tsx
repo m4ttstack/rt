@@ -380,7 +380,18 @@ function Panel({ title, count, children }: { title: string; count: number; child
 
 // ── views ──────────────────────────────────────────────────────────────────
 
-function RowView({ mrs, now }: { mrs: BoardMR[]; now: number }) {
+/** Author identity for a row — shown when the view mixes authors (the All
+    view grouped by anything but author, where the group header isn't the name). */
+function AuthorTag({ mr }: { mr: BoardMR }) {
+  const name = mr.author.name || mr.author.username;
+  return (
+    <span className="tui-author-tag" title={name}>
+      <OwnerSprite username={mr.author.username} /> {name}
+    </span>
+  );
+}
+
+function RowView({ mrs, now, showAuthor }: { mrs: BoardMR[]; now: number; showAuthor: boolean }) {
   return (
     <div className="tui-rows">
       {mrs.map((mr) => {
@@ -395,6 +406,7 @@ function RowView({ mrs, now }: { mrs: BoardMR[]; now: number }) {
               <CopyButton text={mrLine(mr)} className="tui-copy-inline" title="copy this MR for Slack" />
             </div>
             <div className="tui-row-2">
+              {showAuthor && <AuthorTag mr={mr} />}
               <span className="tui-branch">
                 {mr.sourceBranch}
                 {!["master", "main"].includes(mr.targetBranch) && (
@@ -411,7 +423,7 @@ function RowView({ mrs, now }: { mrs: BoardMR[]; now: number }) {
   );
 }
 
-function GridView({ mrs, now }: { mrs: BoardMR[]; now: number }) {
+function GridView({ mrs, now, showAuthor }: { mrs: BoardMR[]; now: number; showAuthor: boolean }) {
   return (
     <div className="tui-grid">
       {mrs.map((mr) => {
@@ -429,7 +441,7 @@ function GridView({ mrs, now }: { mrs: BoardMR[]; now: number }) {
               {mr.sourceBranch} <span className="tui-arrow">→</span> {mr.targetBranch}
             </div>
             <div className="tui-card-tokens">
-              <StatusPhrase mr={mr} /> <MetaTokens mr={mr} now={now} />
+              {showAuthor && <AuthorTag mr={mr} />} <StatusPhrase mr={mr} /> <MetaTokens mr={mr} now={now} />
             </div>
             {reasons.length > 0 && (
               <ul className="tui-blockers">
@@ -713,6 +725,9 @@ function Board() {
     mrs: sortMRs(g.mrs, state.sort),
   }));
   const activeMember = state.member === "all" ? null : data.members.find((m) => m.username === state.member) ?? null;
+  // Show each row's author only when the view mixes authors: the All view
+  // grouped by anything but author (where the group header isn't the name).
+  const showAuthor = state.member === "all" && state.group !== "author";
   const summaryText = boardSummary(groups.flatMap((g) => g.mrs));
   const openSettings = () => {
     setMenuOpen(false);
@@ -767,7 +782,11 @@ function Board() {
         ) : (
           groups.map((g) => (
             <Panel key={g.label} title={g.label} count={g.mrs.length}>
-              {view === "rows" ? <RowView mrs={g.mrs} now={now} /> : <GridView mrs={g.mrs} now={now} />}
+              {view === "rows" ? (
+                <RowView mrs={g.mrs} now={now} showAuthor={showAuthor} />
+              ) : (
+                <GridView mrs={g.mrs} now={now} showAuthor={showAuthor} />
+              )}
             </Panel>
           ))
         )}
