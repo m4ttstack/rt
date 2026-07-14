@@ -1,8 +1,8 @@
 import { join } from "path";
 import { readFileSync } from "fs";
-import { GitLabProvider, type PullRequest } from "@forge-glance/sdk";
+import { GitLabProvider, type PullRequest } from "@workforge/glance-sdk";
 import { loadConfig, loadGitLabToken, saveMemberHidden } from "./config.ts";
-import { buildBoard, buildRoster, memberAuthoredIids, type RawMRRef } from "./data.ts";
+import { buildBoard, buildRoster } from "./data.ts";
 import { SnapshotCache } from "./cache.ts";
 
 const cssPath = join(import.meta.dir, "style.css");
@@ -14,31 +14,16 @@ const provider = new GitLabProvider(config.gitlabHost, loadGitLabToken());
 /**
  * Fetch every configured project's opened MRs authored by a team member.
  *
- * The SDK's `fetchPullRequests()` only returns the *token user's* own MRs, so
- * it can't see teammates' work. Instead we page the project MR list (which
- * lists all authors) to discover member-authored IIDs, then batch-fetch those
- * by IID to get the fully-normalized objects (pipeline, approvals, blockers)
- * the board renders.
+ * The SDK's default `fetchPullRequests()` only returns the *token user's* own
+ * MRs, so it can't see teammates' work. The `{ authorUsernames, projectPath }`
+ * mode fetches every member's MRs directly (one GraphQL query per author, full
+ * dashboard fields) — no REST discovery pass needed.
  */
 async function fetchTeamMRs(): Promise<PullRequest[]> {
+  const authorUsernames = config.members.map((m) => m.username);
   const out: PullRequest[] = [];
   for (const projectPath of config.projects) {
-    const enc = encodeURIComponent(projectPath);
-    const iids: number[] = [];
-    for (let page = 1; ; ) {
-      const res = await provider.restRequest(
-        "GET",
-        `/api/v4/projects/${enc}/merge_requests?state=opened&per_page=100&page=${page}`,
-      );
-      const list = (await res.json()) as RawMRRef[];
-      iids.push(...memberAuthoredIids(list, config.members));
-      const next = res.headers.get("x-next-page");
-      if (!next) break;
-      page = Number(next);
-    }
-    if (iids.length) {
-      out.push(...(await provider.fetchPullRequests({ iids, projectPath, state: "opened" })));
-    }
+    out.push(...(await provider.fetchPullRequests({ authorUsernames, projectPath, state: "opened" })));
   }
   return out;
 }

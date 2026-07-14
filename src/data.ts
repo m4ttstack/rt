@@ -1,4 +1,4 @@
-import { getMRDashboardProps, type MRDashboardProps, type PullRequest } from "@forge-glance/sdk";
+import { getMRDashboardProps, type MRDashboardProps, type PullRequest } from "@workforge/glance-sdk";
 import type { BoardConfig, Member } from "./config.ts";
 
 export type PipelineState = "passed" | "running" | "failed" | "none";
@@ -71,26 +71,6 @@ export function buildBoard(prs: PullRequest[], config: BoardConfig, now: number 
  */
 export function hasChangesRequested(mr: BoardMR): boolean {
   return mr.reviews.reviewers?.some((r) => r.reviewState === "REQUESTED_CHANGES") ?? false;
-}
-
-/** A raw GitLab REST merge-request list item — only the fields we select on. */
-export interface RawMRRef {
-  iid: number;
-  author?: { username?: string } | null;
-  draft?: boolean;
-}
-
-/**
- * IIDs of opened MRs authored by a configured member, excluding drafts.
- * Used to discover which project MRs to fully fetch: the SDK's high-level
- * `fetchPullRequests()` only returns the token user's own MRs, so team MRs
- * are found via the project MR list and then batch-fetched by IID.
- */
-export function memberAuthoredIids(rawList: RawMRRef[], members: Member[]): number[] {
-  const usernames = new Set(members.map((m) => m.username));
-  return rawList
-    .filter((mr) => !mr.draft && mr.author?.username && usernames.has(mr.author.username))
-    .map((mr) => mr.iid);
 }
 
 export interface RosterMember {
