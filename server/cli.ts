@@ -43,7 +43,7 @@ function parseArgs(argv: string[]): Args {
 
 function printStandings(res: LeaderboardResponse): void {
   const w = res.window;
-  console.log(`\nForge Leaderboard ... ${scopeLabel(res)}  ${w.start.slice(0, 10)} → ${w.end.slice(0, 10)}`);
+  console.log(`\nBoxscore ... ${scopeLabel(res)}  ${w.start.slice(0, 10)} → ${w.end.slice(0, 10)}`);
   console.log(`${res.fromCache ? "cached" : "fresh"}${res.hasTrend ? " · trend on" : ""} · ${res.users.filter((u) => u.resolved).length}/${res.users.length} resolved\n`);
 
   console.log("STANDINGS BY METRIC (1 = best):");

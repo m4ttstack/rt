@@ -154,7 +154,7 @@ export default function App() {
     <div className="mx-auto max-w-[96rem] px-6 py-8">
       <header className="mb-5 flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Forge Leaderboard</h1>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">Boxscore</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             GitLab performance across a hand-picked set ... volume metrics are gameable, so weigh
             them against the quality columns. See the README caveats before this becomes a scoreboard.

@@ -14,7 +14,7 @@ if (existsSync("./web/dist")) {
 // missing-token errors surface per-request with a readable message.
 // Bun serves the default export ({ port, fetch }) natively ... no node http server needed.
 const port = readPort();
-console.log(`forge-leaderboard server listening on http://localhost:${port}`);
+console.log(`boxscore server listening on http://localhost:${port}`);
 
 function readPort(): number {
   try {
