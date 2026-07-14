@@ -9,7 +9,7 @@ import type {
   ProviderCapabilities,
   PullRequest,
   UpdatePullRequestInput,
-  UserRef
+  UserRef,
 } from './types.ts';
 import type { RealtimeWatcherOptions } from './RealtimeWatcher.ts';
 
@@ -36,7 +36,16 @@ export interface FetchPullRequestsOptions {
   iids?: number[];
 
   /**
-   * Project path (e.g. `'group/project'`). Required when `iids` is specified.
+   * Fetch every MR in the project authored by any of these usernames, with
+   * full dashboard fields, in one query per author. Lets a caller build a
+   * team board without the token user being involved in each MR — no REST
+   * discovery pass needed. Requires `projectPath` to be set.
+   */
+  authorUsernames?: string[];
+
+  /**
+   * Project path (e.g. `'group/project'`). Required when `iids` or
+   * `authorUsernames` is specified.
    */
   projectPath?: string;
 }
@@ -64,6 +73,8 @@ export interface GitProvider {
    * - No args or `{}`: returns open MRs (authored + assigned + reviewing)
    * - `{ state }`: filter by state(s)
    * - `{ iids, projectPath }`: batch-fetch specific MRs by IID
+   * - `{ authorUsernames, projectPath }`: every MR in the project authored by
+   *   any of those users (for team boards)
    */
   fetchPullRequests(options?: FetchPullRequestsOptions): Promise<PullRequest[]>;
 
@@ -71,11 +82,7 @@ export interface GitProvider {
    * Fetch a single MR/PR by project path and IID.
    * Returns null if the project or MR doesn't exist.
    */
-  fetchSingleMR(
-    projectPath: string,
-    mrIid: number,
-    currentUserNumericId: number | null
-  ): Promise<PullRequest | null>;
+  fetchSingleMR(projectPath: string, mrIid: number, currentUserNumericId: number | null): Promise<PullRequest | null>;
 
   /**
    * Fetch a single MR/PR by its source branch within a project.
@@ -85,7 +92,7 @@ export interface GitProvider {
   fetchPullRequestByBranch(
     projectPath: string,
     sourceBranch: string,
-    state?: MRState | 'all'
+    state?: MRState | 'all',
   ): Promise<PullRequest | null>;
 
   /**
@@ -97,7 +104,7 @@ export interface GitProvider {
   fetchPullRequestsByBranches?(
     projectPath: string,
     branches: string[],
-    state?: MRState | 'all'
+    state?: MRState | 'all',
   ): Promise<Map<string, PullRequest | null>>;
 
   /**
@@ -110,19 +117,13 @@ export interface GitProvider {
    * Update an existing merge request / pull request.
    * Returns the updated PullRequest.
    */
-  updatePullRequest(
-    projectPath: string,
-    mrIid: number,
-    input: UpdatePullRequestInput
-  ): Promise<PullRequest>;
+  updatePullRequest(projectPath: string, mrIid: number, input: UpdatePullRequestInput): Promise<PullRequest>;
 
   /**
    * Fetch branch protection rules for a repository.
    * Returns an array of rules (one per protected branch/pattern).
    */
-  fetchBranchProtectionRules(
-    projectPath: string
-  ): Promise<BranchProtectionRule[]>;
+  fetchBranchProtectionRules(projectPath: string): Promise<BranchProtectionRule[]>;
 
   /**
    * Delete a branch from the repository.
@@ -152,11 +153,7 @@ export interface GitProvider {
    * All input fields are optional — omitting them defers to the project's
    * configured defaults (merge method, squash policy, delete-source-branch).
    */
-  mergePullRequest(
-    projectPath: string,
-    mrIid: number,
-    input?: MergePullRequestInput
-  ): Promise<PullRequest>;
+  mergePullRequest(projectPath: string, mrIid: number, input?: MergePullRequestInput): Promise<PullRequest>;
 
   /**
    * Approve a pull request / merge request.
@@ -198,21 +195,13 @@ export interface GitProvider {
    * Resolve a discussion thread on an MR.
    * GitLab-only — check `capabilities.canResolveDiscussions` before calling.
    */
-  resolveDiscussion(
-    projectPath: string,
-    mrIid: number,
-    discussionId: string
-  ): Promise<void>;
+  resolveDiscussion(projectPath: string, mrIid: number, discussionId: string): Promise<void>;
 
   /**
    * Unresolve a previously resolved discussion thread.
    * GitLab-only — check `capabilities.canResolveDiscussions` before calling.
    */
-  unresolveDiscussion(
-    projectPath: string,
-    mrIid: number,
-    discussionId: string
-  ): Promise<void>;
+  unresolveDiscussion(projectPath: string, mrIid: number, discussionId: string): Promise<void>;
 
   // ── Pipeline mutations ──────────────────────────────────────────────────
 
@@ -257,11 +246,7 @@ export interface GitProvider {
    * If `reviewerUsernames` is provided, only those reviewers are pinged;
    * otherwise all current reviewers are re-requested.
    */
-  requestReReview(
-    projectPath: string,
-    mrIid: number,
-    reviewerUsernames?: string[]
-  ): Promise<void>;
+  requestReReview(projectPath: string, mrIid: number, reviewerUsernames?: string[]): Promise<void>;
 
   // ── REST pass-through (used by note mutations, job traces, etc.) ────────
 
@@ -300,7 +285,7 @@ export interface GitProvider {
     mrIid: number,
     currentUserNumericId: number | null,
     onUpdate: (pr: PullRequest) => void,
-    options?: RealtimeWatcherOptions
+    options?: RealtimeWatcherOptions,
   ): () => void;
 }
 

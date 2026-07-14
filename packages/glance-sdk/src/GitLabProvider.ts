@@ -13,15 +13,12 @@ import type {
   PullRequest,
   Reviewer,
   UpdatePullRequestInput,
-  UserRef
+  UserRef,
 } from './types.ts';
 import { type ForgeLogger, noopLogger } from './logger.ts';
 import { MRDetailFetcher } from './MRDetailFetcher.ts';
 import { ActionCableClient } from './ActionCableClient.ts';
-import {
-  createRealtimeWatcher,
-  type RealtimeWatcherOptions
-} from './RealtimeWatcher.ts';
+import { createRealtimeWatcher, type RealtimeWatcherOptions } from './RealtimeWatcher.ts';
 
 // ---------------------------------------------------------------------------
 // Repository ID helpers
@@ -254,21 +251,20 @@ function toUserRef(u: GQLUser, baseURL?: string, token?: string): UserRef {
     id: `gitlab:user:${numericId(u.id)}`,
     username: u.username,
     name: u.name,
-    avatarUrl
+    avatarUrl,
   };
 }
 
 function toReviewer(u: GQLReviewerNode, baseURL?: string, token?: string): Reviewer {
   return {
     ...toUserRef(u, baseURL, token),
-    reviewState: (u.mergeRequestInteraction?.reviewState ??
-      null) as Reviewer['reviewState']
+    reviewState: (u.mergeRequestInteraction?.reviewState ?? null) as Reviewer['reviewState'],
   };
 }
 
 function toPipeline(p: GQLPipeline, baseURL: string): Pipeline {
-  const allJobs: PipelineJob[] = p.stages.nodes.flatMap(stage =>
-    stage.jobs.nodes.map(job => ({
+  const allJobs: PipelineJob[] = p.stages.nodes.flatMap((stage) =>
+    stage.jobs.nodes.map((job) => ({
       id: `gitlab:job:${numericId(job.id)}`,
       name: job.name,
       stage: job.stage.name,
@@ -276,10 +272,8 @@ function toPipeline(p: GQLPipeline, baseURL: string): Pipeline {
       allowFailure: job.allowFailure,
       duration: job.duration,
       webUrl: job.webPath ? `${baseURL}${job.webPath}` : null,
-      downstreamPipeline: job.downstreamPipeline
-        ? toPipeline(job.downstreamPipeline, baseURL)
-        : null
-    }))
+      downstreamPipeline: job.downstreamPipeline ? toPipeline(job.downstreamPipeline, baseURL) : null,
+    })),
   );
 
   return {
@@ -287,7 +281,7 @@ function toPipeline(p: GQLPipeline, baseURL: string): Pipeline {
     status: normalizePipelineStatus(p),
     createdAt: p.createdAt,
     webUrl: p.path ? `${baseURL}${p.path}` : null,
-    jobs: allJobs
+    jobs: allJobs,
   };
 }
 
@@ -297,11 +291,9 @@ function toPipeline(p: GQLPipeline, baseURL: string): Pipeline {
  * if any allow-failure job failed but overall status is success → "success_with_warnings"
  */
 function normalizePipelineStatus(p: GQLPipeline): string {
-  const allJobs = p.stages.nodes.flatMap(s => s.jobs.nodes);
+  const allJobs = p.stages.nodes.flatMap((s) => s.jobs.nodes);
   const status = p.status.toLowerCase();
-  const hasAllowFailFailed = allJobs.some(
-    j => j.allowFailure && j.status.toLowerCase() === 'failed'
-  );
+  const hasAllowFailFailed = allJobs.some((j) => j.allowFailure && j.status.toLowerCase() === 'failed');
   if (status === 'success' && hasAllowFailFailed) {
     return 'success_with_warnings';
   }
@@ -313,7 +305,7 @@ function toMR(
   role: string,
   baseURL: string,
   divergedCommitsCount: number | null = null,
-  token?: string
+  token?: string,
 ): PullRequest {
   const resolvable = gql.resolvableDiscussionsCount ?? 0;
   const resolved = gql.resolvedDiscussionsCount ?? 0;
@@ -323,7 +315,7 @@ function toMR(
     ? {
         additions: gql.diffStatsSummary.additions,
         deletions: gql.diffStatsSummary.deletions,
-        filesChanged: gql.diffStatsSummary.fileCount
+        filesChanged: gql.diffStatsSummary.fileCount,
       }
     : null;
 
@@ -345,9 +337,10 @@ function toMR(
     // sole blocker; with multiple blockers GitLab surfaces a different status.
     // The dedicated CONFLICT mergeability check is stable regardless of how
     // many other blockers are present.
-    conflicts: gql.conflicts
-      || detailedMergeStatus === 'conflict'
-      || (gql.mergeabilityChecks ?? []).some(c => c.identifier === 'CONFLICT' && c.status === 'FAILED'),
+    conflicts:
+      gql.conflicts ||
+      detailedMergeStatus === 'conflict' ||
+      (gql.mergeabilityChecks ?? []).some((c) => c.identifier === 'CONFLICT' && c.status === 'FAILED'),
 
     webUrl: gql.webUrl,
     sourceBranch: gql.sourceBranch,
@@ -356,14 +349,14 @@ function toMR(
     updatedAt: gql.updatedAt,
     sha: gql.diffHeadSha,
     author: toUserRef(gql.author, baseURL, token),
-    assignees: gql.assignees.nodes.map(u => toUserRef(u, baseURL, token)),
-    reviewers: gql.reviewers.nodes.map(u => toReviewer(u, baseURL, token)),
+    assignees: gql.assignees.nodes.map((u) => toUserRef(u, baseURL, token)),
+    reviewers: gql.reviewers.nodes.map((u) => toReviewer(u, baseURL, token)),
     roles: [role],
     pipeline: gql.headPipeline ? toPipeline(gql.headPipeline, baseURL) : null,
     unresolvedThreadCount,
     approvalsLeft: gql.approvalsLeft ?? 0,
     approved: gql.approved ?? false,
-    approvedBy: gql.approvedBy.nodes.map(u => toUserRef(u, baseURL, token)),
+    approvedBy: gql.approvedBy.nodes.map((u) => toUserRef(u, baseURL, token)),
     diffStats,
     detailedMergeStatus,
     autoMergeEnabled: gql.autoMergeEnabled ?? false,
@@ -377,13 +370,13 @@ function toMR(
     mergeError: gql.mergeError ?? null,
     shouldBeRebased: gql.shouldBeRebased ?? false,
     mergeabilityChecks: (gql.mergeabilityChecks ?? []).map(
-      (c): MergeabilityCheck => ({ identifier: c.identifier, status: c.status })
+      (c): MergeabilityCheck => ({ identifier: c.identifier, status: c.status }),
     ),
     blockingMergeRequestsCount: gql.blockingMergeRequests?.totalCount ?? 0,
     approvalsRequired: gql.approvalsRequired ?? 0,
     squash: gql.squash ?? false,
     squashOnMerge: gql.squashOnMerge ?? false,
-    mergeTrainIndex: gql.mergeTrainIndex ?? null
+    mergeTrainIndex: gql.mergeTrainIndex ?? null,
   };
 }
 
@@ -437,6 +430,20 @@ const MR_BATCH_QUERY_NO_STATE = `
   ${MR_DASHBOARD_FRAGMENT}
 `;
 
+/** All MRs in a project by a single author, with full dashboard fields. */
+const MR_BY_AUTHOR_QUERY = `
+  query GlanceMRByAuthor($projectPath: ID!, $author: String!, $state: MergeRequestState) {
+    project(fullPath: $projectPath) {
+      mergeRequests(authorUsername: $author, state: $state, first: 100) {
+        nodes {
+          ...MRDashboardFields
+        }
+      }
+    }
+  }
+  ${MR_DASHBOARD_FRAGMENT}
+`;
+
 // ---------------------------------------------------------------------------
 // GitLabProvider
 // ---------------------------------------------------------------------------
@@ -459,17 +466,13 @@ export class GitLabProvider implements GitProvider {
   // Per-watcher onDisconnected callbacks
   private readonly cableDisconnectHandlers = new Set<() => void>();
 
-  constructor(
-    baseURL: string,
-    token: string,
-    options: { logger?: ForgeLogger } = {}
-  ) {
+  constructor(baseURL: string, token: string, options: { logger?: ForgeLogger } = {}) {
     // Strip trailing slash for consistent URL building
     this.baseURL = baseURL.replace(/\/$/, '');
     this.token = token;
     this.log = options.logger ?? noopLogger;
     this.mrDetailFetcher = new MRDetailFetcher(this.baseURL, token, {
-      logger: this.log
+      logger: this.log,
     });
   }
 
@@ -483,7 +486,7 @@ export class GitLabProvider implements GitProvider {
     canAutoMerge: true,
     canResolveDiscussions: true,
     canRetryPipeline: true,
-    canRequestReReview: true
+    canRequestReReview: true,
   };
 
   // MARK: - GitProvider
@@ -491,12 +494,10 @@ export class GitLabProvider implements GitProvider {
   async validateToken(): Promise<UserRef> {
     const url = `${this.baseURL}/api/v4/user`;
     const res = await fetch(url, {
-      headers: { 'PRIVATE-TOKEN': this.token }
+      headers: { 'PRIVATE-TOKEN': this.token },
     });
     if (!res.ok) {
-      throw new Error(
-        `Token validation failed: ${res.status} ${res.statusText}`
-      );
+      throw new Error(`Token validation failed: ${res.status} ${res.statusText}`);
     }
     const user = (await res.json()) as {
       id: number;
@@ -516,7 +517,7 @@ export class GitLabProvider implements GitProvider {
       id: `gitlab:user:${user.id}`,
       username: user.username,
       name: user.name,
-      avatarUrl
+      avatarUrl,
     };
   }
 
@@ -531,7 +532,7 @@ export class GitLabProvider implements GitProvider {
   async fetchSingleMR(
     projectPath: string,
     mrIid: number,
-    currentUserNumericId: number | null
+    currentUserNumericId: number | null,
   ): Promise<PullRequest | null> {
     // Run GraphQL detail query and REST diverged_commits_count fetch in parallel.
     let resp: MRDetailResponse;
@@ -541,19 +542,19 @@ export class GitLabProvider implements GitProvider {
       [resp] = await Promise.all([
         this.runQuery<MRDetailResponse>(MR_DETAIL_QUERY, {
           projectPath,
-          iid: String(mrIid)
+          iid: String(mrIid),
         }),
         fetch(
           `${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}?include_diverged_commits_count=true`,
-          { headers: { 'PRIVATE-TOKEN': this.token } }
-        ).then(async r => {
+          { headers: { 'PRIVATE-TOKEN': this.token } },
+        ).then(async (r) => {
           if (r.ok) {
             const data = (await r.json()) as {
               diverged_commits_count?: number;
             };
             divergedCommitsCount = data.diverged_commits_count ?? null;
           }
-        })
+        }),
       ] as unknown as [MRDetailResponse, void]);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -569,37 +570,25 @@ export class GitLabProvider implements GitProvider {
     if (currentUserNumericId !== null) {
       const userGqlId = `gid://gitlab/User/${currentUserNumericId}`;
       if (gql.author.id === userGqlId) roles.push('author');
-      if (gql.assignees.nodes.some(u => u.id === userGqlId))
-        roles.push('assignee');
-      if (gql.reviewers.nodes.some(u => u.id === userGqlId))
-        roles.push('reviewer');
+      if (gql.assignees.nodes.some((u) => u.id === userGqlId)) roles.push('assignee');
+      if (gql.reviewers.nodes.some((u) => u.id === userGqlId)) roles.push('reviewer');
     }
 
     // Use "author" as the primary role for toMR, then overwrite with full computed roles.
-    const pr = toMR(
-      gql,
-      roles[0] ?? 'author',
-      this.baseURL,
-      divergedCommitsCount,
-      this.token
-    );
+    const pr = toMR(gql, roles[0] ?? 'author', this.baseURL, divergedCommitsCount, this.token);
     pr.roles = roles.length > 0 ? roles : pr.roles;
     return pr;
   }
 
   async fetchPullRequests(options?: FetchPullRequestsOptions): Promise<PullRequest[]> {
     const stateInput = options?.state;
-    const states: MRState[] = stateInput
-      ? (Array.isArray(stateInput) ? stateInput : [stateInput])
-      : ['opened'];
+    const states: MRState[] = stateInput ? (Array.isArray(stateInput) ? stateInput : [stateInput]) : ['opened'];
 
     // Determine the single GitLab API state enum to use.
     // GitLab only accepts one state; if multiple are requested, use 'all' + client filter.
     const ALL_STATES: MRState[] = ['opened', 'merged', 'closed'];
     const needsAllStates = states.length > 1 || states.length === ALL_STATES.length;
-    const apiState = needsAllStates
-      ? 'all'
-      : states[0] ?? 'opened';
+    const apiState = needsAllStates ? 'all' : (states[0] ?? 'opened');
     const filterSet = needsAllStates ? new Set(states) : null;
 
     // IID batch path — use batch query for specific MRs
@@ -617,10 +606,33 @@ export class GitLabProvider implements GitProvider {
       }
       const resp = await this.runQuery<MRBatchResponse>(query, vars);
       const nodes = resp.project?.mergeRequests?.nodes ?? [];
-      const results = nodes.map(gql => toMR(gql, 'author', this.baseURL, null, this.token));
-      return filterSet
-        ? results.filter(pr => filterSet.has(pr.state as MRState))
-        : results;
+      const results = nodes.map((gql) => toMR(gql, 'author', this.baseURL, null, this.token));
+      return filterSet ? results.filter((pr) => filterSet.has(pr.state as MRState)) : results;
+    }
+
+    // Author batch path — one query per author, deduped by MR global ID.
+    // Fetches full dashboard fields directly, so callers building a team board
+    // need no separate REST discovery pass.
+    if (options?.authorUsernames && options.projectPath) {
+      const projectPath = options.projectPath;
+      const perAuthor = await Promise.all(
+        options.authorUsernames.map((author) =>
+          this.runQuery<MRBatchResponse>(MR_BY_AUTHOR_QUERY, {
+            projectPath,
+            author,
+            state: apiState,
+          }),
+        ),
+      );
+      const byId = new Map<string, PullRequest>();
+      for (const resp of perAuthor) {
+        for (const gql of resp.project?.mergeRequests?.nodes ?? []) {
+          const pr = toMR(gql, 'author', this.baseURL, null, this.token);
+          if (filterSet && !filterSet.has(pr.state as MRState)) continue;
+          byId.set(pr.id, pr);
+        }
+      }
+      return [...byId.values()];
     }
 
     // Role-based path — 3 queries (authored + reviewing + assigned)
@@ -628,7 +640,7 @@ export class GitLabProvider implements GitProvider {
     const [authored, reviewing, assigned] = await Promise.all([
       this.runQuery<AuthoredResponse>(AUTHORED_QUERY, stateVar),
       this.runQuery<ReviewingResponse>(REVIEWING_QUERY, stateVar),
-      this.runQuery<AssignedResponse>(ASSIGNED_QUERY, stateVar)
+      this.runQuery<AssignedResponse>(ASSIGNED_QUERY, stateVar),
     ]);
 
     // Merge all three sets, deduplicating by MR global ID.
@@ -649,10 +661,7 @@ export class GitLabProvider implements GitProvider {
     };
 
     addAll(authored.currentUser.authoredMergeRequests.nodes, 'author');
-    addAll(
-      reviewing.currentUser.reviewRequestedMergeRequests.nodes,
-      'reviewer'
-    );
+    addAll(reviewing.currentUser.reviewRequestedMergeRequests.nodes, 'reviewer');
     addAll(assigned.currentUser.assignedMergeRequests.nodes, 'assignee');
 
     const prs = [...byId.values()];
@@ -660,7 +669,7 @@ export class GitLabProvider implements GitProvider {
     // Fetch diverged_commits_count for all MRs in parallel via REST.
     // We need the project path per MR, which we derive from webUrl.
     await Promise.all(
-      prs.map(async pr => {
+      prs.map(async (pr) => {
         const match = pr.webUrl?.match(/\/([^/]+\/[^/]+)\/-\/merge_requests/);
         if (!match) return;
         const projectPath = match[1]!;
@@ -668,7 +677,7 @@ export class GitLabProvider implements GitProvider {
         try {
           const r = await fetch(
             `${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${pr.iid}?include_diverged_commits_count=true`,
-            { headers: { 'PRIVATE-TOKEN': this.token } }
+            { headers: { 'PRIVATE-TOKEN': this.token } },
           );
           if (r.ok) {
             const data = (await r.json()) as {
@@ -679,35 +688,25 @@ export class GitLabProvider implements GitProvider {
         } catch {
           // Non-fatal — leave as null
         }
-      })
+      }),
     );
 
     this.log.debug('fetchPullRequests', { count: prs.length });
-    return filterSet
-      ? prs.filter(pr => filterSet.has(pr.state as MRState))
-      : prs;
+    return filterSet ? prs.filter((pr) => filterSet.has(pr.state as MRState)) : prs;
   }
 
-  async fetchMRDiscussions(
-    repositoryId: string,
-    mrIid: number
-  ): Promise<MRDetail> {
+  async fetchMRDiscussions(repositoryId: string, mrIid: number): Promise<MRDetail> {
     const projectId = parseGitLabRepoId(repositoryId);
     return this.mrDetailFetcher.fetchDetail(projectId, mrIid);
   }
 
-  async fetchBranchProtectionRules(
-    projectPath: string
-  ): Promise<BranchProtectionRule[]> {
+  async fetchBranchProtectionRules(projectPath: string): Promise<BranchProtectionRule[]> {
     const encoded = encodeURIComponent(projectPath);
-    const res = await fetch(
-      `${this.baseURL}/api/v4/projects/${encoded}/protected_branches?per_page=100`,
-      { headers: { 'PRIVATE-TOKEN': this.token } }
-    );
+    const res = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/protected_branches?per_page=100`, {
+      headers: { 'PRIVATE-TOKEN': this.token },
+    });
     if (!res.ok) {
-      throw new Error(
-        `fetchBranchProtectionRules failed: ${res.status} ${await res.text()}`
-      );
+      throw new Error(`fetchBranchProtectionRules failed: ${res.status} ${await res.text()}`);
     }
     const branches = (await res.json()) as Array<{
       name: string;
@@ -716,13 +715,13 @@ export class GitLabProvider implements GitProvider {
       merge_access_levels: Array<{ access_level: number }>;
       code_owner_approval_required?: boolean;
     }>;
-    return branches.map(b => ({
+    return branches.map((b) => ({
       pattern: b.name,
       allowForcePush: b.allow_force_push,
       allowDeletion: false,
       requiredApprovals: 0,
       requireStatusChecks: false,
-      raw: b as unknown as Record<string, unknown>
+      raw: b as unknown as Record<string, unknown>,
     }));
   }
 
@@ -730,7 +729,7 @@ export class GitLabProvider implements GitProvider {
     const encoded = encodeURIComponent(projectPath);
     const res = await fetch(
       `${this.baseURL}/api/v4/projects/${encoded}/repository/branches/${encodeURIComponent(branch)}`,
-      { method: 'DELETE', headers: { 'PRIVATE-TOKEN': this.token } }
+      { method: 'DELETE', headers: { 'PRIVATE-TOKEN': this.token } },
     );
     if (!res.ok) {
       throw new Error(`deleteBranch failed: ${res.status} ${await res.text()}`);
@@ -740,18 +739,18 @@ export class GitLabProvider implements GitProvider {
   async fetchPullRequestByBranch(
     projectPath: string,
     sourceBranch: string,
-    state: MRState | 'all' = 'opened'
+    state: MRState | 'all' = 'opened',
   ): Promise<PullRequest | null> {
     const encoded = encodeURIComponent(projectPath);
     const url = `${this.baseURL}/api/v4/projects/${encoded}/merge_requests?source_branch=${encodeURIComponent(sourceBranch)}&state=${state}&per_page=1`;
     const res = await fetch(url, {
-      headers: { 'PRIVATE-TOKEN': this.token }
+      headers: { 'PRIVATE-TOKEN': this.token },
     });
     if (!res.ok) {
       this.log.warn('fetchPullRequestByBranch failed', {
         projectPath,
         sourceBranch,
-        status: res.status
+        status: res.status,
       });
       return null;
     }
@@ -763,7 +762,7 @@ export class GitLabProvider implements GitProvider {
   async fetchPullRequestsByBranches(
     projectPath: string,
     branches: string[],
-    state: 'opened' | 'merged' | 'closed' | 'all' = 'opened'
+    state: 'opened' | 'merged' | 'closed' | 'all' = 'opened',
   ): Promise<Map<string, PullRequest | null>> {
     // Single GraphQL query using sourceBranches array filter
     const MR_BY_BRANCHES_QUERY = `
@@ -782,7 +781,7 @@ export class GitLabProvider implements GitProvider {
     const resp = await this.runQuery<MRBatchResponse>(MR_BY_BRANCHES_QUERY, {
       projectPath,
       branches,
-      state: state === 'all' ? undefined : state
+      state: state === 'all' ? undefined : state,
     });
 
     const nodes = resp.project?.mergeRequests?.nodes ?? [];
@@ -805,7 +804,7 @@ export class GitLabProvider implements GitProvider {
     const body: Record<string, unknown> = {
       source_branch: input.sourceBranch,
       target_branch: input.targetBranch,
-      title: input.title
+      title: input.title,
     };
     if (input.description != null) body.description = input.description;
     if (input.draft != null) body.draft = input.draft;
@@ -813,34 +812,23 @@ export class GitLabProvider implements GitProvider {
     if (input.assignees?.length) body.assignee_ids = input.assignees;
     if (input.reviewers?.length) body.reviewer_ids = input.reviewers;
 
-    const res = await fetch(
-      `${this.baseURL}/api/v4/projects/${encoded}/merge_requests`,
-      {
-        method: 'POST',
-        headers: {
-          'PRIVATE-TOKEN': this.token,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(body)
-      }
-    );
+    const res = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/merge_requests`, {
+      method: 'POST',
+      headers: {
+        'PRIVATE-TOKEN': this.token,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
     if (!res.ok) {
       const text = await res.text();
       throw new Error(`createPullRequest failed: ${res.status} ${text}`);
     }
     const created = (await res.json()) as { iid: number };
-    return this.fetchSingleMRWithRetry(
-      input.projectPath,
-      created.iid,
-      'Created MR but failed to fetch it back'
-    );
+    return this.fetchSingleMRWithRetry(input.projectPath, created.iid, 'Created MR but failed to fetch it back');
   }
 
-  async updatePullRequest(
-    projectPath: string,
-    mrIid: number,
-    input: UpdatePullRequestInput
-  ): Promise<PullRequest> {
+  async updatePullRequest(projectPath: string, mrIid: number, input: UpdatePullRequestInput): Promise<PullRequest> {
     const encoded = encodeURIComponent(projectPath);
     const body: Record<string, unknown> = {};
     if (input.title != null) body.title = input.title;
@@ -852,36 +840,25 @@ export class GitLabProvider implements GitProvider {
     if (input.reviewers) body.reviewer_ids = input.reviewers;
     if (input.stateEvent) body.state_event = input.stateEvent;
 
-    const res = await fetch(
-      `${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}`,
-      {
-        method: 'PUT',
-        headers: {
-          'PRIVATE-TOKEN': this.token,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(body)
-      }
-    );
+    const res = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}`, {
+      method: 'PUT',
+      headers: {
+        'PRIVATE-TOKEN': this.token,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
     if (!res.ok) {
       const text = await res.text();
       throw new Error(`updatePullRequest failed: ${res.status} ${text}`);
     }
-    return this.fetchSingleMRWithRetry(
-      projectPath,
-      mrIid,
-      'Updated MR but failed to fetch it back'
-    );
+    return this.fetchSingleMRWithRetry(projectPath, mrIid, 'Updated MR but failed to fetch it back');
   }
 
-  async restRequest(
-    method: string,
-    path: string,
-    body?: unknown
-  ): Promise<Response> {
+  async restRequest(method: string, path: string, body?: unknown): Promise<Response> {
     const url = `${this.baseURL}${path}`;
     const headers: Record<string, string> = {
-      'PRIVATE-TOKEN': this.token
+      'PRIVATE-TOKEN': this.token,
     };
     if (body !== undefined) {
       headers['Content-Type'] = 'application/json';
@@ -889,7 +866,7 @@ export class GitLabProvider implements GitProvider {
     return fetch(url, {
       method,
       headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined
+      body: body !== undefined ? JSON.stringify(body) : undefined,
     });
   }
 
@@ -898,7 +875,7 @@ export class GitLabProvider implements GitProvider {
     mrIid: number,
     currentUserNumericId: number | null,
     onUpdate: (pr: PullRequest) => void,
-    options?: RealtimeWatcherOptions
+    options?: RealtimeWatcherOptions,
   ): () => void {
     // Step 1 — initial fetch + subscription is bootstrapped by createRealtimeWatcher.
     // We need the MR's global GID for GitLab's subscription API, so we obtain
@@ -909,11 +886,7 @@ export class GitLabProvider implements GitProvider {
       // fetch — called on init, every push event, every poll tick, and on reconnect.
       // Uses fetchSingleMRWithRetry so eventual-consistency retries are included.
       fetch: async () => {
-        const mr = await this.fetchSingleMRWithRetry(
-          projectPath,
-          mrIid,
-          'watchMR'
-        );
+        const mr = await this.fetchSingleMRWithRetry(projectPath, mrIid, 'watchMR');
         if (mr && !mrGid) {
           // Cache the GID from the first successful fetch.
           const numId = mr.id.split(':').pop();
@@ -938,7 +911,7 @@ export class GitLabProvider implements GitProvider {
           const queries = [
             `subscription { mergeRequestMergeStatusUpdated(issuableId: "${mrGid}") { iid } }`,
             `subscription { mergeRequestApprovalStateUpdated(issuableId: "${mrGid}") { iid } }`,
-            `subscription { mergeRequestReviewersUpdated(issuableId: "${mrGid}") { iid } }`
+            `subscription { mergeRequestReviewersUpdated(issuableId: "${mrGid}") { iid } }`,
           ];
           for (const query of queries) {
             const id = JSON.stringify({ channel: 'GraphqlChannel', query });
@@ -983,9 +956,9 @@ export class GitLabProvider implements GitProvider {
                 } else {
                   this.log.debug('watchMR: WS disconnected intentionally', { reason });
                 }
-              }
+              },
             },
-            { logger: this.log, logContext: 'watchMR:shared' }
+            { logger: this.log, logContext: 'watchMR:shared' },
           );
           this.sharedCable.connect();
         } else if (this.sharedCable) {
@@ -1017,107 +990,74 @@ export class GitLabProvider implements GitProvider {
       options: {
         ...options,
         logger: this.log,
-        logContext: `watchMR:${projectPath}!${mrIid}`
-      }
+        logContext: `watchMR:${projectPath}!${mrIid}`,
+      },
     });
   }
 
   // ── MR lifecycle mutations ──────────────────────────────────────────────
 
-  async mergePullRequest(
-    projectPath: string,
-    mrIid: number,
-    input?: MergePullRequestInput
-  ): Promise<PullRequest> {
+  async mergePullRequest(projectPath: string, mrIid: number, input?: MergePullRequestInput): Promise<PullRequest> {
     const encoded = encodeURIComponent(projectPath);
     const body: Record<string, unknown> = {};
-    if (input?.commitMessage != null)
-      body.merge_commit_message = input.commitMessage;
-    if (input?.squashCommitMessage != null)
-      body.squash_commit_message = input.squashCommitMessage;
+    if (input?.commitMessage != null) body.merge_commit_message = input.commitMessage;
+    if (input?.squashCommitMessage != null) body.squash_commit_message = input.squashCommitMessage;
     if (input?.squash != null) body.squash = input.squash;
-    if (input?.shouldRemoveSourceBranch != null)
-      body.should_remove_source_branch = input.shouldRemoveSourceBranch;
+    if (input?.shouldRemoveSourceBranch != null) body.should_remove_source_branch = input.shouldRemoveSourceBranch;
     if (input?.sha != null) body.sha = input.sha;
     // mergeMethod: GitLab uses the project's configured merge method by default.
     // The merge REST API doesn't accept a merge_method param — it honours the project setting.
     // If the caller passes mergeMethod: "squash", we set squash = true as a hint.
-    if (input?.mergeMethod === 'squash' && input?.squash == null)
-      body.squash = true;
+    if (input?.mergeMethod === 'squash' && input?.squash == null) body.squash = true;
 
-    const res = await fetch(
-      `${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}/merge`,
-      {
-        method: 'PUT',
-        headers: {
-          'PRIVATE-TOKEN': this.token,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(body)
-      }
-    );
+    const res = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}/merge`, {
+      method: 'PUT',
+      headers: {
+        'PRIVATE-TOKEN': this.token,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(body),
+    });
     if (!res.ok) {
       const text = await res.text();
       throw new Error(`mergePullRequest failed: ${res.status} ${text}`);
     }
-    return this.fetchSingleMRWithRetry(
-      projectPath,
-      mrIid,
-      'Merged MR but failed to fetch it back'
-    );
+    return this.fetchSingleMRWithRetry(projectPath, mrIid, 'Merged MR but failed to fetch it back');
   }
 
   async approvePullRequest(projectPath: string, mrIid: number): Promise<void> {
     const encoded = encodeURIComponent(projectPath);
-    const res = await fetch(
-      `${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}/approve`,
-      {
-        method: 'POST',
-        headers: { 'PRIVATE-TOKEN': this.token }
-      }
-    );
+    const res = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}/approve`, {
+      method: 'POST',
+      headers: { 'PRIVATE-TOKEN': this.token },
+    });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(
-        `approvePullRequest failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`
-      );
+      throw new Error(`approvePullRequest failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`);
     }
   }
 
-  async unapprovePullRequest(
-    projectPath: string,
-    mrIid: number
-  ): Promise<void> {
+  async unapprovePullRequest(projectPath: string, mrIid: number): Promise<void> {
     const encoded = encodeURIComponent(projectPath);
-    const res = await fetch(
-      `${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}/unapprove`,
-      {
-        method: 'POST',
-        headers: { 'PRIVATE-TOKEN': this.token }
-      }
-    );
+    const res = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}/unapprove`, {
+      method: 'POST',
+      headers: { 'PRIVATE-TOKEN': this.token },
+    });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(
-        `unapprovePullRequest failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`
-      );
+      throw new Error(`unapprovePullRequest failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`);
     }
   }
 
   async rebasePullRequest(projectPath: string, mrIid: number): Promise<void> {
     const encoded = encodeURIComponent(projectPath);
-    const res = await fetch(
-      `${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}/rebase`,
-      {
-        method: 'PUT',
-        headers: { 'PRIVATE-TOKEN': this.token }
-      }
-    );
+    const res = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}/rebase`, {
+      method: 'PUT',
+      headers: { 'PRIVATE-TOKEN': this.token },
+    });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(
-        `rebasePullRequest failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`
-      );
+      throw new Error(`rebasePullRequest failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`);
     }
   }
 
@@ -1125,22 +1065,17 @@ export class GitLabProvider implements GitProvider {
     // REST: PUT merge with merge_when_pipeline_succeeds = true
     // This tells GitLab to merge automatically once the head pipeline succeeds.
     const encoded = encodeURIComponent(projectPath);
-    const res = await fetch(
-      `${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}/merge`,
-      {
-        method: 'PUT',
-        headers: {
-          'PRIVATE-TOKEN': this.token,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ merge_when_pipeline_succeeds: true })
-      }
-    );
+    const res = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}/merge`, {
+      method: 'PUT',
+      headers: {
+        'PRIVATE-TOKEN': this.token,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ merge_when_pipeline_succeeds: true }),
+    });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(
-        `setAutoMerge failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`
-      );
+      throw new Error(`setAutoMerge failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`);
     }
   }
 
@@ -1151,24 +1086,18 @@ export class GitLabProvider implements GitProvider {
       `${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}/cancel_merge_when_pipeline_succeeds`,
       {
         method: 'POST',
-        headers: { 'PRIVATE-TOKEN': this.token }
-      }
+        headers: { 'PRIVATE-TOKEN': this.token },
+      },
     );
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(
-        `cancelAutoMerge failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`
-      );
+      throw new Error(`cancelAutoMerge failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`);
     }
   }
 
   // ── Discussion mutations ────────────────────────────────────────────────
 
-  async resolveDiscussion(
-    projectPath: string,
-    mrIid: number,
-    discussionId: string
-  ): Promise<void> {
+  async resolveDiscussion(projectPath: string, mrIid: number, discussionId: string): Promise<void> {
     const encoded = encodeURIComponent(projectPath);
     const res = await fetch(
       `${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}/discussions/${discussionId}`,
@@ -1176,24 +1105,18 @@ export class GitLabProvider implements GitProvider {
         method: 'PUT',
         headers: {
           'PRIVATE-TOKEN': this.token,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ resolved: true })
-      }
+        body: JSON.stringify({ resolved: true }),
+      },
     );
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(
-        `resolveDiscussion failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`
-      );
+      throw new Error(`resolveDiscussion failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`);
     }
   }
 
-  async unresolveDiscussion(
-    projectPath: string,
-    mrIid: number,
-    discussionId: string
-  ): Promise<void> {
+  async unresolveDiscussion(projectPath: string, mrIid: number, discussionId: string): Promise<void> {
     const encoded = encodeURIComponent(projectPath);
     const res = await fetch(
       `${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}/discussions/${discussionId}`,
@@ -1201,16 +1124,14 @@ export class GitLabProvider implements GitProvider {
         method: 'PUT',
         headers: {
           'PRIVATE-TOKEN': this.token,
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ resolved: false })
-      }
+        body: JSON.stringify({ resolved: false }),
+      },
     );
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(
-        `unresolveDiscussion failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`
-      );
+      throw new Error(`unresolveDiscussion failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`);
     }
   }
 
@@ -1218,44 +1139,33 @@ export class GitLabProvider implements GitProvider {
 
   async retryPipeline(projectPath: string, pipelineId: number): Promise<void> {
     const encoded = encodeURIComponent(projectPath);
-    const res = await fetch(
-      `${this.baseURL}/api/v4/projects/${encoded}/pipelines/${pipelineId}/retry`,
-      {
-        method: 'POST',
-        headers: { 'PRIVATE-TOKEN': this.token }
-      }
-    );
+    const res = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/pipelines/${pipelineId}/retry`, {
+      method: 'POST',
+      headers: { 'PRIVATE-TOKEN': this.token },
+    });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(
-        `retryPipeline failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`
-      );
+      throw new Error(`retryPipeline failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`);
     }
   }
 
   async retryJob(projectPath: string, jobId: number): Promise<void> {
     const encoded = encodeURIComponent(projectPath);
-    const res = await fetch(
-      `${this.baseURL}/api/v4/projects/${encoded}/jobs/${jobId}/retry`,
-      {
-        method: 'POST',
-        headers: { 'PRIVATE-TOKEN': this.token }
-      }
-    );
+    const res = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/jobs/${jobId}/retry`, {
+      method: 'POST',
+      headers: { 'PRIVATE-TOKEN': this.token },
+    });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(
-        `retryJob failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`
-      );
+      throw new Error(`retryJob failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`);
     }
   }
 
   /** Build a Pipeline domain object from a downstream_pipeline ref + fetched jobs. */
   private async buildDownstreamPipeline(encoded: string, dp: any): Promise<Pipeline> {
-    const jobsRes = await fetch(
-      `${this.baseURL}/api/v4/projects/${encoded}/pipelines/${dp.id}/jobs?per_page=100`,
-      { headers: { 'PRIVATE-TOKEN': this.token } }
-    );
+    const jobsRes = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/pipelines/${dp.id}/jobs?per_page=100`, {
+      headers: { 'PRIVATE-TOKEN': this.token },
+    });
     const pipelineJobs: any[] = jobsRes.ok ? await jobsRes.json() : [];
     return {
       id: domainId('pipeline', dp.id),
@@ -1270,7 +1180,7 @@ export class GitLabProvider implements GitProvider {
         allowFailure: j.allow_failure || false,
         duration: j.duration ? Math.round(j.duration) : null,
         webUrl: j.web_url || null,
-      }))
+      })),
     };
   }
 
@@ -1286,15 +1196,14 @@ export class GitLabProvider implements GitProvider {
   private async resolveDownstreamPipeline(
     projectPath: string,
     jobId: number,
-    pipelineId?: number
+    pipelineId?: number,
   ): Promise<Pipeline | null> {
     const encoded = encodeURIComponent(projectPath);
 
     // Attempt 1: regular job endpoint
-    const jobRes = await fetch(
-      `${this.baseURL}/api/v4/projects/${encoded}/jobs/${jobId}`,
-      { headers: { 'PRIVATE-TOKEN': this.token } }
-    );
+    const jobRes = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/jobs/${jobId}`, {
+      headers: { 'PRIVATE-TOKEN': this.token },
+    });
     if (jobRes.ok) {
       const job: any = await jobRes.json();
       if (job.downstream_pipeline) {
@@ -1307,7 +1216,7 @@ export class GitLabProvider implements GitProvider {
     if (pipelineId) {
       const bridgesRes = await fetch(
         `${this.baseURL}/api/v4/projects/${encoded}/pipelines/${pipelineId}/bridges?per_page=100`,
-        { headers: { 'PRIVATE-TOKEN': this.token } }
+        { headers: { 'PRIVATE-TOKEN': this.token } },
       );
       if (bridgesRes.ok) {
         const bridges: any[] = await bridgesRes.json();
@@ -1349,69 +1258,54 @@ export class GitLabProvider implements GitProvider {
 
   async fetchJobTrace(projectPath: string, jobId: number): Promise<string> {
     const encoded = encodeURIComponent(projectPath);
-    const res = await fetch(
-      `${this.baseURL}/api/v4/projects/${encoded}/jobs/${jobId}/trace`,
-      { headers: { 'PRIVATE-TOKEN': this.token } }
-    );
+    const res = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/jobs/${jobId}/trace`, {
+      headers: { 'PRIVATE-TOKEN': this.token },
+    });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(
-        `fetchJobTrace failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`
-      );
+      throw new Error(`fetchJobTrace failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`);
     }
     return res.text();
   }
 
   // ── Review mutations ────────────────────────────────────────────────────
 
-  async requestReReview(
-    projectPath: string,
-    mrIid: number,
-    _reviewerUsernames?: string[]
-  ): Promise<void> {
+  async requestReReview(projectPath: string, mrIid: number, _reviewerUsernames?: string[]): Promise<void> {
     // GitLab does not have a dedicated "re-request review" endpoint.
     // The approach: fetch the current MR to get reviewer IDs, then
     // re-assign them via PUT to trigger review-requested notifications.
     const encoded = encodeURIComponent(projectPath);
 
     // Fetch current MR to get existing reviewer IDs
-    const mrRes = await fetch(
-      `${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}`,
-      { headers: { 'PRIVATE-TOKEN': this.token } }
-    );
+    const mrRes = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}`, {
+      headers: { 'PRIVATE-TOKEN': this.token },
+    });
     if (!mrRes.ok) {
       const text = await mrRes.text().catch(() => '');
-      throw new Error(
-        `requestReReview: failed to fetch MR: ${mrRes.status}${text ? ` — ${text}` : ''}`
-      );
+      throw new Error(`requestReReview: failed to fetch MR: ${mrRes.status}${text ? ` — ${text}` : ''}`);
     }
 
     const mr = (await mrRes.json()) as {
       reviewers?: Array<{ id: number }>;
     };
-    const reviewerIds = mr.reviewers?.map(r => r.id) ?? [];
+    const reviewerIds = mr.reviewers?.map((r) => r.id) ?? [];
     if (reviewerIds.length === 0) {
       // No reviewers to re-request
       return;
     }
 
     // Re-assign the same reviewers to trigger notifications
-    const res = await fetch(
-      `${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}`,
-      {
-        method: 'PUT',
-        headers: {
-          'PRIVATE-TOKEN': this.token,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ reviewer_ids: reviewerIds })
-      }
-    );
+    const res = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}`, {
+      method: 'PUT',
+      headers: {
+        'PRIVATE-TOKEN': this.token,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ reviewer_ids: reviewerIds }),
+    });
     if (!res.ok) {
       const text = await res.text().catch(() => '');
-      throw new Error(
-        `requestReReview failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`
-      );
+      throw new Error(`requestReReview failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`);
     }
   }
 
@@ -1422,14 +1316,10 @@ export class GitLabProvider implements GitProvider {
    * eventual consistency. GitLab's GraphQL may not immediately reflect
    * changes made via REST. 3 attempts: 0ms, 300ms, 600ms delay.
    */
-  private async fetchSingleMRWithRetry(
-    projectPath: string,
-    mrIid: number,
-    errorMessage: string
-  ): Promise<PullRequest> {
+  private async fetchSingleMRWithRetry(projectPath: string, mrIid: number, errorMessage: string): Promise<PullRequest> {
     for (let attempt = 0; attempt < 3; attempt++) {
       if (attempt > 0) {
-        await new Promise(r => setTimeout(r, attempt * 300));
+        await new Promise((r) => setTimeout(r, attempt * 300));
       }
       const pr = await this.fetchSingleMR(projectPath, mrIid, null);
       if (pr) return pr;
@@ -1437,25 +1327,20 @@ export class GitLabProvider implements GitProvider {
     throw new Error(errorMessage);
   }
 
-  private async runQuery<T>(
-    query: string,
-    variables?: Record<string, unknown>
-  ): Promise<T> {
+  private async runQuery<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
     const url = `${this.baseURL}/api/graphql`;
     const body = JSON.stringify({ query, variables: variables ?? {} });
     const res = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.token}`
+        Authorization: `Bearer ${this.token}`,
       },
-      body
+      body,
     });
 
     if (!res.ok) {
-      throw new Error(
-        `GraphQL request failed: ${res.status} ${res.statusText}`
-      );
+      throw new Error(`GraphQL request failed: ${res.status} ${res.statusText}`);
     }
 
     const envelope = (await res.json()) as {
@@ -1464,7 +1349,7 @@ export class GitLabProvider implements GitProvider {
     };
 
     if (envelope.errors?.length) {
-      const msg = envelope.errors.map(e => e.message).join('; ');
+      const msg = envelope.errors.map((e) => e.message).join('; ');
       throw new Error(`GraphQL errors: ${msg}`);
     }
 
