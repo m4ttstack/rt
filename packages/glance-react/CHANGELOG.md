@@ -1,5 +1,12 @@
 # @forge-glance/react
 
+## 0.3.9
+
+### Patch Changes
+
+- Updated dependencies [26d05c1]
+  - @workforge/glance-sdk@0.9.0
+
 ## 0.3.8
 
 ### Patch Changes

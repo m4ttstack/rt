@@ -1,5 +1,11 @@
 # @workforge/glance-sdk
 
+## 0.9.0
+
+### Minor Changes
+
+- 26d05c1: Feat: `fetchPullRequests` accepts `{ authorUsernames, projectPath }` to fetch every MR in a project authored by any of the given users, with full dashboard fields, in one GraphQL query per author (deduped by MR id). Lets a caller build a team board without the token user being involved in each MR and without a separate REST discovery pass.
+
 ## 0.8.1
 
 ### Patch Changes
