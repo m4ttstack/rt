@@ -409,7 +409,14 @@ function CommentsDrawer({ mr, onClose }: { mr: BoardMR; onClose: () => void }) {
       .catch(() => setFailed(true));
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    // Lock body scroll so the page's scrollbar (from the board behind) doesn't
+    // show alongside the drawer's own — no double scrollbar.
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = prevOverflow;
+    };
   }, [mr, onClose]);
   return (
     <div
