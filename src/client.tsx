@@ -25,7 +25,8 @@ interface ConfigMember {
 
 type ReviewStatus = "queued" | "reviewing" | "done" | "error";
 interface ReviewInfo { status: ReviewStatus; message?: string }
-type BoardMRWithReview = BoardMR & { review?: ReviewInfo };
+interface SlackInfo { status: "found" | "notfound"; permalink?: string; reactions: string[] }
+type BoardMRWithReview = BoardMR & { review?: ReviewInfo; slack?: SlackInfo };
 
 interface BoardData {
   title: string;
@@ -36,6 +37,7 @@ interface BoardData {
   fetchedAt: number;
   fetchError: string | null;
   local: boolean;
+  slackEnabled: boolean;
 }
 
 declare global {
@@ -104,6 +106,7 @@ const ICONS: Record<string, React.ReactNode> = {
   system: <Icon d="M2 4h20v12H2zM8 20h8m-4-4v4" />,
   menu: <Icon d="M3 6h18M3 12h18M3 18h18" />,
   close: <Icon d="M6 6l12 12M18 6L6 18" />,
+  refresh: <Icon d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />,
   people: <Icon d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />,
   settings: (
     <Icon
@@ -280,27 +283,69 @@ function ReviewBadge({ review }: { review?: ReviewInfo }) {
 
 // ── row action menu (right-click) ────────────────────────────────────────────
 
+/** The three review-signal reactions, in menu order. */
+const SLACK_MARKS: { emoji: string; glyph: string; label: string }[] = [
+  { emoji: "eyes", glyph: "👀", label: "mark 👀 on slack" },
+  { emoji: "speech_balloon", glyph: "💬", label: "mark 💬 on slack" },
+  { emoji: "white_check_mark", glyph: "✅", label: "mark ✅ on slack" },
+];
+
+/** The review menu item's label reflects current review state. */
+function reviewItemLabel(status?: ReviewStatus): string {
+  if (!status || status === "error") return "launch review";
+  if (status === "done") return "re-review";
+  return "focus review tab"; // queued / reviewing
+}
+
 interface RowMenuState {
   x: number;
   y: number;
   mr: BoardMR;
 }
 
-/** shadcn-style context menu anchored at the cursor. Dismisses on outside
-    click, Escape, scroll, or resize. `onLaunch`/`onCopy` are provided by the
-    board so the launch can drive optimistic state and a toast. */
+function MenuItem({
+  label,
+  hint,
+  trailing,
+  disabled,
+  onClick,
+}: {
+  label: React.ReactNode;
+  hint?: string;
+  trailing?: React.ReactNode;
+  disabled?: boolean;
+  onClick?: () => void;
+}) {
+  return (
+    <button className="tui-menu-item" role="menuitem" disabled={disabled} onClick={onClick}>
+      <span>{label}</span>
+      {trailing ?? (hint && <span className="tui-menu-hint">{hint}</span>)}
+    </button>
+  );
+}
+
+/** shadcn-style context menu anchored at the cursor. State-aware: the review
+    item reflects review status, and the Slack items are disabled until the
+    MR's review-request thread has been resolved. Dismisses on outside click,
+    Escape, scroll, or resize. */
 function RowMenu({
   menu,
   local,
+  slackEnabled,
   onClose,
   onLaunch,
   onCopy,
+  onResolveSlack,
+  onReactSlack,
 }: {
   menu: RowMenuState;
   local: boolean;
+  slackEnabled: boolean;
   onClose: () => void;
   onLaunch: (mr: BoardMR) => void;
   onCopy: (mr: BoardMR) => void;
+  onResolveSlack: (mr: BoardMR) => void;
+  onReactSlack: (mr: BoardMR, emoji: string) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -323,47 +368,66 @@ function RowMenu({
   }, [onClose]);
 
   const { mr } = menu;
-  // Keep the menu on-screen (estimated size; exact enough near edges).
-  const W = 220;
-  const H = local ? 148 : 112;
+  const mrx = mr as BoardMRWithReview;
+  const slack = mrx.slack;
+  const found = slack?.status === "found";
+  const showSlack = local && slackEnabled;
+  // Keep the menu on-screen; estimate generously since item count varies.
+  const W = 230;
+  const H = 60 + (local ? 34 : 0) + 68 + (showSlack ? (found ? 170 : 60) : 0);
   const left = Math.max(8, Math.min(menu.x, window.innerWidth - W - 8));
   const top = Math.max(8, Math.min(menu.y, window.innerHeight - H - 8));
+  const run = (fn: () => void) => () => {
+    fn();
+    onClose();
+  };
+  // Slack marks stay open so you can set several at once.
+  const runKeepOpen = (fn: () => void) => () => fn();
 
   return (
     <div ref={ref} className="tui-menu" style={{ left, top }} role="menu" aria-label={`actions for !${mr.iid}`}>
       <div className="tui-menu-label">!{mr.iid}</div>
+
       {local && (
-        <button
-          className="tui-menu-item"
-          role="menuitem"
-          onClick={() => {
-            onLaunch(mr);
-            onClose();
-          }}
-        >
-          launch review <span className="tui-menu-hint">herdr</span>
-        </button>
+        <MenuItem
+          label={reviewItemLabel(mrx.review?.status)}
+          hint="herdr"
+          onClick={run(() => onLaunch(mr))}
+        />
       )}
-      <button
-        className="tui-menu-item"
-        role="menuitem"
-        onClick={() => {
-          if (mr.webUrl) window.open(mr.webUrl, "_blank", "noopener");
-          onClose();
-        }}
-      >
-        open in gitlab
-      </button>
-      <button
-        className="tui-menu-item"
-        role="menuitem"
-        onClick={() => {
-          onCopy(mr);
-          onClose();
-        }}
-      >
-        copy for slack
-      </button>
+      <MenuItem label="open in gitlab" onClick={run(() => mr.webUrl && window.open(mr.webUrl, "_blank", "noopener"))} />
+      <MenuItem label="copy for slack" onClick={run(() => onCopy(mr))} />
+
+      {showSlack && (
+        <>
+          <div className="tui-menu-sep" />
+          {found ? (
+            <>
+              {SLACK_MARKS.map((m) => (
+                <MenuItem
+                  key={m.emoji}
+                  label={m.label}
+                  trailing={slack?.reactions.includes(m.emoji) ? <span className="tui-menu-check">✓</span> : undefined}
+                  onClick={runKeepOpen(() => onReactSlack(mr, m.emoji))}
+                />
+              ))}
+              {slack?.permalink && (
+                <MenuItem label="open MR post in slack" onClick={run(() => window.open(slack.permalink!, "_blank", "noopener"))} />
+              )}
+            </>
+          ) : (
+            <>
+              <MenuItem
+                label={slack?.status === "notfound" ? "no thread — retry find" : "find slack thread"}
+                onClick={run(() => onResolveSlack(mr))}
+              />
+              {SLACK_MARKS.map((m) => (
+                <MenuItem key={m.emoji} label={m.label} disabled />
+              ))}
+            </>
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -898,6 +962,8 @@ function Controls({
   pickTheme,
   canCopy,
   summaryText,
+  onRefresh,
+  refreshing,
   stacked = false,
 }: {
   state: ViewState;
@@ -908,6 +974,8 @@ function Controls({
   pickTheme: (m: ThemeMode) => void;
   canCopy: boolean;
   summaryText: string;
+  onRefresh: () => void;
+  refreshing: boolean;
   stacked?: boolean;
 }) {
   const group = <LabeledSeg legend="group" options={GROUP_KEYS} labels={GROUP_LABEL} value={state.group} onChange={(g) => update({ group: g })} />;
@@ -923,6 +991,9 @@ function Controls({
         <div className="tui-ctl-row"><span className="tui-ctl-label">sort</span>{sort}</div>
         <div className="tui-ctl-row"><span className="tui-ctl-label">view</span>{viewSeg}</div>
         <div className="tui-ctl-row"><span className="tui-ctl-label">theme</span>{themeSeg}</div>
+        <button className="tui-drawer-action" onClick={onRefresh} disabled={refreshing}>
+          {ICONS.refresh} {refreshing ? "refreshing…" : "refresh now"}
+        </button>
         {canCopy && (
           <CopyButton text={summaryText} className="tui-drawer-action" title="copy summary for Slack" label="copy summary" />
         )}
@@ -933,6 +1004,15 @@ function Controls({
   // Header: compact inline row.
   return (
     <>
+      <button
+        className={`tui-copy tui-refresh${refreshing ? " spinning" : ""}`}
+        onClick={onRefresh}
+        disabled={refreshing}
+        title="refresh now"
+        aria-label="refresh now"
+      >
+        {ICONS.refresh}
+      </button>
       {canCopy && <CopyButton text={summaryText} className="tui-copy" title="copy summary for Slack" />}
       {group}
       {sort}
@@ -981,8 +1061,8 @@ function Board() {
   };
 
   const load = useCallback(
-    () =>
-      fetch("/data.json")
+    (fresh = false) =>
+      fetch(fresh ? "/data.json?fresh=1" : "/data.json")
         .then((r) => r.json())
         .then((d: BoardData) => {
           setData(d);
@@ -1025,6 +1105,44 @@ function Board() {
       document.removeEventListener("visibilitychange", onVisible);
     };
   }, [load]);
+
+  // Merge a scoped (single-member) refresh into the current board: replace that
+  // member's rows and update their roster count, leaving everyone else untouched.
+  const mergeMember = useCallback((username: string, mrs: BoardMRWithReview[], fetchedAt: number) => {
+    setData((prev) => {
+      if (!prev) return prev;
+      const others = prev.mrs.filter((m) => m.author.username !== username);
+      const members = prev.members.map((m) => (m.username === username ? { ...m, count: mrs.length } : m));
+      return { ...prev, mrs: [...others, ...mrs], members, fetchedAt };
+    });
+  }, []);
+
+  const fetchMember = useCallback(
+    (username: string) =>
+      fetch(`/member?u=${encodeURIComponent(username)}`)
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error("bad status"))))
+        .then((d: { mrs: BoardMRWithReview[]; fetchedAt: number }) => mergeMember(username, d.mrs, d.fetchedAt)),
+    [mergeMember],
+  );
+
+  // When viewing one person, poll just their MRs every 15s — 1 query instead of
+  // the whole team, so a reviewer's comment shows up fast and cheap. The "All"
+  // view keeps the slower full poll above.
+  useEffect(() => {
+    if (state.member === "all") return;
+    const member = state.member;
+    const timer = setInterval(() => {
+      if (!document.hidden) fetchMember(member).catch(() => {});
+    }, 15_000);
+    return () => clearInterval(timer);
+  }, [state.member, fetchMember]);
+
+  const [refreshing, setRefreshing] = useState(false);
+  const refreshNow = useCallback(() => {
+    setRefreshing(true);
+    const task = state.member === "all" ? load(true) : fetchMember(state.member);
+    task.catch(() => {}).finally(() => setRefreshing(false));
+  }, [state.member, load, fetchMember]);
 
   const [showSettings, setShowSettings] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -1104,6 +1222,45 @@ function Board() {
     [addToast],
   );
 
+  const handleResolveSlack = useCallback(
+    (mr: BoardMR) => {
+      if (!mr.webUrl) return;
+      addToast(`finding slack thread for !${mr.iid}…`);
+      fetch("/slack/resolve", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mrUrl: mr.webUrl, iid: mr.iid }),
+      })
+        .then(async (r) => {
+          const body = await r.json().catch(() => ({}));
+          if (!r.ok) return addToast(`slack lookup failed for !${mr.iid} (${r.status})`);
+          addToast(body.status === "found" ? `found slack thread for !${mr.iid}` : `no slack thread found for !${mr.iid}`);
+          load();
+        })
+        .catch(() => addToast(`slack lookup failed for !${mr.iid}`));
+    },
+    [addToast, load],
+  );
+
+  const handleReactSlack = useCallback(
+    (mr: BoardMR, emoji: string) => {
+      if (!mr.webUrl) return;
+      const glyph = SLACK_MARKS.find((m) => m.emoji === emoji)?.glyph ?? emoji;
+      fetch("/slack/react", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mrUrl: mr.webUrl, emoji }),
+      })
+        .then(async (r) => {
+          if (!r.ok) return addToast(`couldn't add ${glyph} for !${mr.iid} (${r.status})`);
+          addToast(`marked ${glyph} on !${mr.iid}`);
+          load();
+        })
+        .catch(() => addToast(`couldn't add ${glyph} for !${mr.iid}`));
+    },
+    [addToast, load],
+  );
+
   // Drop optimistic entries once the server has a real review for that MR.
   useEffect(() => {
     if (!data) return;
@@ -1175,6 +1332,8 @@ function Board() {
     pickTheme,
     canCopy: filtered.length > 0,
     summaryText,
+    onRefresh: refreshNow,
+    refreshing,
   };
 
   return (
@@ -1262,9 +1421,12 @@ function Board() {
         <RowMenu
           menu={rowMenu}
           local={data.local}
+          slackEnabled={data.slackEnabled}
           onClose={() => setRowMenu(null)}
           onLaunch={handleLaunch}
           onCopy={handleCopy}
+          onResolveSlack={handleResolveSlack}
+          onReactSlack={handleReactSlack}
         />
       )}
 

@@ -1,19 +1,22 @@
 import { join, dirname, basename } from "path";
 import { readFileSync, watch } from "fs";
 import { GitLabProvider, type PullRequest } from "@workforge/glance-sdk";
-import { loadConfig, loadGitLabToken, saveMemberHidden, CONFIG_PATH } from "./config.ts";
+import { loadConfig, loadGitLabToken, loadSlackToken, saveMemberHidden, CONFIG_PATH } from "./config.ts";
 import { buildBoard, buildRoster, type BoardMR } from "./data.ts";
 import { summarizeThreads, unresolvedReviewerCount } from "./discussions.ts";
 import { SnapshotCache } from "./cache.ts";
 import { isLocalRequest } from "./local.ts";
 import { readReviewStates, reviewFilePath, writeReviewState, parseReviewRequestBody, attachReviews } from "./review-state.ts";
 import { launchReview, focusTab } from "./herdr.ts";
+import { readSlackRefs, attachSlack, resolveSlackRef, reactToMR, REVIEW_EMOJI } from "./slack.ts";
 
 const cssPath = join(import.meta.dir, "style.css");
 let css = readFileSync(cssPath, "utf-8");
 
 const config = loadConfig();
 const provider = new GitLabProvider(config.gitlabHost, loadGitLabToken());
+// Optional: enables the Slack review-thread menu actions when a token is set.
+const slackToken = loadSlackToken();
 
 /**
  * Fetch every configured project's opened MRs authored by a team member.
@@ -73,6 +76,21 @@ const cache = new SnapshotCache(async () => {
   await enrichReviewerComments(mrs);
   return mrs;
 });
+
+/**
+ * Fresh MRs for a single member — the cheap scoped refresh the client polls
+ * when viewing one person (1 author query + that member's comment enrichment,
+ * instead of the whole team). Same filtering as the full board.
+ */
+async function fetchMemberMRs(username: string): Promise<BoardMR[]> {
+  const out: PullRequest[] = [];
+  for (const projectPath of config.projects) {
+    out.push(...(await provider.fetchPullRequests({ authorUsernames: [username], projectPath, state: "opened" })));
+  }
+  const mrs = buildBoard(out, config);
+  await enrichReviewerComments(mrs);
+  return mrs;
+}
 
 /** Display names resolved from GitLab profiles, keyed by username. Long TTL. */
 const memberNames = new Map<string, string | null>();
@@ -162,8 +180,27 @@ Bun.serve({
         return new Response(css, { headers: { "content-type": "text/css; charset=utf-8" } });
       case "/app.js":
         return new Response(appJs, { headers: { "content-type": "text/javascript; charset=utf-8" } });
+      case "/member": {
+        // Scoped refresh: just one member's MRs, cheap enough to poll often.
+        const u = new URL(req.url).searchParams.get("u");
+        if (!u || !config.members.some((m) => m.username === u && !m.hidden)) {
+          return new Response("unknown member", { status: 400 });
+        }
+        void refreshMemberNames();
+        try {
+          const mrs = await fetchMemberMRs(u);
+          const withState = attachSlack(attachReviews(mrs, readReviewStates()), readSlackRefs());
+          return new Response(JSON.stringify({ mrs: withState, fetchedAt: Date.now() }), {
+            headers: { "content-type": "application/json" },
+          });
+        } catch (err) {
+          return new Response(`member fetch failed: ${err instanceof Error ? err.message : err}`, { status: 502 });
+        }
+      }
       case "/data.json": {
         void refreshMemberNames();
+        // ?fresh=1 forces a cache-bypassing refetch (the manual refresh button).
+        if (new URL(req.url).searchParams.get("fresh")) cache.invalidate();
         const snapshot = await cache.get();
         // Hidden (checked-out) members drop from the sidebar, the "All" list,
         // and its counts — but stay in `allMembers` so the settings modal can
@@ -172,6 +209,7 @@ Bun.serve({
         const visibleNames = new Set(visible.map((m) => m.username));
         const visibleMrs = snapshot.mrs.filter((mr) => visibleNames.has(mr.author.username));
         const reviews = readReviewStates();
+        const slackRefs = readSlackRefs();
         return new Response(
           JSON.stringify({
             title: config.title,
@@ -184,8 +222,9 @@ Bun.serve({
               // Counted from the full snapshot so hidden members still show their number.
               count: snapshot.mrs.filter((mr) => mr.author.username === m.username).length,
             })),
-            mrs: attachReviews(visibleMrs, reviews),
+            mrs: attachSlack(attachReviews(visibleMrs, reviews), slackRefs),
             local: isLocalRequest(req),
+            slackEnabled: !!slackToken,
             fetchedAt: snapshot.fetchedAt,
             fetchError: snapshot.fetchError,
           }),
@@ -273,6 +312,55 @@ Bun.serve({
             writeReviewState(statePath, { status: "error", message: "failed to launch review pane" });
           });
         return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });
+      }
+      case "/slack/resolve": {
+        // Find (and cache) the MR's review-request message in the team channel.
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+        if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
+        if (!slackToken) return new Response("slack not configured", { status: 400 });
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return new Response("invalid json", { status: 400 });
+        }
+        const parsed = parseReviewRequestBody(body);
+        if (!parsed) return new Response("expected { mrUrl: string, iid: number }", { status: 400 });
+        try {
+          const ref = await resolveSlackRef(slackToken, parsed.mrUrl, parsed.iid);
+          return new Response(
+            JSON.stringify({ ok: true, status: ref.status, permalink: ref.permalink, reactions: ref.reactions ?? [] }),
+            { headers: { "content-type": "application/json" } },
+          );
+        } catch (err) {
+          return new Response(`slack resolve failed: ${err instanceof Error ? err.message : err}`, { status: 502 });
+        }
+      }
+      case "/slack/react": {
+        // Add a review-signal reaction (eyes/speech_balloon/white_check_mark) to
+        // the MR's cached review-request message.
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+        if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
+        if (!slackToken) return new Response("slack not configured", { status: 400 });
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return new Response("invalid json", { status: 400 });
+        }
+        const { mrUrl, emoji } = (body ?? {}) as { mrUrl?: unknown; emoji?: unknown };
+        const allowed = Object.values(REVIEW_EMOJI) as string[];
+        if (typeof mrUrl !== "string" || typeof emoji !== "string" || !allowed.includes(emoji)) {
+          return new Response(`expected { mrUrl: string, emoji: one of ${allowed.join("|")} }`, { status: 400 });
+        }
+        try {
+          const ref = await reactToMR(slackToken, mrUrl, emoji);
+          return new Response(JSON.stringify({ ok: true, reactions: ref.reactions ?? [] }), {
+            headers: { "content-type": "application/json" },
+          });
+        } catch (err) {
+          return new Response(`slack react failed: ${err instanceof Error ? err.message : err}`, { status: 502 });
+        }
       }
       default:
         return new Response("not found", { status: 404 });
