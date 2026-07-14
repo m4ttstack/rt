@@ -62,13 +62,13 @@ function ageBucket(lastActivity: string | null, now: number): { label: string; o
     status label: a formal "changes requested" review is distinct from someone
     just leaving comments. Partial approvals fold into "needs review". */
 function statusBucket(mr: BoardMR): { label: string; order: number } {
-  const b = mr.blockers;
-  if (b.hasConflicts) return { label: "conflicts", order: 0 };
-  if (b.pipelineFailing) return { label: "ci failing", order: 1 };
-  if (hasChangesRequested(mr)) return { label: "changes requested", order: 2 };
-  if (mr.reviews.isApproved) return { label: "approved", order: 5 };
-  if (mr.reviewerComments > 0) return { label: "commented", order: 3 };
-  return { label: "needs review", order: 4 };
+  // Review-state axis only. Mechanical blockers (conflicts / CI) are row flags,
+  // not their own groups, so an MR with conflicts still shows under its review
+  // state instead of being hidden in a "conflicts" bucket.
+  if (hasChangesRequested(mr)) return { label: "changes requested", order: 0 };
+  if (mr.reviews.isApproved) return { label: "approved", order: 3 };
+  if (mr.reviewerComments > 0) return { label: "commented", order: 1 };
+  return { label: "needs review", order: 2 };
 }
 
 /** Group by a keyed bucket, ordering groups by the bucket's `order`. */

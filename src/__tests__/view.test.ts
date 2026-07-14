@@ -83,22 +83,15 @@ describe("groupMRs author", () => {
 });
 
 describe("groupMRs status", () => {
-  test("severity order: conflicts before needs review before approved", () => {
+  test("mechanical blockers (conflicts/ci) do not form their own groups; MRs bucket by review state", () => {
     const list = [
-      mr({ iid: 1, blockers: { hasConflicts: false, pipelineFailing: false } as any, reviews: { required: 2, given: 0, isApproved: false } as any }),
-      mr({ iid: 2, blockers: { hasConflicts: true } as any }),
-      mr({ iid: 3, blockers: {} as any, reviews: { required: 2, given: 2, isApproved: true } as any }),
+      // conflicts but no review yet -> needs review, not a "conflicts" group
+      mr({ iid: 1, blockers: { hasConflicts: true } as any, reviews: { required: 2, given: 0, isApproved: false } as any }),
+      // ci failing but approved -> still approved
+      mr({ iid: 2, blockers: { pipelineFailing: true } as any, reviews: { required: 2, given: 2, isApproved: true } as any }),
     ];
     const groups = groupMRs(list, "status", [], NOW);
-    expect(groups.map((g) => g.label)).toEqual(["conflicts", "needs review", "approved"]);
-  });
-
-  test("ci failing: blockers.pipelineFailing true buckets separately from conflicts", () => {
-    const list = [
-      mr({ iid: 1, blockers: { pipelineFailing: true } as any }),
-    ];
-    const groups = groupMRs(list, "status", [], NOW);
-    expect(groups.map((g) => g.label)).toEqual(["ci failing"]);
+    expect(groups.map((g) => g.label)).toEqual(["needs review", "approved"]);
   });
 
   test("partial approvals fold into needs review", () => {
@@ -133,24 +126,15 @@ describe("groupMRs status", () => {
     expect(groups.map((g) => g.label)).toEqual(["approved"]);
   });
 
-  test("full severity order with all six buckets present", () => {
+  test("review-state order: changes requested, commented, needs review, approved", () => {
     const list = [
       mr({ iid: 1, blockers: {} as any, reviews: { required: 2, given: 2, isApproved: true } as any }), // approved
       mr({ iid: 2, reviewerComments: 2, blockers: {} as any, reviews: { required: 2, given: 0, isApproved: false } as any }), // commented
       mr({ iid: 3, blockers: {} as any, reviews: { required: 2, given: 0, isApproved: false } as any }), // needs review
       mr({ iid: 4, blockers: {} as any, reviews: { required: 2, given: 0, isApproved: false, reviewers: [{ reviewState: "REQUESTED_CHANGES" }] } as any }), // changes requested
-      mr({ iid: 5, blockers: { pipelineFailing: true } as any }), // ci failing
-      mr({ iid: 6, blockers: { hasConflicts: true } as any }), // conflicts
     ];
     const groups = groupMRs(list, "status", [], NOW);
-    expect(groups.map((g) => g.label)).toEqual([
-      "conflicts",
-      "ci failing",
-      "changes requested",
-      "commented",
-      "needs review",
-      "approved",
-    ]);
+    expect(groups.map((g) => g.label)).toEqual(["changes requested", "commented", "needs review", "approved"]);
   });
 });
 
