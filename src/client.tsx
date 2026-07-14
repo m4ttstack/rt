@@ -4,6 +4,8 @@ import { extractTicketId, ticketUrl } from "./ticket.ts";
 import type { BoardMR } from "./data.ts";
 import { hasChangesRequested } from "./data.ts";
 import { getReviewDisplayState } from "@workforge/glance-sdk";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import { filterByMember, sortMRs, groupMRs, parseViewState, serializeViewState, GROUP_KEYS, SORT_KEYS } from "./view.ts";
 import type { GroupKey, SortKey, ViewState } from "./view.ts";
 
@@ -482,7 +484,16 @@ function CommentsDrawer({ mr, onClose }: { mr: BoardMR; onClose: () => void }) {
                           {ago(n.at, now)} ↗
                         </a>
                       </div>
-                      <div className="tui-cd-note-body">{n.body}</div>
+                      <div className="tui-cd-note-body">
+                        <ReactMarkdown
+                          remarkPlugins={[remarkGfm]}
+                          components={{
+                            a: ({ node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
+                          }}
+                        >
+                          {n.body}
+                        </ReactMarkdown>
+                      </div>
                     </div>
                   );
                 })}

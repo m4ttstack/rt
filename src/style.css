@@ -194,6 +194,8 @@ body {
   /* Card sits on --card so it contrasts with the --panel drawer. */
   background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
   border-left: 3px solid var(--border);
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
 }
 .tui-cd-thread.resolved { border-left-color: var(--dot-ok); }
 .tui-cd-thread.replied { border-left-color: var(--accent); }
@@ -217,8 +219,35 @@ body {
 .tui-cd-note-time:hover { color: var(--accent); }
 .tui-cd-note-body {
   font: 400 0.74rem/1.5 var(--font-sans); color: var(--fg);
-  white-space: pre-wrap; overflow-wrap: anywhere;
+  overflow-wrap: anywhere;
 }
+/* Rendered markdown inside a note. */
+.tui-cd-note-body > :first-child { margin-top: 0; }
+.tui-cd-note-body > :last-child { margin-bottom: 0; }
+.tui-cd-note-body p { margin: 0 0 0.5rem; }
+.tui-cd-note-body a { color: var(--accent); }
+.tui-cd-note-body code {
+  font-family: var(--font-mono); font-size: 0.86em;
+  background: color-mix(in srgb, var(--fg) 8%, transparent); border-radius: 3px; padding: 0.05em 0.3em;
+}
+.tui-cd-note-body pre {
+  background: color-mix(in srgb, var(--fg) 8%, transparent); border-radius: 6px;
+  padding: 0.5rem 0.6rem; overflow-x: auto; margin: 0 0 0.5rem;
+}
+.tui-cd-note-body pre code { background: none; padding: 0; font-size: 0.82em; }
+.tui-cd-note-body ul, .tui-cd-note-body ol { margin: 0 0 0.5rem; padding-left: 1.2rem; }
+.tui-cd-note-body li { margin: 0.1rem 0; }
+.tui-cd-note-body blockquote {
+  margin: 0 0 0.5rem; padding-left: 0.6rem; border-left: 2px solid var(--border);
+  color: var(--muted);
+}
+.tui-cd-note-body h1, .tui-cd-note-body h2, .tui-cd-note-body h3,
+.tui-cd-note-body h4, .tui-cd-note-body h5, .tui-cd-note-body h6 {
+  margin: 0.4rem 0 0.3rem; font-size: 0.9rem; font-weight: 700;
+}
+.tui-cd-note-body table { border-collapse: collapse; margin: 0 0 0.5rem; font-size: 0.95em; }
+.tui-cd-note-body th, .tui-cd-note-body td { border: 1px solid var(--border-soft); padding: 0.2rem 0.4rem; }
+.tui-cd-note-body img { max-width: 100%; }
 
 /* ── ticket link ──────────────────────────────────────────────────── */
 .tui-ticket { color: var(--purple); opacity: 0.75; flex-shrink: 0; align-self: center; display: inline-flex; padding: 0.15rem; }
