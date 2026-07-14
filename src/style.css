@@ -149,6 +149,28 @@ body {
 .t-cyan { color: var(--cyan); } .t-muted { color: var(--muted); } .t-accent { color: var(--accent); }
 .t-dim .t-ok, .t-dim .t-bad { opacity: 0.75; }
 
+/* ── comments hover card ──────────────────────────────────────────── */
+.tui-comments-wrap { position: relative; cursor: default; }
+.tui-comments-card {
+  position: absolute; top: 1.5em; right: 0; z-index: 30;
+  width: max-content; max-width: 340px;
+  display: flex; flex-direction: column; gap: 0.4rem;
+  background: var(--panel); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 0.5rem 0.6rem; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+  font-size: 0.72rem; font-weight: 400; white-space: normal; text-align: left;
+}
+.tui-comments-empty { color: var(--muted); }
+.tui-comment-thread { display: flex; gap: 0.45rem; align-items: baseline; }
+.tui-comment-icon { flex-shrink: 0; }
+.tui-comment-thread.resolved .tui-comment-icon { color: var(--dot-ok); }
+.tui-comment-thread.replied .tui-comment-icon { color: var(--accent); }
+.tui-comment-thread.awaiting .tui-comment-icon { color: var(--dot-warn); }
+.tui-comment-main { min-width: 0; display: flex; flex-direction: column; gap: 0.1rem; }
+.tui-comment-status { font-weight: 600; }
+.tui-comment-reviewer { color: var(--muted); font-weight: 400; }
+.tui-comment-snippet { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 290px; }
+
 /* ── ticket link ──────────────────────────────────────────────────── */
 .tui-ticket { color: var(--purple); opacity: 0.75; flex-shrink: 0; align-self: center; display: inline-flex; padding: 0.15rem; }
 .tui-ticket:hover { opacity: 1; }

@@ -307,8 +307,9 @@ function StatusDot({ mr }: { mr: BoardMR }) {
   );
 }
 
-/** The single most important state, for the row's right side. */
-function statusPhrase(mr: BoardMR): { text: string; cls: string } {
+/** The single most important state, for the row's right side. `comments` marks
+    the state that gets the hover card of per-thread comment status. */
+function statusPhrase(mr: BoardMR): { text: string; cls: string; comments?: boolean } {
   const b = mr.blockers;
   const comments = mr.unresolvedThreads;
   if (b?.hasConflicts) return { text: "conflicts", cls: "t-bad" };
@@ -318,15 +319,81 @@ function statusPhrase(mr: BoardMR): { text: string; cls: string } {
   if (hasChangesRequested(mr)) return { text: "changes requested", cls: "t-bad" };
   if (mr.reviews.isApproved) return { text: "approved", cls: "t-ok" };
   // Comments without a formal verdict: someone left feedback to look at.
-  if (comments > 0) return { text: `${comments} comment${comments === 1 ? "" : "s"}`, cls: "t-warn" };
+  if (comments > 0) return { text: `${comments} comment${comments === 1 ? "" : "s"}`, cls: "t-warn", comments: true };
   if (mr.reviews.required > 0 && mr.reviews.given > 0)
     return { text: `${mr.reviews.given}/${mr.reviews.required} approved`, cls: "t-warn" };
   return { text: "needs review", cls: "t-muted" };
 }
 
 function StatusPhrase({ mr }: { mr: BoardMR }) {
-  const { text, cls } = statusPhrase(mr);
+  const { text, cls, comments } = statusPhrase(mr);
+  if (comments) return <CommentsCard mr={mr} label={text} cls={cls} />;
   return <span className={`tui-phrase ${cls}`}>{text}</span>;
+}
+
+type CommentThread = { status: "resolved" | "replied" | "awaiting"; reviewer: string | null; snippet: string };
+const THREAD_ICON: Record<CommentThread["status"], string> = { resolved: "✓", replied: "↩", awaiting: "●" };
+const THREAD_LABEL: Record<CommentThread["status"], string> = {
+  resolved: "resolved",
+  replied: "author replied",
+  awaiting: "awaiting author",
+};
+
+/** Hover the "N comments" label to lazily load that MR's threads and see, per
+    thread, whether it's resolved, the author replied, or it's awaiting them. */
+function CommentsCard({ mr, label, cls }: { mr: BoardMR; label: string; cls: string }) {
+  const [open, setOpen] = useState(false);
+  const [threads, setThreads] = useState<CommentThread[] | null>(null);
+  const [more, setMore] = useState(0);
+  const [failed, setFailed] = useState(false);
+  const load = () => {
+    if (threads || failed) return;
+    const params = new URLSearchParams({ repo: mr.repositoryId, iid: String(mr.iid), author: mr.author.username });
+    fetch(`/discussions?${params}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("bad status"))))
+      .then((d: { threads: CommentThread[]; more?: number }) => {
+        setThreads(d.threads);
+        setMore(d.more ?? 0);
+      })
+      .catch(() => setFailed(true));
+  };
+  return (
+    <span
+      className={`tui-phrase tui-comments-wrap ${cls}`}
+      onMouseEnter={() => {
+        setOpen(true);
+        load();
+      }}
+      onMouseLeave={() => setOpen(false)}
+    >
+      {label}
+      {open && (
+        <span className="tui-comments-card" onClick={(e) => e.stopPropagation()}>
+          {failed ? (
+            <span className="tui-comments-empty">couldn't load comments</span>
+          ) : !threads ? (
+            <span className="tui-comments-empty">loading…</span>
+          ) : threads.length === 0 ? (
+            <span className="tui-comments-empty">no comment threads</span>
+          ) : (
+            threads.map((t, i) => (
+              <span key={i} className={`tui-comment-thread ${t.status}`}>
+                <span className="tui-comment-icon">{THREAD_ICON[t.status]}</span>
+                <span className="tui-comment-main">
+                  <span className="tui-comment-status">
+                    {THREAD_LABEL[t.status]}
+                    {t.reviewer && <span className="tui-comment-reviewer"> · {t.reviewer}</span>}
+                  </span>
+                  {t.snippet && <span className="tui-comment-snippet">{t.snippet}</span>}
+                </span>
+              </span>
+            ))
+          )}
+          {more > 0 && <span className="tui-comments-empty">+{more} more</span>}
+        </span>
+      )}
+    </span>
+  );
 }
 
 function MetaTokens({ mr, now }: { mr: BoardMR; now: number }) {

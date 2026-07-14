@@ -181,6 +181,47 @@ Bun.serve({
           headers: { "content-type": "application/json" },
         });
       }
+      case "/discussions": {
+        // Lazy per-MR comment-thread status, fetched on hover of the "N comments"
+        // label. Per thread: resolved, the author replied last, or it's awaiting
+        // the author. Only fetched for the one MR the user hovers.
+        const { searchParams } = new URL(req.url);
+        const repo = searchParams.get("repo");
+        const iid = Number(searchParams.get("iid"));
+        const author = searchParams.get("author");
+        if (!repo || !iid) return new Response("expected repo & iid", { status: 400 });
+        try {
+          const detail = await provider.fetchMRDiscussions(repo, iid);
+          const threads: Array<{ status: "resolved" | "replied" | "awaiting"; reviewer: string | null; snippet: string }> = [];
+          for (const d of detail.discussions) {
+            // GitLab puts resolvable/resolved on the notes, not the discussion.
+            // A real comment thread has ≥1 resolvable note; this also skips
+            // system notes and bot linkbacks (resolvable=false).
+            const notes = d.notes.filter((n) => !n.system);
+            const resolvable = notes.filter((n) => n.resolvable);
+            if (!resolvable.length) continue;
+            const resolved = resolvable.every((n) => n.resolved === true);
+            const last = notes[notes.length - 1]!;
+            const status = resolved ? "resolved" : author && last.author?.username === author ? "replied" : "awaiting";
+            const starter = resolvable[0]!.author;
+            threads.push({
+              status,
+              reviewer: starter?.name ?? starter?.username ?? null,
+              snippet: (resolvable[0]!.body ?? "").replace(/\s+/g, " ").trim().slice(0, 90),
+            });
+          }
+          // Actionable first (awaiting the author), then replied, then resolved.
+          const rank = { awaiting: 0, replied: 1, resolved: 2 };
+          threads.sort((a, b) => rank[a.status] - rank[b.status]);
+          const CAP = 12;
+          return new Response(
+            JSON.stringify({ threads: threads.slice(0, CAP), more: Math.max(0, threads.length - CAP) }),
+            { headers: { "content-type": "application/json" } },
+          );
+        } catch (err) {
+          return new Response(`discussions fetch failed: ${err instanceof Error ? err.message : err}`, { status: 502 });
+        }
+      }
       default:
         return new Response("not found", { status: 404 });
     }

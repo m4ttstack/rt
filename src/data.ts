@@ -10,6 +10,8 @@ export type BoardMR = MRDashboardProps & {
   createdAt: string | null;
   unresolvedThreads: number;
   pipelineState: PipelineState;
+  /** Scoped repo id ("gitlab:42"), for the lazy discussions fetch on hover. */
+  repositoryId: string;
 };
 
 export interface Snapshot {
@@ -68,6 +70,7 @@ export function buildBoard(prs: PullRequest[], config: BoardConfig, now: number 
       createdAt: pr.createdAt,
       unresolvedThreads: pr.unresolvedThreadCount,
       pipelineState: derivePipelineState(props),
+      repositoryId: pr.repositoryId,
     });
   }
   return out;
