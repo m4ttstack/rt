@@ -529,12 +529,11 @@ function StatusDot({ mr }: { mr: BoardMR }) {
 
 /** The single most important state, for the row's right side. `comments` marks
     the state that gets the hover card of per-thread comment status. */
+/** The review-state phrase — the human review axis only. Mechanical blockers
+    (conflicts / ci) are NOT folded in here; they render as flag chips above the
+    title so this always shows where the MR actually is in review. */
 function statusPhrase(mr: BoardMR): { text: string; cls: string; comments?: boolean } {
-  const b = mr.blockers;
   const comments = mr.reviewerComments;
-  if (b?.hasConflicts) return { text: "conflicts", cls: "t-bad" };
-  if (b?.pipelineFailing) return { text: "ci failing", cls: "t-bad" };
-  if (b?.pipelineRunning) return { text: "ci running", cls: "t-warn" };
   // Formal "changes requested" reviewer state — a reviewer explicitly blocked it.
   if (hasChangesRequested(mr)) return { text: "changes requested", cls: "t-bad" };
   if (mr.reviews.isApproved) return { text: "approved", cls: "t-ok" };
@@ -543,6 +542,29 @@ function statusPhrase(mr: BoardMR): { text: string; cls: string; comments?: bool
   if (mr.reviews.required > 0 && mr.reviews.given > 0)
     return { text: `${mr.reviews.given}/${mr.reviews.required} approved`, cls: "t-warn" };
   return { text: "needs review", cls: "t-muted" };
+}
+
+/** Mechanical blockers shown as chips (additive to the review phrase), most
+    severe first. Empty when the MR has no conflict/CI issue. */
+function statusFlags(mr: BoardMR): { text: string; cls: string }[] {
+  const b = mr.blockers;
+  const flags: { text: string; cls: string }[] = [];
+  if (b?.hasConflicts) flags.push({ text: "conflicts", cls: "t-bad" });
+  if (b?.pipelineFailing) flags.push({ text: "ci failing", cls: "t-bad" });
+  if (b?.pipelineRunning) flags.push({ text: "ci running", cls: "t-warn" });
+  return flags;
+}
+
+function StatusFlags({ mr }: { mr: BoardMR }) {
+  return (
+    <>
+      {statusFlags(mr).map((f) => (
+        <span key={f.text} className={`tui-flag ${f.cls}`}>
+          {f.text}
+        </span>
+      ))}
+    </>
+  );
 }
 
 function StatusPhrase({ mr }: { mr: BoardMR }) {
@@ -781,9 +803,10 @@ function RowView({
             onClick={(e) => onRowClick(e, mr)}
             onContextMenu={(e) => onContext(e, mr)}
           >
-            {(mr as BoardMRWithReview).review && (
+            {((mr as BoardMRWithReview).review || statusFlags(mr).length > 0) && (
               <div className="tui-row-review">
                 <ReviewBadge review={(mr as BoardMRWithReview).review} />
+                <StatusFlags mr={mr} />
               </div>
             )}
             <div className="tui-row-1">

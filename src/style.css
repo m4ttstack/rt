@@ -409,8 +409,13 @@ body {
   flex-shrink: 0;
 }
 /* review badge sits on its own line above the title */
-.tui-row-review { margin-bottom: 5px; }
+.tui-row-review { margin-bottom: 5px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .tui-card-review { margin: 2px 0 6px; }
+/* mechanical-blocker chips (conflicts / ci), additive to the review phrase */
+.tui-flag {
+  font-size: 11px; line-height: 1.5; padding: 0 6px; border-radius: 4px;
+  border: 1px solid currentColor; white-space: nowrap; opacity: 0.9;
+}
 .tui-review-queued { opacity: 0.7; color: var(--muted); }
 .tui-review-reviewing { color: var(--dot-warn); border-color: currentColor; animation: tui-review-pulse 1.4s ease-in-out infinite; }
 .tui-review-done { color: var(--dot-ok); border-color: currentColor; }
