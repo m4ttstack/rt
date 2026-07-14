@@ -7,6 +7,8 @@
   --fg: #111; --muted: #8990b3; --accent: #2e7de9; --card: #f6f6fa;
   --green: #587539; --red: #f52a65; --amber: #8c6c3e; --purple: #7847bd; --cyan: #007197;
   --grid-line: rgba(52, 59, 88, 0.05);
+  /* Saturated, high-contrast status-dot colors (independent of text greens). */
+  --dot-ok: #1f9d3a; --dot-warn: #e08a00; --dot-bad: #e5153f;
 }
 :root.dark {
   color-scheme: dark;
@@ -14,6 +16,7 @@
   --fg: #e3e7f6; --muted: #7e86ad; --accent: #7aa2f7; --card: #262b41;
   --green: #9ece6a; --red: #f7768e; --amber: #e0af68; --purple: #bb9af7; --cyan: #7dcfff;
   --grid-line: rgba(122, 162, 247, 0.045);
+  --dot-ok: #4ade5b; --dot-warn: #ffbb3d; --dot-bad: #ff5c72;
 }
 
 * { box-sizing: border-box; }
@@ -95,15 +98,18 @@ body {
 }
 .tui-row-1 { display: flex; align-items: baseline; gap: 0.55rem; min-width: 0; }
 .tui-iid { color: var(--muted); font-size: 0.78rem; flex-shrink: 0; }
-.tui-title { font-weight: 400; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tui-title { font-weight: 200; font-size: 0.75rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tui-row-2 { display: flex; align-items: baseline; gap: 0.55rem; color: var(--muted); font-size: 0.6rem; margin-top: 0.1rem; }
 .tui-branch { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tui-arrow { color: var(--muted); opacity: 0.7; }
 
 /* ── status dot + tooltip ─────────────────────────────────────────── */
-.tui-dot.ok { color: var(--green); }
-.tui-dot.warn { color: var(--amber); }
-.tui-dot.bad { color: var(--red); }
+.tui-dot {
+  font-size: 1.35em; line-height: 1; display: inline-block; vertical-align: middle;
+}
+.tui-dot.ok { color: var(--dot-ok); }
+.tui-dot.warn { color: var(--dot-warn); }
+.tui-dot.bad { color: var(--dot-bad); }
 .tui-dot-wrap { position: relative; flex-shrink: 0; }
 .tui-dot-wrap::after {
   content: attr(data-tip);
@@ -119,7 +125,7 @@ body {
 .tui-dot-wrap:hover::after { opacity: 1; visibility: visible; }
 
 /* ── tokens ───────────────────────────────────────────────────────── */
-.tui-phrase { font-size: 0.76rem; flex-shrink: 0; white-space: nowrap; }
+.tui-phrase { font-size: 0.7rem; flex-shrink: 0; white-space: nowrap; }
 .tui-meta { display: inline-flex; gap: 0.8rem; font-size: 0.76rem; flex-shrink: 0; white-space: nowrap; }
 .t-ok { color: var(--green); } .t-bad { color: var(--red); } .t-warn { color: var(--amber); }
 .t-cyan { color: var(--cyan); } .t-muted { color: var(--muted); } .t-accent { color: var(--accent); }
