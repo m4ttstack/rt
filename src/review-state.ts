@@ -78,6 +78,14 @@ export function readReviewStates(
   return out;
 }
 
+/** Attach each MR's review state (matched by webUrl) as a `review` field. Non-mutating. */
+export function attachReviews<T extends { webUrl?: string | null }>(
+  mrs: T[],
+  reviews: Map<string, ReviewState>,
+): Array<T & { review?: ReviewState }> {
+  return mrs.map((mr) => (mr.webUrl && reviews.has(mr.webUrl) ? { ...mr, review: reviews.get(mr.webUrl) } : mr));
+}
+
 /** Validate an incoming POST /review body. Returns null on any shape mismatch. */
 export function parseReviewRequestBody(body: unknown): { mrUrl: string; iid: number } | null {
   if (!body || typeof body !== "object") return null;
