@@ -334,11 +334,6 @@ function MetaTokens({ mr, now }: { mr: BoardMR; now: number }) {
           <span className="t-ok">+{mr.diff.additions}</span> <span className="t-bad">−{mr.diff.deletions}</span>
         </span>
       )}
-      {mr.unresolvedThreads > 0 && (
-        <span className="t-warn" title={`${mr.unresolvedThreads} comment${mr.unresolvedThreads === 1 ? "" : "s"} to address`}>
-          💬 {mr.unresolvedThreads}
-        </span>
-      )}
       <span className="t-muted" title="last updated">{ago(mr.updatedAt, now)}</span>
     </span>
   );
