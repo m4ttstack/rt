@@ -308,10 +308,14 @@ function StatusDot({ mr }: { mr: BoardMR }) {
 /** The single most important state, for the row's right side. */
 function statusPhrase(mr: BoardMR): { text: string; cls: string } {
   const b = mr.blockers;
+  const comments = mr.unresolvedThreads;
   if (b?.hasConflicts) return { text: "conflicts", cls: "t-bad" };
   if (b?.pipelineFailing) return { text: "ci failing", cls: "t-bad" };
   if (b?.pipelineRunning) return { text: "ci running", cls: "t-warn" };
   if (mr.reviews.isApproved) return { text: "approved", cls: "t-ok" };
+  // Team culture: comments without approval mean changes are needed. Surface
+  // that so a reviewed-with-feedback MR doesn't read the same as an untouched one.
+  if (comments > 0) return { text: `${comments} comment${comments === 1 ? "" : "s"}`, cls: "t-warn" };
   if (mr.reviews.required > 0 && mr.reviews.given > 0)
     return { text: `${mr.reviews.given}/${mr.reviews.required} approved`, cls: "t-warn" };
   return { text: "needs review", cls: "t-muted" };
@@ -328,6 +332,11 @@ function MetaTokens({ mr, now }: { mr: BoardMR; now: number }) {
       {mr.diff && (
         <span className="t-dim" title={`${mr.diff.filesChanged} files changed`}>
           <span className="t-ok">+{mr.diff.additions}</span> <span className="t-bad">−{mr.diff.deletions}</span>
+        </span>
+      )}
+      {mr.unresolvedThreads > 0 && (
+        <span className="t-warn" title={`${mr.unresolvedThreads} comment${mr.unresolvedThreads === 1 ? "" : "s"} to address`}>
+          💬 {mr.unresolvedThreads}
         </span>
       )}
       <span className="t-muted" title="last updated">{ago(mr.updatedAt, now)}</span>
