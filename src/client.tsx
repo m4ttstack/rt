@@ -47,11 +47,9 @@ const GROUP_LABEL: Record<GroupKey, string> = {
   age: "age",
   author: "author",
   status: "status",
-  pipeline: "pipeline",
 };
 const SORT_LABEL: Record<SortKey, string> = {
   oldest: "oldest",
-  pipeline: "pipeline",
   progress: "progress",
 };
 

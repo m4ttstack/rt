@@ -10,6 +10,7 @@ function mr(overrides: Partial<BoardMR>): BoardMR {
     createdAt: "2026-07-01T00:00:00Z",
     updatedAt: "2026-07-01T00:00:00Z",
     pipelineState: "none",
+    unresolvedThreads: 0,
     reviews: { required: 2, given: 0, isApproved: false },
     blockers: {},
     ...overrides,
@@ -34,16 +35,6 @@ describe("sortMRs", () => {
       mr({ iid: 3, createdAt: "2026-07-01T00:00:00Z" }),
     ];
     expect(sortMRs(list, "oldest").map((m) => m.iid)).toEqual([3, 1, 2]);
-  });
-
-  test("pipeline: failed, running, none, passed", () => {
-    const list = [
-      mr({ iid: 1, pipelineState: "passed" }),
-      mr({ iid: 2, pipelineState: "failed" }),
-      mr({ iid: 3, pipelineState: "none" }),
-      mr({ iid: 4, pipelineState: "running" }),
-    ];
-    expect(sortMRs(list, "pipeline").map((m) => m.iid)).toEqual([2, 4, 3, 1]);
   });
 
   test("progress: highest approval ratio first", () => {
@@ -109,7 +100,7 @@ describe("groupMRs status", () => {
     expect(groups.map((g) => g.label)).toEqual(["ci failing"]);
   });
 
-  test("in review: some approvals given but not approved, and no conflicts/ci-failing", () => {
+  test("in review: some approvals given but not approved, and no conflicts/ci-failing/comments", () => {
     const list = [
       mr({ iid: 1, blockers: {} as any, reviews: { required: 2, given: 1, isApproved: false } as any }),
     ];
@@ -117,28 +108,40 @@ describe("groupMRs status", () => {
     expect(groups.map((g) => g.label)).toEqual(["in review"]);
   });
 
-  test("full severity order with all five buckets present", () => {
+  test("changes needed: unresolved comments and not approved bucket separately", () => {
+    const list = [
+      mr({ iid: 1, unresolvedThreads: 3, reviews: { required: 2, given: 0, isApproved: false } as any }),
+    ];
+    const groups = groupMRs(list, "status", [], NOW);
+    expect(groups.map((g) => g.label)).toEqual(["changes needed"]);
+  });
+
+  test("approved outranks changes needed: approved MR with comments still buckets approved", () => {
+    const list = [
+      mr({ iid: 1, unresolvedThreads: 3, reviews: { required: 2, given: 2, isApproved: true } as any }),
+    ];
+    const groups = groupMRs(list, "status", [], NOW);
+    expect(groups.map((g) => g.label)).toEqual(["approved"]);
+  });
+
+  test("full severity order with all six buckets present", () => {
     const list = [
       mr({ iid: 1, blockers: {} as any, reviews: { required: 2, given: 2, isApproved: true } as any }), // approved
       mr({ iid: 2, blockers: {} as any, reviews: { required: 2, given: 1, isApproved: false } as any }), // in review
       mr({ iid: 3, blockers: {} as any, reviews: { required: 2, given: 0, isApproved: false } as any }), // needs review
-      mr({ iid: 4, blockers: { pipelineFailing: true } as any }), // ci failing
-      mr({ iid: 5, blockers: { hasConflicts: true } as any }), // conflicts
+      mr({ iid: 4, unresolvedThreads: 2, blockers: {} as any, reviews: { required: 2, given: 0, isApproved: false } as any }), // changes needed
+      mr({ iid: 5, blockers: { pipelineFailing: true } as any }), // ci failing
+      mr({ iid: 6, blockers: { hasConflicts: true } as any }), // conflicts
     ];
     const groups = groupMRs(list, "status", [], NOW);
-    expect(groups.map((g) => g.label)).toEqual(["conflicts", "ci failing", "needs review", "in review", "approved"]);
-  });
-});
-
-describe("groupMRs pipeline", () => {
-  test("order failed, running, none, passed", () => {
-    const list = [
-      mr({ iid: 1, pipelineState: "passed" }),
-      mr({ iid: 2, pipelineState: "failed" }),
-      mr({ iid: 3, pipelineState: "none" }),
-    ];
-    const groups = groupMRs(list, "pipeline", [], NOW);
-    expect(groups.map((g) => g.label)).toEqual(["pipeline failed", "no pipeline", "pipeline passed"]);
+    expect(groups.map((g) => g.label)).toEqual([
+      "conflicts",
+      "ci failing",
+      "changes needed",
+      "needs review",
+      "in review",
+      "approved",
+    ]);
   });
 });
 
@@ -150,10 +153,10 @@ describe("parseViewState", () => {
     expect(parseViewState("", null, members)).toEqual(DEFAULT_VIEW);
   });
   test("URL wins over localStorage", () => {
-    expect(parseViewState("?member=bob&group=status", { member: "alice", sort: "pipeline" }, members)).toEqual({
+    expect(parseViewState("?member=bob&group=status", { member: "alice", sort: "progress" }, members)).toEqual({
       member: "bob",
       group: "status",
-      sort: "pipeline",
+      sort: "progress",
     });
   });
   test("ignores unknown member and invalid group/sort", () => {

@@ -1,15 +1,13 @@
-import type { BoardMR, PipelineState } from "./data.ts";
+import type { BoardMR } from "./data.ts";
 
-export type GroupKey = "age" | "author" | "status" | "pipeline";
-export type SortKey = "oldest" | "pipeline" | "progress";
+export type GroupKey = "age" | "author" | "status";
+export type SortKey = "oldest" | "progress";
 
-export const GROUP_KEYS: readonly GroupKey[] = ["age", "author", "status", "pipeline"];
-export const SORT_KEYS: readonly SortKey[] = ["oldest", "pipeline", "progress"];
+export const GROUP_KEYS: readonly GroupKey[] = ["age", "author", "status"];
+export const SORT_KEYS: readonly SortKey[] = ["oldest", "progress"];
 
 /** Sentinel that sorts after any ISO date, so null timestamps land last. */
 const LATEST = "9999";
-
-const PIPELINE_RANK: Record<PipelineState, number> = { failed: 0, running: 1, none: 2, passed: 3 };
 
 /** Approval ratio in [0,1]; used by the "progress" sort. */
 function progress(mr: BoardMR): number {
@@ -29,9 +27,6 @@ export function sortMRs(mrs: BoardMR[], sort: SortKey): BoardMR[] {
   switch (sort) {
     case "oldest":
       copy.sort(byOldest);
-      break;
-    case "pipeline":
-      copy.sort((a, b) => PIPELINE_RANK[a.pipelineState] - PIPELINE_RANK[b.pipelineState] || byOldest(a, b));
       break;
     case "progress":
       copy.sort((a, b) => progress(b) - progress(a) || byOldest(a, b));
@@ -57,22 +52,17 @@ function ageBucket(createdAt: string | null, now: number): { label: string; orde
   return { label: "Older", order: 9 };
 }
 
-/** Coarse review-readiness bucket, most-blocking first. */
+/** Coarse review-readiness bucket, most-blocking first. Mirrors the row's
+    status label: comments without approval mean changes are needed. */
 function statusBucket(mr: BoardMR): { label: string; order: number } {
   const b = mr.blockers;
   if (b.hasConflicts) return { label: "conflicts", order: 0 };
   if (b.pipelineFailing) return { label: "ci failing", order: 1 };
-  if (mr.reviews.isApproved) return { label: "approved", order: 4 };
-  if (mr.reviews.given > 0) return { label: "in review", order: 3 };
-  return { label: "needs review", order: 2 };
+  if (mr.reviews.isApproved) return { label: "approved", order: 5 };
+  if (mr.unresolvedThreads > 0) return { label: "changes needed", order: 2 };
+  if (mr.reviews.given > 0) return { label: "in review", order: 4 };
+  return { label: "needs review", order: 3 };
 }
-
-const PIPELINE_LABEL: Record<PipelineState, string> = {
-  failed: "pipeline failed",
-  running: "pipeline running",
-  none: "no pipeline",
-  passed: "pipeline passed",
-};
 
 /** Group by a keyed bucket, ordering groups by the bucket's `order`. */
 function groupBy(mrs: BoardMR[], bucket: (mr: BoardMR) => { label: string; order: number }): Group[] {
@@ -116,11 +106,6 @@ export function groupMRs(mrs: BoardMR[], group: GroupKey, memberOrder: string[],
       return groupByAuthor(mrs, memberOrder);
     case "status":
       return groupBy(mrs, statusBucket);
-    case "pipeline":
-      return groupBy(mrs, (mr) => ({
-        label: PIPELINE_LABEL[mr.pipelineState],
-        order: PIPELINE_RANK[mr.pipelineState],
-      }));
   }
 }
 
