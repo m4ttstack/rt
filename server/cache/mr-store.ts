@@ -161,12 +161,19 @@ function getStore(): Store {
 }
 
 // --- MR details ---
+/**
+ * Keys we can safely serve from the store WITHOUT re-fetching. Only merged MRs qualify:
+ * they're immutable, so a cached copy never goes stale. A cached open/locked/closed MR
+ * still changes (it can merge, be retitled, or gain commits), so we deliberately treat it
+ * as a miss and re-fetch ... otherwise a draft cached once stays frozen even after it merges.
+ */
 export async function getCachedMrKeys(mrs: readonly { projectPath: string; iid: number }[]): Promise<Set<string>> {
   const s = getStore();
   const found = new Set<string>();
   for (const mr of mrs) {
     const key = mrKey(mr.projectPath, mr.iid);
-    if (s.has(key)) found.add(key);
+    const cached = s.get(key);
+    if (cached && cached.state === "merged") found.add(key);
   }
   return found;
 }
