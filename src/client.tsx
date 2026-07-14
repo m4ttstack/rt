@@ -366,7 +366,7 @@ function StatusPhrase({ mr }: { mr: BoardMR }) {
 }
 
 type ThreadStatus = "resolved" | "replied" | "awaiting";
-type CommentNote = { name: string; username: string | null; at: string; body: string };
+type CommentNote = { id: number; name: string; username: string | null; at: string; body: string };
 type CommentThread = { status: ThreadStatus; notes: CommentNote[] };
 const THREAD_ICON: Record<ThreadStatus, string> = { resolved: "✓", replied: "↩", awaiting: "●" };
 const THREAD_LABEL: Record<ThreadStatus, string> = {
@@ -412,7 +412,16 @@ function CommentsDrawer({ mr, onClose }: { mr: BoardMR; onClose: () => void }) {
     return () => document.removeEventListener("keydown", onKey);
   }, [mr, onClose]);
   return (
-    <div className="tui-cd-overlay" onClick={onClose}>
+    <div
+      className="tui-cd-overlay"
+      onClick={(e) => {
+        // The drawer renders inside the row (whose onClick opens the MR); React
+        // events bubble by component tree, so stop here or clicking the overlay
+        // would also open the MR.
+        e.stopPropagation();
+        onClose();
+      }}
+    >
       <div className="tui-cd" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="comment threads">
         <div className="tui-cd-head">
           <div className="tui-cd-title">
@@ -436,17 +445,40 @@ function CommentsDrawer({ mr, onClose }: { mr: BoardMR; onClose: () => void }) {
             threads.map((t, i) => (
               <section key={i} className={`tui-cd-thread ${t.status}`}>
                 <div className="tui-cd-thread-status">
-                  <span className="tui-comment-icon">{THREAD_ICON[t.status]}</span> {THREAD_LABEL[t.status]}
+                  <span>
+                    <span className="tui-comment-icon">{THREAD_ICON[t.status]}</span> {THREAD_LABEL[t.status]}
+                  </span>
+                  {mr.webUrl && t.notes[0] && (
+                    <a
+                      className="tui-cd-thread-open"
+                      href={`${mr.webUrl}#note_${t.notes[0].id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      open ↗
+                    </a>
+                  )}
                 </div>
-                {t.notes.map((n, j) => (
-                  <div key={j} className="tui-cd-note">
-                    <div className="tui-cd-note-head">
-                      <span className="tui-cd-note-author">{n.name}</span>
-                      <span className="tui-cd-note-time">{ago(n.at, now)}</span>
+                {t.notes.map((n) => {
+                  const isAuthor = n.username === mr.author.username;
+                  return (
+                    <div key={n.id} className="tui-cd-note">
+                      <div className="tui-cd-note-head">
+                        <span className={`tui-cd-note-author ${isAuthor ? "author" : "commenter"}`}>{n.name}</span>
+                        <a
+                          className="tui-cd-note-time"
+                          href={mr.webUrl ? `${mr.webUrl}#note_${n.id}` : "#"}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title="open this comment in gitlab"
+                        >
+                          {ago(n.at, now)} ↗
+                        </a>
+                      </div>
+                      <div className="tui-cd-note-body">{n.body}</div>
                     </div>
-                    <div className="tui-cd-note-body">{n.body}</div>
-                  </div>
-                ))}
+                  );
+                })}
               </section>
             ))
           )}

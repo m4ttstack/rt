@@ -151,7 +151,11 @@ body {
 
 /* ── comments drawer ──────────────────────────────────────────────── */
 .tui-comments-btn {
-  background: none; border: none; padding: 0; font: inherit; cursor: pointer;
+  background: none; border: none; padding: 0; cursor: pointer;
+  /* font-family only — NOT `font: inherit`, which would reset the size to the
+     row's 13.5px instead of the .tui-phrase 0.7rem the other labels use. Leave
+     color to the t-warn class so the label stays amber. */
+  font-family: inherit;
   text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px;
 }
 .tui-comments-empty { color: var(--muted); }
@@ -164,6 +168,9 @@ body {
   position: fixed; inset: 0; z-index: 100;
   display: flex; justify-content: flex-end;
   background: color-mix(in srgb, var(--bg) 55%, transparent); backdrop-filter: blur(2px);
+  /* The drawer renders inside the clickable row; reset the inherited pointer so
+     its content doesn't look clickable. Interactive children re-set pointer. */
+  cursor: default;
 }
 .tui-cd {
   width: min(460px, 92vw); height: 100%; overflow-y: auto;
@@ -184,24 +191,32 @@ body {
 .tui-cd-open:hover { text-decoration: underline; }
 .tui-cd-body { padding: 0.8rem 1rem 1.4rem; display: flex; flex-direction: column; gap: 1rem; }
 .tui-cd-thread {
-  border: 1px solid var(--border-soft); border-radius: 8px; overflow: hidden;
+  /* Card sits on --card so it contrasts with the --panel drawer. */
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
   border-left: 3px solid var(--border);
 }
 .tui-cd-thread.resolved { border-left-color: var(--dot-ok); }
 .tui-cd-thread.replied { border-left-color: var(--accent); }
 .tui-cd-thread.awaiting { border-left-color: var(--dot-warn); }
 .tui-cd-thread-status {
+  display: flex; justify-content: space-between; align-items: center; gap: 0.6rem;
   font-size: 0.72rem; font-weight: 700; letter-spacing: 0.02em;
-  padding: 0.4rem 0.7rem; background: color-mix(in srgb, var(--card) 60%, transparent);
+  padding: 0.4rem 0.7rem; background: color-mix(in srgb, var(--fg) 5%, transparent);
   border-bottom: 1px solid var(--border-soft);
 }
-.tui-cd-note { padding: 0.6rem 0.7rem; }
+.tui-cd-thread-open { color: var(--accent); font-weight: 400; font-size: 0.68rem; text-decoration: none; flex-shrink: 0; }
+.tui-cd-thread-open:hover { text-decoration: underline; }
+.tui-cd-note { padding: 0.55rem 0.7rem; }
 .tui-cd-note + .tui-cd-note { border-top: 1px solid var(--border-soft); }
-.tui-cd-note-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.6rem; margin-bottom: 0.3rem; }
-.tui-cd-note-author { color: var(--purple); font-weight: 600; font-size: 0.78rem; }
-.tui-cd-note-time { color: var(--muted); font-size: 0.72rem; flex-shrink: 0; }
+.tui-cd-note-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.6rem; margin-bottom: 0.25rem; }
+.tui-cd-note-author { font-weight: 600; font-size: 0.72rem; }
+/* MR author (responding to feedback) vs reviewers/commenters (giving it). */
+.tui-cd-note-author.author { color: var(--accent); }
+.tui-cd-note-author.commenter { color: var(--purple); }
+.tui-cd-note-time { color: var(--muted); font-size: 0.66rem; flex-shrink: 0; text-decoration: none; }
+.tui-cd-note-time:hover { color: var(--accent); }
 .tui-cd-note-body {
-  font: 400 0.82rem/1.5 var(--font-sans); color: var(--fg);
+  font: 400 0.74rem/1.5 var(--font-sans); color: var(--fg);
   white-space: pre-wrap; overflow-wrap: anywhere;
 }
 

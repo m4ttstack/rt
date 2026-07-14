@@ -199,7 +199,7 @@ Bun.serve({
           const detail = await provider.fetchMRDiscussions(repo, iid);
           const threads: Array<{
             status: "resolved" | "replied" | "awaiting";
-            notes: Array<{ name: string; username: string | null; at: string; body: string }>;
+            notes: Array<{ id: number; name: string; username: string | null; at: string; body: string }>;
           }> = [];
           for (const d of detail.discussions) {
             // GitLab puts resolvable/resolved on the notes, not the discussion.
@@ -214,6 +214,7 @@ Bun.serve({
             threads.push({
               status,
               notes: notes.map((n) => ({
+                id: n.id, // for the GitLab #note_<id> anchor link
                 name: n.author?.name ?? n.author?.username ?? "?",
                 username: n.author?.username ?? null,
                 at: n.createdAt,
