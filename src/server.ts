@@ -4,6 +4,9 @@ import { GitLabProvider, type PullRequest } from "@workforge/glance-sdk";
 import { loadConfig, loadGitLabToken, saveMemberHidden, CONFIG_PATH } from "./config.ts";
 import { buildBoard, buildRoster } from "./data.ts";
 import { SnapshotCache } from "./cache.ts";
+import { isLocalRequest } from "./local.ts";
+import { readReviewStates, reviewFilePath, writeReviewState, parseReviewRequestBody, attachReviews } from "./review-state.ts";
+import { launchReview, focusTab } from "./herdr.ts";
 
 const cssPath = join(import.meta.dir, "style.css");
 let css = readFileSync(cssPath, "utf-8");
@@ -140,6 +143,7 @@ Bun.serve({
         const visible = config.members.filter((m) => !m.hidden);
         const visibleNames = new Set(visible.map((m) => m.username));
         const visibleMrs = snapshot.mrs.filter((mr) => visibleNames.has(mr.author.username));
+        const reviews = readReviewStates();
         return new Response(
           JSON.stringify({
             title: config.title,
@@ -152,7 +156,8 @@ Bun.serve({
               // Counted from the full snapshot so hidden members still show their number.
               count: snapshot.mrs.filter((mr) => mr.author.username === m.username).length,
             })),
-            mrs: visibleMrs,
+            mrs: attachReviews(visibleMrs, reviews),
+            local: isLocalRequest(req),
             fetchedAt: snapshot.fetchedAt,
             fetchError: snapshot.fetchError,
           }),
@@ -221,6 +226,50 @@ Bun.serve({
         } catch (err) {
           return new Response(`discussions fetch failed: ${err instanceof Error ? err.message : err}`, { status: 502 });
         }
+      }
+      case "/review": {
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+        if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
+        if (!config.reviewCwd) return new Response("reviewCwd not configured", { status: 400 });
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return new Response("invalid json", { status: 400 });
+        }
+        const parsed = parseReviewRequestBody(body);
+        if (!parsed) return new Response("expected { mrUrl: string, iid: number }", { status: 400 });
+        // Only launch for an MR the board is actually showing.
+        const snapshot = await cache.get();
+        if (!snapshot.mrs.some((mr) => mr.webUrl === parsed.mrUrl)) {
+          return new Response(`unknown MR "${parsed.mrUrl}"`, { status: 400 });
+        }
+        // Dedup: a live review for this MR re-focuses its tab instead of spawning another.
+        const existing = readReviewStates().get(parsed.mrUrl);
+        if (existing && existing.tabId && (existing.status === "queued" || existing.status === "reviewing")) {
+          try {
+            await focusTab(existing.tabId);
+            return new Response(JSON.stringify({ ok: true, focused: true }), { headers: { "content-type": "application/json" } });
+          } catch {
+            // tab is gone — fall through and start a fresh review
+          }
+        }
+        const statePath = reviewFilePath(parsed.mrUrl);
+        writeReviewState(statePath, { mrUrl: parsed.mrUrl, iid: parsed.iid, status: "queued" });
+        // Spawn asynchronously; the badge reflects progress via the state file.
+        void launchReview({
+          mrUrl: parsed.mrUrl,
+          iid: parsed.iid,
+          cwd: config.reviewCwd,
+          workspaceLabel: config.reviewsWorkspace,
+          statePath,
+        })
+          .then(({ tabId, workspaceId }) => writeReviewState(statePath, { status: "queued", tabId, workspaceId }))
+          .catch((err) => {
+            console.error(`review launch failed: ${err instanceof Error ? err.message : err}`);
+            writeReviewState(statePath, { status: "error", message: "failed to launch review pane" });
+          });
+        return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });
       }
       default:
         return new Response("not found", { status: 404 });
