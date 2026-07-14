@@ -268,8 +268,9 @@ function boardSummary(mrs: BoardMR[]): string {
 const COPY_ICON = "M9 9h10v10H9zM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1";
 const CHECK_ICON = "M20 6 9 17l-5-5";
 
-/** Copies `text` to the clipboard and flashes a check for feedback. */
-function CopyButton({ text, className, title }: { text: string; className: string; title: string }) {
+/** Copies `text` to the clipboard and flashes a check for feedback. An
+    optional `label` renders text beside the icon (used for the drawer action). */
+function CopyButton({ text, className, title, label }: { text: string; className: string; title: string; label?: string }) {
   const [copied, setCopied] = useState(false);
   const onClick = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -289,6 +290,7 @@ function CopyButton({ text, className, title }: { text: string; className: strin
       onClick={onClick}
     >
       <Icon d={copied ? CHECK_ICON : COPY_ICON} />
+      {label && <span>{copied ? "copied" : label}</span>}
     </button>
   );
 }
@@ -547,6 +549,7 @@ function Controls({
   onSettings,
   canCopy,
   summaryText,
+  stacked = false,
 }: {
   state: ViewState;
   update: (patch: Partial<ViewState>) => void;
@@ -557,14 +560,37 @@ function Controls({
   onSettings: () => void;
   canCopy: boolean;
   summaryText: string;
+  stacked?: boolean;
 }) {
+  const group = <LabeledSeg legend="group" options={GROUP_KEYS} labels={GROUP_LABEL} value={state.group} onChange={(g) => update({ group: g })} />;
+  const sort = <LabeledSeg legend="sort" options={SORT_KEYS} labels={SORT_LABEL} value={state.sort} onChange={(s) => update({ sort: s })} />;
+  const viewSeg = <Segmented options={["rows", "grid"] as const} value={view} onChange={pickView} label="view" />;
+  const themeSeg = <Segmented options={["light", "dark", "system"] as const} value={theme} onChange={pickTheme} label="theme" />;
+
+  // Drawer: labeled full-width rows, so a mobile user can tell what each does.
+  if (stacked) {
+    return (
+      <>
+        <div className="tui-ctl-row"><span className="tui-ctl-label">group</span>{group}</div>
+        <div className="tui-ctl-row"><span className="tui-ctl-label">sort</span>{sort}</div>
+        <div className="tui-ctl-row"><span className="tui-ctl-label">view</span>{viewSeg}</div>
+        <div className="tui-ctl-row"><span className="tui-ctl-label">theme</span>{themeSeg}</div>
+        <button className="tui-drawer-action" onClick={onSettings}>{ICONS.settings} team settings</button>
+        {canCopy && (
+          <CopyButton text={summaryText} className="tui-drawer-action" title="copy summary for Slack" label="copy summary" />
+        )}
+      </>
+    );
+  }
+
+  // Header: compact inline row.
   return (
     <>
       {canCopy && <CopyButton text={summaryText} className="tui-copy" title="copy summary for Slack" />}
-      <LabeledSeg legend="group" options={GROUP_KEYS} labels={GROUP_LABEL} value={state.group} onChange={(group) => update({ group })} />
-      <LabeledSeg legend="sort" options={SORT_KEYS} labels={SORT_LABEL} value={state.sort} onChange={(sort) => update({ sort })} />
-      <Segmented options={["rows", "grid"] as const} value={view} onChange={pickView} label="view" />
-      <Segmented options={["light", "dark", "system"] as const} value={theme} onChange={pickTheme} label="theme" />
+      {group}
+      {sort}
+      {viewSeg}
+      {themeSeg}
       <button className="tui-copy" onClick={onSettings} title="team settings" aria-label="team settings">
         {ICONS.settings}
       </button>
@@ -757,7 +783,7 @@ function Board() {
               }}
             />
             <div className="tui-drawer-controls">
-              <Controls {...controlProps} />
+              <Controls {...controlProps} stacked />
             </div>
           </div>
         </div>

@@ -208,9 +208,22 @@ body {
 .tui-drawer-head { display: flex; justify-content: space-between; align-items: center; }
 .tui-drawer .tui-sidebar { position: static; }
 .tui-drawer-controls {
-  display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center;
+  display: flex; flex-direction: column; align-items: stretch; gap: 8px;
   padding-top: 12px; border-top: 1px solid var(--border-soft);
 }
+/* Labeled, full-width control rows in the drawer. */
+.tui-ctl-row { display: flex; align-items: center; gap: 10px; }
+.tui-ctl-label { flex-shrink: 0; width: 48px; color: var(--muted); font-size: 0.78rem; }
+.tui-drawer-controls .tui-seg { flex: 1; }
+.tui-drawer-controls .tui-seg button { flex: 1; }
+.tui-drawer-action {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  width: 100%; padding: 8px; margin-top: 2px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: transparent; color: var(--fg); font: inherit; font-size: 0.85rem; cursor: pointer;
+}
+.tui-drawer-action:hover { border-color: var(--accent); }
+.tui-drawer-action.copied { color: var(--dot-ok); border-color: var(--dot-ok); }
 
 @media (max-width: 720px) {
   .tui-app { grid-template-columns: 1fr; }
