@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { parseConfig } from "../config.ts";
+import { parseConfig, setHiddenInRaw } from "../config.ts";
 
 const base = {
   gitlabHost: "https://gitlab.com",
@@ -52,5 +52,32 @@ describe("parseConfig", () => {
 
   test("throws when defaultMember is neither 'all' nor a known member", () => {
     expect(() => parseConfig(JSON.stringify({ ...base, defaultMember: "ghost" }))).toThrow(/defaultMember/);
+  });
+
+  test("parses a member's hidden flag and rejects a non-boolean one", () => {
+    const cfg = parseConfig(JSON.stringify({ ...base, members: [{ username: "alice", hidden: true }, { username: "bob" }] }));
+    expect(cfg.members[0]!.hidden).toBe(true);
+    expect(cfg.members[1]!.hidden).toBeUndefined();
+    expect(() => parseConfig(JSON.stringify({ ...base, members: [{ username: "alice", hidden: "yes" }] }))).toThrow(/hidden/);
+  });
+});
+
+describe("setHiddenInRaw", () => {
+  const raw = JSON.stringify({ members: [{ username: "alice", name: "Alice" }, { username: "bob" }] }, null, 2);
+
+  test("sets the hidden flag on the named member", () => {
+    const parsed = JSON.parse(setHiddenInRaw(raw, "bob", true));
+    expect(parsed.members.find((m: any) => m.username === "bob").hidden).toBe(true);
+    expect(parsed.members.find((m: any) => m.username === "alice").hidden).toBeUndefined();
+  });
+
+  test("removes the flag entirely when set to false, keeping the file clean", () => {
+    const hidden = setHiddenInRaw(raw, "alice", true);
+    const shown = JSON.parse(setHiddenInRaw(hidden, "alice", false));
+    expect("hidden" in shown.members[0]).toBe(false);
+  });
+
+  test("throws for an unknown member", () => {
+    expect(() => setHiddenInRaw(raw, "carol", true)).toThrow(/unknown member/);
   });
 });

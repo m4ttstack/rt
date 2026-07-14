@@ -1,4 +1,4 @@
-import { StrictMode, useEffect, useRef, useState } from "react";
+import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { extractTicketId, ticketUrl } from "./ticket.ts";
 import type { BoardMR } from "./data.ts";
@@ -11,10 +11,18 @@ interface RosterMember {
   count: number;
 }
 
+/** Every configured member with its hidden state — for the settings modal. */
+interface ConfigMember {
+  username: string;
+  name: string | null;
+  hidden: boolean;
+}
+
 interface BoardData {
   title: string;
   defaultMember: string;
   members: RosterMember[];
+  allMembers: ConfigMember[];
   mrs: BoardMR[];
   fetchedAt: number;
   fetchError: string | null;
@@ -86,6 +94,12 @@ const ICONS: Record<string, React.ReactNode> = {
   light: <Icon circle d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />,
   dark: <Icon d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />,
   system: <Icon d="M2 4h20v12H2zM8 20h8m-4-4v4" />,
+  settings: (
+    <Icon
+      circle
+      d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
+    />
+  ),
 };
 
 function Segmented<T extends string>({
@@ -131,7 +145,8 @@ function hashStr(s: string): number {
 const SPRITE_COLORS = ["--accent", "--green", "--amber", "--purple", "--cyan", "--red"];
 
 /** Hand-designed 8×8 creatures (one byte per row, MSB = left pixel).
-    Curated so every user gets something that reads as a sprite, not noise. */
+    Curated so every user gets something that reads as a sprite, not noise;
+    each is left-right symmetric so it looks deliberate, not random. */
 const SPRITES: number[][] = [
   // classic invader
   [0b00011000, 0b00111100, 0b01111110, 0b11011011, 0b11111111, 0b00100100, 0b01011010, 0b10100101],
@@ -145,6 +160,26 @@ const SPRITES: number[][] = [
   [0b00011000, 0b00011000, 0b01111110, 0b11111111, 0b11111111, 0b01100110, 0b01100110, 0b11100111],
   // alien
   [0b01000010, 0b00100100, 0b01111110, 0b11011011, 0b11111111, 0b10100101, 0b00100100, 0b01000010],
+  // robot
+  [0b11100111, 0b00111100, 0b01111110, 0b11011011, 0b11111111, 0b11011011, 0b01111110, 0b01100110],
+  // cat
+  [0b10000001, 0b11000011, 0b11111111, 0b11011011, 0b11111111, 0b11111111, 0b11111111, 0b10100101],
+  // skull
+  [0b00111100, 0b01111110, 0b11111111, 0b11011011, 0b11111111, 0b01111110, 0b01011010, 0b00100100],
+  // beetle
+  [0b10011001, 0b01111110, 0b11111111, 0b11011011, 0b11111111, 0b11111111, 0b01111110, 0b10100101],
+  // owl
+  [0b11000011, 0b11111111, 0b11011011, 0b11111111, 0b01111110, 0b00111100, 0b00011000, 0b00100100],
+  // flower
+  [0b00100100, 0b01111110, 0b11111111, 0b11100111, 0b11111111, 0b01111110, 0b00011000, 0b00011000],
+  // gem
+  [0b00011000, 0b00111100, 0b01111110, 0b11111111, 0b11111111, 0b01111110, 0b00111100, 0b00011000],
+  // heart
+  [0b01100110, 0b11111111, 0b11111111, 0b11111111, 0b01111110, 0b01111110, 0b00111100, 0b00011000],
+  // mushroom
+  [0b00111100, 0b01111110, 0b11111111, 0b11111111, 0b01011010, 0b00011000, 0b00011000, 0b00111100],
+  // amoeba
+  [0b00100100, 0b01011010, 0b11111111, 0b10111101, 0b11111111, 0b01011010, 0b10100101, 0b01000010],
 ];
 
 /** Deterministic per-username creature: the hash picks one of the designed
@@ -439,6 +474,65 @@ function Sidebar({
   );
 }
 
+// ── settings modal ─────────────────────────────────────────────────────────
+
+/** Check members in/out. Toggling persists the hidden flag to config.json. */
+function SettingsModal({
+  members,
+  onToggle,
+  onClose,
+}: {
+  members: ConfigMember[];
+  onToggle: (username: string, hidden: boolean) => Promise<void>;
+  onClose: () => void;
+}) {
+  const [pending, setPending] = useState<string | null>(null);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  const toggle = async (m: ConfigMember) => {
+    setPending(m.username);
+    try {
+      await onToggle(m.username, !m.hidden);
+    } finally {
+      setPending(null);
+    }
+  };
+  return (
+    <div className="tui-modal-overlay" onClick={onClose}>
+      <div className="tui-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal aria-label="team settings">
+        <div className="tui-modal-head">
+          <span className="tui-modal-title">❯ team members</span>
+          <button className="tui-modal-x" onClick={onClose} aria-label="close">
+            ✕
+          </button>
+        </div>
+        <p className="tui-modal-sub"># check people out to hide them from the board</p>
+        <ul className="tui-modal-list">
+          {members.map((m) => (
+            <li key={m.username} className={m.hidden ? "tui-modal-row out" : "tui-modal-row"}>
+              <span className="tui-modal-name">
+                <OwnerSprite username={m.username} /> {m.name ?? m.username}
+              </span>
+              <button
+                className={m.hidden ? "tui-check out" : "tui-check in"}
+                onClick={() => toggle(m)}
+                disabled={pending === m.username}
+                aria-pressed={!m.hidden}
+                title={m.hidden ? "checked out — click to check in" : "checked in — click to check out"}
+              >
+                {m.hidden ? "checked out" : "checked in"}
+              </button>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 // ── board ──────────────────────────────────────────────────────────────────
 
 function Board() {
@@ -477,9 +571,8 @@ function Board() {
     });
   };
 
-  useEffect(() => {
-    let timer: ReturnType<typeof setInterval> | undefined;
-    const load = () =>
+  const load = useCallback(
+    () =>
       fetch("/data.json")
         .then((r) => r.json())
         .then((d: BoardData) => {
@@ -498,27 +591,41 @@ function Board() {
             }
             setState(parseViewState(location.search, stored, usernames, d.defaultMember));
           } else {
-            // Subsequent (periodic) refreshes: keep the user's current selection,
-            // only dropping a member who's no longer on the roster.
+            // Subsequent refreshes: keep the user's current selection, only
+            // dropping a member who's no longer on the (visible) roster.
             setState((prev) =>
               prev.member === "all" || usernames.includes(prev.member) ? prev : { ...prev, member: "all" },
             );
           }
         })
-        .catch(() => setLoadError(true));
+        .catch(() => setLoadError(true)),
+    [],
+  );
+
+  useEffect(() => {
     const onVisible = () => {
       if (!document.hidden) load();
     };
     document.addEventListener("visibilitychange", onVisible);
     load();
-    timer = setInterval(() => {
+    const timer = setInterval(() => {
       if (!document.hidden) load();
     }, 60_000);
     return () => {
       clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, []);
+  }, [load]);
+
+  const [showSettings, setShowSettings] = useState(false);
+  const toggleMember = async (username: string, hidden: boolean) => {
+    const res = await fetch("/settings", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username, hidden }),
+    });
+    if (res.ok) await load();
+  };
 
   if (!data) {
     return <p className="tui-loading">{loadError ? "✗ failed to load board data" : "fetching…"}</p>;
@@ -559,8 +666,15 @@ function Board() {
             <LabeledSeg legend="sort" options={SORT_KEYS} labels={SORT_LABEL} value={state.sort} onChange={(sort) => update({ sort })} />
             <Segmented options={["rows", "grid"] as const} value={view} onChange={pickView} label="view" />
             <Segmented options={["light", "dark", "system"] as const} value={theme} onChange={pickTheme} label="theme" />
+            <button className="tui-copy" onClick={() => setShowSettings(true)} title="team settings" aria-label="team settings">
+              {ICONS.settings}
+            </button>
           </div>
         </header>
+
+        {showSettings && (
+          <SettingsModal members={data.allMembers} onToggle={toggleMember} onClose={() => setShowSettings(false)} />
+        )}
 
         {data.fetchError && <div className="tui-banner">⚠ data from {staleMins}m ago — gitlab fetch failing</div>}
 

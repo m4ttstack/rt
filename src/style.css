@@ -105,12 +105,14 @@ body {
 
 /* ── status dot + tooltip ─────────────────────────────────────────── */
 .tui-dot {
-  font-size: 1.35em; line-height: 1; display: inline-block; vertical-align: middle;
+  font-size: 1rem; line-height: 1; display: inline-block; vertical-align: middle;
+  /* The ● glyph renders low in its line box; nudge up so it optically centers. */
+  position: relative; top: -2px;
 }
 .tui-dot.ok { color: var(--dot-ok); }
 .tui-dot.warn { color: var(--dot-warn); }
 .tui-dot.bad { color: var(--dot-bad); }
-.tui-dot-wrap { position: relative; flex-shrink: 0; }
+.tui-dot-wrap { position: relative; flex-shrink: 0; align-self: center; }
 .tui-dot-wrap::after {
   content: attr(data-tip);
   position: absolute; left: 0; top: 1.5em; z-index: 10;
@@ -188,3 +190,41 @@ body {
   .tui-app { grid-template-columns: 1fr; }
   .tui-sidebar { position: static; flex-direction: row; flex-wrap: wrap; }
 }
+
+/* ── settings modal ───────────────────────────────────────────────── */
+.tui-modal-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; align-items: flex-start; justify-content: center; padding: 8vh 1rem;
+  background: color-mix(in srgb, var(--bg) 55%, transparent); backdrop-filter: blur(2px);
+}
+.tui-modal {
+  width: 100%; max-width: 420px; max-height: 80vh; overflow-y: auto;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--panel);
+  padding: 1rem 1.1rem 1.2rem; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
+}
+.tui-modal-head { display: flex; justify-content: space-between; align-items: center; }
+.tui-modal-title { font-weight: 700; letter-spacing: 0.02em; color: var(--accent); }
+.tui-modal-x {
+  background: none; border: none; color: var(--muted); cursor: pointer;
+  font-size: 0.9rem; padding: 0.2rem 0.4rem; border-radius: 5px;
+}
+.tui-modal-x:hover { color: var(--fg); background: var(--card); }
+.tui-modal-sub { color: var(--muted); font-size: 0.76rem; margin: 0.2rem 0 0.9rem; }
+.tui-modal-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.tui-modal-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  padding: 5px 6px; border-radius: 6px;
+}
+.tui-modal-row:hover { background: var(--card); }
+.tui-modal-row.out { opacity: 0.5; }
+.tui-modal-name { display: inline-flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tui-check {
+  flex-shrink: 0; cursor: pointer; font: inherit; font-size: 0.72rem;
+  padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border);
+  background: transparent;
+}
+.tui-check:disabled { opacity: 0.5; cursor: default; }
+.tui-check.in { color: var(--dot-ok); border-color: color-mix(in srgb, var(--dot-ok) 55%, transparent); }
+.tui-check.out { color: var(--muted); }
+.tui-check.in:hover:not(:disabled) { border-color: var(--dot-ok); }
+.tui-check.out:hover:not(:disabled) { color: var(--fg); border-color: var(--fg); }

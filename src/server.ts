@@ -1,7 +1,7 @@
 import { join } from "path";
 import { readFileSync } from "fs";
 import { GitLabProvider, type PullRequest } from "@forge-glance/sdk";
-import { loadConfig, loadGitLabToken } from "./config.ts";
+import { loadConfig, loadGitLabToken, saveMemberHidden } from "./config.ts";
 import { buildBoard, buildRoster, memberAuthoredIids, type RawMRRef } from "./data.ts";
 import { SnapshotCache } from "./cache.ts";
 
@@ -136,17 +136,50 @@ Bun.serve({
       case "/data.json": {
         void refreshMemberNames();
         const snapshot = await cache.get();
+        // Hidden (checked-out) members drop from the sidebar, the "All" list,
+        // and its counts — but stay in `allMembers` so the settings modal can
+        // check them back in.
+        const visible = config.members.filter((m) => !m.hidden);
+        const visibleNames = new Set(visible.map((m) => m.username));
+        const visibleMrs = snapshot.mrs.filter((mr) => visibleNames.has(mr.author.username));
         return new Response(
           JSON.stringify({
             title: config.title,
             defaultMember: config.defaultMember,
-            members: buildRoster(config.members, snapshot.mrs, memberNames),
-            mrs: snapshot.mrs,
+            members: buildRoster(visible, visibleMrs, memberNames),
+            allMembers: config.members.map((m) => ({
+              username: m.username,
+              name: memberNames.get(m.username) ?? m.name ?? null,
+              hidden: !!m.hidden,
+            })),
+            mrs: visibleMrs,
             fetchedAt: snapshot.fetchedAt,
             fetchError: snapshot.fetchError,
           }),
           { headers: { "content-type": "application/json" } },
         );
+      }
+      case "/settings": {
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return new Response("invalid json", { status: 400 });
+        }
+        const { username, hidden } = (body ?? {}) as { username?: unknown; hidden?: unknown };
+        if (typeof username !== "string" || typeof hidden !== "boolean") {
+          return new Response("expected { username: string, hidden: boolean }", { status: 400 });
+        }
+        if (!config.members.some((m) => m.username === username)) {
+          return new Response(`unknown member "${username}"`, { status: 400 });
+        }
+        // Single writer: persist to config.json, then swap the in-memory members
+        // so this and every subsequent /data.json reflect the new state.
+        config.members = saveMemberHidden(username, hidden).members;
+        return new Response(JSON.stringify({ ok: true }), {
+          headers: { "content-type": "application/json" },
+        });
       }
       default:
         return new Response("not found", { status: 404 });

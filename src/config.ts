@@ -1,4 +1,4 @@
-import { readFileSync } from "fs";
+import { readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 
@@ -6,6 +6,8 @@ export interface Member {
   username: string;
   /** Optional display name; falls back to the GitLab profile lookup, then username. */
   name?: string;
+  /** Checked out: kept in config but hidden from the sidebar, the "All" view, and its counts. */
+  hidden?: boolean;
 }
 
 export interface BoardConfig {
@@ -38,6 +40,9 @@ export function parseConfig(raw: string): BoardConfig {
     if (!member || !member.username) {
       throw new Error(`config.json has a member with no "username"`);
     }
+    if (member.hidden !== undefined && typeof member.hidden !== "boolean") {
+      throw new Error(`config.json member "${member.username}" has a non-boolean "hidden"`);
+    }
   }
   if (cfg.defaultMember && cfg.defaultMember !== "all" && !cfg.members!.some((m) => m.username === cfg.defaultMember)) {
     throw new Error(`config.json "defaultMember" (${cfg.defaultMember}) is not "all" or a known member username`);
@@ -64,6 +69,28 @@ export function loadConfig(): BoardConfig {
     throw new Error(`config.json not found at ${CONFIG_PATH} — copy config.example.json and fill it in`);
   }
   return parseConfig(raw);
+}
+
+/**
+ * Return config JSON text with `username`'s hidden flag set — removed entirely
+ * when false, so the file stays clean. Pure (string in, string out) for testing.
+ * Throws if the username isn't a configured member.
+ */
+export function setHiddenInRaw(raw: string, username: string, hidden: boolean): string {
+  const obj = JSON.parse(raw) as { members?: Array<{ username: string; hidden?: boolean }> };
+  const member = obj.members?.find((m) => m.username === username);
+  if (!member) throw new Error(`unknown member "${username}"`);
+  if (hidden) member.hidden = true;
+  else delete member.hidden;
+  return JSON.stringify(obj, null, 2) + "\n";
+}
+
+/** Persist `username`'s hidden flag to config.json and return the reparsed config. */
+export function saveMemberHidden(username: string, hidden: boolean): BoardConfig {
+  const raw = readFileSync(CONFIG_PATH, "utf8");
+  const next = setHiddenInRaw(raw, username, hidden);
+  writeFileSync(CONFIG_PATH, next);
+  return parseConfig(next);
 }
 
 export function loadGitLabToken(): string {
