@@ -14,6 +14,8 @@ const config: BoardConfig = {
   ticketPrefixes: [],
   title: "Test board",
   port: 0,
+  reviewCwd: "",
+  reviewsWorkspace: "reviews",
 };
 
 function pr(overrides: Partial<PullRequest>): PullRequest {

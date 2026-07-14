@@ -67,6 +67,22 @@ describe("parseConfig", () => {
     expect(cfg.members[1]!.hidden).toBeUndefined();
     expect(() => parseConfig(JSON.stringify({ ...base, members: [{ username: "alice", hidden: "yes" }] }))).toThrow(/hidden/);
   });
+
+  test("reviewCwd defaults empty; reviewsWorkspace defaults to 'reviews'", () => {
+    const cfg = parseConfig(JSON.stringify(base));
+    expect(cfg.reviewCwd).toBe("");
+    expect(cfg.reviewsWorkspace).toBe("reviews");
+  });
+
+  test("reviewCwd and reviewsWorkspace pass through", () => {
+    const cfg = parseConfig(JSON.stringify({ ...base, reviewCwd: "/Users/matt/Documents/GitHub/acme/ron", reviewsWorkspace: "code review" }));
+    expect(cfg.reviewCwd).toBe("/Users/matt/Documents/GitHub/acme/ron");
+    expect(cfg.reviewsWorkspace).toBe("code review");
+  });
+
+  test("rejects non-string reviewCwd", () => {
+    expect(() => parseConfig(JSON.stringify({ ...base, reviewCwd: 5 }))).toThrow(/reviewCwd/);
+  });
 });
 
 describe("setHiddenInRaw", () => {

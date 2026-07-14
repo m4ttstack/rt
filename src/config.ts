@@ -28,6 +28,10 @@ export interface BoardConfig {
   ticketPrefixes: string[];
   title: string;
   port: number;
+  /** Absolute path the review agent's herdr pane starts in (an acme-dev checkout). Empty disables review launch. */
+  reviewCwd: string;
+  /** herdr workspace label reviews are grouped under. */
+  reviewsWorkspace: string;
 }
 
 export const CONFIG_PATH = join(import.meta.dir, "..", "config.json");
@@ -61,6 +65,12 @@ export function parseConfig(raw: string): BoardConfig {
       throw new Error(`config.json "ticketPrefixes" must be an array of non-empty strings`);
     }
   }
+  if (cfg.reviewCwd !== undefined && typeof cfg.reviewCwd !== "string") {
+    throw new Error(`config.json "reviewCwd" must be a string (absolute path)`);
+  }
+  if (cfg.reviewsWorkspace !== undefined && typeof cfg.reviewsWorkspace !== "string") {
+    throw new Error(`config.json "reviewsWorkspace" must be a string`);
+  }
   return {
     gitlabHost: cfg.gitlabHost!,
     projects: cfg.projects!,
@@ -71,6 +81,8 @@ export function parseConfig(raw: string): BoardConfig {
     ticketPrefixes: (cfg.ticketPrefixes ?? []).map((p) => p.trim().toUpperCase()),
     title: cfg.title ?? "MRs ready for review",
     port: cfg.port ?? 7930,
+    reviewCwd: cfg.reviewCwd ?? "",
+    reviewsWorkspace: cfg.reviewsWorkspace ?? "reviews",
   };
 }
 
