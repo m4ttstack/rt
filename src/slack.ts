@@ -14,10 +14,11 @@ const INDEX_PATH = join(STATE_ROOT, "slack-index.json");
 const INITIAL_LOOKBACK_DAYS = 90;
 const MAX_PAGES = 25;
 
-/** The three review-signal reactions, by Slack emoji name. */
+/** The three review-signal reactions, by Slack emoji name. `comment` is a
+    custom workspace emoji (team convention), not the standard speech_balloon. */
 export const REVIEW_EMOJI = {
   looking: "eyes",
-  commented: "speech_balloon",
+  commented: "comment",
   approved: "white_check_mark",
 } as const;
 

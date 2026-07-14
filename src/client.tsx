@@ -286,7 +286,7 @@ function ReviewBadge({ review }: { review?: ReviewInfo }) {
 /** The three review-signal reactions, in menu order. */
 const SLACK_MARKS: { emoji: string; glyph: string; label: string }[] = [
   { emoji: "eyes", glyph: "👀", label: "mark 👀 on slack" },
-  { emoji: "speech_balloon", glyph: "💬", label: "mark 💬 on slack" },
+  { emoji: "comment", glyph: "💬", label: "mark 💬 on slack" },
   { emoji: "white_check_mark", glyph: "✅", label: "mark ✅ on slack" },
 ];
 
