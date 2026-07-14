@@ -97,6 +97,7 @@ const ICONS: Record<string, React.ReactNode> = {
   system: <Icon d="M2 4h20v12H2zM8 20h8m-4-4v4" />,
   menu: <Icon d="M3 6h18M3 12h18M3 18h18" />,
   close: <Icon d="M6 6l12 12M18 6L6 18" />,
+  people: <Icon d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />,
   settings: (
     <Icon
       circle
@@ -448,18 +449,25 @@ function Sidebar({
   total,
   active,
   onPick,
+  onSettings,
 }: {
   members: RosterMember[];
   total: number;
   active: string;
   onPick: (member: string) => void;
+  onSettings: () => void;
 }) {
   return (
     <nav className="tui-sidebar" aria-label="team members">
-      <button className={active === "all" ? "tui-side-item active" : "tui-side-item"} onClick={() => onPick("all")}>
-        <span className="tui-side-name">◉ All</span>
-        <span className="tui-side-count">{total}</span>
-      </button>
+      <div className="tui-side-head">
+        <button className={active === "all" ? "tui-side-item active" : "tui-side-item"} onClick={() => onPick("all")}>
+          <span className="tui-side-name">◉ All</span>
+          <span className="tui-side-count">{total}</span>
+        </button>
+        <button className="tui-side-gear" onClick={onSettings} title="manage roster — check people in/out" aria-label="manage roster">
+          {ICONS.people}
+        </button>
+      </div>
       {members.map((m) => (
         <button
           key={m.username}
@@ -546,7 +554,6 @@ function Controls({
   pickView,
   theme,
   pickTheme,
-  onSettings,
   canCopy,
   summaryText,
   stacked = false,
@@ -557,7 +564,6 @@ function Controls({
   pickView: (v: ViewMode) => void;
   theme: ThemeMode;
   pickTheme: (m: ThemeMode) => void;
-  onSettings: () => void;
   canCopy: boolean;
   summaryText: string;
   stacked?: boolean;
@@ -575,7 +581,6 @@ function Controls({
         <div className="tui-ctl-row"><span className="tui-ctl-label">sort</span>{sort}</div>
         <div className="tui-ctl-row"><span className="tui-ctl-label">view</span>{viewSeg}</div>
         <div className="tui-ctl-row"><span className="tui-ctl-label">theme</span>{themeSeg}</div>
-        <button className="tui-drawer-action" onClick={onSettings}>{ICONS.settings} team settings</button>
         {canCopy && (
           <CopyButton text={summaryText} className="tui-drawer-action" title="copy summary for Slack" label="copy summary" />
         )}
@@ -591,9 +596,6 @@ function Controls({
       {sort}
       {viewSeg}
       {themeSeg}
-      <button className="tui-copy" onClick={onSettings} title="team settings" aria-label="team settings">
-        {ICONS.settings}
-      </button>
     </>
   );
 }
@@ -708,6 +710,10 @@ function Board() {
   }));
   const activeMember = state.member === "all" ? null : data.members.find((m) => m.username === state.member) ?? null;
   const summaryText = boardSummary(groups.flatMap((g) => g.mrs));
+  const openSettings = () => {
+    setMenuOpen(false);
+    setShowSettings(true);
+  };
   const controlProps = {
     state,
     update,
@@ -715,10 +721,6 @@ function Board() {
     pickView,
     theme,
     pickTheme,
-    onSettings: () => {
-      setMenuOpen(false);
-      setShowSettings(true);
-    },
     canCopy: filtered.length > 0,
     summaryText,
   };
@@ -726,7 +728,13 @@ function Board() {
   return (
     <div className={view === "grid" ? "tui tui-wide tui-app" : "tui tui-app"}>
       {/* Desktop roster (hidden on mobile, where it moves into the drawer). */}
-      <Sidebar members={data.members} total={total} active={state.member} onPick={(member) => update({ member })} />
+      <Sidebar
+        members={data.members}
+        total={total}
+        active={state.member}
+        onPick={(member) => update({ member })}
+        onSettings={openSettings}
+      />
 
       <div className="tui-main">
         <header className="tui-header">
@@ -781,6 +789,7 @@ function Board() {
                 update({ member });
                 setMenuOpen(false);
               }}
+              onSettings={openSettings}
             />
             <div className="tui-drawer-controls">
               <Controls {...controlProps} stacked />
