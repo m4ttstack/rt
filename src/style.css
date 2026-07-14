@@ -186,9 +186,39 @@ body {
 .tui-side-count { color: var(--muted); font-family: var(--font-mono); font-size: 0.85em; }
 .tui-side-empty { opacity: 0.45; }
 .tui-seg-text button { padding: 0.3rem 0.55rem; font-size: 0.8em; }
+
+/* ── mobile: burger + drawer ──────────────────────────────────────── */
+.tui-burger {
+  display: none; flex-shrink: 0; align-items: center; justify-content: center;
+  background: transparent; border: 1px solid var(--border); border-radius: 6px;
+  color: var(--fg); cursor: pointer; padding: 5px 7px;
+}
+.tui-burger:hover { border-color: var(--accent); }
+.tui-header-title { min-width: 0; }
+.tui-drawer-overlay {
+  position: fixed; inset: 0; z-index: 90; display: none;
+  background: color-mix(in srgb, var(--bg) 55%, transparent); backdrop-filter: blur(2px);
+}
+.tui-drawer {
+  width: min(320px, 85vw); height: 100%; overflow-y: auto;
+  background: var(--panel); border-right: 1px solid var(--border);
+  padding: 14px; display: flex; flex-direction: column; gap: 14px;
+  box-shadow: 4px 0 28px rgba(0, 0, 0, 0.3);
+}
+.tui-drawer-head { display: flex; justify-content: space-between; align-items: center; }
+.tui-drawer .tui-sidebar { position: static; }
+.tui-drawer-controls {
+  display: flex; flex-wrap: wrap; gap: 0.6rem; align-items: center;
+  padding-top: 12px; border-top: 1px solid var(--border-soft);
+}
+
 @media (max-width: 720px) {
   .tui-app { grid-template-columns: 1fr; }
-  .tui-sidebar { position: static; flex-direction: row; flex-wrap: wrap; }
+  .tui-app > .tui-sidebar { display: none; }   /* roster moves into the drawer */
+  .tui-controls-header { display: none; }        /* controls move into the drawer */
+  .tui-burger { display: inline-flex; }
+  .tui-header { justify-content: flex-start; align-items: center; gap: 10px; margin-bottom: 1.1rem; }
+  .tui-drawer-overlay { display: flex; }
 }
 
 /* ── settings modal ───────────────────────────────────────────────── */

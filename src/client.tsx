@@ -95,6 +95,8 @@ const ICONS: Record<string, React.ReactNode> = {
   light: <Icon circle d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />,
   dark: <Icon d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />,
   system: <Icon d="M2 4h20v12H2zM8 20h8m-4-4v4" />,
+  menu: <Icon d="M3 6h18M3 12h18M3 18h18" />,
+  close: <Icon d="M6 6l12 12M18 6L6 18" />,
   settings: (
     <Icon
       circle
@@ -533,6 +535,43 @@ function SettingsModal({
   );
 }
 
+// ── controls (shared: desktop header + mobile drawer) ───────────────────────
+
+function Controls({
+  state,
+  update,
+  view,
+  pickView,
+  theme,
+  pickTheme,
+  onSettings,
+  canCopy,
+  summaryText,
+}: {
+  state: ViewState;
+  update: (patch: Partial<ViewState>) => void;
+  view: ViewMode;
+  pickView: (v: ViewMode) => void;
+  theme: ThemeMode;
+  pickTheme: (m: ThemeMode) => void;
+  onSettings: () => void;
+  canCopy: boolean;
+  summaryText: string;
+}) {
+  return (
+    <>
+      {canCopy && <CopyButton text={summaryText} className="tui-copy" title="copy summary for Slack" />}
+      <LabeledSeg legend="group" options={GROUP_KEYS} labels={GROUP_LABEL} value={state.group} onChange={(group) => update({ group })} />
+      <LabeledSeg legend="sort" options={SORT_KEYS} labels={SORT_LABEL} value={state.sort} onChange={(sort) => update({ sort })} />
+      <Segmented options={["rows", "grid"] as const} value={view} onChange={pickView} label="view" />
+      <Segmented options={["light", "dark", "system"] as const} value={theme} onChange={pickTheme} label="theme" />
+      <button className="tui-copy" onClick={onSettings} title="team settings" aria-label="team settings">
+        {ICONS.settings}
+      </button>
+    </>
+  );
+}
+
 // ── board ──────────────────────────────────────────────────────────────────
 
 function Board() {
@@ -618,6 +657,7 @@ function Board() {
   }, [load]);
 
   const [showSettings, setShowSettings] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const toggleMember = async (username: string, hidden: boolean) => {
     const res = await fetch("/settings", {
       method: "POST",
@@ -642,14 +682,33 @@ function Board() {
   }));
   const activeMember = state.member === "all" ? null : data.members.find((m) => m.username === state.member) ?? null;
   const summaryText = boardSummary(groups.flatMap((g) => g.mrs));
+  const controlProps = {
+    state,
+    update,
+    view,
+    pickView,
+    theme,
+    pickTheme,
+    onSettings: () => {
+      setMenuOpen(false);
+      setShowSettings(true);
+    },
+    canCopy: filtered.length > 0,
+    summaryText,
+  };
 
   return (
     <div className={view === "grid" ? "tui tui-wide tui-app" : "tui tui-app"}>
+      {/* Desktop roster (hidden on mobile, where it moves into the drawer). */}
       <Sidebar members={data.members} total={total} active={state.member} onPick={(member) => update({ member })} />
 
       <div className="tui-main">
         <header className="tui-header">
-          <div>
+          {/* Mobile-only: burger opens the drawer with roster + controls. */}
+          <button className="tui-burger" onClick={() => setMenuOpen(true)} aria-label="open menu">
+            {ICONS.menu}
+          </button>
+          <div className="tui-header-title">
             <h1>
               <span className="tui-prompt">❯</span> {data.title.toLowerCase()}{" "}
               {activeMember && <span className="tui-author">--author @{activeMember.username}</span>}
@@ -658,23 +717,10 @@ function Board() {
               <span className="tui-comment"># {filtered.length} awaiting review · pick one, it opens in gitlab</span>
             </p>
           </div>
-          <div className="tui-controls">
-            {filtered.length > 0 && (
-              <CopyButton text={summaryText} className="tui-copy" title="copy summary for Slack" />
-            )}
-            <LabeledSeg legend="group" options={GROUP_KEYS} labels={GROUP_LABEL} value={state.group} onChange={(group) => update({ group })} />
-            <LabeledSeg legend="sort" options={SORT_KEYS} labels={SORT_LABEL} value={state.sort} onChange={(sort) => update({ sort })} />
-            <Segmented options={["rows", "grid"] as const} value={view} onChange={pickView} label="view" />
-            <Segmented options={["light", "dark", "system"] as const} value={theme} onChange={pickTheme} label="theme" />
-            <button className="tui-copy" onClick={() => setShowSettings(true)} title="team settings" aria-label="team settings">
-              {ICONS.settings}
-            </button>
+          <div className="tui-controls tui-controls-header">
+            <Controls {...controlProps} />
           </div>
         </header>
-
-        {showSettings && (
-          <SettingsModal members={data.allMembers} onToggle={toggleMember} onClose={() => setShowSettings(false)} />
-        )}
 
         {data.fetchError && <div className="tui-banner">⚠ data from {staleMins}m ago — gitlab fetch failing</div>}
 
@@ -690,6 +736,36 @@ function Board() {
 
         <footer className="tui-footer">updated {staleMins < 1 ? "just now" : `${staleMins}m ago`}</footer>
       </div>
+
+      {/* Mobile drawer: roster + controls, tucked behind the burger. */}
+      {menuOpen && (
+        <div className="tui-drawer-overlay" onClick={() => setMenuOpen(false)}>
+          <div className="tui-drawer" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="menu">
+            <div className="tui-drawer-head">
+              <span className="tui-modal-title">❯ menu</span>
+              <button className="tui-modal-x" onClick={() => setMenuOpen(false)} aria-label="close menu">
+                {ICONS.close}
+              </button>
+            </div>
+            <Sidebar
+              members={data.members}
+              total={total}
+              active={state.member}
+              onPick={(member) => {
+                update({ member });
+                setMenuOpen(false);
+              }}
+            />
+            <div className="tui-drawer-controls">
+              <Controls {...controlProps} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showSettings && (
+        <SettingsModal members={data.allMembers} onToggle={toggleMember} onClose={() => setShowSettings(false)} />
+      )}
     </div>
   );
 }
