@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 
+import { eligibleForLinearDiscovery } from "../server/linear/fetch.js";
 import { mapIssue } from "../server/linear/map.js";
 import { computeSnapshot } from "../server/metrics/snapshot.js";
 import type { RawIssue } from "../server/linear/raw-types.js";
-import { FETCH, USERS, WINDOW } from "./fixtures.js";
+import { FETCH, USERS, WINDOW, mr } from "./fixtures.js";
 
 const SIZE_BAND = { tooSmall: 10, tooLarge: 400 };
 
@@ -14,6 +15,29 @@ const rawIssue = (overrides: Partial<RawIssue> = {}): RawIssue => ({
   url: "https://linear.app/acme/issue/ENG-1",
   state: null,
   ...overrides,
+});
+
+describe("eligibleForLinearDiscovery", () => {
+  const at = (state: "merged" | "opened" | "closed" | "locked") =>
+    mr({ iid: 1, authorUsername: "alice", title: "Fix ACME-100 bug", state });
+
+  it("scans merged MRs (shipped work)", () => {
+    expect(eligibleForLinearDiscovery(at("merged"))).toBe(true);
+  });
+
+  it("scans open MRs so in-review tickets are discovered", () => {
+    // The bug this fixes: a ticket is 'In Review' precisely while its MR is open,
+    // so open MRs must feed discovery or those tickets never enter the dataset.
+    expect(eligibleForLinearDiscovery(at("opened"))).toBe(true);
+  });
+
+  it("scans locked MRs (mid-merge, still active)", () => {
+    expect(eligibleForLinearDiscovery(at("locked"))).toBe(true);
+  });
+
+  it("skips closed (abandoned) MRs", () => {
+    expect(eligibleForLinearDiscovery(at("closed"))).toBe(false);
+  });
 });
 
 describe("mapIssue", () => {

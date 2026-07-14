@@ -6,7 +6,7 @@ import { applyMrDetail, mapEvent, mapMrListNode, mapPipeline } from "../gitlab/m
 import { getCachedMrKeys, getMrByKey, mrKey, putMrDetails, getCachedMrList, putMrListNodes, getLastListScan, setLastListScan } from "../cache/mr-store.js";
 import { scopeKey } from "../cache/store.js";
 import { isRevertTitle } from "../metrics/reverts.js";
-import { resolveLinearTickets } from "../linear/fetch.js";
+import { eligibleForLinearDiscovery, resolveLinearTickets } from "../linear/fetch.js";
 import { GROUP_MRS_QUERY, GROUP_PROJECTS_QUERY, MR_DETAIL_QUERY, PROJECT_MRS_QUERY } from "../gitlab/queries.js";
 import { encodePath, restGetAll, restGetOne } from "../gitlab/rest.js";
 import type { RawEvent, RawMrConnection, RawMrDetail, RawMrListNode, RawPipeline, RawUser } from "../gitlab/raw-types.js";
@@ -57,8 +57,10 @@ export async function fetchAll(opts: FetchOptions): Promise<FetchOutcome> {
 
   signal?.throwIfAborted();
   report({ phase: "linear", label: "Verifying Linear tickets", done: 0, total: 0 });
-  const allMerged = mrs.filter((m) => m.state === "merged");
-  const linearIssues = await resolveLinearTickets(env.linearApiKey, allMerged, warnings, signal, report);
+  // Discover tickets from shipped + in-flight MRs (not abandoned ones): an "In Review"
+  // ticket lives on an open MR, so a merged-only scan would never surface it.
+  const ticketSources = mrs.filter(eligibleForLinearDiscovery);
+  const linearIssues = await resolveLinearTickets(env.linearApiKey, ticketSources, warnings, signal, report);
 
   return {
     result: { mrs, pipelines, pushEvents, linearIssues, approvalsAvailable: true },

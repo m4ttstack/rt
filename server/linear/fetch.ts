@@ -88,7 +88,18 @@ async function verifyIndividually(
 }
 
 /**
- * Scan merged MRs for Linear ticket identifiers, batch-verify them against the Linear
+ * Which MRs feed Linear ticket discovery: shipped (merged) plus in-flight (opened,
+ * or locked while mid-merge), but NOT abandoned (closed). Open MRs matter because a
+ * ticket sits in states like "In Review" precisely while its MR is still open — scan
+ * only merged MRs and those tickets never enter the dataset, so `doneStates` can never
+ * count them.
+ */
+export function eligibleForLinearDiscovery(m: NormMr): boolean {
+  return m.state !== "closed";
+}
+
+/**
+ * Scan the given MRs for Linear ticket identifiers, batch-verify them against the Linear
  * API via `issue(id:)` lookups, and return verified tickets attributed to each MR's author.
  *
  * Resilient: batched in chunks of 100, with automatic per-identifier fallback when a
@@ -96,19 +107,19 @@ async function verifyIndividually(
  */
 export async function resolveLinearTickets(
   apiKey: string | undefined,
-  mergedMrs: readonly NormMr[],
+  sourceMrs: readonly NormMr[],
   warnings: LeaderboardWarning[],
   signal?: AbortSignal,
   onProgress?: (p: Omit<RefreshProgress, "window">) => void,
 ): Promise<NormLinearIssue[]> {
-  if (!apiKey || mergedMrs.length === 0) return [];
+  if (!apiKey || sourceMrs.length === 0) return [];
 
   interface TicketRef {
     authors: Set<string>;
     mrs: { iid: number; projectPath: string }[];
   }
   const ticketMap = new Map<string, TicketRef>();
-  for (const mr of mergedMrs) {
+  for (const mr of sourceMrs) {
     const ids = extractLinearIds(mrTicketHaystack(mr));
     for (const id of ids) {
       const normalized = id.toUpperCase().replace(":", "-");
