@@ -6,3 +6,5 @@ logs/
 
 # review status files written at runtime
 state/
+
+.DS_Store
