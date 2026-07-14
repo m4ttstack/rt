@@ -1,4 +1,4 @@
-import { getMRDashboardProps, type MRDashboardProps, type PullRequest } from "@workforge/glance-sdk";
+import { getMRDashboardProps, getReviewDisplayState, type MRDashboardProps, type PullRequest } from "@workforge/glance-sdk";
 import type { BoardConfig, Member } from "./config.ts";
 
 export type PipelineState = "passed" | "running" | "failed" | "none";
@@ -70,7 +70,7 @@ export function buildBoard(prs: PullRequest[], config: BoardConfig, now: number 
  * comments. Comes from `reviews.reviewers[].reviewState`.
  */
 export function hasChangesRequested(mr: BoardMR): boolean {
-  return mr.reviews.reviewers?.some((r) => r.reviewState === "REQUESTED_CHANGES") ?? false;
+  return mr.reviews.reviewers?.some((r) => getReviewDisplayState(r.reviewState ?? null) === "changes_requested") ?? false;
 }
 
 export interface RosterMember {

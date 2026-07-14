@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { extractTicketId, ticketUrl } from "./ticket.ts";
 import type { BoardMR } from "./data.ts";
 import { hasChangesRequested } from "./data.ts";
+import { getReviewDisplayState } from "@workforge/glance-sdk";
 import { filterByMember, sortMRs, groupMRs, parseViewState, serializeViewState, GROUP_KEYS, SORT_KEYS } from "./view.ts";
 import type { GroupKey, SortKey, ViewState } from "./view.ts";
 
@@ -234,8 +235,10 @@ function statusReasons(mr: BoardMR): string {
 }
 
 function activeReviewers(mr: BoardMR): string[] {
+  // getReviewDisplayState maps the raw reviewState to the UI taxonomy; the SDK
+  // never populates r.displayState, so derive it rather than reading that field.
   return (mr.reviews?.reviewers ?? [])
-    .filter((r) => (r.displayState ?? (r.reviewState === "REVIEW_STARTED" ? "reviewing" : null)) === "reviewing")
+    .filter((r) => getReviewDisplayState(r.reviewState ?? null) === "reviewing")
     .map((r) => r.name || r.username);
 }
 
