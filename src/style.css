@@ -149,27 +149,61 @@ body {
 .t-cyan { color: var(--cyan); } .t-muted { color: var(--muted); } .t-accent { color: var(--accent); }
 .t-dim .t-ok, .t-dim .t-bad { opacity: 0.75; }
 
-/* ── comments hover card ──────────────────────────────────────────── */
-.tui-comments-wrap { position: relative; cursor: default; }
-.tui-comments-card {
-  position: absolute; top: 1.5em; right: 0; z-index: 30;
-  width: max-content; max-width: 340px;
-  display: flex; flex-direction: column; gap: 0.4rem;
-  background: var(--panel); color: var(--fg);
-  border: 1px solid var(--border); border-radius: 6px;
-  padding: 0.5rem 0.6rem; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
-  font-size: 0.72rem; font-weight: 400; white-space: normal; text-align: left;
+/* ── comments drawer ──────────────────────────────────────────────── */
+.tui-comments-btn {
+  background: none; border: none; padding: 0; font: inherit; cursor: pointer;
+  text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px;
 }
 .tui-comments-empty { color: var(--muted); }
-.tui-comment-thread { display: flex; gap: 0.45rem; align-items: baseline; }
 .tui-comment-icon { flex-shrink: 0; }
-.tui-comment-thread.resolved .tui-comment-icon { color: var(--dot-ok); }
-.tui-comment-thread.replied .tui-comment-icon { color: var(--accent); }
-.tui-comment-thread.awaiting .tui-comment-icon { color: var(--dot-warn); }
-.tui-comment-main { min-width: 0; display: flex; flex-direction: column; gap: 0.1rem; }
-.tui-comment-status { font-weight: 600; }
-.tui-comment-reviewer { color: var(--muted); font-weight: 400; }
-.tui-comment-snippet { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 290px; }
+.tui-cd-thread.resolved .tui-comment-icon { color: var(--dot-ok); }
+.tui-cd-thread.replied .tui-comment-icon { color: var(--accent); }
+.tui-cd-thread.awaiting .tui-comment-icon { color: var(--dot-warn); }
+
+.tui-cd-overlay {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; justify-content: flex-end;
+  background: color-mix(in srgb, var(--bg) 55%, transparent); backdrop-filter: blur(2px);
+}
+.tui-cd {
+  width: min(460px, 92vw); height: 100%; overflow-y: auto;
+  background: var(--panel); border-left: 1px solid var(--border);
+  box-shadow: -6px 0 32px rgba(0, 0, 0, 0.3);
+  display: flex; flex-direction: column;
+}
+.tui-cd-head {
+  display: flex; justify-content: space-between; align-items: flex-start; gap: 0.6rem;
+  padding: 0.9rem 1rem 0.5rem; position: sticky; top: 0; background: var(--panel); z-index: 1;
+}
+.tui-cd-title { font-weight: 600; font-size: 0.92rem; line-height: 1.4; min-width: 0; }
+.tui-cd-iid { color: var(--muted); font-family: var(--font-mono); font-weight: 400; }
+.tui-cd-open {
+  color: var(--accent); font-size: 0.76rem; text-decoration: none;
+  padding: 0 1rem 0.7rem; border-bottom: 1px solid var(--border-soft);
+}
+.tui-cd-open:hover { text-decoration: underline; }
+.tui-cd-body { padding: 0.8rem 1rem 1.4rem; display: flex; flex-direction: column; gap: 1rem; }
+.tui-cd-thread {
+  border: 1px solid var(--border-soft); border-radius: 8px; overflow: hidden;
+  border-left: 3px solid var(--border);
+}
+.tui-cd-thread.resolved { border-left-color: var(--dot-ok); }
+.tui-cd-thread.replied { border-left-color: var(--accent); }
+.tui-cd-thread.awaiting { border-left-color: var(--dot-warn); }
+.tui-cd-thread-status {
+  font-size: 0.72rem; font-weight: 700; letter-spacing: 0.02em;
+  padding: 0.4rem 0.7rem; background: color-mix(in srgb, var(--card) 60%, transparent);
+  border-bottom: 1px solid var(--border-soft);
+}
+.tui-cd-note { padding: 0.6rem 0.7rem; }
+.tui-cd-note + .tui-cd-note { border-top: 1px solid var(--border-soft); }
+.tui-cd-note-head { display: flex; justify-content: space-between; align-items: baseline; gap: 0.6rem; margin-bottom: 0.3rem; }
+.tui-cd-note-author { color: var(--purple); font-weight: 600; font-size: 0.78rem; }
+.tui-cd-note-time { color: var(--muted); font-size: 0.72rem; flex-shrink: 0; }
+.tui-cd-note-body {
+  font: 400 0.82rem/1.5 var(--font-sans); color: var(--fg);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}
 
 /* ── ticket link ──────────────────────────────────────────────────── */
 .tui-ticket { color: var(--purple); opacity: 0.75; flex-shrink: 0; align-self: center; display: inline-flex; padding: 0.15rem; }
@@ -317,3 +351,20 @@ body {
 }
 .tui-check-box:disabled { cursor: default; }
 .tui-modal-count { flex-shrink: 0; color: var(--muted); font-family: var(--font-mono); font-size: 0.85em; }
+
+/* review status badge */
+.tui-review {
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.tui-review-queued { opacity: 0.7; color: var(--muted); }
+.tui-review-reviewing { color: var(--dot-warn); border-color: currentColor; animation: tui-review-pulse 1.4s ease-in-out infinite; }
+.tui-review-done { color: var(--dot-ok); border-color: currentColor; }
+.tui-review-error { color: var(--dot-bad); border-color: currentColor; }
+@keyframes tui-review-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+/* hint that modifier-click launches a review (local only) */
+.tui-row[data-local="1"], .tui-card[data-local="1"] { cursor: pointer; }

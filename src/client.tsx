@@ -21,14 +21,19 @@ interface ConfigMember {
   count: number;
 }
 
+type ReviewStatus = "queued" | "reviewing" | "done" | "error";
+interface ReviewInfo { status: ReviewStatus; message?: string }
+type BoardMRWithReview = BoardMR & { review?: ReviewInfo };
+
 interface BoardData {
   title: string;
   defaultMember: string;
   members: RosterMember[];
   allMembers: ConfigMember[];
-  mrs: BoardMR[];
+  mrs: BoardMRWithReview[];
   fetchedAt: number;
   fetchError: string | null;
+  local: boolean;
 }
 
 declare global {
@@ -248,9 +253,38 @@ function cleanTitle(title: string): string {
   return title.replace(/^[A-Za-z]+-\d+:\s*/, "");
 }
 
-function openMR(e: React.MouseEvent, mr: BoardMR) {
+function launchReview(mr: BoardMR) {
+  fetch("/review", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ mrUrl: mr.webUrl, iid: mr.iid }),
+  }).catch(() => {});
+}
+
+function onRowClick(e: React.MouseEvent, mr: BoardMR, local: boolean) {
   if ((e.target as HTMLElement).closest("a, button")) return;
+  if (local && (e.metaKey || e.ctrlKey)) {
+    e.preventDefault();
+    launchReview(mr);
+    return;
+  }
   if (mr.webUrl) window.open(mr.webUrl, "_blank", "noopener");
+}
+
+const REVIEW_LABEL: Record<ReviewStatus, string> = {
+  queued: "review queued",
+  reviewing: "reviewing…",
+  done: "review ready",
+  error: "review failed",
+};
+
+function ReviewBadge({ review }: { review?: ReviewInfo }) {
+  if (!review) return null;
+  return (
+    <span className={`tui-review tui-review-${review.status}`} title={review.message || REVIEW_LABEL[review.status]}>
+      {REVIEW_LABEL[review.status]}
+    </span>
+  );
 }
 
 // ── slack summary ───────────────────────────────────────────────────────────
@@ -327,72 +361,98 @@ function statusPhrase(mr: BoardMR): { text: string; cls: string; comments?: bool
 
 function StatusPhrase({ mr }: { mr: BoardMR }) {
   const { text, cls, comments } = statusPhrase(mr);
-  if (comments) return <CommentsCard mr={mr} label={text} cls={cls} />;
+  if (comments) return <CommentsButton mr={mr} label={text} cls={cls} />;
   return <span className={`tui-phrase ${cls}`}>{text}</span>;
 }
 
-type CommentThread = { status: "resolved" | "replied" | "awaiting"; reviewer: string | null; snippet: string };
-const THREAD_ICON: Record<CommentThread["status"], string> = { resolved: "✓", replied: "↩", awaiting: "●" };
-const THREAD_LABEL: Record<CommentThread["status"], string> = {
+type ThreadStatus = "resolved" | "replied" | "awaiting";
+type CommentNote = { name: string; username: string | null; at: string; body: string };
+type CommentThread = { status: ThreadStatus; notes: CommentNote[] };
+const THREAD_ICON: Record<ThreadStatus, string> = { resolved: "✓", replied: "↩", awaiting: "●" };
+const THREAD_LABEL: Record<ThreadStatus, string> = {
   resolved: "resolved",
   replied: "author replied",
   awaiting: "awaiting author",
 };
 
-/** Hover the "N comments" label to lazily load that MR's threads and see, per
-    thread, whether it's resolved, the author replied, or it's awaiting them. */
-function CommentsCard({ mr, label, cls }: { mr: BoardMR; label: string; cls: string }) {
+/** The "N comments" label; clicking it opens a drawer with the full threads. */
+function CommentsButton({ mr, label, cls }: { mr: BoardMR; label: string; cls: string }) {
   const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button
+        className={`tui-phrase tui-comments-btn ${cls}`}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen(true);
+        }}
+        title="view comment threads"
+      >
+        {label}
+      </button>
+      {open && <CommentsDrawer mr={mr} onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
+/** Right-side drawer showing every comment thread on an MR in full: each
+    thread's status and every note (author, time, body). Lazily fetched. */
+function CommentsDrawer({ mr, onClose }: { mr: BoardMR; onClose: () => void }) {
   const [threads, setThreads] = useState<CommentThread[] | null>(null);
-  const [more, setMore] = useState(0);
   const [failed, setFailed] = useState(false);
-  const load = () => {
-    if (threads || failed) return;
+  const now = Date.now();
+  useEffect(() => {
     const params = new URLSearchParams({ repo: mr.repositoryId, iid: String(mr.iid), author: mr.author.username });
     fetch(`/discussions?${params}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("bad status"))))
-      .then((d: { threads: CommentThread[]; more?: number }) => {
-        setThreads(d.threads);
-        setMore(d.more ?? 0);
-      })
+      .then((d: { threads: CommentThread[] }) => setThreads(d.threads))
       .catch(() => setFailed(true));
-  };
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [mr, onClose]);
   return (
-    <span
-      className={`tui-phrase tui-comments-wrap ${cls}`}
-      onMouseEnter={() => {
-        setOpen(true);
-        load();
-      }}
-      onMouseLeave={() => setOpen(false)}
-    >
-      {label}
-      {open && (
-        <span className="tui-comments-card" onClick={(e) => e.stopPropagation()}>
+    <div className="tui-cd-overlay" onClick={onClose}>
+      <div className="tui-cd" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="comment threads">
+        <div className="tui-cd-head">
+          <div className="tui-cd-title">
+            <span className="tui-cd-iid">!{mr.iid}</span> {cleanTitle(mr.title)}
+          </div>
+          <button className="tui-modal-x" onClick={onClose} aria-label="close">
+            {ICONS.close}
+          </button>
+        </div>
+        <a className="tui-cd-open" href={mr.webUrl ?? "#"} target="_blank" rel="noopener noreferrer">
+          open in gitlab ↗
+        </a>
+        <div className="tui-cd-body">
           {failed ? (
-            <span className="tui-comments-empty">couldn't load comments</span>
+            <p className="tui-comments-empty">couldn't load comments</p>
           ) : !threads ? (
-            <span className="tui-comments-empty">loading…</span>
+            <p className="tui-comments-empty">loading…</p>
           ) : threads.length === 0 ? (
-            <span className="tui-comments-empty">no comment threads</span>
+            <p className="tui-comments-empty">no comment threads</p>
           ) : (
             threads.map((t, i) => (
-              <span key={i} className={`tui-comment-thread ${t.status}`}>
-                <span className="tui-comment-icon">{THREAD_ICON[t.status]}</span>
-                <span className="tui-comment-main">
-                  <span className="tui-comment-status">
-                    {THREAD_LABEL[t.status]}
-                    {t.reviewer && <span className="tui-comment-reviewer"> · {t.reviewer}</span>}
-                  </span>
-                  {t.snippet && <span className="tui-comment-snippet">{t.snippet}</span>}
-                </span>
-              </span>
+              <section key={i} className={`tui-cd-thread ${t.status}`}>
+                <div className="tui-cd-thread-status">
+                  <span className="tui-comment-icon">{THREAD_ICON[t.status]}</span> {THREAD_LABEL[t.status]}
+                </div>
+                {t.notes.map((n, j) => (
+                  <div key={j} className="tui-cd-note">
+                    <div className="tui-cd-note-head">
+                      <span className="tui-cd-note-author">{n.name}</span>
+                      <span className="tui-cd-note-time">{ago(n.at, now)}</span>
+                    </div>
+                    <div className="tui-cd-note-body">{n.body}</div>
+                  </div>
+                ))}
+              </section>
             ))
           )}
-          {more > 0 && <span className="tui-comments-empty">+{more} more</span>}
-        </span>
-      )}
-    </span>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -461,17 +521,23 @@ function AuthorTag({ mr }: { mr: BoardMR }) {
   );
 }
 
-function RowView({ mrs, now, showAuthor }: { mrs: BoardMR[]; now: number; showAuthor: boolean }) {
+function RowView({ mrs, now, showAuthor, local }: { mrs: BoardMR[]; now: number; showAuthor: boolean; local: boolean }) {
   return (
     <div className="tui-rows">
       {mrs.map((mr) => {
         const ticket = extractTicketId(mr.sourceBranch, mr.title);
         return (
-          <div key={mr.iid} className="tui-row" onClick={(e) => openMR(e, mr)}>
+          <div
+            key={mr.iid}
+            className="tui-row"
+            data-local={local ? "1" : undefined}
+            onClick={(e) => onRowClick(e, mr, local)}
+          >
             <div className="tui-row-1">
               <StatusDot mr={mr} />
               <span className="tui-title">{cleanTitle(mr.title)}</span>
               <StatusPhrase mr={mr} />
+              <ReviewBadge review={(mr as BoardMRWithReview).review} />
               {ticket && <TicketLink ticket={ticket} />}
               <CopyButton text={mrLine(mr)} className="tui-copy-inline" title="copy this MR for Slack" />
             </div>
@@ -493,17 +559,23 @@ function RowView({ mrs, now, showAuthor }: { mrs: BoardMR[]; now: number; showAu
   );
 }
 
-function GridView({ mrs, now, showAuthor }: { mrs: BoardMR[]; now: number; showAuthor: boolean }) {
+function GridView({ mrs, now, showAuthor, local }: { mrs: BoardMR[]; now: number; showAuthor: boolean; local: boolean }) {
   return (
     <div className="tui-grid">
       {mrs.map((mr) => {
         const ticket = extractTicketId(mr.sourceBranch, mr.title);
         const reasons = mr.blockers?.any ? statusReasons(mr).split("\n").slice(1) : [];
         return (
-          <div key={mr.iid} className="tui-card" onClick={(e) => openMR(e, mr)}>
+          <div
+            key={mr.iid}
+            className="tui-card"
+            data-local={local ? "1" : undefined}
+            onClick={(e) => onRowClick(e, mr, local)}
+          >
             <CopyButton text={mrLine(mr)} className="tui-copy-inline tui-copy-card" title="copy this MR for Slack" />
             <span className="tui-card-label">
               <StatusDot mr={mr} /> !{mr.iid}
+              <ReviewBadge review={(mr as BoardMRWithReview).review} />
               {ticket && <TicketLink ticket={ticket} />}
             </span>
             <div className="tui-card-title">{cleanTitle(mr.title)}</div>
@@ -781,6 +853,23 @@ function Board() {
     if (res.ok) await load();
   };
 
+  // Poll faster while a review is actively running, so the badge updates
+  // promptly instead of waiting for the normal 60s cadence.
+  const reviewActive =
+    !!data &&
+    data.mrs.some((mr) => {
+      const s = (mr as BoardMRWithReview).review?.status;
+      return s === "queued" || s === "reviewing";
+    });
+
+  useEffect(() => {
+    if (!reviewActive) return;
+    const t = setInterval(() => {
+      if (!document.hidden) load();
+    }, 4000);
+    return () => clearInterval(t);
+  }, [reviewActive, load]);
+
   if (!data) {
     return <p className="tui-loading">{loadError ? "✗ failed to load board data" : "fetching…"}</p>;
   }
@@ -853,9 +942,9 @@ function Board() {
           groups.map((g) => (
             <Panel key={g.label} title={g.label} count={g.mrs.length}>
               {view === "rows" ? (
-                <RowView mrs={g.mrs} now={now} showAuthor={showAuthor} />
+                <RowView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} />
               ) : (
-                <GridView mrs={g.mrs} now={now} showAuthor={showAuthor} />
+                <GridView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} />
               )}
             </Panel>
           ))
