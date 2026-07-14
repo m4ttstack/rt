@@ -109,7 +109,7 @@ body {
 .tui-row-1 { display: flex; align-items: baseline; gap: 0.55rem; min-width: 0; }
 .tui-iid { color: var(--muted); font-size: 0.78rem; flex-shrink: 0; }
 .tui-title { font-weight: 200; font-size: 0.75rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tui-row-2 { display: flex; align-items: baseline; gap: 0.55rem; color: var(--muted); font-size: 0.6rem; margin-top: 0.1rem; }
+.tui-row-2 { display: flex; align-items: center; gap: 0.55rem; color: var(--muted); font-size: 0.6rem; margin-top: 0.15rem; }
 .tui-branch { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tui-arrow { color: var(--muted); opacity: 0.7; }
 /* Author identity in a row (All view, non-author grouping). */
