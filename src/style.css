@@ -459,6 +459,12 @@ body {
 .tui-menu-hint { font-family: var(--font-mono); font-size: 10px; color: var(--muted); }
 .tui-menu-check { color: var(--dot-ok); font-size: 12px; }
 .tui-menu-sep { height: 1px; background: var(--border-soft); margin: 4px 2px; }
+.tui-menu-spin {
+  width: 12px; height: 12px; flex-shrink: 0;
+  border: 2px solid var(--border); border-top-color: var(--accent);
+  border-radius: 50%; display: inline-block;
+  animation: tui-spin 0.7s linear infinite;
+}
 
 /* transient confirmation toasts */
 .tui-toasts {

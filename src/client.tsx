@@ -345,9 +345,13 @@ function RowMenu({
   onLaunch: (mr: BoardMR) => void;
   onCopy: (mr: BoardMR) => void;
   onResolveSlack: (mr: BoardMR) => void;
-  onReactSlack: (mr: BoardMR, emoji: string) => void;
+  onReactSlack: (mr: BoardMR, emoji: string) => Promise<string[] | null>;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  // Local reaction state so the open menu updates immediately after a mark,
+  // and per-emoji pending so the clicked item shows a spinner + disables.
+  const [reactions, setReactions] = useState<string[]>((menu.mr as BoardMRWithReview).slack?.reactions ?? []);
+  const [pending, setPending] = useState<string[]>([]);
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
       if (!ref.current?.contains(e.target as Node)) onClose();
@@ -381,8 +385,16 @@ function RowMenu({
     fn();
     onClose();
   };
-  // Slack marks stay open so you can set several at once.
-  const runKeepOpen = (fn: () => void) => () => fn();
+  // Slack marks stay open (set several at once) and drive per-item pending +
+  // a live check, so the click has immediate feedback.
+  const react = (emoji: string) => {
+    if (pending.includes(emoji)) return;
+    setPending((p) => [...p, emoji]);
+    onReactSlack(mr, emoji).then((next) => {
+      if (next) setReactions(next);
+      setPending((p) => p.filter((e) => e !== emoji));
+    });
+  };
 
   return (
     <div ref={ref} className="tui-menu" style={{ left, top }} role="menu" aria-label={`actions for !${mr.iid}`}>
@@ -403,14 +415,24 @@ function RowMenu({
           <div className="tui-menu-sep" />
           {found ? (
             <>
-              {SLACK_MARKS.map((m) => (
-                <MenuItem
-                  key={m.emoji}
-                  label={m.label}
-                  trailing={slack?.reactions.includes(m.emoji) ? <span className="tui-menu-check">✓</span> : undefined}
-                  onClick={runKeepOpen(() => onReactSlack(mr, m.emoji))}
-                />
-              ))}
+              {SLACK_MARKS.map((m) => {
+                const isPending = pending.includes(m.emoji);
+                return (
+                  <MenuItem
+                    key={m.emoji}
+                    label={m.label}
+                    disabled={isPending}
+                    trailing={
+                      isPending ? (
+                        <span className="tui-menu-spin" aria-label="working" />
+                      ) : reactions.includes(m.emoji) ? (
+                        <span className="tui-menu-check">✓</span>
+                      ) : undefined
+                    }
+                    onClick={() => react(m.emoji)}
+                  />
+                );
+              })}
               {slack?.permalink && (
                 <MenuItem label="open MR post in slack" onClick={run(() => window.open(slack.permalink!, "_blank", "noopener"))} />
               )}
@@ -1243,20 +1265,28 @@ function Board() {
   );
 
   const handleReactSlack = useCallback(
-    (mr: BoardMR, emoji: string) => {
-      if (!mr.webUrl) return;
+    (mr: BoardMR, emoji: string): Promise<string[] | null> => {
+      if (!mr.webUrl) return Promise.resolve(null);
       const glyph = SLACK_MARKS.find((m) => m.emoji === emoji)?.glyph ?? emoji;
-      fetch("/slack/react", {
+      return fetch("/slack/react", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ mrUrl: mr.webUrl, emoji }),
       })
         .then(async (r) => {
-          if (!r.ok) return addToast(`couldn't add ${glyph} for !${mr.iid} (${r.status})`);
+          const body = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            addToast(`couldn't add ${glyph} for !${mr.iid} (${r.status})`);
+            return null;
+          }
           addToast(`marked ${glyph} on !${mr.iid}`);
           load();
+          return (body.reactions as string[]) ?? null;
         })
-        .catch(() => addToast(`couldn't add ${glyph} for !${mr.iid}`));
+        .catch(() => {
+          addToast(`couldn't add ${glyph} for !${mr.iid}`);
+          return null;
+        });
     },
     [addToast, load],
   );
