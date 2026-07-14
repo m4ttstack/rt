@@ -151,6 +151,8 @@ Bun.serve({
               username: m.username,
               name: memberNames.get(m.username) ?? m.name ?? null,
               hidden: !!m.hidden,
+              // Counted from the full snapshot so hidden members still show their number.
+              count: snapshot.mrs.filter((mr) => mr.author.username === m.username).length,
             })),
             mrs: visibleMrs,
             fetchedAt: snapshot.fetchedAt,

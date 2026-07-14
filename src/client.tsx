@@ -11,11 +11,12 @@ interface RosterMember {
   count: number;
 }
 
-/** Every configured member with its hidden state — for the settings modal. */
+/** Every configured member with its hidden state and MR count — for the settings modal. */
 interface ConfigMember {
   username: string;
   name: string | null;
   hidden: boolean;
+  count: number;
 }
 
 interface BoardData {
@@ -513,18 +514,17 @@ function SettingsModal({
         <ul className="tui-modal-list">
           {members.map((m) => (
             <li key={m.username} className={m.hidden ? "tui-modal-row out" : "tui-modal-row"}>
-              <span className="tui-modal-name">
+              <label className="tui-modal-name" title={m.hidden ? "checked out — hidden from the board" : "checked in"}>
+                <input
+                  type="checkbox"
+                  className="tui-check-box"
+                  checked={!m.hidden}
+                  disabled={pending === m.username}
+                  onChange={() => toggle(m)}
+                />
                 <OwnerSprite username={m.username} /> {m.name ?? m.username}
-              </span>
-              <button
-                className={m.hidden ? "tui-check out" : "tui-check in"}
-                onClick={() => toggle(m)}
-                disabled={pending === m.username}
-                aria-pressed={!m.hidden}
-                title={m.hidden ? "checked out — click to check in" : "checked in — click to check out"}
-              >
-                {m.hidden ? "checked out" : "checked in"}
-              </button>
+              </label>
+              <span className="tui-modal-count">{m.count}</span>
             </li>
           ))}
         </ul>

@@ -217,14 +217,13 @@ body {
 }
 .tui-modal-row:hover { background: var(--card); }
 .tui-modal-row.out { opacity: 0.5; }
-.tui-modal-name { display: inline-flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tui-check {
-  flex-shrink: 0; cursor: pointer; font: inherit; font-size: 0.72rem;
-  padding: 3px 9px; border-radius: 999px; border: 1px solid var(--border);
-  background: transparent;
+.tui-modal-name {
+  display: inline-flex; align-items: center; gap: 8px; min-width: 0; cursor: pointer;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.tui-check:disabled { opacity: 0.5; cursor: default; }
-.tui-check.in { color: var(--dot-ok); border-color: color-mix(in srgb, var(--dot-ok) 55%, transparent); }
-.tui-check.out { color: var(--muted); }
-.tui-check.in:hover:not(:disabled) { border-color: var(--dot-ok); }
-.tui-check.out:hover:not(:disabled) { color: var(--fg); border-color: var(--fg); }
+.tui-check-box {
+  flex-shrink: 0; width: 15px; height: 15px; cursor: pointer;
+  accent-color: var(--dot-ok); margin: 0;
+}
+.tui-check-box:disabled { cursor: default; }
+.tui-modal-count { flex-shrink: 0; color: var(--muted); font-family: var(--font-mono); font-size: 0.85em; }
