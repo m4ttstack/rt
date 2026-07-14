@@ -128,3 +128,17 @@ export function loadGitLabToken(): string {
   }
   throw new Error(`no GitLab token: set GITLAB_TOKEN or add "gitlabToken" to ${RT_SECRETS_PATH}`);
 }
+
+/** Slack user token (xoxp) for the review-thread integration. Optional: the
+    board runs fine without it; the Slack menu actions just stay disabled.
+    Returns null when no token is configured. */
+export function loadSlackToken(): string | null {
+  if (process.env.SLACK_TOKEN) return process.env.SLACK_TOKEN;
+  try {
+    const secrets = JSON.parse(readFileSync(RT_SECRETS_PATH, "utf8"));
+    if (secrets.slackToken) return secrets.slackToken;
+  } catch {
+    // no secrets file — treat as unconfigured
+  }
+  return null;
+}
