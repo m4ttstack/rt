@@ -695,11 +695,15 @@ function RowView({
             onClick={(e) => onRowClick(e, mr)}
             onContextMenu={(e) => onContext(e, mr)}
           >
+            {(mr as BoardMRWithReview).review && (
+              <div className="tui-row-review">
+                <ReviewBadge review={(mr as BoardMRWithReview).review} />
+              </div>
+            )}
             <div className="tui-row-1">
               <StatusDot mr={mr} />
               <span className="tui-title">{cleanTitle(mr.title)}</span>
               <StatusPhrase mr={mr} />
-              <ReviewBadge review={(mr as BoardMRWithReview).review} />
               {ticket && <TicketLink ticket={ticket} />}
               <CopyButton text={mrLine(mr)} className="tui-copy-inline" title="copy this MR for Slack" />
             </div>
@@ -751,9 +755,13 @@ function GridView({
             <CopyButton text={mrLine(mr)} className="tui-copy-inline tui-copy-card" title="copy this MR for Slack" />
             <span className="tui-card-label">
               <StatusDot mr={mr} /> !{mr.iid}
-              <ReviewBadge review={(mr as BoardMRWithReview).review} />
               {ticket && <TicketLink ticket={ticket} />}
             </span>
+            {(mr as BoardMRWithReview).review && (
+              <div className="tui-card-review">
+                <ReviewBadge review={(mr as BoardMRWithReview).review} />
+              </div>
+            )}
             <div className="tui-card-title">{cleanTitle(mr.title)}</div>
             <div className="tui-card-branch" title={`${mr.sourceBranch} → ${mr.targetBranch}`}>
               {mr.sourceBranch} <span className="tui-arrow">→</span> {mr.targetBranch}
