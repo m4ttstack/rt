@@ -11,6 +11,7 @@ function mr(overrides: Partial<BoardMR>): BoardMR {
     updatedAt: "2026-07-01T00:00:00Z",
     pipelineState: "none",
     unresolvedThreads: 0,
+    reviewerComments: 0,
     reviews: { required: 2, given: 0, isApproved: false },
     blockers: {},
     ...overrides,
@@ -110,7 +111,7 @@ describe("groupMRs status", () => {
 
   test("commented: unresolved comments, no formal review, not approved", () => {
     const list = [
-      mr({ iid: 1, unresolvedThreads: 3, reviews: { required: 2, given: 0, isApproved: false } as any }),
+      mr({ iid: 1, reviewerComments: 3, reviews: { required: 2, given: 0, isApproved: false } as any }),
     ];
     const groups = groupMRs(list, "status", [], NOW);
     expect(groups.map((g) => g.label)).toEqual(["commented"]);
@@ -118,7 +119,7 @@ describe("groupMRs status", () => {
 
   test("changes requested: a reviewer's REQUESTED_CHANGES state buckets separately from comments", () => {
     const list = [
-      mr({ iid: 1, unresolvedThreads: 3, reviews: { required: 2, given: 0, isApproved: false, reviewers: [{ reviewState: "REQUESTED_CHANGES" }] } as any }),
+      mr({ iid: 1, reviewerComments: 3, reviews: { required: 2, given: 0, isApproved: false, reviewers: [{ reviewState: "REQUESTED_CHANGES" }] } as any }),
     ];
     const groups = groupMRs(list, "status", [], NOW);
     expect(groups.map((g) => g.label)).toEqual(["changes requested"]);
@@ -126,7 +127,7 @@ describe("groupMRs status", () => {
 
   test("approved outranks commented: approved MR with comments still buckets approved", () => {
     const list = [
-      mr({ iid: 1, unresolvedThreads: 3, reviews: { required: 2, given: 2, isApproved: true } as any }),
+      mr({ iid: 1, reviewerComments: 3, reviews: { required: 2, given: 2, isApproved: true } as any }),
     ];
     const groups = groupMRs(list, "status", [], NOW);
     expect(groups.map((g) => g.label)).toEqual(["approved"]);
@@ -135,7 +136,7 @@ describe("groupMRs status", () => {
   test("full severity order with all six buckets present", () => {
     const list = [
       mr({ iid: 1, blockers: {} as any, reviews: { required: 2, given: 2, isApproved: true } as any }), // approved
-      mr({ iid: 2, unresolvedThreads: 2, blockers: {} as any, reviews: { required: 2, given: 0, isApproved: false } as any }), // commented
+      mr({ iid: 2, reviewerComments: 2, blockers: {} as any, reviews: { required: 2, given: 0, isApproved: false } as any }), // commented
       mr({ iid: 3, blockers: {} as any, reviews: { required: 2, given: 0, isApproved: false } as any }), // needs review
       mr({ iid: 4, blockers: {} as any, reviews: { required: 2, given: 0, isApproved: false, reviewers: [{ reviewState: "REQUESTED_CHANGES" }] } as any }), // changes requested
       mr({ iid: 5, blockers: { pipelineFailing: true } as any }), // ci failing

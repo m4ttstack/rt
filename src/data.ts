@@ -9,6 +9,10 @@ export type BoardMR = MRDashboardProps & {
   updatedAt: string | null;
   createdAt: string | null;
   unresolvedThreads: number;
+  /** Unresolved threads a reviewer (non-author) participated in — excludes the
+      author's own solo threads. Starts as unresolvedThreads; the server refines
+      it by fetching discussions for commented MRs. Drives the "commented" state. */
+  reviewerComments: number;
   pipelineState: PipelineState;
   /** Scoped repo id ("gitlab:42"), for the lazy discussions fetch on hover. */
   repositoryId: string;
@@ -69,6 +73,8 @@ export function buildBoard(prs: PullRequest[], config: BoardConfig, now: number 
       updatedAt: pr.updatedAt,
       createdAt: pr.createdAt,
       unresolvedThreads: pr.unresolvedThreadCount,
+      // Coarse fallback; the server refines this from discussions for commented MRs.
+      reviewerComments: pr.unresolvedThreadCount,
       pipelineState: derivePipelineState(props),
       repositoryId: pr.repositoryId,
     });

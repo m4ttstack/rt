@@ -2,7 +2,8 @@ import { join, dirname, basename } from "path";
 import { readFileSync, watch } from "fs";
 import { GitLabProvider, type PullRequest } from "@workforge/glance-sdk";
 import { loadConfig, loadGitLabToken, saveMemberHidden, CONFIG_PATH } from "./config.ts";
-import { buildBoard, buildRoster } from "./data.ts";
+import { buildBoard, buildRoster, type BoardMR } from "./data.ts";
+import { summarizeThreads, unresolvedReviewerCount } from "./discussions.ts";
 import { SnapshotCache } from "./cache.ts";
 import { isLocalRequest } from "./local.ts";
 import { readReviewStates, reviewFilePath, writeReviewState, parseReviewRequestBody, attachReviews } from "./review-state.ts";
@@ -44,7 +45,34 @@ async function fetchTeamMRs(): Promise<PullRequest[]> {
   return [...byId.values()];
 }
 
-const cache = new SnapshotCache(async () => buildBoard(await fetchTeamMRs(), config));
+/**
+ * Refine `reviewerComments` for MRs that have unresolved threads by fetching
+ * their discussions and counting only threads a reviewer joined — so the
+ * author's own solo threads don't read as "comments". Scoped to the commented
+ * subset, paced, and best-effort (a failed fetch keeps the coarse fallback).
+ */
+async function enrichReviewerComments(mrs: BoardMR[]): Promise<void> {
+  const commented = mrs.filter((m) => m.unresolvedThreads > 0);
+  for (let i = 0; i < commented.length; i += FETCH_CONCURRENCY) {
+    const chunk = commented.slice(i, i + FETCH_CONCURRENCY);
+    await Promise.all(
+      chunk.map(async (m) => {
+        try {
+          const detail = await provider.fetchMRDiscussions(m.repositoryId, m.iid);
+          m.reviewerComments = unresolvedReviewerCount(summarizeThreads(detail, m.author.username));
+        } catch {
+          // Keep the coarse fallback (unresolvedThreads) for this MR.
+        }
+      }),
+    );
+  }
+}
+
+const cache = new SnapshotCache(async () => {
+  const mrs = buildBoard(await fetchTeamMRs(), config);
+  await enrichReviewerComments(mrs);
+  return mrs;
+});
 
 /** Display names resolved from GitLab profiles, keyed by username. Long TTL. */
 const memberNames = new Map<string, string | null>();
@@ -187,9 +215,8 @@ Bun.serve({
         });
       }
       case "/discussions": {
-        // Full per-MR comment threads, fetched when the "N comments" drawer opens.
-        // Per thread: status (resolved / author replied / awaiting author) plus
-        // every non-system note with author, time, and full body.
+        // Reviewer-participated comment threads for the drawer — the author's own
+        // solo threads are excluded (see summarizeThreads). Fetched on open.
         const { searchParams } = new URL(req.url);
         const repo = searchParams.get("repo");
         const iid = Number(searchParams.get("iid"));
@@ -197,34 +224,7 @@ Bun.serve({
         if (!repo || !iid) return new Response("expected repo & iid", { status: 400 });
         try {
           const detail = await provider.fetchMRDiscussions(repo, iid);
-          const threads: Array<{
-            status: "resolved" | "replied" | "awaiting";
-            notes: Array<{ id: number; name: string; username: string | null; at: string; body: string }>;
-          }> = [];
-          for (const d of detail.discussions) {
-            // GitLab puts resolvable/resolved on the notes, not the discussion.
-            // A real comment thread has ≥1 resolvable note; this also skips
-            // system notes and bot linkbacks (resolvable=false).
-            const notes = d.notes.filter((n) => !n.system);
-            const resolvable = notes.filter((n) => n.resolvable);
-            if (!resolvable.length) continue;
-            const resolved = resolvable.every((n) => n.resolved === true);
-            const last = notes[notes.length - 1]!;
-            const status = resolved ? "resolved" : author && last.author?.username === author ? "replied" : "awaiting";
-            threads.push({
-              status,
-              notes: notes.map((n) => ({
-                id: n.id, // for the GitLab #note_<id> anchor link
-                name: n.author?.name ?? n.author?.username ?? "?",
-                username: n.author?.username ?? null,
-                at: n.createdAt,
-                body: n.body ?? "",
-              })),
-            });
-          }
-          // Actionable first (awaiting the author), then replied, then resolved.
-          const rank = { awaiting: 0, replied: 1, resolved: 2 };
-          threads.sort((a, b) => rank[a.status] - rank[b.status]);
+          const threads = summarizeThreads(detail, author);
           return new Response(JSON.stringify({ threads }), { headers: { "content-type": "application/json" } });
         } catch (err) {
           return new Response(`discussions fetch failed: ${err instanceof Error ? err.message : err}`, { status: 502 });

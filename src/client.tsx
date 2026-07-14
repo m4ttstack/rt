@@ -347,7 +347,7 @@ function StatusDot({ mr }: { mr: BoardMR }) {
     the state that gets the hover card of per-thread comment status. */
 function statusPhrase(mr: BoardMR): { text: string; cls: string; comments?: boolean } {
   const b = mr.blockers;
-  const comments = mr.unresolvedThreads;
+  const comments = mr.reviewerComments;
   if (b?.hasConflicts) return { text: "conflicts", cls: "t-bad" };
   if (b?.pipelineFailing) return { text: "ci failing", cls: "t-bad" };
   if (b?.pipelineRunning) return { text: "ci running", cls: "t-warn" };

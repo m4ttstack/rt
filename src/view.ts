@@ -67,7 +67,7 @@ function statusBucket(mr: BoardMR): { label: string; order: number } {
   if (b.pipelineFailing) return { label: "ci failing", order: 1 };
   if (hasChangesRequested(mr)) return { label: "changes requested", order: 2 };
   if (mr.reviews.isApproved) return { label: "approved", order: 5 };
-  if (mr.unresolvedThreads > 0) return { label: "commented", order: 3 };
+  if (mr.reviewerComments > 0) return { label: "commented", order: 3 };
   return { label: "needs review", order: 4 };
 }
 
