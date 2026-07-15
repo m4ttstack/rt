@@ -4,7 +4,7 @@ import { app } from "../server/app.js";
 import { config } from "../config.js";
 import { cacheKey, writeCache } from "../server/cache/store.js";
 import { startRefresh, __resetJobs } from "../server/jobs/refresh.js";
-import { customWindow } from "../server/util/window.js";
+import { baseWindow, customWindow } from "../server/util/window.js";
 import type { FetchOutcome } from "../server/pipeline/fetch.js";
 import type { Scope, TimeWindow } from "../shared/types.js";
 
@@ -86,6 +86,40 @@ describe("refresh endpoints", () => {
       expect(res.status).toBe(200);
       const body = await res.json() as Record<string, unknown>;
       expect(body.cached).toBe(false);
+    } finally {
+      await unlink(`.cache/${key}.json`).catch(() => {});
+    }
+  });
+
+  it("serves a preset from a warm base envelope without refetching", async () => {
+    const now = new Date();
+    const base = baseWindow(false, now);
+    const key = cacheKey(TEST_SCOPE, base);
+    await writeCache(key, EMPTY_OUTCOME);
+    try {
+      const res = await app.request("/api/leaderboard?range=7d&cacheOnly=1");
+      expect(res.status).toBe(200);
+      const body = await res.json() as Record<string, unknown>;
+      // A warm base means the 7d probe must NOT report a cold cache.
+      expect(body.cached).toBeUndefined();
+      expect(body.hasTrend).toBe(false);
+    } finally {
+      await unlink(`.cache/${key}.json`).catch(() => {});
+    }
+  });
+
+  it("falls back to a direct fetch for a custom range wider than the base", async () => {
+    const start = "2026-03-01T00:00:00.000Z";
+    const end = "2026-07-07T00:00:00.000Z";
+    const key = cacheKey(TEST_SCOPE, customWindow(start, end));
+    // 128 days: wider than the 90d base, so it must key on itself, not on the base.
+    await writeCache(key, EMPTY_OUTCOME);
+    try {
+      const res = await app.request(
+        `/api/leaderboard?range=custom&start=${start}&end=${end}&cacheOnly=1`,
+      );
+      const body = await res.json() as Record<string, unknown>;
+      expect(body.cached).toBeUndefined();
     } finally {
       await unlink(`.cache/${key}.json`).catch(() => {});
     }
