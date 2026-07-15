@@ -43,6 +43,21 @@ describe("mapMrListNode", () => {
     expect(m.notes).toEqual([]);
     expect(m.approvedByUsernames).toEqual([]);
   });
+
+  it("carries updatedAt through from the raw list node", () => {
+    const raw = {
+      iid: "42",
+      project: { fullPath: "acme/app" },
+      author: { username: "alice" },
+      state: "merged",
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: "2026-07-09T00:00:00.000Z",
+      mergedAt: "2026-07-02T00:00:00.000Z",
+      title: "T",
+    } as unknown as Parameters<typeof mapMrListNode>[0];
+
+    expect(mapMrListNode(raw).updatedAt).toBe("2026-07-09T00:00:00.000Z");
+  });
 });
 
 describe("applyMrDetail", () => {

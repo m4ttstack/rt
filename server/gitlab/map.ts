@@ -9,6 +9,7 @@ export function mapMrListNode(raw: RawMrListNode): NormMr {
     authorUsername: raw.author?.username ?? null,
     state: normalizeState(raw.state),
     createdAt: raw.createdAt,
+    updatedAt: raw.updatedAt,
     preparedAt: raw.preparedAt ?? null,
     mergedAt: raw.mergedAt,
     title: raw.title,

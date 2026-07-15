@@ -9,8 +9,9 @@ const CACHE_DIR = ".cache";
  * are treated as a miss and refetched rather than silently served with missing fields.
  *  v1 -> v2: added FetchResult.linearIssues (the "Issues done" delivery metric).
  *  v2 -> v3: linearIssues gained title + url (for the per-stat detail page).
+ *  v3 -> v4: NormMr gained updatedAt (window slicing scopes MRs on it).
  */
-const CACHE_SCHEMA_VERSION = 3;
+const CACHE_SCHEMA_VERSION = 4;
 
 interface CacheEnvelope<T> {
   savedAt: string;
