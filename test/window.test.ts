@@ -20,6 +20,13 @@ describe("baseWindow", () => {
   it("ends at now", () => {
     expect(baseWindow(false, NOW).end).toBe(NOW.toISOString());
   });
+
+  it("floors the start to UTC midnight so the fetched since matches the day-granular key", () => {
+    const midday = new Date("2026-07-15T10:30:00.000Z");
+    const b = baseWindow(false, midday);
+    // 90 days before 2026-07-15 is 2026-04-16; floored to midnight.
+    expect(b.start).toBe("2026-04-16T00:00:00.000Z");
+  });
 });
 
 describe("covers", () => {

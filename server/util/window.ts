@@ -28,8 +28,14 @@ const BASE_DAYS = { plain: 90, trend: 180 } as const;
  */
 export function baseWindow(trend: boolean, now: Date): TimeWindow {
   const d = trend ? BASE_DAYS.trend : BASE_DAYS.plain;
+  const s = new Date(now.getTime() - d * DAY_MS);
+  // Floor to UTC midnight: the cache key and covers() are day-granular, so the
+  // fetched `since` must equal the day-granular start, else a custom range
+  // starting at that day's midnight is judged "covered" while rows fetched
+  // between midnight and the un-floored write-time clock are silently missing.
+  const start = new Date(Date.UTC(s.getUTCFullYear(), s.getUTCMonth(), s.getUTCDate()));
   return {
-    start: new Date(now.getTime() - d * DAY_MS).toISOString(),
+    start: start.toISOString(),
     end: now.toISOString(),
     key: `base${d}`,
   };
