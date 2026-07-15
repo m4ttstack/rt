@@ -35,12 +35,10 @@ export function baseWindow(trend: boolean, now: Date): TimeWindow {
   };
 }
 
-/** True when `inner` lies entirely within `outer` (inclusive at both edges). */
+/** True when `inner`'s day-range lies within `outer`'s (day-granular, matching the cache key). */
 export function covers(outer: TimeWindow, inner: TimeWindow): boolean {
-  return (
-    Date.parse(inner.start) >= Date.parse(outer.start) &&
-    Date.parse(inner.end) <= Date.parse(outer.end)
-  );
+  const day = (iso: string) => Date.parse(iso.slice(0, 10));
+  return day(inner.start) >= day(outer.start) && day(inner.end) <= day(outer.end);
 }
 
 /** Build a custom window from explicit ISO bounds. */

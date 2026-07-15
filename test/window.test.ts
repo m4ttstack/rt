@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { baseWindow, covers, customWindow, priorWindow, resolvePreset } from "../server/util/window.js";
+import type { TimeWindow } from "../shared/types.js";
 
 const NOW = new Date("2026-07-15T00:00:00.000Z");
 const days = (w: { start: string; end: string }) =>
@@ -46,5 +47,13 @@ describe("covers", () => {
 
   it("is inclusive at both edges", () => {
     expect(covers(base90, { ...base90, key: "custom" })).toBe(true);
+  });
+
+  it("treats sub-day drift within the same calendar day as covered", () => {
+    // Reproduces the live bug: the prior window resolves a few ms before the base,
+    // so its start is microseconds earlier but the same calendar day.
+    const inner: TimeWindow = { start: "2026-01-16T21:45:09.963Z", end: "2026-07-15T00:00:00.000Z", key: "90d" };
+    const outer: TimeWindow = { start: "2026-01-16T21:45:09.969Z", end: "2026-07-15T00:00:00.100Z", key: "base180" };
+    expect(covers(outer, inner)).toBe(true);
   });
 });
