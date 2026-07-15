@@ -20,8 +20,10 @@ export function sliceOutcome(outcome: FetchOutcome, window: TimeWindow): FetchOu
   const start = Date.parse(window.start);
   const end = Date.parse(window.end);
 
-  // Mirrors fetch.ts:153 -- `updatedAt >= since`, with no upper bound.
-  const mrs = outcome.result.mrs.filter((m) => Date.parse(m.updatedAt) >= start);
+  // Diverges from fetch.ts:153 (`updatedAt >= since`, no upper bound) on purpose: without
+  // an upper bound a prior-window slice sees MRs updated during the current window, and
+  // the unwindowed revert scan in snapshot.ts:163 then counts reverts from outside it.
+  const mrs = outcome.result.mrs.filter((m) => within(m.updatedAt, start, end));
 
   // Mirrors fetch.ts:317 -- REST updated_after/updated_before.
   const pipelines = outcome.result.pipelines.filter((p) => within(p.createdAt, start, end));

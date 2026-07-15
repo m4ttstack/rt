@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { computeSnapshot } from "../server/metrics/snapshot.js";
-import { WIDE_OUTCOME, W_7D, W_90D } from "./fixtures/outcome.js";
+import { WIDE_OUTCOME, W_7D, W_90D, mr } from "./fixtures/outcome.js";
 import { sliceOutcome } from "../server/pipeline/slice.js";
 import { W_7D_PRIOR } from "./fixtures/outcome.js";
 
@@ -192,6 +192,14 @@ describe("sliceOutcome", () => {
   it("slices the prior window to a disjoint, non-empty set", () => {
     const prior = sliceOutcome(WIDE_OUTCOME, W_7D_PRIOR);
     expect(prior.result.mrs.map((m) => m.iid)).toContain(7);
+  });
+
+  it("excludes MRs updated after the window ends", () => {
+    const late = mr({ iid: 8, createdAt: "2026-07-02T00:00:00.000Z", updatedAt: "2026-07-14T00:00:00.000Z", mergedAt: "2026-07-02T12:00:00.000Z" });
+    const wide = { ...WIDE_OUTCOME, result: { ...WIDE_OUTCOME.result, mrs: [...WIDE_OUTCOME.result.mrs, late] } };
+    // iid 8 was updated 07-14, after W_7D_PRIOR ends (07-08). A prior-window slice
+    // must not see it, or its revert scan reaches into the current window.
+    expect(sliceOutcome(wide, W_7D_PRIOR).result.mrs.map((m) => m.iid)).not.toContain(8);
   });
 });
 
