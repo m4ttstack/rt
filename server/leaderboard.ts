@@ -120,6 +120,10 @@ async function buildLeaderboard(
       priorSnapshot = snapshotFor(prior.outcome, pw);
     } catch (err) {
       if ((err as Error).name === "AbortError") throw err;
+      // A cold prior window is a cold cache, not a degraded trend: let it propagate so the
+      // probe reports {cached:false} and the client starts the job that fetches it. Swallowing
+      // it here returns a "successful" response, so the prior window would never be fetched.
+      if (err instanceof ColdCacheError) throw err;
       warnings.push({
         code: "trend_unavailable",
         message: `Prior-window data unavailable, deltas hidden: ${(err as Error).message}`,

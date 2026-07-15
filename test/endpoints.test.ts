@@ -1,11 +1,26 @@
+import { unlink } from "node:fs/promises";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { app } from "../server/app.js";
+import { config } from "../config.js";
+import { cacheKey, writeCache } from "../server/cache/store.js";
 import { startRefresh, __resetJobs } from "../server/jobs/refresh.js";
-import type { TimeWindow } from "../shared/types.js";
+import { customWindow } from "../server/util/window.js";
+import type { FetchOutcome } from "../server/pipeline/fetch.js";
+import type { Scope, TimeWindow } from "../shared/types.js";
 
 const WINDOW: TimeWindow = { start: "2026-05-01T00:00:00.000Z", end: "2026-06-01T00:00:00.000Z", key: "30d" };
 const SELECTION = { range: "30d", trend: false };
 const flush = () => new Promise((r) => setTimeout(r, 0));
+
+/** The scope resolveScope() derives from config (groupPath is empty -> projects scope). */
+const TEST_SCOPE: Scope = { type: "projects", projectPaths: config.projectPaths ?? [] };
+
+/** A cacheable but empty outcome, so a warmed window computes an empty snapshot. */
+const EMPTY_OUTCOME: FetchOutcome = {
+  result: { mrs: [], pipelines: [], pushEvents: [], linearIssues: [], approvalsAvailable: true },
+  identities: {},
+  warnings: [],
+};
 
 beforeAll(() => {
   // getLeaderboard calls getEnv(); give it a valid-looking env so it reaches cache logic.
@@ -52,5 +67,27 @@ describe("refresh endpoints", () => {
     expect(res.status).toBe(200);
     const body = await res.json() as Record<string, unknown>;
     expect(body.cached).toBe(false);
+  });
+
+  // A trend probe needs BOTH windows. When only the current one is warm, the probe must
+  // report a cold cache so the client auto-starts the job that fetches the prior window.
+  // Swallowing the prior's ColdCacheError into a warning instead returns a "successful"
+  // response with hasTrend=false, and the prior window is then never fetched at all.
+  it("GET /api/leaderboard?cacheOnly=1&trend=1 returns {cached:false} when only the current window is cached", async () => {
+    const start = "2019-03-01T00:00:00.000Z";
+    const end = "2019-03-08T00:00:00.000Z";
+    const key = cacheKey(TEST_SCOPE, customWindow(start, end));
+    // Warm ONLY the current window; its prior (2019-02-22..2019-03-01) stays cold.
+    await writeCache(key, EMPTY_OUTCOME);
+    try {
+      const res = await app.request(
+        `/api/leaderboard?range=custom&start=${start}&end=${end}&trend=1&cacheOnly=1`,
+      );
+      expect(res.status).toBe(200);
+      const body = await res.json() as Record<string, unknown>;
+      expect(body.cached).toBe(false);
+    } finally {
+      await unlink(`.cache/${key}.json`).catch(() => {});
+    }
   });
 });
