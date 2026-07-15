@@ -19,6 +19,30 @@ export function resolvePreset(preset: RangePreset, now: Date): TimeWindow {
   return { start: start.toISOString(), end: end.toISOString(), key: preset };
 }
 
+/** Days fetched in one envelope. The 90d preset's prior window is why trend needs 180. */
+const BASE_DAYS = { plain: 90, trend: 180 } as const;
+
+/**
+ * The single wide window every preset is sliced out of. Width is uniform rather than
+ * per-preset so switching presets never refetches; toggling trend costs one refetch.
+ */
+export function baseWindow(trend: boolean, now: Date): TimeWindow {
+  const d = trend ? BASE_DAYS.trend : BASE_DAYS.plain;
+  return {
+    start: new Date(now.getTime() - d * DAY_MS).toISOString(),
+    end: now.toISOString(),
+    key: `base${d}`,
+  };
+}
+
+/** True when `inner` lies entirely within `outer` (inclusive at both edges). */
+export function covers(outer: TimeWindow, inner: TimeWindow): boolean {
+  return (
+    Date.parse(inner.start) >= Date.parse(outer.start) &&
+    Date.parse(inner.end) <= Date.parse(outer.end)
+  );
+}
+
 /** Build a custom window from explicit ISO bounds. */
 export function customWindow(startIso: string, endIso: string): TimeWindow {
   return { start: startIso, end: endIso, key: "custom" };
