@@ -22,6 +22,8 @@ export interface NormMr {
   authorUsername: string | null;
   state: MrState;
   createdAt: string;
+  /** Last GitLab update. The fetch's window predicate scopes on this, so slicing must too. */
+  updatedAt: string;
   /** When the MR left draft, if known. Preferred clock-start for latency. */
   preparedAt: string | null;
   mergedAt: string | null;

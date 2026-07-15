@@ -19,6 +19,34 @@ export function resolvePreset(preset: RangePreset, now: Date): TimeWindow {
   return { start: start.toISOString(), end: end.toISOString(), key: preset };
 }
 
+/** Days fetched in one envelope. The 90d preset's prior window is why trend needs 180. */
+const BASE_DAYS = { plain: 90, trend: 180 } as const;
+
+/**
+ * The single wide window every preset is sliced out of. Width is uniform rather than
+ * per-preset so switching presets never refetches; toggling trend costs one refetch.
+ */
+export function baseWindow(trend: boolean, now: Date): TimeWindow {
+  const d = trend ? BASE_DAYS.trend : BASE_DAYS.plain;
+  const s = new Date(now.getTime() - d * DAY_MS);
+  // Floor to UTC midnight: the cache key and covers() are day-granular, so the
+  // fetched `since` must equal the day-granular start, else a custom range
+  // starting at that day's midnight is judged "covered" while rows fetched
+  // between midnight and the un-floored write-time clock are silently missing.
+  const start = new Date(Date.UTC(s.getUTCFullYear(), s.getUTCMonth(), s.getUTCDate()));
+  return {
+    start: start.toISOString(),
+    end: now.toISOString(),
+    key: `base${d}`,
+  };
+}
+
+/** True when `inner`'s day-range lies within `outer`'s (day-granular, matching the cache key). */
+export function covers(outer: TimeWindow, inner: TimeWindow): boolean {
+  const day = (iso: string) => Date.parse(iso.slice(0, 10));
+  return day(inner.start) >= day(outer.start) && day(inner.end) <= day(outer.end);
+}
+
 /** Build a custom window from explicit ISO bounds. */
 export function customWindow(startIso: string, endIso: string): TimeWindow {
   return { start: startIso, end: endIso, key: "custom" };
