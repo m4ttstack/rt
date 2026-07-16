@@ -40,8 +40,9 @@ function healthHtml(row) {
   const h = row.health;
   let inner;
   if (!h) inner = `<span class="muted">no route</span>`;
-  else if (h.status === null) inner = `${dot("bad", "no response")} unreachable`;
-  else inner = `${dot(h.ok ? "ok" : "bad", "HTTP " + h.status)} ${h.status} <span class="muted">· ${h.ms}ms</span>`;
+  else if (h.status === null) inner = `<span class="hpill bad" title="no response">unreachable</span>`;
+  else
+    inner = `<span class="hpill ${h.ok ? "ok" : "bad"}" title="HTTP ${h.status}">${h.status} <span class="muted">${h.ms}ms</span></span>`;
 
   const logs = row.service && row.service.stderr ? row.service.stderr : [];
   const card = logs.length
@@ -74,7 +75,7 @@ function rowHtml(row, data) {
       ? `<a class="launch${row.published ? "" : " off"}" href="${esc(row.publicUrl)}" target="_blank" rel="noopener" title="${row.published ? "open " + esc(row.publicUrl.replace(/^https:\/\//, "")) : "private — not publicly reachable"}">${launchIcon()}</a>`
       : "";
   const nameCell = row.url
-    ? `<td><a href="${esc(row.url)}">${esc(row.name)}<span class="muted">.${esc(data.suffix)}</span></a>${launch}</td>`
+    ? `<td><a class="site" href="${esc(row.url)}">${esc(row.name)}<span class="muted">.${esc(data.suffix)}</span></a>${launch}</td>`
     : `<td class="muted">${esc(row.name)}</td>`;
   const portCell = row.port != null ? `<td class="num">${row.port}</td>` : `<td class="num muted">—</td>`;
   const healthCell = isRestarting
@@ -103,7 +104,12 @@ function rowHtml(row, data) {
 
 function render(data) {
   if (!data) return;
-  $("#sub").textContent = `${data.up}/${data.total} routes healthy · auto-refreshes`;
+  const publicCount = data.apps.filter((r) => r.published).length;
+  const protectedCount = data.apps.filter((r) => r.hasPassword).length;
+  const parts = [`${data.up}/${data.total} healthy`, `${publicCount} public`];
+  if (protectedCount) parts.push(`${protectedCount} protected`);
+  parts.push("auto-refreshes");
+  $("#sub").innerHTML = parts.join(`<span class="sep">·</span>`);
   $("#apps").innerHTML = data.apps.map((r) => rowHtml(r, data)).join("");
 
   const wrap = $("#orphans-wrap");

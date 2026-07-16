@@ -128,25 +128,48 @@ const SHELL = `<!doctype html>
 <title>local apps</title>
 <style>
   :root { color-scheme: light dark; }
-  body { font: 14px/1.5 -apple-system, BlinkMacSystemFont, sans-serif;
-         max-width: 960px; margin: 2.5rem auto; padding: 0 1.2rem; }
-  h1 { font-size: 1.15rem; margin-bottom: 0.2rem; }
-  .sub { opacity: 0.6; font-size: 0.85rem; margin-bottom: 1.5rem; }
+  * { box-sizing: border-box; }
+  body { font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+         max-width: 1000px; margin: 3rem auto 4rem; padding: 0 1.4rem; color: CanvasText; }
+  h1 { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 0.35rem; }
+  .sub { opacity: 0.62; font-size: 0.85rem; margin: 0 0 1.6rem; }
+  .sub .sep { opacity: 0.4; margin: 0 0.55em; }
+
+  /* card container wrapping each table */
+  .board { border: 1px solid color-mix(in srgb, CanvasText 13%, transparent);
+        border-radius: 14px; overflow: hidden;
+        box-shadow: 0 1px 2px color-mix(in srgb, CanvasText 7%, transparent); }
   table { width: 100%; border-collapse: collapse; }
-  th { text-align: left; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em;
-       opacity: 0.55; padding: 0.4rem 0.6rem; border-bottom: 1px solid #8884; }
-  td { padding: 0.55rem 0.6rem; border-bottom: 1px solid #8883; font-size: 0.85rem; }
-  td a { font-weight: 600; text-decoration: none; }
-  td a:hover { text-decoration: underline; }
+  thead th { text-align: left; font-size: 0.67rem; text-transform: uppercase; letter-spacing: 0.06em;
+        font-weight: 600; opacity: 0.5; padding: 0.65rem 0.95rem;
+        background: color-mix(in srgb, CanvasText 3.5%, transparent);
+        border-bottom: 1px solid color-mix(in srgb, CanvasText 10%, transparent); }
+  tbody td { padding: 0.72rem 0.95rem; font-size: 0.85rem; vertical-align: middle; }
+  tbody tr + tr td { border-top: 1px solid color-mix(in srgb, CanvasText 8%, transparent); }
+  tbody tr:hover td { background: color-mix(in srgb, CanvasText 3.5%, transparent); }
+
+  td a.site { font-weight: 600; text-decoration: none; color: CanvasText; }
+  td a.site:hover { text-decoration: underline; }
   a.launch { display: inline-flex; align-items: center; margin-left: 7px; vertical-align: middle;
-        color: inherit; opacity: 0.4; text-decoration: none; }
-  a.launch:hover { opacity: 0.95; text-decoration: none; }
-  a.launch.off { opacity: 0.2; }
-  .num { font-family: ui-monospace, monospace; font-size: 0.8rem; }
-  .muted { opacity: 0.55; }
+        color: inherit; opacity: 0.35; text-decoration: none; }
+  a.launch:hover { opacity: 0.9; text-decoration: none; }
+  a.launch.off { opacity: 0.18; }
+  .num { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.8rem; opacity: 0.85; }
+  .muted { opacity: 0.5; }
   code { font-family: ui-monospace, monospace; font-size: 0.8rem; }
-  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 4px; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px;
+        vertical-align: 1px; }
   .dot.ok { background: #2da44e; } .dot.bad { background: #cf222e; } .dot.warn { background: #bf8700; }
+
+  /* health status pill */
+  .hpill { display: inline-flex; align-items: baseline; gap: 5px; padding: 2px 9px;
+        border-radius: 20px; font-size: 0.76rem; font-weight: 600; white-space: nowrap; }
+  .hpill.ok { background: color-mix(in srgb, #2da44e 15%, transparent); color: #1a7f37; }
+  .hpill.bad { background: color-mix(in srgb, #cf222e 15%, transparent); color: #cf222e; }
+  .hpill .muted { font-weight: 400; opacity: 0.75; }
+  @media (prefers-color-scheme: dark) {
+    .hpill.ok { color: #3fb950; } .hpill.bad { color: #ff7b72; }
+  }
 
   td.actions { text-align: right; width: 1%; white-space: nowrap; }
   button.restart { font: inherit; font-size: 0.95rem; line-height: 1; cursor: pointer;
@@ -188,7 +211,8 @@ const SHELL = `<!doctype html>
   @keyframes spin { to { transform: rotate(360deg); } }
 
   /* stderr hover card over the health status */
-  .status.has-card { cursor: help; border-bottom: 1px dotted #8886; }
+  .status.has-card { cursor: help; }
+  .status.has-card .hpill { box-shadow: inset 0 0 0 1px currentColor; }
   .status { position: relative; }
   .status .card { display: none; position: absolute; top: calc(100% + 6px); left: 0; z-index: 20;
         min-width: 320px; max-width: 620px; background: Canvas; color: CanvasText;
@@ -200,20 +224,23 @@ const SHELL = `<!doctype html>
   .card pre { font-family: ui-monospace, monospace; font-size: 0.72rem; white-space: pre;
         overflow-x: auto; margin: 0; }
 
-  h2 { font-size: 0.8rem; opacity: 0.6; text-transform: uppercase; margin-top: 2rem; }
-  footer { margin-top: 2rem; font-size: 0.75rem; opacity: 0.45; }
+  h2 { font-size: 0.7rem; font-weight: 600; opacity: 0.5; text-transform: uppercase;
+        letter-spacing: 0.06em; margin: 2.25rem 0 0.7rem; }
+  footer { margin-top: 2rem; font-size: 0.75rem; opacity: 0.4; }
 </style>
 </head>
 <body>
 <h1>local apps</h1>
 <p class="sub" id="sub">loading…</p>
+<div class="board">
 <table>
 <thead><tr><th>site</th><th>port</th><th>health</th><th>launchd</th><th>public</th><th>access</th><th></th></tr></thead>
 <tbody id="apps"></tbody>
 </table>
+</div>
 <div id="orphans-wrap" style="display:none">
 <h2>services without routes</h2>
-<table><tbody id="orphans"></tbody></table>
+<div class="board"><table><tbody id="orphans"></tbody></table></div>
 </div>
 <footer>discovered from ~/.portless/routes.json + ~/Library/LaunchAgents/com.matthewgoodwin.*</footer>
 <noscript><p class="sub">this board needs JavaScript to show live status.</p></noscript>
