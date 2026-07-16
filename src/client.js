@@ -79,7 +79,7 @@ function rowHtml(row, data) {
     : `<td class="site-cell muted">${esc(row.name)}</td>`;
   const portCell = row.port != null ? `<td class="num">${row.port}</td>` : `<td class="num muted">—</td>`;
   const healthCell = isRestarting
-    ? `<td><span class="spin"></span> <span class="muted">restarting…</span></td>`
+    ? `<td><span class="hpill restarting"><span class="spin"></span>restarting…</span></td>`
     : `<td>${healthHtml(row)}</td>`;
   const restartCell =
     data.canRestart && row.service
@@ -109,7 +109,7 @@ function tunnelRow(row, data) {
   const isRestarting = label && restarting.has(label);
   const up = !!(s && s.pid !== null);
   const statusCell = isRestarting
-    ? `<td><span class="spin"></span> <span class="muted">restarting…</span></td>`
+    ? `<td><span class="hpill restarting"><span class="spin"></span>restarting…</span></td>`
     : `<td><span class="hpill ${up ? "ok" : "bad"}" title="${up ? "tunnel running" : "tunnel stopped"}">${up ? "up" : "down"}</span></td>`;
   const detail = up
     ? `${dot("ok", "running")} pid ${s.pid}`

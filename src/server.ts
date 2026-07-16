@@ -175,9 +175,11 @@ const SHELL = `<!doctype html>
         border-radius: 20px; font-size: 0.76rem; font-weight: 600; white-space: nowrap; }
   .hpill.ok { background: color-mix(in srgb, #2da44e 15%, transparent); color: #1a7f37; }
   .hpill.bad { background: color-mix(in srgb, #cf222e 15%, transparent); color: #cf222e; }
+  .hpill.restarting { align-items: center; gap: 6px;
+        background: color-mix(in srgb, #bf8700 14%, transparent); color: #9a6700; }
   .hpill .muted { font-weight: 400; opacity: 0.75; }
   @media (prefers-color-scheme: dark) {
-    .hpill.ok { color: #3fb950; } .hpill.bad { color: #ff7b72; }
+    .hpill.ok { color: #3fb950; } .hpill.bad { color: #ff7b72; } .hpill.restarting { color: #d4a72c; }
   }
 
   td.actions { text-align: right; width: 1%; white-space: nowrap; }
@@ -214,9 +216,10 @@ const SHELL = `<!doctype html>
   button.pill.danger:hover { color: #cf222e; border-color: #cf222e77; }
   button.pill.set { display: inline-flex; align-items: center; gap: 5px; }
 
-  .spin { display: inline-block; width: 11px; height: 11px; vertical-align: -1px;
-        border: 2px solid #8884; border-top-color: #888; border-radius: 50%;
-        animation: spin 0.7s linear infinite; margin-right: 2px; }
+  .spin { display: inline-block; width: 10px; height: 10px;
+        border: 2px solid color-mix(in srgb, currentColor 30%, transparent);
+        border-top-color: currentColor; border-radius: 50%;
+        animation: spin 0.7s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
 
   /* stderr hover card over the health status */
