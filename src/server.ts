@@ -34,6 +34,7 @@ interface StatusRow {
   name: string;
   port: number | null;
   url: string | null;
+  publicUrl: string | null;
   health: Health | null;
   service: StatusService | null;
   published: boolean;
@@ -87,6 +88,7 @@ async function buildStatus(requestHost?: string): Promise<Status> {
         name: a.name,
         port: a.port,
         url: a.url,
+        publicUrl: a.publicUrl,
         health,
         service: a.service ? serviceJson(a.service, health, unmanaged) : null,
         published: settings.published,
@@ -99,6 +101,7 @@ async function buildStatus(requestHost?: string): Promise<Status> {
     name: s.label.replace(PLIST_PREFIX, ""),
     port: null,
     url: null,
+    publicUrl: null,
     health: null,
     service: serviceJson(s, null, null),
     published: true,
@@ -135,6 +138,10 @@ const SHELL = `<!doctype html>
   td { padding: 0.55rem 0.6rem; border-bottom: 1px solid #8883; font-size: 0.85rem; }
   td a { font-weight: 600; text-decoration: none; }
   td a:hover { text-decoration: underline; }
+  a.launch { display: inline-flex; align-items: center; margin-left: 7px; vertical-align: middle;
+        color: inherit; opacity: 0.4; text-decoration: none; }
+  a.launch:hover { opacity: 0.95; text-decoration: none; }
+  a.launch.off { opacity: 0.2; }
   .num { font-family: ui-monospace, monospace; font-size: 0.8rem; }
   .muted { opacity: 0.55; }
   code { font-family: ui-monospace, monospace; font-size: 0.8rem; }

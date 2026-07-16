@@ -23,6 +23,11 @@ function lockIcon() {
   return `<svg class="lock-i" viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M12 1a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5zm3 8H9V6a3 3 0 0 1 6 0z"/></svg>`;
 }
 
+// An external-link glyph for launching the public tunnel URL.
+function launchIcon() {
+  return `<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7M21 3l-9 9M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/></svg>`;
+}
+
 function allRows(data) {
   return data ? [...data.apps, ...data.orphans] : [];
 }
@@ -62,8 +67,14 @@ function rowHtml(row, data) {
   const label = row.service && row.service.label;
   const isRestarting = label && restarting.has(label);
 
+  // A launch icon to the public tunnel URL, when it differs from the shown link
+  // (i.e. on the local .localhost board). Dimmed when the app is private.
+  const launch =
+    row.publicUrl && row.publicUrl !== row.url
+      ? `<a class="launch${row.published ? "" : " off"}" href="${esc(row.publicUrl)}" target="_blank" rel="noopener" title="${row.published ? "open " + esc(row.publicUrl.replace(/^https:\/\//, "")) : "private — not publicly reachable"}">${launchIcon()}</a>`
+      : "";
   const nameCell = row.url
-    ? `<td><a href="${esc(row.url)}">${esc(row.name)}<span class="muted">.${esc(data.suffix)}</span></a></td>`
+    ? `<td><a href="${esc(row.url)}">${esc(row.name)}<span class="muted">.${esc(data.suffix)}</span></a>${launch}</td>`
     : `<td class="muted">${esc(row.name)}</td>`;
   const portCell = row.port != null ? `<td class="num">${row.port}</td>` : `<td class="num muted">—</td>`;
   const healthCell = isRestarting

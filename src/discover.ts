@@ -5,6 +5,9 @@ import { homedir } from "os";
 const ROUTES_PATH = join(homedir(), ".portless", "routes.json");
 const AGENTS_DIR = join(homedir(), "Library", "LaunchAgents");
 const PLIST_PREFIX = "com.matthewgoodwin.";
+// The parent domain the shared Cloudflare tunnel serves every portless route
+// under (wildcard *.PUBLIC_DOMAIN). Overridable for a different setup.
+const PUBLIC_DOMAIN = process.env.PUBLIC_DOMAIN ?? "m4tthew.dev";
 
 export interface PortlessRoute {
   hostname: string;
@@ -29,6 +32,8 @@ export interface LaunchdService {
 export interface App {
   name: string;
   url: string;
+  /** The public tunnel URL (https://<name>.PUBLIC_DOMAIN), always set for a route. */
+  publicUrl: string;
   port: number;
   service: LaunchdService | null;
 }
@@ -123,7 +128,8 @@ export function joinApps(routes: PortlessRoute[], services: LaunchdService[], re
       }) ??
       null;
     const url = domain ? `https://${name}.${domain}` : `https://${route.hostname}`;
-    return { name, url, port: route.port, service };
+    const publicUrl = `https://${name}.${PUBLIC_DOMAIN}`;
+    return { name, url, publicUrl, port: route.port, service };
   });
 }
 
