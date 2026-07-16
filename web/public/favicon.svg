@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <!-- Indigo-500 tile (the app's --primary) with a podium of score bars: 2nd, 1st, 3rd. -->
+  <rect width="64" height="64" rx="14" fill="#6366f1"/>
+  <rect x="11" y="28" width="11" height="24" rx="3" fill="#fff" opacity=".85"/>
+  <rect x="26.5" y="14" width="11" height="38" rx="3" fill="#fff"/>
+  <rect x="42" y="36" width="11" height="16" rx="3" fill="#fff" opacity=".7"/>
+</svg>
