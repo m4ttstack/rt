@@ -55,3 +55,7 @@ test("safeNext rejects absolute URLs and null", () => {
   expect(safeNext("http://evil.com")).toBe("/");
   expect(safeNext(null)).toBe("/");
 });
+test("safeNext rejects CRLF injection", () => {
+  expect(safeNext("/foo\r\nSet-Cookie: x=1")).toBe("/");
+  expect(safeNext("/foo\nbar")).toBe("/");
+});

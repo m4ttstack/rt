@@ -66,7 +66,15 @@ function recordFailure(key: string): void {
 }
 
 export function safeNext(next: string | null): string {
-  if (next && next.startsWith("/") && !next.startsWith("//") && !next.includes("\\")) return next;
+  if (
+    next &&
+    next.startsWith("/") &&
+    !next.startsWith("//") &&
+    !next.includes("\\") &&
+    !/[\x00-\x1f]/.test(next)
+  ) {
+    return next;
+  }
   return "/";
 }
 
@@ -102,12 +110,16 @@ export function startGateway(port = 7950): void {
         if (routes.get(app) === undefined || !settings.published) {
           return html(pageNothingHere(), 404);
         }
-        const key = rateKey(app, ip);
-        if (isLocked(key)) return html(pageRateLimited(), 429);
         const form = await req.formData();
         const password = String(form.get("password") ?? "");
         const next = safeNext(String(form.get("next") ?? "/"));
-        if (settings.passwordHash && (await Bun.password.verify(password, settings.passwordHash))) {
+        if (!settings.passwordHash) {
+          // App has no password; nothing to authenticate, just proceed.
+          return new Response(null, { status: 303, headers: { location: next } });
+        }
+        const key = rateKey(app, ip);
+        if (isLocked(key)) return html(pageRateLimited(), 429);
+        if (await Bun.password.verify(password, settings.passwordHash)) {
           attempts.delete(key);
           const token = signToken(app, settings.passwordVersion, secret);
           return new Response(null, { status: 303, headers: { location: next, "set-cookie": cookieHeader(token) } });

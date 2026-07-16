@@ -253,4 +253,10 @@ Bun.serve({
 
 console.log(`local-apps serving on http://localhost:${PORT}`);
 
-if (process.env.LOCAL_APPS_NO_GATEWAY !== "1") startGateway();
+if (process.env.LOCAL_APPS_NO_GATEWAY !== "1") {
+  try {
+    startGateway();
+  } catch (err) {
+    console.error("gateway failed to start:", err);
+  }
+}
