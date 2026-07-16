@@ -135,7 +135,7 @@ const SHELL = `<!doctype html>
   :root { color-scheme: light dark; }
   * { box-sizing: border-box; }
   body { font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-         max-width: 1000px; margin: 3rem auto 4rem; padding: 0 1.4rem; color: CanvasText; }
+         max-width: 1120px; margin: 3rem auto 4rem; padding: 0 1.4rem; color: CanvasText; }
   h1 { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 0.35rem; }
   .sub { opacity: 0.62; font-size: 0.85rem; margin: 0 0 1.6rem; }
   .sub .sep { opacity: 0.4; margin: 0 0.55em; }
@@ -146,12 +146,16 @@ const SHELL = `<!doctype html>
         box-shadow: 0 1px 2px color-mix(in srgb, CanvasText 7%, transparent); }
   table { width: 100%; border-collapse: collapse; }
   thead th { text-align: left; font-size: 0.67rem; text-transform: uppercase; letter-spacing: 0.06em;
-        font-weight: 600; opacity: 0.5; padding: 0.65rem 0.95rem;
+        font-weight: 600; opacity: 0.5; padding: 0.65rem 0.8rem;
         background: color-mix(in srgb, CanvasText 3.5%, transparent);
         border-bottom: 1px solid color-mix(in srgb, CanvasText 10%, transparent); }
-  tbody td { padding: 0.72rem 0.95rem; font-size: 0.85rem; vertical-align: middle; }
+  tbody td { padding: 0.72rem 0.8rem; font-size: 0.85rem; vertical-align: middle; }
+  /* the launchd column can absorb slack so fixed columns are never clipped */
+  td.svc-cell { width: 100%; }
   tbody tr + tr td { border-top: 1px solid color-mix(in srgb, CanvasText 8%, transparent); }
   tbody tr:hover td { background: color-mix(in srgb, CanvasText 3.5%, transparent); }
+  /* keep the site link+launch icon and the launchd pid+name on one line */
+  td.site-cell, td.svc-cell { white-space: nowrap; }
 
   td a.site { font-weight: 600; text-decoration: none; color: CanvasText; }
   td a.site:hover { text-decoration: underline; }

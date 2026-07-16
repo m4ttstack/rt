@@ -75,8 +75,8 @@ function rowHtml(row, data) {
       ? `<a class="launch${row.published ? "" : " off"}" href="${esc(row.publicUrl)}" target="_blank" rel="noopener" title="${row.published ? "open " + esc(row.publicUrl.replace(/^https:\/\//, "")) : "private — not publicly reachable"}">${launchIcon()}</a>`
       : "";
   const nameCell = row.url
-    ? `<td><a class="site" href="${esc(row.url)}">${esc(row.name)}<span class="muted">.${esc(data.suffix)}</span></a>${launch}</td>`
-    : `<td class="muted">${esc(row.name)}</td>`;
+    ? `<td class="site-cell"><a class="site" href="${esc(row.url)}">${esc(row.name)}<span class="muted">.${esc(data.suffix)}</span></a>${launch}</td>`
+    : `<td class="site-cell muted">${esc(row.name)}</td>`;
   const portCell = row.port != null ? `<td class="num">${row.port}</td>` : `<td class="num muted">—</td>`;
   const healthCell = isRestarting
     ? `<td><span class="spin"></span> <span class="muted">restarting…</span></td>`
@@ -99,7 +99,7 @@ function rowHtml(row, data) {
       }</td>`
     : `<td></td>`;
 
-  return `<tr>${nameCell}${portCell}${healthCell}<td>${serviceHtml(row)}</td>${publishCell}${accessCell}${restartCell}</tr>`;
+  return `<tr>${nameCell}${portCell}${healthCell}<td class="svc-cell">${serviceHtml(row)}</td>${publishCell}${accessCell}${restartCell}</tr>`;
 }
 
 // A cloudflared tunnel row: reads as infra health (up/down), not a stray app.
