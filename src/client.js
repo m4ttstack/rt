@@ -71,13 +71,13 @@ function rowHtml(row, data) {
 
   const manageable = data.canManage && row.port != null;
   const publishCell = manageable
-    ? `<td><button class="act" onclick="onPublish('${esc(row.name)}', ${!row.published})">${row.published ? "published" : "hidden"}</button></td>`
+    ? `<td><button class="act" data-action="publish" data-app="${esc(row.name)}" data-next="${!row.published}">${row.published ? "published" : "hidden"}</button></td>`
     : `<td></td>`;
   const accessCell = manageable
     ? `<td>${
         row.hasPassword
-          ? `protected <button class="act" onclick="onPassword('${esc(row.name)}')">change</button> <button class="act" onclick="onClearPassword('${esc(row.name)}')">remove</button>`
-          : `<button class="act" onclick="onPassword('${esc(row.name)}')">set password</button>`
+          ? `protected <button class="act" data-action="password" data-app="${esc(row.name)}">change</button> <button class="act" data-action="clear-password" data-app="${esc(row.name)}">remove</button>`
+          : `<button class="act" data-action="password" data-app="${esc(row.name)}">set password</button>`
       }</td>`
     : `<td></td>`;
 
@@ -99,6 +99,16 @@ function render(data) {
 
   for (const btn of document.querySelectorAll("button.restart")) {
     btn.onclick = () => onRestart(btn.dataset.label);
+  }
+
+  for (const btn of document.querySelectorAll('button.act[data-action="publish"]')) {
+    btn.onclick = () => onPublish(btn.dataset.app, btn.dataset.next === "true");
+  }
+  for (const btn of document.querySelectorAll('button.act[data-action="password"]')) {
+    btn.onclick = () => onPassword(btn.dataset.app);
+  }
+  for (const btn of document.querySelectorAll('button.act[data-action="clear-password"]')) {
+    btn.onclick = () => onClearPassword(btn.dataset.app);
   }
 }
 
