@@ -2,7 +2,7 @@ import { readRoutes } from "./discover.ts";
 import { getAppSettings, getSecret } from "./settings.ts";
 import { verifyToken, signToken, parseCookie, cookieHeader, COOKIE_NAME } from "./session.ts";
 import {
-  pageNothingHere, pageNoRoute, pageOffline, pageRateLimited, pageLogin,
+  pageNothingHere, pageOffline, pageRateLimited, pageLogin,
 } from "./gateway-pages.ts";
 
 const DOMAIN_SUFFIX = ".m4tthew.dev";
@@ -97,6 +97,7 @@ export function startGateway(port = 7950): void {
 
   const server = Bun.serve({
     port,
+    hostname: "127.0.0.1",
     async fetch(req) {
       const url = new URL(req.url);
       const host = req.headers.get("host") ?? "";
@@ -135,7 +136,7 @@ export function startGateway(port = 7950): void {
       });
 
       switch (d.kind) {
-        case "no-route": return html(pageNoRoute(), 502);
+        case "no-route": return html(pageNothingHere(), 404);
         case "not-published": return html(pageNothingHere(), 404);
         case "needs-login": return html(pageLogin(d.app, { next: url.pathname + url.search }), 401);
         case "proxy":

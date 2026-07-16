@@ -205,6 +205,7 @@ async function knownApp(app: string): Promise<boolean> {
 
 Bun.serve({
   port: PORT,
+  hostname: "127.0.0.1",
   async fetch(req) {
     const { pathname } = new URL(req.url);
     if (pathname === "/healthz") return new Response("ok");

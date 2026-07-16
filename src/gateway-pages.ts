@@ -26,10 +26,6 @@ export function pageNothingHere(): string {
   return card("Nothing here", `<h1>Nothing here</h1><p>There is no app at this address.</p>`);
 }
 
-export function pageNoRoute(): string {
-  return card("App not found", `<h1>App not found</h1><p>There is no app at this address.</p>`);
-}
-
 export function pageOffline(app: string): string {
   return card("App is offline", `<h1>${esc(app)} is offline</h1><p>This app is not responding right now. Try again shortly.</p>`);
 }
