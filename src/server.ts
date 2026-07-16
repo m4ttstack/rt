@@ -82,14 +82,15 @@ async function buildStatus(requestHost?: string): Promise<Status> {
       // holds the port — name that unmanaged process instead of crying wolf.
       const unmanaged =
         health.ok && a.service && a.service.pid === null ? await listenerFor(a.port) : null;
+      const settings = getAppSettings(a.name);
       return {
         name: a.name,
         port: a.port,
         url: a.url,
         health,
         service: a.service ? serviceJson(a.service, health, unmanaged) : null,
-        published: getAppSettings(a.name).published,
-        hasPassword: !!getAppSettings(a.name).passwordHash,
+        published: settings.published,
+        hasPassword: !!settings.passwordHash,
       };
     }),
   );
@@ -147,6 +148,11 @@ const SHELL = `<!doctype html>
   button.restart:hover { opacity: 1; border-color: #8888; }
   button.restart:disabled { opacity: 0.35; cursor: default; }
 
+  button.act { font: inherit; font-size: 0.75rem; line-height: 1; cursor: pointer;
+        background: none; border: 1px solid #8884; border-radius: 6px; padding: 0.12rem 0.4rem;
+        color: inherit; opacity: 0.65; }
+  button.act:hover { opacity: 1; border-color: #8888; }
+
   .spin { display: inline-block; width: 11px; height: 11px; vertical-align: -1px;
         border: 2px solid #8884; border-top-color: #888; border-radius: 50%;
         animation: spin 0.7s linear infinite; margin-right: 2px; }
@@ -173,7 +179,7 @@ const SHELL = `<!doctype html>
 <h1>local apps</h1>
 <p class="sub" id="sub">loading…</p>
 <table>
-<thead><tr><th>site</th><th>port</th><th>health</th><th>launchd</th><th></th></tr></thead>
+<thead><tr><th>site</th><th>port</th><th>health</th><th>launchd</th><th>publish</th><th>access</th><th></th></tr></thead>
 <tbody id="apps"></tbody>
 </table>
 <div id="orphans-wrap" style="display:none">

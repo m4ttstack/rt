@@ -69,7 +69,19 @@ function rowHtml(row, data) {
       ? `<td class="actions"><button class="restart" ${isRestarting ? "disabled" : ""} data-label="${esc(label)}" title="restart ${esc(row.service.short)}">↻</button></td>`
       : `<td class="actions"></td>`;
 
-  return `<tr>${nameCell}${portCell}${healthCell}<td>${serviceHtml(row)}</td>${restartCell}</tr>`;
+  const manageable = data.canManage && row.port != null;
+  const publishCell = manageable
+    ? `<td><button class="act" onclick="onPublish('${esc(row.name)}', ${!row.published})">${row.published ? "published" : "hidden"}</button></td>`
+    : `<td></td>`;
+  const accessCell = manageable
+    ? `<td>${
+        row.hasPassword
+          ? `protected <button class="act" onclick="onPassword('${esc(row.name)}')">change</button> <button class="act" onclick="onClearPassword('${esc(row.name)}')">remove</button>`
+          : `<button class="act" onclick="onPassword('${esc(row.name)}')">set password</button>`
+      }</td>`
+    : `<td></td>`;
+
+  return `<tr>${nameCell}${portCell}${healthCell}<td>${serviceHtml(row)}</td>${publishCell}${accessCell}${restartCell}</tr>`;
 }
 
 function render(data) {
@@ -99,6 +111,32 @@ function onRestart(label) {
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: "label=" + encodeURIComponent(label),
   }).catch(() => {});
+}
+
+async function onPublish(name, next) {
+  const body = new URLSearchParams({ app: name, published: String(next) });
+  try {
+    await fetch("/publish", { method: "POST", body });
+  } catch {
+    /* transient — the next refresh will show the true state */
+  }
+  await refresh();
+}
+
+function onPassword(name) {
+  const pw = prompt(`Password for ${name} (blank to cancel):`);
+  if (pw === null || pw === "") return;
+  const body = new URLSearchParams({ app: name, password: pw });
+  fetch("/password", { method: "POST", body })
+    .catch(() => {})
+    .then(refresh);
+}
+
+function onClearPassword(name) {
+  const body = new URLSearchParams({ app: name, password: "" });
+  fetch("/password", { method: "POST", body })
+    .catch(() => {})
+    .then(refresh);
 }
 
 // Clear the restarting flag once the service has a NEW pid and is healthy again
