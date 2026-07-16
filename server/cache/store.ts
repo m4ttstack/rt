@@ -10,8 +10,10 @@ const CACHE_DIR = ".cache";
  *  v1 -> v2: added FetchResult.linearIssues (the "Issues done" delivery metric).
  *  v2 -> v3: linearIssues gained title + url (for the per-stat detail page).
  *  v3 -> v4: NormMr gained updatedAt (window slicing scopes MRs on it).
+ *  v4 -> v5: v4 envelopes could hold store-hydrated MRs missing updatedAt (the store predates
+ *            the field), which sliceOutcome silently dropped along with their Linear tickets.
  */
-const CACHE_SCHEMA_VERSION = 4;
+const CACHE_SCHEMA_VERSION = 5;
 
 interface CacheEnvelope<T> {
   savedAt: string;
