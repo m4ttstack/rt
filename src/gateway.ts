@@ -46,6 +46,7 @@ function loadRoutes(): void {
 const attempts = new Map<string, { count: number; until: number }>();
 const WINDOW_MAX = 10;
 const LOCK_MS = 60_000;
+const MAX_ATTEMPT_KEYS = 5000;
 
 function rateKey(app: string, ip: string): string {
   return `${app}|${ip}`;
@@ -55,14 +56,17 @@ function isLocked(key: string): boolean {
   return !!e && Date.now() < e.until;
 }
 function recordFailure(key: string): void {
+  // Coarse memory bound: if the table is flooded with attacker-varied keys, drop it wholesale.
+  if (attempts.size >= MAX_ATTEMPT_KEYS && !attempts.has(key)) attempts.clear();
   const e = attempts.get(key) ?? { count: 0, until: 0 };
+  if (e.until !== 0 && Date.now() >= e.until) { e.count = 0; e.until = 0; }
   e.count += 1;
   if (e.count > WINDOW_MAX) e.until = Date.now() + LOCK_MS;
   attempts.set(key, e);
 }
 
-function safeNext(next: string | null): string {
-  if (next && next.startsWith("/") && !next.startsWith("//")) return next;
+export function safeNext(next: string | null): string {
+  if (next && next.startsWith("/") && !next.startsWith("//") && !next.includes("\\")) return next;
   return "/";
 }
 
@@ -95,6 +99,9 @@ export function startGateway(port = 7950): void {
 
       // Auth submission is handled by the gateway itself, never proxied.
       if (req.method === "POST" && url.pathname === "/__auth") {
+        if (routes.get(app) === undefined || !settings.published) {
+          return html(pageNothingHere(), 404);
+        }
         const key = rateKey(app, ip);
         if (isLocked(key)) return html(pageRateLimited(), 429);
         const form = await req.formData();

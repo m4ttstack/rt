@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { decide, appFromHost } from "./gateway.ts";
+import { decide, appFromHost, safeNext } from "./gateway.ts";
 import { signToken } from "./session.ts";
 
 const SECRET = "a".repeat(64);
@@ -40,4 +40,18 @@ test("password set, stale cookie (version bumped) → needs-login", () => {
   const cookie = signToken("x", 1, SECRET);
   const d = decide({ app: "x", port: 8080, published: true, passwordHash: "$2b$hash", passwordVersion: 2, cookie, secret: SECRET });
   expect(d.kind).toBe("needs-login");
+});
+
+test("safeNext allows a normal path", () => {
+  expect(safeNext("/dashboard")).toBe("/dashboard");
+});
+test("safeNext rejects protocol-relative //evil.com", () => {
+  expect(safeNext("//evil.com")).toBe("/");
+});
+test("safeNext rejects backslash bypass /\\evil.com", () => {
+  expect(safeNext("/\\evil.com")).toBe("/");
+});
+test("safeNext rejects absolute URLs and null", () => {
+  expect(safeNext("http://evil.com")).toBe("/");
+  expect(safeNext(null)).toBe("/");
 });
