@@ -18,6 +18,11 @@ function dot(cls, title) {
   return `<span class="dot ${cls}" title="${esc(title)}"></span>`;
 }
 
+// A small padlock glyph, tinted via currentColor.
+function lockIcon() {
+  return `<svg class="lock-i" viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M12 1a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5zm3 8H9V6a3 3 0 0 1 6 0z"/></svg>`;
+}
+
 function allRows(data) {
   return data ? [...data.apps, ...data.orphans] : [];
 }
@@ -70,14 +75,15 @@ function rowHtml(row, data) {
       : `<td class="actions"></td>`;
 
   const manageable = data.canManage && row.port != null;
+  const app = esc(row.name);
   const publishCell = manageable
-    ? `<td><button class="act" data-action="publish" data-app="${esc(row.name)}" data-next="${!row.published}">${row.published ? "published" : "hidden"}</button></td>`
+    ? `<td class="manage"><button class="toggle ${row.published ? "on" : ""}" role="switch" aria-checked="${row.published}" data-action="publish" data-app="${app}" data-next="${!row.published}" title="${row.published ? "public — click to make private" : "private — click to publish"}"><span class="toggle-track"></span><span class="toggle-knob"></span></button></td>`
     : `<td></td>`;
   const accessCell = manageable
-    ? `<td>${
+    ? `<td class="manage">${
         row.hasPassword
-          ? `protected <button class="act" data-action="password" data-app="${esc(row.name)}">change</button> <button class="act" data-action="clear-password" data-app="${esc(row.name)}">remove</button>`
-          : `<button class="act" data-action="password" data-app="${esc(row.name)}">set password</button>`
+          ? `<span class="lock-badge" title="password required to view">${lockIcon()} protected</span><button class="linkbtn" data-action="password" data-app="${app}">change</button><button class="linkbtn danger" data-action="clear-password" data-app="${app}">remove</button>`
+          : `<button class="setpw" data-action="password" data-app="${app}">${lockIcon()} set password</button>`
       }</td>`
     : `<td></td>`;
 
@@ -101,13 +107,13 @@ function render(data) {
     btn.onclick = () => onRestart(btn.dataset.label);
   }
 
-  for (const btn of document.querySelectorAll('button.act[data-action="publish"]')) {
+  for (const btn of document.querySelectorAll('button[data-action="publish"]')) {
     btn.onclick = () => onPublish(btn.dataset.app, btn.dataset.next === "true");
   }
-  for (const btn of document.querySelectorAll('button.act[data-action="password"]')) {
+  for (const btn of document.querySelectorAll('button[data-action="password"]')) {
     btn.onclick = () => onPassword(btn.dataset.app);
   }
-  for (const btn of document.querySelectorAll('button.act[data-action="clear-password"]')) {
+  for (const btn of document.querySelectorAll('button[data-action="clear-password"]')) {
     btn.onclick = () => onClearPassword(btn.dataset.app);
   }
 }

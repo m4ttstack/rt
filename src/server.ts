@@ -126,7 +126,7 @@ const SHELL = `<!doctype html>
 <style>
   :root { color-scheme: light dark; }
   body { font: 14px/1.5 -apple-system, BlinkMacSystemFont, sans-serif;
-         max-width: 780px; margin: 2.5rem auto; padding: 0 1.2rem; }
+         max-width: 960px; margin: 2.5rem auto; padding: 0 1.2rem; }
   h1 { font-size: 1.15rem; margin-bottom: 0.2rem; }
   .sub { opacity: 0.6; font-size: 0.85rem; margin-bottom: 1.5rem; }
   table { width: 100%; border-collapse: collapse; }
@@ -144,14 +144,38 @@ const SHELL = `<!doctype html>
   td.actions { text-align: right; width: 1%; white-space: nowrap; }
   button.restart { font: inherit; font-size: 0.95rem; line-height: 1; cursor: pointer;
         background: none; border: 1px solid #8884; border-radius: 6px; padding: 0.15rem 0.45rem;
-        color: inherit; opacity: 0.55; }
-  button.restart:hover { opacity: 1; border-color: #8888; }
-  button.restart:disabled { opacity: 0.35; cursor: default; }
+        color: inherit; opacity: 0.55; transition: opacity .12s, border-color .12s, background .12s; }
+  button.restart:hover { opacity: 1; border-color: #8888; background: #8881; }
+  button.restart:disabled { opacity: 0.35; cursor: default; background: none; }
 
-  button.act { font: inherit; font-size: 0.75rem; line-height: 1; cursor: pointer;
-        background: none; border: 1px solid #8884; border-radius: 6px; padding: 0.12rem 0.4rem;
-        color: inherit; opacity: 0.65; }
-  button.act:hover { opacity: 1; border-color: #8888; }
+  /* manage columns (publish toggle + access) never wrap */
+  td.manage { white-space: nowrap; }
+
+  /* publish: a real on/off switch */
+  button.toggle { position: relative; display: inline-block; width: 34px; height: 20px;
+        border: none; background: none; padding: 0; cursor: pointer; vertical-align: middle; }
+  .toggle-track { display: block; width: 34px; height: 20px; border-radius: 10px;
+        background: #8883; transition: background .15s; }
+  button.toggle.on .toggle-track { background: #2da44e; }
+  .toggle-knob { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px;
+        border-radius: 50%; background: #fff; box-shadow: 0 1px 2px #0005; transition: transform .15s; }
+  button.toggle.on .toggle-knob { transform: translateX(14px); }
+  button.toggle:focus-visible { outline: 2px solid #2da44e; outline-offset: 3px; border-radius: 12px; }
+  .manage-off { font-size: 0.78rem; opacity: 0.5; }
+
+  /* access: lock affordances */
+  .lock-badge { display: inline-flex; align-items: center; gap: 4px;
+        font-size: 0.78rem; font-weight: 600; color: #2da44e; }
+  .lock-i { vertical-align: -2px; }
+  button.setpw { display: inline-flex; align-items: center; gap: 5px; font: inherit;
+        font-size: 0.78rem; cursor: pointer; background: none; border: 1px solid #8884;
+        border-radius: 6px; padding: 0.2rem 0.55rem; color: inherit; opacity: 0.7; }
+  button.setpw:hover { opacity: 1; border-color: #8888; }
+  button.linkbtn { font: inherit; font-size: 0.72rem; cursor: pointer; background: none;
+        border: none; padding: 0 0 0 8px; color: inherit; opacity: 0.5; text-decoration: underline;
+        text-underline-offset: 2px; }
+  button.linkbtn:hover { opacity: 0.95; }
+  button.linkbtn.danger:hover { color: #cf222e; opacity: 1; }
 
   .spin { display: inline-block; width: 11px; height: 11px; vertical-align: -1px;
         border: 2px solid #8884; border-top-color: #888; border-radius: 50%;
@@ -179,7 +203,7 @@ const SHELL = `<!doctype html>
 <h1>local apps</h1>
 <p class="sub" id="sub">loading…</p>
 <table>
-<thead><tr><th>site</th><th>port</th><th>health</th><th>launchd</th><th>publish</th><th>access</th><th></th></tr></thead>
+<thead><tr><th>site</th><th>port</th><th>health</th><th>launchd</th><th>public</th><th>access</th><th></th></tr></thead>
 <tbody id="apps"></tbody>
 </table>
 <div id="orphans-wrap" style="display:none">
