@@ -39,6 +39,8 @@ interface StatusRow {
   service: StatusService | null;
   published: boolean;
   hasPassword: boolean;
+  /** A cloudflared tunnel service (infra), rendered in its own section. */
+  isTunnel: boolean;
 }
 
 interface Status {
@@ -93,6 +95,7 @@ async function buildStatus(requestHost?: string): Promise<Status> {
         service: a.service ? serviceJson(a.service, health, unmanaged) : null,
         published: settings.published,
         hasPassword: !!settings.passwordHash,
+        isTunnel: false,
       };
     }),
   );
@@ -106,6 +109,8 @@ async function buildStatus(requestHost?: string): Promise<Status> {
     service: serviceJson(s, null, null),
     published: true,
     hasPassword: false,
+    // cloudflared tunnels are infrastructure, not stray app services.
+    isTunnel: s.program.some((p) => p.includes("cloudflared")),
   }));
 
   return {
@@ -237,6 +242,10 @@ const SHELL = `<!doctype html>
 <thead><tr><th>site</th><th>port</th><th>health</th><th>launchd</th><th>public</th><th>access</th><th></th></tr></thead>
 <tbody id="apps"></tbody>
 </table>
+</div>
+<div id="tunnels-wrap" style="display:none">
+<h2>cloudflare tunnel</h2>
+<div class="board"><table><tbody id="tunnels"></tbody></table></div>
 </div>
 <div id="orphans-wrap" style="display:none">
 <h2>services without routes</h2>

@@ -102,6 +102,25 @@ function rowHtml(row, data) {
   return `<tr>${nameCell}${portCell}${healthCell}<td>${serviceHtml(row)}</td>${publishCell}${accessCell}${restartCell}</tr>`;
 }
 
+// A cloudflared tunnel row: reads as infra health (up/down), not a stray app.
+function tunnelRow(row, data) {
+  const s = row.service;
+  const label = s && s.label;
+  const isRestarting = label && restarting.has(label);
+  const up = !!(s && s.pid !== null);
+  const statusCell = isRestarting
+    ? `<td><span class="spin"></span> <span class="muted">restarting…</span></td>`
+    : `<td><span class="hpill ${up ? "ok" : "bad"}" title="${up ? "tunnel running" : "tunnel stopped"}">${up ? "up" : "down"}</span></td>`;
+  const detail = up
+    ? `${dot("ok", "running")} pid ${s.pid}`
+    : `${dot("bad", "stopped")} stopped${s && s.lastExitStatus != null ? ` (exit ${s.lastExitStatus})` : ""}`;
+  const restartCell =
+    data.canRestart && s
+      ? `<td class="actions"><button class="restart" ${isRestarting ? "disabled" : ""} data-label="${esc(label)}" title="restart tunnel">↻</button></td>`
+      : `<td class="actions"></td>`;
+  return `<tr><td><strong>Cloudflare tunnel</strong> <span class="muted">${esc(row.name)}</span></td>${statusCell}<td>${detail} <span class="muted">carries *.${esc(data.suffix === "localhost" ? "m4tthew.dev" : data.suffix)}</span></td>${restartCell}</tr>`;
+}
+
 function render(data) {
   if (!data) return;
   const publicCount = data.apps.filter((r) => r.published).length;
@@ -112,10 +131,23 @@ function render(data) {
   $("#sub").innerHTML = parts.join(`<span class="sep">·</span>`);
   $("#apps").innerHTML = data.apps.map((r) => rowHtml(r, data)).join("");
 
+  // Split the routeless services: cloudflared tunnels are infra (their own
+  // section, shown as up/down health), everything else is a true stray.
+  const tunnels = data.orphans.filter((r) => r.isTunnel);
+  const strays = data.orphans.filter((r) => !r.isTunnel);
+
+  const tunnelWrap = $("#tunnels-wrap");
+  if (tunnels.length) {
+    tunnelWrap.style.display = "";
+    $("#tunnels").innerHTML = tunnels.map((r) => tunnelRow(r, data)).join("");
+  } else {
+    tunnelWrap.style.display = "none";
+  }
+
   const wrap = $("#orphans-wrap");
-  if (data.orphans.length) {
+  if (strays.length) {
     wrap.style.display = "";
-    $("#orphans").innerHTML = data.orphans.map((r) => rowHtml(r, data)).join("");
+    $("#orphans").innerHTML = strays.map((r) => rowHtml(r, data)).join("");
   } else {
     wrap.style.display = "none";
   }
