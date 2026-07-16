@@ -13,6 +13,8 @@ import {
   type Health,
   type LaunchdService,
 } from "./discover.ts";
+import { getAppSettings, setPublished, setPassword, clearPassword } from "./settings.ts";
+import { startGateway } from "./gateway.ts";
 
 const PORT = Number(process.env.PORT ?? 7940);
 const PLIST_PREFIX = "com.matthewgoodwin.";
@@ -34,11 +36,14 @@ interface StatusRow {
   url: string | null;
   health: Health | null;
   service: StatusService | null;
+  published: boolean;
+  hasPassword: boolean;
 }
 
 interface Status {
   suffix: string;
   canRestart: boolean;
+  canManage: boolean;
   up: number;
   total: number;
   apps: StatusRow[];
@@ -77,12 +82,15 @@ async function buildStatus(requestHost?: string): Promise<Status> {
       // holds the port — name that unmanaged process instead of crying wolf.
       const unmanaged =
         health.ok && a.service && a.service.pid === null ? await listenerFor(a.port) : null;
+      const settings = getAppSettings(a.name);
       return {
         name: a.name,
         port: a.port,
         url: a.url,
         health,
         service: a.service ? serviceJson(a.service, health, unmanaged) : null,
+        published: settings.published,
+        hasPassword: !!settings.passwordHash,
       };
     }),
   );
@@ -93,12 +101,15 @@ async function buildStatus(requestHost?: string): Promise<Status> {
     url: null,
     health: null,
     service: serviceJson(s, null, null),
+    published: true,
+    hasPassword: false,
   }));
 
   return {
     suffix: publicDomain ?? "localhost",
     // Restart is a local-only control: never expose it through a public tunnel.
     canRestart: publicDomain === null,
+    canManage: publicDomain === null,
     up: healths.filter((h) => h.ok).length,
     total: apps.length,
     apps: appRows,
@@ -137,6 +148,11 @@ const SHELL = `<!doctype html>
   button.restart:hover { opacity: 1; border-color: #8888; }
   button.restart:disabled { opacity: 0.35; cursor: default; }
 
+  button.act { font: inherit; font-size: 0.75rem; line-height: 1; cursor: pointer;
+        background: none; border: 1px solid #8884; border-radius: 6px; padding: 0.12rem 0.4rem;
+        color: inherit; opacity: 0.65; }
+  button.act:hover { opacity: 1; border-color: #8888; }
+
   .spin { display: inline-block; width: 11px; height: 11px; vertical-align: -1px;
         border: 2px solid #8884; border-top-color: #888; border-radius: 50%;
         animation: spin 0.7s linear infinite; margin-right: 2px; }
@@ -163,7 +179,7 @@ const SHELL = `<!doctype html>
 <h1>local apps</h1>
 <p class="sub" id="sub">loading…</p>
 <table>
-<thead><tr><th>site</th><th>port</th><th>health</th><th>launchd</th><th></th></tr></thead>
+<thead><tr><th>site</th><th>port</th><th>health</th><th>launchd</th><th>publish</th><th>access</th><th></th></tr></thead>
 <tbody id="apps"></tbody>
 </table>
 <div id="orphans-wrap" style="display:none">
@@ -183,8 +199,13 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
+async function knownApp(app: string): Promise<boolean> {
+  return readRoutes().some((r) => r.hostname.replace(/\.localhost$/, "") === app);
+}
+
 Bun.serve({
   port: PORT,
+  hostname: "127.0.0.1",
   async fetch(req) {
     const { pathname } = new URL(req.url);
     if (pathname === "/healthz") return new Response("ok");
@@ -203,6 +224,27 @@ Bun.serve({
       return json({ ok });
     }
 
+    if (req.method === "POST" && pathname === "/publish") {
+      if (publicDomainFor(host) !== null) return json({ error: "forbidden" }, 403);
+      const form = await req.formData();
+      const app = String(form.get("app") ?? "");
+      const published = String(form.get("published") ?? "") === "true";
+      if (!(await knownApp(app))) return json({ error: "unknown app" }, 400);
+      await setPublished(app, published);
+      return json({ ok: true });
+    }
+
+    if (req.method === "POST" && pathname === "/password") {
+      if (publicDomainFor(host) !== null) return json({ error: "forbidden" }, 403);
+      const form = await req.formData();
+      const app = String(form.get("app") ?? "");
+      const password = String(form.get("password") ?? "");
+      if (!(await knownApp(app))) return json({ error: "unknown app" }, 400);
+      if (password.length > 0) await setPassword(app, password);
+      else await clearPassword(app);
+      return json({ ok: true });
+    }
+
     if (pathname === "/api/status") return json(await buildStatus(host));
 
     if (pathname !== "/") return new Response("not found", { status: 404 });
@@ -211,3 +253,11 @@ Bun.serve({
 });
 
 console.log(`local-apps serving on http://localhost:${PORT}`);
+
+if (process.env.LOCAL_APPS_NO_GATEWAY !== "1") {
+  try {
+    startGateway();
+  } catch (err) {
+    console.error("gateway failed to start:", err);
+  }
+}

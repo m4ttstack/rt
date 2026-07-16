@@ -69,7 +69,19 @@ function rowHtml(row, data) {
       ? `<td class="actions"><button class="restart" ${isRestarting ? "disabled" : ""} data-label="${esc(label)}" title="restart ${esc(row.service.short)}">↻</button></td>`
       : `<td class="actions"></td>`;
 
-  return `<tr>${nameCell}${portCell}${healthCell}<td>${serviceHtml(row)}</td>${restartCell}</tr>`;
+  const manageable = data.canManage && row.port != null;
+  const publishCell = manageable
+    ? `<td><button class="act" data-action="publish" data-app="${esc(row.name)}" data-next="${!row.published}">${row.published ? "published" : "hidden"}</button></td>`
+    : `<td></td>`;
+  const accessCell = manageable
+    ? `<td>${
+        row.hasPassword
+          ? `protected <button class="act" data-action="password" data-app="${esc(row.name)}">change</button> <button class="act" data-action="clear-password" data-app="${esc(row.name)}">remove</button>`
+          : `<button class="act" data-action="password" data-app="${esc(row.name)}">set password</button>`
+      }</td>`
+    : `<td></td>`;
+
+  return `<tr>${nameCell}${portCell}${healthCell}<td>${serviceHtml(row)}</td>${publishCell}${accessCell}${restartCell}</tr>`;
 }
 
 function render(data) {
@@ -88,6 +100,16 @@ function render(data) {
   for (const btn of document.querySelectorAll("button.restart")) {
     btn.onclick = () => onRestart(btn.dataset.label);
   }
+
+  for (const btn of document.querySelectorAll('button.act[data-action="publish"]')) {
+    btn.onclick = () => onPublish(btn.dataset.app, btn.dataset.next === "true");
+  }
+  for (const btn of document.querySelectorAll('button.act[data-action="password"]')) {
+    btn.onclick = () => onPassword(btn.dataset.app);
+  }
+  for (const btn of document.querySelectorAll('button.act[data-action="clear-password"]')) {
+    btn.onclick = () => onClearPassword(btn.dataset.app);
+  }
 }
 
 function onRestart(label) {
@@ -99,6 +121,32 @@ function onRestart(label) {
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: "label=" + encodeURIComponent(label),
   }).catch(() => {});
+}
+
+async function onPublish(name, next) {
+  const body = new URLSearchParams({ app: name, published: String(next) });
+  try {
+    await fetch("/publish", { method: "POST", body });
+  } catch {
+    /* transient — the next refresh will show the true state */
+  }
+  await refresh();
+}
+
+function onPassword(name) {
+  const pw = prompt(`Password for ${name} (blank to cancel):`);
+  if (pw === null || pw === "") return;
+  const body = new URLSearchParams({ app: name, password: pw });
+  fetch("/password", { method: "POST", body })
+    .catch(() => {})
+    .then(refresh);
+}
+
+function onClearPassword(name) {
+  const body = new URLSearchParams({ app: name, password: "" });
+  fetch("/password", { method: "POST", body })
+    .catch(() => {})
+    .then(refresh);
 }
 
 // Clear the restarting flag once the service has a NEW pid and is healthy again
