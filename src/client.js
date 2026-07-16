@@ -93,8 +93,8 @@ function rowHtml(row, data) {
   const accessCell = manageable
     ? `<td class="manage">${
         row.hasPassword
-          ? `<span class="lock-badge" title="password required to view">${lockIcon()} protected</span><button class="linkbtn" data-action="password" data-app="${app}">change</button><button class="linkbtn danger" data-action="clear-password" data-app="${app}">remove</button>`
-          : `<button class="setpw" data-action="password" data-app="${app}">${lockIcon()} set password</button>`
+          ? `<span class="access-row"><span class="lock-badge" title="password required to view">${lockIcon()} protected</span><button class="pill" data-action="password" data-app="${app}">change</button><button class="pill danger" data-action="clear-password" data-app="${app}">remove</button></span>`
+          : `<button class="pill set" data-action="password" data-app="${app}">${lockIcon()} set password</button>`
       }</td>`
     : `<td></td>`;
 

@@ -170,19 +170,17 @@ const SHELL = `<!doctype html>
   button.toggle:focus-visible { outline: 2px solid #2da44e; outline-offset: 3px; border-radius: 12px; }
   .manage-off { font-size: 0.78rem; opacity: 0.5; }
 
-  /* access: lock affordances */
+  /* access: lock affordances, one consistent pill-button treatment */
+  .access-row { display: inline-flex; align-items: center; gap: 7px; }
   .lock-badge { display: inline-flex; align-items: center; gap: 4px;
         font-size: 0.78rem; font-weight: 600; color: #2da44e; }
   .lock-i { vertical-align: -2px; }
-  button.setpw { display: inline-flex; align-items: center; gap: 5px; font: inherit;
-        font-size: 0.78rem; cursor: pointer; background: none; border: 1px solid #8884;
-        border-radius: 6px; padding: 0.2rem 0.55rem; color: inherit; opacity: 0.7; }
-  button.setpw:hover { opacity: 1; border-color: #8888; }
-  button.linkbtn { font: inherit; font-size: 0.72rem; cursor: pointer; background: none;
-        border: none; padding: 0 0 0 8px; color: inherit; opacity: 0.5; text-decoration: underline;
-        text-underline-offset: 2px; }
-  button.linkbtn:hover { opacity: 0.95; }
-  button.linkbtn.danger:hover { color: #cf222e; opacity: 1; }
+  button.pill { font: inherit; font-size: 0.72rem; line-height: 1; cursor: pointer;
+        background: none; border: 1px solid #8884; border-radius: 5px; padding: 0.22rem 0.5rem;
+        color: inherit; opacity: 0.7; transition: opacity .12s, border-color .12s, color .12s; }
+  button.pill:hover { opacity: 1; border-color: #8888; }
+  button.pill.danger:hover { color: #cf222e; border-color: #cf222e77; }
+  button.pill.set { display: inline-flex; align-items: center; gap: 5px; }
 
   .spin { display: inline-block; width: 11px; height: 11px; vertical-align: -1px;
         border: 2px solid #8884; border-top-color: #888; border-radius: 50%;
