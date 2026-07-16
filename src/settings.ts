@@ -1,4 +1,4 @@
-import { readFileSync, renameSync } from "fs";
+import { readFileSync, writeFileSync, renameSync } from "fs";
 import { join } from "path";
 import { randomBytes } from "crypto";
 
@@ -16,8 +16,6 @@ export interface SettingsFile {
 
 export const SETTINGS_PATH =
   process.env.LOCAL_APPS_SETTINGS_PATH ?? join(import.meta.dir, "..", "data", "settings.json");
-
-const DEFAULT: SettingsFile = { version: 1, apps: {} };
 
 let cache: SettingsFile = load();
 
@@ -37,8 +35,13 @@ export function reloadSettings(): void {
 
 function save(): void {
   const tmp = SETTINGS_PATH + ".tmp";
-  Bun.write(tmp, JSON.stringify(cache, null, 2));
-  renameSync(tmp, SETTINGS_PATH);
+  try {
+    writeFileSync(tmp, JSON.stringify(cache, null, 2));
+    renameSync(tmp, SETTINGS_PATH);
+  } catch (err) {
+    console.error("settings save failed:", err);
+    throw err;
+  }
 }
 
 export function getAppSettings(app: string): AppSettings {

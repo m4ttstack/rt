@@ -1,4 +1,4 @@
-import { test, expect, beforeEach } from "bun:test";
+import { test, expect, beforeEach, afterAll } from "bun:test";
 import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -10,6 +10,10 @@ process.env.LOCAL_APPS_SETTINGS_PATH = join(dir, "settings.json");
 const {
   getAppSettings, getSecret, setPublished, setPassword, clearPassword, reloadSettings,
 } = await import("./settings.ts");
+
+afterAll(() => {
+  rmSync(dir, { recursive: true, force: true });
+});
 
 beforeEach(() => {
   // Reset to an empty file between tests.
