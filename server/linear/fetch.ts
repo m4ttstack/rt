@@ -36,23 +36,29 @@ function buildVerifyQuery(identifiers: readonly string[]): string {
 
 type VerifyResult = Record<string, RawIssue | null>;
 
+/** A verify pass: resolved lookups plus the identifiers whose lookup errored (unknown, not invalid). */
+interface VerifyOutcome {
+  result: VerifyResult;
+  failed: string[];
+}
+
 const CHUNK_SIZE = 100;
 
 const LINEAR_CONCURRENCY = 6;
 
 /**
- * Verify a chunk of identifiers against Linear. On a batch error (e.g. one bad
- * identifier poisons the whole query), falls back to concurrent individual lookups
- * so valid tickets in the same chunk are still recovered.
+ * Verify a chunk of identifiers against Linear. On a batch error (one bad identifier
+ * poisoning the query, or a transient failure like a rate limit), falls back to
+ * concurrent individual lookups so the rest of the chunk is still recovered.
  */
 async function verifyChunk(
   apiKey: string,
   chunk: readonly string[],
   signal?: AbortSignal,
-): Promise<VerifyResult> {
+): Promise<VerifyOutcome> {
   const query = buildVerifyQuery(chunk);
   try {
-    return await linearRequest<VerifyResult>(apiKey, query, {}, signal);
+    return { result: await linearRequest<VerifyResult>(apiKey, query, {}, signal), failed: [] };
   } catch (err) {
     if ((err as Error).name === "AbortError") throw err;
     return verifyIndividually(apiKey, chunk, signal);
@@ -60,15 +66,17 @@ async function verifyChunk(
 }
 
 /**
- * Look up each identifier concurrently, silently skipping any that error.
+ * Look up each identifier concurrently. Lookups that error are reported in `failed`
+ * rather than silently dropped: an errored lookup says nothing about validity.
  * Keyed identically to the batch result (_0, _1, ...) so callers don't care.
  */
 async function verifyIndividually(
   apiKey: string,
   ids: readonly string[],
   signal?: AbortSignal,
-): Promise<VerifyResult> {
+): Promise<VerifyOutcome> {
   const result: VerifyResult = {};
+  const failed: string[] = [];
   await mapLimit(
     [...ids.entries()],
     LINEAR_CONCURRENCY,
@@ -81,10 +89,14 @@ async function verifyIndividually(
         if (raw) result[`_${i}`] = raw;
       } catch (err) {
         if ((err as Error).name === "AbortError") throw err;
+        // "Entity not found" IS a definitive answer (Linear errors on nonexistent ids
+        // rather than returning null): leave the alias unset so it's cached as invalid.
+        // Anything else (rate limit, transport) says nothing about validity.
+        if (!/entity not found/i.test((err as Error).message)) failed.push(id);
       }
     },
   );
-  return result;
+  return { result, failed };
 }
 
 /**
@@ -164,19 +176,19 @@ export async function resolveLinearTickets(
     }
   };
 
-  // Phase 1: batch-query known-valid identifiers (no fallback needed, they're clean).
+  const allFailed: string[] = [];
+
+  // Phase 1: batch-query known-valid identifiers. A chunk can still fail transiently
+  // (rate limits during a big refresh); silently dropping it removes ~100 tickets from
+  // the envelope, so fall back to individual lookups exactly like the unknown path.
   const validChunks = Math.ceil(knownValid.length / CHUNK_SIZE);
   for (let ci = 0; ci < validChunks; ci++) {
     signal?.throwIfAborted();
     const chunk = knownValid.slice(ci * CHUNK_SIZE, (ci + 1) * CHUNK_SIZE);
     onProgress?.({ phase: "linear", label: `Fetching ${knownValid.length} cached tickets`, done: ci, total: validChunks });
-    const query = buildVerifyQuery(chunk);
-    try {
-      const data = await linearRequest<VerifyResult>(apiKey, query, {}, signal);
-      collectResults(data, chunk);
-    } catch (err) {
-      if ((err as Error).name === "AbortError") throw err;
-    }
+    const { result, failed } = await verifyChunk(apiKey, chunk, signal);
+    collectResults(result, chunk);
+    allFailed.push(...failed);
   }
 
   // Phase 2: verify unknown identifiers (with fallback for bad ones).
@@ -186,13 +198,25 @@ export async function resolveLinearTickets(
       signal?.throwIfAborted();
       const chunk = unknown.slice(ci * CHUNK_SIZE, (ci + 1) * CHUNK_SIZE);
       onProgress?.({ phase: "linear", label: `Verifying ${unknown.length} new identifiers (${ci + 1}/${unknownChunks})`, done: ci, total: unknownChunks });
-      const data = await verifyChunk(apiKey, chunk, signal);
-      collectResults(data, chunk);
+      const { result, failed } = await verifyChunk(apiKey, chunk, signal);
+      collectResults(result, chunk);
+      allFailed.push(...failed);
 
-      // Record validity for next time.
-      const entries = chunk.map((id, i) => ({ id, valid: !!data[`_${i}`] }));
+      // Record validity for next time -- but only definitive answers. An errored lookup
+      // says nothing; caching valid:false for it would permanently hide a real ticket.
+      const failedSet = new Set(failed);
+      const entries = chunk
+        .filter((id) => !failedSet.has(id))
+        .map((id) => ({ id, valid: !!result[`_${chunk.indexOf(id)}`] }));
       putLinearIds(entries);
     }
+  }
+
+  if (allFailed.length > 0) {
+    warnings.push({
+      code: "linear_partial",
+      message: `Linear lookup failed for ${allFailed.length} tickets (e.g. ${allFailed[0]}); they are missing from this refresh.`,
+    });
   }
 
   onProgress?.({ phase: "linear", label: "Verifying Linear tickets", done: 1, total: 1 });
