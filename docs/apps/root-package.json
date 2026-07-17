@@ -1,23 +1,21 @@
 {
   "name": "mr-board",
-  "module": "index.ts",
+  "version": "0.1.0",
   "type": "module",
   "private": true,
-  "devDependencies": {
-    "@types/bun": "latest"
-  },
-  "peerDependencies": {
-    "typescript": "^5"
+  "scripts": {
+    "setup": "bun run scripts/setup.ts",
+    "serve": "bun run src/server.ts",
+    "test": "bun test"
   },
   "dependencies": {
     "@workforge/glance-sdk": "^0.9.0",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1"
   },
-  "scripts": {
-    "serve": "bun run src/server.ts",
-    "test": "bun test"
+  "devDependencies": {
+    "@types/bun": "latest"
   }
 }

@@ -18,7 +18,7 @@ describe("isLocalRequest", () => {
     expect(isLocalRequest(reqWithHost("127.0.0.1:7930"))).toBe(true);
   });
   test("public tunnel host is NOT local", () => {
-    expect(isLocalRequest(reqWithHost("mrs.m4tthew.dev"))).toBe(false);
+    expect(isLocalRequest(reqWithHost("board.example.com"))).toBe(false);
   });
   test("missing host is NOT local", () => {
     expect(isLocalRequest(reqWithHost(null))).toBe(false);

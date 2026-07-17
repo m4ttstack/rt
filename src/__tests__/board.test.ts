@@ -200,4 +200,81 @@ describe("SnapshotCache", () => {
     await new Promise((r) => setTimeout(r, 0));
     expect(calls).toBe(2);
   });
+
+  // A config change makes the snapshot outdated but not useless. Readers must
+  // keep getting the old data while the refetch (tens of seconds against
+  // GitLab) runs, rather than blocking on it.
+  test("markStale() serves the current snapshot while revalidating", async () => {
+    let calls = 0;
+    let release!: () => void;
+    const cache = new SnapshotCache(
+      async () => {
+        calls++;
+        const n = calls;
+        if (n === 2) await new Promise<void>((r) => (release = r)); // hold the refetch open
+        return [{ iid: n } as any];
+      },
+      () => 1_000, // frozen clock: markStale is the only thing forcing a refetch
+      60_000,
+    );
+    expect((await cache.get()).mrs).toEqual([{ iid: 1 } as any]);
+
+    cache.markStale();
+    const during = await cache.get();
+    expect(during.mrs).toEqual([{ iid: 1 } as any]); // stale data, served immediately
+    expect(calls).toBe(2); // ...and a refresh was kicked
+
+    release();
+    await new Promise((r) => setTimeout(r, 0));
+    expect((await cache.get()).mrs).toEqual([{ iid: 2 } as any]);
+  });
+
+  // The manual refresh button means "I'll wait for genuinely fresh data".
+  test("invalidate() still blocks until fresh data arrives", async () => {
+    let calls = 0;
+    const cache = new SnapshotCache(
+      async () => {
+        calls++;
+        return [{ iid: calls } as any];
+      },
+      () => 1_000,
+      60_000,
+    );
+    await cache.get();
+    cache.invalidate();
+    expect((await cache.get()).mrs).toEqual([{ iid: 2 } as any]); // fresh, not stale
+    expect(calls).toBe(2);
+  });
+
+  // Toggling two members in a row: the second change lands while the first
+  // one's refetch is still running, so that refetch used the old config.
+  test("a change landing mid-refetch forces another refetch", async () => {
+    let calls = 0;
+    const gate: Array<() => void> = [];
+    const cache = new SnapshotCache(
+      async () => {
+        calls++;
+        const n = calls;
+        await new Promise<void>((r) => gate.push(r));
+        return [{ iid: n } as any];
+      },
+      () => 1_000,
+      60_000,
+    );
+    const first = cache.get();
+    gate[0]!();
+    await first;
+    expect(calls).toBe(1);
+
+    cache.markStale();
+    await cache.get(); // kicks refetch #2, reading config as it stands now
+    expect(calls).toBe(2);
+
+    cache.markStale(); // config changes again *while* #2 is in flight
+    gate[1]!(); // #2 lands, but its data predates that second change
+    await new Promise((r) => setTimeout(r, 0));
+
+    await cache.get(); // so #2 can't be trusted as current — refetch again
+    expect(calls).toBe(3);
+  });
 });

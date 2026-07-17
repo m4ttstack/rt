@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- Light tile so the mark reads on dark browser chrome (where the previous
+       #1a1b26 tile disappeared) and on light chrome (where the tile provides
+       internal contrast). -->
+  <rect width="32" height="32" rx="7" fill="#f6f6fa"/>
+  <!-- main/target branch (right): saturated Tokyo-day blue, thicker stroke so
+       the shape survives 16x16. -->
+  <circle cx="23" cy="5" r="4" fill="#2e7de9"/>
+  <line x1="23" y1="9" x2="23" y2="23" stroke="#2e7de9" stroke-width="4" stroke-linecap="round"/>
+  <circle cx="23" cy="27" r="4" fill="#2e7de9"/>
+  <!-- feature branch merging into main: saturated purple, matching stroke. -->
+  <circle cx="7" cy="27" r="4" fill="#7847bd"/>
+  <path d="M7 23 V 18 Q 7 12 13 12 H 16" fill="none" stroke="#7847bd" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Merge arrow tip: same purple, chunkier so it reads at favicon size. -->
+  <path d="M15 8 L 20 12 L 15 16" fill="none" stroke="#7847bd" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

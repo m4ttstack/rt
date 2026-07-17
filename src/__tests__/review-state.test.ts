@@ -4,6 +4,8 @@ import { join } from "path";
 import { tmpdir } from "os";
 import {
   reviewFilePath,
+  reviewReportPath,
+  readReviewReport,
   writeReviewState,
   readReviewStates,
   parseReviewRequestBody,
@@ -14,7 +16,7 @@ let dir: string;
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "rs-")); });
 afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
 
-const URL_A = "https://gitlab.com/acme/acme-dev/-/merge_requests/4821";
+const URL_A = "https://gitlab.com/acme/webapp/-/merge_requests/4821";
 
 describe("reviewFilePath", () => {
   test("is deterministic and lives under the dir", () => {
@@ -43,7 +45,7 @@ describe("readReviewStates", () => {
   test("maps by mrUrl and prunes stale files", () => {
     writeReviewState(reviewFilePath(URL_A, dir), { mrUrl: URL_A, iid: 4821, status: "reviewing" }, 10_000);
     // A stale file older than the max age is pruned and excluded.
-    const staleUrl = "https://gitlab.com/acme/acme-dev/-/merge_requests/1";
+    const staleUrl = "https://gitlab.com/acme/webapp/-/merge_requests/1";
     const stalePath = reviewFilePath(staleUrl, dir);
     writeFileSync(stalePath, JSON.stringify({ mrUrl: staleUrl, iid: 1, status: "done", startedAt: 0, updatedAt: 0 }));
     const map = readReviewStates(dir, 10_000, 5_000);
@@ -54,6 +56,27 @@ describe("readReviewStates", () => {
 
   test("returns empty map when dir is missing", () => {
     expect(readReviewStates(join(dir, "nope")).size).toBe(0);
+  });
+});
+
+describe("review report", () => {
+  test("reportPath is the state path with a .md extension", () => {
+    expect(reviewReportPath(reviewFilePath(URL_A, dir))).toBe(reviewFilePath(URL_A, dir).replace(/\.json$/, ".md"));
+    expect(reviewReportPath("/s/1.json")).toBe("/s/1.md");
+  });
+
+  test("readReviewReport returns the saved markdown, or null when absent", () => {
+    expect(readReviewReport(URL_A, dir)).toBeNull();
+    writeFileSync(reviewReportPath(reviewFilePath(URL_A, dir)), "# Review\n\nlooks good");
+    expect(readReviewReport(URL_A, dir)).toBe("# Review\n\nlooks good");
+  });
+
+  test("readReviewStates flags reportReady when the sibling .md exists", () => {
+    const p = reviewFilePath(URL_A, dir);
+    writeReviewState(p, { mrUrl: URL_A, iid: 4821, status: "done" }, 10_000);
+    expect(readReviewStates(dir, 10_000).get(URL_A)?.reportReady).toBe(false);
+    writeFileSync(reviewReportPath(p), "# Review");
+    expect(readReviewStates(dir, 10_000).get(URL_A)?.reportReady).toBe(true);
   });
 });
 

@@ -10,8 +10,8 @@ import {
   type SlackRef,
 } from "../slack.ts";
 
-const URL_A = "https://gitlab.com/acme/acme-dev/-/merge_requests/4821";
-const URL_B = "https://gitlab.com/acme/acme-dev/-/merge_requests/4822";
+const URL_A = "https://gitlab.com/acme/webapp/-/merge_requests/4821";
+const URL_B = "https://gitlab.com/acme/webapp/-/merge_requests/4822";
 
 function msg(ts: string, text: string, user = "U1"): SlackMessage {
   return { ts, user, text };
@@ -19,8 +19,8 @@ function msg(ts: string, text: string, user = "U1"): SlackMessage {
 
 describe("buildPermalink", () => {
   test("strips the dot from ts and builds the archive url", () => {
-    expect(buildPermalink("acme-claims.slack.com", "C08GY807K61", "1784046127.318759")).toBe(
-      "https://acme-claims.slack.com/archives/C08GY807K61/p1784046127318759",
+    expect(buildPermalink("myteam.slack.com", "C08GY807K61", "1784046127.318759")).toBe(
+      "https://myteam.slack.com/archives/C08GY807K61/p1784046127318759",
     );
   });
 });
@@ -50,8 +50,8 @@ describe("matchReviewMessage", () => {
 
 describe("buildThreadPermalink", () => {
   test("includes thread_ts and cid for an in-thread reply", () => {
-    expect(buildThreadPermalink("acme-claims.slack.com", "C08GY807K61", "1784058445.555169", "1783888278.629199")).toBe(
-      "https://acme-claims.slack.com/archives/C08GY807K61/p1784058445555169?thread_ts=1783888278.629199&cid=C08GY807K61",
+    expect(buildThreadPermalink("myteam.slack.com", "C08GY807K61", "1784058445.555169", "1783888278.629199")).toBe(
+      "https://myteam.slack.com/archives/C08GY807K61/p1784058445555169?thread_ts=1783888278.629199&cid=C08GY807K61",
     );
   });
 });
@@ -81,16 +81,24 @@ describe("slackRefPath", () => {
 describe("attachSlack", () => {
   test("attaches the client slice by webUrl, leaves others untouched", () => {
     const refs = new Map<string, SlackRef>([
-      [URL_A, { mrUrl: URL_A, iid: 4821, status: "found", permalink: "https://x/p1", reactions: ["eyes"], checkedAt: 0 }],
+      [URL_A, { mrUrl: URL_A, iid: 4821, status: "found", messageTs: "1.2", permalink: "https://x/p1", reactions: ["eyes"], checkedAt: 0 }],
     ]);
     const [a, b] = attachSlack([{ webUrl: URL_A }, { webUrl: URL_B }], refs);
-    expect(a.slack).toEqual({ status: "found", permalink: "https://x/p1", reactions: ["eyes"] });
+    expect(a.slack).toEqual({ status: "found", permalink: "https://x/p1", reactions: ["eyes"], posted: true });
     expect(b.slack).toBeUndefined();
   });
 
   test("defaults reactions to an empty array when the ref has none", () => {
     const refs = new Map<string, SlackRef>([[URL_A, { mrUrl: URL_A, iid: 4821, status: "notfound", checkedAt: 0 }]]);
     const [a] = attachSlack([{ webUrl: URL_A }], refs);
-    expect(a.slack).toEqual({ status: "notfound", permalink: undefined, reactions: [] });
+    expect(a.slack).toEqual({ status: "notfound", permalink: undefined, reactions: [], posted: false });
+  });
+
+  test("posted=false when a multi-MR ref has no reply reified yet", () => {
+    const refs = new Map<string, SlackRef>([
+      [URL_A, { mrUrl: URL_A, iid: 4821, status: "found", multi: true, parentTs: "1.0", checkedAt: 0 }],
+    ]);
+    const [a] = attachSlack([{ webUrl: URL_A }], refs);
+    expect(a.slack?.posted).toBe(false);
   });
 });

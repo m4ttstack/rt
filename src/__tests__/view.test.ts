@@ -138,6 +138,32 @@ describe("groupMRs status", () => {
   });
 });
 
+describe("groupMRs review", () => {
+  const reviewed = (iid: number, status?: string) =>
+    mr({ iid, ...(status ? { review: { status } } : {}) } as any);
+
+  test("buckets by app-initiated review status, most-active first; unlaunched fall to 'not reviewed'", () => {
+    const list = [
+      reviewed(1, "done"),
+      reviewed(2),
+      reviewed(3, "reviewing"),
+      reviewed(4, "error"),
+      reviewed(5, "queued"),
+    ];
+    const groups = groupMRs(list, "review", [], NOW);
+    expect(groups.map((g) => g.label)).toEqual(["reviewing", "queued", "review ready", "review failed", "not reviewed"]);
+  });
+
+  test("collapses MRs sharing a status into one group", () => {
+    const list = [reviewed(1, "done"), reviewed(2, "done"), reviewed(3)];
+    const groups = groupMRs(list, "review", [], NOW);
+    expect(groups.map((g) => [g.label, g.mrs.length])).toEqual([
+      ["review ready", 2],
+      ["not reviewed", 1],
+    ]);
+  });
+});
+
 import { parseViewState, serializeViewState, DEFAULT_VIEW } from "../view.ts";
 
 describe("parseViewState", () => {

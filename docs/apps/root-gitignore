@@ -1,10 +1,14 @@
-.local-dev/
 node_modules/
-config.json
-logs/
-.env
-
-# review status files written at runtime
-state/
-
 .DS_Store
+
+# local config + secrets (never commit)
+.env
+config.json
+config.team.json
+
+# runtime state + logs
+state/
+logs/
+
+# local planning docs
+.local-dev/

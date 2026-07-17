@@ -12,10 +12,18 @@ requires [bun](https://bun.sh).
 
 ```sh
 bun install
-cp config.example.json config.json   # edit it (see below)
-echo 'GITLAB_TOKEN=glpat-...' > .env # a token with read_api scope
-bun run serve                        # http://localhost:7930
+bun run setup   # prompts for tokens + your defaults, writes .env and config.json
+bun run serve   # http://localhost:7930
 ```
+
+`bun run setup` is idempotent — re-run it any time to rotate a token or change your default member. it prompts for:
+
+- **GitLab personal access token** (`read_api` scope) — create at `https://gitlab.com/-/user_settings/personal_access_tokens`
+- **your GitLab username** — used as the board's default view
+- **path to your local repo checkout** (optional) — enables the right-click "launch review" action; leave blank to skip
+- **Slack integration** — opens a browser to authorize a Slack app; each teammate mints their own user token this way, so reactions and messages appear as *them*. only teammates added as **Collaborators** on the app can complete this flow
+
+or configure manually: copy `config.example.json` → `config.json` and edit; put `GITLAB_TOKEN=…` and optionally `SLACK_TOKEN=…` in `.env`.
 
 ## config
 
@@ -29,14 +37,18 @@ bun run serve                        # http://localhost:7930
 | `defaultMember` | member username the board opens to by default (or `"all"`); the URL and remembered state override it |
 | `title` | page heading and tab title |
 | `port` | listen port (default 7930) |
-| `reviewCwd` | absolute path a review agent's herdr pane starts in (an acme-dev checkout); empty disables the review launch. see [review integration](#review-integration-local-only) |
+| `reviewCwd` | absolute path a review agent's herdr pane starts in (a repo checkout); empty disables the review launch. see [review integration](#review-integration-local-only) |
 | `reviewsWorkspace` | herdr workspace label reviews are grouped under (default `reviews`) |
+| `reviewSkill` | domain skill the review wrapper delegates to, e.g. `myteam:review`; empty = the wrapper reviews generically. `respondSkill` / `doctorSkill` are the same for the respond / doctor actions |
 
 the board lists open, non-draft MRs authored by any configured member in one of `projects`. a left sidebar switches between **All** (the whole team) and a single member; the **All** view (and each member view) can be grouped by age / author / status / pipeline and sorted by oldest / pipeline / review progress. the current member, grouping, and sort live in the URL (shareable) and are remembered across visits.
 
-## token
+## tokens
 
-`GITLAB_TOKEN` env var (bun auto-loads `.env`). needs `read_api` scope only — the board never writes to gitlab. as a fallback it also reads `gitlabToken` from `~/.rt/secrets.json` if you happen to have one.
+`bun run setup` handles both. under the hood:
+
+- **`GITLAB_TOKEN`** — env var (bun auto-loads `.env`). needs `read_api` scope only; the board never writes to gitlab. as a fallback it also reads `gitlabToken` from `~/.rt/secrets.json` if you happen to have one.
+- **`SLACK_TOKEN`** — optional user token (`xoxp-…`) for the review-thread integration. minted via the OAuth flow in `bun run setup`, or paste manually into `.env`. same `~/.rt/secrets.json` fallback (as `slackToken`). without it, the Slack menu actions stay disabled and the board runs fine.
 
 ## endpoints
 
@@ -59,11 +71,11 @@ the MR titles, branch names, and reviewer names on this page are your employer's
 
 ## review integration (local only)
 
-when you open the board from a local hostname (`mrs.localhost`, `localhost`, `127.0.0.1`), right-clicking an MR row opens an action menu with **launch review**: the server spawns a fresh [herdr](https://herdr.dev) tab (in the `reviewsWorkspace`, labelled `!<iid>`), starts `claude` in `reviewCwd`, and runs `/mattstack:mr-board-review <url> --state <path>`. that thin skill emits `reviewing` / `done` / `error` to a state file the board reads, so the row shows a live badge (with an instant optimistic badge + toast the moment you launch); the actual review is delegated to the `acme:review` skill. launching again while a review is live re-focuses its tab instead of spawning another.
+when you open the board from a local hostname (`mrs.localhost`, `localhost`, `127.0.0.1`), right-clicking an MR row opens an action menu with **launch review**: the server spawns a fresh [herdr](https://herdr.dev) tab (in the `reviewsWorkspace`, labelled `!<iid>`), starts `claude` in `reviewCwd`, and runs `/mr-board:review <url> --state <path> --status-bin <path> [--skill <reviewSkill>] [--channel <slack-channel>]`. the board injects the domain skill, its own status-writer path, and the slack channel as flags, so the wrapper skill itself carries no repo- or team-specific knowledge. that thin wrapper emits `reviewing` / `done` / `error` to a state file the board reads, so the row shows a live badge (with an instant optimistic badge + toast the moment you launch), and delegates the actual review to the configured `reviewSkill` (or reviews generically when none is set). launching again while a review is live re-focuses its tab instead of spawning another.
 
-a plain click still opens the MR in a new browser tab (the menu also has open-in-gitlab and copy-for-slack). the review action is gated by an `isLocal` check on both the client (the menu item only appears locally) and the server (`POST /review` returns 403), so it never fires when the board is viewed through the public tunnel (`mrs.m4tthew.dev`). review status files live in the gitignored `state/reviews/` dir and are pruned after 24h.
+a plain click still opens the MR in a new browser tab (the menu also has open-in-gitlab and copy-for-slack). the review action is gated by an `isLocal` check on both the client (the menu item only appears locally) and the server (`POST /review` returns 403), so it never fires when the board is viewed through a public tunnel. review status files live in the gitignored `state/reviews/` dir and are pruned after 24h.
 
-depends on herdr running locally and on the `mattstack:mr-board-review` and `acme:review` skills being installed.
+depends on herdr running locally and on the `mr-board:{review,respond,doctor}` wrapper skills being installed (plus whatever domain skills you point `reviewSkill` / `respondSkill` / `doctorSkill` at).
 
 ## dev
 

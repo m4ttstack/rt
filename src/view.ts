@@ -1,10 +1,10 @@
 import type { BoardMR } from "./data.ts";
 import { hasChangesRequested } from "./data.ts";
 
-export type GroupKey = "age" | "author" | "status";
+export type GroupKey = "age" | "author" | "status" | "review";
 export type SortKey = "oldest" | "progress";
 
-export const GROUP_KEYS: readonly GroupKey[] = ["age", "author", "status"];
+export const GROUP_KEYS: readonly GroupKey[] = ["age", "author", "status", "review"];
 export const SORT_KEYS: readonly SortKey[] = ["oldest", "progress"];
 
 /** Sentinel that sorts after any ISO date, so null timestamps land last. */
@@ -71,6 +71,30 @@ function statusBucket(mr: BoardMR): { label: string; order: number } {
   return { label: "needs review", order: 2 };
 }
 
+/** An MR carrying the app-initiated review status the client attaches at
+    render time. Kept as a loose local shape (not imported from review-state.ts)
+    so view.ts stays free of that module's `fs` deps and can bundle for the
+    browser. */
+type ReviewedMR = BoardMR & { review?: { status: "queued" | "reviewing" | "done" | "error" } };
+
+/** Bucket by the review a member kicked off through the board, most-active
+    first. MRs with no launched review fall to "not reviewed". Orthogonal to
+    `statusBucket`, which reflects GitLab's own review state. */
+function reviewBucket(mr: ReviewedMR): { label: string; order: number } {
+  switch (mr.review?.status) {
+    case "reviewing":
+      return { label: "reviewing", order: 0 };
+    case "queued":
+      return { label: "queued", order: 1 };
+    case "done":
+      return { label: "review ready", order: 2 };
+    case "error":
+      return { label: "review failed", order: 3 };
+    default:
+      return { label: "not reviewed", order: 4 };
+  }
+}
+
 /** Group by a keyed bucket, ordering groups by the bucket's `order`. */
 function groupBy(mrs: BoardMR[], bucket: (mr: BoardMR) => { label: string; order: number }): Group[] {
   const map = new Map<string, { order: number; mrs: BoardMR[] }>();
@@ -113,6 +137,8 @@ export function groupMRs(mrs: BoardMR[], group: GroupKey, memberOrder: string[],
       return groupByAuthor(mrs, memberOrder);
     case "status":
       return groupBy(mrs, statusBucket);
+    case "review":
+      return groupBy(mrs as ReviewedMR[], reviewBucket);
   }
 }
 

@@ -7,5 +7,12 @@
   ],
   "defaultMember": "your-gitlab-username",
   "title": "MR Board",
-  "port": 7930
+  "port": 7930,
+  "slack": {
+    "channel": "your-review-channel",
+    "singleTemplate": "{title}: {url}",
+    "multiHeader": "{count} MR's ready for review :pray:",
+    "multiItem": "- {title}: {url}",
+    "autoResolveIntervalMinutes": 15
+  }
 }

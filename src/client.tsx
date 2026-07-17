@@ -8,6 +8,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { filterByMember, sortMRs, groupMRs, parseViewState, serializeViewState, GROUP_KEYS, SORT_KEYS } from "./view.ts";
 import type { GroupKey, SortKey, ViewState } from "./view.ts";
+import { renderMr, renderMulti, type MrFacts } from "./template.ts";
 
 interface RosterMember {
   username: string;
@@ -15,18 +16,25 @@ interface RosterMember {
   count: number;
 }
 
-/** Every configured member with its hidden state and MR count — for the settings modal. */
+/** Every configured member with its hidden state and MR count — for the settings modal.
+    `count` is null for checked-out members, whose MRs the server doesn't fetch. */
 interface ConfigMember {
   username: string;
   name: string | null;
   hidden: boolean;
-  count: number;
+  count: number | null;
 }
 
 type ReviewStatus = "queued" | "reviewing" | "done" | "error";
-interface ReviewInfo { status: ReviewStatus; message?: string }
-interface SlackInfo { status: "found" | "notfound"; permalink?: string; reactions: string[] }
-type BoardMRWithReview = BoardMR & { review?: ReviewInfo; slack?: SlackInfo };
+interface ReviewInfo { status: ReviewStatus; message?: string; reportReady?: boolean; sessionId?: string }
+type RespondStatus = "queued" | "triaging" | "implementing" | "drafting" | "done" | "error";
+interface RespondInfo { status: RespondStatus; message?: string; sessionId?: string }
+type DoctorStatus = "queued" | "diagnosing" | "rebasing" | "fixing" | "watching" | "done" | "error";
+interface DoctorInfo { status: DoctorStatus; message?: string }
+interface SlackInfo { status: "found" | "notfound"; permalink?: string; reactions: string[]; posted: boolean }
+type BoardMRWithReview = BoardMR & { review?: ReviewInfo; respond?: RespondInfo; doctor?: DoctorInfo; slack?: SlackInfo };
+
+interface SlackTemplates { single: string; multiHeader: string; multiItem: string }
 
 interface BoardData {
   title: string;
@@ -38,6 +46,7 @@ interface BoardData {
   fetchError: string | null;
   local: boolean;
   slackEnabled: boolean;
+  slackTemplates: SlackTemplates;
 }
 
 declare global {
@@ -58,6 +67,7 @@ const GROUP_LABEL: Record<GroupKey, string> = {
   age: "age",
   author: "author",
   status: "status",
+  review: "my reviews",
 };
 const SORT_LABEL: Record<SortKey, string> = {
   oldest: "oldest",
@@ -272,12 +282,206 @@ const REVIEW_LABEL: Record<ReviewStatus, string> = {
   error: "review failed",
 };
 
-function ReviewBadge({ review }: { review?: ReviewInfo }) {
+const RESPOND_LABEL: Record<RespondStatus, string> = {
+  queued: "response queued",
+  triaging: "triaging…",
+  implementing: "implementing…",
+  drafting: "drafting replies…",
+  done: "replies drafted",
+  error: "response failed",
+};
+
+const RESPOND_ACTIVE = new Set<RespondStatus>(["queued", "triaging", "implementing", "drafting"]);
+
+const DOCTOR_LABEL: Record<DoctorStatus, string> = {
+  queued: "doctor queued",
+  diagnosing: "diagnosing…",
+  rebasing: "rebasing…",
+  fixing: "fixing…",
+  watching: "watching CI…",
+  done: "healed",
+  error: "doctor stuck",
+};
+
+const DOCTOR_ACTIVE = new Set<DoctorStatus>(["queued", "diagnosing", "rebasing", "fixing", "watching"]);
+
+/** Feature glyphs for the internal-badge row. Currentcolor so the icon takes on
+    each badge's status color. Kept dead-simple: one line-drawn shape per axis. */
+const BADGE_ICON = {
+  review: (
+    <svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" aria-hidden>
+      <circle cx="6" cy="6" r="3.5" />
+      <line x1="8.6" y1="8.6" x2="12" y2="12" />
+    </svg>
+  ),
+  respond: (
+    <svg viewBox="0 0 14 14" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <polyline points="5,3 2,6 5,9" />
+      <path d="M2 6 H 9 Q 12 6 12 9 V 11" />
+    </svg>
+  ),
+  doctor: <span className="tui-badge-emoji" aria-hidden>👨🏻‍⚕️</span>,
+};
+
+function ReviewBadge({ review, onOpen }: { review?: ReviewInfo; onOpen?: () => void }) {
   if (!review) return null;
+  const label = REVIEW_LABEL[review.status];
+  const title = review.message || label;
+  // When the agent has saved its write-up, the badge becomes a button that
+  // opens the review modal. onRowClick ignores clicks on buttons, so this
+  // doesn't also open the MR in GitLab.
+  if (review.reportReady && onOpen) {
+    return (
+      <button
+        className={`tui-review tui-review-${review.status} tui-review-open`}
+        title={`${title} — click to read the review`}
+        onClick={onOpen}
+      >
+        {BADGE_ICON.review} {label} ↗
+      </button>
+    );
+  }
   return (
-    <span className={`tui-review tui-review-${review.status}`} title={review.message || REVIEW_LABEL[review.status]}>
-      {REVIEW_LABEL[review.status]}
+    <span className={`tui-review tui-review-${review.status}`} title={title}>
+      {BADGE_ICON.review} {label}
     </span>
+  );
+}
+
+/** Response-to-review lifecycle badge. Uses the review-badge visual family so
+    the row's shape stays familiar; the class prefix `tui-respond-*` differentiates
+    color state without needing a distinct component style. */
+function RespondBadge({ respond }: { respond?: RespondInfo }) {
+  if (!respond) return null;
+  const label = RESPOND_LABEL[respond.status];
+  const title = respond.message || label;
+  return (
+    <span className={`tui-review tui-respond tui-respond-${respond.status}`} title={title}>
+      {BADGE_ICON.respond} {label}
+    </span>
+  );
+}
+
+/** MR-doctor lifecycle: mechanical fixes (CI red / merge conflicts) chugging in
+    the background. Cyan family so it reads as a distinct "auto-repair" axis. */
+function DoctorBadge({ doctor }: { doctor?: DoctorInfo }) {
+  if (!doctor) return null;
+  const label = DOCTOR_LABEL[doctor.status];
+  const title = doctor.message || label;
+  return (
+    <span className={`tui-review tui-doctor tui-doctor-${doctor.status}`} title={title}>
+      {BADGE_ICON.doctor} {label}
+    </span>
+  );
+}
+
+/** Slack review-signal reactions (eyes / comment / white_check_mark) currently
+    on the MR's request message. Rendered next to the review badge so a row
+    shows both the launched-review lifecycle and what teammates have already
+    signalled in slack. */
+const SLACK_REACTION_TITLE: Record<string, string> = {
+  eyes: "someone's looking (in slack)",
+  comment: "commented in slack",
+  white_check_mark: "approved in slack",
+};
+
+function SlackReactionChips({ reactions }: { reactions?: string[] }) {
+  if (!reactions?.length) return null;
+  const set = new Set(reactions);
+  const present = SLACK_MARKS.filter((m) => set.has(m.emoji));
+  if (!present.length) return null;
+  return (
+    <span className="tui-slack-reactions">
+      {present.map((m) => (
+        <span key={m.emoji} className="tui-slack-reaction" title={SLACK_REACTION_TITLE[m.emoji] ?? m.emoji}>
+          {m.glyph}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+function hasReviewReactions(mr: BoardMR): boolean {
+  const reactions = (mr as BoardMRWithReview).slack?.reactions;
+  if (!reactions?.length) return false;
+  return SLACK_MARKS.some((m) => reactions.includes(m.emoji));
+}
+
+/** Chip shown when the MR has a resolved (or posted-by-us) slack message.
+    Renders the Slack squircle with a check overlay; clicks open the message. */
+function SlackPostedChip({ slack }: { slack?: SlackInfo }) {
+  if (!slack?.posted) return null;
+  const chip = (
+    <span className="tui-slack-posted" title="posted in slack">
+      <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden>
+        <path fill="#E01E5A" d="M5 15a2 2 0 1 1-2-2h2v2Zm1 0a2 2 0 0 1 4 0v5a2 2 0 1 1-4 0v-5Z" />
+        <path fill="#36C5F0" d="M9 5a2 2 0 1 1 2-2v2H9Zm0 1a2 2 0 0 1 0 4H4a2 2 0 1 1 0-4h5Z" />
+        <path fill="#2EB67D" d="M19 9a2 2 0 1 1 2 2h-2V9Zm-1 0a2 2 0 0 1-4 0V4a2 2 0 1 1 4 0v5Z" />
+        <path fill="#ECB22E" d="M15 19a2 2 0 1 1-2 2v-2h2Zm0-1a2 2 0 0 1 0-4h5a2 2 0 1 1 0 4h-5Z" />
+      </svg>
+      <span className="tui-slack-posted-check" aria-hidden>✓</span>
+    </span>
+  );
+  if (!slack.permalink) return chip;
+  return (
+    <a
+      href={slack.permalink}
+      target="_blank"
+      rel="noopener"
+      onClick={(e) => e.stopPropagation()}
+      style={{ display: "inline-flex", textDecoration: "none" }}
+    >
+      {chip}
+    </a>
+  );
+}
+
+/** Modal that fetches and renders the agent's written review markdown for an MR. */
+function ReviewModal({ mr, onClose }: { mr: BoardMRWithReview; onClose: () => void }) {
+  const [body, setBody] = useState<string | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let live = true;
+    if (!mr.webUrl) {
+      setFailed(true);
+      return;
+    }
+    fetch(`/review/report?mr=${encodeURIComponent(mr.webUrl)}`)
+      .then((r) => (r.ok ? r.text() : Promise.reject(new Error(String(r.status)))))
+      .then((t) => live && setBody(t))
+      .catch(() => live && setFailed(true));
+    return () => {
+      live = false;
+    };
+  }, [mr.webUrl]);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="tui-modal-overlay tui-review-overlay" onClick={onClose}>
+      <div className="tui-modal tui-review-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal aria-label={`review for !${mr.iid}`}>
+        <div className="tui-modal-head">
+          <span className="tui-modal-title">❯ review · !{mr.iid}</span>
+          <button className="tui-modal-x" onClick={onClose} aria-label="close">
+            {ICONS.close}
+          </button>
+        </div>
+        <p className="tui-modal-sub">{cleanTitle(mr.title)}</p>
+        <div className="tui-review-body">
+          {failed ? (
+            <p className="tui-comments-empty">couldn't load the review</p>
+          ) : body === null ? (
+            <p className="tui-comments-empty">loading…</p>
+          ) : (
+            <div className="tui-md">
+              <ReactMarkdown remarkPlugins={[remarkGfm]}>{body}</ReactMarkdown>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -290,11 +494,33 @@ const SLACK_MARKS: { emoji: string; glyph: string; label: string }[] = [
   { emoji: "white_check_mark", glyph: "✅", label: "mark ✅ on slack" },
 ];
 
+/** Inline Slack logo — a simple 4-blob squircle. Currentcolor so it inherits from container. */
+const SLACK_ICON = (
+  <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden style={{ verticalAlign: "-2px" }}>
+    <path fill="#E01E5A" d="M5 15a2 2 0 1 1-2-2h2v2Zm1 0a2 2 0 0 1 4 0v5a2 2 0 1 1-4 0v-5Z" />
+    <path fill="#36C5F0" d="M9 5a2 2 0 1 1 2-2v2H9Zm0 1a2 2 0 0 1 0 4H4a2 2 0 1 1 0-4h5Z" />
+    <path fill="#2EB67D" d="M19 9a2 2 0 1 1 2 2h-2V9Zm-1 0a2 2 0 0 1-4 0V4a2 2 0 1 1 4 0v5Z" />
+    <path fill="#ECB22E" d="M15 19a2 2 0 1 1-2 2v-2h2Zm0-1a2 2 0 0 1 0-4h5a2 2 0 1 1 0 4h-5Z" />
+  </svg>
+);
+
 /** The review menu item's label reflects current review state. */
 function reviewItemLabel(status?: ReviewStatus): string {
   if (!status || status === "error") return "launch review";
   if (status === "done") return "re-review";
   return "focus review tab"; // queued / reviewing
+}
+
+function respondItemLabel(status?: RespondStatus): string {
+  if (!status || status === "error") return "respond to review";
+  if (status === "done") return "restart response";
+  return "focus response tab";
+}
+
+function doctorItemLabel(status?: DoctorStatus): string {
+  if (!status || status === "error") return "call the doctor";
+  if (status === "done") return "call the doctor again";
+  return "focus doctor tab";
 }
 
 interface RowMenuState {
@@ -334,18 +560,34 @@ function RowMenu({
   slackEnabled,
   onClose,
   onLaunch,
+  onOpenReview,
   onCopy,
   onResolveSlack,
   onReactSlack,
+  onPostSlack,
+  onRespond,
+  canRespond,
+  onDoctor,
+  canDoctor,
+  onResumeReview,
+  onResumeRespond,
 }: {
   menu: RowMenuState;
   local: boolean;
   slackEnabled: boolean;
   onClose: () => void;
   onLaunch: (mr: BoardMR) => void;
+  onOpenReview: (mr: BoardMRWithReview) => void;
   onCopy: (mr: BoardMR) => void;
   onResolveSlack: (mr: BoardMR) => void;
-  onReactSlack: (mr: BoardMR, emoji: string) => Promise<string[] | null>;
+  onReactSlack: (mr: BoardMR, emoji: string, remove: boolean) => Promise<string[] | null>;
+  onPostSlack: (mr: BoardMR) => void;
+  onRespond: (mr: BoardMR) => void;
+  canRespond: boolean;
+  onDoctor: (mr: BoardMR) => void;
+  canDoctor: boolean;
+  onResumeReview: (mr: BoardMR) => void;
+  onResumeRespond: (mr: BoardMR) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   // Local reaction state so the open menu updates immediately after a mark,
@@ -386,11 +628,13 @@ function RowMenu({
     onClose();
   };
   // Slack marks stay open (set several at once) and drive per-item pending +
-  // a live check, so the click has immediate feedback.
+  // a live check, so the click has immediate feedback. Clicking an item that
+  // already carries our reaction removes it — the ✓ toggles the mark.
   const react = (emoji: string) => {
     if (pending.includes(emoji)) return;
+    const remove = reactions.includes(emoji);
     setPending((p) => [...p, emoji]);
-    onReactSlack(mr, emoji).then((next) => {
+    onReactSlack(mr, emoji, remove).then((next) => {
       if (next) setReactions(next);
       setPending((p) => p.filter((e) => e !== emoji));
     });
@@ -407,6 +651,37 @@ function RowMenu({
           onClick={run(() => onLaunch(mr))}
         />
       )}
+      {local && mrx.review?.sessionId && (
+        <MenuItem
+          label="resume review"
+          hint="herdr"
+          onClick={run(() => onResumeReview(mr))}
+        />
+      )}
+      {local && canRespond && (
+        <MenuItem
+          label={respondItemLabel(mrx.respond?.status)}
+          hint="herdr"
+          onClick={run(() => onRespond(mr))}
+        />
+      )}
+      {local && canRespond && mrx.respond?.sessionId && (
+        <MenuItem
+          label="resume response"
+          hint="herdr"
+          onClick={run(() => onResumeRespond(mr))}
+        />
+      )}
+      {local && canDoctor && (
+        <MenuItem
+          label={doctorItemLabel(mrx.doctor?.status)}
+          hint="herdr"
+          onClick={run(() => onDoctor(mr))}
+        />
+      )}
+      {mrx.review?.reportReady && (
+        <MenuItem label="view review" onClick={run(() => onOpenReview(mrx))} />
+      )}
       <MenuItem label="open in gitlab" onClick={run(() => mr.webUrl && window.open(mr.webUrl, "_blank", "noopener"))} />
       <MenuItem label="copy for slack" onClick={run(() => onCopy(mr))} />
 
@@ -417,15 +692,16 @@ function RowMenu({
             <>
               {SLACK_MARKS.map((m) => {
                 const isPending = pending.includes(m.emoji);
+                const isMarked = reactions.includes(m.emoji);
                 return (
                   <MenuItem
                     key={m.emoji}
-                    label={m.label}
+                    label={isMarked ? `unmark ${m.glyph} on slack` : m.label}
                     disabled={isPending}
                     trailing={
                       isPending ? (
                         <span className="tui-menu-spin" aria-label="working" />
-                      ) : reactions.includes(m.emoji) ? (
+                      ) : isMarked ? (
                         <span className="tui-menu-check">✓</span>
                       ) : undefined
                     }
@@ -443,6 +719,7 @@ function RowMenu({
                 label={slack?.status === "notfound" ? "no thread — retry find" : "find slack thread"}
                 onClick={run(() => onResolveSlack(mr))}
               />
+              <MenuItem label="post to slack" onClick={run(() => onPostSlack(mr))} />
               {SLACK_MARKS.map((m) => (
                 <MenuItem key={m.emoji} label={m.label} disabled />
               ))}
@@ -475,15 +752,26 @@ function ToastHost({ toasts }: { toasts: Toast[] }) {
 
 // ── slack summary ───────────────────────────────────────────────────────────
 
-/** One MR as plain text: "title: url". No markup, so it survives Slack's rich
-    composer, and Slack auto-links the bare URL. */
-function mrLine(mr: BoardMR): string {
-  return mr.webUrl ? `${cleanTitle(mr.title)}: ${mr.webUrl}` : cleanTitle(mr.title);
+function factsFor(mr: BoardMR): MrFacts {
+  return {
+    iid: mr.iid,
+    title: cleanTitle(mr.title),
+    url: mr.webUrl ?? "",
+    ticket: extractTicketId(mr.sourceBranch, mr.title) ?? "",
+    author: mr.author.username,
+    sourceBranch: mr.sourceBranch,
+    targetBranch: mr.targetBranch,
+  };
 }
 
-/** The current view as text: a count heading, then each MR as a "- title: url" bullet. */
-function boardSummary(mrs: BoardMR[]): string {
-  return [`${mrs.length} MR's ready for review :pray:`, ...mrs.map((mr) => `- ${mrLine(mr)}`)].join("\n");
+/** One MR rendered from the configured single template. */
+function mrLine(mr: BoardMR, tpl: SlackTemplates): string {
+  return renderMr(tpl.single, factsFor(mr));
+}
+
+/** The current view rendered from the configured multi template. */
+function boardSummary(mrs: BoardMR[], tpl: SlackTemplates): string {
+  return renderMulti(tpl.multiHeader, tpl.multiItem, mrs.map(factsFor));
 }
 
 // ── pieces ─────────────────────────────────────────────────────────────────
@@ -753,13 +1041,57 @@ function Watching({ mr }: { mr: BoardMR }) {
   );
 }
 
+const PANEL_STATE_KEY = "mrs-panel-collapsed";
+
+/** Set of collapsed panel titles, persisted so a group folded up on one visit
+    stays folded on the next. Keyed on title alone -- group labels are unique
+    within a grouping and it's fine if switching groupings orphans keys. */
+function readCollapsed(): Set<string> {
+  try {
+    const raw = localStorage.getItem(PANEL_STATE_KEY);
+    if (!raw) return new Set();
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? new Set(arr.filter((s) => typeof s === "string")) : new Set();
+  } catch {
+    return new Set();
+  }
+}
+
+function writeCollapsed(set: Set<string>): void {
+  try {
+    localStorage.setItem(PANEL_STATE_KEY, JSON.stringify([...set]));
+  } catch {
+    // storage full or blocked; the panel just won't remember its state
+  }
+}
+
 function Panel({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
+  const [collapsed, setCollapsed] = useState(false);
+  // Read once on mount; if the persisted set is huge we don't want to parse it
+  // on every re-render (this component mounts once per group per grouping).
+  useEffect(() => {
+    setCollapsed(readCollapsed().has(title));
+  }, [title]);
+  const toggle = () => {
+    const next = !collapsed;
+    setCollapsed(next);
+    const set = readCollapsed();
+    if (next) set.add(title); else set.delete(title);
+    writeCollapsed(set);
+  };
   return (
-    <section className="tui-panel">
-      <span className="tui-panel-title">
+    <section className={`tui-panel${collapsed ? " tui-panel-collapsed" : ""}`}>
+      <button
+        type="button"
+        className="tui-panel-title"
+        aria-expanded={!collapsed}
+        aria-controls={`panel-body-${title}`}
+        onClick={toggle}
+      >
+        <span className="tui-panel-caret" aria-hidden>{collapsed ? "▸" : "▾"}</span>
         {title} <span className="tui-panel-count">{count}</span>
-      </span>
-      {children}
+      </button>
+      {!collapsed && <div id={`panel-body-${title}`}>{children}</div>}
     </section>
   );
 }
@@ -782,13 +1114,17 @@ function RowView({
   now,
   showAuthor,
   local,
+  slackTemplates,
   onContext,
+  onOpenReview,
 }: {
   mrs: BoardMR[];
   now: number;
   showAuthor: boolean;
   local: boolean;
+  slackTemplates: SlackTemplates;
   onContext: (e: React.MouseEvent, mr: BoardMR) => void;
+  onOpenReview: (mr: BoardMRWithReview) => void;
 }) {
   return (
     <div className="tui-rows">
@@ -803,9 +1139,8 @@ function RowView({
             onClick={(e) => onRowClick(e, mr)}
             onContextMenu={(e) => onContext(e, mr)}
           >
-            {((mr as BoardMRWithReview).review || statusFlags(mr).length > 0) && (
+            {statusFlags(mr).length > 0 && (
               <div className="tui-row-review">
-                <ReviewBadge review={(mr as BoardMRWithReview).review} />
                 <StatusFlags mr={mr} />
               </div>
             )}
@@ -814,10 +1149,12 @@ function RowView({
               <span className="tui-title">{cleanTitle(mr.title)}</span>
               <StatusPhrase mr={mr} />
               {ticket && <TicketLink ticket={ticket} />}
-              <CopyButton text={mrLine(mr)} className="tui-copy-inline" title="copy this MR for Slack" />
+              <CopyButton text={mrLine(mr, slackTemplates)} className="tui-copy-inline" title="copy this MR for Slack" />
             </div>
             <div className="tui-row-2">
               {showAuthor && <AuthorTag mr={mr} />}
+              <span className="tui-mr-iid">!{mr.iid}</span>
+              <span className="tui-row-sep">|</span>
               <span className="tui-branch">
                 {mr.sourceBranch}
                 {!["master", "main"].includes(mr.targetBranch) && (
@@ -826,6 +1163,15 @@ function RowView({
               </span>
               <MetaTokens mr={mr} now={now} />
             </div>
+            {((mr as BoardMRWithReview).review || (mr as BoardMRWithReview).respond || (mr as BoardMRWithReview).doctor || hasReviewReactions(mr) || (mr as BoardMRWithReview).slack?.posted) && (
+              <div className="tui-row-board">
+                <ReviewBadge review={(mr as BoardMRWithReview).review} onOpen={() => onOpenReview(mr as BoardMRWithReview)} />
+                <RespondBadge respond={(mr as BoardMRWithReview).respond} />
+                <DoctorBadge doctor={(mr as BoardMRWithReview).doctor} />
+                <SlackPostedChip slack={(mr as BoardMRWithReview).slack} />
+                <SlackReactionChips reactions={(mr as BoardMRWithReview).slack?.reactions} />
+              </div>
+            )}
             <Watching mr={mr} />
           </div>
         );
@@ -839,13 +1185,17 @@ function GridView({
   now,
   showAuthor,
   local,
+  slackTemplates,
   onContext,
+  onOpenReview,
 }: {
   mrs: BoardMR[];
   now: number;
   showAuthor: boolean;
   local: boolean;
+  slackTemplates: SlackTemplates;
   onContext: (e: React.MouseEvent, mr: BoardMR) => void;
+  onOpenReview: (mr: BoardMRWithReview) => void;
 }) {
   return (
     <div className="tui-grid">
@@ -861,16 +1211,11 @@ function GridView({
             onClick={(e) => onRowClick(e, mr)}
             onContextMenu={(e) => onContext(e, mr)}
           >
-            <CopyButton text={mrLine(mr)} className="tui-copy-inline tui-copy-card" title="copy this MR for Slack" />
+            <CopyButton text={mrLine(mr, slackTemplates)} className="tui-copy-inline tui-copy-card" title="copy this MR for Slack" />
             <span className="tui-card-label">
               <StatusDot mr={mr} /> !{mr.iid}
               {ticket && <TicketLink ticket={ticket} />}
             </span>
-            {(mr as BoardMRWithReview).review && (
-              <div className="tui-card-review">
-                <ReviewBadge review={(mr as BoardMRWithReview).review} />
-              </div>
-            )}
             <div className="tui-card-title">{cleanTitle(mr.title)}</div>
             <div className="tui-card-branch" title={`${mr.sourceBranch} → ${mr.targetBranch}`}>
               {mr.sourceBranch} <span className="tui-arrow">→</span> {mr.targetBranch}
@@ -878,6 +1223,15 @@ function GridView({
             <div className="tui-card-tokens">
               {showAuthor && <AuthorTag mr={mr} />} <StatusPhrase mr={mr} /> <MetaTokens mr={mr} now={now} />
             </div>
+            {((mr as BoardMRWithReview).review || (mr as BoardMRWithReview).respond || (mr as BoardMRWithReview).doctor || hasReviewReactions(mr) || (mr as BoardMRWithReview).slack?.posted) && (
+              <div className="tui-card-board">
+                <ReviewBadge review={(mr as BoardMRWithReview).review} onOpen={() => onOpenReview(mr as BoardMRWithReview)} />
+                <RespondBadge respond={(mr as BoardMRWithReview).respond} />
+                <DoctorBadge doctor={(mr as BoardMRWithReview).doctor} />
+                <SlackPostedChip slack={(mr as BoardMRWithReview).slack} />
+                <SlackReactionChips reactions={(mr as BoardMRWithReview).slack?.reactions} />
+              </div>
+            )}
             {reasons.length > 0 && (
               <ul className="tui-blockers">
                 {reasons.map((r) => (
@@ -947,23 +1301,14 @@ function SettingsModal({
   onClose,
 }: {
   members: ConfigMember[];
-  onToggle: (username: string, hidden: boolean) => Promise<void>;
+  onToggle: (username: string, hidden: boolean) => void;
   onClose: () => void;
 }) {
-  const [pending, setPending] = useState<string | null>(null);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
   }, [onClose]);
-  const toggle = async (m: ConfigMember) => {
-    setPending(m.username);
-    try {
-      await onToggle(m.username, !m.hidden);
-    } finally {
-      setPending(null);
-    }
-  };
   return (
     <div className="tui-modal-overlay" onClick={onClose}>
       <div className="tui-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal aria-label="team settings">
@@ -982,12 +1327,13 @@ function SettingsModal({
                   type="checkbox"
                   className="tui-check-box"
                   checked={!m.hidden}
-                  disabled={pending === m.username}
-                  onChange={() => toggle(m)}
+                  onChange={() => onToggle(m.username, !m.hidden)}
                 />
                 <OwnerSprite username={m.username} /> {m.name ?? m.username}
               </label>
-              <span className="tui-modal-count">{m.count}</span>
+              <span className="tui-modal-count" title={m.count === null ? "checked out — MR count not fetched" : undefined}>
+                {m.count ?? "—"}
+              </span>
             </li>
           ))}
         </ul>
@@ -1009,6 +1355,9 @@ function Controls({
   summaryText,
   onRefresh,
   refreshing,
+  onPostSummary,
+  canPostSummary,
+  postingSummary,
   stacked = false,
 }: {
   state: ViewState;
@@ -1021,6 +1370,9 @@ function Controls({
   summaryText: string;
   onRefresh: () => void;
   refreshing: boolean;
+  onPostSummary?: () => void;
+  canPostSummary?: boolean;
+  postingSummary?: boolean;
   stacked?: boolean;
 }) {
   const group = <LabeledSeg legend="group" options={GROUP_KEYS} labels={GROUP_LABEL} value={state.group} onChange={(g) => update({ group: g })} />;
@@ -1041,6 +1393,11 @@ function Controls({
         </button>
         {canCopy && (
           <CopyButton text={summaryText} className="tui-drawer-action" title="copy summary for Slack" label="copy summary" />
+        )}
+        {canPostSummary && onPostSummary && (
+          <button className="tui-drawer-action" onClick={onPostSummary} disabled={postingSummary} title="post this summary to slack">
+            {SLACK_ICON} {postingSummary ? "posting…" : "post summary to slack"}
+          </button>
         )}
       </>
     );
@@ -1191,17 +1548,11 @@ function Board() {
 
   const [showSettings, setShowSettings] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const toggleMember = async (username: string, hidden: boolean) => {
-    const res = await fetch("/settings", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ username, hidden }),
-    });
-    if (res.ok) await load();
-  };
 
   // Row action menu (right-click) and transient toasts.
   const [rowMenu, setRowMenu] = useState<RowMenuState | null>(null);
+  // The MR whose saved review is open in the modal, if any.
+  const [reviewModal, setReviewModal] = useState<BoardMRWithReview | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const toastId = useRef(0);
   const addToast = useCallback((text: string) => {
@@ -1210,10 +1561,52 @@ function Board() {
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3500);
   }, []);
 
+  const applyHidden = useCallback((username: string, hidden: boolean) => {
+    setData((prev) =>
+      prev
+        ? {
+            ...prev,
+            // Predict what the reload will send, so nothing flickers when it lands:
+            // a checked-out member's MRs aren't fetched, so they have no count.
+            allMembers: prev.allMembers.map((m) =>
+              m.username === username ? { ...m, hidden, count: hidden ? null : m.count } : m,
+            ),
+          }
+        : prev,
+    );
+  }, []);
+
+  // Check a member in/out. The box flips locally first and never waits on the
+  // network: the POST is quick, but the reload behind it refetches the team from
+  // GitLab (~25s, since a checked-in member's MRs aren't in the snapshot). The
+  // board catches up when that lands; a failed POST flips the box back.
+  const toggleMember = useCallback(
+    (username: string, hidden: boolean) => {
+      applyHidden(username, hidden);
+      fetch("/settings", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ username, hidden }),
+      })
+        .then((res) => {
+          if (!res.ok) throw new Error(`settings failed: ${res.status}`);
+          return load();
+        })
+        .catch(() => {
+          applyHidden(username, !hidden);
+          addToast(`could not check ${username} ${hidden ? "out" : "in"}`);
+        });
+    },
+    [applyHidden, load, addToast],
+  );
+
   // Optimistic review state: show a "queued" badge the instant a launch is
   // requested, before the server's state file round-trips back via /data.json.
   // Cleared per MR once the server reports any real review status for it.
   const [optimistic, setOptimistic] = useState<Record<string, ReviewInfo>>({});
+  /** Same idea for responses -- show a queued state instantly on click. */
+  const [optimisticRespond, setOptimisticRespond] = useState<Record<string, RespondInfo>>({});
+  const [optimisticDoctor, setOptimisticDoctor] = useState<Record<string, DoctorInfo>>({});
 
   const openRowMenu = useCallback((e: React.MouseEvent, mr: BoardMR) => {
     e.preventDefault();
@@ -1257,14 +1650,158 @@ function Board() {
     [addToast, load],
   );
 
+  const handleRespond = useCallback(
+    (mr: BoardMR) => {
+      if (!mr.webUrl) return;
+      const url = mr.webUrl;
+      setOptimisticRespond((o) => ({ ...o, [url]: { status: "queued" } }));
+      addToast(`launching response for !${mr.iid}…`);
+      fetch("/respond", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mrUrl: url, iid: mr.iid }),
+      })
+        .then(async (r) => {
+          const body = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            setOptimisticRespond((o) => {
+              const next = { ...o };
+              delete next[url];
+              return next;
+            });
+            addToast(`couldn't launch response for !${mr.iid} (${r.status})`);
+            return;
+          }
+          if (body?.focused) addToast(`response already running for !${mr.iid} — focused its tab`);
+          load();
+        })
+        .catch(() => {
+          setOptimisticRespond((o) => {
+            const next = { ...o };
+            delete next[url];
+            return next;
+          });
+          addToast(`couldn't launch response for !${mr.iid}`);
+        });
+    },
+    [addToast, load],
+  );
+
+  const handleResume = useCallback(
+    (mr: BoardMR, kind: "review" | "respond") => {
+      if (!mr.webUrl) return;
+      addToast(`resuming ${kind} for !${mr.iid}…`);
+      fetch(`/${kind}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mrUrl: mr.webUrl, iid: mr.iid, resume: true }),
+      })
+        .then(async (r) => {
+          if (!r.ok) {
+            const msg = await r.text().catch(() => "");
+            addToast(`resume ${kind} failed for !${mr.iid} (${r.status})${msg ? `: ${msg}` : ""}`);
+            return;
+          }
+          load();
+        })
+        .catch(() => addToast(`resume ${kind} failed for !${mr.iid}`));
+    },
+    [addToast, load],
+  );
+  const handleResumeReview = useCallback((mr: BoardMR) => handleResume(mr, "review"), [handleResume]);
+  const handleResumeRespond = useCallback((mr: BoardMR) => handleResume(mr, "respond"), [handleResume]);
+
+  const handleDoctor = useCallback(
+    (mr: BoardMR) => {
+      if (!mr.webUrl) return;
+      const url = mr.webUrl;
+      setOptimisticDoctor((o) => ({ ...o, [url]: { status: "queued" } }));
+      addToast(`calling doctor for !${mr.iid}…`);
+      fetch("/doctor", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mrUrl: url, iid: mr.iid }),
+      })
+        .then(async (r) => {
+          const body = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            setOptimisticDoctor((o) => {
+              const next = { ...o };
+              delete next[url];
+              return next;
+            });
+            addToast(`couldn't call doctor for !${mr.iid} (${r.status})`);
+            return;
+          }
+          if (body?.focused) addToast(`doctor already running for !${mr.iid} — focused its tab`);
+          load();
+        })
+        .catch(() => {
+          setOptimisticDoctor((o) => {
+            const next = { ...o };
+            delete next[url];
+            return next;
+          });
+          addToast(`couldn't call doctor for !${mr.iid}`);
+        });
+    },
+    [addToast, load],
+  );
+
   const handleCopy = useCallback(
     (mr: BoardMR) => {
-      navigator.clipboard?.writeText(mrLine(mr)).then(
+      const text = data ? mrLine(mr, data.slackTemplates) : mr.webUrl ?? mr.title;
+      navigator.clipboard?.writeText(text).then(
         () => addToast(`copied !${mr.iid} for slack`),
         () => {},
       );
     },
-    [addToast],
+    [addToast, data],
+  );
+
+  const [postingSummary, setPostingSummary] = useState(false);
+
+  const handlePostSlack = useCallback(
+    (mr: BoardMR) => {
+      if (!mr.webUrl) return;
+      addToast(`posting !${mr.iid} to slack…`);
+      fetch("/slack/post", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mrUrls: [mr.webUrl] }),
+      })
+        .then(async (r) => {
+          const body = await r.json().catch(() => ({}));
+          if (!r.ok) return addToast(`slack post failed for !${mr.iid} (${r.status})`);
+          addToast(body?.linked ? `!${mr.iid} already in slack — linked` : `posted !${mr.iid} to slack`);
+          load();
+        })
+        .catch(() => addToast(`slack post failed for !${mr.iid}`));
+    },
+    [addToast, load],
+  );
+
+  const handlePostSummary = useCallback(
+    (mrs: BoardMR[]) => {
+      const urls = mrs.map((m) => m.webUrl).filter((u): u is string => !!u);
+      if (!urls.length) return;
+      setPostingSummary(true);
+      addToast(`posting ${urls.length} MR${urls.length === 1 ? "" : "s"} to slack…`);
+      fetch("/slack/post", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mrUrls: urls }),
+      })
+        .then(async (r) => {
+          const body = await r.json().catch(() => ({}));
+          if (!r.ok) return addToast(`slack post failed (${r.status})${typeof body === "string" ? `: ${body}` : ""}`);
+          addToast(`posted ${urls.length} MR${urls.length === 1 ? "" : "s"} to slack`);
+          load();
+        })
+        .catch(() => addToast(`slack post failed`))
+        .finally(() => setPostingSummary(false));
+    },
+    [addToast, load],
   );
 
   const handleResolveSlack = useCallback(
@@ -1288,26 +1825,27 @@ function Board() {
   );
 
   const handleReactSlack = useCallback(
-    (mr: BoardMR, emoji: string): Promise<string[] | null> => {
+    (mr: BoardMR, emoji: string, remove: boolean): Promise<string[] | null> => {
       if (!mr.webUrl) return Promise.resolve(null);
       const glyph = SLACK_MARKS.find((m) => m.emoji === emoji)?.glyph ?? emoji;
+      const verb = remove ? "unmark" : "add";
       return fetch("/slack/react", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mrUrl: mr.webUrl, emoji }),
+        body: JSON.stringify({ mrUrl: mr.webUrl, emoji, remove }),
       })
         .then(async (r) => {
           const body = await r.json().catch(() => ({}));
           if (!r.ok) {
-            addToast(`couldn't add ${glyph} for !${mr.iid} (${r.status})`);
+            addToast(`couldn't ${verb} ${glyph} for !${mr.iid} (${r.status})`);
             return null;
           }
-          addToast(`marked ${glyph} on !${mr.iid}`);
+          addToast(`${remove ? "unmarked" : "marked"} ${glyph} on !${mr.iid}`);
           load();
           return (body.reactions as string[]) ?? null;
         })
         .catch(() => {
-          addToast(`couldn't add ${glyph} for !${mr.iid}`);
+          addToast(`couldn't ${verb} ${glyph} for !${mr.iid}`);
           return null;
         });
     },
@@ -1328,10 +1866,32 @@ function Board() {
       }
       return changed ? next : o;
     });
+    setOptimisticRespond((o) => {
+      let changed = false;
+      const next = { ...o };
+      for (const mr of data.mrs) {
+        if (mr.webUrl && (mr as BoardMRWithReview).respond && next[mr.webUrl]) {
+          delete next[mr.webUrl];
+          changed = true;
+        }
+      }
+      return changed ? next : o;
+    });
+    setOptimisticDoctor((o) => {
+      let changed = false;
+      const next = { ...o };
+      for (const mr of data.mrs) {
+        if (mr.webUrl && (mr as BoardMRWithReview).doctor && next[mr.webUrl]) {
+          delete next[mr.webUrl];
+          changed = true;
+        }
+      }
+      return changed ? next : o;
+    });
   }, [data]);
 
-  // Poll faster while a review is actively running (server- or optimistic-side),
-  // so the badge updates promptly instead of waiting for the normal 60s cadence.
+  // Poll faster while a review or response is running, so the badge updates
+  // promptly instead of waiting for the normal 60s cadence.
   const reviewActive =
     Object.values(optimistic).some((r) => r.status === "queued" || r.status === "reviewing") ||
     (!!data &&
@@ -1339,14 +1899,28 @@ function Board() {
         const s = (mr as BoardMRWithReview).review?.status;
         return s === "queued" || s === "reviewing";
       }));
+  const respondActive =
+    Object.values(optimisticRespond).some((r) => RESPOND_ACTIVE.has(r.status)) ||
+    (!!data &&
+      data.mrs.some((mr) => {
+        const s = (mr as BoardMRWithReview).respond?.status;
+        return !!s && RESPOND_ACTIVE.has(s);
+      }));
+  const doctorActive =
+    Object.values(optimisticDoctor).some((r) => DOCTOR_ACTIVE.has(r.status)) ||
+    (!!data &&
+      data.mrs.some((mr) => {
+        const s = (mr as BoardMRWithReview).doctor?.status;
+        return !!s && DOCTOR_ACTIVE.has(s);
+      }));
 
   useEffect(() => {
-    if (!reviewActive) return;
+    if (!reviewActive && !respondActive && !doctorActive) return;
     const t = setInterval(() => {
       if (!document.hidden) load();
     }, 4000);
     return () => clearInterval(t);
-  }, [reviewActive, load]);
+  }, [reviewActive, respondActive, doctorActive, load]);
 
   if (!data) {
     return <p className="tui-loading">{loadError ? "✗ failed to load board data" : "fetching…"}</p>;
@@ -1358,9 +1932,15 @@ function Board() {
 
   // Server review wins; otherwise show an optimistic "queued" badge if pending.
   const mrs = data.mrs.map((mr) => {
-    const server = (mr as BoardMRWithReview).review;
-    const opt = mr.webUrl ? optimistic[mr.webUrl] : undefined;
-    return server || !opt ? mr : { ...mr, review: opt };
+    const mrx = mr as BoardMRWithReview;
+    const optRev = mr.webUrl ? optimistic[mr.webUrl] : undefined;
+    const optResp = mr.webUrl ? optimisticRespond[mr.webUrl] : undefined;
+    const optDoc = mr.webUrl ? optimisticDoctor[mr.webUrl] : undefined;
+    let next: BoardMRWithReview = mrx;
+    if (!mrx.review && optRev) next = { ...next, review: optRev };
+    if (!mrx.respond && optResp) next = { ...next, respond: optResp };
+    if (!mrx.doctor && optDoc) next = { ...next, doctor: optDoc };
+    return next;
   });
   const filtered = filterByMember(mrs, state.member);
   const groups = groupMRs(filtered, state.group, data.members.map((m) => m.username), now).map((g) => ({
@@ -1371,7 +1951,9 @@ function Board() {
   // Show each row's author only when the view mixes authors: the All view
   // grouped by anything but author (where the group header isn't the name).
   const showAuthor = state.member === "all" && state.group !== "author";
-  const summaryText = boardSummary(groups.flatMap((g) => g.mrs));
+  const flatMrs = groups.flatMap((g) => g.mrs);
+  const summaryText = boardSummary(flatMrs, data.slackTemplates);
+  const postableMrs = flatMrs.filter((m) => m.webUrl && !(m as BoardMRWithReview).slack?.posted);
   const openSettings = () => {
     setMenuOpen(false);
     setShowSettings(true);
@@ -1387,6 +1969,9 @@ function Board() {
     summaryText,
     onRefresh: refreshNow,
     refreshing,
+    canPostSummary: data.slackEnabled && data.local && postableMrs.length > 0,
+    postingSummary,
+    onPostSummary: () => handlePostSummary(postableMrs),
   };
 
   return (
@@ -1428,9 +2013,9 @@ function Board() {
           groups.map((g) => (
             <Panel key={g.label} title={g.label} count={g.mrs.length}>
               {view === "rows" ? (
-                <RowView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} onContext={openRowMenu} />
+                <RowView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} slackTemplates={data.slackTemplates} onContext={openRowMenu} onOpenReview={setReviewModal} />
               ) : (
-                <GridView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} onContext={openRowMenu} />
+                <GridView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} slackTemplates={data.slackTemplates} onContext={openRowMenu} onOpenReview={setReviewModal} />
               )}
             </Panel>
           ))
@@ -1477,11 +2062,24 @@ function Board() {
           slackEnabled={data.slackEnabled}
           onClose={() => setRowMenu(null)}
           onLaunch={handleLaunch}
+          onOpenReview={setReviewModal}
           onCopy={handleCopy}
           onResolveSlack={handleResolveSlack}
           onReactSlack={handleReactSlack}
+          onPostSlack={handlePostSlack}
+          onRespond={handleRespond}
+          canRespond={rowMenu.mr.author.username === data.defaultMember}
+          onDoctor={handleDoctor}
+          canDoctor={
+            rowMenu.mr.author.username === data.defaultMember &&
+            !!(rowMenu.mr.blockers?.pipelineFailing || rowMenu.mr.blockers?.hasConflicts)
+          }
+          onResumeReview={handleResumeReview}
+          onResumeRespond={handleResumeRespond}
         />
       )}
+
+      {reviewModal && <ReviewModal mr={reviewModal} onClose={() => setReviewModal(null)} />}
 
       <ToastHost toasts={toasts} />
     </div>

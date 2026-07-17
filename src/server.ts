@@ -6,12 +6,17 @@ import { buildBoard, buildRoster, type BoardMR } from "./data.ts";
 import { summarizeThreads, unresolvedReviewerCount } from "./discussions.ts";
 import { SnapshotCache } from "./cache.ts";
 import { isLocalRequest } from "./local.ts";
-import { readReviewStates, reviewFilePath, writeReviewState, parseReviewRequestBody, attachReviews } from "./review-state.ts";
-import { launchReview, focusTab } from "./herdr.ts";
-import { readSlackRefs, attachSlack, resolveSlackRef, reactToMR, REVIEW_EMOJI } from "./slack.ts";
+import { readReviewStates, reviewFilePath, writeReviewState, parseReviewRequestBody, attachReviews, readReviewReport } from "./review-state.ts";
+import { readRespondStates, respondFilePath, writeRespondState, parseRespondRequestBody, attachResponds } from "./respond-state.ts";
+import { readDoctorStates, doctorFilePath, writeDoctorState, parseDoctorRequestBody, attachDoctors } from "./doctor-state.ts";
+import { launchReview, launchRespond, launchDoctor, launchResume, focusTab } from "./herdr.ts";
+import { readSlackRefs, attachSlack, resolveSlackRef, reactToMR, unreactFromMR, postToSlack, REVIEW_EMOJI } from "./slack.ts";
+import { renderMr, renderMulti, type MrFacts } from "./template.ts";
 
 const cssPath = join(import.meta.dir, "style.css");
 let css = readFileSync(cssPath, "utf-8");
+const faviconPath = join(import.meta.dir, "favicon.svg");
+const favicon = readFileSync(faviconPath, "utf-8");
 
 const config = loadConfig();
 const provider = new GitLabProvider(config.gitlabHost, loadGitLabToken());
@@ -136,6 +141,7 @@ const shell = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="robots" content="noindex">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
 <title>${config.title.replace(/</g, "&lt;")}</title>
 <script>
   const mq = matchMedia("(prefers-color-scheme: dark)");
@@ -178,6 +184,8 @@ Bun.serve({
       case "/style.css":
         css = readFileSync(cssPath, "utf-8");
         return new Response(css, { headers: { "content-type": "text/css; charset=utf-8" } });
+      case "/favicon.svg":
+        return new Response(favicon, { headers: { "content-type": "image/svg+xml; charset=utf-8" } });
       case "/app.js":
         return new Response(appJs, { headers: { "content-type": "text/javascript; charset=utf-8" } });
       case "/member": {
@@ -189,7 +197,10 @@ Bun.serve({
         void refreshMemberNames();
         try {
           const mrs = await fetchMemberMRs(u);
-          const withState = attachSlack(attachReviews(mrs, readReviewStates()), readSlackRefs());
+          const withState = attachSlack(
+            attachDoctors(attachResponds(attachReviews(mrs, readReviewStates()), readRespondStates()), readDoctorStates()),
+            readSlackRefs(),
+          );
           return new Response(JSON.stringify({ mrs: withState, fetchedAt: Date.now() }), {
             headers: { "content-type": "application/json" },
           });
@@ -209,6 +220,8 @@ Bun.serve({
         const visibleNames = new Set(visible.map((m) => m.username));
         const visibleMrs = snapshot.mrs.filter((mr) => visibleNames.has(mr.author.username));
         const reviews = readReviewStates();
+        const responds = readRespondStates();
+        const doctors = readDoctorStates();
         const slackRefs = readSlackRefs();
         return new Response(
           JSON.stringify({
@@ -219,12 +232,19 @@ Bun.serve({
               username: m.username,
               name: memberNames.get(m.username) ?? m.name ?? null,
               hidden: !!m.hidden,
-              // Counted from the full snapshot so hidden members still show their number.
-              count: snapshot.mrs.filter((mr) => mr.author.username === m.username).length,
+              // Checked-out members are skipped by fetchTeamMRs, so their MRs
+              // aren't in the snapshot and there's no count to report. null (not
+              // 0, which reads as "no open MRs") — the modal renders it as "—".
+              count: m.hidden ? null : snapshot.mrs.filter((mr) => mr.author.username === m.username).length,
             })),
-            mrs: attachSlack(attachReviews(visibleMrs, reviews), slackRefs),
+            mrs: attachSlack(attachDoctors(attachResponds(attachReviews(visibleMrs, reviews), responds), doctors), slackRefs),
             local: isLocalRequest(req),
             slackEnabled: !!slackToken,
+            slackTemplates: {
+              single: config.slack.singleTemplate,
+              multiHeader: config.slack.multiHeader,
+              multiItem: config.slack.multiItem,
+            },
             fetchedAt: snapshot.fetchedAt,
             fetchError: snapshot.fetchError,
           }),
@@ -281,13 +301,25 @@ Bun.serve({
         }
         const parsed = parseReviewRequestBody(body);
         if (!parsed) return new Response("expected { mrUrl: string, iid: number }", { status: 400 });
+        const resume = (body as { resume?: unknown })?.resume === true;
         // Only launch for an MR the board is actually showing.
         const snapshot = await cache.get();
         if (!snapshot.mrs.some((mr) => mr.webUrl === parsed.mrUrl)) {
           return new Response(`unknown MR "${parsed.mrUrl}"`, { status: 400 });
         }
-        // Dedup: a live review for this MR re-focuses its tab instead of spawning another.
         const existing = readReviewStates().get(parsed.mrUrl);
+        if (resume) {
+          const sessionId = existing?.sessionId;
+          if (!sessionId) return new Response("no session id on file for this review", { status: 400 });
+          const statePath = reviewFilePath(parsed.mrUrl);
+          void launchResume(
+            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: config.reviewCwd, workspaceLabel: config.reviewsWorkspace, statePath, sessionId, workspaceKind: "review" },
+          )
+            .then(({ tabId, workspaceId }) => writeReviewState(statePath, { status: existing?.status ?? "done", tabId, workspaceId }))
+            .catch((err) => console.error(`review resume failed: ${err instanceof Error ? err.message : err}`));
+          return new Response(JSON.stringify({ ok: true, resumed: true }), { headers: { "content-type": "application/json" } });
+        }
+        // Dedup: a live review for this MR re-focuses its tab instead of spawning another.
         if (existing && existing.tabId && (existing.status === "queued" || existing.status === "reviewing")) {
           try {
             await focusTab(existing.tabId);
@@ -305,6 +337,8 @@ Bun.serve({
           cwd: config.reviewCwd,
           workspaceLabel: config.reviewsWorkspace,
           statePath,
+          skill: config.reviewSkill,
+          channel: config.slack.channel,
         })
           .then(({ tabId, workspaceId }) => writeReviewState(statePath, { status: "queued", tabId, workspaceId }))
           .catch((err) => {
@@ -312,6 +346,162 @@ Bun.serve({
             writeReviewState(statePath, { status: "error", message: "failed to launch review pane" });
           });
         return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });
+      }
+      case "/respond": {
+        // Launch the response-to-review skill in a fresh herdr pane for the
+        // caller's own MR. Same shape as /review: local-only, dedup a running
+        // response, kick the pane asynchronously, and let the state file
+        // drive the badge.
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+        if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
+        const cwd = config.respondCwd || config.reviewCwd;
+        if (!cwd) return new Response("respondCwd (or reviewCwd) not configured", { status: 400 });
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return new Response("invalid json", { status: 400 });
+        }
+        const parsed = parseRespondRequestBody(body);
+        if (!parsed) return new Response("expected { mrUrl: string, iid: number }", { status: 400 });
+        const resume = (body as { resume?: unknown })?.resume === true;
+        const snapshot = await cache.get();
+        if (!snapshot.mrs.some((mr) => mr.webUrl === parsed.mrUrl)) {
+          return new Response(`unknown MR "${parsed.mrUrl}"`, { status: 400 });
+        }
+        const existing = readRespondStates().get(parsed.mrUrl);
+        if (resume) {
+          const sessionId = existing?.sessionId;
+          if (!sessionId) return new Response("no session id on file for this response", { status: 400 });
+          const statePath = respondFilePath(parsed.mrUrl);
+          void launchResume(
+            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: cwd, workspaceLabel: config.respondsWorkspace, statePath, sessionId, workspaceKind: "respond" },
+          )
+            .then(({ tabId, workspaceId }) => writeRespondState(statePath, { status: existing?.status ?? "done", tabId, workspaceId }))
+            .catch((err) => console.error(`respond resume failed: ${err instanceof Error ? err.message : err}`));
+          return new Response(JSON.stringify({ ok: true, resumed: true }), { headers: { "content-type": "application/json" } });
+        }
+        const inFlight = new Set(["queued", "triaging", "implementing", "drafting"]);
+        if (existing && existing.tabId && inFlight.has(existing.status)) {
+          try {
+            await focusTab(existing.tabId);
+            return new Response(JSON.stringify({ ok: true, focused: true }), { headers: { "content-type": "application/json" } });
+          } catch {
+            // tab is gone -- fall through and start a fresh response
+          }
+        }
+        const statePath = respondFilePath(parsed.mrUrl);
+        writeRespondState(statePath, { mrUrl: parsed.mrUrl, iid: parsed.iid, status: "queued" });
+        void launchRespond({
+          mrUrl: parsed.mrUrl,
+          iid: parsed.iid,
+          cwd,
+          workspaceLabel: config.respondsWorkspace,
+          statePath,
+          skill: config.respondSkill,
+        })
+          .then(({ tabId, workspaceId }) => writeRespondState(statePath, { status: "queued", tabId, workspaceId }))
+          .catch((err) => {
+            console.error(`respond launch failed: ${err instanceof Error ? err.message : err}`);
+            writeRespondState(statePath, { status: "error", message: "failed to launch respond pane" });
+          });
+        return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });
+      }
+      case "/doctor": {
+        // Launch the MR-doctor skill to fix mechanical breakage (CI red /
+        // merge conflicts) on the caller's MR. Same shape as /respond.
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+        if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
+        const cwd = config.doctorCwd || config.reviewCwd;
+        if (!cwd) return new Response("doctorCwd (or reviewCwd) not configured", { status: 400 });
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return new Response("invalid json", { status: 400 });
+        }
+        const parsed = parseDoctorRequestBody(body);
+        if (!parsed) return new Response("expected { mrUrl: string, iid: number }", { status: 400 });
+        const snapshot = await cache.get();
+        if (!snapshot.mrs.some((mr) => mr.webUrl === parsed.mrUrl)) {
+          return new Response(`unknown MR "${parsed.mrUrl}"`, { status: 400 });
+        }
+        const existing = readDoctorStates().get(parsed.mrUrl);
+        const inFlight = new Set(["queued", "diagnosing", "rebasing", "fixing", "watching"]);
+        if (existing && existing.tabId && inFlight.has(existing.status)) {
+          try {
+            await focusTab(existing.tabId);
+            return new Response(JSON.stringify({ ok: true, focused: true }), { headers: { "content-type": "application/json" } });
+          } catch {
+            // tab is gone -- fall through and start a fresh doctor session
+          }
+        }
+        const statePath = doctorFilePath(parsed.mrUrl);
+        writeDoctorState(statePath, { mrUrl: parsed.mrUrl, iid: parsed.iid, status: "queued" });
+        void launchDoctor({
+          mrUrl: parsed.mrUrl,
+          iid: parsed.iid,
+          cwd,
+          workspaceLabel: config.doctorsWorkspace,
+          statePath,
+          skill: config.doctorSkill,
+        })
+          .then(({ tabId, workspaceId }) => writeDoctorState(statePath, { status: "queued", tabId, workspaceId }))
+          .catch((err) => {
+            console.error(`doctor launch failed: ${err instanceof Error ? err.message : err}`);
+            writeDoctorState(statePath, { status: "error", message: "failed to launch doctor pane" });
+          });
+        return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });
+      }
+      case "/review/outcome": {
+        // The review skill's terminal handoff: it tells the board whether the
+        // review lands as a `comment` or `approve`, and the board drops the
+        // matching slack reaction so the human doesn't have to. Records the
+        // outcome back into the review state file too, for the client to render.
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+        if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
+        if (!slackToken) return new Response("slack not configured", { status: 400 });
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return new Response("invalid json", { status: 400 });
+        }
+        const { mrUrl, outcome } = (body ?? {}) as { mrUrl?: unknown; outcome?: unknown };
+        if (typeof mrUrl !== "string" || !mrUrl) {
+          return new Response("expected { mrUrl: string, outcome: comment|approve }", { status: 400 });
+        }
+        if (outcome !== "comment" && outcome !== "approve") {
+          return new Response(`outcome must be "comment" or "approve"`, { status: 400 });
+        }
+        const emoji = outcome === "approve" ? REVIEW_EMOJI.approved : REVIEW_EMOJI.commented;
+        // Persist outcome on the state file so the client (and any replay) can see it.
+        const iid = readReviewStates().get(mrUrl)?.iid ?? 0;
+        writeReviewState(reviewFilePath(mrUrl), { mrUrl, iid, status: "done", outcome });
+        // Ensure the MR is resolved before reacting; the sweeper usually beats us
+        // to it, but a first-launch review may finish before the sweeper's interval.
+        try {
+          const existing = readSlackRefs().get(mrUrl);
+          if (existing?.status !== "found" || !existing.messageTs) {
+            await resolveSlackRef(slackToken, config.slack.channel, mrUrl, iid);
+          }
+          const ref = await reactToMR(slackToken, mrUrl, emoji);
+          return new Response(JSON.stringify({ ok: true, reactions: ref.reactions ?? [] }), {
+            headers: { "content-type": "application/json" },
+          });
+        } catch (err) {
+          return new Response(`slack react failed: ${err instanceof Error ? err.message : err}`, { status: 502 });
+        }
+      }
+      case "/review/report": {
+        // The agent's written review markdown for one MR. Read-only display
+        // data, so it's available on the tunnel too (like the status badge),
+        // not local-gated the way launching a review is.
+        const mrUrl = new URL(req.url).searchParams.get("mr");
+        if (!mrUrl) return new Response("expected ?mr=<url>", { status: 400 });
+        const report = readReviewReport(mrUrl);
+        if (report === null) return new Response("no review yet", { status: 404 });
+        return new Response(report, { headers: { "content-type": "text/markdown; charset=utf-8" } });
       }
       case "/slack/resolve": {
         // Find (and cache) the MR's review-request message in the team channel.
@@ -327,7 +517,7 @@ Bun.serve({
         const parsed = parseReviewRequestBody(body);
         if (!parsed) return new Response("expected { mrUrl: string, iid: number }", { status: 400 });
         try {
-          const ref = await resolveSlackRef(slackToken, parsed.mrUrl, parsed.iid);
+          const ref = await resolveSlackRef(slackToken, config.slack.channel, parsed.mrUrl, parsed.iid);
           return new Response(
             JSON.stringify({ ok: true, status: ref.status, permalink: ref.permalink, reactions: ref.reactions ?? [] }),
             { headers: { "content-type": "application/json" } },
@@ -336,9 +526,11 @@ Bun.serve({
           return new Response(`slack resolve failed: ${err instanceof Error ? err.message : err}`, { status: 502 });
         }
       }
-      case "/slack/react": {
-        // Add a review-signal reaction (eyes/speech_balloon/white_check_mark) to
-        // the MR's cached review-request message.
+      case "/slack/post": {
+        // Post an MR (or a summary of many MRs) to the configured channel and
+        // write a slack ref pinned to the new message so reactions target it.
+        // Renders the text server-side from config templates so the client
+        // can't inject arbitrary content.
         if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
         if (!slackToken) return new Response("slack not configured", { status: 400 });
@@ -348,13 +540,94 @@ Bun.serve({
         } catch {
           return new Response("invalid json", { status: 400 });
         }
-        const { mrUrl, emoji } = (body ?? {}) as { mrUrl?: unknown; emoji?: unknown };
+        const { mrUrls } = (body ?? {}) as { mrUrls?: unknown };
+        if (!Array.isArray(mrUrls) || mrUrls.length === 0 || !mrUrls.every((u) => typeof u === "string")) {
+          return new Response("expected { mrUrls: string[] }", { status: 400 });
+        }
+        const snapshot = await cache.get();
+        const byUrl = new Map(snapshot.mrs.map((m) => [m.webUrl, m] as const));
+        const picked = (mrUrls as string[]).map((u) => byUrl.get(u)).filter((m): m is BoardMR => !!m);
+        if (picked.length !== mrUrls.length) {
+          return new Response("one or more mrUrls are not on the board", { status: 400 });
+        }
+        // Guard against duplicate posts: check for an existing ref file first,
+        // and for MRs we've never resolved, sync the channel index and look for
+        // the author's original review-request. If any MR already has a
+        // message, don't post — cache the found ref (single) or 409 (multi).
+        const existingRefs = readSlackRefs();
+        const toResolve = picked.filter((m) => existingRefs.get(m.webUrl!)?.status !== "found");
+        const freshlyFound: Array<{ iid: number; permalink?: string }> = [];
+        try {
+          for (const m of toResolve) {
+            const ref = await resolveSlackRef(slackToken, config.slack.channel, m.webUrl!, m.iid);
+            if (ref.status === "found") freshlyFound.push({ iid: m.iid, permalink: ref.permalink });
+          }
+        } catch (err) {
+          return new Response(`slack resolve failed: ${err instanceof Error ? err.message : err}`, { status: 502 });
+        }
+        const previouslyFound = picked.filter((m) => existingRefs.get(m.webUrl!)?.status === "found");
+        const alreadyIids = [...previouslyFound.map((m) => m.iid), ...freshlyFound.map((f) => f.iid)];
+        if (alreadyIids.length) {
+          if (picked.length === 1) {
+            // Single-MR post: seamlessly link to the existing message instead of
+            // posting a duplicate. The ref was just written by resolveSlackRef.
+            const permalink = freshlyFound[0]?.permalink ?? existingRefs.get(picked[0]!.webUrl!)?.permalink;
+            return new Response(JSON.stringify({ ok: true, linked: true, permalink }), {
+              headers: { "content-type": "application/json" },
+            });
+          }
+          return new Response(
+            `already in slack: ${alreadyIids.map((i) => `!${i}`).join(", ")}`,
+            { status: 409 },
+          );
+        }
+        const facts: MrFacts[] = picked.map((m) => ({
+          iid: m.iid,
+          title: m.title,
+          url: m.webUrl ?? "",
+          ticket: (m.title.match(/([A-Z]+-\d+)/)?.[1]) ?? "",
+          author: m.author.username,
+          sourceBranch: m.sourceBranch,
+          targetBranch: m.targetBranch,
+        }));
+        const text = facts.length === 1
+          ? renderMr(config.slack.singleTemplate, facts[0]!)
+          : renderMulti(config.slack.multiHeader, config.slack.multiItem, facts);
+        try {
+          const refs = await postToSlack(
+            slackToken,
+            config.slack.channel,
+            text,
+            picked.map((m) => ({ webUrl: m.webUrl!, iid: m.iid })),
+          );
+          return new Response(JSON.stringify({ ok: true, posted: refs.length, permalink: refs[0]?.permalink }), {
+            headers: { "content-type": "application/json" },
+          });
+        } catch (err) {
+          return new Response(`slack post failed: ${err instanceof Error ? err.message : err}`, { status: 502 });
+        }
+      }
+      case "/slack/react": {
+        // Add or remove a review-signal reaction (eyes/speech_balloon/white_check_mark)
+        // on the MR's cached review-request message. `remove: true` unreacts.
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+        if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
+        if (!slackToken) return new Response("slack not configured", { status: 400 });
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return new Response("invalid json", { status: 400 });
+        }
+        const { mrUrl, emoji, remove } = (body ?? {}) as { mrUrl?: unknown; emoji?: unknown; remove?: unknown };
         const allowed = Object.values(REVIEW_EMOJI) as string[];
         if (typeof mrUrl !== "string" || typeof emoji !== "string" || !allowed.includes(emoji)) {
-          return new Response(`expected { mrUrl: string, emoji: one of ${allowed.join("|")} }`, { status: 400 });
+          return new Response(`expected { mrUrl: string, emoji: one of ${allowed.join("|")}, remove?: boolean }`, { status: 400 });
         }
         try {
-          const ref = await reactToMR(slackToken, mrUrl, emoji);
+          const ref = remove === true
+            ? await unreactFromMR(slackToken, mrUrl, emoji)
+            : await reactToMR(slackToken, mrUrl, emoji);
           return new Response(JSON.stringify({ ok: true, reactions: ref.reactions ?? [] }), {
             headers: { "content-type": "application/json" },
           });
@@ -374,6 +647,62 @@ console.log(`mr-board serving on http://localhost:${port}`);
 // ready snapshot instead of waiting on the cold fetch.
 void cache.get().catch(() => {});
 
+/**
+ * Background sweep: resolve Slack refs for every MR on the board that doesn't
+ * have one yet, and retry `notfound` refs older than one sweep interval (an MR
+ * posted just now won't be in the index until the next sync). Spaced calls so
+ * a full board doesn't hammer Slack's rate limits. Failures per-MR are logged
+ * and skipped — one bad MR shouldn't kill the sweep.
+ */
+const AUTO_RESOLVE_GAP_MS = 250;
+let autoResolveTimer: ReturnType<typeof setTimeout> | undefined;
+let autoResolveRunning = false;
+
+async function autoResolveSlackRefs(): Promise<void> {
+  if (autoResolveRunning || !slackToken) return;
+  autoResolveRunning = true;
+  try {
+    const snapshot = await cache.get().catch(() => null);
+    if (!snapshot) return;
+    const refs = readSlackRefs();
+    const retryAfter = Date.now() - config.slack.autoResolveIntervalMinutes * 60_000;
+    const targets = snapshot.mrs.filter((mr) => {
+      if (!mr.webUrl) return false;
+      const ref = refs.get(mr.webUrl);
+      if (!ref) return true;
+      if (ref.status === "notfound" && ref.checkedAt < retryAfter) return true;
+      return false;
+    });
+    if (!targets.length) return;
+    for (const mr of targets) {
+      try {
+        await resolveSlackRef(slackToken, config.slack.channel, mr.webUrl!, mr.iid);
+      } catch (err) {
+        console.error(`auto-resolve !${mr.iid} failed: ${err instanceof Error ? err.message : err}`);
+      }
+      await new Promise((r) => setTimeout(r, AUTO_RESOLVE_GAP_MS));
+    }
+  } finally {
+    autoResolveRunning = false;
+  }
+}
+
+function scheduleAutoResolve(): void {
+  if (autoResolveTimer) clearTimeout(autoResolveTimer);
+  const mins = config.slack.autoResolveIntervalMinutes;
+  if (!slackToken || mins <= 0) return;
+  const tick = () => {
+    void autoResolveSlackRefs().catch((err) =>
+      console.error(`auto-resolve sweep failed: ${err instanceof Error ? err.message : err}`),
+    );
+    autoResolveTimer = setTimeout(tick, mins * 60_000);
+  };
+  // Kick a first sweep shortly after startup so the board fills in without a wait.
+  autoResolveTimer = setTimeout(tick, 5_000);
+}
+
+scheduleAutoResolve();
+
 // Hot-reload config.json so adding/removing members (or any setting) takes
 // effect without a restart. Watch the directory — that survives editors that
 // save atomically by swapping the file — and filter to our file. A mid-edit
@@ -386,9 +715,13 @@ watch(dirname(CONFIG_PATH), (_event, filename) => {
     try {
       Object.assign(config, loadConfig());
       namesFetchedAt = 0; // re-resolve display names, including new members
-      cache.invalidate();
+      // Stale, not dropped: checking a member in/out lands here (the board
+      // writes config.json itself), and dropping the snapshot would stall every
+      // reader for a full team refetch. Serve the old board until this lands.
+      cache.markStale();
       void refreshMemberNames();
       void cache.get().catch(() => {});
+      scheduleAutoResolve();
       console.log("config.json changed — reloaded members/settings (no restart needed)");
     } catch (err) {
       console.error(`config reload skipped (invalid): ${err instanceof Error ? err.message : err}`);

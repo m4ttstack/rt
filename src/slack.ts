@@ -2,8 +2,6 @@ import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } from 
 import { join } from "path";
 import { loadSlackToken } from "./config.ts";
 
-/** The team channel where authors post MRs asking for review. */
-export const REVIEW_CHANNEL = "pod-acme-internal";
 
 const STATE_ROOT = join(import.meta.dir, "..", "state");
 export const SLACK_REF_DIR = join(STATE_ROOT, "slack");
@@ -118,7 +116,7 @@ async function teamDomain(token: string): Promise<string> {
   return new URL(data.url as string).host;
 }
 
-async function resolveChannelId(token: string): Promise<string> {
+async function resolveChannelId(token: string, channelName: string): Promise<string> {
   let cursor = "";
   for (let page = 0; page < MAX_PAGES; page++) {
     const data = await call("conversations.list", token, {
@@ -127,12 +125,12 @@ async function resolveChannelId(token: string): Promise<string> {
       limit: "1000",
       ...(cursor ? { cursor } : {}),
     });
-    const found = (data.channels as Array<{ id: string; name: string }>).find((c) => c.name === REVIEW_CHANNEL);
+    const found = (data.channels as Array<{ id: string; name: string }>).find((c) => c.name === channelName);
     if (found) return found.id;
     cursor = (data.response_metadata as { next_cursor?: string })?.next_cursor ?? "";
     if (!cursor) break;
   }
-  throw new Error(`slack channel #${REVIEW_CHANNEL} not found (is the token's user a member?)`);
+  throw new Error(`slack channel #${channelName} not found (is the token's user a member?)`);
 }
 
 function readIndex(): SlackIndex | null {
@@ -153,9 +151,9 @@ function writeIndex(index: SlackIndex): void {
  * the last INITIAL_LOOKBACK_DAYS; later runs fetch only messages after lastTs.
  * Message text/ts never change once posted, so the index only ever grows.
  */
-export async function syncIndex(token: string, now: number = Date.now()): Promise<SlackIndex> {
+export async function syncIndex(token: string, channelName: string, now: number = Date.now()): Promise<SlackIndex> {
   const existing = readIndex();
-  const channelId = existing?.channelId ?? (await resolveChannelId(token));
+  const channelId = existing?.channelId ?? (await resolveChannelId(token, channelName));
   const domain = existing?.teamDomain ?? (await teamDomain(token));
   const oldest = existing?.lastTs && existing.lastTs !== "0"
     ? existing.lastTs
@@ -202,6 +200,16 @@ export async function addReaction(token: string, channelId: string, ts: string, 
   }
 }
 
+/** Remove a reaction; treats a "no reaction" response as success (idempotent). */
+export async function removeReaction(token: string, channelId: string, ts: string, name: string): Promise<void> {
+  try {
+    await call("reactions.remove", token, { channel: channelId, timestamp: ts, name }, true);
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("no_reaction")) return;
+    throw err;
+  }
+}
+
 /** Replies in a message's thread (excludes the parent). */
 async function threadReplies(token: string, channelId: string, parentTs: string): Promise<SlackMessage[]> {
   const data = await call("conversations.replies", token, { channel: channelId, ts: parentTs, limit: "200" });
@@ -214,6 +222,55 @@ async function threadReplies(token: string, channelId: string, parentTs: string)
 async function postThreadReply(token: string, channelId: string, parentTs: string, text: string): Promise<string> {
   const data = await call("chat.postMessage", token, { channel: channelId, thread_ts: parentTs, text }, true);
   return data.ts as string;
+}
+
+/** Post a top-level message; returns the message's ts. */
+async function postMessage(token: string, channelId: string, text: string): Promise<string> {
+  const data = await call("chat.postMessage", token, { channel: channelId, text }, true);
+  return data.ts as string;
+}
+
+/**
+ * Post `text` to `channelName` and record a slack ref against the given MR URLs
+ * so subsequent reactions target it. When multiple MRs are passed, each gets a
+ * ref pointing at the same parent message (multi mode); reactions on those refs
+ * will lazily post a thread reply the first time they're clicked.
+ */
+export async function postToSlack(
+  token: string,
+  channelName: string,
+  text: string,
+  mrs: Array<{ webUrl: string; iid: number }>,
+  now: number = Date.now(),
+): Promise<SlackRef[]> {
+  if (!mrs.length) throw new Error("nothing to post");
+  const existing = readIndex();
+  const channelId = existing?.channelId ?? (await resolveChannelId(token, channelName));
+  const domain = existing?.teamDomain ?? (await teamDomain(token));
+  const ts = await postMessage(token, channelId, text);
+  const multi = mrs.length > 1;
+  const refs: SlackRef[] = mrs.map((mr) => {
+    const base: SlackRef = {
+      mrUrl: mr.webUrl,
+      iid: mr.iid,
+      status: "found",
+      channelId,
+      teamDomain: domain,
+      checkedAt: now,
+    };
+    if (multi) {
+      return {
+        ...base,
+        multi: true,
+        parentTs: ts,
+        permalink: buildPermalink(domain, channelId, ts),
+        reactions: [],
+      };
+    }
+    return { ...base, messageTs: ts, permalink: buildPermalink(domain, channelId, ts), reactions: [] };
+  });
+  for (const ref of refs) writeSlackRef(ref);
+  return refs;
 }
 
 // ── per-MR ref state ─────────────────────────────────────────────────────────
@@ -243,11 +300,19 @@ export function readSlackRefs(dir: string = SLACK_REF_DIR): Map<string, SlackRef
 export function attachSlack<T extends { webUrl?: string | null }>(
   mrs: T[],
   refs: Map<string, SlackRef>,
-): Array<T & { slack?: { status: SlackRef["status"]; permalink?: string; reactions: string[] } }> {
+): Array<T & { slack?: { status: SlackRef["status"]; permalink?: string; reactions: string[]; posted: boolean } }> {
   return mrs.map((mr) => {
     const ref = mr.webUrl ? refs.get(mr.webUrl) : undefined;
     if (!ref) return mr;
-    return { ...mr, slack: { status: ref.status, permalink: ref.permalink, reactions: ref.reactions ?? [] } };
+    return {
+      ...mr,
+      slack: {
+        status: ref.status,
+        permalink: ref.permalink,
+        reactions: ref.reactions ?? [],
+        posted: ref.status === "found" && !!ref.messageTs,
+      },
+    };
   });
 }
 
@@ -256,8 +321,8 @@ export function attachSlack<T extends { webUrl?: string | null }>(
  * URL, fetch the message's live reactions, and cache the ref. Returns the ref
  * (status "notfound" when no message references the MR yet).
  */
-export async function resolveSlackRef(token: string, mrUrl: string, iid: number, now: number = Date.now()): Promise<SlackRef> {
-  const index = await syncIndex(token, now);
+export async function resolveSlackRef(token: string, channelName: string, mrUrl: string, iid: number, now: number = Date.now()): Promise<SlackRef> {
+  const index = await syncIndex(token, channelName, now);
   const msg = matchReviewMessage(index.messages, mrUrl);
   if (!msg) {
     const ref: SlackRef = { mrUrl, iid, status: "notfound", checkedAt: now };
@@ -324,6 +389,21 @@ export async function reactToMR(token: string, mrUrl: string, emoji: string, now
   await addReaction(token, ref.channelId, next.messageTs, emoji);
   next.reactions = await messageReactions(token, ref.channelId, next.messageTs);
   next.checkedAt = now;
+  writeSlackRef(next);
+  return next;
+}
+
+/** Remove a review-signal reaction from an MR's request message. No-op if the
+    reaction wasn't there. Never creates a thread reply (unlike reactToMR): if
+    a multi-MR ref hasn't been reified into its own reply yet, there's nothing
+    to unreact from. */
+export async function unreactFromMR(token: string, mrUrl: string, emoji: string, now: number = Date.now()): Promise<SlackRef> {
+  const ref = JSON.parse(readFileSync(slackRefPath(mrUrl), "utf8")) as SlackRef;
+  if (ref.status !== "found" || !ref.channelId || !ref.messageTs) {
+    throw new Error("no resolved slack message for this MR");
+  }
+  await removeReaction(token, ref.channelId, ref.messageTs, emoji);
+  const next = { ...ref, reactions: await messageReactions(token, ref.channelId, ref.messageTs), checkedAt: now };
   writeSlackRef(next);
   return next;
 }

@@ -12,7 +12,7 @@ export interface Member {
 
 export interface BoardConfig {
   gitlabHost: string;
-  /** GitLab project paths whose MRs are eligible, e.g. "acme/acme-dev". */
+  /** GitLab project paths whose MRs are eligible, e.g. "group/project". */
   projects: string[];
   /** Team members whose authored MRs the board shows, in sidebar order. */
   members: Member[];
@@ -28,11 +28,49 @@ export interface BoardConfig {
   ticketPrefixes: string[];
   title: string;
   port: number;
-  /** Absolute path the review agent's herdr pane starts in (an acme-dev checkout). Empty disables review launch. */
+  /** Absolute path the review agent's herdr pane starts in (a repo checkout). Empty disables review launch. */
   reviewCwd: string;
   /** herdr workspace label reviews are grouped under. */
   reviewsWorkspace: string;
+  /** Absolute path the respond agent's herdr pane starts in. Falls back to reviewCwd when empty. */
+  respondCwd: string;
+  /** herdr workspace label responses are grouped under. */
+  respondsWorkspace: string;
+  /** Absolute path the doctor agent's herdr pane starts in. Falls back to reviewCwd when empty. */
+  doctorCwd: string;
+  /** herdr workspace label doctor sessions are grouped under. */
+  doctorsWorkspace: string;
+  /** Domain skill the review wrapper delegates to, e.g. "myteam:review".
+      Empty = the generic wrapper reviews on its own. Keeps all domain knowledge in config. */
+  reviewSkill: string;
+  /** Domain skill the respond wrapper delegates to. Empty = generic. */
+  respondSkill: string;
+  /** Domain skill the doctor wrapper delegates to. Empty = generic. */
+  doctorSkill: string;
+  slack: SlackConfig;
 }
+
+export interface SlackConfig {
+  /** Channel name (no #) where MR review requests live and where "post to slack" posts. */
+  channel: string;
+  /** Template for a single MR — used for both clipboard copy and "post to slack". */
+  singleTemplate: string;
+  /** Header line for the multi-MR summary (top of a "N MR's ready for review" message). */
+  multiHeader: string;
+  /** Per-MR line under the multi header. */
+  multiItem: string;
+  /** How often the server sweeps the board and resolves missing Slack refs, in minutes.
+      Set to 0 to disable the sweeper (client can still resolve on-demand). */
+  autoResolveIntervalMinutes: number;
+}
+
+const DEFAULT_SLACK: SlackConfig = {
+  channel: "code-review",
+  singleTemplate: "{title}: {url}",
+  multiHeader: "{count} MR's ready for review :pray:",
+  multiItem: "- {title}: {url}",
+  autoResolveIntervalMinutes: 15,
+};
 
 export const CONFIG_PATH = join(import.meta.dir, "..", "config.json");
 const RT_SECRETS_PATH = join(homedir(), ".rt", "secrets.json");
@@ -71,6 +109,24 @@ export function parseConfig(raw: string): BoardConfig {
   if (cfg.reviewsWorkspace !== undefined && typeof cfg.reviewsWorkspace !== "string") {
     throw new Error(`config.json "reviewsWorkspace" must be a string`);
   }
+  if (cfg.respondCwd !== undefined && typeof cfg.respondCwd !== "string") {
+    throw new Error(`config.json "respondCwd" must be a string (absolute path)`);
+  }
+  if (cfg.respondsWorkspace !== undefined && typeof cfg.respondsWorkspace !== "string") {
+    throw new Error(`config.json "respondsWorkspace" must be a string`);
+  }
+  if (cfg.doctorCwd !== undefined && typeof cfg.doctorCwd !== "string") {
+    throw new Error(`config.json "doctorCwd" must be a string (absolute path)`);
+  }
+  if (cfg.doctorsWorkspace !== undefined && typeof cfg.doctorsWorkspace !== "string") {
+    throw new Error(`config.json "doctorsWorkspace" must be a string`);
+  }
+  for (const key of ["reviewSkill", "respondSkill", "doctorSkill"] as const) {
+    if (cfg[key] !== undefined && typeof cfg[key] !== "string") {
+      throw new Error(`config.json "${key}" must be a string (a skill name)`);
+    }
+  }
+  const slack = parseSlack(cfg.slack);
   return {
     gitlabHost: cfg.gitlabHost!,
     projects: cfg.projects!,
@@ -83,6 +139,40 @@ export function parseConfig(raw: string): BoardConfig {
     port: cfg.port ?? 7930,
     reviewCwd: cfg.reviewCwd ?? "",
     reviewsWorkspace: cfg.reviewsWorkspace ?? "reviews",
+    respondCwd: cfg.respondCwd ?? "",
+    respondsWorkspace: cfg.respondsWorkspace ?? "responses",
+    doctorCwd: cfg.doctorCwd ?? "",
+    doctorsWorkspace: cfg.doctorsWorkspace ?? "doctors",
+    reviewSkill: cfg.reviewSkill ?? "",
+    respondSkill: cfg.respondSkill ?? "",
+    doctorSkill: cfg.doctorSkill ?? "",
+    slack,
+  };
+}
+
+function parseSlack(raw: unknown): SlackConfig {
+  if (raw === undefined || raw === null) return { ...DEFAULT_SLACK };
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error(`config.json "slack" must be an object`);
+  }
+  const s = raw as Partial<SlackConfig>;
+  for (const key of ["channel", "singleTemplate", "multiHeader", "multiItem"] as const) {
+    if (s[key] !== undefined && (typeof s[key] !== "string" || !s[key])) {
+      throw new Error(`config.json "slack.${key}" must be a non-empty string`);
+    }
+  }
+  if (
+    s.autoResolveIntervalMinutes !== undefined &&
+    (typeof s.autoResolveIntervalMinutes !== "number" || s.autoResolveIntervalMinutes < 0)
+  ) {
+    throw new Error(`config.json "slack.autoResolveIntervalMinutes" must be a non-negative number`);
+  }
+  return {
+    channel: s.channel ?? DEFAULT_SLACK.channel,
+    singleTemplate: s.singleTemplate ?? DEFAULT_SLACK.singleTemplate,
+    multiHeader: s.multiHeader ?? DEFAULT_SLACK.multiHeader,
+    multiItem: s.multiItem ?? DEFAULT_SLACK.multiItem,
+    autoResolveIntervalMinutes: s.autoResolveIntervalMinutes ?? DEFAULT_SLACK.autoResolveIntervalMinutes,
   };
 }
 

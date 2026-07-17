@@ -1,7 +1,8 @@
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, rmSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, renameSync, mkdirSync, readdirSync, rmSync, existsSync } from "fs";
 import { join } from "path";
 
 export type ReviewStatus = "queued" | "reviewing" | "done" | "error";
+export type ReviewOutcome = "comment" | "approve";
 
 export interface ReviewState {
   mrUrl: string;
@@ -10,8 +11,17 @@ export interface ReviewState {
   message?: string;
   tabId?: string;
   workspaceId?: string;
+  /** The review's verdict, emitted by the skill on `done`. The board consumes
+      this and drops the matching reaction on the MR's slack message. */
+  outcome?: ReviewOutcome;
+  /** Claude Code session id, captured by the status CLI on any write. Lets the
+      board relaunch the same conversation via `claude --resume <sessionId>`. */
+  sessionId?: string;
   startedAt: number;
   updatedAt: number;
+  /** Whether the agent has written its full review markdown yet. Computed at
+      read time from the sibling report file; never persisted to the state JSON. */
+  reportReady?: boolean;
 }
 
 /** Per-review JSON files live here; the server owns naming, the agent just writes. */
@@ -23,6 +33,22 @@ const DAY_MS = 24 * 60 * 60_000;
 export function reviewFilePath(mrUrl: string, dir: string = REVIEW_DIR): string {
   const slug = mrUrl.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 200);
   return join(dir, `${slug}.json`);
+}
+
+/** Sibling markdown file holding the agent's full written review, derived from
+    the state file path so the server and the review agent resolve the same
+    location without passing it around. */
+export function reviewReportPath(statePath: string): string {
+  return statePath.replace(/\.json$/, "") + ".md";
+}
+
+/** The written review markdown for an MR, or null if the agent hasn't saved one. */
+export function readReviewReport(mrUrl: string, dir: string = REVIEW_DIR): string | null {
+  try {
+    return readFileSync(reviewReportPath(reviewFilePath(mrUrl, dir)), "utf8");
+  } catch {
+    return null;
+  }
 }
 
 /** Read-merge-write a review state file. First write stamps startedAt; every write stamps updatedAt. */
@@ -44,11 +70,15 @@ export function writeReviewState(
     message: patch.message ?? prev.message,
     tabId: patch.tabId ?? prev.tabId,
     workspaceId: patch.workspaceId ?? prev.workspaceId,
+    outcome: patch.outcome ?? prev.outcome,
+    sessionId: patch.sessionId ?? prev.sessionId,
     startedAt: prev.startedAt ?? now,
     updatedAt: now,
   };
   mkdirSync(join(path, ".."), { recursive: true });
-  writeFileSync(path, JSON.stringify(next, null, 2) + "\n");
+  const tmp = path + ".tmp";
+  writeFileSync(tmp, JSON.stringify(next, null, 2) + "\n");
+  renameSync(tmp, path);
   return next;
 }
 
@@ -73,7 +103,10 @@ export function readReviewStates(
       rmSync(path, { force: true });
       continue;
     }
-    if (state.mrUrl) out.set(state.mrUrl, state);
+    if (state.mrUrl) {
+      state.reportReady = existsSync(reviewReportPath(path));
+      out.set(state.mrUrl, state);
+    }
   }
   return out;
 }

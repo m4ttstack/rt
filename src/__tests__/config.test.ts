@@ -75,8 +75,8 @@ describe("parseConfig", () => {
   });
 
   test("reviewCwd and reviewsWorkspace pass through", () => {
-    const cfg = parseConfig(JSON.stringify({ ...base, reviewCwd: "/Users/matt/Documents/GitHub/acme/ron", reviewsWorkspace: "code review" }));
-    expect(cfg.reviewCwd).toBe("/Users/matt/Documents/GitHub/acme/ron");
+    const cfg = parseConfig(JSON.stringify({ ...base, reviewCwd: "/Users/matt/code/webapp", reviewsWorkspace: "code review" }));
+    expect(cfg.reviewCwd).toBe("/Users/matt/code/webapp");
     expect(cfg.reviewsWorkspace).toBe("code review");
   });
 

@@ -5,13 +5,22 @@ const TTL_MS = 60_000;
 /**
  * Single-snapshot stale-while-revalidate cache.
  *
- * Within TTL: serve the snapshot. Past TTL: serve the stale snapshot
- * immediately and kick exactly one background refresh (concurrent visitors
- * share it). A failed refresh keeps the last good data and stamps the error.
+ * Within TTL: serve the snapshot. Past TTL (or once markStale() flags a config
+ * change): serve the stale snapshot immediately and kick exactly one background
+ * refresh (concurrent visitors share it). A failed refresh keeps the last good
+ * data and stamps the error.
+ *
+ * Only invalidate() ever makes a reader wait, and only because the manual
+ * refresh asked to.
  */
 export class SnapshotCache {
   private snapshot: Snapshot | null = null;
   private inflight: Promise<Snapshot> | null = null;
+  /** Set by markStale(): the snapshot is known-outdated but still worth serving. */
+  private stale = false;
+  /** Bumped on every markStale(), so a refetch that started before a change can
+      be recognised as already-outdated when it lands. */
+  private generation = 0;
 
   constructor(
     private readonly fetchMRs: () => Promise<BoardMR[]>,
@@ -19,13 +28,28 @@ export class SnapshotCache {
     private readonly ttlMs: number = TTL_MS,
   ) {}
 
-  /** Drop the cached snapshot so the next get() refetches from scratch. */
+  /**
+   * Drop the cached snapshot so the next get() refetches from scratch — and
+   * blocks until it lands. For "I'll wait for fresh data" (the manual refresh).
+   * To pick up a config change, prefer markStale(): dropping the snapshot leaves
+   * readers with nothing to serve, turning a refetch into a stall for everyone.
+   */
   invalidate(): void {
     this.snapshot = null;
   }
 
+  /**
+   * Force the next get() to revalidate while still serving the current snapshot.
+   * Config changed: the data is outdated, but stale data beats making every
+   * reader wait out a full refetch.
+   */
+  markStale(): void {
+    this.stale = true;
+    this.generation++;
+  }
+
   async get(): Promise<Snapshot> {
-    if (this.snapshot && this.now() - this.snapshot.fetchedAt < this.ttlMs) {
+    if (!this.stale && this.snapshot && this.now() - this.snapshot.fetchedAt < this.ttlMs) {
       return this.snapshot;
     }
     const refresh = this.refresh();
@@ -39,20 +63,25 @@ export class SnapshotCache {
 
   private refresh(): Promise<Snapshot> {
     if (this.inflight) return this.inflight;
+    // A markStale() landing mid-fetch means this fetch read the pre-change
+    // config, so its result can't clear the flag — the next get() starts a
+    // new fetch rather than trusting data that's already outdated.
+    const gen = this.generation;
+    const settle = (snapshot: Snapshot): Snapshot => {
+      this.snapshot = snapshot;
+      if (gen === this.generation) this.stale = false;
+      return snapshot;
+    };
     this.inflight = this.fetchMRs()
-      .then((mrs) => {
-        this.snapshot = { mrs, fetchedAt: this.now(), fetchError: null };
-        return this.snapshot;
-      })
+      .then((mrs) => settle({ mrs, fetchedAt: this.now(), fetchError: null }))
       .catch((err) => {
         const message = err instanceof Error ? err.message : String(err);
         console.error(`refresh failed: ${message}`);
-        if (this.snapshot) {
-          this.snapshot = { ...this.snapshot, fetchError: message };
-          return this.snapshot;
-        }
-        this.snapshot = { mrs: [], fetchedAt: this.now(), fetchError: message };
-        return this.snapshot;
+        return settle(
+          this.snapshot
+            ? { ...this.snapshot, fetchError: message }
+            : { mrs: [], fetchedAt: this.now(), fetchError: message },
+        );
       })
       .finally(() => {
         this.inflight = null;

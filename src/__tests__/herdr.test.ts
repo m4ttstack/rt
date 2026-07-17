@@ -42,13 +42,28 @@ describe("parsers", () => {
 });
 
 describe("command builders", () => {
-  test("reviewPrompt is the slash command with args", () => {
-    expect(reviewPrompt("https://x/mr/1", "/s/1.json"))
-      .toBe("/mattstack:mr-board-review https://x/mr/1 --state /s/1.json");
+  test("reviewPrompt injects status-bin, report, skill and channel flags", () => {
+    expect(
+      reviewPrompt({
+        mrUrl: "https://x/mr/1",
+        statePath: "/s/1.json",
+        statusBin: "/b/review-status.ts",
+        reportPath: "/s/1.md",
+        skill: "myteam:review",
+        channel: "code-review",
+      }),
+    ).toBe(
+      "/mr-board:review https://x/mr/1 --state /s/1.json --status-bin /b/review-status.ts --report /s/1.md --skill myteam:review --channel code-review",
+    );
+  });
+  test("reviewPrompt omits skill/channel flags when unconfigured", () => {
+    expect(
+      reviewPrompt({ mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: "/b/review-status.ts", reportPath: "/s/1.md" }),
+    ).toBe("/mr-board:review https://x/mr/1 --state /s/1.json --status-bin /b/review-status.ts --report /s/1.md");
   });
   test("buildPaneCommand cds then launches claude with a single-quoted prompt", () => {
-    const cmd = buildPaneCommand("/repo dir", "https://x/mr/1", "/s/1.json");
-    expect(cmd).toBe("cd '/repo dir' && claude '/mattstack:mr-board-review https://x/mr/1 --state /s/1.json'");
+    const cmd = buildPaneCommand("/repo dir", "/mr-board:review https://x/mr/1 --state /s/1.json");
+    expect(cmd).toBe("cd '/repo dir' && claude '/mr-board:review https://x/mr/1 --state /s/1.json'");
   });
 });
 
@@ -73,7 +88,8 @@ describe("launchReview", () => {
     // The pane runs the review command.
     const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
     expect(runCall?.[2]).toBe("w40:p7");
-    expect(runCall?.[3]).toContain("claude '/mattstack:mr-board-review https://x/mr/1 --state /s/1.json'");
+    expect(runCall?.[3]).toContain("claude '/mr-board:review https://x/mr/1 --state /s/1.json");
+    expect(runCall?.[3]).toContain("bin/review-status.ts --report /s/1.md'");
   });
 
   test("creates the reviews workspace when absent", async () => {
