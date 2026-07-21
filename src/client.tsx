@@ -1,12 +1,13 @@
 import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
+import { Sprite } from "spritr/react";
 import { extractTicketId, ticketUrl } from "./ticket.ts";
 import type { BoardMR } from "./data.ts";
 import { hasChangesRequested } from "./data.ts";
 import { getReviewDisplayState } from "@workforge/glance-sdk";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { filterByMember, sortMRs, groupMRs, parseViewState, serializeViewState, GROUP_KEYS, SORT_KEYS } from "./view.ts";
+import { filterByMember, sortMRs, groupMRs, parseViewState, serializeViewState, commentDot, GROUP_KEYS, SORT_KEYS } from "./view.ts";
 import type { GroupKey, SortKey, ViewState } from "./view.ts";
 import { renderMr, renderMulti, type MrFacts } from "./template.ts";
 
@@ -151,79 +152,6 @@ function Segmented<T extends string>({
         </button>
       ))}
     </span>
-  );
-}
-
-// ── pixel sprite avatar ────────────────────────────────────────────────────
-
-/** FNV-1a string hash → 32-bit seed. */
-function hashStr(s: string): number {
-  let h = 0x811c9dc5;
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 0x01000193);
-  }
-  return h >>> 0;
-}
-
-const SPRITE_COLORS = ["--accent", "--green", "--amber", "--purple", "--cyan", "--red"];
-
-/** Hand-designed 8×8 creatures (one byte per row, MSB = left pixel).
-    Curated so every user gets something that reads as a sprite, not noise;
-    each is left-right symmetric so it looks deliberate, not random. */
-const SPRITES: number[][] = [
-  // classic invader
-  [0b00011000, 0b00111100, 0b01111110, 0b11011011, 0b11111111, 0b00100100, 0b01011010, 0b10100101],
-  // crab
-  [0b00100100, 0b01111110, 0b11011011, 0b11111111, 0b11111111, 0b01100110, 0b00100100, 0b01000010],
-  // ghost
-  [0b00111100, 0b01111110, 0b11011011, 0b11111111, 0b11111111, 0b11111111, 0b11111111, 0b10100101],
-  // smiley
-  [0b00111100, 0b01000010, 0b10100101, 0b10000001, 0b10100101, 0b10011001, 0b01000010, 0b00111100],
-  // mech
-  [0b00011000, 0b00011000, 0b01111110, 0b11111111, 0b11111111, 0b01100110, 0b01100110, 0b11100111],
-  // alien
-  [0b01000010, 0b00100100, 0b01111110, 0b11011011, 0b11111111, 0b10100101, 0b00100100, 0b01000010],
-  // robot
-  [0b11100111, 0b00111100, 0b01111110, 0b11011011, 0b11111111, 0b11011011, 0b01111110, 0b01100110],
-  // cat
-  [0b10000001, 0b11000011, 0b11111111, 0b11011011, 0b11111111, 0b11111111, 0b11111111, 0b10100101],
-  // skull
-  [0b00111100, 0b01111110, 0b11111111, 0b11011011, 0b11111111, 0b01111110, 0b01011010, 0b00100100],
-  // beetle
-  [0b10011001, 0b01111110, 0b11111111, 0b11011011, 0b11111111, 0b11111111, 0b01111110, 0b10100101],
-  // owl
-  [0b11000011, 0b11111111, 0b11011011, 0b11111111, 0b01111110, 0b00111100, 0b00011000, 0b00100100],
-  // flower
-  [0b00100100, 0b01111110, 0b11111111, 0b11100111, 0b11111111, 0b01111110, 0b00011000, 0b00011000],
-  // gem
-  [0b00011000, 0b00111100, 0b01111110, 0b11111111, 0b11111111, 0b01111110, 0b00111100, 0b00011000],
-  // heart
-  [0b01100110, 0b11111111, 0b11111111, 0b11111111, 0b01111110, 0b01111110, 0b00111100, 0b00011000],
-  // mushroom
-  [0b00111100, 0b01111110, 0b11111111, 0b11111111, 0b01011010, 0b00011000, 0b00011000, 0b00111100],
-  // amoeba
-  [0b00100100, 0b01011010, 0b11111111, 0b10111101, 0b11111111, 0b01011010, 0b10100101, 0b01000010],
-];
-
-/** Deterministic per-username creature: the hash picks one of the designed
-    sprites and its color. Same user, same sprite, forever. */
-function OwnerSprite({ username }: { username: string }) {
-  const seed = hashStr(username);
-  const sprite = SPRITES[seed % SPRITES.length]!;
-  const color = SPRITE_COLORS[(seed >>> 4) % SPRITE_COLORS.length]!;
-  const rects: React.ReactNode[] = [];
-  sprite.forEach((row, y) => {
-    for (let x = 0; x < 8; x++) {
-      if (row & (0x80 >> x)) {
-        rects.push(<rect key={`${x},${y}`} x={x} y={y} width="1" height="1" fill={`var(${color})`} />);
-      }
-    }
-  });
-  return (
-    <svg className="tui-avatar" viewBox="-1 -1 10 10" shapeRendering="crispEdges" aria-hidden>
-      {rects}
-    </svg>
   );
 }
 
@@ -504,11 +432,18 @@ const SLACK_ICON = (
   </svg>
 );
 
-/** The review menu item's label reflects current review state. */
-function reviewItemLabel(status?: ReviewStatus): string {
-  if (!status || status === "error") return "launch review";
-  if (status === "done") return "re-review";
-  return "focus review tab"; // queued / reviewing
+/** The review launch items for a row, by current review state. `re-review` is
+    available whenever a review isn't actively running — even with no prior board
+    review (it degrades to a generic re-review) — so it covers MRs a human reviewed
+    outside the board. A live review collapses to a single "focus review tab". */
+function reviewMenuItems(status?: ReviewStatus): Array<{ kind: "launch" | "re-review"; label: string }> {
+  if (status === "queued" || status === "reviewing") return [{ kind: "launch", label: "focus review tab" }];
+  if (status === "done") return [{ kind: "re-review", label: "re-review" }];
+  // none | error: offer a cold first review and the re-review path side by side.
+  return [
+    { kind: "launch", label: "launch review" },
+    { kind: "re-review", label: "re-review" },
+  ];
 }
 
 function respondItemLabel(status?: RespondStatus): string {
@@ -560,6 +495,7 @@ function RowMenu({
   slackEnabled,
   onClose,
   onLaunch,
+  onReReview,
   onOpenReview,
   onCopy,
   onResolveSlack,
@@ -577,6 +513,7 @@ function RowMenu({
   slackEnabled: boolean;
   onClose: () => void;
   onLaunch: (mr: BoardMR) => void;
+  onReReview: (mr: BoardMR) => void;
   onOpenReview: (mr: BoardMRWithReview) => void;
   onCopy: (mr: BoardMR) => void;
   onResolveSlack: (mr: BoardMR) => void;
@@ -644,13 +581,14 @@ function RowMenu({
     <div ref={ref} className="tui-menu" style={{ left, top }} role="menu" aria-label={`actions for !${mr.iid}`}>
       <div className="tui-menu-label">!{mr.iid}</div>
 
-      {local && (
+      {local && reviewMenuItems(mrx.review?.status).map((item) => (
         <MenuItem
-          label={reviewItemLabel(mrx.review?.status)}
+          key={item.kind}
+          label={item.label}
           hint="herdr"
-          onClick={run(() => onLaunch(mr))}
+          onClick={run(() => (item.kind === "re-review" ? onReReview(mr) : onLaunch(mr)))}
         />
-      )}
+      ))}
       {local && mrx.review?.sessionId && (
         <MenuItem
           label="resume review"
@@ -871,9 +809,11 @@ const THREAD_LABEL: Record<ThreadStatus, string> = {
   awaiting: "awaiting author",
 };
 
-/** The "N comments" label; clicking it opens a drawer with the full threads. */
+/** The "N comments" label; clicking it opens a drawer with the full threads. A
+    dot beside it hints whether the author has acted (see `commentDot`). */
 function CommentsButton({ mr, label, cls }: { mr: BoardMR; label: string; cls: string }) {
   const [open, setOpen] = useState(false);
+  const dot = commentDot(mr.threadSummary);
   return (
     <>
       <button
@@ -886,6 +826,11 @@ function CommentsButton({ mr, label, cls }: { mr: BoardMR; label: string; cls: s
       >
         {label}
       </button>
+      {dot && (
+        <span className={`tui-comment-dot ${dot.cls}`} title={dot.title} aria-label={dot.title}>
+          ●
+        </span>
+      )}
       {open && <CommentsDrawer mr={mr} onClose={() => setOpen(false)} />}
     </>
   );
@@ -1104,7 +1049,7 @@ function AuthorTag({ mr }: { mr: BoardMR }) {
   const name = mr.author.name || mr.author.username;
   return (
     <span className="tui-author-tag" title={name}>
-      <OwnerSprite username={mr.author.username} /> {name}
+      <Sprite id={mr.author.username} from="invadr" palette="css-vars" className="tui-avatar" /> {name}
     </span>
   );
 }
@@ -1283,7 +1228,7 @@ function Sidebar({
           title={m.name ?? m.username}
         >
           <span className="tui-side-name">
-            <OwnerSprite username={m.username} /> {m.name ?? m.username}
+            <Sprite id={m.username} from="invadr" palette="css-vars" className="tui-avatar" /> {m.name ?? m.username}
           </span>
           <span className="tui-side-count">{m.count}</span>
         </button>
@@ -1329,7 +1274,7 @@ function SettingsModal({
                   checked={!m.hidden}
                   onChange={() => onToggle(m.username, !m.hidden)}
                 />
-                <OwnerSprite username={m.username} /> {m.name ?? m.username}
+                <Sprite id={m.username} from="invadr" palette="css-vars" className="tui-avatar" /> {m.name ?? m.username}
               </label>
               <span className="tui-modal-count" title={m.count === null ? "checked out — MR count not fetched" : undefined}>
                 {m.count ?? "—"}
@@ -1645,6 +1590,43 @@ function Board() {
             return next;
           });
           addToast(`couldn't launch review for !${mr.iid}`);
+        });
+    },
+    [addToast, load],
+  );
+
+  const handleReReview = useCallback(
+    (mr: BoardMR) => {
+      if (!mr.webUrl) return;
+      const url = mr.webUrl;
+      setOptimistic((o) => ({ ...o, [url]: { status: "queued" } }));
+      addToast(`re-reviewing !${mr.iid}…`);
+      fetch("/review", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mrUrl: url, iid: mr.iid, reReview: true }),
+      })
+        .then(async (r) => {
+          const body = await r.json().catch(() => ({}));
+          if (!r.ok) {
+            setOptimistic((o) => {
+              const next = { ...o };
+              delete next[url];
+              return next;
+            });
+            addToast(`couldn't re-review !${mr.iid} (${r.status})`);
+            return;
+          }
+          if (body?.focused) addToast(`review already running for !${mr.iid} — focused its tab`);
+          load();
+        })
+        .catch(() => {
+          setOptimistic((o) => {
+            const next = { ...o };
+            delete next[url];
+            return next;
+          });
+          addToast(`couldn't re-review !${mr.iid}`);
         });
     },
     [addToast, load],
@@ -2062,6 +2044,7 @@ function Board() {
           slackEnabled={data.slackEnabled}
           onClose={() => setRowMenu(null)}
           onLaunch={handleLaunch}
+          onReReview={handleReReview}
           onOpenReview={setReviewModal}
           onCopy={handleCopy}
           onResolveSlack={handleResolveSlack}
@@ -2070,10 +2053,9 @@ function Board() {
           onRespond={handleRespond}
           canRespond={rowMenu.mr.author.username === data.defaultMember}
           onDoctor={handleDoctor}
-          canDoctor={
-            rowMenu.mr.author.username === data.defaultMember &&
-            !!(rowMenu.mr.blockers?.pipelineFailing || rowMenu.mr.blockers?.hasConflicts)
-          }
+          // Doctor is mechanical repair (rebase / CI), so it's offered for anyone's
+          // MR that's actually broken — not gated to your own MRs the way respond is.
+          canDoctor={!!(rowMenu.mr.blockers?.pipelineFailing || rowMenu.mr.blockers?.hasConflicts)}
           onResumeReview={handleResumeReview}
           onResumeRespond={handleResumeRespond}
         />
