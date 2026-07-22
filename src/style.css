@@ -178,7 +178,7 @@ body {
 
 /* ── tokens ───────────────────────────────────────────────────────── */
 .tui-phrase { font-size: 0.7rem; flex-shrink: 0; white-space: nowrap; }
-.tui-meta { display: inline-flex; gap: 0.8rem; font-size: 0.76rem; flex-shrink: 0; white-space: nowrap; }
+.tui-meta { display: inline-flex; align-items: center; gap: 0.8rem; font-size: 0.76rem; flex-shrink: 0; white-space: nowrap; }
 .t-ok { color: var(--green); } .t-bad { color: var(--red); } .t-warn { color: var(--amber); }
 .t-cyan { color: var(--cyan); } .t-muted { color: var(--muted); } .t-accent { color: var(--accent); }
 .t-dim .t-ok, .t-dim .t-bad { opacity: 0.75; }
@@ -192,6 +192,35 @@ body {
   font-family: inherit;
   text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 2px;
 }
+/* Hint beside "N comments": has the author acted on the threads yet. */
+.tui-comment-dot {
+  margin-left: 0.35rem; font-size: 0.7rem; line-height: 1;
+  vertical-align: middle; cursor: default; flex-shrink: 0;
+}
+.tui-comment-dot.ok { color: var(--dot-ok); }
+.tui-comment-dot.warn { color: var(--dot-warn); }
+/* Persistent 💬 token in the row meta — opens the drawer even when the status
+   isn't a comment state (e.g. approved). Inherits the meta row's font size. */
+.tui-comment-token {
+  display: inline-flex; align-items: center; gap: 0.15rem;
+  background: none; border: none; padding: 0; cursor: pointer; line-height: 1;
+  font-family: inherit; font-size: inherit; color: var(--muted);
+  white-space: nowrap; flex-shrink: 0;
+}
+.tui-comment-token:hover { color: var(--fg); }
+
+/* General MR-comments section in the drawer (notes that aren't resolvable threads). */
+.tui-cd-comments-head {
+  font-size: 0.72rem; color: var(--muted); text-transform: uppercase;
+  letter-spacing: 0.04em; margin: 0.7rem 0 0.4rem;
+  border-top: 1px solid var(--border); padding-top: 0.7rem;
+}
+/* Each general MR comment sits in its own card, matching the thread cards above. */
+.tui-cd-comments .tui-cd-note {
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  margin-top: 0.7rem;
+}
+.tui-cd-comments .tui-cd-note + .tui-cd-note { border-top-color: var(--border); }
 .tui-comments-empty { color: var(--muted); }
 .tui-comment-icon { flex-shrink: 0; }
 .tui-cd-thread.resolved .tui-comment-icon { color: var(--dot-ok); }

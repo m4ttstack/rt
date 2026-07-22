@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { PullRequest } from "@workforge/glance-sdk";
-import { buildBoard, buildRoster, projectPathFromWebUrl, type BoardMR } from "../data.ts";
+import { buildBoard, buildRoster, projectPathFromWebUrl, mrKey, discussionFetchTargets, type BoardMR } from "../data.ts";
 import { SnapshotCache } from "../cache.ts";
 import type { BoardConfig } from "../config.ts";
 import { extractTicketId } from "../ticket.ts";
@@ -276,5 +276,31 @@ describe("SnapshotCache", () => {
 
     await cache.get(); // so #2 can't be trusted as current — refetch again
     expect(calls).toBe(3);
+  });
+});
+
+describe("discussionFetchTargets", () => {
+  const at = (repositoryId: string, iid: number, unresolvedThreads: number): BoardMR =>
+    ({ repositoryId, iid, unresolvedThreads } as unknown as BoardMR);
+
+  test("includes MRs with unresolved threads regardless of memory", () => {
+    const mrs = [at("gitlab:1", 10, 2), at("gitlab:1", 11, 0)];
+    const targets = discussionFetchTargets(mrs, new Set());
+    expect(targets.map((m) => m.iid)).toEqual([10]);
+  });
+
+  test("includes a now-resolved MR (0 unresolved) if it's remembered as commented", () => {
+    const mrs = [at("gitlab:1", 11, 0)];
+    const targets = discussionFetchTargets(mrs, new Set([mrKey(mrs[0]!)]));
+    expect(targets.map((m) => m.iid)).toEqual([11]);
+  });
+
+  test("excludes a 0-unresolved MR the board has never seen commented", () => {
+    const mrs = [at("gitlab:1", 12, 0)];
+    expect(discussionFetchTargets(mrs, new Set())).toEqual([]);
+  });
+
+  test("mrKey is repo-scoped so same iid in different repos doesn't collide", () => {
+    expect(mrKey(at("gitlab:1", 5, 0))).not.toBe(mrKey(at("gitlab:2", 5, 0)));
   });
 });

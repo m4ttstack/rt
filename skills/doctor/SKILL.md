@@ -2,8 +2,9 @@
 name: mr-board:doctor
 description: >-
   Thin, domain-agnostic wrapper the mr-board launches to auto-repair mechanical
-  breakage on ONE of your own MRs — merge conflicts and/or CI failures. Aims to
-  finish unattended. Emits lifecycle status to a state file the board reads, then
+  breakage on ONE MR — merge conflicts and/or CI failures, whether it's yours or
+  a teammate's. Aims to finish unattended. Emits lifecycle status to a state file
+  the board reads, then
   delegates the actual repair to the skill named by --skill. Invoked as
   "/mr-board:doctor <mrUrl> --state <path> --status-bin <path>
   [--skill <name>]". Not for manual use.
@@ -11,10 +12,11 @@ description: >-
 
 # mr-board doctor runner
 
-The board launched this pane because ONE of your MRs has mechanical breakage
-(CI red and/or merge conflicts). The human is not watching — finish unattended,
-escalating to `error` only when a human decision is genuinely required. This
-wrapper carries **no** repo- or CI-specific knowledge; the board injects it:
+The board launched this pane because an MR has mechanical breakage (CI red
+and/or merge conflicts) — it may be yours or a teammate's. The human is not
+watching — finish unattended, escalating to `error` only when a human decision
+is genuinely required. This wrapper carries **no** repo- or CI-specific
+knowledge; the board injects it:
 
 | flag | meaning |
 |------|---------|

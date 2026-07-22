@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { BoardMR } from "../data.ts";
-import { filterByMember, sortMRs, groupMRs } from "../view.ts";
+import { filterByMember, sortMRs, groupMRs, commentDot } from "../view.ts";
 
 function mr(overrides: Partial<BoardMR>): BoardMR {
   return {
@@ -25,6 +25,36 @@ describe("filterByMember", () => {
   });
   test("filters to one member", () => {
     expect(filterByMember(list, "bob").map((m) => m.iid)).toEqual([2]);
+  });
+});
+
+describe("commentDot", () => {
+  test("no summary → no dot (fetch skipped/failed)", () => {
+    expect(commentDot(undefined)).toBeNull();
+  });
+  test("nothing unresolved → no dot", () => {
+    expect(commentDot({ awaiting: 0, replied: 0, resolved: 3 })).toBeNull();
+  });
+  test("any thread awaiting the author → amber, action needed", () => {
+    expect(commentDot({ awaiting: 1, replied: 0, resolved: 0 })).toEqual({
+      cls: "warn",
+      title: "1 awaiting your reply",
+    });
+  });
+  test("amber title lists both awaiting and replied counts", () => {
+    expect(commentDot({ awaiting: 1, replied: 2, resolved: 0 })).toEqual({
+      cls: "warn",
+      title: "1 awaiting your reply · 2 you replied to",
+    });
+  });
+  test("all replied, none awaiting → green", () => {
+    expect(commentDot({ awaiting: 0, replied: 2, resolved: 0 })).toEqual({
+      cls: "ok",
+      title: "you've replied to every comment",
+    });
+  });
+  test("resolved threads never force amber", () => {
+    expect(commentDot({ awaiting: 0, replied: 1, resolved: 5 })?.cls).toBe("ok");
   });
 });
 
@@ -126,15 +156,48 @@ describe("groupMRs status", () => {
     expect(groups.map((g) => g.label)).toEqual(["approved"]);
   });
 
-  test("review-state order: changes requested, commented, needs review, approved", () => {
+  test("all comments resolved, not approved: 'comments resolved', not 'needs review'", () => {
+    const list = [
+      mr({ iid: 1, reviewerComments: 0, threadSummary: { awaiting: 0, replied: 0, resolved: 3 }, reviews: { required: 2, given: 0, isApproved: false } as any }),
+    ];
+    const groups = groupMRs(list, "status", [], NOW);
+    expect(groups.map((g) => g.label)).toEqual(["comments resolved"]);
+  });
+
+  test("no thread breakdown (never commented) stays 'needs review'", () => {
+    const list = [
+      mr({ iid: 1, reviewerComments: 0, reviews: { required: 2, given: 0, isApproved: false } as any }),
+    ];
+    const groups = groupMRs(list, "status", [], NOW);
+    expect(groups.map((g) => g.label)).toEqual(["needs review"]);
+  });
+
+  test("still some unresolved: stays 'commented', not 'comments resolved'", () => {
+    const list = [
+      mr({ iid: 1, reviewerComments: 2, threadSummary: { awaiting: 1, replied: 1, resolved: 4 }, reviews: { required: 2, given: 0, isApproved: false } as any }),
+    ];
+    const groups = groupMRs(list, "status", [], NOW);
+    expect(groups.map((g) => g.label)).toEqual(["commented"]);
+  });
+
+  test("approved outranks all-resolved: approved MR with resolved threads buckets approved", () => {
+    const list = [
+      mr({ iid: 1, reviewerComments: 0, threadSummary: { awaiting: 0, replied: 0, resolved: 2 }, reviews: { required: 2, given: 2, isApproved: true } as any }),
+    ];
+    const groups = groupMRs(list, "status", [], NOW);
+    expect(groups.map((g) => g.label)).toEqual(["approved"]);
+  });
+
+  test("review-state order: changes requested, commented, needs review, comments resolved, approved", () => {
     const list = [
       mr({ iid: 1, blockers: {} as any, reviews: { required: 2, given: 2, isApproved: true } as any }), // approved
       mr({ iid: 2, reviewerComments: 2, blockers: {} as any, reviews: { required: 2, given: 0, isApproved: false } as any }), // commented
       mr({ iid: 3, blockers: {} as any, reviews: { required: 2, given: 0, isApproved: false } as any }), // needs review
+      mr({ iid: 5, reviewerComments: 0, threadSummary: { awaiting: 0, replied: 0, resolved: 1 }, blockers: {} as any, reviews: { required: 2, given: 0, isApproved: false } as any }), // comments resolved
       mr({ iid: 4, blockers: {} as any, reviews: { required: 2, given: 0, isApproved: false, reviewers: [{ reviewState: "REQUESTED_CHANGES" }] } as any }), // changes requested
     ];
     const groups = groupMRs(list, "status", [], NOW);
-    expect(groups.map((g) => g.label)).toEqual(["changes requested", "commented", "needs review", "approved"]);
+    expect(groups.map((g) => g.label)).toEqual(["changes requested", "commented", "needs review", "comments resolved", "approved"]);
   });
 });
 

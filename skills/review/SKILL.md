@@ -6,7 +6,7 @@ description: >-
   delegates the actual review to the skill named by --skill (or reviews
   generically when none is given). Invoked as "/mr-board:review
   <mrUrl> --state <path> --status-bin <path> [--report <path>] [--skill <name>]
-  [--channel <name>]". Not for manual use.
+  [--channel <name>] [--re-review]". Not for manual use.
 ---
 
 # mr-board review runner
@@ -23,6 +23,7 @@ tool-specific knowledge — the board injects everything it needs as flags:
 | `--report <path>` | where to save the written review the board shows in a modal |
 | `--skill <name>` | the domain skill that owns the actual review (optional) |
 | `--channel <name>` | slack channel (no `#`) for the "looking" signal (optional) |
+| `--re-review` | this is a re-review of an already-reviewed MR (optional; see "Re-review mode") |
 
 Write status **only** by running the injected `--status-bin`:
 
@@ -38,12 +39,14 @@ bun run <status-bin> <state> <status> [message] [--outcome <comment|approve>]
    being looked at right now. See "Slack looking signal" below. Best-effort:
    if Slack tooling isn't available or there's no confident match, skip it and
    print a one-line note; never block the review on it.
-3. **Review.**
+3. **Review.** If `--re-review` was passed, read "Re-review mode" below first —
+   it changes how you frame this step (and what you hand the `--skill`).
    - **If `--skill` was given:** invoke that skill with the MR url and the
      `--report <path>`. It owns the actual review — resolving the MR/ticket,
      producing the draft, writing the report, and running its own posting
      gates. Follow it exactly. Do **not** post or approve anything until the
-     human answers its gates.
+     human answers its gates. Under `--re-review`, also pass it the re-review
+     framing (prior review + "check what the author addressed, else fall back").
    - **If no `--skill`:** review the MR yourself. Fetch the diff, read it
      critically, and produce findings (severity, `file:line`, what to change).
 4. **Save the review** to `--report <path>` as Markdown (a short summary line,
@@ -82,6 +85,33 @@ bun run <status-bin> <state> <status> [message] [--outcome <comment|approve>]
    MR/ticket, fetch failure, delegated skill failed):
    `bun run <status-bin> <state> error "<what went wrong>"`
    then stop and report to the human in the pane.
+
+## Re-review mode
+
+Only when `--re-review` was passed. This MR was reviewed before and the author
+should have responded to that feedback — replied to or resolved comment threads,
+and/or pushed new commits. Your job is to re-review with that in mind, not to
+start from a blank slate.
+
+1. **Load the prior review, if any.** If a file exists at `--report <path>`, it
+   holds the previous review — read it first so you know exactly what was flagged.
+   (If it's missing, there's no board record of a prior review; carry on with the
+   re-review framing anyway — a human may have reviewed outside the board.)
+2. **Check whether the author actually acted.** Look at the MR's discussions and
+   new commits since the last review. Did the author address the prior feedback?
+3. **Branch:**
+   - **Author acted** → re-review focused on that: for each prior comment, was it
+     adequately addressed? Are the new changes sound? Note anything still open.
+   - **No action found** (no threads addressed, no relevant new changes since the
+     last review) → **say so explicitly** in your report's summary line, e.g.
+     `"no author action found since last review"`, and **fall back to a normal
+     full review** of the whole MR so the pass is still useful.
+4. **Delegating to `--skill`?** Hand it the same framing: the prior review (from
+   `--report`), "check what the author addressed since the last review", and the
+   "flag + fall back to a full review if nothing was acted on" instruction.
+
+Everything else (status writes, saving the report to `--report`, the posting
+gates, the Slack signal) is unchanged — a re-review is still a review.
 
 ## Slack looking signal
 

@@ -23,7 +23,6 @@ export interface RespondState {
 
 export const RESPOND_DIR = join(import.meta.dir, "..", "state", "responds");
 
-const DAY_MS = 24 * 60 * 60_000;
 
 export function respondFilePath(mrUrl: string, dir: string = RESPOND_DIR): string {
   const slug = mrUrl.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 200);
@@ -59,11 +58,7 @@ export function writeRespondState(
   return next;
 }
 
-export function readRespondStates(
-  dir: string = RESPOND_DIR,
-  now: number = Date.now(),
-  maxAgeMs: number = DAY_MS,
-): Map<string, RespondState> {
+export function readRespondStates(dir: string = RESPOND_DIR): Map<string, RespondState> {
   const out = new Map<string, RespondState>();
   if (!existsSync(dir)) return out;
   for (const name of readdirSync(dir)) {
@@ -75,13 +70,26 @@ export function readRespondStates(
     } catch {
       continue;
     }
-    if (now - (state.updatedAt ?? 0) > maxAgeMs) {
-      rmSync(path, { force: true });
-      continue;
-    }
     if (state.mrUrl) out.set(state.mrUrl, state);
   }
   return out;
+}
+
+/** Drop respond states whose MR has left the board (kept while the MR is shown).
+    See pruneReviewStates for the rationale and the healthy-snapshot gate. */
+export function pruneRespondStates(keepUrls: ReadonlySet<string>, dir: string = RESPOND_DIR): void {
+  if (!existsSync(dir)) return;
+  for (const name of readdirSync(dir)) {
+    if (!name.endsWith(".json")) continue;
+    const path = join(dir, name);
+    let mrUrl: string | undefined;
+    try {
+      mrUrl = (JSON.parse(readFileSync(path, "utf8")) as RespondState).mrUrl;
+    } catch {
+      continue;
+    }
+    if (mrUrl && !keepUrls.has(mrUrl)) rmSync(path, { force: true });
+  }
 }
 
 /** Attach each MR's respond state (matched by webUrl) as a `respond` field. */

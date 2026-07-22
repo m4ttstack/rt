@@ -7,7 +7,7 @@ import { hasChangesRequested } from "./data.ts";
 import { getReviewDisplayState } from "@workforge/glance-sdk";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { filterByMember, sortMRs, groupMRs, parseViewState, serializeViewState, commentDot, GROUP_KEYS, SORT_KEYS } from "./view.ts";
+import { filterByMember, sortMRs, groupMRs, parseViewState, serializeViewState, commentDot, commentsAllResolved, GROUP_KEYS, SORT_KEYS } from "./view.ts";
 import type { GroupKey, SortKey, ViewState } from "./view.ts";
 import { renderMr, renderMulti, type MrFacts } from "./template.ts";
 
@@ -765,6 +765,9 @@ function statusPhrase(mr: BoardMR): { text: string; cls: string; comments?: bool
   if (mr.reviews.isApproved) return { text: "approved", cls: "t-ok" };
   // Comments without a formal verdict: someone left feedback to look at.
   if (comments > 0) return { text: `${comments} comment${comments === 1 ? "" : "s"}`, cls: "t-warn", comments: true };
+  // Reviewed, every thread resolved, not yet approved. Still clickable (`comments`)
+  // so you can open the drawer and read the resolved threads.
+  if (commentsAllResolved(mr)) return { text: "comments resolved", cls: "t-ok", comments: true };
   if (mr.reviews.required > 0 && mr.reviews.given > 0)
     return { text: `${mr.reviews.given}/${mr.reviews.required} approved`, cls: "t-warn" };
   return { text: "needs review", cls: "t-muted" };
@@ -802,6 +805,7 @@ function StatusPhrase({ mr }: { mr: BoardMR }) {
 type ThreadStatus = "resolved" | "replied" | "awaiting";
 type CommentNote = { id: number; name: string; username: string | null; at: string; body: string };
 type CommentThread = { status: ThreadStatus; notes: CommentNote[] };
+type GeneralComment = CommentNote;
 const THREAD_ICON: Record<ThreadStatus, string> = { resolved: "✓", replied: "↩", awaiting: "●" };
 const THREAD_LABEL: Record<ThreadStatus, string> = {
   resolved: "resolved",
@@ -809,44 +813,122 @@ const THREAD_LABEL: Record<ThreadStatus, string> = {
   awaiting: "awaiting author",
 };
 
-/** The "N comments" label; clicking it opens a drawer with the full threads. A
-    dot beside it hints whether the author has acted (see `commentDot`). */
-function CommentsButton({ mr, label, cls }: { mr: BoardMR; label: string; cls: string }) {
+/** Total comment activity on an MR — resolvable threads plus general MR comments —
+    for the 💬 token. Zero when the board has no breakdown or none exist. */
+function commentCount(mr: BoardMR): number {
+  const s = mr.threadSummary;
+  const threads = s ? s.awaiting + s.replied + s.resolved : 0;
+  return threads + (mr.generalComments ?? 0);
+}
+
+/** A button that opens the comments drawer. Shared by the "N comments" status
+    label and the persistent 💬 token, so both routes reach the same drawer. */
+function CommentsTrigger({
+  mr,
+  className,
+  title,
+  children,
+}: {
+  mr: BoardMR;
+  className: string;
+  title: string;
+  children: React.ReactNode;
+}) {
   const [open, setOpen] = useState(false);
-  const dot = commentDot(mr.threadSummary);
   return (
     <>
       <button
-        className={`tui-phrase tui-comments-btn ${cls}`}
+        className={className}
+        title={title}
         onClick={(e) => {
           e.stopPropagation();
           setOpen(true);
         }}
-        title="view comment threads"
       >
-        {label}
+        {children}
       </button>
-      {dot && (
-        <span className={`tui-comment-dot ${dot.cls}`} title={dot.title} aria-label={dot.title}>
-          ●
-        </span>
-      )}
       {open && <CommentsDrawer mr={mr} onClose={() => setOpen(false)} />}
     </>
   );
 }
 
-/** Right-side drawer showing every comment thread on an MR in full: each
-    thread's status and every note (author, time, body). Lazily fetched. */
+/** The "N comments" / "comments resolved" status label; clicking it opens the
+    drawer. A dot beside it hints whether the author has acted (see `commentDot`). */
+function CommentsButton({ mr, label, cls }: { mr: BoardMR; label: string; cls: string }) {
+  const dot = commentDot(mr.threadSummary);
+  return (
+    <>
+      <CommentsTrigger mr={mr} className={`tui-phrase tui-comments-btn ${cls}`} title="view comment threads">
+        {label}
+      </CommentsTrigger>
+      {dot && (
+        <span className={`tui-comment-dot ${dot.cls}`} title={dot.title} aria-label={dot.title}>
+          ●
+        </span>
+      )}
+    </>
+  );
+}
+
+/** Persistent 💬 token in the row meta, shown whenever an MR has comment activity
+    even in states where the status phrase isn't the clickable comments label (e.g.
+    approved). Hidden when the status label already opens the drawer, to avoid two
+    entry points on the same row. */
+function CommentsToken({ mr }: { mr: BoardMR }) {
+  const n = commentCount(mr);
+  if (n === 0 || statusPhrase(mr).comments) return null;
+  return (
+    <CommentsTrigger mr={mr} className="tui-comment-token" title="view comments">
+      <span className="tui-comment-token-icon" aria-hidden>💬</span>
+      <span>{n}</span>
+    </CommentsTrigger>
+  );
+}
+
+/** One note in the drawer: author (highlighted when it's the MR author), a
+    timestamp that deep-links to the note in GitLab, and the markdown body. */
+function CommentNoteView({ mr, note, now }: { mr: BoardMR; note: CommentNote; now: number }) {
+  const isAuthor = note.username === mr.author.username;
+  return (
+    <div className="tui-cd-note">
+      <div className="tui-cd-note-head">
+        <span className={`tui-cd-note-author ${isAuthor ? "author" : "commenter"}`}>{note.name}</span>
+        <a
+          className="tui-cd-note-time"
+          href={mr.webUrl ? `${mr.webUrl}#note_${note.id}` : "#"}
+          target="_blank"
+          rel="noopener noreferrer"
+          title="open this comment in gitlab"
+        >
+          {ago(note.at, now)} ↗
+        </a>
+      </div>
+      <div className="tui-cd-note-body">
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{ a: ({ node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" /> }}
+        >
+          {note.body}
+        </ReactMarkdown>
+      </div>
+    </div>
+  );
+}
+
+/** Right-side drawer showing an MR's review threads (each with its status and
+    notes) plus a section for general MR comments — the Overview-tab notes that
+    aren't threads, so a later author comment isn't invisible. Lazily fetched. */
 function CommentsDrawer({ mr, onClose }: { mr: BoardMR; onClose: () => void }) {
-  const [threads, setThreads] = useState<CommentThread[] | null>(null);
+  const [data, setData] = useState<{ threads: CommentThread[]; comments: GeneralComment[] } | null>(null);
   const [failed, setFailed] = useState(false);
   const now = Date.now();
   useEffect(() => {
     const params = new URLSearchParams({ repo: mr.repositoryId, iid: String(mr.iid), author: mr.author.username });
     fetch(`/discussions?${params}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("bad status"))))
-      .then((d: { threads: CommentThread[] }) => setThreads(d.threads))
+      .then((d: { threads: CommentThread[]; comments?: GeneralComment[] }) =>
+        setData({ threads: d.threads, comments: d.comments ?? [] }),
+      )
       .catch(() => setFailed(true));
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);
@@ -885,59 +967,43 @@ function CommentsDrawer({ mr, onClose }: { mr: BoardMR; onClose: () => void }) {
         <div className="tui-cd-body">
           {failed ? (
             <p className="tui-comments-empty">couldn't load comments</p>
-          ) : !threads ? (
+          ) : !data ? (
             <p className="tui-comments-empty">loading…</p>
-          ) : threads.length === 0 ? (
-            <p className="tui-comments-empty">no comment threads</p>
+          ) : data.threads.length === 0 && data.comments.length === 0 ? (
+            <p className="tui-comments-empty">no comments</p>
           ) : (
-            threads.map((t, i) => (
-              <section key={i} className={`tui-cd-thread ${t.status}`}>
-                <div className="tui-cd-thread-status">
-                  <span>
-                    <span className="tui-comment-icon">{THREAD_ICON[t.status]}</span> {THREAD_LABEL[t.status]}
-                  </span>
-                  {mr.webUrl && t.notes[0] && (
-                    <a
-                      className="tui-cd-thread-open"
-                      href={`${mr.webUrl}#note_${t.notes[0].id}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      open ↗
-                    </a>
-                  )}
-                </div>
-                {t.notes.map((n) => {
-                  const isAuthor = n.username === mr.author.username;
-                  return (
-                    <div key={n.id} className="tui-cd-note">
-                      <div className="tui-cd-note-head">
-                        <span className={`tui-cd-note-author ${isAuthor ? "author" : "commenter"}`}>{n.name}</span>
-                        <a
-                          className="tui-cd-note-time"
-                          href={mr.webUrl ? `${mr.webUrl}#note_${n.id}` : "#"}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title="open this comment in gitlab"
-                        >
-                          {ago(n.at, now)} ↗
-                        </a>
-                      </div>
-                      <div className="tui-cd-note-body">
-                        <ReactMarkdown
-                          remarkPlugins={[remarkGfm]}
-                          components={{
-                            a: ({ node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" />,
-                          }}
-                        >
-                          {n.body}
-                        </ReactMarkdown>
-                      </div>
-                    </div>
-                  );
-                })}
-              </section>
-            ))
+            <>
+              {data.threads.map((t, i) => (
+                <section key={i} className={`tui-cd-thread ${t.status}`}>
+                  <div className="tui-cd-thread-status">
+                    <span>
+                      <span className="tui-comment-icon">{THREAD_ICON[t.status]}</span> {THREAD_LABEL[t.status]}
+                    </span>
+                    {mr.webUrl && t.notes[0] && (
+                      <a
+                        className="tui-cd-thread-open"
+                        href={`${mr.webUrl}#note_${t.notes[0].id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        open ↗
+                      </a>
+                    )}
+                  </div>
+                  {t.notes.map((n) => (
+                    <CommentNoteView key={n.id} mr={mr} note={n} now={now} />
+                  ))}
+                </section>
+              ))}
+              {data.comments.length > 0 && (
+                <section className="tui-cd-comments">
+                  <div className="tui-cd-comments-head">MR comments</div>
+                  {data.comments.map((c) => (
+                    <CommentNoteView key={c.id} mr={mr} note={c} now={now} />
+                  ))}
+                </section>
+              )}
+            </>
           )}
         </div>
       </div>
@@ -953,6 +1019,7 @@ function MetaTokens({ mr, now }: { mr: BoardMR; now: number }) {
           <span className="t-ok">+{mr.diff.additions}</span> <span className="t-bad">−{mr.diff.deletions}</span>
         </span>
       )}
+      <CommentsToken mr={mr} />
       <span className="t-muted" title="last updated">{ago(mr.updatedAt, now)}</span>
     </span>
   );

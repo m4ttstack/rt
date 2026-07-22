@@ -17,6 +17,13 @@ describe("parseConfig", () => {
     expect(cfg.ticketPrefixes).toEqual([]);
   });
 
+  test("botUsernames default to empty, trim, and reject non-string entries", () => {
+    expect(parseConfig(JSON.stringify(base)).botUsernames).toEqual([]);
+    expect(parseConfig(JSON.stringify({ ...base, botUsernames: [" Mr. MR ", "x-bot"] })).botUsernames).toEqual(["Mr. MR", "x-bot"]);
+    expect(() => parseConfig(JSON.stringify({ ...base, botUsernames: "Mr. MR" }))).toThrow(/botUsernames/);
+    expect(() => parseConfig(JSON.stringify({ ...base, botUsernames: [""] }))).toThrow(/botUsernames/);
+  });
+
   test("ticketPrefixes are uppercased and trimmed; rejects non-string entries", () => {
     expect(parseConfig(JSON.stringify({ ...base, ticketPrefixes: ["cv", " int "] })).ticketPrefixes).toEqual(["CV", "INT"]);
     expect(() => parseConfig(JSON.stringify({ ...base, ticketPrefixes: "CV" }))).toThrow(/ticketPrefixes/);

@@ -8,6 +8,7 @@
   "defaultMember": "your-gitlab-username",
   "title": "MR Board",
   "port": 7930,
+  "botUsernames": ["some-integration-bot"],
   "slack": {
     "channel": "your-review-channel",
     "singleTemplate": "{title}: {url}",

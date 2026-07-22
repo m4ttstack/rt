@@ -43,6 +43,23 @@ export function parseTabCreate(json: string): { tabId: string; paneId: string; w
   }
 }
 
+/** Tabs from `herdr tab list`, for label-based dedup. */
+export function parseTabList(json: string): Array<{ tabId: string; label: string; workspaceId: string }> {
+  try {
+    const tabs = JSON.parse(json).result?.tabs;
+    if (!Array.isArray(tabs)) return [];
+    return tabs
+      .map((t: { tab_id?: string; label?: string; workspace_id?: string }) => ({
+        tabId: t?.tab_id ?? "",
+        label: t?.label ?? "",
+        workspaceId: t?.workspace_id ?? "",
+      }))
+      .filter((t) => t.tabId);
+  } catch {
+    return [];
+  }
+}
+
 export function parseWorkspaceCreate(json: string): { workspaceId: string; tabId: string; paneId: string } | null {
   try {
     const r = JSON.parse(json).result;
@@ -77,6 +94,10 @@ export interface SkillPromptOpts {
   reportPath?: string;
   /** Review only: slack channel (no #) for the "looking" 👀 signal. */
   channel?: string;
+  /** Review only: this is a re-review of an already-reviewed MR. The wrapper
+      reads any prior review at reportPath, frames the pass as a re-review, and
+      falls back to a normal review if the author hasn't acted on feedback. */
+  reReview?: boolean;
 }
 
 /** Build the slash-command a launched herdr pane runs. The board injects every
@@ -87,6 +108,7 @@ function buildSkillPrompt(wrapper: string, o: SkillPromptOpts): string {
   if (o.reportPath) parts.push("--report", o.reportPath);
   if (o.skill) parts.push("--skill", o.skill);
   if (o.channel) parts.push("--channel", o.channel);
+  if (o.reReview) parts.push("--re-review");
   return parts.join(" ");
 }
 
@@ -107,10 +129,31 @@ export function buildPaneCommand(cwd: string, prompt: string): string {
   return `cd ${shellSingleQuote(cwd)} && claude ${shellSingleQuote(prompt)}`;
 }
 
-/** Shell command that cd's into cwd and resumes an existing claude session --
-    no prompt argument, so claude drops the user into the interactive continuation. */
-export function buildResumePaneCommand(cwd: string, sessionId: string): string {
-  return `cd ${shellSingleQuote(cwd)} && claude --resume ${shellSingleQuote(sessionId)}`;
+/** Shell command that cd's into cwd and resumes an existing claude session. With
+    no prompt, claude drops the user into the interactive continuation; with one,
+    claude resumes and sends it as the first message (used by re-review). */
+export function buildResumePaneCommand(cwd: string, sessionId: string, prompt?: string): string {
+  const base = `cd ${shellSingleQuote(cwd)} && claude --resume ${shellSingleQuote(sessionId)}`;
+  return prompt ? `${base} ${shellSingleQuote(prompt)}` : base;
+}
+
+/** Directive sent into a resumed review session to re-review after the author
+    responded. The session already holds the prior review, so this points it at
+    the new activity and tells it to fall back to a full review if the author
+    hasn't acted on any feedback. */
+export function reReviewResumePrompt(iid: number): string {
+  return [
+    `This is a RE-REVIEW of !${iid}, which you already reviewed.`,
+    `The author should have responded to your feedback since then — replied to or`,
+    `resolved comment threads, and/or pushed new commits. First check whether the`,
+    `author actually acted on your prior feedback. If they did, re-review: for each`,
+    `comment you raised, was it adequately addressed, and are the new changes sound?`,
+    `If NO action has been taken on your feedback since your last review, say so`,
+    `explicitly ("no author action found since last review") and fall back to a`,
+    `normal full review of the MR. Emit status via the status-bin exactly as before`,
+    `(reviewing now, done with the human's chosen outcome at the end), and follow the`,
+    `same posting gates — do not approve or post on your own.`,
+  ].join(" ");
 }
 
 export interface LaunchPaneOpts {
@@ -123,6 +166,18 @@ export interface LaunchPaneOpts {
   skill?: string;
   /** Review only: slack channel (no #) for the "looking" 👀 signal. */
   channel?: string;
+  /** Review only: launch this review with the re-review framing (see reviewPrompt). */
+  reReview?: boolean;
+  /** The MR author, shown in the tab label beside the id (a display name like
+      "Grace Hopper", or the username). Omitted when the caller doesn't have it. */
+  author?: string;
+}
+
+/** Tab label for an MR pane: the MR id, the author beside it when known, and an
+    optional leading glyph (↺ resume, ⟲ re-review) that keeps pane kinds distinct. */
+export function mrTabLabel(iid: number, author?: string, prefix?: string): string {
+  const core = author ? `!${iid} ${author}` : `!${iid}`;
+  return prefix ? `${prefix} ${core}` : core;
 }
 
 /** Ensure the named workspace exists, open a labelled tab in it, and run
@@ -135,11 +190,26 @@ async function launchInWorkspace(
   tabLabel: string,
   runner: HerdrRunner,
 ): Promise<{ tabId: string; workspaceId: string }> {
-  let workspaceId = findWorkspaceIdByLabel(await runner(["workspace", "list"]), opts.workspaceLabel);
+  const workspaceId = findWorkspaceIdByLabel(await runner(["workspace", "list"]), opts.workspaceLabel);
   if (!workspaceId) {
+    // A freshly created workspace already comes with an initial tab + pane. Reuse
+    // that tab (rename it, run in its pane) instead of opening a second one, which
+    // would leave the blank initial tab orphaned beside the work tab.
     const created = parseWorkspaceCreate(await runner(["workspace", "create", "--label", opts.workspaceLabel, "--no-focus"]));
     if (!created) throw new Error(`herdr: could not create ${workspaceKind} workspace`);
-    workspaceId = created.workspaceId;
+    await runner(["tab", "rename", created.tabId, tabLabel]);
+    await runner(["pane", "run", created.paneId, paneCommand]);
+    return { tabId: created.tabId, workspaceId: created.workspaceId };
+  }
+  // Dedup: if a tab with this exact label is already open in the workspace, focus
+  // it instead of opening a duplicate (re-clicking resume/review/etc.). We do NOT
+  // re-run the pane command — the existing tab already holds that work.
+  const openTab = parseTabList(await runner(["tab", "list", "--workspace", workspaceId])).find(
+    (t) => t.workspaceId === workspaceId && t.label === tabLabel,
+  );
+  if (openTab) {
+    await runner(["tab", "focus", openTab.tabId]);
+    return { tabId: openTab.tabId, workspaceId };
   }
   const tab = parseTabCreate(await runner(["tab", "create", "--workspace", workspaceId, "--label", tabLabel, "--no-focus"]));
   if (!tab) throw new Error(`herdr: could not create ${workspaceKind} tab`);
@@ -155,8 +225,10 @@ export async function launchReview(opts: LaunchPaneOpts, runner: HerdrRunner = d
     reportPath: reviewReportPath(opts.statePath),
     skill: opts.skill,
     channel: opts.channel,
+    reReview: opts.reReview,
   });
-  return launchInWorkspace(opts, buildPaneCommand(opts.cwd, prompt), "review", `!${opts.iid}`, runner);
+  const tabLabel = mrTabLabel(opts.iid, opts.author, opts.reReview ? "⟲" : undefined);
+  return launchInWorkspace(opts, buildPaneCommand(opts.cwd, prompt), "review", tabLabel, runner);
 }
 
 /** Start the MR-response skill in a fresh herdr tab under the responses workspace. */
@@ -167,7 +239,7 @@ export async function launchRespond(opts: LaunchPaneOpts, runner: HerdrRunner = 
     statusBin: statusBinPath("respond"),
     skill: opts.skill,
   });
-  return launchInWorkspace(opts, buildPaneCommand(opts.cwd, prompt), "respond", `!${opts.iid}`, runner);
+  return launchInWorkspace(opts, buildPaneCommand(opts.cwd, prompt), "respond", mrTabLabel(opts.iid, opts.author), runner);
 }
 
 /** Start the MR-doctor skill in a fresh herdr tab under the doctors workspace. */
@@ -178,21 +250,23 @@ export async function launchDoctor(opts: LaunchPaneOpts, runner: HerdrRunner = d
     statusBin: statusBinPath("doctor"),
     skill: opts.skill,
   });
-  return launchInWorkspace(opts, buildPaneCommand(opts.cwd, prompt), "doctor", `!${opts.iid}`, runner);
+  return launchInWorkspace(opts, buildPaneCommand(opts.cwd, prompt), "doctor", mrTabLabel(opts.iid, opts.author), runner);
 }
 
-/** Resume an existing session in a new pane under the given workspace. The tab
-    is labelled with a leading `↺` so a resumed pane is visually distinct from a
-    fresh launch when the workspace has both. */
+/** Resume an existing session in a new pane under the given workspace. The tab is
+    labelled with a leading glyph (default `↺`) so a resumed pane is visually
+    distinct from a fresh launch when the workspace has both. An optional `prompt`
+    is sent as the first message (re-review uses this to direct the resumed
+    session); `tabPrefix` overrides the glyph (e.g. `⟲` for a re-review resume). */
 export async function launchResume(
-  opts: LaunchPaneOpts & { sessionId: string; workspaceKind: string },
+  opts: LaunchPaneOpts & { sessionId: string; workspaceKind: string; prompt?: string; tabPrefix?: string },
   runner: HerdrRunner = defaultRunner,
 ): Promise<{ tabId: string; workspaceId: string }> {
   return launchInWorkspace(
     opts,
-    buildResumePaneCommand(opts.cwd, opts.sessionId),
+    buildResumePaneCommand(opts.cwd, opts.sessionId, opts.prompt),
     opts.workspaceKind,
-    `↺ !${opts.iid}`,
+    mrTabLabel(opts.iid, opts.author, opts.tabPrefix ?? "↺"),
     runner,
   );
 }

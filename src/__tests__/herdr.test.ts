@@ -6,6 +6,9 @@ import {
   parseWorkspaceCreate,
   reviewPrompt,
   buildPaneCommand,
+  buildResumePaneCommand,
+  reReviewResumePrompt,
+  mrTabLabel,
   launchReview,
   type HerdrRunner,
 } from "../herdr.ts";
@@ -20,6 +23,12 @@ const TAB_CREATE = JSON.stringify({
   result: { type: "tab_created",
     tab: { tab_id: "w40:t3", workspace_id: "w40", label: "!4821" },
     root_pane: { pane_id: "w40:p7", tab_id: "w40:t3", workspace_id: "w40" } },
+});
+const TAB_LIST_WITH_DUP = JSON.stringify({
+  result: { type: "tab_list", tabs: [
+    { tab_id: "w40:t1", label: "1", workspace_id: "w40" },
+    { tab_id: "w40:t9", label: "!4821 Grace Hopper", workspace_id: "w40" },
+  ] },
 });
 const WS_CREATE = JSON.stringify({
   result: { type: "workspace_created",
@@ -65,6 +74,36 @@ describe("command builders", () => {
     const cmd = buildPaneCommand("/repo dir", "/mr-board:review https://x/mr/1 --state /s/1.json");
     expect(cmd).toBe("cd '/repo dir' && claude '/mr-board:review https://x/mr/1 --state /s/1.json'");
   });
+  test("reviewPrompt appends --re-review when re-reviewing", () => {
+    expect(
+      reviewPrompt({ mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: "/b/review-status.ts", reportPath: "/s/1.md", reReview: true }),
+    ).toBe("/mr-board:review https://x/mr/1 --state /s/1.json --status-bin /b/review-status.ts --report /s/1.md --re-review");
+  });
+  test("buildResumePaneCommand with no prompt drops into an interactive resume", () => {
+    expect(buildResumePaneCommand("/repo", "sess-1")).toBe("cd '/repo' && claude --resume 'sess-1'");
+  });
+  test("buildResumePaneCommand with a prompt resumes and sends it as the first message", () => {
+    expect(buildResumePaneCommand("/repo", "sess-1", "re-review please")).toBe(
+      "cd '/repo' && claude --resume 'sess-1' 're-review please'",
+    );
+  });
+  test("reReviewResumePrompt tells the session it's a re-review and to fall back", () => {
+    const p = reReviewResumePrompt(4821);
+    expect(p).toContain("RE-REVIEW of !4821");
+    expect(p).toContain("no author action found since last review");
+    expect(p).toContain("fall back to a");
+  });
+  test("mrTabLabel puts the author beside the id when known", () => {
+    expect(mrTabLabel(4821, "Grace Hopper")).toBe("!4821 Grace Hopper");
+  });
+  test("mrTabLabel is just the id when no author", () => {
+    expect(mrTabLabel(4821)).toBe("!4821");
+    expect(mrTabLabel(4821, undefined)).toBe("!4821");
+  });
+  test("mrTabLabel keeps the prefix glyph ahead of the id + author", () => {
+    expect(mrTabLabel(42, "Ada", "⟲")).toBe("⟲ !42 Ada");
+    expect(mrTabLabel(42, undefined, "↺")).toBe("↺ !42");
+  });
 });
 
 describe("launchReview", () => {
@@ -92,22 +131,63 @@ describe("launchReview", () => {
     expect(runCall?.[3]).toContain("bin/review-status.ts --report /s/1.md'");
   });
 
-  test("creates the reviews workspace when absent", async () => {
+  test("puts the MR author beside the id in the tab label when given", async () => {
+    const calls: string[][] = [];
+    const runner: HerdrRunner = async (args) => {
+      calls.push(args);
+      if (args[0] === "workspace" && args[1] === "list") return WS_LIST;
+      if (args[0] === "tab" && args[1] === "create") return TAB_CREATE;
+      return JSON.stringify({ result: { type: "ok" } });
+    };
+    await launchReview(
+      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "reviews", statePath: "/s/1.json", author: "Grace Hopper" },
+      runner,
+    );
+    expect(calls).toContainEqual(["tab", "create", "--workspace", "w40", "--label", "!4821 Grace Hopper", "--no-focus"]);
+  });
+
+  test("dedup: a tab with the same label already open is focused, not duplicated", async () => {
+    const calls: string[][] = [];
+    const runner: HerdrRunner = async (args) => {
+      calls.push(args);
+      if (args[0] === "workspace" && args[1] === "list") return WS_LIST;
+      if (args[0] === "tab" && args[1] === "list") return TAB_LIST_WITH_DUP;
+      return JSON.stringify({ result: { type: "ok" } });
+    };
+    const res = await launchReview(
+      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "reviews", statePath: "/s/1.json", author: "Grace Hopper" },
+      runner,
+    );
+    // Returns the existing tab, does not create a new one.
+    expect(res).toEqual({ tabId: "w40:t9", workspaceId: "w40" });
+    expect(calls.some((c) => c[0] === "tab" && c[1] === "create")).toBe(false);
+    expect(calls).toContainEqual(["tab", "focus", "w40:t9"]);
+    // And it does not re-run the pane command (would double-launch in the tab).
+    expect(calls.some((c) => c[0] === "pane" && c[1] === "run")).toBe(false);
+  });
+
+  test("creates the reviews workspace when absent, reusing its initial tab (no blank tab)", async () => {
     const calls: string[][] = [];
     const runner: HerdrRunner = async (args) => {
       calls.push(args);
       if (args[0] === "workspace" && args[1] === "list")
         return JSON.stringify({ result: { workspaces: [] } });
       if (args[0] === "workspace" && args[1] === "create") return WS_CREATE;
-      if (args[0] === "tab" && args[1] === "create")
-        return JSON.stringify({ result: { tab: { tab_id: "w41:t2", workspace_id: "w41" }, root_pane: { pane_id: "w41:p2" } } });
       return JSON.stringify({ result: { type: "ok" } });
     };
     const res = await launchReview(
       { mrUrl: "https://x/mr/2", iid: 42, cwd: "/repo", workspaceLabel: "reviews", statePath: "/s/2.json" },
       runner,
     );
-    expect(res.workspaceId).toBe("w41");
+    // Returns the workspace's initial tab/pane, not a second one.
+    expect(res).toEqual({ tabId: "w41:t1", workspaceId: "w41" });
     expect(calls).toContainEqual(["workspace", "create", "--label", "reviews", "--no-focus"]);
+    // No second tab is opened — the blank initial tab is reused, just renamed.
+    expect(calls.some((c) => c[0] === "tab" && c[1] === "create")).toBe(false);
+    expect(calls).toContainEqual(["tab", "rename", "w41:t1", "!42"]);
+    // The review command runs in the initial pane.
+    const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
+    expect(runCall?.[2]).toBe("w41:p1");
+    expect(runCall?.[3]).toContain("claude '/mr-board:review https://x/mr/2 --state /s/2.json");
   });
 });

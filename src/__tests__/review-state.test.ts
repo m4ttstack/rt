@@ -8,6 +8,7 @@ import {
   readReviewReport,
   writeReviewState,
   readReviewStates,
+  pruneReviewStates,
   parseReviewRequestBody,
   attachReviews,
 } from "../review-state.ts";
@@ -42,20 +43,37 @@ describe("writeReviewState", () => {
 });
 
 describe("readReviewStates", () => {
-  test("maps by mrUrl and prunes stale files", () => {
+  test("maps every state by mrUrl, regardless of age (no age pruning)", () => {
     writeReviewState(reviewFilePath(URL_A, dir), { mrUrl: URL_A, iid: 4821, status: "reviewing" }, 10_000);
-    // A stale file older than the max age is pruned and excluded.
-    const staleUrl = "https://gitlab.com/acme/webapp/-/merge_requests/1";
-    const stalePath = reviewFilePath(staleUrl, dir);
-    writeFileSync(stalePath, JSON.stringify({ mrUrl: staleUrl, iid: 1, status: "done", startedAt: 0, updatedAt: 0 }));
-    const map = readReviewStates(dir, 10_000, 5_000);
+    // An old file is NOT pruned on read — retention is by board membership now.
+    const oldUrl = "https://gitlab.com/acme/webapp/-/merge_requests/1";
+    const oldPath = reviewFilePath(oldUrl, dir);
+    writeFileSync(oldPath, JSON.stringify({ mrUrl: oldUrl, iid: 1, status: "done", startedAt: 0, updatedAt: 0 }));
+    const map = readReviewStates(dir);
     expect(map.get(URL_A)?.status).toBe("reviewing");
-    expect(map.has(staleUrl)).toBe(false);
-    expect(existsSync(stalePath)).toBe(false); // pruned from disk
+    expect(map.has(oldUrl)).toBe(true);
+    expect(existsSync(oldPath)).toBe(true); // still on disk
   });
 
   test("returns empty map when dir is missing", () => {
     expect(readReviewStates(join(dir, "nope")).size).toBe(0);
+  });
+});
+
+describe("pruneReviewStates", () => {
+  const OTHER = "https://gitlab.com/acme/webapp/-/merge_requests/1";
+  test("keeps states whose MR is on the board, deletes the rest (and their reports)", () => {
+    writeReviewState(reviewFilePath(URL_A, dir), { mrUrl: URL_A, iid: 4821, status: "done" });
+    writeFileSync(reviewReportPath(reviewFilePath(URL_A, dir)), "# review A");
+    writeReviewState(reviewFilePath(OTHER, dir), { mrUrl: OTHER, iid: 1, status: "done" });
+    writeFileSync(reviewReportPath(reviewFilePath(OTHER, dir)), "# review OTHER");
+
+    pruneReviewStates(new Set([URL_A]), dir); // only URL_A still on the board
+
+    expect(existsSync(reviewFilePath(URL_A, dir))).toBe(true);
+    expect(existsSync(reviewReportPath(reviewFilePath(URL_A, dir)))).toBe(true);
+    expect(existsSync(reviewFilePath(OTHER, dir))).toBe(false); // pruned
+    expect(existsSync(reviewReportPath(reviewFilePath(OTHER, dir)))).toBe(false); // report gone too
   });
 });
 
@@ -74,9 +92,9 @@ describe("review report", () => {
   test("readReviewStates flags reportReady when the sibling .md exists", () => {
     const p = reviewFilePath(URL_A, dir);
     writeReviewState(p, { mrUrl: URL_A, iid: 4821, status: "done" }, 10_000);
-    expect(readReviewStates(dir, 10_000).get(URL_A)?.reportReady).toBe(false);
+    expect(readReviewStates(dir).get(URL_A)?.reportReady).toBe(false);
     writeFileSync(reviewReportPath(p), "# Review");
-    expect(readReviewStates(dir, 10_000).get(URL_A)?.reportReady).toBe(true);
+    expect(readReviewStates(dir).get(URL_A)?.reportReady).toBe(true);
   });
 });
 

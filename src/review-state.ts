@@ -27,7 +27,6 @@ export interface ReviewState {
 /** Per-review JSON files live here; the server owns naming, the agent just writes. */
 export const REVIEW_DIR = join(import.meta.dir, "..", "state", "reviews");
 
-const DAY_MS = 24 * 60 * 60_000;
 
 /** Deterministic file path for an MR url, so a repeat launch resolves the same file. */
 export function reviewFilePath(mrUrl: string, dir: string = REVIEW_DIR): string {
@@ -82,12 +81,9 @@ export function writeReviewState(
   return next;
 }
 
-/** Read all review states, keyed by mrUrl. Files older than maxAgeMs are pruned from disk and skipped. */
-export function readReviewStates(
-  dir: string = REVIEW_DIR,
-  now: number = Date.now(),
-  maxAgeMs: number = DAY_MS,
-): Map<string, ReviewState> {
+/** Read all review states, keyed by mrUrl. Pruning is by board membership (see
+    pruneReviewStates), not age — a review persists as long as its MR is shown. */
+export function readReviewStates(dir: string = REVIEW_DIR): Map<string, ReviewState> {
   const out = new Map<string, ReviewState>();
   if (!existsSync(dir)) return out;
   for (const name of readdirSync(dir)) {
@@ -99,16 +95,35 @@ export function readReviewStates(
     } catch {
       continue;
     }
-    if (now - (state.updatedAt ?? 0) > maxAgeMs) {
-      rmSync(path, { force: true });
-      continue;
-    }
     if (state.mrUrl) {
       state.reportReady = existsSync(reviewReportPath(path));
       out.set(state.mrUrl, state);
     }
   }
   return out;
+}
+
+/** Delete review states (and their sibling `.md` reports) whose MR is no longer
+    on the board — so a review is kept exactly as long as its MR is shown, then
+    dropped once the MR merges/closes/goes stale. `keepUrls` is the current board
+    MR set; callers gate this on a healthy snapshot so a failed fetch can't wipe
+    live state. */
+export function pruneReviewStates(keepUrls: ReadonlySet<string>, dir: string = REVIEW_DIR): void {
+  if (!existsSync(dir)) return;
+  for (const name of readdirSync(dir)) {
+    if (!name.endsWith(".json")) continue;
+    const path = join(dir, name);
+    let mrUrl: string | undefined;
+    try {
+      mrUrl = (JSON.parse(readFileSync(path, "utf8")) as ReviewState).mrUrl;
+    } catch {
+      continue;
+    }
+    if (mrUrl && !keepUrls.has(mrUrl)) {
+      rmSync(path, { force: true });
+      rmSync(reviewReportPath(path), { force: true });
+    }
+  }
 }
 
 /** Attach each MR's review state (matched by webUrl) as a `review` field. Non-mutating. */

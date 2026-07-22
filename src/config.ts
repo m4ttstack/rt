@@ -47,6 +47,10 @@ export interface BoardConfig {
   respondSkill: string;
   /** Domain skill the doctor wrapper delegates to. Empty = generic. */
   doctorSkill: string;
+  /** Extra bot accounts whose general MR comments to hide (username or display
+      name, case-insensitive). Additive to the built-in heuristic — for named
+      integration bots that don't match a bot-username pattern. */
+  botUsernames: string[];
   slack: SlackConfig;
 }
 
@@ -126,6 +130,11 @@ export function parseConfig(raw: string): BoardConfig {
       throw new Error(`config.json "${key}" must be a string (a skill name)`);
     }
   }
+  if (cfg.botUsernames !== undefined) {
+    if (!Array.isArray(cfg.botUsernames) || cfg.botUsernames.some((b) => typeof b !== "string" || !b.trim())) {
+      throw new Error(`config.json "botUsernames" must be an array of non-empty strings`);
+    }
+  }
   const slack = parseSlack(cfg.slack);
   return {
     gitlabHost: cfg.gitlabHost!,
@@ -146,6 +155,7 @@ export function parseConfig(raw: string): BoardConfig {
     reviewSkill: cfg.reviewSkill ?? "",
     respondSkill: cfg.respondSkill ?? "",
     doctorSkill: cfg.doctorSkill ?? "",
+    botUsernames: (cfg.botUsernames ?? []).map((b) => b.trim()),
     slack,
   };
 }

@@ -21,7 +21,6 @@ export interface DoctorState {
 
 export const DOCTOR_DIR = join(import.meta.dir, "..", "state", "doctors");
 
-const DAY_MS = 24 * 60 * 60_000;
 
 export function doctorFilePath(mrUrl: string, dir: string = DOCTOR_DIR): string {
   const slug = mrUrl.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 200);
@@ -61,11 +60,7 @@ export function writeDoctorState(
   return next;
 }
 
-export function readDoctorStates(
-  dir: string = DOCTOR_DIR,
-  now: number = Date.now(),
-  maxAgeMs: number = DAY_MS,
-): Map<string, DoctorState> {
+export function readDoctorStates(dir: string = DOCTOR_DIR): Map<string, DoctorState> {
   const out = new Map<string, DoctorState>();
   if (!existsSync(dir)) return out;
   for (const name of readdirSync(dir)) {
@@ -77,13 +72,26 @@ export function readDoctorStates(
     } catch {
       continue;
     }
-    if (now - (state.updatedAt ?? 0) > maxAgeMs) {
-      rmSync(path, { force: true });
-      continue;
-    }
     if (state.mrUrl) out.set(state.mrUrl, state);
   }
   return out;
+}
+
+/** Drop doctor states whose MR has left the board (kept while the MR is shown).
+    See pruneReviewStates for the rationale and the healthy-snapshot gate. */
+export function pruneDoctorStates(keepUrls: ReadonlySet<string>, dir: string = DOCTOR_DIR): void {
+  if (!existsSync(dir)) return;
+  for (const name of readdirSync(dir)) {
+    if (!name.endsWith(".json")) continue;
+    const path = join(dir, name);
+    let mrUrl: string | undefined;
+    try {
+      mrUrl = (JSON.parse(readFileSync(path, "utf8")) as DoctorState).mrUrl;
+    } catch {
+      continue;
+    }
+    if (mrUrl && !keepUrls.has(mrUrl)) rmSync(path, { force: true });
+  }
 }
 
 export function attachDoctors<T extends { webUrl?: string | null }>(

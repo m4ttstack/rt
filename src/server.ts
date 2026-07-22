@@ -2,14 +2,14 @@ import { join, dirname, basename } from "path";
 import { readFileSync, watch } from "fs";
 import { GitLabProvider, type PullRequest } from "@workforge/glance-sdk";
 import { loadConfig, loadGitLabToken, loadSlackToken, saveMemberHidden, CONFIG_PATH } from "./config.ts";
-import { buildBoard, buildRoster, type BoardMR } from "./data.ts";
-import { summarizeThreads, unresolvedReviewerCount } from "./discussions.ts";
+import { buildBoard, buildRoster, mrKey, discussionFetchTargets, type BoardMR } from "./data.ts";
+import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } from "./discussions.ts";
 import { SnapshotCache } from "./cache.ts";
 import { isLocalRequest } from "./local.ts";
-import { readReviewStates, reviewFilePath, writeReviewState, parseReviewRequestBody, attachReviews, readReviewReport } from "./review-state.ts";
-import { readRespondStates, respondFilePath, writeRespondState, parseRespondRequestBody, attachResponds } from "./respond-state.ts";
-import { readDoctorStates, doctorFilePath, writeDoctorState, parseDoctorRequestBody, attachDoctors } from "./doctor-state.ts";
-import { launchReview, launchRespond, launchDoctor, launchResume, focusTab } from "./herdr.ts";
+import { readReviewStates, pruneReviewStates, reviewFilePath, writeReviewState, parseReviewRequestBody, attachReviews, readReviewReport } from "./review-state.ts";
+import { readRespondStates, pruneRespondStates, respondFilePath, writeRespondState, parseRespondRequestBody, attachResponds } from "./respond-state.ts";
+import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, parseDoctorRequestBody, attachDoctors } from "./doctor-state.ts";
+import { launchReview, launchRespond, launchDoctor, launchResume, focusTab, reReviewResumePrompt } from "./herdr.ts";
 import { readSlackRefs, attachSlack, resolveSlackRef, reactToMR, unreactFromMR, postToSlack, REVIEW_EMOJI } from "./slack.ts";
 import { renderMr, renderMulti, type MrFacts } from "./template.ts";
 
@@ -53,21 +53,47 @@ async function fetchTeamMRs(): Promise<PullRequest[]> {
   return [...byId.values()];
 }
 
+/** Author string for a herdr tab label: the display name, else the username. */
+function mrAuthorLabel(mr: BoardMR): string {
+  return mr.author.name ?? mr.author.username;
+}
+
 /**
- * Refine `reviewerComments` for MRs that have unresolved threads by fetching
- * their discussions and counting only threads a reviewer joined — so the
- * author's own solo threads don't read as "comments". Scoped to the commented
- * subset, paced, and best-effort (a failed fetch keeps the coarse fallback).
+ * MRs that have carried reviewer comments during this server instance's lifetime.
+ * In-memory on purpose: it's keyed to the running process, so a restart starts
+ * fresh (natural invalidation). We keep fetching these MRs' discussions even after
+ * their unresolved count hits 0, so an MR whose threads were all resolved shows
+ * "comments resolved" rather than dropping back to "needs review".
+ */
+const everCommented = new Set<string>();
+
+/**
+ * Refine `reviewerComments` by fetching discussions and counting only threads a
+ * reviewer joined — so the author's own solo threads don't read as "comments".
+ * Scoped to MRs with unresolved threads plus any we've seen commented before
+ * (see `everCommented`); paced, and best-effort (a failed fetch keeps the coarse
+ * fallback).
  */
 async function enrichReviewerComments(mrs: BoardMR[]): Promise<void> {
-  const commented = mrs.filter((m) => m.unresolvedThreads > 0);
-  for (let i = 0; i < commented.length; i += FETCH_CONCURRENCY) {
-    const chunk = commented.slice(i, i + FETCH_CONCURRENCY);
+  // Drop memory of MRs no longer on the board (merged/closed) so the set stays bounded.
+  const present = new Set(mrs.map(mrKey));
+  for (const k of everCommented) if (!present.has(k)) everCommented.delete(k);
+
+  const targets = discussionFetchTargets(mrs, everCommented);
+  for (let i = 0; i < targets.length; i += FETCH_CONCURRENCY) {
+    const chunk = targets.slice(i, i + FETCH_CONCURRENCY);
     await Promise.all(
       chunk.map(async (m) => {
         try {
           const detail = await provider.fetchMRDiscussions(m.repositoryId, m.iid);
-          m.reviewerComments = unresolvedReviewerCount(summarizeThreads(detail, m.author.username));
+          const { threads, comments } = summarizeDiscussions(detail, m.author.username, config.botUsernames);
+          m.reviewerComments = unresolvedReviewerCount(threads);
+          m.threadSummary = threadStatusCounts(threads);
+          m.generalComments = comments.length;
+          // Remember MRs with any comment activity (threads or general comments)
+          // so we keep fetching them once resolved; forget ones with none.
+          if (threads.length > 0 || comments.length > 0) everCommented.add(mrKey(m));
+          else everCommented.delete(mrKey(m));
         } catch {
           // Keep the coarse fallback (unresolvedThreads) for this MR.
         }
@@ -219,6 +245,17 @@ Bun.serve({
         const visible = config.members.filter((m) => !m.hidden);
         const visibleNames = new Set(visible.map((m) => m.username));
         const visibleMrs = snapshot.mrs.filter((mr) => visibleNames.has(mr.author.username));
+        // Retain review/respond/doctor state for exactly as long as its MR is on
+        // the board; prune once it merges/closes/goes stale and drops off. Gated
+        // on a healthy, non-empty snapshot so a failed fetch (stale/empty data)
+        // can't wipe live state. Keyed on the full board (all members, incl.
+        // hidden), not just the visible subset.
+        if (!snapshot.fetchError && snapshot.mrs.length > 0) {
+          const onBoard = new Set(snapshot.mrs.map((m) => m.webUrl).filter((u): u is string => !!u));
+          pruneReviewStates(onBoard);
+          pruneRespondStates(onBoard);
+          pruneDoctorStates(onBoard);
+        }
         const reviews = readReviewStates();
         const responds = readRespondStates();
         const doctors = readDoctorStates();
@@ -283,8 +320,8 @@ Bun.serve({
         if (!repo || !iid) return new Response("expected repo & iid", { status: 400 });
         try {
           const detail = await provider.fetchMRDiscussions(repo, iid);
-          const threads = summarizeThreads(detail, author);
-          return new Response(JSON.stringify({ threads }), { headers: { "content-type": "application/json" } });
+          const { threads, comments } = summarizeDiscussions(detail, author, config.botUsernames);
+          return new Response(JSON.stringify({ threads, comments }), { headers: { "content-type": "application/json" } });
         } catch (err) {
           return new Response(`discussions fetch failed: ${err instanceof Error ? err.message : err}`, { status: 502 });
         }
@@ -302,18 +339,76 @@ Bun.serve({
         const parsed = parseReviewRequestBody(body);
         if (!parsed) return new Response("expected { mrUrl: string, iid: number }", { status: 400 });
         const resume = (body as { resume?: unknown })?.resume === true;
+        const reReview = (body as { reReview?: unknown })?.reReview === true;
         // Only launch for an MR the board is actually showing.
         const snapshot = await cache.get();
-        if (!snapshot.mrs.some((mr) => mr.webUrl === parsed.mrUrl)) {
+        const mr = snapshot.mrs.find((m) => m.webUrl === parsed.mrUrl);
+        if (!mr) {
           return new Response(`unknown MR "${parsed.mrUrl}"`, { status: 400 });
         }
+        const author = mrAuthorLabel(mr);
         const existing = readReviewStates().get(parsed.mrUrl);
+        if (reReview) {
+          // A live review re-focuses its tab rather than re-reviewing on top of it.
+          if (existing?.tabId && (existing.status === "queued" || existing.status === "reviewing")) {
+            try {
+              await focusTab(existing.tabId);
+              return new Response(JSON.stringify({ ok: true, focused: true }), { headers: { "content-type": "application/json" } });
+            } catch {
+              // tab is gone — fall through and start the re-review fresh
+            }
+          }
+          const statePath = reviewFilePath(parsed.mrUrl);
+          // Prior claude session on file: resume it and direct it to re-review, so
+          // the agent keeps its memory of what it flagged. Otherwise launch a fresh
+          // review with the re-review framing (the wrapper reads any prior report at
+          // reportPath, and falls back to a normal review if the author hasn't acted).
+          if (existing?.sessionId) {
+            writeReviewState(statePath, { status: "reviewing" });
+            void launchResume({
+              mrUrl: parsed.mrUrl,
+              iid: parsed.iid,
+              cwd: config.reviewCwd,
+              workspaceLabel: config.reviewsWorkspace,
+              statePath,
+              sessionId: existing.sessionId,
+              workspaceKind: "review",
+              prompt: reReviewResumePrompt(parsed.iid),
+              tabPrefix: "⟲",
+              author,
+            })
+              .then(({ tabId, workspaceId }) => writeReviewState(statePath, { status: "reviewing", tabId, workspaceId }))
+              .catch((err) => {
+                console.error(`re-review resume failed: ${err instanceof Error ? err.message : err}`);
+                writeReviewState(statePath, { status: "error", message: "failed to launch re-review pane" });
+              });
+            return new Response(JSON.stringify({ ok: true, reReview: true, resumed: true }), { headers: { "content-type": "application/json" } });
+          }
+          writeReviewState(statePath, { mrUrl: parsed.mrUrl, iid: parsed.iid, status: "queued" });
+          void launchReview({
+            mrUrl: parsed.mrUrl,
+            iid: parsed.iid,
+            cwd: config.reviewCwd,
+            workspaceLabel: config.reviewsWorkspace,
+            statePath,
+            skill: config.reviewSkill,
+            channel: config.slack.channel,
+            reReview: true,
+            author,
+          })
+            .then(({ tabId, workspaceId }) => writeReviewState(statePath, { status: "queued", tabId, workspaceId }))
+            .catch((err) => {
+              console.error(`re-review launch failed: ${err instanceof Error ? err.message : err}`);
+              writeReviewState(statePath, { status: "error", message: "failed to launch re-review pane" });
+            });
+          return new Response(JSON.stringify({ ok: true, reReview: true }), { headers: { "content-type": "application/json" } });
+        }
         if (resume) {
           const sessionId = existing?.sessionId;
           if (!sessionId) return new Response("no session id on file for this review", { status: 400 });
           const statePath = reviewFilePath(parsed.mrUrl);
           void launchResume(
-            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: config.reviewCwd, workspaceLabel: config.reviewsWorkspace, statePath, sessionId, workspaceKind: "review" },
+            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: config.reviewCwd, workspaceLabel: config.reviewsWorkspace, statePath, sessionId, workspaceKind: "review", author },
           )
             .then(({ tabId, workspaceId }) => writeReviewState(statePath, { status: existing?.status ?? "done", tabId, workspaceId }))
             .catch((err) => console.error(`review resume failed: ${err instanceof Error ? err.message : err}`));
@@ -339,6 +434,7 @@ Bun.serve({
           statePath,
           skill: config.reviewSkill,
           channel: config.slack.channel,
+          author,
         })
           .then(({ tabId, workspaceId }) => writeReviewState(statePath, { status: "queued", tabId, workspaceId }))
           .catch((err) => {
@@ -366,16 +462,18 @@ Bun.serve({
         if (!parsed) return new Response("expected { mrUrl: string, iid: number }", { status: 400 });
         const resume = (body as { resume?: unknown })?.resume === true;
         const snapshot = await cache.get();
-        if (!snapshot.mrs.some((mr) => mr.webUrl === parsed.mrUrl)) {
+        const mr = snapshot.mrs.find((m) => m.webUrl === parsed.mrUrl);
+        if (!mr) {
           return new Response(`unknown MR "${parsed.mrUrl}"`, { status: 400 });
         }
+        const author = mrAuthorLabel(mr);
         const existing = readRespondStates().get(parsed.mrUrl);
         if (resume) {
           const sessionId = existing?.sessionId;
           if (!sessionId) return new Response("no session id on file for this response", { status: 400 });
           const statePath = respondFilePath(parsed.mrUrl);
           void launchResume(
-            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: cwd, workspaceLabel: config.respondsWorkspace, statePath, sessionId, workspaceKind: "respond" },
+            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: cwd, workspaceLabel: config.respondsWorkspace, statePath, sessionId, workspaceKind: "respond", author },
           )
             .then(({ tabId, workspaceId }) => writeRespondState(statePath, { status: existing?.status ?? "done", tabId, workspaceId }))
             .catch((err) => console.error(`respond resume failed: ${err instanceof Error ? err.message : err}`));
@@ -399,6 +497,7 @@ Bun.serve({
           workspaceLabel: config.respondsWorkspace,
           statePath,
           skill: config.respondSkill,
+          author,
         })
           .then(({ tabId, workspaceId }) => writeRespondState(statePath, { status: "queued", tabId, workspaceId }))
           .catch((err) => {
@@ -423,9 +522,11 @@ Bun.serve({
         const parsed = parseDoctorRequestBody(body);
         if (!parsed) return new Response("expected { mrUrl: string, iid: number }", { status: 400 });
         const snapshot = await cache.get();
-        if (!snapshot.mrs.some((mr) => mr.webUrl === parsed.mrUrl)) {
+        const mr = snapshot.mrs.find((m) => m.webUrl === parsed.mrUrl);
+        if (!mr) {
           return new Response(`unknown MR "${parsed.mrUrl}"`, { status: 400 });
         }
+        const author = mrAuthorLabel(mr);
         const existing = readDoctorStates().get(parsed.mrUrl);
         const inFlight = new Set(["queued", "diagnosing", "rebasing", "fixing", "watching"]);
         if (existing && existing.tabId && inFlight.has(existing.status)) {
@@ -445,6 +546,7 @@ Bun.serve({
           workspaceLabel: config.doctorsWorkspace,
           statePath,
           skill: config.doctorSkill,
+          author,
         })
           .then(({ tabId, workspaceId }) => writeDoctorState(statePath, { status: "queued", tabId, workspaceId }))
           .catch((err) => {

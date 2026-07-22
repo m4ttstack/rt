@@ -13,6 +13,15 @@ export type BoardMR = MRDashboardProps & {
       author's own solo threads. Starts as unresolvedThreads; the server refines
       it by fetching discussions for commented MRs. Drives the "commented" state. */
   reviewerComments: number;
+  /** Per-status counts of the reviewer threads, set by the same discussions
+      fetch that refines `reviewerComments`. Drives the row's comment-action dot
+      (amber while any thread awaits the author, green once all are handled).
+      Undefined when the discussions fetch was skipped or failed. */
+  threadSummary?: { awaiting: number; replied: number; resolved: number };
+  /** Count of general (non-resolvable) MR comments — the Overview-tab notes that
+      aren't resolvable threads. Drives the 💬 token's total and lets a
+      general-comment-only MR still be flagged as having comment activity. */
+  generalComments?: number;
   pipelineState: PipelineState;
   /** Scoped repo id ("gitlab:42"), for the lazy discussions fetch on hover. */
   repositoryId: string;
@@ -80,6 +89,22 @@ export function buildBoard(prs: PullRequest[], config: BoardConfig, now: number 
     });
   }
   return out;
+}
+
+/** Stable per-MR key for the discussion-fetch memory (survives across refreshes). */
+export function mrKey(mr: Pick<BoardMR, "repositoryId" | "iid">): string {
+  return `${mr.repositoryId}:${mr.iid}`;
+}
+
+/**
+ * MRs whose discussions should be fetched to refine review state: those with
+ * unresolved threads right now, plus any the caller has already seen carrying
+ * reviewer comments (`everCommented`). The second set is what lets an MR whose
+ * threads were all resolved keep being fetched, so it can show "comments
+ * resolved" instead of silently dropping back to "needs review".
+ */
+export function discussionFetchTargets(mrs: BoardMR[], everCommented: ReadonlySet<string>): BoardMR[] {
+  return mrs.filter((m) => m.unresolvedThreads > 0 || everCommented.has(mrKey(m)));
 }
 
 /**

@@ -10,6 +10,35 @@ export const SORT_KEYS: readonly SortKey[] = ["oldest", "progress"];
 /** Sentinel that sorts after any ISO date, so null timestamps land last. */
 const LATEST = "9999";
 
+/** Whether the author has acted on the row's unresolved comment threads, for the
+    dot beside "N comments": amber while any thread awaits the author, green once
+    they've replied to every one. Resolved threads have already left the count, so
+    they never force amber. Null when there's no per-thread breakdown (fetch
+    skipped/failed) or nothing unresolved to describe. */
+export function commentDot(
+  summary: BoardMR["threadSummary"],
+): { cls: "ok" | "warn"; title: string } | null {
+  if (!summary) return null;
+  const { awaiting, replied } = summary;
+  if (awaiting + replied === 0) return null;
+  if (awaiting > 0) {
+    const parts = [`${awaiting} awaiting your reply`];
+    if (replied > 0) parts.push(`${replied} you replied to`);
+    return { cls: "warn", title: parts.join(" · ") };
+  }
+  return { cls: "ok", title: "you've replied to every comment" };
+}
+
+/** True when every reviewer thread has been resolved and none awaits action — the
+    MR was reviewed and its comments are handled, distinct from an untouched "needs
+    review". Relies on the `threadSummary` the server attaches; undefined summary
+    means the board has no per-thread breakdown (never fetched), so this is false
+    and the MR falls back to "needs review". */
+export function commentsAllResolved(mr: BoardMR): boolean {
+  const s = mr.threadSummary;
+  return mr.reviewerComments === 0 && !!s && s.resolved > 0 && s.awaiting + s.replied === 0;
+}
+
 /** Approval ratio in [0,1]; used by the "progress" sort. */
 function progress(mr: BoardMR): number {
   const req = mr.reviews.required;
@@ -66,8 +95,11 @@ function statusBucket(mr: BoardMR): { label: string; order: number } {
   // not their own groups, so an MR with conflicts still shows under its review
   // state instead of being hidden in a "conflicts" bucket.
   if (hasChangesRequested(mr)) return { label: "changes requested", order: 0 };
-  if (mr.reviews.isApproved) return { label: "approved", order: 3 };
+  if (mr.reviews.isApproved) return { label: "approved", order: 4 };
   if (mr.reviewerComments > 0) return { label: "commented", order: 1 };
+  // Reviewed and all threads resolved, just not formally approved — further along
+  // than an untouched MR, so it sits between "needs review" and "approved".
+  if (commentsAllResolved(mr)) return { label: "comments resolved", order: 3 };
   return { label: "needs review", order: 2 };
 }
 
