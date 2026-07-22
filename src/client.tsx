@@ -1,6 +1,6 @@
 import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Sprite } from "invadrs/react";
+import { Invadr } from "invadrs/react";
 import { extractTicketId, ticketUrl } from "./ticket.ts";
 import type { BoardMR } from "./data.ts";
 import { hasChangesRequested } from "./data.ts";
@@ -1049,7 +1049,7 @@ function AuthorTag({ mr }: { mr: BoardMR }) {
   const name = mr.author.name || mr.author.username;
   return (
     <span className="tui-author-tag" title={name}>
-      <Sprite id={mr.author.username} from="invadr" palette="css-vars" className="tui-avatar" /> {name}
+      <Invadr id={mr.author.username} palette="css-vars" className="tui-avatar" /> {name}
     </span>
   );
 }
@@ -1228,7 +1228,7 @@ function Sidebar({
           title={m.name ?? m.username}
         >
           <span className="tui-side-name">
-            <Sprite id={m.username} from="invadr" palette="css-vars" className="tui-avatar" /> {m.name ?? m.username}
+            <Invadr id={m.username} palette="css-vars" className="tui-avatar" /> {m.name ?? m.username}
           </span>
           <span className="tui-side-count">{m.count}</span>
         </button>
@@ -1274,7 +1274,7 @@ function SettingsModal({
                   checked={!m.hidden}
                   onChange={() => onToggle(m.username, !m.hidden)}
                 />
-                <Sprite id={m.username} from="invadr" palette="css-vars" className="tui-avatar" /> {m.name ?? m.username}
+                <Invadr id={m.username} palette="css-vars" className="tui-avatar" /> {m.name ?? m.username}
               </label>
               <span className="tui-modal-count" title={m.count === null ? "checked out — MR count not fetched" : undefined}>
                 {m.count ?? "—"}
