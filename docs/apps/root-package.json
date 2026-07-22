@@ -14,7 +14,7 @@
     "react-dom": "19.2.7",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
-    "invadrs": "^0.1.0"
+    "invadrs": "^0.2.0"
   },
   "devDependencies": {
     "@types/bun": "latest"
