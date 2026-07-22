@@ -1,6 +1,6 @@
 import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { Sprite } from "spritr/react";
+import { Sprite } from "invadrs/react";
 import { extractTicketId, ticketUrl } from "./ticket.ts";
 import type { BoardMR } from "./data.ts";
 import { hasChangesRequested } from "./data.ts";
