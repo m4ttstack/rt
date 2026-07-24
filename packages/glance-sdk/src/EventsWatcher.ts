@@ -10,6 +10,7 @@
  */
 import type { InvalidationBatch, WatchEventsOptions, WatchEventsStatus } from './types.ts';
 import { EventsPoller, type FetchEvents } from './EventsPoller.ts';
+import { type ForgeLogger, noopLogger } from './logger.ts';
 
 const MAX_BACKOFF_MS = 5 * 60_000;
 
@@ -40,6 +41,7 @@ export function startEventsWatcher(
   fetchEvents: FetchEvents,
   options: WatchEventsOptions,
   onInvalidations: (batch: InvalidationBatch) => void,
+  logger: ForgeLogger = noopLogger,
 ): () => void {
   const intervalMs = options.intervalMs ?? 15_000;
   const poller = new EventsPoller({
@@ -61,39 +63,65 @@ export function startEventsWatcher(
     timer = setTimeout(run, jittered(delayMs));
   }
 
+  /** Runs a consumer callback in isolation: a throw is logged and swallowed,
+   *  never allowed to be misread as a fetch failure or crash the loop. */
+  function safeInvoke(fn: () => void): void {
+    try {
+      fn();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn('watchEvents: consumer callback threw', { message });
+    }
+  }
+
   async function run(): Promise<void> {
     if (disposed) return;
-    try {
-      const before = poller.getCursor().lastEventId;
-      const result = await poller.tick();
-      lastSyncedAt = new Date().toISOString();
+    const before = poller.getCursor().lastEventId;
 
-      if (consecutiveFailures > 0) {
-        consecutiveFailures = 0;
-        options.onStatus?.({ state: 'live', lastSyncedAt });
-      }
-      if (result.cursor.lastEventId !== before) {
-        options.onCursor?.(result.cursor);
-      }
-      if (result.invalidations.length > 0) {
-        onInvalidations({
-          invalidations: result.invalidations,
-          syncedAt: lastSyncedAt,
-          cursor: result.cursor,
-        });
-      }
-      schedule(intervalMs);
+    let result: Awaited<ReturnType<typeof poller.tick>>;
+    try {
+      result = await poller.tick();
     } catch (err) {
+      if (disposed) return;
       consecutiveFailures++;
       const backoff = Math.min(intervalMs * 2 ** consecutiveFailures, MAX_BACKOFF_MS);
       const delay = retryAfterMs(err) ?? backoff;
-      options.onStatus?.({
-        state: 'degraded',
-        cause: classifyError(err),
-        lastSyncedAt,
-        nextRetryAt: new Date(Date.now() + delay).toISOString(),
-      });
+      const nextRetryAt = new Date(Date.now() + delay).toISOString();
       schedule(delay);
+      safeInvoke(() =>
+        options.onStatus?.({
+          state: 'degraded',
+          cause: classifyError(err),
+          lastSyncedAt,
+          nextRetryAt,
+        }),
+      );
+      return;
+    }
+
+    if (disposed) return;
+
+    lastSyncedAt = new Date().toISOString();
+    const wasDegraded = consecutiveFailures > 0;
+    consecutiveFailures = 0;
+    schedule(intervalMs);
+
+    if (wasDegraded) {
+      const syncedAt = lastSyncedAt;
+      safeInvoke(() => options.onStatus?.({ state: 'live', lastSyncedAt: syncedAt }));
+    }
+    if (result.cursor.lastEventId !== before) {
+      safeInvoke(() => options.onCursor?.(result.cursor));
+    }
+    if (result.invalidations.length > 0) {
+      const syncedAt = lastSyncedAt;
+      safeInvoke(() =>
+        onInvalidations({
+          invalidations: result.invalidations,
+          syncedAt,
+          cursor: result.cursor,
+        }),
+      );
     }
   }
 

@@ -8,6 +8,7 @@ import { describe, expect, test } from 'bun:test';
 import { startEventsWatcher } from '../src/EventsWatcher.ts';
 import type { GitLabEvent } from '../src/EventsPoller.ts';
 import type { InvalidationBatch, WatchEventsStatus } from '../src/types.ts';
+import type { ForgeLogger } from '../src/logger.ts';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -137,5 +138,72 @@ describe('startEventsWatcher', () => {
     await sleep(100);
     expect(calls).toBe(at);
     dispose(); // idempotent, must not throw
+  });
+
+  test('dispose during an in-flight tick suppresses all callbacks', async () => {
+    const batches: InvalidationBatch[] = [];
+    const cursors: Array<number | null> = [];
+    const statuses: WatchEventsStatus[] = [];
+    const dispose = startEventsWatcher(
+      async () => {
+        await sleep(100);
+        return [mrEvent(20, 2), mrEvent(10, 1)];
+      },
+      {
+        intervalMs: 20,
+        cursor: { since: null, lastEventId: 10 },
+        onCursor: (c) => cursors.push(c.lastEventId),
+        onStatus: (s) => statuses.push(s),
+      },
+      (b) => batches.push(b),
+    );
+    await sleep(30); // still inside the pending fetch
+    dispose();
+    await sleep(250); // give the in-flight tick plenty of time to resolve
+    expect(batches.length).toBe(0);
+    expect(cursors.length).toBe(0);
+    expect(statuses.length).toBe(0);
+  });
+
+  test('a throwing onInvalidations is isolated: no degraded status, loop continues', async () => {
+    const statuses: WatchEventsStatus[] = [];
+    const batches: InvalidationBatch[] = [];
+    const warnCalls: Array<[string, Record<string, unknown> | undefined]> = [];
+    const fakeLogger: ForgeLogger = {
+      debug() {},
+      info() {},
+      warn: (msg, meta) => warnCalls.push([msg, meta]),
+      error() {},
+    };
+    let thrown = false;
+    let feed: GitLabEvent[] = [mrEvent(20, 2), mrEvent(10, 1)];
+    const dispose = startEventsWatcher(
+      async () => feed,
+      {
+        intervalMs: 20,
+        cursor: { since: null, lastEventId: 10 },
+        onStatus: (s) => statuses.push(s),
+      },
+      (b) => {
+        batches.push(b);
+        if (!thrown) {
+          thrown = true;
+          throw new Error('consumer boom');
+        }
+      },
+      fakeLogger,
+    );
+    await sleep(70); // first warm tick delivers and onInvalidations throws
+    expect(batches.length).toBeGreaterThanOrEqual(1);
+    expect(statuses.some((s) => s.state === 'degraded')).toBe(false);
+
+    // Advance the feed again; the loop must still be alive.
+    feed = [mrEvent(30, 3), mrEvent(20, 2), mrEvent(10, 1)];
+    await sleep(80);
+    dispose();
+    expect(statuses.some((s) => s.state === 'degraded')).toBe(false);
+    expect(batches.some((b) => b.invalidations.some((k) => k.kind === 'mr' && k.ref === '3'))).toBe(true);
+    expect(warnCalls.length).toBeGreaterThanOrEqual(1);
+    expect(warnCalls[0]![0]).toContain('consumer callback threw');
   });
 });
