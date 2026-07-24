@@ -33,6 +33,25 @@ export interface LaunchdService {
   lastExitStatus: number | null;
 }
 
+// Managed local apps allocate ports from this range for uniformity and to avoid
+// reserving common dev ports (3000, 5173, 8080, ...).
+export const PORT_RANGE = { start: 11000, end: 11999 } as const;
+
+// Lowest port in PORT_RANGE not claimed by any route or any launchd service PORT.
+// Returns null only if the whole range is taken (not expected in practice).
+export function nextFreePort(
+  routes: PortlessRoute[],
+  services: LaunchdService[],
+): number | null {
+  const used = new Set<number>();
+  for (const r of routes) used.add(r.port);
+  for (const s of services) if (s.port != null) used.add(s.port);
+  for (let p = PORT_RANGE.start; p <= PORT_RANGE.end; p++) {
+    if (!used.has(p)) return p;
+  }
+  return null;
+}
+
 /** One row on the board: a portless route joined (best-effort) to a launchd service. */
 export interface App {
   name: string;
