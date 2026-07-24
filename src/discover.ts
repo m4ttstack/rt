@@ -2,8 +2,12 @@ import { readFileSync, readdirSync, existsSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 
-export const ROUTES_PATH =
-  process.env.LOCAL_APPS_ROUTES_PATH ?? join(homedir(), ".portless", "routes.json");
+// Computed fresh on every call (not frozen at import time) so callers that set
+// LOCAL_APPS_ROUTES_PATH after this module first loads (tests, in particular)
+// still get the override, regardless of module load order.
+export function routesPath(): string {
+  return process.env.LOCAL_APPS_ROUTES_PATH ?? join(homedir(), ".portless", "routes.json");
+}
 const AGENTS_DIR = join(homedir(), "Library", "LaunchAgents");
 const PLIST_PREFIX = "com.matthewgoodwin.";
 // The parent domain the shared Cloudflare tunnel serves every portless route
@@ -41,7 +45,7 @@ export interface App {
 
 export function readRoutes(): PortlessRoute[] {
   try {
-    return JSON.parse(readFileSync(ROUTES_PATH, "utf8"));
+    return JSON.parse(readFileSync(routesPath(), "utf8"));
   } catch {
     return [];
   }
