@@ -1,4 +1,4 @@
-import { Gitlab, GitbeakerRequestError } from '@gitbeaker/rest';
+import { Gitlab, GitbeakerRequestError, GitbeakerRetryError } from '@gitbeaker/rest';
 import type { GitProvider, FetchPullRequestsOptions, MRState } from './GitProvider.ts';
 import type {
   BranchProtectionRule,
@@ -1236,15 +1236,28 @@ export class GitLabProvider implements GitProvider {
   }
 
   /**
-   * Rebuild the pre-gitbeaker error shape. Callers may match on the stable
-   * prefix "<label> failed: <status>"; the suffix carries statusText and the
-   * response body description when available.
+   * Rebuild the pre-gitbeaker error shape. Guarantee: any gitbeaker-raised
+   * error (GitbeakerRequestError, GitbeakerRetryError) is rebuilt with the
+   * stable prefix "<label> failed:", with the HTTP status appended when
+   * known; the suffix carries statusText and the response body description
+   * (GitbeakerRequestError) or the original message (GitbeakerRetryError).
+   * Non-gitbeaker Errors pass through unchanged.
    */
   private legacyError(label: string, err: unknown): Error {
     if (err instanceof GitbeakerRequestError && err.cause?.response) {
       const res = err.cause.response as Response;
       const desc = err.cause.description ?? '';
       return new Error(`${label} failed: ${res.status} ${res.statusText}${desc ? ` — ${desc}` : ''}`);
+    }
+    if (err instanceof GitbeakerRetryError) {
+      // Gitbeaker retries 429/502 internally up to 10 times, then throws
+      // this (no cause.response) with a message like "...after 10 retries,
+      // last status code: 429. Check the applicable rate limits...".
+      const match = err.message.match(/status code: (\d{3})/);
+      const status = match?.[1];
+      return status
+        ? new Error(`${label} failed: ${status} — ${err.message}`)
+        : new Error(`${label} failed: ${err.message}`);
     }
     if (err instanceof Error) return err;
     return new Error(`${label} failed: ${String(err)}`);
