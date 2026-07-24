@@ -6,6 +6,7 @@ export interface AppSettings {
   published: boolean;
   passwordHash?: string;
   passwordVersion: number;
+  override?: { devPort: number; basePort: number };
 }
 
 export interface SettingsFile {
@@ -50,6 +51,7 @@ export function getAppSettings(app: string): AppSettings {
     published: entry?.published ?? true,
     passwordHash: entry?.passwordHash,
     passwordVersion: entry?.passwordVersion ?? 0,
+    override: entry?.override,
   };
 }
 
@@ -83,4 +85,29 @@ export async function clearPassword(app: string): Promise<void> {
   delete entry.passwordHash;
   entry.passwordVersion += 1;
   save();
+}
+
+export function getOverride(app: string): { devPort: number; basePort: number } | undefined {
+  return cache.apps[app]?.override;
+}
+
+export function setOverride(app: string, override: { devPort: number; basePort: number }): void {
+  ensure(app).override = override;
+  save();
+}
+
+export function clearOverride(app: string): void {
+  const entry = cache.apps[app];
+  if (entry?.override) {
+    delete entry.override;
+    save();
+  }
+}
+
+export function getOverrides(): Record<string, { devPort: number; basePort: number }> {
+  const out: Record<string, { devPort: number; basePort: number }> = {};
+  for (const [app, s] of Object.entries(cache.apps)) {
+    if (s.override) out[app] = s.override;
+  }
+  return out;
 }

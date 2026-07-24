@@ -9,6 +9,7 @@ process.env.LOCAL_APPS_SETTINGS_PATH = join(dir, "settings.json");
 
 const {
   getAppSettings, getSecret, setPublished, setPassword, clearPassword, reloadSettings,
+  getOverride, setOverride, clearOverride, getOverrides,
 } = await import("./settings.ts");
 
 afterAll(() => {
@@ -62,4 +63,22 @@ test("getSecret generates a stable hex secret and persists it", () => {
   expect(a).toMatch(/^[0-9a-f]{64}$/);
   reloadSettings();
   expect(getSecret()).toBe(a);
+});
+
+test("setOverride persists and getOverride/getAppSettings surface it", () => {
+  setOverride("boxscore", { devPort: 5173, basePort: 8787 });
+  expect(getOverride("boxscore")).toEqual({ devPort: 5173, basePort: 8787 });
+  expect(getAppSettings("boxscore").override).toEqual({ devPort: 5173, basePort: 8787 });
+});
+
+test("clearOverride removes it", () => {
+  setOverride("boxscore", { devPort: 5173, basePort: 8787 });
+  clearOverride("boxscore");
+  expect(getOverride("boxscore")).toBeUndefined();
+  expect(getAppSettings("boxscore").override).toBeUndefined();
+});
+
+test("getOverrides lists only apps with an active override", () => {
+  setOverride("boxscore", { devPort: 5173, basePort: 8787 });
+  expect(getOverrides()).toEqual({ boxscore: { devPort: 5173, basePort: 8787 } });
 });
