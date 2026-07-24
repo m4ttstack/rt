@@ -4,6 +4,7 @@ import {
   checkHealth,
   joinApps,
   listenerFor,
+  nextFreePort,
   orphanServices,
   publicDomainFor,
   readRoutes,
@@ -13,8 +14,18 @@ import {
   type Health,
   type LaunchdService,
 } from "./discover.ts";
-import { getAppSettings, setPublished, setPassword, clearPassword } from "./settings.ts";
+import {
+  getAppSettings,
+  setPublished,
+  setPassword,
+  clearPassword,
+  getOverride,
+  setOverride,
+  clearOverride,
+} from "./settings.ts";
 import { startGateway } from "./gateway.ts";
+import { setRoutePort } from "./routes-writer.ts";
+import { reconcileOnce } from "./reconcile.ts";
 
 const PORT = Number(process.env.PORT ?? 7940);
 const PLIST_PREFIX = "com.matthewgoodwin.";
@@ -41,6 +52,7 @@ interface StatusRow {
   hasPassword: boolean;
   /** A cloudflared tunnel service (infra), rendered in its own section. */
   isTunnel: boolean;
+  override: { devPort: number; basePort: number } | null;
 }
 
 interface Status {
@@ -51,6 +63,7 @@ interface Status {
   total: number;
   apps: StatusRow[];
   orphans: StatusRow[];
+  nextPort: number | null;
 }
 
 function serviceJson(
@@ -96,6 +109,7 @@ async function buildStatus(requestHost?: string): Promise<Status> {
         published: settings.published,
         hasPassword: !!settings.passwordHash,
         isTunnel: false,
+        override: settings.override ?? null,
       };
     }),
   );
@@ -111,6 +125,7 @@ async function buildStatus(requestHost?: string): Promise<Status> {
     hasPassword: false,
     // cloudflared tunnels are infrastructure, not stray app services.
     isTunnel: s.program.some((p) => p.includes("cloudflared")),
+    override: null,
   }));
 
   return {
@@ -122,6 +137,7 @@ async function buildStatus(requestHost?: string): Promise<Status> {
     total: apps.length,
     apps: appRows,
     orphans: orphanRows,
+    nextPort: nextFreePort(routes, services),
   };
 }
 
@@ -317,6 +333,37 @@ Bun.serve({
       return json({ ok: true });
     }
 
+    if (req.method === "POST" && pathname === "/devport") {
+      // Local-only: a board reached through a public tunnel is read-only.
+      if (publicDomainFor(host) !== null) return json({ error: "forbidden" }, 403);
+      const form = await req.formData();
+      const app = String(form.get("app") ?? "");
+      const portStr = String(form.get("port") ?? "").trim();
+      if (!(await knownApp(app))) return json({ error: "unknown app" }, 400);
+
+      // Blank port clears the override, restoring the captured base port.
+      if (portStr === "") {
+        const ov = getOverride(app);
+        if (ov) {
+          setRoutePort(app, ov.basePort);
+          clearOverride(app);
+        }
+        return json({ ok: true });
+      }
+
+      const devPort = Number(portStr);
+      if (!Number.isInteger(devPort) || devPort < 1 || devPort > 65535) {
+        return json({ error: "bad port" }, 400);
+      }
+      // Capture the base port once: never overwrite it with a dev port on re-set.
+      const route = readRoutes().find((r) => r.hostname.replace(/\.localhost$/, "") === app);
+      const basePort = getOverride(app)?.basePort ?? route?.port;
+      if (basePort === undefined) return json({ error: "no route" }, 400);
+      setRoutePort(app, devPort);
+      setOverride(app, { devPort, basePort });
+      return json({ ok: true });
+    }
+
     if (pathname === "/api/status") return json(await buildStatus(host));
 
     if (pathname !== "/") return new Response("not found", { status: 404 });
@@ -325,6 +372,14 @@ Bun.serve({
 });
 
 console.log(`local-apps serving on http://localhost:${PORT}`);
+
+// Keep active dev-port overrides sticky against other writers of routes.json
+// (portless alias/prune). Writes only when a route has drifted.
+setInterval(() => {
+  try {
+    reconcileOnce();
+  } catch {}
+}, 5000);
 
 if (process.env.LOCAL_APPS_NO_GATEWAY !== "1") {
   try {
