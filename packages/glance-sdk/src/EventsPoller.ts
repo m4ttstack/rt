@@ -72,3 +72,97 @@ export function classifyEvent(e: GitLabEvent): InvalidationKey[] {
 
   return [];
 }
+
+export interface TickResult {
+  cursor: EventCursor;
+  /** Deduped by kind:ref. Empty on cold start regardless of feed content. */
+  invalidations: InvalidationKey[];
+  freshEvents: number;
+  requests: number;
+  coldStart: boolean;
+}
+
+export interface EventsPollerOptions {
+  fetchEvents: FetchEvents;
+  /** Resume point. Omit for a cold start. */
+  cursor?: EventCursor;
+  perPage?: number;
+  maxPagesPerTick?: number;
+}
+
+const DAY_MS = 24 * 60 * 60_000;
+
+export class EventsPoller {
+  private cursor: EventCursor;
+  private readonly fetchEvents: FetchEvents;
+  private readonly perPage: number;
+  private readonly maxPagesPerTick: number;
+
+  constructor(opts: EventsPollerOptions) {
+    this.fetchEvents = opts.fetchEvents;
+    this.cursor = opts.cursor ?? { since: null, lastEventId: null };
+    this.perPage = opts.perPage ?? 100;
+    this.maxPagesPerTick = opts.maxPagesPerTick ?? 5;
+  }
+
+  getCursor(): EventCursor {
+    return { ...this.cursor };
+  }
+
+  async tick(): Promise<TickResult> {
+    const coldStart = this.cursor.lastEventId === null;
+
+    // Day-exclusive gotcha: ask from the day BEFORE the cursor date (2 days
+    // back on cold start) and rely on the id filter below for precision.
+    const fromMs = this.cursor.since
+      ? new Date(this.cursor.since).getTime() - DAY_MS
+      : Date.now() - 2 * DAY_MS;
+    const after = new Date(fromMs).toISOString().slice(0, 10);
+
+    const fresh: GitLabEvent[] = [];
+    let requests = 0;
+    let sawCursor = false;
+    for (let page = 1; page <= this.maxPagesPerTick && !sawCursor; page++) {
+      const events = await this.fetchEvents({ after, perPage: this.perPage, page });
+      requests++;
+      if (events.length === 0) break;
+      for (const e of events) {
+        if (this.cursor.lastEventId != null && e.id <= this.cursor.lastEventId) {
+          sawCursor = true;
+          continue;
+        }
+        fresh.push(e);
+      }
+      if (events.length < this.perPage) break;
+    }
+
+    const invalidations: InvalidationKey[] = [];
+    let maxId = this.cursor.lastEventId ?? -1;
+    let maxTs = this.cursor.since;
+    for (const e of fresh) {
+      invalidations.push(...classifyEvent(e));
+      if (e.id > maxId) maxId = e.id;
+      if (!maxTs || e.created_at > maxTs) maxTs = e.created_at;
+    }
+    if (fresh.length > 0) {
+      this.cursor = { since: maxTs, lastEventId: maxId };
+    }
+
+    return {
+      cursor: this.getCursor(),
+      invalidations: coldStart ? [] : dedup(invalidations),
+      freshEvents: fresh.length,
+      requests,
+      coldStart,
+    };
+  }
+}
+
+function dedup(keys: InvalidationKey[]): InvalidationKey[] {
+  const seen = new Map<string, InvalidationKey>();
+  for (const k of keys) {
+    const id = `${k.kind}:${k.ref}`;
+    if (!seen.has(id)) seen.set(id, k);
+  }
+  return [...seen.values()];
+}
