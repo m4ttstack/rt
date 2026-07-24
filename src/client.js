@@ -67,11 +67,6 @@ function serviceHtml(row) {
   return `${state} <span class="muted">· ${esc(s.short)}</span>`;
 }
 
-function portFor(name) {
-  const row = last && last.apps.find((r) => r.name === name);
-  return row ? row.port : "";
-}
-
 function portCellHtml(row, data) {
   const app = esc(row.name);
   if (!data.canManage || row.port == null) {
@@ -206,19 +201,23 @@ function render(data) {
       if (editing) editing.value = input.value;
     };
     input.onkeydown = (e) => {
-      if (e.key === "Enter") submitPort(input.dataset.app, input.value.trim());
-      else if (e.key === "Escape") {
+      if (e.key === "Enter") {
+        const v = input.value.trim();
+        if (v === "") {
+          editing = null;
+          render(last);
+          return;
+        }
+        submitPort(input.dataset.app, v);
+      } else if (e.key === "Escape") {
         editing = null;
         render(last);
       }
     };
     input.onblur = () => {
-      const v = input.value.trim();
-      if (v && v !== String(portFor(input.dataset.app))) submitPort(input.dataset.app, v);
-      else {
-        editing = null;
-        render(last);
-      }
+      if (!editing || editing.app !== input.dataset.app) return;
+      editing = null;
+      render(last);
     };
     input.focus();
     const n = input.value.length;
@@ -284,6 +283,7 @@ function reconcile(data) {
 }
 
 async function refresh() {
+  if (editing) return; // don't destroy the live input mid-edit; resumes once submit/cancel clears it
   try {
     const data = await (await fetch("/api/status")).json();
     last = data;
