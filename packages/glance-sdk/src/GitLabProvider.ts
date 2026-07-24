@@ -1,4 +1,4 @@
-import { Gitlab } from '@gitbeaker/rest';
+import { Gitlab, GitbeakerRequestError } from '@gitbeaker/rest';
 import type { GitProvider, FetchPullRequestsOptions, MRState } from './GitProvider.ts';
 import type {
   BranchProtectionRule,
@@ -735,13 +735,10 @@ export class GitLabProvider implements GitProvider {
   }
 
   async deleteBranch(projectPath: string, branch: string): Promise<void> {
-    const encoded = encodeURIComponent(projectPath);
-    const res = await fetch(
-      `${this.baseURL}/api/v4/projects/${encoded}/repository/branches/${encodeURIComponent(branch)}`,
-      { method: 'DELETE', headers: { 'PRIVATE-TOKEN': this.token } },
-    );
-    if (!res.ok) {
-      throw new Error(`deleteBranch failed: ${res.status} ${await res.text()}`);
+    try {
+      await this.gb.Branches.remove(projectPath, branch);
+    } catch (err) {
+      throw this.legacyError('deleteBranch', err);
     }
   }
 
@@ -1022,166 +1019,98 @@ export class GitLabProvider implements GitProvider {
   // ── MR lifecycle mutations ──────────────────────────────────────────────
 
   async mergePullRequest(projectPath: string, mrIid: number, input?: MergePullRequestInput): Promise<PullRequest> {
-    const encoded = encodeURIComponent(projectPath);
-    const body: Record<string, unknown> = {};
-    if (input?.commitMessage != null) body.merge_commit_message = input.commitMessage;
-    if (input?.squashCommitMessage != null) body.squash_commit_message = input.squashCommitMessage;
-    if (input?.squash != null) body.squash = input.squash;
-    if (input?.shouldRemoveSourceBranch != null) body.should_remove_source_branch = input.shouldRemoveSourceBranch;
-    if (input?.sha != null) body.sha = input.sha;
-    // mergeMethod: GitLab uses the project's configured merge method by default.
-    // The merge REST API doesn't accept a merge_method param — it honours the project setting.
-    // If the caller passes mergeMethod: "squash", we set squash = true as a hint.
-    if (input?.mergeMethod === 'squash' && input?.squash == null) body.squash = true;
+    const opts: Record<string, unknown> = {};
+    if (input?.commitMessage != null) opts.mergeCommitMessage = input.commitMessage;
+    if (input?.squashCommitMessage != null) opts.squashCommitMessage = input.squashCommitMessage;
+    if (input?.squash != null) opts.squash = input.squash;
+    if (input?.shouldRemoveSourceBranch != null) opts.shouldRemoveSourceBranch = input.shouldRemoveSourceBranch;
+    if (input?.sha != null) opts.sha = input.sha;
+    // The merge REST API has no merge_method param; it honours the project
+    // setting. mergeMethod: 'squash' is treated as a squash hint, as before.
+    if (input?.mergeMethod === 'squash' && input?.squash == null) opts.squash = true;
 
-    const res = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}/merge`, {
-      method: 'PUT',
-      headers: {
-        'PRIVATE-TOKEN': this.token,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`mergePullRequest failed: ${res.status} ${text}`);
+    try {
+      await this.gb.MergeRequests.merge(projectPath, mrIid, opts);
+    } catch (err) {
+      throw this.legacyError('mergePullRequest', err);
     }
     return this.fetchSingleMRWithRetry(projectPath, mrIid, 'Merged MR but failed to fetch it back');
   }
 
   async approvePullRequest(projectPath: string, mrIid: number): Promise<void> {
-    const encoded = encodeURIComponent(projectPath);
-    const res = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}/approve`, {
-      method: 'POST',
-      headers: { 'PRIVATE-TOKEN': this.token },
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`approvePullRequest failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`);
+    try {
+      await this.gb.MergeRequestApprovals.approve(projectPath, mrIid);
+    } catch (err) {
+      throw this.legacyError('approvePullRequest', err);
     }
   }
 
   async unapprovePullRequest(projectPath: string, mrIid: number): Promise<void> {
-    const encoded = encodeURIComponent(projectPath);
-    const res = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}/unapprove`, {
-      method: 'POST',
-      headers: { 'PRIVATE-TOKEN': this.token },
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`unapprovePullRequest failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`);
+    try {
+      await this.gb.MergeRequestApprovals.unapprove(projectPath, mrIid);
+    } catch (err) {
+      throw this.legacyError('unapprovePullRequest', err);
     }
   }
 
   async rebasePullRequest(projectPath: string, mrIid: number): Promise<void> {
-    const encoded = encodeURIComponent(projectPath);
-    const res = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}/rebase`, {
-      method: 'PUT',
-      headers: { 'PRIVATE-TOKEN': this.token },
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`rebasePullRequest failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`);
+    try {
+      await this.gb.MergeRequests.rebase(projectPath, mrIid);
+    } catch (err) {
+      throw this.legacyError('rebasePullRequest', err);
     }
   }
 
   async setAutoMerge(projectPath: string, mrIid: number): Promise<void> {
-    // REST: PUT merge with merge_when_pipeline_succeeds = true
-    // This tells GitLab to merge automatically once the head pipeline succeeds.
-    const encoded = encodeURIComponent(projectPath);
-    const res = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}/merge`, {
-      method: 'PUT',
-      headers: {
-        'PRIVATE-TOKEN': this.token,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ merge_when_pipeline_succeeds: true }),
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`setAutoMerge failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`);
+    // PUT /merge with merge_when_pipeline_succeeds=true, same wire call as before.
+    try {
+      await this.gb.MergeRequests.merge(projectPath, mrIid, { mergeWhenPipelineSucceeds: true });
+    } catch (err) {
+      throw this.legacyError('setAutoMerge', err);
     }
   }
 
   async cancelAutoMerge(projectPath: string, mrIid: number): Promise<void> {
-    // REST: POST cancel_merge_when_pipeline_succeeds
-    const encoded = encodeURIComponent(projectPath);
-    const res = await fetch(
-      `${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}/cancel_merge_when_pipeline_succeeds`,
-      {
-        method: 'POST',
-        headers: { 'PRIVATE-TOKEN': this.token },
-      },
-    );
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`cancelAutoMerge failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`);
+    try {
+      await this.gb.MergeRequests.cancelOnPipelineSuccess(projectPath, mrIid);
+    } catch (err) {
+      throw this.legacyError('cancelAutoMerge', err);
     }
   }
 
   // ── Discussion mutations ────────────────────────────────────────────────
 
   async resolveDiscussion(projectPath: string, mrIid: number, discussionId: string): Promise<void> {
-    const encoded = encodeURIComponent(projectPath);
-    const res = await fetch(
-      `${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}/discussions/${discussionId}`,
-      {
-        method: 'PUT',
-        headers: {
-          'PRIVATE-TOKEN': this.token,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ resolved: true }),
-      },
-    );
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`resolveDiscussion failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`);
+    try {
+      await this.gb.MergeRequestDiscussions.resolve(projectPath, mrIid, discussionId, true);
+    } catch (err) {
+      throw this.legacyError('resolveDiscussion', err);
     }
   }
 
   async unresolveDiscussion(projectPath: string, mrIid: number, discussionId: string): Promise<void> {
-    const encoded = encodeURIComponent(projectPath);
-    const res = await fetch(
-      `${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}/discussions/${discussionId}`,
-      {
-        method: 'PUT',
-        headers: {
-          'PRIVATE-TOKEN': this.token,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ resolved: false }),
-      },
-    );
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`unresolveDiscussion failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`);
+    try {
+      await this.gb.MergeRequestDiscussions.resolve(projectPath, mrIid, discussionId, false);
+    } catch (err) {
+      throw this.legacyError('unresolveDiscussion', err);
     }
   }
 
   // ── Pipeline mutations ──────────────────────────────────────────────────
 
   async retryPipeline(projectPath: string, pipelineId: number): Promise<void> {
-    const encoded = encodeURIComponent(projectPath);
-    const res = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/pipelines/${pipelineId}/retry`, {
-      method: 'POST',
-      headers: { 'PRIVATE-TOKEN': this.token },
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`retryPipeline failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`);
+    try {
+      await this.gb.Pipelines.retry(projectPath, pipelineId);
+    } catch (err) {
+      throw this.legacyError('retryPipeline', err);
     }
   }
 
   async retryJob(projectPath: string, jobId: number): Promise<void> {
-    const encoded = encodeURIComponent(projectPath);
-    const res = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/jobs/${jobId}/retry`, {
-      method: 'POST',
-      headers: { 'PRIVATE-TOKEN': this.token },
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`retryJob failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`);
+    try {
+      await this.gb.Jobs.retry(projectPath, jobId);
+    } catch (err) {
+      throw this.legacyError('retryJob', err);
     }
   }
 
@@ -1281,55 +1210,33 @@ export class GitLabProvider implements GitProvider {
   }
 
   async fetchJobTrace(projectPath: string, jobId: number): Promise<string> {
-    const encoded = encodeURIComponent(projectPath);
-    const res = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/jobs/${jobId}/trace`, {
-      headers: { 'PRIVATE-TOKEN': this.token },
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`fetchJobTrace failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`);
+    try {
+      const log = await this.gb.Jobs.showLog(projectPath, jobId);
+      return typeof log === 'string' ? log : String(log);
+    } catch (err) {
+      throw this.legacyError('fetchJobTrace', err);
     }
-    return res.text();
   }
 
   // ── Review mutations ────────────────────────────────────────────────────
 
   async requestReReview(projectPath: string, mrIid: number, _reviewerUsernames?: string[]): Promise<void> {
-    // GitLab does not have a dedicated "re-request review" endpoint.
-    // The approach: fetch the current MR to get reviewer IDs, then
-    // re-assign them via PUT to trigger review-requested notifications.
-    const encoded = encodeURIComponent(projectPath);
-
-    // Fetch current MR to get existing reviewer IDs
-    const mrRes = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}`, {
-      headers: { 'PRIVATE-TOKEN': this.token },
-    });
-    if (!mrRes.ok) {
-      const text = await mrRes.text().catch(() => '');
-      throw new Error(`requestReReview: failed to fetch MR: ${mrRes.status}${text ? ` — ${text}` : ''}`);
+    // GitLab has no dedicated re-request endpoint: fetch current reviewer
+    // ids, then re-assign them to trigger review-requested notifications.
+    let reviewerIds: number[];
+    try {
+      const mr = (await this.gb.MergeRequests.show(projectPath, mrIid)) as unknown as {
+        reviewers?: Array<{ id: number }>;
+      };
+      reviewerIds = mr.reviewers?.map((r) => r.id) ?? [];
+    } catch (err) {
+      throw this.legacyError('requestReReview: failed to fetch MR', err);
     }
-
-    const mr = (await mrRes.json()) as {
-      reviewers?: Array<{ id: number }>;
-    };
-    const reviewerIds = mr.reviewers?.map((r) => r.id) ?? [];
-    if (reviewerIds.length === 0) {
-      // No reviewers to re-request
-      return;
-    }
-
-    // Re-assign the same reviewers to trigger notifications
-    const res = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}`, {
-      method: 'PUT',
-      headers: {
-        'PRIVATE-TOKEN': this.token,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ reviewer_ids: reviewerIds }),
-    });
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`requestReReview failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`);
+    if (reviewerIds.length === 0) return;
+    try {
+      await this.gb.MergeRequests.edit(projectPath, mrIid, { reviewerIds });
+    } catch (err) {
+      throw this.legacyError('requestReReview', err);
     }
   }
 
@@ -1349,6 +1256,21 @@ export class GitLabProvider implements GitProvider {
       if (pr) return pr;
     }
     throw new Error(errorMessage);
+  }
+
+  /**
+   * Rebuild the pre-gitbeaker error shape. Callers may match on the stable
+   * prefix "<label> failed: <status>"; the suffix carries statusText and the
+   * response body description when available.
+   */
+  private legacyError(label: string, err: unknown): Error {
+    if (err instanceof GitbeakerRequestError && err.cause?.response) {
+      const res = err.cause.response as Response;
+      const desc = err.cause.description ?? '';
+      return new Error(`${label} failed: ${res.status} ${res.statusText}${desc ? ` — ${desc}` : ''}`);
+    }
+    if (err instanceof Error) return err;
+    return new Error(`${label} failed: ${String(err)}`);
   }
 
   private async runQuery<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
