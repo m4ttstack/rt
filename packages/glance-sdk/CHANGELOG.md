@@ -1,20 +1,14 @@
 # @workforge/glance-sdk
 
-## 0.10.0 (2026-07-23)
+## 0.10.0
 
-### Features
+### Minor Changes
 
-- `GitLabProvider.watchEvents(projectPath, options, onInvalidations)`: SDK-owned freshness loop over the GitLab project events feed. Translates activity into `InvalidationBatch` cache hints (`mr`, `notes`, `pipelines`, `branch`), persists position via an `onCursor` callback, reports health transitions via `onStatus`, and handles GitLab's day-exclusive `after` parameter internally. Backoff: exponential to 5 min, honors Retry-After. Cold start establishes a cursor without replaying history. Consumer-callback errors are logged via the provider logger and never misclassified as feed failures.
-- `capabilities.canWatchEvents` on `ProviderCapabilities` (GitLab true, GitHub false).
-- New exports: `EventsPoller`, `startEventsWatcher`, `classifyEvent`, and types `InvalidationKind`, `InvalidationKey`, `InvalidationBatch`, `EventCursor`, `WatchEventsOptions`, `WatchEventsStatus`.
-
-### Internal
-
-- All 25 hand-rolled REST call sites in `GitLabProvider` now go through `@gitbeaker/rest` (first runtime dependency). Public signatures, GraphQL paths, ActionCable, and `restRequest` are unchanged. Thrown errors keep the `<label> failed: <status>` prefix; suffix formatting is now uniform.
-
-### Known feed limitations (documented, unchanged)
-
-- Metadata-only MR edits (title/description/labels/assignees) and pipeline status transitions emit no event on the GitLab events feed; consumers should keep a slow full-refresh safety net.
+- 72a6b9a: Event invalidation types (`InvalidationKind`, `InvalidationKey`, `InvalidationBatch`, `EventCursor`) and `classifyEvent` function for categorizing GitLab project events.
+- 9417018: `GitLabProvider.watchEvents(projectPath, options, onInvalidations)`: SDK-owned freshness loop over the GitLab project events feed. Translates activity into `InvalidationBatch` cache hints (`mr`, `notes`, `pipelines`, `branch`), persists position via an `onCursor` callback, reports health transitions via `onStatus`, and handles GitLab's day-exclusive `after` parameter internally. Backoff: exponential to 5 min, honors Retry-After. Cold start establishes a cursor without replaying history. Consumer-callback errors are logged via the provider logger and never misclassified as feed failures. Metadata-only MR edits (title/description/labels/assignees) and pipeline status transitions emit no event on the GitLab events feed; consumers should keep a slow full-refresh safety net.
+- 9417018: `capabilities.canWatchEvents` on `ProviderCapabilities` (GitLab true, GitHub false).
+- 9417018: New exports: `EventsPoller`, `startEventsWatcher`, `classifyEvent`, and types `InvalidationKind`, `InvalidationKey`, `InvalidationBatch`, `EventCursor`, `WatchEventsOptions`, `WatchEventsStatus`.
+- c89792a: All 25 hand-rolled REST call sites in `GitLabProvider` now go through `@gitbeaker/rest` (first runtime dependency). Public signatures, GraphQL paths, ActionCable, and `restRequest` are unchanged. Thrown errors keep the `<label> failed: <status>` prefix; suffix formatting is now uniform.
 
 ## 0.9.0
 
