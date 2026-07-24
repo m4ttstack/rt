@@ -262,7 +262,8 @@ export class GitHubProvider implements GitProvider {
     canAutoMerge: false,
     canResolveDiscussions: false,
     canRetryPipeline: true,
-    canRequestReReview: true
+    canRequestReReview: true,
+    canWatchEvents: false
   };
 
   // ── GitProvider interface ─────────────────────────────────────────────────

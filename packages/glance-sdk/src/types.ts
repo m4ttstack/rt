@@ -492,6 +492,8 @@ export interface ProviderCapabilities {
   canRetryPipeline: boolean;
   /** Can re-request review attention from reviewers. */
   canRequestReReview: boolean;
+  /** Can watch the project events feed for cache invalidations. */
+  canWatchEvents: boolean;
 }
 
 /** Branch protection rule (provider-agnostic). */
@@ -660,4 +662,70 @@ export interface ServerNotification {
   mrId?: string;
   /** Deep-link URL to open when the notification is tapped. */
   webUrl?: string | null;
+}
+
+// ---------------------------------------------------------------------------
+// Events cursor / cache invalidation (GitLab events API)
+// ---------------------------------------------------------------------------
+
+/** What kind of cached thing an event invalidates. */
+export type InvalidationKind = 'mr' | 'notes' | 'pipelines' | 'branch';
+
+/** One cache-invalidation hint derived from a forge event. */
+export interface InvalidationKey {
+  kind: InvalidationKind;
+  /** MR iid, branch name, or '*' (all pipelines for the project). */
+  ref: string;
+  /** The GitLab action_name that caused it. For logging only. */
+  cause: string;
+}
+
+/**
+ * Persistent resume point for the events feed.
+ * `lastEventId` is the actual dedup key; `since` is for reporting and for
+ * computing the day-exclusive `after` request parameter.
+ */
+export interface EventCursor {
+  since: string | null;
+  lastEventId: number | null;
+}
+
+/** One delivery from watchEvents: everything fresh since the last tick. */
+export interface InvalidationBatch {
+  /** Deduped within the tick by kind:ref. Never empty. */
+  invalidations: InvalidationKey[];
+  /** ISO timestamp of when the tick completed. */
+  syncedAt: string;
+  /** Post-tick cursor (also delivered via onCursor). */
+  cursor: EventCursor;
+}
+
+/** Health of a watchEvents loop, delivered on state transitions. */
+export interface WatchEventsStatus {
+  state: 'live' | 'degraded';
+  /** Present when degraded. */
+  cause?: 'rate-limited' | 'network' | 'http-error';
+  /** ISO timestamp of the last successful tick, null before the first. */
+  lastSyncedAt: string | null;
+  /** ISO timestamp of the next retry attempt. Present when degraded. */
+  nextRetryAt?: string;
+}
+
+export interface WatchEventsOptions {
+  /**
+   * Resume point from a previous run. Omit for a cold start: the first tick
+   * establishes a cursor (2-day lookback) and fires NO invalidations, since
+   * consumers are expected to do a full refresh on boot anyway.
+   */
+  cursor?: EventCursor;
+  /** Called after every tick that advanced the cursor. Callers persist it. */
+  onCursor?: (cursor: EventCursor) => void;
+  /** Poll cadence. Default 15_000. A ±10% jitter is applied to every tick. */
+  intervalMs?: number;
+  /** State-transition callback (live/degraded). Silent when omitted. */
+  onStatus?: (status: WatchEventsStatus) => void;
+  /** Events page size. Default 100 (the GitLab cap). */
+  perPage?: number;
+  /** Max pages walked per tick on a busy feed. Default 5. */
+  maxPagesPerTick?: number;
 }

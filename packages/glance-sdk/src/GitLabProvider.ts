@@ -487,6 +487,7 @@ export class GitLabProvider implements GitProvider {
     canResolveDiscussions: true,
     canRetryPipeline: true,
     canRequestReReview: true,
+    canWatchEvents: true,
   };
 
   // MARK: - GitProvider
