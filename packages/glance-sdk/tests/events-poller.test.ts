@@ -171,4 +171,79 @@ describe('EventsPoller.tick', () => {
     await expect(poller.tick()).rejects.toThrow('network down');
     expect(poller.getCursor()).toEqual({ since: '2026-07-23T00:00:00Z', lastEventId: 30 });
   });
+
+  test('empty cold start establishes a time anchor and stays one-shot', async () => {
+    let events: GitLabEvent[] = [];
+    const fetchEvents = async (opts: { after: string; perPage: number; page: number }) => {
+      const start = (opts.page - 1) * opts.perPage;
+      return events.slice(start, start + opts.perPage);
+    };
+    const poller = new EventsPoller({ fetchEvents, perPage: 50 });
+
+    const r1 = await poller.tick();
+    expect(r1.coldStart).toBe(true);
+    expect(r1.invalidations).toEqual([]);
+    expect(r1.cursor.lastEventId).toBeNull();
+    expect(typeof r1.cursor.since).toBe('string');
+    expect(r1.cursor.since).not.toBeNull();
+    const anchorMs = new Date(r1.cursor.since as string).getTime();
+
+    // Feed gains one MR event with created_at LATER than the anchor.
+    events = [
+      ev({
+        id: 99,
+        action_name: 'opened',
+        target_type: 'MergeRequest',
+        target_iid: 9,
+        created_at: new Date(anchorMs + 1000).toISOString(),
+      }),
+    ];
+    const r2 = await poller.tick();
+    expect(r2.coldStart).toBe(false);
+    expect(r2.invalidations).toEqual([{ kind: 'mr', ref: '9', cause: 'opened' }]);
+    expect(r2.cursor.lastEventId).toBe(99);
+  });
+
+  test('timestamp fallback does not deliver events older than the anchor', async () => {
+    let events: GitLabEvent[] = [];
+    const fetchEvents = async (opts: { after: string; perPage: number; page: number }) => {
+      const start = (opts.page - 1) * opts.perPage;
+      return events.slice(start, start + opts.perPage);
+    };
+    const poller = new EventsPoller({ fetchEvents, perPage: 50 });
+
+    const r1 = await poller.tick();
+    const anchorMs = new Date(r1.cursor.since as string).getTime();
+
+    // Newest-first: later event first, earlier (pre-anchor) event second.
+    events = [
+      ev({
+        id: 101,
+        action_name: 'opened',
+        target_type: 'MergeRequest',
+        target_iid: 11,
+        created_at: new Date(anchorMs + 2000).toISOString(),
+      }),
+      ev({
+        id: 100,
+        action_name: 'opened',
+        target_type: 'MergeRequest',
+        target_iid: 10,
+        created_at: new Date(anchorMs - 2000).toISOString(),
+      }),
+    ];
+    const r2 = await poller.tick();
+    expect(r2.freshEvents).toBe(1);
+    expect(r2.invalidations).toEqual([{ kind: 'mr', ref: '11', cause: 'opened' }]);
+  });
+
+  test('poller constructed with a cursor is never coldStart', async () => {
+    const { fetchEvents } = stubFeed([]);
+    const poller = new EventsPoller({
+      fetchEvents,
+      cursor: { since: '2026-07-23T10:00:00Z', lastEventId: 10 },
+    });
+    const r = await poller.tick();
+    expect(r.coldStart).toBe(false);
+  });
 });

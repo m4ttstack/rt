@@ -7,9 +7,23 @@
  *    filters client-side by `lastEventId`.
  *  - Pages arrive newest-first. A tick walks pages until it sees the cursor
  *    id or a short page, bounded by maxPagesPerTick.
- *  - Cold start (no cursor id) establishes a cursor and reports NO
- *    invalidations. Consumers full-refresh on boot; replaying history here
- *    would only cause a refresh storm.
+ *  - Cold start is one-shot: it's the FIRST tick of a poller constructed
+ *    without a resume cursor, full stop, not "any tick where lastEventId
+ *    happens to be null." That tick reports NO invalidations regardless of
+ *    what it finds (consumers full-refresh on boot; replaying history here
+ *    would only cause a refresh storm). If that first tick finds the feed
+ *    empty (idle repo, nothing in the lookback window), it still has to
+ *    leave a trace: it sets the cursor to `{ since: now, lastEventId: null }`
+ *    as a time anchor, rather than leaving both fields null. Without this,
+ *    a naive "coldStart = cursor.lastEventId === null" re-derivation would
+ *    stay true across every subsequent empty tick and silently swallow the
+ *    invalidations of whichever tick finally sees the first real event.
+ *  - Timestamp fallback: once an empty cold tick has planted that time
+ *    anchor, `lastEventId` is null but `since` isn't. Ticks in that state
+ *    filter by `created_at > since` instead of by id (same stop-walking
+ *    semantics on the newest-first feed: hit one at-or-before `since` and
+ *    everything older is old too). The moment a tick actually sees fresh
+ *    events, the cursor gets a real `lastEventId` and id-filtering resumes.
  *
  * Known blind spots of the feed itself (verified against gitlab.com):
  * metadata-only MR edits (title/description/labels/assignees) and pipeline
@@ -97,10 +111,15 @@ export class EventsPoller {
   private readonly fetchEvents: FetchEvents;
   private readonly perPage: number;
   private readonly maxPagesPerTick: number;
+  /** True iff constructed without a resume cursor (the only pollers that ever go cold). */
+  private readonly startedWithoutCursor: boolean;
+  /** Flips to true after the first completed tick. Cold start is one-shot. */
+  private hasTicked = false;
 
   constructor(opts: EventsPollerOptions) {
     this.fetchEvents = opts.fetchEvents;
     this.cursor = opts.cursor ?? { since: null, lastEventId: null };
+    this.startedWithoutCursor = opts.cursor == null;
     this.perPage = opts.perPage ?? 100;
     this.maxPagesPerTick = opts.maxPagesPerTick ?? 5;
   }
@@ -110,14 +129,19 @@ export class EventsPoller {
   }
 
   async tick(): Promise<TickResult> {
-    const coldStart = this.cursor.lastEventId === null;
+    const coldStart = this.startedWithoutCursor && !this.hasTicked;
 
     // Day-exclusive gotcha: ask from the day BEFORE the cursor date (2 days
-    // back on cold start) and rely on the id filter below for precision.
+    // back on cold start) and rely on the id/timestamp filter below for
+    // precision.
     const fromMs = this.cursor.since
       ? new Date(this.cursor.since).getTime() - DAY_MS
       : Date.now() - 2 * DAY_MS;
     const after = new Date(fromMs).toISOString().slice(0, 10);
+
+    // Timestamp fallback: only reachable once an earlier empty cold tick
+    // planted `since` without a `lastEventId`. Otherwise id-filtering.
+    const useTimestampFallback = this.cursor.lastEventId == null && this.cursor.since != null;
 
     const fresh: GitLabEvent[] = [];
     let requests = 0;
@@ -127,7 +151,12 @@ export class EventsPoller {
       requests++;
       if (events.length === 0) break;
       for (const e of events) {
-        if (this.cursor.lastEventId != null && e.id <= this.cursor.lastEventId) {
+        if (useTimestampFallback) {
+          if (this.cursor.since != null && e.created_at <= this.cursor.since) {
+            sawCursor = true;
+            continue;
+          }
+        } else if (this.cursor.lastEventId != null && e.id <= this.cursor.lastEventId) {
           sawCursor = true;
           continue;
         }
@@ -146,7 +175,12 @@ export class EventsPoller {
     }
     if (fresh.length > 0) {
       this.cursor = { since: maxTs, lastEventId: maxId };
+    } else if (coldStart) {
+      // Empty cold tick: plant a time anchor so "cold" can't be re-derived
+      // from a still-null lastEventId on every subsequent tick.
+      this.cursor = { since: new Date().toISOString(), lastEventId: null };
     }
+    this.hasTicked = true;
 
     return {
       cursor: this.getCursor(),

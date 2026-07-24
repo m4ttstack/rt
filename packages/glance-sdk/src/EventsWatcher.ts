@@ -76,7 +76,7 @@ export function startEventsWatcher(
 
   async function run(): Promise<void> {
     if (disposed) return;
-    const before = poller.getCursor().lastEventId;
+    const before = poller.getCursor();
 
     let result: Awaited<ReturnType<typeof poller.tick>>;
     try {
@@ -110,7 +110,10 @@ export function startEventsWatcher(
       const syncedAt = lastSyncedAt;
       safeInvoke(() => options.onStatus?.({ state: 'live', lastSyncedAt: syncedAt }));
     }
-    if (result.cursor.lastEventId !== before) {
+    // Compare both fields: an empty cold tick only moves `since` (it plants
+    // a time anchor without a lastEventId), and callers still need that
+    // persisted via onCursor.
+    if (result.cursor.lastEventId !== before.lastEventId || result.cursor.since !== before.since) {
       safeInvoke(() => options.onCursor?.(result.cursor));
     }
     if (result.invalidations.length > 0) {

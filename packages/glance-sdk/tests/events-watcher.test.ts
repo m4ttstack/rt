@@ -7,7 +7,7 @@
 import { describe, expect, test } from 'bun:test';
 import { startEventsWatcher } from '../src/EventsWatcher.ts';
 import type { GitLabEvent } from '../src/EventsPoller.ts';
-import type { InvalidationBatch, WatchEventsStatus } from '../src/types.ts';
+import type { EventCursor, InvalidationBatch, WatchEventsStatus } from '../src/types.ts';
 import type { ForgeLogger } from '../src/logger.ts';
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -163,6 +163,33 @@ describe('startEventsWatcher', () => {
     expect(batches.length).toBe(0);
     expect(cursors.length).toBe(0);
     expect(statuses.length).toBe(0);
+  });
+
+  test('empty cold start still persists the anchor and later events are delivered', async () => {
+    let feed: GitLabEvent[] = [];
+    const batches: InvalidationBatch[] = [];
+    const cursors: EventCursor[] = [];
+    const dispose = startEventsWatcher(
+      async () => feed,
+      {
+        intervalMs: 20,
+        onCursor: (c) => cursors.push({ ...c }),
+      },
+      (b) => batches.push(b),
+    );
+    await sleep(60); // first ~2 ticks: empty feed, cold
+    expect(cursors.length).toBeGreaterThanOrEqual(1);
+    expect(cursors[0]!.lastEventId).toBeNull();
+    expect(typeof cursors[0]!.since).toBe('string');
+
+    // A fresh MR event lands with created_at now (after the anchor).
+    feed = [mrEvent(50, 5)];
+    await sleep(120);
+    dispose();
+    expect(batches.length).toBeGreaterThanOrEqual(1);
+    expect(
+      batches.some((b) => b.invalidations.some((k) => k.kind === 'mr' && k.ref === '5')),
+    ).toBe(true);
   });
 
   test('a throwing onInvalidations is isolated: no degraded status, loop continues', async () => {
