@@ -1,5 +1,12 @@
 # @workforge/glance-sdk
 
+## 0.10.1
+
+### Patch Changes
+
+- 4e93add: `classifyEvent` gates `branch` invalidation keys on `push_data.ref_type === 'branch'` (tag pushes no longer emit a bogus branch key; `pipelines:*` still fires for tag pipelines). Timestamp comparisons in `EventsPoller` are numeric via `Date.parse`, so offset-format timestamps from self-hosted GitLab work. `EventsWatcher` guards against reentrant `dispose()` from inside success-path callbacks, and caps a server-supplied Retry-After at the 5-minute backoff ceiling. Documented the per-tick truncation bound and the empty-feed time-anchor cold-start semantics.
+- 555c75f: `GitHubProvider.fetchPullRequestByBranch` now finds fork PRs (client-side head-ref fallback, paginated up to 500 PRs with a logged page-limit warning) and accepts the `state` parameter the `GitProvider` interface declares (interface parity; previously 2-arg only).
+
 ## 0.10.0
 
 ### Minor Changes
