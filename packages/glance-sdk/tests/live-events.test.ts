@@ -35,6 +35,9 @@ async function main(): Promise<void> {
   let failed = 0;
   const seen: string[] = [];
   let savedCursor: EventCursor | null = null;
+  // Hoisted so the outer `finally` can clean up even if a mid-sequence
+  // assertion or API call throws after the branch was created.
+  let branch: string | null = null;
 
   function collect(b: InvalidationBatch): void {
     for (const k of b.invalidations) {
@@ -71,39 +74,46 @@ async function main(): Promise<void> {
   }
 
   // 1. Cold start
-  let dispose = startWatcher();
-  await sleep(6000); // one cold tick establishes the cursor
-  console.log(`cold cursor: ${JSON.stringify(savedCursor)}`);
+  let dispose: (() => void) | null = startWatcher();
+  try {
+    await sleep(6000); // one cold tick establishes the cursor
+    console.log(`cold cursor: ${JSON.stringify(savedCursor)}`);
 
-  // 2-4. Drive events
-  const proj = await luke.Projects.show(REPO);
-  const branch = `live-events-${Date.now()}`;
-  await luke.Branches.create(REPO, branch, proj.default_branch as string);
-  await luke.Commits.create(REPO, branch, 'live-events: touch', [
-    { action: 'create', filePath: `live-events-${Date.now()}.txt`, content: 'x\n' },
-  ]);
-  const mr = await luke.MergeRequests.create(REPO, branch, proj.default_branch as string, `Live events ${branch}`);
-  console.log(`opened !${mr.iid}`);
-  await waitFor(`mr:${mr.iid}`, 'MR opened -> mr invalidation');
+    // 2-4. Drive events
+    const proj = await luke.Projects.show(REPO);
+    branch = `live-events-${Date.now()}`;
+    await luke.Branches.create(REPO, branch, proj.default_branch as string);
+    await luke.Commits.create(REPO, branch, 'live-events: touch', [
+      { action: 'create', filePath: `live-events-${Date.now()}.txt`, content: 'x\n' },
+    ]);
+    const mr = await luke.MergeRequests.create(REPO, branch, proj.default_branch as string, `Live events ${branch}`);
+    console.log(`opened !${mr.iid}`);
+    await waitFor(`mr:${mr.iid}`, 'MR opened -> mr invalidation');
 
-  await han.MergeRequestNotes.create(REPO, mr.iid, `live-events ping ${new Date().toISOString()}`);
-  await waitFor(`notes:${mr.iid}`, 'note -> notes invalidation');
+    await han.MergeRequestNotes.create(REPO, mr.iid, `live-events ping ${new Date().toISOString()}`);
+    await waitFor(`notes:${mr.iid}`, 'note -> notes invalidation');
 
-  seen.length = 0; // reset so the approval re-fire is observable
-  await han.MergeRequestApprovals.approve(REPO, mr.iid);
-  await waitFor(`mr:${mr.iid}`, 'approval -> mr invalidation (re-fire)');
+    seen.length = 0; // reset so the approval re-fire is observable
+    await han.MergeRequestApprovals.approve(REPO, mr.iid);
+    await waitFor(`mr:${mr.iid}`, 'approval -> mr invalidation (re-fire)');
 
-  // 5-6. Restart from cursor
-  dispose();
-  seen.length = 0;
-  console.log(`restarting from cursor: ${JSON.stringify(savedCursor)}`);
-  await luke.MergeRequests.edit(REPO, mr.iid, { stateEvent: 'close' });
-  dispose = startWatcher(savedCursor!);
-  await waitFor(`mr:${mr.iid}`, 'after restart: MR closed -> mr invalidation');
-  dispose();
+    // 5-6. Restart from cursor
+    dispose();
+    dispose = null;
+    seen.length = 0;
+    console.log(`restarting from cursor: ${JSON.stringify(savedCursor)}`);
+    await luke.MergeRequests.edit(REPO, mr.iid, { stateEvent: 'close' });
+    dispose = startWatcher(savedCursor!);
+    await waitFor(`mr:${mr.iid}`, 'after restart: MR closed -> mr invalidation');
+  } finally {
+    // 7. Cleanup: always dispose the watcher and delete the branch, even if
+    // an assertion or API call above threw mid-sequence.
+    dispose?.();
+    if (branch) {
+      try { await luke.Branches.remove(REPO, branch); } catch {}
+    }
+  }
 
-  // 7. Cleanup
-  try { await luke.Branches.remove(REPO, branch); } catch {}
   console.log(`\n${passed}/${passed + failed} live assertions passed`);
   process.exit(failed === 0 ? 0 : 1);
 }

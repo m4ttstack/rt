@@ -13,11 +13,14 @@
  *    what it finds (consumers full-refresh on boot; replaying history here
  *    would only cause a refresh storm). If that first tick finds the feed
  *    empty (idle repo, nothing in the lookback window), it still has to
- *    leave a trace: it sets the cursor to `{ since: now, lastEventId: null }`
- *    as a time anchor, rather than leaving both fields null. Without this,
- *    a naive "coldStart = cursor.lastEventId === null" re-derivation would
- *    stay true across every subsequent empty tick and silently swallow the
+ *    leave a trace: it sets the cursor to
+ *    `{ since: now - CLOCK_SKEW_MARGIN_MS, lastEventId: null }` as a time
+ *    anchor, rather than leaving both fields null. Without this, a naive
+ *    "coldStart = cursor.lastEventId === null" re-derivation would stay
+ *    true across every subsequent empty tick and silently swallow the
  *    invalidations of whichever tick finally sees the first real event.
+ *    The backward padding absorbs clock skew against GitLab's server clock
+ *    (see CLOCK_SKEW_MARGIN_MS below).
  *  - Timestamp fallback: once an empty cold tick has planted that time
  *    anchor, `lastEventId` is null but `since` isn't. Ticks in that state
  *    filter by `created_at > since` instead of by id (same stop-walking
@@ -106,6 +109,13 @@ export interface EventsPollerOptions {
 
 const DAY_MS = 24 * 60 * 60_000;
 
+/**
+ * Padding applied to the empty-cold-start time anchor to absorb clock skew
+ * between this process's local clock and GitLab's server clock (which
+ * stamps `created_at`). See the empty-cold-tick branch in `tick()`.
+ */
+const CLOCK_SKEW_MARGIN_MS = 60_000;
+
 export class EventsPoller {
   private cursor: EventCursor;
   private readonly fetchEvents: FetchEvents;
@@ -119,7 +129,12 @@ export class EventsPoller {
   constructor(opts: EventsPollerOptions) {
     this.fetchEvents = opts.fetchEvents;
     this.cursor = opts.cursor ?? { since: null, lastEventId: null };
-    this.startedWithoutCursor = opts.cursor == null;
+    // A cursor with BOTH fields null (e.g. round-tripped through storage,
+    // or explicitly passed) is absent in every way that matters -- treat it
+    // the same as an omitted cursor. Otherwise it would permanently disable
+    // cold-start suppression and risk a full lookback-window history replay.
+    this.startedWithoutCursor =
+      opts.cursor?.since == null && opts.cursor?.lastEventId == null;
     this.perPage = opts.perPage ?? 100;
     this.maxPagesPerTick = opts.maxPagesPerTick ?? 5;
   }
@@ -178,7 +193,21 @@ export class EventsPoller {
     } else if (coldStart) {
       // Empty cold tick: plant a time anchor so "cold" can't be re-derived
       // from a still-null lastEventId on every subsequent tick.
-      this.cursor = { since: new Date().toISOString(), lastEventId: null };
+      //
+      // Pad the anchor backwards by CLOCK_SKEW_MARGIN_MS: `created_at` is
+      // stamped by GitLab's server clock, not ours. If GitLab's clock lags
+      // behind local time, an event created moments after "now" could still
+      // carry a `created_at` at-or-before an unpadded anchor and be
+      // silently dropped forever (the anchor never re-advances until an
+      // event passes the filter). Trade-off: events up to
+      // CLOCK_SKEW_MARGIN_MS before start may be re-delivered as
+      // invalidations on the first warm tick -- harmless over-delivery,
+      // since invalidations are idempotent refresh hints -- in exchange for
+      // immunity to server/client clock skew up to the margin.
+      this.cursor = {
+        since: new Date(Date.now() - CLOCK_SKEW_MARGIN_MS).toISOString(),
+        lastEventId: null,
+      };
     }
     this.hasTicked = true;
 

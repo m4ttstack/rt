@@ -246,4 +246,81 @@ describe('EventsPoller.tick', () => {
     const r = await poller.tick();
     expect(r.coldStart).toBe(false);
   });
+
+  test('empty cold-start anchor tolerates server clock lagging behind local time', async () => {
+    let events: GitLabEvent[] = [];
+    const fetchEvents = async (opts: { after: string; perPage: number; page: number }) => {
+      const start = (opts.page - 1) * opts.perPage;
+      return events.slice(start, start + opts.perPage);
+    };
+    const poller = new EventsPoller({ fetchEvents, perPage: 50 });
+
+    const wallClockAtColdTick = Date.now();
+    const r1 = await poller.tick();
+    expect(r1.coldStart).toBe(true);
+
+    // Simulated GitLab clock lag: the event's `created_at` (server-stamped)
+    // is 30s BEFORE the local wall clock at the moment the cold tick ran --
+    // inside the 60s skew margin. A naive anchor (unpadded "now") would put
+    // this event at-or-before `since` and drop it forever.
+    events = [
+      ev({
+        id: 99,
+        action_name: 'opened',
+        target_type: 'MergeRequest',
+        target_iid: 9,
+        created_at: new Date(wallClockAtColdTick - 30_000).toISOString(),
+      }),
+    ];
+    const r2 = await poller.tick();
+    expect(r2.coldStart).toBe(false);
+    expect(r2.invalidations).toEqual([{ kind: 'mr', ref: '9', cause: 'opened' }]);
+  });
+
+  test('explicit null-null cursor behaves exactly like an omitted cursor (cold start)', async () => {
+    let events: GitLabEvent[] = [];
+    const fetchEvents = async (opts: { after: string; perPage: number; page: number }) => {
+      const start = (opts.page - 1) * opts.perPage;
+      return events.slice(start, start + opts.perPage);
+    };
+    const poller = new EventsPoller({
+      fetchEvents,
+      cursor: { since: null, lastEventId: null },
+      perPage: 50,
+    });
+
+    const r1 = await poller.tick();
+    expect(r1.coldStart).toBe(true);
+    expect(r1.invalidations).toEqual([]);
+    const anchorMs = new Date(r1.cursor.since as string).getTime();
+
+    events = [
+      ev({
+        id: 30,
+        action_name: 'opened',
+        target_type: 'MergeRequest',
+        target_iid: 5,
+        created_at: new Date(anchorMs + 1000).toISOString(),
+      }),
+    ];
+    const r2 = await poller.tick();
+    expect(r2.coldStart).toBe(false);
+    expect(r2.invalidations).toEqual([{ kind: 'mr', ref: '5', cause: 'opened' }]);
+  });
+
+  test('cold tick that throws stays cold: a later successful tick still reports coldStart', async () => {
+    let shouldThrow = true;
+    const fetchEvents = async (_opts: { after: string; perPage: number; page: number }) => {
+      if (shouldThrow) throw new Error('network down');
+      return [];
+    };
+    const poller = new EventsPoller({ fetchEvents, perPage: 50 });
+
+    await expect(poller.tick()).rejects.toThrow('network down');
+
+    shouldThrow = false;
+    const r = await poller.tick();
+    expect(r.coldStart).toBe(true);
+    expect(r.invalidations).toEqual([]);
+  });
 });
