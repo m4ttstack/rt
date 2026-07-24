@@ -69,7 +69,9 @@ function serviceHtml(row) {
 
 function portCellHtml(row, data) {
   const app = esc(row.name);
-  if (!data.canManage || row.port == null) {
+  // The board's own row (row.self) is never port-editable -- overriding it would
+  // repoint the dashboard itself. Render a plain port like orphan/read-only rows.
+  if (!data.canManage || row.port == null || row.self) {
     return row.port != null ? `<td class="num">${row.port}</td>` : `<td class="num muted">—</td>`;
   }
   const ov = row.override;

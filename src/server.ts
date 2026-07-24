@@ -54,6 +54,8 @@ interface StatusRow {
   /** A cloudflared tunnel service (infra), rendered in its own section. */
   isTunnel: boolean;
   override: PortOverride | null;
+  /** The board's own row (its port === the board's PORT): never port-editable. */
+  self: boolean;
 }
 
 interface Status {
@@ -111,6 +113,7 @@ async function buildStatus(requestHost?: string): Promise<Status> {
         hasPassword: !!settings.passwordHash,
         isTunnel: false,
         override: settings.override ?? null,
+        self: a.port === PORT,
       };
     }),
   );
@@ -127,6 +130,7 @@ async function buildStatus(requestHost?: string): Promise<Status> {
     // cloudflared tunnels are infrastructure, not stray app services.
     isTunnel: s.program.some((p) => p.includes("cloudflared")),
     override: null,
+    self: false,
   }));
 
   return {
@@ -180,10 +184,13 @@ const SHELL = `<!doctype html>
         color: inherit; opacity: 0.35; text-decoration: none; }
   a.launch:hover { opacity: 0.9; text-decoration: none; }
   a.launch.off { opacity: 0.18; }
-  .num { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.8rem; opacity: 0.85; }
+  .num { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.8rem; opacity: 0.85;
+        white-space: nowrap; }
   .port-set, .ovr { cursor: pointer; }
   .port-set { border-bottom: 1px dotted color-mix(in srgb, CanvasText 40%, transparent); }
-  .ovr { font-weight: 600; }
+  /* override reads inline: ⚡ base → dev  ×  (never stacks) */
+  .ovr { font-weight: 600; display: inline-flex; align-items: baseline; gap: 5px; white-space: nowrap; }
+  .ovr s { opacity: 0.5; }
   input.port-edit { font: inherit; font-size: 0.8rem; width: 5.5em; padding: 1px 4px;
         border: 1px solid #8886; border-radius: 5px; background: Canvas; color: CanvasText; }
   button.clear-port { margin-left: 4px; padding: 0 0.35rem; }
@@ -347,6 +354,13 @@ Bun.serve({
       const app = String(form.get("app") ?? "");
       const portStr = String(form.get("port") ?? "").trim();
       if (!(await knownApp(app))) return json({ error: "unknown app" }, 400);
+
+      // The board's own row must never be port-overridden: that would repoint the
+      // control plane at a dev process and take the dashboard down with it.
+      const curRoute = readRoutes().find((r) => r.hostname.replace(/\.localhost$/, "") === app);
+      if (curRoute?.port === PORT || getOverride(app)?.basePort === PORT) {
+        return json({ error: "cannot override the board itself" }, 400);
+      }
 
       // Blank port clears the override, restoring the captured base port.
       if (portStr === "") {
