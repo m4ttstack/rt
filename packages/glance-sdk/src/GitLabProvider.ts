@@ -501,19 +501,12 @@ export class GitLabProvider implements GitProvider {
   // MARK: - GitProvider
 
   async validateToken(): Promise<UserRef> {
-    const url = `${this.baseURL}/api/v4/user`;
-    const res = await fetch(url, {
-      headers: { 'PRIVATE-TOKEN': this.token },
-    });
-    if (!res.ok) {
-      throw new Error(`Token validation failed: ${res.status} ${res.statusText}`);
+    let user: { id: number; username: string; name: string; avatar_url: string | null };
+    try {
+      user = (await this.gb.Users.showCurrentUser()) as unknown as typeof user;
+    } catch (err) {
+      throw this.legacyError('Token validation', err);
     }
-    const user = (await res.json()) as {
-      id: number;
-      username: string;
-      name: string;
-      avatar_url: string | null;
-    };
     let avatarUrl: string | null = user.avatar_url;
     if (avatarUrl) {
       if (avatarUrl.startsWith('/')) {
@@ -547,23 +540,18 @@ export class GitLabProvider implements GitProvider {
     let resp: MRDetailResponse;
     let divergedCommitsCount: number | null = null;
     try {
-      const encoded = encodeURIComponent(projectPath);
       [resp] = await Promise.all([
         this.runQuery<MRDetailResponse>(MR_DETAIL_QUERY, {
           projectPath,
           iid: String(mrIid),
         }),
-        fetch(
-          `${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}?include_diverged_commits_count=true`,
-          { headers: { 'PRIVATE-TOKEN': this.token } },
-        ).then(async (r) => {
-          if (r.ok) {
-            const data = (await r.json()) as {
-              diverged_commits_count?: number;
-            };
-            divergedCommitsCount = data.diverged_commits_count ?? null;
-          }
-        }),
+        this.gb.MergeRequests.show(projectPath, mrIid, { includeDivergedCommitsCount: true } as never)
+          .then((data) => {
+            divergedCommitsCount = (data as unknown as { diverged_commits_count?: number }).diverged_commits_count ?? null;
+          })
+          .catch(() => {
+            // Non-fatal: leave divergedCommitsCount null.
+          }),
       ] as unknown as [MRDetailResponse, void]);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -682,20 +670,13 @@ export class GitLabProvider implements GitProvider {
         const match = pr.webUrl?.match(/\/([^/]+\/[^/]+)\/-\/merge_requests/);
         if (!match) return;
         const projectPath = match[1]!;
-        const encoded = encodeURIComponent(projectPath);
         try {
-          const r = await fetch(
-            `${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${pr.iid}?include_diverged_commits_count=true`,
-            { headers: { 'PRIVATE-TOKEN': this.token } },
-          );
-          if (r.ok) {
-            const data = (await r.json()) as {
-              diverged_commits_count?: number;
-            };
-            pr.divergedCommitsCount = data.diverged_commits_count ?? null;
-          }
+          const data = (await this.gb.MergeRequests.show(projectPath, pr.iid, {
+            includeDivergedCommitsCount: true,
+          } as never)) as unknown as { diverged_commits_count?: number };
+          pr.divergedCommitsCount = data.diverged_commits_count ?? null;
         } catch {
-          // Non-fatal — leave as null
+          // Non-fatal: leave as null
         }
       }),
     );
@@ -710,20 +691,21 @@ export class GitLabProvider implements GitProvider {
   }
 
   async fetchBranchProtectionRules(projectPath: string): Promise<BranchProtectionRule[]> {
-    const encoded = encodeURIComponent(projectPath);
-    const res = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/protected_branches?per_page=100`, {
-      headers: { 'PRIVATE-TOKEN': this.token },
-    });
-    if (!res.ok) {
-      throw new Error(`fetchBranchProtectionRules failed: ${res.status} ${await res.text()}`);
-    }
-    const branches = (await res.json()) as Array<{
+    let branches: Array<{
       name: string;
       allow_force_push: boolean;
       push_access_levels: Array<{ access_level: number }>;
       merge_access_levels: Array<{ access_level: number }>;
       code_owner_approval_required?: boolean;
     }>;
+    try {
+      branches = (await this.gb.ProtectedBranches.all(projectPath, {
+        perPage: 100,
+        page: 1,
+      } as never)) as unknown as typeof branches;
+    } catch (err) {
+      throw this.legacyError('fetchBranchProtectionRules', err);
+    }
     return branches.map((b) => ({
       pattern: b.name,
       allowForcePush: b.allow_force_push,
@@ -747,20 +729,23 @@ export class GitLabProvider implements GitProvider {
     sourceBranch: string,
     state: MRState | 'all' = 'opened',
   ): Promise<PullRequest | null> {
-    const encoded = encodeURIComponent(projectPath);
-    const url = `${this.baseURL}/api/v4/projects/${encoded}/merge_requests?source_branch=${encodeURIComponent(sourceBranch)}&state=${state}&per_page=1`;
-    const res = await fetch(url, {
-      headers: { 'PRIVATE-TOKEN': this.token },
-    });
-    if (!res.ok) {
+    let mrs: Array<{ iid: number }>;
+    try {
+      mrs = (await this.gb.MergeRequests.all({
+        projectId: projectPath,
+        sourceBranch,
+        ...(state === 'all' ? {} : { state }),
+        perPage: 1,
+        page: 1,
+      } as never)) as unknown as Array<{ iid: number }>;
+    } catch (err) {
       this.log.warn('fetchPullRequestByBranch failed', {
         projectPath,
         sourceBranch,
-        status: res.status,
+        message: err instanceof Error ? err.message : String(err),
       });
       return null;
     }
-    const mrs = (await res.json()) as Array<{ iid: number }>;
     if (!mrs[0]) return null;
     return this.fetchSingleMR(projectPath, mrs[0].iid, null);
   }
@@ -806,57 +791,46 @@ export class GitLabProvider implements GitProvider {
   }
 
   async createPullRequest(input: CreatePullRequestInput): Promise<PullRequest> {
-    const encoded = encodeURIComponent(input.projectPath);
-    const body: Record<string, unknown> = {
-      source_branch: input.sourceBranch,
-      target_branch: input.targetBranch,
-      title: input.title,
-    };
-    if (input.description != null) body.description = input.description;
-    if (input.draft != null) body.draft = input.draft;
-    if (input.labels?.length) body.labels = input.labels.join(',');
-    if (input.assignees?.length) body.assignee_ids = input.assignees;
-    if (input.reviewers?.length) body.reviewer_ids = input.reviewers;
+    const opts: Record<string, unknown> = {};
+    if (input.description != null) opts.description = input.description;
+    // 'draft' is not a documented create param (GitLab derives draft from the
+    // title); the legacy code sent it anyway and GitLab ignores unknown
+    // params. Passed through for wire parity.
+    if (input.draft != null) opts.draft = input.draft;
+    if (input.labels?.length) opts.labels = input.labels.join(',');
+    if (input.assignees?.length) opts.assigneeIds = input.assignees;
+    if (input.reviewers?.length) opts.reviewerIds = input.reviewers;
 
-    const res = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/merge_requests`, {
-      method: 'POST',
-      headers: {
-        'PRIVATE-TOKEN': this.token,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`createPullRequest failed: ${res.status} ${text}`);
+    let created: { iid: number };
+    try {
+      created = (await this.gb.MergeRequests.create(
+        input.projectPath,
+        input.sourceBranch,
+        input.targetBranch,
+        input.title,
+        opts as never,
+      )) as unknown as { iid: number };
+    } catch (err) {
+      throw this.legacyError('createPullRequest', err);
     }
-    const created = (await res.json()) as { iid: number };
     return this.fetchSingleMRWithRetry(input.projectPath, created.iid, 'Created MR but failed to fetch it back');
   }
 
   async updatePullRequest(projectPath: string, mrIid: number, input: UpdatePullRequestInput): Promise<PullRequest> {
-    const encoded = encodeURIComponent(projectPath);
-    const body: Record<string, unknown> = {};
-    if (input.title != null) body.title = input.title;
-    if (input.description != null) body.description = input.description;
-    if (input.draft != null) body.draft = input.draft;
-    if (input.targetBranch != null) body.target_branch = input.targetBranch;
-    if (input.labels) body.labels = input.labels.join(',');
-    if (input.assignees) body.assignee_ids = input.assignees;
-    if (input.reviewers) body.reviewer_ids = input.reviewers;
-    if (input.stateEvent) body.state_event = input.stateEvent;
+    const opts: Record<string, unknown> = {};
+    if (input.title != null) opts.title = input.title;
+    if (input.description != null) opts.description = input.description;
+    if (input.draft != null) opts.draft = input.draft; // wire parity, see createPullRequest
+    if (input.targetBranch != null) opts.targetBranch = input.targetBranch;
+    if (input.labels) opts.labels = input.labels.join(',');
+    if (input.assignees) opts.assigneeIds = input.assignees;
+    if (input.reviewers) opts.reviewerIds = input.reviewers;
+    if (input.stateEvent) opts.stateEvent = input.stateEvent;
 
-    const res = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/merge_requests/${mrIid}`, {
-      method: 'PUT',
-      headers: {
-        'PRIVATE-TOKEN': this.token,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`updatePullRequest failed: ${res.status} ${text}`);
+    try {
+      await this.gb.MergeRequests.edit(projectPath, mrIid, opts as never);
+    } catch (err) {
+      throw this.legacyError('updatePullRequest', err);
     }
     return this.fetchSingleMRWithRetry(projectPath, mrIid, 'Updated MR but failed to fetch it back');
   }
@@ -1115,11 +1089,17 @@ export class GitLabProvider implements GitProvider {
   }
 
   /** Build a Pipeline domain object from a downstream_pipeline ref + fetched jobs. */
-  private async buildDownstreamPipeline(encoded: string, dp: any): Promise<Pipeline> {
-    const jobsRes = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/pipelines/${dp.id}/jobs?per_page=100`, {
-      headers: { 'PRIVATE-TOKEN': this.token },
-    });
-    const pipelineJobs: any[] = jobsRes.ok ? await jobsRes.json() : [];
+  private async buildDownstreamPipeline(projectPath: string, dp: any): Promise<Pipeline> {
+    let pipelineJobs: any[] = [];
+    try {
+      pipelineJobs = (await this.gb.Jobs.all(projectPath, {
+        pipelineId: dp.id,
+        perPage: 100,
+        page: 1,
+      } as never)) as unknown as any[];
+    } catch {
+      // Match legacy behavior: jobs listing failure yields an empty jobs array.
+    }
     return {
       id: domainId('pipeline', dp.id),
       status: (dp.status || '').toLowerCase(),
@@ -1151,35 +1131,32 @@ export class GitLabProvider implements GitProvider {
     jobId: number,
     pipelineId?: number,
   ): Promise<Pipeline | null> {
-    const encoded = encodeURIComponent(projectPath);
-
-    // Attempt 1: regular job endpoint
-    const jobRes = await fetch(`${this.baseURL}/api/v4/projects/${encoded}/jobs/${jobId}`, {
-      headers: { 'PRIVATE-TOKEN': this.token },
-    });
-    if (jobRes.ok) {
-      const job: any = await jobRes.json();
+    // Attempt 1: regular job endpoint (bridge jobs 404 here).
+    try {
+      const job: any = await this.gb.Jobs.show(projectPath, jobId);
       if (job.downstream_pipeline) {
-        return this.buildDownstreamPipeline(encoded, job.downstream_pipeline);
+        return this.buildDownstreamPipeline(projectPath, job.downstream_pipeline);
       }
       return null; // Regular job, not a bridge
+    } catch {
+      // Fall through to the bridges scan.
     }
 
-    // Attempt 2: bridge endpoint fallback (bridge jobs 404 on /jobs/:id)
+    // Attempt 2: bridges fallback.
     if (pipelineId) {
-      const bridgesRes = await fetch(
-        `${this.baseURL}/api/v4/projects/${encoded}/pipelines/${pipelineId}/bridges?per_page=100`,
-        { headers: { 'PRIVATE-TOKEN': this.token } },
-      );
-      if (bridgesRes.ok) {
-        const bridges: any[] = await bridgesRes.json();
+      try {
+        const bridges = (await this.gb.Jobs.allPipelineBridges(projectPath, pipelineId, {
+          perPage: 100,
+          page: 1,
+        } as never)) as unknown as any[];
         const bridge = bridges.find((b: any) => b.id === jobId);
         if (bridge?.downstream_pipeline) {
-          return this.buildDownstreamPipeline(encoded, bridge.downstream_pipeline);
+          return this.buildDownstreamPipeline(projectPath, bridge.downstream_pipeline);
         }
+      } catch {
+        // Match legacy: bridge listing failure means "no downstream found".
       }
     }
-
     return null;
   }
 
