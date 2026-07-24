@@ -38,7 +38,13 @@ export type {
   ReviewerSummary,
   FeedEvent,
   FeedSnapshot,
-  ServerNotification
+  ServerNotification,
+  InvalidationKind,
+  InvalidationKey,
+  InvalidationBatch,
+  EventCursor,
+  WatchEventsOptions,
+  WatchEventsStatus,
 } from './types.ts';
 export { getReviewDisplayState, getReviewerSummaries } from './types.ts';
 export type { MRStatus, MRState, MRDashboardProps, MRDashboardActions } from './types.ts';
@@ -76,6 +82,11 @@ export type {
   WatcherSubscribeCallbacks,
   WatcherStatus,
 } from './RealtimeWatcher.ts';
+
+// ── Events cursor (GitLab freshness feed) ─────────────────────────────────────
+export { EventsPoller, classifyEvent } from './EventsPoller.ts';
+export type { GitLabEvent, FetchEvents, TickResult, EventsPollerOptions } from './EventsPoller.ts';
+export { startEventsWatcher } from './EventsWatcher.ts';
 
 // ── GitLab detail + mutations ─────────────────────────────────────────────────
 export { MRDetailFetcher } from './MRDetailFetcher.ts';

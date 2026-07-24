@@ -2,6 +2,7 @@ import type {
   BranchProtectionRule,
   CreatePullRequestInput,
   Discussion,
+  InvalidationBatch,
   JobDetail,
   MergePullRequestInput,
   MRDetail,
@@ -10,6 +11,7 @@ import type {
   PullRequest,
   UpdatePullRequestInput,
   UserRef,
+  WatchEventsOptions,
 } from './types.ts';
 import type { RealtimeWatcherOptions } from './RealtimeWatcher.ts';
 
@@ -286,6 +288,26 @@ export interface GitProvider {
     currentUserNumericId: number | null,
     onUpdate: (pr: PullRequest) => void,
     options?: RealtimeWatcherOptions,
+  ): () => void;
+
+  /**
+   * Watch the project's events feed and translate activity into cache
+   * invalidation hints. The SDK owns the poll loop: interval, jitter,
+   * retry, and backoff. The caller persists the cursor via
+   * `options.onCursor` and passes it back on the next start.
+   *
+   * Optional: GitLab-only today. Feature-detect with
+   * `provider.watchEvents?.(...)` or check `capabilities.canWatchEvents`.
+   *
+   * Known feed blind spots (rely on a slow full refresh for these):
+   * metadata-only MR edits and pipeline status transitions emit no event.
+   *
+   * @returns dispose. Call to stop the loop.
+   */
+  watchEvents?(
+    projectPath: string,
+    options: WatchEventsOptions,
+    onInvalidations: (batch: InvalidationBatch) => void,
   ): () => void;
 }
 

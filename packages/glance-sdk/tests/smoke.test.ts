@@ -29,6 +29,11 @@ import {
   MRDetailFetcher,
   NoteMutator,
 
+  // Events cursor
+  EventsPoller,
+  classifyEvent,
+  startEventsWatcher,
+
   // Logger
   noopLogger,
 
@@ -354,8 +359,20 @@ assert(
   'contains approvedBy field'
 );
 
-// ── Test 11: Type compatibility (compile-time) ──────────────────────────────
-console.log('\n▶ Test 11: Type compatibility (compile-time check)');
+// ── Test 11: Events cursor surface ──────────────────────────────────────────
+console.log('\n▶ Test 11: Events cursor surface');
+assert(typeof EventsPoller === 'function', 'EventsPoller exported');
+assert(typeof classifyEvent === 'function', 'classifyEvent exported');
+assert(typeof startEventsWatcher === 'function', 'startEventsWatcher exported');
+assert(
+  typeof GitLabProvider.prototype.watchEvents === 'function',
+  'GitLabProvider.watchEvents exists'
+);
+assert(gl.capabilities.canWatchEvents === true, 'GitLab: canWatchEvents');
+assert(gh.capabilities.canWatchEvents === false, 'GitHub: canWatchEvents (false)');
+
+// ── Test 12: Type compatibility (compile-time) ──────────────────────────────
+console.log('\n▶ Test 12: Type compatibility (compile-time check)');
 // If this file compiles, these type imports are valid
 const _typeCheck: {
   pr: PullRequest;

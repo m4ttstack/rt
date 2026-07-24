@@ -20,7 +20,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "bun build src/index.ts src/types.ts src/logger.ts src/GitProvider.ts src/GitLabProvider.ts src/GitHubProvider.ts src/ActionCableClient.ts src/MRDetailFetcher.ts src/NoteMutator.ts src/providers.ts --outdir dist --root src --target node && tsc -p tsconfig.build.json",
+    "build": "bun build src/index.ts src/types.ts src/logger.ts src/GitProvider.ts src/GitLabProvider.ts src/GitHubProvider.ts src/ActionCableClient.ts src/MRDetailFetcher.ts src/NoteMutator.ts src/EventsPoller.ts src/EventsWatcher.ts src/providers.ts --outdir dist --root src --target node && tsc -p tsconfig.build.json",
     "prepublishOnly": "bun run check-types && bun run build",
     "check-types": "tsc --noEmit"
   },
@@ -37,5 +37,8 @@
     "typescript": "catalog:",
     "@types/node": "^22.15.21",
     "@workforge/typescript-config": "workspace:*"
+  },
+  "dependencies": {
+    "@gitbeaker/rest": "^43.8.0"
   }
 }

@@ -1,8 +1,10 @@
+import { Gitlab } from '@gitbeaker/rest';
 import type { GitProvider, FetchPullRequestsOptions, MRState } from './GitProvider.ts';
 import type {
   BranchProtectionRule,
   CreatePullRequestInput,
   DiffStats,
+  InvalidationBatch,
   JobDetail,
   MergeabilityCheck,
   MergePullRequestInput,
@@ -14,11 +16,14 @@ import type {
   Reviewer,
   UpdatePullRequestInput,
   UserRef,
+  WatchEventsOptions,
 } from './types.ts';
 import { type ForgeLogger, noopLogger } from './logger.ts';
 import { MRDetailFetcher } from './MRDetailFetcher.ts';
 import { ActionCableClient } from './ActionCableClient.ts';
 import { createRealtimeWatcher, type RealtimeWatcherOptions } from './RealtimeWatcher.ts';
+import { startEventsWatcher } from './EventsWatcher.ts';
+import type { FetchEvents, GitLabEvent } from './EventsPoller.ts';
 
 // ---------------------------------------------------------------------------
 // Repository ID helpers
@@ -454,6 +459,8 @@ export class GitLabProvider implements GitProvider {
   private readonly token: string;
   private readonly log: ForgeLogger;
   private readonly mrDetailFetcher: MRDetailFetcher;
+  /** Typed REST client. All non-GraphQL API calls go through this. */
+  private readonly gb: InstanceType<typeof Gitlab>;
 
   // ── Shared ActionCable connection ────────────────────────────────────
   // All watchMR calls multiplex over one WebSocket instead of N.
@@ -470,6 +477,7 @@ export class GitLabProvider implements GitProvider {
     // Strip trailing slash for consistent URL building
     this.baseURL = baseURL.replace(/\/$/, '');
     this.token = token;
+    this.gb = new Gitlab({ host: this.baseURL, token });
     this.log = options.logger ?? noopLogger;
     this.mrDetailFetcher = new MRDetailFetcher(this.baseURL, token, {
       logger: this.log,
@@ -994,6 +1002,21 @@ export class GitLabProvider implements GitProvider {
         logContext: `watchMR:${projectPath}!${mrIid}`,
       },
     });
+  }
+
+  watchEvents(
+    projectPath: string,
+    options: WatchEventsOptions,
+    onInvalidations: (batch: InvalidationBatch) => void,
+  ): () => void {
+    const fetchEvents: FetchEvents = ({ after, perPage, page }) =>
+      this.gb.Events.all({
+        projectId: projectPath,
+        after,
+        perPage,
+        page,
+      }) as unknown as Promise<GitLabEvent[]>;
+    return startEventsWatcher(fetchEvents, options, onInvalidations, this.log);
   }
 
   // ── MR lifecycle mutations ──────────────────────────────────────────────
