@@ -12,7 +12,7 @@
  * provides the instance URL and we append "/api/v3".
  */
 
-import type { GitProvider } from './GitProvider.ts';
+import type { GitProvider, MRState } from './GitProvider.ts';
 import type {
   BranchProtectionRule,
   CreatePullRequestInput,
@@ -143,6 +143,17 @@ function normalizePRState(pr: GHPullRequest): string {
   if (pr.merged_at) return 'merged';
   if (pr.state === 'open') return 'opened';
   return 'closed';
+}
+
+/**
+ * Map our provider-agnostic MRState to GitHub's `state` query param, which
+ * only knows "open" | "closed" | "all" (GitHub has no separate "merged"
+ * state -- a merged PR is just `state=closed` with `merged_at` set).
+ */
+function mapStateToGitHubQueryParam(state: MRState | 'all'): 'open' | 'closed' | 'all' {
+  if (state === 'all') return 'all';
+  if (state === 'opened') return 'open';
+  return 'closed'; // 'closed' and 'merged' both map to GitHub's 'closed'
 }
 
 /**
@@ -511,11 +522,18 @@ export class GitHubProvider implements GitProvider {
 
   async fetchPullRequestByBranch(
     projectPath: string,
-    sourceBranch: string
+    sourceBranch: string,
+    state: MRState | 'all' = 'opened'
   ): Promise<PullRequest | null> {
+    const ghState = mapStateToGitHubQueryParam(state);
+
+    // Fast path: GitHub's `head` filter requires `<owner>:<branch>`, and we
+    // only know the BASE repo's owner here -- this matches same-repo
+    // branches but never matches a fork PR (whose head lives under a
+    // different owner).
     const res = await this.api(
       'GET',
-      `/repos/${projectPath}/pulls?head=${projectPath.split('/')[0]}:${encodeURIComponent(sourceBranch)}&state=open&per_page=1`
+      `/repos/${projectPath}/pulls?head=${projectPath.split('/')[0]}:${encodeURIComponent(sourceBranch)}&state=${ghState}&per_page=1`
     );
     if (!res.ok) {
       this.log.warn('fetchPullRequestByBranch failed', {
@@ -526,8 +544,29 @@ export class GitHubProvider implements GitProvider {
       return null;
     }
     const prs = (await res.json()) as GHPullRequest[];
-    if (!prs[0]) return null;
-    return this.fetchSingleMR(projectPath, prs[0].number, null);
+    if (prs[0]) {
+      return this.fetchSingleMR(projectPath, prs[0].number, null);
+    }
+
+    // Fallback: list PRs in the target state and match by head.ref
+    // client-side, which catches fork PRs the head-filtered fast path
+    // above can never see. First match wins.
+    const listRes = await this.api(
+      'GET',
+      `/repos/${projectPath}/pulls?state=${ghState}&per_page=100`
+    );
+    if (!listRes.ok) {
+      this.log.warn('fetchPullRequestByBranch failed', {
+        projectPath,
+        sourceBranch,
+        status: listRes.status
+      });
+      return null;
+    }
+    const list = (await listRes.json()) as GHPullRequest[];
+    const match = list.find((pr) => pr.head.ref === sourceBranch);
+    if (!match) return null;
+    return this.fetchSingleMR(projectPath, match.number, null);
   }
 
   async createPullRequest(input: CreatePullRequestInput): Promise<PullRequest> {

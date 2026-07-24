@@ -663,8 +663,9 @@ export class GitLabProvider implements GitProvider {
 
     const prs = [...byId.values()];
 
-    // Fetch diverged_commits_count for all MRs in parallel via REST.
-    // We need the project path per MR, which we derive from webUrl.
+    // Fetch diverged_commits_count for all MRs in parallel via gitbeaker's
+    // MergeRequests.show. We need the project path per MR, which we derive
+    // from webUrl.
     await Promise.all(
       prs.map(async (pr) => {
         const match = pr.webUrl?.match(/\/([^/]+\/[^/]+)\/-\/merge_requests/);
