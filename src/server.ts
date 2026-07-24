@@ -22,6 +22,7 @@ import {
   getOverride,
   setOverride,
   clearOverride,
+  type PortOverride,
 } from "./settings.ts";
 import { startGateway } from "./gateway.ts";
 import { setRoutePort } from "./routes-writer.ts";
@@ -52,7 +53,7 @@ interface StatusRow {
   hasPassword: boolean;
   /** A cloudflared tunnel service (infra), rendered in its own section. */
   isTunnel: boolean;
-  override: { devPort: number; basePort: number } | null;
+  override: PortOverride | null;
 }
 
 interface Status {

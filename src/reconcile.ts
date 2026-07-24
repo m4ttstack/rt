@@ -1,8 +1,8 @@
 import { readRoutes, type PortlessRoute } from "./discover.ts";
-import { getOverrides } from "./settings.ts";
+import { getOverrides, type PortOverride } from "./settings.ts";
 import { setRoutePort } from "./routes-writer.ts";
 
-export type Overrides = Record<string, { devPort: number; basePort: number }>;
+export type Overrides = Record<string, PortOverride>;
 
 // Pure: given current routes and active overrides, list the re-assertions needed
 // (apps whose route port has drifted away from the intended devPort).

@@ -2,11 +2,16 @@ import { readFileSync, writeFileSync, renameSync } from "fs";
 import { join } from "path";
 import { randomBytes } from "crypto";
 
+export interface PortOverride {
+  devPort: number;
+  basePort: number;
+}
+
 export interface AppSettings {
   published: boolean;
   passwordHash?: string;
   passwordVersion: number;
-  override?: { devPort: number; basePort: number };
+  override?: PortOverride;
 }
 
 export interface SettingsFile {
@@ -87,11 +92,11 @@ export async function clearPassword(app: string): Promise<void> {
   save();
 }
 
-export function getOverride(app: string): { devPort: number; basePort: number } | undefined {
+export function getOverride(app: string): PortOverride | undefined {
   return cache.apps[app]?.override;
 }
 
-export function setOverride(app: string, override: { devPort: number; basePort: number }): void {
+export function setOverride(app: string, override: PortOverride): void {
   ensure(app).override = override;
   save();
 }
@@ -104,8 +109,8 @@ export function clearOverride(app: string): void {
   }
 }
 
-export function getOverrides(): Record<string, { devPort: number; basePort: number }> {
-  const out: Record<string, { devPort: number; basePort: number }> = {};
+export function getOverrides(): Record<string, PortOverride> {
+  const out: Record<string, PortOverride> = {};
   for (const [app, s] of Object.entries(cache.apps)) {
     if (s.override) out[app] = s.override;
   }
