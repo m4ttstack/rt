@@ -102,6 +102,41 @@ describe('startEventsWatcher', () => {
     expect(last.invalidations.some((k) => k.kind === 'mr' && k.ref === '3')).toBe(true);
   });
 
+  test('an unbounded Retry-After is capped at MAX_BACKOFF_MS', async () => {
+    const MAX_BACKOFF_MS = 5 * 60_000;
+    const statuses: WatchEventsStatus[] = [];
+    const intervalMs = 20;
+    const startedAt = Date.now();
+    // Duck-typed 429 exposing a huge Retry-After (100000 seconds ~= 27.8h).
+    const failWith = Object.assign(new Error('rate limited'), {
+      cause: {
+        response: {
+          status: 429,
+          headers: { get: (name: string) => (name === 'retry-after' ? '100000' : null) },
+        },
+      },
+    });
+    const dispose = startEventsWatcher(
+      async () => { throw failWith; },
+      {
+        intervalMs,
+        cursor: { since: null, lastEventId: 1 },
+        onStatus: (s) => statuses.push(s),
+      },
+      () => {},
+    );
+    await sleep(60);
+    dispose();
+    expect(statuses.length).toBeGreaterThanOrEqual(1);
+    const degraded = statuses[0]!;
+    expect(degraded.state).toBe('degraded');
+    expect(degraded.nextRetryAt).toBeDefined();
+    const delay = new Date(degraded.nextRetryAt!).getTime() - startedAt;
+    // Generous ceiling: capped delay plus scheduling/jitter slop, nowhere
+    // near the raw 100000s the server claimed.
+    expect(delay).toBeLessThanOrEqual(MAX_BACKOFF_MS + intervalMs + 5_000);
+  });
+
   test('backoff grows across consecutive failures', async () => {
     const statuses: WatchEventsStatus[] = [];
     const dispose = startEventsWatcher(
@@ -190,6 +225,29 @@ describe('startEventsWatcher', () => {
     expect(
       batches.some((b) => b.invalidations.some((k) => k.kind === 'mr' && k.ref === '5')),
     ).toBe(true);
+  });
+
+  test('dispose() called from inside onCursor suppresses onInvalidations for the same tick', async () => {
+    const batches: InvalidationBatch[] = [];
+    const cursors: EventCursor[] = [];
+    let dispose: () => void;
+    dispose = startEventsWatcher(
+      async () => [mrEvent(20, 2), mrEvent(10, 1)],
+      {
+        intervalMs: 20,
+        cursor: { since: null, lastEventId: 10 },
+        onCursor: (c) => {
+          cursors.push({ ...c });
+          dispose();
+        },
+      },
+      (b) => batches.push(b),
+    );
+    await sleep(80);
+    expect(cursors.length).toBeGreaterThanOrEqual(1);
+    // onCursor fired (and disposed mid-tick); the same tick's onInvalidations
+    // for that batch must NOT have been delivered afterward.
+    expect(batches.length).toBe(0);
   });
 
   test('a throwing onInvalidations is isolated: no degraded status, loop continues', async () => {

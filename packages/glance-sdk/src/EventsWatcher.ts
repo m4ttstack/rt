@@ -27,14 +27,26 @@ function classifyError(err: unknown): NonNullable<WatchEventsStatus['cause']> {
   return 'network';
 }
 
-/** Seconds from a Retry-After header when the error exposes one. */
+/**
+ * Milliseconds from a Retry-After header when the error exposes one, capped
+ * at MAX_BACKOFF_MS -- an unbounded server-supplied value must not be able
+ * to stall the loop far past our own backoff ceiling.
+ *
+ * Honesty note: in production this path rarely fires. A 429 from a
+ * gitbeaker-based provider surfaces as GitbeakerRetryError, which does not
+ * carry the original response/headers, so `err.cause.response.headers` is
+ * absent and this returns null (falling back to exponential backoff). This
+ * function only matters for callers that inject `fetchEvents` via direct
+ * `fetch()` and construct a duck-typed error exposing real headers.
+ */
 function retryAfterMs(err: unknown): number | null {
   const headers: unknown = (err as any)?.cause?.response?.headers;
   const get = (headers as { get?: (name: string) => string | null } | undefined)?.get;
   if (typeof get !== 'function') return null;
   const raw = get.call(headers, 'retry-after');
   const seconds = raw ? Number(raw) : NaN;
-  return Number.isFinite(seconds) && seconds > 0 ? seconds * 1000 : null;
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  return Math.min(seconds * 1000, MAX_BACKOFF_MS);
 }
 
 export function startEventsWatcher(
@@ -110,12 +122,18 @@ export function startEventsWatcher(
       const syncedAt = lastSyncedAt;
       safeInvoke(() => options.onStatus?.({ state: 'live', lastSyncedAt: syncedAt }));
     }
+    // A consumer callback can call dispose() from inside itself (e.g. to
+    // tear down on the first successful sync). Re-check after every
+    // success-path callback so a reentrant dispose stops the rest of this
+    // tick's deliveries, matching the in-flight-tick dispose behavior above.
+    if (disposed) return;
     // Compare both fields: an empty cold tick only moves `since` (it plants
     // a time anchor without a lastEventId), and callers still need that
     // persisted via onCursor.
     if (result.cursor.lastEventId !== before.lastEventId || result.cursor.since !== before.since) {
       safeInvoke(() => options.onCursor?.(result.cursor));
     }
+    if (disposed) return;
     if (result.invalidations.length > 0) {
       const syncedAt = lastSyncedAt;
       safeInvoke(() =>

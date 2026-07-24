@@ -68,6 +68,24 @@ describe('classifyEvent', () => {
     expect(keys).toEqual([{ kind: 'branch', ref: 'feature/x', cause: 'deleted' }]);
   });
 
+  test('tag push invalidates pipelines:* only, no branch key', () => {
+    const keys = classifyEvent(ev({
+      action_name: 'pushed to',
+      push_data: { ref: 'v1.2.3', ref_type: 'tag', action: 'pushed' },
+    }));
+    expect(keys).toEqual([
+      { kind: 'pipelines', ref: '*', cause: 'pushed to v1.2.3' },
+    ]);
+  });
+
+  test('tag deletion produces no invalidations', () => {
+    const keys = classifyEvent(ev({
+      action_name: 'deleted',
+      push_data: { ref: 'v1.2.3', ref_type: 'tag', action: 'removed' },
+    }));
+    expect(keys).toEqual([]);
+  });
+
   test('unrelated event (e.g. joined project) produces nothing', () => {
     const keys = classifyEvent(ev({ action_name: 'joined', target_type: null }));
     expect(keys).toEqual([]);
@@ -235,6 +253,51 @@ describe('EventsPoller.tick', () => {
     const r2 = await poller.tick();
     expect(r2.freshEvents).toBe(1);
     expect(r2.invalidations).toEqual([{ kind: 'mr', ref: '11', cause: 'opened' }]);
+  });
+
+  test('timestamp fallback compares numerically, not lexicographically (offset format)', async () => {
+    // Simulate a resumed poller whose persisted cursor.since came from a
+    // self-hosted GitLab instance using non-"Z" offset notation (e.g. a
+    // "+05:00" instance timezone) -- the general case gitlab.com's own
+    // "Z"-only feed never exercises. Fix the cursor directly rather than
+    // driving it through a cold tick, so the mismatch is exact.
+    const anchor = '2026-07-24T05:00:00+05:00'; // == 2026-07-24T00:00:00Z
+    let events: GitLabEvent[] = [];
+    const fetchEvents = async (opts: { after: string; perPage: number; page: number }) => {
+      const start = (opts.page - 1) * opts.perPage;
+      return events.slice(start, start + opts.perPage);
+    };
+    const poller = new EventsPoller({
+      fetchEvents,
+      cursor: { since: anchor, lastEventId: null },
+      perPage: 50,
+    });
+
+    // A fresh event lands 1 hour later in absolute time (2026-07-24T01:00:00Z)
+    // but is reported by the (differently-offset) instance as "+02:00", so
+    // its printed hour digits ("03:00:00") are numerically smaller than the
+    // anchor's ("05:00:00"). A raw string compare (`e.created_at <= since`)
+    // sees "03:00:00+02:00" <= "05:00:00+05:00" and wrongly treats this
+    // genuinely-newer event as stale -- exactly the class of bug that
+    // lexicographic comparison of mixed-offset ISO strings introduces.
+    const offsetCreatedAt = '2026-07-24T03:00:00+02:00'; // == 2026-07-24T01:00:00Z
+
+    // Sanity checks proving the string/numeric orderings actually disagree.
+    expect(offsetCreatedAt <= anchor).toBe(true);
+    expect(Date.parse(offsetCreatedAt)).toBeGreaterThan(Date.parse(anchor));
+
+    events = [
+      ev({
+        id: 200,
+        action_name: 'opened',
+        target_type: 'MergeRequest',
+        target_iid: 20,
+        created_at: offsetCreatedAt,
+      }),
+    ];
+    const r = await poller.tick();
+    expect(r.freshEvents).toBe(1);
+    expect(r.invalidations).toEqual([{ kind: 'mr', ref: '20', cause: 'opened' }]);
   });
 
   test('poller constructed with a cursor is never coldStart', async () => {

@@ -33,6 +33,14 @@
  * status transitions do not emit events. Consumers keep a slow full-refresh
  * as the safety net for those.
  *
+ * Per-tick truncation bound: a single tick delivers at most
+ * `maxPagesPerTick * perPage` fresh events (the walk stops once that many
+ * pages have been fetched, cursor id/timestamp seen, or otherwise). A burst
+ * of activity between ticks larger than that bound advances the cursor past
+ * the excess -- those events are never seen and their invalidations are
+ * silently skipped, not queued for a later tick. Consumers keep a periodic
+ * full refresh as the safety net for this case too.
+ *
  * No I/O here: `fetchEvents` is injected and cursor persistence is the
  * caller's job (see EventsWatcher's onCursor).
  */
@@ -75,15 +83,22 @@ export function classifyEvent(e: GitLabEvent): InvalidationKey[] {
     return [];
   }
 
-  // Pushes move a branch tip and (usually) start a pipeline.
+  // Pushes move a branch tip and (usually) start a pipeline. Tag pushes also
+  // start pipelines (tag pipelines are real), but only a branch ref has a
+  // branch-cache invalidation to emit -- gate the `branch` key on ref_type.
   if (e.action_name?.startsWith('pushed') && e.push_data?.ref) {
-    return [
-      { kind: 'branch', ref: e.push_data.ref, cause: e.action_name },
-      { kind: 'pipelines', ref: '*', cause: `pushed to ${e.push_data.ref}` },
-    ];
+    const keys: InvalidationKey[] = [];
+    if (e.push_data.ref_type === 'branch') {
+      keys.push({ kind: 'branch', ref: e.push_data.ref, cause: e.action_name });
+    }
+    keys.push({ kind: 'pipelines', ref: '*', cause: `pushed to ${e.push_data.ref}` });
+    return keys;
   }
 
+  // Same ref_type gate for deletion: deleting a tag doesn't invalidate any
+  // branch cache.
   if (e.action_name === 'deleted' && e.push_data?.ref) {
+    if (e.push_data.ref_type !== 'branch') return [];
     return [{ kind: 'branch', ref: e.push_data.ref, cause: 'deleted' }];
   }
 
@@ -167,7 +182,7 @@ export class EventsPoller {
       if (events.length === 0) break;
       for (const e of events) {
         if (useTimestampFallback) {
-          if (this.cursor.since != null && e.created_at <= this.cursor.since) {
+          if (this.cursor.since != null && Date.parse(e.created_at) <= Date.parse(this.cursor.since)) {
             sawCursor = true;
             continue;
           }
@@ -186,7 +201,7 @@ export class EventsPoller {
     for (const e of fresh) {
       invalidations.push(...classifyEvent(e));
       if (e.id > maxId) maxId = e.id;
-      if (!maxTs || e.created_at > maxTs) maxTs = e.created_at;
+      if (!maxTs || Date.parse(e.created_at) > Date.parse(maxTs)) maxTs = e.created_at;
     }
     if (fresh.length > 0) {
       this.cursor = { since: maxTs, lastEventId: maxId };

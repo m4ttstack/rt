@@ -700,7 +700,13 @@ export interface InvalidationBatch {
   cursor: EventCursor;
 }
 
-/** Health of a watchEvents loop, delivered on state transitions. */
+/**
+ * Health of a watchEvents loop. NOT purely state-transition-triggered:
+ * `degraded` fires on EVERY failed tick (including consecutive ones), each
+ * time with a freshly recomputed `nextRetryAt`, so consumers can always read
+ * the latest retry estimate rather than diffing against the previous state.
+ * `live` fires once, only on the tick that recovers from a degraded run.
+ */
 export interface WatchEventsStatus {
   state: 'live' | 'degraded';
   /** Present when degraded. */
@@ -716,6 +722,14 @@ export interface WatchEventsOptions {
    * Resume point from a previous run. Omit for a cold start: the first tick
    * establishes a cursor (2-day lookback) and fires NO invalidations, since
    * consumers are expected to do a full refresh on boot anyway.
+   *
+   * Empty-feed cold start: if that first tick finds nothing in the lookback
+   * window, the established cursor is still non-null -- it becomes
+   * `{ since: <anchor>, lastEventId: null }`, a clock-skew-padded time
+   * anchor rather than both fields staying null. Callers persist this
+   * exactly like any other cursor (via `onCursor`) and pass it back in on
+   * the next resume; passing a cursor with both fields null is equivalent
+   * to omitting `cursor` entirely (another cold start).
    */
   cursor?: EventCursor;
   /** Called after every tick that advanced the cursor. Callers persist it. */
