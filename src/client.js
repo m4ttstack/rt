@@ -8,6 +8,9 @@ const RESTART_TIMEOUT_MS = 30000;
 const restarting = new Map();
 let last = null;
 
+// The single port cell currently being edited: { app, value } or null.
+let editing = null;
+
 const $ = (sel) => document.querySelector(sel);
 
 function esc(s) {
@@ -64,6 +67,27 @@ function serviceHtml(row) {
   return `${state} <span class="muted">· ${esc(s.short)}</span>`;
 }
 
+function portFor(name) {
+  const row = last && last.apps.find((r) => r.name === name);
+  return row ? row.port : "";
+}
+
+function portCellHtml(row, data) {
+  const app = esc(row.name);
+  if (!data.canManage || row.port == null) {
+    return row.port != null ? `<td class="num">${row.port}</td>` : `<td class="num muted">—</td>`;
+  }
+  const ov = row.override;
+  if (editing && editing.app === row.name) {
+    const base = ov ? `<s class="muted">${ov.basePort}</s> &rarr; ` : "";
+    return `<td class="num">${base}<input class="port-edit" data-app="${app}" value="${esc(editing.value)}" placeholder="dev port" inputmode="numeric"></td>`;
+  }
+  if (ov) {
+    return `<td class="num"><span class="ovr" data-action="edit-port" data-app="${app}" title="click to change dev port">⚡ <s class="muted">${ov.basePort}</s> &rarr; ${row.port}</span><button class="pill danger clear-port" data-action="clear-port" data-app="${app}" title="revert to ${ov.basePort}">×</button></td>`;
+  }
+  return `<td class="num"><span class="port-set" data-action="edit-port" data-app="${app}" title="click to point at a dev process port">${row.port}</span></td>`;
+}
+
 function rowHtml(row, data) {
   const label = row.service && row.service.label;
   const isRestarting = label && restarting.has(label);
@@ -77,7 +101,7 @@ function rowHtml(row, data) {
   const nameCell = row.url
     ? `<td class="site-cell"><a class="site" href="${esc(row.url)}">${esc(row.name)}<span class="muted">.${esc(data.suffix)}</span></a>${launch}</td>`
     : `<td class="site-cell muted">${esc(row.name)}</td>`;
-  const portCell = row.port != null ? `<td class="num">${row.port}</td>` : `<td class="num muted">—</td>`;
+  const portCell = portCellHtml(row, data);
   const healthCell = isRestarting
     ? `<td><span class="hpill restarting"><span class="spin"></span>restarting…</span></td>`
     : `<td>${healthHtml(row)}</td>`;
@@ -127,6 +151,7 @@ function render(data) {
   const protectedCount = data.apps.filter((r) => r.hasPassword).length;
   const parts = [`${data.up}/${data.total} healthy`, `${publicCount} public`];
   if (protectedCount) parts.push(`${protectedCount} protected`);
+  if (data.nextPort) parts.push(`next port ${data.nextPort}`);
   parts.push("auto-refreshes");
   $("#sub").innerHTML = parts.join(`<span class="sep">·</span>`);
   $("#apps").innerHTML = data.apps.map((r) => rowHtml(r, data)).join("");
@@ -165,6 +190,48 @@ function render(data) {
   for (const btn of document.querySelectorAll('button[data-action="clear-password"]')) {
     btn.onclick = () => onClearPassword(btn.dataset.app);
   }
+
+  for (const el of document.querySelectorAll('[data-action="edit-port"]')) {
+    el.onclick = () => {
+      editing = { app: el.dataset.app, value: "" };
+      render(last);
+    };
+  }
+  for (const el of document.querySelectorAll('[data-action="clear-port"]')) {
+    el.onclick = () => submitPort(el.dataset.app, "");
+  }
+  const input = document.querySelector("input.port-edit");
+  if (input) {
+    input.oninput = () => {
+      if (editing) editing.value = input.value;
+    };
+    input.onkeydown = (e) => {
+      if (e.key === "Enter") submitPort(input.dataset.app, input.value.trim());
+      else if (e.key === "Escape") {
+        editing = null;
+        render(last);
+      }
+    };
+    input.onblur = () => {
+      const v = input.value.trim();
+      if (v && v !== String(portFor(input.dataset.app))) submitPort(input.dataset.app, v);
+      else {
+        editing = null;
+        render(last);
+      }
+    };
+    input.focus();
+    const n = input.value.length;
+    input.setSelectionRange(n, n);
+  }
+}
+
+function submitPort(app, value) {
+  editing = null;
+  const body = new URLSearchParams({ app, port: value }); // "" clears the override
+  fetch("/devport", { method: "POST", body })
+    .catch(() => {})
+    .then(refresh);
 }
 
 function onRestart(label) {

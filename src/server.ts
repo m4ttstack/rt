@@ -180,6 +180,12 @@ const SHELL = `<!doctype html>
   a.launch:hover { opacity: 0.9; text-decoration: none; }
   a.launch.off { opacity: 0.18; }
   .num { font-family: ui-monospace, SFMono-Regular, monospace; font-size: 0.8rem; opacity: 0.85; }
+  .port-set, .ovr { cursor: pointer; }
+  .port-set { border-bottom: 1px dotted color-mix(in srgb, CanvasText 40%, transparent); }
+  .ovr { font-weight: 600; }
+  input.port-edit { font: inherit; font-size: 0.8rem; width: 5.5em; padding: 1px 4px;
+        border: 1px solid #8886; border-radius: 5px; background: Canvas; color: CanvasText; }
+  button.clear-port { margin-left: 4px; padding: 0 0.35rem; }
   .muted { opacity: 0.5; }
   code { font-family: ui-monospace, monospace; font-size: 0.8rem; }
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px;
