@@ -141,14 +141,15 @@ console.log('\n▶ fetchPullRequestByBranch');
 if (ghTestPR && ghRepoPath) {
   const prByBranch = await github.fetchPullRequestByBranch(
     ghRepoPath,
-    ghTestPR.sourceBranch,
-    null
+    ghTestPR.sourceBranch
   );
   assert(
     prByBranch !== null,
     `Found PR by branch: "${prByBranch?.sourceBranch}"`
   );
-  assert(prByBranch!.iid === ghTestPR.iid, `IID matches: ${prByBranch!.iid}`);
+  if (prByBranch) {
+    assert(prByBranch.iid === ghTestPR.iid, `IID matches: ${prByBranch.iid}`);
+  }
 } else {
   console.log('  ℹ️  Skipped — no PRs');
 }
@@ -573,14 +574,15 @@ console.log('\n▶ fetchPullRequestByBranch');
 if (glTestMR && glProjectPath) {
   const mrByBranch = await gitlab.fetchPullRequestByBranch(
     glProjectPath,
-    glTestMR.sourceBranch,
-    null
+    glTestMR.sourceBranch
   );
   assert(
     mrByBranch !== null,
     `Found MR by branch: "${mrByBranch?.sourceBranch}"`
   );
-  assert(mrByBranch!.iid === glTestMR.iid, `IID matches: ${mrByBranch!.iid}`);
+  if (mrByBranch) {
+    assert(mrByBranch.iid === glTestMR.iid, `IID matches: ${mrByBranch.iid}`);
+  }
 } else {
   console.log('  ℹ️  Skipped — no MRs');
 }
