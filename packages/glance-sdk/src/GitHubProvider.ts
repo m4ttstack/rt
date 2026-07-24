@@ -550,23 +550,43 @@ export class GitHubProvider implements GitProvider {
 
     // Fallback: list PRs in the target state and match by head.ref
     // client-side, which catches fork PRs the head-filtered fast path
-    // above can never see. First match wins.
-    const listRes = await this.api(
-      'GET',
-      `/repos/${projectPath}/pulls?state=${ghState}&per_page=100`
-    );
-    if (!listRes.ok) {
-      this.log.warn('fetchPullRequestByBranch failed', {
-        projectPath,
-        sourceBranch,
-        status: listRes.status
-      });
-      return null;
+    // above can never see. First match wins. We walk up to 5 pages (500
+    // PRs) and stop early on a match or a short page (< 100, i.e. the
+    // last page). This is a bounded scan, not an exhaustive search:
+    // branches whose PR sits beyond the first 500 in the target state
+    // are reported as not found. Callers that need an exhaustive lookup
+    // should use fetchSingleMR by number instead.
+    const maxPages = 5;
+    for (let page = 1; page <= maxPages; page++) {
+      const listRes = await this.api(
+        'GET',
+        `/repos/${projectPath}/pulls?state=${ghState}&per_page=100&page=${page}`
+      );
+      if (!listRes.ok) {
+        this.log.warn('fetchPullRequestByBranch failed', {
+          projectPath,
+          sourceBranch,
+          status: listRes.status
+        });
+        return null;
+      }
+      const list = (await listRes.json()) as GHPullRequest[];
+      const match = list.find((pr) => pr.head.ref === sourceBranch);
+      if (match) {
+        return this.fetchSingleMR(projectPath, match.number, null);
+      }
+      if (list.length < 100) {
+        // Short page: this was the last page, nothing left to scan.
+        return null;
+      }
+      if (page === maxPages) {
+        this.log.warn('fetchPullRequestByBranch: fallback scan hit page limit', {
+          projectPath,
+          sourceBranch
+        });
+      }
     }
-    const list = (await listRes.json()) as GHPullRequest[];
-    const match = list.find((pr) => pr.head.ref === sourceBranch);
-    if (!match) return null;
-    return this.fetchSingleMR(projectPath, match.number, null);
+    return null;
   }
 
   async createPullRequest(input: CreatePullRequestInput): Promise<PullRequest> {

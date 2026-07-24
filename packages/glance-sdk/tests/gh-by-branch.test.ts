@@ -10,6 +10,7 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { GitHubProvider } from '../src/GitHubProvider.ts';
+import type { ForgeLogger } from '../src/logger.ts';
 
 function jsonResponse(body: unknown, ok = true): Response {
   return {
@@ -37,6 +38,29 @@ function forkPR(number: number, headRef: string) {
     assignees: [],
     requested_reviewers: [],
     labels: []
+  };
+}
+
+function nonMatchingPage(count: number, startId: number) {
+  return Array.from({ length: count }, (_, i) => forkPR(startId + i, `unrelated-${startId + i}`));
+}
+
+function fakeLogger(): ForgeLogger & { calls: Array<{ level: string; msg: string; meta?: Record<string, unknown> }> } {
+  const calls: Array<{ level: string; msg: string; meta?: Record<string, unknown> }> = [];
+  return {
+    calls,
+    debug(msg, meta) {
+      calls.push({ level: 'debug', msg, meta });
+    },
+    info(msg, meta) {
+      calls.push({ level: 'info', msg, meta });
+    },
+    warn(msg, meta) {
+      calls.push({ level: 'warn', msg, meta });
+    },
+    error(msg, meta) {
+      calls.push({ level: 'error', msg, meta });
+    }
   };
 }
 
@@ -111,5 +135,85 @@ describe('GitHubProvider.fetchPullRequestByBranch', () => {
     expect(headCall).toBeDefined();
     expect(headCall).toContain('state=open');
     expect(headCall).not.toContain('state=opened');
+  });
+
+  test('fallback paginates past page 1: a match on page 2 is found', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const calls: string[] = [];
+    const match = forkPR(9999, 'feature/deep-fork-branch');
+
+    (provider as any).api = async (_method: string, path: string) => {
+      calls.push(path);
+      if (path.includes('head=')) {
+        return jsonResponse([]); // fast path: no match
+      }
+      if (path.includes('page=2')) {
+        return jsonResponse([...nonMatchingPage(5, 5000), match]);
+      }
+      if (path.includes('/pulls?state=')) {
+        // page 1 (or unspecified page=1): full page, no match -> forces page 2
+        return jsonResponse(nonMatchingPage(100, 1));
+      }
+      throw new Error(`unexpected path: ${path}`);
+    };
+
+    let fetchSingleMRCall: [string, number] | null = null;
+    (provider as any).fetchSingleMR = async (projectPath: string, mrIid: number) => {
+      fetchSingleMRCall = [projectPath, mrIid];
+      return { iid: mrIid } as any;
+    };
+
+    const result = await provider.fetchPullRequestByBranch(
+      'acme/repo',
+      'feature/deep-fork-branch'
+    );
+
+    const listCalls = calls.filter((c) => c.includes('/pulls?state='));
+    expect(listCalls.some((c) => c.includes('page=2'))).toBe(true);
+    expect(fetchSingleMRCall).toEqual(['acme/repo', 9999]);
+    expect(result).toEqual({ iid: 9999 } as any);
+  });
+
+  test('fallback stops after 5 full pages with no match, returns null, and warns about the page limit', async () => {
+    const logger = fakeLogger();
+    const provider = new GitHubProvider('https://github.com', 'tok', { logger });
+    const calls: string[] = [];
+
+    (provider as any).api = async (_method: string, path: string) => {
+      calls.push(path);
+      if (path.includes('head=')) {
+        return jsonResponse([]);
+      }
+      if (path.includes('/pulls?state=')) {
+        // Every page is a full, non-matching page of 100.
+        return jsonResponse(nonMatchingPage(100, 1));
+      }
+      throw new Error(`unexpected path: ${path}`);
+    };
+
+    let fetchSingleMRCalled = false;
+    (provider as any).fetchSingleMR = async () => {
+      fetchSingleMRCalled = true;
+      return null;
+    };
+
+    const result = await provider.fetchPullRequestByBranch(
+      'acme/repo',
+      'never-found-branch'
+    );
+
+    const listCalls = calls.filter((c) => c.includes('/pulls?state='));
+    expect(listCalls.length).toBe(5);
+    expect(fetchSingleMRCalled).toBe(false);
+    expect(result).toBeNull();
+
+    const warnCall = logger.calls.find(
+      (c) => c.level === 'warn' && c.msg.includes('fetchPullRequestByBranch: fallback scan hit page limit')
+    );
+    expect(warnCall).toBeDefined();
+    expect(warnCall?.meta).toEqual({
+      projectPath: 'acme/repo',
+      sourceBranch: 'never-found-branch'
+    });
   });
 });
