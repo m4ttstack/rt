@@ -2,7 +2,8 @@ import { readFileSync, readdirSync, existsSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 
-const ROUTES_PATH = join(homedir(), ".portless", "routes.json");
+export const ROUTES_PATH =
+  process.env.LOCAL_APPS_ROUTES_PATH ?? join(homedir(), ".portless", "routes.json");
 const AGENTS_DIR = join(homedir(), "Library", "LaunchAgents");
 const PLIST_PREFIX = "com.matthewgoodwin.";
 // The parent domain the shared Cloudflare tunnel serves every portless route
