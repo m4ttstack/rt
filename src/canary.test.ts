@@ -56,20 +56,50 @@ test("the canary listener forwards every other request to the board", async () =
   }
 });
 
-test("the check always restores the board's route, even when the probe fails", async () => {
+// The probe is injected so these never touch the live proxy: a real fetch would
+// hit whatever is actually serving apps.localhost and make the result depend on
+// the machine's state.
+const seedRoute = () =>
   writeFileSync(
     routesPath,
     JSON.stringify([{ hostname: "apps.localhost", port: 7940, pid: 0 }], null, 2),
   );
-  // No proxy is running in the test environment, so the probe cannot answer.
-  const state = await checkProxyFreshness({
+
+const check = (probe: (app: string) => Promise<number | null>) =>
+  checkProxyFreshness({
     app: "apps",
     mainPort: 7940,
     canaryPort: 7942,
     timeoutMs: 800,
+    probe,
   });
-  expect(state).toBe("unknown");
+
+test("the canary port answering means the proxy followed the change", async () => {
+  seedRoute();
+  expect(await check(async () => 7942)).toBe("fresh");
   expect(routePort("apps")).toBe(7940); // flipped and put back
+});
+
+test("the old port answering means the proxy is stale", async () => {
+  seedRoute();
+  expect(await check(async () => 7940)).toBe("stale");
+  expect(routePort("apps")).toBe(7940);
+});
+
+test("the route is restored even when the probe never answers", async () => {
+  seedRoute();
+  expect(await check(async () => null)).toBe("unknown");
+  expect(routePort("apps")).toBe(7940);
+});
+
+test("the route is restored even when the probe throws", async () => {
+  seedRoute();
+  await expect(
+    check(async () => {
+      throw new Error("boom");
+    }),
+  ).rejects.toThrow();
+  expect(routePort("apps")).toBe(7940);
 });
 
 test("the check is a no-op when the board has no route to flip", async () => {

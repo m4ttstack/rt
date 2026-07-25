@@ -97,9 +97,12 @@ export async function checkProxyFreshness(opts: {
   mainPort: number;
   canaryPort: number;
   timeoutMs?: number;
+  /** Injectable for tests, so they never depend on a live proxy. */
+  probe?: (app: string) => Promise<number | null>;
 }): Promise<Freshness> {
   const { app, mainPort, canaryPort } = opts;
   const timeoutMs = opts.timeoutMs ?? 6000;
+  const probe = opts.probe ?? probeServedPort;
   if (checking) return "unknown";
   checking = true;
   try {
@@ -108,7 +111,7 @@ export async function checkProxyFreshness(opts: {
     let served: number | null = null;
     while (Date.now() < deadline) {
       await sleep(400);
-      served = await probeServedPort(app);
+      served = await probe(app);
       // A live watcher usually lands within a second; stop as soon as it does.
       if (served === canaryPort) return "fresh";
     }
