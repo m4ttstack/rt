@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en" data-bs-theme="light">
+<html lang="en" data-bs-theme="light" data-bs-core="modern">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,6 +7,110 @@
 <link rel="stylesheet" href="/vendor/halfmoon.min.css">
 <link rel="stylesheet" href="/vendor/halfmoon.modern.css">
 <style>
+  /* Palette: Radix Colors (@radix-ui/colors 3.0.0, https://www.radix-ui.com/colors)
+     mapped onto Halfmoon's variable hooks. slate = neutrals, grass = success,
+     amber = warning, red = danger, indigo = primary. Radix conventions: solid
+     step 9 for dots/switches, soft step 3 bg + step 11 text for badges.
+     Selectors carry [data-bs-core=modern] to outrank the Modern core's own
+     (0,2,0) blocks; every token the vendor flips in dark is re-pinned below. */
+  :root[data-bs-core="modern"] {
+    --bs-slate-hue: 220; --bs-slate-saturation: 6%;
+    --bs-neutral-hue: 220; --bs-neutral-saturation: 6%;
+    --bs-green-hue: 131.1; --bs-green-saturation: 40.9%;
+    --bs-yellow-hue: 42.1; --bs-yellow-saturation: 100%;
+    --bs-red-hue: 358.1; --bs-red-saturation: 75.1%;
+    --bs-blue-hue: 226; --bs-blue-saturation: 70%;
+
+    --bs-green-hsl: 131.1, 40.9%, 46.5%;              /* grass 9 */
+    --bs-green-text-emphasis-hsl: 132.1, 50%, 32.9%;  /* grass 11 */
+    --bs-green-bg-subtle: #e9f6e9;                    /* grass 3 */
+    --bs-green-border-subtle: #b2ddb5;                /* grass 6 */
+    --bs-red-hsl: 358.1, 75.1%, 59%;                  /* red 9 */
+    --bs-red-text-emphasis-hsl: 358.1, 64.8%, 49%;    /* red 11 */
+    --bs-red-bg-subtle: #feebec;                      /* red 3 */
+    --bs-red-border-subtle: #fdbdbe;                  /* red 6 */
+    --bs-yellow-hsl: 42.1, 100%, 62%;                 /* amber 9 */
+    --bs-yellow-foreground-hsl: 24, 39.8%, 22.2%;     /* amber 12 */
+    --bs-yellow-text-emphasis-hsl: 35.1, 100%, 33.5%; /* amber 11 */
+    --bs-yellow-bg-subtle: #fff7c2;                   /* amber 3 */
+    --bs-yellow-border-subtle: #f3d673;               /* amber 6 */
+
+    --bs-primary-hue: 226; --bs-primary-saturation: 70%;
+    --bs-primary-hsl: 226, 70%, 55.5%;                /* indigo 9 */
+    --bs-primary: #3e63dd;
+    --bs-primary-foreground-hsl: 0, 0%, 100%;
+    --bs-primary-foreground: #fff;
+    --bs-primary-hover-bg: #3358d4;                   /* indigo 10 */
+    --bs-primary-active-bg: #3a5bc7;                  /* indigo 11 */
+    --bs-primary-text-emphasis-hsl: 226, 55.7%, 50.4%; /* indigo 11 */
+    --bs-primary-text-emphasis: #3a5bc7;
+    --bs-primary-bg-subtle: #edf2fe;                  /* indigo 3 */
+    --bs-primary-border-subtle: #c1d0ff;              /* indigo 6 */
+    --bs-link-color-hsl: var(--bs-primary-text-emphasis-hsl);
+    --bs-link-hover-color-hsl: var(--bs-primary-hsl);
+
+    --bs-body-color-hsl: 210, 12.5%, 12.5%;           /* slate 12 */
+    --bs-secondary-color-hsl: 220, 5.9%, 40%;         /* slate 11 */
+    --bs-tertiary-color-hsl: 230.8, 5.9%, 57.1%;      /* slate 9 */
+    --bs-secondary-bg-hsl: 240, 20%, 98%;             /* slate 2 */
+    --bs-tertiary-bg-hsl: 240, 11.1%, 94.7%;          /* slate 3 */
+    --bs-border-color: #d9d9e0;                       /* slate 6 */
+    --bs-border-color-light: #e0e1e6;                 /* slate 5 */
+    --bs-border-color-dark: #d9d9e0;
+    --bs-gray-text-emphasis-hsl: 220, 5.9%, 40%;      /* slate 11 */
+  }
+  :root[data-bs-theme="dark"] {
+    --bs-green-text-emphasis-hsl: 131.4, 50.3%, 62.9%; /* grass dark 11 */
+    --bs-green-bg-subtle: #1b2a1e;
+    --bs-green-border-subtle: #2d5736;
+    --bs-red-text-emphasis-hsl: 1.7, 100%, 78.6%;      /* red dark 11 */
+    --bs-red-bg-subtle: #3b1219;
+    --bs-red-border-subtle: #72232d;
+    --bs-yellow-text-emphasis-hsl: 46.4, 100%, 54.3%;  /* amber dark 11 */
+    --bs-yellow-bg-subtle: #302008;
+    --bs-yellow-border-subtle: #5c3d05;
+
+    --bs-primary-hover-bg: #5472e4;                    /* indigo dark 10 */
+    --bs-primary-active-bg: #5472e4;
+    --bs-primary-text-emphasis-hsl: 228.2, 100%, 81%;  /* indigo dark 11 */
+    --bs-primary-text-emphasis: #9eb1ff;
+    --bs-primary-bg-subtle: #182449;                   /* indigo dark 3 */
+    --bs-primary-border-subtle: #304384;               /* indigo dark 6 */
+
+    --bs-body-bg-hsl: 240, 5.6%, 7.1%;                 /* slate dark 1 */
+    --bs-content-bg-hsl: 220, 5.9%, 10%;               /* slate dark 2: cards, modals */
+    --bs-body-color-hsl: 220, 9.1%, 93.5%;             /* slate dark 12 */
+    --bs-secondary-color-hsl: 216, 6.8%, 71%;          /* slate dark 11 */
+    --bs-tertiary-color-hsl: 218.6, 6.3%, 43.9%;       /* slate dark 9 */
+    --bs-secondary-bg-hsl: 220, 5.9%, 10%;             /* slate dark 2 */
+    --bs-tertiary-bg-hsl: 225, 5.7%, 13.7%;            /* slate dark 3 */
+    --bs-border-color: #363a3f;                        /* slate dark 6 */
+    --bs-border-color-light: #2e3135;                  /* slate dark 5 */
+    --bs-border-color-dark: #363a3f;
+    --bs-gray-text-emphasis-hsl: 216, 6.8%, 71%;       /* slate dark 11 */
+  }
+  /* Radix soft badges: family tokens above make these flip with the theme */
+  .badge.text-bg-success { --bs-color-hsl: var(--bs-green-text-emphasis-hsl);
+    background-color: var(--bs-green-bg-subtle) !important; }
+  .badge.text-bg-warning { --bs-color-hsl: var(--bs-yellow-text-emphasis-hsl);
+    background-color: var(--bs-yellow-bg-subtle) !important; }
+  .badge.text-bg-danger { --bs-color-hsl: var(--bs-red-text-emphasis-hsl);
+    background-color: var(--bs-red-bg-subtle) !important; }
+  /* Radix outline buttons: step 11 text, step 7-8 border, step 3 wash on hover
+     (replaces Bootstrap's fill-on-hover) */
+  .btn-outline-secondary { --bs-btn-color: #60646c; --bs-btn-border-color: #cdced6;
+    --bs-btn-hover-color: #1c2024; --bs-btn-hover-bg: #f0f0f3;
+    --bs-btn-hover-border-color: #b9bbc6; }
+  :root[data-bs-theme="dark"] .btn-outline-secondary { --bs-btn-color: #b0b4ba;
+    --bs-btn-border-color: #43484e; --bs-btn-hover-color: #edeef0;
+    --bs-btn-hover-bg: #212225; --bs-btn-hover-border-color: #5a6169; }
+  .btn-outline-danger { --bs-btn-color: #ce2c31; --bs-btn-border-color: #eb8e90;
+    --bs-btn-hover-color: #ce2c31; --bs-btn-hover-bg: #feebec;
+    --bs-btn-hover-border-color: #eb8e90; }
+  :root[data-bs-theme="dark"] .btn-outline-danger { --bs-btn-color: #ff9592;
+    --bs-btn-border-color: #b54548; --bs-btn-hover-color: #ff9592;
+    --bs-btn-hover-bg: #3b1219; --bs-btn-hover-border-color: #b54548; }
+
   /* The few things Halfmoon has no equivalent for. Everything else is stock. */
   [x-cloak] { display: none !important; }
   .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px;
