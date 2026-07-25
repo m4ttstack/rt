@@ -93,7 +93,7 @@
                   </template>
                   <template x-if="!(editing && editing.app === row.name)">
                     <span>
-                      <template x-if="row.override">
+                      <template x-if="row.override && data.canManage && !row.self">
                         <span>
                           <span class="ovr" @click="startEdit(row)" title="click to change dev port">⚡
                             <s class="text-body-tertiary" x-text="row.override.basePort"></s>
@@ -107,7 +107,7 @@
                         <span class="port-set" @click="startEdit(row)"
                               title="click to point at a dev process port" x-text="row.port"></span>
                       </template>
-                      <template x-if="!row.override && !(row.port != null && data.canManage && !row.self)">
+                      <template x-if="!(data.canManage && !row.self && (row.override || row.port != null))">
                         <span class="text-body-secondary" x-text="row.port != null ? row.port : '—'"></span>
                       </template>
                     </span>
