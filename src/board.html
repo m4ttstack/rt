@@ -1,0 +1,299 @@
+<!doctype html>
+<html lang="en" data-bs-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>local apps</title>
+<link rel="stylesheet" href="/vendor/halfmoon.min.css">
+<link rel="stylesheet" href="/vendor/halfmoon.modern.css">
+<style>
+  /* The few things Halfmoon has no equivalent for. Everything else is stock. */
+  [x-cloak] { display: none !important; }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px;
+         vertical-align: 1px; }
+  .dot.ok { background: var(--bs-success); }
+  .dot.bad { background: var(--bs-danger); }
+  .dot.warn { background: var(--bs-warning); }
+  /* stderr hover card: pure CSS reveal; Halfmoon tooltips require Bootstrap JS */
+  .status { position: relative; }
+  .status.has-card { cursor: help; }
+  .status .stderr-card { display: none; position: absolute; top: calc(100% + 6px); left: 0;
+         z-index: 20; min-width: 320px; max-width: 620px; text-align: left; }
+  .status.has-card:hover .stderr-card { display: block; }
+  .stderr-card pre { white-space: pre; overflow-x: auto; }
+  input.port-edit { width: 6.5em; display: inline-block; }
+  .port-set { cursor: pointer; border-bottom: 1px dotted var(--bs-secondary-color); }
+  .ovr { cursor: pointer; font-weight: 600; white-space: nowrap; }
+  td { white-space: nowrap; vertical-align: middle; }
+  td.svc-cell { width: 100%; }
+</style>
+</head>
+<body>
+<main class="container py-5" x-data="board" x-cloak>
+
+  <div class="d-flex justify-content-between align-items-baseline">
+    <h1 class="h4 mb-1">local apps</h1>
+    <button class="btn btn-sm btn-outline-secondary" x-show="data && data.canManage"
+            :disabled="reloadingProxy" @click="onProxyReload()"
+            title="restart the portless proxy so route changes take effect on .localhost">
+      <span x-show="reloadingProxy" class="spinner-border spinner-border-sm me-1"></span>
+      <span x-text="reloadingProxy ? 'restarting…' : 'reload proxy'"></span>
+    </button>
+  </div>
+  <p class="text-body-secondary small mb-4" x-text="subline"></p>
+
+  <div x-show="proxyNotice" class="alert"
+       :class="proxyNotice && proxyNotice.kind === 'ok' ? 'alert-success' : 'alert-danger'">
+    <span x-text="proxyNotice ? proxyNotice.message : ''"></span>
+    <pre class="mt-2 mb-0 user-select-all small" x-show="proxyNotice && proxyNotice.command"
+         x-text="proxyNotice ? proxyNotice.command : ''"></pre>
+  </div>
+
+  <template x-for="section in sections" :key="section.key">
+    <div :class="section.title ? 'mt-4' : ''">
+      <h2 x-show="section.title" class="text-uppercase small fw-semibold text-body-secondary"
+          x-text="section.title"></h2>
+      <div class="card">
+        <table class="table table-hover mb-0">
+          <thead x-show="section.key === 'apps'">
+            <tr><th>site</th><th>port</th><th>health</th><th>launchd</th><th>public</th><th>access</th><th></th></tr>
+          </thead>
+          <tbody>
+            <template x-for="row in section.rows" :key="row.name">
+              <tr>
+                <td>
+                  <template x-if="row.url">
+                    <span>
+                      <a class="fw-semibold link-body-emphasis text-decoration-none" :href="row.url"
+                        ><span x-text="row.name"></span><span class="text-body-tertiary"
+                              x-text="'.' + data.suffix"></span></a>
+                      <a x-show="row.publicUrl && row.publicUrl !== row.url"
+                         class="ms-1 link-secondary" :class="row.published ? '' : 'opacity-25'"
+                         :href="row.publicUrl" target="_blank" rel="noopener"
+                         :title="row.published ? 'open ' + String(row.publicUrl).replace('https://', '') : 'private — not publicly reachable'">
+                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3h7v7M21 3l-9 9M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/></svg>
+                      </a>
+                    </span>
+                  </template>
+                  <template x-if="!row.url">
+                    <span class="text-body-secondary" x-text="row.name"></span>
+                  </template>
+                </td>
+
+                <td class="font-monospace small">
+                  <template x-if="editing && editing.app === row.name">
+                    <span>
+                      <s x-show="row.override" class="text-body-tertiary"
+                         x-text="row.override ? row.override.basePort : ''"></s>
+                      <input class="form-control form-control-sm port-edit" x-model="editing.value"
+                             x-init="$el.focus()" placeholder="dev port" inputmode="numeric"
+                             @keydown.enter="submitPort()" @keydown.escape="cancelEdit()"
+                             @blur="cancelEdit()">
+                    </span>
+                  </template>
+                  <template x-if="!(editing && editing.app === row.name)">
+                    <span>
+                      <template x-if="row.override">
+                        <span>
+                          <span class="ovr" @click="startEdit(row)" title="click to change dev port">⚡
+                            <s class="text-body-tertiary" x-text="row.override.basePort"></s>
+                            → <span x-text="row.port"></span></span>
+                          <button class="btn btn-sm btn-outline-danger py-0 px-1 ms-1"
+                                  @click="clearPort(row)"
+                                  :title="'revert to ' + row.override.basePort">×</button>
+                        </span>
+                      </template>
+                      <template x-if="!row.override && row.port != null && data.canManage && !row.self">
+                        <span class="port-set" @click="startEdit(row)"
+                              title="click to point at a dev process port" x-text="row.port"></span>
+                      </template>
+                      <template x-if="!row.override && !(row.port != null && data.canManage && !row.self)">
+                        <span class="text-body-secondary" x-text="row.port != null ? row.port : '—'"></span>
+                      </template>
+                    </span>
+                  </template>
+                </td>
+
+                <td>
+                  <template x-if="isRestarting(row)">
+                    <span class="badge text-bg-warning"><span
+                          class="spinner-border spinner-border-sm me-1"></span>restarting…</span>
+                  </template>
+                  <template x-if="!isRestarting(row)">
+                    <span class="status"
+                          :class="row.service && row.service.stderr && row.service.stderr.length ? 'has-card' : ''">
+                      <template x-if="!row.health">
+                        <span class="text-body-secondary">no route</span>
+                      </template>
+                      <template x-if="row.health && row.health.status === null">
+                        <span class="badge text-bg-danger" title="no response">unreachable</span>
+                      </template>
+                      <template x-if="row.health && row.health.status !== null">
+                        <span class="badge"
+                              :class="row.health.ok ? 'text-bg-success' : 'text-bg-danger'"
+                              :title="'HTTP ' + row.health.status"><span x-text="row.health.status"></span>
+                          <span class="fw-normal opacity-75" x-text="row.health.ms + 'ms'"></span></span>
+                      </template>
+                      <div class="stderr-card card p-2"
+                           x-show="row.service && row.service.stderr && row.service.stderr.length">
+                        <div class="text-uppercase text-body-secondary small">recent stderr</div>
+                        <pre class="small mb-0"
+                             x-text="((row.service && row.service.stderr) || []).join('\n')"></pre>
+                      </div>
+                    </span>
+                  </template>
+                </td>
+
+                <td class="svc-cell">
+                  <template x-if="!row.service">
+                    <span class="text-body-secondary">no launchd service</span>
+                  </template>
+                  <template x-if="row.service && row.service.unmanaged">
+                    <span><span class="dot warn" title="unmanaged process"></span> served by unmanaged
+                      <code x-text="row.service.unmanaged.command"></code>
+                      <span x-text="'pid ' + row.service.unmanaged.pid"></span>
+                      <span class="text-body-secondary"
+                            x-text="'· service ' + row.service.short + ' stopped'"></span></span>
+                  </template>
+                  <template x-if="row.service && !row.service.unmanaged">
+                    <span>
+                      <template x-if="row.service.pid !== null">
+                        <span><span class="dot ok" title="running"></span>
+                          <span x-text="'pid ' + row.service.pid"></span></span>
+                      </template>
+                      <template x-if="row.service.pid === null">
+                        <span><span class="dot bad" title="not running"></span> stopped<span
+                              x-show="row.service.lastExitStatus != null"
+                              x-text="' (exit ' + row.service.lastExitStatus + ')'"></span></span>
+                      </template>
+                      <span class="text-body-secondary" x-text="'· ' + row.service.short"></span>
+                    </span>
+                  </template>
+                </td>
+
+                <td>
+                  <template x-if="data.canManage && row.port != null">
+                    <div class="form-check form-switch mb-0">
+                      <input class="form-check-input" type="checkbox" role="switch"
+                             :checked="row.published" @change="onPublish(row)"
+                             :title="row.published ? 'public — click to make private' : 'private — click to publish'">
+                    </div>
+                  </template>
+                </td>
+
+                <td>
+                  <template x-if="data.canManage && row.port != null">
+                    <span>
+                      <template x-if="row.hasPassword">
+                        <span class="d-inline-flex align-items-center gap-2">
+                          <span class="badge text-bg-success" title="password required to view">
+                            <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M12 1a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5zm3 8H9V6a3 3 0 0 1 6 0z"/></svg>
+                            protected</span>
+                          <button class="btn btn-sm btn-outline-secondary"
+                                  @click="openPassword(row.name)">change</button>
+                          <button class="btn btn-sm btn-outline-danger"
+                                  @click="clearPassword(row.name)">remove</button>
+                        </span>
+                      </template>
+                      <template x-if="!row.hasPassword">
+                        <button class="btn btn-sm btn-outline-secondary"
+                                @click="openPassword(row.name)">
+                          <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true"><path d="M12 1a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5zm3 8H9V6a3 3 0 0 1 6 0z"/></svg>
+                          set password</button>
+                      </template>
+                    </span>
+                  </template>
+                </td>
+
+                <td class="text-end">
+                  <button x-show="data.canRestart && row.service"
+                          class="btn btn-sm btn-outline-secondary" :disabled="isRestarting(row)"
+                          @click="onRestart(row)"
+                          :title="row.service ? 'restart ' + row.service.short : ''">↻</button>
+                </td>
+              </tr>
+            </template>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </template>
+
+  <div x-show="tunnels.length" class="mt-4">
+    <h2 class="text-uppercase small fw-semibold text-body-secondary">cloudflare tunnel</h2>
+    <div class="card">
+      <table class="table table-hover mb-0">
+        <tbody>
+          <template x-for="row in tunnels" :key="row.name">
+            <tr>
+              <td><strong>Cloudflare tunnel</strong>
+                <span class="text-body-secondary" x-text="row.name"></span></td>
+              <td>
+                <template x-if="isRestarting(row)">
+                  <span class="badge text-bg-warning"><span
+                        class="spinner-border spinner-border-sm me-1"></span>restarting…</span>
+                </template>
+                <template x-if="!isRestarting(row)">
+                  <span class="badge"
+                        :class="row.service && row.service.pid !== null ? 'text-bg-success' : 'text-bg-danger'"
+                        :title="row.service && row.service.pid !== null ? 'tunnel running' : 'tunnel stopped'"
+                        x-text="row.service && row.service.pid !== null ? 'up' : 'down'"></span>
+                </template>
+              </td>
+              <td class="svc-cell">
+                <template x-if="row.service && row.service.pid !== null">
+                  <span><span class="dot ok" title="running"></span>
+                    <span x-text="'pid ' + row.service.pid"></span></span>
+                </template>
+                <template x-if="!row.service || row.service.pid === null">
+                  <span><span class="dot bad" title="stopped"></span> stopped<span
+                        x-show="row.service && row.service.lastExitStatus != null"
+                        x-text="' (exit ' + (row.service ? row.service.lastExitStatus : '') + ')'"></span></span>
+                </template>
+                <span class="text-body-secondary" x-text="'carries *.' + tunnelDomain()"></span>
+              </td>
+              <td class="text-end">
+                <button x-show="data.canRestart && row.service"
+                        class="btn btn-sm btn-outline-secondary" :disabled="isRestarting(row)"
+                        @click="onRestart(row)" title="restart tunnel">↻</button>
+              </td>
+            </tr>
+          </template>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <template x-if="pwModal">
+    <div>
+      <div class="modal d-block" tabindex="-1" @keydown.escape.window="pwModal = null">
+        <div class="modal-dialog">
+          <div class="modal-content">
+            <div class="modal-header">
+              <h5 class="modal-title" x-text="'Password for ' + pwModal.app"></h5>
+              <button type="button" class="btn-close" @click="pwModal = null"></button>
+            </div>
+            <div class="modal-body">
+              <input type="password" class="form-control" placeholder="password"
+                     x-model="pwModal.value" x-init="$el.focus()"
+                     @keydown.enter="savePassword()">
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-secondary" @click="pwModal = null">cancel</button>
+              <button class="btn btn-primary" :disabled="!pwModal.value"
+                      @click="savePassword()">save</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-backdrop show" @click="pwModal = null"></div>
+    </div>
+  </template>
+
+  <footer class="mt-4 small text-body-tertiary">discovered from ~/.portless/routes.json + ~/Library/LaunchAgents/com.matthewgoodwin.*</footer>
+</main>
+<noscript><p class="container py-5 text-body-secondary">this board needs JavaScript to show live status.</p></noscript>
+<script src="/board.js" defer></script>
+<script src="/vendor/alpine.min.js" defer></script>
+</body>
+</html>
