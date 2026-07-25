@@ -151,6 +151,8 @@ function render(data) {
   if (data.nextPort) parts.push(`next port ${data.nextPort}`);
   parts.push("auto-refreshes");
   $("#sub").innerHTML = parts.join(`<span class="sep">·</span>`);
+  // Restarting the proxy is a local-only control, like restart/publish/access.
+  $("#proxy-reload").hidden = !data.canManage;
   $("#apps").innerHTML = data.apps.map((r) => rowHtml(r, data)).join("");
 
   // Split the routeless services: cloudflared tunnels are infra (their own
@@ -284,6 +286,46 @@ function reconcile(data) {
   }
 }
 
+// --- portless proxy reload ---
+// portless's routes.json watcher dies on long-lived proxies, so route changes
+// (an override, a renumbered app) stop reaching it and .localhost serves stale
+// ports. Restarting the daemon is the fix; it needs root, so the server may
+// answer with a one-time sudoers install command instead.
+function proxyMsg(cls, html) {
+  const el = $("#proxy-msg");
+  el.className = cls;
+  el.innerHTML = html;
+  el.hidden = false;
+}
+
+async function onProxyReload() {
+  const btn = $("#proxy-reload");
+  btn.disabled = true;
+  btn.innerHTML = `<span class="spin"></span>restarting…`;
+  $("#proxy-msg").hidden = true;
+  try {
+    const res = await fetch("/proxy-restart", { method: "POST" });
+    const body = await res.json().catch(() => ({}));
+    if (body.ok) {
+      proxyMsg("ok", "portless proxy restarted — .localhost now serves the current routes.");
+    } else if (body.error === "not-authorized") {
+      proxyMsg(
+        "bad",
+        "One-time setup: the board isn't allowed to restart the proxy yet. " +
+          "Run this in a terminal (it validates the rule before activating it), then try again:" +
+          `<pre>${esc(body.installCommand || "")}</pre>`,
+      );
+    } else {
+      proxyMsg("bad", `restart failed: ${esc(body.detail || res.status)}`);
+    }
+  } catch (err) {
+    proxyMsg("bad", `restart failed: ${esc(String(err))}`);
+  }
+  btn.disabled = false;
+  btn.textContent = "reload proxy";
+  await refresh();
+}
+
 async function refresh() {
   if (editing) return; // don't destroy the live input mid-edit; resumes once submit/cancel clears it
   try {
@@ -295,6 +337,8 @@ async function refresh() {
     /* transient — keep the last good render */
   }
 }
+
+$("#proxy-reload").onclick = onProxyReload;
 
 refresh();
 setInterval(refresh, REFRESH_MS);

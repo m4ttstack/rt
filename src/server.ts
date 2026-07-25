@@ -27,6 +27,7 @@ import {
 import { startGateway } from "./gateway.ts";
 import { setRoutePort } from "./routes-writer.ts";
 import { reconcileOnce } from "./reconcile.ts";
+import { restartProxy, sudoersInstallCommand, SUDOERS_PATH } from "./proxy-restart.ts";
 
 const PORT = Number(process.env.PORT ?? 7940);
 const PLIST_PREFIX = "com.matthewgoodwin.";
@@ -158,6 +159,18 @@ const SHELL = `<!doctype html>
   body { font: 14px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
          max-width: 1120px; margin: 3rem auto 4rem; padding: 0 1.4rem; color: CanvasText; }
   h1 { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.01em; margin: 0 0 0.35rem; }
+  /* title row: heading left, global proxy control right */
+  .head { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+  button.proxy-reload { flex: none; }
+  button.proxy-reload .spin { margin-right: 5px; }
+  #proxy-msg { margin: -0.9rem 0 1.4rem; padding: 0.6rem 0.75rem; border-radius: 8px;
+        font-size: 0.8rem; border: 1px solid #8886; }
+  #proxy-msg.ok { border-color: color-mix(in srgb, #2da44e 45%, transparent);
+        background: color-mix(in srgb, #2da44e 10%, transparent); }
+  #proxy-msg.bad { border-color: color-mix(in srgb, #cf222e 45%, transparent);
+        background: color-mix(in srgb, #cf222e 8%, transparent); }
+  #proxy-msg pre { font-family: ui-monospace, monospace; font-size: 0.72rem; margin: 0.45rem 0 0;
+        white-space: pre-wrap; word-break: break-all; user-select: all; }
   .sub { opacity: 0.62; font-size: 0.85rem; margin: 0 0 1.6rem; }
   .sub .sep { opacity: 0.4; margin: 0 0.55em; }
 
@@ -272,8 +285,13 @@ const SHELL = `<!doctype html>
 </style>
 </head>
 <body>
-<h1>local apps</h1>
+<div class="head">
+  <h1>local apps</h1>
+  <button class="pill proxy-reload" id="proxy-reload" hidden
+    title="restart the portless proxy so route changes take effect on .localhost">reload proxy</button>
+</div>
 <p class="sub" id="sub">loading…</p>
+<div id="proxy-msg" hidden></div>
 <div class="board">
 <table>
 <thead><tr><th>site</th><th>port</th><th>health</th><th>launchd</th><th>public</th><th>access</th><th></th></tr></thead>
@@ -324,6 +342,29 @@ Bun.serve({
       if (!known) return json({ error: "unknown service" }, 400);
       const ok = await restartService(label);
       return json({ ok });
+    }
+
+    // Restart the portless proxy daemon, so route changes (dev-port overrides,
+    // renumbered apps) actually reach it. Needs root, hence the scoped sudoers
+    // rule; when that is missing we hand back the exact install command.
+    if (req.method === "POST" && pathname === "/proxy-restart") {
+      // Local-only: a board reached through a public tunnel is read-only.
+      if (publicDomainFor(host) !== null) return json({ error: "forbidden" }, 403);
+      const result = await restartProxy();
+      if (result.ok) return json({ ok: true });
+      if (result.reason === "not-authorized") {
+        return json(
+          {
+            ok: false,
+            error: "not-authorized",
+            detail: result.detail,
+            sudoersPath: SUDOERS_PATH,
+            installCommand: sudoersInstallCommand(process.env.USER ?? "matt"),
+          },
+          403,
+        );
+      }
+      return json({ ok: false, error: "failed", detail: result.detail }, 500);
     }
 
     if (req.method === "POST" && pathname === "/publish") {
