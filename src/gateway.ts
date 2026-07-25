@@ -82,10 +82,25 @@ async function proxyTo(port: number, req: Request, url: URL): Promise<Response> 
   url.hostname = "127.0.0.1";
   url.port = String(port);
   url.protocol = "http:";
+  // Ask upstream for identity encoding: Bun's fetch transparently gunzips
+  // compressed bodies but leaves the upstream Content-Encoding header on the
+  // response, so forwarding a compressed upstream reply as-is sends browsers
+  // decompressed bytes labeled gzip (ERR_CONTENT_DECODING_FAILED).
+  const headers = new Headers(req.headers);
+  headers.delete("accept-encoding");
   const proxyReq = new Request(url.toString(), {
-    method: req.method, headers: req.headers, body: req.body, redirect: "manual",
+    method: req.method, headers, body: req.body, redirect: "manual",
   });
-  return await fetch(proxyReq);
+  const res = await fetch(proxyReq);
+  // Safeguard for upstreams that compress unconditionally: the body Bun hands
+  // us is already decoded, so the encoding/length headers must not survive.
+  if (res.headers.has("content-encoding")) {
+    const out = new Headers(res.headers);
+    out.delete("content-encoding");
+    out.delete("content-length");
+    return new Response(res.body, { status: res.status, statusText: res.statusText, headers: out });
+  }
+  return res;
 }
 
 const html = (body: string, status: number, extra?: Record<string, string>): Response =>
