@@ -32,8 +32,8 @@ export function boardJs(): Response {
 }
 
 export function vendorAsset(name: string): Response | null {
+  if (!Object.hasOwn(VENDOR, name)) return null;
   const type = VENDOR[name];
-  if (!type) return null;
   return new Response(Bun.file(join(import.meta.dir, "vendor", name)), {
     headers: { "content-type": type, "cache-control": CACHE },
   });

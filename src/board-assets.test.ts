@@ -31,4 +31,8 @@ test("vendor allowlist rejects unknown names and traversal", () => {
   expect(vendorAsset("../settings.ts")).toBeNull();
   expect(vendorAsset("..%2Fserver.ts")).toBeNull();
   expect(vendorAsset("")).toBeNull();
+  expect(vendorAsset("constructor")).toBeNull();
+  expect(vendorAsset("toString")).toBeNull();
+  expect(vendorAsset("__proto__")).toBeNull();
+  expect(vendorAsset("hasOwnProperty")).toBeNull();
 });
