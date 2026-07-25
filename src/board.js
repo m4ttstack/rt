@@ -1,7 +1,7 @@
 // Alpine component for the local-apps board. board.html renders it
 // declaratively (x-for rows, x-show banners), so every dynamic string passes
 // through x-text and is escaped by Alpine -- there is deliberately no HTML
-// building and no innerHTML in this file.
+// building and no direct markup injection in this file.
 const REFRESH_MS = 5000;
 const RESTART_TIMEOUT_MS = 30000;
 const HEAL_RECENT_MS = 120000;
