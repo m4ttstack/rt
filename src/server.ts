@@ -39,6 +39,7 @@ import {
   startCanaryListener,
   type Freshness,
 } from "./canary.ts";
+import { shouldAutoHeal } from "./auto-heal.ts";
 
 const PORT = Number(process.env.PORT ?? 7940);
 // Second listener used only to tell whether the proxy is still reading
@@ -86,22 +87,70 @@ interface Status {
   nextPort: number | null;
   /** True when the proxy is serving stale routes (its watcher has died). */
   proxyStale: boolean;
+  /** The most recent automatic proxy restart; ok is null while it is running. */
+  autoHeal: { at: number; ok: boolean | null } | null;
 }
 
 // Freshness of the proxy's route table, refreshed periodically and after any
 // route write. Starts unknown; only a positive wrong answer counts as stale.
 let proxyFreshness: Freshness = "unknown";
+let lastHealAt = 0;
+let healFailures = 0;
+let autoHeal: { at: number; ok: boolean | null } | null = null;
+const AUTO_HEAL = process.env.LOCAL_APPS_AUTO_HEAL !== "0";
 
-async function runCanaryCheck(): Promise<void> {
+async function measureFreshness(): Promise<Freshness> {
   try {
-    proxyFreshness = await checkProxyFreshness({
+    return await checkProxyFreshness({
       app: APP_NAME,
       mainPort: PORT,
       canaryPort: CANARY_PORT,
     });
   } catch {
-    proxyFreshness = "unknown";
+    return "unknown";
   }
+}
+
+async function runCanaryCheck(): Promise<void> {
+  proxyFreshness = await measureFreshness();
+  await maybeAutoHeal();
+}
+
+/**
+ * Restart the proxy when it is provably serving stale routes. The policy in
+ * auto-heal.ts decides whether to act; this only carries it out and records
+ * whether the restart actually helped.
+ */
+async function maybeAutoHeal(): Promise<void> {
+  const decide = {
+    freshness: proxyFreshness,
+    now: Date.now(),
+    lastHealAt,
+    consecutiveFailures: healFailures,
+    enabled: AUTO_HEAL,
+  };
+  if (!shouldAutoHeal(decide)) return;
+  // Without the sudoers rule there is nothing we can do but keep reporting it.
+  if (!(await isAuthorized())) return;
+
+  lastHealAt = Date.now();
+  autoHeal = { at: lastHealAt, ok: null };
+  console.log("[auto-heal] proxy is serving stale routes, restarting it");
+  startRestartDetached();
+
+  // Re-measure directly rather than via runCanaryCheck, so verifying a heal can
+  // never itself trigger another one.
+  setTimeout(async () => {
+    proxyFreshness = await measureFreshness();
+    const ok = proxyFreshness === "fresh";
+    healFailures = ok ? 0 : healFailures + 1;
+    autoHeal = { at: lastHealAt, ok };
+    console.log(
+      ok
+        ? "[auto-heal] proxy restarted, routes are in sync again"
+        : `[auto-heal] proxy still not in sync (${healFailures} in a row)`,
+    );
+  }, 15_000);
 }
 
 function serviceJson(
@@ -181,6 +230,7 @@ async function buildStatus(requestHost?: string): Promise<Status> {
     orphans: orphanRows,
     nextPort: nextFreePort(routes, services),
     proxyStale: proxyFreshness === "stale",
+    autoHeal,
   };
 }
 

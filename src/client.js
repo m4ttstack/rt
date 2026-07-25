@@ -155,14 +155,7 @@ function render(data) {
   $("#proxy-reload").hidden = !data.canManage;
   // A stale proxy serves old ports on .localhost while every health probe (which
   // hits ports directly) still reads green, so say so loudly.
-  if (data.proxyStale && data.canManage && Date.now() > proxyMsgHoldUntil) {
-    proxyMsg(
-      "bad",
-      "<strong>.localhost routes are stale.</strong> The proxy stopped following " +
-        "routes.json, so overrides and renumbered apps are not reaching it. " +
-        "Click <em>reload proxy</em> to resync.",
-    );
-  }
+  if (data.canManage && Date.now() > proxyMsgHoldUntil) proxyBanner(data);
   $("#apps").innerHTML = data.apps.map((r) => rowHtml(r, data)).join("");
 
   // Split the routeless services: cloudflared tunnels are infra (their own
@@ -311,6 +304,33 @@ function proxyMsg(cls, html, holdMs = 0) {
   el.innerHTML = html;
   el.hidden = false;
   if (holdMs) proxyMsgHoldUntil = Date.now() + holdMs;
+}
+
+// Report the proxy's route sync: an auto-restart in progress, one that just
+// happened, or a stale proxy nothing is fixing (auto-heal off, unauthorized, or
+// given up after restarts failed to help).
+const HEAL_RECENT_MS = 120000;
+
+function proxyBanner(data) {
+  const heal = data.autoHeal;
+  const recent = heal && Date.now() - heal.at < HEAL_RECENT_MS;
+  const at = heal ? new Date(heal.at).toLocaleTimeString() : "";
+
+  if (recent && heal.ok === null) {
+    proxyMsg(
+      "bad",
+      `<strong>.localhost routes were stale.</strong> Restarting the proxy automatically (${esc(at)})…`,
+    );
+  } else if (data.proxyStale) {
+    proxyMsg(
+      "bad",
+      "<strong>.localhost routes are stale.</strong> The proxy stopped following " +
+        "routes.json, so overrides and renumbered apps are not reaching it. " +
+        "Click <em>reload proxy</em> to resync.",
+    );
+  } else if (recent && heal.ok) {
+    proxyMsg("ok", `Routes were stale; the proxy was restarted automatically at ${esc(at)}.`);
+  }
 }
 
 // Poll until the board answers again. Served through the proxy, that only
