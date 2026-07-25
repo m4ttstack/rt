@@ -27,7 +27,12 @@ import {
 import { startGateway } from "./gateway.ts";
 import { setRoutePort } from "./routes-writer.ts";
 import { reconcileOnce } from "./reconcile.ts";
-import { restartProxy, sudoersInstallCommand, SUDOERS_PATH } from "./proxy-restart.ts";
+import {
+  isAuthorized,
+  startRestartDetached,
+  sudoersInstallCommand,
+  SUDOERS_PATH,
+} from "./proxy-restart.ts";
 
 const PORT = Number(process.env.PORT ?? 7940);
 const PLIST_PREFIX = "com.matthewgoodwin.";
@@ -350,21 +355,21 @@ Bun.serve({
     if (req.method === "POST" && pathname === "/proxy-restart") {
       // Local-only: a board reached through a public tunnel is read-only.
       if (publicDomainFor(host) !== null) return json({ error: "forbidden" }, 403);
-      const result = await restartProxy();
-      if (result.ok) return json({ ok: true });
-      if (result.reason === "not-authorized") {
+      if (!(await isAuthorized())) {
         return json(
           {
             ok: false,
             error: "not-authorized",
-            detail: result.detail,
             sudoersPath: SUDOERS_PATH,
             installCommand: sudoersInstallCommand(process.env.USER ?? "matt"),
           },
           403,
         );
       }
-      return json({ ok: false, error: "failed", detail: result.detail }, 500);
+      // Answer before restarting: the restart takes ~10s and usually kills the
+      // proxy carrying this very response. The client polls for recovery.
+      startRestartDetached();
+      return json({ ok: true, restarting: true });
     }
 
     if (req.method === "POST" && pathname === "/publish") {

@@ -298,6 +298,28 @@ function proxyMsg(cls, html) {
   el.hidden = false;
 }
 
+// Poll until the board answers again. Served through the proxy, that only
+// happens once the proxy is back; served on localhost directly, it never drops.
+async function waitForProxy(timeoutMs = 45000) {
+  const deadline = Date.now() + timeoutMs;
+  let sawDrop = false;
+  while (Date.now() < deadline) {
+    await new Promise((r) => setTimeout(r, 1000));
+    try {
+      const res = await fetch("/healthz", { cache: "no-store" });
+      // Reaching a healthy board after it went away means the proxy is back.
+      if (res.ok && sawDrop) return true;
+      if (!res.ok) sawDrop = true;
+    } catch {
+      sawDrop = true; // connection refused while the proxy is down
+    }
+    // Direct (non-proxied) access never drops, so stop waiting once the
+    // restart has had time to complete.
+    if (!sawDrop && Date.now() > deadline - timeoutMs + 15000) return true;
+  }
+  return false;
+}
+
 async function onProxyReload() {
   const btn = $("#proxy-reload");
   btn.disabled = true;
@@ -307,7 +329,15 @@ async function onProxyReload() {
     const res = await fetch("/proxy-restart", { method: "POST" });
     const body = await res.json().catch(() => ({}));
     if (body.ok) {
-      proxyMsg("ok", "portless proxy restarted — .localhost now serves the current routes.");
+      // The proxy is going down and, if this page is served through it, so is
+      // our connection. Wait for it to answer again rather than assume.
+      const back = await waitForProxy();
+      proxyMsg(
+        back ? "ok" : "bad",
+        back
+          ? "portless proxy restarted — .localhost now serves the current routes."
+          : "the proxy did not come back within 45s. Check: launchctl print system/sh.portless.proxy",
+      );
     } else if (body.error === "not-authorized") {
       proxyMsg(
         "bad",

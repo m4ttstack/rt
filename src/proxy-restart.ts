@@ -47,6 +47,37 @@ export function sudoersInstallCommand(user: string): string {
   );
 }
 
+/**
+ * `sudo -l <cmd>` asks "am I allowed to run this?" without running it. With the
+ * NOPASSWD rule in place it answers in milliseconds, which lets the endpoint
+ * report an authorization problem up front and then fire the real restart in
+ * the background: `kickstart -k` takes ~10s (it waits for the daemon to die and
+ * respawn), and the board is usually reached THROUGH the proxy being restarted,
+ * so a request that waits for it is killed in flight and surfaces as a 502.
+ */
+export function preflightArgv(): string[] {
+  return ["/usr/bin/sudo", "-n", "-l", "/bin/launchctl", "kickstart", "-k", PROXY_LABEL];
+}
+
+/** Whether the scoped sudoers rule is installed. Never throws. */
+export async function isAuthorized(): Promise<boolean> {
+  try {
+    const proc = Bun.spawn(preflightArgv(), { stderr: "ignore", stdout: "ignore" });
+    return (await proc.exited) === 0;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Fire the restart without waiting for it. The caller has already answered the
+ * request; the client watches for the proxy coming back on its own.
+ */
+export function startRestartDetached(): void {
+  const proc = Bun.spawn(proxyRestartArgv(), { stderr: "ignore", stdout: "ignore" });
+  proc.unref();
+}
+
 export type ProxyRestartResult =
   | { ok: true }
   | { ok: false; reason: "not-authorized" | "failed"; detail: string };

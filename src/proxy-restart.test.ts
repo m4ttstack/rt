@@ -2,6 +2,7 @@ import { test, expect } from "bun:test";
 
 import {
   isNotAuthorized,
+  preflightArgv,
   proxyRestartArgv,
   sudoersInstallCommand,
   sudoersLine,
@@ -29,6 +30,23 @@ test("the argv takes no arguments, so nothing can be injected into it", () => {
 
 test("-n is always present so sudo can never hang waiting for a password", () => {
   expect(proxyRestartArgv()).toContain("-n");
+});
+
+test("the preflight asks sudo whether the command is allowed, without running it", () => {
+  const argv = preflightArgv();
+  // `-l` lists/checks permission; it must never actually invoke launchctl.
+  expect(argv).toEqual([
+    "/usr/bin/sudo",
+    "-n",
+    "-l",
+    "/bin/launchctl",
+    "kickstart",
+    "-k",
+    PROXY_LABEL,
+  ]);
+  expect(argv).toContain("-l");
+  // Same target command as the real restart, so the check cannot drift from it.
+  expect(argv.slice(3)).toEqual(proxyRestartArgv().slice(2));
 });
 
 test("the sudoers rule authorizes the same command the board runs", () => {
