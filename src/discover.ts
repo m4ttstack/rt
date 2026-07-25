@@ -62,12 +62,23 @@ export interface App {
   service: LaunchdService | null;
 }
 
+// Last successfully parsed routes, used to ride out a torn read. routes.json is
+// written in place (see routes-writer.ts, which must not use rename), so a
+// reader can occasionally catch it mid-write. Returning [] then would empty the
+// gateway's route table and 404 every app for a poll interval.
+let lastGoodRoutes: PortlessRoute[] = [];
+
 export function readRoutes(): PortlessRoute[] {
   try {
-    return JSON.parse(readFileSync(routesPath(), "utf8"));
+    const parsed = JSON.parse(readFileSync(routesPath(), "utf8"));
+    if (Array.isArray(parsed)) {
+      lastGoodRoutes = parsed;
+      return parsed;
+    }
   } catch {
-    return [];
+    // Fall through to the last good value rather than reporting "no routes".
   }
+  return lastGoodRoutes;
 }
 
 async function plistToJson(path: string): Promise<Record<string, unknown> | null> {

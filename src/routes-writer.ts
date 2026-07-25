@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, renameSync } from "fs";
+import { readFileSync, writeFileSync } from "fs";
 import { routesPath } from "./discover.ts";
 
 // Rewrite one route's port in routes.json atomically, preserving all other
@@ -18,8 +18,16 @@ export function setRoutePort(hostname: string, port: number): boolean {
   );
   if (!entry) return false;
   entry.port = port;
-  const tmp = path + ".tmp";
-  writeFileSync(tmp, JSON.stringify(routes, null, 2));
-  renameSync(tmp, path);
+  // MUST be an in-place write. Do NOT "improve" this into the usual atomic
+  // temp-file + rename: portless watches this exact path with fs.watch, which
+  // follows the inode, so replacing the file leaves the proxy watching a dead
+  // inode. Measured behaviour: the rename itself is delivered, then every later
+  // change is silently ignored, and .localhost serves stale ports until the
+  // proxy is restarted. Writing in place keeps the inode and the watcher alive
+  // (verified across repeated writes). routes-writer.test.ts guards this.
+  //
+  // The cost is losing write atomicity, so readers must tolerate a torn read;
+  // readRoutes() falls back to the last good value for that reason.
+  writeFileSync(path, JSON.stringify(routes, null, 2));
   return true;
 }

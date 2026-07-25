@@ -33,8 +33,19 @@ import {
   sudoersInstallCommand,
   SUDOERS_PATH,
 } from "./proxy-restart.ts";
+import {
+  CANARY_PATH,
+  checkProxyFreshness,
+  startCanaryListener,
+  type Freshness,
+} from "./canary.ts";
 
 const PORT = Number(process.env.PORT ?? 7940);
+// Second listener used only to tell whether the proxy is still reading
+// routes.json. See canary.ts.
+const CANARY_PORT = Number(process.env.LOCAL_APPS_CANARY_PORT ?? 7942);
+const APP_NAME = process.env.LOCAL_APPS_APP_NAME ?? "apps";
+const CANARY_INTERVAL_MS = 5 * 60_000;
 const PLIST_PREFIX = "com.matthewgoodwin.";
 const CLIENT_JS = readFileSync(join(import.meta.dir, "client.js"), "utf8");
 
@@ -73,6 +84,24 @@ interface Status {
   apps: StatusRow[];
   orphans: StatusRow[];
   nextPort: number | null;
+  /** True when the proxy is serving stale routes (its watcher has died). */
+  proxyStale: boolean;
+}
+
+// Freshness of the proxy's route table, refreshed periodically and after any
+// route write. Starts unknown; only a positive wrong answer counts as stale.
+let proxyFreshness: Freshness = "unknown";
+
+async function runCanaryCheck(): Promise<void> {
+  try {
+    proxyFreshness = await checkProxyFreshness({
+      app: APP_NAME,
+      mainPort: PORT,
+      canaryPort: CANARY_PORT,
+    });
+  } catch {
+    proxyFreshness = "unknown";
+  }
 }
 
 function serviceJson(
@@ -119,7 +148,9 @@ async function buildStatus(requestHost?: string): Promise<Status> {
         hasPassword: !!settings.passwordHash,
         isTunnel: false,
         override: settings.override ?? null,
-        self: a.port === PORT,
+        // Also matches CANARY_PORT: during a freshness check the board's route
+        // points at its canary listener, and it is still the board's own row.
+        self: a.port === PORT || a.port === CANARY_PORT,
       };
     }),
   );
@@ -149,6 +180,7 @@ async function buildStatus(requestHost?: string): Promise<Status> {
     apps: appRows,
     orphans: orphanRows,
     nextPort: nextFreePort(routes, services),
+    proxyStale: proxyFreshness === "stale",
   };
 }
 
@@ -334,6 +366,10 @@ Bun.serve({
   async fetch(req) {
     const { pathname } = new URL(req.url);
     if (pathname === "/healthz") return new Response("ok");
+    // Identity endpoint the freshness check reads back through the proxy.
+    if (pathname === CANARY_PATH) {
+      return new Response(String(PORT), { headers: { "content-type": "text/plain" } });
+    }
     if (pathname === "/favicon.ico") return new Response(null, { status: 204 });
     const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? undefined;
 
@@ -369,6 +405,9 @@ Bun.serve({
       // Answer before restarting: the restart takes ~10s and usually kills the
       // proxy carrying this very response. The client polls for recovery.
       startRestartDetached();
+      // A fresh proxy re-reads routes.json, so re-check once it is back up.
+      proxyFreshness = "unknown";
+      setTimeout(runCanaryCheck, 15_000);
       return json({ ok: true, restarting: true });
     }
 
@@ -428,6 +467,9 @@ Bun.serve({
       if (basePort === undefined) return json({ error: "no route" }, 400);
       setRoutePort(app, devPort);
       setOverride(app, { devPort, basePort });
+      // An override only takes effect on .localhost if the proxy is still
+      // reading routes.json, so confirm that right when it matters.
+      setTimeout(runCanaryCheck, 500);
       return json({ ok: true });
     }
 
@@ -453,5 +495,19 @@ if (process.env.LOCAL_APPS_NO_GATEWAY !== "1") {
     startGateway();
   } catch (err) {
     console.error("gateway failed to start:", err);
+  }
+}
+
+// Watch for the proxy's routes.json watcher dying, which would otherwise leave
+// .localhost silently serving stale ports. Disabled with the gateway so tests
+// and throwaway instances never touch the real proxy or bind another port.
+if (process.env.LOCAL_APPS_NO_GATEWAY !== "1") {
+  try {
+    startCanaryListener(CANARY_PORT, PORT);
+    // Let the board settle before the first flip.
+    setTimeout(runCanaryCheck, 10_000);
+    setInterval(runCanaryCheck, CANARY_INTERVAL_MS);
+  } catch (err) {
+    console.error("proxy freshness check failed to start:", err);
   }
 }

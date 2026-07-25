@@ -1,5 +1,5 @@
 import { test, expect, beforeEach, afterAll } from "bun:test";
-import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "fs";
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, statSync, existsSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -8,6 +8,7 @@ process.env.LOCAL_APPS_ROUTES_PATH = join(dir, "routes.json");
 const routesPath = process.env.LOCAL_APPS_ROUTES_PATH;
 
 const { setRoutePort } = await import("./routes-writer.ts");
+const { readRoutes } = await import("./discover.ts");
 
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -44,6 +45,30 @@ test("accepts a full .localhost hostname", () => {
   expect(setRoutePort("boxscore.localhost", 4000)).toBe(true);
   const routes = JSON.parse(readFileSync(routesPath, "utf8"));
   expect(routes.find((r) => r.hostname === "boxscore.localhost").port).toBe(4000);
+});
+
+test("the write preserves the file's inode, keeping portless's fs.watch alive", () => {
+  // portless watches routes.json by path with fs.watch, which follows the inode.
+  // An atomic temp+rename write replaces the inode and permanently deafens the
+  // proxy to later route changes, so .localhost silently serves stale ports.
+  // If this fails, the writer went back to rename-based writing.
+  const before = statSync(routesPath).ino;
+  setRoutePort("boxscore", 5173);
+  setRoutePort("boxscore", 5174); // repeated writes must keep the same inode
+  expect(statSync(routesPath).ino).toBe(before);
+});
+
+test("a torn read falls back to the last good routes, never an empty table", () => {
+  // In-place writes mean a reader can catch the file half-written. Reporting no
+  // routes then would empty the gateway's table and 404 every app.
+  expect(readRoutes()).toHaveLength(2);
+  writeFileSync(routesPath, '[{"hostname": "boxscore.localh'); // partial write
+  expect(readRoutes()).toHaveLength(2);
+});
+
+test("the write leaves no temp file behind", () => {
+  setRoutePort("boxscore", 5173);
+  expect(existsSync(routesPath + ".tmp")).toBe(false);
 });
 
 test("no-op returns false when the entry is absent", () => {

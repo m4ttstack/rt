@@ -153,6 +153,16 @@ function render(data) {
   $("#sub").innerHTML = parts.join(`<span class="sep">·</span>`);
   // Restarting the proxy is a local-only control, like restart/publish/access.
   $("#proxy-reload").hidden = !data.canManage;
+  // A stale proxy serves old ports on .localhost while every health probe (which
+  // hits ports directly) still reads green, so say so loudly.
+  if (data.proxyStale && data.canManage && Date.now() > proxyMsgHoldUntil) {
+    proxyMsg(
+      "bad",
+      "<strong>.localhost routes are stale.</strong> The proxy stopped following " +
+        "routes.json, so overrides and renumbered apps are not reaching it. " +
+        "Click <em>reload proxy</em> to resync.",
+    );
+  }
   $("#apps").innerHTML = data.apps.map((r) => rowHtml(r, data)).join("");
 
   // Split the routeless services: cloudflared tunnels are infra (their own
@@ -291,11 +301,16 @@ function reconcile(data) {
 // (an override, a renumbered app) stop reaching it and .localhost serves stale
 // ports. Restarting the daemon is the fix; it needs root, so the server may
 // answer with a one-time sudoers install command instead.
-function proxyMsg(cls, html) {
+// A message from an explicit click outranks the automatic stale banner, but only
+// briefly: if the proxy is still stale after that, the banner must come back.
+let proxyMsgHoldUntil = 0;
+
+function proxyMsg(cls, html, holdMs = 0) {
   const el = $("#proxy-msg");
   el.className = cls;
   el.innerHTML = html;
   el.hidden = false;
+  if (holdMs) proxyMsgHoldUntil = Date.now() + holdMs;
 }
 
 // Poll until the board answers again. Served through the proxy, that only
@@ -337,6 +352,7 @@ async function onProxyReload() {
         back
           ? "portless proxy restarted — .localhost now serves the current routes."
           : "the proxy did not come back within 45s. Check: launchctl print system/sh.portless.proxy",
+        30000,
       );
     } else if (body.error === "not-authorized") {
       proxyMsg(
@@ -344,9 +360,10 @@ async function onProxyReload() {
         "One-time setup: the board isn't allowed to restart the proxy yet. " +
           "Run this in a terminal (it validates the rule before activating it), then try again:" +
           `<pre>${esc(body.installCommand || "")}</pre>`,
+        60000,
       );
     } else {
-      proxyMsg("bad", `restart failed: ${esc(body.detail || res.status)}`);
+      proxyMsg("bad", `restart failed: ${esc(body.detail || res.status)}`, 30000);
     }
   } catch (err) {
     proxyMsg("bad", `restart failed: ${esc(String(err))}`);
