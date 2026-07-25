@@ -14,6 +14,24 @@ export type Decision =
   | { kind: "needs-login"; app: string }
   | { kind: "proxy"; app: string; port: number };
 
+/**
+ * The port public traffic should reach.
+ *
+ * A dev-port override is a local affordance: it repoints routes.json so
+ * <name>.localhost hits whatever dev process you are working on. Public traffic
+ * must NOT follow it. A dev server serves an unbuilt app whose HMR client cannot
+ * reach its websocket through the tunnel, so the page reloads forever, and it
+ * would expose a dev build to the internet besides. Public traffic therefore
+ * stays on the app's stable base port, which the override recorded for us.
+ */
+export function publicPort(
+  routePort: number | undefined,
+  override?: { basePort: number },
+): number | undefined {
+  if (override) return override.basePort;
+  return routePort;
+}
+
 export function appFromHost(host: string): string {
   const h = host.replace(/:\d+$/, "");
   if (h.endsWith(DOMAIN_SUFFIX)) return h.slice(0, -DOMAIN_SUFFIX.length);
@@ -120,10 +138,12 @@ export function startGateway(port = 7950): void {
       const ip = req.headers.get("cf-connecting-ip") ?? server.requestIP(req)?.address ?? "?";
       const settings = getAppSettings(app);
       const secret = getSecret();
+      // Public traffic ignores a dev-port override; see publicPort.
+      const port = publicPort(routes.get(app), settings.override);
 
       // Auth submission is handled by the gateway itself, never proxied.
       if (req.method === "POST" && url.pathname === "/__auth") {
-        if (routes.get(app) === undefined || !settings.published) {
+        if (port === undefined || !settings.published) {
           return html(pageNothingHere(), 404);
         }
         const form = await req.formData();
@@ -146,7 +166,7 @@ export function startGateway(port = 7950): void {
 
       const cookie = parseCookie(req.headers.get("cookie"), COOKIE_NAME);
       const d = decide({
-        app, port: routes.get(app), published: settings.published,
+        app, port, published: settings.published,
         passwordHash: settings.passwordHash, passwordVersion: settings.passwordVersion, cookie, secret,
       });
 
