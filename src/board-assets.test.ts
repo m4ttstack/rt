@@ -34,6 +34,8 @@ test("client registers the Alpine board component and builds no HTML", async () 
   const js = await boardJs().text();
   expect(js).toContain('Alpine.data("board"');
   expect(js).not.toContain("innerHTML");
+  expect(js).not.toContain("data-bs-theme");
+  expect(js).not.toContain("applyTheme");
   expect(boardJs().headers.get("content-type")).toContain("javascript");
 });
 

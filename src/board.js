@@ -17,17 +17,8 @@ document.addEventListener("alpine:init", () => {
     reloadingProxy: false,
 
     init() {
-      this.applyTheme();
-      window
-        .matchMedia("(prefers-color-scheme: dark)")
-        .addEventListener("change", () => this.applyTheme());
       this.refresh();
       setInterval(() => this.refresh(), REFRESH_MS);
-    },
-
-    applyTheme() {
-      const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-      document.documentElement.setAttribute("data-bs-theme", dark ? "dark" : "light");
     },
 
     // ---- derived ----
