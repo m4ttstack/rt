@@ -17,6 +17,9 @@
 - Adopt Oat's default automatic light/dark theme.
 - Keep the vendor endpoint as an exact-name allowlist.
 - Keep custom CSS limited to board-specific layout, density, and interaction needs.
+- Use Lucide 1.27.0's Vanilla JavaScript API with only the icons the board needs.
+- Let Oat own component presentation; keep custom CSS only for `x-cloak`,
+  page width, no-wrap table cells, and port editor width.
 
 ---
 
@@ -451,8 +454,191 @@ Expected: all tests pass, no whitespace errors appear, and only intentional plan
 If runtime verification required an in-scope correction:
 
 ```bash
-git add <exact corrected files>
+git add src/board.html src/board.js src/board-assets.ts src/board-assets.test.ts
 git commit -m "fix: complete Oat board migration"
 ```
 
 If no corrections were needed, do not create an empty commit.
+
+### Task 5: Adopt Oat Defaults and Lucide Icons
+
+**Files:**
+- Modify: `package.json`
+- Modify: `bun.lock`
+- Create: `src/icons.js`
+- Create: `src/vendor/lucide.min.js`
+- Modify: `src/board-assets.ts`
+- Modify: `src/board-assets.test.ts`
+- Modify: `src/board.html`
+
+**Interfaces:**
+- Consumes: Lucide 1.27.0 `createIcons()` and the board's existing Alpine
+  `<template>` elements
+- Produces: a tree-shaken `/vendor/lucide.min.js`, Oat-default board markup,
+  and table overflow that ends at the final action cell
+
+- [ ] **Step 1: Write failing integration and regression tests**
+
+Extend the shell and vendor tests in `src/board-assets.test.ts`:
+
+```ts
+expect(html).toContain('src="/vendor/lucide.min.js"');
+expect(html).toContain('data-lucide="refresh-cw"');
+expect(html).toContain('data-lucide="lock-keyhole"');
+expect(html).not.toContain("<svg");
+expect(html).not.toContain("↻");
+expect(html).not.toContain('class="table table-panel"');
+expect(html).toContain('class="table"');
+expect(html).not.toMatch(/\.table-panel|\.icon-button|\.dot\b|\.stderr-card/);
+expect(html).not.toMatch(/<td class="align-right">[\s\S]*?:title=/);
+expect(html).not.toMatch(/<header class="hstack justify-between">[\s\S]*?<button[\s\S]*?title=/);
+
+const lucide = vendorAsset("lucide.min.js");
+expect(lucide).not.toBeNull();
+expect((await lucide!.arrayBuffer()).byteLength).toBeGreaterThan(1000);
+```
+
+Add a source assertion for the icon initializer:
+
+```ts
+const icons = await Bun.file(new URL("./icons.js", import.meta.url)).text();
+expect(icons).toContain("createIcons");
+expect(icons).toContain("inTemplates: true");
+expect(icons).not.toContain("icons,");
+```
+
+- [ ] **Step 2: Run the focused tests to verify they fail**
+
+Run: `bun test src/board-assets.test.ts`
+
+Expected: FAIL because Lucide is not served, the shell still contains
+hand-authored SVG and Unicode glyphs, and the custom table/tooltip markup
+remains.
+
+- [ ] **Step 3: Add the pinned, tree-shaken Lucide bundle**
+
+Run:
+
+```bash
+bun add --exact lucide@1.27.0
+```
+
+Create `src/icons.js`:
+
+```js
+import {
+  ArrowRight,
+  ExternalLink,
+  FileWarning,
+  LockKeyhole,
+  RefreshCw,
+  RotateCcw,
+  Zap,
+  createIcons,
+} from "lucide";
+
+createIcons({
+  icons: {
+    ArrowRight,
+    ExternalLink,
+    FileWarning,
+    LockKeyhole,
+    RefreshCw,
+    RotateCcw,
+    Zap,
+  },
+  attrs: {
+    width: 16,
+    height: 16,
+    "stroke-width": 2,
+  },
+  inTemplates: true,
+});
+```
+
+Add this package script:
+
+```json
+"build:icons": "bun build src/icons.js --outfile src/vendor/lucide.min.js --minify --target=browser --format=iife"
+```
+
+Run: `bun run build:icons`
+
+Expected: Bun writes a small browser bundle to
+`src/vendor/lucide.min.js`.
+
+- [ ] **Step 4: Serve Lucide before Alpine**
+
+Add `"lucide.min.js": "text/javascript; charset=utf-8"` to the exact vendor
+allowlist. Load scripts in this order:
+
+```html
+<script src="/vendor/oat.min.js" defer></script>
+<script src="/vendor/lucide.min.js" defer></script>
+<script src="/board.js" defer></script>
+<script src="/vendor/alpine.min.js" defer></script>
+```
+
+This lets Lucide replace placeholders inside templates before Alpine clones
+them.
+
+- [ ] **Step 5: Replace custom visuals with Oat semantics and utilities**
+
+In `src/board.html`:
+
+- Replace hand-authored SVG and Unicode action glyphs with the documented
+  `data-lucide` placeholders.
+- Put accessible names on icon-only buttons with `aria-label`.
+- Replace `.board-header`, `.section`, `.section-title`, `.muted`,
+  `.inline-actions`, `.board-footer`, `.noscript`, `.site-link`,
+  `.public-link`, `.icon-button`, `.dot`, and `.stderr-card` presentation
+  with Oat semantic defaults and utilities.
+- Wrap tables in only `<div class="table">`; remove forced widths, panel
+  styling, custom edge padding, and `service-cell` width.
+- Use Oat badges for running, unmanaged, and stopped service state.
+- Use an Oat `<ot-dropdown>` card popover for recent stderr.
+- Remove `title` from rightmost restart controls and the header proxy action
+  while retaining their visible labels or `aria-label`.
+- Keep custom CSS only for `[x-cloak]`, `.board`, `td` no-wrap, and
+  `input.port-edit`.
+
+- [ ] **Step 6: Run focused tests**
+
+Run: `bun test src/board-assets.test.ts`
+
+Expected: PASS.
+
+- [ ] **Step 7: Verify browser geometry and behavior**
+
+Start the server and inspect a 376px-wide viewport. At the furthest table
+scroll position, assert:
+
+```text
+table right edge == final action-cell right edge
+table wrapper scroll width == table width (within two CSS pixels)
+document body scroll width == document body client width
+```
+
+Also verify that Lucide SVGs exist in rendered Alpine rows, switches retain
+their thumbs, and the stderr popover opens.
+
+- [ ] **Step 8: Run full verification and commit**
+
+Run:
+
+```bash
+bun test
+git diff --check
+git status --short
+```
+
+Expected: all tests pass, there are no whitespace errors, and only the
+intentional Task 5 files are modified.
+
+Commit:
+
+```bash
+git add package.json bun.lock src/icons.js src/vendor/lucide.min.js \
+  src/board-assets.ts src/board-assets.test.ts src/board.html
+git commit -m "refactor: derive board UI from Oat defaults"
+```
