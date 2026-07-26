@@ -4,12 +4,14 @@
   "type": "module",
   "private": true,
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "lucide": "1.27.0"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "scripts": {
+    "build:icons": "bun build src/icons.js --outfile src/vendor/lucide.min.js --minify --target=browser --format=iife",
     "serve": "bun run src/server.ts",
     "test": "bun test"
   }

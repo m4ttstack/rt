@@ -9,175 +9,36 @@
   [x-cloak] { display: none !important; }
 
   .board {
-    width: min(100% - (2 * var(--space-6)), 96rem);
+    width: min(100% - (2 * var(--space-4)), 96rem);
     margin-inline: auto;
-    padding-block: var(--space-10);
   }
-  .board-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: var(--space-4);
-  }
-  .board-header h1 {
-    margin: 0;
-    font-size: var(--text-4);
-  }
-  .board-subline {
-    margin-block: var(--space-1) var(--space-6);
-    color: var(--muted-foreground);
-    font-size: var(--text-7);
-  }
-  .section { margin-block-start: var(--space-6); }
-  .section-title {
-    margin: 0 0 var(--space-2);
-    color: var(--muted-foreground);
-    font-size: var(--text-8);
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-  }
-  .table-panel {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-medium);
-    background: var(--card);
-  }
-  .table-panel table { min-width: 58rem; }
-  .table-panel th:first-child,
-  .table-panel td:first-child { padding-inline-start: var(--space-4); }
-  .table-panel th:last-child,
-  .table-panel td:last-child { padding-inline-end: var(--space-4); }
   td {
     white-space: nowrap;
     vertical-align: middle;
-  }
-  td.service-cell { width: 100%; }
-  .site-link {
-    color: inherit;
-    font-weight: var(--font-semibold);
-    text-decoration: none;
-  }
-  .site-suffix,
-  .muted { color: var(--muted-foreground); }
-  .public-link {
-    margin-inline-start: var(--space-1);
-    color: var(--muted-foreground);
-  }
-  .public-link[data-private="true"] { opacity: 0.3; }
-  .mono {
-    font-family: var(--font-mono);
-    font-size: var(--text-7);
-  }
-  .inline-actions {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-  .icon-button { min-width: 2rem; }
-  .badge-detail {
-    opacity: 0.7;
-    font-weight: var(--font-normal);
-  }
-  .dot {
-    display: inline-block;
-    width: 0.5rem;
-    height: 0.5rem;
-    margin-inline-end: var(--space-1);
-    border-radius: var(--radius-full);
-    vertical-align: 0.05rem;
-  }
-  .dot.ok { background: var(--success); }
-  .dot.bad { background: var(--danger); }
-  .dot.warn { background: var(--warning); }
-  .status { position: relative; }
-  .status.has-card { cursor: help; }
-  .stderr-card {
-    display: none;
-    position: absolute;
-    top: calc(100% + var(--space-2));
-    left: 0;
-    z-index: var(--z-dropdown);
-    min-width: 20rem;
-    max-width: 38rem;
-    padding: var(--space-3);
-  }
-  .status:is(:hover, :focus-within) .stderr-card { display: block; }
-  .stderr-card strong {
-    display: block;
-    margin-block-end: var(--space-1);
-    color: var(--muted-foreground);
-    font-size: var(--text-8);
-    text-transform: uppercase;
-  }
-  .stderr-card pre {
-    margin: 0;
-    white-space: pre;
   }
   input.port-edit {
     display: inline-block;
     width: 6.5rem;
     margin: 0;
   }
-  .port-set {
-    cursor: pointer;
-    border-bottom: 1px dotted var(--muted-foreground);
-  }
-  .override {
-    cursor: pointer;
-    font-weight: var(--font-semibold);
-  }
-  .notice {
-    flex-direction: column;
-    margin-block-end: var(--space-6);
-  }
-  .notice pre {
-    margin: 0;
-    user-select: all;
-  }
-  .dialog-field { padding-block-end: 0; }
-  .board-footer,
-  .noscript {
-    color: var(--faint-foreground);
-    font-size: var(--text-7);
-  }
-  .board-footer { margin-block-start: var(--space-6); }
-  .noscript {
-    width: min(100% - (2 * var(--space-6)), 96rem);
-    margin: var(--space-10) auto;
-  }
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
-  }
-  @media (max-width: 40rem) {
-    .board { width: min(100% - (2 * var(--space-4)), 96rem); }
-    .board-header { align-items: flex-start; }
-  }
 </style>
 </head>
 <body>
 <main class="board" x-data="board" x-cloak>
 
-  <header class="board-header">
+  <header class="hstack justify-between">
     <h1>local apps</h1>
     <button type="button" class="small outline"
             x-show="data && data.canManage"
             :disabled="reloadingProxy"
-            @click="onProxyReload()"
-            title="restart the portless proxy so route changes take effect on .localhost">
+            @click="onProxyReload()">
       <span x-show="reloadingProxy" aria-busy="true" data-spinner="small" aria-hidden="true"></span>
       <span x-text="reloadingProxy ? 'restarting…' : 'reload proxy'"></span>
     </button>
   </header>
-  <p class="board-subline" x-text="subline"></p>
+  <p class="text-light mb-6" x-text="subline"></p>
 
-  <div role="alert" class="notice"
+  <div role="alert" class="flex-col mb-6"
        x-show="proxyNotice"
        :data-variant="proxyNotice && proxyNotice.kind === 'ok' ? 'success' : 'error'">
     <span x-text="proxyNotice ? proxyNotice.message : ''"></span>
@@ -186,9 +47,9 @@
   </div>
 
   <template x-for="section in sections" :key="section.key">
-    <section :class="section.title ? 'section' : ''">
-      <h2 x-show="section.title" class="section-title" x-text="section.title"></h2>
-      <div class="table table-panel">
+    <section :class="section.title ? 'mt-6' : ''">
+      <h2 x-show="section.title" x-text="section.title"></h2>
+      <div class="table">
         <table>
           <thead x-show="section.key === 'apps'">
             <tr>
@@ -198,7 +59,7 @@
               <th>launchd</th>
               <th>public</th>
               <th>access</th>
-              <th><span class="sr-only">actions</span></th>
+              <th aria-label="actions"></th>
             </tr>
           </thead>
           <tbody>
@@ -206,35 +67,30 @@
               <tr>
                 <td>
                   <template x-if="row.url">
-                    <span>
-                      <a class="site-link" :href="row.url">
-                        <span x-text="row.name"></span><span class="site-suffix" x-text="'.' + data.suffix"></span>
+                    <span class="hstack gap-1">
+                      <a class="unstyled" :href="row.url">
+                        <strong x-text="row.name"></strong><span class="text-light" x-text="'.' + data.suffix"></span>
                       </a>
                       <a x-show="row.publicUrl && row.publicUrl !== row.url"
-                         class="public-link"
-                         :data-private="!row.published"
+                         :class="row.published ? 'text-light' : 'text-lighter'"
                          :href="row.publicUrl"
                          target="_blank"
                          rel="noopener"
                          :aria-label="row.published ? 'open ' + String(row.publicUrl).replace('https://', '') : 'private — not publicly reachable'"
                          :title="row.published ? 'open ' + String(row.publicUrl).replace('https://', '') : 'private — not publicly reachable'">
-                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor"
-                             stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"
-                             aria-hidden="true">
-                          <path d="M14 3h7v7M21 3l-9 9M19 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h5"/>
-                        </svg>
+                        <i data-lucide="external-link"></i>
                       </a>
                     </span>
                   </template>
                   <template x-if="!row.url">
-                    <span class="muted" x-text="row.name"></span>
+                    <span class="text-light" x-text="row.name"></span>
                   </template>
                 </td>
 
-                <td class="mono">
+                <td>
                   <template x-if="editing && editing.app === row.name">
                     <span>
-                      <s x-show="row.override" class="muted"
+                      <s x-show="row.override" class="text-light"
                          x-text="row.override ? row.override.basePort : ''"></s>
                       <input class="port-edit"
                              x-model="editing.value"
@@ -250,27 +106,34 @@
                   <template x-if="!(editing && editing.app === row.name)">
                     <span>
                       <template x-if="row.override && data.canManage && !row.self">
-                        <span class="inline-actions">
-                          <span class="override" @click="startEdit(row)" title="click to change dev port">
-                            ⚡ <s class="muted" x-text="row.override.basePort"></s>
-                            → <span x-text="row.port"></span>
-                          </span>
+                        <span class="hstack gap-2">
                           <button type="button"
-                                  class="small outline icon icon-button"
+                                  class="small ghost"
+                                  @click="startEdit(row)"
+                                  aria-label="change development port">
+                            <i data-lucide="zap"></i>
+                            <s class="text-light" x-text="row.override.basePort"></s>
+                            <i data-lucide="arrow-right"></i>
+                            <span x-text="row.port"></span>
+                          </button>
+                          <button type="button"
+                                  class="small outline icon"
                                   data-variant="danger"
                                   @click="clearPort(row)"
-                                  :aria-label="'revert to ' + row.override.basePort"
-                                  :title="'revert to ' + row.override.basePort">×</button>
+                                  :aria-label="'revert to ' + row.override.basePort">
+                            <i data-lucide="rotate-ccw"></i>
+                          </button>
                         </span>
                       </template>
                       <template x-if="!row.override && row.port != null && data.canManage && !row.self">
-                        <span class="port-set"
-                              @click="startEdit(row)"
-                              title="click to point at a dev process port"
-                              x-text="row.port"></span>
+                        <button type="button"
+                                class="small ghost"
+                                @click="startEdit(row)"
+                                aria-label="change development port"
+                                x-text="row.port"></button>
                       </template>
                       <template x-if="!(data.canManage && !row.self && (row.override || row.port != null))">
-                        <span class="muted" x-text="row.port != null ? row.port : '—'"></span>
+                        <span class="text-light" x-text="row.port != null ? row.port : '—'"></span>
                       </template>
                     </span>
                   </template>
@@ -284,11 +147,9 @@
                     </span>
                   </template>
                   <template x-if="!isRestarting(row)">
-                    <span class="status"
-                          :class="row.service && row.service.stderr && row.service.stderr.length ? 'has-card' : ''"
-                          :tabindex="row.service && row.service.stderr && row.service.stderr.length ? '0' : null">
+                    <span class="hstack gap-1">
                       <template x-if="!row.health">
-                        <span class="muted">no route</span>
+                        <span class="text-light">no route</span>
                       </template>
                       <template x-if="row.health && row.health.status === null">
                         <span class="badge" data-variant="danger" title="no response">unreachable</span>
@@ -298,46 +159,64 @@
                               :data-variant="row.health.ok ? 'success' : 'danger'"
                               :title="'HTTP ' + row.health.status">
                           <span x-text="row.health.status"></span>
-                          <span class="badge-detail" x-text="row.health.ms + 'ms'"></span>
+                          <span x-text="row.health.ms + 'ms'"></span>
                         </span>
                       </template>
-                      <article class="card stderr-card"
-                               x-show="row.service && row.service.stderr && row.service.stderr.length">
-                        <strong>recent stderr</strong>
-                        <pre x-text="((row.service && row.service.stderr) || []).join('\n')"></pre>
-                      </article>
+                      <template x-if="row.service && row.service.stderr && row.service.stderr.length">
+                        <span>
+                          <button type="button"
+                                  class="small ghost icon"
+                                  @click="$el.nextElementSibling.showModal()"
+                                  :aria-label="'show recent stderr for ' + row.name">
+                            <i data-lucide="file-warning"></i>
+                          </button>
+                          <dialog data-stderr closedby="any">
+                            <header>
+                              <h3>recent stderr</h3>
+                              <p x-text="row.name"></p>
+                            </header>
+                            <div>
+                              <pre x-text="row.service.stderr.join('\n')"></pre>
+                            </div>
+                            <footer>
+                              <button type="button" class="outline"
+                                      @click="$el.closest('dialog').close()">Close</button>
+                            </footer>
+                          </dialog>
+                        </span>
+                      </template>
                     </span>
                   </template>
                 </td>
 
-                <td class="service-cell">
+                <td>
                   <template x-if="!row.service">
-                    <span class="muted">no launchd service</span>
+                    <span class="text-light">no launchd service</span>
                   </template>
                   <template x-if="row.service && row.service.unmanaged">
                     <span>
-                      <span class="dot warn" title="unmanaged process"></span>
-                      served by unmanaged <code x-text="row.service.unmanaged.command"></code>
+                      <span class="badge" data-variant="warning">unmanaged</span>
+                      served by <code x-text="row.service.unmanaged.command"></code>
                       <span x-text="'pid ' + row.service.unmanaged.pid"></span>
-                      <span class="muted" x-text="'· service ' + row.service.short + ' stopped'"></span>
+                      <span class="text-light" x-text="'· service ' + row.service.short + ' stopped'"></span>
                     </span>
                   </template>
                   <template x-if="row.service && !row.service.unmanaged">
                     <span>
                       <template x-if="row.service.pid !== null">
                         <span>
-                          <span class="dot ok" title="running"></span>
+                          <span class="badge" data-variant="success">running</span>
                           <span x-text="'pid ' + row.service.pid"></span>
                         </span>
                       </template>
                       <template x-if="row.service.pid === null">
                         <span>
-                          <span class="dot bad" title="not running"></span>
-                          stopped<span x-show="row.service.lastExitStatus != null"
-                                       x-text="' (exit ' + row.service.lastExitStatus + ')'"></span>
+                          <span class="badge" data-variant="danger">stopped</span>
+                          <span x-show="row.service.lastExitStatus != null"
+                                x-text="'exit ' + row.service.lastExitStatus"></span>
                         </span>
                       </template>
-                      <span class="muted" x-text="'· ' + row.service.short"></span>
+                      <span class="text-light" x-text="'· ' + row.service.short"></span>
                     </span>
                   </template>
                 </td>
@@ -345,8 +224,6 @@
                 <td>
                   <template x-if="data.canManage && row.port != null">
                     <label :title="row.published ? 'public — click to make private' : 'private — click to publish'">
-                      <span class="sr-only"
-                            x-text="row.published ? 'make ' + row.name + ' private' : 'publish ' + row.name"></span>
                       <input type="checkbox"
                              role="switch"
                              :checked="row.published"
@@ -360,11 +237,9 @@
                   <template x-if="data.canManage && row.port != null">
                     <span>
                       <template x-if="row.hasPassword">
-                        <span class="inline-actions">
+                        <span class="hstack gap-2">
                           <span class="badge" data-variant="success" title="password required to view">
-                            <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true">
-                              <path d="M12 1a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5zm3 8H9V6a3 3 0 0 1 6 0z"/>
-                            </svg>
+                            <i data-lucide="lock-keyhole"></i>
                             protected
                           </span>
                           <button type="button" class="small outline"
@@ -377,9 +252,7 @@
                       <template x-if="!row.hasPassword">
                         <button type="button" class="small outline"
                                 @click="openPassword(row.name)">
-                          <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor" aria-hidden="true">
-                            <path d="M12 1a5 5 0 0 0-5 5v3H6a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-9a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-5-5zm3 8H9V6a3 3 0 0 1 6 0z"/>
-                          </svg>
+                          <i data-lucide="lock-keyhole"></i>
                           set password
                         </button>
                       </template>
@@ -390,11 +263,12 @@
                 <td class="align-right">
                   <button type="button"
                           x-show="data.canRestart && row.service"
-                          class="small outline icon icon-button"
+                          class="small outline"
                           :disabled="isRestarting(row)"
                           @click="onRestart(row)"
-                          :aria-label="row.service ? 'restart ' + row.service.short : 'restart service'"
-                          :title="row.service ? 'restart ' + row.service.short : ''">↻</button>
+                          :aria-label="row.service ? 'restart ' + row.service.short : 'restart service'">
+                    <i data-lucide="refresh-cw"></i>
+                  </button>
                 </td>
               </tr>
             </template>
@@ -404,16 +278,16 @@
     </section>
   </template>
 
-  <section x-show="tunnels.length" class="section">
-    <h2 class="section-title">cloudflare tunnel</h2>
-    <div class="table table-panel">
+  <section x-show="tunnels.length" class="mt-6">
+    <h2>cloudflare tunnel</h2>
+    <div class="table">
       <table>
         <tbody>
           <template x-for="row in tunnels" :key="row.name">
             <tr>
               <td>
                 <strong>Cloudflare tunnel</strong>
-                <span class="muted" x-text="row.name"></span>
+                <span class="text-light" x-text="row.name"></span>
               </td>
               <td>
                 <template x-if="isRestarting(row)">
@@ -429,30 +303,31 @@
                         x-text="row.service && row.service.pid !== null ? 'up' : 'down'"></span>
                 </template>
               </td>
-              <td class="service-cell">
+              <td>
                 <template x-if="row.service && row.service.pid !== null">
                   <span>
-                    <span class="dot ok" title="running"></span>
+                    <span class="badge" data-variant="success">running</span>
                     <span x-text="'pid ' + row.service.pid"></span>
                   </span>
                 </template>
                 <template x-if="!row.service || row.service.pid === null">
                   <span>
-                    <span class="dot bad" title="stopped"></span>
-                    stopped<span x-show="row.service && row.service.lastExitStatus != null"
-                                 x-text="' (exit ' + (row.service ? row.service.lastExitStatus : '') + ')'"></span>
+                    <span class="badge" data-variant="danger">stopped</span>
+                    <span x-show="row.service && row.service.lastExitStatus != null"
+                          x-text="'exit ' + (row.service ? row.service.lastExitStatus : '')"></span>
                   </span>
                 </template>
-                <span class="muted" x-text="'carries *.' + tunnelDomain()"></span>
+                <span class="text-light" x-text="'carries *.' + tunnelDomain()"></span>
               </td>
               <td class="align-right">
                 <button type="button"
                         x-show="data.canRestart && row.service"
-                        class="small outline icon icon-button"
+                        class="small outline"
                         :disabled="isRestarting(row)"
                         @click="onRestart(row)"
-                        aria-label="restart tunnel"
-                        title="restart tunnel">↻</button>
+                        aria-label="restart tunnel">
+                  <i data-lucide="refresh-cw"></i>
+                </button>
               </td>
             </tr>
           </template>
@@ -471,7 +346,7 @@
           <h3 x-text="'Password for ' + pwModal.app"></h3>
           <p>Require a password before this app can be viewed publicly.</p>
         </header>
-        <div class="dialog-field">
+        <div>
           <label data-field>
             Password
             <input type="password" placeholder="password" x-model="pwModal.value">
@@ -485,13 +360,14 @@
     </dialog>
   </template>
 
-  <footer class="board-footer">
+  <footer class="text-lighter mt-6">
     discovered from ~/.portless/routes.json + ~/Library/LaunchAgents/com.matthewgoodwin.*
   </footer>
 </main>
-<noscript><p class="noscript">this board needs JavaScript to show live status.</p></noscript>
-<script src="/board.js" defer></script>
+<noscript><main class="board"><p class="text-lighter">this board needs JavaScript to show live status.</p></main></noscript>
 <script src="/vendor/oat.min.js" defer></script>
+<script src="/vendor/lucide.min.js" defer></script>
+<script src="/board.js" defer></script>
 <script src="/vendor/alpine.min.js" defer></script>
 </body>
 </html>

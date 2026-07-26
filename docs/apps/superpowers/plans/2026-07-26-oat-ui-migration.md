@@ -520,7 +520,7 @@ remains.
 Run:
 
 ```bash
-bun add --exact lucide@1.27.0
+bun add --dev --exact lucide@1.27.0
 ```
 
 Create `src/icons.js`:
@@ -548,9 +548,10 @@ createIcons({
     Zap,
   },
   attrs: {
-    width: 16,
-    height: 16,
+    width: 14,
+    height: 14,
     "stroke-width": 2,
+    style: "max-width: none",
   },
   inTemplates: true,
 });
@@ -596,7 +597,8 @@ In `src/board.html`:
 - Wrap tables in only `<div class="table">`; remove forced widths, panel
   styling, custom edge padding, and `service-cell` width.
 - Use Oat badges for running, unmanaged, and stopped service state.
-- Use an Oat `<ot-dropdown>` card popover for recent stderr.
+- Use an Oat native `<dialog>` for recent stderr so Alpine rows need no
+  dynamic popover IDs.
 - Remove `title` from rightmost restart controls and the header proxy action
   while retaining their visible labels or `aria-label`.
 - Keep custom CSS only for `[x-cloak]`, `.board`, `td` no-wrap, and
@@ -620,7 +622,7 @@ document body scroll width == document body client width
 ```
 
 Also verify that Lucide SVGs exist in rendered Alpine rows, switches retain
-their thumbs, and the stderr popover opens.
+their thumbs, and the stderr dialog opens.
 
 - [ ] **Step 8: Run full verification and commit**
 

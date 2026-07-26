@@ -12,6 +12,7 @@ const BOARD_JS = readFileSync(join(import.meta.dir, "board.js"), "utf8");
 const VENDOR: Record<string, string> = {
   "oat.min.css": "text/css; charset=utf-8",
   "oat.min.js": "text/javascript; charset=utf-8",
+  "lucide.min.js": "text/javascript; charset=utf-8",
   "alpine.min.js": "text/javascript; charset=utf-8",
 };
 

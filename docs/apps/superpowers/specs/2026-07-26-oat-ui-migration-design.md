@@ -13,8 +13,8 @@ The migration covers the board shell, styles, vendored UI assets, Alpine markup,
 The board remains a server-served static HTML shell plus a small Alpine component:
 
 - `board.html` owns semantic structure and Oat component markup.
-- `board.js` owns polling, derived state, user actions through Alpine, and
-  Lucide's one-time icon replacement before Alpine starts.
+- `board.js` owns polling, derived state, and user actions through Alpine.
+- `icons.js` owns Lucide's one-time icon replacement before Alpine starts.
 - `board-assets.ts` serves exact-name vendored assets.
 - Oat supplies base styling and its minimal JavaScript enhancements.
 - A pinned, tree-shaken Lucide bundle supplies the board's SVG icons.
@@ -47,7 +47,9 @@ Import only the icons used by the board, bundle them with Bun as a classic
 browser script, and pin the package to version 1.27.0. Set common icon
 attributes through `createIcons({ attrs: ... })`, and use
 `inTemplates: true` because the board rows are authored inside native
-`<template>` elements for Alpine.
+`<template>` elements for Alpine. Use 14px icons and override Oat's global
+SVG `max-width` through Lucide's `attrs` option so compact, auto-width
+buttons retain the icon's intrinsic width and Oat's standard padding.
 
 Use `data-lucide` placeholders for external links, port overrides, reset
 actions, passwords, service restarts, and stderr disclosure. Icons are
@@ -69,9 +71,10 @@ not create an empty overflow tail.
 
 The password overlay becomes a real modal dialog. Alpine creates it only when `pwModal` exists, calls `showModal()` after insertion, and clears state when the dialog closes or is canceled. Form submission remains bound to `savePassword()`.
 
-Recent stderr uses Oat's documented `<ot-dropdown>` popover pattern instead
-of a board-specific positioned hover card. This keeps the detail in the top
-layer, keyboard reachable, and styled entirely by Oat.
+Recent stderr uses Oat's documented native `<dialog>` pattern instead of a
+board-specific positioned hover card. This keeps the detail in the top layer,
+keyboard reachable, and styled entirely by Oat without depending on dynamic
+popover IDs inside Alpine templates.
 
 ## Custom Styling Boundary
 
