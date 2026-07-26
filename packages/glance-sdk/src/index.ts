@@ -61,6 +61,9 @@ export { parseRepoId, repoIdProvider } from './GitProvider.ts';
 export type { ForgeLogger } from './logger.ts';
 export { noopLogger } from './logger.ts';
 
+// ── Instrumentation ──────────────────────────────────────────────────────────
+export type { RequestInfo, OnRequestHook } from './instrumentation.ts';
+
 // ── Providers ─────────────────────────────────────────────────────────────────
 export {
   GitLabProvider,

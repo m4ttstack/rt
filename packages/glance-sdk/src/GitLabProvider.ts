@@ -24,6 +24,7 @@ import { ActionCableClient } from './ActionCableClient.ts';
 import { createRealtimeWatcher, type RealtimeWatcherOptions } from './RealtimeWatcher.ts';
 import { startEventsWatcher } from './EventsWatcher.ts';
 import type { FetchEvents, GitLabEvent } from './EventsPoller.ts';
+import { safeEmit, type OnRequestHook, type RequestInfo } from './instrumentation.ts';
 
 // ---------------------------------------------------------------------------
 // Repository ID helpers
@@ -461,6 +462,7 @@ export class GitLabProvider implements GitProvider {
   private readonly mrDetailFetcher: MRDetailFetcher;
   /** Typed REST client. All non-GraphQL API calls go through this. */
   private readonly gb: InstanceType<typeof Gitlab>;
+  private readonly onRequest?: OnRequestHook;
 
   // ── Shared ActionCable connection ────────────────────────────────────
   // All watchMR calls multiplex over one WebSocket instead of N.
@@ -473,12 +475,13 @@ export class GitLabProvider implements GitProvider {
   // Per-watcher onDisconnected callbacks
   private readonly cableDisconnectHandlers = new Set<() => void>();
 
-  constructor(baseURL: string, token: string, options: { logger?: ForgeLogger } = {}) {
+  constructor(baseURL: string, token: string, options: { logger?: ForgeLogger; onRequest?: OnRequestHook } = {}) {
     // Strip trailing slash for consistent URL building
     this.baseURL = baseURL.replace(/\/$/, '');
     this.token = token;
     this.gb = new Gitlab({ host: this.baseURL, token });
     this.log = options.logger ?? noopLogger;
+    this.onRequest = options.onRequest;
     this.mrDetailFetcher = new MRDetailFetcher(this.baseURL, token, {
       logger: this.log,
     });
@@ -541,7 +544,7 @@ export class GitLabProvider implements GitProvider {
     let divergedCommitsCount: number | null = null;
     try {
       [resp] = await Promise.all([
-        this.runQuery<MRDetailResponse>(MR_DETAIL_QUERY, {
+        this.runQuery<MRDetailResponse>('fetchSingleMR', MR_DETAIL_QUERY, {
           projectPath,
           iid: String(mrIid),
         }),
@@ -601,7 +604,7 @@ export class GitLabProvider implements GitProvider {
       if (useStateFilter) {
         vars.state = apiState;
       }
-      const resp = await this.runQuery<MRBatchResponse>(query, vars);
+      const resp = await this.runQuery<MRBatchResponse>('fetchPullRequests.iids', query, vars);
       const nodes = resp.project?.mergeRequests?.nodes ?? [];
       const results = nodes.map((gql) => toMR(gql, 'author', this.baseURL, null, this.token));
       return filterSet ? results.filter((pr) => filterSet.has(pr.state as MRState)) : results;
@@ -614,7 +617,7 @@ export class GitLabProvider implements GitProvider {
       const projectPath = options.projectPath;
       const perAuthor = await Promise.all(
         options.authorUsernames.map((author) =>
-          this.runQuery<MRBatchResponse>(MR_BY_AUTHOR_QUERY, {
+          this.runQuery<MRBatchResponse>('fetchPullRequests.byAuthor', MR_BY_AUTHOR_QUERY, {
             projectPath,
             author,
             state: apiState,
@@ -635,9 +638,9 @@ export class GitLabProvider implements GitProvider {
     // Role-based path — 3 queries (authored + reviewing + assigned)
     const stateVar = { state: apiState };
     const [authored, reviewing, assigned] = await Promise.all([
-      this.runQuery<AuthoredResponse>(AUTHORED_QUERY, stateVar),
-      this.runQuery<ReviewingResponse>(REVIEWING_QUERY, stateVar),
-      this.runQuery<AssignedResponse>(ASSIGNED_QUERY, stateVar),
+      this.runQuery<AuthoredResponse>('fetchPullRequests.authored', AUTHORED_QUERY, stateVar),
+      this.runQuery<ReviewingResponse>('fetchPullRequests.reviewing', REVIEWING_QUERY, stateVar),
+      this.runQuery<AssignedResponse>('fetchPullRequests.assigned', ASSIGNED_QUERY, stateVar),
     ]);
 
     // Merge all three sets, deduplicating by MR global ID.
@@ -770,7 +773,7 @@ export class GitLabProvider implements GitProvider {
       ${MR_DASHBOARD_FRAGMENT}
     `;
 
-    const resp = await this.runQuery<MRBatchResponse>(MR_BY_BRANCHES_QUERY, {
+    const resp = await this.runQuery<MRBatchResponse>('fetchPullRequestsByBranches', MR_BY_BRANCHES_QUERY, {
       projectPath,
       branches,
       state: state === 'all' ? undefined : state,
@@ -1264,9 +1267,10 @@ export class GitLabProvider implements GitProvider {
     return new Error(`${label} failed: ${String(err)}`);
   }
 
-  private async runQuery<T>(query: string, variables?: Record<string, unknown>): Promise<T> {
+  private async runQuery<T>(op: string, query: string, variables?: Record<string, unknown>): Promise<T> {
     const url = `${this.baseURL}/api/graphql`;
     const body = JSON.stringify({ query, variables: variables ?? {} });
+    const started = performance.now();
     const res = await fetch(url, {
       method: 'POST',
       headers: {
@@ -1274,6 +1278,14 @@ export class GitLabProvider implements GitProvider {
         Authorization: `Bearer ${this.token}`,
       },
       body,
+    });
+    safeEmit(this.onRequest, {
+      op,
+      transport: 'graphql',
+      method: 'POST',
+      path: '/api/graphql',
+      durationMs: performance.now() - started,
+      status: res.status,
     });
 
     if (!res.ok) {
