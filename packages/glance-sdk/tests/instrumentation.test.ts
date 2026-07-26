@@ -136,3 +136,34 @@ describe('restRequest onRequest', () => {
     expect(seen[0]).toMatchObject({ op: 'test.op', transport: 'rest', method: 'POST', path: '/api/v4/projects/1/notes', status: 201 });
   });
 });
+
+describe('MRDetailFetcher onRequest', () => {
+  test('fetchDetail emits fetchMRDiscussions', async () => {
+    const { MRDetailFetcher } = await import('../src/MRDetailFetcher.ts');
+    globalThis.fetch = (async () => new Response('[]', { status: 200, headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch;
+    const seen: RequestInfo[] = [];
+    const f = new MRDetailFetcher('https://gitlab.example', 't', { onRequest: (i) => seen.push(i) });
+    await f.fetchDetail(42, 7);
+    expect(seen.length).toBe(1);
+    expect(seen[0]).toMatchObject({
+      op: 'fetchMRDiscussions',
+      transport: 'rest',
+      method: 'GET',
+      path: '/api/v4/projects/42/merge_requests/7/discussions',
+      status: 200,
+    });
+  });
+});
+
+describe('NoteMutator onRequest', () => {
+  test('createNote emits noteMutator.createNote', async () => {
+    const { NoteMutator } = await import('../src/NoteMutator.ts');
+    globalThis.fetch = (async () => new Response(JSON.stringify({ id: 1, body: 'x' }), { status: 201, headers: { 'content-type': 'application/json' } })) as unknown as typeof fetch;
+    const seen: RequestInfo[] = [];
+    const m = new NoteMutator('https://gitlab.example', 't', { onRequest: (i) => seen.push(i) });
+    await m.createNote(42, 7, 'hello');
+    expect(seen.length).toBe(1);
+    expect(seen[0].op).toBe('noteMutator.createNote');
+    expect(seen[0].status).toBe(201);
+  });
+});

@@ -9,6 +9,8 @@
  *   DELETE /api/v4/projects/:id/merge_requests/:mrIid/notes/:noteId
  */
 
+import { type OnRequestHook, safeEmit } from './instrumentation.ts';
+
 export interface CreatedNote {
   id: number;
   body: string;
@@ -26,10 +28,12 @@ export interface CreatedNote {
 export class NoteMutator {
   private readonly baseURL: string;
   private readonly token: string;
+  private readonly onRequest?: OnRequestHook;
 
-  constructor(baseURL: string, token: string) {
+  constructor(baseURL: string, token: string, options: { onRequest?: OnRequestHook } = {}) {
     this.baseURL = baseURL.replace(/\/$/, "");
     this.token = token;
+    this.onRequest = options.onRequest;
   }
 
   /**
@@ -42,9 +46,11 @@ export class NoteMutator {
     body: string,
     discussionId?: string,
   ): Promise<CreatedNote> {
-    const url = discussionId
-      ? `${this.baseURL}/api/v4/projects/${projectId}/merge_requests/${mrIid}/discussions/${discussionId}/notes`
-      : `${this.baseURL}/api/v4/projects/${projectId}/merge_requests/${mrIid}/notes`;
+    const path = discussionId
+      ? `/api/v4/projects/${projectId}/merge_requests/${mrIid}/discussions/${discussionId}/notes`
+      : `/api/v4/projects/${projectId}/merge_requests/${mrIid}/notes`;
+    const url = `${this.baseURL}${path}`;
+    const started = performance.now();
 
     const res = await fetch(url, {
       method: "POST",
@@ -53,6 +59,15 @@ export class NoteMutator {
         "PRIVATE-TOKEN": this.token,
       },
       body: JSON.stringify({ body }),
+    });
+
+    safeEmit(this.onRequest, {
+      op: 'noteMutator.createNote',
+      transport: 'rest',
+      method: 'POST',
+      path,
+      durationMs: performance.now() - started,
+      status: res.status,
     });
 
     if (!res.ok) {
@@ -72,7 +87,9 @@ export class NoteMutator {
     noteId: number,
     body: string,
   ): Promise<void> {
-    const url = `${this.baseURL}/api/v4/projects/${projectId}/merge_requests/${mrIid}/notes/${noteId}`;
+    const path = `/api/v4/projects/${projectId}/merge_requests/${mrIid}/notes/${noteId}`;
+    const url = `${this.baseURL}${path}`;
+    const started = performance.now();
     const res = await fetch(url, {
       method: "PUT",
       headers: {
@@ -80,6 +97,15 @@ export class NoteMutator {
         "PRIVATE-TOKEN": this.token,
       },
       body: JSON.stringify({ body }),
+    });
+
+    safeEmit(this.onRequest, {
+      op: 'noteMutator.updateNote',
+      transport: 'rest',
+      method: 'PUT',
+      path,
+      durationMs: performance.now() - started,
+      status: res.status,
     });
 
     if (!res.ok) {
@@ -92,10 +118,21 @@ export class NoteMutator {
 
   /** Permanently delete a note. */
   async deleteNote(projectId: number, mrIid: number, noteId: number): Promise<void> {
-    const url = `${this.baseURL}/api/v4/projects/${projectId}/merge_requests/${mrIid}/notes/${noteId}`;
+    const path = `/api/v4/projects/${projectId}/merge_requests/${mrIid}/notes/${noteId}`;
+    const url = `${this.baseURL}${path}`;
+    const started = performance.now();
     const res = await fetch(url, {
       method: "DELETE",
       headers: { "PRIVATE-TOKEN": this.token },
+    });
+
+    safeEmit(this.onRequest, {
+      op: 'noteMutator.deleteNote',
+      transport: 'rest',
+      method: 'DELETE',
+      path,
+      durationMs: performance.now() - started,
+      status: res.status,
     });
 
     if (!res.ok) {

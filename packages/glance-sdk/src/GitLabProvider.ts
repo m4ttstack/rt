@@ -486,6 +486,7 @@ export class GitLabProvider implements GitProvider {
     this.gb = options.onRequest ? instrumentGitbeaker(gb, (info) => safeEmit(this.onRequest, info)) : gb;
     this.mrDetailFetcher = new MRDetailFetcher(this.baseURL, token, {
       logger: this.log,
+      onRequest: (info) => safeEmit(this.onRequest, info),
     });
   }
 

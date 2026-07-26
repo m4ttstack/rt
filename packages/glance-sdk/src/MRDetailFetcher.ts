@@ -14,6 +14,7 @@ import type {
   NotePosition,
 } from "./types.ts";
 import { type ForgeLogger, noopLogger } from "./logger.ts";
+import { type OnRequestHook, safeEmit } from "./instrumentation.ts";
 
 // ---------------------------------------------------------------------------
 // Raw REST response shapes
@@ -59,17 +60,30 @@ export class MRDetailFetcher {
   private readonly baseURL: string;
   private readonly token: string;
   private readonly log: ForgeLogger;
+  private readonly onRequest?: OnRequestHook;
 
-  constructor(baseURL: string, token: string, options: { logger?: ForgeLogger } = {}) {
+  constructor(baseURL: string, token: string, options: { logger?: ForgeLogger; onRequest?: OnRequestHook } = {}) {
     this.baseURL = baseURL.replace(/\/$/, "");
     this.token = token;
     this.log = options.logger ?? noopLogger;
+    this.onRequest = options.onRequest;
   }
 
   async fetchDetail(projectId: number, mrIid: number): Promise<MRDetail> {
-    const url = `${this.baseURL}/api/v4/projects/${projectId}/merge_requests/${mrIid}/discussions?per_page=100`;
+    const path = `/api/v4/projects/${projectId}/merge_requests/${mrIid}/discussions`;
+    const url = `${this.baseURL}${path}?per_page=100`;
+    const started = performance.now();
     const res = await fetch(url, {
       headers: { "PRIVATE-TOKEN": this.token },
+    });
+
+    safeEmit(this.onRequest, {
+      op: 'fetchMRDiscussions',
+      transport: 'rest',
+      method: 'GET',
+      path,
+      durationMs: performance.now() - started,
+      status: res.status,
     });
 
     if (!res.ok) {
