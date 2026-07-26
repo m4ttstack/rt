@@ -24,7 +24,7 @@ import { ActionCableClient } from './ActionCableClient.ts';
 import { createRealtimeWatcher, type RealtimeWatcherOptions } from './RealtimeWatcher.ts';
 import { startEventsWatcher } from './EventsWatcher.ts';
 import type { FetchEvents, GitLabEvent } from './EventsPoller.ts';
-import { safeEmit, type OnRequestHook, type RequestInfo } from './instrumentation.ts';
+import { safeEmit, instrumentGitbeaker, type OnRequestHook, type RequestInfo } from './instrumentation.ts';
 
 // ---------------------------------------------------------------------------
 // Repository ID helpers
@@ -479,9 +479,11 @@ export class GitLabProvider implements GitProvider {
     // Strip trailing slash for consistent URL building
     this.baseURL = baseURL.replace(/\/$/, '');
     this.token = token;
-    this.gb = new Gitlab({ host: this.baseURL, token });
     this.log = options.logger ?? noopLogger;
     this.onRequest = options.onRequest;
+    const gb = new Gitlab({ host: this.baseURL, token });
+    // Zero-cost when unset: no Proxy layer unless a hook is attached.
+    this.gb = options.onRequest ? instrumentGitbeaker(gb, (info) => safeEmit(this.onRequest, info)) : gb;
     this.mrDetailFetcher = new MRDetailFetcher(this.baseURL, token, {
       logger: this.log,
     });
@@ -839,7 +841,7 @@ export class GitLabProvider implements GitProvider {
     return this.fetchSingleMRWithRetry(projectPath, mrIid, 'Updated MR but failed to fetch it back');
   }
 
-  async restRequest(method: string, path: string, body?: unknown): Promise<Response> {
+  async restRequest(method: string, path: string, body?: unknown, op = 'restRequest'): Promise<Response> {
     const url = `${this.baseURL}${path}`;
     const headers: Record<string, string> = {
       'PRIVATE-TOKEN': this.token,
@@ -847,11 +849,21 @@ export class GitLabProvider implements GitProvider {
     if (body !== undefined) {
       headers['Content-Type'] = 'application/json';
     }
-    return fetch(url, {
+    const started = performance.now();
+    const res = await fetch(url, {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
     });
+    safeEmit(this.onRequest, {
+      op,
+      transport: 'rest',
+      method,
+      path,
+      durationMs: performance.now() - started,
+      status: res.status,
+    });
+    return res;
   }
 
   watchMR(

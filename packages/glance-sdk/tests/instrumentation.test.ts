@@ -6,6 +6,7 @@
 import { describe, expect, test, afterEach } from 'bun:test';
 import { GitLabProvider } from '../src/GitLabProvider.ts';
 import { safeEmit, type RequestInfo } from '../src/instrumentation.ts';
+import { instrumentGitbeaker } from '../src/instrumentation.ts';
 
 const realFetch = globalThis.fetch;
 afterEach(() => {
@@ -87,5 +88,51 @@ describe('runQuery onRequest', () => {
     });
     const prs = await provider.fetchPullRequests({ iids: [1], projectPath: 'g/p' });
     expect(prs).toEqual([]);
+  });
+});
+
+describe('instrumentGitbeaker', () => {
+  test('labels resource.method calls and reports success', async () => {
+    const seen: RequestInfo[] = [];
+    const fake = {
+      MergeRequests: {
+        async show(_pp: string, iid: number) { return { iid }; },
+      },
+    };
+    const gb = instrumentGitbeaker(fake, (i) => seen.push(i));
+    const out = await gb.MergeRequests.show('g/p', 9);
+    expect(out).toEqual({ iid: 9 });
+    expect(seen.length).toBe(1);
+    expect(seen[0].op).toBe('gb.MergeRequests.show');
+    expect(seen[0].transport).toBe('rest');
+    expect(seen[0].status).toBe(200);
+  });
+
+  test('extracts status from GitbeakerRequestError-shaped causes and rethrows', async () => {
+    const seen: RequestInfo[] = [];
+    const boom = Object.assign(new Error('denied'), { cause: { response: { status: 403 } } });
+    const fake = { MergeRequests: { async merge() { throw boom; } } };
+    const gb = instrumentGitbeaker(fake, (i) => seen.push(i));
+    await expect(gb.MergeRequests.merge()).rejects.toThrow('denied');
+    expect(seen[0].op).toBe('gb.MergeRequests.merge');
+    expect(seen[0].status).toBe(403);
+  });
+
+  test('non-function and non-object properties pass through', () => {
+    const fake = { version: '43', Users: { flag: true, async me() { return 1; } } };
+    const gb = instrumentGitbeaker(fake, () => {});
+    expect(gb.version).toBe('43');
+    expect(gb.Users.flag).toBe(true);
+  });
+});
+
+describe('restRequest onRequest', () => {
+  test('emits rest info with real method, path, status', async () => {
+    globalThis.fetch = (async () => new Response('{}', { status: 201 })) as unknown as typeof fetch;
+    const seen: RequestInfo[] = [];
+    const provider = new GitLabProvider('https://gitlab.example', 't', { onRequest: (i) => seen.push(i) });
+    await provider.restRequest('POST', '/api/v4/projects/1/notes', { body: 'x' }, 'test.op');
+    expect(seen.length).toBe(1);
+    expect(seen[0]).toMatchObject({ op: 'test.op', transport: 'rest', method: 'POST', path: '/api/v4/projects/1/notes', status: 201 });
   });
 });
