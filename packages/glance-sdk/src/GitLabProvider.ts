@@ -450,6 +450,45 @@ const MR_BY_AUTHOR_QUERY = `
   ${MR_DASHBOARD_FRAGMENT}
 `;
 
+/** All MRs in a project, cursor-paginated (member-blind team/project view). */
+const MR_PROJECT_QUERY = `
+  query GlanceMRProject($projectPath: ID!, $state: MergeRequestState, $after: String) {
+    project(fullPath: $projectPath) {
+      mergeRequests(state: $state, first: 50, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          ...MRDashboardFields
+        }
+      }
+    }
+  }
+  ${MR_DASHBOARD_FRAGMENT}
+`;
+
+/** Variant without the state filter, for multi-state requests. */
+const MR_PROJECT_QUERY_NO_STATE = `
+  query GlanceMRProjectAll($projectPath: ID!, $after: String) {
+    project(fullPath: $projectPath) {
+      mergeRequests(first: 50, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          ...MRDashboardFields
+        }
+      }
+    }
+  }
+  ${MR_DASHBOARD_FRAGMENT}
+`;
+
+interface MRProjectResponse {
+  project: {
+    mergeRequests: {
+      pageInfo: { hasNextPage: boolean; endCursor: string | null };
+      nodes: GQLMR[];
+    };
+  } | null;
+}
+
 // ---------------------------------------------------------------------------
 // GitLabProvider
 // ---------------------------------------------------------------------------
@@ -636,6 +675,30 @@ export class GitLabProvider implements GitProvider {
         }
       }
       return [...byId.values()];
+    }
+
+    // Project path alone — every MR in the project (member-blind), paginated.
+    // Pages are fetched sequentially: GitLab's GraphQL resolvers time out under
+    // concurrent dashboard-field queries, and order does not matter here.
+    if (options?.projectPath) {
+      const projectPath = options.projectPath;
+      const useStateFilter = !needsAllStates;
+      const query = useStateFilter ? MR_PROJECT_QUERY : MR_PROJECT_QUERY_NO_STATE;
+      const out: PullRequest[] = [];
+      let after: string | null = null;
+      do {
+        const vars: Record<string, unknown> = { projectPath, after };
+        if (useStateFilter) vars.state = apiState;
+        const resp: MRProjectResponse = await this.runQuery<MRProjectResponse>('fetchPullRequests.project', query, vars);
+        const conn = resp.project?.mergeRequests;
+        for (const gql of conn?.nodes ?? []) {
+          const pr = toMR(gql, 'author', this.baseURL, null, this.token);
+          if (filterSet && !filterSet.has(pr.state as MRState)) continue;
+          out.push(pr);
+        }
+        after = conn?.pageInfo?.hasNextPage ? (conn.pageInfo.endCursor ?? null) : null;
+      } while (after);
+      return out;
     }
 
     // Role-based path — 3 queries (authored + reviewing + assigned)

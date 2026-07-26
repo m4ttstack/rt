@@ -47,7 +47,9 @@ export interface FetchPullRequestsOptions {
 
   /**
    * Project path (e.g. `'group/project'`). Required when `iids` or
-   * `authorUsernames` is specified.
+   * `authorUsernames` is specified. May also be passed ALONE: returns every
+   * MR in the project (member-blind), cursor-paginated, with full dashboard
+   * fields.
    */
   projectPath?: string;
 }
@@ -77,6 +79,7 @@ export interface GitProvider {
    * - `{ iids, projectPath }`: batch-fetch specific MRs by IID
    * - `{ authorUsernames, projectPath }`: every MR in the project authored by
    *   any of those users (for team boards)
+   * - `{ projectPath }`: every MR in the project (team/project view), paginated
    */
   fetchPullRequests(options?: FetchPullRequestsOptions): Promise<PullRequest[]>;
 
