@@ -30,6 +30,16 @@ test("shell follows Oat component conventions without Bootstrap markup", async (
   expect(html).not.toContain("text-bg-");
 });
 
+test("switch tooltips stay on the wrapper so Oat can render the thumb", async () => {
+  const html = await boardHtml().text();
+  const switchMarkup = html.match(/<label[\s\S]*?<input type="checkbox"[\s\S]*?role="switch"[\s\S]*?>/)?.[0];
+
+  expect(switchMarkup).toBeDefined();
+  expect(switchMarkup).toContain("<label :title=");
+  expect(switchMarkup).toContain(":aria-label=");
+  expect(switchMarkup).not.toMatch(/<input[\s\S]*?:title=/);
+});
+
 test("client registers the Alpine board component and builds no HTML", async () => {
   const js = await boardJs().text();
   expect(js).toContain('Alpine.data("board"');

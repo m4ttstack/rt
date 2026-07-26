@@ -344,15 +344,14 @@
 
                 <td>
                   <template x-if="data.canManage && row.port != null">
-                    <label>
+                    <label :title="row.published ? 'public — click to make private' : 'private — click to publish'">
                       <span class="sr-only"
                             x-text="row.published ? 'make ' + row.name + ' private' : 'publish ' + row.name"></span>
                       <input type="checkbox"
                              role="switch"
                              :checked="row.published"
                              @change="onPublish(row)"
-                             :aria-label="row.published ? 'make ' + row.name + ' private' : 'publish ' + row.name"
-                             :title="row.published ? 'public — click to make private' : 'private — click to publish'">
+                             :aria-label="row.published ? 'make ' + row.name + ' private' : 'publish ' + row.name">
                     </label>
                   </template>
                 </td>
