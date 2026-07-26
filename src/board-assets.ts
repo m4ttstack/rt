@@ -10,8 +10,8 @@ const BOARD_JS = readFileSync(join(import.meta.dir, "board.js"), "utf8");
 // Exact-name allowlist: /vendor/<name> resolves through this map only, so a
 // crafted path can never reach outside src/vendor.
 const VENDOR: Record<string, string> = {
-  "halfmoon.min.css": "text/css; charset=utf-8",
-  "halfmoon.modern.css": "text/css; charset=utf-8",
+  "oat.min.css": "text/css; charset=utf-8",
+  "oat.min.js": "text/javascript; charset=utf-8",
   "alpine.min.js": "text/javascript; charset=utf-8",
 };
 

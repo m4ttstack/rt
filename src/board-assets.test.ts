@@ -4,9 +4,10 @@ import { boardHtml, boardJs, vendorAsset } from "./board-assets";
 test("shell references the client and the vendored assets", async () => {
   const html = await boardHtml().text();
   expect(html).toContain('src="/board.js"');
+  expect(html).toContain('src="/vendor/oat.min.js"');
   expect(html).toContain('src="/vendor/alpine.min.js"');
-  expect(html).toContain('href="/vendor/halfmoon.min.css"');
-  expect(html).toContain('href="/vendor/halfmoon.modern.css"');
+  expect(html).toContain('href="/vendor/oat.min.css"');
+  expect(html).not.toContain("halfmoon");
   expect(boardHtml().headers.get("content-type")).toContain("text/html");
 });
 
@@ -18,7 +19,7 @@ test("client registers the Alpine board component and builds no HTML", async () 
 });
 
 test("vendor allowlist serves each known file with a plausible size", async () => {
-  for (const name of ["halfmoon.min.css", "halfmoon.modern.css", "alpine.min.js"]) {
+  for (const name of ["oat.min.css", "oat.min.js", "alpine.min.js"]) {
     const res = vendorAsset(name);
     expect(res).not.toBeNull();
     const bytes = await res!.arrayBuffer();
