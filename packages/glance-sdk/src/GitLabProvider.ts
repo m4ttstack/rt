@@ -696,7 +696,11 @@ export class GitLabProvider implements GitProvider {
           if (filterSet && !filterSet.has(pr.state as MRState)) continue;
           out.push(pr);
         }
-        after = conn?.pageInfo?.hasNextPage ? (conn.pageInfo.endCursor ?? null) : null;
+        const next = conn?.pageInfo?.hasNextPage ? (conn.pageInfo.endCursor ?? null) : null;
+        if (next !== null && next === after) {
+          throw new Error(`fetchPullRequests.project: non-advancing cursor '${next}' for ${projectPath}`);
+        }
+        after = next;
       } while (after);
       return out;
     }

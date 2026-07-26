@@ -166,4 +166,36 @@ describe('NoteMutator onRequest', () => {
     expect(seen[0].op).toBe('noteMutator.createNote');
     expect(seen[0].status).toBe(201);
   });
+
+  test('updateNote emits noteMutator.updateNote', async () => {
+    const { NoteMutator } = await import('../src/NoteMutator.ts');
+    globalThis.fetch = (async () => new Response(null, { status: 200 })) as unknown as typeof fetch;
+    const seen: RequestInfo[] = [];
+    const m = new NoteMutator('https://gitlab.example', 't', { onRequest: (i) => seen.push(i) });
+    await m.updateNote(42, 7, 1, 'updated');
+    expect(seen.length).toBe(1);
+    expect(seen[0]).toMatchObject({
+      op: 'noteMutator.updateNote',
+      transport: 'rest',
+      method: 'PUT',
+      path: '/api/v4/projects/42/merge_requests/7/notes/1',
+      status: 200,
+    });
+  });
+
+  test('deleteNote emits noteMutator.deleteNote', async () => {
+    const { NoteMutator } = await import('../src/NoteMutator.ts');
+    globalThis.fetch = (async () => new Response(null, { status: 204 })) as unknown as typeof fetch;
+    const seen: RequestInfo[] = [];
+    const m = new NoteMutator('https://gitlab.example', 't', { onRequest: (i) => seen.push(i) });
+    await m.deleteNote(42, 7, 1);
+    expect(seen.length).toBe(1);
+    expect(seen[0]).toMatchObject({
+      op: 'noteMutator.deleteNote',
+      transport: 'rest',
+      method: 'DELETE',
+      path: '/api/v4/projects/42/merge_requests/7/notes/1',
+      status: 204,
+    });
+  });
 });

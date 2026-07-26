@@ -103,4 +103,31 @@ describe('fetchPullRequests({ projectPath })', () => {
     await provider.fetchPullRequests({ projectPath: 'g/p', iids: [9] });
     expect(calls[0].query).toContain('iids:');
   });
+
+  test('throws instead of looping forever when the cursor stops advancing', async () => {
+    const calls: Array<{ query: string; variables: Record<string, unknown> }> = [];
+    globalThis.fetch = (async (_url: unknown, init: { body: string }) => {
+      const body = JSON.parse(init.body) as { query: string; variables: Record<string, unknown> };
+      calls.push(body);
+      return new Response(
+        JSON.stringify({
+          data: {
+            project: {
+              mergeRequests: {
+                pageInfo: { hasNextPage: true, endCursor: 'stuck' },
+                nodes: [node(1)],
+              },
+            },
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      );
+    }) as unknown as typeof fetch;
+    const provider = new GitLabProvider('https://gitlab.example', 't');
+    await expect(provider.fetchPullRequests({ projectPath: 'g/p' })).rejects.toThrow(/non-advancing cursor/);
+    // First page: after=null -> endCursor='stuck' (advances, no throw). Second
+    // page: after='stuck' -> endCursor='stuck' again (non-advancing) -> throws
+    // before a third fetch would repeat the same cursor.
+    expect(calls.length).toBe(2);
+  });
 });
