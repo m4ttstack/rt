@@ -58,3 +58,17 @@ type _GitHubImplementsGitProvider = NoDroppedParameters<
 type _GitLabImplementsGitProvider = NoDroppedParameters<
   DroppedParameters<GitProvider, GitLabProvider>
 >;
+
+/**
+ * `never` while both providers conform.
+ *
+ * Nothing else in the package imports this module -- it has no runtime code to
+ * import -- and a file nothing depends on can be deleted, or dropped from
+ * tsconfig's `include`, with every check still green. `index.ts` names this
+ * type so the guard is anchored: removing the file fails `tsc` there.
+ * A bare side-effect import would not do the job; TypeScript does not report an
+ * unresolvable module for an import with no bindings.
+ */
+export type ProviderParameterDrift =
+  | DroppedParameters<GitProvider, GitHubProvider>
+  | DroppedParameters<GitProvider, GitLabProvider>;

@@ -12,6 +12,15 @@
  * const prs = await provider.fetchPullRequests();
  */
 
+// ── Compile-time guards ───────────────────────────────────────────────────────
+// providerConformance.ts fails `tsc` when a provider implements a GitProvider
+// method with fewer parameters than the interface declares (MAT-13). It emits
+// no runtime code, so naming one of its types is what keeps it in the build
+// graph: delete the file or drop it from tsconfig's `include` and this line
+// breaks, rather than the guard silently switching itself off.
+import type { ProviderParameterDrift } from './providerConformance.ts';
+type _ProvidersConform = ProviderParameterDrift;
+
 // ── Domain types ──────────────────────────────────────────────────────────────
 export type {
   PullRequest,
