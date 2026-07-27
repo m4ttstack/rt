@@ -11,13 +11,14 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { GitHubProvider } from '../src/GitHubProvider.ts';
+import type { FetchPullRequestsWarning } from '../src/GitProvider.ts';
 
 const API = 'https://api.github.com';
 
-function jsonResponse(body: unknown, ok = true): Response {
+function jsonResponse(body: unknown, ok = true, status?: number): Response {
   return {
     ok,
-    status: ok ? 200 : 500,
+    status: status ?? (ok ? 200 : 500),
     json: async () => body,
     text: async () => JSON.stringify(body),
     headers: { get: () => null }
@@ -87,7 +88,7 @@ function install(provider: GitHubProvider, prs: FakePR[]): string[] {
     const single = path.match(/^\/repos\/([^?]+)\/pulls\/(\d+)$/);
     if (single) {
       const pr = prs.find((p) => p.number === Number(single[2]));
-      return pr ? jsonResponse(pr) : jsonResponse({}, false);
+      return pr ? jsonResponse(pr) : jsonResponse({}, false, 404);
     }
     if (path.includes('/reviews?')) return jsonResponse([]);
     if (path.includes('/check-runs')) return jsonResponse({ check_runs: [] });
@@ -107,6 +108,11 @@ function searchQueries(calls: string[]): string[] {
   return calls
     .filter((c) => c.startsWith('/search/issues'))
     .map((c) => decodeURIComponent(c));
+}
+
+/** The `/repos/{path}/pulls/{n}` detail GETs, one entry per request made. */
+function detailCalls(calls: string[]): string[] {
+  return calls.filter((c) => /^\/repos\/[^/]+\/[^/]+\/pulls\/\d+$/.test(c));
 }
 
 describe('GitHubProvider.fetchPullRequests: state', () => {
@@ -135,7 +141,7 @@ describe('GitHubProvider.fetchPullRequests: state', () => {
     expect(searchQueries(calls).every((q) => q.includes('is:closed'))).toBe(true);
   });
 
-  test("state ['opened','merged'] returns both, without a state qualifier (MAT-13)", async () => {
+  test("state ['opened','merged'] runs one search per qualifier, never an unqualified one", async () => {
     const provider = new GitHubProvider('https://github.com', 'tok');
     const open = ghPR(1);
     const merged = ghPR(2, { state: 'closed', merged_at: '2026-07-09T00:00:00Z' });
@@ -146,9 +152,18 @@ describe('GitHubProvider.fetchPullRequests: state', () => {
 
     expect(prs.map((p) => p.iid).sort()).toEqual([1, 2]);
     expect(prs.find((p) => p.iid === 2)?.state).toBe('merged');
-    // `is:open is:closed` would AND to nothing, so neither qualifier is sent.
+
+    // `is:open is:closed` would AND to nothing, so the two states are two
+    // searches. Dropping the qualifier instead (what this used to do) matches
+    // every PR the user ever authored, all time.
     const queries = searchQueries(calls);
-    expect(queries.some((q) => q.includes('is:open') || q.includes('is:closed'))).toBe(false);
+    expect(queries.length).toBe(6);
+    expect(queries.filter((q) => q.includes('is:open is:pr')).length).toBe(3);
+    expect(queries.filter((q) => q.includes('is:closed is:pr')).length).toBe(3);
+    expect(queries.every((q) => q.includes('is:open') || q.includes('is:closed'))).toBe(true);
+    for (const involvement of ['author:@me', 'review-requested:@me', 'assignee:@me']) {
+      expect(queries.filter((q) => q.includes(involvement)).length).toBe(2);
+    }
   });
 
   test('a closed-unmerged PR is excluded from a merged-only request', async () => {
@@ -298,5 +313,244 @@ describe('GitHubProvider.fetchPullRequests: updatedAfter and listWeight', () => 
     await provider.fetchPullRequests();
 
     expect(calls.some((c) => c.includes('/check-runs'))).toBe(true);
+  });
+});
+
+describe('GitHubProvider.fetchPullRequests: request cost', () => {
+  test('a PR that three involvement searches match costs one detail fetch', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    // `install` answers every search with every PR, so all three involvement
+    // searches match all three PRs: 9 hits, 3 unique.
+    const calls = install(provider, [ghPR(1), ghPR(2), ghPR(3)]);
+
+    const prs = await provider.fetchPullRequests();
+
+    expect(prs.map((p) => p.iid).sort()).toEqual([1, 2, 3]);
+    expect(detailCalls(calls).length).toBe(3);
+    expect(new Set(detailCalls(calls)).size).toBe(3);
+  });
+
+  test('roles still accumulate across the searches the dedupe collapsed', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    install(provider, [ghPR(1)]);
+
+    const prs = await provider.fetchPullRequests();
+
+    expect(prs[0]?.roles.sort()).toEqual(['assignee', 'author', 'reviewer']);
+  });
+
+  test('a mixed-state request still fetches each unique PR once', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const open = ghPR(1);
+    const merged = ghPR(2, { state: 'closed', merged_at: '2026-07-09T00:00:00Z' });
+    const calls = install(provider, [open, merged]);
+
+    await provider.fetchPullRequests({ state: ['opened', 'merged'] });
+
+    // 6 searches over 2 matching PRs, and 2 detail GETs.
+    expect(searchQueries(calls).length).toBe(6);
+    expect(detailCalls(calls).length).toBe(2);
+  });
+
+  test('authorUsernames dedupes across authors before fetching details', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const calls = install(provider, [ghPR(1), ghPR(2)]);
+
+    const prs = await provider.fetchPullRequests({
+      authorUsernames: ['ada', 'grace', 'linus'],
+      projectPath: 'acme/repo'
+    });
+
+    expect(prs.map((p) => p.iid)).toEqual([1, 2]);
+    expect(searchQueries(calls).length).toBe(3);
+    expect(detailCalls(calls).length).toBe(2);
+  });
+
+  test('detail fetches stay under the concurrency bound', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const prs = Array.from({ length: 40 }, (_, i) => ghPR(i + 1));
+    install(provider, prs);
+
+    let inFlight = 0;
+    let peak = 0;
+    const inner = (provider as any).api;
+    (provider as any).api = async (method: string, path: string) => {
+      const isDetail = /^\/repos\/[^/]+\/[^/]+\/pulls\/\d+$/.test(path);
+      if (!isDetail) return inner(method, path);
+      inFlight++;
+      peak = Math.max(peak, inFlight);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      try {
+        return await inner(method, path);
+      } finally {
+        inFlight--;
+      }
+    };
+
+    const result = await provider.fetchPullRequests();
+
+    expect(result.length).toBe(40);
+    expect(peak).toBeGreaterThan(1);
+    expect(peak).toBeLessThanOrEqual(8);
+  });
+});
+
+/**
+ * A transport whose searches never run out: every page is a full 100 items
+ * cycling `prs`, so only the page cap stops the walk.
+ */
+function installFullSearchPages(provider: GitHubProvider, prs: FakePR[]): string[] {
+  const calls: string[] = [];
+  (provider as any).api = async (_method: string, path: string) => {
+    calls.push(path);
+    if (path.startsWith('/user')) {
+      return jsonResponse({ id: 999, login: 'octocat', avatar_url: null });
+    }
+    if (path.startsWith('/search/issues')) {
+      return jsonResponse({
+        items: Array.from({ length: 100 }, (_, i) => searchItem(prs[i % prs.length]!))
+      });
+    }
+    const single = path.match(/^\/repos\/([^?]+)\/pulls\/(\d+)$/);
+    if (single) {
+      const pr = prs.find((p) => p.number === Number(single[2]));
+      return pr ? jsonResponse(pr) : jsonResponse({}, false, 404);
+    }
+    if (path.includes('/reviews?')) return jsonResponse([]);
+    if (path.includes('/check-runs')) return jsonResponse({ check_runs: [] });
+    throw new Error(`unexpected path: ${path}`);
+  };
+  (provider as any).graphql = async () => ({ nodes: [] });
+  return calls;
+}
+
+describe('GitHubProvider.fetchPullRequests: truncation and failures are observable', () => {
+  test('the search page cap reaches the caller, not just the logger', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const calls = installFullSearchPages(provider, [ghPR(1), ghPR(2)]);
+    const warnings: FetchPullRequestsWarning[] = [];
+
+    const prs = await provider.fetchPullRequests({
+      onWarning: (w) => warnings.push(w)
+    });
+
+    // 3 involvement searches, 5 pages each, and the same 2 PRs throughout.
+    expect(searchQueries(calls).length).toBe(15);
+    expect(prs.map((p) => p.iid)).toEqual([1, 2]);
+
+    const capped = warnings.filter((w) => w.kind === 'page-cap');
+    expect(capped.length).toBe(3);
+    expect(capped[0]?.source).toBe('search');
+    expect(capped[0]?.message).toContain('5-page cap');
+  });
+
+  test('a quiet fetch means nothing was truncated', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    install(provider, [ghPR(1)]);
+    const warnings: FetchPullRequestsWarning[] = [];
+
+    await provider.fetchPullRequests({ onWarning: (w) => warnings.push(w) });
+
+    expect(warnings).toEqual([]);
+  });
+
+  test('the repository listing page cap reaches the caller', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const calls: string[] = [];
+    (provider as any).api = async (_method: string, path: string) => {
+      calls.push(path);
+      if (path.startsWith('/user')) {
+        return jsonResponse({ id: 999, login: 'octocat', avatar_url: null });
+      }
+      if (/^\/repos\/acme\/repo\/pulls\?/.test(path)) {
+        const page = Number(
+          new URLSearchParams(path.split('?')[1] ?? '').get('page') ?? '1'
+        );
+        // One open PR per page and 99 closed ones: the walk continues because
+        // the page is full, not because the caller wanted more.
+        return jsonResponse([
+          ghPR(page * 1000),
+          ...Array.from({ length: 99 }, (_, i) =>
+            ghPR(page * 1000 + i + 1, { state: 'closed' })
+          )
+        ]);
+      }
+      if (path.includes('/reviews?')) return jsonResponse([]);
+      if (path.includes('/check-runs')) return jsonResponse({ check_runs: [] });
+      throw new Error(`unexpected path: ${path}`);
+    };
+    (provider as any).graphql = async () => ({ nodes: [] });
+    const warnings: FetchPullRequestsWarning[] = [];
+
+    const prs = await provider.fetchPullRequests({
+      projectPath: 'acme/repo',
+      onWarning: (w) => warnings.push(w)
+    });
+
+    expect(prs.length).toBe(20);
+    expect(warnings.length).toBe(1);
+    expect(warnings[0]?.kind).toBe('page-cap');
+    expect(warnings[0]?.source).toBe('list');
+    expect(warnings[0]?.target).toBe('acme/repo');
+  });
+
+  test('a rate-limited detail fetch is reported instead of vanishing', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    install(provider, [ghPR(1), ghPR(2)]);
+    const inner = (provider as any).api;
+    (provider as any).api = async (method: string, path: string) => {
+      if (path === '/repos/acme/repo/pulls/2') {
+        return jsonResponse({ message: 'API rate limit exceeded' }, false, 403);
+      }
+      return inner(method, path);
+    };
+    const warnings: FetchPullRequestsWarning[] = [];
+
+    const prs = await provider.fetchPullRequests({
+      onWarning: (w) => warnings.push(w)
+    });
+
+    expect(prs.map((p) => p.iid)).toEqual([1]);
+    expect(warnings.length).toBe(1);
+    expect(warnings[0]).toMatchObject({
+      kind: 'request-failed',
+      source: 'detail',
+      status: 403,
+      target: 'acme/repo#2'
+    });
+  });
+
+  test('a PR GitHub says is gone is not reported as a failure', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    // Search matches PR 9, which the detail endpoint 404s for.
+    install(provider, [ghPR(1)]);
+    const inner = (provider as any).api;
+    (provider as any).api = async (method: string, path: string) => {
+      if (path.startsWith('/search/issues')) {
+        return jsonResponse({ items: [searchItem(ghPR(9))] });
+      }
+      return inner(method, path);
+    };
+    const warnings: FetchPullRequestsWarning[] = [];
+
+    const prs = await provider.fetchPullRequests({
+      onWarning: (w) => warnings.push(w)
+    });
+
+    expect(prs).toEqual([]);
+    expect(warnings).toEqual([]);
+  });
+
+  test('an onWarning that throws does not fail the fetch', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    installFullSearchPages(provider, [ghPR(1)]);
+
+    const prs = await provider.fetchPullRequests({
+      onWarning: () => {
+        throw new Error('consumer bug');
+      }
+    });
+
+    expect(prs.map((p) => p.iid)).toEqual([1]);
   });
 });

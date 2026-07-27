@@ -19,6 +19,33 @@ import type { RealtimeWatcherOptions } from './RealtimeWatcher.ts';
 export type MRState = 'opened' | 'merged' | 'closed';
 
 /**
+ * A fetch returned less than the caller asked for.
+ *
+ * `fetchPullRequests` resolves to a plain `PullRequest[]`, which has nowhere
+ * to say "...and there were more": a bounded scan that stops at its page cap
+ * and a complete result are the same value. This is that missing channel.
+ * A caller doing best-effort discovery can ignore it; a caller that must not
+ * present a partial board should treat any warning as "this list is
+ * incomplete" and say so in its UI.
+ */
+export interface FetchPullRequestsWarning {
+  /**
+   * `page-cap`: a bounded scan stopped with matches still outstanding.
+   * `request-failed`: a non-ok response, so whatever it would have returned
+   * is missing from the result entirely. Rate limiting shows up here.
+   */
+  kind: 'page-cap' | 'request-failed';
+  /** Which leg of the fetch: the search API, a repository listing, or a per-MR detail fetch. */
+  source: 'search' | 'list' | 'detail';
+  /** Human-readable summary, always populated. */
+  message: string;
+  /** The HTTP status, when `kind` is `request-failed`. */
+  status?: number;
+  /** What the warning is about: a search query, a project path, or `owner/repo#number`. */
+  target?: string;
+}
+
+/**
  * Options for `fetchPullRequests`.
  * All fields are optional — omitting everything returns the user's open MRs.
  */
@@ -59,6 +86,53 @@ export interface FetchPullRequestsOptions {
       per page on large projects and immune to GitLab's resolver timeouts on job trees;
       per-MR job detail stays available via fetchSingleMR. */
   listWeight?: boolean;
+
+  /**
+   * Called once per way the result fell short: a page cap reached with matches
+   * outstanding, a search page that failed, an MR whose detail fetch was
+   * rejected. A quiet fetch made no such compromise.
+   *
+   * Invoked synchronously during the fetch; a callback that throws is ignored,
+   * never surfaced as a fetch failure.
+   *
+   * GitHub emits these for its search/listing page caps and for non-ok detail
+   * responses (rate limiting reaches a caller this way). GitLab paginates its
+   * project mode to exhaustion and raises transport failures as exceptions, so
+   * it has nothing to report and never calls this.
+   */
+  onWarning?: (warning: FetchPullRequestsWarning) => void;
+}
+
+/**
+ * The project path an option requires, or a thrown error naming that option.
+ *
+ * Shared by both providers so `{ iids }` without a `projectPath` fails the
+ * same way everywhere: one provider throwing while the other quietly returned
+ * a different query's results is the cross-provider split this prevents.
+ */
+export function requireProjectPath(projectPath: string | undefined, field: string): string {
+  if (!projectPath) {
+    throw new Error(`fetchPullRequests: \`${field}\` requires \`projectPath\``);
+  }
+  return projectPath;
+}
+
+/**
+ * `updatedAfter` as epoch milliseconds, or null when it was not supplied.
+ *
+ * @throws when the value is not parseable as an instant. Forwarding an
+ *   unparseable bound to the API instead means the filter is silently dropped
+ *   and the caller gets more MRs than it asked for.
+ */
+export function parseUpdatedAfter(updatedAfter: string | undefined): number | null {
+  if (updatedAfter == null) return null;
+  const parsed = Date.parse(updatedAfter);
+  if (Number.isNaN(parsed)) {
+    throw new Error(
+      `fetchPullRequests: updatedAfter must be an ISO-8601 instant, got "${updatedAfter}"`,
+    );
+  }
+  return parsed;
 }
 
 /**
