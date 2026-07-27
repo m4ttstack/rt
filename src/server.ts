@@ -4,7 +4,7 @@ import type { PullRequest, MRDetail } from "@workforge/glance-sdk";
 import { loadConfig, loadGitLabToken, loadSlackToken, saveMemberHidden, CONFIG_PATH } from "./config.ts";
 import { buildBoard, buildRoster, type BoardMR } from "./data.ts";
 import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } from "./discussions.ts";
-import { readProjectMRs, readDiscussions, subscribe, type Discussion } from "./rt-client.ts";
+import { readProjectMRs, readDiscussions, subscribe } from "./rt-client.ts";
 import { SnapshotCache } from "./cache.ts";
 import { isLocalRequest } from "./local.ts";
 import { readReviewStates, pruneReviewStates, reviewFilePath, writeReviewState, parseReviewRequestBody, attachReviews, readReviewReport } from "./review-state.ts";
