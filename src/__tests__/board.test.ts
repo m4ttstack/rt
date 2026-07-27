@@ -289,4 +289,28 @@ describe("SnapshotCache", () => {
     await cache.get(); // so #2 can't be trusted as current — refetch again
     expect(calls).toBe(3);
   });
+
+  test("refreshNow revalidates immediately and resolves with fresh data", async () => {
+    let calls = 0;
+    const cache = new SnapshotCache(async () => { calls++; return [] as BoardMR[]; }, () => 1000, 60_000);
+    await cache.get();               // warm: 1 fetch
+    const snap = await cache.refreshNow(); // within TTL, but must fetch again
+    expect(calls).toBe(2);
+    expect(snap.fetchError).toBeNull();
+  });
+
+  test("refreshNow during an in-flight fetch shares it and stays stale for the next get", async () => {
+    let calls = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const cache = new SnapshotCache(async () => { calls++; await gate; return [] as BoardMR[]; }, () => 1000, 60_000);
+    const first = cache.get();
+    const second = cache.refreshNow(); // shares the in-flight fetch
+    release();
+    await Promise.all([first, second]);
+    expect(calls).toBe(1);
+    // The shared fetch predates markStale, so the next get() must refetch.
+    await cache.get();
+    expect(calls).toBe(2);
+  });
 });

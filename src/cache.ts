@@ -61,6 +61,17 @@ export class SnapshotCache {
     return refresh;
   }
 
+  /**
+   * Revalidate now and resolve when data lands — the relay-push path (an rt
+   * event says the store changed; refetch, then nudge browsers). Shares any
+   * in-flight fetch; the generation guard keeps `stale` set if that fetch
+   * started before this call, so the next get() finishes the job.
+   */
+  async refreshNow(): Promise<Snapshot> {
+    this.markStale();
+    return this.refresh();
+  }
+
   private refresh(): Promise<Snapshot> {
     if (this.inflight) return this.inflight;
     // A markStale() landing mid-fetch means this fetch read the pre-change

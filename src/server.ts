@@ -4,7 +4,7 @@ import type { PullRequest, MRDetail } from "@workforge/glance-sdk";
 import { loadConfig, loadGitLabToken, loadSlackToken, saveMemberHidden, CONFIG_PATH } from "./config.ts";
 import { buildBoard, buildRoster, type BoardMR } from "./data.ts";
 import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } from "./discussions.ts";
-import { readProjectMRs, readDiscussions, type Discussion } from "./rt-client.ts";
+import { readProjectMRs, readDiscussions, subscribe, type Discussion } from "./rt-client.ts";
 import { SnapshotCache } from "./cache.ts";
 import { isLocalRequest } from "./local.ts";
 import { readReviewStates, pruneReviewStates, reviewFilePath, writeReviewState, parseReviewRequestBody, attachReviews, readReviewReport } from "./review-state.ts";
@@ -214,6 +214,26 @@ Bun.serve({
     switch (pathname) {
       case "/healthz":
         return new Response("ok");
+      case "/events": {
+        // One-way nudge channel: browsers re-pull /data.json on any message.
+        let ctrl: ReadableStreamDefaultController<Uint8Array>;
+        const stream = new ReadableStream<Uint8Array>({
+          start(c) {
+            ctrl = c;
+            sseClients.add(c);
+            c.enqueue(sseEncoder.encode("retry: 3000\n\n"));
+          },
+          cancel() {
+            sseClients.delete(ctrl);
+          },
+        });
+        return new Response(stream, {
+          headers: {
+            "content-type": "text/event-stream",
+            "cache-control": "no-cache",
+          },
+        });
+      }
       case "/":
         return new Response(shell, { headers: { "content-type": "text/html; charset=utf-8" } });
       case "/style.css":
@@ -814,6 +834,35 @@ function scheduleAutoResolve(): void {
 }
 
 scheduleAutoResolve();
+
+// ── rt relay → board push ────────────────────────────────────────────────
+// An rt broadcast about a mapped repo means the store changed: refetch the
+// snapshot (a socket read — the daemon already did the API work) and nudge
+// every connected browser to re-pull /data.json. Coalesced so an event
+// burst (one push = MR + pipeline + discussions frames) refreshes once.
+const RELAY_TYPES = new Set(["project-mrs", "discussions:update", "discussions:new-comments"]);
+const RELAY_COALESCE_MS = 750;
+const sseClients = new Set<ReadableStreamDefaultController<Uint8Array>>();
+const sseEncoder = new TextEncoder();
+
+function sseNudge(): void {
+  const frame = sseEncoder.encode("data: changed\n\n");
+  for (const client of sseClients) {
+    try { client.enqueue(frame); } catch { sseClients.delete(client); }
+  }
+}
+
+let relayTimer: ReturnType<typeof setTimeout> | undefined;
+const stopRelay = subscribe((type, data) => {
+  if (!RELAY_TYPES.has(type)) return;
+  const repoName = (data as { repoName?: string } | null)?.repoName;
+  if (!repoName || !Object.values(config.rtRepos).includes(repoName)) return;
+  clearTimeout(relayTimer);
+  relayTimer = setTimeout(() => {
+    void cache.refreshNow().then(sseNudge).catch(() => {});
+  }, RELAY_COALESCE_MS);
+});
+void stopRelay; // long-lived server; kept for symmetry/tests
 
 // Hot-reload config.json so adding/removing members (or any setting) takes
 // effect without a restart. Watch the directory — that survives editors that

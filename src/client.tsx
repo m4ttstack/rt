@@ -1520,6 +1520,16 @@ function Board() {
     };
   }, [load]);
 
+  // Server push: rt relay events land as SSE nudges; re-pull the board.
+  // Polling stays as the fallback when the stream is down.
+  useEffect(() => {
+    const es = new EventSource("/events");
+    es.onmessage = () => {
+      if (!document.hidden) load();
+    };
+    return () => es.close();
+  }, [load]);
+
   // Merge a scoped (single-member) refresh into the current board: replace that
   // member's rows and update their roster count, leaving everyone else untouched.
   const mergeMember = useCallback((username: string, mrs: BoardMRWithReview[], fetchedAt: number) => {
