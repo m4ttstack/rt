@@ -16,6 +16,7 @@ const config: BoardConfig = {
   port: 0,
   reviewCwd: "",
   reviewsWorkspace: "reviews",
+  rtRepos: {},
 };
 
 function pr(overrides: Partial<PullRequest>): PullRequest {
@@ -147,6 +148,17 @@ describe("buildBoard", () => {
     expect(mr!.author.username).toBe("alice");
     expect(mr!.createdAt).toBe("2026-07-01T00:00:00Z");
     expect(mr!.pipelineState).toBe("none"); // pipeline: null
+  });
+
+  test("buildBoard maps rtRepo from config.rtRepos by project path, null when unmapped", () => {
+    const testConfig = { ...config, projects: ["g/a", "g/b"], rtRepos: { "g/a": "repo-a" } };
+    const prs = [
+      pr({ webUrl: "https://gitlab.com/g/a/-/merge_requests/1" }),
+      pr({ iid: 2, webUrl: "https://gitlab.com/g/b/-/merge_requests/2" }),
+    ];
+    const board = buildBoard(prs, testConfig);
+    expect(board.find((m) => m.webUrl!.includes("/g/a/"))!.rtRepo).toBe("repo-a");
+    expect(board.find((m) => m.webUrl!.includes("/g/b/"))!.rtRepo).toBeNull();
   });
 });
 

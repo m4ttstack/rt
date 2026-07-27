@@ -51,6 +51,11 @@ export interface BoardConfig {
       name, case-insensitive). Additive to the built-in heuristic — for named
       integration bots that don't match a bot-username pattern. */
   botUsernames: string[];
+  /** rt repo names keyed by GitLab project path ("group/project" → the name
+      registered in ~/.rt/repos.json). The board can only show projects mapped
+      here whose repo has the project-mrs grant; an unmapped project surfaces
+      an instructive fetchError. */
+  rtRepos: Record<string, string>;
   slack: SlackConfig;
 }
 
@@ -136,6 +141,9 @@ export function parseConfig(raw: string): BoardConfig {
     }
   }
   const slack = parseSlack(cfg.slack);
+  const rtRepos = (cfg.rtRepos && typeof cfg.rtRepos === "object" && !Array.isArray(cfg.rtRepos))
+    ? Object.fromEntries(Object.entries(cfg.rtRepos).filter(([, v]) => typeof v === "string"))
+    : {};
   return {
     gitlabHost: cfg.gitlabHost!,
     projects: cfg.projects!,
@@ -156,6 +164,7 @@ export function parseConfig(raw: string): BoardConfig {
     respondSkill: cfg.respondSkill ?? "",
     doctorSkill: cfg.doctorSkill ?? "",
     botUsernames: (cfg.botUsernames ?? []).map((b) => b.trim()),
+    rtRepos,
     slack,
   };
 }

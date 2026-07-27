@@ -1,6 +1,7 @@
 {
   "gitlabHost": "https://gitlab.com",
   "projects": ["group/project"],
+  "rtRepos": { "your-group/your-project": "your-rt-repo-name" },
   "members": [
     { "username": "your-gitlab-username", "name": "Your Name" },
     { "username": "teammate-username" }

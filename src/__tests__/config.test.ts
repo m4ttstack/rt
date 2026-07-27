@@ -90,6 +90,12 @@ describe("parseConfig", () => {
   test("rejects non-string reviewCwd", () => {
     expect(() => parseConfig(JSON.stringify({ ...base, reviewCwd: 5 }))).toThrow(/reviewCwd/);
   });
+
+  test("rtRepos parses as a string map and defaults to {}", () => {
+    const cfg = parseConfig(JSON.stringify({ ...base, rtRepos: { "group/proj": "proj-repo" } }));
+    expect(cfg.rtRepos).toEqual({ "group/proj": "proj-repo" });
+    expect(parseConfig(JSON.stringify(base)).rtRepos).toEqual({});
+  });
 });
 
 describe("setHiddenInRaw", () => {

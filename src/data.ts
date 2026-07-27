@@ -25,6 +25,9 @@ export type BoardMR = MRDashboardProps & {
   pipelineState: PipelineState;
   /** Scoped repo id ("gitlab:42"), for the lazy discussions fetch on hover. */
   repositoryId: string;
+  /** rt repo name for daemon reads (config.rtRepos[projectPath]); null when the
+      project has no mapping, which surfaces as a fetch error server-side. */
+  rtRepo: string | null;
 };
 
 export interface Snapshot {
@@ -86,6 +89,7 @@ export function buildBoard(prs: PullRequest[], config: BoardConfig, now: number 
       reviewerComments: pr.unresolvedThreadCount,
       pipelineState: derivePipelineState(props),
       repositoryId: pr.repositoryId,
+      rtRepo: config.rtRepos[path] ?? null,
     });
   }
   return out;
