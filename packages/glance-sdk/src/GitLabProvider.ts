@@ -1010,6 +1010,10 @@ export class GitLabProvider implements GitProvider {
    * flag the previous code forwarded was dropped on the floor and every MR
    * landed ready for review (MAT-15). `toMR` strips the prefix back off, so
    * the returned `title` is the one the caller passed.
+   *
+   * An omitted `draft` leaves the title exactly as given. Treating it as
+   * `false` stripped a caller's literal `"Draft: notes"` down to `"notes"` and
+   * published an MR GitLab itself would have opened as a draft.
    */
   async createPullRequest(input: CreatePullRequestInput): Promise<PullRequest> {
     const opts: CreateMergeRequestOptions = {};
@@ -1024,7 +1028,7 @@ export class GitLabProvider implements GitProvider {
         input.projectPath,
         input.sourceBranch,
         input.targetBranch,
-        draftTitle(input.title, input.draft ?? false),
+        input.draft == null ? input.title : draftTitle(input.title, input.draft),
         opts,
       )) as unknown as { iid: number };
     } catch (err) {
@@ -1040,6 +1044,18 @@ export class GitLabProvider implements GitProvider {
    * MR first when it is given one without the other: changing a draft MR's
    * title must not quietly publish it, and toggling `draft` must not need the
    * caller to re-send a title. Supplying both skips that read.
+   *
+   * That read-then-write is not atomic: a title edited between the read and
+   * the write is overwritten by the title this method computed from the older
+   * one. GitLab offers no compare-and-set on the field, so the window is
+   * inherent, not an oversight. Pass `title` alongside `draft` to skip the read
+   * and close the window.
+   *
+   * When `draft` is requested, the MR read back afterwards must agree. A title
+   * whose draft marker this SDK does not recognise (a pre-14.0 `WIP:`, say)
+   * survives `draftTitle`, and GitLab keeps treating the MR as a draft: the
+   * edit succeeds and the flag does not land. That throws rather than
+   * reporting a transition that did not happen.
    */
   async updatePullRequest(projectPath: string, mrIid: number, input: UpdatePullRequestInput): Promise<PullRequest> {
     const opts: EditMergeRequestOptions = {};
@@ -1061,7 +1077,19 @@ export class GitLabProvider implements GitProvider {
     } catch (err) {
       throw this.legacyError('updatePullRequest', err);
     }
-    return this.fetchSingleMRWithRetry(projectPath, mrIid, 'Updated MR but failed to fetch it back');
+    const updated = await this.fetchSingleMRWithRetry(
+      projectPath,
+      mrIid,
+      'Updated MR but failed to fetch it back',
+    );
+    if (input.draft != null && updated.draft !== input.draft) {
+      throw new Error(
+        `updatePullRequest failed: !${mrIid} is ${updated.draft ? 'still a draft' : 'not a draft'} ` +
+          `after requesting draft=${input.draft}. GitLab derives draft state from the title, and the ` +
+          `title "${updated.title}" did not produce it.`,
+      );
+    }
+    return updated;
   }
 
   /** The MR's current title and draft state, for resolving a partial update. */

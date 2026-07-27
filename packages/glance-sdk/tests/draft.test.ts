@@ -28,28 +28,46 @@ interface GitLabCalls {
   showCount: number;
 }
 
+/**
+ * GitLab's own draft rule, which is broader than the prefixes `draftTitle`
+ * writes: self-hosted instances still honour the pre-14.0 `WIP:`.
+ */
+const GITLAB_DRAFT_TITLE = /^\s*(?:\[draft\]|\(draft\)|draft:|wip:)\s*/i;
+
+/**
+ * A GitLab that behaves like the real one on this point: draft state is read
+ * back off the title it was given, never off what the SDK meant to write.
+ */
 function stubGitLab(
   provider: GitLabProvider,
   current: { title: string; draft: boolean } = { title: 'Current title', draft: false },
 ): GitLabCalls {
   const calls: GitLabCalls = { create: null, edit: null, showCount: 0 };
+  let title = current.title;
   (provider as any).gb = {
     MergeRequests: {
       create: async (...args: unknown[]) => {
         calls.create = args;
+        title = String(args[3]);
         return { iid: 7 };
       },
       edit: async (...args: unknown[]) => {
         calls.edit = args;
+        const opts = args[2] as { title?: string } | undefined;
+        if (opts?.title != null) title = opts.title;
         return {};
       },
       show: async () => {
         calls.showCount++;
-        return current;
+        return { title, draft: GITLAB_DRAFT_TITLE.test(title) };
       },
     },
   };
-  (provider as any).fetchSingleMRWithRetry = async () => ({ iid: 7 });
+  (provider as any).fetchSingleMRWithRetry = async () => ({
+    iid: 7,
+    title: title.replace(GITLAB_DRAFT_TITLE, ''),
+    draft: GITLAB_DRAFT_TITLE.test(title),
+  });
   return calls;
 }
 
@@ -82,6 +100,19 @@ describe('GitLabProvider.createPullRequest draft', () => {
 
     expect(calls.create?.[3]).toBe('My feature');
     expect(calls.create?.[4]).not.toHaveProperty('draft');
+  });
+
+  test('draft omitted does not strip a prefix the caller wrote deliberately', async () => {
+    const provider = new GitLabProvider('https://gitlab.example', 't');
+    const calls = stubGitLab(provider);
+
+    // No `draft` field at all: the caller has no opinion, and GitLab would
+    // read this title as a draft. Treating the absence as `draft: false`
+    // published it instead, under a title the caller never asked for.
+    const created = await provider.createPullRequest(createInput({ title: 'Draft: notes' }));
+
+    expect(calls.create?.[3]).toBe('Draft: notes');
+    expect(created.draft).toBe(true);
   });
 
   test('draft: false strips a prefix the caller already wrote', async () => {
@@ -151,6 +182,28 @@ describe('GitLabProvider.updatePullRequest draft', () => {
 
     expect(calls.showCount).toBe(0);
     expect(calls.edit?.[2]).toEqual({ targetBranch: 'develop' });
+  });
+
+  test('a transition that landed returns the MR in the requested state', async () => {
+    const provider = new GitLabProvider('https://gitlab.example', 't');
+    stubGitLab(provider, { title: 'Current title', draft: false });
+
+    const updated = await provider.updatePullRequest('g/p', 7, { draft: true });
+
+    expect(updated.draft).toBe(true);
+    expect(updated.title).toBe('Current title');
+  });
+
+  test('a draft marker the SDK does not write throws instead of reporting success', async () => {
+    const provider = new GitLabProvider('https://gitlab.example', 't');
+    // Pre-14.0 self-hosted form: `draftTitle` leaves `WIP:` in place, so the
+    // edit succeeds and GitLab keeps the MR a draft.
+    const calls = stubGitLab(provider, { title: 'WIP: Current title', draft: true });
+
+    await expect(provider.updatePullRequest('g/p', 7, { draft: false })).rejects.toThrow(
+      /still a draft after requesting draft=false/,
+    );
+    expect(calls.edit).not.toBeNull();
   });
 });
 
