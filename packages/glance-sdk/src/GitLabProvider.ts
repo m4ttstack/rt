@@ -1,6 +1,7 @@
 import { Gitlab, GitbeakerRequestError, GitbeakerRetryError } from '@gitbeaker/rest';
 import type { CreateMergeRequestOptions, EditMergeRequestOptions } from '@gitbeaker/rest';
 import type { GitProvider, FetchPullRequestsOptions, MRState } from './GitProvider.ts';
+import { parseUpdatedAfter, requireProjectPath } from './GitProvider.ts';
 import type {
   BranchProtectionRule,
   CreatePullRequestInput,
@@ -739,9 +740,22 @@ export class GitLabProvider implements GitProvider {
     return pr;
   }
 
+  /**
+   * See `GitProvider.fetchPullRequests` for the cross-provider contract.
+   *
+   * GitLab specifics: `updatedAfter` and `listWeight` are honored by the
+   * `projectPath`-alone mode only, and every mode returns full dashboard
+   * fields, so there is no per-MR enrichment pass and no page cap to report
+   * through `onWarning`.
+   */
   async fetchPullRequests(options?: FetchPullRequestsOptions): Promise<PullRequest[]> {
     const stateInput = options?.state;
     const states: MRState[] = stateInput ? (Array.isArray(stateInput) ? stateInput : [stateInput]) : ['opened'];
+
+    // Validated in every mode even though only the project mode applies it:
+    // a caller passing a bound this provider cannot parse should hear about
+    // it, and should hear about it the same way on either provider.
+    parseUpdatedAfter(options?.updatedAfter);
 
     // Determine the single GitLab API state enum to use.
     // GitLab only accepts one state; if multiple are requested, use 'all' + client filter.
@@ -750,14 +764,17 @@ export class GitLabProvider implements GitProvider {
     const apiState = needsAllStates ? 'all' : (states[0] ?? 'opened');
     const filterSet = needsAllStates ? new Set(states) : null;
 
-    // IID batch path — use batch query for specific MRs
-    if (options?.iids && options.projectPath) {
+    // IID batch path — use batch query for specific MRs.
+    // Keyed off the field being present, not non-empty: an empty `iids` list
+    // asks for no MRs, not for the role-based involvement set.
+    if (options?.iids) {
+      const projectPath = requireProjectPath(options.projectPath, 'iids');
       // When fetching all states, omit the state filter entirely so
       // GitLab returns MRs regardless of state (the default is 'opened').
       const useStateFilter = !needsAllStates;
       const query = useStateFilter ? MR_BATCH_QUERY : MR_BATCH_QUERY_NO_STATE;
       const vars: Record<string, unknown> = {
-        projectPath: options.projectPath,
+        projectPath,
         iids: options.iids.map(String),
       };
       if (useStateFilter) {
@@ -772,8 +789,8 @@ export class GitLabProvider implements GitProvider {
     // Author batch path — one query per author, deduped by MR global ID.
     // Fetches full dashboard fields directly, so callers building a team board
     // need no separate REST discovery pass.
-    if (options?.authorUsernames && options.projectPath) {
-      const projectPath = options.projectPath;
+    if (options?.authorUsernames) {
+      const projectPath = requireProjectPath(options.projectPath, 'authorUsernames');
       const perAuthor = await Promise.all(
         options.authorUsernames.map((author) =>
           this.runQuery<MRBatchResponse>('fetchPullRequests.byAuthor', MR_BY_AUTHOR_QUERY, {

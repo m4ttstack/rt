@@ -161,6 +161,33 @@ export interface GitProvider {
    * - `{ authorUsernames, projectPath }`: every MR in the project authored by
    *   any of those users (for team boards)
    * - `{ projectPath }`: every MR in the project (team/project view), paginated
+   *
+   * Contract every implementation owes a caller, so the same input cannot mean
+   * different things on different providers:
+   *
+   * - `iids` or `authorUsernames` without `projectPath` **throws**. Neither is
+   *   answerable without a project, and quietly answering a different question
+   *   (the involvement set) is worse than failing.
+   * - A present-but-empty `iids` or `authorUsernames` selects that mode and
+   *   returns `[]`. It asks for no MRs, not for every MR.
+   * - `updatedAfter` that is not parseable as an instant **throws**, in every
+   *   mode, rather than being forwarded to the API and dropped there.
+   * - `onWarning` is the only signal that the returned array is short. A
+   *   provider that truncates or loses MRs must call it; see
+   *   `FetchPullRequestsWarning`.
+   *
+   * Which options each provider honors:
+   *
+   * | option        | GitLab                        | GitHub                    |
+   * | ------------- | ----------------------------- | ------------------------- |
+   * | `state`       | all modes                     | all modes                 |
+   * | `updatedAfter`| `projectPath`-alone mode only | all modes                 |
+   * | `listWeight`  | `projectPath`-alone mode only | all modes                 |
+   * | `onWarning`   | never fires (see below)       | page caps + failed detail |
+   *
+   * GitLab returns full dashboard fields from every mode and paginates its
+   * project mode to exhaustion, so it has no truncation to report; GitHub
+   * assembles a PR from several endpoints under bounded page walks, so it does.
    */
   fetchPullRequests(options?: FetchPullRequestsOptions): Promise<PullRequest[]>;
 
