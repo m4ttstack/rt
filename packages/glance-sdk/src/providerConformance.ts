@@ -11,7 +11,7 @@
  *
  * The assertions below fail `tsc` if an implementation is ever again not
  * callable with the full parameter list the interface promises. Extra optional
- * parameters on an implementation are fine — those still accept every
+ * parameters on an implementation are fine: those still accept every
  * interface-shaped call.
  *
  * Nothing here emits runtime code; the file exists to be type-checked.

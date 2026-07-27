@@ -177,6 +177,19 @@ describe('GitHubProvider.fetchPullRequests: repository modes', () => {
     expect(calls).toContain('/repos/acme/repo/pulls/7');
   });
 
+  test('an empty iids list asks for nothing, not for the whole repository', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const calls = install(provider, [ghPR(1)]);
+
+    const prs = await provider.fetchPullRequests({
+      iids: [],
+      projectPath: 'acme/repo'
+    });
+
+    expect(prs).toEqual([]);
+    expect(searchQueries(calls)).toEqual([]);
+  });
+
   test('iids without projectPath throws instead of silently ignoring it', async () => {
     const provider = new GitHubProvider('https://github.com', 'tok');
     install(provider, [ghPR(1)]);

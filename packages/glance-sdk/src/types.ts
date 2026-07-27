@@ -139,7 +139,7 @@ export interface PullRequest {
   pipeline: Pipeline | null;
   /**
    * Open review threads. `null` means the provider could not determine the
-   * count, which is not the same as zero — never render it as "all resolved".
+   * count, which is not the same as zero. Never render it as "all resolved".
    * GitLab always reports a number. GitHub reports null when the GraphQL
    * review-thread query fails or the PR carries more threads than one page.
    */

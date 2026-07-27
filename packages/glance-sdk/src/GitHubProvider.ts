@@ -52,7 +52,7 @@ interface GHLabel {
 
 interface GHPullRequest {
   id: number;
-  /** GraphQL global node ID — the handle the v4 API addresses this PR by. */
+  /** GraphQL global node ID: the handle the v4 API addresses this PR by. */
   node_id: string;
   number: number;
   title: string;
@@ -122,7 +122,7 @@ interface GHReviewThreadsResponse {
   } | null>;
 }
 
-/** An item from `/search/issues` — issue-shaped, with a `pull_request` stub on PRs. */
+/** An item from `/search/issues`: issue-shaped, with a `pull_request` stub on PRs. */
 interface GHSearchItem {
   number: number;
   state: string;
@@ -402,17 +402,17 @@ export class GitHubProvider implements GitProvider {
    * `projectPath` -- pull requests in a single repository.
    *
    * How each `FetchPullRequestsOptions` field lands on GitHub:
-   * - `state` — honored. GitHub has no merged state of its own, so `merged`
+   * - `state`: honored. GitHub has no merged state of its own, so `merged`
    *   is `is:closed` plus a `merged_at` check (the same reading
    *   `normalizePRState` does).
-   * - `iids` + `projectPath` — honored: one PR fetch per number.
-   * - `authorUsernames` + `projectPath` — honored: one search per author.
-   * - `projectPath` alone — honored: paginated `/pulls` listing. GitHub only
+   * - `iids` + `projectPath`: honored, one PR fetch per number.
+   * - `authorUsernames` + `projectPath`: honored, one search per author.
+   * - `projectPath` alone: honored, paginated `/pulls` listing. GitHub only
    *   returns diff stats and mergeability from the single-PR endpoint, so PRs
    *   from this mode carry `diffStats: null` and `conflicts: false`. Use
    *   `fetchSingleMR` when those matter.
-   * - `updatedAfter` — honored in every mode.
-   * - `listWeight` — honored in every mode: skips the per-PR check-run fetch,
+   * - `updatedAfter`: honored in every mode.
+   * - `listWeight`: honored in every mode, skips the per-PR check-run fetch,
    *   leaving `pipeline` null.
    *
    * `iids` and `authorUsernames` throw without `projectPath`, as the interface
@@ -440,7 +440,9 @@ export class GitHubProvider implements GitProvider {
 
     let candidates: PRWithRoles[];
 
-    if (options?.iids?.length) {
+    // Mode selection keys off the field being present, not non-empty: an empty
+    // `iids` list asks for no MRs, not for the whole repository.
+    if (options?.iids) {
       const projectPath = requireProjectPath(options.projectPath, 'iids');
       const fetched = await Promise.all(
         options.iids.map(iid => this.fetchPR(projectPath, iid))
@@ -448,7 +450,7 @@ export class GitHubProvider implements GitProvider {
       candidates = await this.withRoles(
         fetched.filter((pr): pr is GHPullRequest => pr !== null).filter(keepRaw)
       );
-    } else if (options?.authorUsernames?.length) {
+    } else if (options?.authorUsernames) {
       const projectPath = requireProjectPath(
         options.projectPath,
         'authorUsernames'
@@ -1273,7 +1275,7 @@ export class GitHubProvider implements GitProvider {
    * costs nothing extra: PRs we are about to discard never get a detail fetch.
    *
    * Walks up to `SEARCH_MAX_PAGES` pages and logs a warning if it stops there
-   * with more results outstanding — a bounded scan, not an exhaustive one.
+   * with more results outstanding. A bounded scan, not an exhaustive one.
    */
   private async searchPRs(
     qualifiers: string,
@@ -1381,7 +1383,7 @@ export class GitHubProvider implements GitProvider {
 
   /**
    * The authenticated user, fetched once per provider instance.
-   * Null when the lookup fails — callers degrade to unknown roles rather than
+   * Null when the lookup fails, so callers degrade to unknown roles rather than
    * failing the whole fetch.
    */
   private async currentUser(): Promise<GHUser | null> {
@@ -1389,7 +1391,15 @@ export class GitHubProvider implements GitProvider {
       const res = await this.api('GET', '/user');
       if (!res.ok) return null;
       return (await res.json()) as GHUser;
-    })().catch(() => null);
+    })()
+      .catch(() => null)
+      .then(user => {
+        // Concurrent callers share the in-flight request, but a failure is not
+        // cached: the next fetch asks again rather than degrading for the
+        // lifetime of the provider.
+        if (!user) this.currentUserPromise = null;
+        return user;
+      });
     return this.currentUserPromise;
   }
 
