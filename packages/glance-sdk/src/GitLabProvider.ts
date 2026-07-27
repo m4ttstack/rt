@@ -1,4 +1,5 @@
 import { Gitlab, GitbeakerRequestError, GitbeakerRetryError } from '@gitbeaker/rest';
+import type { CreateMergeRequestOptions, EditMergeRequestOptions } from '@gitbeaker/rest';
 import type { GitProvider, FetchPullRequestsOptions, MRState } from './GitProvider.ts';
 import type {
   BranchProtectionRule,
@@ -353,6 +354,42 @@ function normalizePipelineStatus(p: GQLPipeline): string {
   return status;
 }
 
+/**
+ * GitLab's own draft-title patterns: `Draft:`, `[Draft]`, `(Draft)`, any case.
+ * Draft state is a function of the title, not a field you can set.
+ */
+const DRAFT_TITLE_PREFIX = /^\s*(?:\[draft\]|\(draft\)|draft:)\s*/i;
+
+/** The title without its draft marker. Titles that carry none are unchanged. */
+export function stripDraftPrefix(title: string): string {
+  return title.replace(DRAFT_TITLE_PREFIX, '');
+}
+
+/**
+ * The wire title for an MR that should be in `draft` state.
+ *
+ * The prefix is GitLab's only mechanism for this: the REST API has no `draft`
+ * parameter on create or edit (MAT-15). It is applied here, at the wire
+ * boundary, and stripped again in `toMR`, so a caller's stored title never
+ * grows a "Draft:" it did not write.
+ */
+function draftTitle(title: string, draft: boolean): string {
+  const base = stripDraftPrefix(title);
+  return draft ? `Draft: ${base}` : base;
+}
+
+/**
+ * GitLab's assignee_ids / reviewer_ids take numeric user IDs, while
+ * `CreatePullRequestInput` and `UpdatePullRequestInput` document these fields
+ * as usernames. Values have always been forwarded unchanged; keeping that
+ * behavior needs one type escape, confined here to the two fields that need
+ * it rather than cast across the whole options object -- casting the object is
+ * how the dead `draft` parameter stayed invisible.
+ */
+function asUserIds(usernames: string[]): number[] {
+  return usernames as unknown as number[];
+}
+
 function toMR(
   gql: GQLMR,
   role: string,
@@ -380,7 +417,10 @@ function toMR(
     id: `gitlab:mr:${numericId(gql.id)}`,
     iid: parseInt(gql.iid, 10),
     repositoryId: `gitlab:${gql.projectId}`,
-    title: gql.title,
+    // The "Draft:" prefix is GitLab's transport for `draft`, not part of the
+    // title the author wrote. Consumers persist and render this string, and
+    // `draft` below already carries the state.
+    title: gql.draft ? stripDraftPrefix(gql.title) : gql.title,
     description: gql.description ?? null,
     state: gql.state,
     draft: gql.draft,
@@ -947,16 +987,19 @@ export class GitLabProvider implements GitProvider {
     return result;
   }
 
+  /**
+   * `input.draft` is applied through the title, the only mechanism GitLab has:
+   * neither the create nor the edit endpoint takes a `draft` parameter, so the
+   * flag the previous code forwarded was dropped on the floor and every MR
+   * landed ready for review (MAT-15). `toMR` strips the prefix back off, so
+   * the returned `title` is the one the caller passed.
+   */
   async createPullRequest(input: CreatePullRequestInput): Promise<PullRequest> {
-    const opts: Record<string, unknown> = {};
+    const opts: CreateMergeRequestOptions = {};
     if (input.description != null) opts.description = input.description;
-    // 'draft' is not a documented create param (GitLab derives draft from the
-    // title); the legacy code sent it anyway and GitLab ignores unknown
-    // params. Passed through for wire parity.
-    if (input.draft != null) opts.draft = input.draft;
     if (input.labels?.length) opts.labels = input.labels.join(',');
-    if (input.assignees?.length) opts.assigneeIds = input.assignees;
-    if (input.reviewers?.length) opts.reviewerIds = input.reviewers;
+    if (input.assignees?.length) opts.assigneeIds = asUserIds(input.assignees);
+    if (input.reviewers?.length) opts.reviewerIds = asUserIds(input.reviewers);
 
     let created: { iid: number };
     try {
@@ -964,8 +1007,8 @@ export class GitLabProvider implements GitProvider {
         input.projectPath,
         input.sourceBranch,
         input.targetBranch,
-        input.title,
-        opts as never,
+        draftTitle(input.title, input.draft ?? false),
+        opts,
       )) as unknown as { iid: number };
     } catch (err) {
       throw this.legacyError('createPullRequest', err);
@@ -973,23 +1016,45 @@ export class GitLabProvider implements GitProvider {
     return this.fetchSingleMRWithRetry(input.projectPath, created.iid, 'Created MR but failed to fetch it back');
   }
 
+  /**
+   * Draft transitions go through the title, as on create.
+   *
+   * Because draft state and title are the same field on GitLab, this reads the
+   * MR first when it is given one without the other: changing a draft MR's
+   * title must not quietly publish it, and toggling `draft` must not need the
+   * caller to re-send a title. Supplying both skips that read.
+   */
   async updatePullRequest(projectPath: string, mrIid: number, input: UpdatePullRequestInput): Promise<PullRequest> {
-    const opts: Record<string, unknown> = {};
-    if (input.title != null) opts.title = input.title;
+    const opts: EditMergeRequestOptions = {};
     if (input.description != null) opts.description = input.description;
-    if (input.draft != null) opts.draft = input.draft; // wire parity, see createPullRequest
     if (input.targetBranch != null) opts.targetBranch = input.targetBranch;
     if (input.labels) opts.labels = input.labels.join(',');
-    if (input.assignees) opts.assigneeIds = input.assignees;
-    if (input.reviewers) opts.reviewerIds = input.reviewers;
+    if (input.assignees) opts.assigneeIds = asUserIds(input.assignees);
+    if (input.reviewers) opts.reviewerIds = asUserIds(input.reviewers);
     if (input.stateEvent) opts.stateEvent = input.stateEvent;
 
+    if (input.title != null || input.draft != null) {
+      const current =
+        input.title != null && input.draft != null ? null : await this.showMRTitle(projectPath, mrIid);
+      opts.title = draftTitle(input.title ?? current?.title ?? '', input.draft ?? current?.draft ?? false);
+    }
+
     try {
-      await this.gb.MergeRequests.edit(projectPath, mrIid, opts as never);
+      await this.gb.MergeRequests.edit(projectPath, mrIid, opts);
     } catch (err) {
       throw this.legacyError('updatePullRequest', err);
     }
     return this.fetchSingleMRWithRetry(projectPath, mrIid, 'Updated MR but failed to fetch it back');
+  }
+
+  /** The MR's current title and draft state, for resolving a partial update. */
+  private async showMRTitle(projectPath: string, mrIid: number): Promise<{ title: string; draft: boolean }> {
+    try {
+      const mr = await this.gb.MergeRequests.show(projectPath, mrIid);
+      return { title: mr.title, draft: mr.draft };
+    } catch (err) {
+      throw this.legacyError('updatePullRequest', err);
+    }
   }
 
   async restRequest(method: string, path: string, body?: unknown, op = 'restRequest'): Promise<Response> {

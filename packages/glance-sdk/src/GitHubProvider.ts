@@ -797,6 +797,11 @@ export class GitHubProvider implements GitProvider {
     return pr;
   }
 
+  /**
+   * `input.draft` is applied with a GraphQL mutation, not through the PATCH:
+   * GitHub's REST update endpoint has no `draft` field, so the value the
+   * previous code put in the request body was silently discarded (MAT-15).
+   */
   async updatePullRequest(
     projectPath: string,
     mrIid: number,
@@ -805,7 +810,6 @@ export class GitHubProvider implements GitProvider {
     const body: Record<string, unknown> = {};
     if (input.title != null) body.title = input.title;
     if (input.description != null) body.body = input.description;
-    if (input.draft != null) body.draft = input.draft;
     if (input.targetBranch != null) body.base = input.targetBranch;
     if (input.stateEvent)
       body.state = input.stateEvent === 'close' ? 'closed' : 'open';
@@ -818,6 +822,13 @@ export class GitHubProvider implements GitProvider {
     if (!res.ok) {
       const text = await res.text();
       throw new Error(`updatePullRequest failed: ${res.status} ${text}`);
+    }
+
+    if (input.draft != null) {
+      const patched = (await res.json()) as GHPullRequest;
+      if (patched.draft !== input.draft) {
+        await this.setDraft(patched.node_id, input.draft);
+      }
     }
 
     // Handle reviewers/assignees/labels replacement if provided
@@ -1162,6 +1173,39 @@ export class GitHubProvider implements GitProvider {
         message: err instanceof Error ? err.message : String(err)
       });
       return null;
+    }
+  }
+
+  /**
+   * Move a PR between draft and ready for review.
+   *
+   * These two mutations are GitHub's only API for the transition -- REST
+   * exposes `draft` on create and nowhere else. A failure throws: reporting
+   * success on a draft flag that never landed is the bug this replaces.
+   */
+  private async setDraft(
+    pullRequestId: string,
+    draft: boolean
+  ): Promise<void> {
+    const field = draft
+      ? 'convertPullRequestToDraft'
+      : 'markPullRequestReadyForReview';
+    const mutation = `
+      mutation GlanceSetDraft($id: ID!) {
+        ${field}(input: { pullRequestId: $id }) {
+          pullRequest { isDraft }
+        }
+      }
+    `;
+
+    const data = await this.graphql<
+      Record<string, { pullRequest?: { isDraft: boolean } } | undefined>
+    >(mutation, { id: pullRequestId });
+
+    if (data?.[field]?.pullRequest?.isDraft !== draft) {
+      throw new Error(
+        `updatePullRequest failed: could not set draft=${draft} (GitHub GraphQL ${field})`
+      );
     }
   }
 

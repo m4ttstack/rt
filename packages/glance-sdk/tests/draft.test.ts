@@ -1,0 +1,327 @@
+#!/usr/bin/env bun
+/**
+ * Draft handling on create and update (MAT-15).
+ *
+ * GitLab has no `draft` parameter on either endpoint -- gitbeaker's
+ * CreateMergeRequestOptions and EditMergeRequestOptions have no such field, and
+ * the flag the old code forwarded behind an `as never` cast never reached
+ * anything. Draft is the `Draft:` title prefix, applied at the wire boundary
+ * and stripped again on read.
+ *
+ * GitHub has `draft` on create only; the update endpoint ignores it, so the
+ * transition goes through a GraphQL mutation.
+ */
+import { afterEach, describe, expect, test } from 'bun:test';
+import { GitLabProvider, stripDraftPrefix } from '../src/GitLabProvider.ts';
+import { GitHubProvider } from '../src/GitHubProvider.ts';
+
+const realFetch = globalThis.fetch;
+afterEach(() => {
+  globalThis.fetch = realFetch;
+});
+
+// ── GitLab ───────────────────────────────────────────────────────────────────
+
+interface GitLabCalls {
+  create: unknown[] | null;
+  edit: unknown[] | null;
+  showCount: number;
+}
+
+function stubGitLab(
+  provider: GitLabProvider,
+  current: { title: string; draft: boolean } = { title: 'Current title', draft: false },
+): GitLabCalls {
+  const calls: GitLabCalls = { create: null, edit: null, showCount: 0 };
+  (provider as any).gb = {
+    MergeRequests: {
+      create: async (...args: unknown[]) => {
+        calls.create = args;
+        return { iid: 7 };
+      },
+      edit: async (...args: unknown[]) => {
+        calls.edit = args;
+        return {};
+      },
+      show: async () => {
+        calls.showCount++;
+        return current;
+      },
+    },
+  };
+  (provider as any).fetchSingleMRWithRetry = async () => ({ iid: 7 });
+  return calls;
+}
+
+function createInput(over: Record<string, unknown> = {}) {
+  return {
+    projectPath: 'g/p',
+    title: 'My feature',
+    sourceBranch: 'feat',
+    targetBranch: 'main',
+    ...over,
+  } as Parameters<GitLabProvider['createPullRequest']>[0];
+}
+
+describe('GitLabProvider.createPullRequest draft', () => {
+  test('draft: true prefixes the wire title and sends no draft field', async () => {
+    const provider = new GitLabProvider('https://gitlab.example', 't');
+    const calls = stubGitLab(provider);
+
+    await provider.createPullRequest(createInput({ draft: true }));
+
+    expect(calls.create?.[3]).toBe('Draft: My feature');
+    expect(calls.create?.[4]).not.toHaveProperty('draft');
+  });
+
+  test('draft omitted leaves the title alone', async () => {
+    const provider = new GitLabProvider('https://gitlab.example', 't');
+    const calls = stubGitLab(provider);
+
+    await provider.createPullRequest(createInput());
+
+    expect(calls.create?.[3]).toBe('My feature');
+    expect(calls.create?.[4]).not.toHaveProperty('draft');
+  });
+
+  test('draft: false strips a prefix the caller already wrote', async () => {
+    const provider = new GitLabProvider('https://gitlab.example', 't');
+    const calls = stubGitLab(provider);
+
+    await provider.createPullRequest(createInput({ title: 'Draft: My feature', draft: false }));
+
+    expect(calls.create?.[3]).toBe('My feature');
+  });
+
+  test('a title that is already prefixed is not prefixed twice', async () => {
+    const provider = new GitLabProvider('https://gitlab.example', 't');
+    const calls = stubGitLab(provider);
+
+    await provider.createPullRequest(createInput({ title: 'Draft: My feature', draft: true }));
+
+    expect(calls.create?.[3]).toBe('Draft: My feature');
+  });
+});
+
+describe('GitLabProvider.updatePullRequest draft', () => {
+  test('draft: true reads the current title and prefixes it', async () => {
+    const provider = new GitLabProvider('https://gitlab.example', 't');
+    const calls = stubGitLab(provider, { title: 'Current title', draft: false });
+
+    await provider.updatePullRequest('g/p', 7, { draft: true });
+
+    expect(calls.showCount).toBe(1);
+    expect(calls.edit?.[2]).toMatchObject({ title: 'Draft: Current title' });
+    expect(calls.edit?.[2]).not.toHaveProperty('draft');
+  });
+
+  test('draft: false publishes by stripping the prefix', async () => {
+    const provider = new GitLabProvider('https://gitlab.example', 't');
+    const calls = stubGitLab(provider, { title: 'Draft: Current title', draft: true });
+
+    await provider.updatePullRequest('g/p', 7, { draft: false });
+
+    expect(calls.edit?.[2]).toMatchObject({ title: 'Current title' });
+  });
+
+  test('retitling a draft MR keeps it a draft', async () => {
+    const provider = new GitLabProvider('https://gitlab.example', 't');
+    const calls = stubGitLab(provider, { title: 'Draft: Current title', draft: true });
+
+    await provider.updatePullRequest('g/p', 7, { title: 'Renamed' });
+
+    expect(calls.edit?.[2]).toMatchObject({ title: 'Draft: Renamed' });
+  });
+
+  test('title plus draft needs no extra read', async () => {
+    const provider = new GitLabProvider('https://gitlab.example', 't');
+    const calls = stubGitLab(provider);
+
+    await provider.updatePullRequest('g/p', 7, { title: 'Renamed', draft: true });
+
+    expect(calls.showCount).toBe(0);
+    expect(calls.edit?.[2]).toMatchObject({ title: 'Draft: Renamed' });
+  });
+
+  test('an update touching neither field reads nothing and sets no title', async () => {
+    const provider = new GitLabProvider('https://gitlab.example', 't');
+    const calls = stubGitLab(provider);
+
+    await provider.updatePullRequest('g/p', 7, { targetBranch: 'develop' });
+
+    expect(calls.showCount).toBe(0);
+    expect(calls.edit?.[2]).toEqual({ targetBranch: 'develop' });
+  });
+});
+
+describe('GitLab draft prefix on read', () => {
+  test('stripDraftPrefix handles the forms GitLab accepts', () => {
+    expect(stripDraftPrefix('Draft: Feature')).toBe('Feature');
+    expect(stripDraftPrefix('draft: Feature')).toBe('Feature');
+    expect(stripDraftPrefix('[Draft] Feature')).toBe('Feature');
+    expect(stripDraftPrefix('(Draft) Feature')).toBe('Feature');
+    expect(stripDraftPrefix('Feature')).toBe('Feature');
+    expect(stripDraftPrefix('Redraft: the RFC')).toBe('Redraft: the RFC');
+  });
+
+  test('a draft MR comes back with the prefix removed and draft set', async () => {
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          data: {
+            project: {
+              mergeRequests: {
+                pageInfo: { hasNextPage: false, endCursor: null },
+                nodes: [
+                  {
+                    id: 'gid://gitlab/MergeRequest/1',
+                    iid: '1',
+                    projectId: 42,
+                    title: 'Draft: My feature',
+                    description: null,
+                    state: 'opened',
+                    draft: true,
+                    conflicts: false,
+                    detailedMergeStatus: 'DRAFT_STATUS',
+                    webUrl: 'https://gitlab.example/g/p/-/merge_requests/1',
+                    sourceBranch: 'feat',
+                    targetBranch: 'main',
+                    createdAt: '2026-07-01T00:00:00Z',
+                    updatedAt: '2026-07-01T00:00:00Z',
+                    diffHeadSha: 'abc',
+                    author: { id: 'gid://gitlab/User/1', username: 'u1', name: 'u1', avatarUrl: null },
+                    assignees: { nodes: [] },
+                    reviewers: { nodes: [] },
+                    approvedBy: { nodes: [] },
+                    headPipeline: null,
+                    mergeabilityChecks: [],
+                  },
+                ],
+              },
+            },
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )) as unknown as typeof fetch;
+
+    const provider = new GitLabProvider('https://gitlab.example', 't');
+    const prs = await provider.fetchPullRequests({ projectPath: 'g/p' });
+
+    expect(prs[0]?.title).toBe('My feature');
+    expect(prs[0]?.draft).toBe(true);
+  });
+});
+
+// ── GitHub ───────────────────────────────────────────────────────────────────
+
+function ghPR(draft: boolean) {
+  return {
+    id: 10,
+    node_id: 'PR_node_1',
+    number: 1,
+    title: 'PR 1',
+    body: null,
+    state: 'open',
+    draft,
+    merged_at: null,
+    html_url: 'https://github.com/acme/repo/pull/1',
+    created_at: '2026-07-01T00:00:00Z',
+    updated_at: '2026-07-10T00:00:00Z',
+    head: { sha: 'sha1', ref: 'feat' },
+    base: { ref: 'main', repo: { id: 1, full_name: 'acme/repo' } },
+    user: { id: 999, login: 'octocat', avatar_url: null },
+    assignees: [],
+    requested_reviewers: [],
+    labels: [],
+  };
+}
+
+interface GitHubCalls {
+  bodies: Array<{ path: string; body: unknown }>;
+  mutations: string[];
+}
+
+function stubGitHub(
+  provider: GitHubProvider,
+  patched: ReturnType<typeof ghPR>,
+  mutationSucceeds = true,
+): GitHubCalls {
+  const calls: GitHubCalls = { bodies: [], mutations: [] };
+  (provider as any).api = async (_method: string, path: string, body?: unknown) => {
+    calls.bodies.push({ path, body });
+    return {
+      ok: true,
+      status: 200,
+      json: async () => patched,
+      text: async () => '',
+      headers: { get: () => null },
+    } as unknown as Response;
+  };
+  (provider as any).graphql = async (mutation: string) => {
+    calls.mutations.push(mutation);
+    if (!mutationSucceeds) return null;
+    const draft = mutation.includes('convertPullRequestToDraft');
+    return {
+      [draft ? 'convertPullRequestToDraft' : 'markPullRequestReadyForReview']: {
+        pullRequest: { isDraft: draft },
+      },
+    };
+  };
+  (provider as any).fetchSingleMR = async () => ({ iid: 1 });
+  return calls;
+}
+
+describe('GitHubProvider draft', () => {
+  test('create sends draft in the REST body, which GitHub documents there', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const calls = stubGitHub(provider, ghPR(true));
+
+    await provider.createPullRequest({
+      projectPath: 'acme/repo',
+      title: 'My feature',
+      sourceBranch: 'feat',
+      targetBranch: 'main',
+      draft: true,
+    });
+
+    expect(calls.bodies[0]?.body).toMatchObject({ draft: true, title: 'My feature' });
+  });
+
+  test('update converts to draft with a GraphQL mutation, not the PATCH body', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const calls = stubGitHub(provider, ghPR(false));
+
+    await provider.updatePullRequest('acme/repo', 1, { draft: true });
+
+    expect(calls.bodies[0]?.body).not.toHaveProperty('draft');
+    expect(calls.mutations.length).toBe(1);
+    expect(calls.mutations[0]).toContain('convertPullRequestToDraft');
+  });
+
+  test('update marks a draft PR ready for review', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const calls = stubGitHub(provider, ghPR(true));
+
+    await provider.updatePullRequest('acme/repo', 1, { draft: false });
+
+    expect(calls.mutations[0]).toContain('markPullRequestReadyForReview');
+  });
+
+  test('a PR already in the requested state needs no mutation', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const calls = stubGitHub(provider, ghPR(true));
+
+    await provider.updatePullRequest('acme/repo', 1, { draft: true });
+
+    expect(calls.mutations).toEqual([]);
+  });
+
+  test('a failed transition throws instead of reporting success', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    stubGitHub(provider, ghPR(false), false);
+
+    await expect(provider.updatePullRequest('acme/repo', 1, { draft: true })).rejects.toThrow(
+      /could not set draft=true/,
+    );
+  });
+});
