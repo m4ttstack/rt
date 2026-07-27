@@ -1,7 +1,10 @@
 import { describe, expect, test, afterEach } from "bun:test";
 import { tmpdir } from "os";
 import { join } from "path";
-import { rtCommand, readProjectMRs, readDiscussions, subscribe } from "../rt-client.ts";
+import {
+  rtCommand, readProjectMRs, readProjectMRsForRefresh, refreshMaxAge,
+  LIVE_REFRESH_MAX_AGE_MS, readDiscussions, subscribe,
+} from "../rt-client.ts";
 
 const socks: string[] = [];
 const servers: Array<{ stop(): void }> = [];
@@ -48,6 +51,52 @@ describe("readProjectMRs", () => {
     await readProjectMRs("acme-dev", 0, { sockPath: sock });
     expect(seen[0]!.payload).toEqual({ repoName: "acme-dev" });
     expect(seen[1]!.payload).toEqual({ repoName: "acme-dev", maxAgeMs: 0 });
+  });
+});
+
+describe("readProjectMRsForRefresh (manual refresh freshness policy)", () => {
+  const store = (source: string) => ({ mrs: {}, listSyncedAt: 1, source, syncedAt: 1 });
+
+  test("a live repo is already event-fresh — demand 10s, never force a sync", async () => {
+    const { sock, seen } = fakeDaemon({ "project-mrs:read": { ok: true, data: store("events") } });
+    const res = await readProjectMRsForRefresh("acme-dev", { sockPath: sock });
+    expect(res.ok).toBe(true);
+    // The probe carries no maxAgeMs, so it can never trigger a sync itself.
+    expect(seen[0]!.payload).toEqual({ repoName: "acme-dev" });
+    expect(seen[1]!.payload).toEqual({ repoName: "acme-dev", maxAgeMs: LIVE_REFRESH_MAX_AGE_MS });
+  });
+
+  test("a poll repo still forces — nothing else keeps it current", async () => {
+    const { sock, seen } = fakeDaemon({ "project-mrs:read": { ok: true, data: store("poll") } });
+    await readProjectMRsForRefresh("some-repo", { sockPath: sock });
+    expect(seen[1]!.payload).toEqual({ repoName: "some-repo", maxAgeMs: 0 });
+  });
+
+  test("a mutation-sourced store forces — a write is not ongoing freshness", async () => {
+    const { sock, seen } = fakeDaemon({ "project-mrs:read": { ok: true, data: store("mutation") } });
+    await readProjectMRsForRefresh("some-repo", { sockPath: sock });
+    expect(seen[1]!.payload).toEqual({ repoName: "some-repo", maxAgeMs: 0 });
+  });
+
+  test("a failed probe forces — never relax freshness on unknown state", async () => {
+    const { sock, seen } = fakeDaemon({ "project-mrs:read": { ok: false, error: "grant missing" } });
+    await readProjectMRsForRefresh("some-repo", { sockPath: sock });
+    expect(seen[1]!.payload).toEqual({ repoName: "some-repo", maxAgeMs: 0 });
+  });
+
+  test("an unreachable daemon surfaces the error instead of throwing", async () => {
+    const res = await readProjectMRsForRefresh("x", { sockPath: join(tmpdir(), "definitely-missing.sock") });
+    expect(res.ok).toBe(false);
+    expect(res.error).toContain("rt daemon unreachable");
+  });
+});
+
+describe("refreshMaxAge", () => {
+  test("only an events-sourced store earns the relaxed window", () => {
+    expect(refreshMaxAge("events")).toBe(LIVE_REFRESH_MAX_AGE_MS);
+    expect(refreshMaxAge("poll")).toBe(0);
+    expect(refreshMaxAge("mutation")).toBe(0);
+    expect(refreshMaxAge(undefined)).toBe(0);
   });
 });
 

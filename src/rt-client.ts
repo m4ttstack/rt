@@ -79,6 +79,34 @@ export function readProjectMRs(
   return rtCommand<ProjectMRsData>("project-mrs:read", payload, { sockPath: opts.sockPath, timeoutMs: 90_000 });
 }
 
+/**
+ * Freshness the manual refresh demands, given what the store reports as its
+ * source. A `live` repo's store is maintained by the daemon's events watcher,
+ * so it is already current — forcing (maxAgeMs 0) buys nothing but a forge
+ * round trip that can run tens of seconds on a big project. Everything else
+ * (poll, mutation, unknown) still forces: only an events feed is evidence the
+ * store keeps itself up to date.
+ */
+export const LIVE_REFRESH_MAX_AGE_MS = 10_000;
+
+export function refreshMaxAge(source: ProjectMRsData["source"] | undefined): number {
+  return source === "events" ? LIVE_REFRESH_MAX_AGE_MS : 0;
+}
+
+/**
+ * One repo's store for the manual-refresh path. Probes first — a read with no
+ * maxAgeMs can never trigger a sync, so it costs one socket round trip — to
+ * learn the source, then demands the freshness that source warrants.
+ */
+export async function readProjectMRsForRefresh(
+  repoName: string,
+  opts: RtClientOptions = {},
+): Promise<RtResponse<ProjectMRsData>> {
+  const probe = await readProjectMRs(repoName, undefined, opts);
+  const maxAgeMs = refreshMaxAge(probe.ok ? probe.data?.source : undefined);
+  return readProjectMRs(repoName, maxAgeMs, opts);
+}
+
 export function readDiscussions(
   repoName: string,
   iid: number,

@@ -4,7 +4,7 @@ import type { PullRequest, MRDetail } from "@workforge/glance-sdk";
 import { loadConfig, loadGitLabToken, loadSlackToken, saveMemberHidden, CONFIG_PATH } from "./config.ts";
 import { buildBoard, buildRoster, type BoardMR } from "./data.ts";
 import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } from "./discussions.ts";
-import { readProjectMRs, readDiscussions, subscribe } from "./rt-client.ts";
+import { readProjectMRs, readProjectMRsForRefresh, readDiscussions, subscribe } from "./rt-client.ts";
 import { SnapshotCache } from "./cache.ts";
 import { isLocalRequest } from "./local.ts";
 import { readReviewStates, pruneReviewStates, reviewFilePath, writeReviewState, parseReviewRequestBody, attachReviews, readReviewReport } from "./review-state.ts";
@@ -36,8 +36,9 @@ const FETCH_CONCURRENCY = 4;
  * one socket read per project, no forge traffic. A missing mapping or a
  * daemon-side refusal (down, grant missing) throws with the instructive
  * message, which SnapshotCache surfaces as /data.json's fetchError.
- * `force` is the manual-refresh path: maxAgeMs 0 makes the daemon sync
- * before answering (reserved for the refresh button, spec §6).
+ * `force` is the manual-refresh path (the refresh button, spec §6). It asks
+ * the daemon to sync before answering — except on a live repo, whose store the
+ * events watcher already keeps current; see readProjectMRsForRefresh.
  */
 async function fetchTeamMRs(force = false): Promise<PullRequest[]> {
   const byId = new Map<string, PullRequest>();
@@ -48,7 +49,7 @@ async function fetchTeamMRs(force = false): Promise<PullRequest[]> {
       errors.push(`${projectPath}: no rtRepos mapping in config.json`);
       continue;
     }
-    const res = force ? await readProjectMRs(repoName, 0) : await readProjectMRs(repoName);
+    const res = force ? await readProjectMRsForRefresh(repoName) : await readProjectMRs(repoName);
     if (!res.ok || !res.data) {
       errors.push(`${projectPath}: ${res.error ?? "empty daemon response"}`);
       continue;
