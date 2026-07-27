@@ -408,5 +408,7 @@ console.log(`\n${'─'.repeat(50)}`);
 console.log(`  ${passed} passed, ${failed} failed`);
 console.log(`${'─'.repeat(50)}\n`);
 
-process.exit(failed > 0 ? 1 : 0);
+// Thrown, not process.exit: exiting here tears down the whole `bun test tests/`
+// run and every file that has not executed yet is silently skipped.
+if (failed > 0) throw new Error(`smoke: ${failed} assertion(s) failed`);
 

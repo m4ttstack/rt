@@ -3,6 +3,12 @@
  * Comprehensive integration test for @workforge/glance-sdk.
  *
  * Tests ALL exported methods against live GitHub + GitLab APIs.
+ *
+ * Run it by hand with credentials:
+ *   GITHUB_TOKEN=… GITLAB_TOKEN=… bun tests/integration.live.ts
+ *
+ * Deliberately not named `*.test.ts`: it needs real tokens and mutates real
+ * projects, so `bun test tests/` must not pick it up.
  */
 
 import {
