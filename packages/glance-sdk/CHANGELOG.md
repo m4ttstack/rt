@@ -1,5 +1,17 @@
 # @workforge/glance-sdk
 
+## 0.11.0
+
+### Minor Changes
+
+- 03ffad5: **Breaking (type):** `PullRequest.unresolvedThreadCount` is now `number | null`. `null` means the provider could not determine the count and must not be rendered as "all resolved"; GitLab always reports a number. Consumers that assign the field to a non-nullable `number` need a `?? 0` or nullable handling of their own.
+- 03ffad5: `GitHubProvider.fetchPullRequests` accepts and honors `FetchPullRequestsOptions` (MAT-13). It previously declared no parameter at all, so every option a caller passed was discarded and all three involvement searches were hardcoded to `is:open` — a `{ state: ['opened','merged'] }` request could never see a merged PR. `state` maps onto search qualifiers (`merged` is `is:closed` plus a `merged_at` check, since GitHub has no merged state of its own); `iids`, `authorUsernames`, `projectPath`, `updatedAfter`, and `listWeight` are all honored, and `iids`/`authorUsernames` throw without `projectPath` instead of being ignored. The `projectPath`-alone mode lists the repository, where GitHub omits diff stats and mergeability: PRs from that mode carry `diffStats: null` and `conflicts: false`. Searches now paginate (10 pages, with a logged warning at the cap) rather than silently stopping at 100 results.
+- 03ffad5: GitHub PRs report real unresolved review threads (MAT-14). `unresolvedThreadCount` was hardcoded to `0`, which reads as "nothing outstanding" and silenced consumers' pre-rebase warnings. It now comes from GraphQL `reviewThreads { isResolved }`, batched one query per 50 PRs rather than an extra per-PR request, and is `null` when the query fails or a PR carries more threads than a single page. `detailedMergeStatus` is `null` on GitHub, as its doc comment always said it should be — it no longer leaks GitHub's `mergeable_state` vocabulary into a field documented as raw GitLab.
+- aac2f81: `draft` on create and update now actually produces a draft (MAT-15). GitLab has no `draft` parameter on either endpoint, so the flag both providers forwarded was silently dropped: MRs published with `draft: true` landed ready for review. GitLab now applies the documented `Draft:` title prefix at the wire boundary and strips it again on read, so `PullRequest.title` never carries a marker the caller did not write. `updatePullRequest` resolves title and draft together — retitling a draft MR no longer publishes it — reading the MR only when given one without the other. On GitHub, where REST accepts `draft` on create but ignores it on update, the transition runs `convertPullRequestToDraft` / `markPullRequestReadyForReview` and throws if it does not land. Both `as never` casts on the gitbeaker options objects are gone.
+- 03ffad5: `src/providerConformance.ts` fails `tsc` if a provider ever again implements a `GitProvider` method with fewer parameters than the interface declares. TypeScript accepts that narrowing structurally, which is exactly how MAT-13 went unnoticed.
+- f5a40e0: The `projectPath`-alone mode of `GitLabProvider.fetchPullRequests` gains `updatedAfter` (ISO-8601, with `sort: UPDATED_DESC` on the project queries) and `listWeight`, which selects a fragment without the `headPipeline` stage/job trees: ~10x cheaper per page and immune to GitLab's CI-tree resolver timeouts on large projects.
+- e869a6b: `fetchPullRequests.project` throws on a non-advancing GraphQL cursor instead of looping forever.
+
 ## 0.10.1
 
 ### Patch Changes
