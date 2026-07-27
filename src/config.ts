@@ -227,15 +227,17 @@ export function saveMemberHidden(username: string, hidden: boolean): BoardConfig
   return parseConfig(next);
 }
 
-export function loadGitLabToken(): string {
+/** Optional after the rt rewire: only the display-name lookup uses it; the
+    board runs fully without one. Returns null when no token is configured. */
+export function loadGitLabToken(): string | null {
   if (process.env.GITLAB_TOKEN) return process.env.GITLAB_TOKEN;
   try {
     const secrets = JSON.parse(readFileSync(RT_SECRETS_PATH, "utf8"));
     if (secrets.gitlabToken) return secrets.gitlabToken;
   } catch {
-    // fall through to the error below
+    // fall through — no secrets file, or it's unreadable/invalid
   }
-  throw new Error(`no GitLab token: set GITLAB_TOKEN or add "gitlabToken" to ${RT_SECRETS_PATH}`);
+  return null;
 }
 
 /** Slack user token (xoxp) for the review-thread integration. Optional: the

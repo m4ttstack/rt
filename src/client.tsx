@@ -923,7 +923,7 @@ function CommentsDrawer({ mr, onClose }: { mr: BoardMR; onClose: () => void }) {
   const [failed, setFailed] = useState(false);
   const now = Date.now();
   useEffect(() => {
-    const params = new URLSearchParams({ repo: mr.repositoryId, iid: String(mr.iid), author: mr.author.username });
+    const params = new URLSearchParams({ repo: mr.rtRepo ?? "", iid: String(mr.iid), author: mr.author.username });
     fetch(`/discussions?${params}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("bad status"))))
       .then((d: { threads: CommentThread[]; comments?: GeneralComment[] }) =>

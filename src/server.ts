@@ -1,9 +1,10 @@
 import { join, dirname, basename } from "path";
 import { readFileSync, watch } from "fs";
-import { GitLabProvider, type PullRequest } from "@workforge/glance-sdk";
+import type { PullRequest, MRDetail } from "@workforge/glance-sdk";
 import { loadConfig, loadGitLabToken, loadSlackToken, saveMemberHidden, CONFIG_PATH } from "./config.ts";
 import { buildBoard, buildRoster, type BoardMR } from "./data.ts";
 import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } from "./discussions.ts";
+import { readProjectMRs, readDiscussions, type Discussion } from "./rt-client.ts";
 import { SnapshotCache } from "./cache.ts";
 import { isLocalRequest } from "./local.ts";
 import { readReviewStates, pruneReviewStates, reviewFilePath, writeReviewState, parseReviewRequestBody, attachReviews, readReviewReport } from "./review-state.ts";
@@ -19,37 +20,44 @@ const faviconPath = join(import.meta.dir, "favicon.svg");
 const favicon = readFileSync(faviconPath, "utf-8");
 
 const config = loadConfig();
-const provider = new GitLabProvider(config.gitlabHost, loadGitLabToken());
+// Optional: display-name lookups only. The board's data plane is rt.
+const gitlabToken = loadGitLabToken();
 // Optional: enables the Slack review-thread menu actions when a token is set.
 const slackToken = loadSlackToken();
 
 /**
- * Fetch every configured project's opened MRs authored by a team member.
- *
- * The SDK's default `fetchPullRequests()` only returns the *token user's* own
- * MRs, so it can't see teammates' work. The `{ authorUsernames, projectPath }`
- * mode fetches members' MRs directly (one GraphQL query per author, full
- * dashboard fields) — no REST discovery pass needed.
- *
- * Each of those queries is heavy (pipelines, jobs, mergeability, discussions),
- * so firing all members at once makes GitLab's GraphQL time out its field
- * resolvers. Pace them in small concurrent batches instead. Only visible
- * members are fetched — hidden ones don't render anyway.
+ * Paced discussion-enrichment concurrency (still used by enrichReviewerComments
+ * below); fetchTeamMRs itself is one socket read per project now.
  */
 const FETCH_CONCURRENCY = 4;
 
-async function fetchTeamMRs(): Promise<PullRequest[]> {
-  const authors = config.members.filter((m) => !m.hidden).map((m) => m.username);
+/**
+ * Every mapped project's opened MRs from the rt daemon's project store —
+ * one socket read per project, no forge traffic. A missing mapping or a
+ * daemon-side refusal (down, grant missing) throws with the instructive
+ * message, which SnapshotCache surfaces as /data.json's fetchError.
+ * `force` is the manual-refresh path: maxAgeMs 0 makes the daemon sync
+ * before answering (reserved for the refresh button, spec §6).
+ */
+async function fetchTeamMRs(force = false): Promise<PullRequest[]> {
   const byId = new Map<string, PullRequest>();
+  const errors: string[] = [];
   for (const projectPath of config.projects) {
-    for (let i = 0; i < authors.length; i += FETCH_CONCURRENCY) {
-      const chunk = authors.slice(i, i + FETCH_CONCURRENCY);
-      const results = await Promise.all(
-        chunk.map((a) => provider.fetchPullRequests({ authorUsernames: [a], projectPath, state: "opened" })),
-      );
-      for (const pr of results.flat()) byId.set(pr.id, pr);
+    const repoName = config.rtRepos[projectPath];
+    if (!repoName) {
+      errors.push(`${projectPath}: no rtRepos mapping in config.json`);
+      continue;
+    }
+    const res = force ? await readProjectMRs(repoName, 0) : await readProjectMRs(repoName);
+    if (!res.ok || !res.data) {
+      errors.push(`${projectPath}: ${res.error ?? "empty daemon response"}`);
+      continue;
+    }
+    for (const entry of Object.values(res.data.mrs)) {
+      if (entry.pr.state === "opened") byId.set(entry.pr.id, entry.pr);
     }
   }
+  if (errors.length) throw new Error(errors.join(" · "));
   return [...byId.values()];
 }
 
@@ -73,7 +81,10 @@ async function enrichReviewerComments(mrs: BoardMR[]): Promise<void> {
     await Promise.all(
       chunk.map(async (m) => {
         try {
-          const detail = await provider.fetchMRDiscussions(m.repositoryId, m.iid);
+          if (!m.rtRepo) return;
+          const res = await readDiscussions(m.rtRepo, m.iid);
+          if (!res.ok || !res.data) return; // keep the coarse fallback
+          const detail = { discussions: res.data.discussions } as MRDetail;
           const { threads, comments } = summarizeDiscussions(detail, m.author.username, config.botUsernames);
           m.reviewerComments = unresolvedReviewerCount(threads);
           m.threadSummary = threadStatusCounts(threads);
@@ -86,22 +97,32 @@ async function enrichReviewerComments(mrs: BoardMR[]): Promise<void> {
   }
 }
 
+let forceNextFetch = false;
 const cache = new SnapshotCache(async () => {
-  const mrs = buildBoard(await fetchTeamMRs(), config);
+  const mrs = buildBoard(await fetchTeamMRs(forceNextFetch), config);
+  forceNextFetch = false;
   await enrichReviewerComments(mrs);
   return mrs;
 });
 
 /**
- * Fresh MRs for a single member — the cheap scoped refresh the client polls
- * when viewing one person (1 author query + that member's comment enrichment,
- * instead of the whole team). Same filtering as the full board.
+ * Fresh MRs for a single member. Reads the same project stores with a 20s
+ * freshness demand: on live-granted repos the store is already event-fresh,
+ * so this is a socket read, not an API fetch (spec §6 / review N3).
  */
 async function fetchMemberMRs(username: string): Promise<BoardMR[]> {
   const out: PullRequest[] = [];
+  const errors: string[] = [];
   for (const projectPath of config.projects) {
-    out.push(...(await provider.fetchPullRequests({ authorUsernames: [username], projectPath, state: "opened" })));
+    const repoName = config.rtRepos[projectPath];
+    if (!repoName) { errors.push(`${projectPath}: no rtRepos mapping in config.json`); continue; }
+    const res = await readProjectMRs(repoName, 20_000);
+    if (!res.ok || !res.data) { errors.push(`${projectPath}: ${res.error ?? "empty daemon response"}`); continue; }
+    for (const entry of Object.values(res.data.mrs)) {
+      if (entry.pr.state === "opened" && entry.pr.author?.username === username) out.push(entry.pr);
+    }
   }
+  if (errors.length) throw new Error(errors.join(" · "));
   const mrs = buildBoard(out, config);
   await enrichReviewerComments(mrs);
   return mrs;
@@ -118,9 +139,10 @@ async function refreshMemberNames(): Promise<void> {
   await Promise.all(
     config.members.map(async (member) => {
       try {
-        const res = await provider.restRequest(
-          "GET",
-          `/api/v4/users?username=${encodeURIComponent(member.username)}`,
+        if (!gitlabToken) { memberNames.set(member.username, member.name ?? null); return; }
+        const res = await fetch(
+          `${config.gitlabHost}/api/v4/users?username=${encodeURIComponent(member.username)}`,
+          { headers: { "PRIVATE-TOKEN": gitlabToken } },
         );
         const users = (await res.json()) as Array<{ username: string; name?: string }>;
         memberNames.set(member.username, users[0]?.name ?? member.name ?? null);
@@ -221,7 +243,7 @@ Bun.serve({
       case "/data.json": {
         void refreshMemberNames();
         // ?fresh=1 forces a cache-bypassing refetch (the manual refresh button).
-        if (new URL(req.url).searchParams.get("fresh")) cache.invalidate();
+        if (new URL(req.url).searchParams.get("fresh")) { forceNextFetch = true; cache.invalidate(); }
         const snapshot = await cache.get();
         // Hidden (checked-out) members drop from the sidebar, the "All" list,
         // and its counts — but stay in `allMembers` so the settings modal can
@@ -295,20 +317,21 @@ Bun.serve({
         });
       }
       case "/discussions": {
-        // Reviewer-participated comment threads for the drawer — the author's own
-        // solo threads are excluded (see summarizeThreads). Fetched on open.
+        // Reviewer-participated comment threads for the drawer, from the rt
+        // daemon's discussions store. `repo` is the rt repo name (was a scoped
+        // repositoryId before the rewire).
         const { searchParams } = new URL(req.url);
         const repo = searchParams.get("repo");
         const iid = Number(searchParams.get("iid"));
         const author = searchParams.get("author");
         if (!repo || !iid) return new Response("expected repo & iid", { status: 400 });
-        try {
-          const detail = await provider.fetchMRDiscussions(repo, iid);
-          const { threads, comments } = summarizeDiscussions(detail, author, config.botUsernames);
-          return new Response(JSON.stringify({ threads, comments }), { headers: { "content-type": "application/json" } });
-        } catch (err) {
-          return new Response(`discussions fetch failed: ${err instanceof Error ? err.message : err}`, { status: 502 });
+        const res = await readDiscussions(repo, iid);
+        if (!res.ok || !res.data) {
+          return new Response(`discussions read failed: ${res.error ?? "empty daemon response"}`, { status: 502 });
         }
+        const detail = { discussions: res.data.discussions } as MRDetail;
+        const { threads, comments } = summarizeDiscussions(detail, author, config.botUsernames);
+        return new Response(JSON.stringify({ threads, comments }), { headers: { "content-type": "application/json" } });
       }
       case "/review": {
         if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
