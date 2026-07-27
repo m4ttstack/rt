@@ -148,8 +148,9 @@ interface GHComment {
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Pages of 100 to walk before giving up on a search (GitHub caps it at 10). */
-const SEARCH_MAX_PAGES = 10;
+/** Pages of 100 to walk before giving up on a search. Matches the bound
+    fetchPullRequestByBranch uses for its own fallback scan. */
+const SEARCH_MAX_PAGES = 5;
 
 /** Pages of 100 to walk when listing every PR in a repository. */
 const LIST_MAX_PAGES = 20;
