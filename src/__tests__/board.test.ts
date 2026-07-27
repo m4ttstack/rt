@@ -313,4 +313,37 @@ describe("SnapshotCache", () => {
     await cache.get();
     expect(calls).toBe(2);
   });
+
+  test("forceRefresh with nothing in flight fetches once and returns fresh data", async () => {
+    let calls = 0;
+    const cache = new SnapshotCache(async () => { calls++; return [] as BoardMR[]; }, () => 1000, 60_000);
+    await cache.get(); // warm: 1 fetch
+    const snap = await cache.forceRefresh();
+    expect(calls).toBe(2);
+    expect(snap.fetchError).toBeNull();
+  });
+
+  // The forced path must never share a fetch that started before the user's
+  // click — that fetch's data (and any force-flag consumption) predates it.
+  test("forceRefresh during an in-flight fetch waits it out and fetches again", async () => {
+    let calls = 0;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const cache = new SnapshotCache(
+      async () => {
+        calls++;
+        const n = calls;
+        if (n === 1) await gate;
+        return [{ iid: n } as any];
+      },
+      () => 1000,
+      60_000,
+    );
+    const first = cache.get(); // gated fetch #1, in flight
+    const forced = cache.forceRefresh(); // must not share #1 — waits it out
+    release();
+    const [, forcedSnap] = await Promise.all([first, forced]);
+    expect(calls).toBe(2); // NOT 1: forceRefresh fetched again, not shared
+    expect(forcedSnap.mrs).toEqual([{ iid: 2 } as any]); // the second fetch's snapshot
+  });
 });

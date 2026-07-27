@@ -39,6 +39,18 @@ export class SnapshotCache {
   }
 
   /**
+   * Manual refresh: drop the snapshot and fetch anew, never sharing a fetch
+   * that started before the request — its data predates the user's click.
+   * Waits out any in-flight fetch first, so the fresh fetch (and anything it
+   * consumes, like the server's force flag) runs strictly after this call.
+   */
+  async forceRefresh(): Promise<Snapshot> {
+    this.snapshot = null;
+    if (this.inflight) await this.inflight.catch(() => {});
+    return this.refresh();
+  }
+
+  /**
    * Force the next get() to revalidate while still serving the current snapshot.
    * Config changed: the data is outdated, but stale data beats making every
    * reader wait out a full refetch.

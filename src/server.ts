@@ -265,9 +265,12 @@ Bun.serve({
       }
       case "/data.json": {
         void refreshMemberNames();
-        // ?fresh=1 forces a cache-bypassing refetch (the manual refresh button).
-        if (new URL(req.url).searchParams.get("fresh")) { forceNextFetch = true; cache.invalidate(); }
-        const snapshot = await cache.get();
+        // ?fresh=1 forces a cache-bypassing refetch (the manual refresh
+        // button). Local-only: a tunnel visitor's fresh=1 degrades to a
+        // plain cached read instead of a forced daemon sync (FIX 3).
+        const wantsFresh = !!new URL(req.url).searchParams.get("fresh") && isLocalRequest(req);
+        if (wantsFresh) forceNextFetch = true;
+        const snapshot = wantsFresh ? await cache.forceRefresh() : await cache.get();
         // Hidden (checked-out) members drop from the sidebar, the "All" list,
         // and its counts — but stay in `allMembers` so the settings modal can
         // check them back in.
@@ -845,12 +848,21 @@ const RELAY_COALESCE_MS = 750;
 const sseClients = new Set<ReadableStreamDefaultController<Uint8Array>>();
 const sseEncoder = new TextEncoder();
 
-function sseNudge(): void {
-  const frame = sseEncoder.encode("data: changed\n\n");
+const SSE_HEARTBEAT_MS = 25_000;
+
+function sseSend(frame: Uint8Array): void {
   for (const client of sseClients) {
     try { client.enqueue(frame); } catch { sseClients.delete(client); }
   }
 }
+
+function sseNudge(): void {
+  sseSend(sseEncoder.encode("data: changed\n\n"));
+}
+
+// Comment frames keep quiet connections under Bun's idleTimeout and prune
+// clients that vanished without a cancel. EventSource ignores comment lines.
+setInterval(() => sseSend(sseEncoder.encode(": ping\n\n")), SSE_HEARTBEAT_MS);
 
 let relayTimer: ReturnType<typeof setTimeout> | undefined;
 const stopRelay = subscribe((type, data) => {
