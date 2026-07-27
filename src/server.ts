@@ -99,8 +99,11 @@ async function enrichReviewerComments(mrs: BoardMR[]): Promise<void> {
 
 let forceNextFetch = false;
 const cache = new SnapshotCache(async () => {
-  const mrs = buildBoard(await fetchTeamMRs(forceNextFetch), config);
+  // Consume the flag up front: a failed forced fetch must not leave force
+  // latched for the background refreshes that follow.
+  const force = forceNextFetch;
   forceNextFetch = false;
+  const mrs = buildBoard(await fetchTeamMRs(force), config);
   await enrichReviewerComments(mrs);
   return mrs;
 });
