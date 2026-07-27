@@ -2,7 +2,7 @@ import { join, dirname, basename } from "path";
 import { readFileSync, watch } from "fs";
 import { GitLabProvider, type PullRequest } from "@workforge/glance-sdk";
 import { loadConfig, loadGitLabToken, loadSlackToken, saveMemberHidden, CONFIG_PATH } from "./config.ts";
-import { buildBoard, buildRoster, mrKey, discussionFetchTargets, type BoardMR } from "./data.ts";
+import { buildBoard, buildRoster, type BoardMR } from "./data.ts";
 import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } from "./discussions.ts";
 import { SnapshotCache } from "./cache.ts";
 import { isLocalRequest } from "./local.ts";
@@ -59,29 +59,17 @@ function mrAuthorLabel(mr: BoardMR): string {
 }
 
 /**
- * MRs that have carried reviewer comments during this server instance's lifetime.
- * In-memory on purpose: it's keyed to the running process, so a restart starts
- * fresh (natural invalidation). We keep fetching these MRs' discussions even after
- * their unresolved count hits 0, so an MR whose threads were all resolved shows
- * "comments resolved" rather than dropping back to "needs review".
- */
-const everCommented = new Set<string>();
-
-/**
- * Refine `reviewerComments` by fetching discussions and counting only threads a
- * reviewer joined — so the author's own solo threads don't read as "comments".
- * Scoped to MRs with unresolved threads plus any we've seen commented before
- * (see `everCommented`); paced, and best-effort (a failed fetch keeps the coarse
- * fallback).
+ * Refine each MR's comment signal by fetching its discussions: reviewer threads
+ * (with status) and general comments, minus bots/linkbacks. Fetched for EVERY
+ * open MR each refresh — the cheap dashboard query only exposes the unresolved
+ * count, which is 0 both for "never commented" and "all resolved", so the only
+ * reliable way to detect an all-resolved / generally-commented MR is to fetch its
+ * discussions. Paced (once per ~60s snapshot refresh) and best-effort — a failed
+ * fetch keeps the coarse fallback (unresolvedThreads).
  */
 async function enrichReviewerComments(mrs: BoardMR[]): Promise<void> {
-  // Drop memory of MRs no longer on the board (merged/closed) so the set stays bounded.
-  const present = new Set(mrs.map(mrKey));
-  for (const k of everCommented) if (!present.has(k)) everCommented.delete(k);
-
-  const targets = discussionFetchTargets(mrs, everCommented);
-  for (let i = 0; i < targets.length; i += FETCH_CONCURRENCY) {
-    const chunk = targets.slice(i, i + FETCH_CONCURRENCY);
+  for (let i = 0; i < mrs.length; i += FETCH_CONCURRENCY) {
+    const chunk = mrs.slice(i, i + FETCH_CONCURRENCY);
     await Promise.all(
       chunk.map(async (m) => {
         try {
@@ -90,10 +78,6 @@ async function enrichReviewerComments(mrs: BoardMR[]): Promise<void> {
           m.reviewerComments = unresolvedReviewerCount(threads);
           m.threadSummary = threadStatusCounts(threads);
           m.generalComments = comments.length;
-          // Remember MRs with any comment activity (threads or general comments)
-          // so we keep fetching them once resolved; forget ones with none.
-          if (threads.length > 0 || comments.length > 0) everCommented.add(mrKey(m));
-          else everCommented.delete(mrKey(m));
         } catch {
           // Keep the coarse fallback (unresolvedThreads) for this MR.
         }

@@ -91,22 +91,6 @@ export function buildBoard(prs: PullRequest[], config: BoardConfig, now: number 
   return out;
 }
 
-/** Stable per-MR key for the discussion-fetch memory (survives across refreshes). */
-export function mrKey(mr: Pick<BoardMR, "repositoryId" | "iid">): string {
-  return `${mr.repositoryId}:${mr.iid}`;
-}
-
-/**
- * MRs whose discussions should be fetched to refine review state: those with
- * unresolved threads right now, plus any the caller has already seen carrying
- * reviewer comments (`everCommented`). The second set is what lets an MR whose
- * threads were all resolved keep being fetched, so it can show "comments
- * resolved" instead of silently dropping back to "needs review".
- */
-export function discussionFetchTargets(mrs: BoardMR[], everCommented: ReadonlySet<string>): BoardMR[] {
-  return mrs.filter((m) => m.unresolvedThreads > 0 || everCommented.has(mrKey(m)));
-}
-
 /**
  * Whether any assigned reviewer has formally requested changes — the GitLab
  * "changes requested" review state, distinct from someone merely leaving

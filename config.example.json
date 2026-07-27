@@ -9,6 +9,9 @@
   "title": "MR Board",
   "port": 7930,
   "botUsernames": ["some-integration-bot"],
+  "reviewsWorkspace": "reviews",
+  "respondsWorkspace": "responses",
+  "doctorsWorkspace": "doctors",
   "slack": {
     "channel": "your-review-channel",
     "singleTemplate": "{title}: {url}",
