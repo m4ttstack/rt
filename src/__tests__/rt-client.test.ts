@@ -86,4 +86,38 @@ describe("subscribe", () => {
     expect(events[0]).toEqual({ type: "project-mrs", data: { repoName: "r", iids: [1] } });
     stop();
   });
+
+  test("reconnects with backoff on close, and stop() prevents further reconnects", async () => {
+    let opens = 0;
+    let sock: Bun.ServerWebSocket<unknown> | null = null;
+    const server = Bun.serve({
+      port: 0,
+      fetch(req, srv) { return srv.upgrade(req) ? undefined : new Response("no", { status: 400 }); },
+      websocket: { open(ws) { opens++; sock = ws; }, message() {} },
+    });
+    servers.push(server);
+
+    const waitFor = (predicate: () => boolean, deadlineMs: number, message: string) =>
+      new Promise<void>((resolve, reject) => {
+        const t0 = Date.now();
+        const poll = () => predicate() ? resolve() : Date.now() - t0 > deadlineMs ? reject(new Error(message)) : setTimeout(poll, 10);
+        poll();
+      });
+
+    const stop = subscribe(() => {}, { wsUrl: `ws://127.0.0.1:${server.port}/ws` });
+
+    // Initial connection.
+    await waitFor(() => opens === 1, 3000, "no initial connect");
+
+    // Server-side close triggers a reconnect (first backoff step is 1s).
+    sock!.close();
+    await waitFor(() => opens === 2, 5000, "no reconnect after close");
+
+    // stop() first, then close the live socket -- if stop() were broken, this
+    // close would trigger another reconnect attempt.
+    stop();
+    sock!.close();
+    await new Promise((resolve) => setTimeout(resolve, 1600));
+    expect(opens).toBe(2);
+  });
 });
