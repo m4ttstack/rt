@@ -40,6 +40,14 @@ function node(id: number, state = 'opened') {
   };
 }
 
+/** Same as `node`, but with a list-weight headPipeline: `{ id, status }` only, no stages/jobs. */
+function listWeightNode(id: number, state = 'opened') {
+  return {
+    ...node(id, state),
+    headPipeline: { id: `gid://gitlab/Ci::Pipeline/${id}`, status: 'SUCCESS' },
+  };
+}
+
 /** Stub fetch serving paged project responses; records query text + variables. */
 function mockPaged(pages: Array<ReturnType<typeof node>[]>) {
   const calls: Array<{ query: string; variables: Record<string, unknown> }> = [];
@@ -129,5 +137,48 @@ describe('fetchPullRequests({ projectPath })', () => {
     // page: after='stuck' -> endCursor='stuck' again (non-advancing) -> throws
     // before a third fetch would repeat the same cursor.
     expect(calls.length).toBe(2);
+  });
+
+  test('updatedAfter propagates into the `ua` variable', async () => {
+    const calls = mockPaged([[node(1)]]);
+    const provider = new GitLabProvider('https://gitlab.example', 't');
+    await provider.fetchPullRequests({ projectPath: 'g/p', state: 'opened', updatedAfter: '2026-07-20T00:00:00Z' });
+    expect(calls[0].variables.ua).toBe('2026-07-20T00:00:00Z');
+  });
+
+  test('omitting updatedAfter sends `ua: null`', async () => {
+    const calls = mockPaged([[node(1)]]);
+    const provider = new GitLabProvider('https://gitlab.example', 't');
+    await provider.fetchPullRequests({ projectPath: 'g/p', state: 'opened' });
+    expect(calls[0].variables.ua).toBeNull();
+  });
+
+  test('listWeight selects the list-weight query and parses through toMR without a stages tree', async () => {
+    const calls = mockPaged([[listWeightNode(1)]]);
+    const provider = new GitLabProvider('https://gitlab.example', 't');
+    const prs = await provider.fetchPullRequests({ projectPath: 'g/p', state: 'opened', listWeight: true });
+    expect(calls[0].query).not.toContain('stages(');
+    expect(calls[0].query).toContain('MRListFields');
+    expect(prs.length).toBe(1);
+    expect(prs[0]?.pipeline).toEqual({
+      id: 'gitlab:pipeline:1',
+      status: 'success',
+      createdAt: undefined,
+      webUrl: null,
+      jobs: [],
+    });
+  });
+
+  test('all-states + listWeight routes to the NO_STATE list variant', async () => {
+    const calls = mockPaged([[listWeightNode(1, 'opened'), listWeightNode(2, 'merged'), listWeightNode(3, 'closed')]]);
+    const provider = new GitLabProvider('https://gitlab.example', 't');
+    await provider.fetchPullRequests({
+      projectPath: 'g/p',
+      state: ['opened', 'merged', 'closed'],
+      listWeight: true,
+    });
+    expect(calls[0].query).not.toContain('state: $state');
+    expect(calls[0].query).toContain('MRListFields');
+    expect(calls[0].variables.state).toBeUndefined();
   });
 });

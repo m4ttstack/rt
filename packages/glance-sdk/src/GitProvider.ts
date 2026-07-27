@@ -52,6 +52,13 @@ export interface FetchPullRequestsOptions {
    * fields.
    */
   projectPath?: string;
+
+  /** Only MRs updated at/after this ISO-8601 instant. Honored by the projectPath-alone mode. */
+  updatedAfter?: string;
+  /** Project mode: fetch the list-weight fragment (no CI stages/jobs trees). ~10x cheaper
+      per page on large projects and immune to GitLab's resolver timeouts on job trees;
+      per-MR job detail stays available via fetchSingleMR. */
+  listWeight?: boolean;
 }
 
 /**

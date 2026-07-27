@@ -94,6 +94,52 @@ export const MR_DASHBOARD_FRAGMENT = `
   }
 `;
 
+/**
+ * List-weight twin of MR_DASHBOARD_FRAGMENT: identical fields except
+ * `headPipeline` drops the `stages/jobs` trees down to `{ id status }`.
+ * ~10x cheaper per page on large projects and immune to GitLab's resolver
+ * timeouts on CI job trees (section 5.7 of the typed-stores design). Per-MR
+ * job detail stays available via fetchSingleMR, which always uses the full
+ * MRDashboardFields fragment.
+ */
+export const MR_LIST_FRAGMENT = `
+  fragment MRListFields on MergeRequest {
+    id iid projectId title description state draft
+    sourceBranch targetBranch webUrl
+    diffHeadSha
+    updatedAt createdAt
+    conflicts
+    detailedMergeStatus
+    approved
+    approvalsRequired
+    diffStatsSummary { additions deletions fileCount }
+    author { id username name avatarUrl }
+    assignees(first: 20) { nodes { id username name avatarUrl } }
+    reviewers(first: 20) { nodes { id username name avatarUrl mergeRequestInteraction { reviewState } } }
+    approvedBy(first: 20) { nodes { id username name avatarUrl } }
+    approvalsLeft
+    resolvableDiscussionsCount
+    resolvedDiscussionsCount
+    autoMergeEnabled
+    autoMergeStrategy
+    mergeUser { id username name avatarUrl }
+    mergeAfter
+    rebaseInProgress
+    mergeOngoing
+    inProgressMergeCommitSha
+    mergeError
+    shouldBeRebased
+    squash
+    squashOnMerge
+    mergeTrainIndex
+    mergeabilityChecks { identifier status }
+    blockingMergeRequests { totalCount }
+    headPipeline {
+      id status
+    }
+  }
+`;
+
 const AUTHORED_QUERY = `
   query GlanceDashboardAuthored($state: MergeRequestState!) {
     currentUser {
@@ -164,7 +210,8 @@ interface GQLPipeline {
   status: string;
   createdAt: string | null;
   path: string | null;
-  stages: { nodes: GQLStage[] };
+  /** Absent on list-weight fragment responses (no stages/jobs trees). */
+  stages?: { nodes: GQLStage[] };
 }
 
 interface GQLDiffStats {
@@ -269,7 +316,7 @@ function toReviewer(u: GQLReviewerNode, baseURL?: string, token?: string): Revie
 }
 
 function toPipeline(p: GQLPipeline, baseURL: string): Pipeline {
-  const allJobs: PipelineJob[] = p.stages.nodes.flatMap((stage) =>
+  const allJobs: PipelineJob[] = (p.stages?.nodes ?? []).flatMap((stage) =>
     stage.jobs.nodes.map((job) => ({
       id: `gitlab:job:${numericId(job.id)}`,
       name: job.name,
@@ -297,7 +344,7 @@ function toPipeline(p: GQLPipeline, baseURL: string): Pipeline {
  * if any allow-failure job failed but overall status is success → "success_with_warnings"
  */
 function normalizePipelineStatus(p: GQLPipeline): string {
-  const allJobs = p.stages.nodes.flatMap((s) => s.jobs.nodes);
+  const allJobs = (p.stages?.nodes ?? []).flatMap((s) => s.jobs.nodes);
   const status = p.status.toLowerCase();
   const hasAllowFailFailed = allJobs.some((j) => j.allowFailure && j.status.toLowerCase() === 'failed');
   if (status === 'success' && hasAllowFailFailed) {
@@ -452,9 +499,9 @@ const MR_BY_AUTHOR_QUERY = `
 
 /** All MRs in a project, cursor-paginated (member-blind team/project view). */
 const MR_PROJECT_QUERY = `
-  query GlanceMRProject($projectPath: ID!, $state: MergeRequestState, $after: String) {
+  query GlanceMRProject($projectPath: ID!, $state: MergeRequestState, $ua: Time, $after: String) {
     project(fullPath: $projectPath) {
-      mergeRequests(state: $state, first: 50, after: $after) {
+      mergeRequests(state: $state, updatedAfter: $ua, first: 50, after: $after, sort: UPDATED_DESC) {
         pageInfo { hasNextPage endCursor }
         nodes {
           ...MRDashboardFields
@@ -467,9 +514,9 @@ const MR_PROJECT_QUERY = `
 
 /** Variant without the state filter, for multi-state requests. */
 const MR_PROJECT_QUERY_NO_STATE = `
-  query GlanceMRProjectAll($projectPath: ID!, $after: String) {
+  query GlanceMRProjectAll($projectPath: ID!, $ua: Time, $after: String) {
     project(fullPath: $projectPath) {
-      mergeRequests(first: 50, after: $after) {
+      mergeRequests(updatedAfter: $ua, first: 50, after: $after, sort: UPDATED_DESC) {
         pageInfo { hasNextPage endCursor }
         nodes {
           ...MRDashboardFields
@@ -478,6 +525,36 @@ const MR_PROJECT_QUERY_NO_STATE = `
     }
   }
   ${MR_DASHBOARD_FRAGMENT}
+`;
+
+/** List-weight twin of MR_PROJECT_QUERY: same shape, ...MRListFields instead. */
+const MR_PROJECT_LIST_QUERY = `
+  query GlanceMRProjectList($projectPath: ID!, $state: MergeRequestState, $ua: Time, $after: String) {
+    project(fullPath: $projectPath) {
+      mergeRequests(state: $state, updatedAfter: $ua, first: 50, after: $after, sort: UPDATED_DESC) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          ...MRListFields
+        }
+      }
+    }
+  }
+  ${MR_LIST_FRAGMENT}
+`;
+
+/** List-weight twin of MR_PROJECT_QUERY_NO_STATE. */
+const MR_PROJECT_LIST_QUERY_NO_STATE = `
+  query GlanceMRProjectListAll($projectPath: ID!, $ua: Time, $after: String) {
+    project(fullPath: $projectPath) {
+      mergeRequests(updatedAfter: $ua, first: 50, after: $after, sort: UPDATED_DESC) {
+        pageInfo { hasNextPage endCursor }
+        nodes {
+          ...MRListFields
+        }
+      }
+    }
+  }
+  ${MR_LIST_FRAGMENT}
 `;
 
 interface MRProjectResponse {
@@ -683,11 +760,17 @@ export class GitLabProvider implements GitProvider {
     if (options?.projectPath) {
       const projectPath = options.projectPath;
       const useStateFilter = !needsAllStates;
-      const query = useStateFilter ? MR_PROJECT_QUERY : MR_PROJECT_QUERY_NO_STATE;
+      const query = options.listWeight
+        ? useStateFilter
+          ? MR_PROJECT_LIST_QUERY
+          : MR_PROJECT_LIST_QUERY_NO_STATE
+        : useStateFilter
+          ? MR_PROJECT_QUERY
+          : MR_PROJECT_QUERY_NO_STATE;
       const out: PullRequest[] = [];
       let after: string | null = null;
       do {
-        const vars: Record<string, unknown> = { projectPath, after };
+        const vars: Record<string, unknown> = { projectPath, after, ua: options.updatedAfter ?? null };
         if (useStateFilter) vars.state = apiState;
         const resp: MRProjectResponse = await this.runQuery<MRProjectResponse>('fetchPullRequests.project', query, vars);
         const conn = resp.project?.mergeRequests;
