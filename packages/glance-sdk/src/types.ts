@@ -137,7 +137,13 @@ export interface PullRequest {
   roles: string[];
 
   pipeline: Pipeline | null;
-  unresolvedThreadCount: number;
+  /**
+   * Open review threads. `null` means the provider could not determine the
+   * count, which is not the same as zero — never render it as "all resolved".
+   * GitLab always reports a number. GitHub reports null when the GraphQL
+   * review-thread query fails or the PR carries more threads than one page.
+   */
+  unresolvedThreadCount: number | null;
   approvalsLeft: number;
   /** True when the MR has met its approval requirements. */
   approved: boolean;

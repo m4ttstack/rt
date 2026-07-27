@@ -12,7 +12,7 @@
  * provides the instance URL and we append "/api/v3".
  */
 
-import type { GitProvider, MRState } from './GitProvider.ts';
+import type { FetchPullRequestsOptions, GitProvider, MRState } from './GitProvider.ts';
 import type {
   BranchProtectionRule,
   CreatePullRequestInput,
@@ -52,6 +52,8 @@ interface GHLabel {
 
 interface GHPullRequest {
   id: number;
+  /** GraphQL global node ID — the handle the v4 API addresses this PR by. */
+  node_id: string;
   number: number;
   title: string;
   body: string | null;
@@ -109,6 +111,26 @@ interface GHCheckSuite {
   total_count: number;
 }
 
+/** `nodes(ids:)` review-thread projection. Non-PR nodes come back as null. */
+interface GHReviewThreadsResponse {
+  nodes: Array<{
+    id?: string;
+    reviewThreads?: {
+      pageInfo?: { hasNextPage: boolean };
+      nodes: Array<{ isResolved: boolean }>;
+    };
+  } | null>;
+}
+
+/** An item from `/search/issues` — issue-shaped, with a `pull_request` stub on PRs. */
+interface GHSearchItem {
+  number: number;
+  state: string;
+  updated_at: string;
+  repository_url: string;
+  pull_request?: { url: string; merged_at?: string | null };
+}
+
 interface GHComment {
   id: number;
   body: string;
@@ -126,6 +148,18 @@ interface GHComment {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/** Pages of 100 to walk before giving up on a search (GitHub caps it at 10). */
+const SEARCH_MAX_PAGES = 10;
+
+/** Pages of 100 to walk when listing every PR in a repository. */
+const LIST_MAX_PAGES = 20;
+
+/** PRs per batched `nodes(ids:)` review-thread query. */
+const THREAD_BATCH_SIZE = 50;
+
+/** Review threads read per PR. Beyond this the count is reported as unknown. */
+const THREAD_PAGE_SIZE = 100;
+
 function toUserRef(u: GHUser): UserRef {
   return {
     id: `github:user:${u.id}`,
@@ -139,10 +173,78 @@ function toUserRef(u: GHUser): UserRef {
  * Normalize GitHub PR state to our domain states.
  * GitHub only has "open" and "closed"; we check `merged_at` to distinguish merges.
  */
-function normalizePRState(pr: GHPullRequest): string {
-  if (pr.merged_at) return 'merged';
-  if (pr.state === 'open') return 'opened';
+function normalizePRState(pr: GHPullRequest): MRState {
+  return toMRState(pr.state, pr.merged_at);
+}
+
+/**
+ * The same open/closed/merged_at reading as `normalizePRState`, for payloads
+ * that carry those two fields without being a full PR (search results).
+ */
+function toMRState(state: string, mergedAt: string | null | undefined): MRState {
+  if (mergedAt) return 'merged';
+  if (state === 'open') return 'opened';
   return 'closed';
+}
+
+/** The requested state filter as a set; defaults to open MRs only. */
+function wantedStates(state: FetchPullRequestsOptions['state']): Set<MRState> {
+  if (!state) return new Set<MRState>(['opened']);
+  return new Set<MRState>(Array.isArray(state) ? state : [state]);
+}
+
+/**
+ * The `is:` qualifier for a search covering `wanted`.
+ *
+ * GitHub search cannot express "open OR merged" in one query -- qualifiers
+ * AND together, so `is:open is:closed` matches nothing. A mixed request
+ * therefore searches every state and filters client-side, mirroring how
+ * GitLabProvider falls back to `state: all` + a client filter.
+ */
+function searchStateQualifier(wanted: Set<MRState>): string {
+  if (!wanted.has('opened')) return 'is:closed ';
+  if (wanted.size === 1) return 'is:open ';
+  return '';
+}
+
+/** The `state` query param for `/repos/{path}/pulls` covering `wanted`. */
+function listStateParam(wanted: Set<MRState>): 'open' | 'closed' | 'all' {
+  if (!wanted.has('opened')) return 'closed';
+  if (wanted.size === 1) return 'open';
+  return 'all';
+}
+
+function parseUpdatedAfter(updatedAfter: string | undefined): number | null {
+  if (updatedAfter == null) return null;
+  const parsed = Date.parse(updatedAfter);
+  if (Number.isNaN(parsed)) {
+    throw new Error(
+      `fetchPullRequests: updatedAfter must be an ISO-8601 instant, got "${updatedAfter}"`
+    );
+  }
+  return parsed;
+}
+
+function requireProjectPath(
+  projectPath: string | undefined,
+  field: string
+): string {
+  if (!projectPath) {
+    throw new Error(`fetchPullRequests: \`${field}\` requires \`projectPath\``);
+  }
+  return projectPath;
+}
+
+function dedupePRs(prs: GHPullRequest[]): GHPullRequest[] {
+  const byKey = new Map<string, GHPullRequest>();
+  for (const pr of prs) byKey.set(`${pr.base.repo.id}:${pr.number}`, pr);
+  return [...byKey.values()];
+}
+
+/** A PR plus the roles the token user holds on it. */
+interface PRWithRoles {
+  pr: GHPullRequest;
+  roles: string[];
 }
 
 /**
@@ -234,8 +336,10 @@ export class GitHubProvider implements GitProvider {
   readonly providerName = 'github' as const;
   readonly baseURL: string;
   private readonly apiBase: string;
+  private readonly graphqlURL: string;
   private readonly token: string;
   private readonly log: ForgeLogger;
+  private currentUserPromise: Promise<GHUser | null> | null = null;
 
   /**
    * @param baseURL — The user-facing GitHub URL. For github.com: "https://github.com".
@@ -258,8 +362,11 @@ export class GitHubProvider implements GitProvider {
       this.baseURL === 'https://www.github.com'
     ) {
       this.apiBase = 'https://api.github.com';
+      this.graphqlURL = 'https://api.github.com/graphql';
     } else {
       this.apiBase = `${this.baseURL}/api/v3`;
+      // GHES serves GraphQL from /api/graphql, not under the REST /api/v3 root.
+      this.graphqlURL = `${this.baseURL}/api/graphql`;
     }
   }
 
@@ -290,50 +397,112 @@ export class GitHubProvider implements GitProvider {
     return toUserRef(user);
   }
 
-  async fetchPullRequests(): Promise<PullRequest[]> {
-    // Fetch PRs where the user is involved (author, assignee, reviewer, mentioned)
-    // The `pulls` search qualifier covers authored PRs; `review-requested` covers
-    // review requests. We merge the results.
+  /**
+   * Fetch pull requests the token user is involved in, or -- with
+   * `projectPath` -- pull requests in a single repository.
+   *
+   * How each `FetchPullRequestsOptions` field lands on GitHub:
+   * - `state` — honored. GitHub has no merged state of its own, so `merged`
+   *   is `is:closed` plus a `merged_at` check (the same reading
+   *   `normalizePRState` does).
+   * - `iids` + `projectPath` — honored: one PR fetch per number.
+   * - `authorUsernames` + `projectPath` — honored: one search per author.
+   * - `projectPath` alone — honored: paginated `/pulls` listing. GitHub only
+   *   returns diff stats and mergeability from the single-PR endpoint, so PRs
+   *   from this mode carry `diffStats: null` and `conflicts: false`. Use
+   *   `fetchSingleMR` when those matter.
+   * - `updatedAfter` — honored in every mode.
+   * - `listWeight` — honored in every mode: skips the per-PR check-run fetch,
+   *   leaving `pipeline` null.
+   *
+   * `iids` and `authorUsernames` throw without `projectPath`, as the interface
+   * documents.
+   */
+  async fetchPullRequests(
+    options?: FetchPullRequestsOptions
+  ): Promise<PullRequest[]> {
+    const wanted = wantedStates(options?.state);
+    const updatedAfter = parseUpdatedAfter(options?.updatedAfter);
+    const isFresh = (updatedAt: string) =>
+      updatedAfter === null || Date.parse(updatedAt) >= updatedAfter;
+    const keepRaw = (pr: GHPullRequest) =>
+      wanted.has(normalizePRState(pr)) && isFresh(pr.updated_at);
+    const keepSearchItem = (item: GHSearchItem) =>
+      wanted.has(toMRState(item.state, item.pull_request?.merged_at)) &&
+      isFresh(item.updated_at);
 
-    const [authored, reviewRequested, assigned] = await Promise.all([
-      this.searchPRs('is:open is:pr author:@me'),
-      this.searchPRs('is:open is:pr review-requested:@me'),
-      this.searchPRs('is:open is:pr assignee:@me')
-    ]);
+    // A date-only lower bound is a superset of the requested instant, so the
+    // exact `isFresh` filter below still decides; this only trims the search.
+    const freshQualifier = options?.updatedAfter
+      ? ` updated:>=${options.updatedAfter.slice(0, 10)}`
+      : '';
+    const stateQualifier = searchStateQualifier(wanted);
 
-    // Deduplicate by PR number+repo
-    const byKey = new Map<string, GHPullRequest>();
-    const roles = new Map<string, string[]>();
+    let candidates: PRWithRoles[];
 
-    const addAll = (prs: GHPullRequest[], role: string) => {
-      for (const pr of prs) {
-        const key = `${pr.base.repo.id}:${pr.number}`;
-        if (!byKey.has(key)) {
-          byKey.set(key, pr);
-          roles.set(key, [role]);
-        } else {
-          const existing = roles.get(key)!;
-          if (!existing.includes(role)) existing.push(role);
+    if (options?.iids?.length) {
+      const projectPath = requireProjectPath(options.projectPath, 'iids');
+      const fetched = await Promise.all(
+        options.iids.map(iid => this.fetchPR(projectPath, iid))
+      );
+      candidates = await this.withRoles(
+        fetched.filter((pr): pr is GHPullRequest => pr !== null).filter(keepRaw)
+      );
+    } else if (options?.authorUsernames?.length) {
+      const projectPath = requireProjectPath(
+        options.projectPath,
+        'authorUsernames'
+      );
+      const perAuthor = await Promise.all(
+        options.authorUsernames.map(author =>
+          this.searchPRs(
+            `${stateQualifier}is:pr repo:${projectPath} author:${author}${freshQualifier}`,
+            keepSearchItem
+          )
+        )
+      );
+      candidates = await this.withRoles(dedupePRs(perAuthor.flat()));
+    } else if (options?.projectPath) {
+      candidates = await this.withRoles(
+        await this.listRepoPRs(options.projectPath, wanted, updatedAfter, keepRaw)
+      );
+    } else {
+      // Involvement search: authored, review-requested, and assigned PRs are
+      // three separate searches merged by PR, accumulating roles.
+      const [authored, reviewRequested, assigned] = await Promise.all([
+        this.searchPRs(
+          `${stateQualifier}is:pr author:@me${freshQualifier}`,
+          keepSearchItem
+        ),
+        this.searchPRs(
+          `${stateQualifier}is:pr review-requested:@me${freshQualifier}`,
+          keepSearchItem
+        ),
+        this.searchPRs(
+          `${stateQualifier}is:pr assignee:@me${freshQualifier}`,
+          keepSearchItem
+        )
+      ]);
+
+      const byKey = new Map<string, PRWithRoles>();
+      const addAll = (prs: GHPullRequest[], role: string) => {
+        for (const pr of prs) {
+          const key = `${pr.base.repo.id}:${pr.number}`;
+          const existing = byKey.get(key);
+          if (!existing) {
+            byKey.set(key, { pr, roles: [role] });
+          } else if (!existing.roles.includes(role)) {
+            existing.roles.push(role);
+          }
         }
-      }
-    };
+      };
+      addAll(authored, 'author');
+      addAll(reviewRequested, 'reviewer');
+      addAll(assigned, 'assignee');
+      candidates = [...byKey.values()];
+    }
 
-    addAll(authored, 'author');
-    addAll(reviewRequested, 'reviewer');
-    addAll(assigned, 'assignee');
-
-    // For each unique PR, fetch check runs and reviews in parallel
-    const entries = [...byKey.entries()];
-    const results = await Promise.all(
-      entries.map(async ([key, pr]) => {
-        const prRoles = roles.get(key) ?? ['author'];
-        const [reviews, checkRuns] = await Promise.all([
-          this.fetchReviews(pr.base.repo.full_name, pr.number),
-          this.fetchCheckRuns(pr.base.repo.full_name, pr.head.sha)
-        ]);
-        return this.toPullRequest(pr, prRoles, reviews, checkRuns);
-      })
-    );
+    const results = await this.enrich(candidates, options?.listWeight ?? false);
 
     this.log.debug('GitHubProvider.fetchPullRequests', {
       count: results.length
@@ -348,31 +517,12 @@ export class GitHubProvider implements GitProvider {
   ): Promise<PullRequest | null> {
     // projectPath for GitHub is "owner/repo"
     try {
-      const res = await this.api('GET', `/repos/${projectPath}/pulls/${mrIid}`);
-      if (!res.ok) return null;
-
-      const pr = (await res.json()) as GHPullRequest;
-      const [reviews, checkRuns] = await Promise.all([
-        this.fetchReviews(projectPath, mrIid),
-        this.fetchCheckRuns(projectPath, pr.head.sha)
-      ]);
-
-      // Determine roles from the current user
-      const currentUser = await this.api('GET', '/user');
-      const currentUserData = (await currentUser.json()) as GHUser;
-      const prRoles: string[] = [];
-      if (pr.user.id === currentUserData.id) prRoles.push('author');
-      if (pr.assignees.some(a => a.id === currentUserData.id))
-        prRoles.push('assignee');
-      if (pr.requested_reviewers.some(r => r.id === currentUserData.id))
-        prRoles.push('reviewer');
-
-      return this.toPullRequest(
-        pr,
-        prRoles.length > 0 ? prRoles : ['author'],
-        reviews,
-        checkRuns
-      );
+      const pr = await this.fetchPR(projectPath, mrIid);
+      if (!pr) return null;
+      const [withRoles] = await this.withRoles([pr]);
+      if (!withRoles) return null;
+      const [result] = await this.enrich([withRoles], false);
+      return result ?? null;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       this.log.warn('GitHubProvider.fetchSingleMR failed', {
@@ -976,47 +1126,272 @@ export class GitHubProvider implements GitProvider {
   }
 
   /**
-   * Search for PRs using the GitHub search API.
-   * Returns up to 100 results per query.
+   * Issue a GraphQL (v4) request. Returns null on transport, HTTP, or GraphQL
+   * errors: callers report "unknown" rather than substituting a value.
    */
-  private async searchPRs(qualifiers: string): Promise<GHPullRequest[]> {
-    const q = encodeURIComponent(qualifiers);
-    const res = await this.api(
-      'GET',
-      `/search/issues?q=${q}&per_page=100&sort=updated`
-    );
-    if (!res.ok) {
-      this.log.warn('GitHub search failed', { status: res.status, qualifiers });
-      return [];
+  private async graphql<T>(
+    query: string,
+    variables: Record<string, unknown>
+  ): Promise<T | null> {
+    try {
+      const res = await fetch(this.graphqlURL, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${this.token}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ query, variables })
+      });
+      if (!res.ok) {
+        this.log.warn('GitHub GraphQL request failed', { status: res.status });
+        return null;
+      }
+      const payload = (await res.json()) as {
+        data?: T;
+        errors?: Array<{ message: string }>;
+      };
+      if (payload.errors?.length) {
+        this.log.warn('GitHub GraphQL returned errors', {
+          messages: payload.errors.map(e => e.message)
+        });
+        return null;
+      }
+      return payload.data ?? null;
+    } catch (err) {
+      this.log.warn('GitHub GraphQL request threw', {
+        message: err instanceof Error ? err.message : String(err)
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Unresolved review-thread counts for `prs`, keyed by GraphQL node ID.
+   *
+   * Thread resolution exists only in GraphQL (`reviewThreads { isResolved }`);
+   * REST review comments carry no resolved state, so they are not a substitute.
+   * One batched query per `THREAD_BATCH_SIZE` PRs keeps this off the per-PR
+   * path.
+   *
+   * A PR maps to null -- unknown, not zero -- when the query fails or when the
+   * PR has more than `THREAD_PAGE_SIZE` threads: a truncated read cannot say
+   * how many of the remainder are outstanding.
+   */
+  private async fetchUnresolvedThreadCounts(
+    prs: GHPullRequest[]
+  ): Promise<Map<string, number | null>> {
+    const counts = new Map<string, number | null>();
+    const ids = prs.map(pr => pr.node_id).filter(id => !!id);
+    if (ids.length === 0) return counts;
+
+    const query = `
+      query GlanceUnresolvedThreads($ids: [ID!]!) {
+        nodes(ids: $ids) {
+          ... on PullRequest {
+            id
+            reviewThreads(first: ${THREAD_PAGE_SIZE}) {
+              pageInfo { hasNextPage }
+              nodes { isResolved }
+            }
+          }
+        }
+      }
+    `;
+
+    for (let i = 0; i < ids.length; i += THREAD_BATCH_SIZE) {
+      const batch = ids.slice(i, i + THREAD_BATCH_SIZE);
+      const data = await this.graphql<GHReviewThreadsResponse>(query, {
+        ids: batch
+      });
+      for (const node of data?.nodes ?? []) {
+        if (!node?.id) continue;
+        const threads = node.reviewThreads;
+        counts.set(
+          node.id,
+          threads && !threads.pageInfo?.hasNextPage
+            ? threads.nodes.filter(t => !t.isResolved).length
+            : null
+        );
+      }
+      for (const id of batch) {
+        if (!counts.has(id)) counts.set(id, null);
+      }
     }
 
-    const data = (await res.json()) as {
-      items: Array<{
-        number: number;
-        pull_request?: { url: string };
-        repository_url: string;
-      }>;
-    };
+    return counts;
+  }
+
+  /**
+   * Search for PRs using the GitHub search API, keeping only the items `keep`
+   * accepts, then fetching full PR details for those.
+   *
+   * Filtering on the issue-shaped search result first means a state filter
+   * costs nothing extra: PRs we are about to discard never get a detail fetch.
+   *
+   * Walks up to `SEARCH_MAX_PAGES` pages and logs a warning if it stops there
+   * with more results outstanding — a bounded scan, not an exhaustive one.
+   */
+  private async searchPRs(
+    qualifiers: string,
+    keep: (item: GHSearchItem) => boolean
+  ): Promise<GHPullRequest[]> {
+    const q = encodeURIComponent(qualifiers);
+    const matched: GHSearchItem[] = [];
+
+    for (let page = 1; page <= SEARCH_MAX_PAGES; page++) {
+      const res = await this.api(
+        'GET',
+        `/search/issues?q=${q}&per_page=100&sort=updated&page=${page}`
+      );
+      if (!res.ok) {
+        this.log.warn('GitHub search failed', {
+          status: res.status,
+          qualifiers
+        });
+        break;
+      }
+
+      const data = (await res.json()) as { items: GHSearchItem[] };
+      matched.push(...data.items.filter(item => item.pull_request && keep(item)));
+
+      if (data.items.length < 100) break;
+      if (page === SEARCH_MAX_PAGES) {
+        this.log.warn('GitHub search hit the page limit', { qualifiers });
+      }
+    }
 
     // The search API returns issue-shaped results; fetch full PR details
-    const prPromises = data.items
-      .filter(item => item.pull_request) // Only PRs
-      .map(async item => {
-        // Extract owner/repo from repository_url
-        const repoPath = item.repository_url.replace(
-          `${this.apiBase}/repos/`,
-          ''
-        );
-        const res = await this.api(
-          'GET',
-          `/repos/${repoPath}/pulls/${item.number}`
-        );
-        if (!res.ok) return null;
-        return (await res.json()) as GHPullRequest;
-      });
-
-    const results = await Promise.all(prPromises);
+    const results = await Promise.all(
+      matched.map(item =>
+        this.fetchPR(
+          item.repository_url.replace(`${this.apiBase}/repos/`, ''),
+          item.number
+        )
+      )
+    );
     return results.filter((pr): pr is GHPullRequest => pr !== null);
+  }
+
+  /** GET a single PR. Null when the repo or PR is not visible to this token. */
+  private async fetchPR(
+    projectPath: string,
+    prNumber: number
+  ): Promise<GHPullRequest | null> {
+    const res = await this.api(
+      'GET',
+      `/repos/${projectPath}/pulls/${prNumber}`
+    );
+    if (!res.ok) return null;
+    return (await res.json()) as GHPullRequest;
+  }
+
+  /**
+   * Every PR in a repository, newest-updated first.
+   *
+   * The listing endpoint omits `additions`/`deletions`/`changed_files` and
+   * `mergeable`; PRs from here therefore have no diff stats and report no
+   * conflicts. Fetching those would cost one extra request per PR.
+   */
+  private async listRepoPRs(
+    projectPath: string,
+    wanted: Set<MRState>,
+    updatedAfter: number | null,
+    keep: (pr: GHPullRequest) => boolean
+  ): Promise<GHPullRequest[]> {
+    const state = listStateParam(wanted);
+    const collected: GHPullRequest[] = [];
+
+    for (let page = 1; page <= LIST_MAX_PAGES; page++) {
+      const res = await this.api(
+        'GET',
+        `/repos/${projectPath}/pulls?state=${state}&sort=updated&direction=desc&per_page=100&page=${page}`
+      );
+      if (!res.ok) {
+        throw new Error(
+          `fetchPullRequests failed: ${res.status} ${await res.text()}`
+        );
+      }
+      const listed = (await res.json()) as GHPullRequest[];
+      collected.push(...listed.filter(keep));
+
+      if (listed.length < 100) break;
+      // Sorted newest-updated first, so once a page ends before the cutoff
+      // every later page is older too.
+      const oldest = listed.at(-1);
+      if (
+        updatedAfter !== null &&
+        oldest &&
+        Date.parse(oldest.updated_at) < updatedAfter
+      ) {
+        break;
+      }
+      if (page === LIST_MAX_PAGES) {
+        this.log.warn('fetchPullRequests: project listing hit the page limit', {
+          projectPath
+        });
+      }
+    }
+
+    return collected;
+  }
+
+  /**
+   * The authenticated user, fetched once per provider instance.
+   * Null when the lookup fails — callers degrade to unknown roles rather than
+   * failing the whole fetch.
+   */
+  private async currentUser(): Promise<GHUser | null> {
+    this.currentUserPromise ??= (async () => {
+      const res = await this.api('GET', '/user');
+      if (!res.ok) return null;
+      return (await res.json()) as GHUser;
+    })().catch(() => null);
+    return this.currentUserPromise;
+  }
+
+  private async withRoles(prs: GHPullRequest[]): Promise<PRWithRoles[]> {
+    if (prs.length === 0) return [];
+    const me = await this.currentUser();
+    return prs.map(pr => {
+      const roles: string[] = [];
+      if (me) {
+        if (pr.user.id === me.id) roles.push('author');
+        if (pr.assignees.some(a => a.id === me.id)) roles.push('assignee');
+        if (pr.requested_reviewers.some(r => r.id === me.id))
+          roles.push('reviewer');
+      }
+      return { pr, roles: roles.length > 0 ? roles : ['author'] };
+    });
+  }
+
+  /**
+   * Turn raw PRs into domain PullRequests: reviews and check runs per PR,
+   * unresolved review-thread counts batched across all of them.
+   */
+  private async enrich(
+    candidates: PRWithRoles[],
+    listWeight: boolean
+  ): Promise<PullRequest[]> {
+    const threadCounts = await this.fetchUnresolvedThreadCounts(
+      candidates.map(c => c.pr)
+    );
+    return Promise.all(
+      candidates.map(async ({ pr, roles }) => {
+        const [reviews, checkRuns] = await Promise.all([
+          this.fetchReviews(pr.base.repo.full_name, pr.number),
+          listWeight
+            ? Promise.resolve<GHCheckRun[]>([])
+            : this.fetchCheckRuns(pr.base.repo.full_name, pr.head.sha)
+        ]);
+        return this.toPullRequest(
+          pr,
+          roles,
+          reviews,
+          checkRuns,
+          threadCounts.get(pr.node_id) ?? null
+        );
+      })
+    );
   }
 
   private async fetchReviews(
@@ -1071,12 +1446,16 @@ export class GitHubProvider implements GitProvider {
 
   /**
    * Convert a GitHub PR + reviews + check runs into our domain PullRequest.
+   *
+   * @param unresolvedThreadCount - null when the count could not be read; the
+   *   field must not claim zero outstanding threads on a guess.
    */
   private toPullRequest(
     pr: GHPullRequest,
     roles: string[],
     reviews: GHReview[],
-    checkRuns: GHCheckRun[]
+    checkRuns: GHCheckRun[],
+    unresolvedThreadCount: number | null
   ): PullRequest {
     // Compute approvals: latest review per user, count "APPROVED" ones
     const latestReviewByUser = new Map<number, GHReview>();
@@ -1139,12 +1518,16 @@ export class GitHubProvider implements GitProvider {
       roles,
       pipeline,
       description: pr.body ?? null,
-      unresolvedThreadCount: 0, // Would need separate API call to count; keep 0 for spike
+      unresolvedThreadCount,
       approvalsLeft,
       approved: approvedBy.length > 0 && changesRequested === 0,
       approvedBy,
       diffStats,
-      detailedMergeStatus: pr.mergeable_state ?? null, // "clean"|"dirty"|"blocked"|"unstable"|"behind"|"draft"
+      // Documented as the raw GitLab status; GitHub's mergeable_state uses a
+      // different vocabulary, so publishing it here would invite comparisons
+      // against GitLab values that can never match. `conflicts` above carries
+      // the one part of it we can map. See MAT-14.
+      detailedMergeStatus: null,
       autoMergeEnabled: pr.auto_merge != null,
       autoMergeStrategy: pr.auto_merge?.merge_method ?? null,
       mergeUser: pr.auto_merge ? toUserRef(pr.auto_merge.enabled_by) : null,

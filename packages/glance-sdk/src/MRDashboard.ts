@@ -83,7 +83,9 @@ export function getMRDashboardProps(
   const pipelineRunning =
     mr.pipeline?.status === 'running' || mr.pipeline?.status === 'pending';
   const awaitingApprovals = !mr.approved;
-  const hasUnresolvedDiscussions = mr.unresolvedThreadCount > 0;
+  // An unknown thread count (null) is not a blocker: we cannot claim threads
+  // are outstanding any more than we can claim they are all resolved.
+  const hasUnresolvedDiscussions = (mr.unresolvedThreadCount ?? 0) > 0;
   const hasMergeError = mr.mergeError != null;
 
   const anyBlocker =
