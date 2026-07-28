@@ -1,9 +1,14 @@
+import type { Server } from "bun";
 import { readRoutes } from "./discover.ts";
 import { getAppSettings, getSecret } from "./settings.ts";
 import { verifyToken, signToken, parseCookie, cookieHeader, COOKIE_NAME } from "./session.ts";
 import {
   pageNothingHere, pageOffline, pageRateLimited, pageLogin,
 } from "./gateway-pages.ts";
+import {
+  isWebSocketUpgrade, requestedProtocols, connectUpstream, upstreamUrl, wsHandler,
+  type WsProxyData,
+} from "./ws-proxy.ts";
 
 const DOMAIN_SUFFIX = ".m4tthew.dev";
 const LOCALHOST_SUFFIX = ".localhost";
@@ -17,18 +22,22 @@ export type Decision =
 /**
  * The port public traffic should reach.
  *
- * A dev-port override is a local affordance: it repoints routes.json so
- * <name>.localhost hits whatever dev process you are working on. Public traffic
- * must NOT follow it. A dev server serves an unbuilt app whose HMR client cannot
- * reach its websocket through the tunnel, so the page reloads forever, and it
- * would expose a dev build to the internet besides. Public traffic therefore
- * stays on the app's stable base port, which the override recorded for us.
+ * A dev-port override repoints routes.json so <name>.localhost hits whatever dev
+ * process you are working on. By default public traffic does NOT follow it: a dev
+ * server serves an unbuilt app, and one whose HMR client cannot reach its
+ * websocket reload-loops the page. Public traffic therefore stays on the app's
+ * stable base port, which the override recorded for us.
+ *
+ * `publicFollowsOverride` opts a single app out of that default. It is only safe
+ * once that app's dev server accepts the public hostname and points HMR at 443
+ * (preflight.ts checks both), so it is per-app and off unless explicitly set.
  */
 export function publicPort(
   routePort: number | undefined,
   override?: { basePort: number },
+  publicFollowsOverride = false,
 ): number | undefined {
-  if (override) return override.basePort;
+  if (override && !publicFollowsOverride) return override.basePort;
   return routePort;
 }
 
@@ -121,25 +130,61 @@ async function proxyTo(port: number, req: Request, url: URL): Promise<Response> 
   return res;
 }
 
+/**
+ * Hand a websocket upgrade to the app behind `port`.
+ *
+ * Reached only after decide() returned `proxy`, so an app's password gate covers
+ * its websockets too: an unauthenticated upgrade gets the 401 login page instead
+ * of reaching this.
+ */
+async function proxyWebSocket(
+  server: Server<WsProxyData>,
+  req: Request,
+  url: URL,
+  port: number,
+  app: string,
+): Promise<Response | undefined> {
+  let conn: Awaited<ReturnType<typeof connectUpstream>>;
+  try {
+    conn = await connectUpstream(
+      upstreamUrl(port, url.pathname, url.search),
+      requestedProtocols(req.headers.get("sec-websocket-protocol")),
+    );
+  } catch {
+    return html(pageOffline(app), 502);
+  }
+  const negotiated = conn.upstream.protocol;
+  const headers = negotiated ? { "sec-websocket-protocol": negotiated } : undefined;
+  if (server.upgrade(req, { data: conn.data, headers })) return undefined;
+  // Upgrade refused (a non-websocket request would have been filtered already):
+  // drop the upstream socket rather than leaking it.
+  try { conn.upstream.close(); } catch {}
+  return html(pageOffline(app), 500);
+}
+
 const html = (body: string, status: number, extra?: Record<string, string>): Response =>
   new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8", ...extra } });
 
-export function startGateway(port = 7950): void {
+/** Returns the server so callers (tests) can stop it; production ignores it. */
+export function startGateway(port = 7950): Server<WsProxyData> {
   loadRoutes();
-  setInterval(() => { try { loadRoutes(); } catch {} }, 5000);
+  const watcher = setInterval(() => { try { loadRoutes(); } catch {} }, 5000);
+  // Do not hold the process open on this timer alone.
+  watcher.unref?.();
 
-  const server = Bun.serve({
+  const server = Bun.serve<WsProxyData>({
     port,
     hostname: "127.0.0.1",
-    async fetch(req) {
+    websocket: wsHandler,
+    async fetch(req): Promise<Response | undefined> {
       const url = new URL(req.url);
       const host = req.headers.get("host") ?? "";
       const app = appFromHost(host);
       const ip = req.headers.get("cf-connecting-ip") ?? server.requestIP(req)?.address ?? "?";
       const settings = getAppSettings(app);
       const secret = getSecret();
-      // Public traffic ignores a dev-port override; see publicPort.
-      const port = publicPort(routes.get(app), settings.override);
+      // Public traffic ignores a dev-port override unless the app opted in; see publicPort.
+      const port = publicPort(routes.get(app), settings.override, settings.publicFollowsOverride);
 
       // Auth submission is handled by the gateway itself, never proxied.
       if (req.method === "POST" && url.pathname === "/__auth") {
@@ -175,11 +220,14 @@ export function startGateway(port = 7950): void {
         case "not-published": return html(pageNothingHere(), 404);
         case "needs-login": return html(pageLogin(d.app, { next: url.pathname + url.search }), 401);
         case "proxy":
+          // Upgrades cannot travel through fetch(), so they branch off here.
+          if (isWebSocketUpgrade(req)) return await proxyWebSocket(server, req, url, d.port, d.app);
           try { return await proxyTo(d.port, req, url); }
           catch { return html(pageOffline(d.app), 502); }
       }
     },
   });
 
-  console.log(`local-apps gateway serving on http://localhost:${port}`);
+  console.log(`local-apps gateway serving on http://localhost:${server.port}`);
+  return server;
 }

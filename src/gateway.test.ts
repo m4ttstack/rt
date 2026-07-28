@@ -60,11 +60,19 @@ test("safeNext rejects CRLF injection", () => {
   expect(safeNext("/foo\nbar")).toBe("/");
 });
 
-test("public traffic serves the base port, never a dev-port override", () => {
+test("public traffic serves the base port by default, not a dev-port override", () => {
   // The override repoints routes.json at a dev server for .localhost. Following
   // it publicly serves an unbuilt app whose HMR websocket cannot reach the
   // tunnel, which makes the page reload forever.
   expect(publicPort(4101, { basePort: 11007 })).toBe(11007);
+});
+
+test("an app that opted in follows its dev-port override publicly", () => {
+  expect(publicPort(4101, { basePort: 11007 }, true)).toBe(4101);
+});
+
+test("opting in without an override changes nothing", () => {
+  expect(publicPort(11007, undefined, true)).toBe(11007);
 });
 
 test("public traffic uses the route port when there is no override", () => {
