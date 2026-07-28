@@ -12,6 +12,14 @@ export interface AppSettings {
   passwordHash?: string;
   passwordVersion: number;
   override?: PortOverride;
+  /**
+   * Let public traffic follow an active dev-port override instead of pinning to
+   * the app's base port. Off by default, and a sibling of `override` rather than
+   * a field inside it so the preference survives clearing and re-setting one.
+   * Only apps whose dev server accepts the public hostname should turn this on;
+   * see preflight.ts.
+   */
+  publicFollowsOverride?: boolean;
 }
 
 export interface SettingsFile {
@@ -20,14 +28,18 @@ export interface SettingsFile {
   apps: Record<string, AppSettings>;
 }
 
-export const SETTINGS_PATH =
-  process.env.LOCAL_APPS_SETTINGS_PATH ?? join(import.meta.dir, "..", "data", "settings.json");
+// Computed fresh on every call (not frozen at import time) so callers that set
+// LOCAL_APPS_SETTINGS_PATH after this module first loads (tests, in particular)
+// still get the override, regardless of module load order. Mirrors routesPath().
+export function settingsPath(): string {
+  return process.env.LOCAL_APPS_SETTINGS_PATH ?? join(import.meta.dir, "..", "data", "settings.json");
+}
 
 let cache: SettingsFile = load();
 
 function load(): SettingsFile {
   try {
-    const parsed = JSON.parse(readFileSync(SETTINGS_PATH, "utf8")) as SettingsFile;
+    const parsed = JSON.parse(readFileSync(settingsPath(), "utf8")) as SettingsFile;
     if (!parsed.apps) parsed.apps = {};
     return parsed;
   } catch {
@@ -40,10 +52,11 @@ export function reloadSettings(): void {
 }
 
 function save(): void {
-  const tmp = SETTINGS_PATH + ".tmp";
+  const path = settingsPath();
+  const tmp = path + ".tmp";
   try {
     writeFileSync(tmp, JSON.stringify(cache, null, 2));
-    renameSync(tmp, SETTINGS_PATH);
+    renameSync(tmp, path);
   } catch (err) {
     console.error("settings save failed:", err);
     throw err;
@@ -57,6 +70,7 @@ export function getAppSettings(app: string): AppSettings {
     passwordHash: entry?.passwordHash,
     passwordVersion: entry?.passwordVersion ?? 0,
     override: entry?.override,
+    publicFollowsOverride: entry?.publicFollowsOverride ?? false,
   };
 }
 
@@ -107,6 +121,19 @@ export function clearOverride(app: string): void {
     delete entry.override;
     save();
   }
+}
+
+export function getPublicFollowsOverride(app: string): boolean {
+  return cache.apps[app]?.publicFollowsOverride ?? false;
+}
+
+export function setPublicFollowsOverride(app: string, follows: boolean): void {
+  const entry = ensure(app);
+  // Store the default as an absent key rather than `false`, so settings.json
+  // stays free of noise for the apps that never opt in.
+  if (follows) entry.publicFollowsOverride = true;
+  else delete entry.publicFollowsOverride;
+  save();
 }
 
 export function getOverrides(): Record<string, PortOverride> {
