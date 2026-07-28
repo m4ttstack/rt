@@ -20,8 +20,10 @@ import {
   getOverride,
   setOverride,
   clearOverride,
+  setPublicFollowsOverride,
   type PortOverride,
 } from "./settings.ts";
+import { checkApp, type Issue } from "./preflight.ts";
 import { startGateway } from "./gateway.ts";
 import { setRoutePort } from "./routes-writer.ts";
 import { reconcileOnce } from "./reconcile.ts";
@@ -70,6 +72,13 @@ interface StatusRow {
   /** A cloudflared tunnel service (infra), rendered in its own section. */
   isTunnel: boolean;
   override: PortOverride | null;
+  /** Whether public traffic follows this app's override instead of its base port. */
+  publicFollowsOverride: boolean;
+  /**
+   * Dev-server config problems that would break public traffic. Only probed for
+   * apps that opted in, so it is null for everything else rather than empty.
+   */
+  preflight: Issue[] | null;
   /** The board's own row (its port === the board's PORT): never port-editable. */
   self: boolean;
 }
@@ -184,6 +193,17 @@ async function buildStatus(requestHost?: string): Promise<Status> {
       const unmanaged =
         health.ok && a.service && a.service.pid === null ? await listenerFor(a.port) : null;
       const settings = getAppSettings(a.name);
+      const follows = settings.publicFollowsOverride ?? false;
+      // Probing costs two requests per app, so only the apps actually routing
+      // public traffic at a dev server pay for it.
+      const preflight =
+        follows && settings.override
+          ? await checkApp({
+              app: a.name,
+              devPort: settings.override.devPort,
+              publicHost: new URL(a.publicUrl).host,
+            })
+          : null;
       return {
         name: a.name,
         port: a.port,
@@ -195,6 +215,8 @@ async function buildStatus(requestHost?: string): Promise<Status> {
         hasPassword: !!settings.passwordHash,
         isTunnel: false,
         override: settings.override ?? null,
+        publicFollowsOverride: follows,
+        preflight,
         // Also matches CANARY_PORT: during a freshness check the board's route
         // points at its canary listener, and it is still the board's own row.
         self: a.port === PORT || a.port === CANARY_PORT,
@@ -214,6 +236,8 @@ async function buildStatus(requestHost?: string): Promise<Status> {
     // cloudflared tunnels are infrastructure, not stray app services.
     isTunnel: s.program.some((p) => p.includes("cloudflared")),
     override: null,
+    publicFollowsOverride: false,
+    preflight: null,
     self: false,
   }));
 
@@ -357,6 +381,22 @@ Bun.serve({
       // An override only takes effect on .localhost if the proxy is still
       // reading routes.json, so confirm that right when it matters.
       setTimeout(runCanaryCheck, 500);
+      return json({ ok: true });
+    }
+
+    if (req.method === "POST" && pathname === "/publicdev") {
+      // Local-only: a board reached through a public tunnel is read-only.
+      if (publicDomainFor(host) !== null) return json({ error: "forbidden" }, 403);
+      const form = await req.formData();
+      const app = String(form.get("app") ?? "");
+      const follows = String(form.get("follows") ?? "") === "true";
+      if (!(await knownApp(app))) return json({ error: "unknown app" }, 400);
+      // Meaningless without an override, and storing it would silently change
+      // where public traffic goes the next time one is set.
+      if (follows && !getOverride(app)) {
+        return json({ error: "set a port override first" }, 400);
+      }
+      setPublicFollowsOverride(app, follows);
       return json({ ok: true });
     }
 

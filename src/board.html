@@ -21,6 +21,26 @@
     width: 6.5rem;
     margin: 0;
   }
+  /* A vstack stretches its children; badges should hug their text instead. */
+  .devport-stack {
+    align-items: flex-start;
+  }
+  /* Secondary to the port control it sits under, not a peer of it. */
+  .devport-public {
+    font-size: 0.8em;
+    gap: var(--space-2);
+  }
+  /* td is nowrap for port numbers; a config line has to be free to wrap. */
+  .preflight-issue {
+    white-space: normal;
+    max-width: 22rem;
+    align-items: flex-start;
+  }
+  .preflight-issue code {
+    font-size: 0.75em;
+    white-space: normal;
+    word-break: break-word;
+  }
 </style>
 </head>
 <body>
@@ -106,23 +126,57 @@
                   <template x-if="!(editing && editing.app === row.name)">
                     <span>
                       <template x-if="row.override && data.canManage && !row.self">
-                        <span class="hstack gap-2">
-                          <button type="button"
-                                  class="small ghost"
-                                  @click="startEdit(row)"
-                                  aria-label="change development port">
-                            <i data-lucide="zap"></i>
-                            <s class="text-light" x-text="row.override.basePort"></s>
-                            <i data-lucide="arrow-right"></i>
-                            <span x-text="row.port"></span>
-                          </button>
-                          <button type="button"
-                                  class="small outline icon"
-                                  data-variant="danger"
-                                  @click="clearPort(row)"
-                                  :aria-label="'revert to ' + row.override.basePort">
-                            <i data-lucide="rotate-ccw"></i>
-                          </button>
+                        <span class="vstack gap-1 devport-stack">
+                          <span class="hstack gap-2">
+                            <button type="button"
+                                    class="small ghost"
+                                    @click="startEdit(row)"
+                                    aria-label="change development port">
+                              <i data-lucide="zap"></i>
+                              <s class="text-light" x-text="row.override.basePort"></s>
+                              <i data-lucide="arrow-right"></i>
+                              <span x-text="row.port"></span>
+                            </button>
+                            <button type="button"
+                                    class="small outline icon"
+                                    data-variant="danger"
+                                    @click="clearPort(row)"
+                                    :aria-label="'revert to ' + row.override.basePort">
+                              <i data-lucide="rotate-ccw"></i>
+                            </button>
+                          </span>
+                          <label class="hstack gap-2 devport-public"
+                                 :title="row.publicFollowsOverride
+                                   ? 'the public URL serves the dev port — click to pin it back to ' + row.override.basePort
+                                   : 'the public URL serves ' + row.override.basePort + ' — click to serve the dev port instead'">
+                            <input type="checkbox"
+                                   role="switch"
+                                   :checked="row.publicFollowsOverride"
+                                   @change="onPublicFollows(row)"
+                                   :aria-label="row.publicFollowsOverride
+                                     ? 'stop serving ' + row.name + ' dev port publicly'
+                                     : 'serve ' + row.name + ' dev port publicly'">
+                            <span class="text-light">public too</span>
+                          </label>
+                          <!-- Preflight is probed only for opted-in apps, so a
+                               non-null value means this row is actually exposed. -->
+                          <template x-for="issue in (row.preflight || [])" :key="issue.code">
+                            <span class="vstack gap-1 preflight-issue">
+                              <span class="badge" data-variant="warning">
+                                <i data-lucide="triangle-alert"></i>
+                                <span x-text="issue.message"></span>
+                              </span>
+                              <!-- The fix is the point of the check, so it is
+                                   shown rather than hidden behind a tooltip. -->
+                              <code x-show="issue.fix" x-text="issue.fix" class="text-light"></code>
+                            </span>
+                          </template>
+                          <template x-if="row.preflight && row.preflight.length === 0">
+                            <span class="badge" data-variant="success" title="the dev server accepts the public hostname and its hot reload reaches the tunnel">
+                              <i data-lucide="circle-check"></i>
+                              live publicly
+                            </span>
+                          </template>
                         </span>
                       </template>
                       <template x-if="!row.override && row.port != null && data.canManage && !row.self">

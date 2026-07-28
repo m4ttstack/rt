@@ -129,6 +129,22 @@ document.addEventListener("alpine:init", () => {
         .catch(() => {})
         .then(() => this.refresh());
     },
+    async onPublicFollows(row) {
+      const follows = !row.publicFollowsOverride;
+      const body = new URLSearchParams({ app: row.name, follows: String(follows) });
+      try {
+        const res = await fetch("/publicdev", { method: "POST", body });
+        if (!res.ok) {
+          const { error } = await res.json().catch(() => ({}));
+          this.notice("bad", error || "the board rejected that change.", 10000);
+        }
+      } catch {
+        /* transient -- the next refresh shows the true state */
+      }
+      // Refresh regardless: the response carries no preflight, and turning this
+      // on is what triggers the probe that reports whether it actually works.
+      await this.refresh();
+    },
 
     openPassword(app) {
       this.pwModal = { app, value: "" };

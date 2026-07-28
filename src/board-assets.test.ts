@@ -91,12 +91,20 @@ test("edge controls do not let Oat tooltips create empty overflow", async () => 
 
 test("switch tooltips stay on the wrapper so Oat can render the thumb", async () => {
   const html = await boardHtml().text();
-  const switchMarkup = html.match(/<label[\s\S]*?<input type="checkbox"[\s\S]*?role="switch"[\s\S]*?>/)?.[0];
+  // Every switch, not just the first: a title on the input hides the thumb, so
+  // the guard is worth nothing if a later switch can skip it.
+  const switches = [...html.matchAll(/<label[^>]*>[\s\S]*?<input type="checkbox"[\s\S]*?role="switch"[\s\S]*?>/g)]
+    .map((m) => m[0]);
 
-  expect(switchMarkup).toBeDefined();
-  expect(switchMarkup).toContain("<label :title=");
-  expect(switchMarkup).toContain(":aria-label=");
-  expect(switchMarkup).not.toMatch(/<input[\s\S]*?:title=/);
+  expect(switches.length).toBeGreaterThan(0);
+  for (const markup of switches) {
+    const labelTag = markup.match(/<label[^>]*>/)?.[0] ?? "";
+    // Asserted on the tag rather than as a literal prefix, so attribute order
+    // stays the author's business.
+    expect(labelTag).toMatch(/\s:title=/);
+    expect(markup).toContain(":aria-label=");
+    expect(markup).not.toMatch(/<input[\s\S]*?:title=/);
+  }
 });
 
 test("client registers the Alpine board component and builds no HTML", async () => {
