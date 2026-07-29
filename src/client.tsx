@@ -784,14 +784,16 @@ function statusPhrase(mr: BoardMR): { text: string; cls: string; comments?: bool
   return { text: "needs review", cls: "t-muted" };
 }
 
-/** Mechanical blockers shown as chips (additive to the review phrase), most
-    severe first. Empty when the MR has no conflict/CI issue. */
+/** GitLab-native facts shown as chips above the title: mechanical blockers
+    (conflicts / CI), most severe first, plus the stacked marker for MRs
+    targeting a parent branch instead of the default branch. */
 function statusFlags(mr: BoardMR): { text: string; cls: string }[] {
   const b = mr.blockers;
   const flags: { text: string; cls: string }[] = [];
   if (b?.hasConflicts) flags.push({ text: "conflicts", cls: "t-bad" });
   if (b?.pipelineFailing) flags.push({ text: "ci failing", cls: "t-bad" });
   if (b?.pipelineRunning) flags.push({ text: "ci running", cls: "t-warn" });
+  if (mr.isStacked) flags.push({ text: `stacked → ${mr.targetBranch}`, cls: "t-cyan" });
   return flags;
 }
 
@@ -1180,9 +1182,6 @@ function RowView({
               <span className="tui-row-sep">|</span>
               <span className="tui-branch">
                 {mr.sourceBranch}
-                {!["master", "main"].includes(mr.targetBranch) && (
-                  <> <span className="tui-arrow">→</span> {mr.targetBranch}</>
-                )}
               </span>
               <MetaTokens mr={mr} now={now} />
             </div>
