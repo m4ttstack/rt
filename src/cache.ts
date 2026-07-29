@@ -12,10 +12,11 @@ export type FetchResult = Omit<Snapshot, "fetchedAt" | "fetchError">;
  * Within TTL: serve the snapshot. Past TTL (or once markStale() flags a config
  * change): serve the stale snapshot immediately and kick exactly one background
  * refresh (concurrent visitors share it). A failed refresh keeps the last good
- * data and stamps the error.
+ * data and stamps the error -- this is what lets forceRefresh() fall back to
+ * stale data instead of an empty board when the forced fetch itself fails.
  *
- * Only invalidate() ever makes a reader wait, and only because the manual
- * refresh asked to.
+ * Only the caller of forceRefresh() (or invalidate()) ever waits; concurrent
+ * get() callers keep being served the current snapshot throughout.
  */
 export class SnapshotCache {
   private snapshot: Snapshot | null = null;
@@ -43,14 +44,16 @@ export class SnapshotCache {
   }
 
   /**
-   * Manual refresh: drop the snapshot and fetch anew, never sharing a fetch
-   * that started before the request — its data predates the user's click.
-   * Waits out any in-flight fetch first, so the fresh fetch (and anything it
-   * consumes, like the server's force flag) runs strictly after this call.
+   * Manual refresh: fetch anew, never sharing a fetch that started before the
+   * request... its data predates the user's click. Waits out any in-flight
+   * fetch first, so the fresh fetch (and anything it consumes, like the
+   * server's force flag) runs strictly after this call. Keeps the current
+   * snapshot in place (markStale, not invalidate) so a failing forced refresh
+   * still has stale data to fall back to instead of returning an empty board.
    */
   async forceRefresh(): Promise<Snapshot> {
-    this.snapshot = null;
     if (this.inflight) await this.inflight.catch(() => {});
+    this.markStale();
     return this.refresh();
   }
 
