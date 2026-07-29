@@ -34,10 +34,12 @@ export class SnapshotCache {
   ) {}
 
   /**
-   * Drop the cached snapshot so the next get() refetches from scratch — and
-   * blocks until it lands. For "I'll wait for fresh data" (the manual refresh).
-   * To pick up a config change, prefer markStale(): dropping the snapshot leaves
-   * readers with nothing to serve, turning a refetch into a stall for everyone.
+   * Drop the cached snapshot so the next get() refetches from scratch... and
+   * blocks until it lands. Nulling the snapshot also means a failed refetch has
+   * no stale data to fall back to, so forceRefresh() (the manual refresh) uses
+   * markStale() instead and does not call this. No production caller as of this
+   * writing; kept for callers that genuinely want empty-on-failure semantics,
+   * and exercised directly by its own unit test.
    */
   invalidate(): void {
     this.snapshot = null;
