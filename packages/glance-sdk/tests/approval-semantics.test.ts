@@ -111,3 +111,15 @@ describe('isApproved narrows to genuine approval', () => {
     expect(props.blockers.awaitingApprovals).toBe(false);
   });
 });
+
+describe('isStacked passthrough', () => {
+  test('stacked PR surfaces isStacked on the props', () => {
+    const props = getMRDashboardProps(stubPR({ isStacked: true }));
+    expect(props.isStacked).toBe(true);
+  });
+
+  test('absent isStacked reads as false', () => {
+    const props = getMRDashboardProps(stubPR({}));
+    expect(props.isStacked).toBe(false);
+  });
+});

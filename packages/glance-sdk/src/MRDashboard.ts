@@ -143,6 +143,7 @@ export function getMRDashboardProps(
     // Branch
     sourceBranch: mr.sourceBranch,
     targetBranch: mr.targetBranch,
+    isStacked: mr.isStacked ?? false,
 
     // Diff
     diff: mr.diffStats

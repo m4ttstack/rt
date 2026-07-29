@@ -125,6 +125,10 @@ export interface PullRequest {
   webUrl: string | null;
   sourceBranch: string;
   targetBranch: string;
+  /** True when targetBranch differs from the repo's default branch (a stack
+      MR pointed at its parent). False/absent when the default branch is
+      unknown. */
+  isStacked?: boolean;
   createdAt: string | null;
   updatedAt: string | null;
   /** Head commit SHA. */
@@ -237,6 +241,10 @@ export interface MRDashboardProps {
   // ── Branch ──────────────────────────────────────────────────────────────
   sourceBranch: string;
   targetBranch: string;
+  /** True when targetBranch differs from the repo's default branch (a stack
+      MR pointed at its parent). False/absent when the default branch is
+      unknown. */
+  isStacked?: boolean;
 
   // ── Diff ────────────────────────────────────────────────────────────────
   diff: { additions: number; deletions: number; filesChanged: number } | null;
