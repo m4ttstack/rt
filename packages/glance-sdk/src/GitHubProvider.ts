@@ -78,6 +78,7 @@ interface GHPullRequest {
     repo: {
       id: number;
       full_name: string;
+      default_branch?: string;
     };
   };
   user: GHUser;
@@ -1700,6 +1701,9 @@ export class GitHubProvider implements GitProvider {
       webUrl: pr.html_url,
       sourceBranch: pr.head.ref,
       targetBranch: pr.base.ref,
+      isStacked:
+        pr.base.repo.default_branch != null &&
+        pr.base.ref !== pr.base.repo.default_branch,
       createdAt: pr.created_at,
       updatedAt: pr.updated_at,
       sha: pr.head.sha,

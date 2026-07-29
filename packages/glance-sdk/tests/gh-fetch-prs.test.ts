@@ -34,6 +34,10 @@ function ghPR(
     merged_at: string | null;
     updated_at: string;
     login: string;
+    base: {
+      ref: string;
+      repo: { id: number; full_name: string; default_branch?: string };
+    };
   }> = {}
 ) {
   return {
@@ -49,7 +53,7 @@ function ghPR(
     created_at: '2026-07-01T00:00:00Z',
     updated_at: over.updated_at ?? '2026-07-10T00:00:00Z',
     head: { sha: `sha${number}`, ref: `feature/${number}` },
-    base: { ref: 'main', repo: { id: 1, full_name: 'acme/repo' } },
+    base: over.base ?? { ref: 'main', repo: { id: 1, full_name: 'acme/repo' } },
     user: { id: 999, login: over.login ?? 'octocat', avatar_url: null },
     assignees: [],
     requested_reviewers: [],
@@ -552,5 +556,24 @@ describe('GitHubProvider.fetchPullRequests: truncation and failures are observab
     });
 
     expect(prs.map((p) => p.iid)).toEqual([1]);
+  });
+});
+
+describe('GitHubProvider.fetchPullRequests: isStacked', () => {
+  test('isStacked derives from base.ref vs default_branch', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const stacked = ghPR(7, {
+      base: {
+        ref: 'feat-parent',
+        repo: { id: 1, full_name: 'acme/repo', default_branch: 'main' }
+      }
+    });
+    const plain = ghPR(8);
+    install(provider, [stacked, plain]);
+
+    const prs = await provider.fetchPullRequests({});
+
+    expect(prs.find((p) => p.iid === 7)?.isStacked).toBe(true);
+    expect(prs.find((p) => p.iid === 8)?.isStacked).toBe(false);
   });
 });
