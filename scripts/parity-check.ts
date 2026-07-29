@@ -8,7 +8,7 @@
 import { GitLabProvider, type PullRequest } from "@workforge/glance-sdk";
 import { loadConfig, loadGitLabToken } from "../src/config.ts";
 import { buildBoard, type BoardMR } from "../src/data.ts";
-import { readProjectMRs } from "../src/rt-client.ts";
+import { readProjectMRs } from "@mattstack/rt-client";
 
 const config = loadConfig();
 const token = loadGitLabToken();
