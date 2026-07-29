@@ -444,7 +444,7 @@ function toMR(
     webUrl: gql.webUrl,
     sourceBranch: gql.sourceBranch,
     targetBranch: gql.targetBranch,
-    isStacked: rootRef !== null && gql.targetBranch !== rootRef,
+    isStacked: !!rootRef && gql.targetBranch !== rootRef,
     createdAt: gql.createdAt,
     updatedAt: gql.updatedAt,
     sha: gql.diffHeadSha,

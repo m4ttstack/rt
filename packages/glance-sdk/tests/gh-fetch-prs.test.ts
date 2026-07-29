@@ -53,7 +53,7 @@ function ghPR(
     created_at: '2026-07-01T00:00:00Z',
     updated_at: over.updated_at ?? '2026-07-10T00:00:00Z',
     head: { sha: `sha${number}`, ref: `feature/${number}` },
-    base: over.base ?? { ref: 'main', repo: { id: 1, full_name: 'acme/repo' } },
+    base: over.base ?? { ref: 'main', repo: { id: 1, full_name: 'acme/repo', default_branch: 'main' } },
     user: { id: 999, login: over.login ?? 'octocat', avatar_url: null },
     assignees: [],
     requested_reviewers: [],
@@ -569,11 +569,15 @@ describe('GitHubProvider.fetchPullRequests: isStacked', () => {
       }
     });
     const plain = ghPR(8);
-    install(provider, [stacked, plain]);
+    const missingDefaultBranch = ghPR(9, {
+      base: { ref: 'feat-x', repo: { id: 1, full_name: 'acme/repo' } }
+    });
+    install(provider, [stacked, plain, missingDefaultBranch]);
 
     const prs = await provider.fetchPullRequests({});
 
     expect(prs.find((p) => p.iid === 7)?.isStacked).toBe(true);
     expect(prs.find((p) => p.iid === 8)?.isStacked).toBe(false);
+    expect(prs.find((p) => p.iid === 9)?.isStacked).toBe(false);
   });
 });

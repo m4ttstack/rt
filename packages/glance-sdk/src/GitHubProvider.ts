@@ -1702,7 +1702,7 @@ export class GitHubProvider implements GitProvider {
       sourceBranch: pr.head.ref,
       targetBranch: pr.base.ref,
       isStacked:
-        pr.base.repo.default_branch != null &&
+        !!pr.base.repo.default_branch &&
         pr.base.ref !== pr.base.repo.default_branch,
       createdAt: pr.created_at,
       updatedAt: pr.updated_at,
