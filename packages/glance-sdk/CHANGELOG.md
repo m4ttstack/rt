@@ -1,5 +1,11 @@
 # @workforge/glance-sdk
 
+## 0.12.0
+
+### Minor Changes
+
+- 0b4a4e4: `reviews.isApproved` now means genuinely approved: an MR the provider reports approved with zero required approvals and zero approvers (GitLab stack MRs targeting a parent branch) no longer reads as approved. Mergeability is unchanged and still flows through `blockers.awaitingApprovals` / `status` / `isReady`, which intentionally disagree with `isApproved` in the vacuous case. New optional `isStacked` on `PullRequest` and `MRDashboardProps`: true when the target branch differs from the repo's default branch (GitLab: `targetProject.repository.rootRef` in the MR fragments; GitHub: `base.repo.default_branch`). Absent or unknown default branch reads as not stacked.
+
 ## 0.11.0
 
 ### Minor Changes
