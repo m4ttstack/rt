@@ -45,7 +45,10 @@ export function commentsAllResolved(mr: BoardMR): boolean {
     minutes; unknown (no daemon read reached this board) is treated as stale
     too, since there's nothing to vouch for it. */
 export function dataAgeLabel(dataSyncedAt: number | null, now: number): { text: string; stale: boolean } {
-  if (dataSyncedAt === null) return { text: "data age unknown", stale: true };
+  // <= 0 covers a cold shell record's syncedAt (no daemon read has landed
+  // yet) -- epoch zero is not a real sync time, and rendering it as
+  // "data as of 1:00" (local-timezone midnight) is misleading, not stale-but-honest.
+  if (dataSyncedAt === null || dataSyncedAt <= 0) return { text: "data age unknown", stale: true };
   const stale = now - dataSyncedAt > 10 * 60_000;
   const d = new Date(dataSyncedAt);
   const hh = d.getHours();

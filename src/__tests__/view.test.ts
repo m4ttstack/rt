@@ -65,6 +65,11 @@ test("dataAgeLabel: fresh, stale, unknown", () => {
   expect(dataAgeLabel(null, now)).toEqual({ text: "data age unknown", stale: true });
 });
 
+test("dataAgeLabel: epoch-zero syncedAt (cold shell record) reads as unknown, not 1:00", () => {
+  const now = Date.parse("2026-07-29T15:00:00Z");
+  expect(dataAgeLabel(0, now)).toEqual({ text: "data age unknown", stale: true });
+});
+
 describe("sortMRs", () => {
   test("oldest: oldest last activity (updatedAt) first, nulls last", () => {
     const list = [
