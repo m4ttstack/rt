@@ -37,6 +37,7 @@ function node(id: number, state = 'opened') {
     approvedBy: { nodes: [] },
     headPipeline: null,
     mergeabilityChecks: [],
+    targetProject: { repository: { rootRef: 'main' } },
   };
 }
 
@@ -180,5 +181,15 @@ describe('fetchPullRequests({ projectPath })', () => {
     expect(calls[0].query).not.toContain('state: $state');
     expect(calls[0].query).toContain('MRListFields');
     expect(calls[0].variables.state).toBeUndefined();
+  });
+
+  test('isStacked derives from targetBranch vs rootRef', async () => {
+    const stacked = { ...node(1), targetBranch: 'feat-parent' };
+    const plain = node(2); // targetBranch 'main' per the factory
+    mockPaged([[stacked, plain]]);
+    const provider = new GitLabProvider('https://gitlab.example', 't');
+    const prs = await provider.fetchPullRequests({ projectPath: 'g/p' });
+    expect(prs.find((p) => p.iid === 1)?.isStacked).toBe(true);
+    expect(prs.find((p) => p.iid === 2)?.isStacked).toBe(false);
   });
 });

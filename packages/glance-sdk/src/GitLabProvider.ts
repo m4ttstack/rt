@@ -50,6 +50,7 @@ export const MR_DASHBOARD_FRAGMENT = `
   fragment MRDashboardFields on MergeRequest {
     id iid projectId title description state draft
     sourceBranch targetBranch webUrl
+    targetProject { repository { rootRef } }
     diffHeadSha
     updatedAt createdAt
     conflicts
@@ -108,6 +109,7 @@ export const MR_LIST_FRAGMENT = `
   fragment MRListFields on MergeRequest {
     id iid projectId title description state draft
     sourceBranch targetBranch webUrl
+    targetProject { repository { rootRef } }
     diffHeadSha
     updatedAt createdAt
     conflicts
@@ -233,6 +235,7 @@ interface GQLMR {
   sourceBranch: string;
   targetBranch: string;
   webUrl: string;
+  targetProject?: { repository?: { rootRef: string | null } | null } | null;
   diffHeadSha: string | null;
   updatedAt: string;
   createdAt: string;
@@ -414,6 +417,8 @@ function toMR(
   // Downstream code compares against lowercase values, so normalize at the boundary.
   const detailedMergeStatus = gql.detailedMergeStatus?.toLowerCase() ?? null;
 
+  const rootRef = gql.targetProject?.repository?.rootRef ?? null;
+
   return {
     id: `gitlab:mr:${numericId(gql.id)}`,
     iid: parseInt(gql.iid, 10),
@@ -439,6 +444,7 @@ function toMR(
     webUrl: gql.webUrl,
     sourceBranch: gql.sourceBranch,
     targetBranch: gql.targetBranch,
+    isStacked: rootRef !== null && gql.targetBranch !== rootRef,
     createdAt: gql.createdAt,
     updatedAt: gql.updatedAt,
     sha: gql.diffHeadSha,
