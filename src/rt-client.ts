@@ -26,6 +26,14 @@ export interface ProjectMRsData {
   listSyncedAt: number;
   source: "poll" | "events" | "mutation";
   syncedAt: number;
+  scope?: { authors: string[]; windowDays: number; uncovered: string[] };
+}
+
+/** What a caller declares it needs, so the daemon can size the sync to cover it. */
+export interface DemandDecl {
+  client: string;
+  authors: string[];
+  declaredAt: number;
 }
 
 export interface DiscussionsData {
@@ -68,43 +76,24 @@ export async function rtCommand<T = unknown>(
  * One repo's project open-MR store. A cold repo forces a full paginated sync
  * on the daemon side when maxAgeMs demands it, which can run tens of seconds
  * on a big project — hence the long timeout.
+ *
+ * `demand` tells the daemon what this caller needs covered (client id, the
+ * authors it cares about, when it declared that need), so the daemon can
+ * size the sync to actually cover it rather than trusting the store's
+ * self-reported source. That trust was the bug: a store can report "events"
+ * while hours stale, so a probe-then-read dance based on source is gone --
+ * every forced read is a cheap delta now.
  */
 export function readProjectMRs(
   repoName: string,
   maxAgeMs?: number,
   opts: RtClientOptions = {},
+  demand?: DemandDecl,
 ): Promise<RtResponse<ProjectMRsData>> {
   const payload: Record<string, unknown> = { repoName };
   if (maxAgeMs !== undefined) payload.maxAgeMs = maxAgeMs;
+  if (demand !== undefined) payload.demand = demand;
   return rtCommand<ProjectMRsData>("project-mrs:read", payload, { sockPath: opts.sockPath, timeoutMs: 90_000 });
-}
-
-/**
- * Freshness the manual refresh demands, given what the store reports as its
- * source. A `live` repo's store is maintained by the daemon's events watcher,
- * so it is already current — forcing (maxAgeMs 0) buys nothing but a forge
- * round trip that can run tens of seconds on a big project. Everything else
- * (poll, mutation, unknown) still forces: only an events feed is evidence the
- * store keeps itself up to date.
- */
-export const LIVE_REFRESH_MAX_AGE_MS = 10_000;
-
-export function refreshMaxAge(source: ProjectMRsData["source"] | undefined): number {
-  return source === "events" ? LIVE_REFRESH_MAX_AGE_MS : 0;
-}
-
-/**
- * One repo's store for the manual-refresh path. Probes first — a read with no
- * maxAgeMs can never trigger a sync, so it costs one socket round trip — to
- * learn the source, then demands the freshness that source warrants.
- */
-export async function readProjectMRsForRefresh(
-  repoName: string,
-  opts: RtClientOptions = {},
-): Promise<RtResponse<ProjectMRsData>> {
-  const probe = await readProjectMRs(repoName, undefined, opts);
-  const maxAgeMs = refreshMaxAge(probe.ok ? probe.data?.source : undefined);
-  return readProjectMRs(repoName, maxAgeMs, opts);
 }
 
 export function readDiscussions(
