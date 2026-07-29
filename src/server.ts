@@ -2,7 +2,7 @@ import { join, dirname, basename } from "path";
 import { readFileSync, watch } from "fs";
 import type { PullRequest, MRDetail } from "@workforge/glance-sdk";
 import { loadConfig, loadGitLabToken, loadSlackToken, saveMemberHidden, CONFIG_PATH } from "./config.ts";
-import { buildBoard, buildRoster, type BoardMR } from "./data.ts";
+import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, type BoardMR, type SyncScopeRead } from "./data.ts";
 import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } from "./discussions.ts";
 import { readProjectMRs, readDiscussions, subscribe } from "./rt-client.ts";
 import { SnapshotCache } from "./cache.ts";
@@ -31,6 +31,15 @@ const slackToken = loadSlackToken();
  */
 const FETCH_CONCURRENCY = 4;
 
+/** fetchTeamMRs' result: the opened MRs plus the aggregated sync facts from
+    every project read, for the caller to fold into the snapshot. */
+interface TeamMRsResult {
+  prs: PullRequest[];
+  dataSyncedAt: number | null;
+  scopeUncovered: string[];
+  scopeWindowDays: number | null;
+}
+
 /**
  * Every mapped project's opened MRs from the rt daemon's project store —
  * one socket read per project, no forge traffic. A missing mapping or a
@@ -40,28 +49,35 @@ const FETCH_CONCURRENCY = 4;
  * the daemon to sync before answering, unconditionally: a store can report
  * source "events" while still hours stale, so trusting the source to decide
  * whether to force was wrong. Forced syncs are cheap deltas, not full syncs.
+ *
+ * This is the only read that declares demand: it means "everything this
+ * client needs" (the whole configured roster), so the daemon can size its
+ * sync to cover it. fetchMemberMRs deliberately doesn't -- a one-member
+ * demand would tell the daemon the roster is just that member.
  */
-async function fetchTeamMRs(force = false): Promise<PullRequest[]> {
+async function fetchTeamMRs(force = false): Promise<TeamMRsResult> {
   const byId = new Map<string, PullRequest>();
   const errors: string[] = [];
+  const reads: SyncScopeRead[] = [];
+  const demand = boardDemand(config);
   for (const projectPath of config.projects) {
     const repoName = config.rtRepos[projectPath];
     if (!repoName) {
       errors.push(`${projectPath}: no rtRepos mapping in config.json`);
       continue;
     }
-    // demand arrives in a later task; undefined keeps this call standalone.
-    const res = await readProjectMRs(repoName, force ? 0 : undefined, {}, undefined);
+    const res = await readProjectMRs(repoName, force ? 0 : undefined, {}, demand);
     if (!res.ok || !res.data) {
       errors.push(`${projectPath}: ${res.error ?? "empty daemon response"}`);
       continue;
     }
+    reads.push({ syncedAt: res.data.syncedAt, scope: res.data.scope });
     for (const entry of Object.values(res.data.mrs)) {
       if (entry.pr.state === "opened") byId.set(entry.pr.id, entry.pr);
     }
   }
   if (errors.length) throw new Error(errors.join(" · "));
-  return [...byId.values()];
+  return { prs: [...byId.values()], ...aggregateSyncScope(reads) };
 }
 
 /** Author string for a herdr tab label: the display name, else the username. */
@@ -106,9 +122,10 @@ const cache = new SnapshotCache(async () => {
   // latched for the background refreshes that follow.
   const force = forceNextFetch;
   forceNextFetch = false;
-  const mrs = buildBoard(await fetchTeamMRs(force), config);
+  const { prs, dataSyncedAt, scopeUncovered, scopeWindowDays } = await fetchTeamMRs(force);
+  const mrs = buildBoard(prs, config);
   await enrichReviewerComments(mrs);
-  return mrs;
+  return { mrs, dataSyncedAt, scopeUncovered, scopeWindowDays };
 });
 
 /**
@@ -319,6 +336,9 @@ Bun.serve({
             },
             fetchedAt: snapshot.fetchedAt,
             fetchError: snapshot.fetchError,
+            dataSyncedAt: snapshot.dataSyncedAt,
+            scopeUncovered: snapshot.scopeUncovered,
+            scopeWindowDays: snapshot.scopeWindowDays,
           }),
           { headers: { "content-type": "application/json" } },
         );

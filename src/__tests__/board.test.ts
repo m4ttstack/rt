@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { PullRequest } from "@workforge/glance-sdk";
-import { buildBoard, buildRoster, projectPathFromWebUrl, type BoardMR } from "../data.ts";
-import { SnapshotCache } from "../cache.ts";
+import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, projectPathFromWebUrl, type BoardMR } from "../data.ts";
+import { SnapshotCache, type FetchResult } from "../cache.ts";
 import type { BoardConfig } from "../config.ts";
 import { extractTicketId } from "../ticket.ts";
 
@@ -190,6 +190,48 @@ describe("buildRoster", () => {
   });
 });
 
+describe("boardDemand", () => {
+  test("stable client id from port, full roster including hidden, fresh stamp", () => {
+    const d = boardDemand({ ...config, port: 5980,
+      members: [{ username: "a" }, { username: "b", hidden: true }] } as any);
+    expect(d.client).toBe("mr-board:5980");
+    expect(d.authors).toEqual(["a", "b"]);          // hidden is a display state, not a demand state
+    expect(d.declaredAt).toBeGreaterThan(0);
+  });
+});
+
+describe("aggregateSyncScope", () => {
+  test("dataSyncedAt is the min syncedAt across reads", () => {
+    const agg = aggregateSyncScope([{ syncedAt: 300 }, { syncedAt: 100 }, { syncedAt: 200 }]);
+    expect(agg.dataSyncedAt).toBe(100);
+  });
+
+  test("no reads yields null syncedAt/windowDays and an empty uncovered list", () => {
+    expect(aggregateSyncScope([])).toEqual({ dataSyncedAt: null, scopeUncovered: [], scopeWindowDays: null });
+  });
+
+  test("unions scope.uncovered across reads and takes the min windowDays", () => {
+    const agg = aggregateSyncScope([
+      { syncedAt: 100, scope: { authors: ["a"], windowDays: 30, uncovered: ["a"] } },
+      { syncedAt: 200, scope: { authors: ["b"], windowDays: 14, uncovered: ["b", "a"] } },
+    ]);
+    expect(agg.scopeUncovered.sort()).toEqual(["a", "b"]);
+    expect(agg.scopeWindowDays).toBe(14);
+  });
+
+  test("scopeWindowDays and scopeUncovered stay empty when no read carries a scope", () => {
+    const agg = aggregateSyncScope([{ syncedAt: 100 }, { syncedAt: 200 }]);
+    expect(agg.scopeWindowDays).toBeNull();
+    expect(agg.scopeUncovered).toEqual([]);
+  });
+});
+
+/** Wrap a bare mrs array as the FetchResult shape SnapshotCache now expects,
+    for tests that only care about the mrs field. */
+function fetchResult(mrs: unknown[]): FetchResult {
+  return { mrs: mrs as BoardMR[], dataSyncedAt: null, scopeUncovered: [], scopeWindowDays: null };
+}
+
 describe("SnapshotCache", () => {
   test("caches within TTL and revalidates after", async () => {
     let calls = 0;
@@ -197,7 +239,7 @@ describe("SnapshotCache", () => {
     const cache = new SnapshotCache(
       async () => {
         calls++;
-        return [pr({ iid: calls })].map(() => ({ iid: calls } as any));
+        return fetchResult([pr({ iid: calls })].map(() => ({ iid: calls } as any)));
       },
       () => clock,
       60_000,
@@ -224,7 +266,7 @@ describe("SnapshotCache", () => {
         calls++;
         const n = calls;
         if (n === 2) await new Promise<void>((r) => (release = r)); // hold the refetch open
-        return [{ iid: n } as any];
+        return fetchResult([{ iid: n } as any]);
       },
       () => 1_000, // frozen clock: markStale is the only thing forcing a refetch
       60_000,
@@ -247,7 +289,7 @@ describe("SnapshotCache", () => {
     const cache = new SnapshotCache(
       async () => {
         calls++;
-        return [{ iid: calls } as any];
+        return fetchResult([{ iid: calls } as any]);
       },
       () => 1_000,
       60_000,
@@ -268,7 +310,7 @@ describe("SnapshotCache", () => {
         calls++;
         const n = calls;
         await new Promise<void>((r) => gate.push(r));
-        return [{ iid: n } as any];
+        return fetchResult([{ iid: n } as any]);
       },
       () => 1_000,
       60_000,
@@ -292,7 +334,7 @@ describe("SnapshotCache", () => {
 
   test("refreshNow revalidates immediately and resolves with fresh data", async () => {
     let calls = 0;
-    const cache = new SnapshotCache(async () => { calls++; return [] as BoardMR[]; }, () => 1000, 60_000);
+    const cache = new SnapshotCache(async () => { calls++; return fetchResult([]); }, () => 1000, 60_000);
     await cache.get();               // warm: 1 fetch
     const snap = await cache.refreshNow(); // within TTL, but must fetch again
     expect(calls).toBe(2);
@@ -303,7 +345,7 @@ describe("SnapshotCache", () => {
     let calls = 0;
     let release!: () => void;
     const gate = new Promise<void>((r) => { release = r; });
-    const cache = new SnapshotCache(async () => { calls++; await gate; return [] as BoardMR[]; }, () => 1000, 60_000);
+    const cache = new SnapshotCache(async () => { calls++; await gate; return fetchResult([]); }, () => 1000, 60_000);
     const first = cache.get();
     const second = cache.refreshNow(); // shares the in-flight fetch
     release();
@@ -316,7 +358,7 @@ describe("SnapshotCache", () => {
 
   test("forceRefresh with nothing in flight fetches once and returns fresh data", async () => {
     let calls = 0;
-    const cache = new SnapshotCache(async () => { calls++; return [] as BoardMR[]; }, () => 1000, 60_000);
+    const cache = new SnapshotCache(async () => { calls++; return fetchResult([]); }, () => 1000, 60_000);
     await cache.get(); // warm: 1 fetch
     const snap = await cache.forceRefresh();
     expect(calls).toBe(2);
@@ -334,7 +376,7 @@ describe("SnapshotCache", () => {
         calls++;
         const n = calls;
         if (n === 1) await gate;
-        return [{ iid: n } as any];
+        return fetchResult([{ iid: n } as any]);
       },
       () => 1000,
       60_000,

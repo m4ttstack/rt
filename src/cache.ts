@@ -1,6 +1,10 @@
-import type { BoardMR, Snapshot } from "./data.ts";
+import type { Snapshot } from "./data.ts";
 
 const TTL_MS = 60_000;
+
+/** What one fetch produces: everything the snapshot carries except the
+    cache's own bookkeeping fields (fetchedAt, fetchError). */
+export type FetchResult = Omit<Snapshot, "fetchedAt" | "fetchError">;
 
 /**
  * Single-snapshot stale-while-revalidate cache.
@@ -23,7 +27,7 @@ export class SnapshotCache {
   private generation = 0;
 
   constructor(
-    private readonly fetchMRs: () => Promise<BoardMR[]>,
+    private readonly fetchMRs: () => Promise<FetchResult>,
     private readonly now: () => number = Date.now,
     private readonly ttlMs: number = TTL_MS,
   ) {}
@@ -96,14 +100,14 @@ export class SnapshotCache {
       return snapshot;
     };
     this.inflight = this.fetchMRs()
-      .then((mrs) => settle({ mrs, fetchedAt: this.now(), fetchError: null }))
+      .then((result) => settle({ ...result, fetchedAt: this.now(), fetchError: null }))
       .catch((err) => {
         const message = err instanceof Error ? err.message : String(err);
         console.error(`refresh failed: ${message}`);
         return settle(
           this.snapshot
             ? { ...this.snapshot, fetchError: message }
-            : { mrs: [], fetchedAt: this.now(), fetchError: message },
+            : { mrs: [], fetchedAt: this.now(), fetchError: message, dataSyncedAt: null, scopeUncovered: [], scopeWindowDays: null },
         );
       })
       .finally(() => {

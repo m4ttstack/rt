@@ -1,5 +1,6 @@
 import { getMRDashboardProps, getReviewDisplayState, type MRDashboardProps, type PullRequest } from "@workforge/glance-sdk";
 import type { BoardConfig, Member } from "./config.ts";
+import type { DemandDecl } from "./rt-client.ts";
 import { extractTicketId } from "./ticket.ts";
 
 export type PipelineState = "passed" | "running" | "failed" | "none";
@@ -35,6 +36,15 @@ export interface Snapshot {
   fetchedAt: number;
   /** Set when the latest refresh failed and this data is older than it should be. */
   fetchError: string | null;
+  /** Oldest per-project `syncedAt` among the daemon reads that fed this
+      snapshot; null when none yielded one (every project errored). */
+  dataSyncedAt: number | null;
+  /** Union of `scope.uncovered` across the daemon reads: authors whose
+      window some project's sync didn't reach. */
+  scopeUncovered: string[];
+  /** Narrowest `scope.windowDays` among the daemon reads; null when no read
+      carried a scope. */
+  scopeWindowDays: number | null;
 }
 
 /** Parse "group/project" out of a GitLab MR web URL. */
@@ -93,6 +103,52 @@ export function buildBoard(prs: PullRequest[], config: BoardConfig, now: number 
     });
   }
   return out;
+}
+
+/**
+ * What the board declares it needs from rt on the full-board fetch: every
+ * configured member, including hidden (checked-out) ones -- hidden is a
+ * display state, not a demand state, so the daemon still sizes its sync to
+ * cover them. Callers must attach this only where the read means "everything
+ * this client needs" (fetchTeamMRs); a single-member read declaring demand
+ * would tell the daemon the roster is just that one member.
+ */
+export function boardDemand(config: BoardConfig): DemandDecl {
+  return {
+    client: `mr-board:${config.port}`,
+    authors: config.members.map((m) => m.username),
+    declaredAt: Date.now(),
+  };
+}
+
+/** One project's sync facts, the shape aggregateSyncScope folds across projects. */
+export interface SyncScopeRead {
+  syncedAt: number;
+  scope?: { authors: string[]; windowDays: number; uncovered: string[] };
+}
+
+/**
+ * Fold the per-project daemon reads that built one snapshot into one
+ * board-wide picture. `dataSyncedAt` is the oldest syncedAt (the board is
+ * only as fresh as its stalest project); `scopeUncovered` unions every
+ * project's uncovered authors; `scopeWindowDays` is the narrowest window
+ * (the tightest constraint any project reported). A project that errored
+ * before yielding a read is simply absent from `reads`.
+ */
+export function aggregateSyncScope(
+  reads: SyncScopeRead[],
+): { dataSyncedAt: number | null; scopeUncovered: string[]; scopeWindowDays: number | null } {
+  let dataSyncedAt: number | null = null;
+  let scopeWindowDays: number | null = null;
+  const uncovered = new Set<string>();
+  for (const read of reads) {
+    dataSyncedAt = dataSyncedAt === null ? read.syncedAt : Math.min(dataSyncedAt, read.syncedAt);
+    if (read.scope) {
+      scopeWindowDays = scopeWindowDays === null ? read.scope.windowDays : Math.min(scopeWindowDays, read.scope.windowDays);
+      for (const author of read.scope.uncovered) uncovered.add(author);
+    }
+  }
+  return { dataSyncedAt, scopeUncovered: [...uncovered], scopeWindowDays };
 }
 
 /**
