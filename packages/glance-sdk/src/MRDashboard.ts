@@ -118,6 +118,13 @@ export function getMRDashboardProps(
   const isMerging = mr.mergeOngoing;
   const isRebasing = mr.rebaseInProgress;
 
+  // Genuine approval only: GitLab reports approved=true for MRs with no
+  // applicable approval rules (stack MRs targeting a parent branch), before
+  // anyone has looked at them. An approval nobody gave is not an approval.
+  // Mergeability keeps reading the raw flag via blockers.awaitingApprovals.
+  const genuinelyApproved =
+    mr.approved && !(mr.approvalsRequired === 0 && mr.approvedBy.length === 0);
+
   return {
     // Identity
     provider: repoIdProvider(mr.repositoryId),
@@ -165,7 +172,7 @@ export function getMRDashboardProps(
       required: mr.approvalsRequired,
       given: mr.approvedBy.length,
       remaining: mr.approvalsLeft,
-      isApproved: mr.approved,
+      isApproved: genuinelyApproved,
       approvedBy: mr.approvedBy as Reviewer[],
       reviewers: effectiveReviewers,
       totalAssigned: effectiveReviewers.length,
