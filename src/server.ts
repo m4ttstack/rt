@@ -339,6 +339,7 @@ Bun.serve({
             dataSyncedAt: snapshot.dataSyncedAt,
             scopeUncovered: snapshot.scopeUncovered,
             scopeWindowDays: snapshot.scopeWindowDays,
+            staleAfterDays: config.staleAfterDays,
           }),
           { headers: { "content-type": "application/json" } },
         );

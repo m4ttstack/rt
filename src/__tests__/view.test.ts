@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { BoardMR } from "../data.ts";
-import { filterByMember, sortMRs, groupMRs, commentDot } from "../view.ts";
+import { filterByMember, sortMRs, groupMRs, commentDot, dataAgeLabel } from "../view.ts";
 
 function mr(overrides: Partial<BoardMR>): BoardMR {
   return {
@@ -56,6 +56,13 @@ describe("commentDot", () => {
   test("resolved threads never force amber", () => {
     expect(commentDot({ awaiting: 0, replied: 1, resolved: 5 })?.cls).toBe("ok");
   });
+});
+
+test("dataAgeLabel: fresh, stale, unknown", () => {
+  const now = Date.parse("2026-07-29T15:00:00Z");
+  expect(dataAgeLabel(now - 60_000, now).stale).toBe(false);
+  expect(dataAgeLabel(now - 11 * 60_000, now).stale).toBe(true);
+  expect(dataAgeLabel(null, now)).toEqual({ text: "data age unknown", stale: true });
 });
 
 describe("sortMRs", () => {

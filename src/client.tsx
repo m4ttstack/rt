@@ -7,7 +7,7 @@ import { hasChangesRequested } from "./data.ts";
 import { getReviewDisplayState } from "@workforge/glance-sdk";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { filterByMember, sortMRs, groupMRs, parseViewState, serializeViewState, commentDot, commentsAllResolved, GROUP_KEYS, SORT_KEYS } from "./view.ts";
+import { filterByMember, sortMRs, groupMRs, parseViewState, serializeViewState, commentDot, commentsAllResolved, dataAgeLabel, GROUP_KEYS, SORT_KEYS } from "./view.ts";
 import type { GroupKey, SortKey, ViewState } from "./view.ts";
 import { renderMr, renderMulti, type MrFacts } from "./template.ts";
 
@@ -48,6 +48,17 @@ interface BoardData {
   local: boolean;
   slackEnabled: boolean;
   slackTemplates: SlackTemplates;
+  /** Oldest daemon syncedAt across projects; null when no daemon read reached
+      this snapshot. Drives the honest footer (distinct from `fetchedAt`, which
+      only says the board's own poll succeeded). */
+  dataSyncedAt: number | null;
+  /** Authors this board demanded but rt hasn't finished backfilling yet. */
+  scopeUncovered: string[];
+  /** Narrowest sync window (days) among the daemon reads; null when none carried one. */
+  scopeWindowDays: number | null;
+  /** The board's own configured stale cutoff (days), for comparing against
+      `scopeWindowDays` -- a board asking for more history than rt syncs. */
+  staleAfterDays: number;
 }
 
 declare global {
@@ -1267,12 +1278,16 @@ function Sidebar({
   active,
   onPick,
   onSettings,
+  scopeUncovered,
 }: {
   members: RosterMember[];
   total: number;
   active: string;
   onPick: (member: string) => void;
   onSettings: () => void;
+  /** Authors demanded from rt but not yet backfilled -- their counts may be
+      undercounts, so the row says so instead of quietly showing a low number. */
+  scopeUncovered: string[];
 }) {
   return (
     <nav className="tui-sidebar" aria-label="team members">
@@ -1297,7 +1312,14 @@ function Sidebar({
           <span className="tui-side-name">
             <Invadr id={m.username} palette="css-vars" className="tui-avatar" /> {m.name ?? m.username}
           </span>
-          <span className="tui-side-count">{m.count}</span>
+          <span className="tui-side-right">
+            {scopeUncovered.includes(m.username) && (
+              <span className="tui-flag t-warn" title="rt hasn't finished backfilling this author's MRs... the count may be low">
+                syncing
+              </span>
+            )}
+            <span className="tui-side-count">{m.count}</span>
+          </span>
         </button>
       ))}
     </nav>
@@ -1988,6 +2010,13 @@ function Board() {
   const total = data.members.reduce((n, m) => n + m.count, 0);
   const staleMins = Math.round((Date.now() - data.fetchedAt) / 60_000);
   const now = Date.now();
+  const dataAge = dataAgeLabel(data.dataSyncedAt, now);
+  // Both known and the board asks for more history than rt actually syncs --
+  // config drift the board can't self-correct, so it needs to be visible.
+  const windowMismatch =
+    data.scopeWindowDays !== null && data.staleAfterDays > data.scopeWindowDays
+      ? `board shows ${data.staleAfterDays} days but rt syncs ${data.scopeWindowDays} days... align configs`
+      : null;
 
   // Server review wins; otherwise show an optimistic "queued" badge if pending.
   const mrs = data.mrs.map((mr) => {
@@ -2042,6 +2071,7 @@ function Board() {
         active={state.member}
         onPick={(member) => update({ member })}
         onSettings={openSettings}
+        scopeUncovered={data.scopeUncovered}
       />
 
       <div className="tui-main">
@@ -2065,6 +2095,7 @@ function Board() {
         </header>
 
         {data.fetchError && <div className="tui-banner">⚠ data from {staleMins}m ago — gitlab fetch failing</div>}
+        {windowMismatch && <div className="tui-banner">⚠ {windowMismatch}</div>}
 
         {filtered.length === 0 && !data.fetchError ? (
           <p className="tui-empty">nothing waiting on review ✓</p>
@@ -2080,7 +2111,7 @@ function Board() {
           ))
         )}
 
-        <footer className="tui-footer">updated {staleMins < 1 ? "just now" : `${staleMins}m ago`}</footer>
+        <footer className={dataAge.stale ? "tui-footer tui-footer-stale" : "tui-footer"}>{dataAge.text}</footer>
       </div>
 
       {/* Mobile drawer: roster + controls, tucked behind the burger. */}
@@ -2102,6 +2133,7 @@ function Board() {
                 setMenuOpen(false);
               }}
               onSettings={openSettings}
+              scopeUncovered={data.scopeUncovered}
             />
             <div className="tui-drawer-controls">
               <Controls {...controlProps} stacked />

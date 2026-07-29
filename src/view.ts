@@ -39,6 +39,20 @@ export function commentsAllResolved(mr: BoardMR): boolean {
   return mr.reviewerComments === 0 && !!s && s.resolved > 0 && s.awaiting + s.replied === 0;
 }
 
+/** Board freshness is the daemon's syncedAt, not the board's own poll loop --
+    a poll can succeed against data the daemon hasn't refreshed in a while, so
+    "just fetched" and "actually fresh" are different claims. Stale past 10
+    minutes; unknown (no daemon read reached this board) is treated as stale
+    too, since there's nothing to vouch for it. */
+export function dataAgeLabel(dataSyncedAt: number | null, now: number): { text: string; stale: boolean } {
+  if (dataSyncedAt === null) return { text: "data age unknown", stale: true };
+  const stale = now - dataSyncedAt > 10 * 60_000;
+  const d = new Date(dataSyncedAt);
+  const hh = d.getHours();
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return { text: `data as of ${hh}:${mm}`, stale };
+}
+
 /** Approval ratio in [0,1]; used by the "progress" sort. */
 function progress(mr: BoardMR): number {
   const req = mr.reviews.required;

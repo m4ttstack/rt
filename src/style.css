@@ -348,6 +348,9 @@ body {
 .tui-empty { color: var(--muted); font: 500 0.9rem/1.5 var(--font-sans); text-align: center; margin-top: 3.5rem; }
 .tui-loading { color: var(--muted); text-align: center; margin-top: 4rem; }
 .tui-footer { color: var(--muted); font: 500 0.76rem/1.5 var(--font-sans); text-align: center; margin-top: 2.2rem; opacity: 0.8; }
+/* Daemon data older than 10 minutes (or unknown) -- same amber the fetchError
+   banner uses, so "trust this less" reads the same way everywhere. */
+.tui-footer-stale { color: var(--amber); opacity: 1; }
 
 /* team sidebar layout */
 .tui-app { display: grid; grid-template-columns: 220px 1fr; gap: 20px; align-items: start; }
@@ -371,6 +374,10 @@ body {
 .tui-side-item:hover { background: var(--panel); }
 .tui-side-item.active { border-color: var(--border); background: var(--panel); }
 .tui-side-name { display: inline-flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Wraps the count (+ optional "syncing" flag) as one flex item, so the row
+   keeps its two-item space-between layout instead of the flag floating
+   mid-row on its own. */
+.tui-side-right { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .tui-side-count { color: var(--muted); font-family: var(--font-mono); font-size: 0.85em; }
 .tui-side-empty { opacity: 0.45; }
 .tui-seg-text button { padding: 0.3rem 0.55rem; font-size: 0.8em; }
