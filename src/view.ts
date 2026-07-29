@@ -56,6 +56,19 @@ export function dataAgeLabel(dataSyncedAt: number | null, now: number): { text: 
   return { text: `data as of ${hh}:${mm}`, stale };
 }
 
+/** GitLab-native facts shown as chips above the title: mechanical blockers
+    (conflicts / CI), most severe first, plus the stacked marker for MRs
+    targeting a parent branch instead of the default branch. */
+export function statusFlags(mr: BoardMR): { text: string; cls: string }[] {
+  const b = mr.blockers;
+  const flags: { text: string; cls: string }[] = [];
+  if (b?.hasConflicts) flags.push({ text: "conflicts", cls: "t-bad" });
+  if (b?.pipelineFailing) flags.push({ text: "ci failing", cls: "t-bad" });
+  if (b?.pipelineRunning) flags.push({ text: "ci running", cls: "t-warn" });
+  if (mr.isStacked) flags.push({ text: `stacked → ${mr.targetBranch}`, cls: "t-cyan" });
+  return flags;
+}
+
 /** Approval ratio in [0,1]; used by the "progress" sort. */
 function progress(mr: BoardMR): number {
   const req = mr.reviews.required;

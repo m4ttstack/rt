@@ -7,7 +7,7 @@ import { hasChangesRequested } from "./data.ts";
 import { getReviewDisplayState } from "@workforge/glance-sdk";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { filterByMember, sortMRs, groupMRs, parseViewState, serializeViewState, commentDot, commentsAllResolved, dataAgeLabel, GROUP_KEYS, SORT_KEYS } from "./view.ts";
+import { filterByMember, sortMRs, groupMRs, parseViewState, serializeViewState, commentDot, commentsAllResolved, dataAgeLabel, statusFlags, GROUP_KEYS, SORT_KEYS } from "./view.ts";
 import type { GroupKey, SortKey, ViewState } from "./view.ts";
 import { renderMr, renderMulti, type MrFacts } from "./template.ts";
 
@@ -782,19 +782,6 @@ function statusPhrase(mr: BoardMR): { text: string; cls: string; comments?: bool
   if (mr.reviews.required > 0 && mr.reviews.given > 0)
     return { text: `${mr.reviews.given}/${mr.reviews.required} approved`, cls: "t-warn" };
   return { text: "needs review", cls: "t-muted" };
-}
-
-/** GitLab-native facts shown as chips above the title: mechanical blockers
-    (conflicts / CI), most severe first, plus the stacked marker for MRs
-    targeting a parent branch instead of the default branch. */
-function statusFlags(mr: BoardMR): { text: string; cls: string }[] {
-  const b = mr.blockers;
-  const flags: { text: string; cls: string }[] = [];
-  if (b?.hasConflicts) flags.push({ text: "conflicts", cls: "t-bad" });
-  if (b?.pipelineFailing) flags.push({ text: "ci failing", cls: "t-bad" });
-  if (b?.pipelineRunning) flags.push({ text: "ci running", cls: "t-warn" });
-  if (mr.isStacked) flags.push({ text: `stacked → ${mr.targetBranch}`, cls: "t-cyan" });
-  return flags;
 }
 
 function StatusFlags({ mr }: { mr: BoardMR }) {

@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { BoardMR } from "../data.ts";
-import { filterByMember, sortMRs, groupMRs, commentDot, dataAgeLabel } from "../view.ts";
+import { filterByMember, sortMRs, groupMRs, commentDot, dataAgeLabel, statusFlags } from "../view.ts";
 
 function mr(overrides: Partial<BoardMR>): BoardMR {
   return {
@@ -55,6 +55,19 @@ describe("commentDot", () => {
   });
   test("resolved threads never force amber", () => {
     expect(commentDot({ awaiting: 0, replied: 1, resolved: 5 })?.cls).toBe("ok");
+  });
+});
+
+describe("statusFlags", () => {
+  test("statusFlags adds the stacked chip last for stacked MRs", () => {
+    const flags = statusFlags(mr({ isStacked: true, targetBranch: "parent-branch", blockers: { hasConflicts: true } } as any));
+    expect(flags[flags.length - 1]).toEqual({ text: "stacked → parent-branch", cls: "t-cyan" });
+    expect(flags[0]).toEqual({ text: "conflicts", cls: "t-bad" });
+  });
+
+  test("statusFlags has no stacked chip for default-target MRs", () => {
+    const flags = statusFlags(mr({ targetBranch: "main" } as any));
+    expect(flags.some((f) => f.text.startsWith("stacked"))).toBe(false);
   });
 });
 
