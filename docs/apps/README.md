@@ -6,6 +6,10 @@ each MR shows a status dot (hover for the full blocker list), title, branch, a s
 
 each member view shows that member's name and a deterministic pixel-sprite avatar in the header; the **All** view lists all team members' MRs together. every user gets their own creature derived from their username, with no image hosting involved.
 
+## screenshot
+
+no screenshot yet: the earlier ones were captured against a real team's actual merge requests, branch names, and reviewer identities, so none of them ship with this repo. to see the board's layout yourself without wiring up a real GitLab project first, copy `config.team.example.json` → `config.json` (a filled-in demo roster: `ada`, `grace`, `linus`, each with their own deterministic invadrs avatar) and `bun run serve`.
+
 ## run it
 
 requires [bun](https://bun.sh).
@@ -23,7 +27,7 @@ bun run serve   # http://localhost:7930
 - **path to your local repo checkout** (optional) — enables the right-click "launch review" action; leave blank to skip
 - **Slack integration** — opens a browser to authorize a Slack app; each teammate mints their own user token this way, so reactions and messages appear as *them*. only teammates added as **Collaborators** on the app can complete this flow
 
-or configure manually: copy `config.example.json` → `config.json` and edit; put `GITLAB_TOKEN=…` and optionally `SLACK_TOKEN=…` in `.env`.
+or configure manually: copy `config.example.json` → `config.json` and edit; put `GITLAB_TOKEN=…` and optionally `SLACK_TOKEN=…` in `.env`. `config.team.example.json` is a filled-in demo roster (fake names, fake project) if you just want to see it render before pointing it at a real one.
 
 ## config
 

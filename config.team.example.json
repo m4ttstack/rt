@@ -1,0 +1,35 @@
+{
+  "gitlabHost": "https://gitlab.com",
+  "projects": [
+    "myteam/myproject"
+  ],
+  "members": [
+    {
+      "username": "ada",
+      "name": "Ada Lovelace"
+    },
+    {
+      "username": "grace",
+      "name": "Grace Hopper"
+    },
+    {
+      "username": "linus",
+      "name": "Linus Torvalds"
+    }
+  ],
+  "defaultMember": "all",
+  "staleAfterDays": 30,
+  "ticketPrefixes": [],
+  "title": "MR Board",
+  "port": 7930,
+  "reviewSkill": "myteam:review",
+  "respondSkill": "myteam:respond",
+  "doctorSkill": "myteam:doctor",
+  "slack": {
+    "channel": "code-review",
+    "singleTemplate": "{title}: {url}",
+    "multiHeader": "{count} MR's ready for review :pray:",
+    "multiItem": "- {title}: {url}",
+    "autoResolveIntervalMinutes": 15
+  }
+}
