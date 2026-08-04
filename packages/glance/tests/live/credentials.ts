@@ -108,6 +108,21 @@ export function githubRepo(creds: HarnessCredentials): HarnessRepo {
   return repoFor(creds, 'github');
 }
 
+/**
+ * Shared by `setup-github-fixture.ts` and `fixture.ts`, both of which need
+ * to turn a `github.com` web URL into the `{ owner, repo }` GitHub actually
+ * wants. One parser, so a fix to how it handles a trailing slash or `.git`
+ * suffix lands for both callers instead of drifting between two copies.
+ */
+export function parseGitHubSlug(webUrl: string): { owner: string; repo: string } {
+  const { pathname } = new URL(webUrl);
+  const [, owner, repo] = pathname.split('/');
+  if (!owner || !repo) {
+    throw new Error(`not a github.com repo URL: ${webUrl}`);
+  }
+  return { owner, repo };
+}
+
 const DEFAULT_PATH = new URL('../../../../harness_credentials.json', import.meta.url).pathname;
 
 /** Returns null when the file is absent, so the runner can skip with a message. */

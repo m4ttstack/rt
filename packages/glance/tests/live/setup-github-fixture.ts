@@ -11,19 +11,7 @@
  * Run: bun tests/live/setup-github-fixture.ts
  */
 
-import { loadCredentials, githubRepo, resolveGitHubToken } from './credentials.ts';
-
-// The rest of the harness treats harness_credentials.json as the source of
-// truth for targets, so the fixture's owner/repo are derived from it rather
-// than hardcoded here, the same way later tasks resolve their targets.
-function parseGitHubSlug(webUrl: string): { owner: string; repo: string } {
-  const { pathname } = new URL(webUrl);
-  const [, owner, repo] = pathname.split('/');
-  if (!owner || !repo) {
-    throw new Error(`githubRepo.web_url is not a github.com repo URL: ${webUrl}`);
-  }
-  return { owner, repo };
-}
+import { loadCredentials, githubRepo, parseGitHubSlug, resolveGitHubToken } from './credentials.ts';
 
 const creds = await loadCredentials();
 if (!creds) {
