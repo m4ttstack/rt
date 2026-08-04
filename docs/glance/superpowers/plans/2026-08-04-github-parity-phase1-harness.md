@@ -309,7 +309,7 @@ export async function resolveGitHubToken(): Promise<string | null> {
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `cd packages/glance && bun test tests/live-credentials.test.ts`
-Expected: PASS, 11 tests
+Expected: PASS, 9 tests
 
 - [ ] **Step 5: Verify DEFAULT_PATH resolves to the real credentials file**
 
@@ -429,7 +429,7 @@ describe('expectation tables', () => {
     expect(unsupported).toEqual([]);
   });
 
-  test('every unsupported or approximate entry carries a note', () => {
+  test('every entry that is not plainly supported carries a note', () => {
     for (const table of [GITHUB_EXPECTATIONS, GITLAB_EXPECTATIONS]) {
       for (const [method, exp] of Object.entries(table)) {
         if (exp.support === 'supported') continue;
@@ -605,7 +605,7 @@ export function expectationFor(
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `cd packages/glance && bun test tests/live-expectations.test.ts`
-Expected: PASS, 9 tests
+Expected: PASS, 8 tests
 
 Two failures are expected to be informative rather than mysterious. If "a method is a function unless declared absent" fails, either a table key is misspelled relative to the real method name, or a method you assumed exists does not. Fix the table, never the test. `fetchPullRequestsByBranches` and `watchEvents` are already known to be `undefined` on `GitHubProvider`, which is why both are declared `absent`.
 
@@ -1252,8 +1252,8 @@ export async function runReadConformance(
   );
 
   await check(report, fixture, 'restRequest', 'authenticated GET succeeds', async () => {
-    const path = fixture.name === 'github' ? '/user' : '/user';
-    const res = await provider.restRequest('GET', path);
+    // Both providers expose the current user at /user, so no branch is needed.
+    const res = await provider.restRequest('GET', '/user');
     assert(res.ok, `expected ok, got HTTP ${res.status}`);
   });
 
@@ -1406,6 +1406,22 @@ Append to `packages/glance/tests/live/conformance.ts`:
 /** Unique per run, so an aborted run never collides with the next. */
 function runPrefix(): string {
   return `conformance/${Date.now().toString(36)}`;
+}
+
+/**
+ * The `<provider>:<numericId>` form fetchMRDiscussions expects, which is not
+ * derivable from a project path without asking the API for the numeric id.
+ */
+async function scopedRepoId(fixture: ProviderFixture): Promise<string> {
+  const { provider, projectPath } = fixture;
+  const path =
+    fixture.name === 'github'
+      ? `/repos/${projectPath}`
+      : `/projects/${encodeURIComponent(projectPath)}`;
+  const res = await provider.restRequest('GET', path);
+  if (!res.ok) throw new Error(`could not resolve repo id: HTTP ${res.status}`);
+  const { id } = (await res.json()) as { id: number };
+  return `${fixture.name}:${id}`;
 }
 
 async function createBranch(
@@ -1572,9 +1588,7 @@ export async function runWriteConformance(
     });
 
     await check(report, fixture, 'fetchMRDiscussions', 'returns a detail object', async () => {
-      const repoId = fixture.name === 'github'
-        ? `github:${(await (await provider.restRequest('GET', `/repos/${projectPath}`)).json() as { id: number }).id}`
-        : `gitlab:${(await (await provider.restRequest('GET', `/projects/${encodeURIComponent(projectPath)}`)).json() as { id: number }).id}`;
+      const repoId = await scopedRepoId(fixture);
       const detail = await provider.fetchMRDiscussions(repoId, iid);
       assert(Array.isArray(detail.discussions), 'discussions was not an array');
     });
