@@ -11,7 +11,8 @@ import {
   githubRepo,
   gitlabRepo,
   ownerUser,
-  parseCredentials
+  parseCredentials,
+  resolveGitHubToken
 } from './live/credentials.ts';
 
 const VALID = {
@@ -100,7 +101,23 @@ describe('repo optional field validation', () => {
       ...VALID,
       repos: [{ ...VALID.repos[0], project_id: 'not-a-number' }]
     };
-    expect(() => parseCredentials(bad)).toThrow(/repos\[0\]\.project_id.*number/);
+    expect(() => parseCredentials(bad)).toThrow(/repos\[0\]\.project_id.*integer/);
+  });
+
+  test('rejects a non-integer project_id (e.g. float)', () => {
+    const bad = {
+      ...VALID,
+      repos: [{ ...VALID.repos[0], project_id: 1.5 }]
+    };
+    expect(() => parseCredentials(bad)).toThrow(/repos\[0\]\.project_id.*integer/);
+  });
+
+  test('rejects NaN as project_id', () => {
+    const bad = {
+      ...VALID,
+      repos: [{ ...VALID.repos[0], project_id: NaN }]
+    };
+    expect(() => parseCredentials(bad)).toThrow(/repos\[0\]\.project_id.*integer/);
   });
 
   test('rejects a non-string path_with_namespace', () => {
@@ -127,5 +144,39 @@ describe('repo optional field validation', () => {
     const creds = parseCredentials(minimal);
     expect(creds.repos[0].project_id).toBeUndefined();
     expect(creds.repos[0].path_with_namespace).toBeUndefined();
+  });
+});
+
+describe('resolveGitHubToken', () => {
+  test('returns trimmed token when command succeeds', async () => {
+    const token = await resolveGitHubToken({
+      command: ['printf', 'test-token  '],
+      timeoutMs: 100
+    });
+    expect(token).toBe('test-token');
+  });
+
+  test('returns null when command times out', async () => {
+    const token = await resolveGitHubToken({
+      command: ['sleep', '30'],
+      timeoutMs: 50
+    });
+    expect(token).toBeNull();
+  });
+
+  test('returns null when command exits non-zero', async () => {
+    const token = await resolveGitHubToken({
+      command: ['sh', '-c', 'exit 1'],
+      timeoutMs: 100
+    });
+    expect(token).toBeNull();
+  });
+
+  test('returns null when command succeeds but prints nothing', async () => {
+    const token = await resolveGitHubToken({
+      command: ['printf', ''],
+      timeoutMs: 100
+    });
+    expect(token).toBeNull();
   });
 });

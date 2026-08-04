@@ -89,7 +89,8 @@ import {
   githubRepo,
   gitlabRepo,
   ownerUser,
-  parseCredentials
+  parseCredentials,
+  resolveGitHubToken
 } from './live/credentials.ts';
 
 const VALID = {
@@ -178,7 +179,23 @@ describe('repo optional field validation', () => {
       ...VALID,
       repos: [{ ...VALID.repos[0], project_id: 'not-a-number' }]
     };
-    expect(() => parseCredentials(bad)).toThrow(/repos\[0\]\.project_id.*number/);
+    expect(() => parseCredentials(bad)).toThrow(/repos\[0\]\.project_id.*integer/);
+  });
+
+  test('rejects a non-integer project_id (e.g. float)', () => {
+    const bad = {
+      ...VALID,
+      repos: [{ ...VALID.repos[0], project_id: 1.5 }]
+    };
+    expect(() => parseCredentials(bad)).toThrow(/repos\[0\]\.project_id.*integer/);
+  });
+
+  test('rejects NaN as project_id', () => {
+    const bad = {
+      ...VALID,
+      repos: [{ ...VALID.repos[0], project_id: NaN }]
+    };
+    expect(() => parseCredentials(bad)).toThrow(/repos\[0\]\.project_id.*integer/);
   });
 
   test('rejects a non-string path_with_namespace', () => {
@@ -205,6 +222,40 @@ describe('repo optional field validation', () => {
     const creds = parseCredentials(minimal);
     expect(creds.repos[0].project_id).toBeUndefined();
     expect(creds.repos[0].path_with_namespace).toBeUndefined();
+  });
+});
+
+describe('resolveGitHubToken', () => {
+  test('returns trimmed token when command succeeds', async () => {
+    const token = await resolveGitHubToken({
+      command: ['printf', 'test-token  '],
+      timeoutMs: 100
+    });
+    expect(token).toBe('test-token');
+  });
+
+  test('returns null when command times out', async () => {
+    const token = await resolveGitHubToken({
+      command: ['sleep', '30'],
+      timeoutMs: 50
+    });
+    expect(token).toBeNull();
+  });
+
+  test('returns null when command exits non-zero', async () => {
+    const token = await resolveGitHubToken({
+      command: ['sh', '-c', 'exit 1'],
+      timeoutMs: 100
+    });
+    expect(token).toBeNull();
+  });
+
+  test('returns null when command succeeds but prints nothing', async () => {
+    const token = await resolveGitHubToken({
+      command: ['printf', ''],
+      timeoutMs: 100
+    });
+    expect(token).toBeNull();
   });
 });
 ```
@@ -289,8 +340,10 @@ export function parseCredentials(raw: unknown): HarnessCredentials {
         fail(`repos[${i}].${field} must be a non-empty string`);
       }
     }
-    if (r.project_id !== undefined && typeof r.project_id !== 'number') {
-      fail(`repos[${i}].project_id must be a number, got ${typeof r.project_id}`);
+    if (r.project_id !== undefined) {
+      if (typeof r.project_id !== 'number' || !Number.isInteger(r.project_id)) {
+        fail(`repos[${i}].project_id must be an integer, got ${String(r.project_id)}`);
+      }
     }
     if (r.path_with_namespace !== undefined) {
       if (typeof r.path_with_namespace !== 'string' || !r.path_with_namespace) {
@@ -339,25 +392,22 @@ export async function loadCredentials(
 }
 
 /** Returns null when `gh` is missing or logged out. */
-export async function resolveGitHubToken(): Promise<string | null> {
+export async function resolveGitHubToken(
+  opts: { command?: string[]; timeoutMs?: number } = {}
+): Promise<string | null> {
   try {
-    const proc = Bun.spawn(['gh', 'auth', 'token'], { stdout: 'pipe', stderr: 'ignore' });
-    const timeoutMs = 10_000;
-    const timeout = new Promise<null>(() => {
-      // Promise that never resolves on its own; only needed for the race.
-    });
+    const command = opts.command ?? ['gh', 'auth', 'token'];
+    const timeoutMs = opts.timeoutMs ?? 10_000;
+    const proc = Bun.spawn(command, { stdout: 'pipe', stderr: 'ignore' });
+    let didTimeout = false;
     const timeoutHandle = setTimeout(() => {
+      didTimeout = true;
       proc.kill();
     }, timeoutMs);
     try {
-      const result = await Promise.race([
-        (async () => {
-          const token = (await new Response(proc.stdout).text()).trim();
-          return (await proc.exited) === 0 && token ? token : null;
-        })(),
-        timeout
-      ]);
-      return result;
+      const token = (await new Response(proc.stdout).text()).trim();
+      if (didTimeout) return null;
+      return (await proc.exited) === 0 && token ? token : null;
     } finally {
       clearTimeout(timeoutHandle);
     }
@@ -370,7 +420,7 @@ export async function resolveGitHubToken(): Promise<string | null> {
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `cd packages/glance && bun test tests/live-credentials.test.ts`
-Expected: PASS, 13 tests
+Expected: PASS, 19 tests
 
 - [ ] **Step 5: Verify DEFAULT_PATH resolves to the real credentials file**
 
