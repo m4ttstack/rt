@@ -68,6 +68,14 @@ export function parseCredentials(raw: unknown): HarnessCredentials {
         fail(`repos[${i}].${field} must be a non-empty string`);
       }
     }
+    if (r.project_id !== undefined && typeof r.project_id !== 'number') {
+      fail(`repos[${i}].project_id must be a number, got ${typeof r.project_id}`);
+    }
+    if (r.path_with_namespace !== undefined) {
+      if (typeof r.path_with_namespace !== 'string' || !r.path_with_namespace) {
+        fail(`repos[${i}].path_with_namespace must be a non-empty string`);
+      }
+    }
     return r as unknown as HarnessRepo;
   });
 
@@ -113,8 +121,25 @@ export async function loadCredentials(
 export async function resolveGitHubToken(): Promise<string | null> {
   try {
     const proc = Bun.spawn(['gh', 'auth', 'token'], { stdout: 'pipe', stderr: 'ignore' });
-    const token = (await new Response(proc.stdout).text()).trim();
-    return (await proc.exited) === 0 && token ? token : null;
+    const timeoutMs = 10_000;
+    const timeout = new Promise<null>(() => {
+      // Promise that never resolves on its own; only needed for the race.
+    });
+    const timeoutHandle = setTimeout(() => {
+      proc.kill();
+    }, timeoutMs);
+    try {
+      const result = await Promise.race([
+        (async () => {
+          const token = (await new Response(proc.stdout).text()).trim();
+          return (await proc.exited) === 0 && token ? token : null;
+        })(),
+        timeout
+      ]);
+      return result;
+    } finally {
+      clearTimeout(timeoutHandle);
+    }
   } catch {
     return null;
   }

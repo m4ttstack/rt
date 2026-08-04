@@ -93,3 +93,39 @@ describe('selectors', () => {
     expect(() => ownerUser(parseCredentials(noOwner))).toThrow(/no user with role "owner"/);
   });
 });
+
+describe('repo optional field validation', () => {
+  test('rejects a non-numeric project_id', () => {
+    const bad = {
+      ...VALID,
+      repos: [{ ...VALID.repos[0], project_id: 'not-a-number' }]
+    };
+    expect(() => parseCredentials(bad)).toThrow(/repos\[0\]\.project_id.*number/);
+  });
+
+  test('rejects a non-string path_with_namespace', () => {
+    const bad = {
+      ...VALID,
+      repos: [{ ...VALID.repos[0], path_with_namespace: 12345 }]
+    };
+    expect(() => parseCredentials(bad)).toThrow(/repos\[0\]\.path_with_namespace.*string/);
+  });
+
+  test('rejects an empty path_with_namespace', () => {
+    const bad = {
+      ...VALID,
+      repos: [{ ...VALID.repos[0], path_with_namespace: '' }]
+    };
+    expect(() => parseCredentials(bad)).toThrow(/repos\[0\]\.path_with_namespace.*string/);
+  });
+
+  test('accepts a repo with no optional fields', () => {
+    const minimal = {
+      ...VALID,
+      repos: [{ provider: 'github', name: 'test', web_url: 'https://example.com', owner: 'user' }]
+    };
+    const creds = parseCredentials(minimal);
+    expect(creds.repos[0].project_id).toBeUndefined();
+    expect(creds.repos[0].path_with_namespace).toBeUndefined();
+  });
+});
