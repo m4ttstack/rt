@@ -988,6 +988,8 @@ git commit -m "add idempotent GitHub conformance fixture setup"
 - Create: `packages/glance/tests/live/poll.ts`
 - Create: `packages/glance/tests/live/report.ts`
 - Test: `packages/glance/tests/live-poll.test.ts`
+- Modify: `packages/glance/tsconfig.tests.json` (widen `include` to cover the live test files)
+- Modify: `packages/glance/tests/live-credentials.test.ts:145-146` (fix two errors the widening exposes)
 
 **Interfaces:**
 - Consumes: `Support` and `Expectation` from Task 2.
@@ -1177,17 +1179,52 @@ export class Reporter {
 Run: `cd packages/glance && bun test tests/live-poll.test.ts`
 Expected: PASS, 7 tests
 
-- [ ] **Step 5: Run the whole suite to confirm no regression**
+- [ ] **Step 5: Widen the type-check to cover the live test files**
+
+Task 2 created `tsconfig.tests.json` including `["src", "tests/live"]`. The `tests/live-*.test.ts`
+files are siblings of `tests/live/`, not children, so none of them are type-checked. Every
+later task adds more of them, so the gap widens with each one.
+
+Change the `include` in `packages/glance/tsconfig.tests.json` to:
+
+```json
+  "include": ["src", "tests/live", "tests/live-*.test.ts"]
+```
+
+Then run: `cd packages/glance && bun run check-types:live`
+
+This exposes exactly two pre-existing errors, both in Task 1's test file, both from
+`noUncheckedIndexedAccess`:
+
+```
+tests/live-credentials.test.ts(145,12): error TS2532: Object is possibly 'undefined'.
+tests/live-credentials.test.ts(146,12): error TS2532: Object is possibly 'undefined'.
+```
+
+Fix them by optional-chaining the indexed access at `tests/live-credentials.test.ts:145-146`:
+
+```typescript
+    expect(creds.repos[0]?.project_id).toBeUndefined();
+    expect(creds.repos[0]?.path_with_namespace).toBeUndefined();
+```
+
+Re-run `bun run check-types:live`. Expected: PASS with no output.
+Also run `bun run check-types` and confirm it still passes unchanged.
+
+- [ ] **Step 6: Run the whole suite to confirm no regression**
 
 Run: `cd packages/glance && bun test tests/`
 Expected: PASS. Total is at least 133 plus the tests added in Tasks 1, 2, and 4.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Commit**
 
 ```bash
-cd /Users/matt/Documents/GitHub/glance
-git add packages/glance/tests/live/poll.ts packages/glance/tests/live/report.ts packages/glance/tests/live-poll.test.ts
-git commit -m "add pollUntil and Reporter helpers for the live harness"
+git add packages/glance/tests/live/poll.ts \
+        packages/glance/tests/live/report.ts \
+        packages/glance/tests/live-poll.test.ts \
+        packages/glance/tsconfig.tests.json \
+        packages/glance/tests/live-credentials.test.ts
+git commit -m "add pollUntil and Reporter helpers, type-check the live test files"
 ```
 
 ---
