@@ -124,6 +124,29 @@ failures; recording them accurately is the deliverable of this phase.
   the repository-level `delete_branch_on_merge` setting. Found while planning phase 1,
   not yet ticketed. Same silent-no-op class as MAT-15.
 
+### Phase 2c: `fetchBranchProtectionRules` invents a rule when a read fails
+
+Found during phase 1, by reading the implementation after a live run passed.
+
+The method itself works. A live run against the fixture returned `allowForcePush: true,
+allowDeletion: true, requireStatusChecks: true`, matching the GitHub API exactly. It does
+fetch `/branches/{branch}/protection` per branch rather than relying on the shallow
+listing.
+
+The defect is in its failure path. `GitHubProvider.ts:697-706`: when the per-branch
+protection request is not ok, it pushes a rule with `allowForcePush: false`,
+`allowDeletion: false`, `requiredApprovals: 0`, `requireStatusChecks: false` and
+continues. A caller cannot distinguish "this branch forbids force-push and deletion"
+from "we could not read this branch's protection at all". The invented values are the
+dangerous way round, since they describe a *more* protected branch than may exist, so a
+caller gating a destructive action on them would wrongly believe it is safe.
+
+It should surface the failure rather than fabricate a rule. This is the same class as
+MAT-14, where a hardcoded `unresolvedThreadCount: 0` suppressed a warning gitq depended on.
+
+**Rulesets remain invisible.** The method reads classic branch protection only, so a repo
+governed by rulesets reports no rules. Untested, since the fixture uses classic protection.
+
 ### Phase 2b: `restRequest` is not portable, but documents that it is
 
 Found while planning phase 1. `GitProvider.restRequest`'s docstring states that
