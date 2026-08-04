@@ -124,6 +124,25 @@ failures; recording them accurately is the deliverable of this phase.
   the repository-level `delete_branch_on_merge` setting. Found while planning phase 1,
   not yet ticketed. Same silent-no-op class as MAT-15.
 
+### Phase 2d: GitLab merge races mergeability, and its failure is ambiguous
+
+Found in phase 1, only after the fixture's merge gates were disabled.
+
+For roughly a second after an MR is created, GitLab reports `detailedMergeStatus` as
+`checking` or `preparing`. Calling `mergePullRequest` inside that window returns
+**HTTP 405**, the identical status GitLab returns when a merge is permanently blocked by
+project policy. So a caller cannot tell "try again in a moment" from "this can never
+merge", and the natural usage pattern (create an MR, then merge it) lands squarely in
+the racy window.
+
+The harness works around it with a `waitForMergeReadiness` poll before merging, but that
+is the caller compensating for the SDK. `GitLabProvider.mergePullRequest` should either
+wait for mergeability itself or surface a distinguishable error, so a caller can retry
+the transient case without retrying the permanent one.
+
+This is a parity issue as well as a usability one: `GitHubProvider` has no equivalent
+pre-merge state to race, so the same caller code behaves differently on the two providers.
+
 ### Phase 2c: `fetchBranchProtectionRules` invents a rule when a read fails
 
 Found during phase 1, by reading the implementation after a live run passed.
