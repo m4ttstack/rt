@@ -1,7 +1,7 @@
 {
   "name": "@mattstack/glance-react",
   "private": false,
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Forge Glance React component library \u2014 MR dashboards with GDS theming",
   "license": "MIT",
   "type": "module",
@@ -39,7 +39,7 @@
   ],
   "repository": {
     "type": "git",
-    "url": "https://github.com/m4ttheweric/workforge.git",
+    "url": "git+https://github.com/m4ttstack/glance.git",
     "directory": "packages/glance-react"
   },
   "engines": {
@@ -115,5 +115,9 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "homepage": "https://github.com/m4ttstack/glance/tree/main/packages/glance-react",
+  "bugs": {
+    "url": "https://github.com/m4ttstack/glance/issues"
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "@mattstack/glance",
-  "version": "0.13.1",
+  "version": "0.13.2",
   "description": "GitHub and GitLab API client: REST, GraphQL, and real-time ActionCable subscriptions",
   "type": "module",
   "main": "dist/index.js",
@@ -27,7 +27,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/m4ttheweric/workforge",
+    "url": "git+https://github.com/m4ttstack/glance.git",
     "directory": "packages/glance"
   },
   "engines": {
@@ -43,5 +43,9 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "homepage": "https://github.com/m4ttstack/glance/tree/main/packages/glance",
+  "bugs": {
+    "url": "https://github.com/m4ttstack/glance/issues"
   }
 }
