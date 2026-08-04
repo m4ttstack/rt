@@ -20,9 +20,25 @@ describe('pollUntil', () => {
   });
 
   test('returns immediately when the first call succeeds', async () => {
+    // Call count alone doesn't prove the first attempt runs before any sleep:
+    // a pollUntil that sleeps unconditionally on every iteration, including
+    // the first, would still land on calls === 1. Elapsed time is the part
+    // that actually pins "no pre-check sleep".
     let calls = 0;
-    await pollUntil('instant', async () => { calls++; return 'ok'; }, { intervalMs: 50 });
+    const start = Date.now();
+    await pollUntil('instant', async () => { calls++; return 'ok'; }, { intervalMs: 500 });
     expect(calls).toBe(1);
+    expect(Date.now() - start).toBeLessThan(500);
+  });
+
+  test('returns the first defined value when earlier calls resolve undefined', async () => {
+    let calls = 0;
+    const value = await pollUntil(
+      'possibly-undefined',
+      async () => (++calls < 3 ? undefined : `after ${calls}`),
+      { intervalMs: 1, timeoutMs: 1000 }
+    );
+    expect(value).toBe('after 3');
   });
 
   test('throws a labelled error on timeout', async () => {

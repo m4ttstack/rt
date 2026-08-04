@@ -1078,7 +1078,7 @@ git commit -m "add idempotent GitHub conformance fixture setup"
 - Consumes: `Support` and `Expectation` from Task 2.
 - Produces:
   - `async function pollUntil<T>(label: string, fn: () => Promise<T | null>, opts?: { timeoutMs?: number; intervalMs?: number }): Promise<T>` throws on timeout.
-  - `interface Result { provider: string; method: string; label: string; ok: boolean; detail?: string }`
+  - `interface Result { provider: string; method: string; label: string; ok: boolean; skipped?: boolean; detail?: string }`
   - `class Reporter` with `pass(provider, method, label)`, `fail(provider, method, label, detail)`, `skip(provider, method, label, reason)`, `render(): string`, `get exitCode(): number`.
 
 - [ ] **Step 1: Write the failing test**
@@ -1108,9 +1108,25 @@ describe('pollUntil', () => {
   });
 
   test('returns immediately when the first call succeeds', async () => {
+    // Call count alone doesn't prove the first attempt runs before any sleep:
+    // a pollUntil that sleeps unconditionally on every iteration, including
+    // the first, would still land on calls === 1. Elapsed time is the part
+    // that actually pins "no pre-check sleep".
     let calls = 0;
-    await pollUntil('instant', async () => { calls++; return 'ok'; }, { intervalMs: 50 });
+    const start = Date.now();
+    await pollUntil('instant', async () => { calls++; return 'ok'; }, { intervalMs: 500 });
     expect(calls).toBe(1);
+    expect(Date.now() - start).toBeLessThan(500);
+  });
+
+  test('returns the first defined value when earlier calls resolve undefined', async () => {
+    let calls = 0;
+    const value = await pollUntil(
+      'possibly-undefined',
+      async () => (++calls < 3 ? undefined : `after ${calls}`),
+      { intervalMs: 1, timeoutMs: 1000 }
+    );
+    expect(value).toBe('after 3');
   });
 
   test('throws a labelled error on timeout', async () => {
@@ -1260,7 +1276,7 @@ export class Reporter {
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `cd packages/glance && bun test tests/live-poll.test.ts`
-Expected: PASS, 7 tests
+Expected: PASS, 8 tests
 
 - [ ] **Step 5: Widen the type-check to cover the live test files**
 
