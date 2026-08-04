@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
-import { createDashboard } from '@workforge/glance-sdk';
+import { createDashboard } from '@mattstack/glance';
 import type {
   GitProvider,
   MRDashboardActions,
   MRDashboardProps,
   WatcherStatus
-} from '@workforge/glance-sdk';
+} from '@mattstack/glance';
 
 export interface UseDashboardOptions {
   provider: GitProvider;

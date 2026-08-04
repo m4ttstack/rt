@@ -6,7 +6,7 @@
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { cn } from '@/utils';
-import type { MRDashboardActions, MRDashboardProps } from '@workforge/glance-sdk';
+import type { MRDashboardActions, MRDashboardProps } from '@mattstack/glance';
 
 export interface MRActionsProps {
   mr: MRDashboardProps;

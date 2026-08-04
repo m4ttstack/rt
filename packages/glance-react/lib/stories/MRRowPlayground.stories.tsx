@@ -1,4 +1,4 @@
-import type { MRDashboardProps } from '@workforge/glance-sdk';
+import type { MRDashboardProps } from '@mattstack/glance';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { MRRow } from '../components/forge/MRRow';

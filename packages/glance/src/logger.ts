@@ -1,5 +1,5 @@
 /**
- * Logger interface for @workforge/glance-sdk.
+ * Logger interface for @mattstack/glance.
  *
  * All providers and clients accept an optional `logger` in their constructor
  * that must satisfy this interface. Defaults to `noopLogger` when omitted,

@@ -4,7 +4,7 @@
  * These cover the common states any Forge dashboard will need to show:
  * mergeable, blocked (various reasons), draft, merged, and in-progress.
  */
-import type { MRDashboardProps } from '@workforge/glance-sdk';
+import type { MRDashboardProps } from '@mattstack/glance';
 
 const author = {
   id: 'user:1',

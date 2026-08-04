@@ -1,19 +1,19 @@
-# @workforge/glance-sdk
+# @mattstack/glance
 
 Provider-agnostic SDK for GitHub & GitLab — types, REST/GraphQL clients, real-time subscriptions, and dashboard helpers. Works in any Node/Bun runtime.
 
 ## Install
 
 ```bash
-npm install @workforge/glance-sdk
+npm install @mattstack/glance
 # or
-bun add @workforge/glance-sdk
+bun add @mattstack/glance
 ```
 
 ## Quick Start
 
 ```ts
-import { GitLabProvider } from '@workforge/glance-sdk';
+import { GitLabProvider } from '@mattstack/glance';
 
 const provider = new GitLabProvider('https://gitlab.com', process.env.GITLAB_TOKEN!);
 const user = await provider.validateToken();
@@ -30,7 +30,7 @@ Two built-in providers implement the `GitProvider` interface:
 | GitHub | `GitHubProvider` | Core: merge, approve, rebase |
 
 ```ts
-import { createProvider } from '@workforge/glance-sdk';
+import { createProvider } from '@mattstack/glance';
 
 // Auto-create the right provider by slug
 const provider = createProvider('gitlab', 'https://gitlab.com', token);
@@ -81,7 +81,7 @@ High-level factory that bundles real-time MR watching with pre-bound mutation ac
 #### Single MR by IID
 
 ```ts
-import { createDashboard } from '@workforge/glance-sdk';
+import { createDashboard } from '@mattstack/glance';
 
 const dashboard = createDashboard({
   provider,
@@ -170,7 +170,7 @@ group.updateIids(prev => prev.filter(id => id !== 43));
 Lower-level helper that transforms a raw `PullRequest` into render-ready `MRDashboardProps`. Useful when you already have the MR data from `fetchPullRequests()` or `fetchSingleMR()`:
 
 ```ts
-import { getMRDashboardProps } from '@workforge/glance-sdk';
+import { getMRDashboardProps } from '@mattstack/glance';
 
 const prs = await provider.fetchPullRequests();
 const dashboards = prs.map(getMRDashboardProps);
@@ -245,8 +245,8 @@ Generic self-healing subscription + polling module used internally by `watchMR` 
 - Connection status reporting via `WatcherStatus`
 
 ```ts
-import { createRealtimeWatcher } from '@workforge/glance-sdk';
-import type { WatcherStatus, WatcherSubscribeCallbacks, RealtimeWatcherOptions } from '@workforge/glance-sdk';
+import { createRealtimeWatcher } from '@mattstack/glance';
+import type { WatcherStatus, WatcherSubscribeCallbacks, RealtimeWatcherOptions } from '@mattstack/glance';
 ```
 
 ---
@@ -264,8 +264,8 @@ Fetches full MR discussion threads. Used to populate reviewer summaries and comm
 Creates and manages notes (comments) on MRs. Returns `CreatedNote` with the note's metadata.
 
 ```ts
-import { MRDetailFetcher, NoteMutator } from '@workforge/glance-sdk';
-import type { CreatedNote } from '@workforge/glance-sdk';
+import { MRDetailFetcher, NoteMutator } from '@mattstack/glance';
+import type { CreatedNote } from '@mattstack/glance';
 ```
 
 ### `getReviewerSummaries`
@@ -273,8 +273,8 @@ import type { CreatedNote } from '@workforge/glance-sdk';
 Utility that merges reviewer state with discussion threads into a unified list:
 
 ```ts
-import { getReviewerSummaries } from '@workforge/glance-sdk';
-import type { ReviewerSummary } from '@workforge/glance-sdk';
+import { getReviewerSummaries } from '@mattstack/glance';
+import type { ReviewerSummary } from '@mattstack/glance';
 
 const detail = await provider.fetchMRDiscussions(repoId, iid);
 const summaries = getReviewerSummaries(mr, detail.discussions);
@@ -345,7 +345,7 @@ import type {
 
   // Logger
   ForgeLogger,
-} from '@workforge/glance-sdk';
+} from '@mattstack/glance';
 ```
 
 ### Utility Exports

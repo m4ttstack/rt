@@ -27,7 +27,7 @@ const config: StorybookConfig = {
       ...(config.resolve.alias ?? {}),
       '@': resolve(__dirname, '../lib'),
       // Resolve workspace dep from built dist (source uses .ts extensions Vite can't resolve)
-      '@workforge/glance-sdk': resolve(__dirname, '../../glance-sdk/dist/index.js'),
+      '@mattstack/glance': resolve(__dirname, '../../glance-sdk/dist/index.js'),
     };
     return config;
   },

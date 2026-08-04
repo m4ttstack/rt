@@ -6,7 +6,7 @@
  */
 
 import { cn, formatRelativeTime } from '@/utils';
-import type { MRDashboardProps } from '@workforge/glance-sdk';
+import type { MRDashboardProps } from '@mattstack/glance';
 
 import { Avatar, AvatarFallback, AvatarImage } from '../ui/avatar';
 import { CardHeader } from '../ui/card';

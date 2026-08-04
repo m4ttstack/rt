@@ -1,6 +1,6 @@
 import * as React from 'react';
 import { cn } from '@/utils';
-import type { MRDashboardProps } from '@workforge/glance-sdk';
+import type { MRDashboardProps } from '@mattstack/glance';
 
 import { Badge } from '../ui/badge';
 import {

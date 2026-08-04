@@ -2,7 +2,7 @@ import * as React from 'react';
 import { cn } from '@/utils';
 import { Badge } from '../ui/badge';
 import { SpinnerIcon } from './icons';
-import type { MRDashboardProps } from '@workforge/glance-sdk';
+import type { MRDashboardProps } from '@mattstack/glance';
 import {
   NoPipelineIcon,
   PipelineFailedIcon,

@@ -4,7 +4,7 @@
 
 import { Button } from '@/components/ui/button';
 import { cn } from '@/utils';
-import type { MRDashboardProps } from '@workforge/glance-sdk';
+import type { MRDashboardProps } from '@mattstack/glance';
 
 import {
   Popover,

@@ -2,7 +2,7 @@ import * as React from 'react';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/utils';
-import type { MRDashboardActions, MRDashboardProps } from '@workforge/glance-sdk';
+import type { MRDashboardActions, MRDashboardProps } from '@mattstack/glance';
 import { ExternalLink } from 'lucide-react';
 
 import { Row } from '../ui/flex';

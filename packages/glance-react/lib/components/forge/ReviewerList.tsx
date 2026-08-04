@@ -2,8 +2,8 @@ import * as React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/utils';
-import type { ReviewDisplayState, Reviewer } from '@workforge/glance-sdk';
-import { getReviewDisplayState } from '@workforge/glance-sdk';
+import type { ReviewDisplayState, Reviewer } from '@mattstack/glance';
+import { getReviewDisplayState } from '@mattstack/glance';
 
 import {
   ReviewApprovedIcon,

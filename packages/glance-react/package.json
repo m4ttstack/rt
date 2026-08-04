@@ -1,8 +1,8 @@
 {
-  "name": "@workforge/glance-react",
+  "name": "@mattstack/glance-react",
   "private": false,
-  "version": "0.3.10",
-  "description": "Forge Glance React component library — MR dashboards with GDS theming",
+  "version": "0.4.0",
+  "description": "Forge Glance React component library \u2014 MR dashboards with GDS theming",
   "license": "MIT",
   "type": "module",
   "main": "./dist/main.js",
@@ -66,7 +66,7 @@
     "react-dom": "catalog:"
   },
   "dependencies": {
-    "@workforge/glance-sdk": "workspace:*",
+    "@mattstack/glance": "workspace:*",
     "@fortawesome/fontawesome-svg-core": "^7.2.0",
     "@fortawesome/free-solid-svg-icons": "^7.2.0",
     "@fortawesome/react-fontawesome": "^3.2.0",

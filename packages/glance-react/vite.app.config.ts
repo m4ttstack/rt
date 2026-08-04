@@ -9,7 +9,7 @@ import { defineConfig } from 'vite';
  *   bun run dev:app        → imports from lib/ source (local dev)
  *   bun run dev:app:dist   → imports from dist/ (simulates npm consumer)
  *
- * Both use `@workforge/glance-react` imports in App.tsx — the alias
+ * Both use `@mattstack/glance-react` imports in App.tsx — the alias
  * determines where they resolve to.
  */
 const testDist = process.env.TEST_DIST === '1';
@@ -20,27 +20,27 @@ export default defineConfig({
     alias: testDist
       ? {
           // ── dist mode: resolve to built artifacts ───────────
-          '@workforge/glance-react/styles.css': resolve(
+          '@mattstack/glance-react/styles.css': resolve(
             __dirname,
             'dist/styles.css'
           ),
-          '@workforge/glance-react/tokens.css': resolve(
+          '@mattstack/glance-react/tokens.css': resolve(
             __dirname,
             'dist/tokens.css'
           ),
-          '@workforge/glance-react': resolve(__dirname, 'dist/main.mjs'),
+          '@mattstack/glance-react': resolve(__dirname, 'dist/main.mjs'),
         }
       : {
           // ── source mode: resolve to lib/ source ────────────
-          '@workforge/glance-react/styles.css': resolve(
+          '@mattstack/glance-react/styles.css': resolve(
             __dirname,
             'lib/css/styles.css'
           ),
-          '@workforge/glance-react/tokens.css': resolve(
+          '@mattstack/glance-react/tokens.css': resolve(
             __dirname,
             'lib/css/tokens.css'
           ),
-          '@workforge/glance-react': resolve(__dirname, 'lib/main.ts'),
+          '@mattstack/glance-react': resolve(__dirname, 'lib/main.ts'),
           '@': resolve(__dirname, 'lib'),
         },
   },

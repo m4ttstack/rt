@@ -1,7 +1,7 @@
 ---
 name: glance-react — Canonical Design System (GDS)
 description: >
-  @workforge/glance-react is the authoritative design system for the entire
+  @mattstack/glance-react is the authoritative design system for the entire
   workforge monorepo. All apps and packages must import styles, tokens, and
   components from here rather than defining their own. Read this before
   touching any CSS, Tailwind config, or color values in any consumer package.
@@ -9,7 +9,7 @@ description: >
 
 ## Role
 
-`@workforge/glance-react` is the **single source of truth** for:
+`@mattstack/glance-react` is the **single source of truth** for:
 
 - Color palette (`lib/css/palette.css`)
 - Semantic design tokens + dark/light mode (`lib/css/tokens.css`)
@@ -27,14 +27,14 @@ a consumer app if an equivalent exists in glance-react.
 ### 1. Install the package
 
 ```json
-{ "dependencies": { "@workforge/glance-react": "workspace:*" } }
+{ "dependencies": { "@mattstack/glance-react": "workspace:*" } }
 ```
 
 ### 2. Import the stylesheet (one line)
 
 ```css
 /* your-app/src/index.css */
-@import '@workforge/glance-react/styles.css';
+@import '@mattstack/glance-react/styles.css';
 ```
 
 This single import gives you everything:
@@ -74,11 +74,11 @@ Do **not** re-declare tokens that already exist in glance-react/styles.css.
 
 | ❌ Don't | ✅ Do instead |
 |---|---|
-| Define your own `--primary`, `--foreground`, etc. | Import `@workforge/glance-react/styles.css` |
+| Define your own `--primary`, `--foreground`, etc. | Import `@mattstack/glance-react/styles.css` |
 | Add a `tailwind.config.js` with color definitions | Use the `@theme inline` bridge above |
 | Write `.dark { ... }` overrides in the app | Fix the token in `packages/glance-react/lib/css/tokens.css` |
 | Use raw hex or oklch values in CSS | Reference a `palette.css` var via `tokens.css` |
-| Redefine shadcn components locally | Import from `@workforge/glance-react` |
+| Redefine shadcn components locally | Import from `@mattstack/glance-react` |
 | Use `prose-neutral` or `prose-invert` with Tailwind Typography | Override `--tw-prose-*` vars using GDS tokens (`var(--foreground)` etc.) |
 
 ---
