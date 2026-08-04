@@ -185,8 +185,7 @@ built from has to reproduce errors exactly, and silently editing an API's own me
 would be the wrong trade.
 
 This is the only place in the entire suite `retryJob` is exercised against a job that
-genuinely failed (see "Was `retryJob`/`fetchJobTrace` exercised against a genuine failure?"
-below), so this result is load-bearing. **This is a new finding from this task; it is not
+genuinely failed (see "What phase 1 did not cover" below), so this result is load-bearing. **This is a new finding from this task; it is not
 in the design doc and not yet ticketed.**
 
 A follow-up read-only query against the fixture's Actions run history, after the harness
@@ -378,6 +377,14 @@ be read as "phase 1 confirmed this."
 This harness measures a real subset of `GitProvider`, not the whole surface. Recorded
 explicitly so this document is not mistaken for exhaustive coverage:
 
+- **The job-selection bug that broke GitLab's `fetchJobTrace` also exists, unexercised, on
+  the GitHub probe path.** `latestPipelineAndJob` takes `jobs[0]` with no status filter on
+  both providers. On GitLab it landed on a skipped job and produced the empty-trace
+  failure recorded above. On GitHub it happened to land on a job that had really run, so
+  the GitHub CI results in this document depend on job ordering rather than on anything
+  guaranteed. Treat `fetchJobTrace: returns non-empty log text` on GitHub as lucky rather
+  than robust. The dedicated failed-job assertion, which selects the `controllable` job by
+  name, is not affected and is the trustworthy one.
 - **`requestReReview`** is never called anywhere in this harness, on either provider,
   despite being declared `supported` on both. Zero live evidence either way.
 - **`watchEvents`** is never called anywhere in this harness, on either provider (unlike

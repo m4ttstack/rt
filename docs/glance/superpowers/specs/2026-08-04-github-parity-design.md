@@ -215,9 +215,10 @@ What this fixes structurally rather than case by case:
   Forwarding the `Authorization` header to that redirect target typically fails with 400.~~
   **Corrected by phase 1's live run: this prediction was wrong.** `fetchJobTrace` passed
   twice against the GitHub fixture, including once against a genuinely failed job, and
-  returned the real log content. Bun's `fetch` follows the redirect and the signed blob
-  URL accepts the request. This is no longer a reason to adopt Octokit, and phase 3 should
-  not budget work for it. The remaining reasons below stand on their own.
+  returned the real log content. The redirect was followed and the request succeeded; the
+  client-level mechanism was not investigated, and nothing in the run's output evidences
+  one explanation over another. This is no longer a reason to adopt Octokit, and phase 3
+  should not budget work for it. The remaining reasons below stand on their own.
 - **Rate limiting.** A mutating suite is exactly where throttling and retry matter. There
   is none today.
 - **Pagination.** `octokit.paginate` replaces the hand-rolled `fetchAllPages`.
