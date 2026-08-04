@@ -87,6 +87,9 @@ This is the load-bearing idea. Every `GitProvider` method is declared as exactly
   both directions is what stops a flag and its implementation drifting apart.
 - **`approximate`** ... succeeds, with semantics documented as differing from the other
   provider.
+- **`absent`** ... the optional method is not implemented, so the property is `undefined`
+  rather than a throwing stub. Distinct from `unsupported` because callers feature-detect
+  with `provider.x?.()` and silently take a fallback path instead of surfacing an error.
 
 A method present on `GitProvider` but absent from the table fails the run. That is the
 mechanism that prevents recurrence: adding a method to the interface later *forces* a
@@ -114,6 +117,29 @@ failures; recording them accurately is the deliverable of this phase.
 - **MAT-24.** Reviewers and assignees must replace rather than append, which requires an
   explicit diff (DELETE removals, POST additions) because GitHub has no replace
   semantics on either collection.
+- **`shouldRemoveSourceBranch` is a silent no-op on GitHub.** `GitHubProvider.ts:965`
+  sends `delete_branch` to the merge endpoint, and no such parameter exists. GitHub's
+  merge API accepts only `commit_title`, `commit_message`, `sha`, and `merge_method`.
+  Deleting the branch needs either a separate `DELETE /git/refs/heads/{branch}` call or
+  the repository-level `delete_branch_on_merge` setting. Found while planning phase 1,
+  not yet ticketed. Same silent-no-op class as MAT-15.
+
+### Phase 2a: absent optional methods
+
+Found while planning phase 1. `GitHubProvider` does not implement two optional
+`GitProvider` methods at all: the properties are `undefined` rather than stubs that
+throw. Because both are optional on the interface, `tsc` never objected, and
+`providerConformance.ts` only guards parameter arity on methods that exist.
+
+- **`fetchPullRequestsByBranches`.** Callers feature-detect and fall back to sequential
+  `fetchPullRequestByBranch` calls, so a board resolving twenty branches makes twenty
+  round-trips where GitLab makes one. A performance gap rather than a correctness one,
+  but a real one for gitq's board.
+- **`watchEvents`.** Tracked as part of the `canWatchEvents` work in phase 4.
+
+The expectation table gets a fourth state, `absent`, to distinguish "undefined property"
+from "throws when called". They fail differently at the call site, so folding them
+together would hide exactly this.
 
 ### Phase 3: Octokit transport swap
 
