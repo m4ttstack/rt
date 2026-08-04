@@ -1,6 +1,6 @@
 # @mattstack/glance
 
-Provider-agnostic SDK for GitHub & GitLab — types, REST/GraphQL clients, real-time subscriptions, and dashboard helpers. Works in any Node/Bun runtime.
+Provider-agnostic SDK for GitHub and GitLab: types, REST/GraphQL clients, real-time subscriptions, and dashboard helpers. Works in any Node/Bun runtime.
 
 ## Install
 

@@ -112,5 +112,8 @@
     "babel-plugin-react-compiler": "catalog:",
     "vitest": "catalog:",
     "vite-tsconfig-paths": "catalog:"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
