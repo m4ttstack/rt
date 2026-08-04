@@ -857,3 +857,193 @@ export async function runMergeConformance(
     }
   }
 }
+
+interface PipelineProbe {
+  pipelineId: number;
+  jobId: number;
+}
+
+async function latestPipelineAndJob(fixture: ProviderFixture): Promise<PipelineProbe | null> {
+  const { provider, projectPath } = fixture;
+
+  if (fixture.name === 'github') {
+    const runsRes = await provider.restRequest(
+      'GET',
+      `/repos/${projectPath}/actions/runs?per_page=1&status=completed`
+    );
+    if (!runsRes.ok) return null;
+    const runs = (await runsRes.json()) as { workflow_runs: Array<{ id: number }> };
+    const run = runs.workflow_runs[0];
+    if (!run) return null;
+    const jobsRes = await provider.restRequest(
+      'GET',
+      `/repos/${projectPath}/actions/runs/${run.id}/jobs`
+    );
+    if (!jobsRes.ok) return null;
+    const jobs = (await jobsRes.json()) as { jobs: Array<{ id: number }> };
+    const job = jobs.jobs[0];
+    return job ? { pipelineId: run.id, jobId: job.id } : null;
+  }
+
+  const encoded = encodeURIComponent(projectPath);
+  const pipeRes = await provider.restRequest(
+    'GET',
+    apiPath(fixture, `/projects/${encoded}/pipelines?per_page=1`)
+  );
+  if (!pipeRes.ok) return null;
+  const pipes = (await pipeRes.json()) as Array<{ id: number }>;
+  const pipe = pipes[0];
+  if (!pipe) return null;
+  const jobsRes = await provider.restRequest(
+    'GET',
+    apiPath(fixture, `/projects/${encoded}/pipelines/${pipe.id}/jobs`)
+  );
+  if (!jobsRes.ok) return null;
+  const jobs = (await jobsRes.json()) as Array<{ id: number }>;
+  const job = jobs[0];
+  return job ? { pipelineId: pipe.id, jobId: job.id } : null;
+}
+
+/**
+ * Run `body` against a job that has genuinely FAILED, then clean up.
+ *
+ * `retryJob` and `fetchJobTrace` exist for failed jobs, so probing them with
+ * whatever job happened to run last tests the wrong state: a passing job's log
+ * proves nothing about how a failure is surfaced. The fixture's `controllable`
+ * job fails exactly when the branch carries a `fail-marker` file, and the
+ * workflow triggers on `pull_request`, so the branch needs a PR to run at all.
+ *
+ * GitHub only. The GitLab fixture's `.gitlab-ci.yml` is not ours to change.
+ */
+async function withFailedGitHubJob(
+  fixture: ProviderFixture,
+  body: (probe: PipelineProbe) => Promise<void>
+): Promise<void> {
+  const { provider, projectPath, defaultBranch } = fixture;
+  const branch = `${runPrefix()}-failjob`;
+
+  try {
+    await createBranch(fixture, branch);
+    await commitFile(fixture, branch, 'fail-marker', 'makes the controllable job fail\n');
+    await provider.createPullRequest({
+      projectPath,
+      title: 'conformance: failed-job fixture',
+      description: 'Opened by the glance conformance harness to produce a failed job. Safe to close.',
+      sourceBranch: branch,
+      targetBranch: defaultBranch
+    });
+
+    const probe = await pollUntil(
+      `controllable job to fail on ${branch}`,
+      async () => {
+        const runsRes = await provider.restRequest(
+          'GET',
+          `/repos/${projectPath}/actions/runs?branch=${encodeURIComponent(branch)}`
+        );
+        if (!runsRes.ok) return null;
+        const { workflow_runs: runs } = (await runsRes.json()) as {
+          workflow_runs: Array<{ id: number }>;
+        };
+        for (const run of runs) {
+          const jobsRes = await provider.restRequest(
+            'GET',
+            `/repos/${projectPath}/actions/runs/${run.id}/jobs`
+          );
+          if (!jobsRes.ok) continue;
+          const { jobs } = (await jobsRes.json()) as {
+            jobs: Array<{ id: number; name: string; status: string; conclusion: string | null }>;
+          };
+          const failed = jobs.find(
+            j => j.name === 'controllable' && j.status === 'completed' && j.conclusion === 'failure'
+          );
+          if (failed) return { pipelineId: run.id, jobId: failed.id };
+        }
+        return null;
+      },
+      { timeoutMs: 300_000, intervalMs: 5_000 }
+    );
+
+    await body(probe);
+  } finally {
+    // Deleting the branch also closes the PR. There is no closePullRequest.
+    await provider.deleteBranch(projectPath, branch).catch(err => {
+      console.error(`  cleanup: could not delete ${branch}: ${err}`);
+    });
+  }
+}
+
+export async function runCiConformance(
+  fixture: ProviderFixture,
+  report: Reporter
+): Promise<void> {
+  const { provider, projectPath } = fixture;
+
+  const probe = await latestPipelineAndJob(fixture);
+  if (!probe) {
+    report.skip(fixture.name, 'fetchJobTrace', 'CI probe', 'no completed pipeline found');
+    return;
+  }
+
+  await check(report, fixture, 'fetchJobTrace', 'returns non-empty log text', async () => {
+    const trace = await provider.fetchJobTrace(projectPath, probe.jobId);
+    assert(typeof trace === 'string', `expected a string, got ${typeof trace}`);
+    assert(trace.length > 0, 'trace was empty');
+    assert(
+      !trace.trimStart().startsWith('<'),
+      'trace looks like HTML or XML, which usually means a redirect returned an error page'
+    );
+  });
+
+  await check(report, fixture, 'fetchJobDetail', 'returns a discriminated detail', async () => {
+    const detail = await provider.fetchJobDetail(projectPath, probe.jobId, probe.pipelineId);
+    assert(
+      detail.type === 'trace' || detail.type === 'bridge',
+      `unexpected detail type ${JSON.stringify(detail)}`
+    );
+  });
+
+  await check(report, fixture, 'fetchDownstreamPipeline', 'resolves without throwing', async () => {
+    await provider.fetchDownstreamPipeline(projectPath, probe.jobId);
+  });
+
+  await check(report, fixture, 'retryPipeline', 'accepts a retry request', async () => {
+    await provider.retryPipeline(projectPath, probe.pipelineId);
+  });
+
+  if (fixture.name !== 'github') return;
+
+  try {
+    await withFailedGitHubJob(fixture, async failed => {
+      await check(
+        report,
+        fixture,
+        'fetchJobTrace',
+        'returns the log of a job that actually failed',
+        async () => {
+          const trace = await provider.fetchJobTrace(projectPath, failed.jobId);
+          assert(typeof trace === 'string', `expected a string, got ${typeof trace}`);
+          assert(trace.length > 0, 'trace was empty');
+          assert(
+            !trace.trimStart().startsWith('<'),
+            'trace looks like HTML or XML, which usually means a redirect returned an error page'
+          );
+          assert(
+            trace.includes('fail-marker present'),
+            `trace did not contain the fixture's failure line. First 200 chars: ${trace.slice(0, 200)}`
+          );
+        }
+      );
+
+      await check(report, fixture, 'retryJob', 'accepts a retry of the failed job', async () => {
+        await provider.retryJob(projectPath, failed.jobId);
+      });
+    });
+  } catch (err) {
+    report.fail(
+      fixture.name,
+      'retryJob',
+      'provision a genuinely failed job',
+      err instanceof Error ? err.message : String(err)
+    );
+  }
+}

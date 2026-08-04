@@ -9,6 +9,7 @@
  */
 
 import {
+  runCiConformance,
   runMergeConformance,
   runReadConformance,
   runUnsupportedConformance,
@@ -33,6 +34,7 @@ for (const fixture of fixtures) {
     await runUnsupportedConformance(fixture, report);
     await runWriteConformance(fixture, report);
     await runMergeConformance(fixture, report);
+    await runCiConformance(fixture, report);
   } catch (err) {
     // Every mutating step above is wrapped in check(), so reaching here
     // means something outside those wrappers threw (e.g. a network blip
