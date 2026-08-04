@@ -29,16 +29,27 @@ export interface MissingFixture {
 export interface BuildFixturesResult {
   fixtures: ProviderFixture[];
   /**
-   * Providers harness_credentials.json names in `repos` but that could not
-   * be turned into a working fixture, and why. Deliberately not a count:
-   * the runner needs to name each one and explain it, not just know that
-   * something went wrong. A provider absent from `repos` entirely was
-   * never expected to run and does not appear here; "expected" is always
-   * derivable as `fixtures.map(f => f.name)` plus `missing.map(m => m.name)`,
-   * so it isn't carried as a third field that could drift from the other two.
+   * Every provider in EXPECTED_PROVIDERS that didn't end up in `fixtures`,
+   * with why: either its `repos` entry existed but couldn't build (bad
+   * token, unusable path), or the entry was absent from
+   * harness_credentials.json entirely. Deliberately not a count: the
+   * runner needs to name each one and explain it, not just know that
+   * something went wrong. "Expected" is always derivable as
+   * `fixtures.map(f => f.name)` plus `missing.map(m => m.name)`, so it
+   * isn't carried as a third field that could drift from the other two.
    */
   missing: MissingFixture[];
 }
+
+/**
+ * The providers this harness is meant to cover, declared explicitly rather
+ * than inferred from whichever entries happen to be in `repos`. Without
+ * this, a credentials file that quietly lost a repo entry (as opposed to
+ * having a broken one) was invisible to `missing`: neither provider block
+ * below is gated to run for it, so nothing recorded the gap and a run
+ * silently tested fewer providers than a reader would assume.
+ */
+export const EXPECTED_PROVIDERS = ['github', 'gitlab'] as const;
 
 export async function buildFixtures(): Promise<BuildFixturesResult> {
   const creds = await loadCredentials();
@@ -49,6 +60,12 @@ export async function buildFixtures(): Promise<BuildFixturesResult> {
 
   const fixtures: ProviderFixture[] = [];
   const missing: MissingFixture[] = [];
+
+  for (const name of EXPECTED_PROVIDERS) {
+    if (!creds.repos.some(r => r.provider === name)) {
+      missing.push({ name, reason: `no "${name}" entry in harness_credentials.json repos` });
+    }
+  }
 
   // Gating each provider on its own presence in `repos`, and wrapping its
   // construction in try/catch, makes GitHub and GitLab fail the same way

@@ -1344,6 +1344,7 @@ git commit -m "add pollUntil and Reporter helpers, type-check the live test file
   - `interface ProviderFixture { name: 'github' | 'gitlab'; provider: GitProvider; projectPath: string; defaultBranch: string; approver: GitProvider | null }`
   - `interface MissingFixture { name: 'github' | 'gitlab'; reason: string }`
   - `interface BuildFixturesResult { fixtures: ProviderFixture[]; missing: MissingFixture[] }`
+  - `const EXPECTED_PROVIDERS = ['github', 'gitlab'] as const`
   - `async function buildFixtures(): Promise<BuildFixturesResult>`
   - `async function runReadConformance(fixture: ProviderFixture, report: Reporter): Promise<void>`
   - `async function runUnsupportedConformance(fixture: ProviderFixture, report: Reporter): Promise<void>`
@@ -1351,19 +1352,41 @@ git commit -m "add pollUntil and Reporter helpers, type-check the live test file
 `approver` is a second authenticated `GitProvider` for approval assertions, or `null` where no second identity exists (GitHub).
 
 `buildFixtures` returns both what it built and what it could not, rather than
-silently dropping a provider it failed to build. A provider named in
-`harness_credentials.json`'s `repos` but not represented in `fixtures` shows
-up in `missing` with a reason; a provider absent from `repos` entirely was
-never expected and appears in neither. This was a fix-round change (round 1):
-the original version returned a bare `ProviderFixture[]`, so a missing GitHub
-token silently produced a GitLab-only array with nothing recording that
-GitHub was skipped, and the runner's `fixtures.length === 0` guard could
-never catch it, letting a partial run exit 0 and print a summary that read as
-complete. Symmetrically, a `harness_credentials.json` missing a `gitlab`
-entry used to crash `buildFixtures` uncaught (`gitlabRepo(creds)` throws by
-design), before GitHub ever got a chance to run. Both directions now degrade
-the same way: an entry present but unusable becomes a `missing` record, an
-entry absent from `repos` is silently not attempted.
+silently dropping a provider it failed to build. Every provider in
+`EXPECTED_PROVIDERS` that isn't in `fixtures` shows up in `missing` with a
+reason, whether its `repos` entry existed but failed to build (bad token,
+unusable path) or was absent from `harness_credentials.json` entirely. This
+went through two fix rounds. Round 1: the original version returned a bare
+`ProviderFixture[]`, so a missing GitHub token silently produced a
+GitLab-only array with nothing recording that GitHub was skipped, and the
+runner's `fixtures.length === 0` guard could never catch it, letting a
+partial run exit 0 and print a summary that read as complete. Symmetrically,
+a `harness_credentials.json` missing a `gitlab` entry used to crash
+`buildFixtures` uncaught (`gitlabRepo(creds)` throws by design), before
+GitHub ever got a chance to run. Round 1 fixed the present-but-broken case
+for both providers, but left a narrower gap: a provider entirely absent from
+`repos` (not broken, just never listed) was gated out of both provider
+blocks and so was invisible to `missing` too, meaning the runner's
+denominator couldn't see it either and a run could still silently cover less
+than a reader would assume. Round 2 closed that gap by declaring the
+expected set explicitly as `EXPECTED_PROVIDERS` and checking each one
+against `repos` before either provider block runs, so "never listed" and
+"listed but broken" both land in `missing` now, for the same reason: neither
+should let a run report success on a scope smaller than intended.
+
+The `projectPath`-mode scoping check in `runReadConformance` also went
+through a fix round: it originally asserted only `Array.isArray(prs)` (no
+scoping was checked at all), then a webUrl-substring check
+(`pr.webUrl.includes(projectPath)`), which a same-named sibling project
+(`owner/repo` matching `owner/repo-archive`, `group/project` matching
+`meta-group/project`) can satisfy by accident even when the provider ignored
+the filter. The current version, in the shipped code below, compares each
+returned PR's `repositoryId` (a scoped numeric project id set by a single
+mapper on each provider, reused by every `fetchPullRequests` code path)
+against the fixture project's own id, resolved independently via
+`restRequest`. This is a strict identity check rather than a substring
+match, and `repositoryId` was confirmed populated and reliable on both
+providers, so no fallback to a boundary-anchored URL check was needed.
 
 - [ ] **Step 1: Implement the fixture descriptor**
 
@@ -1401,16 +1424,27 @@ export interface MissingFixture {
 export interface BuildFixturesResult {
   fixtures: ProviderFixture[];
   /**
-   * Providers harness_credentials.json names in `repos` but that could not
-   * be turned into a working fixture, and why. Deliberately not a count:
-   * the runner needs to name each one and explain it, not just know that
-   * something went wrong. A provider absent from `repos` entirely was
-   * never expected to run and does not appear here; "expected" is always
-   * derivable as `fixtures.map(f => f.name)` plus `missing.map(m => m.name)`,
-   * so it isn't carried as a third field that could drift from the other two.
+   * Every provider in EXPECTED_PROVIDERS that didn't end up in `fixtures`,
+   * with why: either its `repos` entry existed but couldn't build (bad
+   * token, unusable path), or the entry was absent from
+   * harness_credentials.json entirely. Deliberately not a count: the
+   * runner needs to name each one and explain it, not just know that
+   * something went wrong. "Expected" is always derivable as
+   * `fixtures.map(f => f.name)` plus `missing.map(m => m.name)`, so it
+   * isn't carried as a third field that could drift from the other two.
    */
   missing: MissingFixture[];
 }
+
+/**
+ * The providers this harness is meant to cover, declared explicitly rather
+ * than inferred from whichever entries happen to be in `repos`. Without
+ * this, a credentials file that quietly lost a repo entry (as opposed to
+ * having a broken one) was invisible to `missing`: neither provider block
+ * below is gated to run for it, so nothing recorded the gap and a run
+ * silently tested fewer providers than a reader would assume.
+ */
+export const EXPECTED_PROVIDERS = ['github', 'gitlab'] as const;
 
 export async function buildFixtures(): Promise<BuildFixturesResult> {
   const creds = await loadCredentials();
@@ -1421,6 +1455,12 @@ export async function buildFixtures(): Promise<BuildFixturesResult> {
 
   const fixtures: ProviderFixture[] = [];
   const missing: MissingFixture[] = [];
+
+  for (const name of EXPECTED_PROVIDERS) {
+    if (!creds.repos.some(r => r.provider === name)) {
+      missing.push({ name, reason: `no "${name}" entry in harness_credentials.json repos` });
+    }
+  }
 
   // Gating each provider on its own presence in `repos`, and wrapping its
   // construction in try/catch, makes GitHub and GitLab fail the same way
@@ -1555,6 +1595,36 @@ function apiPath(fixture: ProviderFixture, path: string): string {
   return fixture.name === 'gitlab' ? `/api/v4${path}` : path;
 }
 
+/**
+ * Resolves the fixture project's own numeric id independent of whatever
+ * `fetchPullRequests` just returned, so the projectPath-mode scoping check
+ * below has a ground truth to compare against rather than trusting the very
+ * data it exists to verify.
+ *
+ * `PullRequest.repositoryId` (e.g. "gitlab:42", "github:12345") is set by a
+ * single mapper function on each provider, reused by every fetchPullRequests
+ * code path, which makes it a strict identity check. A substring match on
+ * `webUrl` is weaker than this: `projectPath = "owner/repo"` is a substring
+ * of a sibling project's URL ".../owner/repo-archive/pull/5", and
+ * `"group/project"` is a substring of ".../meta-group/project/-/merge_requests/1",
+ * so a provider that ignored the filter and returned a similarly-named
+ * project's PRs could still pass a webUrl-substring check.
+ */
+async function fetchProjectId(fixture: ProviderFixture): Promise<number> {
+  const path =
+    fixture.name === 'github'
+      ? `/repos/${fixture.projectPath}`
+      : `/projects/${encodeURIComponent(fixture.projectPath)}`;
+  const res = await fixture.provider.restRequest('GET', apiPath(fixture, path));
+  if (!res.ok) {
+    throw new Error(
+      `could not resolve project id for "${fixture.projectPath}": HTTP ${res.status}`
+    );
+  }
+  const body = (await res.json()) as { id: number };
+  return body.id;
+}
+
 export async function runReadConformance(
   fixture: ProviderFixture,
   report: Reporter
@@ -1609,10 +1679,12 @@ export async function runReadConformance(
         // scoping was checked.
         throw new Inconclusive('no open PRs in the fixture project; scoping is unverified');
       }
+      const projectId = await fetchProjectId(fixture);
+      const expectedRepositoryId = `${fixture.name}:${projectId}`;
       for (const pr of prs) {
         assert(
-          pr.webUrl !== null && pr.webUrl.includes(projectPath),
-          `PR ${pr.iid} webUrl "${pr.webUrl}" does not look scoped to "${projectPath}"`
+          pr.repositoryId === expectedRepositoryId,
+          `PR ${pr.iid} repositoryId "${pr.repositoryId}" does not match fixture project "${expectedRepositoryId}"`
         );
       }
     }

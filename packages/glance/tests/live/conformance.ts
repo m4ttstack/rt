@@ -68,6 +68,36 @@ function apiPath(fixture: ProviderFixture, path: string): string {
   return fixture.name === 'gitlab' ? `/api/v4${path}` : path;
 }
 
+/**
+ * Resolves the fixture project's own numeric id independent of whatever
+ * `fetchPullRequests` just returned, so the projectPath-mode scoping check
+ * below has a ground truth to compare against rather than trusting the very
+ * data it exists to verify.
+ *
+ * `PullRequest.repositoryId` (e.g. "gitlab:42", "github:12345") is set by a
+ * single mapper function on each provider, reused by every fetchPullRequests
+ * code path, which makes it a strict identity check. A substring match on
+ * `webUrl` is weaker than this: `projectPath = "owner/repo"` is a substring
+ * of a sibling project's URL ".../owner/repo-archive/pull/5", and
+ * `"group/project"` is a substring of ".../meta-group/project/-/merge_requests/1",
+ * so a provider that ignored the filter and returned a similarly-named
+ * project's PRs could still pass a webUrl-substring check.
+ */
+async function fetchProjectId(fixture: ProviderFixture): Promise<number> {
+  const path =
+    fixture.name === 'github'
+      ? `/repos/${fixture.projectPath}`
+      : `/projects/${encodeURIComponent(fixture.projectPath)}`;
+  const res = await fixture.provider.restRequest('GET', apiPath(fixture, path));
+  if (!res.ok) {
+    throw new Error(
+      `could not resolve project id for "${fixture.projectPath}": HTTP ${res.status}`
+    );
+  }
+  const body = (await res.json()) as { id: number };
+  return body.id;
+}
+
 export async function runReadConformance(
   fixture: ProviderFixture,
   report: Reporter
@@ -122,10 +152,12 @@ export async function runReadConformance(
         // scoping was checked.
         throw new Inconclusive('no open PRs in the fixture project; scoping is unverified');
       }
+      const projectId = await fetchProjectId(fixture);
+      const expectedRepositoryId = `${fixture.name}:${projectId}`;
       for (const pr of prs) {
         assert(
-          pr.webUrl !== null && pr.webUrl.includes(projectPath),
-          `PR ${pr.iid} webUrl "${pr.webUrl}" does not look scoped to "${projectPath}"`
+          pr.repositoryId === expectedRepositoryId,
+          `PR ${pr.iid} repositoryId "${pr.repositoryId}" does not match fixture project "${expectedRepositoryId}"`
         );
       }
     }
