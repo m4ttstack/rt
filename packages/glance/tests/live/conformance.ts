@@ -567,7 +567,22 @@ export async function runWriteConformance(
         'approvePullRequest',
         'a second identity can approve',
         async () => {
+          // "Did not throw" also passes for a provider that accepts the call
+          // and silently changes nothing, the same silent-no-op shape MAT-25
+          // and shouldRemoveSourceBranch were built to catch. Re-fetching and
+          // checking approved/approvedBy is what actually proves the call
+          // did something.
+          const approverUsername = (await fixture.approver!.validateToken()).username;
           await fixture.approver!.approvePullRequest(projectPath, iid);
+          const after = await pollUntil(`approved state of ${iid}`, async () => {
+            const fresh = await provider.fetchSingleMR(projectPath, iid, null);
+            return fresh?.approved === true ? fresh : null;
+          });
+          assert(after.approved === true, `expected approved to become true, got ${after.approved}`);
+          assert(
+            after.approvedBy.some(u => u.username === approverUsername),
+            `expected approvedBy to include "${approverUsername}", got ${JSON.stringify(after.approvedBy.map(u => u.username))}`
+          );
         }
       );
       await check(
@@ -577,6 +592,11 @@ export async function runWriteConformance(
         'the same identity can revoke',
         async () => {
           await fixture.approver!.unapprovePullRequest(projectPath, iid);
+          const after = await pollUntil(`unapproved state of ${iid}`, async () => {
+            const fresh = await provider.fetchSingleMR(projectPath, iid, null);
+            return fresh?.approved === false ? fresh : null;
+          });
+          assert(after.approved === false, `expected approved to become false, got ${after.approved}`);
         }
       );
     } else {
@@ -607,25 +627,84 @@ async function branchExists(fixture: ProviderFixture, branch: string): Promise<b
  * The merge call returning without throwing proves almost nothing: MAT-25 is a
  * silent overwrite of one message field by another, and the API reports success
  * either way. Only the resulting commit says which message actually landed.
+ *
+ * Polls until the message contains `marker` rather than reading once. The
+ * merge-state check just above this already waits for `state === 'merged'`,
+ * but that is a different field than the branch's HEAD commit, and the two
+ * are not guaranteed to be consistent in the same instant. A single unguarded
+ * read that raced that lag would misreport as MAT-25 for an unrelated
+ * reason, which would be indistinguishable from the real defect in the
+ * failure text; polling for the marker makes the evidence airtight by
+ * construction rather than by observed timing.
  */
-async function headCommitMessage(fixture: ProviderFixture): Promise<string> {
+async function headCommitMessage(fixture: ProviderFixture, marker: string): Promise<string> {
   const { provider, projectPath, defaultBranch } = fixture;
-  if (fixture.name === 'github') {
-    const res = await provider.restRequest(
-      'GET',
-      `/repos/${projectPath}/commits/${defaultBranch}`
-    );
-    if (!res.ok) throw new Error(`could not read head commit: HTTP ${res.status}`);
-    const { commit } = (await res.json()) as { commit: { message: string } };
-    return commit.message;
+  return pollUntil(`head commit for ${defaultBranch} containing "${marker}"`, async () => {
+    let message: string;
+    if (fixture.name === 'github') {
+      const res = await provider.restRequest(
+        'GET',
+        `/repos/${projectPath}/commits/${defaultBranch}`
+      );
+      if (!res.ok) throw new Error(`could not read head commit: HTTP ${res.status}`);
+      const { commit } = (await res.json()) as { commit: { message: string } };
+      message = commit.message;
+    } else {
+      const res = await provider.restRequest(
+        'GET',
+        apiPath(fixture, `/projects/${encodeURIComponent(projectPath)}/repository/commits/${encodeURIComponent(defaultBranch)}`)
+      );
+      if (!res.ok) throw new Error(`could not read head commit: HTTP ${res.status}`);
+      const { message: raw } = (await res.json()) as { message: string };
+      message = raw;
+    }
+    return message.includes(marker) ? message : null;
+  }, { timeoutMs: 15_000 });
+}
+
+/**
+ * Best-effort explanation for why a merge attempt returned HTTP 405, which
+ * both providers document as "the merge request cannot be merged" rather
+ * than a malformed request. Used only to enrich the Inconclusive reason with
+ * the MR's own current state, so the report names the actual blocking
+ * precondition instead of repeating the opaque 405. A failed lookup here
+ * must not mask the original 405, so every failure degrades to null instead
+ * of throwing; one retry absorbs a transient GraphQL hiccup (the same class
+ * of blip pollUntil's own docstring calls out) without adding the latency of
+ * a full pollUntil for what is only enrichment text.
+ */
+async function mergeBlockDetail(fixture: ProviderFixture, iid: number): Promise<string | null> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const fresh = await fixture.provider.fetchSingleMR(fixture.projectPath, iid, null);
+      return fresh?.detailedMergeStatus
+        ? `detailedMergeStatus="${fresh.detailedMergeStatus}" (GitLab's only_allow_merge_if_pipeline_succeeds project setting blocks merge until the pipeline passes)`
+        : null;
+    } catch {
+      // fall through to the retry on attempt 0; give up quietly on attempt 1
+    }
   }
-  const res = await provider.restRequest(
-    'GET',
-    apiPath(fixture, `/projects/${encodeURIComponent(projectPath)}/repository/commits/${encodeURIComponent(defaultBranch)}`)
-  );
-  if (!res.ok) throw new Error(`could not read head commit: HTTP ${res.status}`);
-  const { message } = (await res.json()) as { message: string };
-  return message;
+  return null;
+}
+
+/**
+ * Wait for a newly created MR to leave GitLab's transient "still computing
+ * mergeability" state before attempting to merge it. Right after creation,
+ * `detailedMergeStatus` sits in `checking` / `unchecked` / `preparing` for
+ * roughly a second; merging during that window returns the same HTTP 405 as
+ * a genuinely blocked precondition, which would be indistinguishable from
+ * the fixture-precondition case the Inconclusive handling above exists to
+ * detect on its own terms. `detailedMergeStatus` is always null on GitHub
+ * (per its own docstring in types.ts), so this resolves on the first read
+ * there and is effectively a no-op for that provider.
+ */
+async function waitForMergeReadiness(fixture: ProviderFixture, iid: number): Promise<void> {
+  const stillComputing = new Set(['checking', 'unchecked', 'preparing']);
+  await pollUntil(`merge readiness of ${iid}`, async () => {
+    const fresh = await fixture.provider.fetchSingleMR(fixture.projectPath, iid, null);
+    if (!fresh) return null;
+    return stillComputing.has(fresh.detailedMergeStatus ?? '') ? null : fresh;
+  }, { timeoutMs: 20_000 });
 }
 
 export async function runMergeConformance(
@@ -635,28 +714,62 @@ export async function runMergeConformance(
   const { provider, projectPath, defaultBranch } = fixture;
   const branch = `${runPrefix()}-merge`;
   const marker = `conformance-merge-${Date.now().toString(36)}`;
+  let prIid: number | null = null;
   let merged = false;
 
   try {
-    await createBranch(fixture, branch);
-    await commitFile(fixture, branch, `${marker}.md`, `# ${marker}\n`);
-    const pr = await provider.createPullRequest({
-      projectPath,
-      title: 'conformance: merge cycle',
-      description: 'Opened by the glance conformance harness to exercise merge. Safe to close.',
-      sourceBranch: branch,
-      targetBranch: defaultBranch
+    // Wrapped in check(), matching the write cycle's setup step: an
+    // unguarded createBranch/commitFile/createPullRequest here would throw
+    // straight out of this function on a transient failure, producing no
+    // report entry and crashing the runner before it prints anything,
+    // including results already gathered for other fixtures.
+    await check(report, fixture, 'createPullRequest', 'opens a PR for the merge cycle', async () => {
+      await createBranch(fixture, branch);
+      await commitFile(fixture, branch, `${marker}.md`, `# ${marker}\n`);
+      const pr = await provider.createPullRequest({
+        projectPath,
+        title: 'conformance: merge cycle',
+        description: 'Opened by the glance conformance harness to exercise merge. Safe to close.',
+        sourceBranch: branch,
+        targetBranch: defaultBranch
+      });
+      assert(pr.iid > 0, `expected a positive iid, got ${pr.iid}`);
+      prIid = pr.iid;
     });
 
+    if (prIid === null) return;
+    const iid = prIid;
+
     await check(report, fixture, 'mergePullRequest', 'merges and reports merged state', async () => {
-      await provider.mergePullRequest(projectPath, pr.iid, {
-        commitMessage: `${marker} merge-commit-message`,
-        squashCommitMessage: `${marker} squash-commit-message`,
-        shouldRemoveSourceBranch: true
-      });
+      try {
+        await waitForMergeReadiness(fixture, iid);
+        await provider.mergePullRequest(projectPath, iid, {
+          commitMessage: `${marker} merge-commit-message`,
+          squashCommitMessage: `${marker} squash-commit-message`,
+          shouldRemoveSourceBranch: true
+        });
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        // Both providers document HTTP 405 on this endpoint as "the merge
+        // request cannot be merged", an unmet precondition rather than a
+        // malformed request (a bad request shape gets 400/422, not 405).
+        // The GitLab fixture is known to have only_allow_merge_if_pipeline_
+        // succeeds enabled with a permanently failing pipeline, so no merge
+        // through this endpoint can ever succeed there no matter what
+        // GitLabProvider sends. Reporting that as a hard fail would
+        // misattribute a fixture precondition to the provider, so it is
+        // Inconclusive instead; anything else still fails hard.
+        if (/\bmergePullRequest failed: 405\b/.test(message)) {
+          const detail = await mergeBlockDetail(fixture, iid);
+          throw new Inconclusive(
+            `merge blocked by an unmet precondition (HTTP 405)${detail ? `: ${detail}` : `. Provider said: ${message}`}`
+          );
+        }
+        throw err;
+      }
       merged = true;
-      const after = await pollUntil(`merged state of ${pr.iid}`, async () => {
-        const fresh = await provider.fetchSingleMR(projectPath, pr.iid, null);
+      const after = await pollUntil(`merged state of ${iid}`, async () => {
+        const fresh = await provider.fetchSingleMR(projectPath, iid, null);
         return fresh && fresh.state !== 'opened' ? fresh : null;
       });
       assert(
@@ -665,7 +778,26 @@ export async function runMergeConformance(
       );
     });
 
-    if (!merged) return;
+    if (!merged) {
+      // A merge that never completed, whether a hard failure or an
+      // Inconclusive precondition, must not leave these two downstream
+      // assertions silently missing from the report: silent absence is
+      // indistinguishable from them never having been written at all, which
+      // is exactly the failure mode this harness exists to catch.
+      report.skip(
+        fixture.name,
+        'mergePullRequest',
+        'the commitMessage we asked for actually reaches the commit (MAT-25)',
+        'not run: the merge itself did not complete'
+      );
+      report.skip(
+        fixture.name,
+        'mergePullRequest',
+        'shouldRemoveSourceBranch actually deletes the source branch',
+        'not run: the merge itself did not complete'
+      );
+      return;
+    }
 
     await check(
       report,
@@ -673,7 +805,7 @@ export async function runMergeConformance(
       'mergePullRequest',
       'the commitMessage we asked for actually reaches the commit (MAT-25)',
       async () => {
-        const message = await headCommitMessage(fixture);
+        const message = await headCommitMessage(fixture, marker);
         assert(
           message.includes(marker),
           `head commit does not mention this run at all. Got: ${message.slice(0, 200)}`
@@ -685,6 +817,13 @@ export async function runMergeConformance(
       }
     );
 
+    // This assumes the fixture has GitHub's "automatically delete head
+    // branches" repo setting (delete_branch_on_merge) turned off, which is
+    // true today. If that setting were ever enabled, GitHub's own async
+    // post-merge cleanup could delete the branch on its own, independent of
+    // shouldRemoveSourceBranch, and this assertion would pass for the wrong
+    // reason: a false pass that would silently stop proving the defect it
+    // exists to catch.
     await check(
       report,
       fixture,
@@ -699,7 +838,19 @@ export async function runMergeConformance(
       }
     );
   } finally {
-    if (await branchExists(fixture, branch)) {
+    // branchExists itself can throw (a network blip), and an unguarded call
+    // here would skip deleteBranch entirely on exactly that failure, leaving
+    // a branch behind, which is the outcome this cleanup exists to prevent.
+    // Defaulting to "assume it's still there" and attempting the delete
+    // anyway is safe: deleteBranch on an already-gone branch just fails
+    // harmlessly into the .catch below.
+    let stillThere = true;
+    try {
+      stillThere = await branchExists(fixture, branch);
+    } catch (err) {
+      console.error(`  cleanup: could not check whether ${branch} exists, deleting anyway: ${err}`);
+    }
+    if (stillThere) {
       await provider.deleteBranch(projectPath, branch).catch(err => {
         console.error(`  cleanup: could not delete ${branch}: ${err}`);
       });

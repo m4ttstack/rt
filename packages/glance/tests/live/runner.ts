@@ -28,10 +28,22 @@ const report = new Reporter();
 
 for (const fixture of fixtures) {
   console.log(`\n=== ${fixture.name} (${fixture.projectPath}) ===\n`);
-  await runReadConformance(fixture, report);
-  await runUnsupportedConformance(fixture, report);
-  await runWriteConformance(fixture, report);
-  await runMergeConformance(fixture, report);
+  try {
+    await runReadConformance(fixture, report);
+    await runUnsupportedConformance(fixture, report);
+    await runWriteConformance(fixture, report);
+    await runMergeConformance(fixture, report);
+  } catch (err) {
+    // Every mutating step above is wrapped in check(), so reaching here
+    // means something outside those wrappers threw (e.g. a network blip
+    // between calls). Without this catch, one fixture crashing would throw
+    // out of the whole loop and erase results already gathered for a
+    // fixture that ran earlier, which is worse than losing this fixture's
+    // remaining checks.
+    const message = err instanceof Error ? err.message : String(err);
+    report.fail(fixture.name, 'runFixture', 'fixture run completed without crashing', message);
+    console.error(`  CRASH ${fixture.name}: ${message}`);
+  }
 }
 
 console.log(`\n${'='.repeat(60)}\n`);
