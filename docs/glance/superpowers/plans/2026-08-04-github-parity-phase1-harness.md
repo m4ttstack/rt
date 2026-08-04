@@ -1336,14 +1336,34 @@ git commit -m "add pollUntil and Reporter helpers, type-check the live test file
 - Create: `packages/glance/tests/live/runner.ts`
 
 **Interfaces:**
-- Consumes: everything from Tasks 1, 2, and 4.
+- Consumes: everything from Tasks 1, 2, and 4. Also consumes `parseGitHubSlug`
+  from `credentials.ts`, which `setup-github-fixture.ts` already had
+  privately; it moved there during Task 5 so both callers share one parser
+  instead of drifting between two copies.
 - Produces:
   - `interface ProviderFixture { name: 'github' | 'gitlab'; provider: GitProvider; projectPath: string; defaultBranch: string; approver: GitProvider | null }`
-  - `async function buildFixtures(): Promise<ProviderFixture[]>`
+  - `interface MissingFixture { name: 'github' | 'gitlab'; reason: string }`
+  - `interface BuildFixturesResult { fixtures: ProviderFixture[]; missing: MissingFixture[] }`
+  - `async function buildFixtures(): Promise<BuildFixturesResult>`
   - `async function runReadConformance(fixture: ProviderFixture, report: Reporter): Promise<void>`
   - `async function runUnsupportedConformance(fixture: ProviderFixture, report: Reporter): Promise<void>`
 
 `approver` is a second authenticated `GitProvider` for approval assertions, or `null` where no second identity exists (GitHub).
+
+`buildFixtures` returns both what it built and what it could not, rather than
+silently dropping a provider it failed to build. A provider named in
+`harness_credentials.json`'s `repos` but not represented in `fixtures` shows
+up in `missing` with a reason; a provider absent from `repos` entirely was
+never expected and appears in neither. This was a fix-round change (round 1):
+the original version returned a bare `ProviderFixture[]`, so a missing GitHub
+token silently produced a GitLab-only array with nothing recording that
+GitHub was skipped, and the runner's `fixtures.length === 0` guard could
+never catch it, letting a partial run exit 0 and print a summary that read as
+complete. Symmetrically, a `harness_credentials.json` missing a `gitlab`
+entry used to crash `buildFixtures` uncaught (`gitlabRepo(creds)` throws by
+design), before GitHub ever got a chance to run. Both directions now degrade
+the same way: an entry present but unusable becomes a `missing` record, an
+entry absent from `repos` is silently not attempted.
 
 - [ ] **Step 1: Implement the fixture descriptor**
 
@@ -1359,6 +1379,7 @@ import {
   gitlabRepo,
   loadCredentials,
   ownerUser,
+  parseGitHubSlug,
   resolveGitHubToken
 } from './credentials.ts';
 
@@ -1371,51 +1392,93 @@ export interface ProviderFixture {
   approver: GitProvider | null;
 }
 
-function githubSlug(webUrl: string): string {
-  const match = webUrl.match(/github\.com\/([^/]+\/[^/]+)/);
-  if (!match?.[1]) throw new Error(`cannot parse owner/repo from "${webUrl}"`);
-  return match[1];
+export interface MissingFixture {
+  name: 'github' | 'gitlab';
+  /** Why this provider, named in harness_credentials.json, could not be built. */
+  reason: string;
 }
 
-export async function buildFixtures(): Promise<ProviderFixture[]> {
+export interface BuildFixturesResult {
+  fixtures: ProviderFixture[];
+  /**
+   * Providers harness_credentials.json names in `repos` but that could not
+   * be turned into a working fixture, and why. Deliberately not a count:
+   * the runner needs to name each one and explain it, not just know that
+   * something went wrong. A provider absent from `repos` entirely was
+   * never expected to run and does not appear here; "expected" is always
+   * derivable as `fixtures.map(f => f.name)` plus `missing.map(m => m.name)`,
+   * so it isn't carried as a third field that could drift from the other two.
+   */
+  missing: MissingFixture[];
+}
+
+export async function buildFixtures(): Promise<BuildFixturesResult> {
   const creds = await loadCredentials();
   if (!creds) {
     console.error('No harness_credentials.json. Copy harness_credentials.example.json and fill it in.');
-    return [];
+    return { fixtures: [], missing: [] };
   }
 
   const fixtures: ProviderFixture[] = [];
+  const missing: MissingFixture[] = [];
 
-  const ghToken = await resolveGitHubToken();
-  if (ghToken) {
-    fixtures.push({
-      name: 'github',
-      provider: new GitHubProvider('https://github.com', ghToken),
-      projectPath: githubSlug(githubRepo(creds).web_url),
-      defaultBranch: 'main',
-      approver: null
-    });
-  } else {
-    console.error('Skipping GitHub: `gh auth token` produced nothing. Run `gh auth login`.');
+  // Gating each provider on its own presence in `repos`, and wrapping its
+  // construction in try/catch, makes GitHub and GitLab fail the same way
+  // for the same reasons. Before this fix the two were asymmetric: a
+  // missing GitHub token logged an error and was silently dropped from the
+  // result (the caller had no way to tell "skipped" from "nothing to
+  // skip"), while a missing GitLab repo entry threw uncaught out of
+  // gitlabRepo() here, crashing before GitHub even got a chance to run.
+  if (creds.repos.some(r => r.provider === 'github')) {
+    try {
+      const ghToken = await resolveGitHubToken();
+      if (!ghToken) {
+        throw new Error('`gh auth token` produced nothing. Run `gh auth login`.');
+      }
+      const { owner, repo } = parseGitHubSlug(githubRepo(creds).web_url);
+      fixtures.push({
+        name: 'github',
+        provider: new GitHubProvider('https://github.com', ghToken),
+        projectPath: `${owner}/${repo}`,
+        defaultBranch: 'main',
+        approver: null
+      });
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      console.error(`Skipping GitHub: ${reason}`);
+      missing.push({ name: 'github', reason });
+    }
   }
 
-  const glRepo = gitlabRepo(creds);
-  const glPath = glRepo.path_with_namespace;
-  if (!glPath) throw new Error('gitlab repo entry needs path_with_namespace');
-  const approvers = approverUsers(creds);
-  fixtures.push({
-    name: 'gitlab',
-    provider: new GitLabProvider('https://gitlab.com', ownerUser(creds).token),
-    projectPath: glPath,
-    defaultBranch: 'main',
-    approver: approvers[0]
-      ? new GitLabProvider('https://gitlab.com', approvers[0].token)
-      : null
-  });
+  if (creds.repos.some(r => r.provider === 'gitlab')) {
+    try {
+      const glRepo = gitlabRepo(creds);
+      const glPath = glRepo.path_with_namespace;
+      if (!glPath) throw new Error('gitlab repo entry needs path_with_namespace');
+      const approvers = approverUsers(creds);
+      fixtures.push({
+        name: 'gitlab',
+        provider: new GitLabProvider('https://gitlab.com', ownerUser(creds).token),
+        projectPath: glPath,
+        defaultBranch: 'main',
+        approver: approvers[0]
+          ? new GitLabProvider('https://gitlab.com', approvers[0].token)
+          : null
+      });
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      console.error(`Skipping GitLab: ${reason}`);
+      missing.push({ name: 'gitlab', reason });
+    }
+  }
 
-  return fixtures;
+  return { fixtures, missing };
 }
 ```
+
+`parseGitHubSlug` is not defined here: it lives in `credentials.ts` (moved
+there during Task 5's first pass) and is imported, shared with
+`setup-github-fixture.ts`.
 
 - [ ] **Step 2: Implement the read-path and unsupported-path assertions**
 
@@ -1436,6 +1499,15 @@ import type { ProviderFixture } from './fixture.ts';
 import { pollUntil } from './poll.ts';
 import type { Reporter } from './report.ts';
 
+/**
+ * Thrown from inside a `check()` callback to report a skip rather than a
+ * pass or fail. Some assertions depend on live data the fixture may not
+ * have right now (e.g. an open PR to inspect); when that data is absent the
+ * check has not passed, it has proven nothing, and reporting it as green
+ * would claim coverage that didn't happen.
+ */
+class Inconclusive extends Error {}
+
 async function check(
   report: Reporter,
   fixture: ProviderFixture,
@@ -1447,6 +1519,10 @@ async function check(
     await fn();
     report.pass(fixture.name, method, label);
   } catch (err) {
+    if (err instanceof Inconclusive) {
+      report.skip(fixture.name, method, label, err.message);
+      return;
+    }
     report.fail(
       fixture.name,
       method,
@@ -1456,7 +1532,11 @@ async function check(
   }
 }
 
-function assert(condition: boolean, message: string): void {
+// `asserts condition` (not just `: void`) lets TypeScript narrow whatever
+// expression was checked, e.g. `assert(main !== undefined, ...)` then using
+// `main` unguarded afterward, instead of forcing a redundant non-null
+// assertion at every call site.
+function assert(condition: boolean, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
@@ -1486,10 +1566,31 @@ export async function runReadConformance(
     assert(user.username.length > 0, 'username was empty');
   });
 
-  await check(report, fixture, 'fetchPullRequests', 'returns an array', async () => {
-    const prs = await provider.fetchPullRequests();
-    assert(Array.isArray(prs), `expected an array, got ${typeof prs}`);
-  });
+  await check(
+    report,
+    fixture,
+    'fetchPullRequests',
+    'returns an array of well-formed PRs',
+    async () => {
+      const prs = await provider.fetchPullRequests();
+      assert(Array.isArray(prs), `expected an array, got ${typeof prs}`);
+      // The zero-arg call is a distinct code path from the projectPath-mode
+      // calls below (current-user MRs vs. a specific project), so this
+      // stays even though it can be empty: a shape check on whatever comes
+      // back is still real coverage of that path, unlike a bare
+      // Array.isArray which only proves fetchPullRequests() didn't throw.
+      for (const pr of prs) {
+        assert(
+          typeof pr.id === 'string' && pr.id.length > 0,
+          `PR missing non-empty id: ${JSON.stringify(pr).slice(0, 80)}`
+        );
+        assert(
+          typeof pr.iid === 'number',
+          `PR ${pr.id} missing numeric iid: ${JSON.stringify(pr).slice(0, 80)}`
+        );
+      }
+    }
+  );
 
   await check(
     report,
@@ -1499,6 +1600,21 @@ export async function runReadConformance(
     async () => {
       const prs = await provider.fetchPullRequests({ projectPath, state: 'opened' });
       assert(Array.isArray(prs), 'expected an array');
+      if (prs.length === 0) {
+        // A provider that ignored projectPath and returned everything, and
+        // a provider that scoped correctly, both produce "[]" whenever the
+        // fixture project happens to have zero open PRs right now. Neither
+        // case can be told apart from the other here, so this is not a
+        // pass: it's unverified, and must say so rather than imply the
+        // scoping was checked.
+        throw new Inconclusive('no open PRs in the fixture project; scoping is unverified');
+      }
+      for (const pr of prs) {
+        assert(
+          pr.webUrl !== null && pr.webUrl.includes(projectPath),
+          `PR ${pr.iid} webUrl "${pr.webUrl}" does not look scoped to "${projectPath}"`
+        );
+      }
     }
   );
 
@@ -1558,6 +1674,47 @@ export async function runReadConformance(
         main !== undefined,
         `no rule for "${fixture.defaultBranch}" among [${rules.map(r => r.pattern).join(', ')}]`
       );
+
+      // GitHub's fixture is provisioned by setup-github-fixture.ts with
+      // known values (allow_force_pushes: true, allow_deletions: true, a
+      // required status check), so those exact values can be asserted:
+      // this is what GitHubProvider's all-false fabrication-on-read-failure
+      // bug (recorded separately) would violate, and existence-only
+      // checking would sail straight past. GitLab's project configuration
+      // isn't controlled by this harness, so only the field TYPES are
+      // checked there, which still catches an undefined or mis-typed
+      // mapping without asserting values this harness doesn't own.
+      if (fixture.name === 'github') {
+        assert(
+          main.allowForcePush === true,
+          `allowForcePush should be true, got ${main.allowForcePush}`
+        );
+        assert(
+          main.allowDeletion === true,
+          `allowDeletion should be true, got ${main.allowDeletion}`
+        );
+        assert(
+          main.requireStatusChecks === true,
+          `requireStatusChecks should be true, got ${main.requireStatusChecks}`
+        );
+      } else {
+        assert(
+          typeof main.allowForcePush === 'boolean',
+          `allowForcePush should be boolean, got ${typeof main.allowForcePush}`
+        );
+        assert(
+          typeof main.allowDeletion === 'boolean',
+          `allowDeletion should be boolean, got ${typeof main.allowDeletion}`
+        );
+        assert(
+          typeof main.requiredApprovals === 'number',
+          `requiredApprovals should be number, got ${typeof main.requiredApprovals}`
+        );
+        assert(
+          typeof main.requireStatusChecks === 'boolean',
+          `requireStatusChecks should be boolean, got ${typeof main.requireStatusChecks}`
+        );
+      }
     }
   );
 
@@ -1600,7 +1757,7 @@ export async function runUnsupportedConformance(
   for (const [method, invoke] of probes) {
     const expectation = expectationFor(fixture.name, method);
     if (expectation.support !== 'unsupported') {
-      report.skip(fixture.name, method, 'declared unsupported', 'declared supported here');
+      report.skip(fixture.name, method, 'supported-path not exercised here', 'this provider declares it supported');
       continue;
     }
     await check(report, fixture, method, 'throws, and its capability flag is false', async () => {
@@ -1631,6 +1788,20 @@ export async function runUnsupportedConformance(
       }
       assert(threw, 'expected a throw, got a subscription');
     });
+  } else {
+    // Actually calling watchMR here would open a real ActionCable WebSocket
+    // subscription against a PR that may not exist, with nothing in this
+    // script to ever close it. Exercising subscribe/dispose is out of
+    // scope for read-path conformance, so the gap is recorded explicitly
+    // instead of being left to vanish: without this branch, a provider
+    // that declares watchMR supported gets no report entry for it at all,
+    // neither pass, fail, nor skip.
+    report.skip(
+      fixture.name,
+      'watchMR',
+      'supported-path not exercised here',
+      'this provider declares it supported; invoking it would open a real websocket subscription'
+    );
   }
 }
 ```
@@ -1654,8 +1825,9 @@ import { runReadConformance, runUnsupportedConformance } from './conformance.ts'
 import { buildFixtures } from './fixture.ts';
 import { Reporter } from './report.ts';
 
-const fixtures = await buildFixtures();
-if (fixtures.length === 0) {
+const { fixtures, missing } = await buildFixtures();
+
+if (fixtures.length === 0 && missing.length === 0) {
   console.error('No fixtures could be built. Nothing to run.');
   process.exit(1);
 }
@@ -1669,14 +1841,38 @@ for (const fixture of fixtures) {
 }
 
 console.log(`\n${'='.repeat(60)}\n`);
+
+// A provider that was expected (named in harness_credentials.json) but
+// never got built must never be allowed to read as a clean run. Printing
+// this ahead of the pass/fail summary, and forcing a non-zero exit below,
+// is what stops a CI job (or a human skimming only the tail of the log)
+// from seeing "gitlab: 9 passed, 0 failed" and concluding the whole
+// harness passed when GitHub was never touched.
+if (missing.length > 0) {
+  console.log('!'.repeat(60));
+  console.log(
+    `INCOMPLETE RUN: ${missing.length} of ${missing.length + fixtures.length} ` +
+      'expected provider(s) were never tested:'
+  );
+  for (const m of missing) {
+    console.log(`  MISSING ${m.name}: ${m.reason}`);
+  }
+  console.log('!'.repeat(60));
+  console.log('');
+}
+
 console.log(report.render());
-process.exit(report.exitCode);
+process.exit(missing.length > 0 ? 1 : report.exitCode);
 ```
 
 - [ ] **Step 4: Run the harness**
 
 Run: `cd packages/glance && bun tests/live/runner.ts`
-Expected: both provider sections run to completion and a summary prints.
+Expected: both provider sections run to completion and a summary prints. Exit
+code is `0` only when every provider named in `harness_credentials.json`'s
+`repos` was both built and tested; if any expected provider is missing (bad
+token, unusable repo entry), the run prints an `INCOMPLETE RUN` banner naming
+it and exits `1`, even if every check that did run passed.
 
 **Failures here are the deliverable, not a blocker.** This is the first time these paths have run against a live API. Record every failure verbatim, because phases 2 through 4 are planned from this output. Do not fix provider code in this task.
 

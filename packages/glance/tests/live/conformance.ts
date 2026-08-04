@@ -12,6 +12,15 @@ import type { ProviderFixture } from './fixture.ts';
 import { pollUntil } from './poll.ts';
 import type { Reporter } from './report.ts';
 
+/**
+ * Thrown from inside a `check()` callback to report a skip rather than a
+ * pass or fail. Some assertions depend on live data the fixture may not
+ * have right now (e.g. an open PR to inspect); when that data is absent the
+ * check has not passed, it has proven nothing, and reporting it as green
+ * would claim coverage that didn't happen.
+ */
+class Inconclusive extends Error {}
+
 async function check(
   report: Reporter,
   fixture: ProviderFixture,
@@ -23,6 +32,10 @@ async function check(
     await fn();
     report.pass(fixture.name, method, label);
   } catch (err) {
+    if (err instanceof Inconclusive) {
+      report.skip(fixture.name, method, label, err.message);
+      return;
+    }
     report.fail(
       fixture.name,
       method,
@@ -32,7 +45,11 @@ async function check(
   }
 }
 
-function assert(condition: boolean, message: string): void {
+// `asserts condition` (not just `: void`) lets TypeScript narrow whatever
+// expression was checked, e.g. `assert(main !== undefined, ...)` then using
+// `main` unguarded afterward, instead of forcing a redundant non-null
+// assertion at every call site.
+function assert(condition: boolean, message: string): asserts condition {
   if (!condition) throw new Error(message);
 }
 
@@ -62,10 +79,31 @@ export async function runReadConformance(
     assert(user.username.length > 0, 'username was empty');
   });
 
-  await check(report, fixture, 'fetchPullRequests', 'returns an array', async () => {
-    const prs = await provider.fetchPullRequests();
-    assert(Array.isArray(prs), `expected an array, got ${typeof prs}`);
-  });
+  await check(
+    report,
+    fixture,
+    'fetchPullRequests',
+    'returns an array of well-formed PRs',
+    async () => {
+      const prs = await provider.fetchPullRequests();
+      assert(Array.isArray(prs), `expected an array, got ${typeof prs}`);
+      // The zero-arg call is a distinct code path from the projectPath-mode
+      // calls below (current-user MRs vs. a specific project), so this
+      // stays even though it can be empty: a shape check on whatever comes
+      // back is still real coverage of that path, unlike a bare
+      // Array.isArray which only proves fetchPullRequests() didn't throw.
+      for (const pr of prs) {
+        assert(
+          typeof pr.id === 'string' && pr.id.length > 0,
+          `PR missing non-empty id: ${JSON.stringify(pr).slice(0, 80)}`
+        );
+        assert(
+          typeof pr.iid === 'number',
+          `PR ${pr.id} missing numeric iid: ${JSON.stringify(pr).slice(0, 80)}`
+        );
+      }
+    }
+  );
 
   await check(
     report,
@@ -75,6 +113,21 @@ export async function runReadConformance(
     async () => {
       const prs = await provider.fetchPullRequests({ projectPath, state: 'opened' });
       assert(Array.isArray(prs), 'expected an array');
+      if (prs.length === 0) {
+        // A provider that ignored projectPath and returned everything, and
+        // a provider that scoped correctly, both produce "[]" whenever the
+        // fixture project happens to have zero open PRs right now. Neither
+        // case can be told apart from the other here, so this is not a
+        // pass: it's unverified, and must say so rather than imply the
+        // scoping was checked.
+        throw new Inconclusive('no open PRs in the fixture project; scoping is unverified');
+      }
+      for (const pr of prs) {
+        assert(
+          pr.webUrl !== null && pr.webUrl.includes(projectPath),
+          `PR ${pr.iid} webUrl "${pr.webUrl}" does not look scoped to "${projectPath}"`
+        );
+      }
     }
   );
 
@@ -134,6 +187,47 @@ export async function runReadConformance(
         main !== undefined,
         `no rule for "${fixture.defaultBranch}" among [${rules.map(r => r.pattern).join(', ')}]`
       );
+
+      // GitHub's fixture is provisioned by setup-github-fixture.ts with
+      // known values (allow_force_pushes: true, allow_deletions: true, a
+      // required status check), so those exact values can be asserted:
+      // this is what GitHubProvider's all-false fabrication-on-read-failure
+      // bug (recorded separately) would violate, and existence-only
+      // checking would sail straight past. GitLab's project configuration
+      // isn't controlled by this harness, so only the field TYPES are
+      // checked there, which still catches an undefined or mis-typed
+      // mapping without asserting values this harness doesn't own.
+      if (fixture.name === 'github') {
+        assert(
+          main.allowForcePush === true,
+          `allowForcePush should be true, got ${main.allowForcePush}`
+        );
+        assert(
+          main.allowDeletion === true,
+          `allowDeletion should be true, got ${main.allowDeletion}`
+        );
+        assert(
+          main.requireStatusChecks === true,
+          `requireStatusChecks should be true, got ${main.requireStatusChecks}`
+        );
+      } else {
+        assert(
+          typeof main.allowForcePush === 'boolean',
+          `allowForcePush should be boolean, got ${typeof main.allowForcePush}`
+        );
+        assert(
+          typeof main.allowDeletion === 'boolean',
+          `allowDeletion should be boolean, got ${typeof main.allowDeletion}`
+        );
+        assert(
+          typeof main.requiredApprovals === 'number',
+          `requiredApprovals should be number, got ${typeof main.requiredApprovals}`
+        );
+        assert(
+          typeof main.requireStatusChecks === 'boolean',
+          `requireStatusChecks should be boolean, got ${typeof main.requireStatusChecks}`
+        );
+      }
     }
   );
 
@@ -176,7 +270,7 @@ export async function runUnsupportedConformance(
   for (const [method, invoke] of probes) {
     const expectation = expectationFor(fixture.name, method);
     if (expectation.support !== 'unsupported') {
-      report.skip(fixture.name, method, 'declared unsupported', 'declared supported here');
+      report.skip(fixture.name, method, 'supported-path not exercised here', 'this provider declares it supported');
       continue;
     }
     await check(report, fixture, method, 'throws, and its capability flag is false', async () => {
@@ -207,5 +301,19 @@ export async function runUnsupportedConformance(
       }
       assert(threw, 'expected a throw, got a subscription');
     });
+  } else {
+    // Actually calling watchMR here would open a real ActionCable WebSocket
+    // subscription against a PR that may not exist, with nothing in this
+    // script to ever close it. Exercising subscribe/dispose is out of
+    // scope for read-path conformance, so the gap is recorded explicitly
+    // instead of being left to vanish: without this branch, a provider
+    // that declares watchMR supported gets no report entry for it at all,
+    // neither pass, fail, nor skip.
+    report.skip(
+      fixture.name,
+      'watchMR',
+      'supported-path not exercised here',
+      'this provider declares it supported; invoking it would open a real websocket subscription'
+    );
   }
 }
