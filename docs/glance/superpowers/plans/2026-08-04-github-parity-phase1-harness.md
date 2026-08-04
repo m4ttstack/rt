@@ -447,6 +447,8 @@ git commit -m "add live harness credentials loader"
 
 **Files:**
 - Create: `packages/glance/tests/live/expectations.ts`
+- Create: `packages/glance/tsconfig.tests.json`
+- Modify: `packages/glance/package.json` (add `@types/bun` devDependency and a `check-types:live` script)
 - Test: `packages/glance/tests/live-expectations.test.ts`
 
 **Interfaces:**
@@ -720,22 +722,68 @@ Expected: PASS, 8 tests
 
 Two failures are expected to be informative rather than mysterious. If "a method is a function unless declared absent" fails, either a table key is misspelled relative to the real method name, or a method you assumed exists does not. Fix the table, never the test. `fetchPullRequestsByBranches` and `watchEvents` are already known to be `undefined` on `GitHubProvider`, which is why both are declared `absent`.
 
-- [ ] **Step 5: Verify the compile-time completeness guard actually bites**
+- [ ] **Step 5: Bring `tests/live` into a type-checked program**
 
-Temporarily delete the `watchEvents` line from `GITHUB_EXPECTATIONS`, then run:
+`packages/glance/tsconfig.json` sets `"include": ["src"]`, so `bun run check-types`
+type-checks no test file at all. Verified: `tsc --listFiles` reports zero files under
+`tests/`. An exhaustiveness guard living in an unchecked file is decorative, so it has to
+be wired into a program that actually runs before it can be trusted.
 
-Run: `cd packages/glance && bun run check-types`
-Expected: FAIL with `Property 'watchEvents' is missing in type ... but required in type 'Record<ProviderMethod, Expectation>'`
+The legacy `tests/*.test.ts` files are deliberately left out of scope. They carry
+pre-existing errors that are not this plan's business, and dragging them in would turn a
+two-line fix into an unrelated cleanup.
 
-Restore the line and re-run. Expected: PASS with no output.
-
-This step is the entire point of the task. If `tsc` stays green with the line deleted, `ProviderMethod` is resolving to something wider than intended and must be fixed before continuing.
-
-- [ ] **Step 6: Commit**
+Add `@types/bun` as a devDependency of `packages/glance` (the harness uses `Bun.file`
+and `Bun.spawn`, which are otherwise untyped):
 
 ```bash
-cd /Users/matt/Documents/GitHub/glance
-git add packages/glance/tests/live/expectations.ts packages/glance/tests/live-expectations.test.ts
+cd packages/glance && bun add -d @types/bun
+```
+
+Create `packages/glance/tsconfig.tests.json`:
+
+```json
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "types": ["node", "bun"]
+  },
+  "include": ["src", "tests/live"]
+}
+```
+
+Add a script to `packages/glance/package.json`, alongside the existing `check-types`:
+
+```json
+"check-types:live": "tsc -p tsconfig.tests.json --noEmit"
+```
+
+Run: `cd packages/glance && bun run check-types:live`
+Expected: PASS with no output.
+
+- [ ] **Step 6: Verify the completeness guard actually bites**
+
+Temporarily delete the whole `watchEvents` entry from `GITHUB_EXPECTATIONS`, then run:
+
+Run: `cd packages/glance && bun run check-types:live`
+Expected: FAIL with `error TS2741: Property 'watchEvents' is missing in type ... but required in type 'Record<ProviderMethod, Expectation>'`
+
+Restore the entry and re-run. Expected: PASS with no output.
+
+This step is the entire point of the task. A guard that does not fail is worse than no
+guard, because it advertises a safety property the project does not have. If `tsc` stays
+green with the entry deleted, do not paper over it with a runtime check: report the
+resolved type of `ProviderMethod` and fix the type-level definition, or stop and escalate.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add packages/glance/tests/live/expectations.ts \
+        packages/glance/tests/live-expectations.test.ts \
+        packages/glance/tsconfig.tests.json \
+        packages/glance/package.json \
+        ../../bun.lock
 git commit -m "add provider expectation tables with compile-time completeness guard"
 ```
 
