@@ -104,14 +104,14 @@
     "prettier": "3.4.2",
     "storybook": "^10.2.17",
     "storybook-dark-mode": "^5.0.0",
-    "@workforge/typescript-config": "workspace:*",
     "typescript": "catalog:",
     "typescript-eslint": "^8.23.0",
     "vite": "catalog:",
     "vite-plugin-dts": "^4.5.0",
     "babel-plugin-react-compiler": "catalog:",
     "vitest": "catalog:",
-    "vite-tsconfig-paths": "catalog:"
+    "vite-tsconfig-paths": "catalog:",
+    "@mattstack/typescript-config": "workspace:*"
   },
   "publishConfig": {
     "access": "public"

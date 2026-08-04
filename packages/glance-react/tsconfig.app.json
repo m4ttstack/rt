@@ -1,5 +1,5 @@
 {
-  "extends": "@workforge/typescript-config/react-app",
+  "extends": "@mattstack/typescript-config/react-app",
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo",
     "types": ["vitest/globals"],

@@ -1,5 +1,5 @@
 {
-  "extends": "@workforge/typescript-config/base",
+  "extends": "@mattstack/typescript-config/base",
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.node.tsbuildinfo",
     "moduleResolution": "node",

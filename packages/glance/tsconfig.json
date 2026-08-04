@@ -1,5 +1,5 @@
 {
-  "extends": "@workforge/typescript-config/react-library",
+  "extends": "@mattstack/typescript-config/react-library",
   "compilerOptions": {
     "rootDir": "src",
     "noUncheckedIndexedAccess": true,
