@@ -1,7 +1,7 @@
 {
   "name": "@mattstack/glance-react",
   "private": false,
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Forge Glance React component library \u2014 MR dashboards with GDS theming",
   "license": "MIT",
   "type": "module",
