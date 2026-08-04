@@ -5,7 +5,7 @@
 // Usage: bun run scripts/parity-check.ts
 // Requires: config.json with rtRepos mapped, rt daemon running with the
 // project-mrs grant on the mapped repos, GitLab token available (legacy path).
-import { GitLabProvider, type PullRequest } from "@workforge/glance-sdk";
+import { GitLabProvider, type PullRequest } from "@mattstack/glance";
 import { loadConfig, loadGitLabToken } from "../src/config.ts";
 import { buildBoard, type BoardMR } from "../src/data.ts";
 import { readProjectMRs } from "@mattstack/rt-client";

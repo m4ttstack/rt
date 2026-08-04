@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { MRDetail } from "@workforge/glance-sdk";
+import type { MRDetail } from "@mattstack/glance";
 import { summarizeThreads, summarizeDiscussions, unresolvedReviewerCount, isBotUsername } from "../discussions.ts";
 
 function note(username: string, opts: { resolvable?: boolean; resolved?: boolean; system?: boolean; body?: string; at?: string } = {}) {

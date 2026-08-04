@@ -1,4 +1,4 @@
-import { getMRDashboardProps, getReviewDisplayState, type MRDashboardProps, type PullRequest } from "@workforge/glance-sdk";
+import { getMRDashboardProps, getReviewDisplayState, type MRDashboardProps, type PullRequest } from "@mattstack/glance";
 import type { BoardConfig, Member } from "./config.ts";
 import type { DemandDecl } from "@mattstack/rt-client";
 import { extractTicketId } from "./ticket.ts";

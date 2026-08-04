@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import type { PullRequest } from "@workforge/glance-sdk";
+import type { PullRequest } from "@mattstack/glance";
 import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, projectPathFromWebUrl, type BoardMR } from "../data.ts";
 import { SnapshotCache, type FetchResult } from "../cache.ts";
 import type { BoardConfig } from "../config.ts";

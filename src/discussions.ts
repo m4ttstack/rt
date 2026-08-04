@@ -1,4 +1,4 @@
-import type { MRDetail } from "@workforge/glance-sdk";
+import type { MRDetail } from "@mattstack/glance";
 
 export type ThreadStatus = "resolved" | "replied" | "awaiting";
 

@@ -4,7 +4,7 @@ import { Invadr } from "invadrs/react";
 import { extractTicketId, ticketUrl } from "./ticket.ts";
 import type { BoardMR } from "./data.ts";
 import { hasChangesRequested } from "./data.ts";
-import { getReviewDisplayState } from "@workforge/glance-sdk";
+import { getReviewDisplayState } from "@mattstack/glance";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { filterByMember, sortMRs, groupMRs, parseViewState, serializeViewState, commentDot, commentsAllResolved, dataAgeLabel, statusFlags, GROUP_KEYS, SORT_KEYS } from "./view.ts";

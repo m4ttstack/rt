@@ -1,6 +1,6 @@
 import { join, dirname, basename } from "path";
 import { readFileSync, watch } from "fs";
-import type { PullRequest, MRDetail } from "@workforge/glance-sdk";
+import type { PullRequest, MRDetail } from "@mattstack/glance";
 import { loadConfig, loadGitLabToken, loadSlackToken, saveMemberHidden, CONFIG_PATH } from "./config.ts";
 import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, type BoardMR, type SyncScopeRead } from "./data.ts";
 import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } from "./discussions.ts";
