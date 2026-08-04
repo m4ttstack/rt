@@ -1460,6 +1460,21 @@ function assert(condition: boolean, message: string): void {
   if (!condition) throw new Error(message);
 }
 
+/**
+ * Prefix a REST path for the provider's actual API root.
+ *
+ * `GitProvider.restRequest`'s docstring claims "implementations translate the
+ * path to the provider's API URL format", but GitLabProvider does not: it
+ * concatenates `baseURL + path` verbatim, so a GitLab caller must supply
+ * `/api/v4` itself while a GitHub caller must not. Provider-agnostic code
+ * therefore cannot call `restRequest` portably, which contradicts the
+ * interface's own documentation. Record that in the findings document: it is a
+ * real parity defect, not merely a harness inconvenience.
+ */
+function apiPath(fixture: ProviderFixture, path: string): string {
+  return fixture.name === 'gitlab' ? `/api/v4${path}` : path;
+}
+
 export async function runReadConformance(
   fixture: ProviderFixture,
   report: Reporter
@@ -1547,8 +1562,7 @@ export async function runReadConformance(
   );
 
   await check(report, fixture, 'restRequest', 'authenticated GET succeeds', async () => {
-    // Both providers expose the current user at /user, so no branch is needed.
-    const res = await provider.restRequest('GET', '/user');
+    const res = await provider.restRequest('GET', apiPath(fixture, '/user'));
     assert(res.ok, `expected ok, got HTTP ${res.status}`);
   });
 
@@ -1712,7 +1726,7 @@ async function scopedRepoId(fixture: ProviderFixture): Promise<string> {
   const path =
     fixture.name === 'github'
       ? `/repos/${projectPath}`
-      : `/projects/${encodeURIComponent(projectPath)}`;
+      : apiPath(fixture, `/projects/${encodeURIComponent(projectPath)}`);
   const res = await provider.restRequest('GET', path);
   if (!res.ok) throw new Error(`could not resolve repo id: HTTP ${res.status}`);
   const { id } = (await res.json()) as { id: number };
@@ -1741,7 +1755,7 @@ async function createBranch(
   const encoded = encodeURIComponent(projectPath);
   const res = await provider.restRequest(
     'POST',
-    `/projects/${encoded}/repository/branches?branch=${encodeURIComponent(branch)}&ref=${encodeURIComponent(defaultBranch)}`
+    apiPath(fixture, `/projects/${encoded}/repository/branches?branch=${encodeURIComponent(branch)}&ref=${encodeURIComponent(defaultBranch)}`)
   );
   if (!res.ok) throw new Error(`create branch failed: HTTP ${res.status}`);
 }
@@ -1774,7 +1788,7 @@ async function commitFile(
   const encoded = encodeURIComponent(projectPath);
   const res = await provider.restRequest(
     'POST',
-    `/projects/${encoded}/repository/files/${encodeURIComponent(path)}`,
+    apiPath(fixture, `/projects/${encoded}/repository/files/${encodeURIComponent(path)}`),
     { branch, content, commit_message: `conformance: add ${path}` }
   );
   if (!res.ok) throw new Error(`commit failed: HTTP ${res.status}`);
@@ -1968,7 +1982,7 @@ Expected: the write cycle runs on both providers. Record every failure verbatim.
 Run: `gh api repos/m4ttheweric/glance-conformance/branches --jq '.[].name'`
 Expected: only `main`. Any leftover `conformance/...` branch means the `finally` block did not run or `deleteBranch` failed. Delete leftovers by hand and investigate before continuing.
 
-Run: `cd packages/glance && bun -e 'import {buildFixtures} from "./tests/live/fixture.ts"; const [,gl] = await buildFixtures(); const r = await gl.provider.restRequest("GET", "/projects/" + encodeURIComponent(gl.projectPath) + "/repository/branches"); console.log(((await r.json()) as {name:string}[]).map(b=>b.name).join(" "))'`
+Run: `cd packages/glance && bun -e 'import {buildFixtures} from "./tests/live/fixture.ts"; const [,gl] = await buildFixtures(); const r = await gl.provider.restRequest("GET", "/api/v4/projects/" + encodeURIComponent(gl.projectPath) + "/repository/branches"); console.log(((await r.json()) as {name:string}[]).map(b=>b.name).join(" "))'`
 Expected: no `conformance/` branches.
 
 - [ ] **Step 5: Commit**
@@ -2026,14 +2040,17 @@ async function latestPipelineAndJob(fixture: ProviderFixture): Promise<PipelineP
   }
 
   const encoded = encodeURIComponent(projectPath);
-  const pipeRes = await provider.restRequest('GET', `/projects/${encoded}/pipelines?per_page=1`);
+  const pipeRes = await provider.restRequest(
+    'GET',
+    apiPath(fixture, `/projects/${encoded}/pipelines?per_page=1`)
+  );
   if (!pipeRes.ok) return null;
   const pipes = (await pipeRes.json()) as Array<{ id: number }>;
   const pipe = pipes[0];
   if (!pipe) return null;
   const jobsRes = await provider.restRequest(
     'GET',
-    `/projects/${encoded}/pipelines/${pipe.id}/jobs`
+    apiPath(fixture, `/projects/${encoded}/pipelines/${pipe.id}/jobs`)
   );
   if (!jobsRes.ok) return null;
   const jobs = (await jobsRes.json()) as Array<{ id: number }>;
