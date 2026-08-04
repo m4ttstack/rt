@@ -8,7 +8,12 @@
  * Run: bun tests/live/runner.ts
  */
 
-import { runReadConformance, runUnsupportedConformance } from './conformance.ts';
+import {
+  runMergeConformance,
+  runReadConformance,
+  runUnsupportedConformance,
+  runWriteConformance
+} from './conformance.ts';
 import { buildFixtures } from './fixture.ts';
 import { Reporter } from './report.ts';
 
@@ -25,6 +30,8 @@ for (const fixture of fixtures) {
   console.log(`\n=== ${fixture.name} (${fixture.projectPath}) ===\n`);
   await runReadConformance(fixture, report);
   await runUnsupportedConformance(fixture, report);
+  await runWriteConformance(fixture, report);
+  await runMergeConformance(fixture, report);
 }
 
 console.log(`\n${'='.repeat(60)}\n`);

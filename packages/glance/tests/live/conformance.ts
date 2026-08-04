@@ -349,3 +349,360 @@ export async function runUnsupportedConformance(
     );
   }
 }
+
+/** Unique per run, so an aborted run never collides with the next. */
+function runPrefix(): string {
+  return `conformance/${Date.now().toString(36)}`;
+}
+
+/**
+ * The `<provider>:<numericId>` form fetchMRDiscussions expects, which is not
+ * derivable from a project path without asking the API for the numeric id.
+ */
+async function scopedRepoId(fixture: ProviderFixture): Promise<string> {
+  const { provider, projectPath } = fixture;
+  const path =
+    fixture.name === 'github'
+      ? `/repos/${projectPath}`
+      : apiPath(fixture, `/projects/${encodeURIComponent(projectPath)}`);
+  const res = await provider.restRequest('GET', path);
+  if (!res.ok) throw new Error(`could not resolve repo id: HTTP ${res.status}`);
+  const { id } = (await res.json()) as { id: number };
+  return `${fixture.name}:${id}`;
+}
+
+async function createBranch(
+  fixture: ProviderFixture,
+  branch: string
+): Promise<void> {
+  const { provider, projectPath, defaultBranch } = fixture;
+  if (fixture.name === 'github') {
+    const refRes = await provider.restRequest(
+      'GET',
+      `/repos/${projectPath}/git/ref/heads/${defaultBranch}`
+    );
+    if (!refRes.ok) throw new Error(`read default ref failed: HTTP ${refRes.status}`);
+    const { object } = (await refRes.json()) as { object: { sha: string } };
+    const res = await provider.restRequest('POST', `/repos/${projectPath}/git/refs`, {
+      ref: `refs/heads/${branch}`,
+      sha: object.sha
+    });
+    if (!res.ok) throw new Error(`create branch failed: HTTP ${res.status}`);
+    return;
+  }
+  const encoded = encodeURIComponent(projectPath);
+  const res = await provider.restRequest(
+    'POST',
+    apiPath(fixture, `/projects/${encoded}/repository/branches?branch=${encodeURIComponent(branch)}&ref=${encodeURIComponent(defaultBranch)}`)
+  );
+  if (!res.ok) throw new Error(`create branch failed: HTTP ${res.status}`);
+}
+
+/**
+ * Commit a file so the branch differs from the default. GitLab rejects an MR
+ * whose source and target are identical, and GitHub will not open a PR with
+ * no diff.
+ */
+async function commitFile(
+  fixture: ProviderFixture,
+  branch: string,
+  path: string,
+  content: string
+): Promise<void> {
+  const { provider, projectPath } = fixture;
+  if (fixture.name === 'github') {
+    const res = await provider.restRequest(
+      'PUT',
+      `/repos/${projectPath}/contents/${path}`,
+      {
+        message: `conformance: add ${path}`,
+        content: Buffer.from(content).toString('base64'),
+        branch
+      }
+    );
+    if (!res.ok) throw new Error(`commit failed: HTTP ${res.status}`);
+    return;
+  }
+  const encoded = encodeURIComponent(projectPath);
+  const res = await provider.restRequest(
+    'POST',
+    apiPath(fixture, `/projects/${encoded}/repository/files/${encodeURIComponent(path)}`),
+    { branch, content, commit_message: `conformance: add ${path}` }
+  );
+  if (!res.ok) throw new Error(`commit failed: HTTP ${res.status}`);
+}
+
+export async function runWriteConformance(
+  fixture: ProviderFixture,
+  report: Reporter
+): Promise<void> {
+  const { provider, projectPath, defaultBranch } = fixture;
+  const branch = `${runPrefix()}-write`;
+  let prIid: number | null = null;
+
+  try {
+    await check(report, fixture, 'createPullRequest', 'opens a PR from a new branch', async () => {
+      await createBranch(fixture, branch);
+      await commitFile(fixture, branch, `conformance-${Date.now()}.md`, '# conformance\n');
+      const pr = await provider.createPullRequest({
+        projectPath,
+        title: 'conformance: write cycle',
+        description: 'Opened by the glance conformance harness. Safe to close.',
+        sourceBranch: branch,
+        targetBranch: defaultBranch
+      });
+      assert(pr.iid > 0, `expected a positive iid, got ${pr.iid}`);
+      prIid = pr.iid;
+    });
+
+    if (prIid === null) return;
+    const iid = prIid;
+
+    await check(
+      report,
+      fixture,
+      'fetchSingleMR',
+      'finds the PR just created',
+      async () => {
+        const pr = await pollUntil(`fetchSingleMR ${iid}`, () =>
+          provider.fetchSingleMR(projectPath, iid, null)
+        );
+        assert(pr.iid === iid, `expected iid ${iid}, got ${pr.iid}`);
+      }
+    );
+
+    await check(
+      report,
+      fixture,
+      'fetchPullRequestByBranch',
+      'finds the PR by its source branch',
+      async () => {
+        const pr = await pollUntil(`byBranch ${branch}`, () =>
+          provider.fetchPullRequestByBranch(projectPath, branch, 'opened')
+        );
+        assert(pr.iid === iid, `expected iid ${iid}, got ${pr.iid}`);
+      }
+    );
+
+    if (expectationFor(fixture.name, 'fetchPullRequestsByBranches').support === 'absent') {
+      await check(
+        report,
+        fixture,
+        'fetchPullRequestsByBranches',
+        'is absent, so callers feature-detect and fall back',
+        async () => {
+          assert(
+            provider.fetchPullRequestsByBranches === undefined,
+            'declared absent but the method exists, so the table is stale'
+          );
+        }
+      );
+    } else {
+      await check(
+        report,
+        fixture,
+        'fetchPullRequestsByBranches',
+        'batch lookup maps the branch to the PR',
+        async () => {
+          if (!provider.fetchPullRequestsByBranches) {
+            throw new Error('declared present but the method is undefined');
+          }
+          const map = await provider.fetchPullRequestsByBranches(projectPath, [branch], 'opened');
+          const found = map.get(branch);
+          assert(found?.iid === iid, `expected iid ${iid}, got ${found?.iid ?? 'null'}`);
+        }
+      );
+    }
+
+    await check(report, fixture, 'updatePullRequest', 'changes the title', async () => {
+      const updated = await provider.updatePullRequest(projectPath, iid, {
+        title: 'conformance: write cycle (updated)'
+      });
+      assert(
+        updated.title.includes('updated'),
+        `title did not change, got "${updated.title}"`
+      );
+    });
+
+    await check(report, fixture, 'updatePullRequest', 'toggles draft on', async () => {
+      const updated = await provider.updatePullRequest(projectPath, iid, { draft: true });
+      assert(updated.draft === true, 'draft did not become true');
+    });
+
+    await check(report, fixture, 'updatePullRequest', 'toggles draft off', async () => {
+      const updated = await provider.updatePullRequest(projectPath, iid, { draft: false });
+      assert(updated.draft === false, 'draft did not become false');
+    });
+
+    await check(report, fixture, 'fetchMRDiscussions', 'returns a detail object', async () => {
+      const repoId = await scopedRepoId(fixture);
+      const detail = await provider.fetchMRDiscussions(repoId, iid);
+      assert(Array.isArray(detail.discussions), 'discussions was not an array');
+    });
+
+    const approveExpectation = expectationFor(fixture.name, 'approvePullRequest');
+    if (approveExpectation.support === 'approximate') {
+      await check(
+        report,
+        fixture,
+        'approvePullRequest',
+        'self-approval is rejected, proving request shape reaches GitHub',
+        async () => {
+          let message = '';
+          try {
+            await provider.approvePullRequest(projectPath, iid);
+          } catch (err) {
+            message = err instanceof Error ? err.message : String(err);
+          }
+          assert(
+            message.length > 0,
+            'self-approval unexpectedly succeeded, which contradicts the expectation table'
+          );
+        }
+      );
+    } else if (fixture.approver) {
+      await check(
+        report,
+        fixture,
+        'approvePullRequest',
+        'a second identity can approve',
+        async () => {
+          await fixture.approver!.approvePullRequest(projectPath, iid);
+        }
+      );
+      await check(
+        report,
+        fixture,
+        'unapprovePullRequest',
+        'the same identity can revoke',
+        async () => {
+          await fixture.approver!.unapprovePullRequest(projectPath, iid);
+        }
+      );
+    } else {
+      report.skip(fixture.name, 'approvePullRequest', 'approval', 'no second identity');
+    }
+  } finally {
+    // Deleting the source branch closes the PR on both providers, which is
+    // the only close path available: GitProvider exposes no closePullRequest.
+    await provider.deleteBranch(projectPath, branch).catch(err => {
+      console.error(`  cleanup: could not delete ${branch}: ${err}`);
+    });
+  }
+}
+
+async function branchExists(fixture: ProviderFixture, branch: string): Promise<boolean> {
+  const { provider, projectPath } = fixture;
+  const path =
+    fixture.name === 'github'
+      ? `/repos/${projectPath}/git/ref/heads/${branch}`
+      : apiPath(fixture, `/projects/${encodeURIComponent(projectPath)}/repository/branches/${encodeURIComponent(branch)}`);
+  const res = await provider.restRequest('GET', path);
+  return res.ok;
+}
+
+/**
+ * Read back the message of the commit a merge produced.
+ *
+ * The merge call returning without throwing proves almost nothing: MAT-25 is a
+ * silent overwrite of one message field by another, and the API reports success
+ * either way. Only the resulting commit says which message actually landed.
+ */
+async function headCommitMessage(fixture: ProviderFixture): Promise<string> {
+  const { provider, projectPath, defaultBranch } = fixture;
+  if (fixture.name === 'github') {
+    const res = await provider.restRequest(
+      'GET',
+      `/repos/${projectPath}/commits/${defaultBranch}`
+    );
+    if (!res.ok) throw new Error(`could not read head commit: HTTP ${res.status}`);
+    const { commit } = (await res.json()) as { commit: { message: string } };
+    return commit.message;
+  }
+  const res = await provider.restRequest(
+    'GET',
+    apiPath(fixture, `/projects/${encodeURIComponent(projectPath)}/repository/commits/${encodeURIComponent(defaultBranch)}`)
+  );
+  if (!res.ok) throw new Error(`could not read head commit: HTTP ${res.status}`);
+  const { message } = (await res.json()) as { message: string };
+  return message;
+}
+
+export async function runMergeConformance(
+  fixture: ProviderFixture,
+  report: Reporter
+): Promise<void> {
+  const { provider, projectPath, defaultBranch } = fixture;
+  const branch = `${runPrefix()}-merge`;
+  const marker = `conformance-merge-${Date.now().toString(36)}`;
+  let merged = false;
+
+  try {
+    await createBranch(fixture, branch);
+    await commitFile(fixture, branch, `${marker}.md`, `# ${marker}\n`);
+    const pr = await provider.createPullRequest({
+      projectPath,
+      title: 'conformance: merge cycle',
+      description: 'Opened by the glance conformance harness to exercise merge. Safe to close.',
+      sourceBranch: branch,
+      targetBranch: defaultBranch
+    });
+
+    await check(report, fixture, 'mergePullRequest', 'merges and reports merged state', async () => {
+      await provider.mergePullRequest(projectPath, pr.iid, {
+        commitMessage: `${marker} merge-commit-message`,
+        squashCommitMessage: `${marker} squash-commit-message`,
+        shouldRemoveSourceBranch: true
+      });
+      merged = true;
+      const after = await pollUntil(`merged state of ${pr.iid}`, async () => {
+        const fresh = await provider.fetchSingleMR(projectPath, pr.iid, null);
+        return fresh && fresh.state !== 'opened' ? fresh : null;
+      });
+      assert(
+        after.state === 'merged',
+        `expected state "merged", got "${after.state}"`
+      );
+    });
+
+    if (!merged) return;
+
+    await check(
+      report,
+      fixture,
+      'mergePullRequest',
+      'the commitMessage we asked for actually reaches the commit (MAT-25)',
+      async () => {
+        const message = await headCommitMessage(fixture);
+        assert(
+          message.includes(marker),
+          `head commit does not mention this run at all. Got: ${message.slice(0, 200)}`
+        );
+        assert(
+          message.includes('merge-commit-message'),
+          `commitMessage was dropped. Head commit was: ${message.slice(0, 200)}`
+        );
+      }
+    );
+
+    await check(
+      report,
+      fixture,
+      'mergePullRequest',
+      'shouldRemoveSourceBranch actually deletes the source branch',
+      async () => {
+        const stillThere = await branchExists(fixture, branch);
+        assert(
+          !stillThere,
+          'branch still exists after merging with shouldRemoveSourceBranch: true'
+        );
+      }
+    );
+  } finally {
+    if (await branchExists(fixture, branch)) {
+      await provider.deleteBranch(projectPath, branch).catch(err => {
+        console.error(`  cleanup: could not delete ${branch}: ${err}`);
+      });
+    }
+  }
+}
