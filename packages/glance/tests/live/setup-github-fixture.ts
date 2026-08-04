@@ -11,10 +11,33 @@
  * Run: bun tests/live/setup-github-fixture.ts
  */
 
-import { resolveGitHubToken } from './credentials.ts';
+import { loadCredentials, githubRepo, resolveGitHubToken } from './credentials.ts';
 
-const OWNER = 'm4ttheweric';
-const REPO = 'glance-conformance';
+// The rest of the harness treats harness_credentials.json as the source of
+// truth for targets, so the fixture's owner/repo are derived from it rather
+// than hardcoded here, the same way later tasks resolve their targets.
+function parseGitHubSlug(webUrl: string): { owner: string; repo: string } {
+  const { pathname } = new URL(webUrl);
+  const [, owner, repo] = pathname.split('/');
+  if (!owner || !repo) {
+    throw new Error(`githubRepo.web_url is not a github.com repo URL: ${webUrl}`);
+  }
+  return { owner, repo };
+}
+
+const creds = await loadCredentials();
+if (!creds) {
+  console.error(
+    'No harness_credentials.json found. Copy harness_credentials.example.json ' +
+      'to harness_credentials.json and fill in a github repo entry before running this script.'
+  );
+  process.exit(1);
+}
+
+// githubRepo() throws if the entry is missing. That is expected on a
+// from-scratch setup: the entry names the repo this script creates, so the
+// file must already point at the target before provisioning can run.
+const { owner: OWNER, repo: REPO } = parseGitHubSlug(githubRepo(creds).web_url);
 const SLUG = `${OWNER}/${REPO}`;
 
 const token = await resolveGitHubToken();
@@ -37,24 +60,54 @@ async function api(method: string, path: string, body?: unknown): Promise<Respon
 }
 
 async function ensureRepo(): Promise<void> {
-  if ((await api('GET', `/repos/${SLUG}`)).ok) {
+  const res = await api('GET', `/repos/${SLUG}`);
+  if (res.ok) {
     console.log(`repo ${SLUG} exists`);
     return;
   }
-  const res = await api('POST', '/user/repos', {
+  // Only a 404 means "doesn't exist yet". A transient failure (secondary
+  // rate limit, a 5xx) is not absence, and reading it as absence would
+  // attempt to create a repo that already exists, surfacing a confusing
+  // "422 name already exists" instead of the real problem.
+  if (res.status !== 404) {
+    throw new Error(`check repo failed: ${res.status} ${await res.text()}`);
+  }
+  const createRes = await api('POST', '/user/repos', {
     name: REPO,
     description: 'Live conformance fixture for @mattstack/glance. Safe to force-push.',
     private: false,
     auto_init: true,
     has_issues: true
   });
-  if (!res.ok) throw new Error(`create repo failed: ${res.status} ${await res.text()}`);
+  if (!createRes.ok) {
+    throw new Error(`create repo failed: ${createRes.status} ${await createRes.text()}`);
+  }
   console.log(`created ${SLUG}`);
 }
 
 async function putFile(path: string, content: string, message: string): Promise<void> {
   const existing = await api('GET', `/repos/${SLUG}/contents/${path}`);
-  const sha = existing.ok ? ((await existing.json()) as { sha: string }).sha : undefined;
+  let sha: string | undefined;
+  if (existing.ok) {
+    const body = (await existing.json()) as { sha: string; content: string };
+    sha = body.sha;
+    // GitHub base64-encodes content with embedded newlines; Buffer.from
+    // skips non-base64 characters so this decodes cleanly regardless.
+    // Comparing before writing is what makes re-running after fixture drift
+    // safe without also permanently growing the commit log and firing a
+    // fresh Actions run on every unchanged re-provision.
+    const currentContent = Buffer.from(body.content, 'base64').toString('utf8');
+    if (currentContent === content) {
+      console.log(`unchanged ${path}`);
+      return;
+    }
+  } else if (existing.status !== 404) {
+    // Same reasoning as ensureRepo: a non-404 failure is not "the file is
+    // absent". Treating it as absent would PUT without a `sha` against a
+    // path that does exist, which GitHub rejects, but only after masking
+    // the real cause.
+    throw new Error(`check ${path} failed: ${existing.status} ${await existing.text()}`);
+  }
   const res = await api('PUT', `/repos/${SLUG}/contents/${path}`, {
     message,
     content: Buffer.from(content).toString('base64'),

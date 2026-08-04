@@ -795,10 +795,25 @@ git commit -m "add provider expectation tables with compile-time completeness gu
 - Create: `packages/glance/tests/live/setup-github-fixture.ts`
 
 **Interfaces:**
-- Consumes: `resolveGitHubToken`, `loadCredentials`, `githubRepo` from Task 1.
+- Consumes: `resolveGitHubToken`, `loadCredentials`, `githubRepo` from Task 1. The
+  script derives its target owner/repo from `githubRepo(creds).web_url` rather
+  than a hardcoded constant, so `harness_credentials.json` stays the single
+  source of truth for what the fixture points at.
 - Produces: a live repo `m4ttheweric/glance-conformance` and `async function setupGitHubFixture(): Promise<void>`.
 
 The script must be idempotent. It will be re-run whenever the fixture drifts.
+Idempotent means more than "does not error": re-running with no drift must
+also make no writes, i.e. no new commits and no new Actions runs, not just
+tolerate existing state.
+
+There is a chicken-and-egg dependency worth naming up front: the script reads
+its target repo from `harness_credentials.json`, but that file names the very
+repo the script creates. This is fine, since the entry is expected to exist
+(pointing at the intended repo name) before provisioning ever runs, the same
+way Task 3 originally happened in practice. `loadCredentials`/`githubRepo`
+fail with a legible message if the file or the `github` entry is missing, so
+this is a clear error rather than a confusing one, but Step 2 below still
+orders "get the credentials entry right" before "run the script."
 
 - [ ] **Step 1: Write the setup script**
 
@@ -818,10 +833,33 @@ Create `packages/glance/tests/live/setup-github-fixture.ts`:
  * Run: bun tests/live/setup-github-fixture.ts
  */
 
-import { resolveGitHubToken } from './credentials.ts';
+import { loadCredentials, githubRepo, resolveGitHubToken } from './credentials.ts';
 
-const OWNER = 'm4ttheweric';
-const REPO = 'glance-conformance';
+// The rest of the harness treats harness_credentials.json as the source of
+// truth for targets, so the fixture's owner/repo are derived from it rather
+// than hardcoded here, the same way later tasks resolve their targets.
+function parseGitHubSlug(webUrl: string): { owner: string; repo: string } {
+  const { pathname } = new URL(webUrl);
+  const [, owner, repo] = pathname.split('/');
+  if (!owner || !repo) {
+    throw new Error(`githubRepo.web_url is not a github.com repo URL: ${webUrl}`);
+  }
+  return { owner, repo };
+}
+
+const creds = await loadCredentials();
+if (!creds) {
+  console.error(
+    'No harness_credentials.json found. Copy harness_credentials.example.json ' +
+      'to harness_credentials.json and fill in a github repo entry before running this script.'
+  );
+  process.exit(1);
+}
+
+// githubRepo() throws if the entry is missing. That is expected on a
+// from-scratch setup: the entry names the repo this script creates, so the
+// file must already point at the target before provisioning can run.
+const { owner: OWNER, repo: REPO } = parseGitHubSlug(githubRepo(creds).web_url);
 const SLUG = `${OWNER}/${REPO}`;
 
 const token = await resolveGitHubToken();
@@ -844,24 +882,54 @@ async function api(method: string, path: string, body?: unknown): Promise<Respon
 }
 
 async function ensureRepo(): Promise<void> {
-  if ((await api('GET', `/repos/${SLUG}`)).ok) {
+  const res = await api('GET', `/repos/${SLUG}`);
+  if (res.ok) {
     console.log(`repo ${SLUG} exists`);
     return;
   }
-  const res = await api('POST', '/user/repos', {
+  // Only a 404 means "doesn't exist yet". A transient failure (secondary
+  // rate limit, a 5xx) is not absence, and reading it as absence would
+  // attempt to create a repo that already exists, surfacing a confusing
+  // "422 name already exists" instead of the real problem.
+  if (res.status !== 404) {
+    throw new Error(`check repo failed: ${res.status} ${await res.text()}`);
+  }
+  const createRes = await api('POST', '/user/repos', {
     name: REPO,
     description: 'Live conformance fixture for @mattstack/glance. Safe to force-push.',
     private: false,
     auto_init: true,
     has_issues: true
   });
-  if (!res.ok) throw new Error(`create repo failed: ${res.status} ${await res.text()}`);
+  if (!createRes.ok) {
+    throw new Error(`create repo failed: ${createRes.status} ${await createRes.text()}`);
+  }
   console.log(`created ${SLUG}`);
 }
 
 async function putFile(path: string, content: string, message: string): Promise<void> {
   const existing = await api('GET', `/repos/${SLUG}/contents/${path}`);
-  const sha = existing.ok ? ((await existing.json()) as { sha: string }).sha : undefined;
+  let sha: string | undefined;
+  if (existing.ok) {
+    const body = (await existing.json()) as { sha: string; content: string };
+    sha = body.sha;
+    // GitHub base64-encodes content with embedded newlines; Buffer.from
+    // skips non-base64 characters so this decodes cleanly regardless.
+    // Comparing before writing is what makes re-running after fixture drift
+    // safe without also permanently growing the commit log and firing a
+    // fresh Actions run on every unchanged re-provision.
+    const currentContent = Buffer.from(body.content, 'base64').toString('utf8');
+    if (currentContent === content) {
+      console.log(`unchanged ${path}`);
+      return;
+    }
+  } else if (existing.status !== 404) {
+    // Same reasoning as ensureRepo: a non-404 failure is not "the file is
+    // absent". Treating it as absent would PUT without a `sha` against a
+    // path that does exist, which GitHub rejects, but only after masking
+    // the real cause.
+    throw new Error(`check ${path} failed: ${existing.status} ${await existing.text()}`);
+  }
   const res = await api('PUT', `/repos/${SLUG}/contents/${path}`, {
     message,
     content: Buffer.from(content).toString('base64'),
@@ -950,26 +1018,41 @@ export async function setupGitHubFixture(): Promise<void> {
 if (import.meta.main) await setupGitHubFixture();
 ```
 
-- [ ] **Step 2: Run the setup script**
+- [ ] **Step 2: Point the credentials file at the fixture before running**
+
+The script reads its target from `harness_credentials.json`, so that file's
+`github` entry must already read `"name": "glance-conformance"` and
+`"web_url": "https://github.com/m4ttheweric/glance-conformance"` before the
+script can run at all. Edit if it still points at `gitq-test-sandbox` (or is
+missing a `github` entry entirely, in which case copy
+`harness_credentials.example.json` first).
+
+- [ ] **Step 3: Run the setup script**
 
 Run: `cd packages/glance && bun tests/live/setup-github-fixture.ts`
-Expected output, in order: `created m4ttheweric/glance-conformance`, `wrote README.md`, `wrote .github/workflows/ci.yml`, `auto-merge enabled`, `main protected with required status check`, then the fixture URL.
+Expected output on a true first run (repo does not exist yet), in order: `created m4ttheweric/glance-conformance`, `wrote README.md`, `wrote .github/workflows/ci.yml`, `auto-merge enabled`, `main protected with required status check`, then the fixture URL.
 
 If `protect main failed: 403`, the repo was created private. Fix with `gh repo edit m4ttheweric/glance-conformance --visibility public --accept-visibility-change-consequences` and re-run.
 
-- [ ] **Step 3: Verify idempotency**
+- [ ] **Step 4: Verify idempotency**
 
-Run the exact same command a second time.
-Expected: `repo m4ttheweric/glance-conformance exists` followed by the same writes succeeding. No errors. This proves re-running after fixture drift is safe.
+Run the exact same command again, with nothing changed on either side.
+Expected: `repo m4ttheweric/glance-conformance exists`, `unchanged README.md`,
+`unchanged .github/workflows/ci.yml`, `auto-merge enabled`, `main protected
+with required status check`. No errors, and critically: no new commit on the
+repo and no new Actions run, since `putFile` now skips the write when the
+decoded existing content already matches. Confirm by checking
+`gh api repos/m4ttheweric/glance-conformance/commits --jq 'length'` and
+`gh api repos/m4ttheweric/glance-conformance/actions/runs --jq '.total_count'`
+before and after: neither should grow. This is what "re-running after
+fixture drift is safe" actually means, not just "does not error."
 
-- [ ] **Step 4: Verify the workflow actually runs**
+- [ ] **Step 5: Verify the workflow actually runs**
 
 Run: `gh api repos/m4ttheweric/glance-conformance/actions/runs --jq '.workflow_runs[0] | "\(.name) \(.status) \(.conclusion)"'`
 Expected: a run for the `conformance` workflow. Wait for `completed success` before continuing. If no runs appear, Actions is disabled on the repo; enable it in repository settings.
 
-- [ ] **Step 5: Record the fixture in credentials, then commit the script**
-
-Confirm `harness_credentials.json` names the new repo. Its `github` entry must read `"name": "glance-conformance"` and `"web_url": "https://github.com/m4ttheweric/glance-conformance"`. Edit if it still points at `gitq-test-sandbox`.
+- [ ] **Step 6: Commit the script**
 
 ```bash
 cd /Users/matt/Documents/GitHub/glance
