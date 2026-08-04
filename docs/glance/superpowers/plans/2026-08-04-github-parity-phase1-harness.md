@@ -1971,7 +1971,7 @@ git commit -m "add read-path and unsupported-path live conformance"
 
 **Interfaces:**
 - Consumes: everything from Task 5.
-- Produces: `async function runWriteConformance(fixture: ProviderFixture, report: Reporter): Promise<void>`
+- Produces: `async function runWriteConformance(fixture: ProviderFixture, report: Reporter): Promise<void>` and `async function runMergeConformance(fixture: ProviderFixture, report: Reporter): Promise<void>`, plus the private helpers `runPrefix`, `createBranch`, `commitFile`, `scopedRepoId`, `branchExists`, `headCommitMessage`. Tasks 7 reuses `runPrefix`, `createBranch`, and `commitFile`.
 
 Covers the full lifecycle: branch, PR, update, discussions, approval, merge, cleanup. Every created branch is deleted in a `finally`.
 
@@ -2222,7 +2222,146 @@ export async function runWriteConformance(
 }
 ```
 
-- [ ] **Step 2: Wire the write cycle into the runner**
+- [ ] **Step 2: Add the merge cycle to `conformance.ts`**
+
+`mergePullRequest` is declared `supported` on both providers and is the method with the
+most known open defects, yet nothing above exercises it. Both defects are invisible to a
+merge that only checks "did it return without throwing", so assert their observable
+consequences directly:
+
+- **MAT-25.** `GitHubProvider.ts:962-964` assigns both `commitMessage` and
+  `squashCommitMessage` to `commit_title`, so the second silently clobbers the first.
+  Passing both and then reading the resulting commit back is what exposes it.
+- **`shouldRemoveSourceBranch` is a no-op on GitHub.** `GitHubProvider.ts:965` sends
+  `delete_branch`, which GitHub's merge endpoint does not accept. Asking for branch
+  deletion and then checking whether the branch still exists is what exposes it.
+
+Append to `packages/glance/tests/live/conformance.ts`:
+
+```typescript
+async function branchExists(fixture: ProviderFixture, branch: string): Promise<boolean> {
+  const { provider, projectPath } = fixture;
+  const path =
+    fixture.name === 'github'
+      ? `/repos/${projectPath}/git/ref/heads/${branch}`
+      : apiPath(fixture, `/projects/${encodeURIComponent(projectPath)}/repository/branches/${encodeURIComponent(branch)}`);
+  const res = await provider.restRequest('GET', path);
+  return res.ok;
+}
+
+/**
+ * Read back the message of the commit a merge produced.
+ *
+ * The merge call returning without throwing proves almost nothing: MAT-25 is a
+ * silent overwrite of one message field by another, and the API reports success
+ * either way. Only the resulting commit says which message actually landed.
+ */
+async function headCommitMessage(fixture: ProviderFixture): Promise<string> {
+  const { provider, projectPath, defaultBranch } = fixture;
+  if (fixture.name === 'github') {
+    const res = await provider.restRequest(
+      'GET',
+      `/repos/${projectPath}/commits/${defaultBranch}`
+    );
+    if (!res.ok) throw new Error(`could not read head commit: HTTP ${res.status}`);
+    const { commit } = (await res.json()) as { commit: { message: string } };
+    return commit.message;
+  }
+  const res = await provider.restRequest(
+    'GET',
+    apiPath(fixture, `/projects/${encodeURIComponent(projectPath)}/repository/commits/${encodeURIComponent(defaultBranch)}`)
+  );
+  if (!res.ok) throw new Error(`could not read head commit: HTTP ${res.status}`);
+  const { message } = (await res.json()) as { message: string };
+  return message;
+}
+
+export async function runMergeConformance(
+  fixture: ProviderFixture,
+  report: Reporter
+): Promise<void> {
+  const { provider, projectPath, defaultBranch } = fixture;
+  const branch = `${runPrefix()}-merge`;
+  const marker = `conformance-merge-${Date.now().toString(36)}`;
+  let merged = false;
+
+  try {
+    await createBranch(fixture, branch);
+    await commitFile(fixture, branch, `${marker}.md`, `# ${marker}\n`);
+    const pr = await provider.createPullRequest({
+      projectPath,
+      title: 'conformance: merge cycle',
+      description: 'Opened by the glance conformance harness to exercise merge. Safe to close.',
+      sourceBranch: branch,
+      targetBranch: defaultBranch
+    });
+
+    await check(report, fixture, 'mergePullRequest', 'merges and reports merged state', async () => {
+      await provider.mergePullRequest(projectPath, pr.iid, {
+        commitMessage: `${marker} merge-commit-message`,
+        squashCommitMessage: `${marker} squash-commit-message`,
+        shouldRemoveSourceBranch: true
+      });
+      merged = true;
+      const after = await pollUntil(`merged state of ${pr.iid}`, async () => {
+        const fresh = await provider.fetchSingleMR(projectPath, pr.iid, null);
+        return fresh && fresh.state !== 'opened' ? fresh : null;
+      });
+      assert(
+        after.state === 'merged',
+        `expected state "merged", got "${after.state}"`
+      );
+    });
+
+    if (!merged) return;
+
+    await check(
+      report,
+      fixture,
+      'mergePullRequest',
+      'the commitMessage we asked for actually reaches the commit (MAT-25)',
+      async () => {
+        const message = await headCommitMessage(fixture);
+        assert(
+          message.includes(marker),
+          `head commit does not mention this run at all. Got: ${message.slice(0, 200)}`
+        );
+        assert(
+          message.includes('merge-commit-message'),
+          `commitMessage was dropped. Head commit was: ${message.slice(0, 200)}`
+        );
+      }
+    );
+
+    await check(
+      report,
+      fixture,
+      'mergePullRequest',
+      'shouldRemoveSourceBranch actually deletes the source branch',
+      async () => {
+        const stillThere = await branchExists(fixture, branch);
+        assert(
+          !stillThere,
+          'branch still exists after merging with shouldRemoveSourceBranch: true'
+        );
+      }
+    );
+  } finally {
+    if (await branchExists(fixture, branch)) {
+      await provider.deleteBranch(projectPath, branch).catch(err => {
+        console.error(`  cleanup: could not delete ${branch}: ${err}`);
+      });
+    }
+  }
+}
+```
+
+Two things to expect. On GitHub the fixture's `main` requires the `always-passes` status
+check, but `enforce_admins` is false and the token's account owns the repo, so an admin
+merge goes through without waiting for the run. And both new assertions are EXPECTED TO
+FAIL on GitHub: that is the point. Record the failures, do not fix `src/`.
+
+- [ ] **Step 3: Wire both cycles into the runner**
 
 In `packages/glance/tests/live/runner.ts`, change the import to add `runWriteConformance`:
 
@@ -2240,12 +2379,14 @@ and add the call inside the fixture loop, after `runUnsupportedConformance`:
   await runWriteConformance(fixture, report);
 ```
 
-- [ ] **Step 3: Run the harness**
+- [ ] **Step 4: Run the harness**
 
 Run: `cd packages/glance && bun tests/live/runner.ts`
-Expected: the write cycle runs on both providers. Record every failure verbatim.
+Expected: the write and merge cycles run on both providers. Record every failure verbatim.
+Two GitHub merge assertions are expected to fail, exposing MAT-25 and the
+`shouldRemoveSourceBranch` no-op. Failures here are the deliverable.
 
-- [ ] **Step 4: Verify cleanup left nothing behind**
+- [ ] **Step 5: Verify cleanup left nothing behind**
 
 Run: `gh api repos/m4ttheweric/glance-conformance/branches --jq '.[].name'`
 Expected: only `main`. Any leftover `conformance/...` branch means the `finally` block did not run or `deleteBranch` failed. Delete leftovers by hand and investigate before continuing.
@@ -2253,12 +2394,11 @@ Expected: only `main`. Any leftover `conformance/...` branch means the `finally`
 Run: `cd packages/glance && bun -e 'import {buildFixtures} from "./tests/live/fixture.ts"; const [,gl] = await buildFixtures(); const r = await gl.provider.restRequest("GET", "/api/v4/projects/" + encodeURIComponent(gl.projectPath) + "/repository/branches"); console.log(((await r.json()) as {name:string}[]).map(b=>b.name).join(" "))'`
 Expected: no `conformance/` branches.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-cd /Users/matt/Documents/GitHub/glance
 git add packages/glance/tests/live/conformance.ts packages/glance/tests/live/runner.ts
-git commit -m "add write-cycle live conformance with guaranteed branch cleanup"
+git commit -m "add write-cycle and merge-cycle live conformance"
 ```
 
 ---
@@ -2535,6 +2675,10 @@ git commit -m "add CI live conformance and record phase 1 findings"
 - No `conformance/` branches remain on either fixture repo, including the `-failjob` branch.
 - `retryJob` and `fetchJobTrace` were exercised against a job that genuinely FAILED, not
   merely against whichever job ran last.
+- `mergePullRequest` was actually exercised, and its two known defects (MAT-25's dropped
+  `commitMessage`, and `shouldRemoveSourceBranch` being a no-op on GitHub) were each
+  either reproduced or shown not to reproduce. A merge that only proves "did not throw"
+  does not count.
 - `harness_credentials.json` has never appeared in `git status`.
 - The findings document records what actually broke, in the API's own words.
 
