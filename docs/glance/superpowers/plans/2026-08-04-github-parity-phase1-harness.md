@@ -1891,7 +1891,8 @@ git commit -m "add write-cycle live conformance with guaranteed branch cleanup"
 
 **Interfaces:**
 - Consumes: everything from Task 6.
-- Produces: `async function runCiConformance(fixture: ProviderFixture, report: Reporter): Promise<void>` and the findings document that phases 2 through 4 are planned from.
+- Produces: `async function runCiConformance(fixture: ProviderFixture, report: Reporter): Promise<void>`, the private helper `withFailedGitHubJob`, and the findings document that phases 2 through 4 are planned from.
+- Reuses from Task 6, already in `conformance.ts` scope: `runPrefix`, `createBranch`, `commitFile`, `check`, `assert`.
 
 - [ ] **Step 1: Add CI assertions to `conformance.ts`**
 
@@ -1941,6 +1942,74 @@ async function latestPipelineAndJob(fixture: ProviderFixture): Promise<PipelineP
   return job ? { pipelineId: pipe.id, jobId: job.id } : null;
 }
 
+/**
+ * Run `body` against a job that has genuinely FAILED, then clean up.
+ *
+ * `retryJob` and `fetchJobTrace` exist for failed jobs, so probing them with
+ * whatever job happened to run last tests the wrong state: a passing job's log
+ * proves nothing about how a failure is surfaced. The fixture's `controllable`
+ * job fails exactly when the branch carries a `fail-marker` file, and the
+ * workflow triggers on `pull_request`, so the branch needs a PR to run at all.
+ *
+ * GitHub only. The GitLab fixture's `.gitlab-ci.yml` is not ours to change.
+ */
+async function withFailedGitHubJob(
+  fixture: ProviderFixture,
+  body: (probe: PipelineProbe) => Promise<void>
+): Promise<void> {
+  const { provider, projectPath, defaultBranch } = fixture;
+  const branch = `${runPrefix()}-failjob`;
+
+  try {
+    await createBranch(fixture, branch);
+    await commitFile(fixture, branch, 'fail-marker', 'makes the controllable job fail\n');
+    await provider.createPullRequest({
+      projectPath,
+      title: 'conformance: failed-job fixture',
+      description: 'Opened by the glance conformance harness to produce a failed job. Safe to close.',
+      sourceBranch: branch,
+      targetBranch: defaultBranch
+    });
+
+    const probe = await pollUntil(
+      `controllable job to fail on ${branch}`,
+      async () => {
+        const runsRes = await provider.restRequest(
+          'GET',
+          `/repos/${projectPath}/actions/runs?branch=${encodeURIComponent(branch)}`
+        );
+        if (!runsRes.ok) return null;
+        const { workflow_runs: runs } = (await runsRes.json()) as {
+          workflow_runs: Array<{ id: number }>;
+        };
+        for (const run of runs) {
+          const jobsRes = await provider.restRequest(
+            'GET',
+            `/repos/${projectPath}/actions/runs/${run.id}/jobs`
+          );
+          if (!jobsRes.ok) continue;
+          const { jobs } = (await jobsRes.json()) as {
+            jobs: Array<{ id: number; name: string; status: string; conclusion: string | null }>;
+          };
+          const failed = jobs.find(
+            j => j.name === 'controllable' && j.status === 'completed' && j.conclusion === 'failure'
+          );
+          if (failed) return { pipelineId: run.id, jobId: failed.id };
+        }
+        return null;
+      },
+      { timeoutMs: 300_000, intervalMs: 5_000 }
+    );
+
+    await body(probe);
+  } finally {
+    // Deleting the branch also closes the PR. There is no closePullRequest.
+    await provider.deleteBranch(projectPath, branch).catch(err => {
+      console.error(`  cleanup: could not delete ${branch}: ${err}`);
+    });
+  }
+}
+
 export async function runCiConformance(
   fixture: ProviderFixture,
   report: Reporter
@@ -1978,8 +2047,51 @@ export async function runCiConformance(
   await check(report, fixture, 'retryPipeline', 'accepts a retry request', async () => {
     await provider.retryPipeline(projectPath, probe.pipelineId);
   });
+
+  if (fixture.name !== 'github') return;
+
+  try {
+    await withFailedGitHubJob(fixture, async failed => {
+      await check(
+        report,
+        fixture,
+        'fetchJobTrace',
+        'returns the log of a job that actually failed',
+        async () => {
+          const trace = await provider.fetchJobTrace(projectPath, failed.jobId);
+          assert(typeof trace === 'string', `expected a string, got ${typeof trace}`);
+          assert(trace.length > 0, 'trace was empty');
+          assert(
+            !trace.trimStart().startsWith('<'),
+            'trace looks like HTML or XML, which usually means a redirect returned an error page'
+          );
+          assert(
+            trace.includes('fail-marker present'),
+            `trace did not contain the fixture's failure line. First 200 chars: ${trace.slice(0, 200)}`
+          );
+        }
+      );
+
+      await check(report, fixture, 'retryJob', 'accepts a retry of the failed job', async () => {
+        await provider.retryJob(projectPath, failed.jobId);
+      });
+    });
+  } catch (err) {
+    report.fail(
+      fixture.name,
+      'retryJob',
+      'provision a genuinely failed job',
+      err instanceof Error ? err.message : String(err)
+    );
+  }
 }
 ```
+
+Two things to know before running this. The failed-job section waits on a real Actions
+run, so it is the slowest assertion in the suite: budget up to five minutes. And it is the
+only place `retryJob` is exercised at all, which is the point. Probing whichever job ran
+most recently would usually find a PASSING job, and a passing job's log proves nothing
+about how a failure is surfaced.
 
 - [ ] **Step 2: Wire it into the runner**
 
@@ -2036,7 +2148,9 @@ git commit -m "add CI live conformance and record phase 1 findings"
 - `bun tests/live/runner.ts` runs end to end against both providers and prints a summary.
 - `bun test tests/` still passes, at 133 plus the unit tests added here, with nothing under `tests/live/` picked up.
 - `bun run check-types` is clean, and deleting any line from either expectation table breaks it.
-- No `conformance/` branches remain on either fixture repo.
+- No `conformance/` branches remain on either fixture repo, including the `-failjob` branch.
+- `retryJob` and `fetchJobTrace` were exercised against a job that genuinely FAILED, not
+  merely against whichever job ran last.
 - `harness_credentials.json` has never appeared in `git status`.
 - The findings document records what actually broke, in the API's own words.
 
