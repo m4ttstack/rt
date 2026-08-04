@@ -124,6 +124,26 @@ failures; recording them accurately is the deliverable of this phase.
   the repository-level `delete_branch_on_merge` setting. Found while planning phase 1,
   not yet ticketed. Same silent-no-op class as MAT-15.
 
+### Phase 2b: `restRequest` is not portable, but documents that it is
+
+Found while planning phase 1. `GitProvider.restRequest`'s docstring states that
+"implementations translate the path to the provider's API URL format".
+`GitHubProvider` does: it joins the path onto `https://api.github.com`.
+`GitLabProvider` does not: `restRequest` is `${this.baseURL}${path}` verbatim, so a
+GitLab caller must pass `/api/v4/user` while a GitHub caller must pass `/user`.
+
+The consequence is that provider-agnostic code cannot call `restRequest` portably,
+which is the one thing the method exists to provide. The existing
+`tests/integration.live.ts` already works around it, passing `/user` on one provider
+and `/api/v4/user` on the other, which is why the divergence has gone unnoticed.
+
+Either the implementation should match the docstring (GitLab prefixes `/api/v4`
+itself) or the docstring should be corrected and the interface should expose the API
+root so callers can build paths deliberately. The first is the smaller change and
+matches what callers already assume from the name. Changing it is a breaking change
+for any existing caller passing `/api/v4/...`, so it needs a deliberate decision
+rather than a quiet fix.
+
 ### Phase 2a: absent optional methods
 
 Found while planning phase 1. `GitHubProvider` does not implement two optional
