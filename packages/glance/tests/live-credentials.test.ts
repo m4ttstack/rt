@@ -142,8 +142,8 @@ describe('repo optional field validation', () => {
       repos: [{ provider: 'github', name: 'test', web_url: 'https://example.com', owner: 'user' }]
     };
     const creds = parseCredentials(minimal);
-    expect(creds.repos[0].project_id).toBeUndefined();
-    expect(creds.repos[0].path_with_namespace).toBeUndefined();
+    expect(creds.repos[0]?.project_id).toBeUndefined();
+    expect(creds.repos[0]?.path_with_namespace).toBeUndefined();
   });
 });
 

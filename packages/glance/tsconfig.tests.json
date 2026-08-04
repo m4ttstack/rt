@@ -4,5 +4,5 @@
     "rootDir": ".",
     "types": ["node", "bun"]
   },
-  "include": ["src", "tests/live"]
+  "include": ["src", "tests/live", "tests/live-*.test.ts"]
 }
