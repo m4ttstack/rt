@@ -171,6 +171,42 @@ describe('selectors', () => {
     expect(() => ownerUser(parseCredentials(noOwner))).toThrow(/no user with role "owner"/);
   });
 });
+
+describe('repo optional field validation', () => {
+  test('rejects a non-numeric project_id', () => {
+    const bad = {
+      ...VALID,
+      repos: [{ ...VALID.repos[0], project_id: 'not-a-number' }]
+    };
+    expect(() => parseCredentials(bad)).toThrow(/repos\[0\]\.project_id.*number/);
+  });
+
+  test('rejects a non-string path_with_namespace', () => {
+    const bad = {
+      ...VALID,
+      repos: [{ ...VALID.repos[0], path_with_namespace: 12345 }]
+    };
+    expect(() => parseCredentials(bad)).toThrow(/repos\[0\]\.path_with_namespace.*string/);
+  });
+
+  test('rejects an empty path_with_namespace', () => {
+    const bad = {
+      ...VALID,
+      repos: [{ ...VALID.repos[0], path_with_namespace: '' }]
+    };
+    expect(() => parseCredentials(bad)).toThrow(/repos\[0\]\.path_with_namespace.*string/);
+  });
+
+  test('accepts a repo with no optional fields', () => {
+    const minimal = {
+      ...VALID,
+      repos: [{ provider: 'github', name: 'test', web_url: 'https://example.com', owner: 'user' }]
+    };
+    const creds = parseCredentials(minimal);
+    expect(creds.repos[0].project_id).toBeUndefined();
+    expect(creds.repos[0].path_with_namespace).toBeUndefined();
+  });
+});
 ```
 
 - [ ] **Step 2: Run the tests to verify they fail**
@@ -253,6 +289,14 @@ export function parseCredentials(raw: unknown): HarnessCredentials {
         fail(`repos[${i}].${field} must be a non-empty string`);
       }
     }
+    if (r.project_id !== undefined && typeof r.project_id !== 'number') {
+      fail(`repos[${i}].project_id must be a number, got ${typeof r.project_id}`);
+    }
+    if (r.path_with_namespace !== undefined) {
+      if (typeof r.path_with_namespace !== 'string' || !r.path_with_namespace) {
+        fail(`repos[${i}].path_with_namespace must be a non-empty string`);
+      }
+    }
     return r as unknown as HarnessRepo;
   });
 
@@ -298,8 +342,25 @@ export async function loadCredentials(
 export async function resolveGitHubToken(): Promise<string | null> {
   try {
     const proc = Bun.spawn(['gh', 'auth', 'token'], { stdout: 'pipe', stderr: 'ignore' });
-    const token = (await new Response(proc.stdout).text()).trim();
-    return (await proc.exited) === 0 && token ? token : null;
+    const timeoutMs = 10_000;
+    const timeout = new Promise<null>(() => {
+      // Promise that never resolves on its own; only needed for the race.
+    });
+    const timeoutHandle = setTimeout(() => {
+      proc.kill();
+    }, timeoutMs);
+    try {
+      const result = await Promise.race([
+        (async () => {
+          const token = (await new Response(proc.stdout).text()).trim();
+          return (await proc.exited) === 0 && token ? token : null;
+        })(),
+        timeout
+      ]);
+      return result;
+    } finally {
+      clearTimeout(timeoutHandle);
+    }
   } catch {
     return null;
   }
@@ -309,7 +370,7 @@ export async function resolveGitHubToken(): Promise<string | null> {
 - [ ] **Step 4: Run the tests to verify they pass**
 
 Run: `cd packages/glance && bun test tests/live-credentials.test.ts`
-Expected: PASS, 9 tests
+Expected: PASS, 13 tests
 
 - [ ] **Step 5: Verify DEFAULT_PATH resolves to the real credentials file**
 
