@@ -22,7 +22,8 @@
   "scripts": {
     "build": "bun build src/index.ts src/types.ts src/logger.ts src/GitProvider.ts src/GitLabProvider.ts src/GitHubProvider.ts src/ActionCableClient.ts src/MRDetailFetcher.ts src/NoteMutator.ts src/EventsPoller.ts src/EventsWatcher.ts src/providers.ts --outdir dist --root src --target node --packages external && tsc -p tsconfig.build.json",
     "prepublishOnly": "bun run check-types && bun run build",
-    "check-types": "tsc --noEmit"
+    "check-types": "tsc --noEmit",
+    "check-types:live": "tsc -p tsconfig.tests.json --noEmit"
   },
   "license": "MIT",
   "repository": {
@@ -34,9 +35,10 @@
     "node": ">=18"
   },
   "devDependencies": {
-    "typescript": "catalog:",
+    "@mattstack/typescript-config": "workspace:*",
+    "@types/bun": "^1.3.14",
     "@types/node": "^22.15.21",
-    "@mattstack/typescript-config": "workspace:*"
+    "typescript": "catalog:"
   },
   "dependencies": {
     "@gitbeaker/rest": "^43.8.0"
