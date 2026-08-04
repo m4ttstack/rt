@@ -176,13 +176,13 @@ writing.
 **3. `retryJob`: "accepts a retry of the failed job"**
 
 ```
-retryJob failed: 403 Forbidden ... {"message":"The workflow run containing this job is already running","documentation_url":"https://docs.github.com/rest/actions/workflow-runs#re-run-a-job-from-a-workflow-run","status":"403"}
+retryJob failed: 403 Forbidden — {"message":"The workflow run containing this job is already running","documentation_url":"https://docs.github.com/rest/actions/workflow-runs#re-run-a-job-from-a-workflow-run","status":"403"}
 ```
 
-(The `...` above replaces a single em dash character in GitHub's own error-formatting
-string, `${res.status} ${res.statusText} <em-dash> ${text}`, so this document's own no-dash
-rule can hold without altering the substance of the message. The unaltered original,
-including that character, is in the untracked working report, `task-7-report.md`.)
+The dash in that string is GitHub's, reproduced verbatim. This project's no-dash rule
+governs prose we author, not quoted evidence: a findings document that later plans are
+built from has to reproduce errors exactly, and silently editing an API's own message
+would be the wrong trade.
 
 This is the only place in the entire suite `retryJob` is exercised against a job that
 genuinely failed (see "Was `retryJob`/`fetchJobTrace` exercised against a genuine failure?"

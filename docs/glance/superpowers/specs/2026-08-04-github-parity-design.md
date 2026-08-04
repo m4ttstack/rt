@@ -211,9 +211,13 @@ proves nothing regressed.
 
 What this fixes structurally rather than case by case:
 
-- **`fetchJobTrace`.** The Actions logs endpoint returns 302 to signed blob storage.
-  Forwarding the `Authorization` header to that redirect target typically fails with 400.
-  Octokit handles this correctly.
+- **`fetchJobTrace`.** ~~The Actions logs endpoint returns 302 to signed blob storage.
+  Forwarding the `Authorization` header to that redirect target typically fails with 400.~~
+  **Corrected by phase 1's live run: this prediction was wrong.** `fetchJobTrace` passed
+  twice against the GitHub fixture, including once against a genuinely failed job, and
+  returned the real log content. Bun's `fetch` follows the redirect and the signed blob
+  URL accepts the request. This is no longer a reason to adopt Octokit, and phase 3 should
+  not budget work for it. The remaining reasons below stand on their own.
 - **Rate limiting.** A mutating suite is exactly where throttling and retry matter. There
   is none today.
 - **Pagination.** `octokit.paginate` replaces the hand-rolled `fetchAllPages`.
