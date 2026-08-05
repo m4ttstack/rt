@@ -3127,6 +3127,65 @@ git commit -m "test: re-select the GitLab job after retryPipeline supersedes it"
 
 ---
 
+### Task 19: Separate fixture conditions from provider defects, and instrument the merge stall
+
+Two live runs produced five distinct failures. Tasks 17 and 18 fixed the two deterministic ones, confirmed passing in run 2. The three that remain split cleanly into two kinds, and conflating them is what this task prevents.
+
+**Run 1 versus run 2, same code except tasks 17 and 18:**
+
+| Check | Run 1 | Run 2 |
+| --- | --- | --- |
+| github `resolveDiscussion` / `unresolveDiscussion` | FAIL, invented field | pass |
+| gitlab `retryJob` | FAIL, superseded job | pass |
+| github `setAutoMerge` | pass | FAIL, "Pull request is in unstable status" |
+| gitlab `retryPipeline` | pass | FAIL, 409 "Error updating stale job" |
+| gitlab `mergePullRequest` | FAIL, 20s timeout | FAIL, 20s timeout |
+
+A check that flips between runs without a code change is reporting the fixture's state, not the provider's behavior. This harness already has the right convention for that, documented at `mergePullRequest`'s HTTP-405 handling: reporting it as a hard fail "would misattribute a fixture precondition to the provider, so it is Inconclusive instead."
+
+**Files:**
+- Modify: `packages/glance/tests/live/conformance.ts`
+
+- [ ] **Step 1: `setAutoMerge`, distinguish the precondition from the defect**
+
+GitHub answered `enablePullRequestAutoMerge` with `Pull request is in unstable status`. That is GitHub refusing on a mergeability state, not this SDK sending a bad request: run 1 armed auto-merge successfully with identical code.
+
+Catch that specific condition and report `Inconclusive` naming it, so the reason reads as a statement about the pull request's state rather than about `setAutoMerge`. Match on the message GitHub actually returned; do not broaden the catch to every GraphQL error, or a genuine `setAutoMerge` defect would start reporting as a skip and this task would have created the bug it exists to prevent.
+
+**Then read the surrounding check again with fresh eyes.** In run 2, `setAutoMerge` failed and `cancelAutoMerge` reported `disarms auto-merge and a re-read confirms it` as a pass. Work out whether that pass is real. If auto-merge was never armed, a re-read asserting it is off is satisfied by a pull request that never had it, which would be a vacuous pass of exactly the kind this plan has caught repeatedly. If it is vacuous, fix it: the cancel assertion must only count when there was something to cancel. Report your finding either way.
+
+- [ ] **Step 2: `retryPipeline`, decide whether the selection or the reporting is wrong**
+
+GitLab answered with 409 `Error updating stale job`. The probe selects the newest *settled* pipeline by scanning back up to `PIPELINE_SCAN_LIMIT`; a settled pipeline can be old enough that GitLab refuses to retry it.
+
+Investigate which is true and say which you concluded:
+- If the selection can prefer a more recent pipeline without weakening the settled-status filter that an earlier task added for good reason, prefer that. Do not undo that filter.
+- If a settled-but-stale pipeline is unavoidable on this fixture, treat the 409 as a fixture condition and report `Inconclusive` naming it.
+
+Do not do both. A fix plus a catch that hides the same condition means the catch is never exercised and nobody learns whether the fix worked.
+
+- [ ] **Step 3: Instrument the merge stall rather than guessing at it**
+
+`waitForMergeReadiness` polls until `detailedMergeStatus` leaves `{checking, unchecked, preparing, approvals_syncing}` and timed out at 20s on two consecutive runs, on different merge requests. Two consecutive failures is not a flake.
+
+Nobody knows which status it is stuck in, because the poll discards every observation and reports only that it timed out. That is the same evidentiary hole MAT-128 sat in for three phases, and it was closed by recording what actually happened rather than reasoning about it.
+
+Record the observed `detailedMergeStatus` values across the poll and print them when it times out, so the next run says which state it is stuck in. Also record when `fetchSingleMR` returns null, because the current predicate treats "merge request not found" and "still computing" identically, and those are very different problems.
+
+**Do not raise the timeout to make it pass.** A longer timeout on an unexplained stall converts a visible failure into a slow one and destroys the evidence. If the instrumentation later shows the transitional window is genuinely longer than 20s on this fixture, raising it becomes a justified change; deciding that now would be a guess.
+
+- [ ] **Step 4: Verify and commit**
+
+The live harness is the only thing that verifies any of this and running it is a separate step. Type-check, run the unit suite, and state plainly in your report that live verification is deferred.
+
+```bash
+cd packages/glance && bun run check-types && bun test
+git add packages/glance/tests/live/conformance.ts
+git commit -m "test: report fixture conditions as inconclusive and instrument the merge stall"
+```
+
+---
+
 ## Follow-ups this phase does not close
 
 Record these rather than doing them:
