@@ -9,7 +9,10 @@
  * exactly one of them can reach any given merge.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
+import { RequestError } from '@octokit/request-error';
 import { GitHubProvider } from '../src/GitHubProvider.ts';
+
+const API = 'https://api.github.com';
 
 const realFetch = globalThis.fetch;
 afterEach(() => {
@@ -23,6 +26,29 @@ interface MergeCall {
 }
 
 /**
+ * Adapts an `api()`-shaped stub (method, path, body) => Response into an
+ * `octokit.request(route, params)` stub: `RequestError` on a non-ok status,
+ * `{status, headers, data}` on success, matching the real client.
+ */
+function toOctokitRequestStub(
+  apiFn: (method: string, path: string, body?: unknown) => Promise<Response>
+) {
+  return async (route: string, params?: { data?: unknown }) => {
+    const spaceIdx = route.indexOf(' ');
+    const method = route.slice(0, spaceIdx);
+    const path = route.slice(spaceIdx + 1);
+    const res = await apiFn(method, path, params?.data);
+    if (!res.ok) {
+      throw new RequestError(await res.text(), res.status, {
+        request: { method, url: `${API}${path}`, headers: {} },
+        response: { status: res.status, url: '', headers: {}, data: await res.json() }
+      });
+    }
+    return { status: res.status, headers: {}, data: await res.json() };
+  };
+}
+
+/**
  * Records every api() call and answers all of them 200. `fetchSingleMR` is
  * stubbed too: mergePullRequest re-fetches the PR to return it, and that read
  * is not what these tests are about.
@@ -30,6 +56,13 @@ interface MergeCall {
  * `headRepoFullName` defaults to the same repo the merge is against, since
  * that is the ordinary (non-fork) case. Pass a different value, or `null`, to
  * exercise the fork / unknown-head-repo paths.
+ *
+ * `mergePullRequest`'s `shouldRemoveSourceBranch` path calls `fetchPR`, which
+ * now goes through `octokit.request` rather than `api()`. Every per-test
+ * override below replaces `.api` (for the DELETE and git/ref/heads checks)
+ * but never that raw-PR GET route, so binding `octokit.request` once, here,
+ * to this same base `apiFn` keeps it answering correctly no matter what a
+ * later override does to `.api`.
  */
 function stubGitHub(
   provider: GitHubProvider,
@@ -37,7 +70,7 @@ function stubGitHub(
   headRepoFullName: string | null = 'acme/repo'
 ): MergeCall[] {
   const calls: MergeCall[] = [];
-  (provider as any).api = async (
+  const apiFn = async (
     method: string,
     path: string,
     body?: unknown
@@ -68,6 +101,8 @@ function stubGitHub(
       headers: { get: () => null }
     } as unknown as Response;
   };
+  (provider as any).api = apiFn;
+  (provider as any).octokit = { request: toOctokitRequestStub(apiFn) };
   (provider as any).fetchSingleMR = async () => ({ iid: 1, sourceBranch });
   return calls;
 }

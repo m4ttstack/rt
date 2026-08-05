@@ -7,9 +7,13 @@
  * one fetch, and is null (unknown) when it cannot be read.
  *
  * `(provider as any).api` is monkey-patched and the GraphQL transport is
- * replaced with a recorder, so no network is involved.
+ * replaced with a recorder, so no network is involved. `currentUser`,
+ * `searchPRs`, and `fetchPR` now call `octokit.request` directly rather than
+ * `api()`, so the same stub body is also adapted onto `octokit.request` via
+ * `toOctokitRequestStub`.
  */
 import { describe, expect, test } from 'bun:test';
+import { RequestError } from '@octokit/request-error';
 import { GitHubProvider } from '../src/GitHubProvider.ts';
 
 const API = 'https://api.github.com';
@@ -22,6 +26,29 @@ function jsonResponse(body: unknown, ok = true): Response {
     text: async () => JSON.stringify(body),
     headers: { get: () => null }
   } as unknown as Response;
+}
+
+/**
+ * Adapts an `api()`-shaped stub (method, path) => Response into an
+ * `octokit.request(route)` stub: `RequestError` on a non-ok status,
+ * `{status, headers, data}` on success, matching the real client.
+ */
+function toOctokitRequestStub(
+  apiFn: (method: string, path: string, body?: unknown) => Promise<Response>
+) {
+  return async (route: string, params?: { data?: unknown }) => {
+    const spaceIdx = route.indexOf(' ');
+    const method = route.slice(0, spaceIdx);
+    const path = route.slice(spaceIdx + 1);
+    const res = await apiFn(method, path, params?.data);
+    if (!res.ok) {
+      throw new RequestError(await res.text(), res.status, {
+        request: { method, url: `${API}${path}`, headers: {} },
+        response: { status: res.status, url: '', headers: {}, data: await res.json() }
+      });
+    }
+    return { status: res.status, headers: {}, data: await res.json() };
+  };
 }
 
 function ghPR(number: number) {
@@ -58,7 +85,7 @@ function install(
   prs: ReturnType<typeof ghPR>[],
   threads: ThreadNode[] | null
 ): { batches: string[][] } {
-  (provider as any).api = async (_method: string, path: string) => {
+  const apiFn = async (_method: string, path: string) => {
     if (path.startsWith('/user')) {
       return jsonResponse({ id: 999, login: 'octocat', avatar_url: null });
     }
@@ -88,6 +115,8 @@ function install(
     if (path.includes('/check-runs')) return jsonResponse({ check_runs: [] });
     throw new Error(`unexpected path: ${path}`);
   };
+  (provider as any).api = apiFn;
+  (provider as any).octokit = { request: toOctokitRequestStub(apiFn) };
 
   const batches: string[][] = [];
   (provider as any).graphql = async (

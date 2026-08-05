@@ -53,9 +53,22 @@ function gitlabRecording(): { provider: GitLabProvider; calls: Array<Record<stri
 function githubRecording(): { provider: GitHubProvider; calls: string[] } {
   const provider = new GitHubProvider('https://github.com', 'tok');
   const calls: string[] = [];
+  const answer = (path: string) => (path.startsWith('/search/issues') ? { items: [] } : {});
+  // validateToken/currentUser/fetchPR/listRepoPRs/searchPRs/fetchCheckRuns go
+  // through octokit.request directly now; fetchReviews (via fetchAllPages)
+  // still goes through api(). Both stubs record into the same `calls` array
+  // so the path-based assertions below don't care which transport carried a
+  // given call.
+  (provider as any).octokit = {
+    request: async (route: string) => {
+      const path = route.slice(route.indexOf(' ') + 1);
+      calls.push(path);
+      return { status: 200, headers: {}, data: answer(path) };
+    },
+  };
   (provider as any).api = async (_method: string, path: string) => {
     calls.push(path);
-    const body = path.startsWith('/search/issues') ? { items: [] } : {};
+    const body = answer(path);
     return {
       ok: true,
       status: 200,

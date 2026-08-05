@@ -6,10 +6,15 @@
  * option field: state (single and multi), iids, authorUsernames, projectPath,
  * updatedAfter, listWeight.
  *
- * `(provider as any).api` and `.graphql` are monkey-patched, so no network is
- * involved.
+ * `currentUser`, `searchPRs`, `fetchPR`, `listRepoPRs`, and `fetchCheckRuns`
+ * call `octokit.request` directly; `fetchReviews` (via `fetchAllPages`) still
+ * goes through `api()`. `(provider as any).api` and `.graphql` are monkey-patched
+ * as before, and `toOctokitRequestStub` adapts the same Response-shaped stub
+ * function onto `octokit.request` so both transports answer identically and
+ * every existing path-based assertion keeps its meaning.
  */
 import { describe, expect, test } from 'bun:test';
+import { RequestError } from '@octokit/request-error';
 import { GitHubProvider } from '../src/GitHubProvider.ts';
 import type { FetchPullRequestsWarning } from '../src/GitProvider.ts';
 
@@ -23,6 +28,30 @@ function jsonResponse(body: unknown, ok = true, status?: number): Response {
     text: async () => JSON.stringify(body),
     headers: { get: () => null }
   } as unknown as Response;
+}
+
+/**
+ * Adapts an `api()`-shaped stub (method, path) => Response into an
+ * `octokit.request(route)` stub, so one fake transport body answers both
+ * seams identically: `RequestError` on a non-ok status, `{status, headers,
+ * data}` on success, exactly as the real client does.
+ */
+function toOctokitRequestStub(
+  apiFn: (method: string, path: string, body?: unknown) => Promise<Response>
+) {
+  return async (route: string, params?: { data?: unknown }) => {
+    const spaceIdx = route.indexOf(' ');
+    const method = route.slice(0, spaceIdx);
+    const path = route.slice(spaceIdx + 1);
+    const res = await apiFn(method, path, params?.data);
+    if (!res.ok) {
+      throw new RequestError(await res.text(), res.status, {
+        request: { method, url: `${API}${path}`, headers: {} },
+        response: { status: res.status, url: '', headers: {}, data: await res.json() }
+      });
+    }
+    return { status: res.status, headers: {}, data: await res.json() };
+  };
 }
 
 type FakePR = ReturnType<typeof ghPR>;
@@ -78,7 +107,7 @@ function searchItem(pr: FakePR) {
  */
 function install(provider: GitHubProvider, prs: FakePR[]): string[] {
   const calls: string[] = [];
-  (provider as any).api = async (_method: string, path: string) => {
+  const apiFn = async (_method: string, path: string) => {
     calls.push(path);
     if (path.startsWith('/user')) {
       return jsonResponse({ id: 999, login: 'octocat', avatar_url: null });
@@ -104,6 +133,8 @@ function install(provider: GitHubProvider, prs: FakePR[]): string[] {
     }
     throw new Error(`unexpected path: ${path}`);
   };
+  (provider as any).api = apiFn;
+  (provider as any).octokit = { request: toOctokitRequestStub(apiFn) };
   (provider as any).graphql = async () => ({ nodes: [] });
   return calls;
 }
@@ -377,15 +408,16 @@ describe('GitHubProvider.fetchPullRequests: request cost', () => {
 
     let inFlight = 0;
     let peak = 0;
-    const inner = (provider as any).api;
-    (provider as any).api = async (method: string, path: string) => {
+    const inner = (provider as any).octokit.request;
+    (provider as any).octokit.request = async (route: string, params?: unknown) => {
+      const path = route.slice(route.indexOf(' ') + 1);
       const isDetail = /^\/repos\/[^/]+\/[^/]+\/pulls\/\d+$/.test(path);
-      if (!isDetail) return inner(method, path);
+      if (!isDetail) return inner(route, params);
       inFlight++;
       peak = Math.max(peak, inFlight);
       await new Promise((resolve) => setTimeout(resolve, 0));
       try {
-        return await inner(method, path);
+        return await inner(route, params);
       } finally {
         inFlight--;
       }
@@ -405,7 +437,7 @@ describe('GitHubProvider.fetchPullRequests: request cost', () => {
  */
 function installFullSearchPages(provider: GitHubProvider, prs: FakePR[]): string[] {
   const calls: string[] = [];
-  (provider as any).api = async (_method: string, path: string) => {
+  const apiFn = async (_method: string, path: string) => {
     calls.push(path);
     if (path.startsWith('/user')) {
       return jsonResponse({ id: 999, login: 'octocat', avatar_url: null });
@@ -424,6 +456,8 @@ function installFullSearchPages(provider: GitHubProvider, prs: FakePR[]): string
     if (path.includes('/check-runs')) return jsonResponse({ check_runs: [] });
     throw new Error(`unexpected path: ${path}`);
   };
+  (provider as any).api = apiFn;
+  (provider as any).octokit = { request: toOctokitRequestStub(apiFn) };
   (provider as any).graphql = async () => ({ nodes: [] });
   return calls;
 }
@@ -461,7 +495,7 @@ describe('GitHubProvider.fetchPullRequests: truncation and failures are observab
   test('the repository listing page cap reaches the caller', async () => {
     const provider = new GitHubProvider('https://github.com', 'tok');
     const calls: string[] = [];
-    (provider as any).api = async (_method: string, path: string) => {
+    const apiFn = async (_method: string, path: string) => {
       calls.push(path);
       if (path.startsWith('/user')) {
         return jsonResponse({ id: 999, login: 'octocat', avatar_url: null });
@@ -483,6 +517,8 @@ describe('GitHubProvider.fetchPullRequests: truncation and failures are observab
       if (path.includes('/check-runs')) return jsonResponse({ check_runs: [] });
       throw new Error(`unexpected path: ${path}`);
     };
+    (provider as any).api = apiFn;
+    (provider as any).octokit = { request: toOctokitRequestStub(apiFn) };
     (provider as any).graphql = async () => ({ nodes: [] });
     const warnings: FetchPullRequestsWarning[] = [];
 
@@ -501,12 +537,21 @@ describe('GitHubProvider.fetchPullRequests: truncation and failures are observab
   test('a rate-limited detail fetch is reported instead of vanishing', async () => {
     const provider = new GitHubProvider('https://github.com', 'tok');
     install(provider, [ghPR(1), ghPR(2)]);
-    const inner = (provider as any).api;
-    (provider as any).api = async (method: string, path: string) => {
+    const inner = (provider as any).octokit.request;
+    (provider as any).octokit.request = async (route: string, params?: unknown) => {
+      const path = route.slice(route.indexOf(' ') + 1);
       if (path === '/repos/acme/repo/pulls/2') {
-        return jsonResponse({ message: 'API rate limit exceeded' }, false, 403);
+        throw new RequestError('API rate limit exceeded', 403, {
+          request: { method: 'GET', url: `${API}${path}`, headers: {} },
+          response: {
+            status: 403,
+            url: '',
+            headers: {},
+            data: { message: 'API rate limit exceeded' }
+          }
+        });
       }
-      return inner(method, path);
+      return inner(route, params);
     };
     const warnings: FetchPullRequestsWarning[] = [];
 
@@ -528,12 +573,13 @@ describe('GitHubProvider.fetchPullRequests: truncation and failures are observab
     const provider = new GitHubProvider('https://github.com', 'tok');
     // Search matches PR 9, which the detail endpoint 404s for.
     install(provider, [ghPR(1)]);
-    const inner = (provider as any).api;
-    (provider as any).api = async (method: string, path: string) => {
+    const inner = (provider as any).octokit.request;
+    (provider as any).octokit.request = async (route: string, params?: unknown) => {
+      const path = route.slice(route.indexOf(' ') + 1);
       if (path.startsWith('/search/issues')) {
-        return jsonResponse({ items: [searchItem(ghPR(9))] });
+        return { status: 200, headers: {}, data: { items: [searchItem(ghPR(9))] } };
       }
-      return inner(method, path);
+      return inner(route, params);
     };
     const warnings: FetchPullRequestsWarning[] = [];
 

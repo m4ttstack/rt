@@ -40,6 +40,7 @@ import type {
 import { type ForgeLogger, noopLogger } from './logger.ts';
 import {
   createGitHubClient,
+  ghError,
   reasonPhrase,
   resolveGitHubUrls,
   type GlanceOctokit
@@ -436,13 +437,13 @@ export class GitHubProvider implements GitProvider {
   // ── GitProvider interface ─────────────────────────────────────────────────
 
   async validateToken(): Promise<UserRef> {
-    const res = await this.api('GET', '/user');
-    if (!res.ok) {
-      throw new Error(
-        `GitHub token validation failed: ${res.status} ${res.statusText}`
-      );
+    let user: GHUser;
+    try {
+      const res = await this.octokit.request('GET /user');
+      user = res.data as GHUser;
+    } catch (err) {
+      throw ghError('validateToken', err);
     }
-    const user = (await res.json()) as GHUser;
     return toUserRef(user);
   }
 
@@ -770,20 +771,29 @@ export class GitHubProvider implements GitProvider {
     // colon here reads as exactly that: `head=o:mybranch` becomes the
     // placeholder `{mybranch}`, which expands to empty with no parameters
     // supplied, silently turning this into a query for any PR from the
-    // owner instead of this branch's PR.
-    const res = await this.api(
-      'GET',
-      `/repos/${projectPath}/pulls?head=${encodeURIComponent(`${projectPath.split('/')[0]}:${sourceBranch}`)}&state=${ghState}&per_page=1`
-    );
-    if (!res.ok) {
-      this.log.warn('fetchPullRequestByBranch failed', {
-        projectPath,
-        sourceBranch,
-        status: res.status
-      });
-      return null;
+    // owner instead of this branch's PR. Because the whole value goes
+    // through `encodeURIComponent` before it is spliced in, the colon is
+    // already `%3A` by the time this string exists -- there is no raw `:`
+    // left for the placeholder rewrite to find, on this route or the
+    // fallback one below, so calling `octokit.request` directly here (unlike
+    // arbitrary future paths) needs no extra escaping.
+    let prs: GHPullRequest[];
+    try {
+      const res = await this.octokit.request(
+        `GET /repos/${projectPath}/pulls?head=${encodeURIComponent(`${projectPath.split('/')[0]}:${sourceBranch}`)}&state=${ghState}&per_page=1`
+      );
+      prs = res.data as GHPullRequest[];
+    } catch (err) {
+      if (err instanceof RequestError && err.response) {
+        this.log.warn('fetchPullRequestByBranch failed', {
+          projectPath,
+          sourceBranch,
+          status: err.status
+        });
+        return null;
+      }
+      throw err;
     }
-    const prs = (await res.json()) as GHPullRequest[];
     if (prs[0]) {
       return this.fetchSingleMR(projectPath, prs[0].number, null);
     }
@@ -798,19 +808,23 @@ export class GitHubProvider implements GitProvider {
     // should use fetchSingleMR by number instead.
     const maxPages = 5;
     for (let page = 1; page <= maxPages; page++) {
-      const listRes = await this.api(
-        'GET',
-        `/repos/${projectPath}/pulls?state=${ghState}&per_page=100&page=${page}`
-      );
-      if (!listRes.ok) {
-        this.log.warn('fetchPullRequestByBranch failed', {
-          projectPath,
-          sourceBranch,
-          status: listRes.status
-        });
-        return null;
+      let list: GHPullRequest[];
+      try {
+        const listRes = await this.octokit.request(
+          `GET /repos/${projectPath}/pulls?state=${ghState}&per_page=100&page=${page}`
+        );
+        list = listRes.data as GHPullRequest[];
+      } catch (err) {
+        if (err instanceof RequestError && err.response) {
+          this.log.warn('fetchPullRequestByBranch failed', {
+            projectPath,
+            sourceBranch,
+            status: err.status
+          });
+          return null;
+        }
+        throw err;
       }
-      const list = (await listRes.json()) as GHPullRequest[];
       const match = list.find((pr) => pr.head.ref === sourceBranch);
       if (match) {
         return this.fetchSingleMR(projectPath, match.number, null);
@@ -1537,22 +1551,26 @@ export class GitHubProvider implements GitProvider {
     const matched: SearchHit[] = [];
 
     for (let page = 1; page <= SEARCH_MAX_PAGES; page++) {
-      const res = await this.api(
-        'GET',
-        `/search/issues?q=${q}&per_page=100&sort=updated&page=${page}`
-      );
-      if (!res.ok) {
-        this.warn(onWarning, {
-          kind: 'request-failed',
-          source: 'search',
-          status: res.status,
-          target: qualifiers,
-          message: `GitHub search failed with HTTP ${res.status}; PRs matching "${qualifiers}" are missing from this result.`
-        });
-        break;
+      let data: { items: GHSearchItem[] };
+      try {
+        const res = await this.octokit.request(
+          `GET /search/issues?q=${q}&per_page=100&sort=updated&page=${page}`
+        );
+        data = res.data as { items: GHSearchItem[] };
+      } catch (err) {
+        if (err instanceof RequestError && err.response) {
+          this.warn(onWarning, {
+            kind: 'request-failed',
+            source: 'search',
+            status: err.status,
+            target: qualifiers,
+            message: `GitHub search failed with HTTP ${err.status}; PRs matching "${qualifiers}" are missing from this result.`
+          });
+          break;
+        }
+        throw err;
       }
 
-      const data = (await res.json()) as { items: GHSearchItem[] };
       for (const item of data.items) {
         if (!item.pull_request || !keep(item)) continue;
         matched.push({
@@ -1604,22 +1622,25 @@ export class GitHubProvider implements GitProvider {
     prNumber: number,
     onWarning?: FetchPullRequestsOptions['onWarning']
   ): Promise<GHPullRequest | null> {
-    const res = await this.api(
-      'GET',
-      `/repos/${projectPath}/pulls/${prNumber}`
-    );
-    if (res.status === 404) return null;
-    if (!res.ok) {
-      this.warn(onWarning, {
-        kind: 'request-failed',
-        source: 'detail',
-        status: res.status,
-        target: `${projectPath}#${prNumber}`,
-        message: `GitHub returned HTTP ${res.status} for ${projectPath}#${prNumber}; it is missing from this result.`
-      });
-      return null;
+    try {
+      const res = await this.octokit.request(
+        `GET /repos/${projectPath}/pulls/${prNumber}`
+      );
+      return res.data as GHPullRequest;
+    } catch (err) {
+      if (err instanceof RequestError && err.response) {
+        if (err.status === 404) return null;
+        this.warn(onWarning, {
+          kind: 'request-failed',
+          source: 'detail',
+          status: err.status,
+          target: `${projectPath}#${prNumber}`,
+          message: `GitHub returned HTTP ${err.status} for ${projectPath}#${prNumber}; it is missing from this result.`
+        });
+        return null;
+      }
+      throw err;
     }
-    return (await res.json()) as GHPullRequest;
   }
 
   /**
@@ -1640,16 +1661,15 @@ export class GitHubProvider implements GitProvider {
     const collected: GHPullRequest[] = [];
 
     for (let page = 1; page <= LIST_MAX_PAGES; page++) {
-      const res = await this.api(
-        'GET',
-        `/repos/${projectPath}/pulls?state=${state}&sort=updated&direction=desc&per_page=100&page=${page}`
-      );
-      if (!res.ok) {
-        throw new Error(
-          `fetchPullRequests failed: ${res.status} ${await res.text()}`
+      let listed: GHPullRequest[];
+      try {
+        const res = await this.octokit.request(
+          `GET /repos/${projectPath}/pulls?state=${state}&sort=updated&direction=desc&per_page=100&page=${page}`
         );
+        listed = res.data as GHPullRequest[];
+      } catch (err) {
+        throw ghError('fetchPullRequests', err);
       }
-      const listed = (await res.json()) as GHPullRequest[];
       collected.push(...listed.filter(keep));
 
       if (listed.length < 100) break;
@@ -1683,9 +1703,8 @@ export class GitHubProvider implements GitProvider {
    */
   private async currentUser(): Promise<GHUser | null> {
     this.currentUserPromise ??= (async () => {
-      const res = await this.api('GET', '/user');
-      if (!res.ok) return null;
-      return (await res.json()) as GHUser;
+      const res = await this.octokit.request('GET /user');
+      return res.data as GHUser;
     })()
       .catch(() => null)
       .then(user => {
@@ -1763,14 +1782,16 @@ export class GitHubProvider implements GitProvider {
     sha: string
   ): Promise<GHCheckRun[]> {
     try {
-      const res = await this.api(
-        'GET',
-        `/repos/${repoPath}/commits/${sha}/check-runs?per_page=100`
+      const res = await this.octokit.request(
+        `GET /repos/${repoPath}/commits/${sha}/check-runs?per_page=100`
       );
-      if (!res.ok) return [];
-      const data = (await res.json()) as GHCheckSuite;
+      const data = res.data as GHCheckSuite;
       return data.check_runs;
     } catch {
+      // Every failure here (404, rate limit, transport) degrades to "no
+      // check runs reported" rather than failing the PR it belongs to --
+      // this is existing behavior, not new: the old code returned `[]` for
+      // any non-ok status and any thrown error alike.
       return [];
     }
   }
