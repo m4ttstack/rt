@@ -1343,19 +1343,26 @@ export class GitHubProvider implements GitProvider {
     // GitHub Actions: download job logs
     // GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs
     // The endpoint answers a redirect to a signed blob-storage URL; Octokit's
-    // fetch wrapper follows it and then parses the final body by content
-    // type. A text/* (or missing) content type comes back as a string, which
-    // is what has been observed live, but any content type it doesn't
-    // recognize as text falls through to an ArrayBuffer. Coerce here so this
-    // method's Promise<string> contract holds even if the redirect target
-    // ever answers with a different content type.
+    // fetch wrapper follows it and then parses the final body by the content
+    // type the blob store answers with, not by this route. A text/* (or
+    // missing) content type is the branch the hand-rolled `res.text()` this
+    // replaces was equivalent to, but that prior behavior was content-type
+    // agnostic and never exercised Octokit's own parsing, so which of these
+    // three branches actually fires is unverified until the next live run.
+    // Handle all three explicitly so this method's Promise<string> contract
+    // holds regardless: text/* comes back as a string already; anything else
+    // recognized as text-like falls through to an ArrayBuffer; anything
+    // Octokit parses as JSON (e.g. an `application/json` content type,
+    // plausible behind a GHES proxy) arrives as an object.
     try {
       const res = await this.octokit.request(
         `GET /repos/${projectPath}/actions/jobs/${jobId}/logs`
       );
       return typeof res.data === 'string'
         ? res.data
-        : Buffer.from(res.data as ArrayBuffer).toString('utf-8');
+        : res.data instanceof ArrayBuffer
+          ? Buffer.from(res.data).toString('utf-8')
+          : JSON.stringify(res.data);
     } catch (err) {
       if (err instanceof RequestError && err.response) {
         throw ghError('fetchJobTrace', err, 'statusText');
