@@ -64,14 +64,12 @@ export const GITHUB_EXPECTATIONS: Record<ProviderMethod, Expectation> = {
     note: 'Permanent. GitHub update-branch merges base into head, which is not a rebase.'
   },
   setAutoMerge: {
-    support: 'unsupported',
-    capability: 'canAutoMerge',
-    note: 'Phase 4 implements this via GraphQL enablePullRequestAutoMerge.'
+    support: 'supported',
+    capability: 'canAutoMerge'
   },
   cancelAutoMerge: {
-    support: 'unsupported',
-    capability: 'canAutoMerge',
-    note: 'Phase 4 implements this via GraphQL disablePullRequestAutoMerge.'
+    support: 'supported',
+    capability: 'canAutoMerge'
   },
   resolveDiscussion: { support: 'supported', capability: 'canResolveDiscussions' },
   unresolveDiscussion: { support: 'supported', capability: 'canResolveDiscussions' },

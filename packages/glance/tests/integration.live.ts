@@ -279,7 +279,7 @@ assert(github.capabilities.canMerge === true, 'canMerge');
 assert(github.capabilities.canApprove === true, 'canApprove');
 assert(github.capabilities.canUnapprove === true, 'canUnapprove');
 assert(github.capabilities.canRebase === false, 'canRebase (false)');
-assert(github.capabilities.canAutoMerge === false, 'canAutoMerge (false)');
+assert(github.capabilities.canAutoMerge === true, 'canAutoMerge');
 assert(
   github.capabilities.canResolveDiscussions === true,
   'canResolveDiscussions'
@@ -293,9 +293,13 @@ const ghStubTests: Array<{ name: string; fn: () => Promise<void> }> = [
   // unapprovePullRequest moved off this list in MAT-134: it now dismisses a
   // review instead of throwing "not supported", so it no longer fits the
   // "unsupported stub" shape this loop asserts against.
-  { name: 'rebasePullRequest', fn: () => github.rebasePullRequest('x', 1) },
-  { name: 'setAutoMerge', fn: () => github.setAutoMerge('x', 1) },
-  { name: 'cancelAutoMerge', fn: () => github.cancelAutoMerge('x', 1) }
+  { name: 'rebasePullRequest', fn: () => github.rebasePullRequest('x', 1) }
+  // setAutoMerge / cancelAutoMerge are no longer stubs (MAT-134): GitHub
+  // implements auto-merge via GraphQL, so they no longer throw "not
+  // supported" and don't belong in this list. See the mutation lifecycle
+  // exercise below for their happy-path coverage on GitLab; GitHub's live
+  // harness has no PR fixture with allow_auto_merge enabled to exercise the
+  // success path against yet.
   // resolveDiscussion / unresolveDiscussion are no longer stubs (MAT-27), so
   // they no longer belong in this "throws not supported" list. The mutation
   // lifecycle below has no review-comment thread to exercise them against;

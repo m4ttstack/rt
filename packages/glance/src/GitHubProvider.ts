@@ -486,7 +486,7 @@ export class GitHubProvider implements GitProvider {
     canApprove: true,
     canUnapprove: true,
     canRebase: false,
-    canAutoMerge: false,
+    canAutoMerge: true,
     canResolveDiscussions: true,
     canRetryPipeline: true,
     canRequestReReview: true,
@@ -1399,25 +1399,93 @@ export class GitHubProvider implements GitProvider {
     );
   }
 
-  async setAutoMerge(_projectPath: string, _mrIid: number): Promise<void> {
-    // TODO: GitHub supports auto-merge via GraphQL mutation:
-    //   mutation { enablePullRequestAutoMerge(input: { pullRequestId: "..." }) { ... } }
-    // Requires the repository to have "Allow auto-merge" enabled in settings.
-    // The REST API does not support this — GraphQL only.
-    throw new Error(
-      'setAutoMerge is not supported by the GitHub REST API. ' +
-        'Check provider.capabilities.canAutoMerge before calling.'
-    );
+  /**
+   * The GraphQL node id for a pull request the caller named by number.
+   *
+   * Both auto-merge mutations address a PR by node id and `GitProvider` only
+   * hands this provider `projectPath` and `mrIid`, so every call pays one
+   * REST read for the translation.
+   */
+  private async pullRequestNodeId(
+    op: string,
+    projectPath: string,
+    mrIid: number
+  ): Promise<string> {
+    const { owner, repo } = this.splitOwnerRepo(projectPath);
+    let pr: GHPullRequest;
+    try {
+      const res = await this.octokit.request(
+        'GET /repos/{owner}/{repo}/pulls/{pull_number}',
+        { owner, repo, pull_number: mrIid }
+      );
+      pr = res.data as GHPullRequest;
+    } catch (err) {
+      if (err instanceof RequestError && err.response) {
+        throw ghError(op, err, 'statusText');
+      }
+      throw err;
+    }
+    if (!pr.node_id) {
+      throw new Error(`${op} failed: ${projectPath}!${mrIid} carries no GraphQL node id`);
+    }
+    return pr.node_id;
   }
 
-  async cancelAutoMerge(_projectPath: string, _mrIid: number): Promise<void> {
-    // TODO: GitHub GraphQL mutation:
-    //   mutation { disablePullRequestAutoMerge(input: { pullRequestId: "..." }) { ... } }
-    // Same pre-requisites as setAutoMerge.
-    throw new Error(
-      'cancelAutoMerge is not supported by the GitHub REST API. ' +
-        'Check provider.capabilities.canAutoMerge before calling.'
-    );
+  /**
+   * Merge this pull request once its required checks pass.
+   *
+   * REST has no auto-merge endpoint, so this is GraphQL only. Two repository
+   * preconditions are GitHub's, not this SDK's: `allow_auto_merge` must be on,
+   * and GitHub rejects the mutation on a pull request that is already
+   * mergeable, since there would be nothing to wait for.
+   */
+  async setAutoMerge(projectPath: string, mrIid: number): Promise<void> {
+    const nodeId = await this.pullRequestNodeId('setAutoMerge', projectPath, mrIid);
+    const mutation = `
+      mutation GlanceEnableAutoMerge($id: ID!) {
+        enablePullRequestAutoMerge(input: { pullRequestId: $id }) {
+          pullRequest { autoMergeRequest { enabledAt } }
+        }
+      }
+    `;
+
+    const data = await this.graphqlOrThrow<{
+      enablePullRequestAutoMerge?: {
+        pullRequest?: { autoMergeRequest?: { enabledAt?: string | null } | null } | null;
+      };
+    }>('setAutoMerge', mutation, { id: nodeId });
+
+    // Reading the end state back, not just the absence of an error: an
+    // accepted mutation that enabled nothing is indistinguishable from a
+    // successful one at the call site otherwise.
+    if (!data.enablePullRequestAutoMerge?.pullRequest?.autoMergeRequest?.enabledAt) {
+      throw new Error(
+        `setAutoMerge failed: GitHub accepted the mutation but reported no auto-merge on ${projectPath}!${mrIid}`
+      );
+    }
+  }
+
+  async cancelAutoMerge(projectPath: string, mrIid: number): Promise<void> {
+    const nodeId = await this.pullRequestNodeId('cancelAutoMerge', projectPath, mrIid);
+    const mutation = `
+      mutation GlanceDisableAutoMerge($id: ID!) {
+        disablePullRequestAutoMerge(input: { pullRequestId: $id }) {
+          pullRequest { autoMergeRequest { enabledAt } }
+        }
+      }
+    `;
+
+    const data = await this.graphqlOrThrow<{
+      disablePullRequestAutoMerge?: {
+        pullRequest?: { autoMergeRequest?: { enabledAt?: string | null } | null } | null;
+      };
+    }>('cancelAutoMerge', mutation, { id: nodeId });
+
+    if (data.disablePullRequestAutoMerge?.pullRequest?.autoMergeRequest?.enabledAt) {
+      throw new Error(
+        `cancelAutoMerge failed: GitHub accepted the mutation but still reports auto-merge on ${projectPath}!${mrIid}`
+      );
+    }
   }
 
   // ── Discussion mutations ────────────────────────────────────────────────
