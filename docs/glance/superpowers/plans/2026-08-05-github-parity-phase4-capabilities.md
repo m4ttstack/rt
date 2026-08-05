@@ -2286,6 +2286,277 @@ git commit -m "docs: record the phase 4 live verification run"
 
 ---
 
+### Task 12: A Node smoke test for the shipped build
+
+Added mid-plan by decision, after Task 6's review found the per-task Node check was theater: it read `capabilities`, a static object literal, so it never ran any of the code the task added and would have passed whether or not a Node-only defect existed. Two further facts turned up while scoping this task:
+
+- `dist/index.js` is **ESM** (it ends in `export { ... }`), and `package.json` maps `exports["."].import` to it. Task 6's check reached it with `require()`, which only works on Node 22.12 and later. This package declares `engines.node >= 18`, so that check exercised an entry path most of its supported Node versions cannot use.
+- The unit suite runs on Bun and the package ships a Node build. That divergence has already cost this project once: `new Response('', { status: 204 })` is accepted by Bun and throws under Node, and the resulting bug was invisible to `bun test`.
+
+This task replaces the one-off check with a committed script that every future phase inherits.
+
+**Files:**
+- Create: `packages/glance/tests/node-smoke.mjs`
+- Modify: `packages/glance/package.json` (one script entry)
+
+**Interfaces:**
+- Consumes: the built `dist/index.js` through the same `import` path a consumer uses. It must NOT import from `src/`; importing the TypeScript source would defeat the entire purpose.
+- Produces: `bun run check:node`, exiting non-zero on any failure.
+
+- [ ] **Step 1: Confirm the build output's shape before writing against it**
+
+```bash
+cd packages/glance && bun run build && tail -3 dist/index.js && node --version
+```
+
+Expected: the file ends with an `export { ... }` list, confirming ESM. Note the Node version you are on; record it in your report, because `require()` of ESM succeeding is version-dependent and `import()` is not.
+
+- [ ] **Step 2: Write the smoke test**
+
+Create `packages/glance/tests/node-smoke.mjs`. It runs under plain Node, not Bun, so it uses `node:assert` rather than `bun:test`.
+
+```js
+#!/usr/bin/env node
+/**
+ * Does the SHIPPED build actually work under Node?
+ *
+ * The unit suite runs on Bun; the package ships a Node build. Bun accepts
+ * things Node rejects, so a green `bun test` says nothing about what
+ * consumers get. This project has already paid for that gap once, when
+ * `new Response('', { status: 204 })` (valid under Bun, a TypeError under
+ * Node) shipped invisibly to the suite.
+ *
+ * Two rules keep this honest:
+ *  - Import `dist`, never `src`. Importing the TypeScript source would test
+ *    the thing Bun already tests.
+ *  - Reach `dist` through `import()`, not `require()`. `package.json` maps
+ *    `exports["."].import` here, and `require()` of an ESM file only works
+ *    on Node 22.12 and later, while this package supports Node >= 18. A
+ *    check that passes only on the newest Node proves nothing about the
+ *    floor it claims to support.
+ *
+ * Transports are stubbed. This asserts the code runs and behaves under
+ * Node, not that GitHub is reachable.
+ */
+import assert from 'node:assert/strict';
+import { pathToFileURL } from 'node:url';
+import { resolve } from 'node:path';
+
+const dist = pathToFileURL(resolve(import.meta.dirname, '../dist/index.js')).href;
+const { GitHubProvider } = await import(dist);
+
+let failures = 0;
+async function check(name, fn) {
+  try {
+    await fn();
+    console.log(`ok    ${name}`);
+  } catch (err) {
+    failures++;
+    console.error(`FAIL  ${name}: ${err && err.message ? err.message : err}`);
+  }
+}
+
+/** A provider whose Octokit is replaced wholesale. */
+function provider(octokit) {
+  const p = new GitHubProvider('https://github.com', 'tok');
+  p.octokit = octokit;
+  return p;
+}
+
+const USER = { id: 7, login: 'ada', name: 'Ada', avatar_url: 'https://x/a.png' };
+
+/** One GraphQL review thread rooted at `rootId`. */
+function thread(nodeId, rootId, isResolved) {
+  return {
+    id: nodeId,
+    isResolved,
+    isResolvable: true,
+    comments: { nodes: [{ databaseId: rootId }] }
+  };
+}
+
+function threadsPayload(nodes) {
+  return {
+    repository: {
+      pullRequest: {
+        reviewThreads: { pageInfo: { hasNextPage: false, endCursor: null }, nodes }
+      }
+    }
+  };
+}
+
+await check('capabilities survive the bundler', () => {
+  const caps = new GitHubProvider('https://github.com', 'tok').capabilities;
+  assert.equal(caps.canResolveDiscussions, true);
+  assert.equal(caps.canUnapprove, true);
+  assert.equal(caps.canAutoMerge, true);
+});
+
+await check('fetchMRDiscussions reports resolved state', async () => {
+  const p = provider({
+    paginate: async route =>
+      route.includes('/pulls/')
+        ? [
+            {
+              id: 100,
+              body: 'b',
+              user: USER,
+              created_at: '2026-08-01T00:00:00Z',
+              path: 'a.ts',
+              line: 1,
+              original_line: 1,
+              in_reply_to_id: null
+            }
+          ]
+        : [],
+    graphql: async () => threadsPayload([thread('PRRT_a', 100, true)])
+  });
+  p.api = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({ full_name: 'acme/repo' }),
+    text: async () => '{}',
+    headers: { get: () => null }
+  });
+
+  const detail = await p.fetchMRDiscussions('github:repo:1', 5);
+  const d = detail.discussions.find(x => x.id === 'gh-review-thread-100');
+  assert.equal(d.resolved, true, 'expected the thread to report resolved');
+});
+
+await check('resolveDiscussion maps the id and issues the mutation', async () => {
+  const mutations = [];
+  const p = provider({
+    graphql: async (query, variables) => {
+      if (query.includes('mutation')) {
+        mutations.push(variables);
+        return { resolveReviewThread: { thread: { id: variables.threadId, isResolved: true } } };
+      }
+      return threadsPayload([thread('PRRT_b', 200, false)]);
+    }
+  });
+
+  await p.resolveDiscussion('acme/repo', 5, 'gh-review-thread-200');
+  assert.equal(mutations.length, 1);
+  assert.equal(mutations[0].threadId, 'PRRT_b');
+});
+
+await check('a mutation that changed nothing throws', async () => {
+  const p = provider({
+    graphql: async query =>
+      query.includes('mutation')
+        ? { resolveReviewThread: { thread: { id: 'PRRT_c', isResolved: false } } }
+        : threadsPayload([thread('PRRT_c', 300, false)])
+  });
+
+  await assert.rejects(
+    () => p.resolveDiscussion('acme/repo', 5, 'gh-review-thread-300'),
+    /did not become resolved/i
+  );
+});
+
+await check('unapprovePullRequest dismisses the newest approval', async () => {
+  const dismissals = [];
+  const p = provider({
+    request: async (route, params) => {
+      if (route.startsWith('GET /user')) return { status: 200, headers: {}, data: USER };
+      if (route.includes('/dismissals')) {
+        dismissals.push(params);
+        return { status: 200, headers: {}, data: {} };
+      }
+      throw new Error(`unexpected route ${route}`);
+    },
+    paginate: async () => [
+      { id: 1, user: USER, state: 'APPROVED', submitted_at: '2026-08-01T00:00:00Z' }
+    ]
+  });
+
+  await p.unapprovePullRequest('acme/repo', 5);
+  assert.equal(dismissals.length, 1);
+  assert.equal(dismissals[0].review_id, 1);
+});
+
+await check('setAutoMerge threads the node id', async () => {
+  const mutations = [];
+  const p = provider({
+    request: async () => ({ status: 200, headers: {}, data: { number: 5, node_id: 'PR_kwABC' } }),
+    graphql: async (query, variables) => {
+      mutations.push(variables);
+      return {
+        enablePullRequestAutoMerge: {
+          pullRequest: { autoMergeRequest: { enabledAt: '2026-08-05T00:00:00Z' } }
+        }
+      };
+    }
+  });
+
+  await p.setAutoMerge('acme/repo', 5);
+  assert.equal(mutations[0].id, 'PR_kwABC');
+});
+
+await check('cancelAutoMerge throws when auto-merge is still on', async () => {
+  const p = provider({
+    request: async () => ({ status: 200, headers: {}, data: { number: 5, node_id: 'PR_kwABC' } }),
+    graphql: async () => ({
+      disablePullRequestAutoMerge: {
+        pullRequest: { autoMergeRequest: { enabledAt: '2026-08-05T00:00:00Z' } }
+      }
+    })
+  });
+
+  await assert.rejects(() => p.cancelAutoMerge('acme/repo', 5), /still reports auto-merge/i);
+});
+
+if (failures > 0) {
+  console.error(`\n${failures} Node smoke check(s) failed.`);
+  process.exit(1);
+}
+console.log('\nAll Node smoke checks passed.');
+```
+
+- [ ] **Step 3: Add the script entry**
+
+In `packages/glance/package.json`, add to `scripts`:
+
+```json
+"check:node": "bun run build && node tests/node-smoke.mjs"
+```
+
+Building first is deliberate: a smoke test run against a stale `dist` is worse than no smoke test, because it reports green for code that is not the code under review.
+
+- [ ] **Step 4: Prove the test can fail**
+
+A smoke test that cannot fail is the defect it exists to catch. Temporarily break one thing in `src/` (for example, make `setAutoMerge`'s end-state check always pass), run `bun run check:node`, and confirm it exits non-zero and names the failing check. Then revert the break and confirm it passes.
+
+Record both outputs in your report. This step is the evidence that the task worked; without it the rest is unverified.
+
+- [ ] **Step 5: Run it clean**
+
+```bash
+cd packages/glance && bun run check:node && echo "exit=$?"
+```
+
+Expected: every check prints `ok`, and the exit code is 0.
+
+- [ ] **Step 6: Confirm the unit suite still passes and types are clean**
+
+```bash
+cd packages/glance && bun test && bun run check-types
+```
+
+`node-smoke.mjs` must NOT be picked up by `bun test`. If it is, adjust its location or the test glob so the two runners stay separate, and say what you changed.
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add packages/glance/tests/node-smoke.mjs packages/glance/package.json
+git commit -m "test: exercise the shipped Node build, not just its capability literal"
+```
+
+Do not stage `dist/`.
+
+---
+
 ## Follow-ups this phase does not close
 
 Record these rather than doing them:
