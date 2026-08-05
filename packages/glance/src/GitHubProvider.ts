@@ -696,16 +696,7 @@ export class GitHubProvider implements GitProvider {
   async fetchBranchProtectionRules(
     projectPath: string
   ): Promise<BranchProtectionRule[]> {
-    const res = await this.api(
-      'GET',
-      `/repos/${projectPath}/branches?protected=true&per_page=100`
-    );
-    if (!res.ok) {
-      throw new Error(
-        `fetchBranchProtectionRules failed: ${res.status} ${await res.text()}`
-      );
-    }
-    const branches = (await res.json()) as Array<{
+    let branches: Array<{
       name: string;
       protected: boolean;
       protection?: {
@@ -716,27 +707,23 @@ export class GitHubProvider implements GitProvider {
         } | null;
       };
     }>;
+    try {
+      const res = await this.octokit.request(
+        `GET /repos/${projectPath}/branches?protected=true&per_page=100`
+      );
+      branches = res.data as typeof branches;
+    } catch (err) {
+      if (err instanceof RequestError && err.response) {
+        throw ghError('fetchBranchProtectionRules', err);
+      }
+      throw err;
+    }
 
     const rules: BranchProtectionRule[] = [];
     for (const b of branches) {
       if (!b.protected) continue;
       // Fetch detailed protection for each protected branch
-      const detailRes = await this.api(
-        'GET',
-        `/repos/${projectPath}/branches/${encodeURIComponent(b.name)}/protection`
-      );
-      if (!detailRes.ok) {
-        // The invented rule this replaces was wrong in both directions at once:
-        // it claimed force-push and deletion were forbidden while also claiming
-        // no approvals and no status checks were required, and a caller had no
-        // way to tell those four values from real ones (MAT-131). On a private
-        // repository on the free plan this is a 403, which the message surfaces.
-        const text = await detailRes.text().catch(() => '');
-        throw new Error(
-          `fetchBranchProtectionRules failed reading protection for "${b.name}": ${detailRes.status} ${text}`
-        );
-      }
-      const detail = (await detailRes.json()) as {
+      let detail: {
         allow_force_pushes?: { enabled: boolean };
         allow_deletions?: { enabled: boolean };
         required_pull_request_reviews?: {
@@ -744,6 +731,24 @@ export class GitHubProvider implements GitProvider {
         } | null;
         required_status_checks?: { strict: boolean; contexts: string[] } | null;
       };
+      try {
+        const detailRes = await this.octokit.request(
+          `GET /repos/${projectPath}/branches/${encodeURIComponent(b.name)}/protection`
+        );
+        detail = detailRes.data as typeof detail;
+      } catch (err) {
+        if (!(err instanceof RequestError && err.response)) throw err;
+        // The invented rule this replaces was wrong in both directions at once:
+        // it claimed force-push and deletion were forbidden while also claiming
+        // no approvals and no status checks were required, and a caller had no
+        // way to tell those four values from real ones (MAT-131). On a private
+        // repository on the free plan this is a 403, which the message surfaces.
+        // Not `ghError`-shaped: the prefix here is "reading protection for
+        // ...", not "op failed:", so the body is read with `bodyText` directly.
+        throw new Error(
+          `fetchBranchProtectionRules failed reading protection for "${b.name}": ${err.status} ${bodyText(err)}`
+        );
+      }
       rules.push({
         pattern: b.name,
         allowForcePush: detail.allow_force_pushes?.enabled ?? false,
@@ -1303,15 +1308,15 @@ export class GitHubProvider implements GitProvider {
   async retryPipeline(projectPath: string, pipelineId: number): Promise<void> {
     // GitHub Actions: re-run a workflow run.
     // pipelineId maps to the workflow run ID.
-    const res = await this.api(
-      'POST',
-      `/repos/${projectPath}/actions/runs/${pipelineId}/rerun`
-    );
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(
-        `retryPipeline failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`
+    try {
+      await this.octokit.request(
+        `POST /repos/${projectPath}/actions/runs/${pipelineId}/rerun`
       );
+    } catch (err) {
+      if (err instanceof RequestError && err.response) {
+        throw ghError('retryPipeline', err, 'statusText');
+      }
+      throw err;
     }
   }
 
@@ -1319,32 +1324,44 @@ export class GitHubProvider implements GitProvider {
     // GitHub Actions: re-run a single job within a workflow run.
     // jobId maps to the job ID. Requires the workflow run ID which we don't have here.
     // Use POST /repos/{owner}/{repo}/actions/jobs/{job_id}/rerun
-    const res = await this.api(
-      'POST',
-      `/repos/${projectPath}/actions/jobs/${jobId}/rerun`
-    );
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(
-        `retryJob failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`
+    try {
+      await this.octokit.request(
+        `POST /repos/${projectPath}/actions/jobs/${jobId}/rerun`
       );
+    } catch (err) {
+      if (err instanceof RequestError && err.response) {
+        // This message is quoted verbatim, 403 case included, as evidence in
+        // two committed specs documents; ghError's statusText style reproduces
+        // its exact shape.
+        throw ghError('retryJob', err, 'statusText');
+      }
+      throw err;
     }
   }
 
   async fetchJobTrace(projectPath: string, jobId: number): Promise<string> {
     // GitHub Actions: download job logs
     // GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs
-    const res = await this.api(
-      'GET',
-      `/repos/${projectPath}/actions/jobs/${jobId}/logs`
-    );
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(
-        `fetchJobTrace failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`
+    // The endpoint answers a redirect to a signed blob-storage URL; Octokit's
+    // fetch wrapper follows it and then parses the final body by content
+    // type. A text/* (or missing) content type comes back as a string, which
+    // is what has been observed live, but any content type it doesn't
+    // recognize as text falls through to an ArrayBuffer. Coerce here so this
+    // method's Promise<string> contract holds even if the redirect target
+    // ever answers with a different content type.
+    try {
+      const res = await this.octokit.request(
+        `GET /repos/${projectPath}/actions/jobs/${jobId}/logs`
       );
+      return typeof res.data === 'string'
+        ? res.data
+        : Buffer.from(res.data as ArrayBuffer).toString('utf-8');
+    } catch (err) {
+      if (err instanceof RequestError && err.response) {
+        throw ghError('fetchJobTrace', err, 'statusText');
+      }
+      throw err;
     }
-    return res.text();
   }
 
   async fetchDownstreamPipeline(_projectPath: string, _jobId: number): Promise<Pipeline | null> {
