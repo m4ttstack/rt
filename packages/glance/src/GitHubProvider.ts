@@ -1002,12 +1002,16 @@ export class GitHubProvider implements GitProvider {
         : input?.commitMessage;
     if (chosen == null) return {};
 
-    const firstBreak = chosen.indexOf('\n');
-    if (firstBreak === -1) return { commit_title: chosen };
-    const rest = chosen.slice(firstBreak + 1).replace(/^\n+/, '');
+    // Strip leading newlines to avoid empty commit_title in the request body.
+    const trimmed = chosen.replace(/^\n+/, '');
+    if (trimmed === '') return {};
+
+    const firstBreak = trimmed.indexOf('\n');
+    if (firstBreak === -1) return { commit_title: trimmed };
+    const rest = trimmed.slice(firstBreak + 1).replace(/^\n+/, '');
     return rest
-      ? { commit_title: chosen.slice(0, firstBreak), commit_message: rest }
-      : { commit_title: chosen.slice(0, firstBreak) };
+      ? { commit_title: trimmed.slice(0, firstBreak), commit_message: rest }
+      : { commit_title: trimmed.slice(0, firstBreak) };
   }
 
   async approvePullRequest(projectPath: string, mrIid: number): Promise<void> {

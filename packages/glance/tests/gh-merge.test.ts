@@ -139,4 +139,30 @@ describe('GitHubProvider merge commit messages (MAT-25)', () => {
     expect(body.commit_message).toBeUndefined();
     expect(body.sha).toBe('abc123');
   });
+
+  test('a message beginning with a newline strips the leading newline and extracts title', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const calls = stubGitHub(provider);
+
+    await provider.mergePullRequest('acme/repo', 1, {
+      commitMessage: '\nBody text'
+    });
+
+    const body = mergeBody(calls);
+    expect(body.commit_title).toBe('Body text');
+    expect(body.commit_message).toBeUndefined();
+  });
+
+  test('a message of only newlines omits commit_title', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const calls = stubGitHub(provider);
+
+    await provider.mergePullRequest('acme/repo', 1, {
+      commitMessage: '\n\n'
+    });
+
+    const body = mergeBody(calls);
+    expect(body.commit_title).toBeUndefined();
+    expect(body.commit_message).toBeUndefined();
+  });
 });
