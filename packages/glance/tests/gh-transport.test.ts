@@ -339,13 +339,169 @@ describe('GitHubProvider transport (real Octokit, fetch stubbed)', () => {
     // `https://...` becomes `https%3A//...`, which still passes Octokit's
     // `/^http/` check (see @octokit/endpoint/dist-src/parse.js) so no
     // baseUrl gets prepended, and fetch then receives a malformed URL. This
-    // path is live for restRequest, documented to accept an absolute URL,
-    // and for fetchAllPages following a Link header.
+    // path is live because `restRequest` is documented to accept an
+    // absolute URL.
     const urls = stubFetch(() => jsonResponse([]));
 
     const provider = new GitHubProvider('https://github.com', 'tok');
     await provider.restRequest('GET', 'https://api.github.com/repos/acme/repo/pulls?page=2');
 
     expect(urls).toEqual(['https://api.github.com/repos/acme/repo/pulls?page=2']);
+  });
+});
+
+/**
+ * Real `octokit.paginate` following a real `Link: rel="next"` header, unlike
+ * every other GitHub reviews test in this suite: those stub `octokit.request`
+ * (or `octokit.paginate` wholesale), so none of them exercise multi-page
+ * aggregation, and none of them would notice if `fetchReviews` regressed to a
+ * pre-interpolated path or dropped `per_page` -- both would leave every
+ * path-stubbed unit test green while silently breaking pagination against
+ * real GitHub. Only driving `fetch` itself, as this file does, can catch that.
+ */
+describe('GitHubProvider transport: reviews pagination (real octokit.paginate)', () => {
+  const PULL_URL = 'https://api.github.com/repos/acme/repo/pulls/5';
+  const REVIEWS_PAGE1_URL = `${PULL_URL}/reviews?per_page=100`;
+  const REVIEWS_PAGE2_URL = `${REVIEWS_PAGE1_URL}&page=2`;
+
+  /** Minimal PR fixture: only the fields `withRoles` and `toPullRequest` read. */
+  function reviewsPR() {
+    return {
+      id: 50,
+      node_id: 'PR_node_5',
+      number: 5,
+      title: 'PR 5',
+      body: null,
+      state: 'open',
+      draft: false,
+      merged_at: null,
+      html_url: 'https://github.com/acme/repo/pull/5',
+      created_at: '2026-07-01T00:00:00Z',
+      updated_at: '2026-07-10T00:00:00Z',
+      head: { sha: 'sha5', ref: 'feature/5' },
+      base: { ref: 'main', repo: { id: 1, full_name: 'acme/repo' } },
+      user: { id: 999, login: 'octocat', avatar_url: null },
+      assignees: [],
+      requested_reviewers: [],
+      labels: []
+    };
+  }
+
+  function review(id: number, login: string, submittedAt: string) {
+    return {
+      id,
+      user: { id, login, avatar_url: null },
+      state: 'APPROVED',
+      submitted_at: submittedAt
+    };
+  }
+
+  /**
+   * Answers `/user`, the GraphQL thread-count batch, and the single PR
+   * detail GET identically for both tests below, and delegates anything
+   * to do with the reviews pages to `onReviews`, so each test only has to
+   * describe the one thing it's varying.
+   */
+  function stubAroundReviews(
+    onReviews: (url: string) => Response | undefined
+  ): string[] {
+    return stubFetch(url => {
+      if (url === 'https://api.github.com/user') {
+        return jsonResponse({ id: 1, login: 'me', avatar_url: null });
+      }
+      if (url === 'https://api.github.com/graphql') {
+        return jsonResponse({ data: { nodes: [] } });
+      }
+      if (url === PULL_URL) {
+        return jsonResponse(reviewsPR());
+      }
+      const answer = onReviews(url);
+      if (answer) return answer;
+      throw new Error(`unexpected URL in test: ${url}`);
+    });
+  }
+
+  test('two review pages aggregate to both reviewers, not just page one', async () => {
+    // The parity this migration must not break: page one (bob) and page two
+    // (carol) both succeed, so `approvedBy` must carry both. Asserting the
+    // exact URLs fetch received also pins the route template and
+    // `per_page=100` -- either regressing would leave this failing even
+    // though it would look identical to every path-stubbed unit test.
+    const urls = stubAroundReviews(url => {
+      if (url === REVIEWS_PAGE1_URL) {
+        return new Response(
+          JSON.stringify([review(1, 'bob', '2026-07-01T00:00:00Z')]),
+          {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+              Link: `<${REVIEWS_PAGE2_URL}>; rel="next"`
+            }
+          }
+        );
+      }
+      if (url === REVIEWS_PAGE2_URL) {
+        return jsonResponse([review(2, 'carol', '2026-07-02T00:00:00Z')]);
+      }
+      return undefined;
+    });
+
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const prs = await provider.fetchPullRequests({
+      iids: [5],
+      projectPath: 'acme/repo',
+      listWeight: true
+    });
+
+    expect(prs[0]?.approvedBy.map(u => u.username).sort()).toEqual([
+      'bob',
+      'carol'
+    ]);
+    expect(urls).toContain(REVIEWS_PAGE1_URL);
+    expect(urls).toContain(REVIEWS_PAGE2_URL);
+  });
+
+  test('a failed second reviews page fails the fetch, not a truncated approval count', async () => {
+    // This is the actual defect scenario, constructed for real rather than
+    // by stubbing `octokit.paginate` to reject outright: page one succeeds
+    // with bob's approval and a genuine `rel="next"` Link header, then page
+    // two fails. The old `fetchAllPages` did `if (!res.ok) break` here and
+    // returned page one alone -- a PR reading "approved by bob" with
+    // carol's approval on page two silently dropped and no error raised
+    // anywhere. Driving the real `paginate` plugin through a stubbed
+    // `fetch` (never a stubbed `paginate`) proves the Link-following itself
+    // surfaces the failure, not merely that some rejection propagates.
+    stubAroundReviews(url => {
+      if (url === REVIEWS_PAGE1_URL) {
+        return new Response(
+          JSON.stringify([review(1, 'bob', '2026-07-01T00:00:00Z')]),
+          {
+            status: 200,
+            headers: {
+              'content-type': 'application/json',
+              Link: `<${REVIEWS_PAGE2_URL}>; rel="next"`
+            }
+          }
+        );
+      }
+      if (url === REVIEWS_PAGE2_URL) {
+        // A plain 403 with no rate-limit-shaped message or headers: this is
+        // in the retry plugin's `doNotRetry` list and matches neither of the
+        // throttling plugin's retry triggers, so the failure surfaces on
+        // the first attempt with no real backoff to collapse.
+        return jsonResponse({ message: 'page two unavailable' }, 403);
+      }
+      return undefined;
+    });
+
+    const provider = new GitHubProvider('https://github.com', 'tok');
+
+    await expect(
+      provider.fetchPullRequests({
+        iids: [5],
+        projectPath: 'acme/repo',
+        listWeight: true
+      })
+    ).rejects.toThrow();
   });
 });

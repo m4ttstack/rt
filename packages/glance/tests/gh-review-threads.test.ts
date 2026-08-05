@@ -266,21 +266,4 @@ describe('GitHubProvider unresolved review threads', () => {
 
     expect(prs[0]?.detailedMergeStatus).toBeNull();
   });
-
-  // The old `fetchAllPages` did `if (!res.ok) break`, so a failed or
-  // rate-limited second page of reviews silently returned only page one. This
-  // fed `toPullRequest`'s approval count, so a PR with reviews on page two
-  // would under-report how many approvals it had, with no error anywhere.
-  // `octokit.paginate` must make that failure loud instead of swallowing it.
-  test('a failed reviews page fails the fetch, never returning a short list', async () => {
-    const provider = new GitHubProvider('https://github.com', 'tok');
-    install(provider, [ghPR(1)], [{ id: 'PR_node_1', resolved: [] }]);
-    (provider as any).octokit.paginate = async () => {
-      throw new Error('secondary rate limit exceeded');
-    };
-
-    await expect(provider.fetchPullRequests()).rejects.toThrow(
-      'secondary rate limit exceeded'
-    );
-  });
 });

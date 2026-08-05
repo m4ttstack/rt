@@ -1951,6 +1951,14 @@ export class GitHubProvider implements GitProvider {
    */
   private splitOwnerRepo(repoPath: string): { owner: string; repo: string } {
     const slash = repoPath.indexOf('/');
+    // A theme of this change is refusing to degrade silently on a failure
+    // `paginate` can't recover from; fabricating an `owner`/`repo` pair out
+    // of a path with no slash (e.g. owner = the whole string, repo = "")
+    // would send `paginate` a route it silently mis-follows instead of one
+    // that fails loudly.
+    if (slash === -1) {
+      throw new Error(`splitOwnerRepo: expected "owner/repo", got "${repoPath}"`);
+    }
     return { owner: repoPath.slice(0, slash), repo: repoPath.slice(slash + 1) };
   }
 
