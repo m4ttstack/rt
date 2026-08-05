@@ -1027,6 +1027,11 @@ export class GitHubProvider implements GitProvider {
    * repository-level delete_branch_on_merge setting deletes it asynchronously
    * and races this call, so treating "not there" as failure would make every
    * merge on such a repository throw.
+   *
+   * GitHub's 422 status is ambiguous: it means both "reference does not exist"
+   * and (in some cases) "deletion blocked by branch protection". The intent
+   * ("ref is gone") is verified by checking whether the ref still exists, not
+   * by status code alone. If it is gone, the caller's end state is satisfied.
    */
   private async deleteMergedSourceBranch(
     projectPath: string,
@@ -1036,7 +1041,22 @@ export class GitHubProvider implements GitProvider {
       'DELETE',
       `/repos/${projectPath}/git/refs/heads/${encodeURIComponent(branch)}`
     );
-    if (res.ok || res.status === 404 || res.status === 422) return;
+    if (res.ok) return; // Fast path: successful delete.
+
+    // Verify whether the ref still exists. If it is gone, the caller's
+    // requested end state is satisfied. If it still exists, throw with the
+    // deletion failure details.
+    const checkRes = await this.api(
+      'GET',
+      `/repos/${projectPath}/git/ref/heads/${encodeURIComponent(branch)}`
+    );
+
+    // If the ref is gone (404), the end state is satisfied.
+    if (!checkRes.ok && checkRes.status === 404) return;
+
+    // Ref still exists (checkRes.ok) or we cannot verify the state
+    // (checkRes is an unrelated error). Either way, throw with the deletion
+    // failure details.
     const text = await res.text().catch(() => '');
     throw new Error(
       `mergePullRequest merged but could not delete source branch "${branch}": ${res.status} ${text}`

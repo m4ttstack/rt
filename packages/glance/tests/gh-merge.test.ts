@@ -217,6 +217,18 @@ describe('GitHubProvider shouldRemoveSourceBranch (MAT-127)', () => {
           headers: { get: () => null }
         } as unknown as Response;
       }
+      // The DELETE failed, so we verify by checking if the ref still exists.
+      // Return 404 (ref not found) to indicate it is gone.
+      if (method === 'GET' && path.includes('git/ref/heads/')) {
+        calls.push({ method, path, body: undefined });
+        return {
+          ok: false,
+          status: 404,
+          json: async () => ({}),
+          text: async () => '{}',
+          headers: { get: () => null }
+        } as unknown as Response;
+      }
       return api(method, path, body);
     };
 
@@ -228,9 +240,10 @@ describe('GitHubProvider shouldRemoveSourceBranch (MAT-127)', () => {
     });
 
     expect(pr.iid).toBe(1);
-    // The deletion must still have been attempted: swallowing a 422 is only
-    // correct if the call happened and the ref was genuinely already gone.
+    // The deletion must still have been attempted: the GET verified the ref was
+    // actually gone before returning success.
     expect(calls.some(c => c.method === 'DELETE')).toBe(true);
+    expect(calls.some(c => c.method === 'GET' && c.path.includes('git/ref/heads/'))).toBe(true);
   });
 
   test('a real deletion failure throws rather than reporting a silent no-op', async () => {
@@ -244,6 +257,113 @@ describe('GitHubProvider shouldRemoveSourceBranch (MAT-127)', () => {
           status: 403,
           json: async () => ({}),
           text: async () => '{"message":"Protected branch"}',
+          headers: { get: () => null }
+        } as unknown as Response;
+      }
+      return api(method, path, body);
+    };
+
+    await expect(
+      provider.mergePullRequest('acme/repo', 1, { shouldRemoveSourceBranch: true })
+    ).rejects.toThrow(/could not delete source branch/);
+  });
+
+  test('DELETE fails with 409 while the ref still exists, must throw and name the branch', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const calls = stubGitHub(provider, 'main-protected');
+    const api = (provider as any).api;
+    (provider as any).api = async (method: string, path: string, body?: unknown) => {
+      if (method === 'DELETE') {
+        calls.push({ method, path, body: undefined });
+        return {
+          ok: false,
+          status: 409,
+          json: async () => ({}),
+          text: async () => '{"message":"Reference cannot be deleted"}',
+          headers: { get: () => null }
+        } as unknown as Response;
+      }
+      // GET check: the ref still exists (200).
+      if (method === 'GET' && path.includes('git/ref/heads/')) {
+        calls.push({ method, path, body: undefined });
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({}),
+          text: async () => '{}',
+          headers: { get: () => null }
+        } as unknown as Response;
+      }
+      return api(method, path, body);
+    };
+
+    await expect(
+      provider.mergePullRequest('acme/repo', 1, { shouldRemoveSourceBranch: true })
+    ).rejects.toThrow(/could not delete source branch "main-protected"/);
+  });
+
+  test('DELETE fails with 422 while the ref is already gone, must resolve', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const calls = stubGitHub(provider);
+    const api = (provider as any).api;
+    (provider as any).api = async (method: string, path: string, body?: unknown) => {
+      if (method === 'DELETE') {
+        calls.push({ method, path, body: undefined });
+        return {
+          ok: false,
+          status: 422,
+          json: async () => ({}),
+          text: async () => '{"message":"Reference does not exist"}',
+          headers: { get: () => null }
+        } as unknown as Response;
+      }
+      // GET check: the ref is already gone (404).
+      if (method === 'GET' && path.includes('git/ref/heads/')) {
+        calls.push({ method, path, body: undefined });
+        return {
+          ok: false,
+          status: 404,
+          json: async () => ({}),
+          text: async () => '{}',
+          headers: { get: () => null }
+        } as unknown as Response;
+      }
+      return api(method, path, body);
+    };
+
+    const pr = await provider.mergePullRequest('acme/repo', 1, {
+      shouldRemoveSourceBranch: true
+    });
+
+    expect(pr.iid).toBe(1);
+    // The DELETE and GET verification must both have been attempted.
+    expect(calls.some(c => c.method === 'DELETE')).toBe(true);
+    expect(calls.some(c => c.method === 'GET' && c.path.includes('git/ref/heads/'))).toBe(true);
+  });
+
+  test('DELETE fails and the existence check itself fails, must throw', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const calls = stubGitHub(provider);
+    const api = (provider as any).api;
+    (provider as any).api = async (method: string, path: string, body?: unknown) => {
+      if (method === 'DELETE') {
+        calls.push({ method, path, body: undefined });
+        return {
+          ok: false,
+          status: 500,
+          json: async () => ({}),
+          text: async () => '{"message":"Server error"}',
+          headers: { get: () => null }
+        } as unknown as Response;
+      }
+      // GET check also fails (we cannot verify the end state).
+      if (method === 'GET' && path.includes('git/ref/heads/')) {
+        calls.push({ method, path, body: undefined });
+        return {
+          ok: false,
+          status: 500,
+          json: async () => ({}),
+          text: async () => '{"message":"Server error"}',
           headers: { get: () => null }
         } as unknown as Response;
       }
