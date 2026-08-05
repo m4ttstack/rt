@@ -15,6 +15,7 @@ import {
   runUnsupportedConformance,
   runWriteConformance
 } from './conformance.ts';
+import { ALL_METHODS } from './expectations.ts';
 import { buildFixtures } from './fixture.ts';
 import { Reporter } from './report.ts';
 
@@ -46,6 +47,17 @@ for (const fixture of fixtures) {
     report.fail(fixture.name, 'runFixture', 'fixture run completed without crashing', message);
     console.error(`  CRASH ${fixture.name}: ${message}`);
   }
+}
+
+// Every ProviderMethod must appear at least once in the report for a
+// provider that ran, or its absence reads as "nobody wrote a check for
+// this" rather than "an early return dropped it this run" -- the second is
+// what actually happened at three call sites in conformance.ts. Checked
+// once per fixture, after the loop above finishes, so a crash partway
+// through one fixture doesn't stop this from still naming everything else
+// that came up short.
+for (const fixture of fixtures) {
+  report.assertFullCoverage(fixture.name, ALL_METHODS);
 }
 
 console.log(`\n${'='.repeat(60)}\n`);

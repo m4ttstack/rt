@@ -1,3 +1,5 @@
+import type { ProviderMethod } from './expectations.ts';
+
 export interface Result {
   provider: string;
   method: string;
@@ -23,6 +25,30 @@ export class Reporter {
   skip(provider: string, method: string, label: string, reason: string): void {
     this.results.push({ provider, method, label, ok: true, skipped: true, detail: reason });
     console.log(`  skip  ${provider} ${method}: ${label} (${reason})`);
+  }
+
+  /**
+   * Every `ProviderMethod` must show up as at least one pass, fail, or skip
+   * for a provider that actually ran, or its absence from the report is
+   * indistinguishable from a method nobody wrote a check for. An early
+   * return upstream of a `check()` call (three of them existed in
+   * conformance.ts before this method was added) drops assertions from the
+   * report with no trace they were ever meant to run; this closes that
+   * whole bug class at the source instead of guarding each return site.
+   */
+  assertFullCoverage(provider: string, methods: readonly ProviderMethod[]): void {
+    const covered = new Set(
+      this.results.filter(r => r.provider === provider).map(r => r.method)
+    );
+    for (const method of methods) {
+      if (covered.has(method)) continue;
+      this.fail(
+        provider,
+        method,
+        'coverage: appears at least once in the report',
+        'no pass, fail, or skip was ever recorded for this method on this provider; an early return likely dropped it'
+      );
+    }
   }
 
   get exitCode(): number {

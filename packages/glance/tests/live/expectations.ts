@@ -143,3 +143,15 @@ export function expectationFor(
 ): Expectation {
   return provider === 'github' ? GITHUB_EXPECTATIONS[method] : GITLAB_EXPECTATIONS[method];
 }
+
+/**
+ * Every `ProviderMethod`, for callers (the coverage assertion in report.ts)
+ * that need the full set rather than one provider's expectation. Derived
+ * from `GITHUB_EXPECTATIONS` rather than declared separately, since the two
+ * tables are already asserted to share the same key set (see
+ * live-expectations.test.ts) and a third hand-maintained list would just be
+ * one more place for that set to drift.
+ */
+export const ALL_METHODS: ProviderMethod[] = Object.keys(
+  GITHUB_EXPECTATIONS
+) as ProviderMethod[];
