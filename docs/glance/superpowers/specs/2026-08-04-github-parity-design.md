@@ -113,16 +113,33 @@ failures; recording them accurately is the deliverable of this phase.
 
 - **MAT-25.** `GitHubProvider.ts:962-964` assigns both `commitMessage` and
   `squashCommitMessage` to `commit_title`, so the second silently clobbers the first.
-  GitHub's merge endpoint has a distinct `commit_message` field; map them separately.
+
+  **Corrected 2026-08-04, while planning phase 2.** An earlier version of this bullet
+  prescribed mapping the two onto GitHub's `commit_title` and `commit_message`. That was
+  wrong. Those two GitHub fields are the title and the body of a single commit, not a
+  merge variant and a squash variant. `types.ts:471-474` defines `commitMessage` as the
+  merge commit message and `squashCommitMessage` as the squash commit message "(when
+  merge method is squash)", so they are alternates selected by strategy, not two halves
+  of one message. Sending both would put a squash message in the body of a merge commit.
+
+  The fix: resolve the effective merge method first (`mergeMethod`, else `squash` implying
+  `squash`, else GitHub's repository default), select `squashCommitMessage` when squashing
+  and `commitMessage` otherwise, and split the selected string into `commit_title` (first
+  line) and `commit_message` (remainder, when there is one).
 - **MAT-24.** Reviewers and assignees must replace rather than append, which requires an
   explicit diff (DELETE removals, POST additions) because GitHub has no replace
   semantics on either collection.
 - **`shouldRemoveSourceBranch` is a silent no-op on GitHub.** `GitHubProvider.ts:966`
   sends `delete_branch` to the merge endpoint, and no such parameter exists. GitHub's
   merge API accepts only `commit_title`, `commit_message`, `sha`, and `merge_method`.
-  Deleting the branch needs either a separate `DELETE /git/refs/heads/{branch}` call or
-  the repository-level `delete_branch_on_merge` setting. Found while planning phase 1,
-  not yet ticketed. Same silent-no-op class as MAT-15.
+  Deleting the branch needs a separate `DELETE /git/refs/heads/{branch}` call after a
+  successful merge. Ticketed as MAT-127. Same silent-no-op class as MAT-15.
+
+  **Corrected 2026-08-04, while planning phase 2.** An earlier version of this bullet also
+  offered the repository-level `delete_branch_on_merge` setting as an alternative. It is
+  not one: a repository setting cannot honor a per-call `shouldRemoveSourceBranch: false`,
+  and enabling it would invalidate the live assertion that catches this defect, which
+  `tests/live/conformance.ts:869-875` documents as depending on that setting being off.
 
 ### Phase 2d: GitLab merge races mergeability, and its failure is ambiguous
 
