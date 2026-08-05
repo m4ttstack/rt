@@ -755,24 +755,28 @@ export async function runWriteConformance(
     }
 
     if (fixture.approver) {
-      // Not a check(): GitLabProvider.requestReReview ignores the
-      // reviewerUsernames argument entirely (the parameter is even named
-      // `_reviewerUsernames`) and instead re-fetches the MR's *current*
-      // reviewer ids and re-edits the MR with that exact same list, which
-      // GitLab treats as a no-op reassignment with no observable state
-      // change. It also returns early via
-      // "if (reviewerIds.length === 0) return;" when the MR has no
-      // reviewers yet, so it silently does nothing in that case too. There
-      // is no MR state in which this method produces something an
-      // assertion could distinguish from a no-op, so recording a pass here
-      // would credit setup (e.g. updatePullRequest assigning a reviewer),
-      // not this method. See GITLAB_EXPECTATIONS.requestReReview in
-      // expectations.ts for the same divergence recorded against the table.
-      report.skip(
-        fixture.name,
+      await check(
+        report,
+        fixture,
         'requestReReview',
-        're-request',
-        'GitLabProvider.requestReReview only re-assigns the existing reviewer set on the MR (a no-op on GitLab) and no-ops entirely when there are no reviewers, so no assertion can tell success apart from a no-op'
+        'names a reviewer who was not already one',
+        async () => {
+          // The PR created above never assigned reviewers, so the approver
+          // identity starts outside the reviewer set. Asserting on the
+          // re-read (not on "did not throw") is what makes this a real
+          // check: a no-op that swallows the username would pass a
+          // throw-only assertion identically.
+          const approverUsername = (await fixture.approver!.validateToken()).username;
+          await provider.requestReReview(projectPath, iid, [approverUsername]);
+          const after = await pollUntil(`reviewers of ${iid}`, async () => {
+            const fresh = await provider.fetchSingleMR(projectPath, iid, null);
+            return fresh?.reviewers.some(r => r.username === approverUsername) ? fresh : null;
+          });
+          assert(
+            after.reviewers.some(r => r.username === approverUsername),
+            `expected reviewers to include "${approverUsername}", got ${JSON.stringify(after.reviewers.map(r => r.username))}`
+          );
+        }
       );
     } else {
       report.skip(

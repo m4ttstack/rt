@@ -1480,21 +1480,57 @@ export class GitLabProvider implements GitProvider {
 
   // ── Review mutations ────────────────────────────────────────────────────
 
-  async requestReReview(projectPath: string, mrIid: number, _reviewerUsernames?: string[]): Promise<void> {
-    // GitLab has no dedicated re-request endpoint: fetch current reviewer
-    // ids, then re-assign them to trigger review-requested notifications.
-    let reviewerIds: number[];
+  /**
+   * GitLab has no dedicated re-request endpoint, so both paths work by
+   * re-assigning the MR's reviewer set:
+   *
+   * - With `reviewerUsernames`: each name is resolved to a user id and
+   *   unioned into the existing reviewer set (never replacing it). When a
+   *   named user was not already a reviewer this genuinely changes MR
+   *   state, which is what makes the call observable: a caller can
+   *   re-read the MR and see the id present.
+   * - Without `reviewerUsernames`: the current reviewer set is re-sent
+   *   unchanged, which GitLab treats as a no-op reassignment. Its only
+   *   effect is a re-notification email; there is no MR state a caller can
+   *   read back to confirm it happened, so that path stays unobservable
+   *   through this interface even after this fix.
+   *
+   * With neither usernames nor existing reviewers there is nothing to
+   * re-request from, and resolving anyway would recreate the exact
+   * silent-success shape this method used to have. Throw instead.
+   */
+  async requestReReview(projectPath: string, mrIid: number, reviewerUsernames?: string[]): Promise<void> {
+    let currentReviewerIds: number[];
     try {
       const mr = (await this.gb.MergeRequests.show(projectPath, mrIid)) as unknown as {
         reviewers?: Array<{ id: number }>;
       };
-      reviewerIds = mr.reviewers?.map((r) => r.id) ?? [];
+      currentReviewerIds = mr.reviewers?.map((r) => r.id) ?? [];
     } catch (err) {
       throw this.legacyError('requestReReview: failed to fetch MR', err);
     }
-    if (reviewerIds.length === 0) return;
+
+    const reviewerIds = new Set(currentReviewerIds);
+    if (reviewerUsernames?.length) {
+      for (const username of reviewerUsernames) {
+        const matches = await this.gb.Users.all({ username });
+        const user = matches[0];
+        // Dropping an unresolvable username silently would be the same
+        // defect in miniature: a caller asks for a reviewer and gets no
+        // signal that nothing happened for them.
+        if (!user) {
+          throw new Error(`requestReReview: no GitLab user found for username "${username}"`);
+        }
+        reviewerIds.add(user.id);
+      }
+    } else if (reviewerIds.size === 0) {
+      throw new Error(
+        'requestReReview: nothing to re-request -- no reviewerUsernames given and the MR has no existing reviewers'
+      );
+    }
+
     try {
-      await this.gb.MergeRequests.edit(projectPath, mrIid, { reviewerIds });
+      await this.gb.MergeRequests.edit(projectPath, mrIid, { reviewerIds: [...reviewerIds] });
     } catch (err) {
       throw this.legacyError('requestReReview', err);
     }
