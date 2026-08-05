@@ -38,6 +38,9 @@ import type {
   UserRef
 } from './types.ts';
 import { type ForgeLogger, noopLogger } from './logger.ts';
+import { createGitHubClient, resolveGitHubUrls, type GlanceOctokit } from './githubClient.ts';
+import type { OnRequestHook } from './instrumentation.ts';
+import { RequestError } from '@octokit/request-error';
 
 // ---------------------------------------------------------------------------
 // GitHub REST API response shapes (only fields we consume)
@@ -382,6 +385,7 @@ export class GitHubProvider implements GitProvider {
   private readonly graphqlURL: string;
   private readonly token: string;
   private readonly log: ForgeLogger;
+  private readonly octokit: GlanceOctokit;
   private currentUserPromise: Promise<GHUser | null> | null = null;
 
   /**
@@ -393,24 +397,21 @@ export class GitHubProvider implements GitProvider {
   constructor(
     baseURL: string,
     token: string,
-    options: { logger?: ForgeLogger } = {}
+    options: { logger?: ForgeLogger; onRequest?: OnRequestHook } = {}
   ) {
     this.baseURL = baseURL.replace(/\/$/, '');
     this.token = token;
     this.log = options.logger ?? noopLogger;
 
-    // API base: github.com uses api.github.com; GHES uses <host>/api/v3
-    if (
-      this.baseURL === 'https://github.com' ||
-      this.baseURL === 'https://www.github.com'
-    ) {
-      this.apiBase = 'https://api.github.com';
-      this.graphqlURL = 'https://api.github.com/graphql';
-    } else {
-      this.apiBase = `${this.baseURL}/api/v3`;
-      // GHES serves GraphQL from /api/graphql, not under the REST /api/v3 root.
-      this.graphqlURL = `${this.baseURL}/api/graphql`;
-    }
+    const urls = resolveGitHubUrls(this.baseURL);
+    this.apiBase = urls.apiBase;
+    this.graphqlURL = urls.graphqlURL;
+    this.octokit = createGitHubClient({
+      baseURL: this.baseURL,
+      token: this.token,
+      log: this.log,
+      onRequest: options.onRequest
+    });
   }
 
   // ── Capabilities ──────────────────────────────────────────────────────
@@ -1299,25 +1300,30 @@ export class GitHubProvider implements GitProvider {
 
   // ── Private helpers ─────────────────────────────────────────────────────
 
+  /**
+   * Kept as a Response-returning seam while call sites migrate off it.
+   *
+   * Octokit throws on non-2xx; this converts that back into a Response so the
+   * `if (!res.ok)` call sites still work and so `restRequest`, which is public
+   * and documented to return a Response, does not start throwing on a 404 that
+   * callers branch on.
+   */
   private async api(
     method: string,
     path: string,
     body?: unknown
   ): Promise<Response> {
-    const url = `${this.apiBase}${path}`;
-    const headers: Record<string, string> = {
-      Authorization: `Bearer ${this.token}`,
-      Accept: 'application/vnd.github+json',
-      'X-GitHub-Api-Version': '2022-11-28'
-    };
-    if (body !== undefined) {
-      headers['Content-Type'] = 'application/json';
+    try {
+      const res = await this.octokit.request(`${method} ${path}`, {
+        ...(body !== undefined ? { data: body } : {})
+      });
+      return toResponse(res.status, res.headers, res.data);
+    } catch (err) {
+      if (err instanceof RequestError) {
+        return toResponse(err.status, err.response?.headers ?? {}, err.response?.data);
+      }
+      throw err;
     }
-    return fetch(url, {
-      method,
-      headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined
-    });
   }
 
   /**
@@ -1895,4 +1901,25 @@ function toNoteAuthor(u: GHUser): NoteAuthor {
     name: u.name ?? u.login,
     avatarUrl: u.avatar_url
   };
+}
+
+/**
+ * Rebuild a Response from an Octokit result so the pre-Octokit call sites,
+ * and the public restRequest contract, keep seeing what they always saw.
+ */
+function toResponse(
+  status: number,
+  headers: Record<string, unknown>,
+  data: unknown
+): Response {
+  const body =
+    data === undefined || data === null
+      ? null
+      : typeof data === 'string'
+        ? data
+        : JSON.stringify(data);
+  const init: ResponseInit = { status, headers: {} };
+  const link = headers.link;
+  if (typeof link === 'string') init.headers = { Link: link };
+  return new Response(body, init);
 }
