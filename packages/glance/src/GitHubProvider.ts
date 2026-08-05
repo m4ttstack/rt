@@ -38,7 +38,12 @@ import type {
   UserRef
 } from './types.ts';
 import { type ForgeLogger, noopLogger } from './logger.ts';
-import { createGitHubClient, resolveGitHubUrls, type GlanceOctokit } from './githubClient.ts';
+import {
+  createGitHubClient,
+  reasonPhrase,
+  resolveGitHubUrls,
+  type GlanceOctokit
+} from './githubClient.ts';
 import type { OnRequestHook } from './instrumentation.ts';
 import { RequestError } from '@octokit/request-error';
 
@@ -759,9 +764,16 @@ export class GitHubProvider implements GitProvider {
     // only know the BASE repo's owner here -- this matches same-repo
     // branches but never matches a fork PR (whose head lives under a
     // different owner).
+    // The whole "owner:branch" value is encoded together, not just the
+    // branch half. Octokit's endpoint parser rewrites `:word` into a route
+    // placeholder before this string ever reaches fetch, and an unencoded
+    // colon here reads as exactly that: `head=o:mybranch` becomes the
+    // placeholder `{mybranch}`, which expands to empty with no parameters
+    // supplied, silently turning this into a query for any PR from the
+    // owner instead of this branch's PR.
     const res = await this.api(
       'GET',
-      `/repos/${projectPath}/pulls?head=${projectPath.split('/')[0]}:${encodeURIComponent(sourceBranch)}&state=${ghState}&per_page=1`
+      `/repos/${projectPath}/pulls?head=${encodeURIComponent(`${projectPath.split('/')[0]}:${sourceBranch}`)}&state=${ghState}&per_page=1`
     );
     if (!res.ok) {
       this.log.warn('fetchPullRequestByBranch failed', {
@@ -1313,14 +1325,33 @@ export class GitHubProvider implements GitProvider {
     path: string,
     body?: unknown
   ): Promise<Response> {
+    // Octokit's endpoint parser rewrites `:word` into a route placeholder
+    // before the string is ever handed to fetch, and a placeholder with no
+    // matching parameter expands to the empty string. Every call site is
+    // supposed to hand over an already-built path with the colon encoded,
+    // but this is the last line of defense: any literal colon that still
+    // reaches this point is escaped so it cannot be misread as a
+    // placeholder marker. Only `path` is escaped, never the "${method} "
+    // prefix, since Octokit splits on that leading space to read the verb.
+    const safePath = path.replace(/:/g, '%3A');
     try {
-      const res = await this.octokit.request(`${method} ${path}`, {
+      const res = await this.octokit.request(`${method} ${safePath}`, {
         ...(body !== undefined ? { data: body } : {})
       });
       return toResponse(res.status, res.headers, res.data);
     } catch (err) {
       if (err instanceof RequestError) {
-        return toResponse(err.status, err.response?.headers ?? {}, err.response?.data);
+        if (!err.response) {
+          // No `response` means Octokit's fetch wrapper never got an HTTP
+          // result (DNS failure, connection refused, an aborted request):
+          // a transport failure, not an HTTP outcome. Fabricating a
+          // synthetic 500 Response here would make fetchAllPages's
+          // `if (!res.ok) break` read a dropped connection mid-pagination
+          // as "no more pages" and silently hand back a truncated list,
+          // hiding the failure instead of surfacing it.
+          throw err;
+        }
+        return toResponse(err.status, err.response.headers ?? {}, err.response.data);
       }
       throw err;
     }
@@ -1903,6 +1934,15 @@ function toNoteAuthor(u: GHUser): NoteAuthor {
   };
 }
 
+// Statuses the HTTP spec defines as never carrying a body. Octokit's fetch
+// wrapper still returns `data: ""` for these, and `new Response("", {
+// status: 204 })` is valid under Bun but throws a TypeError under Node,
+// which is what this package publishes for (`engines.node >= 18`,
+// `--target node`). A test suite that only runs on Bun cannot see this
+// divergence, so the null-body statuses are forced to a null body here
+// regardless of what Octokit handed back.
+const NULL_BODY_STATUSES = new Set([101, 103, 204, 205, 304]);
+
 /**
  * Rebuild a Response from an Octokit result so the pre-Octokit call sites,
  * and the public restRequest contract, keep seeing what they always saw.
@@ -1913,12 +1953,12 @@ function toResponse(
   data: unknown
 ): Response {
   const body =
-    data === undefined || data === null
+    NULL_BODY_STATUSES.has(status) || data === undefined || data === null
       ? null
       : typeof data === 'string'
         ? data
         : JSON.stringify(data);
-  const init: ResponseInit = { status, headers: {} };
+  const init: ResponseInit = { status, statusText: reasonPhrase(status), headers: {} };
   const link = headers.link;
   if (typeof link === 'string') init.headers = { Link: link };
   return new Response(body, init);

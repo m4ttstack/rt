@@ -72,6 +72,21 @@ export function createGitHubClient(opts: {
     }
   });
 
+  // The retry plugin defaults to retrying 5xx responses for every verb,
+  // including POST/PUT/PATCH/DELETE. A write that reaches GitHub and then
+  // drops the response on a 502 gets retried, which can create a duplicate
+  // PR, a duplicate approval, or a second merge attempt on top of one that
+  // already succeeded. A duplicate write is a worse failure mode than a
+  // request that surfaces as failed and must be retried by the caller, so
+  // only the idempotent verbs (GET, HEAD) keep automatic retry; everything
+  // else is forced to retries: 0 here, centrally, so no call site has to
+  // remember to opt out.
+  octokit.hook.before('request', options => {
+    if (options.method && options.method !== 'GET' && options.method !== 'HEAD') {
+      options.request = { ...options.request, retries: 0 };
+    }
+  });
+
   if (opts.onRequest) {
     const started = new WeakMap<object, number>();
     octokit.hook.before('request', options => {
@@ -179,7 +194,18 @@ const REASON_PHRASES: Record<number, string> = {
 };
 
 function statusText(err: RequestError): string {
+  return reasonPhrase(err.status);
+}
+
+/**
+ * Exported so `api()` in GitHubProvider.ts can populate `Response.statusText`
+ * without duplicating this map. `new Response(body, { status })` leaves
+ * `statusText` empty, and the messages this SDK emits read
+ * `${res.status} ${res.statusText}`, so an empty statusText renders a double
+ * space and drops the reason phrase.
+ */
+export function reasonPhrase(status: number): string {
   // An unmapped status degrades to the current (empty) behavior rather than
   // inventing text for a status this SDK has not been observed to surface.
-  return REASON_PHRASES[err.status] ?? '';
+  return REASON_PHRASES[status] ?? '';
 }
