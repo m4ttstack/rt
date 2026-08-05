@@ -159,6 +159,31 @@ interface GHReviewThreadsResponse {
   } | null>;
 }
 
+/** One review thread, joined to REST review comments by its root comment. */
+interface GHReviewThread {
+  nodeId: string;
+  isResolved: boolean;
+  isResolvable: boolean;
+  rootCommentId: number;
+}
+
+/** `repository.pullRequest.reviewThreads` projection, one PR at a time. */
+interface GHPullRequestThreadsResponse {
+  repository?: {
+    pullRequest?: {
+      reviewThreads?: {
+        pageInfo?: { hasNextPage: boolean; endCursor: string | null };
+        nodes: Array<{
+          id: string;
+          isResolved: boolean;
+          isResolvable: boolean;
+          comments?: { nodes: Array<{ databaseId: number | null }> };
+        } | null>;
+      };
+    } | null;
+  } | null;
+}
+
 /** An item from `/search/issues`: issue-shaped, with a `pull_request` stub on PRs. */
 interface GHSearchItem {
   number: number;
@@ -204,8 +229,21 @@ const THREAD_BATCH_SIZE = 50;
  */
 const DETAIL_CONCURRENCY = 8;
 
-/** Review threads read per PR. Beyond this the count is reported as unknown. */
+/**
+ * GraphQL page size for review threads. `fetchUnresolvedThreadCounts` reads
+ * a single page per PR and reports the count as unknown beyond it;
+ * `fetchReviewThreadIndex` instead walks further pages up to
+ * `THREAD_MAX_PAGES`.
+ */
 const THREAD_PAGE_SIZE = 100;
+
+/**
+ * Thread pages to walk for one PR before giving up. At THREAD_PAGE_SIZE per
+ * page this is 1000 threads, far past any real review. The bound exists so a
+ * pathological PR cannot spin this loop, not because 1000 is a meaningful
+ * limit.
+ */
+const THREAD_MAX_PAGES = 10;
 
 function toUserRef(u: GHUser): UserRef {
   return {
@@ -672,14 +710,30 @@ export class GitHubProvider implements GitProvider {
       )
     ]);
 
-    // Group review comments into threads by their reply root. GitHub does not
-    // return a thread id on REST review comments, so the root comment stands
-    // in for one: every reply carries `in_reply_to_id` pointing at it, and
-    // GraphQL reports that same comment as the thread's first comment, which
-    // is what lets Task 3 join the two.
+    // Resolution state lives only in GraphQL. A failure here degrades the
+    // answer to the pre-MAT-27 "unknown" rather than failing the call: the
+    // notes themselves came from REST and were returned long before resolved
+    // state was available.
+    let threads: Map<number, GHReviewThread> = new Map();
+    try {
+      threads = await this.fetchReviewThreadIndex(
+        'fetchMRDiscussions',
+        owner,
+        repoName,
+        mrIid
+      );
+    } catch (err) {
+      this.log.warn('fetchMRDiscussions: could not read review thread state', {
+        message: err instanceof Error ? err.message : String(err),
+        projectPath: `${owner}/${repoName}`,
+        mrIid
+      });
+    }
+
     const discussions: Discussion[] = [];
 
-    // Issue comments become individual discussions (no threading)
+    // PR-level comments have no thread and no resolved state on GitHub, so
+    // null is the correct answer here rather than a gap.
     for (const c of issueComments) {
       discussions.push({
         id: `gh-issue-comment-${c.id}`,
@@ -689,7 +743,11 @@ export class GitHubProvider implements GitProvider {
       });
     }
 
-    // Group review comments by thread root
+    // Group review comments into threads by their reply root. GitHub does not
+    // return a thread id on REST review comments, so the root comment stands
+    // in for one: every reply carries `in_reply_to_id` pointing at it, and
+    // GraphQL reports that same comment as the thread's first comment, which
+    // is what lets `fetchReviewThreadIndex` join the two.
     const threadMap = new Map<number, GHComment[]>();
     for (const c of reviewComments) {
       const rootId = c.in_reply_to_id ?? c.id;
@@ -703,11 +761,16 @@ export class GitHubProvider implements GitProvider {
         (a, b) =>
           new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
       );
+      // No match means the GraphQL read failed or the thread arrived after
+      // it. `resolvable: true` with `resolved: null` is exactly what this
+      // method reported before MAT-27, so an unmatched thread degrades to the
+      // old answer instead of to a wrong one.
+      const thread = threads.get(rootId);
       discussions.push({
         id: `gh-review-thread-${rootId}`,
-        resolvable: true,
-        resolved: null, // GitHub doesn't have a native "resolved" state on review threads
-        notes: comments.map(toNote)
+        resolvable: thread ? thread.isResolvable : true,
+        resolved: thread ? thread.isResolved : null,
+        notes: comments.map(c => toNote(c, thread ? thread.isResolved : null))
       });
     }
 
@@ -1742,6 +1805,113 @@ export class GitHubProvider implements GitProvider {
   }
 
   /**
+   * Review threads for one PR, keyed by the databaseId of the comment that
+   * roots each thread.
+   *
+   * That key is what makes the join work. REST review comments carry no
+   * thread id, so `fetchMRDiscussions` groups them by `in_reply_to_id ?? id`
+   * and the resulting root is the same comment GraphQL reports as the
+   * thread's first. Fetching `comments(first: 1)` is therefore enough to
+   * match a whole thread.
+   *
+   * Distinct from `fetchUnresolvedThreadCounts`, which batches many PRs and
+   * only needs a count. This one needs per-thread identity, so it is per-PR
+   * and paginates rather than reporting unknown on the first page alone.
+   *
+   * The walk is still bounded, at `THREAD_MAX_PAGES`, so a pathological PR
+   * cannot spin it forever. Hitting that bound with pages still remaining
+   * logs a warning and returns the partial index rather than throwing:
+   * threads past the bound are simply absent from the map, and the caller
+   * (`fetchMRDiscussions`) already treats an absent thread as "unknown"
+   * rather than "unresolved", so a partial index degrades the same way a
+   * missing one does.
+   *
+   * Throws on any failure. Read callers that can degrade wrap the call;
+   * mutation callers must not.
+   */
+  private async fetchReviewThreadIndex(
+    op: string,
+    owner: string,
+    repo: string,
+    prNumber: number
+  ): Promise<Map<number, GHReviewThread>> {
+    const query = `
+      query GlancePullRequestThreads($owner: String!, $repo: String!, $number: Int!, $cursor: String) {
+        repository(owner: $owner, name: $repo) {
+          pullRequest(number: $number) {
+            reviewThreads(first: ${THREAD_PAGE_SIZE}, after: $cursor) {
+              pageInfo { hasNextPage endCursor }
+              nodes {
+                id
+                isResolved
+                isResolvable
+                comments(first: 1) { nodes { databaseId } }
+              }
+            }
+          }
+        }
+      }
+    `;
+
+    const index = new Map<number, GHReviewThread>();
+    let cursor: string | null = null;
+    // Stays true only if every page up to the bound reported more remaining;
+    // a normal `break` below (the common case) flips it to false.
+    let boundHit = true;
+
+    for (let page = 0; page < THREAD_MAX_PAGES; page++) {
+      // Annotated rather than left to inference: `cursor` is reassigned below
+      // from this same call's result, and without the annotation TypeScript's
+      // control-flow analysis treats `data`'s type as depending on `cursor`
+      // depending on `data` across loop iterations and reports it circular.
+      const data: GHPullRequestThreadsResponse = await this.graphqlOrThrow<GHPullRequestThreadsResponse>(
+        op,
+        query,
+        { owner, repo, number: prNumber, cursor }
+      );
+
+      const threads = data.repository?.pullRequest?.reviewThreads;
+      if (!threads) {
+        throw new Error(
+          `${op} failed: GitHub reported no pull request ${owner}/${repo}!${prNumber}`
+        );
+      }
+
+      for (const node of threads.nodes) {
+        const rootCommentId = node?.comments?.nodes[0]?.databaseId;
+        // A thread whose first comment carries no databaseId cannot be joined
+        // to anything REST returned, so indexing it would be indexing nothing.
+        if (!node || rootCommentId == null) continue;
+        index.set(rootCommentId, {
+          nodeId: node.id,
+          isResolved: node.isResolved,
+          isResolvable: node.isResolvable,
+          rootCommentId
+        });
+      }
+
+      if (!threads.pageInfo?.hasNextPage) {
+        boundHit = false;
+        break;
+      }
+      cursor = threads.pageInfo.endCursor;
+    }
+
+    if (boundHit) {
+      // Not a failure: the index is partial, not wrong. The threads that
+      // didn't fit are simply missing from it, and the caller already reads
+      // a missing thread as unknown rather than resolved or unresolved.
+      this.log.warn(`${op}: hit the review-thread page bound with more threads remaining`, {
+        projectPath: `${owner}/${repo}`,
+        prNumber,
+        pages: THREAD_MAX_PAGES
+      });
+    }
+
+    return index;
+  }
+
+  /**
    * Report a shortfall to the caller and the logger.
    *
    * The logger alone is not enough: it defaults to noop, so a truncated or
@@ -2171,7 +2341,7 @@ export class GitHubProvider implements GitProvider {
 // Note mapping
 // ---------------------------------------------------------------------------
 
-function toNote(c: GHComment): Note {
+function toNote(c: GHComment, resolved: boolean | null = null): Note {
   const position: NotePosition | null = c.path
     ? {
         newPath: c.path,
@@ -2190,7 +2360,10 @@ function toNote(c: GHComment): Note {
     system: false,
     type: c.path ? 'DiffNote' : 'DiscussionNote',
     resolvable: c.path ? true : null,
-    resolved: null,
+    // Resolution is a property of the thread, not of an individual comment,
+    // so it is passed in. GitLab reports the same value on every note of a
+    // resolved discussion and this matches that.
+    resolved: c.path ? resolved : null,
     position
   };
 }
