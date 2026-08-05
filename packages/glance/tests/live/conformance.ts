@@ -965,6 +965,30 @@ interface PipelineProbe {
   jobId: number;
 }
 
+/**
+ * Statuses that mean a job produced output worth asserting on.
+ *
+ * `skipped` and `manual` jobs genuinely have no trace, so selecting one turns
+ * a working `fetchJobTrace` into a failing assertion and reports a harness
+ * defect as a provider defect. That is exactly what phase 1 root-caused on
+ * GitLab, where `jobs[0]` landed on a skipped job. GitHub uses `conclusion`
+ * for the same idea, so the two are checked separately below.
+ */
+const RAN_GITLAB_JOB_STATUSES = new Set(['success', 'failed']);
+const RAN_GITHUB_JOB_CONCLUSIONS = new Set(['success', 'failure']);
+
+/**
+ * Pipeline statuses that mean every job in it has settled.
+ *
+ * An in-flight pipeline has no completed jobs at all, so a probe that lands
+ * on one has nothing to assert against and fails for a reason that has
+ * nothing to do with the provider.
+ */
+const TERMINAL_GITLAB_PIPELINE_STATUSES = new Set(['success', 'failed', 'canceled']);
+
+/** How many recent pipelines to consider before giving up on finding a settled one. */
+const PIPELINE_SCAN_LIMIT = 20;
+
 async function latestPipelineAndJob(fixture: ProviderFixture): Promise<PipelineProbe | null> {
   const { provider, projectPath } = fixture;
 
@@ -982,28 +1006,38 @@ async function latestPipelineAndJob(fixture: ProviderFixture): Promise<PipelineP
       `/repos/${projectPath}/actions/runs/${run.id}/jobs`
     );
     if (!jobsRes.ok) return null;
-    const jobs = (await jobsRes.json()) as { jobs: Array<{ id: number }> };
-    const job = jobs.jobs[0];
+    const { jobs } = (await jobsRes.json()) as {
+      jobs: Array<{ id: number; status: string; conclusion: string | null }>;
+    };
+    const job = jobs.find(
+      j => j.status === 'completed' && RAN_GITHUB_JOB_CONCLUSIONS.has(j.conclusion ?? '')
+    );
     return job ? { pipelineId: run.id, jobId: job.id } : null;
   }
 
   const encoded = encodeURIComponent(projectPath);
+  // Scanning several rather than filtering server-side: GitLab's `status`
+  // parameter takes one value, and the terminal set has three.
   const pipeRes = await provider.restRequest(
     'GET',
-    apiPath(fixture, `/projects/${encoded}/pipelines?per_page=1`)
+    apiPath(fixture, `/projects/${encoded}/pipelines?per_page=${PIPELINE_SCAN_LIMIT}`)
   );
   if (!pipeRes.ok) return null;
-  const pipes = (await pipeRes.json()) as Array<{ id: number }>;
-  const pipe = pipes[0];
-  if (!pipe) return null;
-  const jobsRes = await provider.restRequest(
-    'GET',
-    apiPath(fixture, `/projects/${encoded}/pipelines/${pipe.id}/jobs`)
-  );
-  if (!jobsRes.ok) return null;
-  const jobs = (await jobsRes.json()) as Array<{ id: number }>;
-  const job = jobs[0];
-  return job ? { pipelineId: pipe.id, jobId: job.id } : null;
+  const pipes = (await pipeRes.json()) as Array<{ id: number; status: string }>;
+
+  for (const pipe of pipes) {
+    if (!TERMINAL_GITLAB_PIPELINE_STATUSES.has(pipe.status)) continue;
+    const jobsRes = await provider.restRequest(
+      'GET',
+      apiPath(fixture, `/projects/${encoded}/pipelines/${pipe.id}/jobs`)
+    );
+    if (!jobsRes.ok) continue;
+    const jobs = (await jobsRes.json()) as Array<{ id: number; status: string }>;
+    const job = jobs.find(j => RAN_GITLAB_JOB_STATUSES.has(j.status));
+    if (job) return { pipelineId: pipe.id, jobId: job.id };
+  }
+
+  return null;
 }
 
 /**
