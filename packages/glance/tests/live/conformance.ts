@@ -1597,10 +1597,77 @@ export async function runCiConformance(
     // not ours to change, so there is nothing to manufacture on this side.
     if (probe.jobFailed) {
       await check(report, fixture, 'retryJob', 'accepts a retry of the failed job', async () => {
-        await provider.retryJob(projectPath, probe.jobId);
+        const encoded = encodeURIComponent(projectPath);
+
+        // Retrying a pipeline supersedes its jobs: GitLab does not mutate
+        // `probe.jobId` in place when `retryPipeline` above reruns it --
+        // it creates a brand-new job instance and leaves the old one as a
+        // superseded attempt that GitLab's own retry endpoint refuses with
+        // 403 "Job is not retryable". Calling `provider.retryJob` on
+        // `probe.jobId` here would retry exactly that superseded job, which
+        // is the bug this re-selection exists to avoid: the ordering of
+        // `retryPipeline` before `retryJob` is load-bearing precisely
+        // because of this supersession, not just because the checks happen
+        // to read better in that order.
+        //
+        // No dedicated retryability signal exists to select on instead: as
+        // far as could be checked against docs.gitlab.com/api/jobs and the
+        // open feature request asking for exactly such a field
+        // (gitlab-org/gitlab #499704), the job object documents `archived`,
+        // not `retryable` or `retried`, and that request is still open. That
+        // reading of GitLab's docs is the best available evidence, not a
+        // verified fact, so it is not load-bearing here: this poll's
+        // correctness depends only on a job id showing up that was not
+        // `probe.jobId`, not on GitLab actually excluding the old one from
+        // this listing. `j.id !== probe.jobId` does the real exclusion work
+        // regardless of what the listing itself does or doesn't filter.
+        //
+        // A timeout here means "no fresh job ever showed up to retry" -- a
+        // fixture/harness precondition failure (retryPipeline had nothing
+        // eligible to retry, a fixture hiccup, GitLab lag), not a statement
+        // about retryJob, which this poll never calls. Reporting it as a
+        // hard FAIL on retryJob would be exactly the defect class this task
+        // was opened to close, so it is caught and re-thrown as Inconclusive
+        // instead, following the same precedent as the HTTP-405 handling in
+        // mergePullRequest above. The retryJob call itself, below, is
+        // deliberately left outside this try/catch: a 403 from that call is
+        // a real provider failure and must stay a hard fail.
+        let freshJob: { id: number; status: string };
+        try {
+          freshJob = await pollUntil(
+            `pipeline ${probe.pipelineId} settling a fresh job after retryPipeline`,
+            async () => {
+              const res = await provider.restRequest(
+                'GET',
+                apiPath(fixture, `/projects/${encoded}/pipelines/${probe.pipelineId}/jobs`)
+              );
+              if (!res.ok) return null;
+              const jobs = (await res.json()) as Array<{ id: number; status: string }>;
+              return jobs.find(j => j.id !== probe.jobId && RAN_GITLAB_JOB_STATUSES.has(j.status)) ?? null;
+            },
+            { timeoutMs: 30_000, intervalMs: 2_000 }
+          );
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          throw new Inconclusive(
+            `could not find a fresh job to retry after retryPipeline: ${message}`
+          );
+        }
+
+        if (freshJob.status !== 'failed') {
+          // Same design fact the outer `probe.jobFailed` skip below relies
+          // on -- the fixture's `install` job fails on every pipeline by
+          // design -- just re-checked against the retried attempt instead
+          // of trusting that a pre-retry observation still holds post-retry.
+          throw new Inconclusive(
+            'the retried job settled without failing, so there is no failed job to retry'
+          );
+        }
+
+        await provider.retryJob(projectPath, freshJob.id);
 
         // GitLab jobs are immutable once they finish: retrying one creates a
-        // NEW job rather than mutating `probe.jobId` in place, so re-reading
+        // NEW job rather than mutating `freshJob.id` in place, so re-reading
         // that same job id would show "failed" forever regardless of whether
         // the retry did anything. The pipeline's own aggregate status is the
         // observable effect instead -- it leaves its terminal state the
@@ -1628,7 +1695,6 @@ export async function runCiConformance(
         // interval further: the first-sample argument already covers the
         // structural risk, so a tighter interval would only add API calls
         // without closing the remaining ambiguity.
-        const encoded = encodeURIComponent(projectPath);
         await pollUntil(
           `pipeline ${probe.pipelineId} leaving its terminal status after retryJob`,
           async () => {
