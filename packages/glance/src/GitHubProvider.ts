@@ -1327,8 +1327,14 @@ export class GitHubProvider implements GitProvider {
    *
    * Not identical to GitLab's unapprove, and the difference is caller-visible:
    * GitLab removes the approval record, GitHub leaves a `DISMISSED` review in
-   * the list. `toPullRequest` keeps only the newest review per user, so the
-   * approval does drop out of `approved` and `approvedBy` either way.
+   * the list.
+   *
+   * Only `APPROVE` and `REQUEST_CHANGES` reviews change a reviewer's state on
+   * GitHub; a `COMMENT` review does not. The review that currently carries
+   * the approval is therefore the newest APPROVED-or-CHANGES_REQUESTED
+   * review, not simply the newest review of any kind -- a comment left after
+   * approving must not be mistaken for a state change and must not shadow
+   * the approval that is still in effect.
    *
    * Throws when there is nothing to dismiss. Resolving would be the silent
    * no-op shape: the caller would believe an approval was revoked when none
@@ -1355,11 +1361,17 @@ export class GitHubProvider implements GitProvider {
       throw err;
     }
 
-    // Newest review per user is the only one that counts toward `approved`,
-    // so it is the only one worth dismissing. Sorting rather than trusting
-    // list order for the same reason `toPullRequest` does.
+    // Only APPROVE and REQUEST_CHANGES reviews change a reviewer's state on
+    // GitHub, so a later COMMENT review must not be picked over a still-
+    // current approval. Filtering to state-bearing reviews before taking
+    // the newest is what makes that true; sorting rather than trusting list
+    // order for the same reason `toPullRequest` does.
     const mine = reviews
-      .filter(r => r.user?.login === me)
+      .filter(
+        r =>
+          r.user?.login === me &&
+          (r.state === 'APPROVED' || r.state === 'CHANGES_REQUESTED')
+      )
       .sort(
         (a, b) =>
           new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime()
@@ -1442,8 +1454,13 @@ export class GitHubProvider implements GitProvider {
    *
    * REST has no auto-merge endpoint, so this is GraphQL only. Two repository
    * preconditions are GitHub's, not this SDK's: `allow_auto_merge` must be on,
-   * and GitHub rejects the mutation on a pull request that is already
-   * mergeable, since there would be nothing to wait for.
+   * and GitHub refuses `enablePullRequestAutoMerge` at both ends of the
+   * mergeability range -- "clean" (nothing left to wait for) and "unstable"
+   * (won't queue behind failing/pending checks) -- so the round trip is only
+   * provable when a run happens to land the pull request inside the armable
+   * window between them. In a repository with no required status checks, a
+   * pull request with checks still pending is "unstable", which is the
+   * primary use case a consumer who just read `canAutoMerge: true` hits.
    */
   async setAutoMerge(projectPath: string, mrIid: number): Promise<void> {
     const nodeId = await this.pullRequestNodeId('setAutoMerge', projectPath, mrIid);
@@ -1663,8 +1680,7 @@ export class GitHubProvider implements GitProvider {
     reviewerUsernames?: string[]
   ): Promise<void> {
     // GitHub: POST /repos/{owner}/{repo}/pulls/{pull_number}/requested_reviewers
-    // If no usernames provided, we'd need to fetch the current PR to get
-    // the existing reviewer list. For now, require explicit usernames.
+    // With no usernames given, fall back to the PR's current reviewer list.
     if (!reviewerUsernames?.length) {
       // Fetch current reviewers from the PR
       let pr: GHPullRequest;
@@ -1681,8 +1697,12 @@ export class GitHubProvider implements GitProvider {
       }
       reviewerUsernames = pr.requested_reviewers.map(r => r.login);
       if (!reviewerUsernames.length) {
-        // Nothing to re-request
-        return;
+        // Matches GitLabProvider.requestReReview: resolving here would be
+        // the exact silent-success shape this method must not have. The
+        // caller asked to re-ping reviewers and there is no one to ping.
+        throw new Error(
+          'requestReReview: nothing to re-request -- no reviewerUsernames given and the PR has no existing reviewers'
+        );
       }
     }
 

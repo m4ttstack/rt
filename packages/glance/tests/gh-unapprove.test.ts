@@ -90,6 +90,23 @@ describe('unapprovePullRequest', () => {
     expect(dismissals[0]?.review_id).toBe(3);
   });
 
+  test('a COMMENT review after the approval does not shadow it', async () => {
+    // Ada approved, then later left a COMMENTED review (e.g. follow-up
+    // remarks). GitHub does not treat COMMENT as a state change: ada is
+    // still an approver and dismissing review id 1 is still the correct,
+    // and only, way to withdraw that approval. Taking the newest review of
+    // any kind would land on the COMMENTED one and wrongly throw "no
+    // current approval to dismiss".
+    const { provider, dismissals } = providerWith([
+      review(1, ADA, 'APPROVED', '2026-08-01T00:00:00Z'),
+      review(2, ADA, 'COMMENTED', '2026-08-02T00:00:00Z')
+    ]);
+
+    await provider.unapprovePullRequest('acme/repo', 5);
+
+    expect(dismissals[0]?.review_id).toBe(1);
+  });
+
   test('another user\'s approval is never dismissed', async () => {
     const { provider, dismissals } = providerWith([
       review(1, BOB, 'APPROVED', '2026-08-01T00:00:00Z')

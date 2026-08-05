@@ -1,5 +1,36 @@
 # @workforge/glance-sdk
 
+## 0.14.0
+
+Note: 0.13.0, 0.13.1, and 0.13.2 were released without changelog entries; their
+contents are not recorded here.
+
+### Minor Changes
+
+- **Breaking (shared interface):** `requestReReview(projectPath, mrIid)` with
+  no `reviewerUsernames` now throws, on both providers, when there are no
+  existing reviewers to re-request. GitLab already made this change this
+  branch; GitHub previously resolved silently in the same situation, which
+  was the one-interface-two-behaviors defect the GitLab fix was filed to
+  close, not a second bug to leave open. A caller relying on the old
+  GitHub-side silent no-op now gets an `Error` instead.
+- **Changed values, not shapes:** `Discussion.resolved` and
+  `Discussion.resolvable` on GitLab were hardcoded `null` and now carry
+  GitLab's real thread-resolution state. `Note.resolved` on GitHub moves from
+  always `null` to `boolean | null` for diff notes specifically (other note
+  types are unaffected). `BranchProtectionRule.requiredApprovals` and
+  `requireStatusChecks` on GitLab were always `0` / `false` and are now
+  measured from the project's approval configuration and pipeline-success
+  setting. A consumer rendering any of these fields will see different,
+  correct output on data that has not itself changed.
+- `capabilities.canResolveDiscussions`, `canUnapprove`, and `canAutoMerge` are
+  now `true` on GitHub, backed by real implementations of
+  `resolveDiscussion`, `unresolveDiscussion`, `unapprovePullRequest`,
+  `setAutoMerge`, and `cancelAutoMerge`.
+- Explicitly unchanged: `Discussion.id` on GitHub keeps its
+  `gh-review-thread-<rootCommentId>` form. This is deliberate, not an
+  oversight, so that any id a consumer has already persisted stays valid.
+
 ## 0.12.0
 
 ### Minor Changes

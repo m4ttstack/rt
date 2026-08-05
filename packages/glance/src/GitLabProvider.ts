@@ -938,6 +938,17 @@ export class GitLabProvider implements GitProvider {
    * `allowDeletion: false` is not part of that limitation: it is unconditionally
    * correct, not a placeholder. A protected branch cannot be deleted while
    * protected, and GitLab exposes no per-branch deletion toggle to read.
+   *
+   * `requiredApprovals` is read from the Merge Request Approvals configuration
+   * endpoint (`MergeRequestApprovals.showConfiguration`), which is a Merge
+   * Request Approvals feature and may not exist on self-managed GitLab
+   * Community Edition. This method does not catch that case: an instance
+   * without the feature surfaces an error from this method rather than a
+   * fabricated value. That is deliberate, for the same reason the rest of
+   * this docstring refuses to guess at values it cannot verify -- it has not
+   * been confirmed against a CE instance, and a plausible-looking fallback
+   * here (0, or silently omitting the field) is exactly the kind of
+   * unverified claim this method exists to avoid shipping.
    */
   async fetchBranchProtectionRules(projectPath: string): Promise<BranchProtectionRule[]> {
     let branches: Array<{

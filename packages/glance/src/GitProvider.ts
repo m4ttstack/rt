@@ -277,7 +277,11 @@ export interface GitProvider {
 
   /**
    * Revoke an existing approval.
-   * GitLab-only — GitHub does not support unapproving via API.
+   * On GitLab: POST /merge_requests/:iid/unapprove.
+   * On GitHub: dismisses the token user's own review (PUT
+   * /pulls/:number/reviews/:review_id/dismissals) -- GitHub has no bare
+   * "unapprove" endpoint, so this targets the review that currently carries
+   * the approval rather than deleting an approval record.
    * Check `capabilities.canUnapprove` before calling.
    */
   unapprovePullRequest(projectPath: string, mrIid: number): Promise<void>;
@@ -292,13 +296,18 @@ export interface GitProvider {
   /**
    * Enable auto-merge: the MR will be merged automatically when the
    * pipeline succeeds and all approval rules are met.
-   * GitLab-only — check `capabilities.canAutoMerge` before calling.
+   * On GitLab: PUT /merge_requests/:iid/merge with merge_when_pipeline_succeeds.
+   * On GitHub: GraphQL `enablePullRequestAutoMerge`. Requires the
+   * repository's `allow_auto_merge` setting to be on.
+   * Check `capabilities.canAutoMerge` before calling.
    */
   setAutoMerge(projectPath: string, mrIid: number): Promise<void>;
 
   /**
    * Cancel a previously enabled auto-merge.
-   * GitLab-only — check `capabilities.canAutoMerge` before calling.
+   * On GitLab: POST /merge_requests/:iid/cancel_merge_when_pipeline_succeeds.
+   * On GitHub: GraphQL `disablePullRequestAutoMerge`.
+   * Check `capabilities.canAutoMerge` before calling.
    */
   cancelAutoMerge(projectPath: string, mrIid: number): Promise<void>;
 
@@ -306,13 +315,19 @@ export interface GitProvider {
 
   /**
    * Resolve a discussion thread on an MR.
-   * GitLab-only — check `capabilities.canResolveDiscussions` before calling.
+   * On GitLab: PUT /merge_requests/:iid/discussions/:discussion_id with
+   * resolved=true.
+   * On GitHub: GraphQL `resolveReviewThread`.
+   * Check `capabilities.canResolveDiscussions` before calling.
    */
   resolveDiscussion(projectPath: string, mrIid: number, discussionId: string): Promise<void>;
 
   /**
    * Unresolve a previously resolved discussion thread.
-   * GitLab-only — check `capabilities.canResolveDiscussions` before calling.
+   * On GitLab: PUT /merge_requests/:iid/discussions/:discussion_id with
+   * resolved=false.
+   * On GitHub: GraphQL `unresolveReviewThread`.
+   * Check `capabilities.canResolveDiscussions` before calling.
    */
   unresolveDiscussion(projectPath: string, mrIid: number, discussionId: string): Promise<void>;
 
@@ -358,6 +373,13 @@ export interface GitProvider {
    * Re-request review attention on an MR from its reviewers.
    * If `reviewerUsernames` is provided, only those reviewers are pinged;
    * otherwise all current reviewers are re-requested.
+   *
+   * Both providers throw, rather than resolve, when there is nothing to
+   * re-request: no `reviewerUsernames` given and the MR/PR has no existing
+   * reviewers. Resolving in that case would be a silent no-op -- the caller
+   * would believe reviewers were re-pinged when none were. This contract is
+   * shared code's responsibility to keep in sync across providers; do not
+   * let one provider throw here while the other resolves.
    */
   requestReReview(projectPath: string, mrIid: number, reviewerUsernames?: string[]): Promise<void>;
 
