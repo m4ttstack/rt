@@ -369,6 +369,13 @@ export interface GitProvider {
    * pipeline retries, etc.).
    *
    * Implementations translate the path to the provider's API URL format.
+   *
+   * A non-2xx resolves rather than throwing, so callers branch on `res.ok`.
+   *
+   * GitHub's Response is rebuilt from its HTTP client rather than returned
+   * from `fetch`, so `res.url` is always empty there. Status, statusText,
+   * headers, and body are all carried through; `url` is the one field the
+   * Response constructor cannot set, so it cannot be restored.
    */
   restRequest(method: string, path: string, body?: unknown): Promise<Response>;
 

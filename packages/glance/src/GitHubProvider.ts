@@ -2179,10 +2179,11 @@ function toResponse(
   // rather than one cherry-picked field, so passing it straight into
   // ResponseInit restores content-type, etag, location, x-ratelimit-*, and
   // everything else a pre-Octokit caller could read off the genuine fetch
-  // Response, not just Link. Only string-valued entries survive: the Headers
-  // constructor throws on anything else, and Octokit's own header map never
-  // carries non-string values in practice, but a caller must not have a
-  // never-observed exotic value take down every restRequest response.
+  // Response, not just Link. Only string-valued entries are copied. The
+  // Headers constructor would coerce anything else rather than throw, which
+  // is the trap: an array or object would arrive as "x,y" or
+  // "[object Object]" and read as a real header value. Dropping it keeps a
+  // never-observed exotic value from looking like data.
   const responseHeaders: Record<string, string> = {};
   for (const [key, value] of Object.entries(headers)) {
     if (typeof value === 'string') responseHeaders[key] = value;

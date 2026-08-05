@@ -138,9 +138,11 @@ export function createGitHubClient(opts: {
   // change response shapes underneath this SDK. Octokit sends no version
   // header on its own, and the Octokit constructor's top-level `headers`
   // option (which looks like the obvious place for this) is a red herring:
-  // `@octokit/core`'s constructor only reads `userAgent`/`timeZone` off
-  // `options` into its request defaults, never an arbitrary `options.headers`
-  // -- see `@octokit/core`'s `dist-src/index.js`. A `before` hook, the same
+  // `@octokit/core`'s constructor never reads `options.headers` at all, so
+  // setting it there is silently a no-op. The only headers it builds into
+  // its request defaults are `user-agent` and `time-zone`, from the
+  // `userAgent` and `timeZone` options -- see `@octokit/core`'s
+  // `dist-src/index.js`. A `before` hook, the same
   // mechanism the `retries: 0` guard above already uses, is what actually
   // reaches every request the instance issues.
   octokit.hook.before('request', options => {

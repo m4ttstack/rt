@@ -55,10 +55,10 @@ function githubRecording(): { provider: GitHubProvider; calls: string[] } {
   const calls: string[] = [];
   const answer = (path: string) => (path.startsWith('/search/issues') ? { items: [] } : {});
   // validateToken/currentUser/fetchPR/listRepoPRs/searchPRs/fetchCheckRuns go
-  // through octokit.request directly now; fetchReviews (via fetchAllPages)
-  // still goes through api(). Both stubs record into the same `calls` array
-  // so the path-based assertions below don't care which transport carried a
-  // given call.
+  // through octokit.request, fetchReviews through octokit.paginate, and only
+  // fetchMRDiscussions' repo lookup still goes through api(). All three stubs
+  // record into the same `calls` array so the path-based assertions below
+  // don't care which transport carried a given call.
   (provider as any).octokit = {
     request: async (route: string) => {
       const path = route.slice(route.indexOf(' ') + 1);

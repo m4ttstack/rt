@@ -161,10 +161,10 @@ describe('GitHubProvider transport (real Octokit, fetch stubbed)', () => {
   test('a transport-level failure (fetch rejects) propagates the original error rather than a synthetic 500', async () => {
     // Octokit's fetch wrapper turns a network-level throw into a
     // RequestError(message, 500, { request }) with no `response`. Turning
-    // that into a fabricated 500 Response would make fetchAllPages's
-    // `if (!res.ok) break` read a dropped connection mid-pagination as "no
-    // more pages" and silently truncate results instead of surfacing the
-    // failure.
+    // that into a fabricated 500 Response would hand callers that branch on
+    // `res.ok` a dropped connection dressed as an HTTP result, which is how
+    // a network failure mid-pagination used to read as "no more pages" and
+    // silently truncate instead of surfacing.
     globalThis.fetch = (async () => {
       throw new TypeError('fetch failed', { cause: new Error('ECONNREFUSED') });
     }) as typeof fetch;
