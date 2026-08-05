@@ -697,14 +697,15 @@ export class GitHubProvider implements GitProvider {
         `/repos/${projectPath}/branches/${encodeURIComponent(b.name)}/protection`
       );
       if (!detailRes.ok) {
-        rules.push({
-          pattern: b.name,
-          allowForcePush: false,
-          allowDeletion: false,
-          requiredApprovals: 0,
-          requireStatusChecks: false
-        });
-        continue;
+        // The invented rule this replaces was wrong in both directions at once:
+        // it claimed force-push and deletion were forbidden while also claiming
+        // no approvals and no status checks were required, and a caller had no
+        // way to tell those four values from real ones (MAT-131). On a private
+        // repository on the free plan this is a 403, which the message surfaces.
+        const text = await detailRes.text().catch(() => '');
+        throw new Error(
+          `fetchBranchProtectionRules failed reading protection for "${b.name}": ${detailRes.status} ${text}`
+        );
       }
       const detail = (await detailRes.json()) as {
         allow_force_pushes?: { enabled: boolean };

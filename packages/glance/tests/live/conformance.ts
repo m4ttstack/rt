@@ -263,6 +263,17 @@ export async function runReadConformance(
           `requireStatusChecks should be boolean, got ${typeof main.requireStatusChecks}`
         );
       }
+
+      // Not proof that MAT-131 is fixed: this fixture's protection read always
+      // succeeds, so the failure path never runs here. It does make the
+      // fabricated shape detectable if it ever comes back, since only the
+      // success path attaches raw.
+      for (const rule of rules) {
+        assert(
+          rule.raw !== undefined,
+          `rule for "${rule.pattern}" has no raw field, which is the shape a fabricated rule had (MAT-131)`
+        );
+      }
     }
   );
 
