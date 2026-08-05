@@ -120,6 +120,44 @@ describe('GitHubProvider transport (real Octokit, fetch stubbed)', () => {
     expect(res.status).toBe(404);
   });
 
+  test('restRequest carries a non-Link header (etag) through, not just Link', async () => {
+    // Before Octokit, restRequest returned the genuine fetch Response, so a
+    // caller could read content-type, etag, location, x-ratelimit-remaining,
+    // and so on. `toResponse` used to cherry-pick only `Link`; this pins that
+    // the rest of the header map survives the round trip too.
+    globalThis.fetch = (async () =>
+      new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: {
+          'content-type': 'application/json',
+          etag: '"abc123"'
+        }
+      })) as typeof fetch;
+
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const res = await provider.restRequest('GET', '/repos/acme/repo');
+
+    expect(res.headers.get('etag')).toBe('"abc123"');
+    expect(res.headers.get('content-type')).toBe('application/json');
+  });
+
+  test('restRequest throws a clear error rather than silently corrupting the URL when a GET carries a body', async () => {
+    // Octokit routes non-route-variable params into the query string for
+    // GET/HEAD instead of rejecting them, so a body would previously produce
+    // a request for `?data=%5Bobject%20Object%5D` -- a silently wrong
+    // request. The pre-Octokit bare `fetch` threw
+    // `TypeError: Request with GET/HEAD method cannot have body`; this
+    // restores that loudness with a message naming the method.
+    const urls = stubFetch(() => jsonResponse({}));
+
+    const provider = new GitHubProvider('https://github.com', 'tok');
+
+    await expect(
+      provider.restRequest('GET', '/repos/acme/repo', { some: 'data' })
+    ).rejects.toThrow(/GET cannot have a body/);
+    expect(urls).toHaveLength(0);
+  });
+
   test('a transport-level failure (fetch rejects) propagates the original error rather than a synthetic 500', async () => {
     // Octokit's fetch wrapper turns a network-level throw into a
     // RequestError(message, 500, { request }) with no `response`. Turning
@@ -332,6 +370,29 @@ describe('GitHubProvider transport (real Octokit, fetch stubbed)', () => {
 
     expect(caught).toBeInstanceOf(RequestError);
     expect((caught as RequestError).response).toBeUndefined();
+  });
+
+  test('every request carries the X-GitHub-Api-Version pin', async () => {
+    // The hand-rolled fetch transport this replaced sent
+    // `X-GitHub-Api-Version: 2022-11-28` on every request, protecting this
+    // SDK against a future GitHub REST version bump. Octokit does not send
+    // this on its own; `createGitHubClient` restores it as an
+    // instance-level default header, which Octokit merges into every
+    // request. Captured here as a real Request header reaching fetch, not
+    // just as options Octokit was configured with.
+    let seenHeaders: Headers | undefined;
+    globalThis.fetch = (async (
+      _input: string | URL | Request,
+      init?: RequestInit
+    ) => {
+      seenHeaders = new Headers(init?.headers);
+      return jsonResponse([]);
+    }) as typeof fetch;
+
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    await provider.restRequest('GET', '/repos/acme/repo');
+
+    expect(seenHeaders?.get('x-github-api-version')).toBe('2022-11-28');
   });
 
   test('an absolute URL passed to restRequest reaches fetch unmangled', async () => {

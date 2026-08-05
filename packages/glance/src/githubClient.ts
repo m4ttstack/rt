@@ -133,6 +133,20 @@ export function createGitHubClient(opts: {
     }
   });
 
+  // The hand-rolled fetch transport this replaces pinned every request to a
+  // known REST version so a future GitHub version bump cannot silently
+  // change response shapes underneath this SDK. Octokit sends no version
+  // header on its own, and the Octokit constructor's top-level `headers`
+  // option (which looks like the obvious place for this) is a red herring:
+  // `@octokit/core`'s constructor only reads `userAgent`/`timeZone` off
+  // `options` into its request defaults, never an arbitrary `options.headers`
+  // -- see `@octokit/core`'s `dist-src/index.js`. A `before` hook, the same
+  // mechanism the `retries: 0` guard above already uses, is what actually
+  // reaches every request the instance issues.
+  octokit.hook.before('request', options => {
+    options.headers['x-github-api-version'] = '2022-11-28';
+  });
+
   if (opts.onRequest) {
     const started = new WeakMap<object, number>();
     octokit.hook.before('request', options => {

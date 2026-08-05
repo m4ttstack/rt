@@ -47,7 +47,20 @@ import {
   type GlanceOctokit
 } from './githubClient.ts';
 import type { OnRequestHook } from './instrumentation.ts';
+// This package depends on @octokit/request-error directly so `err instanceof
+// RequestError` below can narrow errors thrown by @octokit/core's OWN copy of
+// this class. That only works while npm/bun dedupe the two into one module
+// instance, which only holds while this package's version range for
+// @octokit/request-error overlaps the range @octokit/core depends on. If the
+// ranges ever diverge, two separate RequestError classes end up installed,
+// every migrated `instanceof RequestError` check here goes false, and each
+// catch rethrows the raw error instead of translating it. Keep this range
+// tracking @octokit/core's own dependency on @octokit/request-error.
 import { RequestError } from '@octokit/request-error';
+// Same coupling as RequestError above, for @octokit/core's copy of
+// @octokit/graphql: `err instanceof GraphqlResponseError` in `graphql()`'s
+// catch only works while the two copies dedupe to one module instance, which
+// requires this package's @octokit/graphql range to track @octokit/core's.
 import { GraphqlResponseError } from '@octokit/graphql';
 
 // ---------------------------------------------------------------------------
@@ -1462,6 +1475,20 @@ export class GitHubProvider implements GitProvider {
     // escaped, never the "${method} " prefix, since Octokit splits on that
     // leading space to read the verb.
     const safePath = path.replace(/:(?!\/)/g, '%3A');
+    // The pre-Octokit `fetch` threw `TypeError: Request with GET/HEAD method
+    // cannot have body` here, a loud failure. Octokit has no such guard: for
+    // GET/HEAD it routes `data` into the query string instead
+    // (`?data=%5Bobject%20Object%5D` for an object body), turning a caller
+    // mistake into a silently wrong request rather than a thrown error. This
+    // restores the old loudness instead of letting that corruption through.
+    if (body !== undefined) {
+      const upperMethod = method.toUpperCase();
+      if (upperMethod === 'GET' || upperMethod === 'HEAD') {
+        throw new Error(
+          `restRequest: ${method} cannot have a body (GitHub/Octokit routes it into the query string instead)`
+        );
+      }
+    }
     try {
       const res = await this.octokit.request(`${method} ${safePath}`, {
         ...(body !== undefined ? { data: body } : {})
@@ -2148,9 +2175,23 @@ function toResponse(
       : typeof data === 'string'
         ? data
         : JSON.stringify(data);
-  const init: ResponseInit = { status, statusText: reasonPhrase(status), headers: {} };
-  const link = headers.link;
-  if (typeof link === 'string') init.headers = { Link: link };
+  // Octokit hands back the whole header map (lowercase keys, string values)
+  // rather than one cherry-picked field, so passing it straight into
+  // ResponseInit restores content-type, etag, location, x-ratelimit-*, and
+  // everything else a pre-Octokit caller could read off the genuine fetch
+  // Response, not just Link. Only string-valued entries survive: the Headers
+  // constructor throws on anything else, and Octokit's own header map never
+  // carries non-string values in practice, but a caller must not have a
+  // never-observed exotic value take down every restRequest response.
+  const responseHeaders: Record<string, string> = {};
+  for (const [key, value] of Object.entries(headers)) {
+    if (typeof value === 'string') responseHeaders[key] = value;
+  }
+  const init: ResponseInit = {
+    status,
+    statusText: reasonPhrase(status),
+    headers: responseHeaders
+  };
   return new Response(body, init);
 }
 
