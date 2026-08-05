@@ -171,8 +171,8 @@ assert(gh.capabilities.canUnapprove === false, 'GitHub: canUnapprove (false)');
 assert(gh.capabilities.canRebase === false, 'GitHub: canRebase (false)');
 assert(gh.capabilities.canAutoMerge === false, 'GitHub: canAutoMerge (false)');
 assert(
-  gh.capabilities.canResolveDiscussions === false,
-  'GitHub: canResolveDiscussions (false)'
+  gh.capabilities.canResolveDiscussions === true,
+  'GitHub: canResolveDiscussions'
 );
 assert(gh.capabilities.canRetryPipeline === true, 'GitHub: canRetryPipeline');
 assert(

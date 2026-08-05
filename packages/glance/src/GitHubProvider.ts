@@ -479,7 +479,7 @@ export class GitHubProvider implements GitProvider {
     canUnapprove: false,
     canRebase: false,
     canAutoMerge: false,
-    canResolveDiscussions: false,
+    canResolveDiscussions: true,
     canRetryPipeline: true,
     canRequestReReview: true,
     canWatchEvents: false
@@ -1360,31 +1360,77 @@ export class GitHubProvider implements GitProvider {
   // ── Discussion mutations ────────────────────────────────────────────────
 
   async resolveDiscussion(
-    _projectPath: string,
-    _mrIid: number,
-    _discussionId: string
+    projectPath: string,
+    mrIid: number,
+    discussionId: string
   ): Promise<void> {
-    // TODO: GitHub GraphQL mutation:
-    //   mutation { resolveReviewThread(input: { threadId: "..." }) { ... } }
-    // REST API does not support resolving review threads.
-    throw new Error(
-      'resolveDiscussion is not supported by the GitHub REST API. ' +
-        'Check provider.capabilities.canResolveDiscussions before calling.'
-    );
+    await this.setThreadResolved('resolveDiscussion', projectPath, mrIid, discussionId, true);
   }
 
   async unresolveDiscussion(
-    _projectPath: string,
-    _mrIid: number,
-    _discussionId: string
+    projectPath: string,
+    mrIid: number,
+    discussionId: string
   ): Promise<void> {
-    // TODO: GitHub GraphQL mutation:
-    //   mutation { unresolveReviewThread(input: { threadId: "..." }) { ... } }
-    // REST API does not support unresolving review threads.
-    throw new Error(
-      'unresolveDiscussion is not supported by the GitHub REST API. ' +
-        'Check provider.capabilities.canResolveDiscussions before calling.'
-    );
+    await this.setThreadResolved('unresolveDiscussion', projectPath, mrIid, discussionId, false);
+  }
+
+  /**
+   * Move one review thread between resolved and unresolved.
+   *
+   * `discussionId` is the `gh-review-thread-<rootCommentId>` form
+   * `fetchMRDiscussions` emits, not a GraphQL node id. Keeping it that way is
+   * deliberate: the id is a value consumers may have persisted, and changing
+   * what it means would be a breaking change on a package with unbumped
+   * consumer-visible changes already shipped. The cost is this lookup.
+   */
+  private async setThreadResolved(
+    op: string,
+    projectPath: string,
+    mrIid: number,
+    discussionId: string,
+    resolved: boolean
+  ): Promise<void> {
+    const rootCommentId = parseReviewThreadDiscussionId(discussionId);
+    if (rootCommentId == null) {
+      throw new Error(
+        `${op} failed: "${discussionId}" is not a resolvable review thread. ` +
+          'Only ids of the form gh-review-thread-<id> can be resolved; ' +
+          'GitHub pull request level comments have no thread.'
+      );
+    }
+
+    const { owner, repo } = this.splitOwnerRepo(projectPath);
+    const threads = await this.fetchReviewThreadIndex(op, owner, repo, mrIid);
+    const thread = threads.get(rootCommentId);
+    if (!thread) {
+      throw new Error(
+        `${op} failed: no review thread rooted at comment ${rootCommentId} on ${projectPath}!${mrIid}`
+      );
+    }
+
+    const field = resolved ? 'resolveReviewThread' : 'unresolveReviewThread';
+    const mutation = `
+      mutation GlanceSetThreadResolved($threadId: ID!) {
+        ${field}(input: { threadId: $threadId }) {
+          thread { id isResolved }
+        }
+      }
+    `;
+
+    const data = await this.graphqlOrThrow<
+      Record<string, { thread?: { id: string; isResolved: boolean } } | undefined>
+    >(op, mutation, { threadId: thread.nodeId });
+
+    // GitHub accepting the mutation is not the same as GitHub applying it.
+    // Reporting success on a thread that never changed is the MAT-15 shape.
+    const isResolved = data[field]?.thread?.isResolved;
+    if (isResolved !== resolved) {
+      throw new Error(
+        `${op} failed: thread ${thread.nodeId} did not become ${resolved ? 'resolved' : 'unresolved'} ` +
+          `(GitHub reported isResolved=${String(isResolved)})`
+      );
+    }
   }
 
   // ── Pipeline mutations ──────────────────────────────────────────────────
@@ -2375,6 +2421,22 @@ function toNoteAuthor(u: GHUser): NoteAuthor {
     name: u.name ?? u.login,
     avatarUrl: u.avatar_url
   };
+}
+
+/**
+ * The root comment id inside a `gh-review-thread-<id>` discussion id, or null
+ * for any other shape.
+ *
+ * Null for `gh-issue-comment-<id>` is the useful case: those are PR-level
+ * comments with no thread behind them, and the caller turns the null into an
+ * explanation rather than sending a comment id to a mutation that wants a
+ * thread.
+ */
+function parseReviewThreadDiscussionId(discussionId: string): number | null {
+  const match = /^gh-review-thread-(\d+)$/.exec(discussionId);
+  if (!match) return null;
+  const id = Number(match[1]);
+  return Number.isSafeInteger(id) ? id : null;
 }
 
 // Statuses the HTTP spec defines as never carrying a body. Octokit's fetch

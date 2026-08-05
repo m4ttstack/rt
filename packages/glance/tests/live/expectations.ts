@@ -73,16 +73,8 @@ export const GITHUB_EXPECTATIONS: Record<ProviderMethod, Expectation> = {
     capability: 'canAutoMerge',
     note: 'Phase 4 implements this via GraphQL disablePullRequestAutoMerge.'
   },
-  resolveDiscussion: {
-    support: 'unsupported',
-    capability: 'canResolveDiscussions',
-    note: 'MAT-27. Phase 4 implements this via GraphQL resolveReviewThread.'
-  },
-  unresolveDiscussion: {
-    support: 'unsupported',
-    capability: 'canResolveDiscussions',
-    note: 'MAT-27. Phase 4 implements this via GraphQL unresolveReviewThread.'
-  },
+  resolveDiscussion: { support: 'supported', capability: 'canResolveDiscussions' },
+  unresolveDiscussion: { support: 'supported', capability: 'canResolveDiscussions' },
   retryPipeline: { support: 'supported', capability: 'canRetryPipeline' },
   retryJob: { support: 'supported', capability: 'canRetryPipeline' },
   fetchJobTrace: { support: 'supported' },

@@ -281,8 +281,8 @@ assert(github.capabilities.canUnapprove === false, 'canUnapprove (false)');
 assert(github.capabilities.canRebase === false, 'canRebase (false)');
 assert(github.capabilities.canAutoMerge === false, 'canAutoMerge (false)');
 assert(
-  github.capabilities.canResolveDiscussions === false,
-  'canResolveDiscussions (false)'
+  github.capabilities.canResolveDiscussions === true,
+  'canResolveDiscussions'
 );
 assert(github.capabilities.canRetryPipeline === true, 'canRetryPipeline');
 assert(github.capabilities.canRequestReReview === true, 'canRequestReReview');
@@ -296,15 +296,11 @@ const ghStubTests: Array<{ name: string; fn: () => Promise<void> }> = [
   },
   { name: 'rebasePullRequest', fn: () => github.rebasePullRequest('x', 1) },
   { name: 'setAutoMerge', fn: () => github.setAutoMerge('x', 1) },
-  { name: 'cancelAutoMerge', fn: () => github.cancelAutoMerge('x', 1) },
-  {
-    name: 'resolveDiscussion',
-    fn: () => github.resolveDiscussion('x', 1, 'd')
-  },
-  {
-    name: 'unresolveDiscussion',
-    fn: () => github.unresolveDiscussion('x', 1, 'd')
-  }
+  { name: 'cancelAutoMerge', fn: () => github.cancelAutoMerge('x', 1) }
+  // resolveDiscussion / unresolveDiscussion are no longer stubs (MAT-27), so
+  // they no longer belong in this "throws not supported" list. The mutation
+  // lifecycle below has no review-comment thread to exercise them against;
+  // adding one is out of this task's scope.
 ];
 for (const { name, fn } of ghStubTests) {
   try {

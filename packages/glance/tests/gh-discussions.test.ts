@@ -280,3 +280,99 @@ describe('fetchMRDiscussions: resolved state', () => {
     ).toBe(true);
   });
 });
+
+describe('resolveDiscussion / unresolveDiscussion', () => {
+  /** Records the mutations a provider issues against a fixed thread list. */
+  function mutatingProvider(threads: unknown[]) {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const mutations: Array<{ query: string; variables: Record<string, unknown> }> = [];
+    (provider as any).octokit = {
+      graphql: async (query: string, variables: Record<string, unknown>) => {
+        if (query.includes('mutation')) {
+          mutations.push({ query, variables });
+          return query.includes('unresolveReviewThread')
+            ? { unresolveReviewThread: { thread: { id: variables.threadId, isResolved: false } } }
+            : { resolveReviewThread: { thread: { id: variables.threadId, isResolved: true } } };
+        }
+        return {
+          repository: {
+            pullRequest: {
+              reviewThreads: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: threads }
+            }
+          }
+        };
+      }
+    };
+    return { provider, mutations };
+  }
+
+  test('the capability flag is true', () => {
+    expect(new GitHubProvider('https://github.com', 'tok').capabilities.canResolveDiscussions).toBe(
+      true
+    );
+  });
+
+  test('a discussion id resolves to the thread node id', async () => {
+    const { provider, mutations } = mutatingProvider([thread('PRRT_x', 900, false)]);
+
+    await provider.resolveDiscussion('acme/repo', 5, 'gh-review-thread-900');
+
+    expect(mutations.length).toBe(1);
+    expect(mutations[0]?.query).toContain('resolveReviewThread');
+    expect(mutations[0]?.variables.threadId).toBe('PRRT_x');
+  });
+
+  test('unresolve issues the unresolve mutation', async () => {
+    const { provider, mutations } = mutatingProvider([thread('PRRT_y', 901, true)]);
+
+    await provider.unresolveDiscussion('acme/repo', 5, 'gh-review-thread-901');
+
+    expect(mutations[0]?.query).toContain('unresolveReviewThread');
+    expect(mutations[0]?.variables.threadId).toBe('PRRT_y');
+  });
+
+  test('an unknown thread throws rather than silently doing nothing', async () => {
+    const { provider, mutations } = mutatingProvider([]);
+
+    await expect(
+      provider.resolveDiscussion('acme/repo', 5, 'gh-review-thread-999')
+    ).rejects.toThrow(/no review thread/i);
+    expect(mutations.length).toBe(0);
+  });
+
+  test('an issue-comment id is rejected with a reason, not attempted', async () => {
+    // PR-level comments are not threads. Sending one to resolveReviewThread
+    // would fail with a GitHub-side type error that says nothing useful.
+    const { provider, mutations } = mutatingProvider([]);
+
+    await expect(
+      provider.resolveDiscussion('acme/repo', 5, 'gh-issue-comment-700')
+    ).rejects.toThrow(/not a resolvable review thread/i);
+    expect(mutations.length).toBe(0);
+  });
+
+  test('a mutation that reports the wrong end state throws', async () => {
+    // The MAT-15 shape: GitHub accepts the call, changes nothing, and the
+    // caller is told it worked.
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    (provider as any).octokit = {
+      graphql: async (query: string) =>
+        query.includes('mutation')
+          ? { resolveReviewThread: { thread: { id: 'PRRT_z', isResolved: false } } }
+          : {
+              repository: {
+                pullRequest: {
+                  reviewThreads: {
+                    pageInfo: { hasNextPage: false, endCursor: null },
+                    nodes: [thread('PRRT_z', 902, false)]
+                  }
+                }
+              }
+            }
+    };
+
+    await expect(
+      provider.resolveDiscussion('acme/repo', 5, 'gh-review-thread-902')
+    ).rejects.toThrow(/did not become resolved/i);
+  });
+});
