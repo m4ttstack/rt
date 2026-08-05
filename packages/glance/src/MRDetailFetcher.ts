@@ -94,8 +94,7 @@ export class MRDetailFetcher {
 
     const discussions: Discussion[] = raw.map((d) => ({
       id: d.id,
-      resolvable: null,
-      resolved: null,
+      ...rollUpResolution(d.notes),
       notes: d.notes.map(toNote),
     }));
 
@@ -112,6 +111,31 @@ export class MRDetailFetcher {
 // ---------------------------------------------------------------------------
 // Mapping helpers
 // ---------------------------------------------------------------------------
+
+/**
+ * A thread's resolution state, derived from the notes inside it.
+ *
+ * GitLab marks resolution per note, not per discussion, so the thread-level
+ * answer has to be rolled up. These fields used to be hardcoded to null here
+ * while the per-note values were mapped correctly, which meant every GitLab
+ * thread read as indeterminate to callers.
+ *
+ * `resolved` stays null for a thread with nothing resolvable in it. Reporting
+ * `false` there would claim the thread is outstanding, when the truth is that
+ * it has no resolution state at all, and collapsing those two into one value
+ * is what let the original hardcoding go unnoticed.
+ */
+function rollUpResolution(notes: RESTNote[]): {
+  resolvable: boolean;
+  resolved: boolean | null;
+} {
+  const resolvable = notes.filter((n) => n.resolvable === true);
+  if (resolvable.length === 0) return { resolvable: false, resolved: null };
+  return {
+    resolvable: true,
+    resolved: resolvable.every((n) => n.resolved === true),
+  };
+}
 
 function toNote(n: RESTNote): Note {
   return {
