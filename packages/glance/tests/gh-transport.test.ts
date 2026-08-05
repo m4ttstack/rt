@@ -41,6 +41,33 @@ function stubFetch(respond: (url: string) => Response | Promise<Response>): stri
   return urls;
 }
 
+/**
+ * Runs `fn` with `setTimeout` collapsed to fire on the next tick regardless
+ * of the requested delay, then restores the real one.
+ *
+ * The retry plugin (`@octokit/plugin-retry`, via Bottleneck) schedules its
+ * backoff with a bare, module-scope `setTimeout` -- see `bottleneck/light.js`
+ * -- so patching the global reaches it without needing to know Bottleneck's
+ * internals. This exists so a test that drives a GET through exhausted
+ * retries (which cannot get `retries: 0` the way a DELETE test can, since
+ * that flag only applies to non-idempotent verbs) can assert on the outcome
+ * without paying for the real quadratic backoff, which the test is not
+ * verifying.
+ */
+async function withInstantTimers<T>(fn: () => Promise<T>): Promise<T> {
+  const realSetTimeout = globalThis.setTimeout;
+  globalThis.setTimeout = ((
+    callback: (...args: unknown[]) => void,
+    _ms?: number,
+    ...args: unknown[]
+  ) => realSetTimeout(callback, 0, ...args)) as typeof setTimeout;
+  try {
+    return await fn();
+  } finally {
+    globalThis.setTimeout = realSetTimeout;
+  }
+}
+
 describe('GitHubProvider transport (real Octokit, fetch stubbed)', () => {
   test('fetchPullRequestByBranch sends head=owner:branch intact, even when the branch contains a slash', async () => {
     // This is the regression case for the Octokit placeholder bug: Octokit's
@@ -137,37 +164,37 @@ describe('GitHubProvider transport (real Octokit, fetch stubbed)', () => {
     );
   });
 
-  test(
-    'a transport-level validateToken failure propagates the original error, not a translated one',
-    async () => {
-      // Mirrors the transport-level restRequest case above: no `.response`
-      // means this never reached an HTTP outcome, so it must come out as the
-      // original `RequestError` (with `.status`/`.request` intact), not a
-      // plain `Error` laundered through a message-building helper. Unlike
-      // that restRequest case, `validateToken` always issues a GET, which
-      // the retry plugin's default 3-retry, quadratic-backoff schedule (see
-      // `@octokit/plugin-retry`'s `error-request.js`) does not skip -- only
-      // non-idempotent verbs get `retries: 0` from the `before` hook in
-      // `githubClient.ts`. The exhausted-retries wait is real, not a stall,
-      // hence the longer test timeout below.
-      globalThis.fetch = (async () => {
-        throw new TypeError('fetch failed', { cause: new Error('ECONNREFUSED') });
-      }) as typeof fetch;
+  test('a transport-level validateToken failure propagates the original error, not a translated one', async () => {
+    // Mirrors the transport-level restRequest case above: no `.response`
+    // means this never reached an HTTP outcome, so it must come out as the
+    // original `RequestError` (with `.status`/`.request` intact), not a
+    // plain `Error` laundered through a message-building helper. Unlike that
+    // restRequest case, `validateToken` always issues a GET, which the retry
+    // plugin's default 3-retry, quadratic backoff (see
+    // `@octokit/plugin-retry`'s `error-request.js`) does not skip -- only
+    // non-idempotent verbs get `retries: 0` from the `before` hook in
+    // `githubClient.ts`, and `validateToken` cannot pass request options to
+    // opt out the way a DELETE-based test can. What this test verifies is the
+    // untouched-error propagation, not the backoff timing, so the backoff
+    // itself is collapsed via `withInstantTimers` rather than paid for.
+    globalThis.fetch = (async () => {
+      throw new TypeError('fetch failed', { cause: new Error('ECONNREFUSED') });
+    }) as typeof fetch;
 
-      const provider = new GitHubProvider('https://github.com', 'tok');
+    const provider = new GitHubProvider('https://github.com', 'tok');
 
-      let caught: unknown;
+    let caught: unknown;
+    await withInstantTimers(async () => {
       try {
         await provider.validateToken();
       } catch (err) {
         caught = err;
       }
+    });
 
-      expect(caught).toBeInstanceOf(RequestError);
-      expect((caught as RequestError).response).toBeUndefined();
-    },
-    20000
-  );
+    expect(caught).toBeInstanceOf(RequestError);
+    expect((caught as RequestError).response).toBeUndefined();
+  });
 
   test('search queries encode colons in the qualifiers, not raw', async () => {
     // searchPRs's only defense against Octokit's `:word` -> `{word}`
@@ -180,10 +207,17 @@ describe('GitHubProvider transport (real Octokit, fetch stubbed)', () => {
     // shape of bug Task 2 fixed at the `head=owner:branch` call site,
     // recurring here undefended. Only a test against the real transport
     // (this file stubs `fetch`, not `octokit.request`) can catch it.
+    //
+    // `fetchPullRequests()` issues three involvement searches, and the
+    // throttling plugin's `search` Bottleneck group enforces a real
+    // `minTime` between them (see `@octokit/plugin-throttling`'s
+    // `index.js`) to respect GitHub's search rate limit -- a real delay this
+    // test has no interest in paying for, since it is checking the query
+    // string, not the pacing between requests.
     const urls = stubFetch(() => jsonResponse({ items: [] }));
 
     const provider = new GitHubProvider('https://github.com', 'tok');
-    await provider.fetchPullRequests();
+    await withInstantTimers(() => provider.fetchPullRequests());
 
     const searchCall = urls.find(u => u.includes('/search/issues'));
     expect(searchCall).toBeDefined();
