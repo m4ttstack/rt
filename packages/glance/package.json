@@ -23,7 +23,8 @@
     "build": "bun build src/index.ts src/types.ts src/logger.ts src/GitProvider.ts src/GitLabProvider.ts src/GitHubProvider.ts src/ActionCableClient.ts src/MRDetailFetcher.ts src/NoteMutator.ts src/EventsPoller.ts src/EventsWatcher.ts src/providers.ts --outdir dist --root src --target node --packages external && tsc -p tsconfig.build.json",
     "prepublishOnly": "bun run check-types && bun run build",
     "check-types": "tsc --noEmit && tsc -p tsconfig.tests.json --noEmit",
-    "check-types:live": "tsc -p tsconfig.tests.json --noEmit"
+    "check-types:live": "tsc -p tsconfig.tests.json --noEmit",
+    "check:node": "bun run build && node tests/node-smoke.mjs"
   },
   "license": "MIT",
   "repository": {
