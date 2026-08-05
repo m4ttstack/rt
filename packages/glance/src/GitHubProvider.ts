@@ -976,6 +976,9 @@ export class GitHubProvider implements GitProvider {
     }
     const pr = await this.fetchSingleMR(projectPath, mrIid, null);
     if (!pr) throw new Error('Merged PR but failed to fetch it back');
+    if (input?.shouldRemoveSourceBranch) {
+      await this.deleteMergedSourceBranch(projectPath, pr.sourceBranch);
+    }
     return pr;
   }
 
@@ -1012,6 +1015,32 @@ export class GitHubProvider implements GitProvider {
     return rest
       ? { commit_title: trimmed.slice(0, firstBreak), commit_message: rest }
       : { commit_title: trimmed.slice(0, firstBreak) };
+  }
+
+  /**
+   * GitHub's merge endpoint has no delete-branch parameter: it accepts only
+   * commit_title, commit_message, sha, and merge_method. The `delete_branch`
+   * field this used to send was silently ignored, so callers asking for branch
+   * removal never got it (MAT-127). The ref has to be deleted in a second call.
+   *
+   * A ref that is already gone satisfies what the caller asked for. The
+   * repository-level delete_branch_on_merge setting deletes it asynchronously
+   * and races this call, so treating "not there" as failure would make every
+   * merge on such a repository throw.
+   */
+  private async deleteMergedSourceBranch(
+    projectPath: string,
+    branch: string
+  ): Promise<void> {
+    const res = await this.api(
+      'DELETE',
+      `/repos/${projectPath}/git/refs/heads/${encodeURIComponent(branch)}`
+    );
+    if (res.ok || res.status === 404 || res.status === 422) return;
+    const text = await res.text().catch(() => '');
+    throw new Error(
+      `mergePullRequest merged but could not delete source branch "${branch}": ${res.status} ${text}`
+    );
   }
 
   async approvePullRequest(projectPath: string, mrIid: number): Promise<void> {

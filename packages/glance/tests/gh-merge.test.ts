@@ -166,3 +166,92 @@ describe('GitHubProvider merge commit messages (MAT-25)', () => {
     expect(body.commit_message).toBeUndefined();
   });
 });
+
+describe('GitHubProvider shouldRemoveSourceBranch (MAT-127)', () => {
+  test('deletes the source ref after a successful merge', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const calls = stubGitHub(provider, 'feature/x');
+
+    await provider.mergePullRequest('acme/repo', 1, {
+      shouldRemoveSourceBranch: true
+    });
+
+    const deletion = calls.find(c => c.method === 'DELETE');
+    expect(deletion?.path).toBe('/repos/acme/repo/git/refs/heads/feature%2Fx');
+  });
+
+  test('sends no delete_branch field, which GitHub would ignore', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const calls = stubGitHub(provider);
+
+    await provider.mergePullRequest('acme/repo', 1, {
+      shouldRemoveSourceBranch: true
+    });
+
+    expect(mergeBody(calls).delete_branch).toBeUndefined();
+  });
+
+  test('deletes nothing when the caller did not ask', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const calls = stubGitHub(provider);
+
+    await provider.mergePullRequest('acme/repo', 1, {
+      shouldRemoveSourceBranch: false
+    });
+
+    expect(calls.some(c => c.method === 'DELETE')).toBe(false);
+  });
+
+  test('an already-deleted ref is the requested end state, not an error', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const calls = stubGitHub(provider);
+    const api = (provider as any).api;
+    (provider as any).api = async (method: string, path: string, body?: unknown) => {
+      if (method === 'DELETE') {
+        calls.push({ method, path, body: undefined });
+        return {
+          ok: false,
+          status: 422,
+          json: async () => ({}),
+          text: async () => '{"message":"Reference does not exist"}',
+          headers: { get: () => null }
+        } as unknown as Response;
+      }
+      return api(method, path, body);
+    };
+
+    // The repository-level delete_branch_on_merge setting races this call, so
+    // "already gone" has to read as success or every merge on a repo with that
+    // setting enabled would throw.
+    const pr = await provider.mergePullRequest('acme/repo', 1, {
+      shouldRemoveSourceBranch: true
+    });
+
+    expect(pr.iid).toBe(1);
+    // The deletion must still have been attempted: swallowing a 422 is only
+    // correct if the call happened and the ref was genuinely already gone.
+    expect(calls.some(c => c.method === 'DELETE')).toBe(true);
+  });
+
+  test('a real deletion failure throws rather than reporting a silent no-op', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    stubGitHub(provider);
+    const api = (provider as any).api;
+    (provider as any).api = async (method: string, path: string, body?: unknown) => {
+      if (method === 'DELETE') {
+        return {
+          ok: false,
+          status: 403,
+          json: async () => ({}),
+          text: async () => '{"message":"Protected branch"}',
+          headers: { get: () => null }
+        } as unknown as Response;
+      }
+      return api(method, path, body);
+    };
+
+    await expect(
+      provider.mergePullRequest('acme/repo', 1, { shouldRemoveSourceBranch: true })
+    ).rejects.toThrow(/could not delete source branch/);
+  });
+});
