@@ -943,69 +943,115 @@ export async function runWriteConformance(
         'setAutoMerge',
         'arms auto-merge and a re-read confirms it',
         async () => {
+          // Tracks whether `provider.setAutoMerge` itself completed without
+          // throwing, i.e. GitHub actually accepted the mutation and
+          // confirmed `enabledAt` (see GitHubProvider.setAutoMerge). That is
+          // the only signal that anything was armed. Gating the finally
+          // block's cancelAutoMerge grading on it matters because run 2 hit
+          // exactly the case where this would otherwise go unnoticed:
+          // setAutoMerge failed outright, nothing was ever armed, and a
+          // re-read confirming auto-merge is off would have been satisfied
+          // by a pull request that never had it -- a vacuous pass of the
+          // cancelAutoMerge check.
+          let armed = false;
           try {
-            await provider.setAutoMerge(projectPath, iid);
+            try {
+              await provider.setAutoMerge(projectPath, iid);
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              // GitHub refuses enablePullRequestAutoMerge outright while a
+              // pull request's mergeability is still "unstable" -- that is
+              // GitHub declining on the PR's current state, not this SDK
+              // sending a bad request. Run 1 armed auto-merge successfully
+              // with identical code, so this is a fixture-timing
+              // precondition, not a setAutoMerge defect; matching only this
+              // exact GitHub wording (rather than every GraphQL error) keeps
+              // a genuine defect -- a bad node id, a real 4xx, a malformed
+              // mutation -- reporting as a hard fail.
+              if (/\bis in unstable status\b/.test(message)) {
+                throw new Inconclusive(
+                  `pull request is in an unstable mergeability state, which GitHub refuses to arm auto-merge on: ${message}`
+                );
+              }
+              throw err;
+            }
+            armed = true;
             const after = await provider.fetchSingleMR(projectPath, iid, null);
             assert(
               after?.autoMergeEnabled === true,
               `expected autoMergeEnabled true after setAutoMerge, got ${after?.autoMergeEnabled}`
             );
           } finally {
-            // The task 7 spike proved this fixture's required check can
-            // settle, and GitHub's own automation will complete a real merge
-            // the moment it does, while auto-merge is armed -- inside a
-            // window as wide as 90 seconds. No sleep and no poll between
-            // enabling above and cancelling here: every call inserted into
-            // that gap only widens the window this project has no way to
-            // close to zero, only to the minimum number of round trips. If
-            // the required check wins that race before this cancel lands,
-            // GitHub answers with "Can't disable auto-merge for this pull
-            // request" because there is nothing left to cancel; that is not
-            // a defect, so it is recorded as a measured skip rather than a
-            // failure. Losing the race also costs nothing new: the result is
-            // the same one file-and-commit artifact every merge-cycle run
-            // already leaves on this fixture by design, not a new kind of
-            // permanent side effect.
-            try {
-              await provider.cancelAutoMerge(projectPath, iid);
-              const after = await provider.fetchSingleMR(projectPath, iid, null);
-              if (after?.autoMergeEnabled === false) {
-                report.pass(fixture.name, 'cancelAutoMerge', 'disarms auto-merge and a re-read confirms it');
-              } else {
-                report.fail(
-                  fixture.name,
-                  'cancelAutoMerge',
-                  'disarms auto-merge and a re-read confirms it',
-                  `cancelAutoMerge did not throw but autoMergeEnabled reads back as ${after?.autoMergeEnabled}`
-                );
-              }
-            } catch (err) {
-              const message = err instanceof Error ? err.message : String(err);
-              // The message alone is not proof of the race: GitHub returns
-              // this exact string whenever there is nothing to cancel for
-              // ANY reason, including cancelAutoMerge being simply broken, or
-              // the enable step above never having armed anything in the
-              // first place. Trusting the substring would let a genuinely
-              // broken cancelAutoMerge report "skip: the check won the race"
-              // on every single call, forever, and a skip asserting a cause
-              // nobody checked is worse than a failure, because it reads as
-              // accounted for. Re-reading the PR's own state is what actually
-              // tells the race apart from that.
-              const reread = await provider.fetchSingleMR(projectPath, iid, null).catch(() => null);
-              if (reread?.state === 'merged' || reread?.state === 'closed') {
-                report.skip(
-                  fixture.name,
-                  'cancelAutoMerge',
-                  'disarms auto-merge and a re-read confirms it',
-                  `the required check won the race and GitHub merged the PR before this call could land (confirmed by re-read: state="${reread.state}"): ${message}`
-                );
-              } else {
-                report.fail(
-                  fixture.name,
-                  'cancelAutoMerge',
-                  'disarms auto-merge and a re-read confirms it',
-                  `cancelAutoMerge failed and a re-read does not support the "already merged" narrative (state="${reread?.state ?? 'unreadable'}"): ${message}`
-                );
+            if (!armed) {
+              // Nothing was armed, so there is nothing for cancelAutoMerge
+              // to disarm. Calling it anyway and grading the re-read would
+              // report a pass that a pull request which never had
+              // auto-merge on would satisfy just as well; that proves
+              // nothing about cancelAutoMerge, so it must not be reported
+              // as a check result at all.
+              report.skip(
+                fixture.name,
+                'cancelAutoMerge',
+                'disarms auto-merge and a re-read confirms it',
+                'setAutoMerge did not arm auto-merge on this run, so there was nothing for cancelAutoMerge to disarm'
+              );
+            } else {
+              // The task 7 spike proved this fixture's required check can
+              // settle, and GitHub's own automation will complete a real merge
+              // the moment it does, while auto-merge is armed -- inside a
+              // window as wide as 90 seconds. No sleep and no poll between
+              // enabling above and cancelling here: every call inserted into
+              // that gap only widens the window this project has no way to
+              // close to zero, only to the minimum number of round trips. If
+              // the required check wins that race before this cancel lands,
+              // GitHub answers with "Can't disable auto-merge for this pull
+              // request" because there is nothing left to cancel; that is not
+              // a defect, so it is recorded as a measured skip rather than a
+              // failure. Losing the race also costs nothing new: the result is
+              // the same one file-and-commit artifact every merge-cycle run
+              // already leaves on this fixture by design, not a new kind of
+              // permanent side effect.
+              try {
+                await provider.cancelAutoMerge(projectPath, iid);
+                const after = await provider.fetchSingleMR(projectPath, iid, null);
+                if (after?.autoMergeEnabled === false) {
+                  report.pass(fixture.name, 'cancelAutoMerge', 'disarms auto-merge and a re-read confirms it');
+                } else {
+                  report.fail(
+                    fixture.name,
+                    'cancelAutoMerge',
+                    'disarms auto-merge and a re-read confirms it',
+                    `cancelAutoMerge did not throw but autoMergeEnabled reads back as ${after?.autoMergeEnabled}`
+                  );
+                }
+              } catch (err) {
+                const message = err instanceof Error ? err.message : String(err);
+                // The message alone is not proof of the race: GitHub returns
+                // this exact string whenever there is nothing to cancel for
+                // ANY reason, including cancelAutoMerge being simply broken, or
+                // the enable step above never having armed anything in the
+                // first place. Trusting the substring would let a genuinely
+                // broken cancelAutoMerge report "skip: the check won the race"
+                // on every single call, forever, and a skip asserting a cause
+                // nobody checked is worse than a failure, because it reads as
+                // accounted for. Re-reading the PR's own state is what actually
+                // tells the race apart from that.
+                const reread = await provider.fetchSingleMR(projectPath, iid, null).catch(() => null);
+                if (reread?.state === 'merged' || reread?.state === 'closed') {
+                  report.skip(
+                    fixture.name,
+                    'cancelAutoMerge',
+                    'disarms auto-merge and a re-read confirms it',
+                    `the required check won the race and GitHub merged the PR before this call could land (confirmed by re-read: state="${reread.state}"): ${message}`
+                  );
+                } else {
+                  report.fail(
+                    fixture.name,
+                    'cancelAutoMerge',
+                    'disarms auto-merge and a re-read confirms it',
+                    `cancelAutoMerge failed and a re-read does not support the "already merged" narrative (state="${reread?.state ?? 'unreadable'}"): ${message}`
+                  );
+                }
               }
             }
           }
@@ -1124,11 +1170,49 @@ async function waitForMergeReadiness(fixture: ProviderFixture, iid: number): Pro
     'preparing',
     'approvals_syncing'
   ]);
-  await pollUntil(`merge readiness of ${iid}`, async () => {
-    const fresh = await fixture.provider.fetchSingleMR(fixture.projectPath, iid, null);
-    if (!fresh) return null;
-    return stillComputing.has(fresh.detailedMergeStatus ?? '') ? null : fresh;
-  }, { timeoutMs: 20_000 });
+
+  // MAT-132 timed out twice on two different MRs with nothing to show for
+  // it: pollUntil's predicate reports "not yet" as `null`, so every
+  // intermediate detailedMergeStatus vanished before the timeout message
+  // was built, and nobody could tell which state it was stuck in. This is
+  // the same evidentiary hole MAT-128 sat in for three phases, closed only
+  // by recording what actually happened instead of reasoning about it.
+  // "not-found" is tracked separately from a real status: the predicate
+  // below treats a missing MR the same as one still computing, but a
+  // fetchSingleMR miss and "still processing" are different problems and
+  // must not be folded into the same observation.
+  const observed: string[] = [];
+
+  try {
+    await pollUntil(`merge readiness of ${iid}`, async () => {
+      const fresh = await fixture.provider.fetchSingleMR(fixture.projectPath, iid, null);
+      if (!fresh) {
+        observed.push('not-found');
+        return null;
+      }
+      observed.push(fresh.detailedMergeStatus ?? 'null');
+      return stillComputing.has(fresh.detailedMergeStatus ?? '') ? null : fresh;
+    }, { timeoutMs: 20_000 });
+  } catch (err) {
+    // Collapse consecutive repeats into counts rather than dumping up to
+    // ~20 raw entries: "checking x2 -> preparing x18" names the stuck
+    // state directly, which is the whole point of recording this.
+    const runs: Array<{ status: string; count: number }> = [];
+    for (const status of observed) {
+      const last = runs[runs.length - 1];
+      if (last && last.status === status) {
+        last.count++;
+      } else {
+        runs.push({ status, count: 1 });
+      }
+    }
+    const summary = runs.length > 0
+      ? runs.map(r => `${r.status} x${r.count}`).join(' -> ')
+      : '(no observations)';
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`  waitForMergeReadiness(${iid}) observed detailedMergeStatus: ${summary}`);
+    throw new Error(`${message}. Observed detailedMergeStatus: ${summary}`);
+  }
 }
 
 export async function runMergeConformance(
@@ -1584,7 +1668,30 @@ export async function runCiConformance(
   });
 
   await check(report, fixture, 'retryPipeline', 'accepts a retry request', async () => {
-    await provider.retryPipeline(projectPath, probe.pipelineId);
+    try {
+      await provider.retryPipeline(projectPath, probe.pipelineId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      // `latestPipelineAndJob` already scans newest-first and keeps the
+      // first pipeline that clears task 9's settled-status filter (kept
+      // deliberately: an in-flight pipeline has no completed jobs to probe
+      // at all), so there is no more-recent eligible pipeline this
+      // selection is passing over. On this fixture the merge cycle just
+      // above triggers a fresh default-branch pipeline that has typically
+      // not settled by the time this scan runs, which pushes the scan back
+      // onto an older, already-settled pipeline instead -- old enough that
+      // GitLab's own bookkeeping has moved past it and refuses the retry
+      // with exactly this 409. That is the fixture's timing, not a
+      // retryPipeline defect, so it is Inconclusive instead, following the
+      // same precedent as mergePullRequest's 405 handling above; anything
+      // else still fails hard.
+      if (/\bError updating stale job\b/.test(message)) {
+        throw new Inconclusive(
+          `pipeline ${probe.pipelineId} settled long enough ago that GitLab now refuses to retry it: ${message}`
+        );
+      }
+      throw err;
+    }
   });
 
   if (fixture.name !== 'github') {
