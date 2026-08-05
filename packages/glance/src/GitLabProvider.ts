@@ -910,6 +910,35 @@ export class GitLabProvider implements GitProvider {
     return this.mrDetailFetcher.fetchDetail(projectId, mrIid);
   }
 
+  /**
+   * GitLab has no per-branch protection detail endpoint the way GitHub does,
+   * so `requireStatusChecks` and `requiredApprovals` are read from *project*
+   * settings rather than the branch itself: `only_allow_merge_if_pipeline_succeeds`
+   * and the project's approval configuration (`approvals_before_merge`). Every
+   * rule returned here therefore carries the same project-wide value; this is
+   * not a per-branch measurement, only the closest verifiable one available.
+   * (GitLab's approval rules *can* be scoped to individual protected branches
+   * via each rule's `protected_branches`, and multiple rules can apply to one
+   * branch at once, but there is no documented, verifiable way to collapse
+   * that into a single per-branch number without guessing at GitLab's
+   * approval-stacking semantics -- so the project default is used for every
+   * rule instead of inventing a mapping.)
+   *
+   * `requiredApprovals` has a second imprecision, separate from "which
+   * branch": `approvals_before_merge` is GitLab's legacy project-wide scalar,
+   * not a readout of the named approval-rules feature (Premium/Ultimate).
+   * A project relying on named rules for its actual requirement can have
+   * `approvals_before_merge` sit at 0, or at some other number the rules
+   * don't match, while the rules themselves demand more. This method reports
+   * the scalar as-is rather than reading the rules, for the same
+   * can't-cleanly-determine reason as the branch-scoping limitation above.
+   * A caller that needs the exact requirement on such a project must read
+   * the approval rules directly; this field is not that.
+   *
+   * `allowDeletion: false` is not part of that limitation: it is unconditionally
+   * correct, not a placeholder. A protected branch cannot be deleted while
+   * protected, and GitLab exposes no per-branch deletion toggle to read.
+   */
   async fetchBranchProtectionRules(projectPath: string): Promise<BranchProtectionRule[]> {
     let branches: Array<{
       name: string;
@@ -926,12 +955,37 @@ export class GitLabProvider implements GitProvider {
     } catch (err) {
       throw this.legacyError('fetchBranchProtectionRules', err);
     }
+
+    // Fetched once per call, not once per branch below: neither setting
+    // varies by branch, so reading them inside the `map` would turn one
+    // protected-branches read into 1 + 2N requests for N branches.
+    let requireStatusChecks: boolean;
+    let requiredApprovals: number;
+    try {
+      const [project, approvalConfig] = await Promise.all([
+        this.gb.Projects.show(projectPath) as unknown as Promise<{
+          only_allow_merge_if_pipeline_succeeds: boolean;
+        }>,
+        this.gb.MergeRequestApprovals.showConfiguration(projectPath) as unknown as Promise<{
+          approvals_before_merge: number;
+        }>,
+      ]);
+      requireStatusChecks = project.only_allow_merge_if_pipeline_succeeds;
+      requiredApprovals = approvalConfig.approvals_before_merge;
+    } catch (err) {
+      // Falling back to 0/false here would recreate the exact bug this
+      // method exists to fix, just with error handling as its disguise.
+      throw this.legacyError('fetchBranchProtectionRules', err);
+    }
+
     return branches.map((b) => ({
       pattern: b.name,
       allowForcePush: b.allow_force_push,
+      // Not a placeholder like the two fields below: a real, measured
+      // answer. See the docstring above this method.
       allowDeletion: false,
-      requiredApprovals: 0,
-      requireStatusChecks: false,
+      requiredApprovals,
+      requireStatusChecks,
       raw: b as unknown as Record<string, unknown>,
     }));
   }
