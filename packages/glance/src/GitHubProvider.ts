@@ -1604,6 +1604,51 @@ export class GitHubProvider implements GitProvider {
   }
 
   /**
+   * Issue a GraphQL (v4) request that must succeed. The mutation counterpart
+   * to `graphql()`.
+   *
+   * MAT-133. `graphql()` reports every failure as `null` so read callers can
+   * say "unknown" instead of substituting a value. A mutation has no such
+   * answer available: a `null` from `enablePullRequestAutoMerge` is
+   * indistinguishable from "auto-merge is off", which is the MAT-15 bug class
+   * where a silent no-op meant a draft MR was never actually published.
+   *
+   * `graphql()` is deliberately left alone rather than harmonized with this.
+   * Two live-passing read paths depend on its swallow and no failing
+   * assertion drives changing them.
+   */
+  private async graphqlOrThrow<T>(
+    op: string,
+    query: string,
+    variables: Record<string, unknown>
+  ): Promise<T> {
+    let data: T | null | undefined;
+    try {
+      data = await this.octokit.graphql<T>(query, variables);
+    } catch (err) {
+      const messages = graphqlErrorMessages(err);
+      if (messages) {
+        throw new Error(`${op} failed: GitHub GraphQL returned ${messages.join('; ')}`);
+      }
+      if (err instanceof GraphqlResponseError) {
+        // Empty `errors` array. `@octokit/graphql` throws on the key's mere
+        // presence and `[]` is truthy, but an empty array carries no error.
+        // `graphql()` reads that as success by falling through to the
+        // response's data, and so does this.
+        data = err.data as T | undefined;
+      } else if (err instanceof RequestError && err.response) {
+        throw ghError(op, err, 'statusText');
+      } else {
+        throw err;
+      }
+    }
+    if (data == null) {
+      throw new Error(`${op} failed: GitHub GraphQL returned no data`);
+    }
+    return data;
+  }
+
+  /**
    * Move a PR between draft and ready for review.
    *
    * These two mutations are GitHub's only API for the transition -- REST
@@ -1625,11 +1670,15 @@ export class GitHubProvider implements GitProvider {
       }
     `;
 
-    const data = await this.graphql<
+    const data = await this.graphqlOrThrow<
       Record<string, { pullRequest?: { isDraft: boolean } } | undefined>
-    >(mutation, { id: pullRequestId });
+    >('updatePullRequest', mutation, { id: pullRequestId });
 
-    if (data?.[field]?.pullRequest?.isDraft !== draft) {
+    // Kept after the throwing call: `graphqlOrThrow` proves the request
+    // succeeded and returned data, not that GitHub landed the flag we asked
+    // for. Reporting success on a draft flag that never took is the bug this
+    // check exists for.
+    if (data[field]?.pullRequest?.isDraft !== draft) {
       throw new Error(
         `updatePullRequest failed: could not set draft=${draft} (GitHub GraphQL ${field})`
       );

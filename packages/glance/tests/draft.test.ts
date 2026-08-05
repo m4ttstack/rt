@@ -306,16 +306,23 @@ function stubGitHub(
       calls.bodies.push({ path, body: params?.data });
       return { status: 200, headers: {}, data: patched };
     },
-  };
-  (provider as any).graphql = async (mutation: string) => {
-    calls.mutations.push(mutation);
-    if (!mutationSucceeds) return null;
-    const draft = mutation.includes('convertPullRequestToDraft');
-    return {
-      [draft ? 'convertPullRequestToDraft' : 'markPullRequestReadyForReview']: {
-        pullRequest: { isDraft: draft },
-      },
-    };
+    // `setDraft` now goes through `graphqlOrThrow`, which reaches
+    // `octokit.graphql` directly rather than the provider's own `graphql`
+    // method (MAT-133), so the mock moves to the transport boundary. A
+    // failed mutation returns a body with no matching field rather than
+    // null: `graphqlOrThrow` treats null as "no data" and throws before the
+    // isDraft check below ever runs, which would change the message this
+    // test asserts on.
+    graphql: async (mutation: string) => {
+      calls.mutations.push(mutation);
+      const draft = mutation.includes('convertPullRequestToDraft');
+      if (!mutationSucceeds) return {};
+      return {
+        [draft ? 'convertPullRequestToDraft' : 'markPullRequestReadyForReview']: {
+          pullRequest: { isDraft: draft },
+        },
+      };
+    },
   };
   (provider as any).fetchSingleMR = async () => ({ iid: 1 });
   return calls;
