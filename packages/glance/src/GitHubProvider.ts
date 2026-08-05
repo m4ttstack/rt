@@ -858,6 +858,18 @@ export class GitHubProvider implements GitProvider {
     return null;
   }
 
+  /**
+   * Every route built in this method and in `updatePullRequest` below
+   * interpolates only `projectPath`/`input.projectPath` (an `owner/repo`
+   * string, and GitHub forbids a colon in either half of that) and a
+   * numeric PR number, never a value with a colon in it. Unlike
+   * `fetchPullRequestByBranch`'s `owner:branch` value, there is nothing
+   * here for Octokit's endpoint parser to rewrite into an empty route
+   * placeholder, so none of these routes carry the defensive `%3A` escape
+   * `api()` applies as a last line of defense. If a future change threads
+   * a caller-supplied string (a title, a branch name) into one of these
+   * routes rather than the request body, that guard needs to come back.
+   */
   async createPullRequest(input: CreatePullRequestInput): Promise<PullRequest> {
     const body: Record<string, unknown> = {
       head: input.sourceBranch,
@@ -882,25 +894,29 @@ export class GitHubProvider implements GitProvider {
     }
 
     // GitHub doesn't support reviewers/assignees/labels on create -- add them
-    // separately. The PR above already exists by this point, so a failure
-    // here throwing does not mean "the PR was never created."
+    // separately. The PR above already exists by this point: a failure here
+    // is not "no PR was created," it is "PR #<n> exists without this one
+    // field applied." The op label below names both the sub-operation and
+    // the PR number so a caller (or a human reading the thrown message) can
+    // tell the two apart and find the PR that already exists, instead of
+    // retrying and hitting GitHub's own "a pull request already exists" 422.
     if (input.reviewers?.length) {
       await this.fireAndThrow(
-        'createPullRequest',
+        `createPullRequest reviewers for #${created.number}`,
         `POST /repos/${input.projectPath}/pulls/${created.number}/requested_reviewers`,
         { reviewers: input.reviewers }
       );
     }
     if (input.assignees?.length) {
       await this.fireAndThrow(
-        'createPullRequest',
+        `createPullRequest assignees for #${created.number}`,
         `POST /repos/${input.projectPath}/issues/${created.number}/assignees`,
         { assignees: input.assignees }
       );
     }
     if (input.labels?.length) {
       await this.fireAndThrow(
-        'createPullRequest',
+        `createPullRequest labels for #${created.number}`,
         `POST /repos/${input.projectPath}/issues/${created.number}/labels`,
         { labels: input.labels }
       );
@@ -955,24 +971,29 @@ export class GitHubProvider implements GitProvider {
     // Handle reviewers/assignees/labels replacement if provided. Octokit
     // throws on a non-2xx here, where the old fetch-based code never checked
     // `res.ok` and silently swallowed a failure on all three. Surfacing that
-    // failure is a deliberate behavior change (MAT-24 owns these fields).
+    // failure is a deliberate behavior change (MAT-24 owns these fields). By
+    // this point the PATCH above and any draft toggle have already landed,
+    // so the op label below names the sub-operation and the PR number,
+    // matching createPullRequest's treatment: a caller reading the thrown
+    // message can tell "the title/base/draft update landed but reviewers
+    // did not" from "nothing happened."
     if (input.reviewers) {
       await this.fireAndThrow(
-        'updatePullRequest',
+        `updatePullRequest reviewers for #${mrIid}`,
         `POST /repos/${projectPath}/pulls/${mrIid}/requested_reviewers`,
         { reviewers: input.reviewers }
       );
     }
     if (input.assignees) {
       await this.fireAndThrow(
-        'updatePullRequest',
+        `updatePullRequest assignees for #${mrIid}`,
         `POST /repos/${projectPath}/issues/${mrIid}/assignees`,
         { assignees: input.assignees }
       );
     }
     if (input.labels) {
       await this.fireAndThrow(
-        'updatePullRequest',
+        `updatePullRequest labels for #${mrIid}`,
         `PUT /repos/${projectPath}/issues/${mrIid}/labels`,
         { labels: input.labels }
       );
@@ -1404,6 +1425,13 @@ export class GitHubProvider implements GitProvider {
    * `.response`) is rethrown untouched, same as every other migrated call
    * site: it never reached an HTTP outcome, so laundering it through
    * `ghError` would lose `.status` and `.request` for no reason.
+   *
+   * `op` is not a bare method name here the way it is at the other call
+   * sites: every caller of this helper names the sub-operation and the PR
+   * number it applies to (e.g. `createPullRequest reviewers for #42`), since
+   * a failure here throws for a PR that already exists (created) or was
+   * already partially updated (patched). A generic `createPullRequest`
+   * label would read as "nothing happened," which is false.
    */
   private async fireAndThrow(
     op: string,

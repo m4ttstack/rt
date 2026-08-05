@@ -225,6 +225,115 @@ describe('GitHubProvider transport (real Octokit, fetch stubbed)', () => {
     expect(searchCall).toContain('author%3A%40me');
   });
 
+  test('createPullRequest names the sub-operation and the created PR number when reviewers 422s', async () => {
+    // The create POST succeeds (the PR exists on GitHub by this point), then
+    // the reviewers sub-request 422s -- a live case (requesting yourself, or
+    // a non-collaborator). Before this fix, the thrown message was
+    // `createPullRequest failed: 422 ...`, indistinguishable from "no PR was
+    // created," which would send a caller who retries straight into GitHub's
+    // own "a pull request already exists" 422. The op label now names the
+    // sub-operation and the PR number so a caller can find #7 instead.
+    //
+    // Both requests here land in Octokit's real "write" throttle group
+    // (`@octokit/plugin-throttling`'s `groups.write`, `minTime: 1000`), a
+    // real, non-retry pacing delay between writes that only exists because
+    // this file drives the real transport. `withInstantTimers` collapses it;
+    // the assertion is about the thrown message, not the pacing.
+    stubFetch(url => {
+      if (url.endsWith('/pulls')) {
+        return jsonResponse({ number: 7, node_id: 'PR_7' }, 201);
+      }
+      if (url.includes('/requested_reviewers')) {
+        return jsonResponse({ message: 'Review cannot be requested from pull request author' }, 422);
+      }
+      throw new Error(`unexpected URL in test: ${url}`);
+    });
+
+    const provider = new GitHubProvider('https://github.com', 'tok');
+
+    await withInstantTimers(() =>
+      expect(
+        provider.createPullRequest({
+          projectPath: 'acme/repo',
+          title: 'My feature',
+          sourceBranch: 'feat',
+          targetBranch: 'main',
+          reviewers: ['octocat']
+        })
+      ).rejects.toThrow(/^createPullRequest reviewers for #7 failed: 422 /)
+    );
+  });
+
+  test('updatePullRequest names the sub-operation and the PR number when labels 422s', async () => {
+    // Mirrors the createPullRequest case above, on the update path: the
+    // PATCH has already landed (title/base/state, whichever were sent) by
+    // the time the labels sub-request fails, so the thrown message must not
+    // read as "nothing happened." Same real write-throttle pacing between
+    // the two requests as above, collapsed the same way.
+    stubFetch(url => {
+      if (/\/pulls\/9$/.test(url)) {
+        return jsonResponse({ number: 9, node_id: 'PR_9', draft: false }, 200);
+      }
+      if (url.includes('/issues/9/labels')) {
+        return jsonResponse({ message: 'Label does not exist' }, 422);
+      }
+      throw new Error(`unexpected URL in test: ${url}`);
+    });
+
+    const provider = new GitHubProvider('https://github.com', 'tok');
+
+    await withInstantTimers(() =>
+      expect(
+        provider.updatePullRequest('acme/repo', 9, { labels: ['no-such-label'] })
+      ).rejects.toThrow(/^updatePullRequest labels for #9 failed: 422 /)
+    );
+  });
+
+  test('a transport-level failure on a PR write sub-request propagates the original RequestError untouched', async () => {
+    // Same shape as the restRequest and validateToken transport-failure
+    // cases above: no `.response` means this never reached an HTTP outcome,
+    // so it must come out as the original `RequestError`, not translated
+    // through `ghError` into a plain `Error` that has lost `.status` and
+    // `.request`. The create POST succeeds; the assignees sub-request is
+    // what drops the connection. The assignees POST is non-idempotent, so
+    // the retry hook's `retries: 0` applies and this fails on the first
+    // attempt with no real retry wait; `withInstantTimers` is only needed
+    // here for the same real write-throttle pacing the two tests above hit
+    // between the create POST and the assignees POST.
+    let call = 0;
+    globalThis.fetch = (async (input: string | URL | Request) => {
+      const url = typeof input === 'string' ? input : input.toString();
+      call++;
+      if (url.endsWith('/pulls')) {
+        return jsonResponse({ number: 3, node_id: 'PR_3' }, 201);
+      }
+      if (url.includes('/assignees')) {
+        throw new TypeError('fetch failed', { cause: new Error('ECONNREFUSED') });
+      }
+      throw new Error(`unexpected URL in test (call ${call}): ${url}`);
+    }) as typeof fetch;
+
+    const provider = new GitHubProvider('https://github.com', 'tok');
+
+    let caught: unknown;
+    await withInstantTimers(async () => {
+      try {
+        await provider.createPullRequest({
+          projectPath: 'acme/repo',
+          title: 'My feature',
+          sourceBranch: 'feat',
+          targetBranch: 'main',
+          assignees: ['octocat']
+        });
+      } catch (err) {
+        caught = err;
+      }
+    });
+
+    expect(caught).toBeInstanceOf(RequestError);
+    expect((caught as RequestError).response).toBeUndefined();
+  });
+
   test('an absolute URL passed to restRequest reaches fetch unmangled', async () => {
     // A blanket colon-escape would rewrite the scheme separator too:
     // `https://...` becomes `https%3A//...`, which still passes Octokit's
