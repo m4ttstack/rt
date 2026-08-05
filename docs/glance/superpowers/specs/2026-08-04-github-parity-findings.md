@@ -469,7 +469,7 @@ explicitly so this document is not mistaken for exhaustive coverage:
   are live, shared external systems; a re-run is not guaranteed to reproduce every result
   identically (the retryJob timing gap above is the clearest example of a result that could
   plausibly go either way on a different run). There is also a specific, named residual flake
-  risk: `waitForMergeReadiness`'s `stillComputing` set (`conformance.ts:702`) treats
+  risk: `waitForMergeReadiness`'s `stillComputing` set (`conformance.ts:751`) treats
   `checking`, `unchecked`, and `preparing` as transitional but omits `approvals_syncing`,
   which the SDK's own `MRDashboard.ts:105` also treats as transitional. A merge attempted
   while GitLab reports `approvals_syncing` could race the same HTTP-405 ambiguity documented
