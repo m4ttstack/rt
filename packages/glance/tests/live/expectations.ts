@@ -121,7 +121,11 @@ export const GITLAB_EXPECTATIONS: Record<ProviderMethod, Expectation> = {
   fetchJobTrace: { support: 'supported' },
   fetchDownstreamPipeline: { support: 'supported' },
   fetchJobDetail: { support: 'supported' },
-  requestReReview: { support: 'supported', capability: 'canRequestReReview' },
+  requestReReview: {
+    support: 'approximate',
+    capability: 'canRequestReReview',
+    note: 'Ignores the reviewerUsernames argument entirely and instead re-fetches the MR\'s current reviewer ids, re-editing the MR with that same list to trigger a re-notification. GitLab treats an identical reassignment as a no-op, and the call returns early doing nothing at all when the MR has no reviewers yet. So it never adds a reviewer and its only externally visible effect (a notification) is not observable through this interface.'
+  },
   restRequest: { support: 'supported' },
   watchMR: { support: 'supported' },
   watchEvents: { support: 'supported', capability: 'canWatchEvents' }

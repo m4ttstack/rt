@@ -455,6 +455,23 @@ export async function runWriteConformance(
   let prIid: number | null = null;
 
   try {
+    await check(report, fixture, 'deleteBranch', 'the branch is gone afterwards', async () => {
+      // Deliberately not asserting on the cleanup deletions in this
+      // function's own finally block below: those must stay non-fatal, and
+      // an assertion there would make a cleanup failure fail the run it was
+      // cleaning up after. This is a dedicated throwaway branch instead.
+      const throwaway = `conformance/delete-${Date.now()}`;
+      await createBranch(fixture, throwaway);
+      assert(await branchExists(fixture, throwaway), 'setup failed: branch was not created');
+
+      await provider.deleteBranch(projectPath, throwaway);
+
+      const gone = await pollUntil(`absence of ${throwaway}`, async () =>
+        (await branchExists(fixture, throwaway)) ? null : true
+      );
+      assert(gone === true, 'branch still exists after deleteBranch');
+    });
+
     await check(report, fixture, 'createPullRequest', 'opens a PR from a new branch', async () => {
       await createBranch(fixture, branch);
       await commitFile(fixture, branch, `conformance-${Date.now()}.md`, '# conformance\n');
@@ -654,6 +671,35 @@ export async function runWriteConformance(
       );
     } else {
       report.skip(fixture.name, 'approvePullRequest', 'approval', 'no second identity');
+    }
+
+    if (fixture.approver) {
+      // Not a check(): GitLabProvider.requestReReview ignores the
+      // reviewerUsernames argument entirely (the parameter is even named
+      // `_reviewerUsernames`) and instead re-fetches the MR's *current*
+      // reviewer ids and re-edits the MR with that exact same list, which
+      // GitLab treats as a no-op reassignment with no observable state
+      // change. It also returns early via
+      // "if (reviewerIds.length === 0) return;" when the MR has no
+      // reviewers yet, so it silently does nothing in that case too. There
+      // is no MR state in which this method produces something an
+      // assertion could distinguish from a no-op, so recording a pass here
+      // would credit setup (e.g. updatePullRequest assigning a reviewer),
+      // not this method. See GITLAB_EXPECTATIONS.requestReReview in
+      // expectations.ts for the same divergence recorded against the table.
+      report.skip(
+        fixture.name,
+        'requestReReview',
+        're-request',
+        'GitLabProvider.requestReReview only re-assigns the existing reviewer set on the MR (a no-op on GitLab) and no-ops entirely when there are no reviewers, so no assertion can tell success apart from a no-op'
+      );
+    } else {
+      report.skip(
+        fixture.name,
+        'requestReReview',
+        're-request',
+        'no second identity: GitHub rejects a review request from the PR author'
+      );
     }
   } finally {
     // Deleting the source branch closes the PR on both providers, which is
@@ -963,6 +1009,14 @@ export async function runMergeConformance(
 interface PipelineProbe {
   pipelineId: number;
   jobId: number;
+  /**
+   * Whether the selected job specifically failed, as opposed to merely
+   * having settled into some other terminal state. The reads below
+   * (fetchJobTrace, fetchJobDetail, fetchDownstreamPipeline, retryPipeline)
+   * don't care whether the job passed or failed; retryJob does, which is why
+   * this wasn't tracked before it needed a GitLab-side gate.
+   */
+  jobFailed: boolean;
 }
 
 /**
@@ -1012,7 +1066,7 @@ async function latestPipelineAndJob(fixture: ProviderFixture): Promise<PipelineP
     const job = jobs.find(
       j => j.status === 'completed' && RAN_GITHUB_JOB_CONCLUSIONS.has(j.conclusion ?? '')
     );
-    return job ? { pipelineId: run.id, jobId: job.id } : null;
+    return job ? { pipelineId: run.id, jobId: job.id, jobFailed: job.conclusion === 'failure' } : null;
   }
 
   const encoded = encodeURIComponent(projectPath);
@@ -1034,7 +1088,7 @@ async function latestPipelineAndJob(fixture: ProviderFixture): Promise<PipelineP
     if (!jobsRes.ok) continue;
     const jobs = (await jobsRes.json()) as Array<{ id: number; status: string }>;
     const job = jobs.find(j => RAN_GITLAB_JOB_STATUSES.has(j.status));
-    if (job) return { pipelineId: pipe.id, jobId: job.id };
+    if (job) return { pipelineId: pipe.id, jobId: job.id, jobFailed: job.status === 'failed' };
   }
 
   return null;
@@ -1092,7 +1146,7 @@ async function withFailedGitHubJob(
           const failed = jobs.find(
             j => j.name === 'controllable' && j.status === 'completed' && j.conclusion === 'failure'
           );
-          if (failed) return { pipelineId: run.id, jobId: failed.id };
+          if (failed) return { pipelineId: run.id, jobId: failed.id, jobFailed: true };
         }
         return null;
       },
@@ -1201,7 +1255,28 @@ export async function runCiConformance(
     await provider.retryPipeline(projectPath, probe.pipelineId);
   });
 
-  if (fixture.name !== 'github') return;
+  if (fixture.name !== 'github') {
+    // The GitLab fixture's `install` job fails on every pipeline by design
+    // (see the RAN_GITLAB_JOB_STATUSES comment above), so there is no need
+    // for GitHub's branch-and-poll trick to manufacture a failure here --
+    // `latestPipelineAndJob` already told us above whether the job it
+    // settled on genuinely failed. Extending that probe rather than writing
+    // a second withFailedGitHubJob-style helper: GitLab's .gitlab-ci.yml is
+    // not ours to change, so there is nothing to manufacture on this side.
+    if (probe.jobFailed) {
+      await check(report, fixture, 'retryJob', 'accepts a retry of the failed job', async () => {
+        await provider.retryJob(projectPath, probe.jobId);
+      });
+    } else {
+      report.skip(
+        fixture.name,
+        'retryJob',
+        'accepts a retry of the failed job',
+        'the CI probe landed on a job that settled but did not fail'
+      );
+    }
+    return;
+  }
 
   try {
     await withFailedGitHubJob(fixture, async failed => {
