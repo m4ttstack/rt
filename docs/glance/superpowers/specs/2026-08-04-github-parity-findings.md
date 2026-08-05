@@ -164,7 +164,7 @@ GitHub-specific, not a shared platform limitation.
 branch still exists after merging with shouldRemoveSourceBranch: true
 ```
 
-Confirmed again in this run. `GitHubProvider.ts:965` sends a `delete_branch` field to
+Confirmed again in this run. `GitHubProvider.ts:966` sends a `delete_branch` field to
 GitHub's merge endpoint, which has no such parameter and silently ignores it.
 **Cross-provider comparison (live-verified, this run):** the identical assertion passed on
 GitLab, whose source branch was gone immediately after merge (GitLab's merge endpoint has a
@@ -201,12 +201,14 @@ run 30957694970  branch=conformance/msf901hv-failjob  status=completed  conclusi
 The harness's poll finds and reports on the `controllable` job as soon as it individually
 reaches `completed`/`failure` (at `:23`), which can happen up to several seconds before the
 *run* as a whole (both jobs together) reaches `completed` (the run's own `updated_at` is
-`:27`, matching when the second job finished). The harness calls `retryJob` immediately
-after its poll returns. GitHub's error text is specifically about the *run*, not the job:
-"the workflow run containing this job is already running." This is consistent with the call
-landing inside that few-second gap between "this job is done" and "the run is done," though
-the harness does not log the exact timestamp of the `retryJob` call itself, so this is the
-evidence available, not a proven root cause.
+`:27`, matching when the second job finished). The harness does not call `retryJob`
+immediately after its poll returns: `fetchJobTrace` runs in between, including a full log
+download, and only then does `retryJob` get called. GitHub's error text is specifically
+about the *run*, not the job: "the workflow run containing this job is already running."
+This is consistent with the call landing inside that few-second gap between "this job is
+done" and "the run is done," though the harness does not log the exact timestamp of the
+`retryJob` call itself (or how long the intervening `fetchJobTrace` call took), so this is
+the evidence available, not a proven root cause.
 
 **Owner: recommend phase 2**, as a companion to phase 2d (which documents the equivalent
 shape of problem on GitLab's `mergePullRequest`: a sub-resource's completion state can
@@ -331,18 +333,33 @@ be read as "phase 1 confirmed this."
 - **`restRequest` is not portable despite its docstring claiming implementations translate
   paths.** GitLab needs an explicit `/api/v4` prefix; GitHub must not have one. Partial live
   update: the harness's own `apiPath()` helper (in `conformance.ts`) had to be written to
-  work around exactly this, and every `restRequest` call site in the harness routes through
-  it. That is strong circumstantial live confirmation that the portability gap is real (the
-  harness could not have been written without the workaround), but there is no dedicated
-  assertion in this run that calls `restRequest` the "wrong" way on purpose and checks that
-  it fails the way the docstring implies it shouldn't.
+  work around exactly this. Of the 17 `restRequest` call sites in `conformance.ts`, 9 route
+  through `apiPath()`; the other 8 pass a raw, unprefixed GitHub path directly, each inside a
+  `fixture.name === 'github'` branch (or a function only ever invoked from one), skipping
+  `apiPath()` because it would be a no-op there anyway. Every one of the 8 raw call sites
+  exists specifically because the equivalent GitLab call, right next to it, needs the
+  `/api/v4` prefix `apiPath()` adds and the GitHub call must not have. That is still strong
+  circumstantial live confirmation that the portability gap is real (the harness could not
+  have been written without the workaround), but there is no dedicated assertion in this run
+  that calls `restRequest` the "wrong" way on purpose and checks that it fails the way the
+  docstring implies it shouldn't.
   **Owner: phase 2b.**
 
 - **`fetchBranchProtectionRules` fabricates an all-false rule when a per-branch protection
   read fails** (`GitHubProvider.ts:697-706`). This run only exercised the success path
   (`ok github fetchBranchProtectionRules: returns rules for the default branch`, with the
   exact expected values). The failure-fabrication branch was never triggered, since the
-  fixture's protection read always succeeds. Still entirely code-read.
+  fixture's protection read always succeeds. Still entirely code-read. The fabricated values
+  are wrong in both directions at once, not uniformly one way: `allowForcePush: false` and
+  `allowDeletion: false` OVER-report protection (a caller would believe force-push and
+  deletion are both forbidden, whether or not they actually are), while `requiredApprovals: 0`
+  and `requireStatusChecks: false` UNDER-report it (a caller would believe nothing is
+  required, when the real answer is simply unknown). A caller gating a destructive action
+  only on the first two fields would wrongly believe it is safe; one relying on the last two
+  to require review would wrongly believe none is needed. The discriminator: the success path
+  attaches a `raw` field carrying the full API response; the fabricated rule omits it
+  entirely, so `rule.raw === undefined` distinguishes "fabricated" from "real" today, though
+  nothing currently asserts on it.
   **Owner: phase 2c.**
 
 - **GitLab's `mergePullRequest` races mergeability**: for about a second after MR creation
@@ -378,13 +395,23 @@ This harness measures a real subset of `GitProvider`, not the whole surface. Rec
 explicitly so this document is not mistaken for exhaustive coverage:
 
 - **The job-selection bug that broke GitLab's `fetchJobTrace` also exists, unexercised, on
-  the GitHub probe path.** `latestPipelineAndJob` takes `jobs[0]` with no status filter on
-  both providers. On GitLab it landed on a skipped job and produced the empty-trace
-  failure recorded above. On GitHub it happened to land on a job that had really run, so
-  the GitHub CI results in this document depend on job ordering rather than on anything
-  guaranteed. Treat `fetchJobTrace: returns non-empty log text` on GitHub as lucky rather
-  than robust. The dedicated failed-job assertion, which selects the `controllable` job by
-  name, is not affected and is the trustworthy one.
+  the GitHub probe path -- but today it is latent, not a live coin-flip.**
+  `latestPipelineAndJob` takes `jobs[0]` with no status filter on both providers. On GitLab
+  it landed on a skipped job and produced the empty-trace failure recorded above. On GitHub,
+  the fixture workflow's two jobs (`controllable` and `always-passes`) carry no `needs:` and
+  no conditionals, so both always run; `jobs[0]` cannot currently land on a job that never
+  ran, on this fixture. The fragility is real but dormant: it would bite the moment a
+  conditional or dependent job is added to the workflow, at which point the GitHub CI results
+  in this document would start depending on job ordering the way GitLab's already do. The
+  dedicated failed-job assertion, which selects the `controllable` job by name, is unaffected
+  either way and is the trustworthy one.
+
+  A second, independent gap the prescribed fix (filtering `latestPipelineAndJob`'s job list
+  to exclude `skipped`/`manual`) would not close: GitLab's *pipeline* selection
+  (`/projects/{id}/pipelines?per_page=1`) is unfiltered by status, unlike GitHub's *run*
+  selection (`?status=completed`). An in-flight (`running` or `pending`) pipeline landing in
+  that slot has no completed jobs at all yet, producing an empty trace for a reason a job-
+  status filter alone does not address.
 - **`requestReReview`** is never called anywhere in this harness, on either provider,
   despite being declared `supported` on both. Zero live evidence either way.
 - **`watchEvents`** is never called anywhere in this harness, on either provider (unlike
@@ -429,10 +456,24 @@ explicitly so this document is not mistaken for exhaustive coverage:
 - **Rulesets** (GitHub's newer branch-protection mechanism, as opposed to classic branch
   protection) remain entirely untested; the design doc already flags this, and phase 1 does
   not change it. The fixture uses classic protection only.
+- **Every merge-cycle run permanently adds a file and two commits to BOTH fixture repos'
+  default branch, and nothing cleans that up.** `runMergeConformance` commits a uniquely
+  named `conformance-merge-<marker>.md` on a branch, merges it, and only deletes the branch;
+  the commits and the file it added stay on `main` forever. A read-only check against the
+  live GitHub fixture confirms this: five `conformance-merge-*.md` files currently sit at the
+  root of `glance-conformance`, one per run so far. The knock-on: any prior claim of the form
+  "commit count on the default branch stayed the same across two runs" as evidence of
+  idempotency is no longer a stable invariant once merge-cycle runs are included, since each
+  run necessarily grows that count by two.
 - **This document reflects one run at one point in time.** GitHub Actions and GitLab CI/CD
   are live, shared external systems; a re-run is not guaranteed to reproduce every result
   identically (the retryJob timing gap above is the clearest example of a result that could
-  plausibly go either way on a different run).
+  plausibly go either way on a different run). There is also a specific, named residual flake
+  risk: `waitForMergeReadiness`'s `stillComputing` set (`conformance.ts:702`) treats
+  `checking`, `unchecked`, and `preparing` as transitional but omits `approvals_syncing`,
+  which the SDK's own `MRDashboard.ts:105` also treats as transitional. A merge attempted
+  while GitLab reports `approvals_syncing` could race the same HTTP-405 ambiguity documented
+  under phase 2d, and this run's clean pass does not rule that out for a future run.
 
 ## Phase ownership, all findings in this document
 

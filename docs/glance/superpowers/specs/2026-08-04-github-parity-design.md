@@ -7,10 +7,10 @@
 
 `GitLabProvider` is the mature implementation in `@mattstack/glance`. It is exercised
 daily through gitq and mr-board. `GitHubProvider` implements the same `GitProvider`
-interface, but most of its paths have never run against a live API, and six of nine
+interface, but most of its paths have never run against a live API, and five of nine
 `ProviderCapabilities` flags are `false` on GitHub against nine `true` on GitLab.
 
-Four Linear bugs already name specific GitHub defects (MAT-13, MAT-14, MAT-24, MAT-25,
+Five Linear bugs already name specific GitHub defects (MAT-13, MAT-14, MAT-24, MAT-25,
 MAT-27), and MAT-13 and MAT-14 shipped only because someone read the code. Nothing in
 the test suite would have caught either. The absence of live coverage is the root
 cause; the individual bugs are symptoms.
@@ -117,7 +117,7 @@ failures; recording them accurately is the deliverable of this phase.
 - **MAT-24.** Reviewers and assignees must replace rather than append, which requires an
   explicit diff (DELETE removals, POST additions) because GitHub has no replace
   semantics on either collection.
-- **`shouldRemoveSourceBranch` is a silent no-op on GitHub.** `GitHubProvider.ts:965`
+- **`shouldRemoveSourceBranch` is a silent no-op on GitHub.** `GitHubProvider.ts:966`
   sends `delete_branch` to the merge endpoint, and no such parameter exists. GitHub's
   merge API accepts only `commit_title`, `commit_message`, `sha`, and `merge_method`.
   Deleting the branch needs either a separate `DELETE /git/refs/heads/{branch}` call or
@@ -156,9 +156,15 @@ The defect is in its failure path. `GitHubProvider.ts:697-706`: when the per-bra
 protection request is not ok, it pushes a rule with `allowForcePush: false`,
 `allowDeletion: false`, `requiredApprovals: 0`, `requireStatusChecks: false` and
 continues. A caller cannot distinguish "this branch forbids force-push and deletion"
-from "we could not read this branch's protection at all". The invented values are the
-dangerous way round, since they describe a *more* protected branch than may exist, so a
-caller gating a destructive action on them would wrongly believe it is safe.
+from "we could not read this branch's protection at all". The invented values are wrong
+in both directions, not uniformly dangerous one way: `allowForcePush: false` and
+`allowDeletion: false` describe a *more* protected branch than may exist, while
+`requiredApprovals: 0` and `requireStatusChecks: false` describe a *less* protected one.
+A caller gating a destructive action on the first pair would wrongly believe it is safe;
+one relying on the second pair to require review or checks would wrongly believe none is
+needed. The success path's `raw` field (the full API response) is the discriminator: the
+fabricated rule omits it, so a caller could check for its presence, though nothing does
+today.
 
 It should surface the failure rather than fabricate a rule. This is the same class as
 MAT-14, where a hardcoded `unresolvedThreadCount: 0` suppressed a warning gitq depended on.
