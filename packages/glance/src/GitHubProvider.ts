@@ -39,6 +39,7 @@ import type {
 } from './types.ts';
 import { type ForgeLogger, noopLogger } from './logger.ts';
 import {
+  bodyText,
   createGitHubClient,
   ghError,
   reasonPhrase,
@@ -760,12 +761,17 @@ export class GitHubProvider implements GitProvider {
   }
 
   async deleteBranch(projectPath: string, branch: string): Promise<void> {
-    const res = await this.api(
-      'DELETE',
-      `/repos/${projectPath}/git/refs/heads/${encodeURIComponent(branch)}`
-    );
-    if (!res.ok) {
-      throw new Error(`deleteBranch failed: ${res.status} ${await res.text()}`);
+    try {
+      await this.octokit.request(
+        `DELETE /repos/${projectPath}/git/refs/heads/${encodeURIComponent(branch)}`
+      );
+    } catch (err) {
+      if (err instanceof RequestError && err.response) {
+        // The existing message is the plain shape (status plus body, no
+        // statusText): `ghError`'s default style reproduces it exactly.
+        throw ghError('deleteBranch', err);
+      }
+      throw err;
     }
   }
 
@@ -1045,14 +1051,19 @@ export class GitHubProvider implements GitProvider {
     Object.assign(body, this.mergeCommitFields(input, mergeMethod));
     if (input?.sha != null) body.sha = input.sha;
 
-    const res = await this.api(
-      'PUT',
-      `/repos/${projectPath}/pulls/${mrIid}/merge`,
-      body
-    );
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`mergePullRequest failed: ${res.status} ${text}`);
+    try {
+      await this.octokit.request(
+        `PUT /repos/${projectPath}/pulls/${mrIid}/merge`,
+        { data: body }
+      );
+    } catch (err) {
+      if (err instanceof RequestError && err.response) {
+        // The live conformance harness (conformance.ts:838) matches
+        // /\bmergePullRequest failed: 405\b/ on this exact message. Do not
+        // reword it.
+        throw ghError('mergePullRequest', err);
+      }
+      throw err;
     }
     const pr = await this.fetchSingleMR(projectPath, mrIid, null);
     if (!pr) throw new Error('Merged PR but failed to fetch it back');
@@ -1142,45 +1153,60 @@ export class GitHubProvider implements GitProvider {
     repoPath: string,
     branch: string
   ): Promise<void> {
-    const res = await this.api(
-      'DELETE',
-      `/repos/${repoPath}/git/refs/heads/${encodeURIComponent(branch)}`
-    );
-    if (res.ok) return; // Fast path: successful delete.
+    try {
+      await this.octokit.request(
+        `DELETE /repos/${repoPath}/git/refs/heads/${encodeURIComponent(branch)}`
+      );
+      return; // Fast path: successful delete.
+    } catch (deleteErr) {
+      if (!(deleteErr instanceof RequestError && deleteErr.response)) {
+        throw deleteErr;
+      }
 
-    // Verify whether the ref still exists. If it is gone, the caller's
-    // requested end state is satisfied. If it still exists, throw with the
-    // deletion failure details.
-    const checkRes = await this.api(
-      'GET',
-      `/repos/${repoPath}/git/ref/heads/${encodeURIComponent(branch)}`
-    );
+      // Verify whether the ref still exists. If it is gone, the caller's
+      // requested end state is satisfied. If it still exists, throw with the
+      // deletion failure details below. GitHub reuses 422 for both
+      // "reference does not exist" and a protection-refused delete, so the
+      // status code alone cannot distinguish them.
+      try {
+        await this.octokit.request(
+          `GET /repos/${repoPath}/git/ref/heads/${encodeURIComponent(branch)}`
+        );
+        // No throw means the ref still exists: fall through to the throw below.
+      } catch (checkErr) {
+        if (
+          checkErr instanceof RequestError &&
+          checkErr.response &&
+          checkErr.status === 404
+        ) {
+          return; // Confirmed gone: the requested end state is satisfied.
+        }
+        // Cannot verify the end state (a network failure or a non-404
+        // response): fall through and throw with the original deletion
+        // failure below.
+      }
 
-    // If the ref is gone (404), the end state is satisfied.
-    if (!checkRes.ok && checkRes.status === 404) return;
-
-    // Ref still exists (checkRes.ok) or we cannot verify the state
-    // (checkRes is an unrelated error). Either way, throw with the deletion
-    // failure details.
-    const text = await res.text().catch(() => '');
-    throw new Error(
-      `mergePullRequest merged but could not delete source branch "${branch}": ${res.status} ${text}`
-    );
+      throw new Error(
+        `mergePullRequest merged but could not delete source branch "${branch}": ${deleteErr.status} ${bodyText(deleteErr)}`
+      );
+    }
   }
 
   async approvePullRequest(projectPath: string, mrIid: number): Promise<void> {
-    const res = await this.api(
-      'POST',
-      `/repos/${projectPath}/pulls/${mrIid}/reviews`,
-      {
-        event: 'APPROVE'
-      }
-    );
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(
-        `approvePullRequest failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`
+    try {
+      await this.octokit.request(
+        `POST /repos/${projectPath}/pulls/${mrIid}/reviews`,
+        { data: { event: 'APPROVE' } }
       );
+    } catch (err) {
+      if (err instanceof RequestError && err.response) {
+        // The live conformance harness (conformance.ts:611) matches
+        // /approvePullRequest failed: 422\b/ on this message. It is the only
+        // proof that GitHub's approval request shape and auth are correct,
+        // since only one GitHub identity exists to run that check against.
+        throw ghError('approvePullRequest', err, 'statusText');
+      }
+      throw err;
     }
   }
 
@@ -1335,14 +1361,18 @@ export class GitHubProvider implements GitProvider {
     // the existing reviewer list. For now, require explicit usernames.
     if (!reviewerUsernames?.length) {
       // Fetch current reviewers from the PR
-      const prRes = await this.api(
-        'GET',
-        `/repos/${projectPath}/pulls/${mrIid}`
-      );
-      if (!prRes.ok) {
-        throw new Error(`requestReReview: failed to fetch PR: ${prRes.status}`);
+      let pr: GHPullRequest;
+      try {
+        const res = await this.octokit.request(
+          `GET /repos/${projectPath}/pulls/${mrIid}`
+        );
+        pr = res.data as GHPullRequest;
+      } catch (err) {
+        if (err instanceof RequestError && err.response) {
+          throw new Error(`requestReReview: failed to fetch PR: ${err.status}`);
+        }
+        throw err;
       }
-      const pr = (await prRes.json()) as GHPullRequest;
       reviewerUsernames = pr.requested_reviewers.map(r => r.login);
       if (!reviewerUsernames.length) {
         // Nothing to re-request
@@ -1350,16 +1380,16 @@ export class GitHubProvider implements GitProvider {
       }
     }
 
-    const res = await this.api(
-      'POST',
-      `/repos/${projectPath}/pulls/${mrIid}/requested_reviewers`,
-      { reviewers: reviewerUsernames }
-    );
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(
-        `requestReReview failed: ${res.status} ${res.statusText}${text ? ` — ${text}` : ''}`
+    try {
+      await this.octokit.request(
+        `POST /repos/${projectPath}/pulls/${mrIid}/requested_reviewers`,
+        { data: { reviewers: reviewerUsernames } }
       );
+    } catch (err) {
+      if (err instanceof RequestError && err.response) {
+        throw ghError('requestReReview', err, 'statusText');
+      }
+      throw err;
     }
   }
 

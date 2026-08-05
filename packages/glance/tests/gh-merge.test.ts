@@ -107,6 +107,21 @@ function stubGitHub(
   return calls;
 }
 
+/**
+ * Some tests below replace `.api` after `stubGitHub` to simulate a specific
+ * DELETE/GET response shape for `deleteMergedSourceBranch`. That method now
+ * calls `octokit.request` rather than `.api`, so the override has to reach
+ * both, or the migrated code keeps talking to the original recorder and
+ * never sees the simulated response.
+ */
+function overrideApi(
+  provider: GitHubProvider,
+  apiFn: (method: string, path: string, body?: unknown) => Promise<Response>
+): void {
+  (provider as any).api = apiFn;
+  (provider as any).octokit = { request: toOctokitRequestStub(apiFn) };
+}
+
 function mergeBody(calls: MergeCall[]): Record<string, unknown> {
   const call = calls.find(c => c.path.endsWith('/merge'));
   if (!call) throw new Error('no merge call was made');
@@ -282,7 +297,7 @@ describe('GitHubProvider shouldRemoveSourceBranch (MAT-127)', () => {
     const provider = new GitHubProvider('https://github.com', 'tok');
     const calls = stubGitHub(provider);
     const api = (provider as any).api;
-    (provider as any).api = async (method: string, path: string, body?: unknown) => {
+    overrideApi(provider, async (method: string, path: string, body?: unknown) => {
       if (method === 'DELETE') {
         calls.push({ method, path, body: undefined });
         return {
@@ -306,7 +321,7 @@ describe('GitHubProvider shouldRemoveSourceBranch (MAT-127)', () => {
         } as unknown as Response;
       }
       return api(method, path, body);
-    };
+    });
 
     // The repository-level delete_branch_on_merge setting races this call, so
     // "already gone" has to read as success or every merge on a repo with that
@@ -326,7 +341,7 @@ describe('GitHubProvider shouldRemoveSourceBranch (MAT-127)', () => {
     const provider = new GitHubProvider('https://github.com', 'tok');
     stubGitHub(provider);
     const api = (provider as any).api;
-    (provider as any).api = async (method: string, path: string, body?: unknown) => {
+    overrideApi(provider, async (method: string, path: string, body?: unknown) => {
       if (method === 'DELETE') {
         return {
           ok: false,
@@ -337,7 +352,7 @@ describe('GitHubProvider shouldRemoveSourceBranch (MAT-127)', () => {
         } as unknown as Response;
       }
       return api(method, path, body);
-    };
+    });
 
     await expect(
       provider.mergePullRequest('acme/repo', 1, { shouldRemoveSourceBranch: true })
@@ -348,7 +363,7 @@ describe('GitHubProvider shouldRemoveSourceBranch (MAT-127)', () => {
     const provider = new GitHubProvider('https://github.com', 'tok');
     const calls = stubGitHub(provider, 'main-protected');
     const api = (provider as any).api;
-    (provider as any).api = async (method: string, path: string, body?: unknown) => {
+    overrideApi(provider, async (method: string, path: string, body?: unknown) => {
       if (method === 'DELETE') {
         calls.push({ method, path, body: undefined });
         return {
@@ -371,7 +386,7 @@ describe('GitHubProvider shouldRemoveSourceBranch (MAT-127)', () => {
         } as unknown as Response;
       }
       return api(method, path, body);
-    };
+    });
 
     await expect(
       provider.mergePullRequest('acme/repo', 1, { shouldRemoveSourceBranch: true })
@@ -382,7 +397,7 @@ describe('GitHubProvider shouldRemoveSourceBranch (MAT-127)', () => {
     const provider = new GitHubProvider('https://github.com', 'tok');
     const calls = stubGitHub(provider);
     const api = (provider as any).api;
-    (provider as any).api = async (method: string, path: string, body?: unknown) => {
+    overrideApi(provider, async (method: string, path: string, body?: unknown) => {
       if (method === 'DELETE') {
         calls.push({ method, path, body: undefined });
         return {
@@ -405,7 +420,7 @@ describe('GitHubProvider shouldRemoveSourceBranch (MAT-127)', () => {
         } as unknown as Response;
       }
       return api(method, path, body);
-    };
+    });
 
     const pr = await provider.mergePullRequest('acme/repo', 1, {
       shouldRemoveSourceBranch: true
@@ -421,7 +436,7 @@ describe('GitHubProvider shouldRemoveSourceBranch (MAT-127)', () => {
     const provider = new GitHubProvider('https://github.com', 'tok');
     const calls = stubGitHub(provider);
     const api = (provider as any).api;
-    (provider as any).api = async (method: string, path: string, body?: unknown) => {
+    overrideApi(provider, async (method: string, path: string, body?: unknown) => {
       if (method === 'DELETE') {
         calls.push({ method, path, body: undefined });
         return {
@@ -444,7 +459,7 @@ describe('GitHubProvider shouldRemoveSourceBranch (MAT-127)', () => {
         } as unknown as Response;
       }
       return api(method, path, body);
-    };
+    });
 
     await expect(
       provider.mergePullRequest('acme/repo', 1, { shouldRemoveSourceBranch: true })
@@ -455,7 +470,7 @@ describe('GitHubProvider shouldRemoveSourceBranch (MAT-127)', () => {
     const provider = new GitHubProvider('https://github.com', 'tok');
     const calls = stubGitHub(provider, 'release/v1.2.3');
     const api = (provider as any).api;
-    (provider as any).api = async (method: string, path: string, body?: unknown) => {
+    overrideApi(provider, async (method: string, path: string, body?: unknown) => {
       if (method === 'DELETE') {
         calls.push({ method, path, body: undefined });
         return {
@@ -480,7 +495,7 @@ describe('GitHubProvider shouldRemoveSourceBranch (MAT-127)', () => {
         } as unknown as Response;
       }
       return api(method, path, body);
-    };
+    });
 
     await expect(
       provider.mergePullRequest('acme/repo', 1, { shouldRemoveSourceBranch: true })

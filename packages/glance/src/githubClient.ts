@@ -161,7 +161,13 @@ export function ghError(
   return new Error(`${op} failed: ${err.status} ${body}`);
 }
 
-function bodyText(err: RequestError): string {
+/**
+ * Exported so `deleteMergedSourceBranch` in GitHubProvider.ts can build its
+ * "merged but could not delete source branch" message with the same body
+ * text `ghError` would use, without going through `ghError` itself: that
+ * message's prefix is not `${op} failed:`, so `ghError`'s shape does not fit.
+ */
+export function bodyText(err: RequestError): string {
   const data = err.response?.data;
   if (data === undefined || data === null) {
     // A network-level failure (DNS, connection refused, and so on) has no
