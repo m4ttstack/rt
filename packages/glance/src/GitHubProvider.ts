@@ -442,7 +442,22 @@ export class GitHubProvider implements GitProvider {
       const res = await this.octokit.request('GET /user');
       user = res.data as GHUser;
     } catch (err) {
-      throw ghError('validateToken', err);
+      if (err instanceof RequestError && err.response) {
+        // Built directly, not through `ghError`, because this message's shape
+        // predates that helper and the live harness pattern-matches on it:
+        // `${op} failed: ${status} ${statusText}`, no body. `ghError`'s
+        // 'statusText' style appends the body after an em dash, which is a
+        // different, newer shape this call site never used.
+        throw new Error(
+          `GitHub token validation failed: ${err.status} ${reasonPhrase(err.status)}`
+        );
+      }
+      // No `.response` means this never reached an HTTP outcome (DNS
+      // failure, connection refused): a transport failure, not something
+      // `validateToken` has ever translated. Rethrow the original
+      // `RequestError` (or whatever else was thrown) so callers keep
+      // `.status`/`.request`, same as every other migrated method here.
+      throw err;
     }
     return toUserRef(user);
   }
@@ -1668,7 +1683,14 @@ export class GitHubProvider implements GitProvider {
         );
         listed = res.data as GHPullRequest[];
       } catch (err) {
-        throw ghError('fetchPullRequests', err);
+        if (err instanceof RequestError && err.response) {
+          throw ghError('fetchPullRequests', err);
+        }
+        // No `.response`: a transport failure, not an HTTP result. Rethrow
+        // the original error untouched, same as the other five migrated
+        // methods, instead of laundering it through `ghError` into a plain
+        // `Error` that has lost `.status` and `.request`.
+        throw err;
       }
       collected.push(...listed.filter(keep));
 

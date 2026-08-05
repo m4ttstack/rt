@@ -121,6 +121,76 @@ describe('GitHubProvider transport (real Octokit, fetch stubbed)', () => {
     expect((caught as RequestError).status).toBe(500);
   });
 
+  test('validateToken keeps its original failure wording, including statusText', async () => {
+    // The message shape here predates `ghError` and the live harness
+    // pattern-matches on it: `${op} failed: ${status} ${statusText}`, no
+    // body. A prior pass through this migration accidentally rerouted it
+    // through `ghError`'s default (plain) style, which reads
+    // `validateToken failed: 401 <body>` -- same information, different
+    // wording -- so this pins the exact string rather than just a substring.
+    stubFetch(() => jsonResponse({ message: 'Bad credentials' }, 401));
+
+    const provider = new GitHubProvider('https://github.com', 'bad-tok');
+
+    await expect(provider.validateToken()).rejects.toThrow(
+      /^GitHub token validation failed: 401 Unauthorized$/
+    );
+  });
+
+  test(
+    'a transport-level validateToken failure propagates the original error, not a translated one',
+    async () => {
+      // Mirrors the transport-level restRequest case above: no `.response`
+      // means this never reached an HTTP outcome, so it must come out as the
+      // original `RequestError` (with `.status`/`.request` intact), not a
+      // plain `Error` laundered through a message-building helper. Unlike
+      // that restRequest case, `validateToken` always issues a GET, which
+      // the retry plugin's default 3-retry, quadratic-backoff schedule (see
+      // `@octokit/plugin-retry`'s `error-request.js`) does not skip -- only
+      // non-idempotent verbs get `retries: 0` from the `before` hook in
+      // `githubClient.ts`. The exhausted-retries wait is real, not a stall,
+      // hence the longer test timeout below.
+      globalThis.fetch = (async () => {
+        throw new TypeError('fetch failed', { cause: new Error('ECONNREFUSED') });
+      }) as typeof fetch;
+
+      const provider = new GitHubProvider('https://github.com', 'tok');
+
+      let caught: unknown;
+      try {
+        await provider.validateToken();
+      } catch (err) {
+        caught = err;
+      }
+
+      expect(caught).toBeInstanceOf(RequestError);
+      expect((caught as RequestError).response).toBeUndefined();
+    },
+    20000
+  );
+
+  test('search queries encode colons in the qualifiers, not raw', async () => {
+    // searchPRs's only defense against Octokit's `:word` -> `{word}`
+    // placeholder rewrite is `encodeURIComponent(qualifiers)` before the
+    // query is spliced into the route string. `gh-fetch-prs.test.ts`'s
+    // `searchQueries()` helper decodes the recorded path before asserting on
+    // it, so removing that `encodeURIComponent` call would leave every
+    // unit-test assertion green while every real search went out with a
+    // `:` Octokit's parser rewrites into an empty placeholder -- the exact
+    // shape of bug Task 2 fixed at the `head=owner:branch` call site,
+    // recurring here undefended. Only a test against the real transport
+    // (this file stubs `fetch`, not `octokit.request`) can catch it.
+    const urls = stubFetch(() => jsonResponse({ items: [] }));
+
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    await provider.fetchPullRequests();
+
+    const searchCall = urls.find(u => u.includes('/search/issues'));
+    expect(searchCall).toBeDefined();
+    expect(searchCall).toContain('is%3Apr');
+    expect(searchCall).toContain('author%3A%40me');
+  });
+
   test('an absolute URL passed to restRequest reaches fetch unmangled', async () => {
     // A blanket colon-escape would rewrite the scheme separator too:
     // `https://...` becomes `https%3A//...`, which still passes Octokit's
