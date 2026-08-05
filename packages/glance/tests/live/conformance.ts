@@ -783,6 +783,15 @@ export async function runMergeConformance(
   const marker = `conformance-merge-${Date.now().toString(36)}`;
   let prIid: number | null = null;
   let merged = false;
+  // Set when mergePullRequest throws its own "merged but could not delete"
+  // error: the DELETE now happens inside that call, after the merge PUT has
+  // already succeeded, so a deletion failure surfaces through the same catch
+  // as a genuine merge failure. Treating it as one would cost this run both
+  // downstream proofs (MAT-25 and the source-branch deletion) to a problem
+  // that is neither: the merge already landed, only the cleanup after it
+  // failed. Only one live run is budgeted for this work, so losing both
+  // proofs to an unrelated deletion failure is not acceptable.
+  let deletionError: string | null = null;
 
   try {
     // Wrapped in check(), matching the write cycle's setup step: an
@@ -832,7 +841,16 @@ export async function runMergeConformance(
             `merge blocked by an unmet precondition (HTTP 405)${detail ? `: ${detail}` : `. Provider said: ${message}`}`
           );
         }
-        throw err;
+        // Recognize the deletion-failure shape specifically (see the
+        // deletionError comment above): the merge succeeded, so this is not
+        // the "merge itself did not complete" case the block below guards
+        // against. Stash the message for the source-branch check to report
+        // instead of re-deriving it, and let the merge be treated as done.
+        if (/mergePullRequest merged but could not delete source branch/.test(message)) {
+          deletionError = message;
+        } else {
+          throw err;
+        }
       }
       merged = true;
       const after = await pollUntil(`merged state of ${iid}`, async () => {
@@ -906,6 +924,14 @@ export async function runMergeConformance(
       'mergePullRequest',
       'shouldRemoveSourceBranch actually deletes the source branch',
       async () => {
+        // A captured deletionError means the merge succeeded but the
+        // deletion itself is the thing that failed; that is a real failure
+        // of this exact assertion, not an absence of data to check, so it
+        // must fail loudly here rather than be masked by a branchExists
+        // read that was never going to prove anything past this point.
+        if (deletionError !== null) {
+          throw new Error(deletionError);
+        }
         const stillThere = await branchExists(fixture, branch);
         assert(
           !stillThere,
