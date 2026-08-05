@@ -51,6 +51,36 @@ function toOctokitRequestStub(
   };
 }
 
+/**
+ * Adapts the same `api()`-shaped stub onto `octokit.paginate(route, params)`:
+ * fills the route template's `{owner}`/`{repo}`/etc placeholders from
+ * `params`, appends `per_page`, and returns the body array directly (what
+ * `paginate` resolves to), instead of the `{status, headers, data}` shape
+ * `octokit.request` resolves to.
+ */
+function toOctokitPaginateStub(
+  apiFn: (method: string, path: string, body?: unknown) => Promise<Response>
+) {
+  return async (route: string, params?: Record<string, unknown>) => {
+    const spaceIdx = route.indexOf(' ');
+    const method = route.slice(0, spaceIdx);
+    let path = route
+      .slice(spaceIdx + 1)
+      .replace(/\{(\w+)\}/g, (_, key: string) => String(params?.[key] ?? ''));
+    if (params?.per_page !== undefined) {
+      path += `${path.includes('?') ? '&' : '?'}per_page=${params.per_page}`;
+    }
+    const res = await apiFn(method, path);
+    if (!res.ok) {
+      throw new RequestError(await res.text(), res.status, {
+        request: { method, url: `${API}${path}`, headers: {} },
+        response: { status: res.status, url: '', headers: {}, data: await res.json() }
+      });
+    }
+    return await res.json();
+  };
+}
+
 function ghPR(number: number) {
   return {
     id: number * 10,
@@ -116,7 +146,10 @@ function install(
     throw new Error(`unexpected path: ${path}`);
   };
   (provider as any).api = apiFn;
-  (provider as any).octokit = { request: toOctokitRequestStub(apiFn) };
+  (provider as any).octokit = {
+    request: toOctokitRequestStub(apiFn),
+    paginate: toOctokitPaginateStub(apiFn)
+  };
 
   const batches: string[][] = [];
   (provider as any).graphql = async (
@@ -232,5 +265,22 @@ describe('GitHubProvider unresolved review threads', () => {
     const prs = await provider.fetchPullRequests();
 
     expect(prs[0]?.detailedMergeStatus).toBeNull();
+  });
+
+  // The old `fetchAllPages` did `if (!res.ok) break`, so a failed or
+  // rate-limited second page of reviews silently returned only page one. This
+  // fed `toPullRequest`'s approval count, so a PR with reviews on page two
+  // would under-report how many approvals it had, with no error anywhere.
+  // `octokit.paginate` must make that failure loud instead of swallowing it.
+  test('a failed reviews page fails the fetch, never returning a short list', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    install(provider, [ghPR(1)], [{ id: 'PR_node_1', resolved: [] }]);
+    (provider as any).octokit.paginate = async () => {
+      throw new Error('secondary rate limit exceeded');
+    };
+
+    await expect(provider.fetchPullRequests()).rejects.toThrow(
+      'secondary rate limit exceeded'
+    );
   });
 });

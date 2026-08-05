@@ -644,14 +644,19 @@ export class GitHubProvider implements GitProvider {
       throw new Error(`Failed to fetch repo: ${repoRes.status}`);
     }
     const repo = (await repoRes.json()) as { full_name: string };
+    const { owner, repo: repoName } = this.splitOwnerRepo(repo.full_name);
 
-    // Fetch review comments (diff-level) and issue comments (PR-level)
+    // Fetch review comments (diff-level) and issue comments (PR-level).
+    // `paginate` needs the route template plus real route params (rather
+    // than one path string) so it can follow the `Link` header itself.
     const [reviewComments, issueComments] = await Promise.all([
-      this.fetchAllPages<GHComment>(
-        `/repos/${repo.full_name}/pulls/${mrIid}/comments?per_page=100`
+      this.octokit.paginate<GHComment>(
+        'GET /repos/{owner}/{repo}/pulls/{pull_number}/comments',
+        { owner, repo: repoName, pull_number: mrIid, per_page: 100 }
       ),
-      this.fetchAllPages<GHComment>(
-        `/repos/${repo.full_name}/issues/${mrIid}/comments?per_page=100`
+      this.octokit.paginate<GHComment>(
+        'GET /repos/{owner}/{repo}/issues/{issue_number}/comments',
+        { owner, repo: repoName, issue_number: mrIid, per_page: 100 }
       )
     ]);
 
@@ -1454,10 +1459,9 @@ export class GitHubProvider implements GitProvider {
     // escaping it would turn `https://` into `https%3A//`, which still
     // passes Octokit's `/^http/` check so no baseUrl gets prepended, and
     // fetch then throws on the malformed URL. `restRequest` is documented
-    // as accepting an absolute URL, and fetchAllPages passes one straight
-    // through when following a Link header, so this path is live. Only
-    // `path` is escaped, never the "${method} " prefix, since Octokit
-    // splits on that leading space to read the verb.
+    // as accepting an absolute URL, so this path is live. Only `path` is
+    // escaped, never the "${method} " prefix, since Octokit splits on that
+    // leading space to read the verb.
     const safePath = path.replace(/:(?!\/)/g, '%3A');
     try {
       const res = await this.octokit.request(`${method} ${safePath}`, {
@@ -1470,10 +1474,9 @@ export class GitHubProvider implements GitProvider {
           // No `response` means Octokit's fetch wrapper never got an HTTP
           // result (DNS failure, connection refused, an aborted request):
           // a transport failure, not an HTTP outcome. Fabricating a
-          // synthetic 500 Response here would make fetchAllPages's
-          // `if (!res.ok) break` read a dropped connection mid-pagination
-          // as "no more pages" and silently hand back a truncated list,
-          // hiding the failure instead of surfacing it.
+          // synthetic 500 Response here would let a caller's `if (!res.ok)`
+          // read a dropped connection as an ordinary HTTP failure, hiding
+          // the transport failure instead of surfacing it.
           throw err;
         }
         return toResponse(err.status, err.response.headers ?? {}, err.response.data);
@@ -1910,8 +1913,13 @@ export class GitHubProvider implements GitProvider {
     repoPath: string,
     prNumber: number
   ): Promise<GHReview[]> {
-    return this.fetchAllPages<GHReview>(
-      `/repos/${repoPath}/pulls/${prNumber}/reviews?per_page=100`
+    const { owner, repo } = this.splitOwnerRepo(repoPath);
+    // `paginate` needs the route template plus real route params (rather
+    // than one path string) so it can follow the `Link` header itself; every
+    // other call site in this file interpolates a whole path instead.
+    return this.octokit.paginate<GHReview>(
+      'GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews',
+      { owner, repo, pull_number: prNumber, per_page: 100 }
     );
   }
 
@@ -1934,28 +1942,16 @@ export class GitHubProvider implements GitProvider {
     }
   }
 
-  private async fetchAllPages<T>(path: string): Promise<T[]> {
-    const results: T[] = [];
-    let url: string | null = path;
-
-    while (url) {
-      const res = await this.api('GET', url);
-      if (!res.ok) break;
-      const items = (await res.json()) as T[];
-      results.push(...items);
-
-      // Parse Link header for pagination
-      const linkHeader = res.headers.get('Link');
-      const nextMatch = linkHeader?.match(/<([^>]+)>;\s*rel="next"/);
-      if (nextMatch) {
-        // Strip apiBase prefix — `api()` will re-add it
-        url = nextMatch[1]!.replace(this.apiBase, '');
-      } else {
-        url = null;
-      }
-    }
-
-    return results;
+  /**
+   * Splits an "owner/repo" path into the two route params `paginate` needs.
+   * Every other call site in this file hands Octokit a whole interpolated
+   * path; `paginate` is the one place a route template plus separate params
+   * is correct, since it re-derives the next page's URL from the route
+   * itself rather than from a path string it was only handed once.
+   */
+  private splitOwnerRepo(repoPath: string): { owner: string; repo: string } {
+    const slash = repoPath.indexOf('/');
+    return { owner: repoPath.slice(0, slash), repo: repoPath.slice(slash + 1) };
   }
 
   /**

@@ -7,11 +7,11 @@
  * updatedAfter, listWeight.
  *
  * `currentUser`, `searchPRs`, `fetchPR`, `listRepoPRs`, and `fetchCheckRuns`
- * call `octokit.request` directly; `fetchReviews` (via `fetchAllPages`) still
- * goes through `api()`. `(provider as any).api` and `.graphql` are monkey-patched
- * as before, and `toOctokitRequestStub` adapts the same Response-shaped stub
- * function onto `octokit.request` so both transports answer identically and
- * every existing path-based assertion keeps its meaning.
+ * call `octokit.request` directly; `fetchReviews` calls `octokit.paginate`.
+ * `(provider as any).api` and `.graphql` are monkey-patched as before, and
+ * `toOctokitRequestStub`/`toOctokitPaginateStub` adapt the same Response-shaped
+ * stub function onto both seams so every existing path-based assertion keeps
+ * its meaning.
  */
 import { describe, expect, test } from 'bun:test';
 import { RequestError } from '@octokit/request-error';
@@ -51,6 +51,36 @@ function toOctokitRequestStub(
       });
     }
     return { status: res.status, headers: {}, data: await res.json() };
+  };
+}
+
+/**
+ * Adapts the same `api()`-shaped stub onto `octokit.paginate(route, params)`:
+ * fills the route template's `{owner}`/`{repo}`/etc placeholders from
+ * `params`, appends `per_page`, and returns the body array directly (what
+ * `paginate` resolves to), instead of the `{status, headers, data}` shape
+ * `octokit.request` resolves to.
+ */
+function toOctokitPaginateStub(
+  apiFn: (method: string, path: string, body?: unknown) => Promise<Response>
+) {
+  return async (route: string, params?: Record<string, unknown>) => {
+    const spaceIdx = route.indexOf(' ');
+    const method = route.slice(0, spaceIdx);
+    let path = route
+      .slice(spaceIdx + 1)
+      .replace(/\{(\w+)\}/g, (_, key: string) => String(params?.[key] ?? ''));
+    if (params?.per_page !== undefined) {
+      path += `${path.includes('?') ? '&' : '?'}per_page=${params.per_page}`;
+    }
+    const res = await apiFn(method, path);
+    if (!res.ok) {
+      throw new RequestError(await res.text(), res.status, {
+        request: { method, url: `${API}${path}`, headers: {} },
+        response: { status: res.status, url: '', headers: {}, data: await res.json() }
+      });
+    }
+    return await res.json();
   };
 }
 
@@ -134,7 +164,10 @@ function install(provider: GitHubProvider, prs: FakePR[]): string[] {
     throw new Error(`unexpected path: ${path}`);
   };
   (provider as any).api = apiFn;
-  (provider as any).octokit = { request: toOctokitRequestStub(apiFn) };
+  (provider as any).octokit = {
+    request: toOctokitRequestStub(apiFn),
+    paginate: toOctokitPaginateStub(apiFn)
+  };
   (provider as any).graphql = async () => ({ nodes: [] });
   return calls;
 }
@@ -457,7 +490,10 @@ function installFullSearchPages(provider: GitHubProvider, prs: FakePR[]): string
     throw new Error(`unexpected path: ${path}`);
   };
   (provider as any).api = apiFn;
-  (provider as any).octokit = { request: toOctokitRequestStub(apiFn) };
+  (provider as any).octokit = {
+    request: toOctokitRequestStub(apiFn),
+    paginate: toOctokitPaginateStub(apiFn)
+  };
   (provider as any).graphql = async () => ({ nodes: [] });
   return calls;
 }
@@ -518,7 +554,10 @@ describe('GitHubProvider.fetchPullRequests: truncation and failures are observab
       throw new Error(`unexpected path: ${path}`);
     };
     (provider as any).api = apiFn;
-    (provider as any).octokit = { request: toOctokitRequestStub(apiFn) };
+    (provider as any).octokit = {
+    request: toOctokitRequestStub(apiFn),
+    paginate: toOctokitPaginateStub(apiFn)
+  };
     (provider as any).graphql = async () => ({ nodes: [] });
     const warnings: FetchPullRequestsWarning[] = [];
 
