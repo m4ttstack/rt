@@ -2810,6 +2810,213 @@ git commit -m "fix: report real resolution state on GitLab discussions"
 
 ---
 
+### Task 14: GitLab `requestReReview` honors its argument and stops reporting false success
+
+Added mid-plan by decision. Task 10 found this and it was originally deferred to a ticket; Matthew's instruction is to fix what this phase finds rather than accumulate follow-ups.
+
+`GitLabProvider.requestReReview(projectPath, mrIid, _reviewerUsernames)` (`src/GitLabProvider.ts:1483-1501`) has two defects:
+
+1. It declares `_reviewerUsernames` with a leading underscore and **ignores it entirely**. `GitHubProvider.requestReReview` honors the same argument. So an identical call against the shared `GitProvider` interface does something on one provider and nothing on the other, with no error and no warning.
+2. It contains `if (reviewerIds.length === 0) return;`. Called on a merge request with no reviewers, it resolves successfully having done nothing at all.
+
+Between them the method has no state in which a caller can tell success from silence, which is why Task 10 could not write a non-vacuous check for it and had to record a skip instead.
+
+**Files:**
+- Modify: `packages/glance/src/GitLabProvider.ts:1483-1501`
+- Modify: `packages/glance/tests/live/expectations.ts` (the `GITLAB_EXPECTATIONS.requestReReview` entry Task 10 set to `approximate`)
+- Modify: `packages/glance/tests/live/conformance.ts` (replace Task 10's skip with a real check)
+- Test: `packages/glance/tests/gitlab-request-rereview.test.ts` (create)
+
+**Interfaces:**
+- Consumes: the gitbeaker client at `this.gb`, `this.legacyError(op, err)`.
+- Produces: no signature change. `requestReReview` gains real behavior for its third argument and throws instead of silently returning.
+
+**The intended semantics, which the implementation must make true:**
+- **With `reviewerUsernames`:** resolve each username to a GitLab user id and set the merge request's reviewers to include them. This genuinely changes state when they were not already reviewers, which is both the useful behavior and the observable one.
+- **Without `reviewerUsernames`:** re-assign the current reviewer set, which is what the method does today. Keep it, and keep the existing comment's explanation that GitLab has no dedicated re-request endpoint. Its effect is a notification rather than a state change, so it stays unobservable through this interface; say so in the docstring rather than pretending otherwise.
+- **With neither:** no usernames given and no current reviewers. Throw. There is nothing to re-request from, and resolving would be the silent-success shape that made this undetectable.
+- **A username that does not resolve to a user:** throw, naming the username. Silently dropping it is the same defect in miniature.
+
+- [ ] **Step 1: Find the gitbeaker calls you need**
+
+Do not guess method names. Confirm against the installed package and the existing call sites in this file:
+
+```bash
+cd packages/glance && grep -n "this.gb\.[A-Za-z]*\." src/GitLabProvider.ts | sed 's/.*this\.gb\.//' | cut -d'(' -f1 | sort -u
+```
+
+You need a username-to-id lookup. Check what the installed gitbeaker exposes for `Users` and report the exact call you settled on. If no clean lookup exists, `restRequest('GET', '/users?username=...')` through the provider's own pass-through is acceptable; say which you used and why.
+
+- [ ] **Step 2: Write the failing test**
+
+Create `packages/glance/tests/gitlab-request-rereview.test.ts`. Stub `this.gb` on the provider the way the other GitLab unit tests in this package do; check one first and follow its pattern. Cover exactly these cases:
+
+- Given usernames, the resolved ids reach the edit call. Assert on the ids actually sent, not merely that edit was called.
+- Given usernames for users who are already reviewers, the call still succeeds and does not drop the existing reviewers.
+- Given no usernames and existing reviewers, the current ids are re-sent (today's behavior, preserved).
+- Given no usernames and no reviewers, it throws. Assert the message explains there is nothing to re-request.
+- Given a username that resolves to nothing, it throws naming that username.
+- A failure from the lookup or the edit surfaces rather than being swallowed.
+
+- [ ] **Step 3: Run the test to verify it fails**
+
+Run: `cd packages/glance && bun test tests/gitlab-request-rereview.test.ts`
+Expected: the username cases fail because the argument is ignored today, and the empty case fails because it resolves rather than throwing.
+
+- [ ] **Step 4: Implement**
+
+Rewrite the method. Requirements, not literal code: keep the existing `legacyError` wrapping for both the fetch and the edit, keep the union of existing reviewers with newly named ones rather than replacing the set wholesale, and write the docstring to state plainly which of the two paths is observable and which is not. Comments explain WHY.
+
+- [ ] **Step 5: Restore the harness check Task 10 removed**
+
+Task 10 replaced the GitLab `requestReReview` check with a `report.skip` because nothing observable distinguished success from a no-op. The usernames path is now observable. Replace the skip with a real check that:
+- calls `requestReReview(projectPath, iid, [approverUsername])` on a merge request where that user is **not** already a reviewer,
+- re-reads the merge request and asserts the reviewer is now present.
+
+Assert on the re-read, never on the absence of a throw.
+
+Leave the GitHub branch's skip alone: it still cannot run, because GitHub rejects a review request from the pull request's author and the fixture has one identity.
+
+- [ ] **Step 6: Restore the expectation entry**
+
+`GITLAB_EXPECTATIONS.requestReReview` was set to `approximate` with a note describing the defects. The defects are fixed, so set it back to plain `supported` and delete the note. Check `tests/live-expectations.test.ts` for what a `supported` entry requires.
+
+- [ ] **Step 7: Verify**
+
+```bash
+cd packages/glance && bun test && bun run check-types && bun run check:node
+```
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add packages/glance/src/GitLabProvider.ts packages/glance/tests/gitlab-request-rereview.test.ts packages/glance/tests/live/expectations.ts packages/glance/tests/live/conformance.ts
+git commit -m "fix: honor reviewerUsernames and stop silently succeeding in GitLab requestReReview"
+```
+
+---
+
+### Task 15: GitLab branch protection reports measured values, not constants
+
+Added mid-plan by the same decision. `GitLabProvider.fetchBranchProtectionRules` (`src/GitLabProvider.ts:929-936`) returns three fields as unconditional constants for every rule:
+
+```ts
+allowDeletion: false,
+requiredApprovals: 0,
+requireStatusChecks: false,
+```
+
+Anyone reading `requiredApprovals` from GitLab today is reading the number zero, not a measurement. GitHub's implementation reports all three from the branch protection detail (`GitHubProvider.ts:847-852`). This is the fourth instance of the hardcoded-constant bug class in this codebase, after `unresolvedThreadCount: 0`, GitHub review threads' `resolved: null`, and the GitLab discussion rollup fixed in Task 13.
+
+**One of the three is not a fabrication and must not be "fixed".** GitLab protected branches cannot be deleted while protected; there is no per-branch deletion toggle to read. `allowDeletion: false` is therefore the correct answer, and it needs a comment saying why rather than a change. Removing a correct constant because it looks like the others would be a regression.
+
+**The other two are measurable, at project scope rather than branch scope.** GitLab models both as project settings rather than per-branch protection:
+- `requireStatusChecks` corresponds to the project's `only_allow_merge_if_pipeline_succeeds`.
+- `requiredApprovals` corresponds to the project's approval rules.
+
+That scope mismatch is real and must be documented rather than hidden: every rule this method returns will carry the same project-level value. Reporting the project's value on each rule is accurate as far as it goes and is strictly better than zero; pretending it was measured per branch would be a new distortion replacing an old one.
+
+**Files:**
+- Modify: `packages/glance/src/GitLabProvider.ts:913-937`
+- Test: `packages/glance/tests/gitlab-branch-protection.test.ts` (create)
+
+**Interfaces:**
+- Consumes: `this.gb`, `this.legacyError`.
+- Produces: no signature change.
+
+- [ ] **Step 1: Confirm the endpoints and the gitbeaker surface**
+
+Verify, do not assume:
+- Which project field carries the pipeline-must-succeed setting.
+- What the approval rules endpoint returns, and whether rules can be scoped to specific protected branches. If they can, prefer the rule that applies to the branch and fall back to the project default; if that is more than this method can cleanly determine, use the project default for every rule and say so explicitly in both the docstring and your report.
+
+Report the exact calls you settled on.
+
+- [ ] **Step 2: Write the failing test**
+
+Create `packages/glance/tests/gitlab-branch-protection.test.ts`, stubbing `this.gb` following the existing GitLab unit tests' pattern. Cover:
+- A project requiring pipeline success reports `requireStatusChecks: true`.
+- A project not requiring it reports `false`.
+- A project with an approval rule requiring two approvals reports `requiredApprovals: 2`.
+- A project with no approval rules reports `0`, and that zero is now a measurement rather than a constant.
+- `allowDeletion` stays `false` and `allowForcePush` still comes from the branch.
+- **A failure reading the project settings or approval rules must not fabricate a value.** Decide the behavior deliberately and test it: either the whole call throws, or the affected field degrades in a way a caller can detect. Do not let a failed read silently produce `0`/`false`, which would recreate exactly the bug being fixed. State your choice and its reasoning in the report.
+
+- [ ] **Step 3: Run it and confirm it fails**
+
+Run: `cd packages/glance && bun test tests/gitlab-branch-protection.test.ts`
+
+- [ ] **Step 4: Implement**
+
+Keep `legacyError` wrapping. Add the extra reads once per call, not once per branch: the project settings and approval rules do not vary by branch, so fetching them inside the `map` would issue N identical requests.
+
+- [ ] **Step 5: Check the live harness's expectations**
+
+`tests/live/conformance.ts` asserts on branch protection rules. Confirm nothing there asserted the constants as correct behavior. If it did, that assertion encoded the bug: update it and report exactly what it asserted before.
+
+- [ ] **Step 6: Verify and commit**
+
+```bash
+cd packages/glance && bun test && bun run check-types && bun run check:node
+git add packages/glance/src/GitLabProvider.ts packages/glance/tests/gitlab-branch-protection.test.ts
+git commit -m "fix: measure requiredApprovals and requireStatusChecks on GitLab branch protection"
+```
+
+---
+
+### Task 16: Close the review findings this plan deferred
+
+Added mid-plan by the same decision. Each item below is a Minor a task reviewer raised and the controller ledgered rather than fixed. They are gathered here because they are individually small and collectively the difference between checks that measure and checks that look like they measure.
+
+**Files:**
+- Modify: `packages/glance/tests/live/conformance.ts`
+- Modify: `packages/glance/src/GitHubProvider.ts` (one doc comment)
+- Modify: `packages/glance/tests/gh-automerge.test.ts`
+- Modify: `packages/glance/tests/gh-unapprove.test.ts`
+
+- [ ] **Step 1: `retryJob` asserts an effect, on both providers**
+
+Both providers' `retryJob` checks assert only that the call did not throw. A provider that accepted the call and did nothing would pass. That is the same shape this plan has now caught three separate times.
+
+Add a re-read. A retry produces observable change: on GitHub the workflow run leaves the completed state, on GitLab the job or pipeline does. Poll for that transition with the harness's existing `pollUntil` rather than sleeping, and keep the bound tight enough that a genuinely broken retry fails rather than hangs. If after investigating you conclude no observable signal is reachable within a sane bound on a given provider, say so and leave that provider's check as-is with a comment explaining why, rather than inventing a weak assertion.
+
+- [ ] **Step 2: Make the `deleteBranch` failure path reachable**
+
+`assert(gone === true, 'branch still exists after deleteBranch')` sits after a `pollUntil` that throws on timeout, so the assert can never fire and its message never reaches a reader. Restructure so a branch that fails to disappear produces that diagnostic message rather than a generic poll timeout. Check whether the same shape appears in nearby checks and fix the ones in code this plan touched; leave older ones alone and note them.
+
+- [ ] **Step 3: Justify or change `PIPELINE_SCAN_LIMIT`**
+
+It is `20` with no stated rationale. Either give the comment a reason tied to something real, or change it to a value you can justify. An unexplained bound reads as arbitrary to whoever next debugs a skipped CI probe.
+
+- [ ] **Step 4: Make the GitHub run scan symmetric with GitLab's**
+
+`latestPipelineAndJob` now scans up to `PIPELINE_SCAN_LIMIT` GitLab pipelines for a settled one, but still requests a single GitHub run (`per_page=1`). If that one run's jobs are all skipped or cancelled, the GitHub probe returns null and the CI checks skip, where GitLab would keep looking. Make GitHub scan too.
+
+- [ ] **Step 5: Assert the auto-merge REST lookup's arguments**
+
+`gh-automerge.test.ts`'s `octokit.request` stub ignores its arguments entirely, so nothing verifies `owner`, `repo`, and `pull_number` are derived correctly from `projectPath` and `mrIid`. Capture the arguments and assert them. Add tests for `pullRequestNodeId`'s own failure paths: an HTTP error, and a pull request whose payload carries no `node_id`.
+
+- [ ] **Step 6: Make the unapprove ordering test discriminate**
+
+`gh-unapprove.test.ts`'s "ordering comes from submitted_at, not list order" case would still pass under a "take the first APPROVED review encountered" implementation, because in its fixture the newest review is also first in list order. Change the fixture so list order and timestamp order genuinely disagree in a way that fails a take-first implementation, keeping the sibling test's coverage intact.
+
+- [ ] **Step 7: Give `cancelAutoMerge` its own doc comment**
+
+It currently inherits context from the comment above `setAutoMerge`. One sentence naming the same repository preconditions makes it readable at its own call site.
+
+- [ ] **Step 8: Verify and commit**
+
+```bash
+cd packages/glance && bun test && bun run check-types && bun run check:node
+```
+
+```bash
+git add packages/glance/tests/live/conformance.ts packages/glance/src/GitHubProvider.ts packages/glance/tests/gh-automerge.test.ts packages/glance/tests/gh-unapprove.test.ts
+git commit -m "test: close the deferred review findings from this plan"
+```
+
+---
+
 ## Follow-ups this phase does not close
 
 Record these rather than doing them:
