@@ -137,6 +137,19 @@ describe('GitHubProvider merge commit messages (MAT-25)', () => {
     expect(body.commit_title).toBe('the only message the caller gave');
   });
 
+  test('squashCommitMessage alone, no mergeMethod, still reaches commit_title', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const calls = stubGitHub(provider);
+
+    await provider.mergePullRequest('acme/repo', 1, {
+      squashCommitMessage: 'only message the caller gave'
+    });
+
+    const body = mergeBody(calls);
+    expect(body.commit_title).toBe('only message the caller gave');
+    expect(body.merge_method).toBeUndefined();
+  });
+
   test('a multi-line message splits into title and body', async () => {
     const provider = new GitHubProvider('https://github.com', 'tok');
     const calls = stubGitHub(provider);

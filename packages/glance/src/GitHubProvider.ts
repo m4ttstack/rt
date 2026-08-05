@@ -1021,11 +1021,16 @@ export class GitHubProvider implements GitProvider {
   ): { commit_title?: string; commit_message?: string } {
     // A squash with no squash-specific message still has the caller's intent in
     // commitMessage, and GitHub produces exactly one commit either way, so
-    // falling back preserves it instead of discarding it.
+    // falling back preserves it instead of discarding it. The reverse case is
+    // symmetric: a caller who supplies only squashCommitMessage and no
+    // mergeMethod clearly meant that message to be used, and since GitHub
+    // produces one commit regardless of method, dropping it serves nobody.
+    // This does not weaken MAT-25: when both messages are supplied, exactly
+    // one is still selected.
     const chosen =
       mergeMethod === 'squash'
         ? (input?.squashCommitMessage ?? input?.commitMessage)
-        : input?.commitMessage;
+        : (input?.commitMessage ?? input?.squashCommitMessage);
     if (chosen == null) return {};
 
     // Strip leading newlines to avoid empty commit_title in the request body.
