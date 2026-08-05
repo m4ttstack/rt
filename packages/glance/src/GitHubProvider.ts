@@ -959,20 +959,11 @@ export class GitHubProvider implements GitProvider {
     input?: MergePullRequestInput
   ): Promise<PullRequest> {
     const body: Record<string, unknown> = {};
-    if (input?.commitMessage != null) body.commit_title = input.commitMessage;
-    if (input?.squashCommitMessage != null)
-      body.commit_title = input.squashCommitMessage;
-    if (input?.shouldRemoveSourceBranch != null)
-      body.delete_branch = input.shouldRemoveSourceBranch;
+    const mergeMethod =
+      input?.mergeMethod ?? (input?.squash ? 'squash' : undefined);
+    if (mergeMethod) body.merge_method = mergeMethod;
+    Object.assign(body, this.mergeCommitFields(input, mergeMethod));
     if (input?.sha != null) body.sha = input.sha;
-
-    // Map mergeMethod / squash to GitHub's merge_method parameter.
-    // GitHub accepts: "merge", "squash", "rebase".
-    if (input?.mergeMethod) {
-      body.merge_method = input.mergeMethod;
-    } else if (input?.squash) {
-      body.merge_method = 'squash';
-    }
 
     const res = await this.api(
       'PUT',
@@ -986,6 +977,37 @@ export class GitHubProvider implements GitProvider {
     const pr = await this.fetchSingleMR(projectPath, mrIid, null);
     if (!pr) throw new Error('Merged PR but failed to fetch it back');
     return pr;
+  }
+
+  /**
+   * Pick the one commit message that applies to this merge.
+   *
+   * GitHub carries a single commit-message pair per merge: `commit_title` and
+   * `commit_message` are the title and body of one commit, not a merge variant
+   * and a squash variant. `commitMessage` and `squashCommitMessage` are
+   * alternates selected by strategy (types.ts), so sending both would put a
+   * squash message in the body of a merge commit. Sending both onto
+   * `commit_title` is MAT-25, where the second silently overwrote the first.
+   */
+  private mergeCommitFields(
+    input: MergePullRequestInput | undefined,
+    mergeMethod: string | undefined
+  ): { commit_title?: string; commit_message?: string } {
+    // A squash with no squash-specific message still has the caller's intent in
+    // commitMessage, and GitHub produces exactly one commit either way, so
+    // falling back preserves it instead of discarding it.
+    const chosen =
+      mergeMethod === 'squash'
+        ? (input?.squashCommitMessage ?? input?.commitMessage)
+        : input?.commitMessage;
+    if (chosen == null) return {};
+
+    const firstBreak = chosen.indexOf('\n');
+    if (firstBreak === -1) return { commit_title: chosen };
+    const rest = chosen.slice(firstBreak + 1).replace(/^\n+/, '');
+    return rest
+      ? { commit_title: chosen.slice(0, firstBreak), commit_message: rest }
+      : { commit_title: chosen.slice(0, firstBreak) };
   }
 
   async approvePullRequest(projectPath: string, mrIid: number): Promise<void> {
