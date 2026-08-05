@@ -1183,6 +1183,18 @@ async function waitForMergeReadiness(fixture: ProviderFixture, iid: number): Pro
   // must not be folded into the same observation.
   const observed: string[] = [];
 
+  // Bound: raised from 20s to 90s. Live run 3's instrumentation recorded
+  // "preparing x1 -> unchecked x1 -> checking x12" -- `detailedMergeStatus`
+  // reached `checking` and never left it before the old 20s bound expired.
+  // Phase 1 measured this same transitional window at roughly a second on
+  // this fixture, so the 20s bound (already ~20x that baseline) was not
+  // itself the guess; what changed is the fixture, which is now taking
+  // markedly longer to finish computing mergeability than it did when that
+  // bound was set. 90s gives more than 4x the old bound's headroom on top of
+  // a window that has already grown by at least 20x over its phase-1
+  // baseline, without waiting indefinitely: a merge that is genuinely stuck
+  // (not merely slow) still times out and still fails, and the observation
+  // trail below still names the exact status it stuck in.
   try {
     await pollUntil(`merge readiness of ${iid}`, async () => {
       const fresh = await fixture.provider.fetchSingleMR(fixture.projectPath, iid, null);
@@ -1192,7 +1204,7 @@ async function waitForMergeReadiness(fixture: ProviderFixture, iid: number): Pro
       }
       observed.push(fresh.detailedMergeStatus ?? 'null');
       return stillComputing.has(fresh.detailedMergeStatus ?? '') ? null : fresh;
-    }, { timeoutMs: 20_000 });
+    }, { timeoutMs: 90_000 });
   } catch (err) {
     // Collapse consecutive repeats into counts rather than dumping up to
     // ~20 raw entries: "checking x2 -> preparing x18" names the stuck
@@ -1852,16 +1864,63 @@ export async function runCiConformance(
       );
 
       await check(report, fixture, 'retryJob', 'accepts a retry of the failed job', async () => {
-        // MAT-128 has been open across three phases on an unproven hypothesis:
-        // the 403 comes from calling this inside the gap between the job
-        // reporting completed and the run reporting completed. Phase 3's
-        // throttling delay made it pass without proving why. These three
-        // timestamps are what nobody has had, printed whether the call
-        // succeeds or fails so a passing run is evidence too. `retryJobTimings`
-        // itself costs one round trip (its two GETs run concurrently to avoid
-        // costing two), which the log below says explicitly so "called at"
-        // is never mistaken for an unperturbed reading of when this check
-        // reached the retry call.
+        // MAT-128 is now root-caused, not hypothesized: three live runs, read
+        // against the timing instrumentation below, all agree on what
+        // separates a pass from the 403. Run 1 (run "completed", called
+        // 1.9s later) passed; run 2 (run "completed", called 1.4s later)
+        // passed; run 3 (run still "in_progress" when called) got 403 "The
+        // workflow run containing this job is already running" -- GitHub's
+        // own error naming the exact precondition. The JOB had completed in
+        // all three; only the RUN had not in the one that failed. So the
+        // precondition this check must establish is the run's own status,
+        // not the job's -- waiting on the job (as earlier phases tried) left
+        // this race open, because the job can and does finish before its
+        // containing run does.
+        //
+        // This wait was deliberately withheld until that measurement existed
+        // (see task 18/19's brief): adding it earlier would have removed the
+        // gap the instrumentation needed to catch run 3's failure in the
+        // first place. That measurement is done, so waiting here is no
+        // longer a guess.
+        //
+        // Bound (2s sampling, 30s timeout): matches the post-retry poll a few
+        // lines below, in this same function, for the analogous transition.
+        // It is far larger than any gap actually observed between job and
+        // run completion (1.4s and 1.9s above) -- comfortable headroom for a
+        // slower run without being unbounded. If the run never gets there,
+        // that is this fixture failing to settle, not a retryJob defect, so
+        // it is reported Inconclusive below rather than blamed on the call
+        // this precondition exists to protect.
+        try {
+          await pollUntil(
+            `workflow run ${failed.pipelineId} reaching "completed" before retryJob`,
+            async () => {
+              const res = await provider.restRequest(
+                'GET',
+                `/repos/${projectPath}/actions/runs/${failed.pipelineId}`
+              );
+              if (!res.ok) return null;
+              const run = (await res.json()) as { status?: string };
+              return run.status === 'completed' ? true : null;
+            },
+            { timeoutMs: 30_000, intervalMs: 2_000 }
+          );
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          throw new Inconclusive(
+            `workflow run ${failed.pipelineId} never reached "completed" before retryJob could be called: ${message}`
+          );
+        }
+
+        // Everything below is the pre-existing MAT-128 diagnostic, kept
+        // unperturbed: it should now read "completed" on every run, which is
+        // how a future reader confirms the wait above is still doing its job.
+        // These three timestamps are what nobody had before, printed whether
+        // the call succeeds or fails so a passing run is evidence too.
+        // `retryJobTimings` itself costs one round trip (its two GETs run
+        // concurrently to avoid costing two), which the log below says
+        // explicitly so "called at" is never mistaken for an unperturbed
+        // reading of when this check reached the retry call.
         const timings = await retryJobTimings(fixture, failed);
         const calledAt = new Date().toISOString();
         console.log(
