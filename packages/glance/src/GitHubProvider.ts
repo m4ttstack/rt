@@ -163,7 +163,6 @@ interface GHReviewThreadsResponse {
 interface GHReviewThread {
   nodeId: string;
   isResolved: boolean;
-  isResolvable: boolean;
   rootCommentId: number;
 }
 
@@ -176,7 +175,6 @@ interface GHPullRequestThreadsResponse {
         nodes: Array<{
           id: string;
           isResolved: boolean;
-          isResolvable: boolean;
           comments?: { nodes: Array<{ databaseId: number | null }> };
         } | null>;
       };
@@ -773,10 +771,18 @@ export class GitHubProvider implements GitProvider {
       // it. `resolvable: true` with `resolved: null` is exactly what this
       // method reported before MAT-27, so an unmatched thread degrades to the
       // old answer instead of to a wrong one.
+      //
+      // A matched thread also reports `resolvable: true`, unconditionally.
+      // GitHub has no per-thread resolvability flag: every review thread can
+      // be resolved, so there is nothing else to encode. `viewerCanResolve`
+      // exists on the schema but answers a different question, whether the
+      // calling user has permission, not whether the thread itself is
+      // resolvable, so mapping it onto this field would trade one wrong
+      // answer for another.
       const thread = threads.get(rootId);
       discussions.push({
         id: `gh-review-thread-${rootId}`,
-        resolvable: thread ? thread.isResolvable : true,
+        resolvable: true,
         resolved: thread ? thread.isResolved : null,
         notes: comments.map(c => toNote(c, thread ? thread.isResolved : null))
       });
@@ -2027,7 +2033,6 @@ export class GitHubProvider implements GitProvider {
               nodes {
                 id
                 isResolved
-                isResolvable
                 comments(first: 1) { nodes { databaseId } }
               }
             }
@@ -2068,7 +2073,6 @@ export class GitHubProvider implements GitProvider {
         index.set(rootCommentId, {
           nodeId: node.id,
           isResolved: node.isResolved,
-          isResolvable: node.isResolvable,
           rootCommentId
         });
       }

@@ -32,11 +32,10 @@ function comment(id: number, replyTo: number | null = null) {
 }
 
 /** One GraphQL review thread node, rooted at `rootCommentId`. */
-function thread(nodeId: string, rootCommentId: number, isResolved: boolean, isResolvable = true) {
+function thread(nodeId: string, rootCommentId: number, isResolved: boolean) {
   return {
     id: nodeId,
     isResolved,
-    isResolvable,
     comments: { nodes: [{ databaseId: rootCommentId }] }
   };
 }
@@ -169,17 +168,6 @@ describe('fetchMRDiscussions: resolved state', () => {
     expect(state['gh-review-thread-300']).toBe(true);
     expect(state['gh-review-thread-301']).toBe(false);
     expect(state['gh-review-thread-302']).toBe(true);
-  });
-
-  test('isResolvable: false is reported rather than assumed true', async () => {
-    const { provider } = providerWith({
-      reviewComments: [comment(400)],
-      threads: [thread('PRRT_f', 400, false, false)]
-    });
-
-    const detail = await provider.fetchMRDiscussions('github:repo:1', 5);
-
-    expect(detail.discussions.find(x => x.id === 'gh-review-thread-400')?.resolvable).toBe(false);
   });
 
   test('a thread with no GraphQL match keeps the old honest unknown', async () => {

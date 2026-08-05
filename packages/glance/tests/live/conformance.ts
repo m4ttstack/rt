@@ -858,6 +858,22 @@ export async function runWriteConformance(
             const target = detail.discussions.find(d => d.resolvable === true);
             if (!target) throw new Inconclusive('no resolvable discussion on the fixture PR');
 
+            // This has to run before the mutation, and on its own. The thread
+            // was just created and is unresolved, so a healthy read reports
+            // `resolved: false`. `null` is what GitHub's provider returns
+            // when fetchMRDiscussions catches a GraphQL failure on its own
+            // read and degrades silently -- the exact shape that let the
+            // isResolvable bug ship with ten green unit tests and a passing
+            // "returns a detail object" harness check. resolveDiscussion's
+            // mutation call below cannot degrade the same way, so asserting
+            // only after it runs would let a broken read hide behind a
+            // mutation that still throws or succeeds on its own.
+            assert(
+              target.resolved === false,
+              `expected the read side to report resolved: false for a fresh thread, got ${target.resolved} -- ` +
+                'null means fetchMRDiscussions degraded instead of reporting real state'
+            );
+
             await provider.resolveDiscussion(projectPath, iid, target.id);
 
             // Re-reading is the assertion. "Did not throw" also passes for a

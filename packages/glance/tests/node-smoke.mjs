@@ -53,7 +53,6 @@ function thread(nodeId, rootId, isResolved) {
   return {
     id: nodeId,
     isResolved,
-    isResolvable: true,
     comments: { nodes: [{ databaseId: rootId }] }
   };
 }
