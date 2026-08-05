@@ -748,7 +748,14 @@ async function mergeBlockDetail(fixture: ProviderFixture, iid: number): Promise<
  * there and is effectively a no-op for that provider.
  */
 async function waitForMergeReadiness(fixture: ProviderFixture, iid: number): Promise<void> {
-  const stillComputing = new Set(['checking', 'unchecked', 'preparing']);
+  // approvals_syncing is transitional too, per MRDashboard.ts:105. Merging
+  // during it races the same ambiguous 405 as the other three (MAT-132).
+  const stillComputing = new Set([
+    'checking',
+    'unchecked',
+    'preparing',
+    'approvals_syncing'
+  ]);
   await pollUntil(`merge readiness of ${iid}`, async () => {
     const fresh = await fixture.provider.fetchSingleMR(fixture.projectPath, iid, null);
     if (!fresh) return null;
@@ -862,6 +869,15 @@ export async function runMergeConformance(
         assert(
           message.includes('merge-commit-message'),
           `commitMessage was dropped. Head commit was: ${message.slice(0, 200)}`
+        );
+        // The positive check alone cannot fail a fix that writes both messages
+        // into the same commit, which is what the design doc originally
+        // prescribed. This merge asked for no merge method, so it is not a
+        // squash, so squashCommitMessage does not apply to it and must not
+        // appear anywhere in the resulting commit.
+        assert(
+          !message.includes('squash-commit-message'),
+          `squashCommitMessage leaked into a non-squash merge commit. Head commit was: ${message.slice(0, 200)}`
         );
       }
     );
