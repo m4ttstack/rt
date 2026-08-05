@@ -3017,6 +3017,116 @@ git commit -m "test: close the deferred review findings from this plan"
 
 ---
 
+### Task 17: The review-thread query asks for a field GitHub does not have
+
+Found by the first live run. `fetchReviewThreadIndex`'s GraphQL query requests `isResolvable` on `PullRequestReviewThread`. That field does not exist. Live GitHub answers:
+
+```
+resolveDiscussion failed: GitHub GraphQL returned Field 'isResolvable' doesn't exist on type 'PullRequestReviewThread'
+```
+
+Introspection confirms the real field set: `comments diffSide id isCollapsed isOutdated isResolved line originalLine originalStartLine path pullRequest repository resolvedBy startDiffSide startLine subjectType viewerCanReply viewerCanResolve viewerCanUnresolve`. There is no `isResolvable`. It was invented in this plan's Task 3 text and transcribed faithfully.
+
+**Why ten green unit tests missed it.** Every test in `gh-discussions.test.ts` stubs `octokit.graphql` and returns a literal shaped like the query's expected response. A stub cannot reject a field the real schema lacks, so the query was never validated by anything until a live call was made. This is the same failure the Node smoke test was added for, one layer up: the tests agreed with each other and none of them agreed with reality.
+
+**Why the live `fetchMRDiscussions` check still passed, which is the more dangerous half.** Task 3 deliberately made a GraphQL failure degrade the read rather than fail it: the catch warns and falls back to `resolved: null`. So against live GitHub, `fetchMRDiscussions` silently returns exactly what it returned before MAT-27, and its harness check (`returns a detail object`) passes because it does not assert resolution state. The degradation design that a reviewer praised is what hid a total feature failure. Only the mutation path, which cannot degrade, surfaced it.
+
+**Files:**
+- Modify: `packages/glance/src/GitHubProvider.ts` (the `GHReviewThread` interface at ~166, the `GHPullRequestThreadsResponse` projection at ~179, the query at ~2030, the mapping at ~2071, the consumer at ~779)
+- Modify: `packages/glance/tests/gh-discussions.test.ts`
+- Modify: `packages/glance/tests/live/conformance.ts` (add an assertion that would have caught this)
+
+- [ ] **Step 1: Decide what `resolvable` means on GitHub, and get it right this time**
+
+GitHub has no per-thread resolvability flag because every review thread is resolvable. `viewerCanResolve` exists but answers a different question, whether the *calling user* has permission, and mapping it onto `Discussion.resolvable` would replace an invented field with a wrong meaning.
+
+So: drop `isResolvable` entirely. A thread matched from GraphQL reports `resolvable: true`, which is what this method reported before MAT-27 and is correct. Keep `isResolved` driving `resolved`, which is the real fix MAT-27 asked for and which does exist.
+
+Remove the field from the query, from `GHReviewThread`, from the response projection, and from the mapping. At the consumer, `resolvable` becomes `true` for a matched thread, unchanged for an unmatched one. Add a comment stating that GitHub has no per-thread resolvability flag and that `viewerCanResolve` was considered and rejected because it is a permission rather than a property of the thread.
+
+- [ ] **Step 2: Delete the test that asserted the invented field**
+
+`gh-discussions.test.ts` has a test named `isResolvable: false is reported rather than assumed true`. It asserts behavior that cannot occur. Delete it and the `isResolvable` parameter from the `thread` helper. Do not replace it with a test of `viewerCanResolve`.
+
+- [ ] **Step 3: Add the check that would have caught this**
+
+A unit test cannot validate a query against a schema. The live harness can, and did, but only through the mutation path.
+
+Add a harness assertion that `fetchMRDiscussions` reports real resolution state, not merely that it returns an object. Resolve a thread, then assert the READ side reports `resolved: true` for it. The existing `resolveDiscussion` check already resolves a thread and re-reads; extend it, or add a sibling that reads through `fetchMRDiscussions` specifically. The point is that the degrade-to-null path must not be able to pass this check.
+
+- [ ] **Step 4: Verify against the live API before trusting the fix**
+
+Run the corrected query directly, read-only, against a real pull request:
+
+```bash
+gh api graphql -f query='
+  query($owner:String!,$repo:String!,$number:Int!){
+    repository(owner:$owner,name:$repo){
+      pullRequest(number:$number){
+        reviewThreads(first:10){
+          pageInfo{hasNextPage endCursor}
+          nodes{ id isResolved comments(first:1){nodes{databaseId}} }
+        }
+      }
+    }
+  }' -F owner=m4ttheweric -F repo=glance-conformance -F number=1
+```
+
+Expected: a valid response, not a field error. A 404 on the pull request number is fine and still proves the query parses; a field error is not. Paste the real output into your report.
+
+- [ ] **Step 5: Verify and commit**
+
+```bash
+cd packages/glance && bun test && bun run check-types && bun run check:node
+git add packages/glance/src/GitHubProvider.ts packages/glance/tests/gh-discussions.test.ts packages/glance/tests/live/conformance.ts
+git commit -m "fix: stop querying a review-thread field GitHub does not have"
+```
+
+---
+
+### Task 18: GitLab `retryJob` retries a job the harness already superseded
+
+Found by the first live run, on the very first occasion GitLab's `retryJob` has ever been asserted:
+
+```
+retryJob failed: 403 Forbidden -- 403 Forbidden - Job is not retryable
+```
+
+**This is a harness ordering defect, not a provider defect.** `runCiConformance` calls `retryPipeline` and then `retryJob`, both against the same `probe` selected once at the start. Retrying the pipeline creates fresh job instances, which makes the originally-selected job a superseded attempt, and GitLab refuses to retry a superseded job. GitHub is unaffected because its `retryJob` check runs against a job provisioned separately by `withFailedGitHubJob`.
+
+So the harness broke its own precondition, then reported the provider as failing. That is the same class as the skipped-job selection bug fixed earlier in this plan: a harness defect wearing a provider's name.
+
+**Files:**
+- Modify: `packages/glance/tests/live/conformance.ts` (`runCiConformance`)
+
+- [ ] **Step 1: Confirm the mechanism before fixing it**
+
+Read `runCiConformance` and confirm the ordering described above: one `probe`, `retryPipeline` before `retryJob`, no re-selection between them. Report what you found. If the mechanism is different from the diagnosis, say so and stop rather than fixing the wrong thing.
+
+- [ ] **Step 2: Fix it**
+
+Preferred: re-select the job immediately before the `retryJob` check rather than reusing a probe taken before `retryPipeline` ran. That keeps both checks and makes the precondition explicit.
+
+Acceptable alternative if re-selection proves unreliable: run `retryJob` before `retryPipeline`. Note the trade-off in a comment either way, because the next person will wonder why the order matters.
+
+Whichever you choose, add a comment stating that retrying a pipeline supersedes its jobs, since that is the non-obvious fact that makes the ordering load-bearing.
+
+- [ ] **Step 3: Consider whether selection should require retryability**
+
+`RAN_GITLAB_JOB_STATUSES` selects jobs that produced output. Retryability is a different property. Investigate whether GitLab's job payload exposes something usable, and if it does, prefer selecting on it for this check specifically. If it does not, say so and rely on the ordering fix alone.
+
+- [ ] **Step 4: Verify and commit**
+
+The live harness is the only thing that can verify this, and running it is a separate step. Type-check, and state plainly in your report that live verification is deferred.
+
+```bash
+cd packages/glance && bun run check-types && bun test
+git add packages/glance/tests/live/conformance.ts
+git commit -m "test: re-select the GitLab job after retryPipeline supersedes it"
+```
+
+---
+
 ## Follow-ups this phase does not close
 
 Record these rather than doing them:
