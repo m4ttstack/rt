@@ -69,7 +69,8 @@ export const GITHUB_EXPECTATIONS: Record<ProviderMethod, Expectation> = {
   },
   cancelAutoMerge: {
     support: 'supported',
-    capability: 'canAutoMerge'
+    capability: 'canAutoMerge',
+    note: 'Task 7\'s live spike measured that once armed, GitHub can complete a real merge before a subsequent cancelAutoMerge call lands, if the fixture\'s required check settles first. When that happens the call legitimately fails with "Can\'t disable auto-merge for this pull request"; the conformance harness records that as a skip, not a defect, since there is nothing left to cancel.'
   },
   resolveDiscussion: { support: 'supported', capability: 'canResolveDiscussions' },
   unresolveDiscussion: { support: 'supported', capability: 'canResolveDiscussions' },

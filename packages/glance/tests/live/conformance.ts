@@ -446,12 +446,87 @@ async function commitFile(
   if (!res.ok) throw new Error(`commit failed: HTTP ${res.status}`);
 }
 
+/**
+ * Post a comment anchored to a line of `path`, which must already be
+ * committed on the PR's branch. This is what gives resolveDiscussion and
+ * unresolveDiscussion a thread to act on: neither method creates one of its
+ * own, and a plain issue-level comment carries no resolvable state on either
+ * provider, only a diff-anchored one does.
+ */
+async function postDiffComment(
+  fixture: ProviderFixture,
+  iid: number,
+  path: string
+): Promise<void> {
+  const { provider, projectPath } = fixture;
+  const body = 'conformance: harness-created review thread';
+  // A bare status code is not enough to diagnose a 400 on this endpoint: the
+  // body carries GitHub's/GitLab's own explanation of which field it
+  // rejected, and without it a bad payload here is nearly unreadable from a
+  // log.
+  const readError = async (res: Response, label: string): Promise<Error> => {
+    const text = await res.text().catch(() => '');
+    return new Error(`${label} failed: HTTP ${res.status}${text ? `: ${text}` : ''}`);
+  };
+  if (fixture.name === 'github') {
+    const prRes = await provider.restRequest('GET', `/repos/${projectPath}/pulls/${iid}`);
+    if (!prRes.ok) throw await readError(prRes, 'could not read PR for diff comment');
+    const { head } = (await prRes.json()) as { head: { sha: string } };
+    const res = await provider.restRequest('POST', `/repos/${projectPath}/pulls/${iid}/comments`, {
+      body,
+      commit_id: head.sha,
+      path,
+      line: 1,
+      side: 'RIGHT'
+    });
+    if (!res.ok) throw await readError(res, 'diff comment');
+    return;
+  }
+  const encoded = encodeURIComponent(projectPath);
+  // GitLab needs the MR's own diff_refs (not just any sha) to anchor a
+  // position-based note; these come from the merge request itself, not from
+  // the commit that was just pushed.
+  const mrRes = await provider.restRequest(
+    'GET',
+    apiPath(fixture, `/projects/${encoded}/merge_requests/${iid}`)
+  );
+  if (!mrRes.ok) throw await readError(mrRes, 'could not read MR for diff comment');
+  const { diff_refs } = (await mrRes.json()) as {
+    diff_refs: { base_sha: string; start_sha: string; head_sha: string };
+  };
+  const res = await provider.restRequest(
+    'POST',
+    apiPath(fixture, `/projects/${encoded}/merge_requests/${iid}/discussions`),
+    {
+      body,
+      position: {
+        base_sha: diff_refs.base_sha,
+        start_sha: diff_refs.start_sha,
+        head_sha: diff_refs.head_sha,
+        position_type: 'text',
+        // GitLab's text-position schema has historically required old_path
+        // even for a line that has no "old" side at all. Since `path` is a
+        // freshly-added file, the only value that makes sense is the same
+        // path on both sides.
+        old_path: path,
+        new_path: path,
+        new_line: 1
+      }
+    }
+  );
+  if (!res.ok) throw await readError(res, 'diff comment');
+}
+
 export async function runWriteConformance(
   fixture: ProviderFixture,
   report: Reporter
 ): Promise<void> {
   const { provider, projectPath, defaultBranch } = fixture;
   const branch = `${runPrefix()}-write`;
+  // Reused later to seed the discussion-resolution checks: they need a diff
+  // comment anchored to a real file already in the PR, and this is the one
+  // the PR is opened with.
+  const seedFilePath = `conformance-${Date.now()}.md`;
   let prIid: number | null = null;
 
   try {
@@ -474,7 +549,7 @@ export async function runWriteConformance(
 
     await check(report, fixture, 'createPullRequest', 'opens a PR from a new branch', async () => {
       await createBranch(fixture, branch);
-      await commitFile(fixture, branch, `conformance-${Date.now()}.md`, '# conformance\n');
+      await commitFile(fixture, branch, seedFilePath, '# conformance\n');
       const pr = await provider.createPullRequest({
         projectPath,
         title: 'conformance: write cycle',
@@ -671,6 +746,12 @@ export async function runWriteConformance(
       );
     } else {
       report.skip(fixture.name, 'approvePullRequest', 'approval', 'no second identity');
+      report.skip(
+        fixture.name,
+        'unapprovePullRequest',
+        'dismissal',
+        'no second identity: dismissal needs an approval, and GitHub rejects self-approval with 422'
+      );
     }
 
     if (fixture.approver) {
@@ -699,6 +780,180 @@ export async function runWriteConformance(
         'requestReReview',
         're-request',
         'no second identity: GitHub rejects a review request from the PR author'
+      );
+    }
+
+    if (expectationFor(fixture.name, 'resolveDiscussion').support === 'supported') {
+      // Neither resolveDiscussion nor unresolveDiscussion creates a thread of
+      // its own, so without one there is nothing for either to act on. A
+      // diff comment is required, not a plain issue comment: an issue-level
+      // comment carries no resolvable state on either provider (see
+      // GitHubProvider's toNote and GitLabProvider's rollUpResolution, both
+      // of which report `resolvable: null`/`false` for those).
+      let setupError: string | null = null;
+      try {
+        await postDiffComment(fixture, iid, seedFilePath);
+      } catch (err) {
+        setupError = err instanceof Error ? err.message : String(err);
+      }
+
+      if (setupError !== null) {
+        // Recorded through the Reporter, not console.error alone: a swallowed
+        // setup failure here used to leave both checks below to fall into
+        // their own "no resolvable discussion" Inconclusive skip, which
+        // renders identically to "the fixture PR genuinely had no thread" --
+        // indistinguishable from a harness that is working correctly against
+        // a fixture with nothing to check. report.fail (not skip) because
+        // this is a failure in the harness's own write path, not an absent
+        // fixture precondition; it is also the only report state whose
+        // entries print individually in Reporter.render()'s summary, which
+        // is what actually closes the visibility gap.
+        report.fail(
+          fixture.name,
+          'resolveDiscussion',
+          'resolves a harness-created thread and the read side reports it',
+          `setup failed before this check could run: could not post the diff comment it needs a thread from: ${setupError}`
+        );
+        report.fail(
+          fixture.name,
+          'unresolveDiscussion',
+          'unresolves the same harness-created thread',
+          `setup failed before this check could run: could not post the diff comment it needs a thread from: ${setupError}`
+        );
+      } else {
+        await check(
+          report,
+          fixture,
+          'resolveDiscussion',
+          'resolves a harness-created thread and the read side reports it',
+          async () => {
+            // `repoId` is local to runReadConformance; the write cycle has to
+            // derive its own. `fetchMRDiscussions` takes the scoped
+            // `<provider>:<numericId>` form, not `owner/repo`.
+            const repoId = await scopedRepoId(fixture);
+            const detail = await provider.fetchMRDiscussions(repoId, iid);
+            const target = detail.discussions.find(d => d.resolvable === true);
+            if (!target) throw new Inconclusive('no resolvable discussion on the fixture PR');
+
+            await provider.resolveDiscussion(projectPath, iid, target.id);
+
+            // Re-reading is the assertion. "Did not throw" also passes for a
+            // provider that accepts the call and changes nothing, which is the
+            // shape MAT-25 and shouldRemoveSourceBranch were built to catch.
+            const after = await pollUntil(`resolved state of ${target.id}`, async () => {
+              const fresh = await provider.fetchMRDiscussions(repoId, iid);
+              const d = fresh.discussions.find(x => x.id === target.id);
+              return d?.resolved === true ? d : null;
+            });
+            assert(after.resolved === true, `expected resolved true, got ${after.resolved}`);
+          }
+        );
+
+        await check(
+          report,
+          fixture,
+          'unresolveDiscussion',
+          'unresolves the same harness-created thread',
+          async () => {
+            const repoId = await scopedRepoId(fixture);
+            const detail = await provider.fetchMRDiscussions(repoId, iid);
+            const target = detail.discussions.find(d => d.resolved === true);
+            if (!target) throw new Inconclusive('no resolved discussion to unresolve');
+
+            await provider.unresolveDiscussion(projectPath, iid, target.id);
+
+            const after = await pollUntil(`unresolved state of ${target.id}`, async () => {
+              const fresh = await provider.fetchMRDiscussions(repoId, iid);
+              const d = fresh.discussions.find(x => x.id === target.id);
+              return d?.resolved === false ? d : null;
+            });
+            assert(after.resolved === false, `expected resolved false, got ${after.resolved}`);
+          }
+        );
+      }
+    }
+
+    // GitHub only: task 7's spike measured this fixture's own required
+    // check, not GitLab's. GitLab already declared setAutoMerge/
+    // cancelAutoMerge supported before this plan touched either provider,
+    // and runUnsupportedConformance's generic "supported-path not exercised
+    // here" skip already covers it for GitLab, so there is no coverage gap
+    // left open by scoping this measured check to the provider it was
+    // actually measured against.
+    if (fixture.name === 'github' && expectationFor(fixture.name, 'setAutoMerge').support === 'supported') {
+      await check(
+        report,
+        fixture,
+        'setAutoMerge',
+        'arms auto-merge and a re-read confirms it',
+        async () => {
+          try {
+            await provider.setAutoMerge(projectPath, iid);
+            const after = await provider.fetchSingleMR(projectPath, iid, null);
+            assert(
+              after?.autoMergeEnabled === true,
+              `expected autoMergeEnabled true after setAutoMerge, got ${after?.autoMergeEnabled}`
+            );
+          } finally {
+            // The task 7 spike proved this fixture's required check can
+            // settle, and GitHub's own automation will complete a real merge
+            // the moment it does, while auto-merge is armed -- inside a
+            // window as wide as 90 seconds. No sleep and no poll between
+            // enabling above and cancelling here: every call inserted into
+            // that gap only widens the window this project has no way to
+            // close to zero, only to the minimum number of round trips. If
+            // the required check wins that race before this cancel lands,
+            // GitHub answers with "Can't disable auto-merge for this pull
+            // request" because there is nothing left to cancel; that is not
+            // a defect, so it is recorded as a measured skip rather than a
+            // failure. Losing the race also costs nothing new: the result is
+            // the same one file-and-commit artifact every merge-cycle run
+            // already leaves on this fixture by design, not a new kind of
+            // permanent side effect.
+            try {
+              await provider.cancelAutoMerge(projectPath, iid);
+              const after = await provider.fetchSingleMR(projectPath, iid, null);
+              if (after?.autoMergeEnabled === false) {
+                report.pass(fixture.name, 'cancelAutoMerge', 'disarms auto-merge and a re-read confirms it');
+              } else {
+                report.fail(
+                  fixture.name,
+                  'cancelAutoMerge',
+                  'disarms auto-merge and a re-read confirms it',
+                  `cancelAutoMerge did not throw but autoMergeEnabled reads back as ${after?.autoMergeEnabled}`
+                );
+              }
+            } catch (err) {
+              const message = err instanceof Error ? err.message : String(err);
+              // The message alone is not proof of the race: GitHub returns
+              // this exact string whenever there is nothing to cancel for
+              // ANY reason, including cancelAutoMerge being simply broken, or
+              // the enable step above never having armed anything in the
+              // first place. Trusting the substring would let a genuinely
+              // broken cancelAutoMerge report "skip: the check won the race"
+              // on every single call, forever, and a skip asserting a cause
+              // nobody checked is worse than a failure, because it reads as
+              // accounted for. Re-reading the PR's own state is what actually
+              // tells the race apart from that.
+              const reread = await provider.fetchSingleMR(projectPath, iid, null).catch(() => null);
+              if (reread?.state === 'merged' || reread?.state === 'closed') {
+                report.skip(
+                  fixture.name,
+                  'cancelAutoMerge',
+                  'disarms auto-merge and a re-read confirms it',
+                  `the required check won the race and GitHub merged the PR before this call could land (confirmed by re-read: state="${reread.state}"): ${message}`
+                );
+              } else {
+                report.fail(
+                  fixture.name,
+                  'cancelAutoMerge',
+                  'disarms auto-merge and a re-read confirms it',
+                  `cancelAutoMerge failed and a re-read does not support the "already merged" narrative (state="${reread?.state ?? 'unreadable'}"): ${message}`
+                );
+              }
+            }
+          }
+        }
       );
     }
   } finally {
