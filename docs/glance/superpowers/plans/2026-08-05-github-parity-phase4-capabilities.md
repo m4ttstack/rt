@@ -3233,6 +3233,49 @@ git commit -m "test: wait for the workflow run to finish, and widen merge readin
 
 ---
 
+### Task 21: Auto-merge is refused at both ends of the mergeability range
+
+Four live runs have now characterised `setAutoMerge` completely:
+
+| Run | Pull request state at the call | Result |
+| --- | --- | --- |
+| 1 | armable window | pass, armed and confirmed by re-read |
+| 2 | `unstable` | refused: `Pull request is in unstable status` |
+| 3 | `unstable` | refused, reported inconclusive by Task 19 |
+| 4 | `clean` | refused: `Pull request is in clean status`, hard failure |
+
+GitHub refuses `enablePullRequestAutoMerge` at **both** ends. `clean` means every required check has passed and the pull request could merge right now, so there is nothing to wait for. `unstable` means checks are failing or pending in a way GitHub will not queue behind. Auto-merge is armable only in the window between, which is what run 1 hit.
+
+The `clean` refusal is the one the design doc predicted from the start (`GitHub rejects the mutation on a pull request that is already mergeable`). Task 19 caught `unstable` because that is the message run 2 produced, and had no way to know about `clean`. Both are the same class: GitHub declining on the pull request's mergeability state, not a defect in this SDK.
+
+**Files:**
+- Modify: `packages/glance/tests/live/conformance.ts`
+- Modify: `packages/glance/tests/live/expectations.ts`
+
+- [ ] **Step 1: Treat both refusals as one class, and keep the class narrow**
+
+Extend the existing inconclusive handling to cover the `clean status` refusal alongside `unstable status`. Match both explicitly rather than loosening to any GraphQL error: a mutation rejected for a bad node id, a permissions problem, or an accepted-but-ineffective arming must all still hard-fail. Say in the comment that the two messages are the two ends of the same range, and that arming is only possible between them, so a future reader does not assume the list of refusal messages is arbitrary.
+
+Do not attempt to widen the window by restructuring when the check runs. That would trade a truthful skip for a flakier pass, and the four runs above already show the behaviour is understood rather than mysterious.
+
+- [ ] **Step 2: Record what the harness can and cannot prove about auto-merge**
+
+`GITHUB_EXPECTATIONS.setAutoMerge` is currently plain `supported`. That is now known to overstate what the harness verifies: the round trip is provable only when a run happens to catch the armable window, and three of four runs did not.
+
+Change it to `approximate` with a note stating that `setAutoMerge` works (run 1 armed it and a re-read confirmed), that GitHub refuses it on both `clean` and `unstable` pull requests, and that the harness therefore reports inconclusive rather than passing whenever a run does not land in the window. Check `tests/live-expectations.test.ts` for what a non-`supported` entry requires.
+
+Leave `cancelAutoMerge` as it is. It is gated on whether arming succeeded and already reports honestly.
+
+- [ ] **Step 3: Verify and commit**
+
+```bash
+cd packages/glance && bun run check-types && bun test
+git add packages/glance/tests/live/conformance.ts packages/glance/tests/live/expectations.ts
+git commit -m "test: auto-merge is refused on both clean and unstable pull requests"
+```
+
+---
+
 ## Follow-ups this phase does not close
 
 Record these rather than doing them:
