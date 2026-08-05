@@ -1074,6 +1074,61 @@ async function withFailedGitHubJob(
   }
 }
 
+/**
+ * Job completion time and run status/update time for the job `retryJob` is
+ * about to retry.
+ *
+ * GitHub-only: MAT-128's hypothesis is about the gap between a job finishing
+ * and its workflow run finishing, and GitLab has no equivalent two-level
+ * completion. Returns nulls rather than throwing, because failing to read a
+ * diagnostic must never fail the check it is diagnosing.
+ *
+ * `failed.pipelineId` is already the workflow run id: `withFailedGitHubJob`
+ * (the only source of `failed` on this path) sets it from `run.id`, so there
+ * is no need to fall back to a `run_id` read off the job.
+ *
+ * The run object has no dedicated completion timestamp the way the job does;
+ * `updated_at` is the closest available proxy, so it is named and reported
+ * as "updated", not "completed" -- this log is the only evidence MAT-128 has
+ * ever produced, and a label claiming a completion time the API never
+ * returned would get read as measured fact.
+ *
+ * The two GETs run via `Promise.all`, not sequentially, because this
+ * diagnostic sits directly in front of the exact call under study: the
+ * hypothesis is that added delay before `retryJob` is what makes the 403
+ * disappear, so a diagnostic that itself burns two sequential round trips
+ * immediately before that call would bias the measurement toward the very
+ * outcome it exists to observe. One round trip of overhead is unavoidable;
+ * a second one is not.
+ */
+async function retryJobTimings(
+  fixture: ProviderFixture,
+  failed: PipelineProbe
+): Promise<{ jobCompletedAt: string | null; runUpdatedAt: string | null; runStatus: string | null }> {
+  const empty = { jobCompletedAt: null, runUpdatedAt: null, runStatus: null };
+  if (fixture.name !== 'github') return empty;
+  const { provider, projectPath } = fixture;
+  try {
+    const [jobRes, runRes] = await Promise.all([
+      provider.restRequest('GET', `/repos/${projectPath}/actions/jobs/${failed.jobId}`),
+      provider.restRequest('GET', `/repos/${projectPath}/actions/runs/${failed.pipelineId}`)
+    ]);
+    const job = jobRes.ok
+      ? ((await jobRes.json()) as { completed_at?: string | null })
+      : null;
+    const run = runRes.ok
+      ? ((await runRes.json()) as { status?: string; updated_at?: string | null })
+      : null;
+    return {
+      jobCompletedAt: job?.completed_at ?? null,
+      runUpdatedAt: run?.updated_at ?? null,
+      runStatus: run?.status ?? null
+    };
+  } catch {
+    return empty;
+  }
+}
+
 export async function runCiConformance(
   fixture: ProviderFixture,
   report: Reporter
@@ -1137,6 +1192,23 @@ export async function runCiConformance(
       );
 
       await check(report, fixture, 'retryJob', 'accepts a retry of the failed job', async () => {
+        // MAT-128 has been open across three phases on an unproven hypothesis:
+        // the 403 comes from calling this inside the gap between the job
+        // reporting completed and the run reporting completed. Phase 3's
+        // throttling delay made it pass without proving why. These three
+        // timestamps are what nobody has had, printed whether the call
+        // succeeds or fails so a passing run is evidence too. `retryJobTimings`
+        // itself costs one round trip (its two GETs run concurrently to avoid
+        // costing two), which the log below says explicitly so "called at"
+        // is never mistaken for an unperturbed reading of when this check
+        // reached the retry call.
+        const timings = await retryJobTimings(fixture, failed);
+        const calledAt = new Date().toISOString();
+        console.log(
+          `  retryJob timing: job completed ${timings.jobCompletedAt ?? 'unknown'}, ` +
+            `run status "${timings.runStatus ?? 'unknown'}" last updated ${timings.runUpdatedAt ?? 'unknown'}, ` +
+            `called at ${calledAt} (after one round trip added by this diagnostic)`
+        );
         await provider.retryJob(projectPath, failed.jobId);
       });
     });
