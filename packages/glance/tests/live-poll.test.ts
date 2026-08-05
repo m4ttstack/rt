@@ -47,6 +47,18 @@ describe('pollUntil', () => {
     ).rejects.toThrow(/never-appears.*timed out/);
   });
 
+  test('a timeout message includes a non-Error thrown value rather than dropping it', async () => {
+    await expect(
+      pollUntil(
+        'always-rejects',
+        async () => {
+          throw 'raw string rejection';
+        },
+        { intervalMs: 1, timeoutMs: 20 }
+      )
+    ).rejects.toThrow(/last error: raw string rejection/);
+  });
+
   test('a thrown predicate does not abort the poll', async () => {
     let calls = 0;
     const value = await pollUntil(

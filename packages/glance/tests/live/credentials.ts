@@ -111,8 +111,11 @@ export function githubRepo(creds: HarnessCredentials): HarnessRepo {
 /**
  * Shared by `setup-github-fixture.ts` and `fixture.ts`, both of which need
  * to turn a `github.com` web URL into the `{ owner, repo }` GitHub actually
- * wants. One parser, so a fix to how it handles a trailing slash or `.git`
- * suffix lands for both callers instead of drifting between two copies.
+ * wants. One parser, so any future fix lands for both callers instead of
+ * drifting between two copies. As written today it does not special-case
+ * either a trailing slash (harmless: the extra empty path segment falls
+ * after `repo`, not between `owner` and `repo`) or a `.git` suffix (not
+ * harmless: `.../owner/repo.git` yields `repo: "repo.git"` verbatim).
  */
 export function parseGitHubSlug(webUrl: string): { owner: string; repo: string } {
   const { pathname } = new URL(webUrl);

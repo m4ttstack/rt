@@ -23,8 +23,15 @@ export async function pollUntil<T>(
       lastError = err;
     }
     if (Date.now() >= deadline) {
+      // A rejected predicate can throw anything, not just an Error (a raw
+      // string, a provider SDK's own error object, ...); falling back to
+      // String() instead of dropping non-Error values keeps the timeout
+      // message from silently discarding the one piece of evidence that
+      // explains why the poll never succeeded.
       const because =
-        lastError instanceof Error ? `, last error: ${lastError.message}` : '';
+        lastError === undefined
+          ? ''
+          : `, last error: ${lastError instanceof Error ? lastError.message : String(lastError)}`;
       throw new Error(`pollUntil("${label}") timed out after ${timeoutMs}ms${because}`);
     }
     await Bun.sleep(intervalMs);

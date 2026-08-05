@@ -117,11 +117,14 @@ export async function runReadConformance(
     async () => {
       const prs = await provider.fetchPullRequests();
       assert(Array.isArray(prs), `expected an array, got ${typeof prs}`);
-      // The zero-arg call is a distinct code path from the projectPath-mode
-      // calls below (current-user MRs vs. a specific project), so this
-      // stays even though it can be empty: a shape check on whatever comes
-      // back is still real coverage of that path, unlike a bare
-      // Array.isArray which only proves fetchPullRequests() didn't throw.
+      // An empty array satisfies Array.isArray without ever running the
+      // per-PR shape assertions below, which would let this pass while
+      // proving nothing about the "well-formed" half of its own label; the
+      // projectPath-mode check ~30 lines below hits the same case and
+      // reports it the same way.
+      if (prs.length === 0) {
+        throw new Inconclusive('no PRs returned; well-formedness of PR shape is unverified');
+      }
       for (const pr of prs) {
         assert(
           typeof pr.id === 'string' && pr.id.length > 0,
@@ -511,6 +514,35 @@ export async function runWriteConformance(
           const found = map.get(branch);
           assert(found?.iid === iid, `expected iid ${iid}, got ${found?.iid ?? 'null'}`);
         }
+      );
+    }
+
+    // Same shape as the fetchPullRequestsByBranches check above: on the
+    // provider that declares this absent, prove it live rather than leaving
+    // it as a code-read claim about GitHubProvider's source.
+    if (expectationFor(fixture.name, 'watchEvents').support === 'absent') {
+      await check(
+        report,
+        fixture,
+        'watchEvents',
+        'is absent, so callers feature-detect and fall back',
+        async () => {
+          assert(
+            provider.watchEvents === undefined,
+            'declared absent but the method exists, so the table is stale'
+          );
+        }
+      );
+    } else {
+      // Actually calling watchEvents here would start a real polling loop
+      // against a live repository with nothing in this script to ever stop
+      // it, the same reasoning that keeps watchMR's supported path
+      // unexercised above.
+      report.skip(
+        fixture.name,
+        'watchEvents',
+        'supported-path not exercised here',
+        'this provider declares it supported; invoking it would start a real polling subscription with nothing in the harness to close it'
       );
     }
 
