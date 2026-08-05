@@ -69,11 +69,11 @@ Tasks 1 through 8 need no network. Task 9 is the single live run.
 - Test: `packages/glance/tests/github-client.test.ts`
 
 **Interfaces:**
-- Consumes: `RequestInfo`, `OnRequestHook`, `safeEmit` from `./instrumentation.ts`; `Logger` from `./logger.ts`.
+- Consumes: `RequestInfo`, `OnRequestHook`, `safeEmit` from `./instrumentation.ts`; `ForgeLogger` and `noopLogger` from `./logger.ts`. Note the logger type is named `ForgeLogger`, not `Logger`; `noopLogger` is exported at `logger.ts:21`.
 - Produces:
   - `type GlanceOctokit = Octokit & { paginate: ... }` (the plugin-augmented instance type; export the type `createGitHubClient` returns rather than hand-writing it).
   - `function resolveGitHubUrls(baseURL: string): { apiBase: string; graphqlURL: string }`
-  - `function createGitHubClient(opts: { baseURL: string; token: string; log: Logger; onRequest?: OnRequestHook }): GlanceOctokit`
+  - `function createGitHubClient(opts: { baseURL: string; token: string; log: ForgeLogger; onRequest?: OnRequestHook }): GlanceOctokit`
   - `function ghError(op: string, err: unknown, style?: 'plain' | 'statusText'): Error`
   - Task 2 consumes all four. Tasks 3 through 8 consume `ghError` at every migrated call site.
 
@@ -278,7 +278,7 @@ import { retry } from '@octokit/plugin-retry';
 import { throttling } from '@octokit/plugin-throttling';
 import { RequestError } from '@octokit/request-error';
 import { safeEmit, type OnRequestHook } from './instrumentation.ts';
-import type { Logger } from './logger.ts';
+import type { ForgeLogger } from './logger.ts';
 
 const GlanceOctokitBase = Octokit.plugin(paginateRest, retry, throttling);
 
@@ -307,7 +307,7 @@ export function resolveGitHubUrls(baseURL: string): {
 export function createGitHubClient(opts: {
   baseURL: string;
   token: string;
-  log: Logger;
+  log: ForgeLogger;
   onRequest?: OnRequestHook;
 }): GlanceOctokit {
   const { apiBase } = resolveGitHubUrls(opts.baseURL);
@@ -482,7 +482,7 @@ Declare the field alongside the existing private fields:
   private readonly octokit: GlanceOctokit;
 ```
 
-If `options.onRequest` is not currently part of `GitHubProvider`'s options type, add it, matching how `GitLabProvider` declares the same option. Do not invent a different name.
+`GitHubProvider`'s options type is `{ logger?: ForgeLogger }` today and has no `onRequest`. Widen it to `{ logger?: ForgeLogger; onRequest?: OnRequestHook }`, which is exactly what `GitLabProvider` declares at `GitLabProvider.ts:641`. Use that name and shape, do not invent a different one. This is an additive change to a published constructor signature, so existing callers are unaffected.
 
 - [ ] **Step 2: Reimplement `api()` over Octokit, preserving its contract**
 
