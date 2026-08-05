@@ -960,6 +960,13 @@ export class GitHubProvider implements GitProvider {
     );
   }
 
+  /**
+   * When `shouldRemoveSourceBranch` is set, the branch deletion happens as a
+   * second call after the merge PUT has already succeeded. If that deletion
+   * fails, this method rejects even though the merge itself went through.
+   * A caller must not read a rejection from this method as "the merge
+   * failed"; it can mean "merged, but the source branch is still there."
+   */
   async mergePullRequest(
     projectPath: string,
     mrIid: number,

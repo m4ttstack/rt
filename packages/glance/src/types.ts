@@ -456,16 +456,23 @@ export interface UpdatePullRequestInput {
  * - "squash" — Squash all commits into one before merging.
  * - "rebase" — Rebase the source branch onto the target (fast-forward).
  *
- * When omitted, the provider uses the project's configured default merge method.
+ * When omitted, what happens differs by provider: GitLab's merge endpoint
+ * defers to the project's configured default merge method, matching its web
+ * UI. GitHub's REST merge endpoint has no such deference; it defaults
+ * `merge_method` to "merge" regardless of the repository's configured
+ * default, which only the web UI honors.
  */
 export type MergeMethod = 'merge' | 'squash' | 'rebase';
 
 /**
  * Input for merging (accepting) a pull request / merge request.
  *
- * All fields are **optional**. Omitting them defers to the project-level
- * settings configured in the forge UI (merge method, squash policy,
- * delete-source-branch, etc.). This matches how the web UI works.
+ * All fields are **optional**. On GitLab, omitting them defers to the
+ * project-level settings configured in the forge UI (merge method, squash
+ * policy, delete-source-branch, etc.), matching how the web UI works. On
+ * GitHub, the REST merge endpoint does not defer to those settings the way
+ * the web UI does: for example, an omitted `mergeMethod` becomes "merge",
+ * not the repository's configured default.
  */
 export interface MergePullRequestInput {
   /** Merge commit message. Omit to use the provider/project default. */
@@ -476,7 +483,13 @@ export interface MergePullRequestInput {
   squash?: boolean;
   /** Merge strategy override. Omit to use the project's default merge method. */
   mergeMethod?: MergeMethod;
-  /** Delete source branch after merge. Omit to use project default. */
+  /**
+   * Delete source branch after merge. Omit to use project default.
+   *
+   * On GitHub, this is not always honorable as written: a repository with
+   * `delete_branch_on_merge` enabled deletes the branch regardless of what
+   * this field says, including when it is explicitly `false`.
+   */
   shouldRemoveSourceBranch?: boolean;
   /** SHA that HEAD must match for the merge to proceed (optimistic locking). */
   sha?: string;
