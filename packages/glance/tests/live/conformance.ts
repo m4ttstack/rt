@@ -546,7 +546,7 @@ export async function runWriteConformance(
         report,
         fixture,
         'approvePullRequest',
-        'self-approval is rejected, proving request shape reaches GitHub',
+        'self-approval is rejected with 422, proving request shape reaches GitHub',
         async () => {
           let message = '';
           try {
@@ -557,6 +557,16 @@ export async function runWriteConformance(
           assert(
             message.length > 0,
             'self-approval unexpectedly succeeded, which contradicts the expectation table'
+          );
+          // GitHubProvider.approvePullRequest throws this same shape for ANY
+          // non-ok response, so a bare "did it throw" cannot tell "GitHub
+          // rejected self-approval" apart from "the request never reached
+          // the right endpoint" (a 401, 404, or 403 would pass identically).
+          // Pinning the status code is what actually proves the claim in
+          // the label.
+          assert(
+            /approvePullRequest failed: 422\b/.test(message),
+            `expected a 422 (self-approval rejected), got: ${message}`
           );
         }
       );
