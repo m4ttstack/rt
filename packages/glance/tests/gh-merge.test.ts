@@ -26,10 +26,15 @@ interface MergeCall {
  * Records every api() call and answers all of them 200. `fetchSingleMR` is
  * stubbed too: mergePullRequest re-fetches the PR to return it, and that read
  * is not what these tests are about.
+ *
+ * `headRepoFullName` defaults to the same repo the merge is against, since
+ * that is the ordinary (non-fork) case. Pass a different value, or `null`, to
+ * exercise the fork / unknown-head-repo paths.
  */
 function stubGitHub(
   provider: GitHubProvider,
-  sourceBranch = 'feature-branch'
+  sourceBranch = 'feature-branch',
+  headRepoFullName: string | null = 'acme/repo'
 ): MergeCall[] {
   const calls: MergeCall[] = [];
   (provider as any).api = async (
@@ -38,6 +43,23 @@ function stubGitHub(
     body?: unknown
   ) => {
     calls.push({ method, path, body: body as Record<string, unknown> | undefined });
+    // The raw-PR GET that mergePullRequest issues to resolve the head repo,
+    // distinct from the merge PUT (.../merge) and the git/ref GETs.
+    if (method === 'GET' && /\/pulls\/\d+$/.test(path)) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          head: {
+            sha: 'abc123',
+            ref: sourceBranch,
+            repo: headRepoFullName ? { full_name: headRepoFullName } : null
+          }
+        }),
+        text: async () => '',
+        headers: { get: () => null }
+      } as unknown as Response;
+    }
     return {
       ok: true,
       status: 200,
@@ -178,6 +200,12 @@ describe('GitHubProvider shouldRemoveSourceBranch (MAT-127)', () => {
 
     const deletion = calls.find(c => c.method === 'DELETE');
     expect(deletion?.path).toBe('/repos/acme/repo/git/refs/heads/feature%2Fx');
+    // The delete must follow the merge PUT, not race or precede it: deleting a
+    // branch that has not merged yet would delete unmerged work.
+    const mergeIndex = calls.findIndex(c => c.path.endsWith('/merge'));
+    const deleteIndex = calls.findIndex(c => c.method === 'DELETE');
+    expect(mergeIndex).toBeGreaterThanOrEqual(0);
+    expect(deleteIndex).toBeGreaterThan(mergeIndex);
   });
 
   test('sends no delete_branch field, which GitHub would ignore', async () => {
@@ -414,5 +442,46 @@ describe('GitHubProvider shouldRemoveSourceBranch (MAT-127)', () => {
     // status-code-only inference (which would swallow 422) would be caught.
     expect(calls.some(c => c.method === 'DELETE')).toBe(true);
     expect(calls.some(c => c.method === 'GET' && c.path.includes('git/ref/heads/'))).toBe(true);
+  });
+});
+
+describe('GitHubProvider shouldRemoveSourceBranch targets the head repository (fork PRs)', () => {
+  test('same-repo PR deletes against the base repo, unchanged behavior', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const calls = stubGitHub(provider, 'feature/x', 'acme/repo');
+
+    await provider.mergePullRequest('acme/repo', 1, {
+      shouldRemoveSourceBranch: true
+    });
+
+    const deletion = calls.find(c => c.method === 'DELETE');
+    expect(deletion?.path).toBe('/repos/acme/repo/git/refs/heads/feature%2Fx');
+  });
+
+  test('fork PR deletes against the fork\'s full_name, not the base repo', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const calls = stubGitHub(provider, 'feature/x', 'contributor/repo-fork');
+
+    await provider.mergePullRequest('acme/repo', 1, {
+      shouldRemoveSourceBranch: true
+    });
+
+    const deletion = calls.find(c => c.method === 'DELETE');
+    expect(deletion?.path).toBe(
+      '/repos/contributor/repo-fork/git/refs/heads/feature%2Fx'
+    );
+    // Must not have targeted the base repo for the fork's branch.
+    expect(
+      calls.some(c => c.method === 'DELETE' && c.path.startsWith('/repos/acme/repo/'))
+    ).toBe(false);
+  });
+
+  test('a PR whose head.repo is null throws rather than guessing', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    stubGitHub(provider, 'feature/x', null);
+
+    await expect(
+      provider.mergePullRequest('acme/repo', 1, { shouldRemoveSourceBranch: true })
+    ).rejects.toThrow(/head repository is unknown/);
   });
 });

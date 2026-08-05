@@ -72,6 +72,12 @@ interface GHPullRequest {
   head: {
     sha: string;
     ref: string;
+    /**
+     * The repository the branch lives in. Present on real API responses;
+     * declared optional/nullable here because GitHub returns null when the
+     * fork has since been deleted.
+     */
+    repo?: { full_name: string } | null;
   };
   base: {
     ref: string;
@@ -978,7 +984,23 @@ export class GitHubProvider implements GitProvider {
     const pr = await this.fetchSingleMR(projectPath, mrIid, null);
     if (!pr) throw new Error('Merged PR but failed to fetch it back');
     if (input?.shouldRemoveSourceBranch) {
-      await this.deleteMergedSourceBranch(projectPath, pr.sourceBranch);
+      // `pr.sourceBranch` is `head.ref`, a branch name with no repository
+      // attached. For a same-repo PR that name lives in `projectPath`, but
+      // for a fork PR it lives in the fork, and deleting against
+      // `projectPath` would either 404 (branch never existed there, so the
+      // delete silently does nothing while reporting success) or, worse,
+      // delete an unrelated same-named branch in the base repo. The raw PR
+      // (not the mapped `PullRequest`, which carries no head-repo field)
+      // has to be read to find out which repository actually owns the ref.
+      const raw = await this.fetchPR(projectPath, mrIid);
+      const headRepo = raw?.head?.repo?.full_name;
+      if (!headRepo) {
+        throw new Error(
+          `mergePullRequest merged but could not delete source branch "${pr.sourceBranch}": ` +
+            'the head repository is unknown (fork likely deleted), so deletion cannot be targeted safely.'
+        );
+      }
+      await this.deleteMergedSourceBranch(headRepo, pr.sourceBranch);
     }
     return pr;
   }
@@ -1033,14 +1055,18 @@ export class GitHubProvider implements GitProvider {
    * and (in some cases) "deletion blocked by branch protection". The intent
    * ("ref is gone") is verified by checking whether the ref still exists, not
    * by status code alone. If it is gone, the caller's end state is satisfied.
+   *
+   * `repoPath` is the repository that owns `branch`, which for a fork PR is
+   * the fork, not the base repository the PR was opened against. The caller
+   * resolves that from `head.repo.full_name` before calling in.
    */
   private async deleteMergedSourceBranch(
-    projectPath: string,
+    repoPath: string,
     branch: string
   ): Promise<void> {
     const res = await this.api(
       'DELETE',
-      `/repos/${projectPath}/git/refs/heads/${encodeURIComponent(branch)}`
+      `/repos/${repoPath}/git/refs/heads/${encodeURIComponent(branch)}`
     );
     if (res.ok) return; // Fast path: successful delete.
 
@@ -1049,7 +1075,7 @@ export class GitHubProvider implements GitProvider {
     // deletion failure details.
     const checkRes = await this.api(
       'GET',
-      `/repos/${projectPath}/git/ref/heads/${encodeURIComponent(branch)}`
+      `/repos/${repoPath}/git/ref/heads/${encodeURIComponent(branch)}`
     );
 
     // If the ref is gone (404), the end state is satisfied.
