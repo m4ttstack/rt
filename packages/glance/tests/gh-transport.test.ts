@@ -120,4 +120,19 @@ describe('GitHubProvider transport (real Octokit, fetch stubbed)', () => {
     expect((caught as RequestError).response).toBeUndefined();
     expect((caught as RequestError).status).toBe(500);
   });
+
+  test('an absolute URL passed to restRequest reaches fetch unmangled', async () => {
+    // A blanket colon-escape would rewrite the scheme separator too:
+    // `https://...` becomes `https%3A//...`, which still passes Octokit's
+    // `/^http/` check (see @octokit/endpoint/dist-src/parse.js) so no
+    // baseUrl gets prepended, and fetch then receives a malformed URL. This
+    // path is live for restRequest, documented to accept an absolute URL,
+    // and for fetchAllPages following a Link header.
+    const urls = stubFetch(() => jsonResponse([]));
+
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    await provider.restRequest('GET', 'https://api.github.com/repos/acme/repo/pulls?page=2');
+
+    expect(urls).toEqual(['https://api.github.com/repos/acme/repo/pulls?page=2']);
+  });
 });

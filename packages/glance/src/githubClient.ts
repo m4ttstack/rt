@@ -82,7 +82,13 @@ export function createGitHubClient(opts: {
   // else is forced to retries: 0 here, centrally, so no call site has to
   // remember to opt out.
   octokit.hook.before('request', options => {
-    if (options.method && options.method !== 'GET' && options.method !== 'HEAD') {
+    // endpoint.merge does not normalize case, so a caller that passes a
+    // lowercase method (e.g. restRequest('get', ...)) would otherwise
+    // silently keep retries enabled instead of falling into this guard.
+    // Every in-repo call site already uses uppercase; this is defensive
+    // for restRequest's external, undocumented-case contract.
+    const method = options.method?.toUpperCase();
+    if (method && method !== 'GET' && method !== 'HEAD') {
       options.request = { ...options.request, retries: 0 };
     }
   });

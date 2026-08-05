@@ -1331,9 +1331,18 @@ export class GitHubProvider implements GitProvider {
     // supposed to hand over an already-built path with the colon encoded,
     // but this is the last line of defense: any literal colon that still
     // reaches this point is escaped so it cannot be misread as a
-    // placeholder marker. Only `path` is escaped, never the "${method} "
-    // prefix, since Octokit splits on that leading space to read the verb.
-    const safePath = path.replace(/:/g, '%3A');
+    // placeholder marker. The negative lookahead excludes a colon followed
+    // by a slash, which is a scheme separator (e.g. `https://...`) on an
+    // absolute URL, not a placeholder colon (Octokit's own placeholder
+    // regex, `/:([a-z]\w+)/g`, never matches a colon before `/` either);
+    // escaping it would turn `https://` into `https%3A//`, which still
+    // passes Octokit's `/^http/` check so no baseUrl gets prepended, and
+    // fetch then throws on the malformed URL. `restRequest` is documented
+    // as accepting an absolute URL, and fetchAllPages passes one straight
+    // through when following a Link header, so this path is live. Only
+    // `path` is escaped, never the "${method} " prefix, since Octokit
+    // splits on that leading space to read the verb.
+    const safePath = path.replace(/:(?!\/)/g, '%3A');
     try {
       const res = await this.octokit.request(`${method} ${safePath}`, {
         ...(body !== undefined ? { data: body } : {})
