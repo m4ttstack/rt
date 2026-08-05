@@ -1181,9 +1181,18 @@ export class GitHubProvider implements GitProvider {
         ) {
           return; // Confirmed gone: the requested end state is satisfied.
         }
-        // Cannot verify the end state (a network failure or a non-404
-        // response): fall through and throw with the original deletion
-        // failure below.
+        // Cannot verify the end state: either a non-404 HTTP response (ref
+        // still there, or an unrelated error on the check) or a transport
+        // failure on the check itself (no `.response`, e.g. a dropped
+        // connection). Both fall through to the deletion-failure throw
+        // below, deliberately, including the transport case. The merge
+        // above already succeeded; an unverifiable branch deletion is a
+        // deletion failure, not a merge failure, so it must not propagate
+        // as a raw thrown error the way a merge-PUT transport failure does.
+        // This is a deliberate behavior change from the pre-Octokit code,
+        // which rethrew a response-less fetch failure on the verification
+        // GET untouched, letting it escape mergePullRequest as a hard
+        // failure instead of reaching this message.
       }
 
       throw new Error(

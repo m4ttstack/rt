@@ -29,6 +29,15 @@ interface MergeCall {
  * Adapts an `api()`-shaped stub (method, path, body) => Response into an
  * `octokit.request(route, params)` stub: `RequestError` on a non-ok status,
  * `{status, headers, data}` on success, matching the real client.
+ *
+ * The failure branch parses `data` from `res.text()`, not `res.json()`.
+ * Every MAT-127 fixture puts its real payload in `text()` and leaves
+ * `json()` returning `{}`, so reading `json()` here silently fed `ghError`
+ * (and the hand-built `deleteMergedSourceBranch` message) the wrong body on
+ * every one of those tests, with no assertion catching it. Parsing `text()`
+ * the way the real fetch-backed Octokit client does keeps the body (and
+ * therefore the thrown message) faithful to what each fixture actually
+ * says.
  */
 function toOctokitRequestStub(
   apiFn: (method: string, path: string, body?: unknown) => Promise<Response>
@@ -39,9 +48,16 @@ function toOctokitRequestStub(
     const path = route.slice(spaceIdx + 1);
     const res = await apiFn(method, path, params?.data);
     if (!res.ok) {
-      throw new RequestError(await res.text(), res.status, {
+      const text = await res.text();
+      let data: unknown;
+      try {
+        data = JSON.parse(text);
+      } catch {
+        data = text;
+      }
+      throw new RequestError(text, res.status, {
         request: { method, url: `${API}${path}`, headers: {} },
-        response: { status: res.status, url: '', headers: {}, data: await res.json() }
+        response: { status: res.status, url: '', headers: {}, data }
       });
     }
     return { status: res.status, headers: {}, data: await res.json() };
@@ -57,12 +73,13 @@ function toOctokitRequestStub(
  * that is the ordinary (non-fork) case. Pass a different value, or `null`, to
  * exercise the fork / unknown-head-repo paths.
  *
- * `mergePullRequest`'s `shouldRemoveSourceBranch` path calls `fetchPR`, which
- * now goes through `octokit.request` rather than `api()`. Every per-test
- * override below replaces `.api` (for the DELETE and git/ref/heads checks)
- * but never that raw-PR GET route, so binding `octokit.request` once, here,
- * to this same base `apiFn` keeps it answering correctly no matter what a
- * later override does to `.api`.
+ * `mergePullRequest`'s `shouldRemoveSourceBranch` path calls `fetchPR` and
+ * `deleteMergedSourceBranch`, both of which go through `octokit.request`
+ * rather than `api()`. Binding `octokit.request` here, to this same base
+ * `apiFn`, is only the starting point: a per-test override that needs the
+ * DELETE or git/ref/heads checks to answer differently has to replace
+ * `octokit.request` too (see `overrideApi` below), or the migrated code
+ * keeps talking to this unmodified 200-OK stub while `.api` alone changes.
  */
 function stubGitHub(
   provider: GitHubProvider,
@@ -252,6 +269,27 @@ describe('GitHubProvider merge commit messages (MAT-25)', () => {
   });
 });
 
+describe('GitHubProvider mergePullRequest uses octokit, not the legacy api()', () => {
+  test('the merge PUT goes through octokit.request', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    stubGitHub(provider);
+    // `stubGitHub` binds `.api` and `.octokit.request` to the same
+    // recorder, which cannot tell which seam production code actually
+    // calls (that blindness is what let six MAT-127 tests silently exercise
+    // a stale stub earlier in this migration). Poisoning `.api` alone
+    // proves the merge path no longer depends on it: a silent revert to
+    // `this.api(...)` in `mergePullRequest` would fail this test instead of
+    // passing unnoticed.
+    (provider as any).api = async () => {
+      throw new Error('api() must not be called by the migrated merge path');
+    };
+
+    await expect(
+      provider.mergePullRequest('acme/repo', 1, { commitMessage: 'ship it' })
+    ).resolves.toBeDefined();
+  });
+});
+
 describe('GitHubProvider shouldRemoveSourceBranch (MAT-127)', () => {
   test('deletes the source ref after a successful merge', async () => {
     const provider = new GitHubProvider('https://github.com', 'tok');
@@ -388,9 +426,15 @@ describe('GitHubProvider shouldRemoveSourceBranch (MAT-127)', () => {
       return api(method, path, body);
     });
 
+    // Full message, not just the prefix: pins the status and body to the
+    // DELETE failure (409, "Reference cannot be deleted"), so a mix-up that
+    // read the verification GET's status/body instead would fail here even
+    // though the GET never throws in this fixture.
     await expect(
       provider.mergePullRequest('acme/repo', 1, { shouldRemoveSourceBranch: true })
-    ).rejects.toThrow(/could not delete source branch "main-protected"/);
+    ).rejects.toThrow(
+      'mergePullRequest merged but could not delete source branch "main-protected": 409 {"message":"Reference cannot be deleted"}'
+    );
   });
 
   test('DELETE fails with 422 while the ref is already gone, must resolve', async () => {
@@ -497,9 +541,15 @@ describe('GitHubProvider shouldRemoveSourceBranch (MAT-127)', () => {
       return api(method, path, body);
     });
 
+    // Full message, not just the prefix: pins the status and body to the
+    // DELETE failure (422, "Reference cannot be deleted"), so a mix-up that
+    // read the verification GET's status/body instead would fail here even
+    // though the GET never throws in this fixture.
     await expect(
       provider.mergePullRequest('acme/repo', 1, { shouldRemoveSourceBranch: true })
-    ).rejects.toThrow(/could not delete source branch "release\/v1\.2\.3"/);
+    ).rejects.toThrow(
+      'mergePullRequest merged but could not delete source branch "release/v1.2.3": 422 {"message":"Reference cannot be deleted"}'
+    );
 
     // Assert that the existence check was performed, so a future revert to
     // status-code-only inference (which would swallow 422) would be caught.
