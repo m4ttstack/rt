@@ -677,8 +677,15 @@ async function mergeBlockDetail(fixture: ProviderFixture, iid: number): Promise<
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
       const fresh = await fixture.provider.fetchSingleMR(fixture.projectPath, iid, null);
+      // Report the observed value only. This used to name a specific cause
+      // (a project setting requiring a passing pipeline), which was true
+      // when that setting was still enabled on the fixture; now that it's
+      // disabled, the only way this string still fires is the transient
+      // mergeability race waitForMergeReadiness exists to wait out, where
+      // that diagnosis would be wrong. Naming a cause this function cannot
+      // actually distinguish from the others is worse than naming none.
       return fresh?.detailedMergeStatus
-        ? `detailedMergeStatus="${fresh.detailedMergeStatus}" (GitLab's only_allow_merge_if_pipeline_succeeds project setting blocks merge until the pipeline passes)`
+        ? `GitLab reported detailedMergeStatus="${fresh.detailedMergeStatus}"; the merge could not proceed`
         : null;
     } catch {
       // fall through to the retry on attempt 0; give up quietly on attempt 1
