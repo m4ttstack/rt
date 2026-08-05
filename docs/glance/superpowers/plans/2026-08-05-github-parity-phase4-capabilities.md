@@ -3186,6 +3186,53 @@ git commit -m "test: report fixture conditions as inconclusive and instrument th
 
 ---
 
+### Task 20: Act on what the instrumentation proved
+
+Two changes, each unblocked by evidence the previous tasks deliberately refused to act without.
+
+**MAT-128 is now root-caused, not hypothesized.** Three runs, with the timing instrumentation an earlier task added:
+
+| Run | Run status when `retryJob` was called | Result |
+| --- | --- | --- |
+| 1 | `completed`, called 1.9s later | pass |
+| 2 | `completed`, called 1.4s later | pass |
+| 3 | `in_progress` | 403 `The workflow run containing this job is already running` |
+
+The *job* had completed in all three. The *workflow run* had not, in the one that failed, and GitHub's error says so literally. Phase 1 proposed this and could not prove it; phase 2 reproduced the failure without explaining it; phase 3 made it pass by accident and drew no conclusion. It is now measured.
+
+**The GitLab merge stall is now characterised.** The instrumentation recorded `preparing x1 -> unchecked x1 -> checking x12`: `detailedMergeStatus` reaches `checking` and stays there past the 20 second bound. Phase 1 measured that transitional window at roughly one second. It is genuinely far longer on this fixture now, which is exactly the condition under which Task 19's brief said raising the bound stops being a guess.
+
+**Files:**
+- Modify: `packages/glance/tests/live/conformance.ts`
+
+- [ ] **Step 1: Wait for the workflow run, not just the job, before retrying**
+
+An earlier task forbade adding any wait before the `retryJob` call, because it would have corrupted the measurement that produced the table above. That measurement is complete, so the prohibition is lifted for this specific change and no other.
+
+Before calling `retryJob` on GitHub, poll until the workflow run itself reports `completed`, not merely until the job does. Use the harness's existing `pollUntil`. Keep the timing instrumentation exactly as it is: it should still print, and its recorded run status should now read `completed` on every run, which is how a future reader confirms this fix is still working.
+
+If the run does not reach `completed` within a sane bound, that is a fixture condition rather than a `retryJob` defect. Report `Inconclusive` naming it, following the convention this file already uses. A 403 from `retryJob` after the run has genuinely completed must still be a hard failure: that would be a new and real defect, and it is the whole reason the check exists.
+
+- [ ] **Step 2: Raise the merge-readiness bound, with the evidence in the comment**
+
+Raise `waitForMergeReadiness`'s timeout from 20 seconds. Choose a value you can justify against the observed data rather than a round number chosen for comfort, and say in the comment what was observed (`preparing`, then `unchecked`, then `checking` for the remainder of 20 seconds) and that phase 1 measured this window at about a second, so the bound tracks a fixture that has changed rather than an arbitrary patience level.
+
+Keep the instrumentation. If a future run stalls past the new bound, the next reader needs the same observation trail this one produced, and losing it to a passing run would waste what it cost to get.
+
+Do not silence the failure any other way. Raising a bound because measurement justified it is legitimate; catching the timeout, or treating a stuck merge as inconclusive, would hide a genuine merge defect and is not.
+
+- [ ] **Step 3: Verify and commit**
+
+The live harness verifies this and running it is a separate step. Type-check and run the unit suite.
+
+```bash
+cd packages/glance && bun run check-types && bun test
+git add packages/glance/tests/live/conformance.ts
+git commit -m "test: wait for the workflow run to finish, and widen merge readiness to the measured window"
+```
+
+---
+
 ## Follow-ups this phase does not close
 
 Record these rather than doing them:
