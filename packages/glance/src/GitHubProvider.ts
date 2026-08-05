@@ -672,7 +672,11 @@ export class GitHubProvider implements GitProvider {
       )
     ]);
 
-    // Group review comments into threads (by pull_request_review_id and in_reply_to_id)
+    // Group review comments into threads by their reply root. GitHub does not
+    // return a thread id on REST review comments, so the root comment stands
+    // in for one: every reply carries `in_reply_to_id` pointing at it, and
+    // GraphQL reports that same comment as the thread's first comment, which
+    // is what lets Task 3 join the two.
     const discussions: Discussion[] = [];
 
     // Issue comments become individual discussions (no threading)

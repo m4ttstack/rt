@@ -220,7 +220,9 @@ throw. Because both are optional on the interface, `tsc` never objected, and
   `fetchPullRequestByBranch` calls, so a board resolving twenty branches makes twenty
   round-trips where GitLab makes one. A performance gap rather than a correctness one,
   but a real one for gitq's board.
-- **`watchEvents`.** Tracked as part of the `canWatchEvents` work in phase 4.
+- **`watchEvents`.** Deferred to phase 5 along with the rest of the
+  `canWatchEvents` work. See that bullet in the phase 4 section for the
+  measured reasons.
 
 The expectation table gets a fourth state, `absent`, to distinguish "undefined property"
 from "throws when called". They fail differently at the call site, so folding them
@@ -256,18 +258,70 @@ that manually check `if (!res.ok)` change. This deletes boilerplate rather than 
 
 ### Phase 4: new capabilities
 
-Each flips a flag from `false` to `true`.
+The first three flip a flag from `false` to `true`. `canWatchEvents` does not:
+it is deferred to phase 5.
 
 - **`canResolveDiscussions` (MAT-27).** GraphQL `resolveReviewThread` and
-  `unresolveReviewThread`. The largest single item: it needs thread node IDs, which the
-  current REST-only `fetchMRDiscussions` never obtains, since it groups by
-  `pull_request_review_id`. Realistically this means a GraphQL path for discussions.
-- **`canUnapprove`.** The review dismissal endpoint, after locating the current user's
-  review ID.
+  `unresolveReviewThread`. The largest single item: it needs thread node IDs,
+  which the current REST-only `fetchMRDiscussions` never obtains. It groups
+  review comments by `in_reply_to_id ?? id` (`GitHubProvider.ts:691`), not by
+  `pull_request_review_id` as an earlier draft of this document claimed. That
+  reply-root is the same comment GraphQL reports as a review thread's first
+  comment, so the REST grouping and the GraphQL thread list are joinable on
+  `comments(first: 1) { nodes { databaseId } }`.
+
+  **Decision, made in the phase 4 survey:** `Discussion.id` keeps its current
+  `gh-review-thread-<rootCommentId>` form and the mutations resolve it to a
+  node ID at call time. MAT-27's acceptance criteria contemplated changing
+  `Discussion.id` to the node ID instead; that is a change of a value
+  consumers may have persisted, on a package still at 0.13.2 with unbumped
+  consumer-visible changes already in main. The cost of the chosen route is
+  one extra GraphQL read per mutation.
+- **`canUnapprove`.** The review dismissal endpoint
+  (`PUT /repos/{owner}/{repo}/pulls/{n}/reviews/{review_id}/dismissals`),
+  after locating the current user's review ID. Three divergences from
+  GitLab's `unapprove` that the implementation has to answer:
+  - GitHub requires a `message` on every dismissal and posts it to the PR
+    timeline. `unapprovePullRequest(projectPath, mrIid)` has nowhere to get
+    one from, so the provider sends a fixed, plainly-attributed string.
+  - Dismissal leaves a `DISMISSED` review in the list rather than removing
+    the approval record. `toPullRequest` (`GitHubProvider.ts:2024-2040`)
+    keeps only the newest review per user, so the approval does drop out.
+    That is read-verified, not live-verified.
+  - GitHub keeps every review ever submitted, so the newest review per user
+    is the only one worth dismissing. Dismissing the first `APPROVED` one
+    found would revive a stale approval.
 - **`canAutoMerge`.** GraphQL `enablePullRequestAutoMerge` and
-  `disablePullRequestAutoMerge`, both needing the PR node ID.
-- **`canWatchEvents`.** Poll `/repos/{owner}/{repo}/events`, translated into the same
-  `InvalidationBatch` contract the GitLab poller already emits.
+  `disablePullRequestAutoMerge`, both needing the PR node ID (REST returns it
+  as `node_id`). The fixture is already provisioned for this: a read-only
+  check during the phase 4 survey confirmed `allow_auto_merge: true` on
+  `m4ttheweric/glance-conformance` and a required `always-passes` status
+  check on `main`. The open risk is a race rather than a missing setting:
+  GitHub rejects enabling auto-merge on a pull request that is already
+  mergeable, so the harness has to land the call before the required check
+  reports. Phase 4 resolves that with a live spike rather than a guess.
+- **`canWatchEvents`.** Deferred to phase 5. The one-line claim this document
+  used to make -- poll `/repos/{owner}/{repo}/events` and translate into the
+  same `InvalidationBatch` contract -- understated it. Measured against the
+  live fixture feed during the phase 4 survey:
+  - `X-Poll-Interval: 60` and `Cache-Control: private, max-age=300`. GitHub
+    asks for a 60s cadence over a feed cached for five minutes, against a
+    watcher whose default is 15s. GitHub freshness is minutes, not seconds.
+  - Event ids do not order with `created_at`. Observed ids descended
+    (`16777788402`, `16777332085`, `16777142192`) while timestamps ran
+    `07:17:11`, `07:17:23`, `07:17:17`. `EventsPoller` derives `since` as
+    `max(created_at)` over fresh events and has a timestamp-fallback filter
+    that assumes the two agree (`EventsPoller.ts:174-192`).
+  - No `since`/`after` request parameter exists; the `Link` header carries
+    only `page`. The day-exclusive cursor strategy `FetchEvents` is typed
+    around has no GitHub analog, so filtering is entirely client-side over a
+    feed capped at 300 events.
+  - Ids are strings. `EventCursor.lastEventId` is `number | null` and is
+    publicly exported (`index.ts:54`) for consumers to persist.
+  - `EventsPoller` is typed on `GitLabEvent` and `classifyEvent` is pure
+    GitLab `action_name` semantics. Workflow and check-run events are absent
+    from the feed, so `pipelines` invalidation can only be inferred from
+    pushes.
 
 **Mandatory for every mutation added here.** `GitHubProvider.graphql<T>()` (line 1213)
 swallows transport, HTTP, and GraphQL errors alike and returns `null`, warning only.
