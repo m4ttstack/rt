@@ -20,6 +20,15 @@ export type GlanceOctokit = InstanceType<typeof GlanceOctokitBase>;
 /**
  * GitHub Enterprise serves REST under /api/v3 but GraphQL under /api/graphql,
  * not beneath the REST root, so the two cannot be derived from one prefix.
+ *
+ * `graphqlURL` is no longer read anywhere in `src/` -- `GitHubProvider`'s
+ * `graphql()` now calls `octokit.graphql`, which derives the same value
+ * itself from the REST `apiBase` (see `@octokit/graphql`'s
+ * `GHES_V3_SUFFIX_REGEX`). It stays here, and its own test in
+ * `github-client.test.ts` stays with it, as a standalone spec of the split
+ * this function's docstring describes: it is the value `octokit.graphql`
+ * is expected to arrive at independently, and losing this pin would remove
+ * the one place that fact is written down and checked.
  */
 export function resolveGitHubUrls(baseURL: string): {
   apiBase: string;
@@ -49,6 +58,15 @@ export function createGitHubClient(opts: {
     auth: opts.token,
     baseUrl: apiBase,
     throttle: {
+      // `@octokit/plugin-throttling` keys its rate-limit Bottleneck groups
+      // in module-scope singletons (`groups.write`, `groups.global`, ...),
+      // defaulting every caller to the same `id: "no-id"` when none is
+      // given. Without a per-instance id here, two `GitHubProvider`s for
+      // different hosts and tokens would throttle and pace each other
+      // process-wide even though they share no actual rate-limit budget.
+      // This only decouples that bookkeeping; the pacing rules themselves
+      // (minTime, maxConcurrent) are unchanged.
+      id: `${apiBase}::${opts.token}`,
       onRateLimit: (retryAfter, options, _octokit, retryCount) => {
         opts.log.warn('GitHub rate limit hit', {
           method: options.method,
@@ -56,6 +74,16 @@ export function createGitHubClient(opts: {
           retryAfter,
           retryCount
         });
+        if (isGraphQLRequest(options)) {
+          // `graphql()`'s documented contract (MAT-133, owned by phase 4)
+          // is to swallow this outcome and return null immediately, the
+          // same way it swallows an HTTP failure or a GraphQL-level error.
+          // Retrying would wait out `x-ratelimit-reset` in real time --
+          // up to roughly two hours for a primary rate limit, twice, since
+          // the retry plugin's cap is 2 -- before returning the exact same
+          // null, which helps no caller and only delays it.
+          return false;
+        }
         // Two attempts absorb a quota window boundary. Retrying indefinitely
         // would turn a quota exhaustion into a hang with no upper bound.
         return retryCount < 2;
@@ -67,6 +95,12 @@ export function createGitHubClient(opts: {
           retryAfter,
           retryCount
         });
+        if (isGraphQLRequest(options)) {
+          // Same reasoning as `onRateLimit` above: `graphql()` swallows this
+          // by design, so waiting out `retry-after` (or the 60s fallback),
+          // up to twice, serves nobody.
+          return false;
+        }
         return retryCount < 2;
       }
     }
@@ -115,6 +149,18 @@ export function createGitHubClient(opts: {
   return octokit;
 }
 
+/**
+ * A GraphQL request's URL is either the relative `/graphql` (github.com) or
+ * the rewritten absolute `.../api/graphql` (GHES) -- see
+ * `resolveGitHubUrls`'s docstring and `@octokit/graphql`'s
+ * `GHES_V3_SUFFIX_REGEX`. No REST route template ever contains that
+ * substring, so a plain `includes` check is enough to tell the two apart
+ * without needing to know which host produced the URL.
+ */
+function isGraphQLRequest(options: { url?: string }): boolean {
+  return (options.url ?? '').includes('/graphql');
+}
+
 function emit(
   hook: OnRequestHook,
   started: WeakMap<object, number>,
@@ -124,7 +170,7 @@ function emit(
   const at = started.get(options as object);
   safeEmit(hook, {
     op: `gh.${options.method ?? 'GET'} ${options.url ?? ''}`.trim(),
-    transport: 'rest',
+    transport: isGraphQLRequest(options) ? 'graphql' : 'rest',
     method: options.method ?? 'GET',
     path: options.url ?? '',
     durationMs: at === undefined ? 0 : performance.now() - at,

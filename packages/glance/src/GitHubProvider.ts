@@ -1531,19 +1531,35 @@ export class GitHubProvider implements GitProvider {
    * `resolveGitHubUrls` computes separately. See
    * `@octokit/graphql/dist-src/graphql.js`'s `GHES_V3_SUFFIX_REGEX`. Both
    * hosts are covered by tests since no fixture otherwise exercises GHES.
+   *
+   * `createGitHubClient` also declines to retry a rate limit hit on this
+   * transport (see its `onRateLimit`/`onSecondaryRateLimit`): without that,
+   * a GraphQL response reporting `RATE_LIMITED` or a secondary rate limit
+   * would retry through the REST retry budget before this catch ever ran,
+   * turning an immediate null into a wait of minutes to hours -- exactly
+   * the kind of caller-visible delay this swallow exists to avoid.
    */
   private async graphql<T>(
     query: string,
     variables: Record<string, unknown>
   ): Promise<T | null> {
     try {
-      return await this.octokit.graphql<T>(query, variables);
+      return (await this.octokit.graphql<T>(query, variables)) ?? null;
     } catch (err) {
-      if (err instanceof GraphqlResponseError) {
-        this.log.warn('GitHub GraphQL returned errors', {
-          messages: err.errors?.map(e => e.message) ?? []
-        });
+      const messages = graphqlErrorMessages(err);
+      if (messages) {
+        this.log.warn('GitHub GraphQL returned errors', { messages });
         return null;
+      }
+      if (err instanceof GraphqlResponseError) {
+        // `graphqlErrorMessages` returned null above, meaning `err.errors`
+        // was empty. `@octokit/graphql` throws whenever the response body
+        // has an `errors` key at all -- `if (response.data.errors)`, which
+        // is true even for `[]`, an empty array being truthy in JS -- but
+        // the old bare-fetch code tested `payload.errors?.length`, so an
+        // empty array read as success. Reproduce that by falling through to
+        // whatever data the response actually carried.
+        return (err.data as T | undefined) ?? null;
       }
       if (err instanceof RequestError && err.response) {
         this.log.warn('GitHub GraphQL request failed', { status: err.status });
@@ -2136,4 +2152,38 @@ function toResponse(
   const link = headers.link;
   if (typeof link === 'string') init.headers = { Link: link };
   return new Response(body, init);
+}
+
+/**
+ * Read GraphQL-level error messages off a thrown error, for `graphql()`'s
+ * MAT-133 swallow. Two different shapes carry this same "the response was a
+ * 200 with a GraphQL-level error" outcome:
+ *
+ * - `GraphqlResponseError`, thrown by `@octokit/graphql` itself whenever the
+ *   response has a non-empty `errors` array.
+ * - A plain `Error` with a `.data.errors` array, thrown by
+ *   `@octokit/plugin-throttling`'s own `RATE_LIMITED`-in-body detection (see
+ *   `wrap-request.js`) -- a different class, but the same underlying
+ *   GraphQL error payload the old bare-fetch code read directly off
+ *   `payload.errors`.
+ *
+ * Returns null (not a match) for an empty `errors` array so a caller falls
+ * through to treating the response as a success, matching the old code's
+ * `payload.errors?.length` check rather than a truthiness check on the
+ * array itself.
+ */
+function graphqlErrorMessages(err: unknown): string[] | null {
+  if (err instanceof GraphqlResponseError) {
+    return err.errors && err.errors.length > 0
+      ? err.errors.map(e => e.message)
+      : null;
+  }
+  if (err instanceof Error) {
+    const data = (err as unknown as { data?: { errors?: unknown } }).data;
+    if (Array.isArray(data?.errors)) {
+      const errors = data.errors as Array<{ message: string }>;
+      return errors.length > 0 ? errors.map(e => e.message) : null;
+    }
+  }
+  return null;
 }

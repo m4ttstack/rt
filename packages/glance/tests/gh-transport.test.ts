@@ -447,17 +447,24 @@ describe('GitHubProvider transport: reviews pagination (real octokit.paginate)',
     });
 
     const provider = new GitHubProvider('https://github.com', 'tok');
-    // `@octokit/plugin-throttling` classifies any `/graphql` request as
-    // `isGraphQL` and routes it through the SAME process-wide "write"
-    // Bottleneck group (`minTime: 1000`, keyed by the shared default id
-    // "no-id") that the write tests above already exercise -- see
-    // `@octokit/plugin-throttling/dist-src/wrap-request.js`. Task 8 moved
-    // `graphql()` onto `octokit.graphql`, so this test's single GraphQL call
-    // (for thread counts) now queues behind that shared group too. The
-    // group's internal "next allowed dispatch" clock already ran ahead of
-    // real time from the earlier `withInstantTimers`-collapsed write tests,
-    // so without collapsing timers here too, this test pays that backlog
-    // back in real wall-clock time and blows past the default 5s timeout.
+    // A GraphQL request is a POST, so `@octokit/plugin-throttling`'s
+    // `isWrite` (`options.method !== "GET" && !== "HEAD"`) is already true
+    // for it and routes it into the SAME process-wide "write" Bottleneck
+    // group (`minTime: 1000`, keyed by the shared default id "no-id") that
+    // the write tests above already exercise -- see
+    // `@octokit/plugin-throttling/dist-src/wrap-request.js`. (The plugin
+    // also has a separate `isGraphQL` flag there, but that only gates a
+    // GraphQL-specific rate-limit check later in the same function; it is
+    // not what puts GraphQL in the write group -- `isWrite` alone already
+    // does. Proof: a GHES host posts to `/api/graphql`, which the plugin's
+    // `isGraphQL` check, `pathname.startsWith('/graphql')`, does not match,
+    // yet GHES shows this same 1s pacing.) Task 8 moved `graphql()` onto
+    // `octokit.graphql`, so this test's single GraphQL call (for thread
+    // counts) now queues behind that shared group too. The group's internal
+    // "next allowed dispatch" clock already ran ahead of real time from the
+    // earlier `withInstantTimers`-collapsed write tests, so without
+    // collapsing timers here too, this test pays that backlog back in real
+    // wall-clock time and blows past the default 5s timeout.
     const prs = await withInstantTimers(() =>
       provider.fetchPullRequests({
         iids: [5],
@@ -646,5 +653,115 @@ describe('GitHubProvider transport: graphql() swallows failures (MAT-133, phase 
     expect((warnings[0]?.payload as { message: string }).message).toContain(
       'ECONNREFUSED'
     );
+  });
+
+  test('a 200 reporting a RATE_LIMITED GraphQL error swallows after exactly one fetch, not a real wait for x-ratelimit-reset', async () => {
+    // `@octokit/plugin-throttling` treats a GraphQL response whose `errors`
+    // array contains a `RATE_LIMITED` entry as a retryable rate limit (see
+    // `wrap-request.js`), which would otherwise retry through
+    // `createGitHubClient`'s REST retry budget (2 attempts) before this
+    // catch ever ran -- waiting out `x-ratelimit-reset` in real time each
+    // time. Before this fix that measured as 3 fetches and a real wait
+    // (collapsed here only by `withInstantTimers`); `createGitHubClient`'s
+    // `onRateLimit` now declines to retry a GraphQL request, so this must
+    // still resolve after exactly one fetch, with the exact same warn the
+    // old bare-fetch code emitted for any GraphQL-level error.
+    const resetInTwoHours = Math.floor(Date.now() / 1000) + 7200;
+    const urls = stubFetch(() =>
+      new Response(
+        JSON.stringify({
+          data: null,
+          errors: [
+            { type: 'RATE_LIMITED', message: 'API rate limit exceeded for installation.' }
+          ]
+        }),
+        {
+          status: 200,
+          headers: {
+            'content-type': 'application/json',
+            'x-ratelimit-remaining': '0',
+            'x-ratelimit-reset': String(resetInTwoHours)
+          }
+        }
+      )
+    );
+    const { warnings, logger } = makeLogSpy();
+
+    const provider = new GitHubProvider('https://github.com', 'tok', { logger });
+    const data = await withInstantTimers(() =>
+      (provider as any).graphql('query { viewer { login } }', {})
+    );
+
+    expect(urls).toHaveLength(1);
+    expect(data).toBeNull();
+    // `createGitHubClient`'s own "GitHub rate limit hit" log (pre-existing
+    // REST instrumentation) also fires once; the assertion here is on
+    // `graphql()`'s own MAT-133 warn, which must match the pre-Task-8 shape.
+    expect(warnings).toContainEqual({
+      message: 'GitHub GraphQL returned errors',
+      payload: { messages: ['API rate limit exceeded for installation.'] }
+    });
+  });
+
+  test('a 403 secondary rate limit swallows after exactly one fetch, not a real 30-120s wait', async () => {
+    // Same shape as the RATE_LIMITED case above but on the HTTP-failure
+    // path: before this fix this measured as 3 fetches and a real wait of
+    // up to `retry-after` (or the 60s fallback) twice.
+    // `onSecondaryRateLimit` now declines for a GraphQL request too.
+    const urls = stubFetch(() =>
+      new Response(
+        JSON.stringify({
+          message: 'You have exceeded a secondary rate limit. Please wait a few minutes.'
+        }),
+        {
+          status: 403,
+          headers: { 'content-type': 'application/json', 'retry-after': '30' }
+        }
+      )
+    );
+    const { warnings, logger } = makeLogSpy();
+
+    const provider = new GitHubProvider('https://github.com', 'tok', { logger });
+    const data = await withInstantTimers(() =>
+      (provider as any).graphql('query { viewer { login } }', {})
+    );
+
+    expect(urls).toHaveLength(1);
+    expect(data).toBeNull();
+    expect(warnings).toContainEqual({
+      message: 'GitHub GraphQL request failed',
+      payload: { status: 403 }
+    });
+  });
+
+  test('an empty errors array is read as success, not a GraphQL error, matching the old payload.errors?.length check', async () => {
+    // `@octokit/graphql` throws `GraphqlResponseError` whenever the response
+    // body has an `errors` key at all (`if (response.data.errors)`, true
+    // even for `[]`), but the old bare-fetch code tested
+    // `payload.errors?.length`, so an empty array read as success.
+    stubFetch(() => jsonResponse({ data: { ok: true }, errors: [] }));
+    const { warnings, logger } = makeLogSpy();
+
+    const provider = new GitHubProvider('https://github.com', 'tok', { logger });
+    // A GraphQL POST is a write for throttling purposes, so this shares the
+    // same real-time backlog every other `graphql()` test in this suite
+    // hits -- see the "two review pages aggregate" test's comment above.
+    const data = await withInstantTimers(() =>
+      (provider as any).graphql('query { x }', {})
+    );
+
+    expect(data).toEqual({ ok: true });
+    expect(warnings).toEqual([]);
+  });
+
+  test('a 200 with no data key returns null, not undefined, matching the declared Promise<T | null>', async () => {
+    stubFetch(() => jsonResponse({}));
+    const provider = new GitHubProvider('https://github.com', 'tok');
+
+    const data = await withInstantTimers(() =>
+      (provider as any).graphql('query { x }', {})
+    );
+
+    expect(data).toBeNull();
   });
 });
