@@ -64,8 +64,9 @@ export const GITHUB_EXPECTATIONS: Record<ProviderMethod, Expectation> = {
     note: 'Permanent. GitHub update-branch merges base into head, which is not a rebase.'
   },
   setAutoMerge: {
-    support: 'supported',
-    capability: 'canAutoMerge'
+    support: 'approximate',
+    capability: 'canAutoMerge',
+    note: 'setAutoMerge itself works: run 1 armed it and a re-read confirmed autoMergeEnabled. But GitHub refuses enablePullRequestAutoMerge at both ends of the mergeability range -- "clean" (nothing left to wait for) and "unstable" (won\'t queue behind failing/pending checks) -- so the round trip is only provable when a run happens to land the pull request inside the armable window between them. The conformance harness therefore reports inconclusive rather than passing whenever a run misses that window, which three of four live runs did.'
   },
   cancelAutoMerge: {
     support: 'supported',

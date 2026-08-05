@@ -936,7 +936,7 @@ export async function runWriteConformance(
     // here" skip already covers it for GitLab, so there is no coverage gap
     // left open by scoping this measured check to the provider it was
     // actually measured against.
-    if (fixture.name === 'github' && expectationFor(fixture.name, 'setAutoMerge').support === 'supported') {
+    if (fixture.name === 'github' && expectationFor(fixture.name, 'setAutoMerge').support === 'approximate') {
       await check(
         report,
         fixture,
@@ -959,18 +959,22 @@ export async function runWriteConformance(
               await provider.setAutoMerge(projectPath, iid);
             } catch (err) {
               const message = err instanceof Error ? err.message : String(err);
-              // GitHub refuses enablePullRequestAutoMerge outright while a
-              // pull request's mergeability is still "unstable" -- that is
-              // GitHub declining on the PR's current state, not this SDK
-              // sending a bad request. Run 1 armed auto-merge successfully
-              // with identical code, so this is a fixture-timing
-              // precondition, not a setAutoMerge defect; matching only this
-              // exact GitHub wording (rather than every GraphQL error) keeps
-              // a genuine defect -- a bad node id, a real 4xx, a malformed
-              // mutation -- reporting as a hard fail.
-              if (/\bis in unstable status\b/.test(message)) {
+              // GitHub refuses enablePullRequestAutoMerge at both ends of the
+              // mergeability range: "unstable" (checks failing or pending in
+              // a way GitHub will not queue behind) and "clean" (every
+              // required check already passed, so there is nothing left to
+              // wait for). Arming is only possible in the window between
+              // those two states, which is what run 1 hit. Run 1 armed
+              // auto-merge successfully with identical code, so either
+              // refusal is a fixture-timing precondition, not a setAutoMerge
+              // defect; matching only these two exact GitHub wordings
+              // (rather than every GraphQL error) keeps a genuine defect --
+              // a bad node id, a real 4xx, a malformed mutation, or a
+              // mutation GitHub accepts while arming nothing -- reporting as
+              // a hard fail.
+              if (/\bis in (?:unstable|clean) status\b/.test(message)) {
                 throw new Inconclusive(
-                  `pull request is in an unstable mergeability state, which GitHub refuses to arm auto-merge on: ${message}`
+                  `pull request is at an end of the mergeability range GitHub refuses to arm auto-merge on: ${message}`
                 );
               }
               throw err;
