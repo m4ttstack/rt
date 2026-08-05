@@ -374,4 +374,45 @@ describe('GitHubProvider shouldRemoveSourceBranch (MAT-127)', () => {
       provider.mergePullRequest('acme/repo', 1, { shouldRemoveSourceBranch: true })
     ).rejects.toThrow(/could not delete source branch/);
   });
+
+  test('DELETE returns 422 (ambiguous) while the ref is still present, must throw', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const calls = stubGitHub(provider, 'release/v1.2.3');
+    const api = (provider as any).api;
+    (provider as any).api = async (method: string, path: string, body?: unknown) => {
+      if (method === 'DELETE') {
+        calls.push({ method, path, body: undefined });
+        return {
+          ok: false,
+          status: 422,
+          json: async () => ({}),
+          text: async () => '{"message":"Reference cannot be deleted"}',
+          headers: { get: () => null }
+        } as unknown as Response;
+      }
+      // GET check: the ref still exists. 422 is ambiguous (can mean either
+      // "reference does not exist" or "deletion blocked"), so the fix must
+      // verify the actual state. If it still exists, this is a failure.
+      if (method === 'GET' && path.includes('git/ref/heads/')) {
+        calls.push({ method, path, body: undefined });
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({}),
+          text: async () => '{}',
+          headers: { get: () => null }
+        } as unknown as Response;
+      }
+      return api(method, path, body);
+    };
+
+    await expect(
+      provider.mergePullRequest('acme/repo', 1, { shouldRemoveSourceBranch: true })
+    ).rejects.toThrow(/could not delete source branch "release\/v1\.2\.3"/);
+
+    // Assert that the existence check was performed, so a future revert to
+    // status-code-only inference (which would swallow 422) would be caught.
+    expect(calls.some(c => c.method === 'DELETE')).toBe(true);
+    expect(calls.some(c => c.method === 'GET' && c.path.includes('git/ref/heads/'))).toBe(true);
+  });
 });
