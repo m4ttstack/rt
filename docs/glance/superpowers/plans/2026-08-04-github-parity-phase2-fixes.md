@@ -531,10 +531,11 @@ describe('GitHubProvider shouldRemoveSourceBranch (MAT-127)', () => {
 
   test('an already-deleted ref is the requested end state, not an error', async () => {
     const provider = new GitHubProvider('https://github.com', 'tok');
-    stubGitHub(provider);
+    const calls = stubGitHub(provider);
     const api = (provider as any).api;
     (provider as any).api = async (method: string, path: string, body?: unknown) => {
       if (method === 'DELETE') {
+        calls.push({ method, path, body: undefined });
         return {
           ok: false,
           status: 422,
@@ -549,9 +550,14 @@ describe('GitHubProvider shouldRemoveSourceBranch (MAT-127)', () => {
     // The repository-level delete_branch_on_merge setting races this call, so
     // "already gone" has to read as success or every merge on a repo with that
     // setting enabled would throw.
-    expect(await provider.mergePullRequest('acme/repo', 1, {
+    const pr = await provider.mergePullRequest('acme/repo', 1, {
       shouldRemoveSourceBranch: true
-    })).toBeDefined();
+    });
+
+    expect(pr.iid).toBe(1);
+    // The deletion must still have been attempted: swallowing a 422 is only
+    // correct if the call happened and the ref was genuinely already gone.
+    expect(calls.some(c => c.method === 'DELETE')).toBe(true);
   });
 
   test('a real deletion failure throws rather than reporting a silent no-op', async () => {
