@@ -1,6 +1,6 @@
 # GitHub Parity Phase 4: live verification results
 
-Twenty-one tasks. Five live runs against `m4ttheweric/glance-conformance` and `m4tthew-dev/glance-test-repo`. The fifth run is the first in this project's history where the conformance runner exits zero.
+Twenty-one tasks, plus a fix wave after the whole-branch review. Six live runs against `m4ttheweric/glance-conformance` and `m4tthew-dev/glance-test-repo`. Run five was the first in this project's history where the conformance runner exits zero; run six repeats it at the exact commit that merges.
 
 ```
 github: 33 passed, 0 failed, 9 skipped
@@ -8,7 +8,9 @@ gitlab: 32 passed, 0 failed, 8 skipped
 HARNESS_EXIT=0
 ```
 
-That exit code is the headline and also the least interesting thing in this document. What the five runs found on the way there matters more.
+Run six exists because run five was taken before the final fix wave, which changed provider source. A results document describing code that is not the code being merged would be the same category of claim this phase spent twenty-one tasks removing.
+
+That exit code is the headline and also the least interesting thing in this document. What the six runs found on the way there matters more.
 
 ## The one that should have shipped broken
 
@@ -94,6 +96,18 @@ The auto-merge spike merged into `main`, adding `automerge-spike.md` and a merge
 Left in place by decision. The repository root already held seven `conformance-merge-*.md` files from prior runs, because every merge cycle permanently adds one file and two commits by design, so this is one more artifact of a kind already accumulating. It is recorded here rather than reverted.
 
 Five runs later the root holds sixteen files and the first page of commits shows thirty. Any claim of the form "commit count stayed stable across runs" remains meaningless for this fixture, as phase 1 already noted.
+
+## What the whole-branch review caught that per-task review could not
+
+Twenty-one tasks were each reviewed against their own brief. Three defects survived that, because no brief covered them.
+
+**The shared interface still said "GitLab-only."** `GitProvider.ts` documented `unapprovePullRequest`, `setAutoMerge`, `cancelAutoMerge`, `resolveDiscussion`, and `unresolveDiscussion` as GitLab-only, after this branch implemented all of them on GitHub and flipped three flags to true. No task's brief touched that file. It ships to consumers and is the first thing they read, so the capability flags would have been inert for exactly the capabilities this phase added.
+
+**`unapprovePullRequest` threw on a pull request GitHub reports as approved.** Only `APPROVE` and `REQUEST_CHANGES` change a reviewer's state; `COMMENT` does not. Approving and then leaving review comments made the method report no approval to dismiss. `gh-unapprove.test.ts` built almost exactly that fixture but ordered the `COMMENTED` review between two approvals, so the bug could not fire: a test agreeing with a broken implementation through fixture ordering alone.
+
+**A fix inverted an asymmetry rather than removing it.** Task 14 made GitLab's `requestReReview` throw when there is nothing to re-request, and left GitHub silently returning at the same input. The identical call through one shared interface then threw on one provider and resolved on the other, which is the precise defect that fix was filed for.
+
+Also found: `prepublishOnly` never ran the Node smoke test, and this repository has no CI workflows, so the guard built in Task 12 ran only when someone typed it. Reverting `NULL_BODY_STATUSES` would still have published green. It is now wired into the publish path.
 
 ## What this phase says about verification
 
