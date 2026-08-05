@@ -142,17 +142,44 @@ export function ghError(
 
 function bodyText(err: RequestError): string {
   const data = err.response?.data;
-  if (data === undefined || data === null) return '';
+  if (data === undefined || data === null) {
+    // A network-level failure (DNS, connection refused, and so on) has no
+    // response at all, so the only surviving diagnostic is the message
+    // Octokit itself threw with. Losing it here would make this branch
+    // strictly worse than the non-RequestError branch above, which keeps it.
+    return err.response === undefined ? err.message : '';
+  }
   return typeof data === 'string' ? data : JSON.stringify(data);
 }
 
+/**
+ * Reason phrases for the statuses this SDK actually surfaces.
+ *
+ * Octokit's fetch wrapper reads `fetchResponse.statusText` only to build its
+ * thrown error and never copies it onto `response.headers`, so there is no
+ * "404 Not Found" style header to recover it from at this point, unlike the
+ * hand-rolled fetch code this replaces. These five messages are quoted
+ * verbatim in two specs documents, so the text is reconstructed from the
+ * status code instead of read off a header that no longer exists.
+ */
+const REASON_PHRASES: Record<number, string> = {
+  304: 'Not Modified',
+  400: 'Bad Request',
+  401: 'Unauthorized',
+  403: 'Forbidden',
+  404: 'Not Found',
+  405: 'Method Not Allowed',
+  409: 'Conflict',
+  410: 'Gone',
+  422: 'Unprocessable Entity',
+  429: 'Too Many Requests',
+  500: 'Internal Server Error',
+  502: 'Bad Gateway',
+  503: 'Service Unavailable'
+};
+
 function statusText(err: RequestError): string {
-  const headers = err.response?.headers as Record<string, unknown> | undefined;
-  const fromResponse = headers?.status;
-  // GitHub returns "404 Not Found" in its status header; the hand-rolled code
-  // read Response.statusText, which is the same text without the code.
-  if (typeof fromResponse === 'string') {
-    return fromResponse.replace(/^\d+\s*/, '');
-  }
-  return '';
+  // An unmapped status degrades to the current (empty) behavior rather than
+  // inventing text for a status this SDK has not been observed to surface.
+  return REASON_PHRASES[err.status] ?? '';
 }

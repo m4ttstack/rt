@@ -79,6 +79,38 @@ describe('ghError', () => {
     expect(err.message).toContain('network down');
     expect(err.message).not.toMatch(/failed: \d/);
   });
+
+  test('statusText style reconstructs the reason phrase for a 403, since Octokit never carries it on the response', () => {
+    const err = ghError(
+      'approvePullRequest',
+      fakeRequestError(403, {}),
+      'statusText'
+    );
+    expect(err.message).toContain('403 Forbidden');
+  });
+
+  test('statusText style reconstructs the reason phrase for a 422', () => {
+    const err = ghError(
+      'approvePullRequest',
+      fakeRequestError(422, {}),
+      'statusText'
+    );
+    expect(err.message).toContain('422 Unprocessable Entity');
+  });
+
+  test('an unmapped status in statusText style degrades to no phantom reason phrase', () => {
+    const err = ghError('approvePullRequest', fakeRequestError(418, {}), 'statusText');
+    expect(/\bapprovePullRequest failed: 418\b/.test(err.message)).toBe(true);
+    expect(err.message).not.toMatch(/418 [A-Za-z]/);
+  });
+
+  test('a RequestError with no response falls back to err.message so the diagnostic survives', () => {
+    const networkErr = new RequestError('network down', 500, {
+      request: { method: 'GET', url: 'https://api.github.com/x', headers: {} }
+    });
+    const err = ghError('fetchJobTrace', networkErr);
+    expect(err.message).toContain('network down');
+  });
 });
 
 describe('createGitHubClient instrumentation', () => {
@@ -106,6 +138,10 @@ describe('createGitHubClient instrumentation', () => {
     expect(seen[0]?.status).toBe(200);
     expect(seen[0]?.method).toBe('GET');
     expect(seen[0]?.path).toContain('/user');
+    expect(seen[0]?.op).toContain('GET');
+    expect(seen[0]?.op).toContain('/user');
+    expect(typeof seen[0]?.durationMs).toBe('number');
+    expect(seen[0]!.durationMs).toBeGreaterThanOrEqual(0);
   });
 
   test('emits for a failed request too, carrying the real status', async () => {
