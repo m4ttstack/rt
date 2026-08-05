@@ -300,15 +300,12 @@ function stubGitHub(
   mutationSucceeds = true,
 ): GitHubCalls {
   const calls: GitHubCalls = { bodies: [], mutations: [] };
-  (provider as any).api = async (_method: string, path: string, body?: unknown) => {
-    calls.bodies.push({ path, body });
-    return {
-      ok: true,
-      status: 200,
-      json: async () => patched,
-      text: async () => '',
-      headers: { get: () => null },
-    } as unknown as Response;
+  (provider as any).octokit = {
+    request: async (route: string, params?: { data?: unknown }) => {
+      const path = route.slice(route.indexOf(' ') + 1);
+      calls.bodies.push({ path, body: params?.data });
+      return { status: 200, headers: {}, data: patched };
+    },
   };
   (provider as any).graphql = async (mutation: string) => {
     calls.mutations.push(mutation);

@@ -867,43 +867,42 @@ export class GitHubProvider implements GitProvider {
     if (input.description != null) body.body = input.description;
     if (input.draft != null) body.draft = input.draft;
 
-    const res = await this.api(
-      'POST',
-      `/repos/${input.projectPath}/pulls`,
-      body
-    );
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`createPullRequest failed: ${res.status} ${text}`);
+    let created: GHPullRequest;
+    try {
+      const res = await this.octokit.request(
+        `POST /repos/${input.projectPath}/pulls`,
+        { data: body }
+      );
+      created = res.data as GHPullRequest;
+    } catch (err) {
+      if (err instanceof RequestError && err.response) {
+        throw ghError('createPullRequest', err);
+      }
+      throw err;
     }
-    const created = (await res.json()) as GHPullRequest;
 
-    // GitHub doesn't support reviewers/assignees/labels on create — add them separately
+    // GitHub doesn't support reviewers/assignees/labels on create -- add them
+    // separately. The PR above already exists by this point, so a failure
+    // here throwing does not mean "the PR was never created."
     if (input.reviewers?.length) {
-      await this.api(
-        'POST',
-        `/repos/${input.projectPath}/pulls/${created.number}/requested_reviewers`,
-        {
-          reviewers: input.reviewers
-        }
+      await this.fireAndThrow(
+        'createPullRequest',
+        `POST /repos/${input.projectPath}/pulls/${created.number}/requested_reviewers`,
+        { reviewers: input.reviewers }
       );
     }
     if (input.assignees?.length) {
-      await this.api(
-        'POST',
-        `/repos/${input.projectPath}/issues/${created.number}/assignees`,
-        {
-          assignees: input.assignees
-        }
+      await this.fireAndThrow(
+        'createPullRequest',
+        `POST /repos/${input.projectPath}/issues/${created.number}/assignees`,
+        { assignees: input.assignees }
       );
     }
     if (input.labels?.length) {
-      await this.api(
-        'POST',
-        `/repos/${input.projectPath}/issues/${created.number}/labels`,
-        {
-          labels: input.labels
-        }
+      await this.fireAndThrow(
+        'createPullRequest',
+        `POST /repos/${input.projectPath}/issues/${created.number}/labels`,
+        { labels: input.labels }
       );
     }
 
@@ -933,46 +932,50 @@ export class GitHubProvider implements GitProvider {
     if (input.stateEvent)
       body.state = input.stateEvent === 'close' ? 'closed' : 'open';
 
-    const res = await this.api(
-      'PATCH',
-      `/repos/${projectPath}/pulls/${mrIid}`,
-      body
-    );
-    if (!res.ok) {
-      const text = await res.text();
-      throw new Error(`updatePullRequest failed: ${res.status} ${text}`);
+    let patched: GHPullRequest;
+    try {
+      const res = await this.octokit.request(
+        `PATCH /repos/${projectPath}/pulls/${mrIid}`,
+        { data: body }
+      );
+      patched = res.data as GHPullRequest;
+    } catch (err) {
+      if (err instanceof RequestError && err.response) {
+        throw ghError('updatePullRequest', err);
+      }
+      throw err;
     }
 
     if (input.draft != null) {
-      const patched = (await res.json()) as GHPullRequest;
       if (patched.draft !== input.draft) {
         await this.setDraft(patched.node_id, input.draft);
       }
     }
 
-    // Handle reviewers/assignees/labels replacement if provided
+    // Handle reviewers/assignees/labels replacement if provided. Octokit
+    // throws on a non-2xx here, where the old fetch-based code never checked
+    // `res.ok` and silently swallowed a failure on all three. Surfacing that
+    // failure is a deliberate behavior change (MAT-24 owns these fields).
     if (input.reviewers) {
-      await this.api(
-        'POST',
-        `/repos/${projectPath}/pulls/${mrIid}/requested_reviewers`,
-        {
-          reviewers: input.reviewers
-        }
+      await this.fireAndThrow(
+        'updatePullRequest',
+        `POST /repos/${projectPath}/pulls/${mrIid}/requested_reviewers`,
+        { reviewers: input.reviewers }
       );
     }
     if (input.assignees) {
-      await this.api(
-        'POST',
-        `/repos/${projectPath}/issues/${mrIid}/assignees`,
-        {
-          assignees: input.assignees
-        }
+      await this.fireAndThrow(
+        'updatePullRequest',
+        `POST /repos/${projectPath}/issues/${mrIid}/assignees`,
+        { assignees: input.assignees }
       );
     }
     if (input.labels) {
-      await this.api('PUT', `/repos/${projectPath}/issues/${mrIid}/labels`, {
-        labels: input.labels
-      });
+      await this.fireAndThrow(
+        'updatePullRequest',
+        `PUT /repos/${projectPath}/issues/${mrIid}/labels`,
+        { labels: input.labels }
+      );
     }
 
     const pr = await this.fetchSingleMR(projectPath, mrIid, null);
@@ -1390,6 +1393,28 @@ export class GitHubProvider implements GitProvider {
           throw err;
         }
         return toResponse(err.status, err.response.headers ?? {}, err.response.data);
+      }
+      throw err;
+    }
+  }
+
+  /**
+   * Fire a write whose caller does not read the response body, translating a
+   * thrown HTTP failure into `ghError`'s shape. A transport failure (no
+   * `.response`) is rethrown untouched, same as every other migrated call
+   * site: it never reached an HTTP outcome, so laundering it through
+   * `ghError` would lose `.status` and `.request` for no reason.
+   */
+  private async fireAndThrow(
+    op: string,
+    route: string,
+    data: unknown
+  ): Promise<void> {
+    try {
+      await this.octokit.request(route, { data });
+    } catch (err) {
+      if (err instanceof RequestError && err.response) {
+        throw ghError(op, err);
       }
       throw err;
     }
