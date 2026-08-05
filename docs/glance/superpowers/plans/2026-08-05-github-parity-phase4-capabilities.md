@@ -2557,6 +2557,259 @@ Do not stage `dist/`.
 
 ---
 
+### Task 13: GitLab discussions report their real resolution state
+
+Added mid-plan by decision, after Task 7's implementer found it while reading. `MRDetailFetcher.fetchDetail` (`src/MRDetailFetcher.ts:95-100`) hardcodes discussion-level `resolvable: null, resolved: null` for every GitLab discussion, unconditionally. Only note-level fields carry real values.
+
+This is the third instance of this bug class in this codebase: MAT-14 hardcoded `unresolvedThreadCount: 0` on GitHub, MAT-27 hardcoded `resolved: null` on GitHub review threads (Task 3 of this plan fixed it), and this one has been sitting on the GitLab side the whole time. The irony is pointed: MAT-27's acceptance criteria said the GitHub work should match GitLab's existing behavior, and GitLab's existing behavior was to report nothing.
+
+It also blocks Task 7. Those discussion checks gate on `Discussion.resolvable === true` to pick a thread to resolve, so on GitLab they would find no candidate and skip deterministically on every run, defeating the point of running them cross-provider.
+
+The data is already there. `RESTNote` declares `resolvable?: boolean | null` and `resolved?: boolean | null` (`MRDetailFetcher.ts:38-47`), and `toNote` already maps `resolvable: n.resolvable ?? null` (`:124`). Only the rollup to the discussion is missing.
+
+**Files:**
+- Modify: `packages/glance/src/MRDetailFetcher.ts` (the `discussions` map at 95-100)
+- Test: `packages/glance/tests/gitlab-discussions.test.ts` (create)
+
+**Interfaces:**
+- Consumes: the existing `RESTDiscussion` and `RESTNote` shapes, unchanged.
+- Produces: no signature change. `Discussion.resolvable` and `Discussion.resolved` stop being constants.
+
+**The rollup rule, which matches how GitLab itself presents a thread:**
+- A discussion is `resolvable` when at least one of its notes is resolvable. GitLab marks individual notes resolvable, and a thread containing any resolvable note is a resolvable thread.
+- A resolvable discussion is `resolved` when every one of its resolvable notes is resolved. One outstanding note keeps the thread open.
+- A discussion with no resolvable notes reports `resolvable: false, resolved: null`. That covers plain comment threads and system notes, which have no resolution state to report. `null` rather than `false` for `resolved` is deliberate: "this thread cannot be resolved" is not the same claim as "this thread is unresolved", and conflating them is how the original hardcoding became invisible.
+
+- [ ] **Step 1: Write the failing test**
+
+Create `packages/glance/tests/gitlab-discussions.test.ts`:
+
+```ts
+#!/usr/bin/env bun
+/**
+ * GitLab discussions carry a real resolution state.
+ *
+ * `MRDetailFetcher` used to hardcode discussion-level `resolvable` and
+ * `resolved` to null while mapping the per-note values correctly, so every
+ * GitLab thread read as indeterminate. That is the same hardcoded-constant
+ * shape as MAT-14 and MAT-27, and it meant the provider GitHub's behavior was
+ * supposed to match reported nothing to match against.
+ *
+ * The transport is stubbed; nothing here touches a network.
+ */
+import { describe, expect, test } from 'bun:test';
+import { MRDetailFetcher } from '../src/MRDetailFetcher.ts';
+
+const AUTHOR = { id: 1, username: 'ada', name: 'Ada', avatar_url: null };
+
+/** One GitLab REST note. `resolvable` undefined means a non-resolvable note. */
+function note(
+  id: number,
+  resolvable?: boolean,
+  resolved?: boolean
+): Record<string, unknown> {
+  return {
+    id,
+    type: resolvable ? 'DiffNote' : 'DiscussionNote',
+    body: `note ${id}`,
+    author: AUTHOR,
+    created_at: '2026-08-01T00:00:00Z',
+    system: false,
+    resolvable,
+    resolved
+  };
+}
+
+/** A fetcher whose one REST call returns `discussions`. */
+function fetcherWith(discussions: unknown[]): MRDetailFetcher {
+  const fetcher = new MRDetailFetcher('https://gitlab.com', 'tok');
+  (globalThis as { fetch: unknown }).fetch = async () =>
+    new Response(JSON.stringify(discussions), {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    });
+  return fetcher;
+}
+
+describe('MRDetailFetcher: discussion resolution state', () => {
+  test('a fully resolved thread reports resolved: true', async () => {
+    const f = fetcherWith([
+      { id: 'd1', notes: [note(1, true, true), note(2, true, true)] }
+    ]);
+
+    const detail = await f.fetchDetail(42, 7);
+
+    expect(detail.discussions[0]?.resolvable).toBe(true);
+    expect(detail.discussions[0]?.resolved).toBe(true);
+  });
+
+  test('one outstanding note keeps the thread unresolved', async () => {
+    const f = fetcherWith([
+      { id: 'd2', notes: [note(1, true, true), note(2, true, false)] }
+    ]);
+
+    const detail = await f.fetchDetail(42, 7);
+
+    expect(detail.discussions[0]?.resolvable).toBe(true);
+    expect(detail.discussions[0]?.resolved).toBe(false);
+  });
+
+  test('a thread with no resolvable notes is not resolvable', async () => {
+    // A plain comment thread. Reporting `resolved: false` here would claim it
+    // is outstanding, when in fact it has nothing to resolve.
+    const f = fetcherWith([{ id: 'd3', notes: [note(1), note(2)] }]);
+
+    const detail = await f.fetchDetail(42, 7);
+
+    expect(detail.discussions[0]?.resolvable).toBe(false);
+    expect(detail.discussions[0]?.resolved).toBe(null);
+  });
+
+  test('a mixed thread rolls up only its resolvable notes', async () => {
+    const f = fetcherWith([
+      { id: 'd4', notes: [note(1), note(2, true, true), note(3)] }
+    ]);
+
+    const detail = await f.fetchDetail(42, 7);
+
+    expect(detail.discussions[0]?.resolvable).toBe(true);
+    expect(detail.discussions[0]?.resolved).toBe(true);
+  });
+
+  test('an empty thread is not resolvable', async () => {
+    const f = fetcherWith([{ id: 'd5', notes: [] }]);
+
+    const detail = await f.fetchDetail(42, 7);
+
+    expect(detail.discussions[0]?.resolvable).toBe(false);
+    expect(detail.discussions[0]?.resolved).toBe(null);
+  });
+
+  test('per-note state is still mapped, not replaced by the rollup', async () => {
+    // The note-level fields were always correct. The rollup must not clobber
+    // them or derive them from itself.
+    const f = fetcherWith([
+      { id: 'd6', notes: [note(1, true, true), note(2, true, false)] }
+    ]);
+
+    const detail = await f.fetchDetail(42, 7);
+
+    expect(detail.discussions[0]?.notes[0]?.resolved).toBe(true);
+    expect(detail.discussions[0]?.notes[1]?.resolved).toBe(false);
+  });
+
+  test('discussions are independent of one another', async () => {
+    const f = fetcherWith([
+      { id: 'd7', notes: [note(1, true, true)] },
+      { id: 'd8', notes: [note(2, true, false)] },
+      { id: 'd9', notes: [note(3)] }
+    ]);
+
+    const detail = await f.fetchDetail(42, 7);
+    const byId = Object.fromEntries(
+      detail.discussions.map(d => [d.id, [d.resolvable, d.resolved]])
+    );
+
+    expect(byId.d7).toEqual([true, true]);
+    expect(byId.d8).toEqual([true, false]);
+    expect(byId.d9).toEqual([false, null]);
+  });
+});
+```
+
+Check `MRDetailFetcher`'s real constructor signature before writing `fetcherWith`; if it takes an options object or a different argument order, adapt and say so. Also check how the existing tests in this package stub `fetch`, and follow that pattern rather than inventing one, including restoring the original `fetch` in an `afterEach` if that is what they do.
+
+- [ ] **Step 2: Run the test to verify it fails**
+
+Run: `cd packages/glance && bun test tests/gitlab-discussions.test.ts`
+Expected: FAIL. Every `resolvable` assertion gets `null` rather than `true` or `false`, and every non-null `resolved` assertion gets `null`. The per-note test and the empty-thread `resolved: null` case may already pass.
+
+- [ ] **Step 3: Replace the hardcoded map**
+
+At `MRDetailFetcher.ts:95-100`, replace:
+
+```ts
+    const discussions: Discussion[] = raw.map((d) => ({
+      id: d.id,
+      resolvable: null,
+      resolved: null,
+      notes: d.notes.map(toNote),
+    }));
+```
+
+with:
+
+```ts
+    const discussions: Discussion[] = raw.map((d) => ({
+      id: d.id,
+      ...rollUpResolution(d.notes),
+      notes: d.notes.map(toNote),
+    }));
+```
+
+- [ ] **Step 4: Add the rollup**
+
+Add near `toNote` in the same file:
+
+```ts
+/**
+ * A thread's resolution state, derived from the notes inside it.
+ *
+ * GitLab marks resolution per note, not per discussion, so the thread-level
+ * answer has to be rolled up. These fields used to be hardcoded to null here
+ * while the per-note values were mapped correctly, which meant every GitLab
+ * thread read as indeterminate to callers.
+ *
+ * `resolved` stays null for a thread with nothing resolvable in it. Reporting
+ * `false` there would claim the thread is outstanding, when the truth is that
+ * it has no resolution state at all, and collapsing those two into one value
+ * is what let the original hardcoding go unnoticed.
+ */
+function rollUpResolution(notes: RESTNote[]): {
+  resolvable: boolean;
+  resolved: boolean | null;
+} {
+  const resolvable = notes.filter((n) => n.resolvable === true);
+  if (resolvable.length === 0) return { resolvable: false, resolved: null };
+  return {
+    resolvable: true,
+    resolved: resolvable.every((n) => n.resolved === true),
+  };
+}
+```
+
+- [ ] **Step 5: Run the tests to verify they pass**
+
+Run: `cd packages/glance && bun test tests/gitlab-discussions.test.ts`
+Expected: PASS, all seven.
+
+- [ ] **Step 6: Check what else read these fields**
+
+This changes a value consumers see. Run:
+
+```bash
+grep -rn "resolvable\|\.resolved" packages/glance/src packages/glance/tests --include=*.ts | grep -v GitHubProvider
+```
+
+`getReviewerSummaries` (`types.ts`) consumes discussions and is the likeliest downstream reader. Confirm nothing depended on the fields being constant, and report what you found. If an existing test asserted `resolved === null` for GitLab as though it were correct behavior, that assertion was encoding the bug: update it and say so explicitly in your report, with what it asserted before.
+
+- [ ] **Step 7: Run the whole suite, type-check, and the Node smoke test**
+
+```bash
+cd packages/glance && bun test && bun run check-types && bun run check:node
+```
+
+Expected: all clean.
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add packages/glance/src/MRDetailFetcher.ts packages/glance/tests/gitlab-discussions.test.ts
+git commit -m "fix: report real resolution state on GitLab discussions"
+```
+
+---
+
 ## Follow-ups this phase does not close
 
 Record these rather than doing them:
