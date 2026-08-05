@@ -5,6 +5,7 @@
  * throttling, pagination that silently truncated on a failed page, and no
  * request instrumentation at all on the GitHub side.
  */
+import { createHash } from 'node:crypto';
 import { Octokit } from '@octokit/core';
 import { paginateRest } from '@octokit/plugin-paginate-rest';
 import { retry } from '@octokit/plugin-retry';
@@ -65,8 +66,13 @@ export function createGitHubClient(opts: {
       // different hosts and tokens would throttle and pace each other
       // process-wide even though they share no actual rate-limit budget.
       // This only decouples that bookkeeping; the pacing rules themselves
-      // (minTime, maxConcurrent) are unchanged.
-      id: `${apiBase}::${opts.token}`,
+      // (minTime, maxConcurrent) are unchanged. The token is hashed rather
+      // than embedded raw: Bottleneck's `Group` keeps this id as an
+      // enumerable key (`group.limiters()`), and although the plugin never
+      // logs it, this repo is public and the package is published, so the
+      // key must not carry a live credential even in a form nothing
+      // currently prints.
+      id: `${apiBase}::${hashToken(opts.token)}`,
       onRateLimit: (retryAfter, options, _octokit, retryCount) => {
         opts.log.warn('GitHub rate limit hit', {
           method: options.method,
@@ -153,12 +159,32 @@ export function createGitHubClient(opts: {
  * A GraphQL request's URL is either the relative `/graphql` (github.com) or
  * the rewritten absolute `.../api/graphql` (GHES) -- see
  * `resolveGitHubUrls`'s docstring and `@octokit/graphql`'s
- * `GHES_V3_SUFFIX_REGEX`. No REST route template ever contains that
- * substring, so a plain `includes` check is enough to tell the two apart
- * without needing to know which host produced the URL.
+ * `GHES_V3_SUFFIX_REGEX`. This has to match the *pathname* exactly, not just
+ * check whether the URL contains the substring "/graphql": at this hook,
+ * `options.url` is already interpolated with real path segments, not a
+ * route template, so a REST request can legitimately contain that substring
+ * -- `GET /repos/graphql/graphql-js/pulls` (a real GitHub org and repo), any
+ * repository or branch literally named "graphql" (e.g.
+ * `/git/refs/heads/graphql`), or any caller-supplied `restRequest` path.
+ * A substring match on those would wrongly skip the REST rate-limit retry
+ * this phase adopted Octokit for, and wrongly label them `transport:
+ * 'graphql'`. Matching the exact pathname is the same check the throttling
+ * plugin itself uses (`pathname.startsWith('/graphql')` in
+ * `wrap-request.js`), just also covering the GHES `/api/graphql` form.
  */
 function isGraphQLRequest(options: { url?: string }): boolean {
-  return (options.url ?? '').includes('/graphql');
+  const { pathname } = new URL(options.url ?? '', 'http://placeholder.invalid');
+  return pathname === '/graphql' || pathname.endsWith('/api/graphql');
+}
+
+/**
+ * A non-secret discriminator for the throttle group key -- see the
+ * `throttle.id` comment above. Any stable hash works here; a short prefix of
+ * a fast, non-cryptographic-strength digest is enough, since this only needs
+ * to distinguish tokens from each other, not resist attack.
+ */
+function hashToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex').slice(0, 16);
 }
 
 function emit(

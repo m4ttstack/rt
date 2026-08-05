@@ -765,3 +765,94 @@ describe('GitHubProvider transport: graphql() swallows failures (MAT-133, phase 
     expect(data).toBeNull();
   });
 });
+
+describe('GitHubProvider transport: GraphQL detection matches pathname, not substring', () => {
+  /**
+   * The interpolated request URL a rate-limit hook sees is not a route
+   * template -- `GET /repos/{owner}/{repo}/pulls` has already become
+   * `/repos/graphql/graphql-js/pulls` by the time `isGraphQLRequest` runs.
+   * A plain `.includes('/graphql')` check would misread any REST path
+   * containing that substring as GraphQL: the real `graphql` GitHub org and
+   * its `graphql-js` repo, any repository or branch literally named
+   * "graphql", or a caller-supplied `restRequest` path. These tests pin
+   * both directions: REST paths that merely contain "graphql" must still
+   * get the REST rate-limit retry Octokit was adopted for, and both real
+   * GraphQL endpoints (github.com and GHES) must still be recognized so
+   * `graphql()`'s MAT-133 swallow still fires promptly for them.
+   */
+  function rateLimited403(): Response {
+    return new Response(JSON.stringify({ message: 'API rate limit exceeded' }), {
+      status: 403,
+      headers: {
+        'content-type': 'application/json',
+        'x-ratelimit-remaining': '0',
+        'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) + 60)
+      }
+    });
+  }
+
+  test('a REST path containing "graphql" as a path segment still gets the REST rate-limit retry (3 fetches)', async () => {
+    // The real GitHub org + repo this collision is not theoretical for.
+    const urls = stubFetch(() => rateLimited403());
+    const provider = new GitHubProvider('https://github.com', 'tok');
+
+    const res = await withInstantTimers(() =>
+      provider.restRequest('GET', '/repos/graphql/graphql-js/pulls')
+    );
+
+    // retryCount < 2 means two retries beyond the first attempt.
+    expect(urls).toHaveLength(3);
+    expect(res.status).toBe(403);
+  });
+
+  test('a branch literally named "graphql" still gets the REST rate-limit retry (3 fetches)', async () => {
+    const urls = stubFetch(() => rateLimited403());
+    const provider = new GitHubProvider('https://github.com', 'tok');
+
+    const res = await withInstantTimers(() =>
+      provider.restRequest('GET', '/repos/acme/repo/git/refs/heads/graphql')
+    );
+
+    expect(urls).toHaveLength(3);
+    expect(res.status).toBe(403);
+  });
+
+  test('an ordinary REST path retries identically (3 fetches), as the control for the two tests above', async () => {
+    const urls = stubFetch(() => rateLimited403());
+    const provider = new GitHubProvider('https://github.com', 'tok');
+
+    const res = await withInstantTimers(() =>
+      provider.restRequest('GET', '/repos/acme/repo/pulls')
+    );
+
+    expect(urls).toHaveLength(3);
+    expect(res.status).toBe(403);
+  });
+
+  test('the real GraphQL endpoint on github.com still swallows immediately under a rate limit (1 fetch)', async () => {
+    const urls = stubFetch(() => rateLimited403());
+    const provider = new GitHubProvider('https://github.com', 'tok');
+
+    const data = await withInstantTimers(() =>
+      (provider as any).graphql('query { viewer { login } }', {})
+    );
+
+    expect(urls).toHaveLength(1);
+    expect(data).toBeNull();
+  });
+
+  test('the real GraphQL endpoint on a GHES host still swallows immediately under a rate limit (1 fetch)', async () => {
+    // GHES's rewritten GraphQL URL is absolute (`.../api/graphql`), unlike
+    // github.com's relative `/graphql` -- both forms must resolve to the
+    // same pathname check.
+    const urls = stubFetch(() => rateLimited403());
+    const provider = new GitHubProvider('https://ghe.corp.example', 'tok');
+
+    const data = await withInstantTimers(() =>
+      (provider as any).graphql('query { viewer { login } }', {})
+    );
+
+    expect(urls).toHaveLength(1);
+    expect(data).toBeNull();
+  });
+});
