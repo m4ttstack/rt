@@ -54,9 +54,9 @@ export const GITHUB_EXPECTATIONS: Record<ProviderMethod, Expectation> = {
     note: 'GitHub rejects self-approval with 422. With one identity the accept path is unverifiable, so the harness asserts the rejection instead.'
   },
   unapprovePullRequest: {
-    support: 'unsupported',
+    support: 'approximate',
     capability: 'canUnapprove',
-    note: 'Phase 4 implements this via the review dismissal endpoint.'
+    note: 'Implemented as a review dismissal, which leaves a DISMISSED review in the list rather than removing the approval record as GitLab does. The harness cannot reach the success path with one GitHub identity: dismissal needs an approval, and GitHub rejects self-approval with 422. `fixture.approver` is hardcoded null for GitHub in fixture.ts, so wiring a second identity is a credentials change rather than a harness change.'
   },
   rebasePullRequest: {
     support: 'unsupported',

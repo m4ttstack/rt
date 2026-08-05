@@ -245,6 +245,14 @@ const THREAD_PAGE_SIZE = 100;
  */
 const THREAD_MAX_PAGES = 10;
 
+/**
+ * GitHub requires a reason on every review dismissal and posts it to the pull
+ * request timeline. GitLab's unapprove takes no message, so
+ * `unapprovePullRequest` has none to pass along and sends this instead of
+ * inventing a reason that would read as if a person wrote it.
+ */
+const DISMISSAL_MESSAGE = 'Approval withdrawn via the Glance SDK.';
+
 function toUserRef(u: GHUser): UserRef {
   return {
     id: `github:user:${u.id}`,
@@ -476,7 +484,7 @@ export class GitHubProvider implements GitProvider {
   readonly capabilities: ProviderCapabilities = {
     canMerge: true,
     canApprove: true,
-    canUnapprove: false,
+    canUnapprove: true,
     canRebase: false,
     canAutoMerge: false,
     canResolveDiscussions: true,
@@ -1308,19 +1316,74 @@ export class GitHubProvider implements GitProvider {
     }
   }
 
+  /**
+   * Withdraw the token user's approval by dismissing their review.
+   *
+   * Not identical to GitLab's unapprove, and the difference is caller-visible:
+   * GitLab removes the approval record, GitHub leaves a `DISMISSED` review in
+   * the list. `toPullRequest` keeps only the newest review per user, so the
+   * approval does drop out of `approved` and `approvedBy` either way.
+   *
+   * Throws when there is nothing to dismiss. Resolving would be the silent
+   * no-op shape: the caller would believe an approval was revoked when none
+   * existed. GitLab's own unapprove answers a non-approved MR with a 404,
+   * which its SDK also turns into a throw.
+   */
   async unapprovePullRequest(
-    _projectPath: string,
-    _mrIid: number
+    projectPath: string,
+    mrIid: number
   ): Promise<void> {
-    // TODO: GitHub does not support unapproving via REST API.
-    // A possible workaround is to dismiss the review via
-    //   PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/dismissals
-    // but that requires knowing the review ID and is semantically different
-    // (dismissal vs. unapproval). Leave as stub until a use case emerges.
-    throw new Error(
-      'unapprovePullRequest is not supported by GitHub. ' +
-        'Check provider.capabilities.canUnapprove before calling.'
-    );
+    const { owner, repo } = this.splitOwnerRepo(projectPath);
+    const me = (await this.validateToken()).username;
+
+    let reviews: GHReview[];
+    try {
+      reviews = await this.octokit.paginate<GHReview>(
+        'GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews',
+        { owner, repo, pull_number: mrIid, per_page: 100 }
+      );
+    } catch (err) {
+      if (err instanceof RequestError && err.response) {
+        throw ghError('unapprovePullRequest', err, 'statusText');
+      }
+      throw err;
+    }
+
+    // Newest review per user is the only one that counts toward `approved`,
+    // so it is the only one worth dismissing. Sorting rather than trusting
+    // list order for the same reason `toPullRequest` does.
+    const mine = reviews
+      .filter(r => r.user?.login === me)
+      .sort(
+        (a, b) =>
+          new Date(a.submitted_at).getTime() - new Date(b.submitted_at).getTime()
+      );
+    const latest = mine[mine.length - 1];
+
+    if (!latest || latest.state !== 'APPROVED') {
+      throw new Error(
+        `unapprovePullRequest failed: ${me} has no current approval on ${projectPath}!${mrIid} to dismiss`
+      );
+    }
+
+    try {
+      await this.octokit.request(
+        'PUT /repos/{owner}/{repo}/pulls/{pull_number}/reviews/{review_id}/dismissals',
+        {
+          owner,
+          repo,
+          pull_number: mrIid,
+          review_id: latest.id,
+          message: DISMISSAL_MESSAGE,
+          event: 'DISMISS'
+        }
+      );
+    } catch (err) {
+      if (err instanceof RequestError && err.response) {
+        throw ghError('unapprovePullRequest', err, 'statusText');
+      }
+      throw err;
+    }
   }
 
   async rebasePullRequest(_projectPath: string, _mrIid: number): Promise<void> {

@@ -167,7 +167,7 @@ assert(typeof gh.requestReReview === 'function', 'has requestReReview()');
 assert(typeof gh.capabilities === 'object', 'has capabilities object');
 assert(gh.capabilities.canMerge === true, 'GitHub: canMerge');
 assert(gh.capabilities.canApprove === true, 'GitHub: canApprove');
-assert(gh.capabilities.canUnapprove === false, 'GitHub: canUnapprove (false)');
+assert(gh.capabilities.canUnapprove === true, 'GitHub: canUnapprove');
 assert(gh.capabilities.canRebase === false, 'GitHub: canRebase (false)');
 assert(gh.capabilities.canAutoMerge === false, 'GitHub: canAutoMerge (false)');
 assert(

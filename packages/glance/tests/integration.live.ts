@@ -277,7 +277,7 @@ if (ghRepoPath) {
 console.log('\n▶ GitHub: capabilities');
 assert(github.capabilities.canMerge === true, 'canMerge');
 assert(github.capabilities.canApprove === true, 'canApprove');
-assert(github.capabilities.canUnapprove === false, 'canUnapprove (false)');
+assert(github.capabilities.canUnapprove === true, 'canUnapprove');
 assert(github.capabilities.canRebase === false, 'canRebase (false)');
 assert(github.capabilities.canAutoMerge === false, 'canAutoMerge (false)');
 assert(
@@ -290,10 +290,9 @@ assert(github.capabilities.canRequestReReview === true, 'canRequestReReview');
 // 8c. Unsupported method stubs throw descriptive errors
 console.log('\n▶ GitHub: unsupported mutation stubs');
 const ghStubTests: Array<{ name: string; fn: () => Promise<void> }> = [
-  {
-    name: 'unapprovePullRequest',
-    fn: () => github.unapprovePullRequest('x', 1)
-  },
+  // unapprovePullRequest moved off this list in MAT-134: it now dismisses a
+  // review instead of throwing "not supported", so it no longer fits the
+  // "unsupported stub" shape this loop asserts against.
   { name: 'rebasePullRequest', fn: () => github.rebasePullRequest('x', 1) },
   { name: 'setAutoMerge', fn: () => github.setAutoMerge('x', 1) },
   { name: 'cancelAutoMerge', fn: () => github.cancelAutoMerge('x', 1) }
