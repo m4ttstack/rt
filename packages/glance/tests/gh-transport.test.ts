@@ -447,11 +447,24 @@ describe('GitHubProvider transport: reviews pagination (real octokit.paginate)',
     });
 
     const provider = new GitHubProvider('https://github.com', 'tok');
-    const prs = await provider.fetchPullRequests({
-      iids: [5],
-      projectPath: 'acme/repo',
-      listWeight: true
-    });
+    // `@octokit/plugin-throttling` classifies any `/graphql` request as
+    // `isGraphQL` and routes it through the SAME process-wide "write"
+    // Bottleneck group (`minTime: 1000`, keyed by the shared default id
+    // "no-id") that the write tests above already exercise -- see
+    // `@octokit/plugin-throttling/dist-src/wrap-request.js`. Task 8 moved
+    // `graphql()` onto `octokit.graphql`, so this test's single GraphQL call
+    // (for thread counts) now queues behind that shared group too. The
+    // group's internal "next allowed dispatch" clock already ran ahead of
+    // real time from the earlier `withInstantTimers`-collapsed write tests,
+    // so without collapsing timers here too, this test pays that backlog
+    // back in real wall-clock time and blows past the default 5s timeout.
+    const prs = await withInstantTimers(() =>
+      provider.fetchPullRequests({
+        iids: [5],
+        projectPath: 'acme/repo',
+        listWeight: true
+      })
+    );
 
     expect(prs[0]?.approvedBy.map(u => u.username).sort()).toEqual([
       'bob',
@@ -496,12 +509,142 @@ describe('GitHubProvider transport: reviews pagination (real octokit.paginate)',
 
     const provider = new GitHubProvider('https://github.com', 'tok');
 
-    await expect(
-      provider.fetchPullRequests({
-        iids: [5],
-        projectPath: 'acme/repo',
-        listWeight: true
+    // Same shared write-group backlog as the test above applies to this
+    // test's own GraphQL thread-count call.
+    await withInstantTimers(() =>
+      expect(
+        provider.fetchPullRequests({
+          iids: [5],
+          projectPath: 'acme/repo',
+          listWeight: true
+        })
+      ).rejects.toThrow()
+    );
+  });
+});
+
+describe('GitHubProvider transport: graphql() endpoint resolution (real octokit.graphql)', () => {
+  /**
+   * Task 8 moved `graphql()` onto `octokit.graphql`, which derives its own
+   * endpoint from the client's REST `baseUrl` rather than reading the
+   * `graphqlURL` this provider used to fetch directly. `@octokit/graphql`
+   * detects a `/api/v3` suffix (GHES) and rewrites it to `/api/graphql`
+   * itself (see `GHES_V3_SUFFIX_REGEX` in
+   * `@octokit/graphql/dist-src/graphql.js`); for github.com's
+   * `https://api.github.com` base, which has no such suffix, it appends the
+   * default `/graphql`. Both must be proven by URL, not inferred, since no
+   * other fixture in this suite exercises a GHES host at all.
+   */
+  test('github.com sends the GraphQL request to https://api.github.com/graphql', async () => {
+    const urls = stubFetch(() => jsonResponse({ data: { ok: true } }));
+
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    const data = await withInstantTimers(() =>
+      (provider as any).graphql('query { viewer { login } }', {})
+    );
+
+    expect(urls).toEqual(['https://api.github.com/graphql']);
+    expect(data).toEqual({ ok: true });
+  });
+
+  test('a GitHub Enterprise host sends the GraphQL request under /api/graphql, not /api/v3', async () => {
+    const urls = stubFetch(() => jsonResponse({ data: { ok: true } }));
+
+    const provider = new GitHubProvider('https://ghe.corp.example', 'tok');
+    const data = await withInstantTimers(() =>
+      (provider as any).graphql('query { viewer { login } }', {})
+    );
+
+    expect(urls).toEqual(['https://ghe.corp.example/api/graphql']);
+    expect(data).toEqual({ ok: true });
+  });
+});
+
+describe('GitHubProvider transport: graphql() swallows failures (MAT-133, phase 4)', () => {
+  /**
+   * MAT-133 is explicitly out of scope for this transport swap: `graphql()`
+   * has always swallowed transport, HTTP, and GraphQL-level errors alike,
+   * warning and returning null instead of throwing. Under the old bare
+   * `fetch` call these three outcomes were read off a parsed payload; under
+   * `octokit.graphql` they arrive as three different thrown shapes
+   * (`GraphqlResponseError`, `RequestError` with a `.response`, and anything
+   * else), so the catch block has to re-derive the same three log.warn calls
+   * explicitly. These tests pin that nothing here started throwing, and that
+   * the warn message strings and payload shapes are unchanged.
+   */
+  function makeLogSpy() {
+    const warnings: Array<{ message: string; payload: unknown }> = [];
+    return {
+      warnings,
+      logger: {
+        debug: () => {},
+        info: () => {},
+        warn: (message: string, payload?: unknown) =>
+          warnings.push({ message, payload }),
+        error: () => {}
+      }
+    };
+  }
+
+  test('an HTTP failure warns "GitHub GraphQL request failed" with the status and returns null', async () => {
+    stubFetch(() => jsonResponse({ message: 'Bad credentials' }, 401));
+    const { warnings, logger } = makeLogSpy();
+
+    const provider = new GitHubProvider('https://github.com', 'tok', { logger });
+    const data = await withInstantTimers(() =>
+      (provider as any).graphql('query { viewer { login } }', {})
+    );
+
+    expect(data).toBeNull();
+    expect(warnings).toEqual([
+      { message: 'GitHub GraphQL request failed', payload: { status: 401 } }
+    ]);
+  });
+
+  test('a 200 response carrying GraphQL errors warns "GitHub GraphQL returned errors" with the messages and returns null', async () => {
+    stubFetch(() =>
+      jsonResponse({
+        data: null,
+        errors: [{ message: 'Field "x" does not exist' }]
       })
-    ).rejects.toThrow();
+    );
+    const { warnings, logger } = makeLogSpy();
+
+    const provider = new GitHubProvider('https://github.com', 'tok', { logger });
+    const data = await withInstantTimers(() =>
+      (provider as any).graphql('query { x }', {})
+    );
+
+    expect(data).toBeNull();
+    expect(warnings).toEqual([
+      {
+        message: 'GitHub GraphQL returned errors',
+        payload: { messages: ['Field "x" does not exist'] }
+      }
+    ]);
+  });
+
+  test('a transport-level failure warns "GitHub GraphQL request threw" with the message and returns null', async () => {
+    globalThis.fetch = (async () => {
+      throw new TypeError('fetch failed', { cause: new Error('ECONNREFUSED') });
+    }) as typeof fetch;
+    const { warnings, logger } = makeLogSpy();
+
+    const provider = new GitHubProvider('https://github.com', 'tok', { logger });
+    const data = await withInstantTimers(() =>
+      (provider as any).graphql('query { viewer { login } }', {})
+    );
+
+    expect(data).toBeNull();
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]?.message).toBe('GitHub GraphQL request threw');
+    // Octokit's fetch wrapper turns the thrown TypeError into a
+    // `RequestError` whose `.message` is built from `cause.message`
+    // ("ECONNREFUSED") rather than the original "fetch failed" -- a detail
+    // of how `@octokit/request` reports network failures, unrelated to this
+    // catch block, which still just forwards whatever `err.message` is.
+    expect((warnings[0]?.payload as { message: string }).message).toContain(
+      'ECONNREFUSED'
+    );
   });
 });

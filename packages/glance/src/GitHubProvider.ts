@@ -48,6 +48,7 @@ import {
 } from './githubClient.ts';
 import type { OnRequestHook } from './instrumentation.ts';
 import { RequestError } from '@octokit/request-error';
+import { GraphqlResponseError } from '@octokit/graphql';
 
 // ---------------------------------------------------------------------------
 // GitHub REST API response shapes (only fields we consume)
@@ -389,7 +390,6 @@ export class GitHubProvider implements GitProvider {
   readonly providerName = 'github' as const;
   readonly baseURL: string;
   private readonly apiBase: string;
-  private readonly graphqlURL: string;
   private readonly token: string;
   private readonly log: ForgeLogger;
   private readonly octokit: GlanceOctokit;
@@ -412,7 +412,6 @@ export class GitHubProvider implements GitProvider {
 
     const urls = resolveGitHubUrls(this.baseURL);
     this.apiBase = urls.apiBase;
-    this.graphqlURL = urls.graphqlURL;
     this.octokit = createGitHubClient({
       baseURL: this.baseURL,
       token: this.token,
@@ -1517,36 +1516,39 @@ export class GitHubProvider implements GitProvider {
   /**
    * Issue a GraphQL (v4) request. Returns null on transport, HTTP, or GraphQL
    * errors: callers report "unknown" rather than substituting a value.
+   *
+   * MAT-133 (phase 4): swallowing every failure category into a warn + null
+   * is intentional legacy behavior, not something this transport swap is
+   * fixing. Do not "harmonize" this with the throw-on-HTTP-failure pattern
+   * used everywhere else in this file -- that change is scoped to phase 4,
+   * and making it here would be indistinguishable from a transport
+   * regression.
+   *
+   * `octokit.graphql` derives its endpoint from the client's REST `baseUrl`:
+   * for github.com (`https://api.github.com`) it appends `/graphql`; for a
+   * GHES host (`.../api/v3`) `@octokit/graphql` detects the `/api/v3` suffix
+   * itself and rewrites it to `/api/graphql`, matching what
+   * `resolveGitHubUrls` computes separately. See
+   * `@octokit/graphql/dist-src/graphql.js`'s `GHES_V3_SUFFIX_REGEX`. Both
+   * hosts are covered by tests since no fixture otherwise exercises GHES.
    */
   private async graphql<T>(
     query: string,
     variables: Record<string, unknown>
   ): Promise<T | null> {
     try {
-      const res = await fetch(this.graphqlURL, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${this.token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({ query, variables })
-      });
-      if (!res.ok) {
-        this.log.warn('GitHub GraphQL request failed', { status: res.status });
-        return null;
-      }
-      const payload = (await res.json()) as {
-        data?: T;
-        errors?: Array<{ message: string }>;
-      };
-      if (payload.errors?.length) {
+      return await this.octokit.graphql<T>(query, variables);
+    } catch (err) {
+      if (err instanceof GraphqlResponseError) {
         this.log.warn('GitHub GraphQL returned errors', {
-          messages: payload.errors.map(e => e.message)
+          messages: err.errors?.map(e => e.message) ?? []
         });
         return null;
       }
-      return payload.data ?? null;
-    } catch (err) {
+      if (err instanceof RequestError && err.response) {
+        this.log.warn('GitHub GraphQL request failed', { status: err.status });
+        return null;
+      }
       this.log.warn('GitHub GraphQL request threw', {
         message: err instanceof Error ? err.message : String(err)
       });
