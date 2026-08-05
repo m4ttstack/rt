@@ -541,10 +541,20 @@ export async function runWriteConformance(
 
       await provider.deleteBranch(projectPath, throwaway);
 
-      const gone = await pollUntil(`absence of ${throwaway}`, async () =>
-        (await branchExists(fixture, throwaway)) ? null : true
-      );
-      assert(gone === true, 'branch still exists after deleteBranch');
+      // `pollUntil` only ever resolves once its predicate has already seen
+      // the branch gone, or throws its own generic "timed out" error, so an
+      // `assert` chained after a successful resolution could never fire and
+      // its message could never reach a reader. Catching the timeout and
+      // rethrowing with the diagnostic that actually names the failure
+      // (rather than a follow-up assert on a value known safe) is what makes
+      // that message reachable.
+      try {
+        await pollUntil(`absence of ${throwaway}`, async () =>
+          (await branchExists(fixture, throwaway)) ? null : true
+        );
+      } catch {
+        throw new Error(`branch ${throwaway} still exists after deleteBranch`);
+      }
     });
 
     await check(report, fixture, 'createPullRequest', 'opens a PR from a new branch', async () => {
@@ -768,14 +778,23 @@ export async function runWriteConformance(
           // throw-only assertion identically.
           const approverUsername = (await fixture.approver!.validateToken()).username;
           await provider.requestReReview(projectPath, iid, [approverUsername]);
-          const after = await pollUntil(`reviewers of ${iid}`, async () => {
-            const fresh = await provider.fetchSingleMR(projectPath, iid, null);
-            return fresh?.reviewers.some(r => r.username === approverUsername) ? fresh : null;
-          });
-          assert(
-            after.reviewers.some(r => r.username === approverUsername),
-            `expected reviewers to include "${approverUsername}", got ${JSON.stringify(after.reviewers.map(r => r.username))}`
-          );
+          // Same reasoning as deleteBranch's check above: pollUntil resolves
+          // only once its predicate already found approverUsername in the
+          // reviewer list, so a follow-up assert on that same condition could
+          // never fire. Catching the timeout and re-reading here is what
+          // gets the actual reviewer list into the failure message instead
+          // of pollUntil's generic "timed out" text.
+          try {
+            await pollUntil(`reviewers of ${iid}`, async () => {
+              const fresh = await provider.fetchSingleMR(projectPath, iid, null);
+              return fresh?.reviewers.some(r => r.username === approverUsername) ? fresh : null;
+            });
+          } catch {
+            const fresh = await provider.fetchSingleMR(projectPath, iid, null).catch(() => null);
+            throw new Error(
+              `expected reviewers to include "${approverUsername}", got ${JSON.stringify(fresh?.reviewers.map(r => r.username) ?? [])}`
+            );
+          }
         }
       );
     } else {
@@ -844,12 +863,21 @@ export async function runWriteConformance(
             // Re-reading is the assertion. "Did not throw" also passes for a
             // provider that accepts the call and changes nothing, which is the
             // shape MAT-25 and shouldRemoveSourceBranch were built to catch.
-            const after = await pollUntil(`resolved state of ${target.id}`, async () => {
-              const fresh = await provider.fetchMRDiscussions(repoId, iid);
-              const d = fresh.discussions.find(x => x.id === target.id);
-              return d?.resolved === true ? d : null;
-            });
-            assert(after.resolved === true, `expected resolved true, got ${after.resolved}`);
+            // pollUntil itself only resolves once `resolved === true` is
+            // already true, so a trailing assert on that same value could
+            // never fire; catching the timeout and re-reading here is what
+            // puts the actual resolved state into the failure message.
+            try {
+              await pollUntil(`resolved state of ${target.id}`, async () => {
+                const fresh = await provider.fetchMRDiscussions(repoId, iid);
+                const d = fresh.discussions.find(x => x.id === target.id);
+                return d?.resolved === true ? d : null;
+              });
+            } catch {
+              const fresh = await provider.fetchMRDiscussions(repoId, iid).catch(() => null);
+              const d = fresh?.discussions.find(x => x.id === target.id);
+              throw new Error(`expected resolved true, got ${d?.resolved}`);
+            }
           }
         );
 
@@ -866,12 +894,20 @@ export async function runWriteConformance(
 
             await provider.unresolveDiscussion(projectPath, iid, target.id);
 
-            const after = await pollUntil(`unresolved state of ${target.id}`, async () => {
-              const fresh = await provider.fetchMRDiscussions(repoId, iid);
-              const d = fresh.discussions.find(x => x.id === target.id);
-              return d?.resolved === false ? d : null;
-            });
-            assert(after.resolved === false, `expected resolved false, got ${after.resolved}`);
+            // Same reasoning as resolveDiscussion's check above: catch the
+            // poll timeout and re-read, rather than chaining an assert that
+            // pollUntil's own success already guarantees.
+            try {
+              await pollUntil(`unresolved state of ${target.id}`, async () => {
+                const fresh = await provider.fetchMRDiscussions(repoId, iid);
+                const d = fresh.discussions.find(x => x.id === target.id);
+                return d?.resolved === false ? d : null;
+              });
+            } catch {
+              const fresh = await provider.fetchMRDiscussions(repoId, iid).catch(() => null);
+              const d = fresh?.discussions.find(x => x.id === target.id);
+              throw new Error(`expected resolved false, got ${d?.resolved}`);
+            }
           }
         );
       }
@@ -1299,7 +1335,17 @@ const RAN_GITHUB_JOB_CONCLUSIONS = new Set(['success', 'failure']);
  */
 const TERMINAL_GITLAB_PIPELINE_STATUSES = new Set(['success', 'failed', 'canceled']);
 
-/** How many recent pipelines to consider before giving up on finding a settled one. */
+/**
+ * How many recent pipelines (or, on GitHub, runs) to consider before giving
+ * up on finding a settled one.
+ *
+ * Not arbitrary: 20 is GitLab's own default `per_page`, so the scan stays a
+ * single request instead of paginating. If the last 20 pipelines are all
+ * still running, or GitHub's last 20 runs all settled with every job
+ * skipped or cancelled, that is a fixture problem for someone to
+ * investigate, not something this bound should silently paper over by
+ * growing.
+ */
 const PIPELINE_SCAN_LIMIT = 20;
 
 async function latestPipelineAndJob(fixture: ProviderFixture): Promise<PipelineProbe | null> {
@@ -1308,24 +1354,35 @@ async function latestPipelineAndJob(fixture: ProviderFixture): Promise<PipelineP
   if (fixture.name === 'github') {
     const runsRes = await provider.restRequest(
       'GET',
-      `/repos/${projectPath}/actions/runs?per_page=1&status=completed`
+      `/repos/${projectPath}/actions/runs?per_page=${PIPELINE_SCAN_LIMIT}&status=completed`
     );
     if (!runsRes.ok) return null;
     const runs = (await runsRes.json()) as { workflow_runs: Array<{ id: number }> };
-    const run = runs.workflow_runs[0];
-    if (!run) return null;
-    const jobsRes = await provider.restRequest(
-      'GET',
-      `/repos/${projectPath}/actions/runs/${run.id}/jobs`
-    );
-    if (!jobsRes.ok) return null;
-    const { jobs } = (await jobsRes.json()) as {
-      jobs: Array<{ id: number; status: string; conclusion: string | null }>;
-    };
-    const job = jobs.find(
-      j => j.status === 'completed' && RAN_GITHUB_JOB_CONCLUSIONS.has(j.conclusion ?? '')
-    );
-    return job ? { pipelineId: run.id, jobId: job.id, jobFailed: job.conclusion === 'failure' } : null;
+
+    // Scanning several runs rather than trusting the single newest one, for
+    // the same reason the GitLab branch below scans several pipelines: the
+    // newest run's jobs can all be skipped or cancelled (e.g. a workflow
+    // whose trigger conditions excluded every job that run), which would
+    // make this probe return null and the CI checks skip where GitLab, with
+    // its own multi-pipeline scan, would keep looking.
+    for (const run of runs.workflow_runs) {
+      const jobsRes = await provider.restRequest(
+        'GET',
+        `/repos/${projectPath}/actions/runs/${run.id}/jobs`
+      );
+      if (!jobsRes.ok) continue;
+      const { jobs } = (await jobsRes.json()) as {
+        jobs: Array<{ id: number; status: string; conclusion: string | null }>;
+      };
+      const job = jobs.find(
+        j => j.status === 'completed' && RAN_GITHUB_JOB_CONCLUSIONS.has(j.conclusion ?? '')
+      );
+      if (job) {
+        return { pipelineId: run.id, jobId: job.id, jobFailed: job.conclusion === 'failure' };
+      }
+    }
+
+    return null;
   }
 
   const encoded = encodeURIComponent(projectPath);
@@ -1525,6 +1582,52 @@ export async function runCiConformance(
     if (probe.jobFailed) {
       await check(report, fixture, 'retryJob', 'accepts a retry of the failed job', async () => {
         await provider.retryJob(projectPath, probe.jobId);
+
+        // GitLab jobs are immutable once they finish: retrying one creates a
+        // NEW job rather than mutating `probe.jobId` in place, so re-reading
+        // that same job id would show "failed" forever regardless of whether
+        // the retry did anything. The pipeline's own aggregate status is the
+        // observable effect instead -- it leaves its terminal state the
+        // moment the new job is queued, which is exactly what a no-op
+        // retryJob would never produce.
+        //
+        // Bound (2s sampling, 30s timeout): the risk a 2s gap runs is
+        // missing a retry that both leaves and re-enters a terminal status
+        // inside that single gap -- plausible in principle on this fixture,
+        // whose `install` job fails on every pipeline by design and could
+        // fail fast again on retry. What makes 2s defensible anyway:
+        // `pollUntil` takes its first sample immediately, with no initial
+        // sleep, and GitLab's job-retry endpoint returns the newly created
+        // job in its own response body, meaning that job (and the
+        // pipeline's recomputed aggregate status) already exists before
+        // this poll ever samples. The transition this check needs to see
+        // has therefore almost certainly already happened by the first
+        // sample; the remaining ~28s of headroom is for a slow runner
+        // pickup, not for catching a fast one. A timeout here is still
+        // ambiguous: it means either the retry did nothing, or the retry
+        // fired and the pipeline settled back to a terminal status between
+        // two samples before either one caught the transition. Read a red
+        // result here as "investigate further", not as proof retryJob is
+        // broken. Left both numbers unchanged rather than shrinking the
+        // interval further: the first-sample argument already covers the
+        // structural risk, so a tighter interval would only add API calls
+        // without closing the remaining ambiguity.
+        const encoded = encodeURIComponent(projectPath);
+        await pollUntil(
+          `pipeline ${probe.pipelineId} leaving its terminal status after retryJob`,
+          async () => {
+            const res = await provider.restRequest(
+              'GET',
+              apiPath(fixture, `/projects/${encoded}/pipelines/${probe.pipelineId}`)
+            );
+            if (!res.ok) return null;
+            const pipeline = (await res.json()) as { status?: string };
+            return pipeline.status && !TERMINAL_GITLAB_PIPELINE_STATUSES.has(pipeline.status)
+              ? true
+              : null;
+          },
+          { timeoutMs: 30_000, intervalMs: 2_000 }
+        );
       });
     } else {
       report.skip(
@@ -1578,6 +1681,42 @@ export async function runCiConformance(
             `called at ${calledAt} (after one round trip added by this diagnostic)`
         );
         await provider.retryJob(projectPath, failed.jobId);
+
+        // Everything above this line exists to keep the retry call itself
+        // unperturbed for MAT-128's measurement, so the effect check belongs
+        // strictly after it. GitHub's job-rerun moves the containing run out
+        // of "completed" (into "queued", then "in_progress") before it
+        // settles again; that transition is the one effect observable here
+        // without diffing individual job attempts, so poll for it rather
+        // than trusting the accepted call alone.
+        //
+        // Bound (2s sampling, 30s timeout): same pair, and the same risk, as
+        // GitLab's retryJob poll above -- a rerun that both leaves and
+        // re-enters "completed" inside one 2s gap would be missed by every
+        // sample. The same first-sample argument narrows that risk here too
+        // (`pollUntil` samples immediately, with no initial sleep), but with
+        // less certainty than GitLab's: accepting a rerun request is
+        // understood to queue the run, flipping its status, as part of that
+        // request completing rather than as a separate later step, but
+        // Octokit's rerun response carries no body confirming that the way
+        // GitLab's retry response confirms its new job. A timeout on this
+        // poll is therefore ambiguous between "the retry did nothing" and
+        // "the retry fired and the run resettled to completed before any
+        // sample landed inside the gap that would have shown the
+        // transition" -- it is not, by itself, proof of a broken retryJob.
+        await pollUntil(
+          `workflow run ${failed.pipelineId} leaving "completed" after retryJob`,
+          async () => {
+            const res = await provider.restRequest(
+              'GET',
+              `/repos/${projectPath}/actions/runs/${failed.pipelineId}`
+            );
+            if (!res.ok) return null;
+            const run = (await res.json()) as { status?: string };
+            return run.status !== 'completed' ? true : null;
+          },
+          { timeoutMs: 30_000, intervalMs: 2_000 }
+        );
       });
     });
   } catch (err) {

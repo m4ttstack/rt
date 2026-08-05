@@ -1465,6 +1465,12 @@ export class GitHubProvider implements GitProvider {
     }
   }
 
+  /**
+   * Disarm a previously-armed auto-merge on this pull request.
+   *
+   * Same `allow_auto_merge` repository precondition as `setAutoMerge`: GitHub
+   * has nothing to disable if that setting was never on for this repository.
+   */
   async cancelAutoMerge(projectPath: string, mrIid: number): Promise<void> {
     const nodeId = await this.pullRequestNodeId('cancelAutoMerge', projectPath, mrIid);
     const mutation = `

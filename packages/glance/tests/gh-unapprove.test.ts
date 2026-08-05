@@ -74,14 +74,20 @@ describe('unapprovePullRequest', () => {
   });
 
   test('ordering comes from submitted_at, not list order', async () => {
+    // The APPROVED review that should be dismissed (id 2) is listed FIRST
+    // but is the OLDEST submission; the newest submission (id 3, last in
+    // the list) is what actually counts and is also APPROVED. A "take the
+    // first APPROVED review encountered" implementation would dismiss id 2
+    // and fail this assertion; only sorting by submitted_at picks id 3.
     const { provider, dismissals } = providerWith([
-      review(2, ADA, 'APPROVED', '2026-08-03T00:00:00Z'),
-      review(1, ADA, 'COMMENTED', '2026-08-01T00:00:00Z')
+      review(2, ADA, 'APPROVED', '2026-08-01T00:00:00Z'),
+      review(1, ADA, 'COMMENTED', '2026-08-02T00:00:00Z'),
+      review(3, ADA, 'APPROVED', '2026-08-03T00:00:00Z')
     ]);
 
     await provider.unapprovePullRequest('acme/repo', 5);
 
-    expect(dismissals[0]?.review_id).toBe(2);
+    expect(dismissals[0]?.review_id).toBe(3);
   });
 
   test('another user\'s approval is never dismissed', async () => {
