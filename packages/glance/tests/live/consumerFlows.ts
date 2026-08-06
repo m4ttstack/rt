@@ -614,9 +614,11 @@ async function buildFlowFixture(
 
   // A reviewer, when a second identity exists, is what gives U10 a live
   // `reviewState` to map. Assigned through `requestReReview` rather than
-  // `createPullRequest({reviewers})`: GitLabProvider's `asUserIds` casts
-  // usernames straight to numbers, so the create-time path silently assigns
-  // nobody there. Best-effort, and the reason is carried into U10's skip:
+  // `createPullRequest({reviewers})`: this predates MAT-24's fix, when the
+  // create-time path silently assigned nobody on GitLab. Both paths work
+  // now; `requestReReview` stays because it exercises the same lookup and
+  // keeps this setup independent of create-time option handling.
+  // Best-effort, and the reason is carried into U10's skip:
   // a reviewer is this suite's convenience, not one of the fifteen rows.
   let reviewerReason = 'no second identity is configured for this fixture';
   if (fixture.approver) {
