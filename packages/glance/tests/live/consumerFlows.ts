@@ -2102,15 +2102,56 @@ interface EventsSession {
   coldTickDeliveredBatch: boolean;
   finalCursor: EventCursor;
   batches: InvalidationBatch[];
-  branchBatch: InvalidationBatch;
-  mrBatch: InvalidationBatch;
-  /** Wall time from starting the watcher to seeing both invalidations. */
+  /**
+   * The batch carrying each driver's invalidation, or null when that one
+   * never arrived inside the wait.
+   *
+   * Nullable rather than guaranteed, because the two drivers do NOT share a
+   * delivery pipeline on every forge. GitLab emits both from one events feed
+   * with one latency, so "wait for both or run nothing" costs nothing there
+   * and the all-or-nothing shape this replaced was invisible. GitHub splits
+   * them: PR/issue-comment events and git-ref events (Push/Create/Delete)
+   * are delivered independently, and either class can stall while the other
+   * flows normally -- measured on 2026-08-06, when comment events arrived in
+   * 11s while NO git-ref event reached the feed for over 12 minutes across
+   * three separate branch creations, two commits and two deletions (raw-feed
+   * probe, and a watcher rehearsal that saw `mr` at 63s and no `branch` in
+   * 425s). Coupling them meant one stalled class skipped all eight rows,
+   * including the four that never read a branch key.
+   *
+   * Each row now requires only the half it reads, via `requireBranchBatch` /
+   * `requireMrBatch`, and the other half's absence is reported as its own
+   * evidence-bearing Inconclusive.
+   */
+  branchBatch: InvalidationBatch | null;
+  mrBatch: InvalidationBatch | null;
+  /** Why a null `branchBatch`/`mrBatch` above is null; null when both arrived. */
+  partialReason: string | null;
+  /** Wall time from starting the watcher to seeing the invalidations it saw. */
   elapsedMs: number;
 }
 
 function requireSession(session: EventsSession | null, reason: string | null): EventsSession {
   if (session) return session;
   throw new Inconclusive(reason ?? 'the events session could not be built, and no reason was recorded');
+}
+
+/** The branch driver's batch, or an Inconclusive saying it never arrived. */
+function requireBranchBatch(session: EventsSession): InvalidationBatch {
+  if (session.branchBatch) return session.branchBatch;
+  throw new Inconclusive(
+    session.partialReason ??
+      `no branch invalidation for ${session.branchRef} was delivered, and no reason was recorded`
+  );
+}
+
+/** The mr driver's batch, or an Inconclusive saying it never arrived. */
+function requireMrBatch(session: EventsSession): InvalidationBatch {
+  if (session.mrBatch) return session.mrBatch;
+  throw new Inconclusive(
+    session.partialReason ??
+      `no mr invalidation for !${session.mrRef} was delivered, and no reason was recorded`
+  );
 }
 
 /** A bounded wait that ran out is data about the feed; say how long it waited. */
@@ -2180,28 +2221,56 @@ async function buildEventsSession(
       'consumer-flow: driving the events feed. Safe to delete.'
     );
 
-    let found: { branchBatch: InvalidationBatch; mrBatch: InvalidationBatch };
-    try {
-      found = await pollUntil(
-        `a branch invalidation for ${branchRef} and an mr invalidation for !${mrRef}`,
-        async () => {
-          const batches = capture.batches();
-          const branchBatch = batches.find(b =>
-            b.invalidations.some(k => k.kind === 'branch' && k.ref === branchRef)
-          );
-          const mrBatch = batches.find(b =>
-            b.invalidations.some(k => k.kind === 'mr' && k.ref === mrRef)
-          );
-          return branchBatch && mrBatch ? { branchBatch, mrBatch } : null;
-        },
-        { timeoutMs: 240_000, intervalMs: 3_000 }
-      );
-    } catch (err) {
-      throw feedTimeout(
-        startedAt,
-        `the feed delivered no branch invalidation for ${branchRef} and/or no mr invalidation for !${mrRef}`,
-        err
-      );
+    const observed = () => {
+      const batches = capture.batches();
+      return {
+        branchBatch:
+          batches.find(b => b.invalidations.some(k => k.kind === 'branch' && k.ref === branchRef)) ??
+          null,
+        mrBatch:
+          batches.find(b => b.invalidations.some(k => k.kind === 'mr' && k.ref === mrRef)) ?? null
+      };
+    };
+
+    // Waits for both, settles for whichever arrived. A timeout here is a
+    // measurement of one delivery pipeline, not a verdict on the session:
+    // see `EventsSession.branchBatch` for why the two drivers can arrive
+    // independently, and why blocking every row on the slower one was a
+    // GitLab-ism.
+    //
+    // The budget is 420s rather than the 240s written for GitLab because the
+    // two watchers do not tick at the same rate. GitLab's honors the 5s
+    // `intervalMs` passed above; GitHub's raises the wait to the server's
+    // `X-Poll-Interval: 60` (production-correct, and the caller cannot lower
+    // it), so the same 240s buys 16 GitLab ticks but only 3 GitHub ticks. A
+    // rehearsal on 2026-08-06 measured GitHub's first warm delivery at 63s --
+    // ~11s of feed latency inside one 60s tick -- so 420s is seven ticks of
+    // headroom instead of three.
+    let found = observed();
+    let partialReason: string | null = null;
+    if (!found.branchBatch || !found.mrBatch) {
+      try {
+        await pollUntil(
+          `a branch invalidation for ${branchRef} and an mr invalidation for !${mrRef}`,
+          async () => {
+            const seen = observed();
+            return seen.branchBatch && seen.mrBatch ? seen : null;
+          },
+          { timeoutMs: 420_000, intervalMs: 3_000 }
+        );
+      } catch (err) {
+        const missing = [
+          !observed().branchBatch ? `no branch invalidation for ${branchRef}` : null,
+          !observed().mrBatch ? `no mr invalidation for !${mrRef}` : null
+        ].filter((m): m is string => m !== null);
+        const timeout = feedTimeout(startedAt, `the feed delivered ${missing.join(' and ')}`, err);
+        // Nothing at all arrived: there is no session to hand out, and every
+        // row skips with this same reason exactly as before.
+        found = observed();
+        if (!found.branchBatch && !found.mrBatch) throw timeout;
+        partialReason = timeout.message;
+      }
+      found = observed();
     }
 
     const cursors = capture.cursors();
@@ -2215,6 +2284,7 @@ async function buildEventsSession(
       batches: capture.batches(),
       branchBatch: found.branchBatch,
       mrBatch: found.mrBatch,
+      partialReason,
       elapsedMs: Date.now() - startedAt
     };
   } finally {
@@ -2270,6 +2340,9 @@ async function runEventsFlows(
       if (skipReason) throw new Inconclusive(skipReason);
       const s = requireFixture(state, setupError);
       const events = requireSession(session, sessionReason);
+      // Reads the mr driver only; the branch driver's delivery is U21's
+      // subject, not this row's.
+      requireMrBatch(events);
 
       const pr = await provider.fetchSingleMR(projectPath, Number(events.mrRef), null);
       assert(pr !== null, `the mr invalidation named !${events.mrRef}, which fetchSingleMR could not read back`);
@@ -2418,7 +2491,7 @@ async function runEventsFlows(
       await rtProcessKeys(
         provider,
         projectPath,
-        events.mrBatch.invalidations,
+        requireMrBatch(events).invalidations,
         cache,
         branchByIid
       );
@@ -2597,7 +2670,7 @@ async function runEventsFlows(
       requireFixture(state, setupError);
       const events = requireSession(session, sessionReason);
 
-      const branchKeys = events.branchBatch.invalidations.filter(
+      const branchKeys = requireBranchBatch(events).invalidations.filter(
         k => k.kind === 'branch' && k.ref === events.branchRef
       );
       assert(
