@@ -134,14 +134,18 @@ export interface FetchPullRequestsOptions {
 
   /**
    * Called once per way the result fell short: a page cap reached with matches
-   * outstanding, a search page that failed, an MR whose detail fetch was
-   * rejected. A quiet fetch made no such compromise.
+   * outstanding, a search page that failed, or a per-PR fetch that failed and
+   * either dropped that PR from the result or left one of its fields at its
+   * "unknown" value. A quiet fetch made no such compromise.
    *
    * Invoked synchronously during the fetch; a callback that throws is ignored,
    * never surfaced as a fetch failure.
    *
-   * GitHub emits these for its search/listing page caps and for non-ok detail
-   * responses (rate limiting reaches a caller this way). GitLab paginates its
+   * GitHub emits these for its search/listing page caps (`search`, `list`) and
+   * for the per-PR fetches it assembles a `PullRequest` from: `detail` and
+   * `reviews` (either one failing drops the PR from the result), `checks` and
+   * `threads` (the PR stays, with `pipeline` / `unresolvedThreadCount` at
+   * `null`). Rate limiting reaches a caller this way. GitLab paginates its
    * project mode to exhaustion and raises transport failures as exceptions, so
    * it has nothing to report and never calls this.
    */
