@@ -2049,6 +2049,18 @@ class GapFillDebouncer {
   private pending = new Set<string>();
   private timer: ReturnType<typeof setTimeout> | null = null;
   readonly calls: string[][] = [];
+  /**
+   * The first rejection `run` produced, or null.
+   *
+   * Captured rather than left to float, because the timer callback below
+   * fires OUTSIDE the `check()` that owns this debouncer: an unhandled
+   * rejection there could never become a report entry, and would instead
+   * print an uncaught trace and set the runner's exit code to 1 with no
+   * Reporter line explaining it. Since the live instance's `run` makes a real
+   * network call, one flaky request would flip a green run red and silent.
+   * The check reads this field and routes it through the normal machinery.
+   */
+  failure: unknown = null;
 
   constructor(
     private readonly run: (refs: string[]) => Promise<void>,
@@ -2063,7 +2075,9 @@ class GapFillDebouncer {
       this.pending.clear();
       this.timer = null;
       this.calls.push(refs);
-      void this.run(refs);
+      this.run(refs).catch((err: unknown) => {
+        if (this.failure === null) this.failure = err;
+      });
     }, this.debounceMs);
   }
 
@@ -2100,10 +2114,15 @@ function requireSession(session: EventsSession | null, reason: string | null): E
 }
 
 /** A bounded wait that ran out is data about the feed; say how long it waited. */
-function feedTimeout(startedAt: number, what: string, err: unknown): Inconclusive {
+function feedTimeout(
+  startedAt: number,
+  what: string,
+  err: unknown,
+  since = 'starting the watcher'
+): Inconclusive {
   const seconds = Math.round((Date.now() - startedAt) / 1000);
   return new Inconclusive(
-    `${what} within ${seconds}s of starting the watcher; a slow feed is a measurement, not necessarily a ` +
+    `${what} within ${seconds}s of ${since}; a slow feed is a measurement, not necessarily a ` +
       `defect: ${err instanceof Error ? err.message : String(err)}`
   );
 }
@@ -2816,11 +2835,33 @@ async function runEventsFlows(
           JSON.stringify(debouncer.calls[0]) === JSON.stringify(burst),
           `the coalesced call carried ${JSON.stringify(debouncer.calls[0])}, not the whole burst ${JSON.stringify(burst)}`
         );
-        await pollUntil(
-          'the batched lookup issued by the coalesced gap-fill to resolve',
-          async () => (fetched.length > 0 ? fetched : null),
-          { timeoutMs: 60_000, intervalMs: 500 }
-        );
+        // Waits for the batched lookup to SETTLE, either way: `failure` is
+        // the rejection the debouncer captured on this flow's behalf, and
+        // watching only for `fetched` would sit here for the full timeout
+        // after a rejected request and then report a timeout instead of the
+        // error that actually happened.
+        const lookupStartedAt = Date.now();
+        try {
+          await pollUntil(
+            'the batched lookup issued by the coalesced gap-fill to settle',
+            async () => (fetched.length > 0 || debouncer.failure !== null ? true : null),
+            { timeoutMs: 60_000, intervalMs: 500 }
+          );
+        } catch (err) {
+          throw feedTimeout(
+            lookupStartedAt,
+            'the batched lookup issued by the coalesced gap-fill neither resolved nor rejected',
+            err,
+            'the burst being coalesced'
+          );
+        }
+        if (debouncer.failure !== null) {
+          const failure = debouncer.failure;
+          throw new Error(
+            "the coalesced gap-fill's batched fetchPullRequestsByBranches rejected: " +
+              (failure instanceof Error ? failure.message : String(failure))
+          );
+        }
         assert(
           fetched[0]?.get(s.stackBranch)?.iid === s.stackPr.iid,
           'the coalesced gap-fill did not resolve the branches it batched'
