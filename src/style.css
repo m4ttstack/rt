@@ -234,6 +234,10 @@ body {
   /* The drawer renders inside the clickable row; reset the inherited pointer so
      its content doesn't look clickable. Interactive children re-set pointer. */
   cursor: default;
+  /* Same reason: the trigger lives in .tui-meta, which is nowrap to keep the
+     row one line. Left inherited, no prose in the drawer wraps and every note
+     runs off the right edge. */
+  white-space: normal;
 }
 .tui-cd {
   width: min(460px, 92vw); height: 100%; overflow-y: auto;
