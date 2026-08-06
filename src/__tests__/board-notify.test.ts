@@ -5,10 +5,16 @@ import { tmpdir } from "os";
 import { notifyBoard, readBoardPort } from "../board-notify.ts";
 
 let dir: string;
-beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "bn-")); });
+let originalPort: string | undefined;
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), "bn-"));
+  originalPort = process.env.MR_BOARD_PORT;
+  delete process.env.MR_BOARD_PORT;
+});
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
-  delete process.env.MR_BOARD_PORT;
+  if (originalPort === undefined) delete process.env.MR_BOARD_PORT;
+  else process.env.MR_BOARD_PORT = originalPort;
 });
 
 const SIGNAL = {
