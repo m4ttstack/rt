@@ -868,6 +868,18 @@ export class GitHubProvider implements GitProvider {
     return { mrIid, repositoryId, discussions };
   }
 
+  /**
+   * The per-branch detail read below requires admin access on the
+   * repository, so a non-admin token that previously resolved with a full
+   * list now throws on the first protected branch it cannot read. That is
+   * the interface docstring's rule (MAT-147) playing out here: this method
+   * keeps the throw rather than returning whatever branches it did manage
+   * to read, because a caller gating a destructive action on this list has
+   * no way to know the list stopped short. If admin-less callers become
+   * common enough that this hurts, the honest fix is to change the return
+   * type to say which branches were unreadable, not to pick a default and
+   * hope it is never wrong.
+   */
   async fetchBranchProtectionRules(
     projectPath: string
   ): Promise<BranchProtectionRule[]> {
@@ -920,8 +932,18 @@ export class GitHubProvider implements GitProvider {
         // repository on the free plan this is a 403, which the message surfaces.
         // Not `ghError`-shaped: the prefix here is "reading protection for
         // ...", not "op failed:", so the body is read with `bodyText` directly.
+        //
+        // The branch name was already in this message; the part missing was
+        // that throwing here also discards every rule already accumulated in
+        // `rules` for branches read before this one (MAT-147). Saying so
+        // (rather than repeating the branch name) is what tells a caller
+        // debugging this whether earlier branches even mattered.
+        const discarded =
+          rules.length > 0
+            ? ` (discarding ${rules.length} already-read rule${rules.length === 1 ? '' : 's'})`
+            : '';
         throw new Error(
-          `fetchBranchProtectionRules failed reading protection for "${b.name}": ${err.status} ${bodyText(err)}`
+          `fetchBranchProtectionRules failed reading protection for "${b.name}": ${err.status} ${bodyText(err)}${discarded}`
         );
       }
       rules.push({

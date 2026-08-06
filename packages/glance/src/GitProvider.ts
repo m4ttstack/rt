@@ -280,6 +280,15 @@ export interface GitProvider {
   /**
    * Fetch branch protection rules for a repository.
    * Returns an array of rules (one per protected branch/pattern).
+   *
+   * Implementations throw on a partial read failure rather than returning
+   * the rules already read: callers gate destructive actions on this list,
+   * and once it is returned a partial list cannot be told apart from a
+   * complete one, so returning it would be silent data loss wearing the
+   * shape of success (MAT-147). If a caller ever needs to act on whatever
+   * was readable, the honest fix is a return type that can say which
+   * branches were unreadable, not an implementation quietly choosing
+   * between the two ways of hiding that fact.
    */
   fetchBranchProtectionRules(projectPath: string): Promise<BranchProtectionRule[]>;
 
