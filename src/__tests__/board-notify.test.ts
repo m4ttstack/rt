@@ -22,14 +22,14 @@ describe("readBoardPort", () => {
   test("reads the port out of config.json", () => {
     const p = join(dir, "config.json");
     writeFileSync(p, JSON.stringify({ port: 8123 }));
-    expect(readBoardPort(p)).toBe(8123);
+    expect(readBoardPort(p, join(dir, "no-port-file"))).toBe(8123);
   });
 
   test("falls back to 7930 when the config is missing or portless", () => {
-    expect(readBoardPort(join(dir, "nope.json"))).toBe(7930);
+    expect(readBoardPort(join(dir, "nope.json"), join(dir, "no-port-file"))).toBe(7930);
     const p = join(dir, "config.json");
     writeFileSync(p, JSON.stringify({ slack: {} }));
-    expect(readBoardPort(p)).toBe(7930);
+    expect(readBoardPort(p, join(dir, "no-port-file"))).toBe(7930);
   });
 
   test("MR_BOARD_PORT env wins over the port file and config.json", () => {
