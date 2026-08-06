@@ -563,8 +563,8 @@ if (glTestMR && glProjectId) {
 // 12. restRequest (GitLab)
 console.log('\n▶ restRequest');
 try {
-  const res = await gitlab.restRequest('GET', '/api/v4/user');
-  assert(res.ok, `REST /api/v4/user returned ${res.status}`);
+  const res = await gitlab.restRequest('GET', '/user');
+  assert(res.ok, `REST /user returned ${res.status}`);
   const data = (await res.json()) as any;
   assert(
     data.username === glUser.username,
@@ -630,7 +630,7 @@ if (GL_PROJECT_PATH) {
     // Create a branch from default branch HEAD
     const createBranchRes = await gitlab.restRequest(
       'POST',
-      `/api/v4/projects/${encodeURIComponent(GL_PROJECT_PATH)}/repository/branches?branch=${encodeURIComponent(testBranch)}&ref=main`
+      `/projects/${encodeURIComponent(GL_PROJECT_PATH)}/repository/branches?branch=${encodeURIComponent(testBranch)}&ref=main`
     );
     assert(createBranchRes.ok, `Created test branch: ${testBranch}`);
 
@@ -711,14 +711,14 @@ if (GL_PROJECT_PATH) {
     // ── Setup: create branch with a commit ─────────────────────────────
     const createBranchRes = await gitlab.restRequest(
       'POST',
-      `/api/v4/projects/${encodeURIComponent(GL_PROJECT_PATH)}/repository/branches?branch=${encodeURIComponent(mutBranch)}&ref=main`
+      `/projects/${encodeURIComponent(GL_PROJECT_PATH)}/repository/branches?branch=${encodeURIComponent(mutBranch)}&ref=main`
     );
     assert(createBranchRes.ok, `Created mutation test branch: ${mutBranch}`);
 
     // Push a file so there's a diff
     await gitlab.restRequest(
       'POST',
-      `/api/v4/projects/${encodeURIComponent(GL_PROJECT_PATH)}/repository/files/${encodeURIComponent(`sdk-mut-test-${Date.now()}.txt`)}`,
+      `/projects/${encodeURIComponent(GL_PROJECT_PATH)}/repository/files/${encodeURIComponent(`sdk-mut-test-${Date.now()}.txt`)}`,
       {
         branch: mutBranch,
         content: 'mutation test',
@@ -788,7 +788,7 @@ if (GL_PROJECT_PATH) {
     const projIdEncoded = encodeURIComponent(GL_PROJECT_PATH);
     const createDiscRes = await gitlab.restRequest(
       'POST',
-      `/api/v4/projects/${projIdEncoded}/merge_requests/${mutMRIid}/discussions`,
+      `/projects/${projIdEncoded}/merge_requests/${mutMRIid}/discussions`,
       { body: noteBody }
     );
     if (createDiscRes.ok) {
