@@ -5,11 +5,12 @@
  * feature-detects an optional method, the flow exercises BOTH branches the
  * consumer can take, so the fallback path has coverage too.
  *
- * Scope: the fifteen rows that matrix tags NOT events-dependent, U1 through
- * U15, one `check()` per row in matrix order. The nine events-dependent rows
- * (U16-U24) belong to a separate task; `runConsumerFlows` stays the single
- * export so adding them is one more call inside it rather than a second entry
- * point the runner has to remember.
+ * Scope: all twenty-four rows, one `check()` per row in matrix order --
+ * U1-U15, which the matrix tags NOT events-dependent and which run on both
+ * providers, then U16-U24, the events-dependent rows, which run wherever the
+ * expectation table declares `watchEvents` supported and report a skip
+ * naming that declaration where it does not. `runConsumerFlows` is the single
+ * export, so the runner has one entry point rather than one per section.
  *
  * The consumer set is smaller than the phase-5 brief assumed, and the matrix
  * is the authority on it: two direct consumers (gitq, and `rt` -- the
@@ -41,9 +42,14 @@ import type { FetchPullRequestsOptions, GitProvider, MRState } from '../../src/G
 import { getMRDashboardProps } from '../../src/MRDashboard.ts';
 import type {
   Discussion,
+  EventCursor,
+  InvalidationBatch,
+  InvalidationKey,
   MergeRequestReviewState,
   PullRequest,
-  ReviewDisplayState
+  ReviewDisplayState,
+  WatchEventsOptions,
+  WatchEventsStatus
 } from '../../src/types.ts';
 import { getReviewDisplayState } from '../../src/types.ts';
 import { expectationFor } from './expectations.ts';
@@ -755,10 +761,11 @@ export async function runConsumerFlows(
     await runGitqFlows(fixture, report, state, setupError);
     await runDashboardFlows(fixture, report, state, setupError);
     await runAuthorScopeFlows(fixture, report, state, setupError);
-    // U16-U24, the events-dependent rows of the same matrix section, append
-    // here as one more `runEventsFlows(fixture, report, state, setupError)`
-    // call: they need the same shared fixture and the same reporting shape,
-    // and `runConsumerFlows` stays the runner's single entry point.
+    // U16-U24, the events-dependent rows of the same matrix section. They
+    // take `branchesToClean` as well as the shared fixture: the events feed
+    // is driven by pushing a branch, and that branch is the caller's to
+    // delete like every other one this suite creates.
+    await runEventsFlows(fixture, report, state, setupError, branchesToClean);
   } finally {
     for (const branch of branchesToClean) {
       await fixture.provider.deleteBranch(fixture.projectPath, branch).catch(err => {
@@ -1775,6 +1782,1065 @@ async function runAuthorScopeFlows(
       assert(
         !withAnonymous.some(pr => pr !== anonymous && pr.author?.username === s.ownerUsername),
         'the filter kept an out-of-scope author, so the anonymous keep above proves nothing'
+      );
+    }
+  );
+}
+
+// ── Events-dependent flows (U16-U24) ────────────────────────────────────────
+//
+// Everything below reproduces rt's events path: rt is the ONLY consumer of
+// the events contract (gitq has zero usage; mr-board inherits rt's freshness
+// transitively over a socket), so "the consumer" here always means rt.
+//
+// Three rules shape this section, and each exists because breaking it would
+// make these checks worthless as the phase-5 GitHub acceptance gate they are
+// meant to become:
+//
+//  1. Every flow gates on `expectationFor(fixture.name, 'watchEvents')`, never
+//     on the fixture's name. Today that means GitLab runs them and GitHub
+//     reports a skip quoting the table's own note. When phase 5 implements
+//     GitHub's `watchEvents` and flips that row to `supported`, these become
+//     live GitHub assertions with no edit here at all -- which is only true
+//     if nothing in this file knows which provider it is talking to.
+//
+//  2. No claim about a cursor is numeric. The phase-5 probe
+//     (.local-dev/derisk/probe-findings.md, surprise S1) measured GitHub
+//     event ids arriving from two disjoint numeric ranges roughly 4e9 apart,
+//     so a client keeping `max(id)` parks its high-water mark in the git-ref
+//     range on its first tick and discards every PR, review and comment event
+//     forever -- 77-80% of the feed, silently. An assertion that a cursor is
+//     numerically monotonic would therefore enshrine a GitLab-ism as the
+//     contract. Cursor advancement is asserted the provider-neutral way
+//     instead: the cursor CHANGED, and resuming from it replays nothing.
+//
+//  3. Waits are bounded and a timeout is Inconclusive, not a failure. The
+//     GitLab feed has its own delivery delay and GitHub documents 30s-6h; a
+//     slow feed is data about the feed, not a defect in glance. Each timeout
+//     carries its elapsed time so the skip line says how long it actually
+//     waited.
+//
+// What drives the feed: a branch push. GitLab's own feed contract (see
+// EventsPoller's docstring) records two verified blind spots -- metadata-only
+// MR edits and pipeline status transitions emit NO event -- so retitling an
+// MR would produce nothing to observe. Pushes emit; notes emit. This section
+// uses exactly those two actions.
+
+/** rt: `GAP_FILL_DEBOUNCE_MS` (`consumer-repo-tools.md` § latency expectations). */
+const GAP_FILL_DEBOUNCE_MS = 5_000;
+
+/** The four legal `InvalidationKind` values, as a runtime set for U17. */
+const INVALIDATION_KINDS = new Set(['mr', 'notes', 'pipelines', 'branch']);
+
+/**
+ * Why the events flows cannot run against this fixture, or null when they can.
+ *
+ * Reads the same method expectation table conformance.ts does. `absent` is
+ * GitHub's row today; anything other than `supported` is reported rather than
+ * guessed at, so a future table edit that downgrades GitLab surfaces as a skip
+ * naming the new value instead of a crash.
+ */
+function eventsSkipReason(fixture: ProviderFixture): string | null {
+  const expectation = expectationFor(fixture.name, 'watchEvents');
+  if (expectation.support === 'supported') return null;
+  return (
+    `the expectation table declares watchEvents "${expectation.support}" for this provider, so there is ` +
+    `no events feed to drive` +
+    (expectation.note ? `: ${expectation.note}` : '')
+  );
+}
+
+// ── Capturing a live watcher ────────────────────────────────────────────────
+
+/**
+ * One delivery from a running watcher, in arrival order.
+ *
+ * Order is the point of keeping a single log rather than three arrays.
+ * `EventsWatcher` invokes `onCursor` and then `onInvalidations` inside the
+ * same tick, so "did the cold tick fire invalidations?" is answerable only by
+ * knowing whether a batch arrived immediately after the first cursor or only
+ * after the second -- which U19 asks and three separate arrays cannot say.
+ */
+type CaptureEntry =
+  | { type: 'cursor'; cursor: EventCursor }
+  | { type: 'batch'; batch: InvalidationBatch }
+  | { type: 'status'; status: WatchEventsStatus };
+
+interface Capture {
+  log: CaptureEntry[];
+  batches(): InvalidationBatch[];
+  cursors(): EventCursor[];
+  statuses(): WatchEventsStatus[];
+  keys(): InvalidationKey[];
+  dispose(): void;
+}
+
+/**
+ * Start a real watcher and record everything it delivers.
+ *
+ * Every caller disposes in a `finally`: this starts a genuine polling loop
+ * against a live project, and conformance.ts's own reason for never calling
+ * `watchEvents` is that nothing there would ever stop it.
+ */
+function startCapture(
+  fixture: ProviderFixture,
+  projectPath: string,
+  options: Omit<WatchEventsOptions, 'onCursor' | 'onStatus'>
+): Capture {
+  const watch = fixture.provider.watchEvents;
+  if (!watch) {
+    throw new Error(
+      'the expectation table declares watchEvents supported, but the property is undefined'
+    );
+  }
+  const log: CaptureEntry[] = [];
+  const dispose = watch.call(
+    fixture.provider,
+    projectPath,
+    {
+      ...options,
+      onCursor: cursor => log.push({ type: 'cursor', cursor }),
+      onStatus: status => log.push({ type: 'status', status })
+    },
+    batch => log.push({ type: 'batch', batch })
+  );
+  return {
+    log,
+    batches: () => log.flatMap(e => (e.type === 'batch' ? [e.batch] : [])),
+    cursors: () => log.flatMap(e => (e.type === 'cursor' ? [e.cursor] : [])),
+    statuses: () => log.flatMap(e => (e.type === 'status' ? [e.status] : [])),
+    keys: () => log.flatMap(e => (e.type === 'batch' ? e.batch.invalidations : [])),
+    dispose
+  };
+}
+
+/** Post a plain comment on an MR/PR: the one non-push action GitLab's feed emits for. */
+async function postMRNote(fixture: ProviderFixture, iid: number, body: string): Promise<void> {
+  const { provider, projectPath } = fixture;
+  const path =
+    fixture.name === 'github'
+      ? `/repos/${projectPath}/issues/${iid}/comments`
+      : apiPath(fixture, `/projects/${encodeURIComponent(projectPath)}/merge_requests/${iid}/notes`);
+  const res = await provider.restRequest('POST', path, { body });
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`posting a note on !${iid} failed: HTTP ${res.status}${text ? `: ${text}` : ''}`);
+  }
+}
+
+// ── Reproduced rt events logic ──────────────────────────────────────────────
+
+interface RtFetch {
+  method: 'fetchSingleMR' | 'fetchPullRequestByBranch';
+  ref: string;
+}
+
+/**
+ * rt: the branch cache `daemon/freshness.ts` writes through, trimmed to what
+ * U19, U21, U22 and U24 turn on. Each write flushes, so `flushes` counts
+ * exactly the writes -- which is what makes "flushes exactly once" (U21) a
+ * statement about the events path issuing one write, not about batching.
+ */
+class RtCache {
+  readonly entries = new Map<string, PullRequest | null>();
+  readonly fetches: RtFetch[] = [];
+  readonly writes: string[] = [];
+  flushes = 0;
+
+  write(key: string, value: PullRequest | null): void {
+    this.entries.set(key, value);
+    this.writes.push(key);
+    this.flushes++;
+  }
+
+  writesFor(key: string): number {
+    return this.writes.filter(w => w === key).length;
+  }
+
+  fetchesFor(method: RtFetch['method'], ref: string): number {
+    return this.fetches.filter(f => f.method === method && f.ref === ref).length;
+  }
+}
+
+/**
+ * rt: `daemon/freshness.ts` `processKeys`, the switch over all four
+ * `InvalidationKey.kind` values (`consumer-repo-tools.md` § events contract).
+ *
+ * All four arms are reproduced including the two that do nothing, because the
+ * doing-nothing is the assertion in U22 (`pipelines`) and part of the
+ * accounting in U19 (`notes`). Unknown iids go to `onUnknownIid` rather than
+ * being fetched: that is rt's gap-fill debounce entry point, which U24 drives.
+ */
+async function rtProcessKeys(
+  provider: GitProvider,
+  projectPath: string,
+  keys: InvalidationKey[],
+  cache: RtCache,
+  branchByIid: Map<string, string>,
+  onUnknownIid?: (ref: string) => void
+): Promise<void> {
+  for (const key of keys) {
+    switch (key.kind) {
+      case 'mr': {
+        if (!branchByIid.has(key.ref)) {
+          // rt cannot resolve the iid to a cached branch, so it debounces a
+          // batched gap-fill rather than fetching one MR it may not want.
+          onUnknownIid?.(key.ref);
+          break;
+        }
+        cache.fetches.push({ method: 'fetchSingleMR', ref: key.ref });
+        const pr = await provider.fetchSingleMR(projectPath, Number(key.ref), null);
+        cache.write(`mr:${key.ref}`, pr);
+        break;
+      }
+      case 'notes':
+        // rt refreshes discussions only when the repo grants `discussions`
+        // AND the MR's threads are already cached. Neither holds here, so the
+        // arm is a documented no-op rather than an omission.
+        break;
+      case 'branch': {
+        cache.fetches.push({ method: 'fetchPullRequestByBranch', ref: key.ref });
+        const pr = await provider.fetchPullRequestByBranch(projectPath, key.ref, 'all');
+        // The one STATE-CLEARING write in the whole events path: a null here
+        // is written through as null rather than skipped.
+        cache.write(`branch:${key.ref}`, pr);
+        break;
+      }
+      case 'pipelines':
+        // "Pipeline status transitions emit no events (verified blind spot);
+        // the 5-min full poll covers pipeline drift." rt receives the kind as
+        // legal and deliberately ignores it.
+        break;
+    }
+  }
+}
+
+/**
+ * rt: the `mr:status` edge coalescer.
+ *
+ * The SDK contract calls `onStatus` on EVERY failed tick (types.ts says so in
+ * as many words, and U23 proves it live); rt broadcasts only when the state
+ * changes, so the UI flag cannot flap once per retry.
+ */
+function rtStatusBroadcaster(): {
+  broadcasts: WatchEventsStatus[];
+  receive: (status: WatchEventsStatus) => void;
+} {
+  const broadcasts: WatchEventsStatus[] = [];
+  let last: WatchEventsStatus['state'] | null = null;
+  return {
+    broadcasts,
+    receive(status) {
+      if (status.state === last) return;
+      last = status.state;
+      broadcasts.push(status);
+    }
+  };
+}
+
+/**
+ * rt: the gap-fill debounce around unknown-iid `mr` keys.
+ *
+ * A burst of keys inside `GAP_FILL_DEBOUNCE_MS` coalesces into ONE batched
+ * call, and disposal before the timer elapses cancels it outright -- the two
+ * halves U24 asserts.
+ */
+class GapFillDebouncer {
+  private pending = new Set<string>();
+  private timer: ReturnType<typeof setTimeout> | null = null;
+  readonly calls: string[][] = [];
+
+  constructor(
+    private readonly run: (refs: string[]) => Promise<void>,
+    private readonly debounceMs: number
+  ) {}
+
+  push(ref: string): void {
+    this.pending.add(ref);
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = setTimeout(() => {
+      const refs = [...this.pending];
+      this.pending.clear();
+      this.timer = null;
+      this.calls.push(refs);
+      void this.run(refs);
+    }, this.debounceMs);
+  }
+
+  dispose(): void {
+    if (this.timer !== null) clearTimeout(this.timer);
+    this.timer = null;
+    this.pending.clear();
+  }
+}
+
+// ── The shared events session ───────────────────────────────────────────────
+
+interface EventsSession {
+  /** A branch with NO merge request of its own: U21 needs a null lookup. */
+  branchRef: string;
+  /** The iid whose note produced an `mr` key. */
+  mrRef: string;
+  /** Its source branch, so rt's `branchByIid` can resolve it (U19). */
+  mrBranch: string;
+  coldCursor: EventCursor;
+  /** True if a batch arrived in the same tick as the first cursor (U19). */
+  coldTickDeliveredBatch: boolean;
+  finalCursor: EventCursor;
+  batches: InvalidationBatch[];
+  branchBatch: InvalidationBatch;
+  mrBatch: InvalidationBatch;
+  /** Wall time from starting the watcher to seeing both invalidations. */
+  elapsedMs: number;
+}
+
+function requireSession(session: EventsSession | null, reason: string | null): EventsSession {
+  if (session) return session;
+  throw new Inconclusive(reason ?? 'the events session could not be built, and no reason was recorded');
+}
+
+/** A bounded wait that ran out is data about the feed; say how long it waited. */
+function feedTimeout(startedAt: number, what: string, err: unknown): Inconclusive {
+  const seconds = Math.round((Date.now() - startedAt) / 1000);
+  return new Inconclusive(
+    `${what} within ${seconds}s of starting the watcher; a slow feed is a measurement, not necessarily a ` +
+      `defect: ${err instanceof Error ? err.message : String(err)}`
+  );
+}
+
+/**
+ * Start a cold watcher, drive the feed once, and record what came back.
+ *
+ * Built once and shared by every events flow for the same reason
+ * `buildFlowFixture` is: each `watchEvents` call is a real polling loop
+ * against a live project, and nine of them would be nine times the feed
+ * latency and nine times the request budget for one set of observations.
+ *
+ * The order matters and is not incidental. The cold tick must complete BEFORE
+ * anything is driven -- a cold tick reports no invalidations no matter what it
+ * finds, so an action performed while it is still running is swallowed and the
+ * wait below would time out on a feed that worked perfectly.
+ */
+async function buildEventsSession(
+  fixture: ProviderFixture,
+  state: FlowFixture,
+  createdBranches: string[]
+): Promise<EventsSession> {
+  const { provider, projectPath, defaultBranch } = fixture;
+  const branchRef = `${runPrefix()}-events`;
+  const mrRef = String(state.stackPr.iid);
+  const startedAt = Date.now();
+  const capture = startCapture(fixture, projectPath, { intervalMs: 5_000 });
+
+  try {
+    let coldCursor: EventCursor;
+    try {
+      coldCursor = await pollUntil(
+        'the cold tick to establish a cursor',
+        async () => capture.cursors()[0] ?? null,
+        { timeoutMs: 90_000, intervalMs: 1_000 }
+      );
+    } catch (err) {
+      throw feedTimeout(startedAt, 'the cold tick never established a cursor', err);
+    }
+    // Read once, here: `onCursor` fires immediately before `onInvalidations`
+    // within a tick, so the entry following the first cursor is the cold
+    // tick's batch if it had one, and belongs to a later tick otherwise.
+    const coldIndex = capture.log.findIndex(e => e.type === 'cursor');
+    const coldTickDeliveredBatch = capture.log[coldIndex + 1]?.type === 'batch';
+
+    // Two drivers, chosen for what GitLab's feed actually emits: a branch
+    // creation is a push (`branch` + `pipelines` keys) and a note is a
+    // comment (`notes` + `mr` keys). Between them they produce all four
+    // InvalidationKinds, which is what lets U17 and U22 read real keys.
+    await createBranch(fixture, provider, branchRef, defaultBranch);
+    createdBranches.unshift(branchRef);
+    await postMRNote(
+      fixture,
+      state.stackPr.iid,
+      'consumer-flow: driving the events feed. Safe to delete.'
+    );
+
+    let found: { branchBatch: InvalidationBatch; mrBatch: InvalidationBatch };
+    try {
+      found = await pollUntil(
+        `a branch invalidation for ${branchRef} and an mr invalidation for !${mrRef}`,
+        async () => {
+          const batches = capture.batches();
+          const branchBatch = batches.find(b =>
+            b.invalidations.some(k => k.kind === 'branch' && k.ref === branchRef)
+          );
+          const mrBatch = batches.find(b =>
+            b.invalidations.some(k => k.kind === 'mr' && k.ref === mrRef)
+          );
+          return branchBatch && mrBatch ? { branchBatch, mrBatch } : null;
+        },
+        { timeoutMs: 240_000, intervalMs: 3_000 }
+      );
+    } catch (err) {
+      throw feedTimeout(
+        startedAt,
+        `the feed delivered no branch invalidation for ${branchRef} and/or no mr invalidation for !${mrRef}`,
+        err
+      );
+    }
+
+    const cursors = capture.cursors();
+    return {
+      branchRef,
+      mrRef,
+      mrBranch: state.stackBranch,
+      coldCursor,
+      coldTickDeliveredBatch,
+      finalCursor: cursors[cursors.length - 1] ?? coldCursor,
+      batches: capture.batches(),
+      branchBatch: found.branchBatch,
+      mrBatch: found.mrBatch,
+      elapsedMs: Date.now() - startedAt
+    };
+  } finally {
+    capture.dispose();
+  }
+}
+
+/** U16-U24: rt's events contract. */
+async function runEventsFlows(
+  fixture: ProviderFixture,
+  report: Reporter,
+  state: FlowFixture | null,
+  setupError: string | null,
+  createdBranches: string[]
+): Promise<void> {
+  const { provider, projectPath } = fixture;
+  const skipReason = eventsSkipReason(fixture);
+
+  let session: EventsSession | null = null;
+  let sessionReason: string | null = skipReason;
+  if (!skipReason && state) {
+    try {
+      session = await buildEventsSession(fixture, state, createdBranches);
+    } catch (err) {
+      sessionReason = err instanceof Error ? err.message : String(err);
+      // A bounded wait that ran out is a measurement of the feed, so it
+      // travels to every flow as a skip. Anything else went wrong in this
+      // harness's own write path and is recorded as a failure too, exactly
+      // as `buildFlowFixture`'s does -- otherwise a broken driver and a slow
+      // feed render identically.
+      if (!(err instanceof Inconclusive)) {
+        report.fail(
+          fixture.name,
+          FLOW,
+          'shared events session: drives the feed the events flows read',
+          sessionReason
+        );
+      }
+    }
+  }
+
+  // U16 (rt, consumer-rt.md § use cases #3): the `mr` arm end to end --
+  // invalidation, refetch, then rt's author-scope decision on the FETCHED pull
+  // request, which is the only place that decision is ever made (an
+  // InvalidationKey carries no author field at all; see U17). rt already has
+  // this test at `freshness-mapping.test.ts:532`; what a live version adds is
+  // that the PR being judged came from a real event round trip.
+  await check(
+    report,
+    fixture,
+    'U16 rt: a PR refetched from an mr invalidation is kept in scope, dropped out of scope, and kept when author-less',
+    async () => {
+      if (skipReason) throw new Inconclusive(skipReason);
+      const s = requireFixture(state, setupError);
+      const events = requireSession(session, sessionReason);
+
+      const pr = await provider.fetchSingleMR(projectPath, Number(events.mrRef), null);
+      assert(pr !== null, `the mr invalidation named !${events.mrRef}, which fetchSingleMR could not read back`);
+      assert(
+        pr.iid === s.stackPr.iid,
+        `the mr key resolved to iid ${pr.iid}, not the ${s.stackPr.iid} the note was posted on`
+      );
+      assert(
+        typeof pr.author.username === 'string' && pr.author.username.length > 0,
+        `the refetched PR carries author.username ${JSON.stringify(pr.author?.username)}; rt's scope decision ` +
+          'reads exactly this field'
+      );
+
+      // In scope: kept.
+      const inScope = rtScopeFilter([pr], [pr.author.username]);
+      assert(inScope.length === 1, 'a PR whose author is in scope was dropped by rt\'s events-upsert filter');
+
+      // Out of scope: discarded. Without this half, a filter that kept
+      // everything would pass the other two.
+      const foreign = `consumer-flow-not-an-author-${Date.now().toString(36)}`;
+      const outOfScope = rtScopeFilter([pr], [foreign]);
+      assert(
+        outOfScope.length === 0,
+        `a PR authored by ${pr.author.username} survived a scope of [${foreign}]`
+      );
+
+      // Author-less: kept, never guess-dropped. The live forge will not
+      // produce this shape, so it is constructed -- the rule is rt's, and rt
+      // asserts it in its own mapping test for the same reason.
+      const anonymous: PullRequest = { ...pr, author: { ...pr.author, username: '' } };
+      const withAnonymous = rtScopeFilter([anonymous], [foreign]);
+      assert(
+        withAnonymous.length === 1,
+        'a refetched PR with no author.username was guess-dropped; rt keeps it, because nothing says ' +
+          'which side of the scope it belongs on'
+      );
+    }
+  );
+
+  // U17 (rt, consumer-rt.md § use cases #4): every key in every batch is
+  // exactly `{kind, ref, cause}`. This is the structural fact the whole "what
+  // must a GitHub event carry" question turned on: because no key carries an
+  // author or actor, a GitHub events implementation owes nothing from
+  // `actor.login` -- and the probe's S2 finding (`payload.pull_request` is a
+  // five-key stub with no `user`) means it could not supply one anyway. rt
+  // asserts this today only by omission; here it is asserted directly.
+  await check(
+    report,
+    fixture,
+    'U17 rt: every invalidation key is exactly {kind, ref, cause} with no author or actor property',
+    async () => {
+      if (skipReason) throw new Inconclusive(skipReason);
+      requireFixture(state, setupError);
+      const events = requireSession(session, sessionReason);
+
+      const keys = events.batches.flatMap(b => b.invalidations);
+      assert(keys.length > 0, 'no invalidation keys were delivered, so there is nothing to inspect');
+      for (const key of keys) {
+        const props = Object.keys(key).sort();
+        assert(
+          JSON.stringify(props) === JSON.stringify(['cause', 'kind', 'ref']),
+          `an invalidation key carried properties ${JSON.stringify(props)}; anything beyond ` +
+            '{kind, ref, cause} is a field a GitHub implementation would have to reproduce'
+        );
+        assert(INVALIDATION_KINDS.has(key.kind), `key kind "${key.kind}" is outside InvalidationKind`);
+        assert(typeof key.ref === 'string' && key.ref.length > 0, `key ref is ${JSON.stringify(key.ref)}`);
+        assert(typeof key.cause === 'string', `key cause is ${JSON.stringify(key.cause)}`);
+      }
+      // The batch envelope is the other half of what a consumer receives.
+      for (const batch of events.batches) {
+        assert(batch.invalidations.length > 0, 'a batch was delivered with no invalidations; the contract says never empty');
+        assert(
+          typeof batch.syncedAt === 'string' && Number.isFinite(Date.parse(batch.syncedAt)),
+          `batch.syncedAt is ${JSON.stringify(batch.syncedAt)}`
+        );
+        assert(batch.cursor !== undefined, 'a batch arrived without the post-tick cursor');
+      }
+    }
+  );
+
+  // U18 (rt, consumer-rt.md § use cases #5): rt's gate is
+  // `if (!provider?.watchEvents)` -- an optional-METHOD feature detect, with
+  // no `capabilities` object anywhere in it. The parity findings named this a
+  // stated hole with no live assertion, so this asserts it in both directions
+  // from the expectation table: where the table says absent, the property must
+  // be undefined and the gate must fall back; where it says supported, the
+  // property must be a function and the gate must take the live path.
+  //
+  // Deliberately NOT gated on `supported` like the rest of this section: this
+  // is the row whose whole subject is the absence, so skipping it wherever
+  // `watchEvents` is absent would skip it on the only provider it describes.
+  await check(
+    report,
+    fixture,
+    'U18 rt: the optional-method feature detect matches the declared support, and canWatchEvents agrees with it',
+    async () => {
+      const expectation = expectationFor(fixture.name, 'watchEvents');
+      const declaredAbsent = expectation.support === 'absent';
+      const present = provider.watchEvents !== undefined;
+      assert(
+        present === !declaredAbsent,
+        `the expectation table says watchEvents is ${declaredAbsent ? 'absent' : 'present'}, but the property ` +
+          `is ${present ? 'a function' : 'undefined'}`
+      );
+
+      // rt's gate, verbatim in shape.
+      let fellBackToPolling = false;
+      let startedWatcher = false;
+      if (!provider.watchEvents) fellBackToPolling = true;
+      else startedWatcher = true;
+      assert(
+        fellBackToPolling === declaredAbsent && startedWatcher === !declaredAbsent,
+        `the truthy-check gate took the ${fellBackToPolling ? 'fallback' : 'live'} path against a provider ` +
+          `declared ${expectation.support}`
+      );
+      assert(
+        !(fellBackToPolling && startedWatcher),
+        'the gate took both paths, so the short-circuit did not short-circuit'
+      );
+
+      // No consumer reads `capabilities.canWatchEvents` -- all three
+      // feature-detect the method (matrix § surprises #3). The flag still has
+      // to agree with the method, or a future consumer that trusts the
+      // documented alternative ("check capabilities.canWatchEvents",
+      // GitProvider.ts:440) would gate the opposite way from rt.
+      assert(
+        provider.capabilities.canWatchEvents === present,
+        `capabilities.canWatchEvents is ${provider.capabilities.canWatchEvents} while the method is ` +
+          `${present ? 'present' : 'undefined'}; the two gates a caller may pick between must agree`
+      );
+    }
+  );
+
+  // U19 (rt, consumer-repo-tools.md § use cases #1): the cold-start contract
+  // plus the first real invalidation. A cold tick establishes a cursor and
+  // fires NO invalidations -- consumers full-refresh on boot, and replaying
+  // the lookback window would be a refresh storm -- and the next tick carrying
+  // a real key produces exactly one refetch and one cache write for it.
+  await check(
+    report,
+    fixture,
+    'U19 rt: the cold tick establishes a cursor and fires no invalidations; the next real key produces one fetch and one write',
+    async () => {
+      if (skipReason) throw new Inconclusive(skipReason);
+      requireFixture(state, setupError);
+      const events = requireSession(session, sessionReason);
+
+      assert(
+        !events.coldTickDeliveredBatch,
+        'the cold tick delivered an InvalidationBatch; the SDK contract is that it establishes a cursor and ' +
+          'reports nothing, because consumers refresh fully on boot'
+      );
+      assert(
+        events.coldCursor.since !== null || events.coldCursor.lastEventId !== null,
+        `the cold tick left a cursor with both fields null (${JSON.stringify(events.coldCursor)}), which is ` +
+          'indistinguishable from no cursor at all and would cold-start forever'
+      );
+
+      const cache = new RtCache();
+      const branchByIid = new Map([[events.mrRef, events.mrBranch]]);
+      await rtProcessKeys(
+        provider,
+        projectPath,
+        events.mrBatch.invalidations,
+        cache,
+        branchByIid
+      );
+
+      // Scoped to our own ref rather than to the batch total: the same tick
+      // can legitimately carry keys for other refs (the branch push, a note's
+      // paired notes key), and folding those into the count would make this
+      // assert something about batch composition instead of about the one
+      // claim the row makes.
+      assert(
+        cache.fetchesFor('fetchSingleMR', events.mrRef) === 1,
+        `the mr key for !${events.mrRef} produced ${cache.fetchesFor('fetchSingleMR', events.mrRef)} ` +
+          'fetchSingleMR calls, expected exactly 1'
+      );
+      assert(
+        cache.writesFor(`mr:${events.mrRef}`) === 1,
+        `the mr key for !${events.mrRef} produced ${cache.writesFor(`mr:${events.mrRef}`)} cache writes, expected exactly 1`
+      );
+      assert(
+        cache.entries.get(`mr:${events.mrRef}`) != null,
+        'the cache entry written from the mr key holds no pull request'
+      );
+    }
+  );
+
+  // U20 (rt, consumer-repo-tools.md § use cases #2 and § EventCursor
+  // persistence): the cursor is persisted to `~/.rt/events-cursors.json` --
+  // no schema version, no migration, no field-level validation, its only
+  // safety net a JSON PARSE failure. So this row has two halves:
+  //
+  //  a) the round trip Task 4's survey asked for: a cursor a provider handed
+  //     out, written and read back through JSON exactly as rt's cursor store
+  //     does, must resume correctly -- proven by resuming from it and getting
+  //     no replay of events already consumed, then a real new event.
+  //  b) the number->string blast radius: a cursor whose `lastEventId` is the
+  //     other type must coerce, reject, or cold-start -- never silently fail
+  //     to dedup, which would look like a healthy watcher replaying history.
+  //
+  // Both halves assert advancement WITHOUT arithmetic: the cursor changed,
+  // and resuming from it replays nothing. Probe surprise S1 is why -- GitHub
+  // ids come from disjoint ranges, so "larger id" is not "later event" there.
+  await check(
+    report,
+    fixture,
+    'U20 rt: a JSON round-tripped cursor resumes without replay, and a foreign-typed lastEventId never silently fails to dedup',
+    async () => {
+      if (skipReason) throw new Inconclusive(skipReason);
+      requireFixture(state, setupError);
+      const events = requireSession(session, sessionReason);
+
+      assert(
+        events.finalCursor.since !== events.coldCursor.since ||
+          events.finalCursor.lastEventId !== events.coldCursor.lastEventId,
+        `the cursor did not change across a tick that delivered invalidations: ` +
+          `${JSON.stringify(events.coldCursor)} -> ${JSON.stringify(events.finalCursor)}`
+      );
+
+      // rt's store round trip, unvalidated, exactly as it happens on disk.
+      const persisted = JSON.parse(JSON.stringify(events.finalCursor)) as EventCursor;
+      assert(
+        persisted.since === events.finalCursor.since,
+        `JSON round trip changed cursor.since: ${JSON.stringify(events.finalCursor.since)} -> ${JSON.stringify(persisted.since)}`
+      );
+      assert(
+        persisted.lastEventId === events.finalCursor.lastEventId,
+        `JSON round trip changed cursor.lastEventId: ${JSON.stringify(events.finalCursor.lastEventId)} -> ` +
+          `${JSON.stringify(persisted.lastEventId)}`
+      );
+
+      /**
+       * The invalidations a resumed watcher delivered about refs whose events
+       * were already consumed before the cursor it resumed from was captured.
+       * Anything in here is a dedup failure: history arriving as news.
+       */
+      const replayedKeys = (capture: Capture): InvalidationKey[] =>
+        capture
+          .keys()
+          .filter(
+            k =>
+              (k.kind === 'branch' && k.ref === events.branchRef) ||
+              (k.kind === 'mr' && k.ref === events.mrRef)
+          );
+
+      // (a) The round-tripped cursor. Silence first, then a real new push, so
+      // the silence is proven to be dedup rather than a stalled loop.
+      //
+      // The settle window is a deliberate sleep rather than a poll: the claim
+      // is an ABSENCE, and an absence has no predicate to poll on.
+      const resumed = startCapture(fixture, projectPath, { intervalMs: 3_000, cursor: persisted });
+      let advanced: EventCursor;
+      try {
+        await Bun.sleep(12_000);
+        const replayed = replayedKeys(resumed);
+        assert(
+          replayed.length === 0,
+          `resuming from the round-tripped cursor replayed ${replayed.length} invalidation(s) already ` +
+            `consumed before it was persisted: ${JSON.stringify(replayed)}`
+        );
+
+        await commitFile(
+          fixture,
+          provider,
+          events.branchRef,
+          `resume-${Date.now().toString(36)}.md`,
+          '# resume probe\n'
+        );
+        const startedAt = Date.now();
+        try {
+          await pollUntil(
+            `the resumed watcher to deliver a fresh branch invalidation for ${events.branchRef}`,
+            async () =>
+              resumed.keys().some(k => k.kind === 'branch' && k.ref === events.branchRef) || null,
+            { timeoutMs: 180_000, intervalMs: 3_000 }
+          );
+        } catch (err) {
+          throw feedTimeout(
+            startedAt,
+            'a watcher resumed from the persisted cursor delivered nothing for a push made after it resumed',
+            err
+          );
+        }
+        const cursors = resumed.cursors();
+        advanced = cursors[cursors.length - 1] ?? persisted;
+      } finally {
+        resumed.dispose();
+      }
+
+      // (b) The foreign-typed cursor: today's numeric lastEventId written as
+      // the string a GitHub-shaped SDK would hand out. The cast is the whole
+      // point -- rt's store does no field-level validation, so a type change
+      // reaches the SDK as a well-formed value that parses fine.
+      //
+      // It resumes from `advanced`, not `persisted`: the liveness push above
+      // is a real event AFTER `persisted`, so replaying it would be correct
+      // behaviour rather than the dedup failure this half is looking for.
+      const roundTrippedAdvanced = JSON.parse(JSON.stringify(advanced)) as EventCursor;
+      const foreignTyped = {
+        since: roundTrippedAdvanced.since,
+        lastEventId:
+          roundTrippedAdvanced.lastEventId === null ? null : String(roundTrippedAdvanced.lastEventId)
+      } as unknown as EventCursor;
+      const coerced = startCapture(fixture, projectPath, { intervalMs: 3_000, cursor: foreignTyped });
+      try {
+        await Bun.sleep(12_000);
+        const replayed = replayedKeys(coerced);
+        // Two outcomes are acceptable and indistinguishable from here, which
+        // is exactly what the row allows: the value coerced and deduped, or
+        // the poller treated the cursor as absent and cold-started (a cold
+        // tick reports nothing either). The third outcome -- accepted, not
+        // deduped, history delivered as fresh invalidations -- is the silent
+        // dedup failure, and it is the one this catches.
+        assert(
+          replayed.length === 0,
+          `a cursor whose lastEventId is a string instead of a number silently failed to dedup: ` +
+            `${replayed.length} already-consumed invalidation(s) came back as fresh ` +
+            `(${JSON.stringify(replayed)})`
+        );
+      } finally {
+        coerced.dispose();
+      }
+    }
+  );
+
+  // U21 (rt, consumer-repo-tools.md § use cases #3): the `branch` arm is the
+  // ONE state-clearing write in the events path -- a branch invalidation whose
+  // `fetchPullRequestByBranch` comes back null writes `mr: null` rather than
+  // skipping the write. GitHub's "branch deleted" / "PR closed with the branch
+  // still there" semantics have to reproduce that, or a stale MR survives in
+  // rt's branch cache until the next full poll.
+  await check(
+    report,
+    fixture,
+    'U21 rt: a branch invalidation whose lookup returns null writes mr:null and flushes exactly once',
+    async () => {
+      if (skipReason) throw new Inconclusive(skipReason);
+      requireFixture(state, setupError);
+      const events = requireSession(session, sessionReason);
+
+      const branchKeys = events.branchBatch.invalidations.filter(
+        k => k.kind === 'branch' && k.ref === events.branchRef
+      );
+      assert(
+        branchKeys.length === 1,
+        `expected one branch key for ${events.branchRef} in the batch that carried it, got ${branchKeys.length}`
+      );
+
+      const cache = new RtCache();
+      await rtProcessKeys(provider, projectPath, branchKeys, cache, new Map());
+
+      assert(
+        cache.fetchesFor('fetchPullRequestByBranch', events.branchRef) === 1,
+        `the branch key produced ${cache.fetchesFor('fetchPullRequestByBranch', events.branchRef)} lookups, expected 1`
+      );
+      assert(
+        cache.entries.has(`branch:${events.branchRef}`),
+        'the branch key produced no cache entry at all, so nothing was cleared'
+      );
+      assert(
+        cache.entries.get(`branch:${events.branchRef}`) === null,
+        `the branch has no merge request, so the entry must be written as null; got ` +
+          `${JSON.stringify(cache.entries.get(`branch:${events.branchRef}`))}`
+      );
+      assert(
+        cache.writesFor(`branch:${events.branchRef}`) === 1 && cache.flushes === 1,
+        `expected exactly one write and one flush, got ${cache.writesFor(`branch:${events.branchRef}`)} write(s) ` +
+          `and ${cache.flushes} flush(es)`
+      );
+    }
+  );
+
+  // U22 (rt, consumer-repo-tools.md § use cases #4): a batch carrying only a
+  // `pipelines` key must cause no fetch, no cache mutation and no error. That
+  // is what makes GitHub's total absence of CI events cost nothing
+  // behaviourally: probe criterion 4 confirmed zero CI-typed events reach the
+  // feed even with workflow runs completing inside the window, and rt ignores
+  // the kind either way. The key is lifted from the real feed rather than
+  // written by hand -- a `pipelines`-only batch cannot be produced live, since
+  // every push emits `branch` alongside it.
+  await check(
+    report,
+    fixture,
+    'U22 rt: a batch containing only a pipelines key causes no fetch, no cache mutation, and no error',
+    async () => {
+      if (skipReason) throw new Inconclusive(skipReason);
+      requireFixture(state, setupError);
+      const events = requireSession(session, sessionReason);
+
+      const pipelinesKey = events.batches
+        .flatMap(b => b.invalidations)
+        .find(k => k.kind === 'pipelines');
+      if (!pipelinesKey) {
+        throw new Inconclusive(
+          'the feed delivered no pipelines key during this session, so the ignored-kind arm has no real key to run on'
+        );
+      }
+      assert(
+        pipelinesKey.ref === '*',
+        `a pipelines key carried ref ${JSON.stringify(pipelinesKey.ref)}; the kind is project-wide by contract`
+      );
+
+      const cache = new RtCache();
+      await rtProcessKeys(provider, projectPath, [pipelinesKey], cache, new Map());
+
+      assert(cache.fetches.length === 0, `the pipelines key issued ${cache.fetches.length} fetch(es)`);
+      assert(cache.writes.length === 0, `the pipelines key wrote ${cache.writes.length} cache entr(ies)`);
+      assert(cache.flushes === 0, `the pipelines key flushed the cache ${cache.flushes} time(s)`);
+      assert(cache.entries.size === 0, 'the pipelines key mutated the cache');
+    }
+  );
+
+  // U23 (rt, consumer-repo-tools.md § use cases #5): the SDK calls `onStatus`
+  // on EVERY failed tick, each with a freshly computed `nextRetryAt`; rt
+  // broadcasts once per EDGE so its `mr:status` UI flag cannot flap once per
+  // retry. The failing half runs live against a project path that does not
+  // exist, which is the only way to make a real watcher fail repeatedly from
+  // outside the SDK; the recovery status is constructed, and labelled as such
+  // below, because nothing available to a caller can make a live feed fail and
+  // then recover on demand.
+  await check(
+    report,
+    fixture,
+    'U23 rt: onStatus fires per failed tick while rt broadcasts once per edge (degraded live, recovery constructed)',
+    async () => {
+      if (skipReason) throw new Inconclusive(skipReason);
+      requireFixture(state, setupError);
+
+      const bogusPath = `${projectPath}-no-such-project-${Date.now().toString(36)}`;
+      const failing = startCapture(fixture, bogusPath, { intervalMs: 1_000 });
+      let degraded: WatchEventsStatus[];
+      const startedAt = Date.now();
+      try {
+        degraded = await pollUntil(
+          'three failed ticks against a project path that does not exist',
+          async () => (failing.statuses().length >= 3 ? failing.statuses() : null),
+          { timeoutMs: 90_000, intervalMs: 500 }
+        );
+      } catch (err) {
+        throw feedTimeout(
+          startedAt,
+          'a watcher pointed at a nonexistent project produced fewer than three status callbacks',
+          err
+        );
+      } finally {
+        failing.dispose();
+      }
+
+      for (const status of degraded) {
+        assert(
+          status.state === 'degraded',
+          `a watcher that can never succeed reported state "${status.state}"`
+        );
+        assert(
+          typeof status.nextRetryAt === 'string',
+          'a degraded status carried no nextRetryAt, which is the field consumers read the retry estimate from'
+        );
+      }
+      // Per-tick, not per-edge: distinct retry estimates are what prove the
+      // SDK really did call back on each failure rather than once.
+      assert(
+        new Set(degraded.map(s => s.nextRetryAt)).size > 1,
+        `${degraded.length} degraded statuses all carried the same nextRetryAt, so this proves nothing about per-tick delivery`
+      );
+
+      const broadcaster = rtStatusBroadcaster();
+      for (const status of degraded) broadcaster.receive(status);
+      // Read into a local before asserting: `assert` is an assertion
+      // function, so asserting on `broadcasts.length` directly narrows it to
+      // the literal 1 and makes the later `=== 2` a compile error.
+      const afterDegradedRun = broadcaster.broadcasts.length;
+      assert(
+        afterDegradedRun === 1,
+        `rt broadcast ${afterDegradedRun} times for ${degraded.length} consecutive failed ticks, ` +
+          'which is exactly the flapping the coalescer exists to prevent'
+      );
+      assert(broadcaster.broadcasts[0]?.state === 'degraded', 'the first broadcast was not the degraded edge');
+
+      // The recovery edge, constructed to the contract's shape (types.ts:
+      // `live` fires once, only on the tick that recovers). Constructed and
+      // said so: a live feed cannot be made to fail and then recover from
+      // outside the SDK, and inventing a scenario that could would be
+      // testing the invention.
+      const recovery: WatchEventsStatus = {
+        state: 'live',
+        lastSyncedAt: degraded[degraded.length - 1]?.lastSyncedAt ?? null
+      };
+      broadcaster.receive(recovery);
+      broadcaster.receive(recovery);
+      const afterRecovery = broadcaster.broadcasts.length;
+      assert(
+        afterRecovery === 2,
+        `rt broadcast ${afterRecovery} times across one degraded run and a repeated recovery; ` +
+          'expected exactly one edge each way'
+      );
+      assert(broadcaster.broadcasts[1]?.state === 'live', 'the recovery edge was not broadcast as live');
+    }
+  );
+
+  // U24 (rt, consumer-repo-tools.md § use cases #6): `mr` keys for iids rt
+  // cannot resolve to a cached branch do not each trigger a fetch -- they
+  // coalesce inside GAP_FILL_DEBOUNCE_MS into one batched
+  // `fetchPullRequestsByBranches`, and a watch disposed before the timer
+  // elapses issues none at all. The matrix calls this the highest-value
+  // debounce test because GitHub's push cadence may burst differently from
+  // GitLab's; the probe's driven pushes landed 2.2-10.5s after the action,
+  // which straddles the 5s window in both directions.
+  await check(
+    report,
+    fixture,
+    'U24 rt: an unknown-iid burst coalesces into one batched gap-fill, and disposal before the timer issues none',
+    async () => {
+      if (skipReason) throw new Inconclusive(skipReason);
+      const s = requireFixture(state, setupError);
+      const events = requireSession(session, sessionReason);
+
+      const batchLookup = provider.fetchPullRequestsByBranches;
+      if (!batchLookup) {
+        // rt's gap-fill deliberately no-ops without the batch method (U2
+        // pins that half), so there is no coalescing to observe.
+        throw new Inconclusive(
+          'this provider does not implement fetchPullRequestsByBranches, so rt\'s gap-fill no-ops rather than batching'
+        );
+      }
+
+      const branches = [s.draftBranch, s.stackBranch];
+      const fetched: Map<string, PullRequest | null>[] = [];
+      const debouncer = new GapFillDebouncer(async () => {
+        fetched.push(await batchLookup.call(provider, projectPath, branches, 'all'));
+      }, GAP_FILL_DEBOUNCE_MS);
+
+      // A burst of unknown iids: rt's own keys plus two it has never seen.
+      const burst = [events.mrRef, `${Number(events.mrRef) + 10_000}`, `${Number(events.mrRef) + 10_001}`];
+      try {
+        const cache = new RtCache();
+        await rtProcessKeys(
+          provider,
+          projectPath,
+          burst.map(ref => ({ kind: 'mr', ref, cause: 'harness burst' })),
+          cache,
+          // Empty: every iid in the burst is unknown, which is the condition
+          // that routes an mr key to gap-fill instead of fetchSingleMR.
+          new Map(),
+          ref => debouncer.push(ref)
+        );
+        assert(
+          cache.fetches.length === 0,
+          `${cache.fetches.length} direct fetch(es) were issued for unknown iids; rt debounces them instead`
+        );
+
+        await pollUntil(
+          'the debounced gap-fill to fire once',
+          async () => (debouncer.calls.length > 0 ? debouncer.calls : null),
+          { timeoutMs: 30_000, intervalMs: 500 }
+        );
+        assert(
+          debouncer.calls.length === 1,
+          `${burst.length} keys inside ${GAP_FILL_DEBOUNCE_MS}ms produced ${debouncer.calls.length} gap-fill calls, expected 1`
+        );
+        assert(
+          JSON.stringify(debouncer.calls[0]) === JSON.stringify(burst),
+          `the coalesced call carried ${JSON.stringify(debouncer.calls[0])}, not the whole burst ${JSON.stringify(burst)}`
+        );
+        await pollUntil(
+          'the batched lookup issued by the coalesced gap-fill to resolve',
+          async () => (fetched.length > 0 ? fetched : null),
+          { timeoutMs: 60_000, intervalMs: 500 }
+        );
+        assert(
+          fetched[0]?.get(s.stackBranch)?.iid === s.stackPr.iid,
+          'the coalesced gap-fill did not resolve the branches it batched'
+        );
+      } finally {
+        debouncer.dispose();
+      }
+
+      // Disposed before the timer elapses: zero calls, ever. This is the half
+      // that protects a torn-down daemon from firing a fetch after teardown.
+      const afterDisposal: string[][] = [];
+      const disposed = new GapFillDebouncer(async refs => {
+        afterDisposal.push(refs);
+      }, GAP_FILL_DEBOUNCE_MS);
+      for (const ref of burst) disposed.push(ref);
+      disposed.dispose();
+      await Bun.sleep(GAP_FILL_DEBOUNCE_MS + 2_000);
+      assert(
+        afterDisposal.length === 0,
+        `a gap-fill disposed before its timer elapsed still issued ${afterDisposal.length} call(s)`
       );
     }
   );
