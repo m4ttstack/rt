@@ -3,6 +3,7 @@ import { GitLabProvider } from '../../src/GitLabProvider.ts';
 import type { GitProvider } from '../../src/GitProvider.ts';
 import {
   approverUsers,
+  githubApproverUsername,
   githubRepo,
   gitlabRepo,
   loadCredentials,
@@ -10,6 +11,32 @@ import {
   parseGitHubSlug,
   resolveGitHubToken
 } from './credentials.ts';
+
+/**
+ * The GitHub second identity, or null when none is configured.
+ *
+ * Throws rather than degrading to null when the account is named but its
+ * token cannot be read. Falling back would make the approval checks skip
+ * with "no second identity", which is a different and false statement: it
+ * would report a misconfiguration as an absence and leave the reader
+ * believing the gap is structural. The caller turns this throw into a
+ * `missing` entry naming the reason, so the run says what went wrong.
+ */
+async function githubApprover(): Promise<GitProvider | null> {
+  const username = githubApproverUsername();
+  if (!username) return null;
+
+  const token = await resolveGitHubToken({
+    command: ['gh', 'auth', 'token', '--user', username]
+  });
+  if (!token) {
+    throw new Error(
+      `GLANCE_HARNESS_GITHUB_APPROVER names "${username}" but \`gh auth token --user ${username}\` produced nothing. ` +
+        `Run \`gh auth login\` for that account, or unset the variable to run without a second identity.`
+    );
+  }
+  return new GitHubProvider('https://github.com', token);
+}
 
 export interface ProviderFixture {
   name: 'github' | 'gitlab';
@@ -86,7 +113,7 @@ export async function buildFixtures(): Promise<BuildFixturesResult> {
         provider: new GitHubProvider('https://github.com', ghToken),
         projectPath: `${owner}/${repo}`,
         defaultBranch: 'main',
-        approver: null
+        approver: await githubApprover()
       });
     } catch (err) {
       const reason = err instanceof Error ? err.message : String(err);

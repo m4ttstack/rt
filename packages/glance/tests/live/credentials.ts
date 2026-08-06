@@ -137,6 +137,24 @@ export async function loadCredentials(
   return parseCredentials(await file.json());
 }
 
+/**
+ * The GitHub account acting as the harness's second identity, or null.
+ *
+ * A username rather than a token, and read from the environment rather than
+ * from `harness_credentials.json`, so that file keeps the property its own
+ * README claims: nothing GitHub-credential-shaped on disk in a public repo.
+ * The token for this account still comes from `gh`, exactly like the primary
+ * one, via `resolveGitHubToken`'s injectable command.
+ *
+ * GitHub rejects a review request and an approval from the pull request's
+ * author, so without a second account `approvePullRequest`'s accept path,
+ * `unapprovePullRequest`, and `requestReReview` cannot be exercised at all.
+ */
+export function githubApproverUsername(): string | null {
+  const name = process.env.GLANCE_HARNESS_GITHUB_APPROVER?.trim();
+  return name ? name : null;
+}
+
 /** Returns null when `gh` is missing or logged out. */
 export async function resolveGitHubToken(
   opts: { command?: string[]; timeoutMs?: number } = {}
