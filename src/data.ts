@@ -94,9 +94,13 @@ export function buildBoard(prs: PullRequest[], config: BoardConfig, now: number 
       ...props,
       updatedAt: pr.updatedAt,
       createdAt: pr.createdAt,
-      unresolvedThreads: pr.unresolvedThreadCount,
+      // glance >=0.14: unresolvedThreadCount is number | null (null = the
+      // provider could not determine it). GitLab always reports a number, and
+      // the server refines both fields from discussions for commented MRs, so
+      // 0 is a safe floor here rather than a claim that all threads resolved.
+      unresolvedThreads: pr.unresolvedThreadCount ?? 0,
       // Coarse fallback; the server refines this from discussions for commented MRs.
-      reviewerComments: pr.unresolvedThreadCount,
+      reviewerComments: pr.unresolvedThreadCount ?? 0,
       pipelineState: derivePipelineState(props),
       repositoryId: pr.repositoryId,
       rtRepo: config.rtRepos[path] ?? null,
