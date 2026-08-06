@@ -69,6 +69,21 @@ describe("command builders", () => {
       reviewPrompt({ mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: "/b/review-status.ts", reportPath: "/s/1.md" }),
     ).toBe("/mr-board:review https://x/mr/1 --state /s/1.json --status-bin /b/review-status.ts --report /s/1.md");
   });
+  test("a stale channel option can no longer put --channel in the prompt", () => {
+    // channel is no longer on SkillPromptOpts; this simulates a stale caller
+    // (or one outside this repo) still passing it, so the cast is the point.
+    const opts = {
+      mrUrl: "https://x/mr/1",
+      statePath: "/s/1.json",
+      statusBin: "/b/review-status.ts",
+      reportPath: "/s/1.md",
+      channel: "code-review",
+    } as unknown as Parameters<typeof reviewPrompt>[0];
+    expect(reviewPrompt(opts)).not.toContain("--channel");
+    expect(reviewPrompt(opts)).toBe(
+      "/mr-board:review https://x/mr/1 --state /s/1.json --status-bin /b/review-status.ts --report /s/1.md",
+    );
+  });
   test("buildPaneCommand cds then launches claude with a single-quoted prompt", () => {
     const cmd = buildPaneCommand("/repo dir", "/mr-board:review https://x/mr/1 --state /s/1.json");
     expect(cmd).toBe("cd '/repo dir' && claude '/mr-board:review https://x/mr/1 --state /s/1.json'");
