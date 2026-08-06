@@ -351,9 +351,18 @@ export class GitHubEventsPoller {
       };
     }
 
-    // Bound seenIds, oldest-first-evicted: `seen`'s insertion order is the
-    // prior persisted order followed by this tick's newly-discovered ids,
-    // so trimming from the front drops the oldest entries.
+    // Bound seenIds, oldest TICK first-evicted: `seen`'s insertion order is
+    // the prior persisted order followed by this tick's newly-discovered
+    // ids, so trimming from the front drops whole prior ticks' entries
+    // before touching this tick's. That guarantee is only tick-granular, not
+    // event-granular: within a single tick, ids are inserted in page-fetch
+    // order, and A6 (this file's header comment) established that id
+    // ordering within a page can disagree with `created_at` -- so a tick's
+    // own ids are not reliably oldest-to-newest either. A `maxSeenIds` small
+    // enough to cut into one tick's own fresh-id count -- default 900 makes
+    // this unlikely, but a caller can configure a much smaller value -- can
+    // therefore evict some of that tick's own ids before others of the same
+    // tick, without regard to which was actually older.
     let seenIds = [...seen];
     if (seenIds.length > this.maxSeenIds) {
       seenIds = seenIds.slice(seenIds.length - this.maxSeenIds);

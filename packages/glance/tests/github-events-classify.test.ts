@@ -58,10 +58,12 @@ describe('classifyGitHubEvent on captured fixtures', () => {
     expect(keys.some(k => k.kind === 'pipelines')).toBe(false);
   });
   test('DeleteEvent on a branch invalidates it', () => {
+    // The fixture IS a branch delete (ref_type: "branch", ref:
+    // "probe-1785992314612") -- hard-assert the expected shape rather than
+    // deriving the expectation from the fixture's own ref_type, which could
+    // never fail on a misclassification.
     const keys = classifyGitHubEvent(deleteSample as GitHubEvent);
-    expect(keys.map(k => k.kind)).toEqual(
-      (deleteSample as GitHubEvent).payload?.ref_type === 'branch' ? ['branch'] : []
-    );
+    expect(keys).toEqual([{ kind: 'branch', ref: 'probe-1785992314612', cause: 'deleted' }]);
   });
 });
 

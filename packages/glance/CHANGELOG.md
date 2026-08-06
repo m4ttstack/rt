@@ -8,21 +8,27 @@
   (`GET /repos/{owner}/{repo}/events`) and translates activity into the same
   `InvalidationBatch` contract GitLab's watcher emits. `capabilities.canWatchEvents`
   is now `true` on GitHub. Cadence is server-directed: GitHub asks for 60s via
-  `X-Poll-Interval` on every `200`, and the watcher never polls faster than that,
-  only slower if a caller configured a larger `intervalMs`. No `pipelines`
-  invalidation is ever emitted on GitHub: the feed has no CI event type, so a
-  consumer that needs pipeline freshness keeps its slow full poll. This is an
-  accelerator, not a replacement for that poll, and a live acceptance run made the
-  gap concrete: the feed dropped git-ref events (`PushEvent`/`CreateEvent`/`DeleteEvent`)
-  entirely for about 18 minutes while comment and PR events kept arriving in ~11s.
-  The full poll is load-bearing on GitHub in a way it is not on GitLab.
+  `X-Poll-Interval` on every `200`. Once a `200` has taught the watcher that
+  cadence, it never polls faster than it, only slower if a caller configured a
+  larger `intervalMs`; before the first `200` (or during a run of pure `304`s,
+  which carry no `X-Poll-Interval`), the caller's configured `intervalMs`
+  governs instead. No `pipelines` invalidation is ever emitted on GitHub: the
+  feed has no CI event type, so a consumer that needs pipeline freshness keeps
+  its slow full poll. This is an accelerator, not a replacement for that poll,
+  and a live acceptance run made the gap concrete: the feed dropped git-ref
+  events (`PushEvent`/`CreateEvent`/`DeleteEvent`) entirely for about 18 minutes
+  while comment and PR events kept arriving in ~11s. The full poll is
+  load-bearing on GitHub in a way it is not on GitLab.
 - `EventCursor.lastEventId` widens from `number | null` to `number | string | null`,
   and gains an optional `seenIds` (GitHub only: a bounded set of recently-seen event
   ids). GitHub event ids do not order with `created_at` (they come from two
   disjoint numeric ranges), so a high-water mark alone silently drops most PR and
-  comment events; `seenIds` is what dedup actually uses on GitHub. A cursor a caller
-  already persisted with a plain numeric `lastEventId` still cold-starts safely on
-  either provider. Fixed alongside the widening: `EventsPoller` (GitLab) used to
+  comment events; `seenIds` is what dedup actually uses on GitHub. A cursor a
+  caller already persisted with a plain numeric `lastEventId` behaves correctly
+  on either provider, but not for the same reason: GitLab resumes from it as the
+  high-water mark it always was, while GitHub (which requires `seenIds` to
+  recognize a cursor as its own) treats it as foreign and cold-starts rather than
+  misreading it. Fixed alongside the widening: `EventsPoller` (GitLab) used to
   compare `e.id <= this.cursor.lastEventId` directly, which coerced a string id
   through `<=` and kept deduping by accident; the type-safe narrowing the widening
   required initially just ignored a non-numeric id instead of falling back, which

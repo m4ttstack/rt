@@ -154,9 +154,15 @@ const CLOCK_SKEW_MARGIN_MS = 60_000;
  */
 function normalizeLastEventId(value: EventCursor['lastEventId']): number | null {
   if (typeof value === 'number') return Number.isFinite(value) ? value : null;
-  if (typeof value === 'string' && value.trim() !== '') {
-    const parsed = Number(value);
-    return Number.isFinite(parsed) ? parsed : null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    // Digit strings only: Number() also accepts hex ("0x1A"), scientific
+    // notation ("1e10"), and other forms no persisted lastEventId is ever
+    // actually shaped like. A GitLab event id is decimal digits, full stop.
+    if (/^-?\d+$/.test(trimmed)) {
+      const parsed = Number(trimmed);
+      return Number.isFinite(parsed) ? parsed : null;
+    }
   }
   return null;
 }
@@ -177,7 +183,24 @@ export class EventsPoller {
     // everywhere below -- both writes to it in `tick()` store numbers, so this
     // is the only door a foreign type can come through.
     const since = opts.cursor?.since ?? null;
-    const lastEventId = normalizeLastEventId(opts.cursor?.lastEventId ?? null);
+    // A cursor carrying `seenIds` is GitHub-shaped, not GitLab-shaped --
+    // GitLab cursors never set that field (EventCursor's doc comment in
+    // types.ts). rt persists cursors with no schema version, so a
+    // GitHub-written cursor can reach this GitLab-only poller, and its
+    // `lastEventId` is a digit string (e.g. "16878075933") that parses
+    // cleanly through `normalizeLastEventId` as a real numeric high-water
+    // mark -- one far larger than any GitLab event id, which then filters
+    // every event as already-seen, forever: no throw, no degraded status,
+    // `coldStart` false. Treat `seenIds !== undefined` as the unambiguous
+    // foreign-cursor marker and drop `lastEventId` before it ever reaches
+    // normalization, so the `since` fallback (or a cold start, if `since` is
+    // also absent) takes over instead. This is the mirror image of
+    // `isValidGitHubCursor` in GitHubEventsPoller.ts, which rejects the
+    // reverse case -- a cursor missing `seenIds` -- as not GitHub-shaped.
+    const lastEventId =
+      opts.cursor?.seenIds !== undefined
+        ? null
+        : normalizeLastEventId(opts.cursor?.lastEventId ?? null);
     this.cursor = { since, lastEventId };
     // A cursor with BOTH fields null (e.g. round-tripped through storage,
     // or explicitly passed) is absent in every way that matters -- treat it

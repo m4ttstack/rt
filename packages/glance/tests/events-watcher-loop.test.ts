@@ -4,23 +4,6 @@ import { startWatcherLoop, type LoopTick } from '../src/EventsWatcher.ts';
 const cursor = { since: '2026-08-06T00:00:00Z', lastEventId: '1', seenIds: ['1'] };
 const batch = { invalidations: [{ kind: 'mr' as const, ref: '1', cause: 'opened' }], syncedAt: 'x', cursor };
 
-function waitTicks(n: number, results: LoopTick[]): Promise<LoopTick[]> {
-  // helper used below: run the loop with a 5ms interval until n ticks consumed, then dispose
-  return new Promise((resolve) => {
-    const consumed: LoopTick[] = [];
-    const dispose = startWatcherLoop(
-      async () => {
-        const r = results.shift() ?? { batch: null, cursor };
-        consumed.push(r);
-        if (consumed.length >= n) setTimeout(() => { dispose(); resolve(consumed); }, 0);
-        return r;
-      },
-      { intervalMs: 5 },
-      () => {},
-    );
-  });
-}
-
 describe('startWatcherLoop', () => {
   test('a null batch is not delivered, a real batch is', async () => {
     const delivered: unknown[] = [];

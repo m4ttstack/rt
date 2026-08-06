@@ -2113,10 +2113,11 @@ interface EventsSession {
    * them: PR/issue-comment events and git-ref events (Push/Create/Delete)
    * are delivered independently, and either class can stall while the other
    * flows normally -- measured on 2026-08-06, when comment events arrived in
-   * 11s while NO git-ref event reached the feed for over 12 minutes across
+   * 11s while NO git-ref event reached the feed for roughly 18 minutes across
    * three separate branch creations, two commits and two deletions (raw-feed
    * probe, and a watcher rehearsal that saw `mr` at 63s and no `branch` in
-   * 425s). Coupling them meant one stalled class skipped all eight rows,
+   * 425s -- the rehearsal's own wait budget, shorter than the full stall).
+   * Coupling them meant one stalled class skipped all eight rows,
    * including the four that never read a branch key.
    *
    * Each row now requires only the half it reads, via `requireBranchBatch` /

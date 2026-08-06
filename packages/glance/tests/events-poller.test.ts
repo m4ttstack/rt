@@ -410,6 +410,38 @@ describe('EventsPoller.tick', () => {
     expect(r.invalidations).toEqual([{ kind: 'mr', ref: '5', cause: 'opened' }]);
   });
 
+  // The IMPORTANT case: a cursor written by the GitHub poller (carries
+  // `seenIds`) reaching this GitLab-only poller. `lastEventId` here is a
+  // digit string that parses cleanly through `normalizeLastEventId` as a
+  // real number -- far larger than any GitLab event id in this feed -- so
+  // treating it as a genuine high-water mark would filter every event as
+  // already-seen forever, silently: no throw, no degraded status, coldStart
+  // false. `seenIds` is the unambiguous marker that this cursor is not
+  // GitLab's; ignoring its `lastEventId` and falling through to `since`
+  // (still present) must let fresh events flow instead of vanishing.
+  test('a GitHub-shaped cursor (carries seenIds) never resumes as a GitLab high-water mark', async () => {
+    const { fetchEvents } = stubFeed([
+      ev({ id: 50, action_name: 'opened', target_type: 'MergeRequest', target_iid: 5, created_at: '2026-07-23T11:00:00Z' }),
+      ev({ id: 30, action_name: 'opened', target_type: 'MergeRequest', target_iid: 4, created_at: '2026-07-23T10:00:00Z' }),
+    ]);
+    const poller = new EventsPoller({
+      fetchEvents,
+      cursor: {
+        since: '2026-07-23T09:00:00Z',
+        lastEventId: '16878075933',
+        seenIds: ['16878075933'],
+      } as never,
+    });
+    const r = await poller.tick();
+    expect(r.coldStart).toBe(false);
+    expect(r.freshEvents).toBe(2);
+    expect(r.invalidations).toEqual([
+      { kind: 'mr', ref: '5', cause: 'opened' },
+      { kind: 'mr', ref: '4', cause: 'opened' },
+    ]);
+    expect(r.cursor.lastEventId).toBe(50);
+  });
+
   test('a cursor whose only field is an uninterpretable lastEventId cold-starts', async () => {
     const { fetchEvents } = stubFeed([
       ev({ id: 50, action_name: 'opened', target_type: 'MergeRequest', target_iid: 5, created_at: '2026-07-23T11:00:00Z' }),
