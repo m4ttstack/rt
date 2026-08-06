@@ -1,9 +1,64 @@
-# @workforge/glance-sdk
+# @mattstack/glance
 
 ## 0.14.0
 
 Note: 0.13.0, 0.13.1, and 0.13.2 were released without changelog entries; their
 contents are not recorded here.
+
+### Breaking Changes
+
+Read these three before upgrading. Everything else in this release is additive
+or a correction a caller does not have to act on.
+
+- **Breaking:** `reviewers` and `assignees` now genuinely reach both providers,
+  and on GitHub `updatePullRequest` now *removes* people (MAT-24). Two halves,
+  both worth reading.
+
+  On GitLab, `createPullRequest` and `updatePullRequest` forwarded the
+  documented username strings straight into GitLab's `assignee_ids` /
+  `reviewer_ids`, which take numeric user ids, behind a cast that made the
+  mismatch compile. Both fields are now resolved to real ids first. A username
+  GitLab has no user for **throws**, naming the operation and the username
+  (`createPullRequest: no GitLab user found for username "..."`), rather than
+  being dropped: a dropped name hands back a merge request that looks like the
+  reviewer or assignee was added when nobody was.
+
+  On GitHub, `updatePullRequest` now honours the "replaces the current set"
+  contract `UpdatePullRequestInput` documents and GitLab's id arrays have
+  always had. GitHub's own endpoints are additive, so the previous `POST`
+  could only ever add; the call now diffs the requested list against the PR's
+  current one and issues the matching `DELETE` for every login the input left
+  out. **That is the consequence to know about: a caller passing a partial
+  `reviewers` or `assignees` list now removes everyone missing from it**,
+  where before the omitted names stayed on the PR untouched. `reviewers: []`
+  cancels every open review request. A caller that has been passing "the
+  people to add" has to start passing "the people who should end up on the
+  PR", which for an addition means the current set plus the new name; the PR
+  object it already has carries that set. Team reviewers (`requested_teams`)
+  are never read or written, so any team already requested is left exactly as
+  it was, and `createPullRequest` is unchanged, since a new PR has nothing to
+  remove from.
+- **Breaking:** `GitProvider.restRequest`'s `path` is now provider-relative on
+  both providers. `GitLabProvider.restRequest` previously concatenated
+  `baseURL + path` verbatim, so a GitLab caller had to pass `/api/v4/user`
+  where a GitHub caller passes `/user` -- the opposite of the "translate the
+  path to the provider's API URL format" contract the interface documents.
+  `GitLabProvider` now prefixes `/api/v4` itself. A path that already starts
+  with `/api/v4` throws rather than being silently accepted: a caller
+  upgrading past this fix needs to drop that prefix from its own call sites,
+  and a thrown error naming the exact path is how it finds out. The
+  `onRequest` hook follows the path the caller now passes: a `restRequest`
+  `RequestInfo.path` reads `/projects/1/notes` where it used to read
+  `/api/v4/projects/1/notes`, so a consumer grouping or matching on that field
+  sees different strings for the same request. The other transports are
+  unchanged and still report the wire path.
+- **Breaking (shared interface):** `requestReReview(projectPath, mrIid)` with
+  no `reviewerUsernames` now throws, on both providers, when there are no
+  existing reviewers to re-request. GitLab already made this change this
+  branch; GitHub previously resolved silently in the same situation, which
+  was the one-interface-two-behaviors defect the GitLab fix was filed to
+  close, not a second bug to leave open. A caller relying on the old
+  GitHub-side silent no-op now gets an `Error` instead.
 
 ### Minor Changes
 
@@ -36,22 +91,6 @@ contents are not recorded here.
   ambiguous 405 described above. That tradeoff is not new, it is what the
   other three transitional values have always done, and the improved 405
   message is what a consumer now gets if a user presses it too early.
-- **Breaking:** `GitProvider.restRequest`'s `path` is now provider-relative on
-  both providers. `GitLabProvider.restRequest` previously concatenated
-  `baseURL + path` verbatim, so a GitLab caller had to pass `/api/v4/user`
-  where a GitHub caller passes `/user` -- the opposite of the "translate the
-  path to the provider's API URL format" contract the interface documents.
-  `GitLabProvider` now prefixes `/api/v4` itself. A path that already starts
-  with `/api/v4` throws rather than being silently accepted: a caller
-  upgrading past this fix needs to drop that prefix from its own call sites,
-  and a thrown error naming the exact path is how it finds out.
-- **Breaking (shared interface):** `requestReReview(projectPath, mrIid)` with
-  no `reviewerUsernames` now throws, on both providers, when there are no
-  existing reviewers to re-request. GitLab already made this change this
-  branch; GitHub previously resolved silently in the same situation, which
-  was the one-interface-two-behaviors defect the GitLab fix was filed to
-  close, not a second bug to leave open. A caller relying on the old
-  GitHub-side silent no-op now gets an `Error` instead.
 - **Changed values, not shapes:** `Discussion.resolved` and
   `Discussion.resolvable` on GitLab were hardcoded `null` and now carry
   GitLab's real thread-resolution state. `Note.resolved` on GitHub moves from
