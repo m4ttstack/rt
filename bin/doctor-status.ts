@@ -1,4 +1,5 @@
 import { writeDoctorState, type DoctorStatus } from "../src/doctor-state.ts";
+import { notifyBoard } from "../src/board-notify.ts";
 
 const VALID: DoctorStatus[] = ["queued", "diagnosing", "rebasing", "fixing", "watching", "done", "error"];
 
@@ -10,4 +11,6 @@ if (!path || !status || !VALID.includes(status as DoctorStatus)) {
   process.exit(1);
 }
 
-writeDoctorState(path, { status: status as DoctorStatus, ...(message ? { message } : {}) });
+const state = writeDoctorState(path, { status: status as DoctorStatus, ...(message ? { message } : {}) });
+
+await notifyBoard({ mrUrl: state.mrUrl, iid: state.iid, kind: "doctor", status });

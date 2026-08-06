@@ -27,4 +27,14 @@ describe("review-status CLI", () => {
     const code = await proc.exited;
     expect(code).toBe(1);
   });
+
+  test("a terminal outcome still exits 0 when the board is not running", async () => {
+    const p = join(dir, "state3.json");
+    const proc = Bun.spawn(["bun", "run", CLI, p, "done", "looks solid", "--outcome", "approve"], { stderr: "pipe" });
+    const code = await proc.exited;
+    expect(code).toBe(0);
+    const state = JSON.parse(readFileSync(p, "utf8"));
+    expect(state.status).toBe("done");
+    expect(state.outcome).toBe("approve");
+  });
 });

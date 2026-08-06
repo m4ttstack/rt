@@ -1,4 +1,5 @@
 import { writeRespondState, type RespondStatus } from "../src/respond-state.ts";
+import { notifyBoard } from "../src/board-notify.ts";
 
 const VALID: RespondStatus[] = ["queued", "triaging", "implementing", "drafting", "done", "error"];
 
@@ -24,8 +25,10 @@ if (!parsed.path || !parsed.status || !VALID.includes(parsed.status as RespondSt
   process.exit(1);
 }
 const sessionId = parsed.session ?? process.env.CLAUDE_CODE_SESSION_ID ?? undefined;
-writeRespondState(parsed.path, {
+const state = writeRespondState(parsed.path, {
   status: parsed.status as RespondStatus,
   ...(parsed.message ? { message: parsed.message } : {}),
   ...(sessionId ? { sessionId } : {}),
 });
+
+await notifyBoard({ mrUrl: state.mrUrl, iid: state.iid, kind: "respond", status: parsed.status });
