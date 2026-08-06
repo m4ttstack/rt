@@ -105,15 +105,13 @@ function assert(condition: boolean, message: string): asserts condition {
 }
 
 /**
- * Prefix a REST path for the provider's actual API root.
- *
- * Same divergence conformance.ts records: `restRequest`'s docstring claims
- * implementations translate the path, and GitLabProvider concatenates
- * `baseURL + path` verbatim instead, so a GitLab caller must supply
- * `/api/v4` and a GitHub caller must not.
+ * Both providers now take provider-relative paths: MAT-130 made
+ * GitLabProvider prefix `/api/v4` itself (and reject pre-prefixed paths),
+ * so the divergence this helper used to paper over is gone. It survives as
+ * an identity so its call sites read the same as before the fix.
  */
-function apiPath(fixture: ProviderFixture, path: string): string {
-  return fixture.name === 'gitlab' ? `/api/v4${path}` : path;
+function apiPath(_fixture: ProviderFixture, path: string): string {
+  return path;
 }
 
 /** Unique per run, so an aborted run never collides with the next. */
