@@ -186,9 +186,15 @@ export class EventsPoller {
             sawCursor = true;
             continue;
           }
-        } else if (this.cursor.lastEventId != null && e.id <= this.cursor.lastEventId) {
-          sawCursor = true;
-          continue;
+        } else {
+          // EventCursor.lastEventId widened to number | string | null for
+          // GitHub cursors; this poller is GitLab-only and its cursors are
+          // always numeric, so narrow here rather than at the type.
+          const last = this.cursor.lastEventId;
+          if (typeof last === 'number' && e.id <= last) {
+            sawCursor = true;
+            continue;
+          }
         }
         fresh.push(e);
       }
@@ -196,7 +202,7 @@ export class EventsPoller {
     }
 
     const invalidations: InvalidationKey[] = [];
-    let maxId = this.cursor.lastEventId ?? -1;
+    let maxId: number = typeof this.cursor.lastEventId === 'number' ? this.cursor.lastEventId : -1;
     let maxTs = this.cursor.since;
     for (const e of fresh) {
       invalidations.push(...classifyEvent(e));
