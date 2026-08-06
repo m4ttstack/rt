@@ -371,6 +371,58 @@ describe('EventsPoller.tick', () => {
     expect(r2.invalidations).toEqual([{ kind: 'mr', ref: '5', cause: 'opened' }]);
   });
 
+  // rt persists cursors with no field-level validation, so once
+  // EventCursor.lastEventId widened to `number | string | null` for GitHub, a
+  // string-shaped id could reach this GitLab-only poller. Ignoring it is the
+  // one unacceptable outcome: the field stays non-null, so the timestamp
+  // fallback never switches on, and every event in the `after=` window comes
+  // back as a fresh invalidation -- history delivered as news by a watcher
+  // that looks healthy. The live U20 flow caught exactly that.
+  test('a numeric-string lastEventId dedups like the number it spells', async () => {
+    const { fetchEvents } = stubFeed([
+      ev({ id: 50, action_name: 'opened', target_type: 'MergeRequest', target_iid: 5, created_at: '2026-07-23T11:00:00Z' }),
+      ev({ id: 30, action_name: 'opened', target_type: 'MergeRequest', target_iid: 4, created_at: '2026-07-23T10:00:00Z' }),
+    ]);
+    const poller = new EventsPoller({
+      fetchEvents,
+      cursor: { since: '2026-07-23T10:00:00Z', lastEventId: '30' } as never,
+    });
+    const r = await poller.tick();
+    expect(r.coldStart).toBe(false);
+    expect(r.freshEvents).toBe(1);
+    expect(r.invalidations).toEqual([{ kind: 'mr', ref: '5', cause: 'opened' }]);
+    expect(r.cursor.lastEventId).toBe(50);
+  });
+
+  test('an uninterpretable lastEventId falls back to the timestamp anchor rather than replaying', async () => {
+    const { fetchEvents } = stubFeed([
+      ev({ id: 50, action_name: 'opened', target_type: 'MergeRequest', target_iid: 5, created_at: '2026-07-23T11:00:00Z' }),
+      ev({ id: 30, action_name: 'opened', target_type: 'MergeRequest', target_iid: 4, created_at: '2026-07-23T10:00:00Z' }),
+    ]);
+    const poller = new EventsPoller({
+      fetchEvents,
+      // A GitHub node-id-shaped value: parses as JSON, means nothing here.
+      cursor: { since: '2026-07-23T10:00:00Z', lastEventId: 'MDEyOklzc3VlQ29t' } as never,
+    });
+    const r = await poller.tick();
+    // The `since` anchor still bounds the tick, so the already-consumed
+    // event at the anchor is not re-delivered.
+    expect(r.invalidations).toEqual([{ kind: 'mr', ref: '5', cause: 'opened' }]);
+  });
+
+  test('a cursor whose only field is an uninterpretable lastEventId cold-starts', async () => {
+    const { fetchEvents } = stubFeed([
+      ev({ id: 50, action_name: 'opened', target_type: 'MergeRequest', target_iid: 5, created_at: '2026-07-23T11:00:00Z' }),
+    ]);
+    const poller = new EventsPoller({
+      fetchEvents,
+      cursor: { since: null, lastEventId: 'not-a-number' } as never,
+    });
+    const r = await poller.tick();
+    expect(r.coldStart).toBe(true);
+    expect(r.invalidations).toEqual([]);
+  });
+
   test('cold tick that throws stays cold: a later successful tick still reports coldStart', async () => {
     let shouldThrow = true;
     const fetchEvents = async (_opts: { after: string; perPage: number; page: number }) => {

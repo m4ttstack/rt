@@ -131,6 +131,36 @@ const DAY_MS = 24 * 60 * 60_000;
  */
 const CLOCK_SKEW_MARGIN_MS = 60_000;
 
+/**
+ * A resume cursor's `lastEventId` as the number this poller's id filter needs,
+ * or null when it is not one.
+ *
+ * GitLab's event ids are numeric, but `EventCursor.lastEventId` widened to
+ * `number | string | null` when GitHub's string ids arrived, so a value of the
+ * other type can now reach this GitLab-only poller: rt persists cursors to
+ * `~/.rt/events-cursors.json` with no schema version and no field-level
+ * validation, so a cursor written by one provider parses cleanly and is handed
+ * straight to the other.
+ *
+ * Coercing rather than ignoring is the whole point. A non-numeric
+ * `lastEventId` left in place is still non-null, which keeps `tick()`'s
+ * timestamp fallback switched OFF while the id filter it disabled never fires
+ * -- so every event in the `after=` window comes back as fresh invalidations,
+ * a healthy-looking watcher replaying history. That is the exact silent dedup
+ * failure the live U20 flow exists to catch, and it is what an earlier
+ * `typeof last === 'number'` guard here produced. Anything that is not a
+ * finite number normalizes to null instead, which routes the tick through the
+ * `since` timestamp fallback, or through a cold start when `since` is null too.
+ */
+function normalizeLastEventId(value: EventCursor['lastEventId']): number | null {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : null;
+  if (typeof value === 'string' && value.trim() !== '') {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+}
+
 export class EventsPoller {
   private cursor: EventCursor;
   private readonly fetchEvents: FetchEvents;
@@ -143,13 +173,19 @@ export class EventsPoller {
 
   constructor(opts: EventsPollerOptions) {
     this.fetchEvents = opts.fetchEvents;
-    this.cursor = opts.cursor ?? { since: null, lastEventId: null };
+    // Normalized once, here, so `this.cursor.lastEventId` is `number | null`
+    // everywhere below -- both writes to it in `tick()` store numbers, so this
+    // is the only door a foreign type can come through.
+    const since = opts.cursor?.since ?? null;
+    const lastEventId = normalizeLastEventId(opts.cursor?.lastEventId ?? null);
+    this.cursor = { since, lastEventId };
     // A cursor with BOTH fields null (e.g. round-tripped through storage,
     // or explicitly passed) is absent in every way that matters -- treat it
     // the same as an omitted cursor. Otherwise it would permanently disable
     // cold-start suppression and risk a full lookback-window history replay.
-    this.startedWithoutCursor =
-      opts.cursor?.since == null && opts.cursor?.lastEventId == null;
+    // Read off the NORMALIZED fields: a cursor carrying only an
+    // uninterpretable `lastEventId` is absent by the same argument.
+    this.startedWithoutCursor = since == null && lastEventId == null;
     this.perPage = opts.perPage ?? 100;
     this.maxPagesPerTick = opts.maxPagesPerTick ?? 5;
   }
@@ -187,9 +223,10 @@ export class EventsPoller {
             continue;
           }
         } else {
-          // EventCursor.lastEventId widened to number | string | null for
-          // GitHub cursors; this poller is GitLab-only and its cursors are
-          // always numeric, so narrow here rather than at the type.
+          // `EventCursor.lastEventId` is `number | string | null` at the type
+          // (GitHub's ids are strings); the constructor has already coerced
+          // this poller's copy to `number | null`, so a non-null value here is
+          // always a number and this narrowing never silently skips the filter.
           const last = this.cursor.lastEventId;
           if (typeof last === 'number' && e.id <= last) {
             sawCursor = true;
