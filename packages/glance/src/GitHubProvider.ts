@@ -425,35 +425,44 @@ function mapStateToGitHubQueryParam(state: MRState | 'all'): 'open' | 'closed' |
 }
 
 /**
- * Map our MRState to GitHub's GraphQL `PullRequestState` enum, or `null` for
- * "send no filter at all".
+ * Map our MRState to GitHub's GraphQL `PullRequestState` values, or `null`
+ * for "send no filter at all".
  *
- * GraphQL is finer-grained than the REST `state` param
- * `mapStateToGitHubQueryParam` targets: REST has no MERGED, so `merged` and
- * `closed` both collapse onto `closed` there and a `merged` lookup also
- * matches PRs that were closed unmerged. Here they stay apart, which is what
- * lets the batch path answer `merged` the way GitLab's own `state` filter
- * does.
+ * Each answer is pinned to a sibling this must agree with, not chosen on its
+ * own merits:
  *
- * An omitted state means no filter rather than `opened`. The optional
- * interface member declares `state?`, and a caller that did not name a state
- * is asking for the branch's PR, not for the branch's PR provided it is still
- * open -- answering `null` for a merged one would be a miss that reads
- * exactly like "no PR ever existed".
+ * - **omitted -> `[OPEN]`.** `GitLabProvider.fetchPullRequestsByBranches`
+ *   defaults its `state` to `'opened'`, and this method exists so a caller
+ *   can ask one question of either forge. A caller that names no state must
+ *   get the same answer on both, so the default is `opened` here too rather
+ *   than the wider "no filter".
+ * - **`'all'` -> `null` (no filter).** GitLab passes `state: undefined` for
+ *   `'all'`, which is likewise no filter.
+ * - **`'closed'` -> `[CLOSED, MERGED]`.** GraphQL splits these two; REST does
+ *   not, so `mapStateToGitHubQueryParam` sends `state=closed` and
+ *   `fetchPullRequestByBranch` consequently matches merged PRs on a
+ *   `'closed'` lookup. That is GitHub's own `is:closed` semantics, and the
+ *   batch path has to answer `'closed'` the way its sibling does or the two
+ *   silently disagree about the same branch.
+ * - **`'merged'` -> `[MERGED]`.** The one place GraphQL is usefully finer
+ *   than REST: REST's `state=closed` cannot express "merged" at all, so
+ *   `fetchPullRequestByBranch` over-matches here. Narrowing is a strict
+ *   improvement rather than a divergence -- every PR this returns is one the
+ *   REST path would also have returned.
  */
 function mapStateToGraphQLStates(
   state: MRState | 'all' | undefined
 ): string[] | null {
   switch (state) {
-    case undefined:
     case 'all':
       return null;
+    case undefined:
     case 'opened':
       return ['OPEN'];
     case 'merged':
       return ['MERGED'];
     case 'closed':
-      return ['CLOSED'];
+      return ['CLOSED', 'MERGED'];
   }
 }
 
@@ -1194,6 +1203,21 @@ export class GitHubProvider implements GitProvider {
    * to `null` without a further request. Every input branch is a key of the
    * returned Map, and an empty `branches` issues no requests at all.
    *
+   * Three lookup semantics, each chosen to agree with a sibling rather than
+   * on its own merits, because a caller's whole reason to use this method is
+   * that it answers the same question the other paths do:
+   *
+   * 1. **An omitted `state` means `'opened'`** -- what
+   *    `GitLabProvider.fetchPullRequestsByBranches` defaults to. Same call,
+   *    same question, either forge.
+   * 2. **`'closed'` matches merged PRs too** (`[CLOSED, MERGED]`), because
+   *    REST has no MERGED and `fetchPullRequestByBranch` therefore does. Only
+   *    `'merged'` narrows to merged alone; `'all'` sends no filter, as on
+   *    GitLab.
+   * 3. **Multiple PRs on one branch resolve created-descending**, matching
+   *    the default sort `fetchPullRequestByBranch`'s REST call takes its
+   *    first result from.
+   *
    * Unlike `fetchPullRequestByBranch` -- which reports an HTTP failure as
    * `null`, indistinguishable from "this branch has no PR" -- a failed lookup
    * here throws (MAT-133 via `graphqlOrThrow`). One query carries up to 50
@@ -1227,10 +1251,18 @@ export class GitHubProvider implements GitProvider {
       // one in would let a branch name rewrite the query. The aliases and
       // variable names below are generated from the index alone.
       const stateArg = states ? ', states: $states' : '';
+      // `orderBy` is CREATED_AT DESC, not the more obvious UPDATED_AT, so
+      // that a branch carrying more than one PR resolves to the same one
+      // `fetchPullRequestByBranch` picks: its REST call takes the first
+      // result of `GET /pulls`, whose default sort is created-descending.
+      // Ordering by UPDATED_AT instead would return the more recently
+      // *touched* PR, which on a reused branch is frequently the older one
+      // -- and U2 asserts live that the two paths agree, so this ordering is
+      // an invariant of that agreement rather than a preference.
       const fields = batch
         .map(
           (_, j) =>
-            `b${j}: pullRequests(headRefName: $h${j}${stateArg}, first: 1, orderBy: {field: UPDATED_AT, direction: DESC}) { nodes { number } }`
+            `b${j}: pullRequests(headRefName: $h${j}${stateArg}, first: 1, orderBy: {field: CREATED_AT, direction: DESC}) { nodes { number } }`
         )
         .join('\n            ');
       const query = `

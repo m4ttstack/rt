@@ -127,19 +127,28 @@ describe('GitHubProvider.fetchPullRequestsByBranches', () => {
     expect(calls[0]!.query).toContain('$states: [PullRequestState!]');
   });
 
-  test("state 'merged' sends [MERGED] and 'closed' sends [CLOSED]", async () => {
-    for (const [state, wanted] of [
-      ['merged', ['MERGED']],
-      ['closed', ['CLOSED']]
-    ] as const) {
-      const provider = newProvider();
-      const calls = stubGraphql(provider, () => undefined);
-      stubDetail(provider);
+  test("state 'merged' sends [MERGED]", async () => {
+    const provider = newProvider();
+    const calls = stubGraphql(provider, () => undefined);
+    stubDetail(provider);
 
-      await provider.fetchPullRequestsByBranches!('acme/repo', ['b'], state);
+    await provider.fetchPullRequestsByBranches!('acme/repo', ['b'], 'merged');
 
-      expect(calls[0]!.variables.states).toEqual(wanted as unknown as string[]);
-    }
+    expect(calls[0]!.variables.states).toEqual(['MERGED']);
+  });
+
+  test("state 'closed' sends [CLOSED, MERGED], matching the REST path's is:closed", async () => {
+    // GraphQL splits CLOSED from MERGED; REST does not, so
+    // `fetchPullRequestByBranch` sends `state=closed` and matches merged PRs
+    // on a 'closed' lookup. The batch path has to answer the same question
+    // its sibling does.
+    const provider = newProvider();
+    const calls = stubGraphql(provider, () => undefined);
+    stubDetail(provider);
+
+    await provider.fetchPullRequestsByBranches!('acme/repo', ['b'], 'closed');
+
+    expect(calls[0]!.variables.states).toEqual(['CLOSED', 'MERGED']);
   });
 
   test("state 'all' omits the filter entirely", async () => {
@@ -153,15 +162,72 @@ describe('GitHubProvider.fetchPullRequestsByBranches', () => {
     expect(calls[0]!.query).not.toContain('states');
   });
 
-  test('an omitted state omits the filter too', async () => {
+  test("an omitted state defaults to 'opened', as GitLab's batch method does", async () => {
+    // GitLabProvider.fetchPullRequestsByBranches defaults `state` to
+    // 'opened'. This method exists so one call answers the same question on
+    // either forge, so a caller naming no state must not get a wider answer
+    // here than it would there.
     const provider = newProvider();
     const calls = stubGraphql(provider, () => undefined);
     stubDetail(provider);
 
     await provider.fetchPullRequestsByBranches!('acme/repo', ['b']);
 
-    expect(calls[0]!.variables.states).toBeUndefined();
-    expect(calls[0]!.query).not.toContain('states');
+    expect(calls[0]!.variables.states).toEqual(['OPEN']);
+    expect(calls[0]!.query).toContain('states: $states');
+  });
+
+  test('a branch with two PRs resolves to the same one fetchPullRequestByBranch picks', async () => {
+    // The reused-branch case, where "which PR?" has two defensible answers
+    // and the two paths must not each pick a different one. Both PRs are
+    // open on `feature/reused`:
+    //
+    //   #10  created first,  updated most recently
+    //   #20  created second, updated earlier
+    //
+    // REST's `GET /pulls` defaults to created-descending and
+    // fetchPullRequestByBranch takes the first result, so the single path
+    // answers #20. The batch query must order the same way -- ordering by
+    // UPDATED_AT would answer #10 and quietly disagree about one branch.
+    const prs = [
+      { number: 10, created: 1, updated: 99 },
+      { number: 20, created: 2, updated: 2 }
+    ];
+    const provider = newProvider();
+    const detailCalls = stubDetail(provider);
+
+    let orderedBy: string | undefined;
+    (provider as any).octokit = {
+      // REST: created-descending, GitHub's own default sort for this route.
+      request: async () => ({
+        status: 200,
+        headers: {},
+        data: [...prs]
+          .sort((a, b) => b.created - a.created)
+          .map((p) => ({ number: p.number, head: { ref: 'feature/reused' } }))
+      }),
+      // GraphQL: honours whatever `orderBy` field the query actually asked
+      // for, so this test fails on the ordering rather than on a string
+      // match against the query text.
+      graphql: async (query: string) => {
+        orderedBy = /field:\s*(\w+)/.exec(query)?.[1];
+        const sorted = [...prs].sort((a, b) =>
+          orderedBy === 'UPDATED_AT' ? b.updated - a.updated : b.created - a.created
+        );
+        return { repository: { b0: { nodes: [{ number: sorted[0]!.number }] } } };
+      }
+    };
+
+    const single = await provider.fetchPullRequestByBranch('acme/repo', 'feature/reused');
+    const batch = await provider.fetchPullRequestsByBranches!('acme/repo', ['feature/reused']);
+
+    expect(orderedBy).toBe('CREATED_AT');
+    expect(single).toEqual({ iid: 20 } as any);
+    expect(batch.get('feature/reused')).toEqual(single as any);
+    expect(detailCalls).toEqual([
+      ['acme/repo', 20],
+      ['acme/repo', 20]
+    ]);
   });
 
   test('60 branches chunk into exactly 2 GraphQL requests of 50 and 10', async () => {
