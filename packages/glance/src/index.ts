@@ -74,7 +74,11 @@ export type {
   FetchPullRequestsOptions,
   FetchPullRequestsWarning,
 } from './GitProvider.ts';
-export { parseRepoId, repoIdProvider } from './GitProvider.ts';
+// `warningTarget` is exported because `FetchPullRequestsWarning.target`'s
+// documentation tells a consumer to match on it by building the string with
+// this function rather than interpolating its own, which it cannot do unless
+// the function is reachable from the package entry point.
+export { parseRepoId, repoIdProvider, warningTarget } from './GitProvider.ts';
 
 // ── Logger ────────────────────────────────────────────────────────────────────
 export type { ForgeLogger } from './logger.ts';
