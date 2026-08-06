@@ -411,6 +411,17 @@ async function pollLoop(ctx: PollContext): Promise<void> {
   let warnedMissingRateLimit = false;
 
   while (Date.now() < ctx.deadline) {
+    // Exactly one PollSample per attempt, which is what makes `polls.length`
+    // mean "requests made" and lets etagSummary's 304-adjacency math trust the
+    // sequence. Set the instant the sample joins `ctx.polls`, so a throw from
+    // anything after that point (parsing a truncated 200 body, writing an
+    // event) cannot make the catch below synthesize a second row for the same
+    // request. Recording the in-memory push rather than the file write is
+    // deliberate: if the write itself fails, the array is still the one source
+    // the report reads, and a duplicated in-memory sample would be worse than
+    // a row missing from the file.
+    let sampleRecorded = false;
+
     // Everything that talks to the network sits inside this try, not just the
     // status handling below it. A DNS blip, connection reset, or TLS error
     // rejects the fetch rather than answering with a status, so the non-2xx
@@ -444,6 +455,7 @@ async function pollLoop(ctx: PollContext): Promise<void> {
         xPollInterval: intHeader(res, 'x-poll-interval')
       };
       ctx.polls.push(sample);
+      sampleRecorded = true;
       await ctx.pollsFile.write(sample);
 
       if (res.status === 200) {
@@ -477,22 +489,36 @@ async function pollLoop(ctx: PollContext): Promise<void> {
         console.error(`  poll ${at} HTTP ${res.status}: ${text.slice(0, 200)}`);
       }
     } catch (err) {
-      // Recorded, not merely logged: an attempt that vanished from polls.jsonl
-      // would under-report how often the probe actually asked, which is the
-      // same silent truncation at row granularity. Status 0 is not a real HTTP
-      // status, so it cannot be mistaken for one, and it correctly breaks any
-      // run of consecutive 304s in the rate-limit accounting.
       const at = new Date().toISOString();
-      const sample: PollSample = {
-        at,
-        status: 0,
-        etagSent: etag !== null,
-        rateLimitRemaining: -1,
-        xPollInterval: null
-      };
-      ctx.polls.push(sample);
-      await ctx.pollsFile.write(sample);
-      console.error(`  poll ${at} transport failure: ${err instanceof Error ? err.message : String(err)}`);
+      const detail = err instanceof Error ? err.message : String(err);
+
+      if (sampleRecorded) {
+        // The request answered and its real sample is already recorded; what
+        // failed is what came after (parsing the body, writing an event).
+        // Adding a status:0 row here would count one request twice, inflate
+        // the "no HTTP response" tally, and label a parse failure a transport
+        // failure. Logged instead, and the events this attempt would have
+        // contributed are simply absent, which the next poll re-offers since
+        // the feed still carries them.
+        console.error(`  poll ${at} answered but could not be processed: ${detail}`);
+      } else {
+        // Nothing came back at all. Recorded, not merely logged: an attempt
+        // that vanished from polls.jsonl would under-report how often the
+        // probe actually asked, which is the same silent truncation at row
+        // granularity. Status 0 is not a real HTTP status, so it cannot be
+        // mistaken for one, and it correctly breaks any run of consecutive
+        // 304s in the rate-limit accounting.
+        const sample: PollSample = {
+          at,
+          status: 0,
+          etagSent: etag !== null,
+          rateLimitRemaining: -1,
+          xPollInterval: null
+        };
+        ctx.polls.push(sample);
+        await ctx.pollsFile.write(sample);
+        console.error(`  poll ${at} transport failure: ${detail}`);
+      }
     }
 
     const remainingMs = ctx.deadline - Date.now();
@@ -570,7 +596,10 @@ function renderReport(input: ReportInput): string {
   }
   lines.push('  X-Poll-Interval by response status:');
   for (const [status, seen] of [...intervalsByStatus].sort((a, b) => a[0] - b[0])) {
-    lines.push(`    ${status}: ${[...seen].sort().join(', ')}`);
+    // 0 is the probe's own marker for an attempt that got no response, not
+    // something GitHub returned; labelled so it cannot be read as one.
+    const label = status === 0 ? '0 (no response)' : String(status);
+    lines.push(`    ${label}: ${[...seen].sort().join(', ')}`);
   }
 
   // A 200 whose body held nothing new means the ETag moved without the feed
