@@ -12,6 +12,7 @@ import { readRespondStates, pruneRespondStates, respondFilePath, writeRespondSta
 import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, parseDoctorRequestBody, attachDoctors } from "./doctor-state.ts";
 import { launchReview, launchRespond, launchDoctor, launchResume, focusTab, reReviewResumePrompt } from "./herdr.ts";
 import { readSlackRefs, attachSlack, resolveSlackRef, reactToMR, unreactFromMR, postToSlack, REVIEW_EMOJI } from "./slack.ts";
+import { signalEmoji, isSignalKind, type AgentSignal } from "./agent-signal.ts";
 import { renderMr, renderMulti, type MrFacts } from "./template.ts";
 
 const cssPath = join(import.meta.dir, "style.css");
@@ -612,11 +613,12 @@ Bun.serve({
           });
         return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });
       }
+      case "/agent/status":
       case "/review/outcome": {
-        // The review skill's terminal handoff: it tells the board whether the
-        // review lands as a `comment` or `approve`, and the board drops the
-        // matching slack reaction so the human doesn't have to. Records the
-        // outcome back into the review state file too, for the client to render.
+        // The launched agent's only channel back to the board. It reports the
+        // lifecycle status it just wrote, and the board -- which already has the
+        // channel indexed -- decides which slack reaction that means. Keeps the
+        // agent out of slack entirely.
         if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
         if (!slackToken) return new Response("slack not configured", { status: 400 });
@@ -626,26 +628,23 @@ Bun.serve({
         } catch {
           return new Response("invalid json", { status: 400 });
         }
-        const { mrUrl, outcome } = (body ?? {}) as { mrUrl?: unknown; outcome?: unknown };
-        if (typeof mrUrl !== "string" || !mrUrl) {
-          return new Response("expected { mrUrl: string, outcome: comment|approve }", { status: 400 });
+        const signal = parseAgentSignal(body, pathname);
+        if (!signal) {
+          return new Response("expected { mrUrl: string, iid: number, kind: review|respond|doctor, status: string, outcome?: string }", { status: 400 });
         }
-        if (outcome !== "comment" && outcome !== "approve") {
-          return new Response(`outcome must be "comment" or "approve"`, { status: 400 });
+        const emoji = signalEmoji(signal.kind, signal.status, signal.outcome);
+        if (!emoji) {
+          return new Response(JSON.stringify({ ok: true, reacted: false }), { headers: { "content-type": "application/json" } });
         }
-        const emoji = outcome === "approve" ? REVIEW_EMOJI.approved : REVIEW_EMOJI.commented;
-        // Persist outcome on the state file so the client (and any replay) can see it.
-        const iid = readReviewStates().get(mrUrl)?.iid ?? 0;
-        writeReviewState(reviewFilePath(mrUrl), { mrUrl, iid, status: "done", outcome });
-        // Ensure the MR is resolved before reacting; the sweeper usually beats us
-        // to it, but a first-launch review may finish before the sweeper's interval.
+        // The sweeper usually resolves the ref first, but a review launched and
+        // finished inside one sweep interval can beat it here.
         try {
-          const existing = readSlackRefs().get(mrUrl);
+          const existing = readSlackRefs().get(signal.mrUrl);
           if (existing?.status !== "found" || !existing.messageTs) {
-            await resolveSlackRef(slackToken, config.slack.channel, mrUrl, iid);
+            await resolveSlackRef(slackToken, config.slack.channel, signal.mrUrl, signal.iid);
           }
-          const ref = await reactToMR(slackToken, mrUrl, emoji);
-          return new Response(JSON.stringify({ ok: true, reactions: ref.reactions ?? [] }), {
+          const ref = await reactToMR(slackToken, signal.mrUrl, emoji);
+          return new Response(JSON.stringify({ ok: true, reacted: true, reactions: ref.reactions ?? [] }), {
             headers: { "content-type": "application/json" },
           });
         } catch (err) {
@@ -925,3 +924,21 @@ watch(dirname(CONFIG_PATH), (_event, filename) => {
     }
   }, 150);
 });
+
+/** Parse an /agent/status body. `/review/outcome` is the pre-existing shape the
+    review CLI used before the board owned the whole policy; panes launched
+    before that change are long-lived, so their `{ mrUrl, outcome }` body is
+    still accepted and filled out here. Deletable once no old pane can be live. */
+function parseAgentSignal(body: unknown, pathname: string): AgentSignal | null {
+  if (!body || typeof body !== "object") return null;
+  const { mrUrl, iid, kind, status, outcome } = body as Record<string, unknown>;
+  if (typeof mrUrl !== "string" || !mrUrl) return null;
+  if (outcome !== undefined && typeof outcome !== "string") return null;
+  if (pathname === "/review/outcome") {
+    return { mrUrl, iid: readReviewStates().get(mrUrl)?.iid ?? 0, kind: "review", status: "done", outcome: outcome as string | undefined };
+  }
+  if (!isSignalKind(kind)) return null;
+  if (typeof status !== "string" || !status) return null;
+  if (typeof iid !== "number" || !Number.isFinite(iid)) return null;
+  return { mrUrl, iid, kind, status, outcome: outcome as string | undefined };
+}
