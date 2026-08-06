@@ -222,7 +222,10 @@ throw. Because both are optional on the interface, `tsc` never objected, and
   but a real one for gitq's board.
 - **`watchEvents`.** Deferred to phase 5 along with the rest of the
   `canWatchEvents` work. See that bullet in the phase 4 section for the
-  measured reasons.
+  measured reasons, and `.local-dev/derisk/phase5-derisk-findings.md` for the
+  probe evidence behind them. The two halves are now separate tickets:
+  `fetchPullRequestsByBranches` is MAT-151 (phase 2a), `watchEvents` is
+  MAT-129 (phase 5).
 
 The expectation table gets a fourth state, `absent`, to distinguish "undefined property"
 from "throws when called". They fail differently at the call site, so folding them
@@ -259,7 +262,10 @@ that manually check `if (!res.ok)` change. This deletes boilerplate rather than 
 ### Phase 4: new capabilities
 
 The first three flip a flag from `false` to `true`. `canWatchEvents` does not:
-it is deferred to phase 5.
+it is deferred to phase 5, which has since been derisked on its own
+(`.local-dev/derisk/phase5-derisk-findings.md`). The verdict there is
+go-with-constraints, so the flag flips in phase 5 but the 5-minute fallback
+poll stays.
 
 - **`canResolveDiscussions` (MAT-27).** GraphQL `resolveReviewThread` and
   `unresolveReviewThread`. The largest single item: it needs thread node IDs,
@@ -302,26 +308,68 @@ it is deferred to phase 5.
   reports. Phase 4 resolves that with a live spike rather than a guess.
 - **`canWatchEvents`.** Deferred to phase 5. The one-line claim this document
   used to make -- poll `/repos/{owner}/{repo}/events` and translate into the
-  same `InvalidationBatch` contract -- understated it. Measured against the
-  live fixture feed during the phase 4 survey:
+  same `InvalidationBatch` contract -- understated it. The bullets below were
+  written from the phase 4 survey's spot checks and have since been measured
+  properly: two 30-minute probe runs against the live fixture, plus a saved
+  300-event capture. Where the survey and the probe disagree, the probe wins
+  and the bullet says so. Full evidence and the go/no-go verdict are in
+  `.local-dev/derisk/phase5-derisk-findings.md`, which cites
+  `.local-dev/derisk/probe-findings.md` for every number. Both are local-only
+  and deliberately untracked, so a fresh clone will not have them: the bullets
+  below carry the load-bearing numbers themselves and do not depend on the
+  citation resolving.
   - `X-Poll-Interval: 60` and `Cache-Control: private, max-age=300`. GitHub
     asks for a 60s cadence over a feed cached for five minutes, against a
-    watcher whose default is 15s. GitHub freshness is minutes, not seconds.
-  - Event ids do not order with `created_at`. Observed ids descended
-    (`16777788402`, `16777332085`, `16777142192`) while timestamps ran
-    `07:17:11`, `07:17:23`, `07:17:17`. `EventsPoller` derives `since` as
-    `max(created_at)` over fresh events and has a timestamp-fallback filter
-    that assumes the two agree (`EventsPoller.ts:174-192`).
+    watcher whose default is 15s. Two refinements from the probe. The header
+    is present on `200`s and **absent on every authenticated `304`**, which is
+    the response a polling client sees most of the time, so cadence has to be
+    remembered from the last `200`. And "GitHub freshness is minutes, not
+    seconds" is wrong for the typical case: observed feed latency was p50 7.5s
+    / p95 11.3s over 35 live-arriving events, with all 18 driven actions inside
+    10.5s. The documented bound is still 30s to 6h, so the fallback poll is
+    insurance against a tail the probe never saw.
+  - Event ids do not order with `created_at`, and the reason is worse than
+    "no guarantee". Ids come from at least two disjoint numeric ranges: git-ref
+    events (`Push`/`Create`/`Delete`) sit near 1.68e10 and issue/PR events
+    (`PullRequest`, review, comment) near 1.28e10, ~4e9 apart, never
+    overlapping. A cursor keeping `max(numeric id)` parks in the higher range
+    on its first tick and then discards every PR, review and comment event
+    forever. Replaying the recorded feeds offline, a warm-started numeric
+    high-water mark missed 27 of 35 and 8 of 10 events; a set of seen string
+    ids missed none. `EventsPoller` derives `since` as `max(created_at)` over
+    fresh events and has a timestamp-fallback filter that assumes id and
+    timestamp order agree (`EventsPoller.ts:174-192`). Phase 5 needs a
+    set-based cursor, not a high-water mark.
   - No `since`/`after` request parameter exists; the `Link` header carries
     only `page`. The day-exclusive cursor strategy `FetchEvents` is typed
     around has no GitHub analog, so filtering is entirely client-side over a
-    feed capped at 300 events.
+    feed capped at 300 events. Two traps the probe found: unknown query
+    parameters are ignored rather than rejected, so a `since` someone adds
+    later returns `200` with silently no filtering at all; and page 4 is an
+    HTTP `422`, not an empty page, so "fewer results than `per_page`" is not a
+    safe end condition.
   - Ids are strings. `EventCursor.lastEventId` is `number | null` and is
-    publicly exported (`index.ts:54`) for consumers to persist.
+    publicly exported (`index.ts:54`) for consumers to persist. Confirmed on
+    300/300 events, so the type change is real and is a runtime compatibility
+    event for every daemon holding a persisted numeric cursor.
   - `EventsPoller` is typed on `GitLabEvent` and `classifyEvent` is pure
     GitLab `action_name` semantics. Workflow and check-run events are absent
-    from the feed, so `pipelines` invalidation can only be inferred from
-    pushes.
+    from the feed, confirmed rather than assumed: three `conformance` workflow
+    runs completed inside a probe window and produced zero CI-typed events. So
+    `pipelines` invalidation has no GitHub source at all. rt no-ops the kind
+    today, so nothing regresses, but the 5-minute full poll can never be
+    retired for GitHub live repos because it is the only channel that heals
+    pipeline drift.
+  - `payload.pull_request` is a five-key stub (`base | head | id | number |
+    url`), not the REST representation. No `user`, no `state`, no `merged`.
+    A refetch is therefore mandatory, which is what rt already does, and a
+    merge is only visible as an undocumented `action: "merged"` rather than
+    through `pull_request.merged`. Comment events are the exception and carry
+    the full issue and comment objects.
+  - Retention is the one measured bar phase 5 fails. The 300 events the feed
+    returns spanned 6.0h and 6.49h in two captures, against rt's
+    `DEEP_RECONCILE_MS = 24h`, so a busy repo can outrun the feed between
+    reconciles and there is no `since` to ask for what was missed.
 
 **Mandatory for every mutation added here.** `GitHubProvider.graphql<T>()` (line 1213)
 swallows transport, HTTP, and GraphQL errors alike and returns `null`, warning only.
