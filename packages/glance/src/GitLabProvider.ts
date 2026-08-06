@@ -20,6 +20,7 @@ import type {
   UserRef,
   WatchEventsOptions,
 } from './types.ts';
+import { TRANSITIONAL_MERGE_STATUSES } from './types.ts';
 import { type ForgeLogger, noopLogger } from './logger.ts';
 import { MRDetailFetcher } from './MRDetailFetcher.ts';
 import { ActionCableClient } from './ActionCableClient.ts';
@@ -1357,7 +1358,7 @@ export class GitLabProvider implements GitProvider {
     try {
       await this.gb.MergeRequests.merge(projectPath, mrIid, opts);
     } catch (err) {
-      throw this.legacyError('mergePullRequest', err);
+      throw await this.mergeRefusalError(projectPath, mrIid, err);
     }
     return this.fetchSingleMRWithRetry(projectPath, mrIid, 'Merged MR but failed to fetch it back');
   }
@@ -1636,6 +1637,59 @@ export class GitLabProvider implements GitProvider {
       if (pr) return pr;
     }
     throw new Error(errorMessage);
+  }
+
+  /**
+   * Name what GitLab refused a merge for, when GitLab itself will not (MAT-132).
+   *
+   * Every "I will not merge this" from the merge endpoint arrives as a bare
+   * HTTP 405: `execute_merge` (lib/api/merge_requests.rb) calls `not_allowed!`
+   * whenever `merge_request.mergeable?` is false, and `not_allowed!`
+   * (lib/api/helpers.rb) renders the constant string "405 Method Not Allowed".
+   * One boolean, no cause, so the status cannot separate "mergeability is
+   * still being computed, retry" from "a check failed, change something".
+   *
+   * `detailedMergeStatus` does carry that, and is readable right afterwards: a
+   * read-only probe of the live fixture returned it in 0.3-1.1s per MR, and
+   * phase 4's merge-readiness poll watched it move preparing -> unchecked ->
+   * checking on a just-created MR through this same `fetchSingleMR` call.
+   *
+   * Three deliberate limits. It does not poll, because the value is only worth
+   * reporting while it is still near the refusal. It never lets the read
+   * become the error: any failure, and the caller gets the untouched 405,
+   * since a read failure is not why the merge did not happen. And it does not
+   * claim to be the status at the instant of the refusal, which it cannot be;
+   * the message says the status was read back afterwards, so a status that
+   * moved in between reads as the observation it is. The measured worst case
+   * for that gap is benign: an MR merged by someone else between the two calls
+   * reads back as `not_open`, which no one will mistake for a diagnosis.
+   *
+   * Only the 405 path reads anything. Other statuses already say what went
+   * wrong, and paying a round trip to append a merge status to a 401 would be
+   * noise. The "mergePullRequest failed: 405" prefix is preserved verbatim
+   * because tests/live/conformance.ts matches on it.
+   */
+  private async mergeRefusalError(projectPath: string, mrIid: number, err: unknown): Promise<Error> {
+    const base = this.legacyError('mergePullRequest', err);
+    const httpStatus =
+      err instanceof GitbeakerRequestError ? (err.cause?.response as Response | undefined)?.status : undefined;
+    if (httpStatus !== 405) return base;
+
+    let detailed: string | null = null;
+    try {
+      detailed = (await this.fetchSingleMR(projectPath, mrIid, null))?.detailedMergeStatus ?? null;
+    } catch {
+      // Swallowed on purpose: see the "never lets the read become the error"
+      // note above. The 405 is still the answer the caller needs.
+    }
+    if (!detailed) return base;
+
+    const retryHint = TRANSITIONAL_MERGE_STATUSES.has(detailed)
+      ? ' GitLab reports that value while it is still computing mergeability, so the same call may succeed once it settles.'
+      : '';
+    return new Error(
+      `${base.message}. Read back after the refusal, GitLab reported detailedMergeStatus="${detailed}".${retryHint}`,
+    );
   }
 
   /**

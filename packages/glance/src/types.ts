@@ -108,6 +108,28 @@ export interface DiffStats {
   filesChanged: number;
 }
 
+/**
+ * GitLab `detailedMergeStatus` values that mean "mergeability is not decided
+ * yet" rather than naming something that blocks the merge. GitLab's own
+ * `MergeRequests::Mergeability::DetailedMergeStatusService` returns
+ * `preparing`, then `unchecked`, then `checking` before it runs a single
+ * check, and `approvals_syncing` while an approval rule is re-evaluated;
+ * every other value is either `mergeable` or the identifier of a check that
+ * actually failed.
+ *
+ * One set, because two consumers ask the same question of these strings and
+ * must not answer it differently: the dashboard decides whether to render
+ * BLOCKED, and `GitLabProvider.mergePullRequest` decides whether a refused
+ * merge is worth retrying. GitHub has no equivalent pre-merge state and always
+ * reports `detailedMergeStatus` as null, so neither question arises there.
+ */
+export const TRANSITIONAL_MERGE_STATUSES: ReadonlySet<string> = new Set([
+  'preparing',
+  'unchecked',
+  'checking',
+  'approvals_syncing',
+]);
+
 export interface PullRequest {
   /** Scoped provider ID, e.g. "gitlab:12345". */
   id: string;
@@ -289,7 +311,8 @@ export interface MRDashboardProps {
   isReady: boolean;
   /**
    * True when GitLab is asynchronously re-evaluating mergeability
-   * (detailedMergeStatus is "checking", "unchecked", or "approvals_syncing").
+   * (detailedMergeStatus is one of TRANSITIONAL_MERGE_STATUSES: "preparing",
+   * "unchecked", "checking", or "approvals_syncing").
    * The MR may become mergeable momentarily — show a spinner rather than a hard BLOCKED state.
    */
   isCheckingMergeability: boolean;

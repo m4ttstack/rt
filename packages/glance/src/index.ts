@@ -56,6 +56,10 @@ export type {
   WatchEventsStatus,
 } from './types.ts';
 export { getReviewDisplayState, getReviewerSummaries } from './types.ts';
+// Exported because mergePullRequest's 405 message now names a
+// detailedMergeStatus, and a caller deciding whether to retry needs the same
+// set the SDK classified it with rather than a copy that can drift (MAT-132).
+export { TRANSITIONAL_MERGE_STATUSES } from './types.ts';
 export type { MRStatus, MRState, MRDashboardProps, MRDashboardActions } from './types.ts';
 
 // ── Dashboard helpers ─────────────────────────────────────────────────────────
