@@ -307,9 +307,10 @@ export async function runUnsupportedConformance(
       //                       GitHub declares it unsupported, so it never
       //                       reaches this branch at all and is probed below.
       //   setAutoMerge        GitLab (supported) via runGitLabMutationConformance;
-      //   cancelAutoMerge     GitHub declares setAutoMerge `approximate` and
-      //                       cancelAutoMerge supported, both exercised by the
+      //                       GitHub declares it `approximate`, exercised by the
       //                       measured block in runWriteConformance.
+      //   cancelAutoMerge     GitLab (supported) via runGitLabMutationConformance;
+      //                       GitHub (supported) by that same measured block.
       //   unapprovePullRequest,
       //   resolveDiscussion,
       //   unresolveDiscussion by runWriteConformance on either provider.
@@ -2197,7 +2198,10 @@ async function latestPipelineAndJob(fixture: ProviderFixture): Promise<PipelineP
  * job fails exactly when the branch carries a `fail-marker` file, and the
  * workflow triggers on `pull_request`, so the branch needs a PR to run at all.
  *
- * GitHub only. The GitLab fixture's `.gitlab-ci.yml` is not ours to change.
+ * GitHub only, but not because the GitLab side is impossible:
+ * `overwriteGitLabCiConfig` manufactures CI state the same way, on a throwaway
+ * branch. It is unnecessary there, because the GitLab fixture already produces
+ * a genuinely failed job without being asked to.
  */
 async function withFailedGitHubJob(
   fixture: ProviderFixture,
