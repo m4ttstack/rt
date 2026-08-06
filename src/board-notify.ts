@@ -4,13 +4,39 @@ import type { AgentSignal } from "./agent-signal.ts";
 
 const DEFAULT_PORT = 7930;
 
-export function readBoardPort(configPath: string = join(import.meta.dir, "..", "config.json")): number {
+function validPort(value: unknown): number | undefined {
+  const n = Number(value);
+  return Number.isFinite(n) && Number.isInteger(n) && n > 0 ? n : undefined;
+}
+
+/** The board's actual port can differ from config.json's when $PORT is set
+    (see server.ts). Env wins because it's the most explicit override; the
+    runtime port file is next because it reflects what the board is really
+    listening on right now; config.json and 7930 are the last-resort guesses
+    a CLI falls back to when the board has never written that file. */
+export function readBoardPort(
+  configPath: string = join(import.meta.dir, "..", "config.json"),
+  portFilePath: string = join(import.meta.dir, "..", "state", "board-port"),
+): number {
+  const fromEnv = validPort(process.env.MR_BOARD_PORT);
+  if (fromEnv !== undefined) return fromEnv;
+
+  try {
+    const fromFile = validPort(readFileSync(portFilePath, "utf8").trim());
+    if (fromFile !== undefined) return fromFile;
+  } catch {
+    // no runtime port file yet -- fall through to config.json
+  }
+
   try {
     const cfg = JSON.parse(readFileSync(configPath, "utf8")) as { port?: number };
-    return cfg.port ?? DEFAULT_PORT;
+    const fromConfig = validPort(cfg.port);
+    if (fromConfig !== undefined) return fromConfig;
   } catch {
-    return DEFAULT_PORT;
+    // config.json missing or unparseable -- fall through to the default
   }
+
+  return DEFAULT_PORT;
 }
 
 /** Tell the board an agent moved to a new lifecycle status, so it can drop

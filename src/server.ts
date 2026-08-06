@@ -1,5 +1,5 @@
 import { join, dirname, basename } from "path";
-import { readFileSync, watch } from "fs";
+import { readFileSync, writeFileSync, mkdirSync, watch } from "fs";
 import type { PullRequest, MRDetail } from "@mattstack/glance";
 import { loadConfig, loadGitLabToken, loadSlackToken, saveMemberHidden, CONFIG_PATH } from "./config.ts";
 import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, type BoardMR, type SyncScopeRead } from "./data.ts";
@@ -798,6 +798,13 @@ Bun.serve({
     }
   },
 });
+
+// The board's real port can differ from config.json when $PORT is set (see
+// above); the status CLIs run in a separate process that never sees that env,
+// so leave the resolved port where they can find it on disk instead.
+const boardPortDir = join(import.meta.dir, "..", "state");
+mkdirSync(boardPortDir, { recursive: true });
+writeFileSync(join(boardPortDir, "board-port"), String(port));
 
 console.log(`mr-board serving on http://localhost:${port}`);
 
