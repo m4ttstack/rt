@@ -85,6 +85,22 @@ describe('latencies', () => {
     ];
     expect(latencies(two, events, 0).map((r) => r.matchedEventId)).toEqual(['1', '2']);
   });
+
+  test('processes actions in performedAt order regardless of input array order', () => {
+    // Array order is [second-performed, first-performed] -- the reverse of
+    // performedAt order. Only one event is available and both actions
+    // could claim it (its createdAt is after both performedAt values), so
+    // the winner reveals which order the greedy match actually used.
+    const outOfOrder: DrivenAction[] = [
+      { label: 'second-performed', performedAt: '2026-08-05T10:02:00Z', expectedTypes: ['PullRequestEvent'] },
+      { label: 'first-performed', performedAt: '2026-08-05T10:00:00Z', expectedTypes: ['PullRequestEvent'] },
+    ];
+    const events = [ev('1', '2026-08-05T10:05:00Z')];
+    expect(latencies(outOfOrder, events, 0)).toEqual([
+      { label: 'first-performed', matchedEventId: '1', latencyMs: 300_000 },
+      { label: 'second-performed', matchedEventId: null, latencyMs: null },
+    ]);
+  });
 });
 
 describe('etagSummary', () => {

@@ -21,13 +21,13 @@ export interface OrderingViolation {
 /** pairs where BigInt(id) order disagrees with createdAt order */
 export function orderingViolations(events: ObservedEvent[]): OrderingViolation[] {
   const violations: OrderingViolation[] = [];
-  for (let i = 0; i < events.length; i++) {
-    for (let j = 0; j < events.length; j++) {
+  for (const [i, a] of events.entries()) {
+    for (const [j, b] of events.entries()) {
       if (i === j) continue;
-      const bigger = BigInt(events[j].id) > BigInt(events[i].id);
-      const earlier = Date.parse(events[j].createdAt) < Date.parse(events[i].createdAt);
+      const bigger = BigInt(b.id) > BigInt(a.id);
+      const earlier = Date.parse(b.createdAt) < Date.parse(a.createdAt);
       if (bigger && earlier) {
-        violations.push({ earlierId: events[i].id, laterId: events[j].id });
+        violations.push({ earlierId: a.id, laterId: b.id });
       }
     }
   }
@@ -51,10 +51,13 @@ export function latencies(
   const sortedEvents = [...events].sort(
     (a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt)
   );
+  const sortedActions = [...actions].sort(
+    (a, b) => Date.parse(a.performedAt) - Date.parse(b.performedAt)
+  );
   const used = new Set<string>();
   const rows: LatencyRow[] = [];
 
-  for (const action of actions) {
+  for (const action of sortedActions) {
     const performedAtMs = Date.parse(action.performedAt);
     const match = sortedEvents.find(
       (event) =>
@@ -97,12 +100,12 @@ export function etagSummary(samples: PollSample[]): EtagSummary {
   const hits304 = samples.filter((sample) => sample.status === 304).length;
 
   let remainingDropAcross304s = 0;
-  for (let i = 1; i < samples.length; i++) {
-    const prev = samples[i - 1];
-    const cur = samples[i];
-    if (prev.status === 304 && cur.status === 304) {
+  let prev: PollSample | null = null;
+  for (const cur of samples) {
+    if (prev && prev.status === 304 && cur.status === 304) {
       remainingDropAcross304s += Math.max(0, prev.rateLimitRemaining - cur.rateLimitRemaining);
     }
+    prev = cur;
   }
 
   return {
