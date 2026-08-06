@@ -31,18 +31,63 @@ export type MRState = 'opened' | 'merged' | 'closed';
 export interface FetchPullRequestsWarning {
   /**
    * `page-cap`: a bounded scan stopped with matches still outstanding.
-   * `request-failed`: a non-ok response, so whatever it would have returned
-   * is missing from the result entirely. Rate limiting shows up here.
+   * `request-failed`: a non-ok response. For `search`/`list`/`detail`/
+   * `reviews`, whatever it would have returned is missing from the result
+   * entirely. For `checks`/`threads`, the PR itself is still in the result;
+   * only that one field (`pipeline`/`unresolvedThreadCount`) reads as its
+   * existing "unknown" value instead of a measured one -- neither feeds an
+   * approval count, so dropping the whole PR over either would be a bigger
+   * degradation than the failure itself warrants.
    */
   kind: 'page-cap' | 'request-failed';
-  /** Which leg of the fetch: the search API, a repository listing, or a per-MR detail fetch. */
-  source: 'search' | 'list' | 'detail';
+  /**
+   * Which leg of the fetch: the search API, a repository listing, a per-MR
+   * detail fetch, a per-MR reviews fetch (the approvals a failed page here
+   * would otherwise under-report), a per-MR checks fetch, or a batched
+   * thread-count query.
+   */
+  source: 'search' | 'list' | 'detail' | 'reviews' | 'checks' | 'threads';
   /** Human-readable summary, always populated. */
   message: string;
   /** The HTTP status, when `kind` is `request-failed`. */
   status?: number;
-  /** What the warning is about: a search query, a project path, or `owner/repo#number`. */
+  /**
+   * What the warning is about: a search query, a project path, or (for
+   * `detail`/`reviews`/`checks`/`threads`, every single-PR source) exactly
+   * `owner/repo#number` -- build it with `warningTarget`, not by hand.
+   *
+   * One PR per warning even for a thread-count batch that covers many at
+   * once: one warning per affected PR, not one warning naming several.
+   *
+   * This field is the join key `fetchDashboardBatch` (MRDashboard.ts) uses
+   * to attribute a warning to a row, by exact string match against
+   * `warningTarget(projectPath, iid)`. A `checks` warning once carried
+   * `owner/repo@sha` (the commit the check-runs fetch actually failed on,
+   * which felt like the more precise thing to name) while every other
+   * source carried `owner/repo#number`; that PR's own warning could never
+   * match the lookup, and `DashboardGroup.onWarning` silently never fired
+   * for it. `warningTarget` exists so every producer and this field's one
+   * consumer read the same format from the same place, instead of relying
+   * on every call site independently getting the string literal right.
+   */
   target?: string;
+}
+
+/**
+ * The single-PR `target` every `FetchPullRequestsWarning` for `detail`,
+ * `reviews`, `checks`, and `threads` must use: `owner/repo#number`.
+ *
+ * Every producer of a single-PR warning (`GitHubProvider`) and this field's
+ * one consumer (`fetchDashboardBatch` in `MRDashboard.ts`) call this rather
+ * than interpolating the string themselves, specifically so the two sides
+ * cannot drift the way `checks` (`owner/repo@sha`, a different value
+ * entirely) and `threads` (a comma-joined list of several) both did before
+ * this function existed -- both changes that looked like local improvements
+ * (naming the actual failing commit; reporting a whole batch at once) and
+ * both silently broke the one thing `target` exists for: being looked up.
+ */
+export function warningTarget(projectPath: string, iid: number): string {
+  return `${projectPath}#${iid}`;
 }
 
 /**
@@ -183,7 +228,7 @@ export interface GitProvider {
    * | `state`       | all modes                     | all modes                 |
    * | `updatedAfter`| `projectPath`-alone mode only | all modes                 |
    * | `listWeight`  | `projectPath`-alone mode only | all modes                 |
-   * | `onWarning`   | never fires (see below)       | page caps + failed detail |
+   * | `onWarning`   | never fires (see below)       | page caps + failed detail/reviews/checks/threads |
    *
    * GitLab returns full dashboard fields from every mode and paginates its
    * project mode to exhaustion, so it has no truncation to report; GitHub

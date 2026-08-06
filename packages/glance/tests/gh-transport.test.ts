@@ -17,6 +17,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { RequestError } from '@octokit/request-error';
 import { GitHubProvider } from '../src/GitHubProvider.ts';
+import type { FetchPullRequestsWarning } from '../src/GitProvider.ts';
 
 const realFetch = globalThis.fetch;
 afterEach(() => {
@@ -542,16 +543,24 @@ describe('GitHubProvider transport: reviews pagination (real octokit.paginate)',
     expect(urls).toContain(REVIEWS_PAGE2_URL);
   });
 
-  test('a failed second reviews page fails the fetch, not a truncated approval count', async () => {
-    // This is the actual defect scenario, constructed for real rather than
-    // by stubbing `octokit.paginate` to reject outright: page one succeeds
+  test('a failed second reviews page drops the PR and reports why, not a truncated approval count', async () => {
+    // The actual defect scenario, constructed for real rather than by
+    // stubbing `octokit.paginate` to reject outright: page one succeeds
     // with bob's approval and a genuine `rel="next"` Link header, then page
     // two fails. The old `fetchAllPages` did `if (!res.ok) break` here and
     // returned page one alone -- a PR reading "approved by bob" with
     // carol's approval on page two silently dropped and no error raised
-    // anywhere. Driving the real `paginate` plugin through a stubbed
-    // `fetch` (never a stubbed `paginate`) proves the Link-following itself
-    // surfaces the failure, not merely that some rejection propagates.
+    // anywhere. `octokit.paginate` still rejects on the failed page (proven
+    // here through a stubbed `fetch`, never a stubbed `paginate`, so the
+    // real Link-following is what surfaces the failure) -- that part of the
+    // fix from the phase this ticket follows stands. What changed is what
+    // happens to that rejection one level up: `enrich` now catches it,
+    // reports it through `onWarning`, and drops PR 5 from the result
+    // instead of letting the rejection fail the whole `fetchPullRequests`
+    // call (MAT-143). Rejecting the entire call was itself a form of the
+    // same defect one level up: with only PR 5 requested here, "the whole
+    // call fails" and "one row of a larger batch silently fails" are the
+    // same bug, just at different batch sizes.
     stubAroundReviews(url => {
       if (url === REVIEWS_PAGE1_URL) {
         return new Response(
@@ -576,18 +585,30 @@ describe('GitHubProvider transport: reviews pagination (real octokit.paginate)',
     });
 
     const provider = new GitHubProvider('https://github.com', 'tok');
+    const warnings: FetchPullRequestsWarning[] = [];
 
     // Same shared write-group backlog as the test above applies to this
     // test's own GraphQL thread-count call.
-    await withInstantTimers(() =>
-      expect(
-        provider.fetchPullRequests({
-          iids: [5],
-          projectPath: 'acme/repo',
-          listWeight: true
-        })
-      ).rejects.toThrow()
+    const prs = await withInstantTimers(() =>
+      provider.fetchPullRequests({
+        iids: [5],
+        projectPath: 'acme/repo',
+        listWeight: true,
+        onWarning: w => warnings.push(w)
+      })
     );
+
+    // Not present at all -- never assembled with only bob's page-one
+    // approval, which is the truncated-count outcome this whole ticket
+    // exists to prevent.
+    expect(prs).toEqual([]);
+    expect(warnings.length).toBe(1);
+    expect(warnings[0]).toMatchObject({
+      kind: 'request-failed',
+      source: 'reviews',
+      status: 403,
+      target: 'acme/repo#5'
+    });
   });
 });
 

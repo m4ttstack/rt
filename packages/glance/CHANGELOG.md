@@ -30,6 +30,36 @@ contents are not recorded here.
 - Explicitly unchanged: `Discussion.id` on GitHub keeps its
   `gh-review-thread-<rootCommentId>` form. This is deliberate, not an
   oversight, so that any id a consumer has already persisted stays valid.
+- On GitHub, a PR whose reviews fetch fails partway through (rate limiting,
+  most commonly) is now dropped from `fetchPullRequests`'s result and
+  reported through `onWarning`, instead of rejecting the whole call. A PR
+  whose check-runs or thread-count fetch fails stays in the result with
+  just that field degraded to its existing "unknown" value
+  (`pipeline: null` / `unresolvedThreadCount: null`), also now reported
+  through `onWarning`. `FetchPullRequestsWarning['source']` gained
+  `'reviews' | 'checks' | 'threads'` (previously `'search' | 'list' |
+  'detail'`) to name these. `fetchSingleMR`'s `createPullRequest`/
+  `updatePullRequest`/`mergePullRequest` refetch failures now throw a
+  message describing the actual cause instead of the generic "... but
+  failed to fetch it back".
+- New export: `FetchPullRequestsWarning` (previously only reachable as
+  `FetchPullRequestsOptions['onWarning']`'s parameter type, not nameable on
+  its own).
+- New optional `DashboardGroup.onWarning(listener)`: fires per-row when one
+  MR in a batched dashboard fetch did not refresh cleanly while the rest of
+  the batch succeeded -- both when that MR is missing from `subscribe`'s Map
+  entirely (a `reviews`/`detail` failure) and when it is present with one
+  field silently at its "unknown" value (a `checks`/`threads` failure), so a
+  consumer can flag either case instead of it looking like an ordinary
+  update or an ordinary empty/no-checks reading. `MRDashboard`'s batched
+  fetch no longer swallows a `fetchPullRequests` rejection to `null` for the
+  whole group; a genuine total failure now reaches `onStatusChange`'s
+  existing `lastError`/`consecutiveErrors` instead.
+- New export: `warningTarget(projectPath, iid)`, the exact format (
+  `owner/repo#number`) every single-PR `FetchPullRequestsWarning.target`
+  uses. A consumer matching on `target` should build it with this rather
+  than its own string interpolation, the same way `GitHubProvider` and
+  `DashboardGroup.onWarning`'s own matching logic now both do internally.
 
 ## 0.12.0
 

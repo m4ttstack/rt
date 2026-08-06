@@ -63,7 +63,11 @@ export { getMRDashboardProps, createDashboard } from './MRDashboard.ts';
 export type { Dashboard, DashboardGroup, CreateDashboardOptions } from './MRDashboard.ts';
 
 // ── Provider interface ────────────────────────────────────────────────────────
-export type { GitProvider, FetchPullRequestsOptions } from './GitProvider.ts';
+export type {
+  GitProvider,
+  FetchPullRequestsOptions,
+  FetchPullRequestsWarning,
+} from './GitProvider.ts';
 export { parseRepoId, repoIdProvider } from './GitProvider.ts';
 
 // ── Logger ────────────────────────────────────────────────────────────────────

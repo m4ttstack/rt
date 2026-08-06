@@ -18,7 +18,7 @@ import type {
   GitProvider,
   MRState
 } from './GitProvider.ts';
-import { parseUpdatedAfter, requireProjectPath } from './GitProvider.ts';
+import { parseUpdatedAfter, requireProjectPath, warningTarget } from './GitProvider.ts';
 import type {
   BranchProtectionRule,
   CreatePullRequestInput,
@@ -538,8 +538,13 @@ export class GitHubProvider implements GitProvider {
    * - `updatedAfter`: honored in every mode.
    * - `listWeight`: honored in every mode, skips the per-PR check-run fetch,
    *   leaving `pipeline` null.
-   * - `onWarning`: called for page-cap truncation and for detail fetches
-   *   GitHub rejected (the shape rate limiting takes here).
+   * - `onWarning`: called for page-cap truncation and for detail, reviews,
+   *   checks, or thread-count fetches GitHub rejected (the shape rate
+   *   limiting takes here). A PR whose reviews fetch failed is dropped from
+   *   the result rather than included with a truncated approval count; a PR
+   *   whose checks or thread-count fetch failed stays in the result with
+   *   that one field degraded (`pipeline: null` / `unresolvedThreadCount:
+   *   null`) instead, since neither feeds an approval count.
    *
    * `iids` and `authorUsernames` throw without `projectPath`, as the interface
    * documents.
@@ -657,7 +662,11 @@ export class GitHubProvider implements GitProvider {
       }));
     }
 
-    const results = await this.enrich(candidates, options?.listWeight ?? false);
+    const results = await this.enrich(
+      candidates,
+      options?.listWeight ?? false,
+      onWarning
+    );
 
     this.log.debug('GitHubProvider.fetchPullRequests', {
       count: results.length
@@ -665,28 +674,96 @@ export class GitHubProvider implements GitProvider {
     return results;
   }
 
+  /**
+   * `onWarning` is not part of the `GitProvider` interface -- callers that
+   * need to distinguish "this PR does not exist" from "the refetch failed
+   * for a reason a caller can report" pass it directly; `fetchSingleMR`
+   * itself still resolves to `null` either way, matching the interface
+   * contract every other caller (e.g. `fetchPullRequestByBranch`) relies on.
+   *
+   * Two separate try/catch blocks, not one around the whole body: `fetchPR`
+   * and `enrich` each already report their own `RequestError`-with-response
+   * failures through `onWarning` internally (tagged `detail`/`reviews`/
+   * `checks`/`threads` correctly at the source). What reaches either catch
+   * here is only the rarer case neither handles itself -- a transport
+   * failure with no response to read, or `withRoles` never throws so it
+   * cannot land in this method's catch at all. Tagging that leftover case
+   * `'detail'` unconditionally, from one catch wrapping both calls, would
+   * mislabel a reviews-side transport failure as a detail-side one; keeping
+   * the catches apart is what keeps the tag honest.
+   */
   async fetchSingleMR(
     projectPath: string,
     mrIid: number,
-    _currentUserNumericId: number | null
+    _currentUserNumericId: number | null,
+    onWarning?: FetchPullRequestsOptions['onWarning']
   ): Promise<PullRequest | null> {
     // projectPath for GitHub is "owner/repo"
+    let pr: GHPullRequest | null;
     try {
-      const pr = await this.fetchPR(projectPath, mrIid);
-      if (!pr) return null;
-      const [withRoles] = await this.withRoles([pr]);
-      if (!withRoles) return null;
-      const [result] = await this.enrich([withRoles], false);
-      return result ?? null;
+      pr = await this.fetchPR(projectPath, mrIid, onWarning);
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      this.log.warn('GitHubProvider.fetchSingleMR failed', {
-        projectPath,
-        mrIid,
-        message
-      });
+      this.warnSingleMRFailure(onWarning, 'detail', projectPath, mrIid, err);
       return null;
     }
+    if (!pr) return null;
+
+    const [withRoles] = await this.withRoles([pr]);
+    if (!withRoles) return null;
+
+    try {
+      const [result] = await this.enrich([withRoles], false, onWarning);
+      return result ?? null;
+    } catch (err) {
+      this.warnSingleMRFailure(onWarning, 'reviews', projectPath, mrIid, err);
+      return null;
+    }
+  }
+
+  /** Shared message-building for `fetchSingleMR`'s two catch sites. */
+  private warnSingleMRFailure(
+    onWarning: FetchPullRequestsOptions['onWarning'],
+    source: FetchPullRequestsWarning['source'],
+    projectPath: string,
+    mrIid: number,
+    err: unknown
+  ): void {
+    const message = err instanceof Error ? err.message : String(err);
+    this.warn(onWarning, {
+      kind: 'request-failed',
+      source,
+      target: warningTarget(projectPath, mrIid),
+      message: `GitHubProvider.fetchSingleMR failed for ${projectPath}#${mrIid}: ${message}`
+    });
+  }
+
+  /**
+   * `createPullRequest`/`updatePullRequest`/`mergePullRequest` all refetch
+   * the PR they just mutated to return the caller a fresh copy, and all
+   * three used to throw the same generic "... but failed to fetch it back"
+   * when that refetch came back null. That message matches no live-harness
+   * pattern (`providerConformance.ts`) and reads as an unrelated hard
+   * failure -- indistinguishable from the PR genuinely having vanished --
+   * when the actual, far more common cause is a rate-limited or otherwise
+   * rejected page on the way back. Capturing `fetchSingleMR`'s `onWarning`
+   * here (rather than letting the mutation callers see only `null`) is what
+   * lets the thrown message say which one actually happened.
+   */
+  private async fetchSingleMRAfterMutation(
+    projectPath: string,
+    mrIid: number,
+    verb: 'Created' | 'Updated' | 'Merged'
+  ): Promise<PullRequest> {
+    let warning: FetchPullRequestsWarning | undefined;
+    const pr = await this.fetchSingleMR(projectPath, mrIid, null, w => {
+      warning = w;
+    });
+    if (pr) return pr;
+    throw new Error(
+      warning
+        ? `${verb} PR #${mrIid} but could not verify it afterward: ${warning.message}`
+        : `${verb} PR #${mrIid} but it was not found when refetched`
+    );
   }
 
   async fetchMRDiscussions(
@@ -1031,13 +1108,11 @@ export class GitHubProvider implements GitProvider {
       );
     }
 
-    const pr = await this.fetchSingleMR(
+    return this.fetchSingleMRAfterMutation(
       input.projectPath,
       created.number,
-      null
+      'Created'
     );
-    if (!pr) throw new Error('Created PR but failed to fetch it back');
-    return pr;
   }
 
   /**
@@ -1115,9 +1190,7 @@ export class GitHubProvider implements GitProvider {
       );
     }
 
-    const pr = await this.fetchSingleMR(projectPath, mrIid, null);
-    if (!pr) throw new Error('Updated PR but failed to fetch it back');
-    return pr;
+    return this.fetchSingleMRAfterMutation(projectPath, mrIid, 'Updated');
   }
 
   async restRequest(
@@ -1175,8 +1248,7 @@ export class GitHubProvider implements GitProvider {
       }
       throw err;
     }
-    const pr = await this.fetchSingleMR(projectPath, mrIid, null);
-    if (!pr) throw new Error('Merged PR but failed to fetch it back');
+    const pr = await this.fetchSingleMRAfterMutation(projectPath, mrIid, 'Merged');
     if (input?.shouldRemoveSourceBranch) {
       // `pr.sourceBranch` is `head.ref`, a branch name with no repository
       // attached. For a same-repo PR that name lives in `projectPath`, but
@@ -2014,13 +2086,27 @@ export class GitHubProvider implements GitProvider {
    * A PR maps to null -- unknown, not zero -- when the query fails or when the
    * PR has more than `THREAD_PAGE_SIZE` threads: a truncated read cannot say
    * how many of the remainder are outstanding.
+   *
+   * A rejected batch used to reject this whole function, and `enrich` awaits
+   * it before its per-PR pool even starts, so one GraphQL blip on a single
+   * batch used to blank every PR passed in, not just the ones in that batch
+   * (MAT-143). `null` already means "unknown" for every PR this function
+   * maps, whether that PR's own read was truncated or the batch it happened
+   * to land in failed outright, so degrading a failed batch to `null` for
+   * just its own ids -- reported through `onWarning` -- reuses that
+   * vocabulary instead of rejecting the batches that succeeded alongside it.
    */
   private async fetchUnresolvedThreadCounts(
-    prs: GHPullRequest[]
+    prs: GHPullRequest[],
+    onWarning?: FetchPullRequestsOptions['onWarning']
   ): Promise<Map<string, number | null>> {
     const counts = new Map<string, number | null>();
     const ids = prs.map(pr => pr.node_id).filter(id => !!id);
     if (ids.length === 0) return counts;
+
+    // Node id back to `owner/repo#number`, for a warning target a human can
+    // read; a GraphQL node id on its own names nothing recognizable.
+    const byNodeId = new Map(prs.map(pr => [pr.node_id, pr]));
 
     const query = `
       query GlanceUnresolvedThreads($ids: [ID!]!) {
@@ -2038,9 +2124,36 @@ export class GitHubProvider implements GitProvider {
 
     for (let i = 0; i < ids.length; i += THREAD_BATCH_SIZE) {
       const batch = ids.slice(i, i + THREAD_BATCH_SIZE);
-      const data = await this.graphql<GHReviewThreadsResponse>(query, {
-        ids: batch
-      });
+      let data: GHReviewThreadsResponse | null;
+      try {
+        data = await this.graphql<GHReviewThreadsResponse>(query, {
+          ids: batch
+        });
+      } catch (err) {
+        // One warning per PR, not one warning naming the whole batch: a
+        // comma-joined target would be a different shape from every other
+        // source (`detail`/`reviews`/`checks` all name exactly one PR), and
+        // `fetchDashboardBatch` -- this codebase's own consumer -- keys
+        // warnings by a single-PR `owner/repo#number` target. A joined
+        // target could never match that lookup for any PR in the batch, so
+        // splitting here is what makes a threads failure attributable to a
+        // row at all, not just a matter of taste.
+        const message = err instanceof Error ? err.message : String(err);
+        for (const id of batch) {
+          const pr = byNodeId.get(id);
+          const target = pr
+            ? warningTarget(pr.base.repo.full_name, pr.number)
+            : undefined;
+          this.warn(onWarning, {
+            kind: 'request-failed',
+            source: 'threads',
+            target,
+            message: `GitHub thread-count query failed${target ? ` for ${target}` : ''} (${message}); its unresolved-discussion count is unknown, not zero.`
+          });
+          counts.set(id, null);
+        }
+        continue;
+      }
       for (const node of data?.nodes ?? []) {
         if (!node?.id) continue;
         const threads = node.reviewThreads;
@@ -2289,7 +2402,7 @@ export class GitHubProvider implements GitProvider {
           kind: 'request-failed',
           source: 'detail',
           status: err.status,
-          target: `${projectPath}#${prNumber}`,
+          target: warningTarget(projectPath, prNumber),
           message: `GitHub returned HTTP ${err.status} for ${projectPath}#${prNumber}; it is missing from this result.`
         });
         return null;
@@ -2400,25 +2513,51 @@ export class GitHubProvider implements GitProvider {
    *
    * The per-PR leg runs through the same bounded pool as the detail fetches;
    * a dashboard-sized result set otherwise opens two sockets per PR at once.
+   *
+   * A PR whose reviews fetch fails is dropped from the result rather than
+   * assembled with whatever reviews did arrive: `fetchReviews` rejects on a
+   * failed page precisely so a partial review list is never mistaken for a
+   * complete one, and presenting that PR here with a truncated approval
+   * count would recreate the bug that rejection exists to prevent. Dropping
+   * it (reported through `onWarning`, same as a failed detail fetch) is the
+   * one option that neither shows a wrong count nor fails every other PR in
+   * the batch alongside it.
+   *
+   * Check runs and thread counts are lower-stakes than reviews -- neither
+   * feeds an approval count -- so a failure in either degrades the one
+   * field instead of dropping the PR: `fetchCheckRuns` still returns `[]`
+   * (read as "no pipeline"), `fetchUnresolvedThreadCounts` still maps a
+   * failed PR to `null` (already "unknown" in that map's own vocabulary).
+   * Both now report the failure through `onWarning` too, so neither looks
+   * like a plain, ordinary empty/unknown reading when it is not one.
    */
   private async enrich(
     candidates: PRWithRoles[],
-    listWeight: boolean
+    listWeight: boolean,
+    onWarning?: FetchPullRequestsOptions['onWarning']
   ): Promise<PullRequest[]> {
     const threadCounts = await this.fetchUnresolvedThreadCounts(
-      candidates.map(c => c.pr)
+      candidates.map(c => c.pr),
+      onWarning
     );
-    return mapPool(
+    const enriched = await mapPool(
       candidates,
       DETAIL_CONCURRENCY,
-      async ({ pr, roles }) => {
+      async ({ pr, roles }): Promise<PullRequest | null> => {
         const reviews = await this.fetchReviews(
           pr.base.repo.full_name,
-          pr.number
+          pr.number,
+          onWarning
         );
+        if (reviews === null) return null;
         const checkRuns = listWeight
           ? []
-          : await this.fetchCheckRuns(pr.base.repo.full_name, pr.head.sha);
+          : await this.fetchCheckRuns(
+              pr.base.repo.full_name,
+              pr.number,
+              pr.head.sha,
+              onWarning
+            );
         return this.toPullRequest(
           pr,
           roles,
@@ -2428,25 +2567,75 @@ export class GitHubProvider implements GitProvider {
         );
       }
     );
+    return enriched.filter((pr): pr is PullRequest => pr !== null);
   }
 
+  /**
+   * Reviews for one PR, or `null` if GitHub rejected a page partway through.
+   *
+   * `null` (not a truncated array) is the point: the caller computes
+   * approval counts from this list, so a short list and a complete one must
+   * never be the same value. Only a response GitHub actually returned is
+   * reported through `onWarning` -- a transport failure (no `.response`)
+   * rethrows, same as every other fetch in this file.
+   */
   private async fetchReviews(
     repoPath: string,
-    prNumber: number
-  ): Promise<GHReview[]> {
+    prNumber: number,
+    onWarning?: FetchPullRequestsOptions['onWarning']
+  ): Promise<GHReview[] | null> {
     const { owner, repo } = this.splitOwnerRepo(repoPath);
-    // `paginate` needs the route template plus real route params (rather
-    // than one path string) so it can follow the `Link` header itself; every
-    // other call site in this file interpolates a whole path instead.
-    return this.octokit.paginate<GHReview>(
-      'GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews',
-      { owner, repo, pull_number: prNumber, per_page: 100 }
-    );
+    try {
+      // `paginate` needs the route template plus real route params (rather
+      // than one path string) so it can follow the `Link` header itself; every
+      // other call site in this file interpolates a whole path instead.
+      return await this.octokit.paginate<GHReview>(
+        'GET /repos/{owner}/{repo}/pulls/{pull_number}/reviews',
+        { owner, repo, pull_number: prNumber, per_page: 100 }
+      );
+    } catch (err) {
+      if (err instanceof RequestError && err.response) {
+        this.warn(onWarning, {
+          kind: 'request-failed',
+          source: 'reviews',
+          status: err.status,
+          target: warningTarget(repoPath, prNumber),
+          message: `GitHub returned HTTP ${err.status} fetching reviews for ${repoPath}#${prNumber}; its approval count could not be verified, so it is missing from this result.`
+        });
+        return null;
+      }
+      throw err;
+    }
   }
 
+  /**
+   * Check runs for one PR's head commit, or `[]` on any failure (404, rate
+   * limit, transport). Returning `[]` rather than failing the PR is existing
+   * behavior, not new -- a pipeline is supplementary to the fields a caller
+   * actually gates decisions on, unlike reviews, and `toPipeline` already
+   * reads `[]` as "no pipeline" (`pipeline: null`).
+   *
+   * That collapse is exactly the gap: "no checks configured" and "could not
+   * ask GitHub" produced the identical `pipeline: null`, with nothing to
+   * tell them apart. This still returns `[]` either way -- changing that
+   * would mean failing the PR over its pipeline, a bigger behavior change
+   * than this ticket asks for -- but now reports the failure case through
+   * `onWarning`, so a caller that cares can tell "no checks" from "unknown."
+   *
+   * `target` is `warningTarget(repoPath, prNumber)`, not `owner/repo@sha`:
+   * an earlier version of this warning named the commit the fetch actually
+   * failed on, which reads as more precise, but `fetchDashboardBatch`
+   * (MRDashboard.ts) attributes a warning to a row by looking up exactly
+   * `owner/repo#iid` -- a `@sha` target can never match that, so the
+   * warning fired (this file's own tests confirmed it) while never once
+   * reaching a `DashboardGroup` consumer. `prNumber` is threaded in just for
+   * this; `sha` still appears in the message for a human reading the log.
+   */
   private async fetchCheckRuns(
     repoPath: string,
-    sha: string
+    prNumber: number,
+    sha: string,
+    onWarning?: FetchPullRequestsOptions['onWarning']
   ): Promise<GHCheckRun[]> {
     try {
       const res = await this.octokit.request(
@@ -2454,11 +2643,16 @@ export class GitHubProvider implements GitProvider {
       );
       const data = res.data as GHCheckSuite;
       return data.check_runs;
-    } catch {
-      // Every failure here (404, rate limit, transport) degrades to "no
-      // check runs reported" rather than failing the PR it belongs to --
-      // this is existing behavior, not new: the old code returned `[]` for
-      // any non-ok status and any thrown error alike.
+    } catch (err) {
+      const status = err instanceof RequestError ? err.status : undefined;
+      const message = err instanceof Error ? err.message : String(err);
+      this.warn(onWarning, {
+        kind: 'request-failed',
+        source: 'checks',
+        status,
+        target: warningTarget(repoPath, prNumber),
+        message: `GitHub check runs for ${repoPath}#${prNumber} (commit ${sha}) could not be fetched (${message}); this PR's pipeline reads as "no checks" but that could not be verified.`
+      });
       return [];
     }
   }

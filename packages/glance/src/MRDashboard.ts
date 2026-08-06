@@ -7,8 +7,8 @@ import type {
   Reviewer,
   UserRef
 } from './types.ts';
-import type { GitProvider } from './GitProvider.ts';
-import { repoIdProvider } from './GitProvider.ts';
+import type { FetchPullRequestsWarning, GitProvider } from './GitProvider.ts';
+import { repoIdProvider, warningTarget } from './GitProvider.ts';
 import { createRealtimeWatcher, type WatcherStatus } from './RealtimeWatcher.ts';
 
 /**
@@ -303,6 +303,33 @@ export interface DashboardGroup {
    * Register a listener for connection status changes.
    */
   onStatusChange: (listener: (status: WatcherStatus) => void) => void;
+  /**
+   * Register a listener for per-row degradation: one MR in the group did
+   * not refresh cleanly on a batch fetch that otherwise succeeded for the
+   * rest.
+   *
+   * Fires in two different situations, both worth the same signal to a
+   * consumer: the MR can be missing from `subscribe`'s Map entirely (a
+   * `reviews`/`detail` failure drops it rather than showing wrong data), or
+   * it can be present with one field silently at its "unknown" value
+   * because its `checks`/`threads` fetch failed -- `pipeline: null` on the
+   * `PullRequest`, which reads as "no CI"; `unresolvedThreadCount: null`,
+   * which `getMRDashboardProps`'s `?? 0` folds into "no unresolved
+   * discussions" for the rendered props, not merely "count unknown."
+   * `subscribe`'s Map has no room to say either on its own -- a missing,
+   * stale, or falsely-clean entry all look identical to one nothing ever
+   * went wrong with -- which is exactly why this fires for both rather
+   * than only the "missing" case.
+   *
+   * Optional (unlike `onStatusChange`, added earlier) even though the real
+   * implementation always provides it: `DashboardGroup` is a published,
+   * versioned interface, and a consumer with their own test double for it
+   * (mocking `createDashboard`'s return value, a normal thing to do around
+   * a hook) would fail to compile against a new required member on an
+   * otherwise-additive change. Optional costs nothing here -- every real
+   * `DashboardGroup` still has it -- and avoids that break.
+   */
+  onWarning?: (listener: (iid: number, warning: FetchPullRequestsWarning) => void) => void;
   /** Stop all subscriptions and clean up. */
   dispose: () => void;
 }
@@ -519,6 +546,62 @@ function createBranchDashboard(
 
 // ── Multi-MR ──────────────────────────────────────────────────────────────────
 
+/**
+ * One batched `fetchPullRequests({ iids })` call, split into what came back
+ * and which requested IIDs `onWarning` named, with why.
+ *
+ * Exported (rather than kept as a closure inside `createDashboardGroup`) so
+ * the degradation split can be tested directly against a fake provider,
+ * without driving `createRealtimeWatcher`'s timers to reach it.
+ *
+ * `degraded` is keyed by every iid a warning named, present in `prs` or
+ * not -- it is not, despite an earlier version of this function assuming
+ * so, the same set as "missing from `prs`". A `reviews`/`detail` failure
+ * drops the PR entirely (missing from `prs`, present in `degraded`); a
+ * `checks`/`threads` failure keeps the PR (present in `prs` with that one
+ * field at its "unknown" value, ALSO present in `degraded`). Skipping the
+ * lookup whenever `prs.has(iid)` -- the earlier version's mistake -- made
+ * every `checks`/`threads` warning unreachable: `DashboardGroup.onWarning`
+ * never fired for either, because the PR they are about is never missing.
+ * Both are "this row is not what it looks like," which is what a consumer
+ * needs to know regardless of whether the row is absent or just incomplete.
+ */
+export async function fetchDashboardBatch(
+  provider: GitProvider,
+  projectPath: string,
+  iids: number[]
+): Promise<{
+  prs: Map<number, PullRequest>;
+  degraded: Map<number, FetchPullRequestsWarning>;
+}> {
+  const warnings: FetchPullRequestsWarning[] = [];
+  const fetched = await provider.fetchPullRequests({
+    iids,
+    projectPath,
+    state: ['opened', 'merged', 'closed'],
+    onWarning: w => warnings.push(w)
+  });
+
+  const prs = new Map<number, PullRequest>();
+  for (const pr of fetched) prs.set(pr.iid, pr);
+
+  const warningByTarget = new Map(warnings.map(w => [w.target, w]));
+  const degraded = new Map<number, FetchPullRequestsWarning>();
+  for (const iid of iids) {
+    // `warningTarget` -- the same function every producer in GitHubProvider
+    // builds `target` with -- not a hand-rolled template string here. A
+    // `checks` warning once used `owner/repo@sha` while this lookup used
+    // `owner/repo#iid`; both were "obviously correct" read on their own,
+    // and neither side's own tests caught that they had quietly stopped
+    // agreeing. Reading the join key from one function removes that as a
+    // way for a future source to repeat it.
+    const warning = warningByTarget.get(warningTarget(projectPath, iid));
+    if (warning) degraded.set(iid, warning);
+  }
+
+  return { prs, degraded };
+}
+
 function createDashboardGroup(
   provider: GitProvider,
   projectPath: string,
@@ -539,26 +622,40 @@ function createDashboardGroup(
   let listener: ((mrs: Map<number, MRDashboardProps>) => void) | null = null;
   let disposeWatcher: (() => void) | null = null;
   let statusListener: ((status: WatcherStatus) => void) | null = null;
+  let warningListener:
+    | ((iid: number, warning: FetchPullRequestsWarning) => void)
+    | null = null;
   let connectionState: MRDashboardProps['connection'] = 'connecting';
   let _isInitialLoading = true;
 
   /**
    * Batched fetch: uses fetchPullRequests with iids option for a single
    * GraphQL call. Includes all states so merged/closed MRs are visible.
+   *
+   * No try/catch here: `createRealtimeWatcher.runFetch` already wraps this
+   * call and turns a rejection into `lastError`/`consecutiveErrors` on
+   * `onStatusChange`, which is a real signal a consumer can act on. Catching
+   * to `null` here instead -- the previous behavior -- discarded that
+   * signal: one PR's failed reviews fetch used to reject the whole batch
+   * (`fetchPullRequests` had nowhere else to put that failure), and this
+   * function turned that single-row problem into "nothing updated, and
+   * nothing said why." `fetchPullRequests` now excludes just the PR it
+   * could not verify instead of rejecting for it, so the row-level case no
+   * longer reaches here as an exception at all; `fetchDashboardBatch`
+   * reports it (and a `checks`/`threads` failure, which keeps the PR
+   * present rather than excluding it) through `degraded`, forwarded to
+   * `warningListener` below.
    */
   const batchFetch = async (): Promise<Map<number, PullRequest> | null> => {
-    try {
-      const prs = await provider.fetchPullRequests({
-        iids: currentIids,
-        projectPath,
-        state: ['opened', 'merged', 'closed']
-      });
-      const map = new Map<number, PullRequest>();
-      for (const pr of prs) map.set(pr.iid, pr);
-      return map;
-    } catch {
-      return null;
+    const { prs, degraded } = await fetchDashboardBatch(
+      provider,
+      projectPath,
+      currentIids
+    );
+    for (const [iid, warning] of degraded) {
+      warningListener?.(iid, warning);
     }
+    return prs;
   };
 
   /** Start (or restart) the watcher for the current IID set. */
@@ -668,11 +765,16 @@ function createDashboardGroup(
       statusListener = listener;
     },
 
+    onWarning(listener: (iid: number, warning: FetchPullRequestsWarning) => void) {
+      warningListener = listener;
+    },
+
     dispose() {
       disposeWatcher?.();
       disposeWatcher = null;
       listener = null;
       statusListener = null;
+      warningListener = null;
     }
   };
 }
