@@ -411,57 +411,88 @@ async function pollLoop(ctx: PollContext): Promise<void> {
   let warnedMissingRateLimit = false;
 
   while (Date.now() < ctx.deadline) {
-    const res = await ghFetch(
-      ctx.token,
-      'GET',
-      `/repos/${ctx.slug}/events?per_page=100`,
-      undefined,
-      etag === null ? {} : { 'If-None-Match': etag }
-    );
-    const at = new Date().toISOString();
+    // Everything that talks to the network sits inside this try, not just the
+    // status handling below it. A DNS blip, connection reset, or TLS error
+    // rejects the fetch rather than answering with a status, so the non-2xx
+    // branch never sees it; unguarded, one such failure would propagate out of
+    // this loop and end polling for the remainder of the window, silently
+    // truncating the observation the run exists to make. Reading the response
+    // body is inside too, for the same reason: a truncated body throws where
+    // an error status would not.
+    try {
+      const res = await ghFetch(
+        ctx.token,
+        'GET',
+        `/repos/${ctx.slug}/events?per_page=100`,
+        undefined,
+        etag === null ? {} : { 'If-None-Match': etag }
+      );
+      const at = new Date().toISOString();
 
-    const remaining = intHeader(res, 'x-ratelimit-remaining');
-    if (remaining === null && !warnedMissingRateLimit) {
-      warnedMissingRateLimit = true;
-      console.warn('  no x-ratelimit-remaining header; recording -1 for those samples');
-    }
-    const sample: PollSample = {
-      at,
-      status: res.status,
-      etagSent: etag !== null,
-      // -1 rather than 0: a real zero would mean the rate limit is exhausted,
-      // and the two must not read the same in the recorded data.
-      rateLimitRemaining: remaining ?? -1,
-      xPollInterval: intHeader(res, 'x-poll-interval')
-    };
-    ctx.polls.push(sample);
-    await ctx.pollsFile.write(sample);
-
-    if (res.status === 200) {
-      etag = res.headers.get('etag') ?? etag;
-      const body = (await res.json()) as RawEvent[];
-      let fresh = 0;
-      for (const raw of body) {
-        if (seen.has(raw.id)) continue;
-        const observed: ObservedEvent = {
-          id: raw.id,
-          type: raw.type ?? 'unknown',
-          ...(raw.payload?.action === undefined ? {} : { action: raw.payload.action }),
-          actorLogin: raw.actor?.login ?? 'unknown',
-          createdAt: raw.created_at ?? at,
-          firstObservedAt: at
-        };
-        seen.set(observed.id, observed);
-        ctx.events.push(observed);
-        await ctx.eventsFile.write(observed);
-        fresh++;
+      const remaining = intHeader(res, 'x-ratelimit-remaining');
+      if (remaining === null && !warnedMissingRateLimit) {
+        warnedMissingRateLimit = true;
+        console.warn('  no x-ratelimit-remaining header; recording -1 for those samples');
       }
-      console.log(`  poll ${at} 200 (+${fresh} new, ${seen.size} total)`);
-    } else if (res.status !== 304) {
-      // Not fatal: a 403/502 mid-run is itself an observation, and ending the
-      // run would throw away every measurement still in flight.
-      const text = await res.text().catch(() => '');
-      console.error(`  poll ${at} HTTP ${res.status}: ${text.slice(0, 200)}`);
+      const sample: PollSample = {
+        at,
+        status: res.status,
+        etagSent: etag !== null,
+        // -1 rather than 0: a real zero would mean the rate limit is exhausted,
+        // and the two must not read the same in the recorded data.
+        rateLimitRemaining: remaining ?? -1,
+        xPollInterval: intHeader(res, 'x-poll-interval')
+      };
+      ctx.polls.push(sample);
+      await ctx.pollsFile.write(sample);
+
+      if (res.status === 200) {
+        etag = res.headers.get('etag') ?? etag;
+        const body = (await res.json()) as RawEvent[];
+        let fresh = 0;
+        for (const raw of body) {
+          // Skipped rather than merged: an event is immutable once GitHub has
+          // recorded it, and the only field a repeat sighting could change is
+          // `firstObservedAt`, whose whole meaning is the first poll that saw
+          // it. There is nothing to upsert, so a second sighting is a no-op.
+          if (seen.has(raw.id)) continue;
+          const observed: ObservedEvent = {
+            id: raw.id,
+            type: raw.type ?? 'unknown',
+            ...(raw.payload?.action === undefined ? {} : { action: raw.payload.action }),
+            actorLogin: raw.actor?.login ?? 'unknown',
+            createdAt: raw.created_at ?? at,
+            firstObservedAt: at
+          };
+          seen.set(observed.id, observed);
+          ctx.events.push(observed);
+          await ctx.eventsFile.write(observed);
+          fresh++;
+        }
+        console.log(`  poll ${at} 200 (+${fresh} new, ${seen.size} total)`);
+      } else if (res.status !== 304) {
+        // Not fatal: a 403/502 mid-run is itself an observation, and ending the
+        // run would throw away every measurement still in flight.
+        const text = await res.text().catch(() => '');
+        console.error(`  poll ${at} HTTP ${res.status}: ${text.slice(0, 200)}`);
+      }
+    } catch (err) {
+      // Recorded, not merely logged: an attempt that vanished from polls.jsonl
+      // would under-report how often the probe actually asked, which is the
+      // same silent truncation at row granularity. Status 0 is not a real HTTP
+      // status, so it cannot be mistaken for one, and it correctly breaks any
+      // run of consecutive 304s in the rate-limit accounting.
+      const at = new Date().toISOString();
+      const sample: PollSample = {
+        at,
+        status: 0,
+        etagSent: etag !== null,
+        rateLimitRemaining: -1,
+        xPollInterval: null
+      };
+      ctx.polls.push(sample);
+      await ctx.pollsFile.write(sample);
+      console.error(`  poll ${at} transport failure: ${err instanceof Error ? err.message : String(err)}`);
     }
 
     const remainingMs = ctx.deadline - Date.now();
@@ -520,9 +551,13 @@ function renderReport(input: ReportInput): string {
   lines.push('', '=== conditional requests ===');
   const etags = etagSummary(polls);
   const withEtag = polls.filter(p => p.etagSent).length;
+  const transportFailures = polls.filter(p => p.status === 0).length;
   lines.push(
     `  ${etags.samples} poll(s), ${withEtag} sent If-None-Match, ${etags.hits304} answered 304`,
-    `  rate-limit points consumed across consecutive 304s: ${etags.remainingDropAcross304s} (docs claim 0)`
+    `  rate-limit points consumed across consecutive 304s: ${etags.remainingDropAcross304s} (docs claim 0)`,
+    // Stated even when zero: the poll count above includes attempts that never
+    // got a response, so a reader needs this number to interpret it.
+    `  attempts that got no HTTP response at all: ${transportFailures}`
   );
   // Broken out by status rather than listed as a flat set of values: the
   // research's claim is that X-Poll-Interval is served on 200 *and* 304, and a
@@ -574,13 +609,26 @@ function renderReport(input: ReportInput): string {
 async function main(): Promise<number> {
   const options = parseArgs(process.argv.slice(2));
 
-  const creds = await loadCredentials();
-  if (!creds) {
-    console.error('No harness_credentials.json. Copy harness_credentials.example.json and fill it in.');
+  // A malformed file, a missing `github` entry, and an unparseable web_url all
+  // throw, and all three mean the same thing to an operator: the credentials
+  // do not name a usable GitHub repo. Reported in the one-line style the
+  // file-missing case already uses rather than as a stack trace, since a
+  // stack trace here says nothing the message does not.
+  let slug: string;
+  try {
+    const creds = await loadCredentials();
+    if (!creds) {
+      console.error('No harness_credentials.json. Copy harness_credentials.example.json and fill it in.');
+      return 1;
+    }
+    const { owner, repo } = parseGitHubSlug(githubRepo(creds).web_url);
+    slug = `${owner}/${repo}`;
+  } catch (err) {
+    console.error(
+      `Could not read a GitHub repo from harness_credentials.json: ${err instanceof Error ? err.message : String(err)}`
+    );
     return 1;
   }
-  const { owner, repo } = parseGitHubSlug(githubRepo(creds).web_url);
-  const slug = `${owner}/${repo}`;
 
   const token = await resolveGitHubToken();
   if (!token) {
