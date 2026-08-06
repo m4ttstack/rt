@@ -395,8 +395,10 @@ function publishSkipReason(pr: PullRequest | undefined, branch: string): Publish
  * gitq: `server/data.ts` `fetchMrsByBranch`, minus the rt-daemon shortcut.
  *
  * The feature detect is on the optional interface member, not on a provider
- * slug: `GitHubProvider` does not implement `fetchPullRequestsByBranches` and
- * must fall back rather than fail.
+ * slug: the fallback arm has to stay exercised for any provider that does not
+ * implement `fetchPullRequestsByBranches`. Both shipped providers now do
+ * (GitHub's landed in MAT-151), so the arm is dead code against them and
+ * live only against a third-party implementation.
  */
 async function gitqFetchMrsByBranch(
   provider: GitProvider,

@@ -190,6 +190,21 @@ interface GHPullRequestThreadsResponse {
   } | null;
 }
 
+/**
+ * `repository { b0: pullRequests(...) ... }` projection, one alias per branch.
+ *
+ * The keys are positional aliases (`b0`, `b1`, ...) rather than branch names
+ * because a branch name is not a valid GraphQL identifier -- `feature/x-y`
+ * has a slash and a dash in it -- so the caller maps aliases back to branches
+ * by index.
+ */
+interface GHBranchPullRequestsResponse {
+  repository?: Record<
+    string,
+    { nodes?: Array<{ number: number } | null> } | null
+  > | null;
+}
+
 /** An item from `/search/issues`: issue-shaped, with a `pull_request` stub on PRs. */
 interface GHSearchItem {
   number: number;
@@ -225,6 +240,17 @@ const LIST_MAX_PAGES = 20;
 
 /** PRs per batched `nodes(ids:)` review-thread query. */
 const THREAD_BATCH_SIZE = 50;
+
+/**
+ * Branch aliases per batched `pullRequests(headRefName:)` query.
+ *
+ * Same 50 as `THREAD_BATCH_SIZE`, for the same reason: GitHub scores a
+ * GraphQL query's cost from the connections it asks for, and a single query
+ * with hundreds of aliased connections is both rejected past the node limit
+ * and unattributable when it fails -- one bad alias takes the whole request
+ * with it. Fifty keeps each request cheap and each failure small.
+ */
+const BRANCH_BATCH_SIZE = 50;
 
 /**
  * Per-PR requests in flight at once (detail, reviews, check runs).
@@ -396,6 +422,39 @@ function mapStateToGitHubQueryParam(state: MRState | 'all'): 'open' | 'closed' |
   if (state === 'all') return 'all';
   if (state === 'opened') return 'open';
   return 'closed'; // 'closed' and 'merged' both map to GitHub's 'closed'
+}
+
+/**
+ * Map our MRState to GitHub's GraphQL `PullRequestState` enum, or `null` for
+ * "send no filter at all".
+ *
+ * GraphQL is finer-grained than the REST `state` param
+ * `mapStateToGitHubQueryParam` targets: REST has no MERGED, so `merged` and
+ * `closed` both collapse onto `closed` there and a `merged` lookup also
+ * matches PRs that were closed unmerged. Here they stay apart, which is what
+ * lets the batch path answer `merged` the way GitLab's own `state` filter
+ * does.
+ *
+ * An omitted state means no filter rather than `opened`. The optional
+ * interface member declares `state?`, and a caller that did not name a state
+ * is asking for the branch's PR, not for the branch's PR provided it is still
+ * open -- answering `null` for a merged one would be a miss that reads
+ * exactly like "no PR ever existed".
+ */
+function mapStateToGraphQLStates(
+  state: MRState | 'all' | undefined
+): string[] | null {
+  switch (state) {
+    case undefined:
+    case 'all':
+      return null;
+    case 'opened':
+      return ['OPEN'];
+    case 'merged':
+      return ['MERGED'];
+    case 'closed':
+      return ['CLOSED'];
+  }
 }
 
 /**
@@ -1106,6 +1165,123 @@ export class GitHubProvider implements GitProvider {
       }
     }
     return null;
+  }
+
+  /**
+   * Batch branch -> PR resolution (MAT-151).
+   *
+   * The cost, stated honestly: **one GraphQL round-trip per
+   * `BRANCH_BATCH_SIZE` (50) branches, plus one detail fetch per branch that
+   * actually has a PR**, the detail fetches bounded to `DETAIL_CONCURRENCY`
+   * in flight. That is not GitLab's shape and is not meant to look like it.
+   * GitLab filters `mergeRequests(sourceBranches: [...])` server-side and its
+   * dashboard fragment returns everything a `PullRequest` needs, so one
+   * request answers the whole call. GitHub's schema has no multi-branch
+   * filter and no equivalent fragment, so the batch buys back only the
+   * *lookup*: 50 branch-to-number resolutions per request instead of one
+   * REST round-trip each.
+   *
+   * What it replaces is the fallback callers used while this method was
+   * absent -- N sequential `fetchPullRequestByBranch` calls, each of them 1-6
+   * REST requests (a head-filtered query plus up to a 5-page fork scan) and
+   * then a detail fetch. For 60 branches with 3 PRs among them that is ~60
+   * lookups serialized; here it is 2 GraphQL requests and 3 detail fetches.
+   * Branches with no PR now cost a share of one request and nothing else.
+   *
+   * Hits are resolved through `fetchSingleMR`, the same detail path
+   * `fetchPullRequestByBranch` returns from, so a branch looked up either way
+   * yields the same object rather than a thinner batch-shaped one. Misses map
+   * to `null` without a further request. Every input branch is a key of the
+   * returned Map, and an empty `branches` issues no requests at all.
+   *
+   * Unlike `fetchPullRequestByBranch` -- which reports an HTTP failure as
+   * `null`, indistinguishable from "this branch has no PR" -- a failed lookup
+   * here throws (MAT-133 via `graphqlOrThrow`). One query carries up to 50
+   * branches, so swallowing it would report 50 branches as PR-less on the
+   * strength of one 502.
+   *
+   * Fork PRs are found without the client-side scan the REST path needs:
+   * GraphQL's `headRefName` matches on the ref name itself, not on the
+   * `owner:branch` pair REST's `head` filter requires.
+   */
+  async fetchPullRequestsByBranches(
+    projectPath: string,
+    branches: string[],
+    state?: MRState | 'all'
+  ): Promise<Map<string, PullRequest | null>> {
+    const result = new Map<string, PullRequest | null>();
+    if (branches.length === 0) return result;
+
+    const { owner, repo } = this.splitOwnerRepo(projectPath);
+    const states = mapStateToGraphQLStates(state);
+
+    // Branch -> PR number for the branches that have one. Keyed by branch
+    // rather than by alias: aliases are per-chunk and restart at b0.
+    const numbers = new Map<string, number>();
+
+    for (let i = 0; i < branches.length; i += BRANCH_BATCH_SIZE) {
+      const batch = branches.slice(i, i + BRANCH_BATCH_SIZE);
+
+      // Branch names reach the server as variables, never as query text: a
+      // ref name may contain any of `)`, `{`, `#` or a quote, and splicing
+      // one in would let a branch name rewrite the query. The aliases and
+      // variable names below are generated from the index alone.
+      const stateArg = states ? ', states: $states' : '';
+      const fields = batch
+        .map(
+          (_, j) =>
+            `b${j}: pullRequests(headRefName: $h${j}${stateArg}, first: 1, orderBy: {field: UPDATED_AT, direction: DESC}) { nodes { number } }`
+        )
+        .join('\n            ');
+      const query = `
+        query GlancePullRequestsByBranches($owner: String!, $repo: String!${
+          states ? ', $states: [PullRequestState!]' : ''
+        }, ${batch.map((_, j) => `$h${j}: String!`).join(', ')}) {
+          repository(owner: $owner, name: $repo) {
+            ${fields}
+          }
+        }
+      `;
+
+      const variables: Record<string, unknown> = { owner, repo };
+      if (states) variables.states = states;
+      batch.forEach((branch, j) => {
+        variables[`h${j}`] = branch;
+      });
+
+      const data = await this.graphqlOrThrow<GHBranchPullRequestsResponse>(
+        'fetchPullRequestsByBranches',
+        query,
+        variables
+      );
+      const repository = data.repository;
+      if (!repository) {
+        // Every alias would read as "no PR" against a null repository, which
+        // is the whole batch degrading to misses on what is really an access
+        // or a typo'd path.
+        throw new Error(
+          `fetchPullRequestsByBranches failed: GitHub reported no repository ${projectPath}`
+        );
+      }
+      batch.forEach((branch, j) => {
+        const number = repository[`b${j}`]?.nodes?.[0]?.number;
+        if (number != null) numbers.set(branch, number);
+      });
+    }
+
+    // `first: 1` per alias, so at most one PR per branch reached `numbers`;
+    // these are the only detail fetches this call makes.
+    const hits = [...numbers.entries()];
+    const details = await mapPool(hits, DETAIL_CONCURRENCY, ([, number]) =>
+      this.fetchSingleMR(projectPath, number, null)
+    );
+
+    const byBranch = new Map<string, PullRequest | null>();
+    hits.forEach(([branch], idx) => byBranch.set(branch, details[idx] ?? null));
+    for (const branch of branches) {
+      result.set(branch, byBranch.get(branch) ?? null);
+    }
+    return result;
   }
 
   /**

@@ -53,10 +53,7 @@ export const GITHUB_EXPECTATIONS: Record<ProviderMethod, Expectation> = {
   fetchPullRequests: { support: 'supported' },
   fetchSingleMR: { support: 'supported' },
   fetchPullRequestByBranch: { support: 'supported' },
-  fetchPullRequestsByBranches: {
-    support: 'absent',
-    note: 'Not implemented on GitHub, so callers fall back to sequential fetchPullRequestByBranch calls: N round-trips where GitLab batches into one. A performance gap rather than a correctness one.'
-  },
+  fetchPullRequestsByBranches: { support: 'supported' },
   createPullRequest: { support: 'supported' },
   updatePullRequest: { support: 'supported' },
   fetchBranchProtectionRules: { support: 'supported' },

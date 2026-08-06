@@ -146,6 +146,17 @@ assert(
   typeof gh.fetchPullRequestByBranch === 'function',
   'has fetchPullRequestByBranch()'
 );
+// Optional on GitProvider, so a caller feature-detects it and silently takes
+// a slower path when it is missing -- exactly the kind of regression nothing
+// else here would catch (MAT-151).
+assert(
+  typeof gh.fetchPullRequestsByBranches === 'function',
+  'has fetchPullRequestsByBranches()'
+);
+assert(
+  typeof GitHubProvider.prototype.fetchPullRequestsByBranches === 'function',
+  'GitHubProvider.fetchPullRequestsByBranches exists on the prototype'
+);
 assert(
   typeof gh.fetchBranchProtectionRules === 'function',
   'has fetchBranchProtectionRules()'
