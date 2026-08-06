@@ -122,13 +122,24 @@ export interface DiffStats {
  * BLOCKED, and `GitLabProvider.mergePullRequest` decides whether a refused
  * merge is worth retrying. GitHub has no equivalent pre-merge state and always
  * reports `detailedMergeStatus` as null, so neither question arises there.
+ *
+ * A frozen array rather than a `ReadonlySet`, because this is public API and
+ * that type is erased at compile time: `Object.freeze` on a `Set` does not
+ * stop `.add`, since a Set's contents are not properties, so a consumer could
+ * silently repoint both the dashboard's BLOCKED rule and the provider's retry
+ * hint. A frozen array actually refuses.
  */
-export const TRANSITIONAL_MERGE_STATUSES: ReadonlySet<string> = new Set([
+export const TRANSITIONAL_MERGE_STATUSES: readonly string[] = Object.freeze([
   'preparing',
   'unchecked',
   'checking',
   'approvals_syncing',
 ]);
+
+/** True when GitLab has not finished deciding whether this MR can merge. */
+export function isTransitionalMergeStatus(status: string | null | undefined): boolean {
+  return status != null && TRANSITIONAL_MERGE_STATUSES.includes(status);
+}
 
 export interface PullRequest {
   /** Scoped provider ID, e.g. "gitlab:12345". */

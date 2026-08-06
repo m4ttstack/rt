@@ -20,7 +20,7 @@ import type {
   UserRef,
   WatchEventsOptions,
 } from './types.ts';
-import { TRANSITIONAL_MERGE_STATUSES } from './types.ts';
+import { isTransitionalMergeStatus } from './types.ts';
 import { type ForgeLogger, noopLogger } from './logger.ts';
 import { MRDetailFetcher } from './MRDetailFetcher.ts';
 import { ActionCableClient } from './ActionCableClient.ts';
@@ -1640,33 +1640,53 @@ export class GitLabProvider implements GitProvider {
   }
 
   /**
+   * Bound on the diagnostic read below. 5s is about 4.5x the slowest read the
+   * live probe measured (1.1s), so a merely slow GitLab still gets to answer,
+   * while the delay a caller pays for a diagnostic on an already-failed call
+   * stays short. A field rather than a literal so a test can shrink it and
+   * prove the bound exists without spending five seconds to do it.
+   */
+  private mergeStatusReadTimeoutMs = 5_000;
+
+  /**
    * Name what GitLab refused a merge for, when GitLab itself will not (MAT-132).
    *
-   * Every "I will not merge this" from the merge endpoint arrives as a bare
-   * HTTP 405: `execute_merge` (lib/api/merge_requests.rb) calls `not_allowed!`
-   * whenever `merge_request.mergeable?` is false, and `not_allowed!`
-   * (lib/api/helpers.rb) renders the constant string "405 Method Not Allowed".
-   * One boolean, no cause, so the status cannot separate "mergeability is
-   * still being computed, retry" from "a check failed, change something".
+   * On the plain (non auto-merge) path, a refusal arrives as a bare HTTP 405
+   * with nothing to read: `execute_merge` (lib/api/merge_requests.rb) calls
+   * `not_allowed!` whenever `merge_request.mergeable?` is false, and
+   * `not_allowed!` (lib/api/helpers.rb) renders the constant string "405
+   * Method Not Allowed". One boolean, no cause, so the status cannot separate
+   * "mergeability is still being computed, retry" from "a check failed,
+   * change something". This is scoped to that path on purpose: the same
+   * endpoint's other refusals already name themselves, 409 for a `sha` that
+   * does not match the head and 422 "Branch cannot be merged" from
+   * `execute_immediate_merge!`, and neither needs help.
    *
-   * `detailedMergeStatus` does carry that, and is readable right afterwards: a
-   * read-only probe of the live fixture returned it in 0.3-1.1s per MR, and
-   * phase 4's merge-readiness poll watched it move preparing -> unchecked ->
-   * checking on a just-created MR through this same `fetchSingleMR` call.
+   * `detailedMergeStatus` does carry the missing cause, and is readable right
+   * afterwards: a read-only probe of the live fixture returned it in 0.3-1.1s
+   * per merge request, and phase 4's merge-readiness poll watched it move
+   * preparing -> unchecked -> checking on a just-created MR through this same
+   * `fetchSingleMR` call.
    *
-   * Three deliberate limits. It does not poll, because the value is only worth
-   * reporting while it is still near the refusal. It never lets the read
-   * become the error: any failure, and the caller gets the untouched 405,
-   * since a read failure is not why the merge did not happen. And it does not
-   * claim to be the status at the instant of the refusal, which it cannot be;
-   * the message says the status was read back afterwards, so a status that
-   * moved in between reads as the observation it is. The measured worst case
-   * for that gap is benign: an MR merged by someone else between the two calls
-   * reads back as `not_open`, which no one will mistake for a diagnosis.
+   * Four deliberate limits. It does not poll, because the value is only worth
+   * reporting while it is still near the refusal. It is bounded, because the
+   * error path must not outlive the error: `runQuery` has no timeout of its
+   * own, so an unreachable GitLab would turn a fast, correct 405 into a hang.
+   * It never lets the read become the error: `fetchSingleMR` already logs and
+   * returns null on transport failure, and the `catch` below covers the rest,
+   * because a read failure is not why the merge did not happen. And it does
+   * not claim to be the status at the instant of the refusal, which it cannot
+   * be; the message says the status was read back afterwards, so a status that
+   * moved in between reads as the observation it is. The one case measured for
+   * that gap is benign: an MR merged by someone else between the two calls
+   * reads back as `not_open`, which no one will mistake for a diagnosis. The
+   * probe that measured it read closed and merged MRs only, so what a
+   * transitional status looks like after a real refusal is still unmeasured.
    *
    * Only the 405 path reads anything. Other statuses already say what went
-   * wrong, and paying a round trip to append a merge status to a 401 would be
-   * noise. The "mergePullRequest failed: 405" prefix is preserved verbatim
+   * wrong, and spending two HTTP requests (`fetchSingleMR` issues a GraphQL
+   * query and a REST show in parallel) to append a merge status to a 401 would
+   * be noise. The "mergePullRequest failed: 405" prefix is preserved verbatim
    * because tests/live/conformance.ts matches on it.
    */
   private async mergeRefusalError(projectPath: string, mrIid: number, err: unknown): Promise<Error> {
@@ -1675,16 +1695,20 @@ export class GitLabProvider implements GitProvider {
       err instanceof GitbeakerRequestError ? (err.cause?.response as Response | undefined)?.status : undefined;
     if (httpStatus !== 405) return base;
 
-    let detailed: string | null = null;
-    try {
-      detailed = (await this.fetchSingleMR(projectPath, mrIid, null))?.detailedMergeStatus ?? null;
-    } catch {
-      // Swallowed on purpose: see the "never lets the read become the error"
-      // note above. The 405 is still the answer the caller needs.
-    }
+    const read = this.fetchSingleMR(projectPath, mrIid, null)
+      .then((pr) => pr?.detailedMergeStatus ?? null)
+      .catch(() => null);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const detailed = await Promise.race([
+      read,
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), this.mergeStatusReadTimeoutMs);
+      }),
+    ]);
+    clearTimeout(timer);
     if (!detailed) return base;
 
-    const retryHint = TRANSITIONAL_MERGE_STATUSES.has(detailed)
+    const retryHint = isTransitionalMergeStatus(detailed)
       ? ' GitLab reports that value while it is still computing mergeability, so the same call may succeed once it settles.'
       : '';
     return new Error(

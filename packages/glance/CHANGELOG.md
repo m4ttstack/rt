@@ -8,24 +8,34 @@ contents are not recorded here.
 ### Minor Changes
 
 - `GitLabProvider.mergePullRequest` now names why GitLab refused a merge
-  (MAT-132). GitLab answers every refusal on this endpoint with a bare HTTP
-  405 whose body is the constant string "405 Method Not Allowed", so the error
-  could not separate "mergeability is still being computed, retry in a moment"
-  from "a check failed, change something first". On a 405 only, the provider
-  reads the merge request back once and appends the `detailedMergeStatus`
-  GitLab reports, plus a retry hint when that value is one of the transitional
-  ones. The existing `mergePullRequest failed: 405 ...` prefix is unchanged,
-  and a follow-up read that fails or reports nothing leaves the original error
-  exactly as it was, so a read failure can never stand in for a merge failure.
-  New export: `TRANSITIONAL_MERGE_STATUSES`, the set the SDK classifies with,
+  (MAT-132). On the plain merge path, GitLab answers a refusal with a bare
+  HTTP 405 whose body is the constant string "405 Method Not Allowed", so the
+  error could not separate "mergeability is still being computed, retry in a
+  moment" from "a check failed, change something first". (Its other refusals
+  on the same endpoint do say why, and are untouched: 409 for a `sha` that
+  does not match the head, 422 "Branch cannot be merged".) On a 405 only, the
+  provider reads the merge request back once and appends the
+  `detailedMergeStatus` GitLab reports, plus a retry hint when that value is a
+  transitional one. The status is worded as an observation taken after the
+  refusal, not as its cause, because it can change in between. The existing
+  `mergePullRequest failed: 405 ...` prefix is unchanged; a follow-up read
+  that fails, reports nothing, or takes longer than 5 seconds leaves the
+  original error exactly as it was, so a read failure can never stand in for a
+  merge failure. New exports: `TRANSITIONAL_MERGE_STATUSES` and
+  `isTransitionalMergeStatus`, the list and predicate the SDK classifies with,
   so a caller deciding whether to retry does not need its own copy.
 - `getMRDashboardProps` now treats `detailedMergeStatus: "preparing"` as
   transitional, alongside `checking`, `unchecked`, and `approvals_syncing`.
   GitLab emits `preparing` ahead of `unchecked` on a just-created merge
   request, so the omission flashed `BLOCKED` during part of the very window
   the transitional rule exists to cover. An MR in `preparing` with no other
-  blocker now reports `status: "mergeable"` and `isCheckingMergeability:
-  true`, matching what the other three already did.
+  blocker now reports `status: "mergeable"`, `isCheckingMergeability: true`,
+  `isReady: true`, and `mergeButton.disabled: false`. That last one is the
+  consequence to know about: the Merge button is now enabled during the
+  `preparing` window, which is exactly the window in which a merge returns the
+  ambiguous 405 described above. That tradeoff is not new, it is what the
+  other three transitional values have always done, and the improved 405
+  message is what a consumer now gets if a user presses it too early.
 - **Breaking:** `GitProvider.restRequest`'s `path` is now provider-relative on
   both providers. `GitLabProvider.restRequest` previously concatenated
   `baseURL + path` verbatim, so a GitLab caller had to pass `/api/v4/user`

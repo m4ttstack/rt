@@ -10,6 +10,7 @@
 import { expectationFor, type ProviderMethod } from './expectations.ts';
 import type { ProviderFixture } from './fixture.ts';
 import { pollUntil } from './poll.ts';
+import { isTransitionalMergeStatus } from '../../src/types.ts';
 import type { Reporter } from './report.ts';
 
 /**
@@ -1829,14 +1830,11 @@ async function mergeBlockDetail(fixture: ProviderFixture, iid: number): Promise<
  * there and is effectively a no-op for that provider.
  */
 async function waitForMergeReadiness(fixture: ProviderFixture, iid: number): Promise<void> {
-  // approvals_syncing is transitional too, per MRDashboard.ts:105. Merging
-  // during it races the same ambiguous 405 as the other three (MAT-132).
-  const stillComputing = new Set([
-    'checking',
-    'unchecked',
-    'preparing',
-    'approvals_syncing'
-  ]);
+  // "Still computing" is asked of the SDK rather than restated here. This
+  // used to be a fourth literal copy of the same four strings, and a harness
+  // whose idea of transitional drifts from the provider's would wait out a
+  // window the provider no longer thinks exists, or merge into one it does
+  // (MAT-132).
 
   // MAT-132 timed out twice on two different MRs with nothing to show for
   // it: pollUntil's predicate reports "not yet" as `null`, so every
@@ -1870,7 +1868,7 @@ async function waitForMergeReadiness(fixture: ProviderFixture, iid: number): Pro
         return null;
       }
       observed.push(fresh.detailedMergeStatus ?? 'null');
-      return stillComputing.has(fresh.detailedMergeStatus ?? '') ? null : fresh;
+      return isTransitionalMergeStatus(fresh.detailedMergeStatus) ? null : fresh;
     }, { timeoutMs: 90_000 });
   } catch (err) {
     // Collapse consecutive repeats into counts rather than dumping up to

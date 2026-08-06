@@ -7,7 +7,7 @@ import type {
   Reviewer,
   UserRef
 } from './types.ts';
-import { TRANSITIONAL_MERGE_STATUSES } from './types.ts';
+import { isTransitionalMergeStatus } from './types.ts';
 import type { FetchPullRequestsWarning, GitProvider } from './GitProvider.ts';
 import { repoIdProvider, warningTarget } from './GitProvider.ts';
 import { createRealtimeWatcher, type WatcherStatus } from './RealtimeWatcher.ts';
@@ -103,12 +103,11 @@ export function getMRDashboardProps(
   // it returns one of TRANSITIONAL_MERGE_STATUSES rather than 'mergeable',
   // causing a false BLOCKED flash. Treat these transitional states
   // as "not yet decided" and fall back to our own blocker signals.
-  // MAT-132 moved the list into that shared set, so the merge-refusal
-  // diagnostics classify the same strings the same way, and added 'preparing'
-  // to it: GitLab emits 'preparing' ahead of 'unchecked' on a just-created MR,
-  // so omitting it flashed BLOCKED through part of this very window.
-  const isCheckingMergeability =
-    mr.detailedMergeStatus != null && TRANSITIONAL_MERGE_STATUSES.has(mr.detailedMergeStatus);
+  // The set is shared with GitLabProvider's merge-refusal diagnostics because
+  // both are answering "has GitLab decided yet?" about the same strings, and
+  // it includes 'preparing' because GitLab emits that ahead of 'unchecked' on
+  // a just-created MR, the earliest part of this same window.
+  const isCheckingMergeability = isTransitionalMergeStatus(mr.detailedMergeStatus);
   const isReady = mr.detailedMergeStatus === 'mergeable'
     || (isCheckingMergeability && !isDraft && !hasConflicts && !pipelineFailing);
   let status: MRDashboardProps['status'];

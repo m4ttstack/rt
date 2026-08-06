@@ -60,6 +60,20 @@ describe('mergePullRequest names the merge status behind a 405', () => {
     expect(/\bmergePullRequest failed: 405\b/.test(err.message)).toBe(true);
   });
 
+  test('the status is framed as read back afterwards, never as the cause', async () => {
+    const { provider } = providerRefusing(refusal(), async () => prWithStatus('checking'));
+
+    const err = await provider.mergePullRequest('g/p', 1).catch((e: unknown) => e as Error);
+
+    // The whole point of MAT-132's step 1: the status is an observation taken
+    // after the refusal, not a diagnosis of it, because it can move in
+    // between. Rewording this to "merge refused because detailedMergeStatus
+    // is X" is the exact defect the ticket forbids, and it would otherwise
+    // pass every other assertion in this file.
+    expect(err.message).toContain('Read back after the refusal, GitLab reported detailedMergeStatus="checking"');
+    expect(err.message).not.toMatch(/refused because|blocked by|caused by|the reason/i);
+  });
+
   test('a blocking status is named without a retry hint', async () => {
     const { provider } = providerRefusing(refusal(), async () => prWithStatus('discussions_not_resolved'));
 
@@ -86,6 +100,19 @@ describe('mergePullRequest names the merge status behind a 405', () => {
 
     expect(err.message).toContain('mergePullRequest failed: 405');
     expect(err.message).not.toContain('502 Bad Gateway');
+    expect(err.message).not.toContain('detailedMergeStatus');
+  });
+
+  test('a hung follow-up read is abandoned, not waited out', async () => {
+    // `runQuery` has no timeout of its own, so without the bound this test
+    // never returns: an unreachable GitLab would turn a fast, correct 405
+    // into a hang on the error path.
+    const { provider } = providerRefusing(refusal(), () => new Promise<PullRequest | null>(() => {}));
+    (provider as any).mergeStatusReadTimeoutMs = 10;
+
+    const err = await provider.mergePullRequest('g/p', 1).catch((e: unknown) => e as Error);
+
+    expect(err.message).toContain('mergePullRequest failed: 405');
     expect(err.message).not.toContain('detailedMergeStatus');
   });
 

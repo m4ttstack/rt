@@ -1,8 +1,9 @@
 #!/usr/bin/env bun
 /**
  * MAT-132 made the "GitLab has not decided yet" vocabulary a single shared
- * set, `TRANSITIONAL_MERGE_STATUSES`, read by both `getMRDashboardProps` and
- * `GitLabProvider`'s merge-refusal diagnostics. The dashboard's own copy of
+ * list, `TRANSITIONAL_MERGE_STATUSES` behind `isTransitionalMergeStatus`, read
+ * by `getMRDashboardProps`, `GitLabProvider`'s merge-refusal diagnostics, and
+ * the live harness's merge-readiness poll. The dashboard's own copy of
  * that list omitted `preparing`, which GitLab emits ahead of `unchecked` on a
  * just-created merge request (its DetailedMergeStatusService returns it
  * first, and phase 4's live poll observed exactly that order), so the one
@@ -75,15 +76,37 @@ describe('transitional merge statuses', () => {
 
     expect(props.isCheckingMergeability).toBe(true);
     expect(props.status).toBe('mergeable');
+    // The consequence worth being explicit about: isReady feeds
+    // mergeButton.disabled, so an MR GitLab has not finished deciding on
+    // offers a Merge button, and pressing it during this window is what
+    // returns the ambiguous 405 MAT-132 now explains.
+    expect(props.isReady).toBe(true);
+    expect(props.mergeButton.disabled).toBe(false);
   });
 
-  test('preparing is in the set', () => {
-    expect(TRANSITIONAL_MERGE_STATUSES.has('preparing')).toBe(true);
+  // Written out rather than derived, deliberately. The test.each above reads
+  // the same set production reads, so it cannot notice a wrong member: adding
+  // `ci_must_pass` there would keep it green while turning a hard blocker into
+  // a mergeable MR with an enabled Merge button. This literal is the only
+  // thing in the suite that would object.
+  test('the set is exactly these four values', () => {
+    expect([...TRANSITIONAL_MERGE_STATUSES].sort()).toEqual(
+      ['approvals_syncing', 'checking', 'preparing', 'unchecked'].sort()
+    );
   });
 
-  test('a named blocker is not transitional', () => {
-    const props = getMRDashboardProps(stubPR('discussions_not_resolved'));
-
-    expect(props.isCheckingMergeability).toBe(false);
+  test('the exported set cannot be repointed by a consumer', () => {
+    expect(Object.isFrozen(TRANSITIONAL_MERGE_STATUSES)).toBe(true);
   });
+
+  test.each(['discussions_not_resolved', 'ci_must_pass', 'conflict', 'not_open'])(
+    '%s is a blocker, not a transitional state',
+    status => {
+      const props = getMRDashboardProps(stubPR(status));
+
+      expect(props.isCheckingMergeability).toBe(false);
+      expect(props.status).toBe('blocked');
+      expect(props.mergeButton.disabled).toBe(true);
+    }
+  );
 });
