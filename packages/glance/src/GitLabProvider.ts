@@ -20,6 +20,7 @@ import type {
   UserRef,
   WatchEventsOptions,
 } from './types.ts';
+import { isTransitionalMergeStatus } from './types.ts';
 import { type ForgeLogger, noopLogger } from './logger.ts';
 import { MRDetailFetcher } from './MRDetailFetcher.ts';
 import { ActionCableClient } from './ActionCableClient.ts';
@@ -380,18 +381,6 @@ export function stripDraftPrefix(title: string): string {
 function draftTitle(title: string, draft: boolean): string {
   const base = stripDraftPrefix(title);
   return draft ? `Draft: ${base}` : base;
-}
-
-/**
- * GitLab's assignee_ids / reviewer_ids take numeric user IDs, while
- * `CreatePullRequestInput` and `UpdatePullRequestInput` document these fields
- * as usernames. Values have always been forwarded unchanged; keeping that
- * behavior needs one type escape, confined here to the two fields that need
- * it rather than cast across the whole options object -- casting the object is
- * how the dead `draft` parameter stayed invisible.
- */
-function asUserIds(usernames: string[]): number[] {
-  return usernames as unknown as number[];
 }
 
 function toMR(
@@ -1090,8 +1079,8 @@ export class GitLabProvider implements GitProvider {
     const opts: CreateMergeRequestOptions = {};
     if (input.description != null) opts.description = input.description;
     if (input.labels?.length) opts.labels = input.labels.join(',');
-    if (input.assignees?.length) opts.assigneeIds = asUserIds(input.assignees);
-    if (input.reviewers?.length) opts.reviewerIds = asUserIds(input.reviewers);
+    if (input.assignees?.length) opts.assigneeIds = await this.resolveUserIds('createPullRequest', input.assignees);
+    if (input.reviewers?.length) opts.reviewerIds = await this.resolveUserIds('createPullRequest', input.reviewers);
 
     let created: { iid: number };
     try {
@@ -1133,8 +1122,8 @@ export class GitLabProvider implements GitProvider {
     if (input.description != null) opts.description = input.description;
     if (input.targetBranch != null) opts.targetBranch = input.targetBranch;
     if (input.labels) opts.labels = input.labels.join(',');
-    if (input.assignees) opts.assigneeIds = asUserIds(input.assignees);
-    if (input.reviewers) opts.reviewerIds = asUserIds(input.reviewers);
+    if (input.assignees) opts.assigneeIds = await this.resolveUserIds('updatePullRequest', input.assignees);
+    if (input.reviewers) opts.reviewerIds = await this.resolveUserIds('updatePullRequest', input.reviewers);
     if (input.stateEvent) opts.stateEvent = input.stateEvent;
 
     if (input.title != null || input.draft != null) {
@@ -1174,7 +1163,22 @@ export class GitLabProvider implements GitProvider {
   }
 
   async restRequest(method: string, path: string, body?: unknown, op = 'restRequest'): Promise<Response> {
-    const url = `${this.baseURL}${path}`;
+    // GitProvider.restRequest documents the path as provider-relative, the
+    // same shape a GitHub caller passes. This used to concatenate
+    // baseURL + path verbatim, so every existing GitLab caller learned to
+    // pass `/api/v4/...` itself -- the opposite of portable, which is the
+    // one thing this method exists to be (MAT-130). Tolerating both shapes
+    // here would let that ambiguity survive forever with no way for a
+    // caller to learn which form is correct; throwing forces a caller
+    // upgrading past the fix to change the one line that needs it, with an
+    // error that names exactly what to remove.
+    if (path === '/api/v4' || path.startsWith('/api/v4/')) {
+      throw new Error(
+        `restRequest: path "${path}" already starts with "/api/v4" -- GitLabProvider prefixes that itself now. ` +
+          `Pass the provider-relative path instead, e.g. "${path.slice('/api/v4'.length) || '/'}".`,
+      );
+    }
+    const url = `${this.baseURL}/api/v4${path}`;
     const headers: Record<string, string> = {
       'PRIVATE-TOKEN': this.token,
     };
@@ -1354,7 +1358,7 @@ export class GitLabProvider implements GitProvider {
     try {
       await this.gb.MergeRequests.merge(projectPath, mrIid, opts);
     } catch (err) {
-      throw this.legacyError('mergePullRequest', err);
+      throw await this.mergeRefusalError(projectPath, mrIid, err);
     }
     return this.fetchSingleMRWithRetry(projectPath, mrIid, 'Merged MR but failed to fetch it back');
   }
@@ -1577,17 +1581,8 @@ export class GitLabProvider implements GitProvider {
 
     const reviewerIds = new Set(currentReviewerIds);
     if (reviewerUsernames?.length) {
-      for (const username of reviewerUsernames) {
-        const matches = await this.gb.Users.all({ username });
-        const user = matches[0];
-        // Dropping an unresolvable username silently would be the same
-        // defect in miniature: a caller asks for a reviewer and gets no
-        // signal that nothing happened for them.
-        if (!user) {
-          throw new Error(`requestReReview: no GitLab user found for username "${username}"`);
-        }
-        reviewerIds.add(user.id);
-      }
+      const resolvedIds = await this.resolveUserIds('requestReReview', reviewerUsernames);
+      for (const id of resolvedIds) reviewerIds.add(id);
     } else if (reviewerIds.size === 0) {
       throw new Error(
         'requestReReview: nothing to re-request -- no reviewerUsernames given and the MR has no existing reviewers'
@@ -1604,6 +1599,31 @@ export class GitLabProvider implements GitProvider {
   // MARK: - Private
 
   /**
+   * GitLab's assignee_ids / reviewer_ids take numeric user IDs, while
+   * `CreatePullRequestInput` and `UpdatePullRequestInput` document these
+   * fields as usernames. `requestReReview` needed this same resolution
+   * first (MAT-24 predecessor); this factors it out so create/update reuse
+   * it instead of each growing its own copy, or reaching for the cast this
+   * used to be.
+   *
+   * A username with no match throws, naming it: dropping it silently would
+   * return a PullRequest that looks like the reviewer/assignee was added,
+   * the same defect this method exists to remove.
+   */
+  private async resolveUserIds(op: string, usernames: string[]): Promise<number[]> {
+    return Promise.all(
+      usernames.map(async (username) => {
+        const matches = await this.gb.Users.all({ username });
+        const user = matches[0];
+        if (!user) {
+          throw new Error(`${op}: no GitLab user found for username "${username}"`);
+        }
+        return user.id;
+      }),
+    );
+  }
+
+  /**
    * Retry `fetchSingleMR` with exponential backoff to handle REST→GraphQL
    * eventual consistency. GitLab's GraphQL may not immediately reflect
    * changes made via REST. 3 attempts: 0ms, 300ms, 600ms delay.
@@ -1617,6 +1637,83 @@ export class GitLabProvider implements GitProvider {
       if (pr) return pr;
     }
     throw new Error(errorMessage);
+  }
+
+  /**
+   * Bound on the diagnostic read below. 5s is about 4.5x the slowest read the
+   * live probe measured (1.1s), so a merely slow GitLab still gets to answer,
+   * while the delay a caller pays for a diagnostic on an already-failed call
+   * stays short. A field rather than a literal so a test can shrink it and
+   * prove the bound exists without spending five seconds to do it.
+   */
+  private mergeStatusReadTimeoutMs = 5_000;
+
+  /**
+   * Name what GitLab refused a merge for, when GitLab itself will not (MAT-132).
+   *
+   * On the plain (non auto-merge) path, a refusal arrives as a bare HTTP 405
+   * with nothing to read: `execute_merge` (lib/api/merge_requests.rb) calls
+   * `not_allowed!` whenever `merge_request.mergeable?` is false, and
+   * `not_allowed!` (lib/api/helpers.rb) renders the constant string "405
+   * Method Not Allowed". One boolean, no cause, so the status cannot separate
+   * "mergeability is still being computed, retry" from "a check failed,
+   * change something". This is scoped to that path on purpose: the same
+   * endpoint's other refusals already name themselves, 409 for a `sha` that
+   * does not match the head and 422 "Branch cannot be merged" from
+   * `execute_immediate_merge!`, and neither needs help.
+   *
+   * `detailedMergeStatus` does carry the missing cause, and is readable right
+   * afterwards: a read-only probe of the live fixture returned it in 0.3-1.1s
+   * per merge request, and phase 4's merge-readiness poll watched it move
+   * preparing -> unchecked -> checking on a just-created MR through this same
+   * `fetchSingleMR` call.
+   *
+   * Four deliberate limits. It does not poll, because the value is only worth
+   * reporting while it is still near the refusal. It is bounded, because the
+   * error path must not outlive the error: `runQuery` has no timeout of its
+   * own, so an unreachable GitLab would turn a fast, correct 405 into a hang.
+   * It never lets the read become the error: `fetchSingleMR` already logs and
+   * returns null on transport failure, and the `catch` below covers the rest,
+   * because a read failure is not why the merge did not happen. And it does
+   * not claim to be the status at the instant of the refusal, which it cannot
+   * be; the message says the status was read back afterwards, so a status that
+   * moved in between reads as the observation it is. The one case measured for
+   * that gap is benign: an MR merged by someone else between the two calls
+   * reads back as `not_open`, which no one will mistake for a diagnosis. The
+   * probe that measured it read closed and merged MRs only, so what a
+   * transitional status looks like after a real refusal is still unmeasured.
+   *
+   * Only the 405 path reads anything. Other statuses already say what went
+   * wrong, and spending two HTTP requests (`fetchSingleMR` issues a GraphQL
+   * query and a REST show in parallel) to append a merge status to a 401 would
+   * be noise. The "mergePullRequest failed: 405" prefix is preserved verbatim
+   * because tests/live/conformance.ts matches on it.
+   */
+  private async mergeRefusalError(projectPath: string, mrIid: number, err: unknown): Promise<Error> {
+    const base = this.legacyError('mergePullRequest', err);
+    const httpStatus =
+      err instanceof GitbeakerRequestError ? (err.cause?.response as Response | undefined)?.status : undefined;
+    if (httpStatus !== 405) return base;
+
+    const read = this.fetchSingleMR(projectPath, mrIid, null)
+      .then((pr) => pr?.detailedMergeStatus ?? null)
+      .catch(() => null);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const detailed = await Promise.race([
+      read,
+      new Promise<null>((resolve) => {
+        timer = setTimeout(() => resolve(null), this.mergeStatusReadTimeoutMs);
+      }),
+    ]);
+    clearTimeout(timer);
+    if (!detailed) return base;
+
+    const retryHint = isTransitionalMergeStatus(detailed)
+      ? ' GitLab reports that value while it is still computing mergeability, so the same call may succeed once it settles.'
+      : '';
+    return new Error(
+      `${base.message}. Read back after the refusal, GitLab reported detailedMergeStatus="${detailed}".${retryHint}`,
+    );
   }
 
   /**

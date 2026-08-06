@@ -10,6 +10,7 @@
 
 import {
   runCiConformance,
+  runGitLabMutationConformance,
   runMergeConformance,
   runReadConformance,
   runUnsupportedConformance,
@@ -35,6 +36,10 @@ for (const fixture of fixtures) {
     await runReadConformance(fixture, report);
     await runUnsupportedConformance(fixture, report);
     await runWriteConformance(fixture, report);
+    // Ahead of the merge cycle, which merges into the default branch: this
+    // one only ever touches branches it created, so running it first keeps
+    // its evidence independent of whether that merge succeeded.
+    await runGitLabMutationConformance(fixture, report);
     await runMergeConformance(fixture, report);
     await runCiConformance(fixture, report);
     // After the conformance suite, deliberately: the consumer flows open

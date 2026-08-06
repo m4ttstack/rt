@@ -131,9 +131,9 @@ describe('restRequest onRequest', () => {
     globalThis.fetch = (async () => new Response('{}', { status: 201 })) as unknown as typeof fetch;
     const seen: RequestInfo[] = [];
     const provider = new GitLabProvider('https://gitlab.example', 't', { onRequest: (i) => seen.push(i) });
-    await provider.restRequest('POST', '/api/v4/projects/1/notes', { body: 'x' }, 'test.op');
+    await provider.restRequest('POST', '/projects/1/notes', { body: 'x' }, 'test.op');
     expect(seen.length).toBe(1);
-    expect(seen[0]).toMatchObject({ op: 'test.op', transport: 'rest', method: 'POST', path: '/api/v4/projects/1/notes', status: 201 });
+    expect(seen[0]).toMatchObject({ op: 'test.op', transport: 'rest', method: 'POST', path: '/projects/1/notes', status: 201 });
   });
 });
 

@@ -129,14 +129,31 @@ export const GITLAB_EXPECTATIONS: Record<ProviderMethod, Expectation> = {
   approvePullRequest: { support: 'supported', capability: 'canApprove' },
   unapprovePullRequest: { support: 'supported', capability: 'canUnapprove' },
   rebasePullRequest: { support: 'supported', capability: 'canRebase' },
-  setAutoMerge: { support: 'supported', capability: 'canAutoMerge' },
-  cancelAutoMerge: { support: 'supported', capability: 'canAutoMerge' },
+  setAutoMerge: {
+    support: 'supported',
+    capability: 'canAutoMerge',
+    // A note on a plainly-supported entry, which the field's own docstring
+    // reserves for divergences, because this one is a divergence in what it
+    // takes to OBSERVE the method rather than in what the method does:
+    // "auto-merge" is not one behaviour across the two providers, and a
+    // reader comparing this row against GitHub's needs to know that before
+    // concluding they were tested the same way.
+    note: 'Exercised live by runGitLabMutationConformance, which arms it and re-reads autoMergeEnabled. GitLab semantics are "merge when the pipeline succeeds", so arming is only possible while a pipeline is active; the harness commits a sleeping CI job onto its own throwaway source branch to make that precondition deterministic rather than a race against the fixture\'s ~15-second pipelines.'
+  },
+  cancelAutoMerge: {
+    support: 'supported',
+    capability: 'canAutoMerge',
+    note: 'Exercised live by runGitLabMutationConformance, but only on runs where setAutoMerge actually armed something: with nothing armed, a re-read confirming auto-merge is off is satisfied by a merge request that never had it, so that case is reported as a skip instead.'
+  },
   resolveDiscussion: { support: 'supported', capability: 'canResolveDiscussions' },
   unresolveDiscussion: { support: 'supported', capability: 'canResolveDiscussions' },
   retryPipeline: { support: 'supported', capability: 'canRetryPipeline' },
   retryJob: { support: 'supported', capability: 'canRetryPipeline' },
   fetchJobTrace: { support: 'supported' },
-  fetchDownstreamPipeline: { support: 'supported' },
+  fetchDownstreamPipeline: {
+    support: 'approximate',
+    note: 'The bridge branch is not reachable through the declared interface. Task 5\'s live spike built a real parent/child pipeline on the fixture and measured: the bridge job 404s at GET /jobs/:id, GET /pipelines/:id/jobs lists no bridges at all, and fetchDownstreamPipeline(projectPath, jobId) returned null for a genuine bridge with a live downstream pipeline. GitLabProvider can answer it -- fetchJobDetail(projectPath, bridgeId, pipelineId) returned type "bridge" in the same spike -- but only via the third argument that GitProvider.fetchDownstreamPipeline does not declare, so no fixture work can close the gap. Widening the signature to fetchDownstreamPipeline(projectPath, jobId, pipelineId?) is its own ticket. Until then the harness can only assert the non-bridge answer, null.'
+  },
   fetchJobDetail: { support: 'supported' },
   requestReReview: { support: 'supported', capability: 'canRequestReReview' },
   restRequest: { support: 'supported' },

@@ -17,6 +17,8 @@ import { describe, expect, test } from 'bun:test';
 import { RequestError } from '@octokit/request-error';
 import { GitHubProvider } from '../src/GitHubProvider.ts';
 import type { FetchPullRequestsWarning } from '../src/GitProvider.ts';
+import { warningTarget } from '../src/GitProvider.ts';
+import { fetchDashboardBatch } from '../src/MRDashboard.ts';
 
 const API = 'https://api.github.com';
 
@@ -608,6 +610,137 @@ describe('GitHubProvider.fetchPullRequests: truncation and failures are observab
     });
   });
 
+  test('a rate-limited reviews fetch drops just that PR, not the whole batch (MAT-143)', async () => {
+    // Before MAT-143, `enrich` had no `onWarning` and no per-PR catch: a
+    // rejected reviews page for PR 2 propagated straight out of
+    // `fetchPullRequests`, failing PR 1 too even though PR 1's own fetch
+    // never had a problem. Approvals are computed from reviews, so the
+    // alternative -- swallowing the rejection and assembling PR 2 from
+    // whatever reviews page one returned -- would silently under-report its
+    // approval count instead. Dropping PR 2 (reported through `onWarning`)
+    // is the one outcome that neither fails PR 1 nor shows PR 2 with a
+    // count that cannot be trusted.
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    install(provider, [ghPR(1), ghPR(2)]);
+    const inner = (provider as any).octokit.paginate;
+    (provider as any).octokit.paginate = async (route: string, params?: any) => {
+      if (params?.pull_number === 2) {
+        throw new RequestError('API rate limit exceeded', 403, {
+          request: { method: 'GET', url: `${API}/x`, headers: {} },
+          response: {
+            status: 403,
+            url: '',
+            headers: {},
+            data: { message: 'API rate limit exceeded' }
+          }
+        });
+      }
+      return inner(route, params);
+    };
+    const warnings: FetchPullRequestsWarning[] = [];
+
+    const prs = await provider.fetchPullRequests({
+      onWarning: (w) => warnings.push(w)
+    });
+
+    expect(prs.map((p) => p.iid)).toEqual([1]);
+    expect(warnings.length).toBe(1);
+    expect(warnings[0]).toMatchObject({
+      kind: 'request-failed',
+      source: 'reviews',
+      status: 403,
+      target: 'acme/repo#2'
+    });
+  });
+
+  test('a rate-limited check-runs fetch degrades pipeline to null, but keeps the PR (MAT-143)', async () => {
+    // Checks are supplementary, unlike reviews: no approval count reads
+    // from them. Before this fix, `fetchCheckRuns` caught every failure to
+    // `[]` with no `onWarning` call at all, so a PR whose checks could not
+    // be read looked identical to a PR with none configured -- both mapped
+    // to `pipeline: null` and nothing distinguished them. The PR itself
+    // must stay in the result (unlike a reviews failure) since dropping it
+    // over a lower-stakes field would be a bigger degradation than the
+    // failure warrants; what's new is that the failure is now visible.
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    install(provider, [ghPR(1), ghPR(2)]);
+    const inner = (provider as any).octokit.request;
+    (provider as any).octokit.request = async (route: string, params?: unknown) => {
+      const path = route.slice(route.indexOf(' ') + 1);
+      if (path === '/repos/acme/repo/commits/sha2/check-runs?per_page=100') {
+        throw new RequestError('API rate limit exceeded', 403, {
+          request: { method: 'GET', url: `${API}${path}`, headers: {} },
+          response: {
+            status: 403,
+            url: '',
+            headers: {},
+            data: { message: 'API rate limit exceeded' }
+          }
+        });
+      }
+      return inner(route, params);
+    };
+    const warnings: FetchPullRequestsWarning[] = [];
+
+    const prs = await provider.fetchPullRequests({
+      onWarning: (w) => warnings.push(w)
+    });
+
+    expect(prs.map((p) => p.iid).sort()).toEqual([1, 2]);
+    expect(prs.find((p) => p.iid === 2)?.pipeline).toBeNull();
+    expect(warnings.length).toBe(1);
+    // `target` must be `warningTarget('acme/repo', 2)` -- i.e.
+    // `owner/repo#number` -- not the commit sha this check-runs call is
+    // actually keyed by on GitHub's side. An earlier version of this
+    // warning used `owner/repo@sha` here, which read as more precise but
+    // could never match `fetchDashboardBatch`'s lookup (MRDashboard.ts),
+    // so a real checks failure never reached `DashboardGroup.onWarning`
+    // despite this exact test passing the whole time. Asserting against
+    // `warningTarget` itself, not a hand-written string, is what would
+    // have caught that: a regression back to `@sha` fails here now,
+    // instead of only failing a dashboard-layer test this file doesn't run.
+    expect(warnings[0]).toMatchObject({
+      kind: 'request-failed',
+      source: 'checks',
+      status: 403,
+      target: warningTarget('acme/repo', 2)
+    });
+  });
+
+  test('a failed thread-count batch degrades those PRs to unknown, without failing the fetch (MAT-143)', async () => {
+    // `fetchUnresolvedThreadCounts` is awaited before `enrich`'s per-PR pool
+    // even starts, so before this fix a single GraphQL failure here
+    // rejected the whole `fetchPullRequests` call -- blanking every PR
+    // passed in, not just the ones whose count query happened to fail
+    // alongside them. `null` already means "unknown" in this map (a
+    // truncated per-PR page reports the same), so degrading to it here
+    // reuses that vocabulary instead of failing PRs that had nothing wrong
+    // with their own reviews or checks.
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    install(provider, [ghPR(1), ghPR(2)]);
+    (provider as any).graphql = async () => {
+      throw new Error('GraphQL: something went wrong');
+    };
+    const warnings: FetchPullRequestsWarning[] = [];
+
+    const prs = await provider.fetchPullRequests({
+      onWarning: (w) => warnings.push(w)
+    });
+
+    expect(prs.map((p) => p.iid).sort()).toEqual([1, 2]);
+    expect(prs.every((p) => p.unresolvedThreadCount === null)).toBe(true);
+    // One warning per affected PR, not one warning naming the whole batch:
+    // `fetchDashboardBatch` (MRDashboard.ts) keys warnings by a single-PR
+    // `owner/repo#number` target, the same shape `detail`/`reviews`/`checks`
+    // already use, so a joined target could never be attributed to a row.
+    expect(warnings.length).toBe(2);
+    expect(warnings.every((w) => w.source === 'threads')).toBe(true);
+    expect(warnings.map((w) => w.target).sort()).toEqual([
+      'acme/repo#1',
+      'acme/repo#2'
+    ]);
+  });
+
   test('a PR GitHub says is gone is not reported as a failure', async () => {
     const provider = new GitHubProvider('https://github.com', 'tok');
     // Search matches PR 9, which the detail endpoint 404s for.
@@ -641,6 +774,91 @@ describe('GitHubProvider.fetchPullRequests: truncation and failures are observab
     });
 
     expect(prs.map((p) => p.iid)).toEqual([1]);
+  });
+});
+
+/**
+ * MAT-143 review round 4: `MRDashboard.ts`'s `fetchDashboardBatch` is the
+ * only real consumer of `FetchPullRequestsWarning.target`, and every test
+ * that had verified a warning reaches it up to this point did so against a
+ * hand-rolled fake `GitProvider` whose fixtures had to invent a `target`
+ * shape by hand. For `checks`, that invented shape (`owner/repo#number`)
+ * happened to be the correct one -- but the real `fetchCheckRuns` at the
+ * time emitted `owner/repo@sha`, a value that can never match
+ * `fetchDashboardBatch`'s lookup, and no test caught it because none of
+ * them drove the real provider through the real consumer together. These
+ * do: a real `GitHubProvider`, stubbed only at the transport seam this file
+ * already uses, piped straight into `fetchDashboardBatch`, with no fixture
+ * standing in for either side's actual `target`.
+ */
+describe('fetchDashboardBatch against the real GitHubProvider, not a fake (MAT-143 review round 4)', () => {
+  test('a real checks failure lands in `degraded`, keyed by the target GitHubProvider actually emits', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    install(provider, [ghPR(1), ghPR(2)]);
+    const inner = (provider as any).octokit.request;
+    (provider as any).octokit.request = async (route: string, params?: unknown) => {
+      const path = route.slice(route.indexOf(' ') + 1);
+      if (path === '/repos/acme/repo/commits/sha2/check-runs?per_page=100') {
+        throw new RequestError('API rate limit exceeded', 403, {
+          request: { method: 'GET', url: `${API}${path}`, headers: {} },
+          response: {
+            status: 403,
+            url: '',
+            headers: {},
+            data: { message: 'API rate limit exceeded' }
+          }
+        });
+      }
+      return inner(route, params);
+    };
+
+    const { prs, degraded } = await fetchDashboardBatch(provider, 'acme/repo', [1, 2]);
+
+    // Present, not dropped: a checks failure degrades `pipeline` to `null`,
+    // it does not exclude the PR the way a reviews failure does.
+    expect(prs.has(2)).toBe(true);
+    expect(degraded.get(2)?.source).toBe('checks');
+  });
+
+  test('a real threads failure lands in `degraded` for every affected PR', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    install(provider, [ghPR(1), ghPR(2)]);
+    (provider as any).graphql = async () => {
+      throw new Error('GraphQL: something went wrong');
+    };
+
+    const { prs, degraded } = await fetchDashboardBatch(provider, 'acme/repo', [1, 2]);
+
+    expect(prs.has(1)).toBe(true);
+    expect(prs.has(2)).toBe(true);
+    expect(degraded.get(1)?.source).toBe('threads');
+    expect(degraded.get(2)?.source).toBe('threads');
+  });
+
+  test('a real reviews failure drops the PR from `prs` but still lands in `degraded`', async () => {
+    const provider = new GitHubProvider('https://github.com', 'tok');
+    install(provider, [ghPR(1), ghPR(2)]);
+    const inner = (provider as any).octokit.paginate;
+    (provider as any).octokit.paginate = async (route: string, params?: any) => {
+      if (params?.pull_number === 2) {
+        throw new RequestError('API rate limit exceeded', 403, {
+          request: { method: 'GET', url: `${API}/x`, headers: {} },
+          response: {
+            status: 403,
+            url: '',
+            headers: {},
+            data: { message: 'API rate limit exceeded' }
+          }
+        });
+      }
+      return inner(route, params);
+    };
+
+    const { prs, degraded } = await fetchDashboardBatch(provider, 'acme/repo', [1, 2]);
+
+    expect(prs.has(1)).toBe(true);
+    expect(prs.has(2)).toBe(false);
+    expect(degraded.get(2)?.source).toBe('reviews');
   });
 });
 

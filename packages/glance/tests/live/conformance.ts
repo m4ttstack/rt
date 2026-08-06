@@ -10,6 +10,7 @@
 import { expectationFor, type ProviderMethod } from './expectations.ts';
 import type { ProviderFixture } from './fixture.ts';
 import { pollUntil } from './poll.ts';
+import { isTransitionalMergeStatus } from '../../src/types.ts';
 import type { Reporter } from './report.ts';
 
 /**
@@ -54,21 +55,6 @@ function assert(condition: boolean, message: string): asserts condition {
 }
 
 /**
- * Prefix a REST path for the provider's actual API root.
- *
- * `GitProvider.restRequest`'s docstring claims "implementations translate the
- * path to the provider's API URL format", but GitLabProvider does not: it
- * concatenates `baseURL + path` verbatim, so a GitLab caller must supply
- * `/api/v4` itself while a GitHub caller must not. Provider-agnostic code
- * therefore cannot call `restRequest` portably, which contradicts the
- * interface's own documentation. Record that in the findings document: it is a
- * real parity defect, not merely a harness inconvenience.
- */
-function apiPath(fixture: ProviderFixture, path: string): string {
-  return fixture.name === 'gitlab' ? `/api/v4${path}` : path;
-}
-
-/**
  * Resolves the fixture project's own numeric id independent of whatever
  * `fetchPullRequests` just returned, so the projectPath-mode scoping check
  * below has a ground truth to compare against rather than trusting the very
@@ -88,7 +74,7 @@ async function fetchProjectId(fixture: ProviderFixture): Promise<number> {
     fixture.name === 'github'
       ? `/repos/${fixture.projectPath}`
       : `/projects/${encodeURIComponent(fixture.projectPath)}`;
-  const res = await fixture.provider.restRequest('GET', apiPath(fixture, path));
+  const res = await fixture.provider.restRequest('GET', path);
   if (!res.ok) {
     throw new Error(
       `could not resolve project id for "${fixture.projectPath}": HTTP ${res.status}`
@@ -278,7 +264,7 @@ export async function runReadConformance(
   );
 
   await check(report, fixture, 'restRequest', 'authenticated GET succeeds', async () => {
-    const res = await provider.restRequest('GET', apiPath(fixture, '/user'));
+    const res = await provider.restRequest('GET', '/user');
     assert(res.ok, `expected ok, got HTTP ${res.status}`);
   });
 
@@ -316,7 +302,24 @@ export async function runUnsupportedConformance(
   for (const [method, invoke] of probes) {
     const expectation = expectationFor(fixture.name, method);
     if (expectation.support !== 'unsupported') {
-      report.skip(fixture.name, method, 'supported-path not exercised here', 'this provider declares it supported');
+      // No placeholder skip here any more. Every method in `probes` now
+      // reaches a real result on both providers, by one route or another:
+      //   rebasePullRequest   GitLab (supported) via runGitLabMutationConformance;
+      //                       GitHub declares it unsupported, so it never
+      //                       reaches this branch at all and is probed below.
+      //   setAutoMerge        GitLab (supported) via runGitLabMutationConformance;
+      //                       GitHub declares it `approximate`, exercised by the
+      //                       measured block in runWriteConformance.
+      //   cancelAutoMerge     GitLab (supported) via runGitLabMutationConformance;
+      //                       GitHub (supported) by that same measured block.
+      //   unapprovePullRequest,
+      //   resolveDiscussion,
+      //   unresolveDiscussion by runWriteConformance on either provider.
+      // A "supported-path not exercised here" line next to a real result for
+      // the same method reads as a coverage gap that no longer exists, and
+      // the runner's assertFullCoverage is the honest backstop if one of
+      // those routes ever stops running: it reports the absence as a FAIL
+      // rather than as a skip that was pre-written to look accounted for.
       continue;
     }
     await check(report, fixture, method, 'throws, and its capability flag is false', async () => {
@@ -378,24 +381,34 @@ async function scopedRepoId(fixture: ProviderFixture): Promise<string> {
   const path =
     fixture.name === 'github'
       ? `/repos/${projectPath}`
-      : apiPath(fixture, `/projects/${encodeURIComponent(projectPath)}`);
+      : `/projects/${encodeURIComponent(projectPath)}`;
   const res = await provider.restRequest('GET', path);
   if (!res.ok) throw new Error(`could not resolve repo id: HTTP ${res.status}`);
   const { id } = (await res.json()) as { id: number };
   return `${fixture.name}:${id}`;
 }
 
+/**
+ * `from` defaults to the fixture's default branch, which is what every
+ * existing caller wants. It is a parameter because the rebase cycle needs a
+ * throwaway branch cut from another throwaway branch: rebasing proves nothing
+ * unless the target can be advanced underneath the merge request, and on this
+ * fixture the default branch is protected with push access "No one", so
+ * advancing it is not an option even where it would be acceptable.
+ */
 async function createBranch(
   fixture: ProviderFixture,
-  branch: string
+  branch: string,
+  from?: string
 ): Promise<void> {
-  const { provider, projectPath, defaultBranch } = fixture;
+  const { provider, projectPath } = fixture;
+  const ref = from ?? fixture.defaultBranch;
   if (fixture.name === 'github') {
     const refRes = await provider.restRequest(
       'GET',
-      `/repos/${projectPath}/git/ref/heads/${defaultBranch}`
+      `/repos/${projectPath}/git/ref/heads/${ref}`
     );
-    if (!refRes.ok) throw new Error(`read default ref failed: HTTP ${refRes.status}`);
+    if (!refRes.ok) throw new Error(`read ref "${ref}" failed: HTTP ${refRes.status}`);
     const { object } = (await refRes.json()) as { object: { sha: string } };
     const res = await provider.restRequest('POST', `/repos/${projectPath}/git/refs`, {
       ref: `refs/heads/${branch}`,
@@ -407,7 +420,7 @@ async function createBranch(
   const encoded = encodeURIComponent(projectPath);
   const res = await provider.restRequest(
     'POST',
-    apiPath(fixture, `/projects/${encoded}/repository/branches?branch=${encodeURIComponent(branch)}&ref=${encodeURIComponent(defaultBranch)}`)
+    `/projects/${encoded}/repository/branches?branch=${encodeURIComponent(branch)}&ref=${encodeURIComponent(ref)}`
   );
   if (!res.ok) throw new Error(`create branch failed: HTTP ${res.status}`);
 }
@@ -440,7 +453,7 @@ async function commitFile(
   const encoded = encodeURIComponent(projectPath);
   const res = await provider.restRequest(
     'POST',
-    apiPath(fixture, `/projects/${encoded}/repository/files/${encodeURIComponent(path)}`),
+    `/projects/${encoded}/repository/files/${encodeURIComponent(path)}`,
     { branch, content, commit_message: `conformance: add ${path}` }
   );
   if (!res.ok) throw new Error(`commit failed: HTTP ${res.status}`);
@@ -488,7 +501,7 @@ async function postDiffComment(
   // the commit that was just pushed.
   const mrRes = await provider.restRequest(
     'GET',
-    apiPath(fixture, `/projects/${encoded}/merge_requests/${iid}`)
+    `/projects/${encoded}/merge_requests/${iid}`
   );
   if (!mrRes.ok) throw await readError(mrRes, 'could not read MR for diff comment');
   const { diff_refs } = (await mrRes.json()) as {
@@ -496,7 +509,7 @@ async function postDiffComment(
   };
   const res = await provider.restRequest(
     'POST',
-    apiPath(fixture, `/projects/${encoded}/merge_requests/${iid}/discussions`),
+    `/projects/${encoded}/merge_requests/${iid}/discussions`,
     {
       body,
       position: {
@@ -957,12 +970,15 @@ export async function runWriteConformance(
     }
 
     // GitHub only: task 7's spike measured this fixture's own required
-    // check, not GitLab's. GitLab already declared setAutoMerge/
-    // cancelAutoMerge supported before this plan touched either provider,
-    // and runUnsupportedConformance's generic "supported-path not exercised
-    // here" skip already covers it for GitLab, so there is no coverage gap
-    // left open by scoping this measured check to the provider it was
-    // actually measured against.
+    // check, not GitLab's, and the armable window this block navigates is a
+    // property of GitHub's enablePullRequestAutoMerge, which refuses at both
+    // ends of the mergeability range. GitLab's auto-merge is a different
+    // behaviour ("merge when the pipeline succeeds") needing a different
+    // precondition, so it has its own cycle in
+    // runGitLabMutationConformance rather than a branch inside this one.
+    // That is where GitLab's coverage of both methods now comes from; it
+    // used to come from a placeholder skip in runUnsupportedConformance,
+    // which is gone precisely because a real check replaced it.
     if (fixture.name === 'github' && expectationFor(fixture.name, 'setAutoMerge').support === 'approximate') {
       await check(
         report,
@@ -1103,9 +1119,630 @@ async function branchExists(fixture: ProviderFixture, branch: string): Promise<b
   const path =
     fixture.name === 'github'
       ? `/repos/${projectPath}/git/ref/heads/${branch}`
-      : apiPath(fixture, `/projects/${encodeURIComponent(projectPath)}/repository/branches/${encodeURIComponent(branch)}`);
+      : `/projects/${encodeURIComponent(projectPath)}/repository/branches/${encodeURIComponent(branch)}`;
   const res = await provider.restRequest('GET', path);
   return res.ok;
+}
+
+/**
+ * Pipeline statuses GitLab itself treats as still active.
+ *
+ * Deliberately not the complement of TERMINAL_GITLAB_PIPELINE_STATUSES far
+ * below: `manual`, `scheduled`, and `skipped` belong to neither set. What
+ * decides whether merge-when-pipeline-succeeds has anything left to wait on
+ * is GitLab's own active list, not "has not finished", and arming against a
+ * pipeline outside that list is what makes GitLab merge the request
+ * immediately instead.
+ */
+const ACTIVE_GITLAB_PIPELINE_STATUSES = new Set([
+  'created',
+  'waiting_for_resource',
+  'preparing',
+  'pending',
+  'running'
+]);
+
+/**
+ * The CI configuration the rebase/auto-merge cycle commits onto its own
+ * throwaway source branch, replacing (only on that branch) the fixture's
+ * real one.
+ *
+ * setAutoMerge on GitLab means "merge when the pipeline succeeds", so it can
+ * only be armed while a pipeline is actually active. The fixture's own
+ * pipelines settle to `failed` about fifteen seconds after a push, which
+ * would make the precondition for this check a race against a stopwatch: a
+ * run that lost it would report Inconclusive with nothing wrong, and a run
+ * that won it by a second would leave the cancelAutoMerge check no window at
+ * all. A job that just sleeps turns that race into a controlled precondition.
+ * This is the same technique withFailedGitHubJob already uses on the GitHub
+ * side, where a `fail-marker` file is committed to make a job fail on demand.
+ *
+ * The fixture's committed `.gitlab-ci.yml` is not modified: this content
+ * exists only on a branch this harness created and deletes again, and the
+ * pipeline is cancelled in the cleanup below rather than left to sleep out
+ * the fixture's shared-runner quota.
+ */
+const HOLD_OPEN_CI_YML = `# Written by the glance live conformance harness onto a throwaway branch.
+# Keeps a pipeline active long enough to arm merge-when-pipeline-succeeds.
+hold-open:
+  image: alpine:3
+  script:
+    - sleep 240
+`;
+
+/**
+ * Overwrite `.gitlab-ci.yml` on one branch.
+ *
+ * Separate from `commitFile` because it is an update, not a create: every
+ * branch this cycle cuts descends from the default branch, so the file is
+ * already there and GitLab's create endpoint answers "a file with this name
+ * already exists". Kept GitLab-only for the same reason the rest of this
+ * section is.
+ */
+async function overwriteGitLabCiConfig(
+  fixture: ProviderFixture,
+  branch: string,
+  content: string
+): Promise<void> {
+  const encoded = encodeURIComponent(fixture.projectPath);
+  const res = await fixture.provider.restRequest(
+    'PUT',
+    `/projects/${encoded}/repository/files/${encodeURIComponent('.gitlab-ci.yml')}`,
+    {
+      branch,
+      content,
+      commit_message: 'conformance: hold a pipeline open on this throwaway branch'
+    }
+  );
+  if (!res.ok) {
+    const text = await res.text().catch(() => '');
+    throw new Error(`could not overwrite .gitlab-ci.yml on ${branch}: HTTP ${res.status}${text ? `: ${text}` : ''}`);
+  }
+}
+
+/**
+ * The GitLab merge request state these checks reason about, read straight
+ * from REST rather than through the provider.
+ *
+ * Same rationale as fetchProjectId's: this is the ground truth a check
+ * compares against, and reading it through the very provider under test
+ * would let one broken mapping satisfy both sides of an assertion. It also
+ * carries fields the domain PullRequest deliberately does not model at all
+ * (`merge_error`, the head pipeline's own sha), which the diagnostics below
+ * need in order to name why a precondition was not met.
+ */
+interface GitLabMrProbe {
+  state: string;
+  headPipelineId: number | null;
+  headPipelineStatus: string | null;
+  headPipelineSha: string | null;
+  mergeError: string | null;
+  rebaseInProgress: boolean;
+}
+
+async function gitlabMrProbe(fixture: ProviderFixture, iid: number): Promise<GitLabMrProbe> {
+  const encoded = encodeURIComponent(fixture.projectPath);
+  const res = await fixture.provider.restRequest(
+    'GET',
+    `/projects/${encoded}/merge_requests/${iid}?include_rebase_in_progress=true`
+  );
+  if (!res.ok) throw new Error(`could not read merge request !${iid}: HTTP ${res.status}`);
+  const body = (await res.json()) as {
+    state: string;
+    merge_error: string | null;
+    rebase_in_progress?: boolean;
+    head_pipeline?: { id: number; status: string; sha: string } | null;
+  };
+  return {
+    state: body.state,
+    headPipelineId: body.head_pipeline?.id ?? null,
+    headPipelineStatus: body.head_pipeline?.status ?? null,
+    headPipelineSha: body.head_pipeline?.sha ?? null,
+    mergeError: body.merge_error ?? null,
+    rebaseInProgress: body.rebase_in_progress ?? false
+  };
+}
+
+/**
+ * A branch's head commit and that commit's parents.
+ *
+ * The parents are the point. A rebase that landed rewrites the source
+ * branch's commit onto the target's current head, so the new head's parent
+ * IS the target's head sha. A changed sha on its own would also be produced
+ * by an unrelated push, and an unchanged sha would also be produced by a
+ * rebase GitLab accepted and never ran.
+ */
+async function gitlabBranchHead(
+  fixture: ProviderFixture,
+  branch: string
+): Promise<{ sha: string; parentIds: string[] }> {
+  const encoded = encodeURIComponent(fixture.projectPath);
+  const res = await fixture.provider.restRequest(
+    'GET',
+    `/projects/${encoded}/repository/branches/${encodeURIComponent(branch)}`
+  );
+  if (!res.ok) throw new Error(`could not read branch "${branch}": HTTP ${res.status}`);
+  const body = (await res.json()) as { commit: { id: string; parent_ids: string[] } };
+  return { sha: body.commit.id, parentIds: body.commit.parent_ids };
+}
+
+/**
+ * Stop the hold-open pipeline (and anything else still running on that ref).
+ *
+ * Deleting a branch does not cancel a pipeline already running on it, and
+ * this cycle deliberately starts one designed to run for minutes. Failures
+ * here are logged rather than thrown: this is cleanup, and a cleanup failure
+ * must not fail the run it is cleaning up after.
+ */
+async function cancelActiveGitLabPipelines(
+  fixture: ProviderFixture,
+  ref: string
+): Promise<void> {
+  const encoded = encodeURIComponent(fixture.projectPath);
+  try {
+    const res = await fixture.provider.restRequest(
+      'GET',
+      `/projects/${encoded}/pipelines?ref=${encodeURIComponent(ref)}`
+    );
+    if (!res.ok) return;
+    const pipelines = (await res.json()) as Array<{ id: number; status: string }>;
+    for (const pipeline of pipelines) {
+      if (!ACTIVE_GITLAB_PIPELINE_STATUSES.has(pipeline.status)) continue;
+      await fixture.provider.restRequest(
+        'POST',
+        `/projects/${encoded}/pipelines/${pipeline.id}/cancel`
+      );
+    }
+  } catch (err) {
+    console.error(`  cleanup: could not cancel pipelines on ${ref}: ${err}`);
+  }
+}
+
+/**
+ * GitLab's rebasePullRequest, setAutoMerge, and cancelAutoMerge: three
+ * methods the expectation table has declared supported since before this
+ * harness existed, and which nothing had ever run live.
+ *
+ * GitLab-only, for the same reason the measured auto-merge block inside
+ * runWriteConformance is GitHub-only: these are not one behaviour with two
+ * spellings. GitHub declares rebasePullRequest permanently unsupported (its
+ * update-branch merges base into head), and its auto-merge pair is exercised
+ * against GitHub's own enablePullRequestAutoMerge semantics, which are
+ * "queue behind required checks", not GitLab's "merge when the pipeline
+ * succeeds".
+ *
+ * The whole cycle runs between two throwaway branches, never against the
+ * default branch. Two independent reasons: the rebase needs a target that
+ * can be advanced underneath the merge request, and the fixture's default
+ * branch is protected with push access "No one"; and auto-merge, if any
+ * precondition reasoning below turns out to be wrong, could actually fire,
+ * so the branch it would merge into must be one whose contents nobody keeps.
+ */
+export async function runGitLabMutationConformance(
+  fixture: ProviderFixture,
+  report: Reporter
+): Promise<void> {
+  if (fixture.name !== 'gitlab') return;
+
+  // Read from the table rather than assumed: if either declaration is ever
+  // flipped away from `supported`, runUnsupportedConformance's probe list is
+  // what covers it instead, and running a happy-path cycle for a method
+  // nobody claims works would be asserting the table's opposite.
+  const rebaseSupported =
+    expectationFor(fixture.name, 'rebasePullRequest').support === 'supported';
+  const autoMergeSupported =
+    expectationFor(fixture.name, 'setAutoMerge').support === 'supported' &&
+    expectationFor(fixture.name, 'cancelAutoMerge').support === 'supported';
+  if (!rebaseSupported && !autoMergeSupported) return;
+
+  const { provider, projectPath, defaultBranch } = fixture;
+  const prefix = runPrefix();
+  const target = `${prefix}-rebase-target`;
+  const source = `${prefix}-rebase-source`;
+  // Null until the whole setup has succeeded, not merely until the merge
+  // request exists: every check below depends on the target having been
+  // advanced too, and a half-built fixture would make them fail for a reason
+  // that says nothing about the method named in the report line.
+  let readyIid: number | null = null;
+
+  try {
+    await check(
+      report,
+      fixture,
+      'createPullRequest',
+      'opens an MR whose source branch is behind its target',
+      async () => {
+        await createBranch(fixture, target, defaultBranch);
+        await createBranch(fixture, source, target);
+        // The only commit on the source branch, which matters: after a
+        // rebase the head's parent is asserted to be the target's head, and
+        // that identity only holds for a single-commit branch.
+        await overwriteGitLabCiConfig(fixture, source, HOLD_OPEN_CI_YML);
+        const pr = await provider.createPullRequest({
+          projectPath,
+          title: 'conformance: rebase and auto-merge cycle',
+          description:
+            'Opened by the glance conformance harness against a throwaway target branch. Safe to close.',
+          sourceBranch: source,
+          targetBranch: target
+        });
+        assert(pr.iid > 0, `expected a positive iid, got ${pr.iid}`);
+        // Advancing the target after the merge request exists is what leaves
+        // the source branch genuinely behind, which is the precondition
+        // without which a rebase has nothing observable to do.
+        await commitFile(
+          fixture,
+          target,
+          `conformance-target-moved-${Date.now()}.md`,
+          '# the target branch moved under the merge request\n'
+        );
+        readyIid = pr.iid;
+      }
+    );
+
+    if (readyIid === null) {
+      // Same reasoning as the merge cycle's post-failure skips: a setup that
+      // never completed must not leave these three silently absent from the
+      // report, because absence is indistinguishable from nobody having
+      // written the check at all.
+      for (const method of ['rebasePullRequest', 'setAutoMerge', 'cancelAutoMerge'] as const) {
+        report.skip(
+          fixture.name,
+          method,
+          'GitLab mutation cycle',
+          'not run: the fixture merge request and its behind-the-target branch could not be set up'
+        );
+      }
+      return;
+    }
+    const iid: number = readyIid;
+
+    if (rebaseSupported) {
+      await check(
+        report,
+        fixture,
+        'rebasePullRequest',
+        'the source branch is rewritten onto the advanced target',
+        async () => {
+          const targetHead = await gitlabBranchHead(fixture, target);
+          const before = await gitlabBranchHead(fixture, source);
+          // Asserted, not assumed. If the setup above left the source branch
+          // already sitting on the target's head, the post-rebase assertion
+          // would be satisfied by a rebasePullRequest that did nothing at
+          // all, which is precisely the vacuous pass this check exists to
+          // avoid.
+          assert(
+            !before.parentIds.includes(targetHead.sha),
+            `setup did not leave "${source}" behind "${target}": its head ${before.sha} already has ` +
+              `${targetHead.sha} among its parents, so a no-op rebase would satisfy this check`
+          );
+
+          await provider.rebasePullRequest(projectPath, iid);
+
+          // GitLab's rebase is asynchronous: the API accepts the request and
+          // reports rebase_in_progress, so the call returning proves only
+          // that it was enqueued. Polling for the source branch to actually
+          // move is the difference between observing the rebase and
+          // observing the request.
+          let after: { sha: string; parentIds: string[] };
+          try {
+            after = await pollUntil(
+              `"${source}" to be rewritten by the rebase`,
+              async () => {
+                const head = await gitlabBranchHead(fixture, source);
+                return head.sha === before.sha ? null : head;
+              },
+              { timeoutMs: 90_000, intervalMs: 2_000 }
+            );
+          } catch {
+            // pollUntil's own timeout text names neither the rebase state nor
+            // the merge_error GitLab writes when an async rebase fails, and
+            // those are the only two things that explain a branch that never
+            // moved.
+            const probe = await gitlabMrProbe(fixture, iid).catch(() => null);
+            throw new Error(
+              `"${source}" still points at ${before.sha} after rebasePullRequest ` +
+                `(rebase_in_progress=${probe?.rebaseInProgress ?? 'unreadable'}, ` +
+                `merge_error=${probe?.mergeError ?? 'null'})`
+            );
+          }
+
+          // The sha changing is not the proof; the new parent is. A rebase
+          // that landed puts the target's head directly beneath the rewritten
+          // commit, and nothing else this cycle does would.
+          assert(
+            after.parentIds.includes(targetHead.sha),
+            `rebase rewrote "${source}" to ${after.sha}, but its parents ` +
+              `${JSON.stringify(after.parentIds)} do not include "${target}"'s head ${targetHead.sha}, ` +
+              'so the branch was rewritten by something other than a rebase onto the target'
+          );
+        }
+      );
+    }
+
+    if (!autoMergeSupported) return;
+
+    await check(
+      report,
+      fixture,
+      'setAutoMerge',
+      'arms merge-when-pipeline-succeeds and a re-read confirms it',
+      async () => {
+        // Mirrors the GitHub block's `armed` flag, and for the same measured
+        // reason: a cancelAutoMerge graded against a merge request that never
+        // had auto-merge on is satisfied by doing nothing, which is the
+        // vacuous pass this project keeps re-inventing.
+        let armed = false;
+        try {
+          const sourceHead = await gitlabBranchHead(fixture, source);
+          // The pipeline must belong to the CURRENT head. After the rebase
+          // above there is a window where the merge request's head_pipeline
+          // still refers to the pipeline of the pre-rebase commit; arming
+          // against that would be arming against a pipeline GitLab is about
+          // to stop treating as the head one.
+          let probe: GitLabMrProbe;
+          try {
+            probe = await pollUntil(
+              `an active head pipeline on !${iid} for ${sourceHead.sha}`,
+              async () => {
+                const p = await gitlabMrProbe(fixture, iid);
+                return p.headPipelineSha === sourceHead.sha &&
+                  ACTIVE_GITLAB_PIPELINE_STATUSES.has(p.headPipelineStatus ?? '')
+                  ? p
+                  : null;
+              },
+              { timeoutMs: 120_000, intervalMs: 3_000 }
+            );
+          } catch {
+            const latest = await gitlabMrProbe(fixture, iid).catch(() => null);
+            throw new Inconclusive(
+              `no active pipeline ever attached to !${iid}'s head commit ${sourceHead.sha} ` +
+                `(head pipeline ${latest?.headPipelineId ?? 'none'} status ` +
+                `"${latest?.headPipelineStatus ?? 'none'}" on sha ${latest?.headPipelineSha ?? 'none'}), ` +
+                'and merge-when-pipeline-succeeds has nothing to wait on without one'
+            );
+          }
+
+          // Printed, not just used: this line is the evidence that the
+          // precondition was real on the run being read, which is the
+          // difference between "auto-merge armed" and "auto-merge armed
+          // against something that was actually waiting".
+          console.log(
+            `  setAutoMerge precondition: !${iid} head pipeline ${probe.headPipelineId} ` +
+              `is "${probe.headPipelineStatus}" on ${probe.headPipelineSha}`
+          );
+
+          try {
+            await provider.setAutoMerge(projectPath, iid);
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            // GitLab answers 405 on this endpoint for "the merge request is
+            // not able to be merged" and 406 for a merge it will not accept
+            // in the request's current state, both unmet preconditions rather
+            // than malformed requests (a bad shape gets 400). Matching only
+            // those two, and only after re-reading what the merge request
+            // actually looks like, keeps every other failure -- a 403, a
+            // 404, a mutation GitLab accepts while arming nothing -- a hard
+            // fail.
+            if (/\bsetAutoMerge failed: 40[56]\b/.test(message)) {
+              const latest = await gitlabMrProbe(fixture, iid).catch(() => null);
+              throw new Inconclusive(
+                `GitLab refused to arm auto-merge on !${iid} (state "${latest?.state ?? 'unreadable'}", ` +
+                  `head pipeline "${latest?.headPipelineStatus ?? 'none'}", ` +
+                  `merge_error=${latest?.mergeError ?? 'null'}): ${message}`
+              );
+            }
+            throw err;
+          }
+
+          // Re-reading through the provider is the assertion. "Did not throw"
+          // is also what a setAutoMerge that silently armed nothing produces,
+          // and this same read is what a consumer would use to decide whether
+          // the button it just drew is on.
+          const after = await provider.fetchSingleMR(projectPath, iid, null);
+          if (after?.autoMergeEnabled === true) {
+            armed = true;
+          } else {
+            // Two things other than a broken setAutoMerge produce this, and
+            // both are observable rather than assumed. GitLab merges the
+            // request outright when merge_when_pipeline_succeeds is asked for
+            // with nothing left to wait on, and it abandons an armed
+            // auto-merge the moment the pipeline it was waiting on fails --
+            // which this fixture's pipelines do by design, on the far side of
+            // the hold-open job. Neither is graded as a pass, and neither is
+            // accepted on the strength of a plausible story: the merge
+            // request's own state has to say so.
+            const latest = await gitlabMrProbe(fixture, iid).catch(() => null);
+            if (latest?.state === 'merged') {
+              throw new Inconclusive(
+                `GitLab merged !${iid} immediately instead of arming auto-merge, so nothing was armed ` +
+                  `(confirmed by re-read: state="${latest.state}")`
+              );
+            }
+            if (
+              latest !== null &&
+              latest.headPipelineStatus !== null &&
+              !ACTIVE_GITLAB_PIPELINE_STATUSES.has(latest.headPipelineStatus)
+            ) {
+              // Weaker evidence than the merged case above, and labelled as
+              // such: a settled pipeline is a real cause for GitLab dropping
+              // the auto-merge, but this cannot fully separate it from a
+              // setAutoMerge that armed nothing in the first place. It is
+              // reported as inconclusive rather than either a pass or a fail
+              // for exactly that reason.
+              throw new Inconclusive(
+                `auto-merge did not read back as enabled on !${iid}, and its head pipeline had already ` +
+                  `settled to "${latest.headPipelineStatus}" (GitLab drops an armed auto-merge when the ` +
+                  'pipeline it waits on stops); this run cannot tell that apart from setAutoMerge arming nothing'
+              );
+            }
+            assert(
+              false,
+              `expected autoMergeEnabled true after setAutoMerge, got ${after?.autoMergeEnabled} ` +
+                `(state "${latest?.state ?? 'unreadable'}", head pipeline ` +
+                `"${latest?.headPipelineStatus ?? 'none'}", merge_error=${latest?.mergeError ?? 'null'})`
+            );
+          }
+        } finally {
+          if (!armed) {
+            report.skip(
+              fixture.name,
+              'cancelAutoMerge',
+              'disarms auto-merge and a re-read confirms it',
+              'setAutoMerge did not arm auto-merge on this run, so there was nothing for cancelAutoMerge to disarm'
+            );
+          } else {
+            await gradeGitLabCancelAutoMerge(fixture, report, iid);
+          }
+        }
+      }
+    );
+  } finally {
+    await cancelActiveGitLabPipelines(fixture, source);
+    for (const branch of [source, target]) {
+      await provider.deleteBranch(projectPath, branch).catch(err => {
+        console.error(`  cleanup: could not delete ${branch}: ${err}`);
+      });
+    }
+  }
+}
+
+/**
+ * Cancel an auto-merge that was just proven to be armed, and grade the
+ * re-read.
+ *
+ * Lifted out of the setAutoMerge check's `finally` only for readability;
+ * it reports its own result directly, because it runs from a `finally` inside
+ * another check() and so has no result of its own to throw into. It records
+ * exactly one cancelAutoMerge entry on every path, including the ones where
+ * its own reads fail: anything that escaped would be graded against
+ * setAutoMerge instead and leave this method with no line at all.
+ *
+ * Called with no intervening calls after the arm was confirmed, deliberately.
+ * The hold-open pipeline makes the window wide rather than instantaneous, but
+ * it is still a window: GitLab drops the auto-merge as soon as that pipeline
+ * stops for any reason, and every round trip inserted here only widens the
+ * gap in which that can happen.
+ */
+async function gradeGitLabCancelAutoMerge(
+  fixture: ProviderFixture,
+  report: Reporter,
+  iid: number
+): Promise<void> {
+  const { provider, projectPath } = fixture;
+  const label = 'disarms auto-merge and a re-read confirms it';
+  try {
+    await provider.cancelAutoMerge(projectPath, iid);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // GitLab refuses this whenever there is nothing left to cancel, which
+    // includes both "auto-merge already fired or was dropped" and
+    // "cancelAutoMerge is simply broken". The message alone cannot tell those
+    // apart, so it is never trusted on its own: only the merge request's own
+    // re-read decides, exactly as the GitHub side does.
+    const reread = await gitlabMrProbe(fixture, iid).catch(() => null);
+    if (reread?.state === 'merged' || reread?.state === 'closed') {
+      report.skip(
+        fixture.name,
+        'cancelAutoMerge',
+        label,
+        `the armed auto-merge fired before this call could land (confirmed by re-read: state="${reread.state}"): ${message}`
+      );
+      return;
+    }
+    if (
+      reread !== null &&
+      reread.headPipelineStatus !== null &&
+      !ACTIVE_GITLAB_PIPELINE_STATUSES.has(reread.headPipelineStatus)
+    ) {
+      report.skip(
+        fixture.name,
+        'cancelAutoMerge',
+        label,
+        `the head pipeline settled to "${reread.headPipelineStatus}" and GitLab dropped the armed ` +
+          `auto-merge before this call could disarm it, so there was nothing left to cancel: ${message}`
+      );
+      return;
+    }
+    report.fail(
+      fixture.name,
+      'cancelAutoMerge',
+      label,
+      `cancelAutoMerge failed while the merge request was still open with an active pipeline ` +
+        `(state="${reread?.state ?? 'unreadable'}", head pipeline "${reread?.headPipelineStatus ?? 'none'}"): ${message}`
+    );
+    return;
+  }
+
+  try {
+    const after = await provider.fetchSingleMR(projectPath, iid, null);
+    if (after?.state === 'merged' || after?.state === 'closed') {
+      report.skip(
+        fixture.name,
+        'cancelAutoMerge',
+        label,
+        `cancelAutoMerge returned, but the merge request is "${after.state}", so the armed auto-merge ` +
+          'had already fired and there was nothing for it to disarm'
+      );
+      return;
+    }
+    // `state === 'opened'` is load-bearing, not decoration. A merged merge
+    // request also reads autoMergeEnabled false, so without it this "pass"
+    // would be satisfied by the auto-merge having fired -- the opposite of
+    // what cancelAutoMerge is supposed to have done.
+    if (after?.autoMergeEnabled === false && after.state === 'opened') {
+      // Still not enough on its own, and this is the last place a vacuous
+      // pass was reachable. GitLab abandons an armed auto-merge by itself the
+      // moment the pipeline it waits on stops, and that leaves exactly the
+      // reading this branch just made: open, auto-merge off. A
+      // cancelAutoMerge that did nothing at all would be graded green by it.
+      // Confirming the head pipeline is STILL active rules that cause out --
+      // GitLab had no occasion to drop the arm, so the only thing that
+      // disarmed it is the call above. The hold-open job makes this the
+      // normal case rather than a lucky one; when it is not the case the
+      // evidence genuinely is ambiguous, so it is reported as a skip naming
+      // the ambiguity instead of a pass nobody can check.
+      const still = await gitlabMrProbe(fixture, iid).catch(() => null);
+      if (still !== null && ACTIVE_GITLAB_PIPELINE_STATUSES.has(still.headPipelineStatus ?? '')) {
+        report.pass(fixture.name, 'cancelAutoMerge', label);
+      } else {
+        report.skip(
+          fixture.name,
+          'cancelAutoMerge',
+          label,
+          'auto-merge reads back as off, but the head pipeline is no longer active ' +
+            `(status "${still?.headPipelineStatus ?? 'unreadable'}"), and GitLab drops an armed ` +
+            'auto-merge on its own when that happens, so this run cannot tell the cancel apart ' +
+            'from GitLab having dropped it'
+        );
+      }
+      return;
+    }
+    report.fail(
+      fixture.name,
+      'cancelAutoMerge',
+      label,
+      `cancelAutoMerge did not throw but autoMergeEnabled reads back as ${after?.autoMergeEnabled} ` +
+        `on a merge request in state "${after?.state ?? 'unreadable'}"`
+    );
+  } catch (err) {
+    // This function runs from a check()'s `finally`, so an escaping throw
+    // would be attributed to setAutoMerge -- turning a genuine setAutoMerge
+    // pass into a FAIL with a message about the wrong method, while leaving
+    // cancelAutoMerge with no line at all until assertFullCoverage reported
+    // its absence at the very end. Reporting here keeps the promise that
+    // this function makes exactly one cancelAutoMerge entry no matter what.
+    // fail, not skip, for the same reason the resolveDiscussion setup
+    // failure above is a fail: the mutation was issued and its effect was
+    // never observed, and a skip would render that as accounted for.
+    report.fail(
+      fixture.name,
+      'cancelAutoMerge',
+      label,
+      'cancelAutoMerge was issued but the re-read that would prove it did anything could not be ' +
+        `made: ${err instanceof Error ? err.message : String(err)}`
+    );
+  }
 }
 
 /**
@@ -1139,7 +1776,7 @@ async function headCommitMessage(fixture: ProviderFixture, marker: string): Prom
     } else {
       const res = await provider.restRequest(
         'GET',
-        apiPath(fixture, `/projects/${encodeURIComponent(projectPath)}/repository/commits/${encodeURIComponent(defaultBranch)}`)
+        `/projects/${encodeURIComponent(projectPath)}/repository/commits/${encodeURIComponent(defaultBranch)}`
       );
       if (!res.ok) throw new Error(`could not read head commit: HTTP ${res.status}`);
       const { message: raw } = (await res.json()) as { message: string };
@@ -1193,14 +1830,11 @@ async function mergeBlockDetail(fixture: ProviderFixture, iid: number): Promise<
  * there and is effectively a no-op for that provider.
  */
 async function waitForMergeReadiness(fixture: ProviderFixture, iid: number): Promise<void> {
-  // approvals_syncing is transitional too, per MRDashboard.ts:105. Merging
-  // during it races the same ambiguous 405 as the other three (MAT-132).
-  const stillComputing = new Set([
-    'checking',
-    'unchecked',
-    'preparing',
-    'approvals_syncing'
-  ]);
+  // "Still computing" is asked of the SDK rather than restated here. This
+  // used to be a fourth literal copy of the same four strings, and a harness
+  // whose idea of transitional drifts from the provider's would wait out a
+  // window the provider no longer thinks exists, or merge into one it does
+  // (MAT-132).
 
   // MAT-132 timed out twice on two different MRs with nothing to show for
   // it: pollUntil's predicate reports "not yet" as `null`, so every
@@ -1234,7 +1868,7 @@ async function waitForMergeReadiness(fixture: ProviderFixture, iid: number): Pro
         return null;
       }
       observed.push(fresh.detailedMergeStatus ?? 'null');
-      return stillComputing.has(fresh.detailedMergeStatus ?? '') ? null : fresh;
+      return isTransitionalMergeStatus(fresh.detailedMergeStatus) ? null : fresh;
     }, { timeoutMs: 90_000 });
   } catch (err) {
     // Collapse consecutive repeats into counts rather than dumping up to
@@ -1533,7 +2167,7 @@ async function latestPipelineAndJob(fixture: ProviderFixture): Promise<PipelineP
   // parameter takes one value, and the terminal set has three.
   const pipeRes = await provider.restRequest(
     'GET',
-    apiPath(fixture, `/projects/${encoded}/pipelines?per_page=${PIPELINE_SCAN_LIMIT}`)
+    `/projects/${encoded}/pipelines?per_page=${PIPELINE_SCAN_LIMIT}`
   );
   if (!pipeRes.ok) return null;
   const pipes = (await pipeRes.json()) as Array<{ id: number; status: string }>;
@@ -1542,7 +2176,7 @@ async function latestPipelineAndJob(fixture: ProviderFixture): Promise<PipelineP
     if (!TERMINAL_GITLAB_PIPELINE_STATUSES.has(pipe.status)) continue;
     const jobsRes = await provider.restRequest(
       'GET',
-      apiPath(fixture, `/projects/${encoded}/pipelines/${pipe.id}/jobs`)
+      `/projects/${encoded}/pipelines/${pipe.id}/jobs`
     );
     if (!jobsRes.ok) continue;
     const jobs = (await jobsRes.json()) as Array<{ id: number; status: string }>;
@@ -1562,7 +2196,10 @@ async function latestPipelineAndJob(fixture: ProviderFixture): Promise<PipelineP
  * job fails exactly when the branch carries a `fail-marker` file, and the
  * workflow triggers on `pull_request`, so the branch needs a PR to run at all.
  *
- * GitHub only. The GitLab fixture's `.gitlab-ci.yml` is not ours to change.
+ * GitHub only, but not because the GitLab side is impossible:
+ * `overwriteGitLabCiConfig` manufactures CI state the same way, on a throwaway
+ * branch. It is unnecessary there, because the GitLab fixture already produces
+ * a genuinely failed job without being asked to.
  */
 async function withFailedGitHubJob(
   fixture: ProviderFixture,
@@ -1706,8 +2343,18 @@ export async function runCiConformance(
     );
   });
 
-  await check(report, fixture, 'fetchDownstreamPipeline', 'resolves without throwing', async () => {
-    await provider.fetchDownstreamPipeline(projectPath, probe.jobId);
+  // Deliberately weak, and now labelled as such. `latestPipelineAndJob` reads
+  // `GET /pipelines/:id/jobs`, which never lists bridges, so `probe.jobId` is
+  // always a regular job. The bridge branch is unreachable from here anyway:
+  // `GitProvider.fetchDownstreamPipeline(projectPath, jobId)` declares no
+  // `pipelineId`, and task 5's live spike measured `null` for a genuine bridge
+  // with a live child pipeline. See the GitLab expectation note.
+  await check(report, fixture, 'fetchDownstreamPipeline', 'reports null for a job with no child pipeline', async () => {
+    const downstream = await provider.fetchDownstreamPipeline(projectPath, probe.jobId);
+    assert(
+      downstream === null,
+      `expected null for a non-bridge job, got ${JSON.stringify(downstream)}`
+    );
   });
 
   await check(report, fixture, 'retryPipeline', 'accepts a retry request', async () => {
@@ -1743,8 +2390,13 @@ export async function runCiConformance(
     // for GitHub's branch-and-poll trick to manufacture a failure here --
     // `latestPipelineAndJob` already told us above whether the job it
     // settled on genuinely failed. Extending that probe rather than writing
-    // a second withFailedGitHubJob-style helper: GitLab's .gitlab-ci.yml is
-    // not ours to change, so there is nothing to manufacture on this side.
+    // a second withFailedGitHubJob-style helper: a failing GitLab job is
+    // already there for the taking, so manufacturing one would be work with
+    // no evidence to show for it. Manufacturing IS available on this side if
+    // some future check needs a job the fixture does not already produce --
+    // `overwriteGitLabCiConfig` puts arbitrary CI config on a throwaway
+    // branch, which is how the auto-merge cycle gets its long-running
+    // pipeline -- so the constraint here is "unnecessary", not "impossible".
     if (probe.jobFailed) {
       await check(report, fixture, 'retryJob', 'accepts a retry of the failed job', async () => {
         const encoded = encodeURIComponent(projectPath);
@@ -1789,7 +2441,7 @@ export async function runCiConformance(
             async () => {
               const res = await provider.restRequest(
                 'GET',
-                apiPath(fixture, `/projects/${encoded}/pipelines/${probe.pipelineId}/jobs`)
+                `/projects/${encoded}/pipelines/${probe.pipelineId}/jobs`
               );
               if (!res.ok) return null;
               const jobs = (await res.json()) as Array<{ id: number; status: string }>;
@@ -1850,7 +2502,7 @@ export async function runCiConformance(
           async () => {
             const res = await provider.restRequest(
               'GET',
-              apiPath(fixture, `/projects/${encoded}/pipelines/${probe.pipelineId}`)
+              `/projects/${encoded}/pipelines/${probe.pipelineId}`
             );
             if (!res.ok) return null;
             const pipeline = (await res.json()) as { status?: string };

@@ -1,4 +1,4 @@
-# @workforge/glance-sdk
+# @mattstack/glance
 
 ## 0.15.0
 
@@ -48,8 +48,55 @@
 Note: 0.13.0, 0.13.1, and 0.13.2 were released without changelog entries; their
 contents are not recorded here.
 
-### Minor Changes
+### Breaking Changes
 
+Read these three before upgrading. Everything else in this release is additive
+or a correction a caller does not have to act on.
+
+- **Breaking:** `reviewers` and `assignees` now genuinely reach both providers,
+  and on GitHub `updatePullRequest` now *removes* people (MAT-24). Two halves,
+  both worth reading.
+
+  On GitLab, `createPullRequest` and `updatePullRequest` forwarded the
+  documented username strings straight into GitLab's `assignee_ids` /
+  `reviewer_ids`, which take numeric user ids, behind a cast that made the
+  mismatch compile. Both fields are now resolved to real ids first. A username
+  GitLab has no user for **throws**, naming the operation and the username
+  (`createPullRequest: no GitLab user found for username "..."`), rather than
+  being dropped: a dropped name hands back a merge request that looks like the
+  reviewer or assignee was added when nobody was.
+
+  On GitHub, `updatePullRequest` now honours the "replaces the current set"
+  contract `UpdatePullRequestInput` documents and GitLab's id arrays have
+  always had. GitHub's own endpoints are additive, so the previous `POST`
+  could only ever add; the call now diffs the requested list against the PR's
+  current one and issues the matching `DELETE` for every login the input left
+  out. **That is the consequence to know about: a caller passing a partial
+  `reviewers` or `assignees` list now removes everyone missing from it**,
+  where before the omitted names stayed on the PR untouched. `reviewers: []`
+  cancels every open review request. A caller that has been passing "the
+  people to add" has to start passing "the people who should end up on the
+  PR", which for an addition means the current set plus the new name; the PR
+  object it already has carries that set. Team reviewers (`requested_teams`)
+  are never read or written, so any team already requested is left exactly as
+  it was, and `createPullRequest` is unchanged, since a new PR has nothing to
+  remove from.
+- **Breaking:** `GitProvider.restRequest`'s `path` is now provider-relative on
+  both providers. `GitLabProvider.restRequest` previously concatenated
+  `baseURL + path` verbatim, so a GitLab caller had to pass `/api/v4/user`
+  where a GitHub caller passes `/user` -- the opposite of the "translate the
+  path to the provider's API URL format" contract the interface documents.
+  `GitLabProvider` now prefixes `/api/v4` itself. A path that already starts
+  with `/api/v4` throws rather than being silently accepted: a caller
+  upgrading past this fix needs to drop that prefix from its own call sites,
+  and a thrown error naming the exact path is how it finds out. The
+  `onRequest` hook follows the path the caller now passes: a `restRequest`
+  `RequestInfo.path` reads `/projects/1/notes` where it used to read
+  `/api/v4/projects/1/notes`, so a consumer grouping or matching on that field
+  sees different strings for the same request. The other transports are
+  unchanged: `MRDetailFetcher`, `NoteMutator`, and GraphQL still report the
+  wire path, and the gitbeaker transport still reports a resource name such as
+  `MergeRequests` rather than a path at all.
 - **Breaking (shared interface):** `requestReReview(projectPath, mrIid)` with
   no `reviewerUsernames` now throws, on both providers, when there are no
   existing reviewers to re-request. GitLab already made this change this
@@ -57,6 +104,38 @@ contents are not recorded here.
   was the one-interface-two-behaviors defect the GitLab fix was filed to
   close, not a second bug to leave open. A caller relying on the old
   GitHub-side silent no-op now gets an `Error` instead.
+
+### Minor Changes
+
+- `GitLabProvider.mergePullRequest` now names why GitLab refused a merge
+  (MAT-132). On the plain merge path, GitLab answers a refusal with a bare
+  HTTP 405 whose body is the constant string "405 Method Not Allowed", so the
+  error could not separate "mergeability is still being computed, retry in a
+  moment" from "a check failed, change something first". (Its other refusals
+  on the same endpoint do say why, and are untouched: 409 for a `sha` that
+  does not match the head, 422 "Branch cannot be merged".) On a 405 only, the
+  provider reads the merge request back once and appends the
+  `detailedMergeStatus` GitLab reports, plus a retry hint when that value is a
+  transitional one. The status is worded as an observation taken after the
+  refusal, not as its cause, because it can change in between. The existing
+  `mergePullRequest failed: 405 ...` prefix is unchanged; a follow-up read
+  that fails, reports nothing, or takes longer than 5 seconds leaves the
+  original error exactly as it was, so a read failure can never stand in for a
+  merge failure. New exports: `TRANSITIONAL_MERGE_STATUSES` and
+  `isTransitionalMergeStatus`, the list and predicate the SDK classifies with,
+  so a caller deciding whether to retry does not need its own copy.
+- `getMRDashboardProps` now treats `detailedMergeStatus: "preparing"` as
+  transitional, alongside `checking`, `unchecked`, and `approvals_syncing`.
+  GitLab emits `preparing` ahead of `unchecked` on a just-created merge
+  request, so the omission flashed `BLOCKED` during part of the very window
+  the transitional rule exists to cover. An MR in `preparing` with no other
+  blocker now reports `status: "mergeable"`, `isCheckingMergeability: true`,
+  `isReady: true`, and `mergeButton.disabled: false`. That last one is the
+  consequence to know about: the Merge button is now enabled during the
+  `preparing` window, which is exactly the window in which a merge returns the
+  ambiguous 405 described above. That tradeoff is not new, it is what the
+  other three transitional values have always done, and the improved 405
+  message is what a consumer now gets if a user presses it too early.
 - **Changed values, not shapes:** `Discussion.resolved` and
   `Discussion.resolvable` on GitLab were hardcoded `null` and now carry
   GitLab's real thread-resolution state. `Note.resolved` on GitHub moves from
@@ -73,6 +152,36 @@ contents are not recorded here.
 - Explicitly unchanged: `Discussion.id` on GitHub keeps its
   `gh-review-thread-<rootCommentId>` form. This is deliberate, not an
   oversight, so that any id a consumer has already persisted stays valid.
+- On GitHub, a PR whose reviews fetch fails partway through (rate limiting,
+  most commonly) is now dropped from `fetchPullRequests`'s result and
+  reported through `onWarning`, instead of rejecting the whole call. A PR
+  whose check-runs or thread-count fetch fails stays in the result with
+  just that field degraded to its existing "unknown" value
+  (`pipeline: null` / `unresolvedThreadCount: null`), also now reported
+  through `onWarning`. `FetchPullRequestsWarning['source']` gained
+  `'reviews' | 'checks' | 'threads'` (previously `'search' | 'list' |
+  'detail'`) to name these. `fetchSingleMR`'s `createPullRequest`/
+  `updatePullRequest`/`mergePullRequest` refetch failures now throw a
+  message describing the actual cause instead of the generic "... but
+  failed to fetch it back".
+- New export: `FetchPullRequestsWarning` (previously only reachable as
+  `FetchPullRequestsOptions['onWarning']`'s parameter type, not nameable on
+  its own).
+- New optional `DashboardGroup.onWarning(listener)`: fires per-row when one
+  MR in a batched dashboard fetch did not refresh cleanly while the rest of
+  the batch succeeded -- both when that MR is missing from `subscribe`'s Map
+  entirely (a `reviews`/`detail` failure) and when it is present with one
+  field silently at its "unknown" value (a `checks`/`threads` failure), so a
+  consumer can flag either case instead of it looking like an ordinary
+  update or an ordinary empty/no-checks reading. `MRDashboard`'s batched
+  fetch no longer swallows a `fetchPullRequests` rejection to `null` for the
+  whole group; a genuine total failure now reaches `onStatusChange`'s
+  existing `lastError`/`consecutiveErrors` instead.
+- New export: `warningTarget(projectPath, iid)`, the exact format (
+  `owner/repo#number`) every single-PR `FetchPullRequestsWarning.target`
+  uses. A consumer matching on `target` should build it with this rather
+  than its own string interpolation, the same way `GitHubProvider` and
+  `DashboardGroup.onWarning`'s own matching logic now both do internally.
 
 ## 0.12.0
 

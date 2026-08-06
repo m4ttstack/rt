@@ -56,6 +56,12 @@ export type {
   WatchEventsStatus,
 } from './types.ts';
 export { getReviewDisplayState, getReviewerSummaries } from './types.ts';
+// Exported because mergePullRequest's 405 message now names a
+// detailedMergeStatus, and a caller deciding whether to retry needs to classify
+// it the way the SDK did rather than keep a copy that can drift (MAT-132). The
+// predicate answers that; the list is for callers that need to enumerate the
+// values, to render or exhaustively switch on them.
+export { TRANSITIONAL_MERGE_STATUSES, isTransitionalMergeStatus } from './types.ts';
 export type { MRStatus, MRState, MRDashboardProps, MRDashboardActions } from './types.ts';
 
 // ── Dashboard helpers ─────────────────────────────────────────────────────────
@@ -63,8 +69,16 @@ export { getMRDashboardProps, createDashboard } from './MRDashboard.ts';
 export type { Dashboard, DashboardGroup, CreateDashboardOptions } from './MRDashboard.ts';
 
 // ── Provider interface ────────────────────────────────────────────────────────
-export type { GitProvider, FetchPullRequestsOptions } from './GitProvider.ts';
-export { parseRepoId, repoIdProvider } from './GitProvider.ts';
+export type {
+  GitProvider,
+  FetchPullRequestsOptions,
+  FetchPullRequestsWarning,
+} from './GitProvider.ts';
+// `warningTarget` is exported because `FetchPullRequestsWarning.target`'s
+// documentation tells a consumer to match on it by building the string with
+// this function rather than interpolating its own, which it cannot do unless
+// the function is reachable from the package entry point.
+export { parseRepoId, repoIdProvider, warningTarget } from './GitProvider.ts';
 
 // ── Logger ────────────────────────────────────────────────────────────────────
 export type { ForgeLogger } from './logger.ts';

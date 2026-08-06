@@ -31,18 +31,63 @@ export type MRState = 'opened' | 'merged' | 'closed';
 export interface FetchPullRequestsWarning {
   /**
    * `page-cap`: a bounded scan stopped with matches still outstanding.
-   * `request-failed`: a non-ok response, so whatever it would have returned
-   * is missing from the result entirely. Rate limiting shows up here.
+   * `request-failed`: a non-ok response. For `search`/`list`/`detail`/
+   * `reviews`, whatever it would have returned is missing from the result
+   * entirely. For `checks`/`threads`, the PR itself is still in the result;
+   * only that one field (`pipeline`/`unresolvedThreadCount`) reads as its
+   * existing "unknown" value instead of a measured one -- neither feeds an
+   * approval count, so dropping the whole PR over either would be a bigger
+   * degradation than the failure itself warrants.
    */
   kind: 'page-cap' | 'request-failed';
-  /** Which leg of the fetch: the search API, a repository listing, or a per-MR detail fetch. */
-  source: 'search' | 'list' | 'detail';
+  /**
+   * Which leg of the fetch: the search API, a repository listing, a per-MR
+   * detail fetch, a per-MR reviews fetch (the approvals a failed page here
+   * would otherwise under-report), a per-MR checks fetch, or a batched
+   * thread-count query.
+   */
+  source: 'search' | 'list' | 'detail' | 'reviews' | 'checks' | 'threads';
   /** Human-readable summary, always populated. */
   message: string;
   /** The HTTP status, when `kind` is `request-failed`. */
   status?: number;
-  /** What the warning is about: a search query, a project path, or `owner/repo#number`. */
+  /**
+   * What the warning is about: a search query, a project path, or (for
+   * `detail`/`reviews`/`checks`/`threads`, every single-PR source) exactly
+   * `owner/repo#number` -- build it with `warningTarget`, not by hand.
+   *
+   * One PR per warning even for a thread-count batch that covers many at
+   * once: one warning per affected PR, not one warning naming several.
+   *
+   * This field is the join key `fetchDashboardBatch` (MRDashboard.ts) uses
+   * to attribute a warning to a row, by exact string match against
+   * `warningTarget(projectPath, iid)`. A `checks` warning once carried
+   * `owner/repo@sha` (the commit the check-runs fetch actually failed on,
+   * which felt like the more precise thing to name) while every other
+   * source carried `owner/repo#number`; that PR's own warning could never
+   * match the lookup, and `DashboardGroup.onWarning` silently never fired
+   * for it. `warningTarget` exists so every producer and this field's one
+   * consumer read the same format from the same place, instead of relying
+   * on every call site independently getting the string literal right.
+   */
   target?: string;
+}
+
+/**
+ * The single-PR `target` every `FetchPullRequestsWarning` for `detail`,
+ * `reviews`, `checks`, and `threads` must use: `owner/repo#number`.
+ *
+ * Every producer of a single-PR warning (`GitHubProvider`) and this field's
+ * one consumer (`fetchDashboardBatch` in `MRDashboard.ts`) call this rather
+ * than interpolating the string themselves, specifically so the two sides
+ * cannot drift the way `checks` (`owner/repo@sha`, a different value
+ * entirely) and `threads` (a comma-joined list of several) both did before
+ * this function existed -- both changes that looked like local improvements
+ * (naming the actual failing commit; reporting a whole batch at once) and
+ * both silently broke the one thing `target` exists for: being looked up.
+ */
+export function warningTarget(projectPath: string, iid: number): string {
+  return `${projectPath}#${iid}`;
 }
 
 /**
@@ -89,14 +134,18 @@ export interface FetchPullRequestsOptions {
 
   /**
    * Called once per way the result fell short: a page cap reached with matches
-   * outstanding, a search page that failed, an MR whose detail fetch was
-   * rejected. A quiet fetch made no such compromise.
+   * outstanding, a search page that failed, or a per-PR fetch that failed and
+   * either dropped that PR from the result or left one of its fields at its
+   * "unknown" value. A quiet fetch made no such compromise.
    *
    * Invoked synchronously during the fetch; a callback that throws is ignored,
    * never surfaced as a fetch failure.
    *
-   * GitHub emits these for its search/listing page caps and for non-ok detail
-   * responses (rate limiting reaches a caller this way). GitLab paginates its
+   * GitHub emits these for its search/listing page caps (`search`, `list`) and
+   * for the per-PR fetches it assembles a `PullRequest` from: `detail` and
+   * `reviews` (either one failing drops the PR from the result), `checks` and
+   * `threads` (the PR stays, with `pipeline` / `unresolvedThreadCount` at
+   * `null`). Rate limiting reaches a caller this way. GitLab paginates its
    * project mode to exhaustion and raises transport failures as exceptions, so
    * it has nothing to report and never calls this.
    */
@@ -183,7 +232,7 @@ export interface GitProvider {
    * | `state`       | all modes                     | all modes                 |
    * | `updatedAfter`| `projectPath`-alone mode only | all modes                 |
    * | `listWeight`  | `projectPath`-alone mode only | all modes                 |
-   * | `onWarning`   | never fires (see below)       | page caps + failed detail |
+   * | `onWarning`   | never fires (see below)       | page caps + failed detail/reviews/checks/threads |
    *
    * GitLab returns full dashboard fields from every mode and paginates its
    * project mode to exhaustion, so it has no truncation to report; GitHub
@@ -235,6 +284,15 @@ export interface GitProvider {
   /**
    * Fetch branch protection rules for a repository.
    * Returns an array of rules (one per protected branch/pattern).
+   *
+   * Implementations throw on a partial read failure rather than returning
+   * the rules already read: callers gate destructive actions on this list,
+   * and once it is returned a partial list cannot be told apart from a
+   * complete one, so returning it would be silent data loss wearing the
+   * shape of success (MAT-147). If a caller ever needs to act on whatever
+   * was readable, the honest fix is a return type that can say which
+   * branches were unreadable, not an implementation quietly choosing
+   * between the two ways of hiding that fact.
    */
   fetchBranchProtectionRules(projectPath: string): Promise<BranchProtectionRule[]>;
 
@@ -390,7 +448,16 @@ export interface GitProvider {
    * Used for operations that don't have a typed method yet (job traces,
    * pipeline retries, etc.).
    *
-   * Implementations translate the path to the provider's API URL format.
+   * `path` is always provider-relative -- the same shape on either provider,
+   * e.g. `/user`, never `/api/v4/user` or `/api/v3/user`. Implementations
+   * translate that path to the provider's actual API URL: GitHub joins it
+   * onto its API root (`https://api.github.com`, or the GHES `/api/v3` root);
+   * GitLab joins it onto `${baseURL}/api/v4`. A path that already starts with
+   * `/api/v4` is rejected by GitLab rather than silently accepted (MAT-130):
+   * this method used to concatenate `baseURL + path` verbatim, so every
+   * existing GitLab caller had learned to include that prefix itself, and
+   * tolerating both shapes would leave that ambiguity in place indefinitely
+   * instead of surfacing it once, at the one call site that needs to change.
    *
    * A non-2xx resolves rather than throwing, so callers branch on `res.ok`.
    *

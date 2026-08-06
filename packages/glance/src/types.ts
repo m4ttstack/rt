@@ -108,6 +108,40 @@ export interface DiffStats {
   filesChanged: number;
 }
 
+/**
+ * GitLab `detailedMergeStatus` values that mean "mergeability is not decided
+ * yet" rather than naming something that blocks the merge. GitLab's own
+ * `MergeRequests::Mergeability::DetailedMergeStatusService` returns
+ * `preparing`, then `unchecked`, then `checking` before it runs a single
+ * check, and `approvals_syncing` while an approval rule is re-evaluated;
+ * every other value is either `mergeable` or the identifier of a check that
+ * actually failed.
+ *
+ * One list, because three readers ask the same question of these strings and
+ * must not answer it differently: the dashboard decides whether to render
+ * BLOCKED, `GitLabProvider.mergePullRequest` decides whether a refused merge
+ * is worth retrying, and the live conformance harness decides whether an MR is
+ * still settling. GitHub has no equivalent pre-merge state and always reports
+ * `detailedMergeStatus` as null, so none of the three arises there.
+ *
+ * A frozen array rather than a `ReadonlySet`, because this is public API and
+ * that type is erased at compile time: `Object.freeze` on a `Set` does not
+ * stop `.add`, since a Set's contents are not properties, so a consumer could
+ * silently repoint both the dashboard's BLOCKED rule and the provider's retry
+ * hint. A frozen array actually refuses.
+ */
+export const TRANSITIONAL_MERGE_STATUSES: readonly string[] = Object.freeze([
+  'preparing',
+  'unchecked',
+  'checking',
+  'approvals_syncing',
+]);
+
+/** True when GitLab has not finished deciding whether this MR can merge. */
+export function isTransitionalMergeStatus(status: string | null | undefined): boolean {
+  return status != null && TRANSITIONAL_MERGE_STATUSES.includes(status);
+}
+
 export interface PullRequest {
   /** Scoped provider ID, e.g. "gitlab:12345". */
   id: string;
@@ -289,7 +323,8 @@ export interface MRDashboardProps {
   isReady: boolean;
   /**
    * True when GitLab is asynchronously re-evaluating mergeability
-   * (detailedMergeStatus is "checking", "unchecked", or "approvals_syncing").
+   * (detailedMergeStatus is one of TRANSITIONAL_MERGE_STATUSES: "preparing",
+   * "unchecked", "checking", or "approvals_syncing").
    * The MR may become mergeable momentarily — show a spinner rather than a hard BLOCKED state.
    */
   isCheckingMergeability: boolean;
