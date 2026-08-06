@@ -24,6 +24,7 @@ import type {
   CreatePullRequestInput,
   DiffStats,
   Discussion,
+  InvalidationBatch,
   JobDetail,
   MergePullRequestInput,
   MRDetail,
@@ -35,9 +36,16 @@ import type {
   ProviderCapabilities,
   PullRequest,
   UpdatePullRequestInput,
-  UserRef
+  UserRef,
+  WatchEventsOptions
 } from './types.ts';
 import { type ForgeLogger, noopLogger } from './logger.ts';
+import {
+  GitHubEventsPoller,
+  type FetchGitHubEventsPage,
+  type GitHubEvent
+} from './GitHubEventsPoller.ts';
+import { startWatcherLoop, type LoopTick } from './EventsWatcher.ts';
 import {
   bodyText,
   createGitHubClient,
@@ -250,6 +258,27 @@ const THREAD_MAX_PAGES = 10;
  * inventing a reason that would read as if a person wrote it.
  */
 const DISMISSAL_MESSAGE = 'Approval withdrawn via the Glance SDK.';
+
+/**
+ * Default `watchEvents` cadence: 60s, four times GitLab's 15s.
+ *
+ * Not a tuning preference. GitHub asks for exactly this on every 200 from
+ * the events feed (`X-Poll-Interval: 60`), and polling a repo feed faster
+ * than the server asked is how a token earns a secondary rate limit. A
+ * caller that passes `intervalMs` is still honored; the server's own number
+ * only ever raises the wait, never lowers it (see `watchEvents`).
+ */
+const WATCH_EVENTS_INTERVAL_MS = 60_000;
+
+/** The events feed's page size cap, and the only value this provider sends. */
+const EVENTS_PER_PAGE = 100;
+
+/**
+ * The events feed serves at most 3 pages (300 events) to a poller; page 4 is
+ * empty no matter what. `GitHubEventsPoller` already clamps to this, so the
+ * fetch below throwing past it is defense, not the enforcement.
+ */
+const EVENTS_MAX_PAGE = 3;
 
 function toUserRef(u: GHUser): UserRef {
   return {
@@ -488,7 +517,20 @@ export class GitHubProvider implements GitProvider {
     canResolveDiscussions: true,
     canRetryPipeline: true,
     canRequestReReview: true,
-    canWatchEvents: false
+    /**
+     * True, with two limits a caller has to design around.
+     *
+     * no CI events: the polled feed has no workflow/check event type at all,
+     * so a `pipelines` invalidation never fires here. keep a full poll for
+     * pipeline status; the watcher is an accelerator, not a replacement.
+     *
+     * hours-scale retention: the feed holds roughly six hours. a watcher
+     * down longer than that comes back to a cursor that proves nothing about
+     * what it missed, because the missed history is already gone from the
+     * feed. resume is a fast path, not a guarantee; full sync is the only
+     * recovery.
+     */
+    canWatchEvents: true
   };
 
   // ── GitProvider interface ─────────────────────────────────────────────────
@@ -1133,6 +1175,126 @@ export class GitHubProvider implements GitProvider {
         'GitHub does not offer a WebSocket subscription equivalent. ' +
         'Check provider capabilities before calling.'
     );
+  }
+
+  /**
+   * Poll the repository events feed and translate activity into invalidation
+   * hints. Same contract as GitLab's `watchEvents`; the feed underneath is
+   * different in ways a caller feels:
+   *
+   * - Cadence defaults to 60s, not GitLab's 15s, because that is what the
+   *   server asks for (`WATCH_EVENTS_INTERVAL_MS`). A 200 carrying a larger
+   *   `X-Poll-Interval` raises the next wait; it never lowers it below what
+   *   the caller configured.
+   * - No `pipelines` invalidation is ever delivered. The feed has no CI event
+   *   type, so a caller that needs pipeline status keeps its full poll.
+   * - The first tick on a cold start delivers nothing: it snapshots page 1 to
+   *   seed the cursor, since the feed has no time filter to bound a lookback
+   *   with. Full-refresh on boot, as on GitLab.
+   * - `options.perPage` is ignored: the feed is always requested at its cap
+   *   of 100 per page, which is what makes the 3-page ceiling worth 300
+   *   events.
+   *
+   * @returns dispose. Call to stop the loop.
+   */
+  watchEvents(
+    projectPath: string,
+    options: WatchEventsOptions,
+    onInvalidations: (batch: InvalidationBatch) => void
+  ): () => void {
+    const { owner, repo } = this.splitOwnerRepo(projectPath);
+    const poller = new GitHubEventsPoller({
+      fetchPage: (opts) => this.fetchEventsPage(owner, repo, opts),
+      cursor: options.cursor,
+      maxPagesPerTick: options.maxPagesPerTick
+    });
+    const intervalMs = options.intervalMs ?? WATCH_EVENTS_INTERVAL_MS;
+
+    return startWatcherLoop(
+      async (): Promise<LoopTick> => {
+        const result = await poller.tick();
+        // One timestamp per tick, not one per field: the batch's `syncedAt`
+        // and the loop's own notion of when this tick landed must not be two
+        // clock reads that can disagree.
+        const syncedAt = new Date().toISOString();
+        // The poller already returns [] on a cold start, so an empty list is
+        // the only "nothing to say" signal this needs.
+        const batch: InvalidationBatch | null =
+          result.invalidations.length > 0
+            ? { invalidations: result.invalidations, syncedAt, cursor: result.cursor }
+            : null;
+        // Server-directed cadence, one way only: honor a slower request,
+        // ignore one that would poll faster than the caller asked for.
+        const serverMs = result.serverPollIntervalMs;
+        const nextIntervalMs =
+          serverMs != null && serverMs > intervalMs ? serverMs : undefined;
+        return { batch, cursor: result.cursor, nextIntervalMs };
+      },
+      { ...options, intervalMs },
+      onInvalidations,
+      this.log
+    );
+  }
+
+  /**
+   * One conditional GET of the events feed.
+   *
+   * Octokit does not return a 304 -- it throws a `RequestError` with
+   * `status: 304`, since there is no body to hand back. Translating that
+   * here is what keeps a "nothing changed" tick from reaching the watcher
+   * loop as a failure and tripping its backoff, which would turn the
+   * steady-state response into an outage.
+   *
+   * `If-None-Match` goes out on page 1 only (the etag describes the head of
+   * the feed), and no `since`/`after` is ever sent: the feed has no such
+   * parameter, and inventing one would silently filter nothing.
+   */
+  private async fetchEventsPage(
+    owner: string,
+    repo: string,
+    opts: { page: number; etag: string | null }
+  ): Promise<Awaited<ReturnType<FetchGitHubEventsPage>>> {
+    if (opts.page > EVENTS_MAX_PAGE) {
+      throw new Error(
+        `fetchEventsPage: the events feed serves at most ${EVENTS_MAX_PAGE} pages, got page ${opts.page}`
+      );
+    }
+    const headers: Record<string, string> = {};
+    if (opts.page === 1 && opts.etag) headers['if-none-match'] = opts.etag;
+
+    let res: { headers: Record<string, unknown>; data: unknown };
+    try {
+      res = await this.octokit.request('GET /repos/{owner}/{repo}/events', {
+        owner,
+        repo,
+        per_page: EVENTS_PER_PAGE,
+        page: opts.page,
+        headers
+      });
+    } catch (err) {
+      // Duck-typed on purpose, unlike every other catch in this file, which
+      // narrows with `instanceof RequestError`. A 304 is what a healthy
+      // watcher gets on nearly every tick, so if the two RequestError copies
+      // ever stop deduping (see this file's import comment), an `instanceof`
+      // here would silently reclassify the steady state as a failure and
+      // leave the loop permanently backing off. Only `.status` is needed,
+      // and reading it cannot go false.
+      if ((err as { status?: unknown } | null)?.status === 304) {
+        return { status: 304, events: [], etag: null, pollIntervalSec: null };
+      }
+      throw err;
+    }
+
+    const etag = res.headers.etag;
+    const pollInterval = Number(res.headers['x-poll-interval']);
+    return {
+      status: 200,
+      events: (res.data ?? []) as GitHubEvent[],
+      etag: typeof etag === 'string' ? etag : null,
+      // A missing header parses to NaN, a blank one to 0; neither is a
+      // cadence, and both must read as "the server said nothing".
+      pollIntervalSec: Number.isFinite(pollInterval) && pollInterval > 0 ? pollInterval : null
+    };
   }
 
   /**

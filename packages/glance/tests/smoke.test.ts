@@ -33,6 +33,9 @@ import {
   EventsPoller,
   classifyEvent,
   startEventsWatcher,
+  GitHubEventsPoller,
+  classifyGitHubEvent,
+  startWatcherLoop,
 
   // Logger
   noopLogger,
@@ -368,8 +371,15 @@ assert(
   typeof GitLabProvider.prototype.watchEvents === 'function',
   'GitLabProvider.watchEvents exists'
 );
+assert(typeof GitHubEventsPoller === 'function', 'GitHubEventsPoller exported');
+assert(typeof classifyGitHubEvent === 'function', 'classifyGitHubEvent exported');
+assert(typeof startWatcherLoop === 'function', 'startWatcherLoop exported');
+assert(
+  typeof GitHubProvider.prototype.watchEvents === 'function',
+  'GitHubProvider.watchEvents exists'
+);
 assert(gl.capabilities.canWatchEvents === true, 'GitLab: canWatchEvents');
-assert(gh.capabilities.canWatchEvents === false, 'GitHub: canWatchEvents (false)');
+assert(gh.capabilities.canWatchEvents === true, 'GitHub: canWatchEvents');
 
 // ── Test 12: Type compatibility (compile-time) ──────────────────────────────
 console.log('\n▶ Test 12: Type compatibility (compile-time check)');

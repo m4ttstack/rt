@@ -108,9 +108,9 @@ export const GITHUB_EXPECTATIONS: Record<ProviderMethod, Expectation> = {
     note: 'Permanent. GitHub has no push channel equivalent to ActionCable.'
   },
   watchEvents: {
-    support: 'absent',
+    support: 'supported',
     capability: 'canWatchEvents',
-    note: 'Not implemented on GitHub: the property is undefined, not a throwing stub. It is implemented by polling the repository events feed.'
+    note: 'polls the repository events feed as an accelerator, not a replacement for a full poll: the feed carries no CI events, so pipelines invalidations never fire on GitHub.'
   }
 };
 

@@ -436,11 +436,16 @@ export interface GitProvider {
    * retry, and backoff. The caller persists the cursor via
    * `options.onCursor` and passes it back on the next start.
    *
-   * Optional: GitLab-only today. Feature-detect with
-   * `provider.watchEvents?.(...)` or check `capabilities.canWatchEvents`.
+   * Optional, and implemented on both providers today. Still feature-detect
+   * with `provider.watchEvents?.(...)` or `capabilities.canWatchEvents`: the
+   * interface keeps it optional, so a provider added later may not have it.
    *
    * Known feed blind spots (rely on a slow full refresh for these):
    * metadata-only MR edits and pipeline status transitions emit no event.
+   * GitHub is blinder than GitLab on both counts: its feed carries no CI
+   * events at all, so `pipelines` never fires, and it retains only hours of
+   * history, so a watcher down longer than that must full-sync rather than
+   * trust its cursor. It also polls at 60s by default, not 15s.
    *
    * @returns dispose. Call to stop the loop.
    */

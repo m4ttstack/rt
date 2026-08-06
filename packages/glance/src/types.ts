@@ -774,7 +774,11 @@ export interface WatchEventsOptions {
   cursor?: EventCursor;
   /** Called after every tick that advanced the cursor. Callers persist it. */
   onCursor?: (cursor: EventCursor) => void;
-  /** Poll cadence. Default 15_000. A ±10% jitter is applied to every tick. */
+  /**
+   * Poll cadence. Default 15_000 on GitLab, 60_000 on GitHub (which asks for
+   * that cadence itself, and can raise a given interval further when it asks
+   * for a slower one). A ±10% jitter is applied to every tick.
+   */
   intervalMs?: number;
   /** State-transition callback (live/degraded). Silent when omitted. */
   onStatus?: (status: WatchEventsStatus) => void;

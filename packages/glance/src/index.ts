@@ -98,7 +98,17 @@ export type {
 // ── Events cursor (GitLab freshness feed) ─────────────────────────────────────
 export { EventsPoller, classifyEvent } from './EventsPoller.ts';
 export type { GitLabEvent, FetchEvents, TickResult, EventsPollerOptions } from './EventsPoller.ts';
-export { startEventsWatcher } from './EventsWatcher.ts';
+export { startEventsWatcher, startWatcherLoop } from './EventsWatcher.ts';
+export type { LoopTick } from './EventsWatcher.ts';
+
+// ── Events cursor (GitHub repo events feed) ───────────────────────────────────
+export { GitHubEventsPoller, classifyGitHubEvent, normalizeBranchRef } from './GitHubEventsPoller.ts';
+export type {
+  GitHubEvent,
+  FetchGitHubEventsPage,
+  GitHubTickResult,
+  GitHubEventsPollerOptions,
+} from './GitHubEventsPoller.ts';
 
 // ── GitLab detail + mutations ─────────────────────────────────────────────────
 export { MRDetailFetcher } from './MRDetailFetcher.ts';
