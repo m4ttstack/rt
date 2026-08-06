@@ -709,12 +709,25 @@ export interface InvalidationKey {
 
 /**
  * Persistent resume point for the events feed.
- * `lastEventId` is the actual dedup key; `since` is for reporting and for
- * computing the day-exclusive `after` request parameter.
+ * `since` is for reporting and for computing the day-exclusive `after`
+ * request parameter. The dedup key is provider-specific: GitLab uses
+ * `lastEventId` as a numeric high-water mark; GitHub uses `seenIds` (a
+ * bounded set of recently-seen event ids) and treats `lastEventId` as
+ * reporting-only.
+ *
+ * On-disk compat: readers must treat a persisted cursor whose shape they
+ * do not recognize (e.g. a string `lastEventId` read by a GitLab-only
+ * reader, or a missing `seenIds`) as absent -- falling back to a cold
+ * start -- never as an error.
  */
 export interface EventCursor {
   since: string | null;
-  lastEventId: number | null;
+  /** GitLab: numeric high-water mark. GitHub: the newest seen id, as a string
+   *  (reporting only; dedup uses seenIds). */
+  lastEventId: number | string | null;
+  /** GitHub only: bounded set of recently-seen event ids, oldest first.
+   *  Absent on GitLab cursors. */
+  seenIds?: string[];
 }
 
 /** One delivery from watchEvents: everything fresh since the last tick. */
