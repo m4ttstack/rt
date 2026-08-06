@@ -129,8 +129,22 @@ export const GITLAB_EXPECTATIONS: Record<ProviderMethod, Expectation> = {
   approvePullRequest: { support: 'supported', capability: 'canApprove' },
   unapprovePullRequest: { support: 'supported', capability: 'canUnapprove' },
   rebasePullRequest: { support: 'supported', capability: 'canRebase' },
-  setAutoMerge: { support: 'supported', capability: 'canAutoMerge' },
-  cancelAutoMerge: { support: 'supported', capability: 'canAutoMerge' },
+  setAutoMerge: {
+    support: 'supported',
+    capability: 'canAutoMerge',
+    // A note on a plainly-supported entry, which the field's own docstring
+    // reserves for divergences, because this one is a divergence in what it
+    // takes to OBSERVE the method rather than in what the method does:
+    // "auto-merge" is not one behaviour across the two providers, and a
+    // reader comparing this row against GitHub's needs to know that before
+    // concluding they were tested the same way.
+    note: 'Exercised live by runGitLabMutationConformance, which arms it and re-reads autoMergeEnabled. GitLab semantics are "merge when the pipeline succeeds", so arming is only possible while a pipeline is active; the harness commits a sleeping CI job onto its own throwaway source branch to make that precondition deterministic rather than a race against the fixture\'s ~15-second pipelines.'
+  },
+  cancelAutoMerge: {
+    support: 'supported',
+    capability: 'canAutoMerge',
+    note: 'Exercised live by runGitLabMutationConformance, but only on runs where setAutoMerge actually armed something: with nothing armed, a re-read confirming auto-merge is off is satisfied by a merge request that never had it, so that case is reported as a skip instead.'
+  },
   resolveDiscussion: { support: 'supported', capability: 'canResolveDiscussions' },
   unresolveDiscussion: { support: 'supported', capability: 'canResolveDiscussions' },
   retryPipeline: { support: 'supported', capability: 'canRetryPipeline' },
