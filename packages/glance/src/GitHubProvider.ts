@@ -55,6 +55,11 @@ import {
   type GlanceOctokit
 } from './githubClient.ts';
 import type { OnRequestHook } from './instrumentation.ts';
+// GitHub's own generated REST response shapes (MAT-144): the GH*-prefixed
+// interfaces below derive from these `components`/`operations` types where a
+// schema exists, so a field GitHub renames or drops becomes a compile error
+// here instead of a silent `undefined` at a call site.
+import type { components, operations } from '@octokit/openapi-types';
 // This package depends on @octokit/request-error directly so `err instanceof
 // RequestError` below can narrow errors thrown by @octokit/core's OWN copy of
 // this class. That only works while npm/bun dedupe the two into one module
@@ -73,37 +78,48 @@ import { GraphqlResponseError } from '@octokit/graphql';
 
 // ---------------------------------------------------------------------------
 // GitHub REST API response shapes (only fields we consume)
+//
+// Each type below derives from `components["schemas"][...]` (MAT-144) via
+// `Pick`, so a field GitHub renames or drops turns into a compile error here
+// instead of a silent `undefined` at a call site. Fields this file narrows
+// beyond what the schema promises -- assumed-always-present, narrowed off
+// `number | bigint`, sliced out of a shape shared with a slimmer sibling
+// endpoint -- are declared explicitly with a one-line comment explaining the
+// narrowing. The four GraphQL response shapes further down (starting at
+// GHReviewThreadsResponse) stay fully hand-rolled: @octokit/openapi-types
+// only documents the REST surface, not the GraphQL schema this file queries
+// via `graphqlOrThrow`.
 // ---------------------------------------------------------------------------
 
-interface GHUser {
-  id: number;
-  login: string;
-  name?: string | null;
-  avatar_url: string | null;
-}
+type PullRequestSchema = components['schemas']['pull-request'];
+type RepositorySchema = components['schemas']['repository'];
+type ReviewCommentSchema = components['schemas']['pull-request-review-comment'];
+type IssueSearchItemSchema = components['schemas']['issue-search-result-item'];
 
-interface GHLabel {
-  id: number;
-  name: string;
-  color: string;
-}
+// GitHub ids fit within JS's safe-integer range in practice; openapi-types
+// widens every `id` field to `number | bigint` defensively for values beyond
+// it. Every `id: number` override below (and in the shapes further down)
+// shares this same rationale rather than repeating it per field.
 
-interface GHPullRequest {
+type GHUser = Pick<components['schemas']['simple-user'], 'login' | 'name' | 'avatar_url'> & {
+  id: number;
+};
+
+type GHLabel = Pick<PullRequestSchema['labels'][number], 'name' | 'color'> & {
+  id: number;
+};
+
+type GHPullRequest = Pick<
+  PullRequestSchema,
+  'number' | 'title' | 'body' | 'merged_at' | 'html_url' | 'created_at' | 'updated_at'
+> & {
   id: number;
   /** GraphQL global node ID: the handle the v4 API addresses this PR by. */
-  node_id: string;
-  number: number;
-  title: string;
-  body: string | null;
+  node_id: PullRequestSchema['node_id'];
   state: string; // "open" | "closed"
+  // Schema marks `draft` optional; every PR payload this file has seen sets it.
   draft: boolean;
-  merged_at: string | null;
-  html_url: string;
-  created_at: string;
-  updated_at: string;
-  head: {
-    sha: string;
-    ref: string;
+  head: Pick<PullRequestSchema['head'], 'sha' | 'ref'> & {
     /**
      * The repository the branch lives in. Present on real API responses;
      * declared optional/nullable here because GitHub returns null when the
@@ -111,18 +127,16 @@ interface GHPullRequest {
      */
     repo?: { full_name: string } | null;
   };
-  base: {
-    ref: string;
-    repo: {
-      id: number;
-      full_name: string;
-      default_branch?: string;
-    };
+  base: Pick<PullRequestSchema['base'], 'ref'> & {
+    repo: Pick<RepositorySchema, 'full_name' | 'default_branch'> & { id: number };
   };
   user: GHUser;
   assignees: GHUser[];
   requested_reviewers: GHUser[];
   labels: GHLabel[];
+  // These four exist on the full `pull-request` schema but not on
+  // `pull-request-simple`, the slimmer shape the list/search endpoints
+  // return that this type is also cast onto -- optional here for that reason.
   additions?: number;
   deletions?: number;
   changed_files?: number;
@@ -132,29 +146,34 @@ interface GHPullRequest {
     enabled_by: GHUser;
     merge_method: string; // "merge" | "squash" | "rebase"
   } | null;
-}
+};
 
-interface GHReview {
+type GHReview = Pick<components['schemas']['pull-request-review'], 'state'> & {
   id: number;
+  // Schema allows `user: null` for reviews from since-deleted accounts;
+  // `paginate<GHReview>`'s results have never carried that case here.
   user: GHUser;
-  state: string; // "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED" | "PENDING"
+  // Schema marks this optional (absent on PENDING reviews); the
+  // /pulls/{number}/reviews page this file reads has never omitted it.
   submitted_at: string;
-}
+};
 
-interface GHCheckRun {
+type GHCheckRun = Pick<
+  components['schemas']['check-run'],
+  'name' | 'status' | 'conclusion' | 'started_at' | 'completed_at'
+> & {
   id: number;
-  name: string;
-  status: string; // "queued" | "in_progress" | "completed"
-  conclusion: string | null; // "success" | "failure" | "neutral" | "cancelled" | "timed_out" | "action_required" | "skipped" | null
+  // Schema allows `html_url: null`; this file has never observed that case.
   html_url: string;
-  started_at: string | null;
-  completed_at: string | null;
-}
+};
 
-interface GHCheckSuite {
+/** The `GET .../commits/{sha}/check-runs` envelope (operation, not a named schema). */
+type GHCheckSuite = Pick<
+  operations['checks/list-for-ref']['responses'][200]['content']['application/json'],
+  'total_count'
+> & {
   check_runs: GHCheckRun[];
-  total_count: number;
-}
+};
 
 /** `nodes(ids:)` review-thread projection. Non-PR nodes come back as null. */
 interface GHReviewThreadsResponse {
@@ -206,26 +225,30 @@ interface GHBranchPullRequestsResponse {
 }
 
 /** An item from `/search/issues`: issue-shaped, with a `pull_request` stub on PRs. */
-interface GHSearchItem {
-  number: number;
-  state: string;
-  updated_at: string;
-  repository_url: string;
-  pull_request?: { url: string; merged_at?: string | null };
-}
+type GHSearchItem = Pick<
+  IssueSearchItemSchema,
+  'number' | 'state' | 'updated_at' | 'repository_url'
+> & {
+  pull_request?: Pick<NonNullable<IssueSearchItemSchema['pull_request']>, 'merged_at'> & {
+    // Schema marks `url` nullable; every pull_request stub this file has seen carries a real URL.
+    url: string;
+  };
+};
 
-interface GHComment {
+type GHComment = Pick<ReviewCommentSchema, 'body' | 'created_at'> & {
   id: number;
-  body: string;
   user: GHUser;
-  created_at: string;
+  // The remaining fields exist on `pull-request-review-comment` (diff-level
+  // comments) but this type is also cast onto plain `issue-comment`
+  // responses (PR-level comments), which lack them entirely -- optional here
+  // for that reason, same as GHPullRequest's list/search narrowing above.
   path?: string | null;
   line?: number | null;
   original_line?: number | null;
   diff_hunk?: string | null;
   pull_request_review_id?: number | null;
   in_reply_to_id?: number | null;
-}
+};
 
 // ---------------------------------------------------------------------------
 // Helpers
