@@ -261,11 +261,11 @@ that manually check `if (!res.ok)` change. This deletes boilerplate rather than 
 
 ### Phase 4: new capabilities
 
-The first three flip a flag from `false` to `true`. `canWatchEvents` does not:
-it is deferred to phase 5, which has since been derisked on its own
-(`.local-dev/derisk/phase5-derisk-findings.md`). The verdict there is
-go-with-constraints, so the flag flips in phase 5 but the 5-minute fallback
-poll stays.
+The first three flip a flag from `false` to `true`. `canWatchEvents` did not, here:
+it was deferred to phase 5, which was derisked on its own
+(`.local-dev/derisk/phase5-derisk-findings.md`) before it shipped. The verdict there
+was go-with-constraints, and phase 5 shipped exactly that: the flag is `true` on
+GitHub and the 5-minute fallback poll stays, per the constraints below.
 
 - **`canResolveDiscussions` (MAT-27).** GraphQL `resolveReviewThread` and
   `unresolveReviewThread`. The largest single item: it needs thread node IDs,
@@ -306,7 +306,7 @@ poll stays.
   GitHub rejects enabling auto-merge on a pull request that is already
   mergeable, so the harness has to land the call before the required check
   reports. Phase 4 resolves that with a live spike rather than a guess.
-- **`canWatchEvents`.** Deferred to phase 5. The one-line claim this document
+- **`canWatchEvents`.** Shipped in phase 5 (MAT-129). The one-line claim this document
   used to make -- poll `/repos/{owner}/{repo}/events` and translate into the
   same `InvalidationBatch` contract -- understated it. The bullets below were
   written from the phase 4 survey's spot checks and have since been measured
@@ -370,6 +370,27 @@ poll stays.
     returns spanned 6.0h and 6.49h in two captures, against rt's
     `DEEP_RECONCILE_MS = 24h`, so a busy repo can outrun the feed between
     reconciles and there is no `since` to ask for what was missed.
+
+  **Shipped.** `GitHubEventsPoller` (a set-based string-id cursor, not a high-water
+  mark), `classifyGitHubEvent`, and `GitHubProvider.watchEvents` land exactly on the
+  constraints above: server-directed 60s cadence, no `pipelines` emission, and an
+  accelerator-not-replacement framing carried into the provider's own docstring. The
+  capability table is now 8 of 9 flags true on GitHub (`canRebase` stays false by
+  design; see "Stays unsupported" below). Live acceptance ran the harness against the
+  real fixture: `github 57 passed, 0 failed, 13 skipped` / `gitlab 59 passed, 0 failed,
+  8 skipped`. U16, U17, U18, U19, and U23 pass live on GitHub; U22 skips by design
+  (there is no `pipelines` kind to exercise); U24 skips on the absent
+  `fetchPullRequestsByBranches` (MAT-151, unrelated to this ticket).
+
+  Two things carry forward, deliberately not softened. First, that same run watched
+  the feed drop git-ref events (`PushEvent`/`CreateEvent`/`DeleteEvent`) for about 18
+  minutes -- never delivered, not merely late -- while comment events kept arriving in
+  ~11s: direct confirmation that the feed is lossy, not just slow, for a whole event
+  class at a time, and that the slow full poll is load-bearing on GitHub rather than a
+  belt-and-braces extra. Second, U20 and U21 both skipped in that same window; U20's
+  mechanism (foreign-typed-cursor dedup safety) is unit-tested and proven live on
+  GitLab, but U21, the one state-clearing write path in the branch arm, has never run
+  green live against GitHub and still needs a re-run on a day the feed cooperates.
 
 **Mandatory for every mutation added here.** `GitHubProvider.graphql<T>()` (line 1213)
 swallows transport, HTTP, and GraphQL errors alike and returns `null`, warning only.

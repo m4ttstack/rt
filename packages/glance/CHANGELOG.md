@@ -1,5 +1,42 @@
 # @workforge/glance-sdk
 
+## 0.15.0
+
+### Minor Changes
+
+- `GitHubProvider.watchEvents` polls the repository events feed
+  (`GET /repos/{owner}/{repo}/events`) and translates activity into the same
+  `InvalidationBatch` contract GitLab's watcher emits. `capabilities.canWatchEvents`
+  is now `true` on GitHub. Cadence is server-directed: GitHub asks for 60s via
+  `X-Poll-Interval` on every `200`, and the watcher never polls faster than that,
+  only slower if a caller configured a larger `intervalMs`. No `pipelines`
+  invalidation is ever emitted on GitHub: the feed has no CI event type, so a
+  consumer that needs pipeline freshness keeps its slow full poll. This is an
+  accelerator, not a replacement for that poll, and a live acceptance run made the
+  gap concrete: the feed dropped git-ref events (`PushEvent`/`CreateEvent`/`DeleteEvent`)
+  entirely for about 18 minutes while comment and PR events kept arriving in ~11s.
+  The full poll is load-bearing on GitHub in a way it is not on GitLab.
+- `EventCursor.lastEventId` widens from `number | null` to `number | string | null`,
+  and gains an optional `seenIds` (GitHub only: a bounded set of recently-seen event
+  ids). GitHub event ids do not order with `created_at` (they come from two
+  disjoint numeric ranges), so a high-water mark alone silently drops most PR and
+  comment events; `seenIds` is what dedup actually uses on GitHub. A cursor a caller
+  already persisted with a plain numeric `lastEventId` still cold-starts safely on
+  either provider. Fixed alongside the widening: `EventsPoller` (GitLab) used to
+  compare `e.id <= this.cursor.lastEventId` directly, which coerced a string id
+  through `<=` and kept deduping by accident; the type-safe narrowing the widening
+  required initially just ignored a non-numeric id instead of falling back, which
+  silently disabled GitLab's own dedup for any cursor carrying a foreign-typed
+  `lastEventId` ... every event in the poll window came back as a fresh invalidation,
+  a watcher that looked healthy while replaying history. Caught live, not in review.
+  `lastEventId` is now normalized once, in the constructor, to `number | null`: a
+  foreign-typed value is treated as absent and falls back to the timestamp anchor,
+  or to a cold start if there is no timestamp either. Three regression tests guard
+  it in `tests/events-poller.test.ts`.
+- New exports: `GitHubEventsPoller`, `classifyGitHubEvent`, `normalizeBranchRef`,
+  and types `GitHubEvent`, `FetchGitHubEventsPage`, `GitHubTickResult`,
+  `GitHubEventsPollerOptions`.
+
 ## 0.14.0
 
 Note: 0.13.0, 0.13.1, and 0.13.2 were released without changelog entries; their
