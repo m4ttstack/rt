@@ -435,7 +435,16 @@ export interface GitProvider {
    * Used for operations that don't have a typed method yet (job traces,
    * pipeline retries, etc.).
    *
-   * Implementations translate the path to the provider's API URL format.
+   * `path` is always provider-relative -- the same shape on either provider,
+   * e.g. `/user`, never `/api/v4/user` or `/api/v3/user`. Implementations
+   * translate that path to the provider's actual API URL: GitHub joins it
+   * onto its API root (`https://api.github.com`, or the GHES `/api/v3` root);
+   * GitLab joins it onto `${baseURL}/api/v4`. A path that already starts with
+   * `/api/v4` is rejected by GitLab rather than silently accepted (MAT-130):
+   * this method used to concatenate `baseURL + path` verbatim, so every
+   * existing GitLab caller had learned to include that prefix itself, and
+   * tolerating both shapes would leave that ambiguity in place indefinitely
+   * instead of surfacing it once, at the one call site that needs to change.
    *
    * A non-2xx resolves rather than throwing, so callers branch on `res.ok`.
    *

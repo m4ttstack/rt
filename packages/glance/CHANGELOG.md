@@ -7,6 +7,15 @@ contents are not recorded here.
 
 ### Minor Changes
 
+- **Breaking:** `GitProvider.restRequest`'s `path` is now provider-relative on
+  both providers. `GitLabProvider.restRequest` previously concatenated
+  `baseURL + path` verbatim, so a GitLab caller had to pass `/api/v4/user`
+  where a GitHub caller passes `/user` -- the opposite of the "translate the
+  path to the provider's API URL format" contract the interface documents.
+  `GitLabProvider` now prefixes `/api/v4` itself. A path that already starts
+  with `/api/v4` throws rather than being silently accepted: a caller
+  upgrading past this fix needs to drop that prefix from its own call sites,
+  and a thrown error naming the exact path is how it finds out.
 - **Breaking (shared interface):** `requestReReview(projectPath, mrIid)` with
   no `reviewerUsernames` now throws, on both providers, when there are no
   existing reviewers to re-request. GitLab already made this change this

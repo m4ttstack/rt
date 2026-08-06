@@ -1162,7 +1162,22 @@ export class GitLabProvider implements GitProvider {
   }
 
   async restRequest(method: string, path: string, body?: unknown, op = 'restRequest'): Promise<Response> {
-    const url = `${this.baseURL}${path}`;
+    // GitProvider.restRequest documents the path as provider-relative, the
+    // same shape a GitHub caller passes. This used to concatenate
+    // baseURL + path verbatim, so every existing GitLab caller learned to
+    // pass `/api/v4/...` itself -- the opposite of portable, which is the
+    // one thing this method exists to be (MAT-130). Tolerating both shapes
+    // here would let that ambiguity survive forever with no way for a
+    // caller to learn which form is correct; throwing forces a caller
+    // upgrading past the fix to change the one line that needs it, with an
+    // error that names exactly what to remove.
+    if (path === '/api/v4' || path.startsWith('/api/v4/')) {
+      throw new Error(
+        `restRequest: path "${path}" already starts with "/api/v4" -- GitLabProvider prefixes that itself now. ` +
+          `Pass the provider-relative path instead, e.g. "${path.slice('/api/v4'.length) || '/'}".`,
+      );
+    }
+    const url = `${this.baseURL}/api/v4${path}`;
     const headers: Record<string, string> = {
       'PRIVATE-TOKEN': this.token,
     };

@@ -54,21 +54,6 @@ function assert(condition: boolean, message: string): asserts condition {
 }
 
 /**
- * Prefix a REST path for the provider's actual API root.
- *
- * `GitProvider.restRequest`'s docstring claims "implementations translate the
- * path to the provider's API URL format", but GitLabProvider does not: it
- * concatenates `baseURL + path` verbatim, so a GitLab caller must supply
- * `/api/v4` itself while a GitHub caller must not. Provider-agnostic code
- * therefore cannot call `restRequest` portably, which contradicts the
- * interface's own documentation. Record that in the findings document: it is a
- * real parity defect, not merely a harness inconvenience.
- */
-function apiPath(fixture: ProviderFixture, path: string): string {
-  return fixture.name === 'gitlab' ? `/api/v4${path}` : path;
-}
-
-/**
  * Resolves the fixture project's own numeric id independent of whatever
  * `fetchPullRequests` just returned, so the projectPath-mode scoping check
  * below has a ground truth to compare against rather than trusting the very
@@ -88,7 +73,7 @@ async function fetchProjectId(fixture: ProviderFixture): Promise<number> {
     fixture.name === 'github'
       ? `/repos/${fixture.projectPath}`
       : `/projects/${encodeURIComponent(fixture.projectPath)}`;
-  const res = await fixture.provider.restRequest('GET', apiPath(fixture, path));
+  const res = await fixture.provider.restRequest('GET', path);
   if (!res.ok) {
     throw new Error(
       `could not resolve project id for "${fixture.projectPath}": HTTP ${res.status}`
@@ -278,7 +263,7 @@ export async function runReadConformance(
   );
 
   await check(report, fixture, 'restRequest', 'authenticated GET succeeds', async () => {
-    const res = await provider.restRequest('GET', apiPath(fixture, '/user'));
+    const res = await provider.restRequest('GET', '/user');
     assert(res.ok, `expected ok, got HTTP ${res.status}`);
   });
 
@@ -378,7 +363,7 @@ async function scopedRepoId(fixture: ProviderFixture): Promise<string> {
   const path =
     fixture.name === 'github'
       ? `/repos/${projectPath}`
-      : apiPath(fixture, `/projects/${encodeURIComponent(projectPath)}`);
+      : `/projects/${encodeURIComponent(projectPath)}`;
   const res = await provider.restRequest('GET', path);
   if (!res.ok) throw new Error(`could not resolve repo id: HTTP ${res.status}`);
   const { id } = (await res.json()) as { id: number };
@@ -407,7 +392,7 @@ async function createBranch(
   const encoded = encodeURIComponent(projectPath);
   const res = await provider.restRequest(
     'POST',
-    apiPath(fixture, `/projects/${encoded}/repository/branches?branch=${encodeURIComponent(branch)}&ref=${encodeURIComponent(defaultBranch)}`)
+    `/projects/${encoded}/repository/branches?branch=${encodeURIComponent(branch)}&ref=${encodeURIComponent(defaultBranch)}`
   );
   if (!res.ok) throw new Error(`create branch failed: HTTP ${res.status}`);
 }
@@ -440,7 +425,7 @@ async function commitFile(
   const encoded = encodeURIComponent(projectPath);
   const res = await provider.restRequest(
     'POST',
-    apiPath(fixture, `/projects/${encoded}/repository/files/${encodeURIComponent(path)}`),
+    `/projects/${encoded}/repository/files/${encodeURIComponent(path)}`,
     { branch, content, commit_message: `conformance: add ${path}` }
   );
   if (!res.ok) throw new Error(`commit failed: HTTP ${res.status}`);
@@ -488,7 +473,7 @@ async function postDiffComment(
   // the commit that was just pushed.
   const mrRes = await provider.restRequest(
     'GET',
-    apiPath(fixture, `/projects/${encoded}/merge_requests/${iid}`)
+    `/projects/${encoded}/merge_requests/${iid}`
   );
   if (!mrRes.ok) throw await readError(mrRes, 'could not read MR for diff comment');
   const { diff_refs } = (await mrRes.json()) as {
@@ -496,7 +481,7 @@ async function postDiffComment(
   };
   const res = await provider.restRequest(
     'POST',
-    apiPath(fixture, `/projects/${encoded}/merge_requests/${iid}/discussions`),
+    `/projects/${encoded}/merge_requests/${iid}/discussions`,
     {
       body,
       position: {
@@ -1103,7 +1088,7 @@ async function branchExists(fixture: ProviderFixture, branch: string): Promise<b
   const path =
     fixture.name === 'github'
       ? `/repos/${projectPath}/git/ref/heads/${branch}`
-      : apiPath(fixture, `/projects/${encodeURIComponent(projectPath)}/repository/branches/${encodeURIComponent(branch)}`);
+      : `/projects/${encodeURIComponent(projectPath)}/repository/branches/${encodeURIComponent(branch)}`;
   const res = await provider.restRequest('GET', path);
   return res.ok;
 }
@@ -1139,7 +1124,7 @@ async function headCommitMessage(fixture: ProviderFixture, marker: string): Prom
     } else {
       const res = await provider.restRequest(
         'GET',
-        apiPath(fixture, `/projects/${encodeURIComponent(projectPath)}/repository/commits/${encodeURIComponent(defaultBranch)}`)
+        `/projects/${encodeURIComponent(projectPath)}/repository/commits/${encodeURIComponent(defaultBranch)}`
       );
       if (!res.ok) throw new Error(`could not read head commit: HTTP ${res.status}`);
       const { message: raw } = (await res.json()) as { message: string };
@@ -1533,7 +1518,7 @@ async function latestPipelineAndJob(fixture: ProviderFixture): Promise<PipelineP
   // parameter takes one value, and the terminal set has three.
   const pipeRes = await provider.restRequest(
     'GET',
-    apiPath(fixture, `/projects/${encoded}/pipelines?per_page=${PIPELINE_SCAN_LIMIT}`)
+    `/projects/${encoded}/pipelines?per_page=${PIPELINE_SCAN_LIMIT}`
   );
   if (!pipeRes.ok) return null;
   const pipes = (await pipeRes.json()) as Array<{ id: number; status: string }>;
@@ -1542,7 +1527,7 @@ async function latestPipelineAndJob(fixture: ProviderFixture): Promise<PipelineP
     if (!TERMINAL_GITLAB_PIPELINE_STATUSES.has(pipe.status)) continue;
     const jobsRes = await provider.restRequest(
       'GET',
-      apiPath(fixture, `/projects/${encoded}/pipelines/${pipe.id}/jobs`)
+      `/projects/${encoded}/pipelines/${pipe.id}/jobs`
     );
     if (!jobsRes.ok) continue;
     const jobs = (await jobsRes.json()) as Array<{ id: number; status: string }>;
@@ -1789,7 +1774,7 @@ export async function runCiConformance(
             async () => {
               const res = await provider.restRequest(
                 'GET',
-                apiPath(fixture, `/projects/${encoded}/pipelines/${probe.pipelineId}/jobs`)
+                `/projects/${encoded}/pipelines/${probe.pipelineId}/jobs`
               );
               if (!res.ok) return null;
               const jobs = (await res.json()) as Array<{ id: number; status: string }>;
@@ -1850,7 +1835,7 @@ export async function runCiConformance(
           async () => {
             const res = await provider.restRequest(
               'GET',
-              apiPath(fixture, `/projects/${encoded}/pipelines/${probe.pipelineId}`)
+              `/projects/${encoded}/pipelines/${probe.pipelineId}`
             );
             if (!res.ok) return null;
             const pipeline = (await res.json()) as { status?: string };
