@@ -42,6 +42,17 @@
  *    the settling evidence is the consumer-flow checks (U16-U24 in
  *    `.local-dev/derisk/consumer-matrix.md`) running for real against
  *    GitHub once `watchEvents` ships and their skips lift.
+ *  - The two PR-comment event types do NOT share a payload shape, despite
+ *    both being "a comment on a PR". The recapture counted
+ *    `PullRequestReviewCommentEvent` as 11 of the 114 `pull_request`-carrying
+ *    events used to measure A22, meaning its real payload carries the
+ *    top-level five-key `pull_request` stub -- the SAME shape as
+ *    `PullRequestEvent`, not `issue.pull_request`. `IssueCommentEvent` is
+ *    the one that actually uses `issue.pull_request` as its PR-vs-plain-issue
+ *    gate. Keying `PullRequestReviewCommentEvent` off `issue.pull_request`
+ *    (an earlier version of this file did) silently classifies every real
+ *    review comment to `[]`, dropping `notes` invalidations for exactly the
+ *    comment kind a consumer's notes cache cares about most.
  *
  * Known blind spots of the feed itself:
  *  - No CI/pipeline events (A30, above) -- `pipelines` is never emitted.
@@ -107,11 +118,27 @@ export function classifyGitHubEvent(e: GitHubEvent): InvalidationKey[] {
     return [{ kind: 'mr', ref: String(number), cause: payload?.action ?? e.type }];
   }
 
-  // Comments on a PR (mirrors GitLab's note classification: a comment can
-  // shift approval state, so it invalidates both the thread cache and the
-  // MR itself). An IssueCommentEvent on a plain issue -- no
+  // PullRequestReviewCommentEvent: a comment on a PR diff. Real payload
+  // carries the top-level five-key pull_request stub (A22), the SAME
+  // source PullRequestEvent uses -- NOT payload.issue (see header comment).
+  // Mirrors GitLab's note classification: invalidates both the thread
+  // cache and the MR itself, since a comment can shift approval state.
+  if (e.type === 'PullRequestReviewCommentEvent') {
+    const number = payload?.pull_request?.number;
+    if (number == null) return [];
+    const ref = String(number);
+    const cause = payload?.action ?? e.type;
+    return [
+      { kind: 'notes', ref, cause },
+      { kind: 'mr', ref, cause },
+    ];
+  }
+
+  // IssueCommentEvent: gated on `issue.pull_request` -- this IS the real
+  // shape for a comment left through the Issues API surface, which is how
+  // GitHub represents PR-conversation-tab comments. A plain issue -- no
   // `issue.pull_request` -- classifies to nothing.
-  if (e.type === 'PullRequestReviewCommentEvent' || e.type === 'IssueCommentEvent') {
+  if (e.type === 'IssueCommentEvent') {
     const issue = payload?.issue;
     if (issue?.pull_request == null) return [];
     const number = issue.number;

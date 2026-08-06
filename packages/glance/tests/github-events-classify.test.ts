@@ -90,4 +90,23 @@ describe('classifyGitHubEvent synthetic edges', () => {
     expect(classifyGitHubEvent(ev({ type: 'CreateEvent', payload: { ref: 'v1', ref_type: 'tag' } }))).toEqual([]);
     expect(classifyGitHubEvent(ev({ type: 'WatchEvent', payload: {} }))).toEqual([]);
   });
+  // PullRequestReviewCommentEvent's real payload carries the top-level
+  // five-key pull_request stub (A22), the same shape PullRequestEvent uses
+  // -- not payload.issue.pull_request. No captured fixture exists for this
+  // type; modeled directly on the stub shape.
+  test('PullRequestReviewCommentEvent invalidates notes and mr from the pull_request stub (no captured fixture)', () => {
+    const keys = classifyGitHubEvent(ev({
+      type: 'PullRequestReviewCommentEvent',
+      payload: { action: 'created', pull_request: { number: 12 } },
+    }));
+    expect(keys.map(k => k.kind).sort()).toEqual(['mr', 'notes']);
+    expect(keys.every(k => k.ref === '12')).toBe(true);
+  });
+  test('PullRequestReviewCommentEvent with neither pull_request nor issue classifies to nothing', () => {
+    const keys = classifyGitHubEvent(ev({
+      type: 'PullRequestReviewCommentEvent',
+      payload: { action: 'created' },
+    }));
+    expect(keys).toEqual([]);
+  });
 });
