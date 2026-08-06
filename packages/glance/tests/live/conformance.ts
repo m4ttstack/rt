@@ -301,17 +301,23 @@ export async function runUnsupportedConformance(
   for (const [method, invoke] of probes) {
     const expectation = expectationFor(fixture.name, method);
     if (expectation.support !== 'unsupported') {
-      // No placeholder skip here any more. Every method in `probes` is now
-      // genuinely exercised somewhere for a provider that declares it
-      // supported: rebase/setAutoMerge/cancelAutoMerge by
-      // runGitLabMutationConformance on GitLab and by the measured block in
-      // runWriteConformance on GitHub, unapprove and both discussion
-      // mutations by runWriteConformance on either. A "supported-path not
-      // exercised here" line next to a real result for the same method reads
-      // as a coverage gap that no longer exists, and the runner's
-      // assertFullCoverage is the honest backstop if one of those paths ever
-      // stops running: it reports the absence as a FAIL rather than as a
-      // skip that was pre-written to look accounted for.
+      // No placeholder skip here any more. Every method in `probes` now
+      // reaches a real result on both providers, by one route or another:
+      //   rebasePullRequest   GitLab (supported) via runGitLabMutationConformance;
+      //                       GitHub declares it unsupported, so it never
+      //                       reaches this branch at all and is probed below.
+      //   setAutoMerge        GitLab (supported) via runGitLabMutationConformance;
+      //   cancelAutoMerge     GitHub declares setAutoMerge `approximate` and
+      //                       cancelAutoMerge supported, both exercised by the
+      //                       measured block in runWriteConformance.
+      //   unapprovePullRequest,
+      //   resolveDiscussion,
+      //   unresolveDiscussion by runWriteConformance on either provider.
+      // A "supported-path not exercised here" line next to a real result for
+      // the same method reads as a coverage gap that no longer exists, and
+      // the runner's assertFullCoverage is the honest backstop if one of
+      // those routes ever stops running: it reports the absence as a FAIL
+      // rather than as a skip that was pre-written to look accounted for.
       continue;
     }
     await check(report, fixture, method, 'throws, and its capability flag is false', async () => {
@@ -962,12 +968,15 @@ export async function runWriteConformance(
     }
 
     // GitHub only: task 7's spike measured this fixture's own required
-    // check, not GitLab's. GitLab already declared setAutoMerge/
-    // cancelAutoMerge supported before this plan touched either provider,
-    // and runUnsupportedConformance's generic "supported-path not exercised
-    // here" skip already covers it for GitLab, so there is no coverage gap
-    // left open by scoping this measured check to the provider it was
-    // actually measured against.
+    // check, not GitLab's, and the armable window this block navigates is a
+    // property of GitHub's enablePullRequestAutoMerge, which refuses at both
+    // ends of the mergeability range. GitLab's auto-merge is a different
+    // behaviour ("merge when the pipeline succeeds") needing a different
+    // precondition, so it has its own cycle in
+    // runGitLabMutationConformance rather than a branch inside this one.
+    // That is where GitLab's coverage of both methods now comes from; it
+    // used to come from a placeholder skip in runUnsupportedConformance,
+    // which is gone precisely because a real check replaced it.
     if (fixture.name === 'github' && expectationFor(fixture.name, 'setAutoMerge').support === 'approximate') {
       await check(
         report,
@@ -1602,7 +1611,10 @@ export async function runGitLabMutationConformance(
  *
  * Lifted out of the setAutoMerge check's `finally` only for readability;
  * it reports its own result directly, because it runs from a `finally` inside
- * another check() and so has no result of its own to throw into.
+ * another check() and so has no result of its own to throw into. It records
+ * exactly one cancelAutoMerge entry on every path, including the ones where
+ * its own reads fail: anything that escaped would be graded against
+ * setAutoMerge instead and leave this method with no line at all.
  *
  * Called with no intervening calls after the arm was confirmed, deliberately.
  * The hold-open pipeline makes the window wide rather than instantaneous, but
@@ -1660,32 +1672,75 @@ async function gradeGitLabCancelAutoMerge(
     return;
   }
 
-  const after = await provider.fetchSingleMR(projectPath, iid, null);
-  // `state === 'opened'` is load-bearing, not decoration. A merged merge
-  // request also reads autoMergeEnabled false, so without it this "pass"
-  // would be satisfied by the auto-merge having fired -- the opposite of
-  // what cancelAutoMerge is supposed to have done.
-  if (after?.autoMergeEnabled === false && after.state === 'opened') {
-    report.pass(fixture.name, 'cancelAutoMerge', label);
-    return;
-  }
-  if (after?.state === 'merged' || after?.state === 'closed') {
-    report.skip(
+  try {
+    const after = await provider.fetchSingleMR(projectPath, iid, null);
+    if (after?.state === 'merged' || after?.state === 'closed') {
+      report.skip(
+        fixture.name,
+        'cancelAutoMerge',
+        label,
+        `cancelAutoMerge returned, but the merge request is "${after.state}", so the armed auto-merge ` +
+          'had already fired and there was nothing for it to disarm'
+      );
+      return;
+    }
+    // `state === 'opened'` is load-bearing, not decoration. A merged merge
+    // request also reads autoMergeEnabled false, so without it this "pass"
+    // would be satisfied by the auto-merge having fired -- the opposite of
+    // what cancelAutoMerge is supposed to have done.
+    if (after?.autoMergeEnabled === false && after.state === 'opened') {
+      // Still not enough on its own, and this is the last place a vacuous
+      // pass was reachable. GitLab abandons an armed auto-merge by itself the
+      // moment the pipeline it waits on stops, and that leaves exactly the
+      // reading this branch just made: open, auto-merge off. A
+      // cancelAutoMerge that did nothing at all would be graded green by it.
+      // Confirming the head pipeline is STILL active rules that cause out --
+      // GitLab had no occasion to drop the arm, so the only thing that
+      // disarmed it is the call above. The hold-open job makes this the
+      // normal case rather than a lucky one; when it is not the case the
+      // evidence genuinely is ambiguous, so it is reported as a skip naming
+      // the ambiguity instead of a pass nobody can check.
+      const still = await gitlabMrProbe(fixture, iid).catch(() => null);
+      if (still !== null && ACTIVE_GITLAB_PIPELINE_STATUSES.has(still.headPipelineStatus ?? '')) {
+        report.pass(fixture.name, 'cancelAutoMerge', label);
+      } else {
+        report.skip(
+          fixture.name,
+          'cancelAutoMerge',
+          label,
+          'auto-merge reads back as off, but the head pipeline is no longer active ' +
+            `(status "${still?.headPipelineStatus ?? 'unreadable'}"), and GitLab drops an armed ` +
+            'auto-merge on its own when that happens, so this run cannot tell the cancel apart ' +
+            'from GitLab having dropped it'
+        );
+      }
+      return;
+    }
+    report.fail(
       fixture.name,
       'cancelAutoMerge',
       label,
-      `cancelAutoMerge returned, but the merge request is "${after.state}", so the armed auto-merge ` +
-        'had already fired and there was nothing for it to disarm'
+      `cancelAutoMerge did not throw but autoMergeEnabled reads back as ${after?.autoMergeEnabled} ` +
+        `on a merge request in state "${after?.state ?? 'unreadable'}"`
     );
-    return;
+  } catch (err) {
+    // This function runs from a check()'s `finally`, so an escaping throw
+    // would be attributed to setAutoMerge -- turning a genuine setAutoMerge
+    // pass into a FAIL with a message about the wrong method, while leaving
+    // cancelAutoMerge with no line at all until assertFullCoverage reported
+    // its absence at the very end. Reporting here keeps the promise that
+    // this function makes exactly one cancelAutoMerge entry no matter what.
+    // fail, not skip, for the same reason the resolveDiscussion setup
+    // failure above is a fail: the mutation was issued and its effect was
+    // never observed, and a skip would render that as accounted for.
+    report.fail(
+      fixture.name,
+      'cancelAutoMerge',
+      label,
+      'cancelAutoMerge was issued but the re-read that would prove it did anything could not be ' +
+        `made: ${err instanceof Error ? err.message : String(err)}`
+    );
   }
-  report.fail(
-    fixture.name,
-    'cancelAutoMerge',
-    label,
-    `cancelAutoMerge did not throw but autoMergeEnabled reads back as ${after?.autoMergeEnabled} ` +
-      `on a merge request in state "${after?.state ?? 'unreadable'}"`
-  );
 }
 
 /**
@@ -2323,8 +2378,13 @@ export async function runCiConformance(
     // for GitHub's branch-and-poll trick to manufacture a failure here --
     // `latestPipelineAndJob` already told us above whether the job it
     // settled on genuinely failed. Extending that probe rather than writing
-    // a second withFailedGitHubJob-style helper: GitLab's .gitlab-ci.yml is
-    // not ours to change, so there is nothing to manufacture on this side.
+    // a second withFailedGitHubJob-style helper: a failing GitLab job is
+    // already there for the taking, so manufacturing one would be work with
+    // no evidence to show for it. Manufacturing IS available on this side if
+    // some future check needs a job the fixture does not already produce --
+    // `overwriteGitLabCiConfig` puts arbitrary CI config on a throwaway
+    // branch, which is how the auto-merge cycle gets its long-running
+    // pipeline -- so the constraint here is "unnecessary", not "impossible".
     if (probe.jobFailed) {
       await check(report, fixture, 'retryJob', 'accepts a retry of the failed job', async () => {
         const encoded = encodeURIComponent(projectPath);
