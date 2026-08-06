@@ -15,6 +15,7 @@ import {
   runUnsupportedConformance,
   runWriteConformance
 } from './conformance.ts';
+import { runConsumerFlows } from './consumerFlows.ts';
 import { ALL_METHODS } from './expectations.ts';
 import { buildFixtures } from './fixture.ts';
 import { Reporter } from './report.ts';
@@ -36,6 +37,11 @@ for (const fixture of fixtures) {
     await runWriteConformance(fixture, report);
     await runMergeConformance(fixture, report);
     await runCiConformance(fixture, report);
+    // After the conformance suite, deliberately: the consumer flows open
+    // their own pull requests, and runCiConformance selects a settled
+    // pipeline by scanning the most recent ones. Running the flows first
+    // would push fresh, still-running pipelines in front of that scan.
+    await runConsumerFlows(fixture, report);
   } catch (err) {
     // Every mutating step above is wrapped in check(), so reaching here
     // means something outside those wrappers threw (e.g. a network blip
