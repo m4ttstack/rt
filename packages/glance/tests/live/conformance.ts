@@ -2343,8 +2343,18 @@ export async function runCiConformance(
     );
   });
 
-  await check(report, fixture, 'fetchDownstreamPipeline', 'resolves without throwing', async () => {
-    await provider.fetchDownstreamPipeline(projectPath, probe.jobId);
+  // Deliberately weak, and now labelled as such. `latestPipelineAndJob` reads
+  // `GET /pipelines/:id/jobs`, which never lists bridges, so `probe.jobId` is
+  // always a regular job. The bridge branch is unreachable from here anyway:
+  // `GitProvider.fetchDownstreamPipeline(projectPath, jobId)` declares no
+  // `pipelineId`, and task 5's live spike measured `null` for a genuine bridge
+  // with a live child pipeline. See the GitLab expectation note.
+  await check(report, fixture, 'fetchDownstreamPipeline', 'reports null for a job with no child pipeline', async () => {
+    const downstream = await provider.fetchDownstreamPipeline(projectPath, probe.jobId);
+    assert(
+      downstream === null,
+      `expected null for a non-bridge job, got ${JSON.stringify(downstream)}`
+    );
   });
 
   await check(report, fixture, 'retryPipeline', 'accepts a retry request', async () => {
