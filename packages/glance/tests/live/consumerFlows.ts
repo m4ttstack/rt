@@ -2545,6 +2545,52 @@ async function runEventsFlows(
       requireFixture(state, setupError);
       const events = requireSession(session, sessionReason);
 
+      // Cadence for the two silence windows below, and the arithmetic that
+      // sizes them to cover >= 2 warm ticks BY CONSTRUCTION -- MAT-154's
+      // final-review caveat was that the previous 12s window, at GitHub's
+      // 60s default cadence, could cover at most one warm tick, so the
+      // silence claim rested on that single tick rather than on dedup
+      // holding across a resumed session.
+      //
+      // `intervalMs` is honored by both providers (WatchEventsOptions: "the
+      // caller's own configured interval wins"), so 5s is what this test
+      // asks for on both. What it actually BUYS differs by provider:
+      //
+      //  - GitLab (EventsWatcher.ts's `startEventsWatcher`: "GitLab has no
+      //    server-directed cadence: never overrides intervalMs") ticks at a
+      //    flat `jittered(intervalMs)` forever, i.e. 5s * [0.9, 1.1]. Worst
+      //    case tick2 lands <= 5.5s after tick1, tick3 <= 11s after tick1 --
+      //    a 12s window safely contains >= 2, usually 3, warm ticks. This is
+      //    already faster than GitLab's own 15s default, so no regression.
+      //
+      //  - GitHub is the case MAT-154 flagged, and the interplay is stickier
+      //    than "the very next wait only": GitHubProvider.watchEvents raises
+      //    `nextIntervalMs` to the server's X-Poll-Interval whenever it beats
+      //    the configured interval, but GitHubEventsPoller's
+      //    `serverPollIntervalMs` field is learned once from a 200 and never
+      //    reset on a 304 (GitHubEventsPoller.tick's early-return on
+      //    `notModified` never touches it) -- so once ANY 200 has been seen,
+      //    EVERY later tick reports that same serverPollIntervalMs, and every
+      //    later wait is raised, not just the one immediately following the
+      //    200 that taught it. And tick 1 of every fresh `watchEvents()` call
+      //    is ALWAYS a 200: the poller's `etag` starts `null`, so no
+      //    `If-None-Match` goes out on the first request
+      //    (GitHubProvider.fetchEventsPage), and GitHub's events feed serves
+      //    the full page on an unconditional GET, carrying `X-Poll-Interval:
+      //    60` (this is `WATCH_EVENTS_INTERVAL_MS`'s own documented
+      //    justification in GitHubProvider.ts). So a 5s configured interval
+      //    changes nothing about GitHub's real spacing after tick1: tick2 is
+      //    scheduled at `jittered(60_000)`, i.e. between 54s and 66s after
+      //    tick1 finishes, no matter how fast `intervalMs` asked to go. A 12s
+      //    window (or even a 12s window at the OLD 3s interval this replaces)
+      //    could not have contained tick2 -- the single-tick risk MAT-154
+      //    called out was real. The window has to clear the 66s worst case,
+      //    not the configured interval, plus slack for tick1's and tick2's
+      //    own request latency (~5s each, generously) -- 90s leaves a
+      //    comfortable margin over the ~76s worst case.
+      const WATCH_INTERVAL_MS = 5_000;
+      const SETTLE_WINDOW_MS = fixture.name === 'github' ? 90_000 : 12_000;
+
       assert(
         events.finalCursor.since !== events.coldCursor.since ||
           events.finalCursor.lastEventId !== events.coldCursor.lastEventId,
@@ -2582,11 +2628,16 @@ async function runEventsFlows(
       // the silence is proven to be dedup rather than a stalled loop.
       //
       // The settle window is a deliberate sleep rather than a poll: the claim
-      // is an ABSENCE, and an absence has no predicate to poll on.
-      const resumed = startCapture(fixture, projectPath, { intervalMs: 3_000, cursor: persisted });
+      // is an ABSENCE, and an absence has no predicate to poll on. See
+      // WATCH_INTERVAL_MS/SETTLE_WINDOW_MS above (MAT-154 precondition) for
+      // why the window is sized the way it is.
+      const resumed = startCapture(fixture, projectPath, {
+        intervalMs: WATCH_INTERVAL_MS,
+        cursor: persisted
+      });
       let advanced: EventCursor;
       try {
-        await Bun.sleep(12_000);
+        await Bun.sleep(SETTLE_WINDOW_MS);
         const replayed = replayedKeys(resumed);
         assert(
           replayed.length === 0,
@@ -2636,9 +2687,15 @@ async function runEventsFlows(
         lastEventId:
           roundTrippedAdvanced.lastEventId === null ? null : String(roundTrippedAdvanced.lastEventId)
       } as unknown as EventCursor;
-      const coerced = startCapture(fixture, projectPath, { intervalMs: 3_000, cursor: foreignTyped });
+      // Same window arithmetic as (a) above: WATCH_INTERVAL_MS /
+      // SETTLE_WINDOW_MS size this sleep to cover >= 2 warm ticks by
+      // construction, not by luck of the cadence.
+      const coerced = startCapture(fixture, projectPath, {
+        intervalMs: WATCH_INTERVAL_MS,
+        cursor: foreignTyped
+      });
       try {
-        await Bun.sleep(12_000);
+        await Bun.sleep(SETTLE_WINDOW_MS);
         const replayed = replayedKeys(coerced);
         // Two outcomes are acceptable and indistinguishable from here, which
         // is exactly what the row allows: the value coerced and deduped, or
