@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync, readFileSync } from "fs";
+import { mkdtempSync, rmSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -28,8 +28,14 @@ describe("review-status CLI", () => {
     expect(code).toBe(1);
   });
 
-  test("a terminal outcome still exits 0 when the board is not running", async () => {
+  test("a failed board notify does not change the exit code or the state write", async () => {
     const p = join(dir, "state3.json");
+    writeFileSync(p, JSON.stringify({
+      mrUrl: "https://gitlab.com/acme/webapp/-/merge_requests/4821",
+      iid: 4821,
+      status: "queued",
+      updatedAt: 0,
+    }));
     const proc = Bun.spawn(["bun", "run", CLI, p, "done", "looks solid", "--outcome", "approve"], { stderr: "pipe" });
     const code = await proc.exited;
     expect(code).toBe(0);
