@@ -31,3 +31,30 @@ export interface AgentSignal {
   status: string;
   outcome?: string;
 }
+
+/** Parse an /agent/status body -- the wire contract every CLI in bin/ posts and
+    the only thing standing between an agent lifecycle transition and a silent
+    400. `lookupIid` is injected rather than imported (e.g. server.ts supplies
+    `(u) => readReviewStates().get(u)?.iid ?? 0`) so this module, which the CLIs
+    also pull in, never drags in server-side state handling.
+
+    `/review/outcome` is the pre-existing shape the review CLI used before the
+    board owned the whole policy; `{ mrUrl, outcome }` on that path is filled
+    out into the same signal via the injected lookup. */
+export function parseAgentSignal(
+  body: unknown,
+  pathname: string,
+  lookupIid: (mrUrl: string) => number,
+): AgentSignal | null {
+  if (!body || typeof body !== "object") return null;
+  const { mrUrl, iid, kind, status, outcome } = body as Record<string, unknown>;
+  if (typeof mrUrl !== "string" || !mrUrl) return null;
+  if (outcome !== undefined && typeof outcome !== "string") return null;
+  if (pathname === "/review/outcome") {
+    return { mrUrl, iid: lookupIid(mrUrl), kind: "review", status: "done", outcome: outcome as string | undefined };
+  }
+  if (!isSignalKind(kind)) return null;
+  if (typeof status !== "string" || !status) return null;
+  if (typeof iid !== "number" || !Number.isFinite(iid)) return null;
+  return { mrUrl, iid, kind, status, outcome: outcome as string | undefined };
+}

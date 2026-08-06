@@ -12,7 +12,7 @@ import { readRespondStates, pruneRespondStates, respondFilePath, writeRespondSta
 import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, parseDoctorRequestBody, attachDoctors } from "./doctor-state.ts";
 import { launchReview, launchRespond, launchDoctor, launchResume, focusTab, reReviewResumePrompt } from "./herdr.ts";
 import { readSlackRefs, attachSlack, resolveSlackRef, reactToMR, unreactFromMR, postToSlack, REVIEW_EMOJI } from "./slack.ts";
-import { signalEmoji, isSignalKind, type AgentSignal } from "./agent-signal.ts";
+import { signalEmoji, parseAgentSignal } from "./agent-signal.ts";
 import { renderMr, renderMulti, type MrFacts } from "./template.ts";
 
 const cssPath = join(import.meta.dir, "style.css");
@@ -612,6 +612,11 @@ Bun.serve({
         return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });
       }
       case "/agent/status":
+      // Retained as harmless belt-and-braces, not because any caller can still
+      // reach it: panes invoke the CLI as `bun run <path>/bin/review-status.ts`,
+      // which bun re-reads from disk on every invocation, so even a pane
+      // launched before this change runs the current CLI (posting to
+      // /agent/status) the moment it next fires.
       case "/review/outcome": {
         // The launched agent's only channel back to the board. It reports the
         // lifecycle status it just wrote, and the board -- which already has the
@@ -619,14 +624,13 @@ Bun.serve({
         // agent out of slack entirely.
         if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
-        if (!slackToken) return new Response("slack not configured", { status: 400 });
         let body: unknown;
         try {
           body = await req.json();
         } catch {
           return new Response("invalid json", { status: 400 });
         }
-        const signal = parseAgentSignal(body, pathname);
+        const signal = parseAgentSignal(body, pathname, (u) => readReviewStates().get(u)?.iid ?? 0);
         if (!signal) {
           return new Response("expected { mrUrl: string, iid: number, kind: review|respond|doctor, status: string, outcome?: string }", { status: 400 });
         }
@@ -634,6 +638,10 @@ Bun.serve({
         if (!emoji) {
           return new Response(JSON.stringify({ ok: true, reacted: false }), { headers: { "content-type": "application/json" } });
         }
+        // Only a wanted reaction needs slack configured -- most transitions map
+        // to no emoji at all (see signalEmoji) and must not 400 on a Slack-less
+        // install.
+        if (!slackToken) return new Response("slack not configured", { status: 400 });
         // The sweeper usually resolves the ref first, but a review launched and
         // finished inside one sweep interval can beat it here.
         try {
@@ -937,21 +945,3 @@ watch(dirname(CONFIG_PATH), (_event, filename) => {
     }
   }, 150);
 });
-
-/** Parse an /agent/status body. `/review/outcome` is the pre-existing shape the
-    review CLI used before the board owned the whole policy; panes launched
-    before that change are long-lived, so their `{ mrUrl, outcome }` body is
-    still accepted and filled out here. Deletable once no old pane can be live. */
-function parseAgentSignal(body: unknown, pathname: string): AgentSignal | null {
-  if (!body || typeof body !== "object") return null;
-  const { mrUrl, iid, kind, status, outcome } = body as Record<string, unknown>;
-  if (typeof mrUrl !== "string" || !mrUrl) return null;
-  if (outcome !== undefined && typeof outcome !== "string") return null;
-  if (pathname === "/review/outcome") {
-    return { mrUrl, iid: readReviewStates().get(mrUrl)?.iid ?? 0, kind: "review", status: "done", outcome: outcome as string | undefined };
-  }
-  if (!isSignalKind(kind)) return null;
-  if (typeof status !== "string" || !status) return null;
-  if (typeof iid !== "number" || !Number.isFinite(iid)) return null;
-  return { mrUrl, iid, kind, status, outcome: outcome as string | undefined };
-}
