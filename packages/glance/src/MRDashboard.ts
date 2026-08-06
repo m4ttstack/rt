@@ -324,6 +324,11 @@ export interface DashboardGroup {
    * went wrong with -- which is exactly why this fires for both rather
    * than only the "missing" case.
    *
+   * A listener that throws is ignored, matching
+   * `FetchPullRequestsOptions.onWarning`: this reports that one row degraded,
+   * so letting it fail the batch would turn one row's problem into the whole
+   * group's, which is the defect the degradation signal exists to end.
+   *
    * Optional (unlike `onStatusChange`, added earlier) even though the real
    * implementation always provides it: `DashboardGroup` is a published,
    * versioned interface, and a consumer with their own test double for it
@@ -656,7 +661,15 @@ function createDashboardGroup(
       currentIids
     );
     for (const [iid, warning] of degraded) {
-      warningListener?.(iid, warning);
+      if (!warningListener) break;
+      try {
+        warningListener(iid, warning);
+      } catch {
+        // A broken observer must never fail a fetch: `runFetch` would record
+        // the rejection as a total failure and deliver no rows at all, which
+        // is the one-row-sinks-the-batch outcome this signal exists to report
+        // rather than cause.
+      }
     }
     return prs;
   };

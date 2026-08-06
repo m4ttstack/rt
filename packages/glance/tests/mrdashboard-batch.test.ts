@@ -288,6 +288,43 @@ describe('DashboardGroup: one failing MR degrades its own row, not the whole ref
     }
   });
 
+  test('a warning listener that throws is ignored, not turned into a total failure', async () => {
+    // The rest of this file proves a degraded row no longer sinks the batch
+    // on the provider side. This pins the other end of the same channel: the
+    // listener is consumer code, and an unguarded call would have made a bug
+    // in it reject `batchFetch`, so `runFetch` would record a total failure
+    // and deliver no rows at all -- one row's problem becoming the whole
+    // batch's, by the very callback that reports it.
+    const provider = fakeProvider('acme/repo');
+    const group = createDashboard({
+      provider,
+      projectPath: 'acme/repo',
+      mrIid: [1, 2],
+      userId: null
+    }) as DashboardGroup;
+
+    const updates: Map<number, unknown>[] = [];
+    const statuses: WatcherStatus[] = [];
+    group.onStatusChange(s => statuses.push(s));
+    group.onWarning?.(() => {
+      throw new Error('consumer listener blew up');
+    });
+    group.subscribe(mrs => updates.push(new Map(mrs)));
+
+    for (let i = 0; i < 5 && updates.length === 0; i++) {
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+
+    try {
+      expect(updates.length).toBeGreaterThan(0);
+      expect(updates.at(-1)!.has(1)).toBe(true);
+      expect(statuses.every(s => s.consecutiveErrors === 0)).toBe(true);
+      expect(statuses.some(s => s.lastError != null)).toBe(false);
+    } finally {
+      group.dispose();
+    }
+  });
+
   test('onWarning fires for a checks-sourced warning even though the row stays present', async () => {
     // The dashboard-facing assertion for the same bug the two
     // `fetchDashboardBatch` tests above pin at the lower level: a consumer
