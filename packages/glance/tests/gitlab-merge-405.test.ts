@@ -1,8 +1,10 @@
 #!/usr/bin/env bun
 /**
- * MAT-132. GitLab answers every refused merge with a bare HTTP 405 whose body
- * is the constant "405 Method Not Allowed", so the status alone cannot tell a
- * merge request that is not ready yet from one a check has actually blocked.
+ * MAT-132. On the plain merge path, GitLab answers a refusal with a bare HTTP
+ * 405 whose body is the constant "405 Method Not Allowed", so the status alone
+ * cannot tell a merge request that is not ready yet from one a check has
+ * actually blocked. Its other refusals on the same endpoint do say why (409 for
+ * a stale `sha`, 422 "Branch cannot be merged") and are not this file's subject.
  * These tests pin the follow-up read that names the difference, and the three
  * ways it is not allowed to make things worse: it must not fire on other
  * statuses, must not replace a real merge failure with a read failure, and

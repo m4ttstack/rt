@@ -117,11 +117,12 @@ export interface DiffStats {
  * every other value is either `mergeable` or the identifier of a check that
  * actually failed.
  *
- * One set, because two consumers ask the same question of these strings and
+ * One list, because three readers ask the same question of these strings and
  * must not answer it differently: the dashboard decides whether to render
- * BLOCKED, and `GitLabProvider.mergePullRequest` decides whether a refused
- * merge is worth retrying. GitHub has no equivalent pre-merge state and always
- * reports `detailedMergeStatus` as null, so neither question arises there.
+ * BLOCKED, `GitLabProvider.mergePullRequest` decides whether a refused merge
+ * is worth retrying, and the live conformance harness decides whether an MR is
+ * still settling. GitHub has no equivalent pre-merge state and always reports
+ * `detailedMergeStatus` as null, so none of the three arises there.
  *
  * A frozen array rather than a `ReadonlySet`, because this is public API and
  * that type is erased at compile time: `Object.freeze` on a `Set` does not
