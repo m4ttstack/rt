@@ -1196,9 +1196,14 @@ async function runGitqFlows(
       const titleBefore = first.data.get(s.stackBranch)?.title;
       assert(titleBefore !== undefined, `the cached snapshot has no entry for ${s.stackBranch}`);
 
+      // Nothing is asserted about this write yet, deliberately: the only
+      // proof it landed is the `?fresh=1` read further down, which is the
+      // first read that bypasses the cache. Comparing the new title against
+      // the old one here would look like a check and be none -- the two are
+      // different by construction, whether or not the forge accepted the
+      // update.
       const titleAfter = `consumer-flow: stack child (cache ${Date.now().toString(36)})`;
       await provider.updatePullRequest(projectPath, s.stackPr.iid, { title: titleAfter });
-      assert(titleAfter !== titleBefore, 'the harness failed to make an observable change');
 
       clock += 30_000;
       const stale = await cache.get();
