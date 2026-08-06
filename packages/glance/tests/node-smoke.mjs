@@ -26,7 +26,8 @@ import { resolve, dirname } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dist = pathToFileURL(resolve(here, '../dist/index.js')).href;
-const { GitHubProvider } = await import(dist);
+const { GitHubProvider, GitLabProvider, TRANSITIONAL_MERGE_STATUSES, isTransitionalMergeStatus } =
+  await import(dist);
 
 let failures = 0;
 async function check(name, fn) {
@@ -232,6 +233,58 @@ await check('cancelAutoMerge throws when auto-merge is still on', async () => {
   });
 
   await assert.rejects(() => p.cancelAutoMerge('acme/repo', 5), /still reports auto-merge/i);
+});
+
+// ── GitLab ───────────────────────────────────────────────────────────────────
+// This file drove only GitHubProvider until now, so the GitLab half of the
+// package shipped with no Node coverage at all. `restRequest`'s path contract
+// is the release's one breaking change: a consumer that does not update its
+// call sites gets a throw, and `prepublishOnly` is the last place that can
+// notice the shipped build no longer behaves the way the CHANGELOG says.
+
+/** Answers every fetch with 200 and records the URLs, so no network is touched. */
+function stubFetch() {
+  const urls = [];
+  globalThis.fetch = async input => {
+    urls.push(typeof input === 'string' ? input : String(input));
+    return new Response('{}', { status: 200 });
+  };
+  return urls;
+}
+
+const realFetch = globalThis.fetch;
+
+await check('GitLabProvider.restRequest prefixes /api/v4 itself (BREAKING, MAT-130)', async () => {
+  const urls = stubFetch();
+  try {
+    const p = new GitLabProvider('https://gitlab.example.com', 'tok');
+    const res = await p.restRequest('GET', '/user');
+    assert.equal(res.status, 200);
+    assert.deepEqual(urls, ['https://gitlab.example.com/api/v4/user']);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+await check('GitLabProvider.restRequest rejects a path that still carries /api/v4', async () => {
+  const urls = stubFetch();
+  try {
+    const p = new GitLabProvider('https://gitlab.example.com', 'tok');
+    await assert.rejects(() => p.restRequest('GET', '/api/v4/user'), /api\/v4/);
+    assert.deepEqual(urls, [], 'the rejected path must never reach fetch');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
+await check('TRANSITIONAL_MERGE_STATUSES and isTransitionalMergeStatus survive the bundler', () => {
+  assert.ok(Array.isArray(TRANSITIONAL_MERGE_STATUSES), 'expected an exported array');
+  assert.ok(TRANSITIONAL_MERGE_STATUSES.includes('preparing'));
+  assert.ok(TRANSITIONAL_MERGE_STATUSES.includes('checking'));
+  assert.equal(typeof isTransitionalMergeStatus, 'function');
+  assert.equal(isTransitionalMergeStatus('preparing'), true);
+  assert.equal(isTransitionalMergeStatus('broken_status'), false);
+  assert.equal(isTransitionalMergeStatus(null), false);
 });
 
 if (failures > 0) {
