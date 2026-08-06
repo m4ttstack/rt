@@ -802,9 +802,17 @@ Bun.serve({
 // The board's real port can differ from config.json when $PORT is set (see
 // above); the status CLIs run in a separate process that never sees that env,
 // so leave the resolved port where they can find it on disk instead.
-const boardPortDir = join(import.meta.dir, "..", "state");
-mkdirSync(boardPortDir, { recursive: true });
-writeFileSync(join(boardPortDir, "board-port"), String(port));
+// A stale or missing port file only costs the agents their Slack reactions,
+// which is not worth refusing to serve over.
+try {
+  const boardPortDir = join(import.meta.dir, "..", "state");
+  mkdirSync(boardPortDir, { recursive: true });
+  writeFileSync(join(boardPortDir, "board-port"), String(port));
+} catch (err) {
+  console.error(
+    `could not record the board port in state/board-port: ${err instanceof Error ? err.message : err} -- agent-driven Slack reactions may not reach this board`,
+  );
+}
 
 console.log(`mr-board serving on http://localhost:${port}`);
 
