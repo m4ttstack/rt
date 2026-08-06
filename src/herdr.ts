@@ -92,8 +92,6 @@ export interface SkillPromptOpts {
   skill?: string;
   /** Review only: absolute path the wrapper writes the full review markdown to. */
   reportPath?: string;
-  /** Review only: slack channel (no #) for the "looking" 👀 signal. */
-  channel?: string;
   /** Review only: this is a re-review of an already-reviewed MR. The wrapper
       reads any prior review at reportPath, frames the pass as a re-review, and
       falls back to a normal review if the author hasn't acted on feedback. */
@@ -101,13 +99,12 @@ export interface SkillPromptOpts {
 }
 
 /** Build the slash-command a launched herdr pane runs. The board injects every
-    domain-specific value (skill, channel, its own status-writer path) as a flag,
-    so the wrapper skill itself carries no repo, channel, or path knowledge. */
+    domain-specific value (skill, its own status-writer path) as a flag,
+    so the wrapper skill itself carries no repo or path knowledge. */
 function buildSkillPrompt(wrapper: string, o: SkillPromptOpts): string {
   const parts = [`/${wrapper}`, o.mrUrl, "--state", o.statePath, "--status-bin", o.statusBin];
   if (o.reportPath) parts.push("--report", o.reportPath);
   if (o.skill) parts.push("--skill", o.skill);
-  if (o.channel) parts.push("--channel", o.channel);
   if (o.reReview) parts.push("--re-review");
   return parts.join(" ");
 }
@@ -164,8 +161,6 @@ export interface LaunchPaneOpts {
   statePath: string;
   /** Domain skill the launched wrapper delegates to (config.reviewSkill etc.). */
   skill?: string;
-  /** Review only: slack channel (no #) for the "looking" 👀 signal. */
-  channel?: string;
   /** Review only: launch this review with the re-review framing (see reviewPrompt). */
   reReview?: boolean;
   /** The MR author, shown in the tab label beside the id (a display name like
@@ -224,7 +219,6 @@ export async function launchReview(opts: LaunchPaneOpts, runner: HerdrRunner = d
     statusBin: statusBinPath("review"),
     reportPath: reviewReportPath(opts.statePath),
     skill: opts.skill,
-    channel: opts.channel,
     reReview: opts.reReview,
   });
   const tabLabel = mrTabLabel(opts.iid, opts.author, opts.reReview ? "⟲" : undefined);

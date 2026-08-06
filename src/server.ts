@@ -450,7 +450,6 @@ Bun.serve({
             workspaceLabel: config.reviewsWorkspace,
             statePath,
             skill: config.reviewSkill,
-            channel: config.slack.channel,
             reReview: true,
             author,
           })
@@ -491,7 +490,6 @@ Bun.serve({
           workspaceLabel: config.reviewsWorkspace,
           statePath,
           skill: config.reviewSkill,
-          channel: config.slack.channel,
           author,
         })
           .then(({ tabId, workspaceId }) => writeReviewState(statePath, { status: "queued", tabId, workspaceId }))

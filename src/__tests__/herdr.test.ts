@@ -51,7 +51,7 @@ describe("parsers", () => {
 });
 
 describe("command builders", () => {
-  test("reviewPrompt injects status-bin, report, skill and channel flags", () => {
+  test("reviewPrompt injects status-bin, report and skill flags", () => {
     expect(
       reviewPrompt({
         mrUrl: "https://x/mr/1",
@@ -59,13 +59,12 @@ describe("command builders", () => {
         statusBin: "/b/review-status.ts",
         reportPath: "/s/1.md",
         skill: "myteam:review",
-        channel: "code-review",
       }),
     ).toBe(
-      "/mr-board:review https://x/mr/1 --state /s/1.json --status-bin /b/review-status.ts --report /s/1.md --skill myteam:review --channel code-review",
+      "/mr-board:review https://x/mr/1 --state /s/1.json --status-bin /b/review-status.ts --report /s/1.md --skill myteam:review",
     );
   });
-  test("reviewPrompt omits skill/channel flags when unconfigured", () => {
+  test("reviewPrompt omits the skill flag when unconfigured", () => {
     expect(
       reviewPrompt({ mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: "/b/review-status.ts", reportPath: "/s/1.md" }),
     ).toBe("/mr-board:review https://x/mr/1 --state /s/1.json --status-bin /b/review-status.ts --report /s/1.md");
