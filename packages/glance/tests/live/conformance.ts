@@ -685,37 +685,14 @@ export async function runWriteConformance(
       assert(Array.isArray(detail.discussions), 'discussions was not an array');
     });
 
+    // A second identity, when present, is strictly stronger evidence than the
+    // self-approval-rejection probe: it exercises the actual accept and
+    // revoke paths instead of only proving the request reaches the API. So
+    // it is tried first regardless of provider, and the probe -- read from
+    // the expectation table rather than an `if (fixture.name === 'github')`
+    // -- is only the fallback for when no second identity is configured.
     const approveExpectation = expectationFor(fixture.name, 'approvePullRequest');
-    if (approveExpectation.support === 'approximate') {
-      await check(
-        report,
-        fixture,
-        'approvePullRequest',
-        'self-approval is rejected with 422, proving request shape reaches GitHub',
-        async () => {
-          let message = '';
-          try {
-            await provider.approvePullRequest(projectPath, iid);
-          } catch (err) {
-            message = err instanceof Error ? err.message : String(err);
-          }
-          assert(
-            message.length > 0,
-            'self-approval unexpectedly succeeded, which contradicts the expectation table'
-          );
-          // GitHubProvider.approvePullRequest throws this same shape for ANY
-          // non-ok response, so a bare "did it throw" cannot tell "GitHub
-          // rejected self-approval" apart from "the request never reached
-          // the right endpoint" (a 401, 404, or 403 would pass identically).
-          // Pinning the status code is what actually proves the claim in
-          // the label.
-          assert(
-            /approvePullRequest failed: 422\b/.test(message),
-            `expected a 422 (self-approval rejected), got: ${message}`
-          );
-        }
-      );
-    } else if (fixture.approver) {
+    if (fixture.approver) {
       await check(
         report,
         fixture,
@@ -747,12 +724,62 @@ export async function runWriteConformance(
         'the same identity can revoke',
         async () => {
           await fixture.approver!.unapprovePullRequest(projectPath, iid);
-          const after = await pollUntil(`unapproved state of ${iid}`, async () => {
-            const fresh = await provider.fetchSingleMR(projectPath, iid, null);
-            return fresh?.approved === false ? fresh : null;
-          });
-          assert(after.approved === false, `expected approved to become false, got ${after.approved}`);
+          // Same reasoning as requestReReview's check below: pollUntil
+          // resolves only once its predicate already found approved ===
+          // false, so a follow-up assert on that same condition could never
+          // fire, and this success path has never run live before, so a
+          // failure here is exactly where phase 4's real bug would recur.
+          // Catching the timeout and re-reading gets the actual
+          // approved/approvedBy state into the failure message instead of
+          // pollUntil's generic "timed out" text.
+          try {
+            await pollUntil(`unapproved state of ${iid}`, async () => {
+              const fresh = await provider.fetchSingleMR(projectPath, iid, null);
+              return fresh?.approved === false ? fresh : null;
+            });
+          } catch {
+            const fresh = await provider.fetchSingleMR(projectPath, iid, null).catch(() => null);
+            throw new Error(
+              `expected approved to become false, got ${fresh?.approved} ` +
+                `(approvedBy: ${JSON.stringify(fresh?.approvedBy.map(u => u.username) ?? [])})`
+            );
+          }
         }
+      );
+    } else if (approveExpectation.selfApprovalRejectionStatus !== undefined) {
+      const rejectionStatus = approveExpectation.selfApprovalRejectionStatus;
+      await check(
+        report,
+        fixture,
+        'approvePullRequest',
+        `self-approval is rejected with ${rejectionStatus}, proving request shape reaches the provider`,
+        async () => {
+          let message = '';
+          try {
+            await provider.approvePullRequest(projectPath, iid);
+          } catch (err) {
+            message = err instanceof Error ? err.message : String(err);
+          }
+          assert(
+            message.length > 0,
+            'self-approval unexpectedly succeeded, which contradicts the expectation table'
+          );
+          // The provider throws this same shape for ANY non-ok response, so
+          // a bare "did it throw" cannot tell "self-approval rejected" apart
+          // from "the request never reached the right endpoint" (a 401,
+          // 404, or 403 would pass identically). Pinning the status code is
+          // what actually proves the claim in the label.
+          assert(
+            new RegExp(`approvePullRequest failed: ${rejectionStatus}\\b`).test(message),
+            `expected a ${rejectionStatus} (self-approval rejected), got: ${message}`
+          );
+        }
+      );
+      report.skip(
+        fixture.name,
+        'unapprovePullRequest',
+        'dismissal',
+        'no second identity: dismissal needs an approval, and this provider rejects self-approval instead of accepting one'
       );
     } else {
       report.skip(fixture.name, 'approvePullRequest', 'approval', 'no second identity');
@@ -760,7 +787,7 @@ export async function runWriteConformance(
         fixture.name,
         'unapprovePullRequest',
         'dismissal',
-        'no second identity: dismissal needs an approval, and GitHub rejects self-approval with 422'
+        'no second identity: dismissal needs an approval'
       );
     }
 

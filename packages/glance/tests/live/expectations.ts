@@ -25,6 +25,21 @@ export interface Expectation {
   capability?: keyof ProviderCapabilities;
   /** Required for anything not plainly `supported`. Explains the divergence. */
   note?: string;
+  /**
+   * Only meaningful for `approvePullRequest`. The HTTP status this
+   * provider's API rejects a self-approval attempt with, when it does.
+   *
+   * `support: 'supported'` says the accept path works, which is only
+   * provable with a second identity. Without one, this field lets the
+   * harness fall back to a weaker but still real probe -- attempting (and
+   * expecting a rejection of) self-approval -- instead of a single
+   * `support` value having to mean both "the happy path" and "the fallback
+   * that applies when a precondition for the happy path is missing". A
+   * provider that has no such rejection (or where the harness has not
+   * verified one) leaves this undefined, and the harness skips outright
+   * rather than asserting a status it never confirmed.
+   */
+  selfApprovalRejectionStatus?: number;
 }
 
 type AnyMethod = (...args: never[]) => unknown;
@@ -49,14 +64,14 @@ export const GITHUB_EXPECTATIONS: Record<ProviderMethod, Expectation> = {
   fetchMRDiscussions: { support: 'supported' },
   mergePullRequest: { support: 'supported', capability: 'canMerge' },
   approvePullRequest: {
-    support: 'approximate',
+    support: 'supported',
     capability: 'canApprove',
-    note: 'GitHub rejects self-approval with 422. With one identity the accept path is unverifiable, so the harness asserts the rejection instead.'
+    selfApprovalRejectionStatus: 422
   },
   unapprovePullRequest: {
-    support: 'approximate',
+    support: 'supported',
     capability: 'canUnapprove',
-    note: 'Implemented as a review dismissal, which leaves a DISMISSED review in the list rather than removing the approval record as GitLab does. The harness cannot reach the success path with one GitHub identity: dismissal needs an approval, and GitHub rejects self-approval with 422. `fixture.approver` is hardcoded null for GitHub in fixture.ts, so wiring a second identity is a credentials change rather than a harness change.'
+    note: 'Implemented as a review dismissal, which leaves a DISMISSED review in the list rather than removing the approval record as GitLab does.'
   },
   rebasePullRequest: {
     support: 'unsupported',

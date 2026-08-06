@@ -1312,10 +1312,12 @@ export class GitHubProvider implements GitProvider {
       );
     } catch (err) {
       if (err instanceof RequestError && err.response) {
-        // The live conformance harness (conformance.ts:611) matches
-        // /approvePullRequest failed: 422\b/ on this message. It is the only
-        // proof that GitHub's approval request shape and auth are correct,
-        // since only one GitHub identity exists to run that check against.
+        // The live conformance harness matches /approvePullRequest failed:
+        // 422\b/ on this message. When a second identity is configured that
+        // identity approves for real and this message is never produced;
+        // this 422 is only the fallback proof of request shape and auth
+        // for a single-identity run, where self-approval is the only call
+        // available to make.
         throw ghError('approvePullRequest', err, 'statusText');
       }
       throw err;
