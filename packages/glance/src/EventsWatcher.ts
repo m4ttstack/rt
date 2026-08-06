@@ -8,11 +8,19 @@
  * degraded/live transitions. The next successful tick catches up from the
  * frozen cursor, so nothing is lost during an outage.
  */
-import type { InvalidationBatch, WatchEventsOptions, WatchEventsStatus } from './types.ts';
+import type { EventCursor, InvalidationBatch, WatchEventsOptions, WatchEventsStatus } from './types.ts';
 import { EventsPoller, type FetchEvents } from './EventsPoller.ts';
 import { type ForgeLogger, noopLogger } from './logger.ts';
 
 const MAX_BACKOFF_MS = 5 * 60_000;
+
+/** Provider-agnostic tick outcome the shared loop consumes. */
+export interface LoopTick {
+  batch: InvalidationBatch | null; // null = nothing to deliver (cold start or no fresh events)
+  cursor: EventCursor; // always delivered to onCursor when changed
+  /** When set, overrides options.intervalMs for the NEXT wait (server-directed cadence). */
+  nextIntervalMs?: number;
+}
 
 /** Duck-typed error classification. GitbeakerRequestError carries
  *  `cause.response`; GitbeakerRetryError mentions the last status code in
@@ -55,7 +63,6 @@ export function startEventsWatcher(
   onInvalidations: (batch: InvalidationBatch) => void,
   logger: ForgeLogger = noopLogger,
 ): () => void {
-  const intervalMs = options.intervalMs ?? 15_000;
   const poller = new EventsPoller({
     fetchEvents,
     cursor: options.cursor,
@@ -63,10 +70,49 @@ export function startEventsWatcher(
     maxPagesPerTick: options.maxPagesPerTick,
   });
 
+  return startWatcherLoop(
+    async (): Promise<LoopTick> => {
+      const result = await poller.tick();
+      const batch: InvalidationBatch | null =
+        result.invalidations.length > 0 && !result.coldStart
+          ? {
+              invalidations: result.invalidations,
+              syncedAt: new Date().toISOString(),
+              cursor: result.cursor,
+            }
+          : null;
+      // GitLab has no server-directed cadence: never overrides intervalMs.
+      return { batch, cursor: result.cursor };
+    },
+    options,
+    onInvalidations,
+    logger,
+  );
+}
+
+/**
+ * Provider-agnostic watcher loop. A setTimeout chain (never setInterval, so
+ * ticks cannot overlap) with ±10% jitter per tick. On tick failure the loop
+ * backs off exponentially (interval * 2^failures, capped at MAX_BACKOFF_MS,
+ * or the server's Retry-After when a 429 exposes one), and onStatus reports
+ * the degraded/live transitions. `tick` reports its own outcome (a batch to
+ * deliver or not, the current cursor, and an optional server-directed
+ * override for the next wait) rather than throwing on ordinary "nothing
+ * fresh" ticks -- only a genuine failure to reach the provider should throw.
+ */
+export function startWatcherLoop(
+  tick: () => Promise<LoopTick>,
+  options: WatchEventsOptions,
+  onInvalidations: (batch: InvalidationBatch) => void,
+  logger: ForgeLogger = noopLogger,
+): () => void {
+  const intervalMs = options.intervalMs ?? 15_000;
+
   let disposed = false;
   let timer: ReturnType<typeof setTimeout> | null = null;
   let consecutiveFailures = 0;
   let lastSyncedAt: string | null = null;
+  let lastCursor: EventCursor = options.cursor ?? { since: null, lastEventId: null };
 
   const jittered = (ms: number) => ms * (0.9 + Math.random() * 0.2);
 
@@ -88,11 +134,11 @@ export function startEventsWatcher(
 
   async function run(): Promise<void> {
     if (disposed) return;
-    const before = poller.getCursor();
+    const before = lastCursor;
 
-    let result: Awaited<ReturnType<typeof poller.tick>>;
+    let result: LoopTick;
     try {
-      result = await poller.tick();
+      result = await tick();
     } catch (err) {
       if (disposed) return;
       consecutiveFailures++;
@@ -116,7 +162,7 @@ export function startEventsWatcher(
     lastSyncedAt = new Date().toISOString();
     const wasDegraded = consecutiveFailures > 0;
     consecutiveFailures = 0;
-    schedule(intervalMs);
+    schedule(result.nextIntervalMs ?? intervalMs);
 
     if (wasDegraded) {
       const syncedAt = lastSyncedAt;
@@ -131,18 +177,13 @@ export function startEventsWatcher(
     // a time anchor without a lastEventId), and callers still need that
     // persisted via onCursor.
     if (result.cursor.lastEventId !== before.lastEventId || result.cursor.since !== before.since) {
+      lastCursor = result.cursor;
       safeInvoke(() => options.onCursor?.(result.cursor));
     }
     if (disposed) return;
-    if (result.invalidations.length > 0) {
-      const syncedAt = lastSyncedAt;
-      safeInvoke(() =>
-        onInvalidations({
-          invalidations: result.invalidations,
-          syncedAt,
-          cursor: result.cursor,
-        }),
-      );
+    if (result.batch) {
+      const batch = result.batch;
+      safeInvoke(() => onInvalidations(batch));
     }
   }
 
