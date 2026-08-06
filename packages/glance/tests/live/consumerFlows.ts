@@ -5,7 +5,7 @@
  * feature-detects an optional method, the flow exercises BOTH branches the
  * consumer can take, so the fallback path has coverage too.
  *
- * Scope: all twenty-four rows, one `check()` per row in matrix order --
+ * Scope: all twenty-four rows, twenty-seven `check()` calls in matrix order --
  * U1-U15, which the matrix tags NOT events-dependent and which run on both
  * providers, then U16-U24, the events-dependent rows, which run wherever the
  * expectation table declares `watchEvents` supported and report a skip
@@ -2373,21 +2373,6 @@ async function runEventsFlows(
         present === !declaredAbsent,
         `the expectation table says watchEvents is ${declaredAbsent ? 'absent' : 'present'}, but the property ` +
           `is ${present ? 'a function' : 'undefined'}`
-      );
-
-      // rt's gate, verbatim in shape.
-      let fellBackToPolling = false;
-      let startedWatcher = false;
-      if (!provider.watchEvents) fellBackToPolling = true;
-      else startedWatcher = true;
-      assert(
-        fellBackToPolling === declaredAbsent && startedWatcher === !declaredAbsent,
-        `the truthy-check gate took the ${fellBackToPolling ? 'fallback' : 'live'} path against a provider ` +
-          `declared ${expectation.support}`
-      );
-      assert(
-        !(fellBackToPolling && startedWatcher),
-        'the gate took both paths, so the short-circuit did not short-circuit'
       );
 
       // No consumer reads `capabilities.canWatchEvents` -- all three

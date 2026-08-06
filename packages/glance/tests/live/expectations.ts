@@ -110,7 +110,7 @@ export const GITHUB_EXPECTATIONS: Record<ProviderMethod, Expectation> = {
   watchEvents: {
     support: 'absent',
     capability: 'canWatchEvents',
-    note: 'Not implemented on GitHub: the property is undefined, not a throwing stub. Phase 4 implements it by polling the repository events feed.'
+    note: 'Not implemented on GitHub: the property is undefined, not a throwing stub. It is implemented by polling the repository events feed.'
   }
 };
 
