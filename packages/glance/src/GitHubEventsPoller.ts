@@ -69,7 +69,7 @@
  *
  * No I/O here: pure functions over an already-fetched event.
  */
-import type { InvalidationKey } from './types.ts';
+import type { EventCursor, InvalidationKey } from './types.ts';
 
 /** The subset of a GitHub repo-events entry we consume. Ids are strings (A6). */
 export interface GitHubEvent {
@@ -169,4 +169,216 @@ export function classifyGitHubEvent(e: GitHubEvent): InvalidationKey[] {
   }
 
   return [];
+}
+
+/**
+ * GitHubEventsPoller: pure per-tick logic over `GET /repos/{owner}/{repo}/events`.
+ *
+ * Mirrors EventsPoller.ts's shape (options -> getCursor/tick, invalidation
+ * dedup) but the resume strategy differs because the two feeds differ:
+ *  - No day-exclusive `after` param and no monotonic numeric id to filter
+ *    by -- GitHub's `lastEventId` is reporting-only (see EventCursor's
+ *    doc-comment in types.ts). Dedup instead uses a bounded `seenIds` set,
+ *    because A6 established that id ordering within a page can disagree
+ *    with `created_at` and ids arrive from disjoint ranges -- there is no
+ *    single high-water mark that safely separates "seen" from "unseen".
+ *  - ETag/If-None-Match (page 1 only) and `X-Poll-Interval` are real
+ *    conditional-GET machinery this feed exposes that GitLab's doesn't
+ *    (A11, A12, see this file's header comment); a 304 short-circuits the
+ *    tick before any page-walking or classification happens.
+ *  - Cold start takes a single-page snapshot rather than walking history:
+ *    unlike GitLab there's no timestamp/day filter to bound a lookback by,
+ *    so the first tick just seeds `seenIds` from whatever page 1 returns
+ *    and starts polling incrementally from there (also why it reports zero
+ *    invalidations -- consumers are expected to full-refresh on boot).
+ *
+ * No I/O here: `fetchPage` is injected and cursor persistence is the
+ * caller's job, same contract as EventsPoller.ts.
+ */
+
+/** One conditional page fetch. 304 = unchanged (events empty, etag echoed). */
+export type FetchGitHubEventsPage = (opts: {
+  page: number; // 1..3 only; the poller never requests 4+ (A8)
+  etag: string | null; // sent as If-None-Match on page 1 only
+}) => Promise<{
+  status: 200 | 304;
+  events: GitHubEvent[]; // [] on 304
+  etag: string | null; // from the 200; null on 304 (A12 applies to headers generally)
+  pollIntervalSec: number | null; // X-Poll-Interval when present (200s only, A12)
+}>;
+
+export interface GitHubTickResult {
+  cursor: EventCursor; // seenIds-based; lastEventId = newest seen id (string)
+  invalidations: InvalidationKey[]; // deduped kind:ref; [] on cold start
+  freshEvents: number;
+  requests: number;
+  coldStart: boolean;
+  notModified: boolean; // page-1 304: nothing changed, zero parse work
+  /** server cadence learned from the most recent 200; null until one is seen */
+  serverPollIntervalMs: number | null;
+}
+
+export interface GitHubEventsPollerOptions {
+  fetchPage: FetchGitHubEventsPage;
+  cursor?: EventCursor; // resume point; foreign/invalid shapes cold-start (U20 rule)
+  maxSeenIds?: number; // default 900 (3x the 300-event window)
+  maxPagesPerTick?: number; // default 3, clamped to 3
+}
+
+const DEFAULT_MAX_SEEN_IDS = 900;
+/** A8: the poller never requests page 4 or beyond, regardless of options. */
+const MAX_PAGES_PER_TICK_CEILING = 3;
+
+/**
+ * A cursor only counts as a GitHub resume point when it carries GitHub's
+ * shape: `seenIds` as `string[]` and `lastEventId` as `string | null`.
+ * Anything else -- including rt's persisted GitLab-era numeric cursors, or
+ * a cursor missing `seenIds` entirely -- cold-starts rather than throwing
+ * (U20: on-disk compat means an unrecognized shape is "absent", not an
+ * error).
+ */
+function isValidGitHubCursor(
+  cursor: EventCursor | undefined
+): cursor is EventCursor & { seenIds: string[] } {
+  if (!cursor) return false;
+  if (!Array.isArray(cursor.seenIds)) return false;
+  if (!cursor.seenIds.every((id) => typeof id === 'string')) return false;
+  if (cursor.lastEventId !== null && typeof cursor.lastEventId !== 'string') return false;
+  return true;
+}
+
+/**
+ * Dedup invalidations by `kind:ref`, first-write-wins. Reimplements
+ * EventsPoller.ts's module-private `dedup` (six lines, not exported there
+ * either) rather than importing it: it's GitLab-shaped in that file's
+ * scope, not worth promoting to a shared export for six lines, and keeping
+ * the two poller files independently readable outweighs the duplication.
+ */
+function dedupInvalidations(keys: InvalidationKey[]): InvalidationKey[] {
+  const seen = new Map<string, InvalidationKey>();
+  for (const k of keys) {
+    const id = `${k.kind}:${k.ref}`;
+    if (!seen.has(id)) seen.set(id, k);
+  }
+  return [...seen.values()];
+}
+
+export class GitHubEventsPoller {
+  private cursor: EventCursor;
+  private readonly fetchPage: FetchGitHubEventsPage;
+  private readonly maxSeenIds: number;
+  private readonly maxPagesPerTick: number;
+  /** True iff constructed without a valid GitHub-shaped resume cursor. */
+  private readonly startedWithoutCursor: boolean;
+  /** Flips to true after the first completed tick. Cold start is one-shot. */
+  private hasTicked = false;
+  /** Remembered from the last 200's etag; re-sent as If-None-Match on page 1. */
+  private etag: string | null = null;
+  private serverPollIntervalMs: number | null = null;
+
+  constructor(opts: GitHubEventsPollerOptions) {
+    this.fetchPage = opts.fetchPage;
+    this.maxSeenIds = opts.maxSeenIds ?? DEFAULT_MAX_SEEN_IDS;
+    this.maxPagesPerTick = Math.min(
+      opts.maxPagesPerTick ?? MAX_PAGES_PER_TICK_CEILING,
+      MAX_PAGES_PER_TICK_CEILING
+    );
+    this.startedWithoutCursor = !isValidGitHubCursor(opts.cursor);
+    this.cursor = isValidGitHubCursor(opts.cursor)
+      ? opts.cursor
+      : { since: null, lastEventId: null, seenIds: [] };
+  }
+
+  getCursor(): EventCursor {
+    return { ...this.cursor, seenIds: [...(this.cursor.seenIds ?? [])] };
+  }
+
+  async tick(): Promise<GitHubTickResult> {
+    const coldStart = this.startedWithoutCursor && !this.hasTicked;
+    this.hasTicked = true;
+
+    // Cold start caps at one page (see class doc comment); a warm tick
+    // walks up to maxPagesPerTick, itself clamped to the page-4 ceiling.
+    const pageLimit = coldStart ? 1 : this.maxPagesPerTick;
+
+    const seen = new Set(this.cursor.seenIds ?? []);
+    const fresh: GitHubEvent[] = [];
+    let requests = 0;
+    let notModified = false;
+
+    for (let page = 1; page <= pageLimit; page++) {
+      const etagToSend = page === 1 ? this.etag : null;
+      const res = await this.fetchPage({ page, etag: etagToSend });
+      requests++;
+
+      if (page === 1 && res.status === 304) {
+        // Nothing changed since the last 200: no page-walking, no
+        // classification, cursor untouched. Cadence stays whatever the
+        // last 200 taught us (A12: 304s don't carry X-Poll-Interval).
+        notModified = true;
+        break;
+      }
+
+      if (page === 1 && res.etag != null) this.etag = res.etag;
+      if (res.pollIntervalSec != null) this.serverPollIntervalMs = res.pollIntervalSec * 1000;
+
+      // Scan the whole page (mirrors EventsPoller.ts's `continue`-not-break
+      // per-event handling) so a page mixing fresh and already-seen ids
+      // still finds everything fresh on it; but once ANY already-seen id
+      // turns up, stop requesting further pages -- we've caught up to
+      // where the last tick left off.
+      let hitSeen = false;
+      for (const e of res.events) {
+        if (seen.has(e.id)) {
+          hitSeen = true;
+          continue;
+        }
+        seen.add(e.id);
+        fresh.push(e);
+      }
+      if (hitSeen) break;
+    }
+
+    if (notModified) {
+      return {
+        cursor: this.getCursor(),
+        invalidations: [],
+        freshEvents: 0,
+        requests,
+        coldStart,
+        notModified: true,
+        serverPollIntervalMs: this.serverPollIntervalMs,
+      };
+    }
+
+    // Bound seenIds, oldest-first-evicted: `seen`'s insertion order is the
+    // prior persisted order followed by this tick's newly-discovered ids,
+    // so trimming from the front drops the oldest entries.
+    let seenIds = [...seen];
+    if (seenIds.length > this.maxSeenIds) {
+      seenIds = seenIds.slice(seenIds.length - this.maxSeenIds);
+    }
+    // Reporting-only high-water mark: the newest fresh id this tick, if
+    // any, else unchanged (dedup itself never consults this -- seenIds does).
+    const lastEventId = fresh[0]?.id ?? this.cursor.lastEventId;
+    // Cold start plants a now-ish anchor; GitHub's feed has no request
+    // parameter that reads `since` back, so warm ticks just carry it
+    // forward unchanged.
+    const since = coldStart ? new Date().toISOString() : this.cursor.since;
+    this.cursor = { since, lastEventId, seenIds };
+
+    const invalidations = coldStart
+      ? []
+      : dedupInvalidations(fresh.flatMap((e) => classifyGitHubEvent(e)));
+
+    return {
+      cursor: this.getCursor(),
+      invalidations,
+      freshEvents: fresh.length,
+      requests,
+      coldStart,
+      notModified: false,
+      serverPollIntervalMs: this.serverPollIntervalMs,
+    };
+  }
 }
