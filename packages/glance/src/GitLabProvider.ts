@@ -382,18 +382,6 @@ function draftTitle(title: string, draft: boolean): string {
   return draft ? `Draft: ${base}` : base;
 }
 
-/**
- * GitLab's assignee_ids / reviewer_ids take numeric user IDs, while
- * `CreatePullRequestInput` and `UpdatePullRequestInput` document these fields
- * as usernames. Values have always been forwarded unchanged; keeping that
- * behavior needs one type escape, confined here to the two fields that need
- * it rather than cast across the whole options object -- casting the object is
- * how the dead `draft` parameter stayed invisible.
- */
-function asUserIds(usernames: string[]): number[] {
-  return usernames as unknown as number[];
-}
-
 function toMR(
   gql: GQLMR,
   role: string,
@@ -1090,8 +1078,8 @@ export class GitLabProvider implements GitProvider {
     const opts: CreateMergeRequestOptions = {};
     if (input.description != null) opts.description = input.description;
     if (input.labels?.length) opts.labels = input.labels.join(',');
-    if (input.assignees?.length) opts.assigneeIds = asUserIds(input.assignees);
-    if (input.reviewers?.length) opts.reviewerIds = asUserIds(input.reviewers);
+    if (input.assignees?.length) opts.assigneeIds = await this.resolveUserIds('createPullRequest', input.assignees);
+    if (input.reviewers?.length) opts.reviewerIds = await this.resolveUserIds('createPullRequest', input.reviewers);
 
     let created: { iid: number };
     try {
@@ -1133,8 +1121,8 @@ export class GitLabProvider implements GitProvider {
     if (input.description != null) opts.description = input.description;
     if (input.targetBranch != null) opts.targetBranch = input.targetBranch;
     if (input.labels) opts.labels = input.labels.join(',');
-    if (input.assignees) opts.assigneeIds = asUserIds(input.assignees);
-    if (input.reviewers) opts.reviewerIds = asUserIds(input.reviewers);
+    if (input.assignees) opts.assigneeIds = await this.resolveUserIds('updatePullRequest', input.assignees);
+    if (input.reviewers) opts.reviewerIds = await this.resolveUserIds('updatePullRequest', input.reviewers);
     if (input.stateEvent) opts.stateEvent = input.stateEvent;
 
     if (input.title != null || input.draft != null) {
@@ -1577,17 +1565,8 @@ export class GitLabProvider implements GitProvider {
 
     const reviewerIds = new Set(currentReviewerIds);
     if (reviewerUsernames?.length) {
-      for (const username of reviewerUsernames) {
-        const matches = await this.gb.Users.all({ username });
-        const user = matches[0];
-        // Dropping an unresolvable username silently would be the same
-        // defect in miniature: a caller asks for a reviewer and gets no
-        // signal that nothing happened for them.
-        if (!user) {
-          throw new Error(`requestReReview: no GitLab user found for username "${username}"`);
-        }
-        reviewerIds.add(user.id);
-      }
+      const resolvedIds = await this.resolveUserIds('requestReReview', reviewerUsernames);
+      for (const id of resolvedIds) reviewerIds.add(id);
     } else if (reviewerIds.size === 0) {
       throw new Error(
         'requestReReview: nothing to re-request -- no reviewerUsernames given and the MR has no existing reviewers'
@@ -1602,6 +1581,31 @@ export class GitLabProvider implements GitProvider {
   }
 
   // MARK: - Private
+
+  /**
+   * GitLab's assignee_ids / reviewer_ids take numeric user IDs, while
+   * `CreatePullRequestInput` and `UpdatePullRequestInput` document these
+   * fields as usernames. `requestReReview` needed this same resolution
+   * first (MAT-24 predecessor); this factors it out so create/update reuse
+   * it instead of each growing its own copy, or reaching for the cast this
+   * used to be.
+   *
+   * A username with no match throws, naming it: dropping it silently would
+   * return a PullRequest that looks like the reviewer/assignee was added,
+   * the same defect this method exists to remove.
+   */
+  private async resolveUserIds(op: string, usernames: string[]): Promise<number[]> {
+    return Promise.all(
+      usernames.map(async (username) => {
+        const matches = await this.gb.Users.all({ username });
+        const user = matches[0];
+        if (!user) {
+          throw new Error(`${op}: no GitLab user found for username "${username}"`);
+        }
+        return user.id;
+      }),
+    );
+  }
 
   /**
    * Retry `fetchSingleMR` with exponential backoff to handle REST→GraphQL

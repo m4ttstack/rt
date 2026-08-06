@@ -1086,18 +1086,25 @@ export class GitHubProvider implements GitProvider {
     // matching createPullRequest's treatment: a caller reading the thrown
     // message can tell "the title/base/draft update landed but reviewers
     // did not" from "nothing happened."
+    //
+    // `patched` (the PATCH response) already carries the PR's current
+    // requested_reviewers/assignees, so the diff below needs no extra read.
     if (input.reviewers) {
-      await this.fireAndThrow(
+      await this.replaceUserSet(
         `updatePullRequest reviewers for #${mrIid}`,
-        `POST /repos/${projectPath}/pulls/${mrIid}/requested_reviewers`,
-        { reviewers: input.reviewers }
+        `/repos/${projectPath}/pulls/${mrIid}/requested_reviewers`,
+        'reviewers',
+        patched.requested_reviewers,
+        input.reviewers
       );
     }
     if (input.assignees) {
-      await this.fireAndThrow(
+      await this.replaceUserSet(
         `updatePullRequest assignees for #${mrIid}`,
-        `POST /repos/${projectPath}/issues/${mrIid}/assignees`,
-        { assignees: input.assignees }
+        `/repos/${projectPath}/issues/${mrIid}/assignees`,
+        'assignees',
+        patched.assignees,
+        input.assignees
       );
     }
     if (input.labels) {
@@ -1815,6 +1822,43 @@ export class GitHubProvider implements GitProvider {
         throw ghError(op, err);
       }
       throw err;
+    }
+  }
+
+  /**
+   * Bring GitHub's requested-reviewer or assignee set to exactly `wanted`,
+   * the "replaces the current set" contract `UpdatePullRequestInput`
+   * documents and GitLab's id arrays honour natively. GitHub's own
+   * endpoints (`POST .../requested_reviewers`, `POST .../assignees`) are
+   * additive only; a caller shrinking the list previously got back a PR
+   * that still had the dropped name on it, with nothing in the response
+   * distinguishing that from success (MAT-24). Removals need the matching
+   * `DELETE` on the same route, with the removed logins in the body.
+   *
+   * `current` is only ever a PR's own `requested_reviewers`/`assignees`,
+   * which GitHub returns as user objects with logins only -- team reviewers
+   * live in the separate `requested_teams` field, which this method never
+   * reads or writes. `reviewers`/`assignees` are documented on
+   * `CreatePullRequestInput`/`UpdatePullRequestInput` as usernames with no
+   * team concept, so any team already requested is left exactly as it was.
+   */
+  private async replaceUserSet(
+    op: string,
+    route: string,
+    bodyKey: 'reviewers' | 'assignees',
+    current: GHUser[],
+    wanted: string[]
+  ): Promise<void> {
+    const currentLogins = new Set(current.map(u => u.login));
+    const wantedLogins = new Set(wanted);
+    const toAdd = wanted.filter(login => !currentLogins.has(login));
+    const toRemove = [...currentLogins].filter(login => !wantedLogins.has(login));
+
+    if (toAdd.length) {
+      await this.fireAndThrow(`${op} (add)`, `POST ${route}`, { [bodyKey]: toAdd });
+    }
+    if (toRemove.length) {
+      await this.fireAndThrow(`${op} (remove)`, `DELETE ${route}`, { [bodyKey]: toRemove });
     }
   }
 
