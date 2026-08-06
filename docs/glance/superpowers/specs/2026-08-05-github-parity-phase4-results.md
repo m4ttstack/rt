@@ -74,8 +74,7 @@ Full method coverage on both providers. That retires the reason this runner has 
 **Still not proven, stated plainly:**
 
 - **GitHub `setAutoMerge`'s round trip.** Run 1 armed auto-merge and confirmed it by re-read, so it works. Runs 2 through 5 could not: GitHub refuses `enablePullRequestAutoMerge` on a `clean` pull request (nothing to wait for) and on an `unstable` one (checks failing), leaving a narrow armable window. The expectation entry is now `approximate` rather than `supported`, because leaving it as `supported` would claim verification the harness does not perform.
-- **GitHub `unapprovePullRequest`'s success path.** Dismissal needs an approval, and GitHub rejects self-approval. `fixture.approver` is hardcoded `null` for GitHub while GitLab reads approver tokens from credentials, so this is a credentials and wiring change rather than a harness redesign.
-- **GitHub `requestReReview`.** Same single-identity limit: GitHub rejects a review request from the pull request's author.
+- ~~**GitHub `unapprovePullRequest`'s success path**~~ and ~~**GitHub `requestReReview`**~~. **Closed after this document was first written.** See below.
 - **`watchMR` and `watchEvents` on GitLab.** Both would open real subscriptions the harness has nothing to close.
 - **GitHub `fetchPullRequests` projectPath scoping**, when the fixture has no open pull requests at read time.
 
@@ -96,6 +95,24 @@ The auto-merge spike merged into `main`, adding `automerge-spike.md` and a merge
 Left in place by decision. The repository root already held seven `conformance-merge-*.md` files from prior runs, because every merge cycle permanently adds one file and two commits by design, so this is one more artifact of a kind already accumulating. It is recorded here rather than reverted.
 
 Five runs later the root holds sixteen files and the first page of commits shows thirty. Any claim of the form "commit count stayed stable across runs" remains meaningless for this fixture, as phase 1 already noted.
+
+## Addendum: the second GitHub identity, and what it immediately proved
+
+Written after the rest of this document, once a GitHub machine account was provisioned as a collaborator on the fixture. Three checks that had never run on GitHub now do:
+
+```
+ok    github approvePullRequest: a second identity can approve
+ok    github unapprovePullRequest: the same identity can revoke
+ok    github requestReReview: names a reviewer who was not already one
+```
+
+GitHub goes from 33 assertions to 35, both providers stay at zero failures, and the runner still exits zero.
+
+The account is named by `GLANCE_HARNESS_GITHUB_APPROVER` and its token comes from `gh auth token --user`, through the injectable command `resolveGitHubToken` already had. A username is not a secret, so `harness_credentials.json` keeps the property its own README claims: nothing GitHub-credential-shaped on disk in a public repository.
+
+**`unapprovePullRequest` passing is the result that matters.** This branch shipped a real bug in it: a `COMMENTED` review shadowed an approval, so the method threw on a pull request GitHub still reported as approved. Approve-then-comment is ordinary reviewer behaviour, not an edge case. That bug survived twenty-one task reviews and was caught by the whole-branch reviewer reasoning about GitHub's review semantics, because the unit test's fixture ordered the `COMMENTED` review between two approvals so it could never fire. Until now the fix had unit coverage and had never touched the real API. It works.
+
+The single-identity fallback is retained rather than discarded. When no approver is configured, GitHub still asserts that self-approval is rejected with 422, which proves request shape, auth, and URL reach GitHub even though it cannot prove the accept path. That is expressed as a new `selfApprovalRejectionStatus` field on the expectation table rather than an inline provider branch, so the divergence stays declared where the harness's other divergences live.
 
 ## What the whole-branch review caught that per-task review could not
 
