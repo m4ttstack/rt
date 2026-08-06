@@ -51,7 +51,9 @@ or a correction a caller does not have to act on.
   `RequestInfo.path` reads `/projects/1/notes` where it used to read
   `/api/v4/projects/1/notes`, so a consumer grouping or matching on that field
   sees different strings for the same request. The other transports are
-  unchanged and still report the wire path.
+  unchanged: `MRDetailFetcher`, `NoteMutator`, and GraphQL still report the
+  wire path, and the gitbeaker transport still reports a resource name such as
+  `MergeRequests` rather than a path at all.
 - **Breaking (shared interface):** `requestReReview(projectPath, mrIid)` with
   no `reviewerUsernames` now throws, on both providers, when there are no
   existing reviewers to re-request. GitLab already made this change this
