@@ -10,7 +10,7 @@
   },
   "dependencies": {
     "@mattstack/rt-client": "file:../repo-tools/packages/rt-client",
-    "@mattstack/glance": "^0.16.0",
+    "@mattstack/glance": "^0.17.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "react-markdown": "^10.1.0",

@@ -1,4 +1,4 @@
-import { getMRDashboardProps, getReviewDisplayState, type MRDashboardProps, type PullRequest } from "@mattstack/glance";
+import { getMRDashboardProps, getReviewDisplayState, stripDraftPrefix as glanceStripDraftPrefix, type MRDashboardProps, type PullRequest } from "@mattstack/glance";
 import type { BoardConfig, Member } from "./config.ts";
 import type { DemandDecl } from "@mattstack/rt-client";
 import { extractTicketId } from "./ticket.ts";
@@ -117,15 +117,16 @@ export function buildBoard(prs: PullRequest[], config: BoardConfig, now: number 
   return out;
 }
 
-/** Every draft marker GitLab recognises on a title, including the legacy WIP
-    spellings. Anchored and case-insensitive; GitLab itself matches loosely. */
-const DRAFT_PREFIX = /^\s*(?:\[draft\]|\(draft\)|draft:|\[wip\]|\(wip\)|wip:)\s*/i;
+/** The legacy WIP spellings, which pre-14.0 self-hosted GitLab still honours.
+    glance's stripDraftPrefix owns the modern marker set; only the wip extension
+    is this board's own display choice. */
+const LEGACY_WIP_PREFIX = /^\s*(?:\[wip\]|\(wip\)|wip:)\s*/i;
 
 /** Drop the draft marker from an MR title, for display only. Writing the marker
     is glance's job (GitLabProvider.updatePullRequest), which also verifies the
     flag landed -- do not reimplement that here. */
 export function stripDraftPrefix(title: string): string {
-  return title.replace(DRAFT_PREFIX, "");
+  return glanceStripDraftPrefix(title).replace(LEGACY_WIP_PREFIX, "");
 }
 
 /**

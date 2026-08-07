@@ -175,12 +175,8 @@ async function refreshMemberNames(): Promise<void> {
     config.members.map(async (member) => {
       try {
         if (!gitlabToken) { memberNames.set(member.username, member.name ?? null); return; }
-        const res = await fetch(
-          `${config.gitlabHost}/api/v4/users?username=${encodeURIComponent(member.username)}`,
-          { headers: { "PRIVATE-TOKEN": gitlabToken } },
-        );
-        const users = (await res.json()) as Array<{ username: string; name?: string }>;
-        memberNames.set(member.username, users[0]?.name ?? member.name ?? null);
+        const user = await gitlab().fetchUser(member.username);
+        memberNames.set(member.username, user?.name ?? member.name ?? null);
       } catch (err) {
         console.error(`name lookup failed for ${member.username}: ${err instanceof Error ? err.message : err}`);
         memberNames.set(member.username, member.name ?? null);
