@@ -95,6 +95,26 @@ export async function runReadConformance(
     assert(user.username.length > 0, 'username was empty');
   });
 
+  await check(report, fixture, 'fetchUser', 'round-trips the token user', async () => {
+    // The token user is the one identity every fixture is guaranteed to
+    // have, and validateToken gives an independently-fetched UserRef to
+    // compare against, so this is a real equality check rather than
+    // "resolves without throwing".
+    const self = await provider.validateToken();
+    const found = await provider.fetchUser(self.username);
+    assert(found !== null, `fetchUser("${self.username}") returned null for the token user`);
+    assert(
+      found.username === self.username,
+      `expected username "${self.username}", got "${found.username}"`
+    );
+    assert(found.id === self.id, `expected id "${self.id}", got "${found.id}"`);
+  });
+
+  await check(report, fixture, 'fetchUser', 'returns null for a username that does not exist', async () => {
+    const missing = await provider.fetchUser('glance-no-such-user-8b3f');
+    assert(missing === null, `expected null, got ${JSON.stringify(missing)}`);
+  });
+
   await check(
     report,
     fixture,
