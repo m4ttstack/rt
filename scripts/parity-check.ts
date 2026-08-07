@@ -53,22 +53,35 @@ async function rtFetch(): Promise<PullRequest[]> {
 }
 
 /** Spec 10.3 normalization: timestamps and mid-flight pipeline state may
- *  differ between two live snapshots; divergedCommitsCount and derivatives are
- *  a documented store-side improvement, excluded from parity. The raw
- *  `.pipeline` object is reduced to presence + collapsed state: list-weight
- *  store entries carry `{ id, status }` only (no job trees, no
- *  success_with_warnings refinement) per the accepted spec 5.7 trade; the
- *  fields the board renders from it (`pipelineState`, `blockers.*`) stay in
- *  the diff at full fidelity. */
+ *  differ between two live snapshots; behind-target is a documented
+ *  store-side improvement, excluded from parity. The raw `.pipeline` object
+ *  is reduced to presence + collapsed state: list-weight store entries carry
+ *  `{ id, status }` only (no job trees, no success_with_warnings
+ *  refinement) per the accepted spec 5.7 trade; the fields the board renders
+ *  from it (`pipelineState`, `blockers.*`) stay in the diff at full
+ *  fidelity.
+ *
+ *  glance 0.18.0 (MAT-164) reshaped what belongs here. `behindTarget`
+ *  replaces the old `divergedCommitsCount`/`behindBy` scrubs and is the only
+ *  one of the three that was ever reachable on a `BoardMR`: that type is
+ *  `MRDashboardProps &`, so the two `PullRequest`-level names never existed
+ *  at these paths and those deletes were quietly doing nothing. It stays
+ *  excluded because it genuinely differs by fetch path -- the legacy side
+ *  here calls `fetchPullRequests({ authorUsernames })`, which never makes the
+ *  REST `include_diverged_commits_count` call, so it reads null while the rt
+ *  store may carry a real count.
+ *
+ *  `blockers.needsRebase` is deliberately no longer scrubbed. It was excluded
+ *  because it *derived* from that same unfetched count and so disagreed
+ *  between the two sides for reasons that had nothing to do with the store.
+ *  As of 0.18.0 it tracks `shouldBeRebased` alone, which rides the GraphQL
+ *  payload both paths share, so it is now a real parity claim and worth
+ *  diffing. */
 function normalize(m: BoardMR): Record<string, unknown> {
   const o = JSON.parse(JSON.stringify(m)) as Record<string, unknown>;
   delete o.updatedAt;
   delete o.fetchedAt;
-  delete o.divergedCommitsCount;
-  delete o.needsRebase;
-  delete o.behindBy;
-  const blockers = o.blockers as Record<string, unknown> | undefined;
-  if (blockers) { delete blockers.needsRebase; delete blockers.behindBy; }
+  delete o.behindTarget;
   o.pipeline = m.pipeline ? "<present>" : null;
   return o;
 }
