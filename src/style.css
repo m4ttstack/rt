@@ -558,6 +558,14 @@ body {
 .tui-doctor-watching { color: var(--cyan); border-color: currentColor; animation: tui-review-pulse 1.4s ease-in-out infinite; }
 .tui-doctor-done { color: var(--dot-ok); border-color: currentColor; }
 .tui-doctor-error { color: var(--dot-bad); border-color: currentColor; }
+/* Held outbound note a doctor drafted; the badge's buttons are the approval
+   gate. "held-draft" (not .tui-draft, which is the draft-MR chip). */
+.tui-held-draft { color: var(--amber); border-color: currentColor; }
+.tui-held-draft-resolved { opacity: 0.6; }
+.tui-draft-act {
+  margin-left: 6px; padding: 0 6px; font: inherit; cursor: pointer;
+  background: transparent; border: 1px solid currentColor; border-radius: 3px; color: inherit;
+}
 /* clickable badge (a saved review exists) — reads as a button */
 .tui-review-open { font: inherit; font-size: 11px; cursor: pointer; background: none; }
 .tui-review-open:hover { background: var(--card); }

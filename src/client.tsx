@@ -32,9 +32,10 @@ type ReviewStatus = "queued" | "reviewing" | "done" | "error";
 interface ReviewInfo { status: ReviewStatus; message?: string; reportReady?: boolean; sessionId?: string }
 interface RespondInfo { status: RespondStatus; message?: string; sessionId?: string; posted?: number; threads?: number }
 type DoctorStatus = "queued" | "diagnosing" | "rebasing" | "fixing" | "watching" | "done" | "error";
-interface DoctorInfo { status: DoctorStatus; message?: string }
+interface DoctorInfo { status: DoctorStatus; message?: string; origin?: "auto" | "manual" }
+interface DraftInfo { kind: string; body: string; createdAt: number }
 interface SlackInfo { status: "found" | "notfound"; permalink?: string; reactions: string[]; posted: boolean }
-type BoardMRWithReview = BoardMR & { review?: ReviewInfo; respond?: RespondInfo; doctor?: DoctorInfo; slack?: SlackInfo };
+type BoardMRWithReview = BoardMR & { review?: ReviewInfo; respond?: RespondInfo; doctor?: DoctorInfo; slack?: SlackInfo; drafts?: DraftInfo[] };
 
 interface SlackTemplates { single: string; multiHeader: string; multiItem: string }
 
@@ -66,6 +67,9 @@ declare global {
   interface Window {
     __applyTheme: () => void;
   }
+  // No DOM lib in tsconfig; declare the one browser global the draft-approval
+  // confirm step uses.
+  function confirm(message?: string): boolean;
 }
 
 // ── toggles ────────────────────────────────────────────────────────────────
@@ -327,14 +331,44 @@ function RespondBadge({ respond, onResume }: { respond?: RespondInfo; onResume?:
 }
 
 /** MR-doctor lifecycle: mechanical fixes (CI red / merge conflicts) chugging in
-    the background. Cyan family so it reads as a distinct "auto-repair" axis. */
+    the background. Cyan family so it reads as a distinct "auto-repair" axis.
+    Auto-dispatched doctors carry an "auto·" prefix so a policy-launched pane
+    is never mistaken for one the human clicked. */
 function DoctorBadge({ doctor }: { doctor?: DoctorInfo }) {
   if (!doctor) return null;
-  const label = DOCTOR_LABEL[doctor.status];
+  const label = (doctor.origin === "auto" ? "auto·" : "") + DOCTOR_LABEL[doctor.status];
   const title = doctor.message || label;
   return (
     <span className={`tui-review tui-doctor tui-doctor-${doctor.status}`} title={title}>
       {BADGE_ICON.doctor} {label}
+    </span>
+  );
+}
+
+/** One held outbound note the doctor drafted. The click IS the approval gate:
+    nothing posts without it. Optimistic local state hides the badge after an
+    action; the next /data.json pull confirms. */
+function DraftBadge({ mrUrl, draft, local }: { mrUrl: string; draft: DraftInfo; local: boolean }) {
+  const [resolved, setResolved] = useState<"posted" | "dismissed" | null>(null);
+  if (resolved) return <span className="tui-review tui-held-draft tui-held-draft-resolved">✉ {resolved}</span>;
+  const act = async (action: "post" | "dismiss") => {
+    if (action === "post" && !confirm(`Post this note?\n\n${draft.body}`)) return;
+    const res = await fetch("/drafts", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ mrUrl, kind: draft.kind, action }),
+    });
+    if (res.ok) setResolved(action === "post" ? "posted" : "dismissed");
+  };
+  return (
+    <span className="tui-review tui-held-draft" title={draft.body}>
+      ✉ held: {draft.kind}
+      {local && (
+        <>
+          <button className="tui-draft-act" onClick={() => act("post")}>post</button>
+          <button className="tui-draft-act" onClick={() => act("dismiss")}>dismiss</button>
+        </>
+      )}
     </span>
   );
 }
@@ -1211,11 +1245,14 @@ function RowView({
               </span>
               <MetaTokens mr={mr} now={now} />
             </div>
-            {((mr as BoardMRWithReview).review || (mr as BoardMRWithReview).respond || (mr as BoardMRWithReview).doctor || hasReviewReactions(mr) || (mr as BoardMRWithReview).slack?.posted) && (
+            {((mr as BoardMRWithReview).review || (mr as BoardMRWithReview).respond || (mr as BoardMRWithReview).doctor || (mr as BoardMRWithReview).drafts?.length || hasReviewReactions(mr) || (mr as BoardMRWithReview).slack?.posted) && (
               <div className="tui-row-board">
                 <ReviewBadge review={(mr as BoardMRWithReview).review} onOpen={() => onOpenReview(mr as BoardMRWithReview)} />
                 <RespondBadge respond={(mr as BoardMRWithReview).respond} onResume={() => onResumeRespond(mr)} />
                 <DoctorBadge doctor={(mr as BoardMRWithReview).doctor} />
+                {((mr as BoardMRWithReview).drafts ?? []).map((d) => (
+                  <DraftBadge key={d.kind} mrUrl={mr.webUrl ?? ""} draft={d} local={local} />
+                ))}
                 <SlackPostedChip slack={(mr as BoardMRWithReview).slack} />
                 <SlackReactionChips reactions={(mr as BoardMRWithReview).slack?.reactions} />
               </div>
@@ -1273,11 +1310,14 @@ function GridView({
             <div className="tui-card-tokens">
               {showAuthor && <AuthorTag mr={mr} />} <StatusPhrase mr={mr} /> <MetaTokens mr={mr} now={now} />
             </div>
-            {((mr as BoardMRWithReview).review || (mr as BoardMRWithReview).respond || (mr as BoardMRWithReview).doctor || hasReviewReactions(mr) || (mr as BoardMRWithReview).slack?.posted) && (
+            {((mr as BoardMRWithReview).review || (mr as BoardMRWithReview).respond || (mr as BoardMRWithReview).doctor || (mr as BoardMRWithReview).drafts?.length || hasReviewReactions(mr) || (mr as BoardMRWithReview).slack?.posted) && (
               <div className="tui-card-board">
                 <ReviewBadge review={(mr as BoardMRWithReview).review} onOpen={() => onOpenReview(mr as BoardMRWithReview)} />
                 <RespondBadge respond={(mr as BoardMRWithReview).respond} onResume={() => onResumeRespond(mr)} />
                 <DoctorBadge doctor={(mr as BoardMRWithReview).doctor} />
+                {((mr as BoardMRWithReview).drafts ?? []).map((d) => (
+                  <DraftBadge key={d.kind} mrUrl={mr.webUrl ?? ""} draft={d} local={local} />
+                ))}
                 <SlackPostedChip slack={(mr as BoardMRWithReview).slack} />
                 <SlackReactionChips reactions={(mr as BoardMRWithReview).slack?.reactions} />
               </div>
