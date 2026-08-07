@@ -10,7 +10,7 @@ import remarkGfm from "remark-gfm";
 import { filterByMember, sortMRs, groupMRs, parseViewState, serializeViewState, commentDot, commentsAllResolved, dataAgeLabel, statusFlags, GROUP_KEYS, SORT_KEYS } from "./view.ts";
 import type { GroupKey, SortKey, ViewState } from "./view.ts";
 import { renderMr, renderMulti, MAX_HEADER_LEN, type MrFacts } from "./template.ts";
-import { selectionOf } from "./selection.ts";
+import { selectionOf, postableOf } from "./selection.ts";
 import { respondOutcome, respondDoneLabel, respondNeedsAttention } from "./respond-outcome.ts";
 import type { RespondStatus } from "./respond-outcome.ts";
 
@@ -2034,7 +2034,7 @@ function Board() {
   );
 
   const handlePostSummary = useCallback(
-    (mrs: BoardMR[]) => {
+    (mrs: BoardMR[], header?: string) => {
       const urls = mrs.map((m) => m.webUrl).filter((u): u is string => !!u);
       if (!urls.length) return;
       setPostingSummary(true);
@@ -2042,7 +2042,7 @@ function Board() {
       fetch("/slack/post", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mrUrls: urls }),
+        body: JSON.stringify(header ? { mrUrls: urls, header } : { mrUrls: urls }),
       })
         .then(async (r) => {
           const body = await r.json().catch(() => ({}));
@@ -2215,7 +2215,8 @@ function Board() {
   // member filters.
   const selectedMrs = selectionOf(mrs, selected);
   const summaryText = boardSummary(flatMrs, data.slackTemplates);
-  const postableMrs = flatMrs.filter((m) => m.webUrl && !(m as BoardMRWithReview).slack?.posted);
+  const postableMrs = postableOf(flatMrs as BoardMRWithReview[]);
+  const postableSelected = postableOf(selectedMrs as BoardMRWithReview[]);
   const openSettings = () => {
     setMenuOpen(false);
     setShowSettings(true);
@@ -2276,7 +2277,11 @@ function Board() {
             inViewCount={selectionOf(filtered, selected).length}
             templates={data.slackTemplates}
             onClear={clearSelection}
-            slackPost={null}
+            slackPost={
+              data.slackEnabled && data.local && postableSelected.length > 0
+                ? { count: postableSelected.length, send: (header) => handlePostSummary(postableSelected, header) }
+                : null
+            }
           />
         )}
 
