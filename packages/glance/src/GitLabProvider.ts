@@ -1171,10 +1171,17 @@ export class GitLabProvider implements GitProvider {
     } catch (err) {
       throw this.legacyError('updatePullRequest', err);
     }
+    // The draft state the edit asked for is part of what makes this read-back
+    // good, not just the fact that a read succeeded: GitLab can serve an MR
+    // that has not caught up with the title just written, and comparing the
+    // first read alone called that lag a failed transition (MAT-169). Handing
+    // the check to the retry gives a stale read the same backoff a failed one
+    // gets, and only a state that never arrives reaches the throw below.
     const updated = await this.fetchSingleMRWithRetry(
       projectPath,
       mrIid,
       'Updated MR but failed to fetch it back',
+      input.draft == null ? undefined : (pr) => pr.draft === input.draft,
     );
     if (input.draft != null && updated.draft !== input.draft) {
       throw new Error(
@@ -1658,17 +1665,57 @@ export class GitLabProvider implements GitProvider {
   }
 
   /**
+   * Backoff step for the read-back retry below: attempt N waits N times this.
+   * A field rather than a literal so a test can shrink it and prove the
+   * retries happen without spending the better part of a second doing it.
+   */
+  private readBackRetryDelayMs = 300;
+
+  /**
    * Retry `fetchSingleMR` with exponential backoff to handle REST→GraphQL
    * eventual consistency. GitLab's GraphQL may not immediately reflect
    * changes made via REST. 3 attempts: 0ms, 300ms, 600ms delay.
+   *
+   * A rejection is retried rather than propagated (MAT-169). `fetchSingleMR`
+   * folds transport failures and GraphQL error responses into null itself, so
+   * a throw escaping it is a payload it could not map -- the partial data a
+   * field-level timeout leaves behind, say -- which is exactly as transient as
+   * the null case and earns the same retries. Letting it escape on attempt 0
+   * meant the retry did nothing for a caller reading back its own write. The
+   * last rejection rides out as `cause` when every attempt fails.
+   *
+   * `accept` lets a caller count a successfully-read but stale MR as another
+   * reason to wait, so read-after-write lag costs the same backoff as a failed
+   * read. When no attempt satisfies it the last read is returned, not thrown
+   * on: "read it, and it disagrees" is a different failure from "could not
+   * read it", and only the caller can phrase it.
    */
-  private async fetchSingleMRWithRetry(projectPath: string, mrIid: number, errorMessage: string): Promise<PullRequest> {
+  private async fetchSingleMRWithRetry(
+    projectPath: string,
+    mrIid: number,
+    errorMessage: string,
+    accept?: (pr: PullRequest) => boolean,
+  ): Promise<PullRequest> {
+    let lastRead: PullRequest | null = null;
+    let lastError: unknown = null;
     for (let attempt = 0; attempt < 3; attempt++) {
       if (attempt > 0) {
-        await new Promise((r) => setTimeout(r, attempt * 300));
+        await new Promise((r) => setTimeout(r, attempt * this.readBackRetryDelayMs));
       }
-      const pr = await this.fetchSingleMR(projectPath, mrIid, null);
-      if (pr) return pr;
+      try {
+        const pr = await this.fetchSingleMR(projectPath, mrIid, null);
+        if (pr) {
+          lastRead = pr;
+          if (!accept || accept(pr)) return pr;
+        }
+      } catch (err) {
+        lastError = err;
+      }
+    }
+    if (lastRead) return lastRead;
+    if (lastError) {
+      const detail = lastError instanceof Error ? lastError.message : String(lastError);
+      throw new Error(`${errorMessage}: ${detail}`, { cause: lastError });
     }
     throw new Error(errorMessage);
   }
