@@ -21,6 +21,7 @@ import type {
   WatchEventsOptions,
 } from './types.ts';
 import { isTransitionalMergeStatus } from './types.ts';
+import { ReadBackFailedError } from './errors.ts';
 import { type ForgeLogger, noopLogger } from './logger.ts';
 import { MRDetailFetcher } from './MRDetailFetcher.ts';
 import { ActionCableClient } from './ActionCableClient.ts';
@@ -1124,7 +1125,13 @@ export class GitLabProvider implements GitProvider {
     } catch (err) {
       throw this.legacyError('createPullRequest', err);
     }
-    return this.fetchSingleMRWithRetry(input.projectPath, created.iid, 'Created MR but failed to fetch it back');
+    return this.fetchSingleMRWithRetry(
+      input.projectPath,
+      created.iid,
+      'createPullRequest',
+      'Created MR but failed to fetch it back',
+      { writeApplied: true },
+    );
   }
 
   /**
@@ -1180,8 +1187,12 @@ export class GitLabProvider implements GitProvider {
     const updated = await this.fetchSingleMRWithRetry(
       projectPath,
       mrIid,
+      'updatePullRequest',
       'Updated MR but failed to fetch it back',
-      input.draft == null ? undefined : (pr) => pr.draft === input.draft,
+      {
+        accept: input.draft == null ? undefined : (pr) => pr.draft === input.draft,
+        writeApplied: true,
+      },
     );
     if (input.draft != null && updated.draft !== input.draft) {
       throw new Error(
@@ -1259,7 +1270,9 @@ export class GitLabProvider implements GitProvider {
       // fetch — called on init, every push event, every poll tick, and on reconnect.
       // Uses fetchSingleMRWithRetry so eventual-consistency retries are included.
       fetch: async () => {
-        const mr = await this.fetchSingleMRWithRetry(projectPath, mrIid, 'watchMR');
+        // No `writeApplied`: a watcher tick is a plain read, so a failure here
+        // leaves nothing pending on the forge for the caller to reconcile.
+        const mr = await this.fetchSingleMRWithRetry(projectPath, mrIid, 'watchMR', 'watchMR');
         if (mr && !mrGid) {
           // Cache the GID from the first successful fetch.
           const numId = mr.id.split(':').pop();
@@ -1401,7 +1414,13 @@ export class GitLabProvider implements GitProvider {
     } catch (err) {
       throw await this.mergeRefusalError(projectPath, mrIid, err);
     }
-    return this.fetchSingleMRWithRetry(projectPath, mrIid, 'Merged MR but failed to fetch it back');
+    return this.fetchSingleMRWithRetry(
+      projectPath,
+      mrIid,
+      'mergePullRequest',
+      'Merged MR but failed to fetch it back',
+      { writeApplied: true },
+    );
   }
 
   async approvePullRequest(projectPath: string, mrIid: number): Promise<void> {
@@ -1684,18 +1703,25 @@ export class GitLabProvider implements GitProvider {
    * meant the retry did nothing for a caller reading back its own write. The
    * last rejection rides out as `cause` when every attempt fails.
    *
-   * `accept` lets a caller count a successfully-read but stale MR as another
-   * reason to wait, so read-after-write lag costs the same backoff as a failed
-   * read. When no attempt satisfies it the last read is returned, not thrown
-   * on: "read it, and it disagrees" is a different failure from "could not
-   * read it", and only the caller can phrase it.
+   * `options.accept` lets a caller count a successfully-read but stale MR as
+   * another reason to wait, so read-after-write lag costs the same backoff as
+   * a failed read. When no attempt satisfies it the last read is returned, not
+   * thrown on: "read it, and it disagrees" is a different failure from "could
+   * not read it", and only the caller can phrase it.
+   *
+   * Giving up throws `ReadBackFailedError`, whose `writeApplied` tells the
+   * caller whether an edit is sitting on the forge behind this failure.
+   * `options.writeApplied` is what sets it, so every call site has to say
+   * whether it follows a write -- a watcher's poll does not.
    */
   private async fetchSingleMRWithRetry(
     projectPath: string,
     mrIid: number,
+    operation: string,
     errorMessage: string,
-    accept?: (pr: PullRequest) => boolean,
+    options?: { accept?: (pr: PullRequest) => boolean; writeApplied?: boolean },
   ): Promise<PullRequest> {
+    const accept = options?.accept;
     let lastRead: PullRequest | null = null;
     let lastError: unknown = null;
     for (let attempt = 0; attempt < 3; attempt++) {
@@ -1713,11 +1739,14 @@ export class GitLabProvider implements GitProvider {
       }
     }
     if (lastRead) return lastRead;
-    if (lastError) {
-      const detail = lastError instanceof Error ? lastError.message : String(lastError);
-      throw new Error(`${errorMessage}: ${detail}`, { cause: lastError });
-    }
-    throw new Error(errorMessage);
+    const detail = lastError instanceof Error ? lastError.message : lastError != null ? String(lastError) : null;
+    throw new ReadBackFailedError(detail ? `${errorMessage}: ${detail}` : errorMessage, {
+      operation,
+      projectPath,
+      iid: mrIid,
+      writeApplied: options?.writeApplied ?? false,
+      cause: lastError ?? undefined,
+    });
   }
 
   /**
