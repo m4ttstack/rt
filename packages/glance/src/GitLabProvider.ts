@@ -1108,8 +1108,12 @@ export class GitLabProvider implements GitProvider {
    * That read-then-write is not atomic: a title edited between the read and
    * the write is overwritten by the title this method computed from the older
    * one. GitLab offers no compare-and-set on the field, so the window is
-   * inherent, not an oversight. Pass `title` alongside `draft` to skip the read
-   * and close the window.
+   * inherent, not an oversight. Passing `title` alongside `draft` skips the
+   * read, but that is for callers already editing the title: a pure draft
+   * toggle has no title of its own to pass, and reading one first just moves
+   * the same window up a level. For a toggle the window cannot be closed,
+   * only kept short, which this method's single immediate read-then-write
+   * already does.
    *
    * When `draft` is requested, the MR read back afterwards must agree. A title
    * whose draft marker this SDK does not recognise (a pre-14.0 `WIP:`, say)
