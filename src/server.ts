@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, mkdirSync, watch } from "fs";
 import type { PullRequest, MRDetail } from "@mattstack/glance";
 import { loadConfig, loadGitLabToken, loadSlackToken, saveMemberHidden, CONFIG_PATH } from "./config.ts";
 import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, projectPathFromWebUrl, type BoardMR, type SyncScopeRead } from "./data.ts";
-import { GitLabProvider, ReadBackFailedError } from "@mattstack/glance";
+import { GitLabProvider, ReadBackFailedError, NoteMutator, parseRepoId } from "@mattstack/glance";
 import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } from "./discussions.ts";
 import { readProjectMRs, readDiscussions, subscribe } from "@mattstack/rt-client";
 import { SnapshotCache } from "./cache.ts";
@@ -11,6 +11,7 @@ import { isLocalRequest } from "./local.ts";
 import { readReviewStates, pruneReviewStates, reviewFilePath, writeReviewState, parseReviewRequestBody, attachReviews, readReviewReport } from "./review-state.ts";
 import { readRespondStates, pruneRespondStates, respondFilePath, writeRespondState, parseRespondRequestBody, attachResponds } from "./respond-state.ts";
 import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, parseDoctorRequestBody, attachDoctors } from "./doctor-state.ts";
+import { readDrafts, heldDraftsByMr, attachDrafts, pruneDrafts, draftFilePath, writeDraft } from "./draft-state.ts";
 import { launchReview, launchRespond, launchDoctor, launchResume, focusTab, reReviewResumePrompt } from "./herdr.ts";
 import { readSlackRefs, attachSlack, resolveSlackRef, reactToMR, unreactFromMR, postToSlack, REVIEW_EMOJI } from "./slack.ts";
 import { signalEmoji, parseAgentSignal } from "./agent-signal.ts";
@@ -280,9 +281,12 @@ Bun.serve({
         void refreshMemberNames();
         try {
           const mrs = await fetchMemberMRs(u);
-          const withState = attachSlack(
-            attachDoctors(attachResponds(attachReviews(mrs, readReviewStates()), readRespondStates()), readDoctorStates()),
-            readSlackRefs(),
+          const withState = attachDrafts(
+            attachSlack(
+              attachDoctors(attachResponds(attachReviews(mrs, readReviewStates()), readRespondStates()), readDoctorStates()),
+              readSlackRefs(),
+            ),
+            heldDraftsByMr(readDrafts()),
           );
           return new Response(JSON.stringify({ mrs: withState, fetchedAt: Date.now() }), {
             headers: { "content-type": "application/json" },
@@ -315,6 +319,7 @@ Bun.serve({
           pruneReviewStates(onBoard);
           pruneRespondStates(onBoard);
           pruneDoctorStates(onBoard);
+          pruneDrafts(onBoard);
         }
         const reviews = readReviewStates();
         const responds = readRespondStates();
@@ -334,7 +339,10 @@ Bun.serve({
               // 0, which reads as "no open MRs") — the modal renders it as "—".
               count: m.hidden ? null : snapshot.mrs.filter((mr) => mr.author.username === m.username).length,
             })),
-            mrs: attachSlack(attachDoctors(attachResponds(attachReviews(visibleMrs, reviews), responds), doctors), slackRefs),
+            mrs: attachDrafts(
+              attachSlack(attachDoctors(attachResponds(attachReviews(visibleMrs, reviews), responds), doctors), slackRefs),
+              heldDraftsByMr(readDrafts()),
+            ),
             local: isLocalRequest(req),
             slackEnabled: !!slackToken,
             slackTemplates: {
@@ -617,6 +625,45 @@ Bun.serve({
             writeDoctorState(statePath, { status: "error", message: "failed to launch doctor pane" });
           });
         return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });
+      }
+      case "/drafts": {
+        // The ONLY path from a held doctor draft to a GitLab note. The human
+        // click is the approval (spec §6): the doctor tier writes drafts and
+        // nothing here runs unattended.
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+        if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return new Response("invalid json", { status: 400 });
+        }
+        const { mrUrl, kind, action } = (body ?? {}) as { mrUrl?: unknown; kind?: unknown; action?: unknown };
+        if (typeof mrUrl !== "string" || typeof kind !== "string" || (action !== "post" && action !== "dismiss")) {
+          return new Response('expected { mrUrl: string, kind: string, action: "post"|"dismiss" }', { status: 400 });
+        }
+        const draft = readDrafts().find((d) => d.mrUrl === mrUrl && d.kind === kind && d.status === "held");
+        if (!draft) return new Response("no held draft for that MR/kind", { status: 404 });
+        const path = draftFilePath(mrUrl, kind);
+        if (action === "dismiss") {
+          writeDraft(path, { status: "dismissed" });
+          return new Response(JSON.stringify({ ok: true, dismissed: true }), { headers: { "content-type": "application/json" } });
+        }
+        if (!gitlabToken) return new Response("gitlab token not configured", { status: 400 });
+        const snapshot = await cache.get();
+        const mr = snapshot.mrs.find((m) => m.webUrl === mrUrl);
+        if (!mr) return new Response(`unknown MR "${mrUrl}"`, { status: 400 });
+        try {
+          const projectId = parseRepoId(mr.repositoryId);
+          const mutator = new NoteMutator(config.gitlabHost, gitlabToken);
+          const note = await mutator.createNote(projectId, mr.iid, draft.body);
+          writeDraft(path, { status: "posted", postedNoteId: note.id });
+          return new Response(JSON.stringify({ ok: true, posted: true, noteId: note.id }), {
+            headers: { "content-type": "application/json" },
+          });
+        } catch (err) {
+          return new Response(`note post failed: ${err instanceof Error ? err.message : err}`, { status: 502 });
+        }
       }
       case "/agent/status":
       // Retained as harmless belt-and-braces, not because any caller can still
