@@ -1,5 +1,25 @@
 # @mattstack/glance
 
+## 0.18.1
+
+### Patch Changes
+
+- `GitLabProvider.updatePullRequest` no longer reports a write that landed as a
+  failure when the read-back after it fails or lags (MAT-169). The edit is a
+  separate call from the verification that follows it, and two gaps in that
+  verification threw over an MR GitLab had already updated. First, the
+  read-back retry only retried a null result, so a rejection from
+  `fetchSingleMR` escaped on attempt 0 -- the retry did nothing for the case it
+  exists to cover. It now retries a rejection too, and carries the last one as
+  the thrown error's `cause` when every attempt fails. Second, the `draft`
+  check compared the first read with no allowance for GitLab serving an MR that
+  had not caught up with the title just written; the requested state is now
+  part of what makes a read acceptable, so lag costs the same backoff a failed
+  read gets and only a transition that never arrives throws. A draft marker
+  this SDK does not write (a pre-14.0 `WIP:`) still throws, as before. The same
+  retry backs `createPullRequest`, `mergePullRequest`, and `watchMR`, which get
+  the rejection handling as well.
+
 ## 0.18.0
 
 ### Minor Changes
