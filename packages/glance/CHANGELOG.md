@@ -1,5 +1,33 @@
 # @mattstack/glance
 
+## 0.18.0
+
+### Minor Changes
+
+- `blockers.needsRebase` now means what its name says: GitLab requires a rebase
+  before this MR can merge (MAT-164). It reads `shouldBeRebased` alone, which
+  rides the GraphQL payload every fetch path shares. It previously also went
+  true when the target branch had merely moved ahead, read from
+  `divergedCommitsCount` -- a field only `fetchSingleMR`,
+  `fetchPullRequestByBranch`, and the role-based mode of `fetchPullRequests`
+  populate. Every other path, including the `iids` mode `DashboardGroup` polls
+  with and `fetchPullRequestsByBranches`, left it null, and `?? 0` folded that
+  "we did not ask" into "not behind". The same MR therefore alternated true and
+  false depending on which method the consumer happened to call, and a consumer
+  notifying on the `false -> true` edge re-fired on every alternation.
+  `blockers.any` no longer inherits behind-ness either.
+- Behind-ness is now `MRDashboardProps.behindTarget: number | null`, where
+  `null` means the fetch path did not request the count and is deliberately
+  distinguishable from `0`. **Breaking:** `rebaseButton.behindBy` is removed --
+  it reported `0` for a count nobody fetched, and with the button now hidden
+  wherever GitLab hides its own, a count hanging off it would be read from a
+  control that never renders. Callers rendering "behind by N" should read
+  `behindTarget` and handle `null` as unknown.
+- **Breaking:** `rebaseButton.visible` now tracks `shouldBeRebased` only, so on
+  a `merge_method: merge` project the button no longer appears for a branch
+  that is merely behind -- matching GitLab's own UI, which offers no rebase
+  there. Read `behindTarget` and render your own affordance if you want one.
+
 ## 0.17.0
 
 ### Minor Changes
