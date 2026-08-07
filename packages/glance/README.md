@@ -46,6 +46,7 @@ const provider = createProvider('gitlab', 'https://gitlab.com', token, {
 | Method | Description |
 |---|---|
 | `validateToken()` | Verify credentials, returns `UserRef` |
+| `fetchUser(username)` | Resolve a username to a `UserRef`, or `null` if no such user |
 | `fetchPullRequests(options?)` | Fetch MRs — supports `state` filter and batch `iids` fetching |
 | `fetchSingleMR(path, iid, userId)` | Fetch one MR by project path and IID |
 | `fetchPullRequestByBranch(path, branch, state?)` | Find an MR by source branch |

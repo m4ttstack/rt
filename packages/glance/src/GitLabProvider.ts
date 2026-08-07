@@ -669,19 +669,45 @@ export class GitLabProvider implements GitProvider {
     } catch (err) {
       throw this.legacyError('Token validation', err);
     }
-    let avatarUrl: string | null = user.avatar_url;
-    if (avatarUrl) {
-      if (avatarUrl.startsWith('/')) {
-        avatarUrl = `${this.baseURL}${avatarUrl}`;
-      }
-      const sep = avatarUrl.includes('?') ? '&' : '?';
-      avatarUrl = `${avatarUrl}${sep}private_token=${this.token}`;
-    }
     return {
       id: `gitlab:user:${user.id}`,
       username: user.username,
       name: user.name,
-      avatarUrl,
+      avatarUrl: this.normalizeAvatarUrl(user.avatar_url),
+    };
+  }
+
+  /**
+   * GitLab avatar URLs on private instances need the caller's token to
+   * render, and self-hosted instances can return instance-relative paths.
+   * Absolute-izes and appends `private_token` so the URL works in an <img>
+   * exactly as `validateToken` has always returned it.
+   */
+  private normalizeAvatarUrl(avatarUrl: string | null): string | null {
+    if (!avatarUrl) return null;
+    const absolute = avatarUrl.startsWith('/') ? `${this.baseURL}${avatarUrl}` : avatarUrl;
+    const sep = absolute.includes('?') ? '&' : '?';
+    return `${absolute}${sep}private_token=${this.token}`;
+  }
+
+  async fetchUser(username: string): Promise<UserRef | null> {
+    type GLUser = { id: number; username: string; name: string; avatar_url: string | null };
+    let matches: GLUser[];
+    try {
+      // GET /users?username= is an exact-match filter, the same call
+      // resolveUserIds leans on, so the first element is the user or the
+      // array is empty.
+      matches = (await this.gb.Users.all({ username })) as unknown as GLUser[];
+    } catch (err) {
+      throw this.legacyError('fetchUser', err);
+    }
+    const user = matches[0];
+    if (!user) return null;
+    return {
+      id: `gitlab:user:${user.id}`,
+      username: user.username,
+      name: user.name,
+      avatarUrl: this.normalizeAvatarUrl(user.avatar_url),
     };
   }
 

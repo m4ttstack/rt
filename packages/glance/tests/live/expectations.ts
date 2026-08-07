@@ -50,6 +50,7 @@ export type ProviderMethod = {
 
 export const GITHUB_EXPECTATIONS: Record<ProviderMethod, Expectation> = {
   validateToken: { support: 'supported' },
+  fetchUser: { support: 'supported' },
   fetchPullRequests: { support: 'supported' },
   fetchSingleMR: { support: 'supported' },
   fetchPullRequestByBranch: { support: 'supported' },
@@ -113,6 +114,7 @@ export const GITHUB_EXPECTATIONS: Record<ProviderMethod, Expectation> = {
 
 export const GITLAB_EXPECTATIONS: Record<ProviderMethod, Expectation> = {
   validateToken: { support: 'supported' },
+  fetchUser: { support: 'supported' },
   fetchPullRequests: { support: 'supported' },
   fetchSingleMR: { support: 'supported' },
   fetchPullRequestByBranch: { support: 'supported' },

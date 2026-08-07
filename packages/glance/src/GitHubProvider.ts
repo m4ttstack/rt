@@ -656,6 +656,18 @@ export class GitHubProvider implements GitProvider {
     return toUserRef(user);
   }
 
+  async fetchUser(username: string): Promise<UserRef | null> {
+    let user: GHUser;
+    try {
+      const res = await this.octokit.request('GET /users/{username}', { username });
+      user = res.data as GHUser;
+    } catch (err) {
+      if (err instanceof RequestError && err.status === 404) return null;
+      throw ghError('fetchUser', err);
+    }
+    return toUserRef(user);
+  }
+
   /**
    * Fetch pull requests the token user is involved in, or -- with
    * `projectPath` -- pull requests in a single repository.

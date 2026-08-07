@@ -202,6 +202,19 @@ export interface GitProvider {
   validateToken(): Promise<UserRef>;
 
   /**
+   * Resolve a username to that provider's user, or null when no such user
+   * exists.
+   *
+   * Returns the same `UserRef` shape `PullRequest.author` carries, so a
+   * consumer can render a configured username exactly the way it renders an
+   * author, instead of hand-rolling a REST call with the token this provider
+   * is already holding (MAT-159). A miss is an answer, not an error: null
+   * means the provider looked and found nobody, while transport and auth
+   * failures still throw.
+   */
+  fetchUser(username: string): Promise<UserRef | null>;
+
+  /**
    * Fetch pull/merge requests the current user is involved in.
    *
    * - No args or `{}`: returns open MRs (authored + assigned + reviewing)
