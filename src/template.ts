@@ -29,3 +29,19 @@ export function renderMulti(header: string, item: string, facts: MrFacts[]): str
   const lines = facts.map((f) => renderMr(item, f));
   return [head, ...lines].join("\n");
 }
+
+/** Longest header line we'll render from outside this process. Long enough for
+    a real sentence with emoji, short enough that a stray paste can't become a
+    wall of text in the channel. */
+export const MAX_HEADER_LEN = 300;
+
+/** Normalise a header line that came from outside this process -- the board's
+    header input, arriving via /slack/post. Newlines collapse to spaces so a
+    single line can't fake a multi-line message body. Returns null when the
+    value is unusable; the caller decides whether that's a 400 or a fallback. */
+export function sanitizeHeader(raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const flat = raw.replace(/[\r\n]+/g, " ").trim();
+  if (!flat || flat.length > MAX_HEADER_LEN) return null;
+  return flat;
+}
