@@ -772,9 +772,9 @@ Bun.serve({
         // Post an MR (or a summary of many MRs) to the configured channel and
         // write a slack ref pinned to the new message so reactions target it.
         // Item lines always render server-side from config templates against
-        // the board cache, so no URL in a posted message can come from the
-        // client. An optional `header` overrides only the summary's first
-        // line, validated by sanitizeHeader.
+        // the board cache. The header line is client-supplied, but
+        // sanitizeHeader Slack-escapes it, so it cannot form a <url|anchor>
+        // link, an <@user> mention, or an <!channel>/<!here> broadcast.
         if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
         if (!slackToken) return new Response("slack not configured", { status: 400 });

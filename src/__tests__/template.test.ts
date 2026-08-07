@@ -69,4 +69,33 @@ describe("sanitizeHeader", () => {
     // 299 chars plus three newlines is 302 raw but 299 once collapsed+trimmed.
     expect(sanitizeHeader("a".repeat(299) + "\n\n\n")).toBe("a".repeat(299));
   });
+
+  test("neutralises a Slack link so it can't form a clickable anchor", () => {
+    expect(sanitizeHeader("<https://evil.example|3 MRs ready for review>"))
+      .toBe("&lt;https://evil.example|3 MRs ready for review&gt;");
+  });
+
+  test("neutralises a channel broadcast", () => {
+    expect(sanitizeHeader("<!channel> check these out")).toBe("&lt;!channel&gt; check these out");
+  });
+
+  test("neutralises a user mention", () => {
+    expect(sanitizeHeader("hey <@U123>")).toBe("hey &lt;@U123&gt;");
+  });
+
+  test("escapes a bare ampersand exactly once", () => {
+    expect(sanitizeHeader("A & B")).toBe("A &amp; B");
+  });
+
+  test("leaves ordinary text with no special characters unchanged", () => {
+    expect(sanitizeHeader("3 MRs ready for review")).toBe("3 MRs ready for review");
+  });
+
+  test("caps length after escaping, not before, so escaping can't smuggle a longer line", () => {
+    // 300 '<' characters would be 300 raw chars but 1500 once escaped to &lt;.
+    expect(sanitizeHeader("<".repeat(300))).toBeNull();
+    // A string that's short enough pre-escape and still within the cap post-escape passes.
+    const short = "<".repeat(20);
+    expect(sanitizeHeader(short)).toBe("&lt;".repeat(20));
+  });
 });
