@@ -2562,6 +2562,9 @@ async function runEventsFlows(
       //    case tick2 lands <= 5.5s after tick1, tick3 <= 11s after tick1 --
       //    a 12s window safely contains >= 2, usually 3, warm ticks. This is
       //    already faster than GitLab's own 15s default, so no regression.
+      //    tick1's and tick2's own fetch time comes out of the ~6.5s the
+      //    window still has left over that 5.5s worst case, which a single
+      //    events-page GET fits inside comfortably.
       //
       //  - GitHub is the case MAT-154 flagged, and the interplay is stickier
       //    than "the very next wait only": GitHubProvider.watchEvents raises

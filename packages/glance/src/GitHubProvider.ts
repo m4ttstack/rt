@@ -105,6 +105,10 @@ type GHUser = Pick<components['schemas']['simple-user'], 'login' | 'name' | 'ava
   id: number;
 };
 
+// `components["schemas"]["label"]` exists and would work here too; this derives
+// from the PR schema's own inline duplicate of it instead, for locality: labels
+// only ever reach this file inside a PR payload, so the shape that drifts is
+// the one the PR schema declares.
 type GHLabel = Pick<PullRequestSchema['labels'][number], 'name' | 'color'> & {
   id: number;
 };
