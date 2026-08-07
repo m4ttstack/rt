@@ -9,7 +9,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { filterByMember, sortMRs, groupMRs, parseViewState, serializeViewState, commentDot, commentsAllResolved, dataAgeLabel, statusFlags, GROUP_KEYS, SORT_KEYS } from "./view.ts";
 import type { GroupKey, SortKey, ViewState } from "./view.ts";
-import { renderMr, renderMulti, type MrFacts } from "./template.ts";
+import { renderMr, renderMulti, MAX_HEADER_LEN, type MrFacts } from "./template.ts";
 import { selectionOf } from "./selection.ts";
 import { respondOutcome, respondDoneLabel, respondNeedsAttention } from "./respond-outcome.ts";
 import type { RespondStatus } from "./respond-outcome.ts";
@@ -755,9 +755,17 @@ function mrLine(mr: BoardMR, tpl: SlackTemplates): string {
   return renderMr(tpl.single, factsFor(mr));
 }
 
-/** The current view rendered from the configured multi template. */
-function boardSummary(mrs: BoardMR[], tpl: SlackTemplates): string {
-  return renderMulti(tpl.multiHeader, tpl.multiItem, mrs.map(factsFor));
+/** The current view (or the current selection) rendered from the configured
+    multi template. `header` overrides the configured header line; {count} in
+    it is still substituted by renderMulti. */
+function boardSummary(mrs: BoardMR[], tpl: SlackTemplates, header?: string): string {
+  return renderMulti(header ?? tpl.multiHeader, tpl.multiItem, mrs.map(factsFor));
+}
+
+/** Just the {count} substitution renderMulti does to its header, for the live
+    preview in the selection bar's input. */
+function replaceCount(header: string, count: number): string {
+  return header.replace(/\{count\}/g, String(count));
 }
 
 // ── pieces ─────────────────────────────────────────────────────────────────
@@ -1520,6 +1528,66 @@ function Controls({
   );
 }
 
+/** Shown only while something is selected. Carries the count, an editable
+    header line, and the actions retargeted to the selection. */
+function SelectionBar({
+  selectedMrs,
+  inViewCount,
+  templates,
+  onClear,
+  slackPost,
+}: {
+  selectedMrs: BoardMR[];
+  inViewCount: number;
+  templates: SlackTemplates;
+  onClear: () => void;
+  /** null when slack is off, remote, or nothing in the selection is postable.
+      `count` is what will actually be sent, which is below the selection count
+      once some are already in slack. */
+  slackPost: { count: number; send: (header: string) => void } | null;
+}) {
+  const count = selectedMrs.length;
+  // Once you type, the line is yours: re-substituting {count} on every check
+  // would stomp your edit. Reset happens by unmount, when the selection empties.
+  const [touched, setTouched] = useState(false);
+  const [header, setHeader] = useState("");
+  const value = touched ? header : replaceCount(templates.multiHeader, count);
+
+  return (
+    <div className="tui-selbar">
+      <div className="tui-selbar-head">
+        <span className="tui-selbar-count">▣ {count} selected</span>
+        {inViewCount < count && <span className="tui-selbar-note">({inViewCount} in view)</span>}
+      </div>
+      <input
+        className="tui-selbar-input"
+        value={value}
+        maxLength={MAX_HEADER_LEN}
+        aria-label="message header"
+        placeholder="header line"
+        onChange={(e) => {
+          setTouched(true);
+          setHeader((e.target as unknown as { value: string }).value);
+        }}
+      />
+      <div className="tui-selbar-actions">
+        <CopyButton
+          text={boardSummary(selectedMrs, templates, value)}
+          className="tui-copy"
+          title={`copy ${count} selected for slack`}
+          label={`copy ${count}`}
+        />
+        {slackPost && (
+          <button className="tui-copy tui-selbar-post" onClick={() => slackPost.send(value)} title="post the selection to slack">
+            {SLACK_ICON} post {slackPost.count}
+          </button>
+        )}
+        <button className="tui-copy" onClick={onClear} title="clear the selection">clear</button>
+      </div>
+    </div>
+  );
+}
+
 // ── board ──────────────────────────────────────────────────────────────────
 
 function Board() {
@@ -2159,7 +2227,9 @@ function Board() {
     pickView,
     theme,
     pickTheme,
-    canCopy: filtered.length > 0,
+    // The bar owns copy while a selection is live -- its header input has to
+    // sit next to the button that consumes it.
+    canCopy: filtered.length > 0 && selectedMrs.length === 0,
     summaryText,
     onRefresh: refreshNow,
     refreshing,
@@ -2199,6 +2269,16 @@ function Board() {
             <Controls {...controlProps} />
           </div>
         </header>
+
+        {selectedMrs.length > 0 && (
+          <SelectionBar
+            selectedMrs={selectedMrs}
+            inViewCount={selectionOf(filtered, selected).length}
+            templates={data.slackTemplates}
+            onClear={clearSelection}
+            slackPost={null}
+          />
+        )}
 
         {data.fetchError && <div className="tui-banner">⚠ data from {staleMins}m ago — gitlab fetch failing</div>}
         {windowMismatch && <div className="tui-banner">⚠ {windowMismatch}</div>}

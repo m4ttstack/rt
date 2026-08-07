@@ -101,6 +101,26 @@ body {
 .tui-selectbox:hover { opacity: 1; color: var(--fg); }
 .tui-selectbox.checked { opacity: 1; color: var(--accent); }
 
+.tui-selbar {
+  position: sticky; top: 0; z-index: 5;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem;
+  padding: 0.6rem 0.75rem; margin-bottom: 1rem;
+  border: 1px solid var(--accent); border-radius: 8px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  backdrop-filter: blur(6px);
+}
+.tui-selbar-head { display: flex; align-items: baseline; gap: 0.4rem; }
+.tui-selbar-count { color: var(--accent); font-weight: 700; white-space: nowrap; }
+.tui-selbar-note { color: var(--muted); font-size: 0.78rem; }
+.tui-selbar-input {
+  flex: 1 1 16rem; min-width: 0;
+  padding: 0.3rem 0.5rem;
+  font: inherit; color: var(--fg);
+  background: var(--card); border: 1px solid var(--border); border-radius: 6px;
+}
+.tui-selbar-input:focus { outline: none; border-color: var(--accent); }
+.tui-selbar-actions { display: flex; gap: 0.4rem; margin-left: auto; }
+
 /* ── panels (TUI frame with label on the border) ──────────────────── */
 .tui-panel {
   position: relative; border: 1px solid var(--border); border-radius: 8px;
