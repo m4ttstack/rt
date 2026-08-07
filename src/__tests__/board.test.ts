@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { PullRequest } from "@mattstack/glance";
-import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, projectPathFromWebUrl, type BoardMR } from "../data.ts";
+import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, projectPathFromWebUrl, stripDraftPrefix, type BoardMR } from "../data.ts";
 import { SnapshotCache, type FetchResult } from "../cache.ts";
 import type { BoardConfig } from "../config.ts";
 import { extractTicketId } from "../ticket.ts";
@@ -92,6 +92,29 @@ describe("projectPathFromWebUrl", () => {
   });
 });
 
+describe("stripDraftPrefix", () => {
+  test("clears every marker gitlab recognises, in any case", () => {
+    expect(stripDraftPrefix("Draft: fix the thing")).toBe("fix the thing");
+    expect(stripDraftPrefix("draft: fix the thing")).toBe("fix the thing");
+    expect(stripDraftPrefix("DRAFT: fix the thing")).toBe("fix the thing");
+    expect(stripDraftPrefix("[Draft] fix the thing")).toBe("fix the thing");
+    expect(stripDraftPrefix("(Draft) fix the thing")).toBe("fix the thing");
+    expect(stripDraftPrefix("WIP: fix the thing")).toBe("fix the thing");
+    expect(stripDraftPrefix("[WIP] fix the thing")).toBe("fix the thing");
+  });
+
+  test("keeps the ticket id that follows the marker", () => {
+    expect(stripDraftPrefix("Draft: ACME-2382: fix the thing")).toBe("ACME-2382: fix the thing");
+  });
+
+  test("returns the title untouched when there is no marker, so callers can refuse to guess", () => {
+    expect(stripDraftPrefix("fix the thing")).toBe("fix the thing");
+    // Only a leading marker counts -- "draft" as a real word must survive.
+    expect(stripDraftPrefix("rewrite the draft: attempt two")).toBe("rewrite the draft: attempt two");
+    expect(stripDraftPrefix("add draft support")).toBe("add draft support");
+  });
+});
+
 describe("buildBoard", () => {
   test("keeps only member-authored, open, non-draft MRs in configured projects", () => {
     const mrs = buildBoard(
@@ -106,6 +129,28 @@ describe("buildBoard", () => {
       config,
     );
     expect(mrs.map((m) => m.iid).sort()).toEqual([1, 2]);
+  });
+
+  test("keeps your own drafts and flags them, but not anyone else's", () => {
+    const mine: BoardConfig = { ...config, defaultMember: "alice" };
+    const mrs = buildBoard(
+      [
+        pr({ iid: 1, draft: true, author: { id: "a", username: "alice", name: "Alice", avatarUrl: null } }),
+        pr({ iid: 2, draft: true, author: { id: "b", username: "bob", name: "Bob", avatarUrl: null } }),
+        pr({ iid: 3, author: { id: "a", username: "alice", name: "Alice", avatarUrl: null } }),
+      ],
+      mine,
+    );
+    expect(mrs.map((m) => m.iid).sort()).toEqual([1, 3]);
+    expect(mrs.find((m) => m.iid === 1)?.isDraft).toBe(true);
+    expect(mrs.find((m) => m.iid === 3)?.isDraft).toBe(false);
+  });
+
+  test("hides every draft when there is no single you to own them", () => {
+    // defaultMember "all" means the board is showing the whole team, so there is
+    // nobody whose drafts are "mine" to act on.
+    const mrs = buildBoard([pr({ iid: 1, draft: true }), pr({ iid: 2 })], config);
+    expect(mrs.map((m) => m.iid)).toEqual([2]);
   });
 
   test("drops MRs with no activity within the stale window, keeps recently-updated ones", () => {

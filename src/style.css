@@ -145,6 +145,15 @@ body {
 .tui-branch { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tui-arrow { color: var(--muted); opacity: 0.7; }
 .tui-mr-iid { color: var(--muted); }
+/* Draft marker on a row. Only your own drafts reach the board, so this reads as
+   "yours, not shipped yet" -- muted rather than alarming, since it isn't a
+   problem to fix, just a state to leave or clear. */
+.tui-draft {
+  flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.06em;
+  font-size: 0.55rem; font-weight: 700; line-height: 1;
+  color: var(--muted); border: 1px solid var(--border);
+  border-radius: 3px; padding: 0.15rem 0.28rem;
+}
 .tui-row-sep { color: var(--muted); opacity: 0.5; }
 /* Author identity in a row (All view, non-author grouping). */
 .tui-author-tag {

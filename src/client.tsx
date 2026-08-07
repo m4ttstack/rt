@@ -3,7 +3,7 @@ import { createRoot } from "react-dom/client";
 import { Invadr } from "invadrs/react";
 import { extractTicketId, ticketUrl } from "./ticket.ts";
 import type { BoardMR } from "./data.ts";
-import { hasChangesRequested } from "./data.ts";
+import { hasChangesRequested, stripDraftPrefix } from "./data.ts";
 import { getReviewDisplayState } from "@mattstack/glance";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -203,8 +203,12 @@ function activeReviewers(mr: BoardMR): string[] {
 
 /** Title with any leading ticket prefix ("ACME-2369: ") removed — the ticket
     already shows via the Linear link and the branch name. */
+/** Drop what the row already says elsewhere: the leading ticket id (the ticket
+    link carries it) and any draft marker (the DRAFT chip carries that). glance
+    already strips the marker off GitLab titles, so the draft pass is only a
+    guard for titles that arrive with it still attached. */
 function cleanTitle(title: string): string {
-  return title.replace(/^[A-Za-z]+-\d+:\s*/, "");
+  return stripDraftPrefix(title).replace(/^[A-Za-z]+-\d+:\s*/, "");
 }
 
 /** Plain click opens the MR in GitLab; right-click opens the row action menu
@@ -516,6 +520,8 @@ function RowMenu({
   canRespond,
   onDoctor,
   canDoctor,
+  onDraftState,
+  canDraftState,
   onResumeReview,
   onResumeRespond,
 }: {
@@ -534,6 +540,8 @@ function RowMenu({
   canRespond: boolean;
   onDoctor: (mr: BoardMR) => void;
   canDoctor: boolean;
+  onDraftState: (mr: BoardMR, draft: boolean) => void;
+  canDraftState: boolean;
   onResumeReview: (mr: BoardMR) => void;
   onResumeRespond: (mr: BoardMR) => void;
 }) {
@@ -626,6 +634,13 @@ function RowMenu({
           label={doctorItemLabel(mrx.doctor?.status)}
           hint="herdr"
           onClick={run(() => onDoctor(mr))}
+        />
+      )}
+      {local && canDraftState && (
+        <MenuItem
+          label={mr.isDraft ? "mark ready" : "mark as draft"}
+          hint="gitlab"
+          onClick={run(() => onDraftState(mr, !mr.isDraft))}
         />
       )}
       {mrx.review?.reportReady && (
@@ -1158,6 +1173,7 @@ function RowView({
             )}
             <div className="tui-row-1">
               <StatusDot mr={mr} />
+              {mr.isDraft && <span className="tui-draft" title="draft — right-click to mark ready">draft</span>}
               <span className="tui-title">{cleanTitle(mr.title)}</span>
               <StatusPhrase mr={mr} />
               {ticket && <TicketLink ticket={ticket} />}
@@ -1778,6 +1794,32 @@ function Board() {
   const handleResumeReview = useCallback((mr: BoardMR) => handleResume(mr, "review"), [handleResume]);
   const handleResumeRespond = useCallback((mr: BoardMR) => handleResume(mr, "respond"), [handleResume]);
 
+  // Flip one of your own MRs between draft and ready. No optimistic state: the
+  // flip lives in GitLab, so the row waits for the reload rather than claiming a
+  // change the API might have refused.
+  const handleDraftState = useCallback(
+    (mr: BoardMR, draft: boolean) => {
+      if (!mr.webUrl) return;
+      const verb = draft ? "draft" : "ready";
+      addToast(`marking !${mr.iid} ${verb}…`);
+      fetch("/draft", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mrUrl: mr.webUrl, iid: mr.iid, draft }),
+      })
+        .then(async (r) => {
+          if (!r.ok) {
+            addToast(`couldn't mark !${mr.iid} ${verb} (${r.status})`);
+            return;
+          }
+          addToast(draft ? `!${mr.iid} is back to draft` : `!${mr.iid} is ready for review`);
+          void load(true);
+        })
+        .catch(() => addToast(`couldn't mark !${mr.iid} ${verb}`));
+    },
+    [addToast, load],
+  );
+
   const handleDoctor = useCallback(
     (mr: BoardMR) => {
       if (!mr.webUrl) return;
@@ -2151,6 +2193,11 @@ function Board() {
           // Doctor is mechanical repair (rebase / CI), so it's offered for anyone's
           // MR that's actually broken — not gated to your own MRs the way respond is.
           canDoctor={!!(rowMenu.mr.blockers?.pipelineFailing || rowMenu.mr.blockers?.hasConflicts)}
+          onDraftState={handleDraftState}
+          // Your own MRs only, both directions. buildBoard already hides other
+          // people's drafts, but their ready MRs are on the board, so this gate
+          // is what keeps "mark as draft" off them.
+          canDraftState={rowMenu.mr.author.username === data.defaultMember}
           onResumeReview={handleResumeReview}
           onResumeRespond={handleResumeRespond}
         />

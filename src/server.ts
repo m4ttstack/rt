@@ -2,7 +2,8 @@ import { join, dirname, basename } from "path";
 import { readFileSync, writeFileSync, mkdirSync, watch } from "fs";
 import type { PullRequest, MRDetail } from "@mattstack/glance";
 import { loadConfig, loadGitLabToken, loadSlackToken, saveMemberHidden, CONFIG_PATH } from "./config.ts";
-import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, type BoardMR, type SyncScopeRead } from "./data.ts";
+import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, projectPathFromWebUrl, type BoardMR, type SyncScopeRead } from "./data.ts";
+import { GitLabProvider } from "@mattstack/glance";
 import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } from "./discussions.ts";
 import { readProjectMRs, readDiscussions, subscribe } from "@mattstack/rt-client";
 import { SnapshotCache } from "./cache.ts";
@@ -23,6 +24,16 @@ const favicon = readFileSync(faviconPath, "utf-8");
 const config = loadConfig();
 // Optional: display-name lookups only. The board's data plane is rt.
 const gitlabToken = loadGitLabToken();
+
+/** Writes go straight to GitLab through glance; reads come from the rt daemon
+    (see readProjectMRs). Built on demand so a tokenless install still boots --
+    every caller has already refused the request when the token is missing. */
+let gitlabProvider: GitLabProvider | undefined;
+function gitlab(): GitLabProvider {
+  if (!gitlabToken) throw new Error("gitlab token not configured");
+  gitlabProvider ??= new GitLabProvider(config.gitlabHost, gitlabToken);
+  return gitlabProvider;
+}
 // Optional: enables the Slack review-thread menu actions when a token is set.
 const slackToken = loadSlackToken();
 
@@ -655,6 +666,52 @@ Bun.serve({
           });
         } catch (err) {
           return new Response(`slack react failed: ${err instanceof Error ? err.message : err}`, { status: 502 });
+        }
+      }
+      case "/draft": {
+        // Flip one of your own MRs between draft and ready. GitLab has no draft
+        // flag: the draft state IS the title prefix, so rewriting the title is
+        // the whole operation, both directions. Gated to your own MRs on both
+        // sides (the menu item only renders for them, and this refuses others').
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+        if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
+        if (!gitlabToken) return new Response("gitlab token not configured", { status: 400 });
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return new Response("invalid json", { status: 400 });
+        }
+        const parsed = parseReviewRequestBody(body);
+        const draft = (body as { draft?: unknown })?.draft;
+        if (!parsed || typeof draft !== "boolean") {
+          return new Response("expected { mrUrl: string, iid: number, draft: boolean }", { status: 400 });
+        }
+        const snapshot = await cache.get();
+        const mr = snapshot.mrs.find((m) => m.webUrl === parsed.mrUrl);
+        if (!mr) return new Response(`unknown MR "${parsed.mrUrl}"`, { status: 400 });
+        if (mr.author.username !== config.defaultMember) {
+          return new Response("not your MR", { status: 403 });
+        }
+        if (mr.isDraft === draft) {
+          return new Response(JSON.stringify({ ok: true, unchanged: true }), { headers: { "content-type": "application/json" } });
+        }
+        const path = projectPathFromWebUrl(parsed.mrUrl, config.gitlabHost);
+        if (!path) return new Response(`could not derive a project path from "${parsed.mrUrl}"`, { status: 400 });
+        try {
+          // glance owns the title mechanics (on GitLab the draft state IS the
+          // title prefix), reads the MR first since we send `draft` without a
+          // title, and reads it back after to confirm the flag actually landed --
+          // throwing instead of reporting a transition that did not happen.
+          const updated = await gitlab().updatePullRequest(path, parsed.iid, { draft });
+          // The cached snapshot still has the old state; drop it so the next
+          // /data.json reflects the flip instead of waiting out the cache TTL.
+          cache.invalidate();
+          return new Response(JSON.stringify({ ok: true, draft, title: updated.title }), {
+            headers: { "content-type": "application/json" },
+          });
+        } catch (err) {
+          return new Response(`gitlab update failed: ${err instanceof Error ? err.message : err}`, { status: 502 });
         }
       }
       case "/review/report": {

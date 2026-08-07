@@ -24,6 +24,9 @@ export type BoardMR = MRDashboardProps & {
       general-comment-only MR still be flagged as having comment activity. */
   generalComments?: number;
   pipelineState: PipelineState;
+  /** Draft (unfinished) MR. Only your own drafts reach the board, so this also
+      means "yours, and not marked ready yet" -- see buildBoard. */
+  isDraft: boolean;
   /** Scoped repo id ("gitlab:42"), for the lazy discussions fetch on hover. */
   repositoryId: string;
   /** rt repo name for daemon reads (config.rtRepos[projectPath]); null when the
@@ -76,8 +79,12 @@ export function buildBoard(prs: PullRequest[], config: BoardConfig, now: number 
   const prefixes = new Set(config.ticketPrefixes);
   const out: BoardMR[] = [];
   for (const pr of prs) {
-    if (pr.draft || pr.state !== "opened") continue;
+    if (pr.state !== "opened") continue;
     if (!pr.author || !members.has(pr.author.username)) continue;
+    // Someone else's draft isn't yours to act on, so it stays off the board;
+    // your own show up with a DRAFT chip and a "mark ready" action. With
+    // defaultMember "all" there's no single "you", so no drafts are shown.
+    if (pr.draft && pr.author.username !== config.defaultMember) continue;
     // Drop MRs gone quiet: no activity (last update) within the stale window.
     if (pr.updatedAt && Date.parse(pr.updatedAt) < staleCutoff) continue;
     // Team filter: keep only MRs whose Linear ticket prefix is configured.
@@ -102,11 +109,23 @@ export function buildBoard(prs: PullRequest[], config: BoardConfig, now: number 
       // Coarse fallback; the server refines this from discussions for commented MRs.
       reviewerComments: pr.unresolvedThreadCount ?? 0,
       pipelineState: derivePipelineState(props),
+      isDraft: pr.draft === true,
       repositoryId: pr.repositoryId,
       rtRepo: config.rtRepos[path] ?? null,
     });
   }
   return out;
+}
+
+/** Every draft marker GitLab recognises on a title, including the legacy WIP
+    spellings. Anchored and case-insensitive; GitLab itself matches loosely. */
+const DRAFT_PREFIX = /^\s*(?:\[draft\]|\(draft\)|draft:|\[wip\]|\(wip\)|wip:)\s*/i;
+
+/** Drop the draft marker from an MR title, for display only. Writing the marker
+    is glance's job (GitLabProvider.updatePullRequest), which also verifies the
+    flag landed -- do not reimplement that here. */
+export function stripDraftPrefix(title: string): string {
+  return title.replace(DRAFT_PREFIX, "");
 }
 
 /**
