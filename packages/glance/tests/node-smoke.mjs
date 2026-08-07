@@ -30,6 +30,7 @@ const {
   ActionCableClient,
   GitHubProvider,
   GitLabProvider,
+  ReadBackFailedError,
   TRANSITIONAL_MERGE_STATUSES,
   isTransitionalMergeStatus
 } = await import(dist);
@@ -290,6 +291,35 @@ await check('TRANSITIONAL_MERGE_STATUSES and isTransitionalMergeStatus survive t
   assert.equal(isTransitionalMergeStatus('preparing'), true);
   assert.equal(isTransitionalMergeStatus('broken_status'), false);
   assert.equal(isTransitionalMergeStatus(null), false);
+});
+
+await check('ReadBackFailedError survives the bundler and answers instanceof', async () => {
+  // The class is only useful if `instanceof` holds for a consumer importing
+  // the built entry point, which is a different module instance from the one
+  // the Bun tests import. A bundler that duplicated or downlevelled the class
+  // would leave the branch in every consumer silently dead.
+  assert.equal(typeof ReadBackFailedError, 'function');
+
+  const p = new GitLabProvider('https://gitlab.example.com', 'tok');
+  p.readBackRetryDelayMs = 1;
+  p.gb = {
+    MergeRequests: {
+      show: async () => ({ title: 'Current title', draft: false }),
+      edit: async () => ({})
+    }
+  };
+  p.fetchSingleMR = async () => null;
+
+  const err = await p.updatePullRequest('g/p', 7, { title: 'Renamed' }).then(
+    () => null,
+    (e) => e
+  );
+  assert.ok(err, 'expected the read-back to fail');
+  assert.ok(err instanceof ReadBackFailedError, 'instanceof must hold across the dist boundary');
+  assert.ok(err instanceof Error, 'must remain a plain Error for callers that do not branch');
+  assert.equal(err.writeApplied, true);
+  assert.equal(err.operation, 'updatePullRequest');
+  assert.equal(err.iid, 7);
 });
 
 // ── ActionCable ──────────────────────────────────────────────────────────────

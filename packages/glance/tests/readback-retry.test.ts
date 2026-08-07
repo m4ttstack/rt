@@ -17,6 +17,8 @@
  */
 import { describe, expect, test } from 'bun:test';
 import { GitLabProvider } from '../src/GitLabProvider.ts';
+import { ReadBackFailedError } from '../src/errors.ts';
+import { ReadBackFailedError as rootReadBackFailedError } from '../src/index.ts';
 import type { PullRequest } from '../src/types.ts';
 
 /** A read-back outcome: an MR, a null miss, or a rejection. */
@@ -106,6 +108,100 @@ describe('read-back retries a rejection, not just a null', () => {
 
     expect(err.message).toBe('Updated MR but failed to fetch it back');
     expect(err.cause).toBeUndefined();
+  });
+});
+
+describe('a failed read-back says whether the write landed', () => {
+  test('the error names the operation, the MR, and the pending write', async () => {
+    const h = harness([null]);
+
+    const err = await h.provider.updatePullRequest('g/p', 7, { title: 'Renamed' }).catch((e) => e);
+
+    // The whole point of the type: a caller catching this knows the edit is
+    // on the forge and must not re-issue it, which a bare Error could not say.
+    expect(err).toBeInstanceOf(ReadBackFailedError);
+    expect(err.writeApplied).toBe(true);
+    expect(err.operation).toBe('updatePullRequest');
+    expect(err.projectPath).toBe('g/p');
+    expect(err.iid).toBe(7);
+    expect(err.name).toBe('ReadBackFailedError');
+  });
+
+  test('it is still an Error, so a caller that does not branch on it is unaffected', async () => {
+    const h = harness([null]);
+
+    const err = await h.provider.updatePullRequest('g/p', 7, { title: 'Renamed' }).catch((e) => e);
+
+    expect(err).toBeInstanceOf(Error);
+    expect(typeof err.message).toBe('string');
+  });
+
+  test('a read with no write in front of it reports no pending write', async () => {
+    const h = harness([null]);
+
+    // The default, which is what `watchMR` relies on by passing no options:
+    // its fetch is a plain read, and claiming `writeApplied` there would tell
+    // a caller to reconcile an edit that was never issued. Driving the helper
+    // rather than `watchMR` keeps the ActionCable subscription out of it.
+    const err = await (h.provider as any)
+      .fetchSingleMRWithRetry('g/p', 7, 'watchMR', 'watchMR')
+      .catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(ReadBackFailedError);
+    expect(err.writeApplied).toBe(false);
+    expect(err.operation).toBe('watchMR');
+  });
+
+  test('every write path marks its read-back as following a write', async () => {
+    // Guards the call sites, which the helper cannot enforce: a new caller
+    // that forgets `writeApplied` silently degrades to "no write pending".
+    const calls: Array<{ operation: string; writeApplied: boolean }> = [];
+    const h = harness([mr()]);
+    (h.provider as any).fetchSingleMRWithRetry = async (
+      _path: string,
+      _iid: number,
+      operation: string,
+      _message: string,
+      options?: { writeApplied?: boolean },
+    ) => {
+      calls.push({ operation, writeApplied: options?.writeApplied ?? false });
+      return mr();
+    };
+    (h.provider as any).gb.MergeRequests.create = async () => ({ iid: 7 });
+    (h.provider as any).gb.MergeRequests.merge = async () => ({});
+
+    await h.provider.updatePullRequest('g/p', 7, { title: 'Renamed' });
+    await h.provider.createPullRequest({
+      projectPath: 'g/p',
+      title: 'New',
+      sourceBranch: 'feat',
+      targetBranch: 'main',
+    });
+    await h.provider.mergePullRequest('g/p', 7);
+
+    expect(calls).toEqual([
+      { operation: 'updatePullRequest', writeApplied: true },
+      { operation: 'createPullRequest', writeApplied: true },
+      { operation: 'mergePullRequest', writeApplied: true },
+    ]);
+  });
+
+  test('the class is reachable from the package root, where a consumer imports it', () => {
+    expect(rootReadBackFailedError).toBe(ReadBackFailedError);
+  });
+
+  test('a draft mismatch is not a read-back failure -- the read worked', async () => {
+    const h = harness([mr({ draft: true, title: 'WIP: Current title' })], {
+      title: 'WIP: Current title',
+      draft: true,
+    });
+
+    const err = await h.provider.updatePullRequest('g/p', 7, { draft: false }).catch((e) => e);
+
+    // The transition genuinely did not land, which is a real failure to
+    // report, not a write whose result merely went unread.
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(ReadBackFailedError);
   });
 });
 
