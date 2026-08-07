@@ -46,6 +46,18 @@ export class ActionCableClient {
   }
 
   connect(): void {
+    // Checked here rather than in performConnect: reconnect ticks run inside
+    // timer callbacks, where a throw would be an uncaught exception, and once
+    // past this guard the global cannot vanish. Without it, a runtime below
+    // the engines floor used to fail into the retry loop behind a
+    // default-noop logger: connect() resolved, no callback fired, and the
+    // backoff burned its attempts failing identically (MAT-156).
+    if (typeof WebSocket === "undefined") {
+      throw new Error(
+        "ActionCableClient requires a global WebSocket (Node 21+ provides one; this package " +
+          "declares engines.node >=21). GitLab realtime cannot work on this runtime.",
+      );
+    }
     this.intentionalDisconnect = false;
     this.reconnectAttempt = 0;
     this.performConnect();
@@ -73,8 +85,10 @@ export class ActionCableClient {
 
     let ws: WebSocket;
     try {
-      // Bun extends the standard WebSocket constructor to accept an options object
-      // with a `headers` field (Bun-specific, not in the browser WebSocket API).
+      // The options object with a `headers` field is not in the browser
+      // WebSocket API, but both server runtimes this package targets accept
+      // it and send the headers: Bun natively, and Node's undici WebSocket
+      // (measured on node 22: Authorization and Origin both arrive, MAT-156).
       ws = new WebSocket(
         this.wsUrl,
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -92,6 +106,10 @@ export class ActionCableClient {
         message,
         ctx: this.logContext,
       });
+      // The callback, not just the log: the default logger is noop, and a
+      // consumer watching the callbacks must never see a client that looks
+      // connected while its constructor is failing (MAT-156).
+      this.callbacks.onDisconnected(false, message);
       this.scheduleReconnect();
       return;
     }

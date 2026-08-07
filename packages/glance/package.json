@@ -33,7 +33,7 @@
     "directory": "packages/glance"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=21"
   },
   "devDependencies": {
     "@mattstack/typescript-config": "workspace:*",

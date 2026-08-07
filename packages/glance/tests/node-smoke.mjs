@@ -13,7 +13,7 @@
  *    the thing Bun already tests.
  *  - Reach `dist` through `import()`, not `require()`. `package.json` maps
  *    `exports["."].import` here, and `require()` of an ESM file only works
- *    on Node 22.12 and later, while this package supports Node >= 18. A
+ *    on Node 22.12 and later, while this package supports Node >= 21. A
  *    check that passes only on the newest Node proves nothing about the
  *    floor it claims to support.
  *
@@ -26,8 +26,13 @@ import { resolve, dirname } from 'node:path';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const dist = pathToFileURL(resolve(here, '../dist/index.js')).href;
-const { GitHubProvider, GitLabProvider, TRANSITIONAL_MERGE_STATUSES, isTransitionalMergeStatus } =
-  await import(dist);
+const {
+  ActionCableClient,
+  GitHubProvider,
+  GitLabProvider,
+  TRANSITIONAL_MERGE_STATUSES,
+  isTransitionalMergeStatus
+} = await import(dist);
 
 let failures = 0;
 async function check(name, fn) {
@@ -285,6 +290,56 @@ await check('TRANSITIONAL_MERGE_STATUSES and isTransitionalMergeStatus survive t
   assert.equal(isTransitionalMergeStatus('preparing'), true);
   assert.equal(isTransitionalMergeStatus('broken_status'), false);
   assert.equal(isTransitionalMergeStatus(null), false);
+});
+
+// ── ActionCable ──────────────────────────────────────────────────────────────
+// This gate never constructed an ActionCableClient, which is how a client
+// that could not work at all on Node 18/20 shipped for five phases while
+// every check here stayed green (MAT-156). These two checks pin both halves
+// of the fix: the runtime this gate runs on actually has the global the
+// client needs, and a runtime without it gets a throw instead of a silent
+// retry loop.
+
+const noopCallbacks = {
+  onConnected: () => {},
+  onDisconnected: () => {},
+  onMessage: () => {},
+  onConfirm: () => {},
+  onReject: () => {}
+};
+
+await check('this Node provides the global WebSocket that ActionCableClient needs', () => {
+  assert.equal(typeof WebSocket, 'function', 'no global WebSocket: engines.node floor is wrong for this runtime');
+});
+
+await check('ActionCableClient.connect() runs under Node and disconnects cleanly', () => {
+  // A stub constructor keeps this hermetic: the check is that the shipped
+  // build's connect path executes under Node, not that GitLab is reachable.
+  const realWS = globalThis.WebSocket;
+  globalThis.WebSocket = class {
+    onmessage = null;
+    onclose = null;
+    onerror = null;
+    close() {}
+  };
+  try {
+    const client = new ActionCableClient('https://gitlab.example.com', 'tok', noopCallbacks);
+    client.connect();
+    client.disconnect();
+  } finally {
+    globalThis.WebSocket = realWS;
+  }
+});
+
+await check('ActionCableClient.connect() throws without a global WebSocket (MAT-156)', () => {
+  const realWS = globalThis.WebSocket;
+  delete globalThis.WebSocket;
+  try {
+    const client = new ActionCableClient('https://gitlab.example.com', 'tok', noopCallbacks);
+    assert.throws(() => client.connect(), /Node 21/);
+  } finally {
+    globalThis.WebSocket = realWS;
+  }
 });
 
 if (failures > 0) {
