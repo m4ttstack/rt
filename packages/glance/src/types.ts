@@ -204,8 +204,19 @@ export interface PullRequest {
   /** ISO timestamp after which the MR is eligible to merge (scheduled merge). */
   mergeAfter: string | null;
   /**
-   * Number of commits the source branch is behind the target (i.e., how far it has diverged).
-   * GitLab: from REST `?include_diverged_commits_count=true`. GitHub: null (requires separate compare call).
+   * Number of commits the source branch is behind the target, or null when
+   * the fetch path did not request it. Null means "not asked", never "zero".
+   *
+   * GitLab populates it only where the REST
+   * `?include_diverged_commits_count=true` call is made: `fetchSingleMR`
+   * (and `fetchPullRequestByBranch`, which is backed by it) and the
+   * role-based mode of `fetchPullRequests`. The `iids`, `authorUsernames`,
+   * and `projectPath` modes of `fetchPullRequests`, plus
+   * `fetchPullRequestsByBranches`, all leave it null. GitHub always leaves it
+   * null: it would need a `GET /compare/{base}...{head}` per PR.
+   *
+   * Collapsing that null into zero is what MAT-164 fixed. Do not reintroduce
+   * a `?? 0` on this field.
    */
   divergedCommitsCount: number | null;
 
@@ -279,6 +290,21 @@ export interface MRDashboardProps {
       MR pointed at its parent). False/absent when the default branch is
       unknown. */
   isStacked?: boolean;
+  /**
+   * Commits the source branch is behind `targetBranch`, or null when the
+   * fetch path that produced this MR never asked for the count.
+   *
+   * Informational, deliberately not a blocker (MAT-164): on a
+   * `merge_method: merge` project a moved target branch does not stop a
+   * merge, and GitLab's own UI offers no rebase button for it. The blocker
+   * question is `blockers.needsRebase`.
+   *
+   * Null is not zero. A consumer rendering "behind by N" must treat null as
+   * unknown rather than as "up to date", or the same MR will appear to fall
+   * in and out of being behind as the caller alternates between fetch paths.
+   * `PullRequest.divergedCommitsCount` documents which paths populate it.
+   */
+  behindTarget: number | null;
 
   // ── Diff ────────────────────────────────────────────────────────────────
   diff: { additions: number; deletions: number; filesChanged: number } | null;
@@ -349,17 +375,28 @@ export interface MRDashboardProps {
     label: string;
     cancelLabel: string;
   };
+  /**
+   * `visible` tracks `PullRequest.shouldBeRebased` -- GitLab's own answer to
+   * whether this project's merge method requires a rebase first -- so the
+   * button appears where GitLab shows one and nowhere else. Behind-ness alone
+   * does not raise it (MAT-164); read `behindTarget` and render your own
+   * affordance if you want one.
+   */
   rebaseButton: {
     visible: boolean;
     loading: boolean;
     label: string;
-    behindBy: number;
   };
 
   // ── Blockers ─────────────────────────────────────────────────────────────
   blockers: {
     isDraft: boolean;
     hasConflicts: boolean;
+    /**
+     * GitLab requires a rebase before this MR can merge
+     * (`PullRequest.shouldBeRebased`). Not "the target branch has moved" --
+     * that is `behindTarget`, which is not a blocker (MAT-164).
+     */
     needsRebase: boolean;
     pipelineFailing: boolean;
     pipelineRunning: boolean;

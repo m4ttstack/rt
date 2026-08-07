@@ -191,15 +191,16 @@ Pre-computed, UI-ready props — no conditional logic needed in the component la
 | `isDraft` | Whether the MR is in draft mode |
 | `author`, `assignees`, `createdAt` | Authorship |
 | `sourceBranch`, `targetBranch` | Branch info |
+| `behindTarget` | `number \| null` — commits behind the target branch, `null` when the fetch path did not ask. Informational, not a blocker |
 | `status` | `'mergeable' \| 'blocked' \| 'draft' \| 'merged' \| 'closed'` |
 | `statusDetail` | Specific blocker reason (e.g., `'CI_MUST_PASS'`, `'NEED_REBASE'`) |
 | `isReady` | `true` when `detailedMergeStatus === 'mergeable'` |
 | `pipeline` | Pipeline status breakdown: passing, failing, running counts, `hasWarnings`, individual `jobs` |
 | `reviews` | Reviewer state: required, given, remaining, approvedBy, per-reviewer breakdown |
 | `mergeButton` | `{ visible, disabled, loading, label }` |
-| `rebaseButton` | `{ visible, loading, label, behindBy }` |
+| `rebaseButton` | `{ visible, loading, label }` — `visible` tracks GitLab's `shouldBeRebased` |
 | `autoMergeButton` | `{ visible, isActive, strategy, setBy, label, cancelLabel }` |
-| `blockers` | Flags: `isDraft`, `hasConflicts`, `needsRebase`, `pipelineFailing`, `pipelineRunning`, `awaitingApprovals`, `hasUnresolvedDiscussions`, `hasMergeError`, `any` |
+| `blockers` | Flags: `isDraft`, `hasConflicts`, `needsRebase`, `pipelineFailing`, `pipelineRunning`, `awaitingApprovals`, `hasUnresolvedDiscussions`, `hasMergeError`, `any`. `needsRebase` means GitLab requires a rebase before merge, not that the target branch moved |
 | `isMerging`, `isRebasing`, `isLoading` | In-progress spinner states |
 | `connection` | `'connecting' \| 'connected' \| 'disconnected' \| 'reconnecting' \| 'idle'` |
 
