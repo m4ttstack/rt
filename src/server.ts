@@ -14,7 +14,7 @@ import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, 
 import { launchReview, launchRespond, launchDoctor, launchResume, focusTab, reReviewResumePrompt } from "./herdr.ts";
 import { readSlackRefs, attachSlack, resolveSlackRef, reactToMR, unreactFromMR, postToSlack, REVIEW_EMOJI } from "./slack.ts";
 import { signalEmoji, parseAgentSignal } from "./agent-signal.ts";
-import { renderMr, renderMulti, type MrFacts } from "./template.ts";
+import { renderMr, renderMulti, sanitizeHeader, MAX_HEADER_LEN, type MrFacts } from "./template.ts";
 
 const cssPath = join(import.meta.dir, "style.css");
 let css = readFileSync(cssPath, "utf-8");
@@ -771,8 +771,10 @@ Bun.serve({
       case "/slack/post": {
         // Post an MR (or a summary of many MRs) to the configured channel and
         // write a slack ref pinned to the new message so reactions target it.
-        // Renders the text server-side from config templates so the client
-        // can't inject arbitrary content.
+        // Item lines always render server-side from config templates against
+        // the board cache, so no URL in a posted message can come from the
+        // client. An optional `header` overrides only the summary's first
+        // line, validated by sanitizeHeader.
         if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
         if (!slackToken) return new Response("slack not configured", { status: 400 });
@@ -782,9 +784,13 @@ Bun.serve({
         } catch {
           return new Response("invalid json", { status: 400 });
         }
-        const { mrUrls } = (body ?? {}) as { mrUrls?: unknown };
+        const { mrUrls, header } = (body ?? {}) as { mrUrls?: unknown; header?: unknown };
         if (!Array.isArray(mrUrls) || mrUrls.length === 0 || !mrUrls.every((u) => typeof u === "string")) {
           return new Response("expected { mrUrls: string[] }", { status: 400 });
+        }
+        const headerOverride = header === undefined ? null : sanitizeHeader(header);
+        if (header !== undefined && headerOverride === null) {
+          return new Response(`"header" must be a non-empty string of at most ${MAX_HEADER_LEN} characters`, { status: 400 });
         }
         const snapshot = await cache.get();
         const byUrl = new Map(snapshot.mrs.map((m) => [m.webUrl, m] as const));
@@ -834,7 +840,7 @@ Bun.serve({
         }));
         const text = facts.length === 1
           ? renderMr(config.slack.singleTemplate, facts[0]!)
-          : renderMulti(config.slack.multiHeader, config.slack.multiItem, facts);
+          : renderMulti(headerOverride ?? config.slack.multiHeader, config.slack.multiItem, facts);
         try {
           const refs = await postToSlack(
             slackToken,
