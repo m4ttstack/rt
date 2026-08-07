@@ -1,6 +1,6 @@
 {
   "name": "@mattstack/glance",
-  "version": "0.18.0",
+  "version": "0.18.1",
   "description": "GitHub and GitLab API client: REST, GraphQL, and real-time ActionCable subscriptions",
   "type": "module",
   "main": "dist/index.js",
