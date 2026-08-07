@@ -2363,19 +2363,69 @@ export async function runCiConformance(
     );
   });
 
-  // Deliberately weak, and now labelled as such. `latestPipelineAndJob` reads
-  // `GET /pipelines/:id/jobs`, which never lists bridges, so `probe.jobId` is
-  // always a regular job. The bridge branch is unreachable from here anyway:
-  // `GitProvider.fetchDownstreamPipeline(projectPath, jobId)` declares no
-  // `pipelineId`, and task 5's live spike measured `null` for a genuine bridge
-  // with a live child pipeline. See the GitLab expectation note.
+  // The negative half: `latestPipelineAndJob` reads `GET /pipelines/:id/jobs`,
+  // which never lists bridges, so `probe.jobId` is always a regular job and
+  // null is the only correct answer, parent id supplied or not.
   await check(report, fixture, 'fetchDownstreamPipeline', 'reports null for a job with no child pipeline', async () => {
-    const downstream = await provider.fetchDownstreamPipeline(projectPath, probe.jobId);
+    const downstream = await provider.fetchDownstreamPipeline(projectPath, probe.jobId, probe.pipelineId);
     assert(
       downstream === null,
       `expected null for a non-bridge job, got ${JSON.stringify(downstream)}`
     );
   });
+
+  // The positive half, on providers whose expectation says the method works
+  // (table-driven, not branched on the fixture name). The fixture's CI keeps
+  // a permanent `trigger-child` bridge job (MAT-155), so scanning recent
+  // pipelines' bridges finds a real parent/child pair; resolving it through
+  // the interface is the round trip the old 'resolves without throwing'
+  // grading never proved. Bridges 404 on GET /jobs/:id, so this only works
+  // because the widened signature carries the parent pipeline id.
+  if (expectationFor(fixture.name, 'fetchDownstreamPipeline').support === 'supported') {
+    await check(report, fixture, 'fetchDownstreamPipeline', 'resolves a bridge job to its child pipeline', async () => {
+      const pipesRes = await provider.restRequest(
+        'GET',
+        `/projects/${encodeURIComponent(projectPath)}/pipelines?per_page=${PIPELINE_SCAN_LIMIT}`
+      );
+      assert(pipesRes.ok, `pipeline listing failed: HTTP ${pipesRes.status}`);
+      const pipes = (await pipesRes.json()) as Array<{ id: number }>;
+
+      let bridge: { parentId: number; bridgeId: number; downstreamId: number } | null = null;
+      for (const pipe of pipes) {
+        const bridgesRes = await provider.restRequest(
+          'GET',
+          `/projects/${encodeURIComponent(projectPath)}/pipelines/${pipe.id}/bridges`
+        );
+        if (!bridgesRes.ok) continue;
+        const bridges = (await bridgesRes.json()) as Array<{
+          id: number;
+          downstream_pipeline: { id: number } | null;
+        }>;
+        const withChild = bridges.find(b => b.downstream_pipeline);
+        if (withChild) {
+          bridge = {
+            parentId: pipe.id,
+            bridgeId: withChild.id,
+            downstreamId: withChild.downstream_pipeline!.id,
+          };
+          break;
+        }
+      }
+      if (!bridge) {
+        throw new Inconclusive(
+          `no bridge with a downstream pipeline in the newest ${PIPELINE_SCAN_LIMIT} pipelines; ` +
+            'the fixture CI should carry the permanent trigger-child job'
+        );
+      }
+
+      const downstream = await provider.fetchDownstreamPipeline(projectPath, bridge.bridgeId, bridge.parentId);
+      assert(downstream !== null, `bridge ${bridge.bridgeId} resolved to null despite child ${bridge.downstreamId}`);
+      assert(
+        downstream.id === `gitlab:pipeline:${bridge.downstreamId}`,
+        `expected gitlab:pipeline:${bridge.downstreamId}, got ${downstream.id}`
+      );
+    });
+  }
 
   await check(report, fixture, 'retryPipeline', 'accepts a retry request', async () => {
     try {

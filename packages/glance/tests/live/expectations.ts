@@ -150,8 +150,8 @@ export const GITLAB_EXPECTATIONS: Record<ProviderMethod, Expectation> = {
   retryJob: { support: 'supported', capability: 'canRetryPipeline' },
   fetchJobTrace: { support: 'supported' },
   fetchDownstreamPipeline: {
-    support: 'approximate',
-    note: 'The bridge branch is not reachable through the declared interface. Task 5\'s live spike built a real parent/child pipeline on the fixture and measured: the bridge job 404s at GET /jobs/:id, GET /pipelines/:id/jobs lists no bridges at all, and fetchDownstreamPipeline(projectPath, jobId) returned null for a genuine bridge with a live downstream pipeline. GitLabProvider can answer it -- fetchJobDetail(projectPath, bridgeId, pipelineId) returned type "bridge" in the same spike -- but only via the third argument that GitProvider.fetchDownstreamPipeline does not declare, so no fixture work can close the gap. Widening the signature to fetchDownstreamPipeline(projectPath, jobId, pipelineId?) is its own ticket. Until then the harness can only assert the non-bridge answer, null.'
+    support: 'supported',
+    note: 'MAT-155 widened the interface to fetchDownstreamPipeline(projectPath, jobId, pipelineId?), which is what makes the bridge branch reachable: bridges 404 on GET /jobs/:id, so without the parent pipeline id the /bridges fallback never runs and a genuine bridge resolves to null. Callers must pass pipelineId whenever they have it. The fixture CI carries a permanent trigger-child bridge job, and the harness resolves a real bridge to its child pipeline id rather than grading "resolves without throwing".'
   },
   fetchJobDetail: { support: 'supported' },
   requestReReview: { support: 'supported', capability: 'canRequestReReview' },

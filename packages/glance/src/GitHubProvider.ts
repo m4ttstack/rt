@@ -2173,8 +2173,9 @@ export class GitHubProvider implements GitProvider {
     }
   }
 
-  async fetchDownstreamPipeline(_projectPath: string, _jobId: number): Promise<Pipeline | null> {
-    // GitHub Actions doesn't have a child/downstream pipeline concept
+  async fetchDownstreamPipeline(_projectPath: string, _jobId: number, _pipelineId?: number): Promise<Pipeline | null> {
+    // GitHub Actions doesn't have a child/downstream pipeline concept, so
+    // null is the correct answer for every input, pipelineId included.
     return null;
   }
 

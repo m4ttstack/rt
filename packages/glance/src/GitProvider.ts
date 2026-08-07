@@ -428,8 +428,13 @@ export interface GitProvider {
   /**
    * Fetch the child/downstream pipeline for a trigger bridge job.
    * Returns null if no downstream pipeline exists.
+   *
+   * Pass `pipelineId` (the parent pipeline) whenever it is known: GitLab's
+   * `GET /jobs/:id` 404s for bridge jobs, so without the parent id the only
+   * fallback that can find a bridge (`/pipelines/:id/bridges`) is
+   * unreachable and a genuine bridge job resolves to null (MAT-155).
    */
-  fetchDownstreamPipeline(projectPath: string, jobId: number): Promise<Pipeline | null>;
+  fetchDownstreamPipeline(projectPath: string, jobId: number, pipelineId?: number): Promise<Pipeline | null>;
 
   /**
    * Unified job detail fetch — single GET /jobs/:id, discriminated return type.
