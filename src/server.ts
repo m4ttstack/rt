@@ -707,7 +707,22 @@ Bun.serve({
             headers: { "content-type": "application/json" },
           });
         } catch (err) {
-          return new Response(`gitlab update failed: ${err instanceof Error ? err.message : err}`, { status: 502 });
+          const message = err instanceof Error ? err.message : String(err);
+          console.error(`draft update failed for !${parsed.iid} (draft=${draft}): ${message}`);
+          // glance verifies the flip by reading the MR back, and that read is the
+          // fragile half: it throws outright on a GraphQL timeout (its retry only
+          // covers a null result, not a throw), and it doesn't wait for the flag
+          // to catch up, so a stale read trips its own mismatch check. Both land
+          // here with the edit already applied, so ask GitLab what is actually
+          // true before reporting a failure. Upstream: MAT-169.
+          const after = await gitlab().fetchSingleMR(path, parsed.iid, null).catch(() => null);
+          if (after?.draft === draft) {
+            cache.invalidate();
+            return new Response(JSON.stringify({ ok: true, draft, title: after.title, recovered: true }), {
+              headers: { "content-type": "application/json" },
+            });
+          }
+          return new Response(`gitlab update failed: ${message}`, { status: 502 });
         }
       }
       case "/review/report": {
