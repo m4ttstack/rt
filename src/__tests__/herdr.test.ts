@@ -205,3 +205,24 @@ describe("launchReview", () => {
     expect(runCall?.[3]).toContain("claude '/mr-board:review https://x/mr/2 --state /s/2.json");
   });
 });
+
+import { doctorPrompt, draftBinPath, statusBinPath } from "../herdr.ts";
+
+describe("doctorPrompt tier flags", () => {
+  test("emits --tier, --fix-classes, and --draft-bin when given", () => {
+    const p = doctorPrompt({
+      mrUrl: "https://x/mr/1", statePath: "/s", statusBin: statusBinPath("doctor"),
+      skill: "team:doctor-api", tier: "api", fixClasses: ["retry-flake", "inherited-note-draft"], draftBin: draftBinPath(),
+    });
+    expect(p).toContain("--tier api");
+    expect(p).toContain("--fix-classes retry-flake,inherited-note-draft");
+    expect(p).toContain(`--draft-bin ${draftBinPath()}`);
+  });
+
+  test("omits the flags when absent (manual path unchanged)", () => {
+    const p = doctorPrompt({ mrUrl: "https://x/mr/1", statePath: "/s", statusBin: statusBinPath("doctor") });
+    expect(p).not.toContain("--tier");
+    expect(p).not.toContain("--fix-classes");
+    expect(p).not.toContain("--draft-bin");
+  });
+});

@@ -601,7 +601,7 @@ Bun.serve({
           }
         }
         const statePath = doctorFilePath(parsed.mrUrl);
-        writeDoctorState(statePath, { mrUrl: parsed.mrUrl, iid: parsed.iid, status: "queued" });
+        writeDoctorState(statePath, { mrUrl: parsed.mrUrl, iid: parsed.iid, status: "queued", origin: "manual" });
         void launchDoctor({
           mrUrl: parsed.mrUrl,
           iid: parsed.iid,

@@ -82,6 +82,11 @@ export function statusBinPath(kind: "review" | "respond" | "doctor"): string {
   return join(import.meta.dir, "..", "bin", `${kind}-status.ts`);
 }
 
+/** Absolute path to the board's draft-writer CLI (see doctor-draft.ts). */
+export function draftBinPath(): string {
+  return join(import.meta.dir, "..", "bin", "doctor-draft.ts");
+}
+
 export interface SkillPromptOpts {
   mrUrl: string;
   statePath: string;
@@ -96,6 +101,13 @@ export interface SkillPromptOpts {
       reads any prior review at reportPath, frames the pass as a re-review, and
       falls back to a normal review if the author hasn't acted on feedback. */
   reReview?: boolean;
+  /** Doctor only: repair tier the wrapper announces to the domain skill
+      ("api" = no-checkout). Absent = the historical checkout-tier behavior. */
+  tier?: string;
+  /** Doctor only: enabled fix classes, kebab-case, comma-joined onto the flag. */
+  fixClasses?: string[];
+  /** Doctor only: absolute path to the board's draft-writer CLI. */
+  draftBin?: string;
 }
 
 /** Build the slash-command a launched herdr pane runs. The board injects every
@@ -106,6 +118,9 @@ function buildSkillPrompt(wrapper: string, o: SkillPromptOpts): string {
   if (o.reportPath) parts.push("--report", o.reportPath);
   if (o.skill) parts.push("--skill", o.skill);
   if (o.reReview) parts.push("--re-review");
+  if (o.tier) parts.push("--tier", o.tier);
+  if (o.fixClasses?.length) parts.push("--fix-classes", o.fixClasses.join(","));
+  if (o.draftBin) parts.push("--draft-bin", o.draftBin);
   return parts.join(" ");
 }
 
@@ -166,6 +181,13 @@ export interface LaunchPaneOpts {
   /** The MR author, shown in the tab label beside the id (a display name like
       "Grace Hopper", or the username). Omitted when the caller doesn't have it. */
   author?: string;
+  /** Doctor only: repair tier the wrapper announces to the domain skill
+      ("api" = no-checkout). Absent = the historical checkout-tier behavior. */
+  tier?: string;
+  /** Doctor only: enabled fix classes, kebab-case, comma-joined onto the flag. */
+  fixClasses?: string[];
+  /** Doctor only: absolute path to the board's draft-writer CLI. */
+  draftBin?: string;
 }
 
 /** Tab label for an MR pane: the MR id, the author beside it when known, and an
@@ -243,6 +265,9 @@ export async function launchDoctor(opts: LaunchPaneOpts, runner: HerdrRunner = d
     statePath: opts.statePath,
     statusBin: statusBinPath("doctor"),
     skill: opts.skill,
+    tier: opts.tier,
+    fixClasses: opts.fixClasses,
+    draftBin: opts.draftBin,
   });
   return launchInWorkspace(opts, buildPaneCommand(opts.cwd, prompt), "doctor", mrTabLabel(opts.iid, opts.author), runner);
 }

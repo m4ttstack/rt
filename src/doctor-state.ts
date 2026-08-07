@@ -8,6 +8,8 @@ import { join } from "path";
  */
 export type DoctorStatus = "queued" | "diagnosing" | "rebasing" | "fixing" | "watching" | "done" | "error";
 
+export type DoctorOrigin = "auto" | "manual";
+
 export interface DoctorState {
   mrUrl: string;
   iid: number;
@@ -15,6 +17,9 @@ export interface DoctorState {
   message?: string;
   tabId?: string;
   workspaceId?: string;
+  /** Who queued this doctor: the policy engine or a human click. Drives the
+      board's auto marker and the auto-only concurrency cap. */
+  origin?: DoctorOrigin;
   startedAt: number;
   updatedAt: number;
 }
@@ -45,6 +50,7 @@ export function writeDoctorState(
     message: patch.message ?? prev.message,
     tabId: patch.tabId ?? prev.tabId,
     workspaceId: patch.workspaceId ?? prev.workspaceId,
+    origin: patch.origin ?? prev.origin,
     startedAt: prev.startedAt ?? now,
     updatedAt: now,
   };
