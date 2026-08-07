@@ -1,17 +1,23 @@
 import { readFileSync, writeFileSync, renameSync, mkdirSync, readdirSync, rmSync, existsSync } from "fs";
 import { join } from "path";
+import type { RespondStatus } from "./respond-outcome.ts";
 
 /**
  * Response-to-review lifecycle. The board owns "queued" (from POST /respond);
  * the skill emits the middle states as it works and "done" or "error" at the end.
  */
-export type RespondStatus = "queued" | "triaging" | "implementing" | "drafting" | "done" | "error";
+export type { RespondStatus };
 
 export interface RespondState {
   mrUrl: string;
   iid: number;
   status: RespondStatus;
   message?: string;
+  /** Unresolved human threads the run set out to answer, and how many of those
+      actually got a reply posted. The board derives the terminal outcome from
+      the pair (see respondOutcome); absent means a run that never reported. */
+  posted?: number;
+  threads?: number;
   tabId?: string;
   workspaceId?: string;
   /** Claude Code session id, captured by the status CLI. Lets the board
@@ -45,6 +51,8 @@ export function writeRespondState(
     iid: patch.iid ?? prev.iid ?? 0,
     status: patch.status,
     message: patch.message ?? prev.message,
+    posted: patch.posted ?? prev.posted,
+    threads: patch.threads ?? prev.threads,
     tabId: patch.tabId ?? prev.tabId,
     workspaceId: patch.workspaceId ?? prev.workspaceId,
     sessionId: patch.sessionId ?? prev.sessionId,
