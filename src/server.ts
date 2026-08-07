@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync, mkdirSync, watch } from "fs";
 import type { PullRequest, MRDetail } from "@mattstack/glance";
 import { loadConfig, loadGitLabToken, loadSlackToken, saveMemberHidden, CONFIG_PATH } from "./config.ts";
 import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, projectPathFromWebUrl, type BoardMR, type SyncScopeRead } from "./data.ts";
-import { GitLabProvider } from "@mattstack/glance";
+import { GitLabProvider, ReadBackFailedError } from "@mattstack/glance";
 import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } from "./discussions.ts";
 import { readProjectMRs, readDiscussions, subscribe } from "@mattstack/rt-client";
 import { SnapshotCache } from "./cache.ts";
@@ -718,6 +718,17 @@ Bun.serve({
           if (after?.draft === draft) {
             cache.invalidate();
             return new Response(JSON.stringify({ ok: true, draft, title: after.title, recovered: true }), {
+              headers: { "content-type": "application/json" },
+            });
+          }
+          // The read above is a guess at what happened; this is the SDK telling
+          // us outright that the edit reached GitLab and only describing it back
+          // failed (glance 0.19.0). That outranks a recovery read which may
+          // itself have just failed -- the flip is applied, so 502-ing here
+          // would report a succeeded write as a failure, which is the whole bug.
+          if (err instanceof ReadBackFailedError && err.writeApplied) {
+            cache.invalidate();
+            return new Response(JSON.stringify({ ok: true, draft, recovered: true, verified: false }), {
               headers: { "content-type": "application/json" },
             });
           }
