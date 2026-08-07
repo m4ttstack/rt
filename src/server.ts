@@ -14,7 +14,7 @@ import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, 
 import { launchReview, launchRespond, launchDoctor, launchResume, focusTab, reReviewResumePrompt } from "./herdr.ts";
 import { readSlackRefs, attachSlack, resolveSlackRef, reactToMR, unreactFromMR, postToSlack, REVIEW_EMOJI } from "./slack.ts";
 import { signalEmoji, parseAgentSignal } from "./agent-signal.ts";
-import { renderMr, renderMulti, sanitizeHeader, MAX_HEADER_LEN, type MrFacts } from "./template.ts";
+import { renderPost, sanitizeHeader, MAX_HEADER_LEN, type MrFacts } from "./template.ts";
 
 const cssPath = join(import.meta.dir, "style.css");
 let css = readFileSync(cssPath, "utf-8");
@@ -774,7 +774,9 @@ Bun.serve({
         // Item lines always render server-side from config templates against
         // the board cache. The header line is client-supplied, but
         // sanitizeHeader Slack-escapes it, so it cannot form a <url|anchor>
-        // link, an <@user> mention, or an <!channel>/<!here> broadcast.
+        // link, an <@user> mention, or an <!channel>/<!here> broadcast. A bare
+        // URL in the header still auto-links (Slack does that itself); that's
+        // accepted -- it's the local user's own words under their own token.
         if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
         if (!slackToken) return new Response("slack not configured", { status: 400 });
@@ -838,9 +840,17 @@ Bun.serve({
           sourceBranch: m.sourceBranch,
           targetBranch: m.targetBranch,
         }));
-        const text = facts.length === 1
-          ? renderMr(config.slack.singleTemplate, facts[0]!)
-          : renderMulti(headerOverride ?? config.slack.multiHeader, config.slack.multiItem, facts);
+        // A supplied header forces the multi rendering even for one MR — the
+        // single template has no header line to put it on. See renderPost.
+        const text = renderPost(
+          {
+            single: config.slack.singleTemplate,
+            multiHeader: config.slack.multiHeader,
+            multiItem: config.slack.multiItem,
+          },
+          facts,
+          headerOverride,
+        );
         try {
           const refs = await postToSlack(
             slackToken,

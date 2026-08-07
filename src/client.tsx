@@ -9,7 +9,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { filterByMember, sortMRs, groupMRs, parseViewState, serializeViewState, commentDot, commentsAllResolved, dataAgeLabel, statusFlags, GROUP_KEYS, SORT_KEYS } from "./view.ts";
 import type { GroupKey, SortKey, ViewState } from "./view.ts";
-import { renderMr, renderMulti, MAX_HEADER_LEN, type MrFacts } from "./template.ts";
+import { renderMr, renderMulti, selectionHeader, MAX_HEADER_LEN, type MrFacts, type SlackTemplates } from "./template.ts";
 import { selectionOf, postableOf } from "./selection.ts";
 import { respondOutcome, respondDoneLabel, respondNeedsAttention } from "./respond-outcome.ts";
 import type { RespondStatus } from "./respond-outcome.ts";
@@ -36,8 +36,6 @@ type DoctorStatus = "queued" | "diagnosing" | "rebasing" | "fixing" | "watching"
 interface DoctorInfo { status: DoctorStatus; message?: string }
 interface SlackInfo { status: "found" | "notfound"; permalink?: string; reactions: string[]; posted: boolean }
 type BoardMRWithReview = BoardMR & { review?: ReviewInfo; respond?: RespondInfo; doctor?: DoctorInfo; slack?: SlackInfo };
-
-interface SlackTemplates { single: string; multiHeader: string; multiItem: string }
 
 interface BoardData {
   title: string;
@@ -760,12 +758,6 @@ function mrLine(mr: BoardMR, tpl: SlackTemplates): string {
     it is still substituted by renderMulti. */
 function boardSummary(mrs: BoardMR[], tpl: SlackTemplates, header?: string): string {
   return renderMulti(header ?? tpl.multiHeader, tpl.multiItem, mrs.map(factsFor));
-}
-
-/** Just the {count} substitution renderMulti does to its header, for the live
-    preview in the selection bar's input. */
-function replaceCount(header: string, count: number): string {
-  return header.replace(/\{count\}/g, String(count));
 }
 
 // ── pieces ─────────────────────────────────────────────────────────────────
@@ -1536,6 +1528,7 @@ function SelectionBar({
   templates,
   onClear,
   slackPost,
+  posting,
 }: {
   selectedMrs: BoardMR[];
   inViewCount: number;
@@ -1544,14 +1537,24 @@ function SelectionBar({
   /** null when slack is off, remote, or nothing in the selection is postable.
       `count` is what will actually be sent, which is below the selection count
       once some are already in slack. */
-  slackPost: { count: number; send: (header: string) => void } | null;
+  slackPost: { count: number; send: (header?: string) => void } | null;
+  /** True while a post is in flight; disables the post button so two fast
+      clicks can't put two messages in the channel. The server's duplicate guard
+      reads slack-ref files that are only written once a message lands, so it
+      does not catch a second click that starts before the first returns. */
+  posting?: boolean;
 }) {
   const count = selectedMrs.length;
   // Once you type, the line is yours: re-substituting {count} on every check
-  // would stomp your edit. Reset happens by unmount, when the selection empties.
-  const [touched, setTouched] = useState(false);
-  const [header, setHeader] = useState("");
-  const value = touched ? header : replaceCount(templates.multiHeader, count);
+  // would stomp your edit, so `edited` stays null until the first keystroke.
+  // Reset happens by unmount, when the selection empties -- which only works
+  // because Board renders this bar conditionally on `selectedMrs.length > 0`.
+  // If you ever render it unconditionally (to animate it out, say), you must
+  // add an explicit reset when the selection empties.
+  const [edited, setEdited] = useState<string | null>(null);
+  // selectionHeader owns the copy/post split; its doc comment says why `post`
+  // is undefined for an untouched header. Don't collapse the three forms.
+  const header = selectionHeader(templates.multiHeader, edited, count);
 
   return (
     <div className="tui-selbar">
@@ -1561,25 +1564,33 @@ function SelectionBar({
       </div>
       <input
         className="tui-selbar-input"
-        value={value}
+        value={header.display}
         maxLength={MAX_HEADER_LEN}
         aria-label="message header"
         placeholder="header line"
         onChange={(e) => {
-          setTouched(true);
-          setHeader((e.target as unknown as { value: string }).value);
+          // The double cast is load-bearing: tsconfig.json omits the DOM lib, so
+          // @types/react resolves HTMLInputElement to an empty interface --
+          // e.target.value, e.currentTarget.value and an explicitly typed
+          // handler param all fail to compile. Don't "clean this up".
+          setEdited((e.target as unknown as { value: string }).value);
         }}
       />
       <div className="tui-selbar-actions">
         <CopyButton
-          text={boardSummary(selectedMrs, templates, value)}
+          text={boardSummary(selectedMrs, templates, header.copy)}
           className="tui-copy"
           title={`copy ${count} selected for slack`}
           label={`copy ${count}`}
         />
         {slackPost && (
-          <button className="tui-copy tui-selbar-post" onClick={() => slackPost.send(value)} title="post the selection to slack">
-            {SLACK_ICON} post {slackPost.count}
+          <button
+            className="tui-copy tui-selbar-post"
+            onClick={() => slackPost.send(header.post)}
+            disabled={posting}
+            title="post the selection to slack"
+          >
+            {SLACK_ICON} {posting ? "posting…" : `post ${slackPost.count}`}
           </button>
         )}
         <button className="tui-copy" onClick={onClear} title="clear the selection">clear</button>
@@ -2033,8 +2044,11 @@ function Board() {
     [addToast, load],
   );
 
+  /** `onPosted` runs only when the message actually landed -- the selection bar
+      uses it to clear the selection, and a failed post must leave the selection
+      intact so the user can retry. */
   const handlePostSummary = useCallback(
-    (mrs: BoardMR[], header?: string) => {
+    (mrs: BoardMR[], header?: string, onPosted?: () => void) => {
       const urls = mrs.map((m) => m.webUrl).filter((u): u is string => !!u);
       if (!urls.length) return;
       setPostingSummary(true);
@@ -2048,6 +2062,7 @@ function Board() {
           const body = await r.json().catch(() => ({}));
           if (!r.ok) return addToast(`slack post failed (${r.status})${typeof body === "string" ? `: ${body}` : ""}`);
           addToast(`posted ${urls.length} MR${urls.length === 1 ? "" : "s"} to slack`);
+          onPosted?.();
           load();
         })
         .catch(() => addToast(`slack post failed`))
@@ -2277,9 +2292,16 @@ function Board() {
             inViewCount={selectionOf(filtered, selected).length}
             templates={data.slackTemplates}
             onClear={clearSelection}
+            posting={postingSummary}
             slackPost={
               data.slackEnabled && data.local && postableSelected.length > 0
-                ? { count: postableSelected.length, send: (header) => handlePostSummary(postableSelected, header) }
+                ? {
+                    count: postableSelected.length,
+                    // Clear only on success: the posted MRs drop out of
+                    // postableSelected, so leaving them checked would sit the
+                    // bar there with no post button and read like a bug.
+                    send: (header) => handlePostSummary(postableSelected, header, clearSelection),
+                  }
                 : null
             }
           />
