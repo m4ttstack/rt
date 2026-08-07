@@ -1,5 +1,28 @@
 # @mattstack/glance
 
+## 0.17.0
+
+### Minor Changes
+
+- `GitProvider` gains a required `fetchUser(username): Promise<UserRef | null>`,
+  implemented on both providers (MAT-159). GitLab resolves through the
+  exact-match `users?username=` filter and normalizes the avatar URL the same
+  way `validateToken` does; GitHub resolves through `GET /users/{username}`. A
+  miss is an answer, not an error: null means the provider looked and found
+  nobody, while transport and auth failures still throw. **Breaking for
+  implementers:** any external `implements GitProvider` class or
+  interface-shaped mock must add `fetchUser` to compile against this release.
+  Plain callers are unaffected.
+- `stripDraftPrefix` and `draftTitle` are exported from the package root
+  (MAT-157), so a consumer rendering its own draft affordance or composing an
+  `updatePullRequest` title no longer has to copy the draft-marker regex and
+  track glance's marker set by hand. Both are listed in the README's utility
+  exports table.
+- `updatePullRequest`'s docstring no longer implies a pure draft toggle can
+  close the lost-update window by passing `title` alongside `draft` (MAT-158).
+  The window is inherent for a toggle; `title` is for callers already editing
+  the title. Documentation only, no behavior change.
+
 ## 0.16.0
 
 ### Minor Changes
