@@ -24,6 +24,9 @@ knowledge; the board injects it:
 | `--state <path>` | lifecycle status file the board polls |
 | `--status-bin <path>` | absolute path to the board's status-writer CLI |
 | `--skill <name>` | the domain skill that owns the actual repair (optional) |
+| `--tier api` | API-only repair tier: no checkout, no worktree, no local commits. Absent = the historical checkout-tier behavior. |
+| `--fix-classes <a,b>` | Comma-separated allowlist of fix classes the dispatching policy enabled (e.g. `retry-flake,inherited-note-draft`). Actions outside the list are escalations, not fixes. |
+| `--draft-bin <path>` | Absolute path to the board's draft-writer CLI. Any outbound MR note MUST be written through it as a held draft: `bun run <draft-bin> <mrUrl> <iid> <kind> <body...>`. Never post a note directly. |
 
 Write status **only** by running the injected `--status-bin`:
 
@@ -56,6 +59,26 @@ The board owns `queued`. You emit the rest as you cross each milestone:
      read conflict/pipeline state, attempt a mechanical rebase, and retry
      obviously-flaky pipelines. Do **not** guess at semantic conflict
      resolutions or behavior-changing test fixes; escalate those.
+### API tier (`--tier api`)
+
+When `--tier api` is present, the repair is checkout-free by contract:
+
+- Never claim a worktree, never commit, never push. The only mutations
+  allowed are pipeline/job retries, (if `clean-api-rebase` is in
+  `--fix-classes`) a server-side rebase, and held drafts via `--draft-bin`.
+- The `rebasing`/`fixing` milestones still apply to their API-shaped
+  equivalents (server-side rebase, retry); otherwise go straight from
+  `diagnosing` to `watching`.
+- **Every autonomous action must be reported as a status-bin write whose
+  message names the action and fix class** (e.g. `fixing "retried job 812
+  (retry-flake)"`, `rebasing "server-side rebase (clean-api-rebase)"`). For
+  auto-dispatched doctors the status writer mirrors each of these into the
+  audit log (spec §6: one line per autonomous action), so an unreported action
+  is an audit-trail violation, not a formality.
+- Anything that would need a checkout is an `error` escalation whose message
+  carries the diagnosis (failed job, one-line cause, why it isn't yours to
+  retry). The human is not watching; the escalation IS the handoff.
+
 3. **Escalate, don't speculate.** Emit `error` (with a specific, actionable
    message) whenever a fix requires product judgment or non-obvious semantic
    resolution — a conflict where both sides changed the same logic, a CI failure
