@@ -79,7 +79,16 @@ export function getMRDashboardProps(
   // ── Blockers ──────────────────────────────────────────────────────────────
   const isDraft = mr.draft;
   const hasConflicts = mr.conflicts;
-  const needsRebase = mr.shouldBeRebased || (mr.divergedCommitsCount ?? 0) > 0;
+  // `shouldBeRebased` alone, deliberately. It is GitLab's authoritative answer
+  // to "does this project's merge method require a rebase before merge", and it
+  // rides the GraphQL payload every fetch path shares, so it cannot vary with
+  // the method a consumer happened to call. The old
+  // `|| (mr.divergedCommitsCount ?? 0) > 0` disjunct read a field only two
+  // paths populate and folded its null into "not behind", so one MR read true
+  // on a single-MR refresh and false on the next bulk poll; a consumer
+  // notifying on the false -> true edge re-fired forever (MAT-164). Behind-ness
+  // is reported separately as `behindTarget`, which keeps its null.
+  const needsRebase = mr.shouldBeRebased;
   const pipelineFailing = mr.pipeline?.status === 'failed';
   const pipelineRunning =
     mr.pipeline?.status === 'running' || mr.pipeline?.status === 'pending';
@@ -147,6 +156,7 @@ export function getMRDashboardProps(
     sourceBranch: mr.sourceBranch,
     targetBranch: mr.targetBranch,
     isStacked: mr.isStacked ?? false,
+    behindTarget: mr.divergedCommitsCount,
 
     // Diff
     diff: mr.diffStats
@@ -218,8 +228,7 @@ export function getMRDashboardProps(
     rebaseButton: {
       visible: needsRebase && mr.state === 'opened',
       loading: isRebasing,
-      label: isRebasing ? 'Rebasing...' : 'Rebase',
-      behindBy: mr.divergedCommitsCount ?? 0
+      label: isRebasing ? 'Rebasing...' : 'Rebase'
     },
 
     // Blockers
