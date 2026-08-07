@@ -365,6 +365,42 @@ import type {
 | `MR_DASHBOARD_FRAGMENT` | GraphQL fragment for MR dashboard queries |
 | `stripDraftPrefix(title)` | Remove a GitLab draft marker (`Draft:`, `[draft]`, `(Draft)`) from a title |
 | `draftTitle(title, draft)` | Compute the wire title for a target draft state, without double-prefixing |
+| `ReadBackFailedError` | Thrown when a write landed but the MR could not be read back — see below |
+
+### `ReadBackFailedError`
+
+`createPullRequest`, `updatePullRequest`, and `mergePullRequest` each write,
+then read the MR back to return it. The write and the read are separate calls,
+so a read that fails says nothing about whether the write did. When the
+read-back cannot be completed these throw `ReadBackFailedError` with
+`writeApplied: true`, which means the edit is on the forge and re-issuing it
+would apply it twice.
+
+```ts
+import { ReadBackFailedError } from '@mattstack/glance';
+
+try {
+  await provider.updatePullRequest(path, iid, { draft: true });
+} catch (err) {
+  if (err instanceof ReadBackFailedError && err.writeApplied) {
+    // The edit landed; only describing the result failed. Re-fetch, don't re-write.
+  } else {
+    throw err;
+  }
+}
+```
+
+| Property | Description |
+|---|---|
+| `writeApplied` | `true` when a write preceded this read. `false` only where none did (a watcher poll) |
+| `operation` | SDK operation that gave up, e.g. `"updatePullRequest"` |
+| `projectPath`, `iid` | Which MR the read-back was for |
+| `cause` | The last underlying read failure, when there was one |
+
+It extends `Error`, so a caller that does not branch on it behaves exactly as
+before. A *failed draft transition* is a different case and still throws a
+plain `Error`: there the read worked and the MR genuinely is not in the
+requested state.
 
 ## License
 

@@ -1,5 +1,33 @@
 # @mattstack/glance
 
+## 0.19.0
+
+### Minor Changes
+
+- New export `ReadBackFailedError`, thrown when a write landed but the MR could
+  not be read back (MAT-169). `createPullRequest`, `updatePullRequest`, and
+  `mergePullRequest` each write and then read the MR back to return it; the two
+  are separate calls, so a read that fails says nothing about whether the write
+  did. These previously threw a bare `Error` there, leaving a caller unable to
+  tell "the forge rejected your write" from "your write landed and we cannot
+  describe the result" -- and the two want opposite handling, since the second
+  is a succeeded write that a retry would apply twice. The error carries
+  `writeApplied` (true on those three paths, false where the read had no write
+  in front of it, such as a `watchMR` poll), plus `operation`, `projectPath`,
+  `iid`, and the underlying failure as `cause`. It extends `Error`, so a caller
+  that does not branch on it keeps the behaviour it already had.
+
+  A failed *draft transition* is deliberately not this error: there the
+  read-back succeeded and the MR genuinely is not in the requested state, which
+  is a real failure to report rather than an unread result. It still throws a
+  plain `Error`.
+
+  Considered and rejected: falling back to a REST read to synthesize the MR
+  instead of throwing. REST cannot answer `mergeabilityChecks`, which `toMR`
+  reads `CONFLICT`/`FAILED` out of to compute `conflicts`, so a degraded read
+  would report an empty check list as "nothing failing" -- the same shape as
+  the bug 0.18.0 fixed.
+
 ## 0.18.1
 
 ### Patch Changes
