@@ -14,6 +14,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { GitLabProvider, stripDraftPrefix } from '../src/GitLabProvider.ts';
 import { GitHubProvider } from '../src/GitHubProvider.ts';
+import { stripDraftPrefix as rootStrip, draftTitle as rootDraftTitle } from '../src/index.ts';
 
 const realFetch = globalThis.fetch;
 afterEach(() => {
@@ -389,7 +390,6 @@ describe('GitHubProvider draft', () => {
 // from the package entry point, and a copy has to track glance's marker set
 // by hand. These imports go through src/index.ts on purpose: the assertion is
 // reachability, not behavior.
-import { stripDraftPrefix as rootStrip, draftTitle as rootDraftTitle } from '../src/index.ts';
 
 describe('package-root draft helpers', () => {
   test('stripDraftPrefix is the GitLabProvider export', () => {

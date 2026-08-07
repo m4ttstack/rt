@@ -17,10 +17,14 @@ function providerWith(matches: GLUser[]): GitLabProvider {
 
 describe('GitLabProvider.fetchUser', () => {
   test('maps the first match to a UserRef', async () => {
-    const provider = providerWith([
-      { id: 42, username: 'ada', name: 'Ada Lovelace', avatar_url: 'https://cdn.example.com/a.png' },
-    ]);
+    const provider = new GitLabProvider('https://gitlab.example.com', 'tok');
+    let seen: unknown;
+    (provider as any).gb.Users.all = async (opts: unknown) => {
+      seen = opts;
+      return [{ id: 42, username: 'ada', name: 'Ada Lovelace', avatar_url: 'https://cdn.example.com/a.png' }];
+    };
     const user = await provider.fetchUser('ada');
+    expect(seen).toEqual({ username: 'ada' });
     expect(user).toEqual({
       id: 'gitlab:user:42',
       username: 'ada',

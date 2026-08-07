@@ -13,12 +13,16 @@ afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
+let seenUrl: string | undefined;
+
 function stubFetch(status: number, body: unknown): void {
-  globalThis.fetch = (async () =>
-    new Response(JSON.stringify(body), {
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    seenUrl = typeof input === 'string' ? input : input.toString();
+    return new Response(JSON.stringify(body), {
       status,
       headers: { 'content-type': 'application/json' },
-    })) as unknown as typeof fetch;
+    });
+  }) as unknown as typeof fetch;
 }
 
 describe('GitHubProvider.fetchUser', () => {
@@ -31,6 +35,7 @@ describe('GitHubProvider.fetchUser', () => {
       name: 'The Octocat',
       avatarUrl: 'https://avatars.example.com/u/583231',
     });
+    expect(seenUrl?.endsWith('/users/octocat')).toBe(true);
   });
 
   test('a null display name falls back to the login', async () => {

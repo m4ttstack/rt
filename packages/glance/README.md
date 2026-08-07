@@ -362,6 +362,8 @@ import type {
 | `noopLogger` | Silent logger implementation |
 | `parseGitLabRepoId(path)` | Parse GitLab project path to numeric ID |
 | `MR_DASHBOARD_FRAGMENT` | GraphQL fragment for MR dashboard queries |
+| `stripDraftPrefix(title)` | Remove a GitLab draft marker (`Draft:`, `[draft]`, `(Draft)`) from a title |
+| `draftTitle(title, draft)` | Compute the wire title for a target draft state, without double-prefixing |
 
 ## License
 
