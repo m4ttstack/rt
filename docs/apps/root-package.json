@@ -6,6 +6,7 @@
   "scripts": {
     "setup": "bun run scripts/setup.ts",
     "serve": "bun run src/server.ts",
+    "triage": "bun run bin/triage.ts",
     "test": "bun test"
   },
   "dependencies": {
