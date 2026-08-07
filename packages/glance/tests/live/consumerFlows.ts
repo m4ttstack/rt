@@ -1318,6 +1318,15 @@ async function runDashboardFlows(
           }
           assert(typeof props.pipeline.status === 'string', `${label}: pipeline.status is not a string`);
         }
+        // `behindTarget` is nullable by design -- most fetch paths never make
+        // the REST call that populates it -- but it must be a number or that
+        // null, never undefined. Undefined would mean the field stopped being
+        // emitted, and a consumer's `behindTarget ?? 0` would read it as "up
+        // to date", which is the collapse MAT-164 removed.
+        assert(
+          props.behindTarget === null || typeof props.behindTarget === 'number',
+          `${label}: behindTarget is ${typeof props.behindTarget}, expected number or null`
+        );
         const blockers = props.blockers;
         for (const field of [
           'isDraft',
@@ -1350,6 +1359,56 @@ async function runDashboardFlows(
           `${label}: blockers.any is ${blockers.any} but the individual blockers say ${individually}`
         );
       }
+    }
+  );
+
+  // U9b (rt; MAT-164): rt alternates between a bulk poll and an event-driven
+  // single-MR refresh, and notifies on the false -> true edge of
+  // `blockers.needsRebase`. That only works if the flag is a property of the
+  // MR rather than of the method that fetched it. Only a live check can catch
+  // a regression here: the defect turns on which path made the REST
+  // `include_diverged_commits_count` call, and no fixture reproduces that.
+  await check(
+    report,
+    fixture,
+    'U9b rt: blockers.needsRebase agrees across fetchSingleMR, fetchPullRequestByBranch, and fetchPullRequestsByBranches',
+    async () => {
+      const s = requireFixture(state, setupError);
+      const byBranches = provider.fetchPullRequestsByBranches;
+      if (!byBranches) {
+        throw new Inconclusive(
+          'this provider does not implement fetchPullRequestsByBranches, so there is no second bulk path to compare'
+        );
+      }
+
+      const [single, byBranch, batch] = await Promise.all([
+        provider.fetchSingleMR(projectPath, s.stackPr.iid, null),
+        provider.fetchPullRequestByBranch(projectPath, s.stackBranch, 'all'),
+        byBranches.call(provider, projectPath, [s.stackBranch], 'all')
+      ]);
+      const batched = batch.get(s.stackBranch) ?? null;
+      assert(
+        single !== null && byBranch !== null && batched !== null,
+        'all three paths must resolve the stack PR for the comparison to mean anything'
+      );
+
+      const flags = [single, byBranch, batched].map(
+        pr => getMRDashboardProps(pr).blockers.needsRebase
+      );
+      assert(
+        flags.every(f => f === flags[0]),
+        `needsRebase differs by fetch path: fetchSingleMR=${flags[0]}, ` +
+          `fetchPullRequestByBranch=${flags[1]}, fetchPullRequestsByBranches=${flags[2]}`
+      );
+
+      // The count legitimately differs -- only the first two paths ask for it
+      // -- and that difference is exactly what must no longer reach the
+      // blocker. Assert the split holds rather than assuming it.
+      const counts = [single, byBranch, batched].map(pr => getMRDashboardProps(pr).behindTarget);
+      assert(
+        counts.every(c => c === null || typeof c === 'number'),
+        `behindTarget must be a number or null on every path, got ${JSON.stringify(counts)}`
+      );
     }
   );
 
