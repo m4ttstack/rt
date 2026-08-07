@@ -14,6 +14,15 @@
   "reviewsWorkspace": "reviews",
   "respondsWorkspace": "responses",
   "doctorsWorkspace": "doctors",
+  "triage": {
+    "enabled": false,
+    "cooldownMinutes": 30,
+    "maxConcurrent": 2,
+    "dailyAttemptBudget": 3,
+    "fixClasses": { "retryFlake": true, "inheritedNoteDraft": true, "cleanApiRebase": false },
+    "doctorSkill": "",
+    "notify": "rt"
+  },
   "slack": {
     "channel": "your-review-channel",
     "singleTemplate": "{title}: {url}",
