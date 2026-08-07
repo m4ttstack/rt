@@ -377,8 +377,12 @@ export function stripDraftPrefix(title: string): string {
  * parameter on create or edit (MAT-15). It is applied here, at the wire
  * boundary, and stripped again in `toMR`, so a caller's stored title never
  * grows a "Draft:" it did not write.
+ *
+ * Exported for consumers composing a title to pass through
+ * `updatePullRequest` alongside `draft` (MAT-157); without it they would
+ * have to copy the marker set and track it by hand.
  */
-function draftTitle(title: string, draft: boolean): string {
+export function draftTitle(title: string, draft: boolean): string {
   const base = stripDraftPrefix(title);
   return draft ? `Draft: ${base}` : base;
 }

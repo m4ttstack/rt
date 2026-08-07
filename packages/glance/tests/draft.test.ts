@@ -382,3 +382,28 @@ describe('GitHubProvider draft', () => {
     );
   });
 });
+
+// ── Package-root exports (MAT-157) ───────────────────────────────────────────
+//
+// mr-board copied the draft-marker regex because neither helper was reachable
+// from the package entry point, and a copy has to track glance's marker set
+// by hand. These imports go through src/index.ts on purpose: the assertion is
+// reachability, not behavior.
+import { stripDraftPrefix as rootStrip, draftTitle as rootDraftTitle } from '../src/index.ts';
+
+describe('package-root draft helpers', () => {
+  test('stripDraftPrefix is the GitLabProvider export', () => {
+    expect(rootStrip).toBe(stripDraftPrefix);
+    expect(rootStrip('Draft: fix the thing')).toBe('fix the thing');
+    expect(rootStrip('[draft] fix the thing')).toBe('fix the thing');
+    expect(rootStrip('(Draft) fix the thing')).toBe('fix the thing');
+    expect(rootStrip('fix the thing')).toBe('fix the thing');
+  });
+
+  test('draftTitle computes the wire title without double-prefixing', () => {
+    expect(rootDraftTitle('fix the thing', true)).toBe('Draft: fix the thing');
+    expect(rootDraftTitle('Draft: fix the thing', true)).toBe('Draft: fix the thing');
+    expect(rootDraftTitle('Draft: fix the thing', false)).toBe('fix the thing');
+    expect(rootDraftTitle('fix the thing', false)).toBe('fix the thing');
+  });
+});

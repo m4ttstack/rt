@@ -91,7 +91,13 @@ export type { RequestInfo, OnRequestHook } from './instrumentation.ts';
 export {
   GitLabProvider,
   parseGitLabRepoId,
-  MR_DASHBOARD_FRAGMENT
+  MR_DASHBOARD_FRAGMENT,
+  // The draft marker is GitLab's transport for draft state, and consumers
+  // rendering their own draft affordance or composing an update title need
+  // the same marker set the SDK strips and writes, not a copy that can
+  // drift (MAT-157).
+  stripDraftPrefix,
+  draftTitle,
 } from './GitLabProvider.ts';
 export { GitHubProvider } from './GitHubProvider.ts';
 export { createProvider, SUPPORTED_PROVIDERS } from './providers.ts';
