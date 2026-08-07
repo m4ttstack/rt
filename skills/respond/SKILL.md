@@ -25,6 +25,7 @@ Write status **only** by running the injected `--status-bin`:
 
 ```
 bun run <status-bin> <state> <status> [message]
+bun run <status-bin> <state> done <message> --posted <n> --threads <n>
 ```
 
 The board tracks five in-flight statuses; emit each as you cross the milestone:
@@ -34,7 +35,7 @@ The board tracks five in-flight statuses; emit each as you cross the milestone:
 | `triaging` | Immediately, before fetching threads. |
 | `implementing` | Only after the code-changes gate is approved, before touching code. Skip when no threads need code changes. |
 | `drafting` | When presenting the verdict table + drafted replies, and again after implementation before posting finalized replies. |
-| `done` | After the run finishes — replies posted (or the human elected not to) and any code committed. |
+| `done` | After the run finishes. REQUIRED: `--posted <n> --threads <n>` (see step 5). |
 | `error` | Anything unrecoverable (bad MR, no threads to process, delegated skill failed). |
 
 ## Steps
@@ -53,11 +54,21 @@ The board tracks five in-flight statuses; emit each as you cross the milestone:
 4. **Emit `implementing`** only if the human approves writing fixes:
    `bun run <status-bin> <state> implementing`. When implementation finishes and
    you're back to finalized replies, emit `drafting` again before offering to post.
-5. **Mark done.** After the run wraps — replies posted (on approval) or the human
-   declined, and any code committed:
-   `bun run <status-bin> <state> done "<one-line summary>"`
-   Keep it short, e.g. `"3 threads: 2 fixed, 1 pushback"` or
-   `"no valid threads — replied with technical pushback"`.
+5. **Mark done, with the counts.** After the run wraps, report what actually
+   happened to the replies:
+   `bun run <status-bin> <state> done "<one-line summary>" --posted <n> --threads <n>`
+   - `--threads` is the number of unresolved human threads the run set out to
+     answer, i.e. the rows in the verdict table.
+   - `--posted` is how many of those actually received a posted reply, counted
+     after the multi-select posting gate resolved. It is `0` when the human
+     declined to post anything.
+   - Zero unresolved threads is `--posted 0 --threads 0`.
+
+   The board derives the badge from this pair, so a wrong count is a wrong
+   badge: `3/3` reads "replies posted", `2/3` reads "2 of 3 posted", `0/3` reads
+   "replies drafted, not posted". Keep the message short, e.g.
+   `"3 threads: 2 fixed, 1 pushback"` or
+   `"no valid threads... replied with technical pushback"`.
 6. **On failure.** `bun run <status-bin> <state> error "<what went wrong>"`,
    then stop and report to the human in the pane.
 
@@ -70,8 +81,10 @@ The board tracks five in-flight statuses; emit each as you cross the milestone:
 - Posting gates are non-negotiable. Never post replies or commit fixes without
   the human's explicit go-ahead at each gate, even to hurry the badge to `done`.
   The final posting gate is a **multi-select** over which verdict categories to
-  post — present it; do not post every reply wholesale, and do not skip the ask
-  and idle. `done` follows the human's pick, not your own call.
+  post... present it; do not post every reply wholesale, and do not skip the ask
+  and idle. `done` follows the human's pick, not your own call, and `--posted`
+  counts what actually went up, never what you drafted.
 - After marking done, stay in the pane so the human can act on leftover drafts.
-- If there are zero unresolved human threads, mark `done` with the summary
-  `"no unresolved threads"`. That is not an error condition.
+- If there are zero unresolved human threads, mark
+  `done "no unresolved threads" --posted 0 --threads 0`. That is not an error
+  condition.
