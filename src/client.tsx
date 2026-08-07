@@ -10,6 +10,7 @@ import remarkGfm from "remark-gfm";
 import { filterByMember, sortMRs, groupMRs, parseViewState, serializeViewState, commentDot, commentsAllResolved, dataAgeLabel, statusFlags, GROUP_KEYS, SORT_KEYS } from "./view.ts";
 import type { GroupKey, SortKey, ViewState } from "./view.ts";
 import { renderMr, renderMulti, type MrFacts } from "./template.ts";
+import { selectionOf } from "./selection.ts";
 import { respondOutcome, respondDoneLabel, respondNeedsAttention } from "./respond-outcome.ts";
 import type { RespondStatus } from "./respond-outcome.ts";
 
@@ -791,6 +792,26 @@ function CopyButton({ text, className, title, label }: { text: string; className
   );
 }
 
+/** Row/card selection checkbox. A real button so the existing onRowClick guard
+    (which ignores clicks on `a, button`) already skips it -- stopPropagation is
+    belt-and-braces in case that guard changes. */
+function SelectBox({ checked, onToggle }: { checked: boolean; onToggle: () => void }) {
+  return (
+    <button
+      role="checkbox"
+      aria-checked={checked}
+      aria-label={checked ? "deselect this MR" : "select this MR"}
+      className={checked ? "tui-selectbox checked" : "tui-selectbox"}
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
+    >
+      {checked ? "▣" : "☐"}
+    </button>
+  );
+}
+
 function StatusDot({ mr }: { mr: BoardMR }) {
   const cls = !mr.blockers?.any ? "ok" : mr.blockers.hasConflicts || mr.blockers.pipelineFailing ? "bad" : "warn";
   return (
@@ -1166,6 +1187,8 @@ function RowView({
   onContext,
   onOpenReview,
   onResumeRespond,
+  selected,
+  onToggleSelect,
 }: {
   mrs: BoardMR[];
   now: number;
@@ -1175,6 +1198,8 @@ function RowView({
   onContext: (e: React.MouseEvent, mr: BoardMR) => void;
   onOpenReview: (mr: BoardMRWithReview) => void;
   onResumeRespond: (mr: BoardMR) => void;
+  selected: ReadonlySet<string>;
+  onToggleSelect: (webUrl: string) => void;
 }) {
   return (
     <div className="tui-rows">
@@ -1195,6 +1220,9 @@ function RowView({
               </div>
             )}
             <div className="tui-row-1">
+              {mr.webUrl && (
+                <SelectBox checked={selected.has(mr.webUrl)} onToggle={() => onToggleSelect(mr.webUrl!)} />
+              )}
               <StatusDot mr={mr} />
               {mr.isDraft && <span className="tui-draft" title="draft — right-click to mark ready">draft</span>}
               <span className="tui-title">{cleanTitle(mr.title)}</span>
@@ -1237,6 +1265,8 @@ function GridView({
   onContext,
   onOpenReview,
   onResumeRespond,
+  selected,
+  onToggleSelect,
 }: {
   mrs: BoardMR[];
   now: number;
@@ -1246,6 +1276,8 @@ function GridView({
   onContext: (e: React.MouseEvent, mr: BoardMR) => void;
   onOpenReview: (mr: BoardMRWithReview) => void;
   onResumeRespond: (mr: BoardMR) => void;
+  selected: ReadonlySet<string>;
+  onToggleSelect: (webUrl: string) => void;
 }) {
   return (
     <div className="tui-grid">
@@ -1263,6 +1295,9 @@ function GridView({
           >
             <CopyButton text={mrLine(mr, slackTemplates)} className="tui-copy-inline tui-copy-card" title="copy this MR for Slack" />
             <span className="tui-card-label">
+              {mr.webUrl && (
+                <SelectBox checked={selected.has(mr.webUrl)} onToggle={() => onToggleSelect(mr.webUrl!)} />
+              )}
               <StatusDot mr={mr} /> !{mr.iid}
               {ticket && <TicketLink ticket={ticket} />}
             </span>
@@ -1616,6 +1651,21 @@ function Board() {
     const task = state.member === "all" ? load(true) : fetchMember(state.member);
     task.catch(() => {}).finally(() => setRefreshing(false));
   }, [state.member, load, fetchMember]);
+
+  // Selection for the multi-copy bar, keyed by webUrl so it survives the
+  // refresh poll and every member/group/sort change. Deliberately not
+  // persisted: a reload should not hand you yesterday's selection.
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+
+  const toggleSelect = useCallback((webUrl: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(webUrl)) next.add(webUrl);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => setSelected(new Set()), []);
 
   const [showSettings, setShowSettings] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -2093,6 +2143,9 @@ function Board() {
   // grouped by anything but author (where the group header isn't the name).
   const showAuthor = state.member === "all" && state.group !== "author";
   const flatMrs = groups.flatMap((g) => g.mrs);
+  // Drawn from `mrs`, not `filtered` -- that's what lets a selection span
+  // member filters.
+  const selectedMrs = selectionOf(mrs, selected);
   const summaryText = boardSummary(flatMrs, data.slackTemplates);
   const postableMrs = flatMrs.filter((m) => m.webUrl && !(m as BoardMRWithReview).slack?.posted);
   const openSettings = () => {
@@ -2156,9 +2209,9 @@ function Board() {
           groups.map((g) => (
             <Panel key={g.label} title={g.label} count={g.mrs.length}>
               {view === "rows" ? (
-                <RowView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} slackTemplates={data.slackTemplates} onContext={openRowMenu} onOpenReview={setReviewModal} onResumeRespond={handleResumeRespond} />
+                <RowView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} slackTemplates={data.slackTemplates} onContext={openRowMenu} onOpenReview={setReviewModal} onResumeRespond={handleResumeRespond} selected={selected} onToggleSelect={toggleSelect} />
               ) : (
-                <GridView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} slackTemplates={data.slackTemplates} onContext={openRowMenu} onOpenReview={setReviewModal} onResumeRespond={handleResumeRespond} />
+                <GridView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} slackTemplates={data.slackTemplates} onContext={openRowMenu} onOpenReview={setReviewModal} onResumeRespond={handleResumeRespond} selected={selected} onToggleSelect={toggleSelect} />
               )}
             </Panel>
           ))

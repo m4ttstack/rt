@@ -89,6 +89,18 @@ body {
    brightens on row hover. */
 .tui-row .tui-copy-inline { opacity: 0.3; }
 
+/* ── selection ────────────────────────────────────────────────────── */
+/* Always visible, unlike the hover-revealed inline copy: you scan the board
+   fast, and hover-reveal is unusable in the mobile drawer layout. */
+.tui-selectbox {
+  flex: none; padding: 0; line-height: 1;
+  font: inherit; cursor: pointer;
+  background: transparent; border: none; color: var(--muted);
+  opacity: 0.55; transition: opacity 0.12s, color 0.12s;
+}
+.tui-selectbox:hover { opacity: 1; color: var(--fg); }
+.tui-selectbox.checked { opacity: 1; color: var(--accent); }
+
 /* ── panels (TUI frame with label on the border) ──────────────────── */
 .tui-panel {
   position: relative; border: 1px solid var(--border); border-radius: 8px;
