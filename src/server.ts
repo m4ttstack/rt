@@ -709,12 +709,11 @@ Bun.serve({
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           console.error(`draft update failed for !${parsed.iid} (draft=${draft}): ${message}`);
-          // glance verifies the flip by reading the MR back, and that read is the
-          // fragile half: it throws outright on a GraphQL timeout (its retry only
-          // covers a null result, not a throw), and it doesn't wait for the flag
-          // to catch up, so a stale read trips its own mismatch check. Both land
-          // here with the edit already applied, so ask GitLab what is actually
-          // true before reporting a failure. Upstream: MAT-169.
+          // glance retries its post-write read-back, rejections and a draft flag
+          // that has not caught up alike (0.18.1, MAT-169), so getting here means
+          // those retries were exhausted rather than never tried. The edit landed
+          // before any of that ran either way, so ask GitLab what is actually true
+          // instead of reporting a write that worked as a failure.
           const after = await gitlab().fetchSingleMR(path, parsed.iid, null).catch(() => null);
           if (after?.draft === draft) {
             cache.invalidate();

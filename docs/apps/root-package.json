@@ -9,13 +9,13 @@
     "test": "bun test"
   },
   "dependencies": {
+    "@mattstack/glance": "^0.18.1",
     "@mattstack/rt-client": "file:../repo-tools/packages/rt-client",
-    "@mattstack/glance": "^0.18.0",
+    "invadrs": "^0.2.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
     "react-markdown": "^10.1.0",
-    "remark-gfm": "^4.0.1",
-    "invadrs": "^0.2.0"
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@types/bun": "latest"
