@@ -1,7 +1,9 @@
 # GitHub feature parity with GitLab
 
 **Date:** 2026-08-04
-**Status:** approved, pending implementation plan
+**Status:** complete. Every phase shipped, and the goal below is met: every
+`GitProvider` method either works on GitHub or is explicitly, verifiably declared
+unsupported. Released across 0.14.0, 0.15.0, and 0.16.0.
 
 ## Problem
 
@@ -220,6 +222,16 @@ throw. Because both are optional on the interface, `tsc` never objected, and
   `fetchPullRequestByBranch` calls, so a board resolving twenty branches makes twenty
   round-trips where GitLab makes one. A performance gap rather than a correctness one,
   but a real one for gitq's board.
+
+  **Shipped** in 0.16.0 (MAT-151). One aliased GraphQL round-trip per 50 branches,
+  then one detail fetch per branch that matched, so the twenty-branch board costs
+  two requests. The semantics are the interesting part: GraphQL's own defaults do
+  not match the single-branch sibling, so they are pinned to it deliberately --
+  absent `state` means opened only, `closed` folds merged in (GitHub models merged
+  as a kind of closed, GitLab does not), and `CREATED_AT DESC` picks the newest
+  when a branch has several matching PRs. U2 asserts that live, comparing the batch
+  result to the sequential fallback field by field on both providers; it passed on
+  GitHub in all three acceptance attempts. This was the last functional parity gap.
 - **`watchEvents`.** Deferred to phase 5 along with the rest of the
   `canWatchEvents` work. See that bullet in the phase 4 section for the
   measured reasons, and `.local-dev/derisk/phase5-derisk-findings.md` for the
@@ -389,8 +401,21 @@ GitHub and the 5-minute fallback poll stays, per the constraints below.
   class at a time, and that the slow full poll is load-bearing on GitHub rather than a
   belt-and-braces extra. Second, U20 and U21 both skipped in that same window; U20's
   mechanism (foreign-typed-cursor dedup safety) is unit-tested and proven live on
-  GitLab, but U21, the one state-clearing write path in the branch arm, has never run
-  green live against GitHub and still needs a re-run on a day the feed cooperates.
+  GitLab, but U21, the one state-clearing write path in the branch arm, had never run
+  green live against GitHub and still needed a re-run on a day the feed cooperated.
+
+  **That re-run happened** in the completion round (MAT-154), and U20's half needed
+  a fix first, not just patience. Its settle windows were sized against the
+  configured interval, but GitHub answers on its own server-directed 60s cadence,
+  so the old window could cover at most one warm tick and the no-replay claim rested
+  on that tick rather than on dedup surviving a resumed session. The windows are now
+  sized to span two warm ticks by construction on both providers. The acceptance run
+  then went green on both flows -- `github 60 passed, 0 failed, 5 skipped` /
+  `gitlab 63 passed, 0 failed, 2 skipped`, with U2 and U24 (MAT-151's targets) also
+  live on GitHub. Two earlier attempts failed only on `retryJob`'s provisioning step
+  during a declared GitHub Actions incident that throttled webhooks, i.e. weather,
+  documented rather than worked around by loosening the poll. The feed-loss truth
+  above is unchanged by any of this: the slow full poll stays load-bearing on GitHub.
 
 **Mandatory for every mutation added here.** `GitHubProvider.graphql<T>()` (line 1213)
 swallows transport, HTTP, and GraphQL errors alike and returns `null`, warning only.
@@ -404,6 +429,12 @@ null-check and throw, as `setDraft` already does.
 
 `rebasePullRequest` and `watchMR`. The suite asserts they throw and that
 `capabilities.canRebase` is `false`, so the gap is verified rather than assumed.
+
+These two are permanent by-design declines, not residual work. GitHub's
+`update-branch` merges base into head, which is not a rebase, and there is no push
+channel to back `watchMR`. With every other method shipped and live-proven, the
+capability table finishes at 8 of 9 true on GitHub, and the ninth is false because
+the platform cannot honestly back it. Nothing further is planned here.
 
 ## Risks
 

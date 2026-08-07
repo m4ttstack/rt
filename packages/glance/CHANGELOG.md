@@ -1,5 +1,40 @@
 # @mattstack/glance
 
+## 0.16.0
+
+### Minor Changes
+
+- `GitHubProvider.fetchPullRequestsByBranches` is implemented, closing the last
+  functional parity gap between the two providers. It resolves branches in one
+  aliased GraphQL round-trip per 50 branches, then one detail fetch per branch
+  that actually matched, so a board resolving twenty branches makes two requests
+  where it used to make twenty. State semantics are pinned to the single-branch
+  sibling rather than to GraphQL's defaults: no `state` means opened only,
+  `closed` folds merged in (GitHub models merged as a kind of closed, GitLab
+  does not), and when a branch has several matching PRs the newest by
+  `CREATED_AT DESC` wins. Callers that feature-detect and fall back to
+  sequential `fetchPullRequestByBranch` calls need no change; the U2 conformance
+  flow asserts, live, that the batch result and that fallback agree field for
+  field.
+- GitHub REST response shapes now derive from `@octokit/openapi-types` instead of
+  being hand-transcribed. Types only: `dist` is byte-identical before and after,
+  and no runtime behaviour moves. What changes is what happens next time GitHub
+  renames or drops a field ... it becomes a compile error in `GitHubProvider.ts`
+  rather than an `undefined` at a call site. The handful of places this file
+  narrows beyond what the published schema promises are declared explicitly with
+  the reason inline. The GraphQL response shapes stay hand-rolled;
+  `@octokit/openapi-types` documents only the REST surface.
+- The two events-path consumer flows that had never run green live on GitHub,
+  U20 (a JSON round-tripped cursor resumes without replay, and a foreign-typed
+  `lastEventId` never silently fails to dedup) and U21 (a branch invalidation
+  whose lookup returns null writes `mr: null` and flushes exactly once), now
+  both pass live on GitHub. U20's proof needed the settle windows reworked
+  first: they were sized against the configured interval, but GitHub's feed
+  answers on its own server-directed 60s cadence, so the old 12s window could
+  cover at most one warm tick and the no-replay claim rested on that single
+  tick. The windows are now sized to span two warm ticks by construction on both
+  providers, which is what makes the silence mean dedup instead of luck.
+
 ## 0.15.0
 
 ### Minor Changes
