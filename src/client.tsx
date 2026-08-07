@@ -10,6 +10,8 @@ import remarkGfm from "remark-gfm";
 import { filterByMember, sortMRs, groupMRs, parseViewState, serializeViewState, commentDot, commentsAllResolved, dataAgeLabel, statusFlags, GROUP_KEYS, SORT_KEYS } from "./view.ts";
 import type { GroupKey, SortKey, ViewState } from "./view.ts";
 import { renderMr, renderMulti, type MrFacts } from "./template.ts";
+import { respondOutcome, respondDoneLabel, respondNeedsAttention } from "./respond-outcome.ts";
+import type { RespondStatus } from "./respond-outcome.ts";
 
 interface RosterMember {
   username: string;
@@ -28,8 +30,7 @@ interface ConfigMember {
 
 type ReviewStatus = "queued" | "reviewing" | "done" | "error";
 interface ReviewInfo { status: ReviewStatus; message?: string; reportReady?: boolean; sessionId?: string }
-type RespondStatus = "queued" | "triaging" | "implementing" | "drafting" | "done" | "error";
-interface RespondInfo { status: RespondStatus; message?: string; sessionId?: string }
+interface RespondInfo { status: RespondStatus; message?: string; sessionId?: string; posted?: number; threads?: number }
 type DoctorStatus = "queued" | "diagnosing" | "rebasing" | "fixing" | "watching" | "done" | "error";
 interface DoctorInfo { status: DoctorStatus; message?: string }
 interface SlackInfo { status: "found" | "notfound"; permalink?: string; reactions: string[]; posted: boolean }
@@ -225,12 +226,13 @@ const REVIEW_LABEL: Record<ReviewStatus, string> = {
   error: "review failed",
 };
 
-const RESPOND_LABEL: Record<RespondStatus, string> = {
+// `done` is deliberately absent: what a finished run should say depends on what
+// it did with its replies, which respondDoneLabel derives from the counts.
+const RESPOND_LABEL: Record<Exclude<RespondStatus, "done">, string> = {
   queued: "response queued",
   triaging: "triaging…",
   implementing: "implementing…",
   drafting: "drafting replies…",
-  done: "replies drafted",
   error: "response failed",
 };
 
@@ -293,13 +295,32 @@ function ReviewBadge({ review, onOpen }: { review?: ReviewInfo; onOpen?: () => v
 
 /** Response-to-review lifecycle badge. Uses the review-badge visual family so
     the row's shape stays familiar; the class prefix `tui-respond-*` differentiates
-    color state without needing a distinct component style. */
-function RespondBadge({ respond }: { respond?: RespondInfo }) {
+    color state without needing a distinct component style. A terminal `done` is
+    keyed on the derived outcome rather than the status, because `done` alone
+    cannot tell a posted run from drafts left waiting. */
+function RespondBadge({ respond, onResume }: { respond?: RespondInfo; onResume?: () => void }) {
   if (!respond) return null;
-  const label = RESPOND_LABEL[respond.status];
+  const outcome = respond.status === "done" ? respondOutcome(respond.posted, respond.threads) : null;
+  // Repeating the `=== "done"` test rather than branching on `outcome` is what
+  // lets TypeScript narrow the status out of the RESPOND_LABEL lookup.
+  const label = respond.status === "done" ? respondDoneLabel(respond.posted, respond.threads) : RESPOND_LABEL[respond.status];
   const title = respond.message || label;
+  const className = `tui-review tui-respond tui-respond-${outcome ?? respond.status}`;
+  // Unposted replies mean a pane is still parked at the posting gate holding
+  // them, so the badge doubles as the way back into it.
+  if (outcome && respondNeedsAttention(outcome) && respond.sessionId && onResume) {
+    return (
+      <button
+        className={`${className} tui-review-open`}
+        title={`${title} (click to resume and finish posting)`}
+        onClick={onResume}
+      >
+        {BADGE_ICON.respond} {label} ↗
+      </button>
+    );
+  }
   return (
-    <span className={`tui-review tui-respond tui-respond-${respond.status}`} title={title}>
+    <span className={className} title={title}>
       {BADGE_ICON.respond} {label}
     </span>
   );
@@ -1144,6 +1165,7 @@ function RowView({
   slackTemplates,
   onContext,
   onOpenReview,
+  onResumeRespond,
 }: {
   mrs: BoardMR[];
   now: number;
@@ -1152,6 +1174,7 @@ function RowView({
   slackTemplates: SlackTemplates;
   onContext: (e: React.MouseEvent, mr: BoardMR) => void;
   onOpenReview: (mr: BoardMRWithReview) => void;
+  onResumeRespond: (mr: BoardMR) => void;
 }) {
   return (
     <div className="tui-rows">
@@ -1191,7 +1214,7 @@ function RowView({
             {((mr as BoardMRWithReview).review || (mr as BoardMRWithReview).respond || (mr as BoardMRWithReview).doctor || hasReviewReactions(mr) || (mr as BoardMRWithReview).slack?.posted) && (
               <div className="tui-row-board">
                 <ReviewBadge review={(mr as BoardMRWithReview).review} onOpen={() => onOpenReview(mr as BoardMRWithReview)} />
-                <RespondBadge respond={(mr as BoardMRWithReview).respond} />
+                <RespondBadge respond={(mr as BoardMRWithReview).respond} onResume={() => onResumeRespond(mr)} />
                 <DoctorBadge doctor={(mr as BoardMRWithReview).doctor} />
                 <SlackPostedChip slack={(mr as BoardMRWithReview).slack} />
                 <SlackReactionChips reactions={(mr as BoardMRWithReview).slack?.reactions} />
@@ -1213,6 +1236,7 @@ function GridView({
   slackTemplates,
   onContext,
   onOpenReview,
+  onResumeRespond,
 }: {
   mrs: BoardMR[];
   now: number;
@@ -1221,6 +1245,7 @@ function GridView({
   slackTemplates: SlackTemplates;
   onContext: (e: React.MouseEvent, mr: BoardMR) => void;
   onOpenReview: (mr: BoardMRWithReview) => void;
+  onResumeRespond: (mr: BoardMR) => void;
 }) {
   return (
     <div className="tui-grid">
@@ -1251,7 +1276,7 @@ function GridView({
             {((mr as BoardMRWithReview).review || (mr as BoardMRWithReview).respond || (mr as BoardMRWithReview).doctor || hasReviewReactions(mr) || (mr as BoardMRWithReview).slack?.posted) && (
               <div className="tui-card-board">
                 <ReviewBadge review={(mr as BoardMRWithReview).review} onOpen={() => onOpenReview(mr as BoardMRWithReview)} />
-                <RespondBadge respond={(mr as BoardMRWithReview).respond} />
+                <RespondBadge respond={(mr as BoardMRWithReview).respond} onResume={() => onResumeRespond(mr)} />
                 <DoctorBadge doctor={(mr as BoardMRWithReview).doctor} />
                 <SlackPostedChip slack={(mr as BoardMRWithReview).slack} />
                 <SlackReactionChips reactions={(mr as BoardMRWithReview).slack?.reactions} />
@@ -2131,9 +2156,9 @@ function Board() {
           groups.map((g) => (
             <Panel key={g.label} title={g.label} count={g.mrs.length}>
               {view === "rows" ? (
-                <RowView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} slackTemplates={data.slackTemplates} onContext={openRowMenu} onOpenReview={setReviewModal} />
+                <RowView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} slackTemplates={data.slackTemplates} onContext={openRowMenu} onOpenReview={setReviewModal} onResumeRespond={handleResumeRespond} />
               ) : (
-                <GridView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} slackTemplates={data.slackTemplates} onContext={openRowMenu} onOpenReview={setReviewModal} />
+                <GridView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} slackTemplates={data.slackTemplates} onContext={openRowMenu} onOpenReview={setReviewModal} onResumeRespond={handleResumeRespond} />
               )}
             </Panel>
           ))

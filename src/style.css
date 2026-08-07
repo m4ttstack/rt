@@ -544,7 +544,11 @@ body {
 .tui-respond-triaging,
 .tui-respond-implementing,
 .tui-respond-drafting { color: var(--purple); border-color: currentColor; animation: tui-review-pulse 1.4s ease-in-out infinite; }
-.tui-respond-done { color: var(--dot-ok); border-color: currentColor; }
+.tui-respond-posted,
+.tui-respond-none { color: var(--dot-ok); border-color: currentColor; }
+.tui-respond-partial,
+.tui-respond-drafted { color: var(--dot-warn); border-color: currentColor; }
+.tui-respond-unknown { color: var(--muted); border-color: currentColor; }
 .tui-respond-error { color: var(--dot-bad); border-color: currentColor; }
 /* Doctor badge: cyan family, so mechanical-fix state reads as its own axis. */
 .tui-doctor-queued { opacity: 0.7; color: var(--muted); }
