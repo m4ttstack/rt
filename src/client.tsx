@@ -1331,15 +1331,20 @@ function RowView({
             onClick={(e) => onRowClick(e, mr)}
             onContextMenu={(e) => onContext(e, mr)}
           >
+            {/* Its own leftmost column, full row height, so the checkbox is a
+                target you can hit without aiming and never crowds the title. */}
+            <div className="tui-row-pick">
+              {mr.webUrl && (
+                <SelectBox checked={selected.has(mr.webUrl)} onToggle={() => onToggleSelect(mr.webUrl!)} />
+              )}
+            </div>
+            <div className="tui-row-body">
             {statusFlags(mr).length > 0 && (
               <div className="tui-row-review">
                 <StatusFlags mr={mr} />
               </div>
             )}
             <div className="tui-row-1">
-              {mr.webUrl && (
-                <SelectBox checked={selected.has(mr.webUrl)} onToggle={() => onToggleSelect(mr.webUrl!)} />
-              )}
               <StatusDot mr={mr} />
               {mr.isDraft && <span className="tui-draft" title="draft — right-click to mark ready">draft</span>}
               <span className="tui-title">{cleanTitle(mr.title)}</span>
@@ -1374,6 +1379,7 @@ function RowView({
               </div>
             )}
             <Watching mr={mr} />
+            </div>
           </div>
         );
       })}
@@ -1689,21 +1695,43 @@ function SelectionBar({
   // is undefined for an untouched header. Don't collapse the three forms.
   const header = selectionHeader(templates.multiHeader, edited, count);
 
+  // Grow the textarea to fit its content, so a long header wraps into view
+  // rather than scrolling sideways out of it. Reset to "auto" first or the box
+  // can only ever grow -- scrollHeight is clamped by the current height, so
+  // deleting text would leave the extra rows behind. `any` because tsconfig
+  // omits the DOM lib and HTMLTextAreaElement resolves to an empty interface.
+  const taRef = useRef<any>(null);
+  useEffect(() => {
+    const el = taRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight}px`;
+  }, [header.display]);
+
   return (
     <div className="tui-selbar">
       <div className="tui-selbar-head">
         <span className="tui-selbar-count">▣ {count} selected</span>
         {inViewCount < count && <span className="tui-selbar-note">({inViewCount} in view)</span>}
       </div>
-      <input
+      <textarea
+        ref={taRef}
         className="tui-selbar-input"
+        rows={1}
         value={header.display}
         maxLength={MAX_HEADER_LEN}
         aria-label="message header"
         placeholder="header line"
+        // The header is one line by definition -- sanitizeHeader collapses any
+        // newline to a space before posting. The textarea is here so long text
+        // wraps into view instead of scrolling out of it, not to author
+        // multi-line messages, so Enter must not insert a break.
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.preventDefault();
+        }}
         onChange={(e) => {
           // The double cast is load-bearing: tsconfig.json omits the DOM lib, so
-          // @types/react resolves HTMLInputElement to an empty interface --
+          // @types/react resolves HTMLTextAreaElement to an empty interface --
           // e.target.value, e.currentTarget.value and an explicitly typed
           // handler param all fail to compile. Don't "clean this up".
           setEdited((e.target as unknown as { value: string }).value);

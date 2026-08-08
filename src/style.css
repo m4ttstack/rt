@@ -93,12 +93,16 @@ body {
 /* Always visible, unlike the hover-revealed inline copy: you scan the board
    fast, and hover-reveal is unusable in the mobile drawer layout. */
 .tui-selectbox {
-  flex: none; padding: 0; line-height: 1;
-  font: inherit; cursor: pointer;
-  background: transparent; border: none; color: var(--muted);
-  opacity: 0.55; transition: opacity 0.12s, color 0.12s;
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: none; width: 1.6rem; height: 1.6rem; padding: 0;
+  font: inherit; font-size: 1.05rem; line-height: 1; cursor: pointer;
+  background: transparent; border: none; border-radius: 5px; color: var(--muted);
+  opacity: 0.5; transition: opacity 0.12s, color 0.12s, background 0.12s;
 }
-.tui-selectbox:hover { opacity: 1; color: var(--fg); }
+.tui-selectbox:hover {
+  opacity: 1; color: var(--fg);
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+}
 .tui-selectbox.checked { opacity: 1; color: var(--accent); }
 
 .tui-selbar {
@@ -112,14 +116,25 @@ body {
 .tui-selbar-head { display: flex; align-items: baseline; gap: 0.4rem; }
 .tui-selbar-count { color: var(--accent); font-weight: 700; white-space: nowrap; }
 .tui-selbar-note { color: var(--muted); font-size: 0.78rem; }
+/* A textarea, not an input, so a long header wraps into view instead of
+   scrolling out of it. Height is driven from JS off scrollHeight; resize is off
+   because the box sizes itself. overflow-y hidden stops a scrollbar flashing
+   during the auto-grow measure. */
 .tui-selbar-input {
   flex: 1 1 16rem; min-width: 0;
-  padding: 0.3rem 0.5rem;
-  font: inherit; color: var(--fg);
+  padding: 0.35rem 0.55rem;
+  font: inherit; color: var(--fg); line-height: 1.45;
   background: var(--card); border: 1px solid var(--border); border-radius: 6px;
+  resize: none; overflow-y: hidden;
 }
 .tui-selbar-input:focus { outline: none; border-color: var(--accent); }
-.tui-selbar-actions { display: flex; gap: 0.4rem; margin-left: auto; }
+.tui-selbar-actions { display: flex; gap: 0.45rem; margin-left: auto; align-items: center; }
+/* Roomier than the bare icon buttons in the header: these carry a label beside
+   the icon, and without the gap the two collide. */
+.tui-selbar-actions .tui-copy {
+  gap: 0.45rem; padding: 0.4rem 0.75rem;
+  font: inherit; font-size: 0.78rem; white-space: nowrap;
+}
 
 /* ── panels (TUI frame with label on the border) ──────────────────── */
 .tui-panel {
@@ -164,7 +179,19 @@ body {
 }
 
 /* ── rows ─────────────────────────────────────────────────────────── */
-.tui-row { padding: 0.5rem 1rem 0.55rem 1.4rem; cursor: pointer; position: relative; }
+/* Two columns: the select box gets its own gutter so it never competes with the
+   title for space, and the body keeps the single-column stack it always had.
+   The left padding is still the ❯ hover marker's gutter, which sits outside the
+   grid in the row's padding. */
+.tui-row {
+  display: grid; grid-template-columns: 1.75rem minmax(0, 1fr);
+  column-gap: 0.5rem; align-items: start;
+  padding: 0.5rem 1rem 0.55rem 1.4rem; cursor: pointer; position: relative;
+}
+/* Full row height and centred, so the checkbox is a large, forgiving target
+   rather than a glyph you have to aim at. */
+.tui-row-pick { align-self: stretch; display: flex; align-items: center; justify-content: center; }
+.tui-row-body { min-width: 0; }
 .tui-row + .tui-row { border-top: 1px solid var(--border-soft); }
 .tui-row:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
 .tui-row:hover::before {
