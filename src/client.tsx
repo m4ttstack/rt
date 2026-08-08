@@ -247,7 +247,10 @@ const DOCTOR_LABEL: Record<DoctorStatus, string> = {
   rebasing: "rebasing…",
   fixing: "fixing…",
   watching: "watching CI…",
-  done: "healed",
+  // "diagnosed", not "healed": the board can't tell a real repair from a run
+  // that only inherited a diagnosis and held a note, so the label claims only
+  // what every finished run actually did.
+  done: "diagnosed",
   error: "doctor stuck",
 };
 
