@@ -66,9 +66,6 @@ declare global {
   interface Window {
     __applyTheme: () => void;
   }
-  // No DOM lib in tsconfig; declare the one browser global the draft-approval
-  // confirm step uses.
-  function confirm(message?: string): boolean;
 }
 
 // ── toggles ────────────────────────────────────────────────────────────────
@@ -247,7 +244,10 @@ const DOCTOR_LABEL: Record<DoctorStatus, string> = {
   rebasing: "rebasing…",
   fixing: "fixing…",
   watching: "watching CI…",
-  done: "healed",
+  // "diagnosed", not "healed": the board can't tell a real repair from a run
+  // that only inherited a diagnosis and held a note, so the label claims only
+  // what every finished run actually did.
+  done: "diagnosed",
   error: "doctor stuck",
 };
 
@@ -344,31 +344,26 @@ function DoctorBadge({ doctor }: { doctor?: DoctorInfo }) {
   );
 }
 
-/** One held outbound note the doctor drafted. The click IS the approval gate:
-    nothing posts without it. Optimistic local state hides the badge after an
-    action; the next /data.json pull confirms. */
-function DraftBadge({ mrUrl, draft, local }: { mrUrl: string; draft: DraftInfo; local: boolean }) {
-  const [resolved, setResolved] = useState<"posted" | "dismissed" | null>(null);
+/** Key for the App-level map of optimistically resolved drafts. Resolution
+    lives above the badge because the acting happens in DraftModal; the next
+    /data.json pull drops the draft and the stale entry is harmless. */
+function draftKey(mrUrl: string, kind: string): string {
+  return `${mrUrl}#${kind}`;
+}
+
+/** One held outbound note the doctor drafted — a compact chip. Reading and
+    approving happen in DraftModal, which the chip opens; nothing posts from
+    the chip itself. */
+function DraftBadge({ draft, resolved, onOpen }: { draft: DraftInfo; resolved?: "posted" | "dismissed"; onOpen: () => void }) {
   if (resolved) return <span className="tui-review tui-held-draft tui-held-draft-resolved">✉ {resolved}</span>;
-  const act = async (action: "post" | "dismiss") => {
-    if (action === "post" && !confirm(`Post this note?\n\n${draft.body}`)) return;
-    const res = await fetch("/drafts", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ mrUrl, kind: draft.kind, action }),
-    });
-    if (res.ok) setResolved(action === "post" ? "posted" : "dismissed");
-  };
   return (
-    <span className="tui-review tui-held-draft" title={draft.body}>
+    <button
+      className="tui-review tui-held-draft tui-review-open"
+      title="held note — click to read and post or dismiss"
+      onClick={onOpen}
+    >
       ✉ held: {draft.kind}
-      {local && (
-        <>
-          <button className="tui-draft-act" onClick={() => act("post")}>post</button>
-          <button className="tui-draft-act" onClick={() => act("dismiss")}>dismiss</button>
-        </>
-      )}
-    </span>
+    </button>
   );
 }
 
@@ -433,6 +428,15 @@ function SlackPostedChip({ slack }: { slack?: SlackInfo }) {
   );
 }
 
+/** Close a modal on Escape, for the lifetime of the calling component. */
+function useEscapeClose(onClose: () => void): void {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+}
+
 /** Modal that fetches and renders the agent's written review markdown for an MR. */
 function ReviewModal({ mr, onClose }: { mr: BoardMRWithReview; onClose: () => void }) {
   const [body, setBody] = useState<string | null>(null);
@@ -451,11 +455,7 @@ function ReviewModal({ mr, onClose }: { mr: BoardMRWithReview; onClose: () => vo
       live = false;
     };
   }, [mr.webUrl]);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscapeClose(onClose);
   return (
     <div className="tui-modal-overlay tui-review-overlay" onClick={onClose}>
       <div className="tui-modal tui-review-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal aria-label={`review for !${mr.iid}`}>
@@ -475,6 +475,85 @@ function ReviewModal({ mr, onClose }: { mr: BoardMRWithReview; onClose: () => vo
             <div className="tui-md">
               <ReactMarkdown remarkPlugins={[remarkGfm]}>{body}</ReactMarkdown>
             </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Drawer for one held outbound note. Shows the full body verbatim — exactly
+    the text that would post — with the MR context, and holds the approval
+    gate: post arms into an in-drawer confirm step (no native dialogs), and
+    only the confirmed click sends. Dismiss is one click; it only deletes a
+    local draft file. */
+function DraftModal({
+  mr,
+  draft,
+  local,
+  onResolved,
+  onClose,
+}: {
+  mr: BoardMRWithReview;
+  draft: DraftInfo;
+  local: boolean;
+  onResolved: (outcome: "posted" | "dismissed") => void;
+  onClose: () => void;
+}) {
+  // Post is two clicks: the first arms the button into "confirm post", the
+  // second sends. Any failure disarms so a retry restates intent.
+  const [armed, setArmed] = useState(false);
+  const [busy, setBusy] = useState<"post" | "dismiss" | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEscapeClose(onClose);
+  const act = async (action: "post" | "dismiss") => {
+    setBusy(action);
+    setFailed(false);
+    try {
+      const res = await fetch("/drafts", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mrUrl: mr.webUrl, kind: draft.kind, action }),
+      });
+      if (!res.ok) throw new Error(String(res.status));
+      onResolved(action === "post" ? "posted" : "dismissed");
+    } catch {
+      setBusy(null);
+      setArmed(false);
+      setFailed(true);
+    }
+  };
+  return (
+    <div className="tui-modal-overlay" onClick={onClose}>
+      <div className="tui-modal tui-draft-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal aria-label={`held draft for !${mr.iid}`}>
+        <div className="tui-modal-head">
+          <span className="tui-modal-title">❯ held: {draft.kind} · !{mr.iid}</span>
+          <button className="tui-modal-x" onClick={onClose} aria-label="close">
+            {ICONS.close}
+          </button>
+        </div>
+        <p className="tui-modal-sub">{cleanTitle(mr.title)}</p>
+        <pre className="tui-draft-body">{draft.body}</pre>
+        <div className="tui-draft-actions">
+          {failed && <span className="tui-draft-error">action failed — nothing was sent, try again</span>}
+          {local ? (
+            armed ? (
+              <>
+                <button className="tui-draft-act" disabled={busy !== null} onClick={() => setArmed(false)}>back</button>
+                <button className="tui-draft-act tui-draft-act-post armed" disabled={busy !== null} onClick={() => act("post")}>
+                  {busy === "post" ? "posting…" : "confirm post"}
+                </button>
+              </>
+            ) : (
+              <>
+                <button className="tui-draft-act" disabled={busy !== null} onClick={() => act("dismiss")}>
+                  {busy === "dismiss" ? "dismissing…" : "dismiss"}
+                </button>
+                <button className="tui-draft-act tui-draft-act-post" disabled={busy !== null} onClick={() => setArmed(true)}>post</button>
+              </>
+            )
+          ) : (
+            <span className="tui-draft-note">read-only — post and dismiss live on the local board</span>
           )}
         </div>
       </div>
@@ -1220,6 +1299,8 @@ function RowView({
   slackTemplates,
   onContext,
   onOpenReview,
+  onOpenDraft,
+  draftResolved,
   onResumeRespond,
   selected,
   onToggleSelect,
@@ -1231,6 +1312,8 @@ function RowView({
   slackTemplates: SlackTemplates;
   onContext: (e: React.MouseEvent, mr: BoardMR) => void;
   onOpenReview: (mr: BoardMRWithReview) => void;
+  onOpenDraft: (mr: BoardMRWithReview, draft: DraftInfo) => void;
+  draftResolved: ReadonlyMap<string, "posted" | "dismissed">;
   onResumeRespond: (mr: BoardMR) => void;
   selected: ReadonlySet<string>;
   onToggleSelect: (webUrl: string) => void;
@@ -1279,7 +1362,12 @@ function RowView({
                 <RespondBadge respond={(mr as BoardMRWithReview).respond} onResume={() => onResumeRespond(mr)} />
                 <DoctorBadge doctor={(mr as BoardMRWithReview).doctor} />
                 {((mr as BoardMRWithReview).drafts ?? []).map((d) => (
-                  <DraftBadge key={d.kind} mrUrl={mr.webUrl ?? ""} draft={d} local={local} />
+                  <DraftBadge
+                    key={d.kind}
+                    draft={d}
+                    resolved={draftResolved.get(draftKey(mr.webUrl ?? "", d.kind))}
+                    onOpen={() => onOpenDraft(mr as BoardMRWithReview, d)}
+                  />
                 ))}
                 <SlackPostedChip slack={(mr as BoardMRWithReview).slack} />
                 <SlackReactionChips reactions={(mr as BoardMRWithReview).slack?.reactions} />
@@ -1301,6 +1389,8 @@ function GridView({
   slackTemplates,
   onContext,
   onOpenReview,
+  onOpenDraft,
+  draftResolved,
   onResumeRespond,
   selected,
   onToggleSelect,
@@ -1312,6 +1402,8 @@ function GridView({
   slackTemplates: SlackTemplates;
   onContext: (e: React.MouseEvent, mr: BoardMR) => void;
   onOpenReview: (mr: BoardMRWithReview) => void;
+  onOpenDraft: (mr: BoardMRWithReview, draft: DraftInfo) => void;
+  draftResolved: ReadonlyMap<string, "posted" | "dismissed">;
   onResumeRespond: (mr: BoardMR) => void;
   selected: ReadonlySet<string>;
   onToggleSelect: (webUrl: string) => void;
@@ -1351,7 +1443,12 @@ function GridView({
                 <RespondBadge respond={(mr as BoardMRWithReview).respond} onResume={() => onResumeRespond(mr)} />
                 <DoctorBadge doctor={(mr as BoardMRWithReview).doctor} />
                 {((mr as BoardMRWithReview).drafts ?? []).map((d) => (
-                  <DraftBadge key={d.kind} mrUrl={mr.webUrl ?? ""} draft={d} local={local} />
+                  <DraftBadge
+                    key={d.kind}
+                    draft={d}
+                    resolved={draftResolved.get(draftKey(mr.webUrl ?? "", d.kind))}
+                    onOpen={() => onOpenDraft(mr as BoardMRWithReview, d)}
+                  />
                 ))}
                 <SlackPostedChip slack={(mr as BoardMRWithReview).slack} />
                 <SlackReactionChips reactions={(mr as BoardMRWithReview).slack?.reactions} />
@@ -1440,11 +1537,7 @@ function SettingsModal({
   onToggle: (username: string, hidden: boolean) => void;
   onClose: () => void;
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscapeClose(onClose);
   return (
     <div className="tui-modal-overlay" onClick={onClose}>
       <div className="tui-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal aria-label="team settings">
@@ -1793,6 +1886,11 @@ function Board() {
   const [rowMenu, setRowMenu] = useState<RowMenuState | null>(null);
   // The MR whose saved review is open in the modal, if any.
   const [reviewModal, setReviewModal] = useState<BoardMRWithReview | null>(null);
+  // The held draft open in its drawer, if any, and the drafts already acted on
+  // this session (optimistic — the next /data.json pull drops resolved drafts).
+  const [draftModal, setDraftModal] = useState<{ mr: BoardMRWithReview; draft: DraftInfo } | null>(null);
+  const [draftResolved, setDraftResolved] = useState<ReadonlyMap<string, "posted" | "dismissed">>(new Map());
+  const openDraft = useCallback((mr: BoardMRWithReview, draft: DraftInfo) => setDraftModal({ mr, draft }), []);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const toastId = useRef(0);
   const addToast = useCallback((text: string) => {
@@ -1800,6 +1898,19 @@ function Board() {
     setToasts((t) => [...t, { id, text }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3500);
   }, []);
+
+  // A drawer action succeeded: swap the chip to its resolved state, close the
+  // drawer, and confirm with a toast (the board's transient-confirmation form).
+  const handleDraftResolved = useCallback(
+    (outcome: "posted" | "dismissed") => {
+      if (!draftModal) return;
+      const { mr, draft } = draftModal;
+      setDraftResolved((prev) => new Map(prev).set(draftKey(mr.webUrl ?? "", draft.kind), outcome));
+      setDraftModal(null);
+      addToast(outcome === "posted" ? `held note posted to !${mr.iid}` : `held note dismissed on !${mr.iid}`);
+    },
+    [draftModal, addToast],
+  );
 
   const applyHidden = useCallback((username: string, hidden: boolean) => {
     setData((prev) =>
@@ -2356,9 +2467,9 @@ function Board() {
           groups.map((g) => (
             <Panel key={g.label} title={g.label} count={g.mrs.length}>
               {view === "rows" ? (
-                <RowView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} slackTemplates={data.slackTemplates} onContext={openRowMenu} onOpenReview={setReviewModal} onResumeRespond={handleResumeRespond} selected={selected} onToggleSelect={toggleSelect} />
+                <RowView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} slackTemplates={data.slackTemplates} onContext={openRowMenu} onOpenReview={setReviewModal} onOpenDraft={openDraft} draftResolved={draftResolved} onResumeRespond={handleResumeRespond} selected={selected} onToggleSelect={toggleSelect} />
               ) : (
-                <GridView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} slackTemplates={data.slackTemplates} onContext={openRowMenu} onOpenReview={setReviewModal} onResumeRespond={handleResumeRespond} selected={selected} onToggleSelect={toggleSelect} />
+                <GridView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} slackTemplates={data.slackTemplates} onContext={openRowMenu} onOpenReview={setReviewModal} onOpenDraft={openDraft} draftResolved={draftResolved} onResumeRespond={handleResumeRespond} selected={selected} onToggleSelect={toggleSelect} />
               )}
             </Panel>
           ))
@@ -2429,6 +2540,16 @@ function Board() {
       )}
 
       {reviewModal && <ReviewModal mr={reviewModal} onClose={() => setReviewModal(null)} />}
+
+      {draftModal && (
+        <DraftModal
+          mr={draftModal.mr}
+          draft={draftModal.draft}
+          local={data.local}
+          onResolved={handleDraftResolved}
+          onClose={() => setDraftModal(null)}
+        />
+      )}
 
       <ToastHost toasts={toasts} />
     </div>
