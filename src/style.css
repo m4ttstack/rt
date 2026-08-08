@@ -590,14 +590,34 @@ body {
 .tui-doctor-watching { color: var(--cyan); border-color: currentColor; animation: tui-review-pulse 1.4s ease-in-out infinite; }
 .tui-doctor-done { color: var(--dot-ok); border-color: currentColor; }
 .tui-doctor-error { color: var(--dot-bad); border-color: currentColor; }
-/* Held outbound note a doctor drafted; the badge's buttons are the approval
-   gate. "held-draft" (not .tui-draft, which is the draft-MR chip). */
+/* Held outbound note a doctor drafted; the chip opens the draft drawer, where
+   the approval gate lives. "held-draft" (not .tui-draft, the draft-MR chip). */
 .tui-held-draft { color: var(--amber); border-color: currentColor; }
 .tui-held-draft-resolved { opacity: 0.6; }
-.tui-draft-act {
-  margin-left: 6px; padding: 0 6px; font: inherit; cursor: pointer;
-  background: transparent; border: 1px solid currentColor; border-radius: 3px; color: inherit;
+/* held-draft drawer: the verbatim note text plus the post/dismiss gate */
+.tui-draft-modal { max-width: 680px; }
+.tui-draft-body {
+  font-family: var(--font-mono); font-size: 0.82rem; line-height: 1.55;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  padding: 0.7rem 0.9rem; margin: 0; color: var(--fg);
 }
+.tui-draft-actions {
+  display: flex; justify-content: flex-end; align-items: center; gap: 8px;
+  margin-top: 0.9rem;
+}
+.tui-draft-note { margin-right: auto; color: var(--muted); font-size: 0.76rem; }
+.tui-draft-error { margin-right: auto; color: var(--dot-bad); font-size: 0.76rem; }
+.tui-draft-act {
+  padding: 4px 12px; font: inherit; font-size: 0.85rem; cursor: pointer;
+  background: transparent; border: 1px solid var(--border); border-radius: 6px; color: var(--fg);
+}
+.tui-draft-act:hover:not(:disabled) { background: var(--card); }
+.tui-draft-act:disabled { opacity: 0.5; cursor: default; }
+.tui-draft-act-post { color: var(--amber); border-color: var(--amber); }
+/* armed = the in-drawer confirm step; filled so "this will send" is unmissable */
+.tui-draft-act-post.armed { background: var(--amber); color: var(--bg); }
+.tui-draft-act-post.armed:hover:not(:disabled) { background: var(--amber); opacity: 0.9; }
 /* clickable badge (a saved review exists) — reads as a button */
 .tui-review-open { font: inherit; font-size: 11px; cursor: pointer; background: none; }
 .tui-review-open:hover { background: var(--card); }
