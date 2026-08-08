@@ -436,6 +436,15 @@ function SlackPostedChip({ slack }: { slack?: SlackInfo }) {
   );
 }
 
+/** Close a modal on Escape, for the lifetime of the calling component. */
+function useEscapeClose(onClose: () => void): void {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [onClose]);
+}
+
 /** Modal that fetches and renders the agent's written review markdown for an MR. */
 function ReviewModal({ mr, onClose }: { mr: BoardMRWithReview; onClose: () => void }) {
   const [body, setBody] = useState<string | null>(null);
@@ -454,11 +463,7 @@ function ReviewModal({ mr, onClose }: { mr: BoardMRWithReview; onClose: () => vo
       live = false;
     };
   }, [mr.webUrl]);
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscapeClose(onClose);
   return (
     <div className="tui-modal-overlay tui-review-overlay" onClick={onClose}>
       <div className="tui-modal tui-review-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal aria-label={`review for !${mr.iid}`}>
@@ -1443,11 +1448,7 @@ function SettingsModal({
   onToggle: (username: string, hidden: boolean) => void;
   onClose: () => void;
 }) {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  useEscapeClose(onClose);
   return (
     <div className="tui-modal-overlay" onClick={onClose}>
       <div className="tui-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal aria-label="team settings">
