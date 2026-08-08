@@ -9,7 +9,8 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { filterByMember, sortMRs, groupMRs, parseViewState, serializeViewState, commentDot, commentsAllResolved, dataAgeLabel, statusFlags, GROUP_KEYS, SORT_KEYS } from "./view.ts";
 import type { GroupKey, SortKey, ViewState } from "./view.ts";
-import { renderMr, renderMulti, type MrFacts } from "./template.ts";
+import { renderMr, renderMulti, selectionHeader, MAX_HEADER_LEN, type MrFacts, type SlackTemplates } from "./template.ts";
+import { selectionOf, postableOf } from "./selection.ts";
 import { respondOutcome, respondDoneLabel, respondNeedsAttention } from "./respond-outcome.ts";
 import type { RespondStatus } from "./respond-outcome.ts";
 
@@ -36,8 +37,6 @@ interface DoctorInfo { status: DoctorStatus; message?: string; origin?: "auto" |
 interface DraftInfo { kind: string; body: string; createdAt: number }
 interface SlackInfo { status: "found" | "notfound"; permalink?: string; reactions: string[]; posted: boolean }
 type BoardMRWithReview = BoardMR & { review?: ReviewInfo; respond?: RespondInfo; doctor?: DoctorInfo; slack?: SlackInfo; drafts?: DraftInfo[] };
-
-interface SlackTemplates { single: string; multiHeader: string; multiItem: string }
 
 interface BoardData {
   title: string;
@@ -788,9 +787,11 @@ function mrLine(mr: BoardMR, tpl: SlackTemplates): string {
   return renderMr(tpl.single, factsFor(mr));
 }
 
-/** The current view rendered from the configured multi template. */
-function boardSummary(mrs: BoardMR[], tpl: SlackTemplates): string {
-  return renderMulti(tpl.multiHeader, tpl.multiItem, mrs.map(factsFor));
+/** The current view (or the current selection) rendered from the configured
+    multi template. `header` overrides the configured header line; {count} in
+    it is still substituted by renderMulti. */
+function boardSummary(mrs: BoardMR[], tpl: SlackTemplates, header?: string): string {
+  return renderMulti(header ?? tpl.multiHeader, tpl.multiItem, mrs.map(factsFor));
 }
 
 // ── pieces ─────────────────────────────────────────────────────────────────
@@ -821,6 +822,26 @@ function CopyButton({ text, className, title, label }: { text: string; className
     >
       <Icon d={copied ? CHECK_ICON : COPY_ICON} />
       {label && <span>{copied ? "copied" : label}</span>}
+    </button>
+  );
+}
+
+/** Row/card selection checkbox. A real button so the existing onRowClick guard
+    (which ignores clicks on `a, button`) already skips it -- stopPropagation is
+    belt-and-braces in case that guard changes. */
+function SelectBox({ checked, onToggle }: { checked: boolean; onToggle: () => void }) {
+  return (
+    <button
+      role="checkbox"
+      aria-checked={checked}
+      aria-label={checked ? "deselect this MR" : "select this MR"}
+      className={checked ? "tui-selectbox checked" : "tui-selectbox"}
+      onClick={(e) => {
+        e.stopPropagation();
+        onToggle();
+      }}
+    >
+      {checked ? "▣" : "☐"}
     </button>
   );
 }
@@ -1200,6 +1221,8 @@ function RowView({
   onContext,
   onOpenReview,
   onResumeRespond,
+  selected,
+  onToggleSelect,
 }: {
   mrs: BoardMR[];
   now: number;
@@ -1209,6 +1232,8 @@ function RowView({
   onContext: (e: React.MouseEvent, mr: BoardMR) => void;
   onOpenReview: (mr: BoardMRWithReview) => void;
   onResumeRespond: (mr: BoardMR) => void;
+  selected: ReadonlySet<string>;
+  onToggleSelect: (webUrl: string) => void;
 }) {
   return (
     <div className="tui-rows">
@@ -1229,6 +1254,9 @@ function RowView({
               </div>
             )}
             <div className="tui-row-1">
+              {mr.webUrl && (
+                <SelectBox checked={selected.has(mr.webUrl)} onToggle={() => onToggleSelect(mr.webUrl!)} />
+              )}
               <StatusDot mr={mr} />
               {mr.isDraft && <span className="tui-draft" title="draft — right-click to mark ready">draft</span>}
               <span className="tui-title">{cleanTitle(mr.title)}</span>
@@ -1274,6 +1302,8 @@ function GridView({
   onContext,
   onOpenReview,
   onResumeRespond,
+  selected,
+  onToggleSelect,
 }: {
   mrs: BoardMR[];
   now: number;
@@ -1283,6 +1313,8 @@ function GridView({
   onContext: (e: React.MouseEvent, mr: BoardMR) => void;
   onOpenReview: (mr: BoardMRWithReview) => void;
   onResumeRespond: (mr: BoardMR) => void;
+  selected: ReadonlySet<string>;
+  onToggleSelect: (webUrl: string) => void;
 }) {
   return (
     <div className="tui-grid">
@@ -1300,6 +1332,9 @@ function GridView({
           >
             <CopyButton text={mrLine(mr, slackTemplates)} className="tui-copy-inline tui-copy-card" title="copy this MR for Slack" />
             <span className="tui-card-label">
+              {mr.webUrl && (
+                <SelectBox checked={selected.has(mr.webUrl)} onToggle={() => onToggleSelect(mr.webUrl!)} />
+              )}
               <StatusDot mr={mr} /> !{mr.iid}
               {ticket && <TicketLink ticket={ticket} />}
             </span>
@@ -1525,6 +1560,85 @@ function Controls({
   );
 }
 
+/** Shown only while something is selected. Carries the count, an editable
+    header line, and the actions retargeted to the selection. */
+function SelectionBar({
+  selectedMrs,
+  inViewCount,
+  templates,
+  onClear,
+  slackPost,
+  posting,
+}: {
+  selectedMrs: BoardMR[];
+  inViewCount: number;
+  templates: SlackTemplates;
+  onClear: () => void;
+  /** null when slack is off, remote, or nothing in the selection is postable.
+      `count` is what will actually be sent, which is below the selection count
+      once some are already in slack. */
+  slackPost: { count: number; send: (header?: string) => void } | null;
+  /** True while a post is in flight; disables the post button so two fast
+      clicks can't put two messages in the channel. The server's duplicate guard
+      reads slack-ref files that are only written once a message lands, so it
+      does not catch a second click that starts before the first returns. */
+  posting?: boolean;
+}) {
+  const count = selectedMrs.length;
+  // Once you type, the line is yours: re-substituting {count} on every check
+  // would stomp your edit, so `edited` stays null until the first keystroke.
+  // Reset happens by unmount, when the selection empties -- which only works
+  // because Board renders this bar conditionally on `selectedMrs.length > 0`.
+  // If you ever render it unconditionally (to animate it out, say), you must
+  // add an explicit reset when the selection empties.
+  const [edited, setEdited] = useState<string | null>(null);
+  // selectionHeader owns the copy/post split; its doc comment says why `post`
+  // is undefined for an untouched header. Don't collapse the three forms.
+  const header = selectionHeader(templates.multiHeader, edited, count);
+
+  return (
+    <div className="tui-selbar">
+      <div className="tui-selbar-head">
+        <span className="tui-selbar-count">▣ {count} selected</span>
+        {inViewCount < count && <span className="tui-selbar-note">({inViewCount} in view)</span>}
+      </div>
+      <input
+        className="tui-selbar-input"
+        value={header.display}
+        maxLength={MAX_HEADER_LEN}
+        aria-label="message header"
+        placeholder="header line"
+        onChange={(e) => {
+          // The double cast is load-bearing: tsconfig.json omits the DOM lib, so
+          // @types/react resolves HTMLInputElement to an empty interface --
+          // e.target.value, e.currentTarget.value and an explicitly typed
+          // handler param all fail to compile. Don't "clean this up".
+          setEdited((e.target as unknown as { value: string }).value);
+        }}
+      />
+      <div className="tui-selbar-actions">
+        <CopyButton
+          text={boardSummary(selectedMrs, templates, header.copy)}
+          className="tui-copy"
+          title={`copy ${count} selected for slack`}
+          label={`copy ${count}`}
+        />
+        {slackPost && (
+          <button
+            className="tui-copy tui-selbar-post"
+            onClick={() => slackPost.send(header.post)}
+            disabled={posting}
+            title="post the selection to slack"
+          >
+            {SLACK_ICON} {posting ? "posting…" : `post ${slackPost.count}`}
+          </button>
+        )}
+        <button className="tui-copy" onClick={onClear} title="clear the selection">clear</button>
+      </div>
+    </div>
+  );
+}
+
 // ── board ──────────────────────────────────────────────────────────────────
 
 function Board() {
@@ -1656,6 +1770,21 @@ function Board() {
     const task = state.member === "all" ? load(true) : fetchMember(state.member);
     task.catch(() => {}).finally(() => setRefreshing(false));
   }, [state.member, load, fetchMember]);
+
+  // Selection for the multi-copy bar, keyed by webUrl so it survives the
+  // refresh poll and every member/group/sort change. Deliberately not
+  // persisted: a reload should not hand you yesterday's selection.
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+
+  const toggleSelect = useCallback((webUrl: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(webUrl)) next.add(webUrl);
+      return next;
+    });
+  }, []);
+
+  const clearSelection = useCallback(() => setSelected(new Set()), []);
 
   const [showSettings, setShowSettings] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -1955,8 +2084,11 @@ function Board() {
     [addToast, load],
   );
 
+  /** `onPosted` runs only when the message actually landed -- the selection bar
+      uses it to clear the selection, and a failed post must leave the selection
+      intact so the user can retry. */
   const handlePostSummary = useCallback(
-    (mrs: BoardMR[]) => {
+    (mrs: BoardMR[], header?: string, onPosted?: () => void) => {
       const urls = mrs.map((m) => m.webUrl).filter((u): u is string => !!u);
       if (!urls.length) return;
       setPostingSummary(true);
@@ -1964,12 +2096,13 @@ function Board() {
       fetch("/slack/post", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mrUrls: urls }),
+        body: JSON.stringify(header ? { mrUrls: urls, header } : { mrUrls: urls }),
       })
         .then(async (r) => {
           const body = await r.json().catch(() => ({}));
           if (!r.ok) return addToast(`slack post failed (${r.status})${typeof body === "string" ? `: ${body}` : ""}`);
           addToast(`posted ${urls.length} MR${urls.length === 1 ? "" : "s"} to slack`);
+          onPosted?.();
           load();
         })
         .catch(() => addToast(`slack post failed`))
@@ -2133,8 +2266,12 @@ function Board() {
   // grouped by anything but author (where the group header isn't the name).
   const showAuthor = state.member === "all" && state.group !== "author";
   const flatMrs = groups.flatMap((g) => g.mrs);
+  // Drawn from `mrs`, not `filtered` -- that's what lets a selection span
+  // member filters.
+  const selectedMrs = selectionOf(mrs, selected);
   const summaryText = boardSummary(flatMrs, data.slackTemplates);
-  const postableMrs = flatMrs.filter((m) => m.webUrl && !(m as BoardMRWithReview).slack?.posted);
+  const postableMrs = postableOf(flatMrs as BoardMRWithReview[]);
+  const postableSelected = postableOf(selectedMrs as BoardMRWithReview[]);
   const openSettings = () => {
     setMenuOpen(false);
     setShowSettings(true);
@@ -2146,7 +2283,9 @@ function Board() {
     pickView,
     theme,
     pickTheme,
-    canCopy: filtered.length > 0,
+    // The bar owns copy while a selection is live -- its header input has to
+    // sit next to the button that consumes it.
+    canCopy: filtered.length > 0 && selectedMrs.length === 0,
     summaryText,
     onRefresh: refreshNow,
     refreshing,
@@ -2187,6 +2326,27 @@ function Board() {
           </div>
         </header>
 
+        {selectedMrs.length > 0 && (
+          <SelectionBar
+            selectedMrs={selectedMrs}
+            inViewCount={selectionOf(filtered, selected).length}
+            templates={data.slackTemplates}
+            onClear={clearSelection}
+            posting={postingSummary}
+            slackPost={
+              data.slackEnabled && data.local && postableSelected.length > 0
+                ? {
+                    count: postableSelected.length,
+                    // Clear only on success: the posted MRs drop out of
+                    // postableSelected, so leaving them checked would sit the
+                    // bar there with no post button and read like a bug.
+                    send: (header) => handlePostSummary(postableSelected, header, clearSelection),
+                  }
+                : null
+            }
+          />
+        )}
+
         {data.fetchError && <div className="tui-banner">⚠ data from {staleMins}m ago — gitlab fetch failing</div>}
         {windowMismatch && <div className="tui-banner">⚠ {windowMismatch}</div>}
 
@@ -2196,9 +2356,9 @@ function Board() {
           groups.map((g) => (
             <Panel key={g.label} title={g.label} count={g.mrs.length}>
               {view === "rows" ? (
-                <RowView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} slackTemplates={data.slackTemplates} onContext={openRowMenu} onOpenReview={setReviewModal} onResumeRespond={handleResumeRespond} />
+                <RowView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} slackTemplates={data.slackTemplates} onContext={openRowMenu} onOpenReview={setReviewModal} onResumeRespond={handleResumeRespond} selected={selected} onToggleSelect={toggleSelect} />
               ) : (
-                <GridView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} slackTemplates={data.slackTemplates} onContext={openRowMenu} onOpenReview={setReviewModal} onResumeRespond={handleResumeRespond} />
+                <GridView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} slackTemplates={data.slackTemplates} onContext={openRowMenu} onOpenReview={setReviewModal} onResumeRespond={handleResumeRespond} selected={selected} onToggleSelect={toggleSelect} />
               )}
             </Panel>
           ))
