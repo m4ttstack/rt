@@ -29,13 +29,14 @@ if (state.origin === "auto") {
 }
 
 // Escalation is the one loud moment (spec §3): an AUTO doctor hitting `error`
-// pushes the diagnosis to the tray. Manual doctors stay quiet -- the human
+// pushes a one-line summary of the diagnosis to the tray (the full text stays
+// in the state file and audit log). Manual doctors stay quiet -- the human
 // launched that pane and is watching its badge.
 if (status === "error" && state.origin === "auto") {
   try {
     const { loadTriageConfig } = await import("../src/triage/config.ts");
-    const { notifyEscalation } = await import("../src/triage/notify.ts");
-    await notifyEscalation(`doctor stuck on !${state.iid}`, state.message ?? "escalated without a message", loadTriageConfig().notify);
+    const { escalationBody, notifyEscalation } = await import("../src/triage/notify.ts");
+    await notifyEscalation(`doctor stuck on !${state.iid}`, escalationBody(state.message ?? "escalated without a message"), loadTriageConfig().notify);
   } catch (err) {
     console.error(`escalation notify failed: ${err instanceof Error ? err.message : err}`);
   }
