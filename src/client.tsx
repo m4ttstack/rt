@@ -423,7 +423,7 @@ function nudgeChipText(nudge: SentNudgeInfo): string {
     case "expired":
       return `nudge: ${nudge.reason ?? nudge.display}`;
     case "no-response":
-      return "no response yet";
+      return "no response, retry?";
   }
 }
 
