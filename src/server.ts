@@ -1,7 +1,7 @@
 import { join, dirname, basename } from "path";
 import { readFileSync, writeFileSync, mkdirSync, watch } from "fs";
 import type { PullRequest, MRDetail } from "@mattstack/glance";
-import { loadConfig, loadGitLabToken, loadSlackToken, saveMemberHidden, CONFIG_PATH } from "./config.ts";
+import { loadConfig, loadGitLabToken, loadSlackToken, loadSwitchboardToken, saveMemberHidden, CONFIG_PATH } from "./config.ts";
 import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, projectPathFromWebUrl, type BoardMR, type SyncScopeRead } from "./data.ts";
 import { GitLabProvider, ReadBackFailedError, NoteMutator, parseRepoId } from "@mattstack/glance";
 import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } from "./discussions.ts";
@@ -16,6 +16,16 @@ import { launchReview, launchRespond, launchDoctor, launchResume, focusTab } fro
 import { launchReReview } from "./review-launch.ts";
 import { readSlackRefs, attachSlack, resolveSlackRef, reactToMR, unreactFromMR, postToSlack, REVIEW_EMOJI } from "./slack.ts";
 import { signalEmoji, parseAgentSignal } from "./agent-signal.ts";
+import { makeSwitchboardClient, type SwitchboardClient } from "./peer/client.ts";
+import { runPeerTick, type MaterializeDeps } from "./peer/inbox.ts";
+import { enqueueOutbox, drainOutbox } from "./peer/outbox.ts";
+import { makeEnvelope, canonicalUsername, type ReviewStatePayload, type ReReviewRequestPayload } from "./peer/envelope.ts";
+import { writePeerReview, readPeerReviews, prunePeerReviews, attachPeerReviews, type PeerReviewState } from "./peer/peer-reviews.ts";
+import {
+  writeNudge, readNudges, pruneNudges,
+  writeSentNudge, readSentNudges, resolveSentNudge, pruneSentNudges, sentNudgeDisplay,
+  type SentNudgeDisplay,
+} from "./peer/nudges.ts";
 import { renderPost, sanitizeHeader, MAX_HEADER_LEN, type MrFacts } from "./template.ts";
 
 const cssPath = join(import.meta.dir, "style.css");
@@ -38,6 +48,72 @@ function gitlab(): GitLabProvider {
 }
 // Optional: enables the Slack review-thread menu actions when a token is set.
 const slackToken = loadSlackToken();
+
+// Optional peer relay. Both a configured url and a token are required; without
+// either, peerClient stays null and every peer feature (publish, poll, /nudge)
+// is off, leaving the board exactly as it was.
+const switchboardToken = loadSwitchboardToken();
+const peerClient = config.switchboard.url && switchboardToken
+  ? makeSwitchboardClient(config.switchboard.url, switchboardToken)
+  : null;
+const peerDeps: MaterializeDeps = {
+  writePeerReview,
+  writeNudge,
+  resolveSentNudge,
+  log: (line) => console.error(line),
+};
+if (peerClient) {
+  // Once now so a restart picks up whatever queued while the board was down,
+  // then on a slow tick -- peer state is ambient context, not a hot path.
+  void runPeerTick(peerClient, peerDeps);
+  setInterval(() => void runPeerTick(peerClient, peerDeps), 60_000);
+}
+
+/** Send what's queued without making the caller wait on the relay. Anything
+    still queued goes out on the next tick, so a failure here only costs
+    latency -- it's logged, never thrown, since nothing awaits this. */
+function kickOutbox(client: SwitchboardClient): void {
+  void drainOutbox((d) => client.publish(d)).catch((err) => {
+    console.error(`peer: outbox drain failed: ${err instanceof Error ? err.message : err}`);
+  });
+}
+
+/** Per-MR peer state for the board payload: how peers with a review of this MR
+    are getting on, the nudge this board sent about its own MR, and the
+    unhandled nudges peers sent here. */
+interface PeerAttachments {
+  peerReviews?: PeerReviewState[];
+  sentNudge?: { display: SentNudgeDisplay; reviewer: string; reason?: string };
+  nudges?: Array<{ from: string; receivedAt: number }>;
+}
+
+/** Fold every peer field onto the MRs, non-mutating. Read from disk per call
+    like the review/respond/doctor attachments -- these files are small and a
+    request already pays for far more. */
+function attachPeerState<T extends { webUrl?: string | null }>(mrs: T[], now: number = Date.now()): Array<T & PeerAttachments> {
+  const sent = readSentNudges();
+  const inbound = new Map<string, Array<{ from: string; receivedAt: number }>>();
+  for (const n of readNudges()) {
+    // Handled nudges stay on disk for the outcome trail; only the ones still
+    // awaiting a decision belong on the board.
+    if (n.handled) continue;
+    const entry = { from: n.from, receivedAt: n.receivedAt };
+    const list = inbound.get(n.mrUrl);
+    if (list) list.push(entry);
+    else inbound.set(n.mrUrl, [entry]);
+  }
+  return attachPeerReviews(mrs, readPeerReviews()).map((mr) => {
+    if (!mr.webUrl) return mr;
+    const s = sent.get(mr.webUrl);
+    const nudges = inbound.get(mr.webUrl);
+    if (!s && !nudges) return mr;
+    return {
+      ...mr,
+      ...(s ? { sentNudge: { display: sentNudgeDisplay(s, now), reviewer: s.reviewer, reason: s.resolution?.reason } } : {}),
+      ...(nudges ? { nudges } : {}),
+    };
+  });
+}
 
 /**
  * Paced discussion-enrichment concurrency (still used by enrichReviewerComments
@@ -282,12 +358,17 @@ Bun.serve({
         void refreshMemberNames();
         try {
           const mrs = await fetchMemberMRs(u);
-          const withState = attachDrafts(
-            attachSlack(
-              attachDoctors(attachResponds(attachReviews(mrs, readReviewStates()), readRespondStates()), readDoctorStates()),
-              readSlackRefs(),
+          // Peer state too: a scoped refresh replaces that member's rows
+          // wholesale on the client, so anything left off here would blink out
+          // of the UI every 15s.
+          const withState = attachPeerState(
+            attachDrafts(
+              attachSlack(
+                attachDoctors(attachResponds(attachReviews(mrs, readReviewStates()), readRespondStates()), readDoctorStates()),
+                readSlackRefs(),
+              ),
+              heldDraftsByMr(readDrafts()),
             ),
-            heldDraftsByMr(readDrafts()),
           );
           return new Response(JSON.stringify({ mrs: withState, fetchedAt: Date.now() }), {
             headers: { "content-type": "application/json" },
@@ -321,6 +402,9 @@ Bun.serve({
           pruneRespondStates(onBoard);
           pruneDoctorStates(onBoard);
           pruneDrafts(onBoard);
+          prunePeerReviews(onBoard);
+          pruneSentNudges(onBoard);
+          pruneNudges(onBoard);
         }
         const reviews = readReviewStates();
         const responds = readRespondStates();
@@ -340,9 +424,11 @@ Bun.serve({
               // 0, which reads as "no open MRs") — the modal renders it as "—".
               count: m.hidden ? null : snapshot.mrs.filter((mr) => mr.author.username === m.username).length,
             })),
-            mrs: attachDrafts(
-              attachSlack(attachDoctors(attachResponds(attachReviews(visibleMrs, reviews), responds), doctors), slackRefs),
-              heldDraftsByMr(readDrafts()),
+            mrs: attachPeerState(
+              attachDrafts(
+                attachSlack(attachDoctors(attachResponds(attachReviews(visibleMrs, reviews), responds), doctors), slackRefs),
+                heldDraftsByMr(readDrafts()),
+              ),
             ),
             local: isLocalRequest(req),
             slackEnabled: !!slackToken,
@@ -656,6 +742,23 @@ Bun.serve({
         if (!signal) {
           return new Response("expected { mrUrl: string, iid: number, kind: review|respond|doctor, status: string, outcome?: string }", { status: 400 });
         }
+        // Peer sync: tell the MR author's board where this review stands. Runs
+        // before the emoji early-return below, so transitions that map to no
+        // emoji still sync. Own policy (slack reactions) continues after; this
+        // is pure relay traffic.
+        if (peerClient && signal.kind === "review") {
+          const snapshotForPeer = await cache.get();
+          const authorUsername = snapshotForPeer.mrs.find((m) => m.webUrl === signal.mrUrl)?.author.username;
+          // Never relay a review of this board's own MR: the author is right
+          // here, and the peer state files are for other people's boards.
+          if (authorUsername && canonicalUsername(authorUsername) !== canonicalUsername(config.defaultMember)) {
+            enqueueOutbox(makeEnvelope(authorUsername, "review-state", {
+              mrUrl: signal.mrUrl, iid: signal.iid, status: signal.status,
+              outcome: signal.outcome, updatedAt: Date.now(),
+            } satisfies ReviewStatePayload));
+            kickOutbox(peerClient);
+          }
+        }
         const emoji = signalEmoji(signal.kind, signal.status, signal.outcome);
         if (!emoji) {
           return new Response(JSON.stringify({ ok: true, reacted: false }), { headers: { "content-type": "application/json" } });
@@ -749,6 +852,44 @@ Bun.serve({
           }
           return new Response(`gitlab update failed: ${message}`, { status: 502 });
         }
+      }
+      case "/nudge": {
+        // Ask a peer's agent for a re-review of YOUR OWN MR. The board only
+        // relays the human's click; all policy runs in the peer's triage.
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+        if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
+        if (!peerClient) return new Response("switchboard not configured", { status: 400 });
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return new Response("invalid json", { status: 400 });
+        }
+        const parsed = parseReviewRequestBody(body);
+        const reviewer = (body as { reviewer?: unknown })?.reviewer;
+        if (!parsed || typeof reviewer !== "string" || !reviewer.trim()) {
+          return new Response("expected { mrUrl: string, iid: number, reviewer: string }", { status: 400 });
+        }
+        const snapshot = await cache.get();
+        const mr = snapshot.mrs.find((m) => m.webUrl === parsed.mrUrl);
+        if (!mr) return new Response(`unknown MR "${parsed.mrUrl}"`, { status: 400 });
+        if (mr.author.username !== config.defaultMember) return new Response("not your MR", { status: 403 });
+        const draft = makeEnvelope(reviewer, "re-review-request", {
+          mrUrl: parsed.mrUrl, iid: parsed.iid,
+        } satisfies ReReviewRequestPayload);
+        enqueueOutbox(draft);
+        // Record the ask before it leaves: the chip is "requested" from the
+        // click, and an inbound outcome needs a file to resolve against even if
+        // the send itself is still queued.
+        writeSentNudge({
+          nudgeId: draft.id,
+          mrUrl: parsed.mrUrl,
+          iid: parsed.iid,
+          reviewer: canonicalUsername(reviewer),
+          sentAt: Date.now(),
+        });
+        kickOutbox(peerClient);
+        return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });
       }
       case "/review/report": {
         // The agent's written review markdown for one MR. Read-only display

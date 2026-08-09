@@ -4,6 +4,8 @@ import {
 } from "./envelope.ts";
 import type { PeerReviewState } from "./peer-reviews.ts";
 import type { NudgeState } from "./nudges.ts";
+import { drainOutbox } from "./outbox.ts";
+import type { SwitchboardClient } from "./client.ts";
 
 export interface MaterializeDeps {
   writePeerReview(s: PeerReviewState): unknown;
@@ -40,4 +42,27 @@ export function materializeEnvelope(e: Envelope, deps: MaterializeDeps, now: num
     return;
   }
   deps.log(`peer: ignoring unknown envelope type "${e.type}" from ${e.from} (${e.id})`);
+}
+
+/** One poll cycle: push what's queued, pull what's pending, materialize, ack.
+    Runs on the board's 60s tick and once at startup. Best-effort throughout --
+    a dead relay must never affect the board's own rendering, and this is
+    called as `void runPeerTick(...)` from an interval, so it swallows and logs
+    rather than rejecting into an unhandled rejection. Every fetched id is
+    acked, malformed and unknown alike: they were logged, and leaving them
+    pending would wedge the inbox forever. */
+export async function runPeerTick(
+  client: SwitchboardClient,
+  deps: MaterializeDeps,
+  outboxDir?: string,
+): Promise<void> {
+  try {
+    await drainOutbox((d) => client.publish(d), outboxDir);
+    const envelopes = await client.inbox();
+    if (!envelopes) return;
+    for (const e of envelopes) materializeEnvelope(e, deps);
+    await client.ack(envelopes.map((e) => e.id));
+  } catch (err) {
+    deps.log(`peer: tick failed: ${err instanceof Error ? err.message : err}`);
+  }
 }
