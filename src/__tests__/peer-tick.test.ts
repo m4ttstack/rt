@@ -131,6 +131,30 @@ describe("runPeerTick", () => {
     expect(client.acked).toEqual([["bad", "alien"]]);
   });
 
+  test("a throwing materialize doesn't stop the batch or skip the ack", async () => {
+    const outbox = freshDir();
+    const client = fakeClient([
+      envelope({ id: "boom" }),
+      envelope({ id: "fine", from: "linus" }),
+    ]);
+    const deps = fakeDeps();
+    // Only the first envelope's store write blows up (a disk error, say).
+    let first = true;
+    deps.writePeerReview = (s) => {
+      if (first) {
+        first = false;
+        throw new Error("disk on fire");
+      }
+      deps.peerReviews.push(s);
+      return true;
+    };
+    await runPeerTick(client, deps, outbox);
+    expect(deps.peerReviews.map((p) => p.reviewer)).toEqual(["linus"]);
+    expect(deps.logs.length).toBe(1);
+    expect(deps.logs[0]).toContain("disk on fire");
+    expect(client.acked).toEqual([["boom", "fine"]]);
+  });
+
   test("acks nothing when the inbox call fails", async () => {
     const outbox = freshDir();
     const client = fakeClient(null);

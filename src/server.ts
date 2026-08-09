@@ -18,7 +18,7 @@ import { readSlackRefs, attachSlack, resolveSlackRef, reactToMR, unreactFromMR, 
 import { signalEmoji, parseAgentSignal } from "./agent-signal.ts";
 import { makeSwitchboardClient, type SwitchboardClient } from "./peer/client.ts";
 import { runPeerTick, type MaterializeDeps } from "./peer/inbox.ts";
-import { enqueueOutbox, drainOutbox } from "./peer/outbox.ts";
+import { enqueueOutbox, drainOutbox, classifySend } from "./peer/outbox.ts";
 import { makeEnvelope, canonicalUsername, type ReviewStatePayload, type ReReviewRequestPayload } from "./peer/envelope.ts";
 import { writePeerReview, readPeerReviews, prunePeerReviews, attachPeerReviews, type PeerReviewState } from "./peer/peer-reviews.ts";
 import {
@@ -877,10 +877,25 @@ Bun.serve({
         const draft = makeEnvelope(reviewer, "re-review-request", {
           mrUrl: parsed.mrUrl, iid: parsed.iid,
         } satisfies ReReviewRequestPayload);
-        enqueueOutbox(draft);
-        // Record the ask before it leaves: the chip is "requested" from the
-        // click, and an inbound outcome needs a file to resolve against even if
-        // the send itself is still queued.
+        // Publish inline rather than queue-and-forget: a 4xx (usually 422, the
+        // reviewer has no board on the switchboard) is permanent, and the drain
+        // would drop it with only a log -- leaving the clicker an "ok" and a
+        // chip reading "requested" for 48h for a send that can never happen.
+        const status = await peerClient.publish(draft);
+        const cls = classifySend(status);
+        if (cls === "drop") {
+          // 422 is the relay's unknown-recipient answer, and the only 4xx a
+          // human can act on -- the rest are this board's problem, not theirs.
+          const why = status === 422
+            ? `reviewer "${canonicalUsername(reviewer)}" is not on the switchboard`
+            : `nudge rejected by relay (${status})`;
+          return new Response(why, { status: 409 });
+        }
+        // Retryable (network or 5xx): queue it for the 60s tick. The chip
+        // honestly reads "requested" while the outbox keeps trying.
+        if (cls === "retry") enqueueOutbox(draft);
+        // Record the ask either way: an inbound outcome needs a file to resolve
+        // against, even while the send is still queued.
         writeSentNudge({
           nudgeId: draft.id,
           mrUrl: parsed.mrUrl,
@@ -888,8 +903,9 @@ Bun.serve({
           reviewer: canonicalUsername(reviewer),
           sentAt: Date.now(),
         });
-        kickOutbox(peerClient);
-        return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });
+        return new Response(JSON.stringify(cls === "retry" ? { ok: true, queued: true } : { ok: true }), {
+          headers: { "content-type": "application/json" },
+        });
       }
       case "/review/report": {
         // The agent's written review markdown for one MR. Read-only display

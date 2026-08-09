@@ -60,7 +60,16 @@ export async function runPeerTick(
     await drainOutbox((d) => client.publish(d), outboxDir);
     const envelopes = await client.inbox();
     if (!envelopes) return;
-    for (const e of envelopes) materializeEnvelope(e, deps);
+    for (const e of envelopes) {
+      // Payload parse failures are already handled inside; this catches a
+      // throwing store write (fs errors). One bad envelope must not skip the
+      // batch's ack, or the batch redelivers and re-throws forever.
+      try {
+        materializeEnvelope(e, deps);
+      } catch (err) {
+        deps.log(`peer: materialize failed for ${e.id} from ${e.from}: ${err instanceof Error ? err.message : err}`);
+      }
+    }
     await client.ack(envelopes.map((e) => e.id));
   } catch (err) {
     deps.log(`peer: tick failed: ${err instanceof Error ? err.message : err}`);
