@@ -90,31 +90,61 @@ export function selectionHeader(configured: string, edited: string | null, selec
   if (edited === null) {
     return { display: replace(configured, { count: String(selectedCount) }), copy: configured, post: undefined };
   }
-  const typed = edited.trim();
+  const typed = tidyHeader(edited);
   if (!typed) return { display: edited, copy: configured, post: undefined };
   return { display: edited, copy: typed, post: typed };
 }
 
-/** Longest header line we'll render from outside this process. Long enough for
-    a real sentence with emoji, short enough that a stray paste can't become a
-    wall of text in the channel. */
-export const MAX_HEADER_LEN = 300;
+/** Longest header we'll render from outside this process, counting the line
+    breaks. Roomy enough for a short multi-line note above the links, small
+    enough that a stray paste can't push the MRs out of view in the channel.
+    Newlines count toward it, so a header made only of breaks still gets
+    rejected. */
+export const MAX_HEADER_LEN = 600;
 
-/** Normalise a header line that came from outside this process -- the board's
-    header input, arriving via /slack/post. Newlines collapse to spaces so a
-    single line can't fake a multi-line message body. The result is then
-    Slack-escaped (see below) and the cap is measured on that escaped string,
-    since the cap bounds what actually reaches the channel, not what the user
-    typed -- escaping alone can turn a short raw string into a much longer
-    posted one, and the cap must catch that. Returns null when the value is
-    unusable; the caller decides whether that's a 400 or a fallback. */
+/** Normalise a header that came from outside this process -- the board's header
+    input, arriving via /slack/post.
+
+    The header is deliberately multi-line: line breaks survive, because writing
+    a couple of lines above the MR links is the point of letting you edit it.
+    An earlier version collapsed every newline to a space, on the theory that a
+    single line couldn't then fake a multi-line message body. That guard is gone
+    on purpose -- it was never what made this safe. What makes it safe is
+    slackEscape: no amount of text or line breaks can form a link, a mention or
+    a broadcast once `<`, `>` and `&` are entities.
+
+    What the newline handling still does is tidy: CRLF and lone CR normalise to
+    \n so the posted text matches what was typed, trailing spaces come off each
+    line, and runs of blank lines collapse to at most one -- a paragraph break
+    is worth keeping, ten of them are a lean on the Enter key.
+
+    The cap is measured on the ESCAPED string, since it bounds what actually
+    reaches the channel rather than what was typed: escaping alone can turn a
+    short raw string into a much longer posted one, and the cap must catch that.
+
+    Returns null when the value is unusable; the caller decides whether that's a
+    400 or a fallback. */
 export function sanitizeHeader(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
-  const flat = raw.replace(/[\r\n]+/g, " ").trim();
-  if (!flat) return null;
-  const escaped = slackEscape(flat);
+  const tidied = tidyHeader(raw);
+  if (!tidied) return null;
+  const escaped = slackEscape(tidied);
   if (escaped.length > MAX_HEADER_LEN) return null;
   return escaped;
+}
+
+/** The cosmetic half of sanitizeHeader, shared with the clipboard path so what
+    you copy is laid out the same as what you post. Deliberately NOT the
+    security half -- escaping stays on the posting path only, because the
+    clipboard is your own words going into your own paste. Keeping the layout
+    rules here is what stops a header with six blank lines copying with six and
+    posting with one. */
+export function tidyHeader(raw: string): string {
+  return raw
+    .replace(/\r\n?/g, "\n")
+    .replace(/[^\S\n]+$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 /** Escape the characters Slack's message formatting treats as control syntax,

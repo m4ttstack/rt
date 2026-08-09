@@ -1722,13 +1722,9 @@ function SelectionBar({
         maxLength={MAX_HEADER_LEN}
         aria-label="message header"
         placeholder="header line"
-        // The header is one line by definition -- sanitizeHeader collapses any
-        // newline to a space before posting. The textarea is here so long text
-        // wraps into view instead of scrolling out of it, not to author
-        // multi-line messages, so Enter must not insert a break.
-        onKeyDown={(e) => {
-          if (e.key === "Enter") e.preventDefault();
-        }}
+        // Enter inserts a real break: the header is multi-line by design, and
+        // sanitizeHeader carries the breaks through to the posted message. The
+        // box grows to fit, so there is nothing to scroll out of view.
         onChange={(e) => {
           // The double cast is load-bearing: tsconfig.json omits the DOM lib, so
           // @types/react resolves HTMLTextAreaElement to an empty interface --

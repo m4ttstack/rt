@@ -144,10 +144,38 @@ describe("sanitizeHeader", () => {
     expect(sanitizeHeader("  3 MRs ready :pray:  ")).toBe("3 MRs ready :pray:");
   });
 
-  test("collapses newline runs into a single space", () => {
-    expect(sanitizeHeader("two\nlines")).toBe("two lines");
-    expect(sanitizeHeader("crlf\r\nhere")).toBe("crlf here");
-    expect(sanitizeHeader("many\n\n\nbreaks")).toBe("many breaks");
+  test("keeps line breaks -- a header is allowed to be multi-line", () => {
+    expect(sanitizeHeader("two\nlines")).toBe("two\nlines");
+    expect(sanitizeHeader("three\nshort\nlines")).toBe("three\nshort\nlines");
+  });
+
+  test("normalises CRLF and lone CR to \\n so the posted text is consistent", () => {
+    expect(sanitizeHeader("crlf\r\nhere")).toBe("crlf\nhere");
+    expect(sanitizeHeader("cr\rhere")).toBe("cr\nhere");
+    expect(sanitizeHeader("mixed\r\na\rb\nc")).toBe("mixed\na\nb\nc");
+  });
+
+  test("keeps one blank line but collapses longer runs", () => {
+    // One blank line is a paragraph break and worth keeping. Longer runs are a
+    // stray paste or a lean on the Enter key, and would push the MR links out
+    // of view in the channel.
+    expect(sanitizeHeader("a\n\nb")).toBe("a\n\nb");
+    expect(sanitizeHeader("a\n\n\n\n\n\nb")).toBe("a\n\nb");
+  });
+
+  test("strips trailing spaces on each line", () => {
+    expect(sanitizeHeader("first   \nsecond\t\nthird")).toBe("first\nsecond\nthird");
+  });
+
+  test("copy and post agree on layout -- both go through tidyHeader", () => {
+    // The clipboard path deliberately skips escaping, but it must NOT skip the
+    // layout tidying, or a header with a run of blank lines copies with all of
+    // them and posts with one.
+    const messy = "hey team \r\n\n\n\n\nno rush  ";
+    const h = selectionHeader("{count} ready", messy, 2);
+    expect(h.copy).toBe("hey team\n\nno rush");
+    expect(h.post).toBe("hey team\n\nno rush");
+    expect(sanitizeHeader(messy)).toBe("hey team\n\nno rush");
   });
 
   test("rejects anything that isn't a string", () => {
@@ -160,6 +188,7 @@ describe("sanitizeHeader", () => {
     expect(sanitizeHeader("")).toBeNull();
     expect(sanitizeHeader("   ")).toBeNull();
     expect(sanitizeHeader("\n\n")).toBeNull();
+    expect(sanitizeHeader(" \n \t \n ")).toBeNull();
   });
 
   test("accepts exactly the cap and rejects one over", () => {
@@ -167,9 +196,16 @@ describe("sanitizeHeader", () => {
     expect(sanitizeHeader("a".repeat(MAX_HEADER_LEN + 1))).toBeNull();
   });
 
-  test("measures length after collapsing, not before", () => {
-    // 299 chars plus three newlines is 302 raw but 299 once collapsed+trimmed.
-    expect(sanitizeHeader("a".repeat(299) + "\n\n\n")).toBe("a".repeat(299));
+  test("the cap counts newlines, so it still bounds a multi-line header", () => {
+    // The cap is what stops a wall of text reaching the channel; a header made
+    // only of line breaks must not slip past it.
+    expect(sanitizeHeader("a\n".repeat(MAX_HEADER_LEN))).toBeNull();
+  });
+
+  test("measures length after escaping, not before", () => {
+    // Escaping expands, so a raw string under the cap can land over it -- that
+    // is the smuggling path the post-escape measurement closes.
+    expect(sanitizeHeader("<".repeat(MAX_HEADER_LEN))).toBeNull();
   });
 
   test("neutralises a Slack link so it can't form a clickable anchor", () => {

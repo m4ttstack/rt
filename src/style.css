@@ -116,16 +116,17 @@ body {
 .tui-selbar-head { display: flex; align-items: baseline; gap: 0.4rem; }
 .tui-selbar-count { color: var(--accent); font-weight: 700; white-space: nowrap; }
 .tui-selbar-note { color: var(--muted); font-size: 0.78rem; }
-/* A textarea, not an input, so a long header wraps into view instead of
-   scrolling out of it. Height is driven from JS off scrollHeight; resize is off
-   because the box sizes itself. overflow-y hidden stops a scrollbar flashing
-   during the auto-grow measure. */
+/* A textarea, not an input: the header is multi-line, and it wraps into view
+   instead of scrolling out of it. Height is driven from JS off scrollHeight;
+   resize is off because the box sizes itself. max-height caps the growth so a
+   long header can't push the board off screen -- past that it scrolls, which is
+   why overflow-y is auto rather than hidden. */
 .tui-selbar-input {
   flex: 1 1 16rem; min-width: 0;
   padding: 0.35rem 0.55rem;
   font: inherit; color: var(--fg); line-height: 1.45;
   background: var(--card); border: 1px solid var(--border); border-radius: 6px;
-  resize: none; overflow-y: hidden;
+  resize: none; overflow-y: auto; max-height: 30vh;
 }
 .tui-selbar-input:focus { outline: none; border-color: var(--accent); }
 .tui-selbar-actions { display: flex; gap: 0.45rem; margin-left: auto; align-items: center; }
