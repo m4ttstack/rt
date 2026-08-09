@@ -59,7 +59,7 @@ the board lists open, non-draft MRs authored by any configured member in one of 
 - `/` — the board
 - `/data.json` — the snapshot the client renders: `{ title, members, mrs, fetchedAt, fetchError, local }`; each MR may carry a `review` status when a review is in flight
 - `/review` — POST `{ mrUrl, iid }` to launch a review (local requests only; see below)
-- `/nudge` — POST `{ mrUrl, iid, reviewer }` to ask a peer's board for a re-review on your own MR (local requests only; see [peer boards + switchboard](#peer-boards--switchboard-optional))
+- `/nudge`: POST `{ mrUrl, iid, reviewer }` to ask a peer's board for a re-review on your own MR (local requests only; see [peer boards + switchboard](#peer-boards--switchboard-optional))
 - `/healthz` — 200 `ok`, for supervisors and tunnels
 
 data is cached in memory for 60s with stale-while-revalidate: bursts of visitors cost one gitlab round trip, and if gitlab is down the board serves the last good snapshot with a "data from N minutes ago" banner.
@@ -129,11 +129,11 @@ a nudge only auto-launches a re-review if the reviewer has `bun run triage` runn
 - the nudge is fresh, judged on the relay's `receivedAt` (never the sender's clock), and expires after 48h
 - a per-MR cooldown and a daily dispatch budget cap how often triage will act
 
-a nudge that clears the guardrails launches through the same resume-or-fresh path as the manual re-review button. every disposal (launched, rejected, or expired) publishes an outcome back to the asker's board so their chip resolves; rejections and expiries also notify. an unresolved nudge self-expires after 48h with a visible retry cue on the asking board.
+a nudge that clears the guardrails launches through the same resume-or-fresh path as the manual re-review button. every disposal (launched, rejected, or expired) publishes an outcome back to the asker's board so their chip resolves. launches, guardrail rejections, and expiries also raise a desktop notification; a rejection caused by a failed launch attempt is still audited and published, just without one. an unresolved nudge self-expires after 48h with a visible retry cue on the asking board.
 
 ### privacy
 
-the switchboard stores envelopes it never inspects. payloads carry MR urls, iids, statuses, usernames, and timestamps only — no titles, no diff content, no credentials. board endpoints, `/nudge` included, stay local-only whether or not peer features are configured.
+the switchboard stores envelopes it never inspects. payloads carry MR urls, iids, statuses, usernames, and timestamps only, never titles, diff content, or credentials. board endpoints, `/nudge` included, stay local-only whether or not peer features are configured.
 
 ## dev
 
