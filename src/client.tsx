@@ -1705,7 +1705,14 @@ function SelectionBar({
     const el = taRef.current;
     if (!el) return;
     el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
+    // scrollHeight covers content + padding but NOT the border, while the
+    // global box-sizing: border-box makes `height` responsible for the border
+    // too. Assigning scrollHeight alone therefore leaves the box a border's
+    // worth short of its own content, and overflow-y: auto renders a scrollbar
+    // for text that actually fits. Measure the border off the element rather
+    // than hardcoding the stylesheet's 1px, so it survives a CSS change.
+    const border = el.offsetHeight - el.clientHeight;
+    el.style.height = `${el.scrollHeight + border}px`;
   }, [header.display]);
 
   return (
