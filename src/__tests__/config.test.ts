@@ -98,6 +98,22 @@ describe("parseConfig", () => {
   });
 });
 
+describe("switchboard config", () => {
+  test("defaults to empty url", () => {
+    expect(parseConfig(JSON.stringify(base)).switchboard).toEqual({ url: "" });
+  });
+  test("accepts an https url", () => {
+    const cfg = parseConfig(JSON.stringify({ ...base, switchboard: { url: "https://sb.example.dev" } }));
+    expect(cfg.switchboard.url).toBe("https://sb.example.dev");
+  });
+  test("rejects a non-object block", () => {
+    expect(() => parseConfig(JSON.stringify({ ...base, switchboard: "x" }))).toThrow(/switchboard/);
+  });
+  test("rejects a non-string url", () => {
+    expect(() => parseConfig(JSON.stringify({ ...base, switchboard: { url: 5 } }))).toThrow(/switchboard.url/);
+  });
+});
+
 describe("setHiddenInRaw", () => {
   const raw = JSON.stringify({ members: [{ username: "alice", name: "Alice" }, { username: "bob" }] }, null, 2);
 

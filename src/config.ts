@@ -57,6 +57,13 @@ export interface BoardConfig {
       an instructive fetchError. */
   rtRepos: Record<string, string>;
   slack: SlackConfig;
+  /** Peer-boards relay. Empty url disables every peer feature (publish, poll,
+      nudge endpoint) cleanly. Token comes from SWITCHBOARD_TOKEN, not config. */
+  switchboard: SwitchboardBoardConfig;
+}
+
+export interface SwitchboardBoardConfig {
+  url: string;
 }
 
 export interface SlackConfig {
@@ -141,6 +148,7 @@ export function parseConfig(raw: string): BoardConfig {
     }
   }
   const slack = parseSlack(cfg.slack);
+  const switchboard = parseSwitchboard(cfg.switchboard);
   const rtRepos = (cfg.rtRepos && typeof cfg.rtRepos === "object" && !Array.isArray(cfg.rtRepos))
     ? Object.fromEntries(Object.entries(cfg.rtRepos).filter(([, v]) => typeof v === "string"))
     : {};
@@ -166,7 +174,20 @@ export function parseConfig(raw: string): BoardConfig {
     botUsernames: (cfg.botUsernames ?? []).map((b) => b.trim()),
     rtRepos,
     slack,
+    switchboard,
   };
+}
+
+function parseSwitchboard(raw: unknown): SwitchboardBoardConfig {
+  if (raw === undefined || raw === null) return { url: "" };
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error(`config.json "switchboard" must be an object`);
+  }
+  const s = raw as Partial<SwitchboardBoardConfig>;
+  if (s.url !== undefined && typeof s.url !== "string") {
+    throw new Error(`config.json "switchboard.url" must be a string`);
+  }
+  return { url: (s.url ?? "").replace(/\/+$/, "") };
 }
 
 function parseSlack(raw: unknown): SlackConfig {
@@ -250,6 +271,19 @@ export function loadSlackToken(): string | null {
     if (secrets.slackToken) return secrets.slackToken;
   } catch {
     // no secrets file — treat as unconfigured
+  }
+  return null;
+}
+
+/** Switchboard board token. Optional: without it (or without switchboard.url)
+    the board runs exactly as before, with all peer features disabled. */
+export function loadSwitchboardToken(): string | null {
+  if (process.env.SWITCHBOARD_TOKEN) return process.env.SWITCHBOARD_TOKEN;
+  try {
+    const secrets = JSON.parse(readFileSync(RT_SECRETS_PATH, "utf8"));
+    if (secrets.switchboardToken) return secrets.switchboardToken;
+  } catch {
+    // no secrets file -- treat as unconfigured
   }
   return null;
 }
