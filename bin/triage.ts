@@ -5,13 +5,20 @@ import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "fs";
 import { join } from "path";
 import { GitLabProvider, type PullRequest } from "@mattstack/glance";
 import { readProjectMRs } from "@mattstack/rt-client";
-import { loadConfig, loadGitLabToken } from "../src/config.ts";
+import { loadConfig, loadGitLabToken, loadSwitchboardToken } from "../src/config.ts";
 import { buildBoard } from "../src/data.ts";
 import { doctorFilePath, readDoctorStates, writeDoctorState } from "../src/doctor-state.ts";
 import { launchDoctor } from "../src/herdr.ts";
+import { makeEnvelope } from "../src/peer/envelope.ts";
+import { makeSwitchboardClient } from "../src/peer/client.ts";
+import { markNudgeHandled, readNudges } from "../src/peer/nudges.ts";
+import { drainOutbox, enqueueOutbox } from "../src/peer/outbox.ts";
+import { launchReReview } from "../src/review-launch.ts";
+import { readReviewStates } from "../src/review-state.ts";
 import { appendAudit } from "../src/triage/audit.ts";
 import { loadTriageConfig } from "../src/triage/config.ts";
 import { MEMORY_PATH, readMemory, writeMemory } from "../src/triage/memory.ts";
+import { runNudgePass } from "../src/triage/nudge.ts";
 import { notifyEscalation } from "../src/triage/notify.ts";
 import { numericPipelineId, runTriage } from "../src/triage/run.ts";
 import type { OwnMrFacts } from "../src/triage/edge.ts";
@@ -98,6 +105,31 @@ try {
     now: () => Date.now(),
   });
   console.log(`triage: dispatched ${result.dispatched}, escalated ${result.escalated}, skipped ${result.skipped}`);
+
+  const switchboardToken = loadSwitchboardToken();
+  if (boardConfig.switchboard.url && switchboardToken) {
+    const client = makeSwitchboardClient(boardConfig.switchboard.url, switchboardToken);
+    const nudgeResult = await runNudgePass({
+      readNudges,
+      markNudgeHandled: (id, r, reason) => markNudgeHandled(id, r, reason),
+      readReviewStates,
+      launchReReview: (mrUrl, iid) =>
+        launchReReview(mrUrl, iid, {
+          cwd: boardConfig.reviewCwd,
+          workspaceLabel: boardConfig.reviewsWorkspace,
+          skill: boardConfig.reviewSkill,
+        }),
+      publishOutcome: (to, payload) => enqueueOutbox(makeEnvelope(to, "nudge-outcome", payload)),
+      memory,
+      cfg: triage,
+      appendAudit,
+      notify: (title, message) => notifyEscalation(title, message, triage.notify),
+      now: () => Date.now(),
+    });
+    await drainOutbox((d) => client.publish(d));
+    writeMemory(memory);
+    console.log(`nudges: dispatched ${nudgeResult.dispatched}, rejected ${nudgeResult.rejected}, expired ${nudgeResult.expired}, skipped ${nudgeResult.skipped}`);
+  }
 } finally {
   rmSync(LOCK_PATH, { force: true });
 }
