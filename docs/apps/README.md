@@ -59,6 +59,7 @@ the board lists open, non-draft MRs authored by any configured member in one of 
 - `/` — the board
 - `/data.json` — the snapshot the client renders: `{ title, members, mrs, fetchedAt, fetchError, local }`; each MR may carry a `review` status when a review is in flight
 - `/review` — POST `{ mrUrl, iid }` to launch a review (local requests only; see below)
+- `/nudge` — POST `{ mrUrl, iid, reviewer }` to ask a peer's board for a re-review on your own MR (local requests only; see [peer boards + switchboard](#peer-boards--switchboard-optional))
 - `/healthz` — 200 `ok`, for supervisors and tunnels
 
 data is cached in memory for 60s with stale-while-revalidate: bursts of visitors cost one gitlab round trip, and if gitlab is down the board serves the last good snapshot with a "data from N minutes ago" banner.
@@ -80,6 +81,59 @@ when you open the board from a local hostname (`mrs.localhost`, `localhost`, `12
 a plain click still opens the MR in a new browser tab (the menu also has open-in-gitlab and copy-for-slack). the review action is gated by an `isLocal` check on both the client (the menu item only appears locally) and the server (`POST /review` returns 403), so it never fires when the board is viewed through a public tunnel. review status files live in the gitignored `state/reviews/` dir and are pruned after 24h.
 
 depends on herdr running locally and on the `mr-board:{review,respond,doctor}` wrapper skills being installed (plus whatever domain skills you point `reviewSkill` / `respondSkill` / `doctorSkill` at).
+
+## peer boards + switchboard (optional)
+
+when your teammates each run their own mr-board, a small relay called the switchboard lets the boards nudge each other about re-reviews without either board talking to the other directly. it's entirely optional: skip it and the board works exactly as described above.
+
+what it adds:
+
+- **live peer badges**: when a peer's board reports a review going into or out of flight on one of your MRs, your row picks up the badge
+- **request re-review**: a row action on your own MR ("request re-review from `<reviewer>`") asks that reviewer's board directly. `POST /nudge` answers `409` with a plain-text reason if the reviewer isn't on the switchboard, or `{"ok":true,"queued":true}` if the relay is unreachable and the ask gets queued for the next tick
+- **guarded auto re-review**: the reviewer side can run `bun run triage` on a cron so an incoming nudge gets picked up and re-dispatched automatically, gated by the guardrails below
+
+### teammate setup
+
+`bun run setup` prompts for a switchboard URL and a board token. blank input for either skips peer features entirely, and everything degrades cleanly: no badges, no nudge action, `/nudge` returns `400`. it writes:
+
+- the switchboard URL your operator gave you, to `config.json` as `switchboard.url`
+- the board token your switchboard admin minted for you, to `.env` as `SWITCHBOARD_TOKEN`
+
+### operator setup (run a switchboard)
+
+the switchboard is a separate deployable in `switchboard/`, a dumb store-and-forward relay, one process, one sqlite file. deploy it to [Railway](https://railway.app):
+
+- service root: `switchboard/`
+- start command: `bun run server.ts`
+- attach a volume and point `SWITCHBOARD_DB` at a path on it (otherwise the database lives on ephemeral disk and every redeploy loses all board registrations)
+- env: `SWITCHBOARD_ADMIN_TOKEN` (pick your own value, the bearer token for minting boards)
+- `PORT` is supplied by Railway
+
+mint a board per teammate (username = their GitLab username, lowercased; one board per username; re-minting rotates the token, so hand out the new one if you re-mint):
+
+```sh
+curl -X POST $URL/boards \
+  -H "Authorization: Bearer $SWITCHBOARD_ADMIN_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"username":"grace"}'
+```
+
+the response includes the token that teammate pastes into their own `bun run setup`.
+
+### reviewer-side automation
+
+a nudge only auto-launches a re-review if the reviewer has `bun run triage` running on a cron (rt cron, or a plain cron entry, either works) with `triage.enabled: true` in their `config.json`. each run applies the same guardrails before dispatching:
+
+- the reviewer's prior review on that MR is `done` with a `comment` outcome
+- no review is already in flight for that MR
+- the nudge is fresh, judged on the relay's `receivedAt` (never the sender's clock), and expires after 48h
+- a per-MR cooldown and a daily dispatch budget cap how often triage will act
+
+a nudge that clears the guardrails launches through the same resume-or-fresh path as the manual re-review button. every disposal (launched, rejected, or expired) publishes an outcome back to the asker's board so their chip resolves; rejections and expiries also notify. an unresolved nudge self-expires after 48h with a visible retry cue on the asking board.
+
+### privacy
+
+the switchboard stores envelopes it never inspects. payloads carry MR urls, iids, statuses, usernames, and timestamps only — no titles, no diff content, no credentials. board endpoints, `/nudge` included, stay local-only whether or not peer features are configured.
 
 ## dev
 

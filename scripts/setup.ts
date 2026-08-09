@@ -252,11 +252,26 @@ async function main() {
     }
   }
 
+  const swUrl = ask(
+    "Switchboard URL for peer boards (optional, blank to skip)",
+    ((existingConfig?.switchboard as { url?: string } | undefined)?.url) ?? "",
+  );
+  if (swUrl) {
+    const swToken = ask("Switchboard board token (minted by your switchboard admin)", env.SWITCHBOARD_TOKEN);
+    if (swToken) env.SWITCHBOARD_TOKEN = swToken;
+    else console.error("No token entered — peer features stay disabled until SWITCHBOARD_TOKEN is set.");
+  }
+
   writeEnv(env);
   console.log(`Wrote ${ENV_PATH}`);
 
   const baseConfig = loadBaseConfig();
-  const finalConfig = { ...baseConfig, defaultMember: defaultMember || "all", reviewCwd };
+  const finalConfig = {
+    ...baseConfig,
+    defaultMember: defaultMember || "all",
+    reviewCwd,
+    ...(swUrl ? { switchboard: { url: swUrl } } : {}),
+  };
   writeFileSync(CONFIG_PATH, JSON.stringify(finalConfig, null, 2) + "\n");
   console.log(`Wrote ${CONFIG_PATH}`);
 

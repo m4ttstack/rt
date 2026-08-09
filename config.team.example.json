@@ -31,5 +31,6 @@
     "multiHeader": "{count} MR's ready for review :pray:",
     "multiItem": "- {title}: {url}",
     "autoResolveIntervalMinutes": 15
-  }
+  },
+  "switchboard": { "url": "" }
 }
