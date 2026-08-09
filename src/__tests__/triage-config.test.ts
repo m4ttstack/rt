@@ -28,3 +28,9 @@ describe("parseTriageBlock", () => {
     expect(() => parseTriageBlock({ doctorSkill: 5 })).toThrow();
   });
 });
+
+test("tier defaults to api, accepts checkout, rejects junk", () => {
+  expect(parseTriageBlock({ enabled: true }).tier).toBe("api");
+  expect(parseTriageBlock({ enabled: true, tier: "checkout" }).tier).toBe("checkout");
+  expect(() => parseTriageBlock({ enabled: true, tier: "yolo" })).toThrow(/triage.tier/);
+});

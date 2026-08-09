@@ -77,3 +77,13 @@ describe("helpers", () => {
       .toEqual(["retry-flake", "clean-api-rebase"]);
   });
 });
+
+test("checkout tier dispatches with tier omitted (historical full doctor); api stays explicit", async () => {
+  const dApi = deps();
+  await runTriage(dApi);
+  expect(dApi.launches[0]?.tier).toBe("api");
+
+  const dFull = deps({ triage: parseTriageBlock({ enabled: true, doctorSkill: "team:doctor", tier: "checkout" }) });
+  await runTriage(dFull);
+  expect(dFull.launches[0]?.tier).toBeUndefined();
+});

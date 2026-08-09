@@ -13,8 +13,12 @@ export interface TriageConfig {
   maxConcurrent: number;
   dailyAttemptBudget: number;
   fixClasses: FixClasses;
-  /** API-tier domain skill the auto-dispatched wrapper delegates to. */
+  /** Domain skill the auto-dispatched wrapper delegates to. */
   doctorSkill: string;
+  /** Repair tier for auto dispatches: "api" = no-checkout held-drafts doctor;
+      "checkout" = the full fix-and-push doctor (token identity's own MRs
+      only, which fetchOwnMrs already guarantees). */
+  tier: "api" | "checkout";
   notify: "rt" | "badge-only";
 }
 
@@ -32,6 +36,7 @@ const DEFAULTS: TriageConfig = {
   dailyAttemptBudget: 3,
   fixClasses: DEFAULT_FIX_CLASSES,
   doctorSkill: "",
+  tier: "api",
   notify: "rt",
 };
 
@@ -58,6 +63,9 @@ export function parseTriageBlock(raw: unknown): TriageConfig {
   if (t.notify !== undefined && t.notify !== "rt" && t.notify !== "badge-only") {
     throw new Error(`config.json "triage.notify" must be "rt" or "badge-only"`);
   }
+  if (t.tier !== undefined && t.tier !== "api" && t.tier !== "checkout") {
+    throw new Error(`config.json "triage.tier" must be "api" or "checkout"`);
+  }
   const fixClasses = { ...DEFAULT_FIX_CLASSES };
   if (t.fixClasses !== undefined) {
     if (typeof t.fixClasses !== "object" || t.fixClasses === null || Array.isArray(t.fixClasses)) {
@@ -77,6 +85,7 @@ export function parseTriageBlock(raw: unknown): TriageConfig {
     dailyAttemptBudget: positiveNumber(t.dailyAttemptBudget, "dailyAttemptBudget", DEFAULTS.dailyAttemptBudget),
     fixClasses,
     doctorSkill: (t.doctorSkill as string | undefined) ?? DEFAULTS.doctorSkill,
+    tier: (t.tier as "api" | "checkout" | undefined) ?? DEFAULTS.tier,
     notify: (t.notify as "rt" | "badge-only" | undefined) ?? DEFAULTS.notify,
   };
 }

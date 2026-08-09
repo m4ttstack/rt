@@ -95,7 +95,9 @@ export async function runTriage(deps: TriageRunDeps): Promise<{ dispatched: numb
         workspaceLabel: deps.doctorsWorkspace,
         statePath,
         skill: deps.triage.doctorSkill,
-        tier: "api",
+        // The wrapper treats an absent tier as the historical checkout
+        // (fix-and-push) behavior; "api" stays the explicit no-checkout tier.
+        tier: deps.triage.tier === "checkout" ? undefined : "api",
         fixClasses: enabledFixClassNames(deps.triage.fixClasses),
         draftBin: draftBinPath(),
       });
