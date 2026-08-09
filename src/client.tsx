@@ -36,7 +36,25 @@ type DoctorStatus = "queued" | "diagnosing" | "rebasing" | "fixing" | "watching"
 interface DoctorInfo { status: DoctorStatus; message?: string; origin?: "auto" | "manual" }
 interface DraftInfo { kind: string; body: string; createdAt: number }
 interface SlackInfo { status: "found" | "notfound"; permalink?: string; reactions: string[]; posted: boolean }
-type BoardMRWithReview = BoardMR & { review?: ReviewInfo; respond?: RespondInfo; doctor?: DoctorInfo; slack?: SlackInfo; drafts?: DraftInfo[] };
+/** How a peer's board says their review of one of our MRs is going. `status`
+    and `outcome` stay loose strings: they're another board's lifecycle words,
+    relayed verbatim, and a peer may run a version whose vocabulary we don't know. */
+interface PeerReviewInfo { mrUrl: string; iid: number; reviewer: string; status: string; outcome?: string; updatedAt: number }
+/** The re-review this board asked a peer for, and where that ask now stands.
+    `reason` only comes with a rejection (the peer's own words for the refusal). */
+interface SentNudgeInfo { display: "requested" | "confirmed" | "launched" | "rejected" | "expired" | "no-response"; reviewer: string; reason?: string }
+/** A peer waiting on us: an inbound re-review request we haven't handled yet. */
+interface InboundNudgeInfo { from: string; receivedAt: number }
+type BoardMRWithReview = BoardMR & {
+  review?: ReviewInfo;
+  respond?: RespondInfo;
+  doctor?: DoctorInfo;
+  slack?: SlackInfo;
+  drafts?: DraftInfo[];
+  peerReviews?: PeerReviewInfo[];
+  sentNudge?: SentNudgeInfo;
+  nudges?: InboundNudgeInfo[];
+};
 
 interface BoardData {
   title: string;
@@ -344,6 +362,105 @@ function DoctorBadge({ doctor }: { doctor?: DoctorInfo }) {
   );
 }
 
+// ── peer switchboard ────────────────────────────────────────────────────────
+
+/** Glyph for every cross-board chip: traffic between two boards, in both
+    directions. Kept as text (like the held-draft ✉) rather than an SVG. */
+const PEER_GLYPH = "⇄";
+
+/** The peer-review states this board has words for. A status it doesn't
+    recognise renders nothing at all, rather than putting a mystery word from
+    another board's vocabulary on the row. */
+type PeerState = "reviewing" | "commented" | "approved" | "done";
+
+const PEER_PHRASE: Record<PeerState, string> = {
+  reviewing: "reviewing",
+  commented: "commented",
+  approved: "approved",
+  done: "reviewed",
+};
+
+/** A `done` review with no outcome is the peer's human never answering their
+    posting gate, so it reads as a plain "reviewed": it is finished, but it is
+    not an approval. */
+function peerState(peer: PeerReviewInfo): PeerState | null {
+  if (peer.status === "queued" || peer.status === "reviewing") return "reviewing";
+  if (peer.status !== "done") return null;
+  if (peer.outcome === "comment") return "commented";
+  if (peer.outcome === "approve") return "approved";
+  return "done";
+}
+
+/** One peer's review of this MR, relayed over the switchboard. Reuses the
+    review-badge shape with its own `tui-peer-*` family so another board's
+    progress is never mistaken for this board's own review lifecycle. */
+function PeerBadge({ peer }: { peer: PeerReviewInfo }) {
+  const state = peerState(peer);
+  if (!state) return null;
+  const phrase = PEER_PHRASE[state];
+  return (
+    <span className={`tui-review tui-peer tui-peer-${state}`} title={`peer review by ${peer.reviewer}: ${phrase}`}>
+      {PEER_GLYPH} {peer.reviewer}: {phrase}
+    </span>
+  );
+}
+
+/** Nudge states that leave the ask unanswered, so asking again is the honest
+    next move. Shared by the chip's hint and the menu item's condition -- the
+    item reappearing IS the retry affordance. */
+const NUDGE_RETRYABLE = new Set<SentNudgeInfo["display"]>(["rejected", "expired", "no-response"]);
+
+/** What a sent nudge reads as. A refusal carries the peer's own reason where
+    they gave one, since "why not" is the only part a human can act on. */
+function nudgeChipText(nudge: SentNudgeInfo): string {
+  switch (nudge.display) {
+    case "requested":
+      return "re-review requested";
+    case "confirmed":
+    case "launched":
+      return "re-reviewing";
+    case "rejected":
+    case "expired":
+      return `nudge: ${nudge.reason ?? nudge.display}`;
+    case "no-response":
+      return "no response yet";
+  }
+}
+
+/** The re-review this board asked for, on the author's own row. */
+function NudgeChip({ nudge }: { nudge?: SentNudgeInfo }) {
+  if (!nudge) return null;
+  const title = NUDGE_RETRYABLE.has(nudge.display)
+    ? `${nudge.reviewer} hasn't picked this up... right-click to ask again`
+    : `re-review asked of ${nudge.reviewer}`;
+  return (
+    <span className={`tui-review tui-nudge tui-nudge-${nudge.display}`} title={title}>
+      {PEER_GLYPH} {nudgeChipText(nudge)}
+    </span>
+  );
+}
+
+/** The reviewer's side: peers waiting on us for a re-review of this MR. The
+    server sends unhandled nudges unsorted, so the age shown is the oldest ask
+    -- how long someone has actually been waiting. */
+function NudgedByMarker({ nudges, now }: { nudges?: InboundNudgeInfo[]; now: number }) {
+  if (!nudges?.length) return null;
+  const sorted = [...nudges].sort((a, b) => a.receivedAt - b.receivedAt);
+  const waiting = ago(new Date(sorted[0]!.receivedAt).toISOString(), now);
+  return (
+    <span className="tui-review tui-nudged" title="a peer asked you to look at this again">
+      {PEER_GLYPH} nudged by {sorted.map((n) => n.from).join(", ")} · {waiting}
+    </span>
+  );
+}
+
+/** Peers we can ask to look again: their review finished with comments (so
+    there's something to re-check) and no ask of ours is still outstanding. */
+function nudgeTargets(mrx: BoardMRWithReview): PeerReviewInfo[] {
+  if (mrx.sentNudge && !NUDGE_RETRYABLE.has(mrx.sentNudge.display)) return [];
+  return (mrx.peerReviews ?? []).filter((p) => p.status === "done" && p.outcome === "comment");
+}
+
 /** Key for the App-level map of optimistically resolved drafts. Resolution
     lives above the badge because the acting happens in DraftModal; the next
     /data.json pull drops the draft and the stale entry is harmless. */
@@ -397,6 +514,23 @@ function hasReviewReactions(mr: BoardMR): boolean {
   const reactions = (mr as BoardMRWithReview).slack?.reactions;
   if (!reactions?.length) return false;
   return SLACK_MARKS.some((m) => reactions.includes(m.emoji));
+}
+
+/** Does this MR have anything for the board-managed badge line? Rows and cards
+    share the test so a new axis can't land on one view and miss the other. */
+function hasBoardBadges(mr: BoardMR): boolean {
+  const mrx = mr as BoardMRWithReview;
+  return !!(
+    mrx.review ||
+    mrx.respond ||
+    mrx.doctor ||
+    mrx.drafts?.length ||
+    mrx.peerReviews?.length ||
+    mrx.sentNudge ||
+    mrx.nudges?.length ||
+    hasReviewReactions(mr) ||
+    mrx.slack?.posted
+  );
 }
 
 /** Chip shown when the MR has a resolved (or posted-by-us) slack message.
@@ -655,6 +789,8 @@ function RowMenu({
   canDoctor,
   onDraftState,
   canDraftState,
+  onNudge,
+  canNudge,
   onResumeReview,
   onResumeRespond,
 }: {
@@ -675,6 +811,8 @@ function RowMenu({
   canDoctor: boolean;
   onDraftState: (mr: BoardMR, draft: boolean) => void;
   canDraftState: boolean;
+  onNudge: (mr: BoardMR, reviewer: string) => void;
+  canNudge: boolean;
   onResumeReview: (mr: BoardMR) => void;
   onResumeRespond: (mr: BoardMR) => void;
 }) {
@@ -707,9 +845,10 @@ function RowMenu({
   const slack = mrx.slack;
   const found = slack?.status === "found";
   const showSlack = local && slackEnabled;
+  const peers = local && canNudge ? nudgeTargets(mrx) : [];
   // Keep the menu on-screen; estimate generously since item count varies.
   const W = 230;
-  const H = 60 + (local ? 34 : 0) + 68 + (showSlack ? (found ? 170 : 60) : 0);
+  const H = 60 + (local ? 34 : 0) + 68 + peers.length * 30 + (showSlack ? (found ? 170 : 60) : 0);
   const left = Math.max(8, Math.min(menu.x, window.innerWidth - W - 8));
   const top = Math.max(8, Math.min(menu.y, window.innerHeight - H - 8));
   const run = (fn: () => void) => () => {
@@ -776,6 +915,16 @@ function RowMenu({
           onClick={run(() => onDraftState(mr, !mr.isDraft))}
         />
       )}
+      {/* Ask a peer whose review left comments to look again. Only ever offered
+          for your own MR, and only while no ask of yours is still outstanding. */}
+      {peers.map((peer) => (
+        <MenuItem
+          key={peer.reviewer}
+          label={`request re-review from ${peer.reviewer}`}
+          hint="peer"
+          onClick={run(() => onNudge(mr, peer.reviewer))}
+        />
+      ))}
       {mrx.review?.reportReady && (
         <MenuItem label="view review" onClick={run(() => onOpenReview(mrx))} />
       )}
@@ -1361,11 +1510,16 @@ function RowView({
               </span>
               <MetaTokens mr={mr} now={now} />
             </div>
-            {((mr as BoardMRWithReview).review || (mr as BoardMRWithReview).respond || (mr as BoardMRWithReview).doctor || (mr as BoardMRWithReview).drafts?.length || hasReviewReactions(mr) || (mr as BoardMRWithReview).slack?.posted) && (
+            {hasBoardBadges(mr) && (
               <div className="tui-row-board">
                 <ReviewBadge review={(mr as BoardMRWithReview).review} onOpen={() => onOpenReview(mr as BoardMRWithReview)} />
                 <RespondBadge respond={(mr as BoardMRWithReview).respond} onResume={() => onResumeRespond(mr)} />
                 <DoctorBadge doctor={(mr as BoardMRWithReview).doctor} />
+                {((mr as BoardMRWithReview).peerReviews ?? []).map((p) => (
+                  <PeerBadge key={p.reviewer} peer={p} />
+                ))}
+                <NudgeChip nudge={(mr as BoardMRWithReview).sentNudge} />
+                <NudgedByMarker nudges={(mr as BoardMRWithReview).nudges} now={now} />
                 {((mr as BoardMRWithReview).drafts ?? []).map((d) => (
                   <DraftBadge
                     key={d.kind}
@@ -1443,11 +1597,16 @@ function GridView({
             <div className="tui-card-tokens">
               {showAuthor && <AuthorTag mr={mr} />} <StatusPhrase mr={mr} /> <MetaTokens mr={mr} now={now} />
             </div>
-            {((mr as BoardMRWithReview).review || (mr as BoardMRWithReview).respond || (mr as BoardMRWithReview).doctor || (mr as BoardMRWithReview).drafts?.length || hasReviewReactions(mr) || (mr as BoardMRWithReview).slack?.posted) && (
+            {hasBoardBadges(mr) && (
               <div className="tui-card-board">
                 <ReviewBadge review={(mr as BoardMRWithReview).review} onOpen={() => onOpenReview(mr as BoardMRWithReview)} />
                 <RespondBadge respond={(mr as BoardMRWithReview).respond} onResume={() => onResumeRespond(mr)} />
                 <DoctorBadge doctor={(mr as BoardMRWithReview).doctor} />
+                {((mr as BoardMRWithReview).peerReviews ?? []).map((p) => (
+                  <PeerBadge key={p.reviewer} peer={p} />
+                ))}
+                <NudgeChip nudge={(mr as BoardMRWithReview).sentNudge} />
+                <NudgedByMarker nudges={(mr as BoardMRWithReview).nudges} now={now} />
                 {((mr as BoardMRWithReview).drafts ?? []).map((d) => (
                   <DraftBadge
                     key={d.kind}
@@ -2069,6 +2228,38 @@ function Board() {
     [addToast, load],
   );
 
+  // Ask a peer's board for a re-review of one of our MRs. No optimistic chip:
+  // the server writes the sent-nudge file before answering, so the reload right
+  // behind this brings back the real state one poll sooner than guessing would.
+  const handleNudge = useCallback(
+    (mr: BoardMR, reviewer: string) => {
+      if (!mr.webUrl) return;
+      addToast(`requesting re-review of !${mr.iid} from ${reviewer}…`);
+      fetch("/nudge", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ mrUrl: mr.webUrl, iid: mr.iid, reviewer }),
+      })
+        .then(async (r) => {
+          if (!r.ok) {
+            // A permanent refusal (409) answers in plain text with the reason
+            // the relay gave -- e.g. the reviewer has no board on the
+            // switchboard. That's the whole point of the failure, so show it.
+            const why = await r.text().then((t) => t.trim()).catch(() => "");
+            addToast(why || `couldn't request re-review for !${mr.iid} (${r.status})`);
+            return;
+          }
+          const body = await r.json().catch(() => ({}));
+          if (body?.queued) addToast(`switchboard unreachable... queued the ask to ${reviewer}`);
+          load();
+        })
+        .catch(() => {
+          addToast(`couldn't request re-review for !${mr.iid}`);
+        });
+    },
+    [addToast, load],
+  );
+
   const handleRespond = useCallback(
     (mr: BoardMR) => {
       if (!mr.webUrl) return;
@@ -2565,6 +2756,10 @@ function Board() {
           // people's drafts, but their ready MRs are on the board, so this gate
           // is what keeps "mark as draft" off them.
           canDraftState={rowMenu.mr.author.username === data.defaultMember}
+          onNudge={handleNudge}
+          // Your own MRs only: a nudge asks a peer to re-review YOUR work, and
+          // the server enforces the same gate (403 "not your MR").
+          canNudge={rowMenu.mr.author.username === data.defaultMember}
           onResumeReview={handleResumeReview}
           onResumeRespond={handleResumeRespond}
         />

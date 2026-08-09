@@ -618,6 +618,28 @@ body {
 .tui-doctor-watching { color: var(--cyan); border-color: currentColor; animation: tui-review-pulse 1.4s ease-in-out infinite; }
 .tui-doctor-done { color: var(--dot-ok); border-color: currentColor; }
 .tui-doctor-error { color: var(--dot-bad); border-color: currentColor; }
+/* Peer switchboard: another board's review of our MR, the re-review we asked a
+   peer for, and peers waiting on us. Accent (blue) family so cross-board
+   traffic reads as its own axis alongside review/respond/doctor. */
+.tui-peer,
+.tui-nudge,
+.tui-nudged { color: var(--accent); border-color: currentColor; }
+/* Peer review states borrow the review badge's colors, so "approved on their
+   board" reads the same as an approval earned here. */
+.tui-peer-reviewing { animation: tui-review-pulse 1.4s ease-in-out infinite; }
+.tui-peer-commented { color: var(--dot-warn); }
+.tui-peer-approved { color: var(--dot-ok); }
+.tui-peer-done { color: var(--muted); }
+/* A sent nudge: pending is quiet, in-flight pulses, and an unanswered or
+   refused ask goes grey -- the menu item is what offers the retry. */
+.tui-nudge-requested { opacity: 0.75; }
+.tui-nudge-confirmed,
+.tui-nudge-launched { animation: tui-review-pulse 1.4s ease-in-out infinite; }
+.tui-nudge-rejected,
+.tui-nudge-expired,
+.tui-nudge-no-response { color: var(--muted); }
+/* Inbound: someone is waiting on you, so it carries a little more weight. */
+.tui-nudged { font-weight: 600; }
 /* Held outbound note a doctor drafted; the chip opens the draft drawer, where
    the approval gate lives. "held-draft" (not .tui-draft, the draft-MR chip). */
 .tui-held-draft { color: var(--amber); border-color: currentColor; }
