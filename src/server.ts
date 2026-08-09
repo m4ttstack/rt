@@ -12,7 +12,8 @@ import { readReviewStates, pruneReviewStates, reviewFilePath, writeReviewState, 
 import { readRespondStates, pruneRespondStates, respondFilePath, writeRespondState, parseRespondRequestBody, attachResponds } from "./respond-state.ts";
 import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, parseDoctorRequestBody, attachDoctors } from "./doctor-state.ts";
 import { readDrafts, heldDraftsByMr, attachDrafts, pruneDrafts, draftFilePath, writeDraft } from "./draft-state.ts";
-import { launchReview, launchRespond, launchDoctor, launchResume, focusTab, reReviewResumePrompt } from "./herdr.ts";
+import { launchReview, launchRespond, launchDoctor, launchResume, focusTab } from "./herdr.ts";
+import { launchReReview } from "./review-launch.ts";
 import { readSlackRefs, attachSlack, resolveSlackRef, reactToMR, unreactFromMR, postToSlack, REVIEW_EMOJI } from "./slack.ts";
 import { signalEmoji, parseAgentSignal } from "./agent-signal.ts";
 import { renderPost, sanitizeHeader, MAX_HEADER_LEN, type MrFacts } from "./template.ts";
@@ -431,48 +432,15 @@ Bun.serve({
               // tab is gone — fall through and start the re-review fresh
             }
           }
-          const statePath = reviewFilePath(parsed.mrUrl);
-          // Prior claude session on file: resume it and direct it to re-review, so
-          // the agent keeps its memory of what it flagged. Otherwise launch a fresh
-          // review with the re-review framing (the wrapper reads any prior report at
-          // reportPath, and falls back to a normal review if the author hasn't acted).
-          if (existing?.sessionId) {
-            writeReviewState(statePath, { status: "reviewing" });
-            void launchResume({
-              mrUrl: parsed.mrUrl,
-              iid: parsed.iid,
-              cwd: config.reviewCwd,
-              workspaceLabel: config.reviewsWorkspace,
-              statePath,
-              sessionId: existing.sessionId,
-              workspaceKind: "review",
-              prompt: reReviewResumePrompt(parsed.iid),
-              tabPrefix: "⟲",
-              author,
-            })
-              .then(({ tabId, workspaceId }) => writeReviewState(statePath, { status: "reviewing", tabId, workspaceId }))
-              .catch((err) => {
-                console.error(`re-review resume failed: ${err instanceof Error ? err.message : err}`);
-                writeReviewState(statePath, { status: "error", message: "failed to launch re-review pane" });
-              });
-            return new Response(JSON.stringify({ ok: true, reReview: true, resumed: true }), { headers: { "content-type": "application/json" } });
-          }
-          writeReviewState(statePath, { mrUrl: parsed.mrUrl, iid: parsed.iid, status: "queued" });
-          void launchReview({
-            mrUrl: parsed.mrUrl,
-            iid: parsed.iid,
+          // Resume-or-fresh lives in the launcher so triage can start the same
+          // re-review off a peer's nudge. Spawn asynchronously; the badge
+          // reflects progress via the state file.
+          void launchReReview(parsed.mrUrl, parsed.iid, {
             cwd: config.reviewCwd,
             workspaceLabel: config.reviewsWorkspace,
-            statePath,
             skill: config.reviewSkill,
-            reReview: true,
             author,
-          })
-            .then(({ tabId, workspaceId }) => writeReviewState(statePath, { status: "queued", tabId, workspaceId }))
-            .catch((err) => {
-              console.error(`re-review launch failed: ${err instanceof Error ? err.message : err}`);
-              writeReviewState(statePath, { status: "error", message: "failed to launch re-review pane" });
-            });
+          });
           return new Response(JSON.stringify({ ok: true, reReview: true }), { headers: { "content-type": "application/json" } });
         }
         if (resume) {
