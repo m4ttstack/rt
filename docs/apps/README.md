@@ -94,6 +94,8 @@ what it adds:
 
 ### teammate setup
 
+peer features also need `defaultMember` in `config.json` set to your own GitLab username: it is how the board tells your MRs from everyone else's, so with `"all"` it stays silent and publishes nothing to peers.
+
 `bun run setup` prompts for a switchboard URL and a board token. blank input for either skips peer features entirely, and everything degrades cleanly: no badges, no nudge action, `/nudge` returns `400`. it writes:
 
 - the switchboard URL your operator gave you, to `config.json` as `switchboard.url`
@@ -103,8 +105,9 @@ what it adds:
 
 the switchboard is a separate deployable in `switchboard/`, a dumb store-and-forward relay, one process, one sqlite file. deploy it to [Railway](https://railway.app):
 
-- service root: `switchboard/`
-- start command: `bun run server.ts`
+- service root: the repo root, not `switchboard/`. the relay imports shared types from `src/peer/`, so a service rooted at `switchboard/` cannot resolve them
+- start command: `bun run switchboard`
+- watch paths: `switchboard/**`, so board-only pushes do not trigger a redeploy of the relay
 - attach a volume and point `SWITCHBOARD_DB` at a path on it (otherwise the database lives on ephemeral disk and every redeploy loses all board registrations)
 - env: `SWITCHBOARD_ADMIN_TOKEN` (pick your own value, the bearer token for minting boards)
 - `PORT` is supplied by Railway
