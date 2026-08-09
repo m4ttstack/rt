@@ -18,6 +18,7 @@ import {
   writeSentNudge,
   readSentNudges,
   resolveSentNudge,
+  retireSentNudge,
   pruneSentNudges,
   sentNudgeDisplay,
   NUDGE_NO_RESPONSE_MS,
@@ -179,6 +180,37 @@ describe("resolveSentNudge", () => {
     resolveSentNudge(URL_A, { result: "confirmed", at: 10 }, dir);
     resolveSentNudge(URL_A, { result: "launched", at: 20 }, dir);
     expect(readSentNudges(dir).get(URL_A)?.resolution).toEqual({ result: "launched", at: 20 });
+  });
+});
+
+describe("retireSentNudge", () => {
+  test("is a no-op when no file exists for the MR", () => {
+    retireSentNudge(URL_A, 10, dir);
+    expect(readSentNudges(dir).size).toBe(0);
+  });
+
+  test("deletes the sent nudge when it was sent before the cutoff", () => {
+    writeSentNudge({ nudgeId: "n1", mrUrl: URL_A, iid: 4821, reviewer: "grace", sentAt: 1 }, dir);
+    resolveSentNudge(URL_A, { result: "launched", at: 5 }, dir);
+    retireSentNudge(URL_A, 10, dir);
+    expect(readSentNudges(dir).has(URL_A)).toBe(false);
+  });
+
+  test("keeps a nudge sent at or after the cutoff, so a redelivered old 'done' cannot clear a fresh ask", () => {
+    writeSentNudge({ nudgeId: "n1", mrUrl: URL_A, iid: 4821, reviewer: "grace", sentAt: 20 }, dir);
+    retireSentNudge(URL_A, 10, dir);
+    expect(readSentNudges(dir).has(URL_A)).toBe(true);
+    retireSentNudge(URL_A, 20, dir);
+    expect(readSentNudges(dir).has(URL_A)).toBe(true);
+  });
+
+  test("only retires the named MR", () => {
+    writeSentNudge({ nudgeId: "n1", mrUrl: URL_A, iid: 4821, reviewer: "grace", sentAt: 1 }, dir);
+    writeSentNudge({ nudgeId: "n2", mrUrl: URL_B, iid: 1, reviewer: "grace", sentAt: 1 }, dir);
+    retireSentNudge(URL_A, 10, dir);
+    const map = readSentNudges(dir);
+    expect(map.has(URL_A)).toBe(false);
+    expect(map.has(URL_B)).toBe(true);
   });
 });
 

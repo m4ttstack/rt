@@ -11,6 +11,7 @@ export interface MaterializeDeps {
   writePeerReview(s: PeerReviewState): unknown;
   writeNudge(n: NudgeState): void;
   resolveSentNudge(mrUrl: string, resolution: { result: NudgeResult | "confirmed"; reason?: string; at: number }): void;
+  retireSentNudge(mrUrl: string, ifSentBefore: number): void;
   log(line: string): void;
 }
 
@@ -26,6 +27,12 @@ export function materializeEnvelope(e: Envelope, deps: MaterializeDeps, now: num
     // re-review actually started, whichever of state/outcome lands first.
     if (p.status === "queued" || p.status === "reviewing") {
       deps.resolveSentNudge(p.mrUrl, { result: "confirmed", at: now });
+    }
+    // The re-review finished, so the ask is spent: retire the sent nudge and
+    // the row can ask again. Guarded on the report's own updatedAt so a
+    // redelivered pre-nudge "done" cannot clear an ask sent after it.
+    if (p.status === "done") {
+      deps.retireSentNudge(p.mrUrl, p.updatedAt);
     }
     return;
   }

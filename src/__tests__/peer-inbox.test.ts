@@ -12,16 +12,19 @@ function fakeDeps(): MaterializeDeps & {
   peerReviews: PeerReviewState[];
   nudges: NudgeState[];
   resolutions: Array<{ mrUrl: string; resolution: { result: NudgeResult | "confirmed"; reason?: string; at: number } }>;
+  retirements: Array<{ mrUrl: string; ifSentBefore: number }>;
   logs: string[];
 } {
   const peerReviews: PeerReviewState[] = [];
   const nudges: NudgeState[] = [];
   const resolutions: Array<{ mrUrl: string; resolution: { result: NudgeResult | "confirmed"; reason?: string; at: number } }> = [];
+  const retirements: Array<{ mrUrl: string; ifSentBefore: number }> = [];
   const logs: string[] = [];
   return {
     peerReviews,
     nudges,
     resolutions,
+    retirements,
     logs,
     writePeerReview(s) {
       peerReviews.push(s);
@@ -32,6 +35,9 @@ function fakeDeps(): MaterializeDeps & {
     },
     resolveSentNudge(mrUrl, resolution) {
       resolutions.push({ mrUrl, resolution });
+    },
+    retireSentNudge(mrUrl, ifSentBefore) {
+      retirements.push({ mrUrl, ifSentBefore });
     },
     log(line) {
       logs.push(line);
@@ -92,6 +98,24 @@ describe("materializeEnvelope", () => {
       materializeEnvelope(e, deps, 1000);
       expect(deps.peerReviews.length).toBe(1);
       expect(deps.resolutions).toEqual([]);
+    });
+
+    test("status 'done' retires the sent nudge, guarded on the review's updatedAt", () => {
+      const deps = fakeDeps();
+      const e = envelope({
+        payload: { mrUrl: URL_A, iid: 4821, status: "done", updatedAt: 500 },
+      });
+      materializeEnvelope(e, deps, 1000);
+      expect(deps.retirements).toEqual([{ mrUrl: URL_A, ifSentBefore: 500 }]);
+    });
+
+    test("an in-flight status never retires the sent nudge", () => {
+      for (const status of ["queued", "reviewing"] as const) {
+        const deps = fakeDeps();
+        const e = envelope({ payload: { mrUrl: URL_A, iid: 4821, status, updatedAt: 500 } });
+        materializeEnvelope(e, deps, 1000);
+        expect(deps.retirements).toEqual([]);
+      }
     });
 
     test("malformed review-state payload only logs, never writes or resolves", () => {

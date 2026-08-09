@@ -23,7 +23,7 @@ import { makeEnvelope, canonicalUsername, type ReviewStatePayload, type ReReview
 import { writePeerReview, readPeerReviews, prunePeerReviews, attachPeerReviews, type PeerReviewState } from "./peer/peer-reviews.ts";
 import {
   writeNudge, readNudges, pruneNudges,
-  writeSentNudge, readSentNudges, resolveSentNudge, pruneSentNudges, sentNudgeDisplay,
+  writeSentNudge, readSentNudges, resolveSentNudge, retireSentNudge, pruneSentNudges, sentNudgeDisplay,
   type SentNudgeDisplay,
 } from "./peer/nudges.ts";
 import { renderPost, sanitizeHeader, MAX_HEADER_LEN, type MrFacts } from "./template.ts";
@@ -60,6 +60,7 @@ const peerDeps: MaterializeDeps = {
   writePeerReview,
   writeNudge,
   resolveSentNudge,
+  retireSentNudge,
   log: (line) => console.error(line),
 };
 if (peerClient) {
@@ -746,7 +747,11 @@ Bun.serve({
         // before the emoji early-return below, so transitions that map to no
         // emoji still sync. Own policy (slack reactions) continues after; this
         // is pure relay traffic.
-        if (peerClient && signal.kind === "review") {
+        // `defaultMember: "all"` is a view setting, not an identity, so there is
+        // no way to tell this board's own MRs from a peer's. Without that, the
+        // own-MR guard below can never match and the board would relay a
+        // review-state for every MR on it, including publishing to itself.
+        if (peerClient && signal.kind === "review" && config.defaultMember !== "all") {
           const snapshotForPeer = await cache.get();
           const authorUsername = snapshotForPeer.mrs.find((m) => m.webUrl === signal.mrUrl)?.author.username;
           // Never relay a review of this board's own MR: the author is right

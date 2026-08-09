@@ -128,7 +128,7 @@ describe("runNudgePass", () => {
     expect(d.audit.some((e) => e.action === "launch-failed")).toBe(true);
   });
 
-  test("skip path touches nothing but the audit log", async () => {
+  test("skip path touches nothing at all, audit log included", async () => {
     const handledNudge: NudgeState = { ...nudge, handled: { at: NOW - 1000, result: "launched" } };
     const d = deps({ readNudges: () => [handledNudge] });
     const result = await runNudgePass(d);
@@ -136,7 +136,15 @@ describe("runNudgePass", () => {
     expect(d.handled).toHaveLength(0);
     expect(d.published).toHaveLength(0);
     expect(d.notifies).toHaveLength(0);
-    expect(d.audit).toHaveLength(1);
-    expect(d.audit[0]?.decision).toBe("skip");
+    expect(d.audit).toHaveLength(0);
+  });
+
+  test("re-running over the same handled nudge never grows the audit log", async () => {
+    const handledNudge: NudgeState = { ...nudge, handled: { at: NOW - 1000, result: "launched" } };
+    const d = deps({ readNudges: () => [handledNudge] });
+    await runNudgePass(d);
+    await runNudgePass(d);
+    await runNudgePass(d);
+    expect(d.audit).toHaveLength(0);
   });
 });

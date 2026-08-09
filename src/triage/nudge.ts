@@ -57,14 +57,17 @@ export async function runNudgePass(deps: NudgePassDeps): Promise<{ dispatched: n
     const m = rollDay(deps.memory.mrs[nudge.mrUrl] ?? emptyMrMemory(dayStamp), dayStamp);
     deps.memory.mrs[nudge.mrUrl] = m;
     const decision = decideNudge(nudge, reviews.get(nudge.mrUrl), m, deps.cfg, now);
-    deps.appendAudit({
-      ts: now, mrUrl: nudge.mrUrl, iid: nudge.iid, event: "nudge",
-      decision: decision.action, reason: decision.reason, attempt: m.attemptsToday + 1,
-    });
+    // Skips come first and audit nothing: a handled nudge is re-read on every
+    // cron run, and auditing it would grow the log forever with a line that
+    // records no change.
     if (decision.action === "skip") {
       result.skipped++;
       continue;
     }
+    deps.appendAudit({
+      ts: now, mrUrl: nudge.mrUrl, iid: nudge.iid, event: "nudge",
+      decision: decision.action, reason: decision.reason, attempt: m.attemptsToday + 1,
+    });
     if (decision.action === "expire" || decision.action === "reject") {
       const outcome: NudgeResult = decision.action === "expire" ? "expired" : "rejected";
       deps.markNudgeHandled(nudge.id, outcome, decision.reason);

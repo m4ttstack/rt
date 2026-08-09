@@ -161,6 +161,24 @@ export function resolveSentNudge(
   renameSync(tmp, path);
 }
 
+/** Retire a sent nudge once the re-review it asked for has finished: delete
+    the file so the chip clears and "request re-review" comes back on the menu.
+    The `ifSentBefore` guard keeps the ask alive when the finishing report is
+    older than the nudge -- at-least-once delivery means a peer's pre-nudge
+    "done" can arrive after a fresh ask went out, and that redelivery must not
+    retire it. */
+export function retireSentNudge(mrUrl: string, ifSentBefore: number, dir: string = NUDGE_SENT_DIR): void {
+  const path = sentNudgeFilePath(mrUrl, dir);
+  let prev: SentNudge;
+  try {
+    prev = JSON.parse(readFileSync(path, "utf8")) as SentNudge;
+  } catch {
+    return;
+  }
+  if (prev.sentAt >= ifSentBefore) return;
+  rmSync(path, { force: true });
+}
+
 /** Delete sent nudges whose MR is no longer on the board. */
 export function pruneSentNudges(keepUrls: ReadonlySet<string>, dir: string = NUDGE_SENT_DIR): void {
   if (!existsSync(dir)) return;
