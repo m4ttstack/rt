@@ -259,7 +259,7 @@ async function main() {
   if (swUrl) {
     const swToken = ask("Switchboard board token (minted by your switchboard admin)", env.SWITCHBOARD_TOKEN);
     if (swToken) env.SWITCHBOARD_TOKEN = swToken;
-    else console.error("No token entered — peer features stay disabled until SWITCHBOARD_TOKEN is set.");
+    else console.error("No token entered. Peer features stay disabled until SWITCHBOARD_TOKEN is set.");
   }
 
   writeEnv(env);
