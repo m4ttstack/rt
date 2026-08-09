@@ -9,6 +9,7 @@ config.team.json
 # runtime state + logs
 state/
 logs/
+switchboard/*.sqlite*
 
 # local planning docs
 .local-dev/
