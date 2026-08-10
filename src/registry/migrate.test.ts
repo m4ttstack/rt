@@ -66,39 +66,39 @@ test("idempotent: a second run skips everything", async () => {
   expect(second.skipped.sort()).toEqual(["boxscore", "mattari"]);
 });
 
-test("never adopts a bootstrap alias sharing Local's own port under a second name", async () => {
+test("never adopts a bootstrap alias sharing Deck's own port under a second name", async () => {
   const { putRecord } = await import("./records.ts");
-  // Pre-register Local's own bootstrap record, exactly as bootstrapSelf() would.
+  // Pre-register Deck's own bootstrap record, exactly as bootstrapSelf() would.
   putRecord({
-    name: "local",
-    managedBy: "local",
+    name: "deck",
+    managedBy: "deck",
     port: 11000,
     kind: "service",
-    label: "com.mattstack.local",
+    label: "com.mattstack.deck",
     createdAt: new Date().toISOString(),
   });
   // bootstrapSelf() writes TWO portless aliases at the SAME port when the
-  // proxy's TLDs don't include "mattstack": local.localhost and
-  // local.mattstack.localhost. With tlds=["localhost"], these bareName to
-  // DIFFERENT names ("local" and "local.mattstack"), so dedupeRoutes does not
+  // proxy's TLDs don't include "mattstack": deck.localhost and
+  // deck.mattstack.localhost. With tlds=["localhost"], these bareName to
+  // DIFFERENT names ("deck" and "deck.mattstack"), so dedupeRoutes does not
   // collapse them - migrate() must skip the second one by port, not adopt it.
   writeFileSync(process.env.LOCAL_APPS_ROUTES_PATH!, JSON.stringify([
-    { hostname: "local.localhost", port: 11000, pid: 0 },
-    { hostname: "local.mattstack.localhost", port: 11000, pid: 0 },
+    { hostname: "deck.localhost", port: 11000, pid: 0 },
+    { hostname: "deck.mattstack.localhost", port: 11000, pid: 0 },
     { hostname: "boxscore.localhost", port: 11005, pid: 0 },
     { hostname: "mattari.localhost", port: 4101, pid: 0 },
   ]));
 
   const result = await migrate({});
 
-  expect(result.skipped).toContain("local.mattstack");
-  expect(result.adopted).not.toContain("local.mattstack");
-  expect(getRecord("local.mattstack")).toBeUndefined();
+  expect(result.skipped).toContain("deck.mattstack");
+  expect(result.adopted).not.toContain("deck.mattstack");
+  expect(getRecord("deck.mattstack")).toBeUndefined();
 });
 
 test("skips any route sharing an already-claimed port, regardless of name", async () => {
   const { putRecord } = await import("./records.ts");
-  // An ordinary (non-Local) app already registered under one name; a second
+  // An ordinary (non-Deck) app already registered under one name; a second
   // route at the same port is a same-app alternate-access alias, not a new
   // app, so it must be skipped rather than adopted under a second name.
   putRecord({
@@ -118,7 +118,7 @@ test("skips any route sharing an already-claimed port, regardless of name", asyn
 });
 
 test("does not adopt two routes at the same never-before-claimed port as separate records within one run", async () => {
-  // Same structural shape as the Local-bootstrap-alias hazard, but for an
+  // Same structural shape as the Deck-bootstrap-alias hazard, but for an
   // ordinary app: two portless aliases at one port under different bareNames,
   // with NEITHER name having a pre-existing record yet. claimedPorts is
   // seeded from existing records before the loop starts, so it alone would

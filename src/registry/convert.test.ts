@@ -12,7 +12,7 @@ const { convert } = await import("./convert.ts");
 const { DEFAULT_LEGACY_PREFIX } = await import("./migrate.ts");
 const { getRecord, putRecord, deleteRecord, reloadRegistry } = await import("./records.ts");
 const { FakeServiceManager } = await import("../services/fake.ts");
-const { PLATFORM_LABEL, LABEL_PREFIX } = await import("../services/manager.ts");
+const { PLATFORM_LABEL, LABEL_PREFIX, LEGACY_PLATFORM_LABEL_PREFIX } = await import("../services/manager.ts");
 
 beforeEach(() => {
   rmSync(process.env.LOCAL_REGISTRY_PATH!, { force: true });
@@ -58,6 +58,23 @@ test("converts a legacy-prefixed service to the new label and updates the record
   expect(spec.programArguments).toEqual(["/usr/bin/true"]);
   expect(spec.workingDirectory).toBe("/tmp");
   expect(spec.environment.PORT).toBe("11005");
+});
+
+// Requirement: deck migrate --convert must treat the pre-rename product
+// prefix (com.mattstack.local.) as a SECOND legacy prefix alongside
+// com.matthewgoodwin., so apps already converted once (under the old Local
+// identity) re-convert cleanly to the new one.
+test("a record labeled under the pre-rename com.mattstack.local. prefix re-converts to com.mattstack.deck.", async () => {
+  putRecord(legacyRecord("foo", 11010, { label: `${LEGACY_PLATFORM_LABEL_PREFIX}foo` }));
+  const manager = new FakeServiceManager();
+
+  const result = await convert({ manager, healthCheck: alwaysHealthy, waitMs: 50, intervalMs: 5 });
+
+  expect(result.converted).toContain("foo");
+  const newLabel = `${LABEL_PREFIX}foo`;
+  expect(manager.installed.has(newLabel)).toBe(true);
+  expect(manager.installed.has(`${LEGACY_PLATFORM_LABEL_PREFIX}foo`)).toBe(false);
+  expect(getRecord("foo")!.label).toBe(newLabel);
 });
 
 test("rolls back on a failed health-check: new label torn down, legacy label restored, issue recorded", async () => {

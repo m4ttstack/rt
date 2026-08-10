@@ -35,9 +35,9 @@ export async function migrate(opts: { legacyPrefix?: string }): Promise<{ adopte
     if (getRecord(name) || claimedPorts.has(route.port)) { skipped.push(name); continue; }
     const svc = services.find((s) => s.port === route.port);
     // Defense-in-depth for a hypothetical ordering where migrate() runs before
-    // Local's own bootstrap record exists yet (so claimedPorts wouldn't catch
-    // it): never adopt a record carrying Local's own platform launchd label
-    // under any other name - that record is Local itself, not a new app.
+    // Deck's own bootstrap record exists yet (so claimedPorts wouldn't catch
+    // it): never adopt a record carrying Deck's own platform launchd label
+    // under any other name - that record is Deck itself, not a new app.
     if (svc?.label === PLATFORM_LABEL) { skipped.push(name); continue; }
     putRecord({
       name,

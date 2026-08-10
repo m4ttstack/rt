@@ -1,6 +1,8 @@
 import { join } from "path";
 import { checkHealth, type Health } from "../../core/discover.ts";
-import { PLATFORM_LABEL, LABEL_PREFIX, type ServiceManager, type ServiceSpec } from "../services/manager.ts";
+import {
+  PLATFORM_LABEL, LABEL_PREFIX, LEGACY_PLATFORM_LABEL_PREFIX, type ServiceManager, type ServiceSpec,
+} from "../services/manager.ts";
 import { putRecord, getRecord, listRecords, addIssue, reloadRegistry, type AppRecord } from "./records.ts";
 import { DEFAULT_LEGACY_PREFIX } from "./migrate.ts";
 import { logsDir } from "../api/state.ts";
@@ -13,7 +15,14 @@ export interface ConvertResult {
 
 export interface ConvertOpts {
   manager: ServiceManager;
-  legacyPrefix?: string;
+  /**
+   * Label prefixes treated as legacy, i.e. convertible. Defaults to
+   * com.matthewgoodwin. (grandfathered pre-product apps, migrate.ts's own
+   * constant) AND com.mattstack.local. (the pre-rename product prefix,
+   * Local -> Deck): a machine that already converted its apps once, under
+   * the old identity, must be able to convert them again to the new one.
+   */
+  legacyPrefixes?: string[];
   /** Injectable for tests: the bounded-wait health probe. Defaults to core/discover's checkHealth. */
   healthCheck?: (port: number) => Promise<Health>;
   /** Bounded-wait tuning, injectable so tests don't pay the production timeout. */
@@ -50,7 +59,7 @@ function specFor(record: AppRecord, label: string): ServiceSpec {
 }
 
 /**
- * Convert legacy-prefixed launchd-supervised apps to the com.mattstack.local.
+ * Convert legacy-prefixed launchd-supervised apps to the com.mattstack.deck.
  * label convention, in place: same program/args/workingDir/PORT, same app
  * name, same route and port (untouched here). Unlike migrate() (adopt in
  * place, ruled), this one DOES write: a new plist goes up, the legacy one
@@ -59,7 +68,7 @@ function specFor(record: AppRecord, label: string): ServiceSpec {
  * never aborts the rest of the batch.
  */
 export async function convert(opts: ConvertOpts): Promise<ConvertResult> {
-  const legacyPrefix = opts.legacyPrefix ?? DEFAULT_LEGACY_PREFIX;
+  const legacyPrefixes = opts.legacyPrefixes ?? [DEFAULT_LEGACY_PREFIX, LEGACY_PLATFORM_LABEL_PREFIX];
   const healthCheck = opts.healthCheck ?? checkHealth;
   const waitMs = opts.waitMs ?? 10_000;
   const intervalMs = opts.intervalMs ?? 500;
@@ -70,7 +79,7 @@ export async function convert(opts: ConvertOpts): Promise<ConvertResult> {
   const skipped: string[] = [];
 
   for (const record of listRecords()) {
-    // Local's own platform record is excluded, exactly as migrate.ts's
+    // Deck's own platform record is excluded, exactly as migrate.ts's
     // defense-in-depth check for its bootstrap alias: never touch it under
     // any code path, checked ahead of (and independent of) the prefix test.
     if (record.label === PLATFORM_LABEL) { skipped.push(record.name); continue; }
@@ -79,7 +88,7 @@ export async function convert(opts: ConvertOpts): Promise<ConvertResult> {
     if (record.kind !== "service" || !record.label) { skipped.push(record.name); continue; }
     // Already on the new convention (a fresh app, or a previous convert run):
     // this is the idempotency path... a second run is a no-op per app.
-    if (!record.label.startsWith(legacyPrefix)) { skipped.push(record.name); continue; }
+    if (!legacyPrefixes.some((p) => record.label!.startsWith(p))) { skipped.push(record.name); continue; }
 
     const oldLabel = record.label;
     const newLabel = `${LABEL_PREFIX}${record.name}`;
