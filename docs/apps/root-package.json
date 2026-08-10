@@ -12,6 +12,7 @@
   },
   "scripts": {
     "build:icons": "bun build core/icons.js --outfile core/vendor/lucide.min.js --minify --target=browser --format=iife",
+    "build": "bun build --compile src/main.ts --outfile dist/local",
     "serve": "bun run src/main.ts serve",
     "test": "bun test"
   }

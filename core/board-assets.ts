@@ -1,19 +1,20 @@
-import { readFileSync } from "fs";
-import { join } from "path";
-
-// The board shell and client are read once at startup, exactly like the old
-// inline SHELL: the server restarts on deploy, so there is no reload-on-change
-// machinery to maintain.
-const BOARD_HTML = readFileSync(join(import.meta.dir, "board.html"), "utf8");
-const BOARD_JS = readFileSync(join(import.meta.dir, "board.js"), "utf8");
+// core/board-assets.ts — readFileSync(import.meta.dir…) dies under --compile;
+// static imports embed the assets in the binary and behave identically under
+// plain `bun run` (the non-negotiable checkout boot).
+import BOARD_HTML from "./board.html" with { type: "text" };
+import BOARD_JS from "./board.js" with { type: "text" };
+import oatCssPath from "./vendor/oat.min.css" with { type: "file" };
+import oatJsPath from "./vendor/oat.min.js" with { type: "file" };
+import lucidePath from "./vendor/lucide.min.js" with { type: "file" };
+import alpinePath from "./vendor/alpine.min.js" with { type: "file" };
 
 // Exact-name allowlist: /vendor/<name> resolves through this map only, so a
 // crafted path can never reach outside src/vendor.
-const VENDOR: Record<string, string> = {
-  "oat.min.css": "text/css; charset=utf-8",
-  "oat.min.js": "text/javascript; charset=utf-8",
-  "lucide.min.js": "text/javascript; charset=utf-8",
-  "alpine.min.js": "text/javascript; charset=utf-8",
+const VENDOR: Record<string, { path: string; type: string }> = {
+  "oat.min.css": { path: oatCssPath, type: "text/css; charset=utf-8" },
+  "oat.min.js": { path: oatJsPath, type: "text/javascript; charset=utf-8" },
+  "lucide.min.js": { path: lucidePath, type: "text/javascript; charset=utf-8" },
+  "alpine.min.js": { path: alpinePath, type: "text/javascript; charset=utf-8" },
 };
 
 // no-cache means revalidate every request, not "don't cache": right for files
@@ -34,8 +35,8 @@ export function boardJs(): Response {
 
 export function vendorAsset(name: string): Response | null {
   if (!Object.hasOwn(VENDOR, name)) return null;
-  const type = VENDOR[name];
-  return new Response(Bun.file(join(import.meta.dir, "vendor", name)), {
+  const { path, type } = VENDOR[name]!;
+  return new Response(Bun.file(path), {
     headers: { "content-type": type, "cache-control": CACHE },
   });
 }
