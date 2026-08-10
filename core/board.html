@@ -304,6 +304,29 @@
                 <td>
                   <template x-if="data.canManage && row.port != null">
                     <span>
+                      <!-- A span wrapper, not a label element: a bare
+                           data-field label tag here (no checkbox of its own)
+                           would sit -- in raw markup order -- before the
+                           addModal switch's :title label and get swallowed
+                           into its match; see the same note by addModal and
+                           board-assets.test.ts. The select is self-labeled
+                           via :aria-label, so no label element is lost. -->
+                      <span data-field class="mb-0">
+                        <select class="small"
+                                :value="row.accessTier ? row.accessTier.tier : 'public'"
+                                @change="onTierChange(row, $event.target.value)"
+                                :aria-label="'access tier for ' + row.name">
+                          <option value="public">public</option>
+                          <option value="password">password</option>
+                          <option value="only-me">only me</option>
+                          <option value="work-domain">work domain</option>
+                          <option value="custom">custom list</option>
+                        </select>
+                      </span>
+                      <span class="badge" data-variant="warning"
+                            x-show="row.issues && row.issues.some(i => i.source === 'cloudflare')">
+                        <i data-lucide="triangle-alert"></i> CF sync failed
+                      </span>
                       <template x-if="row.hasPassword">
                         <span class="hstack gap-2">
                           <span class="badge" data-variant="success" title="password required to view">

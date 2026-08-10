@@ -177,6 +177,29 @@ document.addEventListener("alpine:init", () => {
         .then(() => this.refresh());
     },
 
+    async onTierChange(row, tier) {
+      let payload = { tier };
+      if (tier === "only-me") {
+        const email = prompt("Allow exactly one email:");
+        if (!email) return this.refresh();
+        payload.email = email.trim();
+      } else if (tier === "work-domain") {
+        const emailDomain = prompt("Allow every email at this domain (e.g. corp.com):");
+        if (!emailDomain) return this.refresh();
+        payload.emailDomain = emailDomain.trim();
+      } else if (tier === "custom") {
+        const list = prompt("Comma-separated emails:");
+        if (!list) return this.refresh();
+        payload.emails = list.split(",").map(s => s.trim()).filter(Boolean);
+      }
+      const res = await this.apiPut("/api/v1/apps/" + row.name + "/access", payload).catch(() => null);
+      if (res && !res.ok) {
+        const body = await res.json().catch(() => ({}));
+        this.notice("bad", body.message || body.error || "access change failed", 15000);
+      }
+      await this.refresh();
+    },
+
     async submitAdd() {
       const m = this.addModal;
       if (!m) return;
