@@ -270,6 +270,35 @@ test("legacy POST endpoints are gone (board speaks /api/v1 now)", async () => {
   expect((await api("/api/status")).status).toBe(200);
 });
 
+test("POST /api/v1/migrate without convert runs the adopt-in-place flow", async () => {
+  const res = await post("/api/v1/migrate", {});
+  expect(res.status).toBe(200);
+  const body = (await res.json()) as Record<string, unknown>;
+  // migrate()'s result shape (adopted/skipped), not convert()'s
+  // (converted/rolledBack/skipped) — pins the request to the OLD route.
+  expect(Object.keys(body).sort()).toEqual(["adopted", "skipped"]);
+});
+
+test("POST /api/v1/migrate with convert:true runs the convert batch instead", async () => {
+  // Nothing legacy-prefixed registered: an empty, instant batch — proves the
+  // request routed to convert() (its own result shape) rather than migrate().
+  const res = await post("/api/v1/migrate", { convert: true });
+  expect(res.status).toBe(200);
+  const body = await res.json();
+  expect(body).toEqual({ converted: [], rolledBack: [], skipped: [] });
+});
+
+test("POST /api/v1/migrate with convert:true skips a non-service (external) record without touching the manager", async () => {
+  await post("/api/v1/apps", { name: "static-app", staticPort: 4321 });
+  const res = await post("/api/v1/migrate", { convert: true });
+  const body = (await res.json()) as { skipped: string[]; converted: string[] };
+  expect(body.skipped).toContain("static-app");
+  expect(body.converted).not.toContain("static-app");
+  // external records have no launchd label at all: convert() never calls the
+  // manager for them, under any label naming this app.
+  expect([...manager.installed.keys()].some((label) => label.includes("static-app"))).toBe(false);
+});
+
 test("domain bind flow: POST binds, GET reports the bound domain", async () => {
   const domainApi = (path: string, init?: RequestInit) => fetch(`http://127.0.0.1:${DOMAIN_PORT}${path}`, init);
   const before = await (await domainApi("/api/v1/domain")).json();
