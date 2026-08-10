@@ -46,3 +46,19 @@ test("dedupeRoutes collapses one app's multi-TLD entries to a single row", () =>
     { hostname: "apps.localhost", port: 7940 },
   ]);
 });
+
+import { servicePrefixes, shortLabel } from "./discover.ts";
+
+test("servicePrefixes is the product prefix plus grandfathered ones", () => {
+  expect(servicePrefixes([])).toEqual(["com.mattstack.local."]);
+  expect(servicePrefixes(["com.matthewgoodwin."])).toEqual([
+    "com.mattstack.local.", "com.matthewgoodwin.",
+  ]);
+});
+
+test("shortLabel strips whichever prefix matches", () => {
+  const prefixes = servicePrefixes(["com.matthewgoodwin."]);
+  expect(shortLabel("com.mattstack.local.myapp", prefixes)).toBe("myapp");
+  expect(shortLabel("com.matthewgoodwin.boxscore", prefixes)).toBe("boxscore");
+  expect(shortLabel("com.mattstack.local", prefixes)).toBe("local");
+});

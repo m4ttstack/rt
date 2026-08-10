@@ -7,6 +7,8 @@ import {
   readRoutes,
   readServices,
   tailFile,
+  servicePrefixes,
+  shortLabel,
   type Health,
   type LaunchdService,
 } from "../../core/discover.ts";
@@ -15,9 +17,7 @@ import { checkApp, type Issue } from "../../core/preflight.ts";
 import { listRecords, type SyncIssue } from "../registry/records.ts";
 import { allocatePort } from "../registry/allocate.ts";
 import { getTier, type AccessTier } from "../edge/access-tiers.ts";
-
-// TODO: becomes prefix-list aware in Task 5.2.
-const PLIST_PREFIX = "com.matthewgoodwin.";
+import { getPlatformSettings } from "./platform-settings.ts";
 
 export interface BuildStatusOpts {
   requestHost?: string;
@@ -107,7 +107,7 @@ function serviceJson(
   const bad = health ? !health.ok : s.pid === null;
   return {
     label: s.label,
-    short: s.label.replace(PLIST_PREFIX, ""),
+    short: shortLabel(s.label, servicePrefixes(getPlatformSettings().legacyPrefixes)),
     pid: s.pid,
     lastExitStatus: s.lastExitStatus,
     unmanaged,
@@ -184,7 +184,7 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
   );
 
   const orphanRows: StatusRow[] = orphans.map((s) => ({
-    name: s.label.replace(PLIST_PREFIX, ""),
+    name: shortLabel(s.label, servicePrefixes(getPlatformSettings().legacyPrefixes)),
     port: null,
     url: null,
     publicUrl: null,
