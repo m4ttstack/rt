@@ -3,6 +3,7 @@ import { startApi } from "./api/server.ts";
 import { writeApiInfo } from "./api/state.ts";
 import { LaunchdManager } from "./services/launchd.ts";
 import { PortlessCli } from "./edge/portless.ts";
+import { CloudflaredCli } from "./edge/tunnel.ts";
 import { startGateway } from "../core/gateway.ts";
 import {
   CANARY_PATH, checkProxyFreshness, startCanaryListener, type Freshness,
@@ -71,6 +72,7 @@ export function serve(): void {
     freshness: () => proxyFreshness,
     autoHeal: () => autoHeal,
     onRouteWrite: () => setTimeout(runCanaryCheck, 500),
+    tunnel: new CloudflaredCli(),
   });
   writeApiInfo(PORT);
   console.log(`local serving on http://localhost:${PORT}`);

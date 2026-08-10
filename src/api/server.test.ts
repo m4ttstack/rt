@@ -14,6 +14,7 @@ writeFileSync(process.env.LOCAL_APPS_ROUTES_PATH, "[]");
 const { startApi } = await import("./server.ts");
 const { FakeServiceManager } = await import("../services/fake.ts");
 const { FakeEdgeProxy } = await import("../edge/portless.ts");
+const { FakeTunnelDriver } = await import("../edge/tunnel.ts");
 const { reloadRegistry } = await import("../registry/records.ts");
 const { reloadPlatformSettings } = await import("./platform-settings.ts");
 
@@ -21,15 +22,33 @@ const PORT = 18917;
 let server: ReturnType<typeof startApi>;
 let manager: InstanceType<typeof FakeServiceManager>;
 
+const DOMAIN_PORT = 18919;
+let domainServer: ReturnType<typeof startApi>;
+let domainCfDir: string;
+
 beforeAll(() => {
   manager = new FakeServiceManager();
   server = startApi({
     manager, edge: new FakeEdgeProxy(),
     port: PORT, canaryPort: PORT + 1,
     freshness: () => "unknown", autoHeal: () => null, onRouteWrite: () => {},
+    tunnel: new FakeTunnelDriver(),
+  });
+
+  domainCfDir = mkdtempSync(join(tmpdir(), "local-cfdir-"));
+  domainServer = startApi({
+    manager: new FakeServiceManager(), edge: new FakeEdgeProxy(),
+    port: DOMAIN_PORT, canaryPort: DOMAIN_PORT + 1,
+    freshness: () => "unknown", autoHeal: () => null, onRouteWrite: () => {},
+    tunnel: new FakeTunnelDriver(), cloudflaredDir: domainCfDir,
   });
 });
-afterAll(() => { server.stop(true); rmSync(dir, { recursive: true, force: true }); });
+afterAll(() => {
+  server.stop(true);
+  domainServer.stop(true);
+  rmSync(dir, { recursive: true, force: true });
+  rmSync(domainCfDir, { recursive: true, force: true });
+});
 beforeEach(() => {
   rmSync(process.env.LOCAL_REGISTRY_PATH!, { force: true });
   reloadRegistry();
@@ -186,4 +205,21 @@ test("legacy POST endpoints are gone (board speaks /api/v1 now)", async () => {
   }
   // /api/status stays for one release as a status alias
   expect((await api("/api/status")).status).toBe(200);
+});
+
+test("domain bind flow: POST binds, GET reports the bound domain", async () => {
+  const domainApi = (path: string, init?: RequestInit) => fetch(`http://127.0.0.1:${DOMAIN_PORT}${path}`, init);
+  const before = await (await domainApi("/api/v1/domain")).json();
+  expect(before.domain).toBeNull();
+
+  writeFileSync(join(domainCfDir, "cert.pem"), "x"); // login evidence
+  const bind = await domainApi("/api/v1/domain/bind", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ domain: "example.dev" }),
+  });
+  expect(bind.status).toBe(200);
+
+  const after = await (await domainApi("/api/v1/domain")).json();
+  expect(after.domain).toBe("example.dev");
 });

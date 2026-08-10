@@ -14,9 +14,11 @@ import { boardHtml, boardJs, vendorAsset } from "../../core/board-assets.ts";
 import { buildStatus, type StatusRow } from "./status.ts";
 import { registerApp, unregisterApp, editApp, type Drivers } from "./register.ts";
 import { getRecord, listRecords, type AppRecord, type SyncIssue } from "../registry/records.ts";
-import { redactedSettings, updatePlatformSettings } from "./platform-settings.ts";
+import { redactedSettings, updatePlatformSettings, getPlatformSettings } from "./platform-settings.ts";
 import { logsDir } from "./state.ts";
 import { join } from "path";
+import type { TunnelDriver } from "../edge/tunnel.ts";
+import { bindDomain, TUNNEL_LABEL } from "../edge/domain.ts";
 
 export interface ApiDeps extends Drivers {
   port: number;
@@ -25,6 +27,9 @@ export interface ApiDeps extends Drivers {
   autoHeal(): { at: number; ok: boolean | null } | null;
   /** Called after any routes.json write so the canary can re-verify. */
   onRouteWrite(): void;
+  tunnel: TunnelDriver;
+  /** Where cert.pem / tunnel config live. Tests point this at a scratch dir; production omits it (~/.cloudflared). */
+  cloudflaredDir?: string;
 }
 
 export function callerOf(req: Request): string {
@@ -260,6 +265,22 @@ export function startApi(deps: ApiDeps) {
             setPublicFollowsOverride(name, b.follows === true);
             return json({ ok: true });
           }
+        }
+
+        if (pathname === "/api/v1/domain" && req.method === "GET") {
+          const s = getPlatformSettings();
+          return json({
+            domain: s.publicDomain,
+            tunnelInstalled: await deps.manager.isInstalled(TUNNEL_LABEL),
+          });
+        }
+        if (pathname === "/api/v1/domain/bind" && req.method === "POST") {
+          const b = await body(req);
+          const r = await bindDomain(String(b.domain ?? ""), deps, {
+            gatewayPort: 7950,
+            cloudflaredDir: deps.cloudflaredDir,
+          });
+          return json(r.body, r.status);
         }
 
         if (pathname === "/api/v1/proxy/restart" && req.method === "POST") {
