@@ -3,7 +3,7 @@ import { join } from "path";
 import { readRoutes, readServices, bareName } from "../../core/discover.ts";
 import { getPlatformSettings } from "./platform-settings.ts";
 import {
-  getRecord, putRecord, deleteRecord, listRecords, addIssue, clearIssues,
+  getRecord, putRecord, deleteRecord, listRecords, addIssue, clearIssues, reloadRegistry,
   type AppRecord, type SyncIssue,
 } from "../registry/records.ts";
 import { renameAppSettings, getOverride, clearOverride } from "../../core/settings.ts";
@@ -209,9 +209,24 @@ export async function editApp(
     const issue = await runDriver("launchd", () => drivers.manager.uninstall(oldLabel));
     if (issue) teardownIssues.push(issue);
   }
-  if (next.name !== oldName) {
+  const renaming = next.name !== oldName;
+  if (renaming) {
     const issue = await runDriver("portless", () => drivers.edge.removeAlias(oldName));
     if (issue) teardownIssues.push(issue);
+  }
+
+  // Every await above is done now: re-check existence, freshly reloaded,
+  // before any of editApp's OWN writes below. The `record` snapshot at the
+  // top of this function can go stale the moment a driver call is awaited:
+  // a second writer (unregisterApp's DELETE, in particular) can delete this
+  // exact record while teardown is in flight. A stale write must never
+  // resurrect a deletion that already landed.
+  reloadRegistry();
+  if (!getRecord(oldName)) {
+    return { status: 404, body: { error: "unknown app" } };
+  }
+
+  if (renaming) {
     deleteRecord(oldName);
     // Settings are keyed by app name, and an unknown name reads as
     // published:true with no password — so the entry has to travel with the

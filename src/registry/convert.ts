@@ -1,7 +1,7 @@
 import { join } from "path";
 import { checkHealth, type Health } from "../../core/discover.ts";
 import { PLATFORM_LABEL, LABEL_PREFIX, type ServiceManager, type ServiceSpec } from "../services/manager.ts";
-import { putRecord, listRecords, addIssue, type AppRecord } from "./records.ts";
+import { putRecord, getRecord, listRecords, addIssue, reloadRegistry, type AppRecord } from "./records.ts";
 import { DEFAULT_LEGACY_PREFIX } from "./migrate.ts";
 import { logsDir } from "../api/state.ts";
 
@@ -100,6 +100,21 @@ export async function convert(opts: ConvertOpts): Promise<ConvertResult> {
     }
 
     if (healthy) {
+      // The record snapshot at the top of this loop iteration can go stale:
+      // install/uninstall/kickstart/the health-check wait above are all
+      // awaited, and the health-check wait alone can run for the full
+      // waitMs. A second writer (unregisterApp's DELETE, in particular) can
+      // delete this exact record while that sequence is in flight. Re-check
+      // existence, freshly reloaded, immediately before writing: a stale
+      // write must never resurrect a deletion that already landed.
+      reloadRegistry();
+      if (!getRecord(record.name)) {
+        // Torn down for real, not left running orphaned under a label no
+        // record points at.
+        try { await manager.uninstall(newLabel); } catch { /* best effort */ }
+        skipped.push(record.name);
+        continue;
+      }
       // Registry updated LAST, only once the new label is confirmed healthy
       // (crash-safety, not just correctness): if the process dies anywhere
       // before this line, the record still names the legacy label, so a

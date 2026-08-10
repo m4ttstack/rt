@@ -136,6 +136,27 @@ test("edit rename: moves record, label, and alias", async () => {
   expect(drivers.edge.aliases.has("renamed")).toBe(true);
 });
 
+test("edit: a record deleted by a second writer mid-flight stays dead, never resurrected", async () => {
+  // Same class of bug as convert.ts's resurrection fix: editApp() reads its
+  // record snapshot before any async work, then awaits a teardown driver
+  // call before it ever writes the edited record back. If a second writer
+  // (unregisterApp's DELETE) deletes the SAME record while that teardown
+  // call is in flight, editApp's eventual write must not resurrect it.
+  await registerApp(input, drivers);
+  class RaceyManager extends FakeServiceManager {
+    override async uninstall(label: string): Promise<void> {
+      deleteRecord("myapp"); // the "second writer" landing mid-flight
+      return super.uninstall(label);
+    }
+  }
+  const racey = { manager: new RaceyManager(), edge: drivers.edge };
+
+  const res = await editApp("myapp", { port: 11500 }, "user", false, racey);
+
+  expect(getRecord("myapp")).toBeUndefined(); // stays dead
+  expect(res.status).toBe(404);
+});
+
 test("unregister: a teardown driver failure keeps the record — with the issue — instead of silently deleting it", async () => {
   await registerApp(input, drivers);
   drivers.manager.failNext = "com.mattstack.local.myapp";

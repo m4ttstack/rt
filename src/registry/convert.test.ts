@@ -10,7 +10,7 @@ process.env.LOCAL_STATE_DIR = dir;
 
 const { convert } = await import("./convert.ts");
 const { DEFAULT_LEGACY_PREFIX } = await import("./migrate.ts");
-const { getRecord, putRecord, reloadRegistry } = await import("./records.ts");
+const { getRecord, putRecord, deleteRecord, reloadRegistry } = await import("./records.ts");
 const { FakeServiceManager } = await import("../services/fake.ts");
 const { PLATFORM_LABEL, LABEL_PREFIX } = await import("../services/manager.ts");
 
@@ -141,6 +141,32 @@ test("records without a launchd label (external, route-only) are skipped, never 
   expect(result.skipped).toContain("mattari");
   expect(result.converted).not.toContain("mattari");
   expect(manager.installed.size).toBe(0);
+});
+
+test("a record deleted by a second writer mid-flight stays dead, never resurrected", async () => {
+  // Models the live bug: convert() reads its record snapshot before any
+  // async work begins, then does several awaited driver calls (install,
+  // uninstall, kickstart, the bounded health-check wait) before it ever
+  // writes back. If a second writer (unregisterApp, here stood in for by a
+  // direct deleteRecord call from inside the health-check) deletes the SAME
+  // record while that sequence is in flight, convert's eventual write must
+  // not resurrect it.
+  putRecord(legacyRecord("zombie", 11009));
+  const manager = new FakeServiceManager();
+  const healthCheck: (port: number) => Promise<Health> = async () => {
+    deleteRecord("zombie"); // the "second writer" landing mid-flight
+    return { ok: true, status: 200, ms: 1 };
+  };
+
+  const result = await convert({ manager, healthCheck, waitMs: 30, intervalMs: 5 });
+
+  expect(getRecord("zombie")).toBeUndefined(); // stays dead
+  expect(result.converted).not.toContain("zombie");
+  expect(result.rolledBack).not.toContain("zombie");
+  expect(result.skipped).toContain("zombie");
+  // The orphaned new-label service (installed before the delete landed) is
+  // torn back down too, rather than left running with no record pointing at it.
+  expect(manager.installed.has(`${LABEL_PREFIX}zombie`)).toBe(false);
 });
 
 // Exercises the real LaunchdManager (not the in-memory fake) against a scratch
