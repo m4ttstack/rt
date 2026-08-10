@@ -4,7 +4,7 @@
 // the app's registry record, never thrown past syncAccessTier.
 import type { AccessTier } from "./access-tiers.ts";
 import type { ApiDeps } from "../api/server.ts";
-import { addIssue } from "../registry/records.ts";
+import { addIssue, clearIssues } from "../registry/records.ts";
 import { getPlatformSettings } from "../api/platform-settings.ts";
 
 const BASE = "https://api.cloudflare.com/client/v4";
@@ -116,40 +116,54 @@ export async function syncAccessTier(
   app: string,
   tier: AccessTier,
   deps: ApiDeps,
-): Promise<{ ok: boolean }> {
+): Promise<{ ok: boolean; message?: string }> {
   const settings = getPlatformSettings();
   const { cfApiToken, cfZoneId } = settings.secrets;
-  const hostname = `${app}.${settings.publicDomain}`;
 
   if (tier.tier !== "only-me" && tier.tier !== "work-domain" && tier.tier !== "custom") {
     // Non-CF tiers (public/password) don't need an Access app, but a
     // downgrade must still tear down any CF Access app left from before.
     if (!cfApiToken || !cfZoneId) return { ok: true };
+    // No domain bound means no hostname was ever synced to Cloudflare for
+    // this app; removing against a stale "app.null" would just no-op, but
+    // skip the call outright for consistency with the identity-tier guard.
+    if (!settings.publicDomain) return { ok: true };
+    const hostname = `${app}.${settings.publicDomain}`;
     try {
       const cf = new CfAccess({ token: cfApiToken, zoneId: cfZoneId, fetchImpl: deps.accessFetch });
       await cf.remove(hostname);
+      clearIssues(app, "cloudflare");
       return { ok: true };
     } catch (err) {
-      addIssue(app, { source: "cloudflare", message: String(err).slice(0, 300), at: new Date().toISOString() });
-      return { ok: false };
+      const message = String(err).slice(0, 300);
+      addIssue(app, { source: "cloudflare", message, at: new Date().toISOString() });
+      return { ok: false, message };
     }
   }
 
   if (!cfApiToken || !cfZoneId) {
-    addIssue(app, {
-      source: "cloudflare",
-      message: "Cloudflare API token/zone not configured",
-      at: new Date().toISOString(),
-    });
-    return { ok: false };
+    const message = "Cloudflare API token/zone not configured";
+    addIssue(app, { source: "cloudflare", message, at: new Date().toISOString() });
+    return { ok: false, message };
   }
 
+  if (!settings.publicDomain) {
+    // Building a hostname from a null publicDomain would silently produce
+    // "app.null" and attempt to sync Cloudflare against it. Guard instead.
+    const message = "No domain bound yet — bind a domain before setting an identity-gated access tier.";
+    addIssue(app, { source: "cloudflare", message, at: new Date().toISOString() });
+    return { ok: false, message };
+  }
+
+  const hostname = `${app}.${settings.publicDomain}`;
   try {
     const cf = new CfAccess({ token: cfApiToken, zoneId: cfZoneId, fetchImpl: deps.accessFetch });
     await cf.sync(app, hostname, tier);
+    clearIssues(app, "cloudflare");
     return { ok: true };
   } catch (err) {
-    addIssue(app, { source: "cloudflare", message: String(err).slice(0, 300), at: new Date().toISOString() });
-    return { ok: false };
+    const message = String(err).slice(0, 300);
+    addIssue(app, { source: "cloudflare", message, at: new Date().toISOString() });
+    return { ok: false, message };
   }
 }

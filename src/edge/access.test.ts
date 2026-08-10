@@ -95,6 +95,56 @@ test("syncAccessTier on a CF API error degrades loudly and never leaks the token
   expect(issue!.message).not.toContain(secretToken);
 });
 
+test("syncAccessTier clears its own cloudflare issue once credentials are fixed and a later sync succeeds", async () => {
+  const { putRecord, getRecord, reloadRegistry } = await import("../registry/records.ts");
+  const { updatePlatformSettings, reloadPlatformSettings } = await import("../api/platform-settings.ts");
+  reloadRegistry();
+  reloadPlatformSettings();
+  updatePlatformSettings({
+    publicDomain: "example.dev",
+    secrets: { cfApiToken: undefined, cfZoneId: undefined },
+  });
+  putRecord({ name: "app-fixed", managedBy: "user", port: 11003, kind: "external", createdAt: "2026-08-10T00:00:00Z" });
+
+  // First sync fails loudly for lack of credentials.
+  const failed = await syncAccessTier("app-fixed", { tier: "only-me", email: "m@x.dev" }, {} as never);
+  expect(failed.ok).toBe(false);
+  expect(getRecord("app-fixed")!.issues!.some((i) => i.source === "cloudflare")).toBe(true);
+
+  // Credentials get fixed, and a later sync against a canned-success fetch
+  // must clear the stale badge, not leave it permanent.
+  updatePlatformSettings({ secrets: { cfApiToken: "tok", cfZoneId: "z1" } });
+  const { impl } = cannedCf();
+  const ok = await syncAccessTier("app-fixed", { tier: "only-me", email: "m@x.dev" }, { accessFetch: impl } as unknown as never);
+  expect(ok.ok).toBe(true);
+  expect(getRecord("app-fixed")!.issues?.some((i) => i.source === "cloudflare")).toBeFalsy();
+});
+
+test("syncAccessTier guards against a null publicDomain instead of building a bogus hostname", async () => {
+  const { putRecord, reloadRegistry } = await import("../registry/records.ts");
+  const { updatePlatformSettings, reloadPlatformSettings } = await import("../api/platform-settings.ts");
+  reloadRegistry();
+  reloadPlatformSettings();
+  updatePlatformSettings({
+    publicDomain: null,
+    secrets: { cfApiToken: "tok", cfZoneId: "z1" },
+  });
+  putRecord({ name: "app-nodomain", managedBy: "user", port: 11004, kind: "external", createdAt: "2026-08-10T00:00:00Z" });
+
+  const impl = (async () => {
+    throw new Error("must not call Cloudflare when no domain is bound yet");
+  }) as unknown as typeof fetch;
+
+  const r = await syncAccessTier(
+    "app-nodomain",
+    { tier: "only-me", email: "m@x.dev" },
+    { accessFetch: impl } as unknown as never,
+  );
+
+  expect(r.ok).toBe(false);
+  expect(r.message).toContain("bind a domain");
+});
+
 test("CfAccess.sync on an existing hostname updates the app and replaces its policy", async () => {
   const calls: { method: string; url: string; body: unknown }[] = [];
   const impl = (async (url: RequestInfo | URL, init?: RequestInit) => {

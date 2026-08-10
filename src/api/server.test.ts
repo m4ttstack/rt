@@ -198,6 +198,69 @@ test("platform settings: PUT stores a secret, GET never echoes its value", async
   expect(getRaw).not.toContain("tok-abc123");
 });
 
+test("an identity access tier is synced to Cloudflare BEFORE it is persisted; a failed sync changes nothing", async () => {
+  await post("/api/v1/apps", { name: "gated1", command: ["bun", "s.ts"], workingDirectory: "/tmp" });
+  // No Cloudflare token is configured (beforeEach wipes platform settings), so
+  // syncAccessTier fails for lack of credentials.
+  const before = await (await api("/api/v1/apps/gated1")).json();
+  expect(before.row.accessTier).toEqual({ tier: "public" });
+
+  const put = await api("/api/v1/apps/gated1/access", {
+    method: "PUT", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ tier: "only-me", email: "m@x.dev" }),
+  });
+  // Not a 200/ok response: the sync failure must surface loudly, not as
+  // {ok:true, cfSynced:false} buried in a 200.
+  expect(put.status).toBe(502);
+  const putBody = await put.json();
+  expect(putBody.ok).toBeUndefined();
+  expect(putBody.error).toBe("cloudflare-sync-failed");
+
+  const after = await (await api("/api/v1/apps/gated1")).json();
+  expect(after.row.accessTier).toEqual({ tier: "public" });
+
+  const list = await (await api("/api/v1/apps")).json();
+  const row = list.apps.find((a: any) => a.name === "gated1");
+  expect(row.accessTier).toEqual({ tier: "public" });
+});
+
+test("platform settings: null or empty clears a stored Cloudflare secret; 'null' is never stored as a literal string", async () => {
+  // Bind a non-null publicDomain first, so a literal "null" substring in any
+  // later response can only come from the bug this test guards against (the
+  // secret itself being stored as the string "null"), not from JSON's own
+  // `null` rendering of an unset publicDomain.
+  const put1 = await api("/api/v1/settings", {
+    method: "PUT", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ publicDomain: "example.test", cfApiToken: "tok-real-value" }),
+  });
+  expect(put1.status).toBe(200);
+  const get1 = await (await api("/api/v1/settings")).json();
+  expect(get1.hasCfToken).toBe(true);
+
+  const put2 = await api("/api/v1/settings", {
+    method: "PUT", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ cfApiToken: null }),
+  });
+  expect(put2.status).toBe(200);
+  const get2raw = await (await api("/api/v1/settings")).text();
+  expect(JSON.parse(get2raw).hasCfToken).toBe(false);
+  expect(get2raw).not.toContain("null");
+
+  // Empty string behaves the same as null.
+  await api("/api/v1/settings", {
+    method: "PUT", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ cfApiToken: "tok-real-value" }),
+  });
+  const put3 = await api("/api/v1/settings", {
+    method: "PUT", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ cfApiToken: "" }),
+  });
+  expect(put3.status).toBe(200);
+  const get3raw = await (await api("/api/v1/settings")).text();
+  expect(JSON.parse(get3raw).hasCfToken).toBe(false);
+  expect(get3raw).not.toContain("null");
+});
+
 test("legacy POST endpoints are gone (board speaks /api/v1 now)", async () => {
   for (const path of ["/restart", "/publish", "/password", "/devport", "/publicdev"]) {
     const res = await api(path, { method: "POST", body: new URLSearchParams({ app: "x" }) });

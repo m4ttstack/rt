@@ -19,7 +19,7 @@ import { logsDir } from "./state.ts";
 import { join } from "path";
 import type { TunnelDriver } from "../edge/tunnel.ts";
 import { bindDomain, TUNNEL_LABEL } from "../edge/domain.ts";
-import { parseTier, setTier, getTier } from "../edge/access-tiers.ts";
+import { parseTier, setTier, getTier, tierRequiresCf } from "../edge/access-tiers.ts";
 import { syncAccessTier } from "../edge/access.ts";
 
 export interface ApiDeps extends Drivers {
@@ -179,8 +179,12 @@ export function startApi(deps: ApiDeps) {
             ...(b.publicDomain !== undefined && { publicDomain: b.publicDomain === null ? null : String(b.publicDomain) }),
             ...(Array.isArray(b.tlds) && { tlds: b.tlds.map(String) }),
             secrets: {
-              ...(b.cfApiToken !== undefined && { cfApiToken: String(b.cfApiToken) }),
-              ...(b.cfZoneId !== undefined && { cfZoneId: String(b.cfZoneId) }),
+              ...(b.cfApiToken !== undefined && {
+                cfApiToken: b.cfApiToken === null || b.cfApiToken === "" ? undefined : String(b.cfApiToken),
+              }),
+              ...(b.cfZoneId !== undefined && {
+                cfZoneId: b.cfZoneId === null || b.cfZoneId === "" ? undefined : String(b.cfZoneId),
+              }),
             },
           });
           return json(redactedSettings());
@@ -277,6 +281,26 @@ export function startApi(deps: ApiDeps) {
             if (tier.tier === "password" && !getAppSettings(name).passwordHash) {
               return json({ error: "password-not-set", message: "Set a password first — the password tier is the gateway's own gate." }, 409);
             }
+            if (tierRequiresCf(tier)) {
+              // Identity tiers are a security gate: sync to Cloudflare BEFORE
+              // persisting, so a failed sync never leaves the board claiming a
+              // tier that was never actually enforced. Loud degradation per the
+              // plan's global constraint: silence is never success.
+              const sync = await syncAccessTier(name, tier, deps);
+              if (!sync.ok) {
+                return json({
+                  error: "cloudflare-sync-failed",
+                  message: sync.message ?? "Cloudflare sync failed — the previous access tier is still in effect.",
+                  tier: getTier(name),
+                }, 502);
+              }
+              setTier(name, tier);
+              return json({ ok: true, tier, cfSynced: true });
+            }
+            // public/password enforce locally, not via Cloudflare, so they always
+            // apply immediately. syncAccessTier still tears down any stale
+            // Cloudflare Access app left from a prior identity tier — a failure
+            // there is recorded as a SyncIssue, not a reason to fail this request.
             setTier(name, tier);
             const sync = await syncAccessTier(name, tier, deps);
             return json({ ok: true, tier, cfSynced: sync.ok });
