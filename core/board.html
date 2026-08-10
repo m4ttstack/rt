@@ -48,13 +48,18 @@
 
   <header class="hstack justify-between">
     <h1>local apps</h1>
-    <button type="button" class="small outline"
-            x-show="data && data.canManage"
-            :disabled="reloadingProxy"
-            @click="onProxyReload()">
-      <span x-show="reloadingProxy" aria-busy="true" data-spinner="small" aria-hidden="true"></span>
-      <span x-text="reloadingProxy ? 'restarting…' : 'reload proxy'"></span>
-    </button>
+    <span class="hstack gap-2" x-show="data && data.canManage">
+      <button type="button" class="small outline"
+              :disabled="reloadingProxy"
+              @click="onProxyReload()">
+        <span x-show="reloadingProxy" aria-busy="true" data-spinner="small" aria-hidden="true"></span>
+        <span x-text="reloadingProxy ? 'restarting…' : 'reload proxy'"></span>
+      </button>
+      <button type="button" class="small"
+              @click="addModal = { name: '', external: false, command: '', workingDirectory: '', staticPort: '', error: null }">
+        <i data-lucide="plus"></i> add app
+      </button>
+    </span>
   </header>
   <p class="text-light mb-6" x-text="subline"></p>
 
@@ -389,6 +394,60 @@
       </table>
     </div>
   </section>
+
+  <template x-if="addModal">
+    <dialog closedby="any"
+            x-init="$nextTick(() => { $el.showModal(); $el.querySelector('[name=app-name]').focus(); })"
+            @close="addModal = null" @cancel="addModal = null">
+      <form @submit.prevent="submitAdd()">
+        <header>
+          <h3>Add an app</h3>
+          <p>Registers a local service: a named https domain, and (unless it runs itself) a supervised process that starts on login.</p>
+        </header>
+        <div class="vstack gap-3">
+          <!-- The switch comes first in markup so its wrapping label -- the one
+               Oat needs :title on to render the thumb -- is never preceded by
+               an unrelated data-field label; see board-assets.test.ts. -->
+          <label class="hstack gap-2"
+                 :title="addModal.external ? 'runs itself — Local only routes a port to it' : 'Local runs it via launchd'">
+            <input type="checkbox" role="switch" x-model="addModal.external"
+                   :aria-label="addModal.external ? 'stop routing only, let Local run this app' : 'route only — this app runs itself'">
+            <span>I run this myself — just route a port</span>
+          </label>
+          <label data-field>
+            Name
+            <input name="app-name" x-model="addModal.name" placeholder="myapp" required
+                   pattern="[a-z0-9][a-z0-9.-]*" title="lowercase letters, digits, dots, dashes">
+          </label>
+          <template x-if="!addModal.external">
+            <span class="vstack gap-3">
+              <label data-field>
+                Command
+                <input x-model="addModal.command" placeholder="bun src/server.ts" required>
+              </label>
+              <label data-field>
+                Working directory
+                <input x-model="addModal.workingDirectory" placeholder="/Users/you/code/myapp" required>
+              </label>
+              <p class="text-light" x-show="data && data.nextPort"
+                 x-text="'Will be assigned port ' + (data ? data.nextPort : '') + ' (PORT env).'"></p>
+            </span>
+          </template>
+          <template x-if="addModal.external">
+            <label data-field>
+              Port it listens on
+              <input x-model="addModal.staticPort" inputmode="numeric" placeholder="4200" required>
+            </label>
+          </template>
+          <p role="alert" data-variant="error" x-show="addModal.error" x-text="addModal.error"></p>
+        </div>
+        <footer>
+          <button type="button" class="outline" @click="addModal = null">Cancel</button>
+          <button type="submit">Add app</button>
+        </footer>
+      </form>
+    </dialog>
+  </template>
 
   <template x-if="pwModal">
     <dialog closedby="any"

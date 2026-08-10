@@ -12,6 +12,7 @@ document.addEventListener("alpine:init", () => {
     restarting: {}, // label -> { pid, at }: awaiting a fresh pid
     editing: null, // { app, value } | null: the port cell being edited
     pwModal: null, // { app, value } | null: the password dialog
+    addModal: null, // { name, external, command, workingDirectory, staticPort, error } | null
     proxyNotice: null, // { kind: "ok"|"bad", message, command? } | null
     proxyHoldUntil: 0, // explicit-click notices outrank the automatic banner until this time
     reloadingProxy: false,
@@ -170,6 +171,37 @@ document.addEventListener("alpine:init", () => {
       this.apiPut("/api/v1/apps/" + app + "/password", { password: null })
         .catch(() => {})
         .then(() => this.refresh());
+    },
+
+    async submitAdd() {
+      const m = this.addModal;
+      if (!m) return;
+      const payload = m.external
+        ? { name: m.name.trim(), staticPort: Number(m.staticPort) }
+        : {
+            name: m.name.trim(),
+            // Whitespace split is the honest 90% case; commands needing shell
+            // quoting belong in a wrapper script, same rule the skill used.
+            command: m.command.trim().split(/\s+/),
+            workingDirectory: m.workingDirectory.trim(),
+          };
+      try {
+        const res = await fetch("/api/v1/apps", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          m.error = body.message || body.error || ("failed (" + res.status + ")");
+          return;
+        }
+        this.addModal = null;
+      } catch (err) {
+        m.error = String(err);
+        return;
+      }
+      await this.refresh();
     },
 
     // ---- portless proxy reload ----
