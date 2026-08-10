@@ -2,8 +2,10 @@ import { mkdirSync } from "fs";
 import { join } from "path";
 import { readRoutes, readServices } from "../../core/discover.ts";
 import {
-  getRecord, putRecord, deleteRecord, listRecords, addIssue, type AppRecord, type SyncIssue,
+  getRecord, putRecord, deleteRecord, listRecords, addIssue, clearIssues,
+  type AppRecord, type SyncIssue,
 } from "../registry/records.ts";
+import { renameAppSettings } from "../../core/settings.ts";
 import { allocatePort } from "../registry/allocate.ts";
 import { authorizeStructural } from "../registry/lifecycle.ts";
 import { LABEL_PREFIX, type ServiceManager, type ServiceSpec } from "../services/manager.ts";
@@ -42,7 +44,11 @@ function specFor(record: AppRecord): ServiceSpec {
   };
 }
 
-/** Loud degradation: run a driver call, convert failure into a recorded issue. */
+/**
+ * Loud degradation: run a driver call, convert failure into a recorded issue.
+ * A success clears that source's issue again — a badge for a sync failure that
+ * a later sync fixed is a lie, and it would otherwise be permanent.
+ */
 async function tryDriver(
   name: string,
   source: "portless" | "launchd",
@@ -50,6 +56,7 @@ async function tryDriver(
 ): Promise<void> {
   try {
     await fn();
+    clearIssues(name, source);
   } catch (err) {
     addIssue(name, { source, message: String(err).slice(0, 300), at: new Date().toISOString() });
   }
@@ -72,12 +79,6 @@ async function runDriver(
   } catch (err) {
     return { source, message: String(err).slice(0, 300), at: new Date().toISOString() };
   }
-}
-
-function mergeIssues(existing: SyncIssue[] | undefined, incoming: SyncIssue[]): SyncIssue[] | undefined {
-  if (incoming.length === 0) return existing;
-  const kept = (existing ?? []).filter((i) => !incoming.some((n) => n.source === i.source));
-  return [...kept, ...incoming];
 }
 
 export async function registerApp(input: RegisterInput, drivers: Drivers): Promise<FlowResult> {
@@ -192,10 +193,10 @@ export async function editApp(
   };
   if (next.kind === "service") next.label = `${LABEL_PREFIX}${next.name}`;
 
-  // Teardown-phase failures must land on `next` — the record that's about to
-  // be persisted — not on the old cache entry: a rename deletes that entry
-  // outright, and a same-name edit is about to overwrite it via putRecord
-  // below, either way losing an addIssue() written against the old key.
+  // Teardown-phase failures are collected, not recorded yet: the record they
+  // belong to doesn't exist under its final cache key yet (a rename deletes the
+  // old entry outright, a same-name edit is about to overwrite it via putRecord
+  // below), so an addIssue() written here against the old key would be lost.
   const teardownIssues: SyncIssue[] = [];
   if (next.kind === "service" && oldLabel) {
     const issue = await runDriver("launchd", () => drivers.manager.uninstall(oldLabel));
@@ -205,12 +206,21 @@ export async function editApp(
     const issue = await runDriver("portless", () => drivers.edge.removeAlias(oldName));
     if (issue) teardownIssues.push(issue);
     deleteRecord(oldName);
+    // Settings are keyed by app name, and an unknown name reads as
+    // published:true with no password — so the entry has to travel with the
+    // record, or renaming quietly publishes a private, password-protected app
+    // the moment the new hostname goes live.
+    renameAppSettings(oldName, next.name);
   }
-  next.issues = mergeIssues(next.issues, teardownIssues);
   putRecord(next);
   if (next.kind === "service") {
     await tryDriver(next.name, "launchd", () => drivers.manager.install(specFor(next)));
   }
   await tryDriver(next.name, "portless", () => drivers.edge.alias(next.name, next.port));
+  // Teardown issues land last, against the record that actually got persisted.
+  // After the stand-up calls, too: tryDriver clears its source on success, and a
+  // teardown failure (say an orphaned launchd service the uninstall left behind)
+  // is still unresolved no matter how well the new shape installed.
+  for (const issue of teardownIssues) addIssue(next.name, issue);
   return { status: 200, body: { record: getRecord(next.name) } };
 }

@@ -409,7 +409,10 @@
                           x-text="'exit ' + (row.service ? row.service.lastExitStatus : '')"></span>
                   </span>
                 </template>
-                <span class="text-light" x-text="'carries *.' + tunnelDomain()"></span>
+                <!-- Locally there is no public domain to name, and "carries *."
+                     with a dangling dot is worse than saying nothing. -->
+                <span class="text-light" x-show="tunnelDomain()"
+                      x-text="'carries *.' + tunnelDomain()"></span>
               </td>
               <td class="align-right">
                 <button type="button"
