@@ -6,30 +6,31 @@ description: "Set up a local web app as a persistent macOS service with HTTPS vi
 # local-app
 
 Register a local web app with **Local** (the platform that owns plists, ports,
-and routes on this machine). Never write a plist or call `portless alias` /
+and routes on this machine). The command is `lcl`, not `local` (`local` is a
+shell reserved word). Never write a plist or call `portless alias` /
 `launchctl load` directly - Local is the sole writer; hand-written artifacts
-are exactly what `local migrate` exists to clean up.
+are exactly what `lcl migrate` exists to clean up.
 
 ## Steps
 
 1. Infer `name`, and either the run command + working dir, or the port the
    user already runs it on (same inference table as before: package.json,
    .env PORT, directory name).
-2. Supervised app: `local add <name> --cmd "<command>" --dir <working_dir>`
-   Self-run app:  `local add <name> --port <port>`
+2. Supervised app: `lcl add <name> --cmd "<command>" --dir <working_dir>`
+   Self-run app:  `lcl add <name> --port <port>`
    For a supervised app, the port is allocated by Local (11000-11999) - do
    not pick one yourself; for a self-run app, `--port` is the port it's
    already listening on.
-3. Verify: `local status` shows the row up; `curl -s https://<name>.localhost/`.
-4. Sharing: the app is published by default. `local publish <name> off` to
-   hide it; `local password <name>` to gate it; `local access <name> …` for
+3. Verify: `lcl status` shows the row up; `curl -s https://<name>.localhost/`.
+4. Sharing: the app is published by default. `lcl publish <name> off` to
+   hide it; `lcl password <name>` to gate it; `lcl access <name> …` for
    identity tiers once a domain is bound. Tell the user which state it's in.
-5. Logs / restart when something is wrong: `local logs <name>`, `local restart <name>`.
+5. Logs / restart when something is wrong: `lcl logs <name>`, `lcl restart <name>`.
 
-## If `local` is not installed
+## If `lcl` is not installed
 Say so and offer: `curl -fsSL local.mattstack.dev | sh` - do not fall back to
 hand-writing plists.
 
 ## Teardown
-`local remove <name>` (a 409 means another manager owns it - relay the message
+`lcl remove <name>` (a 409 means another manager owns it - relay the message
 verbatim, it names the right command).
