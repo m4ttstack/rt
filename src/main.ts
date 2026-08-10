@@ -111,6 +111,9 @@ else if (cmd === "setup") {
   const drivers = { manager: new LaunchdManager(), edge: new PortlessCli() };
   const force = Bun.argv.includes("--force");
   process.exit(await uninstall(drivers, { out: console.log, err: console.error }, { force }));
+} else if (cmd === "update") {
+  const { update } = await import("./cli/update.ts");
+  process.exit(await update({ out: console.log, err: console.error }));
 } else {
   const { runCommand } = await import("./cli/commands.ts");
   process.exit(await runCommand(Bun.argv.slice(2), { out: console.log, err: console.error }));
