@@ -41,6 +41,18 @@ export async function bootstrapSelf(
   // both platform agents at once. uninstall() is idempotent teardown
   // (services/launchd.ts): a no-op when that label was never installed, so
   // this is safe to call unconditionally on every boot, not just upgrades.
+  //
+  // This is the OPPOSITE order from convert.ts's per-app conversion
+  // (install new, then boot the old one out), and deliberately so: an
+  // ordinary app converting keeps the same port either way, so briefly
+  // running under both labels is a tolerable transient. The platform's own
+  // two labels would both try to bind the SAME port AND both run the full
+  // API server against the SAME state dir -- two live writers on one
+  // registry.json is a substantially worse hazard than the platform being
+  // briefly down, which is what boot-out-first risks instead (a crash
+  // between this line and install() below). That trade is accepted because
+  // `deck setup` is an attended, one-shot, idempotent command: a re-run
+  // redoes this uninstall (already a no-op) and install cleanly.
   await drivers.manager.uninstall(LEGACY_PLATFORM_LABEL);
 
   mkdirSync(logsDir(), { recursive: true });
