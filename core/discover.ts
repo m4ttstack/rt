@@ -15,14 +15,14 @@ export function agentsDir(): string {
   return process.env.LOCAL_AGENTS_DIR ?? join(homedir(), "Library", "LaunchAgents");
 }
 
-export const PRODUCT_PREFIX = "com.mattstack.local.";
+export const PRODUCT_PREFIX = "com.mattstack.deck.";
 
 export function servicePrefixes(legacy: string[]): string[] {
   return [PRODUCT_PREFIX, ...legacy];
 }
 
 export function shortLabel(label: string, prefixes: string[]): string {
-  if (label + "." === PRODUCT_PREFIX) return "local"; // the platform's own bare label
+  if (label + "." === PRODUCT_PREFIX) return "deck"; // the platform's own bare label
   for (const p of prefixes) if (label.startsWith(p)) return label.slice(p.length);
   return label;
 }
@@ -122,7 +122,7 @@ export async function readServices(prefixes: string[] = servicePrefixes(getPlatf
   const dir = agentsDir();
   if (!existsSync(dir)) return [];
   const files = readdirSync(dir).filter(
-    (f) => f.endsWith(".plist") && (prefixes.some((p) => f.startsWith(p)) || f === "com.mattstack.local.plist"),
+    (f) => f.endsWith(".plist") && (prefixes.some((p) => f.startsWith(p)) || f === "com.mattstack.deck.plist"),
   );
   const running = await launchctlPids();
   const services: LaunchdService[] = [];

@@ -36,7 +36,7 @@ interface RegistryFile {
 export function registryPath(): string {
   return (
     process.env.LOCAL_REGISTRY_PATH ??
-    join(process.env.LOCAL_STATE_DIR ?? join(homedir(), ".mattstack", "local"), "registry.json")
+    join(process.env.LOCAL_STATE_DIR ?? join(homedir(), ".mattstack", "deck"), "registry.json")
   );
 }
 
@@ -77,7 +77,7 @@ export function getRecord(name: string): AppRecord | undefined {
 
 // Every mutator is a read-modify-write: re-read from disk immediately before
 // applying its change, because saving serializes the WHOLE cache back out. A
-// separate process (lcl migrate/setup/uninstall running alongside serve) can
+// separate process (deck migrate/setup/uninstall running alongside serve) can
 // have written since this process last loaded, and a stale-cache-modify-write
 // would silently revert it. This shrinks the window to the mutation itself; it
 // does not make writes atomic across processes.

@@ -9,7 +9,14 @@
 // guard in its own module and importing it FIRST is what actually orders it
 // before every transitive import that reads this env var.
 import { basename, join } from "path";
-import { stateDir } from "./api/state.ts";
+import { stateDir, adoptLegacyStateDir } from "./api/state.ts";
+
+// Local -> Deck rename (ruled): adopt a pre-rename ~/.mattstack/local into
+// ~/.mattstack/deck before anything (records.ts's eager cache load, in
+// particular) ever reads from stateDir() -- same import-ordering hazard as
+// the settings-path guard below, so this runs from the same first-imported
+// module, unconditionally (checkout and compiled binary both need it).
+adoptLegacyStateDir();
 
 // Under bun --compile, core/settings.ts's default path (import.meta.dir/../data)
 // resolves inside the bundle's virtual root: settings would silently go nowhere.

@@ -28,9 +28,9 @@ test("bareName strips any configured TLD labels, greedily from the right", () =>
   expect(bareName("board.localhost", tlds)).toBe("board");
   expect(bareName("board.mattstack", tlds)).toBe("board");
   expect(bareName("board.mattstack.localhost", tlds)).toBe("board");
-  expect(bareName("local.mattstack", tlds)).toBe("local");
+  expect(bareName("deck.mattstack", tlds)).toBe("deck");
   // a dotted app name whose labels are not TLDs survives
-  expect(bareName("local.mattstack.localhost", ["localhost"])).toBe("local.mattstack");
+  expect(bareName("deck.mattstack.localhost", ["localhost"])).toBe("deck.mattstack");
 });
 
 test("dedupeRoutes collapses one app's multi-TLD entries to a single row", () => {
@@ -48,7 +48,7 @@ test("dedupeRoutes collapses one app's multi-TLD entries to a single row", () =>
 });
 
 test("dedupeRoutes prefers .localhost regardless of on-disk order", () => {
-  // routes.json's on-disk order is portless's to control, not Local's - if a
+  // routes.json's on-disk order is portless's to control, not Deck's - if a
   // non-.localhost variant happens to be written first, dedupe must still
   // keep the .localhost variant so the board always shows/probes the port a
   // dev-port override actually repoints.
@@ -63,15 +63,15 @@ test("dedupeRoutes prefers .localhost regardless of on-disk order", () => {
 import { servicePrefixes, shortLabel } from "./discover.ts";
 
 test("servicePrefixes is the product prefix plus grandfathered ones", () => {
-  expect(servicePrefixes([])).toEqual(["com.mattstack.local."]);
+  expect(servicePrefixes([])).toEqual(["com.mattstack.deck."]);
   expect(servicePrefixes(["com.example.legacy."])).toEqual([
-    "com.mattstack.local.", "com.example.legacy.",
+    "com.mattstack.deck.", "com.example.legacy.",
   ]);
 });
 
 test("shortLabel strips whichever prefix matches", () => {
   const prefixes = servicePrefixes(["com.example.legacy."]);
-  expect(shortLabel("com.mattstack.local.myapp", prefixes)).toBe("myapp");
+  expect(shortLabel("com.mattstack.deck.myapp", prefixes)).toBe("myapp");
   expect(shortLabel("com.example.legacy.boxscore", prefixes)).toBe("boxscore");
-  expect(shortLabel("com.mattstack.local", prefixes)).toBe("local");
+  expect(shortLabel("com.mattstack.deck", prefixes)).toBe("deck");
 });

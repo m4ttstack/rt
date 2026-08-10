@@ -7,6 +7,7 @@ import type { Drivers } from "../api/register.ts";
 import { listRecords, getRecord, deleteRecord } from "../registry/records.ts";
 import { stateDir, logsDir } from "../api/state.ts";
 import { updatePlatformSettings } from "../api/platform-settings.ts";
+import { PLATFORM_NAME, LEGACY_PLATFORM_NAME, isPlatformManagedBy } from "../services/manager.ts";
 
 export interface Io {
   out(s: string): void;
@@ -132,8 +133,8 @@ export async function setup(drivers: Drivers, io: Io, checkExec: CheckExec = rea
 
   const healthy = await waitForHealth(result.port);
   if (!healthy) {
-    io.err(`Local didn't come up on port ${result.port} within the health-check budget`);
-    io.err(tailLog(join(logsDir(), "local.err.log")));
+    io.err(`Deck didn't come up on port ${result.port} within the health-check budget`);
+    io.err(tailLog(join(logsDir(), "deck.err.log")));
     return 1;
   }
 
@@ -144,15 +145,17 @@ export async function setup(drivers: Drivers, io: Io, checkExec: CheckExec = rea
 }
 
 export async function uninstall(drivers: Drivers, io: Io, opts: { force: boolean }): Promise<number> {
-  const others = listRecords().filter((r) => r.managedBy !== "local");
+  const others = listRecords().filter((r) => !isPlatformManagedBy(r.managedBy));
   if (others.length > 0 && !opts.force) {
-    io.err("Other apps are still registered with Local:");
+    io.err("Other apps are still registered with Deck:");
     for (const r of others) io.err(`  ${r.name} (${r.managedBy})`);
-    io.err("Remove them first, or re-run `lcl uninstall --force`.");
+    io.err("Remove them first, or re-run `deck uninstall --force`.");
     return 1;
   }
 
-  const self = getRecord("local");
+  // A machine that never got to re-run `deck setup` after the Local -> Deck
+  // rename may still carry its self-row under the pre-rename name.
+  const self = getRecord(PLATFORM_NAME) ?? getRecord(LEGACY_PLATFORM_NAME);
   if (self) {
     if (self.label) {
       try {
@@ -161,14 +164,18 @@ export async function uninstall(drivers: Drivers, io: Io, opts: { force: boolean
         // best-effort teardown; uninstall must not get stuck on a driver failure
       }
     }
-    for (const alias of ["local", "local.mattstack"]) {
+    // All four: an upgrading machine's routes could still carry the
+    // pre-rename aliases alongside (or instead of) the current ones.
+    // removeAlias() is idempotent teardown (edge/portless.ts), so attempting
+    // one that was never written is a safe no-op.
+    for (const alias of [PLATFORM_NAME, `${PLATFORM_NAME}.mattstack`, LEGACY_PLATFORM_NAME, `${LEGACY_PLATFORM_NAME}.mattstack`]) {
       try {
         await drivers.edge.removeAlias(alias);
       } catch {
         // alias may never have been written (e.g. mattstack TLD already active)
       }
     }
-    deleteRecord("local");
+    deleteRecord(self.name);
   }
 
   try {
@@ -177,7 +184,7 @@ export async function uninstall(drivers: Drivers, io: Io, opts: { force: boolean
     // nothing to remove
   }
 
-  io.out("Local uninstalled: its launchd agent, route aliases, and api.json are gone.");
+  io.out("Deck uninstalled: its launchd agent, route aliases, and api.json are gone.");
   io.out("Left in place: portless itself, and any per-app launchd plists it still supervises.");
   return 0;
 }

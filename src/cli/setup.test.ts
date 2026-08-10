@@ -66,20 +66,20 @@ test("uninstall refuses while other records exist, force overrides", async () =>
   expect(await uninstall({ manager, edge }, io(), { force: true })).toBe(0);
 });
 
-test("uninstall removes Local's own agent + aliases when no other apps are registered", async () => {
+test("uninstall removes Deck's own agent + aliases when no other apps are registered", async () => {
   const manager = new FakeServiceManager();
   const edge = new FakeEdgeProxy();
   await bootstrapSelf({ manager, edge }, {
-    execPath: "/usr/local/bin/lcl", entry: null, tlds: ["localhost"],
+    execPath: "/usr/local/bin/deck", entry: null, tlds: ["localhost"],
   });
   expect(manager.installed.has(PLATFORM_LABEL)).toBe(true);
-  expect(edge.aliases.has("local")).toBe(true);
+  expect(edge.aliases.has("deck")).toBe(true);
 
   const o = io();
   expect(await uninstall({ manager, edge }, o, { force: false })).toBe(0);
   expect(manager.installed.has(PLATFORM_LABEL)).toBe(false);
-  expect(edge.aliases.has("local")).toBe(false);
-  expect(getRecord("local")).toBeUndefined();
+  expect(edge.aliases.has("deck")).toBe(false);
+  expect(getRecord("deck")).toBeUndefined();
 });
 
 const passExec = async (argv: string[]) =>
@@ -92,7 +92,7 @@ test("setup: prereqs pass, bootstraps, writes tlds into platform settings, print
   // Pre-seed the self record at the listening server's port, so bootstrapSelf's
   // `existing?.port` reuses it instead of allocating a port nothing is on.
   putRecord({
-    name: "local", managedBy: "local", port: server.port!, kind: "service",
+    name: "deck", managedBy: "deck", port: server.port!, kind: "service",
     createdAt: new Date().toISOString(),
   });
   process.env.LOCAL_SETUP_HEALTH_BUDGET_MS = "2000";
@@ -103,7 +103,7 @@ test("setup: prereqs pass, bootstraps, writes tlds into platform settings, print
   server.stop(true);
 
   expect(code).toBe(0);
-  expect(o.lines.some((l) => l.includes("https://local."))).toBe(true);
+  expect(o.lines.some((l) => l.includes("https://deck."))).toBe(true);
   expect(getPlatformSettings().tlds).toEqual(["localhost"]);
 });
 
@@ -111,11 +111,11 @@ test("setup: healthz timeout exits 1 and shows a tail of the error log", async (
   const manager = new FakeServiceManager();
   const edge = new FakeEdgeProxy();
   putRecord({
-    name: "local", managedBy: "local", port: 39997, kind: "service",
+    name: "deck", managedBy: "deck", port: 39997, kind: "service",
     createdAt: new Date().toISOString(),
   });
   mkdirSync(logsDir(), { recursive: true });
-  writeFileSync(join(logsDir(), "local.err.log"), "boom: something broke\n");
+  writeFileSync(join(logsDir(), "deck.err.log"), "boom: something broke\n");
   process.env.LOCAL_SETUP_HEALTH_BUDGET_MS = "200";
   process.env.LOCAL_SETUP_HEALTH_INTERVAL_MS = "50";
 

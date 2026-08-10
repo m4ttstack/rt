@@ -1,9 +1,36 @@
-import { mkdirSync, readFileSync, writeFileSync } from "fs";
+import { mkdirSync, readFileSync, writeFileSync, existsSync, renameSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 
 export function stateDir(): string {
-  return process.env.LOCAL_STATE_DIR ?? join(homedir(), ".mattstack", "local");
+  return process.env.LOCAL_STATE_DIR ?? join(homedir(), ".mattstack", "deck");
+}
+
+/** Where state lived before the Local -> Deck rename. Adoption source only. */
+export function legacyStateDir(): string {
+  return process.env.LOCAL_LEGACY_STATE_DIR ?? join(homedir(), ".mattstack", "local");
+}
+
+/**
+ * Local -> Deck rename (ruled): a machine that ran the platform before this
+ * rename has its whole state (registry, settings, logs, api.json) under the
+ * pre-rename directory. Adopt it once, at boot, before anything reads or
+ * writes stateDir() -- called from boot-env.ts, which is why this has to be
+ * a plain function rather than something baked into stateDir() itself:
+ * stateDir() is called many times over a process's life and must stay a
+ * cheap, pure path computation, not repeat a filesystem check on every call.
+ *
+ * A rename is the simplest safe move here: both dirs are always siblings
+ * under ~/.mattstack, i.e. the same filesystem, so it's atomic. Never
+ * overwrites: a no-op whenever the new dir already exists, the legacy dir
+ * doesn't, or they resolve to the same path.
+ */
+export function adoptLegacyStateDir(): void {
+  const newDir = stateDir();
+  const legacyDir = legacyStateDir();
+  if (newDir === legacyDir) return;
+  if (existsSync(newDir) || !existsSync(legacyDir)) return;
+  renameSync(legacyDir, newDir);
 }
 
 export function logsDir(): string {
