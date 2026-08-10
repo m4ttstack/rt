@@ -32,7 +32,7 @@ knowledge; the board injects it:
 | `--status-bin <path>` | absolute path to the board's status-writer CLI |
 | `--skill <name>` | the domain skill that owns the actual repair (optional) |
 | `--tier api` | API-only repair tier: no checkout, no worktree, no local commits. Absent = the historical checkout-tier behavior. |
-| `--fix-classes <a,b>` | Comma-separated allowlist of fix classes the dispatching policy enabled (e.g. `retry-flake,inherited-note-draft`). Actions outside the list are escalations, not fixes. |
+| `--fix-classes <a,b>` | Comma-separated allowlist of fix classes the dispatching policy enabled (e.g. `retry-flake,inherited-note-draft`). Actions outside the list are escalations, not fixes. See "Fix classes" below for what each one licenses. |
 | `--draft-bin <path>` | Absolute path to the board's draft-writer CLI. Any outbound MR note MUST be written through it as a held draft: `bun run <draft-bin> <mrUrl> <iid> <kind> <body...>`. Never post a note directly. |
 
 Write status **only** by running the injected `--status-bin`:
@@ -110,6 +110,46 @@ When `--tier api` is present, the repair is checkout-free by contract:
 - Anything that would need a checkout is an `error` escalation whose message
   carries the diagnosis (failed job, one-line cause, why it isn't yours to
   retry). The human is not watching; the escalation IS the handoff.
+
+### Fix classes
+
+`--fix-classes` is an allowlist, not a suggestion: a fix class not in the
+list is out of scope, full stop, and the corresponding breakage is an
+escalation instead.
+
+- `retry-flake`, `inherited-note-draft`, `clean-api-rebase`: unchanged,
+  API-tier fixes described above.
+- **`mechanical-lint`** (checkout-tier only, MAT-351): **behavior-neutral
+  mechanical code fixes ONLY**... appending a required lint-disable reason
+  suffix, formatting-only changes (whitespace, quote style, trailing
+  commas), import ordering. Nothing that could alter runtime behavior
+  qualifies; if a fix touches logic, changes a condition, adds/removes a
+  code path, or you are not certain it's a no-op, it is **not**
+  mechanical-lint... escalate it instead of guessing. This class implies a
+  commit and a push to the MR branch, so it only ever applies without
+  `--tier api`: the API tier's "never commit, never push" contract always
+  wins, even if `mechanical-lint` is present in `--fix-classes` (treat that
+  combination as a dispatcher bug, escalate, do not commit).
+  - **Re-verify the author gate before applying, every time.** The
+    dispatcher only ever includes `mechanical-lint` for the board's own
+    identity, but do not trust the flag alone: confirm independently (e.g.
+    `glab mr view <mrUrl>` for the author, compared against the
+    authenticated GitLab identity for this checkout) that the MR author is
+    genuinely the board's own identity before touching the branch. If that
+    check is inconclusive or they don't match, escalate; never apply a
+    mechanical-lint fix on that ambiguity.
+  - **Commit message must self-identify.** Whatever the repo's own commit
+    message convention is, the message must make clear this is a doctor
+    mechanical-lint fix (e.g. a `doctor: mechanical-lint ...` prefix or
+    equivalent) so it reads unambiguously as an autonomous mechanical fix in
+    `git log`, not a human commit.
+  - **Push using the repo's existing MR-branch push conventions** (same
+    `--force-with-lease`-only discipline as any other doctor push here).
+  - **If the push is blocked** in this runtime environment (no push access,
+    protected branch, network/auth failure): commit locally, do not retry
+    around the block, and escalate `error` with the exact state: the local
+    commit sha, the branch, and the specific block reason, so the human can
+    push it themselves or grant access.
 
 3. **Escalate, don't speculate.** Emit `error` (with a specific, actionable
    message) whenever a fix requires product judgment or non-obvious semantic

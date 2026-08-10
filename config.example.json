@@ -19,7 +19,7 @@
     "cooldownMinutes": 30,
     "maxConcurrent": 2,
     "dailyAttemptBudget": 3,
-    "fixClasses": { "retryFlake": true, "inheritedNoteDraft": true, "cleanApiRebase": false },
+    "fixClasses": { "retryFlake": true, "inheritedNoteDraft": true, "cleanApiRebase": false, "mechanicalLint": false },
     "doctorSkill": "",
     "notify": "rt"
   },
