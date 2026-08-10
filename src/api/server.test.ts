@@ -8,12 +8,14 @@ process.env.LOCAL_REGISTRY_PATH = join(dir, "registry.json");
 process.env.LOCAL_STATE_DIR = dir;
 process.env.LOCAL_APPS_ROUTES_PATH = join(dir, "routes.json");
 process.env.LOCAL_APPS_SETTINGS_PATH = join(dir, "settings.json");
+process.env.LOCAL_PLATFORM_SETTINGS_PATH = join(dir, "platform.json");
 writeFileSync(process.env.LOCAL_APPS_ROUTES_PATH, "[]");
 
 const { startApi } = await import("./server.ts");
 const { FakeServiceManager } = await import("../services/fake.ts");
 const { FakeEdgeProxy } = await import("../edge/portless.ts");
 const { reloadRegistry } = await import("../registry/records.ts");
+const { reloadPlatformSettings } = await import("./platform-settings.ts");
 
 const PORT = 18917;
 let server: ReturnType<typeof startApi>;
@@ -28,7 +30,12 @@ beforeAll(() => {
   });
 });
 afterAll(() => { server.stop(true); rmSync(dir, { recursive: true, force: true }); });
-beforeEach(() => { rmSync(process.env.LOCAL_REGISTRY_PATH!, { force: true }); reloadRegistry(); });
+beforeEach(() => {
+  rmSync(process.env.LOCAL_REGISTRY_PATH!, { force: true });
+  reloadRegistry();
+  rmSync(process.env.LOCAL_PLATFORM_SETTINGS_PATH!, { force: true });
+  reloadPlatformSettings();
+});
 
 const api = (path: string, init?: RequestInit) => fetch(`http://127.0.0.1:${PORT}${path}`, init);
 const post = (path: string, body: unknown, headers: Record<string, string> = {}) =>
