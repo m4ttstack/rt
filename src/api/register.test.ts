@@ -127,3 +127,38 @@ test("edit rename: moves record, label, and alias", async () => {
   expect(drivers.manager.installed.has("com.mattstack.local.myapp")).toBe(false);
   expect(drivers.edge.aliases.has("renamed")).toBe(true);
 });
+
+test("unregister: a teardown driver failure keeps the record — with the issue — instead of silently deleting it", async () => {
+  await registerApp(input, drivers);
+  drivers.manager.failNext = "com.mattstack.local.myapp";
+  const res = await unregisterApp("myapp", "user", false, drivers);
+  expect(res.status).toBe(200);
+  expect((res.body as any).ok).toBe(false);
+  const rec = getRecord("myapp");
+  expect(rec).toBeDefined();
+  expect(rec!.issues).toHaveLength(1);
+  expect(rec!.issues![0]!.source).toBe("launchd");
+});
+
+test("edit rename: a teardown driver failure lands a visible issue on the renamed record", async () => {
+  await registerApp(input, drivers);
+  drivers.manager.failNext = "com.mattstack.local.myapp";
+  const res = await editApp("myapp", { name: "renamed" }, "user", false, drivers);
+  expect(res.status).toBe(200);
+  expect(getRecord("myapp")).toBeUndefined();
+  const rec = getRecord("renamed");
+  expect(rec).toBeDefined();
+  expect(rec!.issues).toHaveLength(1);
+  expect(rec!.issues![0]!.source).toBe("launchd");
+});
+
+test("edit re-ports: a teardown driver failure lands a visible issue without losing the port change", async () => {
+  await registerApp(input, drivers);
+  drivers.manager.failNext = "com.mattstack.local.myapp";
+  const res = await editApp("myapp", { port: 11500 }, "user", false, drivers);
+  expect(res.status).toBe(200);
+  const rec = getRecord("myapp")!;
+  expect(rec.port).toBe(11500);
+  expect(rec.issues).toHaveLength(1);
+  expect(rec.issues![0]!.source).toBe("launchd");
+});

@@ -2,7 +2,7 @@ import { mkdirSync } from "fs";
 import { join } from "path";
 import { readRoutes, readServices } from "../../core/discover.ts";
 import {
-  getRecord, putRecord, deleteRecord, listRecords, addIssue, type AppRecord,
+  getRecord, putRecord, deleteRecord, listRecords, addIssue, type AppRecord, type SyncIssue,
 } from "../registry/records.ts";
 import { allocatePort } from "../registry/allocate.ts";
 import { authorizeStructural } from "../registry/lifecycle.ts";
@@ -53,6 +53,31 @@ async function tryDriver(
   } catch (err) {
     addIssue(name, { source, message: String(err).slice(0, 300), at: new Date().toISOString() });
   }
+}
+
+/**
+ * Same as tryDriver, but for teardown-phase calls where the record that
+ * should receive the issue may not exist under its current cache key by the
+ * time we'd call addIssue (rename deletes the old key; a same-name edit is
+ * about to overwrite it via putRecord). Callers merge the returned issue onto
+ * whatever record object actually gets persisted, instead of losing it.
+ */
+async function runDriver(
+  source: "portless" | "launchd",
+  fn: () => Promise<void>,
+): Promise<SyncIssue | null> {
+  try {
+    await fn();
+    return null;
+  } catch (err) {
+    return { source, message: String(err).slice(0, 300), at: new Date().toISOString() };
+  }
+}
+
+function mergeIssues(existing: SyncIssue[] | undefined, incoming: SyncIssue[]): SyncIssue[] | undefined {
+  if (incoming.length === 0) return existing;
+  const kept = (existing ?? []).filter((i) => !incoming.some((n) => n.source === i.source));
+  return [...kept, ...incoming];
 }
 
 export async function registerApp(input: RegisterInput, drivers: Drivers): Promise<FlowResult> {
@@ -114,10 +139,21 @@ export async function unregisterApp(
   const verdict = authorizeStructural(record, caller, force);
   if (!verdict.ok) return { status: verdict.status, body: verdict.body };
 
+  const issues: SyncIssue[] = [];
   if (record.kind === "service" && record.label) {
-    await tryDriver(name, "launchd", () => drivers.manager.uninstall(record.label!));
+    const issue = await runDriver("launchd", () => drivers.manager.uninstall(record.label!));
+    if (issue) issues.push(issue);
   }
-  await tryDriver(name, "portless", () => drivers.edge.removeAlias(name));
+  const portlessIssue = await runDriver("portless", () => drivers.edge.removeAlias(name));
+  if (portlessIssue) issues.push(portlessIssue);
+
+  if (issues.length > 0) {
+    // Teardown didn't fully complete: keep the record (and the driver it
+    // still owns, e.g. a launchd service that failed to uninstall) visible
+    // on the board rather than silently deleting the evidence of failure.
+    for (const issue of issues) addIssue(name, issue);
+    return { status: 200, body: { ok: false, record: getRecord(name) } };
+  }
   deleteRecord(name);
   return { status: 200, body: { ok: true } };
 }
@@ -156,13 +192,21 @@ export async function editApp(
   };
   if (next.kind === "service") next.label = `${LABEL_PREFIX}${next.name}`;
 
+  // Teardown-phase failures must land on `next` — the record that's about to
+  // be persisted — not on the old cache entry: a rename deletes that entry
+  // outright, and a same-name edit is about to overwrite it via putRecord
+  // below, either way losing an addIssue() written against the old key.
+  const teardownIssues: SyncIssue[] = [];
   if (next.kind === "service" && oldLabel) {
-    await tryDriver(oldName, "launchd", () => drivers.manager.uninstall(oldLabel));
+    const issue = await runDriver("launchd", () => drivers.manager.uninstall(oldLabel));
+    if (issue) teardownIssues.push(issue);
   }
   if (next.name !== oldName) {
-    await tryDriver(oldName, "portless", () => drivers.edge.removeAlias(oldName));
+    const issue = await runDriver("portless", () => drivers.edge.removeAlias(oldName));
+    if (issue) teardownIssues.push(issue);
     deleteRecord(oldName);
   }
+  next.issues = mergeIssues(next.issues, teardownIssues);
   putRecord(next);
   if (next.kind === "service") {
     await tryDriver(next.name, "launchd", () => drivers.manager.install(specFor(next)));
