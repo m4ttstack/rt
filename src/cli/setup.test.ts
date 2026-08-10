@@ -70,7 +70,7 @@ test("uninstall removes Local's own agent + aliases when no other apps are regis
   const manager = new FakeServiceManager();
   const edge = new FakeEdgeProxy();
   await bootstrapSelf({ manager, edge }, {
-    execPath: "/usr/local/bin/local", entry: null, tlds: ["localhost"],
+    execPath: "/usr/local/bin/lcl", entry: null, tlds: ["localhost"],
   });
   expect(manager.installed.has(PLATFORM_LABEL)).toBe(true);
   expect(edge.aliases.has("local")).toBe(true);

@@ -13,7 +13,7 @@
   },
   "scripts": {
     "build:icons": "bun build core/icons.js --outfile core/vendor/lucide.min.js --minify --target=browser --format=iife",
-    "build": "bun build --compile src/main.ts --outfile dist/local",
+    "build": "bun build --compile src/main.ts --outfile dist/lcl",
     "serve": "bun run src/main.ts serve",
     "test": "bun test core src",
     "test:e2e": "LOCAL_E2E=1 bun test test/e2e.smoke.test.ts"

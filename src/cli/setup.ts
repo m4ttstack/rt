@@ -132,7 +132,7 @@ export async function setup(drivers: Drivers, io: Io, checkExec: CheckExec = rea
 
   const healthy = await waitForHealth(result.port);
   if (!healthy) {
-    io.err(`local didn't come up on port ${result.port} within the health-check budget`);
+    io.err(`Local didn't come up on port ${result.port} within the health-check budget`);
     io.err(tailLog(join(logsDir(), "local.err.log")));
     return 1;
   }
@@ -148,7 +148,7 @@ export async function uninstall(drivers: Drivers, io: Io, opts: { force: boolean
   if (others.length > 0 && !opts.force) {
     io.err("Other apps are still registered with Local:");
     for (const r of others) io.err(`  ${r.name} (${r.managedBy})`);
-    io.err("Remove them first, or re-run `local uninstall --force`.");
+    io.err("Remove them first, or re-run `lcl uninstall --force`.");
     return 1;
   }
 

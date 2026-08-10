@@ -11,7 +11,7 @@ export function renderPlist(spec: ServiceSpec): string {
   // breaks any command that shells out to something installed via npm/
   // homebrew (portless, in particular; this broke live). Default to the
   // RENDERING process's own PATH: for app plists rendered by the running
-  // platform, that is the platform's own PATH (captured at `local setup`
+  // platform, that is the platform's own PATH (captured at `lcl setup`
   // time, see registry/bootstrap.ts) once its own plist carries one. An
   // explicit PATH already on the spec's environment always wins.
   const environment = { PATH: process.env.PATH ?? "", ...spec.environment };

@@ -76,7 +76,7 @@ export function serve(): void {
     tunnel: new CloudflaredCli(),
   });
   writeApiInfo(PORT);
-  console.log(`local serving on http://localhost:${PORT}`);
+  console.log(`Local serving on http://localhost:${PORT}`);
 
   setInterval(() => { try { reconcileOnce(); } catch {} }, 5000);
 

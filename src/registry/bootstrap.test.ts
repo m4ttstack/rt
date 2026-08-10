@@ -24,12 +24,12 @@ test("bootstrap: agent + aliases first, then the record catches up as managedBy 
   const manager = new FakeServiceManager();
   const edge = new FakeEdgeProxy();
   const result = await bootstrapSelf({ manager, edge }, {
-    execPath: "/usr/local/bin/local", entry: null, tlds: ["localhost", "mattstack"],
+    execPath: "/usr/local/bin/lcl", entry: null, tlds: ["localhost", "mattstack"],
   });
   expect(result.port).toBe(11000);
   expect(result.label).toBe("com.mattstack.local");
   const spec = manager.installed.get("com.mattstack.local")!;
-  expect(spec.programArguments).toEqual(["/usr/local/bin/local", "serve"]);
+  expect(spec.programArguments).toEqual(["/usr/local/bin/lcl", "serve"]);
   expect(spec.environment.PORT).toBe("11000");
   // mattstack TLD active: the single alias covers local.mattstack
   expect(result.aliases).toEqual(["local"]);
@@ -46,7 +46,7 @@ test("the platform's own plist carries PATH captured from the installing shell",
   process.env.PATH = "/fake/installer/bin:/usr/bin";
   try {
     await bootstrapSelf({ manager, edge }, {
-      execPath: "/usr/local/bin/local", entry: null, tlds: ["localhost", "mattstack"],
+      execPath: "/usr/local/bin/lcl", entry: null, tlds: ["localhost", "mattstack"],
     });
     const spec = manager.installed.get("com.mattstack.local")!;
     expect(spec.environment.PATH).toBe("/fake/installer/bin:/usr/bin");
@@ -58,7 +58,7 @@ test("the platform's own plist carries PATH captured from the installing shell",
 test("bootstrap is idempotent: a second run (reinstall/upgrade/retry) does not throw", async () => {
   const manager = new FakeServiceManager();
   const edge = new FakeEdgeProxy();
-  const opts = { execPath: "/usr/local/bin/local", entry: null, tlds: ["localhost", "mattstack"] };
+  const opts = { execPath: "/usr/local/bin/lcl", entry: null, tlds: ["localhost", "mattstack"] };
   const first = await bootstrapSelf({ manager, edge }, opts);
   const second = await bootstrapSelf({ manager, edge }, opts);
   expect(second.port).toBe(first.port);
@@ -95,7 +95,7 @@ test("bootstrap survives its own alias already being in routes.json (the real-dr
   const manager = new FakeServiceManager();
   const edge = new FakeEdgeProxy();
   const result = await bootstrapSelf({ manager, edge }, {
-    execPath: "/usr/local/bin/local", entry: null, tlds: ["localhost", "mattstack"],
+    execPath: "/usr/local/bin/lcl", entry: null, tlds: ["localhost", "mattstack"],
   });
   // No record yet, so allocation treats the stray route's port as taken and
   // picks the next free one; the alias write then repoints "local" at it.

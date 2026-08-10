@@ -13,14 +13,14 @@ fi
 
 ./scripts/certify.sh
 
-bun build --compile --target=bun-darwin-arm64 src/main.ts --outfile dist/local-darwin-arm64
-bun build --compile --target=bun-darwin-x64  src/main.ts --outfile dist/local-darwin-x64
+bun build --compile --target=bun-darwin-arm64 src/main.ts --outfile dist/lcl-darwin-arm64
+bun build --compile --target=bun-darwin-x64  src/main.ts --outfile dist/lcl-darwin-x64
 
 # The installer ships as a release asset too, pinned to this repo (updater-drift
 # rule: installer and updater read the same releases).
 sed "s|@@REPO@@|${REPO}|g" scripts/install.sh > dist/install.sh
 
 gh release create "${TAG}" \
-  dist/local-darwin-arm64 dist/local-darwin-x64 dist/install.sh \
-  --repo "${REPO}" --title "local ${TAG}" --generate-notes
+  dist/lcl-darwin-arm64 dist/lcl-darwin-x64 dist/install.sh \
+  --repo "${REPO}" --title "Local ${TAG}" --generate-notes
 echo "released ${TAG}"
