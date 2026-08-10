@@ -14,6 +14,7 @@ import { boardHtml, boardJs, vendorAsset } from "../../core/board-assets.ts";
 import { buildStatus, type StatusRow } from "./status.ts";
 import { registerApp, unregisterApp, editApp, type Drivers } from "./register.ts";
 import { getRecord, listRecords, type AppRecord, type SyncIssue } from "../registry/records.ts";
+import { migrate } from "../registry/migrate.ts";
 import { redactedSettings, updatePlatformSettings, getPlatformSettings } from "./platform-settings.ts";
 import { logsDir } from "./state.ts";
 import { join } from "path";
@@ -326,6 +327,10 @@ export function startApi(deps: ApiDeps) {
 
         if (pathname === "/api/v1/proxy/restart" && req.method === "POST") {
           return await proxyRestart(deps);
+        }
+
+        if (pathname === "/api/v1/migrate" && req.method === "POST") {
+          return json(await migrate({}));
         }
         return json({ error: "not found" }, 404);
       }
