@@ -11,7 +11,11 @@ your own domain with access control.
 
     curl -fsSL local.mattstack.dev | sh
 
-(macOS. One prerequisite: Node 24+, because the https proxy - portless - needs it.)
+(macOS. Prerequisites: Node 24+, because the https proxy - portless - needs
+it; and portless itself installed, trusted, and running as a service -
+`npm install -g portless && portless trust && portless service install`.
+The installer finishes by running `local setup`, which needs both in place
+and will tell you exactly what's missing if you skip this.)
 
 ## Five minutes in
 
@@ -77,10 +81,12 @@ alongside everything else you run.
 
 ## Uninstall
 
-`local uninstall` stops and removes local's own launchd service, its board,
-and the routes for apps you registered with `local add`. Apps you only ever
-pointed local at with `--port`, or adopted with `local migrate`, keep
-running exactly as they were: local was never in charge of their process, so
-removing local doesn't touch them. Your app code, your own launchd agents,
-and anything already on disk under `~/.mattstack/local` are left in place,
-so nothing about the apps you run by hand disappears with local itself.
+`local uninstall` refuses to run if any app besides local itself is still
+registered: it prints the offending names and tells you to remove them
+first, or pass `--force`. Even with `--force`, it only ever tears down
+local's own footprint - its launchd agent, its `local`/`local.mattstack`
+aliases, and `api.json` - never another app's route, plist, or registry
+record. That's deliberate: uninstalling the platform should never silently
+kill an app it happens to be supervising. Your app code, your own launchd
+agents, and anything else already on disk under `~/.mattstack/local` are
+left in place.

@@ -4,6 +4,13 @@ set -eu
 TAG="${1:?usage: release.sh vX.Y.Z}"
 REPO="m4ttheweric/local-apps"
 
+PKG_VERSION="$(bun -e 'console.log(require("./package.json").version)')"
+TAG_VERSION="${TAG#v}"
+if [ "${TAG_VERSION}" != "${PKG_VERSION}" ]; then
+  echo "FAIL: tag ${TAG} does not match package.json version ${PKG_VERSION}" >&2
+  exit 1
+fi
+
 ./scripts/certify.sh
 
 bun build --compile --target=bun-darwin-arm64 src/main.ts --outfile dist/local-darwin-arm64

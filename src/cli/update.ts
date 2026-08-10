@@ -22,7 +22,13 @@ export async function update(io: { out(s: string): void; err(s: string): void })
   const asset = pickAsset(process.platform, process.arch);
   const url = latestAssetUrl(asset);
   io.out(`fetching ${url} ...`);
-  const res = await fetch(url, { redirect: "follow" });
+  let res: Response;
+  try {
+    res = await fetch(url, { redirect: "follow" });
+  } catch (err) {
+    io.err(`download failed: ${String(err)}`);
+    return 1;
+  }
   if (!res.ok) { io.err(`download failed: ${res.status}`); return 1; }
   const target = process.execPath;
   const tmp = target + ".new";

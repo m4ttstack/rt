@@ -77,7 +77,10 @@ test("domain verb captures the CF token via the injected prompt and stores it wr
   // Bind itself 428s (no cert.pem in this scratch env) — exit 1 is expected;
   // what this test pins is that the token round-tripped BEFORE the bind.
   expect(await runCommand(["domain", "example.dev"], d, promptFn)).toBe(1);
-  const settings = await (await fetch(`http://127.0.0.1:${PORT}/api/v1/settings`)).json();
+  const settings = (await (await fetch(`http://127.0.0.1:${PORT}/api/v1/settings`)).json()) as {
+    hasCfToken: boolean;
+    hasCfZone: boolean;
+  };
   expect(settings.hasCfToken).toBe(true);
   expect(settings.hasCfZone).toBe(true);
   expect(JSON.stringify(settings)).not.toContain("cf-tok-123"); // redaction holds

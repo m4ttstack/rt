@@ -1,7 +1,8 @@
 // src/cli/commands.ts
 import { apiJson } from "./client.ts";
+import pkg from "../../package.json";
 
-export const VERSION = "1.0.0";
+export const VERSION = pkg.version;
 
 const USAGE = `local — named https domains, supervision, and sharing for local apps
 
@@ -116,12 +117,19 @@ export async function runCommand(
       case "password": {
         const [name] = rest;
         if (!name) { io.err(USAGE); return 2; }
-        const password = rest.includes("--clear") ? null : promptFn("password:") ?? "";
+        const clearFlag = rest.includes("--clear");
+        // An empty prompt result (Ctrl-D, blank enter) hits the API's own
+        // clear-on-empty-string path, same as --clear. Track that so the
+        // printed message never claims "set" when the real effect was a clear.
+        const entered = clearFlag ? null : promptFn("password:");
+        const password = clearFlag ? null : (entered ?? "");
         const { status, body } = await apiJson(`/api/v1/apps/${name}/password`, {
           method: "PUT", body: JSON.stringify({ password }),
         });
         if (status !== 200) { io.err(body.error ?? `failed (${status})`); return 1; }
-        io.out(rest.includes("--clear") ? "password cleared" : "password set");
+        if (clearFlag) io.out("password cleared");
+        else if (!entered) io.out("no password entered — password cleared");
+        else io.out("password set");
         return 0;
       }
       case "access": {
@@ -175,6 +183,11 @@ export async function runCommand(
       }
       case "version": {
         io.out(`local ${VERSION}`);
+        return 0;
+      }
+      case "help":
+      case "--help": {
+        io.out(USAGE);
         return 0;
       }
       default:

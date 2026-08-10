@@ -17,7 +17,9 @@ are exactly what `local migrate` exists to clean up.
    .env PORT, directory name).
 2. Supervised app: `local add <name> --cmd "<command>" --dir <working_dir>`
    Self-run app:  `local add <name> --port <port>`
-   The port is allocated by Local (11000-11999); do not pick one yourself.
+   For a supervised app, the port is allocated by Local (11000-11999) - do
+   not pick one yourself; for a self-run app, `--port` is the port it's
+   already listening on.
 3. Verify: `local status` shows the row up; `curl -s https://<name>.localhost/`.
 4. Sharing: the app is published by default. `local publish <name> off` to
    hide it; `local password <name>` to gate it; `local access <name> …` for

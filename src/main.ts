@@ -1,15 +1,5 @@
 // src/main.ts
-import { basename, join as joinPath } from "path";
-import { stateDir } from "./api/state.ts";
-
-// Under bun --compile, core/settings.ts's default path (import.meta.dir/../data)
-// resolves inside the bundle's virtual root: settings would silently go nowhere.
-// A compiled binary therefore defaults settings into the state dir; a checkout
-// (execPath is bun itself) keeps <repo>/data/settings.json, unchanged.
-if (!process.env.LOCAL_APPS_SETTINGS_PATH && !basename(process.execPath).startsWith("bun")) {
-  process.env.LOCAL_APPS_SETTINGS_PATH = joinPath(stateDir(), "settings.json");
-}
-
+import "./boot-env.ts";
 import { startApi } from "./api/server.ts";
 import { writeApiInfo } from "./api/state.ts";
 import { LaunchdManager } from "./services/launchd.ts";
