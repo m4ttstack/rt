@@ -91,7 +91,16 @@ export function serve(): void {
 
 const cmd = Bun.argv[2] ?? "serve";
 if (cmd === "serve") serve();
-else {
+else if (cmd === "setup") {
+  const { setup } = await import("./cli/setup.ts");
+  const drivers = { manager: new LaunchdManager(), edge: new PortlessCli() };
+  process.exit(await setup(drivers, { out: console.log, err: console.error }));
+} else if (cmd === "uninstall") {
+  const { uninstall } = await import("./cli/setup.ts");
+  const drivers = { manager: new LaunchdManager(), edge: new PortlessCli() };
+  const force = Bun.argv.includes("--force");
+  process.exit(await uninstall(drivers, { out: console.log, err: console.error }, { force }));
+} else {
   const { runCommand } = await import("./cli/commands.ts");
   process.exit(await runCommand(Bun.argv.slice(2), { out: console.log, err: console.error }));
 }
