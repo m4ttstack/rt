@@ -4,13 +4,20 @@ import { getRecord, putRecord, listRecords } from "./records.ts";
 import { PLATFORM_LABEL } from "../services/manager.ts";
 
 /**
+ * The one sanctioned legacy-prefix literal (ruled): every other module that
+ * needs it, including convert.ts, imports it from here rather than
+ * re-declaring the string — certify.sh's purity grep only excludes this file.
+ */
+export const DEFAULT_LEGACY_PREFIX = "com.matthewgoodwin.";
+
+/**
  * Adoption, not conversion (ruled): records point at the EXISTING label, plist,
  * and route. Nothing under ~/Library/LaunchAgents or in portless is written.
  * The old plists keep running under launchd exactly as before; they are simply
  * operable from the board now.
  */
 export async function migrate(opts: { legacyPrefix?: string }): Promise<{ adopted: string[]; skipped: string[] }> {
-  const legacyPrefix = opts.legacyPrefix ?? "com.matthewgoodwin.";
+  const legacyPrefix = opts.legacyPrefix ?? DEFAULT_LEGACY_PREFIX;
   const settings = getPlatformSettings();
   if (!settings.legacyPrefixes.includes(legacyPrefix)) {
     updatePlatformSettings({ legacyPrefixes: [...settings.legacyPrefixes, legacyPrefix] });
