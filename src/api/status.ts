@@ -70,6 +70,12 @@ export interface StatusRow {
    * pre-fill. Null when there is no record (pre-migrate legacy row). This is
    * distinct from the top-level `record: SafeRecord` GET /api/v1/apps/:name
    * already returns -- that one is unchanged.
+   *
+   * command/workingDirectory are local-only: they are null whenever the request
+   * arrived through a public host, whatever the record actually holds. The edit
+   * dialog that consumes them only renders under canManage (local), so it never
+   * misses them, while a public GET -- always allowed through, the 403 gate only
+   * covers mutations -- cannot carry them out. `kind` is not sensitive.
    */
   record: { kind: "service" | "external"; command: string[] | null; workingDirectory: string | null } | null;
 }
@@ -164,7 +170,11 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
         managedBy: record?.managedBy ?? null,
         issues: record?.issues ?? [],
         record: record
-          ? { kind: record.kind, command: record.command ?? null, workingDirectory: record.workingDirectory ?? null }
+          ? {
+              kind: record.kind,
+              command: publicDomain === null ? record.command ?? null : null,
+              workingDirectory: publicDomain === null ? record.workingDirectory ?? null : null,
+            }
           : null,
       };
     }),

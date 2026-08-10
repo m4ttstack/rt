@@ -85,8 +85,12 @@ function safeRecord(record: AppRecord): SafeRecord {
  * ONLY the same safe, non-secret StatusRow fields — never spread the raw
  * AppRecord, which carries command/env/workingDirectory. Shared by the list and
  * single-record endpoints so the two shapes cannot drift apart.
+ *
+ * `redact` mirrors buildStatus: the row's `record` shape feeds the board's
+ * local-only edit dialog, so through a public host command/workingDirectory
+ * must be null here exactly as they are on a joined row.
  */
-function rowFor(record: AppRecord, byName: Map<string, StatusRow>): StatusRow {
+function rowFor(record: AppRecord, byName: Map<string, StatusRow>, redact: boolean): StatusRow {
   return byName.get(record.name) ?? {
     name: record.name,
     port: record.port,
@@ -103,7 +107,11 @@ function rowFor(record: AppRecord, byName: Map<string, StatusRow>): StatusRow {
     self: false,
     managedBy: record.managedBy,
     issues: record.issues ?? [],
-    record: { kind: record.kind, command: record.command ?? null, workingDirectory: record.workingDirectory ?? null },
+    record: {
+      kind: record.kind,
+      command: redact ? null : record.command ?? null,
+      workingDirectory: redact ? null : record.workingDirectory ?? null,
+    },
   };
 }
 
@@ -148,7 +156,7 @@ export function startApi(deps: ApiDeps) {
         if (pathname === "/api/v1/apps" && req.method === "GET") {
           // Every registered record, through the shared safe-row join.
           const byName = rowsByName((await buildStatus(statusOpts)).apps);
-          const apps: StatusRow[] = listRecords().map((record) => rowFor(record, byName));
+          const apps: StatusRow[] = listRecords().map((record) => rowFor(record, byName, isPublic));
           return json({ apps });
         }
         if (pathname === "/api/v1/apps" && req.method === "POST") {
@@ -179,7 +187,7 @@ export function startApi(deps: ApiDeps) {
               // raw AppRecord (env values, command, workingDirectory) never
               // transits an API response.
               const byName = rowsByName((await buildStatus(statusOpts)).apps);
-              return json({ record: safeRecord(record), row: rowFor(record, byName) });
+              return json({ record: safeRecord(record), row: rowFor(record, byName, isPublic) });
             }
             if (req.method === "PATCH") {
               const r = await editApp(name, (await body(req)) as never, caller, force, deps);

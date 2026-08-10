@@ -65,7 +65,37 @@ test("a freshly-registered app with no route yet shows up in the list without le
   expect(row.command).toBeUndefined();
   expect(row.env).toBeUndefined();
   expect(row.workingDirectory).toBeUndefined();
-  expect(JSON.stringify(row)).not.toContain("shh-do-not-leak");
+  // The WHOLE serialized list, not named keys: env values must not appear at
+  // any nesting depth (a past regression hid one inside row.record).
+  expect(JSON.stringify(list)).not.toContain("shh-do-not-leak");
+});
+
+test("a public host gets the row's record shape redacted; a local one still pre-fills the edit dialog", async () => {
+  const created = await post("/api/v1/apps", {
+    name: "secretful", command: ["bun", "s.ts"], workingDirectory: "/tmp/secret-dir",
+    env: { API_KEY: "shh-do-not-leak" },
+  });
+  expect(created.status).toBe(201);
+
+  const pubHeaders = { "x-forwarded-host": "apps.example.dev" };
+  const pubRaw = await (await api("/api/v1/apps", { headers: pubHeaders })).text();
+  // Whole-body assertions: a leak that sinks one level deeper must still fail.
+  expect(pubRaw).not.toContain("/tmp/secret-dir");
+  expect(pubRaw).not.toContain("shh-do-not-leak");
+  const pubRow = JSON.parse(pubRaw).apps.find((a: any) => a.name === "secretful");
+  expect(pubRow.record).toEqual({ kind: "service", command: null, workingDirectory: null });
+
+  // The single-record endpoint's `row` half goes through the same redaction.
+  const oneRaw = await (await api("/api/v1/apps/secretful", { headers: pubHeaders })).text();
+  expect(oneRaw).not.toContain("/tmp/secret-dir");
+  expect(JSON.parse(oneRaw).row.record).toEqual({ kind: "service", command: null, workingDirectory: null });
+
+  // Locally the edit dialog needs the real values, so they survive there.
+  const local: any = await (await api("/api/v1/apps")).json();
+  const localRow = local.apps.find((a: any) => a.name === "secretful");
+  expect(localRow.record).toEqual({
+    kind: "service", command: ["bun", "s.ts"], workingDirectory: "/tmp/secret-dir",
+  });
 });
 
 test("the single-record endpoint redacts the record too (secrets never transit)", async () => {
