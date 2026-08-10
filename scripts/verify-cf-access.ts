@@ -1,6 +1,6 @@
 // scripts/verify-cf-access.ts
 // LIVE gate for the access-tier pillar. Run BY MATT:
-//   CF_TOKEN=… CF_ZONE=… CF_DOMAIN=m4tthew.dev bun run scripts/verify-cf-access.ts
+//   CF_TOKEN=… CF_ZONE=… CF_DOMAIN=yourdomain.com bun run scripts/verify-cf-access.ts
 // Creates a scratch Access app + only-me policy on a hostname that serves
 // nothing, verifies Cloudflare answers the gate (302 to the Access login),
 // then deletes everything it created. Prints PASS/FAIL and every id it touched.

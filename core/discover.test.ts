@@ -51,14 +51,14 @@ import { servicePrefixes, shortLabel } from "./discover.ts";
 
 test("servicePrefixes is the product prefix plus grandfathered ones", () => {
   expect(servicePrefixes([])).toEqual(["com.mattstack.local."]);
-  expect(servicePrefixes(["com.matthewgoodwin."])).toEqual([
-    "com.mattstack.local.", "com.matthewgoodwin.",
+  expect(servicePrefixes(["com.example.legacy."])).toEqual([
+    "com.mattstack.local.", "com.example.legacy.",
   ]);
 });
 
 test("shortLabel strips whichever prefix matches", () => {
-  const prefixes = servicePrefixes(["com.matthewgoodwin."]);
+  const prefixes = servicePrefixes(["com.example.legacy."]);
   expect(shortLabel("com.mattstack.local.myapp", prefixes)).toBe("myapp");
-  expect(shortLabel("com.matthewgoodwin.boxscore", prefixes)).toBe("boxscore");
+  expect(shortLabel("com.example.legacy.boxscore", prefixes)).toBe("boxscore");
   expect(shortLabel("com.mattstack.local", prefixes)).toBe("local");
 });

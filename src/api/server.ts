@@ -18,6 +18,7 @@ import { migrate } from "../registry/migrate.ts";
 import { redactedSettings, updatePlatformSettings, getPlatformSettings } from "./platform-settings.ts";
 import { logsDir } from "./state.ts";
 import { join } from "path";
+import { userInfo } from "os";
 import type { TunnelDriver } from "../edge/tunnel.ts";
 import { bindDomain, TUNNEL_LABEL } from "../edge/domain.ts";
 import { parseTier, setTier, getTier, tierRequiresCf } from "../edge/access-tiers.ts";
@@ -382,7 +383,7 @@ async function proxyRestart(deps: ApiDeps): Promise<Response> {
   if (!(await isAuthorized())) {
     return json({
       ok: false, error: "not-authorized", sudoersPath: SUDOERS_PATH,
-      installCommand: sudoersInstallCommand(process.env.USER ?? "matt"),
+      installCommand: sudoersInstallCommand(process.env.USER ?? userInfo().username),
     }, 403);
   }
   // Answer before restarting: the restart takes ~10s and usually kills the

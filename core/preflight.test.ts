@@ -1,9 +1,9 @@
 import { test, expect } from "bun:test";
 import { interpretProbe, parseHmrPort, parseHmrProtocol, isHostBlocked, type Probe } from "./preflight.ts";
 
-const CTX = { app: "mattari", devPort: 4101, publicHost: "mattari.m4tthew.dev" };
+const CTX = { app: "devapp", devPort: 4101, publicHost: "devapp.example.dev" };
 
-// Captured from mattari's running dev server before it was configured, so the
+// Captured from devapp's running dev server before it was configured, so the
 // unconfigured fixtures below are real output rather than invented shapes.
 const UNCONFIGURED_CLIENT = `
 const importMetaUrl = new URL(import.meta.url);
@@ -19,8 +19,8 @@ const hmrPort = 443;
 `;
 
 const BLOCKED_BODY =
-  'Blocked request. This host ("mattari.m4tthew.dev") is not allowed.\n' +
-  'To allow this host, add "mattari.m4tthew.dev" to `server.allowedHosts` in vite.config.js.';
+  'Blocked request. This host ("devapp.example.dev") is not allowed.\n' +
+  'To allow this host, add "devapp.example.dev" to `server.allowedHosts` in vite.config.js.';
 
 const codes = (p: Probe) => interpretProbe(p, CTX).map((i) => i.code);
 
@@ -51,7 +51,7 @@ test("nothing listening reports only dev-server-down", () => {
   expect(codes({ reachable: false })).toEqual(["dev-server-down"]);
 });
 
-test("mattari's real unconfigured state reports both fixable issues", () => {
+test("devapp's real unconfigured state reports both fixable issues", () => {
   expect(codes({
     reachable: true,
     host: { status: 403, body: BLOCKED_BODY },
@@ -126,7 +126,7 @@ test("issues carry the exact config line to add", () => {
     host: { status: 403, body: BLOCKED_BODY },
     viteClient: { status: 200, body: UNCONFIGURED_CLIENT },
   }, CTX);
-  expect(issues[0]!.fix).toContain("server.allowedHosts: ['mattari.m4tthew.dev']");
+  expect(issues[0]!.fix).toContain("server.allowedHosts: ['devapp.example.dev']");
   expect(issues[1]!.fix).toContain("clientPort: 443");
   expect(issues[1]!.fix).toContain("protocol: 'wss'");
 });
