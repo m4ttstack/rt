@@ -39,6 +39,22 @@ test("bootstrap: agent + aliases first, then the record catches up as managedBy 
   expect(rec.label).toBe("com.mattstack.local");
 });
 
+test("the platform's own plist carries PATH captured from the installing shell", async () => {
+  const manager = new FakeServiceManager();
+  const edge = new FakeEdgeProxy();
+  const savedPath = process.env.PATH;
+  process.env.PATH = "/fake/installer/bin:/usr/bin";
+  try {
+    await bootstrapSelf({ manager, edge }, {
+      execPath: "/usr/local/bin/local", entry: null, tlds: ["localhost", "mattstack"],
+    });
+    const spec = manager.installed.get("com.mattstack.local")!;
+    expect(spec.environment.PATH).toBe("/fake/installer/bin:/usr/bin");
+  } finally {
+    process.env.PATH = savedPath;
+  }
+});
+
 test("bootstrap is idempotent: a second run (reinstall/upgrade/retry) does not throw", async () => {
   const manager = new FakeServiceManager();
   const edge = new FakeEdgeProxy();

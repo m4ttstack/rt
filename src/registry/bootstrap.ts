@@ -38,7 +38,12 @@ export async function bootstrapSelf(
     label: PLATFORM_LABEL,
     programArguments,
     workingDirectory: stateDir(),
-    environment: { PORT: String(port) },
+    // launchd starts agents with its own minimal PATH ($PATH pared down to
+    // the OS defaults), not the installing shell's, so anything the running
+    // platform later shells out to (portless, in particular; this broke live)
+    // needs the real PATH captured here, at `local setup` time, while
+    // process.env.PATH still holds the shell's actual value.
+    environment: { PORT: String(port), PATH: process.env.PATH ?? "" },
     stdoutPath: join(logsDir(), "local.out.log"),
     stderrPath: join(logsDir(), "local.err.log"),
   });
