@@ -1,15 +1,10 @@
 ---
 name: mr-board:doctor
 description: >-
-  Thin, domain-agnostic wrapper the mr-board launches to auto-repair mechanical
-  breakage on ONE MR — merge conflicts and/or CI failures, whether it's yours or
-  a teammate's. Aims to finish unattended. Emits lifecycle status to a state file
-  the board reads, then
-  delegates the actual repair to the skill named by --skill. Invoked as
-  "/mr-board:doctor <mrUrl> --state <path> --status-bin <path>
-  [--skill <name>]". When no --skill is given, the domain skill is resolved
-  from the tier's slot binding (doctor or doctor-api) in
-  .mattstack/skills.jsonc. Not for manual use.
+  Use when the mr-board launches a pane to auto-repair mechanical breakage
+  (merge conflicts and/or red CI) on ONE MR, yours or a teammate's, invoked as
+  "/mr-board:doctor <mrUrl> --state <path> --status-bin <path> [--skill <name>]"
+  with optional --tier, --fix-classes and --draft-bin flags. Not for manual use.
 allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/resolve-args.sh:*)
 metadata:
   slots: "doctor,doctor-api"
@@ -91,6 +86,11 @@ launch uses the `doctor` slot (mirroring `config.doctorSkill`).
      read conflict/pipeline state, attempt a mechanical rebase, and retry
      obviously-flaky pipelines. Do **not** guess at semantic conflict
      resolutions or behavior-changing test fixes; escalate those.
+3. **Escalate, don't speculate.** Emit `error` (with a specific, actionable
+   message) whenever a fix requires product judgment or non-obvious semantic
+   resolution — a conflict where both sides changed the same logic, a CI failure
+   whose fix would change sanctioned behavior, or repeated fixes not converging.
+
 ### API tier (`--tier api`)
 
 When `--tier api` is present, the repair is checkout-free by contract:
@@ -125,54 +125,49 @@ escalation instead.
   commas), import ordering. Nothing that could alter runtime behavior
   qualifies; if a fix touches logic, changes a condition, adds/removes a
   code path, or you are not certain it's a no-op, it is **not**
-  mechanical-lint... escalate it instead of guessing. This class implies a
-  commit and a push to the MR branch, so it only ever applies without
-  `--tier api`: the API tier's "never commit, never push" contract always
-  wins, even if `mechanical-lint` is present in `--fix-classes` (treat that
-  combination as a dispatcher bug, escalate, do not commit).
-  - **Re-verify the author gate before applying, every time.** The
-    dispatcher only ever includes `mechanical-lint` for the board's own
-    identity, but do not trust the flag alone: confirm independently (e.g.
-    `glab mr view <mrUrl>` for the author, compared against the
-    authenticated GitLab identity for this checkout) that the MR author is
-    genuinely the board's own identity before touching the branch. If that
-    check is inconclusive or they don't match, escalate; never apply a
-    mechanical-lint fix on that ambiguity.
-  - **Commit message must self-identify.** Whatever the repo's own commit
-    message convention is, the message must make clear this is a doctor
-    mechanical-lint fix (e.g. a `doctor: mechanical-lint ...` prefix or
-    equivalent) so it reads unambiguously as an autonomous mechanical fix in
-    `git log`, not a human commit.
-  - **Push using the repo's existing MR-branch push conventions** (same
-    `--force-with-lease`-only discipline as any other doctor push here).
-  - **If the push is blocked** in this runtime environment (no push access,
-    protected branch, network/auth failure): commit locally, do not retry
-    around the block, and escalate `error` with the exact state: the local
-    commit sha, the branch, and the specific block reason, so the human can
-    push it themselves or grant access.
-- **`code-fix`** (checkout-tier only, MAT-351 widening, ruled 2026-08-10):
-  **full repair authority on the board identity's OWN MRs**... real code
-  fixes for red CI, semantic conflict resolution, committed and pushed to
-  the MR branch. The dispatcher only ever includes this class when the MR
-  author IS the board's own identity; every safeguard from
-  `mechanical-lint` applies identically and is not optional: the
-  independent author re-check before touching the branch, the
-  self-identifying commit message (`doctor: code-fix ...` or equivalent),
-  the existing push discipline, and the commit-locally-plus-escalate path
-  when a push is blocked. The API tier's never-commit contract still wins
-  over this class too. Judgment line: `code-fix` licenses fixes a competent
-  author would consider the obviously-intended change (a missing import, a
-  type error with one evident correction, a broken test whose fixture
-  drifted from sanctioned behavior). It does NOT license design decisions:
-  when the fix would CHANGE sanctioned behavior, pick between plausible
-  intents, or the loop is not converging, escalate with the options laid
-  out. When both `mechanical-lint` and `code-fix` are present, prefer
-  describing the fix under the narrowest class that covers it.
+  mechanical-lint... escalate it instead of guessing.
+- **`code-fix`** (checkout-tier only, MAT-351): **full repair authority on
+  the board identity's OWN MRs**... real code fixes for red CI, semantic
+  conflict resolution, committed and pushed to the MR branch. The dispatcher
+  only ever includes this class when the MR author IS the board's own
+  identity. Judgment line: `code-fix` licenses fixes a competent author
+  would consider the obviously-intended change (a missing import, a type
+  error with one evident correction, a broken test whose fixture drifted
+  from sanctioned behavior). It does NOT license design decisions: when the
+  fix would CHANGE sanctioned behavior, pick between plausible intents, or
+  the loop is not converging, escalate with the options laid out.
+- When both `mechanical-lint` and `code-fix` are present, the fix takes the
+  narrowest class that covers it, and the commit message names that class.
 
-3. **Escalate, don't speculate.** Emit `error` (with a specific, actionable
-   message) whenever a fix requires product judgment or non-obvious semantic
-   resolution — a conflict where both sides changed the same logic, a CI failure
-   whose fix would change sanctioned behavior, or repeated fixes not converging.
+#### Safeguards for the branch-writing classes
+
+`mechanical-lint` and `code-fix` both commit and push to the MR branch. All
+four safeguards below apply to both classes identically, and none of them is
+optional.
+
+1. **Never under `--tier api`.** These classes only ever apply without
+   `--tier api`: the API tier's "never commit, never push" contract always
+   wins, even if a branch-writing class is present in `--fix-classes` (treat
+   that combination as a dispatcher bug, escalate, do not commit).
+2. **Re-verify the author gate before applying, every time.** The dispatcher
+   only ever includes these classes for the board's own identity, but do not
+   trust the flag alone: confirm independently (e.g. `glab mr view <mrUrl>`
+   for the author, compared against the authenticated GitLab identity for
+   this checkout) that the MR author is genuinely the board's own identity
+   before touching the branch. If that check is inconclusive or they don't
+   match, escalate; never apply a branch-writing fix on that ambiguity.
+3. **Commit message must self-identify.** Whatever the repo's own commit
+   message convention is, the message must make clear this is a doctor fix of
+   that class (e.g. a `doctor: mechanical-lint ...` or `doctor: code-fix ...`
+   prefix or equivalent) so it reads unambiguously as an autonomous fix in
+   `git log`, not a human commit.
+4. **Push using the repo's existing MR-branch push conventions** (same
+   `--force-with-lease`-only discipline as any other doctor push here). **If
+   the push is blocked** in this runtime environment (no push access,
+   protected branch, network/auth failure): commit locally, do not retry
+   around the block, and escalate `error` with the exact state: the local
+   commit sha, the branch, and the specific block reason, so the human can
+   push it themselves or grant access.
 
 ## Rules
 
