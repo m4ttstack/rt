@@ -106,6 +106,23 @@ export async function clearPassword(app: string): Promise<void> {
   save();
 }
 
+/**
+ * Move an app's whole settings entry to a new key, verbatim. Renaming a record
+ * has to carry published/passwordHash/passwordVersion/override with it: an
+ * unknown name defaults to published:true with no password, so without this a
+ * rename would silently turn a private, password-protected app public. It moves
+ * the raw entry because no setter above can: setPassword only takes a plaintext
+ * to re-hash, and an existing hash has no plaintext to re-derive it from.
+ * A no-op when the old name has no entry (nothing to carry).
+ */
+export function renameAppSettings(oldName: string, newName: string): void {
+  const entry = cache.apps[oldName];
+  if (!entry) return;
+  delete cache.apps[oldName];
+  cache.apps[newName] = entry;
+  save();
+}
+
 export function getOverride(app: string): PortOverride | undefined {
   return cache.apps[app]?.override;
 }
