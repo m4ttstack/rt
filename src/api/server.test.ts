@@ -50,6 +50,24 @@ test("register -> list -> get -> delete round-trip through HTTP", async () => {
   expect((await api("/api/v1/apps/t1")).status).toBe(404);
 });
 
+test("a freshly-registered app with no route yet shows up in the list without leaking secrets", async () => {
+  const created = await post("/api/v1/apps", {
+    name: "secretful", command: ["bun", "s.ts"], workingDirectory: "/tmp/secret-dir",
+    env: { API_KEY: "shh-do-not-leak" },
+  });
+  expect(created.status).toBe(201);
+  const list = await (await api("/api/v1/apps")).json();
+  const row = list.apps.find((a: any) => a.name === "secretful");
+  expect(row).toBeDefined();
+  // Same safe shape a StatusRow normally carries, e.g. still has managedBy.
+  expect(row.managedBy).toBe("user");
+  // Never the raw AppRecord: command/env/workingDirectory must not leak.
+  expect(row.command).toBeUndefined();
+  expect(row.env).toBeUndefined();
+  expect(row.workingDirectory).toBeUndefined();
+  expect(JSON.stringify(row)).not.toContain("shh-do-not-leak");
+});
+
 test("caller header drives the 409; ?force=true is the escape hatch", async () => {
   await post("/api/v1/apps", { name: "g", command: ["x"], workingDirectory: "/tmp" }, { "x-local-caller": "rt" });
   const denied = await api("/api/v1/apps/g", { method: "DELETE" }); // default caller "user"

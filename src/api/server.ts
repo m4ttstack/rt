@@ -11,7 +11,7 @@ import {
 } from "../../core/proxy-restart.ts";
 import { CANARY_PATH } from "../../core/canary.ts";
 import { boardHtml, boardJs, vendorAsset } from "../../core/board-assets.ts";
-import { buildStatus } from "./status.ts";
+import { buildStatus, type StatusRow } from "./status.ts";
 import { registerApp, unregisterApp, editApp, type Drivers } from "./register.ts";
 import { getRecord, listRecords } from "../registry/records.ts";
 import { logsDir } from "./state.ts";
@@ -80,10 +80,32 @@ export function startApi(deps: ApiDeps) {
           return json(await buildStatus(statusOpts));
         }
         if (pathname === "/api/v1/apps" && req.method === "GET") {
-          // Registry-only: the raw list of what's registered, independent of
-          // whether a route/health probe exists yet. /api/v1/status is the
-          // richer, route-joined dashboard view.
-          return json({ apps: listRecords() });
+          // Every registered record, joined against the live (route-joined,
+          // health-probed) StatusRow when one exists. A record with no route
+          // yet (just-registered, before the edge driver's alias lands) has no
+          // row to join against; synthesize a "not yet live" stand-in using
+          // ONLY the same safe, non-secret StatusRow fields — never spread the
+          // raw AppRecord, which carries command/env/workingDirectory.
+          const rows = (await buildStatus(statusOpts)).apps;
+          const byName = new Map(rows.map((r) => [r.name, r]));
+          const apps: StatusRow[] = listRecords().map((record) => byName.get(record.name) ?? {
+            name: record.name,
+            port: record.port,
+            url: null,
+            publicUrl: null,
+            health: null,
+            service: null,
+            published: false,
+            hasPassword: false,
+            isTunnel: false,
+            override: null,
+            publicFollowsOverride: false,
+            preflight: null,
+            self: false,
+            managedBy: record.managedBy,
+            issues: record.issues ?? [],
+          });
+          return json({ apps });
         }
         if (pathname === "/api/v1/apps" && req.method === "POST") {
           const b = await body(req);
@@ -294,7 +316,7 @@ async function proxyRestart(deps: ApiDeps): Promise<Response> {
   if (!(await isAuthorized())) {
     return json({
       ok: false, error: "not-authorized", sudoersPath: SUDOERS_PATH,
-      installCommand: sudoersInstallCommand(process.env.USER ?? "user"),
+      installCommand: sudoersInstallCommand(process.env.USER ?? "matt"),
     }, 403);
   }
   // Answer before restarting: the restart takes ~10s and usually kills the
