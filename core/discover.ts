@@ -10,7 +10,7 @@ export function routesPath(): string {
 }
 // Same lazy-override pattern as routesPath() above, and as agentsDir() in
 // src/services/launchd.ts (kept in sync so both readers agree in tests).
-function agentsDir(): string {
+export function agentsDir(): string {
   return process.env.LOCAL_AGENTS_DIR ?? join(homedir(), "Library", "LaunchAgents");
 }
 const PLIST_PREFIX = "com.matthewgoodwin.";
