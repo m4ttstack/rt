@@ -47,8 +47,8 @@ test("register: allocates from 11000, installs the service, registers the alias,
   expect(rec.port).toBe(11000);
   expect(rec.managedBy).toBe("user");
   expect(rec.kind).toBe("service");
-  expect(rec.label).toBe("com.mattstack.local.myapp");
-  const spec = drivers.manager.installed.get("com.mattstack.local.myapp")!;
+  expect(rec.label).toBe("com.mattstack.deck.myapp");
+  const spec = drivers.manager.installed.get("com.mattstack.deck.myapp")!;
   expect(spec.environment.PORT).toBe("11000");
   expect(spec.workingDirectory).toBe("/tmp/myapp");
   expect(drivers.edge.aliases.get("myapp")).toBe(11000);
@@ -70,11 +70,11 @@ test("register rejects a bad name and a taken name", async () => {
 });
 
 test("register with adopt writes the record only — no driver calls (bootstrap/migrate path)", async () => {
-  const res = await registerApp({ ...input, name: "local", managedBy: "local", staticPort: 11000, adopt: true }, drivers);
+  const res = await registerApp({ ...input, name: "deck", managedBy: "deck", staticPort: 11000, adopt: true }, drivers);
   expect(res.status).toBe(201);
   expect(drivers.manager.installed.size).toBe(0);
   expect(drivers.edge.aliases.size).toBe(0);
-  expect(getRecord("local")!.managedBy).toBe("local");
+  expect(getRecord("deck")!.managedBy).toBe("deck");
 });
 
 test("adopt succeeds when the route ALREADY exists — the bootstrap/migrate reality", async () => {
@@ -84,13 +84,13 @@ test("adopt succeeds when the route ALREADY exists — the bootstrap/migrate rea
   const { writeFileSync } = await import("fs");
   writeFileSync(
     process.env.LOCAL_APPS_ROUTES_PATH!,
-    JSON.stringify([{ hostname: "local.localhost", port: 11000, pid: 0 }]),
+    JSON.stringify([{ hostname: "deck.localhost", port: 11000, pid: 0 }]),
   );
-  const res = await registerApp({ name: "local", managedBy: "local", staticPort: 11000, adopt: true }, drivers);
+  const res = await registerApp({ name: "deck", managedBy: "deck", staticPort: 11000, adopt: true }, drivers);
   expect(res.status).toBe(201);
-  expect(getRecord("local")!.managedBy).toBe("local");
+  expect(getRecord("deck")!.managedBy).toBe("deck");
   // A FRESH (non-adopt) registration of that same name is still a conflict:
-  const fresh = await registerApp({ name: "local", staticPort: 11000 }, drivers);
+  const fresh = await registerApp({ name: "deck", staticPort: 11000 }, drivers);
   expect(fresh.status).toBe(409);
   writeFileSync(process.env.LOCAL_APPS_ROUTES_PATH!, "[]");
 });
@@ -121,7 +121,7 @@ test("edit re-ports: reinstalls the service on the new port and re-aliases", asy
   const res = await editApp("myapp", { port: 11500 }, "user", false, drivers);
   expect(res.status).toBe(200);
   expect(getRecord("myapp")!.port).toBe(11500);
-  expect(drivers.manager.installed.get("com.mattstack.local.myapp")!.environment.PORT).toBe("11500");
+  expect(drivers.manager.installed.get("com.mattstack.deck.myapp")!.environment.PORT).toBe("11500");
   expect(drivers.edge.aliases.get("myapp")).toBe(11500);
 });
 
@@ -130,9 +130,9 @@ test("edit rename: moves record, label, and alias", async () => {
   const res = await editApp("myapp", { name: "renamed" }, "user", false, drivers);
   expect(res.status).toBe(200);
   expect(getRecord("myapp")).toBeUndefined();
-  expect(getRecord("renamed")!.label).toBe("com.mattstack.local.renamed");
-  expect(drivers.manager.installed.has("com.mattstack.local.renamed")).toBe(true);
-  expect(drivers.manager.installed.has("com.mattstack.local.myapp")).toBe(false);
+  expect(getRecord("renamed")!.label).toBe("com.mattstack.deck.renamed");
+  expect(drivers.manager.installed.has("com.mattstack.deck.renamed")).toBe(true);
+  expect(drivers.manager.installed.has("com.mattstack.deck.myapp")).toBe(false);
   expect(drivers.edge.aliases.has("renamed")).toBe(true);
 });
 
@@ -159,7 +159,7 @@ test("edit: a record deleted by a second writer mid-flight stays dead, never res
 
 test("unregister: a teardown driver failure keeps the record — with the issue — instead of silently deleting it", async () => {
   await registerApp(input, drivers);
-  drivers.manager.failNext = "com.mattstack.local.myapp";
+  drivers.manager.failNext = "com.mattstack.deck.myapp";
   const res = await unregisterApp("myapp", "user", false, drivers);
   expect(res.status).toBe(200);
   expect((res.body as any).ok).toBe(false);
@@ -181,7 +181,7 @@ test("unregister succeeds when the app's plist was already removed manually (rea
     const { LaunchdManager } = await import("../services/launchd.ts");
     const realDrivers = { manager: new LaunchdManager(async () => 0), edge: new FakeEdgeProxy() };
     await registerApp(input, realDrivers);
-    const plistPath = join(scratchAgentsDir, "com.mattstack.local.myapp.plist");
+    const plistPath = join(scratchAgentsDir, "com.mattstack.deck.myapp.plist");
     expect(existsSync(plistPath)).toBe(true);
     rmSync(plistPath, { force: true }); // simulate: removed manually, job already booted out
 
@@ -197,7 +197,7 @@ test("unregister succeeds when the app's plist was already removed manually (rea
 
 test("edit rename: a teardown driver failure lands a visible issue on the renamed record", async () => {
   await registerApp(input, drivers);
-  drivers.manager.failNext = "com.mattstack.local.myapp";
+  drivers.manager.failNext = "com.mattstack.deck.myapp";
   const res = await editApp("myapp", { name: "renamed" }, "user", false, drivers);
   expect(res.status).toBe(200);
   expect(getRecord("myapp")).toBeUndefined();
@@ -267,7 +267,7 @@ test("edit with an explicit port change clears the now-stale override and aliase
 
 test("edit re-ports: a teardown driver failure lands a visible issue without losing the port change", async () => {
   await registerApp(input, drivers);
-  drivers.manager.failNext = "com.mattstack.local.myapp";
+  drivers.manager.failNext = "com.mattstack.deck.myapp";
   const res = await editApp("myapp", { port: 11500 }, "user", false, drivers);
   expect(res.status).toBe(200);
   const rec = getRecord("myapp")!;

@@ -21,7 +21,7 @@ if (process.env.LOCAL_E2E !== "1") {
   writeFileSync(process.env.LOCAL_APPS_ROUTES_PATH, "[]");
 
   const NAME = `e2e-smoke-${Date.now()}`;
-  const LABEL = `com.mattstack.local.${NAME}`;
+  const LABEL = `com.mattstack.deck.${NAME}`;
   const appDir = join(dir, "app");
 
   test("register -> serve -> override -> unregister with real launchd", async () => {

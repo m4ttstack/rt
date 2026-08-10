@@ -33,7 +33,7 @@ test("binds: tunnel, wildcard route, config, agent, publicDomain", async () => {
   const res = await bindDomain("example.dev", { tunnel, manager }, { cloudflaredDir: cfDir, gatewayPort: 7950 });
   expect(res.status).toBe(200);
   expect(tunnel.calls).toEqual([["create", "local-edge"], ["routeDns", "local-edge", "*.example.dev"]]);
-  const agent = manager.installed.get("com.mattstack.local.tunnel")!;
+  const agent = manager.installed.get("com.mattstack.deck.tunnel")!;
   expect(agent.programArguments).toContain("--config");
   expect(agent.programArguments).toContain("run");
   expect(getPlatformSettings().publicDomain).toBe("example.dev");

@@ -226,6 +226,6 @@ export function startGateway(port = 7950): Server<WsProxyData> {
     },
   });
 
-  console.log(`local-apps gateway serving on http://localhost:${server.port}`);
+  console.log(`Deck gateway serving on http://localhost:${server.port}`);
   return server;
 }

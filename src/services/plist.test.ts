@@ -2,18 +2,18 @@ import { test, expect } from "bun:test";
 import { renderPlist } from "./plist.ts";
 
 const spec = {
-  label: "com.mattstack.local.myapp",
+  label: "com.mattstack.deck.myapp",
   programArguments: ["/Users/x/.bun/bin/bun", "src/server.ts"],
   workingDirectory: "/Users/x/code/myapp",
   environment: { PORT: "11007" },
-  stdoutPath: "/Users/x/.mattstack/local/logs/myapp.out.log",
-  stderrPath: "/Users/x/.mattstack/local/logs/myapp.err.log",
+  stdoutPath: "/Users/x/.mattstack/deck/logs/myapp.out.log",
+  stderrPath: "/Users/x/.mattstack/deck/logs/myapp.err.log",
 };
 
 test("renders the launchd agent shape the skill has proven for years", () => {
   const xml = renderPlist(spec);
   expect(xml).toContain("<key>Label</key>");
-  expect(xml).toContain("<string>com.mattstack.local.myapp</string>");
+  expect(xml).toContain("<string>com.mattstack.deck.myapp</string>");
   expect(xml).toContain("<key>RunAtLoad</key>");
   expect(xml).toContain("<key>KeepAlive</key>");
   expect(xml).toContain("<key>PORT</key>");

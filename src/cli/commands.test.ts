@@ -70,19 +70,19 @@ test("unknown verb exits 2 with usage", async () => {
   expect(x.lines.join("\n")).toContain("usage");
 });
 
-test("usage text invokes the binary as lcl (the shell-reserved-word rename), never local", async () => {
+test("usage text invokes the binary as deck (the shell-reserved-word rename), never local", async () => {
   const x = io();
   expect(await runCommand(["help"], x)).toBe(0);
   const out = x.lines.join("\n");
-  expect(out).toContain("lcl status");
-  expect(out).toContain("lcl migrate --convert");
+  expect(out).toContain("deck status");
+  expect(out).toContain("deck migrate --convert");
   expect(out).not.toMatch(/\blocal (status|add|remove|restart|logs|override|publish|password|access|domain|migrate|serve|setup|uninstall|update|version)\b/);
 });
 
-test("version prints the lcl-prefixed version string", async () => {
+test("version prints the deck-prefixed version string", async () => {
   const x = io();
   expect(await runCommand(["version"], x)).toBe(0);
-  expect(x.lines.join("\n")).toMatch(/^lcl \d+\.\d+\.\d+$/);
+  expect(x.lines.join("\n")).toMatch(/^deck \d+\.\d+\.\d+$/);
 });
 
 test("domain verb captures the CF token via the injected prompt and stores it write-only", async () => {
@@ -128,5 +128,5 @@ test("no running platform gives a clear error", async () => {
   process.env.LOCAL_STATE_DIR = savedInfo;
   rmSync(emptyDir, { recursive: true, force: true });
   expect(code).toBe(1);
-  expect(x.lines.join("\n")).toContain("lcl serve");
+  expect(x.lines.join("\n")).toContain("deck serve");
 });

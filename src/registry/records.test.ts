@@ -20,7 +20,7 @@ beforeEach(() => {
 const rec = (name: string, managedBy = "user") => ({
   name, managedBy, port: 11000, kind: "service" as const,
   command: ["bun", "server.ts"], workingDirectory: "/tmp/x",
-  label: `com.mattstack.local.${name}`, createdAt: "2026-08-10T00:00:00Z",
+  label: `com.mattstack.deck.${name}`, createdAt: "2026-08-10T00:00:00Z",
 });
 
 test("empty registry lists nothing and survives a missing file", () => {

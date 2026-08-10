@@ -185,7 +185,7 @@ function tldRank(hostname: string, tlds: string[]): number {
  * One row per app: a multi-TLD alias writes an entry per hostname, same port.
  * Deterministically prefers `.localhost` (or the earliest-configured TLD) over
  * whichever variant happens to appear first in routes.json - that on-disk
- * order is portless's, not Local's, to control.
+ * order is portless's, not Deck's, to control.
  */
 export function dedupeRoutes(routes: PortlessRoute[], tlds: string[]): PortlessRoute[] {
   const byName = new Map<string, PortlessRoute>();

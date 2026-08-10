@@ -10,10 +10,10 @@ export interface SyncIssue {
 
 export interface AppRecord {
   name: string;
-  /** "user" | "local" | a manager id such as "rt". Generic: rt is just the first manager. */
+  /** "user" | "deck" (the platform itself; "local" pre-rename) | a manager id such as "rt". Generic: rt is just the first manager. */
   managedBy: string;
   port: number;
-  /** service = Local supervises it via launchd; external = a static port Local only routes to. */
+  /** service = Deck supervises it via launchd; external = a static port Deck only routes to. */
   kind: "service" | "external";
   command?: string[];
   workingDirectory?: string;

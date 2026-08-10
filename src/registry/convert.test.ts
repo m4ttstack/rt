@@ -62,8 +62,8 @@ test("converts a legacy-prefixed service to the new label and updates the record
 
 // Requirement: deck migrate --convert must treat the pre-rename product
 // prefix (com.mattstack.local.) as a SECOND legacy prefix alongside
-// com.matthewgoodwin., so apps already converted once (under the old Local
-// identity) re-convert cleanly to the new one.
+// DEFAULT_LEGACY_PREFIX, so apps already converted once (under the old
+// Deck identity) re-convert cleanly to the new one.
 test("a record labeled under the pre-rename com.mattstack.local. prefix re-converts to com.mattstack.deck.", async () => {
   putRecord(legacyRecord("foo", 11010, { label: `${LEGACY_PLATFORM_LABEL_PREFIX}foo` }));
   const manager = new FakeServiceManager();
@@ -112,10 +112,10 @@ test("one app's failure does not abort the batch: the other app still converts",
   expect(getRecord("bad")!.label).toBe(`${DEFAULT_LEGACY_PREFIX}bad`);
 });
 
-test("Local's own platform label is excluded, never converted", async () => {
+test("Deck's own platform label is excluded, never converted", async () => {
   putRecord({
-    name: "local",
-    managedBy: "local",
+    name: "deck",
+    managedBy: "deck",
     port: 11000,
     kind: "service",
     label: PLATFORM_LABEL,
@@ -127,10 +127,10 @@ test("Local's own platform label is excluded, never converted", async () => {
 
   const result = await convert({ manager, healthCheck: alwaysHealthy, waitMs: 30, intervalMs: 5 });
 
-  expect(result.skipped).toContain("local");
-  expect(result.converted).not.toContain("local");
+  expect(result.skipped).toContain("deck");
+  expect(result.converted).not.toContain("deck");
   expect(manager.installed.size).toBe(0);
-  expect(getRecord("local")!.label).toBe(PLATFORM_LABEL);
+  expect(getRecord("deck")!.label).toBe(PLATFORM_LABEL);
 });
 
 test("idempotent: running convert twice is a no-op the second time", async () => {

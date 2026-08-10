@@ -7,7 +7,7 @@ import type { AppRecord } from "./records.ts";
 
 /**
  * The registry is the allocator of record, but ports can also be held by routes
- * Local did not create and by legacy services. Fold registry records in as
+ * Deck did not create and by legacy services. Fold registry records in as
  * synthetic routes so nextFreePort (the proven range walk) sees all three.
  */
 export function allocatePort(

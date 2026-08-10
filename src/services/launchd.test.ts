@@ -15,7 +15,7 @@ test("install writes the plist then loads it; uninstall unloads then removes", a
   const calls: string[][] = [];
   const mgr = new LaunchdManager(async (argv) => { calls.push(argv); return 0; });
   const spec = {
-    label: "com.mattstack.local.t1",
+    label: "com.mattstack.deck.t1",
     programArguments: ["/bin/echo", "hi"],
     workingDirectory: "/tmp",
     environment: { PORT: "11111" },
@@ -23,30 +23,30 @@ test("install writes the plist then loads it; uninstall unloads then removes", a
     stderrPath: "/tmp/t1.err.log",
   };
   await mgr.install(spec);
-  const plist = join(dir, "com.mattstack.local.t1.plist");
+  const plist = join(dir, "com.mattstack.deck.t1.plist");
   expect(existsSync(plist)).toBe(true);
   expect(readFileSync(plist, "utf8")).toContain("<string>/bin/echo</string>");
   expect(calls[0]).toEqual(["launchctl", "load", plist]);
-  expect(await mgr.isInstalled("com.mattstack.local.t1")).toBe(true);
+  expect(await mgr.isInstalled("com.mattstack.deck.t1")).toBe(true);
 
-  await mgr.uninstall("com.mattstack.local.t1");
+  await mgr.uninstall("com.mattstack.deck.t1");
   expect(existsSync(plist)).toBe(false);
   expect(calls[1]).toEqual(["launchctl", "unload", plist]);
-  expect(await mgr.isInstalled("com.mattstack.local.t1")).toBe(false);
+  expect(await mgr.isInstalled("com.mattstack.deck.t1")).toBe(false);
 });
 
 test("kickstart shells the gui-domain kickstart and reports exit ok", async () => {
   const calls: string[][] = [];
   const mgr = new LaunchdManager(async (argv) => { calls.push(argv); return 0; });
-  expect(await mgr.kickstart("com.mattstack.local.t1")).toBe(true);
+  expect(await mgr.kickstart("com.mattstack.deck.t1")).toBe(true);
   expect(calls[0]!.slice(0, 3)).toEqual(["launchctl", "kickstart", "-k"]);
-  expect(calls[0]![3]).toMatch(/^gui\/\d+\/com\.mattstack\.local\.t1$/);
+  expect(calls[0]![3]).toMatch(/^gui\/\d+\/com\.mattstack\.deck\.t1$/);
 });
 
 test("uninstall is a no-op success when the plist file is already gone, without shelling out at all", async () => {
   const calls: string[][] = [];
   const mgr = new LaunchdManager(async (argv) => { calls.push(argv); return 0; });
-  const label = "com.mattstack.local.already-gone";
+  const label = "com.mattstack.deck.already-gone";
   const plist = join(dir, `${label}.plist`);
   expect(existsSync(plist)).toBe(false); // never installed in this test
   await mgr.uninstall(label); // must not throw
@@ -54,7 +54,7 @@ test("uninstall is a no-op success when the plist file is already gone, without 
 });
 
 test("uninstall treats a bootout of a non-loaded label (nonzero unload exit) as success", async () => {
-  const label = "com.mattstack.local.t2";
+  const label = "com.mattstack.deck.t2";
   const failingUnload = new LaunchdManager(async (argv) => (argv[1] === "unload" ? 3 : 0));
   await failingUnload.install({
     label,
@@ -72,7 +72,7 @@ test("uninstall treats a bootout of a non-loaded label (nonzero unload exit) as 
 
 test("uninstall still surfaces a genuine removal failure (not just a missing file)", async () => {
   const mgr = new LaunchdManager(async () => 0);
-  const label = "com.mattstack.local.t3";
+  const label = "com.mattstack.deck.t3";
   const plist = join(dir, `${label}.plist`);
   // A directory sitting where the plist is expected can never be removed by
   // a non-recursive rm: this stands in for a real permission-denied-style

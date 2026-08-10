@@ -17,10 +17,10 @@ export interface ConvertOpts {
   manager: ServiceManager;
   /**
    * Label prefixes treated as legacy, i.e. convertible. Defaults to
-   * com.matthewgoodwin. (grandfathered pre-product apps, migrate.ts's own
-   * constant) AND com.mattstack.local. (the pre-rename product prefix,
-   * Local -> Deck): a machine that already converted its apps once, under
-   * the old identity, must be able to convert them again to the new one.
+   * migrate.ts's own DEFAULT_LEGACY_PREFIX (grandfathered pre-product apps)
+   * AND com.mattstack.local. (the pre-rename product prefix, Local -> Deck):
+   * a machine that already converted its apps once, under the old identity,
+   * must be able to convert them again to the new one.
    */
   legacyPrefixes?: string[];
   /** Injectable for tests: the bounded-wait health probe. Defaults to core/discover's checkHealth. */

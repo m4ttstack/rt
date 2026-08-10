@@ -163,7 +163,7 @@ test("restart 404s on an unknown app, kickstarts a known service record", async 
   await post("/api/v1/apps", { name: "r1", command: ["x"], workingDirectory: "/tmp" });
   const res = await post("/api/v1/apps/r1/restart", {});
   expect(res.status).toBe(200);
-  expect(manager.kickstarts).toContain("com.mattstack.local.r1");
+  expect(manager.kickstarts).toContain("com.mattstack.deck.r1");
 });
 
 test("publish flips settings through the versioned path", async () => {

@@ -1,7 +1,7 @@
 #!/bin/sh
-# Local installer, https://github.com/@@REPO@@
-# Installs the `lcl` binary to ~/.mattstack/local/bin and runs `lcl setup`.
-# (The product is Local; the command is lcl, named so because `local` is a
+# Deck installer, https://github.com/@@REPO@@
+# Installs the `deck` binary to ~/.mattstack/deck/bin and runs `deck setup`.
+# (The product is Deck; the command is deck, named so because `local` is a
 # shell reserved word.)
 set -eu
 REPO="@@REPO@@"
@@ -10,17 +10,17 @@ case "$REPO" in
 esac
 
 case "$(uname -s)-$(uname -m)" in
-  Darwin-arm64) ASSET="lcl-darwin-arm64" ;;
-  Darwin-x86_64) ASSET="lcl-darwin-x64" ;;
-  *) echo "Local v1 supports macOS (Linux is designed-for, coming). Sorry!"; exit 1 ;;
+  Darwin-arm64) ASSET="deck-darwin-arm64" ;;
+  Darwin-x86_64) ASSET="deck-darwin-x64" ;;
+  *) echo "Deck v1 supports macOS (Linux is designed-for, coming). Sorry!"; exit 1 ;;
 esac
 
-BIN_DIR="${HOME}/.mattstack/local/bin"
+BIN_DIR="${HOME}/.mattstack/deck/bin"
 mkdir -p "${BIN_DIR}"
 URL="https://github.com/${REPO}/releases/latest/download/${ASSET}"
 echo "downloading ${URL} ..."
-curl -fsSL -o "${BIN_DIR}/lcl" "${URL}"
-chmod +x "${BIN_DIR}/lcl"
+curl -fsSL -o "${BIN_DIR}/deck" "${URL}"
+chmod +x "${BIN_DIR}/deck"
 
 case ":${PATH}:" in
   *":${BIN_DIR}:"*) ;;
@@ -38,5 +38,5 @@ case ":${PATH}:" in
     ;;
 esac
 
-echo "running lcl setup ..."
-"${BIN_DIR}/lcl" setup
+echo "running deck setup ..."
+"${BIN_DIR}/deck" setup

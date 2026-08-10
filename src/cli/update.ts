@@ -1,11 +1,11 @@
 import { chmodSync, renameSync } from "fs";
 import { basename } from "path";
 
-export const REPO = "m4ttheweric/local-apps";
+export const REPO = "m4ttheweric/deck";
 
 export function pickAsset(platform: string, arch: string): string {
-  if (platform === "darwin" && arch === "arm64") return "lcl-darwin-arm64";
-  if (platform === "darwin" && arch === "x64") return "lcl-darwin-x64";
+  if (platform === "darwin" && arch === "arm64") return "deck-darwin-arm64";
+  if (platform === "darwin" && arch === "x64") return "deck-darwin-x64";
   throw new Error(`no release asset for ${platform}-${arch}`);
 }
 
