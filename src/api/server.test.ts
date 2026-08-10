@@ -68,6 +68,31 @@ test("a freshly-registered app with no route yet shows up in the list without le
   expect(JSON.stringify(row)).not.toContain("shh-do-not-leak");
 });
 
+test("the single-record endpoint redacts the record too (secrets never transit)", async () => {
+  const created = await post("/api/v1/apps", {
+    name: "secretful", command: ["bun", "s.ts"], workingDirectory: "/tmp/secret-dir",
+    env: { API_KEY: "shh-do-not-leak" },
+  });
+  expect(created.status).toBe(201);
+  const res = await api("/api/v1/apps/secretful");
+  expect(res.status).toBe(200);
+  const raw = await res.text();
+  // The whole body: neither `record` nor `row` may carry the secret.
+  expect(raw).not.toContain("shh-do-not-leak");
+  const one = JSON.parse(raw);
+  expect(one.record.env).toBeUndefined();
+  expect(one.record.command).toBeUndefined();
+  expect(one.record.workingDirectory).toBeUndefined();
+  // Redacted, not dropped: the caller still learns which vars are set.
+  expect(one.record.envKeys).toEqual(["API_KEY"]);
+  // The safe fields survive, and the row is the same shape the list returns.
+  expect(one.record.name).toBe("secretful");
+  expect(one.record.managedBy).toBe("user");
+  expect(one.record.port).toBeGreaterThan(0);
+  expect(one.row.name).toBe("secretful");
+  expect(one.row.managedBy).toBe("user");
+});
+
 test("caller header drives the 409; ?force=true is the escape hatch", async () => {
   await post("/api/v1/apps", { name: "g", command: ["x"], workingDirectory: "/tmp" }, { "x-local-caller": "rt" });
   const denied = await api("/api/v1/apps/g", { method: "DELETE" }); // default caller "user"

@@ -10,10 +10,16 @@ import {
 import { shouldAutoHeal } from "../core/auto-heal.ts";
 import { reconcileOnce } from "../core/reconcile.ts";
 import { isAuthorized, startRestartDetached } from "../core/proxy-restart.ts";
+import { listRecords } from "./registry/records.ts";
 
 const PORT = Number(process.env.PORT ?? 7940);
 const CANARY_PORT = Number(process.env.LOCAL_APPS_CANARY_PORT ?? 7942);
-const APP_NAME = process.env.LOCAL_APPS_APP_NAME ?? "apps";
+// The canary flips <APP_NAME>.localhost's route to a canary port and back, so
+// this must be the route the platform actually owns. Once bootstrap has run
+// that is the self-record's name ("local"), not the legacy default "apps".
+const APP_NAME =
+  process.env.LOCAL_APPS_APP_NAME ??
+  (listRecords().find((r) => r.managedBy === "local")?.name ?? "apps");
 const CANARY_INTERVAL_MS = 5 * 60_000;
 
 export function serve(): void {

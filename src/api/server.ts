@@ -13,7 +13,7 @@ import { CANARY_PATH } from "../../core/canary.ts";
 import { boardHtml, boardJs, vendorAsset } from "../../core/board-assets.ts";
 import { buildStatus, type StatusRow } from "./status.ts";
 import { registerApp, unregisterApp, editApp, type Drivers } from "./register.ts";
-import { getRecord, listRecords } from "../registry/records.ts";
+import { getRecord, listRecords, type AppRecord, type SyncIssue } from "../registry/records.ts";
 import { logsDir } from "./state.ts";
 import { join } from "path";
 
@@ -43,6 +43,71 @@ async function body(req: Request): Promise<Record<string, unknown>> {
 
 function knownRouteApp(app: string): boolean {
   return readRoutes().some((r) => r.hostname.split(".")[0] === app);
+}
+
+/**
+ * An AppRecord with everything an API response must not carry stripped out:
+ * env VALUES (real secrets once the add-app form populates them) and the
+ * local-only command/workingDirectory. Redaction is unconditional, because
+ * GETs are always allowed through, public host or not, so there is no caller
+ * policy to gate on. envKeys names the variables an app has, never the values.
+ */
+export interface SafeRecord {
+  name: string;
+  managedBy: string;
+  port: number;
+  kind: AppRecord["kind"];
+  label?: string;
+  grandfathered?: boolean;
+  createdAt: string;
+  issues: SyncIssue[];
+  envKeys: string[];
+}
+
+function safeRecord(record: AppRecord): SafeRecord {
+  return {
+    name: record.name,
+    managedBy: record.managedBy,
+    port: record.port,
+    kind: record.kind,
+    ...(record.label !== undefined && { label: record.label }),
+    ...(record.grandfathered !== undefined && { grandfathered: record.grandfathered }),
+    createdAt: record.createdAt,
+    issues: record.issues ?? [],
+    envKeys: Object.keys(record.env ?? {}),
+  };
+}
+
+/**
+ * A record's live (route-joined, health-probed) StatusRow when one exists. A
+ * record with no route yet (just-registered, before the edge driver's alias
+ * lands) has no row to join against; synthesize a "not yet live" stand-in using
+ * ONLY the same safe, non-secret StatusRow fields — never spread the raw
+ * AppRecord, which carries command/env/workingDirectory. Shared by the list and
+ * single-record endpoints so the two shapes cannot drift apart.
+ */
+function rowFor(record: AppRecord, byName: Map<string, StatusRow>): StatusRow {
+  return byName.get(record.name) ?? {
+    name: record.name,
+    port: record.port,
+    url: null,
+    publicUrl: null,
+    health: null,
+    service: null,
+    published: false,
+    hasPassword: false,
+    isTunnel: false,
+    override: null,
+    publicFollowsOverride: false,
+    preflight: null,
+    self: false,
+    managedBy: record.managedBy,
+    issues: record.issues ?? [],
+  };
+}
+
+function rowsByName(rows: StatusRow[]): Map<string, StatusRow> {
+  return new Map(rows.map((r) => [r.name, r]));
 }
 
 export function startApi(deps: ApiDeps) {
@@ -80,31 +145,9 @@ export function startApi(deps: ApiDeps) {
           return json(await buildStatus(statusOpts));
         }
         if (pathname === "/api/v1/apps" && req.method === "GET") {
-          // Every registered record, joined against the live (route-joined,
-          // health-probed) StatusRow when one exists. A record with no route
-          // yet (just-registered, before the edge driver's alias lands) has no
-          // row to join against; synthesize a "not yet live" stand-in using
-          // ONLY the same safe, non-secret StatusRow fields — never spread the
-          // raw AppRecord, which carries command/env/workingDirectory.
-          const rows = (await buildStatus(statusOpts)).apps;
-          const byName = new Map(rows.map((r) => [r.name, r]));
-          const apps: StatusRow[] = listRecords().map((record) => byName.get(record.name) ?? {
-            name: record.name,
-            port: record.port,
-            url: null,
-            publicUrl: null,
-            health: null,
-            service: null,
-            published: false,
-            hasPassword: false,
-            isTunnel: false,
-            override: null,
-            publicFollowsOverride: false,
-            preflight: null,
-            self: false,
-            managedBy: record.managedBy,
-            issues: record.issues ?? [],
-          });
+          // Every registered record, through the shared safe-row join.
+          const byName = rowsByName((await buildStatus(statusOpts)).apps);
+          const apps: StatusRow[] = listRecords().map((record) => rowFor(record, byName));
           return json({ apps });
         }
         if (pathname === "/api/v1/apps" && req.method === "POST") {
@@ -131,8 +174,11 @@ export function startApi(deps: ApiDeps) {
             if (req.method === "GET") {
               const record = getRecord(name);
               if (!record) return json({ error: "unknown app" }, 404);
-              const row = (await buildStatus(statusOpts)).apps.find((a) => a.name === name) ?? null;
-              return json({ record, row });
+              // Same join and the same redaction the list endpoint uses: the
+              // raw AppRecord (env values, command, workingDirectory) never
+              // transits an API response.
+              const byName = rowsByName((await buildStatus(statusOpts)).apps);
+              return json({ record: safeRecord(record), row: rowFor(record, byName) });
             }
             if (req.method === "PATCH") {
               const r = await editApp(name, (await body(req)) as never, caller, force, deps);

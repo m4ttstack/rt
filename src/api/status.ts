@@ -2,7 +2,6 @@ import {
   checkHealth,
   joinApps,
   listenerFor,
-  nextFreePort,
   orphanServices,
   publicDomainFor,
   readRoutes,
@@ -14,6 +13,7 @@ import {
 import { getAppSettings, type PortOverride } from "../../core/settings.ts";
 import { checkApp, type Issue } from "../../core/preflight.ts";
 import { listRecords, type SyncIssue } from "../registry/records.ts";
+import { allocatePort } from "../registry/allocate.ts";
 
 // TODO: becomes prefix-list aware in Task 5.2.
 const PLIST_PREFIX = "com.matthewgoodwin.";
@@ -55,7 +55,12 @@ export interface StatusRow {
    * apps that opted in, so it is null for everything else rather than empty.
    */
   preflight: Issue[] | null;
-  /** The board's own row (its port === the board's PORT): never port-editable. */
+  /**
+   * The board's own row: never port-editable. True for the board's PORT, for
+   * CANARY_PORT (its route points at the canary listener mid-freshness-check),
+   * and for the port on the platform's own registry record, which after
+   * self-hosting bootstrap may be neither of those.
+   */
   self: boolean;
   /** Registry owner, or null for a route/service the registry has no record for (pre-migrate legacy). */
   managedBy: string | null;
@@ -102,10 +107,13 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
   const orphans = orphanServices(apps, services);
   const healths = await Promise.all(apps.map((a) => checkHealth(a.port)));
 
-  const records = new Map(listRecords().map((r) => [r.name, r]));
+  // One read of the registry, reused for the per-row join, the self lookup and
+  // the nextPort hint below.
+  const records = listRecords();
+  const recordsByName = new Map(records.map((r) => [r.name, r]));
   // The platform's own registry record (once migrated) may sit at any port, so
   // its row is "self" by matching that port rather than by name lookup.
-  const localRecord = listRecords().find((r) => r.managedBy === "local");
+  const localRecord = records.find((r) => r.managedBy === "local");
 
   const appRows: StatusRow[] = await Promise.all(
     apps.map(async (a, i) => {
@@ -126,7 +134,7 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
               publicHost: new URL(a.publicUrl).host,
             })
           : null;
-      const record = records.get(a.name);
+      const record = recordsByName.get(a.name);
       return {
         name: a.name,
         port: a.port,
@@ -180,7 +188,10 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
     total: apps.length,
     apps: appRows,
     orphans: orphanRows,
-    nextPort: nextFreePort(routes, services),
+    // Advisory only, but it must not lie: use the SAME authority the actual
+    // registration path uses, so a record holding a port whose alias hasn't
+    // landed yet (or failed, leaving a SyncIssue) isn't advertised as free.
+    nextPort: allocatePort(records, routes, services),
     proxyStale: opts.proxyFreshness === "stale",
     autoHeal: opts.autoHeal,
   };

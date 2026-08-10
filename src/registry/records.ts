@@ -52,6 +52,7 @@ function load(): RegistryFile {
   }
 }
 
+/** Explicit re-read, for tests and for callers that want a fresh view. */
 export function reloadRegistry(): void {
   cache = load();
 }
@@ -74,12 +75,20 @@ export function getRecord(name: string): AppRecord | undefined {
   return cache.apps[name];
 }
 
+// Every mutator is a read-modify-write: re-read from disk immediately before
+// applying its change, because saving serializes the WHOLE cache back out. A
+// separate process (local migrate/setup/uninstall running alongside serve) can
+// have written since this process last loaded, and a stale-cache-modify-write
+// would silently revert it. This shrinks the window to the mutation itself; it
+// does not make writes atomic across processes.
 export function putRecord(record: AppRecord): void {
+  cache = load();
   cache.apps[record.name] = record;
   save();
 }
 
 export function deleteRecord(name: string): boolean {
+  cache = load();
   if (!cache.apps[name]) return false;
   delete cache.apps[name];
   save();
@@ -87,6 +96,7 @@ export function deleteRecord(name: string): boolean {
 }
 
 export function addIssue(name: string, issue: SyncIssue): void {
+  cache = load();
   const r = cache.apps[name];
   if (!r) return;
   r.issues = [...(r.issues ?? []).filter((i) => i.source !== issue.source), issue];
@@ -94,6 +104,7 @@ export function addIssue(name: string, issue: SyncIssue): void {
 }
 
 export function clearIssues(name: string, source: SyncIssue["source"]): void {
+  cache = load();
   const r = cache.apps[name];
   if (!r?.issues) return;
   r.issues = r.issues.filter((i) => i.source !== source);

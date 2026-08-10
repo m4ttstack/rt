@@ -47,18 +47,25 @@ export async function bootstrapSelf(
   if (!opts.tlds.includes("mattstack")) aliases.push("local.mattstack");
   for (const alias of aliases) await drivers.edge.alias(alias, port);
 
-  // Record catch-up: adopt mode writes the row without re-running the drivers.
-  // Adopt skips the route-conflict check (the alias we JUST wrote above is the
-  // route it would otherwise collide with), but the status still gets checked:
-  // a silent failure here would leave Local serving with no record of itself.
-  const result = await registerApp(
-    { name: "local", managedBy: "local", staticPort: port, adopt: true },
-    drivers,
-  );
-  if (result.status !== 201) {
-    throw new Error(`self record catch-up failed (${result.status}): ${JSON.stringify(result.body)}`);
+  // Record catch-up, fresh bootstrap only: adopt mode writes the row without
+  // re-running the drivers. Adopt skips the route-conflict check (the alias we
+  // JUST wrote above is the route it would otherwise collide with), but the
+  // status still gets checked: a silent failure here would leave Local serving
+  // with no record of itself. On a re-run (reinstall/upgrade/retry) the record
+  // already exists, and registering it again would 409 against itself, so the
+  // field patch below is the whole catch-up that is still owed.
+  if (!existing) {
+    const result = await registerApp(
+      { name: "local", managedBy: "local", staticPort: port, adopt: true },
+      drivers,
+    );
+    if (result.status !== 201) {
+      throw new Error(`self record catch-up failed (${result.status}): ${JSON.stringify(result.body)}`);
+    }
   }
-  // The adopt path wrote kind external; the self record is a supervised service.
+  // The adopt path wrote kind external; the self record is a supervised
+  // service. One write path for both a fresh bootstrap and a re-run, so a
+  // re-run also re-asserts these fields if something drifted them.
   const rec = getRecord("local")!;
   rec.kind = "service";
   rec.label = PLATFORM_LABEL;

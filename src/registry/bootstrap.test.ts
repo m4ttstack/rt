@@ -39,6 +39,24 @@ test("bootstrap: agent + aliases first, then the record catches up as managedBy 
   expect(rec.label).toBe("com.mattstack.local");
 });
 
+test("bootstrap is idempotent: a second run (reinstall/upgrade/retry) does not throw", async () => {
+  const manager = new FakeServiceManager();
+  const edge = new FakeEdgeProxy();
+  const opts = { execPath: "/usr/local/bin/local", entry: null, tlds: ["localhost", "mattstack"] };
+  const first = await bootstrapSelf({ manager, edge }, opts);
+  const second = await bootstrapSelf({ manager, edge }, opts);
+  expect(second.port).toBe(first.port);
+  expect(second.label).toBe(first.label);
+  expect(second.aliases).toEqual(first.aliases);
+  // The drivers stay unconditional: that is the self-heal/reinstall behavior.
+  expect(manager.installed.get("com.mattstack.local")!.environment.PORT).toBe(String(first.port));
+  expect(edge.aliases.get("local")).toBe(first.port);
+  const rec = getRecord("local")!;
+  expect(rec.managedBy).toBe("local");
+  expect(rec.kind).toBe("service");
+  expect(rec.port).toBe(first.port);
+});
+
 test("without the mattstack TLD, the fallback alias local.mattstack is added", async () => {
   const manager = new FakeServiceManager();
   const edge = new FakeEdgeProxy();
