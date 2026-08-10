@@ -32,6 +32,8 @@ export interface ApiDeps extends Drivers {
   tunnel: TunnelDriver;
   /** Where cert.pem / tunnel config live. Tests point this at a scratch dir; production omits it (~/.cloudflared). */
   cloudflaredDir?: string;
+  /** Fake fetch for CF Access driver tests; production omits it and falls back to global fetch. */
+  accessFetch?: typeof fetch;
 }
 
 export function callerOf(req: Request): string {
