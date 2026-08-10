@@ -8,7 +8,11 @@ import { homedir } from "os";
 export function routesPath(): string {
   return process.env.LOCAL_APPS_ROUTES_PATH ?? join(homedir(), ".portless", "routes.json");
 }
-const AGENTS_DIR = join(homedir(), "Library", "LaunchAgents");
+// Same lazy-override pattern as routesPath() above, and as agentsDir() in
+// src/services/launchd.ts (kept in sync so both readers agree in tests).
+function agentsDir(): string {
+  return process.env.LOCAL_AGENTS_DIR ?? join(homedir(), "Library", "LaunchAgents");
+}
 const PLIST_PREFIX = "com.matthewgoodwin.";
 // The parent domain the shared Cloudflare tunnel serves every portless route
 // under (wildcard *.PUBLIC_DOMAIN). Overridable for a different setup.
@@ -106,14 +110,15 @@ async function launchctlPids(): Promise<Map<string, { pid: number | null; status
 }
 
 export async function readServices(): Promise<LaunchdService[]> {
-  if (!existsSync(AGENTS_DIR)) return [];
-  const files = readdirSync(AGENTS_DIR).filter(
+  const dir = agentsDir();
+  if (!existsSync(dir)) return [];
+  const files = readdirSync(dir).filter(
     (f) => f.startsWith(PLIST_PREFIX) && f.endsWith(".plist"),
   );
   const running = await launchctlPids();
   const services: LaunchdService[] = [];
   for (const file of files) {
-    const path = join(AGENTS_DIR, file);
+    const path = join(dir, file);
     const plist = await plistToJson(path);
     if (!plist) continue;
     const label = (plist["Label"] as string) ?? file.replace(".plist", "");
