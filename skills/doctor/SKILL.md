@@ -87,7 +87,7 @@ launch uses the `doctor` slot (mirroring `config.doctorSkill`).
      the actual repair playbook — reading MR state, locating/provisioning the
      worktree, rebasing, triaging and fixing CI, and watching for green. Follow
      it exactly, emitting the state milestones above as it crosses them.
-   - **If no domain skill resolved:** do a generic best-effort — `glab mr view <mrUrl>` to
+   - **If no domain skill resolved:** do a generic best-effort: `glab mr view <mrUrl>` to
      read conflict/pipeline state, attempt a mechanical rebase, and retry
      obviously-flaky pipelines. Do **not** guess at semantic conflict
      resolutions or behavior-changing test fixes; escalate those.
