@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>local apps</title>
+<title>Local</title>
 <link rel="stylesheet" href="/vendor/oat.min.css">
 <style>
   [x-cloak] { display: none !important; }
@@ -47,7 +47,7 @@
 <main class="board" x-data="board" x-cloak>
 
   <header class="hstack justify-between">
-    <h1>local apps</h1>
+    <h1>Local</h1>
     <span class="hstack gap-2" x-show="data && data.canManage">
       <button type="button" class="small outline"
               :disabled="reloadingProxy"
@@ -349,7 +349,13 @@
                       </button>
                     </span>
                   </template>
-                  <template x-if="row.managedBy && row.managedBy !== 'user'">
+                  <template x-if="row.managedBy === 'local'">
+                    <span class="badge" aria-label="this is Local itself — `local uninstall` to remove it">
+                      <i data-lucide="package"></i>
+                      <span>local · this board</span>
+                    </span>
+                  </template>
+                  <template x-if="row.managedBy && row.managedBy !== 'user' && row.managedBy !== 'local'">
                     <span class="badge" :aria-label="'structure is owned by ' + row.managedBy">
                       <i data-lucide="package"></i>
                       <span x-text="'managed · ' + row.managedBy"></span>
@@ -530,7 +536,7 @@
   </template>
 
   <footer class="text-lighter mt-6">
-    discovered from ~/.portless/routes.json + ~/Library/LaunchAgents/com.matthewgoodwin.*
+    discovered from portless routes + LaunchAgents · local.mattstack
   </footer>
 </main>
 <noscript><main class="board"><p class="text-lighter">this board needs JavaScript to show live status.</p></main></noscript>

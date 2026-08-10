@@ -61,7 +61,7 @@ document.addEventListener("alpine:init", () => {
     },
     tunnelDomain() {
       if (!this.data) return "";
-      return this.data.suffix === "localhost" ? "m4tthew.dev" : this.data.suffix;
+      return this.data.suffix === "localhost" ? "" : this.data.suffix;
     },
     isRestarting(row) {
       return !!(row.service && this.restarting[row.service.label]);
@@ -97,6 +97,9 @@ document.addEventListener("alpine:init", () => {
     },
 
     // ---- actions ----
+    // Restarting the board's own service kills this API mid-response (ruled,
+    // accepted quirk): the fetch rejects, we swallow it, and the poll loop
+    // picks the fresh pid up when the platform is back.
     onRestart(row) {
       const label = row.service.label;
       this.restarting[label] = { pid: row.service.pid, at: Date.now() };
