@@ -7,7 +7,14 @@ description: >-
   the board reads, then
   delegates the actual repair to the skill named by --skill. Invoked as
   "/mr-board:doctor <mrUrl> --state <path> --status-bin <path>
-  [--skill <name>]". Not for manual use.
+  [--skill <name>]". When no --skill is given, the domain skill is resolved
+  from the tier's slot binding (doctor or doctor-api) in
+  .mattstack/skills.jsonc. Not for manual use.
+allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/resolve-args.sh:*)
+metadata:
+  slots: "doctor,doctor-api"
+  slot-doctor: "required mr-doctor@1 -- owns the checkout-tier repair playbook: locating or provisioning the worktree, rebasing, triaging and fixing CI, watching for green"
+  slot-doctor-api: "required mr-doctor-api@1 -- owns the api-tier repair playbook: no checkout, pipeline retries, server-side rebase, held drafts only"
 ---
 
 # mr-board doctor runner
@@ -47,15 +54,40 @@ The board owns `queued`. You emit the rest as you cross each milestone:
 | `done` | Terminal: clean + green, or fixes pushed and green. |
 | `error` | Terminal: human decision needed, or the loop budget was exhausted. |
 
+## Resolving the domain skill
+
+The domain skill that owns the actual repair comes from the first source that
+answers; the order is fixed. The tier picks the slot: `--tier api` uses the
+`doctor-api` slot (mirroring the board's `triage.doctorSkill`), any other
+launch uses the `doctor` slot (mirroring `config.doctorSkill`).
+
+1. **Explicit `--skill <name>` wins.** When the board passed it, use it and do
+   not run the resolver. This is the historical launch path, unchanged.
+2. **Otherwise resolve the tier's slot.** Run the vendored resolver:
+
+   ```bash
+   "${CLAUDE_SKILL_DIR}/scripts/resolve-args.sh"
+   ```
+
+   On exit 0, read the SKILL.md at `resolved.doctor.path` (or
+   `resolved.doctor-api.path` under `--tier api`) and treat that skill exactly
+   as if it had been passed via `--skill`.
+3. **Otherwise degrade loudly.** On a nonzero exit, print the resolver's JSON
+   `errors` verbatim in the pane. Never guess or substitute a binding; the
+   script is the only enforcement point. Then proceed with the generic
+   best-effort repair described in the steps below. The api-tier contract
+   (no checkout, no commits, held drafts only) binds the generic path too.
+
 ## Steps
 
 1. **Mark `diagnosing`.** `bun run <status-bin> <state> diagnosing`
 2. **Do the repair.**
-   - **If `--skill` was given:** delegate to that skill with the MR url. It owns
+   - **If a domain skill resolved** (explicit `--skill`, else the tier's slot
+     per "Resolving the domain skill"): delegate to that skill with the MR url. It owns
      the actual repair playbook — reading MR state, locating/provisioning the
      worktree, rebasing, triaging and fixing CI, and watching for green. Follow
      it exactly, emitting the state milestones above as it crosses them.
-   - **If no `--skill`:** do a generic best-effort — `glab mr view <mrUrl>` to
+   - **If no domain skill resolved:** do a generic best-effort: `glab mr view <mrUrl>` to
      read conflict/pipeline state, attempt a mechanical rebase, and retry
      obviously-flaky pipelines. Do **not** guess at semantic conflict
      resolutions or behavior-changing test fixes; escalate those.

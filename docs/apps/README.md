@@ -80,7 +80,30 @@ when you open the board from a local hostname (`mrs.localhost`, `localhost`, `12
 
 a plain click still opens the MR in a new browser tab (the menu also has open-in-gitlab and copy-for-slack). the review action is gated by an `isLocal` check on both the client (the menu item only appears locally) and the server (`POST /review` returns 403), so it never fires when the board is viewed through a public tunnel. review status files live in the gitignored `state/reviews/` dir and are pruned after 24h.
 
-depends on herdr running locally and on the `mr-board:{review,respond,doctor}` wrapper skills being installed (plus whatever domain skills you point `reviewSkill` / `respondSkill` / `doctorSkill` at).
+depends on herdr running locally and on the `mr-board:{review,respond,doctor}` wrapper skills being installed (plus whatever domain skills you point `reviewSkill` / `respondSkill` / `doctorSkill` at, or bind via the manifest below).
+
+### skill bindings (.mattstack/skills.jsonc)
+
+the wrapper skills are parameterized skills (the convention lives in the mattstack-skills plugin's `parameterized-skills` skill): each declares slots for the domain skills that own the actual work, and resolves them with a vendored `scripts/resolve-args.sh`. resolution order, in each wrapper: an explicit `--skill` flag (what the board injects from `reviewSkill` / `respondSkill` / `doctorSkill`) always wins, unchanged; with no `--skill`, the wrapper resolves its slot bindings from the nearest `.mattstack/skills.jsonc` (walking up from the working dir, then `~/.mattstack/skills.jsonc`); a failed resolution degrades loudly (the resolver prints machine-readable json errors, the wrapper never guesses a binding) before falling back to the generic domain-free behavior.
+
+slots and contracts: `mr-board:review` has slot `review` (contract `mr-review@1`), `mr-board:respond` has slot `respond` (`mr-respond@1`), and `mr-board:doctor` has slots `doctor` (`mr-doctor@1`, the checkout tier) and `doctor-api` (`mr-doctor-api@1`, the `--tier api` no-checkout tier). a bound skill must declare the matching contract in its `metadata.provides`.
+
+example bindings, as the acme domain pack provides them:
+
+```jsonc
+// ~/.mattstack/skills.jsonc
+{
+  "version": 1,
+  "bindings": {
+    "mr-board:review":  { "review": "acme:mr-board-review" },
+    "mr-board:respond": { "respond": "acme:mr-board-respond" },
+    "mr-board:doctor": {
+      "doctor": "acme:mr-board-doctor",
+      "doctor-api": "acme:mr-board-doctor-api"
+    }
+  }
+}
+```
 
 ## peer boards + switchboard (optional)
 
