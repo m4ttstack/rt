@@ -328,6 +328,24 @@
                           :aria-label="row.service ? 'restart ' + row.service.short : 'restart service'">
                     <i data-lucide="refresh-cw"></i>
                   </button>
+                  <template x-if="data.canManage && row.managedBy === 'user'">
+                    <span class="hstack gap-1">
+                      <button type="button" class="small outline icon"
+                              @click="openEdit(row)" :aria-label="'edit ' + row.name">
+                        <i data-lucide="pencil"></i>
+                      </button>
+                      <button type="button" class="small outline icon" data-variant="danger"
+                              @click="onRemove(row)" :aria-label="'remove ' + row.name">
+                        <i data-lucide="trash-2"></i>
+                      </button>
+                    </span>
+                  </template>
+                  <template x-if="row.managedBy && row.managedBy !== 'user'">
+                    <span class="badge" :aria-label="'structure is owned by ' + row.managedBy">
+                      <i data-lucide="package"></i>
+                      <span x-text="'managed · ' + row.managedBy"></span>
+                    </span>
+                  </template>
                 </td>
               </tr>
             </template>
@@ -444,6 +462,35 @@
         <footer>
           <button type="button" class="outline" @click="addModal = null">Cancel</button>
           <button type="submit">Add app</button>
+        </footer>
+      </form>
+    </dialog>
+  </template>
+
+  <template x-if="editModal">
+    <dialog closedby="any"
+            x-init="$nextTick(() => $el.showModal())"
+            @close="editModal = null" @cancel="editModal = null">
+      <form @submit.prevent="submitEdit()">
+        <header><h3 x-text="'Edit ' + editModal.original"></h3></header>
+        <div class="vstack gap-3">
+          <label data-field>Name
+            <input x-model="editModal.name" pattern="[a-z0-9][a-z0-9.-]*" required>
+          </label>
+          <label data-field>Base port
+            <input x-model="editModal.port" inputmode="numeric" required>
+          </label>
+          <template x-if="editModal.kind === 'service'">
+            <span class="vstack gap-3">
+              <label data-field>Command <input x-model="editModal.command" required></label>
+              <label data-field>Working directory <input x-model="editModal.workingDirectory" required></label>
+            </span>
+          </template>
+          <p role="alert" data-variant="error" x-show="editModal.error" x-text="editModal.error"></p>
+        </div>
+        <footer>
+          <button type="button" class="outline" @click="editModal = null">Cancel</button>
+          <button type="submit">Save</button>
         </footer>
       </form>
     </dialog>

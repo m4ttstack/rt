@@ -65,6 +65,13 @@ export interface StatusRow {
   /** Registry owner, or null for a route/service the registry has no record for (pre-migrate legacy). */
   managedBy: string | null;
   issues: SyncIssue[];
+  /**
+   * The registry record's structural shape, for the board's edit dialog to
+   * pre-fill. Null when there is no record (pre-migrate legacy row). This is
+   * distinct from the top-level `record: SafeRecord` GET /api/v1/apps/:name
+   * already returns -- that one is unchanged.
+   */
+  record: { kind: "service" | "external"; command: string[] | null; workingDirectory: string | null } | null;
 }
 
 export interface Status {
@@ -156,6 +163,9 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
           (localRecord !== undefined && a.port === localRecord.port),
         managedBy: record?.managedBy ?? null,
         issues: record?.issues ?? [],
+        record: record
+          ? { kind: record.kind, command: record.command ?? null, workingDirectory: record.workingDirectory ?? null }
+          : null,
       };
     }),
   );
@@ -177,6 +187,7 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
     self: false,
     managedBy: null,
     issues: [],
+    record: null,
   }));
 
   return {

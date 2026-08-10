@@ -48,3 +48,14 @@ test("the platform's own record marks its row self, wherever its port is", async
   const status = await buildStatus(opts);
   expect(status.apps.find((a) => a.name === "myapp")!.self).toBe(true);
 });
+
+test("registered rows carry their record shape for the edit dialog", async () => {
+  putRecord({
+    name: "myapp", managedBy: "user", port: 19999, kind: "service",
+    command: ["bun", "s.ts"], workingDirectory: "/tmp/myapp",
+    label: "com.mattstack.local.myapp", createdAt: "2026-08-10T00:00:00Z",
+  });
+  const status = await buildStatus(opts);
+  const row = status.apps.find((a) => a.name === "myapp")!;
+  expect(row.record).toEqual({ kind: "service", command: ["bun", "s.ts"], workingDirectory: "/tmp/myapp" });
+});

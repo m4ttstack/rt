@@ -103,6 +103,7 @@ function rowFor(record: AppRecord, byName: Map<string, StatusRow>): StatusRow {
     self: false,
     managedBy: record.managedBy,
     issues: record.issues ?? [],
+    record: { kind: record.kind, command: record.command ?? null, workingDirectory: record.workingDirectory ?? null },
   };
 }
 

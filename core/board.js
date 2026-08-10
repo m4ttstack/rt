@@ -13,6 +13,7 @@ document.addEventListener("alpine:init", () => {
     editing: null, // { app, value } | null: the port cell being edited
     pwModal: null, // { app, value } | null: the password dialog
     addModal: null, // { name, external, command, workingDirectory, staticPort, error } | null
+    editModal: null, // { original, name, port, kind, command, workingDirectory, error } | null
     proxyNotice: null, // { kind: "ok"|"bad", message, command? } | null
     proxyHoldUntil: 0, // explicit-click notices outrank the automatic banner until this time
     reloadingProxy: false,
@@ -200,6 +201,52 @@ document.addEventListener("alpine:init", () => {
       } catch (err) {
         m.error = String(err);
         return;
+      }
+      await this.refresh();
+    },
+
+    openEdit(row) {
+      // Only user records are structurally editable from the board; the API
+      // enforces this too - the UI just avoids offering a dead end.
+      this.editModal = {
+        original: row.name,
+        name: row.name,
+        port: row.override ? String(row.override.basePort) : String(row.port ?? ""),
+        kind: row.record ? row.record.kind : "external",
+        command: row.record && row.record.command ? row.record.command.join(" ") : "",
+        workingDirectory: row.record ? (row.record.workingDirectory || "") : "",
+        error: null,
+      };
+    },
+    async submitEdit() {
+      const m = this.editModal;
+      if (!m) return;
+      const patch = { name: m.name.trim(), port: Number(m.port) };
+      if (m.kind === "service") {
+        patch.command = m.command.trim().split(/\s+/);
+        patch.workingDirectory = m.workingDirectory.trim();
+      }
+      const res = await fetch("/api/v1/apps/" + m.original, {
+        method: "PATCH",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(patch),
+      }).catch(() => null);
+      const body = res ? await res.json().catch(() => ({})) : {};
+      if (!res || !res.ok) {
+        m.error = body.message || body.error || "edit failed";
+        return;
+      }
+      this.editModal = null;
+      await this.refresh();
+    },
+    async onRemove(row) {
+      if (!confirm("Remove " + row.name + "? This deletes its service and route.")) return;
+      const res = await fetch("/api/v1/apps/" + row.name, { method: "DELETE" }).catch(() => null);
+      if (res && !res.ok) {
+        const body = await res.json().catch(() => ({}));
+        // Surface the API's message VERBATIM - for managed rows it carries the
+        // escape hatch ("Managed by mattstack - `rt uninstall <app>`").
+        this.notice("bad", body.message || body.error || ("remove failed (" + res.status + ")"), 15000);
       }
       await this.refresh();
     },

@@ -3,8 +3,11 @@ import {
   ExternalLink,
   FileWarning,
   LockKeyhole,
+  Package,
+  Pencil,
   RefreshCw,
   RotateCcw,
+  Trash2,
   Zap,
   createIcons,
 } from "lucide";
@@ -15,8 +18,11 @@ createIcons({
     ExternalLink,
     FileWarning,
     LockKeyhole,
+    Package,
+    Pencil,
     RefreshCw,
     RotateCcw,
+    Trash2,
     Zap,
   },
   attrs: {
