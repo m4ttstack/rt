@@ -4,10 +4,12 @@
 set -eu
 
 echo "== purity greps =="
-if grep -rn --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.local-dev \
-    --exclude-dir=docs --exclude=migrate.ts --exclude=migrate.test.ts \
+hits=$(grep -rn --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.local-dev \
+    --exclude-dir=docs --exclude=migrate.ts --exclude=migrate.test.ts --exclude=certify.sh \
     -e "m4tthew" -e "matthewgoodwin" -e "/Users/matt" \
-    core src scripts package.json README.md 2>/dev/null; then
+    core src scripts package.json README.md 2>/dev/null) || true
+if [ -n "$hits" ]; then
+  echo "$hits"
   echo "FAIL: Matt-shaped constants remain (above)."
   exit 1
 fi
