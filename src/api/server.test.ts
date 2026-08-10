@@ -275,13 +275,13 @@ test("POST /api/v1/migrate without convert runs the adopt-in-place flow", async 
   expect(res.status).toBe(200);
   const body = (await res.json()) as Record<string, unknown>;
   // migrate()'s result shape (adopted/skipped), not convert()'s
-  // (converted/rolledBack/skipped) — pins the request to the OLD route.
+  // (converted/rolledBack/skipped): pins the request to the OLD route.
   expect(Object.keys(body).sort()).toEqual(["adopted", "skipped"]);
 });
 
 test("POST /api/v1/migrate with convert:true runs the convert batch instead", async () => {
-  // Nothing legacy-prefixed registered: an empty, instant batch — proves the
-  // request routed to convert() (its own result shape) rather than migrate().
+  // Nothing legacy-prefixed registered: an empty, instant batch, which proves
+  // the request routed to convert() (its own result shape) rather than migrate().
   const res = await post("/api/v1/migrate", { convert: true });
   expect(res.status).toBe(200);
   const body = await res.json();

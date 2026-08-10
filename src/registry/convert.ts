@@ -74,11 +74,11 @@ export async function convert(opts: ConvertOpts): Promise<ConvertResult> {
     // defense-in-depth check for its bootstrap alias: never touch it under
     // any code path, checked ahead of (and independent of) the prefix test.
     if (record.label === PLATFORM_LABEL) { skipped.push(record.name); continue; }
-    // Not a launchd-supervised app (external/route-only, or no label yet) —
+    // Not a launchd-supervised app (external/route-only, or no label yet)...
     // nothing to convert.
     if (record.kind !== "service" || !record.label) { skipped.push(record.name); continue; }
     // Already on the new convention (a fresh app, or a previous convert run):
-    // this is the idempotency path — a second run is a no-op per app.
+    // this is the idempotency path... a second run is a no-op per app.
     if (!record.label.startsWith(legacyPrefix)) { skipped.push(record.name); continue; }
 
     const oldLabel = record.label;
@@ -100,15 +100,33 @@ export async function convert(opts: ConvertOpts): Promise<ConvertResult> {
     }
 
     if (healthy) {
-      const { grandfathered: _grandfathered, ...rest } = record;
+      // Registry updated LAST, only once the new label is confirmed healthy
+      // (crash-safety, not just correctness): if the process dies anywhere
+      // before this line, the record still names the legacy label, so a
+      // re-run of convert() picks the app up again and redoes the (idempotent)
+      // install/uninstall/kickstart sequence rather than leaving the record
+      // pointed at a label the app was never actually confirmed to be
+      // healthy under. grandfathered is dropped: it specifically means "kept
+      // its legacy label", which is no longer true.
+      const { grandfathered, ...rest } = record;
       putRecord({ ...rest, label: newLabel });
       converted.push(record.name);
       continue;
     }
 
-    // Roll back: tear down whatever the new label got to, restore the legacy
-    // plist under its original label, and never let a rollback-step failure
-    // itself abort the batch — this is already the failure path.
+    // Roll back: tear down whatever the new label got to and reinstall the
+    // legacy spec under its original label, unconditionally... not gated on
+    // which step above actually completed. install()/uninstall() are each
+    // individually idempotent-safe (write+load / unload+rm), so calling both
+    // regardless of exactly where the failure happened is safe in every
+    // ordering, including "install(newLabel) itself threw" (nothing to tear
+    // down, legacy was never touched, and reinstalling it is a harmless
+    // no-op overwrite). The alternative, only restoring the step(s) known to
+    // have completed, has a worse failure mode: uninstall()'s rmSync could
+    // throw AFTER launchctl unload already succeeded (its exit code isn't
+    // checked), which would leave the app down under both labels with no
+    // restore attempted. Never let a rollback-step failure itself abort the
+    // batch: this is already the failure path.
     try { await manager.uninstall(newLabel); } catch { /* best effort */ }
     try { await manager.install(specFor(record, oldLabel)); } catch { /* best effort */ }
     addIssue(record.name, {
