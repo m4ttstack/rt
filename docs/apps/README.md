@@ -69,6 +69,13 @@ board. The original plists keep running under launchd exactly as before;
 migrate only makes them visible and operable, it never touches the files
 that define them.
 
+`local migrate --convert` goes further, per adopted app: it writes a new
+`com.mattstack.local.<name>` plist alongside the legacy one, boots out the
+legacy label, and health-checks the app under its new label. A failed
+health-check rolls that one app back (legacy plist restored, an issue
+recorded on its board row) without stopping the rest of the batch. Routes,
+ports, and settings never change - only the launchd label does.
+
 ## mattstack
 
 local is part of mattstack and installs its surfaces (board, gitq, ...) as

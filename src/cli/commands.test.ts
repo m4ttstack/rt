@@ -86,6 +86,24 @@ test("domain verb captures the CF token via the injected prompt and stores it wr
   expect(JSON.stringify(settings)).not.toContain("cf-tok-123"); // redaction holds
 });
 
+test("migrate --convert posts convert:true and prints the convert-shaped report", async () => {
+  const m = io();
+  expect(await runCommand(["migrate", "--convert"], m)).toBe(0);
+  const out = m.lines.join("\n");
+  expect(out).toContain("converted:");
+  expect(out).toContain("rolled back:");
+  expect(out).toContain("skipped:");
+});
+
+test("migrate without --convert still prints the adopt-shaped report", async () => {
+  const m = io();
+  expect(await runCommand(["migrate"], m)).toBe(0);
+  const out = m.lines.join("\n");
+  expect(out).toContain("adopted:");
+  expect(out).toContain("skipped:");
+  expect(out).not.toContain("converted:");
+});
+
 test("no running platform gives a clear error", async () => {
   const savedInfo = process.env.LOCAL_STATE_DIR;
   const emptyDir = mkdtempSync(join(tmpdir(), "local-cli-noserve-"));

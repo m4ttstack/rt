@@ -19,6 +19,7 @@ usage:
   local access <name> <tier> [...]         public | password | only-me --email E | work-domain --domain D | custom --emails a,b
   local domain <domain>                    bind your own domain (cloudflared)
   local migrate                            adopt existing plists + routes
+  local migrate --convert                  relabel adopted legacy apps to com.mattstack.local.<name>
   local serve | setup | uninstall | update platform lifecycle
   local version`;
 
@@ -176,8 +177,16 @@ export async function runCommand(
         return 0;
       }
       case "migrate": {
-        const { body } = await apiJson("/api/v1/migrate", { method: "POST" });
-        io.out(`adopted: ${body.adopted?.join(", ") || "(none)"}`);
+        const convert = rest.includes("--convert");
+        const { body } = await apiJson("/api/v1/migrate", {
+          method: "POST", body: JSON.stringify({ convert }),
+        });
+        if (convert) {
+          io.out(`converted: ${body.converted?.join(", ") || "(none)"}`);
+          io.out(`rolled back: ${body.rolledBack?.join(", ") || "(none)"}`);
+        } else {
+          io.out(`adopted: ${body.adopted?.join(", ") || "(none)"}`);
+        }
         io.out(`skipped: ${body.skipped?.join(", ") || "(none)"}`);
         return 0;
       }
