@@ -110,6 +110,15 @@
                   <template x-if="!row.url">
                     <span class="text-light" x-text="row.name"></span>
                   </template>
+                  <template x-for="issue in (row.issues || [])" :key="issue.source">
+                    <span class="vstack gap-1 preflight-issue">
+                      <span class="badge" data-variant="danger">
+                        <i data-lucide="triangle-alert"></i>
+                        <span x-text="issue.source + ' sync failed'"></span>
+                      </span>
+                      <code class="text-light" x-text="issue.message"></code>
+                    </span>
+                  </template>
                 </td>
 
                 <td>
