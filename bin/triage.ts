@@ -86,6 +86,7 @@ try {
         pipelineId: m.pipeline ? numericPipelineId(m.pipeline.id) : null,
         pipelineState: m.pipelineState,
         needsRebase: m.blockers.needsRebase,
+        author: m.author.username,
       }));
   };
 
@@ -93,6 +94,8 @@ try {
     triage,
     doctorCwd: boardConfig.doctorCwd || boardConfig.reviewCwd,
     doctorsWorkspace: boardConfig.doctorsWorkspace,
+    // Same resolved identity fetchOwnMrs just filtered by (MAT-351 re-check).
+    identity: username,
     fetchOwnMrs,
     readDoctorStates,
     launchDoctor,

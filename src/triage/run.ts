@@ -18,12 +18,30 @@ const FIX_CLASS_FLAGS: Record<keyof FixClasses, string> = {
   retryFlake: "retry-flake",
   inheritedNoteDraft: "inherited-note-draft",
   cleanApiRebase: "clean-api-rebase",
+  mechanicalLint: "mechanical-lint",
 };
 
 export function enabledFixClassNames(fc: FixClasses): string[] {
   return (Object.keys(FIX_CLASS_FLAGS) as Array<keyof FixClasses>)
     .filter((k) => fc[k])
     .map((k) => FIX_CLASS_FLAGS[k]);
+}
+
+/** MAT-351: mechanical-lint commits + pushes to the MR branch, so unlike the
+    other fix classes it stays gated to the board's own identity even when
+    the config toggle is on -- fetchOwnMrs already restricts this whole
+    pipeline to the token identity's own MRs, but this is the explicit
+    re-check at the point the flag string is actually built, so a future
+    change to that upstream filter can never silently widen who gets a
+    branch-mutating auto-fix. `identity` is the resolved GitLab token
+    username (never a hardcoded username, never config.defaultMember --
+    see the 2026-08-08 ruling in .local-dev/2026-08-08-ci-triage-design.md
+    §6 on why this pipeline's own-MR identity never comes from config). */
+export function composeFixClasses(fc: FixClasses, edgeAuthor: string, identity: string | null): string[] {
+  const names = enabledFixClassNames(fc);
+  if (!fc.mechanicalLint) return names;
+  if (identity !== null && edgeAuthor === identity) return names;
+  return names.filter((n) => n !== "mechanical-lint");
 }
 
 const IN_FLIGHT = new Set<DoctorStatus>(["queued", "diagnosing", "rebasing", "fixing", "watching"]);
@@ -34,6 +52,11 @@ export interface TriageRunDeps {
   triage: TriageConfig;
   doctorCwd: string;
   doctorsWorkspace: string;
+  /** Resolved GitLab token username this pipeline is dispatching as (see
+      bin/triage.ts). Never config.defaultMember (2026-08-08 ruling). Used
+      only to re-verify the mechanical-lint author gate (MAT-351); null
+      before the identity has ever been resolved. */
+  identity: string | null;
   /** Own open MRs (token identity, drafts included), already reduced to facts. */
   fetchOwnMrs(): Promise<OwnMrFacts[]>;
   readDoctorStates(): Map<string, DoctorState>;
@@ -98,7 +121,7 @@ export async function runTriage(deps: TriageRunDeps): Promise<{ dispatched: numb
         // The wrapper treats an absent tier as the historical checkout
         // (fix-and-push) behavior; "api" stays the explicit no-checkout tier.
         tier: deps.triage.tier === "checkout" ? undefined : "api",
-        fixClasses: enabledFixClassNames(deps.triage.fixClasses),
+        fixClasses: composeFixClasses(deps.triage.fixClasses, edge.author, deps.identity),
         draftBin: draftBinPath(),
       });
       deps.writeDoctorState(statePath, { status: "queued", tabId, workspaceId });

@@ -5,7 +5,7 @@ import { decide } from "../triage/policy.ts";
 import type { Edge } from "../triage/edge.ts";
 
 const cfg = parseTriageBlock({ enabled: true });
-const edge: Edge = { mrUrl: "https://x/mr/1", iid: 1, kind: "pipeline-red", pipelineId: 100 };
+const edge: Edge = { mrUrl: "https://x/mr/1", iid: 1, kind: "pipeline-red", pipelineId: 100, author: "matt" };
 const NOW = 1_000_000_000;
 
 describe("decide", () => {

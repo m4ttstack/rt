@@ -9,6 +9,12 @@ export interface OwnMrFacts {
   pipelineId: number | null;
   pipelineState: PipelineState;
   needsRebase: boolean;
+  /** MR author's GitLab username. fetchOwnMrs already scopes this list to the
+      token identity, so today this is always that identity -- carried onto
+      the edge anyway so the mechanical-lint fix class (MAT-351) can re-verify
+      the author gate at the point it composes --fix-classes, instead of
+      trusting the upstream filter implicitly. */
+  author: string;
 }
 
 export type EdgeKind = "pipeline-red" | "needs-rebase";
@@ -18,6 +24,7 @@ export interface Edge {
   iid: number;
   kind: EdgeKind;
   pipelineId: number | null;
+  author: string;
 }
 
 /** Fold this run's observations into memory: ensure entries exist, roll the
@@ -39,10 +46,10 @@ export function detectEdges(mem: DispatchMemory, mrs: OwnMrFacts[]): Edge[] {
     const m = mem.mrs[facts.mrUrl];
     if (!m) continue;
     if (facts.pipelineState === "failed" && facts.pipelineId !== null && facts.pipelineId !== m.lastHandledPipelineId) {
-      edges.push({ mrUrl: facts.mrUrl, iid: facts.iid, kind: "pipeline-red", pipelineId: facts.pipelineId });
+      edges.push({ mrUrl: facts.mrUrl, iid: facts.iid, kind: "pipeline-red", pipelineId: facts.pipelineId, author: facts.author });
     }
     if (facts.needsRebase && !m.lastNeedsRebase) {
-      edges.push({ mrUrl: facts.mrUrl, iid: facts.iid, kind: "needs-rebase", pipelineId: facts.pipelineId });
+      edges.push({ mrUrl: facts.mrUrl, iid: facts.iid, kind: "needs-rebase", pipelineId: facts.pipelineId, author: facts.author });
     }
   }
   return edges;

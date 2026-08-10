@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { parseTriageBlock } from "../triage/config.ts";
 import { emptyMrMemory, type DispatchMemory } from "../triage/memory.ts";
-import { enabledFixClassNames, numericPipelineId, runTriage, type TriageRunDeps } from "../triage/run.ts";
+import { composeFixClasses, enabledFixClassNames, numericPipelineId, runTriage, type TriageRunDeps } from "../triage/run.ts";
 import type { OwnMrFacts } from "../triage/edge.ts";
 import type { AuditEntry } from "../triage/audit.ts";
 
@@ -13,7 +13,7 @@ function deps(over: Partial<TriageRunDeps> = {}): TriageRunDeps & { audit: Audit
     triage: parseTriageBlock({ enabled: true, doctorSkill: "team:doctor-api" }),
     doctorCwd: "/repo",
     doctorsWorkspace: "doctors",
-    fetchOwnMrs: async () => [{ mrUrl: "https://x/mr/1", iid: 1, pipelineId: 100, pipelineState: "failed", needsRebase: false } satisfies OwnMrFacts],
+    fetchOwnMrs: async () => [{ mrUrl: "https://x/mr/1", iid: 1, pipelineId: 100, pipelineState: "failed", needsRebase: false, author: "matt" } satisfies OwnMrFacts],
     readDoctorStates: () => new Map(),
     launchDoctor: async (opts) => { launches.push(opts); return { tabId: "t", workspaceId: "w" }; },
     writeDoctorState: (path, patch) => ({ mrUrl: patch.mrUrl ?? "", iid: patch.iid ?? 0, status: patch.status, origin: patch.origin, startedAt: 0, updatedAt: 0 }),
@@ -23,6 +23,7 @@ function deps(over: Partial<TriageRunDeps> = {}): TriageRunDeps & { audit: Audit
     memory: { identity: null, mrs: {} } as DispatchMemory,
     writeMemory: () => {},
     now: () => 1_000_000_000,
+    identity: "matt",
   };
   return Object.assign(base, over, { audit, launches, notifies });
 }
@@ -73,8 +74,53 @@ describe("helpers", () => {
     expect(numericPipelineId("garbage")).toBeNull();
   });
   test("enabledFixClassNames kebab-cases only the enabled classes", () => {
-    expect(enabledFixClassNames({ retryFlake: true, inheritedNoteDraft: false, cleanApiRebase: true }))
+    expect(enabledFixClassNames({ retryFlake: true, inheritedNoteDraft: false, cleanApiRebase: true, mechanicalLint: false }))
       .toEqual(["retry-flake", "clean-api-rebase"]);
+  });
+
+  describe("composeFixClasses (MAT-351 author gate)", () => {
+    const fc = { retryFlake: true, inheritedNoteDraft: true, cleanApiRebase: false, mechanicalLint: true };
+
+    test("includes mechanical-lint when the edge author matches the board identity", () => {
+      expect(composeFixClasses(fc, "matt", "matt")).toEqual(["retry-flake", "inherited-note-draft", "mechanical-lint"]);
+    });
+
+    test("omits mechanical-lint when the edge author does not match, even though the class is enabled", () => {
+      expect(composeFixClasses(fc, "teammate", "matt")).toEqual(["retry-flake", "inherited-note-draft"]);
+    });
+
+    test("omits mechanical-lint when the board identity is not yet known", () => {
+      expect(composeFixClasses(fc, "matt", null)).toEqual(["retry-flake", "inherited-note-draft"]);
+    });
+
+    test("stays off when the config toggle is off, regardless of author match", () => {
+      expect(composeFixClasses({ ...fc, mechanicalLint: false }, "matt", "matt")).toEqual(["retry-flake", "inherited-note-draft"]);
+    });
+  });
+});
+
+describe("runTriage mechanical-lint dispatch gate (MAT-351)", () => {
+  const triageWithMechanicalLint = parseTriageBlock({
+    enabled: true,
+    doctorSkill: "team:doctor",
+    tier: "checkout",
+    fixClasses: { mechanicalLint: true },
+  });
+
+  test("Matt-authored MR gets mechanical-lint in the composed --fix-classes", async () => {
+    const d = deps({ triage: triageWithMechanicalLint, identity: "matt" });
+    await runTriage(d);
+    expect(d.launches[0].fixClasses).toEqual(["retry-flake", "inherited-note-draft", "mechanical-lint"]);
+  });
+
+  test("teammate-authored MR does NOT get mechanical-lint even with the class enabled", async () => {
+    const d = deps({
+      triage: triageWithMechanicalLint,
+      identity: "matt",
+      fetchOwnMrs: async () => [{ mrUrl: "https://x/mr/1", iid: 1, pipelineId: 100, pipelineState: "failed", needsRebase: false, author: "teammate" } satisfies OwnMrFacts],
+    });
+    await runTriage(d);
+    expect(d.launches[0].fixClasses).toEqual(["retry-flake", "inherited-note-draft"]);
   });
 });
 

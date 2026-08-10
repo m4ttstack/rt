@@ -5,6 +5,13 @@ export interface FixClasses {
   retryFlake: boolean;
   inheritedNoteDraft: boolean;
   cleanApiRebase: boolean;
+  /** Behavior-neutral mechanical code fixes (append required lint-disable
+      reasons, formatting-only changes, import ordering) committed and pushed
+      to the MR branch. MAT-351: dispatch only ever includes this class for
+      edges whose author is the board's own identity -- see composeFixClasses
+      in run.ts, the actual gate. DEFAULT OFF, same conservative posture as
+      cleanApiRebase, since it's the other branch-writing class here. */
+  mechanicalLint: boolean;
 }
 
 export interface TriageConfig {
@@ -27,6 +34,10 @@ const DEFAULT_FIX_CLASSES: FixClasses = {
   inheritedNoteDraft: true,
   // API-only but branch-rewriting; ships DEFAULT OFF per the 2026-08-08 ruling.
   cleanApiRebase: false,
+  // Commits + pushes to the MR branch; ships DEFAULT OFF per the 2026-08-10
+  // MAT-351 ruling. Gated to the board's own identity at dispatch regardless
+  // of this toggle -- see composeFixClasses in run.ts.
+  mechanicalLint: false,
 };
 
 const DEFAULTS: TriageConfig = {
@@ -71,7 +82,7 @@ export function parseTriageBlock(raw: unknown): TriageConfig {
     if (typeof t.fixClasses !== "object" || t.fixClasses === null || Array.isArray(t.fixClasses)) {
       throw new Error(`config.json "triage.fixClasses" must be an object`);
     }
-    for (const key of ["retryFlake", "inheritedNoteDraft", "cleanApiRebase"] as const) {
+    for (const key of ["retryFlake", "inheritedNoteDraft", "cleanApiRebase", "mechanicalLint"] as const) {
       const v = (t.fixClasses as Record<string, unknown>)[key];
       if (v === undefined) continue;
       if (typeof v !== "boolean") throw new Error(`config.json "triage.fixClasses.${key}" must be a boolean`);
