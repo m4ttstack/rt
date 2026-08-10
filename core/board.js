@@ -67,6 +67,12 @@ document.addEventListener("alpine:init", () => {
       return !!(row.service && this.restarting[row.service.label]);
     },
 
+    // Mirrors isPlatformManagedBy on the server: "local" is the pre-rename id
+    // and still appears on records written before the Deck rename.
+    isPlatform(managedBy) {
+      return managedBy === "deck" || managedBy === "local";
+    },
+
     // ---- polling ----
     async refresh() {
       if (this.editing) return; // don't fight an in-flight port edit

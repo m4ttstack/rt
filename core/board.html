@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Local</title>
+<title>Deck</title>
 <link rel="stylesheet" href="/vendor/oat.min.css">
 <style>
   [x-cloak] { display: none !important; }
@@ -47,7 +47,7 @@
 <main class="board" x-data="board" x-cloak>
 
   <header class="hstack justify-between">
-    <h1>Local</h1>
+    <h1>Deck</h1>
     <span class="hstack gap-2" x-show="data && data.canManage">
       <button type="button" class="small outline"
               :disabled="reloadingProxy"
@@ -303,7 +303,12 @@
 
                 <td>
                   <template x-if="data.canManage && row.port != null">
-                    <span>
+                    <!-- hstack rather than a plain inline span: td is nowrap for
+                         the sake of port numbers, so inline controls here cannot
+                         wrap and overflow the column instead, painting over the
+                         actions cell. A flex row wraps its own items and reports
+                         a small min-content width, keeping the column in bounds. -->
+                    <span class="hstack gap-2">
                       <!-- A span wrapper, not a label element: a bare
                            data-field label tag here (no checkbox of its own)
                            would sit -- in raw markup order -- before the
@@ -352,38 +357,44 @@
                 </td>
 
                 <td class="align-right">
-                  <button type="button"
-                          x-show="data.canRestart && row.service"
-                          class="small outline"
-                          :disabled="isRestarting(row)"
-                          @click="onRestart(row)"
-                          :aria-label="row.service ? 'restart ' + row.service.short : 'restart service'">
-                    <i data-lucide="refresh-cw"></i>
-                  </button>
-                  <template x-if="data.canManage && row.managedBy === 'user'">
-                    <span class="hstack gap-1">
-                      <button type="button" class="small outline icon"
-                              @click="openEdit(row)" :aria-label="'edit ' + row.name">
-                        <i data-lucide="pencil"></i>
-                      </button>
-                      <button type="button" class="small outline icon" data-variant="danger"
-                              @click="onRemove(row)" :aria-label="'remove ' + row.name">
-                        <i data-lucide="trash-2"></i>
-                      </button>
-                    </span>
-                  </template>
-                  <template x-if="row.managedBy === 'local'">
-                    <span class="badge" aria-label="this is Local itself — `local uninstall` to remove it">
-                      <i data-lucide="package"></i>
-                      <span>local · this board</span>
-                    </span>
-                  </template>
-                  <template x-if="row.managedBy && row.managedBy !== 'user' && row.managedBy !== 'local'">
-                    <span class="badge" :aria-label="'structure is owned by ' + row.managedBy">
-                      <i data-lucide="package"></i>
-                      <span x-text="'managed · ' + row.managedBy"></span>
-                    </span>
-                  </template>
+                  <!-- One flex row around every control in this cell. The edit
+                       and remove pair is itself a flex container, so as a bare
+                       sibling of the restart button it forced its own line and
+                       dropped under the access cell's controls. -->
+                  <span class="hstack gap-1 justify-end">
+                    <button type="button"
+                            x-show="data.canRestart && row.service"
+                            class="small outline"
+                            :disabled="isRestarting(row)"
+                            @click="onRestart(row)"
+                            :aria-label="row.service ? 'restart ' + row.service.short : 'restart service'">
+                      <i data-lucide="refresh-cw"></i>
+                    </button>
+                    <template x-if="data.canManage && row.managedBy === 'user'">
+                      <span class="hstack gap-1">
+                        <button type="button" class="small outline icon"
+                                @click="openEdit(row)" :aria-label="'edit ' + row.name">
+                          <i data-lucide="pencil"></i>
+                        </button>
+                        <button type="button" class="small outline icon" data-variant="danger"
+                                @click="onRemove(row)" :aria-label="'remove ' + row.name">
+                          <i data-lucide="trash-2"></i>
+                        </button>
+                      </span>
+                    </template>
+                    <template x-if="isPlatform(row.managedBy)">
+                      <span class="badge" aria-label="this is Deck itself, `deck uninstall` to remove it">
+                        <i data-lucide="package"></i>
+                        <span>deck · this board</span>
+                      </span>
+                    </template>
+                    <template x-if="row.managedBy && row.managedBy !== 'user' && !isPlatform(row.managedBy)">
+                      <span class="badge" :aria-label="'structure is owned by ' + row.managedBy">
+                        <i data-lucide="package"></i>
+                        <span x-text="'managed · ' + row.managedBy"></span>
+                      </span>
+                    </template>
+                  </span>
                 </td>
               </tr>
             </template>
