@@ -1,5 +1,5 @@
 import { test, expect, afterAll } from "bun:test";
-import { mkdtempSync, rmSync, existsSync, readFileSync } from "fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -41,4 +41,42 @@ test("kickstart shells the gui-domain kickstart and reports exit ok", async () =
   expect(await mgr.kickstart("com.mattstack.local.t1")).toBe(true);
   expect(calls[0]!.slice(0, 3)).toEqual(["launchctl", "kickstart", "-k"]);
   expect(calls[0]![3]).toMatch(/^gui\/\d+\/com\.mattstack\.local\.t1$/);
+});
+
+test("uninstall is a no-op success when the plist file is already gone, without shelling out at all", async () => {
+  const calls: string[][] = [];
+  const mgr = new LaunchdManager(async (argv) => { calls.push(argv); return 0; });
+  const label = "com.mattstack.local.already-gone";
+  const plist = join(dir, `${label}.plist`);
+  expect(existsSync(plist)).toBe(false); // never installed in this test
+  await mgr.uninstall(label); // must not throw
+  expect(calls).toEqual([]); // nothing to unload against a plist that isn't there
+});
+
+test("uninstall treats a bootout of a non-loaded label (nonzero unload exit) as success", async () => {
+  const label = "com.mattstack.local.t2";
+  const failingUnload = new LaunchdManager(async (argv) => (argv[1] === "unload" ? 3 : 0));
+  await failingUnload.install({
+    label,
+    programArguments: ["/bin/echo", "hi"],
+    workingDirectory: "/tmp",
+    environment: { PORT: "11112" },
+    stdoutPath: "/tmp/t2.out.log",
+    stderrPath: "/tmp/t2.err.log",
+  });
+  const plist = join(dir, `${label}.plist`);
+  expect(existsSync(plist)).toBe(true);
+  await failingUnload.uninstall(label); // the nonzero unload exit must not be fatal
+  expect(existsSync(plist)).toBe(false); // the file still comes down
+});
+
+test("uninstall still surfaces a genuine removal failure (not just a missing file)", async () => {
+  const mgr = new LaunchdManager(async () => 0);
+  const label = "com.mattstack.local.t3";
+  const plist = join(dir, `${label}.plist`);
+  // A directory sitting where the plist is expected can never be removed by
+  // a non-recursive rm: this stands in for a real permission-denied-style
+  // failure that must NOT be swallowed as though it were "already gone".
+  mkdirSync(plist);
+  await expect(mgr.uninstall(label)).rejects.toBeTruthy();
 });

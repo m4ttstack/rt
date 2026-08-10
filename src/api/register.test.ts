@@ -1,5 +1,5 @@
 import { test, expect, beforeEach } from "bun:test";
-import { mkdtempSync, rmSync } from "fs";
+import { mkdtempSync, rmSync, existsSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -146,6 +146,32 @@ test("unregister: a teardown driver failure keeps the record — with the issue 
   expect(rec).toBeDefined();
   expect(rec!.issues).toHaveLength(1);
   expect(rec!.issues![0]!.source).toBe("launchd");
+});
+
+test("unregister succeeds when the app's plist was already removed manually (real LaunchdManager, faked exec)", async () => {
+  // The live bug this pins: a record whose plist file is already gone (and
+  // whose job is already booted out) must still tear down cleanly through
+  // the real driver, not just the fake. Genuine SyncIssue-preservation
+  // behavior for ACTUAL failures (the test above) must keep working too.
+  const scratchAgentsDir = mkdtempSync(join(tmpdir(), "local-flows-agents-"));
+  const savedAgentsDir = process.env.LOCAL_AGENTS_DIR;
+  process.env.LOCAL_AGENTS_DIR = scratchAgentsDir;
+  try {
+    const { LaunchdManager } = await import("../services/launchd.ts");
+    const realDrivers = { manager: new LaunchdManager(async () => 0), edge: new FakeEdgeProxy() };
+    await registerApp(input, realDrivers);
+    const plistPath = join(scratchAgentsDir, "com.mattstack.local.myapp.plist");
+    expect(existsSync(plistPath)).toBe(true);
+    rmSync(plistPath, { force: true }); // simulate: removed manually, job already booted out
+
+    const res = await unregisterApp("myapp", "user", false, realDrivers);
+    expect(res.status).toBe(200);
+    expect((res.body as any).ok).toBe(true);
+    expect(getRecord("myapp")).toBeUndefined();
+  } finally {
+    process.env.LOCAL_AGENTS_DIR = savedAgentsDir;
+    rmSync(scratchAgentsDir, { recursive: true, force: true });
+  }
 });
 
 test("edit rename: a teardown driver failure lands a visible issue on the renamed record", async () => {

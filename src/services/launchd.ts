@@ -32,7 +32,18 @@ export class LaunchdManager implements ServiceManager {
 
   async uninstall(label: string): Promise<void> {
     const path = this.plistPath(label);
-    // Unload before removing; a failed unload (already unloaded) is not fatal.
+    // Teardown must be idempotent: the plist may already be gone (removed
+    // manually, or by a prior uninstall attempt) and the job already booted
+    // out. Both are the desired end state, not failures, so a missing plist
+    // is a no-op success without even shelling out to launchctl for a path
+    // that cannot correspond to anything currently loaded from our own
+    // bookkeeping.
+    if (!existsSync(path)) return;
+    // Unload before removing; a failed unload (already unloaded/booted out)
+    // is not fatal, on purpose: launchctl's exit code does not reliably
+    // distinguish "already not loaded" from other benign states. A genuine
+    // failure still surfaces below, via rmSync actually failing to remove
+    // the file (e.g. permission denied), which force:true does not swallow.
     await this.exec(["launchctl", "unload", path]);
     rmSync(path, { force: true });
   }
