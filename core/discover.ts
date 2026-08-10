@@ -150,15 +150,33 @@ export function publicDomainFor(requestHost?: string): string | null {
   return parent.includes(".") ? parent : null; // require a real multi-label domain
 }
 
+/** Strip trailing labels that are configured TLDs: board.mattstack.localhost -> board. */
+export function bareName(hostname: string, tlds: string[]): string {
+  const labels = hostname.split(".");
+  while (labels.length > 1 && tlds.includes(labels[labels.length - 1]!)) labels.pop();
+  return labels.join(".");
+}
+
+/** One row per app: a multi-TLD alias writes an entry per hostname, same port. */
+export function dedupeRoutes(routes: PortlessRoute[], tlds: string[]): PortlessRoute[] {
+  const seen = new Set<string>();
+  return routes.filter((r) => {
+    const name = bareName(r.hostname, tlds);
+    if (seen.has(name)) return false;
+    seen.add(name);
+    return true;
+  });
+}
+
 /**
  * Join routes to services: exact match on the plist's PORT env var first,
  * name overlap as a fallback. Unmatched routes render without service info.
  */
 export function joinApps(routes: PortlessRoute[], services: LaunchdService[], requestHost?: string): App[] {
   const domain = publicDomainFor(requestHost);
-  const publicDomain = getPlatformSettings().publicDomain;
-  return routes.map((route) => {
-    const name = route.hostname.replace(/\.localhost$/, "");
+  const { publicDomain, tlds } = getPlatformSettings();
+  return dedupeRoutes(routes, tlds).map((route) => {
+    const name = bareName(route.hostname, tlds);
     const service =
       services.find((s) => s.port === route.port) ??
       services.find((s) => {

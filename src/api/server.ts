@@ -1,5 +1,5 @@
 import {
-  publicDomainFor, readRoutes, readServices, restartService, tailFile,
+  publicDomainFor, readRoutes, readServices, restartService, tailFile, bareName,
 } from "../../core/discover.ts";
 import {
   setPublished, setPassword, clearPassword, getOverride, setOverride,
@@ -52,7 +52,8 @@ async function body(req: Request): Promise<Record<string, unknown>> {
 }
 
 function knownRouteApp(app: string): boolean {
-  return readRoutes().some((r) => r.hostname.split(".")[0] === app);
+  const tlds = getPlatformSettings().tlds;
+  return readRoutes().some((r) => bareName(r.hostname, tlds) === app);
 }
 
 /**
@@ -347,7 +348,7 @@ async function applyOverride(
   deps: ApiDeps,
 ): Promise<[unknown, number]> {
   if (!getRecord(app) && !knownRouteApp(app)) return [{ error: "unknown app" }, 404];
-  const curRoute = readRoutes().find((r) => r.hostname.split(".")[0] === app);
+  const curRoute = readRoutes().find((r) => bareName(r.hostname, getPlatformSettings().tlds) === app);
   // The board's own row must never be port-overridden: that would repoint the
   // control plane at a dev process and take the dashboard down with it.
   if (curRoute?.port === deps.port || getOverride(app)?.basePort === deps.port) {

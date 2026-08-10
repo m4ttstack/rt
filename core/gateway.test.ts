@@ -12,6 +12,11 @@ test("appFromHost strips port and known suffixes", () => {
   expect(appFromHost("nihongo.localhost", "example.dev")).toBe("nihongo");
 });
 
+test("appFromHost strips any configured TLD", () => {
+  expect(appFromHost("foo.mattstack", null, ["localhost", "mattstack"])).toBe("foo");
+  expect(appFromHost("foo.localhost", null, ["localhost", "mattstack"])).toBe("foo");
+});
+
 test("unknown route → no-route", () => {
   const d = decide({ app: "x", port: undefined, published: true, passwordVersion: 0, secret: SECRET });
   expect(d.kind).toBe("no-route");

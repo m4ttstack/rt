@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { nextFreePort, type LaunchdService, type PortlessRoute } from "./discover.ts";
+import { nextFreePort, bareName, dedupeRoutes, type LaunchdService, type PortlessRoute } from "./discover.ts";
 
 const route = (port: number): PortlessRoute => ({ hostname: `a${port}.localhost`, port });
 const svc = (port: number | null): LaunchdService => ({
@@ -21,4 +21,28 @@ test("skips ports taken by launchd services", () => {
 
 test("ignores ports outside the range", () => {
   expect(nextFreePort([route(8080)], [svc(null)])).toBe(11000);
+});
+
+test("bareName strips any configured TLD labels, greedily from the right", () => {
+  const tlds = ["localhost", "mattstack"];
+  expect(bareName("board.localhost", tlds)).toBe("board");
+  expect(bareName("board.mattstack", tlds)).toBe("board");
+  expect(bareName("board.mattstack.localhost", tlds)).toBe("board");
+  expect(bareName("local.mattstack", tlds)).toBe("local");
+  // a dotted app name whose labels are not TLDs survives
+  expect(bareName("local.mattstack.localhost", ["localhost"])).toBe("local.mattstack");
+});
+
+test("dedupeRoutes collapses one app's multi-TLD entries to a single row", () => {
+  const routes = [
+    { hostname: "board.localhost", port: 11997 },
+    { hostname: "board.mattstack", port: 11997 },
+    { hostname: "board.mattstack.localhost", port: 11997 },
+    { hostname: "apps.localhost", port: 7940 },
+  ];
+  const out = dedupeRoutes(routes, ["localhost", "mattstack"]);
+  expect(out).toEqual([
+    { hostname: "board.localhost", port: 11997 },
+    { hostname: "apps.localhost", port: 7940 },
+  ]);
 });

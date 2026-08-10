@@ -1,6 +1,7 @@
 import { mkdirSync } from "fs";
 import { join } from "path";
-import { readRoutes, readServices } from "../../core/discover.ts";
+import { readRoutes, readServices, bareName } from "../../core/discover.ts";
+import { getPlatformSettings } from "./platform-settings.ts";
 import {
   getRecord, putRecord, deleteRecord, listRecords, addIssue, clearIssues,
   type AppRecord, type SyncIssue,
@@ -96,7 +97,7 @@ export async function registerApp(input: RegisterInput, drivers: Drivers): Promi
   // alias the REAL portless driver just wrote and 409s against itself.
   const taken =
     getRecord(name) ||
-    (!input.adopt && routes.some((r) => r.hostname.split(".")[0] === name));
+    (!input.adopt && routes.some((r) => bareName(r.hostname, getPlatformSettings().tlds) === name));
   if (taken) return { status: 409, body: { error: "name taken", name } };
 
   let port = input.staticPort;

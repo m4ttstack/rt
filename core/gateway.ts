@@ -10,8 +10,7 @@ import {
   type WsProxyData,
 } from "./ws-proxy.ts";
 import { getPlatformSettings } from "../src/api/platform-settings.ts";
-
-const LOCALHOST_SUFFIX = ".localhost";
+import { bareName } from "./discover.ts";
 
 export type Decision =
   | { kind: "no-route" }
@@ -41,11 +40,10 @@ export function publicPort(
   return routePort;
 }
 
-export function appFromHost(host: string, publicDomain: string | null): string {
+export function appFromHost(host: string, publicDomain: string | null, tlds: string[] = ["localhost"]): string {
   const h = host.replace(/:\d+$/, "");
   if (publicDomain && h.endsWith(`.${publicDomain}`)) return h.slice(0, -(publicDomain.length + 1));
-  if (h.endsWith(LOCALHOST_SUFFIX)) return h.slice(0, -LOCALHOST_SUFFIX.length);
-  return h;
+  return bareName(h, tlds);
 }
 
 export function decide(input: {
@@ -179,7 +177,7 @@ export function startGateway(port = 7950): Server<WsProxyData> {
     async fetch(req): Promise<Response | undefined> {
       const url = new URL(req.url);
       const host = req.headers.get("host") ?? "";
-      const app = appFromHost(host, getPlatformSettings().publicDomain);
+      const app = appFromHost(host, getPlatformSettings().publicDomain, getPlatformSettings().tlds);
       const ip = req.headers.get("cf-connecting-ip") ?? server.requestIP(req)?.address ?? "?";
       const settings = getAppSettings(app);
       const secret = getSecret();
