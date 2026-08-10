@@ -14,6 +14,7 @@ import { boardHtml, boardJs, vendorAsset } from "../../core/board-assets.ts";
 import { buildStatus, type StatusRow } from "./status.ts";
 import { registerApp, unregisterApp, editApp, type Drivers } from "./register.ts";
 import { getRecord, listRecords, type AppRecord, type SyncIssue } from "../registry/records.ts";
+import { redactedSettings, updatePlatformSettings } from "./platform-settings.ts";
 import { logsDir } from "./state.ts";
 import { join } from "path";
 
@@ -158,6 +159,21 @@ export function startApi(deps: ApiDeps) {
           const byName = rowsByName((await buildStatus(statusOpts)).apps);
           const apps: StatusRow[] = listRecords().map((record) => rowFor(record, byName, isPublic));
           return json({ apps });
+        }
+        if (pathname === "/api/v1/settings" && req.method === "GET") {
+          return json(redactedSettings());
+        }
+        if (pathname === "/api/v1/settings" && req.method === "PUT") {
+          const b = await body(req);
+          updatePlatformSettings({
+            ...(b.publicDomain !== undefined && { publicDomain: b.publicDomain === null ? null : String(b.publicDomain) }),
+            ...(Array.isArray(b.tlds) && { tlds: b.tlds.map(String) }),
+            secrets: {
+              ...(b.cfApiToken !== undefined && { cfApiToken: String(b.cfApiToken) }),
+              ...(b.cfZoneId !== undefined && { cfZoneId: String(b.cfZoneId) }),
+            },
+          });
+          return json(redactedSettings());
         }
         if (pathname === "/api/v1/apps" && req.method === "POST") {
           const b = await body(req);

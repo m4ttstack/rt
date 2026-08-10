@@ -161,6 +161,17 @@ test("legacy /api/status still answers with the board document", async () => {
   expect(legacy).toHaveProperty("proxyStale");
 });
 
+test("platform settings: PUT stores a secret, GET never echoes its value", async () => {
+  const put = await api("/api/v1/settings", {
+    method: "PUT", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ cfApiToken: "tok-abc123" }),
+  });
+  expect(put.status).toBe(200);
+  const getRaw = await (await api("/api/v1/settings")).text();
+  expect(JSON.parse(getRaw).hasCfToken).toBe(true);
+  expect(getRaw).not.toContain("tok-abc123");
+});
+
 test("legacy POST endpoints are gone (board speaks /api/v1 now)", async () => {
   for (const path of ["/restart", "/publish", "/password", "/devport", "/publicdev"]) {
     const res = await api(path, { method: "POST", body: new URLSearchParams({ app: "x" }) });
