@@ -3,7 +3,7 @@ import {
 } from "../../core/discover.ts";
 import {
   setPublished, setPassword, clearPassword, getOverride, setOverride,
-  clearOverride, setPublicFollowsOverride,
+  clearOverride, setPublicFollowsOverride, getAppSettings,
 } from "../../core/settings.ts";
 import { setRoutePort } from "../../core/routes-writer.ts";
 import {
@@ -19,6 +19,8 @@ import { logsDir } from "./state.ts";
 import { join } from "path";
 import type { TunnelDriver } from "../edge/tunnel.ts";
 import { bindDomain, TUNNEL_LABEL } from "../edge/domain.ts";
+import { parseTier, setTier, getTier } from "../edge/access-tiers.ts";
+import { syncAccessTier } from "../edge/access.ts";
 
 export interface ApiDeps extends Drivers {
   port: number;
@@ -118,6 +120,7 @@ function rowFor(record: AppRecord, byName: Map<string, StatusRow>, redact: boole
       command: redact ? null : record.command ?? null,
       workingDirectory: redact ? null : record.workingDirectory ?? null,
     },
+    accessTier: getTier(record.name),
   };
 }
 
@@ -264,6 +267,17 @@ export function startApi(deps: ApiDeps) {
             }
             setPublicFollowsOverride(name, b.follows === true);
             return json({ ok: true });
+          }
+          if (sub === "access" && req.method === "PUT") {
+            if (!getRecord(name) && !knownRouteApp(name)) return json({ error: "unknown app" }, 404);
+            const tier = parseTier(await body(req));
+            if ("error" in tier) return json(tier, 400);
+            if (tier.tier === "password" && !getAppSettings(name).passwordHash) {
+              return json({ error: "password-not-set", message: "Set a password first — the password tier is the gateway's own gate." }, 409);
+            }
+            setTier(name, tier);
+            const sync = await syncAccessTier(name, tier, deps);
+            return json({ ok: true, tier, cfSynced: sync.ok });
           }
         }
 

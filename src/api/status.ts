@@ -14,6 +14,7 @@ import { getAppSettings, type PortOverride } from "../../core/settings.ts";
 import { checkApp, type Issue } from "../../core/preflight.ts";
 import { listRecords, type SyncIssue } from "../registry/records.ts";
 import { allocatePort } from "../registry/allocate.ts";
+import { getTier, type AccessTier } from "../edge/access-tiers.ts";
 
 // TODO: becomes prefix-list aware in Task 5.2.
 const PLIST_PREFIX = "com.matthewgoodwin.";
@@ -78,6 +79,7 @@ export interface StatusRow {
    * covers mutations -- cannot carry them out. `kind` is not sensitive.
    */
   record: { kind: "service" | "external"; command: string[] | null; workingDirectory: string | null } | null;
+  accessTier: AccessTier;
 }
 
 export interface Status {
@@ -176,6 +178,7 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
               workingDirectory: publicDomain === null ? record.workingDirectory ?? null : null,
             }
           : null,
+        accessTier: getTier(a.name),
       };
     }),
   );
@@ -198,6 +201,7 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
     managedBy: null,
     issues: [],
     record: null,
+    accessTier: { tier: "public" },
   }));
 
   return {

@@ -40,6 +40,11 @@ test("a route with no record is managedBy null (legacy, pre-migrate)", async () 
   expect(status.apps[0]!.issues).toEqual([]);
 });
 
+test("a row carries its access tier, defaulting to public", async () => {
+  const status = await buildStatus(opts);
+  expect(status.apps[0]!.accessTier).toEqual({ tier: "public" });
+});
+
 test("the platform's own record marks its row self, wherever its port is", async () => {
   putRecord({
     name: "local", managedBy: "local", port: 19999, kind: "service",
