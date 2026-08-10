@@ -6,7 +6,12 @@ description: >-
   delegates the actual review to the skill named by --skill (or reviews
   generically when none is given). Invoked as "/mr-board:review
   <mrUrl> --state <path> --status-bin <path> [--report <path>] [--skill <name>]
-  [--re-review]". Not for manual use.
+  [--re-review]". When no --skill is given, the domain skill is resolved from
+  the review slot binding in .mattstack/skills.jsonc. Not for manual use.
+allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/resolve-args.sh:*)
+metadata:
+  slots: "review"
+  slot-review: "required mr-review@1 -- owns the domain review flow for one MR: resolving the MR/ticket, producing the draft review, writing the report, and its own posting gates"
 ---
 
 # mr-board review runner
@@ -30,18 +35,40 @@ Write status **only** by running the injected `--status-bin`:
 bun run <status-bin> <state> <status> [message] [--outcome <comment|approve>]
 ```
 
+## Resolving the domain skill
+
+The domain skill that owns the actual review comes from the first source that
+answers; the order is fixed:
+
+1. **Explicit `--skill <name>` wins.** When the board passed it, use it and do
+   not run the resolver. This is the historical launch path, unchanged.
+2. **Otherwise resolve the `review` slot.** Run the vendored resolver:
+
+   ```bash
+   "${CLAUDE_SKILL_DIR}/scripts/resolve-args.sh"
+   ```
+
+   On exit 0, read the SKILL.md at `resolved.review.path` and treat that skill
+   exactly as if it had been passed via `--skill`.
+3. **Otherwise degrade loudly.** On a nonzero exit, print the resolver's JSON
+   `errors` verbatim in the pane. Never guess or substitute a binding; the
+   script is the only enforcement point. Then proceed with the generic
+   domain-free review described in the steps below, so an unbound board still
+   gets a review... just never a silently mis-bound one.
+
 ## Steps
 
 1. **Mark reviewing.** `bun run <status-bin> <state> reviewing`
 2. **Review.** If `--re-review` was passed, read "Re-review mode" below first —
    it changes how you frame this step (and what you hand the `--skill`).
-   - **If `--skill` was given:** invoke that skill with the MR url and the
+   - **If a domain skill resolved** (explicit `--skill`, else the `review`
+     slot per "Resolving the domain skill"): invoke that skill with the MR url and the
      `--report <path>`. It owns the actual review — resolving the MR/ticket,
      producing the draft, writing the report, and running its own posting
      gates. Follow it exactly. Do **not** post or approve anything until the
      human answers its gates. Under `--re-review`, also pass it the re-review
      framing (prior review + "check what the author addressed, else fall back").
-   - **If no `--skill`:** review the MR yourself. Fetch the diff, read it
+   - **If no domain skill resolved:** review the MR yourself. Fetch the diff, read it
      critically, and produce findings (severity, `file:line`, what to change).
 3. **Save the review** to `--report <path>` as Markdown (a short summary line,
    then the findings). Write it **before** the gate below, so the board makes

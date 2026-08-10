@@ -5,7 +5,13 @@ description: >-
   on your OWN MR in a fresh herdr pane. Emits lifecycle status to a state file
   the board reads, then delegates the actual work to the skill named by --skill.
   Invoked as "/mr-board:respond <mrUrl> --state <path> --status-bin
-  <path> [--skill <name>]". Not for manual use.
+  <path> [--skill <name>]". When no --skill is given, the domain skill is
+  resolved from the respond slot binding in .mattstack/skills.jsonc. Not for
+  manual use.
+allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/resolve-args.sh:*)
+metadata:
+  slots: "respond"
+  slot-respond: "required mr-respond@1 -- owns processing review feedback on your own MR: fetching unresolved threads, evaluating them, drafting replies, and its own posting gates"
 ---
 
 # mr-board respond runner
@@ -38,16 +44,37 @@ The board tracks five in-flight statuses; emit each as you cross the milestone:
 | `done` | After the run finishes. REQUIRED: `--posted <n> --threads <n>` (see step 5). |
 | `error` | Anything unrecoverable (bad MR, no threads to process, delegated skill failed). |
 
+## Resolving the domain skill
+
+The domain skill that owns the actual work comes from the first source that
+answers; the order is fixed:
+
+1. **Explicit `--skill <name>` wins.** When the board passed it, use it and do
+   not run the resolver. This is the historical launch path, unchanged.
+2. **Otherwise resolve the `respond` slot.** Run the vendored resolver:
+
+   ```bash
+   "${CLAUDE_SKILL_DIR}/scripts/resolve-args.sh"
+   ```
+
+   On exit 0, read the SKILL.md at `resolved.respond.path` and treat that
+   skill exactly as if it had been passed via `--skill`.
+3. **Otherwise degrade loudly.** On a nonzero exit, print the resolver's JSON
+   `errors` verbatim in the pane. Never guess or substitute a binding; the
+   script is the only enforcement point. Then proceed with the generic
+   domain-free flow described in the steps below.
+
 ## Steps
 
 1. **Mark triaging.** `bun run <status-bin> <state> triaging`
 2. **Do the work.**
-   - **If `--skill` was given:** delegate to that skill with the MR url. It owns
+   - **If a domain skill resolved** (explicit `--skill`, else the `respond`
+     slot per "Resolving the domain skill"): delegate to that skill with the MR url. It owns
      the real work — resolving the MR/ticket, fetching unresolved human threads,
      evaluating them, drafting replies, and reaching its posting gates. Follow it
      exactly. Do **not** judge comments inline, and do **not** post or commit
      anything unless the human approves at each gate.
-   - **If no `--skill`:** fetch the MR's unresolved review threads yourself,
+   - **If no domain skill resolved:** fetch the MR's unresolved review threads yourself,
      evaluate each on its merits, and draft replies. Hold at a posting gate.
 3. **Emit `drafting`** when the verdict table + per-thread draft replies are on
    screen: `bun run <status-bin> <state> drafting`
