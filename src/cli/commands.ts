@@ -10,20 +10,20 @@ export const VERSION = pkg.version;
 const USAGE = `lcl: named https domains, supervision, and sharing for local apps
 
 usage:
-  lcl status | list                      show every app
-  lcl add <name> --port N                route an app you run yourself
-  lcl add <name> --cmd "…" --dir PATH    register a supervised app
-  lcl remove <name> [--force]            unregister (registrar-owned; --force is the escape hatch)
-  lcl restart <name>                     kickstart its service
-  lcl logs <name> [--lines N]            tail stderr
-  lcl override <name> <port|off>         dev-port override for <name>.localhost
-  lcl publish <name> on|off              public visibility
-  lcl password <name> [--clear]          password gate (prompts)
-  lcl access <name> <tier> [...]         public | password | only-me --email E | work-domain --domain D | custom --emails a,b
-  lcl domain <domain>                    bind your own domain (cloudflared)
-  lcl migrate                            adopt existing plists + routes
-  lcl migrate --convert                  relabel adopted legacy apps to com.mattstack.local.<name>
-  lcl serve | setup | uninstall | update platform lifecycle
+  lcl status | list                        show every app
+  lcl add <name> --port N                  route an app you run yourself
+  lcl add <name> --cmd "…" --dir PATH      register a supervised app
+  lcl remove <name> [--force]              unregister (registrar-owned; --force is the escape hatch)
+  lcl restart <name>                       kickstart its service
+  lcl logs <name> [--lines N]              tail stderr
+  lcl override <name> <port|off>           dev-port override for <name>.localhost
+  lcl publish <name> on|off                public visibility
+  lcl password <name> [--clear]            password gate (prompts)
+  lcl access <name> <tier> [...]           public | password | only-me --email E | work-domain --domain D | custom --emails a,b
+  lcl domain <domain>                      bind your own domain (cloudflared)
+  lcl migrate                              adopt existing plists + routes
+  lcl migrate --convert                    relabel adopted legacy apps to com.mattstack.local.<name>
+  lcl serve | setup | uninstall | update   platform lifecycle
   lcl version`;
 
 interface Io { out(s: string): void; err(s: string): void }
