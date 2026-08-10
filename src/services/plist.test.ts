@@ -30,3 +30,34 @@ test("XML-escapes hostile values instead of injecting elements", () => {
   expect(xml).toContain("/tmp/&lt;evil&gt;&amp;co");
   expect(xml).not.toContain("<evil>");
 });
+
+test("defaults PATH from the rendering process's own env when the spec doesn't set one", () => {
+  const savedPath = process.env.PATH;
+  process.env.PATH = "/fake/bin:/usr/bin";
+  try {
+    const xml = renderPlist(spec); // spec.environment carries no PATH key
+    expect(xml).toContain("<key>PATH</key>");
+    expect(xml).toContain("<string>/fake/bin:/usr/bin</string>");
+  } finally {
+    process.env.PATH = savedPath;
+  }
+});
+
+test("an explicit PATH on the spec wins over the process default, and existing env keys survive", () => {
+  const savedPath = process.env.PATH;
+  process.env.PATH = "/fake/bin";
+  try {
+    const xml = renderPlist({
+      ...spec,
+      environment: { ...spec.environment, PATH: "/explicit/bin", API_KEY: "shh" },
+    });
+    expect(xml).toContain("<string>/explicit/bin</string>");
+    expect(xml).not.toContain("<string>/fake/bin</string>");
+    expect(xml).toContain("<key>PORT</key>");
+    expect(xml).toContain("<string>11007</string>");
+    expect(xml).toContain("<key>API_KEY</key>");
+    expect(xml).toContain("<string>shh</string>");
+  } finally {
+    process.env.PATH = savedPath;
+  }
+});

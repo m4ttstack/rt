@@ -7,7 +7,15 @@ function esc(s: string): string {
 /** The exact agent shape the matt:local-app skill has proven: RunAtLoad + KeepAlive. */
 export function renderPlist(spec: ServiceSpec): string {
   const args = spec.programArguments.map((a) => `        <string>${esc(a)}</string>`).join("\n");
-  const env = Object.entries(spec.environment)
+  // launchd's own default PATH is minimal, so a plist that doesn't set one
+  // breaks any command that shells out to something installed via npm/
+  // homebrew (portless, in particular; this broke live). Default to the
+  // RENDERING process's own PATH: for app plists rendered by the running
+  // platform, that is the platform's own PATH (captured at `local setup`
+  // time, see registry/bootstrap.ts) once its own plist carries one. An
+  // explicit PATH already on the spec's environment always wins.
+  const environment = { PATH: process.env.PATH ?? "", ...spec.environment };
+  const env = Object.entries(environment)
     .map(([k, v]) => `        <key>${esc(k)}</key>\n        <string>${esc(v)}</string>`)
     .join("\n");
   return `<?xml version="1.0" encoding="UTF-8"?>
