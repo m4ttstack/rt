@@ -2,3 +2,4 @@ node_modules/
 logs/
 .local-dev/
 .worktrees/
+dist/
