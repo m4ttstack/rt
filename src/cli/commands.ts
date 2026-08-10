@@ -4,7 +4,7 @@ import pkg from "../../package.json";
 
 export const VERSION = pkg.version;
 
-const USAGE = `local — named https domains, supervision, and sharing for local apps
+const USAGE = `local: named https domains, supervision, and sharing for local apps
 
 usage:
   local status | list                      show every app
