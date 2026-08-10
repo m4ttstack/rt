@@ -27,8 +27,8 @@ test("the registrar itself passes; force is the escape hatch for everyone", () =
   expect(authorizeStructural({ name: "gitq", managedBy: "rt" }, "user", true).ok).toBe(true);
 });
 
-test("Local's own record is 409-gated to `local uninstall`", () => {
+test("Local's own record is 409-gated to `lcl uninstall`", () => {
   const v = authorizeStructural({ name: "local", managedBy: "local" }, "user", false);
   expect(v.ok).toBe(false);
-  if (!v.ok) expect(v.body.message).toBe("This is Local itself — `local uninstall`");
+  if (!v.ok) expect(v.body.message).toBe("This is Local itself: `lcl uninstall`");
 });

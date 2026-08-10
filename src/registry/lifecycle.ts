@@ -24,9 +24,9 @@ export function authorizeStructural(
   if (force || record.managedBy === caller) return { ok: true };
   const message =
     record.managedBy === "local"
-      ? "This is Local itself — `local uninstall`"
+      ? "This is Local itself: `lcl uninstall`"
       : record.managedBy === "user"
-        ? `Managed by user — remove it from the board or \`local remove ${record.name}\``
+        ? `Managed by user: remove it from the board or \`lcl remove ${record.name}\``
         : `Managed by ${MANAGER_DISPLAY[record.managedBy] ?? record.managedBy} — \`${record.managedBy} uninstall ${record.name}\``;
   return {
     ok: false,

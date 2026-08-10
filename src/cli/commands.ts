@@ -4,24 +4,27 @@ import pkg from "../../package.json";
 
 export const VERSION = pkg.version;
 
-const USAGE = `local: named https domains, supervision, and sharing for local apps
+// The command is lcl, not local: local is a shell reserved word in zsh and
+// bash (zsh silently declares a variable, bash hard-errors), and reserved
+// words beat PATH. The product is still Local; only the binary name differs.
+const USAGE = `lcl: named https domains, supervision, and sharing for local apps
 
 usage:
-  local status | list                      show every app
-  local add <name> --port N                route an app you run yourself
-  local add <name> --cmd "…" --dir PATH    register a supervised app
-  local remove <name> [--force]            unregister (registrar-owned; --force is the escape hatch)
-  local restart <name>                     kickstart its service
-  local logs <name> [--lines N]            tail stderr
-  local override <name> <port|off>         dev-port override for <name>.localhost
-  local publish <name> on|off              public visibility
-  local password <name> [--clear]          password gate (prompts)
-  local access <name> <tier> [...]         public | password | only-me --email E | work-domain --domain D | custom --emails a,b
-  local domain <domain>                    bind your own domain (cloudflared)
-  local migrate                            adopt existing plists + routes
-  local migrate --convert                  relabel adopted legacy apps to com.mattstack.local.<name>
-  local serve | setup | uninstall | update platform lifecycle
-  local version`;
+  lcl status | list                      show every app
+  lcl add <name> --port N                route an app you run yourself
+  lcl add <name> --cmd "…" --dir PATH    register a supervised app
+  lcl remove <name> [--force]            unregister (registrar-owned; --force is the escape hatch)
+  lcl restart <name>                     kickstart its service
+  lcl logs <name> [--lines N]            tail stderr
+  lcl override <name> <port|off>         dev-port override for <name>.localhost
+  lcl publish <name> on|off              public visibility
+  lcl password <name> [--clear]          password gate (prompts)
+  lcl access <name> <tier> [...]         public | password | only-me --email E | work-domain --domain D | custom --emails a,b
+  lcl domain <domain>                    bind your own domain (cloudflared)
+  lcl migrate                            adopt existing plists + routes
+  lcl migrate --convert                  relabel adopted legacy apps to com.mattstack.local.<name>
+  lcl serve | setup | uninstall | update platform lifecycle
+  lcl version`;
 
 interface Io { out(s: string): void; err(s: string): void }
 
@@ -191,7 +194,7 @@ export async function runCommand(
         return 0;
       }
       case "version": {
-        io.out(`local ${VERSION}`);
+        io.out(`lcl ${VERSION}`);
         return 0;
       }
       case "help":
