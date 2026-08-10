@@ -3,6 +3,11 @@
 # Exits nonzero on any failure; never pipe the test run.
 set -eu
 
+if [ ! -f package.json ] || [ ! -d core ] || [ ! -d src ]; then
+  echo "FAIL: run this script from the repo root (package.json, core/, src/ not found here)."
+  exit 1
+fi
+
 echo "== purity greps =="
 hits=$(grep -rn --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.local-dev \
     --exclude-dir=docs --exclude=migrate.ts --exclude=migrate.test.ts --exclude=certify.sh \

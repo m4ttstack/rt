@@ -168,15 +168,35 @@ export function bareName(hostname: string, tlds: string[]): string {
   return labels.join(".");
 }
 
-/** One row per app: a multi-TLD alias writes an entry per hostname, same port. */
+/**
+ * Rank a route's hostname by how strongly it should survive dedupeRoutes:
+ * a `.localhost` suffix always wins (the board always shows/probes that
+ * variant's port, so a dev-port override - which only repoints the
+ * `.localhost` route entry - stays visible), then whichever configured TLD
+ * is earliest in `tlds` (the caller's own preference order).
+ */
+function tldRank(hostname: string, tlds: string[]): number {
+  if (hostname.endsWith(".localhost")) return -1;
+  for (let i = 0; i < tlds.length; i++) if (hostname.endsWith(`.${tlds[i]}`)) return i;
+  return tlds.length;
+}
+
+/**
+ * One row per app: a multi-TLD alias writes an entry per hostname, same port.
+ * Deterministically prefers `.localhost` (or the earliest-configured TLD) over
+ * whichever variant happens to appear first in routes.json - that on-disk
+ * order is portless's, not Local's, to control.
+ */
 export function dedupeRoutes(routes: PortlessRoute[], tlds: string[]): PortlessRoute[] {
-  const seen = new Set<string>();
-  return routes.filter((r) => {
+  const byName = new Map<string, PortlessRoute>();
+  for (const r of routes) {
     const name = bareName(r.hostname, tlds);
-    if (seen.has(name)) return false;
-    seen.add(name);
-    return true;
-  });
+    const existing = byName.get(name);
+    if (!existing || tldRank(r.hostname, tlds) < tldRank(existing.hostname, tlds)) {
+      byName.set(name, r);
+    }
+  }
+  return routes.filter((r) => byName.get(bareName(r.hostname, tlds)) === r);
 }
 
 /**

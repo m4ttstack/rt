@@ -47,6 +47,19 @@ test("dedupeRoutes collapses one app's multi-TLD entries to a single row", () =>
   ]);
 });
 
+test("dedupeRoutes prefers .localhost regardless of on-disk order", () => {
+  // routes.json's on-disk order is portless's to control, not Local's - if a
+  // non-.localhost variant happens to be written first, dedupe must still
+  // keep the .localhost variant so the board always shows/probes the port a
+  // dev-port override actually repoints.
+  const routes = [
+    { hostname: "board.mattstack", port: 1 },
+    { hostname: "board.localhost", port: 1 },
+  ];
+  const out = dedupeRoutes(routes, ["localhost", "mattstack"]);
+  expect(out).toEqual([{ hostname: "board.localhost", port: 1 }]);
+});
+
 import { servicePrefixes, shortLabel } from "./discover.ts";
 
 test("servicePrefixes is the product prefix plus grandfathered ones", () => {

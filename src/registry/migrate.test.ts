@@ -1,5 +1,5 @@
 import { test, expect, beforeEach } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -64,4 +64,67 @@ test("idempotent: a second run skips everything", async () => {
   const second = await migrate({});
   expect(second.adopted).toEqual([]);
   expect(second.skipped.sort()).toEqual(["boxscore", "mattari"]);
+});
+
+test("never adopts a bootstrap alias sharing Local's own port under a second name", async () => {
+  const { putRecord } = await import("./records.ts");
+  // Pre-register Local's own bootstrap record, exactly as bootstrapSelf() would.
+  putRecord({
+    name: "local",
+    managedBy: "local",
+    port: 11000,
+    kind: "service",
+    label: "com.mattstack.local",
+    createdAt: new Date().toISOString(),
+  });
+  // bootstrapSelf() writes TWO portless aliases at the SAME port when the
+  // proxy's TLDs don't include "mattstack": local.localhost and
+  // local.mattstack.localhost. With tlds=["localhost"], these bareName to
+  // DIFFERENT names ("local" and "local.mattstack"), so dedupeRoutes does not
+  // collapse them - migrate() must skip the second one by port, not adopt it.
+  writeFileSync(process.env.LOCAL_APPS_ROUTES_PATH!, JSON.stringify([
+    { hostname: "local.localhost", port: 11000, pid: 0 },
+    { hostname: "local.mattstack.localhost", port: 11000, pid: 0 },
+    { hostname: "boxscore.localhost", port: 11005, pid: 0 },
+    { hostname: "mattari.localhost", port: 4101, pid: 0 },
+  ]));
+
+  const result = await migrate({});
+
+  expect(result.skipped).toContain("local.mattstack");
+  expect(result.adopted).not.toContain("local.mattstack");
+  expect(getRecord("local.mattstack")).toBeUndefined();
+});
+
+test("skips any route sharing an already-claimed port, regardless of name", async () => {
+  const { putRecord } = await import("./records.ts");
+  // An ordinary (non-Local) app already registered under one name; a second
+  // route at the same port is a same-app alternate-access alias, not a new
+  // app, so it must be skipped rather than adopted under a second name.
+  putRecord({
+    name: "widgets",
+    managedBy: "user",
+    port: 11005,
+    kind: "service",
+    label: "com.matthewgoodwin.boxscore",
+    createdAt: new Date().toISOString(),
+  });
+
+  const result = await migrate({});
+
+  expect(result.skipped).toContain("boxscore");
+  expect(result.adopted).not.toContain("boxscore");
+  expect(getRecord("boxscore")).toBeUndefined();
+});
+
+test("writes NOTHING to the plist file or routes.json - adopts in place, never rewrites", async () => {
+  const plistPath = join(process.env.LOCAL_AGENTS_DIR!, "com.matthewgoodwin.boxscore.plist");
+  const routesPath = process.env.LOCAL_APPS_ROUTES_PATH!;
+  const plistBefore = readFileSync(plistPath);
+  const routesBefore = readFileSync(routesPath);
+
+  await migrate({});
+
+  expect(readFileSync(plistPath)).toEqual(plistBefore);
+  expect(readFileSync(routesPath)).toEqual(routesBefore);
 });

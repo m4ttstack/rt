@@ -1,6 +1,7 @@
 import { readRoutes, readServices, servicePrefixes, bareName, dedupeRoutes } from "../../core/discover.ts";
 import { getPlatformSettings, updatePlatformSettings } from "../api/platform-settings.ts";
-import { getRecord, putRecord } from "./records.ts";
+import { getRecord, putRecord, listRecords } from "./records.ts";
+import { PLATFORM_LABEL } from "../services/manager.ts";
 
 /**
  * Adoption, not conversion (ruled): records point at the EXISTING label, plist,
@@ -20,11 +21,17 @@ export async function migrate(opts: { legacyPrefix?: string }): Promise<{ adopte
   const tlds = getPlatformSettings().tlds;
   const services = await readServices(servicePrefixes([legacyPrefix]));
   const routes = dedupeRoutes(readRoutes(), tlds);
+  const claimedPorts = new Set(listRecords().map((r) => r.port));
 
   for (const route of routes) {
     const name = bareName(route.hostname, tlds);
-    if (getRecord(name)) { skipped.push(name); continue; }
+    if (getRecord(name) || claimedPorts.has(route.port)) { skipped.push(name); continue; }
     const svc = services.find((s) => s.port === route.port);
+    // Defense-in-depth for a hypothetical ordering where migrate() runs before
+    // Local's own bootstrap record exists yet (so claimedPorts wouldn't catch
+    // it): never adopt a record carrying Local's own platform launchd label
+    // under any other name - that record is Local itself, not a new app.
+    if (svc?.label === PLATFORM_LABEL) { skipped.push(name); continue; }
     putRecord({
       name,
       managedBy: "user",

@@ -1,5 +1,5 @@
 import type { Server } from "bun";
-import { readRoutes } from "./discover.ts";
+import { readRoutes, bareName, dedupeRoutes } from "./discover.ts";
 import { getAppSettings, getSecret } from "./settings.ts";
 import { verifyToken, signToken, parseCookie, cookieHeader, COOKIE_NAME } from "./session.ts";
 import {
@@ -10,7 +10,6 @@ import {
   type WsProxyData,
 } from "./ws-proxy.ts";
 import { getPlatformSettings } from "../src/api/platform-settings.ts";
-import { bareName } from "./discover.ts";
 
 export type Decision =
   | { kind: "no-route" }
@@ -64,7 +63,8 @@ export function decide(input: {
 let routes = new Map<string, number>();
 function loadRoutes(): void {
   const map = new Map<string, number>();
-  for (const r of readRoutes()) map.set(r.hostname.replace(/\.localhost$/, ""), r.port);
+  const tlds = getPlatformSettings().tlds;
+  for (const r of dedupeRoutes(readRoutes(), tlds)) map.set(bareName(r.hostname, tlds), r.port);
   routes = map;
 }
 
