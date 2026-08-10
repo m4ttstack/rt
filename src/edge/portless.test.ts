@@ -28,7 +28,7 @@ function withPath<T>(fakePath: string, fn: () => T): T {
 
 test("PortlessCli shells the alias verbs, never touches portless files", async () => {
   const calls: string[][] = [];
-  const cli = withPath(emptyPathDir, () => new PortlessCli(async (argv) => { calls.push(argv); return 0; }));
+  const cli = withPath(emptyPathDir, () => new PortlessCli(async (argv) => { calls.push(argv); return { code: 0, output: "" }; }));
   await cli.alias("myapp", 11007);
   await cli.removeAlias("myapp");
   expect(calls).toEqual([
@@ -38,7 +38,7 @@ test("PortlessCli shells the alias verbs, never touches portless files", async (
 });
 
 test("a nonzero exit becomes a thrown error naming the command", async () => {
-  const cli = withPath(emptyPathDir, () => new PortlessCli(async () => 1));
+  const cli = withPath(emptyPathDir, () => new PortlessCli(async () => ({ code: 1, output: "boom" })));
   await expect(cli.alias("myapp", 11007)).rejects.toThrow(/portless alias myapp/);
 });
 
@@ -49,7 +49,7 @@ test("resolves portless to its absolute path when present on PATH, at constructi
   chmodSync(stub, 0o755);
   try {
     const calls: string[][] = [];
-    const cli = withPath(binDir, () => new PortlessCli(async (argv) => { calls.push(argv); return 0; }));
+    const cli = withPath(binDir, () => new PortlessCli(async (argv) => { calls.push(argv); return { code: 0, output: "" }; }));
     await cli.alias("myapp", 11007);
     expect(calls[0]![0]).toBe(stub);
     expect(calls[0]).toEqual([stub, "alias", "myapp", "11007"]);
@@ -60,9 +60,19 @@ test("resolves portless to its absolute path when present on PATH, at constructi
 
 test("falls back to the bare command name when portless isn't found on PATH", async () => {
   const calls: string[][] = [];
-  const cli = withPath(emptyPathDir, () => new PortlessCli(async (argv) => { calls.push(argv); return 0; }));
+  const cli = withPath(emptyPathDir, () => new PortlessCli(async (argv) => { calls.push(argv); return { code: 0, output: "" }; }));
   await cli.removeAlias("myapp");
   expect(calls[0]![0]).toBe("portless");
+});
+
+test("removeAlias is idempotent: portless reporting No alias found is success, not a failure", async () => {
+  const cli = withPath(emptyPathDir, () => new PortlessCli(async () => ({ code: 1, output: "No alias found for myapp\n" })));
+  await expect(cli.removeAlias("myapp")).resolves.toBeUndefined();
+});
+
+test("removeAlias still throws on a genuine portless failure (not the already-gone message)", async () => {
+  const cli = withPath(emptyPathDir, () => new PortlessCli(async () => ({ code: 1, output: "permission denied writing routes.json\n" })));
+  await expect(cli.removeAlias("myapp")).rejects.toThrow(/portless alias --remove myapp/);
 });
 
 test("readProxyTlds parses the newline list, defaults to localhost", () => {

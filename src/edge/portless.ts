@@ -7,11 +7,23 @@ export interface EdgeProxy {
   removeAlias(name: string): Promise<void>;
 }
 
-export type Exec = (argv: string[]) => Promise<number>;
+export interface ExecResult {
+  code: number;
+  /** Combined stdout+stderr text: the only signal available to tell an
+   * already-torn-down teardown apart from a genuine failure (portless has
+   * no distinct exit code for "already gone"). */
+  output: string;
+}
+export type Exec = (argv: string[]) => Promise<ExecResult>;
 
 const realExec: Exec = async (argv) => {
-  const proc = Bun.spawn(argv, { stderr: "ignore", stdout: "ignore" });
-  return await proc.exited;
+  const proc = Bun.spawn(argv, { stderr: "pipe", stdout: "pipe" });
+  const [code, stdout, stderr] = await Promise.all([
+    proc.exited,
+    new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
+  ]);
+  return { code, output: `${stdout}${stderr}` };
 };
 
 /**
@@ -38,12 +50,23 @@ export class PortlessCli implements EdgeProxy {
 
   async alias(name: string, port: number): Promise<void> {
     const argv = [this.portlessBin, "alias", name, String(port)];
-    if ((await this.exec(argv)) !== 0) throw new Error(`\`portless alias ${name} ${port}\` failed`);
+    const { code } = await this.exec(argv);
+    if (code !== 0) throw new Error(`\`portless alias ${name} ${port}\` failed`);
   }
 
   async removeAlias(name: string): Promise<void> {
     const argv = [this.portlessBin, "alias", "--remove", name];
-    if ((await this.exec(argv)) !== 0) throw new Error(`\`portless alias --remove ${name}\` failed`);
+    const { code, output } = await this.exec(argv);
+    if (code === 0) return;
+    // Teardown must be idempotent: an alias that is already gone (removed
+    // manually, or by a prior teardown attempt) is the desired end state,
+    // not a failure. portless reports this with "No alias found" rather
+    // than a distinct exit code, so the message is the only signal
+    // available here. Same class of fix as the launchd teardown
+    // idempotency (services/launchd.ts): already-gone is success, a
+    // genuine failure still throws.
+    if (/no alias found/i.test(output)) return;
+    throw new Error(`\`portless alias --remove ${name}\` failed`);
   }
 }
 
