@@ -22,7 +22,7 @@ const { FakeServiceManager } = await import("../services/fake.ts");
 const { FakeEdgeProxy } = await import("../edge/portless.ts");
 const { getRecord, reloadRegistry, listRecords, deleteRecord } = await import("../registry/records.ts");
 const {
-  getAppSettings, setPublished, setPassword, setOverride, setPublicFollowsOverride, reloadSettings,
+  getAppSettings, setPublished, setPassword, setOverride, getOverride, setPublicFollowsOverride, reloadSettings,
 } = await import("../../core/settings.ts");
 
 let drivers: { manager: InstanceType<typeof FakeServiceManager>; edge: InstanceType<typeof FakeEdgeProxy> };
@@ -194,6 +194,28 @@ test("a driver that succeeds on a later pass clears the sync-failure badge a pre
   // Same code path, this time healthy: the badge must not outlive the failure.
   expect((await editApp("myapp", { port: 11500 }, "user", false, drivers)).status).toBe(200);
   expect(getRecord("myapp")!.issues ?? []).toEqual([]);
+});
+
+test("edit without a port change keeps the live route on the active dev-port override", async () => {
+  await registerApp(input, drivers);
+  setOverride("myapp", { devPort: 3999, basePort: 11000 });
+
+  const res = await editApp("myapp", { command: ["bun", "src/other.ts"] }, "user", false, drivers);
+
+  expect(res.status).toBe(200);
+  expect(drivers.edge.aliases.get("myapp")).toBe(3999);
+  expect(getOverride("myapp")).toEqual({ devPort: 3999, basePort: 11000 });
+});
+
+test("edit with an explicit port change clears the now-stale override and aliases to the new base port", async () => {
+  await registerApp(input, drivers);
+  setOverride("myapp", { devPort: 3999, basePort: 11000 });
+
+  const res = await editApp("myapp", { port: 11500 }, "user", false, drivers);
+
+  expect(res.status).toBe(200);
+  expect(drivers.edge.aliases.get("myapp")).toBe(11500);
+  expect(getOverride("myapp")).toBeUndefined();
 });
 
 test("edit re-ports: a teardown driver failure lands a visible issue without losing the port change", async () => {

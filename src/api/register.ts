@@ -5,7 +5,7 @@ import {
   getRecord, putRecord, deleteRecord, listRecords, addIssue, clearIssues,
   type AppRecord, type SyncIssue,
 } from "../registry/records.ts";
-import { renameAppSettings } from "../../core/settings.ts";
+import { renameAppSettings, getOverride, clearOverride } from "../../core/settings.ts";
 import { allocatePort } from "../registry/allocate.ts";
 import { authorizeStructural } from "../registry/lifecycle.ts";
 import { LABEL_PREFIX, type ServiceManager, type ServiceSpec } from "../services/manager.ts";
@@ -192,6 +192,12 @@ export async function editApp(
     port: patch.port ?? record.port,
   };
   if (next.kind === "service") next.label = `${LABEL_PREFIX}${next.name}`;
+  // A dev-port override lives entirely in settings, keyed off the app's base
+  // port at the time it was set. If this edit actually changes the base port,
+  // that captured basePort is now stale... a later "clear override" would
+  // revert to the wrong port, so the edit drops the override rather than
+  // leave it silently wrong.
+  const portChanged = next.port !== record.port;
 
   // Teardown-phase failures are collected, not recorded yet: the record they
   // belong to doesn't exist under its final cache key yet (a rename deletes the
@@ -212,11 +218,17 @@ export async function editApp(
     // the moment the new hostname goes live.
     renameAppSettings(oldName, next.name);
   }
+  if (portChanged) clearOverride(next.name);
   putRecord(next);
   if (next.kind === "service") {
     await tryDriver(next.name, "launchd", () => drivers.manager.install(specFor(next)));
   }
-  await tryDriver(next.name, "portless", () => drivers.edge.alias(next.name, next.port));
+  // Unchanged base port + an active override: the live route stays pointed at
+  // the override's devPort instead of being reset to the base port. A changed
+  // base port has already cleared the override above, so there's nothing to
+  // prefer; alias straight to the new base port.
+  const liveOverride = portChanged ? undefined : getOverride(next.name);
+  await tryDriver(next.name, "portless", () => drivers.edge.alias(next.name, liveOverride?.devPort ?? next.port));
   // Teardown issues land last, against the record that actually got persisted.
   // After the stand-up calls, too: tryDriver clears its source on success, and a
   // teardown failure (say an orphaned launchd service the uninstall left behind)
