@@ -21,15 +21,28 @@ const realExec: Exec = async (argv) => {
  * are fine and already established practice.
  */
 export class PortlessCli implements EdgeProxy {
-  constructor(private exec: Exec = realExec) {}
+  // Resolved once at construction against the CURRENT PATH, not looked up
+  // per call: defense in depth alongside the plist-level PATH fixes (see
+  // registry/bootstrap.ts, services/plist.ts) for the platform's own process,
+  // which shells out to portless directly rather than through a plist.
+  private readonly portlessBin: string;
+
+  constructor(private exec: Exec = realExec) {
+    // Bun.which() with no PATH option resolves against a PATH snapshot taken
+    // at Bun's own process startup, not the live process.env.PATH; passing
+    // it explicitly is what actually picks up PATH as it stands right now
+    // (the installing shell's captured PATH, once the platform's own plist
+    // carries one; see registry/bootstrap.ts).
+    this.portlessBin = Bun.which("portless", { PATH: process.env.PATH ?? "" }) ?? "portless";
+  }
 
   async alias(name: string, port: number): Promise<void> {
-    const argv = ["portless", "alias", name, String(port)];
+    const argv = [this.portlessBin, "alias", name, String(port)];
     if ((await this.exec(argv)) !== 0) throw new Error(`\`portless alias ${name} ${port}\` failed`);
   }
 
   async removeAlias(name: string): Promise<void> {
-    const argv = ["portless", "alias", "--remove", name];
+    const argv = [this.portlessBin, "alias", "--remove", name];
     if ((await this.exec(argv)) !== 0) throw new Error(`\`portless alias --remove ${name}\` failed`);
   }
 }

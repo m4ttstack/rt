@@ -1,5 +1,5 @@
 import { test, expect, afterAll } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "fs";
+import { mkdtempSync, rmSync, writeFileSync, chmodSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -9,9 +9,26 @@ const { PortlessCli, FakeEdgeProxy, readProxyTlds } = await import("./portless.t
 
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
+// An empty scratch dir as PATH: guarantees Bun.which("portless") finds
+// nothing, regardless of whether the machine running these tests happens to
+// have portless installed for real, so PortlessCli falls back to the literal
+// command name deterministically.
+const emptyPathDir = mkdtempSync(join(tmpdir(), "local-portless-empty-path-"));
+afterAll(() => rmSync(emptyPathDir, { recursive: true, force: true }));
+
+function withPath<T>(fakePath: string, fn: () => T): T {
+  const saved = process.env.PATH;
+  process.env.PATH = fakePath;
+  try {
+    return fn();
+  } finally {
+    process.env.PATH = saved;
+  }
+}
+
 test("PortlessCli shells the alias verbs, never touches portless files", async () => {
   const calls: string[][] = [];
-  const cli = new PortlessCli(async (argv) => { calls.push(argv); return 0; });
+  const cli = withPath(emptyPathDir, () => new PortlessCli(async (argv) => { calls.push(argv); return 0; }));
   await cli.alias("myapp", 11007);
   await cli.removeAlias("myapp");
   expect(calls).toEqual([
@@ -21,8 +38,31 @@ test("PortlessCli shells the alias verbs, never touches portless files", async (
 });
 
 test("a nonzero exit becomes a thrown error naming the command", async () => {
-  const cli = new PortlessCli(async () => 1);
+  const cli = withPath(emptyPathDir, () => new PortlessCli(async () => 1));
   await expect(cli.alias("myapp", 11007)).rejects.toThrow(/portless alias myapp/);
+});
+
+test("resolves portless to its absolute path when present on PATH, at construction time", async () => {
+  const binDir = mkdtempSync(join(tmpdir(), "local-portless-bin-"));
+  const stub = join(binDir, "portless");
+  writeFileSync(stub, "#!/bin/sh\nexit 0\n");
+  chmodSync(stub, 0o755);
+  try {
+    const calls: string[][] = [];
+    const cli = withPath(binDir, () => new PortlessCli(async (argv) => { calls.push(argv); return 0; }));
+    await cli.alias("myapp", 11007);
+    expect(calls[0]![0]).toBe(stub);
+    expect(calls[0]).toEqual([stub, "alias", "myapp", "11007"]);
+  } finally {
+    rmSync(binDir, { recursive: true, force: true });
+  }
+});
+
+test("falls back to the bare command name when portless isn't found on PATH", async () => {
+  const calls: string[][] = [];
+  const cli = withPath(emptyPathDir, () => new PortlessCli(async (argv) => { calls.push(argv); return 0; }));
+  await cli.removeAlias("myapp");
+  expect(calls[0]![0]).toBe("portless");
 });
 
 test("readProxyTlds parses the newline list, defaults to localhost", () => {
