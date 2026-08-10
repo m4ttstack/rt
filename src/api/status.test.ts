@@ -25,7 +25,7 @@ const opts = { port: 7940, canaryPort: 7942, proxyFreshness: "unknown" as const,
 test("a route with a registry record carries managedBy and issues on its row", async () => {
   putRecord({
     name: "myapp", managedBy: "rt", port: 19999, kind: "service",
-    label: "com.mattstack.local.myapp", createdAt: "2026-08-10T00:00:00Z",
+    label: "com.mattstack.deck.myapp", createdAt: "2026-08-10T00:00:00Z",
     issues: [{ source: "portless", message: "alias failed", at: "2026-08-10T00:00:00Z" }],
   });
   const status = await buildStatus(opts);
@@ -47,6 +47,18 @@ test("a row carries its access tier, defaulting to public", async () => {
 
 test("the platform's own record marks its row self, wherever its port is", async () => {
   putRecord({
+    name: "deck", managedBy: "deck", port: 19999, kind: "service",
+    label: "com.mattstack.deck", createdAt: "2026-08-10T00:00:00Z",
+  });
+  const status = await buildStatus(opts);
+  expect(status.apps.find((a) => a.name === "myapp")!.self).toBe(true);
+});
+
+test("a pre-rename self-record (managedBy local) still marks its row self", async () => {
+  // Local -> Deck rename: an upgrading machine's self-row may still carry
+  // the pre-rename managedBy id until `deck setup` next runs and migrates
+  // it (registry/bootstrap.ts).
+  putRecord({
     name: "local", managedBy: "local", port: 19999, kind: "service",
     label: "com.mattstack.local", createdAt: "2026-08-10T00:00:00Z",
   });
@@ -58,7 +70,7 @@ test("registered rows carry their record shape for the edit dialog", async () =>
   putRecord({
     name: "myapp", managedBy: "user", port: 19999, kind: "service",
     command: ["bun", "s.ts"], workingDirectory: "/tmp/myapp",
-    label: "com.mattstack.local.myapp", createdAt: "2026-08-10T00:00:00Z",
+    label: "com.mattstack.deck.myapp", createdAt: "2026-08-10T00:00:00Z",
   });
   const status = await buildStatus(opts);
   const row = status.apps.find((a) => a.name === "myapp")!;
@@ -69,7 +81,7 @@ test("through a public host that record shape is redacted — command/workingDir
   putRecord({
     name: "myapp", managedBy: "user", port: 19999, kind: "service",
     command: ["bun", "s.ts"], workingDirectory: "/tmp/secret-dir",
-    label: "com.mattstack.local.myapp", createdAt: "2026-08-10T00:00:00Z",
+    label: "com.mattstack.deck.myapp", createdAt: "2026-08-10T00:00:00Z",
   });
   const status = await buildStatus({ ...opts, requestHost: "myapp.example.dev" });
   const row = status.apps.find((a) => a.name === "myapp")!;

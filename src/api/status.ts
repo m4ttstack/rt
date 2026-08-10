@@ -18,6 +18,7 @@ import { listRecords, type SyncIssue } from "../registry/records.ts";
 import { allocatePort } from "../registry/allocate.ts";
 import { getTier, type AccessTier } from "../edge/access-tiers.ts";
 import { getPlatformSettings } from "./platform-settings.ts";
+import { isPlatformManagedBy } from "../services/manager.ts";
 
 export interface BuildStatusOpts {
   requestHost?: string;
@@ -128,7 +129,7 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
   const recordsByName = new Map(records.map((r) => [r.name, r]));
   // The platform's own registry record (once migrated) may sit at any port, so
   // its row is "self" by matching that port rather than by name lookup.
-  const localRecord = records.find((r) => r.managedBy === "local");
+  const platformRecord = records.find((r) => isPlatformManagedBy(r.managedBy));
 
   const appRows: StatusRow[] = await Promise.all(
     apps.map(async (a, i) => {
@@ -168,7 +169,7 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
         self:
           a.port === opts.port ||
           a.port === opts.canaryPort ||
-          (localRecord !== undefined && a.port === localRecord.port),
+          (platformRecord !== undefined && a.port === platformRecord.port),
         managedBy: record?.managedBy ?? null,
         issues: record?.issues ?? [],
         record: record

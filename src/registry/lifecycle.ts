@@ -1,4 +1,5 @@
 import type { AppRecord } from "./records.ts";
+import { isPlatformManagedBy } from "../services/manager.ts";
 
 /** Manager ids are generic; display names make the 409 read like the product. */
 export const MANAGER_DISPLAY: Record<string, string> = { rt: "mattstack" };
@@ -23,10 +24,10 @@ export function authorizeStructural(
 ): StructuralVerdict {
   if (force || record.managedBy === caller) return { ok: true };
   const message =
-    record.managedBy === "local"
-      ? "This is Local itself: `lcl uninstall`"
+    isPlatformManagedBy(record.managedBy)
+      ? "This is Deck itself: `deck uninstall`"
       : record.managedBy === "user"
-        ? `Managed by user: remove it from the board or \`lcl remove ${record.name}\``
+        ? `Managed by user: remove it from the board or \`deck remove ${record.name}\``
         : `Managed by ${MANAGER_DISPLAY[record.managedBy] ?? record.managedBy} — \`${record.managedBy} uninstall ${record.name}\``;
   return {
     ok: false,

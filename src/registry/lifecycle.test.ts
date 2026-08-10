@@ -27,8 +27,18 @@ test("the registrar itself passes; force is the escape hatch for everyone", () =
   expect(authorizeStructural({ name: "gitq", managedBy: "rt" }, "user", true).ok).toBe(true);
 });
 
-test("Local's own record is 409-gated to `lcl uninstall`", () => {
+test("Deck's own record is 409-gated to `deck uninstall`", () => {
+  const v = authorizeStructural({ name: "deck", managedBy: "deck" }, "user", false);
+  expect(v.ok).toBe(false);
+  if (!v.ok) expect(v.body.message).toBe("This is Deck itself: `deck uninstall`");
+});
+
+test("a pre-rename self-row (managedBy local) is still recognized as Deck itself", () => {
+  // Local -> Deck rename: an upgrading machine's self-row may still carry
+  // the pre-rename managedBy id until `deck setup` next runs and migrates
+  // it (registry/bootstrap.ts). Until then, this check must still read it
+  // as the platform, not as an ordinary user-managed app.
   const v = authorizeStructural({ name: "local", managedBy: "local" }, "user", false);
   expect(v.ok).toBe(false);
-  if (!v.ok) expect(v.body.message).toBe("This is Local itself: `lcl uninstall`");
+  if (!v.ok) expect(v.body.message).toBe("This is Deck itself: `deck uninstall`");
 });
