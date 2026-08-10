@@ -45,6 +45,7 @@ export async function migrate(opts: { legacyPrefix?: string }): Promise<{ adopte
       grandfathered: true,
       createdAt: new Date().toISOString(),
     });
+    claimedPorts.add(route.port); // the port is now claimed for the rest of THIS run too
     adopted.push(name);
   }
 

@@ -117,6 +117,32 @@ test("skips any route sharing an already-claimed port, regardless of name", asyn
   expect(getRecord("boxscore")).toBeUndefined();
 });
 
+test("does not adopt two routes at the same never-before-claimed port as separate records within one run", async () => {
+  // Same structural shape as the Local-bootstrap-alias hazard, but for an
+  // ordinary app: two portless aliases at one port under different bareNames,
+  // with NEITHER name having a pre-existing record yet. claimedPorts is
+  // seeded from existing records before the loop starts, so it alone would
+  // not catch this - it must also be updated as the loop adopts routes, or
+  // both aliases get adopted as separate managedBy:"user" records sharing one
+  // launchd label (two board rows secretly sharing one launchd service).
+  writeFileSync(join(process.env.LOCAL_AGENTS_DIR!, "com.matthewgoodwin.widgets.plist"), PLIST("com.matthewgoodwin.widgets", 9999));
+  writeFileSync(process.env.LOCAL_APPS_ROUTES_PATH!, JSON.stringify([
+    { hostname: "widgets.localhost", port: 9999, pid: 0 },
+    { hostname: "widgets.otherapp.localhost", port: 9999, pid: 0 },
+  ]));
+
+  const result = await migrate({});
+
+  expect(result.adopted).toEqual(["widgets"]);
+  expect(result.skipped).toContain("widgets.otherapp");
+  expect(getRecord("widgets")).toMatchObject({ label: "com.matthewgoodwin.widgets", managedBy: "user" });
+  expect(getRecord("widgets.otherapp")).toBeUndefined();
+
+  const { listRecords } = await import("./records.ts");
+  const sharingLabel = listRecords().filter((r) => r.label === "com.matthewgoodwin.widgets");
+  expect(sharingLabel.length).toBe(1);
+});
+
 test("writes NOTHING to the plist file or routes.json - adopts in place, never rewrites", async () => {
   const plistPath = join(process.env.LOCAL_AGENTS_DIR!, "com.matthewgoodwin.boxscore.plist");
   const routesPath = process.env.LOCAL_APPS_ROUTES_PATH!;
