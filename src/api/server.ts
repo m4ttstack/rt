@@ -243,82 +243,10 @@ export function startApi(deps: ApiDeps) {
         return json({ error: "not found" }, 404);
       }
 
-      // ---- legacy endpoints, carried verbatim from core/server.ts (removed in 3.1) ----
-      // Lifted from core/server.ts lines 287-403, with buildStatus(host) ->
-      // buildStatus(statusOpts), the runCanaryCheck setTimeout calls ->
-      // deps.onRouteWrite(), and PORT -> deps.port. The devport handler routes
-      // through applyOverride, the rule set shared with PUT /api/v1/.../override,
-      // so the two paths cannot drift while both exist.
-
-      if (req.method === "POST" && pathname === "/restart") {
-        // Local-only: a board reached through a public tunnel is read-only.
-        if (isPublic) return json({ error: "forbidden" }, 403);
-        const form = await req.formData();
-        const label = String(form.get("label") ?? "");
-        // Whitelist against discovered services — never kickstart an arbitrary label.
-        const known = (await readServices()).some((s) => s.label === label);
-        if (!known) return json({ error: "unknown service" }, 400);
-        const ok = await restartService(label);
-        return json({ ok });
-      }
-
-      // Restart the portless proxy daemon, so route changes (dev-port overrides,
-      // renumbered apps) actually reach it. Needs root, hence the scoped sudoers
-      // rule; when that is missing we hand back the exact install command.
-      if (req.method === "POST" && pathname === "/proxy-restart") {
-        // Local-only: a board reached through a public tunnel is read-only.
-        if (isPublic) return json({ error: "forbidden" }, 403);
-        return await proxyRestart(deps);
-      }
-
-      if (req.method === "POST" && pathname === "/publish") {
-        if (isPublic) return json({ error: "forbidden" }, 403);
-        const form = await req.formData();
-        const app = String(form.get("app") ?? "");
-        const published = String(form.get("published") ?? "") === "true";
-        if (!knownRouteApp(app)) return json({ error: "unknown app" }, 400);
-        await setPublished(app, published);
-        return json({ ok: true });
-      }
-
-      if (req.method === "POST" && pathname === "/password") {
-        if (isPublic) return json({ error: "forbidden" }, 403);
-        const form = await req.formData();
-        const app = String(form.get("app") ?? "");
-        const password = String(form.get("password") ?? "");
-        if (!knownRouteApp(app)) return json({ error: "unknown app" }, 400);
-        if (password.length > 0) await setPassword(app, password);
-        else await clearPassword(app);
-        return json({ ok: true });
-      }
-
-      if (req.method === "POST" && pathname === "/devport") {
-        // Local-only: a board reached through a public tunnel is read-only.
-        if (isPublic) return json({ error: "forbidden" }, 403);
-        const form = await req.formData();
-        const app = String(form.get("app") ?? "");
-        const portStr = String(form.get("port") ?? "").trim();
-        if (!knownRouteApp(app)) return json({ error: "unknown app" }, 400);
-        const [respBody, status] = await applyOverride(app, portStr, deps);
-        return json(respBody, status);
-      }
-
-      if (req.method === "POST" && pathname === "/publicdev") {
-        // Local-only: a board reached through a public tunnel is read-only.
-        if (isPublic) return json({ error: "forbidden" }, 403);
-        const form = await req.formData();
-        const app = String(form.get("app") ?? "");
-        const follows = String(form.get("follows") ?? "") === "true";
-        if (!knownRouteApp(app)) return json({ error: "unknown app" }, 400);
-        // Meaningless without an override, and storing it would silently change
-        // where public traffic goes the next time one is set.
-        if (follows && !getOverride(app)) {
-          return json({ error: "set a port override first" }, 400);
-        }
-        setPublicFollowsOverride(app, follows);
-        return json({ ok: true });
-      }
-
+      // /api/status: kept for one release as a GET-only status alias while any
+      // stale client caches finish rolling over to GET /api/v1/status. Every
+      // legacy POST endpoint (mutations) is gone -- the board is now a pure
+      // /api/v1 client (Local v1 task 3.1).
       if (pathname === "/api/status") return json(await buildStatus(statusOpts));
       if (pathname !== "/") return new Response("not found", { status: 404 });
       return boardHtml();

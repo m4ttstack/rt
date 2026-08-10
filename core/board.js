@@ -8,7 +8,7 @@ const HEAL_RECENT_MS = 120000;
 
 document.addEventListener("alpine:init", () => {
   Alpine.data("board", () => ({
-    data: null, // last good /api/status body; null until the first answer
+    data: null, // last good /api/v1/status body; null until the first answer
     restarting: {}, // label -> { pid, at }: awaiting a fresh pid
     editing: null, // { app, value } | null: the port cell being edited
     pwModal: null, // { app, value } | null: the password dialog
@@ -19,6 +19,14 @@ document.addEventListener("alpine:init", () => {
     init() {
       this.refresh();
       setInterval(() => this.refresh(), REFRESH_MS);
+    },
+
+    async apiPut(path, payload) {
+      return fetch(path, {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
     },
 
     // ---- derived ----
@@ -61,7 +69,7 @@ document.addEventListener("alpine:init", () => {
     async refresh() {
       if (this.editing) return; // don't fight an in-flight port edit
       try {
-        const data = await (await fetch("/api/status")).json();
+        const data = await (await fetch("/api/v1/status")).json();
         this.reconcile(data);
         this.data = data;
         // A stale proxy serves old ports on .localhost while every health probe
@@ -90,13 +98,12 @@ document.addEventListener("alpine:init", () => {
     onRestart(row) {
       const label = row.service.label;
       this.restarting[label] = { pid: row.service.pid, at: Date.now() };
-      fetch("/restart", { method: "POST", body: new URLSearchParams({ label }) }).catch(() => {});
+      fetch("/api/v1/apps/" + row.name + "/restart", { method: "POST" }).catch(() => {});
     },
 
     async onPublish(row) {
-      const body = new URLSearchParams({ app: row.name, published: String(!row.published) });
       try {
-        await fetch("/publish", { method: "POST", body });
+        await this.apiPut("/api/v1/apps/" + row.name + "/publish", { published: !row.published });
       } catch {
         /* transient -- the next refresh shows the true state */
       }
@@ -124,16 +131,15 @@ document.addEventListener("alpine:init", () => {
       this.postPort(row.name, "");
     },
     postPort(app, port) {
-      const body = new URLSearchParams({ app, port }); // "" clears the override
-      fetch("/devport", { method: "POST", body })
+      const devPort = port === "" ? null : Number(port); // null clears the override
+      this.apiPut("/api/v1/apps/" + app + "/override", { devPort })
         .catch(() => {})
         .then(() => this.refresh());
     },
     async onPublicFollows(row) {
       const follows = !row.publicFollowsOverride;
-      const body = new URLSearchParams({ app: row.name, follows: String(follows) });
       try {
-        const res = await fetch("/publicdev", { method: "POST", body });
+        const res = await this.apiPut("/api/v1/apps/" + row.name + "/public-follows-override", { follows });
         if (!res.ok) {
           const { error } = await res.json().catch(() => ({}));
           this.notice("bad", error || "the board rejected that change.", 10000);
@@ -153,7 +159,7 @@ document.addEventListener("alpine:init", () => {
       if (!this.pwModal || !this.pwModal.value) return;
       const { app, value } = this.pwModal;
       try {
-        await fetch("/password", { method: "POST", body: new URLSearchParams({ app, password: value }) });
+        await this.apiPut("/api/v1/apps/" + app + "/password", { password: value });
         this.pwModal = null;
       } catch {
         this.notice("bad", "saving the password failed -- the board did not answer.", 30000);
@@ -161,7 +167,7 @@ document.addEventListener("alpine:init", () => {
       await this.refresh();
     },
     clearPassword(app) {
-      fetch("/password", { method: "POST", body: new URLSearchParams({ app, password: "" }) })
+      this.apiPut("/api/v1/apps/" + app + "/password", { password: null })
         .catch(() => {})
         .then(() => this.refresh());
     },
@@ -218,7 +224,7 @@ document.addEventListener("alpine:init", () => {
       this.reloadingProxy = true;
       this.proxyNotice = null;
       try {
-        const res = await fetch("/proxy-restart", { method: "POST" });
+        const res = await fetch("/api/v1/proxy/restart", { method: "POST" });
         const body = await res.json().catch(() => ({}));
         if (body.ok) {
           // The proxy is going down and, if this page is served through it, so

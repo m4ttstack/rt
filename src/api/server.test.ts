@@ -130,3 +130,12 @@ test("legacy /api/status still answers with the board document", async () => {
   expect(legacy).toHaveProperty("apps");
   expect(legacy).toHaveProperty("proxyStale");
 });
+
+test("legacy POST endpoints are gone (board speaks /api/v1 now)", async () => {
+  for (const path of ["/restart", "/publish", "/password", "/devport", "/publicdev"]) {
+    const res = await api(path, { method: "POST", body: new URLSearchParams({ app: "x" }) });
+    expect(res.status).toBe(404);
+  }
+  // /api/status stays for one release as a status alias
+  expect((await api("/api/status")).status).toBe(200);
+});
