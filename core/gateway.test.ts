@@ -4,10 +4,12 @@ import { signToken } from "./session.ts";
 
 const SECRET = "a".repeat(64);
 
+// appFromHost gains an explicit suffix argument - the hardcode dies.
 test("appFromHost strips port and known suffixes", () => {
-  expect(appFromHost("nihongo.m4tthew.dev")).toBe("nihongo");
-  expect(appFromHost("nihongo.m4tthew.dev:7950")).toBe("nihongo");
-  expect(appFromHost("nihongo.localhost")).toBe("nihongo");
+  expect(appFromHost("nihongo.example.dev", "example.dev")).toBe("nihongo");
+  expect(appFromHost("nihongo.example.dev:7950", "example.dev")).toBe("nihongo");
+  expect(appFromHost("nihongo.localhost", null)).toBe("nihongo");
+  expect(appFromHost("nihongo.localhost", "example.dev")).toBe("nihongo");
 });
 
 test("unknown route → no-route", () => {

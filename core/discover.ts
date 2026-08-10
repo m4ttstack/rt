@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync, existsSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
+import { getPlatformSettings } from "../src/api/platform-settings.ts";
 
 // Computed fresh on every call (not frozen at import time) so callers that set
 // LOCAL_APPS_ROUTES_PATH after this module first loads (tests, in particular)
@@ -14,9 +15,6 @@ export function agentsDir(): string {
   return process.env.LOCAL_AGENTS_DIR ?? join(homedir(), "Library", "LaunchAgents");
 }
 const PLIST_PREFIX = "com.matthewgoodwin.";
-// The parent domain the shared Cloudflare tunnel serves every portless route
-// under (wildcard *.PUBLIC_DOMAIN). Overridable for a different setup.
-const PUBLIC_DOMAIN = process.env.PUBLIC_DOMAIN ?? "m4tthew.dev";
 
 export interface PortlessRoute {
   hostname: string;
@@ -60,8 +58,8 @@ export function nextFreePort(
 export interface App {
   name: string;
   url: string;
-  /** The public tunnel URL (https://<name>.PUBLIC_DOMAIN), always set for a route. */
-  publicUrl: string;
+  /** The public tunnel URL (https://<name>.<publicDomain>), null when no publicDomain is configured. */
+  publicUrl: string | null;
   port: number;
   service: LaunchdService | null;
 }
@@ -158,6 +156,7 @@ export function publicDomainFor(requestHost?: string): string | null {
  */
 export function joinApps(routes: PortlessRoute[], services: LaunchdService[], requestHost?: string): App[] {
   const domain = publicDomainFor(requestHost);
+  const publicDomain = getPlatformSettings().publicDomain;
   return routes.map((route) => {
     const name = route.hostname.replace(/\.localhost$/, "");
     const service =
@@ -168,7 +167,7 @@ export function joinApps(routes: PortlessRoute[], services: LaunchdService[], re
       }) ??
       null;
     const url = domain ? `https://${name}.${domain}` : `https://${route.hostname}`;
-    const publicUrl = `https://${name}.${PUBLIC_DOMAIN}`;
+    const publicUrl = publicDomain ? `https://${name}.${publicDomain}` : null;
     return { name, url, publicUrl, port: route.port, service };
   });
 }

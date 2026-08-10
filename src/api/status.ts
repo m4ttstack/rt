@@ -140,7 +140,7 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
       // Probing costs two requests per app, so only the apps actually routing
       // public traffic at a dev server pay for it.
       const preflight =
-        follows && settings.override
+        follows && settings.override && a.publicUrl
           ? await checkApp({
               app: a.name,
               devPort: settings.override.devPort,

@@ -17,11 +17,18 @@ import type { WsProxyData } from "./ws-proxy.ts";
 const dir = mkdtempSync(join(tmpdir(), "local-apps-gw-"));
 const ROUTES = join(dir, "routes.json");
 const SETTINGS = join(dir, "settings.json");
+const PLATFORM_SETTINGS = join(dir, "platform.json");
 process.env.LOCAL_APPS_ROUTES_PATH = ROUTES;
 process.env.LOCAL_APPS_SETTINGS_PATH = SETTINGS;
+process.env.LOCAL_PLATFORM_SETTINGS_PATH = PLATFORM_SETTINGS;
 
 const APP = "testapp";
-const HOST = `${APP}.m4tthew.dev`;
+const PUBLIC_DOMAIN = "example.dev";
+const HOST = `${APP}.${PUBLIC_DOMAIN}`;
+
+// appFromHost now strips whatever publicDomain platform settings configure,
+// not a hardcoded suffix, so the gateway needs one on disk before it loads.
+writeFileSync(PLATFORM_SETTINGS, JSON.stringify({ publicDomain: PUBLIC_DOMAIN }));
 
 /** Stands in for a Vite dev server: greets, and echoes over `vite-hmr`. */
 const dev = Bun.serve({

@@ -9,8 +9,8 @@ import {
   isWebSocketUpgrade, requestedProtocols, connectUpstream, upstreamUrl, wsHandler,
   type WsProxyData,
 } from "./ws-proxy.ts";
+import { getPlatformSettings } from "../src/api/platform-settings.ts";
 
-const DOMAIN_SUFFIX = ".m4tthew.dev";
 const LOCALHOST_SUFFIX = ".localhost";
 
 export type Decision =
@@ -41,9 +41,9 @@ export function publicPort(
   return routePort;
 }
 
-export function appFromHost(host: string): string {
+export function appFromHost(host: string, publicDomain: string | null): string {
   const h = host.replace(/:\d+$/, "");
-  if (h.endsWith(DOMAIN_SUFFIX)) return h.slice(0, -DOMAIN_SUFFIX.length);
+  if (publicDomain && h.endsWith(`.${publicDomain}`)) return h.slice(0, -(publicDomain.length + 1));
   if (h.endsWith(LOCALHOST_SUFFIX)) return h.slice(0, -LOCALHOST_SUFFIX.length);
   return h;
 }
@@ -179,7 +179,7 @@ export function startGateway(port = 7950): Server<WsProxyData> {
     async fetch(req): Promise<Response | undefined> {
       const url = new URL(req.url);
       const host = req.headers.get("host") ?? "";
-      const app = appFromHost(host);
+      const app = appFromHost(host, getPlatformSettings().publicDomain);
       const ip = req.headers.get("cf-connecting-ip") ?? server.requestIP(req)?.address ?? "?";
       const settings = getAppSettings(app);
       const secret = getSecret();
