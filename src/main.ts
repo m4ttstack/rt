@@ -92,6 +92,6 @@ export function serve(): void {
 const cmd = Bun.argv[2] ?? "serve";
 if (cmd === "serve") serve();
 else {
-  console.error(`unknown command: ${cmd}`);
-  process.exit(2);
+  const { runCommand } = await import("./cli/commands.ts");
+  process.exit(await runCommand(Bun.argv.slice(2), { out: console.log, err: console.error }));
 }
