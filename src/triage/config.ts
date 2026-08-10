@@ -12,6 +12,10 @@ export interface FixClasses {
       in run.ts, the actual gate. DEFAULT OFF, same conservative posture as
       cleanApiRebase, since it's the other branch-writing class here. */
   mechanicalLint: boolean;
+  /** Full repair authority for the board identity's OWN MRs (Matt's
+      2026-08-10 widening of MAT-351). Same author gate as mechanicalLint in
+      composeFixClasses; DEFAULT OFF. */
+  codeFix: boolean;
 }
 
 export interface TriageConfig {
@@ -38,6 +42,9 @@ const DEFAULT_FIX_CLASSES: FixClasses = {
   // MAT-351 ruling. Gated to the board's own identity at dispatch regardless
   // of this toggle -- see composeFixClasses in run.ts.
   mechanicalLint: false,
+  // Full fix-and-push on the board identity's own MRs; same gate, same
+  // conservative shipped default.
+  codeFix: false,
 };
 
 const DEFAULTS: TriageConfig = {
@@ -82,7 +89,7 @@ export function parseTriageBlock(raw: unknown): TriageConfig {
     if (typeof t.fixClasses !== "object" || t.fixClasses === null || Array.isArray(t.fixClasses)) {
       throw new Error(`config.json "triage.fixClasses" must be an object`);
     }
-    for (const key of ["retryFlake", "inheritedNoteDraft", "cleanApiRebase", "mechanicalLint"] as const) {
+    for (const key of ["retryFlake", "inheritedNoteDraft", "cleanApiRebase", "mechanicalLint", "codeFix"] as const) {
       const v = (t.fixClasses as Record<string, unknown>)[key];
       if (v === undefined) continue;
       if (typeof v !== "boolean") throw new Error(`config.json "triage.fixClasses.${key}" must be a boolean`);

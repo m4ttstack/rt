@@ -19,7 +19,12 @@ const FIX_CLASS_FLAGS: Record<keyof FixClasses, string> = {
   inheritedNoteDraft: "inherited-note-draft",
   cleanApiRebase: "clean-api-rebase",
   mechanicalLint: "mechanical-lint",
+  codeFix: "code-fix",
 };
+
+/** The classes that write to the MR branch (commit and/or push). Only ever
+    dispatched for the board identity's own MRs -- see composeFixClasses. */
+const OWN_MR_ONLY_CLASSES = ["mechanical-lint", "code-fix"];
 
 export function enabledFixClassNames(fc: FixClasses): string[] {
   return (Object.keys(FIX_CLASS_FLAGS) as Array<keyof FixClasses>)
@@ -27,10 +32,10 @@ export function enabledFixClassNames(fc: FixClasses): string[] {
     .map((k) => FIX_CLASS_FLAGS[k]);
 }
 
-/** MAT-351: mechanical-lint commits + pushes to the MR branch, so unlike the
-    other fix classes it stays gated to the board's own identity even when
-    the config toggle is on -- fetchOwnMrs already restricts this whole
-    pipeline to the token identity's own MRs, but this is the explicit
+/** MAT-351: the branch-writing classes (mechanical-lint, and code-fix per
+    Matt's 2026-08-10 widening) stay gated to the board's own identity even
+    when their config toggles are on -- fetchOwnMrs already restricts this
+    whole pipeline to the token identity's own MRs, but this is the explicit
     re-check at the point the flag string is actually built, so a future
     change to that upstream filter can never silently widen who gets a
     branch-mutating auto-fix. `identity` is the resolved GitLab token
@@ -39,9 +44,8 @@ export function enabledFixClassNames(fc: FixClasses): string[] {
     §6 on why this pipeline's own-MR identity never comes from config). */
 export function composeFixClasses(fc: FixClasses, edgeAuthor: string, identity: string | null): string[] {
   const names = enabledFixClassNames(fc);
-  if (!fc.mechanicalLint) return names;
   if (identity !== null && edgeAuthor === identity) return names;
-  return names.filter((n) => n !== "mechanical-lint");
+  return names.filter((n) => !OWN_MR_ONLY_CLASSES.includes(n));
 }
 
 const IN_FLIGHT = new Set<DoctorStatus>(["queued", "diagnosing", "rebasing", "fixing", "watching"]);

@@ -1,16 +1,27 @@
 {
   "gitlabHost": "https://gitlab.com",
-  "projects": ["group/project"],
-  "rtRepos": { "your-group/your-project": "your-rt-repo-name" },
+  "projects": [
+    "group/project"
+  ],
+  "rtRepos": {
+    "your-group/your-project": "your-rt-repo-name"
+  },
   "members": [
-    { "username": "your-gitlab-username", "name": "Your Name" },
-    { "username": "teammate-username" }
+    {
+      "username": "your-gitlab-username",
+      "name": "Your Name"
+    },
+    {
+      "username": "teammate-username"
+    }
   ],
   "defaultMember": "your-gitlab-username",
   "staleAfterDays": 30,
   "title": "MR Board",
   "port": 7930,
-  "botUsernames": ["some-integration-bot"],
+  "botUsernames": [
+    "some-integration-bot"
+  ],
   "reviewsWorkspace": "reviews",
   "respondsWorkspace": "responses",
   "doctorsWorkspace": "doctors",
@@ -19,7 +30,13 @@
     "cooldownMinutes": 30,
     "maxConcurrent": 2,
     "dailyAttemptBudget": 3,
-    "fixClasses": { "retryFlake": true, "inheritedNoteDraft": true, "cleanApiRebase": false, "mechanicalLint": false },
+    "fixClasses": {
+      "retryFlake": true,
+      "inheritedNoteDraft": true,
+      "cleanApiRebase": false,
+      "mechanicalLint": false,
+      "codeFix": false
+    },
     "doctorSkill": "",
     "notify": "rt"
   },
@@ -30,5 +47,7 @@
     "multiItem": "- {title}: {url}",
     "autoResolveIntervalMinutes": 15
   },
-  "switchboard": { "url": "" }
+  "switchboard": {
+    "url": ""
+  }
 }

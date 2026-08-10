@@ -150,6 +150,24 @@ escalation instead.
     around the block, and escalate `error` with the exact state: the local
     commit sha, the branch, and the specific block reason, so the human can
     push it themselves or grant access.
+- **`code-fix`** (checkout-tier only, MAT-351 widening, ruled 2026-08-10):
+  **full repair authority on the board identity's OWN MRs**... real code
+  fixes for red CI, semantic conflict resolution, committed and pushed to
+  the MR branch. The dispatcher only ever includes this class when the MR
+  author IS the board's own identity; every safeguard from
+  `mechanical-lint` applies identically and is not optional: the
+  independent author re-check before touching the branch, the
+  self-identifying commit message (`doctor: code-fix ...` or equivalent),
+  the existing push discipline, and the commit-locally-plus-escalate path
+  when a push is blocked. The API tier's never-commit contract still wins
+  over this class too. Judgment line: `code-fix` licenses fixes a competent
+  author would consider the obviously-intended change (a missing import, a
+  type error with one evident correction, a broken test whose fixture
+  drifted from sanctioned behavior). It does NOT license design decisions:
+  when the fix would CHANGE sanctioned behavior, pick between plausible
+  intents, or the loop is not converging, escalate with the options laid
+  out. When both `mechanical-lint` and `code-fix` are present, prefer
+  describing the fix under the narrowest class that covers it.
 
 3. **Escalate, don't speculate.** Emit `error` (with a specific, actionable
    message) whenever a fix requires product judgment or non-obvious semantic

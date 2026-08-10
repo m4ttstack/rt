@@ -8,7 +8,7 @@ describe("parseTriageBlock", () => {
     expect(cfg.cooldownMinutes).toBe(30);
     expect(cfg.maxConcurrent).toBe(2);
     expect(cfg.dailyAttemptBudget).toBe(3);
-    expect(cfg.fixClasses).toEqual({ retryFlake: true, inheritedNoteDraft: true, cleanApiRebase: false, mechanicalLint: false });
+    expect(cfg.fixClasses).toEqual({ retryFlake: true, inheritedNoteDraft: true, cleanApiRebase: false, mechanicalLint: false, codeFix: false });
     expect(cfg.doctorSkill).toBe("");
     expect(cfg.notify).toBe("rt");
   });

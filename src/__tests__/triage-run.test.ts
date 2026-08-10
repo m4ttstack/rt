@@ -79,22 +79,24 @@ describe("helpers", () => {
   });
 
   describe("composeFixClasses (MAT-351 author gate)", () => {
-    const fc = { retryFlake: true, inheritedNoteDraft: true, cleanApiRebase: false, mechanicalLint: true };
+    const fc = { retryFlake: true, inheritedNoteDraft: true, cleanApiRebase: false, mechanicalLint: true, codeFix: true };
 
-    test("includes mechanical-lint when the edge author matches the board identity", () => {
-      expect(composeFixClasses(fc, "matt", "matt")).toEqual(["retry-flake", "inherited-note-draft", "mechanical-lint"]);
+    test("includes both branch-writing classes when the edge author matches the board identity", () => {
+      expect(composeFixClasses(fc, "matt", "matt")).toEqual(["retry-flake", "inherited-note-draft", "mechanical-lint", "code-fix"]);
     });
 
-    test("omits mechanical-lint when the edge author does not match, even though the class is enabled", () => {
+    test("omits both branch-writing classes when the edge author does not match, even though enabled", () => {
       expect(composeFixClasses(fc, "teammate", "matt")).toEqual(["retry-flake", "inherited-note-draft"]);
     });
 
-    test("omits mechanical-lint when the board identity is not yet known", () => {
+    test("omits both branch-writing classes when the board identity is not yet known", () => {
       expect(composeFixClasses(fc, "matt", null)).toEqual(["retry-flake", "inherited-note-draft"]);
     });
 
-    test("stays off when the config toggle is off, regardless of author match", () => {
-      expect(composeFixClasses({ ...fc, mechanicalLint: false }, "matt", "matt")).toEqual(["retry-flake", "inherited-note-draft"]);
+    test("each branch-writing class stays off when its config toggle is off, regardless of author match", () => {
+      expect(composeFixClasses({ ...fc, mechanicalLint: false }, "matt", "matt")).toEqual(["retry-flake", "inherited-note-draft", "code-fix"]);
+      expect(composeFixClasses({ ...fc, codeFix: false }, "matt", "matt")).toEqual(["retry-flake", "inherited-note-draft", "mechanical-lint"]);
+      expect(composeFixClasses({ ...fc, mechanicalLint: false, codeFix: false }, "matt", "matt")).toEqual(["retry-flake", "inherited-note-draft"]);
     });
   });
 });
