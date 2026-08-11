@@ -101,6 +101,12 @@
     resize: vertical;
     font-family: inherit;
   }
+  /* Sits under the field it explains, so it reads as a note on that field
+     rather than as another paragraph of body copy. */
+  .access-hint {
+    font-size: 0.8em;
+    margin: 0;
+  }
 </style>
 </head>
 <body>
@@ -677,12 +683,18 @@
                  allowlist of any real size shows only its tail in one line.
                  Commas and newlines both separate, so a list pasted from a
                  spreadsheet column or from prose both land correctly. -->
+            <!-- A visible caption rather than an aria-label: the placeholder
+                 is the only hint a bare field gives, and it disappears on the
+                 first keystroke, which is exactly when the separator rule
+                 stops being obvious. The label wraps the textarea, so it names
+                 it without an aria-label competing with the visible text. -->
             <label data-field>
+              <span x-text="accessModal.mode === 'emails' ? 'Allowed emails' : 'Allowed domains'"></span>
               <textarea class="access-list" rows="4"
                         x-model="accessModal.list"
-                        :placeholder="accessModal.mode === 'emails' ? 'a@x.dev\nb@y.dev' : 'corp.com\nother.dev'"
-                        :aria-label="accessModal.mode === 'emails' ? 'allowed emails, one per line' : 'allowed domains, one per line'"></textarea>
+                        :placeholder="accessModal.mode === 'emails' ? 'a@x.dev\nb@y.dev' : 'corp.com\nother.dev'"></textarea>
             </label>
+            <p class="text-light access-hint">One per line. Commas work too.</p>
             <span class="hstack gap-2 justify-end">
               <button type="button" class="small"
                       :disabled="!accessModal.list.trim() || accessModal.oauthBusy"

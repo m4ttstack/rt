@@ -505,3 +505,16 @@ test("a saved list reads back one per line", async () => {
   });
   expect(component.accessModal.list).toBe("a@x.dev\nb@y.dev");
 });
+
+test("the allowlist field explains its separator rule persistently", async () => {
+  const html = await boardHtml().text();
+
+  // A placeholder vanishes on the first keystroke, which is exactly when the
+  // separator rule stops being obvious, so the hint has to be real copy.
+  expect(html).toContain("One per line. Commas work too.");
+
+  // Visible caption instead of an aria-label: a redundant aria-label would
+  // override the visible text for screen reader users.
+  expect(html).toMatch(/x-text="accessModal\.mode === 'emails' \? 'Allowed emails' : 'Allowed domains'"/);
+  expect(html).not.toMatch(/<textarea[^>]*aria-label/);
+});
