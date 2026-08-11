@@ -201,13 +201,13 @@ test("platform settings: PUT stores a secret, GET never echoes its value", async
 test("an identity access tier is synced to Cloudflare BEFORE it is persisted; a failed sync changes nothing", async () => {
   await post("/api/v1/apps", { name: "gated1", command: ["bun", "s.ts"], workingDirectory: "/tmp" });
   // No Cloudflare token is configured (beforeEach wipes platform settings), so
-  // syncAccessTier fails for lack of credentials.
+  // syncOAuth fails for lack of credentials.
   const before = await (await api("/api/v1/apps/gated1")).json();
-  expect(before.row.accessTier).toEqual({ tier: "public" });
+  expect(before.row.oauth).toEqual({ mode: "off" });
 
   const put = await api("/api/v1/apps/gated1/access", {
     method: "PUT", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ tier: "only-me", email: "m@x.dev" }),
+    body: JSON.stringify({ mode: "emails", emails: ["m@x.dev"] }),
   });
   // Not a 200/ok response: the sync failure must surface loudly, not as
   // {ok:true, cfSynced:false} buried in a 200.
@@ -217,11 +217,30 @@ test("an identity access tier is synced to Cloudflare BEFORE it is persisted; a 
   expect(putBody.error).toBe("cloudflare-sync-failed");
 
   const after = await (await api("/api/v1/apps/gated1")).json();
-  expect(after.row.accessTier).toEqual({ tier: "public" });
+  expect(after.row.oauth).toEqual({ mode: "off" });
 
   const list = await (await api("/api/v1/apps")).json();
   const row = list.apps.find((a: any) => a.name === "gated1");
-  expect(row.accessTier).toEqual({ tier: "public" });
+  expect(row.oauth).toEqual({ mode: "off" });
+});
+
+test("a password is not a precondition for a sign-in gate", async () => {
+  // The old API answered 409 when the password tier was selected with no
+  // password set. The two are independent axes now, so setting one must never
+  // depend on the other.
+  const res = await api("/api/v1/apps/gated2/access", {
+    method: "PUT",
+    body: JSON.stringify({ mode: "domains", domains: ["corp.com"] }),
+  });
+  expect(res.status).not.toBe(409);
+});
+
+test("the old tier vocabulary is rejected, not translated", async () => {
+  const res = await api("/api/v1/apps/gated3/access", {
+    method: "PUT",
+    body: JSON.stringify({ tier: "only-me", email: "m@x.dev" }),
+  });
+  expect(res.status).toBe(400);
 });
 
 test("platform settings: null or empty clears a stored Cloudflare secret; 'null' is never stored as a literal string", async () => {
