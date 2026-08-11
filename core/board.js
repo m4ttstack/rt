@@ -193,8 +193,10 @@ document.addEventListener("alpine:init", () => {
         pwOpen: false, password: "", pwError: null, pwBusy: false,
         oauthOn: o.mode !== "off",
         mode: o.mode === "domains" ? "domains" : "emails",
-        list: o.mode === "emails" ? o.emails.join(", ")
-            : o.mode === "domains" ? o.domains.join(", ")
+        // One per line: the field is a textarea, and a saved list reads back
+        // in the same shape it is entered.
+        list: o.mode === "emails" ? o.emails.join("\n")
+            : o.mode === "domains" ? o.domains.join("\n")
             : "",
         oauthError: null, oauthBusy: false,
       };
@@ -291,7 +293,9 @@ document.addEventListener("alpine:init", () => {
     },
     async applyOauth() {
       const m = this.accessModal;
-      const items = m.list.split(",").map((s) => s.trim()).filter(Boolean);
+      // Newlines and commas both separate: the field is one-per-line, but a
+      // list pasted from prose arrives comma-separated and should still work.
+      const items = m.list.split(/[,\n]/).map((s) => s.trim()).filter(Boolean);
       if (!items.length) return;
       const payload = m.mode === "emails"
         ? { mode: "emails", emails: items }

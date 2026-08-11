@@ -446,3 +446,62 @@ test("the access dialog never prints a null public URL and keeps its warning slo
   expect([...between.matchAll(/<\/span>/g)].length)
     .toBeGreaterThan([...between.matchAll(/<span\b/g)].length);
 });
+
+test("the allowlist field is a textarea, not a single line", async () => {
+  const html = await boardHtml().text();
+
+  // A single-line input showed only the tail of any real allowlist. Pin the
+  // element type, not just the binding, so it cannot quietly regress.
+  expect(html).toMatch(/<textarea[^>]*x-model="accessModal\.list"/);
+  expect(html).not.toMatch(/<input[^>]*x-model="accessModal\.list"/);
+
+  // Vertical only: a long address must not widen the dialog past its own
+  // max-width, which is what an unconstrained textarea would do.
+  expect(html).toContain("resize: vertical");
+});
+
+test("applyOauth accepts newline-separated and comma-separated lists alike", async () => {
+  // The field is one-per-line, but a list pasted from prose arrives with
+  // commas. Both must reach the wire as a clean array, with blank lines and
+  // stray whitespace dropped rather than sent as empty entries.
+  const sent: any[] = [];
+  const component = await loadBoardComponent();
+  component.refresh = async () => {};
+  component.apiPut = async (_path: string, payload: unknown) => {
+    sent.push(payload);
+    return { ok: true, status: 200, json: async () => ({ ok: true, cfSynced: true }) };
+  };
+  const base = {
+    app: "demo", published: true, publicUrl: "https://demo.example",
+    hasPassword: false, pwOpen: false, password: "", pwError: null, pwBusy: false,
+    oauthOn: true, oauthError: null, oauthBusy: false,
+  };
+
+  component.accessModal = { ...base, mode: "emails", list: "a@x.dev\n b@y.dev \n\n" };
+  await component.applyOauth();
+  expect(sent.at(-1)).toEqual({ mode: "emails", emails: ["a@x.dev", "b@y.dev"] });
+
+  component.accessModal = { ...base, mode: "emails", list: "a@x.dev, b@y.dev" };
+  await component.applyOauth();
+  expect(sent.at(-1)).toEqual({ mode: "emails", emails: ["a@x.dev", "b@y.dev"] });
+
+  component.accessModal = { ...base, mode: "domains", list: "corp.com\nother.dev,third.io" };
+  await component.applyOauth();
+  expect(sent.at(-1)).toEqual({ mode: "domains", domains: ["corp.com", "other.dev", "third.io"] });
+
+  // A field holding only separators must not fire a request at all.
+  component.accessModal = { ...base, mode: "emails", list: "\n , \n" };
+  await component.applyOauth();
+  expect(sent).toHaveLength(3);
+});
+
+test("a saved list reads back one per line", async () => {
+  // openAccess seeds the textarea from the server's array; joining with ", "
+  // would put a multi-entry list back on one line and undo the change.
+  const component = await loadBoardComponent();
+  component.openAccess({
+    name: "demo", published: true, publicUrl: "https://demo.example",
+    hasPassword: false, oauth: { mode: "emails", emails: ["a@x.dev", "b@y.dev"] },
+  });
+  expect(component.accessModal.list).toBe("a@x.dev\nb@y.dev");
+});
