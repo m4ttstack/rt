@@ -227,17 +227,23 @@ test("an identity access tier is synced to Cloudflare BEFORE it is persisted; a 
 test("a password is not a precondition for a sign-in gate", async () => {
   // The old API answered 409 when the password tier was selected with no
   // password set. The two are independent axes now, so setting one must never
-  // depend on the other.
+  // depend on the other. The app is registered (and left with no password)
+  // so the request reaches the access handler instead of bouncing off the
+  // unknown-app 404, which would make this assertion vacuous.
+  await post("/api/v1/apps", { name: "gated2", command: ["bun", "s.ts"], workingDirectory: "/tmp" });
   const res = await api("/api/v1/apps/gated2/access", {
-    method: "PUT",
+    method: "PUT", headers: { "content-type": "application/json" },
     body: JSON.stringify({ mode: "domains", domains: ["corp.com"] }),
   });
   expect(res.status).not.toBe(409);
 });
 
 test("the old tier vocabulary is rejected, not translated", async () => {
+  // Registered so the 400 is asserted for the reason this test claims (the
+  // body fails parseOAuth), not merely because the app happens to be unknown.
+  await post("/api/v1/apps", { name: "gated3", command: ["bun", "s.ts"], workingDirectory: "/tmp" });
   const res = await api("/api/v1/apps/gated3/access", {
-    method: "PUT",
+    method: "PUT", headers: { "content-type": "application/json" },
     body: JSON.stringify({ tier: "only-me", email: "m@x.dev" }),
   });
   expect(res.status).toBe(400);
