@@ -30,6 +30,13 @@
     font-size: 0.8em;
     gap: var(--space-2);
   }
+  /* oat's .icon sets a width and zeroes the padding but never sets a height,
+     so an icon-only button collapses onto its 16px glyph: half the height of
+     the .small buttons beside it, with the border hugging the icon. Give it
+     the same 28px box its siblings compute from padding + line-height. */
+  button.small.icon {
+    height: 1.75rem;
+  }
   /* td is nowrap for port numbers; a config line has to be free to wrap. */
   .preflight-issue {
     white-space: normal;
