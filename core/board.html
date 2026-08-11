@@ -92,6 +92,15 @@
     white-space: normal;
     word-break: break-word;
   }
+  /* The allowlist is one entry per line. Let it fill the dialog and grow
+     downward, but never sideways: a long address would otherwise widen the
+     textarea and push the dialog past its own max-width. */
+  textarea.access-list {
+    width: 100%;
+    min-height: 5rem;
+    resize: vertical;
+    font-family: inherit;
+  }
 </style>
 </head>
 <body>
@@ -664,12 +673,17 @@
                      x-model="accessModal.mode" @change="onOauthMode()">
               <span>These people</span>
             </label>
-            <span class="hstack gap-2">
-              <label data-field>
-                <input x-model="accessModal.list"
-                       :placeholder="accessModal.mode === 'emails' ? 'a@x.dev, b@y.dev' : 'corp.com, other.dev'"
-                       :aria-label="accessModal.mode === 'emails' ? 'allowed emails' : 'allowed domains'">
-              </label>
+            <!-- A textarea, not a single-line input: these are lists, and an
+                 allowlist of any real size shows only its tail in one line.
+                 Commas and newlines both separate, so a list pasted from a
+                 spreadsheet column or from prose both land correctly. -->
+            <label data-field>
+              <textarea class="access-list" rows="4"
+                        x-model="accessModal.list"
+                        :placeholder="accessModal.mode === 'emails' ? 'a@x.dev\nb@y.dev' : 'corp.com\nother.dev'"
+                        :aria-label="accessModal.mode === 'emails' ? 'allowed emails, one per line' : 'allowed domains, one per line'"></textarea>
+            </label>
+            <span class="hstack gap-2 justify-end">
               <button type="button" class="small"
                       :disabled="!accessModal.list.trim() || accessModal.oauthBusy"
                       @click="applyOauth()">Apply</button>
