@@ -1,7 +1,7 @@
 // scripts/verify-cf-access.ts
-// LIVE gate for the access-tier pillar. Run BY MATT:
+// LIVE gate for the sign-in pillar. Run BY MATT:
 //   CF_TOKEN=… CF_ZONE=… CF_DOMAIN=yourdomain.com bun run scripts/verify-cf-access.ts
-// Creates a scratch Access app + only-me policy on a hostname that serves
+// Creates a scratch Access app + single-email allow policy on a hostname that serves
 // nothing, verifies Cloudflare answers the gate (302 to the Access login),
 // then deletes everything it created. Prints PASS/FAIL and every id it touched.
 import { CfAccess } from "../src/edge/access.ts";

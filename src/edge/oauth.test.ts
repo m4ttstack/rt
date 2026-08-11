@@ -1,18 +1,35 @@
 // src/edge/oauth.test.ts
-import { test, expect, beforeEach } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "fs";
+import { test, expect, beforeEach, afterAll } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, statSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
 const dir = mkdtempSync(join(tmpdir(), "local-oauth-"));
+const ACCESS_PATH = join(dir, "access.json");
+// These are process-wide, and `bun test` runs every file in one process, so
+// restore them afterwards rather than leaving this file's scratch paths for
+// whatever sorts after it to inherit.
+const priorState = process.env.LOCAL_STATE_DIR;
+const priorAccess = process.env.LOCAL_ACCESS_PATH;
 process.env.LOCAL_STATE_DIR = dir;
-process.env.LOCAL_ACCESS_PATH = join(dir, "access.json");
+process.env.LOCAL_ACCESS_PATH = ACCESS_PATH;
 const { parseOAuth, getOAuth, setOAuth, reloadOAuth, oauthRequiresCf } = await import("./oauth.ts");
 
 beforeEach(() => {
-  rmSync(process.env.LOCAL_ACCESS_PATH!, { force: true });
+  rmSync(ACCESS_PATH, { force: true });
   reloadOAuth();
 });
+
+afterAll(() => {
+  restore("LOCAL_STATE_DIR", priorState);
+  restore("LOCAL_ACCESS_PATH", priorAccess);
+  rmSync(dir, { recursive: true, force: true });
+});
+
+function restore(key: string, value: string | undefined): void {
+  if (value === undefined) delete process.env[key];
+  else process.env[key] = value;
+}
 
 test("parseOAuth accepts each mode and rejects junk", () => {
   expect(parseOAuth({ mode: "off" })).toEqual({ mode: "off" });
@@ -52,7 +69,7 @@ test("only an on-mode needs Cloudflare", () => {
 });
 
 test("load drops every entry that does not match the current shape and rewrites the file", () => {
-  writeFileSync(process.env.LOCAL_ACCESS_PATH!, JSON.stringify({
+  writeFileSync(ACCESS_PATH, JSON.stringify({
     apps: {
       legacyPublic: { tier: "public" },
       legacyOnlyMe: { tier: "only-me", email: "m@x.dev" },
@@ -69,13 +86,20 @@ test("load drops every entry that does not match the current shape and rewrites 
   expect(getOAuth("keeper")).toEqual({ mode: "emails", emails: ["a@x.dev"] });
 
   // The drop is written back, not re-derived on every load.
-  const onDisk = JSON.parse(readFileSync(process.env.LOCAL_ACCESS_PATH!, "utf8"));
+  const onDisk = JSON.parse(readFileSync(ACCESS_PATH, "utf8"));
   expect(Object.keys(onDisk.apps)).toEqual(["keeper"]);
 });
 
 test("a file with nothing to drop is left alone", () => {
   setOAuth("a", { mode: "emails", emails: ["a@x.dev"] });
-  const before = readFileSync(process.env.LOCAL_ACCESS_PATH!, "utf8");
+  const before = readFileSync(ACCESS_PATH, "utf8");
+  const beforeStat = statSync(ACCESS_PATH);
+
   reloadOAuth();
-  expect(readFileSync(process.env.LOCAL_ACCESS_PATH!, "utf8")).toBe(before);
+
+  // Content alone cannot fail this: a rewrite is byte-identical, so an
+  // unconditional save() would still pass. save() writes a temp file and
+  // renames it over the target, so any write at all lands a NEW inode.
+  expect(statSync(ACCESS_PATH).ino).toBe(beforeStat.ino);
+  expect(readFileSync(ACCESS_PATH, "utf8")).toBe(before);
 });

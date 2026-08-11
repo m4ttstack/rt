@@ -166,7 +166,7 @@ export async function runCommand(
         const current = await apiJson("/api/v1/settings");
         if (!current.body.hasCfToken) {
           io.out("A Google sign-in gate needs a Cloudflare API token");
-          io.out("scoped to this zone: Access: Apps and Policies — Edit. Blank skips access tiers.");
+          io.out("scoped to this zone: Access: Apps and Policies, Edit. Blank skips the sign-in gate.");
           const cfApiToken = promptFn("Cloudflare API token:")?.trim() ?? "";
           if (cfApiToken) {
             const cfZoneId = promptFn("Cloudflare zone id:")?.trim() ?? "";
