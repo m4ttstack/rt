@@ -198,6 +198,80 @@ document.addEventListener("alpine:init", () => {
       };
     },
 
+    // The switches carry the destructive direction and fire on click; the
+    // apply buttons carry the constructive one. Turning a switch ON sends
+    // nothing, because there is no valid value to send yet: that is what keeps
+    // a half-typed domain from reaching Cloudflare.
+    async onPasswordSwitch() {
+      const m = this.accessModal;
+      if (!m.hasPassword) { m.pwOpen = !m.pwOpen; m.pwError = null; return; }
+      m.pwBusy = true;
+      m.pwError = null;
+      const res = await this.apiPut("/api/v1/apps/" + m.app + "/password", { password: null })
+        .catch(() => null);
+      m.pwBusy = false;
+      if (!res || !res.ok) {
+        m.pwError = "removing the password failed.";
+        return; // the switch snaps back: the server still has the gate
+      }
+      m.hasPassword = false;
+      m.pwOpen = false;
+      m.password = "";
+      await this.refresh();
+    },
+    async savePassword() {
+      const m = this.accessModal;
+      if (!m || !m.password) return;
+      m.pwBusy = true;
+      m.pwError = null;
+      const res = await this.apiPut("/api/v1/apps/" + m.app + "/password", { password: m.password })
+        .catch(() => null);
+      m.pwBusy = false;
+      if (!res || !res.ok) {
+        m.pwError = "saving the password failed, the board did not answer.";
+        return;
+      }
+      m.hasPassword = true;
+      m.password = "";
+      m.pwOpen = false;
+      await this.refresh();
+    },
+    async onOauthSwitch() {
+      const m = this.accessModal;
+      if (!m.oauthOn) { m.oauthOn = true; m.oauthError = null; return; }
+      m.oauthBusy = true;
+      m.oauthError = null;
+      const res = await this.apiPut("/api/v1/apps/" + m.app + "/access", { mode: "off" })
+        .catch(() => null);
+      m.oauthBusy = false;
+      if (!res || !res.ok) {
+        const b = res ? await res.json().catch(() => ({})) : {};
+        m.oauthError = b.message || b.error || "turning sign-in off failed.";
+        return; // stays on: Cloudflare still has the gate
+      }
+      m.oauthOn = false;
+      m.list = "";
+      await this.refresh();
+    },
+    async applyOauth() {
+      const m = this.accessModal;
+      const items = m.list.split(",").map((s) => s.trim()).filter(Boolean);
+      if (!items.length) return;
+      const payload = m.mode === "emails"
+        ? { mode: "emails", emails: items }
+        : { mode: "domains", domains: items };
+      m.oauthBusy = true;
+      m.oauthError = null;
+      const res = await this.apiPut("/api/v1/apps/" + m.app + "/access", payload).catch(() => null);
+      m.oauthBusy = false;
+      if (!res || !res.ok) {
+        const b = res ? await res.json().catch(() => ({})) : {};
+        m.oauthError = b.message || b.error || "Cloudflare sync failed.";
+        return;
+      }
+      await this.refresh();
+    },
+
     async submitAdd() {
       const m = this.addModal;
       if (!m) return;

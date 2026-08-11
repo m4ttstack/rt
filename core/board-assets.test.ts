@@ -201,3 +201,40 @@ test("every data-lucide name in the board is in the icon bundle", async () => {
   const missing = [...used].filter((name) => !registered.has(name)).sort();
   expect(missing).toEqual([]);
 });
+
+test("the access dialog commits per control and never sends a half-typed value", async () => {
+  const html = await boardHtml().text();
+  const js = await boardJs().text();
+
+  expect(html).toContain('x-if="accessModal"');
+  expect(js).toContain("onPasswordSwitch");
+  expect(js).toContain("onOauthSwitch");
+  expect(js).toContain("applyOauth");
+
+  // Turning a switch ON must send nothing: there is no valid value yet.
+  // Both apply buttons are therefore disabled until the field has content.
+  const dialog = html.match(/<template x-if="accessModal">[\s\S]*?<\/template>/)?.[0];
+  expect(dialog).toBeDefined();
+  expect(dialog).toMatch(/:disabled="!accessModal\.password/);
+  expect(dialog).toMatch(/:disabled="!accessModal\.list/);
+
+  // Oat swallows a <label data-field> that precedes a switch, so the dialog's
+  // text fields use spans. See board.html:354 and the switch test below.
+  expect(dialog).not.toContain("<label data-field");
+});
+
+test("the access dialog is the last block on the board", async () => {
+  // The switch test scans left to right: a <label> between two switches is
+  // matched as the later switch's wrapper. This dialog's radio labels are only
+  // safe while no switch follows them.
+  const html = await boardHtml().text();
+  const access = html.indexOf('x-if="accessModal"');
+  expect(access).toBeGreaterThan(-1);
+  expect(access).toBeGreaterThan(html.indexOf('x-if="addModal"'));
+  expect(access).toBeGreaterThan(html.indexOf('x-if="editModal"'));
+  // The dialog's own two switches must be the last two on the page. Anything
+  // after them would turn this dialog's radio labels into that switch's
+  // wrapper as far as the guard above is concerned.
+  const after = html.slice(access);
+  expect([...after.matchAll(/role="switch"/g)]).toHaveLength(2);
+});
