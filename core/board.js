@@ -11,7 +11,7 @@ document.addEventListener("alpine:init", () => {
     data: null, // last good /api/v1/status body; null until the first answer
     restarting: {}, // label -> { pid, at }: awaiting a fresh pid
     editing: null, // { app, value } | null: the port cell being edited
-    pwModal: null, // { app, value } | null: the password dialog
+    accessModal: null, // the per-app access dialog; see openAccess()
     addModal: null, // { name, external, command, workingDirectory, staticPort, error } | null
     editModal: null, // { original, name, port, kind, command, workingDirectory, error } | null
     proxyNotice: null, // { kind: "ok"|"bad", message, command? } | null
@@ -65,6 +65,24 @@ document.addEventListener("alpine:init", () => {
     },
     isRestarting(row) {
       return !!(row.service && this.restarting[row.service.label]);
+    },
+
+    // The one sentence the access cell's title and aria-label share. An
+    // unpublished app LEADS with that ("open to anyone" would otherwise
+    // describe a hostname that answers to nobody) but still names its gates:
+    // the cell is icon-only, so this sentence is the only textual route a
+    // screen reader has to the password and sign-in state.
+    accessSummary(row) {
+      const parts = [];
+      if (!row.published) parts.push("not published");
+      if (row.hasPassword) parts.push("password required");
+      const o = row.oauth || { mode: "off" };
+      if (o.mode === "emails") {
+        parts.push(o.emails.length + (o.emails.length === 1 ? " person" : " people") + " may sign in");
+      } else if (o.mode === "domains") {
+        parts.push("anyone at " + o.domains.join(" or ") + " may sign in");
+      }
+      return parts.length ? parts.join(", ") : "open to anyone";
     },
 
     // Mirrors isPlatformManagedBy on the server: "local" is the pre-rename id
@@ -163,45 +181,129 @@ document.addEventListener("alpine:init", () => {
       await this.refresh();
     },
 
-    openPassword(app) {
-      this.pwModal = { app, value: "" };
-    },
-    async savePassword() {
-      if (!this.pwModal || !this.pwModal.value) return;
-      const { app, value } = this.pwModal;
-      try {
-        await this.apiPut("/api/v1/apps/" + app + "/password", { password: value });
-        this.pwModal = null;
-      } catch {
-        this.notice("bad", "saving the password failed -- the board did not answer.", 30000);
-      }
-      await this.refresh();
-    },
-    clearPassword(app) {
-      this.apiPut("/api/v1/apps/" + app + "/password", { password: null })
-        .catch(() => {})
-        .then(() => this.refresh());
+    openAccess(row) {
+      const o = row.oauth || { mode: "off" };
+      this.accessModal = {
+        app: row.name,
+        published: row.published,
+        publicUrl: row.publicUrl,
+        hasPassword: row.hasPassword,
+        // pwOpen exists because turning the switch ON has nothing valid to
+        // send yet: it only reveals the field. The Set button sends.
+        pwOpen: false, password: "", pwError: null, pwBusy: false,
+        oauthOn: o.mode !== "off",
+        mode: o.mode === "domains" ? "domains" : "emails",
+        list: o.mode === "emails" ? o.emails.join(", ")
+            : o.mode === "domains" ? o.domains.join(", ")
+            : "",
+        oauthError: null, oauthBusy: false,
+      };
     },
 
-    async onTierChange(row, tier) {
-      let payload = { tier };
-      if (tier === "only-me") {
-        const email = prompt("Allow exactly one email:");
-        if (!email) return this.refresh();
-        payload.email = email.trim();
-      } else if (tier === "work-domain") {
-        const emailDomain = prompt("Allow every email at this domain (e.g. corp.com):");
-        if (!emailDomain) return this.refresh();
-        payload.emailDomain = emailDomain.trim();
-      } else if (tier === "custom") {
-        const list = prompt("Comma-separated emails:");
-        if (!list) return this.refresh();
-        payload.emails = list.split(",").map(s => s.trim()).filter(Boolean);
+    // The switches carry the destructive direction and fire on click; the
+    // apply buttons carry the constructive one. Turning a switch ON sends
+    // nothing, because there is no valid value to send yet: that is what keeps
+    // a half-typed domain from reaching Cloudflare.
+    //
+    // A native checkbox flips its own `checked` property the instant it is
+    // clicked, before "change" fires and before Alpine's :checked effect gets
+    // a chance to run. That effect only re-runs when a dependency it read
+    // (accessModal.hasPassword / .pwOpen) actually changes, so on a failed
+    // request -- where we deliberately leave that state alone -- the effect
+    // never re-fires and the box would be left showing the click, not the
+    // server. ev.target.checked is therefore written by hand on every failure
+    // branch below, back to what the (unchanged) state says.
+    async onPasswordSwitch(ev) {
+      const m = this.accessModal;
+      if (!m.hasPassword) {
+        m.pwOpen = !m.pwOpen;
+        m.pwError = null;
+        if (!m.pwOpen) m.password = ""; // don't leave a half-typed password live in a hidden field
+        return;
       }
-      const res = await this.apiPut("/api/v1/apps/" + row.name + "/access", payload).catch(() => null);
-      if (res && !res.ok) {
-        const body = await res.json().catch(() => ({}));
-        this.notice("bad", body.message || body.error || "access change failed", 15000);
+      m.pwBusy = true;
+      m.pwError = null;
+      const res = await this.apiPut("/api/v1/apps/" + m.app + "/password", { password: null })
+        .catch(() => null);
+      m.pwBusy = false;
+      if (!res || !res.ok) {
+        m.pwError = "removing the password failed.";
+        ev.target.checked = m.hasPassword || m.pwOpen; // snap back: the server still has the gate
+        return;
+      }
+      m.hasPassword = false;
+      m.pwOpen = false;
+      m.password = "";
+      await this.refresh();
+    },
+    async savePassword() {
+      const m = this.accessModal;
+      if (!m || !m.password) return;
+      m.pwBusy = true;
+      m.pwError = null;
+      const res = await this.apiPut("/api/v1/apps/" + m.app + "/password", { password: m.password })
+        .catch(() => null);
+      m.pwBusy = false;
+      if (!res || !res.ok) {
+        m.pwError = "saving the password failed, the board did not answer.";
+        return;
+      }
+      m.hasPassword = true;
+      m.password = "";
+      m.pwOpen = false;
+      await this.refresh();
+    },
+    async onOauthSwitch(ev) {
+      const m = this.accessModal;
+      if (!m.oauthOn) { m.oauthOn = true; m.oauthError = null; return; }
+      m.oauthBusy = true;
+      m.oauthError = null;
+      const res = await this.apiPut("/api/v1/apps/" + m.app + "/access", { mode: "off" })
+        .catch(() => null);
+      m.oauthBusy = false;
+      const b = res ? await res.json().catch(() => ({})) : {};
+      if (!res || !res.ok) {
+        m.oauthError = b.message || b.error || "turning sign-in off failed.";
+        ev.target.checked = m.oauthOn; // stays on: Cloudflare still has the gate. See onPasswordSwitch for why this write is necessary.
+        return;
+      }
+      m.oauthOn = false;
+      m.list = "";
+      // Turning sign-in off always takes effect locally, so this is a 200 even
+      // when the Cloudflare teardown was skipped or failed. cfSynced carries
+      // that verdict, and a stale Access app keeps challenging visitors, so
+      // say so rather than render an "off" the edge does not agree with. The
+      // CLI prints the same warning on the same field.
+      m.oauthError = b.cfSynced === false
+        ? "sign-in is off here, but Cloudflare was not updated, so visitors may still be asked to sign in."
+        : null;
+      await this.refresh();
+    },
+    // The radio picks what the field below it MEANS, so entries typed for the
+    // other mode are never valid for the new one: clear them rather than leave
+    // "a@x.dev, b@y.dev" sitting under "anyone at these domains" with Apply
+    // live.
+    onOauthMode() {
+      const m = this.accessModal;
+      if (!m) return;
+      m.list = "";
+      m.oauthError = null;
+    },
+    async applyOauth() {
+      const m = this.accessModal;
+      const items = m.list.split(",").map((s) => s.trim()).filter(Boolean);
+      if (!items.length) return;
+      const payload = m.mode === "emails"
+        ? { mode: "emails", emails: items }
+        : { mode: "domains", domains: items };
+      m.oauthBusy = true;
+      m.oauthError = null;
+      const res = await this.apiPut("/api/v1/apps/" + m.app + "/access", payload).catch(() => null);
+      m.oauthBusy = false;
+      if (!res || !res.ok) {
+        const b = res ? await res.json().catch(() => ({})) : {};
+        m.oauthError = b.message || b.error || "Cloudflare sync failed.";
+        return;
       }
       await this.refresh();
     },

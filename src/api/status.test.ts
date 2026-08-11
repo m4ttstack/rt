@@ -40,9 +40,9 @@ test("a route with no record is managedBy null (legacy, pre-migrate)", async () 
   expect(status.apps[0]!.issues).toEqual([]);
 });
 
-test("a row carries its access tier, defaulting to public", async () => {
+test("a row carries its oauth rule, defaulting to off", async () => {
   const status = await buildStatus(opts);
-  expect(status.apps[0]!.accessTier).toEqual({ tier: "public" });
+  expect(status.apps[0]!.oauth).toEqual({ mode: "off" });
 });
 
 test("the platform's own record marks its row self, wherever its port is", async () => {

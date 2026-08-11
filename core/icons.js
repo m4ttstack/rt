@@ -14,6 +14,7 @@ import {
   RotateCcw,
   Trash2,
   TriangleAlert,
+  UserRoundCheck,
   createIcons,
 } from "lucide";
 
@@ -29,6 +30,7 @@ createIcons({
     RotateCcw,
     Trash2,
     TriangleAlert,
+    UserRoundCheck,
   },
   attrs: {
     width: 14,

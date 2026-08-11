@@ -3,7 +3,7 @@ import {
 } from "../../core/discover.ts";
 import {
   setPublished, setPassword, clearPassword, getOverride, setOverride,
-  clearOverride, setPublicFollowsOverride, getAppSettings,
+  clearOverride, setPublicFollowsOverride,
 } from "../../core/settings.ts";
 import { setRoutePort } from "../../core/routes-writer.ts";
 import {
@@ -22,8 +22,8 @@ import { join } from "path";
 import { userInfo } from "os";
 import type { TunnelDriver } from "../edge/tunnel.ts";
 import { bindDomain, TUNNEL_LABEL } from "../edge/domain.ts";
-import { parseTier, setTier, getTier, tierRequiresCf } from "../edge/access-tiers.ts";
-import { syncAccessTier } from "../edge/access.ts";
+import { parseOAuth, setOAuth, getOAuth, oauthRequiresCf } from "../edge/oauth.ts";
+import { syncOAuth } from "../edge/access.ts";
 
 export interface ApiDeps extends Drivers {
   port: number;
@@ -126,7 +126,7 @@ function rowFor(record: AppRecord, byName: Map<string, StatusRow>, redact: boole
       command: redact ? null : record.command ?? null,
       workingDirectory: redact ? null : record.workingDirectory ?? null,
     },
-    accessTier: getTier(record.name),
+    oauth: getOAuth(record.name),
   };
 }
 
@@ -280,34 +280,29 @@ export function startApi(deps: ApiDeps) {
           }
           if (sub === "access" && req.method === "PUT") {
             if (!getRecord(name) && !knownRouteApp(name)) return json({ error: "unknown app" }, 404);
-            const tier = parseTier(await body(req));
-            if ("error" in tier) return json(tier, 400);
-            if (tier.tier === "password" && !getAppSettings(name).passwordHash) {
-              return json({ error: "password-not-set", message: "Set a password first — the password tier is the gateway's own gate." }, 409);
-            }
-            if (tierRequiresCf(tier)) {
-              // Identity tiers are a security gate: sync to Cloudflare BEFORE
+            const rule = parseOAuth(await body(req));
+            if ("error" in rule) return json(rule, 400);
+            if (oauthRequiresCf(rule)) {
+              // A sign-in gate is a security control: sync to Cloudflare BEFORE
               // persisting, so a failed sync never leaves the board claiming a
-              // tier that was never actually enforced. Loud degradation per the
-              // plan's global constraint: silence is never success.
-              const sync = await syncAccessTier(name, tier, deps);
+              // gate that was never actually enforced. Silence is never success.
+              const sync = await syncOAuth(name, rule, deps);
               if (!sync.ok) {
                 return json({
                   error: "cloudflare-sync-failed",
-                  message: sync.message ?? "Cloudflare sync failed — the previous access tier is still in effect.",
-                  tier: getTier(name),
+                  message: sync.message ?? "Cloudflare sync failed, the previous sign-in rule is still in effect.",
+                  oauth: getOAuth(name),
                 }, 502);
               }
-              setTier(name, tier);
-              return json({ ok: true, tier, cfSynced: true });
+              setOAuth(name, rule);
+              return json({ ok: true, oauth: rule, cfSynced: true });
             }
-            // public/password enforce locally, not via Cloudflare, so they always
-            // apply immediately. syncAccessTier still tears down any stale
-            // Cloudflare Access app left from a prior identity tier — a failure
+            // Turning sign-in off takes effect locally either way. syncOAuth still
+            // tears down the Cloudflare Access app left from before, and a failure
             // there is recorded as a SyncIssue, not a reason to fail this request.
-            setTier(name, tier);
-            const sync = await syncAccessTier(name, tier, deps);
-            return json({ ok: true, tier, cfSynced: sync.ok });
+            setOAuth(name, rule);
+            const sync = await syncOAuth(name, rule, deps);
+            return json({ ok: true, oauth: rule, cfSynced: sync.ok });
           }
         }
 

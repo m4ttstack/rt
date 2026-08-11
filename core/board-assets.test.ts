@@ -92,11 +92,23 @@ test("edge controls do not let Oat tooltips create empty overflow", async () => 
 test("switch tooltips stay on the wrapper so Oat can render the thumb", async () => {
   const html = await boardHtml().text();
   // Every switch, not just the first: a title on the input hides the thumb, so
-  // the guard is worth nothing if a later switch can skip it.
-  const switches = [...html.matchAll(/<label[^>]*>[\s\S]*?<input type="checkbox"[\s\S]*?role="switch"[\s\S]*?>/g)]
-    .map((m) => m[0]);
+  // the guard is worth nothing if a later switch can skip it. The lazy match
+  // is bounded by a negative lookahead so it cannot cross a label boundary:
+  // without that bound, an unrelated data-field label earlier in the page
+  // would be swept forward and matched against a switch several elements
+  // later, past its own closing tag, and wrongly blamed for that switch's
+  // missing :title.
+  const switches = [
+    ...html.matchAll(
+      /<label[^>]*>(?:(?!<\/?label\b)[\s\S])*?<input type="checkbox"(?:(?!<\/?label\b)[\s\S])*?role="switch"[\s\S]*?>/g,
+    ),
+  ].map((m) => m[0]);
 
   expect(switches.length).toBeGreaterThan(0);
+  // Every switch on the page must be caught by the guard above, not just the
+  // ones that happen to sit in a well-formed label: an unwrapped switch would
+  // otherwise pass this test silently while rendering with no thumb at all.
+  expect(switches.length).toBe([...html.matchAll(/role="switch"/g)].length);
   for (const markup of switches) {
     const labelTag = markup.match(/<label[^>]*>/)?.[0] ?? "";
     // Asserted on the tag rather than as a literal prefix, so attribute order
@@ -148,6 +160,32 @@ test("vendor allowlist rejects unknown names and traversal", () => {
   expect(vendorAsset("hasOwnProperty")).toBeNull();
 });
 
+test("the access cell is two glyphs and a click target, not a dropdown", async () => {
+  const html = await boardHtml().text();
+
+  // The whole point of the change: no select survives anywhere on the board.
+  expect(html).not.toContain("<select");
+  expect(html).not.toContain('value="only-me"');
+  expect(html).not.toContain('value="work-domain"');
+
+  expect(html).toContain('data-lucide="user-round-check"');
+  // The password state is one glyph in the cell now, never a pair of buttons.
+  // Match the bare text, not ">set password<": the label sits on its own line
+  // in the markup being removed, so the angle-bracketed form would pass
+  // whether or not the button was ever deleted.
+  expect(html).not.toContain("set password");
+  expect(html).not.toContain(">remove</button>");
+});
+
+test("the client reads the oauth rule and builds no HTML", async () => {
+  const js = await boardJs().text();
+  expect(js).toContain("accessSummary");
+  expect(js).toContain("openAccess");
+  // prompt() was how the identity tiers were collected; the modal replaces it.
+  expect(js).not.toContain("prompt(");
+  expect(js).not.toContain("onTierChange");
+});
+
 // The icon bundle is a curated subset and lucide renders nothing for a name it
 // was not given, leaving an empty <i> that still occupies its slot in the
 // button's flex gap. That reads as off-centre text, not as a missing icon, so
@@ -174,4 +212,237 @@ test("every data-lucide name in the board is in the icon bundle", async () => {
 
   const missing = [...used].filter((name) => !registered.has(name)).sort();
   expect(missing).toEqual([]);
+});
+
+test("the access dialog commits per control and never sends a half-typed value", async () => {
+  const html = await boardHtml().text();
+  const js = await boardJs().text();
+
+  expect(html).toContain('x-if="accessModal"');
+  expect(js).toContain("onPasswordSwitch");
+  expect(js).toContain("onOauthSwitch");
+  expect(js).toContain("applyOauth");
+
+  // Turning a switch ON must send nothing: there is no valid value yet.
+  // Both apply buttons are therefore disabled until the field has content.
+  const dialog = html.match(/<template x-if="accessModal">[\s\S]*?<\/template>/)?.[0];
+  expect(dialog).toBeDefined();
+  expect(dialog).toMatch(/:disabled="!accessModal\.password/);
+  expect(dialog).toMatch(/:disabled="!accessModal\.list/);
+});
+
+test("the access dialog is the last block on the board", async () => {
+  // The switch test scans left to right: a label between two switches is
+  // matched as the later switch's wrapper. This dialog's radio labels are only
+  // safe while no switch follows them.
+  const html = await boardHtml().text();
+  const access = html.indexOf('x-if="accessModal"');
+  const addModal = html.indexOf('x-if="addModal"');
+  const editModal = html.indexOf('x-if="editModal"');
+  expect(access).toBeGreaterThan(-1);
+  // Asserted before the ordering comparisons below: indexOf returns -1 for a
+  // deleted block, and -1 sorts before every real offset, so without this the
+  // ordering checks would pass vacuously if addModal or editModal ever went
+  // away.
+  expect(addModal).toBeGreaterThan(-1);
+  expect(editModal).toBeGreaterThan(-1);
+  expect(access).toBeGreaterThan(addModal);
+  expect(access).toBeGreaterThan(editModal);
+  // The dialog's own two switches must be the last two on the page. Anything
+  // after them would turn this dialog's radio labels into that switch's
+  // wrapper as far as the guard above is concerned.
+  const after = html.slice(access);
+  expect([...after.matchAll(/role="switch"/g)]).toHaveLength(2);
+});
+
+// Loads the real board.js source and hands back the plain object
+// Alpine.data("board", factory) would have registered, without pulling Alpine
+// or a DOM library into the test run: document.addEventListener is stubbed to
+// invoke its callback immediately, and Alpine.data is stubbed to capture the
+// factory instead of registering it. The returned object's methods are the
+// actual production code, called directly.
+type BoardComponent = Record<string, any>;
+type BoardFactory = () => BoardComponent;
+
+async function loadBoardComponent(): Promise<BoardComponent> {
+  const js = await boardJs().text();
+  let factory: BoardFactory | undefined;
+  const fakeDocument = { addEventListener: (_event: string, cb: () => void) => cb() };
+  const fakeAlpine = { data: (_name: string, f: BoardFactory) => { factory = f; } };
+  new Function("document", "Alpine", js)(fakeDocument, fakeAlpine);
+  if (!factory) throw new Error("board.js never called Alpine.data(\"board\", ...)");
+  return factory();
+}
+
+test("a failed password-switch request leaves the checkbox matching the unchanged server state", async () => {
+  // :checked="accessModal.hasPassword || accessModal.pwOpen" is an Alpine
+  // effect with fine-grained dependency tracking: it only re-runs when one of
+  // those two reads actually changes value. A native checkbox flips its own
+  // checked property on click, before "change" fires, so if the failure
+  // branch below left hasPassword and pwOpen untouched (as it must -- the
+  // server still has the old state) the effect would never re-fire and the
+  // box would keep showing the click instead of the server. This asserts the
+  // handler corrects event.target.checked by hand instead.
+  const component = await loadBoardComponent();
+  component.accessModal = {
+    app: "demo", published: true, publicUrl: "https://demo.example",
+    hasPassword: true, pwOpen: false, password: "", pwError: null, pwBusy: false,
+    oauthOn: false, mode: "emails", list: "", oauthError: null, oauthBusy: false,
+  };
+  // The DOM has already flipped itself to false, exactly as a real click on a
+  // real checkbox would before "change" fires.
+  const ev = { target: { checked: false } };
+  component.apiPut = async () => ({ ok: false, status: 500, json: async () => ({}) });
+
+  await component.onPasswordSwitch(ev);
+
+  expect(ev.target.checked).toBe(true); // snapped back: hasPassword is still true
+  expect(component.accessModal.hasPassword).toBe(true); // state itself never moved
+  expect(component.accessModal.pwError).toBeTruthy();
+});
+
+test("a network failure on the password switch also reverts the checkbox", async () => {
+  // Same as above but through the res === null branch (apiPut's fetch threw
+  // and was caught), not the res.ok === false branch, since they are two
+  // different lines in the handler.
+  const component = await loadBoardComponent();
+  component.accessModal = {
+    app: "demo", published: true, publicUrl: "https://demo.example",
+    hasPassword: true, pwOpen: false, password: "", pwError: null, pwBusy: false,
+    oauthOn: false, mode: "emails", list: "", oauthError: null, oauthBusy: false,
+  };
+  const ev = { target: { checked: false } };
+  component.apiPut = async () => { throw new Error("network down"); };
+
+  await component.onPasswordSwitch(ev);
+
+  expect(ev.target.checked).toBe(true);
+  expect(component.accessModal.hasPassword).toBe(true);
+});
+
+test("a failed oauth-switch request (Cloudflare 502) leaves the checkbox on", async () => {
+  // This is the exact case sync-before-persist exists for: Cloudflare
+  // rejects the change, the server keeps the previous rule, and the switch
+  // must keep showing "on" rather than the click that asked to turn it off.
+  const component = await loadBoardComponent();
+  component.accessModal = {
+    app: "demo", published: true, publicUrl: "https://demo.example",
+    hasPassword: false, pwOpen: false, password: "", pwError: null, pwBusy: false,
+    oauthOn: true, mode: "emails", list: "a@x.dev", oauthError: null, oauthBusy: false,
+  };
+  const ev = { target: { checked: false } };
+  component.apiPut = async () => ({
+    ok: false,
+    status: 502,
+    // The wire spelling the server actually sends (src/api/server.ts).
+    json: async () => ({ error: "cloudflare-sync-failed", message: "Cloudflare rejected the change" }),
+  });
+
+  await component.onOauthSwitch(ev);
+
+  expect(ev.target.checked).toBe(true);
+  expect(component.accessModal.oauthOn).toBe(true);
+  expect(component.accessModal.oauthError).toBe("Cloudflare rejected the change");
+});
+
+test("a turn-off that Cloudflare did not confirm still warns, even though it is a 200", async () => {
+  // Sign-in off always takes effect locally, so the server answers 200 and
+  // reports the edge's verdict in cfSynced. A skipped or failed teardown
+  // leaves the Access app challenging visitors, so a silent 200 would have
+  // the board showing an "off" the edge does not agree with. The CLI warns on
+  // the same field; this is the board's half of that.
+  const component = await loadBoardComponent();
+  component.refresh = async () => {};
+  component.accessModal = {
+    app: "demo", published: true, publicUrl: "https://demo.example",
+    hasPassword: false, pwOpen: false, password: "", pwError: null, pwBusy: false,
+    oauthOn: true, mode: "emails", list: "a@x.dev", oauthError: null, oauthBusy: false,
+  };
+  const ev = { target: { checked: false } };
+  component.apiPut = async () => ({
+    ok: true, status: 200,
+    json: async () => ({ ok: true, oauth: { mode: "off" }, cfSynced: false }),
+  });
+
+  await component.onOauthSwitch(ev);
+
+  expect(component.accessModal.oauthOn).toBe(false); // the local change did happen
+  expect(component.accessModal.oauthError).toContain("Cloudflare");
+});
+
+test("a turn-off Cloudflare confirmed leaves no warning behind", async () => {
+  const component = await loadBoardComponent();
+  component.refresh = async () => {};
+  component.accessModal = {
+    app: "demo", published: true, publicUrl: "https://demo.example",
+    hasPassword: false, pwOpen: false, password: "", pwError: null, pwBusy: false,
+    oauthOn: true, mode: "emails", list: "a@x.dev", oauthError: "stale", oauthBusy: false,
+  };
+  component.apiPut = async () => ({
+    ok: true, status: 200,
+    json: async () => ({ ok: true, oauth: { mode: "off" }, cfSynced: true }),
+  });
+
+  await component.onOauthSwitch({ target: { checked: false } });
+
+  expect(component.accessModal.oauthOn).toBe(false);
+  expect(component.accessModal.oauthError).toBeNull();
+});
+
+test("switching the sign-in mode clears the other mode's list", async () => {
+  // applyOauth reads m.list whichever radio is selected, so leaving
+  // "a@x.dev, b@y.dev" in the field after a switch to "anyone at these
+  // domains" would arm Apply with entries that are not domains at all.
+  const component = await loadBoardComponent();
+  component.accessModal = {
+    app: "demo", published: true, publicUrl: "https://demo.example",
+    hasPassword: false, pwOpen: false, password: "", pwError: null, pwBusy: false,
+    oauthOn: true, mode: "domains", list: "a@x.dev, b@y.dev",
+    oauthError: "old", oauthBusy: false,
+  };
+
+  component.onOauthMode();
+
+  expect(component.accessModal.list).toBe("");
+  expect(component.accessModal.oauthError).toBeNull();
+});
+
+test("accessSummary leads with 'not published' but still names the gates", async () => {
+  // The cell is icon-only, so this sentence is the only textual route a
+  // screen reader has to the password and sign-in state. An unpublished app
+  // that drops the gates tells a screen-reader user nothing about them.
+  const component = await loadBoardComponent();
+
+  expect(component.accessSummary({ published: true, hasPassword: false, oauth: { mode: "off" } }))
+    .toBe("open to anyone");
+  expect(component.accessSummary({ published: false, hasPassword: false, oauth: { mode: "off" } }))
+    .toBe("not published");
+  expect(component.accessSummary({
+    published: false, hasPassword: true, oauth: { mode: "domains", domains: ["corp.com"] },
+  })).toBe("not published, password required, anyone at corp.com may sign in");
+  expect(component.accessSummary({
+    published: true, hasPassword: false, oauth: { mode: "emails", emails: ["a@x.dev", "b@x.dev"] },
+  })).toBe("2 people may sign in");
+});
+
+test("the access dialog never prints a null public URL and keeps its warning slot outside the panel", async () => {
+  const html = await boardHtml().text();
+
+  // publicUrl is null on every row until a domain is bound, while published
+  // can already be true, so the interpolation must be guarded on both.
+  expect(html).toContain(`x-show="accessModal.published && accessModal.publicUrl"`);
+  expect(html).toContain(`x-show="accessModal.published && !accessModal.publicUrl"`);
+
+  // Both radios clear the field, so the other mode's entries never stay armed.
+  expect([...html.matchAll(/@change="onOauthMode\(\)"/g)]).toHaveLength(2);
+
+  // The oauth error slot must sit OUTSIDE the panel that x-shows on oauthOn:
+  // a cfSynced:false warning is written at the same moment oauthOn goes false.
+  const panel = html.indexOf(`x-show="accessModal.oauthOn"`);
+  const alert = html.indexOf(`x-text="accessModal.oauthError"`);
+  expect(panel).toBeGreaterThan(-1);
+  expect(alert).toBeGreaterThan(panel);
+  const between = html.slice(panel, alert);
+  expect([...between.matchAll(/<\/span>/g)].length)
+    .toBeGreaterThan([...between.matchAll(/<span\b/g)].length);
 });

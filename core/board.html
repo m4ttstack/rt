@@ -374,56 +374,22 @@
 
                 <td>
                   <template x-if="data.canManage && row.port != null">
-                    <!-- hstack rather than a plain inline span: td is nowrap for
-                         the sake of port numbers, so inline controls here cannot
-                         wrap and overflow the column instead, painting over the
-                         actions cell. A flex row wraps its own items and reports
-                         a small min-content width, keeping the column in bounds. -->
-                    <span class="hstack gap-2">
-                      <!-- A span wrapper, not a label element: a bare
-                           data-field label tag here (no checkbox of its own)
-                           would sit -- in raw markup order -- before the
-                           addModal switch's :title label and get swallowed
-                           into its match; see the same note by addModal and
-                           board-assets.test.ts. The select is self-labeled
-                           via :aria-label, so no label element is lost. -->
-                      <span data-field class="mb-0">
-                        <select class="small"
-                                :value="row.accessTier ? row.accessTier.tier : 'public'"
-                                @change="onTierChange(row, $event.target.value)"
-                                :aria-label="'access tier for ' + row.name">
-                          <option value="public">public</option>
-                          <option value="password">password</option>
-                          <option value="only-me">only me</option>
-                          <option value="work-domain">work domain</option>
-                          <option value="custom">custom list</option>
-                        </select>
-                      </span>
-                      <span class="badge" data-variant="warning"
-                            x-show="row.issues && row.issues.some(i => i.source === 'cloudflare')">
-                        <i data-lucide="triangle-alert"></i> CF sync failed
-                      </span>
-                      <template x-if="row.hasPassword">
-                        <span class="hstack gap-2">
-                          <span class="badge" data-variant="success" title="password required to view">
-                            <i data-lucide="lock-keyhole"></i>
-                            protected
-                          </span>
-                          <button type="button" class="small outline"
-                                  @click="openPassword(row.name)">change</button>
-                          <button type="button" class="small outline"
-                                  data-variant="danger"
-                                  @click="clearPassword(row.name)">remove</button>
-                        </span>
-                      </template>
-                      <template x-if="!row.hasPassword">
-                        <button type="button" class="small outline"
-                                @click="openPassword(row.name)">
-                          <i data-lucide="lock-keyhole"></i>
-                          set password
-                        </button>
-                      </template>
-                    </span>
+                    <!-- Two glyphs, no text: the column stays narrow, and the
+                         full sentence rides both title and aria-label so it is
+                         reachable by hover and by screen reader. The modal is
+                         one click away for anyone who wants more than a
+                         glance. Cloudflare sync failures are NOT shown here:
+                         the site cell already renders every row.issues entry,
+                         with the failure message attached. -->
+                    <button type="button" class="small ghost"
+                            @click="openAccess(row)"
+                            :title="accessSummary(row)"
+                            :aria-label="accessSummary(row) + ', change access'">
+                      <i data-lucide="lock-keyhole"
+                         :class="row.hasPassword ? '' : 'text-lighter'"></i>
+                      <i data-lucide="user-round-check"
+                         :class="row.oauth && row.oauth.mode !== 'off' ? '' : 'text-lighter'"></i>
+                    </button>
                   </template>
                 </td>
 
@@ -607,27 +573,120 @@
     </dialog>
   </template>
 
-  <template x-if="pwModal">
+  <!-- Last block on the page by requirement, not by accident: the switch
+       guard in board-assets.test.ts scans left to right and will not cross
+       a label boundary while looking for a switch to pair with, so a plain
+       data-field label stays safe as long as it closes before a switch's own
+       wrapping label opens. The radio labels below are safe for the same
+       reason. -->
+  <template x-if="accessModal">
     <dialog closedby="any"
-            x-init="$nextTick(() => { $el.showModal(); $el.querySelector('input').focus(); })"
-            @close="pwModal = null"
-            @cancel="pwModal = null">
-      <form @submit.prevent="savePassword()">
-        <header>
-          <h3 x-text="'Password for ' + pwModal.app"></h3>
-          <p>Require a password before this app can be viewed publicly.</p>
-        </header>
-        <div>
-          <label data-field>
-            Password
-            <input type="password" placeholder="password" x-model="pwModal.value">
+            x-init="$nextTick(() => $el.showModal())"
+            @close="accessModal = null" @cancel="accessModal = null">
+      <header>
+        <h3 x-text="'Access · ' + accessModal.app"></h3>
+        <p x-show="accessModal.published && accessModal.publicUrl"
+           x-text="'Published at ' + accessModal.publicUrl"></p>
+        <!-- Published is a setting; a public URL needs a bound domain. Until
+             one is bound publicUrl is null on every row, so interpolating it
+             would print "Published at null". -->
+        <p x-show="accessModal.published && !accessModal.publicUrl">
+          Published, but no public URL yet: bind a domain to reach it from outside.
+        </p>
+        <p x-show="!accessModal.published">Not published. These gates apply once it is.</p>
+      </header>
+      <div class="vstack gap-4">
+
+        <section class="vstack gap-2">
+          <label class="hstack gap-2"
+                 :title="accessModal.hasPassword
+                   ? 'a password is required, click to remove it'
+                   : 'no password, click to set one'">
+            <input type="checkbox" role="switch"
+                   :checked="accessModal.hasPassword || accessModal.pwOpen"
+                   @change="onPasswordSwitch($event)"
+                   :aria-label="accessModal.hasPassword ? 'remove the password' : 'require a password'">
+            <span>Password protected</span>
           </label>
-        </div>
-        <footer>
-          <button type="button" class="outline" @click="pwModal = null">Cancel</button>
-          <button type="submit" :disabled="!pwModal.value">Save</button>
-        </footer>
-      </form>
+          <!-- x-show, not a nested template x-if: a nested template's own
+               closing tag would give the dialog test's lazy match a false
+               stopping point before it reaches this whole dialog's real end. -->
+          <span class="vstack gap-2" x-show="accessModal.hasPassword || accessModal.pwOpen">
+            <p class="text-light" x-show="accessModal.hasPassword">
+              A password is set. Changing it signs out anyone holding a session.
+            </p>
+            <span class="hstack gap-2">
+              <!-- No visible caption, so the accessible name still comes from
+                   aria-label rather than label text; the wrapper is a label
+                   purely for Oat's field typography (see the guard note
+                   above for why a label is safe to use here at all). -->
+              <label data-field>
+                <input type="password" x-model="accessModal.password"
+                       placeholder="new password" aria-label="new password">
+              </label>
+              <button type="button" class="small"
+                      :disabled="!accessModal.password || accessModal.pwBusy"
+                      @click="savePassword()"
+                      x-text="accessModal.hasPassword ? 'Change' : 'Set'"></button>
+            </span>
+            <p role="alert" data-variant="error"
+               x-show="accessModal.pwError" x-text="accessModal.pwError"></p>
+          </span>
+        </section>
+
+        <section class="vstack gap-2">
+          <label class="hstack gap-2"
+                 :title="accessModal.oauthOn
+                   ? 'google sign-in is required, click to turn it off'
+                   : 'no sign-in gate, click to require google'">
+            <input type="checkbox" role="switch"
+                   :checked="accessModal.oauthOn"
+                   @change="onOauthSwitch($event)"
+                   :aria-label="accessModal.oauthOn ? 'turn google sign-in off' : 'require google sign-in'">
+            <span>Google sign-in</span>
+          </label>
+          <!-- x-show, not a nested template x-if: see the note on the
+               password panel above. -->
+          <span class="vstack gap-2" x-show="accessModal.oauthOn">
+            <p class="text-light">
+              Visitors sign in with Google at Cloudflare's edge before reaching the app.
+            </p>
+            <!-- @change clears the field: the two modes do not share a
+                 vocabulary, so the other mode's entries must not stay armed
+                 behind a live Apply. -->
+            <label class="hstack gap-2">
+              <input type="radio" name="oauth-mode" value="domains"
+                     x-model="accessModal.mode" @change="onOauthMode()">
+              <span>Anyone at these domains</span>
+            </label>
+            <label class="hstack gap-2">
+              <input type="radio" name="oauth-mode" value="emails"
+                     x-model="accessModal.mode" @change="onOauthMode()">
+              <span>These people</span>
+            </label>
+            <span class="hstack gap-2">
+              <label data-field>
+                <input x-model="accessModal.list"
+                       :placeholder="accessModal.mode === 'emails' ? 'a@x.dev, b@y.dev' : 'corp.com, other.dev'"
+                       :aria-label="accessModal.mode === 'emails' ? 'allowed emails' : 'allowed domains'">
+              </label>
+              <button type="button" class="small"
+                      :disabled="!accessModal.list.trim() || accessModal.oauthBusy"
+                      @click="applyOauth()">Apply</button>
+            </span>
+          </span>
+          <!-- Outside the panel above on purpose: a successful turn-off whose
+               Cloudflare teardown was skipped or failed sets this message and
+               clears oauthOn in the same breath, so a slot that only renders
+               while the gate is on would swallow the one warning that matters. -->
+          <p role="alert" data-variant="error"
+             x-show="accessModal.oauthError" x-text="accessModal.oauthError"></p>
+        </section>
+
+      </div>
+      <footer>
+        <button type="button" class="outline" @click="accessModal = null">Done</button>
+      </footer>
     </dialog>
   </template>
 

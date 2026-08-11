@@ -1,8 +1,8 @@
-// src/edge/access.ts — the real Cloudflare Access driver. Lists/creates/updates
+// src/edge/access.ts: the real Cloudflare Access driver. Lists/creates/updates
 // a single "self_hosted" Access app per hostname and its one "local tier"
 // allow policy. Every failure is loud: recorded as a `cloudflare` SyncIssue on
-// the app's registry record, never thrown past syncAccessTier.
-import type { AccessTier } from "./access-tiers.ts";
+// the app's registry record, never thrown past syncOAuth.
+import type { OAuth } from "./oauth.ts";
 import type { ApiDeps } from "../api/server.ts";
 import { addIssue, clearIssues } from "../registry/records.ts";
 import { getPlatformSettings } from "../api/platform-settings.ts";
@@ -26,14 +26,12 @@ interface CfAccessPolicy {
   [key: string]: unknown;
 }
 
-export function tierToInclude(tier: AccessTier): unknown[] {
-  switch (tier.tier) {
-    case "only-me":
-      return [{ email: { email: tier.email } }];
-    case "work-domain":
-      return [{ email_domain: { domain: tier.emailDomain } }];
-    case "custom":
-      return tier.emails.map((email) => ({ email: { email } }));
+export function oauthToInclude(rule: OAuth): unknown[] {
+  switch (rule.mode) {
+    case "emails":
+      return rule.emails.map((email) => ({ email: { email } }));
+    case "domains":
+      return rule.domains.map((domain) => ({ email_domain: { domain } }));
     default:
       return [];
   }
@@ -71,7 +69,7 @@ export class CfAccess {
     return apps.find((a) => a.domain === hostname);
   }
 
-  async sync(appName: string, hostname: string, tier: AccessTier): Promise<void> {
+  async sync(appName: string, hostname: string, rule: OAuth): Promise<void> {
     const payload = {
       name: `local: ${appName}`,
       domain: hostname,
@@ -94,7 +92,7 @@ export class CfAccess {
     const policyPayload = {
       name: "local tier",
       decision: "allow",
-      include: tierToInclude(tier),
+      include: oauthToInclude(rule),
     };
 
     const existingPolicy = policies.find((p) => p.name === "local tier");
@@ -112,22 +110,33 @@ export class CfAccess {
   }
 }
 
-export async function syncAccessTier(
+export async function syncOAuth(
   app: string,
-  tier: AccessTier,
+  rule: OAuth,
   deps: ApiDeps,
 ): Promise<{ ok: boolean; message?: string }> {
   const settings = getPlatformSettings();
   const { cfApiToken, cfZoneId } = settings.secrets;
 
-  if (tier.tier !== "only-me" && tier.tier !== "work-domain" && tier.tier !== "custom") {
-    // Non-CF tiers (public/password) don't need an Access app, but a
-    // downgrade must still tear down any CF Access app left from before.
-    if (!cfApiToken || !cfZoneId) return { ok: true };
-    // No domain bound means no hostname was ever synced to Cloudflare for
-    // this app; removing against a stale "app.null" would just no-op, but
-    // skip the call outright for consistency with the identity-tier guard.
-    if (!settings.publicDomain) return { ok: true };
+  if (rule.mode === "off") {
+    // No sign-in gate needs no Access app, but turning one off must still
+    // tear down whatever was left from before. Both guards below skip that
+    // teardown, so neither may answer ok: a Cloudflare Access app that is
+    // still live keeps challenging visitors, and reporting success here is
+    // how the board ends up showing sign-in as off when it is not.
+    if (!cfApiToken || !cfZoneId) {
+      const message = "Cloudflare API token/zone not configured, any Access app at the edge was left in place.";
+      addIssue(app, { source: "cloudflare", message, at: new Date().toISOString() });
+      return { ok: false, message };
+    }
+    // No domain bound means no hostname to remove against: building one from
+    // a null publicDomain would target "app.null". Same guard as the on-path
+    // below, and the same honest answer, since the teardown did not happen.
+    if (!settings.publicDomain) {
+      const message = "No domain bound, so no hostname could be torn down at Cloudflare.";
+      addIssue(app, { source: "cloudflare", message, at: new Date().toISOString() });
+      return { ok: false, message };
+    }
     const hostname = `${app}.${settings.publicDomain}`;
     try {
       const cf = new CfAccess({ token: cfApiToken, zoneId: cfZoneId, fetchImpl: deps.accessFetch });
@@ -150,7 +159,7 @@ export async function syncAccessTier(
   if (!settings.publicDomain) {
     // Building a hostname from a null publicDomain would silently produce
     // "app.null" and attempt to sync Cloudflare against it. Guard instead.
-    const message = "No domain bound yet — bind a domain before setting an identity-gated access tier.";
+    const message = "No domain bound yet, bind a domain before requiring sign-in.";
     addIssue(app, { source: "cloudflare", message, at: new Date().toISOString() });
     return { ok: false, message };
   }
@@ -158,7 +167,7 @@ export async function syncAccessTier(
   const hostname = `${app}.${settings.publicDomain}`;
   try {
     const cf = new CfAccess({ token: cfApiToken, zoneId: cfZoneId, fetchImpl: deps.accessFetch });
-    await cf.sync(app, hostname, tier);
+    await cf.sync(app, hostname, rule);
     clearIssues(app, "cloudflare");
     return { ok: true };
   } catch (err) {
