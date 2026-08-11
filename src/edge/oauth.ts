@@ -1,4 +1,4 @@
-// src/edge/oauth.ts — who may sign in to an app at Cloudflare's edge, and
+// src/edge/oauth.ts: who may sign in to an app at Cloudflare's edge, and
 // nothing else. Publication and the password gate live in core/settings.ts and
 // are enforced independently: core/gateway.ts reads passwordHash and never
 // reads this file.
