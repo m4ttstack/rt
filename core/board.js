@@ -68,11 +68,13 @@ document.addEventListener("alpine:init", () => {
     },
 
     // The one sentence the access cell's title and aria-label share. An
-    // unpublished app leads with that: "open to anyone" would otherwise
-    // describe a hostname that answers to nobody.
+    // unpublished app LEADS with that ("open to anyone" would otherwise
+    // describe a hostname that answers to nobody) but still names its gates:
+    // the cell is icon-only, so this sentence is the only textual route a
+    // screen reader has to the password and sign-in state.
     accessSummary(row) {
-      if (!row.published) return "not published";
       const parts = [];
+      if (!row.published) parts.push("not published");
       if (row.hasPassword) parts.push("password required");
       const o = row.oauth || { mode: "off" };
       if (o.mode === "emails") {
@@ -259,15 +261,33 @@ document.addEventListener("alpine:init", () => {
       const res = await this.apiPut("/api/v1/apps/" + m.app + "/access", { mode: "off" })
         .catch(() => null);
       m.oauthBusy = false;
+      const b = res ? await res.json().catch(() => ({})) : {};
       if (!res || !res.ok) {
-        const b = res ? await res.json().catch(() => ({})) : {};
         m.oauthError = b.message || b.error || "turning sign-in off failed.";
         ev.target.checked = m.oauthOn; // stays on: Cloudflare still has the gate. See onPasswordSwitch for why this write is necessary.
         return;
       }
       m.oauthOn = false;
       m.list = "";
+      // Turning sign-in off always takes effect locally, so this is a 200 even
+      // when the Cloudflare teardown was skipped or failed. cfSynced carries
+      // that verdict, and a stale Access app keeps challenging visitors, so
+      // say so rather than render an "off" the edge does not agree with. The
+      // CLI prints the same warning on the same field.
+      m.oauthError = b.cfSynced === false
+        ? "sign-in is off here, but Cloudflare was not updated, so visitors may still be asked to sign in."
+        : null;
       await this.refresh();
+    },
+    // The radio picks what the field below it MEANS, so entries typed for the
+    // other mode are never valid for the new one: clear them rather than leave
+    // "a@x.dev, b@y.dev" sitting under "anyone at these domains" with Apply
+    // live.
+    onOauthMode() {
+      const m = this.accessModal;
+      if (!m) return;
+      m.list = "";
+      m.oauthError = null;
     },
     async applyOauth() {
       const m = this.accessModal;

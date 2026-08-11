@@ -585,8 +585,14 @@
             @close="accessModal = null" @cancel="accessModal = null">
       <header>
         <h3 x-text="'Access · ' + accessModal.app"></h3>
-        <p x-show="accessModal.published"
+        <p x-show="accessModal.published && accessModal.publicUrl"
            x-text="'Published at ' + accessModal.publicUrl"></p>
+        <!-- Published is a setting; a public URL needs a bound domain. Until
+             one is bound publicUrl is null on every row, so interpolating it
+             would print "Published at null". -->
+        <p x-show="accessModal.published && !accessModal.publicUrl">
+          Published, but no public URL yet: bind a domain to reach it from outside.
+        </p>
         <p x-show="!accessModal.published">Not published. These gates apply once it is.</p>
       </header>
       <div class="vstack gap-4">
@@ -645,12 +651,17 @@
             <p class="text-light">
               Visitors sign in with Google at Cloudflare's edge before reaching the app.
             </p>
+            <!-- @change clears the field: the two modes do not share a
+                 vocabulary, so the other mode's entries must not stay armed
+                 behind a live Apply. -->
             <label class="hstack gap-2">
-              <input type="radio" name="oauth-mode" value="domains" x-model="accessModal.mode">
+              <input type="radio" name="oauth-mode" value="domains"
+                     x-model="accessModal.mode" @change="onOauthMode()">
               <span>Anyone at these domains</span>
             </label>
             <label class="hstack gap-2">
-              <input type="radio" name="oauth-mode" value="emails" x-model="accessModal.mode">
+              <input type="radio" name="oauth-mode" value="emails"
+                     x-model="accessModal.mode" @change="onOauthMode()">
               <span>These people</span>
             </label>
             <span class="hstack gap-2">
@@ -663,9 +674,13 @@
                       :disabled="!accessModal.list.trim() || accessModal.oauthBusy"
                       @click="applyOauth()">Apply</button>
             </span>
-            <p role="alert" data-variant="error"
-               x-show="accessModal.oauthError" x-text="accessModal.oauthError"></p>
           </span>
+          <!-- Outside the panel above on purpose: a successful turn-off whose
+               Cloudflare teardown was skipped or failed sets this message and
+               clears oauthOn in the same breath, so a slot that only renders
+               while the gate is on would swallow the one warning that matters. -->
+          <p role="alert" data-variant="error"
+             x-show="accessModal.oauthError" x-text="accessModal.oauthError"></p>
         </section>
 
       </div>
