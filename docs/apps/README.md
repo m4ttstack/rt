@@ -34,7 +34,7 @@ process Deck watches so it comes back after a reboot or a crash.
 
 - zero-setup, casual: `portless --funnel` (public URL, no auth - treat accordingly)
 - password gate: set a password on the board - served by Deck's own gateway, no accounts needed
-- your own domain: `deck domain yourdomain.dev` (Cloudflare tunnel, wildcard DNS), then per-app access tiers: public · password · only me · work domain · custom list
+- your own domain: `deck domain yourdomain.dev` (Cloudflare tunnel, wildcard DNS), then per-app gates: a password, a Google sign-in list of people or domains, or both
 
 Nothing is public by default. An app stays on `.localhost` until you publish
 it, and publishing is a toggle on the board or a single API call, not a

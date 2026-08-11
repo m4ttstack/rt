@@ -85,6 +85,47 @@ test("version prints the deck-prefixed version string", async () => {
   expect(x.lines.join("\n")).toMatch(/^deck \d+\.\d+\.\d+$/);
 });
 
+test("deck access off succeeds against a registered app", async () => {
+  const a = io();
+  expect(await runCommand(["add", "t-access-off", "--port", "4997"], a)).toBe(0);
+  const x = io();
+  const code = await runCommand(["access", "t-access-off", "off"], x);
+  expect(x.lines.join("\n")).toContain("google sign-in off");
+  expect(code).toBe(0);
+});
+
+// This harness has no Cloudflare API token/zone configured at this point in
+// the file (the "domain verb" test below is the one that sets it), so an
+// on-mode here always reaches syncOAuth and comes back 502. That is the
+// expected, correct path: a 400 would mean the CLI built the wrong payload
+// (bad mode name, wrong field name, empty list), while a 502 proves the
+// payload was well-formed and reached the API's Cloudflare sync step.
+test("deck access emails and domains reach the API with a well-formed payload", async () => {
+  const a = io();
+  expect(await runCommand(["add", "t-access-on", "--port", "4996"], a)).toBe(0);
+
+  const e = io();
+  const emailsCode = await runCommand(["access", "t-access-on", "emails", "a@x.dev,b@y.dev"], e);
+  expect(emailsCode).toBe(1);
+  expect(e.lines.join("\n")).toContain("Cloudflare API token/zone not configured");
+
+  const d = io();
+  const domainsCode = await runCommand(["access", "t-access-on", "domains", "corp.com,other.dev"], d);
+  expect(domainsCode).toBe(1);
+  expect(d.lines.join("\n")).toContain("Cloudflare API token/zone not configured");
+});
+
+test("deck access rejects a mode it does not know without calling the API", async () => {
+  const x = io();
+  // No such app is registered, so a 404 ("unknown app") would prove the CLI
+  // reached the API; the usage text instead proves it never left the CLI.
+  const code = await runCommand(["access", "no-such-app", "only-me", "--email", "m@x.dev"], x);
+  expect(code).toBe(2);
+  const out = x.lines.join("\n");
+  expect(out).toContain("usage");
+  expect(out).not.toContain("unknown app");
+});
+
 test("domain verb captures the CF token via the injected prompt and stores it write-only", async () => {
   const answers = ["cf-tok-123", "zone-abc"]; // token, then zone id
   const promptFn = () => answers.shift() ?? null;

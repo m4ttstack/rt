@@ -19,7 +19,7 @@ usage:
   deck override <name> <port|off>          dev-port override for <name>.localhost
   deck publish <name> on|off               public visibility
   deck password <name> [--clear]           password gate (prompts)
-  deck access <name> <tier> [...]          public | password | only-me --email E | work-domain --domain D | custom --emails a,b
+  deck access <name> off | emails a,b | domains c,d    google sign-in gate
   deck domain <domain>                     bind your own domain (cloudflared)
   deck migrate                             adopt existing plists + routes
   deck migrate --convert                   relabel adopted legacy apps to com.mattstack.deck.<name>
@@ -137,18 +137,25 @@ export async function runCommand(
         return 0;
       }
       case "access": {
-        const [name, tier] = rest;
-        if (!name || !tier) { io.err(USAGE); return 2; }
-        const payload: Record<string, unknown> = { tier };
-        if (flag(rest, "--email")) payload.email = flag(rest, "--email");
-        if (flag(rest, "--domain")) payload.emailDomain = flag(rest, "--domain");
-        if (flag(rest, "--emails")) payload.emails = flag(rest, "--emails")!.split(",");
+        const [name, mode, value] = rest;
+        if (!name || !mode) { io.err(USAGE); return 2; }
+        let payload: Record<string, unknown>;
+        if (mode === "off") {
+          payload = { mode: "off" };
+        } else if (mode === "emails" || mode === "domains") {
+          const items = (value ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+          if (!items.length) { io.err(`${mode} needs a comma-separated list`); return 2; }
+          payload = mode === "emails" ? { mode, emails: items } : { mode, domains: items };
+        } else {
+          io.err(USAGE);
+          return 2;
+        }
         const { status, body } = await apiJson(`/api/v1/apps/${name}/access`, {
           method: "PUT", body: JSON.stringify(payload),
         });
         if (status !== 200) { io.err(body.message || body.error || `failed (${status})`); return 1; }
-        if (body.cfSynced === false) io.err("warning: Cloudflare sync failed — see the app's row on the board");
-        io.out(`access set to ${tier}`);
+        if (body.cfSynced === false) io.err("warning: Cloudflare sync failed, see the app's row on the board");
+        io.out(mode === "off" ? "google sign-in off" : `google sign-in limited to ${mode}`);
         return 0;
       }
       case "domain": {
@@ -158,7 +165,7 @@ export async function runCommand(
         // token — this prompt is the only surface that ever sets it.
         const current = await apiJson("/api/v1/settings");
         if (!current.body.hasCfToken) {
-          io.out("Access tiers (only-me / work-domain / custom) need a Cloudflare API token");
+          io.out("A Google sign-in gate needs a Cloudflare API token");
           io.out("scoped to this zone: Access: Apps and Policies — Edit. Blank skips access tiers.");
           const cfApiToken = promptFn("Cloudflare API token:")?.trim() ?? "";
           if (cfApiToken) {
