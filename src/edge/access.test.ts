@@ -10,14 +10,18 @@ process.env.LOCAL_REGISTRY_PATH = join(dir, "registry.json");
 process.env.LOCAL_PLATFORM_SETTINGS_PATH = join(dir, "platform.json");
 process.env.LOCAL_ACCESS_PATH = join(dir, "access.json");
 
-const { CfAccess, tierToInclude, syncAccessTier } = await import("./access.ts");
+const { CfAccess, oauthToInclude, syncOAuth } = await import("./access.ts");
 
-test("tierToInclude maps each identity tier to CF include rules", () => {
-  expect(tierToInclude({ tier: "only-me", email: "m@x.dev" })).toEqual([{ email: { email: "m@x.dev" } }]);
-  expect(tierToInclude({ tier: "work-domain", emailDomain: "corp.com" })).toEqual([{ email_domain: { domain: "corp.com" } }]);
-  expect(tierToInclude({ tier: "custom", emails: ["a@x.dev", "b@x.dev" ] })).toEqual([
-    { email: { email: "a@x.dev" } }, { email: { email: "b@x.dev" } },
-  ]);
+test("oauthToInclude maps each on-mode to CF include rules", () => {
+  expect(oauthToInclude({ mode: "emails", emails: ["m@x.dev"] }))
+    .toEqual([{ email: { email: "m@x.dev" } }]);
+  expect(oauthToInclude({ mode: "emails", emails: ["a@x.dev", "b@x.dev"] }))
+    .toEqual([{ email: { email: "a@x.dev" } }, { email: { email: "b@x.dev" } }]);
+  expect(oauthToInclude({ mode: "domains", domains: ["corp.com"] }))
+    .toEqual([{ email_domain: { domain: "corp.com" } }]);
+  expect(oauthToInclude({ mode: "domains", domains: ["corp.com", "other.dev"] }))
+    .toEqual([{ email_domain: { domain: "corp.com" } }, { email_domain: { domain: "other.dev" } }]);
+  expect(oauthToInclude({ mode: "off" })).toEqual([]);
 });
 
 function cannedCf() {
@@ -40,7 +44,7 @@ function cannedCf() {
 test("sync on a fresh hostname creates the Access app then its allow policy", async () => {
   const { calls, impl } = cannedCf();
   const cf = new CfAccess({ token: "tok", zoneId: "z1", fetchImpl: impl });
-  await cf.sync("myapp", "myapp.example.dev", { tier: "only-me", email: "m@x.dev" });
+  await cf.sync("myapp", "myapp.example.dev", { mode: "emails", emails: ["m@x.dev"] });
   expect(calls[0]!.url).toContain("/zones/z1/access/apps");
   const create = calls.find((c) => c.method === "POST" && c.url.endsWith("/access/apps"))!;
   expect(create.body).toMatchObject({ domain: "myapp.example.dev", type: "self_hosted" });
@@ -53,7 +57,7 @@ test("syncAccessTier without a token degrades loudly, not silently", async () =>
   const { putRecord, getRecord, reloadRegistry } = await import("../registry/records.ts");
   reloadRegistry();
   putRecord({ name: "app-x", managedBy: "user", port: 11000, kind: "external", createdAt: "2026-08-10T00:00:00Z" });
-  const r = await syncAccessTier("app-x", { tier: "only-me", email: "m@x.dev" }, {} as never);
+  const r = await syncOAuth("app-x", { mode: "emails", emails: ["m@x.dev"] }, {} as never);
   expect(r.ok).toBe(false);
   expect(getRecord("app-x")!.issues!.some((i) => i.source === "cloudflare")).toBe(true);
 });
@@ -83,9 +87,9 @@ test("syncAccessTier on a CF API error degrades loudly and never leaks the token
     return Response.json({ success: true, result: { id: "pol-1" } });
   }) as typeof fetch;
 
-  const r = await syncAccessTier(
+  const r = await syncOAuth(
     "app-err",
-    { tier: "only-me", email: "m@x.dev" },
+    { mode: "emails", emails: ["m@x.dev"] },
     { accessFetch: impl } as unknown as never,
   );
 
@@ -107,7 +111,7 @@ test("syncAccessTier clears its own cloudflare issue once credentials are fixed 
   putRecord({ name: "app-fixed", managedBy: "user", port: 11003, kind: "external", createdAt: "2026-08-10T00:00:00Z" });
 
   // First sync fails loudly for lack of credentials.
-  const failed = await syncAccessTier("app-fixed", { tier: "only-me", email: "m@x.dev" }, {} as never);
+  const failed = await syncOAuth("app-fixed", { mode: "emails", emails: ["m@x.dev"] }, {} as never);
   expect(failed.ok).toBe(false);
   expect(getRecord("app-fixed")!.issues!.some((i) => i.source === "cloudflare")).toBe(true);
 
@@ -115,7 +119,7 @@ test("syncAccessTier clears its own cloudflare issue once credentials are fixed 
   // must clear the stale badge, not leave it permanent.
   updatePlatformSettings({ secrets: { cfApiToken: "tok", cfZoneId: "z1" } });
   const { impl } = cannedCf();
-  const ok = await syncAccessTier("app-fixed", { tier: "only-me", email: "m@x.dev" }, { accessFetch: impl } as unknown as never);
+  const ok = await syncOAuth("app-fixed", { mode: "emails", emails: ["m@x.dev"] }, { accessFetch: impl } as unknown as never);
   expect(ok.ok).toBe(true);
   expect(getRecord("app-fixed")!.issues?.some((i) => i.source === "cloudflare")).toBeFalsy();
 });
@@ -135,9 +139,9 @@ test("syncAccessTier guards against a null publicDomain instead of building a bo
     throw new Error("must not call Cloudflare when no domain is bound yet");
   }) as unknown as typeof fetch;
 
-  const r = await syncAccessTier(
+  const r = await syncOAuth(
     "app-nodomain",
-    { tier: "only-me", email: "m@x.dev" },
+    { mode: "emails", emails: ["m@x.dev"] },
     { accessFetch: impl } as unknown as never,
   );
 
@@ -167,7 +171,7 @@ test("CfAccess.sync on an existing hostname updates the app and replaces its pol
   }) as typeof fetch;
 
   const cf = new CfAccess({ token: "tok", zoneId: "z1", fetchImpl: impl });
-  await cf.sync("myapp", "existing.example.dev", { tier: "only-me", email: "m@x.dev" });
+  await cf.sync("myapp", "existing.example.dev", { mode: "emails", emails: ["m@x.dev"] });
 
   // No creates: the existing app and policy must be updated in place, not re-created.
   expect(calls.some((c) => c.method === "POST")).toBe(false);

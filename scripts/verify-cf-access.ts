@@ -10,7 +10,7 @@ const token = process.env.CF_TOKEN;
 const zoneId = process.env.CF_ZONE;
 const domain = process.env.CF_DOMAIN;
 if (!token || !zoneId || !domain) {
-  console.error("CF_TOKEN, CF_ZONE, CF_DOMAIN are required. Run this yourself — the token never goes through an agent.");
+  console.error("CF_TOKEN, CF_ZONE, CF_DOMAIN are required. Run this yourself, the token never goes through an agent.");
   process.exit(2);
 }
 
@@ -20,7 +20,7 @@ const cf = new CfAccess({ token, zoneId });
 let failed = false;
 try {
   console.log(`creating scratch Access app for ${host} …`);
-  await cf.sync("local-scratch", host, { tier: "only-me", email: "verify@local.invalid" });
+  await cf.sync("local-scratch", host, { mode: "emails", emails: ["verify@local.invalid"] });
 
   // The gate answers at the edge even though nothing serves the hostname:
   // an Access-protected host 302s to the team's cloudflareaccess.com login.
@@ -39,7 +39,7 @@ try {
 } finally {
   console.log("tearing down the scratch Access app …");
   try { await cf.remove(host); console.log("teardown clean."); }
-  catch (err) { console.error("TEARDOWN FAILED — remove it in the CF dashboard:", host, err); failed = true; }
+  catch (err) { console.error("TEARDOWN FAILED, remove it in the CF dashboard:", host, err); failed = true; }
 }
-console.log(failed ? "RESULT: FAIL" : "RESULT: PASS — token scope is sufficient for Access apps + policies.");
+console.log(failed ? "RESULT: FAIL" : "RESULT: PASS, token scope is sufficient for Access apps + policies.");
 process.exit(failed ? 1 : 0);
