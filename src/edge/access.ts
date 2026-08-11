@@ -120,12 +120,23 @@ export async function syncOAuth(
 
   if (rule.mode === "off") {
     // No sign-in gate needs no Access app, but turning one off must still
-    // tear down whatever was left from before.
-    if (!cfApiToken || !cfZoneId) return { ok: true };
-    // No domain bound means no hostname was ever synced to Cloudflare for
-    // this app; removing against a stale "app.null" would just no-op, but
-    // skip the call outright for consistency with the identity-tier guard.
-    if (!settings.publicDomain) return { ok: true };
+    // tear down whatever was left from before. Both guards below skip that
+    // teardown, so neither may answer ok: a Cloudflare Access app that is
+    // still live keeps challenging visitors, and reporting success here is
+    // how the board ends up showing sign-in as off when it is not.
+    if (!cfApiToken || !cfZoneId) {
+      const message = "Cloudflare API token/zone not configured, any Access app at the edge was left in place.";
+      addIssue(app, { source: "cloudflare", message, at: new Date().toISOString() });
+      return { ok: false, message };
+    }
+    // No domain bound means no hostname to remove against: building one from
+    // a null publicDomain would target "app.null". Same guard as the on-path
+    // below, and the same honest answer, since the teardown did not happen.
+    if (!settings.publicDomain) {
+      const message = "No domain bound, so no hostname could be torn down at Cloudflare.";
+      addIssue(app, { source: "cloudflare", message, at: new Date().toISOString() });
+      return { ok: false, message };
+    }
     const hostname = `${app}.${settings.publicDomain}`;
     try {
       const cf = new CfAccess({ token: cfApiToken, zoneId: cfZoneId, fetchImpl: deps.accessFetch });
@@ -148,7 +159,7 @@ export async function syncOAuth(
   if (!settings.publicDomain) {
     // Building a hostname from a null publicDomain would silently produce
     // "app.null" and attempt to sync Cloudflare against it. Guard instead.
-    const message = "No domain bound yet, bind a domain before setting an identity-gated access tier.";
+    const message = "No domain bound yet, bind a domain before requiring sign-in.";
     addIssue(app, { source: "cloudflare", message, at: new Date().toISOString() });
     return { ok: false, message };
   }

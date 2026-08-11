@@ -279,12 +279,9 @@ export function startApi(deps: ApiDeps) {
             return json({ ok: true });
           }
           if (sub === "access" && req.method === "PUT") {
-            // Reject the old tier vocabulary before checking whether the app is
-            // known: destructive migration means a bad body is a 400 regardless
-            // of what it targets, never quietly reshaped into a 404.
+            if (!getRecord(name) && !knownRouteApp(name)) return json({ error: "unknown app" }, 404);
             const rule = parseOAuth(await body(req));
             if ("error" in rule) return json(rule, 400);
-            if (!getRecord(name) && !knownRouteApp(name)) return json({ error: "unknown app" }, 404);
             if (oauthRequiresCf(rule)) {
               // A sign-in gate is a security control: sync to Cloudflare BEFORE
               // persisting, so a failed sync never leaves the board claiming a

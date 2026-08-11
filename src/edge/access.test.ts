@@ -26,7 +26,7 @@ test("oauthToInclude maps each on-mode to CF include rules", () => {
 
 function cannedCf() {
   const calls: { method: string; url: string; body: unknown }[] = [];
-  const impl = (async (url: RequestInfo | URL, init?: RequestInit) => {
+  const impl = (async (url: string | URL | Request, init?: RequestInit) => {
     const u = String(url);
     const method = init?.method ?? "GET";
     calls.push({ method, url: u, body: init?.body ? JSON.parse(String(init.body)) : null });
@@ -52,7 +52,7 @@ test("sync on a fresh hostname creates the Access app then its allow policy", as
   expect(policy.body).toMatchObject({ decision: "allow", include: [{ email: { email: "m@x.dev" } }] });
 });
 
-test("syncAccessTier without a token degrades loudly, not silently", async () => {
+test("syncOAuth without a token degrades loudly, not silently", async () => {
   // registry + settings scratch env as in earlier tests; no cfApiToken set
   const { putRecord, getRecord, reloadRegistry } = await import("../registry/records.ts");
   reloadRegistry();
@@ -62,7 +62,7 @@ test("syncAccessTier without a token degrades loudly, not silently", async () =>
   expect(getRecord("app-x")!.issues!.some((i) => i.source === "cloudflare")).toBe(true);
 });
 
-test("syncAccessTier on a CF API error degrades loudly and never leaks the token", async () => {
+test("syncOAuth on a CF API error degrades loudly and never leaks the token", async () => {
   const { putRecord, getRecord, reloadRegistry } = await import("../registry/records.ts");
   const { updatePlatformSettings, reloadPlatformSettings } = await import("../api/platform-settings.ts");
   reloadRegistry();
@@ -74,7 +74,7 @@ test("syncAccessTier on a CF API error degrades loudly and never leaks the token
   });
   putRecord({ name: "app-err", managedBy: "user", port: 11001, kind: "external", createdAt: "2026-08-10T00:00:00Z" });
 
-  const impl = (async (url: RequestInfo | URL, init?: RequestInit) => {
+  const impl = (async (url: string | URL | Request, init?: RequestInit) => {
     const u = String(url);
     const method = init?.method ?? "GET";
     if (method === "GET" && u.includes("/access/apps")) {
@@ -99,7 +99,7 @@ test("syncAccessTier on a CF API error degrades loudly and never leaks the token
   expect(issue!.message).not.toContain(secretToken);
 });
 
-test("syncAccessTier clears its own cloudflare issue once credentials are fixed and a later sync succeeds", async () => {
+test("syncOAuth clears its own cloudflare issue once credentials are fixed and a later sync succeeds", async () => {
   const { putRecord, getRecord, reloadRegistry } = await import("../registry/records.ts");
   const { updatePlatformSettings, reloadPlatformSettings } = await import("../api/platform-settings.ts");
   reloadRegistry();
@@ -124,7 +124,7 @@ test("syncAccessTier clears its own cloudflare issue once credentials are fixed 
   expect(getRecord("app-fixed")!.issues?.some((i) => i.source === "cloudflare")).toBeFalsy();
 });
 
-test("syncAccessTier guards against a null publicDomain instead of building a bogus hostname", async () => {
+test("syncOAuth guards against a null publicDomain instead of building a bogus hostname", async () => {
   const { putRecord, reloadRegistry } = await import("../registry/records.ts");
   const { updatePlatformSettings, reloadPlatformSettings } = await import("../api/platform-settings.ts");
   reloadRegistry();
@@ -149,9 +149,72 @@ test("syncAccessTier guards against a null publicDomain instead of building a bo
   expect(r.message).toContain("bind a domain");
 });
 
+test("syncOAuth off tears the Access app down at a configured zone", async () => {
+  const { putRecord, getRecord, reloadRegistry } = await import("../registry/records.ts");
+  const { updatePlatformSettings, reloadPlatformSettings } = await import("../api/platform-settings.ts");
+  reloadRegistry();
+  reloadPlatformSettings();
+  updatePlatformSettings({
+    publicDomain: "example.dev",
+    secrets: { cfApiToken: "tok", cfZoneId: "z1" },
+  });
+  putRecord({
+    name: "app-off", managedBy: "user", port: 11005, kind: "external",
+    createdAt: "2026-08-10T00:00:00Z",
+    issues: [{ source: "cloudflare", message: "stale", at: "2026-08-10T00:00:00Z" }],
+  });
+
+  const calls: { method: string; url: string }[] = [];
+  const impl = (async (url: string | URL | Request, init?: RequestInit) => {
+    const u = String(url);
+    const method = init?.method ?? "GET";
+    calls.push({ method, url: u });
+    if (method === "GET" && u.endsWith("/access/apps")) {
+      return Response.json({ success: true, result: [{ id: "app-7", domain: "app-off.example.dev" }] });
+    }
+    return Response.json({ success: true, result: null });
+  }) as typeof fetch;
+
+  const r = await syncOAuth("app-off", { mode: "off" }, { accessFetch: impl } as unknown as never);
+
+  expect(r.ok).toBe(true);
+  // Off is not "do nothing": the Access app left from the previous rule keeps
+  // challenging visitors until it is deleted.
+  expect(calls.some((c) => c.method === "DELETE" && c.url.endsWith("/access/apps/app-7"))).toBe(true);
+  expect(getRecord("app-off")!.issues?.some((i) => i.source === "cloudflare")).toBeFalsy();
+});
+
+test("syncOAuth off never claims success when it could not even attempt the teardown", async () => {
+  const { putRecord, getRecord, reloadRegistry } = await import("../registry/records.ts");
+  const { updatePlatformSettings, reloadPlatformSettings } = await import("../api/platform-settings.ts");
+  reloadRegistry();
+  reloadPlatformSettings();
+  putRecord({ name: "app-off-unconf", managedBy: "user", port: 11006, kind: "external", createdAt: "2026-08-10T00:00:00Z" });
+
+  const impl = (async () => {
+    throw new Error("must not call Cloudflare with no credentials or no domain");
+  }) as unknown as typeof fetch;
+  const deps = { accessFetch: impl } as unknown as never;
+
+  // No credentials: the Access app at the edge is untouched and unknown, so
+  // ok:true here is what makes the board report sign-in as off while
+  // Cloudflare is still enforcing it.
+  updatePlatformSettings({ publicDomain: "example.dev", secrets: { cfApiToken: undefined, cfZoneId: undefined } });
+  const noCreds = await syncOAuth("app-off-unconf", { mode: "off" }, deps);
+  expect(noCreds.ok).toBe(false);
+  expect(noCreds.message).toContain("Cloudflare API token/zone not configured");
+  expect(getRecord("app-off-unconf")!.issues!.some((i) => i.source === "cloudflare")).toBe(true);
+
+  // Credentials but no bound domain: still no hostname to remove against.
+  updatePlatformSettings({ publicDomain: null, secrets: { cfApiToken: "tok", cfZoneId: "z1" } });
+  const noDomain = await syncOAuth("app-off-unconf", { mode: "off" }, deps);
+  expect(noDomain.ok).toBe(false);
+  expect(noDomain.message).toContain("No domain bound");
+});
+
 test("CfAccess.sync on an existing hostname updates the app and replaces its policy", async () => {
   const calls: { method: string; url: string; body: unknown }[] = [];
-  const impl = (async (url: RequestInfo | URL, init?: RequestInit) => {
+  const impl = (async (url: string | URL | Request, init?: RequestInit) => {
     const u = String(url);
     const method = init?.method ?? "GET";
     calls.push({ method, url: u, body: init?.body ? JSON.parse(String(init.body)) : null });

@@ -26,6 +26,24 @@ const DOMAIN_PORT = 18919;
 let domainServer: ReturnType<typeof startApi>;
 let domainCfDir: string;
 
+// A third server whose Cloudflare Access driver is a canned success, so the
+// happy path (sync, then persist, then read it back on a row) can be asserted
+// end to end. The other two servers have no accessFetch, which is what makes
+// every sign-in gate on them fail.
+const CF_PORT = 18921;
+let cfServer: ReturnType<typeof startApi>;
+const cfCalls: { method: string; url: string }[] = [];
+const cannedAccessFetch = (async (url: string | URL | Request, init?: RequestInit) => {
+  const u = String(url);
+  const method = init?.method ?? "GET";
+  cfCalls.push({ method, url: u });
+  if (method === "GET" && u.endsWith("/access/apps")) return Response.json({ success: true, result: [] });
+  if (method === "POST" && u.endsWith("/access/apps")) {
+    return Response.json({ success: true, result: { id: "app-1" } });
+  }
+  return Response.json({ success: true, result: { id: "pol-1" } });
+}) as typeof fetch;
+
 beforeAll(() => {
   manager = new FakeServiceManager();
   server = startApi({
@@ -42,10 +60,18 @@ beforeAll(() => {
     freshness: () => "unknown", autoHeal: () => null, onRouteWrite: () => {},
     tunnel: new FakeTunnelDriver(), cloudflaredDir: domainCfDir,
   });
+
+  cfServer = startApi({
+    manager: new FakeServiceManager(), edge: new FakeEdgeProxy(),
+    port: CF_PORT, canaryPort: CF_PORT + 1,
+    freshness: () => "unknown", autoHeal: () => null, onRouteWrite: () => {},
+    tunnel: new FakeTunnelDriver(), accessFetch: cannedAccessFetch,
+  });
 });
 afterAll(() => {
   server.stop(true);
   domainServer.stop(true);
+  cfServer.stop(true);
   rmSync(dir, { recursive: true, force: true });
   rmSync(domainCfDir, { recursive: true, force: true });
 });
@@ -198,7 +224,7 @@ test("platform settings: PUT stores a secret, GET never echoes its value", async
   expect(getRaw).not.toContain("tok-abc123");
 });
 
-test("an identity access tier is synced to Cloudflare BEFORE it is persisted; a failed sync changes nothing", async () => {
+test("a sign-in gate is synced to Cloudflare BEFORE it is persisted; a failed sync changes nothing", async () => {
   await post("/api/v1/apps", { name: "gated1", command: ["bun", "s.ts"], workingDirectory: "/tmp" });
   // No Cloudflare token is configured (beforeEach wipes platform settings), so
   // syncOAuth fails for lack of credentials.
@@ -235,7 +261,43 @@ test("a password is not a precondition for a sign-in gate", async () => {
     method: "PUT", headers: { "content-type": "application/json" },
     body: JSON.stringify({ mode: "domains", domains: ["corp.com"] }),
   });
-  expect(res.status).not.toBe(409);
+  // Asserted exactly, not as "anything but 409": this server has no Cloudflare
+  // credentials, so the request gets all the way to the sync and fails there.
+  // A 400 or a 404 would mean it never reached the password question at all.
+  expect(res.status).toBe(502);
+  const failure = (await res.json()) as { error?: string };
+  expect(failure.error).toBe("cloudflare-sync-failed");
+});
+
+test("a successful Cloudflare sync persists the rule and reports it back on the row", async () => {
+  // The failure path above would pass identically if the store never persisted
+  // anything, so the success path needs its own end-to-end assertion: sync,
+  // persist, and read the rule back off a status row.
+  const cfApi = (path: string, init?: RequestInit) => fetch(`http://127.0.0.1:${CF_PORT}${path}`, init);
+  const putJson = (path: string, payload: unknown) => cfApi(path, {
+    method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
+  });
+
+  await putJson("/api/v1/settings", { publicDomain: "example.dev", cfApiToken: "tok", cfZoneId: "z1" });
+  await cfApi("/api/v1/apps", {
+    method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "gatedok", command: ["bun", "s.ts"], workingDirectory: "/tmp" }),
+  });
+  cfCalls.length = 0;
+
+  const rule = { mode: "domains", domains: ["corp.com"] };
+  const put = await putJson("/api/v1/apps/gatedok/access", rule);
+  expect(put.status).toBe(200);
+  expect(await put.json()).toEqual({ ok: true, oauth: rule, cfSynced: true });
+
+  // cfSynced: true is only honest if Cloudflare was actually driven.
+  expect(cfCalls.some((c) => c.method === "POST" && c.url.endsWith("/access/apps"))).toBe(true);
+  expect(cfCalls.some((c) => c.url.includes("/access/apps/app-1/policies"))).toBe(true);
+
+  const after = (await (await cfApi("/api/v1/apps/gatedok")).json()) as any;
+  expect(after.row.oauth).toEqual(rule);
+  const list = (await (await cfApi("/api/v1/apps")).json()) as any;
+  expect(list.apps.find((a: any) => a.name === "gatedok").oauth).toEqual(rule);
 });
 
 test("the old tier vocabulary is rejected, not translated", async () => {
