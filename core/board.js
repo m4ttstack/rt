@@ -11,7 +11,7 @@ document.addEventListener("alpine:init", () => {
     data: null, // last good /api/v1/status body; null until the first answer
     restarting: {}, // label -> { pid, at }: awaiting a fresh pid
     editing: null, // { app, value } | null: the port cell being edited
-    pwModal: null, // { app, value } | null: the password dialog
+    accessModal: null, // the per-app access dialog; see openAccess()
     addModal: null, // { name, external, command, workingDirectory, staticPort, error } | null
     editModal: null, // { original, name, port, kind, command, workingDirectory, error } | null
     proxyNotice: null, // { kind: "ok"|"bad", message, command? } | null
@@ -65,6 +65,22 @@ document.addEventListener("alpine:init", () => {
     },
     isRestarting(row) {
       return !!(row.service && this.restarting[row.service.label]);
+    },
+
+    // The one sentence the access cell's title and aria-label share. An
+    // unpublished app leads with that: "open to anyone" would otherwise
+    // describe a hostname that answers to nobody.
+    accessSummary(row) {
+      if (!row.published) return "not published";
+      const parts = [];
+      if (row.hasPassword) parts.push("password required");
+      const o = row.oauth || { mode: "off" };
+      if (o.mode === "emails") {
+        parts.push(o.emails.length + (o.emails.length === 1 ? " person" : " people") + " may sign in");
+      } else if (o.mode === "domains") {
+        parts.push("anyone at " + o.domains.join(" or ") + " may sign in");
+      }
+      return parts.length ? parts.join(", ") : "open to anyone";
     },
 
     // Mirrors isPlatformManagedBy on the server: "local" is the pre-rename id
@@ -163,47 +179,23 @@ document.addEventListener("alpine:init", () => {
       await this.refresh();
     },
 
-    openPassword(app) {
-      this.pwModal = { app, value: "" };
-    },
-    async savePassword() {
-      if (!this.pwModal || !this.pwModal.value) return;
-      const { app, value } = this.pwModal;
-      try {
-        await this.apiPut("/api/v1/apps/" + app + "/password", { password: value });
-        this.pwModal = null;
-      } catch {
-        this.notice("bad", "saving the password failed -- the board did not answer.", 30000);
-      }
-      await this.refresh();
-    },
-    clearPassword(app) {
-      this.apiPut("/api/v1/apps/" + app + "/password", { password: null })
-        .catch(() => {})
-        .then(() => this.refresh());
-    },
-
-    async onTierChange(row, tier) {
-      let payload = { tier };
-      if (tier === "only-me") {
-        const email = prompt("Allow exactly one email:");
-        if (!email) return this.refresh();
-        payload.email = email.trim();
-      } else if (tier === "work-domain") {
-        const emailDomain = prompt("Allow every email at this domain (e.g. corp.com):");
-        if (!emailDomain) return this.refresh();
-        payload.emailDomain = emailDomain.trim();
-      } else if (tier === "custom") {
-        const list = prompt("Comma-separated emails:");
-        if (!list) return this.refresh();
-        payload.emails = list.split(",").map(s => s.trim()).filter(Boolean);
-      }
-      const res = await this.apiPut("/api/v1/apps/" + row.name + "/access", payload).catch(() => null);
-      if (res && !res.ok) {
-        const body = await res.json().catch(() => ({}));
-        this.notice("bad", body.message || body.error || "access change failed", 15000);
-      }
-      await this.refresh();
+    openAccess(row) {
+      const o = row.oauth || { mode: "off" };
+      this.accessModal = {
+        app: row.name,
+        published: row.published,
+        publicUrl: row.publicUrl,
+        hasPassword: row.hasPassword,
+        // pwOpen exists because turning the switch ON has nothing valid to
+        // send yet: it only reveals the field. The Set button sends.
+        pwOpen: false, password: "", pwError: null, pwBusy: false,
+        oauthOn: o.mode !== "off",
+        mode: o.mode === "domains" ? "domains" : "emails",
+        list: o.mode === "emails" ? o.emails.join(", ")
+            : o.mode === "domains" ? o.domains.join(", ")
+            : "",
+        oauthError: null, oauthBusy: false,
+      };
     },
 
     async submitAdd() {

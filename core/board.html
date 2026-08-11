@@ -374,56 +374,22 @@
 
                 <td>
                   <template x-if="data.canManage && row.port != null">
-                    <!-- hstack rather than a plain inline span: td is nowrap for
-                         the sake of port numbers, so inline controls here cannot
-                         wrap and overflow the column instead, painting over the
-                         actions cell. A flex row wraps its own items and reports
-                         a small min-content width, keeping the column in bounds. -->
-                    <span class="hstack gap-2">
-                      <!-- A span wrapper, not a label element: a bare
-                           data-field label tag here (no checkbox of its own)
-                           would sit -- in raw markup order -- before the
-                           addModal switch's :title label and get swallowed
-                           into its match; see the same note by addModal and
-                           board-assets.test.ts. The select is self-labeled
-                           via :aria-label, so no label element is lost. -->
-                      <span data-field class="mb-0">
-                        <select class="small"
-                                :value="row.accessTier ? row.accessTier.tier : 'public'"
-                                @change="onTierChange(row, $event.target.value)"
-                                :aria-label="'access tier for ' + row.name">
-                          <option value="public">public</option>
-                          <option value="password">password</option>
-                          <option value="only-me">only me</option>
-                          <option value="work-domain">work domain</option>
-                          <option value="custom">custom list</option>
-                        </select>
-                      </span>
-                      <span class="badge" data-variant="warning"
-                            x-show="row.issues && row.issues.some(i => i.source === 'cloudflare')">
-                        <i data-lucide="triangle-alert"></i> CF sync failed
-                      </span>
-                      <template x-if="row.hasPassword">
-                        <span class="hstack gap-2">
-                          <span class="badge" data-variant="success" title="password required to view">
-                            <i data-lucide="lock-keyhole"></i>
-                            protected
-                          </span>
-                          <button type="button" class="small outline"
-                                  @click="openPassword(row.name)">change</button>
-                          <button type="button" class="small outline"
-                                  data-variant="danger"
-                                  @click="clearPassword(row.name)">remove</button>
-                        </span>
-                      </template>
-                      <template x-if="!row.hasPassword">
-                        <button type="button" class="small outline"
-                                @click="openPassword(row.name)">
-                          <i data-lucide="lock-keyhole"></i>
-                          set password
-                        </button>
-                      </template>
-                    </span>
+                    <!-- Two glyphs, no text: the column stays narrow, and the
+                         full sentence rides both title and aria-label so it is
+                         reachable by hover and by screen reader. The modal is
+                         one click away for anyone who wants more than a
+                         glance. Cloudflare sync failures are NOT shown here:
+                         the site cell already renders every row.issues entry,
+                         with the failure message attached. -->
+                    <button type="button" class="small ghost"
+                            @click="openAccess(row)"
+                            :title="accessSummary(row)"
+                            :aria-label="accessSummary(row) + ', change access'">
+                      <i data-lucide="lock-keyhole"
+                         :class="row.hasPassword ? '' : 'text-lighter'"></i>
+                      <i data-lucide="user-round-check"
+                         :class="row.oauth && row.oauth.mode !== 'off' ? '' : 'text-lighter'"></i>
+                    </button>
                   </template>
                 </td>
 
@@ -602,30 +568,6 @@
         <footer>
           <button type="button" class="outline" @click="editModal = null">Cancel</button>
           <button type="submit">Save</button>
-        </footer>
-      </form>
-    </dialog>
-  </template>
-
-  <template x-if="pwModal">
-    <dialog closedby="any"
-            x-init="$nextTick(() => { $el.showModal(); $el.querySelector('input').focus(); })"
-            @close="pwModal = null"
-            @cancel="pwModal = null">
-      <form @submit.prevent="savePassword()">
-        <header>
-          <h3 x-text="'Password for ' + pwModal.app"></h3>
-          <p>Require a password before this app can be viewed publicly.</p>
-        </header>
-        <div>
-          <label data-field>
-            Password
-            <input type="password" placeholder="password" x-model="pwModal.value">
-          </label>
-        </div>
-        <footer>
-          <button type="button" class="outline" @click="pwModal = null">Cancel</button>
-          <button type="submit" :disabled="!pwModal.value">Save</button>
         </footer>
       </form>
     </dialog>

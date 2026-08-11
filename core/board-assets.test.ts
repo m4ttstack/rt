@@ -148,6 +148,32 @@ test("vendor allowlist rejects unknown names and traversal", () => {
   expect(vendorAsset("hasOwnProperty")).toBeNull();
 });
 
+test("the access cell is two glyphs and a click target, not a dropdown", async () => {
+  const html = await boardHtml().text();
+
+  // The whole point of the change: no select survives anywhere on the board.
+  expect(html).not.toContain("<select");
+  expect(html).not.toContain('value="only-me"');
+  expect(html).not.toContain('value="work-domain"');
+
+  expect(html).toContain('data-lucide="user-round-check"');
+  // The password state is one glyph in the cell now, never a pair of buttons.
+  // Match the bare text, not ">set password<": the label sits on its own line
+  // in the markup being removed, so the angle-bracketed form would pass
+  // whether or not the button was ever deleted.
+  expect(html).not.toContain("set password");
+  expect(html).not.toContain(">remove</button>");
+});
+
+test("the client reads the oauth rule and builds no HTML", async () => {
+  const js = await boardJs().text();
+  expect(js).toContain("accessSummary");
+  expect(js).toContain("openAccess");
+  // prompt() was how the identity tiers were collected; the modal replaces it.
+  expect(js).not.toContain("prompt(");
+  expect(js).not.toContain("onTierChange");
+});
+
 // The icon bundle is a curated subset and lucide renders nothing for a name it
 // was not given, leaving an empty <i> that still occupies its slot in the
 // button's flex gap. That reads as off-centre text, not as a missing icon, so
