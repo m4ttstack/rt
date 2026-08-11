@@ -147,3 +147,31 @@ test("vendor allowlist rejects unknown names and traversal", () => {
   expect(vendorAsset("__proto__")).toBeNull();
   expect(vendorAsset("hasOwnProperty")).toBeNull();
 });
+
+// The icon bundle is a curated subset and lucide renders nothing for a name it
+// was not given, leaving an empty <i> that still occupies its slot in the
+// button's flex gap. That reads as off-centre text, not as a missing icon, so
+// pin the two lists together rather than trusting a visual check.
+test("every data-lucide name in the board is in the icon bundle", async () => {
+  const html = await boardHtml().text();
+  const used = new Set([...html.matchAll(/data-lucide="([a-z0-9-]+)"/g)].map((m) => m[1]!));
+  expect(used.size).toBeGreaterThan(0);
+
+  const source = await Bun.file(new URL("./icons.js", import.meta.url)).text();
+  // createIcons() is keyed on the PascalCase export names; compare in the
+  // kebab-case form the markup actually asks for. Lucide breaks a trailing
+  // digit off as well (Trash2 -> trash-2), so that split runs before the
+  // lower-to-upper one.
+  const registered = new Set(
+    [...source.matchAll(/^\s{4}([A-Z][A-Za-z0-9]*),$/gm)].map((m) =>
+      m[1]!
+        .replace(/([A-Za-z])([0-9])/g, "$1-$2")
+        .replace(/([a-z0-9])([A-Z])/g, "$1-$2")
+        .toLowerCase(),
+    ),
+  );
+  expect(registered.size).toBeGreaterThan(0);
+
+  const missing = [...used].filter((name) => !registered.has(name)).sort();
+  expect(missing).toEqual([]);
+});
