@@ -92,11 +92,23 @@ test("edge controls do not let Oat tooltips create empty overflow", async () => 
 test("switch tooltips stay on the wrapper so Oat can render the thumb", async () => {
   const html = await boardHtml().text();
   // Every switch, not just the first: a title on the input hides the thumb, so
-  // the guard is worth nothing if a later switch can skip it.
-  const switches = [...html.matchAll(/<label[^>]*>[\s\S]*?<input type="checkbox"[\s\S]*?role="switch"[\s\S]*?>/g)]
-    .map((m) => m[0]);
+  // the guard is worth nothing if a later switch can skip it. The lazy match
+  // is bounded by a negative lookahead so it cannot cross a label boundary:
+  // without that bound, an unrelated data-field label earlier in the page
+  // would be swept forward and matched against a switch several elements
+  // later, past its own closing tag, and wrongly blamed for that switch's
+  // missing :title.
+  const switches = [
+    ...html.matchAll(
+      /<label[^>]*>(?:(?!<\/?label\b)[\s\S])*?<input type="checkbox"(?:(?!<\/?label\b)[\s\S])*?role="switch"[\s\S]*?>/g,
+    ),
+  ].map((m) => m[0]);
 
   expect(switches.length).toBeGreaterThan(0);
+  // Every switch on the page must be caught by the guard above, not just the
+  // ones that happen to sit in a well-formed label: an unwrapped switch would
+  // otherwise pass this test silently while rendering with no thumb at all.
+  expect(switches.length).toBe([...html.matchAll(/role="switch"/g)].length);
   for (const markup of switches) {
     const labelTag = markup.match(/<label[^>]*>/)?.[0] ?? "";
     // Asserted on the tag rather than as a literal prefix, so attribute order
@@ -217,24 +229,114 @@ test("the access dialog commits per control and never sends a half-typed value",
   expect(dialog).toBeDefined();
   expect(dialog).toMatch(/:disabled="!accessModal\.password/);
   expect(dialog).toMatch(/:disabled="!accessModal\.list/);
-
-  // Oat swallows a <label data-field> that precedes a switch, so the dialog's
-  // text fields use spans. See board.html:354 and the switch test below.
-  expect(dialog).not.toContain("<label data-field");
 });
 
 test("the access dialog is the last block on the board", async () => {
-  // The switch test scans left to right: a <label> between two switches is
+  // The switch test scans left to right: a label between two switches is
   // matched as the later switch's wrapper. This dialog's radio labels are only
   // safe while no switch follows them.
   const html = await boardHtml().text();
   const access = html.indexOf('x-if="accessModal"');
+  const addModal = html.indexOf('x-if="addModal"');
+  const editModal = html.indexOf('x-if="editModal"');
   expect(access).toBeGreaterThan(-1);
-  expect(access).toBeGreaterThan(html.indexOf('x-if="addModal"'));
-  expect(access).toBeGreaterThan(html.indexOf('x-if="editModal"'));
+  // Asserted before the ordering comparisons below: indexOf returns -1 for a
+  // deleted block, and -1 sorts before every real offset, so without this the
+  // ordering checks would pass vacuously if addModal or editModal ever went
+  // away.
+  expect(addModal).toBeGreaterThan(-1);
+  expect(editModal).toBeGreaterThan(-1);
+  expect(access).toBeGreaterThan(addModal);
+  expect(access).toBeGreaterThan(editModal);
   // The dialog's own two switches must be the last two on the page. Anything
   // after them would turn this dialog's radio labels into that switch's
   // wrapper as far as the guard above is concerned.
   const after = html.slice(access);
   expect([...after.matchAll(/role="switch"/g)]).toHaveLength(2);
+});
+
+// Loads the real board.js source and hands back the plain object
+// Alpine.data("board", factory) would have registered, without pulling Alpine
+// or a DOM library into the test run: document.addEventListener is stubbed to
+// invoke its callback immediately, and Alpine.data is stubbed to capture the
+// factory instead of registering it. The returned object's methods are the
+// actual production code, called directly.
+async function loadBoardComponent() {
+  const js = await boardJs().text();
+  let factory;
+  const fakeDocument = { addEventListener: (_event, cb) => cb() };
+  const fakeAlpine = { data: (_name, f) => { factory = f; } };
+  new Function("document", "Alpine", js)(fakeDocument, fakeAlpine);
+  if (!factory) throw new Error("board.js never called Alpine.data(\"board\", ...)");
+  return factory();
+}
+
+test("a failed password-switch request leaves the checkbox matching the unchanged server state", async () => {
+  // :checked="accessModal.hasPassword || accessModal.pwOpen" is an Alpine
+  // effect with fine-grained dependency tracking: it only re-runs when one of
+  // those two reads actually changes value. A native checkbox flips its own
+  // checked property on click, before "change" fires, so if the failure
+  // branch below left hasPassword and pwOpen untouched (as it must -- the
+  // server still has the old state) the effect would never re-fire and the
+  // box would keep showing the click instead of the server. This asserts the
+  // handler corrects event.target.checked by hand instead.
+  const component = await loadBoardComponent();
+  component.accessModal = {
+    app: "demo", published: true, publicUrl: "https://demo.example",
+    hasPassword: true, pwOpen: false, password: "", pwError: null, pwBusy: false,
+    oauthOn: false, mode: "emails", list: "", oauthError: null, oauthBusy: false,
+  };
+  // The DOM has already flipped itself to false, exactly as a real click on a
+  // real checkbox would before "change" fires.
+  const ev = { target: { checked: false } };
+  component.apiPut = async () => ({ ok: false, status: 500, json: async () => ({}) });
+
+  await component.onPasswordSwitch(ev);
+
+  expect(ev.target.checked).toBe(true); // snapped back: hasPassword is still true
+  expect(component.accessModal.hasPassword).toBe(true); // state itself never moved
+  expect(component.accessModal.pwError).toBeTruthy();
+});
+
+test("a network failure on the password switch also reverts the checkbox", async () => {
+  // Same as above but through the res === null branch (apiPut's fetch threw
+  // and was caught), not the res.ok === false branch, since they are two
+  // different lines in the handler.
+  const component = await loadBoardComponent();
+  component.accessModal = {
+    app: "demo", published: true, publicUrl: "https://demo.example",
+    hasPassword: true, pwOpen: false, password: "", pwError: null, pwBusy: false,
+    oauthOn: false, mode: "emails", list: "", oauthError: null, oauthBusy: false,
+  };
+  const ev = { target: { checked: false } };
+  component.apiPut = async () => { throw new Error("network down"); };
+
+  await component.onPasswordSwitch(ev);
+
+  expect(ev.target.checked).toBe(true);
+  expect(component.accessModal.hasPassword).toBe(true);
+});
+
+test("a failed oauth-switch request (Cloudflare 502) leaves the checkbox on", async () => {
+  // This is the exact case sync-before-persist exists for: Cloudflare
+  // rejects the change, the server keeps the previous rule, and the switch
+  // must keep showing "on" rather than the click that asked to turn it off.
+  const component = await loadBoardComponent();
+  component.accessModal = {
+    app: "demo", published: true, publicUrl: "https://demo.example",
+    hasPassword: false, pwOpen: false, password: "", pwError: null, pwBusy: false,
+    oauthOn: true, mode: "emails", list: "a@x.dev", oauthError: null, oauthBusy: false,
+  };
+  const ev = { target: { checked: false } };
+  component.apiPut = async () => ({
+    ok: false,
+    status: 502,
+    json: async () => ({ error: "cf_sync_failed", message: "Cloudflare rejected the change" }),
+  });
+
+  await component.onOauthSwitch(ev);
+
+  expect(ev.target.checked).toBe(true);
+  expect(component.accessModal.oauthOn).toBe(true);
+  expect(component.accessModal.oauthError).toBe("Cloudflare rejected the change");
 });

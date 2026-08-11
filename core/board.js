@@ -202,9 +202,23 @@ document.addEventListener("alpine:init", () => {
     // apply buttons carry the constructive one. Turning a switch ON sends
     // nothing, because there is no valid value to send yet: that is what keeps
     // a half-typed domain from reaching Cloudflare.
-    async onPasswordSwitch() {
+    //
+    // A native checkbox flips its own `checked` property the instant it is
+    // clicked, before "change" fires and before Alpine's :checked effect gets
+    // a chance to run. That effect only re-runs when a dependency it read
+    // (accessModal.hasPassword / .pwOpen) actually changes, so on a failed
+    // request -- where we deliberately leave that state alone -- the effect
+    // never re-fires and the box would be left showing the click, not the
+    // server. ev.target.checked is therefore written by hand on every failure
+    // branch below, back to what the (unchanged) state says.
+    async onPasswordSwitch(ev) {
       const m = this.accessModal;
-      if (!m.hasPassword) { m.pwOpen = !m.pwOpen; m.pwError = null; return; }
+      if (!m.hasPassword) {
+        m.pwOpen = !m.pwOpen;
+        m.pwError = null;
+        if (!m.pwOpen) m.password = ""; // don't leave a half-typed password live in a hidden field
+        return;
+      }
       m.pwBusy = true;
       m.pwError = null;
       const res = await this.apiPut("/api/v1/apps/" + m.app + "/password", { password: null })
@@ -212,7 +226,8 @@ document.addEventListener("alpine:init", () => {
       m.pwBusy = false;
       if (!res || !res.ok) {
         m.pwError = "removing the password failed.";
-        return; // the switch snaps back: the server still has the gate
+        ev.target.checked = m.hasPassword || m.pwOpen; // snap back: the server still has the gate
+        return;
       }
       m.hasPassword = false;
       m.pwOpen = false;
@@ -236,7 +251,7 @@ document.addEventListener("alpine:init", () => {
       m.pwOpen = false;
       await this.refresh();
     },
-    async onOauthSwitch() {
+    async onOauthSwitch(ev) {
       const m = this.accessModal;
       if (!m.oauthOn) { m.oauthOn = true; m.oauthError = null; return; }
       m.oauthBusy = true;
@@ -247,7 +262,8 @@ document.addEventListener("alpine:init", () => {
       if (!res || !res.ok) {
         const b = res ? await res.json().catch(() => ({})) : {};
         m.oauthError = b.message || b.error || "turning sign-in off failed.";
-        return; // stays on: Cloudflare still has the gate
+        ev.target.checked = m.oauthOn; // stays on: Cloudflare still has the gate. See onPasswordSwitch for why this write is necessary.
+        return;
       }
       m.oauthOn = false;
       m.list = "";

@@ -92,12 +92,6 @@
     white-space: normal;
     word-break: break-word;
   }
-  /* Oat ships mb-2/4/6/8 but not mb-0. The access dialog pairs a [data-field]
-     with a button on the same line, and [data-field]'s own bottom margin
-     would otherwise misalign the two. */
-  .mb-0 {
-    margin-block-end: 0;
-  }
 </style>
 </head>
 <body>
@@ -515,34 +509,30 @@
                    :aria-label="addModal.external ? 'stop routing only, let Local run this app' : 'route only — this app runs itself'">
             <span>I run this myself — just route a port</span>
           </label>
-          <!-- span, not label: accessModal's dialog sits after this one in the
-               file (a hard requirement, see its own note below), so a label
-               here would be read as ITS switches' wrapper by the same guard. -->
-          <span data-field>
+          <label data-field>
             Name
             <input name="app-name" x-model="addModal.name" placeholder="myapp" required
-                   pattern="[a-z0-9][a-z0-9.-]*" title="lowercase letters, digits, dots, dashes"
-                   aria-label="Name">
-          </span>
+                   pattern="[a-z0-9][a-z0-9.-]*" title="lowercase letters, digits, dots, dashes">
+          </label>
           <template x-if="!addModal.external">
             <span class="vstack gap-3">
-              <span data-field>
+              <label data-field>
                 Command
-                <input x-model="addModal.command" placeholder="bun src/server.ts" required aria-label="Command">
-              </span>
-              <span data-field>
+                <input x-model="addModal.command" placeholder="bun src/server.ts" required>
+              </label>
+              <label data-field>
                 Working directory
-                <input x-model="addModal.workingDirectory" placeholder="/Users/you/code/myapp" required aria-label="Working directory">
-              </span>
+                <input x-model="addModal.workingDirectory" placeholder="/Users/you/code/myapp" required>
+              </label>
               <p class="text-light" x-show="data && data.nextPort"
                  x-text="'Will be assigned port ' + (data ? data.nextPort : '') + ' (PORT env).'"></p>
             </span>
           </template>
           <template x-if="addModal.external">
-            <span data-field>
+            <label data-field>
               Port it listens on
-              <input x-model="addModal.staticPort" inputmode="numeric" placeholder="4200" required aria-label="Port it listens on">
-            </span>
+              <input x-model="addModal.staticPort" inputmode="numeric" placeholder="4200" required>
+            </label>
           </template>
           <p role="alert" data-variant="error" x-show="addModal.error" x-text="addModal.error"></p>
         </div>
@@ -561,17 +551,16 @@
       <form @submit.prevent="submitEdit()">
         <header><h3 x-text="'Edit ' + editModal.original"></h3></header>
         <div class="vstack gap-3">
-          <!-- span, not label: same reason as addModal above. -->
-          <span data-field>Name
-            <input x-model="editModal.name" pattern="[a-z0-9][a-z0-9.-]*" required aria-label="Name">
-          </span>
-          <span data-field>Base port
-            <input x-model="editModal.port" inputmode="numeric" required aria-label="Base port">
-          </span>
+          <label data-field>Name
+            <input x-model="editModal.name" pattern="[a-z0-9][a-z0-9.-]*" required>
+          </label>
+          <label data-field>Base port
+            <input x-model="editModal.port" inputmode="numeric" required>
+          </label>
           <template x-if="editModal.kind === 'service'">
             <span class="vstack gap-3">
-              <span data-field>Command <input x-model="editModal.command" required aria-label="Command"></span>
-              <span data-field>Working directory <input x-model="editModal.workingDirectory" required aria-label="Working directory"></span>
+              <label data-field>Command <input x-model="editModal.command" required></label>
+              <label data-field>Working directory <input x-model="editModal.workingDirectory" required></label>
             </span>
           </template>
           <p role="alert" data-variant="error" x-show="editModal.error" x-text="editModal.error"></p>
@@ -584,13 +573,12 @@
     </dialog>
   </template>
 
-  <!-- Last block on the page by requirement, not by accident: the switch guard
-       in board-assets.test.ts scans left to right, so a label sitting between
-       two switches is read as the later switch's wrapper. The radio labels
-       below are safe only while no switch follows them. That same reasoning
-       is why every data-field above this point (in addModal and editModal)
-       is a span rather than a label: this dialog's switches now sit after
-       them too. -->
+  <!-- Last block on the page by requirement, not by accident: the switch
+       guard in board-assets.test.ts scans left to right and will not cross
+       a label boundary while looking for a switch to pair with, so a plain
+       data-field label stays safe as long as it closes before a switch's own
+       wrapping label opens. The radio labels below are safe for the same
+       reason. -->
   <template x-if="accessModal">
     <dialog closedby="any"
             x-init="$nextTick(() => $el.showModal())"
@@ -610,7 +598,7 @@
                    : 'no password, click to set one'">
             <input type="checkbox" role="switch"
                    :checked="accessModal.hasPassword || accessModal.pwOpen"
-                   @change="onPasswordSwitch()"
+                   @change="onPasswordSwitch($event)"
                    :aria-label="accessModal.hasPassword ? 'remove the password' : 'require a password'">
             <span>Password protected</span>
           </label>
@@ -622,11 +610,14 @@
               A password is set. Changing it signs out anyone holding a session.
             </p>
             <span class="hstack gap-2">
-              <!-- span, not label: see the note at the top of this block. -->
-              <span data-field class="mb-0">
+              <!-- No visible caption, so the accessible name still comes from
+                   aria-label rather than label text; the wrapper is a label
+                   purely for Oat's field typography (see the guard note
+                   above for why a label is safe to use here at all). -->
+              <label data-field>
                 <input type="password" x-model="accessModal.password"
                        placeholder="new password" aria-label="new password">
-              </span>
+              </label>
               <button type="button" class="small"
                       :disabled="!accessModal.password || accessModal.pwBusy"
                       @click="savePassword()"
@@ -644,7 +635,7 @@
                    : 'no sign-in gate, click to require google'">
             <input type="checkbox" role="switch"
                    :checked="accessModal.oauthOn"
-                   @change="onOauthSwitch()"
+                   @change="onOauthSwitch($event)"
                    :aria-label="accessModal.oauthOn ? 'turn google sign-in off' : 'require google sign-in'">
             <span>Google sign-in</span>
           </label>
@@ -663,11 +654,11 @@
               <span>These people</span>
             </label>
             <span class="hstack gap-2">
-              <span data-field class="mb-0">
+              <label data-field>
                 <input x-model="accessModal.list"
                        :placeholder="accessModal.mode === 'emails' ? 'a@x.dev, b@y.dev' : 'corp.com, other.dev'"
                        :aria-label="accessModal.mode === 'emails' ? 'allowed emails' : 'allowed domains'">
-              </span>
+              </label>
               <button type="button" class="small"
                       :disabled="!accessModal.list.trim() || accessModal.oauthBusy"
                       @click="applyOauth()">Apply</button>
