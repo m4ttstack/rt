@@ -15,6 +15,10 @@ export interface PeeringHost {
   makeClient(url: string, token: string): SwitchboardClient;
   deps: Omit<MaterializeDeps, "reportAuth">;
   tickMs?: number;
+  /** Outbox to drain on each tick. Defaults to the shared OUTBOX_DIR, which is
+      what production wants; tests must pin a temp dir so a run never drains
+      the real queue. */
+  outboxDir?: string;
 }
 
 /** The board's peering runtime: hot-startable from /peer/join as well as boot
@@ -34,7 +38,7 @@ export function makePeering(host: PeeringHost) {
   /** One tick against whatever client is current. Also the boot-time "run once
       now", so tests can drive ticks without faking timers. */
   async function tickNow(): Promise<void> {
-    if (runtime) await runPeerTick(runtime.client, deps);
+    if (runtime) await runPeerTick(runtime.client, deps, host.outboxDir);
   }
 
   function start(url: string, token: string): PeerRuntime {
