@@ -17,6 +17,7 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { readEnvFile, upsertEnvKeys } from "../src/env-file.ts";
 
 // Slack app credentials are NOT checked in — bring your own app (see the README
 // "Slack integration" section). setup reads SLACK_CLIENT_ID / SLACK_CLIENT_SECRET
@@ -41,31 +42,6 @@ const TEAM_CONFIG_PATH = join(ROOT, "config.team.json");
 const EXAMPLE_CONFIG_PATH = join(ROOT, "config.example.json");
 const CLAUDE_SKILLS = join(homedir(), ".claude", "skills");
 const SKILLS_SRC = join(ROOT, "skills");
-
-interface EnvMap {
-  [key: string]: string;
-}
-
-function readEnv(): EnvMap {
-  if (!existsSync(ENV_PATH)) return {};
-  const out: EnvMap = {};
-  for (const line of readFileSync(ENV_PATH, "utf8").split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eq = trimmed.indexOf("=");
-    if (eq === -1) continue;
-    out[trimmed.slice(0, eq)] = trimmed.slice(eq + 1);
-  }
-  return out;
-}
-
-function writeEnv(env: EnvMap): void {
-  const body = Object.entries(env)
-    .filter(([, v]) => v)
-    .map(([k, v]) => `${k}=${v}`)
-    .join("\n");
-  writeFileSync(ENV_PATH, body + "\n", { mode: 0o600 });
-}
 
 function ask(question: string, existing?: string): string {
   const suffix = existing ? ` [${maskIfSecret(question, existing)}]` : "";
@@ -207,7 +183,7 @@ function loadExistingConfig(): Record<string, unknown> | null {
 async function main() {
   console.log("mr-board setup\n");
 
-  const env = readEnv();
+  const env = readEnvFile(ENV_PATH);
   const existingConfig = loadExistingConfig();
 
   const gitlabToken = ask("GitLab personal access token (read_api scope)", env.GITLAB_TOKEN);
@@ -262,7 +238,7 @@ async function main() {
     else console.error("No token entered. Peer features stay disabled until SWITCHBOARD_TOKEN is set.");
   }
 
-  writeEnv(env);
+  upsertEnvKeys(ENV_PATH, env);
   console.log(`Wrote ${ENV_PATH}`);
 
   const baseConfig = loadBaseConfig();
