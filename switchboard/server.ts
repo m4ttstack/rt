@@ -21,13 +21,50 @@ export function makeFetchHandler(store: SwitchboardStore, adminToken: string, no
     if (pathname === "/healthz") return new Response("ok");
 
     if (pathname === "/boards") {
+      if (bearer(req) !== adminToken) return new Response("unauthorized", { status: 401 });
+      if (req.method === "GET") return json(200, { boards: store.listBoards() });
+      if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+      let body: unknown;
+      try { body = await req.json(); } catch { return new Response("invalid json", { status: 400 }); }
+      const username = (body as { username?: unknown })?.username;
+      if (typeof username !== "string" || !username.trim()) return new Response("expected { username }", { status: 400 });
+      return json(201, store.registerBoard(username));
+    }
+
+    if (pathname === "/invites") {
       if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
       if (bearer(req) !== adminToken) return new Response("unauthorized", { status: 401 });
       let body: unknown;
       try { body = await req.json(); } catch { return new Response("invalid json", { status: 400 }); }
       const username = (body as { username?: unknown })?.username;
       if (typeof username !== "string" || !username.trim()) return new Response("expected { username }", { status: 400 });
-      return json(201, store.registerBoard(username));
+      return json(201, store.createInvite(username, now()));
+    }
+
+    if (pathname === "/invites/redeem") {
+      if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+      let body: unknown;
+      try { body = await req.json(); } catch { return new Response("invalid json", { status: 400 }); }
+      const { code, username } = (body ?? {}) as { code?: unknown; username?: unknown };
+      if (typeof code !== "string" || typeof username !== "string" || !code.trim() || !username.trim()) {
+        return new Response("expected { code, username }", { status: 400 });
+      }
+      const r = store.redeemInvite(code.trim(), username, now());
+      if (r.ok) return json(200, { username: r.username, token: r.token });
+      if (r.error === "unknown") return new Response("invite not recognized. it may have been replaced; ask for a fresh one", { status: 404 });
+      if (r.error === "mismatch") return new Response("this invite is for a different board handle", { status: 409 });
+      return new Response("invite expired or already used; ask for a fresh one", { status: 410 });
+    }
+
+    // Static, oracle-free landing page for someone who clicks the invite link in a
+    // browser (spec M9): no store access, no reflection of the path, no-store +
+    // no-referrer because the URL itself is the credential.
+    if (pathname.startsWith("/invite/") && req.method === "GET") {
+      return new Response(
+        `<!doctype html><meta charset="utf-8"><style>body{font:16px system-ui;max-width:36rem;margin:4rem auto;padding:0 1rem}</style>` +
+          `<h1>board invite</h1><p>this link is a board invite. paste the whole link into your board's settings ("join peer boards") or into <code>bun run setup</code>.</p>`,
+        { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store", "referrer-policy": "no-referrer" } },
+      );
     }
 
     const token = bearer(req);
