@@ -20,12 +20,12 @@ bun run setup   # prompts for tokens + your defaults, writes .env and config.jso
 bun run serve   # http://localhost:7930
 ```
 
-`bun run setup` is idempotent — re-run it any time to rotate a token or change your default member. it prompts for:
+`bun run setup` is idempotent -- re-run it any time to rotate a token or change your default member. it prompts for:
 
-- **GitLab personal access token** (`read_api` scope) — create at `https://gitlab.com/-/user_settings/personal_access_tokens`
-- **your GitLab username** — used as the board's default view
-- **path to your local repo checkout** (optional) — enables the right-click "launch review" action; leave blank to skip
-- **Slack integration** — opens a browser to authorize a Slack app; each teammate mints their own user token this way, so reactions and messages appear as *them*. only teammates added as **Collaborators** on the app can complete this flow
+- **GitLab personal access token** (`read_api` scope) -- create at `https://gitlab.com/-/user_settings/personal_access_tokens`
+- **your GitLab username** -- used as the board's default view
+- **path to your local repo checkout** (optional) -- enables the right-click "launch review" action; leave blank to skip
+- **Slack integration** -- opens a browser to authorize a Slack app; each teammate mints their own user token this way, so reactions and messages appear as *them*. only teammates added as **Collaborators** on the app can complete this flow
 
 or configure manually: copy `config.example.json` → `config.json` and edit; put `GITLAB_TOKEN=…` and optionally `SLACK_TOKEN=…` in `.env`. `config.team.example.json` is a filled-in demo roster (fake names, fake project) if you just want to see it render before pointing it at a real one.
 
@@ -37,7 +37,7 @@ or configure manually: copy `config.example.json` → `config.json` and edit; pu
 |---|---|
 | `gitlabHost` | your gitlab instance, e.g. `https://gitlab.com` |
 | `projects` | project paths whose MRs are eligible |
-| `members` | array of `{ "username", "name"? }` — the teammates whose authored MRs the board shows, in sidebar order |
+| `members` | array of `{ "username", "name"? }` -- the teammates whose authored MRs the board shows, in sidebar order |
 | `defaultMember` | member username the board opens to by default (or `"all"`); the URL and remembered state override it |
 | `title` | page heading and tab title |
 | `port` | listen port (default 7930) |
@@ -51,28 +51,30 @@ the board lists open, non-draft MRs authored by any configured member in one of 
 
 `bun run setup` handles both. under the hood:
 
-- **`GITLAB_TOKEN`** — env var (bun auto-loads `.env`). needs `read_api` scope only; the board never writes to gitlab. as a fallback it also reads `gitlabToken` from `~/.rt/secrets.json` if you happen to have one.
-- **`SLACK_TOKEN`** — optional user token (`xoxp-…`) for the review-thread integration. minted via the OAuth flow in `bun run setup`, or paste manually into `.env`. same `~/.rt/secrets.json` fallback (as `slackToken`). without it, the Slack menu actions stay disabled and the board runs fine.
+- **`GITLAB_TOKEN`** -- env var (bun auto-loads `.env`). needs `read_api` scope only; the board never writes to gitlab. as a fallback it also reads `gitlabToken` from `~/.rt/secrets.json` if you happen to have one.
+- **`SLACK_TOKEN`** -- optional user token (`xoxp-…`) for the review-thread integration. minted via the OAuth flow in `bun run setup`, or paste manually into `.env`. same `~/.rt/secrets.json` fallback (as `slackToken`). without it, the Slack menu actions stay disabled and the board runs fine.
 
 ## endpoints
 
-- `/` — the board
-- `/data.json` — the snapshot the client renders: `{ title, members, mrs, fetchedAt, fetchError, local }`; each MR may carry a `review` status when a review is in flight
-- `/review` — POST `{ mrUrl, iid }` to launch a review (local requests only; see below)
+- `/` -- the board
+- `/data.json` -- the snapshot the client renders: `{ title, members, mrs, fetchedAt, fetchError, local }`; each MR may carry a `review` status when a review is in flight
+- `/review` -- POST `{ mrUrl, iid }` to launch a review (local requests only; see below)
 - `/nudge`: POST `{ mrUrl, iid, reviewer }` to ask a peer's board for a re-review on your own MR (local requests only; see [peer boards + switchboard](#peer-boards--switchboard-optional))
-- `/healthz` — 200 `ok`, for supervisors and tunnels
+- `/healthz` -- 200 `ok`, for supervisors and tunnels
 
 data is cached in memory for 60s with stale-while-revalidate: bursts of visitors cost one gitlab round trip, and if gitlab is down the board serves the last good snapshot with a "data from N minutes ago" banner.
 
 ## sharing it (optional)
 
-the server binds a local port and has no auth of its own — anything public-facing must bring its own gate. the setup this was built for:
+the server binds a local port and has no auth of its own -- anything public-facing must bring its own gate. the setup this was built for:
 
 1. run it persistently (launchd, systemd, whatever you have)
 2. point a [cloudflare tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/) at the port and route a hostname to it
 3. put [cloudflare access](https://developers.cloudflare.com/cloudflare-one/policies/access/) in front of that hostname with a policy for your org's email domain (google or any idp, or the built-in one-time pin)
 
-the MR titles, branch names, and reviewer names on this page are your employer's internal data — do not expose it without the gate.
+the MR titles, branch names, and reviewer names on this page are your employer's internal data -- do not expose it without the gate.
+
+the server binds `127.0.0.1` by default, so nothing on your LAN can reach it directly -- the cloudflared tunnel above still works fine, since it connects out from the same machine rather than in over the network. viewing it directly from another device on your LAN needs `"host"` set in `config.json` (e.g. `"0.0.0.0"`, or a specific address) to opt into the wider bind. do that with eyes open: the review-launch and peer-invite actions are gated by an `isLocal` check on the request's Host header alone, not by network topology, so a wider bind means anyone who can reach that port and forge a local-looking Host header reaches those actions too. prefer the tunnel.
 
 ## review integration (local only)
 
@@ -119,10 +121,11 @@ what it adds:
 
 peer features also need `defaultMember` in `config.json` set to your own GitLab username: it is how the board tells your MRs from everyone else's, so with `"all"` it stays silent and publishes nothing to peers.
 
-`bun run setup` prompts for a switchboard URL and a board token. blank input for either skips peer features entirely, and everything degrades cleanly: no badges, no nudge action, `/nudge` returns `400`. it writes:
+`bun run setup` prompts once for a board invite: paste the whole link your operator gave you (`.../invite/<code>`) and setup redeems it, writing the switchboard URL to `config.json` as `switchboard.url` and the token it gets back to `.env` as `SWITCHBOARD_TOKEN`. blank input keeps whatever is already configured. a bare URL (no `/invite/<code>`) falls back to the old manual flow: it prompts for a board token separately, for the rare case someone hands you a token out of band instead of a link. either way, everything degrades cleanly when peer features aren't set up: no badges, no nudge action, `/nudge` returns `400`.
 
-- the switchboard URL your operator gave you, to `config.json` as `switchboard.url`
-- the board token your switchboard admin minted for you, to `.env` as `SWITCHBOARD_TOKEN`
+a board that's already running doesn't need a restart to join or re-join: open settings and use "join peer boards" (or "re-join with a new invite" if it's already peered) to paste the link there instead.
+
+if the switchboard ever stops accepting this board's token -- the operator re-minted it, for instance -- the settings modal starts showing "peering token rejected -- re-join with a new invite" after a few failed polls. the fix is the same either way: get a fresh invite from your operator and re-join.
 
 ### operator setup (run a switchboard)
 
@@ -135,16 +138,27 @@ the switchboard is a separate deployable in `switchboard/`, a dumb store-and-for
 - env: `SWITCHBOARD_ADMIN_TOKEN` (pick your own value, the bearer token for minting boards)
 - `PORT` is supplied by Railway
 
-mint a board per teammate (username = their GitLab username, lowercased; one board per username; re-minting rotates the token, so hand out the new one if you re-mint):
+to invite teammates from the board's own UI instead of curl, put the admin token where the board (not the relay) reads it: `switchboardAdminToken` in `~/.rt/secrets.json`, or the `SWITCHBOARD_ADMIN_TOKEN` env var, on the machine running your own board -- plus `switchboard.url` in your `config.json`. with both set, open settings ("team members") locally and each roster member gets an **invite** button; anyone already peered shows **peered** with a **re-invite** button instead, and a free-text row at the bottom invites handles that aren't on your roster at all. either action mints a one-time invite link (`<url>/invite/<code>`, expires in 7 days) shown right there to copy and paste to that teammate. re-invite is also the rotation story: minting a new invite for someone already peered disconnects their current board (the confirm dialog says so) until they redeem the fresh link and reconnect.
+
+the no-UI path still works too -- the relay endpoints stay plain HTTP with the admin bearer token, for scripting or a headless operator setup:
 
 ```sh
+# mint a board directly (username = their GitLab username, lowercased; one board
+# per username; re-minting rotates the token, so hand out the new one if you re-mint)
 curl -X POST $URL/boards \
   -H "Authorization: Bearer $SWITCHBOARD_ADMIN_TOKEN" \
   -H "content-type: application/json" \
   -d '{"username":"grace"}'
+
+# or mint an invite link the same way the settings modal does
+curl -X POST $URL/invites \
+  -H "Authorization: Bearer $SWITCHBOARD_ADMIN_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"username":"grace"}'
+# -> {"code":"...","username":"grace","expiresAt":...} -- hand out "$URL/invite/<code>"
 ```
 
-the response includes the token that teammate pastes into their own `bun run setup`.
+the invite link works everywhere (`bun run setup`'s prompt and the board's own "join peer boards"); the raw `POST /boards` token only works with `bun run setup`'s manual fallback (paste the bare switchboard URL, then the token separately), since "join peer boards" only accepts a link.
 
 ### reviewer-side automation
 
