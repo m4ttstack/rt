@@ -2,6 +2,7 @@ import type { Database } from "bun:sqlite";
 import { canonicalUsername, type DraftEnvelope, type Envelope } from "../src/peer/envelope.ts";
 
 export const ENVELOPE_TTL_MS = 7 * 24 * 60 * 60_000;
+export const INVITE_TTL_MS = 7 * 24 * 60 * 60_000;
 
 export function hashToken(token: string): string {
   return new Bun.CryptoHasher("sha256").update(token).digest("hex");
@@ -9,6 +10,10 @@ export function hashToken(token: string): string {
 
 function mintToken(): string {
   return crypto.randomUUID().replaceAll("-", "") + crypto.randomUUID().replaceAll("-", "");
+}
+
+function mintCode(): string {
+  return crypto.randomUUID().replaceAll("-", "");
 }
 
 /** The relay's entire persistence. It stores envelopes it never inspects:
@@ -32,6 +37,13 @@ export class SwitchboardStore {
       payload TEXT NOT NULL,
       PRIMARY KEY (id, recipient)
     )`);
+    db.run(`CREATE TABLE IF NOT EXISTS invites (
+      code_hash TEXT PRIMARY KEY,
+      username TEXT NOT NULL UNIQUE,
+      created_at INTEGER NOT NULL,
+      expires_at INTEGER NOT NULL,
+      redeemed_at INTEGER
+    )`);
   }
 
   registerBoard(username: string): { username: string; token: string } {
@@ -50,6 +62,55 @@ export class SwitchboardStore {
       .query<{ username: string }, [string]>(`SELECT username FROM boards WHERE token_hash = ?`)
       .get(hashToken(token));
     return row?.username ?? null;
+  }
+
+  /** One outstanding invite per handle (UNIQUE(username) backstops it): creating
+      again replaces the old code atomically, which is also the rotation story. */
+  createInvite(username: string, now: number = Date.now()): { code: string; username: string; expiresAt: number } {
+    const canonical = canonicalUsername(username);
+    const code = mintCode();
+    const expiresAt = now + INVITE_TTL_MS;
+    this.db.transaction(() => {
+      this.db.run(`DELETE FROM invites WHERE username = ?`, [canonical]);
+      this.db.run(
+        `INSERT INTO invites (code_hash, username, created_at, expires_at) VALUES (?, ?, ?, ?)`,
+        [hashToken(code), canonical, now, expiresAt],
+      );
+    })();
+    return { code, username: canonical, expiresAt };
+  }
+
+  /** The identity guard lives here (spec ruling 5): a mismatch consumes nothing
+      and rotates nothing, so a wrong paste can never burn someone else's invite.
+      Consumption is one atomic check-and-set; registerBoard runs only when it hits. */
+  redeemInvite(
+    code: string,
+    username: string,
+    now: number = Date.now(),
+  ): { ok: true; username: string; token: string } | { ok: false; error: "unknown" | "expired" | "spent" | "mismatch" } {
+    const row = this.db
+      .query<{ username: string; expires_at: number; redeemed_at: number | null }, [string]>(
+        `SELECT username, expires_at, redeemed_at FROM invites WHERE code_hash = ?`,
+      )
+      .get(hashToken(code));
+    if (!row) return { ok: false, error: "unknown" };
+    if (row.redeemed_at !== null) return { ok: false, error: "spent" };
+    if (row.expires_at <= now) return { ok: false, error: "expired" };
+    if (row.username !== canonicalUsername(username)) return { ok: false, error: "mismatch" };
+    const consumed = this.db.run(
+      `UPDATE invites SET redeemed_at = ? WHERE code_hash = ? AND redeemed_at IS NULL AND expires_at > ?`,
+      [now, hashToken(code), now],
+    ).changes;
+    if (consumed === 0) return { ok: false, error: "spent" };
+    const board = this.registerBoard(row.username);
+    return { ok: true, ...board };
+  }
+
+  listBoards(): Array<{ username: string; createdAt: number }> {
+    return this.db
+      .query<{ username: string; created_at: number }, []>(`SELECT username, created_at FROM boards ORDER BY username`)
+      .all()
+      .map((r) => ({ username: r.username, createdAt: r.created_at }));
   }
 
   publish(from: string, draft: DraftEnvelope, now: number): { ok: true; delivered: number } | { ok: false; error: "unknown-recipient" } {
@@ -91,6 +152,7 @@ export class SwitchboardStore {
   }
 
   prune(now: number, ttlMs: number = ENVELOPE_TTL_MS): number {
+    this.db.run(`DELETE FROM invites WHERE expires_at < ?`, [now]);
     return this.db.run(`DELETE FROM envelopes WHERE received_at < ?`, [now - ttlMs]).changes;
   }
 }
