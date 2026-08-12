@@ -930,6 +930,13 @@ Bun.serve({
         // reports so the UI never offers a button that can't work.
         if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
+        // isLocal reads the Host header, which a cross-origin form can forge.
+        // Requiring a json content-type takes that away: a form post can only
+        // carry the text/plain-class types, and anything else trips a CORS
+        // preflight the board never answers. The board's own client always
+        // sends application/json.
+        const ct = req.headers.get("content-type") ?? "";
+        if (!ct.toLowerCase().includes("application/json")) return new Response("expected application/json", { status: 415 });
         if (!switchboardAdminToken || !config.switchboard.url) return new Response("inviting is not set up on this board", { status: 400 });
         let body: unknown;
         try {
@@ -954,6 +961,11 @@ Bun.serve({
         // peering, so joining costs no restart.
         if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
+        // Same content-type gate as /peer/invite above: a forged Host header on
+        // a cross-origin form must not be enough to re-point this board's
+        // switchboard config.
+        const ct = req.headers.get("content-type") ?? "";
+        if (!ct.toLowerCase().includes("application/json")) return new Response("expected application/json", { status: 415 });
         let body: unknown;
         try {
           body = await req.json();
