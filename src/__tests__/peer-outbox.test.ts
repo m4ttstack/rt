@@ -20,12 +20,16 @@ afterEach(() => {
 const d = (id: string): DraftEnvelope => ({ id, to: "grace", type: "review-state", sentAt: 1, payload: {} });
 
 describe("classifySend", () => {
-  test("2xx sent, 4xx drop, 5xx and network retry", () => {
+  test("2xx sent, other 4xx drop, 5xx and network retry", () => {
     expect(classifySend(201)).toBe("sent");
     expect(classifySend(422)).toBe("drop");
-    expect(classifySend(401)).toBe("drop");
+    expect(classifySend(404)).toBe("drop");
     expect(classifySend(503)).toBe("retry");
     expect(classifySend("network")).toBe("retry");
+  });
+  test("401 and 403 retry: an unauthorized window is temporary, not a bad envelope", () => {
+    expect(classifySend(401)).toBe("retry");
+    expect(classifySend(403)).toBe("retry");
   });
 });
 
@@ -49,6 +53,17 @@ describe("outbox", () => {
     const remaining = readOutbox(dir);
     expect(remaining.map((e) => e.envelope.id)).toEqual(["later"]);
     expect(remaining[0]!.attempts).toBe(1);
+  });
+  test("drain keeps a 401'd envelope queued so it survives a token rotation", async () => {
+    const dir = freshDir();
+    enqueueOutbox(d("stale-token"), dir, 1);
+    const denied = await drainOutbox(async () => 401, dir);
+    expect(denied).toEqual({ sent: 0, dropped: 0, kept: 1 });
+    expect(readOutbox(dir).map((e) => e.envelope.id)).toEqual(["stale-token"]);
+    // and it goes out once the board has re-joined with a fresh token
+    const after = await drainOutbox(async () => 201, dir);
+    expect(after).toEqual({ sent: 1, dropped: 0, kept: 0 });
+    expect(readOutbox(dir)).toEqual([]);
   });
 });
 
