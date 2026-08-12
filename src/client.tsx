@@ -1750,7 +1750,10 @@ function SettingsModal({
   // one: the server decides what a repeat handle means, not the UI.
   const ask = useCallback((username: string) => {
     const name = username.trim();
-    if (!name) return;
+    // Guard inside the handler, not just on the buttons: the free-text row's
+    // Enter key reaches here directly, and a second POST would burn a second
+    // one-time invite. submitJoin guards itself the same way.
+    if (!name || pending) return;
     setPending(name);
     setInviteError(null);
     fetch("/peer/invite", {
@@ -1773,7 +1776,7 @@ function SettingsModal({
         setInviteError("could not reach the board");
       })
       .finally(() => setPending(null));
-  }, []);
+  }, [pending]);
 
   const join = joinRowState(peering !== null, peering);
   const [joinOpen, setJoinOpen] = useState(false);
@@ -1821,7 +1824,7 @@ function SettingsModal({
             const peerState = m.username === defaultMember || !canInvite ? "unknown" : memberPeerState(m.username, peered);
             return (
               <li key={m.username} className={m.hidden ? "tui-modal-row out" : "tui-modal-row"}>
-                <label className="tui-modal-name" title={m.hidden ? "checked out — hidden from the board" : "checked in"}>
+                <label className="tui-modal-name" title={m.hidden ? "checked out -- hidden from the board" : "checked in"}>
                   <input
                     type="checkbox"
                     className="tui-check-box"
@@ -1852,8 +1855,8 @@ function SettingsModal({
                       invite
                     </button>
                   )}
-                  <span className="tui-modal-count" title={m.count === null ? "checked out — MR count not fetched" : undefined}>
-                    {m.count ?? "—"}
+                  <span className="tui-modal-count" title={m.count === null ? "checked out -- MR count not fetched" : undefined}>
+                    {m.count ?? "--"}
                   </span>
                 </span>
               </li>
@@ -1866,6 +1869,7 @@ function SettingsModal({
             <input
               className="tui-invite-input"
               value={handle}
+              aria-label="username to invite"
               placeholder="username to invite"
               // Cast per the convention at the header editor: tsconfig omits the
               // DOM lib, so e.target.value doesn't typecheck without it.
@@ -1899,6 +1903,7 @@ function SettingsModal({
                 <input
                   className="tui-invite-input"
                   value={joinValue}
+                  aria-label="paste your board invite"
                   placeholder="paste your board invite"
                   onChange={(e) => setJoinValue((e.target as unknown as { value: string }).value)}
                   onKeyDown={(e) => {

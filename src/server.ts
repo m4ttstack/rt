@@ -967,8 +967,10 @@ Bun.serve({
           persist(url, token) {
             // upsertEnvKeys reads "" as a removal, so an empty token must never
             // reach it: that would quietly delete the token line this board is
-            // already peering with. Throwing here is the recovery answer.
-            if (!token) throw new Error("the switchboard returned an empty token");
+            // already peering with. Throwing here is the recovery answer. The
+            // message is interpolated into onboard.ts's 500 body, which the join
+            // UI shows verbatim, so it stays inside the onboarding vocabulary.
+            if (!token) throw new Error("the switchboard sent nothing usable");
             config = saveSwitchboardUrl(url);           // reparsed config swaps in
             upsertEnvKeys(ENV_PATH, { SWITCHBOARD_TOKEN: token });
           },
