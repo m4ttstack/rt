@@ -129,8 +129,8 @@ peer features also need `defaultMember` in `config.json` set to your own GitLab 
 the switchboard is a separate deployable in `switchboard/`, a dumb store-and-forward relay, one process, one sqlite file. deploy it to [Railway](https://railway.app):
 
 - service root: the repo root, not `switchboard/`. the relay imports shared types from `src/peer/`, so a service rooted at `switchboard/` cannot resolve them
-- start command: `bun run switchboard`
-- watch paths: `switchboard/**`, so board-only pushes do not trigger a redeploy of the relay
+- builder: Dockerfile, path `switchboard/Dockerfile`. it copies only the relay's files and runs no `bun install`, because the board's package.json has a `file:` dependency that only resolves on a dev machine
+- watch paths: `switchboard/**` and `src/peer/envelope.ts`, so board-only pushes do not trigger a redeploy of the relay
 - attach a volume and point `SWITCHBOARD_DB` at a path on it (otherwise the database lives on ephemeral disk and every redeploy loses all board registrations)
 - env: `SWITCHBOARD_ADMIN_TOKEN` (pick your own value, the bearer token for minting boards)
 - `PORT` is supplied by Railway
