@@ -1705,6 +1705,7 @@ function Sidebar({
 function SettingsModal({
   members,
   canInvite,
+  local,
   peering,
   defaultMember,
   onToggle,
@@ -1713,6 +1714,11 @@ function SettingsModal({
 }: {
   members: ConfigMember[];
   canInvite: boolean;
+  /** Joining writes this board's own config and .env, so the row is offered
+      only to whoever is at the machine -- POST /peer/join answers a bare
+      forbidden through a tunnel, and an affordance that can only fail is worse
+      than none. canInvite already folds locality in the same way. */
+  local: boolean;
   peering: BoardData["peering"];
   defaultMember: string;
   onToggle: (username: string, hidden: boolean) => void;
@@ -1843,7 +1849,9 @@ function SettingsModal({
                         className="tui-invite-btn"
                         disabled={pending !== null}
                         onClick={() => {
-                          if (confirm("this disconnects their current board until they re-join with the new invite -- continue?")) ask(m.username);
+                          // Minting an invite rotates nothing: the peer's board
+                          // keeps working until the new invite is redeemed.
+                          if (confirm("their current board keeps working until they use the new invite -- continue?")) ask(m.username);
                         }}
                       >
                         re-invite
@@ -1894,34 +1902,36 @@ function SettingsModal({
           </div>
         )}
 
-        <div className="tui-join-row">
-          {join.warning && <p className="tui-modal-sub tui-join-warning">{join.warning}</p>}
-          {joinExpanded ? (
-            <>
-              <span className="tui-join-label">{join.label}</span>
-              <div className="tui-invite-new">
-                <input
-                  className="tui-invite-input"
-                  value={joinValue}
-                  aria-label="paste your board invite"
-                  placeholder="paste your board invite"
-                  onChange={(e) => setJoinValue((e.target as unknown as { value: string }).value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") submitJoin();
-                  }}
-                />
-                <button className="tui-invite-btn" disabled={joining || !joinValue.trim()} onClick={submitJoin}>
-                  join
-                </button>
-              </div>
-              {joinError && <p className="tui-modal-sub tui-invite-error">{joinError}</p>}
-            </>
-          ) : (
-            <button className="tui-join-toggle" onClick={() => setJoinOpen(true)}>
-              {join.label}
-            </button>
-          )}
-        </div>
+        {local && (
+          <div className="tui-join-row">
+            {join.warning && <p className="tui-modal-sub tui-join-warning">{join.warning}</p>}
+            {joinExpanded ? (
+              <>
+                <span className="tui-join-label">{join.label}</span>
+                <div className="tui-invite-new">
+                  <input
+                    className="tui-invite-input"
+                    value={joinValue}
+                    aria-label="paste your board invite"
+                    placeholder="paste your board invite"
+                    onChange={(e) => setJoinValue((e.target as unknown as { value: string }).value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") submitJoin();
+                    }}
+                  />
+                  <button className="tui-invite-btn" disabled={joining || !joinValue.trim()} onClick={submitJoin}>
+                    join
+                  </button>
+                </div>
+                {joinError && <p className="tui-modal-sub tui-invite-error">{joinError}</p>}
+              </>
+            ) : (
+              <button className="tui-join-toggle" onClick={() => setJoinOpen(true)}>
+                {join.label}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2923,6 +2933,7 @@ function Board() {
         <SettingsModal
           members={data.allMembers}
           canInvite={data.canInvite}
+          local={data.local}
           peering={data.peering}
           defaultMember={data.defaultMember}
           onToggle={toggleMember}
