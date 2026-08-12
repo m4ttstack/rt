@@ -41,6 +41,7 @@ or configure manually: copy `config.example.json` → `config.json` and edit; pu
 | `defaultMember` | member username the board opens to by default (or `"all"`); the URL and remembered state override it |
 | `title` | page heading and tab title |
 | `port` | listen port (default 7930) |
+| `host` | bind address; default `127.0.0.1`, set e.g. `"0.0.0.0"` to serve the LAN directly -- see [sharing it](#sharing-it-optional) |
 | `reviewCwd` | absolute path a review agent's herdr pane starts in (a repo checkout); empty disables the review launch. see [review integration](#review-integration-local-only) |
 | `reviewsWorkspace` | herdr workspace label reviews are grouped under (default `reviews`) |
 | `reviewSkill` | domain skill the review wrapper delegates to, e.g. `myteam:review`; empty = the wrapper reviews generically. `respondSkill` / `doctorSkill` are the same for the respond / doctor actions |
@@ -138,7 +139,9 @@ the switchboard is a separate deployable in `switchboard/`, a dumb store-and-for
 - env: `SWITCHBOARD_ADMIN_TOKEN` (pick your own value, the bearer token for minting boards)
 - `PORT` is supplied by Railway
 
-to invite teammates from the board's own UI instead of curl, put the admin token where the board (not the relay) reads it: `switchboardAdminToken` in `~/.rt/secrets.json`, or the `SWITCHBOARD_ADMIN_TOKEN` env var, on the machine running your own board -- plus `switchboard.url` in your `config.json`. with both set, open settings ("team members") locally and each roster member gets an **invite** button; anyone already peered shows **peered** with a **re-invite** button instead, and a free-text row at the bottom invites handles that aren't on your roster at all. either action mints a one-time invite link (`<url>/invite/<code>`, expires in 7 days) shown right there to copy and paste to that teammate. re-invite is also the rotation story: minting a new invite for someone already peered disconnects their current board (the confirm dialog says so) until they redeem the fresh link and reconnect.
+to invite teammates from the board's own UI instead of curl, put the admin token where the board (not the relay) reads it: `switchboardAdminToken` in `~/.rt/secrets.json`, or the `SWITCHBOARD_ADMIN_TOKEN` env var, on the machine running your own board -- plus `switchboard.url` in your `config.json`. with both set, open settings ("team members") locally and each roster member gets an **invite** button; anyone already peered shows **peered** with a **re-invite** button instead, and a free-text row at the bottom invites handles that aren't on your roster at all. either action mints a one-time invite link (`<url>/invite/<code>`, expires in 7 days) shown right there to copy and paste to that teammate. re-invite is the rotation story, with one caveat worth knowing: minting the new invite changes nothing by itself. their current board keeps working, and their access ends only when the new invite is actually redeemed and the token behind it rotates. a true revoke (cutting a board off without waiting on them) is not in v1 -- for that, re-mint or delete the board on the relay directly.
+
+the invite code travels in the url path, so it shows up in the relay host's access logs (the platform's edge logs, e.g. railway's) even though the relay itself never logs it. treat invite links as short-lived secrets: hand them over the same way you would a password, and if one may have leaked, re-invite that handle. the relay keeps one outstanding invite per handle, so minting a fresh one replaces the old code and the leaked link stops working.
 
 the no-UI path still works too -- the relay endpoints stay plain HTTP with the admin bearer token, for scripting or a headless operator setup:
 
