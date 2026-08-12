@@ -246,7 +246,10 @@ async function main() {
     } else {
       console.error("No token entered. Peer features stay disabled until SWITCHBOARD_TOKEN is set.");
     }
-  } else if (classified.kind === "invite" && !defaultMember) {
+  } else if (classified.kind === "invite" && (!defaultMember || defaultMember === "all")) {
+    // "all" is the same blank as far as peering goes: the board can't tell its
+    // own MRs from anyone else's, so redeeming here would burn a one-time
+    // invite on a board that would publish nothing.
     console.error("Peer boards need your username; set it above and re-run.");
   } else if (classified.kind === "invite") {
     // Redeem as late as possible (right before the .env write below) so a crash
@@ -266,9 +269,14 @@ async function main() {
 
   const baseConfig = loadBaseConfig();
   const finalConfig = {
+    // setup rebuilds config.json from the base template, so any key it doesn't
+    // prompt for has to be carried across explicitly or a re-run silently drops
+    // it. `host` is one of those: losing it puts a deliberately LAN-bound board
+    // back on loopback without saying so.
     ...baseConfig,
     defaultMember: defaultMember || "all",
     reviewCwd,
+    ...(typeof existingConfig?.host === "string" && existingConfig.host ? { host: existingConfig.host } : {}),
     ...carrySwitchboard(existingSw, joined),
   };
   writeFileSync(CONFIG_PATH, JSON.stringify(finalConfig, null, 2) + "\n");
