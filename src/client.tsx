@@ -568,6 +568,21 @@ function SlackPostedChip({ slack }: { slack?: SlackInfo }) {
   );
 }
 
+/** Scrolls the returned ref's element into its scroll container whenever `key`
+    turns truthy or changes. For content that appears at the bottom of a capped,
+    scrollable modal: the settings modal stops at 80vh, so a fresh invite row or
+    an expanded join input can render below the fold with nothing to bring it
+    into view. `block: "nearest"` is deliberate -- it's a no-op when the element
+    is already visible, so this never yanks a settled modal around. `any` because
+    tsconfig omits the DOM lib and the element types resolve to empty interfaces. */
+function useRevealOnChange(key: unknown) {
+  const ref = useRef<any>(null);
+  useEffect(() => {
+    if (key) ref.current?.scrollIntoView({ block: "nearest" });
+  }, [key]);
+  return ref;
+}
+
 /** Close a modal on Escape, for the lifetime of the calling component. */
 function useEscapeClose(onClose: () => void): void {
   useEffect(() => {
@@ -1791,6 +1806,18 @@ function SettingsModal({
   const [joining, setJoining] = useState(false);
   const joinExpanded = joinOpen || !join.collapsed;
 
+  // Everything this modal reveals lands at its bottom edge, past 80vh on a
+  // short window. Key each ref on the state that reveals it, not on the
+  // element, so a second invite for a different handle scrolls again.
+  const issuedRef = useRevealOnChange(issued?.invite ?? null);
+  const inviteErrorRef = useRevealOnChange(inviteError);
+  // Reveal the join row when the user opens it, and when peering is rejected
+  // (the warning is why they're here). Not when it's merely open by default on
+  // an unconfigured board: that would scroll every settings open to the bottom,
+  // past the roster the modal is mostly about.
+  const joinRef = useRevealOnChange(joinOpen || peering === "unauthorized");
+  const joinErrorRef = useRevealOnChange(joinError);
+
   const submitJoin = useCallback(() => {
     const value = joinValue.trim();
     if (!value || joining) return;
@@ -1892,10 +1919,14 @@ function SettingsModal({
           </div>
         )}
 
-        {inviteError && <p className="tui-modal-sub tui-invite-error">{inviteError}</p>}
+        {inviteError && (
+          <p ref={inviteErrorRef} className="tui-modal-sub tui-invite-error">
+            {inviteError}
+          </p>
+        )}
 
         {issued && (
-          <div className="tui-invite-row">
+          <div ref={issuedRef} className="tui-invite-row">
             <code className="tui-invite-code">{issued.invite}</code>
             <CopyButton text={issued.invite} className="tui-invite-btn" title="copy invite" label="copy invite" />
             <span className="tui-invite-note">for {issued.username} · one-time, expires in 7 days</span>
@@ -1903,7 +1934,7 @@ function SettingsModal({
         )}
 
         {local && (
-          <div className="tui-join-row">
+          <div ref={joinRef} className="tui-join-row">
             {join.warning && <p className="tui-modal-sub tui-join-warning">{join.warning}</p>}
             {joinExpanded ? (
               <>
@@ -1923,7 +1954,11 @@ function SettingsModal({
                     join
                   </button>
                 </div>
-                {joinError && <p className="tui-modal-sub tui-invite-error">{joinError}</p>}
+                {joinError && (
+                  <p ref={joinErrorRef} className="tui-modal-sub tui-invite-error">
+                    {joinError}
+                  </p>
+                )}
               </>
             ) : (
               <button className="tui-join-toggle" onClick={() => setJoinOpen(true)}>
