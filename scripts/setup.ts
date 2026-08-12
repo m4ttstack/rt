@@ -18,6 +18,8 @@ import {
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { readEnvFile, upsertEnvKeys } from "../src/env-file.ts";
+import { carrySwitchboard, classifySetupAnswer, redeemInvite } from "../src/peer/invite.ts";
+import { canonicalUsername } from "../src/peer/envelope.ts";
 
 // Slack app credentials are NOT checked in — bring your own app (see the README
 // "Slack integration" section). setup reads SLACK_CLIENT_ID / SLACK_CLIENT_SECRET
@@ -228,14 +230,35 @@ async function main() {
     }
   }
 
-  const swUrl = ask(
-    "Switchboard URL for peer boards (optional, blank to skip)",
-    ((existingConfig?.switchboard as { url?: string } | undefined)?.url) ?? "",
-  );
-  if (swUrl) {
-    const swToken = ask("Switchboard board token (minted by your switchboard admin)", env.SWITCHBOARD_TOKEN);
-    if (swToken) env.SWITCHBOARD_TOKEN = swToken;
-    else console.error("No token entered. Peer features stay disabled until SWITCHBOARD_TOKEN is set.");
+  // Peer boards: one paste. An invite link joins outright; a bare URL falls back
+  // to the manual token prompt; blank keeps whatever is already configured.
+  let joined: { url: string } | null = null;
+  const existingSw = existingConfig?.switchboard as { url?: string } | undefined;
+  const answer = ask("Board invite for peer boards (paste the link; blank keeps current settings)", "");
+  const classified = classifySetupAnswer(answer);
+  if (classified.kind === "invalid") {
+    console.error(classified.message);
+  } else if (classified.kind === "manual-url") {
+    const swToken = ask("Switchboard board token (from your operator)", env.SWITCHBOARD_TOKEN);
+    if (swToken) {
+      env.SWITCHBOARD_TOKEN = swToken;
+      joined = { url: classified.url };
+    } else {
+      console.error("No token entered. Peer features stay disabled until SWITCHBOARD_TOKEN is set.");
+    }
+  } else if (classified.kind === "invite" && !defaultMember) {
+    console.error("Peer boards need your username; set it above and re-run.");
+  } else if (classified.kind === "invite") {
+    // Redeem as late as possible (right before the .env write below) so a crash
+    // between redeem and persist cannot burn the one-time invite (spec I4).
+    const r = await redeemInvite(classified.url, classified.code, canonicalUsername(defaultMember), fetch);
+    if (r.ok) {
+      env.SWITCHBOARD_TOKEN = r.token;
+      joined = { url: classified.url };
+      console.log(`Joined peer boards as ${r.username}.`);
+    } else {
+      console.error(`Could not join peer boards: ${r.message}`);
+    }
   }
 
   upsertEnvKeys(ENV_PATH, env);
@@ -246,7 +269,7 @@ async function main() {
     ...baseConfig,
     defaultMember: defaultMember || "all",
     reviewCwd,
-    ...(swUrl ? { switchboard: { url: swUrl } } : {}),
+    ...carrySwitchboard(existingSw, joined),
   };
   writeFileSync(CONFIG_PATH, JSON.stringify(finalConfig, null, 2) + "\n");
   console.log(`Wrote ${CONFIG_PATH}`);

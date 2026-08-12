@@ -61,3 +61,15 @@ export async function redeemInvite(
   if (res.status === 409) return { ok: false, error: "mismatch", message };
   return { ok: false, error: "network", message: message || `switchboard answered ${res.status}` };
 }
+
+/** Setup rebuilds config.json from a base template, which would silently drop
+    an existing switchboard block on re-run (spec I7). This computes the block
+    to carry into finalConfig: a fresh join wins, else whatever already stood. */
+export function carrySwitchboard(
+  existing: { url?: string } | undefined,
+  joined: { url: string } | null,
+): { switchboard: { url: string } } | Record<string, never> {
+  if (joined) return { switchboard: { url: joined.url } };
+  if (existing?.url) return { switchboard: { url: existing.url } };
+  return {};
+}

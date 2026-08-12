@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { classifySetupAnswer, parseInvite, redeemInvite } from "../peer/invite.ts";
+import { carrySwitchboard, classifySetupAnswer, parseInvite, redeemInvite } from "../peer/invite.ts";
 
 describe("parseInvite", () => {
   test("extracts url + code, tolerating whitespace", () => {
@@ -55,5 +55,13 @@ describe("redeemInvite", () => {
     await expect(redeemInvite("https://x", "c", "u", notJson)).resolves.toEqual({
       ok: false, error: "network", message: "unexpected response from the switchboard",
     });
+  });
+});
+
+describe("carrySwitchboard", () => {
+  test("fresh join wins, existing survives a blank re-run, absent stays absent", () => {
+    expect(carrySwitchboard({ url: "https://old" }, { url: "https://new" })).toEqual({ switchboard: { url: "https://new" } });
+    expect(carrySwitchboard({ url: "https://old" }, null)).toEqual({ switchboard: { url: "https://old" } });
+    expect(carrySwitchboard(undefined, null)).toEqual({});
   });
 });
