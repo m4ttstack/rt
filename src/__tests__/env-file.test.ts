@@ -36,4 +36,21 @@ describe("upsertEnvKeys", () => {
     upsertEnvKeys(p, { A: "1" });
     expect(readEnvFile(p)).toEqual({ A: "1" });
   });
+  test("empty string value removes an existing key's line", () => {
+    const p = tmpEnv("# keep me\nSLACK_TOKEN=stale\nGITLAB_TOKEN=g\n");
+    upsertEnvKeys(p, { SLACK_TOKEN: "" });
+    const text = readFileSync(p, "utf8");
+    expect(text).toContain("# keep me");
+    expect(text).toContain("GITLAB_TOKEN=g");
+    expect(text).not.toContain("SLACK_TOKEN");
+    expect(text).not.toContain("stale");
+    expect(readEnvFile(p)).toEqual({ GITLAB_TOKEN: "g" });
+  });
+  test("empty string value for a key that never existed writes nothing", () => {
+    const p = tmpEnv("GITLAB_TOKEN=g\n");
+    upsertEnvKeys(p, { SLACK_TOKEN: "" });
+    const text = readFileSync(p, "utf8");
+    expect(text).not.toContain("SLACK_TOKEN");
+    expect(readEnvFile(p)).toEqual({ GITLAB_TOKEN: "g" });
+  });
 });

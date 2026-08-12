@@ -207,7 +207,7 @@ async function main() {
   if (!skipSlack) {
     if (env.SLACK_TOKEN) {
       const reuse = (ask("An existing SLACK_TOKEN was found. Reuse it? (Y/n)", "Y") || "Y").toLowerCase().startsWith("n");
-      if (reuse) delete env.SLACK_TOKEN;
+      if (reuse) env.SLACK_TOKEN = "";
     }
     if (!env.SLACK_TOKEN) {
       const clientId = ask("Slack app client id", env.SLACK_CLIENT_ID || process.env.SLACK_CLIENT_ID);
