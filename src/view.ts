@@ -238,6 +238,35 @@ export function parseViewState(
   };
 }
 
+/** Settings-modal peering state for one roster member. A null peered list means
+    the GET /peer/boards fetch hasn't resolved: render nothing rather than a
+    wrong "invitable". Comparison is canonical (trimmed, lowercased) so a roster
+    handle typed with different case never hides a board that is already peered. */
+export function memberPeerState(username: string, peered: string[] | null): "peered" | "invitable" | "unknown" {
+  if (peered === null) return "unknown";
+  const canonical = username.trim().toLowerCase();
+  return peered.some((p) => p.trim().toLowerCase() === canonical) ? "peered" : "invitable";
+}
+
+/** What the settings modal's join row should say and whether it starts folded.
+    `switchboardConfigured` is the client's read of `data.peering !== null`; a
+    configured board whose token is missing also reports null peering, and gets
+    the open join row, which is exactly right. */
+export function joinRowState(
+  switchboardConfigured: boolean,
+  peering: "ok" | "unauthorized" | null,
+): { label: string; collapsed: boolean; warning?: string } {
+  if (peering === "unauthorized") {
+    return {
+      label: "re-join with a new invite",
+      collapsed: false,
+      warning: "peering token rejected -- re-join with a new invite",
+    };
+  }
+  if (switchboardConfigured) return { label: "re-join with a new invite", collapsed: true };
+  return { label: "join peer boards", collapsed: false };
+}
+
 /** Query string (with leading "?") carrying only non-default values; "" when all default. */
 export function serializeViewState(v: ViewState): string {
   const params = new URLSearchParams();

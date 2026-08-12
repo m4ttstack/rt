@@ -7,7 +7,7 @@ import { hasChangesRequested, stripDraftPrefix } from "./data.ts";
 import { getReviewDisplayState } from "@mattstack/glance";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { filterByMember, sortMRs, groupMRs, parseViewState, serializeViewState, commentDot, commentsAllResolved, dataAgeLabel, statusFlags, GROUP_KEYS, SORT_KEYS } from "./view.ts";
+import { filterByMember, sortMRs, groupMRs, parseViewState, serializeViewState, commentDot, commentsAllResolved, dataAgeLabel, statusFlags, memberPeerState, joinRowState, GROUP_KEYS, SORT_KEYS } from "./view.ts";
 import type { GroupKey, SortKey, ViewState } from "./view.ts";
 import { renderMr, renderMulti, selectionHeader, MAX_HEADER_LEN, type MrFacts, type SlackTemplates } from "./template.ts";
 import { selectionOf, postableOf } from "./selection.ts";
@@ -78,6 +78,12 @@ interface BoardData {
   /** The board's own configured stale cutoff (days), for comparing against
       `scopeWindowDays` -- a board asking for more history than rt syncs. */
   staleAfterDays: number;
+  /** Whether this board can hand out peer-board invites: local request, and the
+      board holds both a switchboard url and the credential that authorizes it. */
+  canInvite: boolean;
+  /** Peering health: "ok" when the switchboard accepts us, "unauthorized" when
+      it rejects us, null when this board isn't peering at all. */
+  peering: "ok" | "unauthorized" | null;
 }
 
 declare global {
@@ -1692,17 +1698,114 @@ function Sidebar({
 
 // ── settings modal ─────────────────────────────────────────────────────────
 
-/** Check members in/out. Toggling persists the hidden flag to config.json. */
+/** Check members in/out, and (on a board that can hand out invites) put each
+    teammate on a board of their own. Toggling persists the hidden flag to
+    config.json; every peering affordance is conditional, so a board with no
+    switchboard renders exactly the roster it always did. */
 function SettingsModal({
   members,
+  canInvite,
+  peering,
+  defaultMember,
   onToggle,
+  onJoined,
   onClose,
 }: {
   members: ConfigMember[];
+  canInvite: boolean;
+  peering: BoardData["peering"];
+  defaultMember: string;
   onToggle: (username: string, hidden: boolean) => void;
+  /** A join landed: pull /data.json so peering health and the row catch up. */
+  onJoined: () => void;
   onClose: () => void;
 }) {
   useEscapeClose(onClose);
+
+  // null until GET /peer/boards answers, and it stays null if that fetch fails,
+  // so memberPeerState renders nothing rather than calling a peer invitable.
+  const [peered, setPeered] = useState<string[] | null>(null);
+  const [issued, setIssued] = useState<{ username: string; invite: string } | null>(null);
+  const [inviteError, setInviteError] = useState<string | null>(null);
+  const [pending, setPending] = useState<string | null>(null);
+  const [handle, setHandle] = useState("");
+
+  useEffect(() => {
+    if (!canInvite) return;
+    let live = true;
+    fetch("/peer/boards")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
+      .then((b) => {
+        if (!live) return;
+        const boards = (b as { boards?: { username: string }[] }).boards ?? [];
+        setPeered(boards.map((x) => x.username));
+      })
+      .catch(() => {});
+    return () => {
+      live = false;
+    };
+  }, [canInvite]);
+
+  // One handler behind every invite / re-invite button, including the free-text
+  // one: the server decides what a repeat handle means, not the UI.
+  const ask = useCallback((username: string) => {
+    const name = username.trim();
+    if (!name) return;
+    setPending(name);
+    setInviteError(null);
+    fetch("/peer/invite", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ username: name }),
+    })
+      .then(async (r) => {
+        const text = await r.text();
+        if (!r.ok) {
+          // The server's words, verbatim: it knows why this failed and we don't.
+          setIssued(null);
+          setInviteError(text.trim() || `invite failed (${r.status})`);
+          return;
+        }
+        setIssued({ username: name, invite: (JSON.parse(text) as { invite: string }).invite });
+      })
+      .catch(() => {
+        setIssued(null);
+        setInviteError("could not reach the board");
+      })
+      .finally(() => setPending(null));
+  }, []);
+
+  const join = joinRowState(peering !== null, peering);
+  const [joinOpen, setJoinOpen] = useState(false);
+  const [joinValue, setJoinValue] = useState("");
+  const [joinError, setJoinError] = useState<string | null>(null);
+  const [joining, setJoining] = useState(false);
+  const joinExpanded = joinOpen || !join.collapsed;
+
+  const submitJoin = useCallback(() => {
+    const value = joinValue.trim();
+    if (!value || joining) return;
+    setJoining(true);
+    setJoinError(null);
+    fetch("/peer/join", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ invite: value }),
+    })
+      .then(async (r) => {
+        const text = await r.text();
+        if (!r.ok) {
+          setJoinError(text.trim() || `join failed (${r.status})`);
+          return;
+        }
+        setJoinValue("");
+        setJoinOpen(false);
+        onJoined();
+      })
+      .catch(() => setJoinError("could not reach the board"))
+      .finally(() => setJoining(false));
+  }, [joinValue, joining, onJoined]);
+
   return (
     <div className="tui-modal-overlay" onClick={onClose}>
       <div className="tui-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal aria-label="team settings">
@@ -1714,23 +1817,106 @@ function SettingsModal({
         </div>
         <p className="tui-modal-sub"># check people out to hide them from the board</p>
         <ul className="tui-modal-list">
-          {members.map((m) => (
-            <li key={m.username} className={m.hidden ? "tui-modal-row out" : "tui-modal-row"}>
-              <label className="tui-modal-name" title={m.hidden ? "checked out — hidden from the board" : "checked in"}>
-                <input
-                  type="checkbox"
-                  className="tui-check-box"
-                  checked={!m.hidden}
-                  onChange={() => onToggle(m.username, !m.hidden)}
-                />
-                <Invadr id={m.username} palette="css-vars" className="tui-avatar" /> {m.name ?? m.username}
-              </label>
-              <span className="tui-modal-count" title={m.count === null ? "checked out — MR count not fetched" : undefined}>
-                {m.count ?? "—"}
-              </span>
-            </li>
-          ))}
+          {members.map((m) => {
+            const peerState = m.username === defaultMember || !canInvite ? "unknown" : memberPeerState(m.username, peered);
+            return (
+              <li key={m.username} className={m.hidden ? "tui-modal-row out" : "tui-modal-row"}>
+                <label className="tui-modal-name" title={m.hidden ? "checked out — hidden from the board" : "checked in"}>
+                  <input
+                    type="checkbox"
+                    className="tui-check-box"
+                    checked={!m.hidden}
+                    onChange={() => onToggle(m.username, !m.hidden)}
+                  />
+                  <Invadr id={m.username} palette="css-vars" className="tui-avatar" /> {m.name ?? m.username}
+                </label>
+                <span className="tui-modal-right">
+                  {peerState === "peered" && (
+                    <>
+                      <span className="tui-peered" title="on peer boards">
+                        peered
+                      </span>
+                      <button
+                        className="tui-invite-btn"
+                        disabled={pending !== null}
+                        onClick={() => {
+                          if (confirm("this disconnects their current board until they re-join with the new invite -- continue?")) ask(m.username);
+                        }}
+                      >
+                        re-invite
+                      </button>
+                    </>
+                  )}
+                  {peerState === "invitable" && (
+                    <button className="tui-invite-btn" disabled={pending !== null} onClick={() => ask(m.username)}>
+                      invite
+                    </button>
+                  )}
+                  <span className="tui-modal-count" title={m.count === null ? "checked out — MR count not fetched" : undefined}>
+                    {m.count ?? "—"}
+                  </span>
+                </span>
+              </li>
+            );
+          })}
         </ul>
+
+        {canInvite && (
+          <div className="tui-invite-new">
+            <input
+              className="tui-invite-input"
+              value={handle}
+              placeholder="username to invite"
+              // Cast per the convention at the header editor: tsconfig omits the
+              // DOM lib, so e.target.value doesn't typecheck without it.
+              onChange={(e) => setHandle((e.target as unknown as { value: string }).value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") ask(handle);
+              }}
+            />
+            <button className="tui-invite-btn" disabled={pending !== null || !handle.trim()} onClick={() => ask(handle)}>
+              invite
+            </button>
+          </div>
+        )}
+
+        {inviteError && <p className="tui-modal-sub tui-invite-error">{inviteError}</p>}
+
+        {issued && (
+          <div className="tui-invite-row">
+            <code className="tui-invite-code">{issued.invite}</code>
+            <CopyButton text={issued.invite} className="tui-invite-btn" title="copy invite" label="copy invite" />
+            <span className="tui-invite-note">for {issued.username} · one-time, expires in 7 days</span>
+          </div>
+        )}
+
+        <div className="tui-join-row">
+          {join.warning && <p className="tui-modal-sub tui-join-warning">{join.warning}</p>}
+          {joinExpanded ? (
+            <>
+              <span className="tui-join-label">{join.label}</span>
+              <div className="tui-invite-new">
+                <input
+                  className="tui-invite-input"
+                  value={joinValue}
+                  placeholder="paste your board invite"
+                  onChange={(e) => setJoinValue((e.target as unknown as { value: string }).value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") submitJoin();
+                  }}
+                />
+                <button className="tui-invite-btn" disabled={joining || !joinValue.trim()} onClick={submitJoin}>
+                  join
+                </button>
+              </div>
+              {joinError && <p className="tui-modal-sub tui-invite-error">{joinError}</p>}
+            </>
+          ) : (
+            <button className="tui-join-toggle" onClick={() => setJoinOpen(true)}>
+              {join.label}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -2729,7 +2915,15 @@ function Board() {
       )}
 
       {showSettings && (
-        <SettingsModal members={data.allMembers} onToggle={toggleMember} onClose={() => setShowSettings(false)} />
+        <SettingsModal
+          members={data.allMembers}
+          canInvite={data.canInvite}
+          peering={data.peering}
+          defaultMember={data.defaultMember}
+          onToggle={toggleMember}
+          onJoined={() => load()}
+          onClose={() => setShowSettings(false)}
+        />
       )}
 
       {rowMenu && (
