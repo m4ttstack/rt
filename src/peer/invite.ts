@@ -42,11 +42,20 @@ export async function redeemInvite(
     return { ok: false, error: "network", message: "could not reach the switchboard; check the address and try again" };
   }
   if (res.ok) {
-    const body = (await res.json()) as { username?: unknown; token?: unknown };
-    if (typeof body.username === "string" && typeof body.token === "string") return { ok: true, username: body.username, token: body.token };
+    try {
+      const body = (await res.json()) as { username?: unknown; token?: unknown };
+      if (typeof body.username === "string" && typeof body.token === "string") return { ok: true, username: body.username, token: body.token };
+    } catch {
+      // fall through: malformed body maps to the same "unexpected response" error below
+    }
     return { ok: false, error: "network", message: "unexpected response from the switchboard" };
   }
-  const message = await res.text();
+  let message: string;
+  try {
+    message = await res.text();
+  } catch {
+    message = `switchboard answered ${res.status}`;
+  }
   if (res.status === 404) return { ok: false, error: "unknown", message };
   if (res.status === 410) return { ok: false, error: "expired", message };
   if (res.status === 409) return { ok: false, error: "mismatch", message };

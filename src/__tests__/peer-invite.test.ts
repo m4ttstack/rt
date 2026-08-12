@@ -49,4 +49,11 @@ describe("redeemInvite", () => {
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toBe("network");
   });
+
+  test("resolves (not rejects) to a typed network error on a 200 with unparseable JSON", async () => {
+    const notJson = fake(200, "not json {");
+    await expect(redeemInvite("https://x", "c", "u", notJson)).resolves.toEqual({
+      ok: false, error: "network", message: "unexpected response from the switchboard",
+    });
+  });
 });
