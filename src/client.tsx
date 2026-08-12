@@ -1856,7 +1856,7 @@ function SettingsModal({
                     </button>
                   )}
                   <span className="tui-modal-count" title={m.count === null ? "checked out -- MR count not fetched" : undefined}>
-                    {m.count ?? "--"}
+                    {m.count ?? "—"}
                   </span>
                 </span>
               </li>
