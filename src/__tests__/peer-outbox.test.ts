@@ -72,8 +72,13 @@ describe("makeSwitchboardClient", () => {
   test("inbox parses envelopes and returns null on failure", async () => {
     const env = { id: "e", from: "ada", to: "grace", type: "t", sentAt: 1, receivedAt: 2, payload: {} };
     const good = (async () => new Response(JSON.stringify({ envelopes: [env, { junk: true }] }), { status: 200 })) as typeof fetch;
-    expect((await makeSwitchboardClient("https://sb.test", "t", good).inbox())?.map((e) => e.id)).toEqual(["e"]);
+    const envelopes = await makeSwitchboardClient("https://sb.test", "t", good).inbox();
+    expect(Array.isArray(envelopes) ? envelopes.map((e) => e.id) : envelopes).toEqual(["e"]);
     const bad = (async () => new Response("nope", { status: 500 })) as typeof fetch;
     expect(await makeSwitchboardClient("https://sb.test", "t", bad).inbox()).toBeNull();
+  });
+  test("inbox distinguishes a 401 from any other relay failure", async () => {
+    const denied = (async () => new Response("nope", { status: 401 })) as typeof fetch;
+    expect(await makeSwitchboardClient("https://sb.test", "t", denied).inbox()).toBe("unauthorized");
   });
 });

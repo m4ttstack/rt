@@ -17,7 +17,8 @@ import { launchReReview } from "./review-launch.ts";
 import { readSlackRefs, attachSlack, resolveSlackRef, reactToMR, unreactFromMR, postToSlack, REVIEW_EMOJI } from "./slack.ts";
 import { signalEmoji, parseAgentSignal } from "./agent-signal.ts";
 import { makeSwitchboardClient, type SwitchboardClient } from "./peer/client.ts";
-import { runPeerTick, type MaterializeDeps } from "./peer/inbox.ts";
+import { type MaterializeDeps } from "./peer/inbox.ts";
+import { makePeering } from "./peer/runtime.ts";
 import { enqueueOutbox, drainOutbox, classifySend } from "./peer/outbox.ts";
 import { makeEnvelope, canonicalUsername, type ReviewStatePayload, type ReReviewRequestPayload } from "./peer/envelope.ts";
 import { writePeerReview, readPeerReviews, prunePeerReviews, attachPeerReviews, type PeerReviewState } from "./peer/peer-reviews.ts";
@@ -50,25 +51,19 @@ function gitlab(): GitLabProvider {
 const slackToken = loadSlackToken();
 
 // Optional peer relay. Both a configured url and a token are required; without
-// either, peerClient stays null and every peer feature (publish, poll, /nudge)
-// is off, leaving the board exactly as it was.
-const switchboardToken = loadSwitchboardToken();
-const peerClient = config.switchboard.url && switchboardToken
-  ? makeSwitchboardClient(config.switchboard.url, switchboardToken)
-  : null;
-const peerDeps: MaterializeDeps = {
+// either, peering stays unstarted and every peer feature (publish, poll,
+// /nudge) is off, leaving the board exactly as it was. The runtime is startable
+// later at runtime too, so joining a switchboard needs no restart.
+const peerDeps: Omit<MaterializeDeps, "reportAuth"> = {
   writePeerReview,
   writeNudge,
   resolveSentNudge,
   retireSentNudge,
   log: (line) => console.error(line),
 };
-if (peerClient) {
-  // Once now so a restart picks up whatever queued while the board was down,
-  // then on a slow tick -- peer state is ambient context, not a hot path.
-  void runPeerTick(peerClient, peerDeps);
-  setInterval(() => void runPeerTick(peerClient, peerDeps), 60_000);
-}
+const peering = makePeering({ makeClient: makeSwitchboardClient, deps: peerDeps });
+const switchboardToken = loadSwitchboardToken();
+if (config.switchboard.url && switchboardToken) peering.start(config.switchboard.url, switchboardToken);
 
 /** Send what's queued without making the caller wait on the relay. Anything
     still queued goes out on the next tick, so a failure here only costs
@@ -313,6 +308,10 @@ const port = Number(process.env.PORT) || config.port;
 
 Bun.serve({
   port,
+  // Loopback by default (spec ruling 6): local-only gates should be
+  // network-local, not just Host-header-local. config.host opts into wider
+  // binds.
+  hostname: config.host || "127.0.0.1",
   // The cold fetch (paging the project MR list + batch-fetching) can exceed
   // Bun's 10s default; give it room so the first request doesn't time out.
   idleTimeout: 60,
@@ -751,7 +750,8 @@ Bun.serve({
         // no way to tell this board's own MRs from a peer's. Without that, the
         // own-MR guard below can never match and the board would relay a
         // review-state for every MR on it, including publishing to itself.
-        if (peerClient && signal.kind === "review" && config.defaultMember !== "all") {
+        const pc = peering.current()?.client;
+        if (pc && signal.kind === "review" && config.defaultMember !== "all") {
           const snapshotForPeer = await cache.get();
           const authorUsername = snapshotForPeer.mrs.find((m) => m.webUrl === signal.mrUrl)?.author.username;
           // Never relay a review of this board's own MR: the author is right
@@ -761,7 +761,7 @@ Bun.serve({
               mrUrl: signal.mrUrl, iid: signal.iid, status: signal.status,
               outcome: signal.outcome, updatedAt: Date.now(),
             } satisfies ReviewStatePayload));
-            kickOutbox(peerClient);
+            kickOutbox(pc);
           }
         }
         const emoji = signalEmoji(signal.kind, signal.status, signal.outcome);
@@ -863,7 +863,8 @@ Bun.serve({
         // relays the human's click; all policy runs in the peer's triage.
         if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
-        if (!peerClient) return new Response("switchboard not configured", { status: 400 });
+        const pc = peering.current()?.client;
+        if (!pc) return new Response("switchboard not configured", { status: 400 });
         let body: unknown;
         try {
           body = await req.json();
@@ -886,7 +887,7 @@ Bun.serve({
         // reviewer has no board on the switchboard) is permanent, and the drain
         // would drop it with only a log -- leaving the clicker an "ok" and a
         // chip reading "requested" for 48h for a send that can never happen.
-        const status = await peerClient.publish(draft);
+        const status = await pc.publish(draft);
         const cls = classifySend(status);
         if (cls === "drop") {
           // 422 is the relay's unknown-recipient answer, and the only 4xx a

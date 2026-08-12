@@ -13,6 +13,10 @@ export interface MaterializeDeps {
   resolveSentNudge(mrUrl: string, resolution: { result: NudgeResult | "confirmed"; reason?: string; at: number }): void;
   retireSentNudge(mrUrl: string, ifSentBefore: number): void;
   log(line: string): void;
+  /** Called once per tick that reached the relay: "unauthorized" on a 401
+      inbox, "ok" on a fetch that came back. Lets the runtime track token
+      health without the tick knowing what it is used for. */
+  reportAuth?: (state: "ok" | "unauthorized") => void;
 }
 
 /** The board's entire inbound involvement: materialize, never decide. Every
@@ -66,7 +70,14 @@ export async function runPeerTick(
   try {
     await drainOutbox((d) => client.publish(d), outboxDir);
     const envelopes = await client.inbox();
+    // A 401 is a token problem, not a transient one: report it and stop, so
+    // nothing is materialized or acked against a rejected token.
+    if (envelopes === "unauthorized") {
+      deps.reportAuth?.("unauthorized");
+      return;
+    }
     if (!envelopes) return;
+    deps.reportAuth?.("ok");
     for (const e of envelopes) {
       // Payload parse failures are already handled inside; this catches a
       // throwing store write (fs errors). One bad envelope must not skip the
