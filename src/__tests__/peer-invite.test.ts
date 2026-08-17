@@ -6,6 +6,12 @@ describe("parseInvite", () => {
     const p = parseInvite("  https://sb.example.app/invite/aabbccddeeff00112233445566778899 \n");
     expect(p).toEqual({ ok: true, url: "https://sb.example.app", code: "aabbccddeeff00112233445566778899" });
   });
+  test("lowercases the code and tolerates a trailing slash after it", () => {
+    const upper = parseInvite("https://sb.example.app/invite/AABBCCDDEEFF00112233445566778899");
+    expect(upper).toEqual({ ok: true, url: "https://sb.example.app", code: "aabbccddeeff00112233445566778899" });
+    const slashed = parseInvite("https://sb.example.app/invite/aabbccddeeff00112233445566778899/");
+    expect(slashed).toEqual({ ok: true, url: "https://sb.example.app", code: "aabbccddeeff00112233445566778899" });
+  });
   test("rejects non-invite strings with a clear message", () => {
     for (const bad of ["", "not a url", "https://sb.example.app", "https://sb.example.app/invite/", "https://sb.example.app/invite/nothex!"]) {
       const p = parseInvite(bad);
@@ -24,6 +30,12 @@ describe("classifySetupAnswer", () => {
   });
   test("garbage input is invalid, not silently skipped", () => {
     expect(classifySetupAnswer("garbage")).toEqual({ kind: "invalid", message: expect.any(String) });
+  });
+  test("a broken invite link is invalid, never a manual url", () => {
+    // Falling through to manual-url would store the whole invite path as
+    // switchboard.url, and every later relay call would target
+    // .../invite/abc/<endpoint>.
+    expect(classifySetupAnswer("https://sb.example.app/invite/abc")).toEqual({ kind: "invalid", message: expect.any(String) });
   });
 });
 

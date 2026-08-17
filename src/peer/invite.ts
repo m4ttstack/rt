@@ -21,6 +21,11 @@ export function classifySetupAnswer(s: string):
   if (!trimmed) return { kind: "skip" };
   const inv = parseInvite(trimmed);
   if (inv.ok) return { kind: "invite", url: inv.url, code: inv.code };
+  // Something invite-shaped that did not parse (a truncated code, say) is a
+  // broken invite, not a switchboard address: treating it as one would store
+  // the whole invite path as switchboard.url and point every later relay call
+  // at .../invite/<code>/<endpoint>.
+  if (/\/invite\//i.test(trimmed)) return { kind: "invalid", message: inv.message };
   if (/^https?:\/\//i.test(trimmed)) return { kind: "manual-url", url: trimmed.replace(/\/+$/, "") };
   return { kind: "invalid", message: inv.message };
 }
