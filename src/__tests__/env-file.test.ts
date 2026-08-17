@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readEnvFile, upsertEnvKeys } from "../env-file.ts";
@@ -14,6 +14,10 @@ describe("readEnvFile", () => {
   test("parses KEY=VALUE, skipping comments and blanks", () => {
     const p = tmpEnv("# comment\nA=1\n\nB=two=parts\n");
     expect(readEnvFile(p)).toEqual({ A: "1", B: "two=parts" });
+  });
+  test("trims spaces around = and strips one pair of surrounding quotes", () => {
+    const p = tmpEnv('A="quoted"\nB = spaced \nC=\'single\'\nD="ragged\n');
+    expect(readEnvFile(p)).toEqual({ A: "quoted", B: "spaced", C: "single", D: '"ragged' });
   });
   test("missing file reads as empty", () => {
     expect(readEnvFile(join(tmpdir(), "does-not-exist-xyz", ".env"))).toEqual({});
@@ -45,6 +49,20 @@ describe("upsertEnvKeys", () => {
     expect(text).not.toContain("SLACK_TOKEN");
     expect(text).not.toContain("stale");
     expect(readEnvFile(p)).toEqual({ GITLAB_TOKEN: "g" });
+  });
+  test("replaces a hand-written 'KEY = value' line instead of appending a duplicate", () => {
+    const p = tmpEnv("SWITCHBOARD_TOKEN = old\n");
+    upsertEnvKeys(p, { SWITCHBOARD_TOKEN: "new" });
+    const text = readFileSync(p, "utf8");
+    expect(text).not.toContain("old");
+    expect(text.match(/SWITCHBOARD_TOKEN/g)?.length).toBe(1);
+    expect(readEnvFile(p)).toEqual({ SWITCHBOARD_TOKEN: "new" });
+  });
+  test("leaves the file owner-only, even over a stale tmp file", () => {
+    const p = tmpEnv("A=1\n");
+    writeFileSync(p + ".tmp", "junk\n", { mode: 0o666 });
+    upsertEnvKeys(p, { A: "2" });
+    expect(statSync(p).mode & 0o777).toBe(0o600);
   });
   test("empty string value for a key that never existed writes nothing", () => {
     const p = tmpEnv("GITLAB_TOKEN=g\n");

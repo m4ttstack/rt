@@ -1,4 +1,14 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+
+/** Hand-written lines are not written the way this file writes them: `KEY = v`
+    is legal and bun's own .env loader trims around the `=` and strips one pair
+    of surrounding quotes off the value. Reading it any other way hands back a
+    key nothing ever matches. */
+function stripQuotes(value: string): string {
+  const q = value[0];
+  if ((q === '"' || q === "'") && value.length >= 2 && value.endsWith(q)) return value.slice(1, -1);
+  return value;
+}
 
 /** .env reader/writer shared by setup and the board server. The writer is a
     read-modify-write that preserves unrelated lines and comments: this file
@@ -11,7 +21,7 @@ export function readEnvFile(path: string): Record<string, string> {
     if (!trimmed || trimmed.startsWith("#")) continue;
     const eq = trimmed.indexOf("=");
     if (eq === -1) continue;
-    out[trimmed.slice(0, eq)] = trimmed.slice(eq + 1);
+    out[trimmed.slice(0, eq).trim()] = stripQuotes(trimmed.slice(eq + 1).trim());
   }
   return out;
 }
@@ -29,7 +39,9 @@ export function upsertEnvKeys(path: string, updates: Record<string, string>): vo
     if (!trimmed || trimmed.startsWith("#")) return [line];
     const eq = trimmed.indexOf("=");
     if (eq === -1) return [line];
-    const key = trimmed.slice(0, eq);
+    // Trimmed to match readEnvFile: an untrimmed "KEY " matches no update, so
+    // the stale line would survive and the new value land beside it.
+    const key = trimmed.slice(0, eq).trim();
     if (key in pending) {
       const value = pending[key]!;
       delete pending[key];
@@ -42,7 +54,18 @@ export function upsertEnvKeys(path: string, updates: Record<string, string>): vo
     if (value === "") continue;
     next.push(`${key}=${value}`);
   }
+  // The mode option only applies to a file this call creates, so a tmp left
+  // behind by an earlier crash would carry its own (possibly loose) permissions
+  // onto .env through the rename. chmod after the write settles it either way,
+  // and a failed write takes the orphan with it rather than leaving tokens in a
+  // stray file.
   const tmp = path + ".tmp";
-  writeFileSync(tmp, next.join("\n") + "\n", { mode: 0o600 });
-  renameSync(tmp, path);
+  try {
+    writeFileSync(tmp, next.join("\n") + "\n", { mode: 0o600 });
+    chmodSync(tmp, 0o600);
+    renameSync(tmp, path);
+  } catch (err) {
+    rmSync(tmp, { force: true });
+    throw err;
+  }
 }
