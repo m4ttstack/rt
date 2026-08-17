@@ -983,8 +983,20 @@ Bun.serve({
             // message is interpolated into onboard.ts's 500 body, which the join
             // UI shows verbatim, so it stays inside the onboarding vocabulary.
             if (!token) throw new Error("the switchboard sent nothing usable");
+            // The two writes must land together or not at all. config.json
+            // naming the new relay while .env still holds the old token is the
+            // one state nothing recovers from: this process keeps peering on
+            // the live handle, but the next restart pairs the new url with the
+            // old token and 401s forever. So put the url back if the token
+            // write fails, and let the join report the failure.
+            const previousUrl = config.switchboard.url;
             config = saveSwitchboardUrl(url);           // reparsed config swaps in
-            upsertEnvKeys(ENV_PATH, { SWITCHBOARD_TOKEN: token });
+            try {
+              upsertEnvKeys(ENV_PATH, { SWITCHBOARD_TOKEN: token });
+            } catch (err) {
+              config = saveSwitchboardUrl(previousUrl);
+              throw err;
+            }
           },
           startPeering: (url, token) => peering.start(url, token),
         });
