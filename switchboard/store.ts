@@ -82,7 +82,9 @@ export class SwitchboardStore {
 
   /** The identity guard lives here (spec ruling 5): a mismatch consumes nothing
       and rotates nothing, so a wrong paste can never burn someone else's invite.
-      Consumption is one atomic check-and-set; registerBoard runs only when it hits. */
+      Consumption is one atomic check-and-set, and it shares a transaction with
+      registerBoard: a crash between the two would otherwise burn the invite
+      without ever handing back a token, which no re-invite could undo. */
   redeemInvite(
     code: string,
     username: string,
@@ -97,12 +99,15 @@ export class SwitchboardStore {
     if (row.redeemed_at !== null) return { ok: false, error: "spent" };
     if (row.expires_at <= now) return { ok: false, error: "expired" };
     if (row.username !== canonicalUsername(username)) return { ok: false, error: "mismatch" };
-    const consumed = this.db.run(
-      `UPDATE invites SET redeemed_at = ? WHERE code_hash = ? AND redeemed_at IS NULL AND expires_at > ?`,
-      [now, hashToken(code), now],
-    ).changes;
-    if (consumed === 0) return { ok: false, error: "spent" };
-    const board = this.registerBoard(row.username);
+    const board = this.db.transaction(() => {
+      const consumed = this.db.run(
+        `UPDATE invites SET redeemed_at = ? WHERE code_hash = ? AND redeemed_at IS NULL AND expires_at > ?`,
+        [now, hashToken(code), now],
+      ).changes;
+      if (consumed === 0) return null;
+      return this.registerBoard(row.username);
+    })();
+    if (!board) return { ok: false, error: "spent" };
     return { ok: true, ...board };
   }
 

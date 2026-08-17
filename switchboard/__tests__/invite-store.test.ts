@@ -58,6 +58,22 @@ describe("redeemInvite", () => {
     expect(store().redeemInvite("f".repeat(32), "grace", 1000)).toEqual({ ok: false, error: "unknown" });
   });
 
+  test("a failed board registration rolls the consumption back: the invite survives", () => {
+    const s = store();
+    const inv = s.createInvite("grace", 1000);
+    const real = s.registerBoard.bind(s);
+    // Stand in for a crash between consuming the invite and writing the board
+    // row. Both live in one transaction, so neither must stick.
+    (s as { registerBoard: SwitchboardStore["registerBoard"] }).registerBoard = () => {
+      throw new Error("boards write failed");
+    };
+    expect(() => s.redeemInvite(inv.code, "grace", 2000)).toThrow("boards write failed");
+    (s as { registerBoard: SwitchboardStore["registerBoard"] }).registerBoard = real;
+    const r = s.redeemInvite(inv.code, "grace", 3000);
+    if (!r.ok) throw new Error("expected the invite to still redeem");
+    expect(s.authBoard(r.token)).toBe("grace");
+  });
+
   test("redeem rotates an existing board's token (re-invite recovery)", () => {
     const s = store();
     const old = s.registerBoard("grace");
@@ -81,13 +97,13 @@ describe("listBoards / prune", () => {
 
   test("prune removes expired invites but keeps live ones", () => {
     const s = store();
-    const live = s.createInvite("grace", 1000);
-    s.createInvite("bob", 1000);
-    // bob's invite expires; advance past bob's expiry only by pruning at a
-    // time where both are expired except we re-create grace's fresh first
-    const fresh = s.createInvite("grace", 1000 + INVITE_TTL_MS);
-    s.prune(1000 + INVITE_TTL_MS + 1);
-    expect(s.redeemInvite(fresh.code, "grace", 1000 + INVITE_TTL_MS + 2).ok).toBe(true);
-    expect(s.redeemInvite(live.code, "grace", 1000 + INVITE_TTL_MS + 2)).toEqual({ ok: false, error: "unknown" });
+    // bob's invite is past its expiry when prune runs; grace's was minted later
+    // and is still live, so pruning must take bob's code and leave grace's.
+    const expired = s.createInvite("bob", 1000);
+    const live = s.createInvite("grace", 1000 + INVITE_TTL_MS);
+    const now = 1000 + INVITE_TTL_MS + 2;
+    s.prune(now);
+    expect(s.redeemInvite(expired.code, "bob", now)).toEqual({ ok: false, error: "unknown" });
+    expect(s.redeemInvite(live.code, "grace", now).ok).toBe(true);
   });
 });
