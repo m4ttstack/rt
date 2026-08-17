@@ -994,7 +994,18 @@ Bun.serve({
             try {
               upsertEnvKeys(ENV_PATH, { SWITCHBOARD_TOKEN: token });
             } catch (err) {
-              config = saveSwitchboardUrl(previousUrl);
+              // A rollback that itself fails must not become the error the
+              // operator sees: the token write is the real cause, and it is
+              // what the 500 body explains. Log both and rethrow the original.
+              try {
+                config = saveSwitchboardUrl(previousUrl);
+              } catch (rollbackErr) {
+                console.error(
+                  `peer: join could not save the switchboard token (${err instanceof Error ? err.message : err}), ` +
+                    `and putting the previous url back failed too (${rollbackErr instanceof Error ? rollbackErr.message : rollbackErr}); ` +
+                    `config.json may name ${url} while .env still holds the old token`,
+                );
+              }
               throw err;
             }
           },
