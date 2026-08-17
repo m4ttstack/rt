@@ -15,6 +15,18 @@ describe("createInvite", () => {
     expect(r.status).toBe(200);
     expect(JSON.parse(r.body)).toEqual({ invite: `https://sb.example.app/invite/${"a".repeat(32)}` });
   });
+  test("a 201 that is not json never composes an invite link", async () => {
+    const f = fakeFetch(() => new Response("not json {", { status: 201 }));
+    const r = await createInvite("grace", { url: "https://x", adminToken: "t", fetchFn: f });
+    expect(r.status).not.toBe(200);
+    expect(r.body).not.toContain("undefined");
+  });
+  test("a 201 with no code never composes an invite link", async () => {
+    const f = fakeFetch(() => Response.json({}, { status: 201 }));
+    const r = await createInvite("grace", { url: "https://x", adminToken: "t", fetchFn: f });
+    expect(r.status).not.toBe(200);
+    expect(r.body).not.toContain("undefined");
+  });
   test("passes relay errors through as plain text; network becomes 502", async () => {
     const f = fakeFetch(() => new Response("unauthorized", { status: 401 }));
     expect(await createInvite("g", { url: "https://x", adminToken: "t", fetchFn: f })).toEqual({ status: 401, body: "unauthorized" });

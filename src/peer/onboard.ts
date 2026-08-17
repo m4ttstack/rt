@@ -19,8 +19,17 @@ export async function createInvite(username: string, ctx: InviteCtx): Promise<{ 
     return { status: 502, body: "could not reach the switchboard" };
   }
   if (res.status !== 201) return { status: res.status, body: await res.text() };
-  const out = (await res.json()) as { code: string };
-  return { status: 200, body: JSON.stringify({ invite: `${ctx.url}/invite/${out.code}` }) };
+  // A 201 body is not a promise of a code. Unguarded, a malformed one rejects
+  // out of the handler and a missing code composes ".../invite/undefined",
+  // which reads like a real invite right up until someone pastes it.
+  let code: unknown;
+  try {
+    code = ((await res.json()) as { code?: unknown })?.code;
+  } catch {
+    // fall through: same "unexpected response" answer as a missing code
+  }
+  if (typeof code !== "string" || !code) return { status: 502, body: "unexpected response from the switchboard" };
+  return { status: 200, body: JSON.stringify({ invite: `${ctx.url}/invite/${code}` }) };
 }
 
 export async function listPeerBoards(ctx: InviteCtx): Promise<{ status: number; body: string }> {
