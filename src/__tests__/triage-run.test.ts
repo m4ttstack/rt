@@ -135,3 +135,52 @@ test("checkout tier dispatches with tier omitted (historical full doctor); api s
   await runTriage(dFull);
   expect(dFull.launches[0]?.tier).toBeUndefined();
 });
+
+describe("runTriage attendant lease (BOARD-10)", () => {
+  function fakeAttendants(reads: Record<string, "watch-ci" | "doctor" | null> = {}) {
+    const calls = { claims: [] as number[], heartbeats: [] as number[], releases: [] as number[] };
+    return {
+      calls,
+      attendants: {
+        read: (mrUrl: string, _iid: number) => {
+          const holder = reads[mrUrl] ?? null;
+          return holder === null ? null : { mr: mrUrl, holder, startedAt: 0, heartbeatAt: 0, ttlSeconds: 600 };
+        },
+        claim: (_mrUrl: string, iid: number) => { calls.claims.push(iid); return true; },
+        heartbeat: (_mrUrl: string, iid: number) => { calls.heartbeats.push(iid); },
+        release: (_mrUrl: string, iid: number) => { calls.releases.push(iid); },
+      },
+    };
+  }
+
+  test("a fresh watch-ci lease skips dispatch without consuming budget", async () => {
+    const fa = fakeAttendants({ "https://x/mr/1": "watch-ci" });
+    const d = deps({ attendants: fa.attendants });
+    const result = await runTriage(d);
+    expect(result.dispatched).toBe(0);
+    expect(d.launches).toHaveLength(0);
+    expect(d.audit.some((e) => e.reason === "attended")).toBe(true);
+    expect(d.memory.mrs["https://x/mr/1"]!.attemptsToday).toBe(0);
+    expect(fa.calls.claims).toHaveLength(0);
+  });
+
+  test("a dispatch claims the lease as doctor", async () => {
+    const fa = fakeAttendants();
+    const d = deps({ attendants: fa.attendants });
+    const result = await runTriage(d);
+    expect(result.dispatched).toBe(1);
+    expect(fa.calls.claims).toEqual([1]);
+  });
+
+  test("in-flight doctors get a heartbeat; terminal doctors release", async () => {
+    const states = new Map([
+      ["https://x/mr/1", { mrUrl: "https://x/mr/1", iid: 1, status: "fixing" as const, origin: "auto" as const, startedAt: 0, updatedAt: 0 }],
+      ["https://x/mr/2", { mrUrl: "https://x/mr/2", iid: 2, status: "done" as const, origin: "auto" as const, startedAt: 0, updatedAt: 0 }],
+    ]);
+    const fa = fakeAttendants();
+    const d = deps({ attendants: fa.attendants, readDoctorStates: () => states });
+    await runTriage(d);
+    expect(fa.calls.heartbeats).toEqual([1]);
+    expect(fa.calls.releases).toEqual([2]);
+  });
+});

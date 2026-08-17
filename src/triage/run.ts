@@ -50,6 +50,16 @@ export function composeFixClasses(fc: FixClasses, edgeAuthor: string, identity: 
 
 const IN_FLIGHT = new Set<DoctorStatus>(["queued", "diagnosing", "rebasing", "fixing", "watching"]);
 
+/** BOARD-10: the one-CI-attendant-per-MR lease (src/triage/attendant.ts).
+    Injected as a port so runTriage stays fs-free in tests; absent means the
+    lease system is not wired (behavior identical to pre-BOARD-10). */
+export interface AttendantsPort {
+  read(mrUrl: string, iid: number): { holder: "watch-ci" | "doctor" } | null;
+  claim(mrUrl: string, iid: number): boolean;
+  heartbeat(mrUrl: string, iid: number): void;
+  release(mrUrl: string, iid: number): void;
+}
+
 /** Everything runTriage touches, injected so the orchestration is testable
     and bin/triage.ts is pure wiring. */
 export interface TriageRunDeps {
@@ -72,6 +82,7 @@ export interface TriageRunDeps {
   memory: DispatchMemory;
   writeMemory(mem: DispatchMemory): void;
   now(): number;
+  attendants?: AttendantsPort;
 }
 
 export async function runTriage(deps: TriageRunDeps): Promise<{ dispatched: number; escalated: number; skipped: number }> {
@@ -87,11 +98,30 @@ export async function runTriage(deps: TriageRunDeps): Promise<{ dispatched: numb
   const doctors = deps.readDoctorStates();
   let activeAuto = [...doctors.values()].filter((d) => d.origin === "auto" && IN_FLIGHT.has(d.status)).length;
 
+  // Lease maintenance (BOARD-10) BEFORE edge decisions: keep in-flight
+  // doctors' leases alive (the doctor pane itself never heartbeats; this
+  // cron is its pulse, so the cron interval must stay under the TTL) and
+  // release the lease of any doctor that reached a terminal state.
+  if (deps.attendants) {
+    for (const d of doctors.values()) {
+      if (IN_FLIGHT.has(d.status)) deps.attendants.heartbeat(d.mrUrl, d.iid);
+      else deps.attendants.release(d.mrUrl, d.iid);
+    }
+  }
+
   for (const edge of edges) {
     const existing = doctors.get(edge.mrUrl);
     if (existing && IN_FLIGHT.has(existing.status)) {
       result.skipped++;
       deps.appendAudit({ ts: now, mrUrl: edge.mrUrl, iid: edge.iid, event: edge.kind, decision: "skip", reason: "doctor-in-flight", pipelineId: edge.pipelineId });
+      continue;
+    }
+    // BOARD-10: someone (a watch-ci session) is already attending this MR's
+    // CI. The red is theirs to handle; skip without consuming budget.
+    const lease = deps.attendants?.read(edge.mrUrl, edge.iid) ?? null;
+    if (lease && lease.holder !== "doctor") {
+      result.skipped++;
+      deps.appendAudit({ ts: now, mrUrl: edge.mrUrl, iid: edge.iid, event: edge.kind, decision: "skip", reason: "attended", pipelineId: edge.pipelineId });
       continue;
     }
     const m = deps.memory.mrs[edge.mrUrl]!;
@@ -129,6 +159,7 @@ export async function runTriage(deps: TriageRunDeps): Promise<{ dispatched: numb
         draftBin: draftBinPath(),
       });
       deps.writeDoctorState(statePath, { status: "queued", tabId, workspaceId });
+      deps.attendants?.claim(edge.mrUrl, edge.iid);
       result.dispatched++;
       activeAuto++;
       markHandled(deps.memory, edge);

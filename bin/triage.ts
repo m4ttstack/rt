@@ -21,6 +21,14 @@ import { MEMORY_PATH, readMemory, writeMemory } from "../src/triage/memory.ts";
 import { runNudgePass } from "../src/triage/nudge.ts";
 import { notifyEscalation } from "../src/triage/notify.ts";
 import { numericPipelineId, runTriage } from "../src/triage/run.ts";
+import {
+  claimLease,
+  DEFAULT_ATTENDANT_TTL_SECONDS,
+  defaultAttendantsDir,
+  heartbeatLease,
+  readLease,
+  releaseLease,
+} from "../src/triage/attendant.ts";
 import type { OwnMrFacts } from "../src/triage/edge.ts";
 
 const LOCK_PATH = MEMORY_PATH + ".lock";
@@ -106,6 +114,26 @@ try {
     memory,
     writeMemory,
     now: () => Date.now(),
+    // BOARD-10: one CI attendant per MR (plain files under ~/.mattstack/ci-attendants).
+    attendants: {
+      read: (mrUrl, iid) => readLease(defaultAttendantsDir(), mrUrl, iid, Date.now()),
+      claim: (mrUrl, _iid) =>
+        claimLease(
+          defaultAttendantsDir(),
+          {
+            mr: mrUrl,
+            holder: "doctor",
+            sessionLabel: "mr-board-triage",
+            pid: process.pid,
+            startedAt: Date.now(),
+            heartbeatAt: Date.now(),
+            ttlSeconds: DEFAULT_ATTENDANT_TTL_SECONDS,
+          },
+          Date.now(),
+        ).ok,
+      heartbeat: (mrUrl, iid) => heartbeatLease(defaultAttendantsDir(), mrUrl, iid, "doctor", Date.now()),
+      release: (mrUrl, iid) => releaseLease(defaultAttendantsDir(), mrUrl, iid, "doctor"),
+    },
   });
   console.log(`triage: dispatched ${result.dispatched}, escalated ${result.escalated}, skipped ${result.skipped}`);
 
