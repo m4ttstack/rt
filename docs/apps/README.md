@@ -58,9 +58,9 @@ the board lists open, non-draft MRs authored by any configured member in one of 
 ## endpoints
 
 - `/` -- the board
-- `/data.json` -- the snapshot the client renders: `{ title, members, mrs, fetchedAt, fetchError, local }`; each MR may carry a `review` status when a review is in flight
+- `/data.json` -- the snapshot the client renders: `{ title, members, mrs, fetchedAt, fetchError, local, canInvite, peering }`; each MR may carry a `review` status when a review is in flight. `canInvite` is true when the request is local and this board has both a switchboard url and an admin secret, so it can hand out invites. `peering` is `"ok"` or `"unauthorized"` for a board that is peered, and `null` when it is not peering at all
 - `/review` -- POST `{ mrUrl, iid }` to launch a review (local requests only; see below)
-- `/nudge`: POST `{ mrUrl, iid, reviewer }` to ask a peer's board for a re-review on your own MR (local requests only; see [peer boards + switchboard](#peer-boards--switchboard-optional))
+- `/nudge` -- POST `{ mrUrl, iid, reviewer }` to ask a peer's board for a re-review on your own MR (local requests only; see [peer boards + switchboard](#peer-boards--switchboard-optional))
 - `/healthz` -- 200 `ok`, for supervisors and tunnels
 
 data is cached in memory for 60s with stale-while-revalidate: bursts of visitors cost one gitlab round trip, and if gitlab is down the board serves the last good snapshot with a "data from N minutes ago" banner.
