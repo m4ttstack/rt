@@ -42,6 +42,39 @@ describe("makePeering", () => {
     expect(peering.current()).not.toBeNull(); // stop kills the timer, not the handle
   });
 
+  test("overlapping ticks coalesce: never two in flight at once", async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const blocked: Array<() => void> = [];
+    const client: SwitchboardClient = {
+      publish: async () => 201,
+      ack: async () => true,
+      inbox: async () => {
+        inFlight++;
+        peak = Math.max(peak, inFlight);
+        await new Promise<void>((resolve) => blocked.push(resolve));
+        inFlight--;
+        return [];
+      },
+    };
+    const peering = makePeering({ makeClient: () => client, deps: noDeps, tickMs: 999_999, outboxDir: freshDir() });
+    peering.start("https://sb", "tok");   // start's own boot tick blocks in inbox
+    await Promise.resolve();
+    const a = peering.tickNow();
+    const b = peering.tickNow();
+    // Release whatever is blocked, repeatedly: a coalesced follow-up tick
+    // blocks again, so both callers only settle after a few rounds.
+    let settled = false;
+    void Promise.all([a, b]).then(() => { settled = true; });
+    for (let i = 0; i < 20 && !settled; i++) {
+      for (const resolve of blocked.splice(0)) resolve();
+      await new Promise((r) => setTimeout(r, 0));
+    }
+    await Promise.all([a, b]);
+    expect(peak).toBe(1);
+    peering.stop();
+  });
+
   test("three consecutive unauthorized ticks flip health; one ok clears it", async () => {
     let result: Awaited<ReturnType<SwitchboardClient["inbox"]>> = "unauthorized";
     const peering = makePeering({ makeClient: () => fakeClient(() => result), deps: noDeps, tickMs: 999_999, outboxDir: freshDir() });

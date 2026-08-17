@@ -35,10 +35,29 @@ export function makePeering(host: PeeringHost) {
     reportAuth: (state) => { strikes = state === "unauthorized" ? strikes + 1 : 0; },
   };
 
+  let running: Promise<void> | null = null;
+  let next: Promise<void> | null = null;
+
+  function runTick(): Promise<void> {
+    running = (async () => {
+      if (runtime) await runPeerTick(runtime.client, deps, host.outboxDir);
+    })().finally(() => { running = null; });
+    return running;
+  }
+
   /** One tick against whatever client is current. Also the boot-time "run once
-      now", so tests can drive ticks without faking timers. */
-  async function tickNow(): Promise<void> {
-    if (runtime) await runPeerTick(runtime.client, deps, host.outboxDir);
+      now", so tests can drive ticks without faking timers.
+
+      Ticks never overlap: a tick slower than the interval would otherwise have
+      two outbox drains publishing the same queued envelope, which today only
+      stays harmless because the relay dedupes on (id, recipient). Requests
+      arriving mid-tick collapse into one follow-up run rather than a queue of
+      them, and the returned promise resolves when the tick this caller
+      triggered (or joined) has finished. */
+  function tickNow(): Promise<void> {
+    if (!running) return runTick();
+    next ??= running.then(() => { next = null; return tickNow(); });
+    return next;
   }
 
   function start(url: string, token: string): PeerRuntime {
