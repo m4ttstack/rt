@@ -527,6 +527,7 @@ Bun.serve({
             workspaceLabel: config.reviewsWorkspace,
             skill: config.reviewSkill,
             author,
+            claudeCommand: config.claudeCommand,
           });
           return new Response(JSON.stringify({ ok: true, reReview: true }), { headers: { "content-type": "application/json" } });
         }
@@ -535,7 +536,7 @@ Bun.serve({
           if (!sessionId) return new Response("no session id on file for this review", { status: 400 });
           const statePath = reviewFilePath(parsed.mrUrl);
           void launchResume(
-            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: config.reviewCwd, workspaceLabel: config.reviewsWorkspace, statePath, sessionId, workspaceKind: "review", author },
+            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: config.reviewCwd, workspaceLabel: config.reviewsWorkspace, statePath, sessionId, workspaceKind: "review", author, claudeCommand: config.claudeCommand },
           )
             .then(({ tabId, workspaceId }) => writeReviewState(statePath, { status: existing?.status ?? "done", tabId, workspaceId }))
             .catch((err) => console.error(`review resume failed: ${err instanceof Error ? err.message : err}`));
@@ -561,6 +562,7 @@ Bun.serve({
           statePath,
           skill: config.reviewSkill,
           author,
+          claudeCommand: config.claudeCommand,
         })
           .then(({ tabId, workspaceId }) => writeReviewState(statePath, { status: "queued", tabId, workspaceId }))
           .catch((err) => {
@@ -599,7 +601,7 @@ Bun.serve({
           if (!sessionId) return new Response("no session id on file for this response", { status: 400 });
           const statePath = respondFilePath(parsed.mrUrl);
           void launchResume(
-            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: cwd, workspaceLabel: config.respondsWorkspace, statePath, sessionId, workspaceKind: "respond", author },
+            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: cwd, workspaceLabel: config.respondsWorkspace, statePath, sessionId, workspaceKind: "respond", author, claudeCommand: config.claudeCommand },
           )
             .then(({ tabId, workspaceId }) => writeRespondState(statePath, { status: existing?.status ?? "done", tabId, workspaceId }))
             .catch((err) => console.error(`respond resume failed: ${err instanceof Error ? err.message : err}`));
@@ -624,6 +626,7 @@ Bun.serve({
           statePath,
           skill: config.respondSkill,
           author,
+          claudeCommand: config.claudeCommand,
         })
           .then(({ tabId, workspaceId }) => writeRespondState(statePath, { status: "queued", tabId, workspaceId }))
           .catch((err) => {
@@ -673,6 +676,7 @@ Bun.serve({
           statePath,
           skill: config.doctorSkill,
           author,
+          claudeCommand: config.claudeCommand,
         })
           .then(({ tabId, workspaceId }) => writeDoctorState(statePath, { status: "queued", tabId, workspaceId }))
           .catch((err) => {

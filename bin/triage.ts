@@ -102,6 +102,7 @@ try {
     triage,
     doctorCwd: boardConfig.doctorCwd || boardConfig.reviewCwd,
     doctorsWorkspace: boardConfig.doctorsWorkspace,
+    claudeCommand: boardConfig.claudeCommand,
     // Same resolved identity fetchOwnMrs just filtered by (MAT-351 re-check).
     identity: username,
     fetchOwnMrs,

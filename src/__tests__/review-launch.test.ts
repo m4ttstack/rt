@@ -83,6 +83,11 @@ describe("launchReReview: prior session on file", () => {
     expect(state?.sessionId).toBe("sess-abc");   // preserved through the merge
   });
 
+  test("threads claudeCommand through to the resumed pane", async () => {
+    await launchReReview(URL_A, IID, { ...CTX, claudeCommand: "cswap run 2 -- claude" }, makeIo());
+    expect(resumeCalls[0]).toMatchObject({ claudeCommand: "cswap run 2 -- claude" });
+  });
+
   test("a thrown resume leaves the review in error", async () => {
     const io = makeIo({ launchResume: async () => { throw new Error("herdr: no workspace"); } });
 
@@ -113,6 +118,11 @@ describe("launchReReview: nothing on file", () => {
       reReview: true,
       author: CTX.author,
     });
+  });
+
+  test("threads claudeCommand through to the fresh launch", async () => {
+    await launchReReview(URL_A, IID, { ...CTX, claudeCommand: "cswap run 2 -- claude" }, makeIo());
+    expect(reviewCalls[0]).toMatchObject({ claudeCommand: "cswap run 2 -- claude" });
   });
 
   test("writes a queued state carrying the MR identity, then stamps the tab", async () => {

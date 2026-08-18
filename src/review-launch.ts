@@ -15,6 +15,8 @@ export interface ReReviewCtx {
   workspaceLabel: string;
   skill: string;
   author?: string;
+  /** Command that starts claude in the pane (config.claudeCommand). Empty/absent = "claude". */
+  claudeCommand?: string;
 }
 
 /** Seams for the herdr launchers and the review state store, so tests can drive
@@ -70,6 +72,7 @@ export async function launchReReview(
         prompt: reReviewResumePrompt(iid),
         tabPrefix: "⟲",
         author: ctx.author,
+        claudeCommand: ctx.claudeCommand,
       });
       io.writeReviewState(statePath, { status: "reviewing", tabId, workspaceId });
       return { kind: "resumed" };
@@ -91,6 +94,7 @@ export async function launchReReview(
       skill: ctx.skill,
       reReview: true,
       author: ctx.author,
+      claudeCommand: ctx.claudeCommand,
     });
     io.writeReviewState(statePath, { status: "queued", tabId, workspaceId });
     return { kind: "launched" };

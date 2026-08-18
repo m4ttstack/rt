@@ -66,6 +66,8 @@ export interface TriageRunDeps {
   triage: TriageConfig;
   doctorCwd: string;
   doctorsWorkspace: string;
+  /** Command that starts claude in the pane (config.claudeCommand). Empty/absent = "claude". */
+  claudeCommand?: string;
   /** Resolved GitLab token username this pipeline is dispatching as (see
       bin/triage.ts). Never config.defaultMember (2026-08-08 ruling). Used
       only to re-verify the mechanical-lint author gate (MAT-351); null
@@ -151,6 +153,7 @@ export async function runTriage(deps: TriageRunDeps): Promise<{ dispatched: numb
         cwd: deps.doctorCwd,
         workspaceLabel: deps.doctorsWorkspace,
         statePath,
+        claudeCommand: deps.claudeCommand,
         skill: deps.triage.doctorSkill,
         // The wrapper treats an absent tier as the historical checkout
         // (fix-and-push) behavior; "api" stays the explicit no-checkout tier.
