@@ -826,6 +826,17 @@ function RowMenu({
   const [altHeld, setAltHeld] = useState(false);
   const [noteFor, setNoteFor] = useState<{ label: string; fire: (note?: string) => void } | null>(null);
   const [noteText, setNoteText] = useState("");
+  // Same auto-grow mechanism as the selection bar's header textarea: reset to
+  // auto so deletions shrink it back, then add the border because the global
+  // border-box makes `height` responsible for it while scrollHeight is not.
+  // `any` because tsconfig omits the DOM lib.
+  const noteRef = useRef<any>(null);
+  useEffect(() => {
+    const el = noteRef.current;
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${el.scrollHeight + (el.offsetHeight - el.clientHeight)}px`;
+  }, [noteFor, noteText]);
   useEffect(() => {
     const onAlt = (e: KeyboardEvent) => setAltHeld(e.altKey);
     const onBlur = () => setAltHeld(false);
@@ -864,7 +875,7 @@ function RowMenu({
   const showSlack = local && slackEnabled;
   const peers = local && canNudge ? nudgeTargets(mrx) : [];
   // Keep the menu on-screen; estimate generously since item count varies.
-  const W = 230;
+  const W = noteFor ? 320 : 230;
   const H = 60 + (local ? 34 : 0) + 68 + peers.length * 30 + (showSlack ? (found ? 170 : 60) : 0);
   const left = Math.max(8, Math.min(menu.x, window.innerWidth - W - 8));
   const top = Math.max(8, Math.min(menu.y, window.innerHeight - H - 8));
@@ -900,21 +911,28 @@ function RowMenu({
 
   if (noteFor) {
     return (
-      <div ref={ref} className="tui-menu" style={{ left, top }} role="menu" aria-label={`note for !${mr.iid}`}>
+      <div ref={ref} className="tui-menu tui-menu-noting" style={{ left, top }} role="menu" aria-label={`note for !${mr.iid}`}>
         <div className="tui-menu-label">note for {noteFor.label} !{mr.iid}</div>
-        <input
+        <textarea
+          ref={noteRef}
           className="tui-menu-note"
+          rows={1}
           autoFocus
           value={noteText}
-          placeholder="extra instruction for the agent…"
+          placeholder="extra instruction…"
           maxLength={2000}
-          onChange={(e) => setNoteText(e.target.value)}
+          aria-label="launch note"
+          onChange={(e) => {
+            // Double cast for the missing DOM lib, as in the selection bar.
+            setNoteText((e.target as unknown as { value: string }).value);
+          }}
           onKeyDown={(e) => {
             // Keep Escape local (back to the menu, not menu close) and keep
             // the alt tracker honest while its document listener is muted.
             e.stopPropagation();
             setAltHeld(e.altKey);
-            if (e.key === "Enter") {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
               noteFor.fire(noteText.trim() || undefined);
               onClose();
             } else if (e.key === "Escape") {
@@ -922,7 +940,7 @@ function RowMenu({
             }
           }}
         />
-        <div className="tui-menu-note-hint">enter ↵ launch with note · esc back</div>
+        <div className="tui-menu-note-hint">↵ launch with note · ⇧↵ newline · esc back</div>
       </div>
     );
   }
