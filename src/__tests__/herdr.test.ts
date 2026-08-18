@@ -5,6 +5,8 @@ import {
   parseTabCreate,
   parseWorkspaceCreate,
   reviewPrompt,
+  operatorNoteParagraph,
+  parseLaunchNote,
   buildPaneCommand,
   buildResumePaneCommand,
   reReviewResumePrompt,
@@ -84,6 +86,46 @@ describe("command builders", () => {
     expect(reviewPrompt(opts)).toBe(
       "/mr-board:review https://x/mr/1 --state /s/1.json --status-bin /b/review-status.ts --report /s/1.md",
     );
+  });
+  test("reviewPrompt appends the operator note as a trailing paragraph", () => {
+    expect(
+      reviewPrompt({
+        mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: "/b/review-status.ts",
+        note: "focus on the migration files",
+      }),
+    ).toBe(
+      "/mr-board:review https://x/mr/1 --state /s/1.json --status-bin /b/review-status.ts" +
+      "\n\nOperator note (from the human who launched this pane): focus on the migration files",
+    );
+  });
+  test("doctorPrompt appends the operator note after every flag", () => {
+    const p = doctorPrompt({
+      mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: "/b/doctor-status.ts",
+      tier: "api", note: "the lint job is the real blocker",
+    });
+    expect(p).toBe(
+      "/mr-board:doctor https://x/mr/1 --state /s/1.json --status-bin /b/doctor-status.ts --tier api" +
+      "\n\nOperator note (from the human who launched this pane): the lint job is the real blocker",
+    );
+  });
+  test("operatorNoteParagraph frames a note as coming from the human", () => {
+    expect(operatorNoteParagraph("check CI first")).toBe(
+      "Operator note (from the human who launched this pane): check CI first",
+    );
+  });
+  test("parseLaunchNote accepts absent and blank notes as undefined", () => {
+    expect(parseLaunchNote({})).toEqual({ ok: true, note: undefined });
+    expect(parseLaunchNote({ note: "" })).toEqual({ ok: true, note: undefined });
+    expect(parseLaunchNote({ note: "   " })).toEqual({ ok: true, note: undefined });
+    expect(parseLaunchNote(null)).toEqual({ ok: true, note: undefined });
+  });
+  test("parseLaunchNote trims and returns a real note", () => {
+    expect(parseLaunchNote({ note: "  look at !42 too  " })).toEqual({ ok: true, note: "look at !42 too" });
+  });
+  test("parseLaunchNote rejects non-strings and over-long notes", () => {
+    expect(parseLaunchNote({ note: 42 })).toEqual({ ok: false, error: "note must be a string" });
+    expect(parseLaunchNote({ note: "x".repeat(2001) })).toEqual({ ok: false, error: "note too long (max 2000 chars)" });
+    expect(parseLaunchNote({ note: "x".repeat(2000) })).toEqual({ ok: true, note: "x".repeat(2000) });
   });
   test("buildPaneCommand cds then launches claude with a single-quoted prompt", () => {
     const cmd = buildPaneCommand("/repo dir", "/mr-board:review https://x/mr/1 --state /s/1.json");
@@ -177,6 +219,22 @@ describe("launchReview", () => {
     );
     const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
     expect(runCall?.[3]).toStartWith("cd '/repo' && cswap run 2 --share-history -- claude '/mr-board:review ");
+  });
+
+  test("threads the operator note into the launched prompt", async () => {
+    const calls: string[][] = [];
+    const runner: HerdrRunner = async (args) => {
+      calls.push(args);
+      if (args[0] === "workspace" && args[1] === "list") return WS_LIST;
+      if (args[0] === "tab" && args[1] === "create") return TAB_CREATE;
+      return JSON.stringify({ result: { type: "ok" } });
+    };
+    await launchReview(
+      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "reviews", statePath: "/s/1.json", note: "skip the vendored files" },
+      runner,
+    );
+    const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
+    expect(runCall?.[3]).toContain("Operator note (from the human who launched this pane): skip the vendored files");
   });
 
   test("launchResume resumes under the configured claude command when set", async () => {

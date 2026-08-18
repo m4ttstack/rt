@@ -1,4 +1,4 @@
-import { launchResume, launchReview, reReviewResumePrompt } from "./herdr.ts";
+import { launchResume, launchReview, operatorNoteParagraph, reReviewResumePrompt } from "./herdr.ts";
 import { reviewFilePath, writeReviewState, readReviewStates } from "./review-state.ts";
 
 /** How the re-review actually started. Callers that only want the board's
@@ -17,6 +17,8 @@ export interface ReReviewCtx {
   author?: string;
   /** Command that starts claude in the pane (config.claudeCommand). Empty/absent = "claude". */
   claudeCommand?: string;
+  /** Operator note from the human who launched the re-review (see operatorNoteParagraph). */
+  note?: string;
 }
 
 /** Seams for the herdr launchers and the review state store, so tests can drive
@@ -69,7 +71,9 @@ export async function launchReReview(
         statePath,
         sessionId: existing.sessionId,
         workspaceKind: "review",
-        prompt: reReviewResumePrompt(iid),
+        prompt: ctx.note
+          ? `${reReviewResumePrompt(iid)}\n\n${operatorNoteParagraph(ctx.note)}`
+          : reReviewResumePrompt(iid),
         tabPrefix: "⟲",
         author: ctx.author,
         claudeCommand: ctx.claudeCommand,
@@ -95,6 +99,7 @@ export async function launchReReview(
       reReview: true,
       author: ctx.author,
       claudeCommand: ctx.claudeCommand,
+      note: ctx.note,
     });
     io.writeReviewState(statePath, { status: "queued", tabId, workspaceId });
     return { kind: "launched" };

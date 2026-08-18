@@ -108,6 +108,29 @@ export interface SkillPromptOpts {
   fixClasses?: string[];
   /** Doctor only: absolute path to the board's draft-writer CLI. */
   draftBin?: string;
+  /** Free-text instruction from the human who launched the pane, appended to
+      the prompt as a trailing paragraph the wrapper skills know to honor. */
+  note?: string;
+}
+
+/** The trailing paragraph a launch note becomes. The framing tells the wrapper
+    (and the domain skill under it) this is direct human instruction, not a flag. */
+export function operatorNoteParagraph(note: string): string {
+  return `Operator note (from the human who launched this pane): ${note}`;
+}
+
+const NOTE_MAX_CHARS = 2000;
+
+/** Validate the optional `note` on a launch request body. Blank/absent notes
+    collapse to undefined so callers can thread the result straight through. */
+export function parseLaunchNote(body: unknown): { ok: true; note?: string } | { ok: false; error: string } {
+  const note = (body as { note?: unknown } | null)?.note;
+  if (note === undefined || note === null) return { ok: true, note: undefined };
+  if (typeof note !== "string") return { ok: false, error: "note must be a string" };
+  const trimmed = note.trim();
+  if (!trimmed) return { ok: true, note: undefined };
+  if (trimmed.length > NOTE_MAX_CHARS) return { ok: false, error: `note too long (max ${NOTE_MAX_CHARS} chars)` };
+  return { ok: true, note: trimmed };
 }
 
 /** Build the slash-command a launched herdr pane runs. The board injects every
@@ -121,7 +144,8 @@ function buildSkillPrompt(wrapper: string, o: SkillPromptOpts): string {
   if (o.tier) parts.push("--tier", o.tier);
   if (o.fixClasses?.length) parts.push("--fix-classes", o.fixClasses.join(","));
   if (o.draftBin) parts.push("--draft-bin", o.draftBin);
-  return parts.join(" ");
+  const cmd = parts.join(" ");
+  return o.note ? `${cmd}\n\n${operatorNoteParagraph(o.note)}` : cmd;
 }
 
 export function reviewPrompt(o: SkillPromptOpts): string {
@@ -185,6 +209,8 @@ export interface LaunchPaneOpts {
   skill?: string;
   /** Command that starts claude in the pane (config.claudeCommand). Empty/absent = "claude". */
   claudeCommand?: string;
+  /** Operator note appended to the launched prompt (see operatorNoteParagraph). */
+  note?: string;
   /** Review only: launch this review with the re-review framing (see reviewPrompt). */
   reReview?: boolean;
   /** The MR author, shown in the tab label beside the id (a display name like
@@ -251,6 +277,7 @@ export async function launchReview(opts: LaunchPaneOpts, runner: HerdrRunner = d
     reportPath: reviewReportPath(opts.statePath),
     skill: opts.skill,
     reReview: opts.reReview,
+    note: opts.note,
   });
   const tabLabel = mrTabLabel(opts.iid, opts.author, opts.reReview ? "⟲" : undefined);
   return launchInWorkspace(opts, buildPaneCommand(opts.cwd, prompt, opts.claudeCommand), "review", tabLabel, runner);
@@ -263,6 +290,7 @@ export async function launchRespond(opts: LaunchPaneOpts, runner: HerdrRunner = 
     statePath: opts.statePath,
     statusBin: statusBinPath("respond"),
     skill: opts.skill,
+    note: opts.note,
   });
   return launchInWorkspace(opts, buildPaneCommand(opts.cwd, prompt, opts.claudeCommand), "respond", mrTabLabel(opts.iid, opts.author), runner);
 }
@@ -277,6 +305,7 @@ export async function launchDoctor(opts: LaunchPaneOpts, runner: HerdrRunner = d
     tier: opts.tier,
     fixClasses: opts.fixClasses,
     draftBin: opts.draftBin,
+    note: opts.note,
   });
   return launchInWorkspace(opts, buildPaneCommand(opts.cwd, prompt, opts.claudeCommand), "doctor", mrTabLabel(opts.iid, opts.author), runner);
 }

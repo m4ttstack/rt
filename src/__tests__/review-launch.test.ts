@@ -83,6 +83,14 @@ describe("launchReReview: prior session on file", () => {
     expect(state?.sessionId).toBe("sess-abc");   // preserved through the merge
   });
 
+  test("appends the operator note to the re-review resume prompt", async () => {
+    await launchReReview(URL_A, IID, { ...CTX, note: "the schema change worries me" }, makeIo());
+    expect(resumeCalls[0]!.prompt).toBe(
+      reReviewResumePrompt(IID) +
+      "\n\nOperator note (from the human who launched this pane): the schema change worries me",
+    );
+  });
+
   test("threads claudeCommand through to the resumed pane", async () => {
     await launchReReview(URL_A, IID, { ...CTX, claudeCommand: "cswap run 2 -- claude" }, makeIo());
     expect(resumeCalls[0]).toMatchObject({ claudeCommand: "cswap run 2 -- claude" });
@@ -118,6 +126,11 @@ describe("launchReReview: nothing on file", () => {
       reReview: true,
       author: CTX.author,
     });
+  });
+
+  test("threads the operator note through to the fresh launch", async () => {
+    await launchReReview(URL_A, IID, { ...CTX, note: "compare against !4700" }, makeIo());
+    expect(reviewCalls[0]).toMatchObject({ note: "compare against !4700" });
   });
 
   test("threads claudeCommand through to the fresh launch", async () => {
