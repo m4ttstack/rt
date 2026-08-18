@@ -49,6 +49,15 @@ The board owns `queued`. You emit the rest as you cross each milestone:
 | `done` | Terminal: clean + green, or fixes pushed and green. |
 | `error` | Terminal: human decision needed, or the loop budget was exhausted. |
 
+## Operator note
+
+The launch prompt may end with a paragraph beginning `Operator note (from the
+human who launched this pane):`. That is direct instruction from the human,
+typed at launch time — not a flag and not part of the MR. Honor it while
+diagnosing and fixing (e.g. "the lint job is the real blocker", "don't touch
+the flaky e2e suite") and pass it along to the domain skill as context. It
+never overrides the tier, the enabled fix classes, or the status contract.
+
 ## Resolving the domain skill
 
 The domain skill that owns the actual repair comes from the first source that

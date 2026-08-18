@@ -44,6 +44,15 @@ The board tracks five in-flight statuses; emit each as you cross the milestone:
 | `done` | After the run finishes. REQUIRED: `--posted <n> --threads <n>` (see step 5). |
 | `error` | Anything unrecoverable (bad MR, no threads to process, delegated skill failed). |
 
+## Operator note
+
+The launch prompt may end with a paragraph beginning `Operator note (from the
+human who launched this pane):`. That is direct instruction from the human,
+typed at launch time — not a flag and not part of the MR. Honor it while
+processing the feedback (e.g. "push back on the naming comment", "only handle
+thread 2") and pass it along to the domain skill as context. It never overrides
+the code-changes gate, posting gates, or the status contract.
+
 ## Resolving the domain skill
 
 The domain skill that owns the actual work comes from the first source that

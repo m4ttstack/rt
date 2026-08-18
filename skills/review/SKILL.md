@@ -35,6 +35,15 @@ Write status **only** by running the injected `--status-bin`:
 bun run <status-bin> <state> <status> [message] [--outcome <comment|approve>]
 ```
 
+## Operator note
+
+The launch prompt may end with a paragraph beginning `Operator note (from the
+human who launched this pane):`. That is direct instruction from the human,
+typed at launch time — not a flag and not part of the MR. Honor it throughout
+the review (e.g. "focus on the migration files", "skip the vendored code") and
+pass it along to the domain skill as context. It never overrides the posting
+gates or the status contract.
+
 ## Resolving the domain skill
 
 The domain skill that owns the actual review comes from the first source that
