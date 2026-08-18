@@ -757,7 +757,7 @@ function MenuItem({
   hint?: string;
   trailing?: React.ReactNode;
   disabled?: boolean;
-  onClick?: () => void;
+  onClick?: (e: React.MouseEvent) => void;
 }) {
   return (
     <button className="tui-menu-item" role="menuitem" disabled={disabled} onClick={onClick}>
@@ -798,29 +798,46 @@ function RowMenu({
   local: boolean;
   slackEnabled: boolean;
   onClose: () => void;
-  onLaunch: (mr: BoardMR) => void;
-  onReReview: (mr: BoardMR) => void;
+  onLaunch: (mr: BoardMR, note?: string) => void;
+  onReReview: (mr: BoardMR, note?: string) => void;
   onOpenReview: (mr: BoardMRWithReview) => void;
   onCopy: (mr: BoardMR) => void;
   onResolveSlack: (mr: BoardMR) => void;
   onReactSlack: (mr: BoardMR, emoji: string, remove: boolean) => Promise<string[] | null>;
   onPostSlack: (mr: BoardMR) => void;
-  onRespond: (mr: BoardMR) => void;
+  onRespond: (mr: BoardMR, note?: string) => void;
   canRespond: boolean;
-  onDoctor: (mr: BoardMR) => void;
+  onDoctor: (mr: BoardMR, note?: string) => void;
   canDoctor: boolean;
   onDraftState: (mr: BoardMR, draft: boolean) => void;
   canDraftState: boolean;
   onNudge: (mr: BoardMR, reviewer: string) => void;
   canNudge: boolean;
-  onResumeReview: (mr: BoardMR) => void;
-  onResumeRespond: (mr: BoardMR) => void;
+  onResumeReview: (mr: BoardMR, note?: string) => void;
+  onResumeRespond: (mr: BoardMR, note?: string) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   // Local reaction state so the open menu updates immediately after a mark,
   // and per-emoji pending so the clicked item shows a spinner + disables.
   const [reactions, setReactions] = useState<string[]>((menu.mr as BoardMRWithReview).slack?.reactions ?? []);
   const [pending, setPending] = useState<string[]>([]);
+  // Alt-held flips pane-launching items into "+ note" mode; alt-clicking one
+  // swaps the menu for a note box whose Enter fires the captured action.
+  const [altHeld, setAltHeld] = useState(false);
+  const [noteFor, setNoteFor] = useState<{ label: string; fire: (note?: string) => void } | null>(null);
+  const [noteText, setNoteText] = useState("");
+  useEffect(() => {
+    const onAlt = (e: KeyboardEvent) => setAltHeld(e.altKey);
+    const onBlur = () => setAltHeld(false);
+    document.addEventListener("keydown", onAlt);
+    document.addEventListener("keyup", onAlt);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      document.removeEventListener("keydown", onAlt);
+      document.removeEventListener("keyup", onAlt);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, []);
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
       if (!ref.current?.contains(e.target as Node)) onClose();
@@ -855,6 +872,19 @@ function RowMenu({
     fn();
     onClose();
   };
+  // Pane-launching items: a plain click fires immediately; an alt-click captures
+  // the action and opens the note box instead. Focus-tab variants stay plain —
+  // there is nothing to note into an already-running pane.
+  const paneClick = (label: string, fire: (note?: string) => void) => (e: React.MouseEvent) => {
+    if (e.altKey) {
+      setNoteText("");
+      setNoteFor({ label, fire });
+      return;
+    }
+    fire();
+    onClose();
+  };
+  const paneHint = altHeld ? "+ note" : "herdr";
   // Slack marks stay open (set several at once) and drive per-item pending +
   // a live check, so the click has immediate feedback. Clicking an item that
   // already carries our reaction removes it — the ✓ toggles the mark.
@@ -868,6 +898,36 @@ function RowMenu({
     });
   };
 
+  if (noteFor) {
+    return (
+      <div ref={ref} className="tui-menu" style={{ left, top }} role="menu" aria-label={`note for !${mr.iid}`}>
+        <div className="tui-menu-label">note for {noteFor.label} !{mr.iid}</div>
+        <input
+          className="tui-menu-note"
+          autoFocus
+          value={noteText}
+          placeholder="extra instruction for the agent…"
+          maxLength={2000}
+          onChange={(e) => setNoteText(e.target.value)}
+          onKeyDown={(e) => {
+            // Keep Escape local (back to the menu, not menu close) and keep
+            // the alt tracker honest while its document listener is muted.
+            e.stopPropagation();
+            setAltHeld(e.altKey);
+            if (e.key === "Enter") {
+              noteFor.fire(noteText.trim() || undefined);
+              onClose();
+            } else if (e.key === "Escape") {
+              setNoteFor(null);
+            }
+          }}
+        />
+        <div className="tui-menu-note-hint">enter ↵ launch with note · esc back</div>
+      </div>
+    );
+  }
+
+  const reviewRunning = mrx.review?.status === "queued" || mrx.review?.status === "reviewing";
   return (
     <div ref={ref} className="tui-menu" style={{ left, top }} role="menu" aria-label={`actions for !${mr.iid}`}>
       <div className="tui-menu-label">!{mr.iid}</div>
@@ -876,36 +936,48 @@ function RowMenu({
         <MenuItem
           key={item.kind}
           label={item.label}
-          hint="herdr"
-          onClick={run(() => (item.kind === "re-review" ? onReReview(mr) : onLaunch(mr)))}
+          hint={reviewRunning ? "herdr" : paneHint}
+          onClick={
+            reviewRunning
+              ? run(() => onLaunch(mr))
+              : paneClick(item.label, (note) => (item.kind === "re-review" ? onReReview(mr, note) : onLaunch(mr, note)))
+          }
         />
       ))}
       {local && mrx.review?.sessionId && (
         <MenuItem
           label="resume review"
-          hint="herdr"
-          onClick={run(() => onResumeReview(mr))}
+          hint={paneHint}
+          onClick={paneClick("resume review", (note) => onResumeReview(mr, note))}
         />
       )}
       {local && canRespond && (
         <MenuItem
           label={respondItemLabel(mrx.respond?.status)}
-          hint="herdr"
-          onClick={run(() => onRespond(mr))}
+          hint={respondItemLabel(mrx.respond?.status) === "focus response tab" ? "herdr" : paneHint}
+          onClick={
+            respondItemLabel(mrx.respond?.status) === "focus response tab"
+              ? run(() => onRespond(mr))
+              : paneClick(respondItemLabel(mrx.respond?.status), (note) => onRespond(mr, note))
+          }
         />
       )}
       {local && canRespond && mrx.respond?.sessionId && (
         <MenuItem
           label="resume response"
-          hint="herdr"
-          onClick={run(() => onResumeRespond(mr))}
+          hint={paneHint}
+          onClick={paneClick("resume response", (note) => onResumeRespond(mr, note))}
         />
       )}
       {local && canDoctor && (
         <MenuItem
           label={doctorItemLabel(mrx.doctor?.status)}
-          hint="herdr"
-          onClick={run(() => onDoctor(mr))}
+          hint={doctorItemLabel(mrx.doctor?.status) === "focus doctor tab" ? "herdr" : paneHint}
+          onClick={
+            doctorItemLabel(mrx.doctor?.status) === "focus doctor tab"
+              ? run(() => onDoctor(mr))
+              : paneClick(doctorItemLabel(mrx.doctor?.status), (note) => onDoctor(mr, note))
+          }
         />
       )}
       {local && canDraftState && (
@@ -2155,7 +2227,7 @@ function Board() {
   }, []);
 
   const handleLaunch = useCallback(
-    (mr: BoardMR) => {
+    (mr: BoardMR, note?: string) => {
       if (!mr.webUrl) return;
       const url = mr.webUrl;
       setOptimistic((o) => ({ ...o, [url]: { status: "queued" } }));
@@ -2163,7 +2235,7 @@ function Board() {
       fetch("/review", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mrUrl: url, iid: mr.iid }),
+        body: JSON.stringify({ mrUrl: url, iid: mr.iid, note }),
       })
         .then(async (r) => {
           const body = await r.json().catch(() => ({}));
@@ -2192,7 +2264,7 @@ function Board() {
   );
 
   const handleReReview = useCallback(
-    (mr: BoardMR) => {
+    (mr: BoardMR, note?: string) => {
       if (!mr.webUrl) return;
       const url = mr.webUrl;
       setOptimistic((o) => ({ ...o, [url]: { status: "queued" } }));
@@ -2200,7 +2272,7 @@ function Board() {
       fetch("/review", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mrUrl: url, iid: mr.iid, reReview: true }),
+        body: JSON.stringify({ mrUrl: url, iid: mr.iid, reReview: true, note }),
       })
         .then(async (r) => {
           const body = await r.json().catch(() => ({}));
@@ -2261,7 +2333,7 @@ function Board() {
   );
 
   const handleRespond = useCallback(
-    (mr: BoardMR) => {
+    (mr: BoardMR, note?: string) => {
       if (!mr.webUrl) return;
       const url = mr.webUrl;
       setOptimisticRespond((o) => ({ ...o, [url]: { status: "queued" } }));
@@ -2269,7 +2341,7 @@ function Board() {
       fetch("/respond", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mrUrl: url, iid: mr.iid }),
+        body: JSON.stringify({ mrUrl: url, iid: mr.iid, note }),
       })
         .then(async (r) => {
           const body = await r.json().catch(() => ({}));
@@ -2298,13 +2370,13 @@ function Board() {
   );
 
   const handleResume = useCallback(
-    (mr: BoardMR, kind: "review" | "respond") => {
+    (mr: BoardMR, kind: "review" | "respond", note?: string) => {
       if (!mr.webUrl) return;
       addToast(`resuming ${kind} for !${mr.iid}…`);
       fetch(`/${kind}`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mrUrl: mr.webUrl, iid: mr.iid, resume: true }),
+        body: JSON.stringify({ mrUrl: mr.webUrl, iid: mr.iid, resume: true, note }),
       })
         .then(async (r) => {
           if (!r.ok) {
@@ -2318,8 +2390,8 @@ function Board() {
     },
     [addToast, load],
   );
-  const handleResumeReview = useCallback((mr: BoardMR) => handleResume(mr, "review"), [handleResume]);
-  const handleResumeRespond = useCallback((mr: BoardMR) => handleResume(mr, "respond"), [handleResume]);
+  const handleResumeReview = useCallback((mr: BoardMR, note?: string) => handleResume(mr, "review", note), [handleResume]);
+  const handleResumeRespond = useCallback((mr: BoardMR, note?: string) => handleResume(mr, "respond", note), [handleResume]);
 
   // Flip one of your own MRs between draft and ready. No optimistic state: the
   // flip lives in GitLab, so the row waits for the reload rather than claiming a
@@ -2348,7 +2420,7 @@ function Board() {
   );
 
   const handleDoctor = useCallback(
-    (mr: BoardMR) => {
+    (mr: BoardMR, note?: string) => {
       if (!mr.webUrl) return;
       const url = mr.webUrl;
       setOptimisticDoctor((o) => ({ ...o, [url]: { status: "queued" } }));
@@ -2356,7 +2428,7 @@ function Board() {
       fetch("/doctor", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mrUrl: url, iid: mr.iid }),
+        body: JSON.stringify({ mrUrl: url, iid: mr.iid, note }),
       })
         .then(async (r) => {
           const body = await r.json().catch(() => ({}));
