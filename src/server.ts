@@ -12,7 +12,7 @@ import { readReviewStates, pruneReviewStates, reviewFilePath, writeReviewState, 
 import { readRespondStates, pruneRespondStates, respondFilePath, writeRespondState, parseRespondRequestBody, attachResponds } from "./respond-state.ts";
 import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, parseDoctorRequestBody, attachDoctors } from "./doctor-state.ts";
 import { readDrafts, heldDraftsByMr, attachDrafts, pruneDrafts, draftFilePath, writeDraft } from "./draft-state.ts";
-import { launchReview, launchRespond, launchDoctor, launchResume, focusTab } from "./herdr.ts";
+import { launchReview, launchRespond, launchDoctor, launchResume, focusTab, operatorNoteParagraph, parseLaunchNote } from "./herdr.ts";
 import { launchReReview } from "./review-launch.ts";
 import { readSlackRefs, attachSlack, resolveSlackRef, reactToMR, unreactFromMR, postToSlack, REVIEW_EMOJI } from "./slack.ts";
 import { signalEmoji, parseAgentSignal } from "./agent-signal.ts";
@@ -501,6 +501,9 @@ Bun.serve({
         if (!parsed) return new Response("expected { mrUrl: string, iid: number }", { status: 400 });
         const resume = (body as { resume?: unknown })?.resume === true;
         const reReview = (body as { reReview?: unknown })?.reReview === true;
+        const noteParse = parseLaunchNote(body);
+        if (!noteParse.ok) return new Response(noteParse.error, { status: 400 });
+        const note = noteParse.note;
         // Only launch for an MR the board is actually showing.
         const snapshot = await cache.get();
         const mr = snapshot.mrs.find((m) => m.webUrl === parsed.mrUrl);
@@ -528,6 +531,7 @@ Bun.serve({
             skill: config.reviewSkill,
             author,
             claudeCommand: config.claudeCommand,
+            note,
           });
           return new Response(JSON.stringify({ ok: true, reReview: true }), { headers: { "content-type": "application/json" } });
         }
@@ -536,7 +540,7 @@ Bun.serve({
           if (!sessionId) return new Response("no session id on file for this review", { status: 400 });
           const statePath = reviewFilePath(parsed.mrUrl);
           void launchResume(
-            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: config.reviewCwd, workspaceLabel: config.reviewsWorkspace, statePath, sessionId, workspaceKind: "review", author, claudeCommand: config.claudeCommand },
+            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: config.reviewCwd, workspaceLabel: config.reviewsWorkspace, statePath, sessionId, workspaceKind: "review", author, claudeCommand: config.claudeCommand, prompt: note && operatorNoteParagraph(note) },
           )
             .then(({ tabId, workspaceId }) => writeReviewState(statePath, { status: existing?.status ?? "done", tabId, workspaceId }))
             .catch((err) => console.error(`review resume failed: ${err instanceof Error ? err.message : err}`));
@@ -563,6 +567,7 @@ Bun.serve({
           skill: config.reviewSkill,
           author,
           claudeCommand: config.claudeCommand,
+          note,
         })
           .then(({ tabId, workspaceId }) => writeReviewState(statePath, { status: "queued", tabId, workspaceId }))
           .catch((err) => {
@@ -589,6 +594,9 @@ Bun.serve({
         const parsed = parseRespondRequestBody(body);
         if (!parsed) return new Response("expected { mrUrl: string, iid: number }", { status: 400 });
         const resume = (body as { resume?: unknown })?.resume === true;
+        const noteParse = parseLaunchNote(body);
+        if (!noteParse.ok) return new Response(noteParse.error, { status: 400 });
+        const note = noteParse.note;
         const snapshot = await cache.get();
         const mr = snapshot.mrs.find((m) => m.webUrl === parsed.mrUrl);
         if (!mr) {
@@ -601,7 +609,7 @@ Bun.serve({
           if (!sessionId) return new Response("no session id on file for this response", { status: 400 });
           const statePath = respondFilePath(parsed.mrUrl);
           void launchResume(
-            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: cwd, workspaceLabel: config.respondsWorkspace, statePath, sessionId, workspaceKind: "respond", author, claudeCommand: config.claudeCommand },
+            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: cwd, workspaceLabel: config.respondsWorkspace, statePath, sessionId, workspaceKind: "respond", author, claudeCommand: config.claudeCommand, prompt: note && operatorNoteParagraph(note) },
           )
             .then(({ tabId, workspaceId }) => writeRespondState(statePath, { status: existing?.status ?? "done", tabId, workspaceId }))
             .catch((err) => console.error(`respond resume failed: ${err instanceof Error ? err.message : err}`));
@@ -627,6 +635,7 @@ Bun.serve({
           skill: config.respondSkill,
           author,
           claudeCommand: config.claudeCommand,
+          note,
         })
           .then(({ tabId, workspaceId }) => writeRespondState(statePath, { status: "queued", tabId, workspaceId }))
           .catch((err) => {
@@ -650,6 +659,9 @@ Bun.serve({
         }
         const parsed = parseDoctorRequestBody(body);
         if (!parsed) return new Response("expected { mrUrl: string, iid: number }", { status: 400 });
+        const noteParse = parseLaunchNote(body);
+        if (!noteParse.ok) return new Response(noteParse.error, { status: 400 });
+        const note = noteParse.note;
         const snapshot = await cache.get();
         const mr = snapshot.mrs.find((m) => m.webUrl === parsed.mrUrl);
         if (!mr) {
@@ -677,6 +689,7 @@ Bun.serve({
           skill: config.doctorSkill,
           author,
           claudeCommand: config.claudeCommand,
+          note,
         })
           .then(({ tabId, workspaceId }) => writeDoctorState(statePath, { status: "queued", tabId, workspaceId }))
           .catch((err) => {
