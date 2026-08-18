@@ -139,7 +139,7 @@ test("checkout tier dispatches with tier omitted (historical full doctor); api s
 });
 
 describe("runTriage attendant lease (BOARD-10)", () => {
-  function fakeAttendants(reads: Record<string, "watch-ci" | "doctor" | null> = {}) {
+  function fakeAttendants(reads: Record<string, "watch-ci" | "doctor" | null> = {}, byBranch: Record<string, { holder: "watch-ci" | "doctor"; iid: number }> = {}) {
     const calls = { claims: [] as number[], heartbeats: [] as number[], releases: [] as number[] };
     return {
       calls,
@@ -147,6 +147,10 @@ describe("runTriage attendant lease (BOARD-10)", () => {
         read: (mrUrl: string, _iid: number) => {
           const holder = reads[mrUrl] ?? null;
           return holder === null ? null : { mr: mrUrl, holder, startedAt: 0, heartbeatAt: 0, ttlSeconds: 600 };
+        },
+        readByBranch: (branch: string) => {
+          const hit = Object.entries(byBranch).find(([b]) => b === branch);
+          return hit ? { mr: `https://x/mr/${hit[1].iid}`, holder: hit[1].holder } : null;
         },
         claim: (_mrUrl: string, iid: number) => { calls.claims.push(iid); return true; },
         heartbeat: (_mrUrl: string, iid: number) => { calls.heartbeats.push(iid); },
@@ -187,3 +191,109 @@ describe("runTriage attendant lease (BOARD-10)", () => {
   });
 });
 
+describe("runTriage stack chain (BOARD-12)", () => {
+  const PARENT = "https://x/mr/1";
+  const CHILD = "https://x/mr/2";
+
+  function stack(over: { parent?: Partial<OwnMrFacts>; child?: Partial<OwnMrFacts> } = {}): OwnMrFacts[] {
+    return [
+      { mrUrl: PARENT, iid: 1, pipelineId: 100, pipelineState: "passed", needsRebase: false, author: "matt", sourceBranch: "feat-parent", targetBranch: "master", isStacked: false, ...over.parent },
+      { mrUrl: CHILD, iid: 2, pipelineId: 200, pipelineState: "failed", needsRebase: false, author: "matt", sourceBranch: "feat-child", targetBranch: "feat-parent", isStacked: true, ...over.child },
+    ];
+  }
+
+  function attendants(reads: Record<string, "watch-ci" | "doctor" | null> = {}, byBranch: Record<string, { holder: "watch-ci" | "doctor"; mr: string }> = {}) {
+    const claims: number[] = [];
+    return {
+      claims,
+      port: {
+        read: (mrUrl: string) => (reads[mrUrl] ? { mr: mrUrl, holder: reads[mrUrl]!, startedAt: 0, heartbeatAt: 0, ttlSeconds: 600 } : null),
+        readByBranch: (branch: string) => byBranch[branch] ?? null,
+        claim: (_mrUrl: string, iid: number) => { claims.push(iid); return true; },
+        heartbeat: () => {},
+        release: () => {},
+      },
+    };
+  }
+
+  test("a watch-ci lease on the parent skips the red child without consuming budget", async () => {
+    const a = attendants({ [PARENT]: "watch-ci" });
+    const d = deps({ fetchOwnMrs: async () => stack(), attendants: a.port });
+    const result = await runTriage(d);
+    expect(result.dispatched).toBe(0);
+    expect(d.launches).toHaveLength(0);
+    expect(d.audit.some((e) => e.mrUrl === CHILD && e.reason === "attended-upstream")).toBe(true);
+    expect(d.memory.mrs[CHILD]!.attemptsToday).toBe(0);
+    expect(a.claims).toHaveLength(0);
+  });
+
+  test("the skipped child re-fires next cycle -- the edge is never latched as handled", async () => {
+    const a = attendants({ [PARENT]: "watch-ci" });
+    const d = deps({ fetchOwnMrs: async () => stack(), attendants: a.port });
+    await runTriage(d);
+    expect(d.memory.mrs[CHILD]!.lastHandledPipelineId).not.toBe(200);
+    const again = await runTriage(d);
+    expect(again.skipped).toBeGreaterThan(0);
+  });
+
+  test("a red parent skips the child as red-upstream while the parent itself still dispatches", async () => {
+    const a = attendants();
+    const d = deps({ fetchOwnMrs: async () => stack({ parent: { pipelineState: "failed" } }), attendants: a.port });
+    const result = await runTriage(d);
+    expect(result.dispatched).toBe(1);
+    expect(d.launches.map((l) => l.iid)).toEqual([1]);
+    expect(d.audit.some((e) => e.mrUrl === CHILD && e.reason === "red-upstream")).toBe(true);
+  });
+
+  test("an attended parent suppresses the child's needs-rebase edge too, not just pipeline-red", async () => {
+    const a = attendants({ [PARENT]: "watch-ci" });
+    const d = deps({
+      fetchOwnMrs: async () => stack({ child: { pipelineState: "passed", needsRebase: true } }),
+      attendants: a.port,
+    });
+    await runTriage(d);
+    expect(d.launches).toHaveLength(0);
+    expect(d.audit.some((e) => e.mrUrl === CHILD && e.event === "needs-rebase" && e.reason === "attended-upstream")).toBe(true);
+  });
+
+  test("a green unattended parent leaves the child's dispatch alone", async () => {
+    const a = attendants();
+    const d = deps({ fetchOwnMrs: async () => stack(), attendants: a.port });
+    const result = await runTriage(d);
+    expect(result.dispatched).toBe(1);
+    expect(d.launches.map((l) => l.iid)).toEqual([2]);
+  });
+
+  test("an in-flight doctor on the parent blocks the child even with no lease (manual board launches never claim)", async () => {
+    const a = attendants();
+    const states = new Map([[PARENT, { mrUrl: PARENT, iid: 1, status: "fixing" as const, origin: "manual" as const, startedAt: 0, updatedAt: 0 }]]);
+    const d = deps({ fetchOwnMrs: async () => stack(), attendants: a.port, readDoctorStates: () => states });
+    await runTriage(d);
+    expect(d.launches).toHaveLength(0);
+    expect(d.audit.some((e) => e.mrUrl === CHILD && e.reason === "attended-upstream")).toBe(true);
+  });
+
+  test("a lease naming the parent branch blocks the child when the parent MR is outside the board window", async () => {
+    const a = attendants({}, { "feat-parent": { holder: "watch-ci", mr: PARENT } });
+    const d = deps({ fetchOwnMrs: async () => [stack()[1]!], attendants: a.port });
+    await runTriage(d);
+    expect(d.launches).toHaveLength(0);
+    expect(d.audit.some((e) => e.mrUrl === CHILD && e.reason === "attended-upstream")).toBe(true);
+  });
+
+  test("an invisible parent with no lease anywhere still dispatches -- unknown is not blocked", async () => {
+    const a = attendants();
+    const d = deps({ fetchOwnMrs: async () => [stack()[1]!], attendants: a.port });
+    const result = await runTriage(d);
+    expect(result.dispatched).toBe(1);
+    expect(a.claims).toEqual([2]);
+  });
+
+  test("the by-branch lookup is never consulted for an unstacked MR", async () => {
+    const looked: string[] = [];
+    const port = { ...attendants().port, readByBranch: (b: string) => { looked.push(b); return null; } };
+    const d = deps({ fetchOwnMrs: async () => [stack()[0]!], attendants: port });
+    await runTriage(d);
+    expect(looked).toHaveLength(0);
+  });
+});

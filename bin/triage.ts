@@ -27,6 +27,7 @@ import {
   defaultAttendantsDir,
   heartbeatLease,
   readLease,
+  readLeaseByBranch,
   releaseLease,
 } from "../src/triage/attendant.ts";
 import type { OwnMrFacts } from "../src/triage/edge.ts";
@@ -122,11 +123,17 @@ try {
     // BOARD-10: one CI attendant per MR (plain files under ~/.mattstack/ci-attendants).
     attendants: {
       read: (mrUrl, iid) => readLease(defaultAttendantsDir(), mrUrl, iid, Date.now()),
-      claim: (mrUrl, _iid) =>
+      // BOARD-12: lets the stack preflight see an attendant on a parent MR
+      // that falls outside the board's scope window.
+      readByBranch: (branch) => readLeaseByBranch(defaultAttendantsDir(), branch, Date.now()),
+      claim: (mrUrl, _iid, branch) =>
         claimLease(
           defaultAttendantsDir(),
           {
             mr: mrUrl,
+            // BOARD-12: watch-ci has always recorded its branch; the doctor
+            // now does too, so readByBranch sees both holders.
+            branch,
             holder: "doctor",
             sessionLabel: "mr-board-triage",
             pid: process.pid,

@@ -3,6 +3,7 @@ import type { LaunchPaneOpts } from "../herdr.ts";
 import { draftBinPath } from "../herdr.ts";
 import type { FixClasses, TriageConfig } from "./config.ts";
 import { detectEdges, markHandled, observe, type OwnMrFacts } from "./edge.ts";
+import { chainOf } from "./stack.ts";
 import { decide } from "./policy.ts";
 import type { AuditEntry } from "./audit.ts";
 import type { DispatchMemory } from "./memory.ts";
@@ -55,7 +56,12 @@ const IN_FLIGHT = new Set<DoctorStatus>(["queued", "diagnosing", "rebasing", "fi
     lease system is not wired (behavior identical to pre-BOARD-10). */
 export interface AttendantsPort {
   read(mrUrl: string, iid: number): { holder: "watch-ci" | "doctor" } | null;
-  claim(mrUrl: string, iid: number): boolean;
+  /** BOARD-12: the fresh lease on a BRANCH, whichever MR it belongs to. The
+      only way to see an attendant on a parent that sits outside the board's
+      scope window; watch-ci has always written `branch`, and the doctor's own
+      claim now does too. */
+  readByBranch(branch: string): { mr: string; holder: "watch-ci" | "doctor" } | null;
+  claim(mrUrl: string, iid: number, branch?: string): boolean;
   heartbeat(mrUrl: string, iid: number): void;
   release(mrUrl: string, iid: number): void;
 }
@@ -87,6 +93,31 @@ export interface TriageRunDeps {
   attendants?: AttendantsPort;
 }
 
+/** BOARD-12: the ancestor, if any, that owns this edge instead of us. Checks
+    the lease AND the doctor state map, because a doctor launched by hand from
+    the board UI writes state without ever claiming a lease (the gap BOARD-10
+    left open). An unresolved parent is only ever blocked on positive evidence
+    -- a lease naming its branch -- so an MR whose parent sits outside the
+    board's scope window still dispatches rather than silently stalling. */
+function upstreamBlocker(
+  edge: { mrUrl: string },
+  mrs: OwnMrFacts[],
+  doctors: Map<string, DoctorState>,
+  attendants: AttendantsPort | undefined,
+): { reason: "attended-upstream" | "red-upstream"; upstreamMr: string } | null {
+  const { ancestors, unresolvedParentBranch } = chainOf(mrs, edge.mrUrl);
+  for (const anc of ancestors) {
+    const doc = doctors.get(anc.mrUrl);
+    if (attendants?.read(anc.mrUrl, anc.iid) || (doc && IN_FLIGHT.has(doc.status))) {
+      return { reason: "attended-upstream", upstreamMr: anc.mrUrl };
+    }
+    if (anc.pipelineState === "failed") return { reason: "red-upstream", upstreamMr: anc.mrUrl };
+  }
+  if (unresolvedParentBranch === null) return null;
+  const held = attendants?.readByBranch(unresolvedParentBranch);
+  return held ? { reason: "attended-upstream", upstreamMr: held.mr } : null;
+}
+
 export async function runTriage(deps: TriageRunDeps): Promise<{ dispatched: number; escalated: number; skipped: number }> {
   const result = { dispatched: 0, escalated: 0, skipped: 0 };
   if (!deps.triage.enabled) return result;
@@ -98,6 +129,7 @@ export async function runTriage(deps: TriageRunDeps): Promise<{ dispatched: numb
   observe(deps.memory, mrs, dayStamp);
   const edges = detectEdges(deps.memory, mrs);
   const doctors = deps.readDoctorStates();
+  const byUrl = new Map(mrs.map((m) => [m.mrUrl, m]));
   let activeAuto = [...doctors.values()].filter((d) => d.origin === "auto" && IN_FLIGHT.has(d.status)).length;
 
   // Lease maintenance (BOARD-10) BEFORE edge decisions: keep in-flight
@@ -124,6 +156,19 @@ export async function runTriage(deps: TriageRunDeps): Promise<{ dispatched: numb
     if (lease && lease.holder !== "doctor") {
       result.skipped++;
       deps.appendAudit({ ts: now, mrUrl: edge.mrUrl, iid: edge.iid, event: edge.kind, decision: "skip", reason: "attended", pipelineId: edge.pipelineId });
+      continue;
+    }
+    // BOARD-12: the attendant unit is the chain. An ancestor that is attended
+    // may push at any moment and restack every descendant, and an ancestor
+    // that is merely red already explains this MR's red (the child branch
+    // contains the parent's commits). Either way the edge is not ours to act
+    // on. Skipping without markHandled means it re-fires once the ancestor
+    // clears. Applies to both edge kinds -- auto-rebasing a child while the
+    // parent's attendant is mid-push is the force-with-lease race itself.
+    const upstream = upstreamBlocker(edge, mrs, doctors, deps.attendants);
+    if (upstream) {
+      result.skipped++;
+      deps.appendAudit({ ts: now, mrUrl: edge.mrUrl, iid: edge.iid, event: edge.kind, decision: "skip", reason: upstream.reason, outcome: upstream.upstreamMr, pipelineId: edge.pipelineId });
       continue;
     }
     const m = deps.memory.mrs[edge.mrUrl]!;
@@ -162,7 +207,7 @@ export async function runTriage(deps: TriageRunDeps): Promise<{ dispatched: numb
         draftBin: draftBinPath(),
       });
       deps.writeDoctorState(statePath, { status: "queued", tabId, workspaceId });
-      deps.attendants?.claim(edge.mrUrl, edge.iid);
+      deps.attendants?.claim(edge.mrUrl, edge.iid, byUrl.get(edge.mrUrl)?.sourceBranch);
       result.dispatched++;
       activeAuto++;
       markHandled(deps.memory, edge);
