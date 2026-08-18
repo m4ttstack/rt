@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 /** BOARD-10: the one-CI-attendant-per-MR lease. A plain per-MR JSON file so
@@ -64,6 +64,32 @@ export function readLease(dir: string, mrUrl: string, iid: number, now: number):
   } catch {
     return null;
   }
+}
+
+/** BOARD-12: the fresh lease naming a BRANCH, or null. The stack dispatcher
+    uses this to see an attendant on a parent MR that sits outside the board's
+    scope window -- there is no lease file to name, only a branch. A directory
+    scan is fine: this dir holds one file per actively attended MR. */
+export function readLeaseByBranch(dir: string, branch: string, now: number): AttendantLease | null {
+  if (!branch) return null;
+  let names: string[];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return null;
+  }
+  for (const name of names) {
+    if (!name.endsWith(".json")) continue;
+    try {
+      const lease = JSON.parse(readFileSync(join(dir, name), "utf8")) as AttendantLease;
+      if (lease.branch !== branch) continue;
+      if (typeof lease.heartbeatAt !== "number" || typeof lease.ttlSeconds !== "number" || !lease.holder) continue;
+      if (isFresh(lease, now)) return lease;
+    } catch {
+      continue;
+    }
+  }
+  return null;
 }
 
 /** Atomic claim: exclusive create wins; a fresh foreign lease blocks (and is

@@ -8,6 +8,7 @@ import {
   heartbeatLease,
   leaseFileName,
   readLease,
+  readLeaseByBranch,
   releaseLease,
   type AttendantLease,
 } from "../triage/attendant.ts";
@@ -109,5 +110,26 @@ describe("heartbeat", () => {
     claimLease(dir, lease({ holder: "doctor" }), NOW);
     heartbeatLease(dir, MR, IID, "doctor", NOW + ttlMs - 1_000);
     expect(readLease(dir, MR, IID, NOW + ttlMs + 1_000)?.holder).toBe("doctor");
+  });
+});
+
+describe("readLeaseByBranch (BOARD-12)", () => {
+  test("finds a fresh lease by the branch it names, whatever MR it belongs to", () => {
+    writeFileSync(join(dir, leaseFileName(MR, IID)), JSON.stringify(lease({ branch: "feat-parent" })));
+    expect(readLeaseByBranch(dir, "feat-parent", NOW)?.mr).toBe(MR);
+  });
+
+  test("ignores a stale lease, a mismatched branch, and a lease with no branch at all", () => {
+    writeFileSync(join(dir, leaseFileName(MR, IID)), JSON.stringify(lease({ branch: "feat-parent" })));
+    expect(readLeaseByBranch(dir, "feat-parent", NOW + 601_000)).toBeNull();
+    expect(readLeaseByBranch(dir, "other-branch", NOW)).toBeNull();
+    writeFileSync(join(dir, leaseFileName(MR, 999)), JSON.stringify(lease({ branch: undefined })));
+    expect(readLeaseByBranch(dir, "", NOW)).toBeNull();
+  });
+
+  test("a missing directory or unparseable file is null, never a throw", () => {
+    expect(readLeaseByBranch(join(dir, "nope"), "feat-parent", NOW)).toBeNull();
+    writeFileSync(join(dir, "garbage.json"), "{not json");
+    expect(readLeaseByBranch(dir, "feat-parent", NOW)).toBeNull();
   });
 });
