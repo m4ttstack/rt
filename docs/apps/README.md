@@ -25,7 +25,7 @@ bun run serve   # http://localhost:7930
 - **GitLab personal access token** (`read_api` scope) -- create at `https://gitlab.com/-/user_settings/personal_access_tokens`
 - **your GitLab username** -- used as the board's default view
 - **path to your local repo checkout** (optional) -- enables the right-click "launch review" action; leave blank to skip
-- **Slack integration** -- opens a browser to authorize a Slack app; each teammate mints their own user token this way, so reactions and messages appear as *them*. only teammates added as **Collaborators** on the app can complete this flow
+- **Slack integration** -- opens a browser to authorize a Slack app; each teammate mints their own user token this way, so reactions and messages appear as *them*. see [slack integration](#slack-integration) for the one-time app creation (there's a manifest to paste)
 
 or configure manually: copy `config.example.json` → `config.json` and edit; put `GITLAB_TOKEN=…` and optionally `SLACK_TOKEN=…` in `.env`. `config.team.example.json` is a filled-in demo roster (fake names, fake project) if you just want to see it render before pointing it at a real one.
 
@@ -46,6 +46,7 @@ or configure manually: copy `config.example.json` → `config.json` and edit; pu
 | `reviewsWorkspace` | herdr workspace label reviews are grouped under (default `reviews`) |
 | `reviewSkill` | domain skill the review wrapper delegates to, e.g. `myteam:review`; empty = the wrapper reviews generically. `respondSkill` / `doctorSkill` are the same for the respond / doctor actions |
 | `claudeCommand` | command that starts claude in every pane the board launches (review, respond, doctor, resume, triage), inserted verbatim with the prompt/resume flags appended after it; empty = plain `claude`, which inherits whatever account is active. e.g. `cswap run 2 --share-history -- --model opus` pins panes to one account (`cswap run` launches claude itself — everything after its `--` is claude *arguments*, so do NOT write `claude` there; keep `--share-history` so resume can find the transcripts) |
+| `slack` | the review channel, post templates, and signal emoji -- see [slack integration](#slack-integration) |
 
 the board lists open, non-draft MRs authored by any configured member in one of `projects`. a left sidebar switches between **All** (the whole team) and a single member; the **All** view (and each member view) can be grouped by age / author / status / pipeline and sorted by oldest / pipeline / review progress. the current member, grouping, and sort live in the URL (shareable) and are remembered across visits.
 
@@ -55,6 +56,30 @@ the board lists open, non-draft MRs authored by any configured member in one of 
 
 - **`GITLAB_TOKEN`** -- env var (bun auto-loads `.env`). needs `read_api` scope only; the board never writes to gitlab. as a fallback it also reads `gitlabToken` from `~/.rt/secrets.json` if you happen to have one.
 - **`SLACK_TOKEN`** -- optional user token (`xoxp-…`) for the review-thread integration. minted via the OAuth flow in `bun run setup`, or paste manually into `.env`. same `~/.rt/secrets.json` fallback (as `slackToken`). without it, the Slack menu actions stay disabled and the board runs fine.
+
+## slack integration
+
+the board plugs into a simple channel convention rather than inventing its own workflow. the contract:
+
+- review requests are messages in **one channel** that contain the MR's URL (posted by the board's "post to slack", or by hand -- the board finds either; the earliest message containing the URL wins)
+- review state is signalled with **three reactions** on that message: one for "looking", one for "commented", one for "approved". a message asking for review of several MRs gets a threaded reply per MR, and the reactions go on the reply
+
+if your team already reviews this way, the board drops in as-is. the moving parts:
+
+**one-time, per team: create the Slack app.** at [api.slack.com/apps](https://api.slack.com/apps) → Create New App → *From an app manifest*, paste [`slack-app-manifest.yaml`](slack-app-manifest.yaml). no bot, no event subscriptions -- just user-token OAuth scopes for reading the channel, reacting, and posting. while the app is unlisted, add each teammate under **Settings → Collaborators** so they can complete the OAuth flow. share the app's client id + secret with the team (they're not checked in; setup prompts for them or reads `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET` from `.env`).
+
+**per teammate: mint a token.** `bun run setup` opens the browser, the teammate authorizes, and the resulting `xoxp` token lands in their `.env`. everything the board does in slack -- posts, thread replies, reactions -- appears as the person running the board, which is the point: a 👀 from a reviewer means that reviewer.
+
+**per team: match the emoji to your convention.** `slack.emoji` in `config.json` names the three reactions (defaults: `eyes` / `speech_balloon` / `white_check_mark`). any role can be overridden alone, e.g. a workspace with a custom `:comment:` emoji:
+
+```json
+"slack": {
+  "channel": "code-review",
+  "emoji": { "commented": "comment" }
+}
+```
+
+the emoji names drive everything: the right-click mark/unmark actions, the reaction chips on each row, and the reaction the board drops automatically when a launched review starts (👀) or lands (💬/✅).
 
 ## endpoints
 
