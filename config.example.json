@@ -25,6 +25,7 @@
   "reviewsWorkspace": "reviews",
   "respondsWorkspace": "responses",
   "doctorsWorkspace": "doctors",
+  "claudeCommand": "",
   "triage": {
     "enabled": false,
     "cooldownMinutes": 30,

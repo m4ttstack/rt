@@ -44,6 +44,7 @@ or configure manually: copy `config.example.json` → `config.json` and edit; pu
 | `reviewCwd` | absolute path a review agent's herdr pane starts in (a repo checkout); empty disables the review launch. see [review integration](#review-integration-local-only) |
 | `reviewsWorkspace` | herdr workspace label reviews are grouped under (default `reviews`) |
 | `reviewSkill` | domain skill the review wrapper delegates to, e.g. `myteam:review`; empty = the wrapper reviews generically. `respondSkill` / `doctorSkill` are the same for the respond / doctor actions |
+| `claudeCommand` | command that starts claude in every pane the board launches (review, respond, doctor, resume, triage), inserted verbatim; empty = plain `claude`, which inherits whatever account is active. e.g. `cswap run 2 --share-history -- claude` pins panes to one account (keep `--share-history` so resume can find the transcripts) |
 
 the board lists open, non-draft MRs authored by any configured member in one of `projects`. a left sidebar switches between **All** (the whole team) and a single member; the **All** view (and each member view) can be grouped by age / author / status / pipeline and sorted by oldest / pipeline / review progress. the current member, grouping, and sort live in the URL (shareable) and are remembered across visits.
 

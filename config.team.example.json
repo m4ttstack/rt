@@ -25,6 +25,7 @@
   "reviewSkill": "myteam:review",
   "respondSkill": "myteam:respond",
   "doctorSkill": "myteam:doctor",
+  "claudeCommand": "",
   "slack": {
     "channel": "code-review",
     "singleTemplate": "{title}: {url}",
