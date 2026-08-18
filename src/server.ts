@@ -1,7 +1,8 @@
 import { join, dirname, basename } from "path";
 import { readFileSync, writeFileSync, mkdirSync, watch } from "fs";
 import type { PullRequest, MRDetail } from "@mattstack/glance";
-import { loadConfig, loadGitLabToken, loadSlackToken, loadSwitchboardToken, saveMemberHidden, CONFIG_PATH } from "./config.ts";
+import { loadConfig, loadGitLabToken, loadSlackToken, loadSwitchboardToken, loadSwitchboardAdminToken, saveMemberHidden, saveSwitchboardUrl, CONFIG_PATH } from "./config.ts";
+import { upsertEnvKeys } from "./env-file.ts";
 import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, projectPathFromWebUrl, type BoardMR, type SyncScopeRead } from "./data.ts";
 import { GitLabProvider, ReadBackFailedError, NoteMutator, parseRepoId } from "@mattstack/glance";
 import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } from "./discussions.ts";
@@ -17,7 +18,9 @@ import { launchReReview } from "./review-launch.ts";
 import { readSlackRefs, attachSlack, resolveSlackRef, reactToMR, unreactFromMR, postToSlack, REVIEW_EMOJI } from "./slack.ts";
 import { signalEmoji, parseAgentSignal } from "./agent-signal.ts";
 import { makeSwitchboardClient, type SwitchboardClient } from "./peer/client.ts";
-import { runPeerTick, type MaterializeDeps } from "./peer/inbox.ts";
+import { type MaterializeDeps } from "./peer/inbox.ts";
+import { makePeering } from "./peer/runtime.ts";
+import { createInvite, joinSwitchboard, listPeerBoards } from "./peer/onboard.ts";
 import { enqueueOutbox, drainOutbox, classifySend } from "./peer/outbox.ts";
 import { makeEnvelope, canonicalUsername, type ReviewStatePayload, type ReReviewRequestPayload } from "./peer/envelope.ts";
 import { writePeerReview, readPeerReviews, prunePeerReviews, attachPeerReviews, type PeerReviewState } from "./peer/peer-reviews.ts";
@@ -32,8 +35,11 @@ const cssPath = join(import.meta.dir, "style.css");
 let css = readFileSync(cssPath, "utf-8");
 const faviconPath = join(import.meta.dir, "favicon.svg");
 const favicon = readFileSync(faviconPath, "utf-8");
+/** The board's own .env, written when /peer/join redeems an invite. */
+const ENV_PATH = join(import.meta.dir, "..", ".env");
 
-const config = loadConfig();
+// `let`: /peer/join reassigns the whole config after persisting switchboard.url.
+let config = loadConfig();
 // Optional: display-name lookups only. The board's data plane is rt.
 const gitlabToken = loadGitLabToken();
 
@@ -50,25 +56,23 @@ function gitlab(): GitLabProvider {
 const slackToken = loadSlackToken();
 
 // Optional peer relay. Both a configured url and a token are required; without
-// either, peerClient stays null and every peer feature (publish, poll, /nudge)
-// is off, leaving the board exactly as it was.
-const switchboardToken = loadSwitchboardToken();
-const peerClient = config.switchboard.url && switchboardToken
-  ? makeSwitchboardClient(config.switchboard.url, switchboardToken)
-  : null;
-const peerDeps: MaterializeDeps = {
+// either, peering stays unstarted and every peer feature (publish, poll,
+// /nudge) is off, leaving the board exactly as it was. The runtime is startable
+// later at runtime too, so joining a switchboard needs no restart.
+const peerDeps: Omit<MaterializeDeps, "reportAuth"> = {
   writePeerReview,
   writeNudge,
   resolveSentNudge,
   retireSentNudge,
   log: (line) => console.error(line),
 };
-if (peerClient) {
-  // Once now so a restart picks up whatever queued while the board was down,
-  // then on a slow tick -- peer state is ambient context, not a hot path.
-  void runPeerTick(peerClient, peerDeps);
-  setInterval(() => void runPeerTick(peerClient, peerDeps), 60_000);
-}
+const peering = makePeering({ makeClient: makeSwitchboardClient, deps: peerDeps });
+const switchboardToken = loadSwitchboardToken();
+if (config.switchboard.url && switchboardToken) peering.start(config.switchboard.url, switchboardToken);
+// Operator-only secret: its presence is what turns on this board's invite
+// affordances. Absent, /peer/invite and /peer/boards answer 400 and the UI
+// never offers them.
+const switchboardAdminToken = loadSwitchboardAdminToken();
 
 /** Send what's queued without making the caller wait on the relay. Anything
     still queued goes out on the next tick, so a failure here only costs
@@ -313,6 +317,10 @@ const port = Number(process.env.PORT) || config.port;
 
 Bun.serve({
   port,
+  // Loopback by default (spec ruling 6): local-only gates should be
+  // network-local, not just Host-header-local. config.host opts into wider
+  // binds.
+  hostname: config.host || "127.0.0.1",
   // The cold fetch (paging the project MR list + batch-fetching) can exceed
   // Bun's 10s default; give it room so the first request doesn't time out.
   idleTimeout: 60,
@@ -432,6 +440,8 @@ Bun.serve({
               ),
             ),
             local: isLocalRequest(req),
+            canInvite: isLocalRequest(req) && !!switchboardAdminToken && !!config.switchboard.url,
+            peering: peering.current() ? peering.current()!.health() : null,
             slackEnabled: !!slackToken,
             slackTemplates: {
               single: config.slack.singleTemplate,
@@ -768,7 +778,8 @@ Bun.serve({
         // no way to tell this board's own MRs from a peer's. Without that, the
         // own-MR guard below can never match and the board would relay a
         // review-state for every MR on it, including publishing to itself.
-        if (peerClient && signal.kind === "review" && config.defaultMember !== "all") {
+        const pc = peering.current()?.client;
+        if (pc && signal.kind === "review" && config.defaultMember !== "all") {
           const snapshotForPeer = await cache.get();
           const authorUsername = snapshotForPeer.mrs.find((m) => m.webUrl === signal.mrUrl)?.author.username;
           // Never relay a review of this board's own MR: the author is right
@@ -778,7 +789,7 @@ Bun.serve({
               mrUrl: signal.mrUrl, iid: signal.iid, status: signal.status,
               outcome: signal.outcome, updatedAt: Date.now(),
             } satisfies ReviewStatePayload));
-            kickOutbox(peerClient);
+            kickOutbox(pc);
           }
         }
         const emoji = signalEmoji(signal.kind, signal.status, signal.outcome);
@@ -880,7 +891,8 @@ Bun.serve({
         // relays the human's click; all policy runs in the peer's triage.
         if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
-        if (!peerClient) return new Response("switchboard not configured", { status: 400 });
+        const pc = peering.current()?.client;
+        if (!pc) return new Response("switchboard not configured", { status: 400 });
         let body: unknown;
         try {
           body = await req.json();
@@ -903,7 +915,7 @@ Bun.serve({
         // reviewer has no board on the switchboard) is permanent, and the drain
         // would drop it with only a log -- leaving the clicker an "ok" and a
         // chip reading "requested" for 48h for a send that can never happen.
-        const status = await peerClient.publish(draft);
+        const status = await pc.publish(draft);
         const cls = classifySend(status);
         if (cls === "drop") {
           // 422 is the relay's unknown-recipient answer, and the only 4xx a
@@ -928,6 +940,95 @@ Bun.serve({
         return new Response(JSON.stringify(cls === "retry" ? { ok: true, queued: true } : { ok: true }), {
           headers: { "content-type": "application/json" },
         });
+      }
+      case "/peer/invite": {
+        // Mint a one-paste invite for a peer. Operator-only: needs the admin
+        // token this board holds, which is also what /data.json's canInvite
+        // reports so the UI never offers a button that can't work.
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+        if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
+        // isLocal reads the Host header, which a cross-origin form can forge.
+        // Requiring a json content-type takes that away: a form post can only
+        // carry the text/plain-class types, and anything else trips a CORS
+        // preflight the board never answers. The board's own client always
+        // sends application/json.
+        const ct = req.headers.get("content-type") ?? "";
+        if (!ct.toLowerCase().includes("application/json")) return new Response("expected application/json", { status: 415 });
+        if (!switchboardAdminToken || !config.switchboard.url) return new Response("inviting is not set up on this board", { status: 400 });
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return new Response("invalid json", { status: 400 });
+        }
+        const username = (body as { username?: unknown })?.username;
+        if (typeof username !== "string" || !username.trim()) return new Response("expected { username }", { status: 400 });
+        const r = await createInvite(username.trim(), { url: config.switchboard.url, adminToken: switchboardAdminToken });
+        return new Response(r.body, { status: r.status, headers: r.status === 200 ? { "content-type": "application/json" } : undefined });
+      }
+      case "/peer/boards": {
+        if (req.method !== "GET") return new Response("method not allowed", { status: 405 });
+        if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
+        if (!switchboardAdminToken || !config.switchboard.url) return new Response("inviting is not set up on this board", { status: 400 });
+        const r = await listPeerBoards({ url: config.switchboard.url, adminToken: switchboardAdminToken });
+        return new Response(r.body, { status: r.status, headers: r.status === 200 ? { "content-type": "application/json" } : undefined });
+      }
+      case "/peer/join": {
+        // Redeem an invite from the UI: persist url + token, then hot-start
+        // peering, so joining costs no restart.
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+        if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
+        // Same content-type gate as /peer/invite above: a forged Host header on
+        // a cross-origin form must not be enough to re-point this board's
+        // switchboard config.
+        const ct = req.headers.get("content-type") ?? "";
+        if (!ct.toLowerCase().includes("application/json")) return new Response("expected application/json", { status: 415 });
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return new Response("invalid json", { status: 400 });
+        }
+        const invite = (body as { invite?: unknown })?.invite;
+        if (typeof invite !== "string" || !invite.trim()) return new Response("expected { invite }", { status: 400 });
+        const r = await joinSwitchboard(invite, {
+          defaultMember: config.defaultMember,
+          persist(url, token) {
+            // upsertEnvKeys reads "" as a removal, so an empty token must never
+            // reach it: that would quietly delete the token line this board is
+            // already peering with. Throwing here is the recovery answer. The
+            // message is interpolated into onboard.ts's 500 body, which the join
+            // UI shows verbatim, so it stays inside the onboarding vocabulary.
+            if (!token) throw new Error("the switchboard sent nothing usable");
+            // The two writes must land together or not at all. config.json
+            // naming the new relay while .env still holds the old token is the
+            // one state nothing recovers from: this process keeps peering on
+            // the live handle, but the next restart pairs the new url with the
+            // old token and 401s forever. So put the url back if the token
+            // write fails, and let the join report the failure.
+            const previousUrl = config.switchboard.url;
+            config = saveSwitchboardUrl(url);           // reparsed config swaps in
+            try {
+              upsertEnvKeys(ENV_PATH, { SWITCHBOARD_TOKEN: token });
+            } catch (err) {
+              // A rollback that itself fails must not become the error the
+              // operator sees: the token write is the real cause, and it is
+              // what the 500 body explains. Log both and rethrow the original.
+              try {
+                config = saveSwitchboardUrl(previousUrl);
+              } catch (rollbackErr) {
+                console.error(
+                  `peer: join could not save the switchboard token (${err instanceof Error ? err.message : err}), ` +
+                    `and putting the previous url back failed too (${rollbackErr instanceof Error ? rollbackErr.message : rollbackErr}); ` +
+                    `config.json may name ${url} while .env still holds the old token`,
+                );
+              }
+              throw err;
+            }
+          },
+          startPeering: (url, token) => peering.start(url, token),
+        });
+        return new Response(r.body, { status: r.status, headers: r.status === 200 ? { "content-type": "application/json" } : undefined });
       }
       case "/review/report": {
         // The agent's written review markdown for one MR. Read-only display

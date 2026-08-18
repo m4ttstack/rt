@@ -1,5 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { parseConfig, setHiddenInRaw } from "../config.ts";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { parseConfig, saveSwitchboardUrl, setHiddenInRaw } from "../config.ts";
 
 const base = {
   gitlabHost: "https://gitlab.com",
@@ -104,6 +107,12 @@ describe("parseConfig", () => {
     expect(cfg.rtRepos).toEqual({ "group/proj": "proj-repo" });
     expect(parseConfig(JSON.stringify(base)).rtRepos).toEqual({});
   });
+
+  test("host: defaults to empty string, accepts a string, rejects non-strings", () => {
+    expect(parseConfig(JSON.stringify(base)).host).toBe("");
+    expect(parseConfig(JSON.stringify({ ...base, host: "0.0.0.0" })).host).toBe("0.0.0.0");
+    expect(() => parseConfig(JSON.stringify({ ...base, host: 5 }))).toThrow(/host/);
+  });
 });
 
 describe("switchboard config", () => {
@@ -119,6 +128,22 @@ describe("switchboard config", () => {
   });
   test("rejects a non-string url", () => {
     expect(() => parseConfig(JSON.stringify({ ...base, switchboard: { url: 5 } }))).toThrow(/switchboard.url/);
+  });
+});
+
+describe("saveSwitchboardUrl", () => {
+  function tmpConfig(): string {
+    const p = join(mkdtempSync(join(tmpdir(), "configtest-")), "config.json");
+    writeFileSync(p, JSON.stringify(base, null, 2) + "\n");
+    return p;
+  }
+
+  test("writes the block and reparses", () => {
+    const p = tmpConfig();
+    const cfg = saveSwitchboardUrl("https://sb.example.app/", p);
+    expect(cfg.switchboard.url).toBe("https://sb.example.app");
+    const onDisk = JSON.parse(readFileSync(p, "utf8"));
+    expect(onDisk.switchboard).toEqual({ url: "https://sb.example.app/" });
   });
 });
 

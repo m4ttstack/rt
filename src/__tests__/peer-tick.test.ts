@@ -176,4 +176,20 @@ describe("runPeerTick", () => {
     expect(deps.logs.length).toBe(1);
     expect(deps.logs[0]).toContain("relay exploded");
   });
+
+  test("unauthorized inbox reports auth and skips materialize/ack", async () => {
+    const outbox = freshDir();
+    const events: string[] = [];
+    const client = { publish: async () => 201, inbox: async () => "unauthorized" as const, ack: async () => (events.push("ack"), true) };
+    await runPeerTick(client, { ...fakeDeps(), reportAuth: (s) => events.push(s) }, outbox);
+    expect(events).toEqual(["unauthorized"]);
+  });
+
+  test("successful inbox reports ok", async () => {
+    const outbox = freshDir();
+    const events: string[] = [];
+    const client = { publish: async () => 201, inbox: async () => [], ack: async () => true };
+    await runPeerTick(client, { ...fakeDeps(), reportAuth: (s) => events.push(s) }, outbox);
+    expect(events).toEqual(["ok"]);
+  });
 });

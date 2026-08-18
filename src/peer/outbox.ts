@@ -46,12 +46,16 @@ export function readOutbox(dir: string = OUTBOX_DIR): OutboxEntry[] {
   return out.sort((a, b) => a.queuedAt - b.queuedAt);
 }
 
-/** 2xx delivered. Any other 4xx is permanent (notably 422 unknown-recipient,
-    the common case while most MR authors aren't on the switchboard): drop and
-    log, never a forever-retry loop. 5xx and network errors retry next drain. */
+/** 2xx delivered. 401/403 is the board's credential, not the envelope: the
+    operator re-minted this board's token and it has not re-joined yet, so the
+    queue must survive that window and go out after the re-join. Any other 4xx
+    is permanent (notably 422 unknown-recipient, the common case while most MR
+    authors aren't on the switchboard): drop and log, never a forever-retry
+    loop. 5xx and network errors retry next drain. */
 export function classifySend(status: number | "network"): "sent" | "drop" | "retry" {
   if (status === "network") return "retry";
   if (status >= 200 && status < 300) return "sent";
+  if (status === 401 || status === 403) return "retry";
   if (status >= 400 && status < 500) return "drop";
   return "retry";
 }

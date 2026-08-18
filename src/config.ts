@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from "fs";
+import { readFileSync, renameSync, writeFileSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 
@@ -28,6 +28,8 @@ export interface BoardConfig {
   ticketPrefixes: string[];
   title: string;
   port: number;
+  /** Bind host passed to Bun.serve verbatim. "" means the default loopback. */
+  host: string;
   /** Absolute path the review agent's herdr pane starts in (a repo checkout). Empty disables review launch. */
   reviewCwd: string;
   /** herdr workspace label reviews are grouped under. */
@@ -123,6 +125,9 @@ export function parseConfig(raw: string): BoardConfig {
       throw new Error(`config.json "ticketPrefixes" must be an array of non-empty strings`);
     }
   }
+  if (cfg.host !== undefined && typeof cfg.host !== "string") {
+    throw new Error(`config.json "host" must be a string`);
+  }
   if (cfg.reviewCwd !== undefined && typeof cfg.reviewCwd !== "string") {
     throw new Error(`config.json "reviewCwd" must be a string (absolute path)`);
   }
@@ -169,6 +174,7 @@ export function parseConfig(raw: string): BoardConfig {
     ticketPrefixes: (cfg.ticketPrefixes ?? []).map((p) => p.trim().toUpperCase()),
     title: cfg.title ?? "MRs ready for review",
     port: cfg.port ?? 7930,
+    host: cfg.host ?? "",
     reviewCwd: cfg.reviewCwd ?? "",
     reviewsWorkspace: cfg.reviewsWorkspace ?? "reviews",
     respondCwd: cfg.respondCwd ?? "",
@@ -256,6 +262,18 @@ export function saveMemberHidden(username: string, hidden: boolean): BoardConfig
   return parseConfig(next);
 }
 
+/** Persist switchboard.url to config.json (single writer, like saveMemberHidden)
+    and return the reparsed config. Temp-file-plus-rename: a crashed write must
+    not half-eat the operator's config. */
+export function saveSwitchboardUrl(url: string, path: string = CONFIG_PATH): BoardConfig {
+  const raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+  raw.switchboard = { url };
+  const text = JSON.stringify(raw, null, 2) + "\n";
+  writeFileSync(path + ".tmp", text);
+  renameSync(path + ".tmp", path);
+  return parseConfig(text);
+}
+
 /** Optional after the rt rewire: only the display-name lookup uses it; the
     board runs fully without one. Returns null when no token is configured. */
 export function loadGitLabToken(): string | null {
@@ -290,6 +308,19 @@ export function loadSwitchboardToken(): string | null {
   try {
     const secrets = JSON.parse(readFileSync(RT_SECRETS_PATH, "utf8"));
     if (secrets.switchboardToken) return secrets.switchboardToken;
+  } catch {
+    // no secrets file -- treat as unconfigured
+  }
+  return null;
+}
+
+/** Switchboard ADMIN token (operator only). Presence of this secret is what
+    turns on the board's invite affordances; absence changes nothing. */
+export function loadSwitchboardAdminToken(): string | null {
+  if (process.env.SWITCHBOARD_ADMIN_TOKEN) return process.env.SWITCHBOARD_ADMIN_TOKEN;
+  try {
+    const secrets = JSON.parse(readFileSync(RT_SECRETS_PATH, "utf8"));
+    if (secrets.switchboardAdminToken) return secrets.switchboardAdminToken;
   } catch {
     // no secrets file -- treat as unconfigured
   }

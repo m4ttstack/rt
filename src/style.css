@@ -538,6 +538,55 @@ body {
 }
 .tui-check-box:disabled { cursor: default; }
 .tui-modal-count { flex-shrink: 0; color: var(--muted); font-family: var(--font-mono); font-size: 0.85em; }
+/* right side of a roster row: the peering affordance, then the MR count */
+.tui-modal-right { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
+
+/* ── peering: invite / re-invite / join ───────────────────────────────── */
+/* "already has a board" marker, in the quiet small-caps register of .tui-modal-count */
+.tui-peered {
+  flex-shrink: 0; color: var(--muted); font-size: 0.7rem;
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+/* small action button, in the .tui-draft-act family but sized for a list row */
+.tui-invite-btn {
+  display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;
+  padding: 2px 8px; font: inherit; font-size: 0.75rem; cursor: pointer;
+  background: transparent; border: 1px solid var(--border); border-radius: 6px; color: var(--fg);
+}
+.tui-invite-btn:hover:not(:disabled) { background: var(--card); }
+.tui-invite-btn:disabled { opacity: 0.5; cursor: default; }
+/* CopyButton flashes this class after a successful write (see .tui-drawer-action) */
+.tui-invite-btn.copied { color: var(--dot-ok); border-color: var(--dot-ok); }
+/* free-text handle entry, and the join input: field + button on one line */
+.tui-invite-new { display: flex; align-items: center; gap: 6px; margin-top: 0.7rem; }
+.tui-invite-input {
+  flex: 1; min-width: 0; padding: 3px 8px; font: inherit; font-size: 0.8rem;
+  background: var(--card); border: 1px solid var(--border); border-radius: 6px; color: var(--fg);
+}
+.tui-invite-input::placeholder { color: var(--muted); }
+/* the issued invite: the string itself, its copy button, and what it's good for */
+.tui-invite-row {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin-top: 0.7rem; padding: 0.5rem 0.6rem;
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+}
+.tui-invite-code {
+  flex: 1; min-width: 0; font-family: var(--font-mono); font-size: 0.78rem;
+  color: var(--fg); overflow-wrap: anywhere;
+}
+.tui-invite-note { flex-basis: 100%; color: var(--muted); font-size: 0.72rem; }
+.tui-invite-error { color: var(--dot-bad); margin: 0.6rem 0 0; }
+/* join / re-join sits below the roster, separated the way the modal separates
+   its own sections: a hairline rule, not a heading. */
+.tui-join-row { margin-top: 0.9rem; padding-top: 0.8rem; border-top: 1px solid var(--border); }
+.tui-join-label { color: var(--muted); font-size: 0.76rem; }
+.tui-join-warning { color: var(--dot-bad); margin: 0 0 0.5rem; }
+/* collapsed affordance: a text button, so a healthy board isn't nagged by a form */
+.tui-join-toggle {
+  padding: 0; font: inherit; font-size: 0.76rem; cursor: pointer;
+  background: none; border: none; color: var(--muted); text-decoration: underline;
+}
+.tui-join-toggle:hover { color: var(--fg); }
 
 /* review status badge */
 .tui-review {

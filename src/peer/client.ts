@@ -3,8 +3,11 @@ import { parseEnvelope, type DraftEnvelope, type Envelope } from "./envelope.ts"
 export interface SwitchboardClient {
   /** Resolves to the HTTP status, or "network" when the relay is unreachable. */
   publish(d: DraftEnvelope): Promise<number | "network">;
-  /** Pending envelopes oldest-first, or null when the relay call failed. */
-  inbox(): Promise<Envelope[] | null>;
+  /** Pending envelopes oldest-first, "unauthorized" when the relay rejected the
+      token (401), or null for any other failed relay call. 401 is called out
+      separately because it is the one failure a human can fix: the board's
+      token was revoked or never valid, and the UI says so. */
+  inbox(): Promise<Envelope[] | null | "unauthorized">;
   ack(ids: string[]): Promise<boolean>;
 }
 
@@ -23,6 +26,7 @@ export function makeSwitchboardClient(url: string, token: string, fetchFn: typeo
     async inbox() {
       try {
         const res = await fetchFn(`${base}/inbox`, { headers });
+        if (res.status === 401) return "unauthorized";
         if (!res.ok) return null;
         const body = (await res.json()) as { envelopes?: unknown[] };
         if (!Array.isArray(body.envelopes)) return null;

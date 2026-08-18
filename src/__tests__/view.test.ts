@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { BoardMR } from "../data.ts";
-import { filterByMember, sortMRs, groupMRs, commentDot, dataAgeLabel, statusFlags } from "../view.ts";
+import { filterByMember, sortMRs, groupMRs, commentDot, dataAgeLabel, statusFlags, memberPeerState, joinRowState } from "../view.ts";
 
 function mr(overrides: Partial<BoardMR>): BoardMR {
   return {
@@ -293,5 +293,30 @@ describe("serializeViewState", () => {
   });
   test("includes non-defaults", () => {
     expect(serializeViewState({ member: "bob", group: "status", sort: "oldest" })).toBe("?member=bob&group=status");
+  });
+});
+
+describe("memberPeerState", () => {
+  test("peered when listed, invitable when not, unknown before load", () => {
+    expect(memberPeerState("grace", ["grace", "bob"])).toBe("peered");
+    expect(memberPeerState("dana", ["grace"])).toBe("invitable");
+    expect(memberPeerState("dana", null)).toBe("unknown");
+  });
+  test("comparison is canonical: case and padding do not hide a peer", () => {
+    expect(memberPeerState("Grace ", ["grace"])).toBe("peered");
+  });
+});
+
+describe("joinRowState", () => {
+  test("unconfigured board: open join row", () => {
+    expect(joinRowState(false, null)).toEqual({ label: "join peer boards", collapsed: false });
+  });
+  test("configured + healthy: collapsed re-join affordance", () => {
+    expect(joinRowState(true, "ok")).toEqual({ label: "re-join with a new invite", collapsed: true });
+  });
+  test("token rejected: expanded with warning copy", () => {
+    const s = joinRowState(true, "unauthorized");
+    expect(s.collapsed).toBe(false);
+    expect(s.warning).toContain("re-join");
   });
 });

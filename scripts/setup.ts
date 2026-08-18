@@ -17,6 +17,9 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { readEnvFile, upsertEnvKeys } from "../src/env-file.ts";
+import { carrySwitchboard, classifySetupAnswer, redeemInvite } from "../src/peer/invite.ts";
+import { canonicalUsername } from "../src/peer/envelope.ts";
 
 // Slack app credentials are NOT checked in — bring your own app (see the README
 // "Slack integration" section). setup reads SLACK_CLIENT_ID / SLACK_CLIENT_SECRET
@@ -41,31 +44,6 @@ const TEAM_CONFIG_PATH = join(ROOT, "config.team.json");
 const EXAMPLE_CONFIG_PATH = join(ROOT, "config.example.json");
 const CLAUDE_SKILLS = join(homedir(), ".claude", "skills");
 const SKILLS_SRC = join(ROOT, "skills");
-
-interface EnvMap {
-  [key: string]: string;
-}
-
-function readEnv(): EnvMap {
-  if (!existsSync(ENV_PATH)) return {};
-  const out: EnvMap = {};
-  for (const line of readFileSync(ENV_PATH, "utf8").split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
-    const eq = trimmed.indexOf("=");
-    if (eq === -1) continue;
-    out[trimmed.slice(0, eq)] = trimmed.slice(eq + 1);
-  }
-  return out;
-}
-
-function writeEnv(env: EnvMap): void {
-  const body = Object.entries(env)
-    .filter(([, v]) => v)
-    .map(([k, v]) => `${k}=${v}`)
-    .join("\n");
-  writeFileSync(ENV_PATH, body + "\n", { mode: 0o600 });
-}
 
 function ask(question: string, existing?: string): string {
   const suffix = existing ? ` [${maskIfSecret(question, existing)}]` : "";
@@ -207,7 +185,7 @@ function loadExistingConfig(): Record<string, unknown> | null {
 async function main() {
   console.log("mr-board setup\n");
 
-  const env = readEnv();
+  const env = readEnvFile(ENV_PATH);
   const existingConfig = loadExistingConfig();
 
   const gitlabToken = ask("GitLab personal access token (read_api scope)", env.GITLAB_TOKEN);
@@ -231,7 +209,7 @@ async function main() {
   if (!skipSlack) {
     if (env.SLACK_TOKEN) {
       const reuse = (ask("An existing SLACK_TOKEN was found. Reuse it? (Y/n)", "Y") || "Y").toLowerCase().startsWith("n");
-      if (reuse) delete env.SLACK_TOKEN;
+      if (reuse) env.SLACK_TOKEN = "";
     }
     if (!env.SLACK_TOKEN) {
       const clientId = ask("Slack app client id", env.SLACK_CLIENT_ID || process.env.SLACK_CLIENT_ID);
@@ -252,25 +230,54 @@ async function main() {
     }
   }
 
-  const swUrl = ask(
-    "Switchboard URL for peer boards (optional, blank to skip)",
-    ((existingConfig?.switchboard as { url?: string } | undefined)?.url) ?? "",
-  );
-  if (swUrl) {
-    const swToken = ask("Switchboard board token (minted by your switchboard admin)", env.SWITCHBOARD_TOKEN);
-    if (swToken) env.SWITCHBOARD_TOKEN = swToken;
-    else console.error("No token entered. Peer features stay disabled until SWITCHBOARD_TOKEN is set.");
+  // Peer boards: one paste. An invite link joins outright; a bare URL falls back
+  // to the manual token prompt; blank keeps whatever is already configured.
+  let joined: { url: string } | null = null;
+  const existingSw = existingConfig?.switchboard as { url?: string } | undefined;
+  const answer = ask("Board invite for peer boards (paste the link; blank keeps current settings)", "");
+  const classified = classifySetupAnswer(answer);
+  if (classified.kind === "invalid") {
+    console.error(classified.message);
+  } else if (classified.kind === "manual-url") {
+    const swToken = ask("Switchboard board token (from your operator)", env.SWITCHBOARD_TOKEN);
+    if (swToken) {
+      env.SWITCHBOARD_TOKEN = swToken;
+      joined = { url: classified.url };
+    } else {
+      console.error("No token entered. Peer features stay disabled until SWITCHBOARD_TOKEN is set.");
+    }
+  } else if (classified.kind === "invite" && (!defaultMember || defaultMember === "all")) {
+    // "all" is the same blank as far as peering goes: the board can't tell its
+    // own MRs from anyone else's, so redeeming here would burn a one-time
+    // invite on a board that would publish nothing.
+    console.error("Peer boards need your username; set it above and re-run.");
+  } else if (classified.kind === "invite") {
+    // Redeem as late as possible (right before the .env write below) so a crash
+    // between redeem and persist cannot burn the one-time invite (spec I4).
+    const r = await redeemInvite(classified.url, classified.code, canonicalUsername(defaultMember), fetch);
+    if (r.ok) {
+      env.SWITCHBOARD_TOKEN = r.token;
+      joined = { url: classified.url };
+      console.log(`Joined peer boards as ${r.username}.`);
+    } else {
+      console.error(`Could not join peer boards: ${r.message}`);
+    }
   }
 
-  writeEnv(env);
+  upsertEnvKeys(ENV_PATH, env);
   console.log(`Wrote ${ENV_PATH}`);
 
   const baseConfig = loadBaseConfig();
   const finalConfig = {
+    // setup rebuilds config.json from the base template, so any key it doesn't
+    // prompt for has to be carried across explicitly or a re-run silently drops
+    // it. `host` is one of those: losing it puts a deliberately LAN-bound board
+    // back on loopback without saying so.
     ...baseConfig,
     defaultMember: defaultMember || "all",
     reviewCwd,
-    ...(swUrl ? { switchboard: { url: swUrl } } : {}),
+    ...(typeof existingConfig?.host === "string" && existingConfig.host ? { host: existingConfig.host } : {}),
+    ...carrySwitchboard(existingSw, joined),
   };
   writeFileSync(CONFIG_PATH, JSON.stringify(finalConfig, null, 2) + "\n");
   console.log(`Wrote ${CONFIG_PATH}`);
