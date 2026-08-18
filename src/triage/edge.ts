@@ -15,6 +15,12 @@ export interface OwnMrFacts {
       the author gate at the point it composes --fix-classes, instead of
       trusting the upstream filter implicitly. */
   author: string;
+  /** BOARD-12: the branch pair the stack chain is reconstructed from
+      (src/triage/stack.ts). isStacked is glance's flag for "targetBranch is
+      not the repo's default branch", i.e. this MR sits on top of another. */
+  sourceBranch: string;
+  targetBranch: string;
+  isStacked: boolean;
 }
 
 export type EdgeKind = "pipeline-red" | "needs-rebase";

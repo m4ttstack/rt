@@ -4,7 +4,7 @@ import { detectEdges, markHandled, observe, type OwnMrFacts } from "../triage/ed
 
 const DAY = "2026-08-08";
 const mr = (over: Partial<OwnMrFacts> = {}): OwnMrFacts => ({
-  mrUrl: "https://x/mr/1", iid: 1, pipelineId: 100, pipelineState: "failed", needsRebase: false, author: "matt", ...over,
+  mrUrl: "https://x/mr/1", iid: 1, pipelineId: 100, pipelineState: "failed", needsRebase: false, author: "matt", sourceBranch: "feat", targetBranch: "master", isStacked: false, ...over,
 });
 const fresh = (): DispatchMemory => ({ identity: null, mrs: {} });
 

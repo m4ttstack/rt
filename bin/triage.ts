@@ -95,6 +95,10 @@ try {
         pipelineState: m.pipelineState,
         needsRebase: m.blockers.needsRebase,
         author: m.author.username,
+        // BOARD-12: the stack chain is reconstructed from these three.
+        sourceBranch: m.sourceBranch,
+        targetBranch: m.targetBranch,
+        isStacked: !!m.isStacked,
       }));
   };
 
