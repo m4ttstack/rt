@@ -33,6 +33,7 @@ export function readEnvFile(path: string): Record<string, string> {
     absent from `updates` are left untouched, same as any other update. */
 export function upsertEnvKeys(path: string, updates: Record<string, string>): void {
   const pending = { ...updates };
+  const emitted = new Set<string>();
   const lines = existsSync(path) ? readFileSync(path, "utf8").split("\n") : [];
   const next = lines.flatMap((line) => {
     const trimmed = line.trim();
@@ -41,10 +42,25 @@ export function upsertEnvKeys(path: string, updates: Record<string, string>): vo
     if (eq === -1) return [line];
     // Trimmed to match readEnvFile: an untrimmed "KEY " matches no update, so
     // the stale line would survive and the new value land beside it.
+    //
+    // Membership is checked against `updates` with an own-property test, not
+    // `key in pending` (which walks the prototype chain and would treat a
+    // `constructor=` or `toString=` line as a match against an inherited
+    // function). The value is read from `updates`, and `pending[key]` is
+    // still deleted so the key isn't also appended at the end. A file can
+    // carry more than one line for the same key (bun's own .env loader and
+    // readEnvFile both let the last one win), so `emitted` tracks which
+    // updated keys have already produced a line in this pass: the first
+    // matching line becomes the replacement (or is dropped for the
+    // empty-string removal signal), and every later duplicate for that key
+    // is dropped outright rather than replaced again, so the key appears at
+    // most once in the result.
     const key = trimmed.slice(0, eq).trim();
-    if (key in pending) {
-      const value = pending[key]!;
+    if (Object.hasOwn(updates, key)) {
       delete pending[key];
+      if (emitted.has(key)) return [];
+      emitted.add(key);
+      const value = updates[key]!;
       return value === "" ? [] : [`${key}=${value}`];
     }
     return [line];

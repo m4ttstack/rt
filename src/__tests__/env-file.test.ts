@@ -71,4 +71,40 @@ describe("upsertEnvKeys", () => {
     expect(text).not.toContain("SLACK_TOKEN");
     expect(readEnvFile(p)).toEqual({ GITLAB_TOKEN: "g" });
   });
+  test("collapses duplicate lines for the same key to a single replacement", () => {
+    const p = tmpEnv("SWITCHBOARD_TOKEN=old1\nSWITCHBOARD_TOKEN=old2\n");
+    upsertEnvKeys(p, { SWITCHBOARD_TOKEN: "new" });
+    const text = readFileSync(p, "utf8");
+    expect(text.match(/SWITCHBOARD_TOKEN/g)?.length).toBe(1);
+    expect(text).toContain("SWITCHBOARD_TOKEN=new");
+    expect(text).not.toContain("old1");
+    expect(text).not.toContain("old2");
+    expect(readEnvFile(p)).toEqual({ SWITCHBOARD_TOKEN: "new" });
+  });
+  test("duplicate lines with an empty-string removal value: no line survives", () => {
+    const p = tmpEnv("SWITCHBOARD_TOKEN=old1\nSWITCHBOARD_TOKEN=old2\n");
+    upsertEnvKeys(p, { SWITCHBOARD_TOKEN: "" });
+    const text = readFileSync(p, "utf8");
+    expect(text).not.toContain("SWITCHBOARD_TOKEN");
+    expect(readEnvFile(p)).toEqual({});
+  });
+  test("a line whose key shadows an inherited Object.prototype name is left alone", () => {
+    const p = tmpEnv("constructor=keepme\nGITLAB_TOKEN=g\n");
+    upsertEnvKeys(p, { GITLAB_TOKEN: "new" });
+    const text = readFileSync(p, "utf8");
+    expect(text).toContain("constructor=keepme");
+    expect(text).toContain("GITLAB_TOKEN=new");
+    expect(readEnvFile(p)).toEqual({ constructor: "keepme", GITLAB_TOKEN: "new" });
+  });
+  test("unrelated lines and comments survive a duplicate collapse elsewhere in the file", () => {
+    const p = tmpEnv("# keep me\nSLACK_TOKEN=s\nSWITCHBOARD_TOKEN=old1\nGITLAB_TOKEN=g\nSWITCHBOARD_TOKEN=old2\n");
+    upsertEnvKeys(p, { SWITCHBOARD_TOKEN: "new" });
+    const text = readFileSync(p, "utf8");
+    expect(text).toContain("# keep me");
+    expect(text).toContain("SLACK_TOKEN=s");
+    expect(text).toContain("GITLAB_TOKEN=g");
+    expect(text.match(/SWITCHBOARD_TOKEN/g)?.length).toBe(1);
+    expect(text).toContain("SWITCHBOARD_TOKEN=new");
+    expect(readEnvFile(p)).toEqual({ SLACK_TOKEN: "s", GITLAB_TOKEN: "g", SWITCHBOARD_TOKEN: "new" });
+  });
 });
