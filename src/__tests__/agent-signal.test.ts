@@ -12,38 +12,42 @@ function wireBody(signal: AgentSignal): unknown {
   return JSON.parse(JSON.stringify(signal));
 }
 
+/** A workspace convention with a custom emoji, like the one this board grew up in. */
+const EMOJI = { looking: "eyes", commented: "comment", approved: "white_check_mark" };
+
 describe("signalEmoji", () => {
-  test("a review that has started gets the looking eyes", () => {
-    expect(signalEmoji("review", "reviewing")).toBe("eyes");
+  test("a review that has started gets the looking emoji", () => {
+    expect(signalEmoji("review", "reviewing", EMOJI)).toBe("eyes");
   });
 
-  test("a review that landed as a comment gets the comment reaction", () => {
-    expect(signalEmoji("review", "done", "comment")).toBe("comment");
+  test("a review that landed as a comment gets the configured commented emoji", () => {
+    expect(signalEmoji("review", "done", EMOJI, "comment")).toBe("comment");
+    expect(signalEmoji("review", "done", { ...EMOJI, commented: "speech_balloon" }, "comment")).toBe("speech_balloon");
   });
 
   test("a review that landed as an approval gets the check", () => {
-    expect(signalEmoji("review", "done", "approve")).toBe("white_check_mark");
+    expect(signalEmoji("review", "done", EMOJI, "approve")).toBe("white_check_mark");
   });
 
   test("done without an outcome signals nothing -- the human never answered the gate", () => {
-    expect(signalEmoji("review", "done")).toBeNull();
-    expect(signalEmoji("review", "done", "")).toBeNull();
+    expect(signalEmoji("review", "done", EMOJI)).toBeNull();
+    expect(signalEmoji("review", "done", EMOJI, "")).toBeNull();
   });
 
   test("an unknown outcome signals nothing rather than guessing", () => {
-    expect(signalEmoji("review", "done", "approved")).toBeNull();
+    expect(signalEmoji("review", "done", EMOJI, "approved")).toBeNull();
   });
 
   test("queued and error signal nothing", () => {
-    expect(signalEmoji("review", "queued")).toBeNull();
-    expect(signalEmoji("review", "error")).toBeNull();
+    expect(signalEmoji("review", "queued", EMOJI)).toBeNull();
+    expect(signalEmoji("review", "error", EMOJI)).toBeNull();
   });
 
   test("respond and doctor have no policy yet", () => {
-    expect(signalEmoji("respond", "drafting")).toBeNull();
-    expect(signalEmoji("respond", "done")).toBeNull();
-    expect(signalEmoji("doctor", "watching")).toBeNull();
-    expect(signalEmoji("doctor", "done")).toBeNull();
+    expect(signalEmoji("respond", "drafting", EMOJI)).toBeNull();
+    expect(signalEmoji("respond", "done", EMOJI)).toBeNull();
+    expect(signalEmoji("doctor", "watching", EMOJI)).toBeNull();
+    expect(signalEmoji("doctor", "done", EMOJI)).toBeNull();
   });
 });
 

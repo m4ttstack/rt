@@ -31,7 +31,12 @@
     "singleTemplate": "{title}: {url}",
     "multiHeader": "{count} MR's ready for review :pray:",
     "multiItem": "- {title}: {url}",
-    "autoResolveIntervalMinutes": 15
+    "autoResolveIntervalMinutes": 15,
+    "emoji": {
+      "looking": "eyes",
+      "commented": "speech_balloon",
+      "approved": "white_check_mark"
+    }
   },
   "switchboard": { "url": "" }
 }

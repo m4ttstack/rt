@@ -15,7 +15,7 @@ import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, 
 import { readDrafts, heldDraftsByMr, attachDrafts, pruneDrafts, draftFilePath, writeDraft } from "./draft-state.ts";
 import { launchReview, launchRespond, launchDoctor, launchResume, focusTab, operatorNoteParagraph, parseLaunchNote } from "./herdr.ts";
 import { launchReReview } from "./review-launch.ts";
-import { readSlackRefs, attachSlack, resolveSlackRef, reactToMR, unreactFromMR, postToSlack, REVIEW_EMOJI } from "./slack.ts";
+import { readSlackRefs, attachSlack, resolveSlackRef, reactToMR, unreactFromMR, postToSlack } from "./slack.ts";
 import { signalEmoji, parseAgentSignal } from "./agent-signal.ts";
 import { makeSwitchboardClient, type SwitchboardClient } from "./peer/client.ts";
 import { type MaterializeDeps } from "./peer/inbox.ts";
@@ -443,6 +443,7 @@ Bun.serve({
             canInvite: isLocalRequest(req) && !!switchboardAdminToken && !!config.switchboard.url,
             peering: peering.current() ? peering.current()!.health() : null,
             slackEnabled: !!slackToken,
+            slackEmoji: config.slack.emoji,
             slackTemplates: {
               single: config.slack.singleTemplate,
               multiHeader: config.slack.multiHeader,
@@ -792,7 +793,7 @@ Bun.serve({
             kickOutbox(pc);
           }
         }
-        const emoji = signalEmoji(signal.kind, signal.status, signal.outcome);
+        const emoji = signalEmoji(signal.kind, signal.status, config.slack.emoji, signal.outcome);
         if (!emoji) {
           return new Response(JSON.stringify({ ok: true, reacted: false }), { headers: { "content-type": "application/json" } });
         }
@@ -1173,7 +1174,7 @@ Bun.serve({
           return new Response("invalid json", { status: 400 });
         }
         const { mrUrl, emoji, remove } = (body ?? {}) as { mrUrl?: unknown; emoji?: unknown; remove?: unknown };
-        const allowed = Object.values(REVIEW_EMOJI) as string[];
+        const allowed = Object.values(config.slack.emoji);
         if (typeof mrUrl !== "string" || typeof emoji !== "string" || !allowed.includes(emoji)) {
           return new Response(`expected { mrUrl: string, emoji: one of ${allowed.join("|")}, remove?: boolean }`, { status: 400 });
         }

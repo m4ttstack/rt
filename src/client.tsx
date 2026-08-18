@@ -66,6 +66,8 @@ interface BoardData {
   fetchError: string | null;
   local: boolean;
   slackEnabled: boolean;
+  /** Configured review-signal emoji names by role; absent on older servers. */
+  slackEmoji?: { looking: string; commented: string; approved: string };
   slackTemplates: SlackTemplates;
   /** Oldest daemon syncedAt across projects; null when no daemon read reached
       this snapshot. Drives the honest footer (distinct from `fetchedAt`, which
@@ -490,16 +492,9 @@ function DraftBadge({ draft, resolved, onOpen }: { draft: DraftInfo; resolved?: 
   );
 }
 
-/** Slack review-signal reactions (eyes / comment / white_check_mark) currently
-    on the MR's request message. Rendered next to the review badge so a row
-    shows both the launched-review lifecycle and what teammates have already
-    signalled in slack. */
-const SLACK_REACTION_TITLE: Record<string, string> = {
-  eyes: "someone's looking (in slack)",
-  comment: "commented in slack",
-  white_check_mark: "approved in slack",
-};
-
+/** Slack review-signal reactions currently on the MR's request message.
+    Rendered next to the review badge so a row shows both the launched-review
+    lifecycle and what teammates have already signalled in slack. */
 function SlackReactionChips({ reactions }: { reactions?: string[] }) {
   if (!reactions?.length) return null;
   const set = new Set(reactions);
@@ -508,7 +503,7 @@ function SlackReactionChips({ reactions }: { reactions?: string[] }) {
   return (
     <span className="tui-slack-reactions">
       {present.map((m) => (
-        <span key={m.emoji} className="tui-slack-reaction" title={SLACK_REACTION_TITLE[m.emoji] ?? m.emoji}>
+        <span key={m.emoji} className="tui-slack-reaction" title={m.title}>
           {m.glyph}
         </span>
       ))}
@@ -718,12 +713,27 @@ function DraftModal({
 
 // ── row action menu (right-click) ────────────────────────────────────────────
 
-/** The three review-signal reactions, in menu order. */
-const SLACK_MARKS: { emoji: string; glyph: string; label: string }[] = [
-  { emoji: "eyes", glyph: "👀", label: "mark 👀 on slack" },
-  { emoji: "comment", glyph: "💬", label: "mark 💬 on slack" },
-  { emoji: "white_check_mark", glyph: "✅", label: "mark ✅ on slack" },
-];
+/** The three review-signal reactions, in menu order. The glyph and wording are
+    fixed per role; the emoji *name* sent to Slack comes from the server's
+    configured `slack.emoji` map (standard-emoji defaults until data loads). */
+interface SlackMark {
+  emoji: string;
+  glyph: string;
+  label: string;
+  title: string;
+}
+
+function buildSlackMarks(e: { looking: string; commented: string; approved: string }): SlackMark[] {
+  return [
+    { emoji: e.looking, glyph: "👀", label: "mark 👀 on slack", title: "someone's looking (in slack)" },
+    { emoji: e.commented, glyph: "💬", label: "mark 💬 on slack", title: "commented in slack" },
+    { emoji: e.approved, glyph: "✅", label: "mark ✅ on slack", title: "approved in slack" },
+  ];
+}
+
+/** Module-level so every component reads the same list; rebuilt when /data.json
+    arrives (which always precedes a re-render of anything that shows marks). */
+let SLACK_MARKS = buildSlackMarks({ looking: "eyes", commented: "speech_balloon", approved: "white_check_mark" });
 
 /** Inline Slack logo — a simple 4-blob squircle. Currentcolor so it inherits from container. */
 const SLACK_ICON = (
@@ -2291,6 +2301,7 @@ function Board() {
       fetch(fresh ? "/data.json?fresh=1" : "/data.json")
         .then((r) => r.json())
         .then((d: BoardData) => {
+          if (d.slackEmoji) SLACK_MARKS = buildSlackMarks(d.slackEmoji);
           setData(d);
           setLoadError(false);
           const usernames = d.members.map((m) => m.username);

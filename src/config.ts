@@ -72,6 +72,15 @@ export interface SwitchboardBoardConfig {
   url: string;
 }
 
+/** The three review-signal reactions by role, as Slack emoji names (no colons).
+    Adapt these to your workspace's convention — e.g. a custom `comment` emoji
+    instead of the standard `speech_balloon`. */
+export interface SlackEmojiConfig {
+  looking: string;
+  commented: string;
+  approved: string;
+}
+
 export interface SlackConfig {
   /** Channel name (no #) where MR review requests live and where "post to slack" posts. */
   channel: string;
@@ -84,7 +93,14 @@ export interface SlackConfig {
   /** How often the server sweeps the board and resolves missing Slack refs, in minutes.
       Set to 0 to disable the sweeper (client can still resolve on-demand). */
   autoResolveIntervalMinutes: number;
+  emoji: SlackEmojiConfig;
 }
+
+export const DEFAULT_SLACK_EMOJI: SlackEmojiConfig = {
+  looking: "eyes",
+  commented: "speech_balloon",
+  approved: "white_check_mark",
+};
 
 const DEFAULT_SLACK: SlackConfig = {
   channel: "code-review",
@@ -92,6 +108,7 @@ const DEFAULT_SLACK: SlackConfig = {
   multiHeader: "{count} MR's ready for review :pray:",
   multiItem: "- {title}: {url}",
   autoResolveIntervalMinutes: 15,
+  emoji: DEFAULT_SLACK_EMOJI,
 };
 
 export const CONFIG_PATH = join(import.meta.dir, "..", "config.json");
@@ -227,7 +244,29 @@ function parseSlack(raw: unknown): SlackConfig {
     multiHeader: s.multiHeader ?? DEFAULT_SLACK.multiHeader,
     multiItem: s.multiItem ?? DEFAULT_SLACK.multiItem,
     autoResolveIntervalMinutes: s.autoResolveIntervalMinutes ?? DEFAULT_SLACK.autoResolveIntervalMinutes,
+    emoji: parseSlackEmoji(s.emoji),
   };
+}
+
+/** Partial override: any role left out keeps its standard-emoji default.
+    Names are accepted with or without colons (`:comment:` → `comment`). */
+function parseSlackEmoji(raw: unknown): SlackEmojiConfig {
+  if (raw === undefined || raw === null) return { ...DEFAULT_SLACK_EMOJI };
+  if (typeof raw !== "object" || Array.isArray(raw)) {
+    throw new Error(`config.json "slack.emoji" must be an object`);
+  }
+  const e = raw as Partial<SlackEmojiConfig>;
+  const out = { ...DEFAULT_SLACK_EMOJI };
+  for (const role of ["looking", "commented", "approved"] as const) {
+    if (e[role] === undefined) continue;
+    if (typeof e[role] !== "string") {
+      throw new Error(`config.json "slack.emoji.${role}" must be a string (a Slack emoji name)`);
+    }
+    const name = e[role].trim().replace(/^:|:$/g, "");
+    if (!name) throw new Error(`config.json "slack.emoji.${role}" must be a non-empty emoji name`);
+    out[role] = name;
+  }
+  return out;
 }
 
 export function loadConfig(): BoardConfig {

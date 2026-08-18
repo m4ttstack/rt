@@ -115,6 +115,32 @@ describe("parseConfig", () => {
   });
 });
 
+describe("slack emoji config", () => {
+  test("defaults to the standard emoji set", () => {
+    expect(parseConfig(JSON.stringify(base)).slack.emoji).toEqual({
+      looking: "eyes",
+      commented: "speech_balloon",
+      approved: "white_check_mark",
+    });
+  });
+
+  test("a partial override keeps defaults for the other roles", () => {
+    const cfg = parseConfig(JSON.stringify({ ...base, slack: { emoji: { commented: "comment" } } }));
+    expect(cfg.slack.emoji).toEqual({ looking: "eyes", commented: "comment", approved: "white_check_mark" });
+  });
+
+  test("accepts colon-wrapped names and strips the colons", () => {
+    const cfg = parseConfig(JSON.stringify({ ...base, slack: { emoji: { approved: ":heavy_check_mark:" } } }));
+    expect(cfg.slack.emoji.approved).toBe("heavy_check_mark");
+  });
+
+  test("rejects non-object emoji, non-string roles, and empty names", () => {
+    expect(() => parseConfig(JSON.stringify({ ...base, slack: { emoji: "eyes" } }))).toThrow(/slack.emoji/);
+    expect(() => parseConfig(JSON.stringify({ ...base, slack: { emoji: { looking: 5 } } }))).toThrow(/slack.emoji.looking/);
+    expect(() => parseConfig(JSON.stringify({ ...base, slack: { emoji: { commented: "::" } } }))).toThrow(/slack.emoji.commented/);
+  });
+});
+
 describe("switchboard config", () => {
   test("defaults to empty url", () => {
     expect(parseConfig(JSON.stringify(base)).switchboard).toEqual({ url: "" });
