@@ -40,6 +40,10 @@ export interface BoardConfig {
   doctorCwd: string;
   /** herdr workspace label doctor sessions are grouped under. */
   doctorsWorkspace: string;
+  /** Command that starts claude in every pane the board launches, e.g.
+      "cswap run 2 --share-history -- claude" to pin panes to one account.
+      Inserted verbatim (trusted operator config). Empty = plain "claude". */
+  claudeCommand: string;
   /** Domain skill the review wrapper delegates to, e.g. "myteam:review".
       Empty = the generic wrapper reviews on its own. Keeps all domain knowledge in config. */
   reviewSkill: string;
@@ -137,6 +141,9 @@ export function parseConfig(raw: string): BoardConfig {
   if (cfg.doctorsWorkspace !== undefined && typeof cfg.doctorsWorkspace !== "string") {
     throw new Error(`config.json "doctorsWorkspace" must be a string`);
   }
+  if (cfg.claudeCommand !== undefined && typeof cfg.claudeCommand !== "string") {
+    throw new Error(`config.json "claudeCommand" must be a string (a shell command that starts claude)`);
+  }
   for (const key of ["reviewSkill", "respondSkill", "doctorSkill"] as const) {
     if (cfg[key] !== undefined && typeof cfg[key] !== "string") {
       throw new Error(`config.json "${key}" must be a string (a skill name)`);
@@ -168,6 +175,7 @@ export function parseConfig(raw: string): BoardConfig {
     respondsWorkspace: cfg.respondsWorkspace ?? "responses",
     doctorCwd: cfg.doctorCwd ?? "",
     doctorsWorkspace: cfg.doctorsWorkspace ?? "doctors",
+    claudeCommand: cfg.claudeCommand ?? "",
     reviewSkill: cfg.reviewSkill ?? "",
     respondSkill: cfg.respondSkill ?? "",
     doctorSkill: cfg.doctorSkill ?? "",

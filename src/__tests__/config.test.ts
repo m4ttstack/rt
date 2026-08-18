@@ -75,6 +75,14 @@ describe("parseConfig", () => {
     expect(() => parseConfig(JSON.stringify({ ...base, members: [{ username: "alice", hidden: "yes" }] }))).toThrow(/hidden/);
   });
 
+  test("claudeCommand defaults empty, accepts a string, rejects non-strings", () => {
+    expect(parseConfig(JSON.stringify(base)).claudeCommand).toBe("");
+    expect(parseConfig(JSON.stringify({ ...base, claudeCommand: "cswap run 2 -- claude" })).claudeCommand).toBe(
+      "cswap run 2 -- claude",
+    );
+    expect(() => parseConfig(JSON.stringify({ ...base, claudeCommand: 2 }))).toThrow(/claudeCommand/);
+  });
+
   test("reviewCwd defaults empty; reviewsWorkspace defaults to 'reviews'", () => {
     const cfg = parseConfig(JSON.stringify(base));
     expect(cfg.reviewCwd).toBe("");

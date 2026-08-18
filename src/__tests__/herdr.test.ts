@@ -10,6 +10,7 @@ import {
   reReviewResumePrompt,
   mrTabLabel,
   launchReview,
+  launchResume,
   type HerdrRunner,
 } from "../herdr.ts";
 
@@ -93,8 +94,22 @@ describe("command builders", () => {
       reviewPrompt({ mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: "/b/review-status.ts", reportPath: "/s/1.md", reReview: true }),
     ).toBe("/mr-board:review https://x/mr/1 --state /s/1.json --status-bin /b/review-status.ts --report /s/1.md --re-review");
   });
+  test("buildPaneCommand launches a configured claude command in place of plain claude", () => {
+    expect(buildPaneCommand("/repo dir", "do it", "cswap run 2 --share-history -- claude")).toBe(
+      "cd '/repo dir' && cswap run 2 --share-history -- claude 'do it'",
+    );
+  });
+  test("buildPaneCommand falls back to plain claude when the configured command is empty", () => {
+    expect(buildPaneCommand("/repo", "do it", "")).toBe("cd '/repo' && claude 'do it'");
+    expect(buildPaneCommand("/repo", "do it", "   ")).toBe("cd '/repo' && claude 'do it'");
+  });
   test("buildResumePaneCommand with no prompt drops into an interactive resume", () => {
     expect(buildResumePaneCommand("/repo", "sess-1")).toBe("cd '/repo' && claude --resume 'sess-1'");
+  });
+  test("buildResumePaneCommand resumes under the configured claude command", () => {
+    expect(buildResumePaneCommand("/repo", "sess-1", "hi", "cswap run 2 -- claude")).toBe(
+      "cd '/repo' && cswap run 2 -- claude --resume 'sess-1' 'hi'",
+    );
   });
   test("buildResumePaneCommand with a prompt resumes and sends it as the first message", () => {
     expect(buildResumePaneCommand("/repo", "sess-1", "re-review please")).toBe(
@@ -143,6 +158,44 @@ describe("launchReview", () => {
     expect(runCall?.[2]).toBe("w40:p7");
     expect(runCall?.[3]).toContain("claude '/mr-board:review https://x/mr/1 --state /s/1.json");
     expect(runCall?.[3]).toContain("bin/review-status.ts --report /s/1.md'");
+  });
+
+  test("launches the pane with the configured claude command when set", async () => {
+    const calls: string[][] = [];
+    const runner: HerdrRunner = async (args) => {
+      calls.push(args);
+      if (args[0] === "workspace" && args[1] === "list") return WS_LIST;
+      if (args[0] === "tab" && args[1] === "create") return TAB_CREATE;
+      return JSON.stringify({ result: { type: "ok" } });
+    };
+    await launchReview(
+      {
+        mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "reviews", statePath: "/s/1.json",
+        claudeCommand: "cswap run 2 --share-history -- claude",
+      },
+      runner,
+    );
+    const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
+    expect(runCall?.[3]).toStartWith("cd '/repo' && cswap run 2 --share-history -- claude '/mr-board:review ");
+  });
+
+  test("launchResume resumes under the configured claude command when set", async () => {
+    const calls: string[][] = [];
+    const runner: HerdrRunner = async (args) => {
+      calls.push(args);
+      if (args[0] === "workspace" && args[1] === "list") return WS_LIST;
+      if (args[0] === "tab" && args[1] === "create") return TAB_CREATE;
+      return JSON.stringify({ result: { type: "ok" } });
+    };
+    await launchResume(
+      {
+        mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "reviews", statePath: "/s/1.json",
+        sessionId: "sess-1", workspaceKind: "review", claudeCommand: "cswap run 2 -- claude",
+      },
+      runner,
+    );
+    const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
+    expect(runCall?.[3]).toBe("cd '/repo' && cswap run 2 -- claude --resume 'sess-1'");
   });
 
   test("puts the MR author beside the id in the tab label when given", async () => {

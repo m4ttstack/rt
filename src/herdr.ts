@@ -136,16 +136,23 @@ export function doctorPrompt(o: SkillPromptOpts): string {
   return buildSkillPrompt("mr-board:doctor", o);
 }
 
+/** The command a pane starts claude with. config.claudeCommand replaces plain
+    "claude" verbatim (trusted operator config, e.g. a cswap wrapper that pins
+    the account); empty/absent keeps the historical behavior. */
+function claudeInvocation(claudeCommand?: string): string {
+  return claudeCommand?.trim() || "claude";
+}
+
 /** Shell command that cd's into cwd and starts claude with the given prompt. */
-export function buildPaneCommand(cwd: string, prompt: string): string {
-  return `cd ${shellSingleQuote(cwd)} && claude ${shellSingleQuote(prompt)}`;
+export function buildPaneCommand(cwd: string, prompt: string, claudeCommand?: string): string {
+  return `cd ${shellSingleQuote(cwd)} && ${claudeInvocation(claudeCommand)} ${shellSingleQuote(prompt)}`;
 }
 
 /** Shell command that cd's into cwd and resumes an existing claude session. With
     no prompt, claude drops the user into the interactive continuation; with one,
     claude resumes and sends it as the first message (used by re-review). */
-export function buildResumePaneCommand(cwd: string, sessionId: string, prompt?: string): string {
-  const base = `cd ${shellSingleQuote(cwd)} && claude --resume ${shellSingleQuote(sessionId)}`;
+export function buildResumePaneCommand(cwd: string, sessionId: string, prompt?: string, claudeCommand?: string): string {
+  const base = `cd ${shellSingleQuote(cwd)} && ${claudeInvocation(claudeCommand)} --resume ${shellSingleQuote(sessionId)}`;
   return prompt ? `${base} ${shellSingleQuote(prompt)}` : base;
 }
 
@@ -176,6 +183,8 @@ export interface LaunchPaneOpts {
   statePath: string;
   /** Domain skill the launched wrapper delegates to (config.reviewSkill etc.). */
   skill?: string;
+  /** Command that starts claude in the pane (config.claudeCommand). Empty/absent = "claude". */
+  claudeCommand?: string;
   /** Review only: launch this review with the re-review framing (see reviewPrompt). */
   reReview?: boolean;
   /** The MR author, shown in the tab label beside the id (a display name like
@@ -244,7 +253,7 @@ export async function launchReview(opts: LaunchPaneOpts, runner: HerdrRunner = d
     reReview: opts.reReview,
   });
   const tabLabel = mrTabLabel(opts.iid, opts.author, opts.reReview ? "⟲" : undefined);
-  return launchInWorkspace(opts, buildPaneCommand(opts.cwd, prompt), "review", tabLabel, runner);
+  return launchInWorkspace(opts, buildPaneCommand(opts.cwd, prompt, opts.claudeCommand), "review", tabLabel, runner);
 }
 
 /** Start the MR-response skill in a fresh herdr tab under the responses workspace. */
@@ -255,7 +264,7 @@ export async function launchRespond(opts: LaunchPaneOpts, runner: HerdrRunner = 
     statusBin: statusBinPath("respond"),
     skill: opts.skill,
   });
-  return launchInWorkspace(opts, buildPaneCommand(opts.cwd, prompt), "respond", mrTabLabel(opts.iid, opts.author), runner);
+  return launchInWorkspace(opts, buildPaneCommand(opts.cwd, prompt, opts.claudeCommand), "respond", mrTabLabel(opts.iid, opts.author), runner);
 }
 
 /** Start the MR-doctor skill in a fresh herdr tab under the doctors workspace. */
@@ -269,7 +278,7 @@ export async function launchDoctor(opts: LaunchPaneOpts, runner: HerdrRunner = d
     fixClasses: opts.fixClasses,
     draftBin: opts.draftBin,
   });
-  return launchInWorkspace(opts, buildPaneCommand(opts.cwd, prompt), "doctor", mrTabLabel(opts.iid, opts.author), runner);
+  return launchInWorkspace(opts, buildPaneCommand(opts.cwd, prompt, opts.claudeCommand), "doctor", mrTabLabel(opts.iid, opts.author), runner);
 }
 
 /** Resume an existing session in a new pane under the given workspace. The tab is
@@ -283,7 +292,7 @@ export async function launchResume(
 ): Promise<{ tabId: string; workspaceId: string }> {
   return launchInWorkspace(
     opts,
-    buildResumePaneCommand(opts.cwd, opts.sessionId, opts.prompt),
+    buildResumePaneCommand(opts.cwd, opts.sessionId, opts.prompt, opts.claudeCommand),
     opts.workspaceKind,
     mrTabLabel(opts.iid, opts.author, opts.tabPrefix ?? "↺"),
     runner,
