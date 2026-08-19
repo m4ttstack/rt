@@ -20,6 +20,18 @@ import { tuiTheme } from "./src/theme.ts";
  * restated in the `.dark` block — which is exactly why mr-board's own dark
  * block never needed the font stacks either.
  *
+ * DO NOT RENAME OR REMOVE THESE ALIASES. They are not a convenience layer over
+ * the "real" names — the theme itself depends on them. All 16 wash tokens in
+ * src/theme.ts (`--surface-wash-*`) are raw `color-mix()` strings that mix
+ * `var(--panel)`, `var(--accent)`, `var(--fg)`, `var(--bg)`, `var(--cyan)`,
+ * `var(--amber)` and `var(--border)` BY NAME, and those seven properties exist
+ * only because this resolver injects them. Drop or rename one and every wash
+ * mixing it resolves to nothing: invalid CSS, emitted silently, with no codegen
+ * error — a raw string is passed through unvalidated by design (validateRef
+ * skips anything that is not a dotted token path). test/theme.test.ts's
+ * referential-closure test is the guard: it fails the moment a `var()` in the
+ * generated file has no matching declaration.
+ *
  * NOTE the two deliberate absences: `--border-soft` and (for the same reason)
  * anything else whose alias name would collide with an emitted semantic name.
  * The semantic key `border.soft` already emits precisely `--border-soft`;
