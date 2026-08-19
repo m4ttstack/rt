@@ -1,7 +1,6 @@
 import { useState } from "react";
 import type { BoardMRWithReview, DraftInfo } from "../types.ts";
-import { ICONS } from "../ui/Icon.tsx";
-import { useEscapeClose } from "../ui/hooks.ts";
+import { Modal } from "../ui/Modal.tsx";
 import { cleanTitle } from "./format.ts";
 
 /** Drawer for one held outbound note. Shows the full body verbatim — exactly
@@ -27,7 +26,6 @@ function DraftModal({
   const [armed, setArmed] = useState(false);
   const [busy, setBusy] = useState<"post" | "dismiss" | null>(null);
   const [failed, setFailed] = useState(false);
-  useEscapeClose(onClose);
   const act = async (action: "post" | "dismiss") => {
     setBusy(action);
     setFailed(false);
@@ -46,40 +44,37 @@ function DraftModal({
     }
   };
   return (
-    <div className="tui-modal-overlay" onClick={onClose}>
-      <div className="tui-modal tui-draft-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal aria-label={`held draft for !${mr.iid}`}>
-        <div className="tui-modal-head">
-          <span className="tui-modal-title">❯ held: {draft.kind} · !{mr.iid}</span>
-          <button className="tui-modal-x" onClick={onClose} aria-label="close">
-            {ICONS.close}
-          </button>
-        </div>
-        <p className="tui-modal-sub">{cleanTitle(mr.title)}</p>
-        <pre className="tui-draft-body">{draft.body}</pre>
-        <div className="tui-draft-actions">
-          {failed && <span className="tui-draft-error">action failed — nothing was sent, try again</span>}
-          {local ? (
-            armed ? (
-              <>
-                <button className="tui-draft-act" disabled={busy !== null} onClick={() => setArmed(false)}>back</button>
-                <button className="tui-draft-act tui-draft-act-post armed" disabled={busy !== null} onClick={() => act("post")}>
-                  {busy === "post" ? "posting…" : "confirm post"}
-                </button>
-              </>
-            ) : (
-              <>
-                <button className="tui-draft-act" disabled={busy !== null} onClick={() => act("dismiss")}>
-                  {busy === "dismiss" ? "dismissing…" : "dismiss"}
-                </button>
-                <button className="tui-draft-act tui-draft-act-post" disabled={busy !== null} onClick={() => setArmed(true)}>post</button>
-              </>
-            )
+    <Modal
+      title={<>❯ held: {draft.kind} · !{mr.iid}</>}
+      ariaLabel={`held draft for !${mr.iid}`}
+      onClose={onClose}
+      className="tui-draft-modal"
+    >
+      <p className="tui-modal-sub">{cleanTitle(mr.title)}</p>
+      <pre className="tui-draft-body">{draft.body}</pre>
+      <div className="tui-draft-actions">
+        {failed && <span className="tui-draft-error">action failed — nothing was sent, try again</span>}
+        {local ? (
+          armed ? (
+            <>
+              <button className="tui-draft-act" disabled={busy !== null} onClick={() => setArmed(false)}>back</button>
+              <button className="tui-draft-act tui-draft-act-post armed" disabled={busy !== null} onClick={() => act("post")}>
+                {busy === "post" ? "posting…" : "confirm post"}
+              </button>
+            </>
           ) : (
-            <span className="tui-draft-note">read-only — post and dismiss live on the local board</span>
-          )}
-        </div>
+            <>
+              <button className="tui-draft-act" disabled={busy !== null} onClick={() => act("dismiss")}>
+                {busy === "dismiss" ? "dismissing…" : "dismiss"}
+              </button>
+              <button className="tui-draft-act tui-draft-act-post" disabled={busy !== null} onClick={() => setArmed(true)}>post</button>
+            </>
+          )
+        ) : (
+          <span className="tui-draft-note">read-only — post and dismiss live on the local board</span>
+        )}
       </div>
-    </div>
+    </Modal>
   );
 }
 

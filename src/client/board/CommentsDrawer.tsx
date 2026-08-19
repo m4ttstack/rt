@@ -4,6 +4,8 @@ import { commentDot } from "../../view.ts";
 import type { CommentNote, CommentThread, GeneralComment } from "../types.ts";
 import { Markdown } from "../ui/Markdown.tsx";
 import { ICONS } from "../ui/Icon.tsx";
+import { SideDrawer } from "../ui/SideDrawer.tsx";
+import { useBodyScrollLock } from "../ui/hooks.ts";
 import { ago, cleanTitle, statusPhrase, THREAD_ICON, THREAD_LABEL, commentCount } from "./format.ts";
 import { getDiscussions } from "../api.ts";
 
@@ -107,21 +109,17 @@ function CommentsDrawer({ mr, onClose }: { mr: BoardMR; onClose: () => void }) {
     getDiscussions(mr.rtRepo ?? "", mr.iid, mr.author.username)
       .then((d) => setData(d))
       .catch(() => setFailed(true));
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    // Lock body scroll so the page's scrollbar (from the board behind) doesn't
-    // show alongside the drawer's own — no double scrollbar.
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    return () => {
-      document.removeEventListener("keydown", onKey);
-      document.body.style.overflow = prevOverflow;
-    };
-  }, [mr, onClose]);
+  }, [mr]);
+  // Lock body scroll so the page's scrollbar (from the board behind) doesn't
+  // show alongside the drawer's own — no double scrollbar.
+  useBodyScrollLock();
   return (
-    <div
-      className="tui-cd-overlay"
-      onClick={(e) => {
+    <SideDrawer
+      overlayClassName="tui-cd-overlay"
+      panelClassName="tui-cd"
+      ariaLabel="comment threads"
+      onClose={onClose}
+      onOverlayClick={(e) => {
         // The drawer renders inside the row (whose onClick opens the MR); React
         // events bubble by component tree, so stop here or clicking the overlay
         // would also open the MR.
@@ -129,62 +127,60 @@ function CommentsDrawer({ mr, onClose }: { mr: BoardMR; onClose: () => void }) {
         onClose();
       }}
     >
-      <div className="tui-cd" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="comment threads">
-        <div className="tui-cd-head">
-          <div className="tui-cd-title">
-            <span className="tui-cd-iid">!{mr.iid}</span> {cleanTitle(mr.title)}
-          </div>
-          <button className="tui-modal-x" onClick={onClose} aria-label="close">
-            {ICONS.close}
-          </button>
+      <div className="tui-cd-head">
+        <div className="tui-cd-title">
+          <span className="tui-cd-iid">!{mr.iid}</span> {cleanTitle(mr.title)}
         </div>
-        <a className="tui-cd-open" href={mr.webUrl ?? "#"} target="_blank" rel="noopener noreferrer">
-          open in gitlab ↗
-        </a>
-        <div className="tui-cd-body">
-          {failed ? (
-            <p className="tui-comments-empty">couldn't load comments</p>
-          ) : !data ? (
-            <p className="tui-comments-empty">loading…</p>
-          ) : data.threads.length === 0 && data.comments.length === 0 ? (
-            <p className="tui-comments-empty">no comments</p>
-          ) : (
-            <>
-              {data.threads.map((t, i) => (
-                <section key={i} className={`tui-cd-thread ${t.status}`}>
-                  <div className="tui-cd-thread-status">
-                    <span>
-                      <span className="tui-comment-icon">{THREAD_ICON[t.status]}</span> {THREAD_LABEL[t.status]}
-                    </span>
-                    {mr.webUrl && t.notes[0] && (
-                      <a
-                        className="tui-cd-thread-open"
-                        href={`${mr.webUrl}#note_${t.notes[0].id}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        open ↗
-                      </a>
-                    )}
-                  </div>
-                  {t.notes.map((n) => (
-                    <CommentNoteView key={n.id} mr={mr} note={n} now={now} />
-                  ))}
-                </section>
-              ))}
-              {data.comments.length > 0 && (
-                <section className="tui-cd-comments">
-                  <div className="tui-cd-comments-head">MR comments</div>
-                  {data.comments.map((c) => (
-                    <CommentNoteView key={c.id} mr={mr} note={c} now={now} />
-                  ))}
-                </section>
-              )}
-            </>
-          )}
-        </div>
+        <button className="tui-modal-x" onClick={onClose} aria-label="close">
+          {ICONS.close}
+        </button>
       </div>
-    </div>
+      <a className="tui-cd-open" href={mr.webUrl ?? "#"} target="_blank" rel="noopener noreferrer">
+        open in gitlab ↗
+      </a>
+      <div className="tui-cd-body">
+        {failed ? (
+          <p className="tui-comments-empty">couldn't load comments</p>
+        ) : !data ? (
+          <p className="tui-comments-empty">loading…</p>
+        ) : data.threads.length === 0 && data.comments.length === 0 ? (
+          <p className="tui-comments-empty">no comments</p>
+        ) : (
+          <>
+            {data.threads.map((t, i) => (
+              <section key={i} className={`tui-cd-thread ${t.status}`}>
+                <div className="tui-cd-thread-status">
+                  <span>
+                    <span className="tui-comment-icon">{THREAD_ICON[t.status]}</span> {THREAD_LABEL[t.status]}
+                  </span>
+                  {mr.webUrl && t.notes[0] && (
+                    <a
+                      className="tui-cd-thread-open"
+                      href={`${mr.webUrl}#note_${t.notes[0].id}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      open ↗
+                    </a>
+                  )}
+                </div>
+                {t.notes.map((n) => (
+                  <CommentNoteView key={n.id} mr={mr} note={n} now={now} />
+                ))}
+              </section>
+            ))}
+            {data.comments.length > 0 && (
+              <section className="tui-cd-comments">
+                <div className="tui-cd-comments-head">MR comments</div>
+                {data.comments.map((c) => (
+                  <CommentNoteView key={c.id} mr={mr} note={c} now={now} />
+                ))}
+              </section>
+            )}
+          </>
+        )}
+      </div>
+    </SideDrawer>
   );
 }
 

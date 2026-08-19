@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useState } from "react";
 import type { BoardMR } from "../../data.ts";
 import { selectionHeader, MAX_HEADER_LEN, type SlackTemplates } from "../../template.ts";
 import { CopyButton } from "../ui/CopyButton.tsx";
+import { useAutoGrowTextarea } from "../ui/hooks.ts";
 import { boardSummary } from "./format.ts";
 import { SLACK_ICON } from "./chips.tsx";
 
@@ -42,23 +43,8 @@ function SelectionBar({
   const header = selectionHeader(templates.multiHeader, edited, count);
 
   // Grow the textarea to fit its content, so a long header wraps into view
-  // rather than scrolling sideways out of it. Reset to "auto" first or the box
-  // can only ever grow -- scrollHeight is clamped by the current height, so
-  // deleting text would leave the extra rows behind.
-  const taRef = useRef<HTMLTextAreaElement | null>(null);
-  useEffect(() => {
-    const el = taRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    // scrollHeight covers content + padding but NOT the border, while the
-    // global box-sizing: border-box makes `height` responsible for the border
-    // too. Assigning scrollHeight alone therefore leaves the box a border's
-    // worth short of its own content, and overflow-y: auto renders a scrollbar
-    // for text that actually fits. Measure the border off the element rather
-    // than hardcoding the stylesheet's 1px, so it survives a CSS change.
-    const border = el.offsetHeight - el.clientHeight;
-    el.style.height = `${el.scrollHeight + border}px`;
-  }, [header.display]);
+  // rather than scrolling sideways out of it.
+  const taRef = useAutoGrowTextarea([header.display]);
 
   return (
     <div className="tui-selbar">

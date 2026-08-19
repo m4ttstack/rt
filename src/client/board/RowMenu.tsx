@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { BoardMR } from "../../data.ts";
 import type { BoardMRWithReview, RowContext, RowMenuState } from "../types.ts";
+import { useAutoGrowTextarea } from "../ui/hooks.ts";
 import { getSlackMarks, nudgeTargets, reviewMenuItems, respondItemLabel, doctorItemLabel } from "./format.ts";
 
 function MenuItem({
@@ -77,16 +78,8 @@ function RowMenu({
   const [altHeld, setAltHeld] = useState(false);
   const [noteFor, setNoteFor] = useState<{ label: string; fire: (note?: string) => void } | null>(null);
   const [noteText, setNoteText] = useState("");
-  // Same auto-grow mechanism as the selection bar's header textarea: reset to
-  // auto so deletions shrink it back, then add the border because the global
-  // border-box makes `height` responsible for it while scrollHeight is not.
-  const noteRef = useRef<HTMLTextAreaElement | null>(null);
-  useEffect(() => {
-    const el = noteRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight + (el.offsetHeight - el.clientHeight)}px`;
-  }, [noteFor, noteText]);
+  // Same auto-grow mechanism as the selection bar's header textarea.
+  const noteRef = useAutoGrowTextarea([noteFor, noteText]);
   useEffect(() => {
     const onAlt = (e: KeyboardEvent) => setAltHeld(e.altKey);
     const onBlur = () => setAltHeld(false);

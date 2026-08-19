@@ -18,6 +18,7 @@ import { useOptimisticLifecycle, useToasts, useBoardData, useLaunchAction } from
 import { postAction } from "../api.ts";
 import { ICONS } from "../ui/Icon.tsx";
 import { Panel } from "../ui/Panel.tsx";
+import { SideDrawer } from "../ui/SideDrawer.tsx";
 import { ToastHost } from "../ui/Toast.tsx";
 import { Sidebar } from "./Sidebar.tsx";
 import { Controls } from "./Controls.tsx";
@@ -534,30 +535,33 @@ export function Board() {
 
       {/* Mobile drawer: roster + controls, tucked behind the burger. */}
       {menuOpen && (
-        <div className="tui-drawer-overlay" onClick={() => setMenuOpen(false)}>
-          <div className="tui-drawer" onClick={(e) => e.stopPropagation()} role="dialog" aria-label="menu">
-            <div className="tui-drawer-head">
-              <span className="tui-modal-title">❯ menu</span>
-              <button className="tui-modal-x" onClick={() => setMenuOpen(false)} aria-label="close menu">
-                {ICONS.close}
-              </button>
-            </div>
-            <Sidebar
-              members={data.members}
-              total={total}
-              active={state.member}
-              onPick={(member) => {
-                update({ member });
-                setMenuOpen(false);
-              }}
-              onSettings={openSettings}
-              scopeUncovered={data.scopeUncovered}
-            />
-            <div className="tui-drawer-controls">
-              <Controls {...controlProps} stacked />
-            </div>
+        <SideDrawer
+          overlayClassName="tui-drawer-overlay"
+          panelClassName="tui-drawer"
+          ariaLabel="menu"
+          onClose={() => setMenuOpen(false)}
+        >
+          <div className="tui-drawer-head">
+            <span className="tui-modal-title">❯ menu</span>
+            <button className="tui-modal-x" onClick={() => setMenuOpen(false)} aria-label="close menu">
+              {ICONS.close}
+            </button>
           </div>
-        </div>
+          <Sidebar
+            members={data.members}
+            total={total}
+            active={state.member}
+            onPick={(member) => {
+              update({ member });
+              setMenuOpen(false);
+            }}
+            onSettings={openSettings}
+            scopeUncovered={data.scopeUncovered}
+          />
+          <div className="tui-drawer-controls">
+            <Controls {...controlProps} stacked />
+          </div>
+        </SideDrawer>
       )}
 
       {showSettings && (

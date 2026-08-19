@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import type { RefObject } from "react";
 
 /** Scrolls the returned ref's element into its scroll container whenever `key`
     turns truthy or changes. For content that appears at the bottom of a capped,
@@ -23,4 +24,37 @@ function useEscapeClose(onClose: () => void): void {
   }, [onClose]);
 }
 
-export { useRevealOnChange, useEscapeClose };
+/** Auto-grow a textarea to fit its content, re-measuring whenever `deps`
+    changes. Reset to "auto" first or the box can only ever grow -- scrollHeight
+    is clamped by the current height, so deleting text would leave the extra
+    rows behind. scrollHeight covers content + padding but NOT the border, while
+    the global box-sizing: border-box makes `height` responsible for the border
+    too; assigning scrollHeight alone would leave the box a border's worth short
+    of its own content. Measure the border off the element rather than
+    hardcoding the stylesheet's width, so it survives a CSS change. */
+function useAutoGrowTextarea(deps: readonly unknown[]): RefObject<HTMLTextAreaElement | null> {
+  const ref = useRef<HTMLTextAreaElement | null>(null);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = "auto";
+    const border = el.offsetHeight - el.clientHeight;
+    el.style.height = `${el.scrollHeight + border}px`;
+  }, deps);
+  return ref;
+}
+
+/** Lock body scroll for the calling component's lifetime, restoring whatever
+    the body's overflow was before. Keeps a modal/drawer's own scroll region
+    from showing a second scrollbar alongside the page's. */
+function useBodyScrollLock(): void {
+  useEffect(() => {
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = prevOverflow;
+    };
+  }, []);
+}
+
+export { useRevealOnChange, useEscapeClose, useAutoGrowTextarea, useBodyScrollLock };

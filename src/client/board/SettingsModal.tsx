@@ -3,7 +3,8 @@ import { Invadr } from "invadrs/react";
 import { memberPeerState, joinRowState } from "../../view.ts";
 import type { ConfigMember, BoardData } from "../types.ts";
 import { CopyButton } from "../ui/CopyButton.tsx";
-import { useEscapeClose, useRevealOnChange } from "../ui/hooks.ts";
+import { Modal } from "../ui/Modal.tsx";
+import { useRevealOnChange } from "../ui/hooks.ts";
 
 /** Check members in/out, and (on a board that can hand out invites) put each
     teammate on a board of their own. Toggling persists the hidden flag to
@@ -33,8 +34,6 @@ function SettingsModal({
   onJoined: () => void;
   onClose: () => void;
 }) {
-  useEscapeClose(onClose);
-
   // null until GET /peer/boards answers, and it stays null if that fetch fails,
   // so memberPeerState renders nothing rather than calling a peer invitable.
   const [peered, setPeered] = useState<string[] | null>(null);
@@ -135,130 +134,122 @@ function SettingsModal({
   }, [joinValue, joining, onJoined]);
 
   return (
-    <div className="tui-modal-overlay" onClick={onClose}>
-      <div className="tui-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal aria-label="team settings">
-        <div className="tui-modal-head">
-          <span className="tui-modal-title">❯ team members</span>
-          <button className="tui-modal-x" onClick={onClose} aria-label="close">
-            ✕
+    <Modal title="❯ team members" ariaLabel="team settings" onClose={onClose} closeGlyph="✕">
+      <p className="tui-modal-sub"># check people out to hide them from the board</p>
+      <ul className="tui-modal-list">
+        {members.map((m) => {
+          const peerState = m.username === defaultMember || !canInvite ? "unknown" : memberPeerState(m.username, peered);
+          return (
+            <li key={m.username} className={m.hidden ? "tui-modal-row out" : "tui-modal-row"}>
+              <label className="tui-modal-name" title={m.hidden ? "checked out -- hidden from the board" : "checked in"}>
+                <input
+                  type="checkbox"
+                  className="tui-check-box"
+                  checked={!m.hidden}
+                  onChange={() => onToggle(m.username, !m.hidden)}
+                />
+                <Invadr id={m.username} palette="css-vars" className="tui-avatar" /> {m.name ?? m.username}
+              </label>
+              <span className="tui-modal-right">
+                {peerState === "peered" && (
+                  <>
+                    <span className="tui-peered" title="on peer boards">
+                      peered
+                    </span>
+                    <button
+                      className="tui-invite-btn"
+                      disabled={pending !== null}
+                      onClick={() => {
+                        // Minting an invite rotates nothing: the peer's board
+                        // keeps working until the new invite is redeemed.
+                        if (confirm("their current board keeps working until they use the new invite -- continue?")) ask(m.username);
+                      }}
+                    >
+                      re-invite
+                    </button>
+                  </>
+                )}
+                {peerState === "invitable" && (
+                  <button className="tui-invite-btn" disabled={pending !== null} onClick={() => ask(m.username)}>
+                    invite
+                  </button>
+                )}
+                <span className="tui-modal-count" title={m.count === null ? "checked out -- MR count not fetched" : undefined}>
+                  {m.count ?? "—"}
+                </span>
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+
+      {canInvite && (
+        <div className="tui-invite-new">
+          <input
+            className="tui-invite-input"
+            value={handle}
+            aria-label="username to invite"
+            placeholder="username to invite"
+            onChange={(e) => setHandle(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") ask(handle);
+            }}
+          />
+          <button className="tui-invite-btn" disabled={pending !== null || !handle.trim()} onClick={() => ask(handle)}>
+            invite
           </button>
         </div>
-        <p className="tui-modal-sub"># check people out to hide them from the board</p>
-        <ul className="tui-modal-list">
-          {members.map((m) => {
-            const peerState = m.username === defaultMember || !canInvite ? "unknown" : memberPeerState(m.username, peered);
-            return (
-              <li key={m.username} className={m.hidden ? "tui-modal-row out" : "tui-modal-row"}>
-                <label className="tui-modal-name" title={m.hidden ? "checked out -- hidden from the board" : "checked in"}>
-                  <input
-                    type="checkbox"
-                    className="tui-check-box"
-                    checked={!m.hidden}
-                    onChange={() => onToggle(m.username, !m.hidden)}
-                  />
-                  <Invadr id={m.username} palette="css-vars" className="tui-avatar" /> {m.name ?? m.username}
-                </label>
-                <span className="tui-modal-right">
-                  {peerState === "peered" && (
-                    <>
-                      <span className="tui-peered" title="on peer boards">
-                        peered
-                      </span>
-                      <button
-                        className="tui-invite-btn"
-                        disabled={pending !== null}
-                        onClick={() => {
-                          // Minting an invite rotates nothing: the peer's board
-                          // keeps working until the new invite is redeemed.
-                          if (confirm("their current board keeps working until they use the new invite -- continue?")) ask(m.username);
-                        }}
-                      >
-                        re-invite
-                      </button>
-                    </>
-                  )}
-                  {peerState === "invitable" && (
-                    <button className="tui-invite-btn" disabled={pending !== null} onClick={() => ask(m.username)}>
-                      invite
-                    </button>
-                  )}
-                  <span className="tui-modal-count" title={m.count === null ? "checked out -- MR count not fetched" : undefined}>
-                    {m.count ?? "—"}
-                  </span>
-                </span>
-              </li>
-            );
-          })}
-        </ul>
+      )}
 
-        {canInvite && (
-          <div className="tui-invite-new">
-            <input
-              className="tui-invite-input"
-              value={handle}
-              aria-label="username to invite"
-              placeholder="username to invite"
-              onChange={(e) => setHandle(e.currentTarget.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") ask(handle);
-              }}
-            />
-            <button className="tui-invite-btn" disabled={pending !== null || !handle.trim()} onClick={() => ask(handle)}>
-              invite
+      {inviteError && (
+        <p ref={inviteErrorRef} className="tui-modal-sub tui-invite-error">
+          {inviteError}
+        </p>
+      )}
+
+      {issued && (
+        <div ref={issuedRef} className="tui-invite-row">
+          <code className="tui-invite-code">{issued.invite}</code>
+          <CopyButton text={issued.invite} className="tui-invite-btn" title="copy invite" label="copy invite" />
+          <span className="tui-invite-note">for {issued.username} · one-time, expires in 7 days</span>
+        </div>
+      )}
+
+      {local && (
+        <div ref={joinRef} className="tui-join-row">
+          {join.warning && <p className="tui-modal-sub tui-join-warning">{join.warning}</p>}
+          {joinExpanded ? (
+            <>
+              <span className="tui-join-label">{join.label}</span>
+              <div className="tui-invite-new">
+                <input
+                  className="tui-invite-input"
+                  value={joinValue}
+                  aria-label="paste your board invite"
+                  placeholder="paste your board invite"
+                  onChange={(e) => setJoinValue(e.currentTarget.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") submitJoin();
+                  }}
+                />
+                <button className="tui-invite-btn" disabled={joining || !joinValue.trim()} onClick={submitJoin}>
+                  join
+                </button>
+              </div>
+              {joinError && (
+                <p ref={joinErrorRef} className="tui-modal-sub tui-invite-error">
+                  {joinError}
+                </p>
+              )}
+            </>
+          ) : (
+            <button className="tui-join-toggle" onClick={() => setJoinOpen(true)}>
+              {join.label}
             </button>
-          </div>
-        )}
-
-        {inviteError && (
-          <p ref={inviteErrorRef} className="tui-modal-sub tui-invite-error">
-            {inviteError}
-          </p>
-        )}
-
-        {issued && (
-          <div ref={issuedRef} className="tui-invite-row">
-            <code className="tui-invite-code">{issued.invite}</code>
-            <CopyButton text={issued.invite} className="tui-invite-btn" title="copy invite" label="copy invite" />
-            <span className="tui-invite-note">for {issued.username} · one-time, expires in 7 days</span>
-          </div>
-        )}
-
-        {local && (
-          <div ref={joinRef} className="tui-join-row">
-            {join.warning && <p className="tui-modal-sub tui-join-warning">{join.warning}</p>}
-            {joinExpanded ? (
-              <>
-                <span className="tui-join-label">{join.label}</span>
-                <div className="tui-invite-new">
-                  <input
-                    className="tui-invite-input"
-                    value={joinValue}
-                    aria-label="paste your board invite"
-                    placeholder="paste your board invite"
-                    onChange={(e) => setJoinValue(e.currentTarget.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") submitJoin();
-                    }}
-                  />
-                  <button className="tui-invite-btn" disabled={joining || !joinValue.trim()} onClick={submitJoin}>
-                    join
-                  </button>
-                </div>
-                {joinError && (
-                  <p ref={joinErrorRef} className="tui-modal-sub tui-invite-error">
-                    {joinError}
-                  </p>
-                )}
-              </>
-            ) : (
-              <button className="tui-join-toggle" onClick={() => setJoinOpen(true)}>
-                {join.label}
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    </div>
+          )}
+        </div>
+      )}
+    </Modal>
   );
 }
 
