@@ -99,6 +99,8 @@ if [ -z "$MANIFEST" ]; then
   done
   if [ -z "$MANIFEST" ]; then
     # Per-repo manifest, keyed by the normalized origin remote.
+    # Known limitation: an explicit port (ssh://host:2222/path) stays in
+    # the slug; both writer and readers share this, so they agree.
     REPO_REMOTE=$(git remote get-url origin 2> /dev/null || true)
     if [ -n "$REPO_REMOTE" ]; then
       u=${REPO_REMOTE%.git}
@@ -119,7 +121,7 @@ fi
 
 # Missing manifest = empty bindings; required slots then fail as unbound.
 BINDINGS_JSON='{}'
-MANIFEST_NOTE="no .mattstack/skills.jsonc found upward from $PWD or in \$HOME"
+MANIFEST_NOTE="no manifest: not in an upward .mattstack/skills.jsonc from $PWD (stopping before \$HOME), not in \$HOME/.mattstack/repos/<slug>/skills.jsonc for this repo's remote, not in \$HOME/.mattstack/skills.jsonc"
 MANIFEST_INVALID=0
 if [ -n "$MANIFEST" ] && [ -f "$MANIFEST" ]; then
   MANIFEST_NOTE=$MANIFEST
