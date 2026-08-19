@@ -3,7 +3,7 @@ import { join } from "path";
 
 /** rt-tray's notify socket; contract matches repo-tools commands/settings.ts
     test-push: POST /notify {id, title, message, category, timestamp}. */
-export const TRAY_SOCK = join(homedir(), ".rt", "tray.sock");
+export const TRAY_SOCK = join(homedir(), ".mattstack", "rt", "tray.sock");
 
 const BODY_SUFFIX = "-- details on the board";
 const SNIPPET_MAX = 120;

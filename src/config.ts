@@ -58,7 +58,7 @@ export interface BoardConfig {
       integration bots that don't match a bot-username pattern. */
   botUsernames: string[];
   /** rt repo names keyed by GitLab project path ("group/project" → the name
-      registered in ~/.rt/repos.json). The board can only show projects mapped
+      registered in ~/.mattstack/rt/repos.json). The board can only show projects mapped
       here whose repo has the project-mrs grant; an unmapped project surfaces
       an instructive fetchError. */
   rtRepos: Record<string, string>;
@@ -117,7 +117,7 @@ const DEFAULT_SLACK: SlackConfig = {
 };
 
 export const CONFIG_PATH = join(import.meta.dir, "..", "config.json");
-const RT_SECRETS_PATH = join(homedir(), ".rt", "secrets.json");
+const RT_SECRETS_PATH = join(homedir(), ".mattstack", "rt", "secrets.json");
 
 /** Parse and validate raw config JSON. Separated from file IO for testing. */
 export function parseConfig(raw: string): BoardConfig {
