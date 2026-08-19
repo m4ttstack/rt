@@ -1,9 +1,8 @@
-import { StrictMode, useCallback, useEffect, useRef, useState } from "react";
-import { createRoot } from "react-dom/client";
-import type { BoardMR } from "./data.ts";
-import { filterByMember, sortMRs, groupMRs, parseViewState, serializeViewState, dataAgeLabel } from "./view.ts";
-import type { ViewState } from "./view.ts";
-import { selectionOf, postableOf } from "./selection.ts";
+import { useCallback, useEffect, useRef, useState } from "react";
+import type { BoardMR } from "../../data.ts";
+import { filterByMember, sortMRs, groupMRs, parseViewState, serializeViewState, dataAgeLabel } from "../../view.ts";
+import type { ViewState } from "../../view.ts";
+import { selectionOf, postableOf } from "../../selection.ts";
 import type {
   ReviewInfo,
   RespondInfo,
@@ -15,20 +14,20 @@ import type {
   ViewMode,
   Toast,
   RowMenuState,
-} from "./client/types.ts";
-import { setSlackMarks, getSlackMarks, mrLine, boardSummary, draftKey, RESPOND_ACTIVE, DOCTOR_ACTIVE } from "./client/board/format.ts";
-import { ICONS } from "./client/ui/Icon.tsx";
-import { Panel } from "./client/ui/Panel.tsx";
-import { ToastHost } from "./client/ui/Toast.tsx";
-import { Sidebar } from "./client/board/Sidebar.tsx";
-import { Controls } from "./client/board/Controls.tsx";
-import { SelectionBar } from "./client/board/SelectionBar.tsx";
-import { RowView } from "./client/board/RowView.tsx";
-import { GridView } from "./client/board/GridView.tsx";
-import { SettingsModal } from "./client/board/SettingsModal.tsx";
-import { RowMenu } from "./client/board/RowMenu.tsx";
-import { ReviewModal } from "./client/board/ReviewModal.tsx";
-import { DraftModal } from "./client/board/DraftModal.tsx";
+} from "../types.ts";
+import { setSlackMarks, getSlackMarks, mrLine, boardSummary, draftKey, RESPOND_ACTIVE, DOCTOR_ACTIVE } from "./format.ts";
+import { ICONS } from "../ui/Icon.tsx";
+import { Panel } from "../ui/Panel.tsx";
+import { ToastHost } from "../ui/Toast.tsx";
+import { Sidebar } from "./Sidebar.tsx";
+import { Controls } from "./Controls.tsx";
+import { SelectionBar } from "./SelectionBar.tsx";
+import { RowView } from "./RowView.tsx";
+import { GridView } from "./GridView.tsx";
+import { SettingsModal } from "./SettingsModal.tsx";
+import { RowMenu } from "./RowMenu.tsx";
+import { ReviewModal } from "./ReviewModal.tsx";
+import { DraftModal } from "./DraftModal.tsx";
 
 declare global {
   interface Window {
@@ -44,7 +43,7 @@ const STATE_KEY = "mrs-view-state";
 
 // ── board ──────────────────────────────────────────────────────────────────
 
-function Board() {
+export function Board() {
   const [data, setData] = useState<BoardData | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [view, setView] = useState<ViewMode>(() => (localStorage.getItem(VIEW_KEY) as ViewMode) ?? "rows");
@@ -911,9 +910,3 @@ function Board() {
     </div>
   );
 }
-
-createRoot(document.getElementById("root")!).render(
-  <StrictMode>
-    <Board />
-  </StrictMode>,
-);

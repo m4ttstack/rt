@@ -339,7 +339,7 @@ await refreshMemberNames();
 
 // Bundle the React client once at startup; served from memory.
 const build = await Bun.build({
-  entrypoints: [join(import.meta.dir, "client.tsx")],
+  entrypoints: [join(import.meta.dir, "client", "main.tsx")],
   target: "browser",
   minify: true,
 });

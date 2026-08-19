@@ -27,5 +27,5 @@
     "noUnusedParameters": false,
     "noPropertyAccessFromIndexSignature": false
   },
-  "exclude": ["src/client", "src/client.tsx", "node_modules"]
+  "exclude": ["src/client", "node_modules"]
 }
