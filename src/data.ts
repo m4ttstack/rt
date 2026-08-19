@@ -66,6 +66,23 @@ function derivePipelineState(props: MRDashboardProps): PipelineState {
   return "passed";
 }
 
+/** BOARD-17: upstream avatar URLs can embed a GitLab `private_token` query
+    param, and /data.json ships to every board viewer. The client never renders
+    avatarUrl (Invadr draws avatars from usernames), so null the field wherever
+    it appears — author, assignees, reviewers, approvedBy, mergeUser, and any
+    user object a future glance version adds — rather than enumerate shapes. */
+function scrubAvatarUrls(value: unknown): void {
+  if (Array.isArray(value)) {
+    for (const v of value) scrubAvatarUrls(v);
+    return;
+  }
+  if (value && typeof value === "object") {
+    const rec = value as Record<string, unknown>;
+    if ("avatarUrl" in rec) rec.avatarUrl = null;
+    for (const key of Object.keys(rec)) scrubAvatarUrls(rec[key]);
+  }
+}
+
 /**
  * Shape raw MRs into a flat board list: authored by a configured member, open,
  * not draft, in a configured project. Each MR is tagged with its author, created
@@ -97,6 +114,9 @@ export function buildBoard(prs: PullRequest[], config: BoardConfig, now: number 
     const path = pr.webUrl ? projectPathFromWebUrl(pr.webUrl, config.gitlabHost) : null;
     if (!path || !projects.has(path)) continue;
     const props = getMRDashboardProps(pr);
+    // Mutates the freshly-parsed daemon read, never a cached board: each fetch
+    // JSON-parses its own objects, and the snapshot cache holds this output.
+    scrubAvatarUrls(props);
     out.push({
       ...props,
       updatedAt: pr.updatedAt,

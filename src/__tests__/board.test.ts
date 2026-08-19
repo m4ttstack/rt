@@ -66,6 +66,42 @@ function pr(overrides: Partial<PullRequest>): PullRequest {
   } as PullRequest;
 }
 
+describe("buildBoard avatar scrub (BOARD-17)", () => {
+  test("nulls every avatarUrl anywhere in the built MR — they can carry a private_token", () => {
+    const leaky = "https://gitlab.com/uploads/avatar.png?private_token=glpat-SECRET";
+    const [mr] = buildBoard(
+      [
+        pr({
+          author: { id: "gitlab:7", username: "alice", name: "Alice", avatarUrl: leaky },
+          reviewers: [
+            { id: "gitlab:8", username: "bob", name: "Bob", avatarUrl: leaky, reviewState: "REVIEWED" },
+          ] as unknown as PullRequest["reviewers"],
+          approvedBy: [{ id: "gitlab:9", username: "carol", name: "Carol", avatarUrl: leaky }] as unknown as PullRequest["approvedBy"],
+          mergeUser: { id: "gitlab:9", username: "carol", name: "Carol", avatarUrl: leaky } as unknown as PullRequest["mergeUser"],
+        }),
+      ],
+      config,
+      Date.parse("2026-07-11T00:00:00Z"),
+    );
+    expect(mr).toBeDefined();
+    // No avatarUrl anywhere in the payload may survive with a value: the
+    // client never renders them, and upstream URLs embed credentials.
+    const leaks: string[] = [];
+    const walk = (v: unknown, path: string): void => {
+      if (Array.isArray(v)) return v.forEach((x, i) => walk(x, `${path}[${i}]`));
+      if (v && typeof v === "object") {
+        for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+          if (k === "avatarUrl" && val !== null) leaks.push(`${path}.${k}=${String(val)}`);
+          walk(val, `${path}.${k}`);
+        }
+      }
+    };
+    walk(mr, "mr");
+    expect(leaks).toEqual([]);
+    expect(JSON.stringify(mr)).not.toContain("private_token");
+  });
+});
+
 describe("extractTicketId", () => {
   test("exact branch segment", () => {
     expect(extractTicketId("feature/ACME-1287", "whatever")).toBe("ACME-1287");
