@@ -85,6 +85,9 @@ to prove the look survives extraction.
                                      emitted custom properties (soribashi
                                      grew this gate after its STATUS.md was
                                      written; port both)
+  scripts/derive.ts                  the tokenDependencies scraper the
+                                     token-existence gate imports — ports
+                                     with it
   docs/superpowers/specs/            this spec moves here once the repo exists
 ```
 
@@ -99,18 +102,25 @@ the `workspace:*` protocol. Two caveats the probe surfaced, both binding:
 
 - Packages arriving **via overrides do not get their own dependencies
   installed** — tui-kit must declare `clsx` + `tailwind-merge` (factory's
-  deps) and `zod` (theme's dep) as top-level dependencies. A first-failure
-  here is NOT "spike failed, go vendor" — it's this caveat.
-- Relative `file:` paths in overrides resolve against the installing
-  package's directory; keep them `../soribashi/packages/*` and install only
-  from the repo root.
+  deps) and `zod` (theme's dep) as top-level dependencies.
+- **A single fresh `bun install` leaves the overridden packages' interdeps
+  unwired** ("Cannot find module '@soribashi/theme'" from inside factory's
+  store entry); a second `bun install` pass completes the wiring. The kit's
+  setup script therefore runs `bun install && bun install`, and a fresh
+  worktree/clone hitting the missing-module error is THIS, not a reason to
+  vendor.
+- **Precondition**: the sibling soribashi checkout must itself be
+  `bun install`ed (resolution escapes to its own node_modules).
+
+A first failure in this arrangement is one of the three caveats above — NOT
+"spike failed, go vendor".
 
 Fallback if this arrangement rots (pre-agreed, no stall): vendor the three
 packages' `src/` into `tui-kit/vendor/soribashi/` with a `sync-soribashi`
 script — mr-board's vendored-resolvers pattern, and what soribashi's own
 registry-smoke does. Either way, file the soribashi ticket: the unpublished
-core and the overrides-transitives caveat are the first adopter's first
-obstacles.
+core, the overrides-transitives caveat, and the double-install requirement
+are the first adopter's first obstacles.
 
 **Consumption by apps**: mr-board adds the `file:../tui-kit` dep. Bun.build
 bundles the kit's TSX + CSS Modules (probe-proven: hashed class names,
@@ -121,13 +131,19 @@ alongside `style.css` via a new `<link>` in the shell.
   `./hooks` (pure modules — mr-board's bun tests import `layers.ts` and
   `scroll-lock.ts` today and must keep doing so without dragging
   `.module.css` through bun's test runtime), `./theme.css`, and
-  `./canvas.css`.
-- **Dev-loop staleness**: bun copies `file:` deps at install; kit edits are
-  invisible to mr-board until reinstall. The adoption workflow is therefore:
-  iterate inside the kit's workshop (Vite alias = live), and refresh
-  mr-board with `bun install --force @mattstack/tui-kit` (or `bun link`
-  during heavy iteration) before each capture run. The plan encodes this in
-  every adoption task.
+  `./canvas.css`. Each subpath carries its own `types` condition — once
+  `exports` exists, top-level `main`/`types` are ignored by modern
+  resolvers.
+- **Dev-loop staleness**: whether `file:` deps copy or link is
+  linker-mode-dependent on Bun 1.3.13 (mr-board's current tree shows copy
+  behavior for rt-client); the first adoption task pins down which mode
+  mr-board's lockfile is in. The workflow either way: iterate inside the
+  kit's workshop (Vite alias = live), and refresh mr-board with an
+  argument-less `bun install --force` (NEVER `bun install --force
+  <pkg-name>`, which is add-semantics — it fetches from the npm registry
+  and rewrites package.json, a dependency-confusion hazard for an
+  unpublished scope) or `bun link` during heavy iteration, before each
+  capture run. The plan encodes this in every adoption task.
 
 ## Theme
 
@@ -253,9 +269,15 @@ Phase 1 discipline throughout (per-step commits, suite green each step,
 revert over patch-forward). The migration:
 
 1. Add the `file:../tui-kit` dep (+ the refresh-on-edit dev-loop rule above).
-2. Replace `style.css`'s token block and body/canvas rules with imports of
-   the kit's `theme.css` (aliases included) + `canvas.css`. No shim needed —
-   the generated theme carries the `.dark` selector.
+2. Delete `style.css`'s token block and body/canvas rules; `theme.css`
+   (aliases included) and `canvas.css` are imported from `client/main.tsx`
+   so they travel in the Bun.build CSS chunk that step 6 links. (They must
+   NOT be `@import`ed from `style.css` — the server serves that file raw
+   from disk, so a bare-specifier import would reach the browser
+   unresolved.) Link order: the CSS chunk's `<link>` precedes `style.css`'s
+   so the unlayered canvas body rules yield to any board override; the
+   layered tokens are order-immune. No color-scheme shim needed — the
+   generated theme carries the `.dark` selector.
 3. Swap every ui/ import to `@mattstack/tui-kit` (deep pure-module imports
    via `./hooks`); delete `src/client/ui/`.
 4. Convert the nine badge components in `board/chips.tsx` to Chip
