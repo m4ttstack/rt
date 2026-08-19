@@ -89,6 +89,7 @@ SLOTS=$(fm_meta "$SKILL_MD" slots)
 if [ -z "$MANIFEST" ]; then
   d=$PWD
   while :; do
+    [ "$d" = "$HOME" ] && break
     if [ -f "$d/.mattstack/skills.jsonc" ]; then
       MANIFEST="$d/.mattstack/skills.jsonc"
       break
@@ -96,6 +97,21 @@ if [ -z "$MANIFEST" ]; then
     [ "$d" = "/" ] && break
     d=$(dirname "$d")
   done
+  if [ -z "$MANIFEST" ]; then
+    # Per-repo manifest, keyed by the normalized origin remote.
+    REPO_REMOTE=$(git remote get-url origin 2> /dev/null || true)
+    if [ -n "$REPO_REMOTE" ]; then
+      u=${REPO_REMOTE%.git}
+      u=${u#ssh://}; u=${u#https://}; u=${u#http://}; u=${u#git://}
+      u=${u#*@}
+      u=$(printf %s "$u" | sed 's|:|/|')
+      _host=${u%%/*}; _path=${u#*/}
+      REPO_SLUG="$(printf %s "$_host" | tr 'A-Z' 'a-z')-$(printf %s "$_path" | tr '/' '-')"
+      if [ -f "$HOME/.mattstack/repos/$REPO_SLUG/skills.jsonc" ]; then
+        MANIFEST="$HOME/.mattstack/repos/$REPO_SLUG/skills.jsonc"
+      fi
+    fi
+  fi
   if [ -z "$MANIFEST" ] && [ -f "$HOME/.mattstack/skills.jsonc" ]; then
     MANIFEST="$HOME/.mattstack/skills.jsonc"
   fi
@@ -109,7 +125,9 @@ if [ -n "$MANIFEST" ] && [ -f "$MANIFEST" ]; then
   MANIFEST_NOTE=$MANIFEST
   # JSONC rule: strip full-line // comments only (see skills-manifest.md).
   if MANIFEST_JSON=$(sed 's|^[[:space:]]*//.*$||' "$MANIFEST" | jq -c . 2> /dev/null); then
-    BINDINGS_JSON=$(printf '%s' "$MANIFEST_JSON" | jq -c --arg s "$WRAPPER_NAME" '.bindings[$s] // {}')
+    # Lookup by bare frontmatter name first, then the plugin-qualified
+    # "mattstack:<name>" key existing manifests use.
+    BINDINGS_JSON=$(printf '%s' "$MANIFEST_JSON" | jq -c --arg s "$WRAPPER_NAME" '.bindings[$s] // .bindings["mattstack:" + $s] // {}')
   else
     MANIFEST_INVALID=1
   fi
@@ -200,9 +218,21 @@ else
           INNER_SKILL=${BINDING#*:}
           INSTALL_PATH=$(printf '%s' "$PLUGIN_JSON" | jq -r --arg p "$PLUGIN_NAME" \
             '[.[] | select(.enabled and (.id | startswith($p + "@")))][0].installPath // empty')
-          if [ -n "$INSTALL_PATH" ] && [ -f "$INSTALL_PATH/skills/$INNER_SKILL/SKILL.md" ]; then
-            INNER_DIR="$INSTALL_PATH/skills/$INNER_SKILL"
-            SOURCE=plugin
+          if [ -n "$INSTALL_PATH" ]; then
+            # Flat layout first, then one category level (a plugin whose
+            # manifest lists skills/<category> dirs installs the categories).
+            if [ -f "$INSTALL_PATH/skills/$INNER_SKILL/SKILL.md" ]; then
+              INNER_DIR="$INSTALL_PATH/skills/$INNER_SKILL"
+              SOURCE=plugin
+            else
+              for CAT_DIR in "$INSTALL_PATH"/skills/*/"$INNER_SKILL"; do
+                if [ -f "$CAT_DIR/SKILL.md" ]; then
+                  INNER_DIR="$CAT_DIR"
+                  SOURCE=plugin
+                  break
+                fi
+              done
+            fi
           fi
           ;;
       esac

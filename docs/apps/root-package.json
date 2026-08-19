@@ -8,6 +8,7 @@
     "serve": "bun run src/server.ts",
     "triage": "bun run bin/triage.ts",
     "switchboard": "bun run switchboard/server.ts",
+    "sync-resolvers": "sh scripts/sync-resolvers.sh",
     "test": "bun test"
   },
   "dependencies": {
