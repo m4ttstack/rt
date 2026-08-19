@@ -3,90 +3,69 @@ import { createRoot } from "react-dom/client";
 import { Invadr } from "invadrs/react";
 import { extractTicketId, ticketUrl } from "./ticket.ts";
 import type { BoardMR } from "./data.ts";
-import { hasChangesRequested, stripDraftPrefix } from "./data.ts";
-import { getReviewDisplayState } from "@mattstack/glance";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { filterByMember, sortMRs, groupMRs, nestStacks, parseViewState, serializeViewState, commentDot, commentsAllResolved, dataAgeLabel, statusFlags, memberPeerState, joinRowState, GROUP_KEYS, SORT_KEYS, type StackNode } from "./view.ts";
-import type { GroupKey, SortKey, ViewState } from "./view.ts";
-import { renderMr, renderMulti, selectionHeader, MAX_HEADER_LEN, type MrFacts, type SlackTemplates } from "./template.ts";
+import { filterByMember, sortMRs, groupMRs, nestStacks, parseViewState, serializeViewState, commentDot, dataAgeLabel, statusFlags, memberPeerState, joinRowState, GROUP_KEYS, SORT_KEYS } from "./view.ts";
+import type { ViewState } from "./view.ts";
+import { selectionHeader, MAX_HEADER_LEN, type SlackTemplates } from "./template.ts";
 import { selectionOf, postableOf } from "./selection.ts";
 import { respondOutcome, respondDoneLabel, respondNeedsAttention } from "./respond-outcome.ts";
-import type { RespondStatus } from "./respond-outcome.ts";
-
-interface RosterMember {
-  username: string;
-  name: string | null;
-  count: number;
-}
-
-/** Every configured member with its hidden state and MR count — for the settings modal.
-    `count` is null for checked-out members, whose MRs the server doesn't fetch. */
-interface ConfigMember {
-  username: string;
-  name: string | null;
-  hidden: boolean;
-  count: number | null;
-}
-
-type ReviewStatus = "queued" | "reviewing" | "done" | "error";
-interface ReviewInfo { status: ReviewStatus; message?: string; reportReady?: boolean; sessionId?: string }
-interface RespondInfo { status: RespondStatus; message?: string; sessionId?: string; posted?: number; threads?: number }
-type DoctorStatus = "queued" | "diagnosing" | "rebasing" | "fixing" | "watching" | "done" | "error";
-interface DoctorInfo { status: DoctorStatus; message?: string; origin?: "auto" | "manual" }
-interface DraftInfo { kind: string; body: string; createdAt: number }
-interface SlackInfo { status: "found" | "notfound"; permalink?: string; reactions: string[]; posted: boolean }
-/** How a peer's board says their review of one of our MRs is going. `status`
-    and `outcome` stay loose strings: they're another board's lifecycle words,
-    relayed verbatim, and a peer may run a version whose vocabulary we don't know. */
-interface PeerReviewInfo { mrUrl: string; iid: number; reviewer: string; status: string; outcome?: string; updatedAt: number }
-/** The re-review this board asked a peer for, and where that ask now stands.
-    `reason` only comes with a rejection (the peer's own words for the refusal). */
-interface SentNudgeInfo { display: "requested" | "confirmed" | "launched" | "rejected" | "expired" | "no-response"; reviewer: string; reason?: string }
-/** A peer waiting on us: an inbound re-review request we haven't handled yet. */
-interface InboundNudgeInfo { from: string; receivedAt: number }
-type BoardMRWithReview = BoardMR & {
-  review?: ReviewInfo;
-  respond?: RespondInfo;
-  doctor?: DoctorInfo;
-  slack?: SlackInfo;
-  drafts?: DraftInfo[];
-  peerReviews?: PeerReviewInfo[];
-  sentNudge?: SentNudgeInfo;
-  nudges?: InboundNudgeInfo[];
-};
-
-interface BoardData {
-  title: string;
-  defaultMember: string;
-  members: RosterMember[];
-  allMembers: ConfigMember[];
-  mrs: BoardMRWithReview[];
-  fetchedAt: number;
-  fetchError: string | null;
-  local: boolean;
-  slackEnabled: boolean;
-  /** Configured review-signal emoji names by role; absent on older servers. */
-  slackEmoji?: { looking: string; commented: string; approved: string };
-  slackTemplates: SlackTemplates;
-  /** Oldest daemon syncedAt across projects; null when no daemon read reached
-      this snapshot. Drives the honest footer (distinct from `fetchedAt`, which
-      only says the board's own poll succeeded). */
-  dataSyncedAt: number | null;
-  /** Authors this board demanded but rt hasn't finished backfilling yet. */
-  scopeUncovered: string[];
-  /** Narrowest sync window (days) among the daemon reads; null when none carried one. */
-  scopeWindowDays: number | null;
-  /** The board's own configured stale cutoff (days), for comparing against
-      `scopeWindowDays` -- a board asking for more history than rt syncs. */
-  staleAfterDays: number;
-  /** Whether this board can hand out peer-board invites: local request, and the
-      board holds both a switchboard url and the credential that authorizes it. */
-  canInvite: boolean;
-  /** Peering health: "ok" when the switchboard accepts us, "unauthorized" when
-      it rejects us, null when this board isn't peering at all. */
-  peering: "ok" | "unauthorized" | null;
-}
+import type {
+  RosterMember,
+  ConfigMember,
+  ReviewStatus,
+  ReviewInfo,
+  RespondInfo,
+  DoctorStatus,
+  DoctorInfo,
+  DraftInfo,
+  SlackInfo,
+  PeerReviewInfo,
+  SentNudgeInfo,
+  InboundNudgeInfo,
+  BoardMRWithReview,
+  BoardData,
+  ThemeMode,
+  ViewMode,
+  Toast,
+  RowMenuState,
+  ThreadStatus,
+  CommentNote,
+  CommentThread,
+  GeneralComment,
+} from "./client/types.ts";
+import {
+  GROUP_LABEL,
+  SORT_LABEL,
+  ago,
+  statusReasons,
+  activeReviewers,
+  cleanTitle,
+  REVIEW_LABEL,
+  RESPOND_LABEL,
+  RESPOND_ACTIVE,
+  DOCTOR_LABEL,
+  DOCTOR_ACTIVE,
+  PEER_PHRASE,
+  peerState,
+  NUDGE_RETRYABLE,
+  nudgeChipText,
+  nudgeTargets,
+  draftKey,
+  getSlackMarks,
+  setSlackMarks,
+  hasBoardBadges,
+  mrLine,
+  boardSummary,
+  statusPhrase,
+  flattenStack,
+  THREAD_ICON,
+  THREAD_LABEL,
+  commentCount,
+  reviewMenuItems,
+  respondItemLabel,
+  doctorItemLabel,
+} from "./client/board/format.ts";
 
 declare global {
   interface Window {
@@ -96,22 +75,9 @@ declare global {
 
 // ── toggles ────────────────────────────────────────────────────────────────
 
-type ThemeMode = "light" | "dark" | "system";
-type ViewMode = "rows" | "grid";
 const THEME_KEY = "mrs-theme";
 const VIEW_KEY = "mrs-view";
 const STATE_KEY = "mrs-view-state";
-
-const GROUP_LABEL: Record<GroupKey, string> = {
-  age: "age",
-  author: "author",
-  status: "status",
-  review: "my reviews",
-};
-const SORT_LABEL: Record<SortKey, string> = {
-  oldest: "oldest",
-  progress: "progress",
-};
 
 /** A labelled segmented control (text labels, unlike the icon-only Segmented). */
 function LabeledSeg<T extends string>({
@@ -193,91 +159,12 @@ function Segmented<T extends string>({
   );
 }
 
-// ── formatting helpers ─────────────────────────────────────────────────────
-
-function ago(iso: string | null, now: number): string {
-  if (!iso) return "";
-  const mins = Math.max(0, Math.round((now - Date.parse(iso)) / 60_000));
-  if (mins < 60) return `${mins}m`;
-  const hours = Math.round(mins / 60);
-  if (hours < 48) return `${hours}h`;
-  return `${Math.round(hours / 24)}d`;
-}
-
-function statusReasons(mr: BoardMR): string {
-  const b = mr.blockers;
-  if (!b?.any) return "ready to merge";
-  const reasons: string[] = [];
-  if (b.isDraft) reasons.push("marked as draft");
-  if (b.hasConflicts) reasons.push("merge conflicts with target branch");
-  if (b.needsRebase) reasons.push("source branch needs a rebase");
-  if (b.pipelineFailing) reasons.push("pipeline is failing");
-  if (b.pipelineRunning) reasons.push("pipeline still running");
-  if (b.awaitingApprovals)
-    reasons.push(`awaiting approvals (${mr.reviews.given}/${mr.reviews.required})`);
-  if (b.hasUnresolvedDiscussions) reasons.push(`unresolved discussions (${mr.unresolvedThreads})`);
-  if (b.hasMergeError) reasons.push(`merge error: ${b.mergeError ?? "unknown"}`);
-  return reasons.length ? `blocked:\n${reasons.map((r) => `· ${r}`).join("\n")}` : "blocked";
-}
-
-function activeReviewers(mr: BoardMR): string[] {
-  // getReviewDisplayState maps the raw reviewState to the UI taxonomy; the SDK
-  // never populates r.displayState, so derive it rather than reading that field.
-  return (mr.reviews?.reviewers ?? [])
-    .filter((r) => getReviewDisplayState(r.reviewState ?? null) === "reviewing")
-    .map((r) => r.name || r.username);
-}
-
-/** Title with any leading ticket prefix ("ACME-2369: ") removed — the ticket
-    already shows via the Linear link and the branch name. */
-/** Drop what the row already says elsewhere: the leading ticket id (the ticket
-    link carries it) and any draft marker (the DRAFT chip carries that). glance
-    already strips the marker off GitLab titles, so the draft pass is only a
-    guard for titles that arrive with it still attached. */
-function cleanTitle(title: string): string {
-  return stripDraftPrefix(title).replace(/^[A-Za-z]+-\d+:\s*/, "");
-}
-
 /** Plain click opens the MR in GitLab; right-click opens the row action menu
     (wired separately). Clicks on inner links/buttons are left to those. */
 function onRowClick(e: React.MouseEvent, mr: BoardMR) {
   if ((e.target as HTMLElement).closest("a, button")) return;
   if (mr.webUrl) window.open(mr.webUrl, "_blank", "noopener");
 }
-
-const REVIEW_LABEL: Record<ReviewStatus, string> = {
-  queued: "review queued",
-  reviewing: "reviewing…",
-  done: "review ready",
-  error: "review failed",
-};
-
-// `done` is deliberately absent: what a finished run should say depends on what
-// it did with its replies, which respondDoneLabel derives from the counts.
-const RESPOND_LABEL: Record<Exclude<RespondStatus, "done">, string> = {
-  queued: "response queued",
-  triaging: "triaging…",
-  implementing: "implementing…",
-  drafting: "drafting replies…",
-  error: "response failed",
-};
-
-const RESPOND_ACTIVE = new Set<RespondStatus>(["queued", "triaging", "implementing", "drafting"]);
-
-const DOCTOR_LABEL: Record<DoctorStatus, string> = {
-  queued: "doctor queued",
-  diagnosing: "diagnosing…",
-  rebasing: "rebasing…",
-  fixing: "fixing…",
-  watching: "watching CI…",
-  // "diagnosed", not "healed": the board can't tell a real repair from a run
-  // that only inherited a diagnosis and held a note, so the label claims only
-  // what every finished run actually did.
-  done: "diagnosed",
-  error: "doctor stuck",
-};
-
-const DOCTOR_ACTIVE = new Set<DoctorStatus>(["queued", "diagnosing", "rebasing", "fixing", "watching"]);
 
 /** Feature glyphs for the internal-badge row. Currentcolor so the icon takes on
     each badge's status color. Kept dead-simple: one line-drawn shape per axis. */
@@ -376,29 +263,6 @@ function DoctorBadge({ doctor }: { doctor?: DoctorInfo }) {
     directions. Kept as text (like the held-draft ✉) rather than an SVG. */
 const PEER_GLYPH = "⇄";
 
-/** The peer-review states this board has words for. A status it doesn't
-    recognise renders nothing at all, rather than putting a mystery word from
-    another board's vocabulary on the row. */
-type PeerState = "reviewing" | "commented" | "approved" | "done";
-
-const PEER_PHRASE: Record<PeerState, string> = {
-  reviewing: "reviewing",
-  commented: "commented",
-  approved: "approved",
-  done: "reviewed",
-};
-
-/** A `done` review with no outcome is the peer's human never answering their
-    posting gate, so it reads as a plain "reviewed": it is finished, but it is
-    not an approval. */
-function peerState(peer: PeerReviewInfo): PeerState | null {
-  if (peer.status === "queued" || peer.status === "reviewing") return "reviewing";
-  if (peer.status !== "done") return null;
-  if (peer.outcome === "comment") return "commented";
-  if (peer.outcome === "approve") return "approved";
-  return "done";
-}
-
 /** One peer's review of this MR, relayed over the switchboard. Reuses the
     review-badge shape with its own `tui-peer-*` family so another board's
     progress is never mistaken for this board's own review lifecycle. */
@@ -411,28 +275,6 @@ function PeerBadge({ peer }: { peer: PeerReviewInfo }) {
       {PEER_GLYPH} {peer.reviewer}: {phrase}
     </span>
   );
-}
-
-/** Nudge states that leave the ask unanswered, so asking again is the honest
-    next move. Shared by the chip's hint and the menu item's condition -- the
-    item reappearing IS the retry affordance. */
-const NUDGE_RETRYABLE = new Set<SentNudgeInfo["display"]>(["rejected", "expired", "no-response"]);
-
-/** What a sent nudge reads as. A refusal carries the peer's own reason where
-    they gave one, since "why not" is the only part a human can act on. */
-function nudgeChipText(nudge: SentNudgeInfo): string {
-  switch (nudge.display) {
-    case "requested":
-      return "re-review requested";
-    case "confirmed":
-    case "launched":
-      return "re-reviewing";
-    case "rejected":
-    case "expired":
-      return `nudge: ${nudge.reason ?? nudge.display}`;
-    case "no-response":
-      return "no response, retry?";
-  }
 }
 
 /** The re-review this board asked for, on the author's own row. */
@@ -462,20 +304,6 @@ function NudgedByMarker({ nudges, now }: { nudges?: InboundNudgeInfo[]; now: num
   );
 }
 
-/** Peers we can ask to look again: their review finished with comments (so
-    there's something to re-check) and no ask of ours is still outstanding. */
-function nudgeTargets(mrx: BoardMRWithReview): PeerReviewInfo[] {
-  if (mrx.sentNudge && !NUDGE_RETRYABLE.has(mrx.sentNudge.display)) return [];
-  return (mrx.peerReviews ?? []).filter((p) => p.status === "done" && p.outcome === "comment");
-}
-
-/** Key for the App-level map of optimistically resolved drafts. Resolution
-    lives above the badge because the acting happens in DraftModal; the next
-    /data.json pull drops the draft and the stale entry is harmless. */
-function draftKey(mrUrl: string, kind: string): string {
-  return `${mrUrl}#${kind}`;
-}
-
 /** One held outbound note the doctor drafted — a compact chip. Reading and
     approving happen in DraftModal, which the chip opens; nothing posts from
     the chip itself. */
@@ -498,7 +326,7 @@ function DraftBadge({ draft, resolved, onOpen }: { draft: DraftInfo; resolved?: 
 function SlackReactionChips({ reactions }: { reactions?: string[] }) {
   if (!reactions?.length) return null;
   const set = new Set(reactions);
-  const present = SLACK_MARKS.filter((m) => set.has(m.emoji));
+  const present = getSlackMarks().filter((m) => set.has(m.emoji));
   if (!present.length) return null;
   return (
     <span className="tui-slack-reactions">
@@ -508,29 +336,6 @@ function SlackReactionChips({ reactions }: { reactions?: string[] }) {
         </span>
       ))}
     </span>
-  );
-}
-
-function hasReviewReactions(mr: BoardMR): boolean {
-  const reactions = (mr as BoardMRWithReview).slack?.reactions;
-  if (!reactions?.length) return false;
-  return SLACK_MARKS.some((m) => reactions.includes(m.emoji));
-}
-
-/** Does this MR have anything for the board-managed badge line? Rows and cards
-    share the test so a new axis can't land on one view and miss the other. */
-function hasBoardBadges(mr: BoardMR): boolean {
-  const mrx = mr as BoardMRWithReview;
-  return !!(
-    mrx.review ||
-    mrx.respond ||
-    mrx.doctor ||
-    mrx.drafts?.length ||
-    mrx.peerReviews?.length ||
-    mrx.sentNudge ||
-    mrx.nudges?.length ||
-    hasReviewReactions(mr) ||
-    mrx.slack?.posted
   );
 }
 
@@ -712,28 +517,6 @@ function DraftModal({
 
 // ── row action menu (right-click) ────────────────────────────────────────────
 
-/** The three review-signal reactions, in menu order. The glyph and wording are
-    fixed per role; the emoji *name* sent to Slack comes from the server's
-    configured `slack.emoji` map (standard-emoji defaults until data loads). */
-interface SlackMark {
-  emoji: string;
-  glyph: string;
-  label: string;
-  title: string;
-}
-
-function buildSlackMarks(e: { looking: string; commented: string; approved: string }): SlackMark[] {
-  return [
-    { emoji: e.looking, glyph: "👀", label: "mark 👀 on slack", title: "someone's looking (in slack)" },
-    { emoji: e.commented, glyph: "💬", label: "mark 💬 on slack", title: "commented in slack" },
-    { emoji: e.approved, glyph: "✅", label: "mark ✅ on slack", title: "approved in slack" },
-  ];
-}
-
-/** Module-level so every component reads the same list; rebuilt when /data.json
-    arrives (which always precedes a re-render of anything that shows marks). */
-let SLACK_MARKS = buildSlackMarks({ looking: "eyes", commented: "speech_balloon", approved: "white_check_mark" });
-
 /** Inline Slack logo — a simple 4-blob squircle. Currentcolor so it inherits from container. */
 const SLACK_ICON = (
   <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden style={{ verticalAlign: "-2px" }}>
@@ -743,38 +526,6 @@ const SLACK_ICON = (
     <path fill="#ECB22E" d="M15 19a2 2 0 1 1-2 2v-2h2Zm0-1a2 2 0 0 1 0-4h5a2 2 0 1 1 0 4h-5Z" />
   </svg>
 );
-
-/** The review launch items for a row, by current review state. `re-review` is
-    available whenever a review isn't actively running — even with no prior board
-    review (it degrades to a generic re-review) — so it covers MRs a human reviewed
-    outside the board. A live review collapses to a single "focus review tab". */
-function reviewMenuItems(status?: ReviewStatus): Array<{ kind: "launch" | "re-review"; label: string }> {
-  if (status === "queued" || status === "reviewing") return [{ kind: "launch", label: "focus review tab" }];
-  if (status === "done") return [{ kind: "re-review", label: "re-review" }];
-  // none | error: offer a cold first review and the re-review path side by side.
-  return [
-    { kind: "launch", label: "launch review" },
-    { kind: "re-review", label: "re-review" },
-  ];
-}
-
-function respondItemLabel(status?: RespondStatus): string {
-  if (!status || status === "error") return "respond to review";
-  if (status === "done") return "restart response";
-  return "focus response tab";
-}
-
-function doctorItemLabel(status?: DoctorStatus): string {
-  if (!status || status === "error") return "call the doctor";
-  if (status === "done") return "call the doctor again";
-  return "focus doctor tab";
-}
-
-interface RowMenuState {
-  x: number;
-  y: number;
-  mr: BoardMR;
-}
 
 function MenuItem({
   label,
@@ -1054,7 +805,7 @@ function RowMenu({
           <div className="tui-menu-sep" />
           {found ? (
             <>
-              {SLACK_MARKS.map((m) => {
+              {getSlackMarks().map((m) => {
                 const isPending = pending.includes(m.emoji);
                 const isMarked = reactions.includes(m.emoji);
                 return (
@@ -1084,7 +835,7 @@ function RowMenu({
                 onClick={run(() => onResolveSlack(mr))}
               />
               <MenuItem label="post to slack" onClick={run(() => onPostSlack(mr))} />
-              {SLACK_MARKS.map((m) => (
+              {getSlackMarks().map((m) => (
                 <MenuItem key={m.emoji} label={m.label} disabled />
               ))}
             </>
@@ -1093,11 +844,6 @@ function RowMenu({
       )}
     </div>
   );
-}
-
-interface Toast {
-  id: number;
-  text: string;
 }
 
 /** Bottom-right stack of transient confirmations. */
@@ -1112,32 +858,6 @@ function ToastHost({ toasts }: { toasts: Toast[] }) {
       ))}
     </div>
   );
-}
-
-// ── slack summary ───────────────────────────────────────────────────────────
-
-function factsFor(mr: BoardMR): MrFacts {
-  return {
-    iid: mr.iid,
-    title: cleanTitle(mr.title),
-    url: mr.webUrl ?? "",
-    ticket: extractTicketId(mr.sourceBranch, mr.title) ?? "",
-    author: mr.author.username,
-    sourceBranch: mr.sourceBranch,
-    targetBranch: mr.targetBranch,
-  };
-}
-
-/** One MR rendered from the configured single template. */
-function mrLine(mr: BoardMR, tpl: SlackTemplates): string {
-  return renderMr(tpl.single, factsFor(mr));
-}
-
-/** The current view (or the current selection) rendered from the configured
-    multi template. `header` overrides the configured header line; {count} in
-    it is still substituted by renderMulti. */
-function boardSummary(mrs: BoardMR[], tpl: SlackTemplates, header?: string): string {
-  return renderMulti(header ?? tpl.multiHeader, tpl.multiItem, mrs.map(factsFor));
 }
 
 // ── pieces ─────────────────────────────────────────────────────────────────
@@ -1201,26 +921,6 @@ function StatusDot({ mr }: { mr: BoardMR }) {
   );
 }
 
-/** The single most important state, for the row's right side. `comments` marks
-    the state that gets the hover card of per-thread comment status. */
-/** The review-state phrase — the human review axis only. Mechanical blockers
-    (conflicts / ci) are NOT folded in here; they render as flag chips above the
-    title so this always shows where the MR actually is in review. */
-function statusPhrase(mr: BoardMR): { text: string; cls: string; comments?: boolean } {
-  const comments = mr.reviewerComments;
-  // Formal "changes requested" reviewer state — a reviewer explicitly blocked it.
-  if (hasChangesRequested(mr)) return { text: "changes requested", cls: "t-bad" };
-  if (mr.reviews.isApproved) return { text: "approved", cls: "t-ok" };
-  // Comments without a formal verdict: someone left feedback to look at.
-  if (comments > 0) return { text: `${comments} comment${comments === 1 ? "" : "s"}`, cls: "t-warn", comments: true };
-  // Reviewed, every thread resolved, not yet approved. Still clickable (`comments`)
-  // so you can open the drawer and read the resolved threads.
-  if (commentsAllResolved(mr)) return { text: "comments resolved", cls: "t-ok", comments: true };
-  if (mr.reviews.required > 0 && mr.reviews.given > 0)
-    return { text: `${mr.reviews.given}/${mr.reviews.required} approved`, cls: "t-warn" };
-  return { text: "needs review", cls: "t-muted" };
-}
-
 function StatusFlags({ mr, nested = false }: { mr: BoardMR; nested?: boolean }) {
   return (
     <>
@@ -1233,35 +933,10 @@ function StatusFlags({ mr, nested = false }: { mr: BoardMR; nested?: boolean }) 
   );
 }
 
-/** Depth-first flattening of one stack tree, for views that render a chain as
-    consecutive indented items rather than nested markup. */
-function flattenStack(node: StackNode, depth = 0): Array<{ mr: BoardMR; depth: number }> {
-  return [{ mr: node.mr, depth }, ...node.children.flatMap((c) => flattenStack(c, depth + 1))];
-}
-
 function StatusPhrase({ mr }: { mr: BoardMR }) {
   const { text, cls, comments } = statusPhrase(mr);
   if (comments) return <CommentsButton mr={mr} label={text} cls={cls} />;
   return <span className={`tui-phrase ${cls}`}>{text}</span>;
-}
-
-type ThreadStatus = "resolved" | "replied" | "awaiting";
-type CommentNote = { id: number; name: string; username: string | null; at: string; body: string };
-type CommentThread = { status: ThreadStatus; notes: CommentNote[] };
-type GeneralComment = CommentNote;
-const THREAD_ICON: Record<ThreadStatus, string> = { resolved: "✓", replied: "↩", awaiting: "●" };
-const THREAD_LABEL: Record<ThreadStatus, string> = {
-  resolved: "resolved",
-  replied: "author replied",
-  awaiting: "awaiting author",
-};
-
-/** Total comment activity on an MR — resolvable threads plus general MR comments —
-    for the 💬 token. Zero when the board has no breakdown or none exist. */
-function commentCount(mr: BoardMR): number {
-  const s = mr.threadSummary;
-  const threads = s ? s.awaiting + s.replied + s.resolved : 0;
-  return threads + (mr.generalComments ?? 0);
 }
 
 /** A button that opens the comments drawer. Shared by the "N comments" status
@@ -2325,7 +2000,7 @@ function Board() {
       fetch(fresh ? "/data.json?fresh=1" : "/data.json")
         .then((r) => r.json())
         .then((d: BoardData) => {
-          if (d.slackEmoji) SLACK_MARKS = buildSlackMarks(d.slackEmoji);
+          if (d.slackEmoji) setSlackMarks(d.slackEmoji);
           setData(d);
           setLoadError(false);
           const usernames = d.members.map((m) => m.username);
@@ -2828,7 +2503,7 @@ function Board() {
   const handleReactSlack = useCallback(
     (mr: BoardMR, emoji: string, remove: boolean): Promise<string[] | null> => {
       if (!mr.webUrl) return Promise.resolve(null);
-      const glyph = SLACK_MARKS.find((m) => m.emoji === emoji)?.glyph ?? emoji;
+      const glyph = getSlackMarks().find((m) => m.emoji === emoji)?.glyph ?? emoji;
       const verb = remove ? "unmark" : "add";
       return fetch("/slack/react", {
         method: "POST",
