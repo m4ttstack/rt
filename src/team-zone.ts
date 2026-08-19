@@ -120,6 +120,17 @@ export function materializeTeamConfig(cloneDir: string, configPath: string): { c
       fields.push(key);
     }
   }
+  // A materialized `members` can drop the very user `defaultMember` names,
+  // which would otherwise make loadConfig() hard-throw on next boot (spec
+  // §6, never crash boot). Reset to "all" when that happens and report it,
+  // same as any other rewritten field.
+  if (fields.includes("members")) {
+    const defaultMember = obj.defaultMember;
+    if (typeof defaultMember === "string" && defaultMember !== "all" && !zone.members.some((m) => m.username === defaultMember)) {
+      obj.defaultMember = "all";
+      fields.push("defaultMember");
+    }
+  }
   if (fields.length === 0) return { changed: false, fields: [] };
   const text = JSON.stringify(obj, null, 2) + "\n";
   writeFileSync(configPath + ".tmp", text);

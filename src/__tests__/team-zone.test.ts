@@ -28,8 +28,10 @@ function makeClone(nested: boolean = false): string {
   return cloneDir;
 }
 
-/** A fresh mkdtemp config.json with stale team fields plus board-only fields. */
-function makeConfig(): string {
+/** A fresh mkdtemp config.json with stale team fields plus board-only fields.
+    `defaultMember` is overridable so tests can set it to a username the
+    zone's roster does or doesn't have. */
+function makeConfig(defaultMember?: string): string {
   const dir = mkdtempSync(join(tmpdir(), "team-zone-config-"));
   const p = join(dir, "config.json");
   const base = {
@@ -41,6 +43,7 @@ function makeConfig(): string {
     reviewSkill: "myteam:review",
     staleAfterDays: 30,
     slack: { channel: "code-review" },
+    ...(defaultMember !== undefined ? { defaultMember } : {}),
   };
   writeFileSync(p, JSON.stringify(base, null, 2) + "\n");
   return p;
@@ -118,5 +121,24 @@ describe("materializeTeamConfig", () => {
     materializeTeamConfig(cloneDir, configPath);
     const second = materializeTeamConfig(cloneDir, configPath);
     expect(second).toEqual({ changed: false, fields: [] });
+  });
+
+  test("a defaultMember the zone's new roster no longer has is reset to \"all\" and reported", () => {
+    const cloneDir = makeClone();
+    const configPath = makeConfig("carol"); // zone roster is alice/bob -- carol is stale
+    const result = materializeTeamConfig(cloneDir, configPath);
+    expect(result.changed).toBe(true);
+    expect(result.fields).toContain("defaultMember");
+    const onDisk = JSON.parse(readFileSync(configPath, "utf8"));
+    expect(onDisk.defaultMember).toBe("all");
+  });
+
+  test("a defaultMember still present in the new roster is left alone", () => {
+    const cloneDir = makeClone();
+    const configPath = makeConfig("alice"); // alice is in the zone's roster
+    const result = materializeTeamConfig(cloneDir, configPath);
+    expect(result.fields).not.toContain("defaultMember");
+    const onDisk = JSON.parse(readFileSync(configPath, "utf8"));
+    expect(onDisk.defaultMember).toBe("alice");
   });
 });

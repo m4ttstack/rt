@@ -61,6 +61,19 @@ function materializeTeamConfigAtBoot(): void {
   try {
     const result = materializeTeamConfig(cloneDir, CONFIG_PATH);
     console.log(result.changed ? `team config: updated ${result.fields.join(", ")}` : "team config: current");
+    // A zone can add a project before the operator adds its matching
+    // rtRepos entry -- fetchTeamMRs then throws for the entire fetch (spec
+    // §6 rtRepos doc), so warn now rather than let that surface as a
+    // mystery-empty board later.
+    const materialized = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as { projects?: unknown; rtRepos?: unknown };
+    const projects = Array.isArray(materialized.projects) ? materialized.projects.filter((p): p is string => typeof p === "string") : [];
+    const rtRepos = materialized.rtRepos && typeof materialized.rtRepos === "object" && !Array.isArray(materialized.rtRepos)
+      ? (materialized.rtRepos as Record<string, unknown>)
+      : {};
+    const unmapped = projects.filter((p) => !rtRepos[p]);
+    if (unmapped.length) {
+      console.error(`team config: no rtRepos mapping for ${unmapped.join(", ")} -- fetch will fail until config.json's rtRepos maps ${unmapped.length === 1 ? "it" : "them"}`);
+    }
   } catch (err) {
     console.error(`team config materialize failed, continuing with existing config: ${err instanceof Error ? err.message : err}`);
   }

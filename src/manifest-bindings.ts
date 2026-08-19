@@ -18,12 +18,19 @@ const CONFIG_FIELD: Record<BoardSkillKind, "reviewSkill" | "respondSkill" | "doc
 };
 
 /** Slug a GitLab host + project path into the `~/.mattstack/repos/<slug>` dir
-    name a per-repo manifest lives under: the host (protocol stripped,
-    lowercased) and the project path joined by "-", with every "/" in the
-    project path also replaced by "-". E.g. "https://gitlab.com" +
-    "acme/acme-dev" -> "gitlab.com-acme-acme-dev". */
+    name a per-repo manifest lives under: the host (scheme stripped,
+    credentials stripped, truncated at the first "/", lowercased) and the
+    project path joined by "-", with every "/" in the project path also
+    replaced by "-". E.g. "https://gitlab.com" + "acme/acme-dev" ->
+    "gitlab.com-acme-acme-dev". Normalization matches
+    merge-manifests.sh's norm_url so a trailing slash or embedded
+    credentials on `gitlabHost` still resolve the same manifest. */
 export function boardRepoSlug(gitlabHost: string, project: string): string {
-  const host = gitlabHost.replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//, "").toLowerCase();
+  const host = gitlabHost
+    .replace(/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//, "")
+    .replace(/^[^@/]*@/, "")
+    .split("/")[0]!
+    .toLowerCase();
   return `${host}-${project.replace(/\//g, "-")}`;
 }
 

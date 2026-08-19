@@ -104,4 +104,24 @@ describe("resolveBoardSkill", () => {
     const result = resolveBoardSkill("review", "org/repo", cfg, home);
     expect(result).toEqual({ skill: "config:review", source: "config" });
   });
+
+  test("trailing-slash host resolves the same manifest as the plain host", () => {
+    const home = makeHome(
+      "gitlab.com-org-repo",
+      JSON.stringify({ bindings: { "mr-board:review": { skill: "myteam:review" } } }),
+    );
+    const trailingSlashCfg = parseConfig(JSON.stringify({ ...base, gitlabHost: "https://gitlab.com/" }));
+    const result = resolveBoardSkill("review", "org/repo", trailingSlashCfg, home);
+    expect(result).toEqual({ skill: "myteam:review", source: "manifest" });
+  });
+
+  test("credentialed host resolves the same manifest as the plain host", () => {
+    const home = makeHome(
+      "gitlab.com-org-repo",
+      JSON.stringify({ bindings: { "mr-board:review": { skill: "myteam:review" } } }),
+    );
+    const credentialedCfg = parseConfig(JSON.stringify({ ...base, gitlabHost: "https://user:pass@gitlab.com" }));
+    const result = resolveBoardSkill("review", "org/repo", credentialedCfg, home);
+    expect(result).toEqual({ skill: "myteam:review", source: "manifest" });
+  });
 });
