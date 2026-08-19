@@ -3,8 +3,6 @@ import { createRoot } from "react-dom/client";
 import { Invadr } from "invadrs/react";
 import { extractTicketId, ticketUrl } from "./ticket.ts";
 import type { BoardMR } from "./data.ts";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
 import { filterByMember, sortMRs, groupMRs, nestStacks, parseViewState, serializeViewState, commentDot, dataAgeLabel, statusFlags, memberPeerState, joinRowState, GROUP_KEYS, SORT_KEYS } from "./view.ts";
 import type { ViewState } from "./view.ts";
 import { selectionHeader, MAX_HEADER_LEN, type SlackTemplates } from "./template.ts";
@@ -66,6 +64,14 @@ import {
   respondItemLabel,
   doctorItemLabel,
 } from "./client/board/format.ts";
+import { Icon, ICONS, COPY_ICON, CHECK_ICON } from "./client/ui/Icon.tsx";
+import { LabeledSeg, Segmented } from "./client/ui/Segmented.tsx";
+import { CopyButton } from "./client/ui/CopyButton.tsx";
+import { SelectBox } from "./client/ui/SelectBox.tsx";
+import { Panel } from "./client/ui/Panel.tsx";
+import { ToastHost } from "./client/ui/Toast.tsx";
+import { Markdown } from "./client/ui/Markdown.tsx";
+import { useEscapeClose, useRevealOnChange } from "./client/ui/hooks.ts";
 
 declare global {
   interface Window {
@@ -78,86 +84,6 @@ declare global {
 const THEME_KEY = "mrs-theme";
 const VIEW_KEY = "mrs-view";
 const STATE_KEY = "mrs-view-state";
-
-/** A labelled segmented control (text labels, unlike the icon-only Segmented). */
-function LabeledSeg<T extends string>({
-  legend,
-  options,
-  labels,
-  value,
-  onChange,
-}: {
-  legend: string;
-  options: readonly T[];
-  labels: Record<T, string>;
-  value: T;
-  onChange: (v: T) => void;
-}) {
-  return (
-    <span className="tui-seg tui-seg-text" role="group" aria-label={legend}>
-      {options.map((o) => (
-        <button key={o} className={o === value ? "active" : ""} onClick={() => onChange(o)}>
-          {labels[o]}
-        </button>
-      ))}
-    </span>
-  );
-}
-
-function Icon({ d, circle }: { d: string; circle?: boolean }) {
-  return (
-    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      {circle && <circle cx="12" cy="12" r="4" />}
-      <path d={d} />
-    </svg>
-  );
-}
-
-const ICONS: Record<string, React.ReactNode> = {
-  rows: <Icon d="M3 6h18M3 12h18M3 18h18" />,
-  grid: <Icon d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z" />,
-  light: <Icon circle d="M12 2v2m0 16v2M4.9 4.9l1.4 1.4m11.4 11.4 1.4 1.4M2 12h2m16 0h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" />,
-  dark: <Icon d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />,
-  system: <Icon d="M2 4h20v12H2zM8 20h8m-4-4v4" />,
-  menu: <Icon d="M3 6h18M3 12h18M3 18h18" />,
-  close: <Icon d="M6 6l12 12M18 6L6 18" />,
-  refresh: <Icon d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" />,
-  people: <Icon d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" />,
-  settings: (
-    <Icon
-      circle
-      d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"
-    />
-  ),
-};
-
-function Segmented<T extends string>({
-  options,
-  value,
-  onChange,
-  label,
-}: {
-  options: readonly T[];
-  value: T;
-  onChange: (v: T) => void;
-  label: string;
-}) {
-  return (
-    <span className="tui-seg" role="group" aria-label={label}>
-      {options.map((o) => (
-        <button
-          key={o}
-          className={o === value ? "active" : ""}
-          onClick={() => onChange(o)}
-          title={o}
-          aria-label={o}
-        >
-          {ICONS[o] ?? o}
-        </button>
-      ))}
-    </span>
-  );
-}
 
 /** Plain click opens the MR in GitLab; right-click opens the row action menu
     (wired separately). Clicks on inner links/buttons are left to those. */
@@ -368,29 +294,6 @@ function SlackPostedChip({ slack }: { slack?: SlackInfo }) {
   );
 }
 
-/** Scrolls the returned ref's element into its scroll container whenever `key`
-    turns truthy or changes. For content that appears at the bottom of a capped,
-    scrollable modal: the settings modal stops at 80vh, so a fresh invite row or
-    an expanded join input can render below the fold with nothing to bring it
-    into view. `block: "nearest"` is deliberate -- it's a no-op when the element
-    is already visible, so this never yanks a settled modal around. */
-function useRevealOnChange<T extends HTMLElement = HTMLElement>(key: unknown) {
-  const ref = useRef<T | null>(null);
-  useEffect(() => {
-    if (key) ref.current?.scrollIntoView({ block: "nearest" });
-  }, [key]);
-  return ref;
-}
-
-/** Close a modal on Escape, for the lifetime of the calling component. */
-function useEscapeClose(onClose: () => void): void {
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
-}
-
 /** Modal that fetches and renders the agent's written review markdown for an MR. */
 function ReviewModal({ mr, onClose }: { mr: BoardMRWithReview; onClose: () => void }) {
   const [body, setBody] = useState<string | null>(null);
@@ -427,7 +330,7 @@ function ReviewModal({ mr, onClose }: { mr: BoardMRWithReview; onClose: () => vo
             <p className="tui-comments-empty">loading…</p>
           ) : (
             <div className="tui-md">
-              <ReactMarkdown remarkPlugins={[remarkGfm]}>{body}</ReactMarkdown>
+              <Markdown>{body}</Markdown>
             </div>
           )}
         </div>
@@ -846,71 +749,7 @@ function RowMenu({
   );
 }
 
-/** Bottom-right stack of transient confirmations. */
-function ToastHost({ toasts }: { toasts: Toast[] }) {
-  if (!toasts.length) return null;
-  return (
-    <div className="tui-toasts" role="status" aria-live="polite">
-      {toasts.map((t) => (
-        <div key={t.id} className="tui-toast">
-          {t.text}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // ── pieces ─────────────────────────────────────────────────────────────────
-
-const COPY_ICON = "M9 9h10v10H9zM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1";
-const CHECK_ICON = "M20 6 9 17l-5-5";
-
-/** Copies `text` to the clipboard and flashes a check for feedback. An
-    optional `label` renders text beside the icon (used for the drawer action). */
-function CopyButton({ text, className, title, label }: { text: string; className: string; title: string; label?: string }) {
-  const [copied, setCopied] = useState(false);
-  const onClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    navigator.clipboard?.writeText(text).then(
-      () => {
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1200);
-      },
-      () => {},
-    );
-  };
-  return (
-    <button
-      className={copied ? `${className} copied` : className}
-      title={copied ? "copied" : title}
-      aria-label={title}
-      onClick={onClick}
-    >
-      <Icon d={copied ? CHECK_ICON : COPY_ICON} />
-      {label && <span>{copied ? "copied" : label}</span>}
-    </button>
-  );
-}
-
-/** Row/card selection checkbox. A real button so the existing onRowClick guard
-    (which ignores clicks on `a, button`) already skips it -- stopPropagation is
-    belt-and-braces in case that guard changes. */
-function SelectBox({ checked, onToggle }: { checked: boolean; onToggle: () => void }) {
-  return (
-    <button
-      role="checkbox"
-      aria-checked={checked}
-      aria-label={checked ? "deselect this MR" : "select this MR"}
-      className={checked ? "tui-selectbox checked" : "tui-selectbox"}
-      onClick={(e) => {
-        e.stopPropagation();
-        onToggle();
-      }}
-    >
-      {checked ? "▣" : "☐"}
-    </button>
-  );
-}
 
 function StatusDot({ mr }: { mr: BoardMR }) {
   const cls = !mr.blockers?.any ? "ok" : mr.blockers.hasConflicts || mr.blockers.pipelineFailing ? "bad" : "warn";
@@ -1022,12 +861,7 @@ function CommentNoteView({ mr, note, now }: { mr: BoardMR; note: CommentNote; no
         </a>
       </div>
       <div className="tui-cd-note-body">
-        <ReactMarkdown
-          remarkPlugins={[remarkGfm]}
-          components={{ a: ({ node, ...props }) => <a {...props} target="_blank" rel="noopener noreferrer" /> }}
-        >
-          {note.body}
-        </ReactMarkdown>
+        <Markdown linkTargetBlank>{note.body}</Markdown>
       </div>
     </div>
   );
@@ -1168,61 +1002,6 @@ function Watching({ mr }: { mr: BoardMR }) {
     <div className="tui-watching">
       👀 {names.join(", ")} {names.length === 1 ? "is" : "are"} reviewing right now
     </div>
-  );
-}
-
-const PANEL_STATE_KEY = "mrs-panel-collapsed";
-
-/** Set of collapsed panel titles, persisted so a group folded up on one visit
-    stays folded on the next. Keyed on title alone -- group labels are unique
-    within a grouping and it's fine if switching groupings orphans keys. */
-function readCollapsed(): Set<string> {
-  try {
-    const raw = localStorage.getItem(PANEL_STATE_KEY);
-    if (!raw) return new Set();
-    const arr = JSON.parse(raw);
-    return Array.isArray(arr) ? new Set(arr.filter((s) => typeof s === "string")) : new Set();
-  } catch {
-    return new Set();
-  }
-}
-
-function writeCollapsed(set: Set<string>): void {
-  try {
-    localStorage.setItem(PANEL_STATE_KEY, JSON.stringify([...set]));
-  } catch {
-    // storage full or blocked; the panel just won't remember its state
-  }
-}
-
-function Panel({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {
-  const [collapsed, setCollapsed] = useState(false);
-  // Read once on mount; if the persisted set is huge we don't want to parse it
-  // on every re-render (this component mounts once per group per grouping).
-  useEffect(() => {
-    setCollapsed(readCollapsed().has(title));
-  }, [title]);
-  const toggle = () => {
-    const next = !collapsed;
-    setCollapsed(next);
-    const set = readCollapsed();
-    if (next) set.add(title); else set.delete(title);
-    writeCollapsed(set);
-  };
-  return (
-    <section className={`tui-panel${collapsed ? " tui-panel-collapsed" : ""}`}>
-      <button
-        type="button"
-        className="tui-panel-title"
-        aria-expanded={!collapsed}
-        aria-controls={`panel-body-${title}`}
-        onClick={toggle}
-      >
-        <span className="tui-panel-caret" aria-hidden>{collapsed ? "▸" : "▾"}</span>
-        {title} <span className="tui-panel-count">{count}</span>
-      </button>
-      {!collapsed && <div id={`panel-body-${title}`}>{children}</div>}
-    </section>
   );
 }
 
