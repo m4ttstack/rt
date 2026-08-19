@@ -5,6 +5,7 @@ import type { CommentNote, CommentThread, GeneralComment } from "../types.ts";
 import { Markdown } from "../ui/Markdown.tsx";
 import { ICONS } from "../ui/Icon.tsx";
 import { ago, cleanTitle, statusPhrase, THREAD_ICON, THREAD_LABEL, commentCount } from "./format.ts";
+import { getDiscussions } from "../api.ts";
 
 /** A button that opens the comments drawer. Shared by the "N comments" status
     label and the persistent 💬 token, so both routes reach the same drawer. */
@@ -103,12 +104,8 @@ function CommentsDrawer({ mr, onClose }: { mr: BoardMR; onClose: () => void }) {
   const [failed, setFailed] = useState(false);
   const now = Date.now();
   useEffect(() => {
-    const params = new URLSearchParams({ repo: mr.rtRepo ?? "", iid: String(mr.iid), author: mr.author.username });
-    fetch(`/discussions?${params}`)
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("bad status"))))
-      .then((d: { threads: CommentThread[]; comments?: GeneralComment[] }) =>
-        setData({ threads: d.threads, comments: d.comments ?? [] }),
-      )
+    getDiscussions(mr.rtRepo ?? "", mr.iid, mr.author.username)
+      .then((d) => setData(d))
       .catch(() => setFailed(true));
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     document.addEventListener("keydown", onKey);

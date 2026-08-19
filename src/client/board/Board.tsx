@@ -9,12 +9,12 @@ import type {
   BoardData,
   ThemeMode,
   ViewMode,
-  Toast,
   RowMenuState,
 } from "../types.ts";
-import { setSlackMarks, getSlackMarks, mrLine, boardSummary, draftKey } from "./format.ts";
+import { getSlackMarks, mrLine, boardSummary, draftKey } from "./format.ts";
 import { overlay } from "./optimistic.ts";
-import { useOptimisticLifecycle } from "./hooks.ts";
+import { useOptimisticLifecycle, useToasts, useBoardData, useLaunchAction } from "./hooks.ts";
+import { postAction } from "../api.ts";
 import { ICONS } from "../ui/Icon.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { ToastHost } from "../ui/Toast.tsx";
@@ -43,8 +43,6 @@ const STATE_KEY = "mrs-view-state";
 // ── board ──────────────────────────────────────────────────────────────────
 
 export function Board() {
-  const [data, setData] = useState<BoardData | null>(null);
-  const [loadError, setLoadError] = useState(false);
   const [view, setView] = useState<ViewMode>(() => (localStorage.getItem(VIEW_KEY) as ViewMode) ?? "rows");
   const [theme, setTheme] = useState<ThemeMode>(() => (localStorage.getItem(THEME_KEY) as ThemeMode) ?? "system");
 
@@ -78,100 +76,35 @@ export function Board() {
     });
   };
 
-  const load = useCallback(
-    (fresh = false) =>
-      fetch(fresh ? "/data.json?fresh=1" : "/data.json")
-        .then((r) => r.json())
-        .then((d: BoardData) => {
-          if (d.slackEmoji) setSlackMarks(d.slackEmoji);
-          setData(d);
-          setLoadError(false);
-          const usernames = d.members.map((m) => m.username);
-          if (!validatedOnce.current) {
-            // First load: the real roster and configured default are now known, so
-            // re-resolve from URL/localStorage/defaultMember against them.
-            validatedOnce.current = true;
-            let stored: Partial<ViewState> | null = null;
-            try {
-              stored = JSON.parse(localStorage.getItem(STATE_KEY) ?? "null");
-            } catch {
-              stored = null;
-            }
-            setState(parseViewState(location.search, stored, usernames, d.defaultMember));
-          } else {
-            // Subsequent refreshes: keep the user's current selection, only
-            // dropping a member who's no longer on the (visible) roster.
-            setState((prev) =>
-              prev.member === "all" || usernames.includes(prev.member) ? prev : { ...prev, member: "all" },
-            );
-          }
-        })
-        .catch(() => setLoadError(true)),
-    [],
-  );
-
-  useEffect(() => {
-    const onVisible = () => {
-      if (!document.hidden) load();
-    };
-    document.addEventListener("visibilitychange", onVisible);
-    load();
-    const timer = setInterval(() => {
-      if (!document.hidden) load();
-    }, 60_000);
-    return () => {
-      clearInterval(timer);
-      document.removeEventListener("visibilitychange", onVisible);
-    };
-  }, [load]);
-
-  // Server push: rt relay events land as SSE nudges; re-pull the board.
-  // Polling stays as the fallback when the stream is down.
-  useEffect(() => {
-    const es = new EventSource("/events");
-    es.onmessage = () => {
-      if (!document.hidden) load();
-    };
-    return () => es.close();
-  }, [load]);
-
-  // Merge a scoped (single-member) refresh into the current board: replace that
-  // member's rows and update their roster count, leaving everyone else untouched.
-  const mergeMember = useCallback((username: string, mrs: BoardMRWithReview[], fetchedAt: number) => {
-    setData((prev) => {
-      if (!prev) return prev;
-      const others = prev.mrs.filter((m) => m.author.username !== username);
-      const members = prev.members.map((m) => (m.username === username ? { ...m, count: mrs.length } : m));
-      return { ...prev, mrs: [...others, ...mrs], members, fetchedAt };
-    });
+  // Re-resolve the view state's member against the roster the instant real
+  // data arrives: on the first load, that's URL/localStorage/defaultMember
+  // resolved against the now-known roster; on every later load, just drop a
+  // member who's no longer on the (visible) roster. Passed into useBoardData
+  // (rather than a separate effect keyed on `data`) so it runs in the same
+  // batch as setData -- see that hook's doc comment. Deliberately empty deps:
+  // it only closes over the (stable) validatedOnce ref and setState.
+  const onData = useCallback((d: BoardData) => {
+    const usernames = d.members.map((m) => m.username);
+    if (!validatedOnce.current) {
+      validatedOnce.current = true;
+      let stored: Partial<ViewState> | null = null;
+      try {
+        stored = JSON.parse(localStorage.getItem(STATE_KEY) ?? "null");
+      } catch {
+        stored = null;
+      }
+      setState(parseViewState(location.search, stored, usernames, d.defaultMember));
+    } else {
+      setState((prev) => (prev.member === "all" || usernames.includes(prev.member) ? prev : { ...prev, member: "all" }));
+    }
   }, []);
 
-  const fetchMember = useCallback(
-    (username: string) =>
-      fetch(`/member?u=${encodeURIComponent(username)}`)
-        .then((r) => (r.ok ? r.json() : Promise.reject(new Error("bad status"))))
-        .then((d: { mrs: BoardMRWithReview[]; fetchedAt: number }) => mergeMember(username, d.mrs, d.fetchedAt)),
-    [mergeMember],
-  );
-
-  // When viewing one person, poll just their MRs every 15s — 1 query instead of
-  // the whole team, so a reviewer's comment shows up fast and cheap. The "All"
-  // view keeps the slower full poll above.
-  useEffect(() => {
-    if (state.member === "all") return;
-    const member = state.member;
-    const timer = setInterval(() => {
-      if (!document.hidden) fetchMember(member).catch(() => {});
-    }, 15_000);
-    return () => clearInterval(timer);
-  }, [state.member, fetchMember]);
-
-  const [refreshing, setRefreshing] = useState(false);
-  const refreshNow = useCallback(() => {
-    setRefreshing(true);
-    const task = state.member === "all" ? load(true) : fetchMember(state.member);
-    task.catch(() => {}).finally(() => setRefreshing(false));
-  }, [state.member, load, fetchMember]);
+  // Data fetching (initial load, 60s poll, visibilitychange, SSE, the scoped
+  // 15s member poll, and refreshNow) all live in useBoardData now. See that
+  // hook's doc comment for why the fast-poll-while-active interval stays here
+  // instead -- it needs `data` (this hook's own output) to compute the
+  // predicate it would need to take as an argument.
+  const { data, loadError, load, refreshNow, refreshing, setData } = useBoardData(state.member, onData);
 
   // Selection for the multi-copy bar, keyed by webUrl so it survives the
   // refresh poll and every member/group/sort change. Deliberately not
@@ -200,13 +133,7 @@ export function Board() {
   const [draftModal, setDraftModal] = useState<{ mr: BoardMRWithReview; draft: DraftInfo } | null>(null);
   const [draftResolved, setDraftResolved] = useState<ReadonlyMap<string, "posted" | "dismissed">>(new Map());
   const openDraft = useCallback((mr: BoardMRWithReview, draft: DraftInfo) => setDraftModal({ mr, draft }), []);
-  const [toasts, setToasts] = useState<Toast[]>([]);
-  const toastId = useRef(0);
-  const addToast = useCallback((text: string) => {
-    const id = ++toastId.current;
-    setToasts((t) => [...t, { id, text }]);
-    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), 3500);
-  }, []);
+  const { toasts, addToast } = useToasts();
 
   // A drawer action succeeded: swap the chip to its resolved state, close the
   // drawer, and confirm with a toast (the board's transient-confirmation form).
@@ -243,19 +170,14 @@ export function Board() {
   const toggleMember = useCallback(
     (username: string, hidden: boolean) => {
       applyHidden(username, hidden);
-      fetch("/settings", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ username, hidden }),
-      })
-        .then((res) => {
-          if (!res.ok) throw new Error(`settings failed: ${res.status}`);
-          return load();
-        })
-        .catch(() => {
+      postAction("/settings", { username, hidden }).then((result) => {
+        if (!result.ok) {
           applyHidden(username, !hidden);
           addToast(`could not check ${username} ${hidden ? "out" : "in"}`);
-        });
+          return;
+        }
+        load();
+      });
     },
     [applyHidden, load, addToast],
   );
@@ -271,148 +193,83 @@ export function Board() {
     setRowMenu({ x: e.clientX, y: e.clientY, mr });
   }, []);
 
-  const handleLaunch = useCallback(
-    (mr: BoardMR, note?: string) => {
-      if (!mr.webUrl) return;
-      const url = mr.webUrl;
-      optimisticLifecycle.setQueued("review", url);
-      addToast(`launching review for !${mr.iid}…`);
-      fetch("/review", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mrUrl: url, iid: mr.iid, note }),
-      })
-        .then(async (r) => {
-          const body = await r.json().catch(() => ({}));
-          if (!r.ok) {
-            optimisticLifecycle.rollback("review", url);
-            addToast(`couldn't launch review for !${mr.iid} (${r.status})`);
-            return;
-          }
-          if (body?.focused) addToast(`review already running for !${mr.iid} — focused its tab`);
-          load();
-        })
-        .catch(() => {
-          optimisticLifecycle.rollback("review", url);
-          addToast(`couldn't launch review for !${mr.iid}`);
-        });
-    },
-    [addToast, load, optimisticLifecycle],
+  // Six near-identical "launch a pane" actions collapse onto useLaunchAction:
+  // claim optimistic queued state (skipped for resume, whose axis is null),
+  // toast, POST, and reconcile on the answer. See hooks.ts's runLaunchFlow for
+  // the shared shape; note is folded into `extra` since JSON.stringify already
+  // drops it when undefined, matching every one of today's payloads.
+  const launchReview = useLaunchAction({
+    axis: "review", path: "/review", verbing: "launching review", noun: "review",
+    optimistic: optimisticLifecycle, addToast, reload: load,
+  });
+  const handleLaunch = useCallback((mr: BoardMR, note?: string) => launchReview(mr, {}, note), [launchReview]);
+
+  const reReviewAction = useLaunchAction({
+    axis: "review", path: "/review", verbing: "re-reviewing", noun: "review",
+    optimistic: optimisticLifecycle, addToast, reload: load,
+  });
+  const handleReReview = useCallback(
+    (mr: BoardMR, note?: string) => reReviewAction(mr, { reReview: true }, note),
+    [reReviewAction],
   );
 
-  const handleReReview = useCallback(
-    (mr: BoardMR, note?: string) => {
-      if (!mr.webUrl) return;
-      const url = mr.webUrl;
-      optimisticLifecycle.setQueued("review", url);
-      addToast(`re-reviewing !${mr.iid}…`);
-      fetch("/review", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mrUrl: url, iid: mr.iid, reReview: true, note }),
-      })
-        .then(async (r) => {
-          const body = await r.json().catch(() => ({}));
-          if (!r.ok) {
-            optimisticLifecycle.rollback("review", url);
-            addToast(`couldn't re-review !${mr.iid} (${r.status})`);
-            return;
-          }
-          if (body?.focused) addToast(`review already running for !${mr.iid} — focused its tab`);
-          load();
-        })
-        .catch(() => {
-          optimisticLifecycle.rollback("review", url);
-          addToast(`couldn't re-review !${mr.iid}`);
-        });
-    },
-    [addToast, load, optimisticLifecycle],
+  const respondAction = useLaunchAction({
+    axis: "respond", path: "/respond", verbing: "launching response", noun: "response",
+    optimistic: optimisticLifecycle, addToast, reload: load,
+  });
+  const handleRespond = useCallback((mr: BoardMR, note?: string) => respondAction(mr, {}, note), [respondAction]);
+
+  const doctorAction = useLaunchAction({
+    axis: "doctor", path: "/doctor", verbing: "calling doctor", noun: "doctor",
+    optimistic: optimisticLifecycle, addToast, reload: load,
+  });
+  const handleDoctor = useCallback((mr: BoardMR, note?: string) => doctorAction(mr, {}, note), [doctorAction]);
+
+  // Resume actions: axis null means useLaunchAction's setQueued/rollback are
+  // no-ops, matching today's handleResume (which never claimed a badge before
+  // the reload settled).
+  const resumeReviewAction = useLaunchAction({
+    axis: null, path: "/review", verbing: "resuming review", noun: "review",
+    optimistic: optimisticLifecycle, addToast, reload: load,
+  });
+  const handleResumeReview = useCallback(
+    (mr: BoardMR, note?: string) => resumeReviewAction(mr, { resume: true }, note),
+    [resumeReviewAction],
+  );
+
+  const resumeRespondAction = useLaunchAction({
+    axis: null, path: "/respond", verbing: "resuming respond", noun: "respond",
+    optimistic: optimisticLifecycle, addToast, reload: load,
+  });
+  const handleResumeRespond = useCallback(
+    (mr: BoardMR, note?: string) => resumeRespondAction(mr, { resume: true }, note),
+    [resumeRespondAction],
   );
 
   // Ask a peer's board for a re-review of one of our MRs. No optimistic chip:
   // the server writes the sent-nudge file before answering, so the reload right
   // behind this brings back the real state one poll sooner than guessing would.
+  // Bespoke (not useLaunchAction): the failure toast prefers the server's own
+  // refusal text over a generic status message.
   const handleNudge = useCallback(
     (mr: BoardMR, reviewer: string) => {
       if (!mr.webUrl) return;
       addToast(`requesting re-review of !${mr.iid} from ${reviewer}…`);
-      fetch("/nudge", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mrUrl: mr.webUrl, iid: mr.iid, reviewer }),
-      })
-        .then(async (r) => {
-          if (!r.ok) {
-            // A permanent refusal (409) answers in plain text with the reason
-            // the relay gave -- e.g. the reviewer has no board on the
-            // switchboard. That's the whole point of the failure, so show it.
-            const why = await r.text().then((t) => t.trim()).catch(() => "");
-            addToast(why || `couldn't request re-review for !${mr.iid} (${r.status})`);
-            return;
-          }
-          const body = await r.json().catch(() => ({}));
-          if (body?.queued) addToast(`switchboard unreachable... queued the ask to ${reviewer}`);
-          load();
-        })
-        .catch(() => {
-          addToast(`couldn't request re-review for !${mr.iid}`);
-        });
+      postAction("/nudge", { mrUrl: mr.webUrl, iid: mr.iid, reviewer }).then((result) => {
+        if (!result.ok) {
+          // A permanent refusal (409) answers in plain text with the reason
+          // the relay gave -- e.g. the reviewer has no board on the
+          // switchboard. That's the whole point of the failure, so show it.
+          const why = result.text.trim();
+          addToast(why || `couldn't request re-review for !${mr.iid} (${result.status})`);
+          return;
+        }
+        if (result.body?.queued) addToast(`switchboard unreachable... queued the ask to ${reviewer}`);
+        load();
+      });
     },
     [addToast, load],
   );
-
-  const handleRespond = useCallback(
-    (mr: BoardMR, note?: string) => {
-      if (!mr.webUrl) return;
-      const url = mr.webUrl;
-      optimisticLifecycle.setQueued("respond", url);
-      addToast(`launching response for !${mr.iid}…`);
-      fetch("/respond", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mrUrl: url, iid: mr.iid, note }),
-      })
-        .then(async (r) => {
-          const body = await r.json().catch(() => ({}));
-          if (!r.ok) {
-            optimisticLifecycle.rollback("respond", url);
-            addToast(`couldn't launch response for !${mr.iid} (${r.status})`);
-            return;
-          }
-          if (body?.focused) addToast(`response already running for !${mr.iid} — focused its tab`);
-          load();
-        })
-        .catch(() => {
-          optimisticLifecycle.rollback("respond", url);
-          addToast(`couldn't launch response for !${mr.iid}`);
-        });
-    },
-    [addToast, load, optimisticLifecycle],
-  );
-
-  const handleResume = useCallback(
-    (mr: BoardMR, kind: "review" | "respond", note?: string) => {
-      if (!mr.webUrl) return;
-      addToast(`resuming ${kind} for !${mr.iid}…`);
-      fetch(`/${kind}`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mrUrl: mr.webUrl, iid: mr.iid, resume: true, note }),
-      })
-        .then(async (r) => {
-          if (!r.ok) {
-            const msg = await r.text().catch(() => "");
-            addToast(`resume ${kind} failed for !${mr.iid} (${r.status})${msg ? `: ${msg}` : ""}`);
-            return;
-          }
-          load();
-        })
-        .catch(() => addToast(`resume ${kind} failed for !${mr.iid}`));
-    },
-    [addToast, load],
-  );
-  const handleResumeReview = useCallback((mr: BoardMR, note?: string) => handleResume(mr, "review", note), [handleResume]);
-  const handleResumeRespond = useCallback((mr: BoardMR, note?: string) => handleResume(mr, "respond", note), [handleResume]);
 
   // Flip one of your own MRs between draft and ready. No optimistic state: the
   // flip lives in GitLab, so the row waits for the reload rather than claiming a
@@ -422,51 +279,16 @@ export function Board() {
       if (!mr.webUrl) return;
       const verb = draft ? "draft" : "ready";
       addToast(`marking !${mr.iid} ${verb}…`);
-      fetch("/draft", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mrUrl: mr.webUrl, iid: mr.iid, draft }),
-      })
-        .then(async (r) => {
-          if (!r.ok) {
-            addToast(`couldn't mark !${mr.iid} ${verb} (${r.status})`);
-            return;
-          }
-          addToast(draft ? `!${mr.iid} is back to draft` : `!${mr.iid} is ready for review`);
-          void load(true);
-        })
-        .catch(() => addToast(`couldn't mark !${mr.iid} ${verb}`));
+      postAction("/draft", { mrUrl: mr.webUrl, iid: mr.iid, draft }).then((result) => {
+        if (!result.ok) {
+          addToast(`couldn't mark !${mr.iid} ${verb} (${result.status})`);
+          return;
+        }
+        addToast(draft ? `!${mr.iid} is back to draft` : `!${mr.iid} is ready for review`);
+        void load(true);
+      });
     },
     [addToast, load],
-  );
-
-  const handleDoctor = useCallback(
-    (mr: BoardMR, note?: string) => {
-      if (!mr.webUrl) return;
-      const url = mr.webUrl;
-      optimisticLifecycle.setQueued("doctor", url);
-      addToast(`calling doctor for !${mr.iid}…`);
-      fetch("/doctor", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mrUrl: url, iid: mr.iid, note }),
-      })
-        .then(async (r) => {
-          const body = await r.json().catch(() => ({}));
-          if (!r.ok) {
-            optimisticLifecycle.rollback("doctor", url);
-            addToast(`couldn't call doctor for !${mr.iid} (${r.status})`);
-            return;
-          }
-          if (body?.focused) addToast(`doctor already running for !${mr.iid} — focused its tab`);
-          load();
-        })
-        .catch(() => {
-          optimisticLifecycle.rollback("doctor", url);
-          addToast(`couldn't call doctor for !${mr.iid}`);
-        });
-    },
-    [addToast, load, optimisticLifecycle],
   );
 
   const handleCopy = useCallback(
@@ -486,18 +308,11 @@ export function Board() {
     (mr: BoardMR) => {
       if (!mr.webUrl) return;
       addToast(`posting !${mr.iid} to slack…`);
-      fetch("/slack/post", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mrUrls: [mr.webUrl] }),
-      })
-        .then(async (r) => {
-          const body = await r.json().catch(() => ({}));
-          if (!r.ok) return addToast(`slack post failed for !${mr.iid} (${r.status})`);
-          addToast(body?.linked ? `!${mr.iid} already in slack — linked` : `posted !${mr.iid} to slack`);
-          load();
-        })
-        .catch(() => addToast(`slack post failed for !${mr.iid}`));
+      postAction("/slack/post", { mrUrls: [mr.webUrl] }).then((result) => {
+        if (!result.ok) return addToast(`slack post failed for !${mr.iid} (${result.status})`);
+        addToast(result.body?.linked ? `!${mr.iid} already in slack — linked` : `posted !${mr.iid} to slack`);
+        load();
+      });
     },
     [addToast, load],
   );
@@ -511,19 +326,14 @@ export function Board() {
       if (!urls.length) return;
       setPostingSummary(true);
       addToast(`posting ${urls.length} MR${urls.length === 1 ? "" : "s"} to slack…`);
-      fetch("/slack/post", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(header ? { mrUrls: urls, header } : { mrUrls: urls }),
-      })
-        .then(async (r) => {
-          const body = await r.json().catch(() => ({}));
-          if (!r.ok) return addToast(`slack post failed (${r.status})${typeof body === "string" ? `: ${body}` : ""}`);
+      postAction("/slack/post", header ? { mrUrls: urls, header } : { mrUrls: urls })
+        .then((result) => {
+          const body: unknown = result.body;
+          if (!result.ok) return addToast(`slack post failed (${result.status})${typeof body === "string" ? `: ${body}` : ""}`);
           addToast(`posted ${urls.length} MR${urls.length === 1 ? "" : "s"} to slack`);
           onPosted?.();
           load();
         })
-        .catch(() => addToast(`slack post failed`))
         .finally(() => setPostingSummary(false));
     },
     [addToast, load],
@@ -533,18 +343,13 @@ export function Board() {
     (mr: BoardMR) => {
       if (!mr.webUrl) return;
       addToast(`finding slack thread for !${mr.iid}…`);
-      fetch("/slack/resolve", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mrUrl: mr.webUrl, iid: mr.iid }),
-      })
-        .then(async (r) => {
-          const body = await r.json().catch(() => ({}));
-          if (!r.ok) return addToast(`slack lookup failed for !${mr.iid} (${r.status})`);
-          addToast(body.status === "found" ? `found slack thread for !${mr.iid}` : `no slack thread found for !${mr.iid}`);
-          load();
-        })
-        .catch(() => addToast(`slack lookup failed for !${mr.iid}`));
+      postAction("/slack/resolve", { mrUrl: mr.webUrl, iid: mr.iid }).then((result) => {
+        if (!result.ok) return addToast(`slack lookup failed for !${mr.iid} (${result.status})`);
+        addToast(
+          result.body?.status === "found" ? `found slack thread for !${mr.iid}` : `no slack thread found for !${mr.iid}`,
+        );
+        load();
+      });
     },
     [addToast, load],
   );
@@ -554,31 +359,22 @@ export function Board() {
       if (!mr.webUrl) return Promise.resolve(null);
       const glyph = getSlackMarks().find((m) => m.emoji === emoji)?.glyph ?? emoji;
       const verb = remove ? "unmark" : "add";
-      return fetch("/slack/react", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ mrUrl: mr.webUrl, emoji, remove }),
-      })
-        .then(async (r) => {
-          const body = await r.json().catch(() => ({}));
-          if (!r.ok) {
-            addToast(`couldn't ${verb} ${glyph} for !${mr.iid} (${r.status})`);
-            return null;
-          }
-          addToast(`${remove ? "unmarked" : "marked"} ${glyph} on !${mr.iid}`);
-          load();
-          return (body.reactions as string[]) ?? null;
-        })
-        .catch(() => {
-          addToast(`couldn't ${verb} ${glyph} for !${mr.iid}`);
+      return postAction("/slack/react", { mrUrl: mr.webUrl, emoji, remove }).then((result) => {
+        if (!result.ok) {
+          addToast(`couldn't ${verb} ${glyph} for !${mr.iid} (${result.status})`);
           return null;
-        });
+        }
+        addToast(`${remove ? "unmarked" : "marked"} ${glyph} on !${mr.iid}`);
+        load();
+        return result.body?.reactions ?? null;
+      });
     },
     [addToast, load],
   );
 
   // Poll faster while a review, response, or doctor run is active, so the
   // badge updates promptly instead of waiting for the normal 60s cadence.
+  // Stays here rather than inside useBoardData -- see that hook's doc comment.
   useEffect(() => {
     if (!optimisticLifecycle.active) return;
     const t = setInterval(() => {
