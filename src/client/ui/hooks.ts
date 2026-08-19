@@ -25,10 +25,15 @@ let escListener: ((e: KeyboardEvent) => void) | null = null;
 
 /** Join the app's layer stack for the lifetime of the calling component:
     Escape closes only the topmost open layer (modal, drawer, or menu), not
-    every open layer at once. */
+    every open layer at once. Pushes a stable wrapper once per mount (not once
+    per render) so a re-rendered lower layer never re-registers itself to the
+    top of the stack -- `onClose` is read through a ref that's kept current
+    every render, while the pushed closure's identity never changes. */
 function useEscapeClose(onClose: () => void): void {
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
   useEffect(() => {
-    const pop = pushLayer(onClose);
+    const pop = pushLayer(() => onCloseRef.current());
     openLayers++;
     if (!escListener) {
       escListener = (e: KeyboardEvent) => {
@@ -44,7 +49,7 @@ function useEscapeClose(onClose: () => void): void {
         escListener = null;
       }
     };
-  }, [onClose]);
+  }, []);
 }
 
 /** Auto-grow a textarea to fit its content, re-measuring whenever `deps`

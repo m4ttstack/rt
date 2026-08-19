@@ -73,8 +73,13 @@ for (const theme of ["light", "dark"] as const) {
   await page.click(".tui-row", { button: "right" });
   await page.waitForSelector(".tui-menu");
   await shoot(page, `rowmenu-${theme}`);
-  // paper cut 4 assertion: comments drawer over the board — Escape closes it
-  // and does not also fire underlying layers.
+  // paper cut 4 assertion: opening the comments drawer while the row menu is
+  // open closes the menu first (its outside-click handler fires on the
+  // drawer trigger's mousedown), so no two layers actually coexist here --
+  // this is a single-layer Escape-close smoke test, not multi-layer LIFO
+  // evidence. The LIFO stack invariant is covered by the unit test in
+  // src/__tests__/escape-stack.test.ts. This still checks that Escape closes
+  // the drawer without taking the board down with it.
   const t2 = page.locator(".tui-comments-btn, .tui-comment-token").first();
   if (await t2.count()) {
     await t2.click();
