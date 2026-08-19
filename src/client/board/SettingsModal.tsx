@@ -41,6 +41,10 @@ function SettingsModal({
   const [inviteError, setInviteError] = useState<string | null>(null);
   const [pending, setPending] = useState<string | null>(null);
   const [handle, setHandle] = useState("");
+  // Re-invite is two clicks, same shape as DraftModal's post: the first click
+  // arms the button into "confirm re-invite", the second sends. Keyed on
+  // username (not a bare flag) since the roster repeats this button per row.
+  const [armedReinvite, setArmedReinvite] = useState<string | null>(null);
 
   useEffect(() => {
     if (!canInvite) return;
@@ -66,6 +70,9 @@ function SettingsModal({
     // Enter key reaches here directly, and a second POST would burn a second
     // one-time invite. submitJoin guards itself the same way.
     if (!name || pending) return;
+    // Disarm any armed re-invite button here, not just the one that fired --
+    // a stray armed button for a different row must never linger.
+    setArmedReinvite(null);
     setPending(name);
     setInviteError(null);
     fetch("/peer/invite", {
@@ -157,15 +164,23 @@ function SettingsModal({
                       peered
                     </span>
                     <button
-                      className="tui-invite-btn"
+                      className={armedReinvite === m.username ? "tui-invite-btn copied" : "tui-invite-btn"}
                       disabled={pending !== null}
+                      title={
+                        armedReinvite === m.username
+                          ? "their current board keeps working until they use the new invite — click again to confirm"
+                          : undefined
+                      }
                       onClick={() => {
                         // Minting an invite rotates nothing: the peer's board
-                        // keeps working until the new invite is redeemed.
-                        if (confirm("their current board keeps working until they use the new invite -- continue?")) ask(m.username);
+                        // keeps working until the new invite is redeemed. First
+                        // click arms (in-app confirm, no native dialog); second
+                        // click sends.
+                        if (armedReinvite === m.username) ask(m.username);
+                        else setArmedReinvite(m.username);
                       }}
                     >
-                      re-invite
+                      {armedReinvite === m.username ? "confirm re-invite" : "re-invite"}
                     </button>
                   </>
                 )}
