@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { BoardMR } from "../data.ts";
-import { filterByMember, sortMRs, groupMRs, commentDot, dataAgeLabel, statusFlags, memberPeerState, joinRowState } from "../view.ts";
+import { filterByMember, sortMRs, groupMRs, commentDot, dataAgeLabel, statusFlags, nestStacks, memberPeerState, joinRowState } from "../view.ts";
 
 function mr(overrides: Partial<BoardMR>): BoardMR {
   return {
@@ -68,6 +68,79 @@ describe("statusFlags", () => {
   test("statusFlags has no stacked chip for default-target MRs", () => {
     const flags = statusFlags(mr({ targetBranch: "main" } as any));
     expect(flags.some((f) => f.text.startsWith("stacked"))).toBe(false);
+  });
+
+  test("nested option drops the stacked chip but keeps the rest", () => {
+    const flags = statusFlags(mr({ isStacked: true, targetBranch: "parent-branch", blockers: { hasConflicts: true } } as any), { nested: true });
+    expect(flags.some((f) => f.text.startsWith("stacked"))).toBe(false);
+    expect(flags[0]).toEqual({ text: "conflicts", cls: "t-bad" });
+  });
+});
+
+describe("nestStacks", () => {
+  const url = (iid: number, project = "acme/acme-dev") => `https://gitlab.com/${project}/-/merge_requests/${iid}`;
+  const smr = (iid: number, source: string, target: string, opts: { project?: string; stacked?: boolean } = {}) =>
+    mr({
+      iid,
+      webUrl: url(iid, opts.project),
+      sourceBranch: source,
+      targetBranch: target,
+      isStacked: opts.stacked ?? target !== "master",
+    } as any);
+
+  test("child nests under its parent; root keeps its position", () => {
+    const parent = smr(1, "feat-a", "master");
+    const child = smr(2, "feat-b", "feat-a");
+    const other = smr(3, "feat-c", "master");
+    const nodes = nestStacks([other, parent, child]);
+    expect(nodes.map((n) => n.mr.iid)).toEqual([3, 1]);
+    expect(nodes[1]!.children.map((n) => n.mr.iid)).toEqual([2]);
+  });
+
+  test("three-layer chain nests recursively", () => {
+    const nodes = nestStacks([smr(1, "l1", "master"), smr(2, "l2", "l1"), smr(3, "l3", "l2")]);
+    expect(nodes).toHaveLength(1);
+    expect(nodes[0]!.children[0]!.mr.iid).toBe(2);
+    expect(nodes[0]!.children[0]!.children[0]!.mr.iid).toBe(3);
+  });
+
+  test("siblings under one parent keep input order", () => {
+    const nodes = nestStacks([smr(1, "l1", "master"), smr(3, "l2b", "l1"), smr(2, "l2a", "l1")]);
+    expect(nodes[0]!.children.map((n) => n.mr.iid)).toEqual([3, 2]);
+  });
+
+  test("missing parent leaves the child top-level", () => {
+    const nodes = nestStacks([smr(2, "feat-b", "feat-a")]);
+    expect(nodes.map((n) => n.mr.iid)).toEqual([2]);
+    expect(nodes[0]!.children).toEqual([]);
+  });
+
+  test("same branch name in another project never links", () => {
+    const parent = smr(1, "feat-a", "master", { project: "other/repo" });
+    const child = smr(2, "feat-b", "feat-a");
+    const nodes = nestStacks([parent, child]);
+    expect(nodes.map((n) => n.mr.iid)).toEqual([1, 2]);
+  });
+
+  test("non-stacked MR never attaches even when branches line up", () => {
+    const parent = smr(1, "feat-a", "master");
+    const child = smr(2, "feat-b", "feat-a", { stacked: false });
+    const nodes = nestStacks([parent, child]);
+    expect(nodes.map((n) => n.mr.iid)).toEqual([1, 2]);
+  });
+
+  test("a branch cycle renders flat instead of dropping MRs", () => {
+    const a = smr(1, "feat-a", "feat-b", { stacked: true });
+    const b = smr(2, "feat-b", "feat-a", { stacked: true });
+    const nodes = nestStacks([a, b]);
+    expect(nodes.map((n) => n.mr.iid).sort()).toEqual([1, 2]);
+  });
+
+  test("MR without a webUrl stays top-level and breaks no one", () => {
+    const parent = smr(1, "feat-a", "master");
+    const orphan = mr({ iid: 2, webUrl: undefined, sourceBranch: "feat-b", targetBranch: "feat-a", isStacked: true } as any);
+    const nodes = nestStacks([parent, orphan]);
+    expect(nodes.map((n) => n.mr.iid)).toEqual([1, 2]);
   });
 });
 

@@ -604,6 +604,64 @@ body {
 /* Emoji prefixes on internal badges: match the SVG cap and vertical alignment
    so the label baseline lands the same as the other icon variants. */
 .tui-badge-emoji { font-size: 11px; line-height: 1; display: inline-flex; align-items: center; }
+/* ── stacked chains ───────────────────────────────────────────────── */
+/* A chain reads as one unit: a single thread rail spans the children
+   (cyan to match the t-cyan stacked chip), the row dividers inside the
+   chain go quiet, and the boundary dividers move to the wrapper since the
+   wrapper breaks .tui-row + .tui-row adjacency. Indent is inline
+   (depth-scaled) on each nested row. */
+/* Opaque rail color (cyan over the panel tone): the rail is drawn as
+   overlapping per-row segments, and translucent segments double up into
+   darker patches at every joint. */
+.tui-stack-rows { position: relative; --stack-rail: color-mix(in srgb, var(--cyan) 38%, var(--panel)); }
+.tui-row + .tui-stack-rows, .tui-stack-rows + .tui-row, .tui-stack-rows + .tui-stack-rows { border-top: 1px solid var(--border-soft); }
+.tui-stack-children .tui-row { border-top: none; padding-top: 0.3rem; }
+/* One indent level regardless of depth: chain order alone carries the
+   hierarchy, so a deep stack never marches off the right edge. */
+.tui-row-nested { margin-left: 1.4rem; }
+/* The thread anchors to the pick column: it is row-height and the checkbox
+   is centered in it, so 50% is exactly the checkbox line in every row, no
+   matter how many flag/badge rows the body grows. All segments live on
+   tui-row-pick pseudo-elements, which also keeps them clear of the row's
+   hover ❯ (a tui-row::before). */
+.tui-row-pick { position: relative; }
+/* Parent: a stub from just under its checkbox down through its bottom edge. */
+.tui-stack-rows > .tui-row > .tui-row-pick::after {
+  content: ""; position: absolute; width: 2px; background: var(--stack-rail);
+  left: calc(50% - 1px); top: calc(50% + 0.55rem); bottom: -0.6rem;
+}
+/* Children: the rail continues at the parent checkbox's x — the child row is
+   indented 1.4rem, so the parent's pick-center sits 0.525rem left of the
+   child's own pick column. The last child's segment stops at its arm. */
+/* The pick column spans the grid area, not the row's vertical padding, so
+   each segment reaches 1rem up past its own top to bridge the previous row's
+   bottom padding (0.55rem) plus its own top padding (0.3rem). Overlaps are
+   invisible: the rail color is opaque and every segment shares one x. */
+.tui-row-nested .tui-row-pick::before {
+  content: ""; position: absolute; width: 2px; background: var(--stack-rail);
+  left: calc(-0.525rem - 1px); top: -1rem; bottom: 0;
+}
+.tui-row-nested:last-child .tui-row-pick::before { bottom: auto; height: calc(50% + 1rem); }
+/* Arm from the rail into the child's checkbox, on its center line. It starts
+   at the same x as the rail segments so the corner joins cleanly. */
+.tui-row-nested .tui-row-pick::after {
+  content: ""; position: absolute; height: 2px; background: var(--stack-rail);
+  left: calc(-0.525rem - 1px); width: 0.95rem; top: calc(50% - 1px);
+}
+/* The hover ❯ would sit on the thread; the row highlight already marks hover. */
+.tui-row-nested:hover::before { content: none; }
+/* In grid view a whole chain shares one bordered cluster cell. */
+.tui-stack-cluster {
+  position: relative; border: 1px dashed color-mix(in srgb, var(--cyan) 45%, var(--border));
+  border-radius: 10px; padding: 1rem 0.6rem 0.6rem;
+  display: flex; flex-direction: column; gap: 1.1rem;
+}
+.tui-stack-label {
+  position: absolute; top: -0.7em; left: 0.7rem;
+  background: var(--bg); padding: 0 0.45rem;
+  font-size: 0.7rem; color: var(--cyan);
+}
+
 /* review badge sits on its own line above the title */
 .tui-row-review { margin-bottom: 5px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .tui-card-review { margin: 2px 0 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }

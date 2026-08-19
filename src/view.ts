@@ -1,5 +1,6 @@
 import type { BoardMR } from "./data.ts";
 import { hasChangesRequested } from "./data.ts";
+import { projectKeyOf } from "./triage/stack.ts";
 
 export type GroupKey = "age" | "author" | "status" | "review";
 export type SortKey = "oldest" | "progress";
@@ -59,14 +60,68 @@ export function dataAgeLabel(dataSyncedAt: number | null, now: number): { text: 
 /** GitLab-native facts shown as chips above the title: mechanical blockers
     (conflicts / CI), most severe first, plus the stacked marker for MRs
     targeting a parent branch instead of the default branch. */
-export function statusFlags(mr: BoardMR): { text: string; cls: string }[] {
+export function statusFlags(mr: BoardMR, opts?: { nested?: boolean }): { text: string; cls: string }[] {
   const b = mr.blockers;
   const flags: { text: string; cls: string }[] = [];
   if (b?.hasConflicts) flags.push({ text: "conflicts", cls: "t-bad" });
   if (b?.pipelineFailing) flags.push({ text: "ci failing", cls: "t-bad" });
   if (b?.pipelineRunning) flags.push({ text: "ci running", cls: "t-warn" });
-  if (mr.isStacked) flags.push({ text: `stacked → ${mr.targetBranch}`, cls: "t-cyan" });
+  // A row nested under its parent already shows the relationship; the chip
+  // only earns its place when the parent is not visible above the row.
+  if (mr.isStacked && !opts?.nested) flags.push({ text: `stacked → ${mr.targetBranch}`, cls: "t-cyan" });
   return flags;
+}
+
+export interface StackNode {
+  mr: BoardMR;
+  /** Stacked MRs whose parent is `mr`, in the input list's order. */
+  children: StackNode[];
+}
+
+/** Shape one group's (already sorted) list into stack trees: a stacked MR
+    whose parent is in the same list nests under it; everything else stays a
+    root in input order. Run per group AFTER grouping, so a child in a
+    different bucket than its parent renders where it is today (with the
+    stacked chip) instead of being pulled into a group it doesn't belong to.
+    Same-project matching and cycle handling mirror triage/stack.ts: a branch
+    cycle is malformed data, so its members render flat rather than vanish. */
+export function nestStacks(mrs: BoardMR[]): StackNode[] {
+  const branchKey = (mr: BoardMR, branch: string) => `${projectKeyOf(mr.webUrl ?? "")}::${branch}`;
+  const bySource = new Map<string, BoardMR>();
+  for (const m of mrs) {
+    if (m.webUrl) bySource.set(branchKey(m, m.sourceBranch), m);
+  }
+
+  const parentOf = new Map<BoardMR, BoardMR>();
+  for (const m of mrs) {
+    if (!m.isStacked || !m.webUrl) continue;
+    const parent = bySource.get(branchKey(m, m.targetBranch));
+    if (parent && parent !== m) parentOf.set(m, parent);
+  }
+  // Sever cycles: every MR whose parent walk revisits a node renders flat.
+  // Collected first, deleted after, so one member's severed link can't hide
+  // the cycle from the other members' walks.
+  const cyclic: BoardMR[] = [];
+  for (const m of parentOf.keys()) {
+    const seen = new Set<BoardMR>([m]);
+    for (let p = parentOf.get(m); p; p = parentOf.get(p)) {
+      if (seen.has(p)) {
+        cyclic.push(m);
+        break;
+      }
+      seen.add(p);
+    }
+  }
+  for (const m of cyclic) parentOf.delete(m);
+
+  const nodes = new Map<BoardMR, StackNode>(mrs.map((m) => [m, { mr: m, children: [] }]));
+  const roots: StackNode[] = [];
+  for (const m of mrs) {
+    const parent = parentOf.get(m);
+    if (parent) nodes.get(parent)!.children.push(nodes.get(m)!);
+    else roots.push(nodes.get(m)!);
+  }
+  return roots;
 }
 
 /** Approval ratio in [0,1]; used by the "progress" sort. */

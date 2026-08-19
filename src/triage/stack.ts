@@ -20,8 +20,10 @@ export interface StackChain {
 
 /** Project scope for branch matching. Intentionally NOT attendant.ts's
     leaseFileName slug: that string is a shipped cross-repo contract with
-    ci-attendant.sh and must not drift for an internal grouping key. */
-function projectKeyOf(mrUrl: string): string {
+    ci-attendant.sh and must not drift for an internal grouping key.
+    Exported for view.ts's nestStacks, so display grouping and triage
+    chain-walking can never disagree on what counts as the same project. */
+export function projectKeyOf(mrUrl: string): string {
   try {
     const path = new URL(mrUrl).pathname;
     const [project] = path.split("/-/");

@@ -7,7 +7,7 @@ import { hasChangesRequested, stripDraftPrefix } from "./data.ts";
 import { getReviewDisplayState } from "@mattstack/glance";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { filterByMember, sortMRs, groupMRs, parseViewState, serializeViewState, commentDot, commentsAllResolved, dataAgeLabel, statusFlags, memberPeerState, joinRowState, GROUP_KEYS, SORT_KEYS } from "./view.ts";
+import { filterByMember, sortMRs, groupMRs, nestStacks, parseViewState, serializeViewState, commentDot, commentsAllResolved, dataAgeLabel, statusFlags, memberPeerState, joinRowState, GROUP_KEYS, SORT_KEYS, type StackNode } from "./view.ts";
 import type { GroupKey, SortKey, ViewState } from "./view.ts";
 import { renderMr, renderMulti, selectionHeader, MAX_HEADER_LEN, type MrFacts, type SlackTemplates } from "./template.ts";
 import { selectionOf, postableOf } from "./selection.ts";
@@ -1224,16 +1224,22 @@ function statusPhrase(mr: BoardMR): { text: string; cls: string; comments?: bool
   return { text: "needs review", cls: "t-muted" };
 }
 
-function StatusFlags({ mr }: { mr: BoardMR }) {
+function StatusFlags({ mr, nested = false }: { mr: BoardMR; nested?: boolean }) {
   return (
     <>
-      {statusFlags(mr).map((f) => (
+      {statusFlags(mr, { nested }).map((f) => (
         <span key={f.text} className={`tui-flag ${f.cls}`}>
           {f.text}
         </span>
       ))}
     </>
   );
+}
+
+/** Depth-first flattening of one stack tree, for views that render a chain as
+    consecutive indented items rather than nested markup. */
+function flattenStack(node: StackNode, depth = 0): Array<{ mr: BoardMR; depth: number }> {
+  return [{ mr: node.mr, depth }, ...node.children.flatMap((c) => flattenStack(c, depth + 1))];
 }
 
 function StatusPhrase({ mr }: { mr: BoardMR }) {
@@ -1588,14 +1594,13 @@ function RowView({
   selected: ReadonlySet<string>;
   onToggleSelect: (webUrl: string) => void;
 }) {
-  return (
-    <div className="tui-rows">
-      {mrs.map((mr) => {
-        const ticket = extractTicketId(mr.sourceBranch, mr.title);
-        return (
+  const renderRow = (mr: BoardMR, depth: number) => {
+    const ticket = extractTicketId(mr.sourceBranch, mr.title);
+    const nested = depth > 0;
+    return (
           <div
             key={mr.iid}
-            className="tui-row"
+            className={nested ? "tui-row tui-row-nested" : "tui-row"}
             data-local={local ? "1" : undefined}
             title={local ? "right-click for actions" : undefined}
             onClick={(e) => onRowClick(e, mr)}
@@ -1609,9 +1614,9 @@ function RowView({
               )}
             </div>
             <div className="tui-row-body">
-            {statusFlags(mr).length > 0 && (
+            {statusFlags(mr, { nested }).length > 0 && (
               <div className="tui-row-review">
-                <StatusFlags mr={mr} />
+                <StatusFlags mr={mr} nested={nested} />
               </div>
             )}
             <div className="tui-row-1">
@@ -1656,8 +1661,26 @@ function RowView({
             <Watching mr={mr} />
             </div>
           </div>
-        );
-      })}
+    );
+  };
+  return (
+    <div className="tui-rows">
+      {nestStacks(mrs).map((node) =>
+        node.children.length === 0 ? (
+          renderRow(node.mr, 0)
+        ) : (
+          <div key={node.mr.iid} className="tui-stack-rows">
+            {renderRow(node.mr, 0)}
+            {/* The children get their own box so the thread rail can span
+                exactly them, whatever heights the rows come out at. */}
+            <div className="tui-stack-children">
+              {flattenStack(node)
+                .slice(1)
+                .map(({ mr, depth }) => renderRow(mr, depth))}
+            </div>
+          </div>
+        ),
+      )}
     </div>
   );
 }
@@ -1689,15 +1712,14 @@ function GridView({
   selected: ReadonlySet<string>;
   onToggleSelect: (webUrl: string) => void;
 }) {
-  return (
-    <div className="tui-grid">
-      {mrs.map((mr) => {
-        const ticket = extractTicketId(mr.sourceBranch, mr.title);
-        const reasons = mr.blockers?.any ? statusReasons(mr).split("\n").slice(1) : [];
-        return (
+  const renderCard = (mr: BoardMR, depth: number) => {
+    const ticket = extractTicketId(mr.sourceBranch, mr.title);
+    const reasons = mr.blockers?.any ? statusReasons(mr).split("\n").slice(1) : [];
+    return (
           <div
             key={mr.iid}
             className="tui-card"
+            style={depth > 0 ? { marginLeft: "0.7rem" } : undefined}
             data-local={local ? "1" : undefined}
             title={local ? "right-click for actions" : undefined}
             onClick={(e) => onRowClick(e, mr)}
@@ -1748,6 +1770,18 @@ function GridView({
               </ul>
             )}
             <Watching mr={mr} />
+          </div>
+    );
+  };
+  return (
+    <div className="tui-grid">
+      {nestStacks(mrs).map((node) => {
+        if (node.children.length === 0) return renderCard(node.mr, 0);
+        const chain = flattenStack(node);
+        return (
+          <div key={node.mr.iid} className="tui-stack-cluster">
+            <div className="tui-stack-label">stack · {chain.length}</div>
+            {chain.map(({ mr, depth }) => renderCard(mr, depth))}
           </div>
         );
       })}
