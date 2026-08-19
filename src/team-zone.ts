@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, readdirSync, renameSync, writeFileSync } from "fs";
+import { homedir } from "os";
 import { join } from "path";
 import type { Member } from "./config.ts";
 
@@ -136,4 +137,37 @@ export function materializeTeamConfig(cloneDir: string, configPath: string): { c
   writeFileSync(configPath + ".tmp", text);
   renameSync(configPath + ".tmp", configPath);
   return { changed: true, fields };
+}
+
+/** Expand a possibly `~`-prefixed team-clone path to an absolute directory.
+    Same rule the boot hook (src/server.ts materializeTeamConfigAtBoot) uses. */
+export function resolveCloneDir(teamClone: string): string {
+  return teamClone.startsWith("~") ? join(homedir(), teamClone.slice(1)) : teamClone;
+}
+
+export type MaterializeOnDemandResult = { ok: true; changed: boolean; fields: string[] } | { ok: false; reason: string };
+
+/**
+ * On-demand materialize (BOARD-16): the same materialize the board's boot
+ * hook runs, callable outside of a board restart. Reads `teamClone` out of
+ * `configPath` the same minimal way the boot hook does (a raw JSON pre-read,
+ * not the full loadConfig validation) and refuses with a clear reason when
+ * it's unset -- there is no zone to materialize from. Otherwise delegates to
+ * materializeTeamConfig for the actual rewrite.
+ *
+ * Note this does not itself take effect anywhere: a running board only reads
+ * config.json once, at boot, so the caller (bin/materialize.ts) reminds the
+ * operator a restart is what picks the change up.
+ */
+export function materializeOnDemand(configPath: string): MaterializeOnDemandResult {
+  let teamClone: unknown;
+  try {
+    teamClone = (JSON.parse(readFileSync(configPath, "utf8")) as { teamClone?: unknown }).teamClone;
+  } catch (err) {
+    return { ok: false, reason: `could not read ${configPath}: ${err instanceof Error ? err.message : String(err)}` };
+  }
+  if (typeof teamClone !== "string" || !teamClone) {
+    return { ok: false, reason: `config.json has no "teamClone" set -- nothing to materialize from` };
+  }
+  return { ok: true, ...materializeTeamConfig(resolveCloneDir(teamClone), configPath) };
 }

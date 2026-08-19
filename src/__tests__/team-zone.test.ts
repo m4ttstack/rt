@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { materializeTeamConfig, readTeamZone, stripJsonc } from "../team-zone.ts";
+import { materializeOnDemand, materializeTeamConfig, readTeamZone, stripJsonc } from "../team-zone.ts";
 
 const zoneJsonc = `// team definition -- materialized into board config
 {
@@ -140,5 +140,36 @@ describe("materializeTeamConfig", () => {
     expect(result.fields).not.toContain("defaultMember");
     const onDisk = JSON.parse(readFileSync(configPath, "utf8"));
     expect(onDisk.defaultMember).toBe("alice");
+  });
+});
+
+describe("materializeOnDemand", () => {
+  // BOARD-16: the on-demand leg (bin/materialize.ts) of the same materialize
+  // the board's boot hook runs -- reads teamClone from config.json the same
+  // minimal way, refuses when unset, otherwise delegates to
+  // materializeTeamConfig.
+  test("teamClone unset -> ok:false with a reason naming teamClone", () => {
+    const configPath = makeConfig();
+    const result = materializeOnDemand(configPath);
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.reason).toContain("teamClone");
+  });
+
+  test("changed true then false on second run", () => {
+    const cloneDir = makeClone();
+    const configPath = makeConfig();
+    const obj = JSON.parse(readFileSync(configPath, "utf8"));
+    obj.teamClone = cloneDir;
+    writeFileSync(configPath, JSON.stringify(obj, null, 2) + "\n");
+
+    const first = materializeOnDemand(configPath);
+    expect(first).toEqual({
+      ok: true,
+      changed: true,
+      fields: expect.arrayContaining(["gitlabHost", "members", "projects", "title"]),
+    });
+
+    const second = materializeOnDemand(configPath);
+    expect(second).toEqual({ ok: true, changed: false, fields: [] });
   });
 });
