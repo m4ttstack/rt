@@ -4,9 +4,6 @@ import { filterByMember, sortMRs, groupMRs, parseViewState, serializeViewState, 
 import type { ViewState } from "../../view.ts";
 import { selectionOf, postableOf } from "../../selection.ts";
 import type {
-  ReviewInfo,
-  RespondInfo,
-  DoctorInfo,
   DraftInfo,
   BoardMRWithReview,
   BoardData,
@@ -15,7 +12,9 @@ import type {
   Toast,
   RowMenuState,
 } from "../types.ts";
-import { setSlackMarks, getSlackMarks, mrLine, boardSummary, draftKey, RESPOND_ACTIVE, DOCTOR_ACTIVE } from "./format.ts";
+import { setSlackMarks, getSlackMarks, mrLine, boardSummary, draftKey } from "./format.ts";
+import { overlay } from "./optimistic.ts";
+import { useOptimisticLifecycle } from "./hooks.ts";
 import { ICONS } from "../ui/Icon.tsx";
 import { Panel } from "../ui/Panel.tsx";
 import { ToastHost } from "../ui/Toast.tsx";
@@ -261,13 +260,11 @@ export function Board() {
     [applyHidden, load, addToast],
   );
 
-  // Optimistic review state: show a "queued" badge the instant a launch is
-  // requested, before the server's state file round-trips back via /data.json.
-  // Cleared per MR once the server reports any real review status for it.
-  const [optimistic, setOptimistic] = useState<Record<string, ReviewInfo>>({});
-  /** Same idea for responses -- show a queued state instantly on click. */
-  const [optimisticRespond, setOptimisticRespond] = useState<Record<string, RespondInfo>>({});
-  const [optimisticDoctor, setOptimisticDoctor] = useState<Record<string, DoctorInfo>>({});
+  // Optimistic review/respond/doctor state: show a "queued" badge the instant
+  // a launch is requested, before the server's state file round-trips back
+  // via /data.json. Cleared per MR once the server reports real status for
+  // that axis.
+  const optimisticLifecycle = useOptimisticLifecycle(data);
 
   const openRowMenu = useCallback((e: React.MouseEvent, mr: BoardMR) => {
     e.preventDefault();
@@ -278,7 +275,7 @@ export function Board() {
     (mr: BoardMR, note?: string) => {
       if (!mr.webUrl) return;
       const url = mr.webUrl;
-      setOptimistic((o) => ({ ...o, [url]: { status: "queued" } }));
+      optimisticLifecycle.setQueued("review", url);
       addToast(`launching review for !${mr.iid}…`);
       fetch("/review", {
         method: "POST",
@@ -288,11 +285,7 @@ export function Board() {
         .then(async (r) => {
           const body = await r.json().catch(() => ({}));
           if (!r.ok) {
-            setOptimistic((o) => {
-              const next = { ...o };
-              delete next[url];
-              return next;
-            });
+            optimisticLifecycle.rollback("review", url);
             addToast(`couldn't launch review for !${mr.iid} (${r.status})`);
             return;
           }
@@ -300,22 +293,18 @@ export function Board() {
           load();
         })
         .catch(() => {
-          setOptimistic((o) => {
-            const next = { ...o };
-            delete next[url];
-            return next;
-          });
+          optimisticLifecycle.rollback("review", url);
           addToast(`couldn't launch review for !${mr.iid}`);
         });
     },
-    [addToast, load],
+    [addToast, load, optimisticLifecycle],
   );
 
   const handleReReview = useCallback(
     (mr: BoardMR, note?: string) => {
       if (!mr.webUrl) return;
       const url = mr.webUrl;
-      setOptimistic((o) => ({ ...o, [url]: { status: "queued" } }));
+      optimisticLifecycle.setQueued("review", url);
       addToast(`re-reviewing !${mr.iid}…`);
       fetch("/review", {
         method: "POST",
@@ -325,11 +314,7 @@ export function Board() {
         .then(async (r) => {
           const body = await r.json().catch(() => ({}));
           if (!r.ok) {
-            setOptimistic((o) => {
-              const next = { ...o };
-              delete next[url];
-              return next;
-            });
+            optimisticLifecycle.rollback("review", url);
             addToast(`couldn't re-review !${mr.iid} (${r.status})`);
             return;
           }
@@ -337,15 +322,11 @@ export function Board() {
           load();
         })
         .catch(() => {
-          setOptimistic((o) => {
-            const next = { ...o };
-            delete next[url];
-            return next;
-          });
+          optimisticLifecycle.rollback("review", url);
           addToast(`couldn't re-review !${mr.iid}`);
         });
     },
-    [addToast, load],
+    [addToast, load, optimisticLifecycle],
   );
 
   // Ask a peer's board for a re-review of one of our MRs. No optimistic chip:
@@ -384,7 +365,7 @@ export function Board() {
     (mr: BoardMR, note?: string) => {
       if (!mr.webUrl) return;
       const url = mr.webUrl;
-      setOptimisticRespond((o) => ({ ...o, [url]: { status: "queued" } }));
+      optimisticLifecycle.setQueued("respond", url);
       addToast(`launching response for !${mr.iid}…`);
       fetch("/respond", {
         method: "POST",
@@ -394,11 +375,7 @@ export function Board() {
         .then(async (r) => {
           const body = await r.json().catch(() => ({}));
           if (!r.ok) {
-            setOptimisticRespond((o) => {
-              const next = { ...o };
-              delete next[url];
-              return next;
-            });
+            optimisticLifecycle.rollback("respond", url);
             addToast(`couldn't launch response for !${mr.iid} (${r.status})`);
             return;
           }
@@ -406,15 +383,11 @@ export function Board() {
           load();
         })
         .catch(() => {
-          setOptimisticRespond((o) => {
-            const next = { ...o };
-            delete next[url];
-            return next;
-          });
+          optimisticLifecycle.rollback("respond", url);
           addToast(`couldn't launch response for !${mr.iid}`);
         });
     },
-    [addToast, load],
+    [addToast, load, optimisticLifecycle],
   );
 
   const handleResume = useCallback(
@@ -471,7 +444,7 @@ export function Board() {
     (mr: BoardMR, note?: string) => {
       if (!mr.webUrl) return;
       const url = mr.webUrl;
-      setOptimisticDoctor((o) => ({ ...o, [url]: { status: "queued" } }));
+      optimisticLifecycle.setQueued("doctor", url);
       addToast(`calling doctor for !${mr.iid}…`);
       fetch("/doctor", {
         method: "POST",
@@ -481,11 +454,7 @@ export function Board() {
         .then(async (r) => {
           const body = await r.json().catch(() => ({}));
           if (!r.ok) {
-            setOptimisticDoctor((o) => {
-              const next = { ...o };
-              delete next[url];
-              return next;
-            });
+            optimisticLifecycle.rollback("doctor", url);
             addToast(`couldn't call doctor for !${mr.iid} (${r.status})`);
             return;
           }
@@ -493,15 +462,11 @@ export function Board() {
           load();
         })
         .catch(() => {
-          setOptimisticDoctor((o) => {
-            const next = { ...o };
-            delete next[url];
-            return next;
-          });
+          optimisticLifecycle.rollback("doctor", url);
           addToast(`couldn't call doctor for !${mr.iid}`);
         });
     },
-    [addToast, load],
+    [addToast, load, optimisticLifecycle],
   );
 
   const handleCopy = useCallback(
@@ -612,75 +577,15 @@ export function Board() {
     [addToast, load],
   );
 
-  // Drop optimistic entries once the server has a real review for that MR.
+  // Poll faster while a review, response, or doctor run is active, so the
+  // badge updates promptly instead of waiting for the normal 60s cadence.
   useEffect(() => {
-    if (!data) return;
-    setOptimistic((o) => {
-      let changed = false;
-      const next = { ...o };
-      for (const mr of data.mrs) {
-        if (mr.webUrl && (mr as BoardMRWithReview).review && next[mr.webUrl]) {
-          delete next[mr.webUrl];
-          changed = true;
-        }
-      }
-      return changed ? next : o;
-    });
-    setOptimisticRespond((o) => {
-      let changed = false;
-      const next = { ...o };
-      for (const mr of data.mrs) {
-        if (mr.webUrl && (mr as BoardMRWithReview).respond && next[mr.webUrl]) {
-          delete next[mr.webUrl];
-          changed = true;
-        }
-      }
-      return changed ? next : o;
-    });
-    setOptimisticDoctor((o) => {
-      let changed = false;
-      const next = { ...o };
-      for (const mr of data.mrs) {
-        if (mr.webUrl && (mr as BoardMRWithReview).doctor && next[mr.webUrl]) {
-          delete next[mr.webUrl];
-          changed = true;
-        }
-      }
-      return changed ? next : o;
-    });
-  }, [data]);
-
-  // Poll faster while a review or response is running, so the badge updates
-  // promptly instead of waiting for the normal 60s cadence.
-  const reviewActive =
-    Object.values(optimistic).some((r) => r.status === "queued" || r.status === "reviewing") ||
-    (!!data &&
-      data.mrs.some((mr) => {
-        const s = (mr as BoardMRWithReview).review?.status;
-        return s === "queued" || s === "reviewing";
-      }));
-  const respondActive =
-    Object.values(optimisticRespond).some((r) => RESPOND_ACTIVE.has(r.status)) ||
-    (!!data &&
-      data.mrs.some((mr) => {
-        const s = (mr as BoardMRWithReview).respond?.status;
-        return !!s && RESPOND_ACTIVE.has(s);
-      }));
-  const doctorActive =
-    Object.values(optimisticDoctor).some((r) => DOCTOR_ACTIVE.has(r.status)) ||
-    (!!data &&
-      data.mrs.some((mr) => {
-        const s = (mr as BoardMRWithReview).doctor?.status;
-        return !!s && DOCTOR_ACTIVE.has(s);
-      }));
-
-  useEffect(() => {
-    if (!reviewActive && !respondActive && !doctorActive) return;
+    if (!optimisticLifecycle.active) return;
     const t = setInterval(() => {
       if (!document.hidden) load();
     }, 4000);
     return () => clearInterval(t);
-  }, [reviewActive, respondActive, doctorActive, load]);
+  }, [optimisticLifecycle.active, load]);
 
   if (!data) {
     return <p className="tui-loading">{loadError ? "✗ failed to load board data" : "fetching…"}</p>;
@@ -697,18 +602,8 @@ export function Board() {
       ? `board shows ${data.staleAfterDays} days but rt syncs ${data.scopeWindowDays} days... align configs`
       : null;
 
-  // Server review wins; otherwise show an optimistic "queued" badge if pending.
-  const mrs = data.mrs.map((mr) => {
-    const mrx = mr as BoardMRWithReview;
-    const optRev = mr.webUrl ? optimistic[mr.webUrl] : undefined;
-    const optResp = mr.webUrl ? optimisticRespond[mr.webUrl] : undefined;
-    const optDoc = mr.webUrl ? optimisticDoctor[mr.webUrl] : undefined;
-    let next: BoardMRWithReview = mrx;
-    if (!mrx.review && optRev) next = { ...next, review: optRev };
-    if (!mrx.respond && optResp) next = { ...next, respond: optResp };
-    if (!mrx.doctor && optDoc) next = { ...next, doctor: optDoc };
-    return next;
-  });
+  // Server state wins; otherwise show an optimistic "queued" badge if pending.
+  const mrs = overlay(data.mrs, optimisticLifecycle.state);
   const filtered = filterByMember(mrs, state.member);
   const groups = groupMRs(filtered, state.group, data.members.map((m) => m.username), now).map((g) => ({
     label: g.label,
