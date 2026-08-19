@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { useEscapeClose } from "./hooks.ts";
+import { useEscapeClose, useBodyScrollLock } from "./hooks.ts";
 
 /** Shared frame for the app's side drawers: overlay around a stopPropagation'd
     panel, dialog semantics, and Escape-to-close. Unlike Modal, the drawer has
@@ -24,6 +24,7 @@ function SideDrawer({
   children: ReactNode;
 }) {
   useEscapeClose(onClose);
+  useBodyScrollLock();
   return (
     <div className={overlayClassName} onClick={onOverlayClick ?? onClose}>
       <div className={panelClassName} onClick={(e) => e.stopPropagation()} role="dialog" aria-label={ariaLabel}>

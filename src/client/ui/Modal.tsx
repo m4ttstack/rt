@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { ICONS } from "./Icon.tsx";
-import { useEscapeClose } from "./hooks.ts";
+import { useEscapeClose, useBodyScrollLock } from "./hooks.ts";
 
 /** Shared frame for the app's centered modals: overlay (click to close) around
     a stopPropagation'd panel with a title row and close button. Callers supply
@@ -27,6 +27,7 @@ function Modal({
   children: ReactNode;
 }) {
   useEscapeClose(onClose);
+  useBodyScrollLock();
   return (
     <div
       className={overlayClassName ? `tui-modal-overlay ${overlayClassName}` : "tui-modal-overlay"}

@@ -5,7 +5,6 @@ import type { CommentNote, CommentThread, GeneralComment } from "../types.ts";
 import { Markdown } from "../ui/Markdown.tsx";
 import { ICONS } from "../ui/Icon.tsx";
 import { SideDrawer } from "../ui/SideDrawer.tsx";
-import { useBodyScrollLock } from "../ui/hooks.ts";
 import { ago, cleanTitle, statusPhrase, THREAD_ICON, THREAD_LABEL, commentCount } from "./format.ts";
 import { getDiscussions } from "../api.ts";
 
@@ -110,9 +109,6 @@ function CommentsDrawer({ mr, onClose }: { mr: BoardMR; onClose: () => void }) {
       .then((d) => setData(d))
       .catch(() => setFailed(true));
   }, [mr]);
-  // Lock body scroll so the page's scrollbar (from the board behind) doesn't
-  // show alongside the drawer's own — no double scrollbar.
-  useBodyScrollLock();
   return (
     <SideDrawer
       overlayClassName="tui-cd-overlay"
