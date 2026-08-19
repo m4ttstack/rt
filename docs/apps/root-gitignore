@@ -15,3 +15,6 @@ switchboard/*.sqlite*
 
 # local planning docs
 .local-dev/
+
+# screenshot-capture scratch output (tests/baselines/ is the committed baseline)
+tests/.captures/
