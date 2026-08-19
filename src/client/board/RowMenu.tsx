@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { BoardMR } from "../../data.ts";
 import type { BoardMRWithReview, RowContext, RowMenuState } from "../types.ts";
 import { useAutoGrowTextarea, useEscapeClose } from "../ui/hooks.ts";
@@ -113,11 +113,22 @@ function RowMenu({
   const found = slack?.status === "found";
   const showSlack = ctx.local && ctx.slackEnabled;
   const peers = ctx.local && canNudge ? nudgeTargets(mrx) : [];
-  // Keep the menu on-screen; estimate generously since item count varies.
-  const W = noteFor ? 320 : 230;
-  const H = 60 + (ctx.local ? 34 : 0) + 68 + peers.length * 30 + (showSlack ? (found ? 170 : 60) : 0);
-  const left = Math.max(8, Math.min(menu.x, window.innerWidth - W - 8));
-  const top = Math.max(8, Math.min(menu.y, window.innerHeight - H - 8));
+  // Keep the menu on-screen: render once at the requested point, measure the
+  // real box, then clamp. Re-measures whenever noteFor toggles since the note
+  // box is a different size than the item list.
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const { width, height } = el.getBoundingClientRect();
+    setPos({
+      left: Math.max(8, Math.min(menu.x, window.innerWidth - width - 8)),
+      top: Math.max(8, Math.min(menu.y, window.innerHeight - height - 8)),
+    });
+  }, [menu.x, menu.y, noteFor]);
+  const style = pos
+    ? { left: pos.left, top: pos.top }
+    : ({ left: menu.x, top: menu.y, visibility: "hidden" as const });
   const run = (fn: () => void) => () => {
     fn();
     onClose();
@@ -150,7 +161,7 @@ function RowMenu({
 
   if (noteFor) {
     return (
-      <div ref={ref} className="tui-menu tui-menu-noting" style={{ left, top }} role="menu" aria-label={`note for !${mr.iid}`}>
+      <div ref={ref} className="tui-menu tui-menu-noting" style={style} role="menu" aria-label={`note for !${mr.iid}`}>
         <div className="tui-menu-label">note for {noteFor.label} !{mr.iid}</div>
         <textarea
           ref={noteRef}
@@ -185,7 +196,7 @@ function RowMenu({
 
   const reviewRunning = mrx.review?.status === "queued" || mrx.review?.status === "reviewing";
   return (
-    <div ref={ref} className="tui-menu" style={{ left, top }} role="menu" aria-label={`actions for !${mr.iid}`}>
+    <div ref={ref} className="tui-menu" style={style} role="menu" aria-label={`actions for !${mr.iid}`}>
       <div className="tui-menu-label">!{mr.iid}</div>
 
       {ctx.local && reviewMenuItems(mrx.review?.status).map((item) => (
