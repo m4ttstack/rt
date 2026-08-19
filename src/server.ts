@@ -4,6 +4,7 @@ import { homedir } from "os";
 import type { PullRequest, MRDetail } from "@mattstack/glance";
 import { loadConfig, loadGitLabToken, loadSlackToken, loadSwitchboardToken, loadSwitchboardAdminToken, saveMemberHidden, saveSwitchboardUrl, CONFIG_PATH } from "./config.ts";
 import { materializeTeamConfig } from "./team-zone.ts";
+import { resolveBoardSkill, type BoardSkillKind } from "./manifest-bindings.ts";
 import { upsertEnvKeys } from "./env-file.ts";
 import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, projectPathFromWebUrl, type BoardMR, type SyncScopeRead } from "./data.ts";
 import { GitLabProvider, ReadBackFailedError, NoteMutator, parseRepoId } from "@mattstack/glance";
@@ -206,6 +207,24 @@ async function fetchTeamMRs(force = false): Promise<TeamMRsResult> {
 /** Author string for a herdr tab label: the display name, else the username. */
 function mrAuthorLabel(mr: BoardMR): string {
   return mr.author.name ?? mr.author.username;
+}
+
+const LAUNCH_SKILL_CONFIG_FIELD = {
+  review: "reviewSkill",
+  respond: "respondSkill",
+  doctor: "doctorSkill",
+} as const;
+
+/** Resolve the skill a launch (review/respond/doctor) should delegate to for
+    the MR at `mrUrl` -- the per-repo mattstack manifest binding when present,
+    else config -- and log the choice once at launch time. */
+function resolveLaunchSkill(kind: BoardSkillKind, mrUrl: string): string {
+  const project = projectPathFromWebUrl(mrUrl, config.gitlabHost);
+  const resolved = project
+    ? resolveBoardSkill(kind, project, config)
+    : { skill: config[LAUNCH_SKILL_CONFIG_FIELD[kind]], source: "config" as const };
+  console.log(`${kind} skill: ${resolved.skill} (${resolved.source})`);
+  return resolved.skill;
 }
 
 /**
@@ -567,7 +586,7 @@ Bun.serve({
           void launchReReview(parsed.mrUrl, parsed.iid, {
             cwd: config.reviewCwd,
             workspaceLabel: config.reviewsWorkspace,
-            skill: config.reviewSkill,
+            skill: resolveLaunchSkill("review", parsed.mrUrl),
             author,
             claudeCommand: config.claudeCommand,
             note,
@@ -603,7 +622,7 @@ Bun.serve({
           cwd: config.reviewCwd,
           workspaceLabel: config.reviewsWorkspace,
           statePath,
-          skill: config.reviewSkill,
+          skill: resolveLaunchSkill("review", parsed.mrUrl),
           author,
           claudeCommand: config.claudeCommand,
           note,
@@ -671,7 +690,7 @@ Bun.serve({
           cwd,
           workspaceLabel: config.respondsWorkspace,
           statePath,
-          skill: config.respondSkill,
+          skill: resolveLaunchSkill("respond", parsed.mrUrl),
           author,
           claudeCommand: config.claudeCommand,
           note,
@@ -725,7 +744,7 @@ Bun.serve({
           cwd,
           workspaceLabel: config.doctorsWorkspace,
           statePath,
-          skill: config.doctorSkill,
+          skill: resolveLaunchSkill("doctor", parsed.mrUrl),
           author,
           claudeCommand: config.claudeCommand,
           note,
