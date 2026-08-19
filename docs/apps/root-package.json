@@ -15,6 +15,7 @@
   },
   "scripts": {
     "setup": "sh scripts/setup.sh",
+    "census": "bun run scripts/census.ts",
     "codegen": "soribashi build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
