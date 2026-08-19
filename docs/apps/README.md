@@ -50,6 +50,10 @@ or configure manually: copy `config.example.json` → `config.json` and edit; pu
 
 the board lists open, non-draft MRs authored by any configured member in one of `projects`. a left sidebar switches between **All** (the whole team) and a single member; the **All** view (and each member view) can be grouped by age / author / status / pipeline and sorted by oldest / pipeline / review progress. the current member, grouping, and sort live in the URL (shareable) and are remembered across visits.
 
+### team zone (optional)
+
+set `teamClone` in `config.json` to an absolute path (or `~`-path) to a checkout of your mattstack team repo, and the board takes `gitlabHost`, `projects`, `members`, and `title` from that clone's `mattstack/team.jsonc` instead of maintaining them by hand -- it materializes them into `config.json` at boot, before the config is parsed. every other field (`port`, `slack`, `reviewSkill`, ...) is untouched. if materializing fails (clone missing, `team.jsonc` absent or invalid), the board logs a warning and boots with `config.json` as it already is -- it never crashes boot. hand-edits to the four team fields last until the next boot, when the zone overwrites them again.
+
 ## tokens
 
 `bun run setup` handles both. under the hood:

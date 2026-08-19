@@ -1,7 +1,9 @@
 import { join, dirname, basename } from "path";
 import { readFileSync, writeFileSync, mkdirSync, watch } from "fs";
+import { homedir } from "os";
 import type { PullRequest, MRDetail } from "@mattstack/glance";
 import { loadConfig, loadGitLabToken, loadSlackToken, loadSwitchboardToken, loadSwitchboardAdminToken, saveMemberHidden, saveSwitchboardUrl, CONFIG_PATH } from "./config.ts";
+import { materializeTeamConfig } from "./team-zone.ts";
 import { upsertEnvKeys } from "./env-file.ts";
 import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, projectPathFromWebUrl, type BoardMR, type SyncScopeRead } from "./data.ts";
 import { GitLabProvider, ReadBackFailedError, NoteMutator, parseRepoId } from "@mattstack/glance";
@@ -37,6 +39,32 @@ const faviconPath = join(import.meta.dir, "favicon.svg");
 const favicon = readFileSync(faviconPath, "utf-8");
 /** The board's own .env, written when /peer/join redeems an invite. */
 const ENV_PATH = join(import.meta.dir, "..", ".env");
+
+/** Boot hook: when config.json sets `teamClone`, materialize the four
+    team-owned fields (gitlabHost/projects/members/title) from that clone's
+    mattstack/team.jsonc before the config load below parses the (possibly
+    rewritten) file. This is a minimal pre-read just for `teamClone` --
+    loadConfig() does the real parse/validate afterward, so a config.json
+    that's otherwise missing or broken is left for it to report normally.
+    Materialize failure must never crash boot: warn and continue with the
+    file as-is. */
+function materializeTeamConfigAtBoot(): void {
+  let teamClone: unknown;
+  try {
+    teamClone = (JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as { teamClone?: unknown }).teamClone;
+  } catch {
+    return;
+  }
+  if (typeof teamClone !== "string" || !teamClone) return;
+  const cloneDir = teamClone.startsWith("~") ? join(homedir(), teamClone.slice(1)) : teamClone;
+  try {
+    const result = materializeTeamConfig(cloneDir, CONFIG_PATH);
+    console.log(result.changed ? `team config: updated ${result.fields.join(", ")}` : "team config: current");
+  } catch (err) {
+    console.error(`team config materialize failed, continuing with existing config: ${err instanceof Error ? err.message : err}`);
+  }
+}
+materializeTeamConfigAtBoot();
 
 // `let`: /peer/join reassigns the whole config after persisting switchboard.url.
 let config = loadConfig();

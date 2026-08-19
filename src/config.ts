@@ -66,6 +66,11 @@ export interface BoardConfig {
   /** Peer-boards relay. Empty url disables every peer feature (publish, poll,
       nudge endpoint) cleanly. Token comes from SWITCHBOARD_TOKEN, not config. */
   switchboard: SwitchboardBoardConfig;
+  /** Absolute path (or ~-path) to a mattstack team clone. When set, the board
+      materializes gitlabHost/projects/members/title from that clone's
+      mattstack/team.jsonc into this config file at boot, before it's parsed.
+      Absent = no team zone, config.json is the sole source of truth. */
+  teamClone?: string;
 }
 
 export interface SwitchboardBoardConfig {
@@ -166,6 +171,9 @@ export function parseConfig(raw: string): BoardConfig {
   if (cfg.claudeCommand !== undefined && typeof cfg.claudeCommand !== "string") {
     throw new Error(`config.json "claudeCommand" must be a string (a shell command that starts claude)`);
   }
+  if (cfg.teamClone !== undefined && typeof cfg.teamClone !== "string") {
+    throw new Error(`config.json "teamClone" must be a string (absolute path or ~-path)`);
+  }
   for (const key of ["reviewSkill", "respondSkill", "doctorSkill"] as const) {
     if (cfg[key] !== undefined && typeof cfg[key] !== "string") {
       throw new Error(`config.json "${key}" must be a string (a skill name)`);
@@ -206,6 +214,7 @@ export function parseConfig(raw: string): BoardConfig {
     rtRepos,
     slack,
     switchboard,
+    teamClone: cfg.teamClone,
   };
 }
 
