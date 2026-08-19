@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { createInvite, joinSwitchboard, listPeerBoards } from "../peer/onboard.ts";
 
 const fakeFetch = (handler: (url: string, init?: RequestInit) => Response | Promise<Response>) =>
-  (async (u: RequestInfo | URL, i?: RequestInit) => handler(String(u), i)) as unknown as typeof fetch;
+  (async (u: Parameters<typeof fetch>[0], i?: RequestInit) => handler(String(u), i)) as unknown as typeof fetch;
 
 describe("createInvite", () => {
   test("composes the one-paste string from switchboard.url + returned code", async () => {

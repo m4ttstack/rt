@@ -44,7 +44,7 @@ describe("redeemInvite", () => {
     (async () => new Response(body, { status })) as unknown as typeof fetch;
 
   test("maps 200 to ok with username + token", async () => {
-    const f = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const f = (async (input: Parameters<typeof fetch>[0], init?: RequestInit) => {
       expect(String(input)).toBe("https://sb.example.app/invites/redeem");
       expect(JSON.parse(String(init?.body))).toEqual({ code: "c".repeat(32), username: "grace" });
       return Response.json({ username: "grace", token: "tok" });

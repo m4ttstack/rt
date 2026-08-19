@@ -84,14 +84,14 @@ describe("attachSlack", () => {
       [URL_A, { mrUrl: URL_A, iid: 4821, status: "found", messageTs: "1.2", permalink: "https://x/p1", reactions: ["eyes"], checkedAt: 0 }],
     ]);
     const [a, b] = attachSlack([{ webUrl: URL_A }, { webUrl: URL_B }], refs);
-    expect(a.slack).toEqual({ status: "found", permalink: "https://x/p1", reactions: ["eyes"], posted: true });
-    expect(b.slack).toBeUndefined();
+    expect(a!.slack).toEqual({ status: "found", permalink: "https://x/p1", reactions: ["eyes"], posted: true });
+    expect(b!.slack).toBeUndefined();
   });
 
   test("defaults reactions to an empty array when the ref has none", () => {
     const refs = new Map<string, SlackRef>([[URL_A, { mrUrl: URL_A, iid: 4821, status: "notfound", checkedAt: 0 }]]);
     const [a] = attachSlack([{ webUrl: URL_A }], refs);
-    expect(a.slack).toEqual({ status: "notfound", permalink: undefined, reactions: [], posted: false });
+    expect(a!.slack).toEqual({ status: "notfound", permalink: undefined, reactions: [], posted: false });
   });
 
   test("posted=false when a multi-MR ref has no reply reified yet", () => {
@@ -99,6 +99,6 @@ describe("attachSlack", () => {
       [URL_A, { mrUrl: URL_A, iid: 4821, status: "found", multi: true, parentTs: "1.0", checkedAt: 0 }],
     ]);
     const [a] = attachSlack([{ webUrl: URL_A }], refs);
-    expect(a.slack?.posted).toBe(false);
+    expect(a!.slack?.posted).toBe(false);
   });
 });
