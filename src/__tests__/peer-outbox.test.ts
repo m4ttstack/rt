@@ -80,20 +80,20 @@ describe("makeSwitchboardClient", () => {
     expect((calls[0]!.init.headers as Record<string, string>).authorization).toBe("Bearer tok");
   });
   test("publish returns 'network' on a thrown fetch", async () => {
-    const fetchFn = (async () => { throw new Error("down"); }) as typeof fetch;
+    const fetchFn = (async () => { throw new Error("down"); }) as unknown as typeof fetch;
     const client = makeSwitchboardClient("https://sb.test", "tok", fetchFn);
     expect(await client.publish(d("e1"))).toBe("network");
   });
   test("inbox parses envelopes and returns null on failure", async () => {
     const env = { id: "e", from: "ada", to: "grace", type: "t", sentAt: 1, receivedAt: 2, payload: {} };
-    const good = (async () => new Response(JSON.stringify({ envelopes: [env, { junk: true }] }), { status: 200 })) as typeof fetch;
+    const good = (async () => new Response(JSON.stringify({ envelopes: [env, { junk: true }] }), { status: 200 })) as unknown as typeof fetch;
     const envelopes = await makeSwitchboardClient("https://sb.test", "t", good).inbox();
     expect(Array.isArray(envelopes) ? envelopes.map((e) => e.id) : envelopes).toEqual(["e"]);
-    const bad = (async () => new Response("nope", { status: 500 })) as typeof fetch;
+    const bad = (async () => new Response("nope", { status: 500 })) as unknown as typeof fetch;
     expect(await makeSwitchboardClient("https://sb.test", "t", bad).inbox()).toBeNull();
   });
   test("inbox distinguishes a 401 from any other relay failure", async () => {
-    const denied = (async () => new Response("nope", { status: 401 })) as typeof fetch;
+    const denied = (async () => new Response("nope", { status: 401 })) as unknown as typeof fetch;
     expect(await makeSwitchboardClient("https://sb.test", "t", denied).inbox()).toBe("unauthorized");
   });
 });

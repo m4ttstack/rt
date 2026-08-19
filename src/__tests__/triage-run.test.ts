@@ -76,7 +76,7 @@ describe("helpers", () => {
     expect(numericPipelineId("garbage")).toBeNull();
   });
   test("enabledFixClassNames kebab-cases only the enabled classes", () => {
-    expect(enabledFixClassNames({ retryFlake: true, inheritedNoteDraft: false, cleanApiRebase: true, mechanicalLint: false }))
+    expect(enabledFixClassNames({ retryFlake: true, inheritedNoteDraft: false, cleanApiRebase: true, mechanicalLint: false, codeFix: false }))
       .toEqual(["retry-flake", "clean-api-rebase"]);
   });
 

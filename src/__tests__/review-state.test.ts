@@ -113,7 +113,7 @@ describe("attachReviews", () => {
   test("attaches review by webUrl, leaves others untouched", () => {
     const reviews = new Map([[URL_A, { mrUrl: URL_A, iid: 4821, status: "reviewing" as const, startedAt: 0, updatedAt: 0 }]]);
     const [a, b] = attachReviews([{ webUrl: URL_A }, { webUrl: "https://other/mr/9" }], reviews);
-    expect(a.review?.status).toBe("reviewing");
-    expect(b.review).toBeUndefined();
+    expect(a!.review?.status).toBe("reviewing");
+    expect(b!.review).toBeUndefined();
   });
 });

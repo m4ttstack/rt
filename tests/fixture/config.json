@@ -1,0 +1,14 @@
+{
+  "gitlabHost": "https://gitlab.example.com",
+  "projects": ["fixture/project"],
+  "rtRepos": {},
+  "members": [
+    { "username": "matt", "name": "Matthew Goodwin" },
+    { "username": "alice", "name": "Alice Reviewer" },
+    { "username": "bob", "name": "Bob Author" }
+  ],
+  "defaultMember": "all",
+  "title": "MRs ready for review",
+  "port": 7941,
+  "slack": { "autoResolveIntervalMinutes": 0 }
+}

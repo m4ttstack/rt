@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { PullRequest } from "@mattstack/glance";
 import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, projectPathFromWebUrl, stripDraftPrefix, type BoardMR } from "../data.ts";
 import { SnapshotCache, type FetchResult } from "../cache.ts";
-import type { BoardConfig } from "../config.ts";
+import { DEFAULT_SLACK_EMOJI, type BoardConfig } from "../config.ts";
 import { extractTicketId } from "../ticket.ts";
 
 const config: BoardConfig = {
@@ -14,9 +14,28 @@ const config: BoardConfig = {
   ticketPrefixes: [],
   title: "Test board",
   port: 0,
+  host: "",
   reviewCwd: "",
   reviewsWorkspace: "reviews",
+  respondCwd: "",
+  respondsWorkspace: "responds",
+  doctorCwd: "",
+  doctorsWorkspace: "doctors",
+  claudeCommand: "",
+  reviewSkill: "",
+  respondSkill: "",
+  doctorSkill: "",
+  botUsernames: [],
   rtRepos: {},
+  slack: {
+    channel: "code-review",
+    singleTemplate: "{title}: {url}",
+    multiHeader: "{count} MR's ready for review",
+    multiItem: "- {title}: {url}",
+    autoResolveIntervalMinutes: 0,
+    emoji: DEFAULT_SLACK_EMOJI,
+  },
+  switchboard: { url: "" },
 };
 
 function pr(overrides: Partial<PullRequest>): PullRequest {
