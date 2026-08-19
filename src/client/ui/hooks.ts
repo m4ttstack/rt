@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import type { RefObject } from "react";
 import { pushLayer, handleEscape } from "./layers.ts";
+import { acquireScrollLock, releaseScrollLock } from "./scroll-lock.ts";
 
 /** Scrolls the returned ref's element into its scroll container whenever `key`
     turns truthy or changes. For content that appears at the bottom of a capped,
@@ -72,15 +73,17 @@ function useAutoGrowTextarea(deps: readonly unknown[]): RefObject<HTMLTextAreaEl
   return ref;
 }
 
-/** Lock body scroll for the calling component's lifetime, restoring whatever
-    the body's overflow was before. Keeps a modal/drawer's own scroll region
-    from showing a second scrollbar alongside the page's. */
+/** Lock body scroll for the calling component's lifetime. Counter-based (see
+    scroll-lock.ts) so any number of instances can be open at once and don't
+    have to unmount in mount order -- e.g. a Modal opened over an open drawer,
+    where the drawer gets force-unmounted first by an unrelated data change.
+    Keeps a modal/drawer's own scroll region from showing a second scrollbar
+    alongside the page's. */
 function useBodyScrollLock(): void {
   useEffect(() => {
-    const prevOverflow = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
+    acquireScrollLock(document.body.style);
     return () => {
-      document.body.style.overflow = prevOverflow;
+      releaseScrollLock(document.body.style);
     };
   }, []);
 }
