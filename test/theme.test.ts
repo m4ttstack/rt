@@ -219,3 +219,60 @@ test("dark block flips color-scheme and carries no font redeclarations", () => {
   const darkBlock = css.slice(css.indexOf(".dark {"));
   expect(darkBlock.slice(0, darkBlock.indexOf("}"))).not.toContain("--font-family-");
 });
+
+// ── canvas.css ──────────────────────────────────────────────────────────
+// The optional graph-paper page ground (Task 4). Unlike theme.css this is
+// hand-authored, not generated: it is a straight port of mr-board's
+// body + `*` + .tui + .tui-wide rules with tokens swapped in for literals.
+// Importing it is the opt-in — it styles `body` directly.
+
+const CANVAS_PATH = join(REPO, "src", "canvas.css");
+
+// The alias contract canvas.css is allowed to lean on — the same board short
+// names the generated theme resolves, per the task-4 brief.
+const CANVAS_ALIAS_CONTRACT = new Set([
+  "--bg", "--panel", "--card", "--fg", "--muted", "--border", "--border-soft",
+  "--accent", "--green", "--red", "--amber", "--purple", "--cyan",
+  "--grid-line", "--dot-ok", "--dot-warn", "--dot-bad", "--font-mono", "--font-sans",
+]);
+
+test("canvas.css exists and defines the body ground, .tui, and .tui-wide", () => {
+  const canvas = readFileSync(CANVAS_PATH, "utf8");
+  expect(canvas).toContain("body {");
+  expect(canvas).toContain(".tui {");
+  expect(canvas).toContain(".tui-wide {");
+  // The graph-paper grid: two crossed linear-gradients painted as the
+  // background-image, sized to a fixed grid cell.
+  expect(canvas).toContain("background-image:");
+  expect(canvas).toMatch(/background-size:\s*28px 28px;/);
+});
+
+test("canvas.css references only var(--...) names from the alias contract", () => {
+  const canvas = readFileSync(CANVAS_PATH, "utf8");
+  const referenced = new Set<string>();
+  for (const m of canvas.matchAll(/var\((--[\w-]+)\)/g)) referenced.add(m[1]!);
+  expect(referenced.size).toBeGreaterThan(0);
+  for (const name of referenced) {
+    expect(CANVAS_ALIAS_CONTRACT.has(name)).toBe(true);
+  }
+});
+
+test("canvas.css contains no hex or rgba color literals", () => {
+  const canvas = readFileSync(CANVAS_PATH, "utf8");
+  // Every color must ride the alias contract's var()s, not a literal —
+  // canvas.css has no theme of its own to draw from.
+  expect(canvas).not.toMatch(/#[0-9a-fA-F]{3,8}\b/);
+  expect(canvas).not.toMatch(/\brgba?\(/);
+});
+
+test("canvas.css's 13.5px base and 28px grid are census-pinned canvas-identity constants", () => {
+  // These two literals are allowlisted deliberately: the census (docs/
+  // token-census.md) shows both are single-use in mr-board's style.css, so
+  // they never became theme tokens. They're canvas identity, not a themeable
+  // value — pin them here (and require they read as intentional, i.e.
+  // commented) rather than let them silently drift.
+  const canvas = readFileSync(CANVAS_PATH, "utf8");
+  expect(canvas).toContain("13.5px");
+  expect(canvas).toContain("28px 28px");
+  expect(canvas.toLowerCase()).toContain("canvas-identity");
+});
