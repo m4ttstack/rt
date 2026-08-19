@@ -73,6 +73,16 @@ for (const theme of ["light", "dark"] as const) {
   await page.click(".tui-row", { button: "right" });
   await page.waitForSelector(".tui-menu");
   await shoot(page, `rowmenu-${theme}`);
+  // paper cut 4 assertion: comments drawer over the board — Escape closes it
+  // and does not also fire underlying layers.
+  const t2 = page.locator(".tui-comments-btn, .tui-comment-token").first();
+  if (await t2.count()) {
+    await t2.click();
+    await page.waitForSelector(".tui-cd");
+    await page.keyboard.press("Escape");
+    await page.waitForSelector(".tui-cd", { state: "detached" });
+    if (!(await page.locator(".tui-row").first().isVisible())) throw new Error("escape assertion: board vanished");
+  }
   await page.keyboard.press("Escape");
   // comments drawer (first comments trigger, if the fixture has one)
   const trigger = page.locator(".tui-comments-btn, .tui-comment-token").first();

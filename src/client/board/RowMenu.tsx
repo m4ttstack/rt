@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { BoardMR } from "../../data.ts";
 import type { BoardMRWithReview, RowContext, RowMenuState } from "../types.ts";
-import { useAutoGrowTextarea } from "../ui/hooks.ts";
+import { useAutoGrowTextarea, useEscapeClose } from "../ui/hooks.ts";
 import { getSlackMarks, nudgeTargets, reviewMenuItems, respondItemLabel, doctorItemLabel } from "./format.ts";
 
 function MenuItem({
@@ -92,20 +92,16 @@ function RowMenu({
       window.removeEventListener("blur", onBlur);
     };
   }, []);
+  useEscapeClose(onClose);
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
       if (!ref.current?.contains(e.target as Node)) onClose();
     };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
     document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
     window.addEventListener("scroll", onClose, true);
     window.addEventListener("resize", onClose);
     return () => {
       document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
       window.removeEventListener("scroll", onClose, true);
       window.removeEventListener("resize", onClose);
     };

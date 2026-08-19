@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { RefObject } from "react";
+import { pushLayer, handleEscape } from "./layers.ts";
 
 /** Scrolls the returned ref's element into its scroll container whenever `key`
     turns truthy or changes. For content that appears at the bottom of a capped,
@@ -15,12 +16,34 @@ function useRevealOnChange<T extends HTMLElement = HTMLElement>(key: unknown) {
   return ref;
 }
 
-/** Close a modal on Escape, for the lifetime of the calling component. */
+// Layers share a single document listener -- registered when the first layer
+// pushes, torn down when the last one pops -- rather than one listener per
+// open modal/drawer/menu. Escape delegates to layers.ts's stack, which pops
+// only the topmost layer (see that module for the LIFO semantics).
+let openLayers = 0;
+let escListener: ((e: KeyboardEvent) => void) | null = null;
+
+/** Join the app's layer stack for the lifetime of the calling component:
+    Escape closes only the topmost open layer (modal, drawer, or menu), not
+    every open layer at once. */
 function useEscapeClose(onClose: () => void): void {
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
+    const pop = pushLayer(onClose);
+    openLayers++;
+    if (!escListener) {
+      escListener = (e: KeyboardEvent) => {
+        if (e.key === "Escape") handleEscape();
+      };
+      document.addEventListener("keydown", escListener);
+    }
+    return () => {
+      pop();
+      openLayers--;
+      if (openLayers === 0 && escListener) {
+        document.removeEventListener("keydown", escListener);
+        escListener = null;
+      }
+    };
   }, [onClose]);
 }
 
