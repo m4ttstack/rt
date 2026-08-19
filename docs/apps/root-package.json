@@ -11,6 +11,7 @@
     "sync-resolvers": "sh scripts/sync-resolvers.sh",
     "materialize": "bun run bin/materialize.ts",
     "test": "bun test",
+    "typecheck": "tsc --noEmit -p . && tsc --noEmit -p src/client",
     "capture": "bun tests/capture.ts --out tests/.captures",
     "capture:baseline": "bun tests/capture.ts --out tests/baselines",
     "capture:compare": "bun tests/compare.ts"
@@ -28,6 +29,8 @@
     "@types/bun": "latest",
     "@types/pixelmatch": "^5.2.6",
     "@types/pngjs": "^6.0.5",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
     "pixelmatch": "^7.2.0",
     "playwright": "^1.62.1",
     "pngjs": "^7.0.0",

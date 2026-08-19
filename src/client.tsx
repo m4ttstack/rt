@@ -568,10 +568,9 @@ function SlackPostedChip({ slack }: { slack?: SlackInfo }) {
     scrollable modal: the settings modal stops at 80vh, so a fresh invite row or
     an expanded join input can render below the fold with nothing to bring it
     into view. `block: "nearest"` is deliberate -- it's a no-op when the element
-    is already visible, so this never yanks a settled modal around. `any` because
-    tsconfig omits the DOM lib and the element types resolve to empty interfaces. */
-function useRevealOnChange(key: unknown) {
-  const ref = useRef<any>(null);
+    is already visible, so this never yanks a settled modal around. */
+function useRevealOnChange<T extends HTMLElement = HTMLElement>(key: unknown) {
+  const ref = useRef<T | null>(null);
   useEffect(() => {
     if (key) ref.current?.scrollIntoView({ block: "nearest" });
   }, [key]);
@@ -860,8 +859,7 @@ function RowMenu({
   // Same auto-grow mechanism as the selection bar's header textarea: reset to
   // auto so deletions shrink it back, then add the border because the global
   // border-box makes `height` responsible for it while scrollHeight is not.
-  // `any` because tsconfig omits the DOM lib.
-  const noteRef = useRef<any>(null);
+  const noteRef = useRef<HTMLTextAreaElement | null>(null);
   useEffect(() => {
     const el = noteRef.current;
     if (!el) return;
@@ -954,8 +952,7 @@ function RowMenu({
           maxLength={2000}
           aria-label="launch note"
           onChange={(e) => {
-            // Double cast for the missing DOM lib, as in the selection bar.
-            setNoteText((e.target as unknown as { value: string }).value);
+            setNoteText(e.currentTarget.value);
           }}
           onKeyDown={(e) => {
             // Keep Escape local (back to the menu, not menu close) and keep
@@ -1943,14 +1940,14 @@ function SettingsModal({
   // Everything this modal reveals lands at its bottom edge, past 80vh on a
   // short window. Key each ref on the state that reveals it, not on the
   // element, so a second invite for a different handle scrolls again.
-  const issuedRef = useRevealOnChange(issued?.invite ?? null);
-  const inviteErrorRef = useRevealOnChange(inviteError);
+  const issuedRef = useRevealOnChange<HTMLDivElement>(issued?.invite ?? null);
+  const inviteErrorRef = useRevealOnChange<HTMLParagraphElement>(inviteError);
   // Reveal the join row when the user opens it, and when peering is rejected
   // (the warning is why they're here). Not when it's merely open by default on
   // an unconfigured board: that would scroll every settings open to the bottom,
   // past the roster the modal is mostly about.
-  const joinRef = useRevealOnChange(joinOpen || peering === "unauthorized");
-  const joinErrorRef = useRevealOnChange(joinError);
+  const joinRef = useRevealOnChange<HTMLDivElement>(joinOpen || peering === "unauthorized");
+  const joinErrorRef = useRevealOnChange<HTMLParagraphElement>(joinError);
 
   const submitJoin = useCallback(() => {
     const value = joinValue.trim();
@@ -2040,9 +2037,7 @@ function SettingsModal({
               value={handle}
               aria-label="username to invite"
               placeholder="username to invite"
-              // Cast per the convention at the header editor: tsconfig omits the
-              // DOM lib, so e.target.value doesn't typecheck without it.
-              onChange={(e) => setHandle((e.target as unknown as { value: string }).value)}
+              onChange={(e) => setHandle(e.currentTarget.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter") ask(handle);
               }}
@@ -2079,7 +2074,7 @@ function SettingsModal({
                     value={joinValue}
                     aria-label="paste your board invite"
                     placeholder="paste your board invite"
-                    onChange={(e) => setJoinValue((e.target as unknown as { value: string }).value)}
+                    onChange={(e) => setJoinValue(e.currentTarget.value)}
                     onKeyDown={(e) => {
                       if (e.key === "Enter") submitJoin();
                     }}
@@ -2227,9 +2222,8 @@ function SelectionBar({
   // Grow the textarea to fit its content, so a long header wraps into view
   // rather than scrolling sideways out of it. Reset to "auto" first or the box
   // can only ever grow -- scrollHeight is clamped by the current height, so
-  // deleting text would leave the extra rows behind. `any` because tsconfig
-  // omits the DOM lib and HTMLTextAreaElement resolves to an empty interface.
-  const taRef = useRef<any>(null);
+  // deleting text would leave the extra rows behind.
+  const taRef = useRef<HTMLTextAreaElement | null>(null);
   useEffect(() => {
     const el = taRef.current;
     if (!el) return;
@@ -2262,11 +2256,7 @@ function SelectionBar({
         // sanitizeHeader carries the breaks through to the posted message. The
         // box grows to fit, so there is nothing to scroll out of view.
         onChange={(e) => {
-          // The double cast is load-bearing: tsconfig.json omits the DOM lib, so
-          // @types/react resolves HTMLTextAreaElement to an empty interface --
-          // e.target.value, e.currentTarget.value and an explicitly typed
-          // handler param all fail to compile. Don't "clean this up".
-          setEdited((e.target as unknown as { value: string }).value);
+          setEdited(e.currentTarget.value);
         }}
       />
       <div className="tui-selbar-actions">

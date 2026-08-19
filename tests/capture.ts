@@ -55,7 +55,7 @@ async function newPage(width: number, theme: "light" | "dark"): Promise<Page> {
   await page.goto(BASE);
   // Kill animations/transitions so pulsing badges and spinners can't smear.
   await page.addStyleTag({ content: "*,*::before,*::after{animation:none!important;transition:none!important;caret-color:transparent!important}" });
-  await page.evaluate(() => (document as unknown as { fonts: { ready: Promise<unknown> } }).fonts.ready);
+  await page.evaluate(() => (globalThis as unknown as { document: { fonts: { ready: Promise<unknown> } } }).document.fonts.ready);
   await page.waitForSelector(".tui-row, .tui-card, .tui-empty");
   return page;
 }
