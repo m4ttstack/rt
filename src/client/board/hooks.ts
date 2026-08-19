@@ -1,10 +1,10 @@
-/// <reference lib="dom" />
 import { useCallback, useEffect, useRef, useState } from "react";
 import { EMPTY_OPTIMISTIC, setQueued, rollback, clearServerTruth, anyActive, type Axis, type OptimisticState } from "./optimistic.ts";
 import type { BoardData, BoardMRWithReview, Toast } from "../types.ts";
 import type { BoardMR } from "../../data.ts";
-import { getData, getMember, postAction, type ActionResult } from "../api.ts";
+import { getData, getMember, postAction } from "../api.ts";
 import { setSlackMarks } from "./format.ts";
+import { runLaunchFlow, type LaunchFlowDeps } from "./launch-flow.ts";
 
 /** Thin useState/useEffect wrapper over the pure optimistic-lifecycle
     functions: tracks the queued/error-rollback state for the review/respond/
@@ -171,37 +171,12 @@ export function useBoardData(
   return { data, loadError, load, fetchMember, refreshNow, refreshing, setData };
 }
 
-/** Deps a launch flow needs from its caller: how to POST, how to reflect the
-    optimistic queued/rollback state (no-ops for non-optimistic actions like
-    resume), how to toast, and how to reload once the server answers. */
-export interface LaunchFlowDeps {
-  post: (payload: Record<string, unknown>) => Promise<ActionResult>;
-  setQueued: () => void;
-  rollback: () => void;
-  addToast: (t: string) => void;
-  reload: () => void;
-  verbing: string;
-  noun: string;
-}
-
-/** The pure shape common to every launch-a-pane action (characterized from
-    today's handleLaunch): claim optimistic queued state, toast that it's
-    starting, POST, and on the answer either roll back + toast the failure
-    status, or toast a "focused an existing tab" note when the server says so
-    and reload either way that reflects the server's real state. */
-export async function runLaunchFlow(deps: LaunchFlowDeps, mr: BoardMR, extra: Record<string, unknown>): Promise<void> {
-  if (!mr.webUrl) return;
-  deps.setQueued();
-  deps.addToast(`${deps.verbing} for !${mr.iid}…`);
-  const result = await deps.post({ mrUrl: mr.webUrl, iid: mr.iid, ...extra });
-  if (!result.ok) {
-    deps.rollback();
-    deps.addToast(`couldn't launch ${deps.noun} for !${mr.iid} (${result.status})`);
-    return;
-  }
-  if (result.body?.focused) deps.addToast(`${deps.noun} already running for !${mr.iid} — focused its tab`);
-  deps.reload();
-}
+// runLaunchFlow + LaunchFlowDeps live in ./launch-flow.ts: that module is
+// deliberately DOM-free (no react, no browser globals) so it stays safe to
+// import from a plain root-tsconfig test (src/__tests__/client-api.test.ts)
+// without pulling DOM types into that program. hooks.ts (this file) is full
+// of DOM-touching hooks, so the test imports runLaunchFlow directly from
+// launch-flow.ts rather than through here -- this file only *uses* it below.
 
 /** Closes runLaunchFlow over one action's server path and optimistic axis.
     `axis: null` skips the optimistic queued/rollback entirely -- for resume
@@ -214,8 +189,9 @@ export function useLaunchAction(opts: {
   optimistic: ReturnType<typeof useOptimisticLifecycle>;
   addToast: (t: string) => void;
   reload: () => void;
+  failureMessage?: LaunchFlowDeps["failureMessage"];
 }): (mr: BoardMR, extra?: Record<string, unknown>, note?: string) => void {
-  const { axis, path, verbing, noun, optimistic, addToast, reload } = opts;
+  const { axis, path, verbing, noun, optimistic, addToast, reload, failureMessage } = opts;
   return useCallback(
     (mr: BoardMR, extra: Record<string, unknown> = {}, note?: string) => {
       const url = mr.webUrl;
@@ -227,9 +203,10 @@ export function useLaunchAction(opts: {
         reload,
         verbing,
         noun,
+        failureMessage,
       };
       void runLaunchFlow(deps, mr, { ...extra, note });
     },
-    [axis, path, verbing, noun, optimistic, addToast, reload],
+    [axis, path, verbing, noun, optimistic, addToast, reload, failureMessage],
   );
 }

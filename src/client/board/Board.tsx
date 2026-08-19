@@ -195,9 +195,10 @@ export function Board() {
 
   // Six near-identical "launch a pane" actions collapse onto useLaunchAction:
   // claim optimistic queued state (skipped for resume, whose axis is null),
-  // toast, POST, and reconcile on the answer. See hooks.ts's runLaunchFlow for
-  // the shared shape; note is folded into `extra` since JSON.stringify already
-  // drops it when undefined, matching every one of today's payloads.
+  // toast, POST, and reconcile on the answer. See launch-flow.ts's
+  // runLaunchFlow for the shared shape; note is folded into `extra` since
+  // JSON.stringify already drops it when undefined, matching every one of
+  // today's payloads.
   const launchReview = useLaunchAction({
     axis: "review", path: "/review", verbing: "launching review", noun: "review",
     optimistic: optimisticLifecycle, addToast, reload: load,
@@ -227,10 +228,14 @@ export function Board() {
 
   // Resume actions: axis null means useLaunchAction's setQueued/rollback are
   // no-ops, matching today's handleResume (which never claimed a badge before
-  // the reload settled).
+  // the reload settled). Bespoke failureMessage restores handleResume's own
+  // failure wording, including the server's response text when it sends one
+  // (e.g. "no session id on file") -- the shared default failure toast has no
+  // way to carry that detail.
   const resumeReviewAction = useLaunchAction({
     axis: null, path: "/review", verbing: "resuming review", noun: "review",
     optimistic: optimisticLifecycle, addToast, reload: load,
+    failureMessage: (result, mr) => `resume review failed for !${mr.iid} (${result.status})${result.text ? `: ${result.text}` : ""}`,
   });
   const handleResumeReview = useCallback(
     (mr: BoardMR, note?: string) => resumeReviewAction(mr, { resume: true }, note),
@@ -240,6 +245,7 @@ export function Board() {
   const resumeRespondAction = useLaunchAction({
     axis: null, path: "/respond", verbing: "resuming respond", noun: "respond",
     optimistic: optimisticLifecycle, addToast, reload: load,
+    failureMessage: (result, mr) => `resume respond failed for !${mr.iid} (${result.status})${result.text ? `: ${result.text}` : ""}`,
   });
   const handleResumeRespond = useCallback(
     (mr: BoardMR, note?: string) => resumeRespondAction(mr, { resume: true }, note),

@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { postAction } from "../client/api.ts";
-import { runLaunchFlow } from "../client/board/hooks.ts";
+import { runLaunchFlow } from "../client/board/launch-flow.ts";
 
 test("postAction returns typed non-ok without throwing", async () => {
   const r = await postAction("/x", {}, (async () => new Response("nope", { status: 502 })) as unknown as typeof fetch);
@@ -29,4 +29,20 @@ test("launch flow: non-ok rolls back and toasts the status", async () => {
     verbing: "launching review", noun: "review",
   }, { webUrl: "u", iid: 7 } as never, {});
   expect(events).toEqual(["queued", "toast:launching review for !7…", "rollback", "toast:couldn't launch review for !7 (502)"]);
+});
+test("launch flow: failureMessage override replaces the default failure toast", async () => {
+  const events: string[] = [];
+  await runLaunchFlow({
+    post: async () => ({ ok: false, status: 400, body: null, text: "no session id on file" }),
+    setQueued: () => events.push("queued"), rollback: () => events.push("rollback"),
+    addToast: (t) => events.push(`toast:${t}`), reload: () => events.push("reload"),
+    verbing: "resuming review", noun: "review",
+    failureMessage: (result, mr) => `resume review failed for !${mr.iid} (${result.status}): ${result.text}`,
+  }, { webUrl: "u", iid: 7 } as never, {});
+  expect(events).toEqual([
+    "queued",
+    "toast:resuming review for !7…",
+    "rollback",
+    "toast:resume review failed for !7 (400): no session id on file",
+  ]);
 });
