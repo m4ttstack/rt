@@ -2,7 +2,7 @@ import { join, dirname, basename } from "path";
 import { readFileSync, writeFileSync, mkdirSync, watch } from "fs";
 import { homedir } from "os";
 import type { PullRequest, MRDetail } from "@mattstack/glance";
-import { loadConfig, loadGitLabToken, loadSlackToken, loadSwitchboardToken, loadSwitchboardAdminToken, saveMemberHidden, saveSwitchboardUrl, CONFIG_PATH } from "./config.ts";
+import { loadConfig, loadGitLabToken, loadSlackToken, loadSwitchboardToken, loadSwitchboardAdminToken, saveMemberHidden, saveSwitchboardUrl, parseConfig, CONFIG_PATH } from "./config.ts";
 import { materializeTeamConfig } from "./team-zone.ts";
 import { resolveBoardSkill, type BoardSkillKind } from "./manifest-bindings.ts";
 import { upsertEnvKeys } from "./env-file.ts";
@@ -33,6 +33,12 @@ import {
   type SentNudgeDisplay,
 } from "./peer/nudges.ts";
 import { renderPost, sanitizeHeader, MAX_HEADER_LEN, type MrFacts } from "./template.ts";
+
+/** Capture-harness mode: boot from a committed fixture dir instead of live
+    config, serve canned endpoint responses, hold no tokens, start no relay.
+    The seed of the permanent screenshot harness (see tests/capture.ts). */
+const FIXTURE_DIR = process.env.BOARD_FIXTURE || null;
+const fixtureFile = (name: string) => join(FIXTURE_DIR!, name);
 
 const cssPath = join(import.meta.dir, "style.css");
 let css = readFileSync(cssPath, "utf-8");
@@ -78,12 +84,14 @@ function materializeTeamConfigAtBoot(): void {
     console.error(`team config materialize failed, continuing with existing config: ${err instanceof Error ? err.message : err}`);
   }
 }
-materializeTeamConfigAtBoot();
+if (!FIXTURE_DIR) materializeTeamConfigAtBoot();
 
 // `let`: /peer/join reassigns the whole config after persisting switchboard.url.
-let config = loadConfig();
+let config = FIXTURE_DIR
+  ? parseConfig(readFileSync(fixtureFile("config.json"), "utf8"))
+  : loadConfig();
 // Optional: display-name lookups only. The board's data plane is rt.
-const gitlabToken = loadGitLabToken();
+const gitlabToken = FIXTURE_DIR ? null : loadGitLabToken();
 
 /** Writes go straight to GitLab through glance; reads come from the rt daemon
     (see readProjectMRs). Built on demand so a tokenless install still boots --
@@ -95,7 +103,7 @@ function gitlab(): GitLabProvider {
   return gitlabProvider;
 }
 // Optional: enables the Slack review-thread menu actions when a token is set.
-const slackToken = loadSlackToken();
+const slackToken = FIXTURE_DIR ? null : loadSlackToken();
 
 // Optional peer relay. Both a configured url and a token are required; without
 // either, peering stays unstarted and every peer feature (publish, poll,
@@ -109,12 +117,12 @@ const peerDeps: Omit<MaterializeDeps, "reportAuth"> = {
   log: (line) => console.error(line),
 };
 const peering = makePeering({ makeClient: makeSwitchboardClient, deps: peerDeps });
-const switchboardToken = loadSwitchboardToken();
+const switchboardToken = FIXTURE_DIR ? null : loadSwitchboardToken();
 if (config.switchboard.url && switchboardToken) peering.start(config.switchboard.url, switchboardToken);
 // Operator-only secret: its presence is what turns on this board's invite
 // affordances. Absent, /peer/invite and /peer/boards answer 400 and the UI
 // never offers them.
-const switchboardAdminToken = loadSwitchboardAdminToken();
+const switchboardAdminToken = FIXTURE_DIR ? null : loadSwitchboardAdminToken();
 
 /** Send what's queued without making the caller wait on the relay. Anything
     still queued goes out on the next tick, so a failure here only costs
@@ -386,6 +394,24 @@ Bun.serve({
   idleTimeout: 60,
   async fetch(req) {
     const { pathname } = new URL(req.url);
+    if (FIXTURE_DIR) {
+      if (req.method !== "GET") return new Response("fixture mode is read-only", { status: 501 });
+      switch (pathname) {
+        case "/data.json":
+          return new Response(readFileSync(fixtureFile("data.json"), "utf8"), { headers: { "content-type": "application/json" } });
+        case "/discussions":
+          return new Response(readFileSync(fixtureFile("discussions.json"), "utf8"), { headers: { "content-type": "application/json" } });
+        case "/review/report":
+          return new Response(readFileSync(fixtureFile("review-report.md"), "utf8"), { headers: { "content-type": "text/markdown" } });
+        case "/peer/boards":
+          return new Response(JSON.stringify({ boards: [] }), { headers: { "content-type": "application/json" } });
+        case "/member": {
+          const u = new URL(req.url).searchParams.get("u");
+          const data = JSON.parse(readFileSync(fixtureFile("data.json"), "utf8")) as { mrs: Array<{ author: { username: string } }>; fetchedAt: number };
+          return new Response(JSON.stringify({ mrs: data.mrs.filter((m) => m.author.username === u), fetchedAt: data.fetchedAt }), { headers: { "content-type": "application/json" } });
+        }
+      }
+    }
     switch (pathname) {
       case "/healthz":
         return new Response("ok");
@@ -1359,7 +1385,7 @@ function sseNudge(): void {
 setInterval(() => sseSend(sseEncoder.encode(": ping\n\n")), SSE_HEARTBEAT_MS);
 
 let relayTimer: ReturnType<typeof setTimeout> | undefined;
-const stopRelay = subscribe((type, data) => {
+const stopRelay = FIXTURE_DIR ? () => {} : subscribe((type, data) => {
   if (!RELAY_TYPES.has(type)) return;
   const repoName = (data as { repoName?: string } | null)?.repoName;
   if (!repoName || !Object.values(config.rtRepos).includes(repoName)) return;
@@ -1375,7 +1401,7 @@ void stopRelay; // long-lived server; kept for symmetry/tests
 // save atomically by swapping the file — and filter to our file. A mid-edit
 // invalid file is ignored, keeping the last good config.
 let reloadTimer: ReturnType<typeof setTimeout> | undefined;
-watch(dirname(CONFIG_PATH), (_event, filename) => {
+if (!FIXTURE_DIR) watch(dirname(CONFIG_PATH), (_event, filename) => {
   if (filename && filename !== basename(CONFIG_PATH)) return;
   clearTimeout(reloadTimer);
   reloadTimer = setTimeout(() => {

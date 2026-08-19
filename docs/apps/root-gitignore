@@ -5,6 +5,8 @@ node_modules/
 .env
 config.json
 config.team.json
+# ...except the committed capture-harness fixture (tests/fixture/README.md)
+!tests/fixture/config.json
 
 # runtime state + logs
 state/
