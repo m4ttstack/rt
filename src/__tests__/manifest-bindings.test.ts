@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { parseConfig } from "../config.ts";
-import { resolveBoardSkill } from "../manifest-bindings.ts";
+import { resolveBoardSkill, resolveLaunchSkill } from "../manifest-bindings.ts";
 
 const base = {
   gitlabHost: "https://gitlab.com",
@@ -123,5 +123,25 @@ describe("resolveBoardSkill", () => {
     const credentialedCfg = parseConfig(JSON.stringify({ ...base, gitlabHost: "https://user:pass@gitlab.com" }));
     const result = resolveBoardSkill("review", "org/repo", credentialedCfg, home);
     expect(result).toEqual({ skill: "myteam:review", source: "manifest" });
+  });
+});
+
+describe("resolveLaunchSkill", () => {
+  // BOARD-14: nudge-driven re-review launches (bin/triage.ts) derive the
+  // project from the MR's webUrl and resolve through the same manifest
+  // binding as the board's own HTTP launch sites (server.ts).
+  const mrUrl = "https://gitlab.com/org/repo/-/merge_requests/7";
+
+  test("manifest binding present -> resolves via manifest from the MR's webUrl", () => {
+    const home = makeHome(
+      "gitlab.com-org-repo",
+      JSON.stringify({ bindings: { "mr-board:review": { skill: "myteam:review" } } }),
+    );
+    expect(resolveLaunchSkill("review", mrUrl, cfg, home)).toBe("myteam:review");
+  });
+
+  test("no manifest -> config fallback", () => {
+    const home = makeHome(null);
+    expect(resolveLaunchSkill("review", mrUrl, cfg, home)).toBe("config:review");
   });
 });

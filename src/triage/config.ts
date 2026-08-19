@@ -24,7 +24,10 @@ export interface TriageConfig {
   maxConcurrent: number;
   dailyAttemptBudget: number;
   fixClasses: FixClasses;
-  /** Domain skill the auto-dispatched wrapper delegates to. */
+  /** Domain skill the auto-dispatched wrapper delegates to. Deliberate:
+      triage-level config override, not manifest-resolved (BOARD-14 ruling --
+      auto-dispatch has no per-MR nudge/click origin to hang a manifest
+      lookup off, so it stays a plain config field). */
   doctorSkill: string;
   /** Repair tier for auto dispatches: "api" = no-checkout held-drafts doctor;
       "checkout" = the full fix-and-push doctor (token identity's own MRs

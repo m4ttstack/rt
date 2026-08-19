@@ -9,6 +9,7 @@ import { loadConfig, loadGitLabToken, loadSwitchboardToken } from "../src/config
 import { buildBoard } from "../src/data.ts";
 import { doctorFilePath, readDoctorStates, writeDoctorState } from "../src/doctor-state.ts";
 import { launchDoctor } from "../src/herdr.ts";
+import { resolveLaunchSkill } from "../src/manifest-bindings.ts";
 import { makeEnvelope } from "../src/peer/envelope.ts";
 import { makeSwitchboardClient } from "../src/peer/client.ts";
 import { markNudgeHandled, readNudges } from "../src/peer/nudges.ts";
@@ -160,7 +161,9 @@ try {
         launchReReview(mrUrl, iid, {
           cwd: boardConfig.reviewCwd,
           workspaceLabel: boardConfig.reviewsWorkspace,
-          skill: boardConfig.reviewSkill,
+          // BOARD-14: manifest binding when present, config.reviewSkill fallback --
+          // same resolution the board's own HTTP re-review launches use.
+          skill: resolveLaunchSkill("review", mrUrl, boardConfig),
         }),
       publishOutcome: (to, payload) => enqueueOutbox(makeEnvelope(to, "nudge-outcome", payload)),
       memory,

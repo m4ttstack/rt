@@ -2,6 +2,7 @@ import { existsSync, readFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import type { BoardConfig } from "./config.ts";
+import { projectPathFromWebUrl } from "./data.ts";
 import { stripJsonc } from "./team-zone.ts";
 
 export type BoardSkillKind = "review" | "respond" | "doctor";
@@ -83,4 +84,20 @@ export function resolveBoardSkill(
   if (typeof skill !== "string" || skill === "") return fallback;
 
   return { skill, source: "manifest" };
+}
+
+/** Resolve + log which skill a launch (review/respond/doctor) should use for
+    the MR at `mrUrl`: derives its project from the webUrl and defers to
+    resolveBoardSkill, falling back to config when the project can't be
+    parsed out of the URL. Shared by every launch site -- the board's own
+    HTTP launches (server.ts) and triage's nudge-driven re-review launches
+    (bin/triage.ts) -- so the "<kind> skill: <skill> (<source>)" log line has
+    one place. */
+export function resolveLaunchSkill(kind: BoardSkillKind, mrUrl: string, cfg: BoardConfig, mattstackHome?: string): string {
+  const project = projectPathFromWebUrl(mrUrl, cfg.gitlabHost);
+  const resolved = project
+    ? resolveBoardSkill(kind, project, cfg, mattstackHome)
+    : { skill: cfg[CONFIG_FIELD[kind]], source: "config" as const };
+  console.log(`${kind} skill: ${resolved.skill} (${resolved.source})`);
+  return resolved.skill;
 }
