@@ -1,0 +1,55 @@
+{
+  "name": "@mattstack/tui-kit",
+  "version": "0.1.0",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "workspaces": ["workshop"],
+  "exports": {
+    ".": { "types": "./src/index.ts", "default": "./src/index.ts" },
+    "./hooks": { "types": "./src/hooks/index.ts", "default": "./src/hooks/index.ts" },
+    "./theme": { "types": "./src/theme.ts", "default": "./src/theme.ts" },
+    "./theme.css": "./src/generated/theme.css",
+    "./canvas.css": "./src/canvas.css",
+    "./types/css-modules.d.ts": "./types/css-modules.d.ts"
+  },
+  "scripts": {
+    "setup": "sh scripts/setup.sh",
+    "codegen": "soribashi build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "gates": "vitest run test/ && bun run codegen && git diff --exit-code src/generated/theme.css",
+    "dev:workshop": "cd workshop && bunx vite"
+  },
+  "dependencies": {
+    "@soribashi/core": "file:../soribashi/packages/core",
+    "@soribashi/codegen": "file:../soribashi/packages/codegen",
+    "@soribashi/theme": "file:../soribashi/packages/theme",
+    "@soribashi/factory": "file:../soribashi/packages/factory",
+    "clsx": "^2.1.1",
+    "tailwind-merge": "^2.5.0",
+    "zod": "^4",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6",
+    "@vitest/browser-playwright": "^4.1.10",
+    "playwright": "^1.59.1",
+    "react": "^19.2",
+    "react-dom": "^19.2",
+    "typescript": "^7",
+    "vitest": "^4",
+    "vitest-browser-react": "^2"
+  },
+  "overrides": {
+    "@soribashi/theme": "file:../soribashi/packages/theme",
+    "@soribashi/factory": "file:../soribashi/packages/factory"
+  }
+}
