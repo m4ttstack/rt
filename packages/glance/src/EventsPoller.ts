@@ -138,7 +138,7 @@ const CLOCK_SKEW_MARGIN_MS = 60_000;
  * GitLab's event ids are numeric, but `EventCursor.lastEventId` widened to
  * `number | string | null` when GitHub's string ids arrived, so a value of the
  * other type can now reach this GitLab-only poller: rt persists cursors to
- * `~/.rt/events-cursors.json` with no schema version and no field-level
+ * `~/.mattstack/rt/events-cursors.json` with no schema version and no field-level
  * validation, so a cursor written by one provider parses cleanly and is handed
  * straight to the other.
  *

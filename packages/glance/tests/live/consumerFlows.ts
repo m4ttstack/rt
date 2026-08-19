@@ -2580,7 +2580,7 @@ async function runEventsFlows(
   );
 
   // U20 (rt, consumer-repo-tools.md § use cases #2 and § EventCursor
-  // persistence): the cursor is persisted to `~/.rt/events-cursors.json` --
+  // persistence): the cursor is persisted to `~/.mattstack/rt/events-cursors.json` --
   // no schema version, no migration, no field-level validation, its only
   // safety net a JSON PARSE failure. So this row has two halves:
   //
