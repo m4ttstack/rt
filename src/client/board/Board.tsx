@@ -10,6 +10,7 @@ import type {
   ThemeMode,
   ViewMode,
   RowMenuState,
+  RowContext,
 } from "../types.ts";
 import { getSlackMarks, mrLine, boardSummary, draftKey } from "./format.ts";
 import { overlay } from "./optimistic.ts";
@@ -422,6 +423,20 @@ export function Board() {
   const summaryText = boardSummary(flatMrs, data.slackTemplates);
   const postableMrs = postableOf(flatMrs as BoardMRWithReview[]);
   const postableSelected = postableOf(selectedMrs as BoardMRWithReview[]);
+  // One context object threaded through RowView, GridView, and RowMenu — the
+  // board-owned bits every row/menu needs that aren't specific to one MR.
+  const rowCtx: RowContext = {
+    local: data.local,
+    slackTemplates: data.slackTemplates,
+    slackEnabled: data.slackEnabled,
+    onContext: openRowMenu,
+    onOpenReview: setReviewModal,
+    onOpenDraft: openDraft,
+    draftResolved,
+    onResumeRespond: handleResumeRespond,
+    selected,
+    onToggleSelect: toggleSelect,
+  };
   const openSettings = () => {
     setMenuOpen(false);
     setShowSettings(true);
@@ -506,9 +521,9 @@ export function Board() {
           groups.map((g) => (
             <Panel key={g.label} title={g.label} count={g.mrs.length}>
               {view === "rows" ? (
-                <RowView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} slackTemplates={data.slackTemplates} onContext={openRowMenu} onOpenReview={setReviewModal} onOpenDraft={openDraft} draftResolved={draftResolved} onResumeRespond={handleResumeRespond} selected={selected} onToggleSelect={toggleSelect} />
+                <RowView mrs={g.mrs} now={now} showAuthor={showAuthor} ctx={rowCtx} />
               ) : (
-                <GridView mrs={g.mrs} now={now} showAuthor={showAuthor} local={data.local} slackTemplates={data.slackTemplates} onContext={openRowMenu} onOpenReview={setReviewModal} onOpenDraft={openDraft} draftResolved={draftResolved} onResumeRespond={handleResumeRespond} selected={selected} onToggleSelect={toggleSelect} />
+                <GridView mrs={g.mrs} now={now} showAuthor={showAuthor} ctx={rowCtx} />
               )}
             </Panel>
           ))
@@ -561,12 +576,10 @@ export function Board() {
       {rowMenu && (
         <RowMenu
           menu={rowMenu}
-          local={data.local}
-          slackEnabled={data.slackEnabled}
+          ctx={rowCtx}
           onClose={() => setRowMenu(null)}
           onLaunch={handleLaunch}
           onReReview={handleReReview}
-          onOpenReview={setReviewModal}
           onCopy={handleCopy}
           onResolveSlack={handleResolveSlack}
           onReactSlack={handleReactSlack}
@@ -587,7 +600,6 @@ export function Board() {
           // the server enforces the same gate (403 "not your MR").
           canNudge={rowMenu.mr.author.username === data.defaultMember}
           onResumeReview={handleResumeReview}
-          onResumeRespond={handleResumeRespond}
         />
       )}
 

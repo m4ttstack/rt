@@ -2,24 +2,13 @@ import { Invadr } from "invadrs/react";
 import { extractTicketId, ticketUrl } from "../../ticket.ts";
 import type { BoardMR } from "../../data.ts";
 import { nestStacks, statusFlags } from "../../view.ts";
-import type { SlackTemplates } from "../../template.ts";
-import type { BoardMRWithReview, DraftInfo } from "../types.ts";
+import type { BoardMRWithReview, RowContext } from "../types.ts";
 import { CopyButton } from "../ui/CopyButton.tsx";
 import { SelectBox } from "../ui/SelectBox.tsx";
 import { StatusDot } from "./StatusDot.tsx";
 import { CommentsButton, CommentsToken } from "./CommentsDrawer.tsx";
-import {
-  ReviewBadge,
-  RespondBadge,
-  DoctorBadge,
-  PeerBadge,
-  NudgeChip,
-  NudgedByMarker,
-  DraftBadge,
-  SlackPostedChip,
-  SlackReactionChips,
-} from "./chips.tsx";
-import { ago, activeReviewers, cleanTitle, hasBoardBadges, mrLine, statusPhrase, flattenStack, draftKey } from "./format.ts";
+import { BoardBadges } from "./BoardBadges.tsx";
+import { ago, activeReviewers, cleanTitle, mrLine, statusPhrase, flattenStack } from "./format.ts";
 
 /** Plain click opens the MR in GitLab; right-click opens the row action menu
     (wired separately). Clicks on inner links/buttons are left to those. */
@@ -105,28 +94,12 @@ function RowView({
   mrs,
   now,
   showAuthor,
-  local,
-  slackTemplates,
-  onContext,
-  onOpenReview,
-  onOpenDraft,
-  draftResolved,
-  onResumeRespond,
-  selected,
-  onToggleSelect,
+  ctx,
 }: {
   mrs: BoardMR[];
   now: number;
   showAuthor: boolean;
-  local: boolean;
-  slackTemplates: SlackTemplates;
-  onContext: (e: React.MouseEvent, mr: BoardMR) => void;
-  onOpenReview: (mr: BoardMRWithReview) => void;
-  onOpenDraft: (mr: BoardMRWithReview, draft: DraftInfo) => void;
-  draftResolved: ReadonlyMap<string, "posted" | "dismissed">;
-  onResumeRespond: (mr: BoardMR) => void;
-  selected: ReadonlySet<string>;
-  onToggleSelect: (webUrl: string) => void;
+  ctx: RowContext;
 }) {
   const renderRow = (mr: BoardMR, depth: number) => {
     const ticket = extractTicketId(mr.sourceBranch, mr.title);
@@ -135,16 +108,16 @@ function RowView({
           <div
             key={mr.iid}
             className={nested ? "tui-row tui-row-nested" : "tui-row"}
-            data-local={local ? "1" : undefined}
-            title={local ? "right-click for actions" : undefined}
+            data-local={ctx.local ? "1" : undefined}
+            title={ctx.local ? "right-click for actions" : undefined}
             onClick={(e) => onRowClick(e, mr)}
-            onContextMenu={(e) => onContext(e, mr)}
+            onContextMenu={(e) => ctx.onContext(e, mr)}
           >
             {/* Its own leftmost column, full row height, so the checkbox is a
                 target you can hit without aiming and never crowds the title. */}
             <div className="tui-row-pick">
               {mr.webUrl && (
-                <SelectBox checked={selected.has(mr.webUrl)} onToggle={() => onToggleSelect(mr.webUrl!)} />
+                <SelectBox checked={ctx.selected.has(mr.webUrl)} onToggle={() => ctx.onToggleSelect(mr.webUrl!)} />
               )}
             </div>
             <div className="tui-row-body">
@@ -159,7 +132,7 @@ function RowView({
               <span className="tui-title">{cleanTitle(mr.title)}</span>
               <StatusPhrase mr={mr} />
               {ticket && <TicketLink ticket={ticket} />}
-              <CopyButton text={mrLine(mr, slackTemplates)} className="tui-copy-inline" title="copy this MR for Slack" />
+              <CopyButton text={mrLine(mr, ctx.slackTemplates)} className="tui-copy-inline" title="copy this MR for Slack" />
             </div>
             <div className="tui-row-2">
               {showAuthor && <AuthorTag mr={mr} />}
@@ -170,28 +143,7 @@ function RowView({
               </span>
               <MetaTokens mr={mr} now={now} />
             </div>
-            {hasBoardBadges(mr) && (
-              <div className="tui-row-board">
-                <ReviewBadge review={(mr as BoardMRWithReview).review} onOpen={() => onOpenReview(mr as BoardMRWithReview)} />
-                <RespondBadge respond={(mr as BoardMRWithReview).respond} onResume={() => onResumeRespond(mr)} />
-                <DoctorBadge doctor={(mr as BoardMRWithReview).doctor} />
-                {((mr as BoardMRWithReview).peerReviews ?? []).map((p) => (
-                  <PeerBadge key={p.reviewer} peer={p} />
-                ))}
-                <NudgeChip nudge={(mr as BoardMRWithReview).sentNudge} />
-                <NudgedByMarker nudges={(mr as BoardMRWithReview).nudges} now={now} />
-                {((mr as BoardMRWithReview).drafts ?? []).map((d) => (
-                  <DraftBadge
-                    key={d.kind}
-                    draft={d}
-                    resolved={draftResolved.get(draftKey(mr.webUrl ?? "", d.kind))}
-                    onOpen={() => onOpenDraft(mr as BoardMRWithReview, d)}
-                  />
-                ))}
-                <SlackPostedChip slack={(mr as BoardMRWithReview).slack} />
-                <SlackReactionChips reactions={(mr as BoardMRWithReview).slack?.reactions} />
-              </div>
-            )}
+            <BoardBadges mr={mr as BoardMRWithReview} now={now} ctx={ctx} className="tui-row-board" />
             <Watching mr={mr} />
             </div>
           </div>

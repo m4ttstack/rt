@@ -1,3 +1,4 @@
+import type { MouseEvent } from "react";
 import type { BoardMR } from "../data.ts";
 import type { SlackTemplates } from "../template.ts";
 import type { RespondStatus } from "../respond-outcome.ts";
@@ -88,6 +89,23 @@ export interface RowMenuState {
   x: number;
   y: number;
   mr: BoardMR;
+}
+
+/** Shared per-render context threaded through RowView, GridView, and RowMenu —
+    the board-owned bits every row/menu needs that aren't specific to one MR.
+    Built once in Board.tsx per render, not memoized: recreating it is no more
+    work than the individual props it replaces. */
+export interface RowContext {
+  local: boolean;
+  slackTemplates: SlackTemplates;
+  slackEnabled: boolean;
+  onContext: (e: MouseEvent, mr: BoardMR) => void;
+  onOpenReview: (mr: BoardMRWithReview) => void;
+  onOpenDraft: (mr: BoardMRWithReview, draft: DraftInfo) => void;
+  draftResolved: ReadonlyMap<string, "posted" | "dismissed">;
+  onResumeRespond: (mr: BoardMR, note?: string) => void;
+  selected: ReadonlySet<string>;
+  onToggleSelect: (webUrl: string) => void;
 }
 
 export type ThreadStatus = "resolved" | "replied" | "awaiting";

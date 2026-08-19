@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { BoardMR } from "../../data.ts";
-import type { BoardMRWithReview, RowMenuState } from "../types.ts";
+import type { BoardMRWithReview, RowContext, RowMenuState } from "../types.ts";
 import { getSlackMarks, nudgeTargets, reviewMenuItems, respondItemLabel, doctorItemLabel } from "./format.ts";
 
 function MenuItem({
@@ -30,12 +30,10 @@ function MenuItem({
     Escape, scroll, or resize. */
 function RowMenu({
   menu,
-  local,
-  slackEnabled,
+  ctx,
   onClose,
   onLaunch,
   onReReview,
-  onOpenReview,
   onCopy,
   onResolveSlack,
   onReactSlack,
@@ -49,15 +47,12 @@ function RowMenu({
   onNudge,
   canNudge,
   onResumeReview,
-  onResumeRespond,
 }: {
   menu: RowMenuState;
-  local: boolean;
-  slackEnabled: boolean;
+  ctx: RowContext;
   onClose: () => void;
   onLaunch: (mr: BoardMR, note?: string) => void;
   onReReview: (mr: BoardMR, note?: string) => void;
-  onOpenReview: (mr: BoardMRWithReview) => void;
   onCopy: (mr: BoardMR) => void;
   onResolveSlack: (mr: BoardMR) => void;
   onReactSlack: (mr: BoardMR, emoji: string, remove: boolean) => Promise<string[] | null>;
@@ -71,7 +66,6 @@ function RowMenu({
   onNudge: (mr: BoardMR, reviewer: string) => void;
   canNudge: boolean;
   onResumeReview: (mr: BoardMR, note?: string) => void;
-  onResumeRespond: (mr: BoardMR, note?: string) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   // Local reaction state so the open menu updates immediately after a mark,
@@ -128,11 +122,11 @@ function RowMenu({
   const mrx = mr as BoardMRWithReview;
   const slack = mrx.slack;
   const found = slack?.status === "found";
-  const showSlack = local && slackEnabled;
-  const peers = local && canNudge ? nudgeTargets(mrx) : [];
+  const showSlack = ctx.local && ctx.slackEnabled;
+  const peers = ctx.local && canNudge ? nudgeTargets(mrx) : [];
   // Keep the menu on-screen; estimate generously since item count varies.
   const W = noteFor ? 320 : 230;
-  const H = 60 + (local ? 34 : 0) + 68 + peers.length * 30 + (showSlack ? (found ? 170 : 60) : 0);
+  const H = 60 + (ctx.local ? 34 : 0) + 68 + peers.length * 30 + (showSlack ? (found ? 170 : 60) : 0);
   const left = Math.max(8, Math.min(menu.x, window.innerWidth - W - 8));
   const top = Math.max(8, Math.min(menu.y, window.innerHeight - H - 8));
   const run = (fn: () => void) => () => {
@@ -205,7 +199,7 @@ function RowMenu({
     <div ref={ref} className="tui-menu" style={{ left, top }} role="menu" aria-label={`actions for !${mr.iid}`}>
       <div className="tui-menu-label">!{mr.iid}</div>
 
-      {local && reviewMenuItems(mrx.review?.status).map((item) => (
+      {ctx.local && reviewMenuItems(mrx.review?.status).map((item) => (
         <MenuItem
           key={item.kind}
           label={item.label}
@@ -217,14 +211,14 @@ function RowMenu({
           }
         />
       ))}
-      {local && mrx.review?.sessionId && (
+      {ctx.local && mrx.review?.sessionId && (
         <MenuItem
           label="resume review"
           hint={paneHint}
           onClick={paneClick("resume review", (note) => onResumeReview(mr, note))}
         />
       )}
-      {local && canRespond && (
+      {ctx.local && canRespond && (
         <MenuItem
           label={respondItemLabel(mrx.respond?.status)}
           hint={respondItemLabel(mrx.respond?.status) === "focus response tab" ? "herdr" : paneHint}
@@ -235,14 +229,14 @@ function RowMenu({
           }
         />
       )}
-      {local && canRespond && mrx.respond?.sessionId && (
+      {ctx.local && canRespond && mrx.respond?.sessionId && (
         <MenuItem
           label="resume response"
           hint={paneHint}
-          onClick={paneClick("resume response", (note) => onResumeRespond(mr, note))}
+          onClick={paneClick("resume response", (note) => ctx.onResumeRespond(mr, note))}
         />
       )}
-      {local && canDoctor && (
+      {ctx.local && canDoctor && (
         <MenuItem
           label={doctorItemLabel(mrx.doctor?.status)}
           hint={doctorItemLabel(mrx.doctor?.status) === "focus doctor tab" ? "herdr" : paneHint}
@@ -253,7 +247,7 @@ function RowMenu({
           }
         />
       )}
-      {local && canDraftState && (
+      {ctx.local && canDraftState && (
         <MenuItem
           label={mr.isDraft ? "mark ready" : "mark as draft"}
           hint="gitlab"
@@ -271,7 +265,7 @@ function RowMenu({
         />
       ))}
       {mrx.review?.reportReady && (
-        <MenuItem label="view review" onClick={run(() => onOpenReview(mrx))} />
+        <MenuItem label="view review" onClick={run(() => ctx.onOpenReview(mrx))} />
       )}
       <MenuItem label="open in gitlab" onClick={run(() => mr.webUrl && window.open(mr.webUrl, "_blank", "noopener"))} />
       <MenuItem label="copy for slack" onClick={run(() => onCopy(mr))} />
