@@ -21,6 +21,10 @@ async function freePort(): Promise<number> {
   const probe = Bun.serve({ port: 0, fetch: () => new Response("ok") });
   const port = probe.port;
   probe.stop(true);
+  // Bun.Server.port is typed number | undefined; an undefined here would
+  // silently build a "http://127.0.0.1:undefined" base URL and burn the full
+  // healthz retry budget on a confusing timeout instead of failing fast.
+  if (port === undefined) throw new Error("probe server had no port");
   return port;
 }
 
