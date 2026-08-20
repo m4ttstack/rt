@@ -55,21 +55,6 @@ export const tuiTheme = createTheme({
         grid: "rgba(52, 59, 88, 0.05)",
       },
       dot: { ok: "#1f9d3a", warn: "#e08a00", bad: "#e5153f" },
-      // Required only because createTheme() backfills its DEFAULT_TEXT /
-      // DEFAULT_SURFACE / DEFAULT_BORDER semantics, which reference
-      // colors.neutral.*; without the family, codegen validation fails on
-      // references this theme never wrote. Values mirror the surface/line/gray
-      // families so the backfill resolves to sane TUI colours; no recipe reads
-      // them.
-      neutral: {
-        "0": "#f6f6fa", // = surface.card
-        "50": "#eff0f5", // = surface.panel
-        "100": "#e1e2e7", // = surface.bg
-        "200": "#d5d7e2", // = line.soft
-        "400": "#c8cad6", // = line.border
-        "600": "#8990b3", // = gray.muted
-        "900": "#111", // = gray.fg
-      },
     },
     radius: {
       xs: "3px",
@@ -84,6 +69,11 @@ export const tuiTheme = createTheme({
     },
     // `em`-based spacing is deliberately absent and stays in recipe CSS: an em
     // is relative to the element's own font size and cannot be a global rung.
+    //
+    // `xxs`/`xxl` stay as they are. SORI-6 (getSize() mis-reading a
+    // digit-leading key as raw CSS) is fixed upstream, so `2xs`/`2xl` would now
+    // work — but renaming churns every emitted variable and every recipe
+    // reference for zero behavioural gain.
     spacing: {
       xxs: "0.15rem",
       xs: "0.3rem",
@@ -179,18 +169,14 @@ export const tuiTheme = createTheme({
         grid: "rgba(122, 162, 247, 0.06)",
       },
       dot: { ok: "#4ade5b", warn: "#ffbb3d", bad: "#ff5c72" },
-      neutral: {
-        "0": "#2c3352",
-        "50": "#232a47",
-        "100": "#16161e",
-        "200": "#313853",
-        "400": "#3b4261",
-        "600": "#7e86ad",
-        "900": "#e3e7f6",
-      },
     },
   },
   semanticTokens: {
+    // No backfill: createTheme's DEFAULT_TEXT / DEFAULT_SURFACE /
+    // DEFAULT_BORDER reference a `neutral` colour ramp this palette does not
+    // have (one canonical value per hue, no ramp). This theme owns its whole
+    // semantic layer, so every slot the recipes read is declared below.
+    defaults: false,
     surface: {
       canvas: "colors.surface.bg",
       panel: "colors.surface.panel",
