@@ -4,7 +4,7 @@ import { getReviewDisplayState } from "@mattstack/glance";
 import { commentsAllResolved, type GroupKey, type SortKey, type StackNode } from "../../view.ts";
 import { renderMr, renderMulti, type MrFacts, type SlackTemplates } from "../../template.ts";
 import { extractTicketId } from "../../ticket.ts";
-import type { RespondStatus } from "../../respond-outcome.ts";
+import type { RespondOutcome, RespondStatus } from "../../respond-outcome.ts";
 import type {
   ReviewStatus,
   DoctorStatus,
@@ -157,6 +157,63 @@ function nudgeTargets(mrx: BoardMRWithReview): PeerReviewInfo[] {
   if (mrx.sentNudge && !NUDGE_RETRYABLE.has(mrx.sentNudge.display)) return [];
   return (mrx.peerReviews ?? []).filter((p) => p.status === "done" && p.outcome === "comment");
 }
+
+// ── chip cell contract ──────────────────────────────────────────────────────
+
+/** The one vocabulary a respond chip's cell can carry. A finished run shows
+    its DERIVED outcome and an unfinished one its raw status, so `done` is the
+    single respond word that never reaches a chip, and every outcome word does. */
+type RespondCell = Exclude<RespondStatus, "done"> | RespondOutcome;
+
+/** THE CHIP CELL CONTRACT, and the only place it is written down.
+
+    Every status chip stamps its state word into a `data-*` attribute
+    (`data-review`, `data-respond`, `data-doctor`, `data-peer`, `data-nudge`)
+    and style.css keys a dozen colour rules and three dim rules off those exact
+    words. CSS selectors are invisible to a typechecker, so the words are
+    pinned from three sides instead:
+
+      - `satisfies` below ties every word to the SAME union its stamp site is
+        keyed on (chips.tsx's intent maps are `Record<ReviewStatus, …>` and
+        friends), so a typo here stops compiling;
+      - `UnlistedCellWord` makes each list EXHAUSTIVE over its union, so a new
+        lifecycle state cannot be added without landing here — and, from here,
+        without someone deciding whether it needs a colour rule of its own or
+        inherits the neutral chip;
+      - client-format.test.ts asserts the same equality at runtime against the
+        label maps above, which is what catches a word renamed in one
+        vocabulary and not the other.
+
+    Deliberately not consumed by the render path: this is a contract, not a
+    lookup. The render path reads each state word off the MR. */
+const CHIP_CELL_WORDS = {
+  review: ["queued", "reviewing", "done", "error"],
+  respond: ["queued", "triaging", "implementing", "drafting", "error", "posted", "partial", "drafted", "none", "unknown"],
+  doctor: ["queued", "diagnosing", "rebasing", "fixing", "watching", "done", "error"],
+  peer: ["reviewing", "commented", "approved", "done"],
+  nudge: ["requested", "confirmed", "launched", "rejected", "expired", "no-response"],
+} as const satisfies {
+  review: readonly ReviewStatus[];
+  respond: readonly RespondCell[];
+  doctor: readonly DoctorStatus[];
+  peer: readonly PeerState[];
+  nudge: readonly SentNudgeInfo["display"][];
+};
+
+/** Every state word NOT listed above — `never` while the table is complete. */
+type UnlistedCellWord =
+  | Exclude<ReviewStatus, (typeof CHIP_CELL_WORDS.review)[number]>
+  | Exclude<RespondCell, (typeof CHIP_CELL_WORDS.respond)[number]>
+  | Exclude<DoctorStatus, (typeof CHIP_CELL_WORDS.doctor)[number]>
+  | Exclude<PeerState, (typeof CHIP_CELL_WORDS.peer)[number]>
+  | Exclude<SentNudgeInfo["display"], (typeof CHIP_CELL_WORDS.nudge)[number]>;
+
+/** The exhaustiveness half, as a compile error rather than a convention: the
+    annotation resolves to `true` only while `UnlistedCellWord` is `never`, so a
+    state word missing from the table turns this into "`true` is not assignable
+    to `never`" — and the hover text on `UnlistedCellWord` names the word. */
+const _everyCellWordIsListed: [UnlistedCellWord] extends [never] ? true : never = true;
+void _everyCellWordIsListed;
 
 /** Key for the App-level map of optimistically resolved drafts. Resolution
     lives above the badge because the acting happens in DraftModal; the next
@@ -333,6 +390,7 @@ export {
   DOCTOR_ACTIVE,
   PEER_PHRASE,
   peerState,
+  CHIP_CELL_WORDS,
   NUDGE_RETRYABLE,
   nudgeChipText,
   nudgeTargets,
@@ -354,3 +412,7 @@ export {
   respondItemLabel,
   doctorItemLabel,
 };
+/** The two cell vocabularies that are DERIVED rather than declared elsewhere —
+    chips.tsx keys its peer and respond intent maps on these, so the maps and
+    CHIP_CELL_WORDS above stay exhaustive over the same union. */
+export type { PeerState, RespondCell };

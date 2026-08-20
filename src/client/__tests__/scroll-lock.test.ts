@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
-import { acquireScrollLock, releaseScrollLock } from "../client/ui/scroll-lock.ts";
-import type { OverflowTarget } from "../client/ui/scroll-lock.ts";
+import { acquireScrollLock, releaseScrollLock } from "@mattstack/tui-kit/hooks";
+import type { OverflowTarget } from "@mattstack/tui-kit/hooks";
 
 test("two acquires + out-of-order releases restore the original value exactly once", () => {
   const target: OverflowTarget = { overflow: "visible" };

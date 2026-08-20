@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { pushLayer, handleEscape } from "../client/ui/layers.ts";
+import { pushLayer, handleEscape } from "@mattstack/tui-kit/hooks";
 
 test("escape pops only the topmost layer, in LIFO order", () => {
   const fired: string[] = [];

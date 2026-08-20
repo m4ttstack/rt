@@ -16,10 +16,7 @@ import { getSlackMarks, mrLine, boardSummary, draftKey } from "./format.ts";
 import { overlay } from "./optimistic.ts";
 import { useOptimisticLifecycle, useToasts, useBoardData, useLaunchAction } from "./hooks.ts";
 import { postAction } from "../api.ts";
-import { ICONS } from "../ui/Icon.tsx";
-import { Panel } from "../ui/Panel.tsx";
-import { SideDrawer } from "../ui/SideDrawer.tsx";
-import { ToastHost } from "../ui/Toast.tsx";
+import { ICONS, Panel, SideDrawer, ToastHost } from "@mattstack/tui-kit";
 import { Sidebar } from "./Sidebar.tsx";
 import { Controls } from "./Controls.tsx";
 import { SelectionBar } from "./SelectionBar.tsx";
@@ -520,7 +517,15 @@ export function Board() {
           <p className="tui-empty">nothing waiting on review ✓</p>
         ) : (
           groups.map((g) => (
-            <Panel key={g.label} title={g.label} count={g.mrs.length}>
+            <Panel
+              key={g.label}
+              title={g.label}
+              count={g.mrs.length}
+              // Pins the LEGACY persistence key: the recipe defaults to its own
+              // "tui-panel-collapsed", and switching would orphan every panel a
+              // user has already folded up.
+              storageKey="mrs-panel-collapsed"
+            >
               {view === "rows" ? (
                 <RowView mrs={g.mrs} now={now} showAuthor={showAuthor} ctx={rowCtx} />
               ) : (
@@ -536,8 +541,13 @@ export function Board() {
       {/* Mobile drawer: roster + controls, tucked behind the burger. */}
       {menuOpen && (
         <SideDrawer
-          overlayClassName="tui-drawer-overlay"
-          panelClassName="tui-drawer"
+          // `side` replaces the two class-name props: it drives the panel's
+          // width, border edge, shadow, padding/gap and the overlay's
+          // stacking + alignment. The one thing it does NOT carry is this
+          // drawer's below-720px-only existence, which is a board layout
+          // decision -- style.css keeps that as a two-rule display gate on
+          // [data-part="sidedrawer-overlay"][data-side="left"].
+          side="left"
           ariaLabel="menu"
           onClose={() => setMenuOpen(false)}
         >

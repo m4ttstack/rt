@@ -71,7 +71,9 @@ for (const theme of ["light", "dark"] as const) {
   await shoot(page, `rows-${theme}`);
   // row menu open (right-click the first row)
   await page.click(".tui-row", { button: "right" });
-  await page.waitForSelector(".tui-menu");
+  // `.tui-menu` is gone: the menu shell is the kit's ContextMenu recipe, named
+  // by its own self-identifying data-part (the root's, not an item's).
+  await page.waitForSelector('[data-part="contextmenu"]');
   await shoot(page, `rowmenu-${theme}`);
   // paper cut 4 assertion: opening the comments drawer while the row menu is
   // open closes the menu first (its outside-click handler fires on the
@@ -83,9 +85,9 @@ for (const theme of ["light", "dark"] as const) {
   const t2 = page.locator(".tui-comments-btn, .tui-comment-token").first();
   if (await t2.count()) {
     await t2.click();
-    await page.waitForSelector(".tui-cd");
+    await page.waitForSelector('[data-part="sidedrawer"][data-side="right"]');
     await page.keyboard.press("Escape");
-    await page.waitForSelector(".tui-cd", { state: "detached" });
+    await page.waitForSelector('[data-part="sidedrawer"][data-side="right"]', { state: "detached" });
     if (!(await page.locator(".tui-row").first().isVisible())) throw new Error("escape assertion: board vanished");
   }
   await page.keyboard.press("Escape");
@@ -93,25 +95,29 @@ for (const theme of ["light", "dark"] as const) {
   const trigger = page.locator(".tui-comments-btn, .tui-comment-token").first();
   if (await trigger.count()) {
     await trigger.click();
-    await page.waitForSelector(".tui-cd");
+    await page.waitForSelector('[data-part="sidedrawer"][data-side="right"]');
     await shoot(page, `comments-${theme}`);
     await page.keyboard.press("Escape");
   }
   // review modal (badge with a saved report)
-  const reviewBtn = page.locator(".tui-review-open.tui-review-done").first();
+  // The badge classes are gone: the clickable review chip is Chip's `as="button"`
+  // form, identified by the recipe's data-part plus the board's own data-review
+  // cell. Same two facts the old `.tui-review-open.tui-review-done` pair named
+  // (it is a button, and it is the review-done cell), no looser.
+  const reviewBtn = page.locator('button[data-part="chip"][data-review="done"]').first();
   if (await reviewBtn.count()) {
     await reviewBtn.click();
-    await page.waitForSelector(".tui-review-modal .tui-md h1, .tui-review-modal .tui-md p");
+    await page.waitForSelector('.tui-review-modal [data-part="markdown"] h1, .tui-review-modal [data-part="markdown"] p');
     await shoot(page, `reviewmodal-${theme}`);
     await page.keyboard.press("Escape");
   }
   // settings modal
   await page.click(".tui-side-gear");
-  await page.waitForSelector(".tui-modal");
+  await page.waitForSelector('[data-part="modal"]');
   await shoot(page, `settings-${theme}`);
   await page.keyboard.press("Escape");
   // selection bar
-  await page.locator(".tui-selectbox").first().click();
+  await page.locator('[data-part="selectbox"]').first().click();
   await page.waitForSelector(".tui-selbar");
   await shoot(page, `selection-${theme}`);
   await page.close();
@@ -129,7 +135,7 @@ for (const theme of ["light", "dark"] as const) {
   page = await newPage(700, theme);
   await shoot(page, `mobile-${theme}`);
   await page.click(".tui-burger");
-  await page.waitForSelector(".tui-drawer");
+  await page.waitForSelector('[data-part="sidedrawer"][data-side="left"]');
   await shoot(page, `drawer-${theme}`);
   await page.close();
 

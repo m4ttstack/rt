@@ -1,8 +1,8 @@
 import { useState } from "react";
 import type { BoardMR } from "../../data.ts";
 import { selectionHeader, MAX_HEADER_LEN, type SlackTemplates } from "../../template.ts";
-import { CopyButton } from "../ui/CopyButton.tsx";
-import { useAutoGrowTextarea } from "../ui/hooks.ts";
+import { CopyButton } from "@mattstack/tui-kit";
+import { useAutoGrowTextarea } from "@mattstack/tui-kit/hooks";
 import { boardSummary } from "./format.ts";
 import { SLACK_ICON } from "./chips.tsx";
 
@@ -68,9 +68,12 @@ function SelectionBar({
         }}
       />
       <div className="tui-selbar-actions">
+        {/* No `className="tui-copy"`: the recipe carries that shape itself.
+            The roomier selection-bar sizing still applies -- style.css's
+            `.tui-selbar-actions` rule now names `[data-part="copybutton"]`
+            alongside the `.tui-copy` its two plain sibling buttons still use. */}
         <CopyButton
           text={boardSummary(selectedMrs, templates, header.copy)}
-          className="tui-copy"
           title={`copy ${count} selected for slack`}
           label={`copy ${count}`}
         />

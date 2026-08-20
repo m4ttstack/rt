@@ -11,7 +11,7 @@
     "sync-resolvers": "sh scripts/sync-resolvers.sh",
     "materialize": "bun run bin/materialize.ts",
     "test": "bun test",
-    "typecheck": "tsc --noEmit -p . && tsc --noEmit -p src/client",
+    "typecheck": "tsc --noEmit -p . && tsc --noEmit -p src/client && tsc --noEmit -p src/client/__tests__",
     "capture": "bun tests/capture.ts --out tests/.captures",
     "capture:baseline": "bun tests/capture.ts --out tests/baselines",
     "capture:compare": "bun tests/compare.ts"
@@ -19,6 +19,7 @@
   "dependencies": {
     "@mattstack/glance": "^0.19.0",
     "@mattstack/rt-client": "file:../repo-tools/packages/rt-client",
+    "@mattstack/tui-kit": "file:../tui-kit",
     "invadrs": "^0.2.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
@@ -27,6 +28,7 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "@types/node": "^26.2.0",
     "@types/pixelmatch": "^5.2.6",
     "@types/pngjs": "^6.0.5",
     "@types/react": "^19",
@@ -35,5 +37,6 @@
     "playwright": "^1.62.1",
     "pngjs": "^7.0.0",
     "typescript": "^7.0.2"
-  }
+  },
+  "//soribashi": "No @soribashi/* DEPENDENCY here, deliberately: registerTheme/SoribashiProvider come from @mattstack/tui-kit/provider, which keeps them on the same resolved path as the kit's own recipes. A direct @soribashi/core dep would bundle a SECOND copy of factory and silently break theming. The kit now resolves @soribashi/core from the registry (no file: deps in its own package.json), so no overrides block is needed here either. See docs/tui-kit-devloop.md."
 }
