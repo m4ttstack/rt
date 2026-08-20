@@ -425,10 +425,25 @@ eleven errors *inside the kit's source* — `Cannot find name 'document'`,
 `Property 'style' does not exist on type 'HTMLTextAreaElement'`, and so on.
 `skipLibCheck` does not help; it only covers `.d.ts`.
 
-Root `tsconfig.json` now declares `"lib": ["ESNext", "DOM", "DOM.Iterable"]`,
-which `src/client/tsconfig.json` already did for the same code. The cost is
-that server sources gain the DOM globals; nothing under `src/` outside the
-client reaches for one, so nothing was actually loosened in practice. The
-upstream fix would be for the kit to expose its DOM-free half on its own
+**The resolution is a THIRD tsconfig program, not a widened root.** Widening
+the root to `lib: ["ESNext", "DOM", "DOM.Iterable"]` was the first attempt and
+it was the wrong trade — it hands the server program a DOM it does not have.
+Neither existing program can host these tests on its own:
+
+| program | `types` | DOM lib | why it can't take them |
+| --- | --- | --- | --- |
+| root (`-p .`) | `["bun"]` | no | the kit's hooks module needs `document`/HTMLElement |
+| client (`-p src/client`) | `["node"]` | yes | `bun:test` does not resolve; adding `"bun"` re-raises the two factory TS2578 errors above (verified, not assumed) |
+
+So the two tests live at `src/client/__tests__/` with their own
+`tsconfig.json` declaring BOTH `types: ["bun"]` and the DOM lib, and
+`src/client/tsconfig.json` excludes that directory. `bun run typecheck` is now
+three `tsc` invocations. Both at once is only safe there because
+`@mattstack/tui-kit/hooks` imports nothing but React — it never reaches
+`@soribashi/factory`, so there is no TS2578 to raise. **A test that imported a
+RECIPE would not belong in that program**, and would have to solve the factory
+problem some other way.
+
+The upstream fix would be for the kit to expose its DOM-free half on its own
 subpath — the README already advertises the hooks as "DOM-free at their core",
-which is true of the functions and not of the module.
+which is true of the functions and not of the module they ship in.

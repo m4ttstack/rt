@@ -516,11 +516,16 @@ export function Board() {
         {filtered.length === 0 && !data.fetchError ? (
           <p className="tui-empty">nothing waiting on review ✓</p>
         ) : (
-          // storageKey pins the LEGACY persistence key: the recipe defaults to
-          // its own "tui-panel-collapsed", and switching would orphan every
-          // panel a user has already folded up.
           groups.map((g) => (
-            <Panel key={g.label} title={g.label} count={g.mrs.length} storageKey="mrs-panel-collapsed">
+            <Panel
+              key={g.label}
+              title={g.label}
+              count={g.mrs.length}
+              // Pins the LEGACY persistence key: the recipe defaults to its own
+              // "tui-panel-collapsed", and switching would orphan every panel a
+              // user has already folded up.
+              storageKey="mrs-panel-collapsed"
+            >
               {view === "rows" ? (
                 <RowView mrs={g.mrs} now={now} showAuthor={showAuthor} ctx={rowCtx} />
               ) : (

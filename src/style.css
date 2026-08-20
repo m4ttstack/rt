@@ -481,7 +481,13 @@
 }
 .tui-invite-btn:hover:not(:disabled) { background: var(--card); }
 .tui-invite-btn:disabled { opacity: 0.5; cursor: default; }
-/* CopyButton stamps data-copied after a successful write (see .tui-drawer-action) */
+/* One green, TWO producers, signalled differently -- both selectors are
+   load-bearing. The CopyButton recipe ("copy invite") stamps `data-copied`
+   after a successful write; the ARMED RE-INVITE is a plain board button that
+   sets the `copied` CLASS itself while it waits for its confirm click. Drop
+   the class half and the armed state goes unstyled -- and no capture arms a
+   re-invite, so the pixel gate would not catch it. */
+.tui-invite-btn.copied,
 .tui-invite-btn[data-copied] { color: var(--dot-ok); border-color: var(--dot-ok); }
 /* free-text handle entry, and the join input: field + button on one line */
 .tui-invite-new { display: flex; align-items: center; gap: 6px; margin-top: 0.7rem; }

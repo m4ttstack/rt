@@ -360,6 +360,14 @@ await refreshMemberNames();
 // `Bun.resolveSync` from THIS file's directory always lands in mr-board's own
 // node_modules, so every react/react-dom specifier in the graph -- ours and
 // the kit's alike -- collapses onto one copy.
+//
+// THE FILTER IS DELIBERATELY UNCONDITIONAL, and that is the thing to know if
+// you land here chasing a React version conflict: it rewrites EVERY
+// react/react-dom specifier in the graph onto mr-board's copy, third-party
+// dependencies included (invadrs and react-markdown both import React today).
+// A dependency that genuinely needed a different React major would be silently
+// given ours and break at render, not at resolve -- so this plugin, not the
+// lockfile, is where that investigation starts.
 const reactSingleton: BunPlugin = {
   name: "react-singleton",
   setup(builder) {
