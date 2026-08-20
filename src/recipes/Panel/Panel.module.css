@@ -146,7 +146,18 @@
     margin: var(--spacing-rem75) 0;
   }
 
+  /* `box-sizing: border-box` (R13): an ADDITION, not a lift. mr-board gets it
+     from a global `* { box-sizing: border-box; }` reset, so this bar's
+     `width: 100%` has always been an OUTER measure there; this kit's own
+     reset (`src/canvas.css`) is optional, so without this declaration a
+     consumer who skips it gets a 100%-wide bar plus ~19px of padding and
+     border overflowing the panel's frame. Same three-case caveat as
+     Modal.module.css's note (this repeats it condensed): a consumer with no
+     opinion gets border-box (correct, the case this closes); a border-box
+     reset agrees (mr-board, no change); an UNLAYERED content-box reset still
+     wins, because this sits inside `@layer soribashi.recipes`. */
   .root[data-collapsed] .title {
+    box-sizing: border-box;
     position: static;
     display: flex;
     width: 100%;

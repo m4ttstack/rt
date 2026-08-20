@@ -77,7 +77,17 @@
     align-self: center;
   }
 
+  /* `box-sizing: border-box` (R13): an ADDITION, not a lift. mr-board gets it
+     from a global `* { box-sizing: border-box; }` reset, so `max-width: 320px`
+     has always been an OUTER measure there; this kit's own reset
+     (`src/canvas.css`) is optional, so without this declaration a consumer
+     who skips it gets a "320px" tooltip that measures ~342px (320 + padding
+     + border). Same three-case caveat as Modal.module.css's note (repeated
+     condensed here): no-opinion consumer -> border-box, correct; border-box
+     reset -> agrees, no change (mr-board); UNLAYERED content-box reset ->
+     still wins, because this sits inside `@layer soribashi.recipes`. */
   .root::after {
+    box-sizing: border-box;
     content: attr(data-tip);
     position: absolute;
     left: 0;
