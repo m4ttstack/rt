@@ -1,6 +1,6 @@
 import { Invadr } from "invadrs/react";
 import type { RosterMember } from "../types.ts";
-import { ICONS } from "@mattstack/tui-kit";
+import { Chip, ICONS } from "@mattstack/tui-kit";
 
 function Sidebar({
   members,
@@ -44,9 +44,9 @@ function Sidebar({
           </span>
           <span className="tui-side-right">
             {scopeUncovered.includes(m.username) && (
-              <span className="tui-flag t-warn" title="rt hasn't finished backfilling this author's MRs... the count may be low">
+              <Chip intent="warn" data-flag="" title="rt hasn't finished backfilling this author's MRs... the count may be low">
                 syncing
-              </span>
+              </Chip>
             )}
             <span className="tui-side-count">{m.count}</span>
           </span>

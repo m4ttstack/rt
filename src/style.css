@@ -109,12 +109,14 @@
 }
 
 /* Keyboard focus: one accent ring for the controls that lacked one. Menu
-   items and the panel title already carry their own focus-visible styles. */
+   items and the panel title already carry their own focus-visible styles.
+   `.tui-review-open` has left this list: the clickable chips are Chip's
+   `as="button"` form now, and the recipe carries this exact ring itself. */
 .tui-copy:focus-visible, .tui-copy-inline:focus-visible,
 .tui-side-item:focus-visible, .tui-side-gear:focus-visible,
 .tui-burger:focus-visible, .tui-invite-btn:focus-visible, .tui-draft-act:focus-visible,
 .tui-modal-x:focus-visible, .tui-comments-btn:focus-visible, .tui-comment-token:focus-visible,
-.tui-join-toggle:focus-visible, .tui-drawer-action:focus-visible, .tui-review-open:focus-visible {
+.tui-join-toggle:focus-visible, .tui-drawer-action:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 2px;
 }
 /* ── rows ─────────────────────────────────────────────────────────── */
@@ -143,15 +145,10 @@
 .tui-branch { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tui-arrow { color: var(--muted); opacity: 0.7; }
 .tui-mr-iid { color: var(--muted); }
-/* Draft marker on a row. Only your own drafts reach the board, so this reads as
-   "yours, not shipped yet" -- muted rather than alarming, since it isn't a
-   problem to fix, just a state to leave or clear. */
-.tui-draft {
-  flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.06em;
-  font-size: 0.55rem; font-weight: 700; line-height: 1;
-  color: var(--muted); border: 1px solid var(--border);
-  border-radius: 3px; padding: 0.15rem 0.28rem;
-}
+/* Draft marker on a row: now Chip's small-caps register (`uppercase` -- the
+   transform, the 0.06em tracking, the 0.55rem/700 type) inside the neutral
+   `subtle` frame, muted. Only the tighter pill is left here; see the chip
+   outliers block below. */
 .tui-row-sep { color: var(--muted); opacity: 0.5; }
 /* Author identity in a row (All view, non-author grouping). */
 .tui-author-tag {
@@ -160,28 +157,14 @@
 }
 .tui-author-tag .tui-avatar { width: 13px; height: 13px; }
 
-/* ── status dot + tooltip ─────────────────────────────────────────── */
-.tui-dot {
-  font-size: 1rem; line-height: 1; display: inline-block; vertical-align: middle;
-  /* The ● glyph renders low in its line box; nudge up so it optically centers. */
-  position: relative; top: -2px;
-}
-.tui-dot.ok { color: var(--dot-ok); }
-.tui-dot.warn { color: var(--dot-warn); }
-.tui-dot.bad { color: var(--dot-bad); }
-.tui-dot-wrap { position: relative; flex-shrink: 0; align-self: center; }
-.tui-dot-wrap::after {
-  content: attr(data-tip);
-  position: absolute; left: 0; top: 1.5em; z-index: 10;
-  white-space: pre-line; width: max-content; max-width: 320px;
-  font-size: 0.74rem; line-height: 1.5; text-align: left; font-weight: 400;
-  background: var(--panel); color: var(--fg);
-  border: 1px solid var(--border); border-radius: 6px;
-  padding: 0.45rem 0.7rem;
-  opacity: 0; visibility: hidden; transition: opacity 0.1s ease 0.15s;
-  pointer-events: none;
-}
-.tui-dot-wrap:hover::after { opacity: 1; visibility: visible; }
+/* ── status dot + tooltip: now @mattstack/tui-kit's StatusDot ─────────
+   The `.tui-dot` glyph (including its -2px optical nudge), the three
+   `--dot-*` colour rules, `.tui-dot-wrap` and its `attr(data-tip)` tooltip
+   are the recipe's two slots, `[data-part="statusdot"]` /
+   `[data-part="statusdot-dot"]`. Nothing here selects into them: the board
+   keeps only the DERIVATION (blockers -> intent, statusReasons -> tip) in
+   src/client/board/StatusDot.tsx. `.tui-comment-dot` below is a SEPARATE
+   family that happens to reuse two of the same colours -- left alone. */
 
 /* ── tokens ───────────────────────────────────────────────────────── */
 .tui-phrase { font-size: 0.7rem; flex-shrink: 0; white-space: nowrap; }
@@ -520,22 +503,9 @@
 }
 .tui-join-toggle:hover { color: var(--fg); }
 
-/* review status badge */
-.tui-review {
-  font-size: 11px;
-  padding: 1px 6px;
-  border-radius: 4px;
-  border: 1px solid var(--border);
-  white-space: nowrap;
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-}
-.tui-review svg { flex-shrink: 0; }
-/* Emoji prefixes on internal badges: match the SVG cap and vertical alignment
-   so the label baseline lands the same as the other icon variants. */
-.tui-badge-emoji { font-size: 11px; line-height: 1; display: inline-flex; align-items: center; }
+/* review status badge: now @mattstack/tui-kit's Chip. The box (`.tui-review`),
+   the icon wrapper (`.tui-badge-emoji`) and `.tui-review svg`'s flex-shrink
+   are the recipe's `root` and `icon` slots. */
 /* ── stacked chains ───────────────────────────────────────────────── */
 /* A chain reads as one unit: a single thread rail spans the children
    (cyan to match the t-cyan stacked chip), the row dividers inside the
@@ -628,61 +598,58 @@
   font-weight: 700;
   border: 1.5px solid var(--panel);
 }
-/* mechanical-blocker chips (conflicts / ci), additive to the review phrase */
-.tui-flag {
-  font-size: 11px; line-height: 1.5; padding: 0 6px; border-radius: 4px;
-  border: 1px solid currentColor; white-space: nowrap; opacity: 0.9;
-}
-.tui-review-queued { opacity: 0.7; color: var(--muted); }
-.tui-review-reviewing { color: var(--dot-warn); border-color: currentColor; animation: tui-review-pulse 1.4s ease-in-out infinite; }
-.tui-review-done { color: var(--dot-ok); border-color: currentColor; }
-.tui-review-error { color: var(--dot-bad); border-color: currentColor; }
-@keyframes tui-review-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-/* Respond badge: same shape as review, purple family so it reads as "my side of the review". */
-.tui-respond-queued { opacity: 0.7; color: var(--muted); }
-.tui-respond-triaging,
-.tui-respond-implementing,
-.tui-respond-drafting { color: var(--purple); border-color: currentColor; animation: tui-review-pulse 1.4s ease-in-out infinite; }
-.tui-respond-posted,
-.tui-respond-none { color: var(--dot-ok); border-color: currentColor; }
-.tui-respond-partial,
-.tui-respond-drafted { color: var(--dot-warn); border-color: currentColor; }
-.tui-respond-unknown { color: var(--muted); border-color: currentColor; }
-.tui-respond-error { color: var(--dot-bad); border-color: currentColor; }
-/* Doctor badge: cyan family, so mechanical-fix state reads as its own axis. */
-.tui-doctor-queued { opacity: 0.7; color: var(--muted); }
-.tui-doctor-diagnosing,
-.tui-doctor-rebasing,
-.tui-doctor-fixing,
-.tui-doctor-watching { color: var(--cyan); border-color: currentColor; animation: tui-review-pulse 1.4s ease-in-out infinite; }
-.tui-doctor-done { color: var(--dot-ok); border-color: currentColor; }
-.tui-doctor-error { color: var(--dot-bad); border-color: currentColor; }
-/* Peer switchboard: another board's review of our MR, the re-review we asked a
-   peer for, and peers waiting on us. Accent (blue) family so cross-board
-   traffic reads as its own axis alongside review/respond/doctor. */
-.tui-peer,
-.tui-nudge,
-.tui-nudged { color: var(--accent); border-color: currentColor; }
-/* Peer review states borrow the review badge's colors, so "approved on their
-   board" reads the same as an approval earned here. */
-.tui-peer-reviewing { animation: tui-review-pulse 1.4s ease-in-out infinite; }
-.tui-peer-commented { color: var(--dot-warn); }
-.tui-peer-approved { color: var(--dot-ok); }
-.tui-peer-done { color: var(--muted); }
-/* A sent nudge: pending is quiet, in-flight pulses, and an unanswered or
-   refused ask goes grey -- the menu item is what offers the retry. */
-.tui-nudge-requested { opacity: 0.75; }
-.tui-nudge-confirmed,
-.tui-nudge-launched { animation: tui-review-pulse 1.4s ease-in-out infinite; }
-.tui-nudge-rejected,
-.tui-nudge-expired,
-.tui-nudge-no-response { color: var(--muted); }
-/* Inbound: someone is waiting on you, so it carries a little more weight. */
-.tui-nudged { font-weight: 600; }
-/* Held outbound note a doctor drafted; the chip opens the draft drawer, where
-   the approval gate lives. "held-draft" (not .tui-draft, the draft-MR chip). */
-.tui-held-draft { color: var(--amber); border-color: currentColor; }
-.tui-held-draft-resolved { opacity: 0.6; }
+/* ── chip cells the kit deliberately does not reproduce ───────────────
+   Every badge and flag on the board is `[data-part="chip"]` now: the box, the
+   1.4s pulse, the dim, the small-caps register and the clickable `<button>`
+   form all live in the Chip recipe, chosen at the call site with
+   intent/pulse/dimmed/uppercase/as. Two groups survive here, each scoped by a
+   data attribute its own call site stamps so no chip family can bleed into
+   another:
+
+   1. THE DOT-COLOUR CELLS. Twelve review/respond/doctor/peer states paint from
+      the brighter STATUS-DOT trio (--dot-ok #1f9d3a / --dot-warn #e08a00 /
+      --dot-bad #e5153f) while the kit's shared intent resolver maps
+      ok/warn/bad onto the hue families (--green / --amber / --red). The dot
+      trio belongs to StatusDot, so the one shade of difference comes back here
+      rather than bending the resolver for one consumer. `border-color:
+      currentColor` rides along on each: the recipe's outline variant paints
+      its border from `--chip-border` (the hue), not from the text colour we
+      just overrode -- exactly what these rules said before the adoption.
+   2. THE OUTLIER BOXES. Chip's `dimmed` is one canonical 0.7; three cells want
+      0.75, 0.6 and 0.9. And two cells keep a box the recipe deliberately
+      unified away -- `.tui-flag`'s zero-padding/1.5-line-height frame and
+      `.tui-draft`'s tighter pill.
+
+   THE PROPERTY ROUTE IS THE ONLY ONE THAT WORKS, and getting it wrong is
+   silent: the recipe's `--sb-chip-*` scalars are emitted into the element's
+   INLINE style by its vars resolver, so an app-side rule setting one is never
+   read. Setting the PROPERTY wins at any specificity, because this file is
+   unlayered and the recipe sits inside `@layer soribashi.recipes`. */
+[data-part="chip"][data-review="reviewing"],
+[data-part="chip"][data-respond="partial"],
+[data-part="chip"][data-respond="drafted"],
+[data-part="chip"][data-peer="commented"] { color: var(--dot-warn); border-color: currentColor; }
+[data-part="chip"][data-review="done"],
+[data-part="chip"][data-respond="posted"],
+[data-part="chip"][data-respond="none"],
+[data-part="chip"][data-doctor="done"],
+[data-part="chip"][data-peer="approved"] { color: var(--dot-ok); border-color: currentColor; }
+[data-part="chip"][data-review="error"],
+[data-part="chip"][data-respond="error"],
+[data-part="chip"][data-doctor="error"] { color: var(--dot-bad); border-color: currentColor; }
+/* A sent nudge's pending state is quieter than the canonical dim by 0.05. */
+[data-part="chip"][data-nudge="requested"] { opacity: 0.75; }
+/* A resolved held note is the deepest of the board's four quiet values. */
+[data-part="chip"][data-held-draft="resolved"] { opacity: 0.6; }
+/* Mechanical-blocker flags (conflicts / ci / stacked) carry a standing 0.9 and
+   keep their own frame: no vertical padding, and the 1.5 line-height that was
+   what claimed the box back. The recipe unified the two boxes onto the badge's
+   1px/6px; this row sits above the title and its height is load-bearing. */
+[data-part="chip"][data-flag] { opacity: 0.9; padding: 0 6px; line-height: 1.5; }
+/* The row's draft marker: small-caps type in a pill tighter than a badge's, so
+   it reads as a marker beside the title rather than another status chip. */
+[data-part="chip"][data-draft] { padding: 0.15rem 0.28rem; border-radius: 3px; line-height: 1; }
+
 /* held-draft drawer: the verbatim note text plus the post/dismiss gate */
 .tui-draft-modal { max-width: 680px; }
 .tui-draft-body {
@@ -707,9 +674,9 @@
 /* armed = the in-drawer confirm step; filled so "this will send" is unmissable */
 .tui-draft-act-post.armed { background: var(--amber); color: var(--bg); }
 .tui-draft-act-post.armed:hover:not(:disabled) { background: var(--amber); opacity: 0.9; }
-/* clickable badge (a saved review exists) — reads as a button */
-.tui-review-open { font: inherit; font-size: 11px; cursor: pointer; background: none; }
-.tui-review-open:hover { background: var(--card); }
+/* clickable badge (a saved review exists) — `.tui-review-open`'s font reset,
+   pointer cursor, hover wash and focus ring are Chip's `as="button"` form,
+   keyed on the element (`:is(button, a)`) inside the recipe. */
 
 /* center the near-fullscreen review modal (the shared overlay top-aligns
    with 8vh padding, which would clip a 94vh box) */

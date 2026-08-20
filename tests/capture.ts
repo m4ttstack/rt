@@ -98,7 +98,11 @@ for (const theme of ["light", "dark"] as const) {
     await page.keyboard.press("Escape");
   }
   // review modal (badge with a saved report)
-  const reviewBtn = page.locator(".tui-review-open.tui-review-done").first();
+  // The badge classes are gone: the clickable review chip is Chip's `as="button"`
+  // form, identified by the recipe's data-part plus the board's own data-review
+  // cell. Same two facts the old `.tui-review-open.tui-review-done` pair named
+  // (it is a button, and it is the review-done cell), no looser.
+  const reviewBtn = page.locator('button[data-part="chip"][data-review="done"]').first();
   if (await reviewBtn.count()) {
     await reviewBtn.click();
     await page.waitForSelector('.tui-review-modal [data-part="markdown"] h1, .tui-review-modal [data-part="markdown"] p');

@@ -3,7 +3,7 @@ import { extractTicketId, ticketUrl } from "../../ticket.ts";
 import type { BoardMR } from "../../data.ts";
 import { nestStacks, statusFlags } from "../../view.ts";
 import type { BoardMRWithReview, RowContext } from "../types.ts";
-import { CopyButton, SelectBox } from "@mattstack/tui-kit";
+import { Chip, CopyButton, SelectBox } from "@mattstack/tui-kit";
 import { StatusDot } from "./StatusDot.tsx";
 import { CommentsButton, CommentsToken } from "./CommentsDrawer.tsx";
 import { BoardBadges } from "./BoardBadges.tsx";
@@ -16,13 +16,24 @@ function onRowClick(e: React.MouseEvent, mr: BoardMR) {
   if (mr.webUrl) window.open(mr.webUrl, "_blank", "noopener");
 }
 
+/** statusFlags() keeps emitting the board's own token classes (`.tui-phrase`
+    shares them), so the flag row translates them to Chip intents here rather
+    than making view.ts -- a DOM-free module with its own tests -- speak the
+    kit's vocabulary. `data-flag` is the hook style.css scopes the flag's
+    standing 0.9 dim and its own zero-padding box to. */
+const FLAG_INTENT: Record<string, "bad" | "warn" | "cyan"> = {
+  "t-bad": "bad",
+  "t-warn": "warn",
+  "t-cyan": "cyan",
+};
+
 function StatusFlags({ mr, nested = false }: { mr: BoardMR; nested?: boolean }) {
   return (
     <>
       {statusFlags(mr, { nested }).map((f) => (
-        <span key={f.text} className={`tui-flag ${f.cls}`}>
+        <Chip key={f.text} intent={FLAG_INTENT[f.cls] ?? "muted"} data-flag="">
           {f.text}
-        </span>
+        </Chip>
       ))}
     </>
   );
@@ -127,7 +138,15 @@ function RowView({
             )}
             <div className="tui-row-1">
               <StatusDot mr={mr} />
-              {mr.isDraft && <span className="tui-draft" title="draft — right-click to mark ready">draft</span>}
+              {/* The draft marker is the chip family's small-caps register
+                  (`uppercase`); its tighter pill is the one part of the old
+                  `.tui-draft` box the recipe does not carry, restored from
+                  style.css off `data-draft`. */}
+              {mr.isDraft && (
+                <Chip intent="muted" variant="subtle" uppercase data-draft="" title="draft — right-click to mark ready">
+                  draft
+                </Chip>
+              )}
               <span className="tui-title">{cleanTitle(mr.title)}</span>
               <StatusPhrase mr={mr} />
               {ticket && <TicketLink ticket={ticket} />}
