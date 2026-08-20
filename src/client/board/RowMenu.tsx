@@ -5,13 +5,11 @@ import { ContextMenu } from "@mattstack/tui-kit";
 import { useAutoGrowTextarea } from "@mattstack/tui-kit/hooks";
 import { getSlackMarks, nudgeTargets, reviewMenuItems, respondItemLabel, doctorItemLabel } from "./format.ts";
 
-/** shadcn-style context menu anchored at the cursor. The SHELL is the kit's
-    ContextMenu recipe -- the fixed box, the measured viewport clamp, the
-    item/label/separator parts, and all four dismissals (Escape through the
-    shared LIFO layer stack, outside mousedown, scroll capture, resize). What
-    stays here is everything board: which items exist for this MR's state, the
-    slack marks section, and the alt-note mode, which renders INSIDE the menu
-    surface as the recipe's children. */
+/** Context menu anchored at the cursor. The kit's ContextMenu recipe owns the
+    shell -- the box, the viewport clamp, the parts, and all four dismissals.
+    What stays here is everything board: which items exist for this MR's state,
+    the slack marks section, and the alt-note mode, which renders inside the
+    menu surface as the recipe's children. */
 function RowMenu({
   menu,
   ctx,
@@ -74,22 +72,6 @@ function RowMenu({
       window.removeEventListener("blur", onBlur);
     };
   }, []);
-  // FOCUS THE NOTE BOX ON THE NEXT FRAME, not with `autoFocus`. The recipe
-  // renders itself `visibility: hidden` until its layout effect has measured
-  // and clamped the box, and a `visibility: hidden` subtree cannot take focus
-  // at all -- `focus()` on it is a silent no-op (verified in chromium: the
-  // element does not become activeElement, and un-hiding does not retroactively
-  // give it focus). React fires `autoFocus` in the same commit that leaves the
-  // menu hidden, and so does any passive effect (React flushes those before the
-  // clamp's own state update re-renders), so a frame is the earliest honest
-  // moment. Only matters because note mode now REMOUNTS (see the key below);
-  // before the adoption the div was reconciled in place and never went hidden.
-  useEffect(() => {
-    if (!noteFor) return;
-    const id = requestAnimationFrame(() => noteRef.current?.focus());
-    return () => cancelAnimationFrame(id);
-  }, [noteFor, noteRef]);
-
   const { mr } = menu;
   const mrx = mr as BoardMRWithReview;
   const slack = mrx.slack;
@@ -129,20 +111,20 @@ function RowMenu({
   if (noteFor) {
     return (
       <ContextMenu
-        // THE KEY IS LOAD-BEARING, not decoration. The recipe's clamp is a
-        // layout effect keyed on [x, y]; RowMenu's own third dep (`noteFor`)
-        // could not travel with it, because a menu shell has no business
-        // knowing a consumer's modes. A distinct key makes React unmount the
-        // item-list menu and mount this one instead, which re-runs the clamp
-        // against the note box's very different size — the adoption answer the
-        // recipe documents. Accepted cosmetic delta: the 90ms entry animation
-        // replays on the swap, where the old in-place reconcile did not
-        // re-animate.
+        // THE KEY IS LOAD-BEARING. The recipe's clamp is a layout effect keyed
+        // on [x, y] only; a distinct key makes React unmount the item-list menu
+        // and mount this one, re-running the clamp against the note box's very
+        // different size. Accepted cosmetic delta: the entry animation replays.
         key="noting"
         x={menu.x}
         y={menu.y}
         ariaLabel={`note for !${mr.iid}`}
         onClose={onClose}
+        // The recipe focuses this once the clamp has committed and the menu has
+        // stopped being `visibility: hidden` -- the earliest point a focus call
+        // can land. `autoFocus`, or a focus call from our own effect, would run
+        // while the subtree is still hidden and silently no-op.
+        initialFocusRef={noteRef}
         // The board's own note-mode box (320px wide, tighter padding) plus the
         // scope its label rule needs. style.css is unlayered, so it wins over
         // the recipe's own `.root` padding regardless of specificity.
@@ -181,9 +163,8 @@ function RowMenu({
 
   const reviewRunning = mrx.review?.status === "queued" || mrx.review?.status === "reviewing";
   return (
-    // The item list's own key, the other half of the pair above: two menus of
-    // the same element type at the same position are only distinct instances
-    // to React if their keys differ.
+    // The other half of the pair above: two menus of the same element type at
+    // the same position are only distinct instances to React if the keys differ.
     <ContextMenu key="items" x={menu.x} y={menu.y} ariaLabel={`actions for !${mr.iid}`} onClose={onClose}>
       <ContextMenu.Label>!{mr.iid}</ContextMenu.Label>
 
