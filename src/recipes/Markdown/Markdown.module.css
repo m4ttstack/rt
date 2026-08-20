@@ -1,0 +1,155 @@
+/*
+ * Markdown — mr-board's `.tui-md` typography block (src/style.css), the
+ * prose styling ReactMarkdown's output renders into. Lifted in full onto this
+ * recipe's single `root` slot; mr-board deletes `.tui-md` from its own
+ * stylesheet and the two `<div className="tui-md">` wrappers at adoption
+ * (ReviewModal.tsx, and CommentsDrawer.tsx's `.tui-cd-note-body` sibling,
+ * which is a SEPARATE, board-owned prose block that stays — see the recipe's
+ * own doc comment).
+ *
+ * mr-board's rules select through a `.tui-md` ANCESTOR onto plain element
+ * selectors ReactMarkdown itself renders (`h1`, `p`, `code`, `table`, ...) —
+ * ReactMarkdown decides what DOM those are, not this recipe, so there is no
+ * `getStyles()` slot for any of them. The lift preserves that shape one for
+ * one: every mr-board `.tui-md <element>` rule becomes `.root <element>`
+ * here, a plain (non-localized) element selector nested under the recipe's
+ * one CSS-module class. `data-part="markdown"` is stamped only on `.root`
+ * itself (R7) — there is nothing else in this recipe to stamp it on.
+ *
+ * TOKENS, checked against src/theme.ts's real ladders, outlet-1 preferred:
+ *   0.95rem (root font-size)     -> var(--font-size-rem95)   [exact rung]
+ *   4px  (code border-radius)    -> var(--radius-sm)          [exact rung]
+ *   8px  (pre border-radius)     -> var(--radius-lg)          [exact rung]
+ *   0.7rem / 0.9rem (pre padding)-> var(--spacing-lg) / var(--spacing-xl) [exact rung]
+ *   1px  (every border width except blockquote's) -> the gate's own length
+ *        allowlist; no outlet needed.
+ *
+ * EVERY OTHER length below is an `em` value: relative to the rendering
+ * element's OWN font size, exactly as mr-board wrote it (`1.4em`, `0.3em`,
+ * ...). src/theme.ts's own comment is explicit that em-based spacing "stays
+ * inline in recipe CSS on purpose... cannot be a global rung" — there is no
+ * theme token these could reuse without changing their behaviour to a fixed
+ * rem size. They still need a `var()` outlet to pass the gate (the length
+ * scanner has no `em` exemption the way it does for `0`/`1px`/`2px`/`100%`),
+ * so each becomes a recipe-local `--sb-markdown-*` custom property, wired
+ * through `vars()` below — the SAME pattern LabeledSeg's
+ * `--sb-segmented-text-size: 0.8em` and Panel's `PANEL_TITLE_SCALARS`
+ * already use for their own em values. `MARKDOWN_SCALARS` in Markdown.tsx is
+ * the single source for every one of them; nothing here is a bare literal.
+ *
+ * blockquote's 3px border-left width is the one outlier length that is
+ * neither a theme rung nor an em value — also routed through
+ * `MARKDOWN_SCALARS` (`--sb-markdown-blockquote-border-w`).
+ */
+@layer soribashi.recipes {
+  .root {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: var(--font-size-rem95);
+    line-height: 1.6;
+    color: var(--fg);
+    overflow-wrap: anywhere;
+  }
+
+  .root h1,
+  .root h2,
+  .root h3,
+  .root h4 {
+    font-weight: 600;
+    line-height: 1.25;
+    margin: var(--sb-markdown-heading-margin-top) 0 var(--sb-markdown-heading-margin-bottom);
+  }
+
+  .root h1 {
+    font-size: var(--sb-markdown-h1-size);
+    padding-bottom: var(--sb-markdown-heading-underline-pad);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .root h2 {
+    font-size: var(--sb-markdown-h2-size);
+    padding-bottom: var(--sb-markdown-heading-underline-pad);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .root h3 {
+    font-size: var(--sb-markdown-h3-size);
+  }
+
+  .root h4 {
+    font-size: var(--sb-markdown-h4-size);
+  }
+
+  .root h1:first-child,
+  .root h2:first-child,
+  .root h3:first-child {
+    margin-top: 0;
+  }
+
+  .root p,
+  .root ul,
+  .root ol {
+    margin: var(--sb-markdown-block-margin) 0;
+  }
+
+  .root ul,
+  .root ol {
+    padding-left: var(--sb-markdown-list-indent);
+  }
+
+  .root li {
+    margin: var(--sb-markdown-list-item-margin) 0;
+  }
+
+  .root a {
+    color: var(--accent);
+  }
+
+  .root code {
+    font-family: var(--font-mono);
+    font-size: var(--sb-markdown-code-size);
+    background: var(--card);
+    padding: var(--sb-markdown-code-pad-block) var(--sb-markdown-code-pad-inline);
+    border-radius: var(--radius-sm);
+  }
+
+  .root pre {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: var(--spacing-lg) var(--spacing-xl);
+    overflow-x: auto;
+    margin: var(--sb-markdown-pre-margin) 0;
+  }
+
+  .root pre code {
+    background: none;
+    padding: 0;
+  }
+
+  .root blockquote {
+    margin: var(--sb-markdown-blockquote-margin) 0;
+    padding: var(--sb-markdown-blockquote-pad-block) var(--sb-markdown-blockquote-pad-inline);
+    color: var(--muted);
+    border-left: var(--sb-markdown-blockquote-border-w) solid var(--border);
+  }
+
+  .root table {
+    border-collapse: collapse;
+    margin: var(--sb-markdown-table-margin) 0;
+    display: block;
+    overflow-x: auto;
+  }
+
+  .root th,
+  .root td {
+    border: 1px solid var(--border);
+    padding: var(--sb-markdown-cell-pad-block) var(--sb-markdown-cell-pad-inline);
+    text-align: left;
+  }
+
+  .root hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: var(--sb-markdown-hr-margin) 0;
+  }
+}

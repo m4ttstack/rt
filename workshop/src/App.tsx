@@ -4,6 +4,7 @@ import { Chips } from "./pages/Chips.tsx";
 import { ContextMenus } from "./pages/ContextMenus.tsx";
 import { CopyButtons } from "./pages/CopyButtons.tsx";
 import { Icons } from "./pages/Icons.tsx";
+import { Markdowns } from "./pages/Markdowns.tsx";
 import { Modals } from "./pages/Modals.tsx";
 import { Panels } from "./pages/Panels.tsx";
 import { Segmenteds } from "./pages/Segmenteds.tsx";
@@ -28,6 +29,7 @@ const PAGES: Record<string, ComponentType> = {
   contextmenus: ContextMenus,
   copybuttons: CopyButtons,
   icons: Icons,
+  markdowns: Markdowns,
   modals: Modals,
   panels: Panels,
   segmenteds: Segmenteds,
@@ -43,6 +45,7 @@ const PAGES: Record<string, ComponentType> = {
 const PAGE_LABELS: Record<string, string> = {
   contextmenus: "ContextMenu",
   copybuttons: "CopyButton",
+  markdowns: "Markdown",
   selectboxes: "SelectBox",
   sidedrawers: "SideDrawer",
   statusdots: "StatusDot",
