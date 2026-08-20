@@ -1,4 +1,4 @@
-import type { IntentResolver, IntentResolverResult } from "@soribashi/theme";
+import type { IntentResolver, IntentResolverResult } from "@soribashi/core";
 
 /**
  * Family per intent word.

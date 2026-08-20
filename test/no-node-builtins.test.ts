@@ -7,13 +7,20 @@ import { describe, expect, it } from "vitest";
  * BUILT-IN OR FOR `process`.
  *
  * WHY THIS FILE EXISTS. The kit's tsconfig declares `"types": ["node"]`
- * globally, which is not a preference — @soribashi/factory is consumed as
- * TypeScript SOURCE (soribashi packages set `"types": "./src/index.ts"`), so
- * `tsc` type-checks factory's own `.ts` files as part of any program covering
- * `src/`, and four of them read `process.env.NODE_ENV`. `skipLibCheck` does not
- * help (it skips `.d.ts`; these are `.ts`), and a src-vs-scripts tsconfig split
- * does not help either, because the errors come from inside the dependency.
- * Declaring node types was the only fix.
+ * globally, because `scripts/` and `test/` genuinely use node APIs and a
+ * src-vs-scripts config split would buy duplication and nothing else.
+ *
+ * It was originally forced by a stronger reason that no longer applies: while
+ * soribashi was consumed via `file:`, @soribashi/factory came in as TypeScript
+ * SOURCE (soribashi packages set `"types": "./src/index.ts"`), so `tsc`
+ * type-checked factory's own `.ts` files as part of any program covering
+ * `src/`, and four of them read `process.env.NODE_ENV` — `skipLibCheck` did not
+ * help (it skips `.d.ts`; those were `.ts`) and no tsconfig split could, since
+ * the errors came from inside the dependency. The published `@soribashi/core`
+ * ships compiled `.d.ts`, so that pressure is gone.
+ *
+ * The gate below is unaffected either way: node types are still declared
+ * globally, so the type system still cannot catch a node import in `src/`.
  *
  * The cost of that fix is this file. Before it, `import { readFileSync } from
  * "node:fs"` inside src/theme.ts — or a stray `process.env` in a recipe —

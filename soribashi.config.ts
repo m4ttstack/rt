@@ -1,4 +1,4 @@
-import type { CssVariablesResolver } from "@soribashi/codegen";
+import type { CssVariablesResolver } from "@soribashi/core/codegen";
 import { tuiTheme } from "./src/theme.ts";
 
 /**

@@ -1,14 +1,14 @@
 # @mattstack/tui-kit
 
-The mattstack TUI look, packaged as a [soribashi](https://github.com/) component library.
-Currently source-consumed by mr-board; no published releases yet.
+The mattstack TUI look, packaged as a [soribashi](https://github.com/m4ttheweric/soribashi)
+component library. Currently source-consumed by mr-board; no published releases of the
+kit itself yet.
 
 ## What this is
 
 A theme + recipe library (`createTheme`, hooks, and hand-rolled compound components)
-built on the unpublished `soribashi` framework, consumed from a sibling checkout via
-verified `file:` + `overrides` wiring (not workspace protocol — soribashi is not a
-member of this repo's workspace).
+built on the `soribashi` framework, consumed from the registry as an ordinary semver
+dependency (`@soribashi/core`).
 
 **Kit v1's public surface is frozen (Milestone A complete):** every recipe listed
 below, the hooks family, and `tuiTheme` are all re-exported from the package root
@@ -18,75 +18,65 @@ below, the hooks family, and `tuiTheme` are all re-exported from the package roo
 
 ## Setup
 
-Requires a sibling checkout at `../soribashi` (relative to this repo) that has
-already been `bun install`ed.
-
 ```sh
-bun run setup   # sh scripts/setup.sh — installs, twice (see script comment)
+bun install
 ```
+
+That is the whole story. `@soribashi/core` is an ordinary registry dependency, so
+there is no sibling checkout to clone, no install ordering to respect, and no
+`overrides` block to keep in sync. (`bun run setup` is an alias for the same
+command, kept so the script name in older docs still works.)
 
 ### The wiring, exactly
 
 **This section is about THIS repo's own dependencies — for people hacking on the
-kit.** An app that merely *consumes* the kit needs none of it: see
-"[Wiring an adopter app](#wiring-an-adopter-app)" below, which is deliberately
-much shorter.
+kit.** An app that merely *consumes* the kit needs even less: see
+"[Wiring an adopter app](#wiring-an-adopter-app)" below.
 
-`package.json`'s `dependencies` declares FOUR soribashi packages directly, all as
-`file:` pointers into the sibling `../soribashi` checkout — not two, even though
-only `@soribashi/core` and `@soribashi/codegen` are imported directly anywhere in
-this repo's source:
+`package.json` declares ONE soribashi package:
 
 ```json
-"@soribashi/core": "file:../soribashi/packages/core",
-"@soribashi/codegen": "file:../soribashi/packages/codegen",
-"@soribashi/theme": "file:../soribashi/packages/theme",
-"@soribashi/factory": "file:../soribashi/packages/factory"
+"@soribashi/core": "^0.1.0"
 ```
 
-plus an `overrides` block redirecting `@soribashi/theme` and `@soribashi/factory` to
-those same `file:` paths, so that `core`'s and `codegen`'s own internal
-`"workspace:*"` requests for them resolve too:
+`@soribashi/core` is the whole framework in a single package — the theme model,
+the component factory, and the `soribashi` codegen CLI. It exposes two entry
+points and ships the CLI as a bin:
 
-```json
-"overrides": {
-  "@soribashi/theme": "file:../soribashi/packages/theme",
-  "@soribashi/factory": "file:../soribashi/packages/factory"
-}
-```
+| specifier | what it is | used here by |
+| --- | --- | --- |
+| `@soribashi/core` | theme model + component factory (`makeBuilders`, `createTheme`, `registerTheme`, `SoribashiProvider`, the `IntentResolver` types) | every recipe, `src/theme.ts`, `src/builders.ts`, `src/provider.ts`, `src/intent-resolver.ts` |
+| `@soribashi/core/codegen` | the codegen types (`CssVariablesResolver`) | `soribashi.config.ts` |
+| `soribashi` (bin) | the CSS codegen CLI, run by `bun run codegen` | `package.json`'s `codegen`/`gates` scripts |
 
-**Both halves are necessary.** `overrides` alone does not reach a nested
-`workspace:*` dependency one level inside an already-overridden `file:` package
-— confirmed empirically: with only `core`/`codegen` as direct dependencies,
-`@soribashi/factory`'s own `"@soribashi/theme": "workspace:*"` never got linked, on
-Bun 1.3.13, no matter how many times `bun install` was re-run. Declaring
-`theme`/`factory` directly puts them in root `node_modules`, where `factory`'s
-runtime walk-up module resolution finds them regardless of that unresolved nested
-link.
+Because core brings its own `clsx`, `tailwind-merge`, and `zod`, this repo does
+NOT declare them. Nothing in `src/` imports any of the three directly; they were
+only ever named here because `file:`-delivered packages don't install their own
+transitive dependencies. Registry packages do.
 
-`clsx`, `tailwind-merge`, and `zod` are ALSO declared as top-level `dependencies`
-(ranges copied verbatim from `soribashi/packages/{factory,theme}/package.json`),
-because overrides-delivered `file:` packages don't install their own transitive
-deps — `bun install` never walks into `../soribashi/packages/factory/package.json`
-to resolve what IT needs, so this repo has to name those three itself or the
-recipes fail at runtime with an unresolved import.
-
-`react-markdown` and `remark-gfm` are ordinary top-level dependencies (not part of
-the soribashi wiring at all) — the Markdown recipe's only two non-soribashi
+`react-markdown` and `remark-gfm` are ordinary top-level dependencies (not part
+of the soribashi wiring at all) — the Markdown recipe's only two non-soribashi
 runtime dependencies, pinned to the same versions mr-board's own
 `src/client/ui/Markdown.tsx` used.
 
-**The double install (`scripts/setup.sh`).** Two `bun install` runs, and the
-reason has shifted since the script was first written: now that direct
-dependencies fix the wiring (see above), a single install is USUALLY enough — but
-on a genuinely clean `node_modules` the first install occasionally hits a
-transient `EEXIST: failed to link package` race (observed ~1/3 of clean runs),
-because `@soribashi/theme` is linked via two paths (the direct dependency and the
-override target) concurrently; that race exits `bun install` non-zero even though
-`node_modules` ends up correct. The first install is allowed to fail for that
-reason; the second install is the one whose exit status is trusted.
-`scripts/setup.sh`'s own header comment carries the same explanation in full,
-next to the code that acts on it — read it before touching either install line.
+**Version policy.** The `^0.1.0` range IS the pin — bumping soribashi means
+editing that range and running `bun install`, with `bun.lock` recording the
+exact resolved version. There is no separate commit-pin file to keep honest
+(there used to be: see the appendix). After any bump, run `bun run gates`: the
+codegen drift check re-runs the PUBLISHED `soribashi build` against
+`soribashi.config.ts` and fails if `src/generated/theme.css` would change, which
+is the cheapest possible detector for a soribashi release moving the CSS out
+from under this kit.
+
+One consequence of consuming a published package worth knowing: core's `.`
+export resolves to **compiled `dist/`**, not TypeScript source. That retires a
+whole class of friction the `file:` era had — the factory's own
+`@ts-expect-error` suppressions are no longer re-checked under this repo's
+tsconfig, so the `TS2578: Unused '@ts-expect-error' directive` errors that once
+forced `types: ["node"]` can no longer occur from inside `node_modules`. (The
+`types: ["node"]` setting stays for its own independent reasons — `scripts/`
+and `test/` genuinely use node APIs.) The browser test tier is what confirms
+the compiled factory behaves identically to the source one.
 
 `workshop/` carries its own real `package.json` (a Vite React app, `workspaces:
 ["workshop"]` at the root) — see "Workshop" below.
@@ -109,35 +99,23 @@ barrel; reach for one directly when you want a narrower import:
 
 ### Wiring an adopter app
 
-**One dependency: an adopter declares `@mattstack/tui-kit` and no `@soribashi/*`
-package at all.** It still needs the two-line `overrides` block, for a
-different reason (below).
+**One dependency, and nothing else: an adopter declares `@mattstack/tui-kit` and
+no `@soribashi/*` package at all.**
 
 ```jsonc
 // the adopter's package.json — this is the whole soribashi story
 "dependencies": {
   "@mattstack/tui-kit": "file:../tui-kit"
-},
-"overrides": {
-  "@soribashi/theme":   "file:../soribashi/packages/theme",
-  "@soribashi/factory": "file:../soribashi/packages/factory"
 }
 ```
 
-**Why the `overrides` survive even with zero `@soribashi` dependencies.** Bun
-applies `overrides` only from the ROOT package, so this kit's own overrides do
-not reach an adopter's install. Installing `@mattstack/tui-kit` makes bun walk
-into this repo's `package.json` and resolve *its* `@soribashi/*` `file:` deps,
-whose own `"workspace:*"` requirements then have nothing to resolve against.
-Without the block, `bun install` fails outright:
-
-```
-error: @soribashi/factory@workspace:* failed to resolve
-error: @soribashi/theme@workspace:* failed to resolve
-```
-
-Loud and immediate, unlike the silent breakage the direct dependencies caused —
-and it disappears entirely once soribashi is a published package.
+No `overrides` block. Adopters used to need a two-line one, because installing
+the kit made bun walk into this repo's `package.json`, find `@soribashi/*`
+`file:` dependencies, and fail to resolve their internal `"workspace:*"`
+requirements (`error: @soribashi/theme@workspace:* failed to resolve`). Now that
+this repo depends on a single registry package, there is no `workspace:*` left
+anywhere in the graph to rescue — an adopter that still carries that block can
+delete it, and one that never had it will not miss it.
 
 ```tsx
 // the adopter's app entry
@@ -160,16 +138,17 @@ Both halves are mandatory and neither substitutes for the other:
 resolve tokens/vocabulary/intent, `<SoribashiProvider>` is what `useTheme()`
 reads inside the tree. `workshop/src/main.tsx` is the live example.
 
-**Import them from the kit, never from `@soribashi/core` directly.** Doing the
-latter used to be the only option, and it required an adopter to take direct
-`file:` deps on three soribashi packages. That guidance is retired: it produced
-wiring that installed, type-checked, booted — and was silently wrong.
+**Import them from the kit, never from `@soribashi/core` directly.** This is
+still true with soribashi on the registry, and it is the more important of the
+two archaeological bugs to remember: adding `@soribashi/core` to an adopter's
+own `package.json` produces wiring that installs, type-checks, boots — and is
+silently wrong.
 
-The reason is that **bundlers key module identity by resolved path**. An
-adopter's own `@soribashi/core` resolves through the adopter's `node_modules`
-to the canonical `soribashi/packages/*` checkout; a file inside this kit has
+The reason is that **bundlers key module identity by resolved path**, and a
+registry package does not change that. An adopter's own `@soribashi/core`
+resolves through the adopter's `node_modules`; a file inside this kit has
 its leaf symlink realpathed to the kit's checkout first, so the same specifier
-resolves from `tui-kit/node_modules/`. Same package, same version,
+resolves from `tui-kit/node_modules/`. Same package, same published version,
 byte-identical files (usually hardlinked to one inode) — but two paths, so two
 module records in the bundle: two `SoribashiContext` objects, two vocabulary
 registries, two `createTheme` implementations. `registerTheme()` writes one
@@ -190,13 +169,13 @@ is already importing recipes from it. The subpath exists because an app entry
 usually wants only the wiring, and the barrel drags every recipe's module graph
 — and every `.module.css` — along with it.
 
-One thing the subpath does **not** fix: `@soribashi/factory` ships its types as
-source, so its `@ts-expect-error` suppressions are re-checked under the
-*consumer's* tsconfig on either import path. A consumer whose tsconfig declares
-`import.meta.env` (any `types: ["bun"]` project) will see two `TS2578: Unused
-'@ts-expect-error' directive` errors from inside `node_modules`. The fix is to
-check factory the way factory's own repo does — `types: ["node"]` — which is
-what this kit's `tsconfig.json` uses.
+A `file:`-era hazard that the registry migration RETIRED: soribashi's factory
+used to ship its types as TypeScript source, so its `@ts-expect-error`
+suppressions were re-checked under the *consumer's* tsconfig, and any consumer
+declaring `import.meta.env` (any `types: ["bun"]` project) saw two `TS2578:
+Unused '@ts-expect-error' directive` errors from inside `node_modules`.
+`@soribashi/core` ships compiled `.d.ts` files, so a consumer's tsconfig no
+longer type-checks soribashi's own source and the error class is gone.
 
 **The `types/css-modules.d.ts` include.** Every recipe imports its own
 `.module.css` (`import styles from "./Chip.module.css"`), which `tsc` can only
@@ -340,27 +319,22 @@ meant to go through a bundler) only when you want the whole board-identity page
 background and type scale; a consumer building their own page shell around the
 recipes never needs it.
 
-## The SORIBASHI_COMMIT pin
+## The soribashi version, and the ref casts it made eligible for removal
 
-This repo pins against soribashi at the commit recorded in `SORIBASHI_COMMIT`
-(currently `6471499bb8a0a8b62cb846d8d4dc7ccf3ae826f2`). Bump it manually when
-picking up new soribashi changes — there is no automated sync, and bumping means:
-update `SORIBASHI_COMMIT`, `git -C ../soribashi checkout <commit>` (or otherwise
-bring the sibling checkout to that commit), `bun install` (the `file:` links
-already point at the checkout, so no dependency-version edit is needed), then
-`bun run gates` to catch anything the new soribashi build changed under this
-kit's feet.
+The version policy lives in
+"[The wiring, exactly](#the-wiring-exactly)": the `^0.1.0` range in
+`package.json` is the pin, and `bun.lock` records the exact resolved version.
+There is no longer a `SORIBASHI_COMMIT` file — it existed because `file:` deps
+consumed a sibling checkout's *working tree* rather than a published version,
+so the only honest record of what the recipes were built against was a commit
+SHA written down by hand. A semver dependency records that itself.
 
-**The current pin includes every fix batch discovered while authoring this kit's
-recipes**, landed upstream in soribashi across the build (SORI-6, -9, -10, -11,
--12, -13a, -15, -16, -18, -20, SORI-7's `@property` syntax fix, plus **SORI-14**
-(every builder hardcoding `Ref<HTMLElement>` on its render ctx; the commit
-actually pinned now). Because `file:` deps consume the sibling checkout's
-working tree rather than a published version, the pin record only stays honest
-if it tracks the actual HEAD the recipes were built and gated against — this
-bump is that record catching up one commit (SORI-14 is types-only, no runtime
-change). SORI-14 shows up as TWO DIFFERENT symptoms in this kit's recipes, not
-one — worth distinguishing rather than lumping together:
+**`0.1.0` includes every fix batch discovered while authoring this kit's
+recipes** (SORI-6, -9, -10, -11, -12, -13a, -15, -16, -18, -20, SORI-7's
+`@property` syntax fix, plus **SORI-14** — every builder hardcoding
+`Ref<HTMLElement>` on its render ctx). SORI-14 shows up as TWO DIFFERENT
+symptoms in this kit's recipes, not one — worth distinguishing rather than
+lumping together:
 
 - **A genuine bidirectional type mismatch (Icon's `<svg>` root).**
   `SVGSVGElement` is not assignable to or from `HTMLElement` (it is missing
@@ -386,13 +360,12 @@ Both symptoms trace to the same root cause (the render ctx's `ref` type should
 be generic over the recipe's actual root element, defaulting to `HTMLElement`,
 the way the polymorphic builder already threads `TDefaultAs`) and SORI-14 fixes
 both at once — the distinction above is about how each recipe experiences the
-bug today, not about needing two separate upstream fixes. **SORI-14 is now
-included in the pin** (bumped above), but every recipe's `ref={ref as
-Ref<...>}` cast is still in place — the pin bump alone doesn't make the casts
-unnecessary, it only makes them ELIGIBLE for removal now that the generic ref
-type exists upstream. Dropping them is a future cleanup, deliberately not done
-as part of this bump; each cast site still carries its own workaround comment
-until that pass happens.
+bug today, not about needing two separate upstream fixes. **SORI-14 is in
+`0.1.0`**, but every recipe's `ref={ref as Ref<...>}` cast is still in place —
+shipping the fix upstream does not make the casts unnecessary, it only makes
+them ELIGIBLE for removal now that the generic ref type exists. Dropping them
+is a future cleanup, deliberately not done here; each cast site still carries
+its own workaround comment until that pass happens.
 
 ## Adoption notes
 
@@ -486,3 +459,34 @@ Milestone A (kit build) is complete: every recipe above, the hooks family, and
 B — mr-board's own adoption of this kit, recipe by recipe, deleting the
 board-side CSS/markup each recipe absorbed — is tracked in the `mr-board` SDD
 ledger, not in this repo.
+
+## Appendix: the `file:` era (historical)
+
+Before `@soribashi/core` was published, this repo consumed soribashi from a
+sibling `../soribashi` checkout as four separate `file:` packages
+(`core`, `codegen`, `theme`, `factory`) plus a two-line `overrides` block. None
+of that is needed now, and the mechanics are recorded here only because the two
+bugs behind them are worth recognising if similar wiring ever reappears.
+
+**Bug 1 — `overrides` do not reach a nested `workspace:*`.** `core`'s and
+`codegen`'s own dependencies on `theme`/`factory` were declared
+`"workspace:*"`, which means nothing outside soribashi's own workspace.
+`overrides` alone did not fix them: with only `core`/`codegen` as direct
+dependencies, `@soribashi/factory`'s own `"@soribashi/theme": "workspace:*"`
+never got linked into factory's install location, on Bun 1.3.13, no matter how
+many times `bun install` was re-run. The workaround was to ALSO declare
+`theme` and `factory` as direct dependencies, putting them in root
+`node_modules` where factory's runtime walk-up resolution found them regardless
+of the unresolved nested link. Two overlapping link paths for the same package
+then produced a transient `EEXIST: failed to link package` race on roughly one
+in three clean installs, which is why `scripts/setup.sh` ran `bun install`
+twice and trusted only the second exit status. A registry package declares
+ordinary semver dependencies, so none of this arises: the current clean install
+is a single `bun install` with no overrides and no race.
+
+**Bug 2 — two module identities in one bundle.** Recorded in full under
+"[Wiring an adopter app](#wiring-an-adopter-app)", because unlike Bug 1 it is
+NOT retired by publishing: bundlers still key module identity by resolved path,
+so an adopter that declares its own `@soribashi/core` alongside the kit still
+gets two `SoribashiContext` objects and silently wrong colours. Import the
+wiring from `@mattstack/tui-kit/provider`.

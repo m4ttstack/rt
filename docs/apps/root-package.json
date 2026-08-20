@@ -27,7 +27,7 @@
     "./types/css-modules.d.ts": "./types/css-modules.d.ts"
   },
   "scripts": {
-    "setup": "sh scripts/setup.sh",
+    "setup": "bun install",
     "census": "bun run scripts/census.ts",
     "codegen": "soribashi build",
     "typecheck": "tsc --noEmit",
@@ -36,13 +36,7 @@
     "dev:workshop": "cd workshop && bunx vite"
   },
   "dependencies": {
-    "@soribashi/core": "file:../soribashi/packages/core",
-    "@soribashi/codegen": "file:../soribashi/packages/codegen",
-    "@soribashi/theme": "file:../soribashi/packages/theme",
-    "@soribashi/factory": "file:../soribashi/packages/factory",
-    "clsx": "^2.1.1",
-    "tailwind-merge": "^2.5.0",
-    "zod": "^4",
+    "@soribashi/core": "^0.1.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1"
   },
@@ -64,9 +58,5 @@
     "typescript": "^7",
     "vitest": "^4",
     "vitest-browser-react": "^2"
-  },
-  "overrides": {
-    "@soribashi/theme": "file:../soribashi/packages/theme",
-    "@soribashi/factory": "file:../soribashi/packages/factory"
   }
 }

@@ -29,17 +29,21 @@
     // tsconfig.base.json reaches, and here it is not a preference.
     //
     // The tempting shape is "src/ is browser code, so keep node types out of
-    // it and give scripts/ + test/ their own config". That split does not
-    // work: @soribashi/factory is consumed AS TYPESCRIPT SOURCE (every
-    // soribashi package sets `"types": "./src/index.ts"`), so `tsc`
-    // type-checks factory's own .ts files as part of any program that
-    // includes src/, and four of them read `process.env.NODE_ENV`
-    // (use-styles.ts, slot.tsx, is-dev.ts, validate-vocabulary-props.ts).
-    // `skipLibCheck` does not help: it skips .d.ts files, and these are .ts.
-    // So ANY config covering src/ needs `process` typed, split or not — 9 of
-    // the 18 baseline errors were exactly that. The other 9 were
-    // scripts/census.ts's `node:fs|os|path` imports, test/theme.test.ts's
-    // `fs`/`path` + `bun:test`, and two `import.meta.dir` reads.
+    // it and give scripts/ + test/ their own config". It buys duplication and
+    // nothing else: scripts/census.ts imports `node:fs|os|path`,
+    // test/theme.test.ts reads `fs`/`path`, and two files read
+    // `import.meta.dir` — all of which need `process`/node globals typed.
+    //
+    // HISTORICAL NOTE: this setting used to ALSO be forced by src/ itself.
+    // While soribashi was consumed via `file:`, every package set `"types":
+    // "./src/index.ts"`, so `tsc` type-checked factory's own .ts files as part
+    // of any program including src/, and four of them read
+    // `process.env.NODE_ENV` (use-styles.ts, slot.tsx, is-dev.ts,
+    // validate-vocabulary-props.ts) — `skipLibCheck` did not help, since it
+    // skips .d.ts and those were .ts. The published `@soribashi/core` ships
+    // compiled `.d.ts`, so src/ no longer drags soribashi's source into the
+    // program and that half of the reasoning is retired. The scripts/test half
+    // above still stands on its own.
     //
     // Given that, a second config would buy duplication and nothing else.
     // "node" rather than "bun": nothing in the kit imports `bun:*` any more
