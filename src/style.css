@@ -234,24 +234,6 @@
 .tui-cd-thread.replied .tui-comment-icon { color: var(--accent); }
 .tui-cd-thread.awaiting .tui-comment-icon { color: var(--dot-warn); }
 
-.tui-cd-overlay {
-  position: fixed; inset: 0; z-index: 100;
-  display: flex; justify-content: flex-end;
-  background: color-mix(in srgb, var(--bg) 55%, transparent); backdrop-filter: blur(2px);
-  /* The drawer renders inside the clickable row; reset the inherited pointer so
-     its content doesn't look clickable. Interactive children re-set pointer. */
-  cursor: default;
-  /* Same reason: the trigger lives in .tui-meta, which is nowrap to keep the
-     row one line. Left inherited, no prose in the drawer wraps and every note
-     runs off the right edge. */
-  white-space: normal;
-}
-.tui-cd {
-  width: min(460px, 92vw); height: 100%; overflow-y: auto;
-  background: var(--panel); border-left: 1px solid var(--border);
-  box-shadow: -6px 0 32px rgba(0, 0, 0, 0.3);
-  display: flex; flex-direction: column;
-}
 .tui-cd-head {
   display: flex; justify-content: space-between; align-items: flex-start; gap: 0.6rem;
   padding: 0.9rem 1rem 0.5rem; position: sticky; top: 0; background: var(--panel); z-index: 1;
@@ -407,20 +389,18 @@
 }
 .tui-burger:hover { border-color: var(--accent); }
 .tui-header-title { min-width: 0; }
-.tui-drawer-overlay {
-  position: fixed; inset: 0; z-index: 90; display: none;
-  background: color-mix(in srgb, var(--bg) 55%, transparent); backdrop-filter: blur(2px);
-}
-.tui-drawer {
-  width: min(320px, 85vw); height: 100%; overflow-y: auto;
-  background: var(--panel); border-right: 1px solid var(--border);
-  padding: 14px; display: flex; flex-direction: column; gap: 14px;
-  box-shadow: 4px 0 28px rgba(0, 0, 0, 0.3);
-}
+/* The left drawer IS the burger menu, which only exists below 720px (see the
+   media query below for the unhide). That is a BOARD LAYOUT decision, not a
+   property of "a left drawer", so the SideDrawer recipe does not carry it and
+   this residual gate stays here. It wins over the recipe's own
+   `display: flex` because style.css is UNLAYERED and every recipe rule sits
+   inside `@layer soribashi.recipes`. */
+[data-part="sidedrawer-overlay"][data-side="left"] { display: none; }
 .tui-drawer-head { display: flex; justify-content: space-between; align-items: center; }
 /* Inside the drawer the roster sits on the drawer's own panel: drop the
-   backdrop so it doesn't read as a box in a box. */
-.tui-drawer .tui-sidebar { position: static; padding: 0; border: 0; background: none; }
+   backdrop so it doesn't read as a box in a box. Fully qualified rather than
+   bare [data-part="sidedrawer"]: the comments drawer is the same recipe. */
+[data-part="sidedrawer"][data-side="left"] .tui-sidebar { position: static; padding: 0; border: 0; background: none; }
 .tui-drawer-controls {
   display: flex; flex-direction: column; align-items: stretch; gap: 8px;
   padding-top: 12px; border-top: 1px solid var(--border-soft);
@@ -445,21 +425,14 @@
   .tui-controls-header { display: none; }        /* controls move into the drawer */
   .tui-burger { display: inline-flex; }
   .tui-header { justify-content: flex-start; align-items: center; gap: 10px; margin-bottom: 1.1rem; }
-  .tui-drawer-overlay { display: flex; }
+  [data-part="sidedrawer-overlay"][data-side="left"] { display: flex; }
 }
 
 /* ── settings modal ───────────────────────────────────────────────── */
-.tui-modal-overlay {
-  position: fixed; inset: 0; z-index: 100;
-  display: flex; align-items: flex-start; justify-content: center; padding: 8vh 1rem;
-  background: color-mix(in srgb, var(--bg) 55%, transparent); backdrop-filter: blur(2px);
-}
-.tui-modal {
-  width: 100%; max-width: 420px; max-height: 80vh; overflow-y: auto;
-  border: 1px solid var(--border); border-radius: 10px; background: var(--panel);
-  padding: 1rem 1.1rem 1.2rem; box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25);
-}
-.tui-modal-head { display: flex; justify-content: space-between; align-items: center; }
+/* The frame itself (overlay / panel / head) is the Modal recipe's now. These
+   two are NOT dead with it: Board.tsx's mobile drawer head and CommentsDrawer's
+   head each render their own .tui-modal-title / .tui-modal-x inside a
+   SideDrawer's children, where no Modal slot reaches. */
 .tui-modal-title { font-weight: 700; letter-spacing: 0.02em; color: var(--accent); }
 .tui-modal-x {
   background: none; border: none; color: var(--muted); cursor: pointer;

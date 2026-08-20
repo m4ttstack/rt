@@ -83,9 +83,9 @@ for (const theme of ["light", "dark"] as const) {
   const t2 = page.locator(".tui-comments-btn, .tui-comment-token").first();
   if (await t2.count()) {
     await t2.click();
-    await page.waitForSelector(".tui-cd");
+    await page.waitForSelector('[data-part="sidedrawer"][data-side="right"]');
     await page.keyboard.press("Escape");
-    await page.waitForSelector(".tui-cd", { state: "detached" });
+    await page.waitForSelector('[data-part="sidedrawer"][data-side="right"]', { state: "detached" });
     if (!(await page.locator(".tui-row").first().isVisible())) throw new Error("escape assertion: board vanished");
   }
   await page.keyboard.press("Escape");
@@ -93,7 +93,7 @@ for (const theme of ["light", "dark"] as const) {
   const trigger = page.locator(".tui-comments-btn, .tui-comment-token").first();
   if (await trigger.count()) {
     await trigger.click();
-    await page.waitForSelector(".tui-cd");
+    await page.waitForSelector('[data-part="sidedrawer"][data-side="right"]');
     await shoot(page, `comments-${theme}`);
     await page.keyboard.press("Escape");
   }
@@ -107,7 +107,7 @@ for (const theme of ["light", "dark"] as const) {
   }
   // settings modal
   await page.click(".tui-side-gear");
-  await page.waitForSelector(".tui-modal");
+  await page.waitForSelector('[data-part="modal"]');
   await shoot(page, `settings-${theme}`);
   await page.keyboard.press("Escape");
   // selection bar
@@ -129,7 +129,7 @@ for (const theme of ["light", "dark"] as const) {
   page = await newPage(700, theme);
   await shoot(page, `mobile-${theme}`);
   await page.click(".tui-burger");
-  await page.waitForSelector(".tui-drawer");
+  await page.waitForSelector('[data-part="sidedrawer"][data-side="left"]');
   await shoot(page, `drawer-${theme}`);
   await page.close();
 

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { BoardMRWithReview, DraftInfo } from "../types.ts";
-import { Modal } from "../ui/Modal.tsx";
+import { Modal } from "@mattstack/tui-kit";
 import { cleanTitle } from "./format.ts";
 
 /** Drawer for one held outbound note. Shows the full body verbatim — exactly

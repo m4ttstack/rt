@@ -2,8 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Invadr } from "invadrs/react";
 import { memberPeerState, joinRowState } from "../../view.ts";
 import type { ConfigMember, BoardData } from "../types.ts";
-import { CopyButton } from "@mattstack/tui-kit";
-import { Modal } from "../ui/Modal.tsx";
+import { CopyButton, Modal } from "@mattstack/tui-kit";
 import { useRevealOnChange } from "../ui/hooks.ts";
 
 /** Check members in/out, and (on a board that can hand out invites) put each

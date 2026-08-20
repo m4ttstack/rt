@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { BoardMRWithReview } from "../types.ts";
 import { Markdown } from "../ui/Markdown.tsx";
-import { Modal } from "../ui/Modal.tsx";
+import { Modal } from "@mattstack/tui-kit";
 import { cleanTitle } from "./format.ts";
 
 /** Modal that fetches and renders the agent's written review markdown for an MR. */

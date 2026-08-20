@@ -4,7 +4,7 @@ import { commentDot } from "../../view.ts";
 import type { CommentNote, CommentThread, GeneralComment } from "../types.ts";
 import { Markdown } from "../ui/Markdown.tsx";
 import { ICONS } from "@mattstack/tui-kit";
-import { SideDrawer } from "../ui/SideDrawer.tsx";
+import { SideDrawer } from "@mattstack/tui-kit";
 import { ago, cleanTitle, statusPhrase, THREAD_ICON, THREAD_LABEL, commentCount } from "./format.ts";
 import { getDiscussions } from "../api.ts";
 
@@ -111,8 +111,11 @@ function CommentsDrawer({ mr, onClose }: { mr: BoardMR; onClose: () => void }) {
   }, [mr]);
   return (
     <SideDrawer
-      overlayClassName="tui-cd-overlay"
-      panelClassName="tui-cd"
+      // `side="right"` replaces .tui-cd-overlay/.tui-cd: the recipe carries
+      // the 460px measure, the left border + drawer shadow, and the overlay's
+      // flex-end alignment and cursor/white-space resets this drawer needs
+      // because it renders inside a clickable, nowrap row.
+      side="right"
       ariaLabel="comment threads"
       onClose={onClose}
       onOverlayClick={(e) => {

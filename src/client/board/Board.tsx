@@ -16,8 +16,7 @@ import { getSlackMarks, mrLine, boardSummary, draftKey } from "./format.ts";
 import { overlay } from "./optimistic.ts";
 import { useOptimisticLifecycle, useToasts, useBoardData, useLaunchAction } from "./hooks.ts";
 import { postAction } from "../api.ts";
-import { ICONS, Panel, ToastHost } from "@mattstack/tui-kit";
-import { SideDrawer } from "../ui/SideDrawer.tsx";
+import { ICONS, Panel, SideDrawer, ToastHost } from "@mattstack/tui-kit";
 import { Sidebar } from "./Sidebar.tsx";
 import { Controls } from "./Controls.tsx";
 import { SelectionBar } from "./SelectionBar.tsx";
@@ -537,8 +536,13 @@ export function Board() {
       {/* Mobile drawer: roster + controls, tucked behind the burger. */}
       {menuOpen && (
         <SideDrawer
-          overlayClassName="tui-drawer-overlay"
-          panelClassName="tui-drawer"
+          // `side` replaces the two class-name props: it drives the panel's
+          // width, border edge, shadow, padding/gap and the overlay's
+          // stacking + alignment. The one thing it does NOT carry is this
+          // drawer's below-720px-only existence, which is a board layout
+          // decision -- style.css keeps that as a two-rule display gate on
+          // [data-part="sidedrawer-overlay"][data-side="left"].
+          side="left"
           ariaLabel="menu"
           onClose={() => setMenuOpen(false)}
         >
