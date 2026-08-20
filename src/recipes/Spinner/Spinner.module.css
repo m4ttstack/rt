@@ -1,0 +1,21 @@
+/* `aria-hidden` by contract: the busy CONTEXT (Button, Badge) owns the
+   accessible state via `aria-busy`, not this glyph. */
+@layer soribashi.recipes {
+  .root {
+    display: inline-block;
+    width: var(--sb-spinner-size);
+    height: var(--sb-spinner-size);
+    flex-shrink: 0;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: var(--radius-round);
+    animation: sb-spinner-spin 0.8s linear infinite;
+    vertical-align: middle;
+  }
+
+  @keyframes sb-spinner-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+}

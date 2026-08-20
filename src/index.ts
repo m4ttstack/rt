@@ -74,6 +74,9 @@ export type {
   SideDrawerSide,
 } from "./recipes/SideDrawer/SideDrawer.tsx";
 
+export { Spinner, SPINNER_PARTS, spinnerTheme } from "./recipes/Spinner/Spinner.tsx";
+export type { SpinnerOwnProps, SpinnerProps } from "./recipes/Spinner/Spinner.tsx";
+
 export { STATUSDOT_PARTS, StatusDot, statusDotTheme } from "./recipes/StatusDot/StatusDot.tsx";
 export type { StatusDotOwnProps, StatusDotProps } from "./recipes/StatusDot/StatusDot.tsx";
 

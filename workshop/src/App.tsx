@@ -10,6 +10,7 @@ import { Panels } from "./pages/Panels.tsx";
 import { Segmenteds } from "./pages/Segmenteds.tsx";
 import { SelectBoxes } from "./pages/SelectBoxes.tsx";
 import { SideDrawers } from "./pages/SideDrawers.tsx";
+import { Spinners } from "./pages/Spinners.tsx";
 import { StatusDots } from "./pages/StatusDots.tsx";
 import { ToastHosts } from "./pages/ToastHosts.tsx";
 import { Tokens } from "./pages/Tokens.tsx";
@@ -35,6 +36,7 @@ const PAGES: Record<string, ComponentType> = {
   segmenteds: Segmenteds,
   selectboxes: SelectBoxes,
   sidedrawers: SideDrawers,
+  spinners: Spinners,
   statusdots: StatusDots,
   toasthosts: ToastHosts,
 };
