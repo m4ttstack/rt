@@ -36,6 +36,27 @@ import { tuiVocabulary } from "../src/theme.ts";
  *     monorepo's biome binary so a generated file is byte-identical to what
  *     biome would format; the kit has no biome and commits no manifest.json,
  *     so the only consumer of this module is test/token-existence.test.ts.
+ *  4. A DIRECTORY MAY PRODUCE MORE THAN ONE MANIFEST ENTRY (controller ruling
+ *     R11, task 15). soribashi's original assumes one recipe per directory —
+ *     `buildManifestEntry(name)` looked for the single RecipeMeta-carrying
+ *     export whose `.name` matched the directory, and threw if none matched.
+ *     That broke the moment `src/recipes/Segmented/` grew a second exported
+ *     recipe (`LabeledSeg`, sharing Segmented's four files rather than
+ *     getting its own directory — see Segmented.tsx's own comment for why):
+ *     `LabeledSeg`'s RecipeMeta was silently skipped by the name check, so it
+ *     had NO manifest entry at all, and a future cross-recipe import inside
+ *     `Segmented.tsx` would misattribute (`extractRecipeDependencies` and the
+ *     token/CSS gates all key off the manifest, which named only
+ *     `"Segmented"`). Fixed by collecting EVERY RecipeMeta-carrying export in
+ *     a directory's module, rather than the one matching the directory name:
+ *     `Recipe.extend({})` convenience exports (`segmentedTheme`,
+ *     `labeledSegTheme`) still carry no RecipeMeta (see the loop below), so
+ *     nothing about single-recipe directories changes — every recipe but
+ *     Segmented's still produces exactly one entry, byte-identical to before.
+ *     The new `ManifestEntry.dir` field records which directory an entry came
+ *     from (no longer implied by `entry.name`), and is what
+ *     test/token-existence.test.ts's "the manifest names every recipe
+ *     directory" row now sweeps instead of `entry.name` directly.
  */
 
 const SCRIPT_DIR = import.meta.dirname;
@@ -44,6 +65,15 @@ const RECIPES_DIR = join(REPO_ROOT, "src", "recipes");
 
 export interface ManifestEntry {
   name: string;
+  /**
+   * The `src/recipes/` directory this entry was derived from (bare directory
+   * name, matching `listRecipeDirs()`'s own entries — NOT a repo-relative
+   * path). Usually equal to `name` lowercased-and-matched by convention, but
+   * NOT guaranteed to equal `name` at all: a directory that exports more than
+   * one recipe (R11 — see this file's header comment) produces one
+   * `ManifestEntry` per export, all sharing the same `dir`.
+   */
+  dir: string;
   category: 1 | 2 | 3 | 4;
   builder: string;
   slots: readonly string[];
@@ -204,7 +234,16 @@ export function listRecipeDirs(): string[] {
 
 const VALID_CATEGORIES = new Set([1, 2, 3, 4]);
 
-async function buildManifestEntry(name: string): Promise<ManifestEntry> {
+/**
+ * Every `ManifestEntry` derived from ONE recipe directory — usually exactly
+ * one, but see R11 (this file's header comment, point 4): a directory whose
+ * module exports more than one RecipeMeta-carrying recipe (Segmented +
+ * LabeledSeg, sharing one four-file set) produces one entry per export, all
+ * sharing this directory's `category`/`files`/`tokenDependencies`/
+ * `registryDependencies` — those are properties of the FILES the recipes are
+ * authored in, not of an individual recipe.
+ */
+async function buildManifestEntriesForDir(name: string): Promise<ManifestEntry[]> {
   const recipeDir = join(RECIPES_DIR, name);
   const tsxPath = join(recipeDir, `${name}.tsx`);
   const cssPath = join(recipeDir, `${name}.module.css`);
@@ -215,40 +254,56 @@ async function buildManifestEntry(name: string): Promise<ManifestEntry> {
   const cssSource = readFileSync(cssPath, "utf-8");
 
   // The module's own namespace: `recipeCategory` is a per-module constant that
-  // no barrel re-exports, and RecipeMeta is read off whichever export the
+  // no barrel re-exports, and RecipeMeta is read off whichever export(s) the
   // builders attached it to.
   const recipeModule = (await import(pathToFileURL(tsxPath).href)) as Record<string, unknown>;
 
-  let meta: RecipeMeta | undefined;
+  // Collect EVERY RecipeMeta-carrying export, not only the one named after
+  // the directory (R11's fix — see this file's header comment, point 4).
+  // `Recipe.extend({})` results (`segmentedTheme`, `labeledSegTheme`, ...)
+  // carry no RecipeMeta, so they never appear here; ordinary single-recipe
+  // directories still yield exactly one entry, unchanged from before.
+  const metas: RecipeMeta[] = [];
   for (const value of Object.values(recipeModule)) {
     const candidate = getRecipeMeta(value);
-    // `Recipe.extend({})` results carry no RecipeMeta, so the named component
-    // is the only export that can match; the name check pins the convention
-    // that a recipe directory holds exactly one recipe, named after it.
-    if (candidate && candidate.name === name) {
-      meta = candidate;
-      break;
-    }
+    if (candidate) metas.push(candidate);
   }
-  if (!meta) {
+  if (metas.length === 0) {
+    throw new Error(
+      `[derive] ${toRepoRelative(tsxPath)} exports no component carrying RecipeMeta. Every ` +
+        "recipe directory must export at least one component built with a builder from " +
+        "src/builders.ts.",
+    );
+  }
+  // At least one export must still be named after the directory — the
+  // convention every recipe-authoring doc states ("a recipe directory holds
+  // one PRIMARY recipe, named after it"); a directory hosting only
+  // differently-named recipes would be a real authoring mistake this should
+  // still catch loudly.
+  if (!metas.some((m) => m.name === name)) {
     throw new Error(
       `[derive] ${toRepoRelative(tsxPath)} exports no component named "${name}" carrying ` +
-        "RecipeMeta. Every recipe directory must export one component, built with a builder " +
-        "from src/builders.ts and named after the directory.",
+        `RecipeMeta (found: ${metas.map((m) => m.name).join(", ") || "none"}). A recipe ` +
+        "directory's primary export must be named after the directory.",
     );
   }
 
   const category = recipeModule.recipeCategory;
   if (typeof category !== "number" || !VALID_CATEGORIES.has(category)) {
     throw new Error(
-      `[derive] Recipe "${name}" (${toRepoRelative(tsxPath)}) is missing a valid ` +
+      `[derive] Recipe directory "${name}" (${toRepoRelative(tsxPath)}) is missing a valid ` +
         "`export const recipeCategory = <1|2|3|4> as const;`. Every recipe module must declare " +
         "its authoring category before it can be derived into the manifest.",
     );
   }
 
-  return {
+  const files = [tsxPath, cssPath, testPath, visualTestPath].map(toRepoRelative);
+  const tokenDependencies = extractTokenDependencies(cssSource);
+  const registryDependencies = extractRecipeDependencies(tsxSource);
+
+  return metas.map((meta) => ({
     name: meta.name,
+    dir: name,
     category: category as 1 | 2 | 3 | 4,
     builder: meta.builder,
     slots: meta.slots,
@@ -256,19 +311,20 @@ async function buildManifestEntry(name: string): Promise<ManifestEntry> {
     vocabularyAxes: meta.vocabularyAxes,
     variants: meta.variants,
     defaults: { ...meta.defaults },
-    files: [tsxPath, cssPath, testPath, visualTestPath].map(toRepoRelative),
-    tokenDependencies: extractTokenDependencies(cssSource),
-    registryDependencies: extractRecipeDependencies(tsxSource),
-  };
+    files,
+    tokenDependencies,
+    registryDependencies,
+  }));
 }
 
 /**
- * One manifest entry per directory under `src/recipes/`, paired with the kit's
- * own vocabulary declaration.
+ * One manifest entry per RECIPE (not per directory — see R11) under
+ * `src/recipes/`, paired with the kit's own vocabulary declaration.
  */
 export async function buildManifest(): Promise<Manifest> {
   const names = listRecipeDirs();
-  const recipes = await Promise.all(names.map((name) => buildManifestEntry(name)));
+  const perDir = await Promise.all(names.map((name) => buildManifestEntriesForDir(name)));
+  const recipes = perDir.flat();
   recipes.sort((a, b) => a.name.localeCompare(b.name));
 
   return {

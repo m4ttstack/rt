@@ -87,8 +87,26 @@ describe("token existence: recipe tokenDependencies resolve against emitted CSS"
     // first recipe lands. This is the stronger form and is true at zero: if
     // derive.ts ever silently resolved to fewer recipes than exist on disk,
     // the sweep below would go quiet and this row would fail.
+    //
+    // Swept via `r.dir`, not `r.name` (R11, task 15 — see derive.ts's header
+    // comment, point 4): a directory may export more than one recipe
+    // (Segmented + LabeledSeg share one four-file set), so `r.name` is no
+    // longer 1:1 with `listRecipeDirs()`. The DIRECTORY set still must be —
+    // every entry names the directory it came from, so a directory silently
+    // producing zero entries (derive.ts resolving to fewer than exist on
+    // disk) still fails here exactly as before.
     const manifest = await buildManifest();
-    expect(manifest.recipes.map((r) => r.name)).toEqual(listRecipeDirs());
+    expect([...new Set(manifest.recipes.map((r) => r.dir))].sort()).toEqual(listRecipeDirs());
+  });
+
+  it("every manifest entry's name is unique", async () => {
+    // A real invariant now that a directory can host more than one entry:
+    // two recipes (in the same or different directories) must never collide
+    // on `name`, since consumers key off it (registryDependencies, the CSS
+    // gate's per-recipe rows, ...).
+    const manifest = await buildManifest();
+    const names = manifest.recipes.map((r) => r.name);
+    expect(new Set(names).size).toBe(names.length);
   });
 
   it("every recipe tokenDependency is an emitted custom property, or allowlisted", async () => {

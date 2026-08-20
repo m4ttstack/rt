@@ -20,13 +20,20 @@ import classes from "./Segmented.module.css";
  *
  * Read by scripts/derive.ts to build the kit's manifest; not itself derived,
  * since it records an authoring decision, not a fact recoverable from
- * RecipeMeta or the CSS. `scripts/derive.ts`'s `buildManifestEntry` requires
- * exactly one export per recipe DIRECTORY whose RecipeMeta name matches the
- * directory ("Segmented") — `LabeledSeg` below carries its own RecipeMeta
- * (name "LabeledSeg") and is simply skipped by that match, the same way
- * Icon.tsx's `ICONS`/`COPY_ICON`/`CHECK_ICON` constants coexist with `Icon`'s
- * RecipeMeta without derive.ts trying to select them. One recipe DIRECTORY,
- * two exported recipes, per this task's own brief ("Segmented (+LabeledSeg)").
+ * RecipeMeta or the CSS. One recipe DIRECTORY, two exported recipes, per this
+ * task's own brief ("Segmented (+LabeledSeg)") — RESOLVED as controller
+ * ruling R11 (task 15): `scripts/derive.ts`'s `buildManifestEntriesForDir`
+ * collects EVERY RecipeMeta-carrying export in a directory's module, not only
+ * the one matching the directory name, so `LabeledSeg` below (its own
+ * RecipeMeta, name "LabeledSeg") gets its own manifest entry alongside
+ * `Segmented`'s — both sharing this directory's files/category/token
+ * dependencies, since those are properties of the FILES, not of either
+ * recipe individually. (`Recipe.extend({})` results — `segmentedTheme`,
+ * `labeledSegTheme` — still carry no RecipeMeta and are still skipped, the
+ * same way Icon.tsx's `ICONS`/`COPY_ICON`/`CHECK_ICON` constants are.) See
+ * scripts/derive.ts's header comment (point 4) for the full rationale and why
+ * a same-directory split (giving LabeledSeg its own four files) was rejected
+ * as the larger change.
  */
 export const recipeCategory = 4 as const;
 
