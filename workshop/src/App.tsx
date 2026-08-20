@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import { useState } from "react";
+import { Alerts } from "./pages/Alerts.tsx";
 import { Badges } from "./pages/Badges.tsx";
 import { Buttons } from "./pages/Buttons.tsx";
 import { Chips } from "./pages/Chips.tsx";
@@ -30,6 +31,7 @@ import { Tokens } from "./pages/Tokens.tsx";
  */
 const PAGES: Record<string, ComponentType> = {
   tokens: Tokens,
+  alerts: Alerts,
   badges: Badges,
   buttons: Buttons,
   chips: Chips,

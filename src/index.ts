@@ -15,6 +15,9 @@
  * that name would collide here.
  */
 
+export { Alert, ALERT_PARTS, alertTheme } from "./recipes/Alert/Alert.tsx";
+export type { AlertOwnProps, AlertProps } from "./recipes/Alert/Alert.tsx";
+
 export { Badge, BADGE_PARTS, badgeTheme } from "./recipes/Badge/Badge.tsx";
 export type { BadgeOwnProps, BadgeProps } from "./recipes/Badge/Badge.tsx";
 
