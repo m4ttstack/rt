@@ -192,7 +192,7 @@
     initial-value: 7px;
   }
   @property --radius-round {
-    syntax: "<length>";
+    syntax: "<length-percentage>";
     inherits: true;
     initial-value: 50%;
   }
