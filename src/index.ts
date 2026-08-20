@@ -34,6 +34,22 @@
 export { Chip, CHIP_PARTS, chipTheme } from "./recipes/Chip/Chip.tsx";
 export type { ChipOwnProps, ChipProps } from "./recipes/Chip/Chip.tsx";
 
+export {
+  CONTEXTMENU_PARTS,
+  ContextMenu,
+  contextMenuTheme,
+} from "./recipes/ContextMenu/ContextMenu.tsx";
+export type {
+  ContextMenuItemOwnProps,
+  ContextMenuItemProps,
+  ContextMenuLabelOwnProps,
+  ContextMenuLabelProps,
+  ContextMenuOwnProps,
+  ContextMenuProps,
+  ContextMenuSeparatorOwnProps,
+  ContextMenuSeparatorProps,
+} from "./recipes/ContextMenu/ContextMenu.tsx";
+
 export { CopyButton, copyButtonTheme } from "./recipes/CopyButton/CopyButton.tsx";
 export type { CopyButtonOwnProps, CopyButtonProps } from "./recipes/CopyButton/CopyButton.tsx";
 

@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import { useState } from "react";
 import { Chips } from "./pages/Chips.tsx";
+import { ContextMenus } from "./pages/ContextMenus.tsx";
 import { CopyButtons } from "./pages/CopyButtons.tsx";
 import { Icons } from "./pages/Icons.tsx";
 import { Modals } from "./pages/Modals.tsx";
@@ -24,6 +25,7 @@ import { Tokens } from "./pages/Tokens.tsx";
 const PAGES: Record<string, ComponentType> = {
   tokens: Tokens,
   chips: Chips,
+  contextmenus: ContextMenus,
   copybuttons: CopyButtons,
   icons: Icons,
   modals: Modals,
@@ -39,6 +41,7 @@ const PAGES: Record<string, ComponentType> = {
  * below — needed once a key isn't a single word (`copybuttons`,
  * `selectboxes`). */
 const PAGE_LABELS: Record<string, string> = {
+  contextmenus: "ContextMenu",
   copybuttons: "CopyButton",
   selectboxes: "SelectBox",
   sidedrawers: "SideDrawer",

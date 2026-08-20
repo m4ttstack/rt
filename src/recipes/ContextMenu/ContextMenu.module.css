@@ -1,0 +1,195 @@
+/*
+ * ContextMenu — mr-board's `.tui-menu*` cursor-anchored row action menu.
+ *
+ * Every lift below is anchored on the CLASS NAME it came from in mr-board's
+ * `src/style.css` (line numbers drift; class names are the stable anchor).
+ * Seven board rules plus one keyframe make up the shell:
+ *
+ *   `.tui-menu {
+ *      position: fixed; z-index: 200; min-width: 200px; padding: 4px;
+ *      background: var(--card); border: 1px solid var(--border);
+ *      border-radius: 8px;
+ *      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28),
+ *                  0 2px 8px rgba(0, 0, 0, 0.18);
+ *      font-size: 13px;
+ *      animation: tui-menu-in 90ms ease-out; }`
+ *
+ *   `@keyframes tui-menu-in {
+ *      from { opacity: 0; transform: scale(0.97) translateY(-2px); }
+ *      to { opacity: 1; transform: none; } }`
+ *
+ *   `.tui-menu-label {
+ *      padding: 5px 8px 6px; font-family: var(--font-mono); font-size: 11px;
+ *      color: var(--muted); border-bottom: 1px solid var(--border-soft);
+ *      margin-bottom: 4px; }`
+ *
+ *   `.tui-menu-item {
+ *      display: flex; align-items: center; justify-content: space-between;
+ *      gap: 12px; width: 100%; padding: 7px 8px; background: none;
+ *      border: none; border-radius: 5px; color: var(--fg); font: inherit;
+ *      text-align: left; cursor: pointer; }`
+ *   `.tui-menu-item:hover:not(:disabled), .tui-menu-item:focus-visible {
+ *      background: color-mix(in srgb, var(--accent) 16%, transparent);
+ *      outline: none; }`
+ *   `.tui-menu-item:disabled {
+ *      color: var(--muted); opacity: 0.45; cursor: default; }`
+ *
+ *   `.tui-menu-hint {
+ *      font-family: var(--font-mono); font-size: 10px; color: var(--muted); }`
+ *   `.tui-menu-sep {
+ *      height: 1px; background: var(--border-soft); margin: 4px 2px; }`
+ *
+ * TOKENS. Every length/colour literal above has an exact rung:
+ *   4px  -> var(--spacing-px4)      5px  -> var(--spacing-px5) / --radius-px5
+ *   6px  -> var(--spacing-px6)      7px  -> var(--spacing-px7)
+ *   8px  -> var(--spacing-px8) / var(--radius-lg)
+ *   12px -> var(--spacing-px12)     2px  -> var(--spacing-px2)
+ *   10px -> var(--font-size-px10)   11px -> var(--font-size-px11)
+ *   13px -> var(--font-size-px13)
+ *   `color-mix(in srgb, var(--accent) 16%, transparent)` is the pre-emitted
+ *   semantic wash `var(--surface-wash-accent-16)` (src/theme.ts), referenced
+ *   as the token rather than re-derived — preference-order outlet 1. It is
+ *   the SAME wash Segmented's and SelectBox's hover rules already use, which
+ *   is why it exists as a token at all.
+ *   The two-layer drop shadow is src/theme.ts's `shadow.menu` VERBATIM ->
+ *   `var(--shadow-menu)`; that rung was named for THIS family and this recipe
+ *   is its first consumer.
+ * `1px` (three borders and the separator's own height) and `2px` (the
+ * keyframe's 2px lift) are on the gate's own length allowlist. `z-index: 200`,
+ * `opacity: 0.45`/`0`/`1`, `scale(0.97)` and `90ms` are bare/unitless or a
+ * time value, invisible to the length scanner.
+ *
+ * ONE VALUE HAS NO THEME RUNG and is routed through a recipe scalar
+ * ContextMenu.tsx's `vars` resolver emits unconditionally
+ * (`CONTEXTMENU_SCALARS`), the same pattern Modal's `MODAL_SCALARS` /
+ * ToastHost's `TOASTHOST_SCALARS` use:
+ *   200px -> `--sb-contextmenu-min-w`  (a fixed floating-panel MEASURE, not a
+ *            padding-margin-gap literal, so the spacing ladder's stated scope
+ *            excludes it. It is deliberately NOT given the shared-allowlist
+ *            treatment `320px` got: that literal recurs verbatim across four
+ *            independent board families, this one appears exactly once.)
+ *
+ * WHAT IS DELIBERATELY NOT LIFTED, and where it goes instead. All five stay in
+ * mr-board's stylesheet, unchanged, and keep working:
+ *
+ *  1. NOTE MODE — `.tui-menu-noting`, `.tui-menu-note`, `.tui-menu-note-hint`.
+ *     mr-board's alt-click flow swaps the item list for a labelled, auto-
+ *     growing textarea whose Enter fires the captured launch action. That is
+ *     an APPLICATION MODE, not menu chrome: it knows about launch notes, about
+ *     the alt key, and about mr-board's own `useAutoGrowTextarea`. It stays
+ *     app-side by this task's brief, and RowMenu keeps rendering it inside a
+ *     ContextMenu's `children`.
+ *     ONE OF THE THREE IS ANCESTOR-SCOPED ON AN ABSORBED CLASS and therefore
+ *     has to be REWRITTEN at adoption rather than merely kept:
+ *       `.tui-menu-noting .tui-menu-label`  { margin-bottom: 6px; }
+ *         -> `.tui-menu-noting [data-part="contextmenu-label"]`
+ *     `.tui-menu-noting`'s own rule (`width: 320px; padding: 6px;`) needs no
+ *     rewrite: RowMenu passes it as `className`, which the builder folds into
+ *     the root slot, and mr-board's stylesheet is UNLAYERED — an unlayered
+ *     author rule beats any rule in `@layer soribashi.recipes` regardless of
+ *     specificity or source order, so its `padding` still overrides `.root`'s
+ *     exactly as it does today.
+ *  2. TRAILING BOARD CHROME — `.tui-menu-check` (the Slack ✓ mark) and
+ *     `.tui-menu-spin` (the per-emoji spinner, which also depends on the
+ *     board-global `tui-spin` keyframe). Both are rendered BY THE CALLER into
+ *     an item's `trailing` prop, as arbitrary nodes the shell never inspects,
+ *     so neither is a slot here and neither could be styled from this file.
+ *     They are `.tui-menu-*`-named for historical reasons only.
+ *
+ * WHAT WAS SPLIT RATHER THAN MOVED: nothing. Unlike Modal, no shared
+ * multi-selector board rule (the fourteen-selector `:focus-visible` ring)
+ * names any `.tui-menu*` class — the menu item's focus treatment is the
+ * accent wash in its own `:hover:not(:disabled), :focus-visible` rule, which
+ * is lifted whole.
+ */
+@layer soribashi.recipes {
+  /* `box-sizing: border-box` (R13): an ADDITION, not a lift. mr-board gets it
+     from a global `* { box-sizing: border-box; }` reset; this kit's own copy
+     of that reset lives in the OPTIONAL `src/canvas.css`. Same three-case
+     caveat as Modal.module.css's note (condensed): consumer with no
+     box-sizing opinion -> border-box, correct; consumer whose reset is
+     border-box -> agrees, no change (this is mr-board); consumer with an
+     UNLAYERED content-box reset -> their rule still wins, because everything
+     here sits inside `@layer soribashi.recipes`. */
+  .root {
+    box-sizing: border-box;
+    position: fixed;
+    z-index: 200;
+    min-width: var(--sb-contextmenu-min-w);
+    padding: var(--spacing-px4);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-menu);
+    font-size: var(--font-size-px13);
+    animation: contextmenu-in 90ms ease-out;
+  }
+
+  /* Renamed from mr-board's `tui-menu-in`: CSS modules scope a keyframe name
+     the same way they scope a class, so the local name never collides with
+     the board's own copy while both stylesheets are loaded during adoption. */
+  @keyframes contextmenu-in {
+    from {
+      opacity: 0;
+      transform: scale(0.97) translateY(-2px);
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  .label {
+    padding: var(--spacing-px5) var(--spacing-px8) var(--spacing-px6);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-px11);
+    color: var(--muted);
+    border-bottom: 1px solid var(--border-soft);
+    margin-bottom: var(--spacing-px4);
+  }
+
+  /* `box-sizing: border-box` here for the same reason as `.root`, and it bites
+     harder: `width: 100%` plus 8px of horizontal padding would otherwise make
+     every item 16px wider than the box it sits in. Pinned by
+     ContextMenu.test.tsx's "the item's declared width is an OUTER measure". */
+  .item {
+    box-sizing: border-box;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-px12);
+    width: 100%;
+    padding: var(--spacing-px7) var(--spacing-px8);
+    background: none;
+    border: none;
+    border-radius: var(--radius-px5);
+    color: var(--fg);
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .item:hover:not(:disabled),
+  .item:focus-visible {
+    background: var(--surface-wash-accent-16);
+    outline: none;
+  }
+
+  .item:disabled {
+    color: var(--muted);
+    opacity: 0.45;
+    cursor: default;
+  }
+
+  .hint {
+    font-family: var(--font-mono);
+    font-size: var(--font-size-px10);
+    color: var(--muted);
+  }
+
+  .separator {
+    height: 1px;
+    background: var(--border-soft);
+    margin: var(--spacing-px4) var(--spacing-px2);
+  }
+}
