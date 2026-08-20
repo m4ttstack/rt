@@ -100,6 +100,27 @@ describe("Markdown (browser)", () => {
     expect(getComputedStyle(root).overflowWrap).toBe("anywhere");
   });
 
+  it("unstyled suppresses the recipe's own stylesheet, for adoption at a call site with pre-existing prose styling (CommentsDrawer)", async () => {
+    // CommentsDrawer.tsx's `.tui-cd-note-body` wrapper is a SEPARATE,
+    // board-owned prose block that never applied `.tui-md` — adopting this
+    // recipe there needs `unstyled` to avoid injecting `.tui-md` typography
+    // where the board never had it (see Markdown.tsx's own doc comment). This
+    // pins the actual mechanism: `unstyled` suppresses the CSS-module class
+    // (the SAME computed-style proxy the row above uses, now asserted to be
+    // the browser DEFAULT instead), while `data-part` — the cross-boundary
+    // hook, hand-stamped independently of getStyles's class resolution —
+    // still lands.
+    const styled = await renderWithTheme(<Markdown>text</Markdown>);
+    expect(getComputedStyle(styled.container.firstElementChild as HTMLElement).overflowWrap).toBe(
+      "anywhere",
+    );
+
+    const unstyled = await renderWithTheme(<Markdown unstyled>text</Markdown>);
+    const root = unstyled.container.firstElementChild as HTMLElement;
+    expect(getComputedStyle(root).overflowWrap).toBe("normal");
+    expect(root.getAttribute("data-part")).toBe("markdown");
+  });
+
   it("headings render through the real accessibility tree at the right level", async () => {
     const screen = await renderWithTheme(
       <Markdown>{"# One\n\n## Two\n\n### Three"}</Markdown>,

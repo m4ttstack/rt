@@ -108,6 +108,50 @@ export interface MarkdownOwnProps {
   linkTargetBlank?: boolean;
 }
 
+/**
+ * ADOPTION HAZARD — read before wiring this recipe into CommentsDrawer.tsx.
+ *
+ * mr-board's ReviewModal.tsx wraps its `<Markdown>` in `<div
+ * className="tui-md">` — adopting this recipe there is a straight swap
+ * (delete the wrapper div and its class, this recipe carries the same
+ * typography itself). CommentsDrawer.tsx's call site is DIFFERENT and
+ * needs different handling: it renders `<Markdown linkTargetBlank>` directly
+ * inside `<div className="tui-cd-note-body">`, a SEPARATE, board-owned prose
+ * block (style.css's `.tui-cd-note-body*` rules) that was never `.tui-md` —
+ * comment bodies today get `.tui-cd-note-body`'s own font/spacing/heading
+ * rules, not this recipe's typography, because nothing there ever applied
+ * `.tui-md`.
+ *
+ * Adopting this recipe as-is at that call site is NOT a no-op: `.root`'s own
+ * `font-family`/`font-size: var(--font-size-rem95)`/`line-height: 1.6` sit
+ * directly ON the wrapper element mr-board's ReactMarkdown output mounts
+ * into, which wins over `.tui-cd-note-body`'s inherited font regardless of
+ * CSS layer ordering (a property set on the element itself always beats one
+ * inherited from an ancestor), and the layered `h1`-`h6`/`pre`/`table`/...
+ * rules apply with no unlayered `.tui-cd-note-body` competitor there to lose
+ * to. The net effect is comment bodies silently picking up `.tui-md`
+ * typography they never had — a real, pixel-gate-visible rendering change,
+ * not a refactor.
+ *
+ * The escape hatch is the Styles API's own `unstyled` prop (soribashi's
+ * `useStyles`, `config.unstyled || options?.unstyled` — every builder reads
+ * it off props automatically, before `render` ever runs; see
+ * `packages/factory/src/hooks/use-styles.ts`). `<Markdown unstyled
+ * linkTargetBlank>{note.body}</Markdown>` suppresses `.root`'s CSS-module
+ * class entirely (no `Markdown.module.css` rule can match, since the
+ * element never carries the class), leaving `.tui-cd-note-body`'s own rules
+ * to apply exactly as they do today. `data-part="markdown"` is still
+ * stamped either way (it is hand-stamped in the render body, not part of
+ * `getStyles`'s class resolution), so the cross-boundary selector hook
+ * keeps working even in `unstyled` mode.
+ *
+ * **`unstyled` is the choice that PRESERVES PARITY** with mr-board's current
+ * CommentsDrawer rendering. Adopting without it is a real, visible typography
+ * change and should be a deliberate call, not a side effect of a mechanical
+ * swap. See the README's "Adoption notes" for the same warning, plus
+ * Markdown.test.tsx's "unstyled suppresses the recipe's own stylesheet" case
+ * for the pinned, verified behaviour.
+ */
 type MarkdownProps_ = MarkdownOwnProps & Omit<HTMLAttributes<HTMLDivElement>, "children">;
 
 export const Markdown = defineComponent<

@@ -109,13 +109,27 @@ LabeledSeg), SelectBox, SideDrawer, StatusDot, ToastHost. Each is a
 `<name>Theme = Recipe.extend({})` convenience export for a `createTheme({
 components: [...] })` call to start from.
 
-## The alias contract (19 names)
+### Hooks
 
-`soribashi.config.ts`'s `cssVariablesResolver` emits 19 short, board-domain CSS
-custom properties at `:root`, aliasing soribashi's own generated names
+Nine, all DOM-free at their core (each pairs a small React hook with a pure,
+independently-testable function): `pushLayer`, `handleEscape`,
+`acquireScrollLock`, `releaseScrollLock`, `useRevealOnChange`,
+`useEscapeClose`, `useAutoGrowTextarea`, `useBodyScrollLock`, `useToasts`.
+
+## The alias contract (19 names, 18 resolver-injected)
+
+`soribashi.config.ts`'s `cssVariablesResolver` injects 18 short, board-domain
+CSS custom properties at `:root`, aliasing soribashi's own generated names
 (`--surface-canvas`, `--color-blue-500`, ...) to the words mr-board's stylesheet
-already uses ~234 times. This is the kit's STABLE public CSS surface — recipes and
-app code alike reach for these, never the underlying generated names directly:
+already uses ~234 times. The table below lists 19 names because `--border-soft`
+belongs to the same board-domain vocabulary and every recipe reaches for it the
+same way, but it is NOT one of the resolver's injections — `border.soft` already
+emits `--border-soft` directly as its real semantic-token name (see the table's
+own note), so the resolver deliberately does not re-declare it (re-declaring it
+LATER in the same `:root` block, which is where resolver additions land, would
+overwrite the real declaration with a self-reference and resolve to nothing).
+This is the kit's STABLE public CSS surface either way — recipes and app code
+alike reach for every name below, never the underlying generated names directly:
 
 | alias | resolves to |
 | --- | --- |
@@ -218,14 +232,101 @@ kit's feet.
 **The current pin includes every fix batch discovered while authoring this kit's
 recipes**, landed upstream in soribashi across the build (SORI-6, -9, -10, -11,
 -12, -13a, -15, -16, -18, -20, plus SORI-7's `@property` syntax fix, which is the
-commit actually pinned). One known fix is NOT yet pulled: **SORI-14** (the
-builders' hardcoded `Ref<HTMLElement>` render-ctx type, filed against Icon's svg
-root — see `src/recipes/Icon/Icon.tsx`'s doc comment) landed in soribashi one
-commit after the current pin and has not been picked up; every recipe with a
-non-`HTMLElement` root (Icon's `<svg>`, Segmented's/Markdown's cast div/span)
-still carries the local `ref={ref as Ref<...>}` workaround documented at its own
+commit actually pinned). One known fix is NOT yet pulled: **SORI-14** (every
+builder hardcodes `Ref<HTMLElement>` on its render ctx; landed in soribashi one
+commit after the current pin, not yet picked up). SORI-14 shows up as TWO
+DIFFERENT symptoms in this kit's recipes, not one — worth distinguishing rather
+than lumping together:
+
+- **A genuine bidirectional type mismatch (Icon's `<svg>` root).**
+  `SVGSVGElement` is not assignable to or from `HTMLElement` (it is missing
+  `accessKey`, `autocapitalize`, and 26 more members — see
+  `src/recipes/Icon/Icon.tsx`'s doc comment for the exact compiler error), so
+  the cast is load-bearing in both directions: inside the recipe AND for any
+  future consumer who wants to pass their own `useRef<SVGSVGElement>` to
+  `<Icon ref={...} />`.
+  Icon is the only recipe with a non-`HTMLElement` root today, so it is the
+  only one with this symptom.
+- **A narrowing cast, not a mismatch (Segmented's `<span>`, Markdown's
+  `<div>`).** `HTMLSpanElement`/`HTMLDivElement` are both real SUBTYPES of
+  `HTMLElement` (they extend it, adding nothing incompatible) — the cast here
+  exists only because TypeScript's contravariant checking of `Ref`'s function-
+  signature parameter rejects narrowing `Ref<HTMLElement>` to `Ref<HTMLSpanElement>`
+  even though it is safe (every `HTMLSpanElement` genuinely IS an `HTMLElement`).
+  This is a real friction (an unnecessary cast at every such recipe's render
+  call) but not the same defect class as Icon's: nothing is actually
+  incompatible, and a future consumer's own `useRef<HTMLDivElement>` faces the
+  identical narrowing annoyance, not an impossible assignment.
+
+Both symptoms trace to the same root cause (the render ctx's `ref` type should
+be generic over the recipe's actual root element, defaulting to `HTMLElement`,
+the way the polymorphic builder already threads `TDefaultAs`) and SORI-14 fixes
+both at once — the distinction above is about how each recipe experiences the
+bug today, not about needing two separate upstream fixes. Every recipe with a
+cast (`ref={ref as Ref<...>}`) carries the workaround documented at its own
 cast site. Bumping the pin to pick up SORI-14 is a reasonable next slice but is
 not required for anything in this kit today — nothing here takes a recipe ref.
+
+## Adoption notes
+
+Two mr-board call sites need MORE than a mechanical "delete the board class,
+render the recipe" swap. Both are about the Markdown recipe specifically,
+recorded here because Milestone B's adoption task reads this README, not the
+recipe's own source, as its entry point.
+
+**`.tui-review-body .tui-md` (style.css:822) must SURVIVE, rewritten, not be
+deleted.** `.tui-review-body .tui-md { max-width: 820px; margin: 0 auto;
+padding-bottom: 1.5rem; }` is a CONTEXTUAL rule keyed on an ancestor
+(`.tui-review-body`, the review modal's scrolling body) — it is not part of
+`.tui-md`'s own typography and was never lifted into the Markdown recipe
+(a recipe has no ancestor to key off). It reads exactly like one of the
+`.tui-md` rules the adoption task is told it may delete once the recipe
+absorbs them, but deleting it silently drops the review modal's 820px reading
+measure and center alignment. It survives adoption rewritten onto the
+recipe's `data-part`:
+
+```css
+.tui-review-body [data-part="markdown"] {
+  max-width: 820px;
+  margin: 0 auto;
+  padding-bottom: 1.5rem;
+}
+```
+
+See `src/recipes/Markdown/Markdown.module.css`'s header comment for the same
+warning at the point a recipe-reader is most likely to see it.
+
+**CommentsDrawer.tsx needs `unstyled`, or it silently changes comment-body
+typography.** `CommentsDrawer.tsx` renders `<Markdown linkTargetBlank>`
+directly inside `<div className="tui-cd-note-body">` — a SEPARATE,
+board-owned prose block that was never `.tui-md`. Adopting the recipe there
+as-is is NOT a no-op: `.root`'s own `font-family`/`font-size`/`line-height`
+sit directly on the element ReactMarkdown mounts into (which wins over
+`.tui-cd-note-body`'s inherited font regardless of layer ordering — a
+property set on the element itself always beats one inherited from an
+ancestor), and the recipe's layered `h1`-`h6`/`pre`/`table`/... rules apply
+with no unlayered `.tui-cd-note-body` competitor there to lose to. The result
+is comment bodies picking up `.tui-md` typography they never had — a real,
+pixel-gate-visible change, not a refactor.
+
+The Styles API's own `unstyled` prop (every builder reads it off props
+automatically, before `render` runs) suppresses `.root`'s CSS-module class
+entirely, leaving `.tui-cd-note-body`'s own rules to apply exactly as they do
+today; `data-part="markdown"` is still stamped either way (it is hand-stamped
+independently of the class resolution `unstyled` suppresses). The adoption
+task at this call site is a real decision, not a mechanical default:
+
+```tsx
+<Markdown unstyled linkTargetBlank>{note.body}</Markdown>
+```
+
+**`unstyled` is the choice that PRESERVES PARITY** with mr-board's current
+rendering. Adopting without it — plain `<Markdown linkTargetBlank>{note.body}</Markdown>`
+— is a deliberate opt-in to `.tui-md` typography inside comment bodies, and
+should be made knowingly, not by omission. See
+`src/recipes/Markdown/Markdown.tsx`'s own doc comment and
+`Markdown.test.tsx`'s "unstyled suppresses the recipe's own stylesheet" case
+for the pinned, verified mechanism.
 
 ## Workshop
 
