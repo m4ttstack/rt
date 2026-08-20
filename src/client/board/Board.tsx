@@ -16,7 +16,7 @@ import { getSlackMarks, mrLine, boardSummary, draftKey } from "./format.ts";
 import { overlay } from "./optimistic.ts";
 import { useOptimisticLifecycle, useToasts, useBoardData, useLaunchAction } from "./hooks.ts";
 import { postAction } from "../api.ts";
-import { ICONS } from "../ui/Icon.tsx";
+import { ICONS } from "@mattstack/tui-kit";
 import { Panel } from "../ui/Panel.tsx";
 import { SideDrawer } from "../ui/SideDrawer.tsx";
 import { ToastHost } from "../ui/Toast.tsx";

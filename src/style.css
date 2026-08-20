@@ -37,7 +37,7 @@
 /* Uniform control height: the text segmented (0.8em) and icon segmented would
    otherwise differ by ~1px and read as misaligned. */
 .tui-controls-header > * { height: 28px; }
-.tui-controls-header .tui-seg button { height: 100%; }
+.tui-controls-header [data-part="segmented-option"] { height: 100%; }
 .tui-author { color: var(--purple); white-space: nowrap; }
 .tui-mascot {
   width: 34px; height: 34px; border-radius: 50%; flex-shrink: 0;
@@ -45,24 +45,17 @@
   background: var(--card); border: 1px solid var(--border); margin-left: 0.2rem;
 }
 .tui-avatar { width: 20px; height: 20px; }
-.tui-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--panel); }
-.tui-seg button {
-  display: inline-flex; align-items: center; justify-content: center;
-  padding: 0.3rem 0.45rem; cursor: pointer;
-  background: transparent; border: none; color: var(--muted);
-}
-.tui-seg button + button { border-left: 1px solid var(--border); }
-.tui-seg button.active { background: var(--accent); color: var(--bg); font-weight: 700; }
-.tui-seg button:not(.active):hover { color: var(--fg); }
-
-/* copy-to-slack buttons */
+/* Board-domain button shell. The CopyButton recipe absorbed this shape for its
+   own instances (which no longer carry the class), but three plain board
+   buttons still borrow it: the header refresh, and the selection bar's post +
+   clear. `.tui-copy.copied` is gone with the recipe -- only CopyButton ever
+   flashed it, and it now stamps `data-copied` instead. */
 .tui-copy {
   display: inline-flex; align-items: center; justify-content: center;
   padding: 0.3rem 0.45rem; cursor: pointer; border-radius: 6px;
   background: var(--panel); border: 1px solid var(--border); color: var(--muted);
 }
 .tui-copy:hover { color: var(--fg); border-color: var(--accent); }
-.tui-copy.copied { color: var(--green); border-color: var(--green); }
 .tui-refresh:disabled { cursor: default; color: var(--accent); border-color: var(--accent); }
 .tui-refresh.spinning svg { animation: tui-spin 0.8s linear infinite; }
 @keyframes tui-spin { to { transform: rotate(360deg); } }
@@ -74,7 +67,7 @@
 }
 .tui-row:hover .tui-copy-inline, .tui-card:hover .tui-copy-inline { opacity: 0.9; }
 .tui-copy-inline:hover { opacity: 1; color: var(--fg); }
-.tui-copy-inline.copied { opacity: 1; color: var(--green); }
+.tui-copy-inline[data-copied] { opacity: 1; color: var(--green); }
 .tui-copy-card { position: absolute; top: 0.45rem; right: 0.45rem; }
 /* Row copy button is always faintly present (not a hidden empty slot), so line
    1 reaches the right edge like the meta line below it — no phantom gap. It
@@ -82,21 +75,6 @@
 .tui-row .tui-copy-inline { opacity: 0.3; }
 
 /* ── selection ────────────────────────────────────────────────────── */
-/* Always visible, unlike the hover-revealed inline copy: you scan the board
-   fast, and hover-reveal is unusable in the mobile drawer layout. */
-.tui-selectbox {
-  display: inline-flex; align-items: center; justify-content: center;
-  flex: none; width: 1.6rem; height: 1.6rem; padding: 0;
-  font: inherit; font-size: 1.05rem; line-height: 1; cursor: pointer;
-  background: transparent; border: none; border-radius: 5px; color: var(--muted);
-  opacity: 0.5; transition: opacity 0.12s, color 0.12s, background 0.12s;
-}
-.tui-selectbox:hover {
-  opacity: 1; color: var(--fg);
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
-}
-.tui-selectbox.checked { opacity: 1; color: var(--accent); }
-
 .tui-selbar {
   position: sticky; top: 0; z-index: 5;
   display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem;
@@ -124,7 +102,8 @@
 .tui-selbar-actions { display: flex; gap: 0.45rem; margin-left: auto; align-items: center; }
 /* Roomier than the bare icon buttons in the header: these carry a label beside
    the icon, and without the gap the two collide. */
-.tui-selbar-actions .tui-copy {
+.tui-selbar-actions .tui-copy,
+.tui-selbar-actions [data-part="copybutton"] {
   gap: 0.45rem; padding: 0.4rem 0.75rem;
   font: inherit; font-size: 0.78rem; white-space: nowrap;
 }
@@ -147,8 +126,8 @@
 .tui-panel-title:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
 /* Keyboard focus: one accent ring for the controls that lacked one. Menu
    items and the panel title already carry their own focus-visible styles. */
-.tui-seg button:focus-visible, .tui-copy:focus-visible, .tui-copy-inline:focus-visible,
-.tui-selectbox:focus-visible, .tui-side-item:focus-visible, .tui-side-gear:focus-visible,
+.tui-copy:focus-visible, .tui-copy-inline:focus-visible,
+.tui-side-item:focus-visible, .tui-side-gear:focus-visible,
 .tui-burger:focus-visible, .tui-invite-btn:focus-visible, .tui-draft-act:focus-visible,
 .tui-modal-x:focus-visible, .tui-comments-btn:focus-visible, .tui-comment-token:focus-visible,
 .tui-join-toggle:focus-visible, .tui-drawer-action:focus-visible, .tui-review-open:focus-visible {
@@ -461,7 +440,6 @@
 .tui-side-right { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
 .tui-side-count { color: var(--muted); font-family: var(--font-mono); font-size: 0.85em; }
 .tui-side-empty { opacity: 0.45; }
-.tui-seg-text button { padding: 0.3rem 0.55rem; font-size: 0.8em; }
 
 /* ── mobile: burger + drawer ──────────────────────────────────────── */
 .tui-burger {
@@ -492,8 +470,8 @@
 /* Labeled, full-width control rows in the drawer. */
 .tui-ctl-row { display: flex; align-items: center; gap: 10px; }
 .tui-ctl-label { flex-shrink: 0; width: 48px; color: var(--muted); font-size: 0.78rem; }
-.tui-drawer-controls .tui-seg { flex: 1; }
-.tui-drawer-controls .tui-seg button { flex: 1; }
+.tui-drawer-controls [data-part="segmented"] { flex: 1; }
+.tui-drawer-controls [data-part="segmented-option"] { flex: 1; }
 .tui-drawer-action {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   width: 100%; padding: 8px; margin-top: 2px;
@@ -501,7 +479,7 @@
   background: transparent; color: var(--fg); font: inherit; font-size: 0.85rem; cursor: pointer;
 }
 .tui-drawer-action:hover { border-color: var(--accent); }
-.tui-drawer-action.copied { color: var(--dot-ok); border-color: var(--dot-ok); }
+.tui-drawer-action[data-copied] { color: var(--dot-ok); border-color: var(--dot-ok); }
 
 @media (max-width: 720px) {
   .tui-app { grid-template-columns: 1fr; }
@@ -565,8 +543,8 @@
 }
 .tui-invite-btn:hover:not(:disabled) { background: var(--card); }
 .tui-invite-btn:disabled { opacity: 0.5; cursor: default; }
-/* CopyButton flashes this class after a successful write (see .tui-drawer-action) */
-.tui-invite-btn.copied { color: var(--dot-ok); border-color: var(--dot-ok); }
+/* CopyButton stamps data-copied after a successful write (see .tui-drawer-action) */
+.tui-invite-btn[data-copied] { color: var(--dot-ok); border-color: var(--dot-ok); }
 /* free-text handle entry, and the join input: field + button on one line */
 .tui-invite-new { display: flex; align-items: center; gap: 6px; margin-top: 0.7rem; }
 .tui-invite-input {

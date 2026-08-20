@@ -3,7 +3,7 @@ import type { BoardMR } from "../../data.ts";
 import { commentDot } from "../../view.ts";
 import type { CommentNote, CommentThread, GeneralComment } from "../types.ts";
 import { Markdown } from "../ui/Markdown.tsx";
-import { ICONS } from "../ui/Icon.tsx";
+import { ICONS } from "@mattstack/tui-kit";
 import { SideDrawer } from "../ui/SideDrawer.tsx";
 import { ago, cleanTitle, statusPhrase, THREAD_ICON, THREAD_LABEL, commentCount } from "./format.ts";
 import { getDiscussions } from "../api.ts";

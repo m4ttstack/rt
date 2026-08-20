@@ -1,3 +1,4 @@
+import type { BunPlugin } from "bun";
 import { join, dirname, basename } from "path";
 import { readFileSync, writeFileSync, mkdirSync, watch } from "fs";
 import { homedir } from "os";
@@ -337,11 +338,43 @@ async function refreshMemberNames(): Promise<void> {
 }
 await refreshMemberNames();
 
+// ONE React in the bundle, pinned by resolved path.
+//
+// @mattstack/tui-kit is a `file:` dependency, and bun links it as a tree of
+// per-file symlinks into the sibling checkout. A bundler REALPATHS a leaf
+// before resolving that file's own imports, so a kit recipe's bare `react`
+// specifier resolves from `~/Documents/GitHub/tui-kit/node_modules/...`, not
+// from ours -- and bundlers key module identity by resolved path. The kit
+// declares react/react-dom as PEER dependencies (correctly); that is simply
+// not something an adopter's install can act on when the kit also has its own
+// devDependency copy sitting next to the realpath'd source.
+//
+// Measured before this plugin existed: `react@19.2.8` from the kit's store AND
+// `node_modules/react` from ours, both in one bundle -- so `<Icon>` (the first
+// kit recipe the board renders) threw `Cannot read properties of null (reading
+// 'useContext')` and React logged "You might have more than one copy of React
+// in the same app". Same failure mode, same diagnosis technique, as the
+// @soribashi/factory double instance in docs/tui-kit-devloop.md: group the
+// emitted bundle's module-path comments by package root.
+//
+// `Bun.resolveSync` from THIS file's directory always lands in mr-board's own
+// node_modules, so every react/react-dom specifier in the graph -- ours and
+// the kit's alike -- collapses onto one copy.
+const reactSingleton: BunPlugin = {
+  name: "react-singleton",
+  setup(builder) {
+    builder.onResolve({ filter: /^react(-dom)?(\/.*)?$/ }, (args) => ({
+      path: Bun.resolveSync(args.path, import.meta.dir),
+    }));
+  },
+};
+
 // Bundle the React client once at startup; served from memory.
 const build = await Bun.build({
   entrypoints: [join(import.meta.dir, "client", "main.tsx")],
   target: "browser",
   minify: true,
+  plugins: [reactSingleton],
 });
 if (!build.success) {
   console.error(build.logs.join("\n"));

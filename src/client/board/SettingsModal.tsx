@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Invadr } from "invadrs/react";
 import { memberPeerState, joinRowState } from "../../view.ts";
 import type { ConfigMember, BoardData } from "../types.ts";
-import { CopyButton } from "../ui/CopyButton.tsx";
+import { CopyButton } from "@mattstack/tui-kit";
 import { Modal } from "../ui/Modal.tsx";
 import { useRevealOnChange } from "../ui/hooks.ts";
 

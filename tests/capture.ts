@@ -111,7 +111,7 @@ for (const theme of ["light", "dark"] as const) {
   await shoot(page, `settings-${theme}`);
   await page.keyboard.press("Escape");
   // selection bar
-  await page.locator(".tui-selectbox").first().click();
+  await page.locator('[data-part="selectbox"]').first().click();
   await page.waitForSelector(".tui-selbar");
   await shoot(page, `selection-${theme}`);
   await page.close();

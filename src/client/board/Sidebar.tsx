@@ -1,6 +1,6 @@
 import { Invadr } from "invadrs/react";
 import type { RosterMember } from "../types.ts";
-import { ICONS } from "../ui/Icon.tsx";
+import { ICONS } from "@mattstack/tui-kit";
 
 function Sidebar({
   members,

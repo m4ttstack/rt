@@ -1,9 +1,7 @@
 import { GROUP_KEYS, SORT_KEYS } from "../../view.ts";
 import type { ViewState } from "../../view.ts";
 import type { ThemeMode, ViewMode } from "../types.ts";
-import { LabeledSeg, Segmented } from "../ui/Segmented.tsx";
-import { ICONS } from "../ui/Icon.tsx";
-import { CopyButton } from "../ui/CopyButton.tsx";
+import { CopyButton, ICONS, LabeledSeg, Segmented } from "@mattstack/tui-kit";
 import { GROUP_LABEL, SORT_LABEL } from "./format.ts";
 import { SLACK_ICON } from "./chips.tsx";
 
@@ -80,7 +78,11 @@ function Controls({
       >
         {ICONS.refresh}
       </button>
-      {canCopy && <CopyButton text={summaryText} className="tui-copy" title="copy summary for Slack" />}
+      {/* No `className="tui-copy"`: the CopyButton recipe's own stylesheet IS
+          that rule now. `.tui-copy` survives in style.css only to dress the
+          board's own plain buttons (the refresh button above, the selection
+          bar's post/clear), which are not CopyButton instances. */}
+      {canCopy && <CopyButton text={summaryText} title="copy summary for Slack" />}
       {group}
       {sort}
       {viewSeg}
