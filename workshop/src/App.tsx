@@ -5,6 +5,7 @@ import { Buttons } from "./pages/Buttons.tsx";
 import { Chips } from "./pages/Chips.tsx";
 import { ContextMenus } from "./pages/ContextMenus.tsx";
 import { CopyButtons } from "./pages/CopyButtons.tsx";
+import { Fields } from "./pages/Fields.tsx";
 import { Icons } from "./pages/Icons.tsx";
 import { Markdowns } from "./pages/Markdowns.tsx";
 import { Modals } from "./pages/Modals.tsx";
@@ -34,6 +35,7 @@ const PAGES: Record<string, ComponentType> = {
   chips: Chips,
   contextmenus: ContextMenus,
   copybuttons: CopyButtons,
+  fields: Fields,
   icons: Icons,
   markdowns: Markdowns,
   modals: Modals,

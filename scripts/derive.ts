@@ -280,11 +280,21 @@ async function buildManifestEntriesForDir(name: string): Promise<ManifestEntry[]
   // one PRIMARY recipe, named after it"); a directory hosting only
   // differently-named recipes would be a real authoring mistake this should
   // still catch loudly.
-  if (!metas.some((m) => m.name === name)) {
+  //
+  // `recipeIsFamily` (R12, task 6, opt-out, read directly off the module like
+  // `recipeCategory`) is the escape hatch for a directory with no primary at
+  // all: `src/recipes/Field/Field.tsx` hosts TextField/TextArea/RadioGroup,
+  // three co-equal recipes sharing one CSS shape, and none of them is named
+  // "Field" — there is no single recipe the directory name could correctly
+  // point at, so the "primary name matches directory" guard does not apply.
+  // Ordinary directories (including Segmented + LabeledSeg, which DOES have a
+  // primary) keep tripping this guard exactly as before.
+  if (!recipeModule.recipeIsFamily && !metas.some((m) => m.name === name)) {
     throw new Error(
       `[derive] ${toRepoRelative(tsxPath)} exports no component named "${name}" carrying ` +
         `RecipeMeta (found: ${metas.map((m) => m.name).join(", ") || "none"}). A recipe ` +
-        "directory's primary export must be named after the directory.",
+        "directory's primary export must be named after the directory, or the module must " +
+        "declare `export const recipeIsFamily = true as const;` for a deliberate no-primary family.",
     );
   }
 
