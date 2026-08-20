@@ -237,8 +237,12 @@ describe("Modal (browser)", () => {
       </Modal>,
     );
 
+    // Literals, not MODAL_PARTS references: the point of this case is that
+    // the CONTRACT's values are what they are, so reading them out of the
+    // constant under test would make it vacuous. `modal` (not `modal-frame`)
+    // is controller ruling R12 — § 5's `root -> <recipe>` rule, applied.
     expect(overlayOf(screen.container).getAttribute("data-part")).toBe("modal-overlay");
-    expect(frameOf(screen.container).getAttribute("data-part")).toBe("modal-frame");
+    expect(frameOf(screen.container).getAttribute("data-part")).toBe("modal");
     for (const part of ["modal-head", "modal-title", "modal-close"]) {
       expect(screen.container.querySelectorAll(`[data-part="${part}"]`)).toHaveLength(1);
     }
@@ -251,7 +255,7 @@ describe("Modal (browser)", () => {
       </Modal>,
     );
 
-    expect(frameOf(screen.container).getAttribute("data-part")).toBe("modal-frame");
+    expect(frameOf(screen.container).getAttribute("data-part")).toBe("modal");
     expect(screen.container.querySelectorAll('[data-part="hijacked"]')).toHaveLength(0);
   });
 

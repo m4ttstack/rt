@@ -111,11 +111,24 @@
      explicitly OPTIONAL ("Components do not require it"). Without this
      declaration a consumer who skips the canvas gets a frame `width: 100%`
      PLUS ~35px of padding and border, which overflows the overlay's own
-     padded box, and a "420px" modal that measures ~455px. Declaring it here
-     changes nothing about mr-board's computed styles (it already computes
-     border-box). Pinned by Modal.test.tsx's "the frame's declared width is an
-     OUTER measure". (SideDrawer.module.css carries the same note for the same
-     reason.) */
+     padded box, and a "420px" modal that measures ~455px.
+
+     WHAT THIS DOES AND DOES NOT GUARANTEE. It is not a universal guarantee,
+     because it sits inside `@layer soribashi.recipes` and an UNLAYERED author
+     rule beats any layered one — the same cascade fact that lets mr-board's
+     own `.tui-review-modal` override `.root` (see note 2 in the header). So:
+
+       - consumer with NO box-sizing opinion  -> border-box, correct;
+       - consumer whose reset is border-box   -> agrees, correct (this is
+         mr-board: the declaration changes nothing about its computed styles);
+       - consumer with an UNLAYERED reset that says content-box -> their rule
+         wins and the frame is content-box again.
+
+     The third case is a consumer deliberately overriding us and is out of
+     scope here; the first is the one this closes. Pinned by Modal.test.tsx's
+     "the frame's declared width is an OUTER measure", which runs in exactly
+     the first case (the browser tier loads theme.css only, never the canvas).
+     (SideDrawer.module.css carries the same note for the same reason.) */
   .root {
     box-sizing: border-box;
     width: 100%;

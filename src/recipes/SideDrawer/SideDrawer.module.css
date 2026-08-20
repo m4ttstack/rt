@@ -152,11 +152,25 @@
      `src/canvas.css`, which is explicitly OPTIONAL ("Components do not require
      it"). Without this declaration, a consumer who skips the canvas renders a
      "320px" left drawer 349px wide (320 + 28px padding + 1px border), and a
-     "min(460px, 92vw)" right drawer one border too wide. Declaring it here
-     changes nothing about mr-board's own computed styles (it already computes
-     border-box) and makes the recipe's width mean the same thing everywhere.
-     Pinned by SideDrawer.test.tsx's per-side width cases, which assert the
-     `min()` formula as the OUTER measure. */
+     "min(460px, 92vw)" right drawer one border too wide.
+
+     WHAT THIS DOES AND DOES NOT GUARANTEE. It is not a universal guarantee,
+     because it sits inside `@layer soribashi.recipes` and an UNLAYERED author
+     rule beats any layered one — the same cascade fact note 1 in the header
+     relies on for the board's residual `display` gate. So:
+
+       - consumer with NO box-sizing opinion  -> border-box, correct;
+       - consumer whose reset is border-box   -> agrees, correct (this is
+         mr-board: the declaration changes nothing about its computed styles,
+         so parity holds there by agreement, not by this rule winning);
+       - consumer with an UNLAYERED reset saying content-box -> their rule
+         wins and the panel is content-box again.
+
+     The third case is a consumer deliberately overriding us and is out of
+     scope here; the first is the one this closes. Pinned by
+     SideDrawer.test.tsx's per-side width cases, which assert the `min()`
+     formula as the OUTER measure and run in exactly the first case (the
+     browser tier loads theme.css only, never the canvas). */
   .root {
     box-sizing: border-box;
     width: var(--sb-sidedrawer-w);

@@ -83,18 +83,21 @@ const MODAL_SELECTORS = ["root", "overlay", "head", "title", "close"] as const;
  * mr-board's residual `style.css` without needing an ancestor to disambiguate
  * which recipe it is:
  *
- *   root slot    -> "modal-frame"    (the drop-in replacement for `.tui-modal`)
+ *   root slot    -> "modal"          (the drop-in replacement for `.tui-modal`)
  *   overlay slot -> "modal-overlay"  (`.tui-modal-overlay`)
  *   head slot    -> "modal-head"     (`.tui-modal-head`)
  *   title slot   -> "modal-title"    (`.tui-modal-title`)
  *   close slot   -> "modal-close"    (`.tui-modal-x`)
  *
- * The root value is `modal-frame` rather than the bare `modal` § 5's naming
- * rule would otherwise produce: the controller named both overlay and frame
- * explicitly for this recipe, and `modal-frame` reads unambiguously beside
- * `modal-overlay`. (SideDrawer's root keeps the bare `sidedrawer` form, which
- * is the same controller instruction applied to that recipe — the asymmetry is
- * deliberate and is flagged in the task report.)
+ * THE ROOT VALUE IS THE BARE `modal` (controller ruling R12). This recipe
+ * briefly shipped `modal-frame`, on the reading that the controller had named
+ * overlay and frame explicitly; R12 settles it the other way, and correctly —
+ * § 5's rule is `root -> <lowercased recipe name>`, the frame IS the root
+ * slot (see MODAL_SELECTORS above for why the frame and not the overlay holds
+ * that position), and every other recipe in the kit follows the bare form
+ * (`panel`, `sidedrawer`, `chip`, `segmented`). The `-frame` suffix
+ * bought nothing `modal` beside `modal-overlay` did not already read
+ * unambiguously, and cost the kit its one exception.
  *
  * ADOPTION NOTE, TWO RULES THAT MUST SURVIVE. `.tui-modal-title` and
  * `.tui-modal-x` are absorbed here AND still used app-side: Board.tsx's mobile
@@ -110,7 +113,7 @@ const MODAL_SELECTORS = ["root", "overlay", "head", "title", "close"] as const;
  * Pinned by Modal.test.tsx's "a consumer-supplied data-part does not win".
  */
 export const MODAL_PARTS = {
-  root: "modal-frame",
+  root: "modal",
   overlay: "modal-overlay",
   head: "modal-head",
   title: "modal-title",
