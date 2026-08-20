@@ -95,13 +95,22 @@ Other gates: `bun run typecheck`, `bun test` (587 tests / 52 files).
   the kit existed) — deleted in `1289a52`: `.tui-mascot`, `.tui-iid`,
   `.tui-card-review`. Re-ran typecheck/test/capture/compare after deleting —
   still 20/20, zero diffs, confirming they were inert.
-- **`[data-part]` scoping**: every remaining kit-facing selector in
-  `style.css` is `[data-part=...]`-scoped (the chip state selectors
-  additionally key on board-domain data attributes — `data-review`,
-  `data-respond`, `data-peer`, `data-doctor`, `data-nudge`, `data-held-draft`,
-  `data-flag`, `data-draft` — sitting on the kit's `[data-part="chip"]`
-  element; that's intentional, documented in the big comment above them). No
-  exceptions found.
+- **`[data-part]` scoping**: all kit-facing selectors in `style.css` are
+  either `[data-part=...]`-scoped (the chip state selectors additionally key
+  on board-domain data attributes — `data-review`, `data-respond`,
+  `data-peer`, `data-doctor`, `data-nudge`, `data-held-draft`, `data-flag`,
+  `data-draft` — sitting on the kit's `[data-part="chip"]` element; that's
+  intentional, documented in the big comment above them) **or one of three
+  documented `[data-copied]` state hooks on a CopyButton recipe root**,
+  reached via className pass-through with no `[data-part]` in the selector:
+  `.tui-copy-inline[data-copied]`, `.tui-drawer-action[data-copied]`, and
+  `.tui-invite-btn[data-copied]` (the last is one of two sanctioned producers
+  for that green state — see Task 18's fix round: the CopyButton "copy
+  invite" instance stamps `data-copied`, while the plain-button armed
+  re-invite sets `.copied` as a class itself; both selectors are
+  load-bearing). `.tui-row[data-local="1"], .tui-card[data-local="1"]` is a
+  separate, purely board-domain attribute selector (`data-local` marks
+  locally-known rows/cards) — not kit-facing at all.
 
 ## Accepted deltas (kit behavior that diverges from the pre-adoption board, on purpose)
 
