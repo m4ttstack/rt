@@ -130,3 +130,19 @@ export type { OverflowTarget, Toast } from "./hooks/index.ts";
 // barrel is already downstream of `builders.ts`, which is already downstream
 // of the theme, via every recipe import above).
 export { tuiTheme } from "./theme.ts";
+
+// The app-entry wiring — same two exports as `./provider.ts` (the `/provider`
+// subpath). `tuiTheme`'s companions: `registerTheme(tuiTheme)` at module
+// scope, `<SoribashiProvider theme={tuiTheme}>` around the tree.
+//
+// They MUST be reachable from this package rather than imported by an adopter
+// from `@soribashi/core` directly: bundlers key module identity by resolved
+// path, and an adopter's own `@soribashi/core` resolves down a different path
+// than the one this kit's own files resolve down — yielding two
+// `SoribashiContext` objects and a silent fallback to the DEFAULT theme.
+// `src/provider.ts` carries the full mechanism and the measurement.
+//
+// Costs this barrel nothing: every recipe above already pulls
+// `@soribashi/factory` in through `builders.ts`, so the module graph is
+// unchanged by adding these two names.
+export { registerTheme, SoribashiProvider } from "./provider.ts";

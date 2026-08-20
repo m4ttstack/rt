@@ -27,6 +27,11 @@ bun run setup   # sh scripts/setup.sh — installs, twice (see script comment)
 
 ### The wiring, exactly
 
+**This section is about THIS repo's own dependencies — for people hacking on the
+kit.** An app that merely *consumes* the kit needs none of it: see
+"[Wiring an adopter app](#wiring-an-adopter-app)" below, which is deliberately
+much shorter.
+
 `package.json`'s `dependencies` declares FOUR soribashi packages directly, all as
 `file:` pointers into the sibling `../soribashi` checkout — not two, even though
 only `@soribashi/core` and `@soribashi/codegen` are imported directly anywhere in
@@ -98,8 +103,100 @@ barrel; reach for one directly when you want a narrower import:
 | `@mattstack/tui-kit` | `src/index.ts` | recipes + hooks + `tuiTheme`, the common case |
 | `@mattstack/tui-kit/hooks` | `src/hooks/index.ts` | only the hooks, no recipe module graph |
 | `@mattstack/tui-kit/theme` | `src/theme.ts` | only `tuiTheme`, e.g. feeding a `createTheme({ extends })` call |
+| `@mattstack/tui-kit/provider` | `src/provider.ts` | `registerTheme` + `SoribashiProvider` for an app entry, without the recipe module graph |
 | `@mattstack/tui-kit/theme.css` | `src/generated/theme.css` | the generated CSS custom properties — import once, at an app entry |
 | `@mattstack/tui-kit/canvas.css` | `src/canvas.css` | opt-in page canvas reset — see below |
+
+### Wiring an adopter app
+
+**One dependency: an adopter declares `@mattstack/tui-kit` and no `@soribashi/*`
+package at all.** It still needs the two-line `overrides` block, for a
+different reason (below).
+
+```jsonc
+// the adopter's package.json — this is the whole soribashi story
+"dependencies": {
+  "@mattstack/tui-kit": "file:../tui-kit"
+},
+"overrides": {
+  "@soribashi/theme":   "file:../soribashi/packages/theme",
+  "@soribashi/factory": "file:../soribashi/packages/factory"
+}
+```
+
+**Why the `overrides` survive even with zero `@soribashi` dependencies.** Bun
+applies `overrides` only from the ROOT package, so this kit's own overrides do
+not reach an adopter's install. Installing `@mattstack/tui-kit` makes bun walk
+into this repo's `package.json` and resolve *its* `@soribashi/*` `file:` deps,
+whose own `"workspace:*"` requirements then have nothing to resolve against.
+Without the block, `bun install` fails outright:
+
+```
+error: @soribashi/factory@workspace:* failed to resolve
+error: @soribashi/theme@workspace:* failed to resolve
+```
+
+Loud and immediate, unlike the silent breakage the direct dependencies caused —
+and it disappears entirely once soribashi is a published package.
+
+```tsx
+// the adopter's app entry
+import { registerTheme, SoribashiProvider } from "@mattstack/tui-kit/provider";
+import { tuiTheme } from "@mattstack/tui-kit/theme";
+import "@mattstack/tui-kit/theme.css";
+import "@mattstack/tui-kit/canvas.css";   // optional, see below
+
+registerTheme(tuiTheme);                   // module scope, before render
+
+createRoot(el).render(
+  <SoribashiProvider theme={tuiTheme}>
+    <App />
+  </SoribashiProvider>,
+);
+```
+
+Both halves are mandatory and neither substitutes for the other:
+`registerTheme()` is what the `makeBuilders()`-produced components read to
+resolve tokens/vocabulary/intent, `<SoribashiProvider>` is what `useTheme()`
+reads inside the tree. `workshop/src/main.tsx` is the live example.
+
+**Import them from the kit, never from `@soribashi/core` directly.** Doing the
+latter used to be the only option, and it required an adopter to take direct
+`file:` deps on three soribashi packages. That guidance is retired: it produced
+wiring that installed, type-checked, booted — and was silently wrong.
+
+The reason is that **bundlers key module identity by resolved path**. An
+adopter's own `@soribashi/core` resolves through the adopter's `node_modules`
+to the canonical `soribashi/packages/*` checkout; a file inside this kit has
+its leaf symlink realpathed to the kit's checkout first, so the same specifier
+resolves from `tui-kit/node_modules/`. Same package, same version,
+byte-identical files (usually hardlinked to one inode) — but two paths, so two
+module records in the bundle: two `SoribashiContext` objects, two vocabulary
+registries, two `createTheme` implementations. `registerTheme()` writes one
+registry while the recipes read the other, and a recipe's `useTheme()` finds no
+Provider above it and falls back to the DEFAULT theme. No error, no warning,
+just wrong colours. Measured on mr-board before this export existed: 2x
+`provider/context.ts`, 2x `vocabulary-registry.ts`, 2x `create-theme.ts` in one
+bundle.
+
+Importing through the kit collapses that to one identity by construction —
+these symbols travel the same resolved path as `tuiTheme` and every recipe.
+If you ever suspect a double instance, group your bundle's emitted module-path
+comments by package root; do not trust `node_modules` inspection or
+`Bun.resolveSync`, neither of which reflects what the bundler actually does.
+
+`@mattstack/tui-kit` (the barrel) re-exports the same two names, for an app that
+is already importing recipes from it. The subpath exists because an app entry
+usually wants only the wiring, and the barrel drags every recipe's module graph
+— and every `.module.css` — along with it.
+
+One thing the subpath does **not** fix: `@soribashi/factory` ships its types as
+source, so its `@ts-expect-error` suppressions are re-checked under the
+*consumer's* tsconfig on either import path. A consumer whose tsconfig declares
+`import.meta.env` (any `types: ["bun"]` project) will see two `TS2578: Unused
+'@ts-expect-error' directive` errors from inside `node_modules`. The fix is to
+check factory the way factory's own repo does — `types: ["node"]` — which is
+what this kit's `tsconfig.json` uses.
 
 ### Recipes
 

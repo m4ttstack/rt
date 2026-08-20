@@ -18,6 +18,10 @@
       "types": "./src/theme.ts",
       "default": "./src/theme.ts"
     },
+    "./provider": {
+      "types": "./src/provider.ts",
+      "default": "./src/provider.ts"
+    },
     "./theme.css": "./src/generated/theme.css",
     "./canvas.css": "./src/canvas.css",
     "./types/css-modules.d.ts": "./types/css-modules.d.ts"

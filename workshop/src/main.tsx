@@ -1,4 +1,10 @@
-import { registerTheme, SoribashiProvider } from "@soribashi/core";
+// Through the kit's own `/provider` subpath, not `@soribashi/core` directly —
+// the shape every adopter is told to use (README, "Wiring an adopter app"), so
+// the workshop is a live surface check for that export the same way it is for
+// the barrel. It also keeps these two on the SAME resolved path as `tuiTheme`
+// and every recipe, which is the whole point of the subpath: see
+// `src/provider.ts` for why two paths mean two SoribashiContexts.
+import { registerTheme, SoribashiProvider } from "@mattstack/tui-kit/provider";
 import { tuiTheme } from "@mattstack/tui-kit/theme";
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
