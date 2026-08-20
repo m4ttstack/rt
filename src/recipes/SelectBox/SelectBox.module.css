@@ -1,0 +1,89 @@
+/*
+ * SelectBox — mr-board's row/card selection checkbox (`.tui-selectbox`).
+ *
+ * Every lift below is anchored on the CLASS NAME it came from in mr-board's
+ * `src/style.css` (line numbers drift; class names are the stable anchor):
+ *
+ *   `.tui-selectbox {
+ *      display: inline-flex; align-items: center; justify-content: center;
+ *      flex: none; width: 1.6rem; height: 1.6rem; padding: 0;
+ *      font: inherit; font-size: 1.05rem; line-height: 1; cursor: pointer;
+ *      background: transparent; border: none; border-radius: 5px;
+ *      color: var(--muted); opacity: 0.5;
+ *      transition: opacity 0.12s, color 0.12s, background 0.12s; }`
+ *   `.tui-selectbox:hover {
+ *      opacity: 1; color: var(--fg);
+ *      background: color-mix(in srgb, var(--accent) 14%, transparent); }`
+ *   `.tui-selectbox.checked { opacity: 1; color: var(--accent); }`
+ *   (focus ring, from the board's shared multi-selector rule)
+ *   `.tui-selectbox:focus-visible { outline: 2px solid var(--accent);
+ *      outline-offset: 2px; }`
+ *
+ * TOKENS. Every literal in the board rule has an exact rung in src/theme.ts:
+ *   5px     -> var(--radius-px5)     1.05rem -> var(--font-size-rem105)
+ * `1.6rem` has NO theme rung (the spacing ladder runs …rem150, rem180 with no
+ * rem160 between them, and inventing one for this single call site would be a
+ * token this recipe is the only consumer of). Routed the same way Segmented's
+ * `--sb-segmented-text-size` is: through `--sb-selectbox-size`, a real CSS
+ * custom property this recipe's `vars` resolver emits (Chip's `CHIP_SCALARS`
+ * pattern), retunable via `SelectBox.extend({ vars })` rather than a
+ * decorative fallback.
+ * `0.12s` is a time value: the CSS gate's length scanner only matches
+ * length UNITS (px/rem/em/vh/…), never `s`/`ms`, so it needs no outlet.
+ * `color-mix(in srgb, var(--accent) 14%, transparent)` is byte-identical to
+ * one of theme.ts's own semantic washes (`--surface-wash-accent-14`), so the
+ * hover background references that token directly rather than restating the
+ * expression.
+ *
+ * `.checked` BECOMES A DATA ATTRIBUTE (`[data-checked]`), not a class
+ * selector — hashed CSS-module class names cannot be selected across the
+ * package boundary, and the recipe already receives `checked` as a real prop,
+ * so `getStyles('root')`'s own attribute-stamping mechanics are not involved:
+ * `data-checked` is hand-stamped from SelectBox.tsx the same way Chip's
+ * `data-pulse`/`-dimmed`/`-uppercase` are.
+ */
+@layer soribashi.recipes {
+  .root {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    flex: none;
+    width: var(--sb-selectbox-size);
+    height: var(--sb-selectbox-size);
+    padding: 0;
+    /* UA reset for the `<button>` element, the longhand spelling Chip's
+       `.root` uses for the same reset — `font-size` immediately after is
+       the board's own override on top of it, exactly matching
+       `.tui-selectbox`'s `font: inherit; font-size: 1.05rem;` pair. */
+    font-family: inherit;
+    font-weight: inherit;
+    font-size: var(--font-size-rem105);
+    line-height: 1;
+    cursor: pointer;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-px5);
+    color: var(--muted);
+    opacity: 0.5;
+    transition:
+      opacity 0.12s,
+      color 0.12s,
+      background 0.12s;
+  }
+
+  .root:hover {
+    opacity: 1;
+    color: var(--fg);
+    background: var(--surface-wash-accent-14);
+  }
+
+  .root[data-checked] {
+    opacity: 1;
+    color: var(--accent);
+  }
+
+  .root:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}

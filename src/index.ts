@@ -53,3 +53,6 @@ export type {
   SegmentedOwnProps,
   SegmentedProps,
 } from "./recipes/Segmented/Segmented.tsx";
+
+export { SelectBox, selectBoxTheme } from "./recipes/SelectBox/SelectBox.tsx";
+export type { SelectBoxOwnProps, SelectBoxProps } from "./recipes/SelectBox/SelectBox.tsx";
