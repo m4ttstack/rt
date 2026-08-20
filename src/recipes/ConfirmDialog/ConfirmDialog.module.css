@@ -1,0 +1,18 @@
+/*
+ * ConfirmDialog — the body/foot content rendered inside Modal's children.
+ * Modal owns the overlay, frame, head, and close button; this stylesheet
+ * only dresses the two slots this recipe itself renders.
+ */
+@layer soribashi.recipes {
+  .body {
+    padding: var(--spacing-md) 0;
+    font-size: var(--font-size-sm);
+    color: var(--fg);
+  }
+
+  .foot {
+    display: flex;
+    justify-content: flex-end;
+    gap: var(--spacing-sm);
+  }
+}

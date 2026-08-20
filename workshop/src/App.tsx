@@ -4,6 +4,7 @@ import { Alerts } from "./pages/Alerts.tsx";
 import { Badges } from "./pages/Badges.tsx";
 import { Buttons } from "./pages/Buttons.tsx";
 import { Chips } from "./pages/Chips.tsx";
+import { ConfirmDialogs } from "./pages/ConfirmDialogs.tsx";
 import { ContextMenus } from "./pages/ContextMenus.tsx";
 import { CopyButtons } from "./pages/CopyButtons.tsx";
 import { Fields } from "./pages/Fields.tsx";
@@ -36,6 +37,7 @@ const PAGES: Record<string, ComponentType> = {
   badges: Badges,
   buttons: Buttons,
   chips: Chips,
+  confirmdialogs: ConfirmDialogs,
   contextmenus: ContextMenus,
   copybuttons: CopyButtons,
   fields: Fields,
@@ -57,6 +59,7 @@ const PAGES: Record<string, ComponentType> = {
  * below — needed once a key isn't a single word (`copybuttons`,
  * `selectboxes`). */
 const PAGE_LABELS: Record<string, string> = {
+  confirmdialogs: "ConfirmDialog",
   contextmenus: "ContextMenu",
   copybuttons: "CopyButton",
   markdowns: "Markdown",

@@ -28,6 +28,16 @@ export { Chip, CHIP_PARTS, chipTheme } from "./recipes/Chip/Chip.tsx";
 export type { ChipOwnProps, ChipProps } from "./recipes/Chip/Chip.tsx";
 
 export {
+  CONFIRMDIALOG_PARTS,
+  ConfirmDialog,
+  confirmDialogTheme,
+} from "./recipes/ConfirmDialog/ConfirmDialog.tsx";
+export type {
+  ConfirmDialogOwnProps,
+  ConfirmDialogProps,
+} from "./recipes/ConfirmDialog/ConfirmDialog.tsx";
+
+export {
   CONTEXTMENU_PARTS,
   ContextMenu,
   contextMenuTheme,
