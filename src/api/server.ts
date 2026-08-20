@@ -141,6 +141,19 @@ export function startApi(deps: ApiDeps) {
     async fetch(req) {
       const url = new URL(req.url);
       const { pathname } = url;
+
+      const fixtureDir = process.env.DECK_FIXTURE || null;
+      if (fixtureDir && pathname.startsWith("/api/v1/")) {
+        if (pathname === "/api/v1/status" && req.method === "GET") {
+          return new Response(Bun.file(join(fixtureDir, "status.json")), {
+            headers: { "content-type": "application/json" },
+          });
+        }
+        // Mutations are inert and deterministic: the DOM tests assert the REQUEST
+        // (via page.route interception) and the optimistic UI, never launchd effects.
+        return json({ ok: true });
+      }
+
       const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? undefined;
       const isPublic = publicDomainFor(host) !== null;
       const statusOpts = {

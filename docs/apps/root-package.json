@@ -6,8 +6,13 @@
   "private": true,
   "devDependencies": {
     "@types/bun": "latest",
+    "@types/pixelmatch": "^5.2.6",
+    "@types/pngjs": "^6.0.5",
     "@types/react": "^19.2.18",
-    "@types/react-dom": "^19.2.4"
+    "@types/react-dom": "^19.2.4",
+    "pixelmatch": "^7.2.0",
+    "playwright": "^1.62.1",
+    "pngjs": "^7.0.0"
   },
   "peerDependencies": {
     "typescript": "^5"
@@ -17,6 +22,7 @@
     "build": "bun build --compile src/main.ts --outfile dist/deck",
     "serve": "bun run src/main.ts serve",
     "test": "bun test core src",
+    "test:dom": "bun test test/dom/",
     "test:e2e": "LOCAL_E2E=1 bun test test/e2e.smoke.test.ts"
   },
   "dependencies": {
