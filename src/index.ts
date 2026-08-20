@@ -86,6 +86,9 @@ export type { SpinnerOwnProps, SpinnerProps } from "./recipes/Spinner/Spinner.ts
 export { STATUSDOT_PARTS, StatusDot, statusDotTheme } from "./recipes/StatusDot/StatusDot.tsx";
 export type { StatusDotOwnProps, StatusDotProps } from "./recipes/StatusDot/StatusDot.tsx";
 
+export { SWITCH_PARTS, Switch, switchTheme } from "./recipes/Switch/Switch.tsx";
+export type { SwitchOwnProps, SwitchProps } from "./recipes/Switch/Switch.tsx";
+
 export { TOASTHOST_PARTS, ToastHost, toastHostTheme } from "./recipes/ToastHost/ToastHost.tsx";
 export type { ToastHostOwnProps, ToastHostProps } from "./recipes/ToastHost/ToastHost.tsx";
 

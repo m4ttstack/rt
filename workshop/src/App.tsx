@@ -14,6 +14,7 @@ import { SelectBoxes } from "./pages/SelectBoxes.tsx";
 import { SideDrawers } from "./pages/SideDrawers.tsx";
 import { Spinners } from "./pages/Spinners.tsx";
 import { StatusDots } from "./pages/StatusDots.tsx";
+import { Switches } from "./pages/Switches.tsx";
 import { ToastHosts } from "./pages/ToastHosts.tsx";
 import { Tokens } from "./pages/Tokens.tsx";
 
@@ -42,6 +43,7 @@ const PAGES: Record<string, ComponentType> = {
   sidedrawers: SideDrawers,
   spinners: Spinners,
   statusdots: StatusDots,
+  switches: Switches,
   toasthosts: ToastHosts,
 };
 
