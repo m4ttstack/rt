@@ -4,6 +4,21 @@ import { page } from "vitest/browser";
 import { renderWithTheme } from "../../../test/test-utils.tsx";
 import { CHECK_ICON, COPY_ICON, Icon, ICONS } from "./Icon.tsx";
 
+/** deck's glyph set, added after mr-board's in ICONS, in Icon.tsx source order. */
+const DECK_ICON_NAMES = [
+  "plus",
+  "external-link",
+  "triangle-alert",
+  "circle-check",
+  "file-warning",
+  "refresh-cw",
+  "pencil",
+  "trash-2",
+  "lock-keyhole",
+  "user-round-check",
+  "rotate-ccw",
+];
+
 /**
  * Visual tier for the Icon recipe.
  *
@@ -80,11 +95,33 @@ function IconGrid() {
   );
 }
 
+/** Just the 11 deck glyphs, labelled, for the deck-specific baseline. */
+function DeckIconGrid() {
+  return (
+    <div data-testid="deck-grid" style={{ ...surface }}>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: "0.75rem", width: "26rem" }}>
+        {DECK_ICON_NAMES.map((name) => (
+          <div key={name} style={cell}>
+            {ICONS[name]}
+            <span>{name}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 describe("Icon (visual)", () => {
   it("the glyph grid matches its baseline in light mode", async () => {
     await renderFixture(<IconGrid />);
 
     await expect(page.getByTestId("grid")).toMatchScreenshot("icon-grid-light");
+  });
+
+  it("deck's glyph set matches its baseline (light only: stroke is currentColor)", async () => {
+    await renderFixture(<DeckIconGrid />);
+
+    await expect(page.getByTestId("deck-grid")).toMatchScreenshot("icon-deck-glyphs");
   });
 
   it("the glyph grid matches its baseline in dark mode", async () => {
