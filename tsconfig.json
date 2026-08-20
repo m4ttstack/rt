@@ -12,7 +12,41 @@
     "strict": true,
     "skipLibCheck": true,
     "noUncheckedIndexedAccess": true,
-    "types": []
+
+    // ONE program, node ambient globals included — the same answer soribashi's
+    // tsconfig.base.json reaches, and here it is not a preference.
+    //
+    // The tempting shape is "src/ is browser code, so keep node types out of
+    // it and give scripts/ + test/ their own config". That split does not
+    // work: @soribashi/factory is consumed AS TYPESCRIPT SOURCE (every
+    // soribashi package sets `"types": "./src/index.ts"`), so `tsc`
+    // type-checks factory's own .ts files as part of any program that
+    // includes src/, and four of them read `process.env.NODE_ENV`
+    // (use-styles.ts, slot.tsx, is-dev.ts, validate-vocabulary-props.ts).
+    // `skipLibCheck` does not help: it skips .d.ts files, and these are .ts.
+    // So ANY config covering src/ needs `process` typed, split or not — 9 of
+    // the 18 baseline errors were exactly that. The other 9 were
+    // scripts/census.ts's `node:fs|os|path` imports, test/theme.test.ts's
+    // `fs`/`path` + `bun:test`, and two `import.meta.dir` reads.
+    //
+    // Given that, a second config would buy duplication and nothing else.
+    // "node" rather than "bun": nothing in the kit imports `bun:*` any more
+    // (this task migrated the last `bun:test` file to vitest),
+    // scripts/census.ts is a plain node-API script, and `import.meta.dirname`
+    // — which Bun implements too — is typed by @types/node. Keeping the array
+    // explicit rather than deleting it also pins the TS 7 behaviour soribashi
+    // documents: @types auto-discovery is no longer reliable, so the list is
+    // the contract.
+    "types": ["node"]
   },
-  "include": ["src/**/*", "types/**/*", "test/**/*", "scripts/**/*.ts"]
+  "include": [
+    "src/**/*",
+    "types/**/*",
+    "test/**/*",
+    "scripts/**/*.ts",
+    "vitest.config.ts",
+    "vitest.node.config.ts",
+    "vitest.browser.config.ts",
+    "soribashi.config.ts"
+  ]
 }

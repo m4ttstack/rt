@@ -8,7 +8,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 const SOURCE = join(homedir(), "Documents/GitHub/mr-board/src/style.css");
-const OUT = join(import.meta.dir, "..", "docs/token-census.md");
+const OUT = join(import.meta.dirname, "..", "docs/token-census.md");
 
 // Rule-family prefixes census (b) groups by. Listed in the brief as
 // `.tui-seg/.tui-copy/.tui-selectbox/.tui-panel*/.tui-modal*/.tui-cd*/

@@ -1,3 +1,22 @@
 node_modules/
 workshop/dist/
 .superpowers/
+
+# Vitest's scratch dir for toMatchScreenshot mismatch / missing-reference debug
+# images. Never the committed baselines themselves (see below).
+.vitest-attachments/
+
+# Vitest browser-mode FAILURE screenshots. These land in a dir named after the
+# failing test file, so a tier-2 (`<Name>.test.tsx`) capture is throwaway debug
+# output while the real baselines live under `<Name>.visual.test.tsx/` and must
+# stay tracked. The patterns match FILES rather than dirs so the negation can
+# re-include — git cannot re-include anything under an excluded directory.
+src/recipes/**/__screenshots__/*.test.tsx/*.png
+!src/recipes/**/__screenshots__/*.visual.test.tsx/*.png
+
+# NOTE the one place this deviates from soribashi's .gitignore, which it is
+# otherwise a copy of: soribashi additionally ignores `*-darwin.png` /
+# `*-win32.png` baselines, because its visual baselines are generated on Linux
+# in CI and a local-platform capture there is advisory noise. This kit has no
+# CI, so the platform-suffixed baseline a developer generates IS the baseline
+# and is tracked. Revisit if the kit ever grows a CI pipeline.

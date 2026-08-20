@@ -1,0 +1,11 @@
+@layer soribashi.recipes {
+  .root {
+    display: block;
+    padding: var(--spacing-sm);
+    border: 1px solid var(--border);
+    background: var(--panel);
+    color: var(--fg);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+  }
+}

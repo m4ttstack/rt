@@ -1,10 +1,23 @@
-import { test, expect } from "bun:test";
-import { readFileSync } from "fs";
-import { join } from "path";
+import { test, expect } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import {
+  createTheme,
+  defineVocabulary,
+  registerTheme,
+  SoribashiProvider,
+  useTheme,
+} from "@soribashi/core";
+import {
+  defineCompound,
+  defineComponent,
+  defineGenericComponent,
+  definePolymorphicComponent,
+} from "../src/builders.ts";
 import { tuiTheme } from "../src/theme.ts";
 import { tuiIntentResolver } from "../src/intent-resolver.ts";
 
-const REPO = join(import.meta.dir, "..");
+const REPO = join(import.meta.dirname, "..");
 const css = readFileSync(join(REPO, "src", "generated", "theme.css"), "utf8");
 const census = readFileSync(join(REPO, "docs", "token-census.md"), "utf8");
 
@@ -118,6 +131,40 @@ function resolve(name: string, scheme: "light" | "dark", seen = new Set<string>(
 }
 
 // ── tests ─────────────────────────────────────────────────────────────
+
+// ── wiring ──────────────────────────────────────────────────────────────
+// Folded in from the deleted src/wiring.test.ts, which existed under `bun
+// test` before this repo had a vitest rig. Same purpose: @soribashi/* is
+// consumed through `file:` deps plus `overrides`, a wiring that has already
+// failed once in this repo (SORI-4: a nested `workspace:*` dep never linked),
+// and when it fails the symptom is an import that resolves to undefined rather
+// than an error. Strengthened on the way in: the four builders are now taken
+// from src/builders.ts, so this also covers `makeBuilders<typeof tuiTheme>()`
+// destructuring correctly, and the provider surface test/test-utils.tsx
+// depends on is asserted alongside it.
+
+test("the soribashi surface the kit is built on resolves through file:+overrides wiring", () => {
+  for (const fn of [createTheme, defineVocabulary, registerTheme, useTheme]) {
+    expect(typeof fn).toBe("function");
+  }
+  // SoribashiProvider is a component, not necessarily a plain function.
+  expect(SoribashiProvider).toBeDefined();
+  for (const builder of [
+    defineComponent,
+    definePolymorphicComponent,
+    defineCompound,
+    defineGenericComponent,
+  ]) {
+    expect(typeof builder).toBe("function");
+  }
+});
+
+test("registerTheme accepts the kit's theme", () => {
+  // The call test/test-utils.tsx makes at module top for every browser test.
+  // Asserted here too because it is the node tier that runs on every commit,
+  // and a throw from it would otherwise only surface in the browser tier.
+  expect(() => registerTheme(tuiTheme)).not.toThrow();
+});
 
 test("the census tables are the shape this suite expects", () => {
   // Guards the parser itself: a census edit that breaks the table format has to
