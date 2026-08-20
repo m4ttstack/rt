@@ -1,0 +1,94 @@
+/*
+ * ToastHost — mr-board's `.tui-toasts`/`.tui-toast` transient confirmation
+ * stack.
+ *
+ * Every lift below is anchored on the CLASS NAME it came from in mr-board's
+ * `src/style.css` (line numbers drift; class names are the stable anchor):
+ *
+ *   `.tui-toasts {
+ *      position: fixed; right: 16px; bottom: 16px; z-index: 210;
+ *      display: flex; flex-direction: column; gap: 8px;
+ *      pointer-events: none; }`
+ *   `.tui-toast {
+ *      padding: 9px 13px; background: var(--card);
+ *      border: 1px solid var(--border); border-left: 3px solid var(--accent);
+ *      border-radius: 7px; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+ *      color: var(--fg); font-size: 13px; max-width: 320px;
+ *      animation: tui-toast-in 140ms ease-out; }`
+ *   `@keyframes tui-toast-in {
+ *      from { opacity: 0; transform: translateX(12px); }
+ *      to { opacity: 1; transform: none; } }`
+ *
+ * TOKENS. Several are CROSS-FAMILY reuse of a ladder that happens to carry
+ * the same numeric literal src/theme.ts's own header explicitly invites this
+ * ("recipe CSS can reference a token for any real value instead of half of
+ * them"), used where the value's OWN family (spacing's "padding-margin-gap"
+ * scope) has no rung for it but another ladder's does:
+ *   8px  -> var(--spacing-px8)     9px  -> var(--spacing-px9)
+ *   3px  -> var(--spacing-px3)     12px -> var(--spacing-px12)
+ *   7px  -> var(--radius-px7)      13px -> var(--font-size-px13)
+ *                                          (padding AND font-size both read
+ *                                           this one token — same literal,
+ *                                           no spacing rung exists for it)
+ *   `0 6px 20px rgba(0, 0, 0, 0.25)` is src/theme.ts's `shadow.toast`
+ *   VERBATIM -> `var(--shadow-toast)`, referenced as the whole semantic
+ *   token rather than reconstructed from its three parts.
+ * `1px` is the gate's own length allowlist. `320px` is the SAME shared
+ * allowlist entry StatusDot's task added
+ * (test/no-hardcoded-values.test.ts) — see that recipe's own comment for why
+ * it is a shared outlet (a floating-panel width mr-board repeats across four
+ * families) rather than a per-recipe bend. `z-index: 210`, `opacity: 0`/`1`,
+ * and `140ms` are bare/unitless or a time value, invisible to the length
+ * scanner (rule 4).
+ *
+ * `16px` (the fixed offset from the viewport edge) has NO theme rung: it is a
+ * fixed POSITION offset, outside the spacing ladder's stated scope
+ * ("padding-margin-gap literal", src/theme.ts) — a genuine gap, not a
+ * borrowable literal from any other ladder either. Routed through
+ * `--sb-toasthost-offset`, a recipe scalar ToastHost.tsx's `vars` resolver
+ * emits UNCONDITIONALLY, the same pattern Chip's `CHIP_SCALARS` / StatusDot's
+ * `STATUSDOT_SCALARS` use for their own rung-less values. `translateX(12px)`
+ * inside `@keyframes` also goes through its token (`var(--spacing-px12)`) —
+ * custom properties resolve fine inside keyframe values.
+ *
+ * WHAT IS DELIBERATELY NOT LIFTED: nothing — `.tui-toasts`/`.tui-toast` is
+ * the entire family, two rules and one keyframe, no ancestor-scoped or
+ * sibling rules anywhere else in mr-board's stylesheet reference either
+ * class.
+ */
+@layer soribashi.recipes {
+  .root {
+    position: fixed;
+    right: var(--sb-toasthost-offset);
+    bottom: var(--sb-toasthost-offset);
+    z-index: 210;
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-px8);
+    pointer-events: none;
+  }
+
+  .toast {
+    padding: var(--spacing-px9) var(--font-size-px13);
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-left: var(--spacing-px3) solid var(--accent);
+    border-radius: var(--radius-px7);
+    box-shadow: var(--shadow-toast);
+    color: var(--fg);
+    font-size: var(--font-size-px13);
+    max-width: 320px;
+    animation: toasthost-in 140ms ease-out;
+  }
+
+  @keyframes toasthost-in {
+    from {
+      opacity: 0;
+      transform: translateX(var(--spacing-px12));
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
