@@ -414,6 +414,12 @@ export function Board() {
   // Show each row's author only when the view mixes authors: the All view
   // grouped by anything but author (where the group header isn't the name).
   const showAuthor = state.member === "all" && state.group !== "author";
+  // Under author grouping the header IS the name, so rows normally drop the
+  // author tag -- but a stack pulled to its root's group can carry a
+  // co-author's MR under someone else's header. Tag the rows whenever a group
+  // turns out to hold more than one author, so nothing is misattributed.
+  const showAuthorIn = (g: { mrs: BoardMR[] }) =>
+    showAuthor || (state.member === "all" && new Set(g.mrs.map((m) => m.author.username)).size > 1);
   const flatMrs = groups.flatMap((g) => g.mrs);
   // Drawn from `mrs`, not `filtered` -- that's what lets a selection span
   // member filters.
@@ -527,9 +533,9 @@ export function Board() {
               storageKey="mrs-panel-collapsed"
             >
               {view === "rows" ? (
-                <RowView mrs={g.mrs} now={now} showAuthor={showAuthor} ctx={rowCtx} />
+                <RowView mrs={g.mrs} now={now} showAuthor={showAuthorIn(g)} ctx={rowCtx} />
               ) : (
-                <GridView mrs={g.mrs} now={now} showAuthor={showAuthor} ctx={rowCtx} />
+                <GridView mrs={g.mrs} now={now} showAuthor={showAuthorIn(g)} ctx={rowCtx} />
               )}
             </Panel>
           ))

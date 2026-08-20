@@ -185,6 +185,69 @@ describe("sortMRs", () => {
 const NOW = Date.parse("2026-07-13T12:00:00Z");
 const daysAgo = (n: number) => new Date(NOW - n * 86_400_000).toISOString();
 
+describe("groupMRs stack cohesion", () => {
+  const url = (iid: number, project = "acme/acme-dev") => `https://gitlab.com/${project}/-/merge_requests/${iid}`;
+  const smr = (iid: number, source: string, target: string, extra: Record<string, unknown> = {}) =>
+    mr({
+      iid,
+      webUrl: url(iid),
+      sourceBranch: source,
+      targetBranch: target,
+      isStacked: target !== "master",
+      ...extra,
+    } as any);
+
+  test("a child in another age bucket follows its parent's group", () => {
+    const parent = smr(1, "feat-a", "master", { updatedAt: daysAgo(0) });
+    const child = smr(2, "feat-b", "feat-a", { updatedAt: daysAgo(9) });
+    const groups = groupMRs([parent, child], "age", [], NOW);
+    expect(groups.map((g) => g.label)).toEqual(["Today"]);
+    expect(groups[0]!.mrs.map((m) => m.iid).sort()).toEqual([1, 2]);
+  });
+
+  test("a whole chain lands in the root's group, however deep", () => {
+    const list = [
+      smr(1, "l1", "master", { updatedAt: daysAgo(30) }),
+      smr(2, "l2", "l1", { updatedAt: daysAgo(0) }),
+      smr(3, "l3", "l2", { updatedAt: daysAgo(1) }),
+    ];
+    const groups = groupMRs(list, "age", [], NOW);
+    expect(groups.map((g) => g.label)).toEqual(["Older"]);
+    expect(groups[0]!.mrs.map((m) => m.iid).sort()).toEqual([1, 2, 3]);
+  });
+
+  test("a child follows its parent across status buckets too", () => {
+    const parent = smr(1, "feat-a", "master", { reviews: { given: 1, required: 1, isApproved: true } });
+    const child = smr(2, "feat-b", "feat-a", { blockers: { hasConflicts: true } });
+    const groups = groupMRs([parent, child], "status", [], NOW);
+    expect(groups.map((g) => g.label)).toEqual(["approved"]);
+    expect(groups[0]!.mrs.map((m) => m.iid).sort()).toEqual([1, 2]);
+  });
+
+  test("a cross-author stack renders under the root author's group", () => {
+    const parent = smr(1, "feat-a", "master", { author: { username: "alice", name: "Alice" } });
+    const child = smr(2, "feat-b", "feat-a", { author: { username: "bob", name: "Bob" } });
+    const groups = groupMRs([parent, child], "author", ["alice", "bob"], NOW);
+    expect(groups.map((g) => g.label)).toEqual(["Alice"]);
+    expect(groups[0]!.mrs.map((m) => m.iid).sort()).toEqual([1, 2]);
+  });
+
+  test("an orphaned child (parent out of view) stays in its own group", () => {
+    const child = smr(2, "feat-b", "feat-a", { updatedAt: daysAgo(9) });
+    const other = smr(3, "feat-c", "master", { updatedAt: daysAgo(0) });
+    const groups = groupMRs([child, other], "age", [], NOW);
+    expect(groups.map((g) => g.label)).toEqual(["Today", "Last week"]);
+  });
+
+  test("a branch cycle never collapses or drops its members", () => {
+    const a = smr(1, "feat-a", "feat-b", { updatedAt: daysAgo(0) });
+    const b = smr(2, "feat-b", "feat-a", { updatedAt: daysAgo(9) });
+    const groups = groupMRs([a, b], "age", [], NOW);
+    expect(groups.map((g) => g.label)).toEqual(["Today", "Last week"]);
+    expect(groups.flatMap((g) => g.mrs).map((m) => m.iid).sort()).toEqual([1, 2]);
+  });
+});
+
 describe("groupMRs age", () => {
   test("buckets by last activity (updatedAt), by day then week, ordered", () => {
     const list = [

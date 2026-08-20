@@ -86,14 +86,14 @@ export interface StackNode {
   children: StackNode[];
 }
 
-/** Shape one group's (already sorted) list into stack trees: a stacked MR
-    whose parent is in the same list nests under it; everything else stays a
-    root in input order. Run per group AFTER grouping, so a child in a
-    different bucket than its parent renders where it is today (with the
-    stacked chip) instead of being pulled into a group it doesn't belong to.
-    Same-project matching and cycle handling mirror triage/stack.ts: a branch
-    cycle is malformed data, so its members render flat rather than vanish. */
-export function nestStacks(mrs: BoardMR[]): StackNode[] {
+/** Resolve child -> parent links across a set of MRs: a stacked MR whose
+    target branch is another MR's source branch (same project) is that MR's
+    child. Same-project matching and cycle handling mirror triage/stack.ts: a
+    branch cycle is malformed data, so its members are left parentless rather
+    than vanishing into an unwalkable loop. Shared by nestStacks (which draws
+    the tree) and groupMRs (which pulls a child into its parent's group), so
+    the two can never disagree about who is whose child. */
+function stackParents(mrs: BoardMR[]): Map<BoardMR, BoardMR> {
   const branchKey = (mr: BoardMR, branch: string) => `${projectKeyOf(mr.webUrl ?? "")}::${branch}`;
   const bySource = new Map<string, BoardMR>();
   for (const m of mrs) {
@@ -121,6 +121,16 @@ export function nestStacks(mrs: BoardMR[]): StackNode[] {
     }
   }
   for (const m of cyclic) parentOf.delete(m);
+  return parentOf;
+}
+
+/** Shape one group's (already sorted) list into stack trees: a stacked MR
+    whose parent is in the same list nests under it; everything else stays a
+    root in input order. Run per group AFTER grouping -- groupMRs has already
+    pulled every child into its parent's group, so a stack that spans buckets
+    arrives here intact. */
+export function nestStacks(mrs: BoardMR[]): StackNode[] {
+  const parentOf = stackParents(mrs);
 
   const nodes = new Map<BoardMR, StackNode>(mrs.map((m) => [m, { mr: m, children: [] }]));
   const roots: StackNode[] = [];
@@ -249,22 +259,58 @@ function groupByAuthor(mrs: BoardMR[], memberOrder: string[]): Group[] {
     .map(([username, list]) => ({ label: list[0]!.author.name || username, mrs: list }));
 }
 
+/** Move every stacked child into the group holding the root of its stack, so
+    a stack always renders as one nested cluster instead of being scattered
+    across buckets by facts (age, CI state, reviewer) that differ per MR while
+    the branch chain does not. The root's own bucket decides for the whole
+    stack; groups emptied by the move are dropped, and group order and the
+    order within each group are otherwise untouched. */
+function pullStacksIntoParentGroups(groups: Group[], mrs: BoardMR[]): Group[] {
+  const parentOf = stackParents(mrs);
+  if (parentOf.size === 0) return groups;
+
+  const groupOf = new Map<BoardMR, number>();
+  groups.forEach((g, i) => {
+    for (const m of g.mrs) groupOf.set(m, i);
+  });
+  // Walk to the root, not just the immediate parent: in a 3-deep stack the
+  // middle MR may itself be moving, so only the root's bucket is settled.
+  // stackParents has already severed cycles, so the walk terminates.
+  const rootGroupOf = (mr: BoardMR): number => {
+    let cur = mr;
+    for (;;) {
+      const p = parentOf.get(cur);
+      if (!p) return groupOf.get(cur)!;
+      cur = p;
+    }
+  };
+
+  const moved: BoardMR[][] = groups.map(() => []);
+  for (const g of groups) {
+    for (const m of g.mrs) moved[rootGroupOf(m)]!.push(m);
+  }
+  return groups.map((g, i) => ({ label: g.label, mrs: moved[i]! })).filter((g) => g.mrs.length > 0);
+}
+
 /**
  * Partition MRs into ordered display groups. Groups are ordered naturally for
  * the dimension; ordering WITHIN each group is the caller's job (apply sortMRs
  * to each group's `mrs`).
  */
 export function groupMRs(mrs: BoardMR[], group: GroupKey, memberOrder: string[], now: number): Group[] {
-  switch (group) {
-    case "age":
-      return groupBy(mrs, (mr) => ageBucket(mr.updatedAt, now));
-    case "author":
-      return groupByAuthor(mrs, memberOrder);
-    case "status":
-      return groupBy(mrs, statusBucket);
-    case "review":
-      return groupBy(mrs as ReviewedMR[], reviewBucket);
-  }
+  const grouped = (): Group[] => {
+    switch (group) {
+      case "age":
+        return groupBy(mrs, (mr) => ageBucket(mr.updatedAt, now));
+      case "author":
+        return groupByAuthor(mrs, memberOrder);
+      case "status":
+        return groupBy(mrs, statusBucket);
+      case "review":
+        return groupBy(mrs as ReviewedMR[], reviewBucket);
+    }
+  };
+  return pullStacksIntoParentGroups(grouped(), mrs);
 }
 
 export interface ViewState {
