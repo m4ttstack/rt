@@ -21,7 +21,7 @@ going-forward gate.
 
 One spec, one plan, two repos. The plan runs in two acts:
 
-- **Act 1** — grow tui-kit: seven new recipes plus Icon glyph additions,
+- **Act 1** — grow tui-kit: eight new recipes plus Icon glyph additions,
   each landing with the kit's standard shape (recipe + theme contribution +
   workshop demo + soribashi visual coverage).
 - **Act 2** — rebuild deck consuming Act 1: React board client, React-authored
@@ -34,7 +34,7 @@ that feedback loop is why the acts share a plan.
 
 - Deck board and gateway pages rendered by React + tui-kit, Tokyo look,
   following the system color scheme (Day light / Night dark).
-- Seven new kit recipes proven by a real consumer, available to gitq next.
+- Eight new kit recipes proven by a real consumer, available to gitq next.
 - Alpine, Oat, and vendored lucide deleted from deck.
 - Both deck boot paths preserved unchanged: checkout `bun run src/main.ts serve`
   and the compiled `dist/deck` binary.
@@ -81,7 +81,7 @@ that feedback loop is why the acts share a plan.
 
 ## 3. Act 1 — tui-kit expansion
 
-Seven new recipes and one extension, requirements sourced from the deck UI
+Eight new recipes and one extension, requirements sourced from the deck UI
 inventory. Each recipe follows the kit's established conventions (soribashi
 authoring skill: builders, `PARTS` export, `<name>Theme` export, alias
 contract, workshop demo, vitest-browser visual baselines). APIs below name the
@@ -180,7 +180,21 @@ hand-rolled compound per the authoring skill's compound-component section).
 Props stay structural: `align` (`start` | `end`) on cells; no data-model props
 — children render rows.
 
-### 3.8 Icon glyph additions
+### 3.8 ConfirmDialog
+
+A small compound over Modal for destructive-action confirmation. Deck usage:
+remove app ("Remove <name>? This deletes its service and route."), replacing
+the native `confirm()`.
+
+Props:
+- `open`, `onConfirm`, `onCancel` (controlled).
+- `title`, children (the message body).
+- `confirmLabel` (e.g. "Remove"), `cancelLabel` (default "Cancel").
+- `intent`: `bad` (default) — the confirm Button's tone.
+- Initial focus lands on the cancel Button (destructive default-safe), escape
+  and backdrop dismiss as cancel — Modal's existing behavior.
+
+### 3.9 Icon glyph additions
 
 Add deck's lucide glyphs to the kit's `ICONS` registry (verbatim lucide path
 data, same mechanism as existing entries): `plus`, `external-link`,
@@ -214,8 +228,8 @@ it):
 - `AddAppModal.tsx`, `EditAppModal.tsx`, `AccessModal.tsx` — kit Modal +
   Field family + Switch + Button; the stderr viewer is a kit Modal wrapping a
   `<pre>`.
-- Remove confirmation stays native `confirm()` (parity; no kit ConfirmModal
-  this cycle).
+- Remove confirmation uses the kit ConfirmDialog (§3.8) with the current
+  message text verbatim; the confirm action fires the same DELETE flow.
 
 Accessibility semantics carry over verbatim: every `aria-label`, `title`,
 `role="switch"`, `role="alert"`, and the `accessSummary` sentence survive the
@@ -318,7 +332,8 @@ baseline discipline from SORI-1/2 applies as it stands on tui-kit main.
 Preserved exactly:
 - Every `/api/v1/*` request the UI makes: method, path, payload shape, error
   surfacing (API messages shown verbatim).
-- Every user flow: add (service/external), edit, remove (with confirm), port
+- Every user flow: add (service/external), edit, remove (with confirmation,
+  now a ConfirmDialog — same message, same DELETE on confirm), port
   override lifecycle (edit/revert/public-follows), publish, password gate
   set/change/remove, oauth gate on/off/mode/apply, restart with spinner
   reconcile, proxy reload with wait-and-report, auto-heal banner logic.
