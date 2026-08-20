@@ -31,5 +31,8 @@
  * and every recipe exporting a symbol of that name would collide here.
  */
 
+export { Chip, CHIP_PARTS, chipTheme } from "./recipes/Chip/Chip.tsx";
+export type { ChipOwnProps, ChipProps } from "./recipes/Chip/Chip.tsx";
+
 export { CHECK_ICON, COPY_ICON, Icon, ICONS, iconTheme } from "./recipes/Icon/Icon.tsx";
 export type { IconOwnProps, IconProps } from "./recipes/Icon/Icon.tsx";
