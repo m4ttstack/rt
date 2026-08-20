@@ -219,11 +219,26 @@ export interface ContextMenuLabelOwnProps {
 type ContextMenuLabelProps_ = ContextMenuLabelOwnProps &
   Omit<HTMLAttributes<HTMLDivElement>, "ref" | "children">;
 
-/** The `Separator` part takes no own props — it is a 1px rule. */
-export type ContextMenuSeparatorOwnProps = Omit<
-  HTMLAttributes<HTMLDivElement>,
-  "ref" | "children"
->;
+/** The `Separator` part takes no own props — it is a 1px rule, so its
+    internal render-time props type is just the DOM attribute surface, the
+    same role `ContextMenuRootProps_` / `ContextMenuItemProps_` /
+    `ContextMenuLabelProps_` play for their parts (trailing-underscore,
+    not exported: the public full-props type is `ContextMenuSeparatorProps`
+    below). */
+type ContextMenuSeparatorProps_ = Omit<HTMLAttributes<HTMLDivElement>, "ref" | "children">;
+
+/**
+ * @deprecated The old name claimed to be "own props" (Root/Item/Label's
+ * `XxxOwnProps` types hold each part's own declared fields, distinct from the
+ * DOM attributes they're combined with). Separator has no fields of its own,
+ * so this type was ALWAYS the full DOM attribute surface — the opposite of
+ * what `OwnProps` means for its siblings. Renamed to `ContextMenuSeparatorProps_`
+ * to match the sibling parts' internal-props convention; this alias is kept
+ * only because the barrel (`src/index.ts`) re-exported the old name. Prefer
+ * `ContextMenuSeparatorProps` (`ComponentProps<typeof ContextMenu.Separator>`,
+ * below) for the full public props type.
+ */
+export type ContextMenuSeparatorOwnProps = ContextMenuSeparatorProps_;
 
 export const ContextMenu = defineCompound({
   name: "ContextMenu",
@@ -423,7 +438,7 @@ export const ContextMenu = defineCompound({
       },
     },
     separator: {
-      render: ({ props, getStyles, ref }: Ctx<ContextMenuSeparatorOwnProps>) => (
+      render: ({ props, getStyles, ref }: Ctx<ContextMenuSeparatorProps_>) => (
         <div
           ref={ref as Ref<HTMLDivElement>}
           // Band 1. `role="separator"` is an ADDITION to mr-board's bare

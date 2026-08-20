@@ -61,6 +61,8 @@ export type {
   ContextMenuLabelProps,
   ContextMenuOwnProps,
   ContextMenuProps,
+  /** @deprecated see the type's own JSDoc in ContextMenu.tsx — kept because
+      this barrel used to export it under this name. */
   ContextMenuSeparatorOwnProps,
   ContextMenuSeparatorProps,
 } from "./recipes/ContextMenu/ContextMenu.tsx";

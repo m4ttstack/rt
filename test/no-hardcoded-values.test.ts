@@ -27,8 +27,12 @@ import { listRecipeDirs } from "../scripts/derive.ts";
  *      NOT the same as allowlisting a percentage value: `width: 50%;`
  *      inside or outside a keyframes block is still flagged.
  *
- * The two allowlists below are soribashi's, unchanged. Extensions happen
- * per-recipe, with a comment saying why — never by widening them casually.
+ * The two allowlists below are soribashi's, plus one documented kit
+ * extension: `ALLOWED_LENGTH_LITERALS` adds `320px` globally (not
+ * per-recipe) — see the rationale comment directly above that constant for
+ * why a global entry was the right call there instead of a per-recipe one.
+ * Beyond that one reviewed exception, extensions happen per-recipe, with a
+ * comment saying why — never by widening either allowlist casually.
  */
 
 interface Violation {
@@ -211,7 +215,7 @@ const ALLOWED_NAMED_COLOR_KEYWORDS = new Set(["transparent", "currentcolor", "in
 // candidate for that ladder — it is a fixed FLOATING-PANEL WIDTH mr-board
 // repeats verbatim across four independent families (`.tui-dot-wrap::after`,
 // `.tui-toast`, `.tui-drawer`, `.tui-menu`; docs/token-census.md), so it earns
-// a shared outlet here rather than a per-recipe bent value or four duplicated
+// a shared outlet here rather than a per-recipe bend or four duplicated
 // recipe-local scalars for the exact same number.
 const ALLOWED_LENGTH_LITERALS = new Set(["0", "1px", "2px", "100%", "320px"]);
 

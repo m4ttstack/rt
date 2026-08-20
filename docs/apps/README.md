@@ -198,6 +198,31 @@ source, so its `@ts-expect-error` suppressions are re-checked under the
 check factory the way factory's own repo does — `types: ["node"]` — which is
 what this kit's `tsconfig.json` uses.
 
+**The `types/css-modules.d.ts` include.** Every recipe imports its own
+`.module.css` (`import styles from "./Chip.module.css"`), which `tsc` can only
+type-check if *some* `.d.ts` in the program declares what a `*.module.css`
+import resolves to. This kit ships that declaration at the
+`./types/css-modules.d.ts` export precisely so an adopter never has to author
+it for source it doesn't own — but because it's an ambient module
+declaration, not a value or type any file imports, it has to be pulled in via
+`include`, not `import`. Add it as one more entry in the adopter's tsconfig
+`include` array, alongside the app's own source glob:
+
+```jsonc
+// the adopter's tsconfig.json (mr-board's src/client/tsconfig.json, verbatim)
+"include": [
+  "./**/*",
+  "../../node_modules/@mattstack/tui-kit/types/css-modules.d.ts"
+]
+```
+
+Skip it and the FIRST `tsc` run through this kit's source fails with `Cannot
+find module './Chip.module.css' or its corresponding type declarations` — not
+a bug in the adopter's own code, just a program that was never told what a
+`.module.css` specifier means. The relative path to `node_modules` depends on
+where the adopter's tsconfig actually sits; mr-board's is two directories
+below its `node_modules`, hence `../../`.
+
 ### Recipes
 
 Chip, ContextMenu, CopyButton, Icon, Markdown, Modal, Panel, Segmented (+
@@ -318,7 +343,7 @@ recipes never needs it.
 ## The SORIBASHI_COMMIT pin
 
 This repo pins against soribashi at the commit recorded in `SORIBASHI_COMMIT`
-(currently `e5e1a217b347f789116fdfa05cf254b44a7f42cb`). Bump it manually when
+(currently `6471499bb8a0a8b62cb846d8d4dc7ccf3ae826f2`). Bump it manually when
 picking up new soribashi changes — there is no automated sync, and bumping means:
 update `SORIBASHI_COMMIT`, `git -C ../soribashi checkout <commit>` (or otherwise
 bring the sibling checkout to that commit), `bun install` (the `file:` links
@@ -328,12 +353,14 @@ kit's feet.
 
 **The current pin includes every fix batch discovered while authoring this kit's
 recipes**, landed upstream in soribashi across the build (SORI-6, -9, -10, -11,
--12, -13a, -15, -16, -18, -20, plus SORI-7's `@property` syntax fix, which is the
-commit actually pinned). One known fix is NOT yet pulled: **SORI-14** (every
-builder hardcodes `Ref<HTMLElement>` on its render ctx; landed in soribashi one
-commit after the current pin, not yet picked up). SORI-14 shows up as TWO
-DIFFERENT symptoms in this kit's recipes, not one — worth distinguishing rather
-than lumping together:
+-12, -13a, -15, -16, -18, -20, SORI-7's `@property` syntax fix, plus **SORI-14**
+(every builder hardcoding `Ref<HTMLElement>` on its render ctx; the commit
+actually pinned now). Because `file:` deps consume the sibling checkout's
+working tree rather than a published version, the pin record only stays honest
+if it tracks the actual HEAD the recipes were built and gated against — this
+bump is that record catching up one commit (SORI-14 is types-only, no runtime
+change). SORI-14 shows up as TWO DIFFERENT symptoms in this kit's recipes, not
+one — worth distinguishing rather than lumping together:
 
 - **A genuine bidirectional type mismatch (Icon's `<svg>` root).**
   `SVGSVGElement` is not assignable to or from `HTMLElement` (it is missing
@@ -359,10 +386,13 @@ Both symptoms trace to the same root cause (the render ctx's `ref` type should
 be generic over the recipe's actual root element, defaulting to `HTMLElement`,
 the way the polymorphic builder already threads `TDefaultAs`) and SORI-14 fixes
 both at once — the distinction above is about how each recipe experiences the
-bug today, not about needing two separate upstream fixes. Every recipe with a
-cast (`ref={ref as Ref<...>}`) carries the workaround documented at its own
-cast site. Bumping the pin to pick up SORI-14 is a reasonable next slice but is
-not required for anything in this kit today — nothing here takes a recipe ref.
+bug today, not about needing two separate upstream fixes. **SORI-14 is now
+included in the pin** (bumped above), but every recipe's `ref={ref as
+Ref<...>}` cast is still in place — the pin bump alone doesn't make the casts
+unnecessary, it only makes them ELIGIBLE for removal now that the generic ref
+type exists upstream. Dropping them is a future cleanup, deliberately not done
+as part of this bump; each cast site still carries its own workaround comment
+until that pass happens.
 
 ## Adoption notes
 
