@@ -347,7 +347,24 @@ if (!build.success) {
   console.error(build.logs.join("\n"));
   throw new Error("client bundle failed");
 }
-const appJs = await build.outputs[0]!.text();
+// The client entry imports the kit's theme.css + canvas.css, so the bundle is
+// now a JS chunk *and* a CSS chunk. Discriminate on `kind`, not on the file
+// extension: Bun tags each output ("entry-point" / "asset" / "chunk" /
+// "sourcemap"), so turning on sourcemaps some day adds a `kind: "sourcemap"`
+// output that these counts correctly ignore, while a real regression -- a
+// second entry point, or a code-split chunk the shell does not serve -- still
+// trips the assertion instead of sliding through an extension match.
+//
+// The CSS assertion is the load-bearing one: zero CSS outputs means those two
+// imports silently vanished, which would boot the board with no token block at
+// all (every var(--*) computing to `initial` -- black text on a transparent
+// ground). Better a boot failure than a black board.
+const jsOutputs = build.outputs.filter((o) => o.kind === "entry-point");
+const cssOutputs = build.outputs.filter((o) => o.kind === "asset" && o.path.endsWith(".css"));
+if (jsOutputs.length !== 1) throw new Error(`expected 1 JS entry-point output, got ${jsOutputs.length}`);
+if (cssOutputs.length !== 1) throw new Error(`expected 1 CSS asset output (tui-kit theme + canvas), got ${cssOutputs.length}`);
+const appJs = await jsOutputs[0]!.text();
+const appCss = await cssOutputs[0]!.text();
 
 const shell = `<!doctype html>
 <html lang="en">
@@ -371,6 +388,7 @@ const shell = `<!doctype html>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<link rel="stylesheet" href="/app.css">
 <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -437,6 +455,12 @@ Bun.serve({
       }
       case "/":
         return new Response(shell, { headers: { "content-type": "text/html; charset=utf-8" } });
+      // tui-kit's tokens + page canvas, bundled out of client/main.tsx. Linked
+      // ahead of /style.css: the token block lives in @layer soribashi.tokens,
+      // and canvas.css is unlayered but earlier, so the board's own unlayered
+      // rules still win every conflict.
+      case "/app.css":
+        return new Response(appCss, { headers: { "content-type": "text/css; charset=utf-8" } });
       case "/style.css":
         css = readFileSync(cssPath, "utf-8");
         return new Response(css, { headers: { "content-type": "text/css; charset=utf-8" } });

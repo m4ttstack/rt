@@ -28,6 +28,7 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "@types/node": "^26.2.0",
     "@types/pixelmatch": "^5.2.6",
     "@types/pngjs": "^6.0.5",
     "@types/react": "^19",
@@ -36,5 +37,10 @@
     "playwright": "^1.62.1",
     "pngjs": "^7.0.0",
     "typescript": "^7.0.2"
+  },
+  "//soribashi": "No @soribashi/* DEPENDENCY here, deliberately: registerTheme/SoribashiProvider come from @mattstack/tui-kit/provider, which keeps them on the same resolved path as the kit's own recipes. A direct @soribashi/core dep would bundle a SECOND copy of factory and silently break theming. The overrides block below is still required -- it resolves the `workspace:*` deps inside the kit's own transitive @soribashi packages, which the kit's own overrides cannot reach from here (overrides only apply from the root package). See docs/tui-kit-devloop.md.",
+  "overrides": {
+    "@soribashi/theme": "file:../soribashi/packages/theme",
+    "@soribashi/factory": "file:../soribashi/packages/factory"
   }
 }
