@@ -66,5 +66,25 @@ export default {
   theme: tuiTheme,
   output: { css: "src/generated/theme.css" },
   watch: ["src/theme.ts", "src/intent-resolver.ts"],
-  emit: { cssVariablesResolver: aliases },
+  // `utilities: false` drops the `soribashi.utilities` layer -- the
+  // `.sb-hidden-from-*` / `.sb-visible-from-*` / `.sb-light-hidden` /
+  // `.sb-dark-hidden` visibility classes. Nothing in this kit emits or
+  // documents those class names (`grep -r "sb-hidden\|sb-visible\|sb-light-hidden\|sb-dark-hidden" src`
+  // is empty), so shipping them only added inert rules to every adopter's
+  // stylesheet.
+  //
+  // They were not merely unused, they were harmful: mr-board's screenshot
+  // harness caught a 111-pixel regression in two captures traced to this layer
+  // (controller ruling R15). The rules match no element in that app, but their
+  // bulk tips Chromium's re-rasterisation during Playwright's `fullPage`
+  // screenshot path, which snaps the anti-alias fringe off a
+  // `text-decoration: underline dotted` rule. Verified by bisect: removing
+  // this layer -- and nothing else -- restores byte-identical pixels.
+  //
+  // The `@layer soribashi.tokens, soribashi.recipes, soribashi.utilities;`
+  // ordering statement is still emitted unconditionally (emit-layer.ts), so
+  // the layer name keeps its slot in the cascade order and a consumer that
+  // writes its own `@layer soribashi.utilities { ... }` still lands where the
+  // kit intends. Declaring a layer with no rules in it costs nothing.
+  emit: { cssVariablesResolver: aliases, utilities: false },
 };
