@@ -1,4 +1,4 @@
-import type { ComponentProps, ReactNode, Ref, SVGProps } from "react";
+import type { ComponentProps, ReactNode, SVGProps } from "react";
 import { defineComponent } from "../../builders.ts";
 import classes from "./Icon.module.css";
 
@@ -40,7 +40,8 @@ export const Icon = defineComponent<
   IconOwnProps & Omit<SVGProps<SVGSVGElement>, "ref">,
   typeof ICON_SELECTORS,
   readonly [],
-  readonly []
+  readonly [],
+  SVGSVGElement
 >({
   name: "Icon",
   selectors: ICON_SELECTORS,
@@ -61,7 +62,7 @@ export const Icon = defineComponent<
 
     return (
       <svg
-        ref={ref as Ref<SVGSVGElement>}
+        ref={ref}
         viewBox="0 0 24 24"
         width="14"
         height="14"

@@ -1,4 +1,4 @@
-import type { ComponentProps, HTMLAttributes, ReactNode, Ref } from "react";
+import type { ComponentProps, HTMLAttributes, ReactNode } from "react";
 import { defineComponent } from "../../builders.ts";
 import { useBodyScrollLock, useEscapeClose } from "../../hooks/index.ts";
 import { ICONS } from "../Icon/Icon.tsx";
@@ -59,7 +59,8 @@ export const Modal = defineComponent<
   ModalProps_,
   typeof MODAL_SELECTORS,
   readonly [],
-  readonly []
+  readonly [],
+  HTMLDivElement
 >({
   name: "Modal",
   selectors: MODAL_SELECTORS,
@@ -106,7 +107,7 @@ export const Modal = defineComponent<
         onClick={onClose}
       >
         <div
-          ref={ref as Ref<HTMLDivElement>}
+          ref={ref}
           role="dialog"
           aria-modal
           {...rest}

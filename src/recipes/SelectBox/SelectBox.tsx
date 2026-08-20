@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ComponentProps, MouseEvent, Ref } from "react";
+import type { ButtonHTMLAttributes, ComponentProps, MouseEvent } from "react";
 import { defineComponent } from "../../builders.ts";
 import classes from "./SelectBox.module.css";
 
@@ -34,7 +34,8 @@ export const SelectBox = defineComponent<
   SelectBoxProps_,
   typeof SELECTBOX_SELECTORS,
   readonly [],
-  readonly []
+  readonly [],
+  HTMLButtonElement
 >({
   name: "SelectBox",
   selectors: SELECTBOX_SELECTORS,
@@ -61,7 +62,7 @@ export const SelectBox = defineComponent<
 
     return (
       <button
-        ref={ref as Ref<HTMLButtonElement>}
+        ref={ref}
         type="button"
         role="checkbox"
         aria-checked={checked}

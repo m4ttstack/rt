@@ -1,4 +1,4 @@
-import type { ComponentProps, HTMLAttributes, MouseEvent, ReactNode, Ref } from "react";
+import type { ComponentProps, HTMLAttributes, MouseEvent, ReactNode } from "react";
 import { defineComponent } from "../../builders.ts";
 import { useBodyScrollLock, useEscapeClose } from "../../hooks/index.ts";
 import classes from "./SideDrawer.module.css";
@@ -56,7 +56,8 @@ export const SideDrawer = defineComponent<
   SideDrawerProps_,
   typeof SIDEDRAWER_SELECTORS,
   readonly [],
-  readonly []
+  readonly [],
+  HTMLDivElement
 >({
   name: "SideDrawer",
   selectors: SIDEDRAWER_SELECTORS,
@@ -101,7 +102,7 @@ export const SideDrawer = defineComponent<
         onClick={onOverlayClick ?? onClose}
       >
         <div
-          ref={ref as Ref<HTMLDivElement>}
+          ref={ref}
           // No `aria-modal`, deliberately: mr-board's SideDrawer sets role and
           // label and stops — only its Modal is aria-modal. Adding it would
           // change how a screen reader treats the rest of the page.

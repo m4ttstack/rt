@@ -596,22 +596,11 @@ describe("Chip (browser)", () => {
   });
 
   it("extend threads a defaultProps element too (as resolves after useProps)", async () => {
-    // KNOWN SORIBASHI TYPE GAP, not a silenced bug. The builder supports this
-    // deliberately at runtime — define-polymorphic-component.tsx says "`as`
-    // resolves AFTER useProps (Mantine semantics) so theme defaultProps can
-    // retarget the element" — but `PolymorphicExtendProps` (the type
-    // `.extend({ defaultProps })` validates against) omits `as` entirely, so
-    // the supported call does not type-check:
-    //   TS2353: 'as' does not exist in type 'Partial<PolymorphicExtendProps<…>>'
-    // The cast is the workaround; this case is what proves the runtime half
-    // works, so the gap stays a types-only one. Filed as a friction.
+    // `as` resolves AFTER useProps merges theme defaults in, and is stripped
+    // before render, which is what lets a theme retarget the element.
     const extended = createTheme({
       extends: tuiTheme,
-      components: [
-        Chip.extend({ defaultProps: { as: "button" } } as unknown as Parameters<
-          typeof Chip.extend
-        >[0]),
-      ],
+      components: [Chip.extend({ defaultProps: { as: "button" } })],
     });
 
     const screen = await renderWithTheme(<Chip>held</Chip>, undefined, extended);

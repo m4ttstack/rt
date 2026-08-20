@@ -1,4 +1,4 @@
-import type { ComponentProps, HTMLAttributes, Ref } from "react";
+import type { ComponentProps, HTMLAttributes } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { defineComponent } from "../../builders.ts";
@@ -69,7 +69,8 @@ export const Markdown = defineComponent<
   MarkdownProps_,
   typeof MARKDOWN_SELECTORS,
   readonly [],
-  readonly []
+  readonly [],
+  HTMLDivElement
 >({
   name: "Markdown",
   selectors: MARKDOWN_SELECTORS,
@@ -93,7 +94,7 @@ export const Markdown = defineComponent<
 
     return (
       <div
-        ref={ref as Ref<HTMLDivElement>}
+        ref={ref}
         {...rest}
         {...getStyles("root")}
         data-part={MARKDOWN_PART}

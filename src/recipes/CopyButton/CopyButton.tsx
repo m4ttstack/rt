@@ -1,4 +1,4 @@
-import type { ButtonHTMLAttributes, ComponentProps, MouseEvent, Ref } from "react";
+import type { ButtonHTMLAttributes, ComponentProps, MouseEvent } from "react";
 import { useState } from "react";
 import { defineComponent } from "../../builders.ts";
 import { CHECK_ICON, COPY_ICON, Icon } from "../Icon/Icon.tsx";
@@ -33,7 +33,8 @@ export const CopyButton = defineComponent<
   CopyButtonProps_,
   typeof COPYBUTTON_SELECTORS,
   readonly [],
-  readonly []
+  readonly [],
+  HTMLButtonElement
 >({
   name: "CopyButton",
   selectors: COPYBUTTON_SELECTORS,
@@ -71,7 +72,7 @@ export const CopyButton = defineComponent<
 
     return (
       <button
-        ref={ref as Ref<HTMLButtonElement>}
+        ref={ref}
         type="button"
         aria-label={title}
         title={copied ? "copied" : title}

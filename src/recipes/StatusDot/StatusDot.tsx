@@ -1,4 +1,4 @@
-import type { ComponentProps, HTMLAttributes, Ref } from "react";
+import type { ComponentProps, HTMLAttributes } from "react";
 import { defineComponent } from "../../builders.ts";
 import classes from "./StatusDot.module.css";
 
@@ -48,7 +48,8 @@ export const StatusDot = defineComponent<
   StatusDotProps_,
   typeof STATUSDOT_SELECTORS,
   readonly [],
-  readonly []
+  readonly [],
+  HTMLSpanElement
 >({
   name: "StatusDot",
   selectors: STATUSDOT_SELECTORS,
@@ -76,7 +77,7 @@ export const StatusDot = defineComponent<
 
     return (
       <span
-        ref={ref as Ref<HTMLSpanElement>}
+        ref={ref}
         {...rest}
         {...getStyles("root")}
         data-part={STATUSDOT_PARTS.root}

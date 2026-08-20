@@ -1,3 +1,4 @@
+import { mergeRefs } from "@soribashi/core";
 import type { PartRenderCtx } from "@soribashi/core";
 import type {
   ButtonHTMLAttributes,
@@ -9,7 +10,7 @@ import type {
   Ref,
   RefObject,
 } from "react";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { defineCompound } from "../../builders.ts";
 import { useEscapeClose } from "../../hooks/index.ts";
 import classes from "./ContextMenu.module.css";
@@ -160,16 +161,12 @@ export const ContextMenu = defineCompound({
         // A plain mutable ref, not state: flipping it must not schedule a render.
         const hasFocusedRef = useRef(false);
 
-        // Memoised on `ref` so the callback identity is stable; a fresh identity
-        // every render would make React detach and re-attach it each time.
-        const setRefs = useCallback(
-          (el: HTMLDivElement | null) => {
-            menuRef.current = el;
-            if (typeof ref === "function") ref(el);
-            else if (ref) (ref as { current: unknown }).current = el;
-          },
-          [ref],
-        );
+        // The recipe needs its own handle on the element (to measure it, and to
+        // answer "was that mousedown inside me?") while a consumer may still
+        // pass a ref. Memoised on `ref`: `mergeRefs` returns a fresh callback
+        // per call, and a fresh identity every render would make React detach
+        // and re-attach it each time.
+        const setRefs = useMemo(() => mergeRefs(menuRef, ref), [ref]);
 
         // Keep the menu on screen: render once at the requested point (hidden,
         // see `anchored`), measure, then clamp both axes. `useLayoutEffect` so

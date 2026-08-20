@@ -1,4 +1,4 @@
-import type { ComponentProps, HTMLAttributes, Ref } from "react";
+import type { ComponentProps, HTMLAttributes } from "react";
 import { defineComponent } from "../../builders.ts";
 import type { Toast } from "../../hooks/index.ts";
 import classes from "./ToastHost.module.css";
@@ -33,7 +33,8 @@ export const ToastHost = defineComponent<
   ToastHostProps_,
   typeof TOASTHOST_SELECTORS,
   readonly [],
-  readonly []
+  readonly [],
+  HTMLDivElement
 >({
   name: "ToastHost",
   selectors: TOASTHOST_SELECTORS,
@@ -59,7 +60,7 @@ export const ToastHost = defineComponent<
 
     return (
       <div
-        ref={ref as Ref<HTMLDivElement>}
+        ref={ref}
         role="status"
         aria-live="polite"
         {...rest}
