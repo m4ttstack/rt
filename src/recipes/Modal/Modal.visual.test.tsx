@@ -7,16 +7,12 @@ import { Modal } from "./Modal.tsx";
 /**
  * Visual tier for the Modal recipe.
  *
- * BASELINES ARE TRACKED IN GIT (`__screenshots__/Modal.visual.test.tsx/*.png`),
- * the spec's declared divergence from soribashi — see Icon.visual.test.tsx's
- * comment for the full rationale.
- *
- * NO MOTION FREEZE IS INSTALLED, deliberately: Modal.module.css declares
+ *  * NO MOTION FREEZE IS INSTALLED, deliberately: Modal.module.css declares
  * neither a `transition` nor an `animation` (mr-board's `.tui-modal*` family
  * has none either — the dialog appears and disappears with its mount), so
  * there is no interpolating frame a capture could land mid-way through.
  * Copying ToastHost's/Chip's freeze in anyway would teach the next recipe to
- * cargo-cult it (authoring skill § 21 / task-8-report.md § 9).
+ * cargo-cult it.
  *
  * THE OVERLAY IS THE CAPTURE TARGET, not the frame. It is `position: fixed;
  * inset: 0`, so its layout box IS the viewport — the screenshot therefore

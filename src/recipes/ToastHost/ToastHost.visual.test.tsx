@@ -8,16 +8,12 @@ import { ToastHost } from "./ToastHost.tsx";
 /**
  * Visual tier for the ToastHost recipe.
  *
- * BASELINES ARE TRACKED IN GIT (`__screenshots__/ToastHost.visual.test.tsx/*.png`),
- * the spec's declared divergence from soribashi — see Icon.visual.test.tsx's
- * comment for the full rationale.
- *
- * THE ANIMATION FREEZE IS INSTALLED HERE, following Chip's precedent:
+ *  * THE ANIMATION FREEZE IS INSTALLED HERE, following Chip's precedent:
  * ToastHost.module.css's `.toast` carries a real (one-shot, not perpetual)
  * `animation` (`toasthost-in`), so a capture mid-slide-in would be
  * non-deterministic between runs. `animation: none !important` is what
  * closes that — `transition: none` alone would do nothing for an `animation`
- * (authoring skill § 21).
+ *.
  */
 
 const NO_MOTION_CLASS = "toasthost-visual-no-motion";

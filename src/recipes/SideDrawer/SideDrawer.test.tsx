@@ -11,7 +11,7 @@ import { SIDEDRAWER_PARTS, SideDrawer } from "./SideDrawer.tsx";
  *
  * Conventions inherited from every prior recipe: renders go through
  * `renderWithTheme`; assertions observe rendered behaviour, never emitted CSS
- * text (authoring skill § 18); the one sanctioned structural assertion is
+ * text; the one sanctioned structural assertion is
  * `data-part`.
  *
  * THIS RECIPE MERGES TWO mr-board FAMILIES into one side-driven surface

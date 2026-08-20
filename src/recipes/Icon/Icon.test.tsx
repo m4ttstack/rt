@@ -5,19 +5,15 @@ import { tuiTheme } from "../../theme.ts";
 import { CHECK_ICON, COPY_ICON, Icon, ICONS } from "./Icon.tsx";
 
 /**
- * Browser tier for the Icon recipe — and the first recipe test in the kit, so
- * it is also the shape tasks 9-15 copy.
+ * Browser tier for the Icon recipe.
  *
- * Every case renders through `renderWithTheme` (test/test-utils.tsx), never
- * through `vitest-browser-react`'s `render` directly: the helper is what pairs
- * `registerTheme(tuiTheme)` with a real `<SoribashiProvider>`, and BOTH are
- * silent when missing (see that file's own comment).
+ * Every case renders through `renderWithTheme`, never vitest-browser-react's
+ * `render` directly: the helper pairs `registerTheme(tuiTheme)` with a real
+ * `<SoribashiProvider>`, and BOTH are silent when missing.
  *
- * Assertions observe rendered behaviour — computed styles, real DOM shape, the
- * accessibility tree — rather than emitted CSS text, per the authoring skill's
- * § 18. The one structural exception is the `data-part` case: `data-part` IS
- * the observable contract (it is what app-side CSS selects on across the
- * package boundary), so asserting the attribute is asserting the behaviour.
+ * Assertions observe rendered behaviour rather than emitted CSS text. The one
+ * structural exception is `data-part`, which IS the observable contract — what
+ * app-side CSS selects on across the package boundary.
  */
 
 /** The glyph names mr-board's src/client/ui/Icon.tsx shipped, in source order. */

@@ -1,41 +1,8 @@
 /*
- * Icon's stylesheet is deliberately one declaration long.
- *
- * Almost everything that makes an mr-board glyph look the way it does is an
- * SVG PRESENTATION ATTRIBUTE on the element itself (viewBox, width/height,
- * fill, stroke, stroke-width, stroke-linecap/linejoin — see Icon.tsx), not
- * CSS, and moving them into this file would change their cascade position
- * (attributes lose to any author rule; declarations here would not), which a
- * straight port has no business doing. Colour is `currentColor`, so it needs
- * no declaration either.
- *
- * The one real lift from mr-board's src/style.css, anchored on the CLASS NAME
- * rather than a line number (line numbers drift, class names are the stable
- * anchor):
- *
- *   `.tui-review svg { flex-shrink: 0; }`
- *
- * generalised from that one call site to every icon. The board only wrote it
- * where a squashed glyph had actually been observed; an icon that shrinks
- * inside a flex row is never wanted anywhere, so the recipe owns the rule and
- * the board's copy goes away with the migration. Recorded as a deliberate
- * generalisation, not a verbatim copy.
- *
- * Two sibling board rules are deliberately NOT lifted, because they are
- * genuinely local and would change every other icon if made the default:
- *
- *   `.tui-slack-posted svg { display: block; }`   — becomes
- *       `.tui-slack-posted [data-part="icon"] { display: block; }` app-side.
- *   `.tui-refresh.spinning svg { animation: … }`  — the spin belongs to the
- *       refresh control, not to the glyph; it becomes
- *       `.tui-refresh.spinning [data-part="icon"]` app-side.
- *
- * Both are the `data-part` convention doing its job: the app keeps its
- * override, it just selects on a stable attribute instead of a hashed class.
- *
- * No token references: this file has no colour and no length. `0` is on the
- * gate's length allowlist (test/no-hardcoded-values.test.ts) and `flex-shrink`
- * is unitless anyway, so nothing here needs a tokenization outlet.
+ * Icon's stylesheet is one declaration long by design: almost everything that
+ * shapes an mr-board glyph is an SVG presentation attribute on the element
+ * (see Icon.tsx), and moving those into CSS would change their cascade
+ * position — attributes lose to any author rule, declarations here would not.
  */
 @layer soribashi.recipes {
   .root {

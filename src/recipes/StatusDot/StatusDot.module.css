@@ -1,74 +1,8 @@
 /*
- * StatusDot — mr-board's `.tui-dot`/`.tui-dot-wrap` status glyph + its CSS
- * tooltip.
+ * StatusDot — mr-board's `.tui-dot`/`.tui-dot-wrap` status glyph + CSS tooltip.
  *
- * Every lift below is anchored on the CLASS NAME it came from in mr-board's
- * `src/style.css` (line numbers drift; class names are the stable anchor):
- *
- *   `.tui-dot {
- *      font-size: 1rem; line-height: 1; display: inline-block;
- *      vertical-align: middle;
- *      position: relative; top: -2px; }`
- *      -- the -2px is an OPTICAL NUDGE: the ● glyph renders low in its line
- *         box, so this nudges it up so it visually centers. Verbatim, not a
- *         value this recipe re-derives.
- *   `.tui-dot.ok { color: var(--dot-ok); }`
- *   `.tui-dot.warn { color: var(--dot-warn); }`
- *   `.tui-dot.bad { color: var(--dot-bad); }`
- *   `.tui-dot-wrap { position: relative; flex-shrink: 0; align-self: center; }`
- *   `.tui-dot-wrap::after {
- *      content: attr(data-tip); position: absolute; left: 0; top: 1.5em;
- *      z-index: 10; white-space: pre-line; width: max-content;
- *      max-width: 320px; font-size: 0.74rem; line-height: 1.5;
- *      text-align: left; font-weight: 400; background: var(--panel);
- *      color: var(--fg); border: 1px solid var(--border);
- *      border-radius: 6px; padding: 0.45rem 0.7rem;
- *      opacity: 0; visibility: hidden;
- *      transition: opacity 0.1s ease 0.15s; pointer-events: none; }`
- *   `.tui-dot-wrap:hover::after { opacity: 1; visibility: visible; }`
- *
- * TOKENS. Every literal above has an exact rung in src/theme.ts:
- *   1rem    -> var(--font-size-rem100)   0.74rem -> var(--font-size-rem74)
- *   0.45rem -> var(--spacing-sm)         0.7rem  -> var(--spacing-lg)
- *   6px     -> var(--radius-md)
- * `1px`, `2px` (the `-2px` nudge — the scanner matches the digit run, not the
- * sign) and `0` are the gate's own length allowlist
- * (test/no-hardcoded-values.test.ts). `320px` is a NEW allowlist entry this
- * task adds: it is not a padding/margin/gap literal (src/theme.ts's spacing
- * ladder is scoped to those), it is a fixed floating-panel width mr-board
- * repeats verbatim across FOUR families (this tooltip, `.tui-toast` —
- * ToastHost, also this task — `.tui-drawer`, `.tui-menu`;
- * docs/token-census.md), so it earns a shared outlet rather than a
- * per-recipe bend. `line-height: 1` / `1.5` and `font-weight: 400` are bare
- * unitless numbers, invisible to the length scanner (no unit), so nothing
- * here needs to tokenize them.
- *
- * `1.5em` (the tooltip's vertical offset below the dot) has NO theme rung BY
- * DESIGN (src/theme.ts: "em-based spacing stays inline in recipe CSS on
- * purpose... deliberately relative to the element's own font size and cannot
- * be a global rung") and is not a raw literal either — the gate's length
- * scanner has no `em` exemption the way it does for `0`/`1px`/`2px`/`100%`.
- * Routed through `--sd-tooltip-offset`, a recipe scalar StatusDot.tsx's
- * `vars` resolver emits UNCONDITIONALLY (the same "recipe scalar via vars"
- * pattern Chip's `CHIP_SCALARS` / LabeledSeg's `--sb-segmented-text-size`
- * use for their own em values).
- *
- * COLOUR. `--sd-color` is StatusDot's OWN per-instance scalar, mapped
- * DIRECTLY from the `intent` prop to `--dot-ok`/`--dot-warn`/`--dot-bad`
- * (`STATUSDOT_TONES` in StatusDot.tsx) — NOT through `autoVars`/the theme's
- * intent resolver. See StatusDot.tsx's comment on `STATUSDOT_TONES` for why:
- * the dot tokens are their own, deliberately more saturated palette,
- * independent of the ordinary green/amber/red TEXT hues the resolver would
- * reach for. StatusDot declares no `variants` and opts into no
- * `vocabularyAxes`, so nothing here is reachable through `autoVars` at all —
- * `--sd-color` is entirely this recipe's own doing.
- *
- * WHAT IS DELIBERATELY NOT LIFTED, and where it goes instead:
- *   `.tui-comment-dot.ok`/`.warn` — a SEPARATE board class family (comment
- *     thread status dots) that happens to reuse the same two colour rules.
- *     Not this recipe's concern; it can be re-pointed at StatusDot's own
- *     `[data-part="statusdot-dot"]` at adoption if the shapes truly match,
- *     but that census is Task 20's, not this one's.
+ * `--sd-color` is the recipe's own per-instance scalar, mapped straight from
+ * `intent` and never through autoVars — see docs/decisions.md.
  */
 @layer soribashi.recipes {
   .root {
@@ -77,15 +11,9 @@
     align-self: center;
   }
 
-  /* `box-sizing: border-box` (R13): an ADDITION, not a lift. mr-board gets it
-     from a global `* { box-sizing: border-box; }` reset, so `max-width: 320px`
-     has always been an OUTER measure there; this kit's own reset
-     (`src/canvas.css`) is optional, so without this declaration a consumer
-     who skips it gets a "320px" tooltip that measures ~342px (320 + padding
-     + border). Same three-case caveat as Modal.module.css's note (repeated
-     condensed here): no-opinion consumer -> border-box, correct; border-box
-     reset -> agrees, no change (mr-board); UNLAYERED content-box reset ->
-     still wins, because this sits inside `@layer soribashi.recipes`. */
+  /* `box-sizing` is an ADDITION, not a lift — without it a consumer who skips
+     the optional canvas reset gets a "320px" tooltip measuring ~342px. See
+     docs/decisions.md. */
   .root::after {
     box-sizing: border-box;
     content: attr(data-tip);
@@ -122,6 +50,8 @@
     display: inline-block;
     vertical-align: middle;
     position: relative;
+    /* Optical nudge, verbatim: the ● glyph renders low in its line box, so
+       this lifts it to visual centre. Not a value to re-derive or round. */
     top: -2px;
     color: var(--sd-color);
   }

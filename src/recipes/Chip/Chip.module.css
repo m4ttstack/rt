@@ -1,63 +1,8 @@
 /*
- * Chip — the codification of mr-board's badge/flag family.
- *
- * Every lift below is anchored on the CLASS NAME it came from in mr-board's
- * `src/style.css` (line numbers drift; class names are the stable anchor).
- * Three board rules make up the shape:
- *
- *   `.tui-review {
- *      font-size: 11px; padding: 1px 6px; border-radius: 4px;
- *      border: 1px solid var(--border); white-space: nowrap; flex-shrink: 0;
- *      display: inline-flex; align-items: center; gap: 4px; }`
- *
- *   `.tui-flag {
- *      font-size: 11px; line-height: 1.5; padding: 0 6px; border-radius: 4px;
- *      border: 1px solid currentColor; white-space: nowrap; opacity: 0.9; }`
- *
- *   `.tui-review-open { font: inherit; font-size: 11px; cursor: pointer;
- *      background: none; }`
- *   `.tui-review-open:hover { background: var(--card); }`
- *   `.tui-review-open:focus-visible { outline: 2px solid var(--accent);
- *      outline-offset: 2px; }`   (from the board's shared focus-ring rule)
- *
- * `.tui-review` is the base shape; `.tui-flag` is the same box with the
- * border already in `currentColor` (which IS this recipe's `outline` variant)
- * and a standing 0.9 dim. The two are unified here rather than kept apart:
- * `padding: 1px 6px` wins over `.tui-flag`'s `0 6px` because the flag's
- * `line-height: 1.5` existed only to claw back the vertical box the missing
- * padding cost it, and a chip row wants one box, not two that nearly match.
- * Recorded as a deliberate unification, not a verbatim copy.
- *
- * TOKENS. Every literal in the board rules above has an exact rung in
- * src/theme.ts, so nothing here needed a new token or a bent one:
- *   11px    -> var(--font-size-px11)      4px  -> var(--spacing-px4)
- *   6px     -> var(--spacing-px6)         4px  -> var(--radius-sm)  (radius)
- *   0.55rem -> var(--font-size-xxs)       (the `.tui-draft` small-caps size)
- * `1px`, `2px` and `0` are on the gate's own length allowlist
- * (test/no-hardcoded-values.test.ts).
- *
- * COLOUR comes from `--chip-bg` / `--chip-color` / `--chip-border` /
- * `--chip-hover`, which the builder derives FOR FREE through
- * `autoVars(theme, 'Chip', props, true)` -> `tuiIntentResolver`. Nothing in
- * this file re-derives colour logic, and nothing here references a hue token
- * directly: the intent word a call site passes is the whole colour story.
- * `--sb-chip-*` are the recipe's OWN scalars, emitted from Chip.tsx's `vars`
- * resolver so a theme can retune them via `Chip.extend({ vars })`.
- *
- * WHAT IS DELIBERATELY NOT LIFTED, and where it goes instead:
- *   `.tui-review svg { flex-shrink: 0; }`   already lives in the Icon recipe
- *       (task 8) — an icon that shrinks in a flex row is never wanted.
- *   `.tui-badge-emoji { font-size: 11px; ... }`  IS lifted, as the `.icon`
- *       slot below, minus its `font-size: 11px`: the slot sits inside `.root`
- *       and inherits exactly that size already, so restating it would freeze
- *       the icon out of a theme that retunes the chip's font size.
- *   `.tui-draft`'s own `padding: 0.15rem 0.28rem` / `border-radius: 3px`.
- *       The `uppercase` modifier carries only the TYPE register (transform,
- *       tracking, size, weight); the chip keeps its own box, so a small-caps
- *       chip still lines up with its neighbours in a row.
- *   `.tui-slack-posted` / `.tui-slack-reaction`. Not chips: one is a fixed
- *       four-colour brand mark, the other a bare emoji run. They stay
- *       app-side.
+ * Chip — mr-board's badge/flag family (`.tui-review` + `.tui-flag`, unified).
+ * Colour comes entirely from `--chip-*`, which the builder derives via
+ * autoVars -> tuiIntentResolver; nothing here references a hue token directly.
+ * See docs/decisions.md for the unification and the deliberate departures.
  */
 @layer soribashi.recipes {
   .root {
@@ -71,17 +16,14 @@
     white-space: nowrap;
     flex-shrink: 0;
 
-    /* The intent resolver's two halves. `--chip-bg` is `transparent` for every
-       intent in this theme (the TUI look colours by border and text on an
-       unfilled surface — see src/intent-resolver.ts), but it is referenced
+    /* `--chip-bg` is transparent for every intent in this theme, but referenced
        rather than hardcoded so a re-skin that DOES paint chips can. */
     background: var(--chip-bg, transparent);
     color: var(--chip-color, inherit);
 
-    /* UA resets for the `as="button"` / `as="a"` forms, kept unconditional
-       because each is an exact no-op on the default span. This is the longhand
-       spelling of `.tui-review-open`'s `font: inherit`: the shorthand would
-       also reset font-size, which the next declaration up already owns. */
+    /* UA resets for the `as="button"` / `as="a"` forms; each is a no-op on the
+       default span. Longhand deliberately: the `font` shorthand would also
+       reset font-size, which the declaration above owns. */
     margin: 0;
     font-family: inherit;
     font-weight: inherit;
@@ -90,28 +32,10 @@
     text-decoration: none;
   }
 
-  /* `outline` (the default) is every coloured chip in the board: the state
-     classes all set `border-color: currentColor` over `.tui-review`'s neutral
-     frame. `subtle` is the frame left alone — `.tui-review` itself and the
-     three `*-queued` states, which never override it. `ghost` is NOT declared
-     on this recipe (authoring skill § 14): nothing in the family renders a
-     borderless chip, and inheriting the value would commit CSS and baselines
-     to a pairing no call site wants. */
   .root[data-variant="outline"] {
     border-color: var(--chip-border, currentColor);
   }
 
-  /* `.tui-review-reviewing` / `.tui-respond-drafting` / `.tui-doctor-fixing` /
-     `.tui-peer-reviewing` / `.tui-nudge-launched`:
-       `animation: tui-review-pulse 1.4s ease-in-out infinite`
-       `@keyframes tui-review-pulse { 0%,100% { opacity: 1 } 50% { opacity: .5 } }`
-
-     Verbatim spelling, full period: SORI-18 fixed the CSS gate's length
-     scanner to treat a percentage in KEYFRAME-SELECTOR position (`0%,100%
-     {`, `50% {`) as selector syntax, not a declared value, so it no longer
-     flags this. The previous half-period `alternate` two-stop rewrite was a
-     workaround for that scanner limitation, not a design choice — removed
-     now that the gate carries the natural spelling. */
   .root[data-pulse] {
     animation-name: chip-pulse;
     animation-duration: var(--sb-chip-pulse-period);
@@ -119,10 +43,6 @@
     animation-iteration-count: infinite;
   }
 
-  /* A DELIBERATE ADDITION, not a lift: mr-board's pulse runs forever with no
-     reduced-motion escape. A perpetual opacity animation is exactly the class
-     of motion the media query exists for, and the chip still reads correctly
-     at rest. Recorded here rather than passed off as parity. */
   @media (prefers-reduced-motion: reduce) {
     .root[data-pulse] {
       animation-name: none;
@@ -139,34 +59,17 @@
     }
   }
 
-  /* One canonical dim for the board's four near-identical quiet states
-     (`.tui-review-queued`/`.tui-respond-queued`/`.tui-doctor-queued` at 0.7,
-     `.tui-nudge-requested` at 0.75, `.tui-held-draft-resolved` at 0.6,
-     `.tui-flag` at 0.9). 0.7 is the modal value; the three outliers are marked
-     row by row in Chip.test.tsx's census and come back one of two ways.
-
-     THE ROUTES ARE NOT INTERCHANGEABLE, and getting this wrong is silent:
-       - `Chip.extend({ vars })`, or a per-instance `vars` prop — WORKS. Both
-         feed the same resolver whose output lands in the element's inline
-         style, so they replace the value at its source.
-       - an app-side rule setting `--sb-chip-dimmed-opacity` — DOES NOT WORK.
-         Every `--sb-chip-*` in this file is emitted by the vars resolver into
-         the root's INLINE style, and an inline declaration beats any stylesheet
-         rule, so the app's variable is simply never read.
-       - an app-side rule setting `opacity` DIRECTLY — WORKS, and wins at any
-         specificity, because an unlayered author rule beats everything inside
-         `@layer soribashi.recipes`. This is the route tasks 19/20 want.
-     Pinned by Chip.test.tsx's "an app-side rule overrides a modifier by
-     property, never by variable". */
+  /* Overriding this from an app is route-sensitive, and getting it wrong is
+     silent: `Chip.extend({ vars })` or a per-instance `vars` prop works (both
+     land in the element's inline style); an app rule setting
+     `--sb-chip-dimmed-opacity` does NOT (inline beats any stylesheet rule); an
+     app rule setting `opacity` directly works at any specificity, because an
+     unlayered author rule beats everything in `@layer soribashi.recipes`. */
   .root[data-dimmed] {
     opacity: var(--sb-chip-dimmed-opacity);
   }
 
-  /* The board's small-caps register, from `.tui-draft`
-     (`text-transform: uppercase; letter-spacing: 0.06em; font-size: 0.55rem;
-     font-weight: 700`) — the same register `.tui-peered` uses. `700` is a
-     bare number: src/theme.ts declares no fontWeight scale, and the gate's
-     length scanner requires a unit, so there is nothing to tokenize here. */
+  /* `700` stays a bare number: the theme declares no fontWeight scale. */
   .root[data-uppercase] {
     text-transform: uppercase;
     letter-spacing: var(--sb-chip-uppercase-tracking);
@@ -174,36 +77,25 @@
     font-weight: 700;
   }
 
-  /* `.tui-review-open`, keyed on the ELEMENT rather than on a modifier prop:
-     in mr-board every chip that carries `.tui-review-open` is exactly the one
-     rendered as a `<button>`, so the element already IS the signal and a
-     second `clickable` prop would be able to disagree with it. `<a>` joins it
-     because an anchor chip is interactive for the same reasons. */
+  /* Keyed on the ELEMENT, not a modifier prop: in mr-board every chip carrying
+     `.tui-review-open` is exactly the one rendered as a button, so the element
+     already is the signal and a `clickable` prop could disagree with it. */
   .root:is(button, a) {
     cursor: pointer;
   }
 
-  /* `.tui-review-open:hover { background: var(--card) }`, upgraded to the
-     intent-tinted wash the resolver already computes. `--chip-hover` is
-     `color-mix(in srgb, <intent> 14%, transparent)`, and 14% is not a new
-     number: it is the exact weight mr-board's own accent hover surface uses
-     (see src/intent-resolver.ts). `var(--card)` stays as the fallback, so a
-     chip rendered without a resolved intent still gets the board's behaviour.
-     Recorded as a deliberate change, not a copy. */
   .root:is(button, a):hover {
     background: var(--chip-hover, var(--card));
   }
 
-  /* From the board's shared focus-ring rule, which lists `.tui-review-open`
-     among its selectors: `outline: 2px solid var(--accent); outline-offset: 2px`. */
   .root:is(button, a):focus-visible {
     outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
 
-  /* `.tui-badge-emoji { line-height: 1; display: inline-flex;
-     align-items: center; }` — the wrapper mr-board puts around a chip's glyph
-     so an emoji's line box does not push the label's baseline around. */
+  /* `.tui-badge-emoji`: keeps a glyph's line box from shoving the label's
+     baseline. No font-size — it inherits the chip's, so restating it would
+     freeze the icon out of a theme that retunes the chip. */
   .icon {
     display: inline-flex;
     align-items: center;

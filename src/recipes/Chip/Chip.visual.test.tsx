@@ -7,15 +7,12 @@ import { Chip } from "./Chip.tsx";
 /**
  * Visual tier for the Chip recipe.
  *
- * BASELINES ARE TRACKED IN GIT (`__screenshots__/Chip.visual.test.tsx/*.png`),
- * the spec's declared divergence from soribashi (which gitignores `*-darwin.png`
- * because it generates baselines on Linux in CI; this kit has no CI, so the
- * platform-suffixed local capture IS the baseline).
+ * BASELINES ARE TRACKED IN GIT — see Icon.visual.test.tsx.
  *
- * THE ANIMATION FREEZE IS INSTALLED HERE, and unlike Icon's file that is not
- * cargo-cult: Chip.module.css carries a PERPETUAL `animation` (the pulse), and
+ * THE ANIMATION FREEZE IS INSTALLED HERE because Chip.module.css carries a
+ * PERPETUAL `animation` (the pulse), and
  * `transition: none` does nothing for an animation — they are separate CSS
- * mechanisms (authoring skill § 21). Without the freeze a pulse cell would be
+ * mechanisms. Without the freeze a pulse cell would be
  * captured at whatever opacity the keyframe happened to be interpolating
  * through at that instant, different on every run. The rule below pins every
  * capture to the animation's resting frame.

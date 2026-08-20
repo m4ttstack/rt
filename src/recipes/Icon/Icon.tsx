@@ -2,70 +2,24 @@ import type { ComponentProps, ReactNode, Ref, SVGProps } from "react";
 import { defineComponent } from "../../builders.ts";
 import classes from "./Icon.module.css";
 
-/**
- * Authoring category from soribashi's recipe conversion playbook's four
- * categories (soribashi
- * docs/superpowers/specs/2026-04-26-recipe-conversion-playbook.md § 2, reached
- * through .claude/skills/authoring-a-recipe/SKILL.md § 2):
- * 1 = pure styled primitive (§ 2.1) — one element, style slots, no lifecycle.
- * `defineComponent` rather than `definePolymorphicComponent`: there is no other
- * element an inline-SVG glyph would ever render as, so polymorphism is
- * senseless here (SKILL.md § 2's own criterion for the choice).
- *
- * Read by scripts/derive.ts to build the kit's manifest; not itself derived,
- * since it records an authoring decision, not a fact recoverable from
- * RecipeMeta or the CSS.
- */
+/** Authoring category (1 = pure styled primitive). Read off this module by
+    scripts/derive.ts to build the kit's manifest; not dead code. */
 export const recipeCategory = 1 as const;
 
-/**
- * The recipe's style slots. Icon has exactly one addressable element, so the
- * tuple is `root` alone; the const assertion is what keeps `getStyles`'s slot
- * argument and `RecipeMeta.slots` from drifting apart.
- */
 const ICON_SELECTORS = ["root"] as const;
 
 /**
- * tui-kit's `data-part` convention (design spec § "Parity mechanics" 1). NOT
- * soribashi's: soribashi's builders stamp only the vocabulary-axis attributes
- * (`data-variant` / `data-intent` / `data-size`) and a recipe must never
- * hand-emit those. `data-part` is this kit's own addition, and it is
- * hand-stamped precisely because nothing in the framework knows about it.
+ * Stable selector surface for app-side CSS, since CSS-module class names are
+ * hashed. Stamped in the non-overridable tail (after `{...rest}`) so an
+ * `<Icon data-part="…" />` cannot sever an app's `[data-part="icon"]` rules.
  *
- * Why it exists: CSS-module class names are hashed, so mr-board's residual
- * `style.css` cannot select into a recipe's internals the way it does today
- * (`.tui-review svg { … }`, `.tui-drawer-controls .tui-seg button { … }`).
- * A stable data attribute is the replacement selector surface.
- *
- * The value rule, which every later recipe follows:
- *   - root slot        -> the lowercased recipe name  (`icon`, `segmented`)
- *   - every other slot -> `<lowercased recipe name>-<slot key>` (`segmented-item`)
- * So a value is globally unambiguous on its own — an app-side override never
- * needs a second attribute or an ancestor to disambiguate which recipe it is
- * reaching into — and the root's value is the drop-in replacement for the
- * board class the recipe absorbed.
- *
- * THE SPREAD POSITION IS PART OF THE CONVENTION: `data-part` is stamped in the
- * NON-OVERRIDABLE TAIL, after `{...rest}`, alongside `getStyles`. It is a
- * contract between the kit and mr-board's stylesheet, not a consumer-facing
- * prop — a `<Icon data-part="whatever" />` that won the spread would silently
- * sever every app-side `[data-part="icon"]` rule, with no error anywhere and no
- * failing test in the app. Stamped before `{...rest}` it WOULD be overridable,
- * which is exactly the bug this ordering closes. Pinned by
- * Icon.test.tsx's "a consumer-supplied data-part does not win" case; every
- * later recipe stamps in the same tail and carries the same test.
+ * The kit-wide value rule: root slot -> the lowercased recipe name; every other
+ * slot -> `<recipe>-<slot key>`. Self-identifying, so a value never needs an
+ * ancestor to disambiguate which recipe it reaches into.
  */
 const ICON_PART = "icon";
 
-/**
- * The recipe's OWN props — the part of the surface Icon itself defines.
- *
- * The full public surface is `IconProps` below: this, plus every SVG attribute,
- * plus the Styles API (`classNames`/`styles`/`vars`/…) and the universal style
- * props the builder adds for free. Two exported types rather than one because
- * they answer different questions ("what does this recipe add?" vs "what may I
- * pass?"), and every later recipe exports the same pair.
- */
+/** Icon's own props; `IconProps` below is the full public surface. */
 export interface IconOwnProps {
   /** The SVG path data for the glyph. */
   d: string;
@@ -74,28 +28,13 @@ export interface IconOwnProps {
 }
 
 /**
- * Every geometry attribute below is mr-board's `src/client/ui/Icon.tsx`,
- * unchanged: 24x24 viewBox, a 14px painted box, unfilled, 2-wide round-capped
- * `currentColor` strokes. They stay SVG ATTRIBUTES rather than becoming theme
- * tokens because that is what they are in the source — presentation attributes
- * on the element, defeated by any CSS the consumer applies — and because a
- * `size` axis would be an API promotion this straight port does not make.
+ * Geometry below is mr-board's `src/client/ui/Icon.tsx`, unchanged. These stay
+ * SVG presentation attributes rather than tokens because that is what they are
+ * in the source — defeated by any CSS a consumer applies.
  *
- * THE SPREAD ORDER, which every later recipe follows. Three bands:
- *
- *   1. OVERRIDABLE HEAD — the recipe's own presentation defaults (viewBox,
- *      width/height, stroke, `aria-hidden`, …). A consumer may replace any of
- *      them, which is what lets `<Icon role="img" aria-label="…"
- *      aria-hidden={false} />` promote a decorative glyph into a labelled one.
- *   2. `{...rest}` — everything the consumer passed.
- *   3. NON-OVERRIDABLE TAIL — `getStyles('root')` (so the recipe's own class
- *      and vars beat a raw `className`/`style`, the ordering soribashi's Button
- *      uses) and `data-part` (so the cross-boundary selector contract cannot be
- *      severed from a call site; see ICON_PART's comment).
- *
- * Anything in band 1 is a documented courtesy; anything in band 3 is a
- * contract. Deciding which band a given attribute belongs in is the authoring
- * judgement each recipe makes for itself.
+ * The kit-wide spread order, which every recipe follows: (1) the recipe's own
+ * presentation defaults, replaceable by a consumer; (2) `{...rest}`; (3) the
+ * non-overridable tail — `getStyles` then `data-part`.
  */
 export const Icon = defineComponent<
   IconOwnProps & Omit<SVGProps<SVGSVGElement>, "ref">,
@@ -107,11 +46,8 @@ export const Icon = defineComponent<
   selectors: ICON_SELECTORS,
   classes,
   render: ({ props, getStyles, ref }) => {
-    // The Styles API's own config keys (classNames/styles/vars/attributes/
-    // unstyled) are consumed internally by useStyles and are not valid DOM
-    // attributes, so they are stripped here the same way Button strips them.
-    // No vocabulary-axis destructure is needed: Icon opts into no axes, so
-    // `size`/`intent`/`variant` are not part of its prop surface at all.
+    // classNames/styles/vars/attributes/unstyled are the Styles API's own
+    // config keys, consumed by useStyles and not valid DOM attributes.
     const {
       d,
       circle,
@@ -125,18 +61,7 @@ export const Icon = defineComponent<
 
     return (
       <svg
-        // KNOWN SORIBASHI LIMITATION, not a silenced bug: every builder
-        // hardcodes `HTMLElement` as the ref element type — `Ref<HTMLElement>`
-        // on the render ctx (define-component.tsx) and `RefAttributes<
-        // HTMLElement>` on the produced component type. An SVG root is outside
-        // that type in both directions, so this cast is required here, and a
-        // CONSUMER holding a `useRef<SVGSVGElement>(null)` cannot pass it to
-        // `<Icon ref={…} />` without a cast of their own (verified: TS2322,
-        // "SVGSVGElement is missing … accessKey, autocapitalize, and 26 more").
-        // The ref lands on a real SVGSVGElement at runtime regardless. Filed as
-        // a friction; nothing in the kit takes an Icon ref today.
         ref={ref as Ref<SVGSVGElement>}
-        // Band 1, the overridable head: mr-board's own presentation attributes.
         viewBox="0 0 24 24"
         width="14"
         height="14"
@@ -146,10 +71,7 @@ export const Icon = defineComponent<
         strokeLinecap="round"
         strokeLinejoin="round"
         aria-hidden
-        // Band 2: everything the consumer passed.
         {...(rest as SVGProps<SVGSVGElement>)}
-        // Band 3, the non-overridable tail — nothing below may be replaced
-        // from a call site.
         {...getStyles("root")}
         data-part={ICON_PART}
       >
@@ -163,13 +85,8 @@ export const Icon = defineComponent<
 /** Everything a call site may pass, own props included. */
 export type IconProps = ComponentProps<typeof Icon>;
 
-/**
- * mr-board's glyph dictionary, moved verbatim (same keys, same path data, same
- * `circle` flags, same source order). Pre-rendered elements rather than a
- * `Record<string, string>` of path data because that is the shape mr-board's
- * call sites consume (`{ICONS[name]}`), and changing it would be an API
- * promotion this straight port does not make.
- */
+/** mr-board's glyph dictionary, verbatim — same keys, path data, and order.
+    Pre-rendered elements, because that is the shape call sites consume. */
 export const ICONS: Record<string, ReactNode> = {
   rows: <Icon d="M3 6h18M3 12h18M3 18h18" />,
   grid: <Icon d="M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z" />,
@@ -197,18 +114,9 @@ export const ICONS: Record<string, ReactNode> = {
   ),
 };
 
-/**
- * Two glyphs mr-board keeps outside ICONS because CopyButton toggles between
- * them by path rather than by name. Moved verbatim; they become CopyButton's
- * inputs when that recipe lands.
- */
+/** Outside ICONS because CopyButton toggles between them by path, not by name. */
 export const COPY_ICON = "M9 9h10v10H9zM5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1";
 export const CHECK_ICON = "M20 6 9 17l-5-5";
 
-/**
- * The recipe's theme-entry convenience export. Every recipe ships one: it is
- * the no-op `.extend({})` a consumer's `createTheme({ components: [...] })`
- * can start from, and having it named means invariant 1's public surface is
- * exercised from the barrel rather than only from tests.
- */
+/** No-op `.extend({})` a consumer's `createTheme({ components })` starts from. */
 export const iconTheme = Icon.extend({});

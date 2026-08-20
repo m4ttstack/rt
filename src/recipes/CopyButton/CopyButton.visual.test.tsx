@@ -7,11 +7,7 @@ import { CopyButton } from "./CopyButton.tsx";
 /**
  * Visual tier for the CopyButton recipe.
  *
- * BASELINES ARE TRACKED IN GIT (`__screenshots__/CopyButton.visual.test.tsx/*.png`),
- * the spec's declared divergence from soribashi — see Icon.visual.test.tsx's
- * comment for the full rationale.
- *
- * NO TRANSITION/ANIMATION FREEZE IS INSTALLED HERE. `.tui-copy` declares
+ *  * NO TRANSITION/ANIMATION FREEZE IS INSTALLED HERE. `.tui-copy` declares
  * neither in mr-board's source (unlike Chip's pulse), so CopyButton.module.css
  * declares neither either, and there is nothing to interpolate mid-capture.
  *

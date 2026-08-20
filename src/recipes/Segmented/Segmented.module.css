@@ -1,77 +1,12 @@
 /*
  * Segmented (+ LabeledSeg) — mr-board's icon/text segmented control family.
  *
- * Every lift below is anchored on the CLASS NAME it came from in mr-board's
- * `src/style.css` (line numbers drift; class names are the stable anchor).
- * The family is two board rule sets over one shape:
+ * The solid fill lives on the root and shows through the transparent buttons,
+ * so the control reads as one opaque box rather than letting the page's grid
+ * bleed through. The active option's accent then paints over it. Both halves
+ * are the current board rule, verbatim.
  *
- *   `.tui-seg {
- *      display: inline-flex; border: 1px solid var(--border);
- *      border-radius: 6px; overflow: hidden; background: var(--panel); }`
- *   `.tui-seg button {
- *      display: inline-flex; align-items: center; justify-content: center;
- *      padding: 0.3rem 0.45rem; cursor: pointer;
- *      background: transparent; border: none; color: var(--muted); }`
- *   `.tui-seg button + button { border-left: 1px solid var(--border); }`
- *   `.tui-seg button.active { background: var(--accent); color: var(--bg);
- *      font-weight: 700; }`
- *   `.tui-seg button:not(.active):hover { color: var(--fg); }`
- *   `.tui-seg-text button { padding: 0.3rem 0.55rem; font-size: 0.8em; }`
- *   (focus ring, from the board's shared multi-selector rule)
- *   `.tui-seg button:focus-visible { outline: 2px solid var(--accent);
- *      outline-offset: 2px; }`
- *
- * THE PHASE-1 PAPER-CUT FIX IS INCLUDED, verbatim, not re-derived: `.tui-seg`'s
- * `background: var(--panel)` (commit 0701066, "header controls get a solid
- * panel background — grid showed through") is the CURRENT board rule and is
- * what `.root` below carries. The buttons themselves stay `background:
- * transparent` (also current, also verbatim) — the solid fill lives on the
- * root, showing through the transparent buttons, so the control reads as one
- * opaque box rather than letting the page's background grid bleed through.
- * The active option's accent fill (`.tui-seg button.active`) then paints over
- * that panel background, which is the "active accent fill" half of the fix.
- *
- * TOKENS. Every literal in the board rules above has an exact rung in
- * src/theme.ts:
- *   6px     -> var(--radius-md)             0.3rem  -> var(--spacing-xs)
- *   0.45rem -> var(--spacing-sm)            0.55rem -> var(--spacing-rem55)
- * `1px` and `2px` are on the gate's own length allowlist
- * (test/no-hardcoded-values.test.ts). `0.8em` has no theme rung by design
- * (src/theme.ts: "em-based spacing stays inline in recipe CSS on purpose... and
- * cannot be a global rung") and is not a raw literal either, because the CSS
- * gate's length scanner has no `em` exemption the way it does for `0`/`1px`/
- * `2px`/`100%` — it is routed through `--sb-segmented-text-size`, a real CSS
- * custom property LabeledSeg's own `vars` resolver emits (the same "recipe
- * scalar via `vars`" pattern Chip's `CHIP_SCALARS` uses for its own em value),
- * so a theme can retune it via `LabeledSeg.extend({ vars })` rather than the
- * value being a dead decoration.
- *
- * `font-weight: 700` is a bare number: src/theme.ts declares no fontWeight
- * scale and the gate's length scanner requires a unit, so there is nothing to
- * tokenize.
- *
- * WHAT IS DELIBERATELY NOT LIFTED, and where it goes instead:
- *   `.tui-controls-header .tui-seg button { height: 100%; }` and
- *   `.tui-controls-header > * { height: 28px; }` — ANCESTOR-SCOPED layout, not
- *     part of the control's own shape. Becomes an app-side
- *     `.tui-controls-header [data-part="segmented"] { height: 28px; }` /
- *     `.tui-controls-header [data-part="segmented-option"] { height: 100%; }`
- *     rule at adoption.
- *   `.tui-drawer-controls .tui-seg { flex: 1; }` /
- *   `.tui-drawer-controls .tui-seg button { flex: 1; }` — same reasoning,
- *     stays app-side as `.tui-drawer-controls [data-part="segmented"]` /
- *     `[data-part="segmented-option"] { flex: 1; }`.
- *
- * NOT REPRODUCED (an omission in the board's own CSS, preserved rather than
- * "fixed"): `.tui-seg button` carries no `font` reset, unlike `.tui-review-open`
- * (Chip's clickable form), so this recipe's `.option` does not add one either —
- * a straight port preserves the board's own inconsistency rather than quietly
- * correcting it.
- *
- * A DELIBERATE ADDITION, not a lift, and recorded as such: `.option` renders
- * with `type="button"` (Segmented.tsx), the same class of "never submit a
- * surrounding form" safety Chip's `as="button"` form adds — mr-board's own
- * `.tui-seg` buttons never set `type` explicitly either.
+ * `.option` deliberately carries no `font` reset — see docs/decisions.md.
  */
 @layer soribashi.recipes {
   .root {
@@ -112,11 +47,8 @@
     outline-offset: 2px;
   }
 
-  /* `.tui-seg-text button`: LabeledSeg's roomier text padding + relative
-     size. `data-text` is LabeledSeg's own hand-stamped boolean modifier (the
-     same convention as Chip's `data-pulse`/`data-dimmed`/`data-uppercase`),
-     not a vocabulary axis — Segmented never stamps it, so this rule never
-     matches an icon-mode control. */
+  /* LabeledSeg's roomier text padding. Segmented never stamps `data-text`, so
+     this never matches an icon-mode control. */
   .root[data-text] .option {
     padding: var(--spacing-xs) var(--spacing-rem55);
     font-size: var(--sb-segmented-text-size);

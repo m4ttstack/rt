@@ -7,48 +7,21 @@ import { Chip, CHIP_PARTS, type ChipOwnProps, type ChipProps } from "./Chip.tsx"
 /**
  * Browser tier for the Chip recipe.
  *
- * Chip is the first recipe in this kit that DECLARES VOCABULARY AXES, so this
- * file carries two things Icon's could not: the census-driven colour matrix
- * (every intent word, resolved through tuiIntentResolver, observed as a real
- * computed colour) and the provider-dependence canary at the bottom.
- *
- * Conventions inherited from Icon.test.tsx and task 8's checklist:
- *  - every render goes through `renderWithTheme` (test/test-utils.tsx), never
- *    vitest-browser-react's `render` directly — the helper pairs
- *    `registerTheme(tuiTheme)` with a real `<SoribashiProvider>` and BOTH are
- *    silent when missing;
- *  - assertions observe rendered behaviour (computed styles, the accessibility
- *    tree, real interaction), not emitted CSS text (authoring skill § 18). The
- *    one sanctioned structural assertion is `data-part`, because the attribute
- *    IS the cross-boundary contract.
+ * Every render goes through `renderWithTheme`, never vitest-browser-react's
+ * `render` directly: the helper pairs `registerTheme(tuiTheme)` with a real
+ * `<SoribashiProvider>`, and BOTH are silent when missing. Assertions observe
+ * rendered behaviour, not emitted CSS text; `data-part` is the one structural
+ * assertion, because the attribute IS the cross-boundary contract.
  */
 
 // ---------------------------------------------------------------------------
-// THE CENSUS. Written before Chip.tsx existed: this table IS the inventory of
-// mr-board's badge/flag family — src/client/board/chips.tsx and RowView.tsx's
-// StatusFlags, plus the `.tui-review*` / `.tui-flag` / `.tui-respond*` /
-// `.tui-doctor*` / `.tui-peer*` / `.tui-nudge*` / `.tui-held-draft*` /
-// `.tui-draft` CSS families, located by class name — expressed as Chip props.
-// Tasks 19/20 (adoption) consume it as REQUIREMENTS, so it is inventory, not a
-// showcase: every row below is a state mr-board can actually render today.
+// THE CENSUS: the inventory of mr-board's badge/flag family expressed as Chip
+// props. Adoption consumes it as REQUIREMENTS, so a row exists only if the
+// board's own code can actually produce that state today.
 //
-// FIDELITY RULES THIS TABLE IS HELD TO, after the task-9 review:
-//  - A row exists only if the board's own code can produce it. Three rows were
-//    deleted for failing that: `.tui-flag.t-ok` and `.tui-flag.t-muted` (which
-//    statusFlags() in mr-board's src/view.ts never emits — it emits only
-//    `t-bad`, `t-warn` and `t-cyan`; `t-ok`/`t-muted` live on `.tui-phrase`, a
-//    different component), and a plain non-pulsing `.tui-peer` (peerState() in
-//    format.ts returns only reviewing|commented|approved|done, and `reviewing`
-//    always pulses, so accent-without-pulse never reaches the DOM). The
-//    stacked-MR flag `.tui-flag.t-cyan` was ADDED for the same reason: it ships
-//    and it was missing.
-//  - `dotColour` is PER ROW, never per file. See its own comment below.
-//  - `outlier` is per row too, for any cell where the chip's canonical
-//    treatment is not the board's own value.
-//  - `props` is a TYPED prop union, not `Record<string, unknown>`: a typo like
-//    `{ dimed: true }` must be a compile error, because the modifier
-//    assertions below read the row's own props and would otherwise pass
-//    vacuously against a prop that never reached the component.
+// `props` is a TYPED prop union, not `Record<string, unknown>`, so a typo like
+// `{ dimed: true }` is a compile error: the modifier assertions below read each
+// row's own props and would otherwise pass vacuously.
 // ---------------------------------------------------------------------------
 
 /**
@@ -74,22 +47,14 @@ interface CensusRow {
   /** The theme alias the cell's text colour must resolve to. */
   alias: string;
   /**
-   * PER-ROW RULING R10 MARKING. Set when mr-board paints this cell from the
-   * brighter STATUS-DOT trio — `--dot-ok` #1f9d3a, `--dot-warn` #e08a00,
-   * `--dot-bad` #e5153f — while `tuiIntentResolver` maps ok/warn/bad onto the
-   * HUE families (`--green` #587539, `--amber` #8c6c3e, `--red` #f52a65). Such
-   * a cell shifts by one shade at adoption.
+   * Set when mr-board paints this cell from the brighter STATUS-DOT trio while
+   * `tuiIntentResolver` maps ok/warn/bad onto the hue families — so the cell
+   * shifts by one shade at adoption. Deliberate: the `--dot-*` trio belongs to
+   * StatusDot and the resolver is shared. Exact parity is one
+   * `Chip.extend({ vars })` entry or one app-side rule.
    *
-   * Deliberate, and it stays board-side per ruling R10: the `--dot-*` trio
-   * belongs to StatusDot (task 11) and the resolver is shared. A consumer who
-   * wants exact parity writes one `Chip.extend({ vars })` entry or one
-   * app-side `[data-part="chip"][data-intent="ok"]` rule.
-   *
-   * It is a per-ROW field rather than a note at the top of the file because it
-   * is NOT confined to terminal states: `.tui-review-reviewing` (in flight, and
-   * pulsing), `.tui-respond-partial`/`-drafted`, `.tui-peer-commented` and
-   * `.tui-peer-approved` are all dot-coloured too. A task-19/20 reader working
-   * row by row has to see it on the row.
+   * Per-row rather than a file-level note because it is not confined to
+   * terminal states — several in-flight cells are dot-coloured too.
    */
   dotColour?: "--dot-ok" | "--dot-warn" | "--dot-bad";
   /** Set when the chip's canonical treatment is not the board's own value. */
@@ -171,9 +136,8 @@ const CENSUS: CensusRow[] = [
     props: { intent: "bad" },
   },
   {
-    // respondNeedsAttention() is `partial || drafted` (mr-board
-    // src/respond-outcome.ts), so the resumable button form is only ever the
-    // warn-family cell — never posted/none/unknown.
+    // respondNeedsAttention() is `partial || drafted`, so the resumable button
+    // form is only ever the warn-family cell.
     board: "RespondBadge needs-attention resume (.tui-respond-drafted + .tui-review-open)",
     alias: "--amber",
     dotColour: "--dot-warn",
@@ -205,10 +169,8 @@ const CENSUS: CensusRow[] = [
   },
 
   // ── PeerBadge (.tui-peer-*) ──────────────────────────────────────────────
-  // peerState() (mr-board src/client/board/format.ts) returns exactly
-  // reviewing | commented | approved | done | null, so those four are the whole
-  // inventory. `.tui-peer`'s bare accent never renders on its own: the only
-  // state that keeps it (`reviewing`, which also covers `queued`) pulses.
+  // `.tui-peer`'s bare accent never renders on its own: the only state that
+  // keeps it (`reviewing`, which also covers `queued`) always pulses.
   {
     board: "PeerBadge queued/reviewing (.tui-peer + .tui-peer-reviewing)",
     alias: "--accent",
@@ -253,7 +215,7 @@ const CENSUS: CensusRow[] = [
   },
 
   // ── NudgedByMarker (.tui-nudged) ─────────────────────────────────────────
-  // `fw` is a UNIVERSAL STYLE PROP the builder supplies free (skill § 5), so
+  // `fw` is a universal style prop the builder supplies free, so
   // `.tui-nudged { font-weight: 600 }` needs no recipe API of its own.
   {
     board: "NudgedByMarker (.tui-nudged)",
@@ -277,11 +239,8 @@ const CENSUS: CensusRow[] = [
   },
 
   // ── StatusFlags (.tui-flag + t-*) ────────────────────────────────────────
-  // statusFlags() (mr-board src/view.ts) emits EXACTLY three classes:
-  // `t-bad` (conflicts, ci failing), `t-warn` (ci running), `t-cyan` (stacked
-  // under a parent branch). There is no `t-ok` and no `t-muted` flag; those two
-  // classes belong to `.tui-phrase`, a different component and not this
-  // recipe's job.
+  // statusFlags() emits exactly three classes. There is no `t-ok` and no
+  // `t-muted` flag: those belong to `.tui-phrase`, a different component.
   {
     board: "StatusFlags conflicts / ci failing (.tui-flag.t-bad)",
     alias: "--red",
@@ -390,11 +349,9 @@ describe("Chip (browser) — the mr-board badge/flag census", () => {
   });
 
   it("every dotColour marking names the slot its own intent maps to", () => {
-    // Gives the R10 marking teeth: without this, `dotColour` is a comment that
-    // can drift onto the wrong row, or name the wrong dot, and nothing notices.
-    // The forward direction only — `--amber` is byte-exact on `.tui-held-draft`
-    // and `.tui-flag.t-warn`, so "the alias is a hue family" does NOT imply a
-    // drift, and the converse cannot be asserted mechanically.
+    // Without this, `dotColour` is a comment that can drift onto the wrong row
+    // and nothing notices. Forward direction only: the converse ("a hue-family
+    // alias implies a drift") is false and cannot be asserted mechanically.
     const SLOT: Record<string, string> = {
       ok: "--dot-ok",
       warn: "--dot-warn",
@@ -473,8 +430,8 @@ describe("Chip (browser)", () => {
   });
 
   it("does not leak the vocabulary-axis props onto the DOM as raw attributes", async () => {
-    // The builder does NOT strip size/intent/variant before render (skill § 7),
-    // so a recipe that forgot to destructure them would emit intent="cyan" and
+    // The builder does NOT strip size/intent/variant before render, so a recipe
+    // that forgot to destructure them would emit intent="cyan" and
     // variant="outline" as literal attributes alongside the data-* pair.
     const screen = await renderWithTheme(
       <Chip intent="cyan" variant="subtle">
@@ -490,18 +447,11 @@ describe("Chip (browser)", () => {
   });
 
   it("runs under no-preference reduced motion, so the pulse cases mean something", () => {
-    // The pulse assertions in this file read `animationName`, which
-    // Chip.module.css sets to `none` under
-    // `@media (prefers-reduced-motion: reduce)`. That media query is an
-    // ENVIRONMENT input: on a machine (or a browser launch) carrying the
-    // preference, five census rows plus the cadence case below would go red for
-    // a reason that has nothing to do with the recipe.
-    //
-    // vitest.browser.config.ts pins the playwright context to
-    // `reducedMotion: "no-preference"` so the tier is deterministic. This case
-    // is that pin's canary: if the option is dropped, renamed, or stops being
-    // honoured, this fails FIRST and names the cause, instead of six colour and
-    // cadence assertions failing with a confusing "expected true to be false".
+    // The pulse assertions read `animationName`, which Chip.module.css sets to
+    // `none` under `prefers-reduced-motion`. That media query is an ENVIRONMENT
+    // input, pinned to `no-preference` in vitest.browser.config.ts. This case is
+    // that pin's canary: drop the option and this fails FIRST and names the
+    // cause, instead of six colour and cadence assertions failing confusingly.
     expect(window.matchMedia("(prefers-reduced-motion: reduce)").matches).toBe(false);
   });
 
@@ -514,11 +464,7 @@ describe("Chip (browser)", () => {
     expect(style.animationName).not.toBe("none");
     expect(style.animationIterationCount).toBe("infinite");
     expect(style.animationTimingFunction).toBe("ease-in-out");
-    // mr-board: `animation: tui-review-pulse 1.4s ease-in-out infinite` over
-    // keyframes 0/50/100. Chip now expresses that verbatim (SORI-18 fixed the
-    // CSS gate to treat a keyframe-selector percentage as selector syntax, not
-    // a flagged length value, so the natural spelling no longer needs the
-    // half-period `alternate` workaround).
+    // mr-board's `1.4s ease-in-out infinite` over keyframes 0/50/100, verbatim.
     expect(style.animationDirection).toBe("normal");
     expect(style.animationDuration).toBe("1.4s");
   });

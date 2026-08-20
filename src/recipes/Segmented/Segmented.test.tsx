@@ -8,10 +8,9 @@ import { LabeledSeg, SEGMENTED_PARTS, Segmented, type SegmentedProps } from "./S
 /**
  * Browser tier for the Segmented recipe (+ LabeledSeg).
  *
- * Conventions inherited from Icon.test.tsx / Chip.test.tsx and task 8's
- * checklist: every render goes through `renderWithTheme`; assertions observe
+ * Every render goes through `renderWithTheme`; assertions observe
  * rendered behaviour (computed styles, the accessibility tree, real
- * interaction), never emitted CSS text (authoring skill § 18); the one
+ * interaction), never emitted CSS text; the one
  * sanctioned structural assertion is `data-part`.
  *
  * `defineGenericComponent` declares NO vocabulary axes here (mr-board's

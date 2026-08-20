@@ -2,9 +2,8 @@
     top: with a drawer over a menu over the board, one press closes one layer. */
 const layerStack: Array<() => void> = [];
 
-/** Register a layer's close handler. Returns a pop function that removes
-    exactly this registration (by identity, from the top down) -- callers own
-    calling it once, on cleanup/close. */
+/** Register a layer's close handler. Returns a pop that removes exactly this
+    registration, by identity, from the top down; callers own calling it once. */
 function pushLayer(onClose: () => void): () => void {
   layerStack.push(onClose);
   return () => {

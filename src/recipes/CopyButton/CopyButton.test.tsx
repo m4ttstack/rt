@@ -8,9 +8,8 @@ import { CopyButton, type CopyButtonProps } from "./CopyButton.tsx";
 /**
  * Browser tier for the CopyButton recipe.
  *
- * Conventions inherited from Icon.test.tsx / Chip.test.tsx and task 8's
- * checklist: every render goes through `renderWithTheme`; assertions observe
- * rendered behaviour, never emitted CSS text (authoring skill § 18); the one
+ * Every render goes through `renderWithTheme`; assertions observe
+ * rendered behaviour, never emitted CSS text; the one
  * sanctioned structural assertion is `data-part`.
  *
  * THE FAKE-TIMER / REAL-BROWSER-EVENT INTERACTION, spelled out because it is

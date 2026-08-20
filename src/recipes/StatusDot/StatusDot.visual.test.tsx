@@ -7,11 +7,7 @@ import { StatusDot } from "./StatusDot.tsx";
 /**
  * Visual tier for the StatusDot recipe.
  *
- * BASELINES ARE TRACKED IN GIT (`__screenshots__/StatusDot.visual.test.tsx/*.png`),
- * the spec's declared divergence from soribashi — see Icon.visual.test.tsx's
- * comment for the full rationale.
- *
- * THE ANIMATION FREEZE IS INSTALLED HERE, following Chip's precedent:
+ *  * THE ANIMATION FREEZE IS INSTALLED HERE, following Chip's precedent:
  * StatusDot.module.css's tooltip carries a real `transition` (opacity, with a
  * delay), so a capture mid-fade would be non-deterministic between runs.
  * `transition: none` is exactly what closes that gap here (unlike Chip's

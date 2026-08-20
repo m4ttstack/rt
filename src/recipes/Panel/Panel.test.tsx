@@ -7,11 +7,9 @@ import { Panel, PANEL_PARTS, type PanelProps } from "./Panel.tsx";
 /**
  * Browser tier for the Panel recipe.
  *
- * Conventions inherited from Icon.test.tsx / Chip.test.tsx / StatusDot.test.tsx
- * and task 8's checklist: every render goes through `renderWithTheme`;
- * assertions observe rendered behaviour (computed styles, the accessibility
- * tree, real interaction), never emitted CSS text (authoring skill § 18). The
- * one sanctioned structural assertion is `data-part`.
+ * Every render goes through `renderWithTheme`; assertions observe rendered
+ * behaviour, never emitted CSS text; `data-part` is the one structural
+ * assertion.
  *
  * localStorage IS STUBBED, following CopyButton.test.tsx's clipboard-stub
  * idiom for the same reason: real headless Chromium's localStorage persists

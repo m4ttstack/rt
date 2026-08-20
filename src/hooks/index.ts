@@ -3,18 +3,15 @@ import type { RefObject } from "react";
 import { pushLayer, handleEscape } from "./layers.ts";
 import { acquireScrollLock, releaseScrollLock } from "./scroll-lock.ts";
 
-// Re-exported so a consumer that only imports the `./hooks` subpath (rather
-// than reaching into layers.ts/scroll-lock.ts directly) can still exercise
-// the DOM-free cores in its own tests -- e.g. mr-board's bun-test suite.
+// Re-exported so a consumer importing only the `./hooks` subpath can still
+// exercise the DOM-free cores in its own tests.
 export { pushLayer, handleEscape, acquireScrollLock, releaseScrollLock };
 export type { OverflowTarget } from "./scroll-lock.ts";
 
 /** Scrolls the returned ref's element into its scroll container whenever `key`
-    turns truthy or changes. For content that appears at the bottom of a capped,
-    scrollable modal: the settings modal stops at 80vh, so a fresh invite row or
-    an expanded join input can render below the fold with nothing to bring it
-    into view. `block: "nearest"` is deliberate -- it's a no-op when the element
-    is already visible, so this never yanks a settled modal around. */
+    turns truthy or changes, for content that can render below the fold of a
+    height-capped modal. `block: "nearest"` is deliberate: it is a no-op when
+    the element is already visible, so this never yanks a settled modal around. */
 function useRevealOnChange<T extends HTMLElement = HTMLElement>(key: unknown) {
   const ref = useRef<T | null>(null);
   useEffect(() => {
@@ -23,19 +20,16 @@ function useRevealOnChange<T extends HTMLElement = HTMLElement>(key: unknown) {
   return ref;
 }
 
-// Layers share a single document listener -- registered when the first layer
-// pushes, torn down when the last one pops -- rather than one listener per
-// open modal/drawer/menu. Escape delegates to layers.ts's stack, which pops
-// only the topmost layer (see that module for the LIFO semantics).
+// One shared document listener for all layers, registered on the first push
+// and torn down on the last pop.
 let openLayers = 0;
 let escListener: ((e: KeyboardEvent) => void) | null = null;
 
-/** Join the app's layer stack for the lifetime of the calling component:
-    Escape closes only the topmost open layer (modal, drawer, or menu), not
-    every open layer at once. Pushes a stable wrapper once per mount (not once
-    per render) so a re-rendered lower layer never re-registers itself to the
-    top of the stack -- `onClose` is read through a ref that's kept current
-    every render, while the pushed closure's identity never changes. */
+/** Join the app's layer stack for the calling component's lifetime: Escape
+    closes only the topmost open layer, not every one at once. The pushed
+    closure's identity never changes (once per mount, not once per render), so
+    a re-rendered lower layer cannot re-register itself to the top of the
+    stack; `onClose` is read through a ref kept current every render. */
 function useEscapeClose(onClose: () => void): void {
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -60,13 +54,12 @@ function useEscapeClose(onClose: () => void): void {
 }
 
 /** Auto-grow a textarea to fit its content, re-measuring whenever `deps`
-    changes. Reset to "auto" first or the box can only ever grow -- scrollHeight
-    is clamped by the current height, so deleting text would leave the extra
-    rows behind. scrollHeight covers content + padding but NOT the border, while
-    the global box-sizing: border-box makes `height` responsible for the border
-    too; assigning scrollHeight alone would leave the box a border's worth short
-    of its own content. Measure the border off the element rather than
-    hardcoding the stylesheet's width, so it survives a CSS change. */
+    changes. Two traps, both load-bearing: reset to "auto" first or the box can
+    only ever grow (scrollHeight is clamped by the current height, so deleting
+    text would leave the extra rows behind); and add the border back, because
+    scrollHeight covers content + padding but not the border while border-box
+    `height` is responsible for it. The border is measured off the element
+    rather than hardcoded, so it survives a CSS change. */
 function useAutoGrowTextarea(deps: readonly unknown[]): RefObject<HTMLTextAreaElement | null> {
   const ref = useRef<HTMLTextAreaElement | null>(null);
   useEffect(() => {
@@ -80,11 +73,7 @@ function useAutoGrowTextarea(deps: readonly unknown[]): RefObject<HTMLTextAreaEl
 }
 
 /** Lock body scroll for the calling component's lifetime. Counter-based (see
-    scroll-lock.ts) so any number of instances can be open at once and don't
-    have to unmount in mount order -- e.g. a Modal opened over an open drawer,
-    where the drawer gets force-unmounted first by an unrelated data change.
-    Keeps a modal/drawer's own scroll region from showing a second scrollbar
-    alongside the page's. */
+    scroll-lock.ts) so instances need not unmount in mount order. */
 function useBodyScrollLock(): void {
   useEffect(() => {
     acquireScrollLock(document.body.style);
@@ -100,9 +89,8 @@ interface Toast {
   text: string;
 }
 
-/** Transient toast queue: each addToast() call appends one with a fresh id
-    and self-removes it after 3.5s. Generic port of mr-board's board-scoped
-    useToasts -- no board imports, the Toast type lives here now. */
+/** Transient toast queue: each addToast() call appends one with a fresh id and
+    self-removes it after 3.5s. */
 function useToasts(): { toasts: Toast[]; addToast: (text: string) => void } {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const toastId = useRef(0);

@@ -7,11 +7,7 @@ import { Markdown } from "./Markdown.tsx";
 /**
  * Visual tier for the Markdown recipe.
  *
- * BASELINES ARE TRACKED IN GIT (`__screenshots__/Markdown.visual.test.tsx/*.png`),
- * the spec's declared divergence from soribashi — see Icon.visual.test.tsx's
- * comment for the full rationale.
- *
- * NO TRANSITION/ANIMATION FREEZE IS INSTALLED HERE. Markdown.module.css
+ *  * NO TRANSITION/ANIMATION FREEZE IS INSTALLED HERE. Markdown.module.css
  * declares neither a `transition` nor an `animation`, so there is nothing to
  * interpolate through mid-capture — the same reasoning Icon's own visual test
  * states for the same absence.

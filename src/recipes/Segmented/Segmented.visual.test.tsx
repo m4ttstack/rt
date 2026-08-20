@@ -7,11 +7,7 @@ import { LabeledSeg, Segmented } from "./Segmented.tsx";
 /**
  * Visual tier for the Segmented recipe (+ LabeledSeg).
  *
- * BASELINES ARE TRACKED IN GIT (`__screenshots__/Segmented.visual.test.tsx/*.png`),
- * the spec's declared divergence from soribashi — see Icon.visual.test.tsx's
- * comment for the full rationale.
- *
- * NO TRANSITION/ANIMATION FREEZE IS INSTALLED HERE, deliberately. Neither
+ *  * NO TRANSITION/ANIMATION FREEZE IS INSTALLED HERE, deliberately. Neither
  * `.tui-seg` nor `.tui-seg-text` declares a `transition` or `animation` in
  * mr-board's source (unlike Chip's pulse), so Segmented.module.css declares
  * neither either, and there is nothing to interpolate mid-capture — the same

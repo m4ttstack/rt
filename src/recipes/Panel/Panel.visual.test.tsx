@@ -7,11 +7,7 @@ import { Panel } from "./Panel.tsx";
 /**
  * Visual tier for the Panel recipe.
  *
- * BASELINES ARE TRACKED IN GIT (`__screenshots__/Panel.visual.test.tsx/*.png`),
- * the spec's declared divergence from soribashi — see Icon.visual.test.tsx's
- * comment for the full rationale.
- *
- * NO TRANSITION/ANIMATION FREEZE IS INSTALLED HERE. `.tui-panel-caret`
+ *  * NO TRANSITION/ANIMATION FREEZE IS INSTALLED HERE. `.tui-panel-caret`
  * declares `transition: transform 120ms ease` (lifted verbatim in
  * Panel.module.css), but nothing in mr-board's own CSS — or this recipe's —
  * ever sets a `transform` on it: the expanded/collapsed indication is the ▾/▸

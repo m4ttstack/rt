@@ -7,11 +7,7 @@ import { SideDrawer, type SideDrawerSide } from "./SideDrawer.tsx";
 /**
  * Visual tier for the SideDrawer recipe.
  *
- * BASELINES ARE TRACKED IN GIT (`__screenshots__/SideDrawer.visual.test.tsx/*.png`),
- * the spec's declared divergence from soribashi — see Icon.visual.test.tsx's
- * comment for the full rationale.
- *
- * FOUR BASELINES, NOT TWO: this recipe merges two mr-board families, so both
+ *  * FOUR BASELINES, NOT TWO: this recipe merges two mr-board families, so both
  * SIDES are captured in both SCHEMES. Each side has its own width, its own
  * border edge, its own shadow token (`--shadow-drawer` throws left,
  * `--shadow-drawer-left` throws right) and, for the left, its own padding and
@@ -21,7 +17,7 @@ import { SideDrawer, type SideDrawerSide } from "./SideDrawer.tsx";
  * neither a `transition` nor an `animation`, and neither did either board
  * family — mr-board's drawers appear and disappear with their mount, with no
  * slide-in. Copying ToastHost's/Chip's freeze in anyway would teach the next
- * recipe to cargo-cult it (authoring skill § 21 / task-8-report.md § 9).
+ * recipe to cargo-cult it.
  *
  * THE OVERLAY IS THE CAPTURE TARGET, not the panel: it is `position: fixed;
  * inset: 0`, so its layout box IS the viewport, and the screenshot carries the

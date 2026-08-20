@@ -7,17 +7,13 @@ import { ContextMenu } from "./ContextMenu.tsx";
 /**
  * Visual tier for the ContextMenu recipe.
  *
- * BASELINES ARE TRACKED IN GIT (`__screenshots__/ContextMenu.visual.test.tsx/*.png`),
- * the spec's declared divergence from soribashi — see Icon.visual.test.tsx's
- * comment for the full rationale.
- *
- * THE ANIMATION FREEZE IS INSTALLED HERE, following Chip's and ToastHost's
+ *  * THE ANIMATION FREEZE IS INSTALLED HERE, following Chip's and ToastHost's
  * precedent: ContextMenu.module.css's `.root` carries a real (one-shot, not
  * perpetual) `animation` (`contextmenu-in`), so a capture mid-open would be
  * non-deterministic between runs in BOTH opacity and geometry — the keyframe
  * opens on `scale(0.97) translateY(-2px)`. `animation: none !important` is
  * what closes that; `transition: none` alone would do nothing for an
- * `animation` (authoring skill § 21).
+ * `animation`.
  */
 
 const NO_MOTION_CLASS = "contextmenu-visual-no-motion";

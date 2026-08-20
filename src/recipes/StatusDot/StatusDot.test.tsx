@@ -10,7 +10,7 @@ import { STATUSDOT_PARTS, StatusDot } from "./StatusDot.tsx";
  * Conventions inherited from Icon/Chip/CopyButton/Segmented: every render
  * goes through `renderWithTheme`; assertions observe rendered behaviour
  * (computed styles, the accessibility tree, real interaction), never emitted
- * CSS text (authoring skill § 18); the one sanctioned structural assertion is
+ * CSS text; the one sanctioned structural assertion is
  * `data-part`.
  *
  * StatusDot declares NO vocabulary axes. `intent` is a recipe-OWN three-value

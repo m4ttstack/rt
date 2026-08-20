@@ -8,15 +8,9 @@ import { TOASTHOST_PARTS, ToastHost } from "./ToastHost.tsx";
 /**
  * Browser tier for the ToastHost recipe.
  *
- * Conventions inherited from Icon/Chip/CopyButton/Segmented/StatusDot: every
- * render goes through `renderWithTheme`; assertions observe rendered
- * behaviour, not emitted CSS text (authoring skill § 18); the one sanctioned
- * structural assertion is `data-part`.
- *
- * ToastHost declares no vocabulary axes: it takes exactly one own prop
- * (`toasts: Toast[]`, the same `Toast` shape Task 7's `useToasts` hook
- * produces -- imported from `../../hooks/index.ts` rather than redeclared, so
- * the two stay one type).
+ * Every render goes through `renderWithTheme`; assertions observe rendered
+ * behaviour, not emitted CSS text; `data-part` is the one structural
+ * assertion.
  */
 
 function rootQuery(container: HTMLElement): HTMLElement | null {

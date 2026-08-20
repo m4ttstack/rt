@@ -11,7 +11,7 @@ import { Markdown } from "./Markdown.tsx";
  * `vitest-browser-react`'s `render` directly, per the authoring skill and
  * every prior recipe's own comment. Assertions observe rendered behaviour —
  * real DOM produced by ReactMarkdown+remarkGfm, computed styles, the
- * accessibility tree — rather than emitted CSS text (skill § 18). The one
+ * accessibility tree — rather than emitted CSS text. The one
  * structural exception is `data-part`, which IS the observable
  * cross-boundary contract.
  */
@@ -57,9 +57,8 @@ describe("Markdown (browser)", () => {
   });
 
   it("stamps a stable data-part on its root (the kit's cross-boundary hook)", async () => {
-    // R7: the root slot's data-part is the SELF-IDENTIFYING recipe name,
-    // "markdown" — NOT "root" (this recipe's own brief predates the ruling;
-    // see task-8-report.md § 5).
+    // The root slot's data-part is the SELF-IDENTIFYING recipe name,
+    // "markdown" — never the bare slot key "root".
     const screen = await renderWithTheme(<Markdown>text</Markdown>);
 
     const root = screen.container.firstElementChild as HTMLElement;

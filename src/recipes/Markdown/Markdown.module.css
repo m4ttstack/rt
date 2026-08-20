@@ -1,79 +1,18 @@
 /*
- * Markdown — mr-board's `.tui-md` typography block (src/style.css), the
- * prose styling ReactMarkdown's output renders into. Lifted in full onto this
- * recipe's single `root` slot; mr-board deletes `.tui-md` from its own
- * stylesheet and the `<div className="tui-md">` wrapper in ReviewModal.tsx at
- * adoption.
+ * Markdown — mr-board's `.tui-md` prose typography, lifted onto one slot.
  *
- * NOT LIFTED — goes instead to, or stays, at these two OTHER call sites:
+ * The element selectors below are plain (non-localized) descendants of `.root`
+ * because ReactMarkdown decides what DOM they are, not this recipe — there is
+ * no slot to give any of them.
  *
- *   `.tui-review-body .tui-md { max-width: 820px; margin: 0 auto;
- *   padding-bottom: 1.5rem; }` (style.css:822) is a CONTEXTUAL rule keyed on
- *   an ANCESTOR (`.tui-review-body`, the review modal's scrolling body), not
- *   part of `.tui-md`'s own typography — it caps the reading measure and adds
- *   bottom breathing room only inside the review modal, nowhere else `.tui-md`
- *   appears. It is NOT part of this recipe (a recipe has no ancestor to key
- *   off) and MUST SURVIVE adoption, rewritten to select the recipe's
- *   `data-part` instead of the class it absorbed:
- *   `.tui-review-body [data-part="markdown"] { max-width: 820px; margin: 0
- *   auto; padding-bottom: 1.5rem; }`. It is easy to mistake for one of the
- *   `.tui-md` rules this recipe already absorbed and delete outright at
- *   adoption — it is not; deleting it silently drops the review modal's
- *   820px measure. See the README's "Adoption notes" for the same warning at
- *   the point an adopter is most likely to read it.
- *
- *   `.tui-cd-note-body` (CommentsDrawer.tsx's comment-body wrapper) is a
- *   SEPARATE, board-owned prose block — never `.tui-md` at all, so there is
- *   nothing of ITS rules to lift here. See Markdown.tsx's own doc comment for
- *   why adopting this recipe at that call site needs `unstyled` to avoid
- *   injecting `.tui-md` typography where the board never had it.
- *
- * mr-board's rules select through a `.tui-md` ANCESTOR onto plain element
- * selectors ReactMarkdown itself renders (`h1`, `p`, `code`, `table`, ...) —
- * ReactMarkdown decides what DOM those are, not this recipe, so there is no
- * `getStyles()` slot for any of them. The lift preserves that shape one for
- * one: every mr-board `.tui-md <element>` rule becomes `.root <element>`
- * here, a plain (non-localized) element selector nested under the recipe's
- * one CSS-module class. `data-part="markdown"` is stamped only on `.root`
- * itself (R7) — there is nothing else in this recipe to stamp it on.
- *
- * TOKENS, checked against src/theme.ts's real ladders, outlet-1 preferred:
- *   0.95rem (root font-size)     -> var(--font-size-rem95)   [exact rung]
- *   4px  (code border-radius)    -> var(--radius-sm)          [exact rung]
- *   8px  (pre border-radius)     -> var(--radius-lg)          [exact rung]
- *   0.7rem / 0.9rem (pre padding)-> var(--spacing-lg) / var(--spacing-xl) [exact rung]
- *   1px  (every border width except blockquote's) -> the gate's own length
- *        allowlist; no outlet needed.
- *   -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif
- *        (root font-family) -> DELIBERATE NON-TOKEN, kept as mr-board's exact
- *        literal stack rather than swapped for `var(--font-sans)`
- *        ("Inter", -apple-system, ...): the two stacks genuinely differ
- *        (no Inter, no BlinkMacSystemFont-first ordering match), and a
- *        straight port preserves the board's own prose font exactly rather
- *        than silently pulling in the theme's UI sans-serif. `font-family`
- *        values are not colour or length literals, so the CSS gate's scanner
- *        does not flag this string either way — the token map records the
- *        decision, not a gate requirement.
- *
- * EVERY OTHER length below is an `em` value: relative to the rendering
- * element's OWN font size, exactly as mr-board wrote it (`1.4em`, `0.3em`,
- * ...). src/theme.ts's own comment is explicit that em-based spacing "stays
- * inline in recipe CSS on purpose... cannot be a global rung" — there is no
- * theme token these could reuse without changing their behaviour to a fixed
- * rem size. They still need a `var()` outlet to pass the gate (the length
- * scanner has no `em` exemption the way it does for `0`/`1px`/`2px`/`100%`),
- * so each becomes a recipe-local `--sb-markdown-*` custom property, wired
- * through `vars()` below — the SAME pattern LabeledSeg's
- * `--sb-segmented-text-size: 0.8em` and Panel's `PANEL_TITLE_SCALARS`
- * already use for their own em values. `MARKDOWN_SCALARS` in Markdown.tsx is
- * the single source for every one of them; nothing here is a bare literal.
- *
- * blockquote's 3px border-left width is the one outlier length that is
- * neither a theme rung nor an em value — also routed through
- * `MARKDOWN_SCALARS` (`--sb-markdown-blockquote-border-w`).
+ * `.tui-review-body .tui-md`'s 820px reading-measure cap is ancestor-scoped and
+ * is NOT part of this recipe; it must survive adoption, rewritten onto
+ * `[data-part="markdown"]`. See docs/decisions.md.
  */
 @layer soribashi.recipes {
   .root {
+    /* mr-board's exact prose stack, deliberately NOT `var(--font-sans)`: the
+       theme's UI sans starts with Inter, which this never had. */
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
     font-size: var(--font-size-rem95);
     line-height: 1.6;

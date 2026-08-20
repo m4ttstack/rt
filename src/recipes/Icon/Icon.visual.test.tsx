@@ -5,23 +5,14 @@ import { renderWithTheme } from "../../../test/test-utils.tsx";
 import { CHECK_ICON, COPY_ICON, Icon, ICONS } from "./Icon.tsx";
 
 /**
- * Visual tier for the Icon recipe — the first in the kit, so it is also the
- * shape tasks 9-15 copy.
+ * Visual tier for the Icon recipe.
  *
- * BASELINES ARE TRACKED IN GIT (`__screenshots__/Icon.visual.test.tsx/*.png`).
- * This is the spec's declared divergence from soribashi, whose .gitignore drops
- * `*-darwin.png` because its baselines are generated on Linux in CI and a local
- * capture there is advisory noise. This kit has no CI, so the platform-suffixed
- * PNG a developer generates IS the baseline. The kit's own .gitignore already
- * encodes that (it re-includes `__screenshots__/ * .visual.test.tsx/ *.png`
- * while still dropping tier-2 failure captures).
+ * BASELINES ARE TRACKED IN GIT. Unlike soribashi, this kit has no CI, so the
+ * platform-suffixed PNG a developer generates IS the baseline; .gitignore
+ * re-includes them while still dropping tier-2 failure captures.
  *
- * NO TRANSITION/ANIMATION FREEZE IS INSTALLED HERE, deliberately.
- * Icon.module.css declares neither, so there is nothing to interpolate through
- * mid-capture. A later recipe with a `transition` needs soribashi's
- * no-transition class idiom, and one with a perpetual `animation` needs the
- * stronger `animation: none !important` form as well (authoring skill § 21) —
- * neither is cargo-culted in advance.
+ * No animation freeze here, deliberately: Icon.module.css declares neither a
+ * transition nor an animation, so there is nothing to interpolate mid-capture.
  */
 
 /** Mounts into a fresh container that already carries `dark` when asked. */

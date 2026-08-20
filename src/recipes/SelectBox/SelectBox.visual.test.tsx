@@ -7,11 +7,7 @@ import { SelectBox } from "./SelectBox.tsx";
 /**
  * Visual tier for the SelectBox recipe.
  *
- * BASELINES ARE TRACKED IN GIT (`__screenshots__/SelectBox.visual.test.tsx/*.png`),
- * the spec's declared divergence from soribashi — see Icon.visual.test.tsx's
- * comment for the full rationale.
- *
- * NO TRANSITION FREEZE IS INSTALLED. `.tui-selectbox` has a `transition` (not
+ *  * NO TRANSITION FREEZE IS INSTALLED. `.tui-selectbox` has a `transition` (not
  * a perpetual `animation`), and this fixture captures RESTING states only
  * (unchecked / checked / hover), never mid-transition — nothing here would
  * animate at capture time, so there is no need for the freeze idiom Chip's

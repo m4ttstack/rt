@@ -1,123 +1,18 @@
 /*
- * SideDrawer — mr-board's TWO drawer families, merged into one side-driven
- * recipe.
+ * SideDrawer — mr-board's TWO drawer families (`.tui-cd*` right,
+ * `.tui-drawer*` left) merged into one side-driven recipe. Shared declarations
+ * sit on `.overlay`/`.root`; everything that differs is written under
+ * `[data-side]`.
  *
- * This is the only recipe in the kit that absorbs two independent board
- * families at once, so the merge is written out family by family. Every lift
- * is anchored on the CLASS NAME it came from in mr-board's `src/style.css`
- * (line numbers drift; class names are the stable anchor).
+ * The left overlay's `justify-content` is deliberately left UNSET rather than
+ * written as `flex-start`: the board never declares it, so today's computed
+ * value is the initial `normal`, and the parity constraint is computed styles,
+ * not just pixels.
  *
- * ── RIGHT (`.tui-cd-overlay` / `.tui-cd`, CommentsDrawer) ────────────────────
- *
- *   `.tui-cd-overlay {
- *      position: fixed; inset: 0; z-index: 100;
- *      display: flex; justify-content: flex-end;
- *      background: color-mix(in srgb, var(--bg) 55%, transparent);
- *      backdrop-filter: blur(2px);
- *      cursor: default;      (see the note below)
- *      white-space: normal;  (see the note below) }`
- *   `.tui-cd {
- *      width: min(460px, 92vw); height: 100%; overflow-y: auto;
- *      background: var(--panel); border-left: 1px solid var(--border);
- *      box-shadow: -6px 0 32px rgba(0, 0, 0, 0.3);
- *      display: flex; flex-direction: column; }`
- *
- * ── LEFT (`.tui-drawer-overlay` / `.tui-drawer`, the mobile burger menu) ─────
- *
- *   `.tui-drawer-overlay {
- *      position: fixed; inset: 0; z-index: 90; display: none;
- *      background: color-mix(in srgb, var(--bg) 55%, transparent);
- *      backdrop-filter: blur(2px); }`
- *   `@media (max-width: 720px) { .tui-drawer-overlay { display: flex; } }`
- *   `.tui-drawer {
- *      width: min(320px, 85vw); height: 100%; overflow-y: auto;
- *      background: var(--panel); border-right: 1px solid var(--border);
- *      padding: 14px; display: flex; flex-direction: column; gap: 14px;
- *      box-shadow: 4px 0 28px rgba(0, 0, 0, 0.3); }`
- *
- * ── THE MERGE MAP ───────────────────────────────────────────────────────────
- *
- * SHARED (written once, on `.overlay` / `.root`):
- *   overlay: position/inset/backdrop-filter/background/display:flex
- *   panel:   height/overflow-y/background/display:flex/flex-direction:column
- *
- * SIDE-DRIVEN (written under `[data-side="right"]` / `[data-side="left"]`,
- * stamped from SideDrawer.tsx):
- *   overlay z-index            100          /  90
- *   overlay justify-content    flex-end     /  (unset — see below)
- *   panel   width              min(460,92vw)/  min(320,85vw)   (via `vars`)
- *   panel   border edge        border-left  /  border-right
- *   panel   box-shadow         --shadow-drawer / --shadow-drawer-left
- *   panel   padding + gap      (none)       /  14px
- *
- * `justify-content` IS DELIBERATELY UNSET ON THE LEFT rather than written as
- * `flex-start`. `.tui-drawer-overlay` never declares it, so today's computed
- * value is the initial `normal`; writing `flex-start` would lay out
- * identically but change what `getComputedStyle` reports, and the parity
- * constraint for this task is computed styles, not just pixels.
- *
- * ── WHAT IS DELIBERATELY NOT LIFTED, and where it goes instead ──────────────
- *
- *  1. THE LEFT OVERLAY'S `display: none` AND ITS `@media (max-width: 720px)`
- *     UNHIDE. This is a BOARD LAYOUT decision, not a property of "a left
- *     drawer": mr-board's left drawer IS the burger menu, which only exists
- *     below 720px, where the roster and the controls move into it. A kit
- *     recipe that hid its own left drawer above 720px would be unusable for
- *     any other consumer. mr-board keeps the behaviour by keeping ONE residual
- *     rule pair in its own stylesheet, rewritten onto the data-part contract:
- *
- *       [data-part="sidedrawer-overlay"][data-side="left"] { display: none; }
- *       @media (max-width: 720px) {
- *         [data-part="sidedrawer-overlay"][data-side="left"] { display: flex; }
- *       }
- *
- *     mr-board's stylesheet is UNLAYERED and everything here is inside
- *     `@layer soribashi.recipes`, so those two rules win over `.overlay`'s
- *     `display: flex` with no `!important` and no specificity fight. Pinned
- *     from the kit side by SideDrawer.test.tsx's "shows BOTH sides' overlays".
- *
- *  2. `cursor: default` AND `white-space: normal` ON THE RIGHT OVERLAY ARE
- *     LIFTED, BUT SCOPED TO `[data-side="right"]` RATHER THAN GENERALISED.
- *     Both exist because CommentsDrawer renders INSIDE a clickable, nowrap
- *     board row and has to reset what it inherits (mr-board's own comments,
- *     carried below). The honest generalisation is that any overlay should
- *     reset both — an inherited `pointer` cursor or `nowrap` is never wanted
- *     on a full-viewport scrim — but generalising would change the LEFT
- *     overlay's computed `cursor` from `auto` to `default`, which the parity
- *     constraint forbids for this slice. Recorded here so a later slice can
- *     promote them deliberately rather than rediscover them.
- *
- *  3. EVERY DRAWER *INTERNAL* STAYS APP-SIDE, by the task's own constraint:
- *     `.tui-drawer-head`, `.tui-drawer-controls`, `.tui-drawer-action`,
- *     `.tui-drawer .tui-sidebar`, and the whole `.tui-cd-*` content family
- *     (`-head`, `-title`, `-iid`, `-open`, `-body`, `-thread*`, `-note*`).
- *     The drawer owns overlay + panel and nothing else; every one of those
- *     classes is rendered by a caller inside `children` and keeps its
- *     `.tui-*` name. ONE OF THEM NEEDS CARE AT ADOPTION: `.tui-drawer
- *     .tui-sidebar` is DESCENDANT-SCOPED on the drawer's own class, so it
- *     must be rewritten to `[data-part="sidedrawer"] .tui-sidebar` (or
- *     `[data-side="left"] .tui-sidebar`) when `.tui-drawer` stops being on
- *     the element. Likewise `.tui-drawer-controls .tui-seg`/`… .tui-seg
- *     button`, which are scoped on an internal and are therefore unaffected.
- *
- * ── TOKENS ─────────────────────────────────────────────────────────────────
- *   14px    -> var(--spacing-px14)   (the left panel's padding AND its gap)
- *   `color-mix(in srgb, var(--bg) 55%, transparent)` is the pre-emitted
- *     semantic wash `var(--surface-wash-bg-55)` — outlet 1, a theme token.
- *   `-6px 0 32px rgba(0, 0, 0, 0.3)` is src/theme.ts's `shadow.drawer`
- *     VERBATIM -> `var(--shadow-drawer)`; `4px 0 28px rgba(0, 0, 0, 0.3)` is
- *     `shadow.drawer-left` VERBATIM -> `var(--shadow-drawer-left)`. Both
- *     tokens were added in Task 3 for exactly this recipe.
- * `1px`, `2px` (the backdrop blur radius) and `100%` are on the gate's own
- * length allowlist; `z-index: 90`/`100` are bare unitless numbers.
- *
- * THE TWO WIDTH EXPRESSIONS HAVE NO THEME RUNG and are not gate-exempt
- * (`460px`, `92vw` and `85vw` all carry units; `320px` happens to be
- * allowlisted but its `min()` partner is not). Both are routed through ONE
- * custom property, `--sb-sidedrawer-w`, which SideDrawer.tsx's `vars`
- * resolver picks per side out of `SIDEDRAWER_WIDTHS` — the § 6
- * dimension-record pattern, keyed on this recipe's own `side` axis rather
- * than the theme's `size` vocabulary. See that constant's doc comment.
+ * The left overlay's `display: none` + its 720px unhide are a BOARD LAYOUT
+ * decision, not a property of "a left drawer", and stay in mr-board's
+ * stylesheet. Every drawer internal likewise stays app-side. See
+ * docs/decisions.md for those adoption rules.
  */
 @layer soribashi.recipes {
   .overlay {
@@ -131,13 +26,11 @@
   .overlay[data-side="right"] {
     z-index: 100;
     justify-content: flex-end;
-    /* The drawer renders inside the clickable row; reset the inherited pointer
-       so its content doesn't look clickable. Interactive children re-set
-       pointer. (mr-board's own comment on `.tui-cd-overlay`.) */
+    /* Both resets exist because this drawer renders inside a clickable, nowrap
+       board row and has to undo what it inherits. Scoped to the right side
+       rather than generalised: generalising would change the LEFT overlay's
+       computed `cursor` from `auto` to `default`, which parity forbids. */
     cursor: default;
-    /* Same reason: the trigger lives in .tui-meta, which is nowrap to keep the
-       row one line. Left inherited, no prose in the drawer wraps and every note
-       runs off the right edge. (mr-board's own comment.) */
     white-space: normal;
   }
 
@@ -145,32 +38,9 @@
     z-index: 90;
   }
 
-  /* `box-sizing: border-box` IS AN ADDITION, not a lift, and a deliberate one.
-     mr-board gets it from a global `* { box-sizing: border-box; }` reset, so
-     `.tui-drawer`'s `min(320px, 85vw)` has always been the drawer's OUTER
-     width there — but this kit's own copy of that reset lives in
-     `src/canvas.css`, which is explicitly OPTIONAL ("Components do not require
-     it"). Without this declaration, a consumer who skips the canvas renders a
-     "320px" left drawer 349px wide (320 + 28px padding + 1px border), and a
-     "min(460px, 92vw)" right drawer one border too wide.
-
-     WHAT THIS DOES AND DOES NOT GUARANTEE. It is not a universal guarantee,
-     because it sits inside `@layer soribashi.recipes` and an UNLAYERED author
-     rule beats any layered one — the same cascade fact note 1 in the header
-     relies on for the board's residual `display` gate. So:
-
-       - consumer with NO box-sizing opinion  -> border-box, correct;
-       - consumer whose reset is border-box   -> agrees, correct (this is
-         mr-board: the declaration changes nothing about its computed styles,
-         so parity holds there by agreement, not by this rule winning);
-       - consumer with an UNLAYERED reset saying content-box -> their rule
-         wins and the panel is content-box again.
-
-     The third case is a consumer deliberately overriding us and is out of
-     scope here; the first is the one this closes. Pinned by
-     SideDrawer.test.tsx's per-side width cases, which assert the `min()`
-     formula as the OUTER measure and run in exactly the first case (the
-     browser tier loads theme.css only, never the canvas). */
+  /* `box-sizing` is an ADDITION, not a lift — without it a consumer who skips
+     the optional canvas reset renders a "320px" left drawer 349px wide. See
+     docs/decisions.md. */
   .root {
     box-sizing: border-box;
     width: var(--sb-sidedrawer-w);

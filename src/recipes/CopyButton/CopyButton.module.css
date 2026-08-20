@@ -1,58 +1,9 @@
 /*
- * CopyButton — mr-board's copy-to-clipboard button (`.tui-copy`).
+ * CopyButton — mr-board's `.tui-copy` copy-to-clipboard button.
  *
- * Every lift below is anchored on the CLASS NAME it came from in mr-board's
- * `src/style.css` (line numbers drift; class names are the stable anchor):
- *
- *   `.tui-copy {
- *      display: inline-flex; align-items: center; justify-content: center;
- *      padding: 0.3rem 0.45rem; cursor: pointer; border-radius: 6px;
- *      background: var(--panel); border: 1px solid var(--border);
- *      color: var(--muted); }`
- *   `.tui-copy:hover { color: var(--fg); border-color: var(--accent); }`
- *   `.tui-copy.copied { color: var(--green); border-color: var(--green); }`
- *   (focus ring, from the board's shared multi-selector rule)
- *   `.tui-copy:focus-visible { outline: 2px solid var(--accent);
- *      outline-offset: 2px; }`
- *
- * `background: var(--panel)` IS the current board rule (commit 0701066, the
- * same "header controls get a solid panel background" Phase-1 fix Segmented's
- * stylesheet documents) — carried verbatim, not re-derived.
- *
- * TOKENS. Every literal in the board rule has an exact rung in src/theme.ts:
- *   0.3rem  -> var(--spacing-xs)     0.45rem -> var(--spacing-sm)
- *   6px     -> var(--radius-md)
- * `1px` and `2px` are on the gate's own length allowlist
- * (test/no-hardcoded-values.test.ts).
- *
- * `.copied`'S STATE BECOMES A DATA ATTRIBUTE, per this task's own brief:
- * `.root[data-copied]` replaces `.tui-copy.copied`, stamped from CopyButton.tsx
- * (`data-copied={copied || undefined}`), not a class toggle — hashed CSS-module
- * class names cannot be selected across the package boundary, and `data-copied`
- * is the same hand-stamped-boolean convention Chip's `data-pulse`/`-dimmed`/
- * `-uppercase` use.
- *
- * WHAT IS DELIBERATELY NOT LIFTED, and where it goes instead:
- *   `.tui-copy-inline` / `.tui-copy-inline.copied` / `.tui-copy-card` /
- *     `.tui-row .tui-copy-inline` / `.tui-row:hover .tui-copy-inline` /
- *     `.tui-card:hover .tui-copy-inline` — a DIFFERENT board component (the
- *     hover-revealed, opacity-faded row/card copy affordance), not this
- *     recipe. Per this task's brief, `.tui-copy-inline` is explicitly NOT
- *     ported and stays board-side.
- *   `.tui-selbar-actions .tui-copy { gap: 0.45rem; padding: 0.4rem 0.75rem;
- *     font: inherit; font-size: 0.78rem; white-space: nowrap; }` —
- *     ANCESTOR-SCOPED layout (the selection-bar's roomier button), not part
- *     of the control's own shape. Becomes an app-side
- *     `.tui-selbar-actions [data-part="copybutton"] { ... }` rule at
- *     adoption.
- *
- * NOT REPRODUCED (an omission in the board's own CSS, preserved rather than
- * "fixed"): `.tui-copy` carries no `gap` between its icon and an optional
- * label span — the board relies on `.tui-selbar-actions .tui-copy`'s
- * ancestor-scoped `gap: 0.45rem` for the ONE call site that passes a label,
- * and has no fallback gap for a bare `.tui-copy` with a label anywhere else.
- * This recipe's `label` slot inherits the same gap-less default; an adopting
- * app rule supplies the gap the same way the board's own ancestor rule does.
+ * `.tui-copy-inline` (the hover-revealed row/card affordance) is a different
+ * board component and stays app-side. There is deliberately no `gap` between
+ * icon and label — see docs/decisions.md.
  */
 @layer soribashi.recipes {
   .root {

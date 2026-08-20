@@ -2,16 +2,11 @@ import { createTheme, defineVocabulary } from "@soribashi/core";
 import { tuiIntentResolver } from "./intent-resolver.ts";
 
 /**
- * tui-kit's vocabulary: the board's own words.
- *
- * `intent` is role-named where mr-board's CSS is hue-named (`--accent`,
- * `--green`, ...); src/intent-resolver.ts holds the join. Renames of the board's
- * own class-level vocabulary are deferred per the spec — this axis is the
- * component-prop vocabulary, not the CSS one.
- *
- * `variant` omits soribashi's default `filled`/`link`: nothing in the TUI look
- * paints a filled intent-coloured control, and a variant the kit cannot render
- * has no business in the vocabulary a prop validates against.
+ * `intent` is role-named where mr-board's CSS is hue-named; the join lives in
+ * src/intent-resolver.ts. `variant` omits soribashi's default `filled`/`link`:
+ * nothing in the TUI look paints a filled intent-coloured control, and a
+ * variant the kit cannot render has no business in the vocabulary a prop
+ * validates against.
  */
 export const tuiVocabulary = {
   size: defineVocabulary(["xs", "sm", "md", "lg", "xl"] as const),
@@ -30,23 +25,14 @@ export const tuiVocabulary = {
 /**
  * The Tokyo Day / Tokyo Night theme.
  *
- * Every colour value below is mr-board's EXACT string, copied from its
- * `src/style.css` `:root` / `:root.dark` blocks and cross-checked against
- * docs/token-census.md section (a). Parity with the board is by construction,
- * not by eye: no value here was rounded, re-derived, or "cleaned up".
+ * EVERY VALUE BELOW IS MR-BOARD'S EXACT STRING, cross-checked against
+ * docs/token-census.md. Nothing here may be rounded, re-derived, or "cleaned
+ * up" — parity with the board is by construction, not by eye.
  *
- * One canonical shade (`500`) per hue family. The TUI look has one value per
- * colour, not a ramp; hover and wash derivation happens through `color-mix`
- * (in the intent resolver, and in the wash semantic tokens below), never by
- * inventing ramp shades the source palette never had.
- *
- * Scale-key naming convention (spacing / fontSize / radius): a t-shirt ladder
- * carries the dominant rhythm, and `remNN` / `pxN` rungs carry the exact
- * remaining literals the board actually uses, so recipe CSS can reference a
- * token for any real value instead of half of them. Keys never START with a
- * digit: @soribashi/factory's getSize() treats a digit-leading token key as raw
- * CSS (see get-size.ts's isRawCss), so `spacing["2xs"]` would emit the literal
- * string `2xs` from a style prop rather than `var(--spacing-2xs)`.
+ * One canonical shade (`500`) per hue family: the TUI look has one value per
+ * colour, not a ramp. See docs/decisions.md for the census methodology and the
+ * scale-key naming rule (keys must never start with a digit — `getSize()`
+ * treats a digit-leading key as raw CSS).
  */
 export const tuiTheme = createTheme({
   name: "tui-kit",
@@ -69,15 +55,12 @@ export const tuiTheme = createTheme({
         grid: "rgba(52, 59, 88, 0.05)",
       },
       dot: { ok: "#1f9d3a", warn: "#e08a00", bad: "#e5153f" },
-      // REQUIRED, not optional. createTheme() unconditionally merges its
-      // DEFAULT_TEXT / DEFAULT_SURFACE / DEFAULT_BORDER semantic tokens over
-      // whatever this theme declares (create-theme.ts, the per-key merge), and
-      // those defaults reference colors.neutral.{0,50,100,200,400,600,900}. A
-      // theme without a `neutral` family therefore fails codegen validation on
-      // references it never wrote. The values mirror the surface/line/gray
-      // families above so the backfilled defaults at least resolve to sane TUI
-      // colours; no tui recipe reads them (recipes use the explicit semantics
-      // below).
+      // Required only because createTheme() backfills its DEFAULT_TEXT /
+      // DEFAULT_SURFACE / DEFAULT_BORDER semantics, which reference
+      // colors.neutral.*; without the family, codegen validation fails on
+      // references this theme never wrote. Values mirror the surface/line/gray
+      // families so the backfill resolves to sane TUI colours; no recipe reads
+      // them.
       neutral: {
         "0": "#f6f6fa", // = surface.card
         "50": "#eff0f5", // = surface.panel
@@ -99,13 +82,8 @@ export const tuiTheme = createTheme({
       px5: "5px",
       px7: "7px",
     },
-    // The t-shirt ladder is mr-board's 0.15rem grid (0.15 / 0.3 / 0.45 / 0.6 /
-    // 0.9 / 1.1, plus the 0.7 step it uses for card padding). The remNN / pxN
-    // rungs are every other rem/px padding-margin-gap literal that appears at
-    // least twice in the board's `.tui-*` rules (docs/token-census.md section
-    // b). `em`-based spacing stays inline in recipe CSS on purpose: it is
-    // deliberately relative to the element's own font size and cannot be a
-    // global rung.
+    // `em`-based spacing is deliberately absent and stays in recipe CSS: an em
+    // is relative to the element's own font size and cannot be a global rung.
     spacing: {
       xxs: "0.15rem",
       xs: "0.3rem",
@@ -138,10 +116,9 @@ export const tuiTheme = createTheme({
       px12: "12px",
       px14: "14px",
     },
-    // `base` is the board's body size (`font: 13.5px/1.55 var(--font-mono)`).
-    // The ladder follows usage frequency in the census, not a geometric
-    // progression: `md` is 0.76rem because that is the board's most-used font
-    // size (8 rules), not because it sits halfway between two neighbours.
+    // The ladder follows census usage frequency, not a geometric progression:
+    // `md` is 0.76rem because that is the board's most-used size, not because
+    // it sits halfway between its neighbours.
     fontSize: {
       base: "13.5px",
       xxs: "0.55rem",
@@ -174,7 +151,6 @@ export const tuiTheme = createTheme({
       mono: '"JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace',
       sans: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
     },
-    // The board's body line-height, the other half of its `font:` shorthand.
     lineHeight: { base: "1.55" },
     shadow: {
       menu: "0 10px 30px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.18)",
@@ -184,10 +160,9 @@ export const tuiTheme = createTheme({
       "drawer-left": "4px 0 28px rgba(0, 0, 0, 0.3)",
     },
   },
-  // Colours only. mr-board's `:root.dark` carries 17 variables and never
-  // redeclares `--font-mono` / `--font-sans`; soribashi rejects a non-colour
-  // dark override outright (light-dark() is a <color> production), so the two
-  // constraints agree.
+  // Colours only: soribashi rejects a non-colour dark override outright
+  // (light-dark() is a <color> production), and mr-board's `:root.dark` never
+  // redeclares a non-colour either, so the two constraints agree.
   dark: {
     colors: {
       blue: { "500": "#7aa2f7" },
@@ -220,27 +195,20 @@ export const tuiTheme = createTheme({
       canvas: "colors.surface.bg",
       panel: "colors.surface.panel",
       card: "colors.surface.card",
-      // The wash layers: every distinct `color-mix()` expression in mr-board's
-      // stylesheet (docs/token-census.md section (c), all 16), carried as RAW
-      // strings. validate-theme.ts's validateRef only checks values that match
-      // its dotted-identifier REF_SHAPE, so an expression like this one passes
-      // through and emitCss writes it verbatim (same route DEFAULT_SURFACE's
-      // `overlay` scrim takes).
+      // Every distinct `color-mix()` expression in mr-board's stylesheet,
+      // carried as RAW strings (validateRef only checks dotted-identifier
+      // refs, so these pass through and emitCss writes them verbatim).
       //
-      // They mix the ALIAS names (`var(--panel)`, `var(--accent)`, ...) rather
-      // than the underlying `--surface-panel` / `--color-blue-500` for two
-      // reasons: the strings then match the board's CSS byte for byte, and a
-      // consumer who re-points an alias re-points its washes with it. Custom
-      // property references resolve at use, not in declaration order, so it
-      // does not matter that the aliases are emitted later in the same block.
+      // They mix the ALIAS names rather than the underlying tokens so the
+      // strings match the board's CSS byte for byte, and so a consumer who
+      // re-points an alias re-points its washes with it. Custom properties
+      // resolve at use, so the aliases being emitted later does not matter.
       "wash-bg-55": "color-mix(in srgb, var(--bg) 55%, transparent)",
       "wash-panel-55": "color-mix(in srgb, var(--panel) 55%, transparent)",
       "wash-panel-70": "color-mix(in srgb, var(--panel) 70%, transparent)",
       "wash-panel-88": "color-mix(in srgb, var(--panel) 88%, transparent)",
       "wash-panel-94": "color-mix(in srgb, var(--panel) 94%, transparent)",
-      // 100% of a colour mixed with transparent is that colour — kept because
-      // the board writes it (a deliberate "same shape as its siblings, no
-      // translucency here" marker), and verbatim means verbatim.
+      // A no-op mix, kept because the board writes it: verbatim means verbatim.
       "wash-panel-100": "color-mix(in srgb, var(--panel) 100%, transparent)",
       "wash-accent-7": "color-mix(in srgb, var(--accent) 7%, transparent)",
       "wash-accent-14": "color-mix(in srgb, var(--accent) 14%, transparent)",
@@ -254,8 +222,8 @@ export const tuiTheme = createTheme({
       "wash-cyan-border-45":
         "color-mix(in srgb, var(--cyan) 45%, var(--border))",
     },
-    // Plain string refs: SemanticTokensConfig types `text` and `border` as
-    // Record<string, SemanticReference>. Only `surface` accepts the object form.
+    // Plain string refs only: `text` and `border` are typed
+    // Record<string, SemanticReference>; only `surface` accepts the object form.
     text: {
       primary: "colors.gray.fg",
       muted: "colors.gray.muted",

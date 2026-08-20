@@ -11,7 +11,7 @@ import { MODAL_PARTS, Modal } from "./Modal.tsx";
  *
  * Conventions inherited from Icon/Chip/CopyButton/Segmented/StatusDot/
  * ToastHost/Panel: every render goes through `renderWithTheme`; assertions
- * observe rendered behaviour, never emitted CSS text (authoring skill § 18);
+ * observe rendered behaviour, never emitted CSS text;
  * the one sanctioned structural assertion is `data-part`.
  *
  * THREE INTERACTION MECHANICS ARE SPECIFIC TO AN OVERLAY RECIPE and are
@@ -239,8 +239,7 @@ describe("Modal (browser)", () => {
 
     // Literals, not MODAL_PARTS references: the point of this case is that
     // the CONTRACT's values are what they are, so reading them out of the
-    // constant under test would make it vacuous. `modal` (not `modal-frame`)
-    // is controller ruling R12 — § 5's `root -> <recipe>` rule, applied.
+    // constant under test would make it vacuous.
     expect(overlayOf(screen.container).getAttribute("data-part")).toBe("modal-overlay");
     expect(frameOf(screen.container).getAttribute("data-part")).toBe("modal");
     for (const part of ["modal-head", "modal-title", "modal-close"]) {
