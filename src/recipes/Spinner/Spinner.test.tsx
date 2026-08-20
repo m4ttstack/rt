@@ -9,7 +9,7 @@ import { SPINNER_PARTS, Spinner } from "./Spinner.tsx";
  * `renderWithTheme`, assertions observe rendered behaviour, and the one
  * sanctioned structural assertion is `data-part`.
  *
- * `size` is a recipe-own two-value scalar (Task 1 brief), not a theme
+ * `size` is a recipe-own two-value scalar, not a theme
  * vocabulary axis -- Spinner declares no `vocabularyAxes`, so it hand-stamps
  * `data-size` itself in render rather than through `getStyles`.
  */

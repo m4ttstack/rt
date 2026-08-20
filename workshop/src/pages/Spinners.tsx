@@ -60,7 +60,7 @@ export function Spinners() {
       </p>
 
       <h2 style={{ marginTop: "2rem" }}>inside a disabled control</h2>
-      <p>The shape Task 3's Button embeds: an in-flight action, mid-submit.</p>
+      <p>The shape a submit button embeds: an in-flight action, mid-submit.</p>
       <button type="button" disabled style={disabledButton}>
         <Spinner size="xs" />
         Materializing…
