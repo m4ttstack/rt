@@ -37,30 +37,69 @@ fresh install to regenerate the mirrored tree.
 
 ## Refresh rule
 
+Two different situations, two different refreshes — they are **not**
+interchangeable, and using the lighter one for the heavier situation fails
+silently (the install succeeds, the lockfile is just wrong).
+
+**Kit file contents changed, kit `package.json` unchanged** (edited an
+existing `.ts`/`.tsx`, added or removed a file):
+
 ```
 bun install --force
 ```
 
-Argument-less. This forces a full reinstall (229 packages reinstalled vs. a
-normal incremental `bun install`'s ~67) and regenerates the symlink tree
-against the kit's current file set and manifest. Verified: ran it after
-adding the dependency, full suite (`bun test`) and both `tsc --noEmit`
-projects stayed green afterward.
+Argument-less. This forces a full reinstall and regenerates the symlink tree
+against the kit's current file set. Verified: ran it after adding the
+dependency, full suite (`bun test`) and both `tsc --noEmit` projects stayed
+green afterward.
 
 **Never** run `bun install --force @mattstack/tui-kit` (or any other package
 name after `--force`). That is bun's *add* form — it goes to npm for a
 package by that name (which does not exist there, or exists as someone
 else's unrelated package) instead of re-resolving the `file:` spec already in
-`package.json`. Bare `bun install --force` is the only safe refresh.
+`package.json`.
 
-## Transitive @soribashi resolution (adoption note, extends SORI-4)
+**Kit `package.json` changed** (a dependency added, removed, or bumped): bare
+`bun install --force` is **not** sufficient, and reaching for it here is the
+wrong call. For a locked `file:` dependency, bun reuses the *cached manifest*
+it already recorded for that package instead of re-reading the kit's
+`package.json` off disk — so a manifest change silently does not propagate,
+and `bun.lock` keeps recording the kit's OLD dependency list even after
+`--force`. Proven during the registry migration: the kit's `@soribashi/*`
+dependency went from four `file:` packages to one registry package
+(`@soribashi/core@^0.1.0`), and after `bun install --force` mr-board's
+`bun.lock` still listed the old four-package manifest. Only a genuinely clean
+install re-resolved it:
 
-The kit's own `package.json` depends on `@soribashi/core|codegen|factory|theme`
-via `file:../soribashi/packages/*` (relative to the kit's own location).
-`bun install` in mr-board does **not** physically materialize those packages
-anywhere in mr-board's `node_modules` — not at the worktree root, not nested
-under `node_modules/@mattstack/tui-kit/node_modules/@soribashi` (that
-directory exists but is empty after install).
+```
+rm -rf node_modules bun.lock && bun install
+```
+
+Reach for that whenever the kit's own `dependencies` / `devDependencies` /
+`peerDependencies` change — not just `--force`.
+
+## Transitive @soribashi resolution (adoption note, extends SORI-4) — SUPERSEDED, historical
+
+**This section describes the file:-era topology and no longer matches the
+tree.** Since the registry migration, the kit's `package.json` depends on a
+single `@soribashi/core: "^0.1.0"` from the npm registry — no `file:` specs,
+no `codegen`/`factory`/`theme` siblings. `@soribashi/core` now materializes
+as an ordinary hoisted package directly under mr-board's own
+`node_modules/@soribashi/core` (not a symlink into a sibling checkout, not
+empty) the same as any other registry dependency, so the "hidden runtime
+dependency on the kit checkout" problem this section describes does not
+apply to `@soribashi/*` resolution anymore. Kept for the diagnostic technique
+and as the reason the two-line `overrides` block existed at all (see the end
+of this section) — both are now dead. `docs/tui-kit-adoption-notes.md` has
+the current-state summary.
+
+The kit's own `package.json` used to depend on
+`@soribashi/core|codegen|factory|theme` via `file:../soribashi/packages/*`
+(relative to the kit's own location). `bun install` in mr-board did **not**
+physically materialize those packages anywhere in mr-board's `node_modules`
+— not at the worktree root, not nested under
+`node_modules/@mattstack/tui-kit/node_modules/@soribashi` (that directory
+existed but was empty after install).
 
 Resolution still succeeds, but only because of the symlink behavior above:
 when bun/tsc resolve a bare `@soribashi/*` import from
@@ -118,20 +157,28 @@ Re-verified after the change: exactly 1x `provider/context.ts`, 1x
 `vocabulary-registry.ts`, 1x `create-theme.ts` in the bundle, in the shipped
 `main.tsx` shape *and* in the Task 18 shape that adds a kit recipe.
 
-**The two-line `overrides` block stays, for an unrelated reason.** Bun applies
-`overrides` only from the ROOT package, so the kit's own overrides do not
-reach mr-board's install; installing `@mattstack/tui-kit` makes bun walk into
-the kit's `package.json` and resolve its `@soribashi/*` `file:` deps, whose
-own `workspace:*` requirements then have nothing to resolve against. Removing
-the block fails the install outright:
+**The two-line `overrides` block stayed at the time, for an unrelated reason
+— now dead too.** Bun applies `overrides` only from the ROOT package, so the
+kit's own overrides did not reach mr-board's install; installing
+`@mattstack/tui-kit` made bun walk into the kit's `package.json` and resolve
+its `@soribashi/*` `file:` deps, whose own `workspace:*` requirements then
+had nothing to resolve against. Removing the block used to fail the install
+outright:
 
 ```
 error: @soribashi/factory@workspace:* failed to resolve
 error: @soribashi/theme@workspace:* failed to resolve
 ```
 
-Loud and immediate, which is the opposite of the failure the direct
-dependencies caused — and it goes away when soribashi is published.
+That was the failure mode the block existed to prevent. It went away the
+moment soribashi published to the registry (the `@soribashi/core` dependency
+above): registry `core` declares ordinary semver deps, not `workspace:*`
+ones, so nothing in the graph requests `@soribashi/theme` or
+`@soribashi/factory` anymore, and the `overrides` block became fully inert —
+bun ignores an override nothing requests. The merge-time cleanup removed the
+block from mr-board's `package.json` entirely; a clean install
+(`rm -rf node_modules bun.lock && bun install`) with it gone produced an
+identical lockfile apart from the two now-pointless override lines.
 
 ## css-modules.d.ts
 
@@ -203,6 +250,16 @@ correct under any tsconfig:
 const viteEnv = (import.meta as ImportMeta & { env?: { DEV?: boolean } })?.env;
 ```
 
+**Post-registry-migration note.** `@soribashi/factory` is no longer in the
+dependency graph at all — not in mr-board's `node_modules`, not in the kit's
+own (`find … -iname '*factory*'` under both trees comes up empty after the
+registry migration). The `"types": ["node"]` split and the
+`bun-import-meta.d.ts` shim above are therefore live code addressing a bug
+class that can no longer trigger from `@soribashi/factory` specifically. Left
+as-is here since reverting them is a code change, not a doc correction, and
+outside this cleanup's scope — flagging in case a future pass wants to
+re-evaluate whether the split is still earning its keep.
+
 ## The provider import: FIXED (R17) — and how the double instance was found
 
 **Current, correct shape.** Import the wiring from the kit:
@@ -212,9 +269,11 @@ import { registerTheme, SoribashiProvider } from "@mattstack/tui-kit/provider";
 import { tuiTheme } from "@mattstack/tui-kit/theme";
 ```
 
-mr-board declares **no** `@soribashi/*` dependency (only the `overrides`
-block, for the install-time reason above). tui-kit `908348a` added the
-`/provider` subpath and the matching barrel exports.
+mr-board declares **no** `@soribashi/*` dependency and, since the registry
+migration, no `overrides` block either — see the "SUPERSEDED, historical"
+section above for why that block existed at the time and why it later became
+dead weight. tui-kit `908348a` added the `/provider` subpath and the matching
+barrel exports.
 
 The rest of this section is the bug that forced that fix, kept because it is
 the worked example for diagnosing *any* duplicate-module suspicion in this
