@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import type { BoardMRWithReview } from "../types.ts";
-import { Markdown } from "../ui/Markdown.tsx";
-import { Modal } from "@mattstack/tui-kit";
+import { Markdown, Modal } from "@mattstack/tui-kit";
 import { cleanTitle } from "./format.ts";
 
 /** Modal that fetches and renders the agent's written review markdown for an MR. */
@@ -37,9 +36,7 @@ function ReviewModal({ mr, onClose }: { mr: BoardMRWithReview; onClose: () => vo
         ) : body === null ? (
           <p className="tui-comments-empty">loading…</p>
         ) : (
-          <div className="tui-md">
-            <Markdown>{body}</Markdown>
-          </div>
+          <Markdown>{body}</Markdown>
         )}
       </div>
     </Modal>

@@ -1,7 +1,17 @@
 {
   "compilerOptions": {
-    // Environment setup & latest features
-    "lib": ["ESNext"],
+    // Environment setup & latest features.
+    //
+    // DOM is here for the two client-layer tests this project still owns
+    // (src/__tests__/escape-stack.test.ts, scroll-lock.test.ts). They exercise
+    // the kit's PURE layer-stack and scroll-lock functions, which need no DOM
+    // -- but the kit ships them from `@mattstack/tui-kit/hooks`, the same
+    // module as the React hooks that do touch `document`/HTMLElement, and it
+    // ships types as source, so the whole module is checked under whichever
+    // consumer project pulls it in. src/client/tsconfig.json already declares
+    // DOM for exactly this code. Server sources gain the DOM globals as a side
+    // effect; nothing under src/ outside the client reaches for one.
+    "lib": ["ESNext", "DOM", "DOM.Iterable"],
     "target": "ESNext",
     "module": "Preserve",
     "moduleDetection": "force",

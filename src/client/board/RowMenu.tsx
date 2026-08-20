@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type { BoardMR } from "../../data.ts";
 import type { BoardMRWithReview, RowContext, RowMenuState } from "../types.ts";
-import { useAutoGrowTextarea, useEscapeClose } from "../ui/hooks.ts";
+import { useAutoGrowTextarea, useEscapeClose } from "@mattstack/tui-kit/hooks";
 import { getSlackMarks, nudgeTargets, reviewMenuItems, respondItemLabel, doctorItemLabel } from "./format.ts";
 
 function MenuItem({

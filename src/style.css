@@ -278,8 +278,15 @@
   overflow-wrap: anywhere;
 }
 /* Rendered markdown inside a note. */
-.tui-cd-note-body > :first-child { margin-top: 0; }
-.tui-cd-note-body > :last-child { margin-bottom: 0; }
+/* Collapse the prose block's outer edges. These reach THROUGH the Markdown
+   recipe's root: mr-board used to render ReactMarkdown's output as the direct
+   children of .tui-cd-note-body, but the recipe wraps that output in a div of
+   its own, which a bare `> :first-child` would match instead of the first
+   paragraph -- silently restoring the last paragraph's 0.5rem bottom margin
+   and pushing every following note down 8px. `unstyled` does not help here:
+   it suppresses the recipe's CLASS, not its wrapper element. */
+.tui-cd-note-body [data-part="markdown"] > :first-child { margin-top: 0; }
+.tui-cd-note-body [data-part="markdown"] > :last-child { margin-bottom: 0; }
 .tui-cd-note-body p { margin: 0 0 0.5rem; }
 .tui-cd-note-body a { color: var(--accent); }
 .tui-cd-note-body code {
@@ -708,37 +715,11 @@
   padding: 1.4rem 1.8rem; display: flex; flex-direction: column; overflow: hidden;
 }
 .tui-review-body { flex: 1; min-height: 0; overflow-y: auto; margin-top: 0.8rem; padding-right: 0.4rem; }
-.tui-review-body .tui-md { max-width: 820px; margin: 0 auto; padding-bottom: 1.5rem; }
-.tui-md {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
-  font-size: 0.95rem; line-height: 1.6; color: var(--fg); overflow-wrap: anywhere;
-}
-.tui-md h1, .tui-md h2, .tui-md h3, .tui-md h4 { font-weight: 600; line-height: 1.25; margin: 1.4em 0 0.6em; }
-.tui-md h1 { font-size: 1.6em; padding-bottom: 0.3em; border-bottom: 1px solid var(--border); }
-.tui-md h2 { font-size: 1.3em; padding-bottom: 0.3em; border-bottom: 1px solid var(--border); }
-.tui-md h3 { font-size: 1.1em; }
-.tui-md h4 { font-size: 1em; }
-.tui-md h1:first-child, .tui-md h2:first-child, .tui-md h3:first-child { margin-top: 0; }
-.tui-md p, .tui-md ul, .tui-md ol { margin: 0.5em 0; }
-.tui-md ul, .tui-md ol { padding-left: 1.4em; }
-.tui-md li { margin: 0.2em 0; }
-.tui-md a { color: var(--accent); }
-.tui-md code {
-  font-family: var(--font-mono); font-size: 0.9em;
-  background: var(--card); padding: 0.1em 0.35em; border-radius: 4px;
-}
-.tui-md pre {
-  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
-  padding: 0.7rem 0.9rem; overflow-x: auto; margin: 0.7em 0;
-}
-.tui-md pre code { background: none; padding: 0; }
-.tui-md blockquote {
-  margin: 0.7em 0; padding: 0.1em 0.9em; color: var(--muted);
-  border-left: 3px solid var(--border);
-}
-.tui-md table { border-collapse: collapse; margin: 0.7em 0; display: block; overflow-x: auto; }
-.tui-md th, .tui-md td { border: 1px solid var(--border); padding: 0.3em 0.6em; text-align: left; }
-.tui-md hr { border: none; border-top: 1px solid var(--border); margin: 1em 0; }
+/* The Markdown recipe absorbed `.tui-md`'s own typography, but NOT this: it is
+   a CONTEXTUAL rule keyed on an ancestor (the review modal's scrolling body),
+   capping the reading measure only there. A recipe has no ancestor to key off,
+   so it survives, rewritten onto the recipe's data-part. */
+.tui-review-body [data-part="markdown"] { max-width: 820px; margin: 0 auto; padding-bottom: 1.5rem; }
 
 /* row action menu (right-click) */
 .tui-menu {

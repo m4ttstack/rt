@@ -101,7 +101,7 @@ for (const theme of ["light", "dark"] as const) {
   const reviewBtn = page.locator(".tui-review-open.tui-review-done").first();
   if (await reviewBtn.count()) {
     await reviewBtn.click();
-    await page.waitForSelector(".tui-review-modal .tui-md h1, .tui-review-modal .tui-md p");
+    await page.waitForSelector('.tui-review-modal [data-part="markdown"] h1, .tui-review-modal [data-part="markdown"] p');
     await shoot(page, `reviewmodal-${theme}`);
     await page.keyboard.press("Escape");
   }

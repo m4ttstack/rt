@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { BoardMR } from "../../data.ts";
 import { selectionHeader, MAX_HEADER_LEN, type SlackTemplates } from "../../template.ts";
 import { CopyButton } from "@mattstack/tui-kit";
-import { useAutoGrowTextarea } from "../ui/hooks.ts";
+import { useAutoGrowTextarea } from "@mattstack/tui-kit/hooks";
 import { boardSummary } from "./format.ts";
 import { SLACK_ICON } from "./chips.tsx";
 

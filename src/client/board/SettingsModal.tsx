@@ -3,7 +3,7 @@ import { Invadr } from "invadrs/react";
 import { memberPeerState, joinRowState } from "../../view.ts";
 import type { ConfigMember, BoardData } from "../types.ts";
 import { CopyButton, Modal } from "@mattstack/tui-kit";
-import { useRevealOnChange } from "../ui/hooks.ts";
+import { useRevealOnChange } from "@mattstack/tui-kit/hooks";
 
 /** Check members in/out, and (on a board that can hand out invites) put each
     teammate on a board of their own. Toggling persists the hidden flag to

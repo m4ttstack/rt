@@ -357,3 +357,78 @@ bundled output. A scoped/nested dark region will not work by setting
 `color-scheme: dark` on a wrapper; it needs the `dark` class, or the
 `--buncss-light` / `--buncss-dark` pair set by hand. Worth knowing before
 Tasks 18-20 reach for a locally-inverted surface.
+
+## The React singleton: an adopter-side bundler pin (Task 18)
+
+The `@soribashi/factory` double instance above has a sibling, and Task 18 is
+where it bites: **React itself**. Same root cause, different package.
+
+A kit file's leaf symlink is realpathed to `~/Documents/GitHub/tui-kit/src/…`
+*before* its own imports resolve, so a recipe's bare `react` specifier resolves
+from `~/Documents/GitHub/tui-kit/node_modules/.bun/react@19.2.8/…` while
+mr-board's own resolves from `node_modules/react`. Two paths, two module
+records, two dispatchers. The first kit recipe the board rendered (`<Icon>`)
+threw immediately:
+
+```
+Invalid hook call. … You might have more than one copy of React in the same app
+TypeError: Cannot read properties of null (reading 'useContext')
+    at Icon (…/app.js)
+```
+
+**The kit is not at fault and cannot fix this.** Its `package.json` already
+declares `react`/`react-dom` as `peerDependencies` (with devDependency copies
+for its own workshop and test tiers), which is the correct authoring. A peer
+declaration is a statement about the *installed* graph; it has no say over what
+a bundler resolves after realpathing a symlink. Bumping mr-board's react to the
+kit's exact version would not help either — the two copies would still sit at
+two paths, and identity is keyed by path.
+
+**The fix is one adopter-side `onResolve` plugin**, in `src/server.ts`'s
+`Bun.build`:
+
+```ts
+const reactSingleton: BunPlugin = {
+  name: "react-singleton",
+  setup(builder) {
+    builder.onResolve({ filter: /^react(-dom)?(\/.*)?$/ }, (args) => ({
+      path: Bun.resolveSync(args.path, import.meta.dir),
+    }));
+  },
+};
+```
+
+`Bun.resolveSync` from `src/` always lands in mr-board's own `node_modules`, so
+every react/react-dom specifier in the graph — ours and the kit's alike —
+collapses onto one copy. `Bun.build` has no `alias` option in Bun 1.3.13; a
+plugin is the only lever.
+
+**This invalidates the "group the bundle's module-path comments" technique
+above for React specifically, unless you reproduce the plugin.** A bare
+`bun build src/client/main.tsx --outdir …` from the CLI applies no plugins, so
+it still shows two react roots and always will. That output is not what the
+server serves. To check module identity from now on, either bundle through the
+server's own build config or add the same plugin to your probe. Everything the
+technique says about `@soribashi/*` is unchanged: those still collapse by
+construction, via the kit's own re-exports.
+
+## `@mattstack/tui-kit/hooks` needs `lib: DOM` on whatever project imports it
+
+The kit's `/hooks` subpath ships the pure functions (`pushLayer`,
+`handleEscape`, `acquireScrollLock`, `releaseScrollLock`) in the SAME module as
+the React hooks that touch `document` and `HTMLElement`, and the kit ships types
+as source — so the whole module is re-checked under whichever consumer project
+pulls it in, exactly like `@soribashi/factory`'s `@ts-expect-error` pair. When
+`src/__tests__/escape-stack.test.ts` and `scroll-lock.test.ts` retargeted onto
+the kit, the ROOT project (`tsc --noEmit -p .`, `lib: ["ESNext"]`, no DOM) grew
+eleven errors *inside the kit's source* — `Cannot find name 'document'`,
+`Property 'style' does not exist on type 'HTMLTextAreaElement'`, and so on.
+`skipLibCheck` does not help; it only covers `.d.ts`.
+
+Root `tsconfig.json` now declares `"lib": ["ESNext", "DOM", "DOM.Iterable"]`,
+which `src/client/tsconfig.json` already did for the same code. The cost is
+that server sources gain the DOM globals; nothing under `src/` outside the
+client reaches for one, so nothing was actually loosened in practice. The
+upstream fix would be for the kit to expose its DOM-free half on its own
+subpath — the README already advertises the hooks as "DOM-free at their core",
+which is true of the functions and not of the module.

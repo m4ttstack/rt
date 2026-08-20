@@ -2,8 +2,7 @@ import { useEffect, useState } from "react";
 import type { BoardMR } from "../../data.ts";
 import { commentDot } from "../../view.ts";
 import type { CommentNote, CommentThread, GeneralComment } from "../types.ts";
-import { Markdown } from "../ui/Markdown.tsx";
-import { ICONS } from "@mattstack/tui-kit";
+import { ICONS, Markdown } from "@mattstack/tui-kit";
 import { SideDrawer } from "@mattstack/tui-kit";
 import { ago, cleanTitle, statusPhrase, THREAD_ICON, THREAD_LABEL, commentCount } from "./format.ts";
 import { getDiscussions } from "../api.ts";
@@ -91,7 +90,16 @@ function CommentNoteView({ mr, note, now }: { mr: BoardMR; note: CommentNote; no
         </a>
       </div>
       <div className="tui-cd-note-body">
-        <Markdown linkTargetBlank>{note.body}</Markdown>
+        {/* `unstyled` is the parity choice, not an omission. .tui-cd-note-body
+            is a SEPARATE board-owned prose block that was never .tui-md;
+            without this the recipe's own font-family/size/line-height would sit
+            directly on the element ReactMarkdown mounts into (beating an
+            inherited font regardless of layer order) and its layered
+            h1-h6/pre/table rules would apply with no unlayered competitor.
+            data-part="markdown" is still stamped either way. */}
+        <Markdown unstyled linkTargetBlank>
+          {note.body}
+        </Markdown>
       </div>
     </div>
   );
