@@ -104,7 +104,20 @@
     backdrop-filter: blur(2px);
   }
 
+  /* `box-sizing: border-box` IS AN ADDITION, not a lift, and a deliberate one.
+     mr-board gets it from a global `* { box-sizing: border-box; }` reset, so
+     `width: 100%` + `max-width: 420px` have always been OUTER measures there —
+     but this kit's own copy of that reset lives in `src/canvas.css`, which is
+     explicitly OPTIONAL ("Components do not require it"). Without this
+     declaration a consumer who skips the canvas gets a frame `width: 100%`
+     PLUS ~35px of padding and border, which overflows the overlay's own
+     padded box, and a "420px" modal that measures ~455px. Declaring it here
+     changes nothing about mr-board's computed styles (it already computes
+     border-box). Pinned by Modal.test.tsx's "the frame's declared width is an
+     OUTER measure". (SideDrawer.module.css carries the same note for the same
+     reason.) */
   .root {
+    box-sizing: border-box;
     width: 100%;
     max-width: var(--sb-modal-max-w);
     max-height: var(--sb-modal-max-h);

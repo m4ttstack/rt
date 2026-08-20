@@ -284,6 +284,27 @@ describe("Modal (browser)", () => {
     expect(frameStyle.overflowY).toBe("auto");
   });
 
+  it("the frame's declared width is an OUTER measure, so it never overflows the scrim", async () => {
+    // mr-board's `.tui-modal` is `width: 100%` inside an overlay that pads
+    // itself `8vh 1rem`, and relies on a GLOBAL `* { box-sizing: border-box }`
+    // reset for that 100% to mean the outer box. This kit's copy of that reset
+    // is in the OPTIONAL `src/canvas.css`, so the recipe declares the
+    // box-sizing itself — without it the frame's own ~35px of padding and
+    // border push it past the overlay's content box. Asserted as real
+    // geometry: the frame fills exactly the overlay minus its 1rem gutters.
+    const screen = await renderWithTheme(
+      <Modal title="t" ariaLabel="m" onClose={noop}>
+        body
+      </Modal>,
+    );
+
+    const overlayBox = overlayOf(screen.container).getBoundingClientRect();
+    const frameBox = frameOf(screen.container).getBoundingClientRect();
+    const cap = 420;
+    const expected = Math.min(cap, overlayBox.width - 32);
+    expect(Math.abs(frameBox.width - expected)).toBeLessThan(1.5);
+  });
+
   it("routes className to the FRAME and overlayClassName to the OVERLAY (mr-board parity)", async () => {
     // ReviewModal passes both, and each one has to land where mr-board's own
     // `.tui-review-modal` / `.tui-review-overlay` rules expect it.
