@@ -6,16 +6,22 @@
   "private": true,
   "devDependencies": {
     "@types/bun": "latest",
-    "lucide": "1.27.0"
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4"
   },
   "peerDependencies": {
     "typescript": "^5"
   },
   "scripts": {
-    "build:icons": "bun build core/icons.js --outfile core/vendor/lucide.min.js --minify --target=browser --format=iife",
+    "build:board": "bun run scripts/build-board.ts",
     "build": "bun build --compile src/main.ts --outfile dist/deck",
     "serve": "bun run src/main.ts serve",
     "test": "bun test core src",
     "test:e2e": "LOCAL_E2E=1 bun test test/e2e.smoke.test.ts"
+  },
+  "dependencies": {
+    "@mattstack/tui-kit": "file:../tui-kit",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
   }
 }
