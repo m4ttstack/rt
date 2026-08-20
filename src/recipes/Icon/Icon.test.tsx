@@ -98,6 +98,23 @@ describe("Icon (browser)", () => {
     expect(screen.container.querySelectorAll('[data-part="icon"]')).toHaveLength(1);
   });
 
+  it("a consumer-supplied data-part does not win", async () => {
+    // data-part is a CONTRACT between the kit and mr-board's stylesheet, not a
+    // consumer-facing prop: it is stamped in the non-overridable tail, AFTER
+    // {...rest}. A consumer who passes one (by accident, or by cargo-culting
+    // some other attribute) must not be able to sever every app-side
+    // `[data-part="icon"]` rule — a failure that would otherwise be silent on
+    // both sides of the boundary. Reordering the stamp back in front of
+    // {...rest} fails this case.
+    const screen = await renderWithTheme(<Icon d={CHECK_ICON} data-part="hijacked" />);
+    const svg = svgOf(screen.container);
+
+    expect(svg.getAttribute("data-part")).toBe("icon");
+    // ...and the selector app-side CSS actually writes still matches.
+    expect(screen.container.querySelectorAll('[data-part="icon"]')).toHaveLength(1);
+    expect(screen.container.querySelectorAll('[data-part="hijacked"]')).toHaveLength(0);
+  });
+
   it("never hand-emits the vocabulary-axis data attributes", async () => {
     // getStyles('root') owns data-variant/data-intent/data-size and emits them
     // only for axes the recipe opted into. Icon opts into none, so none may

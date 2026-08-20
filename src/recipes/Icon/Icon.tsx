@@ -44,6 +44,16 @@ const ICON_SELECTORS = ["root"] as const;
  * needs a second attribute or an ancestor to disambiguate which recipe it is
  * reaching into — and the root's value is the drop-in replacement for the
  * board class the recipe absorbed.
+ *
+ * THE SPREAD POSITION IS PART OF THE CONVENTION: `data-part` is stamped in the
+ * NON-OVERRIDABLE TAIL, after `{...rest}`, alongside `getStyles`. It is a
+ * contract between the kit and mr-board's stylesheet, not a consumer-facing
+ * prop — a `<Icon data-part="whatever" />` that won the spread would silently
+ * sever every app-side `[data-part="icon"]` rule, with no error anywhere and no
+ * failing test in the app. Stamped before `{...rest}` it WOULD be overridable,
+ * which is exactly the bug this ordering closes. Pinned by
+ * Icon.test.tsx's "a consumer-supplied data-part does not win" case; every
+ * later recipe stamps in the same tail and carries the same test.
  */
 const ICON_PART = "icon";
 
@@ -71,11 +81,21 @@ export interface IconOwnProps {
  * on the element, defeated by any CSS the consumer applies — and because a
  * `size` axis would be an API promotion this straight port does not make.
  *
- * `...rest` is spread AFTER them, so a consumer can override any one of them
- * (including `aria-hidden`, to promote a decorative glyph into a labelled
- * `role="img"`), and BEFORE `getStyles('root')`, so the recipe's own class and
- * vars always win over a raw `className`/`style` — the same ordering
- * soribashi's Button uses.
+ * THE SPREAD ORDER, which every later recipe follows. Three bands:
+ *
+ *   1. OVERRIDABLE HEAD — the recipe's own presentation defaults (viewBox,
+ *      width/height, stroke, `aria-hidden`, …). A consumer may replace any of
+ *      them, which is what lets `<Icon role="img" aria-label="…"
+ *      aria-hidden={false} />` promote a decorative glyph into a labelled one.
+ *   2. `{...rest}` — everything the consumer passed.
+ *   3. NON-OVERRIDABLE TAIL — `getStyles('root')` (so the recipe's own class
+ *      and vars beat a raw `className`/`style`, the ordering soribashi's Button
+ *      uses) and `data-part` (so the cross-boundary selector contract cannot be
+ *      severed from a call site; see ICON_PART's comment).
+ *
+ * Anything in band 1 is a documented courtesy; anything in band 3 is a
+ * contract. Deciding which band a given attribute belongs in is the authoring
+ * judgement each recipe makes for itself.
  */
 export const Icon = defineComponent<
   IconOwnProps & Omit<SVGProps<SVGSVGElement>, "ref">,
@@ -116,7 +136,7 @@ export const Icon = defineComponent<
         // The ref lands on a real SVGSVGElement at runtime regardless. Filed as
         // a friction; nothing in the kit takes an Icon ref today.
         ref={ref as Ref<SVGSVGElement>}
-        data-part={ICON_PART}
+        // Band 1, the overridable head: mr-board's own presentation attributes.
         viewBox="0 0 24 24"
         width="14"
         height="14"
@@ -126,8 +146,12 @@ export const Icon = defineComponent<
         strokeLinecap="round"
         strokeLinejoin="round"
         aria-hidden
+        // Band 2: everything the consumer passed.
         {...(rest as SVGProps<SVGSVGElement>)}
+        // Band 3, the non-overridable tail — nothing below may be replaced
+        // from a call site.
         {...getStyles("root")}
+        data-part={ICON_PART}
       >
         {circle && <circle cx="12" cy="12" r="4" />}
         <path d={d} />
