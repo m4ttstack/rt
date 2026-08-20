@@ -1,6 +1,7 @@
 import type { ComponentType } from "react";
 import { useState } from "react";
 import { Chips } from "./pages/Chips.tsx";
+import { CopyButtons } from "./pages/CopyButtons.tsx";
 import { Icons } from "./pages/Icons.tsx";
 import { Segmenteds } from "./pages/Segmenteds.tsx";
 import { Tokens } from "./pages/Tokens.tsx";
@@ -17,12 +18,19 @@ import { Tokens } from "./pages/Tokens.tsx";
 const PAGES: Record<string, ComponentType> = {
   tokens: Tokens,
   chips: Chips,
+  copybuttons: CopyButtons,
   icons: Icons,
   segmenteds: Segmenteds,
 };
 
+/** Per-key label overrides for the naive capitalize-first-letter default
+ * below — needed once a key isn't a single word (`copybuttons`). */
+const PAGE_LABELS: Record<string, string> = {
+  copybuttons: "CopyButton",
+};
+
 function pageLabel(key: string): string {
-  return key.charAt(0).toUpperCase() + key.slice(1);
+  return PAGE_LABELS[key] ?? key.charAt(0).toUpperCase() + key.slice(1);
 }
 
 export function App() {

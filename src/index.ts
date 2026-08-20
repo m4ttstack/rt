@@ -34,6 +34,9 @@
 export { Chip, CHIP_PARTS, chipTheme } from "./recipes/Chip/Chip.tsx";
 export type { ChipOwnProps, ChipProps } from "./recipes/Chip/Chip.tsx";
 
+export { CopyButton, copyButtonTheme } from "./recipes/CopyButton/CopyButton.tsx";
+export type { CopyButtonOwnProps, CopyButtonProps } from "./recipes/CopyButton/CopyButton.tsx";
+
 export { CHECK_ICON, COPY_ICON, Icon, ICONS, iconTheme } from "./recipes/Icon/Icon.tsx";
 export type { IconOwnProps, IconProps } from "./recipes/Icon/Icon.tsx";
 
