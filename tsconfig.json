@@ -13,6 +13,18 @@
     "skipLibCheck": true,
     "noUncheckedIndexedAccess": true,
 
+    // Mirrors workshop/vite.config.ts's `resolve.alias` exactly (bare
+    // specifier -> `src`, every subpath echoed) so `tsc` and Vite resolve
+    // `@mattstack/tui-kit/*` imports identically. tsc has no notion of Vite's
+    // alias config; without this, workshop/src/main.tsx's
+    // `@mattstack/tui-kit/theme` import is a real module at runtime (Vite
+    // resolves it) but a TS2307 under `tsc --noEmit` (nothing here maps it) —
+    // the two resolvers would disagree about the same specifier.
+    "paths": {
+      "@mattstack/tui-kit": ["./src/index.ts"],
+      "@mattstack/tui-kit/*": ["./src/*"]
+    },
+
     // ONE program, node ambient globals included — the same answer soribashi's
     // tsconfig.base.json reaches, and here it is not a preference.
     //
@@ -47,6 +59,8 @@
     "vitest.config.ts",
     "vitest.node.config.ts",
     "vitest.browser.config.ts",
-    "soribashi.config.ts"
+    "soribashi.config.ts",
+    "workshop/src/**/*",
+    "workshop/vite.config.ts"
   ]
 }

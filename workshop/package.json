@@ -2,5 +2,15 @@
   "name": "workshop",
   "version": "0.0.0",
   "private": true,
-  "type": "module"
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5173 --strictPort",
+    "build": "vite build"
+  },
+  "dependencies": {
+    "@soribashi/core": "file:../../soribashi/packages/core"
+  },
+  "devDependencies": {
+    "vite": "^8"
+  }
 }
