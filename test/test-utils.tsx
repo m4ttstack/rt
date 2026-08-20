@@ -1,4 +1,4 @@
-import { registerTheme, SoribashiProvider } from "@soribashi/core";
+import { registerTheme, type ResolvedTheme, SoribashiProvider } from "@soribashi/core";
 import type { ReactNode } from "react";
 import { render } from "vitest-browser-react";
 import { tuiTheme } from "../src/theme.ts";
@@ -36,10 +36,20 @@ registerTheme(tuiTheme);
  * `options` is passed straight through so a visual test can mount into a
  * container it prepared itself (e.g. one already carrying the `dark` class, so
  * the very first paint is dark rather than a light frame followed by a flip).
+ *
+ * `theme` defaults to `tuiTheme` and exists for exactly one case, which every
+ * recipe has: pinning invariant 1 (`Recipe.extend()` is first-class public API)
+ * needs a locally-composed `createTheme({ extends: tuiTheme, components: [
+ * Recipe.extend({ defaultProps }) ] })` provided instead. Routing that through
+ * here rather than through a bare `render(<SoribashiProvider …>)` keeps the
+ * "every test renders through renderWithTheme" rule intact; the module-top
+ * `registerTheme(tuiTheme)` still holds, and correctly so — an extends-derived
+ * theme carries the same vocabulary, which is all the registry is consulted for.
  */
 export function renderWithTheme(
   ui: ReactNode,
   options?: Parameters<typeof render>[1],
+  theme: ResolvedTheme = tuiTheme,
 ): ReturnType<typeof render> {
-  return render(<SoribashiProvider theme={tuiTheme}>{ui}</SoribashiProvider>, options);
+  return render(<SoribashiProvider theme={theme}>{ui}</SoribashiProvider>, options);
 }

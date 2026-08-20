@@ -1,14 +1,20 @@
 import type { ComponentType } from "react";
 import { useState } from "react";
+import { Icons } from "./pages/Icons.tsx";
 import { Tokens } from "./pages/Tokens.tsx";
 
 /**
  * Page-registration table. Each key is both the sidebar identity and the
  * displayed label's source (title-cased below); recipe tasks 8-15 each add
  * one entry here as their page arrives.
+ *
+ * `tokens` stays FIRST: the default page is `Object.keys(PAGES)[0]`, and the
+ * token audit is the right landing page. Recipe pages are appended after it in
+ * alphabetical order.
  */
 const PAGES: Record<string, ComponentType> = {
   tokens: Tokens,
+  icons: Icons,
 };
 
 function pageLabel(key: string): string {
