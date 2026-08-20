@@ -120,6 +120,29 @@ describe("Table (browser)", () => {
     expect(partOf(screen.container, TABLE_PARTS.row).getAttribute("aria-selected")).toBe("true");
   });
 
+  it("a consumer className on Row MERGES with the recipe class, not replaces it", async () => {
+    const screen = await renderWithTheme(
+      <Table>
+        <Table.Body>
+          <Table.Row className="app-row">
+            <Table.Cell>alpha</Table.Cell>
+          </Table.Row>
+        </Table.Body>
+      </Table>,
+    );
+
+    const row = partOf(screen.container, TABLE_PARTS.row);
+    expect(row.classList.contains("app-row")).toBe(true);
+    // `border-collapse` lives on `.table`, not `.row` — instead prove the
+    // recipe's own row class survived by asserting BOTH class tokens are
+    // present, since a replace (rather than merge) would drop the recipe's
+    // hashed module class from `classList` entirely.
+    const recipeRowClass = [...row.classList].find(
+      (token) => token !== "app-row" && token.length > 0,
+    );
+    expect(recipeRowClass).toBeDefined();
+  });
+
   it("a consumer className merges onto the root div", async () => {
     const screen = await renderWithTheme(
       <Table className="app-table">

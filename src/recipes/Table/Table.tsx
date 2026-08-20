@@ -109,10 +109,18 @@ function Body({ children }: { children?: ReactNode }) {
 
 /** Takes the full DOM prop surface (key aside — React reserves that): a
     consuming board's hover-reveal keys off `[data-part="table-row"]:hover`
-    and needs real row-level event handlers and aria attributes to reach it. */
-function Row({ children, ...rest }: HTMLAttributes<HTMLTableRowElement>) {
+    and needs real row-level event handlers and aria attributes to reach it.
+    `{...rest}` is spread FIRST, `className`/`data-part` stamped after and
+    merged rather than overwritten — a consumer-supplied `className`/
+    `data-part` must not be able to silently replace the recipe's own class
+    (killing the hover wash) or sever the part contract. */
+function Row({ children, className, ...rest }: HTMLAttributes<HTMLTableRowElement>) {
   return (
-    <tr className={classes.row} data-part={TABLE_PARTS.row} {...rest}>
+    <tr
+      {...rest}
+      className={className ? `${classes.row} ${className}` : classes.row}
+      data-part={TABLE_PARTS.row}
+    >
       {children}
     </tr>
   );
@@ -121,17 +129,21 @@ function Row({ children, ...rest }: HTMLAttributes<HTMLTableRowElement>) {
 // `Omit<..., "align">`: TdHTMLAttributes carries its own deprecated `align`
 // (a disjoint "left"|"center"|"right"|"justify"|"char" union) — a plain
 // intersection with TableCellOwnProps.align collapses to `undefined` only.
+// `{...rest}` spread FIRST, `className`/`data-part`/`data-align` stamped
+// after and merged rather than overwritten — same non-overridable-tail
+// reasoning as Row.
 function Cell({
   align,
   children,
+  className,
   ...rest
 }: TableCellOwnProps & Omit<TdHTMLAttributes<HTMLTableCellElement>, "align">) {
   return (
     <td
-      className={classes.cell}
+      {...rest}
+      className={className ? `${classes.cell} ${className}` : classes.cell}
       data-part={TABLE_PARTS.cell}
       data-align={align === "end" ? "end" : undefined}
-      {...rest}
     >
       {children}
     </td>
