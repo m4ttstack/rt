@@ -56,3 +56,6 @@ export type {
 
 export { SelectBox, selectBoxTheme } from "./recipes/SelectBox/SelectBox.tsx";
 export type { SelectBoxOwnProps, SelectBoxProps } from "./recipes/SelectBox/SelectBox.tsx";
+
+export { STATUSDOT_PARTS, StatusDot, statusDotTheme } from "./recipes/StatusDot/StatusDot.tsx";
+export type { StatusDotOwnProps, StatusDotProps } from "./recipes/StatusDot/StatusDot.tsx";

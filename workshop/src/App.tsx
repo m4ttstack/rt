@@ -5,6 +5,7 @@ import { CopyButtons } from "./pages/CopyButtons.tsx";
 import { Icons } from "./pages/Icons.tsx";
 import { Segmenteds } from "./pages/Segmenteds.tsx";
 import { SelectBoxes } from "./pages/SelectBoxes.tsx";
+import { StatusDots } from "./pages/StatusDots.tsx";
 import { Tokens } from "./pages/Tokens.tsx";
 
 /**
@@ -23,6 +24,7 @@ const PAGES: Record<string, ComponentType> = {
   icons: Icons,
   segmenteds: Segmenteds,
   selectboxes: SelectBoxes,
+  statusdots: StatusDots,
 };
 
 /** Per-key label overrides for the naive capitalize-first-letter default
@@ -31,6 +33,7 @@ const PAGES: Record<string, ComponentType> = {
 const PAGE_LABELS: Record<string, string> = {
   copybuttons: "CopyButton",
   selectboxes: "SelectBox",
+  statusdots: "StatusDot",
 };
 
 function pageLabel(key: string): string {

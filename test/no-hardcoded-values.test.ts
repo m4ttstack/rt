@@ -201,7 +201,14 @@ const NAMED_COLOR_KEYWORDS = [
 // not just in the brief, so the decision travels with the constant.
 const ALLOWED_NAMED_COLOR_KEYWORDS = new Set(["transparent", "currentcolor", "inherit"]);
 
-const ALLOWED_LENGTH_LITERALS = new Set(["0", "1px", "2px", "100%"]);
+// `320px` (Task 11, StatusDot + ToastHost): NOT a padding/margin/gap literal
+// (src/theme.ts's spacing ladder is scoped to those), so it was never a
+// candidate for that ladder — it is a fixed FLOATING-PANEL WIDTH mr-board
+// repeats verbatim across four independent families (`.tui-dot-wrap::after`,
+// `.tui-toast`, `.tui-drawer`, `.tui-menu`; docs/token-census.md), so it earns
+// a shared outlet here rather than a per-recipe bent value or four duplicated
+// recipe-local scalars for the exact same number.
+const ALLOWED_LENGTH_LITERALS = new Set(["0", "1px", "2px", "100%", "320px"]);
 
 const HEX_COLOR = /#[0-9a-f]{3,8}\b/gi;
 const FUNCTIONAL_COLOR = /\b(rgb|rgba|hsl|hsla|oklch|oklab|lab|lch|color)\(/gi;
