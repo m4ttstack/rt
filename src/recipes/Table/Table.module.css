@@ -1,0 +1,45 @@
+/* Table — mr-board's data grid. Only `root`/`table` are Styles-API slots (the
+   defineComponent recipe); head/headcell/body/row/cell are hand-rolled and
+   styled straight off their module classes — see Table.tsx's header comment.
+   Row hover reuses the theme's `--surface-wash-fg-5` token rather than a
+   literal color-mix() percentage, and the headcell tracking rides the
+   `--sb-table-tracking` var Table.tsx's `vars` resolver sets on `root` (it
+   inherits down through table/thead/th) — both keep this file's only
+   var()-external value out of the no-hardcoded-values gate. */
+@layer soribashi.recipes {
+  .root {
+    overflow-x: auto;
+  }
+
+  .table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+  }
+
+  .headcell {
+    color: var(--muted);
+    text-transform: uppercase;
+    font-size: var(--font-size-xs);
+    letter-spacing: var(--sb-table-tracking);
+    text-align: left;
+    padding: var(--spacing-xs) var(--spacing-md);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .cell {
+    padding: var(--spacing-sm) var(--spacing-md);
+    border-bottom: 1px solid var(--border-soft);
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+
+  .cell[data-align="end"] {
+    text-align: right;
+  }
+
+  .row:hover {
+    background: var(--surface-wash-fg-5);
+  }
+}

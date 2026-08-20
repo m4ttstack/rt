@@ -110,6 +110,9 @@ export type { StatusDotOwnProps, StatusDotProps } from "./recipes/StatusDot/Stat
 export { SWITCH_PARTS, Switch, switchTheme } from "./recipes/Switch/Switch.tsx";
 export type { SwitchOwnProps, SwitchProps } from "./recipes/Switch/Switch.tsx";
 
+export { Table, TABLE_PARTS, tableTheme } from "./recipes/Table/Table.tsx";
+export type { TableCellOwnProps, TableOwnProps, TableProps } from "./recipes/Table/Table.tsx";
+
 export { TOASTHOST_PARTS, ToastHost, toastHostTheme } from "./recipes/ToastHost/ToastHost.tsx";
 export type { ToastHostOwnProps, ToastHostProps } from "./recipes/ToastHost/ToastHost.tsx";
 
