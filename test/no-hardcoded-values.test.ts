@@ -21,6 +21,11 @@ import { listRecipeDirs } from "../scripts/derive.ts";
  *      functions, and named colours outside the allowlist.
  *   4. Any remaining length literal is flagged, outside the allowlist.
  *      Unitless numbers and time values (ms/s) pass untouched.
+ *   5. A percentage in KEYFRAME-SELECTOR position (`50% {`, `0%, 100% {`,
+ *      inside an `@keyframes` block) is a selector, not a declared value,
+ *      and is never flagged, no matter what number it is (SORI-18). This is
+ *      NOT the same as allowlisting a percentage value: `width: 50%;`
+ *      inside or outside a keyframes block is still flagged.
  *
  * The two allowlists below are soribashi's, unchanged. Extensions happen
  * per-recipe, with a comment saying why — never by widening them casually.
@@ -215,6 +220,12 @@ const FUNCTIONAL_COLOR = /\b(rgb|rgba|hsl|hsla|oklch|oklab|lab|lch|color)\(/gi;
 const NAMED_COLOR = new RegExp(`(${NAMED_COLOR_KEYWORDS.join("|")})`, "gi");
 const LENGTH_LITERAL = /\d*\.?\d+(px|rem|em|vh|vw|vmin|vmax|ch|ex|%)/g;
 
+// A comma-separated list of percentage keyframe offsets (`50%`, `0%, 100%`)
+// immediately preceding the rule's opening brace -- a SELECTOR, not a
+// declared value. The lookahead keeps the brace itself untouched.
+const KEYFRAME_SELECTOR_PERCENTAGES =
+  /(?:\d+(?:\.\d+)?%\s*,\s*)*\d+(?:\.\d+)?%(?=\s*\{)/g;
+
 /** True if `text[index]` would extend an identifier (letter/digit/_/-). */
 function isIdentChar(text: string, index: number): boolean {
   if (index < 0 || index >= text.length) return false;
@@ -273,6 +284,53 @@ function stripVarExpressionsPreservingLines(css: string): string {
   return result;
 }
 
+/**
+ * Blanks out percentage tokens in KEYFRAME-SELECTOR position (`50% {`,
+ * `0%, 100% {`) inside `@keyframes` blocks, with equal-length whitespace so
+ * line numbers stay accurate (SORI-18). A keyframe offset is a selector, not
+ * a declared value, so the length scanner must not flag it; scoped to
+ * inside `@keyframes` blocks specifically (found by brace-balancing from
+ * each `@keyframes` occurrence to its matching close), NOT a global `50%`
+ * allowlist entry -- a percentage used as an actual declared VALUE, inside
+ * or outside a keyframes block (`width: 50%;`), must still be flagged.
+ */
+function stripKeyframeSelectorPercentages(css: string): string {
+  let result = "";
+  let i = 0;
+  for (;;) {
+    const kfIndex = css.indexOf("@keyframes", i);
+    if (kfIndex === -1) {
+      result += css.slice(i);
+      break;
+    }
+    const braceIndex = css.indexOf("{", kfIndex);
+    if (braceIndex === -1) {
+      result += css.slice(i);
+      break;
+    }
+    result += css.slice(i, braceIndex + 1);
+
+    let depth = 1;
+    let j = braceIndex + 1;
+    for (; j < css.length && depth > 0; j++) {
+      if (css[j] === "{") depth++;
+      else if (css[j] === "}") depth--;
+    }
+    // j now sits just past the matching '}' (or at css.length if the block
+    // never closes, in which case there's no closing brace to re-emit below).
+    const closed = depth === 0;
+    const bodyEnd = closed ? j - 1 : j;
+    const body = css.slice(braceIndex + 1, bodyEnd);
+    const cleanedBody = body.replace(KEYFRAME_SELECTOR_PERCENTAGES, (match) =>
+      match.replace(/[^\n]/g, " "),
+    );
+    result += cleanedBody;
+    if (closed) result += "}";
+    i = bodyEnd + (closed ? 1 : 0);
+  }
+  return result;
+}
+
 /** True if the first non-comment, non-whitespace statement opens the layer. */
 function opensWithRecipesLayer(source: string): boolean {
   let rest = source;
@@ -301,7 +359,9 @@ function scanCssModule(source: string, path: string): Violation[] {
     violations.push({ path, line: 1, token: snippet, kind: "layer" });
   }
 
-  const scanned = stripVarExpressionsPreservingLines(stripCommentsPreservingLines(source));
+  const scanned = stripKeyframeSelectorPercentages(
+    stripVarExpressionsPreservingLines(stripCommentsPreservingLines(source)),
+  );
 
   const raw: Array<{ index: number; token: string; kind: "color" | "length" }> = [];
 
@@ -577,6 +637,74 @@ describe("scanCssModule", () => {
     expect(violations).toEqual([
       { path: "fixture.module.css", line: 4, token: "#fff", kind: "color" },
     ]);
+  });
+
+  // SORI-18: keyframe selector percentages (0%/50%/100%) are selector
+  // syntax, not declared length values, and must not be flagged.
+  it("does not flag 0%/50%/100% keyframe selectors", () => {
+    const css = [
+      "@layer soribashi.recipes {",
+      "  @keyframes fade-in {",
+      "    0% {",
+      "      opacity: 0;",
+      "    }",
+      "    50% {",
+      "      opacity: 0.5;",
+      "    }",
+      "    100% {",
+      "      opacity: 1;",
+      "    }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(scanCssModule(css, "fixture.module.css")).toEqual([]);
+  });
+
+  it("does not flag a comma-separated keyframe selector list (0%, 100%)", () => {
+    const css = [
+      "@layer soribashi.recipes {",
+      "  @keyframes pulse {",
+      "    0%, 100% {",
+      "      opacity: 1;",
+      "    }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    expect(scanCssModule(css, "fixture.module.css")).toEqual([]);
+  });
+
+  it("still flags a non-allowlisted percentage used as a declared VALUE, even inside a keyframes block", () => {
+    // 100% is in ALLOWED_LENGTH_LITERALS as a *value*; use 50%, which is
+    // not, so this stays a genuine "still fails" case rather than
+    // accidentally exercising the existing value allowlist instead of the
+    // keyframe-selector fix.
+    const css = [
+      "@layer soribashi.recipes {",
+      "  @keyframes grow {",
+      "    0% {",
+      "      width: 50%;",
+      "    }",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const violations = scanCssModule(css, "fixture.module.css");
+    expect(violations).toEqual([{ path: "fixture.module.css", line: 4, token: "50%", kind: "length" }]);
+  });
+
+  it("still flags a non-allowlisted percentage used as a declared value outside any keyframes block", () => {
+    const css = [
+      "@layer soribashi.recipes {",
+      "  .root {",
+      "    width: 50%;",
+      "  }",
+      "}",
+      "",
+    ].join("\n");
+    const violations = scanCssModule(css, "fixture.module.css");
+    expect(violations).toEqual([{ path: "fixture.module.css", line: 3, token: "50%", kind: "length" }]);
   });
 });
 

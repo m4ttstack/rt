@@ -106,21 +106,17 @@
        `animation: tui-review-pulse 1.4s ease-in-out infinite`
        `@keyframes tui-review-pulse { 0%,100% { opacity: 1 } 50% { opacity: .5 } }`
 
-     Expressed here as a HALF-PERIOD `alternate` over a two-stop keyframe set,
-     which is motion-identical: a timing function applies per keyframe INTERVAL,
-     so the board's 0->50 and 50->100 legs are each an independent ease-in-out
-     over 0.7s, exactly what `alternate` produces. The rewrite is not
-     cosmetic — `0%` and `50%` are keyframe SELECTORS, but the CSS gate's
-     length scanner sees any `<number>%` as a value and would flag them, and
-     widening its global length allowlist to admit `50%` would also admit
-     `width: 50%` in every recipe forever. Filed as a friction; this file takes
-     the equivalent spelling rather than the weaker gate. */
+     Verbatim spelling, full period: SORI-18 fixed the CSS gate's length
+     scanner to treat a percentage in KEYFRAME-SELECTOR position (`0%,100%
+     {`, `50% {`) as selector syntax, not a declared value, so it no longer
+     flags this. The previous half-period `alternate` two-stop rewrite was a
+     workaround for that scanner limitation, not a design choice — removed
+     now that the gate carries the natural spelling. */
   .root[data-pulse] {
     animation-name: chip-pulse;
-    animation-duration: calc(var(--sb-chip-pulse-period) / 2);
+    animation-duration: var(--sb-chip-pulse-period);
     animation-timing-function: ease-in-out;
     animation-iteration-count: infinite;
-    animation-direction: alternate;
   }
 
   /* A DELIBERATE ADDITION, not a lift: mr-board's pulse runs forever with no
@@ -134,10 +130,11 @@
   }
 
   @keyframes chip-pulse {
-    from {
+    0%,
+    100% {
       opacity: 1;
     }
-    to {
+    50% {
       opacity: 0.5;
     }
   }

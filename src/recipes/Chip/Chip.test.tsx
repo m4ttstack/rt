@@ -515,10 +515,12 @@ describe("Chip (browser)", () => {
     expect(style.animationIterationCount).toBe("infinite");
     expect(style.animationTimingFunction).toBe("ease-in-out");
     // mr-board: `animation: tui-review-pulse 1.4s ease-in-out infinite` over
-    // keyframes 0/50/100. Chip expresses the identical motion as a half-period
-    // `alternate`, so the duration reads as half of the 1.4s full cycle.
-    expect(style.animationDirection).toBe("alternate");
-    expect(style.animationDuration).toBe("0.7s");
+    // keyframes 0/50/100. Chip now expresses that verbatim (SORI-18 fixed the
+    // CSS gate to treat a keyframe-selector percentage as selector syntax, not
+    // a flagged length value, so the natural spelling no longer needs the
+    // half-period `alternate` workaround).
+    expect(style.animationDirection).toBe("normal");
+    expect(style.animationDuration).toBe("1.4s");
   });
 
   it("renders as a real button when asked, and is reachable by role", async () => {
