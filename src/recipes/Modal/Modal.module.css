@@ -1,0 +1,155 @@
+/*
+ * Modal — mr-board's `.tui-modal*` centred dialog FRAME.
+ *
+ * Every lift below is anchored on the CLASS NAME it came from in mr-board's
+ * `src/style.css` (line numbers drift; class names are the stable anchor).
+ * Six board rules make up the shared skeleton:
+ *
+ *   `.tui-modal-overlay {
+ *      position: fixed; inset: 0; z-index: 100;
+ *      display: flex; align-items: flex-start; justify-content: center;
+ *      padding: 8vh 1rem;
+ *      background: color-mix(in srgb, var(--bg) 55%, transparent);
+ *      backdrop-filter: blur(2px); }`
+ *
+ *   `.tui-modal {
+ *      width: 100%; max-width: 420px; max-height: 80vh; overflow-y: auto;
+ *      border: 1px solid var(--border); border-radius: 10px;
+ *      background: var(--panel);
+ *      padding: 1rem 1.1rem 1.2rem;
+ *      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.25); }`
+ *
+ *   `.tui-modal-head {
+ *      display: flex; justify-content: space-between; align-items: center; }`
+ *   `.tui-modal-title {
+ *      font-weight: 700; letter-spacing: 0.02em; color: var(--accent); }`
+ *   `.tui-modal-x {
+ *      background: none; border: none; color: var(--muted); cursor: pointer;
+ *      font-size: 0.9rem; padding: 0.2rem 0.4rem; border-radius: 5px; }`
+ *   `.tui-modal-x:hover { color: var(--fg); background: var(--card); }`
+ *
+ * ...plus ONE CONTRIBUTION FROM A SHARED MULTI-SELECTOR RULE. mr-board's
+ * keyboard-focus ring is written once across fourteen selectors:
+ *   `.tui-seg button:focus-visible, …, .tui-modal-x:focus-visible, … {
+ *      outline: 2px solid var(--accent); outline-offset: 2px; }`
+ * Only `.tui-modal-x`'s share of it is lifted here (as `.close:focus-visible`);
+ * the other thirteen selectors stay board-side, and mr-board's own rule keeps
+ * every one of them. This is a SPLIT of a board rule, not a move of it — the
+ * kind of thing that is invisible in a diff unless it is written down.
+ *
+ * TOKENS. Every length/colour literal above has an exact rung:
+ *   1rem    -> var(--spacing-rem100)      1.1rem  -> var(--spacing-xxl)
+ *   1.2rem  -> var(--spacing-rem120)      10px    -> var(--radius-xl)
+ *   0.9rem  -> var(--font-size-rem90)     0.2rem  -> var(--spacing-rem20)
+ *   0.4rem  -> var(--spacing-rem40)       5px     -> var(--radius-px5)
+ *   `color-mix(in srgb, var(--bg) 55%, transparent)` is the pre-emitted
+ *   semantic wash `var(--surface-wash-bg-55)` (src/theme.ts), referenced as
+ *   the token rather than re-derived — preference-order outlet 1.
+ *   `0 12px 40px rgba(0, 0, 0, 0.25)` is src/theme.ts's `shadow.modal`
+ *   VERBATIM -> `var(--shadow-modal)`.
+ * `1px`, `2px` (the outline width and the backdrop blur radius) and `100%` are
+ * on the gate's own length allowlist. `z-index: 100` and `font-weight: 700`
+ * are bare unitless numbers, invisible to the length scanner.
+ *
+ * THREE VALUES HAVE NO THEME RUNG and are routed through recipe scalars
+ * Modal.tsx's `vars` resolver emits unconditionally (`MODAL_SCALARS`), the
+ * same pattern Chip's `CHIP_SCALARS` / StatusDot's `STATUSDOT_SCALARS` /
+ * Panel's `PANEL_TITLE_SCALARS` use:
+ *   8vh    -> `--sb-modal-overlay-pad-y` (a VIEWPORT-relative offset; the
+ *             spacing ladder is scoped to rem/px padding-margin-gap literals)
+ *   420px  -> `--sb-modal-max-w`         (a fixed dialog measure, not spacing)
+ *   80vh   -> `--sb-modal-max-h`         (ditto, viewport-relative)
+ *   0.02em -> `--sb-modal-title-tracking` (em-based, and src/theme.ts states
+ *             outright that em spacing "cannot be a global rung")
+ * `1rem`, the overlay padding's INLINE half, does have a rung and uses it —
+ * only the block half is scalar-routed.
+ *
+ * WHAT IS DELIBERATELY NOT LIFTED, and where it goes instead:
+ *
+ *  1. EVERY BOARD-SPECIFIC MODAL *CONTENT* RULE stays app-side, because it
+ *     styles children a caller passes in, not the frame this recipe owns:
+ *     `.tui-modal-sub`, `.tui-modal-list`, `.tui-modal-row`, `.tui-modal-name`,
+ *     `.tui-modal-count`, `.tui-modal-right`. They keep their `.tui-*` class
+ *     names and keep working unchanged, since a caller renders them inside
+ *     `children`.
+ *  2. THE TWO PER-MODAL OVERRIDES likewise stay app-side and keep working
+ *     through the `className` / `overlayClassName` props:
+ *     `.tui-review-overlay { align-items: center; padding: 1rem; }`,
+ *     `.tui-review-modal { width: 96vw; max-width: 1100px; height: 94vh; … }`,
+ *     `.tui-draft-modal { max-width: 680px; }`.
+ *     THEY STILL WIN, and by a mechanism worth stating: everything in this
+ *     file is inside `@layer soribashi.recipes`, and mr-board's stylesheet is
+ *     UNLAYERED — an unlayered author rule beats any layered one regardless of
+ *     specificity or source order. So `.tui-review-modal`'s `max-width: 1100px`
+ *     overrides `.root`'s `max-width: var(--sb-modal-max-w)` exactly as it
+ *     does today, with no `!important` and no specificity arms race.
+ *  3. `.tui-modal-title` AND `.tui-modal-x` MUST NOT BE DELETED FROM
+ *     mr-board's stylesheet at adoption, even though this recipe absorbs both.
+ *     Board.tsx's mobile drawer head and CommentsDrawer's head render their
+ *     OWN `<span className="tui-modal-title">` / `<button className=
+ *     "tui-modal-x">` inside a SideDrawer's `children` — app-side elements
+ *     that are not Modal slots and never pass through this stylesheet. See
+ *     Modal.tsx's MODAL_PARTS comment for the adoption note.
+ */
+@layer soribashi.recipes {
+  .overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: var(--sb-modal-overlay-pad-y) var(--spacing-rem100);
+    background: var(--surface-wash-bg-55);
+    backdrop-filter: blur(2px);
+  }
+
+  .root {
+    width: 100%;
+    max-width: var(--sb-modal-max-w);
+    max-height: var(--sb-modal-max-h);
+    overflow-y: auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-xl);
+    background: var(--panel);
+    padding: var(--spacing-rem100) var(--spacing-xxl) var(--spacing-rem120);
+    box-shadow: var(--shadow-modal);
+  }
+
+  .head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .title {
+    font-weight: 700;
+    letter-spacing: var(--sb-modal-title-tracking);
+    color: var(--accent);
+  }
+
+  /* No `font: inherit` / `font-family: inherit` here, deliberately: mr-board
+     has no global `button { font: inherit }` rule and `.tui-modal-x` never
+     set one either, so the close button has always rendered in the browser's
+     default button font. Adding the inherit would be a visible change to
+     SettingsModal's literal "✕" glyph, not a port. */
+  .close {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: var(--font-size-rem90);
+    padding: var(--spacing-rem20) var(--spacing-rem40);
+    border-radius: var(--radius-px5);
+  }
+
+  .close:hover {
+    color: var(--fg);
+    background: var(--card);
+  }
+
+  .close:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+}

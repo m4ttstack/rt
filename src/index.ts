@@ -40,6 +40,9 @@ export type { CopyButtonOwnProps, CopyButtonProps } from "./recipes/CopyButton/C
 export { CHECK_ICON, COPY_ICON, Icon, ICONS, iconTheme } from "./recipes/Icon/Icon.tsx";
 export type { IconOwnProps, IconProps } from "./recipes/Icon/Icon.tsx";
 
+export { MODAL_PARTS, Modal, modalTheme } from "./recipes/Modal/Modal.tsx";
+export type { ModalOwnProps, ModalProps } from "./recipes/Modal/Modal.tsx";
+
 export { Panel, PANEL_PARTS, panelTheme } from "./recipes/Panel/Panel.tsx";
 export type { PanelOwnProps, PanelProps } from "./recipes/Panel/Panel.tsx";
 

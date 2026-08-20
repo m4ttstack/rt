@@ -3,6 +3,7 @@ import { useState } from "react";
 import { Chips } from "./pages/Chips.tsx";
 import { CopyButtons } from "./pages/CopyButtons.tsx";
 import { Icons } from "./pages/Icons.tsx";
+import { Modals } from "./pages/Modals.tsx";
 import { Panels } from "./pages/Panels.tsx";
 import { Segmenteds } from "./pages/Segmenteds.tsx";
 import { SelectBoxes } from "./pages/SelectBoxes.tsx";
@@ -24,6 +25,7 @@ const PAGES: Record<string, ComponentType> = {
   chips: Chips,
   copybuttons: CopyButtons,
   icons: Icons,
+  modals: Modals,
   panels: Panels,
   segmenteds: Segmenteds,
   selectboxes: SelectBoxes,
