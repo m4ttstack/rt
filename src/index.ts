@@ -15,6 +15,9 @@
  * that name would collide here.
  */
 
+export { Button, BUTTON_PARTS, buttonTheme } from "./recipes/Button/Button.tsx";
+export type { ButtonOwnProps, ButtonProps } from "./recipes/Button/Button.tsx";
+
 export { Chip, CHIP_PARTS, chipTheme } from "./recipes/Chip/Chip.tsx";
 export type { ChipOwnProps, ChipProps } from "./recipes/Chip/Chip.tsx";
 

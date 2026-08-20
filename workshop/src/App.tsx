@@ -1,5 +1,6 @@
 import type { ComponentType } from "react";
 import { useState } from "react";
+import { Buttons } from "./pages/Buttons.tsx";
 import { Chips } from "./pages/Chips.tsx";
 import { ContextMenus } from "./pages/ContextMenus.tsx";
 import { CopyButtons } from "./pages/CopyButtons.tsx";
@@ -26,6 +27,7 @@ import { Tokens } from "./pages/Tokens.tsx";
  */
 const PAGES: Record<string, ComponentType> = {
   tokens: Tokens,
+  buttons: Buttons,
   chips: Chips,
   contextmenus: ContextMenus,
   copybuttons: CopyButtons,
