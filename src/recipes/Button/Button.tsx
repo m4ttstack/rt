@@ -1,4 +1,4 @@
-import { autoVars } from "@soribashi/core";
+import { autoVars, isDev } from "@soribashi/core";
 import type { ButtonHTMLAttributes, ComponentProps, ReactNode } from "react";
 import { defineComponent } from "../../builders.ts";
 import { Spinner } from "../Spinner/Spinner.tsx";
@@ -16,20 +16,6 @@ export const BUTTON_PARTS = { root: "button" } as const;
 const BUTTON_VARIANTS = ["outline", "subtle", "ghost"] as const;
 
 const BUTTON_VOCABULARY_AXES = ["intent", "variant", "size"] as const;
-
-/** `src/` is browser code and may never read the node `process` global (see
-    test/no-node-builtins.test.ts) — `import.meta.env.DEV` is the browser-safe
-    equivalent, cast through `unknown` because this kit declares no
-    `vite/client` types. Mirrors @soribashi/core's own isDev(). */
-function isDev(): boolean {
-  try {
-    const viteEnv = (import.meta as unknown as { env?: { DEV?: boolean } }).env;
-    if (viteEnv && typeof viteEnv.DEV === "boolean") return viteEnv.DEV;
-  } catch {
-    // import.meta access threw — fall through to the safe default.
-  }
-  return true;
-}
 
 export interface ButtonOwnProps {
   children?: ReactNode;
