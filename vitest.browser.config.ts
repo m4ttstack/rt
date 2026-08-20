@@ -8,9 +8,9 @@ import { defineConfig } from "vitest/config";
  * because its visual baselines are run by a separate `test:visual` script that
  * is deliberately outside the default `projects` list, whereas this kit's
  * brief puts both behaviours behind one `bun run test`. The merge is just the
- * union of the two files — the include glob widens to cover
- * `*.visual.test.tsx` (which `*.test.tsx` already matches, hence no `exclude`
- * here), and the screenshot comparator block comes across verbatim.
+ * union of the two files — the include glob covers `*.visual.test.tsx` (which
+ * `*.test.tsx` already matches, hence no `exclude` here), and the screenshot
+ * comparator block comes across verbatim.
  *
  * `root` is anchored to this config file's own directory rather than left to
  * Vite's default (the process cwd) so `include` resolves against the repo
@@ -21,7 +21,25 @@ export default defineConfig({
   root: import.meta.dirname,
   test: {
     name: "browser",
-    include: ["src/recipes/**/*.test.tsx", "src/recipes/**/*.visual.test.tsx"],
+    // `src/**`, NOT `src/recipes/**`. Together with the node tier's
+    // `src/**/*.test.ts`, the two projects must partition every test file
+    // under src/ between them, because a file matched by NO project is not an
+    // error in vitest — it is simply never run, and the summary reports
+    // nothing missing. Scoped to `src/recipes/**` this tier had a hole: a
+    // `*.test.tsx` written under src/hooks/ (Task 7's territory) or anywhere
+    // else in src/ would have silently disappeared. `test/**` is listed for the
+    // same reason and not because a browser test is expected to live there.
+    //
+    // The partition, stated once: this tier takes every `*.test.tsx` under
+    // src/ and test/, the node tier takes every `*.test.ts` under the same two
+    // roots. `*.visual.test.tsx` is already matched by `*.test.tsx` and is
+    // named separately only for readability.
+    include: [
+      "src/**/*.test.tsx",
+      "src/**/*.visual.test.tsx",
+      "test/**/*.test.tsx",
+      "test/**/*.visual.test.tsx",
+    ],
     // Loads the generated theme.css once, so every browser test renders
     // against the real emitted custom properties instead of each test file
     // importing the stylesheet itself. This is what makes a computed-style

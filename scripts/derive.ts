@@ -13,7 +13,7 @@ import { tuiVocabulary } from "../src/theme.ts";
  * `RecipeMeta` (attached by @soribashi/factory's builders), scraped from its
  * source files, or copied from the kit's own `tuiVocabulary`.
  *
- * TWO deliberate departures from the soribashi original, both forced:
+ * THREE deliberate departures from the soribashi original:
  *
  *  1. RECIPE DISCOVERY WALKS `src/recipes/`, IT DOES NOT WALK A BARREL.
  *     soribashi's version imports `../src/index.ts` and keeps every export
@@ -25,7 +25,14 @@ import { tuiVocabulary } from "../src/theme.ts";
  *     would make its sweep vacuous, whereas here the gate can assert that the
  *     manifest names EVERY directory on disk (see both gate files), which is a
  *     real assertion even at zero recipes.
- *  2. NO `toJsonFile`. soribashi runs the serialized manifest through the
+ *  2. NO `baseUi` FIELD. soribashi's ManifestEntry carries
+ *     `baseUi: tsxSource.includes("from '@base-ui/react")`, because its recipes
+ *     may or may not wrap a Base UI primitive and its registry needs to know.
+ *     This kit has no @base-ui/react dependency and is not planned to grow one
+ *     (its recipes are ports of mr-board's own hand-written markup), so the
+ *     field would be `false` on every entry forever. Reinstate it verbatim the
+ *     day a recipe reaches for a headless primitive library.
+ *  3. NO `toJsonFile`. soribashi runs the serialized manifest through the
  *     monorepo's biome binary so a generated file is byte-identical to what
  *     biome would format; the kit has no biome and commits no manifest.json,
  *     so the only consumer of this module is test/token-existence.test.ts.

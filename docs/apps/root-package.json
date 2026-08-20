@@ -28,7 +28,7 @@
     "codegen": "soribashi build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "gates": "vitest run --project node test/no-hardcoded-values.test.ts test/token-existence.test.ts && bun run codegen && git diff --exit-code src/generated/theme.css",
+    "gates": "vitest run --project node test/no-hardcoded-values.test.ts test/token-existence.test.ts test/no-node-builtins.test.ts && bun run codegen && git diff --exit-code src/generated/theme.css",
     "dev:workshop": "cd workshop && bunx vite"
   },
   "dependencies": {
