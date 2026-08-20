@@ -108,22 +108,6 @@
   font: inherit; font-size: 0.78rem; white-space: nowrap;
 }
 
-/* ── panels (TUI frame with label on the border) ──────────────────── */
-.tui-panel {
-  position: relative; border: 1px solid var(--border); border-radius: 8px;
-  background: color-mix(in srgb, var(--panel) 88%, transparent);
-  padding: 1.1rem 0 0.3rem; margin: 1.5rem 0 1.8rem;
-}
-.tui-panel-title {
-  position: absolute; top: -0.72em; left: 0.9rem;
-  background: var(--bg); padding: 0 0.5rem;
-  font-size: 0.74rem; font-weight: 700; letter-spacing: 0.04em; color: var(--accent);
-  /* Now a click target: button reset so it still reads as a border label. */
-  border: 0; font-family: inherit; cursor: pointer;
-  display: inline-flex; align-items: center; gap: 0.35em;
-}
-.tui-panel-title:hover { color: color-mix(in srgb, var(--accent) 70%, var(--fg)); }
-.tui-panel-title:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
 /* Keyboard focus: one accent ring for the controls that lacked one. Menu
    items and the panel title already carry their own focus-visible styles. */
 .tui-copy:focus-visible, .tui-copy-inline:focus-visible,
@@ -133,32 +117,6 @@
 .tui-join-toggle:focus-visible, .tui-drawer-action:focus-visible, .tui-review-open:focus-visible {
   outline: 2px solid var(--accent); outline-offset: 2px;
 }
-.tui-panel-caret { font-size: 0.65rem; opacity: 0.7; transition: transform 120ms ease; }
-.tui-panel-count { color: var(--muted); font-weight: 400; }
-/* Collapsed: drop the outer frame entirely and reflow the title into a
-   full-width inline bar. The absolute-positioned "label on the border" look
-   only makes sense when there's a body to label -- with no body, the empty
-   frame reads as a broken container. */
-.tui-panel-collapsed {
-  border: 0;
-  background: transparent;
-  padding: 0;
-  margin: 0.75rem 0;
-}
-.tui-panel-collapsed .tui-panel-title {
-  position: static;
-  display: flex;
-  width: 100%;
-  text-align: left;
-  padding: 0.4rem 0.9rem;
-  background: color-mix(in srgb, var(--panel) 70%, transparent);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-.tui-panel-collapsed .tui-panel-title:hover {
-  background: color-mix(in srgb, var(--panel) 100%, transparent);
-}
-
 /* ── rows ─────────────────────────────────────────────────────────── */
 /* Two columns: the select box gets its own gutter so it never competes with the
    title for space, and the body keeps the single-column stack it always had.
@@ -873,31 +831,6 @@
   border-radius: 50%; display: inline-block;
   animation: tui-spin 0.7s linear infinite;
 }
-
-/* transient confirmation toasts */
-.tui-toasts {
-  position: fixed;
-  right: 16px;
-  bottom: 16px;
-  z-index: 210;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  pointer-events: none;
-}
-.tui-toast {
-  padding: 9px 13px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
-  border-radius: 7px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
-  color: var(--fg);
-  font-size: 13px;
-  max-width: 320px;
-  animation: tui-toast-in 140ms ease-out;
-}
-@keyframes tui-toast-in { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
 
 /* rows are clickable (open MR); local rows also right-click for actions */
 .tui-row[data-local="1"], .tui-card[data-local="1"] { cursor: context-menu; }

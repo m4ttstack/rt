@@ -16,10 +16,8 @@ import { getSlackMarks, mrLine, boardSummary, draftKey } from "./format.ts";
 import { overlay } from "./optimistic.ts";
 import { useOptimisticLifecycle, useToasts, useBoardData, useLaunchAction } from "./hooks.ts";
 import { postAction } from "../api.ts";
-import { ICONS } from "@mattstack/tui-kit";
-import { Panel } from "../ui/Panel.tsx";
+import { ICONS, Panel, ToastHost } from "@mattstack/tui-kit";
 import { SideDrawer } from "../ui/SideDrawer.tsx";
-import { ToastHost } from "../ui/Toast.tsx";
 import { Sidebar } from "./Sidebar.tsx";
 import { Controls } from "./Controls.tsx";
 import { SelectionBar } from "./SelectionBar.tsx";
@@ -519,8 +517,11 @@ export function Board() {
         {filtered.length === 0 && !data.fetchError ? (
           <p className="tui-empty">nothing waiting on review ✓</p>
         ) : (
+          // storageKey pins the LEGACY persistence key: the recipe defaults to
+          // its own "tui-panel-collapsed", and switching would orphan every
+          // panel a user has already folded up.
           groups.map((g) => (
-            <Panel key={g.label} title={g.label} count={g.mrs.length}>
+            <Panel key={g.label} title={g.label} count={g.mrs.length} storageKey="mrs-panel-collapsed">
               {view === "rows" ? (
                 <RowView mrs={g.mrs} now={now} showAuthor={showAuthor} ctx={rowCtx} />
               ) : (
