@@ -694,53 +694,33 @@
    so it survives, rewritten onto the recipe's data-part. */
 .tui-review-body [data-part="markdown"] { max-width: 820px; margin: 0 auto; padding-bottom: 1.5rem; }
 
-/* row action menu (right-click) */
-.tui-menu {
-  position: fixed;
-  z-index: 200;
-  min-width: 200px;
-  padding: 4px;
-  background: var(--card);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.18);
-  font-size: 13px;
-  animation: tui-menu-in 90ms ease-out;
-}
-@keyframes tui-menu-in { from { opacity: 0; transform: scale(0.97) translateY(-2px); } to { opacity: 1; transform: none; } }
-.tui-menu-label {
-  padding: 5px 8px 6px;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  color: var(--muted);
-  border-bottom: 1px solid var(--border-soft);
-  margin-bottom: 4px;
-}
-.tui-menu-item {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  width: 100%;
-  padding: 7px 8px;
-  background: none;
-  border: none;
-  border-radius: 5px;
-  color: var(--fg);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.tui-menu-item:hover:not(:disabled), .tui-menu-item:focus-visible { background: color-mix(in srgb, var(--accent) 16%, transparent); outline: none; }
-.tui-menu-item:disabled { color: var(--muted); opacity: 0.45; cursor: default; }
-.tui-menu-hint { font-family: var(--font-mono); font-size: 10px; color: var(--muted); }
-.tui-menu-check { color: var(--dot-ok); font-size: 12px; }
-.tui-menu-sep { height: 1px; background: var(--border-soft); margin: 4px 2px; }
+/* ── row action menu (right-click): what the ContextMenu recipe left behind ──
+   The menu's whole shell is `[data-part="contextmenu"]` now -- the fixed box,
+   the 200px measure, the 90ms entry animation, the measured viewport clamp,
+   the label/item/hint/separator parts and the item's hover/focus wash and
+   disabled dim all live in the kit. Three groups survive here, none of which a
+   menu shell could own:
+
+   1. NOTE MODE (`.tui-menu-noting`, `.tui-menu-note`, `.tui-menu-note-hint`).
+      An application mode, not menu chrome: it knows about launch notes, the
+      alt key, and the board's auto-grow textarea. RowMenu renders it INSIDE
+      the recipe's surface, passing `.tui-menu-noting` as `className` (the
+      builder folds a consumer class into the root slot). This file is
+      UNLAYERED and the recipe sits in `@layer soribashi.recipes`, so the
+      width/padding below win over `.root`'s at any specificity.
+   2. THE ONE ANCESTOR-SCOPED RULE, rewritten rather than kept: its old
+      descendant `.tui-menu-label` was absorbed, so it is re-anchored on the
+      recipe's self-identifying part -- still scoped by the note-mode class the
+      board keeps stamping.
+   3. TRAILING BOARD CHROME (`.tui-menu-check`, `.tui-menu-spin`). Both are
+      arbitrary nodes the caller hands to an item's `trailing` prop, which the
+      shell never inspects; they are `.tui-menu-*`-named for history only. */
+
 /* Note mode: the menu swaps to a labelled textarea. Wider than the item list
    so a sentence fits without clipping; the textarea grows to its content
    (height driven from JS, like the selection bar's header box). */
 .tui-menu-noting { width: 320px; padding: 6px; }
-.tui-menu-noting .tui-menu-label { margin-bottom: 6px; }
+.tui-menu-noting [data-part="contextmenu-label"] { margin-bottom: 6px; }
 .tui-menu-note {
   display: block; width: 100%;
   padding: 7px 9px;
@@ -752,6 +732,9 @@
 .tui-menu-note:focus { outline: none; border-color: var(--accent); }
 .tui-menu-note::placeholder { color: var(--muted); opacity: 0.8; }
 .tui-menu-note-hint { font-family: var(--font-mono); font-size: 10px; color: var(--muted); padding: 6px 3px 2px; }
+/* Trailing nodes a slack-mark item hands the shell: the set mark, and the
+   in-flight spinner that replaces it while the reaction is being written. */
+.tui-menu-check { color: var(--dot-ok); font-size: 12px; }
 .tui-menu-spin {
   width: 12px; height: 12px; flex-shrink: 0;
   border: 2px solid var(--border); border-top-color: var(--accent);

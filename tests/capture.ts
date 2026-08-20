@@ -71,7 +71,9 @@ for (const theme of ["light", "dark"] as const) {
   await shoot(page, `rows-${theme}`);
   // row menu open (right-click the first row)
   await page.click(".tui-row", { button: "right" });
-  await page.waitForSelector(".tui-menu");
+  // `.tui-menu` is gone: the menu shell is the kit's ContextMenu recipe, named
+  // by its own self-identifying data-part (the root's, not an item's).
+  await page.waitForSelector('[data-part="contextmenu"]');
   await shoot(page, `rowmenu-${theme}`);
   // paper cut 4 assertion: opening the comments drawer while the row menu is
   // open closes the menu first (its outside-click handler fires on the

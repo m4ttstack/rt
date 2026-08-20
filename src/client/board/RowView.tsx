@@ -1,7 +1,7 @@
 import { Invadr } from "invadrs/react";
 import { extractTicketId, ticketUrl } from "../../ticket.ts";
 import type { BoardMR } from "../../data.ts";
-import { nestStacks, statusFlags } from "../../view.ts";
+import { nestStacks, statusFlags, type FlagClass } from "../../view.ts";
 import type { BoardMRWithReview, RowContext } from "../types.ts";
 import { Chip, CopyButton, SelectBox } from "@mattstack/tui-kit";
 import { StatusDot } from "./StatusDot.tsx";
@@ -19,9 +19,12 @@ function onRowClick(e: React.MouseEvent, mr: BoardMR) {
 /** statusFlags() keeps emitting the board's own token classes (`.tui-phrase`
     shares them), so the flag row translates them to Chip intents here rather
     than making view.ts -- a DOM-free module with its own tests -- speak the
-    kit's vocabulary. `data-flag` is the hook style.css scopes the flag's
-    standing 0.9 dim and its own zero-padding box to. */
-const FLAG_INTENT: Record<string, "bad" | "warn" | "cyan"> = {
+    kit's vocabulary. Keyed on view.ts's own `FlagClass` union, which is what
+    retired the `?? "muted"` fallback the lookup used to need: a fourth token
+    class now fails to compile here instead of silently rendering grey.
+    `data-flag` is the hook style.css scopes the flag's standing 0.9 dim and
+    its own zero-padding box to. */
+const FLAG_INTENT: Record<FlagClass, "bad" | "warn" | "cyan"> = {
   "t-bad": "bad",
   "t-warn": "warn",
   "t-cyan": "cyan",
@@ -31,7 +34,7 @@ function StatusFlags({ mr, nested = false }: { mr: BoardMR; nested?: boolean }) 
   return (
     <>
       {statusFlags(mr, { nested }).map((f) => (
-        <Chip key={f.text} intent={FLAG_INTENT[f.cls] ?? "muted"} data-flag="">
+        <Chip key={f.text} intent={FLAG_INTENT[f.cls]} data-flag="">
           {f.text}
         </Chip>
       ))}

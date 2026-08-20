@@ -1,34 +1,17 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import type { BoardMR } from "../../data.ts";
 import type { BoardMRWithReview, RowContext, RowMenuState } from "../types.ts";
-import { useAutoGrowTextarea, useEscapeClose } from "@mattstack/tui-kit/hooks";
+import { ContextMenu } from "@mattstack/tui-kit";
+import { useAutoGrowTextarea } from "@mattstack/tui-kit/hooks";
 import { getSlackMarks, nudgeTargets, reviewMenuItems, respondItemLabel, doctorItemLabel } from "./format.ts";
 
-function MenuItem({
-  label,
-  hint,
-  trailing,
-  disabled,
-  onClick,
-}: {
-  label: React.ReactNode;
-  hint?: string;
-  trailing?: React.ReactNode;
-  disabled?: boolean;
-  onClick?: (e: React.MouseEvent) => void;
-}) {
-  return (
-    <button className="tui-menu-item" role="menuitem" disabled={disabled} onClick={onClick}>
-      <span>{label}</span>
-      {trailing ?? (hint && <span className="tui-menu-hint">{hint}</span>)}
-    </button>
-  );
-}
-
-/** shadcn-style context menu anchored at the cursor. State-aware: the review
-    item reflects review status, and the Slack items are disabled until the
-    MR's review-request thread has been resolved. Dismisses on outside click,
-    Escape, scroll, or resize. */
+/** shadcn-style context menu anchored at the cursor. The SHELL is the kit's
+    ContextMenu recipe -- the fixed box, the measured viewport clamp, the
+    item/label/separator parts, and all four dismissals (Escape through the
+    shared LIFO layer stack, outside mousedown, scroll capture, resize). What
+    stays here is everything board: which items exist for this MR's state, the
+    slack marks section, and the alt-note mode, which renders INSIDE the menu
+    surface as the recipe's children. */
 function RowMenu({
   menu,
   ctx,
@@ -68,7 +51,6 @@ function RowMenu({
   canNudge: boolean;
   onResumeReview: (mr: BoardMR, note?: string) => void;
 }) {
-  const ref = useRef<HTMLDivElement>(null);
   // Local reaction state so the open menu updates immediately after a mark,
   // and per-emoji pending so the clicked item shows a spinner + disables.
   const [reactions, setReactions] = useState<string[]>((menu.mr as BoardMRWithReview).slack?.reactions ?? []);
@@ -92,20 +74,21 @@ function RowMenu({
       window.removeEventListener("blur", onBlur);
     };
   }, []);
-  useEscapeClose(onClose);
+  // FOCUS THE NOTE BOX ON THE NEXT FRAME, not with `autoFocus`. The recipe
+  // renders itself `visibility: hidden` until its layout effect has measured
+  // and clamped the box, and a `visibility: hidden` subtree cannot take focus
+  // at all -- `focus()` on it is a silent no-op (verified in chromium: the
+  // element does not become activeElement, and un-hiding does not retroactively
+  // give it focus). React fires `autoFocus` in the same commit that leaves the
+  // menu hidden, and so does any passive effect (React flushes those before the
+  // clamp's own state update re-renders), so a frame is the earliest honest
+  // moment. Only matters because note mode now REMOUNTS (see the key below);
+  // before the adoption the div was reconciled in place and never went hidden.
   useEffect(() => {
-    const onDown = (e: MouseEvent) => {
-      if (!ref.current?.contains(e.target as Node)) onClose();
-    };
-    document.addEventListener("mousedown", onDown);
-    window.addEventListener("scroll", onClose, true);
-    window.addEventListener("resize", onClose);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      window.removeEventListener("scroll", onClose, true);
-      window.removeEventListener("resize", onClose);
-    };
-  }, [onClose]);
+    if (!noteFor) return;
+    const id = requestAnimationFrame(() => noteRef.current?.focus());
+    return () => cancelAnimationFrame(id);
+  }, [noteFor, noteRef]);
 
   const { mr } = menu;
   const mrx = mr as BoardMRWithReview;
@@ -113,22 +96,6 @@ function RowMenu({
   const found = slack?.status === "found";
   const showSlack = ctx.local && ctx.slackEnabled;
   const peers = ctx.local && canNudge ? nudgeTargets(mrx) : [];
-  // Keep the menu on-screen: render once at the requested point, measure the
-  // real box, then clamp. Re-measures whenever noteFor toggles since the note
-  // box is a different size than the item list.
-  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
-  useLayoutEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const { width, height } = el.getBoundingClientRect();
-    setPos({
-      left: Math.max(8, Math.min(menu.x, window.innerWidth - width - 8)),
-      top: Math.max(8, Math.min(menu.y, window.innerHeight - height - 8)),
-    });
-  }, [menu.x, menu.y, noteFor]);
-  const style = pos
-    ? { left: pos.left, top: pos.top }
-    : ({ left: menu.x, top: menu.y, visibility: "hidden" as const });
   const run = (fn: () => void) => () => {
     fn();
     onClose();
@@ -161,13 +128,31 @@ function RowMenu({
 
   if (noteFor) {
     return (
-      <div ref={ref} className="tui-menu tui-menu-noting" style={style} role="menu" aria-label={`note for !${mr.iid}`}>
-        <div className="tui-menu-label">note for {noteFor.label} !{mr.iid}</div>
+      <ContextMenu
+        // THE KEY IS LOAD-BEARING, not decoration. The recipe's clamp is a
+        // layout effect keyed on [x, y]; RowMenu's own third dep (`noteFor`)
+        // could not travel with it, because a menu shell has no business
+        // knowing a consumer's modes. A distinct key makes React unmount the
+        // item-list menu and mount this one instead, which re-runs the clamp
+        // against the note box's very different size — the adoption answer the
+        // recipe documents. Accepted cosmetic delta: the 90ms entry animation
+        // replays on the swap, where the old in-place reconcile did not
+        // re-animate.
+        key="noting"
+        x={menu.x}
+        y={menu.y}
+        ariaLabel={`note for !${mr.iid}`}
+        onClose={onClose}
+        // The board's own note-mode box (320px wide, tighter padding) plus the
+        // scope its label rule needs. style.css is unlayered, so it wins over
+        // the recipe's own `.root` padding regardless of specificity.
+        className="tui-menu-noting"
+      >
+        <ContextMenu.Label>note for {noteFor.label} !{mr.iid}</ContextMenu.Label>
         <textarea
           ref={noteRef}
           className="tui-menu-note"
           rows={1}
-          autoFocus
           value={noteText}
           placeholder="extra instruction…"
           maxLength={2000}
@@ -190,17 +175,20 @@ function RowMenu({
           }}
         />
         <div className="tui-menu-note-hint">↵ launch with note · ⇧↵ newline · esc back</div>
-      </div>
+      </ContextMenu>
     );
   }
 
   const reviewRunning = mrx.review?.status === "queued" || mrx.review?.status === "reviewing";
   return (
-    <div ref={ref} className="tui-menu" style={style} role="menu" aria-label={`actions for !${mr.iid}`}>
-      <div className="tui-menu-label">!{mr.iid}</div>
+    // The item list's own key, the other half of the pair above: two menus of
+    // the same element type at the same position are only distinct instances
+    // to React if their keys differ.
+    <ContextMenu key="items" x={menu.x} y={menu.y} ariaLabel={`actions for !${mr.iid}`} onClose={onClose}>
+      <ContextMenu.Label>!{mr.iid}</ContextMenu.Label>
 
       {ctx.local && reviewMenuItems(mrx.review?.status).map((item) => (
-        <MenuItem
+        <ContextMenu.Item
           key={item.kind}
           label={item.label}
           hint={reviewRunning ? "herdr" : paneHint}
@@ -212,14 +200,14 @@ function RowMenu({
         />
       ))}
       {ctx.local && mrx.review?.sessionId && (
-        <MenuItem
+        <ContextMenu.Item
           label="resume review"
           hint={paneHint}
           onClick={paneClick("resume review", (note) => onResumeReview(mr, note))}
         />
       )}
       {ctx.local && canRespond && (
-        <MenuItem
+        <ContextMenu.Item
           label={respondItemLabel(mrx.respond?.status)}
           hint={respondItemLabel(mrx.respond?.status) === "focus response tab" ? "herdr" : paneHint}
           onClick={
@@ -230,14 +218,14 @@ function RowMenu({
         />
       )}
       {ctx.local && canRespond && mrx.respond?.sessionId && (
-        <MenuItem
+        <ContextMenu.Item
           label="resume response"
           hint={paneHint}
           onClick={paneClick("resume response", (note) => ctx.onResumeRespond(mr, note))}
         />
       )}
       {ctx.local && canDoctor && (
-        <MenuItem
+        <ContextMenu.Item
           label={doctorItemLabel(mrx.doctor?.status)}
           hint={doctorItemLabel(mrx.doctor?.status) === "focus doctor tab" ? "herdr" : paneHint}
           onClick={
@@ -248,7 +236,7 @@ function RowMenu({
         />
       )}
       {ctx.local && canDraftState && (
-        <MenuItem
+        <ContextMenu.Item
           label={mr.isDraft ? "mark ready" : "mark as draft"}
           hint="gitlab"
           onClick={run(() => onDraftState(mr, !mr.isDraft))}
@@ -257,7 +245,7 @@ function RowMenu({
       {/* Ask a peer whose review left comments to look again. Only ever offered
           for your own MR, and only while no ask of yours is still outstanding. */}
       {peers.map((peer) => (
-        <MenuItem
+        <ContextMenu.Item
           key={peer.reviewer}
           label={`request re-review from ${peer.reviewer}`}
           hint="peer"
@@ -265,24 +253,26 @@ function RowMenu({
         />
       ))}
       {mrx.review?.reportReady && (
-        <MenuItem label="view review" onClick={run(() => ctx.onOpenReview(mrx))} />
+        <ContextMenu.Item label="view review" onClick={run(() => ctx.onOpenReview(mrx))} />
       )}
-      <MenuItem label="open in gitlab" onClick={run(() => mr.webUrl && window.open(mr.webUrl, "_blank", "noopener"))} />
-      <MenuItem label="copy for slack" onClick={run(() => onCopy(mr))} />
+      <ContextMenu.Item label="open in gitlab" onClick={run(() => mr.webUrl && window.open(mr.webUrl, "_blank", "noopener"))} />
+      <ContextMenu.Item label="copy for slack" onClick={run(() => onCopy(mr))} />
 
       {showSlack && (
         <>
-          <div className="tui-menu-sep" />
+          <ContextMenu.Separator />
           {found ? (
             <>
               {getSlackMarks().map((m) => {
                 const isPending = pending.includes(m.emoji);
                 const isMarked = reactions.includes(m.emoji);
                 return (
-                  <MenuItem
+                  <ContextMenu.Item
                     key={m.emoji}
                     label={isMarked ? `unmark ${m.glyph} on slack` : m.label}
                     disabled={isPending}
+                    // Caller-supplied trailing nodes: the recipe never inspects
+                    // them, so both keep their board-side classes.
                     trailing={
                       isPending ? (
                         <span className="tui-menu-spin" aria-label="working" />
@@ -295,25 +285,25 @@ function RowMenu({
                 );
               })}
               {slack?.permalink && (
-                <MenuItem label="open MR post in slack" onClick={run(() => window.open(slack.permalink!, "_blank", "noopener"))} />
+                <ContextMenu.Item label="open MR post in slack" onClick={run(() => window.open(slack.permalink!, "_blank", "noopener"))} />
               )}
             </>
           ) : (
             <>
-              <MenuItem
+              <ContextMenu.Item
                 label={slack?.status === "notfound" ? "no thread — retry find" : "find slack thread"}
                 onClick={run(() => onResolveSlack(mr))}
               />
-              <MenuItem label="post to slack" onClick={run(() => onPostSlack(mr))} />
+              <ContextMenu.Item label="post to slack" onClick={run(() => onPostSlack(mr))} />
               {getSlackMarks().map((m) => (
-                <MenuItem key={m.emoji} label={m.label} disabled />
+                <ContextMenu.Item key={m.emoji} label={m.label} disabled />
               ))}
             </>
           )}
         </>
       )}
-    </div>
+    </ContextMenu>
   );
 }
 
-export { MenuItem, RowMenu };
+export { RowMenu };

@@ -1,3 +1,4 @@
+import type { ComponentProps } from "react";
 import { Chip } from "@mattstack/tui-kit";
 import { respondOutcome, respondDoneLabel, respondNeedsAttention } from "../../respond-outcome.ts";
 import {
@@ -11,7 +12,10 @@ import {
   getSlackMarks,
   ago,
 } from "./format.ts";
+import type { PeerState, RespondCell } from "./format.ts";
 import type {
+  ReviewStatus,
+  DoctorStatus,
   ReviewInfo,
   RespondInfo,
   DoctorInfo,
@@ -43,16 +47,25 @@ const BADGE_ICON = {
   doctor: "👨🏻‍⚕️",
 };
 
+/** The intent vocabulary, read off the recipe rather than restated here, so a
+    word the kit drops stops compiling at the map that still names it. Every
+    lifecycle map below is a `Record<StateUnion, ChipIntent>` on purpose: the
+    key side keeps the map exhaustive over the states the board can stamp into
+    a `data-*` cell (format.ts's CHIP_CELL_WORDS is the other half of that
+    contract, and the half style.css's selectors read), and the value side
+    keeps a mistyped intent from reaching `<Chip>` at all. */
+type ChipIntent = NonNullable<ComponentProps<typeof Chip>["intent"]>;
+
 /** Which Chip intent each review lifecycle state wears. `queued` is the quiet
     register (muted text inside the neutral `subtle` frame, dimmed); the rest
     are outline chips whose exact shade the `[data-part="chip"][data-review]`
     rules in style.css nudge onto the brighter status-dot trio. */
-const REVIEW_INTENT = {
+const REVIEW_INTENT: Record<ReviewStatus, ChipIntent> = {
   queued: "muted",
   reviewing: "warn",
   done: "ok",
   error: "bad",
-} as const;
+};
 
 function ReviewBadge({ review, onOpen }: { review?: ReviewInfo; onOpen?: () => void }) {
   if (!review) return null;
@@ -89,7 +102,7 @@ function ReviewBadge({ review, onOpen }: { review?: ReviewInfo; onOpen?: () => v
 /** Which Chip intent each respond cell wears, keyed by the same word the
     `data-respond` attribute carries: a derived outcome for a finished run, the
     raw status for one still going. The two vocabularies do not collide. */
-const RESPOND_INTENT = {
+const RESPOND_INTENT: Record<RespondCell, ChipIntent> = {
   queued: "muted",
   triaging: "purple",
   implementing: "purple",
@@ -100,10 +113,10 @@ const RESPOND_INTENT = {
   drafted: "warn",
   unknown: "muted",
   error: "bad",
-} as const;
+};
 
 /** The three in-flight respond states pulse; so does nothing else here. */
-const RESPOND_PULSING = new Set(["triaging", "implementing", "drafting"]);
+const RESPOND_PULSING = new Set<RespondCell>(["triaging", "implementing", "drafting"]);
 
 /** Response-to-review lifecycle badge. Uses the review-badge visual family so
     the row's shape stays familiar; the purple intent differentiates color state
@@ -147,7 +160,7 @@ function RespondBadge({ respond, onResume }: { respond?: RespondInfo; onResume?:
 
 /** Cyan for every state that is still working, so mechanical-fix progress reads
     as its own axis; the terminal pair borrows the status-dot shades. */
-const DOCTOR_INTENT = {
+const DOCTOR_INTENT: Record<DoctorStatus, ChipIntent> = {
   queued: "muted",
   diagnosing: "cyan",
   rebasing: "cyan",
@@ -155,9 +168,9 @@ const DOCTOR_INTENT = {
   watching: "cyan",
   done: "ok",
   error: "bad",
-} as const;
+};
 
-const DOCTOR_PULSING = new Set(["diagnosing", "rebasing", "fixing", "watching"]);
+const DOCTOR_PULSING = new Set<DoctorStatus>(["diagnosing", "rebasing", "fixing", "watching"]);
 
 /** MR-doctor lifecycle: mechanical fixes (CI red / merge conflicts) chugging in
     the background. Cyan family so it reads as a distinct "auto-repair" axis.
@@ -192,12 +205,12 @@ const PEER_GLYPH = "⇄";
 /** Peer review states borrow the review badge's colors, so "approved on their
     board" reads the same as an approval earned here; `reviewing` keeps the
     accent (blue) every cross-board chip starts from, and pulses. */
-const PEER_INTENT = {
+const PEER_INTENT: Record<PeerState, ChipIntent> = {
   reviewing: "accent",
   commented: "warn",
   approved: "ok",
   done: "muted",
-} as const;
+};
 
 /** One peer's review of this MR, relayed over the switchboard. Reuses the
     review-badge shape with its own `data-peer` family so another board's
@@ -222,16 +235,16 @@ function PeerBadge({ peer }: { peer: PeerReviewInfo }) {
     unanswered or refused ask goes grey -- the menu item is what offers the
     retry. `requested`'s dim is 0.75, not the recipe's 0.7; style.css puts that
     back on `[data-part="chip"][data-nudge="requested"]`. */
-const NUDGE_INTENT = {
+const NUDGE_INTENT: Record<SentNudgeInfo["display"], ChipIntent> = {
   requested: "accent",
   confirmed: "accent",
   launched: "accent",
   rejected: "muted",
   expired: "muted",
   "no-response": "muted",
-} as const;
+};
 
-const NUDGE_PULSING = new Set(["confirmed", "launched"]);
+const NUDGE_PULSING = new Set<SentNudgeInfo["display"]>(["confirmed", "launched"]);
 
 /** The re-review this board asked for, on the author's own row. */
 function NudgeChip({ nudge }: { nudge?: SentNudgeInfo }) {

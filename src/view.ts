@@ -57,12 +57,20 @@ export function dataAgeLabel(dataSyncedAt: number | null, now: number): { text: 
   return { text: `data as of ${hh}:${mm}`, stale };
 }
 
+/** The three token classes a status flag can carry. Named as a union rather
+    than a bare `string` because the client translates each one into a Chip
+    intent: with `string` that lookup needed a silent `?? "muted"` fallback,
+    which would have quietly greyed out a fourth class instead of failing.
+    This module stays DOM-free and knows nothing of the kit's vocabulary — the
+    translation is RowView's, the exhaustiveness is this type's. */
+export type FlagClass = "t-bad" | "t-warn" | "t-cyan";
+
 /** GitLab-native facts shown as chips above the title: mechanical blockers
     (conflicts / CI), most severe first, plus the stacked marker for MRs
     targeting a parent branch instead of the default branch. */
-export function statusFlags(mr: BoardMR, opts?: { nested?: boolean }): { text: string; cls: string }[] {
+export function statusFlags(mr: BoardMR, opts?: { nested?: boolean }): { text: string; cls: FlagClass }[] {
   const b = mr.blockers;
-  const flags: { text: string; cls: string }[] = [];
+  const flags: { text: string; cls: FlagClass }[] = [];
   if (b?.hasConflicts) flags.push({ text: "conflicts", cls: "t-bad" });
   if (b?.pipelineFailing) flags.push({ text: "ci failing", cls: "t-bad" });
   if (b?.pipelineRunning) flags.push({ text: "ci running", cls: "t-warn" });
