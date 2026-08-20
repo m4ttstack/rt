@@ -15,6 +15,9 @@
  * that name would collide here.
  */
 
+export { Badge, BADGE_PARTS, badgeTheme } from "./recipes/Badge/Badge.tsx";
+export type { BadgeOwnProps, BadgeProps } from "./recipes/Badge/Badge.tsx";
+
 export { Button, BUTTON_PARTS, buttonTheme } from "./recipes/Button/Button.tsx";
 export type { ButtonOwnProps, ButtonProps } from "./recipes/Button/Button.tsx";
 
