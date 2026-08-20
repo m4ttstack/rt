@@ -1,4 +1,5 @@
 import { createTheme } from "@soribashi/core";
+import { useRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { userEvent } from "vitest/browser";
 import { renderWithTheme } from "../../../test/test-utils.tsx";
@@ -386,6 +387,59 @@ describe("ContextMenu (browser)", () => {
     expect(getComputedStyle(root).opacity).toBe("0.5");
     expect(Math.abs(box.left - 60)).toBeLessThan(0.5);
     expect(Math.abs(box.top - 70)).toBeLessThan(0.5);
+  });
+
+  it("focuses initialFocusRef once the clamp has positioned it (SORI-25)", async () => {
+    // The ticket's repro: a child relying on `autoFocus` comes up unfocused
+    // because the anti-flash `visibility: hidden` blocks focus entirely until
+    // the clamp commits. This pins the first-class answer — `initialFocusRef`
+    // lands focus in the SAME effect chain, right after the clamp's `setPos`
+    // has landed and `visibility` has flipped to `visible`.
+    function Menu() {
+      const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+      return (
+        <ContextMenu x={40} y={40} ariaLabel="m" onClose={noop} initialFocusRef={textareaRef}>
+          <ContextMenu.Item label="open in gitlab" onClick={noop} />
+          <textarea ref={textareaRef} aria-label="note" />
+        </ContextMenu>
+      );
+    }
+    const screen = await renderWithTheme(<Menu />);
+    await settledBox(rootOf(screen.container));
+
+    const textarea = screen.getByRole("textbox", { name: "note" }).element();
+    expect(document.activeElement).toBe(textarea);
+  });
+
+  it("steals no focus when initialFocusRef is omitted", async () => {
+    // The negative case: nothing in the recipe reaches for focus on its own
+    // when the consumer never opted in, exactly as before SORI-25.
+    function Menu() {
+      const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+      return (
+        <ContextMenu x={40} y={40} ariaLabel="m" onClose={noop}>
+          <ContextMenu.Item label="open in gitlab" onClick={noop} />
+          <textarea ref={textareaRef} aria-label="note" />
+        </ContextMenu>
+      );
+    }
+    const screen = await renderWithTheme(<Menu />);
+    await settledBox(rootOf(screen.container));
+
+    const textarea = screen.getByRole("textbox", { name: "note" }).element();
+    expect(document.activeElement).not.toBe(textarea);
+  });
+
+  it("calls onPositioned once the clamp has committed", async () => {
+    const onPositioned = vi.fn();
+    const screen = await renderWithTheme(
+      <ContextMenu x={40} y={40} ariaLabel="m" onClose={noop} onPositioned={onPositioned}>
+        <ContextMenu.Item label="open in gitlab" onClick={noop} />
+      </ContextMenu>,
+    );
+    await settledBox(rootOf(screen.container));
+
+    expect(onPositioned).toHaveBeenCalledTimes(1);
   });
 
   it("extend threads defaultProps (invariant 1 stays load-bearing)", async () => {

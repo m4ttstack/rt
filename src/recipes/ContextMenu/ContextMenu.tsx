@@ -7,6 +7,7 @@ import type {
   MouseEvent as ReactMouseEvent,
   ReactNode,
   Ref,
+  RefObject,
 } from "react";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { defineCompound } from "../../builders.ts";
@@ -182,6 +183,37 @@ export interface ContextMenuOwnProps {
       the caller's decision, exactly as in mr-board (its Slack-mark items
       deliberately keep the menu open so several marks can be set at once). */
   onClose: () => void;
+  /**
+   * A ref to a focusable descendant (an item, a textarea, whatever the
+   * consumer's content includes) that the root focuses ONCE, right after the
+   * clamp below commits and the menu's `visibility` flips from `hidden` to
+   * `visible` — never before.
+   *
+   * THE HAZARD THIS CLOSES (SORI-25): the anti-flash mechanism renders the
+   * menu `visibility: hidden` until the layout effect below has measured and
+   * clamped it. A `visibility: hidden` subtree cannot take focus AT ALL, so a
+   * child's own `autoFocus`, or a focus call from a passive `useEffect` (React
+   * flushes passive effects before the clamp's `setPos` re-render), silently
+   * no-ops — the input renders, looks focused-shaped, and eats no keystrokes.
+   * mr-board's RowMenu hit exactly this the moment its note-mode textarea
+   * needed `autoFocus` and worked around it with its own `requestAnimationFrame`
+   * dance from a `useEffect`. `initialFocusRef` is the first-class answer:
+   * declarative, and correctly ordered against the clamp with no timing
+   * knowledge required from the consumer.
+   *
+   * Optional. Omit it and nothing steals focus — identical to today's
+   * behaviour. */
+  initialFocusRef?: RefObject<HTMLElement | null>;
+  /**
+   * Called every time the clamped position commits — i.e. every time the
+   * layout effect below runs `setPos` and that state lands, which is also
+   * the moment `initialFocusRef` gets focused. Fires again on any later
+   * re-clamp (a consumer remounting the menu with a fresh `key` for a
+   * differently-sized mode, per the ADOPTION note on the layout effect
+   * below), not just on the first mount. Optional — most consumers only ever
+   * need `initialFocusRef`; this is for the rarer case of reacting to the
+   * landed position itself (e.g. measuring something else against it). */
+  onPositioned?: () => void;
   children?: ReactNode;
 }
 
@@ -257,6 +289,8 @@ export const ContextMenu = defineCompound({
           y,
           ariaLabel,
           onClose,
+          initialFocusRef,
+          onPositioned,
           children: _children,
           ...rest
         } = stripFrameworkKeys(props);
@@ -267,6 +301,11 @@ export const ContextMenu = defineCompound({
         // directly in a function component.
         const menuRef = useRef<HTMLDivElement | null>(null);
         const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+        // `initialFocusRef` fires exactly ONCE per mount, never re-firing on a
+        // later re-clamp (unlike `onPositioned`, which is allowed to fire
+        // every time). A plain mutable ref, not state: flipping it must not
+        // itself schedule a render.
+        const hasFocusedRef = useRef(false);
 
         // The recipe needs its own handle on the element (to measure it, and to
         // answer "was that mousedown inside me?"), and a consumer may still
@@ -323,6 +362,29 @@ export const ContextMenu = defineCompound({
             top: Math.max(VIEWPORT_MARGIN, Math.min(y, window.innerHeight - height - VIEWPORT_MARGIN)),
           });
         }, [x, y]);
+
+        // FOCUS-ON-POSITIONED (SORI-25). Deliberately its OWN `useLayoutEffect`,
+        // not folded into the clamp effect above: this one is keyed on `pos`
+        // (the COMMITTED state), where the clamp effect is keyed on `[x, y]`
+        // (the REQUEST) — they run on different renders. React runs layout
+        // effects in commit order after every render, so by the time this
+        // effect's body executes, the `setPos` from the render that triggered
+        // it has already landed in the DOM as `style.visibility` flipping from
+        // `hidden` to `visible` (see `anchored` below) — this is the earliest
+        // point a focus call can succeed, and it is still pre-paint, so there
+        // is no visible flash of an unfocused menu.
+        //
+        // Pinned by ContextMenu.test.tsx: a focusable child + `initialFocusRef`
+        // lands `document.activeElement` on it; without the prop, nothing
+        // steals focus.
+        useLayoutEffect(() => {
+          if (!pos) return;
+          onPositioned?.();
+          if (initialFocusRef && !hasFocusedRef.current) {
+            hasFocusedRef.current = true;
+            initialFocusRef.current?.focus();
+          }
+        }, [pos, onPositioned, initialFocusRef]);
 
         // Escape goes through the shared LIFO layer stack, so it closes only
         // the TOPMOST open modal/drawer/menu rather than every layer at once.

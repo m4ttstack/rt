@@ -1,5 +1,5 @@
 import { CONTEXTMENU_PARTS, ContextMenu } from "@mattstack/tui-kit";
-import { useState } from "react";
+import { useRef, useState } from "react";
 
 /**
  * The ContextMenu recipe's workshop page.
@@ -40,6 +40,13 @@ export function ContextMenus() {
   const [at, setAt] = useState<Point | null>(null);
   const [log, setLog] = useState<string>("nothing clicked yet");
   const [marked, setMarked] = useState(false);
+
+  // The `initialFocusRef` demo below (SORI-25). A plain `useRef` the consumer
+  // owns, exactly like `menuRef` inside the recipe itself — the root focuses
+  // it once, right after the anti-flash clamp commits and `visibility` flips
+  // from `hidden` to `visible`.
+  const [noteAt, setNoteAt] = useState<Point | null>(null);
+  const noteRef = useRef<HTMLTextAreaElement | null>(null);
 
   return (
     <div>
@@ -114,6 +121,46 @@ export function ContextMenus() {
             }}
           />
           <ContextMenu.Item label="mark 👀 on slack" disabled onClick={() => setLog("never")} />
+        </ContextMenu>
+      )}
+
+      <h2 style={{ marginTop: "2rem" }}>initialFocusRef (SORI-25)</h2>
+      <p>
+        Right-click the strip below to open a note-mode menu whose only content
+        is a <code>&lt;textarea autoFocus&gt;</code>-shaped field. Without{" "}
+        <code>initialFocusRef</code> that field would come up unfocused — the
+        anti-flash <code>visibility: hidden</code> first paint blocks focus
+        entirely until the clamp has measured and positioned the menu, so a
+        child's own <code>autoFocus</code> silently no-ops (this is exactly
+        what bit mr-board's RowMenu). Passing <code>initialFocusRef</code>{" "}
+        lets the recipe itself land focus in the correct order, right after the
+        clamp commits — type immediately, no click required.
+      </p>
+      <div
+        style={strip}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setNoteAt({ x: e.clientX, y: e.clientY });
+        }}
+      >
+        right-click me for a note
+      </div>
+
+      {noteAt && (
+        <ContextMenu
+          x={noteAt.x}
+          y={noteAt.y}
+          ariaLabel="add a note"
+          onClose={() => setNoteAt(null)}
+          initialFocusRef={noteRef}
+        >
+          <ContextMenu.Label>note</ContextMenu.Label>
+          <textarea
+            ref={noteRef}
+            aria-label="note"
+            rows={3}
+            style={{ display: "block", margin: "0.4rem", width: "calc(100% - 0.8rem)" }}
+          />
         </ContextMenu>
       )}
 
