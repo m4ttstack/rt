@@ -1,0 +1,163 @@
+/*
+ * Panel — mr-board's `.tui-panel*` collapsible section container.
+ *
+ * Every lift below is anchored on the CLASS NAME it came from in mr-board's
+ * `src/style.css` (line numbers drift; class names are the stable anchor).
+ * Five board rules make up the shape:
+ *
+ *   `.tui-panel {
+ *      position: relative; border: 1px solid var(--border); border-radius: 8px;
+ *      background: color-mix(in srgb, var(--panel) 88%, transparent);
+ *      padding: 1.1rem 0 0.3rem; margin: 1.5rem 0 1.8rem; }`
+ *
+ *   `.tui-panel-title {
+ *      position: absolute; top: -0.72em; left: 0.9rem;
+ *      background: var(--bg); padding: 0 0.5rem;
+ *      font-size: 0.74rem; font-weight: 700; letter-spacing: 0.04em;
+ *      color: var(--accent);
+ *      border: 0; font-family: inherit; cursor: pointer;
+ *      display: inline-flex; align-items: center; gap: 0.35em; }`
+ *   `.tui-panel-title:hover { color: color-mix(in srgb, var(--accent) 70%, var(--fg)); }`
+ *   `.tui-panel-title:focus-visible { outline: 2px solid var(--accent);
+ *      outline-offset: 2px; border-radius: 2px; }`
+ *
+ *   `.tui-panel-caret { font-size: 0.65rem; opacity: 0.7;
+ *      transition: transform 120ms ease; }`
+ *   `.tui-panel-count { color: var(--muted); font-weight: 400; }`
+ *
+ *   `.tui-panel-collapsed {
+ *      border: 0; background: transparent; padding: 0; margin: 0.75rem 0; }`
+ *   `.tui-panel-collapsed .tui-panel-title {
+ *      position: static; display: flex; width: 100%; text-align: left;
+ *      padding: 0.4rem 0.9rem;
+ *      background: color-mix(in srgb, var(--panel) 70%, transparent);
+ *      border: 1px solid var(--border); border-radius: 6px; }`
+ *   `.tui-panel-collapsed .tui-panel-title:hover {
+ *      background: color-mix(in srgb, var(--panel) 100%, transparent); }`
+ *
+ * `.tui-panel-collapsed` BECOMES A DATA ATTRIBUTE, the same "hashed CSS-module
+ * class names cannot be selected across the package boundary" reasoning
+ * CopyButton's `data-copied`/Chip's `data-pulse`/`-dimmed`/`-uppercase` use:
+ * `.root[data-collapsed]` replaces `.tui-panel-collapsed`, and
+ * `.root[data-collapsed] .title` replaces the descendant-scoped
+ * `.tui-panel-collapsed .tui-panel-title`, stamped from Panel.tsx
+ * (`data-collapsed={collapsed || undefined}`).
+ *
+ * TOKENS. Every length/colour literal above has an exact rung:
+ *   8px     -> var(--radius-lg)          0.3rem  -> var(--spacing-xs)
+ *   1.1rem  -> var(--spacing-xxl)        1.5rem  -> var(--spacing-rem150)
+ *   1.8rem  -> var(--spacing-rem180)     0.9rem  -> var(--spacing-xl)
+ *   0.5rem  -> var(--spacing-rem50)      0.74rem -> var(--font-size-rem74)
+ *   0.65rem -> var(--font-size-rem65)    0.75rem -> var(--spacing-rem75)
+ *   0.4rem  -> var(--spacing-rem40)      6px     -> var(--radius-md)
+ *   2px (border-radius) -> var(--radius-px2)
+ * `1px`, `2px` (outline-width) and `0` are on the gate's own length
+ * allowlist (test/no-hardcoded-values.test.ts). `line-height`/`font-weight`/
+ * `opacity` are bare unitless numbers, invisible to the length scanner (no
+ * unit), so nothing here needs to tokenize them. `120ms` has no `px|rem|em|
+ * vh|vw|vmin|vmax|ch|ex|%` unit either, so it too passes untouched.
+ *
+ * WASHES. The three `color-mix(in srgb, var(--panel) NN%, transparent)`
+ * expressions are NOT re-derived here — they are already emitted theme
+ * tokens (src/theme.ts's semantic washes, generated into
+ * `src/generated/theme.css`): `--surface-wash-panel-88` /
+ * `--surface-wash-panel-70` / `--surface-wash-panel-100`. Likewise the
+ * title's hover colour, `color-mix(in srgb, var(--accent) 70%, var(--fg))`,
+ * is the pre-emitted `--surface-wash-accent-fg-70`. Referencing the token is
+ * preference-order outlet 1 (a theme token), strictly better than
+ * hand-writing the equivalent `color-mix(...)` expression as outlet 2.
+ *
+ * `-0.72em` / `0.04em` / `0.35em` (the title's `top`/`letter-spacing`/`gap`)
+ * have NO theme rung BY DESIGN (src/theme.ts: "em-based spacing stays inline
+ * in recipe CSS on purpose... deliberately relative to the element's own
+ * font size and cannot be a global rung") and are not raw-literal gate
+ * exemptions either. Routed through `--panel-title-offset` /
+ * `--panel-title-tracking` / `--panel-title-gap`, recipe scalars Panel.tsx's
+ * `vars` resolver emits unconditionally — the same "recipe scalar via vars"
+ * pattern StatusDot's `--sd-tooltip-offset` / Chip's `CHIP_SCALARS` use for
+ * their own em values. See `PANEL_TITLE_SCALARS`'s doc comment in Panel.tsx.
+ *
+ * WHAT IS DELIBERATELY NOT LIFTED, and where it goes instead:
+ *   The BODY WRAPPER (`<div id="panel-body-...">`) carries no rule in
+ *   mr-board's stylesheet at all — its own children (`.tui-row` etc.) supply
+ *   all visible structure. This recipe still gives it a `.body` slot (see
+ *   PANEL_SELECTORS's comment in Panel.tsx) so a consumer can target it
+ *   directly, but the slot itself declares NO layout here: adding one would
+ *   be an addition, not a lift.
+ */
+@layer soribashi.recipes {
+  .root {
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--surface-wash-panel-88);
+    padding: var(--spacing-xxl) 0 var(--spacing-xs);
+    margin: var(--spacing-rem150) 0 var(--spacing-rem180);
+  }
+
+  .title {
+    position: absolute;
+    top: var(--panel-title-offset);
+    left: var(--spacing-xl);
+    background: var(--bg);
+    padding: 0 var(--spacing-rem50);
+    font-size: var(--font-size-rem74);
+    font-weight: 700;
+    letter-spacing: var(--panel-title-tracking);
+    color: var(--accent);
+    border: 0;
+    font-family: inherit;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--panel-title-gap);
+  }
+
+  .title:hover {
+    color: var(--surface-wash-accent-fg-70);
+  }
+
+  .title:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: var(--radius-px2);
+  }
+
+  .caret {
+    font-size: var(--font-size-rem65);
+    opacity: 0.7;
+    transition: transform 120ms ease;
+  }
+
+  .count {
+    color: var(--muted);
+    font-weight: 400;
+  }
+
+  /* Collapsed: drop the outer frame entirely and reflow the title into a
+     full-width inline bar. The absolute-positioned "label on the border"
+     look only makes sense when there's a body to label -- with no body, the
+     empty frame reads as a broken container. Comment carried verbatim from
+     mr-board's own `.tui-panel-collapsed`. */
+  .root[data-collapsed] {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    margin: var(--spacing-rem75) 0;
+  }
+
+  .root[data-collapsed] .title {
+    position: static;
+    display: flex;
+    width: 100%;
+    text-align: left;
+    padding: var(--spacing-rem40) var(--spacing-xl);
+    background: var(--surface-wash-panel-70);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+  }
+
+  .root[data-collapsed] .title:hover {
+    background: var(--surface-wash-panel-100);
+  }
+}
