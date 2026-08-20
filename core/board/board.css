@@ -1,0 +1,12 @@
+.board {
+  width: min(100% - 2rem, 96rem);
+  margin-inline: auto;
+  font-family: var(--font-mono);
+  color: var(--fg);
+}
+body {
+  margin: 0;
+  background: var(--bg);
+}
+.board-header { display: flex; justify-content: space-between; align-items: center; }
+.board-subline { color: var(--muted); }
