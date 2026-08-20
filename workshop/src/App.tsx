@@ -2,6 +2,7 @@ import type { ComponentType } from "react";
 import { useState } from "react";
 import { Chips } from "./pages/Chips.tsx";
 import { Icons } from "./pages/Icons.tsx";
+import { Segmenteds } from "./pages/Segmenteds.tsx";
 import { Tokens } from "./pages/Tokens.tsx";
 
 /**
@@ -17,6 +18,7 @@ const PAGES: Record<string, ComponentType> = {
   tokens: Tokens,
   chips: Chips,
   icons: Icons,
+  segmenteds: Segmenteds,
 };
 
 function pageLabel(key: string): string {

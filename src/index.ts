@@ -36,3 +36,17 @@ export type { ChipOwnProps, ChipProps } from "./recipes/Chip/Chip.tsx";
 
 export { CHECK_ICON, COPY_ICON, Icon, ICONS, iconTheme } from "./recipes/Icon/Icon.tsx";
 export type { IconOwnProps, IconProps } from "./recipes/Icon/Icon.tsx";
+
+export {
+  LabeledSeg,
+  labeledSegTheme,
+  SEGMENTED_PARTS,
+  Segmented,
+  segmentedTheme,
+} from "./recipes/Segmented/Segmented.tsx";
+export type {
+  LabeledSegOwnProps,
+  LabeledSegProps,
+  SegmentedOwnProps,
+  SegmentedProps,
+} from "./recipes/Segmented/Segmented.tsx";
