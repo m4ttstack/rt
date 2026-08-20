@@ -49,7 +49,27 @@ export default defineConfig({
     browser: {
       enabled: true,
       headless: true,
-      provider: playwright(),
+      // `reducedMotion` is an ENVIRONMENT input that recipe CSS can legally
+      // read: Chip.module.css turns its pulse off under
+      // `@media (prefers-reduced-motion: reduce)`, which is correct behaviour
+      // and deliberately not something a test should have to work around. Left
+      // unset, playwright inherits whatever the launching machine prefers, so a
+      // developer with "reduce motion" on in macOS would watch six of Chip's
+      // cases go red for a reason that has nothing to do with the recipe — and
+      // the visual baselines would capture a different frame besides. Pinned to
+      // `no-preference` so this tier is deterministic across machines; the
+      // reduced-motion branch is a stylesheet decision, verified by reading the
+      // CSS, not by inheriting the developer's OS settings.
+      // Chip.test.tsx's "runs under no-preference reduced motion" case is this
+      // option's canary, and fails first if it is ever dropped.
+      //
+      // IT BELONGS ON THE PROVIDER, not on an `instances` entry:
+      // `contextOptions` (playwright's own `browser.newContext` options) is a
+      // member of `PlaywrightProviderOptions`, and `BrowserInstanceOption`
+      // rejects both `context` and `contextOptions`. This repo's tsconfig
+      // includes the vitest configs, which is how that was caught rather than
+      // silently ignored.
+      provider: playwright({ contextOptions: { reducedMotion: "no-preference" } }),
       instances: [{ browser: "chromium" }],
       // NOTE THE NESTING: `expect.toMatchScreenshot` belongs to
       // BrowserConfigOptions, i.e. `test.browser.expect`, NOT `test.expect`

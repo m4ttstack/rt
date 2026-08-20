@@ -145,9 +145,22 @@
   /* One canonical dim for the board's four near-identical quiet states
      (`.tui-review-queued`/`.tui-respond-queued`/`.tui-doctor-queued` at 0.7,
      `.tui-nudge-requested` at 0.75, `.tui-held-draft-resolved` at 0.6,
-     `.tui-flag` at 0.9). 0.7 is the modal value; the three outliers become a
-     `Chip.extend({ vars })` retune or an app-side `[data-part="chip"]` rule
-     rather than three more props. */
+     `.tui-flag` at 0.9). 0.7 is the modal value; the three outliers are marked
+     row by row in Chip.test.tsx's census and come back one of two ways.
+
+     THE ROUTES ARE NOT INTERCHANGEABLE, and getting this wrong is silent:
+       - `Chip.extend({ vars })`, or a per-instance `vars` prop — WORKS. Both
+         feed the same resolver whose output lands in the element's inline
+         style, so they replace the value at its source.
+       - an app-side rule setting `--sb-chip-dimmed-opacity` — DOES NOT WORK.
+         Every `--sb-chip-*` in this file is emitted by the vars resolver into
+         the root's INLINE style, and an inline declaration beats any stylesheet
+         rule, so the app's variable is simply never read.
+       - an app-side rule setting `opacity` DIRECTLY — WORKS, and wins at any
+         specificity, because an unlayered author rule beats everything inside
+         `@layer soribashi.recipes`. This is the route tasks 19/20 want.
+     Pinned by Chip.test.tsx's "an app-side rule overrides a modifier by
+     property, never by variable". */
   .root[data-dimmed] {
     opacity: var(--sb-chip-dimmed-opacity);
   }
