@@ -1,10 +1,9 @@
 /**
  * Ledger of Button (intent, variant, scheme) rest-state cells that measure
- * below WCAG AA (4.5:1) under the human-approved Tokyo Day/Night look —
- * see task-7-report.md for the full investigation. These are PRE-EXISTING
- * properties of that approved look, not regressions introduced by the
- * contrast-matrix gate; retuning the theme's tones is a design decision
- * reserved for a human (it would also re-baseline most of
+ * below WCAG AA (4.5:1) under the human-approved Tokyo Day/Night look. These
+ * are PRE-EXISTING properties of that approved look, not regressions
+ * introduced by the contrast-matrix gate; retuning the theme's tones is a
+ * design decision reserved for a human (it would also re-baseline most of
  * Button.parity.test.tsx's oracle, which this ledger deliberately leaves
  * untouched pending that direction).
  *
