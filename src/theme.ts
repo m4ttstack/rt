@@ -149,7 +149,7 @@ export const tuiTheme = createTheme({
       px12: "12px",
       px13: "13px",
     },
-    // `mono` is vendored Tomorrow (Task K1), not census parity: mr-board has
+    // `mono` is vendored Tomorrow, not census parity: mr-board has
     // not adopted this font, so this is a deliberate, one-directional
     // departure -- see test/theme.test.ts's font block. `monospace` is a
     // soft generic fallback, not a claim Tomorrow is monospaced (it isn't).

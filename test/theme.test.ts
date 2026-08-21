@@ -1,5 +1,5 @@
 import { test, expect } from "vitest";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 import {
   createTheme,
@@ -180,10 +180,10 @@ test("the census tables are the shape this suite expects", () => {
   }
 });
 
-// Font rows are excluded from the census-parity sweep below: Task K1 makes
-// `--font-mono` a deliberate, one-directional departure from the census (the
-// kit now leads mr-board on font, not the reverse). See the "fonts" block
-// further down for its own coverage.
+// Font rows are excluded from the census-parity sweep below: `--font-mono` is
+// a deliberate, one-directional departure from the census (the kit leads
+// mr-board on font, not the reverse). See the "fonts" block further down for
+// its own coverage.
 const LIGHT_COLORS = [...LIGHT].filter(([name]) => SLOT[name]!.kind === "color");
 
 test.each(LIGHT_COLORS)(
@@ -217,9 +217,9 @@ test("light and dark differ everywhere the census says they differ", () => {
 });
 
 // ── fonts ───────────────────────────────────────────────────────────────
-// `mono` is Task K1's deliberate departure from census parity (see the
-// LIGHT_COLORS filter above); `sans` is untouched, so it still tracks the
-// census verbatim like every colour row does.
+// `mono` is a deliberate departure from census parity (see the LIGHT_COLORS
+// filter above); `sans` is untouched, so it still tracks the census verbatim
+// like every colour row does.
 
 test("mono is the vendored Tomorrow stack; sans still carries its census value verbatim", () => {
   const TOMORROW_STACK = '"Tomorrow", "Noto Sans JP", monospace';
@@ -241,6 +241,25 @@ test("the four Tomorrow weights are declared as @font-face rules pointing at the
 
 test("--font-numeric aliases to tabular-nums", () => {
   expect(css).toContain("--font-numeric: tabular-nums;");
+});
+
+// Bun's CSS bundler inlines a `url()`-referenced asset under this file's
+// bundled CSS as a base64 data URI (verified empirically: the observed cutoff
+// sits between 120KB and 150KB); past it, the asset is copied out to a
+// separate, content-hashed file instead and the CSS `url()` is rewritten to
+// point at it. Neither consumer build (mr-board's src/server.ts,
+// local-apps/scripts/build-board.ts) collects or serves any output besides
+// the JS entry-point and the one CSS asset chunk, so a woff2 that crossed
+// that line would silently 404 in a consumer app rather than fail here. 100KB
+// is comfortably under the observed cutoff, with headroom for a future
+// weight or subset swap.
+test("each vendored Tomorrow weight stays under Bun's CSS asset-inlining threshold", () => {
+  const INLINE_SAFE_BOUND_BYTES = 100 * 1024;
+  for (const weight of [400, 500, 600, 700]) {
+    const path = join(REPO, "assets", "fonts", `tomorrow-${weight}.woff2`);
+    const { size } = statSync(path);
+    expect(size, `${path} is ${size} bytes`).toBeLessThan(INLINE_SAFE_BOUND_BYTES);
+  }
 });
 
 test("generated css exposes the alias contract with verbatim values reachable", () => {
