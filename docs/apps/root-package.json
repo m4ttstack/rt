@@ -36,7 +36,7 @@
     "dev:workshop": "cd workshop && bunx vite"
   },
   "dependencies": {
-    "@soribashi/core": "^0.1.0",
+    "@soribashi/core": "file:../soribashi/packages/core",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1"
   },

@@ -104,10 +104,10 @@ const SCHEMES = ["light", "dark"] as const;
  */
 const RENDER_VARIANT: Record<(typeof OLD_VARIANTS)[number], NonNullable<ButtonProps["variant"]>> =
   {
-    solid: "solid",
+    solid: "default",
     outline: "outline",
-    subtle: "subtle",
-    ghost: "ghost",
+    subtle: "light",
+    ghost: "subtle",
   };
 
 function buttonOf(container: HTMLElement): HTMLElement {

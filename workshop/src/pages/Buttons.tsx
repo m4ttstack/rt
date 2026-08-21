@@ -12,7 +12,7 @@ import { Button, BUTTON_PARTS, ICONS } from "@mattstack/tui-kit";
  * <html> and every intent below follows through the theme.
  */
 
-const VARIANTS = ["solid", "outline", "subtle", "ghost"] as const;
+const VARIANTS = ["default", "outline", "light", "subtle"] as const;
 const INTENTS = ["accent", "bad"] as const;
 const SIZES = ["md", "sm"] as const;
 
@@ -61,14 +61,14 @@ export function Buttons() {
       <h2 style={{ marginTop: "2rem" }}>hover each variant (accent vs bad)</h2>
       <p>
         Hover reads as "this box got a fill" — border and text never shift on
-        hover, only <code>background</code>. Every value below is read off
-        Mantine's real <code>defaultVariantColorsResolver</code> (its
-        raw-colour fallback, the branch that fits a single-shade-per-hue
-        palette): <code>solid</code> steps to <code>--card</code>, matching
-        Mantine's own <code>default</code>-variant token step;{" "}
-        <code>outline</code> tints 5%, <code>subtle</code>/<code>ghost</code>{" "}
-        tint 12% — Mantine's own outline vs subtle alphas, not one shared
-        value.
+        hover, only <code>background</code>. Every value below comes from{" "}
+        <code>@soribashi/core</code>'s <code>singleShadeVariantColors</code>{" "}
+        (the single-shade-per-hue branch of its variant-colour resolver,
+        derived from Mantine's <code>defaultVariantColorsResolver</code>):{" "}
+        <code>default</code> steps to <code>--card</code>, matching Mantine's
+        own <code>default</code>-variant token step; <code>outline</code>{" "}
+        tints 5%, <code>light</code>/<code>subtle</code> tint 12% — two
+        different alphas, not one shared value.
       </p>
       {VARIANTS.map((variant) => (
         <div key={variant} style={row}>

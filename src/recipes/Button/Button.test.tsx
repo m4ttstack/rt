@@ -40,21 +40,21 @@ describe("Button (browser)", () => {
 
   it("stamps data-part, data-variant, and data-intent via getStyles", async () => {
     const screen = await renderWithTheme(
-      <Button intent="bad" variant="ghost">
+      <Button intent="bad" variant="subtle">
         delete
       </Button>,
     );
     const button = buttonOf(screen.container);
 
     expect(button.getAttribute("data-part")).toBe("button");
-    expect(button.getAttribute("data-variant")).toBe("ghost");
+    expect(button.getAttribute("data-variant")).toBe("subtle");
     expect(button.getAttribute("data-intent")).toBe("bad");
   });
 
-  it('defaults to variant="solid"', async () => {
+  it('defaults to variant="default"', async () => {
     const screen = await renderWithTheme(<Button>go</Button>);
 
-    expect(buttonOf(screen.container).getAttribute("data-variant")).toBe("solid");
+    expect(buttonOf(screen.container).getAttribute("data-variant")).toBe("default");
   });
 
   it("size=sm stamps data-size=sm, a vocabulary axis emitted by getStyles", async () => {
@@ -117,37 +117,37 @@ describe("Button (browser)", () => {
     });
   });
 
-  describe("solid vs outline vs subtle — background and intent-colour distinctions", () => {
-    it("solid is opaque at rest; outline and ghost are transparent", async () => {
-      const solidScreen = await renderWithTheme(<Button variant="solid">solid</Button>);
+  describe("default vs outline vs light — background and intent-colour distinctions", () => {
+    it("default is opaque at rest; outline and subtle are transparent", async () => {
+      const defaultScreen = await renderWithTheme(<Button variant="default">default</Button>);
       const outlineScreen = await renderWithTheme(<Button variant="outline">outline</Button>);
-      const ghostScreen = await renderWithTheme(<Button variant="ghost">ghost</Button>);
+      const subtleScreen = await renderWithTheme(<Button variant="subtle">subtle</Button>);
 
-      expect(getComputedStyle(buttonOf(solidScreen.container)).backgroundColor).not.toBe(
+      expect(getComputedStyle(buttonOf(defaultScreen.container)).backgroundColor).not.toBe(
         "rgba(0, 0, 0, 0)",
       );
       expect(getComputedStyle(buttonOf(outlineScreen.container)).backgroundColor).toBe(
         "rgba(0, 0, 0, 0)",
       );
-      expect(getComputedStyle(buttonOf(ghostScreen.container)).backgroundColor).toBe(
+      expect(getComputedStyle(buttonOf(subtleScreen.container)).backgroundColor).toBe(
         "rgba(0, 0, 0, 0)",
       );
     });
 
-    it("subtle's card background differs from solid's panel background", async () => {
-      const solidScreen = await renderWithTheme(<Button variant="solid">solid</Button>);
-      const subtleScreen = await renderWithTheme(<Button variant="subtle">subtle</Button>);
+    it("light's card background differs from default's panel background", async () => {
+      const defaultScreen = await renderWithTheme(<Button variant="default">default</Button>);
+      const lightScreen = await renderWithTheme(<Button variant="light">light</Button>);
 
-      expect(getComputedStyle(buttonOf(subtleScreen.container)).backgroundColor).not.toBe(
-        getComputedStyle(buttonOf(solidScreen.container)).backgroundColor,
+      expect(getComputedStyle(buttonOf(lightScreen.container)).backgroundColor).not.toBe(
+        getComputedStyle(buttonOf(defaultScreen.container)).backgroundColor,
       );
     });
 
-    it("solid's text/border stay neutral for a non-bad intent — no per-intent tint, unlike outline", async () => {
+    it("default's text/border stay neutral for a non-bad intent — no per-intent tint, unlike outline", async () => {
       const screen = await renderWithTheme(
         <div>
-          <Button variant="solid" intent="ok">
-            solid
+          <Button variant="default" intent="ok">
+            default
           </Button>
           <span data-testid="fg-probe" style={{ color: "var(--fg)" }} />
         </div>,
@@ -160,10 +160,10 @@ describe("Button (browser)", () => {
       expect(getComputedStyle(button).color).toBe(fgColor);
     });
 
-    it("solid + bad intent: red text AND red border, at rest (no hover needed)", async () => {
+    it("default + bad intent: red text AND red border, at rest (no hover needed)", async () => {
       const screen = await renderWithTheme(
         <div>
-          <Button variant="solid" intent="bad">
+          <Button variant="default" intent="bad">
             remove
           </Button>
           <span data-testid="red-probe" style={{ color: "var(--red)" }} />
@@ -213,19 +213,19 @@ describe("Button (browser)", () => {
       );
     });
 
-    it("subtle's text also rides the intent tone, same as outline's", async () => {
+    it("light's text also rides the intent tone, same as outline's", async () => {
       const outlineScreen = await renderWithTheme(
         <Button variant="outline" intent="purple">
           outline
         </Button>,
       );
-      const subtleScreen = await renderWithTheme(
-        <Button variant="subtle" intent="purple">
-          subtle
+      const lightScreen = await renderWithTheme(
+        <Button variant="light" intent="purple">
+          light
         </Button>,
       );
 
-      expect(getComputedStyle(buttonOf(subtleScreen.container)).color).toBe(
+      expect(getComputedStyle(buttonOf(lightScreen.container)).color).toBe(
         getComputedStyle(buttonOf(outlineScreen.container)).color,
       );
     });
@@ -248,34 +248,34 @@ describe("Button (browser)", () => {
       expect(getComputedStyle(button).backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
     });
 
-    it("outline's hover fill is a WEAKER tint than ghost's — Mantine's own outline (5%) vs subtle (12%) alphas differ", async () => {
+    it("outline's hover fill is a WEAKER tint than subtle's — the resolver's outline (5%) vs subtle (12%) alphas differ", async () => {
       const outlineScreen = await renderWithTheme(
         <Button variant="outline" intent="accent">
           outline
         </Button>,
       );
-      const ghostScreen = await renderWithTheme(
-        <Button variant="ghost" intent="accent">
-          ghost
+      const subtleScreen = await renderWithTheme(
+        <Button variant="subtle" intent="accent">
+          subtle
         </Button>,
       );
 
       await outlineScreen.getByRole("button", { name: "outline" }).hover();
-      await ghostScreen.getByRole("button", { name: "ghost" }).hover();
+      await subtleScreen.getByRole("button", { name: "subtle" }).hover();
 
       // Same intent, same --bg base, DIFFERENT alpha — the two must not
       // collapse onto the same computed colour (they did, by accident, when
-      // both variants shared one var before this was split per Mantine's
-      // real per-variant alphas).
+      // both variants shared one var before this was split per the
+      // resolver's real per-variant alphas).
       expect(getComputedStyle(buttonOf(outlineScreen.container)).backgroundColor).not.toBe(
-        getComputedStyle(buttonOf(ghostScreen.container)).backgroundColor,
+        getComputedStyle(buttonOf(subtleScreen.container)).backgroundColor,
       );
     });
   });
 
-  describe("ghost hover fill", () => {
+  describe("subtle hover fill", () => {
     it("stays transparent at rest", async () => {
-      const screen = await renderWithTheme(<Button variant="ghost">ghost</Button>);
+      const screen = await renderWithTheme(<Button variant="subtle">subtle</Button>);
 
       expect(getComputedStyle(buttonOf(screen.container)).backgroundColor).toBe(
         "rgba(0, 0, 0, 0)",
@@ -283,12 +283,12 @@ describe("Button (browser)", () => {
     });
 
     it("tints on a real hover — the wash is gated behind :hover, which no synthetic event can satisfy", async () => {
-      const screen = await renderWithTheme(<Button variant="ghost">ghost</Button>);
+      const screen = await renderWithTheme(<Button variant="subtle">subtle</Button>);
 
       // A real pointer hover (vitest-browser's Locator, backed by a real
       // Playwright pointer move) — same reasoning as StatusDot.test.tsx's
       // tooltip case.
-      await screen.getByRole("button", { name: "ghost" }).hover();
+      await screen.getByRole("button", { name: "subtle" }).hover();
 
       expect(getComputedStyle(buttonOf(screen.container)).backgroundColor).not.toBe(
         "rgba(0, 0, 0, 0)",
@@ -297,12 +297,12 @@ describe("Button (browser)", () => {
 
     it("is derived from intent, not a fixed tint — accent and bad hover to different colours", async () => {
       const accentScreen = await renderWithTheme(
-        <Button variant="ghost" intent="accent">
+        <Button variant="subtle" intent="accent">
           accent
         </Button>,
       );
       const badScreen = await renderWithTheme(
-        <Button variant="ghost" intent="bad">
+        <Button variant="subtle" intent="bad">
           bad
         </Button>,
       );
@@ -316,32 +316,31 @@ describe("Button (browser)", () => {
       expect(accentHoverBg).not.toBe(badHoverBg);
     });
 
-    it("is a SOLID mix over --bg, not the shared partial-alpha wash", async () => {
-      const screen = await renderWithTheme(<Button variant="ghost">ghost</Button>);
+    it("is a SOLID mix over --surface-canvas, not a partial-alpha wash", async () => {
+      const screen = await renderWithTheme(<Button variant="subtle">subtle</Button>);
 
-      await screen.getByRole("button", { name: "ghost" }).hover();
+      await screen.getByRole("button", { name: "subtle" }).hover();
 
-      // The kit's shared tuiIntentResolver.hover wash is `color-mix(...,
-      // transparent)` — a genuine fractional alpha. Button's own
-      // --sb-button-ghost-hover-bg mixes against --bg (opaque) instead, so
-      // the composited colour must read fully opaque, not partially so.
+      // singleShadeVariantColors' `subtle` hover mixes the intent tone over
+      // `--surface-canvas` (an opaque colour), not toward `transparent`, so
+      // the composited result must read fully opaque, not partially so.
       expect(alphaOf(getComputedStyle(buttonOf(screen.container)).backgroundColor)).toBe(1);
     });
 
     it("the border stays transparent on hover, for both accent and bad intent", async () => {
       const accentScreen = await renderWithTheme(
-        <Button variant="ghost" intent="accent">
+        <Button variant="subtle" intent="accent">
           accent
         </Button>,
       );
       const badScreen = await renderWithTheme(
-        <Button variant="ghost" intent="bad">
+        <Button variant="subtle" intent="bad">
           bad
         </Button>,
       );
 
       // No variant's hover touches border-color any more (only background
-      // does) — this pins that ghost's already-transparent border really
+      // does) — this pins that subtle's already-transparent border really
       // does stay put, for both intents, rather than relying on that being
       // true by omission.
       await accentScreen.getByRole("button", { name: "accent" }).hover();
@@ -358,14 +357,14 @@ describe("Button (browser)", () => {
     it("keeps the hover text at the same full-saturation intent colour the fill doesn't touch", async () => {
       const screen = await renderWithTheme(
         <div>
-          <Button variant="ghost" intent="accent">
-            ghost
+          <Button variant="subtle" intent="accent">
+            subtle
           </Button>
           <span data-testid="accent-probe" style={{ color: "var(--accent)" }} />
         </div>,
       );
 
-      await screen.getByRole("button", { name: "ghost" }).hover();
+      await screen.getByRole("button", { name: "subtle" }).hover();
 
       const hoverTextColor = getComputedStyle(buttonOf(screen.container)).color;
       const accentColor = getComputedStyle(
@@ -378,8 +377,8 @@ describe("Button (browser)", () => {
   it("rejects an out-of-vocabulary variant at the type level", async () => {
     await renderWithTheme(
       // @ts-expect-error -- "filled" is not in the kit's variant vocabulary
-      // (BUTTON_VARIANTS is solid/outline/subtle/ghost; theme.ts's variant
-      // vocabulary omits soribashi's default "filled").
+      // (BUTTON_VARIANTS is default/light/outline/subtle; theme.ts's variant
+      // vocabulary omits soribashi's canonical "filled").
       <Button variant="filled">go</Button>,
     );
   });

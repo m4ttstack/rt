@@ -14,11 +14,13 @@ const CHIP_SELECTORS = ["root", "icon"] as const;
     `<Chip data-part="…" />` cannot sever an app's `[data-part="chip"]` rules. */
 export const CHIP_PARTS = { root: "chip", icon: "chip-icon" } as const;
 
-/** Two of the theme's three variants — `ghost` is omitted because nothing in
-    the chip family renders a borderless chip. `as const` is load-bearing:
-    without it `TVariants[number]` widens to `string` and `VariantProp`
-    collapses to `unknown`, so `<Chip variant="nope" />` compiles silently. */
-const CHIP_VARIANTS = ["outline", "subtle"] as const;
+/** Two of the theme's four variants — `default` (opaque panel) and `subtle`
+    (fully transparent) are omitted: nothing in the chip family renders
+    either, only a bordered-outline or a soft-filled pill. `as const` is
+    load-bearing: without it `TVariants[number]` widens to `string` and
+    `VariantProp` collapses to `unknown`, so `<Chip variant="nope" />`
+    compiles silently. */
+const CHIP_VARIANTS = ["outline", "light"] as const;
 
 const CHIP_VOCABULARY_AXES = ["intent", "variant"] as const;
 

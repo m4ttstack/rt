@@ -74,7 +74,7 @@ const CENSUS: CensusRow[] = [
   {
     board: "ReviewBadge queued (.tui-review-queued)",
     alias: "--muted",
-    props: { intent: "muted", variant: "subtle", dimmed: true },
+    props: { intent: "muted", variant: "light", dimmed: true },
   },
   {
     board: "ReviewBadge reviewing (.tui-review-reviewing)",
@@ -105,7 +105,7 @@ const CENSUS: CensusRow[] = [
   {
     board: "RespondBadge queued (.tui-respond-queued)",
     alias: "--muted",
-    props: { intent: "muted", variant: "subtle", dimmed: true },
+    props: { intent: "muted", variant: "light", dimmed: true },
   },
   {
     board: "RespondBadge triaging/implementing/drafting (.tui-respond-drafting)",
@@ -148,7 +148,7 @@ const CENSUS: CensusRow[] = [
   {
     board: "DoctorBadge queued (.tui-doctor-queued)",
     alias: "--muted",
-    props: { intent: "muted", variant: "subtle", dimmed: true },
+    props: { intent: "muted", variant: "light", dimmed: true },
   },
   {
     board: "DoctorBadge diagnosing/rebasing/fixing/watching (.tui-doctor-fixing)",
@@ -264,7 +264,7 @@ const CENSUS: CensusRow[] = [
   {
     board: "draft marker (.tui-draft)",
     alias: "--muted",
-    props: { intent: "muted", variant: "subtle", uppercase: true },
+    props: { intent: "muted", variant: "light", uppercase: true },
   },
 ];
 
@@ -321,7 +321,7 @@ describe("Chip (browser) — the mr-board badge/flag census", () => {
     expect(getComputedStyle(chip).color).not.toBe(fgColor);
 
     // 2. The border follows the variant: `outline` (the default) takes the
-    //    intent colour, `subtle` keeps the board's neutral `--border` frame.
+    //    intent colour, `light` keeps the board's neutral `--border` frame.
     const variant = row.props.variant ?? "outline";
     expect(chip.getAttribute("data-variant")).toBe(variant);
     expect(getComputedStyle(chip).borderTopColor).toBe(
@@ -434,7 +434,7 @@ describe("Chip (browser)", () => {
     // that forgot to destructure them would emit intent="cyan" and
     // variant="outline" as literal attributes alongside the data-* pair.
     const screen = await renderWithTheme(
-      <Chip intent="cyan" variant="subtle">
+      <Chip intent="cyan" variant="light">
         done
       </Chip>,
     );
