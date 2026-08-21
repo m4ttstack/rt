@@ -104,7 +104,7 @@ export function AccessModal({ board }: { board: BoardState }) {
       </div>
 
       <footer className="modal-footer">
-        <Button variant="outline" onClick={closeAccess}>
+        <Button onClick={closeAccess}>
           Done
         </Button>
       </footer>

@@ -59,7 +59,6 @@ export function TunnelSection({
                 <Table.Cell align="end">
                   {data.canRestart && row.service && (
                     <Button
-                      variant="outline"
                       size="sm"
                       iconOnly
                       disabled={restarting}

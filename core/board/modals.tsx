@@ -76,7 +76,7 @@ export function AddAppModal({ board }: { board: BoardState }) {
           {addModal.error && <Alert intent="bad">{addModal.error}</Alert>}
         </div>
         <footer className="modal-footer">
-          <Button type="button" variant="outline" onClick={closeAdd}>
+          <Button type="button" onClick={closeAdd}>
             Cancel
           </Button>
           <Button type="submit">Add app</Button>
@@ -131,7 +131,7 @@ export function EditAppModal({ board }: { board: BoardState }) {
           {editModal.error && <Alert intent="bad">{editModal.error}</Alert>}
         </div>
         <footer className="modal-footer">
-          <Button type="button" variant="outline" onClick={closeEdit}>
+          <Button type="button" onClick={closeEdit}>
             Cancel
           </Button>
           <Button type="submit">Save</Button>

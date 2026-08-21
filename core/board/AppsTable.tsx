@@ -383,7 +383,6 @@ function ActionsCell({
     <span className="row-actions">
       {data.canRestart && row.service && (
         <Button
-          variant="outline"
           size="sm"
           iconOnly
           disabled={restarting}
@@ -395,11 +394,10 @@ function ActionsCell({
       )}
       {data.canManage && row.managedBy === "user" && (
         <span className="row-actions">
-          <Button variant="outline" size="sm" iconOnly aria-label={`edit ${row.name}`} onClick={() => onEdit(row)}>
+          <Button size="sm" iconOnly aria-label={`edit ${row.name}`} onClick={() => onEdit(row)}>
             {ICONS.pencil}
           </Button>
           <Button
-            variant="outline"
             size="sm"
             iconOnly
             intent="bad"

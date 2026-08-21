@@ -16,7 +16,7 @@ export function Board() {
         <h1>Deck</h1>
         {data && data.canManage && (
           <span className="header-actions">
-            <Button variant="outline" size="sm" busy={reloadingProxy} onClick={onProxyReload}>
+            <Button size="sm" busy={reloadingProxy} onClick={onProxyReload}>
               {reloadingProxy ? "restarting…" : "reload proxy"}
             </Button>
             <Button size="sm" onClick={openAdd}>
