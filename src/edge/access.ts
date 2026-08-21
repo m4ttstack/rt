@@ -123,8 +123,9 @@ export async function syncOAuth(
   // which cover the legitimate not-configured state (ok:true, no creds yet).
   const secretsResult = await readDeckSecrets(deps.deckSecrets);
   if (!secretsResult.ok) {
-    addIssue(app, { source: "cloudflare", message: secretsResult.message, at: new Date().toISOString() });
-    return { ok: false, message: secretsResult.message };
+    const message = secretsResult.message.slice(0, 300);
+    addIssue(app, { source: "cloudflare", message, at: new Date().toISOString() });
+    return { ok: false, message };
   }
   const { cfApiToken, cfZoneId } = secretsResult;
 

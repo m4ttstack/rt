@@ -234,7 +234,8 @@ test("platform settings: PUT rejects a CF secret in the payload with a directed 
   });
   expect(put.status).toBe(400);
   const putBody = (await put.json()) as { message?: string };
-  expect(putBody.message).toContain("rt secrets set deck cfApiToken --stdin");
+  expect(putBody.message).toContain("rt secrets set deck cfApiToken");
+  expect(putBody.message).toContain("rt secrets set deck cfZoneId");
   const getRaw = await (await api("/api/v1/settings")).text();
   expect(getRaw).not.toContain("tok-abc123");
   expect(getRaw).not.toContain("hasCfToken");

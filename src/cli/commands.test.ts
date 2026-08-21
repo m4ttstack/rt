@@ -95,19 +95,22 @@ test("domain verb no longer prompts for or persists a CF token; it points at rt 
   // what this test pins is the CLI's own behavior before the bind attempt.
   expect(await runCommand(["domain", "example.dev"], d, promptFn)).toBe(1);
   const out = d.lines.join("\n");
-  expect(out).toContain("rt secrets set deck cfApiToken --stdin");
+  expect(out).toContain("rt secrets set deck cfApiToken");
+  expect(out).toContain("rt secrets set deck cfZoneId");
+  expect(out).toContain("--stdin");
   const settingsRaw = await (await fetch(`http://127.0.0.1:${PORT}/api/v1/settings`)).text();
   expect(settingsRaw).not.toContain("hasCfToken");
 });
 
-test("PUT /api/v1/settings rejects a CF secret in the payload with a directed message, not a silent drop", async () => {
+test("PUT /api/v1/settings rejects a CF secret in the payload with a directed message naming both keys, not a silent drop", async () => {
   const res = await fetch(`http://127.0.0.1:${PORT}/api/v1/settings`, {
     method: "PUT", headers: { "content-type": "application/json" },
     body: JSON.stringify({ cfApiToken: "should-be-rejected" }),
   });
   expect(res.status).toBe(400);
   const body = (await res.json()) as { message?: string };
-  expect(body.message).toContain("rt secrets set deck cfApiToken --stdin");
+  expect(body.message).toContain("rt secrets set deck cfApiToken");
+  expect(body.message).toContain("rt secrets set deck cfZoneId");
 });
 
 test("migrate --convert posts convert:true and prints the convert-shaped report", async () => {

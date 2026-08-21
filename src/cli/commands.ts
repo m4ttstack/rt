@@ -164,8 +164,10 @@ export async function runCommand(
         // A Google sign-in gate needs a Cloudflare API token scoped to this
         // zone (Access: Apps and Policies, Edit) -- but this CLI no longer
         // collects or stores it. The rt daemon owns it now.
-        io.out("A Google sign-in gate needs a Cloudflare API token.");
-        io.out("store with: rt secrets set deck cfApiToken --stdin");
+        io.out(
+          "A Google sign-in gate needs a Cloudflare API token — store with: rt secrets set deck cfApiToken "
+            + "(and: rt secrets set deck cfZoneId) — interactive prompt; add --stdin when piping from a script",
+        );
         const { status, body } = await apiJson("/api/v1/domain/bind", {
           method: "POST", body: JSON.stringify({ domain }),
         });

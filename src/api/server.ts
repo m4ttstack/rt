@@ -196,7 +196,8 @@ export function startApi(deps: ApiDeps) {
           if (b.cfApiToken !== undefined || b.cfZoneId !== undefined) {
             return json({
               error: "cf-secrets-not-accepted",
-              message: "Cloudflare credentials are no longer stored here — run: rt secrets set deck cfApiToken --stdin",
+              message: "Cloudflare credentials are no longer stored here — store with: rt secrets set deck cfApiToken "
+                + "(and: rt secrets set deck cfZoneId) — interactive prompt; add --stdin when piping from a script",
             }, 400);
           }
           updatePlatformSettings({
