@@ -1,7 +1,7 @@
 // The apps table and the strays table share one row template, per
 // board.html.
 import { useState } from "react";
-import { Badge, Button, Chip, ICONS, Modal, Spinner, Switch, Table, TextField } from "@mattstack/tui-kit";
+import { Badge, Button, Chip, ICONS, Modal, Spinner, Switch, Table, TextField, Tooltip } from "@mattstack/tui-kit";
 import { accessSummary, isPlatform, type Row, type StatusData } from "./logic.ts";
 import type { BoardState } from "./useBoardState.ts";
 
@@ -74,24 +74,27 @@ function SiteCell({ row, data }: { row: Row; data: StatusData }) {
             <span className="muted">.{data.suffix}</span>
           </a>
           {row.publicUrl && row.publicUrl !== row.url && (
-            <a
-              className={row.published ? "muted" : "muted-more"}
-              href={row.publicUrl}
-              target="_blank"
-              rel="noopener"
-              aria-label={
-                row.published
-                  ? `open ${row.publicUrl.replace("https://", "")}`
-                  : "private — not publicly reachable"
-              }
-              title={
+            <Tooltip
+              tip={
                 row.published
                   ? `open ${row.publicUrl.replace("https://", "")}`
                   : "private — not publicly reachable"
               }
             >
-              {ICONS["external-link"]}
-            </a>
+              <a
+                className={row.published ? "muted" : "muted-more"}
+                href={row.publicUrl}
+                target="_blank"
+                rel="noopener"
+                aria-label={
+                  row.published
+                    ? `open ${row.publicUrl.replace("https://", "")}`
+                    : "private — not publicly reachable"
+                }
+              >
+                {ICONS["external-link"]}
+              </a>
+            </Tooltip>
           )}
         </span>
       ) : (
@@ -100,18 +103,18 @@ function SiteCell({ row, data }: { row: Row; data: StatusData }) {
       {/* Who owns this row's structure belongs with the row's identity, not
           in the column of things you can click. */}
       {isPlatform(row.managedBy ?? undefined) && (
-        <Chip
-          uppercase
-          title="this is Deck itself, `deck uninstall` to remove it"
-          aria-label="this is Deck itself, `deck uninstall` to remove it"
-        >
-          this board
-        </Chip>
+        <Tooltip tip="this is Deck itself, `deck uninstall` to remove it">
+          <Chip uppercase aria-label="this is Deck itself, `deck uninstall` to remove it">
+            this board
+          </Chip>
+        </Tooltip>
       )}
       {row.managedBy && row.managedBy !== "user" && !isPlatform(row.managedBy) && (
-        <Chip uppercase title={`structure is owned by ${row.managedBy}`} aria-label={`structure is owned by ${row.managedBy}`}>
-          managed · {row.managedBy}
-        </Chip>
+        <Tooltip tip={`structure is owned by ${row.managedBy}`}>
+          <Chip uppercase aria-label={`structure is owned by ${row.managedBy}`}>
+            managed · {row.managedBy}
+          </Chip>
+        </Tooltip>
       )}
       {(row.issues || []).map((issue) => (
         <span className="preflight-issue" key={issue.source}>
@@ -159,42 +162,44 @@ function PortCell({ row, data, board }: { row: Row; data: StatusData; board: Boa
           <Button variant="subtle" size="sm" aria-label="change development port" onClick={() => startEdit(row)}>
             {row.port}
           </Button>
-          <Chip
-            uppercase
-            title={`dev port override, normally ${basePort}`}
-            aria-label={`dev port override, normally ${basePort}`}
-          >
-            dev
-          </Chip>
+          <Tooltip tip={`dev port override, normally ${basePort}`}>
+            <Chip uppercase aria-label={`dev port override, normally ${basePort}`}>
+              dev
+            </Chip>
+          </Tooltip>
           {/* Revealed on row hover or keyboard focus (board.css), so an
               overridden row is exactly as tall as the rest of the table. */}
           <span className="devport-extra">
-            <Button
-              variant="subtle"
-              size="sm"
-              iconOnly
-              aria-label={`revert to ${basePort}`}
-              title={`revert to ${basePort}`}
-              onClick={() => clearPort(row)}
-            >
-              {ICONS["rotate-ccw"]}
-            </Button>
-            <Switch
-              className="devport-public"
-              checked={row.publicFollowsOverride}
-              onChange={() => onPublicFollows(row)}
-              label="public too"
-              aria-label={
-                row.publicFollowsOverride
-                  ? `stop serving ${row.name} dev port publicly`
-                  : `serve ${row.name} dev port publicly`
-              }
-              title={
+            <Tooltip tip={`revert to ${basePort}`}>
+              <Button
+                variant="subtle"
+                size="sm"
+                iconOnly
+                aria-label={`revert to ${basePort}`}
+                onClick={() => clearPort(row)}
+              >
+                {ICONS["rotate-ccw"]}
+              </Button>
+            </Tooltip>
+            <Tooltip
+              tip={
                 row.publicFollowsOverride
                   ? `the public URL serves the dev port — click to pin it back to ${basePort}`
                   : `the public URL serves ${basePort} — click to serve the dev port instead`
               }
-            />
+            >
+              <Switch
+                className="devport-public"
+                checked={row.publicFollowsOverride}
+                onChange={() => onPublicFollows(row)}
+                label="public too"
+                aria-label={
+                  row.publicFollowsOverride
+                    ? `stop serving ${row.name} dev port publicly`
+                    : `serve ${row.name} dev port publicly`
+                }
+              />
+            </Tooltip>
           </span>
         </span>
         {/* Preflight is probed only for opted-in apps, so a non-null value
@@ -209,13 +214,12 @@ function PortCell({ row, data, board }: { row: Row; data: StatusData; board: Boa
           </span>
         ))}
         {row.preflight && row.preflight.length === 0 && (
-          <Badge
-            intent="ok"
-            title="the dev server accepts the public hostname and its hot reload reaches the tunnel"
-          >
-            {ICONS["circle-check"]}
-            live publicly
-          </Badge>
+          <Tooltip tip="the dev server accepts the public hostname and its hot reload reaches the tunnel">
+            <Badge intent="ok">
+              {ICONS["circle-check"]}
+              live publicly
+            </Badge>
+          </Tooltip>
         )}
       </span>
     );
@@ -245,14 +249,16 @@ function HealthCell({ row, restarting }: { row: Row; restarting: boolean }) {
     <span>
       {!row.health && <span className="muted">no route</span>}
       {row.health && row.health.status === null && (
-        <Badge intent="bad" title="no response">
-          unreachable
-        </Badge>
+        <Tooltip tip="no response">
+          <Badge intent="bad">unreachable</Badge>
+        </Tooltip>
       )}
       {row.health && row.health.status !== null && (
-        <Badge intent={row.health.ok ? "ok" : "bad"} title={`HTTP ${row.health.status}`}>
-          {row.health.status} {row.health.ms}ms
-        </Badge>
+        <Tooltip tip={`HTTP ${row.health.status}`}>
+          <Badge intent={row.health.ok ? "ok" : "bad"}>
+            {row.health.status} {row.health.ms}ms
+          </Badge>
+        </Tooltip>
       )}
       {row.service && row.service.stderr && row.service.stderr.length > 0 && <StderrTrigger row={row} />}
     </span>
@@ -328,8 +334,12 @@ function PublishCell({
 }) {
   if (!(data.canManage && row.port != null)) return null;
   const label = row.published ? `make ${row.name} private` : `publish ${row.name}`;
-  const title = row.published ? "public — click to make private" : "private — click to publish";
-  return <Switch checked={row.published} onChange={() => onPublish(row)} aria-label={label} title={title} />;
+  const tip = row.published ? "public — click to make private" : "private — click to publish";
+  return (
+    <Tooltip tip={tip}>
+      <Switch checked={row.published} onChange={() => onPublish(row)} aria-label={label} />
+    </Tooltip>
+  );
 }
 
 function AccessCell({
@@ -345,22 +355,24 @@ function AccessCell({
   const summary = accessSummary(row);
   return (
     // Two glyphs, no text: the column stays narrow, and the full sentence
-    // rides both title and aria-label so it is reachable by hover and by
-    // screen reader. Cloudflare sync failures are NOT shown here: the site
-    // cell already renders every row.issues entry, with the message attached.
-    <Button
-      variant="subtle"
-      size="sm"
-      iconOnly
-      title={summary}
-      aria-label={`${summary}, change access`}
-      onClick={() => onOpenAccess(row)}
-    >
-      <span className={row.hasPassword ? undefined : "muted-more"}>{ICONS["lock-keyhole"]}</span>
-      <span className={row.oauth && row.oauth.mode !== "off" ? undefined : "muted-more"}>
-        {ICONS["user-round-check"]}
-      </span>
-    </Button>
+    // rides both the tooltip and aria-label so it is reachable by hover and
+    // by screen reader. Cloudflare sync failures are NOT shown here: the
+    // site cell already renders every row.issues entry, with the message
+    // attached.
+    <Tooltip tip={summary}>
+      <Button
+        variant="subtle"
+        size="sm"
+        iconOnly
+        aria-label={`${summary}, change access`}
+        onClick={() => onOpenAccess(row)}
+      >
+        <span className={row.hasPassword ? undefined : "muted-more"}>{ICONS["lock-keyhole"]}</span>
+        <span className={row.oauth && row.oauth.mode !== "off" ? undefined : "muted-more"}>
+          {ICONS["user-round-check"]}
+        </span>
+      </Button>
+    </Tooltip>
   );
 }
 
@@ -383,6 +395,7 @@ function ActionsCell({
     <span className="row-actions">
       {data.canRestart && row.service && (
         <Button
+          variant="subtle"
           size="sm"
           iconOnly
           disabled={restarting}
@@ -394,10 +407,11 @@ function ActionsCell({
       )}
       {data.canManage && row.managedBy === "user" && (
         <span className="row-actions">
-          <Button size="sm" iconOnly aria-label={`edit ${row.name}`} onClick={() => onEdit(row)}>
+          <Button variant="subtle" size="sm" iconOnly aria-label={`edit ${row.name}`} onClick={() => onEdit(row)}>
             {ICONS.pencil}
           </Button>
           <Button
+            variant="subtle"
             size="sm"
             iconOnly
             intent="bad"
