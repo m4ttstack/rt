@@ -120,8 +120,10 @@ export function parseTriageBlock(raw: unknown, source = "config.json"): TriageCo
 type GetSettingFn = typeof getSetting;
 
 /** Read one board.triage* key, degrading to "not owned" on a resolver throw
-    rather than letting a daemon hiccup brick triage config load (same
-    fail-open contract as config.ts's storeValue). Warns once per call. */
+    (an unregistered key, or an unreadable/malformed store file -- getSetting
+    never touches the daemon) rather than letting that brick triage config
+    load (same fail-open contract as config.ts's storeValue). Warns once per
+    call. */
 function storeValue<T>(key: string, resolve: GetSettingFn): T | undefined {
   try {
     return resolve<T>(key).value;
@@ -165,7 +167,11 @@ export function loadTriageConfig(
   const storeRaw = storeValue<unknown>("board.triage", resolve);
   const merged = storeRaw !== undefined
     ? {
-        ...fileConfig,
+        // No `...fileConfig` here: parseTriageBlock always returns every
+        // TriageConfig field (defaulted, never partial), so spreading it
+        // first would only be immediately overwritten below -- doctorSkill/
+        // maxConcurrent are re-pinned to the file's values on the next two
+        // lines regardless, since those two never live inside board.triage.
         ...parseTriageBlock(storeRaw, `settings key "board.triage"`),
         doctorSkill: fileConfig.doctorSkill,
         maxConcurrent: fileConfig.maxConcurrent,

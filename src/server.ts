@@ -447,12 +447,12 @@ Bun.serve({
         }
       }
     }
-    // Resolved once per request, off the memoized getters above -- cheap
-    // after the first daemon round trip, and every branch below expects a
-    // plain string|null the way the removed module-level consts used to read.
-    const [gitlabToken, slackToken, switchboardAdminToken] = await Promise.all([
-      getGitlabToken(), getSlackToken(), getSwitchboardAdminToken(),
-    ]);
+    // Health/SSE/static-asset routes need no board secret -- handled here,
+    // BEFORE the token round trip below, so a wedged daemon (the exact thing
+    // /healthz exists to let an operator detect) can never stall a health
+    // check, the SSE nudge channel, or the page shell/assets it loads to
+    // show that diagnosis. Falls through (no default case) to the main
+    // switch for everything else.
     switch (pathname) {
       case "/healthz":
         return new Response("ok");
@@ -491,6 +491,14 @@ Bun.serve({
         return new Response(favicon, { headers: { "content-type": "image/svg+xml; charset=utf-8" } });
       case "/app.js":
         return new Response(appJs, { headers: { "content-type": "text/javascript; charset=utf-8" } });
+    }
+    // Resolved once per request, off the memoized getters above -- cheap
+    // after the first daemon round trip, and every branch below expects a
+    // plain string|null the way the removed module-level consts used to read.
+    const [gitlabToken, slackToken, switchboardAdminToken] = await Promise.all([
+      getGitlabToken(), getSlackToken(), getSwitchboardAdminToken(),
+    ]);
+    switch (pathname) {
       case "/member": {
         // Scoped refresh: just one member's MRs, cheap enough to poll often.
         const u = new URL(req.url).searchParams.get("u");
@@ -561,9 +569,12 @@ Bun.serve({
               username: m.username,
               name: memberNames.get(m.username) ?? m.name ?? null,
               hidden: !!m.hidden,
-              // Checked-out members are skipped by fetchTeamMRs, so their MRs
-              // aren't in the snapshot and there's no count to report. null (not
-              // 0, which reads as "no open MRs") — the modal renders it as "—".
+              // fetchTeamMRs does not filter by member at all (hidden or
+              // otherwise) -- a checked-out member's MRs are still in
+              // `snapshot.mrs`. null is deliberate anyway: it signals "not
+              // tracked" for a hidden member rather than a real (and
+              // possibly stale-looking) count for someone the sidebar no
+              // longer shows -- the modal renders null as "—", not "0".
               count: m.hidden ? null : snapshot.mrs.filter((mr) => mr.author.username === m.username).length,
             })),
             mrs: attachPeerState(
@@ -1134,12 +1145,14 @@ Bun.serve({
             // message is interpolated into onboard.ts's 500 body, which the join
             // UI shows verbatim, so it stays inside the onboarding vocabulary.
             if (!token) throw new Error("the switchboard sent nothing usable");
-            // The two writes must land together or not at all. config.json
-            // naming the new relay while .env still holds the old token is the
-            // one state nothing recovers from: this process keeps peering on
-            // the live handle, but the next restart pairs the new url with the
-            // old token and 401s forever. So put the url back if the token
-            // write fails, and let the join report the failure.
+            // The two writes must land together or not at all. saveSwitchboardUrl
+            // naming the new relay -- in config.json (unowned) or the machine
+            // settings store (owned; see config.ts's saveSwitchboardUrl) --
+            // while .env still holds the old token is the one state nothing
+            // recovers from: this process keeps peering on the live handle,
+            // but the next restart pairs the new url with the old token and
+            // 401s forever. So put the url back if the token write fails,
+            // and let the join report the failure.
             const previousUrl = config.switchboard.url;
             config = saveSwitchboardUrl(url);           // reparsed config swaps in
             try {
@@ -1154,7 +1167,7 @@ Bun.serve({
                 console.error(
                   `peer: join could not save the switchboard token (${err instanceof Error ? err.message : err}), ` +
                     `and putting the previous url back failed too (${rollbackErr instanceof Error ? rollbackErr.message : rollbackErr}); ` +
-                    `config.json may name ${url} while .env still holds the old token`,
+                    `the switchboard url (config.json or the settings store) may still name ${url} while .env holds the old token`,
                 );
               }
               throw err;

@@ -128,6 +128,18 @@ describe("loadConfigFrom: store values get the same normalization/validation the
       loadConfigFrom(p, fakeResolve({ "board.members": [{ name: "No User" }] })),
     ).toThrow(/username/);
   });
+
+  test("a malformed store value's error names the settings store, never config.json", () => {
+    const p = tmpConfig();
+    expect(() => loadConfigFrom(p, fakeResolve({ "board.defaultMember": "ghost" }))).toThrow(
+      /settings-store value/,
+    );
+    try {
+      loadConfigFrom(p, fakeResolve({ "board.defaultMember": "ghost" }));
+    } catch (err) {
+      expect((err as Error).message).not.toContain("config.json");
+    }
+  });
 });
 
 describe("loadConfigFrom: members roster + hiddenMembers overlay", () => {

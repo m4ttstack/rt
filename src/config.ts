@@ -106,65 +106,71 @@ const DEFAULT_SLACK: SlackConfig = {
 
 export const CONFIG_PATH = join(import.meta.dir, "..", "config.json");
 
-/** Parse and validate raw config JSON. Separated from file IO for testing. */
-export function parseConfig(raw: string): BoardConfig {
+/** Parse and validate raw config JSON. Separated from file IO for testing.
+    `source` names where a malformed value came from in every thrown message
+    (default "config.json", the file path's own vocabulary) -- the store
+    round trip in withBoardStoreFallback passes a settings-store label
+    instead, so a malformed store value sends the operator to `rt settings`
+    rather than blaming a file that isn't the actual problem (same contract
+    as triage/config.ts's parseTriageBlock). */
+export function parseConfig(raw: string, source = "config.json"): BoardConfig {
   const cfg = JSON.parse(raw) as Partial<BoardConfig>;
   for (const key of ["gitlabHost", "projects", "members"] as const) {
     const value = cfg[key];
     if (!value || (Array.isArray(value) && value.length === 0)) {
-      throw new Error(`config.json is missing required field "${key}"`);
+      throw new Error(`${source} is missing required field "${key}"`);
     }
   }
   for (const member of cfg.members!) {
     if (!member || !member.username) {
-      throw new Error(`config.json has a member with no "username"`);
+      throw new Error(`${source} has a member with no "username"`);
     }
     if (member.hidden !== undefined && typeof member.hidden !== "boolean") {
-      throw new Error(`config.json member "${member.username}" has a non-boolean "hidden"`);
+      throw new Error(`${source} member "${member.username}" has a non-boolean "hidden"`);
     }
   }
   if (cfg.defaultMember && cfg.defaultMember !== "all" && !cfg.members!.some((m) => m.username === cfg.defaultMember)) {
-    throw new Error(`config.json "defaultMember" (${cfg.defaultMember}) is not "all" or a known member username`);
+    throw new Error(`${source} "defaultMember" (${cfg.defaultMember}) is not "all" or a known member username`);
   }
   if (cfg.staleAfterDays !== undefined && (typeof cfg.staleAfterDays !== "number" || cfg.staleAfterDays <= 0)) {
-    throw new Error(`config.json "staleAfterDays" must be a positive number`);
+    throw new Error(`${source} "staleAfterDays" must be a positive number`);
   }
   if (cfg.ticketPrefixes !== undefined) {
     if (!Array.isArray(cfg.ticketPrefixes) || cfg.ticketPrefixes.some((p) => typeof p !== "string" || !p.trim())) {
-      throw new Error(`config.json "ticketPrefixes" must be an array of non-empty strings`);
+      throw new Error(`${source} "ticketPrefixes" must be an array of non-empty strings`);
     }
   }
   if (cfg.reviewCwd !== undefined && typeof cfg.reviewCwd !== "string") {
-    throw new Error(`config.json "reviewCwd" must be a string (absolute path)`);
+    throw new Error(`${source} "reviewCwd" must be a string (absolute path)`);
   }
   if (cfg.reviewsWorkspace !== undefined && typeof cfg.reviewsWorkspace !== "string") {
-    throw new Error(`config.json "reviewsWorkspace" must be a string`);
+    throw new Error(`${source} "reviewsWorkspace" must be a string`);
   }
   if (cfg.respondCwd !== undefined && typeof cfg.respondCwd !== "string") {
-    throw new Error(`config.json "respondCwd" must be a string (absolute path)`);
+    throw new Error(`${source} "respondCwd" must be a string (absolute path)`);
   }
   if (cfg.respondsWorkspace !== undefined && typeof cfg.respondsWorkspace !== "string") {
-    throw new Error(`config.json "respondsWorkspace" must be a string`);
+    throw new Error(`${source} "respondsWorkspace" must be a string`);
   }
   if (cfg.doctorCwd !== undefined && typeof cfg.doctorCwd !== "string") {
-    throw new Error(`config.json "doctorCwd" must be a string (absolute path)`);
+    throw new Error(`${source} "doctorCwd" must be a string (absolute path)`);
   }
   if (cfg.doctorsWorkspace !== undefined && typeof cfg.doctorsWorkspace !== "string") {
-    throw new Error(`config.json "doctorsWorkspace" must be a string`);
+    throw new Error(`${source} "doctorsWorkspace" must be a string`);
   }
   if (cfg.claudeCommand !== undefined && typeof cfg.claudeCommand !== "string") {
-    throw new Error(`config.json "claudeCommand" must be a string (a shell command that starts claude)`);
+    throw new Error(`${source} "claudeCommand" must be a string (a shell command that starts claude)`);
   }
   if (cfg.doctorSkill !== undefined && typeof cfg.doctorSkill !== "string") {
-    throw new Error(`config.json "doctorSkill" must be a string (a skill name)`);
+    throw new Error(`${source} "doctorSkill" must be a string (a skill name)`);
   }
   if (cfg.botUsernames !== undefined) {
     if (!Array.isArray(cfg.botUsernames) || cfg.botUsernames.some((b) => typeof b !== "string" || !b.trim())) {
-      throw new Error(`config.json "botUsernames" must be an array of non-empty strings`);
+      throw new Error(`${source} "botUsernames" must be an array of non-empty strings`);
     }
   }
-  const slack = parseSlack(cfg.slack);
-  const switchboard = parseSwitchboard(cfg.switchboard);
+  const slack = parseSlack(cfg.slack, source);
+  const switchboard = parseSwitchboard(cfg.switchboard, source);
   const rtRepos = (cfg.rtRepos && typeof cfg.rtRepos === "object" && !Array.isArray(cfg.rtRepos))
     ? Object.fromEntries(Object.entries(cfg.rtRepos).filter(([, v]) => typeof v === "string"))
     : {};
@@ -199,34 +205,34 @@ function stripTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
 }
 
-function parseSwitchboard(raw: unknown): SwitchboardBoardConfig {
+function parseSwitchboard(raw: unknown, source: string): SwitchboardBoardConfig {
   if (raw === undefined || raw === null) return { url: "" };
   if (typeof raw !== "object" || Array.isArray(raw)) {
-    throw new Error(`config.json "switchboard" must be an object`);
+    throw new Error(`${source} "switchboard" must be an object`);
   }
   const s = raw as Partial<SwitchboardBoardConfig>;
   if (s.url !== undefined && typeof s.url !== "string") {
-    throw new Error(`config.json "switchboard.url" must be a string`);
+    throw new Error(`${source} "switchboard.url" must be a string`);
   }
   return { url: stripTrailingSlash(s.url ?? "") };
 }
 
-function parseSlack(raw: unknown): SlackConfig {
+function parseSlack(raw: unknown, source: string): SlackConfig {
   if (raw === undefined || raw === null) return { ...DEFAULT_SLACK };
   if (typeof raw !== "object" || Array.isArray(raw)) {
-    throw new Error(`config.json "slack" must be an object`);
+    throw new Error(`${source} "slack" must be an object`);
   }
   const s = raw as Partial<SlackConfig>;
   for (const key of ["channel", "singleTemplate", "multiHeader", "multiItem"] as const) {
     if (s[key] !== undefined && (typeof s[key] !== "string" || !s[key])) {
-      throw new Error(`config.json "slack.${key}" must be a non-empty string`);
+      throw new Error(`${source} "slack.${key}" must be a non-empty string`);
     }
   }
   if (
     s.autoResolveIntervalMinutes !== undefined &&
     (typeof s.autoResolveIntervalMinutes !== "number" || s.autoResolveIntervalMinutes < 0)
   ) {
-    throw new Error(`config.json "slack.autoResolveIntervalMinutes" must be a non-negative number`);
+    throw new Error(`${source} "slack.autoResolveIntervalMinutes" must be a non-negative number`);
   }
   return {
     channel: s.channel ?? DEFAULT_SLACK.channel,
@@ -234,26 +240,26 @@ function parseSlack(raw: unknown): SlackConfig {
     multiHeader: s.multiHeader ?? DEFAULT_SLACK.multiHeader,
     multiItem: s.multiItem ?? DEFAULT_SLACK.multiItem,
     autoResolveIntervalMinutes: s.autoResolveIntervalMinutes ?? DEFAULT_SLACK.autoResolveIntervalMinutes,
-    emoji: parseSlackEmoji(s.emoji),
+    emoji: parseSlackEmoji(s.emoji, source),
   };
 }
 
 /** Partial override: any role left out keeps its standard-emoji default.
     Names are accepted with or without colons (`:comment:` → `comment`). */
-function parseSlackEmoji(raw: unknown): SlackEmojiConfig {
+function parseSlackEmoji(raw: unknown, source: string): SlackEmojiConfig {
   if (raw === undefined || raw === null) return { ...DEFAULT_SLACK_EMOJI };
   if (typeof raw !== "object" || Array.isArray(raw)) {
-    throw new Error(`config.json "slack.emoji" must be an object`);
+    throw new Error(`${source} "slack.emoji" must be an object`);
   }
   const e = raw as Partial<SlackEmojiConfig>;
   const out = { ...DEFAULT_SLACK_EMOJI };
   for (const role of ["looking", "commented", "approved"] as const) {
     if (e[role] === undefined) continue;
     if (typeof e[role] !== "string") {
-      throw new Error(`config.json "slack.emoji.${role}" must be a string (a Slack emoji name)`);
+      throw new Error(`${source} "slack.emoji.${role}" must be a string (a Slack emoji name)`);
     }
     const name = e[role].trim().replace(/^:|:$/g, "");
-    if (!name) throw new Error(`config.json "slack.emoji.${role}" must be a non-empty emoji name`);
+    if (!name) throw new Error(`${source} "slack.emoji.${role}" must be a non-empty emoji name`);
     out[role] = name;
   }
   return out;
@@ -267,9 +273,14 @@ type GetSettingFn = typeof getSetting;
 type SetSettingFn = typeof setSetting;
 
 /** Read one board.* key, degrading to "not owned" (`undefined`) on a resolver
-    throw rather than letting a daemon hiccup brick config load — same
-    fail-open contract as the deck latch (local-apps-settings-wt's
-    withPlatformStoreFallback). Warns once per call, never throws. */
+    throw (an unregistered key, or an unreadable/malformed store file --
+    getSetting never touches the daemon) rather than letting that brick
+    config load — same fail-open contract as the deck latch (local-apps-
+    settings-wt's withPlatformStoreFallback). Warns once per call, never
+    throws. The `undefined` ownership probe below relies on every board.*
+    registry row carrying no `default`: a registry default would make
+    getSetting always return a value, so an unset key would misread as
+    store-owned. */
 function storeValue<T>(key: string, resolve: GetSettingFn): T | undefined {
   try {
     return resolve<T>(key).value;
@@ -305,6 +316,16 @@ function storeValue<T>(key: string, resolve: GetSettingFn): T | undefined {
  * makes with parseTriageBlock over a store value — applies that normalization
  * uniformly regardless of which side (file or store) a field came from,
  * rather than only ever normalizing the file's half.
+ *
+ * The round trip passes a store-level `source` label (not per-field
+ * attribution): `merged` blends fields independently sourced from the store
+ * or `fileConfig` field-by-field, and parseConfig's ~20 throw sites cover
+ * both top-level and nested (slack.*, switchboard.*) paths, so precise
+ * per-field attribution would mean threading a lookup (not a string) through
+ * every nested parser here — judged not worth it since ANY thrown error
+ * post-migration is far more likely to trace back to the store than a
+ * config.json most installs won't even have; the label still correctly
+ * points an operator at `rt settings`, not a file that may not exist.
  */
 function withBoardStoreFallback(fileConfig: BoardConfig, resolve: GetSettingFn): BoardConfig {
   const workspaces = storeValue<{ reviews?: string; responds?: string; doctors?: string }>("board.workspaces", resolve);
@@ -341,7 +362,7 @@ function withBoardStoreFallback(fileConfig: BoardConfig, resolve: GetSettingFn):
     switchboard: { url: storeValue("board.switchboardUrl", resolve) ?? fileConfig.switchboard.url },
   };
 
-  return parseConfig(JSON.stringify(merged));
+  return parseConfig(JSON.stringify(merged), "a board.* team settings-store value");
 }
 
 /** Structurally satisfies parseConfig's required-field check without being a
