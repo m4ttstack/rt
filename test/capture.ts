@@ -26,14 +26,6 @@ const baseFixture = JSON.parse(readFileSync(join(ROOT, "test/fixture/status.json
 const emptyFixture = JSON.parse(readFileSync(join(ROOT, "test/fixture/status-empty.json"), "utf8"));
 const staleFixture = JSON.parse(readFileSync(join(ROOT, "test/fixture/status-stale.json"), "utf8"));
 
-// orbit is the only fixture row with an override on a non-self app (forecast
-// is self:true, so its override never renders — see AppsTable's PortCell),
-// so it is the one row that can demonstrate the dev-port hover reveal and a
-// preflight warning badge.
-const preflightFixture = structuredClone(baseFixture);
-const orbit = preflightFixture.apps.find((a: { name: string }) => a.name === "orbit");
-orbit.preflight = [{ code: "hmr-blocked", message: "hot reload does not reach the tunnel", fix: "set --strictPort" }];
-
 const noticeOkFixture = structuredClone(baseFixture);
 noticeOkFixture.autoHeal = { at: NOW - 30000, ok: true };
 
@@ -99,8 +91,14 @@ async function newPage(theme: "light" | "dark"): Promise<Page> {
   return page;
 }
 
+// The site cell renders the name in a <strong> only when the row has a
+// route; a stray/tunnel row with no route falls back to a plain dim span
+// (see AppsTable's SiteCell) -- scoping to the row's first cell, not a tag
+// name, matches both.
 function rowFor(page: Page, name: string) {
-  return page.locator('[data-part="table-row"]').filter({ has: page.locator("strong", { hasText: name }) });
+  return page.locator('[data-part="table-row"]').filter({
+    has: page.locator('[data-part="table-cell"]').first().filter({ hasText: name }),
+  });
 }
 
 // A click can resolve before React's resulting re-render has painted; two
@@ -153,11 +151,14 @@ async function openModal(page: Page, trigger: () => Promise<void>): Promise<void
   await page.waitForSelector('[data-part="modal"]');
 }
 
+async function openDrawerFor(page: Page, name: string): Promise<void> {
+  await rowFor(page, name).locator('[data-part="row-chevron"]').click();
+  await page.waitForSelector('[data-part="sidedrawer"]');
+}
+
 // ---- day ----
 await scenario("light", baseFixture, "board-default");
 await scenario("light", emptyFixture, "board-empty");
-await scenario("light", baseFixture, "board-override-hover", (page) => rowFor(page, "orbit").hover());
-await scenario("light", preflightFixture, "board-preflight");
 await scenario(
   "light",
   baseFixture,
@@ -184,17 +185,6 @@ await scenario(
   await page.close();
 }
 
-await scenario("light", baseFixture, "modal-edit", (page) =>
-  openModal(page, () => rowFor(page, "orbit").locator('[aria-label="edit orbit"]').click()),
-);
-await scenario("light", baseFixture, "modal-access", async (page) => {
-  await openModal(page, () => rowFor(page, "atlas").locator('[aria-label$=", change access"]').click());
-  await page.mouse.move(0, 0);
-  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
-});
-await scenario("light", baseFixture, "modal-stderr", (page) =>
-  openModal(page, () => rowFor(page, "ledger").locator('[aria-label="show recent stderr for ledger"]').click()),
-);
 await scenario("light", noticeOkFixture, "notice-ok", (page) =>
   page.waitForSelector('[data-part="alert"][data-intent="ok"]'),
 );
@@ -202,16 +192,86 @@ await scenario("light", staleFixture, "notice-error", (page) =>
   page.waitForSelector('[data-part="alert"][data-intent="bad"]'),
 );
 
+// One root screen per row kind (drawer-states-atlas.html "1 · Roots"): a
+// healthy managed app, a broken app (error banner + bad-tone logs hint), a
+// service without a route (reduced root), and a tunnel (facts + restart).
+await scenario("light", baseFixture, "drawer-root", (page) => openDrawerFor(page, "atlas"));
+await scenario("light", baseFixture, "drawer-root-broken", (page) => openDrawerFor(page, "ledger"));
+await scenario("light", baseFixture, "drawer-root-service", (page) => openDrawerFor(page, "stray-agent"));
+await scenario("light", baseFixture, "drawer-root-tunnel", (page) => openDrawerFor(page, "cloudflared"));
+await scenario("light", baseFixture, "drawer-root-restarting", async (page) => {
+  await openDrawerFor(page, "atlas");
+  await page.locator('[data-part="listgroup-action"] button', { hasText: "restart service" }).click();
+  await page.waitForSelector('[data-part="listgroup-action"] button[aria-busy="true"]');
+});
+
+// Dev port screens (drawer-states-atlas.html "2 · Dev port"): override
+// active (orbit, which carries one in the fixture) and the setting screen
+// mid-edit (atlas, which has none to start).
+await scenario("light", baseFixture, "drawer-devport", async (page) => {
+  await openDrawerFor(page, "orbit");
+  await page.locator('[data-part="listgroup-nav"] button', { hasText: "dev port" }).click();
+});
+await scenario("light", baseFixture, "drawer-devport-set", async (page) => {
+  await openDrawerFor(page, "atlas");
+  await page.locator('[data-part="listgroup-nav"] button', { hasText: "dev port" }).click();
+  await page.locator('[data-part="listgroup-action"] button', { hasText: "set override…" }).click();
+  await page.getByRole("textbox", { name: "dev port override" }).fill("5173");
+});
+
+// Access screens (drawer-states-atlas.html "3 · Access"): atlas carries a
+// password + oauth emails mode (2 entries) in the fixture, so its root shows
+// both gates on; the who screen and the password screen are entered from it.
+await scenario("light", baseFixture, "drawer-access", async (page) => {
+  await openDrawerFor(page, "atlas");
+  await page.locator('[data-part="listgroup-nav"] button', { hasText: "access" }).click();
+});
+await scenario("light", baseFixture, "drawer-access-password", async (page) => {
+  await openDrawerFor(page, "atlas");
+  await page.locator('[data-part="listgroup-nav"] button', { hasText: "access" }).click();
+  await page.locator('[data-part="listgroup-nav"] button', { hasText: "password" }).click();
+});
+await scenario("light", baseFixture, "drawer-access-who", async (page) => {
+  await openDrawerFor(page, "atlas");
+  await page.locator('[data-part="listgroup-nav"] button', { hasText: "access" }).click();
+  await page.locator('[data-part="listgroup-nav"] button', { hasText: "who" }).click();
+});
+
+// Logs screen (drawer-states-atlas.html "4 · Logs, edit, remove"): ledger
+// carries the fixture's one stderr row -- the stderr modal it used to open
+// dies with this baseline.
+await scenario("light", baseFixture, "drawer-logs", async (page) => {
+  await openDrawerFor(page, "ledger");
+  await page.locator('[data-part="listgroup-nav"] button', { hasText: "logs" }).click();
+});
+
+// Edit and remove (drawer-states-atlas.html "4 · Logs, edit, remove"): a
+// managed app's edit screen (name/base port/command/directory, save in nav),
+// and the remove danger row's ConfirmDialog sheet over the root.
+await scenario("light", baseFixture, "drawer-edit", async (page) => {
+  await openDrawerFor(page, "atlas");
+  await page.locator('[data-part="listgroup-nav"] button', { hasText: "edit app" }).click();
+});
+await scenario("light", baseFixture, "drawer-remove-confirm", async (page) => {
+  await openDrawerFor(page, "atlas");
+  await page.locator('[data-part="listgroup-action"] button', { hasText: "remove app" }).click();
+  await page.waitForSelector('[data-part="modal"]');
+});
+
 // ---- night ----
 await scenario("dark", baseFixture, "board-default-dark");
-await scenario("dark", baseFixture, "modal-access-dark", async (page) => {
-  await openModal(page, () => rowFor(page, "atlas").locator('[aria-label$=", change access"]').click());
-  await page.mouse.move(0, 0);
-  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
-});
+await scenario("dark", baseFixture, "drawer-root-dark", (page) => openDrawerFor(page, "atlas"));
 await scenario("dark", staleFixture, "notice-error-dark", (page) =>
   page.waitForSelector('[data-part="alert"][data-intent="bad"]'),
 );
+// The logs box uses the kit's scheme-invariant --terminal-* tokens
+// specifically so it reads the same dark surface in both schemes -- this is
+// the capture that would catch a regression back to a scheme-dependent token
+// (e.g. one that collapses to the page's own light background here).
+await scenario("dark", baseFixture, "drawer-logs-dark", async (page) => {
+  await openDrawerFor(page, "ledger");
+  await page.locator('[data-part="listgroup-nav"] button', { hasText: "logs" }).click();
+});
 
 await browser.close();
 server.kill();

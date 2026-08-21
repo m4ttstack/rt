@@ -1,6 +1,8 @@
-// Add/edit/remove flows, ported field-for-field from board.html's two
-// <dialog> blocks and board.js's onRemove confirm(). Copy, field order,
-// placeholders and the switch-before-name-field ordering are verbatim.
+// Add-app modal, ported field-for-field from board.html's <dialog> and
+// board.js's switch-before-name-field ordering. Edit now lives in the drawer
+// (EditScreen.tsx); remove is triggered from the drawer's danger row
+// (RootScreen.tsx) but the confirmation itself stays a board-level
+// ConfirmDialog here, per drawer-states-atlas.html's blast-radius copy.
 import { Alert, Button, ConfirmDialog, Modal, Switch, TextField } from "@mattstack/tui-kit";
 import type { BoardState } from "./useBoardState.ts";
 
@@ -86,72 +88,18 @@ export function AddAppModal({ board }: { board: BoardState }) {
   );
 }
 
-export function EditAppModal({ board }: { board: BoardState }) {
-  const { editModal, closeEdit, updateEditModal, submitEdit } = board;
-  if (!editModal) return null;
-  return (
-    <Modal title={`Edit ${editModal.original}`} ariaLabel={`Edit ${editModal.original}`} onClose={closeEdit}>
-      <form
-        onSubmit={(ev) => {
-          ev.preventDefault();
-          submitEdit();
-        }}
-      >
-        <div className="modal-form">
-          <TextField
-            label="Name"
-            value={editModal.name}
-            onChange={(ev) => updateEditModal({ name: ev.target.value })}
-            pattern="[a-z0-9][a-z0-9.-]*"
-            required
-          />
-          <TextField
-            label="Base port"
-            value={editModal.port}
-            onChange={(ev) => updateEditModal({ port: ev.target.value })}
-            inputMode="numeric"
-            required
-          />
-          {editModal.kind === "service" && (
-            <>
-              <TextField
-                label="Command"
-                value={editModal.command}
-                onChange={(ev) => updateEditModal({ command: ev.target.value })}
-                required
-              />
-              <TextField
-                label="Working directory"
-                value={editModal.workingDirectory}
-                onChange={(ev) => updateEditModal({ workingDirectory: ev.target.value })}
-                required
-              />
-            </>
-          )}
-          {editModal.error && <Alert intent="bad">{editModal.error}</Alert>}
-        </div>
-        <footer className="modal-footer">
-          <Button type="button" onClick={closeEdit}>
-            Cancel
-          </Button>
-          <Button type="submit">Save</Button>
-        </footer>
-      </form>
-    </Modal>
-  );
-}
-
 export function RemoveConfirm({ board }: { board: BoardState }) {
   const { pendingRemove, cancelRemove, confirmRemove } = board;
   return (
     <ConfirmDialog
       open={pendingRemove != null}
-      title={pendingRemove ? `Remove ${pendingRemove.name}?` : ""}
+      title={pendingRemove ? `remove ${pendingRemove.name}?` : ""}
       onConfirm={confirmRemove}
       onCancel={cancelRemove}
-      confirmLabel="Remove"
+      confirmLabel="remove app"
+      cancelLabel="cancel"
     >
-      This deletes its service and route.
+      its route, launchd service, and access config are deleted. the code stays.
     </ConfirmDialog>
   );
 }

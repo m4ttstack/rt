@@ -53,33 +53,25 @@ export type Row = StatusData["apps"][number];
 export type RestartingMap = Record<string, { pid: number | null; at: number }>;
 export type Notice = { kind: "ok" | "bad"; message: string; command?: string };
 
+function healthyFraction(data: StatusData): string {
+  return `${data.up}/${data.total} healthy`;
+}
+
 export function subline(data: StatusData | null): string {
   if (!data) return "loading…";
   const pub = data.apps.filter((r) => r.published).length;
   const prot = data.apps.filter((r) => r.hasPassword).length;
-  const parts = [`${data.up}/${data.total} healthy`, `${pub} public`];
+  const parts = [healthyFraction(data), `${pub} public`];
   if (prot) parts.push(`${prot} protected`);
   if (data.nextPort) parts.push(`next port ${data.nextPort}`);
   parts.push("auto-refreshes");
   return parts.join(" · ");
 }
 
-// The one sentence the access cell's title and aria-label share. An
-// unpublished app LEADS with that ("open to anyone" would otherwise describe
-// a hostname that answers to nobody) but still names its gates: the cell is
-// icon-only, so this sentence is the only textual route a screen reader has
-// to the password and sign-in state.
-export function accessSummary(row: Row): string {
-  const parts: string[] = [];
-  if (!row.published) parts.push("not published");
-  if (row.hasPassword) parts.push("password required");
-  const o = row.oauth || { mode: "off" as const };
-  if (o.mode === "emails") {
-    parts.push(o.emails.length + (o.emails.length === 1 ? " person" : " people") + " may sign in");
-  } else if (o.mode === "domains") {
-    parts.push("anyone at " + o.domains.join(" or ") + " may sign in");
-  }
-  return parts.length ? parts.join(", ") : "open to anyone";
+// Split out so the stat strip can tone the fraction independently of the
+// rest of the subline (ok when every app is healthy, bad otherwise).
+export function sublineHealthy(data: StatusData): { text: string; ok: boolean } {
+  return { text: healthyFraction(data), ok: data.up === data.total };
 }
 
 // Mirrors isPlatformManagedBy on the server: "local" is the pre-rename id and
@@ -143,15 +135,6 @@ export function autoBanner(data: StatusData, now: number): Notice | null {
     return { kind: "ok", message: `Routes were stale; the proxy was restarted automatically at ${at}.` };
   }
   return null;
-}
-
-// Newlines and commas both separate: the field is one-per-line, but a list
-// pasted from prose arrives comma-separated and should still work.
-export function splitList(text: string): string[] {
-  return text
-    .split(/[,\n]/)
-    .map((s) => s.trim())
-    .filter(Boolean);
 }
 
 export function addPayload(m: {

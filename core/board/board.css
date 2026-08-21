@@ -12,12 +12,16 @@ body {
 .board-subline { color: var(--muted); }
 
 .header-actions { display: flex; align-items: center; gap: var(--spacing-xs); }
-.row-actions { display: flex; align-items: center; gap: var(--spacing-xxs); justify-content: flex-end; }
 .mt-6 { margin-top: 1.5rem; }
 
 .unstyled { color: inherit; text-decoration: none; }
 .muted { color: var(--muted); text-decoration: none; }
 .muted-more { color: var(--muted); opacity: 0.6; text-decoration: none; }
+/* Bad-tone plain text -- for a value that reads as dim by default (the
+   service cell's exit status) and only needs the bad hue, not a pill:
+   Badge is reserved for the health column. */
+.t-bad { color: var(--red); }
+.t-ok { color: var(--green); }
 
 /* hstack is a block-level flex container, so a chip after the name would be
    pushed onto its own line and stand the row up taller. */
@@ -55,87 +59,160 @@ body {
   margin-top: var(--spacing-md);
 }
 
-.access-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-xs);
-}
-.access-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-}
-/* The allowlist is one entry per line. Let it fill the dialog and grow
-   downward, but never sideways: a long address would otherwise widen the
-   textarea and push the dialog past its own max-width. */
-.access-list {
-  width: 100%;
-  min-height: 5rem;
-  resize: vertical;
-  font-family: inherit;
-}
-/* Sits under the field it explains, so it reads as a note on that field
-   rather than as another paragraph of body copy. */
-.access-hint {
-  font-size: 0.8em;
-  margin: 0;
+/* The switch (16px, inline-flex) is shorter than the tooltip wrapper's
+   line box, so baseline alignment (the default) leaves it off-center by
+   the asymmetric leading above/below the baseline. Table cells only. */
+[data-part="table-cell"] [data-part="switch"] {
+  vertical-align: middle;
 }
 
-.port-edit {
-  display: inline-block;
-  width: 6.5rem;
-  margin: 0;
+/* Gap between the dot and the name it precedes -- StatusDot itself ships
+   unmargined so a consumer can also use it flush against other glyphs. */
+[data-part="statusdot"] {
+  margin-right: var(--spacing-sm);
 }
 
-/* A vstack stretches its children; badges should hug their text instead. */
-.devport-stack {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--spacing-xxs);
-}
-.devport-line {
-  display: flex;
-  align-items: center;
-  flex-wrap: nowrap;
-  gap: var(--spacing-xs);
-  position: relative;
-}
-/* Out of flow, not merely transparent. This is a table: a cell wide enough
-   to hold these controls at rest widens the whole column, and the width it
-   takes comes straight out of the access column, which then wraps and makes
-   every row in the table taller. Absolute keeps the column sized to the port
-   itself; the cell below is the positioning context. left:100% lands this on
-   top of the health cell's own (static, unpositioned) content, so the panel
-   surface, border and shadow below aren't decoration — they're what stops
-   the health badge's text from bleeding through or visually merging with
-   this control at either edge; the pill has to read as its own surface, not
-   a transparent overlay. */
-.devport-extra {
-  position: absolute;
-  left: 100%;
-  top: 50%;
-  transform: translateY(-50%);
-  margin-left: var(--spacing-xs);
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s ease;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+/* The drawer affordance: a plain button (not the kit Button, see
+   AppsTable's ChevronCell) reset to read as inline dim text, not a box.
+   `color` is set here rather than via `.muted` -- `all: unset` resets it to
+   `inherit`, so a class applied alongside this one would lose the fight
+   whenever its rule sorts earlier in the stylesheet. */
+.row-chevron {
+  all: unset;
+  cursor: pointer;
+  color: var(--muted);
   padding-inline: var(--spacing-xs);
-  box-shadow: var(--shadow-menu);
-  z-index: 5;
 }
-[data-part="table-row"]:hover .devport-extra,
-.devport-extra:focus-within {
-  opacity: 1;
-  pointer-events: auto;
+
+/* Identity→facts→controls grouping: a visual gap ahead of the public column,
+   per board-composite.html. border-left, not margin -- margin collapses in
+   table layout. */
+.col-gap {
+  border-left: 14px solid transparent;
 }
-/* Secondary to the port control it sits beside, not a peer of it. */
-.devport-public {
-  font-size: 0.8em;
+
+.row-selected {
+  background: var(--surface-wash-accent-14);
+}
+
+/* The drawer is a side panel, not a modal: the composite mock keeps the
+   table plainly legible beside it. Overrides the kit SideDrawer's own
+   overlay (Modal-strength wash-bg-55 + blur(2px), tuned for a dialog that
+   fully claims attention) with the lightest wash token available and no
+   blur -- unlayered, so it wins over the kit's `@layer soribashi.recipes`
+   rule regardless of selector specificity. */
+[data-part="sidedrawer-overlay"] {
+  background: var(--surface-wash-fg-5);
+  backdrop-filter: none;
+}
+
+/* The drawer root's status strip, rendered in the kit Drawer's `header`
+   slot -- not a ListGroup row, so it needs its own line treatment. */
+.drawer-status {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--font-size-sm);
+  font-variant-numeric: var(--font-numeric);
+}
+.drawer-status-link {
+  margin-left: auto;
+  color: var(--accent);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.drawer-groups {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.drawer-danger-group {
+  margin-top: var(--spacing-xs);
+}
+.drawer-accent-label {
+  color: var(--accent);
+}
+
+/* Access "who" mode picker: two ListGroup rows acting as a radiogroup
+   (checkmark-selected, not a chevron nav) -- ListGroup has no radio row of
+   its own, so these replicate its row shell (kit tokens only). */
+.drawer-mode-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border-soft);
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.drawer-mode-item:last-child .drawer-mode-row {
+  border-bottom: none;
+}
+.drawer-mode-check {
+  color: var(--accent);
+}
+
+/* Access "who" allowlist rows: entry text + a remove affordance, the whole
+   row clickable -- no separate hit target for the glyph. */
+.drawer-entry-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border-soft);
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.drawer-mode-row:hover,
+.drawer-entry-row:hover {
+  background: var(--surface-wash-fg-5);
+}
+.drawer-mode-row:focus-visible,
+.drawer-entry-row:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+.drawer-entry-remove {
+  color: var(--red);
+  flex-shrink: 0;
+}
+
+/* Logs: a genuinely dark surface regardless of page scheme. The kit's
+   `light-dark()`-defined tokens (--bg/--fg/--border) collapse to one branch
+   once at `:root` -- a descendant's own `color-scheme` cannot re-resolve a
+   `var()` that has already been substituted upstream, so there is no token
+   chain that pins a leaf element dark in day scheme. `--terminal-bg`/
+   `--terminal-fg`/`--terminal-border` are the kit's scheme-invariant answer:
+   plain hex aliased off the night palette, not `light-dark()`, so they stay
+   dark no matter what scheme the page is in. */
+.drawer-logbox {
+  margin: 0;
+  background: var(--terminal-bg);
+  color: var(--terminal-fg);
+  border: 1px solid var(--terminal-border);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md) var(--spacing-lg);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-base);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow-y: auto;
 }

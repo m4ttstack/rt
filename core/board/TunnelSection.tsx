@@ -1,4 +1,5 @@
-import { Badge, Button, ICONS, Spinner, Table } from "@mattstack/tui-kit";
+import { Badge, Button, ICONS, Spinner, StatusDot, Table } from "@mattstack/tui-kit";
+import { ChevronCell, isDrawerClick, type DrawerRowProps } from "./AppsTable.tsx";
 import { tunnelDomain, type Row, type StatusData } from "./logic.ts";
 
 export function TunnelSection({
@@ -6,12 +7,15 @@ export function TunnelSection({
   data,
   isRestarting,
   onRestart,
+  openRowName,
+  onOpenRow,
+  registerChevron,
 }: {
   tunnels: Row[];
   data: StatusData;
   isRestarting: (row: Row) => boolean;
   onRestart: (row: Row) => void;
-}) {
+} & DrawerRowProps) {
   if (!tunnels.length) return null;
   const domain = tunnelDomain(data);
   return (
@@ -23,9 +27,21 @@ export function TunnelSection({
             const restarting = isRestarting(row);
             const up = row.service && row.service.pid !== null;
             return (
-              <Table.Row key={row.name}>
+              <Table.Row
+                key={row.name}
+                className={openRowName === row.name ? "row-selected" : undefined}
+                onClick={(e) => {
+                  if (isDrawerClick(e)) onOpenRow(row.name);
+                }}
+              >
                 <Table.Cell>
-                  <strong>Cloudflare tunnel</strong> <span className="muted">{row.name}</span>
+                  <StatusDot intent={restarting ? "warn" : up ? "ok" : "bad"} tip={row.name} />
+                  {row.name}
+                </Table.Cell>
+                <Table.Cell>
+                  {/* Locally there is no public domain to name, and "carries *."
+                      with a dangling dot is worse than saying nothing. */}
+                  {domain && <span className="muted">carries *.{domain}</span>}
                 </Table.Cell>
                 <Table.Cell>
                   {restarting ? (
@@ -41,22 +57,15 @@ export function TunnelSection({
                 </Table.Cell>
                 <Table.Cell>
                   {row.service && row.service.pid !== null ? (
-                    <span>
-                      <Badge intent="ok">running</Badge> <span>pid {row.service.pid}</span>
-                    </span>
+                    <span className="muted">pid {row.service.pid}</span>
+                  ) : row.service && row.service.lastExitStatus != null ? (
+                    <span className="t-bad">exit {row.service.lastExitStatus}</span>
                   ) : (
-                    <span>
-                      <Badge intent="bad">stopped</Badge>
-                      {row.service && row.service.lastExitStatus != null && (
-                        <span> exit {row.service.lastExitStatus}</span>
-                      )}
-                    </span>
+                    <span className="muted">stopped</span>
                   )}
-                  {/* Locally there is no public domain to name, and "carries *."
-                      with a dangling dot is worse than saying nothing. */}
-                  {domain && <span className="muted"> carries *.{domain}</span>}
                 </Table.Cell>
-                <Table.Cell align="end">
+                <Table.Cell />
+                <Table.Cell>
                   {data.canRestart && row.service && (
                     <Button
                       variant="subtle"
@@ -69,6 +78,9 @@ export function TunnelSection({
                       {ICONS["refresh-cw"]}
                     </Button>
                   )}
+                </Table.Cell>
+                <Table.Cell>
+                  <ChevronCell row={row} registerRef={(el) => registerChevron(row.name, el)} />
                 </Table.Cell>
               </Table.Row>
             );

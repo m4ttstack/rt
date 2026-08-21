@@ -1,0 +1,105 @@
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Tomorrow:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;700&display=swap');
+  .tk { font-family:"Tomorrow","Noto Sans JP",monospace; background:#e1e2e7; color:#4c505e; border:1px solid #c8cad1; border-radius:10px; padding:18px; font-size:12.5px; line-height:1.55; position:relative; overflow:hidden; }
+  .tk .hd { display:flex; justify-content:space-between; align-items:baseline; }
+  .tk .ttl { font-size:22px; font-weight:700; color:#343b58; }
+  .btn { border:1px solid #c8cad1; background:#eaebef; border-radius:6px; padding:3px 10px; font-size:11.5px; color:#343b58; display:inline-block; white-space:nowrap; }
+  .btn.acc { color:#2e7de9; border-color:#9ab6e8; }
+  .btn.quiet { border-color:transparent; background:transparent; color:#8990a3; }
+  .tk .stats { color:#7a7f8d; margin:8px 0 14px; }
+  .tk table { width:100%; border-collapse:collapse; }
+  .tk th { text-align:left; font-size:10px; letter-spacing:.09em; color:#8990a3; border-bottom:1px solid #c8cad1; padding:5px 8px; font-weight:600; text-transform:uppercase; }
+  .tk td { padding:8px; border-bottom:1px solid #d4d6dd; vertical-align:middle; }
+  .tk .site { color:#343b58; font-weight:600; }
+  .tk .site .ext { color:#9aa0b0; font-weight:400; }
+  .tk .dim { color:#9aa0b0; }
+  .b { display:inline-block; border-radius:999px; padding:1px 9px; font-size:10.5px; white-space:nowrap; }
+  .b.ok { background:#d5e0c8; color:#587539; }
+  .b.bad { background:#f6cdd4; color:#c64343; }
+  .b.info { background:#ccd7f0; color:#2e7de9; }
+  .b.tag { background:#dcdee5; color:#7a7f8d; font-size:9.5px; letter-spacing:.05em; }
+  .sw { display:inline-block; width:28px; height:16px; border-radius:999px; background:#2e7de9; position:relative; vertical-align:middle; }
+  .sw::after { content:""; position:absolute; right:2px; top:2px; width:12px; height:12px; border-radius:50%; background:#fff; }
+  .sw.off { background:#b8bcc7; } .sw.off::after { right:auto; left:2px; }
+  .dot { display:inline-block; width:8px; height:8px; border-radius:50%; vertical-align:middle; margin-right:7px; }
+  .dot.g { background:#587539; } .dot.r { background:#c64343; }
+  .tk .err { color:#c64343; font-size:11px; padding-left:15px; }
+  .tk .sec { font-size:15px; font-weight:700; color:#343b58; margin:20px 0 6px; }
+  .tk tr.on { background:#d8dcf0; }
+  .dw { position:absolute; top:0; right:0; bottom:0; width:300px; background:#ececf0; border-left:1px solid #c8cad1; box-shadow:-8px 0 24px rgba(52,59,88,.12); font-size:12px; }
+  .dw .nav { display:flex; align-items:center; justify-content:space-between; padding:12px 14px 10px; background:#f3f4f7; border-bottom:1px solid #dcdee5; }
+  .dw .nav .ttl2 { font-weight:700; color:#343b58; font-size:13px; }
+  .dw .stat { padding:2px 14px 11px; background:#f3f4f7; border-bottom:1px solid #dcdee5; color:#7a7f8d; font-size:11px; }
+  .dw .inner { padding:13px 11px; }
+  .grp { background:#fff; border:1px solid #dcdee5; border-radius:9px; overflow:hidden; margin-bottom:7px; }
+  .grp .r { display:flex; align-items:center; gap:8px; padding:8px 11px; border-bottom:1px solid #ecedf1; }
+  .grp .r:last-child { border-bottom:none; }
+  .grp .r .l { color:#343b58; flex:1; white-space:nowrap; }
+  .grp .r .v { color:#9aa0b0; text-align:right; white-space:nowrap; }
+  .grp .r .ch { color:#c0c3cc; }
+  .grp .r.act .l { color:#2e7de9; flex:none; }
+  .grp .r.danger { justify-content:center; }
+  .grp .r.danger .l { color:#c64343; flex:none; }
+  .foot { color:#8990a3; font-size:10px; line-height:1.5; padding:0 11px; margin:-3px 0 12px; }
+</style>
+
+<h2>The composite — new table + drawer, in Tomorrow</h2>
+<p class="subtitle">Everything approved so far in one frame, set in the new kit font ("Tomorrow", "Noto Sans JP", monospace — a kit-wide change, so mr-board inherits it too). Drawer open on orbit; table shows the shared refinements: leading health dots, identity→facts→controls grouping, quiet restart, chevron affordance.</p>
+
+<div class="tk" style="min-height:520px;">
+  <div style="margin-right:300px;">
+    <div class="hd"><span class="ttl">Deck</span><span><span class="btn">reload proxy</span> <span class="btn acc">+ add app</span></span></div>
+    <div class="stats"><span style="color:#c64343;">3/4 healthy</span> · 3 public · 1 protected · next 11012 · auto-refreshes</div>
+    <table>
+      <tr><th>site</th><th>port</th><th>health</th><th>service</th><th style="border-left:14px solid transparent;">public</th><th></th><th></th></tr>
+      <tr><td class="site"><span class="dot g"></span>atlas<span class="ext">.mattstack ↗</span> <span class="b tag">MANAGED</span></td><td>11001</td><td><span class="b ok">200 34ms</span></td><td class="dim">pid 5123</td><td style="border-left:14px solid transparent;"><span class="sw"></span></td><td><span class="btn quiet">↻</span></td><td class="dim">›</td></tr>
+      <tr><td class="site"><span class="dot g"></span>forecast<span class="ext">.mattstack ↗</span> <span class="b tag">THIS BOARD</span></td><td>11003</td><td><span class="b ok">200 51ms</span></td><td class="dim">pid 5140</td><td style="border-left:14px solid transparent;"><span class="sw"></span></td><td><span class="btn quiet">↻</span></td><td class="dim">›</td></tr>
+      <tr><td class="site"><span class="dot r"></span>ledger<span class="ext">.mattstack</span><br><span class="err">▲ cloudflare sync failed · 502</span></td><td>11005</td><td><span class="b bad">unreachable</span></td><td class="dim" style="color:#c64343;">exit 1</td><td style="border-left:14px solid transparent;"><span class="sw off"></span></td><td><span class="btn quiet">↻</span></td><td class="dim">›</td></tr>
+      <tr class="on"><td class="site"><span class="dot g"></span>orbit<span class="ext">.mattstack ↗</span></td><td>3007 <span class="b info">dev</span></td><td><span class="b ok">200 18ms</span></td><td class="dim">pid 5311</td><td style="border-left:14px solid transparent;"><span class="sw"></span></td><td><span class="btn quiet">↻</span></td><td class="dim">›</td></tr>
+    </table>
+    <div class="sec">services without routes</div>
+    <table><tr><td class="site"><span class="dot r"></span>stray-agent</td><td class="dim">no route</td><td><span class="b bad">stopped</span></td><td class="dim">exit 1</td><td style="border-left:14px solid transparent;"></td><td><span class="btn quiet">↻</span></td><td class="dim">›</td></tr></table>
+    <div class="sec">cloudflare tunnel</div>
+    <table><tr><td class="site"><span class="dot g"></span>cloudflared</td><td class="dim">*.mattstack</td><td><span class="b ok">up</span></td><td class="dim">pid 4200</td><td style="border-left:14px solid transparent;"></td><td><span class="btn quiet">↻</span></td><td class="dim">›</td></tr></table>
+    <div class="dim" style="margin-top:18px; font-size:11px;">discovered from portless routes + LaunchAgents · local.mattstack</div>
+  </div>
+
+  <div class="dw">
+    <div class="nav"><span style="visibility:hidden;" class="dim">‹</span><span class="ttl2">orbit</span><span class="dim">✕</span></div>
+    <div class="stat"><span class="dot g" style="width:7px;height:7px;"></span>200 in 18ms · running pid 5311 · <span style="color:#2e7de9;">open ↗</span></div>
+    <div class="inner">
+      <div class="grp"><div class="r"><span class="l">public</span><span class="sw"></span></div></div>
+      <div class="foot">orbit.mattstack is reachable through the tunnel</div>
+      <div class="grp">
+        <div class="r"><span class="l">dev port</span><span class="v">3007 · override</span><span class="ch">›</span></div>
+        <div class="r"><span class="l">access</span><span class="v">password · sign-in</span><span class="ch">›</span></div>
+        <div class="r"><span class="l">logs</span><span class="v">2 lines</span><span class="ch">›</span></div>
+      </div>
+      <div class="grp">
+        <div class="r act"><span class="l">↻ restart service</span></div>
+        <div class="r"><span class="l" style="color:#2e7de9;">✎ edit app</span><span class="ch">›</span></div>
+      </div>
+      <div class="grp" style="margin-top:13px;"><div class="r danger"><span class="l">remove app…</span></div></div>
+    </div>
+  </div>
+</div>
+
+<h3 style="margin-top:24px;">Interaction contract</h3>
+<ul style="font-size:14px; line-height:1.8; margin-left:18px;">
+  <li>Row click / <code>enter</code> opens the drawer; the row stays highlighted; switch and ↻ clicks don't open it</li>
+  <li><code>esc</code> = back one screen, or close when at root; ✕ always closes; <code>↑↓</code> on the table move the open drawer between rows</li>
+  <li>Drawer is an overlay panel (table doesn't reflow); on narrow windows it becomes full-width</li>
+  <li>Add app + reload proxy + the add flow stay board-level (modal as today, restyled by the new font)</li>
+  <li>Stat strip, discovery footer, section list unchanged in content — only regrouped visually</li>
+</ul>
+
+<div class="options" style="margin-top:16px;">
+  <div class="option" data-choice="composite-approved" onclick="toggleSelect(this)">
+    <div class="letter">✓</div>
+    <div class="content"><h3>Approved — write the spec</h3><p>I'll write the full design spec (board + drawer + kit changes incl. the font) with the mocks as parity references, for your review before planning.</p></div>
+  </div>
+  <div class="option" data-choice="composite-iterate" onclick="toggleSelect(this)">
+    <div class="letter">↻</div>
+    <div class="content"><h3>Iterate the composite</h3><p>Tell me what's off in the table, drawer placement, or interactions.</p></div>
+  </div>
+</div>

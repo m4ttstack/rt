@@ -46,15 +46,68 @@ test("health badges: status+ms for healthy, unreachable for down", async () => {
   });
 });
 
-test("launchd column shows running+pid or stopped", async () => {
+test("service column shows dim pid N, or exit N as bad-tone text (no pill)", async () => {
   await withBoard(async (page) => {
-    const atlasLaunchd = rowFor(page, "atlas").locator('[data-part="table-cell"]').nth(3);
-    const atlasText = await atlasLaunchd.textContent();
-    expect(atlasText).toContain("running");
-    expect(atlasText).toContain("5123");
+    const atlasService = rowFor(page, "atlas").locator('[data-part="table-cell"]').nth(3);
+    expect(await atlasService.textContent()).toBe("pid 5123");
 
-    const ledgerLaunchd = rowFor(page, "ledger").locator('[data-part="table-cell"]').nth(3);
-    expect(await ledgerLaunchd.textContent()).toContain("stopped");
+    const ledgerService = rowFor(page, "ledger").locator('[data-part="table-cell"]').nth(3);
+    expect(await ledgerService.textContent()).toBe("exit 1");
+    // Plain text, not a Badge -- pills are reserved for the health column.
+    expect(await ledgerService.locator('[data-part="badge"]').count()).toBe(0);
+
+    const exitColor = await ledgerService.locator(".t-bad").evaluate((el) => getComputedStyle(el).color);
+    const redProbe = await page.evaluate(() => {
+      const probe = document.createElement("span");
+      probe.style.color = "var(--red)";
+      document.body.appendChild(probe);
+      const c = getComputedStyle(probe).color;
+      probe.remove();
+      return c;
+    });
+    expect(exitColor).toBe(redProbe);
+  });
+});
+
+test("leading health dot: ok tone for a healthy row, bad tone for an unreachable one", async () => {
+  await withBoard(async (page) => {
+    // Computed colour against a same-token probe, not the emitted style
+    // text -- the --sd-color custom property is StatusDot's own internal
+    // wiring, not a contract this app should assert the literal form of.
+    const dotColor = (rowName: string) =>
+      rowFor(page, rowName).locator('[data-part="statusdot-dot"]').evaluate((el) => getComputedStyle(el).color);
+    const probeColor = (token: string) =>
+      page.evaluate((t) => {
+        const probe = document.createElement("span");
+        probe.style.color = `var(${t})`;
+        document.body.appendChild(probe);
+        const c = getComputedStyle(probe).color;
+        probe.remove();
+        return c;
+      }, token);
+
+    expect(await dotColor("atlas")).toBe(await probeColor("--dot-ok"));
+    expect(await dotColor("ledger")).toBe(await probeColor("--dot-bad"));
+  });
+});
+
+test("restart button is visible without hovering the row", async () => {
+  await withBoard(async (page) => {
+    const restart = rowFor(page, "atlas").locator('[aria-label="restart atlas"]');
+    expect(await restart.isVisible()).toBe(true);
+  });
+});
+
+test("every row carries a focusable chevron with a details aria-label", async () => {
+  await withBoard(async (page) => {
+    const appsTable = page.locator("table").first();
+    expect(await appsTable.locator('[data-part="row-chevron"]').count()).toBe(4);
+
+    const atlasChevron = rowFor(page, "atlas").locator('[data-part="row-chevron"]');
+    expect(await atlasChevron.getAttribute("aria-label")).toBe("details for atlas");
+
+    await atlasChevron.focus();
+    expect(await page.evaluate(() => document.activeElement?.getAttribute("data-part"))).toBe("row-chevron");
   });
 });
 
@@ -103,6 +156,24 @@ test("subline matches logic.subline of the fixture", async () => {
   await withBoard(async (page) => {
     const expected = subline(fixture as unknown as StatusData);
     expect(await page.locator(".board-subline").textContent()).toBe(expected);
+  });
+});
+
+test("subline: healthy fraction renders in bad tone when an app is down (3/4 fixture)", async () => {
+  await withBoard(async (page) => {
+    const fraction = page.locator(".board-subline .t-bad", { hasText: "healthy" });
+    expect(await fraction.textContent()).toBe("3/4 healthy");
+
+    const fractionColor = await fraction.evaluate((el) => getComputedStyle(el).color);
+    const redProbe = await page.evaluate(() => {
+      const probe = document.createElement("span");
+      probe.style.color = "var(--red)";
+      document.body.appendChild(probe);
+      const c = getComputedStyle(probe).color;
+      probe.remove();
+      return c;
+    });
+    expect(fractionColor).toBe(redProbe);
   });
 });
 
