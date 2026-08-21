@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "apps": {
+    "example-app": {
+      "published": true,
+      "passwordVersion": 1,
+      "passwordHash": "$argon2id$v=19$m=65536,t=2,p=1$examplesaltexamplesalt$exampledigestexampledigestexampledigest",
+      "override": {
+        "devPort": 4100,
+        "basePort": 11000
+      },
+      "publicFollowsOverride": false
+    }
+  },
+  "secret": "0000000000000000000000000000000000000000000000000000000000000000"
+}

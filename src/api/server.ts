@@ -24,6 +24,7 @@ import type { TunnelDriver } from "../edge/tunnel.ts";
 import { bindDomain, TUNNEL_LABEL } from "../edge/domain.ts";
 import { parseOAuth, setOAuth, getOAuth, oauthRequiresCf } from "../edge/oauth.ts";
 import { syncOAuth } from "../edge/access.ts";
+import type { RtSecretsDeps } from "../edge/rt-secrets.ts";
 
 export interface ApiDeps extends Drivers {
   port: number;
@@ -37,6 +38,8 @@ export interface ApiDeps extends Drivers {
   cloudflaredDir?: string;
   /** Fake fetch for CF Access driver tests; production omits it and falls back to global fetch. */
   accessFetch?: typeof fetch;
+  /** Fake rt-secrets transport for CF Access driver tests; production omits it and reads the real daemon. */
+  deckSecrets?: RtSecretsDeps;
 }
 
 export function callerOf(req: Request): string {
@@ -190,17 +193,16 @@ export function startApi(deps: ApiDeps) {
         }
         if (pathname === "/api/v1/settings" && req.method === "PUT") {
           const b = await body(req);
+          if (b.cfApiToken !== undefined || b.cfZoneId !== undefined) {
+            return json({
+              error: "cf-secrets-not-accepted",
+              message: "Cloudflare credentials are no longer stored here — store with: rt secrets set deck cfApiToken "
+                + "(and: rt secrets set deck cfZoneId) — interactive prompt; add --stdin when piping from a script",
+            }, 400);
+          }
           updatePlatformSettings({
             ...(b.publicDomain !== undefined && { publicDomain: b.publicDomain === null ? null : String(b.publicDomain) }),
             ...(Array.isArray(b.tlds) && { tlds: b.tlds.map(String) }),
-            secrets: {
-              ...(b.cfApiToken !== undefined && {
-                cfApiToken: b.cfApiToken === null || b.cfApiToken === "" ? undefined : String(b.cfApiToken),
-              }),
-              ...(b.cfZoneId !== undefined && {
-                cfZoneId: b.cfZoneId === null || b.cfZoneId === "" ? undefined : String(b.cfZoneId),
-              }),
-            },
           });
           return json(redactedSettings());
         }

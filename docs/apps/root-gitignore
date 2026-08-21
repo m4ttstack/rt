@@ -4,3 +4,4 @@ logs/
 .worktrees/
 dist/
 test/.captures/
+data/settings.json

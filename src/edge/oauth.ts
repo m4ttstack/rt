@@ -2,8 +2,9 @@
 // nothing else. Publication and the password gate live in core/settings.ts and
 // are enforced independently: core/gateway.ts reads passwordHash and never
 // reads this file.
-import { readFileSync, writeFileSync, renameSync, mkdirSync } from "fs";
+import { readFileSync, writeFileSync, renameSync, mkdirSync, chmodSync } from "fs";
 import { dirname, join } from "path";
+import { getSetting, setSetting } from "@mattstack/rt-client";
 import { stateDir } from "../api/state.ts";
 
 export type OAuth =
@@ -37,23 +38,53 @@ function isOAuth(value: unknown): value is OAuth {
   return false;
 }
 
-let cache: AccessFile = load();
+const STORE_KEY = "deck.access";
+type GetSettingFn = typeof getSetting;
 
-// Destructive by design: an entry that does not match the current shape is
-// dropped, not translated. There is no legacy support, so a stale entry is
-// simply gone and its app reverts to no sign-in gate. Note that a Cloudflare
-// Access app left behind by a dropped entry keeps challenging visitors, so the
-// drop fails closed at the edge while the board understates the gate until the
-// next Apply resyncs it.
-function load(): AccessFile {
+/**
+ * Transition fallback for deck.access (MAT-384): a store entry for an app
+ * wins WHOLESALE over access.json's entry for that app -- OAuth is one
+ * variant, not a bag of independently-mergeable fields. An app absent from
+ * the store, or whose store entry doesn't match the current OAuth shape,
+ * falls back to the file's entry. A resolver throw degrades to the file's
+ * entries entirely (fail-open), warning once. Unlike `loadFileKept` below,
+ * this NEVER rewrites the store: an invalid store entry is skipped, not
+ * corrected -- the store is authoritative as-written.
+ */
+function withAccessStoreFallback(fileApps: Record<string, OAuth>, resolve: GetSettingFn): Record<string, OAuth> {
+  let store: Record<string, unknown>;
+  try {
+    store = (resolve<Record<string, unknown>>(STORE_KEY).value ?? {}) as Record<string, unknown>;
+  } catch (err) {
+    console.warn(`deck: ${STORE_KEY} unavailable, falling back to access.json`, err);
+    return fileApps;
+  }
+  const merged: Record<string, OAuth> = { ...fileApps };
+  for (const [app, rule] of Object.entries(store)) {
+    if (isOAuth(rule)) merged[app] = rule;
+  }
+  return merged;
+}
+
+let cache: AccessFile = load(getSetting);
+
+// Destructive by design, file side only: an entry that does not match the
+// current shape is dropped, not translated, and the drop is written back.
+// There is no legacy support, so a stale entry is simply gone and its app
+// reverts to no sign-in gate. Note that a Cloudflare Access app left behind
+// by a dropped entry keeps challenging visitors, so the drop fails closed at
+// the edge while the board understates the gate until the next Apply resyncs
+// it. The store, merged in afterward by withAccessStoreFallback, does NOT
+// inherit this behavior -- it is authoritative as-written.
+function loadFileKept(): Record<string, OAuth> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(readFileSync(accessPath(), "utf8"));
   } catch {
-    return { apps: {} };
+    return {};
   }
   const apps = (parsed as AccessFile | null)?.apps;
-  if (typeof apps !== "object" || apps === null) return { apps: {} };
+  if (typeof apps !== "object" || apps === null) return {};
 
   const kept: Record<string, OAuth> = {};
   let dropped = false;
@@ -61,32 +92,95 @@ function load(): AccessFile {
     if (isOAuth(rule)) kept[app] = rule;
     else dropped = true;
   }
-  const file: AccessFile = { apps: kept };
-  if (dropped) save(file);
-  return file;
+  if (dropped) saveFile({ apps: kept });
+  return kept;
 }
 
-export function reloadOAuth(): void {
-  cache = load();
+function load(resolve: GetSettingFn): AccessFile {
+  return { apps: withAccessStoreFallback(loadFileKept(), resolve) };
 }
 
-// Takes the file explicitly so load() can write a migrated file back before
-// the module-level cache has been assigned.
-function save(file: AccessFile = cache): void {
+export function reloadOAuth(resolve: GetSettingFn = getSetting): void {
+  cache = load(resolve);
+}
+
+function saveFile(file: AccessFile): void {
   const path = accessPath();
   mkdirSync(dirname(path), { recursive: true });
   const tmp = path + ".tmp";
-  writeFileSync(tmp, JSON.stringify(file, null, 2));
+  writeFileSync(tmp, JSON.stringify(file, null, 2), { mode: 0o600 });
   renameSync(tmp, path);
+  chmodSync(path, 0o600);
 }
 
 export function getOAuth(app: string): OAuth {
   return cache.apps[app] ?? { mode: "off" };
 }
 
+/**
+ * Store ownership is a one-way latch, decided fresh on every call: rt-client's
+ * read path never throws for an absent or lost key, it yields `undefined`
+ * (even a malformed store file honest-degrades to "empty", not a throw --
+ * see rt-client's stores.ts). `undefined` here means the store does not yet
+ * own deck.access -- ownership flips only via the orchestrator's live import
+ * or an explicit `rt settings set`, never manufactured by this function.
+ */
+function isAccessStoreOwned(): boolean {
+  try {
+    return getSetting<unknown>(STORE_KEY).value !== undefined;
+  } catch {
+    return false;
+  }
+}
+
+function currentRawAccessStore(): Record<string, unknown> {
+  return (getSetting<Record<string, unknown>>(STORE_KEY).value ?? {}) as Record<string, unknown>;
+}
+
+/**
+ * While deck.access is unowned, the rule writes straight to access.json (the
+ * app's whole rule migrates wholesale, unlike deck.apps' per-field split, so
+ * there is nothing left for the file to strip) and setSetting is never
+ * called -- calling it would manufacture ownership deck itself never asked
+ * for. Once the store owns the key, the write overlays this one app onto a
+ * FRESH read of the raw store (never a wholesale replace from `cache.apps`
+ * alone) so an entry another process wrote -- or one `loadFileKept`/
+ * `withAccessStoreFallback` skipped as malformed -- survives untouched, then
+ * the file collapses to `{ apps: {} }`: every app's rule has migrated, so
+ * there's nothing left worth keeping on disk. On a store-write failure the
+ * cache reverts to `previous` and the error rethrows before the file is
+ * touched, matching core/settings.ts's save().
+ */
 export function setOAuth(app: string, rule: OAuth): void {
+  const previous = structuredClone(cache);
   cache.apps[app] = rule;
-  save();
+
+  const owned = isAccessStoreOwned();
+  if (owned) {
+    try {
+      setSetting(STORE_KEY, { ...currentRawAccessStore(), [app]: rule }, "user");
+    } catch (err) {
+      cache = previous;
+      throw err;
+    }
+    // The store write above already persisted -- it is now authoritative,
+    // and the store-first read path shadows whatever stale rule is still on
+    // disk. A failure collapsing the file is therefore a cleanup failure,
+    // not a data-loss one: warn and move on, never revert the store or fail
+    // the call over it.
+    try {
+      saveFile({ apps: {} });
+    } catch (err) {
+      console.warn("deck.access: collapsing access.json after a store write failed; the store is authoritative", err);
+    }
+  } else {
+    try {
+      saveFile({ apps: cache.apps });
+    } catch (err) {
+      cache = previous;
+      throw err;
+    }
+  }
 }
 
 export function oauthRequiresCf(rule: OAuth): boolean {

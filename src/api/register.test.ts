@@ -16,6 +16,10 @@ process.env.LOCAL_AGENTS_DIR = join(dir, "agents-not-present");
 // Settings live in the same throwaway dir: the rename tests write real
 // published/password state and must never touch the repo's data/settings.json.
 process.env.LOCAL_APPS_SETTINGS_PATH = join(dir, "settings.json");
+// deck.platform reads through rt-client, which resolves HOME at call time (not overridable
+// via a LOCAL_*_PATH var) -- must be faked here too, or the import below touches the real
+// ~/.mattstack; beforeEach repoints it to a fresh dir per test below.
+process.env.HOME = dir;
 
 const { registerApp, unregisterApp, editApp } = await import("./register.ts");
 const { FakeServiceManager } = await import("../services/fake.ts");
@@ -29,6 +33,9 @@ let drivers: { manager: InstanceType<typeof FakeServiceManager>; edge: InstanceT
 beforeEach(() => {
   rmSync(process.env.LOCAL_REGISTRY_PATH!, { force: true });
   rmSync(process.env.LOCAL_APPS_SETTINGS_PATH!, { force: true });
+  // A fresh HOME per test keeps deck.platform store state (read via register.ts)
+  // from leaking test-to-test, same as server.test.ts.
+  process.env.HOME = mkdtempSync(join(tmpdir(), "local-flows-home-"));
   reloadRegistry();
   reloadSettings();
   drivers = { manager: new FakeServiceManager(), edge: new FakeEdgeProxy() };
