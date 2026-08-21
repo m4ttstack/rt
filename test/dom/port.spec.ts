@@ -117,13 +117,14 @@ test("blur cancels the edit with no request", async () => {
   });
 });
 
-test("override row: no struck base port at rest, dev chip carries it in its title", async () => {
+test("override row: no struck base port at rest, dev chip carries it in its tooltip", async () => {
   await withBoard(async (page) => {
     const orbitRow = rowFor(page, "orbit");
     expect(await orbitRow.locator("s").count()).toBe(0);
 
     const chip = orbitRow.locator('[data-part="chip"]', { hasText: "dev" });
-    expect(await chip.getAttribute("title")).toBe("dev port override, normally 11007");
+    const chipTooltip = chip.locator("xpath=..");
+    expect(await chipTooltip.getAttribute("data-tip")).toBe("dev port override, normally 11007");
 
     const portButton = orbitRow.locator('[aria-label="change development port"]');
     expect(await portButton.textContent()).toContain("3007");
@@ -160,7 +161,7 @@ test("hover reveals the revert button and public-too switch; revert clears the o
   });
 });
 
-test("public-too switch carries parity aria-label/title and PUTs public-follows-override", async () => {
+test("public-too switch carries parity aria-label/tooltip and PUTs public-follows-override", async () => {
   await withBoard(async (page) => {
     let putBody: unknown = null;
     await page.route("**/api/v1/apps/orbit/public-follows-override", async (route) => {
@@ -171,9 +172,10 @@ test("public-too switch carries parity aria-label/title and PUTs public-follows-
     const orbitRow = rowFor(page, "orbit");
     const publicSwitch = orbitRow.locator('.devport-public [data-part="switch-control"]');
     const label = orbitRow.locator('.devport-public');
+    const labelTooltip = label.locator("xpath=..");
 
     expect(await publicSwitch.getAttribute("aria-label")).toBe("serve orbit dev port publicly");
-    expect(await label.getAttribute("title")).toBe(
+    expect(await labelTooltip.getAttribute("data-tip")).toBe(
       "the public URL serves 11007 — click to serve the dev port instead",
     );
 
@@ -229,7 +231,8 @@ test("live-publicly success badge renders once opted in with a clean preflight",
 
     const successBadge = orbitRow.locator('[data-part="badge"]', { hasText: "live publicly" });
     await successBadge.waitFor({ state: "visible" });
-    expect(await successBadge.getAttribute("title")).toBe(
+    const successTooltip = successBadge.locator("xpath=..");
+    expect(await successTooltip.getAttribute("data-tip")).toBe(
       "the dev server accepts the public hostname and its hot reload reaches the tunnel",
     );
   });

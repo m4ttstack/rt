@@ -187,9 +187,11 @@ await scenario(
 await scenario("light", baseFixture, "modal-edit", (page) =>
   openModal(page, () => rowFor(page, "orbit").locator('[aria-label="edit orbit"]').click()),
 );
-await scenario("light", baseFixture, "modal-access", (page) =>
-  openModal(page, () => rowFor(page, "atlas").locator('[aria-label$=", change access"]').click()),
-);
+await scenario("light", baseFixture, "modal-access", async (page) => {
+  await openModal(page, () => rowFor(page, "atlas").locator('[aria-label$=", change access"]').click());
+  await page.mouse.move(0, 0);
+  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+});
 await scenario("light", baseFixture, "modal-stderr", (page) =>
   openModal(page, () => rowFor(page, "ledger").locator('[aria-label="show recent stderr for ledger"]').click()),
 );
@@ -202,9 +204,11 @@ await scenario("light", staleFixture, "notice-error", (page) =>
 
 // ---- night ----
 await scenario("dark", baseFixture, "board-default-dark");
-await scenario("dark", baseFixture, "modal-access-dark", (page) =>
-  openModal(page, () => rowFor(page, "atlas").locator('[aria-label$=", change access"]').click()),
-);
+await scenario("dark", baseFixture, "modal-access-dark", async (page) => {
+  await openModal(page, () => rowFor(page, "atlas").locator('[aria-label$=", change access"]').click());
+  await page.mouse.move(0, 0);
+  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+});
 await scenario("dark", staleFixture, "notice-error-dark", (page) =>
   page.waitForSelector('[data-part="alert"][data-intent="bad"]'),
 );
