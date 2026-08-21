@@ -15,7 +15,6 @@ describe("parseConfig", () => {
     const cfg = parseConfig(JSON.stringify(base));
     expect(cfg.members).toEqual([{ username: "alice", name: "Alice Ng" }, { username: "bob" }]);
     expect(cfg.title).toBe("MRs ready for review");
-    expect(cfg.port).toBe(7930);
     expect(cfg.staleAfterDays).toBe(90);
     expect(cfg.ticketPrefixes).toEqual([]);
   });
@@ -108,10 +107,13 @@ describe("parseConfig", () => {
     expect(parseConfig(JSON.stringify(base)).rtRepos).toEqual({});
   });
 
-  test("host: defaults to empty string, accepts a string, rejects non-strings", () => {
-    expect(parseConfig(JSON.stringify(base)).host).toBe("");
-    expect(parseConfig(JSON.stringify({ ...base, host: "0.0.0.0" })).host).toBe("0.0.0.0");
-    expect(() => parseConfig(JSON.stringify({ ...base, host: 5 }))).toThrow(/host/);
+  test("port, host, reviewSkill, respondSkill, teamClone are gone from the parsed shape", () => {
+    const cfg = parseConfig(JSON.stringify({
+      ...base, port: 9999, host: "0.0.0.0", reviewSkill: "x:review", respondSkill: "x:respond", teamClone: "~/team",
+    })) as unknown as Record<string, unknown>;
+    for (const key of ["port", "host", "reviewSkill", "respondSkill", "teamClone"]) {
+      expect(cfg[key]).toBeUndefined();
+    }
   });
 });
 

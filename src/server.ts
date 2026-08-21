@@ -1,10 +1,8 @@
 import type { BunPlugin } from "bun";
 import { join, dirname, basename } from "path";
 import { readFileSync, writeFileSync, mkdirSync, watch } from "fs";
-import { homedir } from "os";
 import type { PullRequest, MRDetail } from "@mattstack/glance";
 import { loadConfig, loadGitLabToken, loadSlackToken, loadSwitchboardToken, loadSwitchboardAdminToken, saveMemberHidden, saveSwitchboardUrl, parseConfig, CONFIG_PATH } from "./config.ts";
-import { materializeTeamConfig } from "./team-zone.ts";
 import { resolveBoardSkill, type BoardSkillKind } from "./manifest-bindings.ts";
 import { upsertEnvKeys } from "./env-file.ts";
 import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, projectPathFromWebUrl, type BoardMR, type SyncScopeRead } from "./data.ts";
@@ -47,45 +45,6 @@ const faviconPath = join(import.meta.dir, "favicon.svg");
 const favicon = readFileSync(faviconPath, "utf-8");
 /** The board's own .env, written when /peer/join redeems an invite. */
 const ENV_PATH = join(import.meta.dir, "..", ".env");
-
-/** Boot hook: when config.json sets `teamClone`, materialize the four
-    team-owned fields (gitlabHost/projects/members/title) from that clone's
-    mattstack/team.jsonc before the config load below parses the (possibly
-    rewritten) file. This is a minimal pre-read just for `teamClone` --
-    loadConfig() does the real parse/validate afterward, so a config.json
-    that's otherwise missing or broken is left for it to report normally.
-    Materialize failure must never crash boot: warn and continue with the
-    file as-is. */
-function materializeTeamConfigAtBoot(): void {
-  let teamClone: unknown;
-  try {
-    teamClone = (JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as { teamClone?: unknown }).teamClone;
-  } catch {
-    return;
-  }
-  if (typeof teamClone !== "string" || !teamClone) return;
-  const cloneDir = teamClone.startsWith("~") ? join(homedir(), teamClone.slice(1)) : teamClone;
-  try {
-    const result = materializeTeamConfig(cloneDir, CONFIG_PATH);
-    console.log(result.changed ? `team config: updated ${result.fields.join(", ")}` : "team config: current");
-    // A zone can add a project before the operator adds its matching
-    // rtRepos entry -- fetchTeamMRs then throws for the entire fetch (spec
-    // §6 rtRepos doc), so warn now rather than let that surface as a
-    // mystery-empty board later.
-    const materialized = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as { projects?: unknown; rtRepos?: unknown };
-    const projects = Array.isArray(materialized.projects) ? materialized.projects.filter((p): p is string => typeof p === "string") : [];
-    const rtRepos = materialized.rtRepos && typeof materialized.rtRepos === "object" && !Array.isArray(materialized.rtRepos)
-      ? (materialized.rtRepos as Record<string, unknown>)
-      : {};
-    const unmapped = projects.filter((p) => !rtRepos[p]);
-    if (unmapped.length) {
-      console.error(`team config: no rtRepos mapping for ${unmapped.join(", ")} -- fetch will fail until config.json's rtRepos maps ${unmapped.length === 1 ? "it" : "them"}`);
-    }
-  } catch (err) {
-    console.error(`team config materialize failed, continuing with existing config: ${err instanceof Error ? err.message : err}`);
-  }
-}
-if (!FIXTURE_DIR) materializeTeamConfigAtBoot();
 
 // `let`: /peer/join reassigns the whole config after persisting switchboard.url.
 let config = FIXTURE_DIR
@@ -205,7 +164,7 @@ async function fetchTeamMRs(force = false): Promise<TeamMRsResult> {
   const byId = new Map<string, PullRequest>();
   const errors: string[] = [];
   const reads: SyncScopeRead[] = [];
-  const demand = boardDemand(config);
+  const demand = boardDemand(config, port);
   for (const projectPath of config.projects) {
     const repoName = config.rtRepos[projectPath];
     if (!repoName) {
@@ -231,20 +190,16 @@ function mrAuthorLabel(mr: BoardMR): string {
   return mr.author.name ?? mr.author.username;
 }
 
-const LAUNCH_SKILL_CONFIG_FIELD = {
-  review: "reviewSkill",
-  respond: "respondSkill",
-  doctor: "doctorSkill",
-} as const;
-
 /** Resolve the skill a launch (review/respond/doctor) should delegate to for
     the MR at `mrUrl` -- the per-repo mattstack manifest binding when present,
-    else config -- and log the choice once at launch time. */
+    else config -- and log the choice once at launch time. review/respond
+    have no config fallback (reviewSkill/respondSkill retired -- dead, always
+    shadowed by the manifest); only doctor's config.doctorSkill is real. */
 function resolveLaunchSkill(kind: BoardSkillKind, mrUrl: string): string {
   const project = projectPathFromWebUrl(mrUrl, config.gitlabHost);
   const resolved = project
     ? resolveBoardSkill(kind, project, config)
-    : { skill: config[LAUNCH_SKILL_CONFIG_FIELD[kind]], source: "config" as const };
+    : { skill: kind === "doctor" ? config.doctorSkill : "", source: "config" as const };
   console.log(`${kind} skill: ${resolved.skill} (${resolved.source})`);
   return resolved.skill;
 }
@@ -438,16 +393,15 @@ const shell = `<!doctype html>
 </body>
 </html>`;
 
-// $PORT wins over config.port so a deployment (launchd/systemd) can pin the
-// port the tunnel points at, independent of config.json.
-const port = Number(process.env.PORT) || config.port;
+// $PORT is authoritative (config.port retired) so a deployment (launchd/systemd)
+// can pin the port the tunnel points at.
+const port = Number(process.env.PORT) || 7930;
 
 Bun.serve({
   port,
-  // Loopback by default (spec ruling 6): local-only gates should be
-  // network-local, not just Host-header-local. config.host opts into wider
-  // binds.
-  hostname: config.host || "127.0.0.1",
+  // Loopback only (spec ruling 6): local-only gates are network-local, not
+  // just Host-header-local (config.host, a wider-bind opt-in, retired).
+  hostname: "127.0.0.1",
   // The cold fetch (paging the project MR list + batch-fetching) can exceed
   // Bun's 10s default; give it room so the first request doesn't time out.
   idleTimeout: 60,

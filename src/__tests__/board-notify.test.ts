@@ -25,69 +25,40 @@ const SIGNAL = {
 };
 
 describe("readBoardPort", () => {
-  test("reads the port out of config.json", () => {
-    const p = join(dir, "config.json");
-    writeFileSync(p, JSON.stringify({ port: 8123 }));
-    expect(readBoardPort(p, join(dir, "no-port-file"))).toBe(8123);
+  test("reads the port out of the runtime port file", () => {
+    const portFilePath = join(dir, "board-port");
+    writeFileSync(portFilePath, "11006");
+    expect(readBoardPort(portFilePath)).toBe(11006);
   });
 
-  test("falls back to 7930 when the config is missing or portless", () => {
-    expect(readBoardPort(join(dir, "nope.json"), join(dir, "no-port-file"))).toBe(7930);
-    const p = join(dir, "config.json");
-    writeFileSync(p, JSON.stringify({ slack: {} }));
-    expect(readBoardPort(p, join(dir, "no-port-file"))).toBe(7930);
+  test("falls back to 7930 when the port file is missing", () => {
+    expect(readBoardPort(join(dir, "no-port-file"))).toBe(7930);
   });
 
-  test("MR_BOARD_PORT env wins over the port file and config.json", () => {
+  test("MR_BOARD_PORT env wins over the port file", () => {
     process.env.MR_BOARD_PORT = "9001";
-    const configPath = join(dir, "config.json");
-    writeFileSync(configPath, JSON.stringify({ port: 8123 }));
     const portFilePath = join(dir, "board-port");
     writeFileSync(portFilePath, "11006");
-    expect(readBoardPort(configPath, portFilePath)).toBe(9001);
-  });
-
-  test("the port file wins over config.json when there is no env override", () => {
-    const configPath = join(dir, "config.json");
-    writeFileSync(configPath, JSON.stringify({ port: 8123 }));
-    const portFilePath = join(dir, "board-port");
-    writeFileSync(portFilePath, "11006");
-    expect(readBoardPort(configPath, portFilePath)).toBe(11006);
-  });
-
-  test("falls back to config.json when the port file is absent", () => {
-    const configPath = join(dir, "config.json");
-    writeFileSync(configPath, JSON.stringify({ port: 8123 }));
-    const portFilePath = join(dir, "nope-board-port");
-    expect(readBoardPort(configPath, portFilePath)).toBe(8123);
-  });
-
-  test("falls back to 7930 when nothing resolves", () => {
-    const configPath = join(dir, "nope.json");
-    const portFilePath = join(dir, "nope-board-port");
-    expect(readBoardPort(configPath, portFilePath)).toBe(7930);
+    expect(readBoardPort(portFilePath)).toBe(9001);
   });
 
   test("ignores a garbage or empty MR_BOARD_PORT and falls through to the port file", () => {
     process.env.MR_BOARD_PORT = "banana";
-    const configPath = join(dir, "nope.json");
     const portFilePath = join(dir, "board-port");
     writeFileSync(portFilePath, "11006");
-    expect(readBoardPort(configPath, portFilePath)).toBe(11006);
+    expect(readBoardPort(portFilePath)).toBe(11006);
 
     process.env.MR_BOARD_PORT = "";
-    expect(readBoardPort(configPath, portFilePath)).toBe(11006);
+    expect(readBoardPort(portFilePath)).toBe(11006);
   });
 
-  test("ignores a garbage or empty port file and falls through to config.json", () => {
-    const configPath = join(dir, "config.json");
-    writeFileSync(configPath, JSON.stringify({ port: 8123 }));
+  test("ignores a garbage or empty port file and falls through to 7930", () => {
     const portFilePath = join(dir, "board-port");
     writeFileSync(portFilePath, "not-a-port");
-    expect(readBoardPort(configPath, portFilePath)).toBe(8123);
+    expect(readBoardPort(portFilePath)).toBe(7930);
 
     writeFileSync(portFilePath, "");
-    expect(readBoardPort(configPath, portFilePath)).toBe(8123);
+    expect(readBoardPort(portFilePath)).toBe(7930);
   });
 });
 

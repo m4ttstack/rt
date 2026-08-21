@@ -9,7 +9,6 @@
     "triage": "bun run bin/triage.ts",
     "switchboard": "bun run switchboard/server.ts",
     "sync-resolvers": "sh scripts/sync-resolvers.sh",
-    "materialize": "bun run bin/materialize.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit -p . && tsc --noEmit -p src/client && tsc --noEmit -p src/client/__tests__",
     "capture": "bun tests/capture.ts --out tests/.captures",

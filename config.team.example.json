@@ -21,9 +21,6 @@
   "staleAfterDays": 30,
   "ticketPrefixes": [],
   "title": "MR Board",
-  "port": 7930,
-  "reviewSkill": "myteam:review",
-  "respondSkill": "myteam:respond",
   "doctorSkill": "myteam:doctor",
   "claudeCommand": "",
   "slack": {

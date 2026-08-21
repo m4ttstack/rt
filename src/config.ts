@@ -1,6 +1,7 @@
 import { readFileSync, renameSync, writeFileSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
+import { getSetting, setSetting } from "@mattstack/rt-client";
 
 export interface Member {
   username: string;
@@ -27,9 +28,6 @@ export interface BoardConfig {
    */
   ticketPrefixes: string[];
   title: string;
-  port: number;
-  /** Bind host passed to Bun.serve verbatim. "" means the default loopback. */
-  host: string;
   /** Absolute path the review agent's herdr pane starts in (a repo checkout). Empty disables review launch. */
   reviewCwd: string;
   /** herdr workspace label reviews are grouped under. */
@@ -46,11 +44,6 @@ export interface BoardConfig {
       "cswap run 2 --share-history -- claude" to pin panes to one account.
       Inserted verbatim (trusted operator config). Empty = plain "claude". */
   claudeCommand: string;
-  /** Domain skill the review wrapper delegates to, e.g. "myteam:review".
-      Empty = the generic wrapper reviews on its own. Keeps all domain knowledge in config. */
-  reviewSkill: string;
-  /** Domain skill the respond wrapper delegates to. Empty = generic. */
-  respondSkill: string;
   /** Domain skill the doctor wrapper delegates to. Empty = generic. */
   doctorSkill: string;
   /** Extra bot accounts whose general MR comments to hide (username or display
@@ -66,11 +59,6 @@ export interface BoardConfig {
   /** Peer-boards relay. Empty url disables every peer feature (publish, poll,
       nudge endpoint) cleanly. Token comes from SWITCHBOARD_TOKEN, not config. */
   switchboard: SwitchboardBoardConfig;
-  /** Absolute path (or ~-path) to a mattstack team clone. When set, the board
-      materializes gitlabHost/projects/members/title from that clone's
-      mattstack/team.jsonc into this config file at boot, before it's parsed.
-      Absent = no team zone, config.json is the sole source of truth. */
-  teamClone?: string;
 }
 
 export interface SwitchboardBoardConfig {
@@ -147,9 +135,6 @@ export function parseConfig(raw: string): BoardConfig {
       throw new Error(`config.json "ticketPrefixes" must be an array of non-empty strings`);
     }
   }
-  if (cfg.host !== undefined && typeof cfg.host !== "string") {
-    throw new Error(`config.json "host" must be a string`);
-  }
   if (cfg.reviewCwd !== undefined && typeof cfg.reviewCwd !== "string") {
     throw new Error(`config.json "reviewCwd" must be a string (absolute path)`);
   }
@@ -171,13 +156,8 @@ export function parseConfig(raw: string): BoardConfig {
   if (cfg.claudeCommand !== undefined && typeof cfg.claudeCommand !== "string") {
     throw new Error(`config.json "claudeCommand" must be a string (a shell command that starts claude)`);
   }
-  if (cfg.teamClone !== undefined && typeof cfg.teamClone !== "string") {
-    throw new Error(`config.json "teamClone" must be a string (absolute path or ~-path)`);
-  }
-  for (const key of ["reviewSkill", "respondSkill", "doctorSkill"] as const) {
-    if (cfg[key] !== undefined && typeof cfg[key] !== "string") {
-      throw new Error(`config.json "${key}" must be a string (a skill name)`);
-    }
+  if (cfg.doctorSkill !== undefined && typeof cfg.doctorSkill !== "string") {
+    throw new Error(`config.json "doctorSkill" must be a string (a skill name)`);
   }
   if (cfg.botUsernames !== undefined) {
     if (!Array.isArray(cfg.botUsernames) || cfg.botUsernames.some((b) => typeof b !== "string" || !b.trim())) {
@@ -198,8 +178,6 @@ export function parseConfig(raw: string): BoardConfig {
     // Normalize to uppercase so matching is case-insensitive (ticket keys are uppercased).
     ticketPrefixes: (cfg.ticketPrefixes ?? []).map((p) => p.trim().toUpperCase()),
     title: cfg.title ?? "MRs ready for review",
-    port: cfg.port ?? 7930,
-    host: cfg.host ?? "",
     reviewCwd: cfg.reviewCwd ?? "",
     reviewsWorkspace: cfg.reviewsWorkspace ?? "reviews",
     respondCwd: cfg.respondCwd ?? "",
@@ -207,14 +185,11 @@ export function parseConfig(raw: string): BoardConfig {
     doctorCwd: cfg.doctorCwd ?? "",
     doctorsWorkspace: cfg.doctorsWorkspace ?? "doctors",
     claudeCommand: cfg.claudeCommand ?? "",
-    reviewSkill: cfg.reviewSkill ?? "",
-    respondSkill: cfg.respondSkill ?? "",
     doctorSkill: cfg.doctorSkill ?? "",
     botUsernames: (cfg.botUsernames ?? []).map((b) => b.trim()),
     rtRepos,
     slack,
     switchboard,
-    teamClone: cfg.teamClone,
   };
 }
 
@@ -279,13 +254,120 @@ function parseSlackEmoji(raw: unknown): SlackEmojiConfig {
 }
 
 export function loadConfig(): BoardConfig {
+  return loadConfigFrom(CONFIG_PATH, getSetting);
+}
+
+type GetSettingFn = typeof getSetting;
+type SetSettingFn = typeof setSetting;
+
+/** Read one board.* key, degrading to "not owned" (`undefined`) on a resolver
+    throw rather than letting a daemon hiccup brick config load — same
+    fail-open contract as the deck latch (local-apps-settings-wt's
+    withPlatformStoreFallback). Warns once per call, never throws. */
+function storeValue<T>(key: string, resolve: GetSettingFn): T | undefined {
+  try {
+    return resolve<T>(key).value;
+  } catch (err) {
+    console.warn(`board: ${key} unavailable, falling back to config.json`, err);
+    return undefined;
+  }
+}
+
+/**
+ * Transition fallback (board settings migration): layers every board.* store
+ * key over `fileConfig`, per key. A key the store doesn't yet own falls back
+ * to config.json's value for it — ownership is a one-way latch decided fresh
+ * on every load (never manufactured here; see the writers below). Two keys
+ * bundle several BoardConfig fields (`board.workspaces`, `board.cwds`) since
+ * those three fields apiece were never independently meaningful to split;
+ * store-wins is per SUB-field there so setting one doesn't blank the other
+ * two back to their zero value. `board.rtRepos` is an array of pairs in the
+ * store (registry type "array") but a path-keyed Record in config.json and in
+ * BoardConfig — converted here, at the one seam that needs to know both
+ * shapes. The members roster overlays `board.hiddenMembers` (user-scope
+ * usernames) onto the roster's `hidden` flags by username, replacing
+ * whatever `hidden` flags the roster source (store or file) carried inline —
+ * post-migration, hidden state lives only in the user key, never on the
+ * team-owned member entries. Delete this function whole at cutover, once
+ * config.json carries none of these fields.
+ */
+function withBoardStoreFallback(fileConfig: BoardConfig, resolve: GetSettingFn): BoardConfig {
+  const workspaces = storeValue<{ reviews?: string; responds?: string; doctors?: string }>("board.workspaces", resolve);
+  const cwds = storeValue<{ review?: string; respond?: string; doctor?: string }>("board.cwds", resolve);
+  const rtReposStore = storeValue<Array<{ project: string; repo: string }>>("board.rtRepos", resolve);
+  const roster = storeValue<Member[]>("board.members", resolve) ?? fileConfig.members;
+  const hiddenStore = storeValue<string[]>("board.hiddenMembers", resolve);
+  const hiddenUsernames = new Set(hiddenStore ?? roster.filter((m) => m.hidden).map((m) => m.username));
+  const members = roster.map((m) => {
+    const { hidden: _hidden, ...rest } = m;
+    return hiddenUsernames.has(m.username) ? { ...rest, hidden: true } : rest;
+  });
+
+  return {
+    ...fileConfig,
+    gitlabHost: storeValue("board.gitlabHost", resolve) ?? fileConfig.gitlabHost,
+    projects: storeValue("board.projects", resolve) ?? fileConfig.projects,
+    members,
+    title: storeValue("board.title", resolve) ?? fileConfig.title,
+    botUsernames: storeValue("board.botUsernames", resolve) ?? fileConfig.botUsernames,
+    ticketPrefixes: storeValue("board.ticketPrefixes", resolve) ?? fileConfig.ticketPrefixes,
+    slack: storeValue("board.slack", resolve) ?? fileConfig.slack,
+    doctorSkill: storeValue("board.doctorSkill", resolve) ?? fileConfig.doctorSkill,
+    staleAfterDays: storeValue("board.staleAfterDays", resolve) ?? fileConfig.staleAfterDays,
+    reviewsWorkspace: workspaces?.reviews ?? fileConfig.reviewsWorkspace,
+    respondsWorkspace: workspaces?.responds ?? fileConfig.respondsWorkspace,
+    doctorsWorkspace: workspaces?.doctors ?? fileConfig.doctorsWorkspace,
+    defaultMember: storeValue("board.defaultMember", resolve) ?? fileConfig.defaultMember,
+    claudeCommand: storeValue("board.claudeCommand", resolve) ?? fileConfig.claudeCommand,
+    reviewCwd: cwds?.review ?? fileConfig.reviewCwd,
+    respondCwd: cwds?.respond ?? fileConfig.respondCwd,
+    doctorCwd: cwds?.doctor ?? fileConfig.doctorCwd,
+    rtRepos: rtReposStore ? Object.fromEntries(rtReposStore.map((r) => [r.project, r.repo])) : fileConfig.rtRepos,
+    switchboard: { url: storeValue("board.switchboardUrl", resolve) ?? fileConfig.switchboard.url },
+  };
+}
+
+/** Structurally satisfies parseConfig's required-field check without being a
+    real config; only ever used one line below, gated on the team store
+    already owning all three fields, so the overlay that follows replaces
+    every placeholder value before it can be observed by a caller. Lets the
+    board boot config.json-free once cutover (plan Task 5) hands gitlabHost/
+    projects/members fully to the team store. */
+const NO_FILE_PLACEHOLDER = JSON.stringify({
+  gitlabHost: "unset", projects: ["unset"], members: [{ username: "unset" }],
+});
+
+function isEnoent(err: unknown): boolean {
+  return (err as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
+}
+
+function storeOwnsRequiredFields(resolve: GetSettingFn): boolean {
+  return (
+    storeValue("board.gitlabHost", resolve) !== undefined &&
+    storeValue("board.projects", resolve) !== undefined &&
+    storeValue("board.members", resolve) !== undefined
+  );
+}
+
+/** Read `path`, layer the store on top — the shared reload every writer below
+    returns through, so a write to one key never regresses another already-
+    store-owned field back to its file value. A missing file degrades to the
+    placeholder above only when the store already owns every required field;
+    any other read failure (including a missing file the store can't cover)
+    surfaces loudly, same as today. Exported (with `resolve` injectable) so
+    the store-latch behavior is unit-testable without a real CONFIG_PATH or
+    a real getSetting/rt-client store on disk. */
+export function loadConfigFrom(path: string, resolve: GetSettingFn = getSetting): BoardConfig {
   let raw: string;
   try {
-    raw = readFileSync(CONFIG_PATH, "utf8");
-  } catch {
-    throw new Error(`config.json not found at ${CONFIG_PATH} — copy config.example.json and fill it in`);
+    raw = readFileSync(path, "utf8");
+  } catch (err) {
+    if (!isEnoent(err) || !storeOwnsRequiredFields(resolve)) {
+      throw new Error(`config.json not found at ${path} — copy config.example.json and fill it in, or seed the team settings store`);
+    }
+    raw = NO_FILE_PLACEHOLDER;
   }
-  return parseConfig(raw);
+  return withBoardStoreFallback(parseConfig(raw), resolve);
 }
 
 /**
@@ -302,24 +384,77 @@ export function setHiddenInRaw(raw: string, username: string, hidden: boolean): 
   return JSON.stringify(obj, null, 2) + "\n";
 }
 
-/** Persist `username`'s hidden flag to config.json and return the reparsed config. */
-export function saveMemberHidden(username: string, hidden: boolean): BoardConfig {
-  const raw = readFileSync(CONFIG_PATH, "utf8");
-  const next = setHiddenInRaw(raw, username, hidden);
-  writeFileSync(CONFIG_PATH, next);
-  return parseConfig(next);
+/** Store ownership is a one-way latch, decided fresh on every write — see
+    withBoardStoreFallback. `undefined` means unowned; a resolver throw
+    degrades to unowned rather than crashing the write. */
+function isHiddenMembersOwned(resolve: GetSettingFn): boolean {
+  try {
+    return resolve<unknown>("board.hiddenMembers").value !== undefined;
+  } catch {
+    return false;
+  }
 }
 
-/** Persist switchboard.url to config.json (single writer, like saveMemberHidden)
-    and return the reparsed config. Temp-file-plus-rename: a crashed write must
-    not half-eat the operator's config. */
-export function saveSwitchboardUrl(url: string, path: string = CONFIG_PATH): BoardConfig {
-  const raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
-  raw.switchboard = { url };
-  const text = JSON.stringify(raw, null, 2) + "\n";
-  writeFileSync(path + ".tmp", text);
-  renameSync(path + ".tmp", path);
-  return parseConfig(text);
+/**
+ * Persist `username`'s hidden flag and return the reload. Unowned: config.json's
+ * inline `members[].hidden` stays the single writer (today's behavior). Owned:
+ * `board.hiddenMembers` (the user store) is the single writer instead and
+ * config.json is never touched for this — each branch is exactly one write, so
+ * a `write` throw simply propagates; nothing was persisted for it to revert.
+ */
+export function saveMemberHidden(
+  username: string,
+  hidden: boolean,
+  path: string = CONFIG_PATH,
+  resolve: GetSettingFn = getSetting,
+  write: SetSettingFn = setSetting,
+): BoardConfig {
+  if (isHiddenMembersOwned(resolve)) {
+    const current = loadConfigFrom(path, resolve);
+    if (!current.members.some((m) => m.username === username)) {
+      throw new Error(`unknown member "${username}"`);
+    }
+    const stored = resolve<string[]>("board.hiddenMembers").value ?? [];
+    const next = hidden ? [...new Set([...stored, username])] : stored.filter((u) => u !== username);
+    write("board.hiddenMembers", next, "user");
+  } else {
+    const raw = readFileSync(path, "utf8");
+    const next = setHiddenInRaw(raw, username, hidden); // throws for an unknown member
+    writeFileSync(path, next);
+  }
+  return loadConfigFrom(path, resolve);
+}
+
+function isSwitchboardUrlOwned(resolve: GetSettingFn): boolean {
+  try {
+    return resolve<unknown>("board.switchboardUrl").value !== undefined;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Persist switchboard.url and return the reload. Unowned: config.json (temp-
+ * file-plus-rename, as before — a crashed write must not half-eat the
+ * operator's config). Owned: `board.switchboardUrl` (the machine store)
+ * instead, config.json untouched. One write per branch, like saveMemberHidden.
+ */
+export function saveSwitchboardUrl(
+  url: string,
+  path: string = CONFIG_PATH,
+  resolve: GetSettingFn = getSetting,
+  write: SetSettingFn = setSetting,
+): BoardConfig {
+  if (isSwitchboardUrlOwned(resolve)) {
+    write("board.switchboardUrl", url, "machine");
+  } else {
+    const raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+    raw.switchboard = { url };
+    const text = JSON.stringify(raw, null, 2) + "\n";
+    writeFileSync(path + ".tmp", text);
+    renameSync(path + ".tmp", path);
+  }
+  return loadConfigFrom(path, resolve);
 }
 
 /** Optional after the rt rewire: only the display-name lookup uses it; the

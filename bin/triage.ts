@@ -161,7 +161,7 @@ try {
         launchReReview(mrUrl, iid, {
           cwd: boardConfig.reviewCwd,
           workspaceLabel: boardConfig.reviewsWorkspace,
-          // BOARD-14: manifest binding when present, config.reviewSkill fallback --
+          // BOARD-14: manifest binding when present, else "" (the generic wrapper) --
           // same resolution the board's own HTTP re-review launches use.
           skill: resolveLaunchSkill("review", mrUrl, boardConfig),
         }),

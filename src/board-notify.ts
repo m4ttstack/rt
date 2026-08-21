@@ -9,13 +9,14 @@ function validPort(value: unknown): number | undefined {
   return Number.isFinite(n) && Number.isInteger(n) && n > 0 ? n : undefined;
 }
 
-/** The board's actual port can differ from config.json's when $PORT is set
-    (see server.ts). Env wins because it's the most explicit override; the
-    runtime port file is next because it reflects what the board is really
-    listening on right now; config.json and 7930 are the last-resort guesses
-    a CLI falls back to when the board has never written that file. */
+/** The board's actual port can differ from the default when $PORT is set (see
+    server.ts). Env wins because it's the most explicit override; the runtime
+    port file is next because it reflects what the board is really listening
+    on right now; 7930 is the last resort when the board has never written
+    that file. config.json's `port` field retired with the settings
+    migration (env PORT is now the sole override), so there is no longer a
+    config.json tier here. */
 export function readBoardPort(
-  configPath: string = join(import.meta.dir, "..", "config.json"),
   portFilePath: string = join(import.meta.dir, "..", "state", "board-port"),
 ): number {
   const fromEnv = validPort(process.env.MR_BOARD_PORT);
@@ -25,15 +26,7 @@ export function readBoardPort(
     const fromFile = validPort(readFileSync(portFilePath, "utf8").trim());
     if (fromFile !== undefined) return fromFile;
   } catch {
-    // no runtime port file yet -- fall through to config.json
-  }
-
-  try {
-    const cfg = JSON.parse(readFileSync(configPath, "utf8")) as { port?: number };
-    const fromConfig = validPort(cfg.port);
-    if (fromConfig !== undefined) return fromConfig;
-  } catch {
-    // config.json missing or unparseable -- fall through to the default
+    // no runtime port file yet -- fall through to the default
   }
 
   return DEFAULT_PORT;

@@ -1,5 +1,6 @@
 import { readFileSync } from "fs";
 import { join } from "path";
+import { getSetting } from "@mattstack/rt-client";
 
 export interface FixClasses {
   retryFlake: boolean;
@@ -111,11 +112,45 @@ export function parseTriageBlock(raw: unknown): TriageConfig {
   };
 }
 
+type GetSettingFn = typeof getSetting;
+
+/** Read one board.triage* key, degrading to "not owned" on a resolver throw
+    rather than letting a daemon hiccup brick triage config load (same
+    fail-open contract as config.ts's storeValue). Warns once per call. */
+function storeValue<T>(key: string, resolve: GetSettingFn): T | undefined {
+  try {
+    return resolve<T>(key).value;
+  } catch (err) {
+    console.warn(`board: ${key} unavailable, falling back to config.json`, err);
+    return undefined;
+  }
+}
+
 /** The block lives in the board's config.json, but parsing stays here so the
-    board server never needs to know the block exists (hard boundary). */
+    board server never needs to know the block exists (hard boundary).
+    BOARD-14 split across three independently latched store keys once
+    migrated: `board.triage` (user) carries every field here except
+    doctorSkill/maxConcurrent — those two are sibling flat keys
+    (`board.triage.doctorSkill` team, never manifest-resolved;
+    `board.triageMaxConcurrent` machine), not nested inside `board.triage`,
+    so each is layered back on individually after the block wins or falls
+    back to config.json's triage block as a whole. */
 export function loadTriageConfig(
   configPath: string = join(import.meta.dir, "..", "..", "config.json"),
+  resolve: GetSettingFn = getSetting,
 ): TriageConfig {
   const cfg = JSON.parse(readFileSync(configPath, "utf8")) as { triage?: unknown };
-  return parseTriageBlock(cfg.triage);
+  const fileConfig = parseTriageBlock(cfg.triage);
+
+  const storeRaw = storeValue<unknown>("board.triage", resolve);
+  const merged = storeRaw !== undefined
+    ? { ...fileConfig, ...parseTriageBlock(storeRaw), doctorSkill: fileConfig.doctorSkill, maxConcurrent: fileConfig.maxConcurrent }
+    : fileConfig;
+
+  const doctorSkill = storeValue<string>("board.triage.doctorSkill", resolve);
+  const maxConcurrent = storeValue<number>("board.triageMaxConcurrent", resolve);
+  merged.doctorSkill = typeof doctorSkill === "string" ? doctorSkill : merged.doctorSkill;
+  merged.maxConcurrent = typeof maxConcurrent === "number" && maxConcurrent > 0 ? maxConcurrent : merged.maxConcurrent;
+
+  return merged;
 }
