@@ -1,0 +1,140 @@
+/*
+ * Drawer — a right-edge screen-stack panel, composed on top of SideDrawer
+ * rather than owning its own overlay/panel mechanism (see Drawer.tsx). This
+ * stylesheet covers only the parts Drawer itself draws: the nav bar and its
+ * back/title/close row, the optional header strip, and the sliding content
+ * body. The panel chrome (border, shadow, scrim) stays SideDrawer's.
+ */
+@layer soribashi.recipes {
+  .nav {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-rem40);
+    padding: var(--spacing-rem75) var(--spacing-rem100) var(--spacing-rem50);
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .back {
+    align-self: flex-start;
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    padding: 0;
+    font: inherit;
+    font-size: var(--font-size-sm);
+  }
+
+  .back:hover {
+    color: var(--fg);
+  }
+
+  .back:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .navRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-rem50);
+  }
+
+  .title {
+    font-weight: 700;
+    font-size: var(--font-size-xl);
+    color: var(--fg);
+    /* The stack's top screen can outlive the row it was pushed from; this
+       keeps a long title from forcing the nav bar to wrap the close button
+       off the edge. */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .navActions {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-rem40);
+    flex-shrink: 0;
+  }
+
+  .navAction {
+    background: none;
+    border: none;
+    color: var(--accent);
+    cursor: pointer;
+    font: inherit;
+    font-weight: 600;
+    padding: var(--spacing-rem20) var(--spacing-rem40);
+    border-radius: var(--radius-px5);
+  }
+
+  .navAction:hover:not(:disabled) {
+    background: var(--surface-wash-accent-14);
+  }
+
+  .navAction:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .navAction:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+
+  /* No `font: inherit`, matching Modal's own close button: mr-board's glyph
+     buttons have never reset font, and this keeps the literal "✕" consistent
+     with every other drawer head in the kit. */
+  .close {
+    background: none;
+    border: none;
+    color: var(--muted);
+    cursor: pointer;
+    font-size: var(--font-size-rem90);
+    padding: var(--spacing-rem20) var(--spacing-rem40);
+    border-radius: var(--radius-px5);
+  }
+
+  .close:hover {
+    color: var(--fg);
+    background: var(--card);
+  }
+
+  .close:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+
+  .header {
+    flex-shrink: 0;
+    padding: var(--spacing-rem50) var(--spacing-rem100);
+    border-bottom: 1px solid var(--border-soft);
+  }
+
+  .content {
+    flex: 1 1 auto;
+    padding: var(--spacing-rem100);
+    animation: drawer-slide-in 160ms ease-out;
+  }
+
+  @keyframes drawer-slide-in {
+    from {
+      opacity: 0;
+      transform: translateX(var(--sb-drawer-slide-x));
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .content {
+      animation: none;
+    }
+  }
+}

@@ -37,6 +37,10 @@ export const MATRIX_CLASSIFICATION: Record<string, MatrixClassification> = {
     exempt:
       "structural chrome: fixed --panel/--muted/--fg/--green pairs (--green is the copied-flash state, not an intent), no intent axis",
   },
+  Drawer: {
+    exempt:
+      "structural chrome: fixed --panel/--muted/--fg/--accent/--border pairs, no intent axis; composes SideDrawer, itself exempt",
+  },
   Icon: { exempt: "renders no colour of its own — the svg inherits currentColor from its rendering context" },
   LabeledSeg: {
     exempt: "no vocabulary axes; composes Segmented, which is itself structural chrome (see Segmented entry)",

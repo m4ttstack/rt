@@ -8,6 +8,7 @@ import { ConfirmDialogs } from "./pages/ConfirmDialogs.tsx";
 import { ContextMenus } from "./pages/ContextMenus.tsx";
 import { ContrastDebt } from "./pages/ContrastDebt.tsx";
 import { CopyButtons } from "./pages/CopyButtons.tsx";
+import { Drawers } from "./pages/Drawers.tsx";
 import { Fields } from "./pages/Fields.tsx";
 import { Icons } from "./pages/Icons.tsx";
 import { ListGroups } from "./pages/ListGroups.tsx";
@@ -44,6 +45,7 @@ const PAGES: Record<string, ComponentType> = {
   contextmenus: ContextMenus,
   contrastdebt: ContrastDebt,
   copybuttons: CopyButtons,
+  drawers: Drawers,
   fields: Fields,
   icons: Icons,
   listgroups: ListGroups,
@@ -69,6 +71,7 @@ const PAGE_LABELS: Record<string, string> = {
   contextmenus: "ContextMenu",
   contrastdebt: "Contrast debt",
   copybuttons: "CopyButton",
+  drawers: "Drawer",
   listgroups: "ListGroup",
   markdowns: "Markdown",
   selectboxes: "SelectBox",

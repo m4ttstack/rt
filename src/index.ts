@@ -57,6 +57,9 @@ export type {
 export { CopyButton, copyButtonTheme } from "./recipes/CopyButton/CopyButton.tsx";
 export type { CopyButtonOwnProps, CopyButtonProps } from "./recipes/CopyButton/CopyButton.tsx";
 
+export { DRAWER_PARTS, Drawer, drawerTheme } from "./recipes/Drawer/Drawer.tsx";
+export type { DrawerOwnProps, DrawerProps, DrawerScreen } from "./recipes/Drawer/Drawer.tsx";
+
 export {
   FIELD_PARTS,
   RadioGroup,
