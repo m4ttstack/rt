@@ -1,11 +1,13 @@
-import { Button, ICONS } from "@mattstack/tui-kit";
+import { Alert, Button, ICONS } from "@mattstack/tui-kit";
 import { AppsTable } from "./AppsTable.tsx";
+import { AddAppModal, EditAppModal, RemoveConfirm } from "./modals.tsx";
 import { TunnelSection } from "./TunnelSection.tsx";
 import { useBoardState } from "./useBoardState.ts";
 
 export function Board() {
   const board = useBoardState();
-  const { data, sections, tunnels, subline, isRestarting, onRestart, reloadingProxy, onProxyReload, openAdd } = board;
+  const { data, sections, tunnels, subline, isRestarting, onRestart, reloadingProxy, onProxyReload, openAdd, proxyNotice } =
+    board;
 
   return (
     <main className="board" data-board-ready={data != null ? "" : undefined}>
@@ -23,6 +25,11 @@ export function Board() {
         )}
       </header>
       <p className="board-subline">{subline}</p>
+      {proxyNotice && (
+        <Alert intent={proxyNotice.kind} command={proxyNotice.command}>
+          {proxyNotice.message}
+        </Alert>
+      )}
 
       {data != null && (
         <>
@@ -37,6 +44,10 @@ export function Board() {
       )}
 
       <footer className="muted-more mt-6">discovered from portless routes + LaunchAgents · local.mattstack</footer>
+
+      <AddAppModal board={board} />
+      <EditAppModal board={board} />
+      <RemoveConfirm board={board} />
     </main>
   );
 }
