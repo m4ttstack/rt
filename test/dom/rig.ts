@@ -3,7 +3,7 @@
 // DOM specs exercise the same HTML/JS/CSS the browser gets in production.
 import { chromium, type Browser, type Page } from "playwright";
 import { join } from "path";
-import { mkdtempSync, rmSync } from "fs";
+import { copyFileSync, mkdtempSync, rmSync } from "fs";
 import { tmpdir } from "os";
 
 const ROOT = join(import.meta.dir, "../..");
@@ -35,17 +35,33 @@ export function consoleErrors(page: Page): string[] {
   return consoleErrorsByPage.get(page) ?? [];
 }
 
-export async function withBoard(fn: (page: Page) => Promise<void>): Promise<void> {
+export interface WithBoardOptions {
+  /** Filename under test/fixture/ to serve as status.json instead of the
+      default, e.g. "status-stale.json". The server always reads
+      <DECK_FIXTURE>/status.json, so this copies the named file into its own
+      temp dir under that name rather than parameterizing the server. */
+  fixture?: string;
+}
+
+export async function withBoard(fn: (page: Page) => Promise<void>, opts: WithBoardOptions = {}): Promise<void> {
   const port = await freePort();
   const stateDir = mkdtempSync(join(tmpdir(), "deck-dom-"));
   const base = `http://127.0.0.1:${port}`;
+
+  let fixtureDir = FIXTURE_DIR;
+  let fixtureTmp: string | null = null;
+  if (opts.fixture) {
+    fixtureTmp = mkdtempSync(join(tmpdir(), "deck-dom-fixture-"));
+    copyFileSync(join(FIXTURE_DIR, opts.fixture), join(fixtureTmp, "status.json"));
+    fixtureDir = fixtureTmp;
+  }
 
   const proc = Bun.spawn(["bun", "run", join(ROOT, "src/main.ts"), "serve"], {
     cwd: ROOT,
     env: {
       ...process.env,
       PORT: String(port),
-      DECK_FIXTURE: FIXTURE_DIR,
+      DECK_FIXTURE: fixtureDir,
       LOCAL_STATE_DIR: stateDir,
       // Never touch the real launchd deck service or ~/.mattstack state.
       LOCAL_APPS_NO_GATEWAY: "1",
@@ -82,5 +98,6 @@ export async function withBoard(fn: (page: Page) => Promise<void>): Promise<void
     proc.kill();
     await proc.exited;
     rmSync(stateDir, { recursive: true, force: true });
+    if (fixtureTmp) rmSync(fixtureTmp, { recursive: true, force: true });
   }
 }
