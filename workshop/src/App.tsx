@@ -6,6 +6,7 @@ import { Buttons } from "./pages/Buttons.tsx";
 import { Chips } from "./pages/Chips.tsx";
 import { ConfirmDialogs } from "./pages/ConfirmDialogs.tsx";
 import { ContextMenus } from "./pages/ContextMenus.tsx";
+import { ContrastDebt } from "./pages/ContrastDebt.tsx";
 import { CopyButtons } from "./pages/CopyButtons.tsx";
 import { Fields } from "./pages/Fields.tsx";
 import { Icons } from "./pages/Icons.tsx";
@@ -39,6 +40,7 @@ const PAGES: Record<string, ComponentType> = {
   chips: Chips,
   confirmdialogs: ConfirmDialogs,
   contextmenus: ContextMenus,
+  contrastdebt: ContrastDebt,
   copybuttons: CopyButtons,
   fields: Fields,
   icons: Icons,
@@ -61,6 +63,7 @@ const PAGES: Record<string, ComponentType> = {
 const PAGE_LABELS: Record<string, string> = {
   confirmdialogs: "ConfirmDialog",
   contextmenus: "ContextMenu",
+  contrastdebt: "Contrast debt",
   copybuttons: "CopyButton",
   markdowns: "Markdown",
   selectboxes: "SelectBox",
