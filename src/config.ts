@@ -1,7 +1,7 @@
 import { readFileSync, renameSync, writeFileSync } from "fs";
 import { join } from "path";
-import { homedir } from "os";
 import { getSetting, setSetting } from "@mattstack/rt-client";
+import { readBoardSecrets, type BoardSecretsData, type BoardSecretsDeps } from "./board-secrets.ts";
 
 export interface Member {
   username: string;
@@ -105,7 +105,6 @@ const DEFAULT_SLACK: SlackConfig = {
 };
 
 export const CONFIG_PATH = join(import.meta.dir, "..", "config.json");
-const RT_SECRETS_PATH = join(homedir(), ".mattstack", "rt", "secrets.json");
 
 /** Parse and validate raw config JSON. Separated from file IO for testing. */
 export function parseConfig(raw: string): BoardConfig {
@@ -509,55 +508,45 @@ export function saveSwitchboardUrl(
   return loadConfigFrom(path, resolve);
 }
 
+/** Every board secrets loader below shares this one call: env-first, then
+    the rt daemon's token-gated `secrets:read` (scope "board"). `deps` exists
+    only for tests -- production callers take the default (real api-token
+    file + real daemon socket, resolved at call time by board-secrets.ts).
+    Any daemon-side failure (down, gate-refused, old daemon) degrades to
+    `{}` after a console.warn -- these are all optional secrets, so a daemon
+    problem must disable the dependent feature, never crash the board. */
+async function boardSecrets(deps?: BoardSecretsDeps): Promise<BoardSecretsData> {
+  const res = await readBoardSecrets(deps);
+  if (res.ok) return res;
+  console.warn(`board: secrets unavailable (${res.message})`);
+  return {};
+}
+
 /** Optional after the rt rewire: only the display-name lookup uses it; the
     board runs fully without one. Returns null when no token is configured. */
-export function loadGitLabToken(): string | null {
+export async function loadGitLabToken(deps?: BoardSecretsDeps): Promise<string | null> {
   if (process.env.GITLAB_TOKEN) return process.env.GITLAB_TOKEN;
-  try {
-    const secrets = JSON.parse(readFileSync(RT_SECRETS_PATH, "utf8"));
-    if (secrets.gitlabToken) return secrets.gitlabToken;
-  } catch {
-    // fall through — no secrets file, or it's unreadable/invalid
-  }
-  return null;
+  return (await boardSecrets(deps)).gitlabToken ?? null;
 }
 
 /** Slack user token (xoxp) for the review-thread integration. Optional: the
     board runs fine without it; the Slack menu actions just stay disabled.
     Returns null when no token is configured. */
-export function loadSlackToken(): string | null {
+export async function loadSlackToken(deps?: BoardSecretsDeps): Promise<string | null> {
   if (process.env.SLACK_TOKEN) return process.env.SLACK_TOKEN;
-  try {
-    const secrets = JSON.parse(readFileSync(RT_SECRETS_PATH, "utf8"));
-    if (secrets.slackToken) return secrets.slackToken;
-  } catch {
-    // no secrets file — treat as unconfigured
-  }
-  return null;
+  return (await boardSecrets(deps)).slackToken ?? null;
 }
 
 /** Switchboard board token. Optional: without it (or without switchboard.url)
     the board runs exactly as before, with all peer features disabled. */
-export function loadSwitchboardToken(): string | null {
+export async function loadSwitchboardToken(deps?: BoardSecretsDeps): Promise<string | null> {
   if (process.env.SWITCHBOARD_TOKEN) return process.env.SWITCHBOARD_TOKEN;
-  try {
-    const secrets = JSON.parse(readFileSync(RT_SECRETS_PATH, "utf8"));
-    if (secrets.switchboardToken) return secrets.switchboardToken;
-  } catch {
-    // no secrets file -- treat as unconfigured
-  }
-  return null;
+  return (await boardSecrets(deps)).switchboardToken ?? null;
 }
 
 /** Switchboard ADMIN token (operator only). Presence of this secret is what
     turns on the board's invite affordances; absence changes nothing. */
-export function loadSwitchboardAdminToken(): string | null {
+export async function loadSwitchboardAdminToken(deps?: BoardSecretsDeps): Promise<string | null> {
   if (process.env.SWITCHBOARD_ADMIN_TOKEN) return process.env.SWITCHBOARD_ADMIN_TOKEN;
-  try {
-    const secrets = JSON.parse(readFileSync(RT_SECRETS_PATH, "utf8"));
-    if (secrets.switchboardAdminToken) return secrets.switchboardAdminToken;
-  } catch {
-    // no secrets file -- treat as unconfigured
-  }
-  return null;
+  return (await boardSecrets(deps)).switchboardAdminToken ?? null;
 }

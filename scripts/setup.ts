@@ -16,16 +16,21 @@
 import { readdirSync, readFileSync, readlinkSync, symlinkSync, unlinkSync, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { setSetting } from "@mattstack/rt-client";
+import { getSetting, setSetting } from "@mattstack/rt-client";
 import { readEnvFile, upsertEnvKeys } from "../src/env-file.ts";
 import { carrySwitchboard, classifySetupAnswer, redeemInvite } from "../src/peer/invite.ts";
 import { canonicalUsername } from "../src/peer/envelope.ts";
 import { loadConfig, type BoardConfig } from "../src/config.ts";
 
 // Slack app credentials are NOT checked in — bring your own app (see the README
-// "Slack integration" section). setup reads SLACK_CLIENT_ID / SLACK_CLIENT_SECRET
-// from .env (or the environment) and prompts for them when absent, so nothing
-// secret ever lands in a tracked file.
+// "Slack integration" section). The client id is public (an OAuth app
+// identifier, not a secret) and defaults from the team settings store's
+// `mattstack.integrations` key (`.slack.clientId`) once an operator has set
+// it there, ahead of .env/process.env. The client SECRET is never read from
+// the team store here: it lives in the `board` domain's encrypted secrets
+// (the `secrets:read` daemon scope this board's own config.ts loaders now
+// use), not in a settings-store field -- setup only ever reads it from .env
+// or prompts for it, so nothing secret lands in a tracked file.
 const SLACK_REDIRECT_PORT = 53782;
 const SLACK_REDIRECT_URI = `http://localhost:${SLACK_REDIRECT_PORT}/slack/callback`;
 const SLACK_USER_SCOPES = [
@@ -205,7 +210,8 @@ async function main() {
       if (reuse) env.SLACK_TOKEN = "";
     }
     if (!env.SLACK_TOKEN) {
-      const clientId = ask("Slack app client id", env.SLACK_CLIENT_ID || process.env.SLACK_CLIENT_ID);
+      const teamSlack = getSetting<{ slack?: { clientId?: string } }>("mattstack.integrations").value?.slack;
+      const clientId = ask("Slack app client id", env.SLACK_CLIENT_ID || teamSlack?.clientId || process.env.SLACK_CLIENT_ID);
       const clientSecret = ask("Slack app client secret", env.SLACK_CLIENT_SECRET || process.env.SLACK_CLIENT_SECRET);
       if (!clientId || !clientSecret) {
         console.error("Slack setup needs a client id + secret from your own Slack app (see README). Skipping Slack.");

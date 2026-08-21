@@ -50,20 +50,38 @@ const ENV_PATH = join(import.meta.dir, "..", ".env");
 let config = FIXTURE_DIR
   ? parseConfig(readFileSync(fixtureFile("config.json"), "utf8"))
   : loadConfig();
+
+/** Wraps a board secrets loader (env-first, then a daemon round trip) so it
+    runs at most once per process: an env-set token needs no daemon call, and
+    a daemon-sourced one is fetched lazily on first use, not at import -- the
+    board must still boot with the daemon down, since every one of these
+    tokens is optional. */
+function memoizeAsync<T>(load: () => Promise<T>): () => Promise<T> {
+  let cached: Promise<T> | undefined;
+  return () => (cached ??= load());
+}
+
 // Optional: display-name lookups only. The board's data plane is rt.
-const gitlabToken = FIXTURE_DIR ? null : loadGitLabToken();
+const getGitlabToken = memoizeAsync<string | null>(() => (FIXTURE_DIR ? Promise.resolve(null) : loadGitLabToken()));
+// Optional: enables the Slack review-thread menu actions when a token is set.
+const getSlackToken = memoizeAsync<string | null>(() => (FIXTURE_DIR ? Promise.resolve(null) : loadSlackToken()));
+// Optional peer relay token -- see the peering-start block below.
+const getSwitchboardToken = memoizeAsync<string | null>(() => (FIXTURE_DIR ? Promise.resolve(null) : loadSwitchboardToken()));
+// Operator-only secret: its presence is what turns on this board's invite
+// affordances. Absent, /peer/invite and /peer/boards answer 400 and the UI
+// never offers them.
+const getSwitchboardAdminToken = memoizeAsync<string | null>(() => (FIXTURE_DIR ? Promise.resolve(null) : loadSwitchboardAdminToken()));
 
 /** Writes go straight to GitLab through glance; reads come from the rt daemon
     (see readProjectMRs). Built on demand so a tokenless install still boots --
     every caller has already refused the request when the token is missing. */
 let gitlabProvider: GitLabProvider | undefined;
-function gitlab(): GitLabProvider {
-  if (!gitlabToken) throw new Error("gitlab token not configured");
-  gitlabProvider ??= new GitLabProvider(config.gitlabHost, gitlabToken);
+async function gitlab(): Promise<GitLabProvider> {
+  const token = await getGitlabToken();
+  if (!token) throw new Error("gitlab token not configured");
+  gitlabProvider ??= new GitLabProvider(config.gitlabHost, token);
   return gitlabProvider;
 }
-// Optional: enables the Slack review-thread menu actions when a token is set.
-const slackToken = FIXTURE_DIR ? null : loadSlackToken();
 
 // Optional peer relay. Both a configured url and a token are required; without
 // either, peering stays unstarted and every peer feature (publish, poll,
@@ -77,12 +95,11 @@ const peerDeps: Omit<MaterializeDeps, "reportAuth"> = {
   log: (line) => console.error(line),
 };
 const peering = makePeering({ makeClient: makeSwitchboardClient, deps: peerDeps });
-const switchboardToken = FIXTURE_DIR ? null : loadSwitchboardToken();
-if (config.switchboard.url && switchboardToken) peering.start(config.switchboard.url, switchboardToken);
-// Operator-only secret: its presence is what turns on this board's invite
-// affordances. Absent, /peer/invite and /peer/boards answer 400 and the UI
-// never offers them.
-const switchboardAdminToken = FIXTURE_DIR ? null : loadSwitchboardAdminToken();
+// Fire-and-forget: the daemon round trip must not hold up Bun.serve below.
+void (async () => {
+  const token = await getSwitchboardToken();
+  if (config.switchboard.url && token) peering.start(config.switchboard.url, token);
+})();
 
 /** Send what's queued without making the caller wait on the relay. Anything
     still queued goes out on the next tick, so a failure here only costs
@@ -278,11 +295,12 @@ const NAMES_TTL_MS = 60 * 60_000;
 async function refreshMemberNames(): Promise<void> {
   if (namesFetchedAt && Date.now() - namesFetchedAt < NAMES_TTL_MS) return;
   namesFetchedAt = Date.now();
+  const token = await getGitlabToken();
   await Promise.all(
     config.members.map(async (member) => {
       try {
-        if (!gitlabToken) { memberNames.set(member.username, member.name ?? null); return; }
-        const user = await gitlab().fetchUser(member.username);
+        if (!token) { memberNames.set(member.username, member.name ?? null); return; }
+        const user = await (await gitlab()).fetchUser(member.username);
         memberNames.set(member.username, user?.name ?? member.name ?? null);
       } catch (err) {
         console.error(`name lookup failed for ${member.username}: ${err instanceof Error ? err.message : err}`);
@@ -425,6 +443,12 @@ Bun.serve({
         }
       }
     }
+    // Resolved once per request, off the memoized getters above -- cheap
+    // after the first daemon round trip, and every branch below expects a
+    // plain string|null the way the removed module-level consts used to read.
+    const [gitlabToken, slackToken, switchboardAdminToken] = await Promise.all([
+      getGitlabToken(), getSlackToken(), getSwitchboardAdminToken(),
+    ]);
     switch (pathname) {
       case "/healthz":
         return new Response("ok");
@@ -956,7 +980,7 @@ Bun.serve({
           // title prefix), reads the MR first since we send `draft` without a
           // title, and reads it back after to confirm the flag actually landed --
           // throwing instead of reporting a transition that did not happen.
-          const updated = await gitlab().updatePullRequest(path, parsed.iid, { draft });
+          const updated = await (await gitlab()).updatePullRequest(path, parsed.iid, { draft });
           // The cached snapshot still has the old state; drop it so the next
           // /data.json reflects the flip instead of waiting out the cache TTL.
           cache.invalidate();
@@ -971,7 +995,7 @@ Bun.serve({
           // those retries were exhausted rather than never tried. The edit landed
           // before any of that ran either way, so ask GitLab what is actually true
           // instead of reporting a write that worked as a failure.
-          const after = await gitlab().fetchSingleMR(path, parsed.iid, null).catch(() => null);
+          const after = await (await gitlab()).fetchSingleMR(path, parsed.iid, null).catch(() => null);
           if (after?.draft === draft) {
             cache.invalidate();
             return new Response(JSON.stringify({ ok: true, draft, title: after.title, recovered: true }), {
@@ -1333,7 +1357,9 @@ let autoResolveTimer: ReturnType<typeof setTimeout> | undefined;
 let autoResolveRunning = false;
 
 async function autoResolveSlackRefs(): Promise<void> {
-  if (autoResolveRunning || !slackToken) return;
+  if (autoResolveRunning) return;
+  const slackToken = await getSlackToken();
+  if (!slackToken) return;
   autoResolveRunning = true;
   try {
     const snapshot = await cache.get().catch(() => null);
@@ -1361,10 +1387,12 @@ async function autoResolveSlackRefs(): Promise<void> {
   }
 }
 
-function scheduleAutoResolve(): void {
+async function scheduleAutoResolve(): Promise<void> {
   if (autoResolveTimer) clearTimeout(autoResolveTimer);
   const mins = config.slack.autoResolveIntervalMinutes;
-  if (!slackToken || mins <= 0) return;
+  if (mins <= 0) return;
+  const slackToken = await getSlackToken();
+  if (!slackToken) return;
   const tick = () => {
     void autoResolveSlackRefs().catch((err) =>
       console.error(`auto-resolve sweep failed: ${err instanceof Error ? err.message : err}`),
@@ -1375,7 +1403,7 @@ function scheduleAutoResolve(): void {
   autoResolveTimer = setTimeout(tick, 5_000);
 }
 
-scheduleAutoResolve();
+void scheduleAutoResolve();
 
 // ── rt relay → board push ────────────────────────────────────────────────
 // An rt broadcast about a mapped repo means the store changed: refetch the
@@ -1433,7 +1461,7 @@ if (!FIXTURE_DIR) watch(dirname(CONFIG_PATH), (_event, filename) => {
       cache.markStale();
       void refreshMemberNames();
       void cache.get().catch(() => {});
-      scheduleAutoResolve();
+      void scheduleAutoResolve();
       console.log("config.json changed — reloaded members/settings (no restart needed)");
     } catch (err) {
       console.error(`config reload skipped (invalid): ${err instanceof Error ? err.message : err}`);

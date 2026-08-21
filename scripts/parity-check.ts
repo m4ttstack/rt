@@ -11,7 +11,7 @@ import { buildBoard, type BoardMR } from "../src/data.ts";
 import { readProjectMRs } from "@mattstack/rt-client";
 
 const config = loadConfig();
-const token = loadGitLabToken();
+const token = await loadGitLabToken();
 if (!token) {
   console.error("no GitLab token available for the legacy path");
   process.exit(2);
