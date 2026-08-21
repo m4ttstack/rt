@@ -6,8 +6,9 @@ import {
 } from "../services/manager.ts";
 import { allocatePort } from "./allocate.ts";
 import { listRecords, getRecord, deleteRecord, putRecord } from "./records.ts";
-import { registerApp, type Drivers } from "../api/register.ts";
+import { registerApp, reinstallSupervised, type Drivers } from "../api/register.ts";
 import { stateDir, logsDir } from "../api/state.ts";
+import { composeServicePath } from "../services/exec-env.ts";
 
 export interface BootstrapResult {
   port: number;
@@ -64,11 +65,14 @@ export async function bootstrapSelf(
     programArguments,
     workingDirectory: stateDir(),
     // launchd starts agents with its own minimal PATH ($PATH pared down to
-    // the OS defaults), not the installing shell's, so anything the running
-    // platform later shells out to (portless, in particular; this broke live)
-    // needs the real PATH captured here, at `deck setup` time, while
-    // process.env.PATH still holds the shell's actual value.
-    environment: { PORT: String(port), PATH: process.env.PATH ?? "" },
+    // the OS defaults), so the platform needs one that can find what it
+    // shells out to (portless, in particular; this broke live). Composed,
+    // not captured: `deck setup` runs from a shell whose PATH may hold
+    // per-shell version-manager directories, and those are dead long before
+    // the plist that recorded them is next read. This PATH is also what
+    // every app plist the running platform renders inherits by default, so
+    // a bad capture here would propagate to every app registered after it.
+    environment: { PORT: String(port), PATH: composeServicePath() },
     stdoutPath: join(logsDir(), "deck.out.log"),
     stderrPath: join(logsDir(), "deck.err.log"),
   });
@@ -110,6 +114,12 @@ export async function bootstrapSelf(
   rec.command = programArguments;
   rec.workingDirectory = stateDir();
   putRecord(rec);
+
+  // Re-render the apps' plists too. Their programs are resolved at render
+  // time, so a setup run after a toolchain change is what repairs an app
+  // whose interpreter moved — without this, `deck setup` fixes the platform
+  // and leaves every app it supervises pointing at the old one.
+  await reinstallSupervised(drivers);
 
   return { port, label: PLATFORM_LABEL, aliases };
 }

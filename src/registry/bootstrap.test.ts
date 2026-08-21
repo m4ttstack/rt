@@ -40,17 +40,22 @@ test("bootstrap: agent + aliases first, then the record catches up as managedBy 
   expect(rec.label).toBe("com.mattstack.deck");
 });
 
-test("the platform's own plist carries PATH captured from the installing shell", async () => {
+test("the platform's own plist carries a composed PATH, not the installing shell's", async () => {
   const manager = new FakeServiceManager();
   const edge = new FakeEdgeProxy();
   const savedPath = process.env.PATH;
-  process.env.PATH = "/fake/installer/bin:/usr/bin";
+  // `deck setup` runs from a shell whose PATH can hold per-shell
+  // version-manager directories; those die with the shell, and every app
+  // plist the running platform later renders would inherit them.
+  process.env.PATH = "/fake/installer/bin:/home/t/.local/state/fnm_multishells/1_2/bin";
   try {
     await bootstrapSelf({ manager, edge }, {
       execPath: "/usr/local/bin/deck", entry: null, tlds: ["localhost", "mattstack"],
     });
     const spec = manager.installed.get("com.mattstack.deck")!;
-    expect(spec.environment.PATH).toBe("/fake/installer/bin:/usr/bin");
+    expect(spec.environment.PATH).not.toContain("/fake/installer/bin");
+    expect(spec.environment.PATH).not.toContain("fnm_multishells");
+    expect(spec.environment.PATH).toContain("/usr/bin");
   } finally {
     process.env.PATH = savedPath;
   }
@@ -154,4 +159,26 @@ test("migration: boots out the pre-rename platform label (com.mattstack.local) b
 
   expect(manager.installed.has(LEGACY_PLATFORM_LABEL)).toBe(false); // booted out
   expect(manager.installed.has("com.mattstack.deck")).toBe(true); // new one installed
+});
+
+test("setup re-renders supervised apps' plists so a moved interpreter self-heals", async () => {
+  const manager = new FakeServiceManager();
+  const edge = new FakeEdgeProxy();
+  // An app registered earlier, frozen against an interpreter that is gone.
+  putRecord({
+    name: "stale", managedBy: "user", port: 11007, kind: "service",
+    label: "com.mattstack.deck.stale",
+    command: ["bun", "src/server.ts"],
+    workingDirectory: "/tmp/stale",
+    createdAt: new Date().toISOString(),
+  });
+
+  await bootstrapSelf({ manager, edge }, {
+    execPath: "/usr/local/bin/deck", entry: null, tlds: ["localhost"],
+  });
+
+  const spec = manager.installed.get("com.mattstack.deck.stale")!;
+  expect(spec).toBeDefined();
+  expect(spec.programArguments[0]!.startsWith("/")).toBe(true);
+  expect(spec.programArguments[0]!.endsWith("/bun")).toBe(true);
 });

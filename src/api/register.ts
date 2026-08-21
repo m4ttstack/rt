@@ -9,7 +9,10 @@ import {
 import { renameAppSettings, getOverride, clearOverride } from "../../core/settings.ts";
 import { allocatePort } from "../registry/allocate.ts";
 import { authorizeStructural } from "../registry/lifecycle.ts";
-import { LABEL_PREFIX, type ServiceManager, type ServiceSpec } from "../services/manager.ts";
+import {
+  LABEL_PREFIX, isPlatformManagedBy, type ServiceManager, type ServiceSpec,
+} from "../services/manager.ts";
+import { composeServicePath, resolveProgram } from "../services/exec-env.ts";
 import type { EdgeProxy } from "../edge/portless.ts";
 import { logsDir } from "./state.ts";
 
@@ -34,12 +37,28 @@ export type FlowResult = { status: number; body: unknown };
 
 const NAME_RE = /^[a-z0-9][a-z0-9.-]*$/;
 
+/**
+ * launchd does not search PATH for `ProgramArguments[0]`, so argv0 must be
+ * absolute in the plist. The registry deliberately keeps the logical command
+ * (`node server.js`) and this resolves it on every render, so an interpreter
+ * that moves — a version manager reorganizing, or being swapped for another —
+ * is picked up by the next render instead of being frozen at registration.
+ *
+ * Throws rather than naming a program that does not exist: launchd declines
+ * to start such a job without logging anything, so writing it anyway produces
+ * an app that is silently, inexplicably down.
+ */
 function specFor(record: AppRecord): ServiceSpec {
+  const env = { ...(record.env ?? {}), PORT: String(record.port) };
+  const path = env.PATH ?? composeServicePath();
+  const [argv0, ...rest] = record.command!;
+  const program = resolveProgram(argv0!, path);
+  if (!program) throw new Error(`${argv0} not found on the service PATH (${path})`);
   return {
     label: record.label!,
-    programArguments: record.command!,
+    programArguments: [program, ...rest],
     workingDirectory: record.workingDirectory!,
-    environment: { ...(record.env ?? {}), PORT: String(record.port) },
+    environment: { ...env, PATH: path },
     stdoutPath: join(logsDir(), `${record.name}.out.log`),
     stderrPath: join(logsDir(), `${record.name}.err.log`),
   };
@@ -251,4 +270,41 @@ export async function editApp(
   // is still unresolved no matter how well the new shape installed.
   for (const issue of teardownIssues) addIssue(next.name, issue);
   return { status: 200, body: { record: getRecord(next.name) } };
+}
+
+/**
+ * Re-render every supervised app's plist against the current environment.
+ *
+ * A plist is written once at registration and then never revisited, so an app
+ * registered while one toolchain was installed keeps naming that toolchain's
+ * paths after it moves or is replaced — and launchd simply declines to start
+ * it, silently. Re-rendering resolves each record's logical command again,
+ * which is what makes such a change self-healing instead of a support ticket.
+ *
+ * The platform's own service is excluded on purpose: bootstrapSelf owns that
+ * plist and the uninstall/install ordering around a live platform, which is
+ * deliberately not this sweep's to repeat.
+ */
+export async function reinstallSupervised(
+  drivers: Drivers,
+): Promise<{ reinstalled: string[]; failed: string[] }> {
+  const reinstalled: string[] = [];
+  const failed: string[] = [];
+  for (const record of listRecords()) {
+    if (record.kind !== "service" || isPlatformManagedBy(record.managedBy)) continue;
+    if (!record.label || !record.command?.length) continue;
+    try {
+      await drivers.manager.install(specFor(record));
+      clearIssues(record.name, "launchd");
+      reinstalled.push(record.name);
+    } catch (err) {
+      addIssue(record.name, {
+        source: "launchd",
+        message: String(err).slice(0, 300),
+        at: new Date().toISOString(),
+      });
+      failed.push(record.name);
+    }
+  }
+  return { reinstalled, failed };
 }

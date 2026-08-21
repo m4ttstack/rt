@@ -31,16 +31,23 @@ test("XML-escapes hostile values instead of injecting elements", () => {
   expect(xml).not.toContain("<evil>");
 });
 
-test("defaults PATH from the rendering process's own env when the spec doesn't set one", () => {
+test("composes a default PATH instead of inheriting the rendering process's", () => {
   const savedPath = process.env.PATH;
   process.env.PATH = "/fake/bin:/usr/bin";
   try {
     const xml = renderPlist(spec); // spec.environment carries no PATH key
     expect(xml).toContain("<key>PATH</key>");
-    expect(xml).toContain("<string>/fake/bin:/usr/bin</string>");
+    // A rendering process's PATH is one shell's snapshot; a plist outlives it.
+    expect(xml).not.toContain("/fake/bin");
+    expect(xml).toContain("/usr/bin");
   } finally {
     process.env.PATH = savedPath;
   }
+});
+
+test("an explicit PATH on the spec still wins", () => {
+  const xml = renderPlist({ ...spec, environment: { PATH: "/only/this" } });
+  expect(xml).toContain("<string>/only/this</string>");
 });
 
 test("an explicit PATH on the spec wins over the process default, and existing env keys survive", () => {

@@ -275,3 +275,29 @@ test("edit re-ports: a teardown driver failure lands a visible issue without los
   expect(rec.issues).toHaveLength(1);
   expect(rec.issues![0]!.source).toBe("launchd");
 });
+
+test("resolves argv0 to an absolute path at render time, keeping the logical command on the record", async () => {
+  await registerApp(input, drivers);
+
+  const spec = drivers.manager.installed.get("com.mattstack.deck.myapp")!;
+  // launchd does not search PATH for ProgramArguments[0].
+  expect(spec.programArguments[0]!.startsWith("/")).toBe(true);
+  expect(spec.programArguments[0]!.endsWith("/bun")).toBe(true);
+  expect(spec.programArguments.slice(1)).toEqual(["src/server.ts"]);
+  // The record keeps the logical name, so a later render re-resolves it.
+  expect(getRecord("myapp")!.command).toEqual(["bun", "src/server.ts"]);
+});
+
+test("refuses to install a service whose program cannot be found", async () => {
+  const res = await registerApp(
+    { ...input, name: "ghostapp", command: ["definitely-not-a-real-binary", "x.js"] },
+    drivers,
+  );
+
+  // Registered, but loudly broken rather than silently down: launchd declines
+  // to start a job naming a nonexistent program without logging anything.
+  expect(res.status).toBe(201);
+  expect(drivers.manager.installed.has("com.mattstack.deck.ghostapp")).toBe(false);
+  const issues = getRecord("ghostapp")!.issues!;
+  expect(issues.some((i) => i.source === "launchd" && i.message.includes("not found"))).toBe(true);
+});
