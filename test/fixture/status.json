@@ -2,8 +2,8 @@
   "suffix": "mattstack",
   "canRestart": true,
   "canManage": true,
-  "up": 2,
-  "total": 3,
+  "up": 3,
+  "total": 4,
   "nextPort": 11012,
   "proxyStale": false,
   "autoHeal": null,
@@ -97,6 +97,36 @@
         "kind": "service",
         "command": ["bun", "run", "server.ts"],
         "workingDirectory": "/Users/matt/Documents/GitHub/ledger"
+      },
+      "oauth": { "mode": "off" }
+    },
+    {
+      "name": "orbit",
+      "port": 3007,
+      "url": "https://orbit.localhost",
+      "publicUrl": "https://orbit.mattstack",
+      "health": { "ok": true, "status": 200, "ms": 18 },
+      "service": {
+        "label": "com.mattstack.deck.orbit",
+        "short": "orbit",
+        "pid": 5311,
+        "lastExitStatus": 0,
+        "unmanaged": null,
+        "stderr": []
+      },
+      "published": true,
+      "hasPassword": false,
+      "isTunnel": false,
+      "override": { "devPort": 3007, "basePort": 11007 },
+      "publicFollowsOverride": false,
+      "preflight": null,
+      "self": false,
+      "managedBy": "user",
+      "issues": [],
+      "record": {
+        "kind": "service",
+        "command": ["bun", "run", "dev"],
+        "workingDirectory": "/Users/matt/Documents/GitHub/orbit"
       },
       "oauth": { "mode": "off" }
     }

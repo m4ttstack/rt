@@ -1,8 +1,7 @@
 // The apps table and the strays table share one row template, per
-// board.html. PortCell renders the plain-text branch; the editable port UI
-// replaces it.
+// board.html.
 import { useState } from "react";
-import { Badge, Button, Chip, ICONS, Modal, Spinner, Switch, Table } from "@mattstack/tui-kit";
+import { Badge, Button, Chip, ICONS, Modal, Spinner, Switch, Table, TextField } from "@mattstack/tui-kit";
 import { accessSummary, isPlatform, type Row, type StatusData } from "./logic.ts";
 import type { BoardState } from "./useBoardState.ts";
 
@@ -34,7 +33,7 @@ export function AppsTable({ section, data, board }: { section: AppsSection; data
               <SiteCell row={row} data={data} />
             </Table.Cell>
             <Table.Cell>
-              <PortCell row={row} />
+              <PortCell row={row} data={data} board={board} />
             </Table.Cell>
             <Table.Cell>
               <HealthCell row={row} restarting={isRestarting(row)} />
@@ -127,8 +126,109 @@ function SiteCell({ row, data }: { row: Row; data: StatusData }) {
   );
 }
 
-/** Plain-text placeholder; the editable port cell replaces this. */
-function PortCell({ row }: { row: Row }) {
+function PortCell({ row, data, board }: { row: Row; data: StatusData; board: BoardState }) {
+  const { editing, setEditValue, submitPort, cancelEdit, startEdit, clearPort, onPublicFollows } = board;
+
+  if (editing && editing.app === row.name) {
+    return (
+      <span>
+        {row.override && <s className="muted">{row.override.basePort}</s>}
+        <TextField
+          classNames={{ input: "port-edit" }}
+          value={editing.value}
+          onChange={(ev) => setEditValue(ev.target.value)}
+          inputRef={(el) => el?.focus()}
+          placeholder="dev port"
+          inputMode="numeric"
+          aria-label="development port"
+          onKeyDown={(ev) => {
+            if (ev.key === "Enter") submitPort();
+            else if (ev.key === "Escape") cancelEdit();
+          }}
+          onBlur={cancelEdit}
+        />
+      </span>
+    );
+  }
+
+  if (row.override && data.canManage && !row.self) {
+    const basePort = row.override.basePort;
+    return (
+      <span className="devport-stack">
+        <span className="devport-line">
+          <Button variant="ghost" size="sm" aria-label="change development port" onClick={() => startEdit(row)}>
+            {row.port}
+          </Button>
+          <Chip
+            uppercase
+            title={`dev port override, normally ${basePort}`}
+            aria-label={`dev port override, normally ${basePort}`}
+          >
+            dev
+          </Chip>
+          {/* Revealed on row hover or keyboard focus (board.css), so an
+              overridden row is exactly as tall as the rest of the table. */}
+          <span className="devport-extra">
+            <Button
+              variant="ghost"
+              size="sm"
+              iconOnly
+              aria-label={`revert to ${basePort}`}
+              title={`revert to ${basePort}`}
+              onClick={() => clearPort(row)}
+            >
+              {ICONS["rotate-ccw"]}
+            </Button>
+            <Switch
+              className="devport-public"
+              checked={row.publicFollowsOverride}
+              onChange={() => onPublicFollows(row)}
+              label="public too"
+              aria-label={
+                row.publicFollowsOverride
+                  ? `stop serving ${row.name} dev port publicly`
+                  : `serve ${row.name} dev port publicly`
+              }
+              title={
+                row.publicFollowsOverride
+                  ? `the public URL serves the dev port — click to pin it back to ${basePort}`
+                  : `the public URL serves ${basePort} — click to serve the dev port instead`
+              }
+            />
+          </span>
+        </span>
+        {/* Preflight is probed only for opted-in apps, so a non-null value
+            means this row is actually exposed. */}
+        {(row.preflight || []).map((issue) => (
+          <span className="preflight-issue" key={issue.code}>
+            <Badge intent="warn">
+              {ICONS["triangle-alert"]}
+              <span>{issue.message}</span>
+            </Badge>
+            {issue.fix && <code className="muted">{issue.fix}</code>}
+          </span>
+        ))}
+        {row.preflight && row.preflight.length === 0 && (
+          <Badge
+            intent="ok"
+            title="the dev server accepts the public hostname and its hot reload reaches the tunnel"
+          >
+            {ICONS["circle-check"]}
+            live publicly
+          </Badge>
+        )}
+      </span>
+    );
+  }
+
+  if (!row.override && row.port != null && data.canManage && !row.self) {
+    return (
+      <Button variant="ghost" size="sm" aria-label="change development port" onClick={() => startEdit(row)}>
+        {row.port}
+      </Button>
+    );
+  }
+
   return <span className="muted">{row.port != null ? row.port : "—"}</span>;
 }
 

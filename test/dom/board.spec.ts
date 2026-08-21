@@ -24,7 +24,7 @@ async function poll(check: () => boolean, timeoutMs = 4000): Promise<void> {
 test("renders one row per fixture app; site cell links name + suffix", async () => {
   await withBoard(async (page) => {
     const appsTable = page.locator("table").first();
-    expect(await appsTable.locator('[data-part="table-row"]').count()).toBe(3);
+    expect(await appsTable.locator('[data-part="table-row"]').count()).toBe(4);
 
     const atlasLink = rowFor(page, "atlas").locator("a.unstyled");
     expect(await atlasLink.getAttribute("href")).toBe("https://atlas.localhost");
