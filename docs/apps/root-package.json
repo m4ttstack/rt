@@ -23,7 +23,10 @@
     "serve": "bun run src/main.ts serve",
     "test": "bun test core src",
     "test:dom": "bun test test/dom/",
-    "test:e2e": "LOCAL_E2E=1 bun test test/e2e.smoke.test.ts"
+    "test:e2e": "LOCAL_E2E=1 bun test test/e2e.smoke.test.ts",
+    "capture": "bun test/capture.ts --out test/.captures",
+    "capture:baseline": "bun test/capture.ts --out test/baselines",
+    "capture:compare": "bun test/compare.ts"
   },
   "dependencies": {
     "@mattstack/tui-kit": "file:../tui-kit",

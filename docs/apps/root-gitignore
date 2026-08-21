@@ -3,3 +3,4 @@ logs/
 .local-dev/
 .worktrees/
 dist/
+test/.captures/
