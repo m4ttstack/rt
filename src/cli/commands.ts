@@ -78,6 +78,16 @@ export async function runCommand(
         const force = rest.includes("--force") ? "?force=true" : "";
         const { status, body } = await apiJson(`/api/v1/apps/${name}${force}`, { method: "DELETE" });
         if (status !== 200) { io.err(body.message || body.error || `failed (${status})`); return 1; }
+        // A teardown whose drivers did not all succeed answers 200 with
+        // ok:false and KEEPS the record (see unregisterApp). Reporting that
+        // as "removed" sends someone off believing an app is gone while it
+        // is still registered, still routed, and still on the board.
+        if (body.ok === false) {
+          const issues = (body.record?.issues ?? []) as Array<{ source: string; message: string }>;
+          const detail = issues.map((i) => `${i.source}: ${i.message}`).join("; ");
+          io.err(`partly removed ${name} — the record was kept${detail ? ` (${detail})` : ""}`);
+          return 1;
+        }
         io.out(`removed ${name}`);
         return 0;
       }
