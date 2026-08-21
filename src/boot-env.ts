@@ -8,7 +8,7 @@
 // import graph before executing the importer's own statements. Putting the
 // guard in its own module and importing it FIRST is what actually orders it
 // before every transitive import that reads this env var.
-import { basename, join } from "path";
+import { join } from "path";
 import { stateDir, adoptLegacyStateDir } from "./api/state.ts";
 
 // Local -> Deck rename (ruled): adopt a pre-rename ~/.mattstack/local into
@@ -19,9 +19,19 @@ import { stateDir, adoptLegacyStateDir } from "./api/state.ts";
 adoptLegacyStateDir();
 
 // Under bun --compile, core/settings.ts's default path (import.meta.dir/../data)
-// resolves inside the bundle's virtual root: settings would silently go nowhere.
-// A compiled binary therefore defaults settings into the state dir; a checkout
-// (execPath is bun itself) keeps <repo>/data/settings.json, unchanged.
-if (!process.env.LOCAL_APPS_SETTINGS_PATH && !basename(process.execPath).startsWith("bun")) {
+// resolves inside the bundle's virtual root: settings would silently go
+// nowhere. A checkout's default (<repo>/data/settings.json) must not be read
+// either -- it holds real secrets (password hashes, session token) and is
+// untracked scratch, never a config source. Every mode therefore defaults
+// settings into the state dir.
+//
+// This means a checkout run now reads AND WRITES the exact same state dir a
+// live compiled deck uses: `bun run serve` on a dev machine that shares
+// stateDir() with production is a production mutation, not a sandboxed one
+// -- a publish toggle flipped from `bun run serve` really flips it live.
+// This guard performs no adoption of the old repo-tracked file's values on
+// first run; those are the rotation set (compromised, being retired), not a
+// seed worth carrying forward.
+if (!process.env.LOCAL_APPS_SETTINGS_PATH) {
   process.env.LOCAL_APPS_SETTINGS_PATH = join(stateDir(), "settings.json");
 }

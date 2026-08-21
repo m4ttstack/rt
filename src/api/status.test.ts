@@ -7,12 +7,20 @@ const dir = mkdtempSync(join(tmpdir(), "local-status-"));
 process.env.LOCAL_REGISTRY_PATH = join(dir, "registry.json");
 process.env.LOCAL_APPS_ROUTES_PATH = join(dir, "routes.json");
 process.env.LOCAL_APPS_SETTINGS_PATH = join(dir, "settings.json");
+// deck.platform reads through rt-client, which resolves HOME at call time (not overridable
+// via a LOCAL_*_PATH var) -- must be faked here too, or the import below touches the real
+// ~/.mattstack; beforeEach repoints it to a fresh dir per test below.
+process.env.HOME = dir;
 
 const { buildStatus } = await import("./status.ts");
 const { putRecord, reloadRegistry } = await import("../registry/records.ts");
 
 beforeEach(() => {
   rmSync(process.env.LOCAL_REGISTRY_PATH!, { force: true });
+  // deck.platform reads through rt-client, which resolves HOME at call time
+  // (not overridable via a LOCAL_*_PATH var); a fresh dir per test keeps this
+  // file's own store writes (none today) from ever leaking test-to-test.
+  process.env.HOME = mkdtempSync(join(tmpdir(), "local-status-home-"));
   reloadRegistry();
   writeFileSync(
     process.env.LOCAL_APPS_ROUTES_PATH!,

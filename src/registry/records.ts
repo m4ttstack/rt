@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync, renameSync, mkdirSync } from "fs";
 import { dirname, join } from "path";
-import { homedir } from "os";
+import { stateDir } from "../api/state.ts";
 
 export interface SyncIssue {
   source: "portless" | "launchd" | "cloudflare";
@@ -32,12 +32,13 @@ interface RegistryFile {
 }
 
 // Computed fresh per call so tests can set LOCAL_REGISTRY_PATH after import.
-// Mirrors routesPath()/settingsPath() in core.
+// Mirrors routesPath()/settingsPath() in core. Delegates to stateDir() rather
+// than re-deriving the HOME/LOCAL_STATE_DIR fallback inline -- a second copy
+// of that formula previously drifted (bare `homedir()`, frozen at process
+// start, never following a later HOME fake) independently of state.ts's own
+// copy; importing it keeps the two from diverging again.
 export function registryPath(): string {
-  return (
-    process.env.LOCAL_REGISTRY_PATH ??
-    join(process.env.LOCAL_STATE_DIR ?? join(homedir(), ".mattstack", "deck"), "registry.json")
-  );
+  return process.env.LOCAL_REGISTRY_PATH ?? join(stateDir(), "registry.json");
 }
 
 let cache: RegistryFile = load();

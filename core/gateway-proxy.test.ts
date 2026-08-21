@@ -21,6 +21,9 @@ const PLATFORM_SETTINGS = join(dir, "platform.json");
 process.env.LOCAL_APPS_ROUTES_PATH = ROUTES;
 process.env.LOCAL_APPS_SETTINGS_PATH = SETTINGS;
 process.env.LOCAL_PLATFORM_SETTINGS_PATH = PLATFORM_SETTINGS;
+// deck.platform reads through rt-client, which resolves HOME at call time (not overridable
+// via a LOCAL_*_PATH var) -- must be faked here too, or this test touches the real ~/.mattstack.
+process.env.HOME = dir;
 
 const APP = "testapp";
 const PUBLIC_DOMAIN = "example.dev";

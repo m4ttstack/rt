@@ -7,6 +7,9 @@ import { tmpdir } from "os";
 const dir = mkdtempSync(join(tmpdir(), "local-domain-"));
 process.env.LOCAL_PLATFORM_SETTINGS_PATH = join(dir, "platform.json");
 process.env.LOCAL_STATE_DIR = dir;
+// deck.platform reads through rt-client, which resolves HOME at call time (not overridable
+// via a LOCAL_*_PATH var) -- must be faked here too, or this test touches the real ~/.mattstack.
+process.env.HOME = dir;
 
 const { bindDomain } = await import("./domain.ts");
 const { FakeTunnelDriver } = await import("./tunnel.ts");
@@ -16,6 +19,9 @@ const { getPlatformSettings, reloadPlatformSettings } = await import("../api/pla
 let cfDir: string;
 beforeEach(() => {
   rmSync(process.env.LOCAL_PLATFORM_SETTINGS_PATH!, { force: true });
+  // A fresh HOME per test: publicDomain now also lives in the machine
+  // settings STORE, which the file reset above never touches.
+  process.env.HOME = mkdtempSync(join(tmpdir(), "local-domain-home-"));
   reloadPlatformSettings();
   cfDir = mkdtempSync(join(tmpdir(), "local-cfdir-"));
 });

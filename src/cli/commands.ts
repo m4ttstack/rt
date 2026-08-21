@@ -161,23 +161,13 @@ export async function runCommand(
       case "domain": {
         const [domain] = rest;
         if (!domain) { io.err(USAGE); return 2; }
-        // Spec pillar c: the SAME guided flow captures the scoped CF Access
-        // token — this prompt is the only surface that ever sets it.
-        const current = await apiJson("/api/v1/settings");
-        if (!current.body.hasCfToken) {
-          io.out("A Google sign-in gate needs a Cloudflare API token");
-          io.out("scoped to this zone: Access: Apps and Policies, Edit. Blank skips the sign-in gate.");
-          const cfApiToken = promptFn("Cloudflare API token:")?.trim() ?? "";
-          if (cfApiToken) {
-            const cfZoneId = promptFn("Cloudflare zone id:")?.trim() ?? "";
-            if (!cfZoneId) { io.err("a zone id is required with a token"); return 1; }
-            const put = await apiJson("/api/v1/settings", {
-              method: "PUT", body: JSON.stringify({ cfApiToken, cfZoneId }),
-            });
-            if (put.status !== 200) { io.err("storing the token failed"); return 1; }
-            io.out("token stored (never echoed back — GET /settings reports booleans only).");
-          }
-        }
+        // A Google sign-in gate needs a Cloudflare API token scoped to this
+        // zone (Access: Apps and Policies, Edit) -- but this CLI no longer
+        // collects or stores it. The rt daemon owns it now.
+        io.out(
+          "A Google sign-in gate needs a Cloudflare API token — store with: rt secrets set deck cfApiToken "
+            + "(and: rt secrets set deck cfZoneId) — interactive prompt; add --stdin when piping from a script",
+        );
         const { status, body } = await apiJson("/api/v1/domain/bind", {
           method: "POST", body: JSON.stringify({ domain }),
         });
