@@ -69,6 +69,12 @@ beforeAll(() => {
     port: CF_PORT, canaryPort: CF_PORT + 1,
     freshness: () => "unknown", autoHeal: () => null, onRouteWrite: () => {},
     tunnel: new FakeTunnelDriver(), accessFetch: cannedAccessFetch,
+    // Stands in for the rt daemon: CF creds now come from secrets:read, not
+    // a PUT to /api/v1/settings.
+    deckSecrets: {
+      readApiToken: () => "tok",
+      post: async () => ({ ok: true, data: { cfApiToken: "cf-tok", cfZoneId: "z1" } }),
+    },
   });
 });
 afterAll(() => {
@@ -221,15 +227,17 @@ test("legacy /api/status still answers with the board document", async () => {
   expect(legacy).toHaveProperty("proxyStale");
 });
 
-test("platform settings: PUT stores a secret, GET never echoes its value", async () => {
+test("platform settings: PUT rejects a CF secret in the payload with a directed message, not a silent drop", async () => {
   const put = await api("/api/v1/settings", {
     method: "PUT", headers: { "content-type": "application/json" },
     body: JSON.stringify({ cfApiToken: "tok-abc123" }),
   });
-  expect(put.status).toBe(200);
+  expect(put.status).toBe(400);
+  const putBody = (await put.json()) as { message?: string };
+  expect(putBody.message).toContain("rt secrets set deck cfApiToken --stdin");
   const getRaw = await (await api("/api/v1/settings")).text();
-  expect(JSON.parse(getRaw).hasCfToken).toBe(true);
   expect(getRaw).not.toContain("tok-abc123");
+  expect(getRaw).not.toContain("hasCfToken");
 });
 
 test("a sign-in gate is synced to Cloudflare BEFORE it is persisted; a failed sync changes nothing", async () => {
@@ -286,7 +294,7 @@ test("a successful Cloudflare sync persists the rule and reports it back on the 
     method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify(payload),
   });
 
-  await putJson("/api/v1/settings", { publicDomain: "example.dev", cfApiToken: "tok", cfZoneId: "z1" });
+  await putJson("/api/v1/settings", { publicDomain: "example.dev" });
   await cfApi("/api/v1/apps", {
     method: "POST", headers: { "content-type": "application/json" },
     body: JSON.stringify({ name: "gatedok", command: ["bun", "s.ts"], workingDirectory: "/tmp" }),
@@ -319,41 +327,24 @@ test("the old tier vocabulary is rejected, not translated", async () => {
   expect(res.status).toBe(400);
 });
 
-test("platform settings: null or empty clears a stored Cloudflare secret; 'null' is never stored as a literal string", async () => {
-  // Bind a non-null publicDomain first, so a literal "null" substring in any
-  // later response can only come from the bug this test guards against (the
-  // secret itself being stored as the string "null"), not from JSON's own
-  // `null` rendering of an unset publicDomain.
+test("platform settings: PUT rejects cfZoneId too, and rejects null/empty forms of either key, not just a real value", async () => {
+  // A non-null publicDomain must still land: the rejection is scoped to the
+  // CF keys, not the whole request.
   const put1 = await api("/api/v1/settings", {
     method: "PUT", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ publicDomain: "example.test", cfApiToken: "tok-real-value" }),
+    body: JSON.stringify({ publicDomain: "example.test", cfZoneId: "zone-real-value" }),
   });
-  expect(put1.status).toBe(200);
+  expect(put1.status).toBe(400);
   const get1 = await (await api("/api/v1/settings")).json();
-  expect(get1.hasCfToken).toBe(true);
+  expect(get1.publicDomain).toBeNull(); // rejected, so nothing in the payload was applied
 
-  const put2 = await api("/api/v1/settings", {
-    method: "PUT", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ cfApiToken: null }),
-  });
-  expect(put2.status).toBe(200);
-  const get2raw = await (await api("/api/v1/settings")).text();
-  expect(JSON.parse(get2raw).hasCfToken).toBe(false);
-  expect(get2raw).not.toContain("null");
-
-  // Empty string behaves the same as null.
-  await api("/api/v1/settings", {
-    method: "PUT", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ cfApiToken: "tok-real-value" }),
-  });
-  const put3 = await api("/api/v1/settings", {
-    method: "PUT", headers: { "content-type": "application/json" },
-    body: JSON.stringify({ cfApiToken: "" }),
-  });
-  expect(put3.status).toBe(200);
-  const get3raw = await (await api("/api/v1/settings")).text();
-  expect(JSON.parse(get3raw).hasCfToken).toBe(false);
-  expect(get3raw).not.toContain("null");
+  for (const payload of [{ cfApiToken: null }, { cfApiToken: "" }, { cfZoneId: null }, { cfZoneId: "" }]) {
+    const put = await api("/api/v1/settings", {
+      method: "PUT", headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    expect(put.status).toBe(400);
+  }
 });
 
 test("legacy POST endpoints are gone (board speaks /api/v1 now)", async () => {

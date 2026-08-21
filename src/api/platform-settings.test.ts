@@ -51,13 +51,10 @@ test("updates persist and merge", () => {
   expect(getPlatformSettings().secrets.cfApiToken).toBe("tok");
 });
 
-test("redaction: secrets never leave as values", () => {
+test("redaction: the secrets field never transits, in any shape -- CF creds come from the rt daemon now", () => {
   updatePlatformSettings({ secrets: { cfApiToken: "tok", cfZoneId: "z1" } });
   const r = redactedSettings();
-  expect(r).toEqual({
-    publicDomain: null, tlds: ["localhost"], legacyPrefixes: [],
-    hasCfToken: true, hasCfZone: true,
-  });
+  expect(r).toEqual({ publicDomain: null, tlds: ["localhost"], legacyPrefixes: [] });
   expect(JSON.stringify(r)).not.toContain("tok");
 });
 

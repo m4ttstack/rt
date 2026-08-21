@@ -6,6 +6,7 @@ import type { OAuth } from "./oauth.ts";
 import type { ApiDeps } from "../api/server.ts";
 import { addIssue, clearIssues } from "../registry/records.ts";
 import { getPlatformSettings } from "../api/platform-settings.ts";
+import { readDeckSecrets } from "./rt-secrets.ts";
 
 const BASE = "https://api.cloudflare.com/client/v4";
 
@@ -116,7 +117,16 @@ export async function syncOAuth(
   deps: ApiDeps,
 ): Promise<{ ok: boolean; message?: string }> {
   const settings = getPlatformSettings();
-  const { cfApiToken, cfZoneId } = settings.secrets;
+
+  // A daemon that is unreachable or actively refused the request is a loud,
+  // directed failure (never a silent skip) -- distinct from the guards below,
+  // which cover the legitimate not-configured state (ok:true, no creds yet).
+  const secretsResult = await readDeckSecrets(deps.deckSecrets);
+  if (!secretsResult.ok) {
+    addIssue(app, { source: "cloudflare", message: secretsResult.message, at: new Date().toISOString() });
+    return { ok: false, message: secretsResult.message };
+  }
+  const { cfApiToken, cfZoneId } = secretsResult;
 
   if (rule.mode === "off") {
     // No sign-in gate needs no Access app, but turning one off must still

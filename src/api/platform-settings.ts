@@ -119,8 +119,13 @@ export function updatePlatformSettings(patch: Partial<PlatformSettings>, resolve
   }
 }
 
-/** Secrets never transit API responses (ruled): booleans out, values never. */
+/**
+ * Secrets never transit API responses. CF credentials come from the rt
+ * daemon now (src/edge/rt-secrets.ts), not this field -- so this strips
+ * `secrets` without reading its contents at all, rather than reporting
+ * booleans derived from it.
+ */
 export function redactedSettings() {
-  const { secrets, ...rest } = cache;
-  return { ...rest, hasCfToken: !!secrets.cfApiToken, hasCfZone: !!secrets.cfZoneId };
+  const { secrets: _secrets, ...rest } = cache;
+  return rest;
 }

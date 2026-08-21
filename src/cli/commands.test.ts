@@ -88,20 +88,26 @@ test("version prints the deck-prefixed version string", async () => {
   expect(x.lines.join("\n")).toMatch(/^deck \d+\.\d+\.\d+$/);
 });
 
-test("domain verb captures the CF token via the injected prompt and stores it write-only", async () => {
-  const answers = ["cf-tok-123", "zone-abc"]; // token, then zone id
-  const promptFn = () => answers.shift() ?? null;
+test("domain verb no longer prompts for or persists a CF token; it points at rt secrets set instead", async () => {
+  const promptFn = () => { throw new Error("domain must not prompt for a CF token anymore"); };
   const d = io();
   // Bind itself 428s (no cert.pem in this scratch env) — exit 1 is expected;
-  // what this test pins is that the token round-tripped BEFORE the bind.
+  // what this test pins is the CLI's own behavior before the bind attempt.
   expect(await runCommand(["domain", "example.dev"], d, promptFn)).toBe(1);
-  const settings = (await (await fetch(`http://127.0.0.1:${PORT}/api/v1/settings`)).json()) as {
-    hasCfToken: boolean;
-    hasCfZone: boolean;
-  };
-  expect(settings.hasCfToken).toBe(true);
-  expect(settings.hasCfZone).toBe(true);
-  expect(JSON.stringify(settings)).not.toContain("cf-tok-123"); // redaction holds
+  const out = d.lines.join("\n");
+  expect(out).toContain("rt secrets set deck cfApiToken --stdin");
+  const settingsRaw = await (await fetch(`http://127.0.0.1:${PORT}/api/v1/settings`)).text();
+  expect(settingsRaw).not.toContain("hasCfToken");
+});
+
+test("PUT /api/v1/settings rejects a CF secret in the payload with a directed message, not a silent drop", async () => {
+  const res = await fetch(`http://127.0.0.1:${PORT}/api/v1/settings`, {
+    method: "PUT", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ cfApiToken: "should-be-rejected" }),
+  });
+  expect(res.status).toBe(400);
+  const body = (await res.json()) as { message?: string };
+  expect(body.message).toContain("rt secrets set deck cfApiToken --stdin");
 });
 
 test("migrate --convert posts convert:true and prints the convert-shaped report", async () => {
