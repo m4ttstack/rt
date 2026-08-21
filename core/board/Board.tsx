@@ -1,4 +1,5 @@
 import { Alert, Button, ICONS } from "@mattstack/tui-kit";
+import { AccessModal } from "./AccessModal.tsx";
 import { AppsTable } from "./AppsTable.tsx";
 import { AddAppModal, EditAppModal, RemoveConfirm } from "./modals.tsx";
 import { TunnelSection } from "./TunnelSection.tsx";
@@ -48,6 +49,7 @@ export function Board() {
       <AddAppModal board={board} />
       <EditAppModal board={board} />
       <RemoveConfirm board={board} />
+      <AccessModal board={board} />
     </main>
   );
 }
