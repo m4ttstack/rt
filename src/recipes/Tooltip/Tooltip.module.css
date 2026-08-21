@@ -17,7 +17,7 @@
     content: attr(data-tip);
     position: absolute;
     left: 0;
-    top: var(--sb-tooltip-offset);
+    top: calc(100% + var(--sb-tooltip-gap));
     z-index: 10;
     white-space: pre-line;
     width: max-content;
