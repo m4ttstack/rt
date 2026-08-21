@@ -91,9 +91,22 @@ function Head({ children }: { children?: ReactNode }) {
   );
 }
 
-function HeadCell({ children }: { children?: ReactNode }) {
+// `{...rest}` spread FIRST, `className`/`data-part` stamped after and merged
+// rather than overwritten — same non-overridable-tail reasoning as Row/Cell.
+function HeadCell({
+  children,
+  className,
+  ...rest
+}: { children?: ReactNode; className?: string } & Omit<
+  HTMLAttributes<HTMLTableCellElement>,
+  "className" | "children"
+>) {
   return (
-    <th className={classes.headcell} data-part={TABLE_PARTS.headcell}>
+    <th
+      {...rest}
+      className={className ? `${classes.headcell} ${className}` : classes.headcell}
+      data-part={TABLE_PARTS.headcell}
+    >
       {children}
     </th>
   );

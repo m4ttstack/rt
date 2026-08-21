@@ -1,0 +1,153 @@
+/* ListGroup — grouped settings rows (Nav/Toggle/Action/Fact/Input/Danger) in
+   a bordered panel, the deck drawer's row surface. Panel/divider tokens are
+   the same family Table/Modal use (--panel/--border/--border-soft), NOT a
+   white-card-on-grey iOS treatment — see the brief's global constraint.
+   `.navButton`/`.actionButton` stay separate rather than one shared class:
+   Action's busy state renders two flex children (Spinner + label) that must
+   stay adjacent via `gap`, so it needs `justify-content: flex-start`, while
+   Nav's label/value/chevron trio needs `space-between` to push the trailing
+   group to the row's far edge. */
+@layer soribashi.recipes {
+  .root {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    background: var(--panel);
+    overflow: hidden;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    color: var(--fg);
+  }
+
+  .list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+  }
+
+  .footer {
+    margin: 0;
+    padding: var(--spacing-sm) var(--spacing-md);
+    color: var(--muted);
+    font-size: var(--font-size-xs);
+  }
+
+  /* Divider between rows, not around the group -- the border lives on
+     `.root`. Every row `<li>` carries this class alongside its own layout
+     class. */
+  .item {
+    border-bottom: 1px solid var(--border-soft);
+  }
+
+  .item:last-child {
+    border-bottom: none;
+  }
+
+  /* No `color` here, deliberately: `.root` already sets `--fg` as the panel's
+     base text colour, and Action's `[data-intent]` rule below relies on this
+     span INHERITING its button's colour rather than fighting a same-specificity
+     declaration of its own. */
+  .label {
+    min-width: 0;
+  }
+
+  .value {
+    color: var(--muted);
+    font-variant-numeric: var(--font-numeric);
+  }
+
+  .trailing {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+  }
+
+  .chevron {
+    color: var(--muted);
+  }
+
+  .navButton {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: none;
+    border: none;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.12s ease;
+  }
+
+  .actionButton {
+    display: flex;
+    width: 100%;
+    align-items: center;
+    justify-content: flex-start;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+    background: none;
+    border: none;
+    margin: 0;
+    font: inherit;
+    color: inherit;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.12s ease;
+  }
+
+  .actionButton[data-intent="accent"] {
+    color: var(--accent);
+  }
+
+  .actionButton[data-intent="bad"] {
+    color: var(--red);
+  }
+
+  /* Danger's sugar: intent bad, centered -- the destructive-confirmation
+     shape, distinct from an inline bad-intent Action. */
+  .actionButton[data-centered] {
+    justify-content: center;
+    text-align: center;
+  }
+
+  .navButton:hover:not(:disabled),
+  .actionButton:hover:not(:disabled) {
+    background: var(--surface-wash-fg-5);
+  }
+
+  .navButton:focus-visible,
+  .actionButton:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .navButton:disabled,
+  .actionButton:disabled {
+    opacity: 0.55;
+    cursor: default;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .navButton,
+    .actionButton {
+      transition: none;
+    }
+  }
+
+  .toggleRow,
+  .factRow {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--spacing-sm);
+    padding: var(--spacing-sm) var(--spacing-md);
+  }
+
+  .inputRow {
+    padding: var(--spacing-sm) var(--spacing-md);
+  }
+}

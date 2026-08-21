@@ -143,6 +143,23 @@ describe("Table (browser)", () => {
     expect(recipeRowClass).toBeDefined();
   });
 
+  it("a consumer className on HeadCell MERGES with the recipe class, not replaces it", async () => {
+    const screen = await renderWithTheme(
+      <Table>
+        <Table.Head>
+          <Table.HeadCell className="col-gap">site</Table.HeadCell>
+        </Table.Head>
+      </Table>,
+    );
+
+    const headCell = partOf(screen.container, TABLE_PARTS.headcell);
+    expect(headCell.classList.contains("col-gap")).toBe(true);
+    const recipeHeadCellClass = [...headCell.classList].find(
+      (token) => token !== "col-gap" && token.length > 0,
+    );
+    expect(recipeHeadCellClass).toBeDefined();
+  });
+
   it("a consumer className merges onto the root div", async () => {
     const screen = await renderWithTheme(
       <Table className="app-table">

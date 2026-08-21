@@ -10,6 +10,7 @@ import { ContrastDebt } from "./pages/ContrastDebt.tsx";
 import { CopyButtons } from "./pages/CopyButtons.tsx";
 import { Fields } from "./pages/Fields.tsx";
 import { Icons } from "./pages/Icons.tsx";
+import { ListGroups } from "./pages/ListGroups.tsx";
 import { Markdowns } from "./pages/Markdowns.tsx";
 import { Modals } from "./pages/Modals.tsx";
 import { Panels } from "./pages/Panels.tsx";
@@ -45,6 +46,7 @@ const PAGES: Record<string, ComponentType> = {
   copybuttons: CopyButtons,
   fields: Fields,
   icons: Icons,
+  listgroups: ListGroups,
   markdowns: Markdowns,
   modals: Modals,
   panels: Panels,
@@ -67,6 +69,7 @@ const PAGE_LABELS: Record<string, string> = {
   contextmenus: "ContextMenu",
   contrastdebt: "Contrast debt",
   copybuttons: "CopyButton",
+  listgroups: "ListGroup",
   markdowns: "Markdown",
   selectboxes: "SelectBox",
   sidedrawers: "SideDrawer",

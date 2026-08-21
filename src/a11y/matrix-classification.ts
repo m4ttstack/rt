@@ -41,6 +41,7 @@ export const MATRIX_CLASSIFICATION: Record<string, MatrixClassification> = {
   LabeledSeg: {
     exempt: "no vocabulary axes; composes Segmented, which is itself structural chrome (see Segmented entry)",
   },
+  ListGroup: { toneMapCoveredBy: "src/recipes/ListGroup/ListGroup.visual.test.tsx" },
   Markdown: {
     exempt: "structural: fixed --fg/--accent/--card/--muted prose-chrome pairs, no intent axis",
   },
