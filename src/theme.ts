@@ -64,7 +64,13 @@ export const tuiTheme = createTheme({
       md: "6px",
       lg: "8px",
       xl: "10px",
+      // `round` (50%) is correct only on a box whose width equals its
+      // height (StatusDot's dot, Spinner's ring) — on a wider box it draws
+      // an ellipse. `pill` is a fixed radius past any realistic box's own
+      // half-height, so it always resolves to a true stadium regardless of
+      // the box's aspect ratio (Badge's root, Switch's track).
       round: "50%",
+      pill: "999px",
       px2: "2px",
       px5: "5px",
       px7: "7px",
@@ -95,6 +101,10 @@ export const tuiTheme = createTheme({
       rem120: "1.2rem",
       rem140: "1.4rem",
       rem150: "1.5rem",
+      // The iconOnly Button's min square (Button.module.css) — the old Oat
+      // board's `min-height: 1.75rem` guard against a cramped glyph box,
+      // carried into the token scale rather than left as a recipe literal.
+      rem175: "1.75rem",
       rem180: "1.8rem",
       px2: "2px",
       px3: "3px",

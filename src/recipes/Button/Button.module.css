@@ -52,9 +52,16 @@
     padding: var(--spacing-xxs) var(--spacing-sm);
   }
 
+  /* `--spacing-xxs` read as too tight around a 14px Icon glyph — bumped to
+     `--spacing-xs`, with a min-width/min-height floor so a `sm` iconOnly
+     button still comes out an even ~28px square rather than shrinking to
+     fit the glyph (the old Oat board pinned this same floor for the same
+     reason). */
   .root[data-icon-only] {
-    padding: var(--spacing-xxs);
+    padding: var(--spacing-xs);
     aspect-ratio: 1;
+    min-width: var(--spacing-rem175);
+    min-height: var(--spacing-rem175);
   }
 
   /* PARITY ANCHOR (Button.parity.test.tsx): the resolver's `default` variant
