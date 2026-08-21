@@ -23,17 +23,13 @@ import { Button, type ButtonProps, BUTTON_PARTS } from "./Button.tsx";
  * makes today's `<Button>` render that same box. Renaming a KEY here instead
  * would silently stop comparing against last-known-good pixels.
  *
- * RE-CAPTURED for the contrast-retune ruling (see
- * src/a11y/known-contrast-debt.ts and intent-resolver.ts): 34 of the 56
- * cells below changed pixels on purpose — every `ghost`/`outline` cell whose
- * intent got an `OUTLINE_SUBTLE_TONE_WEIGHT` entry, every `subtle` cell
- * (old key; today's `light` variant) whose intent got a
- * `LIGHT_VARIANT_TONE_WEIGHT` entry, and both `solid|bad` cells (the
- * `default`/`bad` CSS override). Re-recorded from a real render on this
- * branch, not hand-edited — see contrast-retune-report.md for the full
- * before/after list. The other 22 cells are byte-identical to the
- * pre-retune table: this is still last-known-good pixels, just a new
- * "known good" for the cells the ruling deliberately changed.
+ * The oracle records the current approved rendering of every
+ * variant x intent x scheme cell. Cells with per-intent `LIGHT_VARIANT_TONE_WEIGHT`
+ * or `OUTLINE_SUBTLE_TONE_WEIGHT` entries (see intent-resolver.ts) and the
+ * `default`/`bad` CSS override (Button.module.css) are text-darkened via
+ * `color-mix` to meet WCAG AA. The oracle itself is never hand-edited — each
+ * cell is recorded from a real render. Any mismatch between this table and
+ * the DOM is a defect in the resolver wiring or intent-to-tone mapping.
  */
 const ORACLE: Record<
   string,

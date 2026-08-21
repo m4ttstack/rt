@@ -16,26 +16,24 @@ const FAMILY: Record<string, string> = {
 };
 
 /**
- * Text-tone retune (contrast-retune ruling — see
- * src/a11y/known-contrast-debt.ts): Tokyo has one shade per hue, so
- * `singleShadeVariantColors` has no darker/lighter ramp step to reach for
- * the way a multi-shade resolver would — its `light`/`outline`/`subtle`
- * branches all paint `color: tone` verbatim, and several tones read below
- * WCAG AA against those variants' actual backgrounds. Mirrors Mantine's
- * tinted-context text (its light-variant text sits a shade darker than the
- * tint itself): `color` is patched to `color-mix(in srgb, tone N%,
- * var(--fg))` for the intents that need it. Leaning toward `--fg` corrects
- * both schemes with one N — `--fg` itself flips near-black/near-white per
- * scheme (src/generated/theme.css), so the same mix darkens in light mode
- * and lightens in dark mode. `border`/`background` stay untouched: neither
- * is the failing axis (WCAG text contrast only grades `color` against
- * `background`), and `filled`'s foreground already clears the floor.
+ * Text-tone retune: Tokyo has one shade per hue, so `singleShadeVariantColors`
+ * has no darker/lighter ramp step to reach for the way a multi-shade resolver
+ * would — its `light`/`outline`/`subtle` branches all paint `color: tone`
+ * verbatim, and several tones read below WCAG AA against those variants'
+ * actual backgrounds. Mirrors Mantine's tinted-context text (its light-variant
+ * text sits a shade darker than the tint itself): `color` is patched to
+ * `color-mix(in srgb, tone N%, var(--fg))` for the intents that need it.
+ * Leaning toward `--fg` corrects both schemes with one N — `--fg` itself flips
+ * near-black/near-white per scheme (src/generated/theme.css), so the same mix
+ * darkens in light mode and lightens in dark mode. `border`/`background` stay
+ * untouched: neither is the failing axis (WCAG text contrast only grades
+ * `color` against `background`), and `filled`'s foreground already clears the
+ * floor.
  *
  * N per intent was chosen by measurement against this exact palette (each
- * variant's real background), not by eye — see contrast-retune-report.md.
- * An intent absent from a table clears the floor at the raw tone already
- * and is left unpatched, to stay as close to the original hue as the floor
- * allows.
+ * variant's real background), not by eye. An intent absent from a table clears
+ * the floor at the raw tone already and is left unpatched, to stay as close to
+ * the original hue as the floor allows.
  */
 const LIGHT_VARIANT_TONE_WEIGHT: Partial<Record<string, number>> = {
   accent: 80,

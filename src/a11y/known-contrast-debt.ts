@@ -26,11 +26,10 @@ export interface ContrastDebtEntry {
   measuredRatio: number;
 }
 
-// Emptied by the contrast-retune ruling: every cell that was here now clears
-// the plain 4.5 floor via intent-resolver.ts's per-intent `color` retune (see
-// its header comment) — see contrast-retune-report.md for the before/after
-// ratios. Left as an empty array, not deleted, so the ratchet contract above
-// still has somewhere to record future debt.
+// Currently empty: every Button rest-state cell clears the WCAG AA 4.5:1 floor
+// via intent-resolver.ts's per-intent `color` retune (see its header comment).
+// Left as an array, not deleted, so the ratchet contract above still has
+// somewhere to record future debt.
 export const KNOWN_CONTRAST_DEBT: readonly ContrastDebtEntry[] = [];
 
 export function contrastDebtKey(

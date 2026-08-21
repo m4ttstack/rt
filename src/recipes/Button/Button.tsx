@@ -57,6 +57,7 @@ export const Button = defineComponent<
     return {
       root: {
         ...base.root,
+        // Keep in sync with LIGHT_VARIANT_TONE_WEIGHT.bad in intent-resolver.ts.
         "--sb-button-bad-color": "color-mix(in srgb, var(--red) 80%, var(--fg))",
       },
     };
