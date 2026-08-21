@@ -11,7 +11,25 @@ export interface AppsSection {
   rows: Row[];
 }
 
-export function AppsTable({ section, data, board }: { section: AppsSection; data: StatusData; board: BoardState }) {
+export interface DrawerRowProps {
+  /** The row currently backing the open drawer, if any -- drives the
+      selected highlight. */
+  openRowName: string | null;
+  onOpenRow: (name: string) => void;
+  /** Registers/unregisters a row's chevron DOM node so the drawer can
+      restore focus to it on close, including after the row that opened it
+      switches (arrow keys) or is later removed. */
+  registerChevron: (name: string, el: HTMLButtonElement | null) => void;
+}
+
+export function AppsTable({
+  section,
+  data,
+  board,
+  openRowName,
+  onOpenRow,
+  registerChevron,
+}: { section: AppsSection; data: StatusData; board: BoardState } & DrawerRowProps) {
   const { isRestarting, onRestart, onPublish, openAccess } = board;
   return (
     <Table>
@@ -21,7 +39,9 @@ export function AppsTable({ section, data, board }: { section: AppsSection; data
           <Table.HeadCell>port</Table.HeadCell>
           <Table.HeadCell>health</Table.HeadCell>
           <Table.HeadCell>service</Table.HeadCell>
-          <Table.HeadCell>public</Table.HeadCell>
+          {/* border-left gap, not margin: a margin on a <th> collapses in
+              table layout, per board-composite.html's own gap treatment. */}
+          <Table.HeadCell className="col-gap">public</Table.HeadCell>
           <Table.HeadCell>access</Table.HeadCell>
           <Table.HeadCell />
           <Table.HeadCell />
@@ -31,7 +51,13 @@ export function AppsTable({ section, data, board }: { section: AppsSection; data
         {section.rows.map((row) => {
           const restarting = isRestarting(row);
           return (
-            <Table.Row key={row.name}>
+            <Table.Row
+              key={row.name}
+              className={openRowName === row.name ? "row-selected" : undefined}
+              onClick={(e) => {
+                if (isDrawerClick(e)) onOpenRow(row.name);
+              }}
+            >
               <Table.Cell>
                 <SiteCell row={row} data={data} restarting={restarting} />
               </Table.Cell>
@@ -44,7 +70,7 @@ export function AppsTable({ section, data, board }: { section: AppsSection; data
               <Table.Cell>
                 <ServiceCell row={row} />
               </Table.Cell>
-              <Table.Cell>
+              <Table.Cell className="col-gap">
                 <PublishCell row={row} data={data} onPublish={onPublish} />
               </Table.Cell>
               <Table.Cell>
@@ -54,7 +80,7 @@ export function AppsTable({ section, data, board }: { section: AppsSection; data
                 <RestartCell row={row} data={data} restarting={restarting} onRestart={onRestart} />
               </Table.Cell>
               <Table.Cell>
-                <ChevronCell row={row} />
+                <ChevronCell row={row} registerRef={(el) => registerChevron(row.name, el)} />
               </Table.Cell>
             </Table.Row>
           );
@@ -65,9 +91,20 @@ export function AppsTable({ section, data, board }: { section: AppsSection; data
 }
 
 /** The running pid a service actually answers on -- launchd's own `pid` when
-    managed, the foreign process's when a route is served unmanaged. */
-function servicePid(service: NonNullable<Row["service"]>): number | null {
+    managed, the foreign process's when a route is served unmanaged. Exported:
+    the drawer's status strip (RootScreen.tsx) needs the same reading. */
+export function servicePid(service: NonNullable<Row["service"]>): number | null {
   return service.unmanaged ? service.unmanaged.pid : service.pid;
+}
+
+/** A row click opens its drawer UNLESS the click landed on an existing
+    interactive control (link, switch, restart/access/stderr button) that
+    already has its own action -- the chevron is the one button exempted,
+    since opening the drawer IS its action. */
+export function isDrawerClick(e: { target: EventTarget | null }): boolean {
+  const target = e.target as HTMLElement;
+  const interactive = target.closest?.('a, button, input, [role="switch"]');
+  return !interactive || interactive.getAttribute("data-part") === "row-chevron";
 }
 
 /** ok/warn/bad for the row's leading dot: restarting outranks the health
@@ -323,19 +360,27 @@ function RestartCell({
   );
 }
 
-/** Inert for now: a later drawer feature wires this to open the row's
-    details. A plain `<button>`, not the kit `Button`, because it needs the
-    `row-chevron` part that wiring selects on -- Button's non-overridable
-    tail always stamps `data-part="button"`. Exported: TunnelSection's rows
-    share this same cell. */
-export function ChevronCell({ row }: { row: Row }) {
+/** Opens the row's drawer via the row's own onClick (this button is exempted
+    from `isDrawerClick`'s interactive-target check, so the click bubbles
+    rather than needing its own handler). A plain `<button>`, not the kit
+    `Button`, because it needs the `row-chevron` part that wiring selects on
+    -- Button's non-overridable tail always stamps `data-part="button"`.
+    Exported: TunnelSection's rows share this same cell. `registerRef` feeds
+    the drawer's chevron map, read on close to restore focus. */
+export function ChevronCell({
+  row,
+  registerRef,
+}: {
+  row: Row;
+  registerRef?: (el: HTMLButtonElement | null) => void;
+}) {
   return (
     <button
       type="button"
       className="row-chevron"
       data-part="row-chevron"
       aria-label={`details for ${row.name}`}
-      onClick={() => {}}
+      ref={registerRef}
     >
       ›
     </button>

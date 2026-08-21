@@ -1,5 +1,5 @@
 import { Badge, Button, ICONS, Spinner, StatusDot, Table } from "@mattstack/tui-kit";
-import { ChevronCell } from "./AppsTable.tsx";
+import { ChevronCell, isDrawerClick, type DrawerRowProps } from "./AppsTable.tsx";
 import { tunnelDomain, type Row, type StatusData } from "./logic.ts";
 
 export function TunnelSection({
@@ -7,12 +7,15 @@ export function TunnelSection({
   data,
   isRestarting,
   onRestart,
+  openRowName,
+  onOpenRow,
+  registerChevron,
 }: {
   tunnels: Row[];
   data: StatusData;
   isRestarting: (row: Row) => boolean;
   onRestart: (row: Row) => void;
-}) {
+} & DrawerRowProps) {
   if (!tunnels.length) return null;
   const domain = tunnelDomain(data);
   return (
@@ -24,7 +27,13 @@ export function TunnelSection({
             const restarting = isRestarting(row);
             const up = row.service && row.service.pid !== null;
             return (
-              <Table.Row key={row.name}>
+              <Table.Row
+                key={row.name}
+                className={openRowName === row.name ? "row-selected" : undefined}
+                onClick={(e) => {
+                  if (isDrawerClick(e)) onOpenRow(row.name);
+                }}
+              >
                 <Table.Cell>
                   <StatusDot intent={restarting ? "warn" : up ? "ok" : "bad"} tip={row.name} />
                   {row.name}
@@ -71,7 +80,7 @@ export function TunnelSection({
                   )}
                 </Table.Cell>
                 <Table.Cell>
-                  <ChevronCell row={row} />
+                  <ChevronCell row={row} registerRef={(el) => registerChevron(row.name, el)} />
                 </Table.Cell>
               </Table.Row>
             );

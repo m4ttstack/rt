@@ -91,8 +91,14 @@ async function newPage(theme: "light" | "dark"): Promise<Page> {
   return page;
 }
 
+// The site cell renders the name in a <strong> only when the row has a
+// route; a stray/tunnel row with no route falls back to a plain dim span
+// (see AppsTable's SiteCell) -- scoping to the row's first cell, not a tag
+// name, matches both.
 function rowFor(page: Page, name: string) {
-  return page.locator('[data-part="table-row"]').filter({ has: page.locator("strong", { hasText: name }) });
+  return page.locator('[data-part="table-row"]').filter({
+    has: page.locator('[data-part="table-cell"]').first().filter({ hasText: name }),
+  });
 }
 
 // A click can resolve before React's resulting re-render has painted; two
@@ -145,6 +151,11 @@ async function openModal(page: Page, trigger: () => Promise<void>): Promise<void
   await page.waitForSelector('[data-part="modal"]');
 }
 
+async function openDrawerFor(page: Page, name: string): Promise<void> {
+  await rowFor(page, name).locator('[data-part="row-chevron"]').click();
+  await page.waitForSelector('[data-part="sidedrawer"]');
+}
+
 // ---- day ----
 await scenario("light", baseFixture, "board-default");
 await scenario("light", emptyFixture, "board-empty");
@@ -189,8 +200,17 @@ await scenario("light", staleFixture, "notice-error", (page) =>
   page.waitForSelector('[data-part="alert"][data-intent="bad"]'),
 );
 
+// One root screen per row kind (drawer-states-atlas.html "1 · Roots"): a
+// healthy managed app, a broken app (error banner + bad-tone logs hint), a
+// service without a route (reduced root), and a tunnel (facts + restart).
+await scenario("light", baseFixture, "drawer-root", (page) => openDrawerFor(page, "atlas"));
+await scenario("light", baseFixture, "drawer-root-broken", (page) => openDrawerFor(page, "ledger"));
+await scenario("light", baseFixture, "drawer-root-service", (page) => openDrawerFor(page, "stray-agent"));
+await scenario("light", baseFixture, "drawer-root-tunnel", (page) => openDrawerFor(page, "cloudflared"));
+
 // ---- night ----
 await scenario("dark", baseFixture, "board-default-dark");
+await scenario("dark", baseFixture, "drawer-root-dark", (page) => openDrawerFor(page, "atlas"));
 await scenario("dark", baseFixture, "modal-access-dark", async (page) => {
   await openModal(page, () => rowFor(page, "atlas").locator('[aria-label$=", change access"]').click());
   await page.mouse.move(0, 0);
