@@ -1,7 +1,7 @@
 // The apps table and the strays table share one row template, per
 // board.html.
 import { useState } from "react";
-import { Badge, Button, Chip, ICONS, Modal, Spinner, Switch, Table, TextField, Tooltip } from "@mattstack/tui-kit";
+import { Badge, Button, Chip, ICONS, Modal, Spinner, StatusDot, Switch, Table, Tooltip } from "@mattstack/tui-kit";
 import { accessSummary, isPlatform, type Row, type StatusData } from "./logic.ts";
 import type { BoardState } from "./useBoardState.ts";
 
@@ -12,7 +12,7 @@ export interface AppsSection {
 }
 
 export function AppsTable({ section, data, board }: { section: AppsSection; data: StatusData; board: BoardState }) {
-  const { isRestarting, onRestart, onPublish, openEdit, onRemove, openAccess } = board;
+  const { isRestarting, onRestart, onPublish, openAccess } = board;
   return (
     <Table>
       {section.key === "apps" && (
@@ -20,53 +20,78 @@ export function AppsTable({ section, data, board }: { section: AppsSection; data
           <Table.HeadCell>site</Table.HeadCell>
           <Table.HeadCell>port</Table.HeadCell>
           <Table.HeadCell>health</Table.HeadCell>
-          <Table.HeadCell>launchd</Table.HeadCell>
+          <Table.HeadCell>service</Table.HeadCell>
           <Table.HeadCell>public</Table.HeadCell>
           <Table.HeadCell>access</Table.HeadCell>
+          <Table.HeadCell />
           <Table.HeadCell />
         </Table.Head>
       )}
       <Table.Body>
-        {section.rows.map((row) => (
-          <Table.Row key={row.name}>
-            <Table.Cell>
-              <SiteCell row={row} data={data} />
-            </Table.Cell>
-            <Table.Cell>
-              <PortCell row={row} data={data} board={board} />
-            </Table.Cell>
-            <Table.Cell>
-              <HealthCell row={row} restarting={isRestarting(row)} />
-            </Table.Cell>
-            <Table.Cell>
-              <LaunchdCell row={row} />
-            </Table.Cell>
-            <Table.Cell>
-              <PublishCell row={row} data={data} onPublish={onPublish} />
-            </Table.Cell>
-            <Table.Cell>
-              <AccessCell row={row} data={data} onOpenAccess={openAccess} />
-            </Table.Cell>
-            <Table.Cell align="end">
-              <ActionsCell
-                row={row}
-                data={data}
-                restarting={isRestarting(row)}
-                onRestart={onRestart}
-                onEdit={openEdit}
-                onRemove={onRemove}
-              />
-            </Table.Cell>
-          </Table.Row>
-        ))}
+        {section.rows.map((row) => {
+          const restarting = isRestarting(row);
+          return (
+            <Table.Row key={row.name}>
+              <Table.Cell>
+                <SiteCell row={row} data={data} restarting={restarting} />
+              </Table.Cell>
+              <Table.Cell>
+                <PortCell row={row} data={data} />
+              </Table.Cell>
+              <Table.Cell>
+                <HealthCell row={row} restarting={restarting} />
+              </Table.Cell>
+              <Table.Cell>
+                <ServiceCell row={row} />
+              </Table.Cell>
+              <Table.Cell>
+                <PublishCell row={row} data={data} onPublish={onPublish} />
+              </Table.Cell>
+              <Table.Cell>
+                <AccessCell row={row} data={data} onOpenAccess={openAccess} />
+              </Table.Cell>
+              <Table.Cell>
+                <RestartCell row={row} data={data} restarting={restarting} onRestart={onRestart} />
+              </Table.Cell>
+              <Table.Cell>
+                <ChevronCell row={row} />
+              </Table.Cell>
+            </Table.Row>
+          );
+        })}
       </Table.Body>
     </Table>
   );
 }
 
-function SiteCell({ row, data }: { row: Row; data: StatusData }) {
+/** The running pid a service actually answers on -- launchd's own `pid` when
+    managed, the foreign process's when a route is served unmanaged. */
+function servicePid(service: NonNullable<Row["service"]>): number | null {
+  return service.unmanaged ? service.unmanaged.pid : service.pid;
+}
+
+/** ok/warn/bad for the row's leading dot: restarting outranks the health
+    probe (which outranks a bare service pid) because a row mid-restart is
+    still probeable and would otherwise flash bad before the new process
+    comes up. */
+function healthTone(row: Row, restarting: boolean): "ok" | "warn" | "bad" {
+  if (restarting) return "warn";
+  if (row.health) return row.health.ok ? "ok" : "bad";
+  if (row.service) return servicePid(row.service) !== null ? "ok" : "bad";
+  return "bad";
+}
+
+function healthTip(row: Row, restarting: boolean): string {
+  if (restarting) return "restarting…";
+  if (row.health) return row.health.status !== null ? `HTTP ${row.health.status}` : "unreachable";
+  if (row.service) return servicePid(row.service) !== null ? "running" : "stopped";
+  return "no route";
+}
+
+function SiteCell({ row, data, restarting }: { row: Row; data: StatusData; restarting: boolean }) {
   return (
     <>
+      <StatusDot intent={healthTone(row, restarting)} tip={healthTip(row, restarting)} />
       {row.url ? (
         <span className="site-name">
           <a className="unstyled" href={row.url}>
@@ -129,111 +154,24 @@ function SiteCell({ row, data }: { row: Row; data: StatusData }) {
   );
 }
 
-function PortCell({ row, data, board }: { row: Row; data: StatusData; board: BoardState }) {
-  const { editing, setEditValue, submitPort, cancelEdit, startEdit, clearPort, onPublicFollows } = board;
-
-  if (editing && editing.app === row.name) {
-    return (
-      <span>
-        {row.override && <s className="muted">{row.override.basePort}</s>}
-        <TextField
-          classNames={{ input: "port-edit" }}
-          value={editing.value}
-          onChange={(ev) => setEditValue(ev.target.value)}
-          inputRef={(el) => el?.focus()}
-          placeholder="dev port"
-          inputMode="numeric"
-          aria-label="development port"
-          onKeyDown={(ev) => {
-            if (ev.key === "Enter") submitPort();
-            else if (ev.key === "Escape") cancelEdit();
-          }}
-          onBlur={cancelEdit}
-        />
-      </span>
-    );
-  }
-
-  if (row.override && data.canManage && !row.self) {
-    const basePort = row.override.basePort;
-    return (
-      <span className="devport-stack">
-        <span className="devport-line">
-          <Button variant="subtle" size="sm" aria-label="change development port" onClick={() => startEdit(row)}>
-            {row.port}
-          </Button>
-          <Tooltip tip={`dev port override, normally ${basePort}`}>
-            <Chip uppercase aria-label={`dev port override, normally ${basePort}`}>
-              dev
-            </Chip>
-          </Tooltip>
-          {/* Revealed on row hover or keyboard focus (board.css), so an
-              overridden row is exactly as tall as the rest of the table. */}
-          <span className="devport-extra">
-            <Tooltip tip={`revert to ${basePort}`}>
-              <Button
-                variant="subtle"
-                size="sm"
-                iconOnly
-                aria-label={`revert to ${basePort}`}
-                onClick={() => clearPort(row)}
-              >
-                {ICONS["rotate-ccw"]}
-              </Button>
-            </Tooltip>
-            <Tooltip
-              tip={
-                row.publicFollowsOverride
-                  ? `the public URL serves the dev port — click to pin it back to ${basePort}`
-                  : `the public URL serves ${basePort} — click to serve the dev port instead`
-              }
-            >
-              <Switch
-                className="devport-public"
-                checked={row.publicFollowsOverride}
-                onChange={() => onPublicFollows(row)}
-                label="public too"
-                aria-label={
-                  row.publicFollowsOverride
-                    ? `stop serving ${row.name} dev port publicly`
-                    : `serve ${row.name} dev port publicly`
-                }
-              />
-            </Tooltip>
-          </span>
-        </span>
-        {/* Preflight is probed only for opted-in apps, so a non-null value
-            means this row is actually exposed. */}
-        {(row.preflight || []).map((issue) => (
-          <span className="preflight-issue" key={issue.code}>
-            <Badge intent="warn">
-              {ICONS["triangle-alert"]}
-              <span>{issue.message}</span>
-            </Badge>
-            {issue.fix && <code className="muted">{issue.fix}</code>}
-          </span>
-        ))}
-        {row.preflight && row.preflight.length === 0 && (
-          <Tooltip tip="the dev server accepts the public hostname and its hot reload reaches the tunnel">
-            <Badge intent="ok">
-              {ICONS["circle-check"]}
-              live publicly
-            </Badge>
-          </Tooltip>
-        )}
-      </span>
-    );
-  }
-
-  if (!row.override && row.port != null && data.canManage && !row.self) {
-    return (
-      <Button variant="subtle" size="sm" aria-label="change development port" onClick={() => startEdit(row)}>
-        {row.port}
-      </Button>
-    );
-  }
-
-  return <span className="muted">{row.port != null ? row.port : "—"}</span>;
+function PortCell({ row, data }: { row: Row; data: StatusData }) {
+  if (row.port == null) return <span className="muted">no route</span>;
+  // The board's own row can never carry an override in practice, but the
+  // dev chip still checks `self` defensively: showing "override" on the
+  // board's own listing of itself would be self-contradictory.
+  const override = row.override && data.canManage && !row.self ? row.override : null;
+  return (
+    <span>
+      {row.port}
+      {override && (
+        <Tooltip tip={`dev port override, normally ${override.basePort}`}>
+          <Chip uppercase aria-label={`dev port override, normally ${override.basePort}`}>
+            dev
+          </Chip>
+        </Tooltip>
+      )}
+    </span>
+  );
 }
 
 function HealthCell({ row, restarting }: { row: Row; restarting: boolean }) {
@@ -247,7 +185,6 @@ function HealthCell({ row, restarting }: { row: Row; restarting: boolean }) {
   }
   return (
     <span>
-      {!row.health && <span className="muted">no route</span>}
       {row.health && row.health.status === null && (
         <Tooltip tip="no response">
           <Badge intent="bad">unreachable</Badge>
@@ -260,6 +197,14 @@ function HealthCell({ row, restarting }: { row: Row; restarting: boolean }) {
           </Badge>
         </Tooltip>
       )}
+      {/* No HTTP probe (unrouted rows): the badge falls back to the service's
+          own pid, which is the only signal left to call ok/bad. */}
+      {!row.health && row.service && (
+        <Badge intent={servicePid(row.service) !== null ? "ok" : "bad"}>
+          {servicePid(row.service) !== null ? "running" : "stopped"}
+        </Badge>
+      )}
+      {!row.health && !row.service && <span className="muted">no route</span>}
       {row.service && row.service.stderr && row.service.stderr.length > 0 && <StderrTrigger row={row} />}
     </span>
   );
@@ -290,37 +235,13 @@ function StderrTrigger({ row }: { row: Row }) {
   );
 }
 
-function LaunchdCell({ row }: { row: Row }) {
-  if (!row.service) return <span className="muted">no launchd service</span>;
+function ServiceCell({ row }: { row: Row }) {
+  if (!row.service) return <span className="muted">no service</span>;
   const service = row.service;
-  if (service.unmanaged) {
-    return (
-      <span>
-        <Badge intent="warn">unmanaged</Badge> served by <code>{service.unmanaged.command}</code>{" "}
-        <span>pid {service.unmanaged.pid}</span>
-        <span className="muted"> · service {service.short} stopped</span>
-      </span>
-    );
-  }
-  if (service.pid !== null) {
-    return (
-      <span>
-        <span>
-          <Badge intent="ok">running</Badge> <span>pid {service.pid}</span>
-        </span>
-        <span className="muted"> · {service.short}</span>
-      </span>
-    );
-  }
-  return (
-    <span>
-      <span>
-        <Badge intent="bad">stopped</Badge>
-        {service.lastExitStatus != null && <span> exit {service.lastExitStatus}</span>}
-      </span>
-      <span className="muted"> · {service.short}</span>
-    </span>
-  );
+  const pid = servicePid(service);
+  if (pid !== null) return <span className="muted">pid {pid}</span>;
+  if (service.lastExitStatus != null) return <Badge intent="bad">exit {service.lastExitStatus}</Badge>;
+  return <span className="muted">stopped</span>;
 }
 
 function PublishCell({
@@ -376,52 +297,47 @@ function AccessCell({
   );
 }
 
-function ActionsCell({
+function RestartCell({
   row,
   data,
   restarting,
   onRestart,
-  onEdit,
-  onRemove,
 }: {
   row: Row;
   data: StatusData;
   restarting: boolean;
   onRestart: (row: Row) => void;
-  onEdit: (row: Row) => void;
-  onRemove: (row: Row) => void;
 }) {
+  if (!(data.canRestart && row.service)) return null;
   return (
-    <span className="row-actions">
-      {data.canRestart && row.service && (
-        <Button
-          variant="subtle"
-          size="sm"
-          iconOnly
-          disabled={restarting}
-          aria-label={row.service ? `restart ${row.service.short}` : "restart service"}
-          onClick={() => onRestart(row)}
-        >
-          {ICONS["refresh-cw"]}
-        </Button>
-      )}
-      {data.canManage && row.managedBy === "user" && (
-        <span className="row-actions">
-          <Button variant="subtle" size="sm" iconOnly aria-label={`edit ${row.name}`} onClick={() => onEdit(row)}>
-            {ICONS.pencil}
-          </Button>
-          <Button
-            variant="subtle"
-            size="sm"
-            iconOnly
-            intent="bad"
-            aria-label={`remove ${row.name}`}
-            onClick={() => onRemove(row)}
-          >
-            {ICONS["trash-2"]}
-          </Button>
-        </span>
-      )}
-    </span>
+    <Button
+      variant="subtle"
+      size="sm"
+      iconOnly
+      disabled={restarting}
+      aria-label={`restart ${row.service.short}`}
+      onClick={() => onRestart(row)}
+    >
+      {ICONS["refresh-cw"]}
+    </Button>
+  );
+}
+
+/** Inert for now: a later drawer feature wires this to open the row's
+    details. A plain `<button>`, not the kit `Button`, because it needs the
+    `row-chevron` part that wiring selects on -- Button's non-overridable
+    tail always stamps `data-part="button"`. Exported: TunnelSection's rows
+    share this same cell. */
+export function ChevronCell({ row }: { row: Row }) {
+  return (
+    <button
+      type="button"
+      className="row-chevron"
+      data-part="row-chevron"
+      aria-label={`details for ${row.name}`}
+      onClick={() => {}}
+    >
+      ›
+    </button>
   );
 }

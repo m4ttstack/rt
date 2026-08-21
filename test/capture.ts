@@ -26,14 +26,6 @@ const baseFixture = JSON.parse(readFileSync(join(ROOT, "test/fixture/status.json
 const emptyFixture = JSON.parse(readFileSync(join(ROOT, "test/fixture/status-empty.json"), "utf8"));
 const staleFixture = JSON.parse(readFileSync(join(ROOT, "test/fixture/status-stale.json"), "utf8"));
 
-// orbit is the only fixture row with an override on a non-self app (forecast
-// is self:true, so its override never renders — see AppsTable's PortCell),
-// so it is the one row that can demonstrate the dev-port hover reveal and a
-// preflight warning badge.
-const preflightFixture = structuredClone(baseFixture);
-const orbit = preflightFixture.apps.find((a: { name: string }) => a.name === "orbit");
-orbit.preflight = [{ code: "hmr-blocked", message: "hot reload does not reach the tunnel", fix: "set --strictPort" }];
-
 const noticeOkFixture = structuredClone(baseFixture);
 noticeOkFixture.autoHeal = { at: NOW - 30000, ok: true };
 
@@ -156,8 +148,6 @@ async function openModal(page: Page, trigger: () => Promise<void>): Promise<void
 // ---- day ----
 await scenario("light", baseFixture, "board-default");
 await scenario("light", emptyFixture, "board-empty");
-await scenario("light", baseFixture, "board-override-hover", (page) => rowFor(page, "orbit").hover());
-await scenario("light", preflightFixture, "board-preflight");
 await scenario(
   "light",
   baseFixture,
@@ -184,9 +174,6 @@ await scenario(
   await page.close();
 }
 
-await scenario("light", baseFixture, "modal-edit", (page) =>
-  openModal(page, () => rowFor(page, "orbit").locator('[aria-label="edit orbit"]').click()),
-);
 await scenario("light", baseFixture, "modal-access", async (page) => {
   await openModal(page, () => rowFor(page, "atlas").locator('[aria-label$=", change access"]').click());
   await page.mouse.move(0, 0);
