@@ -1,9 +1,8 @@
-/* Button — the kit's workhorse control. Colour rides the autoVars-injected
-   `--button-*` intent/variant vars; a variant with no injected value falls
-   back to the alias palette below. `subtle`'s wash reuses the theme's own
-   `--surface-wash-fg-5` semantic token rather than a literal color-mix(),
-   which is what keeps this file's only percentage a var() reference and out
-   of the no-hardcoded-values gate. */
+/* Button — the kit's workhorse control, matching CopyButton's absorbed
+   `.tui-copy` chrome: `outline` (the default) carries the same
+   `--panel`/`--border` box, not a transparent one. `subtle` is a raised
+   borderless sibling on `--card`, not a faint wash — only `ghost` is
+   transparent. */
 @layer soribashi.recipes {
   .root {
     display: inline-flex;
@@ -14,7 +13,7 @@
     font-size: var(--font-size-sm);
     line-height: var(--line-height-base);
     color: var(--fg);
-    background: transparent;
+    background: var(--panel);
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
     padding: var(--spacing-xs) var(--spacing-md);
@@ -44,7 +43,7 @@
 
   .root[data-variant="subtle"] {
     border-color: transparent;
-    background: var(--surface-wash-fg-5);
+    background: var(--card);
   }
 
   .root[data-variant="ghost"] {
