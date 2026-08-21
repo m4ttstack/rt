@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, renameSync, mkdirSync, chmodSync } from "f
 import { dirname, join } from "path";
 import { randomBytes } from "crypto";
 import { getSetting, setSetting } from "@mattstack/rt-client";
+import { stateDir } from "../src/api/state.ts";
 
 export interface PortOverride {
   devPort: number;
@@ -40,8 +41,14 @@ export interface SettingsFile {
 // Computed fresh on every call (not frozen at import time) so callers that set
 // LOCAL_APPS_SETTINGS_PATH after this module first loads (tests, in particular)
 // still get the override, regardless of module load order. Mirrors routesPath().
+// boot-env.ts always sets LOCAL_APPS_SETTINGS_PATH before this module's own
+// eager `cache = load()` runs, so the stateDir() fallback below is a second
+// safety net for anything that imports this module without going through
+// boot-env.ts first (a test, in particular) -- it must never fall through to
+// the repo's own data/ directory, which is untracked scratch, not a config
+// source.
 export function settingsPath(): string {
-  return process.env.LOCAL_APPS_SETTINGS_PATH ?? join(import.meta.dir, "..", "data", "settings.json");
+  return process.env.LOCAL_APPS_SETTINGS_PATH ?? join(stateDir(), "settings.json");
 }
 
 const STORE_KEY = "deck.apps";

@@ -82,6 +82,18 @@ test("a bad-scope refusal names an outdated rt daemon, never the api-token or un
   expect(message).not.toContain("api-token");
 });
 
+test("an 'unknown command' refusal names a pre-verb daemon that has never heard of secrets:read, same message as bad-scope", async () => {
+  const result = await readDeckSecrets({
+    readApiToken: () => "tok-123",
+    post: async () => ({ ok: false, error: "unknown command: secrets:read" }),
+  });
+  expect(result.ok).toBe(false);
+  const message = (result as { message: string }).message;
+  expect(message).toContain("update rt and restart the daemon");
+  expect(message).not.toContain("rt daemon start");
+  expect(message).not.toContain("api-token");
+});
+
 test("an ok:true response carrying only extension keys (no cf keys) is the old-daemon signature, not not-configured", async () => {
   const result = await readDeckSecrets({
     readApiToken: () => "tok-123",

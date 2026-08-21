@@ -24,6 +24,14 @@ adoptLegacyStateDir();
 // either -- it holds real secrets (password hashes, session token) and is
 // untracked scratch, never a config source. Every mode therefore defaults
 // settings into the state dir.
+//
+// This means a checkout run now reads AND WRITES the exact same state dir a
+// live compiled deck uses: `bun run serve` on a dev machine that shares
+// stateDir() with production is a production mutation, not a sandboxed one
+// -- a publish toggle flipped from `bun run serve` really flips it live.
+// This guard performs no adoption of the old repo-tracked file's values on
+// first run; those are the rotation set (compromised, being retired), not a
+// seed worth carrying forward.
 if (!process.env.LOCAL_APPS_SETTINGS_PATH) {
   process.env.LOCAL_APPS_SETTINGS_PATH = join(stateDir(), "settings.json");
 }

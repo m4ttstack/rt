@@ -2,13 +2,18 @@ import { mkdirSync, readFileSync, writeFileSync, existsSync, renameSync } from "
 import { join } from "path";
 import { homedir } from "os";
 
+// `homedir()` alone is frozen to whatever HOME was at process start -- Bun
+// does not track later mutations of process.env.HOME through it, so a
+// test's HOME fake (or any late reassignment) never moves it. `process.env.HOME
+// ?? homedir()` reads the live env var first, per rt-client's paths.ts
+// convention, falling back to `homedir()` only when HOME is unset entirely.
 export function stateDir(): string {
-  return process.env.LOCAL_STATE_DIR ?? join(homedir(), ".mattstack", "deck");
+  return process.env.LOCAL_STATE_DIR ?? join(process.env.HOME ?? homedir(), ".mattstack", "deck");
 }
 
 /** Where state lived before the Local -> Deck rename. Adoption source only. */
 export function legacyStateDir(): string {
-  return process.env.LOCAL_LEGACY_STATE_DIR ?? join(homedir(), ".mattstack", "local");
+  return process.env.LOCAL_LEGACY_STATE_DIR ?? join(process.env.HOME ?? homedir(), ".mattstack", "local");
 }
 
 /**

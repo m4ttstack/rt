@@ -69,3 +69,14 @@ test("adoptLegacyStateDir is a no-op when the resolved new and legacy dirs are t
 test("stateDir defaults under ~/.mattstack/deck", () => {
   expect(stateDir()).toContain(join(".mattstack", "deck"));
 });
+
+test("stateDir follows a faked HOME at call time, not a value frozen at process start", () => {
+  const originalHome = process.env.HOME;
+  const fakeHome = join(scratch, `home-${Date.now()}`);
+  process.env.HOME = fakeHome;
+  try {
+    expect(stateDir()).toBe(join(fakeHome, ".mattstack", "deck"));
+  } finally {
+    process.env.HOME = originalHome;
+  }
+});

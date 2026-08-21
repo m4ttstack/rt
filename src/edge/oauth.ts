@@ -163,7 +163,16 @@ export function setOAuth(app: string, rule: OAuth): void {
       cache = previous;
       throw err;
     }
-    saveFile({ apps: {} });
+    // The store write above already persisted -- it is now authoritative,
+    // and the store-first read path shadows whatever stale rule is still on
+    // disk. A failure collapsing the file is therefore a cleanup failure,
+    // not a data-loss one: warn and move on, never revert the store or fail
+    // the call over it.
+    try {
+      saveFile({ apps: {} });
+    } catch (err) {
+      console.warn("deck.access: collapsing access.json after a store write failed; the store is authoritative", err);
+    }
   } else {
     try {
       saveFile({ apps: cache.apps });

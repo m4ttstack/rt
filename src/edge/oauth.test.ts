@@ -252,6 +252,25 @@ test("a resolver throw on the ownership probe degrades to unowned rather than cr
   expect(onDisk.apps.a).toEqual({ mode: "emails", emails: ["a@x.dev"] });
 });
 
+test("store key present: a file-write failure collapsing access.json to {} does not revert the store or fail the call -- the store already persisted", () => {
+  setSetting("deck.access", { seed: { mode: "off" } }, "user");
+  reloadOAuth();
+
+  rmSync(ACCESS_PATH, { force: true });
+  mkdirSync(ACCESS_PATH, { recursive: true });
+  const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+  try {
+    expect(() => setOAuth("a", { mode: "emails", emails: ["a@x.dev"] })).not.toThrow();
+    expect(warnSpy).toHaveBeenCalled();
+  } finally {
+    rmSync(ACCESS_PATH, { recursive: true, force: true });
+    warnSpy.mockRestore();
+  }
+
+  const stored = getSetting<Record<string, unknown>>("deck.access").value;
+  expect(stored?.a).toEqual({ mode: "emails", emails: ["a@x.dev"] });
+});
+
 test("store key present: a store write failure reverts the in-memory cache instead of claiming a value neither side holds", () => {
   // rt-client's read path honest-degrades a malformed store to "empty"
   // rather than throwing (see stores.ts), so a plain syntax error can no

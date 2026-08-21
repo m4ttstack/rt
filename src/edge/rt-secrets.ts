@@ -13,13 +13,15 @@
 // Three failure shapes, because they call for different fixes:
 // daemon unreachable (socket down, or no api-token file yet -- the daemon
 // mints one on first start) points at `rt daemon start`; a gate refusal
-// (bad/missing token) points at the token file; an old daemon that
-// predates the "deck" scope -- detected either by its own bad-scope error
-// or by an ok:true answer holding only extension keys (linearApiKey /
-// gitlabToken) and neither cf key -- points at updating rt itself. Missing
-// keys inside an otherwise-normal ok:true response is NOT a failure here:
-// that's the legitimate not-configured state, left for the caller's own
-// guard to skip quietly.
+// (bad/missing token) points at the token file; an old daemon points at
+// updating rt itself, detected any of three ways -- a daemon old enough to
+// not know the "secrets:read" verb AT ALL refuses with "unknown command"
+// (pre-verb); one that knows the verb but not the "deck" scope refuses with
+// "bad-scope" (pre-scope); one whose scope check silently no-ops answers
+// ok:true holding only extension keys (linearApiKey / gitlabToken) and
+// neither cf key. Missing keys inside an otherwise-normal ok:true response
+// is NOT a failure here: that's the legitimate not-configured state, left
+// for the caller's own guard to skip quietly.
 import { readFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
@@ -98,6 +100,10 @@ export async function readDeckSecrets(deps: RtSecretsDeps = {}): Promise<DeckSec
   if (!res.ok) {
     const err = res.error ?? "unknown";
     if (err.startsWith(UNREACHABLE_PREFIX)) return { ok: false, message: `${DAEMON_DOWN_MESSAGE} (${err})` };
+    // A daemon that predates secrets:read entirely refuses the verb itself,
+    // not the scope -- caught here BEFORE the bad-scope/token checks below,
+    // which all assume the daemon at least recognized the command.
+    if (err.startsWith("unknown command")) return { ok: false, message: UPDATE_RT_MESSAGE };
     if (err === "bad-scope") return { ok: false, message: UPDATE_RT_MESSAGE };
     if (err === "bad-token" || err === "missing-token") {
       return {
