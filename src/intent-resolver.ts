@@ -1,3 +1,4 @@
+import { singleShadeVariantColors } from "@soribashi/core";
 import type { IntentResolver, IntentResolverResult } from "@soribashi/core";
 
 /**
@@ -14,31 +15,20 @@ const FAMILY: Record<string, string> = {
   muted: "gray",
 };
 
-/** Hover wash weight, in percent. Not a guess: the exact weight mr-board uses
-    for its one accent-tinted hover surface. */
-const HOVER_WASH = 14;
-
 /**
- * tui-kit's intent resolver. Hand-written because the default one hardcodes
- * ramp-shade lookups the TUI palette does not have — see docs/decisions.md.
- *
- * `muted` is the one intent whose family has no `500`: the gray family carries
- * `fg` and `muted` slots, so it resolves to `--color-gray-muted`.
+ * tui-kit's intent resolver: maps `intent` to its family's single canonical
+ * tone (the TUI palette has one value per hue, no ramp — `muted`'s family
+ * carries no `500`, so it resolves to `--color-gray-muted` instead), then
+ * delegates every variant's actual colour/border/hover math to
+ * `singleShadeVariantColors`. That helper's per-variant formulas (weights,
+ * mix spaces, which surface each hover mixes over) are themselves parity
+ * with what this file used to hand-roll — see Button.parity.test.tsx, the
+ * oracle this migration was required to reproduce exactly.
  */
 export const tuiIntentResolver: IntentResolver = ({ intent, variant }) => {
   const family = FAMILY[intent] ?? "blue";
-  const base =
+  const tone =
     family === "gray" ? "var(--color-gray-muted)" : `var(--color-${family}-500)`;
 
-  // Variants differ only in border and wash treatment, which lives in recipe
-  // CSS where it can be expressed per part; they share one colouring model.
-  void variant;
-
-  return {
-    background: "transparent",
-    color: base,
-    border: base,
-    hover: `color-mix(in srgb, ${base} ${HOVER_WASH}%, transparent)`,
-    hoverColor: base,
-  } satisfies IntentResolverResult;
+  return singleShadeVariantColors(tone, variant) satisfies IntentResolverResult;
 };

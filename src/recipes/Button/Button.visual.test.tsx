@@ -58,7 +58,11 @@ const row = { display: "flex", alignItems: "center", gap: "0.6rem", padding: "0.
 
 const label = { width: "4rem", color: "var(--muted)", fontSize: "var(--font-size-sm)" } as const;
 
-const VARIANTS = ["solid", "outline", "subtle", "ghost"] as const;
+// Column order preserves the PRE-rename fixture layout (`solid, outline,
+// subtle, ghost` -> `default, outline, light, subtle`) rather than the
+// vocabulary's own declaration order, so a baseline regen changes only cell
+// TEXT, never which column a box sits in.
+const VARIANTS = ["default", "outline", "light", "subtle"] as const;
 const INTENTS = ["accent", "bad"] as const;
 const SIZES = ["md", "sm"] as const;
 
@@ -101,7 +105,7 @@ function ButtonStates() {
     ACCENT button of each row gets hovered before capture (a real pointer can
     only hover one element at a time), so each shot proves that variant's
     hover fill by CONTRAST against its at-rest bad-intent sibling in the same
-    frame. `solid`'s bad button also shows the red text+border it carries AT
+    frame. `default`'s bad button also shows the red text+border it carries AT
     REST — no hover needed for that part. */
 function HoverContrastRow({ variant }: { variant: (typeof VARIANTS)[number] }) {
   return (

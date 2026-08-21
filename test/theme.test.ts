@@ -242,11 +242,13 @@ test("intent resolver maps intent words onto the single-shade families", () => {
   expect(tuiIntentResolver({ intent: "ok", variant: "outline", theme: tuiTheme }).color).toContain(
     "--color-green-500",
   );
-  expect(tuiIntentResolver({ intent: "muted", variant: "ghost", theme: tuiTheme }).color).toContain(
+  expect(tuiIntentResolver({ intent: "muted", variant: "subtle", theme: tuiTheme }).color).toContain(
     "--color-gray-muted",
   );
-  expect(tuiIntentResolver({ intent: "accent", variant: "subtle", theme: tuiTheme }).hover).toBe(
-    "color-mix(in srgb, var(--color-blue-500) 14%, transparent)",
+  // `light`'s hover mixes the tone over `--surface-card` — singleShadeVariantColors'
+  // own formula (Button.parity.test.tsx is the oracle that pins this exactly).
+  expect(tuiIntentResolver({ intent: "accent", variant: "light", theme: tuiTheme }).hover).toBe(
+    "color-mix(in srgb, var(--color-blue-500) 12%, var(--surface-card))",
   );
 });
 

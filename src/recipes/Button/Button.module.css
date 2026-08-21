@@ -1,37 +1,10 @@
-/* Button — the kit's workhorse control, four variants:
-     solid   (default) — CopyButton's absorbed `.tui-copy` box: `--panel` bg,
-             neutral `--border`, `--fg` text. Neutral except `bad`, whose
-             text AND border go `--red` — the one variant/intent pair called
-             out by name, because every other intent stays neutral here.
-     outline — transparent bg, intent-coloured border AND text at rest
-             (`--button-color`, autoVars' own resolved tone for the CURRENT
-             intent — covers all seven intents for free, not just bad).
-     subtle  — `--card` bg, borderless, intent-coloured text.
-     ghost   — transparent at rest, intent-coloured text, no border ever.
-
-   HOVER changes background ONLY, never border or text colour — matching
-   Mantine's own variant-colour-resolver discipline (text always full
-   strength; contrast comes from restraining the FILL, not the text). Every
-   hover value below is READ off Mantine's real
-   `defaultVariantColorsResolver` raw-colour fallback (the branch that
-   applies to a single-shade-per-hue palette like Tokyo's), not
-   tuned by eye:
-     `solid` (≈ Mantine's `default`) steps to `--card` — Mantine's own
-             `default` hover is ITSELF a real-but-small pre-tuned token step
-             (white→gray-0 light, dark-6→dark-5 dark; ~1.05:1 / ~1.21:1
-             measured), not a synthesized percentage, so `--card` (our
-             equivalent next-real-surface token) is the faithful match.
-     `outline` (Mantine's `outline`): `--sb-button-outline-hover-bg` —
-             intent tone at Mantine's outline alpha (5%) over `--bg`, since
-             outline's rest state is genuinely transparent (shows the page).
-     `ghost` (structurally Mantine's `subtle`: transparent-at-rest,
-             colour-on-hover): `--sb-button-ghost-hover-bg` — tone at
-             Mantine's SUBTLE alpha (12%, not outline's 5% — the two differ
-             in the real source), also over `--bg`.
-     `subtle` (ours; card-at-rest, a deliberate divergence from Mantine's
-             transparent-at-rest `subtle`): `--sb-button-subtle-hover-bg` —
-             the same 12% proportion as `ghost`, mixed over `--card` (its
-             own actual rest surface) instead of `--bg`. */
+/* Button — the kit's workhorse control, four canonical variants (default,
+   light, outline, subtle). Every variant's colour comes from the SAME
+   `--button-bg`/`--button-color`/`--button-border`/`--button-hover` quartet,
+   which autoVars derives from the theme's intent resolver
+   (tuiIntentResolver -> singleShadeVariantColors) per (intent, variant) —
+   nothing in this stylesheet names a variant to pick a colour any more.
+   HOVER changes background ONLY, never border or text colour. */
 @layer soribashi.recipes {
   .root {
     display: inline-flex;
@@ -42,14 +15,22 @@
     font-size: var(--font-size-sm);
     line-height: var(--line-height-base);
     /* Uniform box model across variants: border-WIDTH always reserved, so
-       switching variant (or hovering) never shifts layout — only the
-       colour beneath ever changes. */
-    border: 1px solid transparent;
+       switching variant (or hovering) never shifts layout — border-COLOR is
+       the only part that changes, and it's `transparent` for some variants
+       via `--button-border` itself, not via a separate declaration here. */
+    border: 1px solid var(--button-border);
     border-radius: var(--radius-md);
     padding: var(--spacing-xs) var(--spacing-md);
     cursor: pointer;
     transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease,
       transform 0.08s ease;
+
+    background: var(--button-bg);
+    color: var(--button-color);
+  }
+
+  .root:hover:not(:disabled) {
+    background: var(--button-hover);
   }
 
   .root:focus-visible {
@@ -76,58 +57,15 @@
     aspect-ratio: 1;
   }
 
-  /* ---- solid (default) ---------------------------------------------- */
-
-  .root[data-variant="solid"] {
-    background: var(--panel);
-    border-color: var(--border);
-    color: var(--fg);
-  }
-
-  .root[data-variant="solid"]:hover:not(:disabled) {
-    background: var(--card);
-  }
-
-  .root[data-variant="solid"][data-intent="bad"] {
+  /* PARITY ANCHOR (Button.parity.test.tsx): the resolver's `default` variant
+     is deliberately intent-agnostic — one neutral panel for every intent, by
+     design (see default-intent-resolver.ts). `bad` on `default` is the one
+     cell that predates the resolver and has no field in its result to carry
+     this: red text AND red border, at rest, is a Button-specific departure
+     from that neutral rule, so it stays here as a narrow override rather
+     than becoming a resolver patch that would leak into every other variant. */
+  .root[data-variant="default"][data-intent="bad"] {
     color: var(--red);
     border-color: var(--red);
-  }
-
-  /* ---- outline --------------------------------------------------------
-     Text AND border ride the current intent's own resolved tone — one rule
-     covers every intent, `bad` included, with no separate override. */
-
-  .root[data-variant="outline"] {
-    background: transparent;
-    border-color: var(--button-color);
-    color: var(--button-color);
-  }
-
-  .root[data-variant="outline"]:hover:not(:disabled) {
-    background: var(--sb-button-outline-hover-bg);
-  }
-
-  /* ---- subtle — card box, borderless, intent-coloured text ------------ */
-
-  .root[data-variant="subtle"] {
-    background: var(--card);
-    border-color: transparent;
-    color: var(--button-color);
-  }
-
-  .root[data-variant="subtle"]:hover:not(:disabled) {
-    background: var(--sb-button-subtle-hover-bg);
-  }
-
-  /* ---- ghost — transparent at rest, intent-coloured text, no border --- */
-
-  .root[data-variant="ghost"] {
-    background: transparent;
-    border-color: transparent;
-    color: var(--button-color);
-  }
-
-  .root[data-variant="ghost"]:hover:not(:disabled) {
-    background: var(--sb-button-ghost-hover-bg);
   }
 }

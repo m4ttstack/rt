@@ -16,7 +16,7 @@ import { Chip, CHIP_PARTS } from "@mattstack/tui-kit";
 /** Every intent word tuiTheme declares, in vocabulary order. */
 const INTENTS = ["accent", "ok", "warn", "bad", "cyan", "purple", "muted"] as const;
 
-/** Chip's own variant subset — the theme's `ghost` is deliberately not one. */
+/** Chip's own variant subset — the theme's `default`/`light` are deliberately not one. */
 const VARIANTS = ["outline", "subtle"] as const;
 
 const table = {
