@@ -31,7 +31,13 @@ function publicFollowsFooter(follows: boolean, basePort: number, devPort: number
 }
 
 function noOverrideFooter(row: Row): string {
-  return `${row.name} serves on its assigned port — no override`;
+  // The board's own row (self) is structurally exempt from overrides --
+  // applyOverride rejects it server-side too -- so it gets a footer that
+  // says why, not the ordinary "no override" copy with a dead-end action
+  // beneath it.
+  return row.self
+    ? "deck serves on this port — overrides don't apply to the board itself"
+    : `${row.name} serves on its assigned port — no override`;
 }
 
 export const buildDevPortSetting: ScreenBuilder = (row, nav, board) => {
@@ -120,16 +126,22 @@ export const buildDevPortScreen: ScreenBuilder = (row, nav, board, data) => {
         <ListGroup footer={noOverrideFooter(row)}>
           <ListGroup.Fact label="assigned port" value={row.port ?? ""} />
         </ListGroup>
-        <ListGroup>
-          <ListGroup.Action
-            label="set override…"
-            onClick={() => {
-              board.startEdit(row);
-              nav.pop();
-              nav.push(buildDevPortSetting);
-            }}
-          />
-        </ListGroup>
+        {/* Self's `startEdit` no-ops (useBoardState guards the board's own
+            row from ever overriding itself), so this row is never offered
+            here -- the old inline UI gated both its entry points on
+            `!row.self` the same way. */}
+        {!row.self && (
+          <ListGroup>
+            <ListGroup.Action
+              label="set override…"
+              onClick={() => {
+                board.startEdit(row);
+                nav.pop();
+                nav.push(buildDevPortSetting);
+              }}
+            />
+          </ListGroup>
+        )}
       </div>
     ),
   };

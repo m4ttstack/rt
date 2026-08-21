@@ -316,6 +316,26 @@ test("dev port: revert calls the override-clear mutation; the screen and the roo
   });
 });
 
+test("dev port: the board's own row (self) offers no 'set override…' -- no dead-end into the setting screen", async () => {
+  await withBoard(async (page) => {
+    // forecast is `self` in the fixture and defensively carries an override
+    // in the underlying data (applyOverride would reject one in reality) --
+    // devPortValue already hides that override on the root's own nav-row
+    // hint (see port.spec.ts), and this screen must agree with it.
+    await openDevPort(page, "forecast");
+    expect(await page.locator('[data-part="listgroup-fact"]').count()).toBe(1);
+    expect(await page.locator('[data-part="listgroup-fact"] [data-part="listgroup-value"]').textContent()).toBe(
+      "11003",
+    );
+    expect(await page.locator('[data-part="listgroup-footer"]').textContent()).toBe(
+      "deck serves on this port — overrides don't apply to the board itself",
+    );
+    expect(await page.locator('[data-part="listgroup-action"] button', { hasText: "set override…" }).count()).toBe(
+      0,
+    );
+  });
+});
+
 test("dev port: no override shows 'set override…'; editing has the input + nav save; cancel returns without saving", async () => {
   await withBoard(async (page) => {
     let putCalled = false;
