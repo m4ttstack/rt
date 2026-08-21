@@ -210,6 +210,14 @@ LabeledSeg), SelectBox, SideDrawer, StatusDot, ToastHost. Each is a
 `<name>Theme = Recipe.extend({})` convenience export for a `createTheme({
 components: [...] })` call to start from.
 
+### Button variants
+
+Button's `variant` axis is `default` / `light` / `outline` / `subtle`, Mantine-derived (`light` ≈ Mantine's `light`, `subtle` ≈ Mantine's `subtle`; `default` is the neutral bordered-surface button, with no Mantine equivalent by that name).
+
+Variant colors are resolver-computed — never hand-write variant color CSS. `Button.module.css` consumes `--button-bg`/`-color`/`-border`/`-hover` (and `-hover-color` where a variant needs it), sourced from soribashi's intent resolver via `autoVars`; see soribashi's `authoring-a-recipe` skill's "Variant colors" section for the mechanism.
+
+`src/a11y/known-contrast-debt.ts` ratchets a fixed list of pre-existing Button (intent, variant, scheme) cells that measure below WCAG AA under the human-approved Tokyo Day/Night look — known debt pending a design retune, not something a recipe change is expected to silently fix or worsen.
+
 ### Hooks
 
 Nine, all DOM-free at their core (each pairs a small React hook with a pure,
