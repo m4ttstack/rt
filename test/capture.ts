@@ -185,9 +185,6 @@ await scenario(
   await page.close();
 }
 
-await scenario("light", baseFixture, "modal-stderr", (page) =>
-  openModal(page, () => rowFor(page, "ledger").locator('[aria-label="show recent stderr for ledger"]').click()),
-);
 await scenario("light", noticeOkFixture, "notice-ok", (page) =>
   page.waitForSelector('[data-part="alert"][data-intent="ok"]'),
 );
@@ -238,6 +235,14 @@ await scenario("light", baseFixture, "drawer-access-who", async (page) => {
   await openDrawerFor(page, "atlas");
   await page.locator('[data-part="listgroup-nav"] button', { hasText: "access" }).click();
   await page.locator('[data-part="listgroup-nav"] button', { hasText: "who" }).click();
+});
+
+// Logs screen (drawer-states-atlas.html "4 · Logs, edit, remove"): ledger
+// carries the fixture's one stderr row -- the stderr modal it used to open
+// dies with this baseline.
+await scenario("light", baseFixture, "drawer-logs", async (page) => {
+  await openDrawerFor(page, "ledger");
+  await page.locator('[data-part="listgroup-nav"] button', { hasText: "logs" }).click();
 });
 
 // ---- night ----

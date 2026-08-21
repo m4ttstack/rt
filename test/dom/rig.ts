@@ -80,7 +80,12 @@ export async function withBoard(fn: (page: Page) => Promise<void>, opts: WithBoa
     if (!up) throw new Error(`fixture server on ${base} did not become healthy`);
 
     const browser = await getBrowser();
-    const context = await browser.newContext();
+    // Granted globally, not per-spec: the logs screen's "copy all" is the
+    // only thing that needs it, and an ungranted context makes
+    // navigator.clipboard.writeText() reject silently rather than throw,
+    // which would surface as a confusing assertion failure far from the
+    // real cause.
+    const context = await browser.newContext({ permissions: ["clipboard-read", "clipboard-write"] });
     const page = await context.newPage();
     const errors: string[] = [];
     consoleErrorsByPage.set(page, errors);

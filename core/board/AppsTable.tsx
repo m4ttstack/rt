@@ -1,7 +1,6 @@
 // The apps table and the strays table share one row template, per
 // board.html.
-import { useState } from "react";
-import { Badge, Button, Chip, ICONS, Modal, Spinner, StatusDot, Switch, Table, Tooltip } from "@mattstack/tui-kit";
+import { Badge, Button, Chip, ICONS, Spinner, StatusDot, Switch, Table, Tooltip } from "@mattstack/tui-kit";
 import { isPlatform, type Row, type StatusData } from "./logic.ts";
 import type { BoardState } from "./useBoardState.ts";
 
@@ -238,33 +237,7 @@ function HealthCell({ row, restarting }: { row: Row; restarting: boolean }) {
         </Badge>
       )}
       {!row.health && !row.service && <span className="muted">no route</span>}
-      {row.service && row.service.stderr && row.service.stderr.length > 0 && <StderrTrigger row={row} />}
     </span>
-  );
-}
-
-function StderrTrigger({ row }: { row: Row }) {
-  const [open, setOpen] = useState(false);
-  if (!row.service) return null;
-  const service = row.service;
-  return (
-    <>
-      <Button
-        variant="subtle"
-        size="sm"
-        iconOnly
-        aria-label={`show recent stderr for ${row.name}`}
-        onClick={() => setOpen(true)}
-      >
-        {ICONS["file-warning"]}
-      </Button>
-      {open && (
-        <Modal title="recent stderr" ariaLabel={`recent stderr for ${row.name}`} onClose={() => setOpen(false)}>
-          <p>{row.name}</p>
-          <pre>{service.stderr.join("\n")}</pre>
-        </Modal>
-      )}
-    </>
   );
 }
 

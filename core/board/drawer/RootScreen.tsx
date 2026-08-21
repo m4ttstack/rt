@@ -1,14 +1,16 @@
 // Root screens for the per-row drawer, per drawer-states-atlas.html "1 ·
-// Roots". The access / logs / edit nav rows still push placeholder screens;
-// a real screen replaces one by swapping its buildPlaceholder(...) call for
-// a ScreenBuilder of the same (row, nav, board, data) => DrawerScreen shape
-// dev port (DevPortScreen.tsx) already uses.
+// Roots". The edit-app nav row still pushes a placeholder screen; a real
+// screen replaces it by swapping its buildPlaceholder(...) call for a
+// ScreenBuilder of the same (row, nav, board, data) => DrawerScreen shape
+// dev port (DevPortScreen.tsx), access (AccessScreens.tsx), and logs
+// (LogsScreen.tsx) already use.
 import { Alert, ICONS, ListGroup, StatusDot, type DrawerScreen } from "@mattstack/tui-kit";
 import { servicePid } from "../AppsTable.tsx";
 import { type Row, type StatusData, tunnelDomain } from "../logic.ts";
 import type { BoardState } from "../useBoardState.ts";
 import { buildAccessRoot } from "./AccessScreens.tsx";
 import { buildDevPortScreen } from "./DevPortScreen.tsx";
+import { buildLogsScreen } from "./LogsScreen.tsx";
 
 /** What a root/pushed screen's row builders push onto and pop off of. Drawer
     itself owns no mutation surface -- AppDrawer is the only implementation.
@@ -192,7 +194,7 @@ export function buildAppRoot(
               nav.push(buildAccessRoot);
             }}
           />
-          <ListGroup.Nav label="logs" value={logsValue(row)} onClick={() => nav.push(() => buildPlaceholder("logs"))} />
+          <ListGroup.Nav label="logs" value={logsValue(row)} onClick={() => nav.push(buildLogsScreen)} />
         </ListGroup>
         <ListGroup>
           <ListGroup.Action
@@ -231,7 +233,7 @@ export function buildServiceRoot(row: Row, nav: Nav, board: BoardState, restarti
     content: (
       <div className="drawer-groups">
         <ListGroup>
-          <ListGroup.Nav label="logs" value={logsValue(row)} onClick={() => nav.push(() => buildPlaceholder("logs"))} />
+          <ListGroup.Nav label="logs" value={logsValue(row)} onClick={() => nav.push(buildLogsScreen)} />
         </ListGroup>
         <ListGroup>
           <ListGroup.Action
@@ -263,7 +265,7 @@ export function buildTunnelRoot(row: Row, nav: Nav, board: BoardState, data: Sta
       <div className="drawer-groups">
         <ListGroup>
           {domain && <ListGroup.Fact label="carries" value={`*.${domain}`} />}
-          <ListGroup.Nav label="logs" value={logsValue(row)} onClick={() => nav.push(() => buildPlaceholder("logs"))} />
+          <ListGroup.Nav label="logs" value={logsValue(row)} onClick={() => nav.push(buildLogsScreen)} />
         </ListGroup>
         <ListGroup>
           <ListGroup.Action

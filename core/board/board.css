@@ -192,3 +192,28 @@ body {
   color: var(--red);
   flex-shrink: 0;
 }
+
+/* Logs: a genuinely dark surface in both schemes, not a themed one -- forcing
+   `color-scheme: dark` here makes the kit's own `light-dark()`-defined tokens
+   resolve their dark variant locally, regardless of the page's actual scheme,
+   so this stays "kit tokens only" rather than hardcoded hex. `--bg`, not
+   `--panel`: the drawer itself already sits on dark `--panel` in dark mode
+   (SideDrawer's own background), so the box needs the next surface down to
+   still read as a distinct, recessed surface rather than blending into its
+   own container. */
+.drawer-logbox {
+  color-scheme: dark;
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-md) var(--spacing-lg);
+  font-family: var(--font-mono);
+  font-size: var(--font-size-sm);
+  line-height: var(--line-height-base);
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 320px;
+  overflow-y: auto;
+}
