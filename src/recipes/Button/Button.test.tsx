@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderWithTheme } from "../../../test/test-utils.tsx";
+import { retunedTextColor } from "../../intent-resolver.ts";
 import { Button, BUTTON_PARTS } from "./Button.tsx";
 
 /**
@@ -160,21 +161,30 @@ describe("Button (browser)", () => {
       expect(getComputedStyle(button).color).toBe(fgColor);
     });
 
-    it("default + bad intent: red text AND red border, at rest (no hover needed)", async () => {
+    it("default + bad intent: red text (retuned toward --fg) AND raw red border, at rest (no hover needed)", async () => {
       const screen = await renderWithTheme(
         <div>
           <Button variant="default" intent="bad">
             remove
           </Button>
           <span data-testid="red-probe" style={{ color: "var(--red)" }} />
+          <span
+            data-testid="red-retuned-probe"
+            style={{ color: "color-mix(in srgb, var(--red) 80%, var(--fg))" }}
+          />
         </div>,
       );
       const button = buttonOf(screen.container);
       const redColor = getComputedStyle(
         screen.container.querySelector('[data-testid="red-probe"]') as HTMLElement,
       ).color;
+      const redRetunedColor = getComputedStyle(
+        screen.container.querySelector('[data-testid="red-retuned-probe"]') as HTMLElement,
+      ).color;
 
-      expect(getComputedStyle(button).color).toBe(redColor);
+      // Text is contrast-retuned (Button.tsx's --sb-button-bad-color); the
+      // border is not — border contrast isn't the WCAG axis this retune fixes.
+      expect(getComputedStyle(button).color).toBe(redRetunedColor);
       expect(getComputedStyle(button).borderTopColor).toBe(redColor);
     });
 
@@ -185,14 +195,23 @@ describe("Button (browser)", () => {
             outline
           </Button>
           <span data-testid="cyan-probe" style={{ color: "var(--cyan)" }} />
+          <span
+            data-testid="cyan-retuned-probe"
+            style={{ color: retunedTextColor("var(--cyan)", "outline", "cyan") }}
+          />
         </div>,
       );
       const button = buttonOf(screen.container);
       const cyanColor = getComputedStyle(
         screen.container.querySelector('[data-testid="cyan-probe"]') as HTMLElement,
       ).color;
+      const cyanRetunedColor = getComputedStyle(
+        screen.container.querySelector('[data-testid="cyan-retuned-probe"]') as HTMLElement,
+      ).color;
 
-      expect(getComputedStyle(button).color).toBe(cyanColor);
+      // Text is contrast-retuned (intent-resolver.ts); the border rides the
+      // raw tone — border contrast isn't the WCAG axis that retune fixes.
+      expect(getComputedStyle(button).color).toBe(cyanRetunedColor);
       expect(getComputedStyle(button).borderTopColor).toBe(cyanColor);
     });
 
@@ -354,13 +373,16 @@ describe("Button (browser)", () => {
       );
     });
 
-    it("keeps the hover text at the same full-saturation intent colour the fill doesn't touch", async () => {
+    it("keeps the hover text at the same resolved intent colour the fill doesn't touch", async () => {
       const screen = await renderWithTheme(
         <div>
           <Button variant="subtle" intent="accent">
             subtle
           </Button>
-          <span data-testid="accent-probe" style={{ color: "var(--accent)" }} />
+          <span
+            data-testid="accent-probe"
+            style={{ color: retunedTextColor("var(--accent)", "subtle", "accent") }}
+          />
         </div>,
       );
 

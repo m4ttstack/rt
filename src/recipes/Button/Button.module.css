@@ -63,9 +63,15 @@
      cell that predates the resolver and has no field in its result to carry
      this: red text AND red border, at rest, is a Button-specific departure
      from that neutral rule, so it stays here as a narrow override rather
-     than becoming a resolver patch that would leak into every other variant. */
+     than becoming a resolver patch that would leak into every other variant.
+     `color` is darkened toward `--fg` (contrast-retune ruling, same formula
+     as intent-resolver.ts) — raw `--red` on `--surface-panel` reads below
+     WCAG AA; `border-color` stays the raw tone since border isn't the
+     failing axis. The mix itself lives in Button.tsx's `vars` as
+     `--sb-button-bad-color`: a literal color-mix() percentage here would
+     trip the no-hardcoded-values gate even inside var()'s expression tree. */
   .root[data-variant="default"][data-intent="bad"] {
-    color: var(--red);
+    color: var(--sb-button-bad-color);
     border-color: var(--red);
   }
 }

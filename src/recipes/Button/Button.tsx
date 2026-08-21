@@ -1,4 +1,4 @@
-import { isDev } from "@soribashi/core";
+import { autoVars, isDev } from "@soribashi/core";
 import type { ButtonHTMLAttributes, ComponentProps, ReactNode } from "react";
 import { defineComponent } from "../../builders.ts";
 import { Spinner } from "../Spinner/Spinner.tsx";
@@ -44,10 +44,23 @@ export const Button = defineComponent<
   variants: BUTTON_VARIANTS,
   classes,
   // Every axis needs a default: autoVars returns {} unless the axes it reads
-  // are all set — see Chip.tsx. No `vars` here: omitting it is what makes the
-  // builder fall back to calling autoVars itself (define-component.tsx), and
-  // that fallback is now exactly what this recipe wants — every colour comes
-  // straight from the theme's resolver, with no per-recipe var of its own.
+  // are all set — see Chip.tsx. `vars` calls autoVars itself (rather than
+  // omitting the key, which is what let the builder do that automatically —
+  // define-component.tsx) so it can layer in ONE extra static var: the
+  // contrast-retuned `default`/`bad` text colour (Button.module.css's parity
+  // anchor). The mix is built here rather than as a literal in that CSS
+  // rule because the no-hardcoded-values gate flags a literal color-mix()
+  // percentage even inside var()'s own expression tree — same escape hatch
+  // Badge.tsx's --sb-badge-bg and Switch.tsx's --sb-switch-bg-* use.
+  vars: (theme, props) => {
+    const base = autoVars(theme, "Button", props as Record<string, unknown>, true);
+    return {
+      root: {
+        ...base.root,
+        "--sb-button-bad-color": "color-mix(in srgb, var(--red) 80%, var(--fg))",
+      },
+    };
+  },
   defaults: { intent: "accent", variant: "default", size: "md" },
   render: ({ props, getStyles, ref }) => {
     const {
