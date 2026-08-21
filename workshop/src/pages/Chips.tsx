@@ -16,8 +16,8 @@ import { Chip, CHIP_PARTS } from "@mattstack/tui-kit";
 /** Every intent word tuiTheme declares, in vocabulary order. */
 const INTENTS = ["accent", "ok", "warn", "bad", "cyan", "purple", "muted"] as const;
 
-/** Chip's own variant subset — the theme's `default`/`subtle` are deliberately not one. */
-const VARIANTS = ["outline", "light"] as const;
+/** Chip's own variant subset — the theme's `default`/`light` are deliberately not one. */
+const VARIANTS = ["outline", "subtle"] as const;
 
 const table = {
   display: "grid",
@@ -59,7 +59,7 @@ export function Chips() {
       <div style={table}>
         <span style={head} />
         <span style={head}>outline</span>
-        <span style={head}>light</span>
+        <span style={head}>subtle</span>
         <span style={head}>pulse</span>
         <span style={head}>dimmed</span>
         <span style={head}>uppercase</span>
@@ -96,7 +96,7 @@ export function Chips() {
         together on one MR row.
       </p>
       <div style={boardRow}>
-        <Chip intent="muted" variant="light" dimmed>
+        <Chip intent="muted" variant="subtle" dimmed>
           queued
         </Chip>
         <Chip intent="warn" pulse>
@@ -119,7 +119,7 @@ export function Chips() {
           held: note
         </Chip>
         <Chip intent="bad">conflicts</Chip>
-        <Chip intent="muted" variant="light" uppercase>
+        <Chip intent="muted" variant="subtle" uppercase>
           draft
         </Chip>
       </div>
@@ -143,8 +143,8 @@ function ChipRow({ intent }: { intent: (typeof INTENTS)[number] }) {
     <>
       <span style={rowLabel}>{intent}</span>
       <Chip intent={intent}>outline</Chip>
-      <Chip intent={intent} variant="light">
-        light
+      <Chip intent={intent} variant="subtle">
+        subtle
       </Chip>
       <Chip intent={intent} pulse>
         pulse

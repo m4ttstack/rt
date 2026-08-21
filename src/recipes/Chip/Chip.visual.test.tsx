@@ -92,8 +92,8 @@ function ChipGrid() {
         <div key={intent} style={row}>
           <span style={label}>{intent}</span>
           <Chip intent={intent}>outline</Chip>
-          <Chip intent={intent} variant="light">
-            light
+          <Chip intent={intent} variant="subtle">
+            subtle
           </Chip>
           <Chip intent={intent} pulse>
             pulse
@@ -126,7 +126,7 @@ function BoardRow() {
   return (
     <div data-testid="board-row" style={{ ...surface }}>
       <div style={{ ...row, gap: "0.4rem" }}>
-        <Chip intent="muted" variant="light" dimmed>
+        <Chip intent="muted" variant="subtle" dimmed>
           queued
         </Chip>
         <Chip intent="warn" pulse>
@@ -146,7 +146,7 @@ function BoardRow() {
           held: note
         </Chip>
         <Chip intent="bad">conflicts</Chip>
-        <Chip intent="muted" variant="light" uppercase>
+        <Chip intent="muted" variant="subtle" uppercase>
           draft
         </Chip>
       </div>
