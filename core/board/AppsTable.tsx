@@ -1,6 +1,6 @@
 // The apps table and the strays table share one row template, per
-// board.html. Port editing (PortCell) is Task 14's; the fallback rendered
-// here is the plain-text branch it will replace.
+// board.html. PortCell renders the plain-text branch; the editable port UI
+// replaces it.
 import { useState } from "react";
 import { Badge, Button, Chip, ICONS, Modal, Spinner, Switch, Table } from "@mattstack/tui-kit";
 import { accessSummary, isPlatform, type Row, type StatusData } from "./logic.ts";
@@ -127,7 +127,7 @@ function SiteCell({ row, data }: { row: Row; data: StatusData }) {
   );
 }
 
-/** Plain-text placeholder; Task 14 replaces this with the editable port cell. */
+/** Plain-text placeholder; the editable port cell replaces this. */
 function PortCell({ row }: { row: Row }) {
   return <span className="muted">{row.port != null ? row.port : "—"}</span>;
 }

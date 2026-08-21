@@ -139,9 +139,9 @@ export function useBoardState() {
     [restarting],
   );
 
-  // Restarting the board's own service kills this API mid-response (ruled,
-  // accepted quirk): the fetch rejects, we swallow it, and the poll loop
-  // picks the fresh pid up when the platform is back.
+  // Restarting the board's own service kills this API mid-response: the fetch
+  // rejects, we swallow it, and the poll loop picks up the fresh pid when the
+  // platform is back.
   const onRestart = useCallback((row: Row) => {
     if (!row.service) return;
     const label = row.service.label;
