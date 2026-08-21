@@ -156,7 +156,7 @@ function PortCell({ row, data, board }: { row: Row; data: StatusData; board: Boa
     return (
       <span className="devport-stack">
         <span className="devport-line">
-          <Button variant="ghost" size="sm" aria-label="change development port" onClick={() => startEdit(row)}>
+          <Button variant="subtle" size="sm" aria-label="change development port" onClick={() => startEdit(row)}>
             {row.port}
           </Button>
           <Chip
@@ -170,7 +170,7 @@ function PortCell({ row, data, board }: { row: Row; data: StatusData; board: Boa
               overridden row is exactly as tall as the rest of the table. */}
           <span className="devport-extra">
             <Button
-              variant="ghost"
+              variant="subtle"
               size="sm"
               iconOnly
               aria-label={`revert to ${basePort}`}
@@ -223,7 +223,7 @@ function PortCell({ row, data, board }: { row: Row; data: StatusData; board: Boa
 
   if (!row.override && row.port != null && data.canManage && !row.self) {
     return (
-      <Button variant="ghost" size="sm" aria-label="change development port" onClick={() => startEdit(row)}>
+      <Button variant="subtle" size="sm" aria-label="change development port" onClick={() => startEdit(row)}>
         {row.port}
       </Button>
     );
@@ -266,7 +266,7 @@ function StderrTrigger({ row }: { row: Row }) {
   return (
     <>
       <Button
-        variant="ghost"
+        variant="subtle"
         size="sm"
         iconOnly
         aria-label={`show recent stderr for ${row.name}`}
@@ -349,7 +349,7 @@ function AccessCell({
     // screen reader. Cloudflare sync failures are NOT shown here: the site
     // cell already renders every row.issues entry, with the message attached.
     <Button
-      variant="ghost"
+      variant="subtle"
       size="sm"
       iconOnly
       title={summary}
