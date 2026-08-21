@@ -193,20 +193,19 @@ body {
   flex-shrink: 0;
 }
 
-/* Logs: a genuinely dark surface in both schemes, not a themed one -- forcing
-   `color-scheme: dark` here makes the kit's own `light-dark()`-defined tokens
-   resolve their dark variant locally, regardless of the page's actual scheme,
-   so this stays "kit tokens only" rather than hardcoded hex. `--bg`, not
-   `--panel`: the drawer itself already sits on dark `--panel` in dark mode
-   (SideDrawer's own background), so the box needs the next surface down to
-   still read as a distinct, recessed surface rather than blending into its
-   own container. */
+/* Logs: a genuinely dark surface regardless of page scheme. The kit's
+   `light-dark()`-defined tokens (--bg/--fg/--border) collapse to one branch
+   once at `:root` -- a descendant's own `color-scheme` cannot re-resolve a
+   `var()` that has already been substituted upstream, so there is no token
+   chain that pins a leaf element dark in day scheme. `--terminal-bg`/
+   `--terminal-fg`/`--terminal-border` are the kit's scheme-invariant answer:
+   plain hex aliased off the night palette, not `light-dark()`, so they stay
+   dark no matter what scheme the page is in. */
 .drawer-logbox {
-  color-scheme: dark;
   margin: 0;
-  background: var(--bg);
-  color: var(--fg);
-  border: 1px solid var(--border);
+  background: var(--terminal-bg);
+  color: var(--terminal-fg);
+  border: 1px solid var(--terminal-border);
   border-radius: var(--radius-lg);
   padding: var(--spacing-md) var(--spacing-lg);
   font-family: var(--font-mono);

@@ -251,6 +251,14 @@ await scenario("dark", baseFixture, "drawer-root-dark", (page) => openDrawerFor(
 await scenario("dark", staleFixture, "notice-error-dark", (page) =>
   page.waitForSelector('[data-part="alert"][data-intent="bad"]'),
 );
+// The logs box uses the kit's scheme-invariant --terminal-* tokens
+// specifically so it reads the same dark surface in both schemes -- this is
+// the capture that would catch a regression back to a scheme-dependent token
+// (e.g. one that collapses to the page's own light background here).
+await scenario("dark", baseFixture, "drawer-logs-dark", async (page) => {
+  await openDrawerFor(page, "ledger");
+  await page.locator('[data-part="listgroup-nav"] button', { hasText: "logs" }).click();
+});
 
 await browser.close();
 server.kill();

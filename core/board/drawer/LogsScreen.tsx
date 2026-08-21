@@ -20,7 +20,7 @@ export const buildLogsScreen: ScreenBuilder = (row): DrawerScreen => {
         ) : (
           <>
             <pre className="drawer-logbox">{stderr.join("\n")}</pre>
-            <ListGroup footer="last 200 lines of stderr, newest at the bottom · live">
+            <ListGroup footer="recent stderr, newest at the bottom · live">
               <ListGroup.Action
                 label="copy all"
                 intent="accent"

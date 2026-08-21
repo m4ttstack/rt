@@ -73,7 +73,7 @@ test(
       );
       expect(
         await page.locator('[data-part="listgroup-footer"]', {
-          hasText: "last 200 lines of stderr, newest at the bottom · live",
+          hasText: "recent stderr, newest at the bottom · live",
         }).count(),
       ).toBe(1);
     });
