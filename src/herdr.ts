@@ -2,6 +2,7 @@
 import { homedir } from "os";
 import { join } from "path";
 import { reviewReportPath } from "./review-state.ts";
+import { resolveSkillPath } from "./skill-path.ts";
 
 export type HerdrRunner = (args: string[]) => Promise<string>;
 
@@ -133,19 +134,29 @@ export function parseLaunchNote(body: unknown): { ok: true; note?: string } | { 
   return { ok: true, note: trimmed };
 }
 
-/** Build the slash-command a launched herdr pane runs. The board injects every
-    domain-specific value (skill, its own status-writer path) as a flag,
-    so the wrapper skill itself carries no repo or path knowledge. */
-function buildSkillPrompt(wrapper: string, o: SkillPromptOpts): string {
-  const parts = [`/${wrapper}`, o.mrUrl, "--state", o.statePath, "--status-bin", o.statusBin];
+/** The flag string every launch carries, whether the target is reached by
+    slash-name or by a direct path-read -- identical in both forms so a
+    dispatched skill sees the same inputs regardless of how it was found. */
+function dispatchArgs(o: SkillPromptOpts): string {
+  const parts = [o.mrUrl, "--state", o.statePath, "--status-bin", o.statusBin];
   if (o.reportPath) parts.push("--report", o.reportPath);
   if (o.skill) parts.push("--skill", o.skill);
   if (o.reReview) parts.push("--re-review");
   if (o.tier) parts.push("--tier", o.tier);
   if (o.fixClasses?.length) parts.push("--fix-classes", o.fixClasses.join(","));
   if (o.draftBin) parts.push("--draft-bin", o.draftBin);
-  const cmd = parts.join(" ");
-  return o.note ? `${cmd}\n\n${operatorNoteParagraph(o.note)}` : cmd;
+  return parts.join(" ");
+}
+
+function withNote(cmd: string, note?: string): string {
+  return note ? `${cmd}\n\n${operatorNoteParagraph(note)}` : cmd;
+}
+
+/** Build the slash-command a launched herdr pane runs. The board injects every
+    domain-specific value (skill, its own status-writer path) as a flag,
+    so the wrapper skill itself carries no repo or path knowledge. */
+function buildSkillPrompt(wrapper: string, o: SkillPromptOpts): string {
+  return withNote(`/${wrapper} ${dispatchArgs(o)}`, o.note);
 }
 
 export function reviewPrompt(o: SkillPromptOpts): string {
@@ -158,6 +169,38 @@ export function respondPrompt(o: SkillPromptOpts): string {
 
 export function doctorPrompt(o: SkillPromptOpts): string {
   return buildSkillPrompt("mr-board:doctor", o);
+}
+
+/** Resolves a skill name (e.g. "acme:mr-board-review") to the absolute
+    path of its SKILL.md, or null when it can't be found (see skill-path.ts). */
+export type SkillPathResolver = (name: string) => Promise<string | null>;
+
+/**
+ * Build the prompt a launched pane runs, preferring a path-carrying dispatch
+ * over the slash form: when `o.skill` resolves to a file (registered under
+ * skills/ or, once retired from the pack's public surface, attachments/),
+ * the pane reads it directly instead of relying on Claude to resolve the
+ * name via slash-completion -- which only works for registered skills.
+ *
+ * Fail-open: an unset `o.skill`, or any resolution failure, keeps the
+ * historical `/<wrapper> ...` slash form (buildSkillPrompt) unchanged. The
+ * flag string is identical in both forms (dispatchArgs) so a dispatched
+ * skill's inputs never depend on how it was found.
+ */
+export async function dispatchPrompt(
+  wrapper: string,
+  o: SkillPromptOpts,
+  resolvePath: SkillPathResolver = resolveSkillPath,
+): Promise<string> {
+  if (o.skill) {
+    const path = await resolvePath(o.skill);
+    if (path) {
+      console.log(`${wrapper} dispatch: path form -- "${o.skill}" -> ${path}`);
+      return withNote(`Read ${path} and execute it with these arguments: ${dispatchArgs(o)}`, o.note);
+    }
+    console.log(`${wrapper} dispatch: slash form -- no path resolved for "${o.skill}"`);
+  }
+  return buildSkillPrompt(wrapper, o);
 }
 
 /** The command a pane starts claude with. config.claudeCommand replaces plain
@@ -269,8 +312,12 @@ async function launchInWorkspace(
   return { tabId: tab.tabId, workspaceId };
 }
 
-export async function launchReview(opts: LaunchPaneOpts, runner: HerdrRunner = defaultRunner): Promise<{ tabId: string; workspaceId: string }> {
-  const prompt = reviewPrompt({
+export async function launchReview(
+  opts: LaunchPaneOpts,
+  runner: HerdrRunner = defaultRunner,
+  resolvePath: SkillPathResolver = resolveSkillPath,
+): Promise<{ tabId: string; workspaceId: string }> {
+  const prompt = await dispatchPrompt("mr-board:review", {
     mrUrl: opts.mrUrl,
     statePath: opts.statePath,
     statusBin: statusBinPath("review"),
@@ -278,26 +325,34 @@ export async function launchReview(opts: LaunchPaneOpts, runner: HerdrRunner = d
     skill: opts.skill,
     reReview: opts.reReview,
     note: opts.note,
-  });
+  }, resolvePath);
   const tabLabel = mrTabLabel(opts.iid, opts.author, opts.reReview ? "⟲" : undefined);
   return launchInWorkspace(opts, buildPaneCommand(opts.cwd, prompt, opts.claudeCommand), "review", tabLabel, runner);
 }
 
 /** Start the MR-response skill in a fresh herdr tab under the responses workspace. */
-export async function launchRespond(opts: LaunchPaneOpts, runner: HerdrRunner = defaultRunner): Promise<{ tabId: string; workspaceId: string }> {
-  const prompt = respondPrompt({
+export async function launchRespond(
+  opts: LaunchPaneOpts,
+  runner: HerdrRunner = defaultRunner,
+  resolvePath: SkillPathResolver = resolveSkillPath,
+): Promise<{ tabId: string; workspaceId: string }> {
+  const prompt = await dispatchPrompt("mr-board:respond", {
     mrUrl: opts.mrUrl,
     statePath: opts.statePath,
     statusBin: statusBinPath("respond"),
     skill: opts.skill,
     note: opts.note,
-  });
+  }, resolvePath);
   return launchInWorkspace(opts, buildPaneCommand(opts.cwd, prompt, opts.claudeCommand), "respond", mrTabLabel(opts.iid, opts.author), runner);
 }
 
 /** Start the MR-doctor skill in a fresh herdr tab under the doctors workspace. */
-export async function launchDoctor(opts: LaunchPaneOpts, runner: HerdrRunner = defaultRunner): Promise<{ tabId: string; workspaceId: string }> {
-  const prompt = doctorPrompt({
+export async function launchDoctor(
+  opts: LaunchPaneOpts,
+  runner: HerdrRunner = defaultRunner,
+  resolvePath: SkillPathResolver = resolveSkillPath,
+): Promise<{ tabId: string; workspaceId: string }> {
+  const prompt = await dispatchPrompt("mr-board:doctor", {
     mrUrl: opts.mrUrl,
     statePath: opts.statePath,
     statusBin: statusBinPath("doctor"),
@@ -306,7 +361,7 @@ export async function launchDoctor(opts: LaunchPaneOpts, runner: HerdrRunner = d
     fixClasses: opts.fixClasses,
     draftBin: opts.draftBin,
     note: opts.note,
-  });
+  }, resolvePath);
   return launchInWorkspace(opts, buildPaneCommand(opts.cwd, prompt, opts.claudeCommand), "doctor", mrTabLabel(opts.iid, opts.author), runner);
 }
 

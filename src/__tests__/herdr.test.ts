@@ -317,7 +317,7 @@ describe("launchReview", () => {
   });
 });
 
-import { doctorPrompt, draftBinPath, statusBinPath } from "../herdr.ts";
+import { doctorPrompt, draftBinPath, statusBinPath, dispatchPrompt, respondPrompt, launchRespond, launchDoctor } from "../herdr.ts";
 
 describe("doctorPrompt tier flags", () => {
   test("emits --tier, --fix-classes, and --draft-bin when given", () => {
@@ -335,5 +335,147 @@ describe("doctorPrompt tier flags", () => {
     expect(p).not.toContain("--tier");
     expect(p).not.toContain("--fix-classes");
     expect(p).not.toContain("--draft-bin");
+  });
+});
+
+describe("dispatchPrompt (path-carrying launch)", () => {
+  const baseOpts = {
+    mrUrl: "https://x/mr/1",
+    statePath: "/s/1.json",
+    statusBin: "/b/review-status.ts",
+    reportPath: "/s/1.md",
+    skill: "acme:mr-board-review",
+  };
+
+  test("reads the resolved path with the same flags the slash form carries", async () => {
+    const resolvePath = async (name: string) => (name === "acme:mr-board-review" ? "/cache/acme/skills/mr-board-review/SKILL.md" : null);
+    const prompt = await dispatchPrompt("mr-board:review", baseOpts, resolvePath);
+    expect(prompt).toBe(
+      "Read /cache/acme/skills/mr-board-review/SKILL.md and execute it with these arguments: " +
+        "https://x/mr/1 --state /s/1.json --status-bin /b/review-status.ts --report /s/1.md --skill acme:mr-board-review",
+    );
+  });
+
+  test("falls back to the slash form when path resolution returns null", async () => {
+    const resolvePath = async () => null;
+    const prompt = await dispatchPrompt("mr-board:review", baseOpts, resolvePath);
+    expect(prompt).toBe(reviewPrompt(baseOpts));
+  });
+
+  test("falls back to the slash form without calling the resolver when no skill is configured", async () => {
+    let called = false;
+    const resolvePath = async () => {
+      called = true;
+      return "/should/not/be/used/SKILL.md";
+    };
+    const opts = { mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: "/b/review-status.ts" };
+    const prompt = await dispatchPrompt("mr-board:review", opts, resolvePath);
+    expect(called).toBe(false);
+    expect(prompt).toBe(reviewPrompt(opts));
+  });
+
+  test("path form keeps the operator note as a trailing paragraph", async () => {
+    const resolvePath = async () => "/cache/acme/skills/mr-board-review/SKILL.md";
+    const prompt = await dispatchPrompt("mr-board:review", { ...baseOpts, note: "focus on the migration files" }, resolvePath);
+    expect(prompt).toContain("Read /cache/acme/skills/mr-board-review/SKILL.md and execute it with these arguments:");
+    expect(prompt).toContain("\n\nOperator note (from the human who launched this pane): focus on the migration files");
+  });
+
+  test("path form carries doctor's tier, fix-classes, and draft-bin flags verbatim", async () => {
+    const resolvePath = async () => "/cache/acme/attachments/mr-board-doctor-api/SKILL.md";
+    const opts = {
+      mrUrl: "https://x/mr/1", statePath: "/s", statusBin: statusBinPath("doctor"),
+      skill: "acme:mr-board-doctor-api", tier: "api",
+      fixClasses: ["retry-flake"], draftBin: draftBinPath(),
+    };
+    const prompt = await dispatchPrompt("mr-board:doctor", opts, resolvePath);
+    expect(prompt).toBe(
+      `Read /cache/acme/attachments/mr-board-doctor-api/SKILL.md and execute it with these arguments: ` +
+        `https://x/mr/1 --state /s --status-bin ${statusBinPath("doctor")} --skill acme:mr-board-doctor-api ` +
+        `--tier api --fix-classes retry-flake --draft-bin ${draftBinPath()}`,
+    );
+  });
+});
+
+describe("launchReview / launchRespond / launchDoctor path-form wiring", () => {
+  const okRunner: HerdrRunner = async (args) => {
+    if (args[0] === "workspace" && args[1] === "list") return WS_LIST;
+    if (args[0] === "workspace" && args[1] === "create") return WS_CREATE;
+    if (args[0] === "tab" && args[1] === "create") return TAB_CREATE;
+    return JSON.stringify({ result: { type: "ok" } });
+  };
+
+  test("launchReview reads the resolved skill path when resolution succeeds", async () => {
+    const calls: string[][] = [];
+    const runner: HerdrRunner = async (args) => {
+      calls.push(args);
+      return okRunner(args);
+    };
+    const resolvePath = async () => "/cache/acme/skills/mr-board-review/SKILL.md";
+    await launchReview(
+      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "reviews", statePath: "/s/1.json", skill: "acme:mr-board-review" },
+      runner,
+      resolvePath,
+    );
+    const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
+    expect(runCall?.[3]).toContain("claude 'Read /cache/acme/skills/mr-board-review/SKILL.md and execute it with these arguments:");
+    expect(runCall?.[3]).not.toContain("/mr-board:review");
+  });
+
+  test("launchReview falls back to the slash form when resolution fails", async () => {
+    const calls: string[][] = [];
+    const runner: HerdrRunner = async (args) => {
+      calls.push(args);
+      return okRunner(args);
+    };
+    const resolvePath = async () => null;
+    await launchReview(
+      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "reviews", statePath: "/s/1.json", skill: "acme:mr-board-review" },
+      runner,
+      resolvePath,
+    );
+    const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
+    expect(runCall?.[3]).toContain("claude '/mr-board:review https://x/mr/1");
+  });
+
+  test("launchRespond reads the resolved skill path when resolution succeeds", async () => {
+    const calls: string[][] = [];
+    const runner: HerdrRunner = async (args) => {
+      calls.push(args);
+      return okRunner(args);
+    };
+    const resolvePath = async () => "/cache/acme/skills/mr-board-respond/SKILL.md";
+    await launchRespond(
+      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "responds", statePath: "/s/1.json", skill: "acme:mr-board-respond" },
+      runner,
+      resolvePath,
+    );
+    const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
+    expect(runCall?.[3]).toContain("claude 'Read /cache/acme/skills/mr-board-respond/SKILL.md and execute it with these arguments:");
+    expect(runCall?.[3]).toBe(
+      buildPaneCommand("/repo", await dispatchPrompt("mr-board:respond", {
+        mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: statusBinPath("respond"), skill: "acme:mr-board-respond",
+      }, resolvePath)),
+    );
+  });
+
+  test("launchDoctor reads the resolved skill path when resolution succeeds", async () => {
+    const calls: string[][] = [];
+    const runner: HerdrRunner = async (args) => {
+      calls.push(args);
+      return okRunner(args);
+    };
+    const resolvePath = async () => "/cache/acme/attachments/mr-board-doctor-api/SKILL.md";
+    await launchDoctor(
+      {
+        mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "doctors", statePath: "/s/1.json",
+        skill: "acme:mr-board-doctor-api", tier: "api",
+      },
+      runner,
+      resolvePath,
+    );
+    const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
+    expect(runCall?.[3]).toContain("claude 'Read /cache/acme/attachments/mr-board-doctor-api/SKILL.md and execute it with these arguments:");
+    expect(runCall?.[3]).toContain("--tier api");
   });
 });
