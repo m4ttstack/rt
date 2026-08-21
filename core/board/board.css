@@ -105,7 +105,10 @@ body {
    to hold these controls at rest widens the whole column, and the width it
    takes comes straight out of the access column, which then wraps and makes
    every row in the table taller. Absolute keeps the column sized to the port
-   itself; the cell below is the positioning context. */
+   itself; the cell below is the positioning context. left:100% lands this on
+   top of the health cell's own (static, unpositioned) content, so it needs
+   its own opaque background and a z-index — without them the health badge's
+   text paints through it instead of being covered. */
 .devport-extra {
   position: absolute;
   left: 100%;
@@ -118,6 +121,8 @@ body {
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.15s ease;
+  background: var(--bg);
+  z-index: 1;
 }
 [data-part="table-row"]:hover .devport-extra,
 .devport-extra:focus-within {
