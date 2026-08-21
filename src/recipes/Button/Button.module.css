@@ -2,7 +2,12 @@
    `.tui-copy` chrome: `outline` (the default) carries the same
    `--panel`/`--border` box, not a transparent one. `subtle` is a raised
    borderless sibling on `--card`, not a faint wash — only `ghost` is
-   transparent. */
+   transparent AT REST. `ghost`'s hover background is `--button-hover`,
+   autoVars' own per-intent wash (tuiIntentResolver's `hover`:
+   `color-mix(in srgb, <intent tone> 14%, transparent)`) — Mantine's
+   subtle/light convention: transparent, then tinted on hover. No new
+   scalar needed; the var is already injected by the `vars` resolver's
+   `autoVars` call below, just unused by any other variant. */
 @layer soribashi.recipes {
   .root {
     display: inline-flex;
@@ -49,6 +54,10 @@
   .root[data-variant="ghost"] {
     border-color: transparent;
     background: transparent;
+  }
+
+  .root[data-variant="ghost"]:hover:not(:disabled) {
+    background: var(--button-hover);
   }
 
   .root[data-intent="bad"] {

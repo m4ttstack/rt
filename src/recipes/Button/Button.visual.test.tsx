@@ -97,6 +97,24 @@ function ButtonStates() {
   );
 }
 
+/** One ghost button per intent, side by side — only the first is hovered
+    before capture, so the shot proves the tint by CONTRAST against its
+    at-rest sibling in the same frame. */
+function GhostHoverRow() {
+  return (
+    <div data-testid="ghost-hover" style={surface}>
+      <div style={row}>
+        <Button variant="ghost" intent="accent">
+          accent ghost
+        </Button>
+        <Button variant="ghost" intent="bad">
+          bad ghost
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 describe("Button (visual)", () => {
   it("the variant × intent grid matches its baseline in light mode", async () => {
     await renderFixture(<ButtonGrid />);
@@ -120,5 +138,21 @@ describe("Button (visual)", () => {
     await renderFixture(<ButtonStates />, { dark: true });
 
     await expect(page.getByTestId("states")).toMatchScreenshot("button-states-dark");
+  });
+
+  it("the hovered ghost's intent-tinted wash matches its baseline in light mode", async () => {
+    const screen = await renderFixture(<GhostHoverRow />);
+
+    await screen.getByRole("button", { name: "accent ghost" }).hover();
+
+    await expect(page.getByTestId("ghost-hover")).toMatchScreenshot("button-ghost-hover-light");
+  });
+
+  it("the hovered ghost's intent-tinted wash matches its baseline in dark mode", async () => {
+    const screen = await renderFixture(<GhostHoverRow />, { dark: true });
+
+    await screen.getByRole("button", { name: "accent ghost" }).hover();
+
+    await expect(page.getByTestId("ghost-hover")).toMatchScreenshot("button-ghost-hover-dark");
   });
 });

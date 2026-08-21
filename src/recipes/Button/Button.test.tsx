@@ -104,6 +104,50 @@ describe("Button (browser)", () => {
     });
   });
 
+  describe("ghost hover background", () => {
+    it("stays transparent at rest", async () => {
+      const screen = await renderWithTheme(<Button variant="ghost">ghost</Button>);
+
+      expect(getComputedStyle(buttonOf(screen.container)).backgroundColor).toBe(
+        "rgba(0, 0, 0, 0)",
+      );
+    });
+
+    it("tints on a real hover — the wash is gated behind :hover, which no synthetic event can satisfy", async () => {
+      const screen = await renderWithTheme(<Button variant="ghost">ghost</Button>);
+
+      // A real pointer hover (vitest-browser's Locator, backed by a real
+      // Playwright pointer move) — same reasoning as StatusDot.test.tsx's
+      // tooltip case.
+      await screen.getByRole("button", { name: "ghost" }).hover();
+
+      expect(getComputedStyle(buttonOf(screen.container)).backgroundColor).not.toBe(
+        "rgba(0, 0, 0, 0)",
+      );
+    });
+
+    it("is derived from intent, not a fixed tint — accent and bad hover to different colours", async () => {
+      const accentScreen = await renderWithTheme(
+        <Button variant="ghost" intent="accent">
+          accent
+        </Button>,
+      );
+      const badScreen = await renderWithTheme(
+        <Button variant="ghost" intent="bad">
+          bad
+        </Button>,
+      );
+
+      await accentScreen.getByRole("button", { name: "accent" }).hover();
+      const accentHoverBg = getComputedStyle(buttonOf(accentScreen.container)).backgroundColor;
+
+      await badScreen.getByRole("button", { name: "bad" }).hover();
+      const badHoverBg = getComputedStyle(buttonOf(badScreen.container)).backgroundColor;
+
+      expect(accentHoverBg).not.toBe(badHoverBg);
+    });
+  });
+
   it("rejects an out-of-vocabulary variant at the type level", async () => {
     await renderWithTheme(
       // @ts-expect-error -- "filled" is not in the kit's variant vocabulary
