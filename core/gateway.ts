@@ -4,7 +4,7 @@ import { getAppSettings, getSecret } from "./settings.ts";
 import { verifyToken, signToken, parseCookie, cookieHeader, COOKIE_NAME } from "./session.ts";
 import {
   pageNothingHere, pageOffline, pageRateLimited, pageLogin,
-} from "./gateway-pages.ts";
+} from "./gateway-pages.tsx";
 import {
   isWebSocketUpgrade, requestedProtocols, connectUpstream, upstreamUrl, wsHandler,
   type WsProxyData,

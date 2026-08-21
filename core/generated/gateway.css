@@ -1,0 +1,2 @@
+:root { --bg: #e1e2e7; --panel: #eff0f5; --fg: #111; --muted: #8990b3; --border: #c8cad6; --accent: #2e7de9; --red: #f52a65; }
+@media (prefers-color-scheme: dark) { :root { --bg: #16161e; --panel: #232a47; --fg: #e3e7f6; --muted: #7e86ad; --border: #3b4261; --accent: #7aa2f7; --red: #f7768e; } }

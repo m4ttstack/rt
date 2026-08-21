@@ -1,48 +1,40 @@
-// core/board-assets.ts — readFileSync(import.meta.dir…) dies under --compile;
-// static imports embed the assets in the binary and behave identically under
-// plain `bun run` (the non-negotiable checkout boot).
-import BOARD_HTML from "./board.html" with { type: "text" };
-import BOARD_JS from "./board.js" with { type: "text" };
-// @ts-expect-error — tsc doesn't narrow module types by import attribute (with {type:...}); runtime is correct, see core/board-assets.test.ts
-import oatCssPath from "./vendor/oat.min.css" with { type: "file" };
-import oatJsPath from "./vendor/oat.min.js" with { type: "file" };
-import lucidePath from "./vendor/lucide.min.js" with { type: "file" };
-import alpinePath from "./vendor/alpine.min.js" with { type: "file" };
+// readFileSync(import.meta.dir…) dies under --compile; static imports embed the
+// assets in the binary and behave identically under plain `bun run`.
+import BOARD_JS from "./generated/board.js" with { type: "text" };
+// @ts-expect-error — tsc has no ambient module declaration for a .css text import (with {type:"text"}); runtime is correct, see core/board-assets.test.ts
+import BOARD_CSS from "./generated/board.css" with { type: "text" };
 
-// Exact-name allowlist: /vendor/<name> resolves through this map only, so a
-// crafted path can never reach outside src/vendor.
-const VENDOR: Record<string, { path: string; type: string }> = {
-  "oat.min.css": { path: oatCssPath, type: "text/css; charset=utf-8" },
-  // @ts-expect-error — tsc doesn't narrow module types by import attribute (with {type:...}); runtime is correct, see core/board-assets.test.ts
-  "oat.min.js": { path: oatJsPath, type: "text/javascript; charset=utf-8" },
-  // @ts-expect-error — tsc doesn't narrow module types by import attribute (with {type:...}); runtime is correct, see core/board-assets.test.ts
-  "lucide.min.js": { path: lucidePath, type: "text/javascript; charset=utf-8" },
-  // @ts-expect-error — tsc doesn't narrow module types by import attribute (with {type:...}); runtime is correct, see core/board-assets.test.ts
-  "alpine.min.js": { path: alpinePath, type: "text/javascript; charset=utf-8" },
-};
-
-// no-cache means revalidate every request, not "don't cache": right for files
-// that change only on deploy or a by-hand vendor bump.
 const CACHE = "no-cache";
 
+const BOARD_HTML = `<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deck</title>
+<link rel="stylesheet" href="/board.css">
+</head>
+<body>
+<div id="root"></div>
+<noscript><main class="board"><p>this board needs JavaScript to show live status.</p></main></noscript>
+<script src="/board.js" type="module"></script>
+</body>
+</html>`;
+
 export function boardHtml(): Response {
-  // @ts-expect-error — tsc doesn't narrow module types by import attribute (with {type:...}); runtime is correct, see core/board-assets.test.ts
   return new Response(BOARD_HTML, {
     headers: { "content-type": "text/html; charset=utf-8", "cache-control": CACHE },
   });
 }
 
 export function boardJs(): Response {
-  // @ts-expect-error — tsc doesn't narrow module types by import attribute (with {type:...}); runtime is correct, see core/board-assets.test.ts
-  return new Response(BOARD_JS, {
+  return new Response(BOARD_JS as unknown as string, {
     headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": CACHE },
   });
 }
 
-export function vendorAsset(name: string): Response | null {
-  if (!Object.hasOwn(VENDOR, name)) return null;
-  const { path, type } = VENDOR[name]!;
-  return new Response(Bun.file(path), {
-    headers: { "content-type": type, "cache-control": CACHE },
+export function boardCss(): Response {
+  return new Response(BOARD_CSS as unknown as string, {
+    headers: { "content-type": "text/css; charset=utf-8", "cache-control": CACHE },
   });
 }

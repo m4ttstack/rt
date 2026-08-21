@@ -89,6 +89,37 @@ with Deck the same way `deck add` does, through the same registry and
 routing described above, so mattstack's own tools end up on your board
 alongside everything else you run.
 
+## Board dev loop
+
+The board (`core/board/`) is a small React app built with
+`@mattstack/tui-kit` and served by the API.
+
+- Edited `core/board/`? Run `bun run build:board` before testing or
+  building - it regenerates the committed `core/generated/board.js` and
+  `board.css`. `core/generated-fresh.test.ts` fails the suite if that
+  output is stale.
+- `bun run test:dom` drives the built board with a real headless
+  Chromium against fixture data (`test/dom/rig.ts`) for DOM/behavior
+  coverage; `bun run capture:compare` (below) is the pixel layer on top.
+- `bun run test` is scoped (`bun test core src`). The bare `bun test`,
+  with no arguments, also sweeps `test/dom/` and `test/e2e.smoke.test.ts`
+  - slower, and e2e touches real launchd - so reach for the scoped
+  script day to day and save the bare command for a full sweep.
+
+Pixel baselines: `test/capture.ts` boots the fixture server and
+Playwright-screenshots a fixed set of board/modal/notice states, day and
+night; `test/compare.ts` diffs them against `test/baselines/`
+pixel-for-pixel, zero tolerance. `bun run capture:baseline` regenerates
+the baselines after an intentional visual change - eyeball every PNG
+before committing, it's the review step for the board's CSS/markup.
+`bun run capture` + `bun run capture:compare` take a fresh set into
+`test/.captures/` (gitignored) and diff against what's committed; a diff
+means the board's rendered output moved, on purpose or not.
+
+`@mattstack/tui-kit` is a `file:` sibling checkout, which has its own
+refresh rules and a react-singleton constraint on the build - see
+[`docs/board-dev-loop.md`](docs/board-dev-loop.md).
+
 ## Uninstall
 
 `deck uninstall` refuses to run if any app besides Deck itself is still

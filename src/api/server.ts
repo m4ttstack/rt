@@ -10,7 +10,7 @@ import {
   isAuthorized, startRestartDetached, sudoersInstallCommand, SUDOERS_PATH,
 } from "../../core/proxy-restart.ts";
 import { CANARY_PATH } from "../../core/canary.ts";
-import { boardHtml, boardJs, vendorAsset } from "../../core/board-assets.ts";
+import { boardHtml, boardJs, boardCss } from "../../core/board-assets.ts";
 import { buildStatus, type StatusRow } from "./status.ts";
 import { registerApp, unregisterApp, editApp, type Drivers } from "./register.ts";
 import { getRecord, listRecords, type AppRecord, type SyncIssue } from "../registry/records.ts";
@@ -141,6 +141,19 @@ export function startApi(deps: ApiDeps) {
     async fetch(req) {
       const url = new URL(req.url);
       const { pathname } = url;
+
+      const fixtureDir = process.env.DECK_FIXTURE || null;
+      if (fixtureDir && pathname.startsWith("/api/v1/")) {
+        if (pathname === "/api/v1/status" && req.method === "GET") {
+          return new Response(Bun.file(join(fixtureDir, "status.json")), {
+            headers: { "content-type": "application/json" },
+          });
+        }
+        // Mutations are inert and deterministic: the DOM tests assert the REQUEST
+        // (via page.route interception) and the optimistic UI, never launchd effects.
+        return json({ ok: true });
+      }
+
       const host = req.headers.get("x-forwarded-host") ?? req.headers.get("host") ?? undefined;
       const isPublic = publicDomainFor(host) !== null;
       const statusOpts = {
@@ -151,9 +164,7 @@ export function startApi(deps: ApiDeps) {
       // ---- static / identity (carried from core/server.ts) ----
       if (pathname === "/healthz") return new Response("ok");
       if (pathname === "/board.js") return boardJs();
-      if (pathname.startsWith("/vendor/")) {
-        return vendorAsset(pathname.slice("/vendor/".length)) ?? new Response("not found", { status: 404 });
-      }
+      if (pathname === "/board.css") return boardCss();
       if (pathname === CANARY_PATH) {
         return new Response(String(deps.port), { headers: { "content-type": "text/plain" } });
       }

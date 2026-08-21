@@ -1,0 +1,12 @@
+{
+  "suffix": "mattstack",
+  "canRestart": true,
+  "canManage": true,
+  "up": 0,
+  "total": 0,
+  "nextPort": 11001,
+  "proxyStale": false,
+  "autoHeal": null,
+  "apps": [],
+  "orphans": []
+}
