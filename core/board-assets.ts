@@ -17,7 +17,7 @@ const BOARD_HTML = `<!doctype html>
 <body>
 <div id="root"></div>
 <noscript><main class="board"><p>this board needs JavaScript to show live status.</p></main></noscript>
-<script src="/board.js" defer></script>
+<script src="/board.js" type="module"></script>
 </body>
 </html>`;
 
