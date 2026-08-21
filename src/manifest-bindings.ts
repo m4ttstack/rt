@@ -3,20 +3,34 @@ import { homedir } from "os";
 import { join } from "path";
 import type { BoardConfig } from "./config.ts";
 import { projectPathFromWebUrl } from "./data.ts";
-import { stripJsonc } from "./team-zone.ts";
 
 export type BoardSkillKind = "review" | "respond" | "doctor";
+
+/** Strip full-line `//` comments from JSONC text. Only lines whose trimmed
+    content starts with `//` are removed -- a `//` inside a string value (e.g.
+    a `https://` URL) is left alone since it never starts the line. Merge-
+    manifests.sh-generated skills.jsonc files carry a leading `// GENERATED`
+    comment line this needs to survive stripping past. */
+export function stripJsonc(raw: string): string {
+  return raw
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("//"))
+    .join("\n");
+}
 
 export interface ResolvedBoardSkill {
   skill: string;
   source: "manifest" | "config";
 }
 
-const CONFIG_FIELD: Record<BoardSkillKind, "reviewSkill" | "respondSkill" | "doctorSkill"> = {
-  review: "reviewSkill",
-  respond: "respondSkill",
-  doctor: "doctorSkill",
-};
+/** review/respond had a config fallback once (reviewSkill/respondSkill); both
+    were dead (skills.jsonc manifests always shadowed them) and retired with
+    the settings migration, so their fallback is now unconditionally "" (the
+    generic wrapper). doctor's config fallback (doctorSkill) is real and
+    manifest-overridable per BOARD-14. */
+function configSkillFor(kind: BoardSkillKind, cfg: BoardConfig): string {
+  return kind === "doctor" ? cfg.doctorSkill : "";
+}
 
 /** Slug a GitLab host + project path into the `~/.mattstack/repos/<slug>` dir
     name a per-repo manifest lives under: the host (scheme stripped,
@@ -51,8 +65,7 @@ export function resolveBoardSkill(
   cfg: BoardConfig,
   mattstackHome?: string,
 ): ResolvedBoardSkill {
-  const configSkill = cfg[CONFIG_FIELD[kind]];
-  const fallback: ResolvedBoardSkill = { skill: configSkill, source: "config" };
+  const fallback: ResolvedBoardSkill = { skill: configSkillFor(kind, cfg), source: "config" };
 
   const home = mattstackHome ?? join(homedir(), ".mattstack");
   const slug = boardRepoSlug(cfg.gitlabHost, project);
@@ -97,7 +110,7 @@ export function resolveLaunchSkill(kind: BoardSkillKind, mrUrl: string, cfg: Boa
   const project = projectPathFromWebUrl(mrUrl, cfg.gitlabHost);
   const resolved = project
     ? resolveBoardSkill(kind, project, cfg, mattstackHome)
-    : { skill: cfg[CONFIG_FIELD[kind]], source: "config" as const };
+    : { skill: configSkillFor(kind, cfg), source: "config" as const };
   console.log(`${kind} skill: ${resolved.skill} (${resolved.source})`);
   return resolved.skill;
 }

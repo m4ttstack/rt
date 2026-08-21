@@ -1,5 +1,6 @@
 import { readFileSync } from "fs";
 import { join } from "path";
+import { getSetting } from "@mattstack/rt-client";
 
 export interface FixClasses {
   retryFlake: boolean;
@@ -61,49 +62,54 @@ const DEFAULTS: TriageConfig = {
   notify: "rt",
 };
 
-function positiveNumber(value: unknown, key: string, fallback: number): number {
+function positiveNumber(value: unknown, key: string, fallback: number, source: string): number {
   if (value === undefined) return fallback;
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) {
-    throw new Error(`config.json "triage.${key}" must be a positive number`);
+    throw new Error(`${source} "triage.${key}" must be a positive number`);
   }
   return value;
 }
 
-export function parseTriageBlock(raw: unknown): TriageConfig {
+/** `source` names where a malformed value came from in every thrown message
+    (default "config.json", the file path's own vocabulary) — the store call
+    site in loadTriageConfig passes `settings key "board.triage"` instead, so
+    a malformed store value sends the operator to `rt settings` rather than
+    telling them to go fix a file that isn't the actual problem. */
+export function parseTriageBlock(raw: unknown, source = "config.json"): TriageConfig {
   if (raw === undefined || raw === null) return structuredClone(DEFAULTS);
   if (typeof raw !== "object" || Array.isArray(raw)) {
-    throw new Error(`config.json "triage" must be an object`);
+    throw new Error(`${source} "triage" must be an object`);
   }
   const t = raw as Record<string, unknown>;
   if (t.enabled !== undefined && typeof t.enabled !== "boolean") {
-    throw new Error(`config.json "triage.enabled" must be a boolean`);
+    throw new Error(`${source} "triage.enabled" must be a boolean`);
   }
   if (t.doctorSkill !== undefined && typeof t.doctorSkill !== "string") {
-    throw new Error(`config.json "triage.doctorSkill" must be a string (a skill name)`);
+    throw new Error(`${source} "triage.doctorSkill" must be a string (a skill name)`);
   }
   if (t.notify !== undefined && t.notify !== "rt" && t.notify !== "badge-only") {
-    throw new Error(`config.json "triage.notify" must be "rt" or "badge-only"`);
+    throw new Error(`${source} "triage.notify" must be "rt" or "badge-only"`);
   }
   if (t.tier !== undefined && t.tier !== "api" && t.tier !== "checkout") {
-    throw new Error(`config.json "triage.tier" must be "api" or "checkout"`);
+    throw new Error(`${source} "triage.tier" must be "api" or "checkout"`);
   }
   const fixClasses = { ...DEFAULT_FIX_CLASSES };
   if (t.fixClasses !== undefined) {
     if (typeof t.fixClasses !== "object" || t.fixClasses === null || Array.isArray(t.fixClasses)) {
-      throw new Error(`config.json "triage.fixClasses" must be an object`);
+      throw new Error(`${source} "triage.fixClasses" must be an object`);
     }
     for (const key of ["retryFlake", "inheritedNoteDraft", "cleanApiRebase", "mechanicalLint", "codeFix"] as const) {
       const v = (t.fixClasses as Record<string, unknown>)[key];
       if (v === undefined) continue;
-      if (typeof v !== "boolean") throw new Error(`config.json "triage.fixClasses.${key}" must be a boolean`);
+      if (typeof v !== "boolean") throw new Error(`${source} "triage.fixClasses.${key}" must be a boolean`);
       fixClasses[key] = v;
     }
   }
   return {
     enabled: (t.enabled as boolean | undefined) ?? DEFAULTS.enabled,
-    cooldownMinutes: positiveNumber(t.cooldownMinutes, "cooldownMinutes", DEFAULTS.cooldownMinutes),
-    maxConcurrent: positiveNumber(t.maxConcurrent, "maxConcurrent", DEFAULTS.maxConcurrent),
-    dailyAttemptBudget: positiveNumber(t.dailyAttemptBudget, "dailyAttemptBudget", DEFAULTS.dailyAttemptBudget),
+    cooldownMinutes: positiveNumber(t.cooldownMinutes, "cooldownMinutes", DEFAULTS.cooldownMinutes, source),
+    maxConcurrent: positiveNumber(t.maxConcurrent, "maxConcurrent", DEFAULTS.maxConcurrent, source),
+    dailyAttemptBudget: positiveNumber(t.dailyAttemptBudget, "dailyAttemptBudget", DEFAULTS.dailyAttemptBudget, source),
     fixClasses,
     doctorSkill: (t.doctorSkill as string | undefined) ?? DEFAULTS.doctorSkill,
     tier: (t.tier as "api" | "checkout" | undefined) ?? DEFAULTS.tier,
@@ -111,11 +117,71 @@ export function parseTriageBlock(raw: unknown): TriageConfig {
   };
 }
 
+type GetSettingFn = typeof getSetting;
+
+/** Read one board.triage* key, degrading to "not owned" on a resolver throw
+    (an unregistered key, or an unreadable/malformed store file -- getSetting
+    never touches the daemon) rather than letting that brick triage config
+    load (same fail-open contract as config.ts's storeValue). Warns once per
+    call. */
+function storeValue<T>(key: string, resolve: GetSettingFn): T | undefined {
+  try {
+    return resolve<T>(key).value;
+  } catch (err) {
+    console.warn(`board: ${key} unavailable, falling back to config.json`, err);
+    return undefined;
+  }
+}
+
+function isEnoent(err: unknown): boolean {
+  return (err as NodeJS.ErrnoException | undefined)?.code === "ENOENT";
+}
+
 /** The block lives in the board's config.json, but parsing stays here so the
-    board server never needs to know the block exists (hard boundary). */
+    board server never needs to know the block exists (hard boundary).
+    BOARD-14 split across three independently latched store keys once
+    migrated: `board.triage` (user) carries every field here except
+    doctorSkill/maxConcurrent — those two are sibling flat keys
+    (`board.triage.doctorSkill` team, never manifest-resolved;
+    `board.triageMaxConcurrent` machine), not nested inside `board.triage`,
+    so each is layered back on individually after the block wins or falls
+    back to config.json's triage block as a whole. A missing config.json (RULING:
+    file-authority is meaningless with no file) degrades to an absent triage
+    block rather than throwing, mirroring config.ts's loadConfigFrom store-boot
+    mode -- board.triage/board.triage.doctorSkill/board.triageMaxConcurrent can
+    carry the whole config on their own once the store owns them. Any other
+    read failure (a genuinely malformed config.json) still surfaces loudly. */
 export function loadTriageConfig(
   configPath: string = join(import.meta.dir, "..", "..", "config.json"),
+  resolve: GetSettingFn = getSetting,
 ): TriageConfig {
-  const cfg = JSON.parse(readFileSync(configPath, "utf8")) as { triage?: unknown };
-  return parseTriageBlock(cfg.triage);
+  let triageRaw: unknown;
+  try {
+    triageRaw = (JSON.parse(readFileSync(configPath, "utf8")) as { triage?: unknown }).triage;
+  } catch (err) {
+    if (!isEnoent(err)) throw err;
+    triageRaw = undefined;
+  }
+  const fileConfig = parseTriageBlock(triageRaw);
+
+  const storeRaw = storeValue<unknown>("board.triage", resolve);
+  const merged = storeRaw !== undefined
+    ? {
+        // No `...fileConfig` here: parseTriageBlock always returns every
+        // TriageConfig field (defaulted, never partial), so spreading it
+        // first would only be immediately overwritten below -- doctorSkill/
+        // maxConcurrent are re-pinned to the file's values on the next two
+        // lines regardless, since those two never live inside board.triage.
+        ...parseTriageBlock(storeRaw, `settings key "board.triage"`),
+        doctorSkill: fileConfig.doctorSkill,
+        maxConcurrent: fileConfig.maxConcurrent,
+      }
+    : fileConfig;
+
+  const doctorSkill = storeValue<string>("board.triage.doctorSkill", resolve);
+  const maxConcurrent = storeValue<number>("board.triageMaxConcurrent", resolve);
+  merged.doctorSkill = typeof doctorSkill === "string" ? doctorSkill : merged.doctorSkill;
+  merged.maxConcurrent = typeof maxConcurrent === "number" && maxConcurrent > 0 ? maxConcurrent : merged.maxConcurrent;
+
+  return merged;
 }

@@ -1,10 +1,9 @@
 import type { BunPlugin } from "bun";
 import { join, dirname, basename } from "path";
 import { readFileSync, writeFileSync, mkdirSync, watch } from "fs";
-import { homedir } from "os";
 import type { PullRequest, MRDetail } from "@mattstack/glance";
 import { loadConfig, loadGitLabToken, loadSlackToken, loadSwitchboardToken, loadSwitchboardAdminToken, saveMemberHidden, saveSwitchboardUrl, parseConfig, CONFIG_PATH } from "./config.ts";
-import { materializeTeamConfig } from "./team-zone.ts";
+import { memoizeAsync } from "./memoize-async.ts";
 import { resolveBoardSkill, type BoardSkillKind } from "./manifest-bindings.ts";
 import { upsertEnvKeys } from "./env-file.ts";
 import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, projectPathFromWebUrl, type BoardMR, type SyncScopeRead } from "./data.ts";
@@ -48,63 +47,41 @@ const favicon = readFileSync(faviconPath, "utf-8");
 /** The board's own .env, written when /peer/join redeems an invite. */
 const ENV_PATH = join(import.meta.dir, "..", ".env");
 
-/** Boot hook: when config.json sets `teamClone`, materialize the four
-    team-owned fields (gitlabHost/projects/members/title) from that clone's
-    mattstack/team.jsonc before the config load below parses the (possibly
-    rewritten) file. This is a minimal pre-read just for `teamClone` --
-    loadConfig() does the real parse/validate afterward, so a config.json
-    that's otherwise missing or broken is left for it to report normally.
-    Materialize failure must never crash boot: warn and continue with the
-    file as-is. */
-function materializeTeamConfigAtBoot(): void {
-  let teamClone: unknown;
-  try {
-    teamClone = (JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as { teamClone?: unknown }).teamClone;
-  } catch {
-    return;
-  }
-  if (typeof teamClone !== "string" || !teamClone) return;
-  const cloneDir = teamClone.startsWith("~") ? join(homedir(), teamClone.slice(1)) : teamClone;
-  try {
-    const result = materializeTeamConfig(cloneDir, CONFIG_PATH);
-    console.log(result.changed ? `team config: updated ${result.fields.join(", ")}` : "team config: current");
-    // A zone can add a project before the operator adds its matching
-    // rtRepos entry -- fetchTeamMRs then throws for the entire fetch (spec
-    // §6 rtRepos doc), so warn now rather than let that surface as a
-    // mystery-empty board later.
-    const materialized = JSON.parse(readFileSync(CONFIG_PATH, "utf8")) as { projects?: unknown; rtRepos?: unknown };
-    const projects = Array.isArray(materialized.projects) ? materialized.projects.filter((p): p is string => typeof p === "string") : [];
-    const rtRepos = materialized.rtRepos && typeof materialized.rtRepos === "object" && !Array.isArray(materialized.rtRepos)
-      ? (materialized.rtRepos as Record<string, unknown>)
-      : {};
-    const unmapped = projects.filter((p) => !rtRepos[p]);
-    if (unmapped.length) {
-      console.error(`team config: no rtRepos mapping for ${unmapped.join(", ")} -- fetch will fail until config.json's rtRepos maps ${unmapped.length === 1 ? "it" : "them"}`);
-    }
-  } catch (err) {
-    console.error(`team config materialize failed, continuing with existing config: ${err instanceof Error ? err.message : err}`);
-  }
-}
-if (!FIXTURE_DIR) materializeTeamConfigAtBoot();
-
 // `let`: /peer/join reassigns the whole config after persisting switchboard.url.
 let config = FIXTURE_DIR
   ? parseConfig(readFileSync(fixtureFile("config.json"), "utf8"))
   : loadConfig();
+
+// Board secrets: env-first, then a daemon round trip -- resolved at most
+// once per process (memoizeAsync), lazily on first use, not at import, so
+// the board still boots with the daemon down. A daemon-sourced failure
+// (down, gate-refused, not-configured -- indistinguishable here) is cached
+// only briefly, not forever: a daemon restart at board boot is routine
+// (every `rt daemon restart`/upgrade), and pinning null across it would
+// leave the dependent feature dead until the board itself restarts.
+const isTokenFailure = (v: string | null): boolean => v === null;
+
 // Optional: display-name lookups only. The board's data plane is rt.
-const gitlabToken = FIXTURE_DIR ? null : loadGitLabToken();
+const getGitlabToken = memoizeAsync<string | null>(() => (FIXTURE_DIR ? Promise.resolve(null) : loadGitLabToken()), isTokenFailure);
+// Optional: enables the Slack review-thread menu actions when a token is set.
+const getSlackToken = memoizeAsync<string | null>(() => (FIXTURE_DIR ? Promise.resolve(null) : loadSlackToken()), isTokenFailure);
+// Optional peer relay token -- see the peering-start block below.
+const getSwitchboardToken = memoizeAsync<string | null>(() => (FIXTURE_DIR ? Promise.resolve(null) : loadSwitchboardToken()), isTokenFailure);
+// Operator-only secret: its presence is what turns on this board's invite
+// affordances. Absent, /peer/invite and /peer/boards answer 400 and the UI
+// never offers them.
+const getSwitchboardAdminToken = memoizeAsync<string | null>(() => (FIXTURE_DIR ? Promise.resolve(null) : loadSwitchboardAdminToken()), isTokenFailure);
 
 /** Writes go straight to GitLab through glance; reads come from the rt daemon
     (see readProjectMRs). Built on demand so a tokenless install still boots --
     every caller has already refused the request when the token is missing. */
 let gitlabProvider: GitLabProvider | undefined;
-function gitlab(): GitLabProvider {
-  if (!gitlabToken) throw new Error("gitlab token not configured");
-  gitlabProvider ??= new GitLabProvider(config.gitlabHost, gitlabToken);
+async function gitlab(): Promise<GitLabProvider> {
+  const token = await getGitlabToken();
+  if (!token) throw new Error("gitlab token not configured");
+  gitlabProvider ??= new GitLabProvider(config.gitlabHost, token);
   return gitlabProvider;
 }
-// Optional: enables the Slack review-thread menu actions when a token is set.
-const slackToken = FIXTURE_DIR ? null : loadSlackToken();
 
 // Optional peer relay. Both a configured url and a token are required; without
 // either, peering stays unstarted and every peer feature (publish, poll,
@@ -118,12 +95,11 @@ const peerDeps: Omit<MaterializeDeps, "reportAuth"> = {
   log: (line) => console.error(line),
 };
 const peering = makePeering({ makeClient: makeSwitchboardClient, deps: peerDeps });
-const switchboardToken = FIXTURE_DIR ? null : loadSwitchboardToken();
-if (config.switchboard.url && switchboardToken) peering.start(config.switchboard.url, switchboardToken);
-// Operator-only secret: its presence is what turns on this board's invite
-// affordances. Absent, /peer/invite and /peer/boards answer 400 and the UI
-// never offers them.
-const switchboardAdminToken = FIXTURE_DIR ? null : loadSwitchboardAdminToken();
+// Fire-and-forget: the daemon round trip must not hold up Bun.serve below.
+void (async () => {
+  const token = await getSwitchboardToken();
+  if (config.switchboard.url && token) peering.start(config.switchboard.url, token);
+})();
 
 /** Send what's queued without making the caller wait on the relay. Anything
     still queued goes out on the next tick, so a failure here only costs
@@ -205,7 +181,7 @@ async function fetchTeamMRs(force = false): Promise<TeamMRsResult> {
   const byId = new Map<string, PullRequest>();
   const errors: string[] = [];
   const reads: SyncScopeRead[] = [];
-  const demand = boardDemand(config);
+  const demand = boardDemand(config, port);
   for (const projectPath of config.projects) {
     const repoName = config.rtRepos[projectPath];
     if (!repoName) {
@@ -231,20 +207,16 @@ function mrAuthorLabel(mr: BoardMR): string {
   return mr.author.name ?? mr.author.username;
 }
 
-const LAUNCH_SKILL_CONFIG_FIELD = {
-  review: "reviewSkill",
-  respond: "respondSkill",
-  doctor: "doctorSkill",
-} as const;
-
 /** Resolve the skill a launch (review/respond/doctor) should delegate to for
     the MR at `mrUrl` -- the per-repo mattstack manifest binding when present,
-    else config -- and log the choice once at launch time. */
+    else config -- and log the choice once at launch time. review/respond
+    have no config fallback (reviewSkill/respondSkill retired -- dead, always
+    shadowed by the manifest); only doctor's config.doctorSkill is real. */
 function resolveLaunchSkill(kind: BoardSkillKind, mrUrl: string): string {
   const project = projectPathFromWebUrl(mrUrl, config.gitlabHost);
   const resolved = project
     ? resolveBoardSkill(kind, project, config)
-    : { skill: config[LAUNCH_SKILL_CONFIG_FIELD[kind]], source: "config" as const };
+    : { skill: kind === "doctor" ? config.doctorSkill : "", source: "config" as const };
   console.log(`${kind} skill: ${resolved.skill} (${resolved.source})`);
   return resolved.skill;
 }
@@ -323,11 +295,12 @@ const NAMES_TTL_MS = 60 * 60_000;
 async function refreshMemberNames(): Promise<void> {
   if (namesFetchedAt && Date.now() - namesFetchedAt < NAMES_TTL_MS) return;
   namesFetchedAt = Date.now();
+  const token = await getGitlabToken();
   await Promise.all(
     config.members.map(async (member) => {
       try {
-        if (!gitlabToken) { memberNames.set(member.username, member.name ?? null); return; }
-        const user = await gitlab().fetchUser(member.username);
+        if (!token) { memberNames.set(member.username, member.name ?? null); return; }
+        const user = await (await gitlab()).fetchUser(member.username);
         memberNames.set(member.username, user?.name ?? member.name ?? null);
       } catch (err) {
         console.error(`name lookup failed for ${member.username}: ${err instanceof Error ? err.message : err}`);
@@ -336,7 +309,11 @@ async function refreshMemberNames(): Promise<void> {
     }),
   );
 }
-await refreshMemberNames();
+// Fire-and-forget: a hung/down daemon must not delay Bun.serve() by the
+// full getGitlabToken() timeout at boot. Every consumer already renders a
+// null display name (falls back to member.name / username) until this
+// resolves, same as the other void refreshMemberNames() call sites below.
+void refreshMemberNames();
 
 // ONE React in the bundle, pinned by resolved path.
 //
@@ -438,16 +415,15 @@ const shell = `<!doctype html>
 </body>
 </html>`;
 
-// $PORT wins over config.port so a deployment (launchd/systemd) can pin the
-// port the tunnel points at, independent of config.json.
-const port = Number(process.env.PORT) || config.port;
+// $PORT is authoritative (config.port retired) so a deployment (launchd/systemd)
+// can pin the port the tunnel points at.
+const port = Number(process.env.PORT) || 7930;
 
 Bun.serve({
   port,
-  // Loopback by default (spec ruling 6): local-only gates should be
-  // network-local, not just Host-header-local. config.host opts into wider
-  // binds.
-  hostname: config.host || "127.0.0.1",
+  // Loopback only (spec ruling 6): local-only gates are network-local, not
+  // just Host-header-local (config.host, a wider-bind opt-in, retired).
+  hostname: "127.0.0.1",
   // The cold fetch (paging the project MR list + batch-fetching) can exceed
   // Bun's 10s default; give it room so the first request doesn't time out.
   idleTimeout: 60,
@@ -471,6 +447,12 @@ Bun.serve({
         }
       }
     }
+    // Health/SSE/static-asset routes need no board secret -- handled here,
+    // BEFORE the token round trip below, so a wedged daemon (the exact thing
+    // /healthz exists to let an operator detect) can never stall a health
+    // check, the SSE nudge channel, or the page shell/assets it loads to
+    // show that diagnosis. Falls through (no default case) to the main
+    // switch for everything else.
     switch (pathname) {
       case "/healthz":
         return new Response("ok");
@@ -509,6 +491,14 @@ Bun.serve({
         return new Response(favicon, { headers: { "content-type": "image/svg+xml; charset=utf-8" } });
       case "/app.js":
         return new Response(appJs, { headers: { "content-type": "text/javascript; charset=utf-8" } });
+    }
+    // Resolved once per request, off the memoized getters above -- cheap
+    // after the first daemon round trip, and every branch below expects a
+    // plain string|null the way the removed module-level consts used to read.
+    const [gitlabToken, slackToken, switchboardAdminToken] = await Promise.all([
+      getGitlabToken(), getSlackToken(), getSwitchboardAdminToken(),
+    ]);
+    switch (pathname) {
       case "/member": {
         // Scoped refresh: just one member's MRs, cheap enough to poll often.
         const u = new URL(req.url).searchParams.get("u");
@@ -579,9 +569,12 @@ Bun.serve({
               username: m.username,
               name: memberNames.get(m.username) ?? m.name ?? null,
               hidden: !!m.hidden,
-              // Checked-out members are skipped by fetchTeamMRs, so their MRs
-              // aren't in the snapshot and there's no count to report. null (not
-              // 0, which reads as "no open MRs") — the modal renders it as "—".
+              // fetchTeamMRs does not filter by member at all (hidden or
+              // otherwise) -- a checked-out member's MRs are still in
+              // `snapshot.mrs`. null is deliberate anyway: it signals "not
+              // tracked" for a hidden member rather than a real (and
+              // possibly stale-looking) count for someone the sidebar no
+              // longer shows -- the modal renders null as "—", not "0".
               count: m.hidden ? null : snapshot.mrs.filter((mr) => mr.author.username === m.username).length,
             })),
             mrs: attachPeerState(
@@ -1002,7 +995,7 @@ Bun.serve({
           // title prefix), reads the MR first since we send `draft` without a
           // title, and reads it back after to confirm the flag actually landed --
           // throwing instead of reporting a transition that did not happen.
-          const updated = await gitlab().updatePullRequest(path, parsed.iid, { draft });
+          const updated = await (await gitlab()).updatePullRequest(path, parsed.iid, { draft });
           // The cached snapshot still has the old state; drop it so the next
           // /data.json reflects the flip instead of waiting out the cache TTL.
           cache.invalidate();
@@ -1017,7 +1010,7 @@ Bun.serve({
           // those retries were exhausted rather than never tried. The edit landed
           // before any of that ran either way, so ask GitLab what is actually true
           // instead of reporting a write that worked as a failure.
-          const after = await gitlab().fetchSingleMR(path, parsed.iid, null).catch(() => null);
+          const after = await (await gitlab()).fetchSingleMR(path, parsed.iid, null).catch(() => null);
           if (after?.draft === draft) {
             cache.invalidate();
             return new Response(JSON.stringify({ ok: true, draft, title: after.title, recovered: true }), {
@@ -1152,12 +1145,14 @@ Bun.serve({
             // message is interpolated into onboard.ts's 500 body, which the join
             // UI shows verbatim, so it stays inside the onboarding vocabulary.
             if (!token) throw new Error("the switchboard sent nothing usable");
-            // The two writes must land together or not at all. config.json
-            // naming the new relay while .env still holds the old token is the
-            // one state nothing recovers from: this process keeps peering on
-            // the live handle, but the next restart pairs the new url with the
-            // old token and 401s forever. So put the url back if the token
-            // write fails, and let the join report the failure.
+            // The two writes must land together or not at all. saveSwitchboardUrl
+            // naming the new relay -- in config.json (unowned) or the machine
+            // settings store (owned; see config.ts's saveSwitchboardUrl) --
+            // while .env still holds the old token is the one state nothing
+            // recovers from: this process keeps peering on the live handle,
+            // but the next restart pairs the new url with the old token and
+            // 401s forever. So put the url back if the token write fails,
+            // and let the join report the failure.
             const previousUrl = config.switchboard.url;
             config = saveSwitchboardUrl(url);           // reparsed config swaps in
             try {
@@ -1172,7 +1167,7 @@ Bun.serve({
                 console.error(
                   `peer: join could not save the switchboard token (${err instanceof Error ? err.message : err}), ` +
                     `and putting the previous url back failed too (${rollbackErr instanceof Error ? rollbackErr.message : rollbackErr}); ` +
-                    `config.json may name ${url} while .env still holds the old token`,
+                    `the switchboard url (config.json or the settings store) may still name ${url} while .env holds the old token`,
                 );
               }
               throw err;
@@ -1379,7 +1374,9 @@ let autoResolveTimer: ReturnType<typeof setTimeout> | undefined;
 let autoResolveRunning = false;
 
 async function autoResolveSlackRefs(): Promise<void> {
-  if (autoResolveRunning || !slackToken) return;
+  if (autoResolveRunning) return;
+  const slackToken = await getSlackToken();
+  if (!slackToken) return;
   autoResolveRunning = true;
   try {
     const snapshot = await cache.get().catch(() => null);
@@ -1407,10 +1404,20 @@ async function autoResolveSlackRefs(): Promise<void> {
   }
 }
 
-function scheduleAutoResolve(): void {
-  if (autoResolveTimer) clearTimeout(autoResolveTimer);
+async function scheduleAutoResolve(): Promise<void> {
   const mins = config.slack.autoResolveIntervalMinutes;
-  if (!slackToken || mins <= 0) return;
+  if (mins <= 0) {
+    clearTimeout(autoResolveTimer);
+    return;
+  }
+  const slackToken = await getSlackToken();
+  // Cleared here, after this function's only await, not before it -- two
+  // overlapping calls (e.g. boot racing a config reload) both suspend on the
+  // same memoized getSlackToken() and resume in call order, so the second
+  // one's clear reliably cancels whatever the first one just armed, instead
+  // of both arming independently and orphaning a timer forever.
+  clearTimeout(autoResolveTimer);
+  if (!slackToken) return;
   const tick = () => {
     void autoResolveSlackRefs().catch((err) =>
       console.error(`auto-resolve sweep failed: ${err instanceof Error ? err.message : err}`),
@@ -1421,7 +1428,7 @@ function scheduleAutoResolve(): void {
   autoResolveTimer = setTimeout(tick, 5_000);
 }
 
-scheduleAutoResolve();
+void scheduleAutoResolve();
 
 // ── rt relay → board push ────────────────────────────────────────────────
 // An rt broadcast about a mapped repo means the store changed: refetch the
@@ -1479,7 +1486,7 @@ if (!FIXTURE_DIR) watch(dirname(CONFIG_PATH), (_event, filename) => {
       cache.markStale();
       void refreshMemberNames();
       void cache.get().catch(() => {});
-      scheduleAutoResolve();
+      void scheduleAutoResolve();
       console.log("config.json changed — reloaded members/settings (no restart needed)");
     } catch (err) {
       console.error(`config reload skipped (invalid): ${err instanceof Error ? err.message : err}`);

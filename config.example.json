@@ -18,7 +18,6 @@
   "defaultMember": "your-gitlab-username",
   "staleAfterDays": 30,
   "title": "MR Board",
-  "port": 7930,
   "botUsernames": [
     "some-integration-bot"
   ],

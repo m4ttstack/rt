@@ -157,9 +157,12 @@ export function stripDraftPrefix(title: string): string {
  * this client needs" (fetchTeamMRs); a single-member read declaring demand
  * would tell the daemon the roster is just that one member.
  */
-export function boardDemand(config: BoardConfig): DemandDecl {
+// `port` identifies which board process is declaring -- config.port retired
+// (the actual listen port is env/default-derived, not config), so callers
+// pass the resolved port explicitly.
+export function boardDemand(config: BoardConfig, port: number): DemandDecl {
   return {
-    client: `mr-board:${config.port}`,
+    client: `mr-board:${port}`,
     authors: config.members.map((m) => m.username),
     declaredAt: Date.now(),
   };

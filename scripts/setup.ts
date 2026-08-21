@@ -1,30 +1,37 @@
 /**
  * One-shot setup for a fresh clone. Prompts for a GitLab token, runs the Slack
  * OAuth flow in the browser (each teammate mints their own xoxp token via the
- * shared internal app), and writes .env + config.json.
+ * shared internal app), and writes .env plus this developer's user/machine
+ * settings (defaultMember, reviewCwd, switchboard peering).
+ *
+ * The team-owned fields (gitlabHost, projects, members, title, ...) are no
+ * longer setup's job -- they live in the team settings store (seeded once,
+ * shared via the team repo), not rebuilt per-clone from config.team.json.
+ * `config.example.json` / `config.team.example.json` still exist for anyone
+ * who wants to see the board render against a demo roster without a team
+ * store at all (see README) -- that path is a manual copy, not this script.
  *
  * Re-runnable: existing values are shown as defaults, blank input keeps them.
  */
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  readdirSync,
-  readlinkSync,
-  symlinkSync,
-  unlinkSync,
-  writeFileSync,
-} from "node:fs";
+import { readdirSync, readFileSync, readlinkSync, symlinkSync, unlinkSync, existsSync, mkdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
+import { getSetting, setSetting } from "@mattstack/rt-client";
 import { readEnvFile, upsertEnvKeys } from "../src/env-file.ts";
 import { carrySwitchboard, classifySetupAnswer, redeemInvite } from "../src/peer/invite.ts";
 import { canonicalUsername } from "../src/peer/envelope.ts";
+import { loadConfig, type BoardConfig } from "../src/config.ts";
 
 // Slack app credentials are NOT checked in — bring your own app (see the README
-// "Slack integration" section). setup reads SLACK_CLIENT_ID / SLACK_CLIENT_SECRET
-// from .env (or the environment) and prompts for them when absent, so nothing
-// secret ever lands in a tracked file.
+// "Slack integration" section). The client id is public (an OAuth app
+// identifier, not a secret): env (.env/process.env, an explicit personal
+// override) still wins first, falling back to the team settings store's
+// `mattstack.integrations` key (`.slack.clientId`) once an operator has set
+// it there. The client SECRET is never read from the team store here: it
+// lives in the `board` domain's encrypted secrets (the `secrets:read`
+// daemon scope this board's own config.ts loaders now use), not in a
+// settings-store field -- setup only ever reads it from .env or prompts for
+// it, so nothing secret lands in a tracked file.
 const SLACK_REDIRECT_PORT = 53782;
 const SLACK_REDIRECT_URI = `http://localhost:${SLACK_REDIRECT_PORT}/slack/callback`;
 const SLACK_USER_SCOPES = [
@@ -39,9 +46,6 @@ const SLACK_USER_SCOPES = [
 
 const ROOT = join(import.meta.dir, "..");
 const ENV_PATH = join(ROOT, ".env");
-const CONFIG_PATH = join(ROOT, "config.json");
-const TEAM_CONFIG_PATH = join(ROOT, "config.team.json");
-const EXAMPLE_CONFIG_PATH = join(ROOT, "config.example.json");
 const CLAUDE_SKILLS = join(homedir(), ".claude", "skills");
 const SKILLS_SRC = join(ROOT, "skills");
 
@@ -134,14 +138,6 @@ function escape(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 }
 
-/** Base config to seed config.json from: a private config.team.json (a real
-    roster) if present, else the shipped config.example.json template. */
-function loadBaseConfig(): Record<string, unknown> {
-  const base = existsSync(TEAM_CONFIG_PATH) ? TEAM_CONFIG_PATH : EXAMPLE_CONFIG_PATH;
-  if (!existsSync(base)) throw new Error(`no base config: expected ${TEAM_CONFIG_PATH} or ${EXAMPLE_CONFIG_PATH}`);
-  return JSON.parse(readFileSync(base, "utf8"));
-}
-
 /** Symlink each skills/<dir> (with a `name:` in its SKILL.md frontmatter) into
     ~/.claude/skills/<name>, so the board's launched panes can invoke them.
     Idempotent: replaces a stale link, leaves a correct one. */
@@ -173,10 +169,13 @@ function installSkills(): void {
   }
 }
 
-function loadExistingConfig(): Record<string, unknown> | null {
-  if (!existsSync(CONFIG_PATH)) return null;
+/** The board's current merged config (store + config.json's transition
+    fallback), or null when neither has anything yet -- a config.json-less
+    team-store-only clone still counts as "existing" here as long as it
+    resolves, which loadConfig() already handles (see config.ts). */
+function loadExistingConfig(): BoardConfig | null {
   try {
-    return JSON.parse(readFileSync(CONFIG_PATH, "utf8"));
+    return loadConfig();
   } catch {
     return null;
   }
@@ -197,12 +196,12 @@ async function main() {
 
   const defaultMember = ask(
     "Your GitLab username (used as the default board view)",
-    (existingConfig?.defaultMember as string) ?? "",
+    existingConfig?.defaultMember ?? "",
   );
 
   const reviewCwd = ask(
     "Absolute path to your local repo checkout for launching reviews (optional, blank to skip)",
-    (existingConfig?.reviewCwd as string) ?? "",
+    existingConfig?.reviewCwd ?? "",
   );
 
   const skipSlack = (ask("Set up Slack integration now? (Y/n)", "Y") || "Y").toLowerCase().startsWith("n");
@@ -212,7 +211,8 @@ async function main() {
       if (reuse) env.SLACK_TOKEN = "";
     }
     if (!env.SLACK_TOKEN) {
-      const clientId = ask("Slack app client id", env.SLACK_CLIENT_ID || process.env.SLACK_CLIENT_ID);
+      const teamSlack = getSetting<{ slack?: { clientId?: string } }>("mattstack.integrations").value?.slack;
+      const clientId = ask("Slack app client id", env.SLACK_CLIENT_ID || process.env.SLACK_CLIENT_ID || teamSlack?.clientId);
       const clientSecret = ask("Slack app client secret", env.SLACK_CLIENT_SECRET || process.env.SLACK_CLIENT_SECRET);
       if (!clientId || !clientSecret) {
         console.error("Slack setup needs a client id + secret from your own Slack app (see README). Skipping Slack.");
@@ -233,7 +233,7 @@ async function main() {
   // Peer boards: one paste. An invite link joins outright; a bare URL falls back
   // to the manual token prompt; blank keeps whatever is already configured.
   let joined: { url: string } | null = null;
-  const existingSw = existingConfig?.switchboard as { url?: string } | undefined;
+  const existingSw = existingConfig?.switchboard;
   const answer = ask("Board invite for peer boards (paste the link; blank keeps current settings)", "");
   const classified = classifySetupAnswer(answer);
   if (classified.kind === "invalid") {
@@ -267,20 +267,27 @@ async function main() {
   upsertEnvKeys(ENV_PATH, env);
   console.log(`Wrote ${ENV_PATH}`);
 
-  const baseConfig = loadBaseConfig();
-  const finalConfig = {
-    // setup rebuilds config.json from the base template, so any key it doesn't
-    // prompt for has to be carried across explicitly or a re-run silently drops
-    // it. `host` is one of those: losing it puts a deliberately LAN-bound board
-    // back on loopback without saying so.
-    ...baseConfig,
-    defaultMember: defaultMember || "all",
-    reviewCwd,
-    ...(typeof existingConfig?.host === "string" && existingConfig.host ? { host: existingConfig.host } : {}),
-    ...carrySwitchboard(existingSw, joined),
-  };
-  writeFileSync(CONFIG_PATH, JSON.stringify(finalConfig, null, 2) + "\n");
-  console.log(`Wrote ${CONFIG_PATH}`);
+  // Team-owned fields (gitlabHost, projects, members, title, ...) are no
+  // longer setup's job -- see the module doc. Only this developer's own
+  // user/machine settings get written here.
+  setSetting("board.defaultMember", defaultMember || "all", "user");
+  setSetting(
+    "board.cwds",
+    { review: reviewCwd, respond: existingConfig?.respondCwd ?? "", doctor: existingConfig?.doctorCwd ?? "" },
+    "machine",
+  );
+  console.log("Saved your default member and review checkout to the settings store.");
+
+  // Direct setSetting, not saveSwitchboardUrl: that helper's file branch
+  // requires config.json to exist, which a fresh clone with only a team
+  // store may not have. setup.ts is the migration vehicle for this
+  // developer's own settings (same reasoning as defaultMember/cwds above),
+  // so it establishes store ownership outright rather than latching.
+  const swUpdate = carrySwitchboard(existingSw, joined);
+  if ("switchboard" in swUpdate) {
+    setSetting("board.switchboardUrl", swUpdate.switchboard.url, "machine");
+    console.log(swUpdate.switchboard.url ? `Switchboard url set to ${swUpdate.switchboard.url}` : "Switchboard url cleared.");
+  }
 
   installSkills();
 

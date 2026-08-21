@@ -1,7 +1,5 @@
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } from "fs";
 import { join } from "path";
-import { loadSlackToken } from "./config.ts";
-
 
 const STATE_ROOT = join(import.meta.dir, "..", "state");
 export const SLACK_REF_DIR = join(STATE_ROOT, "slack");
@@ -399,5 +397,3 @@ export async function unreactFromMR(token: string, mrUrl: string, emoji: string,
   writeSlackRef(next);
   return next;
 }
-
-export { loadSlackToken };

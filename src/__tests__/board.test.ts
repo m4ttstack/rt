@@ -13,8 +13,6 @@ const config: BoardConfig = {
   staleAfterDays: 90,
   ticketPrefixes: [],
   title: "Test board",
-  port: 0,
-  host: "",
   reviewCwd: "",
   reviewsWorkspace: "reviews",
   respondCwd: "",
@@ -22,8 +20,6 @@ const config: BoardConfig = {
   doctorCwd: "",
   doctorsWorkspace: "doctors",
   claudeCommand: "",
-  reviewSkill: "",
-  respondSkill: "",
   doctorSkill: "",
   botUsernames: [],
   rtRepos: {},
@@ -291,9 +287,8 @@ describe("buildRoster", () => {
 });
 
 describe("boardDemand", () => {
-  test("stable client id from port, full roster including hidden, fresh stamp", () => {
-    const d = boardDemand({ ...config, port: 5980,
-      members: [{ username: "a" }, { username: "b", hidden: true }] } as any);
+  test("stable client id from the passed-in port, full roster including hidden, fresh stamp", () => {
+    const d = boardDemand({ ...config, members: [{ username: "a" }, { username: "b", hidden: true }] }, 5980);
     expect(d.client).toBe("mr-board:5980");
     expect(d.authors).toEqual(["a", "b"]);          // hidden is a display state, not a demand state
     expect(d.declaredAt).toBeGreaterThan(0);

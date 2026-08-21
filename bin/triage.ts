@@ -60,7 +60,7 @@ try {
   // cached so steady-state runs are pure socket reads.
   let username = memory.identity && Date.now() - memory.identity.fetchedAt < IDENTITY_TTL_MS ? memory.identity.username : null;
   if (!username) {
-    const token = loadGitLabToken();
+    const token = await loadGitLabToken();
     // Throw rather than process.exit(1): an exit here would skip the finally
     // block and strand the lock until the stale window reclaims it.
     if (!token) throw new Error("triage: no gitlab token available for identity");
@@ -150,7 +150,7 @@ try {
   });
   console.log(`triage: dispatched ${result.dispatched}, escalated ${result.escalated}, skipped ${result.skipped}`);
 
-  const switchboardToken = loadSwitchboardToken();
+  const switchboardToken = await loadSwitchboardToken();
   if (boardConfig.switchboard.url && switchboardToken) {
     const client = makeSwitchboardClient(boardConfig.switchboard.url, switchboardToken);
     const nudgeResult = await runNudgePass({
@@ -161,7 +161,7 @@ try {
         launchReReview(mrUrl, iid, {
           cwd: boardConfig.reviewCwd,
           workspaceLabel: boardConfig.reviewsWorkspace,
-          // BOARD-14: manifest binding when present, config.reviewSkill fallback --
+          // BOARD-14: manifest binding when present, else "" (the generic wrapper) --
           // same resolution the board's own HTTP re-review launches use.
           skill: resolveLaunchSkill("review", mrUrl, boardConfig),
         }),

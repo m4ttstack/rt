@@ -259,7 +259,7 @@ export interface LaunchPaneOpts {
   cwd: string;
   workspaceLabel: string;
   statePath: string;
-  /** Domain skill the launched wrapper delegates to (config.reviewSkill etc.). */
+  /** Domain skill the launched wrapper delegates to (resolveLaunchSkill's result). */
   skill?: string;
   /** Command that starts claude in the pane (config.claudeCommand). Empty/absent = "claude". */
   claudeCommand?: string;

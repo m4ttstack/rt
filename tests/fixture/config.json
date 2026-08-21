@@ -9,6 +9,5 @@
   ],
   "defaultMember": "all",
   "title": "MRs ready for review",
-  "port": 7941,
   "slack": { "autoResolveIntervalMinutes": 0 }
 }

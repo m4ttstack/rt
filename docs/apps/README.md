@@ -16,18 +16,19 @@ requires [bun](https://bun.sh).
 
 ```sh
 bun install
-bun run setup   # prompts for tokens + your defaults, writes .env and config.json
-bun run serve   # http://localhost:7930
+cp config.example.json config.json   # fill in gitlabHost/projects/members/rtRepos -- see the config table below
+bun run setup                        # prompts for tokens + your defaults, writes .env + your user/machine settings
+bun run serve                        # http://localhost:7930
 ```
 
-`bun run setup` is idempotent -- re-run it any time to rotate a token or change your default member. it prompts for:
+`config.json` carries the team-shared fields (gitlabHost, projects, members, title, ...) -- copy it once per team, or point everyone at a shared mattstack team settings store instead (ask your operator). `bun run setup` only handles what's yours: it's idempotent -- re-run it any time to rotate a token or change your default member. it prompts for:
 
 - **GitLab personal access token** (`read_api` scope) -- create at `https://gitlab.com/-/user_settings/personal_access_tokens`
 - **your GitLab username** -- used as the board's default view
 - **path to your local repo checkout** (optional) -- enables the right-click "launch review" action; leave blank to skip
 - **Slack integration** -- opens a browser to authorize a Slack app; each teammate mints their own user token this way, so reactions and messages appear as *them*. see [slack integration](#slack-integration) for the one-time app creation (there's a manifest to paste)
 
-or configure manually: copy `config.example.json` → `config.json` and edit; put `GITLAB_TOKEN=…` and optionally `SLACK_TOKEN=…` in `.env`. `config.team.example.json` is a filled-in demo roster (fake names, fake project) if you just want to see it render before pointing it at a real one.
+or configure manually: put `GITLAB_TOKEN=…` and optionally `SLACK_TOKEN=…` in `.env`. `config.team.example.json` is a filled-in demo roster (fake names, fake project) if you just want to see it render before pointing it at a real one.
 
 ## config
 
@@ -40,26 +41,22 @@ or configure manually: copy `config.example.json` → `config.json` and edit; pu
 | `members` | array of `{ "username", "name"? }` -- the teammates whose authored MRs the board shows, in sidebar order |
 | `defaultMember` | member username the board opens to by default (or `"all"`); the URL and remembered state override it |
 | `title` | page heading and tab title |
-| `port` | listen port (default 7930) |
-| `host` | bind address; default `127.0.0.1`, set e.g. `"0.0.0.0"` to serve the LAN directly -- see [sharing it](#sharing-it-optional) |
 | `reviewCwd` | absolute path a review agent's herdr pane starts in (a repo checkout); empty disables the review launch. see [review integration](#review-integration-local-only) |
 | `reviewsWorkspace` | herdr workspace label reviews are grouped under (default `reviews`) |
-| `reviewSkill` | domain skill the review wrapper delegates to, e.g. `myteam:review`; empty = the wrapper reviews generically. `respondSkill` / `doctorSkill` are the same for the respond / doctor actions |
+| `doctorSkill` | domain skill the doctor wrapper delegates to, e.g. `myteam:doctor`; empty = the wrapper repairs generically. a repo's `skills.jsonc` manifest binding overrides it when present (review/respond skills always resolve through the manifest, with no config fallback) |
 | `claudeCommand` | command that starts claude in every pane the board launches (review, respond, doctor, resume, triage), inserted verbatim with the prompt/resume flags appended after it; empty = plain `claude`, which inherits whatever account is active. e.g. `cswap run 2 --share-history -- --model opus` pins panes to one account (`cswap run` launches claude itself — everything after its `--` is claude *arguments*, so do NOT write `claude` there; keep `--share-history` so resume can find the transcripts) |
 | `slack` | the review channel, post templates, and signal emoji -- see [slack integration](#slack-integration) |
 
+the listen port is `$PORT` (default 7930); the server always binds `127.0.0.1` -- see [sharing it](#sharing-it-optional) for exposing it beyond localhost. `bun run setup` and the board's own settings writes (member hide/unhide, switchboard peering) go through the mattstack settings stores (`~/.mattstack/`), not `config.json`, once a key has been set that way -- `config.json` stays authoritative for a key until then. a caveat: `config.json` edits hot-reload (the server watches the file), but a settings-store edit -- `rt settings set board.<key> ...` by hand, or another tool writing the store directly -- does not; a store-owned key needs the board restarted (`bun run serve`) before the new value takes effect.
+
 the board lists open, non-draft MRs authored by any configured member in one of `projects`. a left sidebar switches between **All** (the whole team) and a single member; the **All** view (and each member view) can be grouped by age / author / status / pipeline and sorted by oldest / pipeline / review progress. the current member, grouping, and sort live in the URL (shareable) and are remembered across visits.
-
-### team zone (optional)
-
-set `teamClone` in `config.json` to an absolute path (or `~`-path) to a checkout of your mattstack team repo, and the board takes `gitlabHost`, `projects`, `members`, and `title` from that clone's `mattstack/team.jsonc` instead of maintaining them by hand -- it materializes them into `config.json` at boot, before the config is parsed. every other field (`port`, `slack`, `reviewSkill`, ...) is untouched. if materializing fails (clone missing, `team.jsonc` absent or invalid), the board logs a warning and boots with `config.json` as it already is -- it never crashes boot. hand-edits to the four team fields last until the next boot, when the zone overwrites them again. a project the zone adds still needs a matching `rtRepos` entry (with the project-mrs grant) added by hand -- without one, the whole fetch fails, not just that project.
 
 ## tokens
 
-`bun run setup` handles both. under the hood:
+`bun run setup` handles both. `.env` becomes optional with the daemon fallback below, not retired -- an env var still wins first when it's set, `bun run setup` and `/peer/join` both still write to it (`SWITCHBOARD_TOKEN` in particular), and it stays the simplest path for a solo/local install with no rt daemon at all. under the hood:
 
-- **`GITLAB_TOKEN`** -- env var (bun auto-loads `.env`). needs `read_api` scope only; the board never writes to gitlab. as a fallback it also reads `gitlabToken` from `~/.mattstack/rt/secrets.json` if you happen to have one.
-- **`SLACK_TOKEN`** -- optional user token (`xoxp-…`) for the review-thread integration. minted via the OAuth flow in `bun run setup`, or paste manually into `.env`. same `~/.mattstack/rt/secrets.json` fallback (as `slackToken`). without it, the Slack menu actions stay disabled and the board runs fine.
+- **`GITLAB_TOKEN`** -- env var (bun auto-loads `.env`). needs `read_api` scope only; the board never writes to gitlab. without an env var, it falls back to the rt daemon's token-gated `secrets:read` (`board` scope, which reads gitlabToken from the `rt` domain) -- `rt secrets set rt gitlabToken` on the machine running rt.
+- **`SLACK_TOKEN`** -- optional user token (`xoxp-…`) for the review-thread integration. minted via the OAuth flow in `bun run setup`, or paste manually into `.env`. same rt-daemon fallback as `GITLAB_TOKEN` (as `slackToken`, in the `board` domain -- `rt secrets set board slackToken`). without it, the Slack menu actions stay disabled and the board runs fine.
 
 ## slack integration
 
@@ -70,7 +67,7 @@ the board plugs into a simple channel convention rather than inventing its own w
 
 if your team already reviews this way, the board drops in as-is. the moving parts:
 
-**one-time, per team: create the Slack app.** at [api.slack.com/apps](https://api.slack.com/apps) → Create New App → *From an app manifest*, paste [`slack-app-manifest.yaml`](slack-app-manifest.yaml). no bot, no event subscriptions -- just user-token OAuth scopes for reading the channel, reacting, and posting. while the app is unlisted, add each teammate under **Settings → Collaborators** so they can complete the OAuth flow. share the app's client id + secret with the team (they're not checked in; setup prompts for them or reads `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET` from `.env`).
+**one-time, per team: create the Slack app.** at [api.slack.com/apps](https://api.slack.com/apps) → Create New App → *From an app manifest*, paste [`slack-app-manifest.yaml`](slack-app-manifest.yaml). no bot, no event subscriptions -- just user-token OAuth scopes for reading the channel, reacting, and posting. while the app is unlisted, add each teammate under **Settings → Collaborators** so they can complete the OAuth flow. share the app's client id + secret with the team. the client id is public (not a secret): `.env`/`SLACK_CLIENT_ID` still wins first, but set it once as `mattstack.integrations` (team scope, `slack.clientId`) and setup defaults every other clone to it. the client secret is never a team setting -- rt's board domain holds it as the encrypted `slackClientSecret` secret, but setup itself still only reads/writes it via `.env`/`SLACK_CLIENT_SECRET` today, prompting when that's unset.
 
 **per teammate: mint a token.** `bun run setup` opens the browser, the teammate authorizes, and the resulting `xoxp` token lands in their `.env`. everything the board does in slack -- posts, thread replies, reactions -- appears as the person running the board, which is the point: a 👀 from a reviewer means that reviewer.
 
@@ -105,21 +102,21 @@ the server binds a local port and has no auth of its own -- anything public-faci
 
 the MR titles, branch names, and reviewer names on this page are your employer's internal data -- do not expose it without the gate.
 
-the server binds `127.0.0.1` by default, so nothing on your LAN can reach it directly -- the cloudflared tunnel above still works fine, since it connects out from the same machine rather than in over the network. viewing it directly from another device on your LAN needs `"host"` set in `config.json` (e.g. `"0.0.0.0"`, or a specific address) to opt into the wider bind. do that with eyes open: the review-launch and peer-invite actions are gated by an `isLocal` check on the request's Host header alone, not by network topology, so a wider bind means anyone who can reach that port and forge a local-looking Host header reaches those actions too. prefer the tunnel.
+the server always binds `127.0.0.1`, so nothing on your LAN can reach it directly -- the cloudflared tunnel above still works fine, since it connects out from the same machine rather than in over the network. there is no wider-bind opt-in (a former `host` config field retired for exactly this reason: the review-launch and peer-invite actions are gated by an `isLocal` check on the request's Host header alone, not by network topology, so a wider bind would have let anyone who can reach that port and forge a local-looking Host header reach those actions too). use the tunnel for any off-machine access.
 
 ## review integration (local only)
 
-when you open the board from a local hostname (`mrs.localhost`, `localhost`, `127.0.0.1`), right-clicking an MR row opens an action menu with **launch review**: the server spawns a fresh [herdr](https://herdr.dev) tab (in the `reviewsWorkspace`, labelled `!<iid>`), starts `claude` in `reviewCwd`, and runs `/mr-board:review <url> --state <path> --status-bin <path> [--skill <reviewSkill>]`. the board injects the domain skill and its own status-writer path as flags, so the wrapper skill itself carries no repo- or team-specific knowledge. the wrapper reports each lifecycle status back to the board, which owns every slack reaction (👀 on `reviewing`, 💬/✅ on `done`) so the agent never touches slack. that thin wrapper emits `reviewing` / `done` / `error` to a state file the board reads, so the row shows a live badge (with an instant optimistic badge + toast the moment you launch), and delegates the actual review to the configured `reviewSkill` (or reviews generically when none is set). launching again while a review is live re-focuses its tab instead of spawning another.
+when you open the board from a local hostname (`mrs.localhost`, `localhost`, `127.0.0.1`), right-clicking an MR row opens an action menu with **launch review**: the server spawns a fresh [herdr](https://herdr.dev) tab (in the `reviewsWorkspace`, labelled `!<iid>`), starts `claude` in `reviewCwd`, and runs `/mr-board:review <url> --state <path> --status-bin <path> [--skill <skill>]`. the board injects the domain skill and its own status-writer path as flags, so the wrapper skill itself carries no repo- or team-specific knowledge -- for review/respond that skill comes solely from the repo's `skills.jsonc` manifest binding (see below); with no binding the wrapper reviews generically. the wrapper reports each lifecycle status back to the board, which owns every slack reaction (👀 on `reviewing`, 💬/✅ on `done`) so the agent never touches slack. that thin wrapper emits `reviewing` / `done` / `error` to a state file the board reads, so the row shows a live badge (with an instant optimistic badge + toast the moment you launch). launching again while a review is live re-focuses its tab instead of spawning another.
 
 hold **alt/option** over any pane-launching menu item (launch review, re-review, respond, doctor, resume) and its hint flips to `+ note`: alt-clicking opens a small note box instead of firing, and the note you type is appended to the launched prompt as an `Operator note (from the human who launched this pane): …` paragraph the wrapper skills honor (resumes send it as the session's first message). enter launches with the note, esc goes back. notes cap at 2000 chars; triage never sends one.
 
 a plain click still opens the MR in a new browser tab (the menu also has open-in-gitlab and copy-for-slack). the review action is gated by an `isLocal` check on both the client (the menu item only appears locally) and the server (`POST /review` returns 403), so it never fires when the board is viewed through a public tunnel. review status files live in the gitignored `state/reviews/` dir and are pruned after 24h.
 
-depends on herdr running locally and on the `mr-board:{review,respond,doctor}` wrapper skills being installed (plus whatever domain skills you point `reviewSkill` / `respondSkill` / `doctorSkill` at, or bind via the manifest below).
+depends on herdr running locally and on the `mr-board:{review,respond,doctor}` wrapper skills being installed (plus whatever doctor skill you point `doctorSkill` at -- review/respond have no config fallback, only the manifest binding below -- or bind any of the three via the manifest).
 
 ### skill bindings (.mattstack/skills.jsonc)
 
-the wrapper skills are parameterized skills (the convention lives in the mattstack-skills plugin's `parameterized-skills` skill): each declares slots for the domain skills that own the actual work, and resolves them with a vendored `scripts/resolve-args.sh`. resolution order, in each wrapper: an explicit `--skill` flag (what the board injects from `reviewSkill` / `respondSkill` / `doctorSkill`) always wins, unchanged; with no `--skill`, the wrapper resolves its slot bindings from the nearest `.mattstack/skills.jsonc` (walking up from the working dir, then `~/.mattstack/skills.jsonc`); a failed resolution degrades loudly (the resolver prints machine-readable json errors, the wrapper never guesses a binding) before falling back to the generic domain-free behavior.
+the wrapper skills are parameterized skills (the convention lives in the mattstack-skills plugin's `parameterized-skills` skill): each declares slots for the domain skills that own the actual work, and resolves them with a vendored `scripts/resolve-args.sh`. resolution order, in each wrapper: an explicit `--skill` flag (what the board injects -- `doctorSkill` from config for doctor, the manifest binding or nothing for review/respond) always wins, unchanged; with no `--skill`, the wrapper resolves its slot bindings from the nearest `.mattstack/skills.jsonc` (walking up from the working dir, then `~/.mattstack/skills.jsonc`); a failed resolution degrades loudly (the resolver prints machine-readable json errors, the wrapper never guesses a binding) before falling back to the generic domain-free behavior.
 
 slots and contracts: `mr-board:review` has slot `review` (contract `mr-review@1`), `mr-board:respond` has slot `respond` (`mr-respond@1`), and `mr-board:doctor` has slots `doctor` (`mr-doctor@1`, the checkout tier) and `doctor-api` (`mr-doctor-api@1`, the `--tier api` no-checkout tier). a bound skill must declare the matching contract in its `metadata.provides`.
 
@@ -171,7 +168,7 @@ the switchboard is a separate deployable in `switchboard/`, a dumb store-and-for
 - env: `SWITCHBOARD_ADMIN_TOKEN` (pick your own value, the bearer token for minting boards)
 - `PORT` is supplied by Railway
 
-to invite teammates from the board's own UI instead of curl, put the admin token where the board (not the relay) reads it: `switchboardAdminToken` in `~/.mattstack/rt/secrets.json`, or the `SWITCHBOARD_ADMIN_TOKEN` env var, on the machine running your own board -- plus `switchboard.url` in your `config.json`. with both set, open settings ("team members") locally and each roster member gets an **invite** button; anyone already peered shows **peered** with a **re-invite** button instead, and a free-text row at the bottom invites handles that aren't on your roster at all. either action mints a one-time invite link (`<url>/invite/<code>`, expires in 7 days) shown right there to copy and paste to that teammate. re-invite is the rotation story, with one caveat worth knowing: minting the new invite changes nothing by itself. their current board keeps working, and their access ends only when the new invite is actually redeemed and the token behind it rotates. a true revoke (cutting a board off without waiting on them) is not in v1 -- for that, re-mint or delete the board on the relay directly.
+to invite teammates from the board's own UI instead of curl, put the admin token where the board (not the relay) reads it: the `SWITCHBOARD_ADMIN_TOKEN` env var, or `switchboardAdminToken` in the rt daemon's secrets (`secrets:read`'s `board` scope, `rt` domain -- `rt secrets set rt switchboardAdminToken`), on the machine running your own board -- plus `switchboard.url` in your `config.json`. with both set, open settings ("team members") locally and each roster member gets an **invite** button; anyone already peered shows **peered** with a **re-invite** button instead, and a free-text row at the bottom invites handles that aren't on your roster at all. either action mints a one-time invite link (`<url>/invite/<code>`, expires in 7 days) shown right there to copy and paste to that teammate. re-invite is the rotation story, with one caveat worth knowing: minting the new invite changes nothing by itself. their current board keeps working, and their access ends only when the new invite is actually redeemed and the token behind it rotates. a true revoke (cutting a board off without waiting on them) is not in v1 -- for that, re-mint or delete the board on the relay directly.
 
 the invite code travels in the url path, so it shows up in the relay host's access logs (the platform's edge logs, e.g. railway's) even though the relay itself never logs it. treat invite links as short-lived secrets: hand them over the same way you would a password, and if one may have leaked, re-invite that handle. the relay keeps one outstanding invite per handle, so minting a fresh one replaces the old code and the leaked link stops working.
 

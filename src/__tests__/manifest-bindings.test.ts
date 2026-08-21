@@ -9,8 +9,9 @@ const base = {
   gitlabHost: "https://gitlab.com",
   projects: ["org/repo"],
   members: [{ username: "alice" }],
-  reviewSkill: "config:review",
-  respondSkill: "config:respond",
+  // reviewSkill/respondSkill retired (dead -- always shadowed by the
+  // manifest); their config fallback is unconditionally "". Only doctorSkill
+  // still has a real config fallback.
   doctorSkill: "config:doctor",
 };
 
@@ -38,19 +39,19 @@ describe("resolveBoardSkill", () => {
     expect(result).toEqual({ skill: "myteam:review", source: "manifest" });
   });
 
-  test("no repos dir -> config fallback", () => {
+  test("no repos dir -> config fallback (\"\" for review -- reviewSkill retired)", () => {
     const home = makeHome(null);
     const result = resolveBoardSkill("review", "org/repo", cfg, home);
-    expect(result).toEqual({ skill: "config:review", source: "config" });
+    expect(result).toEqual({ skill: "", source: "config" });
   });
 
-  test("manifest without board keys -> config fallback", () => {
+  test("manifest without board keys -> config fallback (\"\" for respond -- respondSkill retired)", () => {
     const home = makeHome(
       "gitlab.com-org-repo",
       JSON.stringify({ bindings: { "mattstack:work": { tiering: "mattstack:model-tiering" } } }),
     );
     const result = resolveBoardSkill("respond", "org/repo", cfg, home);
-    expect(result).toEqual({ skill: "config:respond", source: "config" });
+    expect(result).toEqual({ skill: "", source: "config" });
   });
 
   test("malformed manifest -> config fallback (no throw)", () => {
@@ -102,7 +103,7 @@ describe("resolveBoardSkill", () => {
       JSON.stringify({ bindings: { "mr-board:review": { skill: "" } } }),
     );
     const result = resolveBoardSkill("review", "org/repo", cfg, home);
-    expect(result).toEqual({ skill: "config:review", source: "config" });
+    expect(result).toEqual({ skill: "", source: "config" });
   });
 
   test("trailing-slash host resolves the same manifest as the plain host", () => {
@@ -140,8 +141,8 @@ describe("resolveLaunchSkill", () => {
     expect(resolveLaunchSkill("review", mrUrl, cfg, home)).toBe("myteam:review");
   });
 
-  test("no manifest -> config fallback", () => {
+  test("no manifest -> config fallback (\"\" -- reviewSkill retired)", () => {
     const home = makeHome(null);
-    expect(resolveLaunchSkill("review", mrUrl, cfg, home)).toBe("config:review");
+    expect(resolveLaunchSkill("review", mrUrl, cfg, home)).toBe("");
   });
 });
