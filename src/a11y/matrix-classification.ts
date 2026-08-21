@@ -81,4 +81,7 @@ export const MATRIX_CLASSIFICATION: Record<string, MatrixClassification> = {
     exempt: "shares Field.module.css structural chrome (fixed --fg/--muted/--red pairs), no intent axis",
   },
   ToastHost: { exempt: "structural chrome: fixed --card/--fg pairs, no intent axis" },
+  Tooltip: {
+    exempt: "structural chrome: fixed --panel/--fg/--border pairs (lifted from StatusDot's own tooltip), no intent axis",
+  },
 };

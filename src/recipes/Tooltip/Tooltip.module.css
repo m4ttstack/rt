@@ -1,0 +1,49 @@
+/*
+ * Tooltip — the standalone recipe generalised from StatusDot's `.tui-dot-wrap`
+ * CSS tooltip (`content: attr(data-tip)`), for any wrapped child, not just
+ * the dot glyph.
+ */
+@layer soribashi.recipes {
+  .root {
+    position: relative;
+    display: inline-block;
+  }
+
+  /* `box-sizing` is an ADDITION, not a lift — without it a consumer who skips
+     the optional canvas reset gets a "320px" tooltip measuring ~342px.
+     Lifted verbatim from StatusDot's own comment on this same trap. */
+  .root::after {
+    box-sizing: border-box;
+    content: attr(data-tip);
+    position: absolute;
+    left: 0;
+    top: var(--sb-tooltip-offset);
+    z-index: 10;
+    white-space: pre-line;
+    width: max-content;
+    max-width: 320px;
+    font-size: var(--font-size-rem74);
+    line-height: 1.5;
+    text-align: left;
+    font-weight: 400;
+    background: var(--panel);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-sm) var(--spacing-lg);
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.1s ease 0.15s;
+    pointer-events: none;
+  }
+
+  /* `:focus-within` alongside `:hover`, unlike StatusDot's hover-only card —
+     a keyboard user tabbing to a focusable child gets the same reveal a
+     mouse hover gets, without this recipe becoming the child's accessible
+     name (see TooltipOwnProps.tip's own doc comment on that ceiling). */
+  .root:hover::after,
+  .root:focus-within::after {
+    opacity: 1;
+    visibility: visible;
+  }
+}
