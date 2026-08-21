@@ -1,3 +1,4 @@
+import { isDev } from "@soribashi/core";
 import type { ComponentProps, HTMLAttributes, ReactNode } from "react";
 import { defineComponent } from "../../builders.ts";
 import { Spinner } from "../Spinner/Spinner.tsx";
@@ -32,8 +33,8 @@ export const LISTGROUP_PARTS = {
 
 /** The root's own props; `ListGroupProps` below is the full public surface. */
 export interface ListGroupOwnProps {
-  /** A single dim sentence rendered under the group -- not per-row, per the
-      brief's mock reference. */
+  /** A single dim sentence rendered under the group -- not per-row: the
+      footer is one sentence per group. */
   footer?: ReactNode;
   children: ReactNode;
 }
@@ -83,16 +84,26 @@ const ListGroupRoot = defineComponent<
 
 export interface ListGroupNavOwnProps {
   label: ReactNode;
-  /** Right-hand dim hint. Wrapped `aria-hidden` alongside the chevron so the
-      button's accessible name stays exactly `label` -- the value is a visual
-      summary, not a second accessible fact (a Fact row is the place for
-      that). */
+  /** Right-hand dim hint -- primary state (e.g. a current setting's value),
+      not decoration, so it stays IN the button's accessible name; only the
+      chevron beside it is hidden from assistive tech. */
   value?: ReactNode;
   onClick(): void;
   disabled?: boolean;
 }
 
 function Nav({ label, value, onClick, disabled }: ListGroupNavOwnProps) {
+  // An explicit `label, value` name only where both sides are known plain
+  // text: a `${value}` template on a non-primitive ReactNode would stringify
+  // it uselessly ("[object Object]"). Anything else falls back to the
+  // button's own visible text, which still includes the value span (only
+  // the chevron below carries `aria-hidden`) -- so the value is never
+  // dropped from the accessible name, just not phrased with the comma.
+  const explicitAriaLabel =
+    typeof label === "string" && (typeof value === "string" || typeof value === "number")
+      ? `${label}, ${value}`
+      : undefined;
+
   return (
     <li className={classes.item} data-part={LISTGROUP_PARTS.nav}>
       <button
@@ -100,17 +111,18 @@ function Nav({ label, value, onClick, disabled }: ListGroupNavOwnProps) {
         className={classes.navButton}
         onClick={() => onClick()}
         disabled={disabled}
+        aria-label={explicitAriaLabel}
       >
         <span className={classes.label} data-part={LISTGROUP_PARTS.label}>
           {label}
         </span>
-        <span className={classes.trailing} aria-hidden="true">
+        <span className={classes.trailing}>
           {value != null && (
             <span className={classes.value} data-part={LISTGROUP_PARTS.value}>
               {value}
             </span>
           )}
-          <span className={classes.chevron} data-part={LISTGROUP_PARTS.chevron}>
+          <span className={classes.chevron} data-part={LISTGROUP_PARTS.chevron} aria-hidden="true">
             {"›"}
           </span>
         </span>
@@ -124,6 +136,8 @@ function Nav({ label, value, onClick, disabled }: ListGroupNavOwnProps) {
 // ---------------------------------------------------------------------------
 
 export interface ListGroupToggleOwnProps {
+  /** When this is not a plain string, pass `aria-label` too -- a Switch with
+      neither is unlabeled for assistive tech, and a dev build warns. */
   label: ReactNode;
   checked: boolean;
   onChange(): void;
@@ -131,16 +145,20 @@ export interface ListGroupToggleOwnProps {
 }
 
 function Toggle({ label, checked, onChange, "aria-label": ariaLabel }: ListGroupToggleOwnProps) {
+  const resolvedAriaLabel = ariaLabel ?? (typeof label === "string" ? label : undefined);
+
+  if (isDev() && resolvedAriaLabel == null) {
+    console.warn(
+      "tui-kit ListGroup.Toggle: a non-string `label` with no `aria-label` leaves the Switch unlabeled",
+    );
+  }
+
   return (
     <li className={`${classes.item} ${classes.toggleRow}`} data-part={LISTGROUP_PARTS.toggle}>
       <span className={classes.label} data-part={LISTGROUP_PARTS.label}>
         {label}
       </span>
-      <Switch
-        checked={checked}
-        onChange={() => onChange()}
-        aria-label={ariaLabel ?? (typeof label === "string" ? label : undefined)}
-      />
+      <Switch checked={checked} onChange={() => onChange()} aria-label={resolvedAriaLabel} />
     </li>
   );
 }
@@ -160,10 +178,10 @@ export interface ListGroupActionOwnProps {
   disabled?: boolean;
 }
 
-/** Shared by Action and Danger: `centered` is Danger's own addition, not part
-    of Action's public prop surface (the brief's Action signature has no such
-    prop) -- Danger reaches this render path directly rather than through the
-    public Action component to apply it. */
+/** Shared by Action and Danger: `centered` is Danger's own addition. Action's
+    public prop surface has no `centered` prop, so Danger reaches this render
+    path directly rather than through the public Action component to apply
+    it. */
 function renderActionRow(props: ListGroupActionOwnProps, centered: boolean) {
   const { label, onClick, busy, intent, disabled } = props;
   return (

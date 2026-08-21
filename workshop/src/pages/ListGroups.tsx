@@ -44,6 +44,7 @@ export function ListGroups() {
           />
           <ListGroup.Fact label="Plan" value="Pro" />
           <ListGroup.Input label="Slug" value={slug} onChange={(ev) => setSlug(ev.target.value)} />
+          <ListGroup.Input label="Slug (locked)" value="mr-board" onChange={() => {}} disabled />
         </ListGroup>
       </div>
 

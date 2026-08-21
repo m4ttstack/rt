@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderWithTheme } from "../../../test/test-utils.tsx";
 import { LISTGROUP_PARTS, ListGroup } from "./ListGroup.tsx";
 
@@ -58,16 +58,55 @@ describe("ListGroup (browser)", () => {
   });
 
   describe("Nav", () => {
-    it("is a button whose accessible name is the label, and shows a value hint", async () => {
+    it("is a button whose accessible name is the label alone when there is no value", async () => {
       const screen = await renderWithTheme(
         <ListGroup>
-          <ListGroup.Nav label="Notifications" value="Enabled" onClick={() => {}} />
+          <ListGroup.Nav label="Notifications" onClick={() => {}} />
         </ListGroup>,
       );
 
       const button = screen.getByRole("button", { name: "Notifications" }).element() as HTMLButtonElement;
       expect(button.tagName).toBe("BUTTON");
-      expect(button.textContent).toContain("Enabled");
+    });
+
+    it("the value hint participates in the accessible name, not just visible text", async () => {
+      const screen = await renderWithTheme(
+        <ListGroup>
+          <ListGroup.Nav label="dev port" value="3007 · override" onClick={() => {}} />
+        </ListGroup>,
+      );
+
+      const button = screen
+        .getByRole("button", { name: "dev port, 3007 · override" })
+        .element() as HTMLButtonElement;
+      expect(button.textContent).toContain("3007 · override");
+    });
+
+    it("the chevron stays hidden from assistive tech", async () => {
+      const screen = await renderWithTheme(
+        <ListGroup>
+          <ListGroup.Nav label="Region" value="us-east-1" onClick={() => {}} />
+        </ListGroup>,
+      );
+
+      const chevron = partOf(screen.container, LISTGROUP_PARTS.chevron);
+      expect(chevron.getAttribute("aria-hidden")).toBe("true");
+      // Exact-name match: if the chevron glyph leaked into the accessible
+      // name, this query would not find a "Region, us-east-1" role.
+      expect(screen.getByRole("button", { name: "Region, us-east-1" }).element()).toBeDefined();
+    });
+
+    it("does not force-stringify a non-string label: falls back to the button's own visible text", async () => {
+      const screen = await renderWithTheme(
+        <ListGroup>
+          <ListGroup.Nav label={<span>Region</span>} value="us-east-1" onClick={() => {}} />
+        </ListGroup>,
+      );
+
+      const button = screen.container.querySelector("button") as HTMLButtonElement;
+      expect(button.hasAttribute("aria-label")).toBe(false);
+      expect(button.textContent).toContain("Region");
+      expect(button.textContent).toContain("us-east-1");
     });
 
     it("fires onClick", async () => {
@@ -122,6 +161,55 @@ describe("ListGroup (browser)", () => {
 
       expect(onChange).toHaveBeenCalledTimes(1);
       expect(onChange).toHaveBeenCalledWith();
+    });
+  });
+
+  describe("Toggle dev warning", () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it("warns when label is not a string and no aria-label is given", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      await renderWithTheme(
+        <ListGroup>
+          <ListGroup.Toggle label={<span>Dark mode</span>} checked={false} onChange={() => {}} />
+        </ListGroup>,
+      );
+
+      expect(warn).toHaveBeenCalledWith(
+        "tui-kit ListGroup.Toggle: a non-string `label` with no `aria-label` leaves the Switch unlabeled",
+      );
+    });
+
+    it("stays silent when a non-string label carries an aria-label", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      await renderWithTheme(
+        <ListGroup>
+          <ListGroup.Toggle
+            label={<span>Dark mode</span>}
+            checked={false}
+            onChange={() => {}}
+            aria-label="Dark mode"
+          />
+        </ListGroup>,
+      );
+
+      expect(warn).not.toHaveBeenCalled();
+    });
+
+    it("stays silent for a plain string label with no aria-label", async () => {
+      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      await renderWithTheme(
+        <ListGroup>
+          <ListGroup.Toggle label="Dark mode" checked={false} onChange={() => {}} />
+        </ListGroup>,
+      );
+
+      expect(warn).not.toHaveBeenCalled();
     });
   });
 

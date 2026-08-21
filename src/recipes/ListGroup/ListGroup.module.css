@@ -1,7 +1,7 @@
 /* ListGroup — grouped settings rows (Nav/Toggle/Action/Fact/Input/Danger) in
    a bordered panel, the deck drawer's row surface. Panel/divider tokens are
-   the same family Table/Modal use (--panel/--border/--border-soft), NOT a
-   white-card-on-grey iOS treatment — see the brief's global constraint.
+   the same family Table/Modal use (--panel/--border/--border-soft): this
+   recipe must read as Tokyo, never a white-card-on-grey iOS treatment.
    `.navButton`/`.actionButton` stay separate rather than one shared class:
    Action's busy state renders two flex children (Spinner + label) that must
    stay adjacent via `gap`, so it needs `justify-content: flex-start`, while
