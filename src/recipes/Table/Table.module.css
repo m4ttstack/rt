@@ -7,8 +7,30 @@
    inherits down through table/thead/th) — both keep this file's only
    var()-external value out of the no-hardcoded-values gate. */
 @layer soribashi.recipes {
+  /* `hidden`, not the implied `auto`, on the y axis: the wrapper grows with
+     the table, so vertical overflow is only ever phantom layout — hidden
+     tooltip cards below the last row — and an auto y-axis turns that into a
+     permanent scrollbar under always-visible-scrollbar settings (and a
+     flickering one on hover). Real scrolling here is horizontal only. */
   .root {
     overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border) transparent;
+  }
+
+  .root::-webkit-scrollbar {
+    height: var(--spacing-px8);
+    width: var(--spacing-px8);
+  }
+
+  .root::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .root::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: var(--radius-pill);
   }
 
   .table {
