@@ -1,4 +1,4 @@
-import { Button, Tooltip } from "@mattstack/tui-kit";
+import { Button, Chip, Tooltip } from "@mattstack/tui-kit";
 
 /**
  * The Tooltip recipe's workshop page.
@@ -13,6 +13,17 @@ import { Button, Tooltip } from "@mattstack/tui-kit";
  */
 
 const row = { display: "flex", alignItems: "center", gap: "2rem", marginTop: "1rem" } as const;
+
+const composedControl = {
+  display: "flex",
+  flexDirection: "column",
+  gap: "0.2rem",
+  padding: "0.9rem 1.2rem",
+  border: "1px solid var(--border)",
+  borderRadius: "var(--radius-md)",
+  background: "var(--panel)",
+  cursor: "pointer",
+} as const;
 
 export function Tooltips() {
   return (
@@ -33,6 +44,27 @@ export function Tooltips() {
         </Tooltip>
         <Tooltip tip={"multi-line tips\nuse pre-line, same as StatusDot"}>
           <Button>Hover or Tab me</Button>
+        </Tooltip>
+      </div>
+
+      <h2 style={{ marginTop: "2rem" }}>trigger height</h2>
+      <p>
+        The card sits below the trigger's own box (<code>top: 100%</code>,
+        plus a small gap) rather than a fixed offset off StatusDot's tiny dot
+        glyph — so it never overlaps, from a short chip up through a taller
+        composed control.
+      </p>
+      <div style={row}>
+        <Tooltip tip="short chip trigger">
+          <Chip>build #482</Chip>
+        </Tooltip>
+        <Tooltip tip="taller composed control, stacked label + sublabel">
+          <div style={composedControl}>
+            <strong>Deploy pipeline</strong>
+            <span style={{ color: "var(--muted)", fontSize: "var(--font-size-xs)" }}>
+              main -&gt; production
+            </span>
+          </div>
         </Tooltip>
       </div>
 

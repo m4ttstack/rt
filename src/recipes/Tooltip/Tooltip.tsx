@@ -12,10 +12,12 @@ const TOOLTIP_SELECTORS = ["root"] as const;
     tail so a call site cannot sever an app's `[data-part]` rules. */
 export const TOOLTIP_PARTS = { root: "tooltip" } as const;
 
-/** Recipe-local offset, generalised from StatusDot's own
-    `--sd-tooltip-offset`: how far below the anchor the hover card sits. */
+/** Gap between the trigger's own box (`top: 100%`, not StatusDot's fixed
+    em offset off a tiny glyph) and the hover card — StatusDot's
+    `--sd-tooltip-offset` overlaps any trigger taller than ~1.5em, so this
+    recipe measures from the box edge instead and only needs a small gap. */
 const TOOLTIP_SCALARS: Record<string, string> = {
-  "--sb-tooltip-offset": "1.5em",
+  "--sb-tooltip-gap": "var(--spacing-xxs)",
 };
 
 export interface TooltipOwnProps {
