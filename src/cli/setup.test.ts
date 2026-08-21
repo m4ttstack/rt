@@ -12,6 +12,9 @@ process.env.LOCAL_PLATFORM_SETTINGS_PATH = join(dir, "platform.json");
 // Nonexistent on purpose: readProxyTlds() falls back to ["localhost"] deterministically.
 process.env.LOCAL_PORTLESS_TLDS_PATH = join(dir, "proxy.tlds");
 process.env.LOCAL_AGENTS_DIR = join(dir, "agents"); // isolate from this machine's real LaunchAgents
+// deck.platform reads through rt-client, which resolves HOME at call time (not overridable
+// via a LOCAL_*_PATH var) -- must be faked here too, or this test touches the real ~/.mattstack.
+process.env.HOME = dir;
 writeFileSync(process.env.LOCAL_APPS_ROUTES_PATH, "[]");
 
 const { checkPrereqs, setup, uninstall } = await import("./setup.ts");

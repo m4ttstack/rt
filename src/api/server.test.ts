@@ -9,6 +9,9 @@ process.env.LOCAL_STATE_DIR = dir;
 process.env.LOCAL_APPS_ROUTES_PATH = join(dir, "routes.json");
 process.env.LOCAL_APPS_SETTINGS_PATH = join(dir, "settings.json");
 process.env.LOCAL_PLATFORM_SETTINGS_PATH = join(dir, "platform.json");
+// deck.platform reads through rt-client, which resolves HOME at call time (not overridable
+// via a LOCAL_*_PATH var) -- must be faked here too, or this test touches the real ~/.mattstack.
+process.env.HOME = dir;
 writeFileSync(process.env.LOCAL_APPS_ROUTES_PATH, "[]");
 
 const { startApi } = await import("./server.ts");
@@ -79,6 +82,11 @@ beforeEach(() => {
   rmSync(process.env.LOCAL_REGISTRY_PATH!, { force: true });
   reloadRegistry();
   rmSync(process.env.LOCAL_PLATFORM_SETTINGS_PATH!, { force: true });
+  // A fresh HOME per test, not just per file: deck.platform's migrated fields
+  // now live in the machine settings STORE (~/.mattstack), which the file
+  // reset above never touches — without this, one test's setSetting leaks
+  // into every later test in this file.
+  process.env.HOME = mkdtempSync(join(tmpdir(), "local-api-home-"));
   reloadPlatformSettings();
 });
 

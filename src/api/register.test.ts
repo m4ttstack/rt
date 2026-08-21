@@ -16,6 +16,9 @@ process.env.LOCAL_AGENTS_DIR = join(dir, "agents-not-present");
 // Settings live in the same throwaway dir: the rename tests write real
 // published/password state and must never touch the repo's data/settings.json.
 process.env.LOCAL_APPS_SETTINGS_PATH = join(dir, "settings.json");
+// deck.platform reads through rt-client, which resolves HOME at call time (not overridable
+// via a LOCAL_*_PATH var) -- must be faked here too, or this test touches the real ~/.mattstack.
+process.env.HOME = dir;
 
 const { registerApp, unregisterApp, editApp } = await import("./register.ts");
 const { FakeServiceManager } = await import("../services/fake.ts");

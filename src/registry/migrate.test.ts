@@ -10,6 +10,9 @@ process.env.LOCAL_PLATFORM_SETTINGS_PATH = join(dir, "platform.json");
 process.env.LOCAL_APPS_ROUTES_PATH = join(dir, "routes.json");
 process.env.LOCAL_AGENTS_DIR = join(dir, "agents");
 mkdirSync(process.env.LOCAL_AGENTS_DIR, { recursive: true });
+// deck.platform reads through rt-client, which resolves HOME at call time (not overridable
+// via a LOCAL_*_PATH var) -- must be faked here too, or this test touches the real ~/.mattstack.
+process.env.HOME = dir;
 
 const { migrate } = await import("./migrate.ts");
 const { getRecord, reloadRegistry } = await import("./records.ts");
@@ -29,6 +32,9 @@ beforeEach(() => {
   rmSync(process.env.LOCAL_REGISTRY_PATH!, { force: true });
   rmSync(process.env.LOCAL_PLATFORM_SETTINGS_PATH!, { force: true });
   reloadRegistry();
+  // A fresh HOME per test: legacyPrefixes now also lives in the machine
+  // settings STORE, which the file reset above never touches.
+  process.env.HOME = mkdtempSync(join(tmpdir(), "local-migrate-home-"));
   reloadPlatformSettings();
   writeFileSync(join(process.env.LOCAL_AGENTS_DIR!, "com.matthewgoodwin.boxscore.plist"), PLIST("com.matthewgoodwin.boxscore", 11005));
   writeFileSync(process.env.LOCAL_APPS_ROUTES_PATH!, JSON.stringify([

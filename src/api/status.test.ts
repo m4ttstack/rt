@@ -7,6 +7,9 @@ const dir = mkdtempSync(join(tmpdir(), "local-status-"));
 process.env.LOCAL_REGISTRY_PATH = join(dir, "registry.json");
 process.env.LOCAL_APPS_ROUTES_PATH = join(dir, "routes.json");
 process.env.LOCAL_APPS_SETTINGS_PATH = join(dir, "settings.json");
+// deck.platform reads through rt-client, which resolves HOME at call time (not overridable
+// via a LOCAL_*_PATH var) -- must be faked here too, or this test touches the real ~/.mattstack.
+process.env.HOME = dir;
 
 const { buildStatus } = await import("./status.ts");
 const { putRecord, reloadRegistry } = await import("../registry/records.ts");

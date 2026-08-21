@@ -9,6 +9,9 @@ process.env.LOCAL_STATE_DIR = dir;
 process.env.LOCAL_REGISTRY_PATH = join(dir, "registry.json");
 process.env.LOCAL_PLATFORM_SETTINGS_PATH = join(dir, "platform.json");
 process.env.LOCAL_ACCESS_PATH = join(dir, "access.json");
+// deck.platform reads through rt-client, which resolves HOME at call time (not overridable
+// via a LOCAL_*_PATH var) -- must be faked here too, or this test touches the real ~/.mattstack.
+process.env.HOME = dir;
 
 const { CfAccess, oauthToInclude, syncOAuth } = await import("./access.ts");
 
