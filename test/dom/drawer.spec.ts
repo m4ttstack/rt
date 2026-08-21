@@ -411,3 +411,245 @@ test("dev port: save PUTs the override, then shows the override-active state; th
     expect(await devPortNav(page).locator('[data-part="listgroup-value"]').textContent()).toBe("5173 · override");
   });
 });
+
+test(
+  "dev port: the kit back chevron out of the setting screen clears the draft, so refresh() is not frozen behind it",
+  async () => {
+    await withBoard(async (page) => {
+      let statusHits = 0;
+      await page.route("**/api/v1/status", async (route) => {
+        statusHits++;
+        await route.continue();
+      });
+
+      await openDevPort(page, "atlas");
+      await page.locator('[data-part="listgroup-action"] button', { hasText: "set override…" }).click();
+      await page.getByRole("textbox", { name: "dev port override" }).fill("5173");
+
+      const hitsBeforeBack = statusHits;
+      // The kit's own nav-bar back chevron, not the screen's "cancel" row --
+      // setting sits directly on root (one pushed frame), so this pops
+      // straight to it.
+      await page.locator('[data-part="drawer-back"]').click();
+      expect(await page.locator('[data-part="drawer-title"]').textContent()).toBe("atlas");
+
+      // refresh() bails out before ever calling fetch while board.editing is
+      // still set (see useBoardState) -- if the kit chevron left it set, no
+      // further /status poll would land, ever.
+      await waitUntil(async () => statusHits > hitsBeforeBack, 7000);
+
+      // And the setting screen itself starts from an empty draft on
+      // reentry, not whatever was typed before leaving.
+      await page.locator('[data-part="listgroup-nav"] button', { hasText: "dev port" }).click();
+      await page.locator('[data-part="listgroup-action"] button', { hasText: "set override…" }).click();
+      expect(await page.getByRole("textbox", { name: "dev port override" }).inputValue()).toBe("");
+    });
+  },
+  12000,
+);
+
+// ---------------------------------------------------------------------------
+// Edit screen (drawer-states-atlas.html "4 · Logs, edit, remove", edit phone).
+// ---------------------------------------------------------------------------
+
+async function openEdit(page: Page, name: string): Promise<void> {
+  await openDrawer(page, name);
+  await page.locator('[data-part="listgroup-nav"] button', { hasText: "edit app" }).click();
+}
+
+test("edit app: a managed row shows name, base port, command and directory, prefilled from the row", async () => {
+  await withBoard(async (page) => {
+    await openEdit(page, "atlas");
+    expect(await page.locator('[data-part="drawer-title"]').textContent()).toBe("edit app");
+    expect(await page.locator('[data-part="drawer-back"]').textContent()).toBe("‹ atlas");
+
+    const drawer = page.locator('[data-part="sidedrawer"]');
+    expect(await drawer.locator('[data-part="field"]').count()).toBe(4);
+    expect(await drawer.getByRole("textbox", { name: "name" }).inputValue()).toBe("atlas");
+    expect(await drawer.getByRole("textbox", { name: "base port" }).inputValue()).toBe("11001");
+    expect(await drawer.getByRole("textbox", { name: "command" }).inputValue()).toBe("bun run server.ts");
+    expect(await drawer.getByRole("textbox", { name: "directory" }).inputValue()).toBe(
+      "/Users/matt/Documents/GitHub/atlas",
+    );
+
+    const navAction = page.locator('[data-part="drawer-navaction"]');
+    expect((await navAction.textContent())?.trim()).toBe("save");
+    expect(await navAction.isDisabled()).toBe(false);
+  });
+});
+
+test("edit app: an external row shows only name and base port", async () => {
+  await withBoard(
+    async (page) => {
+      await openEdit(page, "atlas");
+      const drawer = page.locator('[data-part="sidedrawer"]');
+      expect(await drawer.locator('[data-part="field"]').count()).toBe(2);
+      expect(await drawer.getByRole("textbox", { name: "name" }).inputValue()).toBe("atlas");
+      expect(await drawer.getByRole("textbox", { name: "base port" }).inputValue()).toBe("11001");
+      expect(await drawer.getByText("command", { exact: true }).count()).toBe(0);
+      expect(await drawer.getByText("directory", { exact: true }).count()).toBe(0);
+    },
+    { fixture: "status-external.json" },
+  );
+});
+
+test("edit app: save PATCHes the edit payload and pops back to root", async () => {
+  await withBoard(async (page) => {
+    let patchBody: unknown = null;
+    await page.route("**/api/v1/apps/atlas", async (route) => {
+      if (route.request().method() !== "PATCH") {
+        await route.continue();
+        return;
+      }
+      patchBody = route.request().postDataJSON();
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+    });
+
+    await openEdit(page, "atlas");
+    await page.getByRole("textbox", { name: "base port" }).fill("12345");
+    await page.locator('[data-part="drawer-navaction"]').click();
+
+    await waitUntil(async () => patchBody !== null);
+    expect(patchBody).toEqual({
+      name: "atlas",
+      port: 12345,
+      command: ["bun", "run", "server.ts"],
+      workingDirectory: "/Users/matt/Documents/GitHub/atlas",
+    });
+
+    await waitUntil(async () => (await page.locator('[data-part="drawer-title"]').textContent()) === "atlas");
+    expect(await page.locator('[data-part="drawer-back"]').count()).toBe(0);
+  });
+});
+
+test("edit app: an API validation error renders inline on the name field; the screen stays open", async () => {
+  await withBoard(async (page) => {
+    await page.route("**/api/v1/apps/atlas", async (route) => {
+      if (route.request().method() !== "PATCH") {
+        await route.continue();
+        return;
+      }
+      await route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ message: "name taken" }) });
+    });
+
+    await openEdit(page, "atlas");
+    await page.locator('[data-part="drawer-navaction"]').click();
+
+    const fieldError = page.locator('[data-part="sidedrawer"] [data-part="field-error"]');
+    await fieldError.waitFor({ state: "visible" });
+    expect(await fieldError.textContent()).toBe("name taken");
+    expect(await page.locator('[data-part="drawer-title"]').textContent()).toBe("edit app");
+  });
+});
+
+test("edit app: cancel via the kit back chevron discards the draft without saving", async () => {
+  await withBoard(async (page) => {
+    let patchCalled = false;
+    await page.route("**/api/v1/apps/atlas", async (route) => {
+      if (route.request().method() === "PATCH") patchCalled = true;
+      await route.continue();
+    });
+
+    await openEdit(page, "atlas");
+    await page.getByRole("textbox", { name: "name" }).fill("scratch");
+    await page.locator('[data-part="drawer-back"]').click();
+
+    expect(await page.locator('[data-part="drawer-title"]').textContent()).toBe("atlas");
+    expect(patchCalled).toBe(false);
+  });
+});
+
+test("edit app: the kit back chevron clears the draft; reentering starts fresh, not resuming the discarded edit", async () => {
+  await withBoard(async (page) => {
+    await openEdit(page, "atlas");
+    const drawer = page.locator('[data-part="sidedrawer"]');
+    await drawer.getByRole("textbox", { name: "name" }).fill("scratch");
+    await drawer.getByRole("textbox", { name: "command" }).fill("garbage");
+
+    await page.locator('[data-part="drawer-back"]').click();
+    expect(await page.locator('[data-part="drawer-title"]').textContent()).toBe("atlas");
+    // Drawer's already open on root -- reenter via the nav row, not the
+    // table chevron (which the open drawer panel now overlaps).
+    await page.locator('[data-part="listgroup-nav"] button', { hasText: "edit app" }).click();
+
+    expect(await drawer.getByRole("textbox", { name: "name" }).inputValue()).toBe("atlas");
+    expect(await drawer.getByRole("textbox", { name: "command" }).inputValue()).toBe("bun run server.ts");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Remove flow (drawer-states-atlas.html "4 · Logs, edit, remove", remove
+// sheet): the danger row opens the kit ConfirmDialog over the root.
+// ---------------------------------------------------------------------------
+
+test("remove: the danger row opens the ConfirmDialog with the atlas's blast-radius copy", async () => {
+  await withBoard(async (page) => {
+    await openDrawer(page, "atlas");
+    await page.locator('[data-part="listgroup-action"] button', { hasText: "remove app" }).click();
+
+    const dialog = page.locator('[data-part="modal"]');
+    await dialog.waitFor({ state: "visible" });
+    expect(await dialog.locator('[data-part="modal-title"]').textContent()).toBe("remove atlas?");
+    expect(await dialog.locator('[data-part="confirmdialog-body"]').textContent()).toBe(
+      "its route, launchd service, and access config are deleted. the code stays.",
+    );
+    // The sidedrawer stays mounted underneath -- remove is a sheet over the
+    // root, not a screen that replaces it.
+    expect(await page.locator('[data-part="sidedrawer"]').count()).toBe(1);
+  });
+});
+
+test("remove: cancel closes the dialog without deleting; the drawer stays open", async () => {
+  await withBoard(async (page) => {
+    let deleteCalled = false;
+    await page.route("**/api/v1/apps/atlas", async (route) => {
+      if (route.request().method() === "DELETE") deleteCalled = true;
+      await route.continue();
+    });
+
+    await openDrawer(page, "atlas");
+    await page.locator('[data-part="listgroup-action"] button', { hasText: "remove app" }).click();
+    await page.locator('[data-part="modal"] button', { hasText: "cancel" }).click();
+    await page.waitForSelector('[data-part="modal"]', { state: "detached" });
+
+    expect(deleteCalled).toBe(false);
+    expect(await page.locator('[data-part="sidedrawer"]').count()).toBe(1);
+  });
+});
+
+test(
+  "remove: confirm DELETEs the app and closes the drawer",
+  async () => {
+    await withBoard(async (page) => {
+      let deleteCalled = false;
+      await page.route("**/api/v1/apps/atlas", async (route) => {
+        if (route.request().method() !== "DELETE") {
+          await route.continue();
+          return;
+        }
+        deleteCalled = true;
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+      });
+      let removed = false;
+      await page.route("**/api/v1/status", async (route) => {
+        if (!removed) {
+          await route.continue();
+          return;
+        }
+        const next = structuredClone(fixture) as typeof fixture;
+        next.apps = next.apps.filter((a) => a.name !== "atlas");
+        next.total -= 1;
+        await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(next) });
+      });
+
+      await openDrawer(page, "atlas");
+      await page.locator('[data-part="listgroup-action"] button', { hasText: "remove app" }).click();
+      removed = true;
+      await page.locator('[data-part="modal"] button', { hasText: "remove app" }).click();
+
+      await waitUntil(async () => deleteCalled);
+      await page.waitForSelector('[data-part="sidedrawer"]', { state: "detached", timeout: 8000 });
+    });
+  },
+  12000,
+);

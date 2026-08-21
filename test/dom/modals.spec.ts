@@ -79,5 +79,3 @@ test("add app submit POSTs the addPayload shape; API error renders in the modal 
     expect(await page.locator('[data-part="modal"]').count()).toBe(1);
   });
 });
-
-// Edit/remove have no reachable trigger until the drawer lands.

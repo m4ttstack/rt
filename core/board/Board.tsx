@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { Alert, Button, ICONS } from "@mattstack/tui-kit";
 import { AppsTable } from "./AppsTable.tsx";
 import { AppDrawer } from "./drawer/AppDrawer.tsx";
-import { AddAppModal, EditAppModal, RemoveConfirm } from "./modals.tsx";
+import { AddAppModal, RemoveConfirm } from "./modals.tsx";
 import { TunnelSection } from "./TunnelSection.tsx";
 import { useBoardState } from "./useBoardState.ts";
 
@@ -82,7 +82,6 @@ export function Board() {
       <footer className="muted-more mt-6">discovered from portless routes + LaunchAgents · local.mattstack</footer>
 
       <AddAppModal board={board} />
-      <EditAppModal board={board} />
       <RemoveConfirm board={board} />
     </main>
   );

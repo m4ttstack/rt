@@ -137,7 +137,11 @@ export const buildDevPortScreen: ScreenBuilder = (row, nav, board, data) => {
               onClick={() => {
                 board.startEdit(row);
                 nav.pop();
-                nav.push(buildDevPortSetting);
+                // The kit's own nav-bar back chevron pops this frame directly
+                // (bypassing `cancel`'s explicit cancelEdit() above) -- without
+                // this, board.editing stays set and refresh() skips every poll
+                // behind it (see useBoardState) even after the user has left.
+                nav.push(buildDevPortSetting, () => board.cancelEdit());
               }}
             />
           </ListGroup>

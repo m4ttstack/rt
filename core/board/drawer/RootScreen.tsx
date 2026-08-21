@@ -1,15 +1,14 @@
 // Root screens for the per-row drawer, per drawer-states-atlas.html "1 ·
-// Roots". The edit-app nav row still pushes a placeholder screen; a real
-// screen replaces it by swapping its buildPlaceholder(...) call for a
-// ScreenBuilder of the same (row, nav, board, data) => DrawerScreen shape
-// dev port (DevPortScreen.tsx), access (AccessScreens.tsx), and logs
-// (LogsScreen.tsx) already use.
+// Roots". Every nav row now pushes a real screen: dev port
+// (DevPortScreen.tsx), access (AccessScreens.tsx), logs (LogsScreen.tsx),
+// and edit (EditScreen.tsx).
 import { Alert, ICONS, ListGroup, StatusDot, type DrawerScreen } from "@mattstack/tui-kit";
 import { servicePid } from "../AppsTable.tsx";
 import { type Row, type StatusData, tunnelDomain } from "../logic.ts";
 import type { BoardState } from "../useBoardState.ts";
 import { buildAccessRoot } from "./AccessScreens.tsx";
 import { buildDevPortScreen } from "./DevPortScreen.tsx";
+import { buildEditScreen } from "./EditScreen.tsx";
 import { buildLogsScreen } from "./LogsScreen.tsx";
 
 /** What a root/pushed screen's row builders push onto and pop off of. Drawer
@@ -135,19 +134,6 @@ function accessValue(row: Row): string {
   return parts.length ? parts.join(" · ") : "open";
 }
 
-/** Pushed by every nav row that has no real screen wired up yet. */
-export function buildPlaceholder(title: string): DrawerScreen {
-  return {
-    id: `placeholder:${title}`,
-    title,
-    content: (
-      <ListGroup>
-        <ListGroup.Fact label={title} value="coming in this branch" />
-      </ListGroup>
-    ),
-  };
-}
-
 export function buildAppRoot(
   row: Row,
   nav: Nav,
@@ -209,7 +195,15 @@ export function buildAppRoot(
                 {ICONS.pencil} edit app
               </span>
             }
-            onClick={() => nav.push(() => buildPlaceholder("edit app"))}
+            onClick={() => {
+              board.openEdit(row);
+              // onLeave: firing closeEdit() on every exit path this frame
+              // has (kit back chevron, ✕, row switch) -- not just its own
+              // save/cancel -- is the only cleanup this screen needs; there
+              // is no row-level effect for editModal the way there is for
+              // dev port's `editing` and access's `accessModal`.
+              nav.push(buildEditScreen, () => board.closeEdit());
+            }}
           />
         </ListGroup>
         {/* Extra top margin beyond the group gap, per the atlas: destructive
@@ -217,7 +211,7 @@ export function buildAppRoot(
             group in the list. */}
         <div className="drawer-danger-group">
           <ListGroup>
-            <ListGroup.Danger label="remove app…" onClick={() => {}} />
+            <ListGroup.Danger label="remove app…" onClick={() => board.onRemove(row)} />
           </ListGroup>
         </div>
       </div>

@@ -245,6 +245,19 @@ await scenario("light", baseFixture, "drawer-logs", async (page) => {
   await page.locator('[data-part="listgroup-nav"] button', { hasText: "logs" }).click();
 });
 
+// Edit and remove (drawer-states-atlas.html "4 · Logs, edit, remove"): a
+// managed app's edit screen (name/base port/command/directory, save in nav),
+// and the remove danger row's ConfirmDialog sheet over the root.
+await scenario("light", baseFixture, "drawer-edit", async (page) => {
+  await openDrawerFor(page, "atlas");
+  await page.locator('[data-part="listgroup-nav"] button', { hasText: "edit app" }).click();
+});
+await scenario("light", baseFixture, "drawer-remove-confirm", async (page) => {
+  await openDrawerFor(page, "atlas");
+  await page.locator('[data-part="listgroup-action"] button', { hasText: "remove app" }).click();
+  await page.waitForSelector('[data-part="modal"]');
+});
+
 // ---- night ----
 await scenario("dark", baseFixture, "board-default-dark");
 await scenario("dark", baseFixture, "drawer-root-dark", (page) => openDrawerFor(page, "atlas"));

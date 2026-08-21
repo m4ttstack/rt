@@ -259,7 +259,7 @@ export function useBoardState() {
     setEditModal((prev) => (prev ? { ...prev, ...patch } : prev));
   }, []);
   const submitEdit = useCallback(async () => {
-    if (!editModal) return;
+    if (!editModal) return false;
     const patch = editPatch(editModal);
     let res: Response | null = null;
     try {
@@ -270,10 +270,11 @@ export function useBoardState() {
     const body = res ? await res.json().catch(() => ({}) as { message?: string; error?: string }) : {};
     if (!res || !res.ok) {
       updateEditModal({ error: (body as { message?: string; error?: string }).message || (body as { error?: string }).error || "edit failed" });
-      return;
+      return false;
     }
     setEditModal(null);
     await refresh();
+    return true;
   }, [editModal, refresh, updateEditModal]);
 
   // ---- remove ----
