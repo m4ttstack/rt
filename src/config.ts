@@ -193,6 +193,13 @@ export function parseConfig(raw: string): BoardConfig {
   };
 }
 
+/** Shared with saveSwitchboardUrl's owned-branch write, so a trailing slash
+    never lands in the store either — peer/onboard.ts builds `${url}/invites`
+    verbatim, and a stored slash would double up into `//invites`. */
+function stripTrailingSlash(url: string): string {
+  return url.replace(/\/+$/, "");
+}
+
 function parseSwitchboard(raw: unknown): SwitchboardBoardConfig {
   if (raw === undefined || raw === null) return { url: "" };
   if (typeof raw !== "object" || Array.isArray(raw)) {
@@ -202,7 +209,7 @@ function parseSwitchboard(raw: unknown): SwitchboardBoardConfig {
   if (s.url !== undefined && typeof s.url !== "string") {
     throw new Error(`config.json "switchboard.url" must be a string`);
   }
-  return { url: (s.url ?? "").replace(/\/+$/, "") };
+  return { url: stripTrailingSlash(s.url ?? "") };
 }
 
 function parseSlack(raw: unknown): SlackConfig {
@@ -290,6 +297,15 @@ function storeValue<T>(key: string, resolve: GetSettingFn): T | undefined {
  * post-migration, hidden state lives only in the user key, never on the
  * team-owned member entries. Delete this function whole at cutover, once
  * config.json carries none of these fields.
+ *
+ * The store is a raw value straight off getSetting — unlike fileConfig, it
+ * never went through parseConfig's normalization (ticketPrefixes' trim
+ * +uppercase, switchboard's trailing-slash strip, slack's DEFAULT_SLACK fill
+ * for an unset field, member/defaultMember shape checks). Building `merged`
+ * and then round-tripping it through parseConfig — same move loadTriageConfig
+ * makes with parseTriageBlock over a store value — applies that normalization
+ * uniformly regardless of which side (file or store) a field came from,
+ * rather than only ever normalizing the file's half.
  */
 function withBoardStoreFallback(fileConfig: BoardConfig, resolve: GetSettingFn): BoardConfig {
   const workspaces = storeValue<{ reviews?: string; responds?: string; doctors?: string }>("board.workspaces", resolve);
@@ -303,7 +319,7 @@ function withBoardStoreFallback(fileConfig: BoardConfig, resolve: GetSettingFn):
     return hiddenUsernames.has(m.username) ? { ...rest, hidden: true } : rest;
   });
 
-  return {
+  const merged: BoardConfig = {
     ...fileConfig,
     gitlabHost: storeValue("board.gitlabHost", resolve) ?? fileConfig.gitlabHost,
     projects: storeValue("board.projects", resolve) ?? fileConfig.projects,
@@ -325,6 +341,8 @@ function withBoardStoreFallback(fileConfig: BoardConfig, resolve: GetSettingFn):
     rtRepos: rtReposStore ? Object.fromEntries(rtReposStore.map((r) => [r.project, r.repo])) : fileConfig.rtRepos,
     switchboard: { url: storeValue("board.switchboardUrl", resolve) ?? fileConfig.switchboard.url },
   };
+
+  return parseConfig(JSON.stringify(merged));
 }
 
 /** Structurally satisfies parseConfig's required-field check without being a
@@ -397,10 +415,17 @@ function isHiddenMembersOwned(resolve: GetSettingFn): boolean {
 
 /**
  * Persist `username`'s hidden flag and return the reload. Unowned: config.json's
- * inline `members[].hidden` stays the single writer (today's behavior). Owned:
- * `board.hiddenMembers` (the user store) is the single writer instead and
- * config.json is never touched for this — each branch is exactly one write, so
- * a `write` throw simply propagates; nothing was persisted for it to revert.
+ * inline `members[].hidden` stays the single writer (today's behavior) —
+ * UNLESS config.json doesn't exist at all (RULING: file-authority is
+ * meaningless with no file), in which case this establishes store ownership
+ * outright rather than raw-ENOENT-ing (mirrors loadConfigFrom's store-boot
+ * mode; only reachable when the store already owns the required team fields,
+ * since that's what a config.json-free `current` needs to resolve at all).
+ * Owned: `board.hiddenMembers` (the user store) is the single writer instead
+ * and config.json is never touched for this — every branch is exactly one
+ * write, so a `write` throw simply propagates; nothing was persisted for it
+ * to revert. A non-ENOENT file-read failure (a genuinely malformed
+ * config.json) still surfaces loudly, same as today.
  */
 export function saveMemberHidden(
   username: string,
@@ -418,9 +443,22 @@ export function saveMemberHidden(
     const next = hidden ? [...new Set([...stored, username])] : stored.filter((u) => u !== username);
     write("board.hiddenMembers", next, "user");
   } else {
-    const raw = readFileSync(path, "utf8");
-    const next = setHiddenInRaw(raw, username, hidden); // throws for an unknown member
-    writeFileSync(path, next);
+    let raw: string | undefined;
+    try {
+      raw = readFileSync(path, "utf8");
+    } catch (err) {
+      if (!isEnoent(err)) throw err;
+    }
+    if (raw === undefined) {
+      const current = loadConfigFrom(path, resolve);
+      if (!current.members.some((m) => m.username === username)) {
+        throw new Error(`unknown member "${username}"`);
+      }
+      write("board.hiddenMembers", hidden ? [username] : [], "user");
+    } else {
+      const next = setHiddenInRaw(raw, username, hidden); // throws for an unknown member
+      writeFileSync(path, next);
+    }
   }
   return loadConfigFrom(path, resolve);
 }
@@ -436,8 +474,13 @@ function isSwitchboardUrlOwned(resolve: GetSettingFn): boolean {
 /**
  * Persist switchboard.url and return the reload. Unowned: config.json (temp-
  * file-plus-rename, as before — a crashed write must not half-eat the
- * operator's config). Owned: `board.switchboardUrl` (the machine store)
- * instead, config.json untouched. One write per branch, like saveMemberHidden.
+ * operator's config) — UNLESS config.json doesn't exist at all (RULING:
+ * file-authority is meaningless with no file), in which case this establishes
+ * store ownership outright instead of raw-ENOENT-ing, same move as
+ * saveMemberHidden's config.json-free branch. Owned: `board.switchboardUrl`
+ * (the machine store) instead, config.json untouched. Every branch is exactly
+ * one write, like saveMemberHidden. A non-ENOENT file-read failure (malformed
+ * JSON) still surfaces loudly, same as today.
  */
 export function saveSwitchboardUrl(
   url: string,
@@ -446,13 +489,22 @@ export function saveSwitchboardUrl(
   write: SetSettingFn = setSetting,
 ): BoardConfig {
   if (isSwitchboardUrlOwned(resolve)) {
-    write("board.switchboardUrl", url, "machine");
+    write("board.switchboardUrl", stripTrailingSlash(url), "machine");
   } else {
-    const raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
-    raw.switchboard = { url };
-    const text = JSON.stringify(raw, null, 2) + "\n";
-    writeFileSync(path + ".tmp", text);
-    renameSync(path + ".tmp", path);
+    let raw: Record<string, unknown> | undefined;
+    try {
+      raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+    } catch (err) {
+      if (!isEnoent(err)) throw err;
+    }
+    if (raw === undefined) {
+      write("board.switchboardUrl", stripTrailingSlash(url), "machine");
+    } else {
+      raw.switchboard = { url };
+      const text = JSON.stringify(raw, null, 2) + "\n";
+      writeFileSync(path + ".tmp", text);
+      renameSync(path + ".tmp", path);
+    }
   }
   return loadConfigFrom(path, resolve);
 }

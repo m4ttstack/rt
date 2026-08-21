@@ -81,4 +81,39 @@ describe("loadTriageConfig: per-key store-wins fallback", () => {
     const cfg = loadTriageConfig(p, fakeResolve({ "board.doctorSkill": "team:top-level-doctor" }));
     expect(cfg.doctorSkill).toBe("file:triage-doctor"); // unaffected by the unrelated key
   });
+
+  test("a malformed board.triage value names the settings key, not config.json", () => {
+    const p = tmpConfig({ enabled: true });
+    expect(() =>
+      loadTriageConfig(p, fakeResolve({ "board.triage": { enabled: "yes" } })),
+    ).toThrow(/settings key "board\.triage" "triage\.enabled" must be a boolean/);
+  });
+
+  test("a malformed file triage block still blames config.json, unaffected by the source-labeling", () => {
+    const p = tmpConfig({ enabled: "yes" });
+    expect(() => loadTriageConfig(p, fakeResolve({}))).toThrow(/config\.json "triage\.enabled" must be a boolean/);
+  });
+});
+
+describe("loadTriageConfig: config.json-free boot (RULING: file-authority is meaningless with no file)", () => {
+  test("a missing config.json degrades to an empty triage block, proceeding on store values alone", () => {
+    const missing = join(mkdtempSync(join(tmpdir(), "triage-latch-nofile-")), "config.json");
+    const cfg = loadTriageConfig(missing, fakeResolve({
+      "board.triage": { enabled: true, cooldownMinutes: 60 },
+      "board.triage.doctorSkill": "team:doctor-store",
+      "board.triageMaxConcurrent": 5,
+    }));
+    expect(cfg.enabled).toBe(true);
+    expect(cfg.cooldownMinutes).toBe(60);
+    expect(cfg.doctorSkill).toBe("team:doctor-store");
+    expect(cfg.maxConcurrent).toBe(5);
+  });
+
+  test("a missing config.json with nothing in the store still yields the plain disabled defaults, no throw", () => {
+    const missing = join(mkdtempSync(join(tmpdir(), "triage-latch-nofile-")), "config.json");
+    const cfg = loadTriageConfig(missing, fakeResolve({}));
+    expect(cfg.enabled).toBe(false);
+    expect(cfg.maxConcurrent).toBe(2);
+    expect(cfg.doctorSkill).toBe("");
+  });
 });

@@ -91,6 +91,45 @@ describe("loadConfigFrom: per-key store-wins fallback", () => {
   });
 });
 
+describe("loadConfigFrom: store values get the same normalization/validation the file path gets", () => {
+  test("a lowercase store ticketPrefixes normalizes (trim + uppercase), same as the file path", () => {
+    const p = tmpConfig();
+    const cfg = loadConfigFrom(p, fakeResolve({ "board.ticketPrefixes": ["cv", " int "] }));
+    expect(cfg.ticketPrefixes).toEqual(["CV", "INT"]);
+  });
+
+  test("a partial store slack object gets DEFAULT_SLACK fill for the fields it doesn't carry", () => {
+    const p = tmpConfig();
+    const cfg = loadConfigFrom(p, fakeResolve({ "board.slack": { channel: "store-channel" } }));
+    expect(cfg.slack).toEqual({
+      channel: "store-channel",
+      singleTemplate: "{title}: {url}",
+      multiHeader: "{count} MR's ready for review :pray:",
+      multiItem: "- {title}: {url}",
+      autoResolveIntervalMinutes: 15,
+      emoji: DEFAULT_SLACK_EMOJI,
+    });
+  });
+
+  test("a store switchboardUrl with a trailing slash strips it, same as parseSwitchboard's file-side rule", () => {
+    const p = tmpConfig();
+    const cfg = loadConfigFrom(p, fakeResolve({ "board.switchboardUrl": "https://sb.example.app/" }));
+    expect(cfg.switchboard.url).toBe("https://sb.example.app");
+  });
+
+  test("a bad store defaultMember (not \"all\" or a known member) is rejected the same way a bad file one is", () => {
+    const p = tmpConfig();
+    expect(() => loadConfigFrom(p, fakeResolve({ "board.defaultMember": "ghost" }))).toThrow(/defaultMember/);
+  });
+
+  test("a store member with no username is rejected the same way a bad file one is", () => {
+    const p = tmpConfig();
+    expect(() =>
+      loadConfigFrom(p, fakeResolve({ "board.members": [{ name: "No User" }] })),
+    ).toThrow(/username/);
+  });
+});
+
 describe("loadConfigFrom: members roster + hiddenMembers overlay", () => {
   test("unowned board.members and board.hiddenMembers: hidden comes from config.json's inline flags", () => {
     const p = tmpConfig({ ...base, members: [{ username: "alice", hidden: true }, { username: "bob" }] });
@@ -193,6 +232,43 @@ describe("saveMemberHidden: latch-gated writer", () => {
     const cfg = saveMemberHidden("bob", true, p, throwingResolve(), fakeWrite(calls));
     expect(calls).toEqual([]);
     expect(cfg.members).toEqual([{ username: "alice" }, { username: "bob", hidden: true }]);
+  });
+});
+
+describe("saveMemberHidden / saveSwitchboardUrl: config.json-free still succeeds (RULING: file-authority is meaningless with no file)", () => {
+  const teamOwned = {
+    "board.gitlabHost": "https://gitlab.example.com",
+    "board.projects": ["team/repo"],
+    "board.members": [{ username: "carol" }, { username: "dave" }],
+    // board.hiddenMembers/board.switchboardUrl deliberately absent -- unowned going in
+  };
+
+  test("saveMemberHidden with owned team keys and no config.json establishes board.hiddenMembers ownership", () => {
+    const missing = join(mkdtempSync(join(tmpdir(), "board-latch-nofile-")), "config.json");
+    const calls: Array<{ key: string; value: unknown; scope: string }> = [];
+    const cfg = saveMemberHidden("dave", true, missing, fakeResolve(teamOwned), fakeWrite(calls));
+    expect(calls).toEqual([{ key: "board.hiddenMembers", value: ["dave"], scope: "user" }]);
+    expect(cfg.members).toEqual([{ username: "carol" }, { username: "dave" }]); // fakeResolve is static; the write landed, the reload just doesn't see it back
+  });
+
+  test("saveMemberHidden with owned team keys, no config.json, and an unknown member throws before any write", () => {
+    const missing = join(mkdtempSync(join(tmpdir(), "board-latch-nofile-")), "config.json");
+    const calls: Array<{ key: string; value: unknown; scope: string }> = [];
+    expect(() => saveMemberHidden("ghost", true, missing, fakeResolve(teamOwned), fakeWrite(calls))).toThrow(/unknown member/);
+    expect(calls).toEqual([]);
+  });
+
+  test("saveMemberHidden with no config.json and NO owned team keys throws the same instructive error as loadConfigFrom", () => {
+    const missing = join(mkdtempSync(join(tmpdir(), "board-latch-nofile-")), "config.json");
+    expect(() => saveMemberHidden("dave", true, missing, fakeResolve({}), fakeWrite([]))).toThrow(/config\.json not found/);
+  });
+
+  test("saveSwitchboardUrl with owned team keys and no config.json establishes board.switchboardUrl ownership", () => {
+    const missing = join(mkdtempSync(join(tmpdir(), "board-latch-nofile-")), "config.json");
+    const calls: Array<{ key: string; value: unknown; scope: string }> = [];
+    const cfg = saveSwitchboardUrl("https://sb.example.app/", missing, fakeResolve(teamOwned), fakeWrite(calls));
+    expect(calls).toEqual([{ key: "board.switchboardUrl", value: "https://sb.example.app", scope: "machine" }]); // slash-free, per the switchboardUrl round-trip fix
+    expect(cfg.gitlabHost).toBe("https://gitlab.example.com"); // the reload succeeded off the store alone
   });
 });
 
