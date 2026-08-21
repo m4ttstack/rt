@@ -1,7 +1,8 @@
 // Root screens for the per-row drawer, per drawer-states-atlas.html "1 ·
-// Roots". D4-D7 replace the placeholder screens pushed from the nav rows
-// here (dev port / access / logs / edit) with real builders sharing the
-// same (row, nav) => DrawerScreen shape.
+// Roots". The dev port / access / logs / edit nav rows push placeholder
+// screens for now; a real screen replaces one by swapping its
+// buildPlaceholder(...) call for a builder of the same (row, nav) =>
+// DrawerScreen shape.
 import { Alert, ICONS, ListGroup, StatusDot, type DrawerScreen } from "@mattstack/tui-kit";
 import { servicePid } from "../AppsTable.tsx";
 import { type Row, type StatusData, tunnelDomain } from "../logic.ts";
@@ -45,14 +46,15 @@ function RootStatusStrip({ row, restarting }: { row: Row; restarting: boolean })
     parts.push(row.health.status !== null ? `${row.health.status} in ${row.health.ms}ms` : "unreachable");
   } else if (row.service) {
     parts.push(pid !== null ? "running" : "stopped");
-  } else {
-    parts.push("no route");
   }
   if (row.service) {
     if (pid !== null) parts.push(row.health ? `running pid ${pid}` : `pid ${pid}`);
     else if (row.service.lastExitStatus != null) parts.push(`exit ${row.service.lastExitStatus}`);
   }
-  if (row.port == null && row.health) parts.push("no route");
+  // Keyed off port alone, not `row.health`: a routeless row (stray-agent)
+  // has no health probe to gate on, and would otherwise silently drop this
+  // suffix -- port is the one field every unrouted row shares.
+  if (row.port == null) parts.push("no route");
   const openLink = row.health?.ok && row.url;
   return (
     <p className="drawer-status">
@@ -118,7 +120,7 @@ function accessValue(row: Row): string {
   return parts.length ? parts.join(" · ") : "open";
 }
 
-/** Pushed by every nav row D4-D7 haven't replaced yet. */
+/** Pushed by every nav row that has no real screen wired up yet. */
 export function buildPlaceholder(title: string): DrawerScreen {
   return {
     id: `placeholder:${title}`,
@@ -174,11 +176,7 @@ export function buildAppRoot(
         </ListGroup>
         <ListGroup>
           <ListGroup.Action
-            label={
-              <>
-                {ICONS["refresh-cw"]} restart service
-              </>
-            }
+            label={restarting ? "restarting…" : <>{ICONS["refresh-cw"]} restart service</>}
             busy={restarting}
             disabled={!row.service}
             onClick={() => board.onRestart(row)}
@@ -217,11 +215,7 @@ export function buildServiceRoot(row: Row, nav: Nav, board: BoardState, restarti
         </ListGroup>
         <ListGroup>
           <ListGroup.Action
-            label={
-              <>
-                {ICONS["refresh-cw"]} restart service
-              </>
-            }
+            label={restarting ? "restarting…" : <>{ICONS["refresh-cw"]} restart service</>}
             busy={restarting}
             disabled={!row.service}
             onClick={() => board.onRestart(row)}
@@ -253,11 +247,7 @@ export function buildTunnelRoot(row: Row, nav: Nav, board: BoardState, data: Sta
         </ListGroup>
         <ListGroup>
           <ListGroup.Action
-            label={
-              <>
-                {ICONS["refresh-cw"]} restart tunnel
-              </>
-            }
+            label={restarting ? "restarting…" : <>{ICONS["refresh-cw"]} restart tunnel</>}
             busy={restarting}
             disabled={!row.service}
             onClick={() => board.onRestart(row)}

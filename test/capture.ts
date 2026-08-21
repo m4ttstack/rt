@@ -207,6 +207,11 @@ await scenario("light", baseFixture, "drawer-root", (page) => openDrawerFor(page
 await scenario("light", baseFixture, "drawer-root-broken", (page) => openDrawerFor(page, "ledger"));
 await scenario("light", baseFixture, "drawer-root-service", (page) => openDrawerFor(page, "stray-agent"));
 await scenario("light", baseFixture, "drawer-root-tunnel", (page) => openDrawerFor(page, "cloudflared"));
+await scenario("light", baseFixture, "drawer-root-restarting", async (page) => {
+  await openDrawerFor(page, "atlas");
+  await page.locator('[data-part="listgroup-action"] button', { hasText: "restart service" }).click();
+  await page.waitForSelector('[data-part="listgroup-action"] button[aria-busy="true"]');
+});
 
 // ---- night ----
 await scenario("dark", baseFixture, "board-default-dark");

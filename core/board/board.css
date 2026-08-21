@@ -121,6 +121,17 @@ body {
   background: var(--surface-wash-accent-14);
 }
 
+/* The drawer is a side panel, not a modal: the composite mock keeps the
+   table plainly legible beside it. Overrides the kit SideDrawer's own
+   overlay (Modal-strength wash-bg-55 + blur(2px), tuned for a dialog that
+   fully claims attention) with the lightest wash token available and no
+   blur -- unlayered, so it wins over the kit's `@layer soribashi.recipes`
+   rule regardless of selector specificity. */
+[data-part="sidedrawer-overlay"] {
+  background: var(--surface-wash-fg-5);
+  backdrop-filter: none;
+}
+
 /* The drawer root's status strip, rendered in the kit Drawer's `header`
    slot -- not a ListGroup row, so it needs its own line treatment. */
 .drawer-status {

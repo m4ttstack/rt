@@ -178,3 +178,27 @@ test("a broken app's root shows an error banner and a bad-tone logs hint", async
     expect(await drawer.locator('[data-part="listgroup-nav"] .t-bad').count()).toBe(1);
   });
 });
+
+test("the service-without-route root's status strip keeps the 'no route' suffix (no health to gate it on)", async () => {
+  await withBoard(async (page) => {
+    await openDrawer(page, "stray-agent");
+    const status = page.locator('[data-part="sidedrawer"] .drawer-status');
+    expect(await status.textContent()).toContain("stopped · exit 1 · no route");
+  });
+});
+
+test("a restarting drawer row shows the busy state per the atlas: spinner + \"restarting…\", trigger label gone", async () => {
+  await withBoard(async (page) => {
+    await page.route("**/api/v1/apps/atlas/restart", (route) =>
+      route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) }),
+    );
+    await openDrawer(page, "atlas");
+    await page.locator('[data-part="listgroup-action"] button', { hasText: "restart service" }).click();
+
+    const busyButton = page.locator('[data-part="listgroup-action"] button[aria-busy="true"]');
+    await busyButton.waitFor({ state: "visible" });
+    expect((await busyButton.textContent())?.trim()).toBe("restarting…");
+    expect(await busyButton.locator('[data-part="spinner"]').count()).toBe(1);
+    expect(await busyButton.locator('[data-part="icon"]').count()).toBe(0);
+  });
+});
