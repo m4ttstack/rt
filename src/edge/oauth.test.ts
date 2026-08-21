@@ -1,8 +1,17 @@
 // src/edge/oauth.test.ts
-import { test, expect, beforeEach, afterAll } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, statSync } from "fs";
-import { join } from "path";
+import { test, expect, beforeEach, afterEach, afterAll, spyOn } from "bun:test";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, statSync, mkdirSync } from "fs";
+import { join, dirname } from "path";
 import { tmpdir } from "os";
+import { getSetting, setSetting } from "@mattstack/rt-client";
+
+// rt-client doesn't export its user-store path helper; this literal is
+// duplicated from rt-client/src/settings/paths.ts#userSettingsPath, same
+// reason platform-settings.test.ts duplicates the machine one: no dependency
+// from here on rt-client's internals, only its public API.
+function userStorePath(): string {
+  return join(process.env.HOME!, ".mattstack", "user", "settings.jsonc");
+}
 
 const dir = mkdtempSync(join(tmpdir(), "local-oauth-"));
 const ACCESS_PATH = join(dir, "access.json");
@@ -15,9 +24,19 @@ process.env.LOCAL_STATE_DIR = dir;
 process.env.LOCAL_ACCESS_PATH = ACCESS_PATH;
 const { parseOAuth, getOAuth, setOAuth, reloadOAuth, oauthRequiresCf } = await import("./oauth.ts");
 
+const origHome = process.env.HOME;
+let home: string;
+
 beforeEach(() => {
   rmSync(ACCESS_PATH, { force: true });
+  home = mkdtempSync(join(tmpdir(), "local-oauth-home-"));
+  process.env.HOME = home;
   reloadOAuth();
+});
+
+afterEach(() => {
+  process.env.HOME = origHome;
+  rmSync(home, { recursive: true, force: true });
 });
 
 afterAll(() => {
@@ -102,4 +121,81 @@ test("a file with nothing to drop is left alone", () => {
   // renames it over the target, so any write at all lands a NEW inode.
   expect(statSync(ACCESS_PATH).ino).toBe(beforeStat.ino);
   expect(readFileSync(ACCESS_PATH, "utf8")).toBe(before);
+});
+
+// ─── deck.access store migration (MAT-384 Task 2) ────────────────────────────
+
+test("deck.access store entry wins over access.json wholesale, per app", () => {
+  writeFileSync(ACCESS_PATH, JSON.stringify({
+    apps: { a: { mode: "domains", domains: ["file.example.com"] } },
+  }));
+  setSetting("deck.access", { a: { mode: "emails", emails: ["store@example.com"] } }, "user");
+  reloadOAuth();
+  expect(getOAuth("a")).toEqual({ mode: "emails", emails: ["store@example.com"] });
+});
+
+test("an app absent from the store falls back to its access.json entry", () => {
+  writeFileSync(ACCESS_PATH, JSON.stringify({
+    apps: { a: { mode: "domains", domains: ["file.example.com"] } },
+  }));
+  setSetting("deck.access", { b: { mode: "off" } }, "user");
+  reloadOAuth();
+  expect(getOAuth("a")).toEqual({ mode: "domains", domains: ["file.example.com"] });
+});
+
+test("a store entry that doesn't match the OAuth shape is skipped, never rewritten", () => {
+  writeFileSync(ACCESS_PATH, JSON.stringify({
+    apps: { a: { mode: "domains", domains: ["file.example.com"] } },
+  }));
+  setSetting("deck.access", { a: { tier: "public" } }, "user");
+  reloadOAuth();
+  expect(getOAuth("a")).toEqual({ mode: "domains", domains: ["file.example.com"] });
+  // Never auto-rewrite the store: the malformed entry is still there verbatim.
+  const stored = getSetting<Record<string, unknown>>("deck.access").value;
+  expect(stored?.a).toEqual({ tier: "public" });
+});
+
+test("a resolver throw degrades to access.json's entries entirely, warning once", () => {
+  writeFileSync(ACCESS_PATH, JSON.stringify({
+    apps: { a: { mode: "domains", domains: ["file.example.com"] } },
+  }));
+  const warnSpy = spyOn(console, "warn").mockImplementation(() => {});
+  const throwingResolver: typeof getSetting = () => {
+    throw new Error("rt daemon unreachable");
+  };
+  reloadOAuth(throwingResolver);
+  expect(getOAuth("a")).toEqual({ mode: "domains", domains: ["file.example.com"] });
+  expect(warnSpy).toHaveBeenCalledTimes(1);
+  warnSpy.mockRestore();
+});
+
+test("setOAuth writes the store unconditionally and stops persisting the rule to the file", () => {
+  setOAuth("a", { mode: "emails", emails: ["a@x.dev"] });
+  const stored = getSetting<Record<string, unknown>>("deck.access").value;
+  expect(stored?.a).toEqual({ mode: "emails", emails: ["a@x.dev"] });
+
+  const onDisk = JSON.parse(readFileSync(ACCESS_PATH, "utf8"));
+  expect(onDisk.apps.a).toBeUndefined();
+});
+
+test("setOAuth on one app keeps every other app's rule current in the store too", () => {
+  setOAuth("a", { mode: "emails", emails: ["a@x.dev"] });
+  setOAuth("b", { mode: "domains", domains: ["corp.com"] });
+  const stored = getSetting<Record<string, unknown>>("deck.access").value;
+  expect(stored?.a).toEqual({ mode: "emails", emails: ["a@x.dev"] });
+  expect(stored?.b).toEqual({ mode: "domains", domains: ["corp.com"] });
+});
+
+test("access.json is written 0600", () => {
+  setOAuth("a", { mode: "off" });
+  const mode = statSync(ACCESS_PATH).mode & 0o777;
+  expect(mode).toBe(0o600);
+});
+
+test("a store write failure reverts the in-memory cache instead of claiming a value neither side holds", () => {
+  reloadOAuth();
+  mkdirSync(dirname(userStorePath()), { recursive: true });
+  writeFileSync(userStorePath(), "{ this is not valid jsonc");
+  expect(() => setOAuth("a", { mode: "emails", emails: ["a@x.dev"] })).toThrow();
+  expect(getOAuth("a")).toEqual({ mode: "off" });
 });

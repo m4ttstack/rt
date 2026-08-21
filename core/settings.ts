@@ -1,6 +1,7 @@
-import { readFileSync, writeFileSync, renameSync } from "fs";
-import { join } from "path";
+import { readFileSync, writeFileSync, renameSync, mkdirSync, chmodSync } from "fs";
+import { dirname, join } from "path";
 import { randomBytes } from "crypto";
+import { getSetting, setSetting } from "@mattstack/rt-client";
 
 export interface PortOverride {
   devPort: number;
@@ -22,10 +23,18 @@ export interface AppSettings {
   publicFollowsOverride?: boolean;
 }
 
+interface AppEntry {
+  published?: boolean;
+  passwordHash?: string;
+  passwordVersion?: number;
+  override?: PortOverride;
+  publicFollowsOverride?: boolean;
+}
+
 export interface SettingsFile {
   version: number;
   secret?: string;
-  apps: Record<string, AppSettings>;
+  apps: Record<string, AppEntry>;
 }
 
 // Computed fresh on every call (not frozen at import time) so callers that set
@@ -35,28 +44,112 @@ export function settingsPath(): string {
   return process.env.LOCAL_APPS_SETTINGS_PATH ?? join(import.meta.dir, "..", "data", "settings.json");
 }
 
-let cache: SettingsFile = load();
+const STORE_KEY = "deck.apps";
+type MigratedAppFields = { published: boolean; publicFollowsOverride: boolean };
+type GetSettingFn = typeof getSetting;
 
-function load(): SettingsFile {
+/**
+ * Transition fallback for deck.apps (MAT-384): per app, the store's
+ * published/publicFollowsOverride win PER FIELD over settings.json; a field
+ * the store doesn't carry for that app falls back to the file's value for
+ * it; an app absent from the store falls back to its file entry untouched.
+ * A resolver throw degrades to the file's entries entirely (fail-open),
+ * warning once per load. `resolve` defaults to the real resolver; tests
+ * inject a throwing stand-in to cover the fail-open path without touching
+ * real state.
+ */
+function withAppsStoreFallback(
+  fileApps: Record<string, AppEntry>,
+  resolve: GetSettingFn,
+): Record<string, AppEntry> {
+  let store: Record<string, Partial<MigratedAppFields>>;
+  try {
+    store = (resolve<Record<string, Partial<MigratedAppFields>>>(STORE_KEY).value ?? {}) as Record<
+      string,
+      Partial<MigratedAppFields>
+    >;
+  } catch (err) {
+    console.warn(`deck: ${STORE_KEY} unavailable, falling back to settings.json`, err);
+    return fileApps;
+  }
+  const merged: Record<string, AppEntry> = { ...fileApps };
+  for (const [app, fields] of Object.entries(store)) {
+    const fileEntry = fileApps[app] ?? {};
+    merged[app] = {
+      ...fileEntry,
+      published: fields.published !== undefined ? fields.published : fileEntry.published,
+      publicFollowsOverride:
+        fields.publicFollowsOverride !== undefined ? fields.publicFollowsOverride : fileEntry.publicFollowsOverride,
+    };
+  }
+  return merged;
+}
+
+let cache: SettingsFile = load(getSetting);
+
+function load(resolve: GetSettingFn): SettingsFile {
+  let fileValues: SettingsFile;
   try {
     const parsed = JSON.parse(readFileSync(settingsPath(), "utf8")) as SettingsFile;
     if (!parsed.apps) parsed.apps = {};
-    return parsed;
+    fileValues = parsed;
   } catch {
-    return { version: 1, apps: {} };
+    fileValues = { version: 1, apps: {} };
   }
+  return { ...fileValues, apps: withAppsStoreFallback(fileValues.apps, resolve) };
 }
 
-export function reloadSettings(): void {
-  cache = load();
+export function reloadSettings(resolve: GetSettingFn = getSetting): void {
+  cache = load(resolve);
 }
 
-function save(): void {
+/** The store's view of every app currently in cache, defaults applied so both fields are always determinate. */
+function buildAppsStoreDict(state: SettingsFile): Record<string, MigratedAppFields> {
+  const out: Record<string, MigratedAppFields> = {};
+  for (const [app, entry] of Object.entries(state.apps)) {
+    out[app] = {
+      published: entry.published ?? true,
+      publicFollowsOverride: entry.publicFollowsOverride ?? false,
+    };
+  }
+  return out;
+}
+
+function stripMigratedFields(state: SettingsFile): SettingsFile {
+  const apps: Record<string, AppEntry> = {};
+  for (const [app, entry] of Object.entries(state.apps)) {
+    const { published: _published, publicFollowsOverride: _publicFollowsOverride, ...rest } = entry;
+    apps[app] = rest;
+  }
+  return { ...state, apps };
+}
+
+/**
+ * Every mutation funnels through here, unconditionally rebuilding the WHOLE
+ * deck.apps store entry from the current cache before writing the file --
+ * not just when the caller touched published/publicFollowsOverride. The file
+ * write below always strips those two fields from every app, so a save()
+ * gated on "did this call touch a migrated field" would let a setPassword
+ * (etc.) call re-diverge the store from the file it just stripped. The store
+ * write is attempted first; on failure the cache reverts to `previous` and
+ * the error rethrows before the file is touched, so a value is never claimed
+ * as persisted when neither side actually holds it.
+ */
+function save(previous: SettingsFile): void {
+  try {
+    setSetting(STORE_KEY, buildAppsStoreDict(cache), "user");
+  } catch (err) {
+    cache = previous;
+    throw err;
+  }
+
   const path = settingsPath();
+  mkdirSync(dirname(path), { recursive: true });
   const tmp = path + ".tmp";
   try {
-    writeFileSync(tmp, JSON.stringify(cache, null, 2));
+    writeFileSync(tmp, JSON.stringify(stripMigratedFields(cache), null, 2), { mode: 0o600 });
     renameSync(tmp, path);
+    chmodSync(path, 0o600);
   } catch (err) {
     console.error("settings save failed:", err);
     throw err;
@@ -74,36 +167,40 @@ export function getAppSettings(app: string): AppSettings {
   };
 }
 
-function ensure(app: string): AppSettings {
+function ensure(app: string): AppEntry {
   if (!cache.apps[app]) cache.apps[app] = { published: true, passwordVersion: 0 };
-  return cache.apps[app];
+  return cache.apps[app] as AppEntry;
 }
 
 export function getSecret(): string {
   if (!cache.secret) {
+    const previous = structuredClone(cache);
     cache.secret = randomBytes(32).toString("hex");
-    save();
+    save(previous);
   }
   return cache.secret;
 }
 
 export async function setPublished(app: string, published: boolean): Promise<void> {
+  const previous = structuredClone(cache);
   ensure(app).published = published;
-  save();
+  save(previous);
 }
 
 export async function setPassword(app: string, password: string): Promise<void> {
+  const previous = structuredClone(cache);
   const entry = ensure(app);
   entry.passwordHash = await Bun.password.hash(password);
-  entry.passwordVersion += 1;
-  save();
+  entry.passwordVersion = (entry.passwordVersion ?? 0) + 1;
+  save(previous);
 }
 
 export async function clearPassword(app: string): Promise<void> {
+  const previous = structuredClone(cache);
   const entry = ensure(app);
   delete entry.passwordHash;
-  entry.passwordVersion += 1;
-  save();
+  entry.passwordVersion = (entry.passwordVersion ?? 0) + 1;
+  save(previous);
 }
 
 /**
@@ -113,14 +210,17 @@ export async function clearPassword(app: string): Promise<void> {
  * rename would silently turn a private, password-protected app public. It moves
  * the raw entry because no setter above can: setPassword only takes a plaintext
  * to re-hash, and an existing hash has no plaintext to re-derive it from.
- * A no-op when the old name has no entry (nothing to carry).
+ * A no-op when the old name has no entry (nothing to carry). The store side
+ * follows automatically: save() always rebuilds deck.apps from the CURRENT
+ * cache, so the old key drops out and the new key picks up its fields.
  */
 export function renameAppSettings(oldName: string, newName: string): void {
   const entry = cache.apps[oldName];
   if (!entry) return;
+  const previous = structuredClone(cache);
   delete cache.apps[oldName];
   cache.apps[newName] = entry;
-  save();
+  save(previous);
 }
 
 export function getOverride(app: string): PortOverride | undefined {
@@ -128,15 +228,17 @@ export function getOverride(app: string): PortOverride | undefined {
 }
 
 export function setOverride(app: string, override: PortOverride): void {
+  const previous = structuredClone(cache);
   ensure(app).override = override;
-  save();
+  save(previous);
 }
 
 export function clearOverride(app: string): void {
   const entry = cache.apps[app];
   if (entry?.override) {
+    const previous = structuredClone(cache);
     delete entry.override;
-    save();
+    save(previous);
   }
 }
 
@@ -145,12 +247,13 @@ export function getPublicFollowsOverride(app: string): boolean {
 }
 
 export function setPublicFollowsOverride(app: string, follows: boolean): void {
+  const previous = structuredClone(cache);
   const entry = ensure(app);
   // Store the default as an absent key rather than `false`, so settings.json
   // stays free of noise for the apps that never opt in.
   if (follows) entry.publicFollowsOverride = true;
   else delete entry.publicFollowsOverride;
-  save();
+  save(previous);
 }
 
 export function getOverrides(): Record<string, PortOverride> {
