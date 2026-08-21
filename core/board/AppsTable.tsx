@@ -93,8 +93,8 @@ export function servicePid(service: NonNullable<Row["service"]>): number | null 
 }
 
 /** A row click opens its drawer UNLESS the click landed on an existing
-    interactive control (link, switch, restart/stderr button) that already
-    has its own action -- the chevron is the one button exempted, since
+    interactive control (link, switch, restart button) that already has
+    its own action -- the chevron is the one button exempted, since
     opening the drawer IS its action. */
 export function isDrawerClick(e: { target: EventTarget | null }): boolean {
   const target = e.target as HTMLElement;

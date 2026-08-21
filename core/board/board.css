@@ -12,7 +12,6 @@ body {
 .board-subline { color: var(--muted); }
 
 .header-actions { display: flex; align-items: center; gap: var(--spacing-xs); }
-.row-actions { display: flex; align-items: center; gap: var(--spacing-xxs); justify-content: flex-end; }
 .mt-6 { margin-top: 1.5rem; }
 
 .unstyled { color: inherit; text-decoration: none; }
@@ -22,6 +21,7 @@ body {
    service cell's exit status) and only needs the bad hue, not a pill:
    Badge is reserved for the health column. */
 .t-bad { color: var(--red); }
+.t-ok { color: var(--green); }
 
 /* hstack is a block-level flex container, so a chip after the name would be
    pushed onto its own line and stand the row up taller. */

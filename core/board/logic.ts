@@ -53,15 +53,25 @@ export type Row = StatusData["apps"][number];
 export type RestartingMap = Record<string, { pid: number | null; at: number }>;
 export type Notice = { kind: "ok" | "bad"; message: string; command?: string };
 
+function healthyFraction(data: StatusData): string {
+  return `${data.up}/${data.total} healthy`;
+}
+
 export function subline(data: StatusData | null): string {
   if (!data) return "loading…";
   const pub = data.apps.filter((r) => r.published).length;
   const prot = data.apps.filter((r) => r.hasPassword).length;
-  const parts = [`${data.up}/${data.total} healthy`, `${pub} public`];
+  const parts = [healthyFraction(data), `${pub} public`];
   if (prot) parts.push(`${prot} protected`);
   if (data.nextPort) parts.push(`next port ${data.nextPort}`);
   parts.push("auto-refreshes");
   return parts.join(" · ");
+}
+
+// Split out so the stat strip can tone the fraction independently of the
+// rest of the subline (ok when every app is healthy, bad otherwise).
+export function sublineHealthy(data: StatusData): { text: string; ok: boolean } {
+  return { text: healthyFraction(data), ok: data.up === data.total };
 }
 
 // Mirrors isPlatformManagedBy on the server: "local" is the pre-rename id and

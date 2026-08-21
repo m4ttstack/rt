@@ -98,7 +98,7 @@ test("restart button is visible without hovering the row", async () => {
   });
 });
 
-test("every row carries a focusable, inert chevron placeholder", async () => {
+test("every row carries a focusable chevron with a details aria-label", async () => {
   await withBoard(async (page) => {
     const appsTable = page.locator("table").first();
     expect(await appsTable.locator('[data-part="row-chevron"]').count()).toBe(4);
@@ -108,9 +108,6 @@ test("every row carries a focusable, inert chevron placeholder", async () => {
 
     await atlasChevron.focus();
     expect(await page.evaluate(() => document.activeElement?.getAttribute("data-part"))).toBe("row-chevron");
-
-    await atlasChevron.click(); // no-op placeholder: nothing opens
-    expect(await page.locator('[data-part="modal"]').count()).toBe(0);
   });
 });
 
@@ -159,6 +156,24 @@ test("subline matches logic.subline of the fixture", async () => {
   await withBoard(async (page) => {
     const expected = subline(fixture as unknown as StatusData);
     expect(await page.locator(".board-subline").textContent()).toBe(expected);
+  });
+});
+
+test("subline: healthy fraction renders in bad tone when an app is down (3/4 fixture)", async () => {
+  await withBoard(async (page) => {
+    const fraction = page.locator(".board-subline .t-bad", { hasText: "healthy" });
+    expect(await fraction.textContent()).toBe("3/4 healthy");
+
+    const fractionColor = await fraction.evaluate((el) => getComputedStyle(el).color);
+    const redProbe = await page.evaluate(() => {
+      const probe = document.createElement("span");
+      probe.style.color = "var(--red)";
+      document.body.appendChild(probe);
+      const c = getComputedStyle(probe).color;
+      probe.remove();
+      return c;
+    });
+    expect(fractionColor).toBe(redProbe);
   });
 });
 

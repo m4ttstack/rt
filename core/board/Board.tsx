@@ -4,6 +4,7 @@ import { AppsTable } from "./AppsTable.tsx";
 import { AppDrawer } from "./drawer/AppDrawer.tsx";
 import { AddAppModal, RemoveConfirm } from "./modals.tsx";
 import { TunnelSection } from "./TunnelSection.tsx";
+import { sublineHealthy } from "./logic.ts";
 import { useBoardState } from "./useBoardState.ts";
 
 export function Board() {
@@ -20,6 +21,7 @@ export function Board() {
   const [openRowName, setOpenRowName] = useState<string | null>(null);
   // Table display order: apps, then strays, then tunnels -- what ↑/↓ walks.
   const allRows = useMemo(() => [...sections.flatMap((s) => s.rows), ...tunnels], [sections, tunnels]);
+  const healthy = data ? sublineHealthy(data) : null;
 
   return (
     <main className="board" ref={mainRef} tabIndex={-1} data-board-ready={data != null ? "" : undefined}>
@@ -36,7 +38,16 @@ export function Board() {
           </span>
         )}
       </header>
-      <p className="board-subline">{subline}</p>
+      <p className="board-subline">
+        {healthy ? (
+          <>
+            <span className={healthy.ok ? "t-ok" : "t-bad"}>{healthy.text}</span>
+            {subline.slice(healthy.text.length)}
+          </>
+        ) : (
+          subline
+        )}
+      </p>
       {proxyNotice && (
         <Alert intent={proxyNotice.kind} command={proxyNotice.command}>
           {proxyNotice.message}

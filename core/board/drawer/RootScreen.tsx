@@ -107,8 +107,14 @@ function TunnelStatusStrip({ row, restarting }: { row: Row; restarting: boolean 
   );
 }
 
-/** True when the row's own leading-dot state would read `bad` -- drives the
-    root's error banner and the logs value's bad tone. */
+/** True when the health probe reports unhealthy or a sync issue was
+    recorded -- gates the root's error banner (one Alert per row.issues
+    entry). The logs-nav bad tone (logsValueHint) tracks the same "broken"
+    concept but computes it separately, not by calling this. NOT the same
+    predicate as healthTone's leading-dot color: they diverge in both
+    directions -- a stopped, routeless row with no issues reads bad on the
+    dot but false here, and a row that still probes healthy while carrying
+    a sync issue reads ok on the dot but true here. */
 function isBroken(row: Row): boolean {
   return (row.health ? !row.health.ok : false) || (row.issues != null && row.issues.length > 0);
 }
@@ -141,19 +147,17 @@ export function buildAppRoot(
   data: StatusData,
   restarting: boolean,
 ): DrawerScreen {
-  const broken = isBroken(row);
   return {
     id: `root:${row.name}`,
     title: row.name,
     header: (
       <>
         <RootStatusStrip row={row} restarting={restarting} />
-        {broken &&
-          (row.issues || []).map((issue) => (
-            <Alert key={issue.source} intent="bad">
-              {issue.source} sync failed · {issue.message}
-            </Alert>
-          ))}
+        {(row.issues || []).map((issue) => (
+          <Alert key={issue.source} intent="bad">
+            {issue.source} sync failed · {issue.message}
+          </Alert>
+        ))}
       </>
     ),
     content: (

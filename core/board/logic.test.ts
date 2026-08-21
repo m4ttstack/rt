@@ -5,6 +5,7 @@ import {
   HEAL_RECENT_MS,
   PROXY_WAIT_MS,
   subline,
+  sublineHealthy,
   isPlatform,
   tunnelDomain,
   sections,
@@ -93,6 +94,18 @@ test("subline: protected and next-port segments omitted when 0/absent", () => {
     apps: [makeRow({ published: true, hasPassword: false })],
   });
   expect(subline(data)).toBe("1/1 healthy · 1 public · auto-refreshes");
+});
+
+// ---- sublineHealthy ----
+
+test("sublineHealthy: ok tone when every app is healthy", () => {
+  const data = makeData({ up: 3, total: 3 });
+  expect(sublineHealthy(data)).toEqual({ text: "3/3 healthy", ok: true });
+});
+
+test("sublineHealthy: bad tone when any app is unhealthy", () => {
+  const data = makeData({ up: 3, total: 4 });
+  expect(sublineHealthy(data)).toEqual({ text: "3/4 healthy", ok: false });
 });
 
 // ---- isPlatform ----

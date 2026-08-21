@@ -653,3 +653,17 @@ test(
   },
   12000,
 );
+
+test("remove: ArrowDown while the confirm dialog is open does not retarget the drawer", async () => {
+  await withBoard(async (page) => {
+    await openDrawer(page, "atlas");
+    await page.locator('[data-part="listgroup-action"] button', { hasText: "remove app" }).click();
+    const dialog = page.locator('[data-part="modal"]');
+    await dialog.waitFor({ state: "visible" });
+
+    await page.keyboard.press("ArrowDown");
+
+    expect(await dialog.isVisible()).toBe(true);
+    expect(await page.locator('[data-part="drawer-title"]').textContent()).toBe("atlas");
+  });
+});

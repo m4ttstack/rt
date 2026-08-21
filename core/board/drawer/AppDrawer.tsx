@@ -82,10 +82,11 @@ export function AppDrawer({
 
   const row = openRowName != null ? (rows.find((r) => r.name === openRowName) ?? null) : null;
 
-  // A row that closes or switches away mid-edit (dev port's setting screen)
-  // must not leave `board.editing` set: refresh() skips every poll while it
-  // is, which would otherwise freeze the whole board's status forever behind
-  // a screen nobody can see anymore.
+  // Belt-and-braces, not the primary guard: the dev-port setting frame's own
+  // onLeave already calls cancelEdit() on every exit path (pop, close, row
+  // switch). Kept as a backstop so `board.editing` can never survive a row
+  // close/switch and freeze refresh()'s poll behind a screen nobody can see
+  // anymore.
   useEffect(() => {
     return () => board.cancelEdit();
   }, [openRowName, board.cancelEdit]);
@@ -143,6 +144,10 @@ export function AppDrawer({
       if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
       const target = e.target as HTMLElement | null;
       if (target && /^(input|textarea)$/i.test(target.tagName)) return;
+      // A confirm dialog or the add-app modal can sit open above the drawer;
+      // retargeting the row underneath it would swap the drawer's contents
+      // while the dialog still reads as pointing at the old row.
+      if (board.pendingRemove != null || board.addModal != null) return;
       const idx = rows.findIndex((r) => r.name === openRowName);
       if (idx === -1) return;
       const nextIdx = e.key === "ArrowDown" ? idx + 1 : idx - 1;
@@ -152,7 +157,7 @@ export function AppDrawer({
     }
     document.addEventListener("keydown", onKeyDown);
     return () => document.removeEventListener("keydown", onKeyDown);
-  }, [row, rows, openRowName, onOpenRowNameChange]);
+  }, [row, rows, openRowName, onOpenRowNameChange, board.pendingRemove, board.addModal]);
 
   const stack: DrawerScreen[] = row
     ? [rootScreenFor(row, nav, board, data), ...pushed.map((frame) => frame.build(row, nav, board, data))]
