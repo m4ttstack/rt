@@ -6,14 +6,15 @@
  * makes that whole tree throwaway by default; a test file that fakes its own
  * HOME (for deterministic per-file store state) still overrides this.
  *
- * Exempt under LOCAL_E2E=1: test/e2e.smoke.test.ts drives real launchd
- * in-process (no subprocess boundary to carry a separate HOME across), so it
- * needs the genuine ~/Library/LaunchAgents this preload would otherwise hide.
+ * Safe for test/e2e.smoke.test.ts too, unconditionally: Bun resolves
+ * os.homedir() once at process start, before this preload runs, so mutating
+ * process.env.HOME here (or anywhere later) never moves the real
+ * ~/Library/LaunchAgents path that test checks against -- only rt-client's
+ * own env-based store paths move. That file sets its own HOME to isolate
+ * rt-client the same way; launchd stays real either way.
  */
 import { mkdtempSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
-if (process.env.LOCAL_E2E !== "1") {
-  process.env.HOME = mkdtempSync(join(tmpdir(), "local-test-home-"));
-}
+process.env.HOME = mkdtempSync(join(tmpdir(), "local-test-home-"));

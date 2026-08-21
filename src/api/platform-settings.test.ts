@@ -1,8 +1,17 @@
 import { test, expect, beforeEach, afterEach, spyOn } from "bun:test";
-import { mkdtempSync, rmSync, readFileSync, writeFileSync, statSync } from "fs";
-import { join } from "path";
+import { mkdtempSync, rmSync, readFileSync, writeFileSync, statSync, mkdirSync, chmodSync } from "fs";
+import { join, dirname } from "path";
 import { tmpdir } from "os";
 import { getSetting, setSetting } from "@mattstack/rt-client";
+
+// rt-client doesn't export its machine-store path helper; this literal is
+// duplicated from rt-client/src/settings/paths.ts#machineSettingsPath (which
+// itself documents duplicating it from repo-tools/lib/rt-paths.ts) for the
+// same reason: no dependency from here on rt-client's internals, only its
+// public API. Change there first, mirror here.
+function machineStorePath(): string {
+  return join(process.env.HOME!, ".mattstack", "settings.local.jsonc");
+}
 
 const dir = mkdtempSync(join(tmpdir(), "local-psettings-"));
 process.env.LOCAL_PLATFORM_SETTINGS_PATH = join(dir, "platform.json");
@@ -72,6 +81,16 @@ test("a field absent from the store falls back to platform.json's value", () => 
   expect(getPlatformSettings().legacyPrefixes).toEqual(["/file-prefix"]);
 });
 
+test("the inverse: a store carrying only legacyPrefixes still falls back to the file for publicDomain", () => {
+  writeLegacyFile({
+    publicDomain: "file.example.dev", legacyPrefixes: ["/file-prefix"], tlds: ["localhost"], secrets: {},
+  });
+  setSetting("deck.platform", { legacyPrefixes: ["/store-prefix"] }, "machine");
+  reloadPlatformSettings();
+  expect(getPlatformSettings().publicDomain).toBe("file.example.dev");
+  expect(getPlatformSettings().legacyPrefixes).toEqual(["/store-prefix"]);
+});
+
 test("a resolver throw degrades to platform.json's values, warning once", () => {
   writeLegacyFile({
     publicDomain: "file.example.dev", legacyPrefixes: ["/file-prefix"], tlds: ["localhost"], secrets: {},
@@ -111,4 +130,32 @@ test("platform.json is written 0600", () => {
   updatePlatformSettings({ tlds: ["localhost", "example.dev"] });
   const mode = statSync(process.env.LOCAL_PLATFORM_SETTINGS_PATH!).mode & 0o777;
   expect(mode).toBe(0o600);
+});
+
+test("an existing 0644 platform.json is upgraded to 0600 on the next write", () => {
+  writeLegacyFile({ publicDomain: null, legacyPrefixes: [], tlds: ["localhost"], secrets: {} });
+  chmodSync(process.env.LOCAL_PLATFORM_SETTINGS_PATH!, 0o644);
+  updatePlatformSettings({ tlds: ["localhost", "upgraded.dev"] });
+  const mode = statSync(process.env.LOCAL_PLATFORM_SETTINGS_PATH!).mode & 0o777;
+  expect(mode).toBe(0o600);
+});
+
+test("a tlds-only patch never strips publicDomain/legacyPrefixes that only the file was carrying", () => {
+  writeLegacyFile({
+    publicDomain: "file-only.example.dev", legacyPrefixes: ["/file-only-prefix"], tlds: ["localhost"], secrets: {},
+  });
+  reloadPlatformSettings();
+  updatePlatformSettings({ tlds: ["localhost", "upgraded.dev"] });
+  reloadPlatformSettings();
+  expect(getPlatformSettings().publicDomain).toBe("file-only.example.dev");
+  expect(getPlatformSettings().legacyPrefixes).toEqual(["/file-only-prefix"]);
+});
+
+test("a store write failure reverts the in-memory cache instead of claiming a value neither side holds", () => {
+  reloadPlatformSettings();
+  const before = getPlatformSettings().publicDomain;
+  mkdirSync(dirname(machineStorePath()), { recursive: true });
+  writeFileSync(machineStorePath(), "{ this is not valid jsonc");
+  expect(() => updatePlatformSettings({ publicDomain: "should-not-apply.example.dev" })).toThrow();
+  expect(getPlatformSettings().publicDomain).toBe(before);
 });

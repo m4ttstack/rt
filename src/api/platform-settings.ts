@@ -16,7 +16,6 @@ const DEFAULTS: PlatformSettings = {
 
 const STORE_KEY = "deck.platform";
 type MigratedFields = Pick<PlatformSettings, "publicDomain" | "legacyPrefixes">;
-const MIGRATED_KEYS: (keyof MigratedFields)[] = ["publicDomain", "legacyPrefixes"];
 
 export function platformSettingsPath(): string {
   return process.env.LOCAL_PLATFORM_SETTINGS_PATH ?? join(stateDir(), "platform.json");
@@ -28,10 +27,10 @@ type GetSettingFn = typeof getSetting;
  * Transition fallback for deck.platform (MAT-384): store wins PER FIELD over
  * platform.json; a field the store doesn't carry falls back to the file's
  * value; a resolver throw degrades to the file's values entirely (fail-open),
- * warning once. `resolve` defaults to the real resolver; tests inject a
- * throwing stand-in to cover the fail-open path without touching real state.
- * Delete this function whole at cutover, once the file no longer carries
- * these fields.
+ * warning once per load. `resolve` defaults to the real resolver; tests
+ * inject a throwing stand-in to cover the fail-open path without touching
+ * real state. Delete this function whole at cutover, once the file no
+ * longer carries these fields.
  */
 function withPlatformStoreFallback(fileValues: MigratedFields, resolve: GetSettingFn): MigratedFields {
   let store: Partial<MigratedFields>;
@@ -63,17 +62,30 @@ export function reloadPlatformSettings(resolve: GetSettingFn = getSetting): void
 export function getPlatformSettings(): PlatformSettings { return cache; }
 
 export function updatePlatformSettings(patch: Partial<PlatformSettings>): void {
+  const previous = cache;
   cache = { ...cache, ...patch, secrets: { ...cache.secrets, ...(patch.secrets ?? {}) } };
 
-  if (MIGRATED_KEYS.some((key) => key in patch)) {
+  try {
+    // Unconditional, not just when `patch` touches a migrated field: the file
+    // write below always strips these two fields, so gating this on the
+    // patch would let a tlds/secrets-only patch erase them from disk with
+    // nowhere left holding the value. Writing the cache's current values
+    // back is a no-op when they're unchanged. This REPLACES deck.platform in
+    // the store wholesale from deck's boot-time cache -- a field another
+    // process wrote to the store after this process booted is clobbered
+    // here, same as any other boot-read config in deck (a restart is what
+    // picks up an external edit).
     setSetting(STORE_KEY, { publicDomain: cache.publicDomain, legacyPrefixes: cache.legacyPrefixes }, "machine");
+  } catch (err) {
+    cache = previous; // never claim a value neither the store nor the file actually holds
+    throw err;
   }
 
   const { publicDomain: _publicDomain, legacyPrefixes: _legacyPrefixes, ...fileBody } = cache;
   const path = platformSettingsPath();
   mkdirSync(dirname(path), { recursive: true });
   const tmp = path + ".tmp";
-  writeFileSync(tmp, JSON.stringify(fileBody, null, 2));
+  writeFileSync(tmp, JSON.stringify(fileBody, null, 2), { mode: 0o600 });
   renameSync(tmp, path);
   chmodSync(path, 0o600);
 }

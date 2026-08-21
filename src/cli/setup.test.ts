@@ -13,7 +13,8 @@ process.env.LOCAL_PLATFORM_SETTINGS_PATH = join(dir, "platform.json");
 process.env.LOCAL_PORTLESS_TLDS_PATH = join(dir, "proxy.tlds");
 process.env.LOCAL_AGENTS_DIR = join(dir, "agents"); // isolate from this machine's real LaunchAgents
 // deck.platform reads through rt-client, which resolves HOME at call time (not overridable
-// via a LOCAL_*_PATH var) -- must be faked here too, or this test touches the real ~/.mattstack.
+// via a LOCAL_*_PATH var) -- must be faked here too, or the import below touches the real
+// ~/.mattstack; beforeEach repoints it to a fresh dir per test below.
 process.env.HOME = dir;
 writeFileSync(process.env.LOCAL_APPS_ROUTES_PATH, "[]");
 
@@ -29,6 +30,9 @@ const { PLATFORM_LABEL } = await import("../services/manager.ts");
 
 beforeEach(() => {
   rmSync(process.env.LOCAL_REGISTRY_PATH!, { force: true });
+  // A fresh HOME per test keeps this file's own store writes (via setup())
+  // from leaking test-to-test, same as server.test.ts.
+  process.env.HOME = mkdtempSync(join(tmpdir(), "local-setup-home-"));
   reloadRegistry();
   delete process.env.LOCAL_SETUP_HEALTH_BUDGET_MS;
   delete process.env.LOCAL_SETUP_HEALTH_INTERVAL_MS;

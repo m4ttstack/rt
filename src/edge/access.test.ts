@@ -1,5 +1,5 @@
 // src/edge/access.test.ts
-import { test, expect } from "bun:test";
+import { test, expect, beforeEach } from "bun:test";
 import { mkdtempSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -10,10 +10,19 @@ process.env.LOCAL_REGISTRY_PATH = join(dir, "registry.json");
 process.env.LOCAL_PLATFORM_SETTINGS_PATH = join(dir, "platform.json");
 process.env.LOCAL_ACCESS_PATH = join(dir, "access.json");
 // deck.platform reads through rt-client, which resolves HOME at call time (not overridable
-// via a LOCAL_*_PATH var) -- must be faked here too, or this test touches the real ~/.mattstack.
+// via a LOCAL_*_PATH var) -- must be faked here too, or the import below touches the real
+// ~/.mattstack; beforeEach repoints it to a fresh dir per test below.
 process.env.HOME = dir;
 
 const { CfAccess, oauthToInclude, syncOAuth } = await import("./access.ts");
+
+beforeEach(() => {
+  // A fresh HOME per test: several tests here write publicDomain/secrets to
+  // the deck.platform store, and every test that touches it already
+  // overwrites its own values first -- this just removes the latent
+  // fragility of relying on that ordering, same as server.test.ts.
+  process.env.HOME = mkdtempSync(join(tmpdir(), "local-access-home-"));
+});
 
 test("oauthToInclude maps each on-mode to CF include rules", () => {
   expect(oauthToInclude({ mode: "emails", emails: ["m@x.dev"] }))
