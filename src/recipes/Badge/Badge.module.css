@@ -9,6 +9,7 @@
     font-family: var(--font-mono);
     font-size: var(--font-size-xs);
     line-height: var(--line-height-base);
+    font-variant-numeric: var(--font-numeric);
     color: var(--sb-badge-color);
     background: var(--sb-badge-bg);
     border: 1px solid var(--sb-badge-border);

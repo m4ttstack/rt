@@ -149,8 +149,16 @@ export const tuiTheme = createTheme({
       px12: "12px",
       px13: "13px",
     },
+    // `mono` is vendored Tomorrow (Task K1), not census parity: mr-board has
+    // not adopted this font, so this is a deliberate, one-directional
+    // departure -- see test/theme.test.ts's font block. `monospace` is a
+    // soft generic fallback, not a claim Tomorrow is monospaced (it isn't).
+    // Weights 400/500/600/700 ship as woff2 under assets/fonts/; the
+    // @font-face rules pointing at them are appended to
+    // src/generated/theme.css by scripts/append-font-faces.ts, run as the
+    // second half of the `codegen` script.
     fontFamily: {
-      mono: '"JetBrains Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace',
+      mono: '"Tomorrow", "Noto Sans JP", monospace',
       sans: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
     },
     lineHeight: { base: "1.55" },

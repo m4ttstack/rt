@@ -33,6 +33,7 @@
     border-bottom: 1px solid var(--border-soft);
     white-space: nowrap;
     vertical-align: middle;
+    font-variant-numeric: var(--font-numeric);
   }
 
   .cell[data-align="end"] {

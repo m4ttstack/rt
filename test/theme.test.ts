@@ -180,14 +180,17 @@ test("the census tables are the shape this suite expects", () => {
   }
 });
 
-test.each([...LIGHT])(
+// Font rows are excluded from the census-parity sweep below: Task K1 makes
+// `--font-mono` a deliberate, one-directional departure from the census (the
+// kit now leads mr-board on font, not the reverse). See the "fonts" block
+// further down for its own coverage.
+const LIGHT_COLORS = [...LIGHT].filter(([name]) => SLOT[name]!.kind === "color");
+
+test.each(LIGHT_COLORS)(
   "light %s carries the census value verbatim, in the theme and through the generated CSS",
   (name: string, value: string) => {
-    const slot = SLOT[name]!;
-    const themeValue =
-      slot.kind === "font"
-        ? tuiTheme.tokens.fontFamily![slot.key]
-        : tuiTheme.tokens.colors[slot.family]![slot.shade];
+    const slot = SLOT[name]! as { kind: "color"; family: string; shade: string };
+    const themeValue = tuiTheme.tokens.colors[slot.family]![slot.shade];
     expect(themeValue).toBe(value);
     // …and the board's short name still reaches that exact literal after
     // codegen, through the alias → semantic → token → light-dark() chain.
@@ -213,8 +216,35 @@ test("light and dark differ everywhere the census says they differ", () => {
   }
 });
 
+// ── fonts ───────────────────────────────────────────────────────────────
+// `mono` is Task K1's deliberate departure from census parity (see the
+// LIGHT_COLORS filter above); `sans` is untouched, so it still tracks the
+// census verbatim like every colour row does.
+
+test("mono is the vendored Tomorrow stack; sans still carries its census value verbatim", () => {
+  const TOMORROW_STACK = '"Tomorrow", "Noto Sans JP", monospace';
+  expect(tuiTheme.tokens.fontFamily!.mono).toBe(TOMORROW_STACK);
+  expect(resolve("--font-mono", "light")).toBe(TOMORROW_STACK);
+
+  const sans = LIGHT.get("--font-sans")!;
+  expect(tuiTheme.tokens.fontFamily!.sans).toBe(sans);
+  expect(resolve("--font-sans", "light")).toBe(sans);
+});
+
+test("the four Tomorrow weights are declared as @font-face rules pointing at the vendored woff2 assets", () => {
+  for (const weight of [400, 500, 600, 700]) {
+    expect(css).toContain(`font-weight: ${weight};`);
+    expect(css).toContain(`url("../../assets/fonts/tomorrow-${weight}.woff2")`);
+  }
+  expect(css).toContain("font-display: swap;");
+});
+
+test("--font-numeric aliases to tabular-nums", () => {
+  expect(css).toContain("--font-numeric: tabular-nums;");
+});
+
 test("generated css exposes the alias contract with verbatim values reachable", () => {
-  for (const alias of ["--bg:", "--panel:", "--card:", "--fg:", "--muted:", "--border:", "--border-soft:", "--accent:", "--green:", "--red:", "--amber:", "--purple:", "--cyan:", "--grid-line:", "--dot-ok:", "--dot-warn:", "--dot-bad:", "--font-mono:", "--font-sans:"]) {
+  for (const alias of ["--bg:", "--panel:", "--card:", "--fg:", "--muted:", "--border:", "--border-soft:", "--accent:", "--green:", "--red:", "--amber:", "--purple:", "--cyan:", "--grid-line:", "--dot-ok:", "--dot-warn:", "--dot-bad:", "--font-mono:", "--font-sans:", "--font-numeric:"]) {
     expect(css).toContain(alias);
   }
   expect(css).toContain("#2e7de9"); // light accent, verbatim

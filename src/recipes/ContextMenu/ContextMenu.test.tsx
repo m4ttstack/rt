@@ -338,7 +338,7 @@ describe("ContextMenu (browser)", () => {
     const sep = partsIn(screen.container, CONTEXTMENU_PARTS.separator)[0] as HTMLElement;
     expect(getComputedStyle(sep).height).toBe("1px");
     const label = partsIn(screen.container, CONTEXTMENU_PARTS.label)[0] as HTMLElement;
-    expect(getComputedStyle(label).fontFamily).toContain("JetBrains Mono");
+    expect(getComputedStyle(label).fontFamily).toContain("Tomorrow");
   });
 
   it("the item's declared width is an OUTER measure, so it never overflows the menu", async () => {

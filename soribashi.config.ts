@@ -59,6 +59,10 @@ const aliases: CssVariablesResolver = () => ({
     "--dot-bad": "var(--color-dot-bad)",
     "--font-mono": "var(--font-family-mono)",
     "--font-sans": "var(--font-family-sans)",
+    // A literal, not a `var()` indirection: `font-variant-numeric` has no
+    // theme token category to alias (ThemeTokens has no such family), and
+    // "tabular-nums" is the whole value space this ever needs (Task K1).
+    "--font-numeric": "tabular-nums",
   },
 });
 

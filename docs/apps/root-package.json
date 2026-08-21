@@ -29,7 +29,7 @@
   "scripts": {
     "setup": "bun install",
     "census": "bun run scripts/census.ts",
-    "codegen": "soribashi build",
+    "codegen": "soribashi build && bun run scripts/append-font-faces.ts",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "gates": "vitest run --project node test/no-hardcoded-values.test.ts test/token-existence.test.ts test/no-node-builtins.test.ts && bun run codegen && git diff --exit-code src/generated/theme.css",
