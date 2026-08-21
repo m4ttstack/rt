@@ -5,7 +5,7 @@ import { Button, type ButtonProps, BUTTON_PARTS } from "./Button.tsx";
 
 /**
  * THE PIXEL-PARITY ORACLE for the @soribashi/core 0.2.0 variant-vocabulary
- * adoption (mantine-variant-system task 6).
+ * adoption.
  *
  * Captured with `getComputedStyle` against the PRE-migration hand-rolled
  * Button (variant vocabulary `solid/outline/subtle/ghost`, colours from
@@ -15,7 +15,7 @@ import { Button, type ButtonProps, BUTTON_PARTS } from "./Button.tsx";
  * This table is the ground truth: after the resolver swap, every cell below
  * must still equal what the DOM renders — a mismatch is a defect in the new
  * `singleShadeVariantColors` wiring or the intent-to-tone mapping, never a
- * new expectation to record (see the brief, step 3).
+ * new expectation to record.
  *
  * Keyed by the OLD (pre-migration) variant name, permanently — the table
  * itself is never touched by the rename. `RENDER_VARIANT` below is the one
