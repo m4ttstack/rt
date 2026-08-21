@@ -22,6 +22,8 @@ const DRAWER_SELECTORS = ["root", "nav", "back", "title", "navAction", "close", 
     entry is stamped: SideDrawer already stamps `data-part="sidedrawer"` on
     that element. */
 export const DRAWER_PARTS = {
+  /** Never stamped on a DOM node — query `[data-part="sidedrawer"]` for the
+      panel instead. */
   root: "drawer",
   nav: "drawer-nav",
   back: "drawer-back",
@@ -120,11 +122,12 @@ export const Drawer = defineComponent<
       return () => mql.removeEventListener("change", update);
     }, []);
 
-    // Escape and an overlay click both reach this through SideDrawer's own
-    // `onClose` (its Escape handler calls whatever `onClose` it was given);
-    // the ✕ button below bypasses it and calls the raw `onClose` directly,
-    // which is what keeps ✕ a full close from any depth while Escape only
-    // pops.
+    // Escape reaches this through SideDrawer's own `onClose` (its Escape
+    // handler calls whatever `onClose` it was given). An overlay click gets
+    // its OWN handler below (`onOverlayClick={onClose}`), deliberately not
+    // this one: leaving the drawer's footprint entirely is a full close from
+    // any depth, same as ✕, which also bypasses this and calls the raw
+    // `onClose` directly.
     const backThenClose = useCallback(() => {
       if (stack.length > 1) onBack();
       else onClose();
@@ -149,6 +152,7 @@ export const Drawer = defineComponent<
         side="right"
         ariaLabel={ariaLabel}
         onClose={backThenClose}
+        onOverlayClick={onClose}
         tabIndex={-1}
         // The instance `vars` prop is Styles API precedence-highest for its
         // selector — it overrides SideDrawer's own built-in width resolver
@@ -157,58 +161,60 @@ export const Drawer = defineComponent<
         vars={() => ({ root: { "--sb-sidedrawer-w": isNarrow ? "100%" : DRAWER_WIDTH } })}
         {...getStyles("root", { dataAttrs: { "data-full-width": isNarrow ? "true" : undefined } })}
       >
-        <div {...getStyles("nav")} data-part={DRAWER_PARTS.nav}>
-          {previous && (
-            <button
-              type="button"
-              {...getStyles("back")}
-              data-part={DRAWER_PARTS.back}
-              onClick={() => onBack()}
-            >
-              {"‹ "}
-              {previous.title}
-            </button>
-          )}
-          <div className={classes.navRow}>
-            <span {...getStyles("title")} data-part={DRAWER_PARTS.title}>
-              {top.title}
-            </span>
-            <div className={classes.navActions}>
-              {navAction && (
-                <button
-                  type="button"
-                  {...getStyles("navAction")}
-                  data-part={DRAWER_PARTS.navAction}
-                  onClick={() => navAction.onAction()}
-                  disabled={navAction.disabled}
-                >
-                  {navAction.label}
-                </button>
-              )}
+        <div className={classes.frame}>
+          <div {...getStyles("nav")} data-part={DRAWER_PARTS.nav}>
+            {previous && (
               <button
                 type="button"
-                {...getStyles("close")}
-                data-part={DRAWER_PARTS.close}
-                onClick={() => onClose()}
-                aria-label="close"
+                {...getStyles("back")}
+                data-part={DRAWER_PARTS.back}
+                onClick={() => onBack()}
               >
-                ✕
+                {"‹ "}
+                {previous.title}
               </button>
+            )}
+            <div className={classes.navRow}>
+              <span {...getStyles("title")} data-part={DRAWER_PARTS.title}>
+                {top.title}
+              </span>
+              <div className={classes.navActions}>
+                {navAction && (
+                  <button
+                    type="button"
+                    {...getStyles("navAction")}
+                    data-part={DRAWER_PARTS.navAction}
+                    onClick={() => navAction.onAction()}
+                    disabled={navAction.disabled}
+                  >
+                    {navAction.label}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  {...getStyles("close")}
+                  data-part={DRAWER_PARTS.close}
+                  onClick={() => onClose()}
+                  aria-label="close"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-        {top.header != null && (
-          <div {...getStyles("header")} data-part={DRAWER_PARTS.header}>
-            {top.header}
+          {top.header != null && (
+            <div {...getStyles("header")} data-part={DRAWER_PARTS.header}>
+              {top.header}
+            </div>
+          )}
+          <div
+            key={top.id}
+            {...contentStyles}
+            style={slideStyle}
+            data-part={DRAWER_PARTS.content}
+          >
+            {top.content}
           </div>
-        )}
-        <div
-          key={top.id}
-          {...contentStyles}
-          style={slideStyle}
-          data-part={DRAWER_PARTS.content}
-        >
-          {top.content}
         </div>
       </SideDrawer>
     );

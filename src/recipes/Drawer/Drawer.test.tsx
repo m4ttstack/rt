@@ -33,6 +33,12 @@ function panelOf(container: HTMLElement): HTMLElement {
   return el;
 }
 
+function overlayOf(container: HTMLElement): HTMLElement {
+  const el = container.querySelector<HTMLElement>('[data-part="sidedrawer-overlay"]');
+  if (!el) throw new Error("no drawer overlay rendered");
+  return el;
+}
+
 const noop = () => {};
 
 /** A depth-1 stack: no back link, no navAction, no header. */
@@ -145,6 +151,19 @@ describe("Drawer (browser)", () => {
     partOf(screen.container, DRAWER_PARTS.close).click();
 
     expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it("an overlay click always calls onClose, even nested — unlike Escape, which pops", async () => {
+    const onBack = vi.fn();
+    const onClose = vi.fn();
+    const screen = await renderWithTheme(
+      <Drawer open stack={nestedStack()} onBack={onBack} onClose={onClose} ariaLabel="d" />,
+    );
+
+    overlayOf(screen.container).click();
+
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(onBack).not.toHaveBeenCalled();
   });
 
   it("renders the current screen's optional header region", async () => {
@@ -276,6 +295,44 @@ describe("Drawer (browser)", () => {
 
     const content = partOf(screen.container, DRAWER_PARTS.content);
     expect(getComputedStyle(content).animationName).not.toBe("none");
+  });
+
+  it("the content region scrolls under tall content; the nav bar stays pinned", async () => {
+    // A short viewport, so the panel's own height (100% of it) is shorter
+    // than the content below — real overflow, not a synthetic scrollHeight
+    // reading with nothing actually clipped.
+    await page.viewport(700, 320);
+    const tall: DrawerScreen[] = [
+      {
+        id: "long",
+        title: "Long screen",
+        content: (
+          <div style={{ height: "1400px" }}>
+            tall content that must overflow the panel
+          </div>
+        ),
+      },
+    ];
+    const screen = await renderWithTheme(
+      <Drawer open stack={tall} onBack={noop} onClose={noop} ariaLabel="d" />,
+    );
+
+    const content = partOf(screen.container, DRAWER_PARTS.content);
+    const nav = partOf(screen.container, DRAWER_PARTS.nav);
+    const panel = panelOf(screen.container);
+
+    // The content region is the one that overflows and scrolls...
+    expect(content.scrollHeight).toBeGreaterThan(content.clientHeight);
+    // ...not the panel SideDrawer itself owns.
+    expect(panel.scrollHeight).toBe(panel.clientHeight);
+
+    const navRectBefore = nav.getBoundingClientRect();
+    content.scrollTop = 300;
+    expect(content.scrollTop).toBeGreaterThan(0);
+    const navRectAfter = nav.getBoundingClientRect();
+
+    expect(navRectAfter.top).toBe(navRectBefore.top);
+    expect(navRectAfter.height).toBe(navRectBefore.height);
   });
 
   it("is full width under a narrow viewport, and the fixed 21rem panel above it", async () => {

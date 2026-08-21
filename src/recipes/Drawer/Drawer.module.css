@@ -6,6 +6,18 @@
  * body. The panel chrome (border, shadow, scrim) stays SideDrawer's.
  */
 @layer soribashi.recipes {
+  /* Fills SideDrawer's `.root` exactly (a flex item under its own
+     column-flex root) rather than growing past it, so `.root`'s own
+     `overflow-y: auto` never has anything to scroll — `.content` below is
+     the one scroll container, which is what keeps `.nav`/`.header` in
+     place under content taller than the panel. */
+  .frame {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
   .nav {
     display: flex;
     flex-direction: column;
@@ -117,6 +129,10 @@
 
   .content {
     flex: 1 1 auto;
+    /* Without this a flex child's min-height defaults to its content size,
+       which would let content overflow `.frame` instead of scrolling here. */
+    min-height: 0;
+    overflow-y: auto;
     padding: var(--spacing-rem100);
     animation: drawer-slide-in 160ms ease-out;
   }
