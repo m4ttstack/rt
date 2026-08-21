@@ -22,6 +22,7 @@ import { Switches } from "./pages/Switches.tsx";
 import { Tables } from "./pages/Tables.tsx";
 import { ToastHosts } from "./pages/ToastHosts.tsx";
 import { Tokens } from "./pages/Tokens.tsx";
+import { Tooltips } from "./pages/Tooltips.tsx";
 
 /**
  * Page-registration table. Each key is both the sidebar identity and the
@@ -55,6 +56,7 @@ const PAGES: Record<string, ComponentType> = {
   switches: Switches,
   tables: Tables,
   toasthosts: ToastHosts,
+  tooltips: Tooltips,
 };
 
 /** Per-key label overrides for the naive capitalize-first-letter default
@@ -70,6 +72,7 @@ const PAGE_LABELS: Record<string, string> = {
   sidedrawers: "SideDrawer",
   statusdots: "StatusDot",
   toasthosts: "ToastHost",
+  tooltips: "Tooltip",
 };
 
 function pageLabel(key: string): string {

@@ -126,6 +126,9 @@ export type { TableCellOwnProps, TableOwnProps, TableProps } from "./recipes/Tab
 export { TOASTHOST_PARTS, ToastHost, toastHostTheme } from "./recipes/ToastHost/ToastHost.tsx";
 export type { ToastHostOwnProps, ToastHostProps } from "./recipes/ToastHost/ToastHost.tsx";
 
+export { Tooltip, TOOLTIP_PARTS, tooltipTheme } from "./recipes/Tooltip/Tooltip.tsx";
+export type { TooltipOwnProps, TooltipProps } from "./recipes/Tooltip/Tooltip.tsx";
+
 export {
   acquireScrollLock,
   handleEscape,
