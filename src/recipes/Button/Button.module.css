@@ -14,8 +14,7 @@
    strength; contrast comes from restraining the FILL, not the text). Every
    hover value below is READ off Mantine's real
    `defaultVariantColorsResolver` raw-colour fallback (the branch that
-   applies to a single-shade-per-hue palette like Tokyo's — see the task-3
-   report for the full source excerpts and reference contrast ratios), not
+   applies to a single-shade-per-hue palette like Tokyo's), not
    tuned by eye:
      `solid` (≈ Mantine's `default`) steps to `--card` — Mantine's own
              `default` hover is ITSELF a real-but-small pre-tuned token step

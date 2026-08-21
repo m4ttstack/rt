@@ -16,8 +16,9 @@ export const recipeCategory = 2 as const;
     Modal instance itself rather than a slot this module draws. */
 const CONFIRMDIALOG_SELECTORS = ["root", "body", "foot"] as const;
 
-/** Stable selector surface for app-side CSS, stamped in the non-overridable
-    tail so a call site cannot sever an app's `[data-part]` rules. */
+/** Stable selector surface for app-side CSS. `body` and `foot` are stamped
+    in the non-overridable tail so a call site cannot sever an app's
+    `[data-part]` rules; `root` is Modal's frame, not stamped by this recipe. */
 export const CONFIRMDIALOG_PARTS = {
   root: "confirmdialog",
   body: "confirmdialog-body",

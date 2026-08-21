@@ -25,9 +25,7 @@ const BUTTON_VOCABULARY_AXES = ["intent", "variant", "size"] as const;
     tuned by eye. Mantine's real numbers: `outline` hover =
     `rgba(color, 0.05)`, `subtle` hover = `rgba(color, 0.12)` — two DIFFERENT
     alphas, not one shared value, and both IDENTICAL across light/dark (no
-    scheme-conditional alpha in that fallback branch — see the task-3 report
-    for the full source excerpts and the Mantine reference contrast ratios
-    computed from them). Tokyo's tone tokens already vary correctly per
+    scheme-conditional alpha in that fallback branch). Tokyo's tone tokens already vary correctly per
     scheme via `light-dark(...)` at the token layer, which is what lets one
     flat alpha work for both schemes here too. `outline`'s rest state is
     genuinely `transparent`, matching what Mantine's alpha composites

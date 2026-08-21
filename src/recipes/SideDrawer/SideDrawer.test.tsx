@@ -378,7 +378,7 @@ describe("SideDrawer (browser)", () => {
     const panel = panelOf(screen.container);
 
     // `side` is a recipe-local prop stamped as `data-side`, NOT a vocabulary
-    // variant — tuiTheme's variant axis is ['outline','subtle','ghost'] and
+    // variant — tuiTheme's variant axis is ["solid","outline","subtle","ghost"] and
     // has nothing to say about which edge a drawer is pinned to.
     expect(panel.getAttribute("data-variant")).toBeNull();
     expect(panel.getAttribute("data-intent")).toBeNull();
