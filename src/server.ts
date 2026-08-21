@@ -3,6 +3,7 @@ import { join, dirname, basename } from "path";
 import { readFileSync, writeFileSync, mkdirSync, watch } from "fs";
 import type { PullRequest, MRDetail } from "@mattstack/glance";
 import { loadConfig, loadGitLabToken, loadSlackToken, loadSwitchboardToken, loadSwitchboardAdminToken, saveMemberHidden, saveSwitchboardUrl, parseConfig, CONFIG_PATH } from "./config.ts";
+import { memoizeAsync } from "./memoize-async.ts";
 import { resolveBoardSkill, type BoardSkillKind } from "./manifest-bindings.ts";
 import { upsertEnvKeys } from "./env-file.ts";
 import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, projectPathFromWebUrl, type BoardMR, type SyncScopeRead } from "./data.ts";
@@ -51,26 +52,25 @@ let config = FIXTURE_DIR
   ? parseConfig(readFileSync(fixtureFile("config.json"), "utf8"))
   : loadConfig();
 
-/** Wraps a board secrets loader (env-first, then a daemon round trip) so it
-    runs at most once per process: an env-set token needs no daemon call, and
-    a daemon-sourced one is fetched lazily on first use, not at import -- the
-    board must still boot with the daemon down, since every one of these
-    tokens is optional. */
-function memoizeAsync<T>(load: () => Promise<T>): () => Promise<T> {
-  let cached: Promise<T> | undefined;
-  return () => (cached ??= load());
-}
+// Board secrets: env-first, then a daemon round trip -- resolved at most
+// once per process (memoizeAsync), lazily on first use, not at import, so
+// the board still boots with the daemon down. A daemon-sourced failure
+// (down, gate-refused, not-configured -- indistinguishable here) is cached
+// only briefly, not forever: a daemon restart at board boot is routine
+// (every `rt daemon restart`/upgrade), and pinning null across it would
+// leave the dependent feature dead until the board itself restarts.
+const isTokenFailure = (v: string | null): boolean => v === null;
 
 // Optional: display-name lookups only. The board's data plane is rt.
-const getGitlabToken = memoizeAsync<string | null>(() => (FIXTURE_DIR ? Promise.resolve(null) : loadGitLabToken()));
+const getGitlabToken = memoizeAsync<string | null>(() => (FIXTURE_DIR ? Promise.resolve(null) : loadGitLabToken()), isTokenFailure);
 // Optional: enables the Slack review-thread menu actions when a token is set.
-const getSlackToken = memoizeAsync<string | null>(() => (FIXTURE_DIR ? Promise.resolve(null) : loadSlackToken()));
+const getSlackToken = memoizeAsync<string | null>(() => (FIXTURE_DIR ? Promise.resolve(null) : loadSlackToken()), isTokenFailure);
 // Optional peer relay token -- see the peering-start block below.
-const getSwitchboardToken = memoizeAsync<string | null>(() => (FIXTURE_DIR ? Promise.resolve(null) : loadSwitchboardToken()));
+const getSwitchboardToken = memoizeAsync<string | null>(() => (FIXTURE_DIR ? Promise.resolve(null) : loadSwitchboardToken()), isTokenFailure);
 // Operator-only secret: its presence is what turns on this board's invite
 // affordances. Absent, /peer/invite and /peer/boards answer 400 and the UI
 // never offers them.
-const getSwitchboardAdminToken = memoizeAsync<string | null>(() => (FIXTURE_DIR ? Promise.resolve(null) : loadSwitchboardAdminToken()));
+const getSwitchboardAdminToken = memoizeAsync<string | null>(() => (FIXTURE_DIR ? Promise.resolve(null) : loadSwitchboardAdminToken()), isTokenFailure);
 
 /** Writes go straight to GitLab through glance; reads come from the rt daemon
     (see readProjectMRs). Built on demand so a tokenless install still boots --
@@ -309,7 +309,11 @@ async function refreshMemberNames(): Promise<void> {
     }),
   );
 }
-await refreshMemberNames();
+// Fire-and-forget: a hung/down daemon must not delay Bun.serve() by the
+// full getGitlabToken() timeout at boot. Every consumer already renders a
+// null display name (falls back to member.name / username) until this
+// resolves, same as the other void refreshMemberNames() call sites below.
+void refreshMemberNames();
 
 // ONE React in the bundle, pinned by resolved path.
 //
@@ -1388,10 +1392,18 @@ async function autoResolveSlackRefs(): Promise<void> {
 }
 
 async function scheduleAutoResolve(): Promise<void> {
-  if (autoResolveTimer) clearTimeout(autoResolveTimer);
   const mins = config.slack.autoResolveIntervalMinutes;
-  if (mins <= 0) return;
+  if (mins <= 0) {
+    clearTimeout(autoResolveTimer);
+    return;
+  }
   const slackToken = await getSlackToken();
+  // Cleared here, after this function's only await, not before it -- two
+  // overlapping calls (e.g. boot racing a config reload) both suspend on the
+  // same memoized getSlackToken() and resume in call order, so the second
+  // one's clear reliably cancels whatever the first one just armed, instead
+  // of both arming independently and orphaning a timer forever.
+  clearTimeout(autoResolveTimer);
   if (!slackToken) return;
   const tick = () => {
     void autoResolveSlackRefs().catch((err) =>

@@ -15,6 +15,13 @@
 // an otherwise-normal ok:true response is NOT a failure here: that's the
 // legitimate not-configured state, left for the caller's own guard to skip
 // quietly.
+//
+// Unlike deck, no ok:true-with-partial-keys "old daemon" heuristic: board's
+// gitlabToken overlaps "extension" scope's own gitlabToken, so presence/
+// absence can never discriminate old-daemon from nothing-configured here --
+// a daemon this old would report slack/switchboard keys as simply not
+// configured rather than "update rt" (accepted; the real pre-scope path is
+// bad-scope, handled above).
 import { readFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";

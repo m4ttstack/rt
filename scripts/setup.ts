@@ -24,13 +24,14 @@ import { loadConfig, type BoardConfig } from "../src/config.ts";
 
 // Slack app credentials are NOT checked in — bring your own app (see the README
 // "Slack integration" section). The client id is public (an OAuth app
-// identifier, not a secret) and defaults from the team settings store's
+// identifier, not a secret): env (.env/process.env, an explicit personal
+// override) still wins first, falling back to the team settings store's
 // `mattstack.integrations` key (`.slack.clientId`) once an operator has set
-// it there, ahead of .env/process.env. The client SECRET is never read from
-// the team store here: it lives in the `board` domain's encrypted secrets
-// (the `secrets:read` daemon scope this board's own config.ts loaders now
-// use), not in a settings-store field -- setup only ever reads it from .env
-// or prompts for it, so nothing secret lands in a tracked file.
+// it there. The client SECRET is never read from the team store here: it
+// lives in the `board` domain's encrypted secrets (the `secrets:read`
+// daemon scope this board's own config.ts loaders now use), not in a
+// settings-store field -- setup only ever reads it from .env or prompts for
+// it, so nothing secret lands in a tracked file.
 const SLACK_REDIRECT_PORT = 53782;
 const SLACK_REDIRECT_URI = `http://localhost:${SLACK_REDIRECT_PORT}/slack/callback`;
 const SLACK_USER_SCOPES = [
@@ -211,7 +212,7 @@ async function main() {
     }
     if (!env.SLACK_TOKEN) {
       const teamSlack = getSetting<{ slack?: { clientId?: string } }>("mattstack.integrations").value?.slack;
-      const clientId = ask("Slack app client id", env.SLACK_CLIENT_ID || teamSlack?.clientId || process.env.SLACK_CLIENT_ID);
+      const clientId = ask("Slack app client id", env.SLACK_CLIENT_ID || process.env.SLACK_CLIENT_ID || teamSlack?.clientId);
       const clientSecret = ask("Slack app client secret", env.SLACK_CLIENT_SECRET || process.env.SLACK_CLIENT_SECRET);
       if (!clientId || !clientSecret) {
         console.error("Slack setup needs a client id + secret from your own Slack app (see README). Skipping Slack.");
