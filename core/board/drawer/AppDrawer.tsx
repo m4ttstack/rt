@@ -7,7 +7,7 @@ import { useEffect, useRef, useState, type RefObject } from "react";
 import { Drawer, type DrawerScreen } from "@mattstack/tui-kit";
 import type { Row, StatusData } from "../logic.ts";
 import type { BoardState } from "../useBoardState.ts";
-import { buildAppRoot, buildServiceRoot, buildTunnelRoot, type Nav } from "./RootScreen.tsx";
+import { buildAppRoot, buildServiceRoot, buildTunnelRoot, type Nav, type ScreenBuilder } from "./RootScreen.tsx";
 
 function rootScreenFor(row: Row, nav: Nav, board: BoardState, data: StatusData): DrawerScreen {
   const restarting = board.isRestarting(row);
@@ -40,7 +40,12 @@ export function AppDrawer({
   chevronRefs,
   fallbackFocusRef,
 }: AppDrawerProps) {
-  const [pushed, setPushed] = useState<DrawerScreen[]>([]);
+  // Builders, not built DrawerScreen values: AppDrawer calls each one fresh
+  // every render (see `stack` below) so a mutation a pushed screen triggers
+  // -- which flows back through fresh row/data/board -- shows up on that
+  // same screen instead of staying frozen at whatever it looked like when
+  // it was pushed.
+  const [pushed, setPushed] = useState<ScreenBuilder[]>([]);
   const returnFocusRef = useRef<HTMLElement | null>(null);
 
   // A row switch (arrow keys, or clicking a different row while one is
@@ -59,8 +64,16 @@ export function AppDrawer({
 
   const row = openRowName != null ? (rows.find((r) => r.name === openRowName) ?? null) : null;
 
+  // A row that closes or switches away mid-edit (dev port's setting screen)
+  // must not leave `board.editing` set: refresh() skips every poll while it
+  // is, which would otherwise freeze the whole board's status forever behind
+  // a screen nobody can see anymore.
+  useEffect(() => {
+    return () => board.cancelEdit();
+  }, [openRowName, board.cancelEdit]);
+
   const nav: Nav = {
-    push: (screen) => setPushed((prev) => [...prev, screen]),
+    push: (build) => setPushed((prev) => [...prev, build]),
     pop: () => setPushed((prev) => (prev.length > 0 ? prev.slice(0, -1) : prev)),
     close: () => onOpenRowNameChange(null),
   };
@@ -102,8 +115,9 @@ export function AppDrawer({
     return () => document.removeEventListener("keydown", onKeyDown);
   }, [row, rows, openRowName, onOpenRowNameChange]);
 
-  const rootScreen = row ? rootScreenFor(row, nav, board, data) : null;
-  const stack = rootScreen ? [rootScreen, ...pushed] : [];
+  const stack: DrawerScreen[] = row
+    ? [rootScreenFor(row, nav, board, data), ...pushed.map((build) => build(row, nav, board, data))]
+    : [];
 
   return (
     <Drawer

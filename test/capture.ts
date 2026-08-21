@@ -213,6 +213,20 @@ await scenario("light", baseFixture, "drawer-root-restarting", async (page) => {
   await page.waitForSelector('[data-part="listgroup-action"] button[aria-busy="true"]');
 });
 
+// Dev port screens (drawer-states-atlas.html "2 · Dev port"): override
+// active (orbit, which carries one in the fixture) and the setting screen
+// mid-edit (atlas, which has none to start).
+await scenario("light", baseFixture, "drawer-devport", async (page) => {
+  await openDrawerFor(page, "orbit");
+  await page.locator('[data-part="listgroup-nav"] button', { hasText: "dev port" }).click();
+});
+await scenario("light", baseFixture, "drawer-devport-set", async (page) => {
+  await openDrawerFor(page, "atlas");
+  await page.locator('[data-part="listgroup-nav"] button', { hasText: "dev port" }).click();
+  await page.locator('[data-part="listgroup-action"] button', { hasText: "set override…" }).click();
+  await page.getByRole("textbox", { name: "dev port override" }).fill("5173");
+});
+
 // ---- night ----
 await scenario("dark", baseFixture, "board-default-dark");
 await scenario("dark", baseFixture, "drawer-root-dark", (page) => openDrawerFor(page, "atlas"));

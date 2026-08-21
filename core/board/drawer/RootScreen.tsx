@@ -1,20 +1,28 @@
 // Root screens for the per-row drawer, per drawer-states-atlas.html "1 ·
-// Roots". The dev port / access / logs / edit nav rows push placeholder
-// screens for now; a real screen replaces one by swapping its
-// buildPlaceholder(...) call for a builder of the same (row, nav) =>
-// DrawerScreen shape.
+// Roots". The access / logs / edit nav rows still push placeholder screens;
+// a real screen replaces one by swapping its buildPlaceholder(...) call for
+// a ScreenBuilder of the same (row, nav, board, data) => DrawerScreen shape
+// dev port (DevPortScreen.tsx) already uses.
 import { Alert, ICONS, ListGroup, StatusDot, type DrawerScreen } from "@mattstack/tui-kit";
 import { servicePid } from "../AppsTable.tsx";
 import { type Row, type StatusData, tunnelDomain } from "../logic.ts";
 import type { BoardState } from "../useBoardState.ts";
+import { buildDevPortScreen } from "./DevPortScreen.tsx";
 
 /** What a root/pushed screen's row builders push onto and pop off of. Drawer
     itself owns no mutation surface -- AppDrawer is the only implementation. */
 export interface Nav {
-  push(screen: DrawerScreen): void;
+  push(build: ScreenBuilder): void;
   pop(): void;
   close(): void;
 }
+
+/** Builds a screen from the row/nav/board/data current as of the render that
+    calls it, rather than a value frozen at push time -- AppDrawer rebuilds
+    the whole pushed stack every render, so a mutation a pushed screen
+    triggers is visible on its own screen the same render it reaches the
+    root's nav-row hint. */
+export type ScreenBuilder = (row: Row, nav: Nav, board: BoardState, data: StatusData) => DrawerScreen;
 
 function logsValueHint(row: Row): { text: string; bad: boolean } {
   const n = row.service ? row.service.stderr.length : 0;
@@ -169,10 +177,10 @@ export function buildAppRoot(
           <ListGroup.Nav
             label="dev port"
             value={devPortValue(row, data)}
-            onClick={() => nav.push(buildPlaceholder("dev port"))}
+            onClick={() => nav.push(buildDevPortScreen)}
           />
-          <ListGroup.Nav label="access" value={accessValue(row)} onClick={() => nav.push(buildPlaceholder("access"))} />
-          <ListGroup.Nav label="logs" value={logsValue(row)} onClick={() => nav.push(buildPlaceholder("logs"))} />
+          <ListGroup.Nav label="access" value={accessValue(row)} onClick={() => nav.push(() => buildPlaceholder("access"))} />
+          <ListGroup.Nav label="logs" value={logsValue(row)} onClick={() => nav.push(() => buildPlaceholder("logs"))} />
         </ListGroup>
         <ListGroup>
           <ListGroup.Action
@@ -187,7 +195,7 @@ export function buildAppRoot(
                 {ICONS.pencil} edit app
               </span>
             }
-            onClick={() => nav.push(buildPlaceholder("edit app"))}
+            onClick={() => nav.push(() => buildPlaceholder("edit app"))}
           />
         </ListGroup>
         {/* Extra top margin beyond the group gap, per the atlas: destructive
@@ -211,7 +219,7 @@ export function buildServiceRoot(row: Row, nav: Nav, board: BoardState, restarti
     content: (
       <div className="drawer-groups">
         <ListGroup>
-          <ListGroup.Nav label="logs" value={logsValue(row)} onClick={() => nav.push(buildPlaceholder("logs"))} />
+          <ListGroup.Nav label="logs" value={logsValue(row)} onClick={() => nav.push(() => buildPlaceholder("logs"))} />
         </ListGroup>
         <ListGroup>
           <ListGroup.Action
@@ -243,7 +251,7 @@ export function buildTunnelRoot(row: Row, nav: Nav, board: BoardState, data: Sta
       <div className="drawer-groups">
         <ListGroup>
           {domain && <ListGroup.Fact label="carries" value={`*.${domain}`} />}
-          <ListGroup.Nav label="logs" value={logsValue(row)} onClick={() => nav.push(buildPlaceholder("logs"))} />
+          <ListGroup.Nav label="logs" value={logsValue(row)} onClick={() => nav.push(() => buildPlaceholder("logs"))} />
         </ListGroup>
         <ListGroup>
           <ListGroup.Action

@@ -25,6 +25,29 @@ async function openDrawer(page: Page, name: string): Promise<void> {
   await page.waitForSelector('[data-part="sidedrawer"]');
 }
 
+async function openDevPort(page: Page, name: string): Promise<void> {
+  await openDrawer(page, name);
+  await page.locator('[data-part="listgroup-nav"] button', { hasText: "dev port" }).click();
+}
+
+/** Polls an async condition -- the dev-port mutation tests intercept a
+    request or swap the fixture's GET /status response, and the assertion
+    has to wait for the resulting re-render rather than racing it. */
+async function waitUntil(check: () => Promise<boolean>, timeoutMs = 4000): Promise<void> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (await check()) return;
+    await new Promise((r) => setTimeout(r, 25));
+  }
+  throw new Error("waitUntil() timed out");
+}
+
+function devPortNav(page: Page) {
+  return page
+    .locator('[data-part="listgroup-nav"]')
+    .filter({ has: page.locator('[data-part="listgroup-label"]', { hasText: "dev port" }) });
+}
+
 test("row click opens the drawer, titled by the app name", async () => {
   await withBoard(async (page) => {
     await openDrawer(page, "atlas");
@@ -200,5 +223,171 @@ test("a restarting drawer row shows the busy state per the atlas: spinner + \"re
     expect((await busyButton.textContent())?.trim()).toBe("restarting…");
     expect(await busyButton.locator('[data-part="spinner"]').count()).toBe(1);
     expect(await busyButton.locator('[data-part="icon"]').count()).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Dev port screens (drawer-states-atlas.html "2 · Dev port"). orbit carries a
+// live override (3007, base 11007) in the fixture; atlas has none.
+// ---------------------------------------------------------------------------
+
+test("dev port: override-active screen shows assigned + override facts and the atlas footer copy", async () => {
+  await withBoard(async (page) => {
+    await openDevPort(page, "orbit");
+    expect(await page.locator('[data-part="drawer-title"]').textContent()).toBe("dev port");
+    expect(await page.locator('[data-part="drawer-back"]').textContent()).toBe("‹ orbit");
+
+    const facts = page.locator('[data-part="listgroup-fact"]');
+    expect(await facts.count()).toBe(2);
+    expect(await facts.nth(0).locator('[data-part="listgroup-label"]').textContent()).toBe("assigned port");
+    expect(await facts.nth(0).locator('[data-part="listgroup-value"]').textContent()).toBe("11007");
+    expect(await facts.nth(1).locator('[data-part="listgroup-label"]').textContent()).toBe("override");
+    expect(await facts.nth(1).locator('[data-part="listgroup-value"]').textContent()).toBe("3007");
+
+    const footers = page.locator('[data-part="listgroup-footer"]');
+    expect(await footers.nth(0).textContent()).toBe(
+      "the proxy routes orbit.mattstack to 3007 while the override is set",
+    );
+    // orbit's publicFollowsOverride is false in the fixture -- the off copy.
+    expect(await footers.nth(1).textContent()).toBe(
+      "off: visitors keep getting 11007 while you develop on 3007",
+    );
+
+    expect(await page.locator('[data-part="listgroup-action"] button', { hasText: "revert to 11007" }).count()).toBe(
+      1,
+    );
+  });
+});
+
+test("dev port: the public-follows-dev toggle calls its mutation", async () => {
+  await withBoard(async (page) => {
+    let putBody: unknown = null;
+    await page.route("**/api/v1/apps/orbit/public-follows-override", async (route) => {
+      putBody = route.request().postDataJSON();
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+    });
+
+    await openDevPort(page, "orbit");
+    await page.locator('[data-part="listgroup-toggle"] [data-part="switch-control"]').click();
+
+    await waitUntil(async () => putBody !== null);
+    expect(putBody).toEqual({ follows: true }); // false -> true in the fixture
+  });
+});
+
+test("dev port: revert calls the override-clear mutation; the screen and the root hint update", async () => {
+  await withBoard(async (page) => {
+    let putBody: unknown = null;
+    await page.route("**/api/v1/apps/orbit/override", async (route) => {
+      putBody = route.request().postDataJSON();
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+    });
+    let reverted = false;
+    await page.route("**/api/v1/status", async (route) => {
+      if (!reverted) {
+        await route.continue();
+        return;
+      }
+      const next = structuredClone(fixture) as typeof fixture;
+      const orbit = next.apps.find((a) => a.name === "orbit");
+      if (!orbit) throw new Error("fixture missing orbit");
+      orbit.override = null;
+      orbit.port = 11007;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(next) });
+    });
+
+    await openDevPort(page, "orbit");
+    reverted = true;
+    await page.locator('[data-part="listgroup-action"] button', { hasText: "revert to 11007" }).click();
+
+    await waitUntil(async () => putBody !== null);
+    expect(putBody).toEqual({ devPort: null });
+
+    await waitUntil(
+      async () => (await page.locator('[data-part="listgroup-action"] button', { hasText: "set override…" }).count()) === 1,
+    );
+    expect(await page.locator('[data-part="listgroup-fact"]').count()).toBe(1);
+    expect(await page.locator('[data-part="listgroup-footer"]').textContent()).toBe(
+      "orbit serves on its assigned port — no override",
+    );
+
+    await page.locator('[data-part="drawer-back"]').click();
+    expect(await devPortNav(page).locator('[data-part="listgroup-value"]').textContent()).toBe("11007");
+  });
+});
+
+test("dev port: no override shows 'set override…'; editing has the input + nav save; cancel returns without saving", async () => {
+  await withBoard(async (page) => {
+    let putCalled = false;
+    await page.route("**/api/v1/apps/atlas/override", async (route) => {
+      putCalled = true;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+    });
+
+    await openDevPort(page, "atlas");
+    expect(await page.locator('[data-part="listgroup-fact"]').count()).toBe(1);
+    expect(await page.locator('[data-part="listgroup-footer"]').textContent()).toBe(
+      "atlas serves on its assigned port — no override",
+    );
+
+    await page.locator('[data-part="listgroup-action"] button', { hasText: "set override…" }).click();
+
+    // Editing sits directly on root, same as the view it replaced -- the
+    // atlas's own back label reads the row name from both.
+    expect(await page.locator('[data-part="drawer-title"]').textContent()).toBe("dev port");
+    expect(await page.locator('[data-part="drawer-back"]').textContent()).toBe("‹ atlas");
+
+    const navAction = page.locator('[data-part="drawer-navaction"]');
+    expect((await navAction.textContent())?.trim()).toBe("save");
+    expect(await navAction.isDisabled()).toBe(true);
+
+    const input = page.getByRole("textbox", { name: "dev port override" });
+    await input.fill("5173");
+    expect(await navAction.isDisabled()).toBe(false);
+
+    await page.locator('[data-part="listgroup-action"] button', { hasText: "cancel" }).click();
+
+    expect(await page.locator('[data-part="listgroup-action"] button', { hasText: "set override…" }).count()).toBe(1);
+    expect(putCalled).toBe(false);
+  });
+});
+
+test("dev port: save PUTs the override, then shows the override-active state; the root hint updates too", async () => {
+  await withBoard(async (page) => {
+    let putBody: unknown = null;
+    await page.route("**/api/v1/apps/atlas/override", async (route) => {
+      putBody = route.request().postDataJSON();
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+    });
+    let saved = false;
+    await page.route("**/api/v1/status", async (route) => {
+      if (!saved) {
+        await route.continue();
+        return;
+      }
+      const next = structuredClone(fixture) as typeof fixture;
+      const atlas = next.apps.find((a) => a.name === "atlas");
+      if (!atlas) throw new Error("fixture missing atlas");
+      atlas.override = { devPort: 5173, basePort: 11001 };
+      atlas.port = 5173;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(next) });
+    });
+
+    await openDevPort(page, "atlas");
+    await page.locator('[data-part="listgroup-action"] button', { hasText: "set override…" }).click();
+    await page.getByRole("textbox", { name: "dev port override" }).fill("5173");
+    saved = true;
+    await page.locator('[data-part="drawer-navaction"]').click();
+
+    await waitUntil(async () => putBody !== null);
+    expect(putBody).toEqual({ devPort: 5173 });
+
+    await waitUntil(
+      async () => (await page.locator('[data-part="listgroup-action"] button', { hasText: "revert to 11001" }).count()) === 1,
+    );
+    expect(await page.locator('[data-part="listgroup-fact"]').count()).toBe(2);
+
+    await page.locator('[data-part="drawer-back"]').click();
+    expect(await devPortNav(page).locator('[data-part="listgroup-value"]').textContent()).toBe("5173 · override");
   });
 });
