@@ -27,6 +27,7 @@ tool-specific knowledge — the board injects everything it needs as flags:
 | `--status-bin <path>` | absolute path to the board's status-writer CLI; run it to emit status |
 | `--report <path>` | where to save the written review the board shows in a modal |
 | `--skill <name>` | the domain skill that owns the actual review (optional) |
+| `--skill-path <path>` | absolute path to that skill's SKILL.md, when the board already resolved it (optional; see "Resolving the domain skill") |
 | `--re-review` | this is a re-review of an already-reviewed MR (optional; see "Re-review mode") |
 
 Write status **only** by running the injected `--status-bin`:
@@ -50,7 +51,10 @@ The domain skill that owns the actual review comes from the first source that
 answers; the order is fixed:
 
 1. **Explicit `--skill <name>` wins.** When the board passed it, use it and do
-   not run the resolver. This is the historical launch path, unchanged.
+   not run the resolver. This is the historical launch path, unchanged. When
+   the board also passed `--skill-path <path>`, read the SKILL.md at that
+   absolute path directly and treat it exactly as the domain skill named by
+   `--skill` (same idiom as step 2's `resolved.review.path` below).
 2. **Otherwise resolve the `review` slot.** Run the vendored resolver:
 
    ```bash

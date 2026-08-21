@@ -134,13 +134,18 @@ export function parseLaunchNote(body: unknown): { ok: true; note?: string } | { 
   return { ok: true, note: trimmed };
 }
 
-/** The flag string every launch carries, whether the target is reached by
-    slash-name or by a direct path-read -- identical in both forms so a
-    dispatched skill sees the same inputs regardless of how it was found. */
-function dispatchArgs(o: SkillPromptOpts): string {
+/** The flag string every launch carries. `skillPath`, when given, rides
+    alongside `--skill` (never replaces it) -- the wrapper still owns board
+    lifecycle status, --re-review framing, and (for doctor) the fix-classes
+    allowlist and branch-writing safeguards; a resolved path only tells it
+    where to read the domain skill directly instead of resolving `--skill`
+    by name. Omitting `skillPath` reproduces the historical flag string
+    byte-for-byte, so the slash form never drifts when resolution fails. */
+function dispatchArgs(o: SkillPromptOpts, skillPath?: string | null): string {
   const parts = [o.mrUrl, "--state", o.statePath, "--status-bin", o.statusBin];
   if (o.reportPath) parts.push("--report", o.reportPath);
   if (o.skill) parts.push("--skill", o.skill);
+  if (skillPath) parts.push("--skill-path", skillPath);
   if (o.reReview) parts.push("--re-review");
   if (o.tier) parts.push("--tier", o.tier);
   if (o.fixClasses?.length) parts.push("--fix-classes", o.fixClasses.join(","));
@@ -176,31 +181,37 @@ export function doctorPrompt(o: SkillPromptOpts): string {
 export type SkillPathResolver = (name: string) => Promise<string | null>;
 
 /**
- * Build the prompt a launched pane runs, preferring a path-carrying dispatch
- * over the slash form: when `o.skill` resolves to a file (registered under
- * skills/ or, once retired from the pack's public surface, attachments/),
- * the pane reads it directly instead of relying on Claude to resolve the
- * name via slash-completion -- which only works for registered skills.
+ * Build the prompt a launched pane runs. The pane ALWAYS starts the generic
+ * wrapper by its slash name (`/<wrapper> ...`) -- the wrapper is the sole
+ * writer of board lifecycle status and the sole carrier of --re-review
+ * framing, the doctor fix-classes allowlist, and doctor's branch-writing
+ * safeguards, none of which the domain skill it delegates to owns. When
+ * `o.skill` resolves to a file (registered under skills/, or -- once
+ * retired from a pack's public surface -- attachments/), this ADDS a
+ * `--skill-path <path>` flag alongside the existing `--skill <name>` flag,
+ * so the wrapper can read that skill directly instead of resolving `--skill`
+ * by name (which only works for a registered skill).
  *
- * Fail-open: an unset `o.skill`, or any resolution failure, keeps the
- * historical `/<wrapper> ...` slash form (buildSkillPrompt) unchanged. The
- * flag string is identical in both forms (dispatchArgs) so a dispatched
- * skill's inputs never depend on how it was found.
+ * Fail-open: an unset `o.skill`, or any resolution failure, omits
+ * --skill-path and reproduces the historical flag string byte-for-byte
+ * (buildSkillPrompt) -- the wrapper then falls back to its own binding
+ * resolution, unchanged.
  */
 export async function dispatchPrompt(
   wrapper: string,
   o: SkillPromptOpts,
   resolvePath: SkillPathResolver = resolveSkillPath,
 ): Promise<string> {
+  let skillPath: string | null = null;
   if (o.skill) {
-    const path = await resolvePath(o.skill);
-    if (path) {
-      console.log(`${wrapper} dispatch: path form -- "${o.skill}" -> ${path}`);
-      return withNote(`Read ${path} and execute it with these arguments: ${dispatchArgs(o)}`, o.note);
+    skillPath = await resolvePath(o.skill);
+    if (skillPath) {
+      console.log(`${wrapper} dispatch: --skill-path resolved -- "${o.skill}" -> ${skillPath}`);
+    } else {
+      console.log(`${wrapper} dispatch: no path resolved for "${o.skill}" -- --skill only`);
     }
-    console.log(`${wrapper} dispatch: slash form -- no path resolved for "${o.skill}"`);
   }
-  return buildSkillPrompt(wrapper, o);
+  return withNote(`/${wrapper} ${dispatchArgs(o, skillPath)}`, o.note);
 }
 
 /** The command a pane starts claude with. config.claudeCommand replaces plain

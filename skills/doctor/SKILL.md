@@ -26,6 +26,7 @@ knowledge; the board injects it:
 | `--state <path>` | lifecycle status file the board polls |
 | `--status-bin <path>` | absolute path to the board's status-writer CLI |
 | `--skill <name>` | the domain skill that owns the actual repair (optional) |
+| `--skill-path <path>` | absolute path to that skill's SKILL.md, when the board already resolved it (optional; see "Resolving the domain skill") |
 | `--tier api` | API-only repair tier: no checkout, no worktree, no local commits. Absent = the historical checkout-tier behavior. |
 | `--fix-classes <a,b>` | Comma-separated allowlist of fix classes the dispatching policy enabled (e.g. `retry-flake,inherited-note-draft`). Actions outside the list are escalations, not fixes. See "Fix classes" below for what each one licenses. |
 | `--draft-bin <path>` | Absolute path to the board's draft-writer CLI. Any outbound MR note MUST be written through it as a held draft: `bun run <draft-bin> <mrUrl> <iid> <kind> <body...>`. Never post a note directly. |
@@ -66,7 +67,10 @@ answers; the order is fixed. The tier picks the slot: `--tier api` uses the
 launch uses the `doctor` slot (mirroring `config.doctorSkill`).
 
 1. **Explicit `--skill <name>` wins.** When the board passed it, use it and do
-   not run the resolver. This is the historical launch path, unchanged.
+   not run the resolver. This is the historical launch path, unchanged. When
+   the board also passed `--skill-path <path>`, read the SKILL.md at that
+   absolute path directly and treat it exactly as the domain skill named by
+   `--skill` (same idiom as step 2's `resolved.doctor(-api).path` below).
 2. **Otherwise resolve the tier's slot.** Run the vendored resolver:
 
    ```bash

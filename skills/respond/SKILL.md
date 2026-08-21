@@ -26,6 +26,7 @@ MRs and report status back to the board via a state file. This wrapper carries
 | `--state <path>` | lifecycle status file the board polls |
 | `--status-bin <path>` | absolute path to the board's status-writer CLI |
 | `--skill <name>` | the domain skill that owns the actual work (optional) |
+| `--skill-path <path>` | absolute path to that skill's SKILL.md, when the board already resolved it (optional; see "Resolving the domain skill") |
 
 Write status **only** by running the injected `--status-bin`:
 
@@ -59,7 +60,10 @@ The domain skill that owns the actual work comes from the first source that
 answers; the order is fixed:
 
 1. **Explicit `--skill <name>` wins.** When the board passed it, use it and do
-   not run the resolver. This is the historical launch path, unchanged.
+   not run the resolver. This is the historical launch path, unchanged. When
+   the board also passed `--skill-path <path>`, read the SKILL.md at that
+   absolute path directly and treat it exactly as the domain skill named by
+   `--skill` (same idiom as step 2's `resolved.respond.path` below).
 2. **Otherwise resolve the `respond` slot.** Run the vendored resolver:
 
    ```bash

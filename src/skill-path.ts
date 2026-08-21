@@ -1,5 +1,6 @@
 // src/skill-path.ts
 import { existsSync, readdirSync, realpathSync } from "fs";
+import { homedir } from "os";
 import { join } from "path";
 
 export interface PluginEntry {
@@ -10,23 +11,48 @@ export interface PluginEntry {
 
 export type PluginListRunner = () => Promise<PluginEntry[]>;
 
-let cachedPlugins: PluginEntry[] | null = null;
+// Absolute binary, since the server runs under a minimal launchd env (same
+// precedent as HERDR_BIN in herdr.ts -- a bare "claude" isn't on that PATH).
+const CLAUDE_BIN = process.env.CLAUDE_BIN || join(homedir(), ".local", "bin", "claude");
+
+type PluginListResult = { ok: true; plugins: PluginEntry[] } | { ok: false };
+
+/** Runs `<claudeBin> plugin list --json` once, uncached. Exported so its
+    failure branches (spawn error, non-zero exit, malformed/non-array JSON)
+    are directly testable against a fake binary, without touching the real
+    `claude` CLI or the process-lifetime cache. */
+export async function runPluginList(claudeBin: string): Promise<PluginListResult> {
+  try {
+    const proc = Bun.spawn([claudeBin, "plugin", "list", "--json"], { stdout: "pipe", stderr: "pipe" });
+    const [out, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+    if (code !== 0) return { ok: false };
+    const parsed = JSON.parse(out);
+    if (!Array.isArray(parsed)) return { ok: false };
+    return { ok: true, plugins: parsed };
+  } catch {
+    return { ok: false };
+  }
+}
+
+/** Wrap a one-shot lister in a process-lifetime cache that remembers only
+    SUCCESSFUL results. A transient failure (claude not on PATH yet, a hung
+    CLI, malformed JSON) must not pin every subsequent resolveSkillPath call
+    to the slash-only fallback for the board's lifetime -- it retries next
+    time instead. A successful empty list ("[]") still counts as success and
+    is cached, since that's a real (if unlikely) answer from the CLI. */
+export function makeCachedPluginListRunner(run: () => Promise<PluginListResult>): PluginListRunner {
+  let cached: PluginEntry[] | null = null;
+  return async () => {
+    if (cached) return cached;
+    const result = await run();
+    if (result.ok) cached = result.plugins;
+    return result.ok ? result.plugins : [];
+  };
+}
 
 /** `claude plugin list --json`, memoized for the life of the process (the
     board only picks up newly (un)installed plugins on restart anyway). */
-export const defaultPluginListRunner: PluginListRunner = async () => {
-  if (cachedPlugins) return cachedPlugins;
-  try {
-    const proc = Bun.spawn(["claude", "plugin", "list", "--json"], { stdout: "pipe", stderr: "pipe" });
-    const [out, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
-    if (code !== 0) return (cachedPlugins = []);
-    const parsed = JSON.parse(out);
-    cachedPlugins = Array.isArray(parsed) ? parsed : [];
-  } catch {
-    cachedPlugins = [];
-  }
-  return cachedPlugins;
-};
+export const defaultPluginListRunner: PluginListRunner = makeCachedPluginListRunner(() => runPluginList(CLAUDE_BIN));
 
 /** Find a SKILL.md directly under `dir`. */
 function skillMdIn(dir: string): string | null {
