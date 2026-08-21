@@ -80,8 +80,4 @@ test("add app submit POSTs the addPayload shape; API error renders in the modal 
   });
 });
 
-// Edit/remove have no row trigger right now: the chiclets that opened
-// EditAppModal/RemoveConfirm are gone, and their replacement is the row
-// drawer, still to come. EditAppModal and RemoveConfirm stay mounted in
-// Board.tsx, unreachable until that lands -- the same interim shape as the
-// dev-port edit gap (AppsTable's PortCell).
+// Edit/remove have no reachable trigger until the drawer lands.

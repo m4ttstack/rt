@@ -46,14 +46,26 @@ test("health badges: status+ms for healthy, unreachable for down", async () => {
   });
 });
 
-test("service column shows dim pid N, or exit N in bad tone when nonzero", async () => {
+test("service column shows dim pid N, or exit N as bad-tone text (no pill)", async () => {
   await withBoard(async (page) => {
     const atlasService = rowFor(page, "atlas").locator('[data-part="table-cell"]').nth(3);
     expect(await atlasService.textContent()).toBe("pid 5123");
 
-    const ledgerExit = rowFor(page, "ledger").locator('[data-part="table-cell"]').nth(3).locator('[data-part="badge"]');
-    expect(await ledgerExit.textContent()).toBe("exit 1");
-    expect(await ledgerExit.getAttribute("data-intent")).toBe("bad");
+    const ledgerService = rowFor(page, "ledger").locator('[data-part="table-cell"]').nth(3);
+    expect(await ledgerService.textContent()).toBe("exit 1");
+    // Plain text, not a Badge -- pills are reserved for the health column.
+    expect(await ledgerService.locator('[data-part="badge"]').count()).toBe(0);
+
+    const exitColor = await ledgerService.locator(".t-bad").evaluate((el) => getComputedStyle(el).color);
+    const redProbe = await page.evaluate(() => {
+      const probe = document.createElement("span");
+      probe.style.color = "var(--red)";
+      document.body.appendChild(probe);
+      const c = getComputedStyle(probe).color;
+      probe.remove();
+      return c;
+    });
+    expect(exitColor).toBe(redProbe);
   });
 });
 

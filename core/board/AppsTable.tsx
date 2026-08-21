@@ -240,7 +240,7 @@ function ServiceCell({ row }: { row: Row }) {
   const service = row.service;
   const pid = servicePid(service);
   if (pid !== null) return <span className="muted">pid {pid}</span>;
-  if (service.lastExitStatus != null) return <Badge intent="bad">exit {service.lastExitStatus}</Badge>;
+  if (service.lastExitStatus != null) return <span className="t-bad">exit {service.lastExitStatus}</span>;
   return <span className="muted">stopped</span>;
 }
 

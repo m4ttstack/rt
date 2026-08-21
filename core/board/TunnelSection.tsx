@@ -50,7 +50,7 @@ export function TunnelSection({
                   {row.service && row.service.pid !== null ? (
                     <span className="muted">pid {row.service.pid}</span>
                   ) : row.service && row.service.lastExitStatus != null ? (
-                    <Badge intent="bad">exit {row.service.lastExitStatus}</Badge>
+                    <span className="t-bad">exit {row.service.lastExitStatus}</span>
                   ) : (
                     <span className="muted">stopped</span>
                   )}

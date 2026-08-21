@@ -18,6 +18,10 @@ body {
 .unstyled { color: inherit; text-decoration: none; }
 .muted { color: var(--muted); text-decoration: none; }
 .muted-more { color: var(--muted); opacity: 0.6; text-decoration: none; }
+/* Bad-tone plain text -- for a value that reads as dim by default (the
+   service cell's exit status) and only needs the bad hue, not a pill:
+   Badge is reserved for the health column. */
+.t-bad { color: var(--red); }
 
 /* hstack is a block-level flex container, so a chip after the name would be
    pushed onto its own line and stand the row up taller. */
