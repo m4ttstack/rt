@@ -12,7 +12,9 @@
     color: var(--sb-badge-color);
     background: var(--sb-badge-bg);
     border: 1px solid var(--sb-badge-border);
-    border-radius: var(--radius-round);
+    /* `pill`, not `round` (50%): this box is wider than it is tall, and 50%
+       on an unequal box draws an ellipse, not a stadium. */
+    border-radius: var(--radius-pill);
     padding: 0 var(--spacing-sm);
     white-space: nowrap;
   }

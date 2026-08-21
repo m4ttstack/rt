@@ -26,28 +26,11 @@ export interface ContrastDebtEntry {
   measuredRatio: number;
 }
 
-export const KNOWN_CONTRAST_DEBT: readonly ContrastDebtEntry[] = [
-  // Light scheme — 17 of this scheme's 28 cells.
-  { variant: "default", intent: "bad", scheme: "light", state: "rest", measuredRatio: 3.416 },
-  { variant: "light", intent: "accent", scheme: "light", state: "rest", measuredRatio: 3.728 },
-  { variant: "light", intent: "warn", scheme: "light", state: "rest", measuredRatio: 4.499 },
-  { variant: "light", intent: "bad", scheme: "light", state: "rest", measuredRatio: 3.607 },
-  { variant: "light", intent: "muted", scheme: "light", state: "rest", measuredRatio: 2.906 },
-  { variant: "outline", intent: "accent", scheme: "light", state: "rest", measuredRatio: 3.106 },
-  { variant: "outline", intent: "ok", scheme: "light", state: "rest", measuredRatio: 4.04 },
-  { variant: "outline", intent: "warn", scheme: "light", state: "rest", measuredRatio: 3.749 },
-  { variant: "outline", intent: "bad", scheme: "light", state: "rest", measuredRatio: 3.005 },
-  { variant: "outline", intent: "cyan", scheme: "light", state: "rest", measuredRatio: 4.262 },
-  { variant: "outline", intent: "muted", scheme: "light", state: "rest", measuredRatio: 2.422 },
-  { variant: "subtle", intent: "accent", scheme: "light", state: "rest", measuredRatio: 3.106 },
-  { variant: "subtle", intent: "ok", scheme: "light", state: "rest", measuredRatio: 4.04 },
-  { variant: "subtle", intent: "warn", scheme: "light", state: "rest", measuredRatio: 3.749 },
-  { variant: "subtle", intent: "bad", scheme: "light", state: "rest", measuredRatio: 3.005 },
-  { variant: "subtle", intent: "cyan", scheme: "light", state: "rest", measuredRatio: 4.262 },
-  { variant: "subtle", intent: "muted", scheme: "light", state: "rest", measuredRatio: 2.422 },
-  // Dark scheme — 1 of this scheme's 28 cells.
-  { variant: "light", intent: "muted", scheme: "dark", state: "rest", measuredRatio: 3.466 },
-];
+// Currently empty: every Button rest-state cell clears the WCAG AA 4.5:1 floor
+// via intent-resolver.ts's per-intent `color` retune (see its header comment).
+// Left as an array, not deleted, so the ratchet contract above still has
+// somewhere to record future debt.
+export const KNOWN_CONTRAST_DEBT: readonly ContrastDebtEntry[] = [];
 
 export function contrastDebtKey(
   entry: Pick<ContrastDebtEntry, "variant" | "intent" | "scheme" | "state">,

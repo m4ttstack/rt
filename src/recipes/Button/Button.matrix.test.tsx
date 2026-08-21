@@ -38,11 +38,10 @@ const SCHEMES = ["light", "dark"] as const;
 
 /**
  * Rest-state contrast, every variant x intent x scheme cell. NOT
- * `describeColourGrid` (the shared harness): 18 of these 56 cells are
- * known-below-floor properties of the approved theme (known-contrast-debt.ts),
- * ratcheted rather than exempted — the harness's own floor check has no hook
- * for that per-cell branch, so the grid is assembled here from its lower-level
- * primitives instead.
+ * `describeColourGrid` (the shared harness): cells with known-contrast-debt
+ * ledger entries (known-contrast-debt.ts) are ratcheted rather than exempted —
+ * the harness's own floor check has no hook for that per-cell branch, so the
+ * grid is assembled here from its lower-level primitives instead.
  *
  * A ledger cell asserts `measuredRatio - 0.05 <= ratio < MIN_CONTRAST`: a
  * regression past the 0.05 measurement-noise tolerance fails (catches a

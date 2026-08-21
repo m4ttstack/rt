@@ -24,6 +24,7 @@
     --color-surface-panel: light-dark(#eff0f5, #232a47);
     --radius-lg: 8px;
     --radius-md: 6px;
+    --radius-pill: 999px;
     --radius-px2: 2px;
     --radius-px5: 5px;
     --radius-px7: 7px;
@@ -48,6 +49,7 @@
     --spacing-rem120: 1.2rem;
     --spacing-rem140: 1.4rem;
     --spacing-rem150: 1.5rem;
+    --spacing-rem175: 1.75rem;
     --spacing-rem180: 1.8rem;
     --spacing-rem20: 0.2rem;
     --spacing-rem35: 0.35rem;
@@ -158,6 +160,11 @@
     syntax: "<length>";
     inherits: true;
     initial-value: 6px;
+  }
+  @property --radius-pill {
+    syntax: "<length>";
+    inherits: true;
+    initial-value: 999px;
   }
   @property --radius-px2 {
     syntax: "<length>";
@@ -278,6 +285,11 @@
     syntax: "<length>";
     inherits: true;
     initial-value: 1.5rem;
+  }
+  @property --spacing-rem175 {
+    syntax: "<length>";
+    inherits: true;
+    initial-value: 1.75rem;
   }
   @property --spacing-rem180 {
     syntax: "<length>";

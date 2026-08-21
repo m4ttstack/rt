@@ -1,6 +1,7 @@
 import { createTheme } from "@soribashi/core";
 import { describe, expect, it } from "vitest";
 import { renderWithTheme } from "../../../test/test-utils.tsx";
+import { retunedTextColor } from "../../intent-resolver.ts";
 import { tuiTheme } from "../../theme.ts";
 import { Chip, CHIP_PARTS, type ChipOwnProps, type ChipProps } from "./Chip.tsx";
 
@@ -276,17 +277,25 @@ function chipOf(container: HTMLElement): HTMLElement {
 }
 
 /**
- * Renders `ui` next to a probe span painted with `var(<alias>)`, so a colour
- * assertion compares two REAL computed values rather than an expected string.
- * The wrapper's own colour is deliberately `--fg`, which no census row uses:
- * a chip whose `--chip-color` failed to resolve would fall back to inherit and
- * read as `--fg`, which is what `notToBe(fgColor)` catches.
+ * Renders `ui` next to probe spans painted with `var(<alias>)` and with the
+ * SAME `color-mix` formula `retunedTextColor` would apply to that alias for
+ * `variant`/`intent`, so a colour assertion compares two REAL computed
+ * values rather than an expected string. The wrapper's own colour is
+ * deliberately `--fg`, which no census row uses: a chip whose `--chip-color`
+ * failed to resolve would fall back to inherit and read as `--fg`, which is
+ * what `notToBe(fgColor)` catches.
+ *
+ * `expectedColor` and `aliasColor` diverge exactly for the intents the
+ * contrast retune darkened (intent-resolver.ts) — `border`, unaffected by
+ * that retune, still equals the raw `aliasColor`.
  */
-async function renderWithProbe(ui: React.ReactNode, alias: string) {
+async function renderWithProbe(ui: React.ReactNode, alias: string, variant: string, intent: string) {
+  const expectedColorExpr = retunedTextColor(`var(${alias})`, variant, intent);
   const screen = await renderWithTheme(
     <div style={{ color: "var(--fg)" }}>
       {ui}
       <span data-testid="probe" style={{ color: `var(${alias})` }} />
+      <span data-testid="expected-probe" style={{ color: expectedColorExpr }} />
       <span data-testid="fg-probe" style={{ color: "var(--fg)" }} />
       <span data-testid="border-probe" style={{ color: "var(--border)" }} />
     </div>,
@@ -299,6 +308,7 @@ async function renderWithProbe(ui: React.ReactNode, alias: string) {
     screen,
     chip: chipOf(screen.container),
     aliasColor: probeColor("probe"),
+    expectedColor: probeColor("expected-probe"),
     fgColor: probeColor("fg-probe"),
     borderColor: probeColor("border-probe"),
   };
@@ -306,7 +316,8 @@ async function renderWithProbe(ui: React.ReactNode, alias: string) {
 
 describe("Chip (browser) — the mr-board badge/flag census", () => {
   it.each(CENSUS.map((row) => [row.board, row] as const))("%s", async (_label, row) => {
-    const { chip, aliasColor, fgColor, borderColor } = await renderWithProbe(
+    const variant = row.props.variant ?? "outline";
+    const { chip, aliasColor, expectedColor, fgColor, borderColor } = await renderWithProbe(
       // The census's `as` is a union of three elements, which a polymorphic
       // call site cannot express in one spread (each `as` value narrows the
       // rest of the prop surface to a different element). The TABLE is what
@@ -314,15 +325,17 @@ describe("Chip (browser) — the mr-board badge/flag census", () => {
       // has them; only this spread is cast.
       <Chip {...(row.props as ChipProps)}>label</Chip>,
       row.alias,
+      variant,
+      row.props.intent ?? "accent",
     );
 
-    // 1. The intent resolver landed on mr-board's own palette value.
-    expect(getComputedStyle(chip).color).toBe(aliasColor);
+    // 1. The intent resolver landed on mr-board's own palette value, retuned
+    //    per intent-resolver.ts's contrast retune where that applies.
+    expect(getComputedStyle(chip).color).toBe(expectedColor);
     expect(getComputedStyle(chip).color).not.toBe(fgColor);
 
     // 2. The border follows the variant: `outline` (the default) takes the
     //    intent colour, `subtle` keeps the board's neutral `--border` frame.
-    const variant = row.props.variant ?? "outline";
     expect(chip.getAttribute("data-variant")).toBe(variant);
     expect(getComputedStyle(chip).borderTopColor).toBe(
       variant === "outline" ? aliasColor : borderColor,
@@ -631,17 +644,23 @@ describe("Chip (browser) — provider dependence canary", () => {
      * So the assertion has to be two-sided: the chip's colour must EQUAL the
      * green family's real value AND must DIFFER from what it would inherit.
      */
-    const { chip, aliasColor, fgColor } = await renderWithProbe(
+    const { chip, aliasColor, expectedColor, fgColor } = await renderWithProbe(
       <Chip intent="ok">approved</Chip>,
       "--green",
+      "outline",
+      "ok",
     );
 
     const chipColor = getComputedStyle(chip).color;
 
-    // It resolved to a real, painted colour rather than to an unresolved var().
-    expect(chipColor).toMatch(/^rgb/);
-    // It is tuiTheme's green family value, reached through tuiIntentResolver.
-    expect(chipColor).toBe(aliasColor);
+    // It resolved to a real, painted colour rather than to an unresolved
+    // var() — `rgb(...)` for a literal value, `color(srgb ...)` for the
+    // `color-mix` the contrast retune applies to `ok`/`outline`, never empty
+    // or an unresolved `var(...)`.
+    expect(chipColor).toMatch(/^(rgb|color)\(/);
+    // It is tuiTheme's green family value (retuned), reached through
+    // tuiIntentResolver.
+    expect(chipColor).toBe(expectedColor);
     // ...and not the inherited --fg the broken path would have fallen back to.
     expect(chipColor).not.toBe(fgColor);
     // The same value reaches the border, which is the other half of what the

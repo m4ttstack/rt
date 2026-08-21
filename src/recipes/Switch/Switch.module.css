@@ -21,7 +21,10 @@
     width: var(--spacing-rem180);
     height: var(--spacing-rem100);
     border: 1px solid var(--border);
-    border-radius: var(--radius-round);
+    /* `pill`, not `round`: the track is wider than it is tall (1.8rem x
+       1rem) — 50% would draw an ellipse. The thumb below stays `round`
+       because it IS equal width/height, a true circle. */
+    border-radius: var(--radius-pill);
     background: var(--sb-switch-bg-off);
     position: relative;
     cursor: pointer;
