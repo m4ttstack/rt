@@ -15,7 +15,6 @@ import {
   editPatch,
   reconcileRestarting,
   sections as sectionsOf,
-  splitList,
   subline as sublineOf,
   tunnels as tunnelsOf,
   type Notice,
@@ -50,16 +49,13 @@ export interface EditModalState {
 
 export interface AccessModalState {
   app: string;
-  published: boolean;
-  publicUrl: string | null;
-  hasPassword: boolean;
-  pwOpen: boolean;
   password: string;
   pwError: string | null;
   pwBusy: boolean;
   oauthOn: boolean;
   mode: "emails" | "domains";
-  list: string;
+  entries: string[];
+  entryDraft: string;
   oauthError: string | null;
   oauthBusy: boolean;
 }
@@ -307,20 +303,13 @@ export function useBoardState() {
     const o = row.oauth || { mode: "off" as const };
     setAccessModal({
       app: row.name,
-      published: row.published,
-      publicUrl: row.publicUrl,
-      hasPassword: row.hasPassword,
-      // pwOpen exists because turning the switch ON has nothing valid to
-      // send yet: it only reveals the field. The Set button sends.
-      pwOpen: false,
       password: "",
       pwError: null,
       pwBusy: false,
       oauthOn: o.mode !== "off",
       mode: o.mode === "domains" ? "domains" : "emails",
-      // One per line: the field is a textarea, and a saved list reads back
-      // in the same shape it is entered.
-      list: o.mode === "emails" ? o.emails.join("\n") : o.mode === "domains" ? o.domains.join("\n") : "",
+      entries: o.mode === "emails" ? o.emails : o.mode === "domains" ? o.domains : [],
+      entryDraft: "",
       oauthError: null,
       oauthBusy: false,
     });
@@ -330,14 +319,22 @@ export function useBoardState() {
     setAccessModal((prev) => (prev ? { ...prev, ...patch } : prev));
   }, []);
 
-  const onPasswordSwitch = useCallback(async () => {
-    if (!accessModal) return;
-    if (!accessModal.hasPassword) {
-      const pwOpen = !accessModal.pwOpen;
-      // don't leave a half-typed password live in a hidden field
-      updateAccessModal({ pwOpen, pwError: null, password: pwOpen ? accessModal.password : "" });
-      return;
-    }
+  const addAccessEntry = useCallback((value: string) => {
+    setAccessModal((prev) => {
+      if (!prev) return prev;
+      const trimmed = value.trim();
+      if (!trimmed || prev.entries.includes(trimmed)) return { ...prev, entryDraft: "" };
+      return { ...prev, entries: [...prev.entries, trimmed], entryDraft: "" };
+    });
+  }, []);
+  const removeAccessEntry = useCallback((index: number) => {
+    setAccessModal((prev) => (prev ? { ...prev, entries: prev.entries.filter((_, i) => i !== index) } : prev));
+  }, []);
+
+  // No confirm: unlike removing the app itself, a removed password is
+  // recoverable by setting a new one, so this fires straight from the row.
+  const removePassword = useCallback(async () => {
+    if (!accessModal) return false;
     updateAccessModal({ pwBusy: true, pwError: null });
     let res: Response | null = null;
     try {
@@ -347,14 +344,15 @@ export function useBoardState() {
     }
     if (!res || !res.ok) {
       updateAccessModal({ pwBusy: false, pwError: "removing the password failed." });
-      return;
+      return false;
     }
-    updateAccessModal({ pwBusy: false, hasPassword: false, pwOpen: false, password: "" });
+    updateAccessModal({ pwBusy: false, password: "" });
     await refresh();
+    return true;
   }, [accessModal, refresh, updateAccessModal]);
 
   const savePassword = useCallback(async () => {
-    if (!accessModal || !accessModal.password) return;
+    if (!accessModal || !accessModal.password) return false;
     updateAccessModal({ pwBusy: true, pwError: null });
     let res: Response | null = null;
     try {
@@ -364,10 +362,11 @@ export function useBoardState() {
     }
     if (!res || !res.ok) {
       updateAccessModal({ pwBusy: false, pwError: "saving the password failed, the board did not answer." });
-      return;
+      return false;
     }
-    updateAccessModal({ pwBusy: false, hasPassword: true, password: "", pwOpen: false });
+    updateAccessModal({ pwBusy: false, password: "" });
     await refresh();
+    return true;
   }, [accessModal, refresh, updateAccessModal]);
 
   const onOauthSwitch = useCallback(async () => {
@@ -398,7 +397,7 @@ export function useBoardState() {
     updateAccessModal({
       oauthBusy: false,
       oauthOn: false,
-      list: "",
+      entries: [],
       oauthError:
         (b as { cfSynced?: boolean }).cfSynced === false
           ? "sign-in is off here, but Cloudflare was not updated, so visitors may still be asked to sign in."
@@ -407,17 +406,17 @@ export function useBoardState() {
     await refresh();
   }, [accessModal, refresh, updateAccessModal]);
 
-  // The radio picks what the field below it MEANS, so entries typed for the
+  // The mode picks what the entries below it MEAN, so entries picked for the
   // other mode are never valid for the new one: clear them rather than leave
-  // "a@x.dev, b@y.dev" sitting under "anyone at these domains" with Apply live.
+  // "a@x.dev" sitting under "anyone at these domains" with save live.
   const onOauthMode = useCallback(() => {
-    updateAccessModal({ list: "", oauthError: null });
+    updateAccessModal({ entries: [], entryDraft: "", oauthError: null });
   }, [updateAccessModal]);
 
   const applyOauth = useCallback(async () => {
-    if (!accessModal) return;
-    const items = splitList(accessModal.list);
-    if (!items.length) return;
+    if (!accessModal) return false;
+    const items = accessModal.entries;
+    if (!items.length) return false;
     const payload =
       accessModal.mode === "emails" ? { mode: "emails", emails: items } : { mode: "domains", domains: items };
     updateAccessModal({ oauthBusy: true, oauthError: null });
@@ -433,10 +432,11 @@ export function useBoardState() {
         oauthBusy: false,
         oauthError: (b as { message?: string }).message || (b as { error?: string }).error || "Cloudflare sync failed.",
       });
-      return;
+      return false;
     }
     updateAccessModal({ oauthBusy: false });
     await refresh();
+    return true;
   }, [accessModal, refresh, updateAccessModal]);
 
   // ---- portless proxy reload ----
@@ -510,7 +510,9 @@ export function useBoardState() {
     openAccess,
     closeAccess,
     updateAccessModal,
-    onPasswordSwitch,
+    addAccessEntry,
+    removeAccessEntry,
+    removePassword,
     savePassword,
     onOauthSwitch,
     onOauthMode,

@@ -1,6 +1,5 @@
 import { useMemo, useRef, useState } from "react";
 import { Alert, Button, ICONS } from "@mattstack/tui-kit";
-import { AccessModal } from "./AccessModal.tsx";
 import { AppsTable } from "./AppsTable.tsx";
 import { AppDrawer } from "./drawer/AppDrawer.tsx";
 import { AddAppModal, EditAppModal, RemoveConfirm } from "./modals.tsx";
@@ -85,7 +84,6 @@ export function Board() {
       <AddAppModal board={board} />
       <EditAppModal board={board} />
       <RemoveConfirm board={board} />
-      <AccessModal board={board} />
     </main>
   );
 }

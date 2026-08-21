@@ -161,3 +161,60 @@ body {
 .drawer-accent-label {
   color: var(--accent);
 }
+
+/* Access "who" mode picker: two ListGroup rows acting as a radiogroup
+   (checkmark-selected, not a chevron nav) -- ListGroup has no radio row of
+   its own, so these replicate its row shell (kit tokens only). */
+.drawer-mode-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border-soft);
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.drawer-mode-item:last-child .drawer-mode-row {
+  border-bottom: none;
+}
+.drawer-mode-check {
+  color: var(--accent);
+}
+
+/* Access "who" allowlist rows: entry text + a remove affordance, the whole
+   row clickable -- no separate hit target for the glyph. */
+.drawer-entry-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--border-soft);
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.drawer-mode-row:hover,
+.drawer-entry-row:hover {
+  background: var(--surface-wash-fg-5);
+}
+.drawer-mode-row:focus-visible,
+.drawer-entry-row:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+.drawer-entry-remove {
+  color: var(--red);
+  flex-shrink: 0;
+}

@@ -72,6 +72,13 @@ export function AppDrawer({
     return () => board.cancelEdit();
   }, [openRowName, board.cancelEdit]);
 
+  // Same idea for the access working buffer: it's reseeded fresh every time
+  // the access nav row is clicked (openAccess), so this is just hygiene
+  // against a stale password/entries buffer surviving a row switch.
+  useEffect(() => {
+    return () => board.closeAccess();
+  }, [openRowName, board.closeAccess]);
+
   const nav: Nav = {
     push: (build) => setPushed((prev) => [...prev, build]),
     pop: () => setPushed((prev) => (prev.length > 0 ? prev.slice(0, -1) : prev)),

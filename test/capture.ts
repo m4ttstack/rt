@@ -185,11 +185,6 @@ await scenario(
   await page.close();
 }
 
-await scenario("light", baseFixture, "modal-access", async (page) => {
-  await openModal(page, () => rowFor(page, "atlas").locator('[aria-label$=", change access"]').click());
-  await page.mouse.move(0, 0);
-  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
-});
 await scenario("light", baseFixture, "modal-stderr", (page) =>
   openModal(page, () => rowFor(page, "ledger").locator('[aria-label="show recent stderr for ledger"]').click()),
 );
@@ -227,14 +222,27 @@ await scenario("light", baseFixture, "drawer-devport-set", async (page) => {
   await page.getByRole("textbox", { name: "dev port override" }).fill("5173");
 });
 
+// Access screens (drawer-states-atlas.html "3 · Access"): atlas carries a
+// password + oauth emails mode (2 entries) in the fixture, so its root shows
+// both gates on; the who screen and the password screen are entered from it.
+await scenario("light", baseFixture, "drawer-access", async (page) => {
+  await openDrawerFor(page, "atlas");
+  await page.locator('[data-part="listgroup-nav"] button', { hasText: "access" }).click();
+});
+await scenario("light", baseFixture, "drawer-access-password", async (page) => {
+  await openDrawerFor(page, "atlas");
+  await page.locator('[data-part="listgroup-nav"] button', { hasText: "access" }).click();
+  await page.locator('[data-part="listgroup-nav"] button', { hasText: "password" }).click();
+});
+await scenario("light", baseFixture, "drawer-access-who", async (page) => {
+  await openDrawerFor(page, "atlas");
+  await page.locator('[data-part="listgroup-nav"] button', { hasText: "access" }).click();
+  await page.locator('[data-part="listgroup-nav"] button', { hasText: "who" }).click();
+});
+
 // ---- night ----
 await scenario("dark", baseFixture, "board-default-dark");
 await scenario("dark", baseFixture, "drawer-root-dark", (page) => openDrawerFor(page, "atlas"));
-await scenario("dark", baseFixture, "modal-access-dark", async (page) => {
-  await openModal(page, () => rowFor(page, "atlas").locator('[aria-label$=", change access"]').click());
-  await page.mouse.move(0, 0);
-  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
-});
 await scenario("dark", staleFixture, "notice-error-dark", (page) =>
   page.waitForSelector('[data-part="alert"][data-intent="bad"]'),
 );

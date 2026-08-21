@@ -1,183 +1,222 @@
-// bun:test's `expect` has no Playwright-locator matchers -- see board.spec.ts's
-// header comment for why assertions here read Locator/Page API values
-// directly and compare with bun's expect.
+// Access lives in the drawer now (drawer-states-atlas.html "3 · Access") --
+// AccessModal is retired. atlas carries a password + oauth emails mode (2
+// entries) in the fixture; forecast/ledger/orbit carry neither.
 import { test, expect } from "bun:test";
 import type { Page } from "playwright";
 import { withBoard } from "./rig.ts";
 import fixture from "../fixture/status.json" with { type: "json" };
 
 function rowFor(page: Page, name: string) {
-  return page.locator('[data-part="table-row"]').filter({ has: page.locator("strong", { hasText: name }) });
+  return page.locator('[data-part="table-row"]').filter({
+    has: page.locator('[data-part="table-cell"]').first().filter({ hasText: name }),
+  });
 }
 
-async function openAccess(page: Page, name: string) {
-  await rowFor(page, name).locator(`[aria-label*="change access"]`).click();
-  const modal = page.locator('[data-part="modal"]');
-  await modal.waitFor({ state: "visible" });
-  return modal;
+async function openDrawer(page: Page, name: string): Promise<void> {
+  await rowFor(page, name).locator('[data-part="row-chevron"]').click();
+  await page.waitForSelector('[data-part="sidedrawer"]');
 }
 
-async function poll(check: () => boolean, timeoutMs = 4000): Promise<void> {
+async function openAccess(page: Page, name: string): Promise<void> {
+  await openDrawer(page, name);
+  await page
+    .locator('[data-part="listgroup-nav"]')
+    .filter({ has: page.locator('[data-part="listgroup-label"]', { hasText: "access" }) })
+    .locator("button")
+    .click();
+  await page.waitForSelector('[data-part="drawer-title"]', { hasText: "access" });
+}
+
+function accessNav(page: Page, label: string) {
+  return page
+    .locator('[data-part="listgroup-nav"]')
+    .filter({ has: page.locator('[data-part="listgroup-label"]', { hasText: label }) });
+}
+
+async function waitUntil(check: () => Promise<boolean>, timeoutMs = 4000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
-    if (check()) return;
+    if (await check()) return;
     await new Promise((r) => setTimeout(r, 25));
   }
-  if (!check()) throw new Error("poll() timed out waiting for condition");
+  throw new Error("waitUntil() timed out");
 }
 
-/** A status payload identical to the fixture except forecast is published
-    with no public URL yet -- the one header variant the shared fixture
-    doesn't carry (every published row in it already has a publicUrl). */
-function statusWithForecastUnbound(): unknown {
-  const next = structuredClone(fixture) as { apps: Array<{ name: string; publicUrl: string | null }> };
-  const forecast = next.apps.find((a) => a.name === "forecast");
-  if (!forecast) throw new Error("fixture missing the forecast row");
-  forecast.publicUrl = null;
-  return next;
-}
-
-test("access button opens a modal titled Access · <name>; published-with-url header line", async () => {
+test("access glyph cell is gone from the table", async () => {
   await withBoard(async (page) => {
-    const summaryButton = rowFor(page, "atlas").locator('[aria-label$=", change access"]');
-    const expectedLabel = await summaryButton.getAttribute("aria-label");
-    expect(expectedLabel).toEndWith(", change access");
-
-    const modal = await openAccess(page, "atlas");
-    expect(await modal.locator('[data-part="modal-title"]').textContent()).toBe("Access · atlas");
-    expect(await modal.getByText("Published at https://atlas.mattstack").count()).toBe(1);
+    expect(await page.locator('[aria-label$=", change access"]').count()).toBe(0);
+    expect(await page.locator("th", { hasText: "access" }).count()).toBe(0);
   });
 });
 
-test("unpublished header line reads 'Not published. These gates apply once it is.'", async () => {
+test("AccessModal is gone: no Access · <name> modal is reachable", async () => {
   await withBoard(async (page) => {
-    const modal = await openAccess(page, "ledger");
-    expect(await modal.getByText("Not published. These gates apply once it is.").count()).toBe(1);
+    await openAccess(page, "atlas");
+    expect(await page.locator('[aria-label^="Access ·"]').count()).toBe(0);
+    expect(await page.locator('[data-part="modal"]').count()).toBe(0);
   });
 });
 
-test("published-without-url header line", async () => {
+test("root: password value set/not set, sign-in toggle, who hidden until sign-in is on", async () => {
   await withBoard(async (page) => {
-    await page.route("**/api/v1/status", async (route) => {
-      await route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify(statusWithForecastUnbound()),
-      });
-    });
-    // Reload rather than wait out REFRESH_MS: a fresh navigation re-fetches
-    // /api/v1/status, which the route above now intercepts.
-    await page.reload();
-    await page.waitForSelector("[data-board-ready]");
-    const modal = await openAccess(page, "forecast");
+    await openAccess(page, "atlas"); // hasPassword true, oauth emails x2 in the fixture
+    expect(await accessNav(page, "password").locator('[data-part="listgroup-value"]').textContent()).toBe("set");
+    const toggle = page.locator('[data-part="listgroup-toggle"] [data-part="switch-control"]');
+    expect(await toggle.isChecked()).toBe(true);
+    expect(await accessNav(page, "who").locator('[data-part="listgroup-value"]').textContent()).toBe("2 people");
+
+    await page.locator('[data-part="drawer-close"]').click();
+    await page.waitForSelector('[data-part="sidedrawer"]', { state: "detached" });
+
+    await openAccess(page, "forecast"); // no password, oauth off in the fixture
+    expect(await accessNav(page, "password").locator('[data-part="listgroup-value"]').textContent()).toBe(
+      "not set",
+    );
+    expect(await page.locator('[data-part="listgroup-toggle"] [data-part="switch-control"]').isChecked()).toBe(
+      false,
+    );
+    expect(await accessNav(page, "who").count()).toBe(0);
     expect(
-      await modal.getByText("Published, but no public URL yet: bind a domain to reach it from outside.").count(),
+      await page.locator('[data-part="listgroup-footer"]', {
+        hasText: "forecast is open — anyone who can reach the tunnel gets in",
+      }).count(),
     ).toBe(1);
   });
 });
 
-test("password: switch ON with no password reveals the field + a Set button disabled until typed", async () => {
-  await withBoard(async (page) => {
-    const modal = await openAccess(page, "forecast"); // hasPassword: false in the fixture
-    const pwSwitch = modal.locator('[aria-label="require a password"]');
-    expect(await pwSwitch.count()).toBe(1);
-
-    await pwSwitch.click();
-    const field = modal.locator('[aria-label="new password"]');
-    await field.waitFor({ state: "visible" });
-    const setButton = modal.getByRole("button", { name: "Set", exact: true });
-    expect(await setButton.isDisabled()).toBe(true);
-
-    await field.fill("s3cret");
-    expect(await setButton.isDisabled()).toBe(false);
-  });
-});
-
-test("Set PUTs the password; hint shows only once hasPassword; Change PUTs null on switch-off", async () => {
+test("password: set flow -- input + nav save PUTs the password, then the root hint reads 'set'", async () => {
   await withBoard(async (page) => {
     let putBody: unknown = null;
     await page.route("**/api/v1/apps/forecast/password", async (route) => {
       putBody = route.request().postDataJSON();
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
     });
+    let saved = false;
+    await page.route("**/api/v1/status", async (route) => {
+      if (!saved) {
+        await route.continue();
+        return;
+      }
+      const next = structuredClone(fixture) as typeof fixture;
+      const forecast = next.apps.find((a) => a.name === "forecast");
+      if (!forecast) throw new Error("fixture missing forecast");
+      forecast.hasPassword = true;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(next) });
+    });
 
-    const modal = await openAccess(page, "forecast");
-    expect(await modal.getByText("A password is set. Changing it signs out anyone holding a session.").count()).toBe(0);
+    await openAccess(page, "forecast");
+    await accessNav(page, "password").locator("button").click();
+    expect(await page.locator('[data-part="drawer-title"]').textContent()).toBe("password");
+    expect(await page.locator('[data-part="drawer-back"]').textContent()).toBe("‹ access");
 
-    await modal.locator('[aria-label="require a password"]').click();
-    await modal.locator('[aria-label="new password"]').fill("s3cret");
-    await modal.getByRole("button", { name: "Set", exact: true }).click();
+    const navAction = page.locator('[data-part="drawer-navaction"]');
+    expect((await navAction.textContent())?.trim()).toBe("save");
+    expect(await navAction.isDisabled()).toBe(true);
 
-    await poll(() => putBody !== null);
+    const input = page.locator('[aria-label="new password"]');
+    await input.fill("s3cret");
+    expect(await navAction.isDisabled()).toBe(false);
+    saved = true;
+    await navAction.click();
+
+    await waitUntil(async () => putBody !== null);
     expect(putBody).toEqual({ password: "s3cret" });
+
+    await page.waitForSelector('[data-part="drawer-title"]', { hasText: "access" });
+    await waitUntil(
+      async () => (await accessNav(page, "password").locator('[data-part="listgroup-value"]').textContent()) === "set",
+    );
   });
 });
 
-test("hint 'Changing it signs out anyone holding a session.' shown when hasPassword; Change removes on switch-off", async () => {
+test("password: remove -- no confirm, PUTs password:null immediately", async () => {
   await withBoard(async (page) => {
     let putBody: unknown = null;
     await page.route("**/api/v1/apps/atlas/password", async (route) => {
       putBody = route.request().postDataJSON();
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
     });
+    let removed = false;
+    await page.route("**/api/v1/status", async (route) => {
+      if (!removed) {
+        await route.continue();
+        return;
+      }
+      const next = structuredClone(fixture) as typeof fixture;
+      const atlas = next.apps.find((a) => a.name === "atlas");
+      if (!atlas) throw new Error("fixture missing atlas");
+      atlas.hasPassword = false;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(next) });
+    });
 
-    const modal = await openAccess(page, "atlas"); // hasPassword: true in the fixture
-    expect(await modal.getByText("A password is set. Changing it signs out anyone holding a session.").count()).toBe(1);
+    await openAccess(page, "atlas"); // hasPassword true in the fixture
+    await accessNav(page, "password").locator("button").click();
 
-    const pwSwitch = modal.locator('[aria-label="remove the password"]');
-    await pwSwitch.click();
+    const danger = page.locator('button[data-intent="bad"]', { hasText: "remove password" });
+    expect(await danger.count()).toBe(1);
+    removed = true;
+    await danger.click();
 
-    await poll(() => putBody !== null);
+    await waitUntil(async () => putBody !== null);
     expect(putBody).toEqual({ password: null });
+
+    await waitUntil(async () => (await danger.count()) === 0); // hasPassword false -> the row disappears
   });
 });
 
-test("failed switch-off leaves the Switch checked (controlled-Switch parity case)", async () => {
+test("password: a failed save renders the Alert inside the password screen", async () => {
   await withBoard(async (page) => {
-    await page.route("**/api/v1/apps/atlas/password", async (route) => {
+    await page.route("**/api/v1/apps/forecast/password", async (route) => {
       await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: "boom" }) });
     });
 
-    const modal = await openAccess(page, "atlas");
-    const pwSwitch = modal.locator('[data-part="switch-control"]').first();
-    expect(await pwSwitch.isChecked()).toBe(true);
+    await openAccess(page, "forecast");
+    await accessNav(page, "password").locator("button").click();
+    await page.locator('[aria-label="new password"]').fill("s3cret");
+    await page.locator('[data-part="drawer-navaction"]').click();
 
-    await modal.locator('[aria-label="remove the password"]').click();
-    const error = modal.locator('[data-part="alert"]');
-    await error.waitFor({ state: "visible" }); // failed request has settled once this appears
-    expect(await pwSwitch.isChecked()).toBe(true);
-    expect(await error.textContent()).toContain("removing the password failed.");
+    const alert = page.locator('[data-part="alert"]');
+    await alert.waitFor({ state: "visible" });
+    expect(await alert.textContent()).toContain("saving the password failed, the board did not answer.");
+    // A failed save does not navigate away.
+    expect(await page.locator('[data-part="drawer-title"]').textContent()).toBe("password");
   });
 });
 
-test("oauth: switch reveals radios + textarea + hint; mode flip clears the list; Apply disabled on empty", async () => {
+test("who: mode switch clears entries; entries add/remove; save disabled on empty", async () => {
   await withBoard(async (page) => {
-    const modal = await openAccess(page, "forecast"); // oauth off in the fixture -> opens on "emails"
-    const oauthSwitch = modal.locator('[aria-label="require google sign-in"]');
-    await oauthSwitch.click();
+    await openAccess(page, "forecast"); // oauth off -> opens on "these people" (emails)
+    await page.locator('[data-part="listgroup-toggle"] [data-part="switch-control"]').click();
+    await accessNav(page, "who").locator("button").click();
+    expect(await page.locator('[data-part="drawer-title"]').textContent()).toBe("who");
 
-    expect(await modal.getByText("Anyone at these domains").count()).toBe(1);
-    expect(await modal.getByText("These people").count()).toBe(1);
-    expect(await modal.getByText("One per line. Commas work too.").count()).toBe(1);
+    const navAction = page.locator('[data-part="drawer-navaction"]');
+    expect(await navAction.isDisabled()).toBe(true);
 
-    const applyButton = modal.getByRole("button", { name: "Apply", exact: true });
-    expect(await applyButton.isDisabled()).toBe(true);
+    const draft = page.getByRole("textbox", { name: "add email" });
+    await draft.fill("a@x.dev");
+    await draft.press("Enter");
+    expect(await page.locator('[aria-label="remove a@x.dev"]').count()).toBe(1);
+    expect(await navAction.isDisabled()).toBe(false);
+    expect(await draft.inputValue()).toBe("");
 
-    // "off" opens on the emails mode: label + placeholder.
-    expect(await modal.getByText("Allowed emails", { exact: true }).count()).toBe(1);
-    const list = modal.locator('[data-part="field-input"]').last();
-    await list.fill("a@x.dev");
-    expect(await applyButton.isDisabled()).toBe(false);
+    // Flipping mode clears the entries and re-disables save.
+    await page.locator('[role="radio"]', { hasText: "anyone at these domains" }).click();
+    expect(await page.locator('[aria-label="remove a@x.dev"]').count()).toBe(0);
+    expect(await navAction.isDisabled()).toBe(true);
+    expect(await page.getByRole("textbox", { name: "add domain" }).count()).toBe(1);
 
-    // Flipping to "Anyone at these domains" clears the list and re-disables Apply.
-    await modal.getByText("Anyone at these domains").click();
-    expect(await modal.getByText("Allowed domains", { exact: true }).count()).toBe(1);
-    expect(await list.inputValue()).toBe("");
-    expect(await applyButton.isDisabled()).toBe(true);
+    await page.getByRole("textbox", { name: "add domain" }).fill("corp.co");
+    await page.locator('[aria-label="add domain"]').press("Enter");
+    expect(await page.locator('[aria-label="remove corp.co"]').count()).toBe(1);
+
+    await page.locator('[aria-label="remove corp.co"]').click();
+    expect(await page.locator('[aria-label="remove corp.co"]').count()).toBe(0);
+    expect(await navAction.isDisabled()).toBe(true);
   });
 });
 
-test("Apply PUTs mode/emails with splitList applied", async () => {
+test("who: save PUTs mode + the composed entries, then returns to the access root", async () => {
   await withBoard(async (page) => {
     let putBody: unknown = null;
     await page.route("**/api/v1/apps/forecast/access", async (route) => {
@@ -185,18 +224,51 @@ test("Apply PUTs mode/emails with splitList applied", async () => {
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true, cfSynced: true }) });
     });
 
-    const modal = await openAccess(page, "forecast"); // "off" -> opens on the emails mode already
-    await modal.locator('[aria-label="require google sign-in"]').click();
-    const list = modal.locator('[data-part="field-input"]').last();
-    await list.fill("a@x.dev, b@y.dev\nc@z.dev");
-    await modal.getByRole("button", { name: "Apply", exact: true }).click();
+    await openAccess(page, "forecast");
+    await page.locator('[data-part="listgroup-toggle"] [data-part="switch-control"]').click();
+    await accessNav(page, "who").locator("button").click();
 
-    await poll(() => putBody !== null);
-    expect(putBody).toEqual({ mode: "emails", emails: ["a@x.dev", "b@y.dev", "c@z.dev"] });
+    const draft = page.getByRole("textbox", { name: "add email" });
+    await draft.fill("a@x.dev");
+    await draft.press("Enter");
+    await draft.fill("b@y.dev");
+    await draft.press("Enter");
+
+    await page.locator('[data-part="drawer-navaction"]').click();
+
+    await waitUntil(async () => putBody !== null);
+    expect(putBody).toEqual({ mode: "emails", emails: ["a@x.dev", "b@y.dev"] });
+    await page.waitForSelector('[data-part="drawer-title"]', { hasText: "access" });
   });
 });
 
-test("cfSynced:false on turn-off renders the Cloudflare-not-updated warning Alert", async () => {
+test("who: an apply error renders the Alert inside the who screen and does not navigate away", async () => {
+  await withBoard(async (page) => {
+    await page.route("**/api/v1/apps/forecast/access", async (route) => {
+      await route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Cloudflare rejected the request" }),
+      });
+    });
+
+    await openAccess(page, "forecast");
+    await page.locator('[data-part="listgroup-toggle"] [data-part="switch-control"]').click();
+    await accessNav(page, "who").locator("button").click();
+
+    const draft = page.getByRole("textbox", { name: "add email" });
+    await draft.fill("a@x.dev");
+    await draft.press("Enter");
+    await page.locator('[data-part="drawer-navaction"]').click();
+
+    const alert = page.locator('[data-part="alert"]');
+    await alert.waitFor({ state: "visible" });
+    expect(await alert.textContent()).toContain("Cloudflare rejected the request");
+    expect(await page.locator('[data-part="drawer-title"]').textContent()).toBe("who");
+  });
+});
+
+test("root: a teardown failure on turn-off surfaces here even though the toggle already reads off", async () => {
   await withBoard(async (page) => {
     await page.route("**/api/v1/apps/atlas/access", async (route) => {
       await route.fulfill({
@@ -206,23 +278,16 @@ test("cfSynced:false on turn-off renders the Cloudflare-not-updated warning Aler
       });
     });
 
-    const modal = await openAccess(page, "atlas"); // oauth mode: emails in the fixture
-    const oauthSwitch = modal.locator('[aria-label="turn google sign-in off"]');
+    await openAccess(page, "atlas"); // oauth on (emails) in the fixture
+    const oauthSwitch = page.locator('[aria-label="turn google sign-in off"]');
     await oauthSwitch.click();
 
-    const alert = modal.locator('[data-part="alert"]');
+    const alert = page.locator('[data-part="alert"]');
     await alert.waitFor({ state: "visible" });
     expect(await alert.textContent()).toContain(
       "sign-in is off here, but Cloudflare was not updated, so visitors may still be asked to sign in.",
     );
-    expect(await oauthSwitch.count()).toBe(0); // relabeled to "require google sign-in" now that it's off
-  });
-});
-
-test("footer Done closes the modal", async () => {
-  await withBoard(async (page) => {
-    const modal = await openAccess(page, "atlas");
-    await modal.getByRole("button", { name: "Done" }).click();
-    expect(await page.locator('[data-part="modal"]').count()).toBe(0);
+    expect(await page.locator('[aria-label="require google sign-in"]').count()).toBe(1); // relabeled, now off
+    expect(await accessNav(page, "who").count()).toBe(0);
   });
 });

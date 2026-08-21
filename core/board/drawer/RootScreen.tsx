@@ -7,6 +7,7 @@ import { Alert, ICONS, ListGroup, StatusDot, type DrawerScreen } from "@mattstac
 import { servicePid } from "../AppsTable.tsx";
 import { type Row, type StatusData, tunnelDomain } from "../logic.ts";
 import type { BoardState } from "../useBoardState.ts";
+import { buildAccessRoot } from "./AccessScreens.tsx";
 import { buildDevPortScreen } from "./DevPortScreen.tsx";
 
 /** What a root/pushed screen's row builders push onto and pop off of. Drawer
@@ -179,7 +180,14 @@ export function buildAppRoot(
             value={devPortValue(row, data)}
             onClick={() => nav.push(buildDevPortScreen)}
           />
-          <ListGroup.Nav label="access" value={accessValue(row)} onClick={() => nav.push(() => buildPlaceholder("access"))} />
+          <ListGroup.Nav
+            label="access"
+            value={accessValue(row)}
+            onClick={() => {
+              board.openAccess(row);
+              nav.push(buildAccessRoot);
+            }}
+          />
           <ListGroup.Nav label="logs" value={logsValue(row)} onClick={() => nav.push(() => buildPlaceholder("logs"))} />
         </ListGroup>
         <ListGroup>

@@ -2,7 +2,7 @@
 // board.html.
 import { useState } from "react";
 import { Badge, Button, Chip, ICONS, Modal, Spinner, StatusDot, Switch, Table, Tooltip } from "@mattstack/tui-kit";
-import { accessSummary, isPlatform, type Row, type StatusData } from "./logic.ts";
+import { isPlatform, type Row, type StatusData } from "./logic.ts";
 import type { BoardState } from "./useBoardState.ts";
 
 export interface AppsSection {
@@ -30,7 +30,7 @@ export function AppsTable({
   onOpenRow,
   registerChevron,
 }: { section: AppsSection; data: StatusData; board: BoardState } & DrawerRowProps) {
-  const { isRestarting, onRestart, onPublish, openAccess } = board;
+  const { isRestarting, onRestart, onPublish } = board;
   return (
     <Table>
       {section.key === "apps" && (
@@ -42,7 +42,6 @@ export function AppsTable({
           {/* border-left gap, not margin: a margin on a <th> collapses in
               table layout, per board-composite.html's own gap treatment. */}
           <Table.HeadCell className="col-gap">public</Table.HeadCell>
-          <Table.HeadCell>access</Table.HeadCell>
           <Table.HeadCell />
           <Table.HeadCell />
         </Table.Head>
@@ -74,9 +73,6 @@ export function AppsTable({
                 <PublishCell row={row} data={data} onPublish={onPublish} />
               </Table.Cell>
               <Table.Cell>
-                <AccessCell row={row} data={data} onOpenAccess={openAccess} />
-              </Table.Cell>
-              <Table.Cell>
                 <RestartCell row={row} data={data} restarting={restarting} onRestart={onRestart} />
               </Table.Cell>
               <Table.Cell>
@@ -98,9 +94,9 @@ export function servicePid(service: NonNullable<Row["service"]>): number | null 
 }
 
 /** A row click opens its drawer UNLESS the click landed on an existing
-    interactive control (link, switch, restart/access/stderr button) that
-    already has its own action -- the chevron is the one button exempted,
-    since opening the drawer IS its action. */
+    interactive control (link, switch, restart/stderr button) that already
+    has its own action -- the chevron is the one button exempted, since
+    opening the drawer IS its action. */
 export function isDrawerClick(e: { target: EventTarget | null }): boolean {
   const target = e.target as HTMLElement;
   const interactive = target.closest?.('a, button, input, [role="switch"]');
@@ -296,40 +292,6 @@ function PublishCell({
   return (
     <Tooltip tip={tip}>
       <Switch checked={row.published} onChange={() => onPublish(row)} aria-label={label} />
-    </Tooltip>
-  );
-}
-
-function AccessCell({
-  row,
-  data,
-  onOpenAccess,
-}: {
-  row: Row;
-  data: StatusData;
-  onOpenAccess: (row: Row) => void;
-}) {
-  if (!(data.canManage && row.port != null)) return null;
-  const summary = accessSummary(row);
-  return (
-    // Two glyphs, no text: the column stays narrow, and the full sentence
-    // rides both the tooltip and aria-label so it is reachable by hover and
-    // by screen reader. Cloudflare sync failures are NOT shown here: the
-    // site cell already renders every row.issues entry, with the message
-    // attached.
-    <Tooltip tip={summary}>
-      <Button
-        variant="subtle"
-        size="sm"
-        iconOnly
-        aria-label={`${summary}, change access`}
-        onClick={() => onOpenAccess(row)}
-      >
-        <span className={row.hasPassword ? undefined : "muted-more"}>{ICONS["lock-keyhole"]}</span>
-        <span className={row.oauth && row.oauth.mode !== "off" ? undefined : "muted-more"}>
-          {ICONS["user-round-check"]}
-        </span>
-      </Button>
     </Tooltip>
   );
 }
