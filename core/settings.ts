@@ -86,6 +86,7 @@ function withAppsStoreFallback(
 }
 
 let cache: SettingsFile = load(getSetting);
+mintSecretIfMissing();
 
 function load(resolve: GetSettingFn): SettingsFile {
   let fileValues: SettingsFile;
@@ -101,6 +102,21 @@ function load(resolve: GetSettingFn): SettingsFile {
 
 export function reloadSettings(resolve: GetSettingFn = getSetting): void {
   cache = load(resolve);
+  mintSecretIfMissing();
+}
+
+/**
+ * Minted at boot (module load) and on every reload, never lazily on the
+ * request path: getSecret() used to mint-and-save on first call, which put a
+ * live gateway request one save() failure away from throwing. Boot is the
+ * only place that needs to tolerate that -- and with an unowned store, the
+ * latched save() below never touches the store at all, only the file.
+ */
+function mintSecretIfMissing(): void {
+  if (cache.secret) return;
+  const previous = structuredClone(cache);
+  cache.secret = randomBytes(32).toString("hex");
+  save(previous);
 }
 
 /** The store's view of every app currently in cache, defaults applied so both fields are always determinate. */
@@ -115,42 +131,98 @@ function buildAppsStoreDict(state: SettingsFile): Record<string, MigratedAppFiel
   return out;
 }
 
+// An app whose ONLY fields ever were the two migrated ones (it entered cache
+// purely via a store merge in load(), never through ensure()) strips down to
+// `{}` -- omit it from the file entirely rather than accreting empty-object
+// noise for apps the file has nothing left to say about.
 function stripMigratedFields(state: SettingsFile): SettingsFile {
   const apps: Record<string, AppEntry> = {};
   for (const [app, entry] of Object.entries(state.apps)) {
     const { published: _published, publicFollowsOverride: _publicFollowsOverride, ...rest } = entry;
-    apps[app] = rest;
+    if (Object.keys(rest).length > 0) apps[app] = rest;
   }
   return { ...state, apps };
 }
 
 /**
- * Every mutation funnels through here, unconditionally rebuilding the WHOLE
- * deck.apps store entry from the current cache before writing the file --
- * not just when the caller touched published/publicFollowsOverride. The file
- * write below always strips those two fields from every app, so a save()
- * gated on "did this call touch a migrated field" would let a setPassword
- * (etc.) call re-diverge the store from the file it just stripped. The store
- * write is attempted first; on failure the cache reverts to `previous` and
- * the error rethrows before the file is touched, so a value is never claimed
- * as persisted when neither side actually holds it.
+ * Store ownership is a one-way latch, decided fresh on every save: rt-client's
+ * read path never throws for an absent or lost key, it yields `undefined`
+ * (even a malformed store file honest-degrades to "empty", not a throw --
+ * see rt-client's stores.ts). `undefined` here means the store does not yet
+ * own deck.apps -- ownership flips only via the orchestrator's live import or
+ * an explicit `rt settings set`, never manufactured by this function.
+ */
+function isAppsStoreOwned(): boolean {
+  return getSetting<unknown>(STORE_KEY).value !== undefined;
+}
+
+function currentRawAppsStore(): Record<string, Partial<MigratedAppFields>> {
+  return (getSetting<Record<string, Partial<MigratedAppFields>>>(STORE_KEY).value ?? {}) as Record<
+    string,
+    Partial<MigratedAppFields>
+  >;
+}
+
+/**
+ * Overlays this process's known apps onto a FRESH read of the raw store,
+ * never a wholesale replace built from cache alone: another process may have
+ * written an app this process's boot-time cache never saw, and rebuilding
+ * purely from cache would silently erase it. `previous.apps` keys missing
+ * from the CURRENT cache -- a rename's old name -- are the one case an app
+ * should actually disappear from the store, so those are deleted from the
+ * result.
+ */
+function nextAppsStoreDict(previous: SettingsFile): Record<string, Partial<MigratedAppFields>> {
+  const next: Record<string, Partial<MigratedAppFields>> = { ...currentRawAppsStore(), ...buildAppsStoreDict(cache) };
+  for (const app of Object.keys(previous.apps)) {
+    if (!(app in cache.apps)) delete next[app];
+  }
+  return next;
+}
+
+/**
+ * Every mutation funnels through here. While deck.apps is unowned (see
+ * isAppsStoreOwned), saves write the migrated fields straight to
+ * settings.json and never call setSetting -- calling it would manufacture
+ * ownership deck itself never asked for. Once the store owns the key, saves
+ * write a fresh overlay into the store (nextAppsStoreDict) and strip the two
+ * migrated fields from every app in the file. Either branch reverts `cache`
+ * to `previous` and rethrows on a failure, so a value is never claimed as
+ * persisted when neither side actually holds it. A file-write failure AFTER
+ * a successful store write additionally un-writes the store back to
+ * `previous`'s view (best effort, logged if that itself fails) -- otherwise
+ * the store would keep a new value (e.g. a renamed app) whose file-local
+ * fields (passwordHash) never actually made it to disk.
  */
 function save(previous: SettingsFile): void {
-  try {
-    setSetting(STORE_KEY, buildAppsStoreDict(cache), "user");
-  } catch (err) {
-    cache = previous;
-    throw err;
+  const owned = isAppsStoreOwned();
+
+  if (owned) {
+    try {
+      setSetting(STORE_KEY, nextAppsStoreDict(previous), "user");
+    } catch (err) {
+      cache = previous;
+      throw err;
+    }
   }
 
   const path = settingsPath();
   mkdirSync(dirname(path), { recursive: true });
   const tmp = path + ".tmp";
+  const fileBody = owned ? stripMigratedFields(cache) : cache;
   try {
-    writeFileSync(tmp, JSON.stringify(stripMigratedFields(cache), null, 2), { mode: 0o600 });
+    writeFileSync(tmp, JSON.stringify(fileBody, null, 2), { mode: 0o600 });
     renameSync(tmp, path);
     chmodSync(path, 0o600);
   } catch (err) {
+    if (owned) {
+      try {
+        setSetting(STORE_KEY, buildAppsStoreDict(previous), "user");
+      } catch (revertErr) {
+        console.error("settings save: failed to revert deck.apps after a file-write failure", revertErr);
+      }
+    }
+    cache = previous;
     console.error("settings save failed:", err);
     throw err;
   }
@@ -173,12 +245,7 @@ function ensure(app: string): AppEntry {
 }
 
 export function getSecret(): string {
-  if (!cache.secret) {
-    const previous = structuredClone(cache);
-    cache.secret = randomBytes(32).toString("hex");
-    save(previous);
-  }
-  return cache.secret;
+  return cache.secret as string;
 }
 
 export async function setPublished(app: string, published: boolean): Promise<void> {
@@ -211,8 +278,9 @@ export async function clearPassword(app: string): Promise<void> {
  * the raw entry because no setter above can: setPassword only takes a plaintext
  * to re-hash, and an existing hash has no plaintext to re-derive it from.
  * A no-op when the old name has no entry (nothing to carry). The store side
- * follows automatically: save() always rebuilds deck.apps from the CURRENT
- * cache, so the old key drops out and the new key picks up its fields.
+ * follows automatically (when the store owns deck.apps): save()'s overlay
+ * diffs `previous.apps` against the current cache, so the old key drops out
+ * of the store and the new key picks up its fields.
  */
 export function renameAppSettings(oldName: string, newName: string): void {
   const entry = cache.apps[oldName];

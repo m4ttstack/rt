@@ -169,21 +169,57 @@ test("a resolver throw degrades to access.json's entries entirely, warning once"
   warnSpy.mockRestore();
 });
 
-test("setOAuth writes the store unconditionally and stops persisting the rule to the file", () => {
+// ─── store ownership latch (MAT-384 fix wave) ────────────────────────────────
+//
+// Store ownership of deck.access is a one-way latch, decided fresh on every
+// call from whether getSetting("deck.access") currently yields a defined
+// value. It starts absent in every one of these tests (a fresh temp HOME per
+// test, per beforeEach), so the "store key absent" tests below need no setup
+// at all; the "store key present" tests establish ownership explicitly with
+// a `setSetting` call before exercising setOAuth.
+
+test("store key absent: setOAuth keeps the rule in the file and never touches the store", () => {
+  setOAuth("a", { mode: "emails", emails: ["a@x.dev"] });
+
+  const onDisk = JSON.parse(readFileSync(ACCESS_PATH, "utf8"));
+  expect(onDisk.apps.a).toEqual({ mode: "emails", emails: ["a@x.dev"] });
+  expect(getSetting<unknown>("deck.access").value).toBeUndefined();
+});
+
+test("store key present: setOAuth writes the store and stops persisting the rule to the file", () => {
+  setSetting("deck.access", { seed: { mode: "off" } }, "user");
+  reloadOAuth();
+
   setOAuth("a", { mode: "emails", emails: ["a@x.dev"] });
   const stored = getSetting<Record<string, unknown>>("deck.access").value;
   expect(stored?.a).toEqual({ mode: "emails", emails: ["a@x.dev"] });
 
   const onDisk = JSON.parse(readFileSync(ACCESS_PATH, "utf8"));
-  expect(onDisk.apps.a).toBeUndefined();
+  expect(onDisk.apps).toEqual({});
 });
 
-test("setOAuth on one app keeps every other app's rule current in the store too", () => {
+test("store key present: setOAuth on one app keeps every other app's rule current in the store too", () => {
+  setSetting("deck.access", { seed: { mode: "off" } }, "user");
+  reloadOAuth();
+
   setOAuth("a", { mode: "emails", emails: ["a@x.dev"] });
   setOAuth("b", { mode: "domains", domains: ["corp.com"] });
   const stored = getSetting<Record<string, unknown>>("deck.access").value;
   expect(stored?.a).toEqual({ mode: "emails", emails: ["a@x.dev"] });
   expect(stored?.b).toEqual({ mode: "domains", domains: ["corp.com"] });
+});
+
+test("store key present: a malformed store entry for another app survives a write untouched", () => {
+  // "a" is malformed (isOAuth rejects it): the loader skips it on READ, but
+  // the WRITE overlay reads the raw store fresh, so it must never be erased
+  // by a write that only touches "b".
+  setSetting("deck.access", { a: { tier: "public" }, b: { mode: "off" } }, "user");
+  reloadOAuth();
+
+  setOAuth("b", { mode: "emails", emails: ["b@x.dev"] });
+  const stored = getSetting<Record<string, unknown>>("deck.access").value;
+  expect(stored?.a).toEqual({ tier: "public" });
+  expect(stored?.b).toEqual({ mode: "emails", emails: ["b@x.dev"] });
 });
 
 test("access.json is written 0600", () => {
@@ -192,10 +228,23 @@ test("access.json is written 0600", () => {
   expect(mode).toBe(0o600);
 });
 
-test("a store write failure reverts the in-memory cache instead of claiming a value neither side holds", () => {
-  reloadOAuth();
+test("store key present: a store write failure reverts the in-memory cache instead of claiming a value neither side holds", () => {
+  // rt-client's read path honest-degrades a malformed store to "empty"
+  // rather than throwing (see stores.ts), so a plain syntax error can no
+  // longer be used to force a write-time throw -- it would just read back as
+  // unowned. A duplicate top-level key is the one shape that both (a) parses
+  // fine under the lenient reader the ownership check uses (last occurrence
+  // wins, so deck.access reads as present/owned) and (b) is refused by
+  // setSetting's stricter writer (assertEditableJsonc refuses to edit a
+  // document with ANY duplicate key, anywhere in the tree).
   mkdirSync(dirname(userStorePath()), { recursive: true });
-  writeFileSync(userStorePath(), "{ this is not valid jsonc");
+  writeFileSync(
+    userStorePath(),
+    '{ "deck.access": { "a": { "mode": "off" } }, "deck.access": { "a": { "mode": "off" } } }',
+  );
+  reloadOAuth();
+  expect(getOAuth("a")).toEqual({ mode: "off" }); // sanity: the store is read as owned before the write attempt
+
   expect(() => setOAuth("a", { mode: "emails", emails: ["a@x.dev"] })).toThrow();
   expect(getOAuth("a")).toEqual({ mode: "off" });
 });

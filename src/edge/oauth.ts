@@ -118,22 +118,51 @@ export function getOAuth(app: string): OAuth {
 }
 
 /**
- * Writes the store unconditionally from the WHOLE current cache (every
- * app's rule migrates wholesale, unlike deck.apps' per-field split, so there
- * is nothing left for access.json to keep) before writing the file. On a
- * store-write failure the cache reverts to `previous` and the error
- * rethrows before the file is touched, matching core/settings.ts's save().
+ * Store ownership is a one-way latch, decided fresh on every call: rt-client's
+ * read path never throws for an absent or lost key, it yields `undefined`
+ * (even a malformed store file honest-degrades to "empty", not a throw --
+ * see rt-client's stores.ts). `undefined` here means the store does not yet
+ * own deck.access -- ownership flips only via the orchestrator's live import
+ * or an explicit `rt settings set`, never manufactured by this function.
+ */
+function isAccessStoreOwned(): boolean {
+  return getSetting<unknown>(STORE_KEY).value !== undefined;
+}
+
+function currentRawAccessStore(): Record<string, unknown> {
+  return (getSetting<Record<string, unknown>>(STORE_KEY).value ?? {}) as Record<string, unknown>;
+}
+
+/**
+ * While deck.access is unowned, the rule writes straight to access.json (the
+ * app's whole rule migrates wholesale, unlike deck.apps' per-field split, so
+ * there is nothing left for the file to strip) and setSetting is never
+ * called -- calling it would manufacture ownership deck itself never asked
+ * for. Once the store owns the key, the write overlays this one app onto a
+ * FRESH read of the raw store (never a wholesale replace from `cache.apps`
+ * alone) so an entry another process wrote -- or one `loadFileKept`/
+ * `withAccessStoreFallback` skipped as malformed -- survives untouched, then
+ * the file collapses to `{ apps: {} }`: every app's rule has migrated, so
+ * there's nothing left worth keeping on disk. On a store-write failure the
+ * cache reverts to `previous` and the error rethrows before the file is
+ * touched, matching core/settings.ts's save().
  */
 export function setOAuth(app: string, rule: OAuth): void {
   const previous = structuredClone(cache);
   cache.apps[app] = rule;
-  try {
-    setSetting(STORE_KEY, cache.apps, "user");
-  } catch (err) {
-    cache = previous;
-    throw err;
+
+  const owned = isAccessStoreOwned();
+  if (owned) {
+    try {
+      setSetting(STORE_KEY, { ...currentRawAccessStore(), [app]: rule }, "user");
+    } catch (err) {
+      cache = previous;
+      throw err;
+    }
+    saveFile({ apps: {} });
+  } else {
+    saveFile({ apps: cache.apps });
   }
-  saveFile({ apps: {} });
 }
 
 export function oauthRequiresCf(rule: OAuth): boolean {

@@ -115,7 +115,12 @@ test("updatePlatformSettings writes a patched migrated field to the store withou
   expect(stored?.legacyPrefixes).toEqual(["/existing"]);
 });
 
-test("platform.json no longer carries the migrated fields after a write", () => {
+test("store key present: platform.json no longer carries the migrated fields after a write", () => {
+  // Establish ownership first -- the latch only strips the file once the
+  // store already carries deck.platform (see the "store key absent" tests
+  // below for the opposite state).
+  setSetting("deck.platform", { publicDomain: "seed.example.dev", legacyPrefixes: [] }, "machine");
+  reloadPlatformSettings();
   updatePlatformSettings({
     publicDomain: "x.example.dev", legacyPrefixes: ["/y"], tlds: ["localhost", "z"], secrets: { cfApiToken: "tok" },
   });
@@ -124,6 +129,29 @@ test("platform.json no longer carries the migrated fields after a write", () => 
   expect(onDisk).not.toHaveProperty("legacyPrefixes");
   expect(onDisk.tlds).toEqual(["localhost", "z"]);
   expect(onDisk.secrets).toEqual({ cfApiToken: "tok" });
+});
+
+test("store key absent: updatePlatformSettings keeps the migrated fields in the file and never touches the store", () => {
+  writeLegacyFile({
+    publicDomain: "file.example.dev", legacyPrefixes: ["/file-prefix"], tlds: ["localhost"], secrets: {},
+  });
+  reloadPlatformSettings();
+  updatePlatformSettings({ tlds: ["localhost", "z"] });
+
+  const onDisk = JSON.parse(readFileSync(process.env.LOCAL_PLATFORM_SETTINGS_PATH!, "utf8"));
+  expect(onDisk.publicDomain).toBe("file.example.dev");
+  expect(onDisk.legacyPrefixes).toEqual(["/file-prefix"]);
+  expect(onDisk.tlds).toEqual(["localhost", "z"]);
+
+  // Ownership is never manufactured by deck's own save path.
+  expect(getSetting<unknown>("deck.platform").value).toBeUndefined();
+});
+
+test("store key absent: a publicDomain-changing write still lands only in the file", () => {
+  updatePlatformSettings({ publicDomain: "fresh.example.dev" });
+  reloadPlatformSettings();
+  expect(getPlatformSettings().publicDomain).toBe("fresh.example.dev");
+  expect(getSetting<unknown>("deck.platform").value).toBeUndefined();
 });
 
 test("platform.json is written 0600", () => {
@@ -151,11 +179,26 @@ test("a tlds-only patch never strips publicDomain/legacyPrefixes that only the f
   expect(getPlatformSettings().legacyPrefixes).toEqual(["/file-only-prefix"]);
 });
 
-test("a store write failure reverts the in-memory cache instead of claiming a value neither side holds", () => {
+test("store key present: a store write failure reverts the in-memory cache instead of claiming a value neither side holds", () => {
+  // rt-client's read path honest-degrades malformed stores to "empty"
+  // rather than throwing (see stores.ts), so a plain syntax error can no
+  // longer be used to force a write-time throw -- it would just read back
+  // as unowned. A duplicate top-level key is the one shape that both (a)
+  // parses fine under the lenient reader the ownership check uses (last
+  // occurrence wins, so deck.platform reads as present/owned) and (b) is
+  // refused by setSetting's stricter writer (assertEditableJsonc refuses to
+  // edit a document with ANY duplicate key, anywhere in the tree).
+  writeLegacyFile({ publicDomain: "file.example.dev", legacyPrefixes: [], tlds: ["localhost"], secrets: {} });
+  mkdirSync(dirname(machineStorePath()), { recursive: true });
+  writeFileSync(
+    machineStorePath(),
+    '{ "deck.platform": { "publicDomain": "owned.example.dev", "legacyPrefixes": [] },'
+      + ' "deck.platform": { "publicDomain": "owned.example.dev", "legacyPrefixes": [] } }',
+  );
   reloadPlatformSettings();
   const before = getPlatformSettings().publicDomain;
-  mkdirSync(dirname(machineStorePath()), { recursive: true });
-  writeFileSync(machineStorePath(), "{ this is not valid jsonc");
+  expect(before).toBe("owned.example.dev"); // sanity: the store is read as owned before the write attempt
+
   expect(() => updatePlatformSettings({ publicDomain: "should-not-apply.example.dev" })).toThrow();
   expect(getPlatformSettings().publicDomain).toBe(before);
 });
