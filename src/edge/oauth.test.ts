@@ -228,6 +228,30 @@ test("access.json is written 0600", () => {
   expect(mode).toBe(0o600);
 });
 
+test("store key absent: a file-write failure reverts the in-memory cache instead of silently keeping the change", () => {
+  setOAuth("a", { mode: "off" }); // establishes a baseline the failed write must revert to
+
+  rmSync(ACCESS_PATH, { force: true });
+  mkdirSync(ACCESS_PATH, { recursive: true });
+  try {
+    expect(() => setOAuth("a", { mode: "emails", emails: ["a@x.dev"] })).toThrow();
+  } finally {
+    rmSync(ACCESS_PATH, { recursive: true, force: true });
+  }
+
+  expect(getOAuth("a")).toEqual({ mode: "off" });
+});
+
+test("a resolver throw on the ownership probe degrades to unowned rather than crashing the write", () => {
+  setSetting("deck.access", { poison: "${repoRoot}" }, "user");
+  reloadOAuth(); // load()'s own fallback already tolerates this; unaffected by the probe fix
+
+  expect(() => setOAuth("a", { mode: "emails", emails: ["a@x.dev"] })).not.toThrow();
+
+  const onDisk = JSON.parse(readFileSync(ACCESS_PATH, "utf8"));
+  expect(onDisk.apps.a).toEqual({ mode: "emails", emails: ["a@x.dev"] });
+});
+
 test("store key present: a store write failure reverts the in-memory cache instead of claiming a value neither side holds", () => {
   // rt-client's read path honest-degrades a malformed store to "empty"
   // rather than throwing (see stores.ts), so a plain syntax error can no

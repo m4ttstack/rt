@@ -341,6 +341,45 @@ test("store key present: a file-write failure after a successful store write res
   expect(getAppSettings("old-name").passwordHash).toBeDefined();
 });
 
+test("store key present: a file-write failure's store revert overlays the current raw store instead of replacing it wholesale", async () => {
+  setSetting("deck.apps", { "old-name": { published: true, publicFollowsOverride: false } }, "user");
+  reloadSettings(); // boots knowing only about old-name
+
+  // A second process adds a brand-new app to the store after this process's
+  // cache was built -- the revert must not erase it.
+  setSetting(
+    "deck.apps",
+    {
+      "old-name": { published: true, publicFollowsOverride: false },
+      "concurrent-app": { published: false, publicFollowsOverride: true },
+    },
+    "user",
+  );
+
+  const settingsFilePath = process.env.LOCAL_APPS_SETTINGS_PATH!;
+  rmSync(settingsFilePath, { force: true });
+  mkdirSync(settingsFilePath, { recursive: true });
+  try {
+    await expect(setPublished("old-name", false)).rejects.toThrow();
+  } finally {
+    rmSync(settingsFilePath, { recursive: true, force: true });
+  }
+
+  const stored = getSetting<Record<string, unknown>>("deck.apps").value;
+  expect(stored?.["concurrent-app"]).toEqual({ published: false, publicFollowsOverride: true });
+  expect(stored?.["old-name"]).toEqual({ published: true, publicFollowsOverride: false });
+});
+
+test("a resolver throw on the ownership probe degrades to unowned rather than crashing the write", async () => {
+  setSetting("deck.apps", { poison: "${repoRoot}" }, "user");
+  reloadSettings(); // load()'s own fallback already tolerates this; unaffected by the probe fix
+
+  await expect(setPublished("nihongo", false)).resolves.toBeUndefined();
+
+  const onDisk = JSON.parse(readFileSync(process.env.LOCAL_APPS_SETTINGS_PATH!, "utf8"));
+  expect(onDisk.apps.nihongo.published).toBe(false);
+});
+
 test("store key present: renameAppSettings carries published/publicFollowsOverride to the new key in the store", () => {
   setSetting("deck.apps", { "old-name": { published: false, publicFollowsOverride: false } }, "user");
   reloadSettings();

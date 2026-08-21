@@ -73,7 +73,11 @@ export function getPlatformSettings(): PlatformSettings { return cache; }
  * and doing so would manufacture ownership deck never asked for).
  */
 function isPlatformStoreOwned(resolve: GetSettingFn): boolean {
-  return resolve<unknown>(STORE_KEY).value !== undefined;
+  try {
+    return resolve<unknown>(STORE_KEY).value !== undefined;
+  } catch {
+    return false;
+  }
 }
 
 export function updatePlatformSettings(patch: Partial<PlatformSettings>, resolve: GetSettingFn = getSetting): void {
@@ -114,6 +118,13 @@ export function updatePlatformSettings(patch: Partial<PlatformSettings>, resolve
     renameSync(tmp, path);
     chmodSync(path, 0o600);
   } catch (err) {
+    if (owned) {
+      try {
+        setSetting(STORE_KEY, { publicDomain: previous.publicDomain, legacyPrefixes: previous.legacyPrefixes }, "machine");
+      } catch (revertErr) {
+        console.error("platform settings save: failed to revert deck.platform after a file-write failure", revertErr);
+      }
+    }
     cache = previous;
     throw err;
   }

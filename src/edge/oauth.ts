@@ -126,7 +126,11 @@ export function getOAuth(app: string): OAuth {
  * or an explicit `rt settings set`, never manufactured by this function.
  */
 function isAccessStoreOwned(): boolean {
-  return getSetting<unknown>(STORE_KEY).value !== undefined;
+  try {
+    return getSetting<unknown>(STORE_KEY).value !== undefined;
+  } catch {
+    return false;
+  }
 }
 
 function currentRawAccessStore(): Record<string, unknown> {
@@ -161,7 +165,12 @@ export function setOAuth(app: string, rule: OAuth): void {
     }
     saveFile({ apps: {} });
   } else {
-    saveFile({ apps: cache.apps });
+    try {
+      saveFile({ apps: cache.apps });
+    } catch (err) {
+      cache = previous;
+      throw err;
+    }
   }
 }
 

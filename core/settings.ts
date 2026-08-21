@@ -153,7 +153,11 @@ function stripMigratedFields(state: SettingsFile): SettingsFile {
  * an explicit `rt settings set`, never manufactured by this function.
  */
 function isAppsStoreOwned(): boolean {
-  return getSetting<unknown>(STORE_KEY).value !== undefined;
+  try {
+    return getSetting<unknown>(STORE_KEY).value !== undefined;
+  } catch {
+    return false;
+  }
 }
 
 function currentRawAppsStore(): Record<string, Partial<MigratedAppFields>> {
@@ -178,6 +182,25 @@ function nextAppsStoreDict(previous: SettingsFile): Record<string, Partial<Migra
     if (!(app in cache.apps)) delete next[app];
   }
   return next;
+}
+
+/**
+ * The revert-direction mirror of nextAppsStoreDict, same overlay-a-fresh-read
+ * reasoning: a wholesale replace from `previous` alone would erase whatever
+ * the just-reverted forward write (or a concurrent process) landed in the
+ * store for an unrelated app. `cache` keys missing from `previous.apps` -- a
+ * rename's new name, just added by the forward write this call is undoing --
+ * are the one case an app should disappear from the store on revert.
+ */
+function revertedAppsStoreDict(previous: SettingsFile): Record<string, Partial<MigratedAppFields>> {
+  const reverted: Record<string, Partial<MigratedAppFields>> = {
+    ...currentRawAppsStore(),
+    ...buildAppsStoreDict(previous),
+  };
+  for (const app of Object.keys(cache.apps)) {
+    if (!(app in previous.apps)) delete reverted[app];
+  }
+  return reverted;
 }
 
 /**
@@ -217,7 +240,7 @@ function save(previous: SettingsFile): void {
   } catch (err) {
     if (owned) {
       try {
-        setSetting(STORE_KEY, buildAppsStoreDict(previous), "user");
+        setSetting(STORE_KEY, revertedAppsStoreDict(previous), "user");
       } catch (revertErr) {
         console.error("settings save: failed to revert deck.apps after a file-write failure", revertErr);
       }

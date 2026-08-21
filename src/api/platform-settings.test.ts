@@ -176,6 +176,35 @@ test("a tlds-only patch never strips publicDomain/legacyPrefixes that only the f
   expect(getPlatformSettings().legacyPrefixes).toEqual(["/file-only-prefix"]);
 });
 
+test("store key present: a file-write failure after a successful store write restores the store to its previous value", () => {
+  setSetting("deck.platform", { publicDomain: "before.example.dev", legacyPrefixes: ["/before"] }, "machine");
+  reloadPlatformSettings();
+
+  // Force the file write to fail AFTER the store write above already landed.
+  const platformPath = process.env.LOCAL_PLATFORM_SETTINGS_PATH!;
+  rmSync(platformPath, { force: true });
+  mkdirSync(platformPath, { recursive: true });
+  try {
+    expect(() => updatePlatformSettings({ publicDomain: "after.example.dev" })).toThrow();
+  } finally {
+    rmSync(platformPath, { recursive: true, force: true });
+  }
+
+  const stored = getSetting<{ publicDomain?: string; legacyPrefixes?: string[] }>("deck.platform").value;
+  expect(stored?.publicDomain).toBe("before.example.dev");
+  expect(stored?.legacyPrefixes).toEqual(["/before"]);
+});
+
+test("a resolver throw on the ownership probe degrades to unowned rather than crashing the write", () => {
+  setSetting("deck.platform", { poison: "${repoRoot}" }, "machine");
+  reloadPlatformSettings(); // load()'s own fallback already tolerates this; unaffected by the probe fix
+
+  expect(() => updatePlatformSettings({ tlds: ["localhost", "z"] })).not.toThrow();
+
+  const onDisk = JSON.parse(readFileSync(process.env.LOCAL_PLATFORM_SETTINGS_PATH!, "utf8"));
+  expect(onDisk.tlds).toEqual(["localhost", "z"]);
+});
+
 test("store key present: a store write failure reverts the in-memory cache instead of claiming a value neither side holds", () => {
   // rt-client's read path honest-degrades malformed stores to "empty"
   // rather than throwing (see stores.ts), so a plain syntax error can no
