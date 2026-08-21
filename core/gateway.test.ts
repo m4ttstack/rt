@@ -1,6 +1,7 @@
 import { test, expect } from "bun:test";
 import { decide, appFromHost, publicPort, safeNext } from "./gateway.ts";
 import { signToken } from "./session.ts";
+import { pageNothingHere, pageOffline, pageRateLimited, pageLogin } from "./gateway-pages.tsx";
 
 const SECRET = "a".repeat(64);
 
@@ -89,4 +90,51 @@ test("public traffic uses the route port when there is no override", () => {
 test("no route stays undefined, so the gateway still reports no-route", () => {
   expect(publicPort(undefined, undefined)).toBeUndefined();
   expect(decide({ app: "x", port: publicPort(undefined, undefined), published: true, passwordVersion: 0, secret: SECRET }).kind).toBe("no-route");
+});
+
+// Gateway pages are the zero-JS failure path: no <script> may ever appear on
+// any of them, in any state.
+test("gateway pages carry no <script> tag", () => {
+  expect(pageNothingHere()).not.toContain("<script");
+  expect(pageOffline("nihongo")).not.toContain("<script");
+  expect(pageRateLimited()).not.toContain("<script");
+  expect(pageLogin("nihongo")).not.toContain("<script");
+  expect(pageLogin("nihongo", { error: true })).not.toContain("<script");
+});
+
+test("gateway pages inline the generated token css", () => {
+  expect(pageNothingHere()).toContain("--bg:");
+  expect(pageLogin("nihongo")).toContain("--bg:");
+});
+
+test("pageLogin escapes an app name carrying markup", () => {
+  const html = pageLogin('<b>"x"</b>');
+  expect(html).not.toContain("<b>");
+  expect(html).not.toContain('"x"</b>');
+});
+
+test("pageLogin escapes the hidden next field", () => {
+  const html = pageLogin("nihongo", { next: '/x"><script>alert(1)</script>' });
+  expect(html).not.toContain("<script>alert(1)</script>");
+  // The escaped value still round-trips the intended path.
+  expect(html).toContain("&quot;");
+});
+
+test("pageLogin's form posts to /__auth and carries the password + hidden next fields", () => {
+  const html = pageLogin("nihongo", { next: "/dashboard" });
+  expect(html).toContain('method="POST"');
+  expect(html).toContain('action="/__auth"');
+  expect(html).toContain('type="password"');
+  expect(html).toContain("autofocus");
+  // React emits the DOM property's own case (autoComplete); HTML attribute
+  // matching is case-insensitive, so the check is too.
+  expect(html.toLowerCase()).toContain('autocomplete="current-password"');
+  expect(html).toContain('type="hidden"');
+  expect(html).toContain('name="next"');
+  expect(html).toContain('value="/dashboard"');
+});
+
+test("pageLogin's error paragraph appears only when opts.error is set", () => {
+  expect(pageLogin("nihongo")).not.toContain('class="err"');
+  expect(pageLogin("nihongo", { error: true })).toContain('class="err"');
 });

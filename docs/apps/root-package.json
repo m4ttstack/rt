@@ -18,7 +18,7 @@
     "typescript": "^5"
   },
   "scripts": {
-    "build:board": "bun run scripts/build-board.ts",
+    "build:board": "bun run scripts/build-board.ts && bun run scripts/build-gateway-css.ts",
     "build": "bun build --compile src/main.ts --outfile dist/deck",
     "serve": "bun run src/main.ts serve",
     "test": "bun test core src",
