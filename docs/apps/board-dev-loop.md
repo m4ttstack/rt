@@ -66,3 +66,48 @@ kit's and ours alike, back to this repo's own `node_modules` via
 `Bun.resolveSync`. If the board bundle ever throws that error after
 touching the build config, check that plugin is still wired into the
 `Bun.build` call first.
+
+## Testing the drawer era
+
+The table + per-row drawer (roots, dev port, access, logs, edit,
+remove) is covered by two independent suites: DOM specs assert
+behavior, pixel captures assert appearance. Both drive the real
+`src/main.ts serve` server in fixture mode, never a mock.
+
+**DOM specs** — `bun run test:dom` runs the Playwright-driven specs
+under `test/dom/` (`board`, `drawer`, `modals`, `port`, `access`,
+`logs`, `proxy`, `shell`). `test/dom/rig.ts`'s `withBoard(fn, opts)`
+spawns the server with `DECK_FIXTURE` pointed at a temp dir seeded from
+`test/fixture/status.json`; pass `opts.fixture` (e.g.
+`"status-stale.json"`) to copy a different fixture file in as
+`status.json` instead. Each spec gets its own server + browser context
+and a fresh `page` navigated to readiness (`[data-board-ready]`)
+before the callback runs.
+
+**Pixel captures** — `bun run capture:baseline` (writes
+`test/baselines/`) and `bun run capture` (writes `test/.captures/`,
+compared by `bun run capture:compare` at pixel threshold 0) both run
+`test/capture.ts` against the same fixture-mode server, freezing the
+page clock and disabling animations for determinism. The scenario list
+covers: board default (day + night), empty, sections (scrolled to the
+tunnel group), a stale-routes notice (ok + error, error also in dark),
+the add-app modal (service mode + external mode), and the drawer set —
+one root per row kind (healthy, broken, routeless service, tunnel,
+mid-restart; root also in dark), dev port (override active + mid-edit),
+access (root, password, who), logs (day + dark, the dark shot existing
+specifically to catch the terminal box regressing to a scheme-dependent
+token), edit, and the remove confirmation. Regenerated baselines always
+get eyeballed against `docs/design/deck-redesign/board-composite.html`
+and `drawer-states-atlas.html` before committing — the scenario list
+exists to keep every screen in those references reachable by a named
+capture, no more and no less.
+
+**The drawer's own screen stack** — `RootScreen.tsx`'s `ScreenBuilder`
+type builds a screen from the row/nav/board/data current as of the
+render that calls it, so a mutation a pushed screen triggers is visible
+immediately rather than a value frozen at push time. `Nav.push` takes
+an optional `onLeave` callback that `AppDrawer.tsx` runs once when that
+frame is removed — by `pop()`, `close()`, or a row switch — letting a
+screen that stashes transient state (e.g. an in-flight form error)
+clear it itself instead of leaving it to bleed into whatever renders
+next.
