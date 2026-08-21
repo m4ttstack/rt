@@ -11,9 +11,13 @@ import { buildAccessRoot } from "./AccessScreens.tsx";
 import { buildDevPortScreen } from "./DevPortScreen.tsx";
 
 /** What a root/pushed screen's row builders push onto and pop off of. Drawer
-    itself owns no mutation surface -- AppDrawer is the only implementation. */
+    itself owns no mutation surface -- AppDrawer is the only implementation.
+    `onLeave` runs once when its frame is removed -- by `pop()`, by `close()`,
+    or by a row switch -- so a screen that stashes an error in durable board
+    state (e.g. access's `oauthError`) can clear it itself rather than leave
+    it to bleed into whatever screen renders next. */
 export interface Nav {
-  push(build: ScreenBuilder): void;
+  push(build: ScreenBuilder, onLeave?: () => void): void;
   pop(): void;
   close(): void;
 }
@@ -119,9 +123,9 @@ function devPortValue(row: Row, data: StatusData): string {
   return overriding ? `${row.port} · override` : String(row.port ?? "");
 }
 
-// One sentence per gate, mirroring accessSummary's own vocabulary but
-// condensed to a value-hint width -- "open" reads as clearly as the summary
-// sentence in the tight trailing column a Nav row's value occupies.
+// One word per gate, condensed to a value-hint width -- "open" reads as
+// clearly as a fuller sentence would in the tight trailing column a Nav
+// row's value occupies.
 function accessValue(row: Row): string {
   const parts: string[] = [];
   if (row.hasPassword) parts.push("password");

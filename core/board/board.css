@@ -59,32 +59,6 @@ body {
   margin-top: var(--spacing-md);
 }
 
-.access-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-xs);
-}
-.access-actions {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-xs);
-}
-/* The allowlist is one entry per line. Let it fill the dialog and grow
-   downward, but never sideways: a long address would otherwise widen the
-   textarea and push the dialog past its own max-width. */
-.access-list {
-  width: 100%;
-  min-height: 5rem;
-  resize: vertical;
-  font-family: inherit;
-}
-/* Sits under the field it explains, so it reads as a note on that field
-   rather than as another paragraph of body copy. */
-.access-hint {
-  font-size: 0.8em;
-  margin: 0;
-}
-
 /* The switch (16px, inline-flex) is shorter than the tooltip wrapper's
    line box, so baseline alignment (the default) leaves it off-center by
    the asymmetric leading above/below the baseline. Table cells only. */

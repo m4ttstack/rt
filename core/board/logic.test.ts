@@ -5,14 +5,12 @@ import {
   HEAL_RECENT_MS,
   PROXY_WAIT_MS,
   subline,
-  accessSummary,
   isPlatform,
   tunnelDomain,
   sections,
   tunnels,
   reconcileRestarting,
   autoBanner,
-  splitList,
   addPayload,
   editPatch,
   type StatusData,
@@ -95,45 +93,6 @@ test("subline: protected and next-port segments omitted when 0/absent", () => {
     apps: [makeRow({ published: true, hasPassword: false })],
   });
   expect(subline(data)).toBe("1/1 healthy · 1 public · auto-refreshes");
-});
-
-// ---- accessSummary ----
-
-test("accessSummary: unpublished leads with 'not published'", () => {
-  const row = makeRow({ published: false, hasPassword: false, oauth: { mode: "off" } });
-  expect(accessSummary(row)).toBe("not published");
-});
-
-test("accessSummary: password required plus singular '1 person'", () => {
-  const row = makeRow({
-    published: true,
-    hasPassword: true,
-    oauth: { mode: "emails", emails: ["a@x.dev"] },
-  });
-  expect(accessSummary(row)).toBe("password required, 1 person may sign in");
-});
-
-test("accessSummary: plural 'people' for multiple emails", () => {
-  const row = makeRow({
-    published: true,
-    hasPassword: false,
-    oauth: { mode: "emails", emails: ["a@x.dev", "b@y.dev"] },
-  });
-  expect(accessSummary(row)).toBe("2 people may sign in");
-});
-
-test("accessSummary: domains phrasing joins with 'or'", () => {
-  const row = makeRow({
-    published: true,
-    hasPassword: false,
-    oauth: { mode: "domains", domains: ["a.com", "b.com"] },
-  });
-  expect(accessSummary(row)).toBe("anyone at a.com or b.com may sign in");
-});
-
-test("accessSummary: default is 'open to anyone'", () => {
-  const row = makeRow({ published: true, hasPassword: false, oauth: { mode: "off" } });
-  expect(accessSummary(row)).toBe("open to anyone");
 });
 
 // ---- isPlatform ----
@@ -259,16 +218,6 @@ test("autoBanner: recent successful heal reads an ok notice", () => {
 
 test("autoBanner: nothing to report reads null", () => {
   expect(autoBanner(makeData(), 1000)).toBeNull();
-});
-
-// ---- splitList ----
-
-test("splitList: commas and newlines both separate, blanks dropped", () => {
-  expect(splitList("a@x.dev, b@y.dev\nc@z.dev")).toEqual(["a@x.dev", "b@y.dev", "c@z.dev"]);
-});
-
-test("splitList: empty entries from stray delimiters are dropped", () => {
-  expect(splitList("a@x.dev,,\n \nb@y.dev")).toEqual(["a@x.dev", "b@y.dev"]);
 });
 
 // ---- addPayload ----

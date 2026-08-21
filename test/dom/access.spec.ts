@@ -129,6 +129,29 @@ test("password: set flow -- input + nav save PUTs the password, then the root hi
   });
 });
 
+test("password: change flow -- a row that already has one PUTs the new value and stays 'set'", async () => {
+  await withBoard(async (page) => {
+    let putBody: unknown = null;
+    await page.route("**/api/v1/apps/atlas/password", async (route) => {
+      putBody = route.request().postDataJSON();
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+    });
+
+    await openAccess(page, "atlas"); // hasPassword true in the fixture
+    await accessNav(page, "password").locator("button").click();
+    expect(await page.locator('button[data-intent="bad"]', { hasText: "remove password" }).count()).toBe(1);
+
+    await page.locator('[aria-label="new password"]').fill("newSecret1");
+    await page.locator('[data-part="drawer-navaction"]').click();
+
+    await waitUntil(async () => putBody !== null);
+    expect(putBody).toEqual({ password: "newSecret1" });
+
+    await page.waitForSelector('[data-part="drawer-title"]', { hasText: "access" });
+    expect(await accessNav(page, "password").locator('[data-part="listgroup-value"]').textContent()).toBe("set");
+  });
+});
+
 test("password: remove -- no confirm, PUTs password:null immediately", async () => {
   await withBoard(async (page) => {
     let putBody: unknown = null;
@@ -265,6 +288,36 @@ test("who: an apply error renders the Alert inside the who screen and does not n
     await alert.waitFor({ state: "visible" });
     expect(await alert.textContent()).toContain("Cloudflare rejected the request");
     expect(await page.locator('[data-part="drawer-title"]').textContent()).toBe("who");
+  });
+});
+
+test("who: an apply error does not survive the kit back chevron onto the access root", async () => {
+  await withBoard(async (page) => {
+    await page.route("**/api/v1/apps/forecast/access", async (route) => {
+      await route.fulfill({
+        status: 500,
+        contentType: "application/json",
+        body: JSON.stringify({ error: "Cloudflare rejected the request" }),
+      });
+    });
+
+    await openAccess(page, "forecast");
+    await page.locator('[data-part="listgroup-toggle"] [data-part="switch-control"]').click();
+    await accessNav(page, "who").locator("button").click();
+
+    const draft = page.getByRole("textbox", { name: "add email" });
+    await draft.fill("a@x.dev");
+    await draft.press("Enter");
+    await page.locator('[data-part="drawer-navaction"]').click();
+
+    const alert = page.locator('[data-part="alert"]');
+    await alert.waitFor({ state: "visible" }); // the failed save landed on who, per the test above
+
+    // The kit's own nav-bar back chevron, not who's save/cancel -- this is
+    // the path that used to leave oauthError set on the way out.
+    await page.locator('[data-part="drawer-back"]').click();
+    await page.waitForSelector('[data-part="drawer-title"]', { hasText: "access" });
+    expect(await page.locator('[data-part="alert"]').count()).toBe(0);
   });
 });
 

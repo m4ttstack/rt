@@ -44,9 +44,24 @@ export function AppDrawer({
   // every render (see `stack` below) so a mutation a pushed screen triggers
   // -- which flows back through fresh row/data/board -- shows up on that
   // same screen instead of staying frozen at whatever it looked like when
-  // it was pushed.
-  const [pushed, setPushed] = useState<ScreenBuilder[]>([]);
+  // it was pushed. `onLeave` is optional per-frame cleanup, run once when
+  // the frame is removed (see the `Nav` doc comment).
+  const [pushed, setPushed] = useState<Array<{ build: ScreenBuilder; onLeave?: () => void }>>([]);
   const returnFocusRef = useRef<HTMLElement | null>(null);
+
+  // onLeave callbacks a row switch discarded, drained by the effect below.
+  // Firing them right here (during the render-time reset two blocks down)
+  // would call a board setter -- e.g. clearing access's oauthError -- while
+  // AppDrawer, not Board, is mid-render, which React disallows; queuing them
+  // for the post-commit effect is the same "defer the foreign update" move
+  // `cancelEdit`/`closeAccess` already make via their own effects below.
+  const pendingLeaveRef = useRef<Array<() => void>>([]);
+  useEffect(() => {
+    if (pendingLeaveRef.current.length === 0) return;
+    const fns = pendingLeaveRef.current;
+    pendingLeaveRef.current = [];
+    fns.forEach((fn) => fn());
+  });
 
   // A row switch (arrow keys, or clicking a different row while one is
   // already open) always lands on that row's root, per the interaction
@@ -59,6 +74,9 @@ export function AppDrawer({
   const seenRowNameRef = useRef(openRowName);
   if (seenRowNameRef.current !== openRowName) {
     seenRowNameRef.current = openRowName;
+    for (const frame of pushed) {
+      if (frame.onLeave) pendingLeaveRef.current.push(frame.onLeave);
+    }
     setPushed([]);
   }
 
@@ -80,9 +98,23 @@ export function AppDrawer({
   }, [openRowName, board.closeAccess]);
 
   const nav: Nav = {
-    push: (build) => setPushed((prev) => [...prev, build]),
-    pop: () => setPushed((prev) => (prev.length > 0 ? prev.slice(0, -1) : prev)),
-    close: () => onOpenRowNameChange(null),
+    push: (build, onLeave) => setPushed((prev) => [...prev, { build, onLeave }]),
+    pop: () =>
+      setPushed((prev) => {
+        if (prev.length === 0) return prev;
+        prev[prev.length - 1]!.onLeave?.();
+        return prev.slice(0, -1);
+      }),
+    // Runs every remaining frame's onLeave itself, then empties `pushed`
+    // eagerly (not left to the row-switch reset above, which runs on the
+    // NEXT render once `openRowName` has changed) -- otherwise that reset
+    // would find these same frames still in `pushed` and queue their
+    // onLeave a second time.
+    close: () => {
+      pushed.forEach((frame) => frame.onLeave?.());
+      setPushed([]);
+      onOpenRowNameChange(null);
+    },
   };
 
   // Read after commit, not during render: a row that just mounted this same
@@ -123,7 +155,7 @@ export function AppDrawer({
   }, [row, rows, openRowName, onOpenRowNameChange]);
 
   const stack: DrawerScreen[] = row
-    ? [rootScreenFor(row, nav, board, data), ...pushed.map((build) => build(row, nav, board, data))]
+    ? [rootScreenFor(row, nav, board, data), ...pushed.map((frame) => frame.build(row, nav, board, data))]
     : [];
 
   return (

@@ -86,10 +86,14 @@ export const buildAccessRoot: ScreenBuilder = (row, nav, board): DrawerScreen =>
               <ListGroup.Nav
                 label="who"
                 value={whoValue(m)}
-                onClick={() => {
-                  board.updateAccessModal({ oauthError: null });
-                  nav.push(buildAccessWho);
-                }}
+                onClick={() =>
+                  // onLeave, not a clear-on-entry here too: whichever way who
+                  // is left (kit back chevron, ✕, or a row switch) an apply
+                  // error it set must not survive onto root -- root's OWN
+                  // oauthError (the toggle-off teardown-failure case) is a
+                  // different write path entirely and is untouched by this.
+                  nav.push(buildAccessWho, () => board.updateAccessModal({ oauthError: null }))
+                }
               />
             )}
           </ListGroup>
