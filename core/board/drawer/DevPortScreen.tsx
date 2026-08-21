@@ -10,6 +10,7 @@
 // the row name ("‹ atlas") from both the view and the setting screen, which
 // only holds if setting sits directly on root, not on top of the view.
 import { ListGroup } from "@mattstack/tui-kit";
+import { OptimisticToggleRow } from "../optimistic.tsx";
 import type { Row, StatusData } from "../logic.ts";
 import type { ScreenBuilder } from "./RootScreen.tsx";
 
@@ -99,10 +100,10 @@ export const buildDevPortScreen: ScreenBuilder = (row, nav, board, data) => {
             <ListGroup.Fact label="override" value={override.devPort} />
           </ListGroup>
           <ListGroup footer={publicFollowsFooter(row.publicFollowsOverride, override.basePort, override.devPort)}>
-            <ListGroup.Toggle
+            <OptimisticToggleRow
               label="public follows dev"
               checked={row.publicFollowsOverride}
-              onChange={() => board.onPublicFollows(row)}
+              mutate={() => board.onPublicFollows(row)}
               aria-label={
                 row.publicFollowsOverride
                   ? `stop serving ${row.name}'s dev port publicly`

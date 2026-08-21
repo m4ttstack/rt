@@ -212,3 +212,31 @@ test("external-link anchor appears only when publicUrl differs, with parity aria
     expect(await ledgerExtLink.count()).toBe(0);
   });
 });
+
+test("public switch flips optimistically before the PUT resolves, and reverts when the server never confirms", async () => {
+  await withBoard(async (page) => {
+    // ledger is unpublished in the fixture; hold the PUT open long enough to
+    // observe the optimistic state, then let the poll (still serving the
+    // unchanged fixture) act as the server refusing to confirm.
+    let releasePut: () => void = () => {};
+    const putHeld = new Promise<void>((r) => (releasePut = r));
+    await page.route("**/api/v1/apps/ledger/publish", async (route) => {
+      await putHeld;
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+    });
+    const sw = rowFor(page, "ledger").locator('[role="switch"]');
+    expect(await sw.isChecked()).toBe(false);
+    await sw.click();
+    // Optimistic: shown state flips while the request is still in flight.
+    await poll(() => true, 50);
+    expect(await sw.isChecked()).toBe(true);
+    releasePut();
+    // Canonical hand-off: the refresh returns the unchanged fixture, so the
+    // switch snaps back instead of lying about the server's state.
+    const deadline = Date.now() + 4000;
+    while (Date.now() < deadline && (await sw.isChecked())) {
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    expect(await sw.isChecked()).toBe(false);
+  });
+});

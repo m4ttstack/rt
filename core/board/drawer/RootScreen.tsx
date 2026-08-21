@@ -3,6 +3,7 @@
 // (DevPortScreen.tsx), access (AccessScreens.tsx), logs (LogsScreen.tsx),
 // and edit (EditScreen.tsx).
 import { Alert, ICONS, ListGroup, StatusDot, type DrawerScreen } from "@mattstack/tui-kit";
+import { OptimisticToggleRow } from "../optimistic.tsx";
 import { servicePid } from "../AppsTable.tsx";
 import { type Row, type StatusData, tunnelDomain } from "../logic.ts";
 import type { BoardState } from "../useBoardState.ts";
@@ -151,10 +152,10 @@ export function buildAppRoot(
     content: (
       <div className="drawer-groups">
         <ListGroup footer={publicFooter(row, data)}>
-          <ListGroup.Toggle
+          <OptimisticToggleRow
             label="public"
             checked={row.published}
-            onChange={() => board.onPublish(row)}
+            mutate={() => board.onPublish(row)}
             aria-label={row.published ? `make ${row.name} private` : `publish ${row.name}`}
           />
         </ListGroup>

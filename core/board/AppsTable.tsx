@@ -1,6 +1,7 @@
 // The apps table and the strays table share one row template, per
 // board.html.
-import { Badge, Button, Chip, ICONS, Spinner, StatusDot, Switch, Table, Tooltip } from "@mattstack/tui-kit";
+import { Badge, Button, Chip, ICONS, Spinner, StatusDot, Table, Tooltip } from "@mattstack/tui-kit";
+import { OptimisticSwitch } from "./optimistic.tsx";
 import { isPlatform, type Row, type StatusData } from "./logic.ts";
 import type { BoardState } from "./useBoardState.ts";
 
@@ -160,14 +161,14 @@ function SiteCell({ row, data, restarting }: { row: Row; data: StatusData; resta
       {/* Who owns this row's structure belongs with the row's identity, not
           in the column of things you can click. */}
       {isPlatform(row.managedBy ?? undefined) && (
-        <Tooltip tip="this is Deck itself, `deck uninstall` to remove it">
+        <Tooltip className="cell-tag" tip="this is Deck itself, `deck uninstall` to remove it">
           <Chip uppercase aria-label="this is Deck itself, `deck uninstall` to remove it">
             this board
           </Chip>
         </Tooltip>
       )}
       {row.managedBy && row.managedBy !== "user" && !isPlatform(row.managedBy) && (
-        <Tooltip tip={`structure is owned by ${row.managedBy}`}>
+        <Tooltip className="cell-tag" tip={`structure is owned by ${row.managedBy}`}>
           <Chip uppercase aria-label={`structure is owned by ${row.managedBy}`}>
             managed · {row.managedBy}
           </Chip>
@@ -196,7 +197,7 @@ function PortCell({ row, data }: { row: Row; data: StatusData }) {
     <span>
       {row.port}
       {override && (
-        <Tooltip tip={`dev port override, normally ${override.basePort}`}>
+        <Tooltip className="cell-tag" tip={`dev port override, normally ${override.basePort}`}>
           <Chip uppercase aria-label={`dev port override, normally ${override.basePort}`}>
             dev
           </Chip>
@@ -264,7 +265,7 @@ function PublishCell({
   const tip = row.published ? "public — click to make private" : "private — click to publish";
   return (
     <Tooltip tip={tip}>
-      <Switch checked={row.published} onChange={() => onPublish(row)} aria-label={label} />
+      <OptimisticSwitch checked={row.published} mutate={() => onPublish(row)} aria-label={label} />
     </Tooltip>
   );
 }

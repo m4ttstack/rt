@@ -32,6 +32,18 @@ body {
   vertical-align: middle;
 }
 
+/* The site link is the row's identity -- one step up from the cell's data
+   font size so it anchors the row without shouting. */
+.site-name a {
+  font-size: var(--font-size-md);
+}
+
+/* Chips that trail inline data (site tags, the dev-override chip) breathe
+   instead of butting against the text or icon before them. */
+.cell-tag {
+  margin-left: var(--spacing-sm);
+}
+
 /* td is nowrap for port numbers; a config line has to be free to wrap. */
 .preflight-issue {
   display: flex;

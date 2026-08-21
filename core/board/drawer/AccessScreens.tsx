@@ -6,6 +6,7 @@
 // the API immediately, and a teardown failure renders here even after the
 // toggle itself reads off (oauthError is not gated on oauthOn).
 import { Alert, ListGroup, type DrawerScreen } from "@mattstack/tui-kit";
+import { OptimisticToggleRow } from "../optimistic.tsx";
 import type { Row } from "../logic.ts";
 import type { AccessModalState } from "../useBoardState.ts";
 import type { ScreenBuilder } from "./RootScreen.tsx";
@@ -76,10 +77,10 @@ export const buildAccessRoot: ScreenBuilder = (row, nav, board): DrawerScreen =>
         </ListGroup>
         {m && (
           <ListGroup footer={m.oauthOn ? signInFooter() : nothingSet ? openFooter(row) : undefined}>
-            <ListGroup.Toggle
+            <OptimisticToggleRow
               label="google sign-in"
               checked={m.oauthOn}
-              onChange={() => board.onOauthSwitch()}
+              mutate={() => board.onOauthSwitch()}
               aria-label={m.oauthOn ? "turn google sign-in off" : "require google sign-in"}
             />
             {m.oauthOn && (
