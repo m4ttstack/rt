@@ -1,5 +1,5 @@
 import type { CssVariablesResolver } from "@soribashi/core/codegen";
-import { tuiTheme } from "./src/theme.ts";
+import { tuiTheme, TUI_DARK_COLORS } from "./src/theme.ts";
 
 /**
  * The public alias contract.
@@ -63,6 +63,14 @@ const aliases: CssVariablesResolver = () => ({
     // theme token category to alias (ThemeTokens has no such family), and
     // "tabular-nums" is the whole value space this ever needs.
     "--font-numeric": "tabular-nums",
+    // Scheme-INVARIANT terminal surface, aliased straight off the night
+    // palette object (not through --surface-*/--text-*): every
+    // scheme-varying token collapses its light-dark() once at :root, so a
+    // var() chain can never pin a leaf element dark while the page is in
+    // day scheme. Terminal/log boxes stay night-dark in both schemes.
+    "--terminal-bg": TUI_DARK_COLORS.surface.bg,
+    "--terminal-fg": TUI_DARK_COLORS.gray.fg,
+    "--terminal-border": TUI_DARK_COLORS.line.border,
   },
 });
 

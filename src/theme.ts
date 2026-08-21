@@ -36,6 +36,27 @@ export const tuiVocabulary = {
  * scale-key naming rule (keys must never start with a digit — `getSize()`
  * treats a digit-leading key as raw CSS).
  */
+/** The night palette, exported so scheme-INVARIANT surfaces (the always-dark
+    terminal treatment) can alias these exact values: every scheme-varying
+    token collapses its light-dark() once at :root, so no var() chain can pin
+    a leaf element to the dark branch while the page is in day scheme. */
+export const TUI_DARK_COLORS = {
+  blue: { "500": "#7aa2f7" },
+  green: { "500": "#9ece6a" },
+  red: { "500": "#f7768e" },
+  amber: { "500": "#e0af68" },
+  purple: { "500": "#bb9af7" },
+  cyan: { "500": "#7dcfff" },
+  gray: { fg: "#e3e7f6", muted: "#7e86ad" },
+  surface: { bg: "#16161e", panel: "#232a47", card: "#2c3352" },
+  line: {
+    border: "#3b4261",
+    soft: "#313853",
+    grid: "rgba(122, 162, 247, 0.06)",
+  },
+  dot: { ok: "#4ade5b", warn: "#ffbb3d", bad: "#ff5c72" },
+} as const;
+
 export const tuiTheme = createTheme({
   name: "tui-kit",
   darkMode: { selector: ".dark" },
@@ -174,22 +195,7 @@ export const tuiTheme = createTheme({
   // (light-dark() is a <color> production), and mr-board's `:root.dark` never
   // redeclares a non-colour either, so the two constraints agree.
   dark: {
-    colors: {
-      blue: { "500": "#7aa2f7" },
-      green: { "500": "#9ece6a" },
-      red: { "500": "#f7768e" },
-      amber: { "500": "#e0af68" },
-      purple: { "500": "#bb9af7" },
-      cyan: { "500": "#7dcfff" },
-      gray: { fg: "#e3e7f6", muted: "#7e86ad" },
-      surface: { bg: "#16161e", panel: "#232a47", card: "#2c3352" },
-      line: {
-        border: "#3b4261",
-        soft: "#313853",
-        grid: "rgba(122, 162, 247, 0.06)",
-      },
-      dot: { ok: "#4ade5b", warn: "#ffbb3d", bad: "#ff5c72" },
-    },
+    colors: TUI_DARK_COLORS,
   },
   semanticTokens: {
     // No backfill: createTheme's DEFAULT_TEXT / DEFAULT_SURFACE /

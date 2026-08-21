@@ -146,6 +146,9 @@
     --font-mono: var(--font-family-mono);
     --font-sans: var(--font-family-sans);
     --font-numeric: tabular-nums;
+    --terminal-bg: #16161e;
+    --terminal-fg: #e3e7f6;
+    --terminal-border: #3b4261;
   }
 
   .dark {
