@@ -15,8 +15,27 @@
  * that name would collide here.
  */
 
+export { Alert, ALERT_PARTS, alertTheme } from "./recipes/Alert/Alert.tsx";
+export type { AlertOwnProps, AlertProps } from "./recipes/Alert/Alert.tsx";
+
+export { Badge, BADGE_PARTS, badgeTheme } from "./recipes/Badge/Badge.tsx";
+export type { BadgeOwnProps, BadgeProps } from "./recipes/Badge/Badge.tsx";
+
+export { Button, BUTTON_PARTS, buttonTheme } from "./recipes/Button/Button.tsx";
+export type { ButtonOwnProps, ButtonProps } from "./recipes/Button/Button.tsx";
+
 export { Chip, CHIP_PARTS, chipTheme } from "./recipes/Chip/Chip.tsx";
 export type { ChipOwnProps, ChipProps } from "./recipes/Chip/Chip.tsx";
+
+export {
+  CONFIRMDIALOG_PARTS,
+  ConfirmDialog,
+  confirmDialogTheme,
+} from "./recipes/ConfirmDialog/ConfirmDialog.tsx";
+export type {
+  ConfirmDialogOwnProps,
+  ConfirmDialogProps,
+} from "./recipes/ConfirmDialog/ConfirmDialog.tsx";
 
 export {
   CONTEXTMENU_PARTS,
@@ -37,6 +56,24 @@ export type {
 
 export { CopyButton, copyButtonTheme } from "./recipes/CopyButton/CopyButton.tsx";
 export type { CopyButtonOwnProps, CopyButtonProps } from "./recipes/CopyButton/CopyButton.tsx";
+
+export {
+  FIELD_PARTS,
+  RadioGroup,
+  radioGroupTheme,
+  TextArea,
+  textAreaTheme,
+  TextField,
+  textFieldTheme,
+} from "./recipes/Field/Field.tsx";
+export type {
+  RadioGroupOwnProps,
+  RadioGroupProps,
+  TextAreaOwnProps,
+  TextAreaProps,
+  TextFieldOwnProps,
+  TextFieldProps,
+} from "./recipes/Field/Field.tsx";
 
 export { CHECK_ICON, COPY_ICON, Icon, ICONS, iconTheme } from "./recipes/Icon/Icon.tsx";
 export type { IconOwnProps, IconProps } from "./recipes/Icon/Icon.tsx";
@@ -74,8 +111,17 @@ export type {
   SideDrawerSide,
 } from "./recipes/SideDrawer/SideDrawer.tsx";
 
+export { Spinner, SPINNER_PARTS, spinnerTheme } from "./recipes/Spinner/Spinner.tsx";
+export type { SpinnerOwnProps, SpinnerProps } from "./recipes/Spinner/Spinner.tsx";
+
 export { STATUSDOT_PARTS, StatusDot, statusDotTheme } from "./recipes/StatusDot/StatusDot.tsx";
 export type { StatusDotOwnProps, StatusDotProps } from "./recipes/StatusDot/StatusDot.tsx";
+
+export { SWITCH_PARTS, Switch, switchTheme } from "./recipes/Switch/Switch.tsx";
+export type { SwitchOwnProps, SwitchProps } from "./recipes/Switch/Switch.tsx";
+
+export { Table, TABLE_PARTS, tableTheme } from "./recipes/Table/Table.tsx";
+export type { TableCellOwnProps, TableOwnProps, TableProps } from "./recipes/Table/Table.tsx";
 
 export { TOASTHOST_PARTS, ToastHost, toastHostTheme } from "./recipes/ToastHost/ToastHost.tsx";
 export type { ToastHostOwnProps, ToastHostProps } from "./recipes/ToastHost/ToastHost.tsx";

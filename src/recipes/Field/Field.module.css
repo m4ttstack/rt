@@ -1,0 +1,51 @@
+/* Field family -- TextField, TextArea, RadioGroup share one CSS shape.
+   .root doubles as the label-wrapped stack (TextField/TextArea) and the
+   radiogroup container (RadioGroup): both are a vertical stack of parts,
+   so one rule serves both roots. .input is shared by <input> and
+   <textarea>; the textarea-only resize rule is scoped with :where(textarea)
+   so it never touches the <input> element sharing the class. */
+@layer soribashi.recipes {
+  .root {
+    display: flex;
+    flex-direction: column;
+    gap: var(--spacing-sm);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    color: var(--fg);
+  }
+
+  .label {
+    color: var(--muted);
+    font-size: var(--font-size-xs);
+  }
+
+  .input {
+    background: var(--panel);
+    color: var(--fg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: var(--spacing-sm);
+    font-family: inherit;
+    font-size: inherit;
+  }
+
+  .input:focus-visible {
+    outline: 1px solid var(--accent);
+    outline-offset: 1px;
+  }
+
+  .input:where(textarea) {
+    resize: vertical;
+  }
+
+  .error {
+    color: var(--red);
+    font-size: var(--font-size-xs);
+  }
+
+  .option {
+    display: flex;
+    gap: var(--spacing-sm);
+    align-items: center;
+  }
+}

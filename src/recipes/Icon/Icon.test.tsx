@@ -30,6 +30,21 @@ const MR_BOARD_ICON_NAMES = [
   "settings",
 ];
 
+/** deck's glyph set, added after mr-board's in ICONS, in Icon.tsx source order. */
+const DECK_ICON_NAMES = [
+  "plus",
+  "external-link",
+  "triangle-alert",
+  "circle-check",
+  "file-warning",
+  "refresh-cw",
+  "pencil",
+  "trash-2",
+  "lock-keyhole",
+  "user-round-check",
+  "rotate-ccw",
+];
+
 function svgOf(container: HTMLElement): SVGSVGElement {
   const svg = container.querySelector("svg");
   if (!svg) throw new Error("no <svg> rendered");
@@ -159,7 +174,9 @@ describe("Icon (browser)", () => {
   });
 
   it("ships mr-board's ICONS record verbatim, every entry rendering a glyph", async () => {
-    expect(Object.keys(ICONS)).toEqual(MR_BOARD_ICON_NAMES);
+    // Verbatim means "still first, still in order" — deck's glyphs are
+    // appended after, so this checks a prefix rather than the full key set.
+    expect(Object.keys(ICONS).slice(0, MR_BOARD_ICON_NAMES.length)).toEqual(MR_BOARD_ICON_NAMES);
 
     const screen = await renderWithTheme(
       <div>
@@ -183,6 +200,28 @@ describe("Icon (browser)", () => {
     expect(glyph("light").querySelector("circle")).not.toBeNull();
     expect(glyph("settings").querySelector("circle")).not.toBeNull();
     expect(glyph("dark").querySelector("circle")).toBeNull();
+  });
+
+  it("ships deck's glyph set, every entry rendering a non-empty glyph", async () => {
+    for (const name of DECK_ICON_NAMES) {
+      expect(ICONS[name], `${name} missing from ICONS`).not.toBeUndefined();
+    }
+
+    const screen = await renderWithTheme(
+      <div>
+        {DECK_ICON_NAMES.map((name) => (
+          <span key={name} data-testid={`icon-${name}`}>
+            {ICONS[name]}
+          </span>
+        ))}
+      </div>,
+    );
+
+    for (const name of DECK_ICON_NAMES) {
+      const svg = svgOf(screen.container.querySelector(`[data-testid="icon-${name}"]`) as HTMLElement);
+      const path = svg.querySelector("path") as SVGPathElement;
+      expect(path.getTotalLength(), `${name} renders an empty path`).toBeGreaterThan(0);
+    }
   });
 
   it("exports the two standalone path constants as usable glyphs", async () => {

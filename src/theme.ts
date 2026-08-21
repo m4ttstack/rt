@@ -4,9 +4,10 @@ import { tuiIntentResolver } from "./intent-resolver.ts";
 /**
  * `intent` is role-named where mr-board's CSS is hue-named; the join lives in
  * src/intent-resolver.ts. `variant` omits soribashi's default `filled`/`link`:
- * nothing in the TUI look paints a filled intent-coloured control, and a
- * variant the kit cannot render has no business in the vocabulary a prop
- * validates against.
+ * nothing in the TUI look paints an intent-COLOURED fill, and a variant the
+ * kit cannot render has no business in the vocabulary a prop validates
+ * against. `solid` (Button's default) is not that: it is a NEUTRAL opaque
+ * panel, the same box CopyButton already renders — see Button.module.css.
  */
 export const tuiVocabulary = {
   size: defineVocabulary(["xs", "sm", "md", "lg", "xl"] as const),
@@ -19,7 +20,7 @@ export const tuiVocabulary = {
     "purple",
     "muted",
   ] as const),
-  variant: defineVocabulary(["outline", "subtle", "ghost"] as const),
+  variant: defineVocabulary(["solid", "outline", "subtle", "ghost"] as const),
 };
 
 /**

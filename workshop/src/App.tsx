@@ -1,8 +1,13 @@
 import type { ComponentType } from "react";
 import { useState } from "react";
+import { Alerts } from "./pages/Alerts.tsx";
+import { Badges } from "./pages/Badges.tsx";
+import { Buttons } from "./pages/Buttons.tsx";
 import { Chips } from "./pages/Chips.tsx";
+import { ConfirmDialogs } from "./pages/ConfirmDialogs.tsx";
 import { ContextMenus } from "./pages/ContextMenus.tsx";
 import { CopyButtons } from "./pages/CopyButtons.tsx";
+import { Fields } from "./pages/Fields.tsx";
 import { Icons } from "./pages/Icons.tsx";
 import { Markdowns } from "./pages/Markdowns.tsx";
 import { Modals } from "./pages/Modals.tsx";
@@ -10,7 +15,10 @@ import { Panels } from "./pages/Panels.tsx";
 import { Segmenteds } from "./pages/Segmenteds.tsx";
 import { SelectBoxes } from "./pages/SelectBoxes.tsx";
 import { SideDrawers } from "./pages/SideDrawers.tsx";
+import { Spinners } from "./pages/Spinners.tsx";
 import { StatusDots } from "./pages/StatusDots.tsx";
+import { Switches } from "./pages/Switches.tsx";
+import { Tables } from "./pages/Tables.tsx";
 import { ToastHosts } from "./pages/ToastHosts.tsx";
 import { Tokens } from "./pages/Tokens.tsx";
 
@@ -25,9 +33,14 @@ import { Tokens } from "./pages/Tokens.tsx";
  */
 const PAGES: Record<string, ComponentType> = {
   tokens: Tokens,
+  alerts: Alerts,
+  badges: Badges,
+  buttons: Buttons,
   chips: Chips,
+  confirmdialogs: ConfirmDialogs,
   contextmenus: ContextMenus,
   copybuttons: CopyButtons,
+  fields: Fields,
   icons: Icons,
   markdowns: Markdowns,
   modals: Modals,
@@ -35,7 +48,10 @@ const PAGES: Record<string, ComponentType> = {
   segmenteds: Segmenteds,
   selectboxes: SelectBoxes,
   sidedrawers: SideDrawers,
+  spinners: Spinners,
   statusdots: StatusDots,
+  switches: Switches,
+  tables: Tables,
   toasthosts: ToastHosts,
 };
 
@@ -43,6 +59,7 @@ const PAGES: Record<string, ComponentType> = {
  * below — needed once a key isn't a single word (`copybuttons`,
  * `selectboxes`). */
 const PAGE_LABELS: Record<string, string> = {
+  confirmdialogs: "ConfirmDialog",
   contextmenus: "ContextMenu",
   copybuttons: "CopyButton",
   markdowns: "Markdown",

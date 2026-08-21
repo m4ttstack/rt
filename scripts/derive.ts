@@ -36,8 +36,8 @@ import { tuiVocabulary } from "../src/theme.ts";
  *     monorepo's biome binary so a generated file is byte-identical to what
  *     biome would format; the kit has no biome and commits no manifest.json,
  *     so the only consumer of this module is test/token-existence.test.ts.
- *  4. A DIRECTORY MAY PRODUCE MORE THAN ONE MANIFEST ENTRY (controller ruling
- *     R11, task 15). soribashi's original assumes one recipe per directory —
+ *  4. A DIRECTORY MAY PRODUCE MORE THAN ONE MANIFEST ENTRY. soribashi's
+ *     original assumes one recipe per directory —
  *     `buildManifestEntry(name)` looked for the single RecipeMeta-carrying
  *     export whose `.name` matched the directory, and threw if none matched.
  *     That broke the moment `src/recipes/Segmented/` grew a second exported
@@ -280,11 +280,20 @@ async function buildManifestEntriesForDir(name: string): Promise<ManifestEntry[]
   // one PRIMARY recipe, named after it"); a directory hosting only
   // differently-named recipes would be a real authoring mistake this should
   // still catch loudly.
-  if (!metas.some((m) => m.name === name)) {
+  //
+  // `recipeIsFamily` (read directly off the module like `recipeCategory`) is
+  // the escape hatch for a directory with no primary at all: a directory can
+  // host co-equal recipes sharing one CSS shape where none of them is named
+  // after the directory, so there is no single recipe the directory name
+  // could correctly point at, and the "primary name matches directory" guard
+  // does not apply. Ordinary directories (including Segmented + LabeledSeg,
+  // which DOES have a primary) keep tripping this guard exactly as before.
+  if (!recipeModule.recipeIsFamily && !metas.some((m) => m.name === name)) {
     throw new Error(
       `[derive] ${toRepoRelative(tsxPath)} exports no component named "${name}" carrying ` +
         `RecipeMeta (found: ${metas.map((m) => m.name).join(", ") || "none"}). A recipe ` +
-        "directory's primary export must be named after the directory.",
+        "directory's primary export must be named after the directory, or the module must " +
+        "declare `export const recipeIsFamily = true as const;` for a deliberate no-primary family.",
     );
   }
 
