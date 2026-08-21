@@ -58,7 +58,7 @@ const row = { display: "flex", alignItems: "center", gap: "0.6rem", padding: "0.
 
 const label = { width: "4rem", color: "var(--muted)", fontSize: "var(--font-size-sm)" } as const;
 
-const VARIANTS = ["outline", "subtle", "ghost"] as const;
+const VARIANTS = ["solid", "outline", "subtle", "ghost"] as const;
 const INTENTS = ["accent", "bad"] as const;
 const SIZES = ["md", "sm"] as const;
 
@@ -97,18 +97,21 @@ function ButtonStates() {
   );
 }
 
-/** One ghost button per intent, side by side — only the first is hovered
-    before capture, so the shot proves the tint by CONTRAST against its
-    at-rest sibling in the same frame. */
-function GhostHoverRow() {
+/** One row per variant, an accent button beside a bad-intent one — only the
+    ACCENT button of each row gets hovered before capture (a real pointer can
+    only hover one element at a time), so each shot proves that variant's
+    hover fill by CONTRAST against its at-rest bad-intent sibling in the same
+    frame. `solid`'s bad button also shows the red text+border it carries AT
+    REST — no hover needed for that part. */
+function HoverContrastRow({ variant }: { variant: (typeof VARIANTS)[number] }) {
   return (
-    <div data-testid="ghost-hover" style={surface}>
+    <div data-testid={`hover-${variant}`} style={surface}>
       <div style={row}>
-        <Button variant="ghost" intent="accent">
-          accent ghost
+        <Button variant={variant} intent="accent">
+          {variant} accent
         </Button>
-        <Button variant="ghost" intent="bad">
-          bad ghost
+        <Button variant={variant} intent="bad">
+          {variant} bad
         </Button>
       </div>
     </div>
@@ -140,19 +143,23 @@ describe("Button (visual)", () => {
     await expect(page.getByTestId("states")).toMatchScreenshot("button-states-dark");
   });
 
-  it("the hovered ghost's intent-tinted wash matches its baseline in light mode", async () => {
-    const screen = await renderFixture(<GhostHoverRow />);
+  it.each(VARIANTS)("%s's hovered fill matches its baseline in light mode", async (variant) => {
+    const screen = await renderFixture(<HoverContrastRow variant={variant} />);
 
-    await screen.getByRole("button", { name: "accent ghost" }).hover();
+    await screen.getByRole("button", { name: `${variant} accent` }).hover();
 
-    await expect(page.getByTestId("ghost-hover")).toMatchScreenshot("button-ghost-hover-light");
+    await expect(page.getByTestId(`hover-${variant}`)).toMatchScreenshot(
+      `button-hover-${variant}-light`,
+    );
   });
 
-  it("the hovered ghost's intent-tinted wash matches its baseline in dark mode", async () => {
-    const screen = await renderFixture(<GhostHoverRow />, { dark: true });
+  it.each(VARIANTS)("%s's hovered fill matches its baseline in dark mode", async (variant) => {
+    const screen = await renderFixture(<HoverContrastRow variant={variant} />, { dark: true });
 
-    await screen.getByRole("button", { name: "accent ghost" }).hover();
+    await screen.getByRole("button", { name: `${variant} accent` }).hover();
 
-    await expect(page.getByTestId("ghost-hover")).toMatchScreenshot("button-ghost-hover-dark");
+    await expect(page.getByTestId(`hover-${variant}`)).toMatchScreenshot(
+      `button-hover-${variant}-dark`,
+    );
   });
 });

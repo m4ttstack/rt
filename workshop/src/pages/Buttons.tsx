@@ -12,13 +12,13 @@ import { Button, BUTTON_PARTS, ICONS } from "@mattstack/tui-kit";
  * <html> and every intent below follows through the theme.
  */
 
-const VARIANTS = ["outline", "subtle", "ghost"] as const;
+const VARIANTS = ["solid", "outline", "subtle", "ghost"] as const;
 const INTENTS = ["accent", "bad"] as const;
 const SIZES = ["md", "sm"] as const;
 
 const table = {
   display: "grid",
-  gridTemplateColumns: "4rem repeat(6, max-content)",
+  gridTemplateColumns: "4rem repeat(8, max-content)",
   alignItems: "center",
   gap: "0.5rem 0.7rem",
   marginTop: "1rem",
@@ -57,6 +57,30 @@ export function Buttons() {
           <ButtonRow key={size} size={size} />
         ))}
       </div>
+
+      <h2 style={{ marginTop: "2rem" }}>hover each variant (accent vs bad)</h2>
+      <p>
+        Hover reads as "this box got a fill" — border and text never shift on
+        hover, only <code>background</code>. Every value below is read off
+        Mantine's real <code>defaultVariantColorsResolver</code> (its
+        raw-colour fallback, the branch that fits a single-shade-per-hue
+        palette): <code>solid</code> steps to <code>--card</code>, matching
+        Mantine's own <code>default</code>-variant token step;{" "}
+        <code>outline</code> tints 5%, <code>subtle</code>/<code>ghost</code>{" "}
+        tint 12% — Mantine's own outline vs subtle alphas, not one shared
+        value.
+      </p>
+      {VARIANTS.map((variant) => (
+        <div key={variant} style={row}>
+          <span style={rowLabel}>{variant}</span>
+          <Button variant={variant} intent="accent">
+            {variant} accent
+          </Button>
+          <Button variant={variant} intent="bad">
+            {variant} bad
+          </Button>
+        </div>
+      ))}
 
       <h2 style={{ marginTop: "2rem" }}>click counter (proves interactivity)</h2>
       <div style={row}>

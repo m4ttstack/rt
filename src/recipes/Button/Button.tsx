@@ -12,10 +12,38 @@ const BUTTON_SELECTORS = ["root"] as const;
 
 export const BUTTON_PARTS = { root: "button" } as const;
 
-/** `as const` is load-bearing — see Chip.tsx's CHIP_VARIANTS note. */
-const BUTTON_VARIANTS = ["outline", "subtle", "ghost"] as const;
+/** `as const` is load-bearing — see Chip.tsx's CHIP_VARIANTS note. `solid` is
+    first/default: the panel+border box every other variant is a departure
+    from. */
+const BUTTON_VARIANTS = ["solid", "outline", "subtle", "ghost"] as const;
 
 const BUTTON_VOCABULARY_AXES = ["intent", "variant", "size"] as const;
+
+/** DERIVED from Mantine's own `defaultVariantColorsResolver` (the RAW/custom-
+    colour fallback branch — the one that applies to a single-shade-per-hue
+    palette like Tokyo's, which has no 10-step ramp to index into), not
+    tuned by eye. Mantine's real numbers: `outline` hover =
+    `rgba(color, 0.05)`, `subtle` hover = `rgba(color, 0.12)` — two DIFFERENT
+    alphas, not one shared value, and both IDENTICAL across light/dark (no
+    scheme-conditional alpha in that fallback branch — see the task-3 report
+    for the full source excerpts and the Mantine reference contrast ratios
+    computed from them). Tokyo's tone tokens already vary correctly per
+    scheme via `light-dark(...)` at the token layer, which is what lets one
+    flat alpha work for both schemes here too. `outline`'s rest state is
+    genuinely `transparent`, matching what Mantine's alpha composites
+    over — `--bg` (the page), not `--panel`. */
+const OUTLINE_HOVER_TINT = "5%";
+
+/** `ghost` is transparent-at-rest with colour-on-hover — structurally
+    Mantine's `subtle`, not `outline` — so it gets `subtle`'s alpha (12%),
+    also over `--bg` for the same "rest is genuinely transparent" reason. */
+const GHOST_HOVER_TINT = "12%";
+
+/** `subtle` (ours) is a deliberate divergence from Mantine's `subtle`: card
+    background AT REST, not transparent — so its hover reuses `ghost`'s 12%
+    proportion (same variant family) but mixed over `--card`, its own actual
+    rest surface, rather than over `--bg`. */
+const SUBTLE_HOVER_TINT = "12%";
 
 export interface ButtonOwnProps {
   children?: ReactNode;
@@ -43,12 +71,27 @@ export const Button = defineComponent<
   classes,
   // Every axis needs a default: autoVars returns {} unless the axes it reads
   // are all set — see Chip.tsx.
-  defaults: { intent: "accent", variant: "outline", size: "md" },
-  vars: (theme, props) => ({
-    root: {
-      ...(autoVars(theme, "Button", props as Record<string, unknown>, true).root ?? {}),
-    },
-  }),
+  defaults: { intent: "accent", variant: "solid", size: "md" },
+  vars: (theme, props) => {
+    const autoRoot = autoVars(theme, "Button", props as Record<string, unknown>, true).root ?? {};
+    // `--button-color` IS the intent tone (autoVars' own resolved value, same
+    // map autoVars uses) — reused rather than re-deriving it from a second
+    // FAMILY lookup. `outline`/`subtle`/`ghost` all read it directly as their
+    // at-rest text/border colour too (see Button.module.css).
+    const tone = autoRoot["--button-color"];
+    return {
+      root: {
+        ...autoRoot,
+        ...(tone
+          ? {
+              "--sb-button-outline-hover-bg": `color-mix(in srgb, ${tone} ${OUTLINE_HOVER_TINT}, var(--bg))`,
+              "--sb-button-ghost-hover-bg": `color-mix(in srgb, ${tone} ${GHOST_HOVER_TINT}, var(--bg))`,
+              "--sb-button-subtle-hover-bg": `color-mix(in srgb, ${tone} ${SUBTLE_HOVER_TINT}, var(--card))`,
+            }
+          : {}),
+      },
+    };
+  },
   render: ({ props, getStyles, ref }) => {
     const {
       children,
