@@ -5,9 +5,30 @@
 import { test, expect } from "bun:test";
 import type { Page } from "playwright";
 import { withBoard } from "./rig.ts";
+import fixture from "../fixture/status.json" with { type: "json" };
 
 function rowFor(page: Page, name: string) {
   return page.locator('[data-part="table-row"]').filter({ has: page.locator("strong", { hasText: name }) });
+}
+
+interface PreflightIssue {
+  code: string;
+  message: string;
+  fix?: string;
+}
+
+/** A status payload identical to the fixture except orbit is opted in
+    (preflight is probed only for opted-in apps -- core/preflight.ts) with
+    the given preflight result. Routed in place of GET /api/v1/status so the
+    refresh() that onPublicFollows triggers picks it up immediately, rather
+    than waiting out the real REFRESH_MS poll. */
+function statusWithOrbitPreflight(preflight: PreflightIssue[]): unknown {
+  const next = structuredClone(fixture) as { apps: Array<{ name: string; publicFollowsOverride: boolean; preflight: PreflightIssue[] | null }> };
+  const orbit = next.apps.find((a) => a.name === "orbit");
+  if (!orbit) throw new Error("fixture missing the orbit row");
+  orbit.publicFollowsOverride = true;
+  orbit.preflight = preflight;
+  return next;
 }
 
 async function poll(check: () => boolean, timeoutMs = 4000): Promise<void> {
@@ -160,6 +181,57 @@ test("public-too switch carries parity aria-label/title and PUTs public-follows-
     await publicSwitch.click();
     await poll(() => putBody !== null);
     expect(putBody).toEqual({ follows: true });
+  });
+});
+
+test("preflight warn badge + fix code render once opted in and an issue comes back", async () => {
+  await withBoard(async (page) => {
+    await page.route("**/api/v1/apps/orbit/public-follows-override", async (route) => {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+    });
+    const body = statusWithOrbitPreflight([
+      {
+        code: "host-blocked",
+        message: "The dev server refuses requests for orbit.mattstack.",
+        fix: "Add server.allowedHosts: ['orbit.mattstack'] to the dev server config.",
+      },
+    ]);
+    await page.route("**/api/v1/status", async (route) => {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+    });
+
+    const orbitRow = rowFor(page, "orbit");
+    await orbitRow.hover();
+    await orbitRow.locator('.devport-public [data-part="switch-control"]').click();
+
+    const warnBadge = orbitRow.locator('[data-part="badge"]', {
+      hasText: "The dev server refuses requests for orbit.mattstack.",
+    });
+    await warnBadge.waitFor({ state: "visible" });
+    const fix = orbitRow.locator("code", { hasText: "server.allowedHosts" });
+    expect(await fix.textContent()).toBe("Add server.allowedHosts: ['orbit.mattstack'] to the dev server config.");
+  });
+});
+
+test("live-publicly success badge renders once opted in with a clean preflight", async () => {
+  await withBoard(async (page) => {
+    await page.route("**/api/v1/apps/orbit/public-follows-override", async (route) => {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+    });
+    const body = statusWithOrbitPreflight([]);
+    await page.route("**/api/v1/status", async (route) => {
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(body) });
+    });
+
+    const orbitRow = rowFor(page, "orbit");
+    await orbitRow.hover();
+    await orbitRow.locator('.devport-public [data-part="switch-control"]').click();
+
+    const successBadge = orbitRow.locator('[data-part="badge"]', { hasText: "live publicly" });
+    await successBadge.waitFor({ state: "visible" });
+    expect(await successBadge.getAttribute("title")).toBe(
+      "the dev server accepts the public hostname and its hot reload reaches the tunnel",
+    );
   });
 });
 
