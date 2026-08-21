@@ -139,3 +139,12 @@ body {
 .devport-public {
   font-size: 0.8em;
 }
+
+/* The switch (16px, inline-flex) is shorter than the tooltip wrapper's
+   line box, so baseline alignment (the default) leaves it off-center by
+   the asymmetric leading above/below the baseline. Table cells only: the
+   devport-extra popover's switch sits in a flex row, where vertical-align
+   has no effect. */
+[data-part="table-cell"] [data-part="switch"] {
+  vertical-align: middle;
+}
