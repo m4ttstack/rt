@@ -31,13 +31,15 @@
     transition: background 0.12s ease, border-color 0.12s ease;
   }
 
-  /* Thumb top is (track height - thumb height) / 2, composed entirely from
-     var()s -- a raw 50% + translateY(-50%) centering pair would each trip
-     the gate's length scanner outside any var(). */
+  /* Thumb top is (inner track height - thumb height) / 2, composed entirely
+     from var()s -- a raw 50% + translateY(-50%) centering pair would each
+     trip the gate's length scanner outside any var(). `top` offsets from the
+     padding box, so the track's two 1px borders (px2 total) come out of the
+     height first. */
   .control::after {
     content: "";
     position: absolute;
-    top: calc((var(--spacing-rem100) - var(--spacing-rem75)) / 2);
+    top: calc((var(--spacing-rem100) - var(--spacing-rem75) - var(--spacing-px2)) / 2);
     left: var(--spacing-px2);
     width: var(--spacing-rem75);
     height: var(--spacing-rem75);
