@@ -10,7 +10,14 @@ import { getSetting, setSetting } from "@mattstack/rt-client";
 // same reason: no dependency from here on rt-client's internals, only its
 // public API. Change there first, mirror here.
 function machineStorePath(): string {
-  return join(process.env.HOME!, ".mattstack", "settings.local.jsonc");
+  return join(process.env.HOME!, ".mattstack", "user", "local", "test-machine", "settings.local.jsonc");
+}
+
+// The resolver picks the machine profile from ~/.mattstack/machine-key (falling
+// back to the hostname slug), so the fixture pins the key the path above uses.
+function pinMachineKey(): void {
+  mkdirSync(join(process.env.HOME!, ".mattstack"), { recursive: true });
+  writeFileSync(join(process.env.HOME!, ".mattstack", "machine-key"), "test-machine\n");
 }
 
 const dir = mkdtempSync(join(tmpdir(), "local-psettings-"));
@@ -26,6 +33,7 @@ beforeEach(() => {
   rmSync(process.env.LOCAL_PLATFORM_SETTINGS_PATH!, { force: true });
   home = mkdtempSync(join(tmpdir(), "local-psettings-home-"));
   process.env.HOME = home;
+  pinMachineKey();
   reloadPlatformSettings();
 });
 
