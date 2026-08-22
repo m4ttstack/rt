@@ -1,7 +1,8 @@
 import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } from "fs";
 import { join } from "path";
+import { APP_ROOT } from "./app-root.ts";
 
-const STATE_ROOT = join(import.meta.dir, "..", "state");
+const STATE_ROOT = join(APP_ROOT, "state");
 export const SLACK_REF_DIR = join(STATE_ROOT, "slack");
 const INDEX_PATH = join(STATE_ROOT, "slack-index.json");
 

@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync, renameSync, mkdirSync, readdirSync, rmSync, existsSync } from "fs";
 import { join } from "path";
+import { APP_ROOT } from "./app-root.ts";
 
 /**
  * Doctor lifecycle for MRs with mechanical breakage (CI failing, merge
@@ -24,7 +25,7 @@ export interface DoctorState {
   updatedAt: number;
 }
 
-export const DOCTOR_DIR = join(import.meta.dir, "..", "state", "doctors");
+export const DOCTOR_DIR = join(APP_ROOT, "state", "doctors");
 
 
 export function doctorFilePath(mrUrl: string, dir: string = DOCTOR_DIR): string {

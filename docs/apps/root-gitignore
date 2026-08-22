@@ -18,3 +18,6 @@ switchboard/*.sqlite*
 
 # screenshot-capture scratch output (tests/baselines/ is the committed baseline)
 tests/.captures/
+
+# compiled binary + build-time client bundle (bun run build)
+dist/

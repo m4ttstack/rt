@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync, renameSync, mkdirSync, readdirSync, rmSync, existsSync } from "fs";
 import { join } from "path";
+import { APP_ROOT } from "./app-root.ts";
 import type { RespondStatus } from "./respond-outcome.ts";
 
 /**
@@ -27,7 +28,7 @@ export interface RespondState {
   updatedAt: number;
 }
 
-export const RESPOND_DIR = join(import.meta.dir, "..", "state", "responds");
+export const RESPOND_DIR = join(APP_ROOT, "state", "responds");
 
 
 export function respondFilePath(mrUrl: string, dir: string = RESPOND_DIR): string {

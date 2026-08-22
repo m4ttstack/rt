@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync, renameSync, mkdirSync, readdirSync, rmSync, existsSync } from "fs";
 import { join } from "path";
+import { APP_ROOT } from "./app-root.ts";
 
 export type ReviewStatus = "queued" | "reviewing" | "done" | "error";
 export type ReviewOutcome = "comment" | "approve";
@@ -25,7 +26,7 @@ export interface ReviewState {
 }
 
 /** Per-review JSON files live here; the server owns naming, the agent just writes. */
-export const REVIEW_DIR = join(import.meta.dir, "..", "state", "reviews");
+export const REVIEW_DIR = join(APP_ROOT, "state", "reviews");
 
 
 /** Deterministic file path for an MR url, so a repeat launch resolves the same file. */

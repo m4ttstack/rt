@@ -1,6 +1,10 @@
-import type { BunPlugin } from "bun";
 import { join, dirname, basename } from "path";
 import { readFileSync, writeFileSync, mkdirSync, watch } from "fs";
+import pkg from "../package.json";
+import { APP_ROOT, IS_COMPILED } from "./app-root.ts";
+import { getClientAssets } from "./client-assets.ts";
+import styleCss from "./style.css" with { type: "text" };
+import faviconSvg from "./favicon.svg" with { type: "text" };
 import type { PullRequest, MRDetail } from "@mattstack/glance";
 import { loadConfig, loadGitLabToken, loadSlackToken, loadSwitchboardToken, loadSwitchboardAdminToken, saveMemberHidden, saveSwitchboardUrl, parseConfig, CONFIG_PATH } from "./config.ts";
 import { memoizeAsync } from "./memoize-async.ts";
@@ -40,12 +44,21 @@ import { renderPost, sanitizeHeader, MAX_HEADER_LEN, type MrFacts } from "./temp
 const FIXTURE_DIR = process.env.BOARD_FIXTURE || null;
 const fixtureFile = (name: string) => join(FIXTURE_DIR!, name);
 
+// Bare semver, nothing else: the mattstack bundle gate compares this output
+// against the rt-tray deps.lock row verbatim. Before config load, so a clean
+// machine with no config can still ask. src/compiled.ts answers it even
+// earlier for the standalone binary; this one covers `bun run src/server.ts`.
+if (Bun.argv.includes("--version")) {
+  console.log(pkg.version);
+  process.exit(0);
+}
+
+// Baked at build/boot via text imports (embedded in the compiled binary); the
+// /style.css route re-reads from disk in dev so CSS edits land on refresh.
 const cssPath = join(import.meta.dir, "style.css");
-let css = readFileSync(cssPath, "utf-8");
-const faviconPath = join(import.meta.dir, "favicon.svg");
-const favicon = readFileSync(faviconPath, "utf-8");
+const favicon = faviconSvg;
 /** The board's own .env, written when /peer/join redeems an invite. */
-const ENV_PATH = join(import.meta.dir, "..", ".env");
+const ENV_PATH = join(APP_ROOT, ".env");
 
 // `let`: /peer/join reassigns the whole config after persisting switchboard.url.
 let config = FIXTURE_DIR
@@ -315,74 +328,10 @@ async function refreshMemberNames(): Promise<void> {
 // resolves, same as the other void refreshMemberNames() call sites below.
 void refreshMemberNames();
 
-// ONE React in the bundle, pinned by resolved path.
-//
-// @mattstack/tui-kit is a `file:` dependency, and bun links it as a tree of
-// per-file symlinks into the sibling checkout. A bundler REALPATHS a leaf
-// before resolving that file's own imports, so a kit recipe's bare `react`
-// specifier resolves from `~/Documents/GitHub/tui-kit/node_modules/...`, not
-// from ours -- and bundlers key module identity by resolved path. The kit
-// declares react/react-dom as PEER dependencies (correctly); that is simply
-// not something an adopter's install can act on when the kit also has its own
-// devDependency copy sitting next to the realpath'd source.
-//
-// Measured before this plugin existed: `react@19.2.8` from the kit's store AND
-// `node_modules/react` from ours, both in one bundle -- so `<Icon>` (the first
-// kit recipe the board renders) threw `Cannot read properties of null (reading
-// 'useContext')` and React logged "You might have more than one copy of React
-// in the same app". Same failure mode, same diagnosis technique, as the
-// @soribashi/factory double instance in docs/tui-kit-devloop.md: group the
-// emitted bundle's module-path comments by package root.
-//
-// `Bun.resolveSync` from THIS file's directory always lands in mr-board's own
-// node_modules, so every react/react-dom specifier in the graph -- ours and
-// the kit's alike -- collapses onto one copy.
-//
-// THE FILTER IS DELIBERATELY UNCONDITIONAL, and that is the thing to know if
-// you land here chasing a React version conflict: it rewrites EVERY
-// react/react-dom specifier in the graph onto mr-board's copy, third-party
-// dependencies included (invadrs and react-markdown both import React today).
-// A dependency that genuinely needed a different React major would be silently
-// given ours and break at render, not at resolve -- so this plugin, not the
-// lockfile, is where that investigation starts.
-const reactSingleton: BunPlugin = {
-  name: "react-singleton",
-  setup(builder) {
-    builder.onResolve({ filter: /^react(-dom)?(\/.*)?$/ }, (args) => ({
-      path: Bun.resolveSync(args.path, import.meta.dir),
-    }));
-  },
-};
-
-// Bundle the React client once at startup; served from memory.
-const build = await Bun.build({
-  entrypoints: [join(import.meta.dir, "client", "main.tsx")],
-  target: "browser",
-  minify: true,
-  plugins: [reactSingleton],
-});
-if (!build.success) {
-  console.error(build.logs.join("\n"));
-  throw new Error("client bundle failed");
-}
-// The client entry imports the kit's theme.css + canvas.css, so the bundle is
-// now a JS chunk *and* a CSS chunk. Discriminate on `kind`, not on the file
-// extension: Bun tags each output ("entry-point" / "asset" / "chunk" /
-// "sourcemap"), so turning on sourcemaps some day adds a `kind: "sourcemap"`
-// output that these counts correctly ignore, while a real regression -- a
-// second entry point, or a code-split chunk the shell does not serve -- still
-// trips the assertion instead of sliding through an extension match.
-//
-// The CSS assertion is the load-bearing one: zero CSS outputs means those two
-// imports silently vanished, which would boot the board with no token block at
-// all (every var(--*) computing to `initial` -- black text on a transparent
-// ground). Better a boot failure than a black board.
-const jsOutputs = build.outputs.filter((o) => o.kind === "entry-point");
-const cssOutputs = build.outputs.filter((o) => o.kind === "asset" && o.path.endsWith(".css"));
-if (jsOutputs.length !== 1) throw new Error(`expected 1 JS entry-point output, got ${jsOutputs.length}`);
-if (cssOutputs.length !== 1) throw new Error(`expected 1 CSS asset output (tui-kit theme + canvas), got ${cssOutputs.length}`);
-const appJs = await jsOutputs[0]!.text();
-const appCss = await cssOutputs[0]!.text();
+// Client bundle: a fresh Bun.build at boot in dev, pre-built + embedded
+// assets injected by src/compiled.ts when running as a standalone binary.
+// The react-singleton constraint story lives in client-bundle.ts.
+const { appJs, appCss } = await getClientAssets();
 
 const shell = `<!doctype html>
 <html lang="en">
@@ -484,9 +433,10 @@ Bun.serve({
       // rules still win every conflict.
       case "/app.css":
         return new Response(appCss, { headers: { "content-type": "text/css; charset=utf-8" } });
-      case "/style.css":
-        css = readFileSync(cssPath, "utf-8");
+      case "/style.css": {
+        const css = IS_COMPILED ? styleCss : readFileSync(cssPath, "utf-8");
         return new Response(css, { headers: { "content-type": "text/css; charset=utf-8" } });
+      }
       case "/favicon.svg":
         return new Response(favicon, { headers: { "content-type": "image/svg+xml; charset=utf-8" } });
       case "/app.js":
@@ -1347,7 +1297,7 @@ Bun.serve({
 // A stale or missing port file only costs the agents their Slack reactions,
 // which is not worth refusing to serve over.
 try {
-  const boardPortDir = join(import.meta.dir, "..", "state");
+  const boardPortDir = join(APP_ROOT, "state");
   mkdirSync(boardPortDir, { recursive: true });
   writeFileSync(join(boardPortDir, "board-port"), String(port));
 } catch (err) {

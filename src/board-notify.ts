@@ -1,5 +1,6 @@
 import { readFileSync } from "fs";
 import { join } from "path";
+import { APP_ROOT } from "./app-root.ts";
 import type { AgentSignal } from "./agent-signal.ts";
 
 const DEFAULT_PORT = 7930;
@@ -17,7 +18,7 @@ function validPort(value: unknown): number | undefined {
     migration (env PORT is now the sole override), so there is no longer a
     config.json tier here. */
 export function readBoardPort(
-  portFilePath: string = join(import.meta.dir, "..", "state", "board-port"),
+  portFilePath: string = join(APP_ROOT, "state", "board-port"),
 ): number {
   const fromEnv = validPort(process.env.MR_BOARD_PORT);
   if (fromEnv !== undefined) return fromEnv;

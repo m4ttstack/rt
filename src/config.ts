@@ -1,5 +1,6 @@
 import { readFileSync, renameSync, writeFileSync } from "fs";
 import { join } from "path";
+import { APP_ROOT } from "./app-root.ts";
 import { getSetting, setSetting } from "@mattstack/rt-client";
 import { readBoardSecrets, type BoardSecretsData, type BoardSecretsDeps } from "./board-secrets.ts";
 
@@ -104,7 +105,7 @@ const DEFAULT_SLACK: SlackConfig = {
   emoji: DEFAULT_SLACK_EMOJI,
 };
 
-export const CONFIG_PATH = join(import.meta.dir, "..", "config.json");
+export const CONFIG_PATH = join(APP_ROOT, "config.json");
 
 /** Parse and validate raw config JSON. Separated from file IO for testing.
     `source` names where a malformed value came from in every thrown message

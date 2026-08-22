@@ -13,7 +13,9 @@
     "typecheck": "tsc --noEmit -p . && tsc --noEmit -p src/client && tsc --noEmit -p src/client/__tests__",
     "capture": "bun tests/capture.ts --out tests/.captures",
     "capture:baseline": "bun tests/capture.ts --out tests/baselines",
-    "capture:compare": "bun tests/compare.ts"
+    "capture:compare": "bun tests/compare.ts",
+    "build:client": "bun run scripts/build-client.ts",
+    "build": "bun run build:client && bun build --compile src/compiled.ts --outfile dist/board"
   },
   "dependencies": {
     "@mattstack/glance": "^0.19.0",

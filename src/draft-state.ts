@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
+import { APP_ROOT } from "./app-root.ts";
 
 /** An outbound MR note the doctor DRAFTED but may never post. Held drafts are
     the only path to GitLab notes, and only the board's approval click walks
@@ -19,7 +20,7 @@ export interface DraftState {
   postedNoteId?: number;
 }
 
-export const DRAFT_DIR = join(import.meta.dir, "..", "state", "drafts");
+export const DRAFT_DIR = join(APP_ROOT, "state", "drafts");
 
 export function draftFilePath(mrUrl: string, kind: string, dir: string = DRAFT_DIR): string {
   const slug = `${mrUrl}-${kind}`.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 200);
