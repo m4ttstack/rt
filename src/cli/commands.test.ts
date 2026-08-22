@@ -252,3 +252,10 @@ test("adopt --json against no running platform answers the frozen deck-not-runni
   expect(code).toBe(1);
   expect(JSON.parse(x.lines.join("\n"))).toEqual({ adopted: false, error: "deck not running" });
 });
+
+test("--version prints the bare semver — the bundle gate matches it against deps.lock verbatim", async () => {
+  const x = io();
+  expect(await runCommand(["--version"], x)).toBe(0);
+  expect(x.lines).toHaveLength(1);
+  expect(x.lines[0]).toMatch(/^\d+\.\d+\.\d+$/);
+});

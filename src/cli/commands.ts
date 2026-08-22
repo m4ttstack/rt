@@ -240,6 +240,12 @@ export async function runCommand(
         io.out(`deck ${VERSION}`);
         return 0;
       }
+      case "--version": {
+        // Bare semver, nothing else: the mattstack bundle gate compares this
+        // output against the rt-tray deps.lock row verbatim.
+        io.out(VERSION);
+        return 0;
+      }
       case "help":
       case "--help": {
         io.out(USAGE);
