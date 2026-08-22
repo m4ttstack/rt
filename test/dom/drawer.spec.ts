@@ -246,7 +246,7 @@ test("dev port: override-active screen shows assigned + override facts and the a
 
     const footers = page.locator('[data-part="listgroup-footer"]');
     expect(await footers.nth(0).textContent()).toBe(
-      "the proxy routes orbit.mattstack to 3007 while the override is set",
+      "the proxy routes orbit.localhost to 3007 while the override is set",
     );
     // orbit's publicFollowsOverride is false in the fixture -- the off copy.
     expect(await footers.nth(1).textContent()).toBe(

@@ -110,7 +110,7 @@ function TunnelStatusStrip({ row, restarting }: { row: Row; restarting: boolean 
 
 function publicFooter(row: Row, data: StatusData): string {
   return row.published
-    ? `${row.name}.${data.suffix} is reachable through the tunnel`
+    ? `${row.name}.${row.displayTld ?? data.suffix} is reachable through the tunnel`
     : "not public — visitors get the tunnel's 404 page";
 }
 

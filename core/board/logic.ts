@@ -8,6 +8,8 @@ export const PROXY_WAIT_MS = 45000;
 
 interface StatusRow {
   name: string;
+  /** TLD the row identity renders under; null when the row has no hostname. */
+  displayTld: string | null;
   port: number | null;
   url: string | null;
   publicUrl: string | null;

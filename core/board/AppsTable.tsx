@@ -129,7 +129,7 @@ function SiteCell({ row, data, restarting }: { row: Row; data: StatusData; resta
         <span className="site-name">
           <a className="unstyled" href={row.url}>
             <strong>{row.name}</strong>
-            <span className="muted">.{data.suffix}</span>
+            {row.displayTld && <span className="muted">.{row.displayTld}</span>}
           </a>
           {row.publicUrl && row.publicUrl !== row.url && (
             <Tooltip

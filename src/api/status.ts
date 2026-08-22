@@ -11,6 +11,7 @@ import {
   shortLabel,
   type Health,
   type LaunchdService,
+  MATTSTACK_TLD,
 } from "../../core/discover.ts";
 import { getAppSettings, type PortOverride } from "../../core/settings.ts";
 import { checkApp, type Issue } from "../../core/preflight.ts";
@@ -40,6 +41,10 @@ export interface StatusService {
 
 export interface StatusRow {
   name: string;
+  /** TLD the row's identity renders under (ownership-driven locally, the
+      tunnel domain when served publicly); null for rows with no hostname
+      identity (orphan services, tunnels). */
+  displayTld: string | null;
   port: number | null;
   url: string | null;
   publicUrl: string | null;
@@ -151,8 +156,14 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
             })
           : null;
       const record = recordsByName.get(a.name);
+      // Ownership decides the displayed TLD: a managed record (managedBy set
+      // to anything but "user") is a mattstack product and surfaces as
+      // name.mattstack; user-added apps surface as name.localhost. Through a
+      // public tunnel the tunnel's domain is everyone's identity.
+      const owned = record?.managedBy != null && record.managedBy !== "user";
       return {
         name: a.name,
+        displayTld: publicDomain ?? (owned ? MATTSTACK_TLD : "localhost"),
         port: a.port,
         url: a.url,
         publicUrl: a.publicUrl,
@@ -186,6 +197,7 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
 
   const orphanRows: StatusRow[] = orphans.map((s) => ({
     name: shortLabel(s.label, servicePrefixes(getPlatformSettings().legacyPrefixes)),
+    displayTld: null,
     port: null,
     url: null,
     publicUrl: null,
@@ -206,11 +218,7 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
   }));
 
   return {
-    // Displayed identity, not the link target: rows render name.<suffix>
-    // while hrefs keep their real .localhost route. Served locally, the
-    // brand TLD (first configured non-localhost TLD) is the identity;
-    // through a public tunnel, that tunnel's domain is.
-    suffix: publicDomain ?? getPlatformSettings().tlds.find((t) => t !== "localhost") ?? "localhost",
+    suffix: publicDomain ?? "localhost",
     // Restart is a local-only control: never expose it through a public tunnel.
     canRestart: publicDomain === null,
     canManage: publicDomain === null,

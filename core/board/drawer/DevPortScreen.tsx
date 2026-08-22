@@ -22,7 +22,7 @@ function effectiveOverride(row: Row, data: StatusData): { devPort: number; baseP
 }
 
 function overrideFooter(row: Row, data: StatusData, devPort: number): string {
-  return `the proxy routes ${row.name}.${data.suffix} to ${devPort} while the override is set`;
+  return `the proxy routes ${row.name}.${row.displayTld ?? data.suffix} to ${devPort} while the override is set`;
 }
 
 function publicFollowsFooter(follows: boolean, basePort: number, devPort: number): string {

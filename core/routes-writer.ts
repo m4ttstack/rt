@@ -31,3 +31,20 @@ export function setRoutePort(hostname: string, port: number): boolean {
   writeFileSync(path, JSON.stringify(routes, null, 2));
   return true;
 }
+
+/** Append a route for `hostname` if none exists (any-TLD exact match), using
+    the same in-place write discipline as setRoutePort -- portless follows the
+    inode. Returns true when a route was appended. */
+export function ensureRoute(hostname: string, port: number): boolean {
+  const path = routesPath();
+  let routes: Array<Record<string, unknown>>;
+  try {
+    routes = JSON.parse(readFileSync(path, "utf8"));
+  } catch {
+    return false;
+  }
+  if (routes.some((r) => String(r.hostname) === hostname)) return false;
+  routes.push({ hostname, port, pid: 0 });
+  writeFileSync(path, JSON.stringify(routes, null, 2));
+  return true;
+}

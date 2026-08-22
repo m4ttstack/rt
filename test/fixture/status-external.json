@@ -10,6 +10,7 @@
   "apps": [
     {
       "name": "atlas",
+      "displayTld": "mattstack",
       "port": 11001,
       "url": "https://atlas.localhost",
       "publicUrl": "https://atlas.mattstack",
@@ -50,6 +51,7 @@
     },
     {
       "name": "forecast",
+      "displayTld": "mattstack",
       "port": 11003,
       "url": "https://forecast.localhost",
       "publicUrl": "https://forecast.mattstack",
@@ -93,6 +95,7 @@
     },
     {
       "name": "ledger",
+      "displayTld": "mattstack",
       "port": 11005,
       "url": "https://ledger.localhost",
       "publicUrl": null,
@@ -141,6 +144,7 @@
     },
     {
       "name": "orbit",
+      "displayTld": "localhost",
       "port": 3007,
       "url": "https://orbit.localhost",
       "publicUrl": "https://orbit.mattstack",
@@ -186,6 +190,7 @@
   "orphans": [
     {
       "name": "cloudflared",
+      "displayTld": null,
       "port": null,
       "url": null,
       "publicUrl": null,
@@ -214,6 +219,7 @@
     },
     {
       "name": "stray-agent",
+      "displayTld": null,
       "port": null,
       "url": null,
       "publicUrl": null,

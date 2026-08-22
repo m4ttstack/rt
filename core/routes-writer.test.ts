@@ -75,3 +75,13 @@ test("no-op returns false when the entry is absent", () => {
   expect(setRoutePort("ghost", 5173)).toBe(false);
   expect(JSON.parse(readFileSync(routesPath, "utf8"))).toHaveLength(2);
 });
+
+test("ensureRoute appends a missing hostname once and never duplicates", async () => {
+  const path = process.env.LOCAL_APPS_ROUTES_PATH!;
+  writeFileSync(path, JSON.stringify([{ hostname: "a.localhost", port: 1, pid: 0 }]));
+  const { ensureRoute } = await import("./routes-writer.ts");
+  expect(ensureRoute("deck.mattstack", 11007)).toBe(true);
+  expect(ensureRoute("deck.mattstack", 11007)).toBe(false);
+  const routes = JSON.parse(readFileSync(path, "utf8"));
+  expect(routes.map((r: { hostname: string }) => r.hostname)).toEqual(["a.localhost", "deck.mattstack"]);
+});

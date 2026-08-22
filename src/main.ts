@@ -1,6 +1,7 @@
 // src/main.ts
 import "./boot-env.ts";
 import { startApi } from "./api/server.ts";
+import { reconcileMattstackTld } from "./api/tld-reconcile.ts";
 import { writeApiInfo } from "./api/state.ts";
 import { LaunchdManager } from "./services/launchd.ts";
 import { PortlessCli } from "./edge/portless.ts";
@@ -78,6 +79,12 @@ export function serve(): void {
   });
   writeApiInfo(PORT);
   console.log(`Deck serving on http://localhost:${PORT}`);
+
+  // Ownership-driven TLD rehome: every managed record (mattstack product)
+  // surfaces on name.mattstack; the tlds cache is then re-derived from the
+  // routes that actually exist -- tlds is a derived cache of portless state,
+  // never hand-authored configuration.
+  try { reconcileMattstackTld(); } catch (err) { console.error("mattstack-tld reconcile failed:", err); }
 
   setInterval(() => { try { reconcileOnce(); } catch {} }, 5000);
 

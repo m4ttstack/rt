@@ -50,6 +50,11 @@ export interface LaunchdService {
 // reserving common dev ports (3000, 5173, 8080, ...).
 export const PORT_RANGE = { start: 11000, end: 11999 } as const;
 
+/** The stack's own TLD: mattstack-owned (managed) apps surface as
+    name.mattstack; user-added apps stay on .localhost. Product identity,
+    not configuration. */
+export const MATTSTACK_TLD = "mattstack";
+
 // Lowest port in PORT_RANGE not claimed by any route or any launchd service PORT.
 // Returns null only if the whole range is taken (not expected in practice).
 export function nextFreePort(
