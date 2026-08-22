@@ -10,7 +10,7 @@ import { getSetting, setSetting } from "@mattstack/rt-client";
 // reason platform-settings.test.ts duplicates the machine one: no dependency
 // from here on rt-client's internals, only its public API.
 function userStorePath(): string {
-  return join(process.env.HOME!, ".mattstack", "user", "settings.jsonc");
+  return join(process.env.HOME!, ".mattstack", "user", "settings.user.jsonc");
 }
 
 const dir = mkdtempSync(join(tmpdir(), "local-oauth-"));
