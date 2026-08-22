@@ -1,4 +1,4 @@
-import { createTheme } from "@soribashi/core";
+import { createTheme, SoribashiProvider } from "@soribashi/core";
 import { describe, expect, it } from "vitest";
 import { renderWithTheme } from "../../../test/test-utils.tsx";
 import { tuiTheme } from "../../theme.ts";
@@ -151,6 +151,43 @@ describe("StatusDot (browser)", () => {
     // `active: tip !== undefined`), so nothing shows up even after the delay.
     await new Promise((r) => setTimeout(r, 250));
     expect(cardInBody()).toBeNull();
+
+    await screen.getByTestId("dot").unhover();
+  });
+
+  it("a card left visible does not survive tip going away and coming back -- it needs a fresh hover", async () => {
+    // Regression: `active` (tip !== undefined) can flip false->true on a live
+    // poll while the pointer never left the dot -- no fresh mouseenter fires
+    // to re-arm anything. useTooltipReveal must not let a `visible` state
+    // from before `active` went false leak into the window after it returns.
+    const screen = await renderWithTheme(<StatusDot data-testid="dot" intent="bad" tip="pipeline failing" />);
+
+    await screen.getByTestId("dot").hover();
+    await expect.poll(() => cardInBody()?.textContent, { timeout: 1000 }).toBe("pipeline failing");
+
+    await screen.rerender(
+      <SoribashiProvider theme={tuiTheme}>
+        <StatusDot data-testid="dot" intent="bad" />
+      </SoribashiProvider>,
+    );
+    await expect.poll(() => cardInBody(), { timeout: 500 }).toBeNull();
+
+    await screen.rerender(
+      <SoribashiProvider theme={tuiTheme}>
+        <StatusDot data-testid="dot" intent="bad" tip="pipeline failing" />
+      </SoribashiProvider>,
+    );
+
+    // Still no card -- the pointer never left, so there is no fresh
+    // mouseenter to arm the show timer. Held for a full show-delay window
+    // (see TooltipCard.tsx's TOOLTIP_SHOW_DELAY_MS) to prove this isn't a
+    // false negative from checking too early.
+    await new Promise((r) => setTimeout(r, 250));
+    expect(cardInBody()).toBeNull();
+
+    await screen.getByTestId("dot").unhover();
+    await screen.getByTestId("dot").hover();
+    await expect.poll(() => cardInBody()?.textContent, { timeout: 1000 }).toBe("pipeline failing");
 
     await screen.getByTestId("dot").unhover();
   });

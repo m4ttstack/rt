@@ -11,14 +11,23 @@ export const TOOLTIP_SHOW_DELAY_MS = 150;
     VIEWPORT_MARGIN: consumed in JS geometry, not a spacing token. */
 const VIEWPORT_MARGIN = 8;
 
-/** Visible while the pointer is over `triggerRef`'s element, or (when
-    `focusWithin`) focus sits anywhere inside it — gated by
-    `TOOLTIP_SHOW_DELAY_MS` on entry, immediate on exit. Listens on the DOM
-    node directly rather than through React props, so a consumer's own
-    `onMouseEnter`/`onFocus` on the trigger is never at risk of being
-    clobbered. Also closes immediately on window scroll/resize: a position
-    computed at a scroll offset that has since changed is wrong, and closing
-    is simpler and safer than re-measuring mid-scroll. */
+/** Visible while the pointer is over `triggerRef`'s element (after
+    `TOOLTIP_SHOW_DELAY_MS`), or — when `focusWithin` — focus sits anywhere
+    inside it (IMMEDIATELY: a keyboard user tabbing onto the trigger isn't
+    "passing through" the way a moving pointer is, so there is nothing here
+    for a delay to protect against). Exit is always immediate, both paths.
+    Listens on the DOM node directly rather than through React props, so a
+    consumer's own `onMouseEnter`/`onFocus` on the trigger is never at risk of
+    being clobbered. Also closes immediately on window scroll/resize: a
+    position computed at a scroll offset that has since changed is wrong, and
+    closing is simpler and safer than re-measuring mid-scroll.
+
+    `active` flipping false→true must not resurrect a card left over from
+    before it went false — StatusDot's `active` (`tip !== undefined`) can
+    flip on a live poll while the pointer still rests on the dot, with no
+    fresh mouseenter to re-arm anything. The `!active` branch explicitly
+    hides rather than merely skipping listener setup, so `visible` never
+    survives an inactive window. */
 export function useTooltipReveal(
   triggerRef: RefObject<HTMLElement | null>,
   { active, focusWithin }: { active: boolean; focusWithin: boolean },
@@ -26,7 +35,10 @@ export function useTooltipReveal(
   const [visible, setVisible] = useState(false);
 
   useEffect(() => {
-    if (!active) return;
+    if (!active) {
+      setVisible(false);
+      return;
+    }
     const el = triggerRef.current;
     if (!el) return;
 
@@ -41,6 +53,10 @@ export function useTooltipReveal(
       clearShowTimer();
       showTimer = setTimeout(() => setVisible(true), TOOLTIP_SHOW_DELAY_MS);
     };
+    const showNow = () => {
+      clearShowTimer();
+      setVisible(true);
+    };
     const hide = () => {
       clearShowTimer();
       setVisible(false);
@@ -48,7 +64,7 @@ export function useTooltipReveal(
     // focusin/focusout (not focus/blur) — the ones that bubble, so a single
     // listener on the trigger sees focus land on or leave any descendant.
     const onFocusIn = (e: FocusEvent) => {
-      if (el.contains(e.target as Node)) show();
+      if (el.contains(e.target as Node)) showNow();
     };
     const onFocusOut = (e: FocusEvent) => {
       const next = e.relatedTarget as Node | null;

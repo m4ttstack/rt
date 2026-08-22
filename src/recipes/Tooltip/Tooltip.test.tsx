@@ -121,7 +121,11 @@ describe("Tooltip (browser)", () => {
 
     await screen.getByRole("button", { name: "focus me" }).element().focus();
 
-    await expect.poll(() => cardInBody()?.textContent, { timeout: 1000 }).toBe("keyboard reachable");
+    // Immediate, unlike hover's TOOLTIP_SHOW_DELAY_MS (150ms) -- a keyboard
+    // user tabbing onto the trigger isn't "passing through" it, so a short
+    // poll window (well under the hover delay) is enough to prove there is
+    // no matching delay on this path.
+    await expect.poll(() => cardInBody()?.textContent, { timeout: 100 }).toBe("keyboard reachable");
 
     (screen.getByRole("button", { name: "focus me" }).element() as HTMLElement).blur();
     await expect.poll(() => cardInBody(), { timeout: 500 }).toBeNull();
