@@ -160,6 +160,27 @@ export function knownRouteApp(app: string): boolean {
   return readRoutes().some((r) => bareName(r.hostname, tlds) === app);
 }
 
+/** Shared by unregisterApp and removeManagedApps: tears down a record's launchd service and portless alias. */
+async function teardownRecord(record: AppRecord, drivers: Drivers): Promise<{ ok: boolean }> {
+  const issues: SyncIssue[] = [];
+  if (record.kind === "service" && record.label) {
+    const issue = await runDriver("launchd", () => drivers.manager.uninstall(record.label!));
+    if (issue) issues.push(issue);
+  }
+  const portlessIssue = await runDriver("portless", () => drivers.edge.removeAlias(record.name));
+  if (portlessIssue) issues.push(portlessIssue);
+
+  if (issues.length > 0) {
+    // Teardown didn't fully complete: keep the record (and the driver it
+    // still owns, e.g. a launchd service that failed to uninstall) visible
+    // on the board rather than silently deleting the evidence of failure.
+    for (const issue of issues) addIssue(record.name, issue);
+    return { ok: false };
+  }
+  deleteRecord(record.name);
+  return { ok: true };
+}
+
 export async function unregisterApp(
   name: string,
   caller: string,
@@ -180,23 +201,51 @@ export async function unregisterApp(
   const verdict = authorizeStructural(record, caller, force);
   if (!verdict.ok) return { status: verdict.status, body: verdict.body };
 
-  const issues: SyncIssue[] = [];
-  if (record.kind === "service" && record.label) {
-    const issue = await runDriver("launchd", () => drivers.manager.uninstall(record.label!));
-    if (issue) issues.push(issue);
-  }
-  const portlessIssue = await runDriver("portless", () => drivers.edge.removeAlias(name));
-  if (portlessIssue) issues.push(portlessIssue);
+  const { ok } = await teardownRecord(record, drivers);
+  return { status: 200, body: ok ? { ok: true } : { ok: false, record: getRecord(name) } };
+}
 
-  if (issues.length > 0) {
-    // Teardown didn't fully complete: keep the record (and the driver it
-    // still owns, e.g. a launchd service that failed to uninstall) visible
-    // on the board rather than silently deleting the evidence of failure.
-    for (const issue of issues) addIssue(name, issue);
-    return { status: 200, body: { ok: false, record: getRecord(name) } };
+/**
+ * Bulk lifecycle verb behind `deck restart --managed`: the app calls this on
+ * its own version-change kickstart (installer spec §8), so it targets every
+ * non-user record directly -- the verb itself is the authorization boundary,
+ * the way a single-app `--force` is.
+ */
+export async function restartManagedApps(drivers: Drivers): Promise<FlowResult> {
+  const managed = listRecords().filter((r) => r.managedBy !== "user");
+  const restarted: string[] = [];
+  const failed: Array<{ name: string; error: string }> = [];
+  for (const record of managed) {
+    if (record.kind !== "service" || !record.label) continue;
+    try {
+      // kickstart signals failure via its boolean return (label not
+      // installed), not by throwing — same contract the single-app
+      // POST /apps/:name/restart route relies on.
+      const ok = await drivers.manager.kickstart(record.label);
+      if (ok) restarted.push(record.name);
+      else failed.push({ name: record.name, error: "kickstart failed" });
+    } catch (err) {
+      failed.push({ name: record.name, error: String(err).slice(0, 300) });
+    }
   }
-  deleteRecord(name);
-  return { status: 200, body: { ok: true } };
+  return { status: 200, body: { ok: failed.length === 0, restarted, failed } };
+}
+
+/**
+ * Bulk lifecycle verb behind `deck remove --managed`: the app calls this
+ * during `rt uninstall` (installer spec §12.3) to unregister every non-user
+ * record deck supervises. Same implicit-authority model as restartManagedApps.
+ */
+export async function removeManagedApps(drivers: Drivers): Promise<FlowResult> {
+  const managed = listRecords().filter((r) => r.managedBy !== "user");
+  const removed: string[] = [];
+  const failed: string[] = [];
+  for (const record of managed) {
+    const { ok } = await teardownRecord(record, drivers);
+    if (ok) removed.push(record.name);
+    else failed.push(record.name);
+  }
+  return { status: 200, body: { ok: failed.length === 0, removed, failed } };
 }
 
 export async function editApp(

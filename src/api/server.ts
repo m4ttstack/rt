@@ -12,7 +12,8 @@ import {
 import { CANARY_PATH } from "../../core/canary.ts";
 import { boardHtml, boardJs, boardCss } from "../../core/board-assets.ts";
 import { buildStatus, type StatusRow } from "./status.ts";
-import { registerApp, unregisterApp, editApp, adoptApp, type Drivers, knownRouteApp,
+import { registerApp, unregisterApp, editApp, adoptApp, restartManagedApps, removeManagedApps,
+  type Drivers, knownRouteApp,
 } from "./register.ts";
 import { getRecord, listRecords, type AppRecord, type SyncIssue } from "../registry/records.ts";
 import { migrate } from "../registry/migrate.ts";
@@ -216,6 +217,17 @@ export function startApi(deps: ApiDeps) {
             },
             deps,
           );
+          return json(r.body, r.status);
+        }
+
+        // Checked ahead of the generic /apps/:name matcher below so a real app
+        // named "managed" can never shadow these bulk lifecycle routes.
+        if (pathname === "/api/v1/apps/managed/restart" && req.method === "POST") {
+          const r = await restartManagedApps(deps);
+          return json(r.body, r.status);
+        }
+        if (pathname === "/api/v1/apps/managed/remove" && req.method === "POST") {
+          const r = await removeManagedApps(deps);
           return json(r.body, r.status);
         }
 

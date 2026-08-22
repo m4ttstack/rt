@@ -44,6 +44,24 @@ describe("composeServicePath", () => {
     expect(path).toBe("/usr/bin");
   });
 
+  test("puts the bundle's Helpers dir first when running inside mattstack.app", () => {
+    const present = new Set(["/App.app/Contents/Helpers", "/home/t/.local/bin", "/usr/bin"]);
+
+    const path = composeServicePath({
+      home: HOME, bundleHelpers: "/App.app/Contents/Helpers", exists: (p) => present.has(p),
+    });
+
+    expect(path).toBe("/App.app/Contents/Helpers:/home/t/.local/bin:/usr/bin");
+  });
+
+  test("omits the bundle Helpers dir outside a bundle (bundleHelpers: null)", () => {
+    const present = new Set(["/home/t/.local/bin", "/usr/bin"]);
+
+    const path = composeServicePath({ home: HOME, bundleHelpers: null, exists: (p) => present.has(p) });
+
+    expect(path).not.toContain("Contents/Helpers");
+  });
+
   test("is independent of the calling process's PATH", () => {
     const saved = process.env.PATH;
     try {

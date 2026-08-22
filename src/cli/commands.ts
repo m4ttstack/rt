@@ -17,7 +17,9 @@ usage:
   deck add <name> --port N                 route an app you run yourself
   deck add <name> --cmd "…" --dir PATH     register a supervised app
   deck remove <name> [--force]             unregister (registrar-owned; --force is the escape hatch)
+  deck remove --managed                    unregister every app deck manages (installer's uninstall step)
   deck restart <name>                      kickstart its service
+  deck restart --managed                   kickstart every app deck manages (installer's version-change step)
   deck logs <name> [--lines N]             tail stderr
   deck override <name> <port|off>          dev-port override for <name>.localhost
   deck publish <name> on|off               public visibility
@@ -77,6 +79,13 @@ export async function runCommand(
         return 0;
       }
       case "remove": {
+        if (rest.includes("--managed")) {
+          const { status, body } = await apiJson(`/api/v1/apps/managed/remove`, { method: "POST" });
+          if (status !== 200) { io.err(body.error ?? `failed (${status})`); return 1; }
+          for (const name of body.removed ?? []) io.out(`removed ${name}`);
+          for (const name of body.failed ?? []) io.err(`partly removed ${name} — the record was kept`);
+          return body.ok === false ? 1 : 0;
+        }
         const [name] = rest;
         if (!name) { io.err(USAGE); return 2; }
         const force = rest.includes("--force") ? "?force=true" : "";
@@ -96,6 +105,13 @@ export async function runCommand(
         return 0;
       }
       case "restart": {
+        if (rest.includes("--managed")) {
+          const { status, body } = await apiJson(`/api/v1/apps/managed/restart`, { method: "POST" });
+          if (status !== 200) { io.err(body.error ?? `failed (${status})`); return 1; }
+          for (const name of body.restarted ?? []) io.out(`restarted ${name}`);
+          for (const f of (body.failed ?? []) as Array<{ name: string; error: string }>) io.err(`failed to restart ${f.name} — ${f.error}`);
+          return body.ok === false ? 1 : 0;
+        }
         const [name] = rest;
         if (!name) { io.err(USAGE); return 2; }
         const { status, body } = await apiJson(`/api/v1/apps/${name}/restart`, { method: "POST" });

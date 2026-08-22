@@ -67,6 +67,35 @@ test("remove on a managed record prints the escape hatch and exits 1", async () 
   expect(await runCommand(["remove", "t-rt", "--force"], f)).toBe(0);
 });
 
+test("restart --managed / remove --managed only touch non-user records", async () => {
+  const a = io();
+  await runCommand(["add", "t-managed", "--cmd", "sleep 1", "--dir", dir], a);
+  // Flip it to rt-managed the same way the "escape hatch" test above does.
+  await fetch(`http://127.0.0.1:${PORT}/api/v1/apps/t-managed?force=true`, { method: "DELETE" });
+  await fetch(`http://127.0.0.1:${PORT}/api/v1/apps`, {
+    method: "POST", headers: { "content-type": "application/json", "x-local-caller": "rt" },
+    body: JSON.stringify({ name: "t-managed", command: ["sleep", "1"], workingDirectory: dir }),
+  });
+  const b = io();
+  await runCommand(["add", "t-user-only", "--port", "4997"], b);
+
+  const restarted = io();
+  expect(await runCommand(["restart", "--managed"], restarted)).toBe(0);
+  expect(restarted.lines.join("\n")).toContain("restarted t-managed");
+  expect(restarted.lines.join("\n")).not.toContain("t-user-only");
+
+  const removed = io();
+  expect(await runCommand(["remove", "--managed"], removed)).toBe(0);
+  expect(removed.lines.join("\n")).toContain("removed t-managed");
+
+  const s = io();
+  await runCommand(["status"], s);
+  expect(s.lines.join("\n")).not.toContain("t-managed");
+  expect(s.lines.join("\n")).toContain("t-user-only");
+
+  await runCommand(["remove", "t-user-only"], io());
+});
+
 test("unknown verb exits 2 with usage", async () => {
   const x = io();
   expect(await runCommand(["frobnicate"], x)).toBe(2);

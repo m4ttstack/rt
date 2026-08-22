@@ -21,6 +21,7 @@
 import { homedir } from "os";
 import { join } from "path";
 import { existsSync, statSync, accessSync, constants } from "fs";
+import { bundleHelpersDir } from "./bundle-layout.ts";
 
 export type Exists = (path: string) => boolean;
 
@@ -38,8 +39,9 @@ const defaultExists: Exists = (p) => existsSync(p);
  * stable it looks — deck must not encode which manager a machine happens to
  * run. Those belong in `extraDirs`, set deliberately per machine.
  */
-export function stablePathDirs(home: string = homedir()): string[] {
+export function stablePathDirs(home: string = homedir(), bundleHelpers: string | null = bundleHelpersDir()): string[] {
   return [
+    ...(bundleHelpers ? [bundleHelpers] : []),
     join(home, ".mattstack", "deck", "bin"),
     join(home, ".local", "bin"),
     join(home, ".bun", "bin"),
@@ -64,6 +66,8 @@ export interface ComposePathOpts {
   extraDirs?: string[];
   home?: string;
   exists?: Exists;
+  /** Override for the bundle's Helpers dir; defaults to the live bundleHelpersDir() lookup. Injectable for tests. */
+  bundleHelpers?: string | null;
 }
 
 /** PATH for a supervised service: extras first, then the stable set, existing dirs only, deduped. */
@@ -71,7 +75,11 @@ export function composeServicePath(opts: ComposePathOpts = {}): string {
   const exists = opts.exists ?? defaultExists;
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const dir of [...(opts.extraDirs ?? []), ...stablePathDirs(opts.home)]) {
+  const stable = stablePathDirs(
+    opts.home ?? homedir(),
+    opts.bundleHelpers !== undefined ? opts.bundleHelpers : bundleHelpersDir(),
+  );
+  for (const dir of [...(opts.extraDirs ?? []), ...stable]) {
     if (!dir || seen.has(dir) || !exists(dir)) continue;
     seen.add(dir);
     out.push(dir);

@@ -21,7 +21,7 @@ process.env.LOCAL_APPS_SETTINGS_PATH = join(dir, "settings.json");
 // ~/.mattstack; beforeEach repoints it to a fresh dir per test below.
 process.env.HOME = dir;
 
-const { registerApp, unregisterApp, editApp } = await import("./register.ts");
+const { registerApp, unregisterApp, editApp, restartManagedApps, removeManagedApps } = await import("./register.ts");
 const { FakeServiceManager } = await import("../services/fake.ts");
 const { FakeEdgeProxy } = await import("../edge/portless.ts");
 const { getRecord, reloadRegistry, listRecords, deleteRecord } = await import("../registry/records.ts");
@@ -400,4 +400,44 @@ test("adopt refuses managedBy user — adoption IS the ownership flip", async ()
   await registerApp(input, drivers);
   const res = await adoptApp("myapp", { managedBy: "user" }, drivers);
   expect(res.status).toBe(400);
+});
+
+test("restartManagedApps: kickstarts every non-user record, skips user apps and staticPort externals", async () => {
+  await registerApp({ ...input, name: "board", managedBy: "rt" }, drivers);
+  await registerApp({ name: "gitq", managedBy: "rt", staticPort: 4200 }, drivers); // external: no label to kickstart
+  await registerApp({ ...input, name: "myuserapp" }, drivers); // managedBy defaults to "user"
+
+  const res = await restartManagedApps(drivers);
+  expect(res.status).toBe(200);
+  expect(res.body).toMatchObject({ ok: true, restarted: ["board"], failed: [] });
+  expect(drivers.manager.kickstarts).toEqual(["com.mattstack.deck.board"]);
+});
+
+test("restartManagedApps: a kickstart returning false surfaces as a per-app failure, not an exception", async () => {
+  await registerApp({ ...input, name: "board", managedBy: "rt" }, drivers);
+  await drivers.manager.uninstall("com.mattstack.deck.board"); // now kickstart(label) resolves false
+
+  const res = await restartManagedApps(drivers);
+  expect(res.body).toMatchObject({ ok: false, restarted: [], failed: [{ name: "board", error: "kickstart failed" }] });
+});
+
+test("removeManagedApps: tears down every non-user record, leaves user apps alone", async () => {
+  await registerApp({ ...input, name: "board", managedBy: "rt" }, drivers);
+  await registerApp({ ...input, name: "myuserapp" }, drivers);
+
+  const res = await removeManagedApps(drivers);
+  expect(res.status).toBe(200);
+  expect(res.body).toMatchObject({ ok: true, removed: ["board"], failed: [] });
+  expect(getRecord("board")).toBeUndefined();
+  expect(getRecord("myuserapp")).toBeDefined();
+  expect(drivers.manager.installed.has("com.mattstack.deck.board")).toBe(false);
+});
+
+test("removeManagedApps: a driver failure keeps the record and reports it in failed", async () => {
+  await registerApp({ ...input, name: "board", managedBy: "rt" }, drivers);
+  drivers.manager.failNext = "com.mattstack.deck.board";
+
+  const res = await removeManagedApps(drivers);
+  expect(res.body).toMatchObject({ ok: false, removed: [], failed: ["board"] });
+  expect(getRecord("board")).toBeDefined();
 });

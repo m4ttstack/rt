@@ -67,7 +67,7 @@ export function serve(): void {
     }, 15_000);
   }
 
-  startApi({
+  const apiServer = startApi({
     manager: new LaunchdManager(),
     edge: new PortlessCli(),
     port: PORT,
@@ -86,16 +86,46 @@ export function serve(): void {
   // never hand-authored configuration.
   try { reconcileMattstackTld(); } catch (err) { console.error("mattstack-tld reconcile failed:", err); }
 
-  setInterval(() => { try { reconcileOnce(); } catch {} }, 5000);
+  const reconcileInterval = setInterval(() => { try { reconcileOnce(); } catch {} }, 5000);
+
+  let gatewayServer: ReturnType<typeof startGateway> | null = null;
+  let canaryServer: ReturnType<typeof startCanaryListener> | null = null;
+  let canaryInterval: ReturnType<typeof setInterval> | null = null;
+  let canaryTimeout: ReturnType<typeof setTimeout> | null = null;
 
   if (process.env.LOCAL_APPS_NO_GATEWAY !== "1") {
-    try { startGateway(); } catch (err) { console.error("gateway failed to start:", err); }
+    try { gatewayServer = startGateway(); } catch (err) { console.error("gateway failed to start:", err); }
     try {
-      startCanaryListener(CANARY_PORT, PORT);
-      setTimeout(runCanaryCheck, 10_000);
-      setInterval(runCanaryCheck, CANARY_INTERVAL_MS);
+      canaryServer = startCanaryListener(CANARY_PORT, PORT);
+      canaryTimeout = setTimeout(runCanaryCheck, 10_000);
+      canaryInterval = setInterval(runCanaryCheck, CANARY_INTERVAL_MS);
     } catch (err) { console.error("proxy freshness check failed to start:", err); }
   }
+
+  // Graceful shutdown (installer checklist item 5): Sparkle replaces the
+  // whole bundle on update (this process's inode vanishes mid-run) and
+  // launchd sends SIGTERM before its kill grace period expires either way.
+  // Supervised apps (`deck add --cmd`) are NOT a shutdown concern here --
+  // LaunchdManager.install() only ever does `launchctl load` and returns;
+  // launchd itself owns and re-supervises those processes independently of
+  // deck's own lifetime, so there is no child handle here to orphan. What
+  // this closes is deck's own three listeners (api/gateway/canary) and its
+  // two background timers, so /healthz stops answering and the ports are
+  // actually released rather than lingering past process exit.
+  let shuttingDown = false;
+  function shutdown(): void {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    clearInterval(reconcileInterval);
+    if (canaryInterval) clearInterval(canaryInterval);
+    if (canaryTimeout) clearTimeout(canaryTimeout);
+    try { canaryServer?.stop(); } catch { /* already stopped */ }
+    try { gatewayServer?.stop(); } catch { /* already stopped */ }
+    try { apiServer.stop(); } catch { /* already stopped */ }
+    process.exit(0);
+  }
+  process.on("SIGTERM", shutdown);
+  process.on("SIGINT", shutdown);
 }
 
 const cmd = Bun.argv[2] ?? "serve";
