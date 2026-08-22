@@ -1,6 +1,8 @@
 node_modules/
 workshop/dist/
 .superpowers/
+dist/
+*.tgz
 
 # Vitest's scratch dir for toMatchScreenshot mismatch / missing-reference debug
 # images. Never the committed baselines themselves (see below).

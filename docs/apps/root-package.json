@@ -2,41 +2,56 @@
   "name": "@mattstack/tui-kit",
   "version": "0.1.0",
   "license": "MIT",
-  "private": true,
   "type": "module",
+  "main": "./dist/src/index.js",
+  "types": "./dist/src/index.d.ts",
   "workspaces": ["workshop"],
   "exports": {
     ".": {
-      "types": "./src/index.ts",
-      "default": "./src/index.ts"
+      "types": "./dist/src/index.d.ts",
+      "default": "./dist/src/index.js"
     },
     "./hooks": {
-      "types": "./src/hooks/index.ts",
-      "default": "./src/hooks/index.ts"
+      "types": "./dist/src/hooks/index.d.ts",
+      "default": "./dist/src/hooks/index.js"
     },
     "./theme": {
-      "types": "./src/theme.ts",
-      "default": "./src/theme.ts"
+      "types": "./dist/src/theme.d.ts",
+      "default": "./dist/src/theme.js"
     },
     "./provider": {
-      "types": "./src/provider.ts",
-      "default": "./src/provider.ts"
+      "types": "./dist/src/provider.d.ts",
+      "default": "./dist/src/provider.js"
     },
     "./theme.css": "./src/generated/theme.css",
     "./canvas.css": "./src/canvas.css",
-    "./types/css-modules.d.ts": "./types/css-modules.d.ts"
+    "./types/css-modules.d.ts": "./types/css-modules.d.ts",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src/generated/theme.css",
+    "src/canvas.css",
+    "assets",
+    "types",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
   },
   "scripts": {
     "setup": "bun install",
     "census": "bun run scripts/census.ts",
     "codegen": "soribashi build && bun run scripts/append-font-faces.ts",
+    "build": "rm -rf dist && tsc -p tsconfig.build.json && bun scripts/copy-recipe-css.ts && bun scripts/fix-dts-extensions.ts dist",
+    "prepack": "bun run build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "gates": "vitest run --project node test/no-hardcoded-values.test.ts test/token-existence.test.ts test/no-node-builtins.test.ts && bun run codegen && git diff --exit-code src/generated/theme.css",
     "dev:workshop": "cd workshop && bunx vite"
   },
   "dependencies": {
-    "@soribashi/core": "file:../soribashi/packages/core",
+    "@soribashi/core": "^0.2.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1"
   },
