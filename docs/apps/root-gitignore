@@ -3,6 +3,9 @@ workshop/dist/
 .superpowers/
 dist/
 *.tgz
+# Stopgap: the vendored @soribashi/core build that package.json's `overrides`
+# resolves to until 0.3.0 is published to npm. Remove with that override.
+!vendor/*.tgz
 
 # Vitest's scratch dir for toMatchScreenshot mismatch / missing-reference debug
 # images. Never the committed baselines themselves (see below).

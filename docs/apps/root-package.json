@@ -51,9 +51,12 @@
     "dev:workshop": "cd workshop && bunx vite"
   },
   "dependencies": {
-    "@soribashi/core": "^0.2.0",
+    "@soribashi/core": "^0.3.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1"
+  },
+  "overrides": {
+    "@soribashi/core": "file:./vendor/soribashi-core-0.3.0.tgz"
   },
   "peerDependencies": {
     "react": "^19.0.0",
