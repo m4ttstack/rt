@@ -8,7 +8,7 @@ declare module "*.svg" {
   const text: string;
   export default text;
 }
-declare module "*/dist/client/app.js" {
+declare module "*.txt" {
   const text: string;
   export default text;
 }

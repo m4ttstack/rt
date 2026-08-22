@@ -368,7 +368,7 @@ const shell = `<!doctype html>
 // can pin the port the tunnel points at.
 const port = Number(process.env.PORT) || 7930;
 
-Bun.serve({
+const httpServer = Bun.serve({
   port,
   // Loopback only (spec ruling 6): local-only gates are network-local, not
   // just Host-header-local (config.host, a wider-bind opt-in, retired).
@@ -1416,7 +1416,6 @@ const stopRelay = FIXTURE_DIR ? () => {} : subscribe((type, data) => {
     void cache.refreshNow().then(sseNudge).catch(() => {});
   }, RELAY_COALESCE_MS);
 });
-void stopRelay; // long-lived server; kept for symmetry/tests
 
 // Hot-reload config.json so adding/removing members (or any setting) takes
 // effect without a restart. Watch the directory — that survives editors that
@@ -1443,3 +1442,28 @@ if (!FIXTURE_DIR) watch(dirname(CONFIG_PATH), (_event, filename) => {
     }
   }, 150);
 });
+
+// Graceful shutdown: Sparkle replaces the whole bundle on update (this
+// process's inode vanishes mid-run) and launchd sends SIGTERM before its
+// grace period expires either way. All board state writes are already
+// synchronous (writeFileSync), so nothing here is flushing buffered data --
+// the point is closing the two long-lived connections cleanly instead of
+// leaking them past process exit: SSE clients so a browser's EventSource
+// reconnects immediately rather than waiting out a TCP timeout, and the
+// rt-relay websocket so it doesn't attempt to reconnect into a process that
+// is already gone. server.stop() stops accepting new connections and lets
+// in-flight requests finish before this handler's own return.
+let shuttingDown = false;
+function shutdown(): void {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  for (const client of sseClients) {
+    try { client.close(); } catch { /* already closed */ }
+  }
+  sseClients.clear();
+  stopRelay();
+  httpServer.stop();
+  process.exit(0);
+}
+process.on("SIGTERM", shutdown);
+process.on("SIGINT", shutdown);

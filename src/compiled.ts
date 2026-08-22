@@ -4,7 +4,7 @@
 // text imports below — scripts/build-client.ts writes them first) and handed
 // to the server before it boots.
 import pkg from "../package.json";
-import appJs from "../dist/client/app.js" with { type: "text" };
+import appJs from "../dist/client/app.js.txt" with { type: "text" };
 import appCss from "../dist/client/app.css" with { type: "text" };
 import { injectClientAssets } from "./client-assets.ts";
 
