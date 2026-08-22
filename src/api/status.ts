@@ -206,7 +206,11 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
   }));
 
   return {
-    suffix: publicDomain ?? "localhost",
+    // Displayed identity, not the link target: rows render name.<suffix>
+    // while hrefs keep their real .localhost route. Served locally, the
+    // brand TLD (first configured non-localhost TLD) is the identity;
+    // through a public tunnel, that tunnel's domain is.
+    suffix: publicDomain ?? getPlatformSettings().tlds.find((t) => t !== "localhost") ?? "localhost",
     // Restart is a local-only control: never expose it through a public tunnel.
     canRestart: publicDomain === null,
     canManage: publicDomain === null,
