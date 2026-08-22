@@ -1,6 +1,7 @@
 import { mkdirSync } from "fs";
 import { join } from "path";
-import { readRoutes, readServices, bareName } from "../../core/discover.ts";
+import { readRoutes, readServices, bareName, MATTSTACK_TLD } from "../../core/discover.ts";
+import { reconcileMattstackTld } from "./tld-reconcile.ts";
 import { getPlatformSettings } from "./platform-settings.ts";
 import {
   getRecord, putRecord, deleteRecord, listRecords, addIssue, clearIssues, reloadRegistry,
@@ -293,6 +294,73 @@ export async function editApp(
   // is still unresolved no matter how well the new shape installed.
   for (const issue of teardownIssues) addIssue(next.name, issue);
   return { status: 200, body: { record: getRecord(next.name) } };
+}
+
+/**
+ * Adopt a user-registered app as a mattstack product: optionally rename it to
+ * its canonical product name, stamp managedBy (any non-"user" value flips the
+ * row to name.mattstack and hands structural ownership to that manager), and
+ * ensure the .mattstack route. Force-blessed by design — adoption is an
+ * explicit ownership claim, and idempotent re-runs must succeed against the
+ * already-managed record a first run produced, which authorizeStructural
+ * would otherwise refuse from user context.
+ *
+ * Idempotency contract (pinned with the installer, L1 T25): re-running after
+ * success answers 200 with changed:false and still re-ensures the .mattstack
+ * route, so the installer's apply step can run it on every pass. The failure
+ * `error` strings are frozen literals the installer matches on.
+ */
+export async function adoptApp(
+  name: string,
+  opts: { as?: string; managedBy?: string },
+  drivers: Drivers,
+): Promise<FlowResult> {
+  const target = opts.as ?? name;
+  const managedBy = opts.managedBy ?? "rt";
+  if (!NAME_RE.test(target)) return { status: 400, body: { error: "bad name" } };
+  if (managedBy === "user") return { status: 400, body: { error: "bad managedBy" } };
+
+  const summary = (rec: AppRecord, previousName: string, changed: boolean) => ({
+    adopted: true,
+    changed,
+    app: {
+      name: rec.name,
+      previousName,
+      managedBy: rec.managedBy,
+      port: rec.port,
+      kind: rec.kind,
+      label: rec.label,
+    },
+    hostnames: [`${rec.name}.${MATTSTACK_TLD}`, `${rec.name}.localhost`],
+    issues: rec.issues ?? [],
+  });
+
+  const record = getRecord(name);
+  if (!record) {
+    const already = getRecord(target);
+    if (already && already.managedBy === managedBy) {
+      reconcileMattstackTld();
+      return { status: 200, body: summary(getRecord(target)!, name, false) };
+    }
+    return { status: 404, body: { error: "unknown app" } };
+  }
+
+  const renaming = target !== name;
+  if (renaming && getRecord(target)) return { status: 409, body: { error: "name taken", name: target } };
+
+  let changed = false;
+  if (renaming) {
+    const r = await editApp(name, { name: target }, managedBy, true, drivers);
+    if (r.status !== 200) return r;
+    changed = true;
+  }
+  const current = getRecord(target)!;
+  if (current.managedBy !== managedBy) {
+    putRecord({ ...current, managedBy });
+    changed = true;
+  }
+  reconcileMattstackTld();
+  return { status: 200, body: summary(getRecord(target)!, name, changed) };
 }
 
 /**

@@ -29,6 +29,7 @@ const {
   getAppSettings, setPublished, setPassword, setOverride, getOverride, setPublicFollowsOverride, reloadSettings,
 } = await import("../../core/settings.ts");
 const { setOAuth, getOAuth, reloadOAuth } = await import("../edge/oauth.ts");
+const { adoptApp } = await import("./register.ts");
 
 let drivers: { manager: InstanceType<typeof FakeServiceManager>; edge: InstanceType<typeof FakeEdgeProxy> };
 beforeEach(() => {
@@ -319,4 +320,84 @@ test("refuses to install a service whose program cannot be found", async () => {
   expect(drivers.manager.installed.has("com.mattstack.deck.ghostapp")).toBe(false);
   const issues = getRecord("ghostapp")!.issues!;
   expect(issues.some((i) => i.source === "launchd" && i.message.includes("not found"))).toBe(true);
+});
+
+// ─── adopt: user app -> mattstack product (ownership flip + optional rename) ──
+
+function routesOnDisk(): Array<{ hostname: string; port: number }> {
+  return JSON.parse(require("fs").readFileSync(process.env.LOCAL_APPS_ROUTES_PATH!, "utf8"));
+}
+
+test("adopt without rename flips managedBy, ensures the .mattstack route, reports changed", async () => {
+  await Bun.write(process.env.LOCAL_APPS_ROUTES_PATH!, "[]");
+  await registerApp(input, drivers);
+
+  const res = await adoptApp("myapp", {}, drivers);
+  expect(res.status).toBe(200);
+  const body = res.body as any;
+  expect(body.adopted).toBe(true);
+  expect(body.changed).toBe(true);
+  expect(body.app).toMatchObject({ name: "myapp", previousName: "myapp", managedBy: "rt", kind: "service" });
+  expect(body.hostnames).toEqual(["myapp.mattstack", "myapp.localhost"]);
+  expect(getRecord("myapp")!.managedBy).toBe("rt");
+  expect(routesOnDisk().some((r) => r.hostname === "myapp.mattstack")).toBe(true);
+});
+
+test("adopt with --as renames record, label, alias, settings, and sign-in rule, then flips ownership", async () => {
+  await Bun.write(process.env.LOCAL_APPS_ROUTES_PATH!, "[]");
+  await registerApp({ ...input, name: "mrs" }, drivers);
+  await setPublished("mrs", false);
+  reloadOAuth();
+  setOAuth("mrs", { mode: "emails", emails: ["m@x.dev"] });
+
+  const res = await adoptApp("mrs", { as: "board" }, drivers);
+  expect(res.status).toBe(200);
+  const body = res.body as any;
+  expect(body.changed).toBe(true);
+  expect(body.app).toMatchObject({ name: "board", previousName: "mrs", managedBy: "rt" });
+  expect(getRecord("mrs")).toBeUndefined();
+  const rec = getRecord("board")!;
+  expect(rec.managedBy).toBe("rt");
+  expect(rec.label).toBe("com.mattstack.deck.board");
+  expect(drivers.edge.aliases.has("board")).toBe(true);
+  expect(getAppSettings("board").published).toBe(false);
+  expect(getOAuth("board")).toEqual({ mode: "emails", emails: ["m@x.dev"] });
+  expect(routesOnDisk().some((r) => r.hostname === "board.mattstack")).toBe(true);
+});
+
+test("adopt is idempotent: a re-run reports changed:false and still re-ensures the route", async () => {
+  await Bun.write(process.env.LOCAL_APPS_ROUTES_PATH!, "[]");
+  await registerApp({ ...input, name: "mrs" }, drivers);
+  expect((await adoptApp("mrs", { as: "board" }, drivers)).status).toBe(200);
+
+  // Someone hand-removed the route between apply runs; the re-run repairs it.
+  await Bun.write(process.env.LOCAL_APPS_ROUTES_PATH!, "[]");
+  const rerun = await adoptApp("mrs", { as: "board" }, drivers);
+  expect(rerun.status).toBe(200);
+  const body = rerun.body as any;
+  expect(body.adopted).toBe(true);
+  expect(body.changed).toBe(false);
+  expect(body.app).toMatchObject({ name: "board", previousName: "mrs" });
+  expect(routesOnDisk().some((r) => r.hostname === "board.mattstack")).toBe(true);
+});
+
+test("adopt of a name unknown under both identities answers the frozen error string", async () => {
+  const res = await adoptApp("ghost", { as: "board" }, drivers);
+  expect(res.status).toBe(404);
+  expect(res.body).toEqual({ error: "unknown app" });
+});
+
+test("adopt refuses a rename target that is a different existing app", async () => {
+  await Bun.write(process.env.LOCAL_APPS_ROUTES_PATH!, "[]");
+  await registerApp({ ...input, name: "mrs" }, drivers);
+  await registerApp({ ...input, name: "board", workingDirectory: "/tmp/other" }, drivers);
+  const res = await adoptApp("mrs", { as: "board" }, drivers);
+  expect(res.status).toBe(409);
+  expect((res.body as any).error).toBe("name taken");
+});
+
+test("adopt refuses managedBy user — adoption IS the ownership flip", async () => {
+  await registerApp(input, drivers);
+  const res = await adoptApp("myapp", { managedBy: "user" }, drivers);
+  expect(res.status).toBe(400);
 });
