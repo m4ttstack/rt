@@ -100,3 +100,26 @@ test("through a public host that record shape is redacted — command/workingDir
   // would have sailed straight past it.
   expect(JSON.stringify(status)).not.toContain("/tmp/secret-dir");
 });
+
+test("an owned row's url follows its displayTld, whichever route it joined on", async () => {
+  writeFileSync(
+    process.env.LOCAL_APPS_ROUTES_PATH!,
+    JSON.stringify([
+      { hostname: "myapp.localhost", port: 19999, pid: 0 },
+      { hostname: "myapp.mattstack", port: 19999, pid: 0 },
+    ]),
+  );
+  putRecord({
+    name: "myapp", managedBy: "rt", port: 19999, kind: "service",
+    label: "com.mattstack.deck.myapp", createdAt: "2026-08-10T00:00:00Z",
+  });
+  const status = await buildStatus(opts);
+  const row = status.apps.find((a) => a.name === "myapp")!;
+  expect(row.displayTld).toBe("mattstack");
+  expect(row.url).toBe("https://myapp.mattstack");
+});
+
+test("a user row's url stays on localhost", async () => {
+  const status = await buildStatus(opts);
+  expect(status.apps[0]!.url).toBe("https://myapp.localhost");
+});

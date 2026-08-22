@@ -161,11 +161,14 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
       // name.mattstack; user-added apps surface as name.localhost. Through a
       // public tunnel the tunnel's domain is everyone's identity.
       const owned = record?.managedBy != null && record.managedBy !== "user";
+      const displayTld = publicDomain ?? (owned ? MATTSTACK_TLD : "localhost");
       return {
         name: a.name,
-        displayTld: publicDomain ?? (owned ? MATTSTACK_TLD : "localhost"),
-        port: a.port,
-        url: a.url,
+        displayTld,
+        // The href must match the rendered identity: an owned app joins on
+        // whichever of its routes sorts first (often name.localhost), so the
+        // joined route's url would contradict the .mattstack the row displays.
+        url: `https://${a.name}.${displayTld}`,
         publicUrl: a.publicUrl,
         health,
         service: a.service ? serviceJson(a.service, health, unmanaged) : null,
