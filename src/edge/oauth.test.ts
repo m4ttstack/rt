@@ -22,7 +22,7 @@ const priorState = process.env.LOCAL_STATE_DIR;
 const priorAccess = process.env.LOCAL_ACCESS_PATH;
 process.env.LOCAL_STATE_DIR = dir;
 process.env.LOCAL_ACCESS_PATH = ACCESS_PATH;
-const { parseOAuth, getOAuth, setOAuth, reloadOAuth, oauthRequiresCf } = await import("./oauth.ts");
+const { parseOAuth, getOAuth, setOAuth, renameOAuth, reloadOAuth, oauthRequiresCf } = await import("./oauth.ts");
 
 const origHome = process.env.HOME;
 let home: string;
@@ -290,4 +290,59 @@ test("store key present: a store write failure reverts the in-memory cache inste
 
   expect(() => setOAuth("a", { mode: "emails", emails: ["a@x.dev"] })).toThrow();
   expect(getOAuth("a")).toEqual({ mode: "off" });
+});
+
+// ─── renameOAuth (adopt verb + edit-rename fix) ──────────────────────────────
+
+test("store key absent: renameOAuth moves the rule in the file and never touches the store", () => {
+  setOAuth("mrs", { mode: "emails", emails: ["m@x.dev"] });
+  renameOAuth("mrs", "board");
+
+  expect(getOAuth("board")).toEqual({ mode: "emails", emails: ["m@x.dev"] });
+  expect(getOAuth("mrs")).toEqual({ mode: "off" });
+  const onDisk = JSON.parse(readFileSync(ACCESS_PATH, "utf8"));
+  expect(Object.keys(onDisk.apps)).toEqual(["board"]);
+  expect(getSetting<unknown>("deck.access").value).toBeUndefined();
+});
+
+test("store key present: renameOAuth drops the old key and writes the new one, other entries untouched", () => {
+  setSetting("deck.access", {
+    mrs: { mode: "domains", domains: ["corp.com"] },
+    other: { mode: "off" },
+    malformed: { tier: "public" },
+  }, "user");
+  reloadOAuth();
+
+  renameOAuth("mrs", "board");
+
+  const stored = getSetting<Record<string, unknown>>("deck.access").value!;
+  expect(stored.mrs).toBeUndefined();
+  expect(stored.board).toEqual({ mode: "domains", domains: ["corp.com"] });
+  expect(stored.other).toEqual({ mode: "off" });
+  expect(stored.malformed).toEqual({ tier: "public" });
+  expect(getOAuth("board")).toEqual({ mode: "domains", domains: ["corp.com"] });
+});
+
+test("renameOAuth with no rule under the old name is a no-op — no write at all", () => {
+  setOAuth("keeper", { mode: "off" });
+  const beforeStat = statSync(ACCESS_PATH);
+
+  renameOAuth("ghost", "board");
+
+  expect(statSync(ACCESS_PATH).ino).toBe(beforeStat.ino);
+  expect(getSetting<unknown>("deck.access").value).toBeUndefined();
+});
+
+test("store key present: a store write failure during renameOAuth reverts the cache and rethrows", () => {
+  mkdirSync(dirname(userStorePath()), { recursive: true });
+  writeFileSync(
+    userStorePath(),
+    '{ "deck.access": { "mrs": { "mode": "off" } }, "deck.access": { "mrs": { "mode": "off" } } }',
+  );
+  reloadOAuth();
+  expect(getOAuth("mrs")).toEqual({ mode: "off" });
+
+  expect(() => renameOAuth("mrs", "board")).toThrow();
+  expect(getOAuth("mrs")).toEqual({ mode: "off" });
+  expect(getOAuth("board")).toEqual({ mode: "off" }); // default, not the moved rule
 });
