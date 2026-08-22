@@ -35,6 +35,10 @@ function dotOf(container: HTMLElement): HTMLElement {
   return el;
 }
 
+function cardInBody(): HTMLElement | null {
+  return document.querySelector<HTMLElement>(`[data-part="${STATUSDOT_PARTS.card}"]`);
+}
+
 describe("StatusDot (browser)", () => {
   it("renders the ● glyph inside the wrap", async () => {
     const screen = await renderWithTheme(<StatusDot intent="ok" />);
@@ -112,40 +116,43 @@ describe("StatusDot (browser)", () => {
     expect(new Set([dotColor("dot-ok"), dotColor("dot-warn"), dotColor("dot-bad")]).size).toBe(3);
   });
 
-  it("the tooltip content renders from tip, hidden by default and shown on real hover", async () => {
+  it("the tooltip content renders from tip, absent from the DOM by default and shown on real hover", async () => {
     const screen = await renderWithTheme(
       <StatusDot data-testid="dot" intent="bad" tip="pipeline failing" />,
     );
     const root = rootOf(screen.container);
     expect(root.getAttribute("data-tip")).toBe("pipeline failing");
 
-    const before = getComputedStyle(root, "::after");
-    expect(before.opacity).toBe("0");
-    expect(before.visibility).toBe("hidden");
+    expect(cardInBody()).toBeNull();
 
     // A real pointer hover (vitest-browser's Locator, backed by a real
-    // Playwright pointer move), not a synthetic dispatchEvent -- the CSS
-    // tooltip is gated behind `:hover`, a real UA pseudo-class no synthetic
-    // event can satisfy.
+    // Playwright pointer move), not a synthetic dispatchEvent.
     await screen.getByTestId("dot").hover();
 
-    // `visibility` is not a listed `transition` property (only `opacity` is),
-    // so it flips the instant `:hover` matches -- the immediate, non-flaky
-    // signal that the tooltip is now showing.
-    expect(getComputedStyle(root, "::after").visibility).toBe("visible");
-    // `opacity` DOES transition, with a 0.15s delay before its own 0.1s
-    // run -- polled rather than read synchronously, so this isn't racing the
-    // delay.
-    await expect.poll(() => getComputedStyle(root, "::after").opacity, { timeout: 1000 }).toBe(
-      "1",
-    );
+    // Still gone right after the hover lands -- the show delay is real, not
+    // a same-tick reveal (see TooltipCard.tsx's TOOLTIP_SHOW_DELAY_MS).
+    expect(cardInBody()).toBeNull();
+
+    await expect.poll(() => cardInBody()?.textContent, { timeout: 1000 }).toBe("pipeline failing");
+    expect(cardInBody()?.getAttribute("aria-hidden")).toBe("true");
+
+    await screen.getByTestId("dot").unhover();
+    await expect.poll(() => cardInBody(), { timeout: 500 }).toBeNull();
   });
 
-  it("without a tip, data-tip is absent and the tooltip never appears", async () => {
+  it("without a tip, data-tip is absent and the card never appears even on hover", async () => {
     const screen = await renderWithTheme(<StatusDot data-testid="dot" intent="ok" />);
     const root = rootOf(screen.container);
 
     expect(root.hasAttribute("data-tip")).toBe(false);
+
+    await screen.getByTestId("dot").hover();
+    // No `active` timer was ever armed (see StatusDot.tsx's
+    // `active: tip !== undefined`), so nothing shows up even after the delay.
+    await new Promise((r) => setTimeout(r, 250));
+    expect(cardInBody()).toBeNull();
+
+    await screen.getByTestId("dot").unhover();
   });
 
   it("applies its layered stylesheet to the rendered elements", async () => {

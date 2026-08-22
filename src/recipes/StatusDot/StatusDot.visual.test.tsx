@@ -2,17 +2,23 @@ import type { ReactNode } from "react";
 import { describe, expect, it } from "vitest";
 import { page } from "vitest/browser";
 import { renderWithTheme } from "../../../test/test-utils.tsx";
-import { StatusDot } from "./StatusDot.tsx";
+import { STATUSDOT_PARTS, StatusDot } from "./StatusDot.tsx";
 
 /**
  * Visual tier for the StatusDot recipe.
  *
- *  * THE ANIMATION FREEZE IS INSTALLED HERE, following Chip's precedent:
- * StatusDot.module.css's tooltip carries a real `transition` (opacity, with a
- * delay), so a capture mid-fade would be non-deterministic between runs.
- * `transition: none` is exactly what closes that gap here (unlike Chip's
- * pulse, there is no perpetual `animation` to also freeze).
+ * The card is a portaled, JS-mounted element now (../Tooltip/TooltipCard.tsx),
+ * shared with Tooltip's own — see Tooltip.visual.test.tsx's header comment for
+ * why the hovered case awaits the card's actual DOM appearance rather than
+ * trusting screenshot-retry timing, and why dark mode toggles on
+ * `document.body` rather than on the local container.
  */
+
+async function waitForCard(): Promise<void> {
+  await expect
+    .poll(() => document.querySelector(`[data-part="${STATUSDOT_PARTS.card}"]`), { timeout: 1000 })
+    .not.toBeNull();
+}
 
 const NO_MOTION_CLASS = "statusdot-visual-no-motion";
 
@@ -26,14 +32,15 @@ function installNoMotionStyle() {
   document.head.appendChild(style);
 }
 
-/** Mounts into a fresh container that already carries `dark` when asked. */
+/** Mounts into a fresh container, toggling `dark` on `document.body` — see
+    Tooltip.visual.test.tsx's `renderFixture` for why. */
 async function renderFixture(ui: ReactNode, { dark = false } = {}) {
   await page.viewport(700, 400);
   installNoMotionStyle();
+  document.body.classList.toggle("dark", dark);
 
   const container = document.createElement("div");
   container.classList.add(NO_MOTION_CLASS);
-  if (dark) container.classList.add("dark");
   document.body.appendChild(container);
 
   const screen = await renderWithTheme(ui, { container });
@@ -97,6 +104,7 @@ describe("StatusDot (visual)", () => {
     );
 
     await page.getByTestId("dot").hover();
+    await waitForCard();
 
     await expect(page.getByTestId("tooltip")).toMatchScreenshot("statusdot-tooltip");
   });

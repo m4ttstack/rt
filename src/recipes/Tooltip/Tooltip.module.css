@@ -1,7 +1,8 @@
 /*
  * Tooltip — the standalone recipe generalised from StatusDot's `.tui-dot-wrap`
- * CSS tooltip (`content: attr(data-tip)`), for any wrapped child, not just
- * the dot glyph.
+ * CSS tooltip, for any wrapped child, not just the dot glyph. The card is a
+ * real portaled element now (TooltipCard.tsx), not a `::after` — no ancestor
+ * `overflow` can clip a node that isn't its descendant.
  */
 @layer soribashi.recipes {
   .root {
@@ -12,16 +13,20 @@
   /* `box-sizing` is an ADDITION, not a lift — without it a consumer who skips
      the optional canvas reset gets a "320px" tooltip measuring ~342px.
      Lifted verbatim from StatusDot's own comment on this same trap. */
-  .root::after {
+  .card {
     box-sizing: border-box;
-    content: attr(data-tip);
-    position: absolute;
-    left: 0;
-    top: calc(100% + var(--sb-tooltip-gap));
-    z-index: 10;
+    position: fixed;
+    /* Highest z-index in the kit (ContextMenu 200, ToastHost 210) — a hover
+       card must stay above every other overlay layer, including toasts. */
+    z-index: 300;
     white-space: pre-line;
     width: max-content;
     max-width: 320px;
+    /* The old `::after` inherited its font from wherever the trigger sat;
+       `document.body` gives no such guarantee (a consumer may not have set
+       a body font at all), so the card states its own rather than gambling
+       on inheritance across a portal boundary. */
+    font-family: var(--font-mono);
     font-size: var(--font-size-rem74);
     line-height: 1.5;
     text-align: left;
@@ -31,19 +36,6 @@
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
     padding: var(--spacing-sm) var(--spacing-lg);
-    opacity: 0;
-    visibility: hidden;
-    transition: opacity 0.1s ease 0.15s;
     pointer-events: none;
-  }
-
-  /* `:focus-within` alongside `:hover`, unlike StatusDot's hover-only card —
-     a keyboard user tabbing to a focusable child gets the same reveal a
-     mouse hover gets, without this recipe becoming the child's accessible
-     name (see TooltipOwnProps.tip's own doc comment on that ceiling). */
-  .root:hover::after,
-  .root:focus-within::after {
-    opacity: 1;
-    visibility: visible;
   }
 }

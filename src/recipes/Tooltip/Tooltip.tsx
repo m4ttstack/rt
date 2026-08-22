@@ -1,32 +1,35 @@
+import { mergeRefs } from "@soribashi/core";
 import type { ComponentProps, HTMLAttributes, ReactNode } from "react";
+import { useMemo, useRef } from "react";
 import { defineComponent } from "../../builders.ts";
+import { TooltipCard, useTooltipReveal } from "./TooltipCard.tsx";
 import classes from "./Tooltip.module.css";
 
 /** Authoring category (1 = pure styled primitive). Read off this module by
     scripts/derive.ts to build the kit's manifest; not dead code. */
 export const recipeCategory = 1 as const;
 
-const TOOLTIP_SELECTORS = ["root"] as const;
+const TOOLTIP_SELECTORS = ["root", "card"] as const;
 
 /** Stable selector surface for app-side CSS, stamped in the non-overridable
     tail so a call site cannot sever an app's `[data-part]` rules. */
-export const TOOLTIP_PARTS = { root: "tooltip" } as const;
+export const TOOLTIP_PARTS = { root: "tooltip", card: "tooltip-card" } as const;
 
-/** Gap between the trigger's own box (`top: 100%`, not StatusDot's fixed
-    em offset off a tiny glyph) and the hover card — StatusDot's
-    `--sd-tooltip-offset` overlaps any trigger taller than ~1.5em, so this
-    recipe measures from the box edge instead and only needs a small gap. */
+/** Read by TooltipCard off the trigger element at show time (see its
+    `resolveGapPx`) — a portaled card can't inherit this through the cascade,
+    since createPortal moves it out of the trigger's subtree. */
+const TOOLTIP_GAP_VAR = "--sb-tooltip-gap";
+
 const TOOLTIP_SCALARS: Record<string, string> = {
-  "--sb-tooltip-gap": "var(--spacing-xxs)",
+  [TOOLTIP_GAP_VAR]: "var(--spacing-xxs)",
 };
 
 export interface TooltipOwnProps {
-  /** Tooltip text, rendered by CSS `content: attr(data-tip)` — the same
-      mechanism StatusDot's dot tooltip uses, so it exposes NOTHING to
-      assistive tech: no accessible name, no role, no announcement. A
-      consumer whose wrapped content needs the tip's information conveyed to
-      AT still supplies its own `aria-label`/`aria-describedby` — this recipe
-      does not, and cannot, do that for them. */
+  /** Tooltip text. The card exposes NOTHING to assistive tech (`aria-hidden`,
+      no role, no announcement) — a consumer whose wrapped content needs the
+      tip's information conveyed to AT still supplies its own
+      `aria-label`/`aria-describedby`; this recipe does not, and cannot, do
+      that for them. */
   tip: string;
   children?: ReactNode;
 }
@@ -56,15 +59,31 @@ export const Tooltip = defineComponent<
       ...rest
     } = props;
 
+    const triggerRef = useRef<HTMLSpanElement | null>(null);
+    const setRefs = useMemo(() => mergeRefs(triggerRef, ref), [ref]);
+    const visible = useTooltipReveal(triggerRef, { active: true, focusWithin: true });
+
     return (
       <span
-        ref={ref}
+        ref={setRefs}
         {...rest}
         {...getStyles("root")}
         data-part={TOOLTIP_PARTS.root}
+        // Kept for a consumer that still reads it (e.g. an existing E2E
+        // selector) even though the kit's own CSS no longer does — the
+        // card's content is now the real DOM text below, not attr(data-tip).
         data-tip={tip}
       >
         {children}
+        <TooltipCard
+          triggerRef={triggerRef}
+          visible={visible}
+          gapVar={TOOLTIP_GAP_VAR}
+          part={TOOLTIP_PARTS.card}
+          cardProps={getStyles("card")}
+        >
+          {tip}
+        </TooltipCard>
       </span>
     );
   },
