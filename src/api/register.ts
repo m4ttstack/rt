@@ -149,6 +149,15 @@ export async function registerApp(input: RegisterInput, drivers: Drivers): Promi
   return { status: 201, body: { record: getRecord(name) } };
 }
 
+/** True when `app` exists on the board only as a portless route (a
+    hand-registered alias, or the remnant of a removed app) with no registry
+    record behind it. Publish and delete both accept these names: a row the
+    board renders must be actionable, record or not. */
+export function knownRouteApp(app: string): boolean {
+  const tlds = getPlatformSettings().tlds;
+  return readRoutes().some((r) => bareName(r.hostname, tlds) === app);
+}
+
 export async function unregisterApp(
   name: string,
   caller: string,
@@ -156,7 +165,16 @@ export async function unregisterApp(
   drivers: Drivers,
 ): Promise<FlowResult> {
   const record = getRecord(name);
-  if (!record) return { status: 404, body: { error: "unknown app" } };
+  if (!record) {
+    if (!knownRouteApp(name)) return { status: 404, body: { error: "unknown app" } };
+    // Route-only teardown: no registry record, no launchd service -- the
+    // route IS the row, so removing the alias is the whole job. No
+    // structural authorization either, matching the publish endpoint's
+    // treatment of route-only names.
+    const issue = await runDriver("portless", () => drivers.edge.removeAlias(name));
+    if (issue) return { status: 200, body: { ok: false, error: issue.message } };
+    return { status: 200, body: { ok: true } };
+  }
   const verdict = authorizeStructural(record, caller, force);
   if (!verdict.ok) return { status: verdict.status, body: verdict.body };
 

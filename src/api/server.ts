@@ -12,7 +12,8 @@ import {
 import { CANARY_PATH } from "../../core/canary.ts";
 import { boardHtml, boardJs, boardCss } from "../../core/board-assets.ts";
 import { buildStatus, type StatusRow } from "./status.ts";
-import { registerApp, unregisterApp, editApp, type Drivers } from "./register.ts";
+import { registerApp, unregisterApp, editApp, type Drivers, knownRouteApp,
+} from "./register.ts";
 import { getRecord, listRecords, type AppRecord, type SyncIssue } from "../registry/records.ts";
 import { migrate } from "../registry/migrate.ts";
 import { convert } from "../registry/convert.ts";
@@ -55,11 +56,6 @@ function json(body: unknown, status = 200): Response {
 
 async function body(req: Request): Promise<Record<string, unknown>> {
   try { return (await req.json()) as Record<string, unknown>; } catch { return {}; }
-}
-
-function knownRouteApp(app: string): boolean {
-  const tlds = getPlatformSettings().tlds;
-  return readRoutes().some((r) => bareName(r.hostname, tlds) === app);
 }
 
 /**

@@ -24,6 +24,7 @@ const { reloadPlatformSettings } = await import("./platform-settings.ts");
 const PORT = 18917;
 let server: ReturnType<typeof startApi>;
 let manager: InstanceType<typeof FakeServiceManager>;
+let edge: InstanceType<typeof FakeEdgeProxy>;
 
 const DOMAIN_PORT = 18919;
 let domainServer: ReturnType<typeof startApi>;
@@ -49,8 +50,9 @@ const cannedAccessFetch = (async (url: string | URL | Request, init?: RequestIni
 
 beforeAll(() => {
   manager = new FakeServiceManager();
+  edge = new FakeEdgeProxy();
   server = startApi({
-    manager, edge: new FakeEdgeProxy(),
+    manager, edge,
     port: PORT, canaryPort: PORT + 1,
     freshness: () => "unknown", autoHeal: () => null, onRouteWrite: () => {},
     tunnel: new FakeTunnelDriver(),
@@ -401,4 +403,17 @@ test("domain bind flow: POST binds, GET reports the bound domain", async () => {
 
   const after = await (await domainApi("/api/v1/domain")).json();
   expect(after.domain).toBe("example.dev");
+});
+
+test("DELETE tears down a route-only row through the edge driver instead of 404ing", async () => {
+  writeFileSync(
+    process.env.LOCAL_APPS_ROUTES_PATH!,
+    JSON.stringify([{ hostname: "strayroute.localhost", port: 11997, pid: 0 }]),
+  );
+  edge.aliases.set("strayroute", 11997);
+  const res = await api("/api/v1/apps/strayroute", { method: "DELETE" });
+  expect(res.status).toBe(200);
+  expect((await res.json()).ok).toBe(true);
+  expect(edge.aliases.has("strayroute")).toBe(false);
+  expect((await api("/api/v1/apps/neither-route-nor-record", { method: "DELETE" })).status).toBe(404);
 });
