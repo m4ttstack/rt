@@ -29,7 +29,7 @@
     "capture:compare": "bun test/compare.ts"
   },
   "dependencies": {
-    "@mattstack/rt-client": "file:../repo-tools/packages/rt-client",
+    "@mattstack/rt-client": "^0.3.0",
     "@mattstack/tui-kit": "file:../tui-kit",
     "react": "19.2.8",
     "react-dom": "19.2.8"
