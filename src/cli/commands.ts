@@ -4,6 +4,9 @@ import pkg from "../../package.json";
 
 export const VERSION = pkg.version;
 
+/** Frozen literal in the installer contract — see the adopt verb below. */
+export const DECK_NOT_RUNNING = "deck not running";
+
 // The product is Deck. The command is deck, not local: local is a shell
 // reserved word in zsh and bash (zsh silently declares a variable, bash
 // hard-errors), and reserved words beat PATH.
@@ -20,6 +23,7 @@ usage:
   deck publish <name> on|off               public visibility
   deck password <name> [--clear]           password gate (prompts)
   deck access <name> off | emails a,b | domains c,d    google sign-in gate
+  deck adopt <name> [--as NEW] [--managed-by ID] [--json]   claim a user app as a mattstack product
   deck domain <domain>                     bind your own domain (cloudflared)
   deck migrate                             adopt existing plists + routes
   deck migrate --convert                   relabel adopted legacy apps to com.mattstack.deck.<name>
@@ -166,6 +170,38 @@ export async function runCommand(
         if (status !== 200) { io.err(body.message || body.error || `failed (${status})`); return 1; }
         if (body.cfSynced === false) io.err("warning: Cloudflare sync failed, see the app's row on the board");
         io.out(mode === "off" ? "google sign-in off" : `google sign-in limited to ${mode}`);
+        return 0;
+      }
+      case "adopt": {
+        const [name] = rest;
+        if (!name) { io.err(USAGE); return 2; }
+        const as = flag(rest, "--as");
+        const managedBy = flag(rest, "--managed-by");
+        const asJson = rest.includes("--json");
+        let status: number, body: any;
+        try {
+          ({ status, body } = await apiJson(`/api/v1/apps/${name}/adopt`, {
+            method: "POST",
+            body: JSON.stringify({ ...(as && { as }), ...(managedBy && { managedBy }) }),
+          }));
+        } catch {
+          // The installer's apply step matches this string (frozen contract,
+          // like the API's "unknown app"/"name taken"): it means "run `deck
+          // setup` and retry", distinct from every real adoption failure.
+          if (asJson) { io.out(JSON.stringify({ adopted: false, error: DECK_NOT_RUNNING })); return 1; }
+          io.err("Deck isn't running. Start it with `deck serve` or install it with `deck setup`.");
+          return 1;
+        }
+        if (status !== 200) {
+          if (asJson) { io.out(JSON.stringify({ adopted: false, error: String(body.error ?? `failed (${status})`) })); return 1; }
+          io.err(body.message || body.error || `failed (${status})`);
+          return 1;
+        }
+        if (asJson) { io.out(JSON.stringify(body)); return 0; }
+        const host = body.hostnames?.[0] ?? body.app?.name;
+        io.out(body.changed
+          ? `adopted ${name} — now ${host} (managed by ${body.app.managedBy})`
+          : `already adopted — ${host}`);
         return 0;
       }
       case "domain": {
