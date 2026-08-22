@@ -1356,7 +1356,7 @@ try {
   );
 }
 
-console.log(`mr-board serving on http://localhost:${port}`);
+console.log(`the board serving on http://localhost:${port}`);
 
 // Warm the cache at startup so the first visitor after a (re)start gets a
 // ready snapshot instead of waiting on the cold fetch.

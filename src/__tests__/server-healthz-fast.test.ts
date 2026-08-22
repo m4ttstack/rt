@@ -16,7 +16,7 @@ const fakeHome = mkdtempSync(join(tmpdir(), "board-healthz-fast-"));
 const teamDir = join(fakeHome, ".mattstack", "teams", "testteam", "mattstack");
 mkdirSync(teamDir, { recursive: true });
 writeFileSync(
-  join(teamDir, "settings.jsonc"),
+  join(teamDir, "settings.team.jsonc"),
   JSON.stringify({
     "board.gitlabHost": "https://gitlab.example.com",
     "board.projects": ["g/p"],

@@ -1,4 +1,4 @@
-# mr-board
+# the board
 
 a one-page board of your team's open gitlab merge requests that are ready for review, so you can drop a single link in slack instead of pasting MR urls. terminal-styled (tokyo night), server-rendered data with a small react client, zero database.
 
@@ -106,7 +106,7 @@ the server always binds `127.0.0.1`, so nothing on your LAN can reach it directl
 
 ## review integration (local only)
 
-when you open the board from a local hostname (`mrs.localhost`, `localhost`, `127.0.0.1`), right-clicking an MR row opens an action menu with **launch review**: the server spawns a fresh [herdr](https://herdr.dev) tab (in the `reviewsWorkspace`, labelled `!<iid>`), starts `claude` in `reviewCwd`, and runs `/mr-board:review <url> --state <path> --status-bin <path> [--skill <skill>]`. the board injects the domain skill and its own status-writer path as flags, so the wrapper skill itself carries no repo- or team-specific knowledge -- for review/respond that skill comes solely from the repo's `skills.jsonc` manifest binding (see below); with no binding the wrapper reviews generically. the wrapper reports each lifecycle status back to the board, which owns every slack reaction (👀 on `reviewing`, 💬/✅ on `done`) so the agent never touches slack. that thin wrapper emits `reviewing` / `done` / `error` to a state file the board reads, so the row shows a live badge (with an instant optimistic badge + toast the moment you launch). launching again while a review is live re-focuses its tab instead of spawning another.
+when you open the board from a local hostname (`board.mattstack`, `board.localhost`, `localhost`, `127.0.0.1`), right-clicking an MR row opens an action menu with **launch review**: the server spawns a fresh [herdr](https://herdr.dev) tab (in the `reviewsWorkspace`, labelled `!<iid>`), starts `claude` in `reviewCwd`, and runs `/mr-board:review <url> --state <path> --status-bin <path> [--skill <skill>]`. the board injects the domain skill and its own status-writer path as flags, so the wrapper skill itself carries no repo- or team-specific knowledge -- for review/respond that skill comes solely from the repo's `skills.jsonc` manifest binding (see below); with no binding the wrapper reviews generically. the wrapper reports each lifecycle status back to the board, which owns every slack reaction (👀 on `reviewing`, 💬/✅ on `done`) so the agent never touches slack. that thin wrapper emits `reviewing` / `done` / `error` to a state file the board reads, so the row shows a live badge (with an instant optimistic badge + toast the moment you launch). launching again while a review is live re-focuses its tab instead of spawning another.
 
 hold **alt/option** over any pane-launching menu item (launch review, re-review, respond, doctor, resume) and its hint flips to `+ note`: alt-clicking opens a small note box instead of firing, and the note you type is appended to the launched prompt as an `Operator note (from the human who launched this pane): …` paragraph the wrapper skills honor (resumes send it as the session's first message). enter launches with the note, esc goes back. notes cap at 2000 chars; triage never sends one.
 
@@ -139,7 +139,7 @@ example bindings, as the acme domain pack provides them:
 
 ## peer boards + switchboard (optional)
 
-when your teammates each run their own mr-board, a small relay called the switchboard lets the boards nudge each other about re-reviews without either board talking to the other directly. it's entirely optional: skip it and the board works exactly as described above.
+when your teammates each run their own board, a small relay called the switchboard lets the boards nudge each other about re-reviews without either board talking to the other directly. it's entirely optional: skip it and the board works exactly as described above.
 
 what it adds:
 
