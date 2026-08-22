@@ -44,6 +44,28 @@ body {
   margin-left: var(--spacing-sm);
 }
 
+/* The name opens the local site and the trailing icon opens the public one --
+   without distinct hover identities the icon reads as decoration, not a
+   second control. */
+.site-name a.unstyled {
+  transition: color 0.12s ease;
+}
+.site-name a.unstyled:hover,
+.site-name a.unstyled:focus-visible {
+  color: var(--accent);
+}
+.public-link {
+  display: inline-flex;
+  padding: var(--spacing-xxs);
+  border-radius: var(--radius-sm);
+  transition: color 0.12s ease, background 0.12s ease;
+}
+.public-link:hover,
+.public-link:focus-visible {
+  color: var(--accent);
+  background: var(--surface-wash-fg-5);
+}
+
 /* td is nowrap for port numbers; a config line has to be free to wrap. */
 .preflight-issue {
   display: flex;

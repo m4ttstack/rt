@@ -140,7 +140,7 @@ function SiteCell({ row, data, restarting }: { row: Row; data: StatusData; resta
               }
             >
               <a
-                className={row.published ? "muted" : "muted-more"}
+                className={`public-link ${row.published ? "muted" : "muted-more"}`}
                 href={row.publicUrl}
                 target="_blank"
                 rel="noopener"
