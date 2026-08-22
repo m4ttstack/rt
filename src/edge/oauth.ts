@@ -183,6 +183,50 @@ export function setOAuth(app: string, rule: OAuth): void {
   }
 }
 
+/**
+ * Move an app's sign-in rule to a new name, verbatim. Access rules are keyed
+ * by app name, so a rename must carry the rule or the renamed app silently
+ * reads { mode: "off" } — the emails/domains allowlist is dropped the moment
+ * the new hostname goes live. A no-op when the old name has no rule (getOAuth
+ * defaulting to off means an absent entry carries nothing worth moving).
+ * Store handling mirrors setOAuth exactly: while deck.access is unowned the
+ * move happens in access.json alone; once owned, the write overlays a FRESH
+ * read of the raw store (old key deleted, new key written, everything else —
+ * malformed entries included — untouched), reverting the cache and rethrowing
+ * on failure before the file collapse.
+ */
+export function renameOAuth(oldName: string, newName: string): void {
+  const rule = cache.apps[oldName];
+  if (!rule) return;
+  const previous = structuredClone(cache);
+  delete cache.apps[oldName];
+  cache.apps[newName] = rule;
+
+  const owned = isAccessStoreOwned();
+  if (owned) {
+    const next = { ...currentRawAccessStore(), [newName]: rule };
+    delete next[oldName];
+    try {
+      setSetting(STORE_KEY, next, "user");
+    } catch (err) {
+      cache = previous;
+      throw err;
+    }
+    try {
+      saveFile({ apps: {} });
+    } catch (err) {
+      console.warn("deck.access: collapsing access.json after a store write failed; the store is authoritative", err);
+    }
+  } else {
+    try {
+      saveFile({ apps: cache.apps });
+    } catch (err) {
+      cache = previous;
+      throw err;
+    }
+  }
+}
+
 export function oauthRequiresCf(rule: OAuth): boolean {
   return rule.mode !== "off";
 }

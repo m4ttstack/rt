@@ -209,3 +209,46 @@ test("no running platform gives a clear error", async () => {
   expect(code).toBe(1);
   expect(x.lines.join("\n")).toContain("deck serve");
 });
+
+test("adopt --json: rename + ownership flip, idempotent re-run, frozen error strings", async () => {
+  const a = io();
+  await runCommand(["add", "t-mrs", "--port", "4901"], a);
+
+  const first = io();
+  expect(await runCommand(["adopt", "t-mrs", "--as", "t-board", "--json"], first)).toBe(0);
+  const body = JSON.parse(first.lines.join("\n"));
+  expect(body.adopted).toBe(true);
+  expect(body.changed).toBe(true);
+  expect(body.app).toMatchObject({ name: "t-board", previousName: "t-mrs", managedBy: "rt" });
+  expect(body.hostnames).toEqual(["t-board.mattstack", "t-board.localhost"]);
+
+  const rerun = io();
+  expect(await runCommand(["adopt", "t-mrs", "--as", "t-board", "--json"], rerun)).toBe(0);
+  expect(JSON.parse(rerun.lines.join("\n")).changed).toBe(false);
+
+  const ghost = io();
+  expect(await runCommand(["adopt", "t-ghost", "--json"], ghost)).toBe(1);
+  expect(JSON.parse(ghost.lines.join("\n"))).toEqual({ adopted: false, error: "unknown app" });
+});
+
+test("adopt without --json prints a human line; a missing name is usage", async () => {
+  const a = io();
+  await runCommand(["add", "t-plain", "--port", "4902"], a);
+  const x = io();
+  expect(await runCommand(["adopt", "t-plain"], x)).toBe(0);
+  expect(x.lines.join("\n")).toContain("t-plain.mattstack");
+  const u = io();
+  expect(await runCommand(["adopt"], u)).toBe(2);
+});
+
+test("adopt --json against no running platform answers the frozen deck-not-running error on stdout", async () => {
+  const savedInfo = process.env.LOCAL_STATE_DIR;
+  const emptyDir = mkdtempSync(join(tmpdir(), "local-cli-noserve2-"));
+  process.env.LOCAL_STATE_DIR = emptyDir;
+  const x = io();
+  const code = await runCommand(["adopt", "t-mrs", "--as", "t-board", "--json"], x);
+  process.env.LOCAL_STATE_DIR = savedInfo;
+  rmSync(emptyDir, { recursive: true, force: true });
+  expect(code).toBe(1);
+  expect(JSON.parse(x.lines.join("\n"))).toEqual({ adopted: false, error: "deck not running" });
+});

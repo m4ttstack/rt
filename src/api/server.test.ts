@@ -417,3 +417,24 @@ test("DELETE tears down a route-only row through the edge driver instead of 404i
   expect(edge.aliases.has("strayroute")).toBe(false);
   expect((await api("/api/v1/apps/neither-route-nor-record", { method: "DELETE" })).status).toBe(404);
 });
+
+test("adopt endpoint: renames + flips ownership, and a re-run is an idempotent 200", async () => {
+  writeFileSync(process.env.LOCAL_APPS_ROUTES_PATH!, "[]");
+  await post("/api/v1/apps", { name: "mrs", command: ["x"], workingDirectory: "/tmp" });
+
+  const res = await post("/api/v1/apps/mrs/adopt", { as: "board" });
+  expect(res.status).toBe(200);
+  const body = await res.json();
+  expect(body.adopted).toBe(true);
+  expect(body.changed).toBe(true);
+  expect(body.app).toMatchObject({ name: "board", previousName: "mrs", managedBy: "rt" });
+  expect(body.hostnames).toEqual(["board.mattstack", "board.localhost"]);
+
+  const rerun = await post("/api/v1/apps/mrs/adopt", { as: "board" });
+  expect(rerun.status).toBe(200);
+  expect((await rerun.json()).changed).toBe(false);
+
+  const ghost = await post("/api/v1/apps/ghost/adopt", {});
+  expect(ghost.status).toBe(404);
+  expect(await ghost.json()).toEqual({ error: "unknown app" });
+});

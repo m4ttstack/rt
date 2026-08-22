@@ -12,7 +12,7 @@ import {
 import { CANARY_PATH } from "../../core/canary.ts";
 import { boardHtml, boardJs, boardCss } from "../../core/board-assets.ts";
 import { buildStatus, type StatusRow } from "./status.ts";
-import { registerApp, unregisterApp, editApp, type Drivers, knownRouteApp,
+import { registerApp, unregisterApp, editApp, adoptApp, type Drivers, knownRouteApp,
 } from "./register.ts";
 import { getRecord, listRecords, type AppRecord, type SyncIssue } from "../registry/records.ts";
 import { migrate } from "../registry/migrate.ts";
@@ -240,6 +240,18 @@ export function startApi(deps: ApiDeps) {
               const r = await unregisterApp(name, caller, force, deps);
               return json(r.body, r.status);
             }
+          }
+          if (sub === "adopt" && req.method === "POST") {
+            const b = await body(req);
+            const r = await adoptApp(
+              name,
+              {
+                as: b.as !== undefined ? String(b.as) : undefined,
+                managedBy: b.managedBy !== undefined ? String(b.managedBy) : undefined,
+              },
+              deps,
+            );
+            return json(r.body, r.status);
           }
           if (sub === "restart" && req.method === "POST") {
             const record = getRecord(name);
