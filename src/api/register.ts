@@ -7,6 +7,7 @@ import {
   type AppRecord, type SyncIssue,
 } from "../registry/records.ts";
 import { renameAppSettings, getOverride, clearOverride } from "../../core/settings.ts";
+import { renameOAuth } from "../edge/oauth.ts";
 import { allocatePort } from "../registry/allocate.ts";
 import { authorizeStructural } from "../registry/lifecycle.ts";
 import {
@@ -270,6 +271,10 @@ export async function editApp(
     // record, or renaming quietly publishes a private, password-protected app
     // the moment the new hostname goes live.
     renameAppSettings(oldName, next.name);
+    // The sign-in rule is keyed by name too, and an unknown name reads as
+    // { mode: "off" } — without this the emails/domains allowlist is silently
+    // dropped the moment the renamed hostname goes live.
+    renameOAuth(oldName, next.name);
   }
   if (portChanged) clearOverride(next.name);
   putRecord(next);

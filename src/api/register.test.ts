@@ -28,6 +28,7 @@ const { getRecord, reloadRegistry, listRecords, deleteRecord } = await import(".
 const {
   getAppSettings, setPublished, setPassword, setOverride, getOverride, setPublicFollowsOverride, reloadSettings,
 } = await import("../../core/settings.ts");
+const { setOAuth, getOAuth, reloadOAuth } = await import("../edge/oauth.ts");
 
 let drivers: { manager: InstanceType<typeof FakeServiceManager>; edge: InstanceType<typeof FakeEdgeProxy> };
 beforeEach(() => {
@@ -239,6 +240,17 @@ test("edit rename: the app's settings move with it — a private, password-prote
   expect(getAppSettings("myapp")).toEqual(getAppSettings("never-registered"));
   expect(getAppSettings("myapp").published).toBe(true);
   expect(getAppSettings("myapp").passwordHash).toBeUndefined();
+});
+
+test("edit rename: the app's sign-in rule moves with it — the allowlist cannot be dropped by a rename", async () => {
+  await registerApp(input, drivers);
+  reloadOAuth();
+  setOAuth("myapp", { mode: "emails", emails: ["m@x.dev"] });
+
+  expect((await editApp("myapp", { name: "renamed" }, "user", false, drivers)).status).toBe(200);
+
+  expect(getOAuth("renamed")).toEqual({ mode: "emails", emails: ["m@x.dev"] });
+  expect(getOAuth("myapp")).toEqual({ mode: "off" });
 });
 
 test("a driver that succeeds on a later pass clears the sync-failure badge a previous one left", async () => {
