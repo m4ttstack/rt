@@ -10,7 +10,7 @@ import {
   Tooltip,
 } from '@ui/core';
 import type { MantineColor } from '@ui/core';
-import { useSchemeColors } from '@ui/hooks';
+import { useClipboard, useSchemeColors } from '@ui/hooks';
 import { Icons } from '@ui/icons';
 import { notifications } from '@ui/notifications';
 import { client } from '../api';
@@ -38,7 +38,7 @@ function formatElapsed(startedAt: number, endedAt: number | null): string {
     and `mr` live in `RunDetail.fields` and are fetched on demand here rather
     than guessed from `branch` -- a wrong guess would send someone to a path
     or MR that doesn't exist. */
-async function openDetailField(
+async function fetchDetailField(
   repo: string,
   runId: string,
   key: 'worktree' | 'mr'
@@ -53,27 +53,48 @@ async function openDetailField(
 
 export function RunRow({ run }: { run: BoardRun }) {
   const { bg, text, border } = useSchemeColors();
-  const [opening, setOpening] = useState<'worktree' | 'mr' | null>(null);
+  const clipboard = useClipboard();
+  const [resolving, setResolving] = useState<'worktree' | 'mr' | null>(null);
   const detailHref = `/runs/${run.repo}/${run.id}`;
   const statusColor = STATUS_COLOR[run.status] ?? 'accent';
 
-  async function handleOpen(key: 'worktree' | 'mr') {
-    setOpening(key);
+  /** A worktree is a local filesystem path, and this console is a plain page
+      served over http(s) -- not a desktop shell -- so `window.open('file://
+      ...')` is refused by the browser before it ever reaches disk (verified
+      against this app's own serving context: no dialog, no thrown error, no
+      new tab, just a console line the user never sees). Clipboard is the
+      only handoff that actually lands. */
+  async function handleCopyWorktree() {
+    setResolving('worktree');
     try {
-      const value = await openDetailField(run.repo, run.id, key);
+      const value = await fetchDetailField(run.repo, run.id, 'worktree');
       if (!value) {
-        notifications.info(`No ${key} recorded for this run yet.`);
+        notifications.info('No worktree recorded for this run yet.');
         return;
       }
-      window.open(
-        key === 'worktree' ? `file://${value}` : value,
-        '_blank',
-        'noopener'
-      );
+      clipboard.copy(value);
     } catch (err) {
-      notifications.error(`Could not open ${key}: ${(err as Error).message}`);
+      notifications.error(
+        `Could not copy worktree path: ${(err as Error).message}`
+      );
     } finally {
-      setOpening(null);
+      setResolving(null);
+    }
+  }
+
+  async function handleOpenMr() {
+    setResolving('mr');
+    try {
+      const value = await fetchDetailField(run.repo, run.id, 'mr');
+      if (!value) {
+        notifications.info('No MR recorded for this run yet.');
+        return;
+      }
+      window.open(value, '_blank', 'noopener');
+    } catch (err) {
+      notifications.error(`Could not open MR: ${(err as Error).message}`);
+    } finally {
+      setResolving(null);
     }
   }
 
@@ -142,23 +163,27 @@ export function RunRow({ run }: { run: BoardRun }) {
             label="Copy resume command"
           />
         )}
-        <Tooltip label="Open worktree">
+        <Tooltip label={clipboard.copied ? 'Copied!' : 'Copy worktree path'}>
           <ActionIcon
             variant="subtle"
             color="gray"
-            loading={opening === 'worktree'}
-            onClick={() => void handleOpen('worktree')}
-            aria-label="open worktree"
+            loading={resolving === 'worktree'}
+            onClick={() => void handleCopyWorktree()}
+            aria-label="copy worktree path"
           >
-            <Icons.externalLink size={16} />
+            {clipboard.copied ? (
+              <Icons.check size={16} />
+            ) : (
+              <Icons.copy size={16} />
+            )}
           </ActionIcon>
         </Tooltip>
         <Tooltip label="Open MR">
           <ActionIcon
             variant="subtle"
             color="gray"
-            loading={opening === 'mr'}
-            onClick={() => void handleOpen('mr')}
+            loading={resolving === 'mr'}
+            onClick={() => void handleOpenMr()}
             aria-label="open MR"
           >
             <Icons.externalLink size={16} />
