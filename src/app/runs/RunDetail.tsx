@@ -26,13 +26,13 @@ interface HandoffFieldSpec {
   hotkey: string;
 }
 
-// Order fixes the hotkey each field answers to -- t/b/w/m/p, no modifier.
+// Order fixes the hotkey each field answers to -- t/b/w/m/c, no modifier.
 const HANDOFF_FIELDS: HandoffFieldSpec[] = [
   { key: 'ticket', label: 'Ticket', hotkey: 't' },
   { key: 'branch', label: 'Branch', hotkey: 'b' },
   { key: 'worktree', label: 'Worktree', hotkey: 'w' },
   { key: 'mr', label: 'MR', hotkey: 'm' },
-  { key: 'commits', label: 'Commits', hotkey: 'p' },
+  { key: 'commits', label: 'Commits', hotkey: 'c' },
 ];
 
 function HandoffField({

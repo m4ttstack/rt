@@ -1,12 +1,18 @@
 import { useMemo } from 'react';
 
-import { GenericError, Group, PageShell, Stack, Text } from '@ui/core';
+import { Anchor, GenericError, Group, PageShell, Stack, Text } from '@ui/core';
 import { useSchemeColors } from '@ui/hooks';
+import { Link } from '../router/Link';
 import { bandFor, sortBand, type Band, type BoardRun } from './bands';
 import { RunRow } from './RunRow';
 import { useRunEvents, useRunList, useSeen } from './useRuns';
 
 const BAND_ORDER: Band[] = ['attention', 'running', 'finished'];
+
+/** The finished band is the whole retention window and grows unbounded --
+    render only the most recent slice here; `RunSearch` is the surface for
+    the rest of the window. */
+const FINISHED_DISPLAY_CAP = 20;
 
 const BAND_META: Record<Band, { title: string; empty: string }> = {
   attention: {
@@ -61,27 +67,45 @@ export function RunBoard() {
   return (
     <PageShell title="Runs">
       <Stack gap="xl" data-testid="run-board">
-        {BAND_ORDER.map(band => (
-          <Stack key={band} gap="sm" data-testid={`band-${band}`}>
-            <Group justify="space-between">
-              <Text fw={700}>{BAND_META[band].title}</Text>
-              <Text c={text.muted} size="sm">
-                {bands[band].length}
-              </Text>
-            </Group>
-            {bands[band].length === 0 ? (
-              <Text c={text.muted} size="sm">
-                {BAND_META[band].empty}
-              </Text>
-            ) : (
-              <Stack gap="xs">
-                {bands[band].map(run => (
-                  <RunRow key={run.id} run={run} />
-                ))}
-              </Stack>
-            )}
-          </Stack>
-        ))}
+        {BAND_ORDER.map(band => {
+          const bandRuns = bands[band];
+          const isFinished = band === 'finished';
+          const capped = isFinished && bandRuns.length > FINISHED_DISPLAY_CAP;
+          // "Most recent" means highest `last_event_at`, which is the
+          // opposite end from `sortBand`'s silence-first order for this band.
+          const displayRuns = capped
+            ? [...bandRuns]
+                .sort((a, b) => b.last_event_at - a.last_event_at)
+                .slice(0, FINISHED_DISPLAY_CAP)
+            : bandRuns;
+
+          return (
+            <Stack key={band} gap="sm" data-testid={`band-${band}`}>
+              <Group justify="space-between">
+                <Text fw={700}>{BAND_META[band].title}</Text>
+                <Text c={text.muted} size="sm">
+                  {bandRuns.length}
+                </Text>
+              </Group>
+              {bandRuns.length === 0 ? (
+                <Text c={text.muted} size="sm">
+                  {BAND_META[band].empty}
+                </Text>
+              ) : (
+                <Stack gap="xs">
+                  {displayRuns.map(run => (
+                    <RunRow key={run.id} run={run} />
+                  ))}
+                </Stack>
+              )}
+              {capped && (
+                <Anchor component={Link} href="/search" size="sm">
+                  See all {bandRuns.length} finished runs in search →
+                </Anchor>
+              )}
+            </Stack>
+          );
+        })}
       </Stack>
     </PageShell>
   );

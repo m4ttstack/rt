@@ -4,6 +4,7 @@ import type {
 } from '@mattstack/rt-client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { renderWithProviders } from '@ui/storybook/test-utils';
@@ -353,5 +354,80 @@ describe('RunDetail', () => {
     expect(
       await screen.findByRole('button', { name: 'Mark abandoned' })
     ).toBeInTheDocument();
+  });
+
+  it('copies a handoff field to the clipboard on its single-key hotkey', async () => {
+    detailGet.mockResolvedValue(detailResponse(FIXTURE));
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const originalClipboard = navigator.clipboard;
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+
+    try {
+      renderDetail();
+
+      await screen.findByTestId('handoff-card');
+      await userEvent.keyboard('t');
+
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith('RT-1'));
+    } finally {
+      Object.defineProperty(navigator, 'clipboard', {
+        value: originalClipboard,
+        configurable: true,
+      });
+    }
+  });
+
+  it('marks the run abandoned with the entered reason', async () => {
+    const staleFixture: RunDetailData = {
+      ...FIXTURE,
+      run: run({
+        attention: { needs: true, reason: 'stale', evidence: 'quiet 3h' },
+      }),
+    };
+    detailGet.mockResolvedValue(detailResponse(staleFixture));
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+    abandonPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ ok: true }),
+    });
+
+    renderDetail();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Mark abandoned' })
+    );
+    const input = await screen.findByLabelText(/Why is this run dead\?/);
+    await userEvent.type(input, 'wedged overnight{Enter}');
+
+    await waitFor(() =>
+      expect(abandonPost).toHaveBeenCalledWith({
+        param: { repo: 'repo-tools', runId: 'run-1' },
+        json: { reason: 'wedged overnight' },
+      })
+    );
   });
 });
