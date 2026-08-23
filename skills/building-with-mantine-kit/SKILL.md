@@ -38,7 +38,7 @@ To install the kit or sync it forward, use `adopting-mantine-kit`.
    radius is `md`. Re-passing these per-usage is noise that drifts.
 
 6. **Let the shells carry layout.** `PageShell.Content` is already the page's
-   scroll frame _and_ its capped, centered content column;
+   scroll frame *and* its capped, centered content column;
    `PageShell.Sidebar` already scrolls its own children. Tune them via
    `scrollAreaProps` / `contentContainerProps`; your own nested `ScrollArea`
    or `Container` gives you two scrollbars or two columns. Full-bleed content
@@ -84,23 +84,23 @@ To install the kit or sync it forward, use `adopting-mantine-kit`.
 13. **Brand the app in `app-theme.ts`, never in `base-theme.ts` or
     `theme.ts`.** Those two are kit-owned and replaced wholesale on every
     sync; `app-theme.ts` merges on top and is never touched. Brand color
-    _names_ also go in `app-colors.ts`.
+    *names* also go in `app-colors.ts`.
 
 ## Which affordance for which job
 
-| Need                          | Use                                                                            | Not                             |
-| ----------------------------- | ------------------------------------------------------------------------------ | ------------------------------- |
+| Need                          | Use                                                                           | Not                             |
+| ----------------------------- | ----------------------------------------------------------------------------- | ------------------------------- |
 | Page with sidebar/header/tabs | `PageShell` compound (`Sidebar`/`Header`/`Main`/`Content`, `topNotch`, `tabs`) | a hand-rolled layout            |
-| App-level mini icon rail      | `RailShell` + `Rail` + `RailEntry` + `useRailState`                            | a second `PageShell`            |
+| App-level mini icon rail      | `RailShell` + `Rail` + `RailEntry` + `useRailState`                           | a second `PageShell`            |
 | Capped, centered page column  | `PageShell.Content` (on by default), or `ContentContainer` standalone          | your own `Container`            |
-| The kit's look inside a brand | `ThemeIsland theme={baseTheme} baseSurfaces`                                   | a hand-written "plain" override |
-| Inline collapsing side panel  | `SlideInSidebar`                                                               | a `Drawer`                      |
-| Overlay panel over content    | `Drawer`                                                                       | `SlideInSidebar`                |
-| Long list or table (1000s)    | `VirtualList` / `VirtualTable`                                                 | mapping the whole array         |
-| Hover hint on an icon         | `IconTooltip`                                                                  | `Tooltip` wrapping `ActionIcon` |
-| Copy affordance               | `CopyButton` (labelled) or `CopyActionIcon` (icon-only)                        | a hand-rolled clipboard button  |
-| Validated form                | `useForm` + `FormContainer`                                                    | raw `useState` fields           |
-| Form inside a modal           | `useModalForm`                                                                 | `FormContainer` plus your modal |
+| The kit's look inside a brand | `ThemeIsland theme={baseTheme} baseSurfaces`                                  | a hand-written "plain" override |
+| Inline collapsing side panel  | `SlideInSidebar`                                                              | a `Drawer`                      |
+| Overlay panel over content    | `Drawer`                                                                      | `SlideInSidebar`                |
+| Long list or table (1000s)    | `VirtualList` / `VirtualTable`                                                | mapping the whole array         |
+| Hover hint on an icon         | `IconTooltip`                                                                 | `Tooltip` wrapping `ActionIcon` |
+| Copy affordance               | `CopyButton` (labelled) or `CopyActionIcon` (icon-only)                       | a hand-rolled clipboard button  |
+| Validated form                | `useForm` + `FormContainer`                                                   | raw `useState` fields           |
+| Form inside a modal           | `useModalForm`                                                                | `FormContainer` plus your modal |
 
 ## Adding to the kit
 

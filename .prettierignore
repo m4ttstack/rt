@@ -4,3 +4,8 @@ storybook-static
 logs
 *.log
 bun.lock
+
+# Vendored from mantine-kit: the sync process byte-compares these against
+# upstream, so a local prettier reformat reads as permanent drift.
+src/ui/**
+skills/**

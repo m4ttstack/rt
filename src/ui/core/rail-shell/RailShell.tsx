@@ -105,55 +105,55 @@ export function RailShell({
 
   return (
     <RailShellContext.Provider value={railContext}>
-      <SiteShell
-        layout="alt"
-        transitionDuration={200}
-        headerHeight={headerHeight}
-        headerProps={{ ...headerProps, zIndex: headerZIndex }}
-        header={
-          <Group h="100%" px={headerPx} w="100%" wrap="nowrap">
-            {isMobile && (
-              <ActionIcon
-                variant="subtle"
-                size="lg"
-                onClick={onToggleRail}
-                aria-label="Toggle navigation"
-              >
-                <Icon name="panelLeftOpen" size={20} />
-              </ActionIcon>
-            )}
-            {header}
-          </Group>
-        }
-        navbar={rail}
-        navbarWidth={currentRailWidth}
-        navbarCollapsed={{ mobile: !railOpened }}
-        navbarProps={{
-          zIndex: navbarZIndex,
-          w: currentRailWidth,
-          maw: currentRailWidth,
-          className: classes.railNavbar,
-          style: { boxShadow: railShadow },
-        }}
-        // Hosted sections bring a PageShell whose `topOffset` clears the fixed
-        // header (padding + height math in one place), so AppShell.Main must
-        // not also pad for it -- that would double the offset.
-        mainProps={{ style: { paddingTop: 0 } }}
-      >
-        {children}
-        <Transition mounted={railOverlayActive}>
-          {transitionStyle => (
-            <Overlay
-              fixed
-              zIndex={999}
-              backgroundOpacity={0.4}
-              style={transitionStyle}
-              onClick={onCloseRail}
-              data-testid="rail-overlay"
-            />
+    <SiteShell
+      layout="alt"
+      transitionDuration={200}
+      headerHeight={headerHeight}
+      headerProps={{ ...headerProps, zIndex: headerZIndex }}
+      header={
+        <Group h="100%" px={headerPx} w="100%" wrap="nowrap">
+          {isMobile && (
+            <ActionIcon
+              variant="subtle"
+              size="lg"
+              onClick={onToggleRail}
+              aria-label="Toggle navigation"
+            >
+              <Icon name="panelLeftOpen" size={20} />
+            </ActionIcon>
           )}
-        </Transition>
-      </SiteShell>
+          {header}
+        </Group>
+      }
+      navbar={rail}
+      navbarWidth={currentRailWidth}
+      navbarCollapsed={{ mobile: !railOpened }}
+      navbarProps={{
+        zIndex: navbarZIndex,
+        w: currentRailWidth,
+        maw: currentRailWidth,
+        className: classes.railNavbar,
+        style: { boxShadow: railShadow },
+      }}
+      // Hosted sections bring a PageShell whose `topOffset` clears the fixed
+      // header (padding + height math in one place), so AppShell.Main must
+      // not also pad for it -- that would double the offset.
+      mainProps={{ style: { paddingTop: 0 } }}
+    >
+      {children}
+      <Transition mounted={railOverlayActive}>
+        {transitionStyle => (
+          <Overlay
+            fixed
+            zIndex={999}
+            backgroundOpacity={0.4}
+            style={transitionStyle}
+            onClick={onCloseRail}
+            data-testid="rail-overlay"
+          />
+        )}
+      </Transition>
+    </SiteShell>
     </RailShellContext.Provider>
   );
 }
