@@ -1,6 +1,7 @@
 import type { RunSummary } from '@mattstack/rt-client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { renderWithProviders } from '@ui/storybook/test-utils';
@@ -83,11 +84,12 @@ function renderBoard() {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return renderWithProviders(
+  const result = renderWithProviders(
     <QueryClientProvider client={queryClient}>
       <RunBoard />
     </QueryClientProvider>
   );
+  return { ...result, queryClient };
 }
 
 describe('RunBoard', () => {
@@ -209,5 +211,126 @@ describe('RunBoard', () => {
       { name: /see all 25 finished runs in search/i }
     );
     expect(seeAll).toHaveAttribute('href', '/search');
+  });
+
+  it('names the rt verb that produced the board', async () => {
+    renderBoard();
+
+    expect(await screen.findByTestId('command-provenance')).toHaveTextContent(
+      'rt runs'
+    );
+  });
+
+  describe('the quiet-update pill', () => {
+    it('shows no pill for the initial population', async () => {
+      renderBoard();
+
+      await waitFor(() =>
+        expect(screen.getByTestId('run-row-attn-1')).toBeInTheDocument()
+      );
+
+      expect(screen.queryByTestId('board-update-pill')).not.toBeInTheDocument();
+    });
+
+    it('holds a band change behind a pill -- the row does not move until the pill is clicked', async () => {
+      const { queryClient } = renderBoard();
+
+      await waitFor(() =>
+        expect(
+          within(screen.getByTestId('band-running')).getByTestId(
+            'run-row-running-noisy'
+          )
+        ).toBeInTheDocument()
+      );
+
+      // rt now flags running-noisy into attention -- the daemon event this
+      // simulates would, pre-fix, teleport the row into a different band the
+      // instant it arrived.
+      const updated = FIXTURE.map(r =>
+        r.id === 'running-noisy'
+          ? {
+              ...r,
+              attention: {
+                needs: true,
+                reason: 'failed' as const,
+                evidence: 'exit 1',
+              },
+            }
+          : r
+      );
+      runsGet.mockResolvedValue({
+        ok: true,
+        json: async () => ({ runs: updated }),
+      });
+      await queryClient.invalidateQueries({ queryKey: ['runs', null] });
+
+      await waitFor(() =>
+        expect(screen.getByTestId('board-update-pill')).toHaveTextContent(
+          '1 run moved to needs attention'
+        )
+      );
+
+      // Still in `running`, not yet in `attention` -- this is the assertion
+      // that actually pins the law; the pill appearing alone would not.
+      expect(
+        within(screen.getByTestId('band-running')).getByTestId(
+          'run-row-running-noisy'
+        )
+      ).toBeInTheDocument();
+      expect(
+        within(screen.getByTestId('band-attention')).queryByTestId(
+          'run-row-running-noisy'
+        )
+      ).not.toBeInTheDocument();
+
+      await userEvent.click(screen.getByTestId('board-update-pill'));
+
+      await waitFor(() =>
+        expect(
+          within(screen.getByTestId('band-attention')).getByTestId(
+            'run-row-running-noisy'
+          )
+        ).toBeInTheDocument()
+      );
+      expect(
+        within(screen.getByTestId('band-running')).queryByTestId(
+          'run-row-running-noisy'
+        )
+      ).not.toBeInTheDocument();
+      expect(screen.queryByTestId('board-update-pill')).not.toBeInTheDocument();
+    });
+
+    it('updates an unchanged row´s fields in place without waiting for the pill', async () => {
+      const { queryClient } = renderBoard();
+
+      await waitFor(() =>
+        expect(screen.getByTestId('run-row-running-noisy')).toBeInTheDocument()
+      );
+      expect(
+        within(screen.getByTestId('run-row-running-noisy')).getByText(
+          'not started'
+        )
+      ).toBeInTheDocument();
+
+      // Same band, same rank -- only a field changed, so this is exactly the
+      // "in-place" case the law carves out, not a reorder.
+      const updated = FIXTURE.map(r =>
+        r.id === 'running-noisy' ? { ...r, current_stage: 'provision' } : r
+      );
+      runsGet.mockResolvedValue({
+        ok: true,
+        json: async () => ({ runs: updated }),
+      });
+      await queryClient.invalidateQueries({ queryKey: ['runs', null] });
+
+      await waitFor(() =>
+        expect(
+          within(screen.getByTestId('run-row-running-noisy')).getByText(
+            'provision'
+          )
+        ).toBeInTheDocument()
+      );
+      expect(screen.queryByTestId('board-update-pill')).not.toBeInTheDocument();
+    });
   });
 });
