@@ -3,6 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 
 import pkg from '../../package.json' with { type: 'json' };
 import { runs } from './runs';
+import { ws } from './ws';
 
 /**
  * Routes are CHAINED and handlers are INLINE, both load-bearing for Hono's RPC
@@ -13,7 +14,8 @@ const routes = new Hono()
   .get('/api/health', async c =>
     c.json({ ok: true, version: pkg.version }, 200)
   )
-  .route('/', runs);
+  .route('/', runs)
+  .route('/', ws);
 
 /** The 404 every unmatched route falls to. `c.notFound()` would produce a
     response the RPC client cannot type. */

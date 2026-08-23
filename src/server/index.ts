@@ -1,6 +1,7 @@
 import { serveStatic, websocket } from 'hono/bun';
 
 import { app } from './app';
+import { startRelay } from './ws';
 
 // Scoped away from /api and /ws DELIBERATELY. A bare '/*' static fallback
 // makes an unknown /api/* route return 200 with the SPA's index.html: the RPC
@@ -32,3 +33,10 @@ export const server = Bun.serve({
 });
 
 console.log(`console listening on http://127.0.0.1:${server.port}`);
+
+const stopRelay = startRelay((topic, data) => server.publish(topic, data));
+
+process.on('SIGTERM', () => {
+  stopRelay();
+  void server.stop();
+});

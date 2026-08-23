@@ -2,9 +2,9 @@
 import { describe, expect, it, vi } from 'vitest';
 
 // `subscribe` must be in this factory even though these tests never call it:
-// Task 5 chains the websocket sub-app into the same `app.ts`, and vitest
-// throws "No `subscribe` export is defined on the mock" for any named import
-// the factory omits.
+// a websocket sub-app shares this `app.ts`; every named export it uses must
+// be present here or vitest throws "No `subscribe` export is defined on the
+// mock".
 vi.mock('@mattstack/rt-client', () => ({
   listRuns: vi.fn(async () => ({ ok: true, data: { runs: [] } })),
   getRun: vi.fn(async () => ({ ok: false, error: 'no such run' })),
@@ -66,9 +66,9 @@ describe('runs api', () => {
   });
 
   it('survives a POST with no body at all', async () => {
-    // An ABSENT body is the case the validator handles like the removed
-    // `.catch`: reason lands undefined and the handler still runs. A
-    // MALFORMED body is deliberately different -- 400, handler skipped.
+    // An ABSENT body: the validator sees `undefined` and still returns a
+    // valid `{ reason: undefined }`, so the handler runs. A MALFORMED body is
+    // deliberately different -- 400, handler skipped.
     const res = await app.fetch(
       new Request('http://localhost/api/runs/repo-tools/run-2/abandon', {
         method: 'POST',
