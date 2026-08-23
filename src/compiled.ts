@@ -16,5 +16,16 @@ if (Bun.argv.includes("--version")) {
   process.exit(0);
 }
 
+// One-shot triage pass, for rt cron to invoke on a machine that only has the
+// bundled binary (no checkout to `bun run bin/triage.ts` against). bin/
+// triage.ts is a top-level-execution script, not an exported function: the
+// dynamic import runs it to completion (or lets its rejection propagate, for
+// a real failure to exit non-zero). Never touches the client bundle/server
+// boot path below.
+if (Bun.argv[2] === "triage") {
+  await import("../bin/triage.ts");
+  process.exit(0);
+}
+
 injectClientAssets({ appJs, appCss });
 await import("./server.ts");

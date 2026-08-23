@@ -1,12 +1,13 @@
 import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import type { DraftEnvelope } from "./envelope.ts";
+import { APP_ROOT } from "../app-root.ts";
 
 /** One file per envelope id. Both the board's 60s tick and a triage run may
     drain concurrently; per-file enqueue/rm makes every operation atomic with
     no shared read-modify-write, so the worst race is a double send -- which
     the relay's (id, recipient) primary key makes idempotent. */
-export const OUTBOX_DIR = join(import.meta.dir, "..", "..", "state", "outbox");
+export const OUTBOX_DIR = join(APP_ROOT, "state", "outbox");
 
 export interface OutboxEntry {
   envelope: DraftEnvelope;

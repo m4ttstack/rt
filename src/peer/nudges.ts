@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, renameSync, mkdirSync, readdirSync, rmSync, existsSync } from "fs";
 import { join } from "path";
 import type { NudgeResult } from "./envelope.ts";
+import { APP_ROOT } from "../app-root.ts";
 
 /** An inbound re-review request, materialized from a peer's envelope. */
 export interface NudgeState {
@@ -14,7 +15,7 @@ export interface NudgeState {
 }
 
 /** One file per inbound nudge id -- lives here. */
-export const NUDGE_DIR = join(import.meta.dir, "..", "..", "state", "nudges");
+export const NUDGE_DIR = join(APP_ROOT, "state", "nudges");
 
 /** Deterministic file path for a nudge id. */
 export function nudgeFilePath(id: string, dir: string = NUDGE_DIR): string {
@@ -103,7 +104,7 @@ export interface SentNudge {
 }
 
 /** One file per mrUrl -- a board only ever has one outstanding sent nudge per MR. */
-export const NUDGE_SENT_DIR = join(import.meta.dir, "..", "..", "state", "nudges-sent");
+export const NUDGE_SENT_DIR = join(APP_ROOT, "state", "nudges-sent");
 
 /** Deterministic file path for an mrUrl. */
 export function sentNudgeFilePath(mrUrl: string, dir: string = NUDGE_SENT_DIR): string {
