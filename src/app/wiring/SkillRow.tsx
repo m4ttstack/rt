@@ -3,6 +3,7 @@ import type { MantineColor } from '@ui/core';
 import { useSchemeColors } from '@ui/hooks';
 import { Icons } from '@ui/icons';
 import type { SpineEntry, WiringHealth } from './outline';
+import { QuietBadge } from './QuietBadge';
 import { SlotTable } from './SlotRow';
 
 /** Only the two states a reader has to act on carry a badge. `in-sync` and
@@ -170,9 +171,7 @@ export function SkillRow({
               </Text>
             )}
             {entry.kind === 'orchestrator' && (
-              <Badge size="xs" variant="outline" color="gray">
-                orchestrator
-              </Badge>
+              <QuietBadge>orchestrator</QuietBadge>
             )}
             {badge && color && (
               <Badge
@@ -191,15 +190,11 @@ export function SkillRow({
             )}
             {entry.kind === 'outside' &&
               !entry.external &&
-              !entry.invocable && (
-                <Badge size="xs" variant="outline" color="gray">
-                  internal
-                </Badge>
-              )}
+              !entry.invocable && <QuietBadge>internal</QuietBadge>}
             {entry.sameWiringAsStep !== undefined && (
-              <Badge size="xs" variant="outline" color="gray">
+              <QuietBadge>
                 same wiring as stage {entry.sameWiringAsStep}
-              </Badge>
+              </QuietBadge>
             )}
           </Group>
           {lines.map(line => (

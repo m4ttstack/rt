@@ -61,6 +61,8 @@
   --tk-dot-ok: #1f9d3a;
   --tk-dot-warn: #e08a00;
   --tk-dot-bad: #e5153f;
+  --tk-wash: 10%;
+  --tk-wash-hover: 18%;
 }
 
 :root[data-mantine-color-scheme='dark'] {
@@ -81,6 +83,8 @@
   --tk-dot-ok: #4ade5b;
   --tk-dot-warn: #ffbb3d;
   --tk-dot-bad: #ff5c72;
+  --tk-wash: 15%;
+  --tk-wash-hover: 24%;
 }
 
 /*
@@ -125,6 +129,116 @@
   --mantine-color-default-hover: var(--ui-bg-4);
   --mantine-color-default-color: var(--tk-fg);
   --mantine-color-default-border: var(--tk-border);
+}
+
+/*
+ * The `light` variant's wash, for every hue this theme supplies.
+ *
+ * Mantine DERIVES `--mantine-color-<c>-light` from the tuple by parsing the
+ * shade into `rgba()`. Every tuple here is the string `var(--tk-*)`, which
+ * that parse cannot read, so it emits the hue itself for both the fill AND
+ * `-light-color` -- a `variant="light"` Badge or Alert lands as solid hue
+ * behind same-hue text, i.e. invisible. Restating the three vars per hue is
+ * what makes the variant work at all; the 10%/15% wash is tui-kit's own.
+ *
+ * The doubled `:root:root` is deliberate and load-bearing. Mantine emits the
+ * `-light` family from `MantineProvider` at RUNTIME, into a `<style
+ * data-mantine-styles>` that lives in the React tree -- later in the document
+ * than any bundled stylesheet -- under its own
+ * `:root[data-mantine-color-scheme='…']`. A bare `:root` here loses on
+ * specificity and a single `:root[data-mantine-color-scheme]` ties and then
+ * loses on order, both silently. 0,3,0 is the first weight that wins.
+ */
+:root:root[data-mantine-color-scheme] {
+  --mantine-color-accent-light: color-mix(
+    in srgb,
+    var(--tk-accent) var(--tk-wash),
+    transparent
+  );
+  --mantine-color-accent-light-color: var(--tk-accent);
+  --mantine-color-accent-light-hover: color-mix(
+    in srgb,
+    var(--tk-accent) var(--tk-wash-hover),
+    transparent
+  );
+
+  --mantine-color-ok-light: color-mix(
+    in srgb,
+    var(--tk-green) var(--tk-wash),
+    transparent
+  );
+  --mantine-color-ok-light-color: var(--tk-green);
+  --mantine-color-ok-light-hover: color-mix(
+    in srgb,
+    var(--tk-green) var(--tk-wash-hover),
+    transparent
+  );
+
+  --mantine-color-warn-light: color-mix(
+    in srgb,
+    var(--tk-amber) var(--tk-wash),
+    transparent
+  );
+  --mantine-color-warn-light-color: var(--tk-amber);
+  --mantine-color-warn-light-hover: color-mix(
+    in srgb,
+    var(--tk-amber) var(--tk-wash-hover),
+    transparent
+  );
+
+  --mantine-color-bad-light: color-mix(
+    in srgb,
+    var(--tk-red) var(--tk-wash),
+    transparent
+  );
+  --mantine-color-bad-light-color: var(--tk-red);
+  --mantine-color-bad-light-hover: color-mix(
+    in srgb,
+    var(--tk-red) var(--tk-wash-hover),
+    transparent
+  );
+
+  --mantine-color-purple-light: color-mix(
+    in srgb,
+    var(--tk-purple) var(--tk-wash),
+    transparent
+  );
+  --mantine-color-purple-light-color: var(--tk-purple);
+  --mantine-color-purple-light-hover: color-mix(
+    in srgb,
+    var(--tk-purple) var(--tk-wash-hover),
+    transparent
+  );
+
+  --mantine-color-cyan-light: color-mix(
+    in srgb,
+    var(--tk-cyan) var(--tk-wash),
+    transparent
+  );
+  --mantine-color-cyan-light-color: var(--tk-cyan);
+  --mantine-color-cyan-light-hover: color-mix(
+    in srgb,
+    var(--tk-cyan) var(--tk-wash-hover),
+    transparent
+  );
+
+  /* The built-ins app-theme.ts re-points at the same hues, so kit components
+     reaching for a stock colour wash the same way. */
+  --mantine-color-blue-light: var(--mantine-color-accent-light);
+  --mantine-color-blue-light-color: var(--mantine-color-accent-light-color);
+  --mantine-color-blue-light-hover: var(--mantine-color-accent-light-hover);
+  --mantine-color-green-light: var(--mantine-color-ok-light);
+  --mantine-color-green-light-color: var(--mantine-color-ok-light-color);
+  --mantine-color-green-light-hover: var(--mantine-color-ok-light-hover);
+  --mantine-color-yellow-light: var(--mantine-color-warn-light);
+  --mantine-color-yellow-light-color: var(--mantine-color-warn-light-color);
+  --mantine-color-yellow-light-hover: var(--mantine-color-warn-light-hover);
+  --mantine-color-red-light: var(--mantine-color-bad-light);
+  --mantine-color-red-light-color: var(--mantine-color-bad-light-color);
+  --mantine-color-red-light-hover: var(--mantine-color-bad-light-hover);
+  --mantine-color-violet-light: var(--mantine-color-purple-light);
+  --mantine-color-violet-light-color: var(--mantine-color-purple-light-color);
+  --mantine-color-violet-light-hover: var(--mantine-color-purple-light-hover);
 }
 
 /*

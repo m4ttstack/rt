@@ -126,7 +126,14 @@ export function CompileDrawer({
               }}
               data-testid="compile-preview-body"
             >
-              <Code block>{query.data.content}</Code>
+              {/* Compiled SKILL.md carries long frontmatter lines; wrapping
+                  them keeps the drawer's only scroll vertical. */}
+              <Code
+                block
+                style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+              >
+                {query.data.content}
+              </Code>
             </div>
           )}
         </Stack>

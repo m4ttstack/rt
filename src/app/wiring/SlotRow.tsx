@@ -2,6 +2,7 @@ import { Anchor, Badge, Group, Paper, Stack, Text } from '@ui/core';
 import { useSchemeColors } from '@ui/hooks';
 import { Icons } from '@ui/icons';
 import type { SlotOutlineNode } from './outline';
+import { QuietBadge } from './QuietBadge';
 
 /** tokyo-theme.css re-points Mantine's `gray-3` at `--tk-border-soft`, the
     palette's rule-inside-a-surface weight. The slot table is that case: a
@@ -77,9 +78,7 @@ export function SlotRow({ slot }: { slot: SlotOutlineNode }) {
         <Icons.arrowRight size={12} color={text.muted} />
         <FillLink slot={slot} />
         {unbound && slot.required === false && (
-          <Badge size="xs" variant="outline" color="gray">
-            optional
-          </Badge>
+          <QuietBadge>optional</QuietBadge>
         )}
         {unbound && slot.required === true && (
           <Badge size="xs" variant="light" color="bad">
@@ -87,14 +86,9 @@ export function SlotRow({ slot }: { slot: SlotOutlineNode }) {
           </Badge>
         )}
         {slot.siteCount > 1 && (
-          <Badge
-            size="xs"
-            variant="outline"
-            color="gray"
-            data-testid="slot-sites"
-          >
-            {slot.siteCount} sites
-          </Badge>
+          <div data-testid="slot-sites">
+            <QuietBadge>{slot.siteCount} sites</QuietBadge>
+          </div>
         )}
       </Group>
       {slot.resolveError && (
