@@ -1,4 +1,4 @@
-import { serveStatic, websocket } from 'hono/bun';
+import { serveStatic, upgradeWebSocket, websocket } from 'hono/bun';
 
 import { app } from './app';
 import { startRelay } from './ws';
@@ -16,6 +16,22 @@ import { startRelay } from './ws';
 app.use('/assets/*', serveStatic({ root: './dist' }));
 app.use('/fonts/*', serveStatic({ root: './dist' }));
 app.use('/favicon.svg', serveStatic({ path: './dist/favicon.svg' }));
+// No middleware may touch this route: header-modifying middleware plus the
+// websocket helper throws on immutable headers. Registered here, not in
+// app.ts, so app.ts stays import-safe under vitest's Node runtime and /ws
+// stays out of AppType, where no RPC client needs it.
+app.get(
+  '/ws',
+  upgradeWebSocket(() => ({
+    onOpen(_event, socket) {
+      // `raw` is the underlying Bun ServerWebSocket, which is what carries
+      // topic subscription; Hono's WSContext wraps it without taking it away.
+      (socket.raw as { subscribe(topic: string): void } | undefined)?.subscribe(
+        'runs'
+      );
+    },
+  }))
+);
 app.get('*', async c => {
   if (c.req.path.startsWith('/api') || c.req.path.startsWith('/ws')) {
     return c.json({ error: 'not found' }, 404);

@@ -28,8 +28,12 @@ describe('run relay', () => {
   it('republishes a run-updated event to the runs topic', () => {
     const published: Array<[string, string]> = [];
     startRelay((topic, data) => published.push([topic, data]));
+    // Each test's own subscribe() call appends a new handler; indexing
+    // handlers[0] here would silently fire an earlier test's handler once
+    // this suite has more than one test.
+    const handler = handlers.at(-1)!;
 
-    handlers[0]!('event', runEvent);
+    handler('event', runEvent);
 
     expect(published).toEqual([['runs', JSON.stringify(runEvent)]]);
   });
@@ -37,12 +41,13 @@ describe('run relay', () => {
   it('drops every other daemon broadcast', () => {
     const published: Array<[string, string]> = [];
     startRelay((topic, data) => published.push([topic, data]));
+    const handler = handlers.at(-1)!;
 
     // The daemon also broadcasts these on its pollers. Without the filter the
     // board full-refetches the run list on every unrelated daemon tick.
-    handlers[0]!('ports', { some: 'payload' });
-    handlers[0]!('status', { some: 'payload' });
-    handlers[0]!('event', {
+    handler('ports', { some: 'payload' });
+    handler('status', { some: 'payload' });
+    handler('event', {
       id: 2,
       topic: 'pack-installed',
       payload: {},
