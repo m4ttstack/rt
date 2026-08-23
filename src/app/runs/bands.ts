@@ -78,11 +78,19 @@ export interface BoardChangeSummary {
 }
 
 /**
- * The quiet-pill diff: a row's slot (band + index) is the unit of "moved
- * under the cursor," so a within-band silence resort counts the same as a
- * band change. `count` drives whether the pill renders at all; `message`
- * follows the spec's own wording for the single-run case (naming the band it
- * moved to) and falls back to a plain count once several rows are involved.
+ * The quiet-pill diff. Two different questions, answered two different ways:
+ *
+ * WHETHER to hold the pill at all uses full slot equality (band + index) --
+ * a within-band silence resort is a reorder under the cursor exactly like a
+ * band change, so it counts too. `count` is this full slot-diff size.
+ *
+ * WHAT the message says uses band-crossing membership only, ignoring index.
+ * Removing an id from a band (or inserting one) shifts every trailing id's
+ * index in that band, so slot equality alone would only call a move
+ * "singular" when the mover happened to sit last in both its source and
+ * destination band -- true for a small fixture, false in general. Band
+ * membership is what the spec's own example ("1 run moved to needs
+ * attention") actually describes, and index-shift noise never changes it.
  */
 export function summarizeBoardChanges(
   committed: BandIds,
@@ -98,17 +106,20 @@ export function summarizeBoardChanges(
   );
 
   if (changed.length === 0) return { count: 0, message: '' };
-  // A lone reorder always moves at least two ids (any transposition displaces
-  // its neighbor too), so `changed.length === 1` only ever happens when that
-  // one id crossed a band boundary -- the case the spec names directly.
-  if (changed.length === 1) {
-    const [id] = changed;
-    const to = bandOf(latest, id);
-    const from = bandOf(committed, id);
-    if (to && to !== from) {
-      return { count: 1, message: `1 run moved to ${BAND_LABEL[to]}` };
+
+  const bandCrossers = changed.filter(
+    id => bandOf(committed, id) !== bandOf(latest, id)
+  );
+  if (bandCrossers.length === 1) {
+    const to = bandOf(latest, bandCrossers[0]);
+    if (to) {
+      return {
+        count: changed.length,
+        message: `1 run moved to ${BAND_LABEL[to]}`,
+      };
     }
   }
+
   const count = changed.length;
   return { count, message: `${count} run${count === 1 ? '' : 's'} updated` };
 }

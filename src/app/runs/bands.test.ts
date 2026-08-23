@@ -123,6 +123,31 @@ describe('summarizeBoardChanges', () => {
     });
   });
 
+  // The mover is NOT tail-of-band in either its source or destination band
+  // (`q3` sits after it in `running`) -- slot equality alone would call
+  // this "2 runs updated" because q3's index shifts too. Band-crossing
+  // membership is what must decide the singular wording.
+  it('names the destination band even when the mover is not last in its source band', () => {
+    const before = computeBandIds([
+      run({ id: 'q1', last_event_at: 0 }),
+      run({ id: 'noisy', last_event_at: 50 }),
+      run({ id: 'q3', last_event_at: 100 }),
+    ]);
+    const after = computeBandIds([
+      run({ id: 'q1', last_event_at: 0 }),
+      run({
+        id: 'noisy',
+        last_event_at: 50,
+        attention: { needs: true, reason: 'failed', evidence: 'x' },
+      }),
+      run({ id: 'q3', last_event_at: 100 }),
+    ]);
+
+    expect(summarizeBoardChanges(before, after).message).toBe(
+      '1 run moved to needs attention'
+    );
+  });
+
   it('counts a pure in-band reorder (no band change) as a change too', () => {
     const before = computeBandIds([
       run({ id: 'a', last_event_at: 1 }),
