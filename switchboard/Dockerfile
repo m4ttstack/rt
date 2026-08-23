@@ -5,6 +5,6 @@
 # that only resolves on a dev machine and must never be part of this build.
 FROM oven/bun:1-slim
 WORKDIR /app
-COPY switchboard/server.ts switchboard/store.ts ./switchboard/
+COPY switchboard/*.ts ./switchboard/
 COPY src/peer/envelope.ts ./src/peer/
 CMD ["bun", "run", "switchboard/server.ts"]

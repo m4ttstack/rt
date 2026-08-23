@@ -1,13 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { SwitchboardStore } from "../store.ts";
+import { TeamInviteStore } from "../team-invites.ts";
 import { makeFetchHandler } from "../server.ts";
 
 const ADMIN = "admin-secret";
 
 function setup() {
-  const store = new SwitchboardStore(new Database(":memory:"));
-  const handler = makeFetchHandler(store, ADMIN, () => 1000);
+  const db = new Database(":memory:");
+  const store = new SwitchboardStore(db);
+  const handler = makeFetchHandler(store, ADMIN, () => 1000, new TeamInviteStore(db));
   const call = (path: string, opts: { method?: string; token?: string; body?: unknown } = {}) =>
     handler(new Request(`http://x${path}`, {
       method: opts.method ?? (opts.body !== undefined ? "POST" : "GET"),

@@ -5,6 +5,7 @@ import { Database } from "bun:sqlite";
 import { join } from "path";
 import { parseDraftEnvelope } from "../src/peer/envelope.ts";
 import { ENVELOPE_TTL_MS, SwitchboardStore } from "./store.ts";
+import { makeTeamInviteHandler, TeamInviteStore } from "./team-invites.ts";
 
 function json(status: number, body: unknown): Response {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
@@ -15,10 +16,19 @@ function bearer(req: Request): string | null {
   return h.startsWith("Bearer ") ? h.slice(7) : null;
 }
 
-export function makeFetchHandler(store: SwitchboardStore, adminToken: string, now: () => number = Date.now) {
+export function makeFetchHandler(
+  store: SwitchboardStore,
+  adminToken: string,
+  now: () => number,
+  teamInvites: TeamInviteStore,
+) {
+  const teamInviteRoutes = makeTeamInviteHandler(teamInvites, now);
   return async (req: Request): Promise<Response> => {
     const { pathname } = new URL(req.url);
     if (pathname === "/healthz") return new Response("ok");
+
+    const relayed = await teamInviteRoutes(req, pathname);
+    if (relayed) return relayed;
 
     if (pathname === "/boards") {
       if (bearer(req) !== adminToken) return new Response("unauthorized", { status: 401 });
@@ -107,9 +117,14 @@ if (import.meta.main) {
     process.exit(1);
   }
   const dbPath = process.env.SWITCHBOARD_DB || join(import.meta.dir, "switchboard.sqlite");
-  const store = new SwitchboardStore(new Database(dbPath));
+  const db = new Database(dbPath);
+  const store = new SwitchboardStore(db);
+  const teamInvites = new TeamInviteStore(db);
   const port = Number(process.env.PORT) || 7940;
-  setInterval(() => store.prune(Date.now(), ENVELOPE_TTL_MS), 60 * 60_000);
-  Bun.serve({ port, fetch: makeFetchHandler(store, adminToken) });
+  setInterval(() => {
+    store.prune(Date.now(), ENVELOPE_TTL_MS);
+    teamInvites.prune(Date.now());
+  }, 60 * 60_000);
+  Bun.serve({ port, fetch: makeFetchHandler(store, adminToken, Date.now, teamInvites) });
   console.log(`switchboard listening on :${port} (db: ${dbPath})`);
 }

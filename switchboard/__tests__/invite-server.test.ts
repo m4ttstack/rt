@@ -1,11 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { Database } from "bun:sqlite";
 import { SwitchboardStore } from "../store.ts";
+import { TeamInviteStore } from "../team-invites.ts";
 import { makeFetchHandler } from "../server.ts";
 
 const ADMIN = "admintok";
-function handler(store = new SwitchboardStore(new Database(":memory:"))) {
-  return { store, fetch: makeFetchHandler(store, ADMIN, () => 5000) };
+function handler(db = new Database(":memory:")) {
+  const store = new SwitchboardStore(db);
+  return { store, fetch: makeFetchHandler(store, ADMIN, () => 5000, new TeamInviteStore(db)) };
 }
 function req(path: string, init: RequestInit = {}) {
   return new Request(`http://sb.test${path}`, init);
