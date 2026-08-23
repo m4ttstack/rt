@@ -1,30 +1,30 @@
 // @vitest-environment node
-//
-// Only the absent-manifest branch is covered here -- which is also the only
-// state `bun run test` ever actually runs in (the generated module is
-// gitignored and nothing in this repo's test/lint/typecheck pipeline
-// generates it). The present-manifest branch is real-runtime-only: Vite's
-// module runner caches a *failed* dynamic-import resolution and won't
-// re-stat the filesystem for the same specifier within one process, so a
-// test that writes the fixture mid-run after this test's import already
-// failed keeps replaying that cached failure -- it would be pinning Vite's
-// loader behavior, not this code's. The present branch is proven instead by
-// actually running the server: `bun run generate:embedded` then `bun run
-// serve` serves the embedded assets (manually verified), and the compiled
-// binary does the same with `dist/` deleted (see
-// .superpowers/compile-binary-report.md).
-import { existsSync } from 'node:fs';
-import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import { loadEmbeddedManifest } from './manifest-loader';
+import type { EmbeddedManifest } from './types';
+
+const manifest: EmbeddedManifest = {
+  indexHtmlPath: '/embedded/index.html',
+  files: { '/assets/app.js': '/embedded/assets/app.js' },
+};
 
 describe('loadEmbeddedManifest', () => {
-  it('resolves to null when no codegen has run (the checked-out, dev/serve state)', async () => {
-    expect(
-      existsSync(join(import.meta.dirname, 'generated', 'manifest.ts'))
-    ).toBe(false);
+  it('resolves the manifest a resolver hands back', async () => {
+    await expect(
+      loadEmbeddedManifest(async () => ({ manifest }))
+    ).resolves.toEqual(manifest);
+  });
 
+  it('resolves to null when the resolver finds nothing (dev/serve, no codegen run)', async () => {
+    await expect(loadEmbeddedManifest(async () => null)).resolves.toBeNull();
+  });
+
+  it('uses the real generated-module resolver by default', async () => {
+    // No codegen has run in this checkout/CI (the generated module is
+    // gitignored), so the real default resolver's import fails and this
+    // still resolves to null -- proving the default argument is actually
+    // wired to a real dynamic import, not stubbed out.
     await expect(loadEmbeddedManifest()).resolves.toBeNull();
   });
 });

@@ -1,8 +1,10 @@
 import { upgradeWebSocket, websocket } from 'hono/bun';
 
 import { app } from './app';
+import { isCompiledBinary } from './embedded/compiled-binary';
 import { loadEmbeddedManifest } from './embedded/manifest-loader';
 import { mountEmbeddedStatic } from './embedded/mount';
+import { decideServingMode } from './embedded/serving-mode';
 import { mountDiskStatic } from './static-disk';
 import { startRelay } from './ws';
 
@@ -19,6 +21,20 @@ import { startRelay } from './ws';
 // `serve` never produce that embedded manifest, so they fall back to reading
 // `dist/` off disk exactly as before.
 const embeddedManifest = await loadEmbeddedManifest();
+const servingMode = decideServingMode({
+  manifestLoaded: embeddedManifest !== null,
+  isCompiledBinary: isCompiledBinary(),
+});
+// A compiled binary with no manifest has no `dist/` to fall back to either
+// -- refuse to serve rather than let every request 404 in production. Exits
+// before `Bun.serve` below, so nothing ever listens.
+if (servingMode.mode === 'fatal') {
+  console.error(servingMode.message);
+  process.exit(1);
+}
+console.log(
+  `static assets: ${servingMode.mode === 'embedded' ? 'embedded' : 'disk (./dist)'}`
+);
 const serveIndexHtml = embeddedManifest
   ? mountEmbeddedStatic(app, embeddedManifest)
   : mountDiskStatic(app);
