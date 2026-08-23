@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 
 import {
   ActionIcon,
@@ -16,6 +17,7 @@ import { notifications } from '@ui/notifications';
 import { client } from '../api';
 import { Link } from '../router/Link';
 import type { BoardRun } from './bands';
+import { BRANCH_CHECKOUT_LABEL, branchCheckoutCommand } from './branchCheckout';
 
 const STATUS_COLOR: Record<string, MantineColor> = {
   running: 'accent',
@@ -37,23 +39,36 @@ function formatElapsed(startedAt: number, endedAt: number | null): string {
 /** `RunSummary` denormalizes only `ticket`/`branch` for the list; `worktree`
     and `mr` live in `RunDetail.fields` and are fetched on demand here rather
     than guessed from `branch` -- a wrong guess would send someone to a path
-    or MR that doesn't exist. */
+    or MR that doesn't exist. Routed through `queryClient.fetchQuery` under
+    the same `['run', repo, runId]` key `useRun` uses, so clicking worktree
+    then MR (or landing on the detail view) shares one cached fetch instead
+    of issuing a fresh detail request per action. `staleTime` is what makes
+    that sharing real: without it the default `staleTime: 0` would still
+    refetch on the second click even though the query key matches. */
 async function fetchDetailField(
+  queryClient: QueryClient,
   repo: string,
   runId: string,
   key: 'worktree' | 'mr'
 ): Promise<string | null> {
-  const res = await client.api.runs[':repo'][':runId'].$get({
-    param: { repo, runId },
+  const detail = await queryClient.fetchQuery({
+    queryKey: ['run', repo, runId],
+    staleTime: 30_000,
+    queryFn: async () => {
+      const res = await client.api.runs[':repo'][':runId'].$get({
+        param: { repo, runId },
+      });
+      if (!res.ok) throw new Error(`run detail failed: ${res.status}`);
+      return res.json();
+    },
   });
-  if (!res.ok) throw new Error(`run detail failed: ${res.status}`);
-  const detail = await res.json();
   return detail.fields.find(f => f.key === key)?.value ?? null;
 }
 
 export function RunRow({ run }: { run: BoardRun }) {
   const { bg, text, border } = useSchemeColors();
   const clipboard = useClipboard();
+  const queryClient = useQueryClient();
   const [resolving, setResolving] = useState<'worktree' | 'mr' | null>(null);
   const detailHref = `/runs/${run.repo}/${run.id}`;
   const statusColor = STATUS_COLOR[run.status] ?? 'accent';
@@ -67,7 +82,12 @@ export function RunRow({ run }: { run: BoardRun }) {
   async function handleCopyWorktree() {
     setResolving('worktree');
     try {
-      const value = await fetchDetailField(run.repo, run.id, 'worktree');
+      const value = await fetchDetailField(
+        queryClient,
+        run.repo,
+        run.id,
+        'worktree'
+      );
       if (!value) {
         notifications.info('No worktree recorded for this run yet.');
         return;
@@ -85,7 +105,7 @@ export function RunRow({ run }: { run: BoardRun }) {
   async function handleOpenMr() {
     setResolving('mr');
     try {
-      const value = await fetchDetailField(run.repo, run.id, 'mr');
+      const value = await fetchDetailField(queryClient, run.repo, run.id, 'mr');
       if (!value) {
         notifications.info('No MR recorded for this run yet.');
         return;
@@ -159,8 +179,8 @@ export function RunRow({ run }: { run: BoardRun }) {
         </Tooltip>
         {run.branch && (
           <CopyActionIcon
-            value={`git checkout ${run.branch}`}
-            label="Copy resume command"
+            value={branchCheckoutCommand(run.branch)}
+            label={BRANCH_CHECKOUT_LABEL}
           />
         )}
         <Tooltip label={clipboard.copied ? 'Copied!' : 'Copy worktree path'}>

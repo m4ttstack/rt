@@ -5,6 +5,10 @@ import { Icons } from '@ui/icons';
 import { Spotlight } from '@ui/spotlight';
 import type { SpotlightActionData } from '@ui/spotlight';
 import { navigate } from '../router/navigation';
+import {
+  BRANCH_CHECKOUT_LABEL,
+  branchCheckoutCommand,
+} from '../runs/branchCheckout';
 import { useRunList } from '../runs/useRuns';
 
 function runAction(run: {
@@ -24,8 +28,8 @@ function runAction(run: {
     leftSection: <Icons.layers size={16} />,
     rightSection: run.branch ? (
       <CopyActionIcon
-        value={`git checkout ${run.branch}`}
-        label="Copy resume command"
+        value={branchCheckoutCommand(run.branch)}
+        label={BRANCH_CHECKOUT_LABEL}
       />
     ) : undefined,
   };

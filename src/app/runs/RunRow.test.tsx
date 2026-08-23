@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -56,6 +57,17 @@ function detailResponse(fields: Array<{ key: string; value: string }>) {
   };
 }
 
+function renderRow(run: BoardRun) {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return renderWithProviders(
+    <QueryClientProvider client={queryClient}>
+      <RunRow run={run} />
+    </QueryClientProvider>
+  );
+}
+
 const originalClipboard = navigator.clipboard;
 const originalOpen = window.open;
 
@@ -79,7 +91,7 @@ describe('RunRow outward actions', () => {
     );
     window.open = vi.fn();
 
-    renderWithProviders(<RunRow run={baseRun} />);
+    renderRow(baseRun);
     await userEvent.click(screen.getByRole('button', { name: 'open MR' }));
 
     await waitFor(() =>
@@ -100,7 +112,7 @@ describe('RunRow outward actions', () => {
     });
     window.open = vi.fn();
 
-    renderWithProviders(<RunRow run={baseRun} />);
+    renderRow(baseRun);
     await userEvent.click(
       screen.getByRole('button', { name: 'copy worktree path' })
     );
@@ -118,17 +130,17 @@ describe('RunRow outward actions', () => {
     });
     window.open = vi.fn();
 
-    renderWithProviders(<RunRow run={baseRun} />);
+    renderRow(baseRun);
     await userEvent.click(screen.getByRole('button', { name: 'open MR' }));
 
     await screen.findByText(/Could not open MR: run detail failed: 502/);
     expect(window.open).not.toHaveBeenCalled();
   });
 
-  // Finding: `window.open('file://...')` is silently refused by the browser
-  // from an http(s) origin (verified against this app's own serving
-  // context -- no tab, no error the user sees). Clipboard is the only
-  // handoff that actually works, so the worktree action must copy, never open.
+  // `window.open('file://...')` is silently refused by the browser from an
+  // http(s) origin (verified against this app's own serving context -- no
+  // tab, no error the user sees). Clipboard is the only handoff that
+  // actually works, so the worktree action must copy, never open.
   it('copies the worktree path to the clipboard instead of opening a file:// link', async () => {
     detailGet.mockResolvedValueOnce(
       detailResponse([
@@ -142,7 +154,7 @@ describe('RunRow outward actions', () => {
     });
     window.open = vi.fn();
 
-    renderWithProviders(<RunRow run={baseRun} />);
+    renderRow(baseRun);
     await userEvent.click(
       screen.getByRole('button', { name: 'copy worktree path' })
     );
@@ -151,5 +163,34 @@ describe('RunRow outward actions', () => {
       expect(writeText).toHaveBeenCalledWith('/Users/matt/work/repo-tools-wt')
     );
     expect(window.open).not.toHaveBeenCalled();
+  });
+
+  // Both actions read off the SAME `['run', repo, runId]` query -- worktree
+  // then MR must share the one cached fetch, not issue a fresh detail
+  // request per click.
+  it('shares one detail fetch between the worktree and MR actions', async () => {
+    detailGet.mockResolvedValue(
+      detailResponse([
+        { key: 'worktree', value: '/Users/matt/work/repo-tools-wt' },
+        { key: 'mr', value: 'https://example.com/pr/1' },
+      ])
+    );
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    window.open = vi.fn();
+
+    renderRow(baseRun);
+    await userEvent.click(
+      screen.getByRole('button', { name: 'copy worktree path' })
+    );
+    await waitFor(() => expect(writeText).toHaveBeenCalled());
+
+    await userEvent.click(screen.getByRole('button', { name: 'open MR' }));
+    await waitFor(() => expect(window.open).toHaveBeenCalled());
+
+    expect(detailGet).toHaveBeenCalledTimes(1);
   });
 });
