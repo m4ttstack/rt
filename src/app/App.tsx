@@ -6,6 +6,7 @@ import { ConsoleChrome, type ConsoleSection } from './chrome/ConsoleChrome';
 import { NotFoundPage } from './NotFoundPage';
 import { usePath } from './router/navigation';
 import { matchRoute, type AppRoute } from './routes';
+import { RunBoard } from './runs/RunBoard';
 
 const queryClient = new QueryClient();
 
@@ -47,11 +48,7 @@ class RouteErrorBoundary extends Component<
 function RouteContent({ route }: { route: AppRoute }) {
   switch (route.name) {
     case 'board':
-      return (
-        <PageShell title="Runs">
-          <Text c="dimmed">The run board arrives in a later task.</Text>
-        </PageShell>
-      );
+      return <RunBoard />;
     case 'run':
       return (
         <PageShell title={`${route.repo} / ${route.runId}`}>

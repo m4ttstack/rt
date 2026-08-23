@@ -2,6 +2,8 @@ import { abandonRun, getRun, listRuns } from '@mattstack/rt-client';
 import { Hono } from 'hono';
 import { validator } from 'hono/validator';
 
+import { markSeen, readSeen } from './seen';
+
 /**
  * 502, not 500: an `ok: false` from rt-client means the daemon answered and
  * refused, an upstream condition the client should see as "rt said no" rather
@@ -39,4 +41,8 @@ export const runs = new Hono()
       if (!res.ok) return c.json({ error: res.error }, 502);
       return c.json(res.data, 200);
     }
+  )
+  .get('/api/seen', async c => c.json(readSeen(), 200))
+  .post('/api/seen/:runId', async c =>
+    c.json(markSeen(c.req.param('runId')), 200)
   );
