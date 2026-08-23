@@ -58,6 +58,25 @@ export function useComposition(pack: string) {
   });
 }
 
+/** The same cache entry `useComposition` fills, read WITHOUT suspending.
+    The page header needs the work types and the fetch time while staying
+    outside the outline's suspense boundary -- the pack picker has to survive
+    a composition failure, which is the whole reason that boundary is scoped
+    to the outline. Same query key, so this shares the fetch rather than
+    issuing a second one. */
+export function useCompositionSnapshot(pack: string | null) {
+  return useQuery({
+    queryKey: ['skills', 'composition', pack],
+    queryFn: async () => {
+      const res = await client.api.skills.composition.$get({
+        query: { pack: pack ?? '' },
+      });
+      return readOrThrow<SkillsComposition>(res, 'skills composition');
+    },
+    enabled: pack !== null,
+  });
+}
+
 export function useSkillsCheck(pack: string) {
   return useQuery({
     queryKey: ['skills', 'check', pack],

@@ -73,7 +73,7 @@ describe('skills routes', () => {
     await expect(res.json()).resolves.toEqual(payload);
   });
 
-  it('round-trips a composition payload with binders intact', async () => {
+  it('round-trips a composition payload with binders and pipelines intact', async () => {
     const payload = {
       pack: 'demo',
       packDir: '/p',
@@ -117,6 +117,7 @@ describe('skills routes', () => {
           slots: [{ name: 'domain', boundTo: 'demo:work-provision' }],
         },
       ],
+      pipelines: { feature: ['mattstack:stage-provision'] },
     };
     const rt = fakeRt({ code: 0, stdout: JSON.stringify(payload), stderr: '' });
     const app = mountSkills(new Hono(), rt.run);

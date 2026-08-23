@@ -53,6 +53,12 @@ interface SkillsCompositionResponse {
   verbs: SkillsCompositionVerb[];
   fills: SkillsCompositionFill[];
   binders: SkillsCompositionBinder[];
+  /** Work type -> its ordered stage refs. The payload's only record of
+      execution order: `binders[].kind` says a ref IS a stage, never where it
+      runs. Optional because an rt older than the field answers without it,
+      and the client has to be able to tell that apart from a pack with no
+      pipelines. */
+  pipelines?: Record<string, string[]>;
 }
 
 interface SkillsCheckVerbRow {
