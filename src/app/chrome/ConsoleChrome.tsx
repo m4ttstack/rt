@@ -12,7 +12,7 @@ import { Link } from '../router/Link';
 
 export const CONSOLE_HEADER_HEIGHT = 64;
 
-export type ConsoleSection = 'runs' | 'search';
+export type ConsoleSection = 'runs' | 'search' | 'wiring';
 
 // Matches `MantineColorScheme` structurally without importing it -- the
 // `@mantine/core` import wall requires going through `@ui/*`, which doesn't
@@ -86,6 +86,15 @@ export function ConsoleChrome({
             href="/search"
             expanded={rail.effectiveExpanded}
             active={section === 'search'}
+            onClick={rail.close}
+          />
+          <RailEntry
+            icon="zap"
+            label="Wiring"
+            component={Link}
+            href="/wiring"
+            expanded={rail.effectiveExpanded}
+            active={section === 'wiring'}
             onClick={rail.close}
           />
         </Rail>

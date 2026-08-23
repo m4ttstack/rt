@@ -10,11 +10,13 @@ import { matchRoute, type AppRoute } from './routes';
 import { RunBoard } from './runs/RunBoard';
 import { RunDetail } from './runs/RunDetail';
 import { RunSearch } from './runs/RunSearch';
+import { WiringMap } from './wiring/WiringMap';
 
 const queryClient = new QueryClient();
 
 function chromeSection(route: AppRoute): ConsoleSection | null {
   if (route.name === 'search') return 'search';
+  if (route.name === 'wiring') return 'wiring';
   if (route.name === 'not-found') return null;
   return 'runs';
 }
@@ -56,6 +58,8 @@ function RouteContent({ route }: { route: AppRoute }) {
       return <RunDetail repo={route.repo} runId={route.runId} />;
     case 'search':
       return <RunSearch />;
+    case 'wiring':
+      return <WiringMap />;
     case 'not-found':
       return (
         <PageShell>
