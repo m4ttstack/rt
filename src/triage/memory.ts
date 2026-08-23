@@ -1,5 +1,6 @@
 import { mkdirSync, readFileSync, renameSync, writeFileSync } from "fs";
 import { join } from "path";
+import { APP_ROOT } from "../app-root.ts";
 
 /** Per-MR dispatch bookkeeping AND red-edge memory. Plain-named file: the
     working name must not leak into state schemas (2026-08-08 amendment). */
@@ -19,7 +20,7 @@ export interface DispatchMemory {
   mrs: Record<string, MrMemory>;
 }
 
-export const MEMORY_PATH = join(import.meta.dir, "..", "..", "state", "auto-dispatch.json");
+export const MEMORY_PATH = join(APP_ROOT, "state", "auto-dispatch.json");
 
 export function emptyMrMemory(dayStamp: string): MrMemory {
   return {

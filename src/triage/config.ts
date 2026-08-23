@@ -1,6 +1,6 @@
 import { readFileSync } from "fs";
-import { join } from "path";
 import { getSetting } from "@mattstack/rt-client";
+import { CONFIG_PATH } from "../config.ts";
 
 export interface FixClasses {
   retryFlake: boolean;
@@ -152,7 +152,7 @@ function isEnoent(err: unknown): boolean {
     carry the whole config on their own once the store owns them. Any other
     read failure (a genuinely malformed config.json) still surfaces loudly. */
 export function loadTriageConfig(
-  configPath: string = join(import.meta.dir, "..", "..", "config.json"),
+  configPath: string = CONFIG_PATH,
   resolve: GetSettingFn = getSetting,
 ): TriageConfig {
   let triageRaw: unknown;
