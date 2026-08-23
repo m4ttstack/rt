@@ -14,3 +14,9 @@ src/server/embedded/generated/**
 # upstream, so a local prettier reformat reads as permanent drift.
 src/ui/**
 skills/**
+
+# Design artboards and their generated renders. Whitespace inside them is
+# load-bearing -- the compile drawer's body renders under `white-space:
+# pre-wrap`, so reflowing it changes what the reference PNG shows.
+design/wiring/artboards/**
+design/wiring/render/**
