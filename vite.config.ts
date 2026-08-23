@@ -47,6 +47,12 @@ export default defineConfig({
     // it runs behind a reverse proxy; localhost-style hosts are always allowed.
     allowedHosts: process.env.PREVIEW_ALLOWED_HOSTS?.split(',') ?? [],
   },
+  server: {
+    proxy: {
+      '/api': { target: 'http://127.0.0.1:11011', changeOrigin: true },
+      '/ws': { target: 'ws://127.0.0.1:11011', ws: true },
+    },
+  },
   test: {
     environment: 'jsdom',
     include: ['src/**/*.test.{ts,tsx}'],
