@@ -61,10 +61,6 @@ from inside `dist/`.
 
 ## Learn more
 
-- The app ships its own docs: run `bun run dev` and open `/docs` for per-topic guides — theming
-  and the layered backgrounds, hooks, modals, notifications, forms, the components catalog, icons,
-  and the **App chrome** guide (the `RailShell` + `PageShell` double-nav recipe this site's docs
-  and demo sections run on).
 - `AGENTS.md` — the kit's conventions: import walls, adding components, the icon registry, theme
   overrides, facade usage (modals, notifications, forms), storage and color-scheme hooks, and the
   boot family.
