@@ -85,7 +85,22 @@ const FIXTURE: RunDetailData = {
       at: 99,
     },
   ],
-  decisions: [],
+  decisions: [
+    {
+      contract: 'execution-strategy@1',
+      scope: 'run',
+      selection: '{"tier":"direct-tdd"}',
+      decided_by: 'implement',
+      decided_at: 15,
+    },
+    {
+      contract: 'human-override@1',
+      scope: 'run',
+      selection: '{"note":"skip ci"}',
+      decided_by: 'rt runs abandon',
+      decided_at: 99,
+    },
+  ],
   schemaAhead: false,
 };
 
@@ -209,8 +224,68 @@ describe('RunDetail', () => {
     renderDetail();
 
     await screen.findByTestId('handoff-card');
-    // FIXTURE never produces 'worktree', 'mr', or 'plan'.
+    // FIXTURE never produces 'worktree', 'mr', or 'commits'.
     expect(screen.getAllByText('not recorded')).toHaveLength(3);
+  });
+
+  // Mirrors the field-grouping tests above, but for decisions -- groupTimeline
+  // applies the same stage / outside-the-pipeline split to `decided_by` as it
+  // does to `produced_by`, and that half of the rule had no fixture data at
+  // all before this.
+  it('renders a decision inside the stage named by its decided_by', async () => {
+    detailGet.mockResolvedValue(detailResponse(FIXTURE));
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        lines: ['assertion failed at line 42'],
+        truncated: false,
+      }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+
+    renderDetail();
+
+    const implementStage = await screen.findByTestId(
+      'timeline-stage-implement-1'
+    );
+    expect(
+      within(implementStage).getByText(/execution-strategy@1/)
+    ).toBeInTheDocument();
+  });
+
+  it('renders a decision with no matching stage in the outside-the-pipeline entry', async () => {
+    detailGet.mockResolvedValue(detailResponse(FIXTURE));
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        lines: ['assertion failed at line 42'],
+        truncated: false,
+      }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+
+    renderDetail();
+
+    const outside = await screen.findByTestId('timeline-outside-pipeline');
+    expect(within(outside).getByText(/human-override@1/)).toBeInTheDocument();
+
+    // Must not also land under a real stage -- 'rt runs abandon' matches no
+    // stage name in FIXTURE.
+    expect(
+      screen.queryByText(/human-override@1/, {
+        selector: `[data-testid="timeline-stage-implement-1"] *`,
+      })
+    ).not.toBeInTheDocument();
   });
 
   it('marks the run seen on mount', async () => {

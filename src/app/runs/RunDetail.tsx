@@ -17,7 +17,7 @@ import { Icons } from '@ui/icons';
 import { modals } from '@ui/modals';
 import { notifications } from '@ui/notifications';
 import { client } from '../api';
-import { latestFields, Timeline } from './Timeline';
+import { fieldsByKey, Timeline } from './Timeline';
 import { useMarkSeen, useRun } from './useRuns';
 
 interface HandoffFieldSpec {
@@ -32,7 +32,7 @@ const HANDOFF_FIELDS: HandoffFieldSpec[] = [
   { key: 'branch', label: 'Branch', hotkey: 'b' },
   { key: 'worktree', label: 'Worktree', hotkey: 'w' },
   { key: 'mr', label: 'MR', hotkey: 'm' },
-  { key: 'plan', label: 'Plan path', hotkey: 'p' },
+  { key: 'commits', label: 'Commits', hotkey: 'p' },
 ];
 
 function HandoffField({
@@ -47,10 +47,10 @@ function HandoffField({
   const { text } = useSchemeColors();
   const clipboard = useClipboard();
 
-  // Independent of CopyButton's own click handler -- this is the
-  // single-key path, CopyButton below is the click path. Both write the
-  // same value; they don't need to share state to satisfy "click-to-copy
-  // AND single-key-copy".
+  // Independent of CopyButton's own click handler below: this hotkey writes
+  // the clipboard directly rather than triggering the button (a plain
+  // function component, not ref-forwarded, so it can't be clicked
+  // programmatically).
   useHotkeys([
     [
       hotkey,
@@ -85,7 +85,7 @@ function HandoffField({
 
 function HandoffCard({ fields }: { fields: RunFieldRow[] }) {
   const { bg, border, text } = useSchemeColors();
-  const latest = latestFields(fields);
+  const byKey = fieldsByKey(fields);
 
   return (
     <Stack
@@ -107,7 +107,7 @@ function HandoffCard({ fields }: { fields: RunFieldRow[] }) {
           key={spec.key}
           label={spec.label}
           hotkey={spec.hotkey}
-          value={latest.get(spec.key)?.current.value ?? null}
+          value={byKey.get(spec.key)?.value ?? null}
         />
       ))}
     </Stack>

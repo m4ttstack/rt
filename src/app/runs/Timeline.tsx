@@ -10,52 +10,32 @@ import {
   Timeline as MantineTimeline,
   Stack,
   Text,
-  Tooltip,
 } from '@ui/core';
 import type { MantineColor } from '@ui/core';
 import { useSchemeColors } from '@ui/hooks';
 import { Icons } from '@ui/icons';
 import { FailureExcerpt } from './FailureExcerpt';
 
-export interface FieldHistoryEntry {
-  current: RunFieldRow;
-  prior?: RunFieldRow;
-}
-
 /**
- * Two `fields` rows sharing a `key` are the same field overwritten. Only the
- * newest renders; the marker (see `FieldRow`) keeps the prior value reachable
- * instead of silently dropping it.
+ * `fields`' primary key is `(run_id, key)`, written via `INSERT OR REPLACE`
+ * -- the API can never return two rows sharing a `key` for one run, so this
+ * is a plain index, not a dedupe.
  */
-export function latestFields(
-  fields: RunFieldRow[]
-): Map<string, FieldHistoryEntry> {
-  const byKey = new Map<string, RunFieldRow[]>();
-  for (const field of fields) {
-    const rows = byKey.get(field.key) ?? [];
-    rows.push(field);
-    byKey.set(field.key, rows);
-  }
-
-  const result = new Map<string, FieldHistoryEntry>();
-  for (const [key, rows] of byKey) {
-    const sorted = [...rows].sort((a, b) => a.at - b.at);
-    const current = sorted.at(-1)!;
-    const prior = sorted.length > 1 ? sorted.at(-2) : undefined;
-    result.set(key, { current, prior });
-  }
+export function fieldsByKey(fields: RunFieldRow[]): Map<string, RunFieldRow> {
+  const result = new Map<string, RunFieldRow>();
+  for (const field of fields) result.set(field.key, field);
   return result;
 }
 
 interface StageGroup {
   stage: RunStageRow;
-  fields: FieldHistoryEntry[];
+  fields: RunFieldRow[];
   decisions: RunDecisionRow[];
 }
 
 interface OutsideGroup {
   producedBy: string;
-  fields: FieldHistoryEntry[];
+  fields: RunFieldRow[];
   decisions: RunDecisionRow[];
 }
 
@@ -94,11 +74,10 @@ export function groupTimeline(
     return created;
   };
 
-  for (const entry of latestFields(fields).values()) {
-    const idx = stageIndexByName.get(entry.current.produced_by);
-    if (idx === undefined)
-      outsideGroup(entry.current.produced_by).fields.push(entry);
-    else stageGroups[idx].fields.push(entry);
+  for (const field of fields) {
+    const idx = stageIndexByName.get(field.produced_by);
+    if (idx === undefined) outsideGroup(field.produced_by).fields.push(field);
+    else stageGroups[idx].fields.push(field);
   }
 
   for (const decision of decisions) {
@@ -124,28 +103,16 @@ function StageBullet({ status }: { status: string }) {
   return null;
 }
 
-function FieldRow({ entry }: { entry: FieldHistoryEntry }) {
+function FieldRow({ field }: { field: RunFieldRow }) {
   const { text } = useSchemeColors();
   return (
-    <Group gap={6} wrap="nowrap" data-testid={`field-${entry.current.key}`}>
+    <Group gap={6} wrap="nowrap" data-testid={`field-${field.key}`}>
       <Text size="sm">
         <Text span fw={600} c={text.muted}>
-          {entry.current.key}:
+          {field.key}:
         </Text>{' '}
-        {entry.current.value}
+        {field.value}
       </Text>
-      {entry.prior && (
-        <Tooltip label={`was: ${entry.prior.value}`} withArrow>
-          <Badge
-            size="xs"
-            variant="light"
-            color="warn"
-            data-testid={`field-changed-${entry.current.key}`}
-          >
-            changed
-          </Badge>
-        </Tooltip>
-      )}
     </Group>
   );
 }
@@ -235,8 +202,8 @@ export function Timeline({
                   )}
                 </>
               )}
-              {stageFields.map(entry => (
-                <FieldRow key={entry.current.key} entry={entry} />
+              {stageFields.map(field => (
+                <FieldRow key={field.key} field={field} />
               ))}
               {stageDecisions.map(decision => (
                 <DecisionRow
@@ -261,8 +228,8 @@ export function Timeline({
                 <Text size="xs" c={text.muted}>
                   {group.producedBy}
                 </Text>
-                {group.fields.map(entry => (
-                  <FieldRow key={entry.current.key} entry={entry} />
+                {group.fields.map(field => (
+                  <FieldRow key={field.key} field={field} />
                 ))}
                 {group.decisions.map(decision => (
                   <DecisionRow

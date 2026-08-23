@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -50,5 +50,20 @@ describe('readExcerpt', () => {
       lines: [],
       truncated: false,
     });
+  });
+
+  // A prefix comparison (`abs.startsWith(resolve(root))`) would wrongly
+  // admit a sibling directory whose name merely starts with the root's
+  // name -- `run-1-evil` string-starts-with `run-1` even though it is not
+  // inside it. Resolving + relative() is what tells them apart.
+  it('refuses a sibling directory that string-prefixes the root (run-1 vs run-1-evil)', () => {
+    const runRoot = join(root, 'run-1');
+    mkdirSync(runRoot, { recursive: true });
+    const evilDir = join(root, 'run-1-evil');
+    mkdirSync(evilDir, { recursive: true });
+    const evilFile = join(evilDir, 'secret.log');
+    writeFileSync(evilFile, 'not yours');
+
+    expect(() => readExcerpt(evilFile, runRoot)).toThrow(/outside/i);
   });
 });
