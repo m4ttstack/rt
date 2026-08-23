@@ -55,4 +55,21 @@ describe('tokyo-theme.css', () => {
       expect(css).toContain(`/fonts/tomorrow-${weight}.woff2`);
     }
   });
+
+  // PageShell's root and RailShell's AppShell.Main both fill the viewport
+  // with an opaque, identically-colored `bg.level1`, so a grid painted on
+  // `body` (their shared ancestor) is permanently covered -- it has to live
+  // on `#page-shell-content`, the first surface downstream of those fills
+  // that every route actually renders into, and it has to beat that
+  // surface's own inline `bg` style, which only `!important` can do.
+  it('paints the grid on the page-shell content surface, not body', () => {
+    const bodyBlock = blockFor('body');
+    expect(bodyBlock).not.toContain('background-image');
+    expect(bodyBlock).not.toContain('--tk-grid-line');
+
+    const contentBlock = blockFor('#page-shell-content');
+    expect(contentBlock).toContain('--tk-grid-line');
+    expect(contentBlock).toMatch(/background-image:[\s\S]*!important/);
+    expect(contentBlock).toContain('background-attachment: fixed !important');
+  });
 });

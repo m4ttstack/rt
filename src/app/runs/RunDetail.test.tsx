@@ -450,4 +450,22 @@ describe('RunDetail', () => {
       })
     );
   });
+
+  // The bug this pins: a thrown run-detail query used to take the whole
+  // view with it (the app-wide RouteErrorBoundary in App.tsx caught it
+  // above PageShell), dropping the one piece of context -- which run,
+  // which command -- a person needs to go fetch it by hand instead.
+  it('keeps the run id heading and command provenance visible when the query errors', async () => {
+    detailGet.mockResolvedValue({ ok: false, status: 404 });
+
+    renderDetail();
+
+    expect(
+      await screen.findByRole('heading', { name: 'repo-tools / run-1' })
+    ).toBeInTheDocument();
+    expect(await screen.findByTestId('command-provenance')).toHaveTextContent(
+      'rt runs show run-1 --repo repo-tools'
+    );
+    expect(screen.getByTestId('generic-error')).toBeInTheDocument();
+  });
 });

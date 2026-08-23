@@ -1,10 +1,12 @@
-import { useEffect } from 'react';
+import { Component, useEffect } from 'react';
+import type { ReactNode } from 'react';
 import type { RunFieldRow } from '@mattstack/rt-client';
 import { useQueryClient } from '@tanstack/react-query';
 
 import {
   Button,
   CopyButton,
+  GenericError,
   Group,
   Kbd,
   LazyLoader,
@@ -189,12 +191,53 @@ function RunDetailContent({ repo, runId }: { repo: string; runId: string }) {
   );
 }
 
+/**
+ * Scoped to this route (not the app-wide `RouteErrorBoundary` in App.tsx),
+ * so a thrown `useRun` query loses only the fields it fetched -- the run id
+ * heading (`PageShell`'s title, rendered by the caller outside this
+ * boundary) and the command that would fetch them by hand both survive the
+ * fallback.
+ */
+class RunDetailErrorBoundary extends Component<
+  { repo: string; runId: string; children: ReactNode },
+  { error: Error | null }
+> {
+  state: { error: Error | null } = { error: null };
+
+  static getDerivedStateFromError(error: Error) {
+    return { error };
+  }
+
+  render() {
+    const { error } = this.state;
+    if (error) {
+      const { repo, runId } = this.props;
+      return (
+        <Stack gap="lg" data-testid="run-detail-error">
+          <CommandProvenance
+            command={`rt runs show ${runId} --repo ${repo}`}
+            asOf={undefined}
+          />
+          <GenericError
+            title="This run failed to load"
+            message={error.message}
+            onRetry={() => this.setState({ error: null })}
+          />
+        </Stack>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export function RunDetail({ repo, runId }: { repo: string; runId: string }) {
   return (
     <PageShell title={`${repo} / ${runId}`}>
-      <LazyLoader>
-        <RunDetailContent repo={repo} runId={runId} />
-      </LazyLoader>
+      <RunDetailErrorBoundary repo={repo} runId={runId}>
+        <LazyLoader>
+          <RunDetailContent repo={repo} runId={runId} />
+        </LazyLoader>
+      </RunDetailErrorBoundary>
     </PageShell>
   );
 }

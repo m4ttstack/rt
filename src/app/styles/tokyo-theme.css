@@ -147,24 +147,42 @@
 }
 
 /*
- * The board canvas: mono body type at 13.5px/1.55 on a 28px graph-paper
- * ground. Both constants are tui-kit canvas identity (its canvas.css keeps
- * them literal for the same reason -- single-use, not theme tokens).
- *
- * `background-attachment: fixed` is a departure: tui-kit paints the grid on a
- * scrolling document body, while the console's shells own their own scroll
- * frames, so an unfixed grid would sit still while content moves past it.
+ * Mono body type at 13.5px/1.55 -- tui-kit canvas identity (its canvas.css
+ * keeps this literal for the same reason -- single-use, not a theme token).
  */
 body {
   font-family: var(--mantine-font-family);
   font-size: 13.5px;
   line-height: 1.55;
   background-color: var(--tk-bg);
+}
+
+/*
+ * The graph-paper grid. NOT painted on `body`: PageShell's root and
+ * RailShell's `AppShell.Main` both sit between body and every route, and
+ * both fill the viewport with an opaque `bg.level1` (the same `--tk-bg`),
+ * so a body-level grid is permanently covered and never reaches the
+ * screen. `#page-shell-content` -- PageShell's own capped `ScrollArea`,
+ * the one surface every route (board/search/run detail) actually scrolls
+ * inside -- is the first point in that stack that is genuinely visible.
+ *
+ * `!important` is required on every sub-property: PageShell sets this
+ * element's background via Mantine's `bg` style prop, which lands as an
+ * inline `background` declaration, and only `!important` in a stylesheet
+ * outranks an inline non-important one.
+ *
+ * `background-attachment: fixed` still anchors to the viewport, not to
+ * this element's own scroll box, even though this element -- not
+ * `body` -- is what actually scrolls (confirmed by loading the app: the
+ * grid holds still while the list scrolls past it).
+ */
+#page-shell-content {
+  background-color: var(--tk-bg) !important;
   background-image:
     linear-gradient(var(--tk-grid-line) 1px, transparent 1px),
-    linear-gradient(90deg, var(--tk-grid-line) 1px, transparent 1px);
-  background-size: 28px 28px;
-  background-attachment: fixed;
+    linear-gradient(90deg, var(--tk-grid-line) 1px, transparent 1px) !important;
+  background-size: 28px 28px !important;
+  background-attachment: fixed !important;
 }
 
 /*

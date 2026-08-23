@@ -30,13 +30,31 @@ describe('runs api', () => {
     expect(rt.listRuns).toHaveBeenCalledWith('repo-tools');
   });
 
-  it('translates a daemon failure into 502, not a thrown 500', async () => {
+  it('translates a genuine daemon failure into 502, not a thrown 500', async () => {
     const res = await app.fetch(
       new Request('http://localhost/api/runs/repo-tools/run-1')
     );
 
     expect(res.status).toBe(502);
     await expect(res.json()).resolves.toMatchObject({ error: 'no such run' });
+  });
+
+  // Distinct from the 502 above: "run not found" is the daemon's exact,
+  // literal string for a missing id (lib/daemon/handlers/runs.ts), never a
+  // caught-exception message -- this is the one ok:false shape that means
+  // "not there", not "upstream broke".
+  it('translates a missing run into 404, not 502', async () => {
+    vi.mocked(rt.getRun).mockResolvedValueOnce({
+      ok: false,
+      error: 'run not found',
+    });
+
+    const res = await app.fetch(
+      new Request('http://localhost/api/runs/repo-tools/does-not-exist')
+    );
+
+    expect(res.status).toBe(404);
+    await expect(res.json()).resolves.toEqual({ error: 'run not found' });
   });
 
   it('abandons a run with the reason from the body', async () => {

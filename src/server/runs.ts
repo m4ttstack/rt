@@ -23,7 +23,14 @@ export const runs = new Hono()
   .get('/api/runs/:repo/:runId', async c => {
     const { repo, runId } = c.req.param();
     const res = await getRun(runId, repo);
-    if (!res.ok) return c.json({ error: res.error }, 502);
+    if (!res.ok) {
+      // The daemon's runs:get handler (lib/daemon/handlers/runs.ts) returns
+      // this exact string when the run id resolves to nothing -- every other
+      // ok:false path there is `String(err)` off a caught exception, never
+      // this literal, so the match can't collide with a real upstream error.
+      const status: 404 | 502 = res.error === 'run not found' ? 404 : 502;
+      return c.json({ error: res.error }, status);
+    }
     return c.json(res.data, 200);
   })
   // A `query` validator is required for the same reason the `abandon` POST
