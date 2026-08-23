@@ -4,3 +4,4 @@
 @import '@mantine/spotlight/styles.css';
 @import './scheme-vars.css';
 @import './mantine-overrides.css';
+@import '../../app/styles/tokyo-theme.css';
