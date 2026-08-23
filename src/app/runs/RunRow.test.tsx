@@ -57,13 +57,13 @@ function detailResponse(fields: Array<{ key: string; value: string }>) {
   };
 }
 
-function renderRow(run: BoardRun) {
+function renderRow(run: BoardRun, pruneDays?: number) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return renderWithProviders(
     <QueryClientProvider client={queryClient}>
-      <RunRow run={run} />
+      <RunRow run={run} pruneDays={pruneDays} />
     </QueryClientProvider>
   );
 }
@@ -192,5 +192,56 @@ describe('RunRow outward actions', () => {
     await waitFor(() => expect(window.open).toHaveBeenCalled());
 
     expect(detailGet).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('RunRow aging warning', () => {
+  const DAY_MS = 24 * 60 * 60 * 1000;
+
+  it('warns once a finished run is close to the retention floor', () => {
+    detailGet.mockResolvedValue(detailResponse([]));
+    const now = Date.now();
+    const run: BoardRun = {
+      ...baseRun,
+      status: 'done',
+      ended_at: now - 28 * DAY_MS,
+      last_event_at: now - 28 * DAY_MS,
+    };
+
+    renderRow(run, 30);
+
+    expect(screen.getByTestId('aging-warning')).toHaveTextContent(
+      'ages out in 2 days'
+    );
+  });
+
+  it('stays quiet for a run nowhere near the floor', () => {
+    detailGet.mockResolvedValue(detailResponse([]));
+    const now = Date.now();
+    const run: BoardRun = {
+      ...baseRun,
+      status: 'done',
+      ended_at: now - 2 * DAY_MS,
+      last_event_at: now - 2 * DAY_MS,
+    };
+
+    renderRow(run, 30);
+
+    expect(screen.queryByTestId('aging-warning')).not.toBeInTheDocument();
+  });
+
+  it('stays quiet before the prune-days setting has loaded', () => {
+    detailGet.mockResolvedValue(detailResponse([]));
+    const now = Date.now();
+    const run: BoardRun = {
+      ...baseRun,
+      status: 'done',
+      ended_at: now - 29 * DAY_MS,
+      last_event_at: now - 29 * DAY_MS,
+    };
+
+    renderRow(run, undefined);
+
+    expect(screen.queryByTestId('aging-warning')).not.toBeInTheDocument();
   });
 });

@@ -16,6 +16,7 @@ import { Icons } from '@ui/icons';
 import { notifications } from '@ui/notifications';
 import { client } from '../api';
 import { Link } from '../router/Link';
+import { agingWarning } from './aging';
 import type { BoardRun } from './bands';
 import { BRANCH_CHECKOUT_LABEL, branchCheckoutCommand } from './branchCheckout';
 
@@ -65,13 +66,22 @@ async function fetchDetailField(
   return detail.fields.find(f => f.key === key)?.value ?? null;
 }
 
-export function RunRow({ run }: { run: BoardRun }) {
+export interface RunRowProps {
+  run: BoardRun;
+  /** Retention window in days, when known -- only the board passes this, so
+      only board rows carry the aging warning (search states the window
+      itself, once, rather than repeating it per row). */
+  pruneDays?: number;
+}
+
+export function RunRow({ run, pruneDays }: RunRowProps) {
   const { bg, text, border } = useSchemeColors();
   const clipboard = useClipboard();
   const queryClient = useQueryClient();
   const [resolving, setResolving] = useState<'worktree' | 'mr' | null>(null);
   const detailHref = `/runs/${run.repo}/${run.id}`;
   const statusColor = STATUS_COLOR[run.status] ?? 'accent';
+  const aging = agingWarning(run, pruneDays);
 
   /** A worktree is a local filesystem path, and this console is a plain page
       served over http(s) -- not a desktop shell -- so `window.open('file://
@@ -162,6 +172,15 @@ export function RunRow({ run }: { run: BoardRun }) {
           <Text c={text.muted} size="xs">
             {formatElapsed(run.started_at, run.ended_at)}
           </Text>
+          {aging && (
+            <Text
+              c={text.highContrast('warn')}
+              size="xs"
+              data-testid="aging-warning"
+            >
+              {aging}
+            </Text>
+          )}
         </Group>
       </Stack>
 
