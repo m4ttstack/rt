@@ -1,6 +1,9 @@
-import { serveStatic, upgradeWebSocket, websocket } from 'hono/bun';
+import { upgradeWebSocket, websocket } from 'hono/bun';
 
 import { app } from './app';
+import { loadEmbeddedManifest } from './embedded/manifest-loader';
+import { mountEmbeddedStatic } from './embedded/mount';
+import { mountDiskStatic } from './static-disk';
 import { startRelay } from './ws';
 
 // Scoped away from /api and /ws DELIBERATELY. A bare '/*' static fallback
@@ -10,12 +13,15 @@ import { startRelay } from './ws';
 // (the test still passes, because it calls app.fetch before this file mounts
 // anything).
 //
-// serveStatic resolves through Bun.file + node:path.join, i.e. relative to the
-// process CWD -- so the deck's `workingDirectory` for this app must be the
-// repo root, not the dist directory.
-app.use('/assets/*', serveStatic({ root: './dist' }));
-app.use('/fonts/*', serveStatic({ root: './dist' }));
-app.use('/favicon.svg', serveStatic({ path: './dist/favicon.svg' }));
+// Static assets come from whichever source actually has them: the compiled
+// binary embeds `dist/` at build time (see embedded/), so it has no
+// dependency on a `dist/` directory existing on disk at runtime; `dev` and
+// `serve` never produce that embedded manifest, so they fall back to reading
+// `dist/` off disk exactly as before.
+const embeddedManifest = await loadEmbeddedManifest();
+const serveIndexHtml = embeddedManifest
+  ? mountEmbeddedStatic(app, embeddedManifest)
+  : mountDiskStatic(app);
 // No middleware may touch this route: header-modifying middleware plus the
 // websocket helper throws on immutable headers. Registered here, not in
 // app.ts, so app.ts stays import-safe under vitest's Node runtime and /ws
@@ -36,7 +42,7 @@ app.get('*', async c => {
   if (c.req.path.startsWith('/api') || c.req.path.startsWith('/ws')) {
     return c.json({ error: 'not found' }, 404);
   }
-  return serveStatic({ path: './dist/index.html' })(c, async () => {});
+  return serveIndexHtml(c);
 });
 
 const port = Number(process.env.PORT ?? 11011);

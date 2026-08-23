@@ -10,7 +10,12 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
+dist-bin
 *.local
+
+# `bun run generate:embedded` output (see scripts/generate-embedded-assets.ts)
+# -- rebuilt from `dist/` on every `build:binary` run, never hand-edited.
+src/server/embedded/generated
 
 # Editor directories and files
 .vscode/*
