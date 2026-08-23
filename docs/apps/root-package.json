@@ -21,7 +21,6 @@
     "treeshake": "scripts/treeshake-check.sh"
   },
   "dependencies": {
-    "@mattstack/rt-client": "file:../repo-tools/packages/rt-client",
     "@codemirror/commands": "^6.10.4",
     "@codemirror/lang-javascript": "^6.2.5",
     "@codemirror/lang-json": "^6.0.2",
@@ -35,6 +34,7 @@
     "@mantine/modals": "^9.4.1",
     "@mantine/notifications": "^9.4.1",
     "@mantine/spotlight": "^9.4.1",
+    "@mattstack/rt-client": "file:../repo-tools/packages/rt-client",
     "@tanstack/react-virtual": "^3.14.6",
     "clsx": "^2.1.1",
     "codemirror": "^6.0.2",
