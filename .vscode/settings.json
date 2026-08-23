@@ -6,5 +6,17 @@
   // readonlyInclude stops that at the editor, before it becomes a stale fork.
   "files.readonlyInclude": {
     "skills/**/SKILL.md": true
-  }
+  },
+  // The bindings-manifest schema is owned by mattstack-skills, not this repo
+  // -- point at it directly rather than copying it, so the two can't drift.
+  // Real manifests are all literally named skills.jsonc, wherever they live
+  // (a consumer repo's own .mattstack/, the ~/.mattstack/ home fallback, a
+  // team pack's pack/skills.jsonc fragment, or merge-manifests.sh's generated
+  // ~/.mattstack/repos/<slug>/skills.jsonc).
+  "json.schemas": [
+    {
+      "fileMatch": ["**/skills.jsonc"],
+      "url": "file:///Users/matt/Documents/GitHub/mattstack-skills/plugin/schemas/skills-manifest.schema.json"
+    }
+  ]
 }
