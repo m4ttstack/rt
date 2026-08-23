@@ -76,7 +76,7 @@ afterEach(() => {
 });
 
 describe('App keyboard contract', () => {
-  // Task 8's single-key copies (t/b/w/m/p) live on the run detail view and
+  // The single-key handoff copies (t/b/w/m/c) live on the run detail view and
   // must not fire while the palette's own search input has focus. Spotlight
   // traps its own keys via a real <input>, and useHotkeys' default
   // tagsToIgnore already excludes INPUT -- this proves that combination

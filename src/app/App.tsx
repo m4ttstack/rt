@@ -21,8 +21,8 @@ function chromeSection(route: AppRoute): ConsoleSection | null {
 
 /**
  * Mantine has no error boundary of its own, and a suspense query (run
- * detail, arriving in a later task) throws on failure -- one boundary here
- * keeps a bad query from blanking the whole console instead of just its route.
+ * detail) throws on failure -- one boundary here keeps a bad query from
+ * blanking the whole console instead of just its route.
  */
 class RouteErrorBoundary extends Component<
   { children: ReactNode },
@@ -78,7 +78,7 @@ export function App() {
     <QueryClientProvider client={queryClient}>
       {/* One instance for the whole app: its own ⌘K shortcut and its own
           search input, which already owns keyboard focus while open -- the
-          detail view's single-key copies (Task 8) never see those keys. */}
+          detail view's single-key copies never see those keys. */}
       <ConsolePalette />
       <ConsoleChrome section={chromeSection(route)}>
         {/* Keyed on path: without a remount, an error caught on one route
