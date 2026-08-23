@@ -1,0 +1,58 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { describe, expect, it } from 'vitest';
+
+const css = readFileSync(join(__dirname, 'tokyo-theme.css'), 'utf8');
+
+/** Declarations inside the block whose selector is exactly `selector`. */
+function blockFor(selector: string): string {
+  const start = css.indexOf(`${selector} {`);
+  expect(start, `no block for ${selector}`).toBeGreaterThan(-1);
+  return css.slice(start, css.indexOf('}', start));
+}
+
+function varNames(block: string): string[] {
+  return [...block.matchAll(/--tk-[\w-]+/g)].map(m => m[0]).sort();
+}
+
+describe('tokyo-theme.css', () => {
+  it('declares the same --tk-* names in both schemes', () => {
+    const light = varNames(
+      blockFor(":root[data-mantine-color-scheme='light']")
+    );
+    const dark = varNames(blockFor(":root[data-mantine-color-scheme='dark']"));
+
+    expect(light).toEqual(dark);
+    expect(light.length).toBe(17);
+  });
+
+  it("carries tui-kit's exact Tokyo Day and Tokyo Night values", () => {
+    const light = blockFor(":root[data-mantine-color-scheme='light']");
+    const dark = blockFor(":root[data-mantine-color-scheme='dark']");
+
+    expect(light).toContain('--tk-bg: #e1e2e7;');
+    expect(light).toContain('--tk-accent: #2e7de9;');
+    expect(light).toContain('--tk-fg: #111;');
+    expect(dark).toContain('--tk-bg: #16161e;');
+    expect(dark).toContain('--tk-accent: #7aa2f7;');
+    expect(dark).toContain('--tk-fg: #e3e7f6;');
+  });
+
+  it('remaps the live --ui-* slots and never DECLARES a --ui-base-* one', () => {
+    expect(css).toContain('--ui-bg-1: var(--tk-bg);');
+    expect(css).toContain('--ui-bg-2: var(--tk-panel);');
+    expect(css).toContain('--ui-bg-3: var(--tk-card);');
+    // Scoped to declarations: the file MENTIONS --ui-base-* in a comment
+    // explaining that the layer stays kit-owned, and a bare `not.toContain`
+    // fails on that prose.
+    expect(css.replace(/\/\*[\s\S]*?\*\//g, '')).not.toMatch(
+      /--ui-base-[\w-]+\s*:/
+    );
+  });
+
+  it('vendors Tomorrow at the four weights tui-kit ships', () => {
+    for (const weight of [400, 500, 600, 700]) {
+      expect(css).toContain(`/fonts/tomorrow-${weight}.woff2`);
+    }
+  });
+});

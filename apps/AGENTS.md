@@ -247,11 +247,11 @@ and lose the point of a closed icon-name union.
 
 **The theme is three files, and an app edits exactly one of them:**
 
-| File | Owner | What it holds |
-| --- | --- | --- |
-| `design-system/base-theme.ts` | kit | `baseTheme`, the kit's defaults. Never edited in a consuming app. |
-| `design-system/app-theme.ts` | app | `appTheme`, the brand. The only theme file a consumer touches. |
-| `design-system/theme.ts` | kit | `theme = mergeThemeOverrides(baseTheme, appTheme)`. |
+| File                          | Owner | What it holds                                                     |
+| ----------------------------- | ----- | ----------------------------------------------------------------- |
+| `design-system/base-theme.ts` | kit   | `baseTheme`, the kit's defaults. Never edited in a consuming app. |
+| `design-system/app-theme.ts`  | app   | `appTheme`, the brand. The only theme file a consumer touches.    |
+| `design-system/theme.ts`      | kit   | `theme = mergeThemeOverrides(baseTheme, appTheme)`.               |
 
 Same shape, and the same reason, as `app-colors.ts` (§1): branding a file the kit also owns turns it
 into a permanent local delta re-merged on every sync. It buys two things beyond clean syncs:
@@ -327,11 +327,11 @@ constraint is kit-side, on the shared theme module.
 baseline.** Two components, and picking the wrong one is the single most common way this goes wrong,
 because subtracting is what a dev route, embedded admin view, or print layout actually wants:
 
-| Ask | Use |
-| --- | --- |
-| "this section needs rounder cards / a different primaryColor" | `ThemeOverrideWrapper` (merges onto the ancestor theme) |
-| "make this route look like the kit again" | `ThemeIsland theme={baseTheme} baseSurfaces` (replaces it) |
-| "this preview must render exactly as production does" | `ThemeIsland theme={appTheme} cssVariablesResolver={...}` |
+| Ask                                                           | Use                                                        |
+| ------------------------------------------------------------- | ---------------------------------------------------------- |
+| "this section needs rounder cards / a different primaryColor" | `ThemeOverrideWrapper` (merges onto the ancestor theme)    |
+| "make this route look like the kit again"                     | `ThemeIsland theme={baseTheme} baseSurfaces` (replaces it) |
+| "this preview must render exactly as production does"         | `ThemeIsland theme={appTheme} cssVariablesResolver={...}`  |
 
 `ThemeOverrideWrapper` requires an ancestor `MantineProvider` (`useMantineTheme()` throws
 otherwise), which is always true inside the app since `main.tsx` wraps the whole tree in one. It is
@@ -467,11 +467,11 @@ colors, `--mantine-color-*` vars, or the `--ui-bg-*` slots, never literals.
 **Shells own their own frames.** Three defaults are deliberate, invisible from the outside, and the
 usual reason a page fights its layout:
 
-| The shell already does | So don't | Tune it with |
-| --- | --- | --- |
+| The shell already does                                                                                  | So don't                                                           | Tune it with                                                            |
+| ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------ | ----------------------------------------------------------------------- |
 | `PageShell.Content` is the page's scroll frame (a `ScrollArea.Autosize` capped at the available height) | wrap children in your own `ScrollArea`, or clamp with `mah="__vh"` | `scrollAreaProps`, or take the frame over with the root's `scrollClamp` |
-| `PageShell.Sidebar` scrolls its own children, sized to the shell frame | reach for a `ScrollArea` around a long nav list | `scrollAreaProps` |
-| `PageShell.Content` wraps children in `ContentContainer` (capped, centered column) | add your own `Container` | `contentContainerProps`, or `contentContainer={false}` for full-bleed |
+| `PageShell.Sidebar` scrolls its own children, sized to the shell frame                                  | reach for a `ScrollArea` around a long nav list                    | `scrollAreaProps`                                                       |
+| `PageShell.Content` wraps children in `ContentContainer` (capped, centered column)                      | add your own `Container`                                           | `contentContainerProps`, or `contentContainer={false}` for full-bleed   |
 
 The container default is on in scroll mode and off under `scrollClamp`, where the caller owns the
 frame and a margined, capped column would fight their inner scroll. An explicit prop wins either way.

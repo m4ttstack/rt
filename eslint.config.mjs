@@ -77,6 +77,14 @@ export default tseslint.config(
               message:
                 "Import from '@ui/lazy' instead. CodeMirror is only ever imported inside its lazy loader (src/ui/lazy/codemirror), so it stays out of the entry bundle.",
             },
+            {
+              group: ['**/server/**'],
+              importNamePattern: '.*',
+              allowTypeImports: true,
+              message:
+                'The server runs on Bun and must never reach the browser bundle. ' +
+                'Only `import type` from src/server is allowed.',
+            },
           ],
         },
       ],

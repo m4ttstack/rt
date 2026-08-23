@@ -1,3 +1,5 @@
+import '@testing-library/jest-dom/vitest';
+
 // The matchMedia and ResizeObserver polyfills `src/ui` needs travel with it,
 // so vendoring apps get them by copying the kit rather than by reproducing
 // this file. See src/ui/storybook/jsdom-polyfills.ts.
@@ -12,4 +14,10 @@ installJsdomPolyfills();
 // travelling with `src/ui`.
 if (typeof window !== 'undefined') {
   window.scrollTo = () => {};
+}
+
+// Same story for `Element.prototype.scrollIntoView` -- jsdom has no layout
+// engine to scroll, and Spotlight calls it on every selection change.
+if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => {};
 }
