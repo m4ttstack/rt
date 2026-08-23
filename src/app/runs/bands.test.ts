@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
-import { bandFor, sortBand, type BoardRun } from './bands';
+import {
+  bandFor,
+  computeBandIds,
+  sortBand,
+  summarizeBoardChanges,
+  type BoardRun,
+} from './bands';
 
 // `status` values are rt's real vocabulary and nothing else: pipeline-state.sh
 // writes `running` at start and accepts only done|failed|abandoned to close.
@@ -92,5 +98,72 @@ describe('sortBand', () => {
       'tty',
       'batch',
     ]);
+  });
+});
+
+describe('summarizeBoardChanges', () => {
+  it('reports nothing when the two snapshots agree', () => {
+    const ids = computeBandIds([run({ id: 'a' })]);
+    expect(summarizeBoardChanges(ids, ids)).toEqual({ count: 0, message: '' });
+  });
+
+  it('names the destination band for a single run that changed bands', () => {
+    const before = computeBandIds([run({ id: 'a', status: 'running' })]);
+    const after = computeBandIds([
+      run({
+        id: 'a',
+        status: 'running',
+        attention: { needs: true, reason: 'failed', evidence: 'x' },
+      }),
+    ]);
+
+    expect(summarizeBoardChanges(before, after)).toEqual({
+      count: 1,
+      message: '1 run moved to needs attention',
+    });
+  });
+
+  it('counts a pure in-band reorder (no band change) as a change too', () => {
+    const before = computeBandIds([
+      run({ id: 'a', last_event_at: 1 }),
+      run({ id: 'b', last_event_at: 2 }),
+    ]);
+    // `a` overtakes `b` in silence order -- both ids land at a different
+    // index even though neither left the `running` band.
+    const after = computeBandIds([
+      run({ id: 'a', last_event_at: 3 }),
+      run({ id: 'b', last_event_at: 2 }),
+    ]);
+
+    expect(summarizeBoardChanges(before, after)).toEqual({
+      count: 2,
+      message: '2 runs updated',
+    });
+  });
+
+  it('counts every changed slot once several rows move', () => {
+    const before = computeBandIds([run({ id: 'a' }), run({ id: 'b' })]);
+    const after = computeBandIds([
+      run({
+        id: 'a',
+        attention: { needs: true, reason: 'failed', evidence: 'x' },
+      }),
+      run({
+        id: 'b',
+        attention: { needs: true, reason: 'stale', evidence: 'y' },
+      }),
+    ]);
+
+    expect(summarizeBoardChanges(before, after)).toEqual({
+      count: 2,
+      message: '2 runs updated',
+    });
+  });
+
+  it('treats a newly appeared run as a change, not silent insertion', () => {
+    const before = computeBandIds([run({ id: 'a' })]);
+    const after = computeBandIds([run({ id: 'a' }), run({ id: 'b' })]);
+
+    expect(summarizeBoardChanges(before, after).count).toBe(1);
   });
 });
