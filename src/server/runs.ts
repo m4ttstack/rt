@@ -1,7 +1,10 @@
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { abandonRun, getRun, listRuns } from '@mattstack/rt-client';
 import { Hono } from 'hono';
 import { validator } from 'hono/validator';
 
+import { readExcerpt } from './artifact';
 import { markSeen, readSeen } from './seen';
 
 /**
@@ -23,6 +26,33 @@ export const runs = new Hono()
     if (!res.ok) return c.json({ error: res.error }, 502);
     return c.json(res.data, 200);
   })
+  // A `query` validator is required for the same reason the `abandon` POST
+  // below needs a `json` one: with path params already in this route,
+  // Hono's inferred client input is `{ param }` only, and a caller passing
+  // `query` fails to compile despite working at runtime. The root is
+  // derived from repo/runId, never trusted from the caller -- only `path`
+  // (the file within it) comes off the query string.
+  .get(
+    '/api/runs/:repo/:runId/artifact',
+    validator('query', (value): { path?: string } => {
+      const v = value as { path?: unknown };
+      return { path: typeof v?.path === 'string' ? v.path : undefined };
+    }),
+    async c => {
+      const { repo, runId } = c.req.param();
+      const { path } = c.req.valid('query');
+      if (!path) return c.json({ error: 'path is required' }, 400);
+
+      const runsRoot =
+        process.env.RT_RUNS_ROOT ?? join(homedir(), '.mattstack', 'runs');
+      const root = join(runsRoot, repo, runId);
+      try {
+        return c.json(readExcerpt(path, root), 200);
+      } catch (err) {
+        return c.json({ error: (err as Error).message }, 403);
+      }
+    }
+  )
   // A validator is required for any route whose body the RPC client sends --
   // without one Hono infers client input as `{ param }` only and a caller
   // passing `json` fails to compile despite working at runtime. An absent

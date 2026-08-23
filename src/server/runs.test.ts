@@ -1,5 +1,8 @@
 // @vitest-environment node
-import { describe, expect, it, vi } from 'vitest';
+import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // `subscribe` must be in this factory even though these tests never call it:
 // a websocket sub-app shares this `app.ts`; every named export it uses must
@@ -81,5 +84,71 @@ describe('runs api', () => {
       'repo-tools',
       undefined
     );
+  });
+});
+
+describe('runs api artifact route', () => {
+  const originalRoot = process.env.RT_RUNS_ROOT;
+  let runsRoot: string;
+
+  beforeEach(() => {
+    runsRoot = mkdtempSync(join(tmpdir(), 'console-runs-root-'));
+    process.env.RT_RUNS_ROOT = runsRoot;
+    mkdirSync(join(runsRoot, 'repo-tools', 'run-1'), { recursive: true });
+    writeFileSync(
+      join(runsRoot, 'repo-tools', 'run-1', 'detail.log'),
+      'boom\ntrace line'
+    );
+  });
+
+  afterEach(() => {
+    process.env.RT_RUNS_ROOT = originalRoot;
+  });
+
+  it('reads an artifact under the run directory it derives from repo/runId', async () => {
+    const res = await app.fetch(
+      new Request(
+        'http://localhost/api/runs/repo-tools/run-1/artifact?path=' +
+          encodeURIComponent(
+            join(runsRoot, 'repo-tools', 'run-1', 'detail.log')
+          )
+      )
+    );
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({
+      lines: ['boom', 'trace line'],
+      truncated: false,
+    });
+  });
+
+  // Proves the route wires readExcerpt's own root, not just the caller's
+  // path: a sibling run's file passes the traversal guard's string check
+  // only if the guard is bypassed entirely, so this fails if the route ever
+  // stopped scoping `root` to repo/runId.
+  it('refuses an artifact path from a different run as 403, not 200', async () => {
+    mkdirSync(join(runsRoot, 'repo-tools', 'run-2'), { recursive: true });
+    const otherRunFile = join(runsRoot, 'repo-tools', 'run-2', 'secret.log');
+    writeFileSync(otherRunFile, 'not yours');
+
+    const res = await app.fetch(
+      new Request(
+        'http://localhost/api/runs/repo-tools/run-1/artifact?path=' +
+          encodeURIComponent(otherRunFile)
+      )
+    );
+
+    expect(res.status).toBe(403);
+    await expect(res.json()).resolves.toMatchObject({
+      error: expect.stringMatching(/outside/i),
+    });
+  });
+
+  it('requires a path query param', async () => {
+    const res = await app.fetch(
+      new Request('http://localhost/api/runs/repo-tools/run-1/artifact')
+    );
+
+    expect(res.status).toBe(400);
   });
 });

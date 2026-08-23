@@ -7,6 +7,7 @@ import { NotFoundPage } from './NotFoundPage';
 import { usePath } from './router/navigation';
 import { matchRoute, type AppRoute } from './routes';
 import { RunBoard } from './runs/RunBoard';
+import { RunDetail } from './runs/RunDetail';
 
 const queryClient = new QueryClient();
 
@@ -50,11 +51,7 @@ function RouteContent({ route }: { route: AppRoute }) {
     case 'board':
       return <RunBoard />;
     case 'run':
-      return (
-        <PageShell title={`${route.repo} / ${route.runId}`}>
-          <Text c="dimmed">Run detail arrives in a later task.</Text>
-        </PageShell>
-      );
+      return <RunDetail repo={route.repo} runId={route.runId} />;
     case 'search':
       return (
         <PageShell title="Search">

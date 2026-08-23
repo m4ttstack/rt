@@ -1,8 +1,10 @@
 import { useEffect } from 'react';
 import {
   keepPreviousData,
+  useMutation,
   useQuery,
   useQueryClient,
+  useSuspenseQuery,
 } from '@tanstack/react-query';
 
 import { client } from '../api';
@@ -54,6 +56,35 @@ export function useSeen() {
       const res = await client.api.seen.$get();
       if (!res.ok) throw new Error(`seen read failed: ${res.status}`);
       return res.json();
+    },
+  });
+}
+
+// The detail view cannot render without its run, so this one -- unlike
+// useRunList above -- is a suspense query: no loading branch to forget.
+export function useRun(repo: string, runId: string) {
+  return useSuspenseQuery({
+    queryKey: ['run', repo, runId],
+    queryFn: async () => {
+      const res = await client.api.runs[':repo'][':runId'].$get({
+        param: { repo, runId },
+      });
+      if (!res.ok) throw new Error(`run detail failed: ${res.status}`);
+      return res.json();
+    },
+  });
+}
+
+export function useMarkSeen() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (runId: string) => {
+      const res = await client.api.seen[':runId'].$post({ param: { runId } });
+      if (!res.ok) throw new Error(`mark seen failed: ${res.status}`);
+      return res.json();
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['seen'] });
     },
   });
 }
