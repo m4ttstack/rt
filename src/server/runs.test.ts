@@ -4,15 +4,16 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// `subscribe` must be in this factory even though these tests never call it:
-// a websocket sub-app shares this `app.ts`; every named export it uses must
-// be present here or vitest throws "No `subscribe` export is defined on the
-// mock".
+// `subscribe` and `getSetting` must be in this factory even though these
+// tests never call them: the websocket sub-app and the settings sub-app both
+// share this `app.ts`, and every named export either one uses must be
+// present here or vitest throws "No `X` export is defined on the mock".
 vi.mock('@mattstack/rt-client', () => ({
   listRuns: vi.fn(async () => ({ ok: true, data: { runs: [] } })),
   getRun: vi.fn(async () => ({ ok: false, error: 'no such run' })),
   abandonRun: vi.fn(async () => ({ ok: true, data: { ok: true } })),
   subscribe: vi.fn(() => () => {}),
+  getSetting: vi.fn(() => ({ value: 30, provenance: [] })),
 }));
 
 const { app } = await import('./app');

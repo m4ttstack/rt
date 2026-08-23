@@ -15,3 +15,9 @@ installJsdomPolyfills();
 if (typeof window !== 'undefined') {
   window.scrollTo = () => {};
 }
+
+// Same story for `Element.prototype.scrollIntoView` -- jsdom has no layout
+// engine to scroll, and Spotlight calls it on every selection change.
+if (typeof Element !== 'undefined' && !Element.prototype.scrollIntoView) {
+  Element.prototype.scrollIntoView = () => {};
+}

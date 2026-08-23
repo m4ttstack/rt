@@ -1,13 +1,15 @@
 import { Component, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
-import { GenericError, PageShell, Text } from '@ui/core';
+import { GenericError, PageShell } from '@ui/core';
 import { ConsoleChrome, type ConsoleSection } from './chrome/ConsoleChrome';
 import { NotFoundPage } from './NotFoundPage';
+import { ConsolePalette } from './palette/ConsolePalette';
 import { usePath } from './router/navigation';
 import { matchRoute, type AppRoute } from './routes';
 import { RunBoard } from './runs/RunBoard';
 import { RunDetail } from './runs/RunDetail';
+import { RunSearch } from './runs/RunSearch';
 
 const queryClient = new QueryClient();
 
@@ -53,11 +55,7 @@ function RouteContent({ route }: { route: AppRoute }) {
     case 'run':
       return <RunDetail repo={route.repo} runId={route.runId} />;
     case 'search':
-      return (
-        <PageShell title="Search">
-          <Text c="dimmed">Run search arrives in a later task.</Text>
-        </PageShell>
-      );
+      return <RunSearch />;
     case 'not-found':
       return (
         <PageShell>
@@ -78,6 +76,10 @@ export function App() {
 
   return (
     <QueryClientProvider client={queryClient}>
+      {/* One instance for the whole app: its own ⌘K shortcut and its own
+          search input, which already owns keyboard focus while open -- the
+          detail view's single-key copies (Task 8) never see those keys. */}
+      <ConsolePalette />
       <ConsoleChrome section={chromeSection(route)}>
         {/* Keyed on path: without a remount, an error caught on one route
             would keep showing the fallback after navigating to another. */}

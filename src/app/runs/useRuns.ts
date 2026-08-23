@@ -75,6 +75,22 @@ export function useRun(repo: string, runId: string) {
   });
 }
 
+/** Search states the retention window rather than hardcoding it -- rt owns
+    `rt.runsPruneDays` (default 30), and the console renders whatever the
+    resolver actually returns. */
+export function useRunsPruneDays() {
+  return useQuery({
+    queryKey: ['settings', 'runsPruneDays'],
+    queryFn: async () => {
+      const res = await client.api.settings['runs-prune-days'].$get();
+      if (!res.ok)
+        throw new Error(`runs prune-days read failed: ${res.status}`);
+      const { days } = await res.json();
+      return days;
+    },
+  });
+}
+
 export function useMarkSeen() {
   const queryClient = useQueryClient();
   return useMutation({
