@@ -20,14 +20,16 @@ jobs:
       - uses: oven-sh/setup-bun@v2
       # rt-client's dist/ is gitignored and `file:` consumers copy it verbatim,
       # so it must be built here or the console installs an empty package.
-      # Install at the workspace ROOT, not in the package: rt-client's own
-      # build runs tsc, and @types/node and @types/bun are hoisted to the root
-      # — a package-scoped install resolves two packages and then fails.
-      - run: bun install
+      #
+      # --ignore-scripts is load-bearing on BOTH installs: rt-client's `prepack`
+      # runs its build, which bun fires during install, before @types/node and
+      # @types/bun are in place — so the build must be an explicit step between
+      # the two installs, never a lifecycle hook during either.
+      - run: bun install --ignore-scripts
         working-directory: repo-tools
       - run: bun run build
         working-directory: repo-tools/packages/rt-client
-      - run: bun install --frozen-lockfile
+      - run: bun install --frozen-lockfile --ignore-scripts
       - run: bun run typecheck
       - run: bun run lint
       - run: bun run format:check
