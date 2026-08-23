@@ -40,4 +40,13 @@ describe('matchRun', () => {
   it('matches everything on an empty query', () => {
     expect(matchRun(run, parseQuery('   '))).toBe(true);
   });
+
+  // `run.ticket` is null on every real run today -- nothing in the pipeline
+  // writes one -- so the run id is the only thing an operator can actually
+  // search by until a ticket field exists.
+  it('matches on a partial run id even with no ticket recorded', () => {
+    const untracked = { ...run, id: 'run-abc123', ticket: null };
+    expect(matchRun(untracked, parseQuery('run-abc123'))).toBe(true);
+    expect(matchRun(untracked, parseQuery('abc123'))).toBe(true);
+  });
 });

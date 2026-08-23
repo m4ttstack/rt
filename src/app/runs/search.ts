@@ -13,6 +13,7 @@ export function parseQuery(raw: string): string[] {
  */
 export function matchRun(
   run: {
+    id: string;
     repo: string;
     work_type: string;
     pipeline: string;
@@ -24,6 +25,7 @@ export function matchRun(
 ): boolean {
   if (terms.length === 0) return true;
   const haystack = [
+    run.id,
     run.repo,
     run.work_type,
     run.pipeline,
