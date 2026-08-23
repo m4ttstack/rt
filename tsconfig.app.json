@@ -26,5 +26,12 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Codegen output (scripts/generate-embedded-assets.ts) -- gitignored,
+  // regenerated on every build:binary run. Its literal `with { type: 'file' }`
+  // imports of .js/.css/.html hit bun-types' extension ambient declarations
+  // (HTMLBundle for *.html, implicit any for *.js/*.css -- neither accounts
+  // for the file-type import attribute), which is irrelevant to a file
+  // nothing hand-writes or reviews; excluded rather than fought.
+  "exclude": ["src/server/embedded/generated"]
 }

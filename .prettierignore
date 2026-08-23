@@ -1,9 +1,14 @@
 node_modules
 dist
+dist-bin
 storybook-static
 logs
 *.log
 bun.lock
+
+# Codegen output (scripts/generate-embedded-assets.ts) -- gitignored,
+# regenerated on every build:binary run.
+src/server/embedded/generated/**
 
 # Vendored from mantine-kit: the sync process byte-compares these against
 # upstream, so a local prettier reformat reads as permanent drift.

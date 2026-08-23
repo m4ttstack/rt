@@ -10,6 +10,8 @@
     "preview": "vite preview",
     "serve": "bun run src/server/index.ts",
     "dev:server": "bun run --hot src/server/index.ts",
+    "generate:embedded": "bun run scripts/generate-embedded-assets.ts",
+    "build:binary": "vite build && bun run generate:embedded && bun build --compile --outfile dist-bin/console src/server/index.ts",
     "typecheck": "tsc -b",
     "lint": "eslint --no-error-on-unmatched-pattern src .storybook",
     "test": "vitest",

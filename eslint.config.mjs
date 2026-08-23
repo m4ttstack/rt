@@ -14,6 +14,9 @@ const mantineWall = (pkg, barrel) => ({
 });
 
 export default tseslint.config(
+  // Codegen output (scripts/generate-embedded-assets.ts) -- gitignored,
+  // regenerated on every build:binary run, never hand-edited or reviewed.
+  { ignores: ['src/server/embedded/generated/**'] },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   // The two classic react-hooks rules: rules-of-hooks as an error,

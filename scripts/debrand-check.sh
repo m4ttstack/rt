@@ -6,7 +6,7 @@ PATTERN='hasura|promptql|graphiql|walktour'
 # --exclude=debrand-check.sh: this file's own PATTERN line contains the banned
 # words as literal text (that's the point of the pattern); grep would
 # otherwise flag itself as a violation, so it excludes its own filename.
-HITS=$(grep -riEn "$PATTERN" --exclude-dir={node_modules,.git,dist,storybook-static,.superpowers} --exclude=debrand-check.sh --exclude=FEEDBACK-*.md . || true)
+HITS=$(grep -riEn "$PATTERN" --exclude-dir={node_modules,.git,dist,dist-bin,storybook-static,.superpowers} --exclude=debrand-check.sh --exclude=FEEDBACK-*.md . || true)
 if [ -n "$HITS" ]; then
   echo "De-brand gate FAILED:"
   echo "$HITS"
