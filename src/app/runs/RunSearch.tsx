@@ -4,6 +4,7 @@ import { GenericError, PageShell, Stack, Text, TextInput } from '@ui/core';
 import { useSchemeColors } from '@ui/hooks';
 import { Icons } from '@ui/icons';
 import type { BoardRun } from './bands';
+import { CommandProvenance } from './CommandProvenance';
 import { RunRow } from './RunRow';
 import { matchRun, parseQuery } from './search';
 import { useRunList, useRunsPruneDays, useSeen } from './useRuns';
@@ -51,7 +52,12 @@ export function RunSearch() {
   }
 
   return (
-    <PageShell title="Search">
+    <PageShell
+      title="Search"
+      actions={
+        <CommandProvenance command="rt runs" asOf={runsQuery.dataUpdatedAt} />
+      }
+    >
       <Stack gap="md" data-testid="run-search">
         <RetentionNotice days={pruneDaysQuery.data} />
         <TextInput

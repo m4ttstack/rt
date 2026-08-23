@@ -391,6 +391,26 @@ describe('RunDetail', () => {
     }
   });
 
+  it('names the rt verb that produced this panel, with the run and repo it was scoped to', async () => {
+    detailGet.mockResolvedValue(detailResponse(FIXTURE));
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+
+    renderDetail();
+
+    expect(await screen.findByTestId('command-provenance')).toHaveTextContent(
+      'rt runs show run-1 --repo repo-tools'
+    );
+  });
+
   it('marks the run abandoned with the entered reason', async () => {
     const staleFixture: RunDetailData = {
       ...FIXTURE,

@@ -95,6 +95,18 @@ describe('RunSearch', () => {
     expect(notice).not.toHaveTextContent('30');
   });
 
+  it('names the rt verb that produced these results', async () => {
+    runsGet.mockResolvedValue(ok({ runs: RUNS }));
+    seenGet.mockResolvedValue(ok({}));
+    pruneDaysGet.mockResolvedValue(ok({ days: 30 }));
+
+    renderSearch();
+
+    expect(await screen.findByTestId('command-provenance')).toHaveTextContent(
+      'rt runs'
+    );
+  });
+
   // Narrowing, proven the same way search.test.ts proves it: a query that
   // widens the result set (rather than narrowing it) is the failure this
   // guards against.

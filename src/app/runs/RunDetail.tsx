@@ -17,6 +17,7 @@ import { Icons } from '@ui/icons';
 import { modals } from '@ui/modals';
 import { notifications } from '@ui/notifications';
 import { client } from '../api';
+import { CommandProvenance } from './CommandProvenance';
 import { fieldsByKey, Timeline } from './Timeline';
 import { useMarkSeen, useRun } from './useRuns';
 
@@ -152,7 +153,8 @@ function AbandonAction({ repo, runId }: { repo: string; runId: string }) {
 }
 
 function RunDetailContent({ repo, runId }: { repo: string; runId: string }) {
-  const { data } = useRun(repo, runId);
+  const runQuery = useRun(repo, runId);
+  const { data } = runQuery;
   const markSeen = useMarkSeen();
 
   useEffect(() => {
@@ -168,6 +170,10 @@ function RunDetailContent({ repo, runId }: { repo: string; runId: string }) {
 
   return (
     <Stack gap="lg" data-testid="run-detail">
+      <CommandProvenance
+        command={`rt runs show ${runId} --repo ${repo}`}
+        asOf={runQuery.dataUpdatedAt}
+      />
       <Group align="flex-start" wrap="nowrap">
         <HandoffCard fields={data.fields} />
         {showAbandon && <AbandonAction repo={repo} runId={runId} />}
