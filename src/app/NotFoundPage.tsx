@@ -14,8 +14,7 @@ export function NotFoundPage() {
           Page not found
         </Title>
         <Text c="dimmed">
-          Nothing lives at this address. The landing page, the docs, and the
-          live demo are all one click away.
+          Nothing lives at this address. The run board is one click away.
         </Text>
         <Button
           component={Link}
@@ -23,7 +22,7 @@ export function NotFoundPage() {
           mt="xs"
           leftSection={<Icon name="arrowLeft" size={16} />}
         >
-          Back to the landing page
+          Back to the run board
         </Button>
       </Stack>
     </Box>
