@@ -49,7 +49,7 @@ const RECIPE_SNIPPET = [
   '      onCloseRail={rail.close}',
   '    >',
   '      {/* host a PageShell here -- its topOffset defaults to */}',
-  '      {/* this shell\'s headerHeight, so pass nothing */}',
+  "      {/* this shell's headerHeight, so pass nothing */}",
   '      {children}',
   '    </RailShell>',
   '  );',
@@ -156,9 +156,9 @@ export function AppChromePage() {
           brings its own PageShell, and needs no topOffset: RailShell publishes
           its headerHeight on context and a hosted PageShell defaults to it, so
           the shell&apos;s height math clears the fixed header exactly with the
-          number living in one place. Sub-navigation between sibling views inside a section rides
-          the PageShell&apos;s own tabs prop (a page-level tab bar above the
-          body) rather than more chrome.
+          number living in one place. Sub-navigation between sibling views
+          inside a section rides the PageShell&apos;s own tabs prop (a
+          page-level tab bar above the body) rather than more chrome.
         </Text>
         <CodeBlock code={RECIPE_SNIPPET} language="tsx" minHeight={1180} />
       </DocSection>

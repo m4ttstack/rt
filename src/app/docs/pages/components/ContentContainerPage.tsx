@@ -76,8 +76,8 @@ export function ContentContainerPage() {
           including the polymorphic component prop. PageShell.Content wraps
           content in this same component by default (opt out with
           contentContainer={'{false}'} for full-bleed pages; already off under
-          scrollClamp); Notch
-          sizes itself against MAX_CONTENT_WIDTH to read as page-level chrome.
+          scrollClamp); Notch sizes itself against MAX_CONTENT_WIDTH to read as
+          page-level chrome.
         </Text>
       </DocSection>
     </ComponentDoc>

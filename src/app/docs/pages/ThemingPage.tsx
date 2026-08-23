@@ -256,8 +256,8 @@ export function ThemingPage() {
 
       <DocSection title="Kit-wide theme defaults">
         <Text size="sm">
-          Defaults live in src/ui/design-system/base-theme.ts, via createTheme and
-          Mantine&apos;s string-keyed components map (the theme&apos;s typed
+          Defaults live in src/ui/design-system/base-theme.ts, via createTheme
+          and Mantine&apos;s string-keyed components map (the theme&apos;s typed
           defaults() helper) -- deliberately not each component&apos;s own{' '}
           <code>.extend({'{ defaultProps }'})</code>, which would import every
           extended component into the theme module and pin it into bundles that
@@ -296,13 +296,13 @@ export function ThemingPage() {
           </Table>
         </Table.ScrollContainer>
         <Text size="xs" c="dimmed">
-          primaryShade is tuned for the default indigo on the default
-          background ramp. If a re-theme re-tunes it, dark mode generally wants
-          the <em>lighter</em> of the two shades (a brighter accent holds
-          contrast on dark surfaces) -- and consider autoContrast so filled
-          variants keep readable labels. Keep the {'{ light, dark }'} object
-          form: Mantine&apos;s deepMerge collapses a scalar to {'{}'} when the
-          other theme in a nested pair uses the object form.
+          primaryShade is tuned for the default indigo on the default background
+          ramp. If a re-theme re-tunes it, dark mode generally wants the{' '}
+          <em>lighter</em> of the two shades (a brighter accent holds contrast
+          on dark surfaces) -- and consider autoContrast so filled variants keep
+          readable labels. Keep the {'{ light, dark }'} object form:
+          Mantine&apos;s deepMerge collapses a scalar to {'{}'} when the other
+          theme in a nested pair uses the object form.
         </Text>
       </DocSection>
 

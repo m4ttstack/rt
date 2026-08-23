@@ -275,11 +275,11 @@ export function RailShellPage() {
           Host a PageShell in children for the double-nav geometry (rail and
           page sidebar collapse independently). It needs no topOffset: this
           shell publishes its headerHeight on context and a hosted PageShell
-          defaults to it, so the two cannot drift apart. On mobile the rail collapses behind a header
-          toggle and opens already expanded over a click-to-close overlay --
-          useRailState&apos;s expand-then-open rule. The z-index contract (rail
-          5, PageShell root 10, header 100, overlay 999, mobile-open chrome
-          1000) is kept internal to RailShell.
+          defaults to it, so the two cannot drift apart. On mobile the rail
+          collapses behind a header toggle and opens already expanded over a
+          click-to-close overlay -- useRailState&apos;s expand-then-open rule.
+          The z-index contract (rail 5, PageShell root 10, header 100, overlay
+          999, mobile-open chrome 1000) is kept internal to RailShell.
         </Text>
         <Text size="sm" c="dimmed">
           The{' '}

@@ -10,13 +10,13 @@ import { Group, Stack } from '@mantine/core';
 import type { BoxProps, StackProps } from '@mantine/core';
 
 import { useIsMobile, useSchemeColors } from '@ui/hooks';
+import { useRailShellHeaderHeight } from '../rail-shell/context';
 import { Content } from './components/Content';
 import { Header } from './components/Header';
 import { Main } from './components/Main';
 import { Sidebar } from './components/Sidebar';
 import { PAGE_SHELL_TAB_BAR_HEIGHT, TabBar } from './components/TabBar';
 import type { PageShellTab } from './components/TabBar';
-import { useRailShellHeaderHeight } from '../rail-shell/context';
 import { PageShellContext } from './context';
 import { useSideDrawerState } from './useSideDrawerState';
 

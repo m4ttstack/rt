@@ -89,6 +89,7 @@ fine. The parts you cannot derive:
      for `--mantine-color-body: var(--ui-bg-1)` paired with an older kit's
      `--ui-bg-1: var(--mantine-color-body)`: that is a CSS cycle, and both
      properties silently fall back to their initial values.
+
 2. **Prove drift per file before copying:**
    `git show <base-sha>:src/ui/<f> | cmp -s - <consumer>/src/ui/<f>`.
    Byte-identical is FF-OK and gets a verbatim `cp`. Anything else is

@@ -379,9 +379,9 @@ export function PageShellPage() {
           RailShell, topOffset defaults to that chrome&apos;s headerHeight, so
           the height math clears the fixed header exactly with no prop and
           nothing to keep in sync; pass topOffset explicitly only for chrome the
-          kit did not render. Consumers composing their own
-          sub-components can read the shell&apos;s shared state via
-          usePageShellContext (exported from @ui/core).
+          kit did not render. Consumers composing their own sub-components can
+          read the shell&apos;s shared state via usePageShellContext (exported
+          from @ui/core).
         </Text>
         <Text size="sm">
           The tab row&apos;s presence in the height math (hasTabBar) is a

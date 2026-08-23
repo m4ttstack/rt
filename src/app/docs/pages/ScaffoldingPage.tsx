@@ -27,8 +27,8 @@ export function ScaffoldingPage() {
         <CodeBlock code={SCAFFOLD_SNIPPET} language="bash" minHeight={66} />
         <Text size="xs" c="dimmed">
           Publishing to npm turns this into{' '}
-          <code>bunx create-mattstack-console my-app</code> -- see PUBLISHING.md at
-          the repo root for the runbook.
+          <code>bunx create-mattstack-console my-app</code> -- see PUBLISHING.md
+          at the repo root for the runbook.
         </Text>
       </DocSection>
 

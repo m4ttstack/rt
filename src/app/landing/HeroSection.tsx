@@ -106,7 +106,8 @@ export function HeroSection() {
 
         <Text size="xs" c="dimmed" ta="center">
           Publishing to npm turns this into{' '}
-          <code>bunx create-mattstack-console my-app</code> -- see PUBLISHING.md.
+          <code>bunx create-mattstack-console my-app</code> -- see
+          PUBLISHING.md.
         </Text>
       </Stack>
     </Box>

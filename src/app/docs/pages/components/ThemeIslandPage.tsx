@@ -1,8 +1,11 @@
+import { useState } from 'react';
+
 import {
   Anchor,
   Badge,
   Button,
   Card,
+  createTheme,
   Group,
   SegmentedControl,
   Stack,
@@ -10,9 +13,6 @@ import {
   Text,
 } from '@ui/core';
 import { baseTheme, ThemeIsland } from '@ui/design-system';
-import { useState } from 'react';
-
-import { createTheme } from '@ui/core';
 import { Link } from '../../../router/Link';
 import { ComponentDoc } from '../../ComponentDoc';
 import { DocSection } from '../../DocPage';
@@ -22,7 +22,7 @@ const USAGE = [
   "import { baseTheme, ThemeIsland } from '@ui/design-system';",
   '',
   '// A dev-only route inside a heavily branded app, rendered in the kit',
-  "// defaults. `baseSurfaces` restores the --ui-bg-* ramp too, for apps",
+  '// defaults. `baseSurfaces` restores the --ui-bg-* ramp too, for apps',
   '// that remapped it to their own role ladder.',
   '<ThemeIsland theme={baseTheme} baseSurfaces>',
   '  <PipelineDebugger />',

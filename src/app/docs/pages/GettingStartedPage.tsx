@@ -87,8 +87,8 @@ export function GettingStartedPage() {
         <CodeBlock code={SCAFFOLD_STEPS} language="bash" minHeight={150} />
         <Text size="xs" c="dimmed">
           Publishing the template to npm turns this into{' '}
-          <code>bunx create-mattstack-console my-app</code> -- see PUBLISHING.md at
-          the repo root for the runbook. The{' '}
+          <code>bunx create-mattstack-console my-app</code> -- see PUBLISHING.md
+          at the repo root for the runbook. The{' '}
           <Anchor component={Link} href={docsPath('scaffolding')} size="xs">
             Scaffolding page
           </Anchor>{' '}
