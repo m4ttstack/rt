@@ -16,7 +16,7 @@ describe('readExcerpt', () => {
       Array.from({ length: 200 }, (_, i) => `line ${i}`).join('\n')
     );
 
-    const out = readExcerpt(path, root);
+    const out = readExcerpt(path, [root]);
 
     expect(out.truncated).toBe(true);
     expect(out.lines).toHaveLength(EXCERPT_LINES);
@@ -27,7 +27,7 @@ describe('readExcerpt', () => {
     const path = join(root, 'short.log');
     writeFileSync(path, 'only line');
 
-    expect(readExcerpt(path, root)).toEqual({
+    expect(readExcerpt(path, [root])).toEqual({
       lines: ['only line'],
       truncated: false,
     });
@@ -35,18 +35,18 @@ describe('readExcerpt', () => {
 
   it('refuses a path that escapes the root', () => {
     expect(() =>
-      readExcerpt(join(root, '..', '..', 'etc', 'passwd'), root)
+      readExcerpt(join(root, '..', '..', 'etc', 'passwd'), [root])
     ).toThrow(/outside/i);
   });
 
-  it('refuses a path that escapes the root via a symlink-shaped string', () => {
-    expect(() => readExcerpt(`${root}/../sneaky.log`, root)).toThrow(
+  it('refuses a `..` escape written as a literal string rather than joined via path.join', () => {
+    expect(() => readExcerpt(`${root}/../sneaky.log`, [root])).toThrow(
       /outside/i
     );
   });
 
   it('reports a missing file as a normal absence, not a crash', () => {
-    expect(readExcerpt(join(root, 'nope.log'), root)).toEqual({
+    expect(readExcerpt(join(root, 'nope.log'), [root])).toEqual({
       lines: [],
       truncated: false,
     });
@@ -64,6 +64,26 @@ describe('readExcerpt', () => {
     const evilFile = join(evilDir, 'secret.log');
     writeFileSync(evilFile, 'not yours');
 
-    expect(() => readExcerpt(evilFile, runRoot)).toThrow(/outside/i);
+    expect(() => readExcerpt(evilFile, [runRoot])).toThrow(/outside/i);
+  });
+
+  it('allows a path under a second root when the first root refuses it', () => {
+    const worktree = mkdtempSync(join(tmpdir(), 'console-worktree-'));
+    const path = join(worktree, 'triage.md');
+    writeFileSync(path, 'triage notes');
+
+    expect(readExcerpt(path, [root, worktree])).toEqual({
+      lines: ['triage notes'],
+      truncated: false,
+    });
+  });
+
+  it('refuses a path outside every given root', () => {
+    const worktree = mkdtempSync(join(tmpdir(), 'console-worktree-'));
+    const elsewhere = mkdtempSync(join(tmpdir(), 'console-elsewhere-'));
+    const path = join(elsewhere, 'secret.log');
+    writeFileSync(path, 'not yours');
+
+    expect(() => readExcerpt(path, [root, worktree])).toThrow(/outside/i);
   });
 });

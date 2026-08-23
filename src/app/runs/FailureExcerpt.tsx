@@ -21,6 +21,11 @@ export interface FailureExcerptProps {
   detailPath: string;
 }
 
+/** Thrown for the 403 case specifically, so the render branch can tell
+    "outside every allowed root" apart from a genuine fetch failure and word
+    each one honestly instead of surfacing a raw status string. */
+class ArtifactOutsideRunError extends Error {}
+
 /**
  * The spec's one concession to a log surface: a bounded, one-shot excerpt.
  * No `refetchInterval`, no follow, no auto-scroll -- adding any of those
@@ -40,10 +45,30 @@ export function FailureExcerpt({
         param: { repo, runId },
         query: { path: detailPath },
       });
+      if (res.status === 403) throw new ArtifactOutsideRunError();
       if (!res.ok) throw new Error(`artifact read failed: ${res.status}`);
       return res.json();
     },
   });
+
+  // No extra slash: `detailPath` is already an absolute path (leading `/`),
+  // and vscode's URI form is `vscode://file` + that absolute path.
+  const editorLink = (
+    <Anchor
+      href={`vscode://file${detailPath}`}
+      size="xs"
+      c={text.muted}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 4,
+        flexShrink: 0,
+      }}
+    >
+      <Icons.externalLink size={12} />
+      open full artifact in editor
+    </Anchor>
+  );
 
   if (query.isPending) {
     return (
@@ -52,14 +77,20 @@ export function FailureExcerpt({
   }
 
   if (query.isError) {
+    const outsideRun = query.error instanceof ArtifactOutsideRunError;
     return (
-      <Text
-        c={text.highContrast('bad')}
-        size="sm"
+      <Group
+        justify="space-between"
+        wrap="nowrap"
         data-testid="failure-excerpt-error"
       >
-        Could not load {detailPath}: {(query.error as Error).message}
-      </Text>
+        <Text c={text.highContrast('bad')} size="sm">
+          {outsideRun
+            ? 'This artifact lives outside the run directory.'
+            : `Could not load ${detailPath}: ${(query.error as Error).message}`}
+        </Text>
+        {editorLink}
+      </Group>
     );
   }
 
@@ -72,20 +103,7 @@ export function FailureExcerpt({
           {truncated ? `last ${lines.length} lines · ` : ''}
           {detailPath}
         </Text>
-        <Anchor
-          href={`vscode://file/${detailPath}`}
-          size="xs"
-          c={text.muted}
-          style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 4,
-            flexShrink: 0,
-          }}
-        >
-          <Icons.externalLink size={12} />
-          open full artifact in editor
-        </Anchor>
+        {editorLink}
       </Group>
       <ScrollArea
         h={MAX_HEIGHT}

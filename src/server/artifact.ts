@@ -11,14 +11,20 @@ export interface Excerpt {
 }
 
 /**
- * `root` is the run's own directory. Resolving both sides and testing the
- * relative path is what makes `../` and absolute-path escapes fail closed --
- * a prefix string comparison would pass `/runs/../runs-evil`.
+ * `roots` is the run's own directory plus, when recorded, the run's
+ * worktree -- both come off the same trusted DB row, never the caller.
+ * Resolving both sides and testing the relative path per root is what makes
+ * `../` and absolute-path escapes fail closed -- a prefix string comparison
+ * would pass `/runs/../runs-evil`.
  */
-export function readExcerpt(path: string, root: string): Excerpt {
+export function readExcerpt(path: string, roots: string[]): Excerpt {
   const abs = resolve(path);
-  const rel = relative(resolve(root), abs);
-  if (rel.startsWith('..') || resolve(root) === abs) {
+  const allowed = roots.some(root => {
+    const resolvedRoot = resolve(root);
+    const rel = relative(resolvedRoot, abs);
+    return !(rel.startsWith('..') || resolvedRoot === abs);
+  });
+  if (!allowed) {
     throw new Error(`artifact path is outside the run directory: ${path}`);
   }
 

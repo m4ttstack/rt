@@ -152,4 +152,66 @@ describe('runs api artifact route', () => {
 
     expect(res.status).toBe(400);
   });
+
+  it('reads an artifact under the recorded worktree, not just the run directory', async () => {
+    const worktree = mkdtempSync(join(tmpdir(), 'console-worktree-'));
+    const detailPath = join(worktree, 'triage.md');
+    writeFileSync(detailPath, 'triage notes');
+    vi.mocked(rt.getRun).mockResolvedValueOnce({
+      ok: true,
+      data: {
+        run: {} as never,
+        stages: [],
+        fields: [
+          { key: 'worktree', value: worktree, produced_by: 'provision', at: 0 },
+        ],
+        decisions: [],
+        schemaAhead: false,
+      },
+    });
+
+    const res = await app.fetch(
+      new Request(
+        'http://localhost/api/runs/repo-tools/run-1/artifact?path=' +
+          encodeURIComponent(detailPath)
+      )
+    );
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({
+      lines: ['triage notes'],
+      truncated: false,
+    });
+  });
+
+  it('still refuses an unrelated absolute path once the worktree root is allowed', async () => {
+    const worktree = mkdtempSync(join(tmpdir(), 'console-worktree-'));
+    const elsewhere = mkdtempSync(join(tmpdir(), 'console-elsewhere-'));
+    const strayPath = join(elsewhere, 'secret.log');
+    writeFileSync(strayPath, 'not yours');
+    vi.mocked(rt.getRun).mockResolvedValueOnce({
+      ok: true,
+      data: {
+        run: {} as never,
+        stages: [],
+        fields: [
+          { key: 'worktree', value: worktree, produced_by: 'provision', at: 0 },
+        ],
+        decisions: [],
+        schemaAhead: false,
+      },
+    });
+
+    const res = await app.fetch(
+      new Request(
+        'http://localhost/api/runs/repo-tools/run-1/artifact?path=' +
+          encodeURIComponent(strayPath)
+      )
+    );
+
+    expect(res.status).toBe(403);
+    await expect(res.json()).resolves.toMatchObject({
+      error: expect.stringMatching(/outside/i),
+    });
+  });
 });

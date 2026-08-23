@@ -45,9 +45,22 @@ export const runs = new Hono()
 
       const runsRoot =
         process.env.RT_RUNS_ROOT ?? join(homedir(), '.mattstack', 'runs');
-      const root = join(runsRoot, repo, runId);
+      const roots = [join(runsRoot, repo, runId)];
+
+      // Stage skills write a triage report into the worktree, not the run
+      // directory -- the worktree path comes off the same trusted run row as
+      // the run dir itself, never from the caller, so admitting it here
+      // doesn't weaken the guard against a caller-supplied path.
+      const detail = await getRun(runId, repo);
+      if (detail.ok && detail.data) {
+        const worktree = detail.data.fields.find(
+          f => f.key === 'worktree'
+        )?.value;
+        if (worktree) roots.push(worktree);
+      }
+
       try {
-        return c.json(readExcerpt(path, root), 200);
+        return c.json(readExcerpt(path, roots), 200);
       } catch (err) {
         return c.json({ error: (err as Error).message }, 403);
       }
