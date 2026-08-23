@@ -57,4 +57,15 @@ describe('agingWarning', () => {
     };
     expect(agingWarning(run, 30, NOW)).toBeNull();
   });
+
+  // prune.ts removes on strict `stamp < cutoff`, so a run sitting exactly AT
+  // the floor has not been pruned yet -- the boundary here must match, not
+  // hide the warning one cycle early.
+  it('still warns for a run sitting exactly at the floor', () => {
+    const run = {
+      ended_at: NOW - 30 * DAY_MS,
+      last_event_at: NOW - 30 * DAY_MS,
+    };
+    expect(agingWarning(run, 30, NOW)).toBe('ages out today');
+  });
 });

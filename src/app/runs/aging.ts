@@ -22,9 +22,13 @@ export function daysUntilPrune(
   return Math.ceil((anchor + pruneDays * DAY_MS - now) / DAY_MS);
 }
 
-/** Null once a run is either safely far from the floor or already past it
-    -- a run at or below zero days is rt's to prune, not this console's to
-    keep announcing. */
+/**
+ * Null once a run is either safely far from the floor or already past it.
+ * The cutoff mirrors `prune.ts`'s own `stamp < cutoff` check exactly: that
+ * comparison is strict, so a run sitting AT the floor (`days === 0`) has not
+ * been pruned yet and still deserves the warning -- only `days < 0` is
+ * rt's to prune, not this console's to keep announcing.
+ */
 export function agingWarning(
   run: Pick<RunSummary, 'ended_at' | 'last_event_at'>,
   pruneDays: number | undefined,
@@ -32,6 +36,7 @@ export function agingWarning(
 ): string | null {
   if (pruneDays == null) return null;
   const days = daysUntilPrune(run, pruneDays, now);
-  if (days <= 0 || days > AGING_WARNING_THRESHOLD_DAYS) return null;
+  if (days < 0 || days > AGING_WARNING_THRESHOLD_DAYS) return null;
+  if (days === 0) return 'ages out today';
   return `ages out in ${days} day${days === 1 ? '' : 's'}`;
 }
