@@ -287,9 +287,8 @@ describe('WiringMap: the spine', () => {
     // The stage binder declares no contract, so the row shows what the bound
     // fill provides rather than nothing at all.
     expect(within(slot).getByText('watch-ci-domain@1')).toBeInTheDocument();
-    expect(within(slot).getByTestId('slot-fill')).toHaveAttribute(
-      'href',
-      'vscode://file/fills/watch-ci-domain/SKILL.md'
+    expect(within(slot).getByTestId('slot-fill')).toHaveTextContent(
+      'demo:watch-ci-domain'
     );
     expect(within(slot).getByTestId('slot-sites')).toHaveTextContent('2 sites');
   });
@@ -393,6 +392,49 @@ describe('WiringMap: the inverse index', () => {
       'binding-site-mattstack:watch-ci:domain',
       'binding-site-mattstack:stage-watch-ci:domain',
     ]);
+  });
+
+  it('opens on a fill bound in exactly one place, which carries no chip at all', async () => {
+    mockHappyPath();
+    const user = userEvent.setup();
+    renderWiring();
+
+    // stage-provision's fill is bound once, so its row has no `N sites`
+    // chip. The fill name is the only way in -- and a fill bound in one
+    // place is the one a reader is most likely about to delete.
+    const stage = await screen.findByTestId(
+      'skill-row-mattstack:stage-provision'
+    );
+    const slot = within(stage).getByTestId('slot-domain');
+    expect(within(slot).queryByTestId('slot-sites')).not.toBeInTheDocument();
+
+    await user.click(within(slot).getByTestId('slot-fill'));
+
+    await screen.findByTestId('site-count');
+    const drawer = screen.getByTestId('inverse-index');
+    expect(within(drawer).getByTestId('site-count')).toHaveTextContent('1');
+    expect(
+      within(drawer).getByTestId(
+        'binding-site-mattstack:stage-provision:domain'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it("carries the fill's own source, which the slot row used to link to", async () => {
+    mockHappyPath();
+    const user = userEvent.setup();
+    renderWiring();
+
+    const row = await screen.findByTestId('skill-row-mattstack:stage-watch-ci');
+    await user.click(
+      within(within(row).getByTestId('slot-domain')).getByTestId('slot-fill')
+    );
+
+    await screen.findByTestId('site-count');
+    expect(screen.getByTestId('open-fill-source')).toHaveAttribute(
+      'href',
+      'vscode://file/fills/watch-ci-domain/SKILL.md'
+    );
   });
 
   it('lists exactly as many sites as the chip on the row claims', async () => {
@@ -537,10 +579,11 @@ describe('WiringMap: actions', () => {
     const row = await screen.findByTestId('skill-row-mattstack:work');
     await user.click(within(row).getByTestId('toggle-compile-preview'));
 
-    const drawer = await screen.findByTestId('compile-drawer');
-    expect(
-      within(drawer).getByText(/not a diff against the artifact/)
-    ).toBeInTheDocument();
+    // Mantine keeps `Drawer.Root` mounted whether or not it is open, so the
+    // drawer's own testid resolves on a CLOSED drawer -- wait on content
+    // only an open one has, or the negative assertion below is vacuous.
+    await screen.findByText(/not a diff against the artifact/);
+    const drawer = screen.getByTestId('compile-drawer');
     expect(within(drawer).getByText('SKILL.md')).toBeInTheDocument();
     await waitFor(() =>
       expect(

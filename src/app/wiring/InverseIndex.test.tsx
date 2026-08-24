@@ -36,6 +36,7 @@ function renderIndex(
   over: {
     fill?: string | null;
     sites?: BindingSite[];
+    sourcePath?: string | null;
     onShowInMap?: (site: BindingSite) => void;
     onClose?: () => void;
   } = {}
@@ -45,6 +46,11 @@ function renderIndex(
       pack="demo"
       fill={over.fill === undefined ? 'demo:review-criteria' : over.fill}
       sites={over.sites ?? SITES}
+      sourcePath={
+        over.sourcePath === undefined
+          ? '/fills/review-criteria/SKILL.md'
+          : over.sourcePath
+      }
       asOf={1_700_000_000_000}
       onShowInMap={over.onShowInMap ?? (() => {})}
       onClose={over.onClose ?? (() => {})}
@@ -107,6 +113,26 @@ describe('InverseIndex: what binds this fill', () => {
     expect(row).toHaveTextContent(
       "another plugin's skill · slot skill · no roster verb"
     );
+  });
+});
+
+describe("InverseIndex: the fill's own source", () => {
+  it('offers it beside the title, since the slot row now opens this panel instead', () => {
+    renderIndex();
+
+    expect(screen.getByTestId('open-fill-source')).toHaveAttribute(
+      'href',
+      'vscode://file/fills/review-criteria/SKILL.md'
+    );
+  });
+
+  it('withholds it for a bound ref no fill in this pack answers', () => {
+    // A dangling `boundTo` still has sites worth listing, but no SKILL.md to
+    // open -- an action pointing at nothing is a lie about what this can do.
+    renderIndex({ fill: 'demo:vanished', sourcePath: null });
+
+    expect(screen.getByTestId('site-count')).toBeInTheDocument();
+    expect(screen.queryByTestId('open-fill-source')).not.toBeInTheDocument();
   });
 });
 

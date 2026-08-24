@@ -403,6 +403,10 @@ function WiringSpineView({
         pack={pack}
         fill={indexFill}
         sites={indexFill ? (spine.bindingSites[indexFill] ?? []) : []}
+        sourcePath={
+          compositionQuery.data.fills.find(f => f.binding === indexFill)
+            ?.sourcePath ?? null
+        }
         asOf={compositionQuery.dataUpdatedAt || undefined}
         onShowInMap={site => {
           const key = rowKeyFor(site);

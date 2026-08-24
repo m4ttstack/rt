@@ -22,35 +22,58 @@ export const SOFT_RULE = 'var(--mantine-color-gray-3)';
 const NAME_WIDTH = 104;
 const CONTRACT_WIDTH = 176;
 
-function FillLink({ slot }: { slot: SlotOutlineNode }) {
+/**
+ * The fill is the way into the inverse index, on every bound slot rather
+ * than only the ones carrying a `N sites` chip. The chip counts; it is not
+ * the door. The fills that most need checking before a delete are the ones
+ * bound in exactly one place, and those never carry a chip at all.
+ *
+ * A `boundTo` with no fill behind it opens the index too -- "what else
+ * points at this dangling ref" is the same question -- but stays muted so it
+ * never reads as a healthy binding.
+ */
+function FillLink({
+  slot,
+  onShowSites,
+}: {
+  slot: SlotOutlineNode;
+  onShowSites: (binding: string) => void;
+}) {
   const { text } = useSchemeColors();
+  const boundTo = slot.boundTo;
 
-  if (slot.fill) {
+  if (!boundTo) {
     return (
-      <Anchor
-        href={`vscode://file${slot.fill.sourcePath}`}
-        size="sm"
-        truncate
-        style={{ flex: 1, minWidth: 0 }}
-        data-testid="slot-fill"
-      >
-        {slot.fill.binding}
-      </Anchor>
-    );
-  }
-
-  if (slot.boundTo) {
-    return (
-      <Text size="sm" c={text.muted} truncate style={{ flex: 1, minWidth: 0 }}>
-        {slot.boundTo} — no matching fill in this pack
+      <Text size="sm" c={text.dimmed} style={{ flex: 1, minWidth: 0 }}>
+        nothing bound
       </Text>
     );
   }
 
   return (
-    <Text size="sm" c={text.dimmed} style={{ flex: 1, minWidth: 0 }}>
-      nothing bound
-    </Text>
+    <Anchor
+      component="button"
+      type="button"
+      onClick={() => onShowSites(boundTo)}
+      size="sm"
+      truncate
+      c={slot.fill ? undefined : text.muted}
+      aria-label={`what binds ${boundTo}`}
+      style={{
+        flex: 1,
+        minWidth: 0,
+        // Mantine's Anchor is styled for an <a>; as a <button> the
+        // user-agent chrome has to be cleared or the row grows a bevel.
+        background: 'none',
+        border: 0,
+        padding: 0,
+        textAlign: 'left',
+        cursor: 'pointer',
+      }}
+      data-testid="slot-fill"
+    >
+      {slot.fill ? boundTo : `${boundTo} — no matching fill in this pack`}
+    </Anchor>
   );
 }
 
@@ -90,7 +113,7 @@ export function SlotRow({
           {slot.contract ?? 'contract unknown'}
         </Text>
         <Icons.arrowRight size={12} color={text.muted} />
-        <FillLink slot={slot} />
+        <FillLink slot={slot} onShowSites={onShowSites} />
         {unbound && slot.required === false && (
           <QuietBadge>optional</QuietBadge>
         )}

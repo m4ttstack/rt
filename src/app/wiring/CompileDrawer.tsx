@@ -12,6 +12,7 @@ import {
 import { useSchemeColors } from '@ui/hooks';
 import { Icons } from '@ui/icons';
 import { CommandProvenance } from '../runs/CommandProvenance';
+import { useDrawerSurface } from './drawerSurface';
 import { useCompilePreview } from './useWiring';
 
 export interface CompileDrawerProps {
@@ -38,6 +39,7 @@ export function CompileDrawer({
   onClose,
 }: CompileDrawerProps) {
   const { bg, text } = useSchemeColors();
+  const surface = useDrawerSurface();
   const query = useCompilePreview(pack, verb ?? undefined);
 
   return (
@@ -47,6 +49,7 @@ export function CompileDrawer({
       position="right"
       size={720}
       padding="lg"
+      styles={surface}
       data-testid="compile-drawer"
       title={
         <Stack gap={2}>

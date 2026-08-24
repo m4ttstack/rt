@@ -13,6 +13,7 @@ import type { MantineColor } from '@ui/core';
 import { useSchemeColors } from '@ui/hooks';
 import { Icons } from '@ui/icons';
 import { CommandProvenance } from '../runs/CommandProvenance';
+import { useDrawerSurface } from './drawerSurface';
 import type { BindingSite, BindingSiteKind } from './outline';
 import { suffixOf } from './outline';
 import { SOFT_RULE } from './SlotRow';
@@ -98,6 +99,9 @@ export interface InverseIndexProps {
   /** Every site that resolves to `fill`, already ordered. Empty is a real
       answer -- "bound by nothing" -- not a loading state. */
   sites: BindingSite[];
+  /** The fill's own SKILL.md. Null for a `boundTo` no fill in this pack
+      answers -- there is nothing to open, so no action is offered. */
+  sourcePath: string | null;
   /** `dataUpdatedAt` off the composition query that produced `sites`. */
   asOf: number | undefined;
   /** Scrolls the spine to that site's row and closes the drawer. Every ref
@@ -118,11 +122,13 @@ export function InverseIndex({
   pack,
   fill,
   sites,
+  sourcePath,
   asOf,
   onShowInMap,
   onClose,
 }: InverseIndexProps) {
   const { text } = useSchemeColors();
+  const surface = useDrawerSurface();
 
   return (
     <Drawer
@@ -131,12 +137,32 @@ export function InverseIndex({
       position="right"
       size={720}
       padding="lg"
+      styles={surface}
       data-testid="inverse-index"
       title={
         <Stack gap={2}>
-          <Text fz="xl" fw={700}>
-            {fill}
-          </Text>
+          <Group gap="xs" wrap="nowrap">
+            <Text fz="xl" fw={700}>
+              {fill}
+            </Text>
+            {/* The fill's source moved here from the slot row, where the
+                name now opens this panel. One affordance per control: the
+                row answers "what binds it", this answers "where is it". */}
+            {sourcePath && (
+              <Tooltip label="Open source">
+                <ActionIcon
+                  component="a"
+                  href={`vscode://file${sourcePath}`}
+                  variant="subtle"
+                  color="gray"
+                  aria-label={`open source for ${fill}`}
+                  data-testid="open-fill-source"
+                >
+                  <Icons.edit size={16} />
+                </ActionIcon>
+              </Tooltip>
+            )}
+          </Group>
           <CommandProvenance
             command={`rt skills composition --pack ${pack}`}
             asOf={asOf}
