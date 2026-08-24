@@ -119,12 +119,23 @@
   --mantine-color-dimmed: var(--tk-muted);
   --mantine-color-placeholder: var(--tk-muted);
   --mantine-color-anchor: var(--tk-accent);
-  --mantine-color-error: var(--tk-red);
 
   --mantine-color-default: var(--tk-panel);
   --mantine-color-default-hover: var(--ui-bg-4);
   --mantine-color-default-color: var(--tk-fg);
   --mantine-color-default-border: var(--tk-border);
+}
+
+/*
+ * Mantine declares this in its own `[data-mantine-color-scheme]` blocks, which
+ * outrank the bare `:root` above -- scoping the override per scheme is what
+ * makes it win, and `--tk-red` already varies by scheme so one grouped
+ * selector covers both. Without this, dark falls back to `red-8`: a deep
+ * #b92739 that fails contrast on `--tk-panel`.
+ */
+:root[data-mantine-color-scheme='light'],
+:root[data-mantine-color-scheme='dark'] {
+  --mantine-color-error: var(--tk-red);
 }
 
 /*
