@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync, readFileSync, writeFileSync, statSync } from "fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync, statSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { statusBinPath, draftBinPath } from "../herdr.ts";
@@ -50,6 +50,39 @@ describe("the status writer the board hands out", () => {
 
     const written = JSON.parse(readFileSync(state, "utf8")) as { status: string; message: string; outcome: string };
     expect(written).toMatchObject({ status: "done", message: "looks good", outcome: "approve" });
+  });
+
+  /** Domain skills ship in version-pinned plugin caches (acme 0.4.11 has
+      `bun run <status-bin> <state> fixing`), so they reach a board newer than
+      themselves and pass the pre-subcommand argv. Dropping that shape would
+      break the doctor lane exactly the way this whole fix exists to prevent. */
+  describe("the pre-subcommand argv older plugin-cached skills still send", () => {
+    test.each([
+      ["reviews", "reviewing"],
+      ["responds", "triaging"],
+      ["doctors", "diagnosing"],
+    ])("infers the writer from a %s state path", async (kind, status) => {
+      const dir = join(mkdtempSync(join(tmpdir(), "board-legacy-")), kind);
+      mkdirSync(dir, { recursive: true });
+      const state = join(dir, "mr.json");
+      writeFileSync(state, JSON.stringify({ mrUrl: "https://x/mr/9", iid: 9, status: "queued" }));
+
+      const proc = Bun.spawn([statusBinPath(), state, status], { stdout: "pipe", stderr: "pipe", env: NO_LIVE_BOARD });
+      expect(await proc.exited).toBe(0);
+      expect((JSON.parse(readFileSync(state, "utf8")) as { status: string }).status).toBe(status);
+    });
+
+    test("routes the draft writer's mrUrl-first argv to doctor-draft", async () => {
+      const root = mkdtempSync(join(tmpdir(), "board-legacy-draft-"));
+      const proc = Bun.spawn(
+        [statusBinPath(), "https://gitlab.com/g/p/-/merge_requests/5", "5", "inherited-note", "job x fails on main"],
+        { stdout: "pipe", stderr: "pipe", env: { ...NO_LIVE_BOARD, BOARD_APP_ROOT: root } },
+      );
+      expect(await proc.exited).toBe(0);
+      const drafts = readdirSync(join(root, "state", "drafts"));
+      expect(drafts.length).toBe(1);
+      expect(readFileSync(join(root, "state", "drafts", drafts[0]!), "utf8")).toContain("job x fails on main");
+    });
   });
 
   test("rejects an unknown subcommand rather than silently doing nothing", async () => {
