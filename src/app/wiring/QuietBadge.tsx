@@ -11,8 +11,10 @@ import { useSchemeColors } from '@ui/hooks';
  * Deliberately NOT `variant="outline" color="gray"`. tokyo-theme.css re-points
  * `gray-3`/`gray-4` at its two BORDER weights, and Mantine's outline variant
  * reads that same ramp for its TEXT colour -- in dark scheme the label lands
- * at `--tk-border` on a `--tk-panel` surface and disappears. `default` is the
- * one variant whose three colours the theme sets explicitly.
+ * at `--tk-border` on a `--tk-panel` surface and disappears. `default` is used instead
+ * because the kit's variant resolver overrides its background to `--ui-bg-3`,
+ * and `c` sets the label directly -- so neither colour comes from the gray
+ * ramp.
  */
 export function QuietBadge({ children }: { children: ReactNode }) {
   const { text } = useSchemeColors();

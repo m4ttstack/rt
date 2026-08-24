@@ -22,6 +22,9 @@
       --purple: #7847bd; --cyan: #007197;
       --grid: rgba(52, 59, 88, 0.05);
       --dot-ok: #1f9d3a; --dot-warn: #e08a00; --dot-bad: #e5153f;
+      /* One shade past --bad: the bullet's glyph is a 9px numeral, and white
+         on --bad is 3.89:1 where small text wants 4.5:1. */
+      --bad-deep: #dc1e54; --bad-on: #fff;
       --wash: 10%;
     }
     .app.dark {
@@ -32,6 +35,8 @@
       --purple: #bb9af7; --cyan: #7dcfff;
       --grid: rgba(122, 162, 247, 0.06);
       --dot-ok: #4ade5b; --dot-warn: #ffbb3d; --dot-bad: #ff5c72;
+      /* Dark needs no step: --bad is already pale, and takes a dark glyph. */
+      --bad-deep: var(--bad); --bad-on: #16161e;
       --wash: 15%;
     }
     .app {
@@ -67,7 +72,7 @@
     }
     .tl-bullet.ok { border-color: var(--ok); color: var(--ok); }
     .tl-bullet.warn { border-color: var(--warn); color: var(--warn); }
-    .tl-bullet.bad { border-color: var(--bad); background: var(--bad); color: #fff; }
+    .tl-bullet.bad { border-color: var(--bad-deep); background: var(--bad-deep); color: var(--bad-on); }
 
     /* Slot table: the nested surface, always open -- the wiring IS the page. */
     .slots { background: var(--bg3); border: 1px solid var(--border-soft); border-radius: 4px; margin-top: 4.8px; }

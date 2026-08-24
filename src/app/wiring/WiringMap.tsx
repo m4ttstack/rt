@@ -191,9 +191,16 @@ function useBulletStyles() {
       // colour (shade 1 in dark), so using it as a fill puts a white glyph on
       // near-white at 1.4:1. Mantine computes this pair per scheme so the
       // glyph always reads against the fill.
+      //
+      // Light scheme steps one shade past `filled` because the glyph is a 9px
+      // numeral -- small text, so it wants 4.5:1, and shade 6 gives white only
+      // 3.89:1. Shade 7 gives 4.82:1. Dark needs no such step: `filled` there
+      // is a pale shade taking a dark glyph at 7.94:1.
+      const fill =
+        'light-dark(var(--mantine-color-bad-7), var(--mantine-color-bad-filled))';
       return {
-        borderColor: 'var(--mantine-color-bad-filled)',
-        backgroundColor: 'var(--mantine-color-bad-filled)',
+        borderColor: fill,
+        backgroundColor: fill,
         color: 'var(--mantine-color-bad-contrast)',
       };
     }
