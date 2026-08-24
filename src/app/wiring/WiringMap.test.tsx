@@ -705,6 +705,10 @@ describe('WiringMap: needs-attention only', () => {
 
     const empty = await screen.findByTestId('attention-empty');
     expect(empty).toHaveTextContent('Nothing needs attention.');
+    // The header counts the rows on screen, which at empty is none of them.
+    expect(screen.getByTestId('spine-summary')).toHaveTextContent(
+      'showing 0 of 6 rows'
+    );
     expect(empty).toHaveTextContent(
       'rt skills check compared 3 roster verbs in demo against a fresh compile; none differed.'
     );
@@ -745,6 +749,42 @@ describe('WiringMap: needs-attention only', () => {
     );
     expect(empty).not.toHaveTextContent('Nothing needs attention.');
   });
+  it('summarises the rows on screen rather than the pack, and says where the stages went', async () => {
+    window.history.pushState(null, '', '/wiring?attention=1');
+    mockHappyPath();
+    renderWiring();
+
+    await screen.findByTestId('skill-row-mattstack:work');
+    const summary = screen.getByTestId('spine-summary');
+
+    // Six rows in the pack: the orchestrator, three stages, and two
+    // outside it. Two of them drifted.
+    expect(summary).toHaveTextContent('showing 2 of 6 rows');
+    // The pipeline did not vanish -- it is named, hidden, and explained.
+    expect(summary).toHaveTextContent('3 stages hidden');
+    expect(summary).toHaveTextContent(
+      'check covers no artifact of a stage to flag'
+    );
+    // The unfiltered claim must be gone, or the header states two sets.
+    // Matched on the caveat's own wording: "3 stages" is a substring of
+    // "3 of 3 stages hidden", so a negative on that would never fail.
+    expect(summary).not.toHaveTextContent(
+      'so they carry no artifact of their own to check'
+    );
+  });
+
+  it('still summarises the pack when the filter is off', async () => {
+    mockHappyPath();
+    renderWiring();
+
+    await screen.findByTestId('skill-row-mattstack:work');
+    const summary = screen.getByTestId('spine-summary');
+
+    expect(summary).toHaveTextContent('3 stages');
+    expect(summary).not.toHaveTextContent('showing');
+    expect(summary).not.toHaveTextContent('hidden');
+  });
+
   it('does not call an empty roster a clean compile', async () => {
     window.history.pushState(null, '', '/wiring?attention=1');
     packsGet.mockResolvedValue(

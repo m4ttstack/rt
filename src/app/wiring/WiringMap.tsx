@@ -35,6 +35,7 @@ import { InverseIndex } from './InverseIndex';
 import {
   buildSpine,
   pluginOf,
+  spineRows,
   suffixOf,
   type BindingSite,
   type OrphanFillEntry,
@@ -151,14 +152,25 @@ function OutsideThePipeline({
   );
 }
 
+/**
+ * The panel's header. While the filter is on it describes the rows actually
+ * rendered, not the pack -- a "8 stages" claim over a spine drawing none is
+ * the summary and the list disagreeing about the same set. The stages are
+ * still named, and named as HIDDEN rather than dropped, because the reason
+ * they never survive the filter is a fact about what `check` covers, not the
+ * pipeline going away.
+ */
 function SpineSummary({
   spine,
+  shown,
   attentionOnly,
 }: {
   spine: WiringSpine;
+  shown: WiringSpine;
   attentionOnly: boolean;
 }) {
   const { text } = useSchemeColors();
+  const hiddenStages = spine.stages.length - shown.stages.length;
 
   return (
     <Group gap="xs" wrap="nowrap" pb="lg" data-testid="spine-summary">
@@ -184,18 +196,44 @@ function SpineSummary({
       <Text size="sm" c={text.muted}>
         ·
       </Text>
-      <Text size="sm" c={text.muted}>
-        {spine.stages.length} stages
-      </Text>
-      {spine.stages.length > 0 && (
+      {attentionOnly ? (
+        <>
+          <Text size="sm" c={text.muted} data-testid="shown-of-total">
+            showing {spineRows(shown).length} of {spineRows(spine).length} rows
+          </Text>
+          {hiddenStages > 0 && (
+            <>
+              <Text size="sm" c={text.muted}>
+                ·
+              </Text>
+              {/* Deliberately shorter than the unfiltered caveat beside it:
+                  the filtered header also carries the row count and two
+                  controls, and at 1440 the longer wording truncated
+                  mid-sentence -- which loses the reason and leaves the
+                  stages looking dropped. */}
+              <Text size="xs" c={text.muted} truncate>
+                {hiddenStages} stages hidden — check covers no artifact of a
+                stage to flag
+              </Text>
+            </>
+          )}
+        </>
+      ) : (
         <>
           <Text size="sm" c={text.muted}>
-            ·
+            {spine.stages.length} stages
           </Text>
-          <Text size="xs" c={text.muted} truncate>
-            stages compile into the orchestrator, so they carry no artifact of
-            their own to check
-          </Text>
+          {spine.stages.length > 0 && (
+            <>
+              <Text size="sm" c={text.muted}>
+                ·
+              </Text>
+              <Text size="xs" c={text.muted} truncate>
+                stages compile into the orchestrator, so they carry no artifact
+                of their own to check
+              </Text>
+            </>
+          )}
         </>
       )}
       <div style={{ flex: 1 }} />
@@ -359,7 +397,7 @@ function WiringSpineView({
       style={{ border: `1px solid ${border.default}` }}
       data-testid="wiring-spine"
     >
-      <SpineSummary spine={spine} attentionOnly={attentionOnly} />
+      <SpineSummary spine={spine} shown={shown} attentionOnly={attentionOnly} />
 
       {spine.pipelineState !== 'ok' && (
         <Alert

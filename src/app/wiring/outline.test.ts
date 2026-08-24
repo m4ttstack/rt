@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   buildSpine,
   invertBindings,
+  needsAttention,
+  spineRows,
   type OutlineCheck,
   type SpineComposition,
 } from './outline';
@@ -380,6 +382,74 @@ describe('buildSpine: check-status health mapping', () => {
     });
 
     expect(spine.attentionCount).toBe(1);
+  });
+});
+
+/**
+ * The rail badge has no work-type picker, so it counts against the pack's
+ * default while the page counts against the picker. These pin the property
+ * that makes those two numbers the same one.
+ */
+describe('buildSpine: attentionCount does not move with the work type', () => {
+  const DRIFTED: OutlineCheck = {
+    verbs: [
+      {
+        name: 'work',
+        status: 'stale',
+        staleFiles: ['SKILL.md'],
+        orphanFiles: [],
+      },
+      {
+        name: 'ship',
+        status: 'never-compiled',
+        staleFiles: [],
+        orphanFiles: [],
+      },
+      {
+        name: 'rebase-worktree',
+        status: 'stale',
+        staleFiles: ['SKILL.md'],
+        orphanFiles: [],
+      },
+    ],
+  };
+
+  it('answers the same count for two pipelines of different lengths', () => {
+    // `feature` names three stages, one of which (`stage-implement`) has no
+    // binder and no roster verb, so it is a row in `feature` and absent from
+    // `hotfix` entirely. That asymmetric row is the only way the count could
+    // diverge, and it is exactly what a stage "contributing" would look like.
+    const feature = buildSpine(PACK, DRIFTED, 'feature');
+    const hotfix = buildSpine(PACK, DRIFTED, 'hotfix');
+
+    expect(feature.stages).toHaveLength(3);
+    expect(hotfix.stages).toHaveLength(1);
+    // Non-zero, or the equality below would hold on two empty counts.
+    expect(feature.attentionCount).toBe(3);
+    expect(hotfix.attentionCount).toBe(feature.attentionCount);
+  });
+
+  it('flags nothing that has no roster verb behind it', () => {
+    const spine = buildSpine(PACK, DRIFTED, 'feature');
+    const flagged = spineRows(spine).filter(needsAttention);
+
+    expect(flagged).toHaveLength(spine.attentionCount);
+    // `every` is vacuously true on an empty list, so this is what lets the
+    // assertion below fail.
+    expect(flagged.length).toBeGreaterThan(0);
+    expect(flagged.every(entry => entry.verb !== null)).toBe(true);
+  });
+
+  it('gives every roster verb exactly one row, in every work type', () => {
+    for (const workType of ['feature', 'hotfix']) {
+      const rows = spineRows(buildSpine(PACK, DRIFTED, workType));
+      const verbs = rows
+        .map(row => row.verb)
+        .filter((name): name is string => name !== null);
+
+      expect(new Set(verbs).size).toBe(verbs.length);
+      expect([...verbs].sort()).toEqual(['rebase-worktree', 'ship', 'work']);
+    }
   });
 });
 

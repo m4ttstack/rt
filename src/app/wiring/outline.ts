@@ -253,9 +253,19 @@ function noSlotsNote(
     : 'no slots — this skill takes nothing from the pack';
 }
 
-/** The one predicate behind both `attentionCount` and the "needs attention
-    only" filter -- a badge that disagreed with the list it links to would be
-    two derivations of the same claim. */
+/**
+ * The one predicate behind both `attentionCount` and the "needs attention
+ * only" filter -- a badge that disagreed with the list it links to would be
+ * two derivations of the same claim.
+ *
+ * Every signal it reads reaches an entry through a ROSTER VERB: `health`
+ * comes from `check` keyed by verb name, `engineError` off the verb, and
+ * `required`/`resolveError` off the verb's declared slots. A binder-only
+ * slot carries `required: null` and no `resolveError`, and a ref no verb
+ * backs gets `health: 'unknown'`. So this can only ever answer true for an
+ * entry with `verb !== null` -- which is what makes `attentionCount`
+ * independent of the work type. See `buildSpine`.
+ */
 export function needsAttention(entry: SpineEntry): boolean {
   if (entry.health === 'source-newer' || entry.health === 'never-compiled')
     return true;
@@ -263,6 +273,22 @@ export function needsAttention(entry: SpineEntry): boolean {
   return entry.slots.some(
     slot => slot.resolveError || (slot.required === true && !slot.boundTo)
   );
+}
+
+/**
+ * Every row the spine draws, in render order. Names the set `attentionCount`
+ * ranges over so the count, the filter and the summary's "showing N of M"
+ * cannot each decide for themselves what a row is. Orphaned fills are not
+ * rows: they are fills, and the count never included them.
+ */
+export function spineRows(
+  spine: Pick<WiringSpine, 'orchestrator' | 'stages' | 'outside'>
+): SpineEntry[] {
+  return [
+    ...(spine.orchestrator ? [spine.orchestrator] : []),
+    ...spine.stages,
+    ...spine.outside,
+  ];
 }
 
 /**
@@ -511,11 +537,20 @@ export function buildSpine(
       health: 'orphaned',
     }));
 
-  const attentionCount = [
-    ...(orchestrator ? [orchestrator] : []),
-    ...stages,
-    ...outside,
-  ].filter(needsAttention).length;
+  // Work-type independence, which the rail badge depends on: the rail has no
+  // work-type picker, so it counts against the pack's default while the page
+  // counts against whatever the picker says. Those agree because the ONLY
+  // rows that come and go with the work type are stage refs that no binder
+  // and no roster verb backs -- rt omits a binder for a stage that binds
+  // nothing, so such a ref is a row in the work types whose pipeline names it
+  // and absent everywhere else. `needsAttention` can never answer true for
+  // one (see its comment: every signal arrives via a roster verb), and every
+  // roster verb gets exactly one row in EVERY work type -- placed as the
+  // orchestrator, a stage or a binder, or swept in unwired just above. So the
+  // count cannot move when the work type does.
+  const attentionCount = spineRows({ orchestrator, stages, outside }).filter(
+    needsAttention
+  ).length;
 
   return {
     bindingSites,
