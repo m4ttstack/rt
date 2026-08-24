@@ -126,6 +126,8 @@ export interface SkillRowProps {
   entry: SpineEntry;
   previewOpen: boolean;
   onPreview: () => void;
+  /** Opens the inverse index for a slot's fill. */
+  onShowSites: (binding: string) => void;
   /** Outside-the-pipeline rows carry no step number, so health rides a dot
       in front of the name instead of the timeline bullet. */
   withDot?: boolean;
@@ -140,6 +142,7 @@ export function SkillRow({
   entry,
   previewOpen,
   onPreview,
+  onShowSites,
   withDot = false,
 }: SkillRowProps) {
   const { text } = useSchemeColors();
@@ -213,7 +216,7 @@ export function SkillRow({
           onPreview={onPreview}
         />
       </Group>
-      <SlotTable slots={entry.slots} />
+      <SlotTable slots={entry.slots} onShowSites={onShowSites} />
     </Stack>
   );
 }

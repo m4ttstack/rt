@@ -65,6 +65,28 @@ export interface SlotOutlineNode {
   siteCount: number;
 }
 
+export type BindingSiteKind = CompositionBinder['kind'];
+
+/** One place in the manifest that resolves to a fill: a ref, the slot on it,
+    and what that ref is. `verb` is null wherever the ref is not a roster
+    verb, which is most of them. */
+export interface BindingSite {
+  ref: string;
+  verb: string | null;
+  kind: BindingSiteKind;
+  slot: string;
+}
+
+/** Kinds ahead of names, so the drawer reads in the order its own sentence
+    names them. Any order would render; a STABLE one is what keeps the list
+    from moving under the cursor between fetches of the same pack. */
+const SITE_KIND_RANK: Record<BindingSiteKind, number> = {
+  verb: 0,
+  stage: 1,
+  skill: 2,
+  external: 3,
+};
+
 export type SpineEntryKind = 'orchestrator' | 'stage' | 'outside';
 
 export interface SpineEntry {
@@ -116,6 +138,10 @@ export interface OrphanFillEntry {
 export type PipelineState = 'ok' | 'empty' | 'absent';
 
 export interface WiringSpine {
+  /** Fill binding -> every site that resolves to it. The slot rows' `N
+      sites` chip is this map's lengths, so the chip and the inverse index
+      cannot disagree about the same fill. */
+  bindingSites: Record<string, BindingSite[]>;
   workType: string | null;
   workTypes: string[];
   pipelineState: PipelineState;
@@ -147,14 +173,63 @@ function healthFromStatus(
   }
 }
 
-function suffixOf(ref: string): string {
+export function suffixOf(ref: string): string {
   const colon = ref.indexOf(':');
   return colon === -1 ? ref : ref.slice(colon + 1);
 }
 
-function pluginOf(ref: string): string {
+export function pluginOf(ref: string): string {
   const colon = ref.indexOf(':');
   return colon === -1 ? ref : ref.slice(0, colon);
+}
+
+/**
+ * Every fill the pack declares, mapped to every binding site that resolves
+ * to it. A declared fill nothing binds gets an empty array rather than no
+ * key: absent and bound-by-nothing are different facts, and a missing key
+ * would render as "unknown" where the honest answer is "bound by nothing".
+ *
+ * Inverts `binders[]`, never `verbs[]`. The roster holds roughly a third of
+ * the manifest's binding keys -- the rest are pipeline stages, other
+ * plugins' skills, and mattstack skills that are neither -- so a
+ * roster-derived index reports genuinely-bound fills as orphaned in the one
+ * view consulted before deleting something. Nor is `Resolved.bindings`
+ * inverted directly: its outer key is `${step.plugin}:${verb.engine}`, an
+ * engine ref, not a verb name.
+ *
+ * Unioning `verbs[]` in would add nothing: rt reads a verb slot's `boundTo`
+ * out of the same `resolved.bindings` map it emits every `binders[]` entry
+ * from, so `binders[]` is a superset of the roster's bindings by
+ * construction (measured on the live demo pack: 18 binders cover all
+ * 12 verbs' bound slots, ref/slot/binding identical).
+ */
+export function invertBindings(
+  composition: SpineComposition
+): Record<string, BindingSite[]> {
+  const sites: Record<string, BindingSite[]> = {};
+  for (const fill of composition.fills) sites[fill.binding] = [];
+
+  for (const binder of composition.binders ?? []) {
+    for (const slot of binder.slots) {
+      if (slot.boundTo == null) continue;
+      (sites[slot.boundTo] ??= []).push({
+        ref: binder.ref,
+        verb: binder.verb,
+        kind: binder.kind,
+        slot: slot.name,
+      });
+    }
+  }
+
+  for (const list of Object.values(sites)) {
+    list.sort(
+      (a, b) =>
+        SITE_KIND_RANK[a.kind] - SITE_KIND_RANK[b.kind] ||
+        (a.verb ?? a.ref).localeCompare(b.verb ?? b.ref) ||
+        a.slot.localeCompare(b.slot)
+    );
+  }
+  return sites;
 }
 
 /** Identity of a binder's wiring, order-insensitive -- what makes "same
@@ -220,12 +295,11 @@ export function buildSpine(
       .map(v => [v.engineRef as string, v] as const)
   );
 
-  const siteCounts = new Map<string, number>();
-  for (const binder of binders) {
-    for (const slot of binder.slots) {
-      siteCounts.set(slot.boundTo, (siteCounts.get(slot.boundTo) ?? 0) + 1);
-    }
-  }
+  // One inversion, two readers: the chip below counts what the inverse index
+  // lists, so the two can never disagree about the same fill.
+  const bindingSites = invertBindings(composition);
+  const siteCount = (boundTo: string | null) =>
+    boundTo ? (bindingSites[boundTo]?.length ?? 0) : 0;
 
   const boundBindings = new Set<string>();
   for (const verb of composition.verbs) {
@@ -261,7 +335,7 @@ export function buildSpine(
       boundTo: slot.boundTo,
       resolveError: slot.resolveError,
       fill: slot.boundTo ? (fillsByBinding.get(slot.boundTo) ?? null) : null,
-      siteCount: slot.boundTo ? (siteCounts.get(slot.boundTo) ?? 0) : 0,
+      siteCount: siteCount(slot.boundTo),
     }));
     const declared = new Set(slots.map(s => s.name));
 
@@ -274,7 +348,7 @@ export function buildSpine(
         required: null,
         boundTo: slot.boundTo,
         fill,
-        siteCount: siteCounts.get(slot.boundTo) ?? 0,
+        siteCount: siteCount(slot.boundTo),
       });
     }
     return slots;
@@ -376,7 +450,7 @@ export function buildSpine(
           required: null,
           boundTo: slot.boundTo,
           fill,
-          siteCount: siteCounts.get(slot.boundTo) ?? 0,
+          siteCount: siteCount(slot.boundTo),
         });
       }
       continue;
@@ -441,6 +515,7 @@ export function buildSpine(
   ].filter(needsAttention).length;
 
   return {
+    bindingSites,
     workType,
     workTypes,
     pipelineState,

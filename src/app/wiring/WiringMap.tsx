@@ -14,13 +14,18 @@ import {
   Stack,
   Text,
   Timeline,
+  UnstyledButton,
 } from '@ui/core';
 import { useSchemeColors } from '@ui/hooks';
 import { Icons } from '@ui/icons';
 import { CommandProvenance } from '../runs/CommandProvenance';
 import { CompileDrawer } from './CompileDrawer';
+import { InverseIndex } from './InverseIndex';
 import {
   buildSpine,
+  pluginOf,
+  suffixOf,
+  type BindingSite,
   type OrphanFillEntry,
   type SpineEntry,
   type WiringHealth,
@@ -46,33 +51,44 @@ const PIPELINE_NOTICE: Record<'absent' | 'empty', string> = {
     "This pack's manifest declares no pipeline, so there is no run order. Every wired skill is still listed below.",
 };
 
-function OrphanFillRow({ node }: { node: OrphanFillEntry }) {
+function OrphanFillRow({
+  node,
+  onShowSites,
+}: {
+  node: OrphanFillEntry;
+  onShowSites: (binding: string) => void;
+}) {
   const { text } = useSchemeColors();
-  const suffix = node.fill.slice(node.fill.indexOf(':') + 1);
 
   return (
     <Stack gap={1} data-testid={`orphan-fill-${node.fill}`}>
-      <Group gap="xs" wrap="nowrap">
-        <div
-          aria-hidden
-          style={{
-            width: 6,
-            height: 6,
-            borderRadius: '50%',
-            flex: 'none',
-            background: text.highContrast('purple'),
-          }}
-        />
-        <Text fw={600} size="lg">
-          {suffix}
-        </Text>
-        <Text size="sm" c={text.muted} truncate>
-          {node.fill}
-        </Text>
-        <Badge size="sm" variant="light" color="purple">
-          bound by nothing
-        </Badge>
-      </Group>
+      <UnstyledButton
+        onClick={() => onShowSites(node.fill)}
+        aria-label={`what binds ${node.fill}`}
+        data-testid="open-inverse-index"
+      >
+        <Group gap="xs" wrap="nowrap">
+          <div
+            aria-hidden
+            style={{
+              width: 6,
+              height: 6,
+              borderRadius: '50%',
+              flex: 'none',
+              background: text.highContrast('purple'),
+            }}
+          />
+          <Text fw={600} size="lg">
+            {suffixOf(node.fill)}
+          </Text>
+          <Text size="sm" c={text.muted} truncate>
+            {node.fill}
+          </Text>
+          <Badge size="sm" variant="light" color="purple">
+            bound by nothing
+          </Badge>
+        </Group>
+      </UnstyledButton>
       <Text size="xs" c={text.muted} pl="lg">
         A fill nothing resolves to — not a stage&apos;s slot, not a verb&apos;s,
         not another plugin&apos;s. Safe to delete unless something outside this
@@ -91,10 +107,12 @@ function OutsideThePipeline({
   spine,
   previewVerb,
   onPreview,
+  onShowSites,
 }: {
   spine: WiringSpine;
   previewVerb: string | null;
   onPreview: (entry: SpineEntry) => void;
+  onShowSites: (binding: string) => void;
 }) {
   const { text } = useSchemeColors();
 
@@ -111,10 +129,11 @@ function OutsideThePipeline({
           withDot
           previewOpen={previewVerb === entry.verb}
           onPreview={() => onPreview(entry)}
+          onShowSites={onShowSites}
         />
       ))}
       {spine.orphans.map(node => (
-        <OrphanFillRow key={node.fill} node={node} />
+        <OrphanFillRow key={node.fill} node={node} onShowSites={onShowSites} />
       ))}
     </Stack>
   );
@@ -238,6 +257,7 @@ function WiringSpineView({
     verb: string;
     changedFiles: string[];
   } | null>(null);
+  const [indexFill, setIndexFill] = useState<string | null>(null);
 
   const spine = useMemo(
     () =>
@@ -265,6 +285,23 @@ function WiringSpineView({
     ...(spine.orchestrator ? [spine.orchestrator] : []),
     ...spine.stages,
   ];
+
+  // A cross-plugin binder has no row of its own: it is one line inside its
+  // plugin's grouped row, keyed by the plugin rather than the ref.
+  const rowKeys = useMemo(
+    () =>
+      new Set(
+        [spine.orchestrator, ...spine.stages, ...spine.outside]
+          .filter((entry): entry is SpineEntry => entry !== null)
+          .map(entry => entry.key)
+      ),
+    [spine]
+  );
+  const rowKeyFor = (site: BindingSite): string | null => {
+    if (rowKeys.has(site.ref)) return site.ref;
+    const grouped = `external:${pluginOf(site.ref)}`;
+    return rowKeys.has(grouped) ? grouped : null;
+  };
 
   return (
     <Paper
@@ -325,6 +362,7 @@ function WiringSpineView({
               entry={entry}
               previewOpen={preview?.verb === entry.verb}
               onPreview={() => openPreview(entry)}
+              onShowSites={setIndexFill}
             />
           </Timeline.Item>
         ))}
@@ -343,6 +381,7 @@ function WiringSpineView({
             spine={spine}
             previewVerb={preview?.verb ?? null}
             onPreview={openPreview}
+            onShowSites={setIndexFill}
           />
         </Timeline.Item>
       </Timeline>
@@ -358,6 +397,22 @@ function WiringSpineView({
         verb={preview?.verb ?? null}
         changedFiles={preview?.changedFiles ?? []}
         onClose={() => setPreview(null)}
+      />
+
+      <InverseIndex
+        pack={pack}
+        fill={indexFill}
+        sites={indexFill ? (spine.bindingSites[indexFill] ?? []) : []}
+        asOf={compositionQuery.dataUpdatedAt || undefined}
+        onShowInMap={site => {
+          const key = rowKeyFor(site);
+          setIndexFill(null);
+          if (!key) return;
+          document
+            .querySelector(`[data-testid="skill-row-${key}"]`)
+            ?.scrollIntoView?.({ block: 'center' });
+        }}
+        onClose={() => setIndexFill(null)}
       />
     </Paper>
   );

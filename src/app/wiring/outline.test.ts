@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   buildSpine,
+  invertBindings,
   type OutlineCheck,
   type SpineComposition,
 } from './outline';
@@ -420,6 +421,110 @@ describe('buildSpine: nodes never vanish or narrate away real state', () => {
     expect(orchestrator?.sourcePath).toBe('/steps/work/SKILL.md');
     expect(orchestrator?.artifactPath).toBe('/p/skills/work');
     expect(orchestrator?.sourcePath).not.toBe(orchestrator?.artifactPath);
+  });
+});
+
+describe('invertBindings: every site that resolves to a fill', () => {
+  it('lists a verb and a stage that bind the same fill, each with its own kind', () => {
+    const sites = invertBindings(PACK)['demo:ship-domain'];
+
+    expect(sites).toHaveLength(2);
+    expect(sites).toEqual([
+      { ref: 'mattstack:ship', verb: 'ship', kind: 'verb', slot: 'domain' },
+      {
+        ref: 'mattstack:stage-ship',
+        verb: null,
+        kind: 'stage',
+        slot: 'domain',
+      },
+    ]);
+  });
+
+  it('keeps a `skill` binder, the ref that is neither a roster verb nor a stage', () => {
+    const sites = invertBindings(PACK)['demo:work-provision'];
+
+    expect(sites).toHaveLength(2);
+    const skill = sites.find(site => site.kind === 'skill');
+    expect(skill).toBeDefined();
+    expect(skill?.ref).toBe('mattstack:review-core');
+    expect(skill?.verb).toBeNull();
+    expect(skill?.slot).toBe('criteria');
+  });
+
+  it('a cross-plugin binder is a real binding site, not an orphan', () => {
+    const sites = invertBindings(PACK)['demo:mr-board-review'];
+
+    expect(sites).toHaveLength(1);
+    expect(sites[0]).toEqual({
+      ref: 'mr-board:review',
+      verb: null,
+      kind: 'external',
+      slot: 'skill',
+    });
+  });
+
+  it('a declared fill nobody binds gets an empty array, not a missing key', () => {
+    const sites = invertBindings(PACK);
+
+    // Absent and bound-by-nothing are different facts: a missing key renders
+    // as "unknown" where the honest answer is "bound by nothing".
+    expect(Object.keys(sites)).toContain('mattstack:self-review');
+    expect(sites['mattstack:self-review']).toEqual([]);
+  });
+
+  it('a slot the payload leaves unbound contributes nothing, not a null-keyed entry', () => {
+    // The response type says `boundTo: string`, but it is unvalidated JSON
+    // off an rt subprocess -- the guard is what keeps `null` out of the keys.
+    const composition: SpineComposition = {
+      verbs: [],
+      fills: [],
+      binders: [
+        {
+          ref: 'mattstack:watch-ci',
+          verb: 'watch-ci',
+          kind: 'verb',
+          slots: [{ name: 'domain', boundTo: null as unknown as string }],
+        },
+      ],
+    };
+
+    expect(invertBindings(composition)).toEqual({});
+  });
+
+  it('orders two verbs on one fill by name, not by the order the manifest listed them', () => {
+    const composition: SpineComposition = {
+      verbs: [],
+      fills: [fill('demo:shared', 'shared@1')],
+      binders: [
+        {
+          ref: 'mattstack:zeta',
+          verb: 'zeta',
+          kind: 'verb',
+          slots: [{ name: 'domain', boundTo: 'demo:shared' }],
+        },
+        {
+          ref: 'mattstack:alpha',
+          verb: 'alpha',
+          kind: 'verb',
+          slots: [{ name: 'domain', boundTo: 'demo:shared' }],
+        },
+      ],
+    };
+
+    const sites = invertBindings(composition)['demo:shared'];
+    expect(sites).toHaveLength(2);
+    expect(sites.map(site => site.verb)).toEqual(['alpha', 'zeta']);
+  });
+
+  it("the slot row's site count is the length of the index's list for that fill", () => {
+    const spine = buildSpine(PACK, EMPTY_CHECK);
+    const slot = spine.stages[2].slots[0];
+
+    // One inversion, two readers -- the chip cannot claim a number the
+    // drawer's list does not have rows for.
+    expect(slot.boundTo).toBe('demo:ship-domain');
+    expect(spine.bindingSites['demo:ship-domain']).toHaveLength(2);
+    expect(slot.siteCount).toBe(2);
   });
 });
 

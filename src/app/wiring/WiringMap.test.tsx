@@ -362,6 +362,71 @@ describe('WiringMap: the spine', () => {
   });
 });
 
+describe('WiringMap: the inverse index', () => {
+  it('opens on the fill whose sites chip was clicked, listing every site with its kind', async () => {
+    mockHappyPath();
+    const user = userEvent.setup();
+    renderWiring();
+
+    const stage = await screen.findByTestId(
+      'skill-row-mattstack:stage-watch-ci'
+    );
+    await user.click(
+      within(within(stage).getByTestId('slot-domain')).getByTestId('slot-sites')
+    );
+
+    const drawer = await screen.findByTestId('inverse-index');
+    expect(
+      within(drawer).getByText('demo:watch-ci-domain')
+    ).toBeInTheDocument();
+    // The roster verb and the pipeline stage that both bind it -- neither is
+    // reachable from the other's row.
+    expect(
+      within(drawer)
+        .getAllByTestId(/^binding-site-/)
+        .map(row => row.getAttribute('data-testid'))
+    ).toEqual([
+      'binding-site-mattstack:watch-ci:domain',
+      'binding-site-mattstack:stage-watch-ci:domain',
+    ]);
+  });
+
+  it('lists exactly as many sites as the chip on the row claims', async () => {
+    mockHappyPath();
+    const user = userEvent.setup();
+    renderWiring();
+
+    const stage = await screen.findByTestId(
+      'skill-row-mattstack:stage-watch-ci'
+    );
+    const chip = within(within(stage).getByTestId('slot-domain')).getByTestId(
+      'slot-sites'
+    );
+    expect(chip).toHaveTextContent('2 sites');
+
+    await user.click(chip);
+    const drawer = await screen.findByTestId('inverse-index');
+
+    expect(within(drawer).getByTestId('site-count')).toHaveTextContent('2');
+    expect(within(drawer).getAllByTestId(/^binding-site-/)).toHaveLength(2);
+  });
+
+  it('answers for a fill nothing binds too, which is the question asked before deleting it', async () => {
+    mockHappyPath();
+    const user = userEvent.setup();
+    renderWiring();
+
+    const orphan = await screen.findByTestId('orphan-fill-demo:unused');
+    await user.click(within(orphan).getByTestId('open-inverse-index'));
+
+    const drawer = await screen.findByTestId('inverse-index');
+    expect(within(drawer).getByTestId('site-count')).toHaveTextContent('0');
+    expect(within(drawer).getByTestId('bound-by-nothing')).toHaveTextContent(
+      'Bound by nothing. Not an error'
+    );
+  });
+});
+
 describe('WiringMap: the work-type picker', () => {
   it('switches which pipeline the spine draws', async () => {
     mockHappyPath();

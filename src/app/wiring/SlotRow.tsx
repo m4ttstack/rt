@@ -1,4 +1,12 @@
-import { Anchor, Badge, Group, Paper, Stack, Text } from '@ui/core';
+import {
+  Anchor,
+  Badge,
+  Group,
+  Paper,
+  Stack,
+  Text,
+  UnstyledButton,
+} from '@ui/core';
 import { useSchemeColors } from '@ui/hooks';
 import { Icons } from '@ui/icons';
 import type { SlotOutlineNode } from './outline';
@@ -7,7 +15,7 @@ import { QuietBadge } from './QuietBadge';
 /** tokyo-theme.css re-points Mantine's `gray-3` at `--tk-border-soft`, the
     palette's rule-inside-a-surface weight. The slot table is that case: a
     grid drawn inside a card, not another card. */
-const SOFT_RULE = 'var(--mantine-color-gray-3)';
+export const SOFT_RULE = 'var(--mantine-color-gray-3)';
 
 /** Fixed columns, so slot names and contracts line up down the whole spine
     instead of jittering with each row's content. */
@@ -56,7 +64,13 @@ function FillLink({ slot }: { slot: SlotOutlineNode }) {
  * Badging every optional slot would put a badge on nearly every row of the
  * live pack and say nothing.
  */
-export function SlotRow({ slot }: { slot: SlotOutlineNode }) {
+export function SlotRow({
+  slot,
+  onShowSites,
+}: {
+  slot: SlotOutlineNode;
+  onShowSites: (binding: string) => void;
+}) {
   const { text } = useSchemeColors();
   const unbound = !slot.boundTo;
 
@@ -85,10 +99,14 @@ export function SlotRow({ slot }: { slot: SlotOutlineNode }) {
             required, unbound
           </Badge>
         )}
-        {slot.siteCount > 1 && (
-          <div data-testid="slot-sites">
+        {slot.siteCount > 1 && slot.boundTo && (
+          <UnstyledButton
+            onClick={() => onShowSites(slot.boundTo as string)}
+            aria-label={`what binds ${slot.boundTo}`}
+            data-testid="slot-sites"
+          >
             <QuietBadge>{slot.siteCount} sites</QuietBadge>
-          </div>
+          </UnstyledButton>
         )}
       </Group>
       {slot.resolveError && (
@@ -106,7 +124,13 @@ export function SlotRow({ slot }: { slot: SlotOutlineNode }) {
 
 /** The nested surface holding a skill's slots. Rendered even for one slot:
     the alignment is what makes a column of skills readable as one wiring. */
-export function SlotTable({ slots }: { slots: SlotOutlineNode[] }) {
+export function SlotTable({
+  slots,
+  onShowSites,
+}: {
+  slots: SlotOutlineNode[];
+  onShowSites: (binding: string) => void;
+}) {
   const { bg } = useSchemeColors();
 
   if (slots.length === 0) return null;
@@ -124,7 +148,7 @@ export function SlotTable({ slots }: { slots: SlotOutlineNode[] }) {
           key={`${slot.name}-${slot.boundTo ?? i}`}
           style={i === 0 ? undefined : { borderTop: `1px solid ${SOFT_RULE}` }}
         >
-          <SlotRow slot={slot} />
+          <SlotRow slot={slot} onShowSites={onShowSites} />
         </div>
       ))}
     </Paper>
