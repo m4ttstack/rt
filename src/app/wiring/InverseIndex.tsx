@@ -62,7 +62,9 @@ function SiteRow({
           {site.kind}
         </Badge>
         <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
-          <Text fw={600} truncate>
+          {/* `lg` is the ramp step that lands on the 13.5px body size the
+              design draws these at; an unsized Text is `md`, a step down. */}
+          <Text fw={600} size="lg" truncate>
             {siteTitle(site)}
           </Text>
           <Text size="xs" c={text.muted} truncate>
@@ -145,7 +147,9 @@ export function InverseIndex({
       <Stack gap="lg">
         <Stack gap="xs">
           <Group justify="space-between" wrap="nowrap">
-            <Text fw={700}>What binds this</Text>
+            <Text fw={700} size="lg">
+              What binds this
+            </Text>
             <Text size="sm" c={text.muted} data-testid="site-count">
               {sites.length}
             </Text>
@@ -163,7 +167,9 @@ export function InverseIndex({
               <Badge size="sm" variant="light" color="purple">
                 orphaned
               </Badge>
-              <Text truncate>{fill}</Text>
+              <Text size="lg" truncate>
+                {fill}
+              </Text>
             </Group>
             <Alert
               variant="default"
