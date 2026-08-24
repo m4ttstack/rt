@@ -176,10 +176,14 @@ function useBulletStyles() {
   return (health: WiringHealth): CSSProperties => {
     const color = HEALTH_COLOR[health];
     if (health === 'never-compiled') {
+      // The filled/contrast pair, not `highContrast`: the latter is a TEXT
+      // colour (shade 1 in dark), so using it as a fill puts a white glyph on
+      // near-white at 1.4:1. Mantine computes this pair per scheme so the
+      // glyph always reads against the fill.
       return {
-        borderColor: text.highContrast('bad'),
-        backgroundColor: text.highContrast('bad'),
-        color: 'var(--mantine-color-white)',
+        borderColor: 'var(--mantine-color-bad-filled)',
+        backgroundColor: 'var(--mantine-color-bad-filled)',
+        color: 'var(--mantine-color-bad-contrast)',
       };
     }
     if (color) {
