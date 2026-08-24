@@ -60,26 +60,26 @@
     <div style="background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 0 14.4px;">
 
       <div class="entry">
-        <div class="key"><div class="bullet ok">3</div><span class="sm">numbered, outlined</span></div>
+        <div class="key"><div class="bullet">3</div><span class="sm">numbered, neutral</span></div>
         <div class="stack" style="gap: 1px; flex: 1;">
-          <span class="sm" style="font-weight: 600;">In sync — a pipeline stage, at its position in the run order</span>
-          <span class="xs muted">The compiled artifact on disk matches its sources. The number is the step in the run order, and it is never replaced — a stage in trouble still has to say where it runs.</span>
+          <span class="sm" style="font-weight: 600;">A pipeline stage, at its position in the run order</span>
+          <span class="xs muted">The number is the step, and it is never replaced — a row in trouble still has to say where it runs. Stages carry no health colour at all: they compile INTO the orchestrator rather than to an artifact of their own, and `rt skills check` covers roster verbs only. A green ring here would be a claim nothing measured.</span>
         </div>
       </div>
 
       <div class="entry">
-        <div class="key"><div class="bullet warn">2</div><span class="sm">amber, keeps its number</span></div>
+        <div class="key"><div class="bullet warn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h7l-2 8 11-12h-7l2-8z"/></svg></div><span class="sm">amber ring</span></div>
         <div class="stack" style="gap: 1px; flex: 1;">
           <div class="row" style="gap: 4.8px;"><span class="sm" style="font-weight: 600;">Source newer</span><span class="badge" style="background: color-mix(in srgb, var(--warn) var(--wash), transparent); color: var(--warn);">source newer</span></div>
-          <span class="xs muted">You edited a source and did not recompile. Claude is reading the previous compile, silently — no error anywhere else in the system says so.</span>
+          <span class="xs muted">On a roster verb — the orchestrator, or anything outside the pipeline. You edited a source and did not recompile, so Claude is reading the previous compile, silently: no error anywhere else in the system says so.</span>
         </div>
       </div>
 
       <div class="entry">
-        <div class="key"><div class="bullet bad">6</div><span class="sm">filled red, keeps its number</span></div>
+        <div class="key"><div class="bullet bad"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h7l-2 8 11-12h-7l2-8z"/></svg></div><span class="sm">filled red</span></div>
         <div class="stack" style="gap: 1px; flex: 1;">
           <div class="row" style="gap: 4.8px;"><span class="sm" style="font-weight: 600;">Never compiled</span><span class="badge" style="background: color-mix(in srgb, var(--bad) var(--wash), transparent); color: var(--bad);">never compiled</span></div>
-          <span class="xs muted">No artifact on disk. The stage will not load when the pipeline reaches it.</span>
+          <span class="xs muted">No artifact on disk. The verb will not load when something invokes it.</span>
         </div>
       </div>
 
@@ -95,7 +95,7 @@
         <div class="key"><div class="dot" style="background: var(--dot-ok); margin-left: 8px;"></div><span class="sm">small dot</span></div>
         <div class="stack" style="gap: 1px; flex: 1;">
           <span class="sm" style="font-weight: 600;">Health, for anything with no step number</span>
-          <span class="xs muted">Green in sync, amber source newer, red never compiled, grey internal. Same vocabulary, quieter, because there is no order to break.</span>
+          <span class="xs muted">Green in sync, amber source newer, red never compiled, grey internal. Same vocabulary as the rings, quieter, because there is no run order to break.</span>
         </div>
       </div>
 

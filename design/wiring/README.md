@@ -35,10 +35,17 @@ The pipeline, its stage order, all eighteen binding keys, the four `mr-board`
 binders and `stage-implement` genuinely having no slots are read from
 `~/.mattstack/repos/gitlab.com-acme-acme-dev/skills.jsonc`.
 
-The health states shown (`stage-plan` source-newer, `stage-self-review` never
-compiled) are **illustrative** — `rt skills check` was not run for the draft.
-Do not treat them as facts about the pack, and do not write tests that assert
-them.
+**Pipeline stages carry no health and no actions, and that is deliberate.** A
+stage compiles INTO the orchestrator rather than to an artifact of its own, so
+the payload has no `sourcePath`, `artifactPath` or verb for one, and `rt skills
+check` covers roster verbs only. Stage bullets are therefore neutral numbers,
+and the action cluster appears only on rows that genuinely have a source and an
+artifact — the orchestrator and everything outside the pipeline. A green ring
+or three buttons on a stage would be a claim nothing measured.
+
+The two health states shown (`work` source-newer, `review` never-compiled) are
+**illustrative** — `check` was not run for the draft. Do not treat them as facts
+about the pack, and do not write tests that assert them.
 
 Skill descriptions in `CompileDrawer` are rewritten neutral on purpose: the
 real ones carry employer identifiers and the canvas is hosted.
@@ -48,9 +55,10 @@ real ones carry employer identifiers and the canvas is hosted.
 1. **The order is the pipeline's execution order**, read from
    `pipelines.<workType>`. Never sorted by health, never reordered under the
    cursor.
-2. **A step number is never replaced by a health glyph.** A stage in trouble
+2. **A step number is never replaced by a health glyph.** A row in trouble
    still has to say where it runs; health is the bullet's colour plus the
-   badge plus the sub-line.
+   badge plus the sub-line. Stages never carry a health colour at all — see
+   above.
 3. **Slots are always open.** Verb → slot → fill is the wiring; it does not
    go behind a chevron.
 4. **Health indicates, it never groups.** No bands.

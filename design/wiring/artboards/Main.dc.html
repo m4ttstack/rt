@@ -135,6 +135,8 @@
           <span class="sm" style="font-weight: 600;">feature</span>
           <span class="sm muted">·</span>
           <span class="sm muted">8 stages</span>
+          <span class="sm muted">·</span>
+          <span class="xs muted">stages compile into the orchestrator, so they carry no artifact of their own to check</span>
           <div style="flex: 1;"></div>
           <span class="badge" style="background: color-mix(in srgb, var(--warn) var(--wash), transparent); color: var(--warn);">2 need attention</span>
         </div>
@@ -143,15 +145,16 @@
 
           <!-- The orchestrator itself: it has a slot, so it gets a row. -->
           <div class="tl-item">
-            <div class="tl-bullet ok"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h7l-2 8 11-12h-7l2-8z"/></svg></div>
+            <div class="tl-bullet warn"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.25" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h7l-2 8 11-12h-7l2-8z"/></svg></div>
             <div class="row" style="gap: 7.2px; align-items: flex-start;">
               <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
                 <div class="row" style="gap: 4.8px;">
                   <span style="font-weight: 600;">work</span>
                   <span class="sm muted truncate">mattstack:work</span>
                   <span class="badge-outline">orchestrator</span>
+                  <span class="badge" style="background: color-mix(in srgb, var(--warn) var(--wash), transparent); color: var(--warn);">source newer</span>
                 </div>
-                <span class="xs muted">reads the pipeline below and runs each stage in order</span>
+                <span class="xs muted">reads the pipeline below and runs each stage in order · SKILL.md on disk is older than its sources</span>
               </div>
               <div class="row" style="gap: 4.8px; flex: none;">
                 <button class="aicon" aria-label="Open source"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
@@ -172,18 +175,13 @@
 
           <!-- 1 -->
           <div class="tl-item">
-            <div class="tl-bullet ok">1</div>
+            <div class="tl-bullet">1</div>
             <div class="row" style="gap: 7.2px; align-items: flex-start;">
               <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
                 <div class="row" style="gap: 4.8px;">
                   <span style="font-weight: 600;">stage-provision</span>
                   <span class="sm muted truncate">mattstack:stage-provision</span>
                 </div>
-              </div>
-              <div class="row" style="gap: 4.8px; flex: none;">
-                <button class="aicon" aria-label="Open source"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
-                <button class="aicon" aria-label="Reveal artifact"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>
-                <button class="aicon" aria-label="Preview compile"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h7l-2 8 11-12h-7l2-8z"/></svg></button>
               </div>
             </div>
             <div class="slots">
@@ -198,20 +196,13 @@
 
           <!-- 2: drift, indicated on the row itself -->
           <div class="tl-item">
-            <div class="tl-bullet warn">2</div>
+            <div class="tl-bullet">2</div>
             <div class="row" style="gap: 7.2px; align-items: flex-start;">
               <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
                 <div class="row" style="gap: 4.8px;">
                   <span style="font-weight: 600;">stage-plan</span>
                   <span class="sm muted truncate">mattstack:stage-plan</span>
-                  <span class="badge" style="background: color-mix(in srgb, var(--warn) var(--wash), transparent); color: var(--warn);">source newer</span>
                 </div>
-                <span class="xs muted">SKILL.md on disk is older than its sources — Claude is reading the previous compile</span>
-              </div>
-              <div class="row" style="gap: 4.8px; flex: none;">
-                <button class="aicon" aria-label="Open source"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
-                <button class="aicon" aria-label="Reveal artifact"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>
-                <button class="aicon on" aria-label="Preview compile"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h7l-2 8 11-12h-7l2-8z"/></svg></button>
               </div>
             </div>
             <div class="slots">
@@ -220,25 +211,19 @@
                 <span class="slot-contract">work-policy@1</span>
                 <svg class="arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
                 <a href="#" class="sm truncate" style="flex: 1;">demo:work-policy</a>
-                <span class="xs" style="color: var(--warn);">edited 2h ago</span>
               </div>
             </div>
           </div>
 
           <!-- 3 -->
           <div class="tl-item">
-            <div class="tl-bullet ok">3</div>
+            <div class="tl-bullet">3</div>
             <div class="row" style="gap: 7.2px; align-items: flex-start;">
               <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
                 <div class="row" style="gap: 4.8px;">
                   <span style="font-weight: 600;">stage-gates</span>
                   <span class="sm muted truncate">mattstack:stage-gates</span>
                 </div>
-              </div>
-              <div class="row" style="gap: 4.8px; flex: none;">
-                <button class="aicon" aria-label="Open source"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
-                <button class="aicon" aria-label="Reveal artifact"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>
-                <button class="aicon" aria-label="Preview compile"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h7l-2 8 11-12h-7l2-8z"/></svg></button>
               </div>
             </div>
             <div class="slots">
@@ -253,18 +238,13 @@
 
           <!-- 4 -->
           <div class="tl-item">
-            <div class="tl-bullet ok">4</div>
+            <div class="tl-bullet">4</div>
             <div class="row" style="gap: 7.2px; align-items: flex-start;">
               <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
                 <div class="row" style="gap: 4.8px;">
                   <span style="font-weight: 600;">stage-evidence</span>
                   <span class="sm muted truncate">mattstack:stage-evidence</span>
                 </div>
-              </div>
-              <div class="row" style="gap: 4.8px; flex: none;">
-                <button class="aicon" aria-label="Open source"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
-                <button class="aicon" aria-label="Reveal artifact"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>
-                <button class="aicon" aria-label="Preview compile"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h7l-2 8 11-12h-7l2-8z"/></svg></button>
               </div>
             </div>
             <div class="slots">
@@ -279,7 +259,7 @@
 
           <!-- 5: a real stage with nothing wired -- stated, not hidden -->
           <div class="tl-item">
-            <div class="tl-bullet ok">5</div>
+            <div class="tl-bullet">5</div>
             <div class="row" style="gap: 7.2px; align-items: flex-start;">
               <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
                 <div class="row" style="gap: 4.8px;">
@@ -288,30 +268,18 @@
                 </div>
                 <span class="xs muted">no slots — this stage takes nothing from the pack</span>
               </div>
-              <div class="row" style="gap: 4.8px; flex: none;">
-                <button class="aicon" aria-label="Open source"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
-                <button class="aicon" aria-label="Reveal artifact"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>
-                <button class="aicon" aria-label="Preview compile"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h7l-2 8 11-12h-7l2-8z"/></svg></button>
-              </div>
             </div>
           </div>
 
           <!-- 6: never compiled -->
           <div class="tl-item">
-            <div class="tl-bullet bad">6</div>
+            <div class="tl-bullet">6</div>
             <div class="row" style="gap: 7.2px; align-items: flex-start;">
               <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
                 <div class="row" style="gap: 4.8px;">
                   <span style="font-weight: 600;">stage-self-review</span>
                   <span class="sm muted truncate">mattstack:stage-self-review</span>
-                  <span class="badge" style="background: color-mix(in srgb, var(--bad) var(--wash), transparent); color: var(--bad);">never compiled</span>
                 </div>
-                <span class="xs muted">no artifact on disk — this stage will not load when the pipeline reaches it</span>
-              </div>
-              <div class="row" style="gap: 4.8px; flex: none;">
-                <button class="aicon" aria-label="Open source"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
-                <button class="aicon" aria-label="Reveal artifact"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>
-                <button class="aicon" aria-label="Preview compile"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h7l-2 8 11-12h-7l2-8z"/></svg></button>
               </div>
             </div>
             <div class="slots">
@@ -326,18 +294,13 @@
 
           <!-- 7 -->
           <div class="tl-item">
-            <div class="tl-bullet ok">7</div>
+            <div class="tl-bullet">7</div>
             <div class="row" style="gap: 7.2px; align-items: flex-start;">
               <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
                 <div class="row" style="gap: 4.8px;">
                   <span style="font-weight: 600;">stage-ship</span>
                   <span class="sm muted truncate">mattstack:stage-ship</span>
                 </div>
-              </div>
-              <div class="row" style="gap: 4.8px; flex: none;">
-                <button class="aicon" aria-label="Open source"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
-                <button class="aicon" aria-label="Reveal artifact"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>
-                <button class="aicon" aria-label="Preview compile"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h7l-2 8 11-12h-7l2-8z"/></svg></button>
               </div>
             </div>
             <div class="slots">
@@ -353,18 +316,13 @@
 
           <!-- 8 -->
           <div class="tl-item">
-            <div class="tl-bullet ok">8</div>
+            <div class="tl-bullet">8</div>
             <div class="row" style="gap: 7.2px; align-items: flex-start;">
               <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
                 <div class="row" style="gap: 4.8px;">
                   <span style="font-weight: 600;">stage-watch-ci</span>
                   <span class="sm muted truncate">mattstack:stage-watch-ci</span>
                 </div>
-              </div>
-              <div class="row" style="gap: 4.8px; flex: none;">
-                <button class="aicon" aria-label="Open source"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg></button>
-                <button class="aicon" aria-label="Reveal artifact"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg></button>
-                <button class="aicon" aria-label="Preview compile"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14h7l-2 8 11-12h-7l2-8z"/></svg></button>
               </div>
             </div>
             <div class="slots">
@@ -412,9 +370,10 @@
 
               <div class="stack" style="gap: 1px;">
                 <div class="row" style="gap: 4.8px;">
-                  <div style="width: 6px; height: 6px; border-radius: 50%; background: var(--dot-ok); flex: none;"></div>
+                  <div style="width: 6px; height: 6px; border-radius: 50%; background: var(--dot-bad); flex: none;"></div>
                   <span style="font-weight: 600;">review</span>
                   <span class="sm muted truncate">mattstack:review</span>
+                  <span class="badge" style="background: color-mix(in srgb, var(--bad) var(--wash), transparent); color: var(--bad);">never compiled</span>
                 </div>
                 <div class="slots">
                   <div class="slot"><span class="slot-name">criteria</span><span class="slot-contract">review-criteria@1</span><svg class="arrow" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg><a href="#" class="sm truncate" style="flex: 1;">demo:review-criteria</a><span class="badge-outline">3 sites</span></div>
