@@ -12,68 +12,9 @@ import {
 } from '@ui/core';
 import { useSchemeColors } from '@ui/hooks';
 import { Icons } from '@ui/icons';
-import type { BindingSite, SpineComposition } from './outline';
+import type { BindingSite, SkillsComposition } from './outline';
 import { invertBindings, suffixOf } from './outline';
 import { SOFT_RULE } from './SlotRow';
-
-export interface RebindSlot {
-  name: string;
-  boundTo: string | null;
-}
-export interface RebindVerb {
-  name: string;
-  engineRef: string | null;
-  slots: RebindSlot[];
-}
-export interface RebindFill {
-  binding: string;
-}
-/** The narrow slice of a pack's composition this confirm step needs: which
-    fill each roster verb's slot is bound to, and every fill that exists to
-    rebind onto. Not `SpineComposition` itself -- that type carries fields
-    (`provides`, `sourcePath`, engine metadata, ...) no caller of this
-    component has assembled yet, since it is not wired into the map in this
-    task. */
-export interface RebindComposition {
-  verbs: RebindVerb[];
-  fills: RebindFill[];
-}
-
-type Binder = NonNullable<SpineComposition['binders']>[number];
-type Fill = SpineComposition['fills'][number];
-
-/**
- * Adapts `RebindComposition` into the shape `invertBindings` reads, so this
- * confirm step gets the SAME inversion `InverseIndex` renders rather than a
- * second implementation of it. `invertBindings` only ever reads
- * `fills[].binding` and `binders[].slots[].boundTo` -- the fields it never
- * touches (`provides`, `sourcePath`, `registered`) are filled with
- * placeholders here rather than left to a cast, so nothing downstream can
- * mistake a placeholder for data this component was actually given.
- */
-function toSpineComposition(composition: RebindComposition): SpineComposition {
-  const fills: Fill[] = composition.fills.map(f => ({
-    binding: f.binding,
-    provides: '',
-    sourcePath: '',
-    registered: true,
-  }));
-
-  const binders: Binder[] = composition.verbs
-    .filter(
-      (v): v is RebindVerb & { engineRef: string } => v.engineRef !== null
-    )
-    .map(v => ({
-      ref: v.engineRef,
-      verb: v.name,
-      kind: 'verb' as const,
-      slots: v.slots.filter(
-        (s): s is RebindSlot & { boundTo: string } => s.boundTo !== null
-      ),
-    }));
-
-  return { verbs: [], fills, binders };
-}
 
 /** One row of the blast radius: the same facts `InverseIndex`'s site row
     shows, at confirm-step scale rather than drawer scale. */
@@ -178,16 +119,18 @@ export interface RebindProps {
   /** The roster verb whose slot is being rebound. */
   verb: string;
   slot: string;
-  composition: RebindComposition;
-  /** The manifest's real path, when a caller has it. Defaults to the
-      registered-repo convention the supplement names -- a best guess this
-      component states plainly rather than leaving the edit unaddressed. */
-  manifestPath?: string;
-  /** Fired with the manifest path when "Open manifest" is pressed. This
-      component never resolves or opens the file itself: it does not know
-      the repo's real absolute path, only the pack name. */
+  /** The real payload `/api/skills/composition` answers -- the same object
+      `WiringMap`/`InverseIndex` read, not a narrowed copy. The blast radius
+      has to invert the pack's FULL binder set (roster verbs are only a
+      fraction of it -- pipeline stages and other plugins' skills bind fills
+      too), so this component cannot work from anything narrower. */
+  composition: SkillsComposition;
+  /** Fired with the manifest path when "Open manifest" is pressed. Disabled
+      whenever `composition.manifestPath` is null or absent -- there is
+      nothing to open. */
   onOpenManifest?: (manifestPath: string) => void;
-  /** Fired with the edit text when "Copy" is pressed. */
+  /** Fired with the edit text when "Copy" is pressed. Disabled under the
+      same condition as `onOpenManifest`. */
   onCopy?: (edit: string) => void;
   onClose?: () => void;
 }
@@ -204,7 +147,6 @@ export function Rebind({
   verb,
   slot,
   composition,
-  manifestPath,
   onOpenManifest,
   onCopy,
   onClose,
@@ -226,8 +168,13 @@ export function Rebind({
   );
   const [confirmed, setConfirmed] = useState(false);
 
+  // The full `composition` goes straight to `invertBindings` -- the same
+  // inversion `InverseIndex` renders. A roster-only reconstruction here
+  // would undercount: the roster is a fraction of the manifest's binding
+  // keys, and a fill bound only by a stage would wrongly read "nothing else
+  // binds it."
   const bindingSites = useMemo(
-    () => invertBindings(toSpineComposition(composition)),
+    () => invertBindings(composition),
     [composition]
   );
 
@@ -241,11 +188,15 @@ export function Rebind({
   const outgoingSites = otherSites(currentBinding);
   const incomingSites = otherSites(target);
 
-  const resolvedManifestPath =
-    manifestPath ?? `~/.mattstack/repos/${pack}/skills.jsonc`;
+  // `manifestPath` is optional on the wire (an rt older than the field
+  // answers without it) and nullable (a rosterless pack). Both collapse to
+  // "nothing to show" -- never a guessed path.
+  const manifestPath = composition.manifestPath ?? null;
   const bindingsKey = `bindings.${verb}.${slot}`;
   const compileCommand = `rt skills compile --pack ${pack} --verb ${verb}`;
-  const editText = `${resolvedManifestPath}\n  ${bindingsKey}\n    "${currentBinding ?? ''}"\n  → "${target ?? ''}"\n\n${compileCommand}`;
+  const editText = manifestPath
+    ? `${manifestPath}\n  ${bindingsKey}\n    "${currentBinding ?? ''}"\n  → "${target ?? ''}"\n\n${compileCommand}`
+    : `${bindingsKey}\n    "${currentBinding ?? ''}"\n  → "${target ?? ''}"\n\n${compileCommand}`;
 
   return (
     <Stack gap="md" data-testid="rebind">
@@ -356,8 +307,17 @@ export function Rebind({
               </Group>
               <Text size="xs" c={text.muted}>
                 rt has no verb that writes a binding yet, so the console does
-                not write one either. Edit the manifest, then recompile:
+                not write one either.
+                {manifestPath
+                  ? ' Edit the manifest, then recompile:'
+                  : ' Recompile after making the edit below:'}
               </Text>
+              {!manifestPath && (
+                <Text size="xs" c={text.muted}>
+                  Manifest path not available — this rt has not reported one for{' '}
+                  {pack}.
+                </Text>
+              )}
               <Paper
                 radius="sm"
                 p="xs"
@@ -375,14 +335,16 @@ export function Rebind({
                 <Button
                   size="xs"
                   variant="default"
-                  onClick={() => onOpenManifest?.(resolvedManifestPath)}
+                  disabled={!manifestPath}
+                  onClick={() => manifestPath && onOpenManifest?.(manifestPath)}
                 >
                   Open manifest
                 </Button>
                 <Button
                   size="xs"
                   variant="default"
-                  onClick={() => onCopy?.(editText)}
+                  disabled={!manifestPath}
+                  onClick={() => manifestPath && onCopy?.(editText)}
                 >
                   Copy
                 </Button>

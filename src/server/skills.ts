@@ -63,6 +63,11 @@ interface SkillsCompositionResponse {
       and the client has to be able to tell that apart from a pack with no
       pipelines. */
   pipelines?: Record<string, string[]>;
+  /** The manifest's absolute path on disk, or `null` for a rosterless pack.
+      Optional because an rt older than this field answers without it --
+      absent and null both mean "no path to show," and neither is a path a
+      caller may fabricate. */
+  manifestPath?: string | null;
 }
 
 interface SkillsCheckVerbRow {

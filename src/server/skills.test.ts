@@ -73,10 +73,11 @@ describe('skills routes', () => {
     await expect(res.json()).resolves.toEqual(payload);
   });
 
-  it('round-trips a composition payload with binders and pipelines intact', async () => {
+  it('round-trips a composition payload with binders, pipelines, and manifestPath intact', async () => {
     const payload = {
       pack: 'demo',
       packDir: '/p',
+      manifestPath: '/repos/gitlab.com-acme-acme-dev/skills.jsonc',
       verbs: [
         {
           name: 'work',
