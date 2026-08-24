@@ -88,6 +88,27 @@ interface SkillsSurfaceResponse {
   rows: SkillsSurfaceRow[];
 }
 
+/** One `rt skills surface set <name...> --public|--internal` invocation and
+    what it did. `ok: false` on the direction that failed; a direction never
+    attempted (the sequence stopped before it) has no entry at all. */
+interface SkillsSurfaceApplyStep {
+  direction: 'public' | 'internal';
+  names: string[];
+  ok: boolean;
+  error?: string;
+}
+
+interface SkillsSurfaceApplyResponse {
+  pack: string;
+  /** In attempt order -- at most two entries, since a delta is bounded to
+      one `--public` call and one `--internal` call. */
+  steps: SkillsSurfaceApplyStep[];
+  /** Re-read from disk after the attempt, whatever it landed at -- the
+      honest partial-failure answer, not the roster this route validated
+      the request against before writing anything. */
+  rows: SkillsSurfaceRow[];
+}
+
 interface SkillsCompilePreviewResponse {
   content: string;
 }
@@ -318,6 +339,31 @@ const packQuery = validator('query', (value): { pack?: string } => {
   return { pack: typeof v?.pack === 'string' ? v.pack : undefined };
 });
 
+/** A malformed `toPublic`/`toInternal` (missing, or not an array of
+    strings) comes back `undefined` rather than coerced -- the route treats
+    that as a 400, never as an empty delta that would silently no-op. */
+function stringArray(value: unknown): string[] | undefined {
+  return Array.isArray(value) && value.every(v => typeof v === 'string')
+    ? (value as string[])
+    : undefined;
+}
+
+const surfaceApplyBody = validator(
+  'json',
+  (value): { pack?: string; toPublic?: string[]; toInternal?: string[] } => {
+    const v = value as {
+      pack?: unknown;
+      toPublic?: unknown;
+      toInternal?: unknown;
+    };
+    return {
+      pack: typeof v?.pack === 'string' ? v.pack : undefined,
+      toPublic: stringArray(v?.toPublic),
+      toInternal: stringArray(v?.toInternal),
+    };
+  }
+);
+
 const compileQuery = validator(
   'query',
   (value): { pack?: string; verb?: string } => {
@@ -481,6 +527,134 @@ export function mountSkills(
           );
         }
         return c.json(payload as SkillsSurfaceResponse, 200);
+      } catch (err) {
+        if (err instanceof RtNotFoundError) {
+          return c.json({ error: err.message }, 503);
+        }
+        return c.json({ error: (err as Error).message }, 502);
+      }
+    })
+    .post('/api/skills/surface/apply', surfaceApplyBody, async c => {
+      const { pack, toPublic, toInternal } = c.req.valid('json');
+      if (!pack) return c.json({ error: 'pack is required' }, 400);
+      if (toPublic === undefined || toInternal === undefined) {
+        return c.json(
+          { error: 'toPublic and toInternal must be arrays of strings' },
+          400
+        );
+      }
+      if (toPublic.length === 0 && toInternal.length === 0) {
+        return c.json({ error: 'delta is empty' }, 400);
+      }
+
+      const allNames = [...toPublic, ...toInternal];
+      for (const name of allNames) {
+        if (!VERB_NAME.test(name)) {
+          return c.json({ error: `invalid name: ${name}` }, 400);
+        }
+      }
+      const publicSet = new Set(toPublic);
+      const bothDirections = toInternal.find(name => publicSet.has(name));
+      if (bothDirections) {
+        return c.json(
+          { error: `"${bothDirections}" is staged in both directions` },
+          400
+        );
+      }
+
+      try {
+        // Never `cachedRun` here: this is about to write, so the roster it
+        // validates against -- and the roster it reports back -- must be
+        // what is really on disk right now, not up to CACHE_TTL_MS stale.
+        const before = await runRt([
+          'skills',
+          'surface',
+          'list',
+          '--pack',
+          pack,
+          '--json',
+        ]);
+        const beforePayload = parseJsonPayload(before.stdout);
+        if (beforePayload === undefined) {
+          return c.json(
+            { error: before.stderr.trim() || 'rt produced no output' },
+            502
+          );
+        }
+        const roster = beforePayload as SkillsSurfaceResponse;
+        const known = new Set(roster.rows.map(row => row.name));
+        // Checked against the roster BEFORE any name reaches an argv -- an
+        // unknown name is rejected here, never handed to a spawn.
+        const unknown = allNames.find(name => !known.has(name));
+        if (unknown) {
+          return c.json(
+            { error: `"${unknown}" is not in ${pack}'s surface roster` },
+            400
+          );
+        }
+
+        const plan: { direction: 'public' | 'internal'; names: string[] }[] =
+          [];
+        if (toPublic.length > 0)
+          plan.push({ direction: 'public', names: toPublic });
+        if (toInternal.length > 0)
+          plan.push({ direction: 'internal', names: toInternal });
+
+        // Sequential, never concurrent: both directions write surface.jsonc
+        // and run git in the same pack directory. Stops at the first
+        // failure so a partial result is reported honestly rather than
+        // papered over by a second write racing the first.
+        const steps: SkillsSurfaceApplyStep[] = [];
+        for (const step of plan) {
+          const run = await runRt([
+            'skills',
+            'surface',
+            'set',
+            ...step.names,
+            `--${step.direction}`,
+          ]);
+          const ok = run.code === 0;
+          steps.push({
+            direction: step.direction,
+            names: step.names,
+            ok,
+            error: ok ? undefined : run.stderr.trim() || 'rt exited nonzero',
+          });
+          if (!ok) break;
+        }
+
+        // A cached GET for this pack taken moments ago (including the
+        // validation read above, on a cache MISS it would have primed) must
+        // not go on answering with the pre-write roster -- an apply is the
+        // one action on this surface that invalidates it.
+        cache.delete(
+          JSON.stringify([
+            'skills',
+            'surface',
+            'list',
+            '--pack',
+            pack,
+            '--json',
+          ])
+        );
+
+        const after = await runRt([
+          'skills',
+          'surface',
+          'list',
+          '--pack',
+          pack,
+          '--json',
+        ]);
+        const afterPayload = parseJsonPayload(after.stdout);
+        const rows =
+          afterPayload !== undefined
+            ? (afterPayload as SkillsSurfaceResponse).rows
+            : roster.rows;
+
+        const allOk = steps.every(step => step.ok);
+        const response: SkillsSurfaceApplyResponse = { pack, steps, rows };
+        return c.json(response, allOk ? 200 : 502);
       } catch (err) {
         if (err instanceof RtNotFoundError) {
           return c.json({ error: err.message }, 503);

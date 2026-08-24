@@ -10,10 +10,11 @@ import {
 } from './outline';
 
 type SkillsPacks = InferResponseType<typeof client.api.skills.packs.$get, 200>;
-type SkillsSurface = InferResponseType<
+export type SkillsSurface = InferResponseType<
   typeof client.api.skills.surface.$get,
   200
 >;
+export type SkillsSurfaceRow = SkillsSurface['rows'][number];
 type SkillsCompilePreview = InferResponseType<
   typeof client.api.skills.compile.$get,
   200

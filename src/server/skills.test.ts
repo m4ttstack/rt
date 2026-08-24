@@ -814,3 +814,323 @@ describe('skills history route: quoted status paths', () => {
     });
   });
 });
+
+type RtResult = { code: number; stdout: string; stderr: string };
+
+/** Dispatches on argv, like `fakeGit` above -- the apply route spawns rt
+    more than once per request (a roster read, one or two `set`s, a final
+    roster read), and each needs its own answer. */
+function fakeRtHandler(handler: (argv: string[]) => RtResult) {
+  const calls: string[][] = [];
+  const run = vi.fn(async (argv: string[]) => {
+    calls.push(argv);
+    return handler(argv);
+  });
+  return { run, calls };
+}
+
+function surfaceList(rows: { name: string; kind: string; status: string }[]) {
+  return JSON.stringify({ pack: 'demo', packDir: '/p', rows });
+}
+
+const isList = (argv: string[]) => argv.includes('list');
+const isSet = (argv: string[]) => argv.includes('set');
+
+async function postApply(
+  app: ReturnType<typeof mountSkills>,
+  body: Record<string, unknown>
+) {
+  return app.request('/api/skills/surface/apply', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+describe('skills surface apply route', () => {
+  it('requires pack and a non-empty delta before touching rt', async () => {
+    const rt = fakeRtHandler(() => ({ code: 0, stdout: '', stderr: '' }));
+    const app = mountSkills(new Hono(), rt.run);
+
+    const noPack = await postApply(app, { toPublic: ['x'], toInternal: [] });
+    expect(noPack.status).toBe(400);
+
+    const empty = await postApply(app, {
+      pack: 'demo',
+      toPublic: [],
+      toInternal: [],
+    });
+    expect(empty.status).toBe(400);
+
+    expect(rt.run).not.toHaveBeenCalled();
+  });
+
+  it('rejects a name shaped like a git pathspec before any spawn', async () => {
+    const rt = fakeRtHandler(() => ({ code: 0, stdout: '', stderr: '' }));
+    const app = mountSkills(new Hono(), rt.run);
+
+    const res = await postApply(app, {
+      pack: 'demo',
+      toPublic: ['../escape'],
+      toInternal: [],
+    });
+
+    expect(res.status).toBe(400);
+    expect(rt.run).not.toHaveBeenCalled();
+  });
+
+  it('rejects a name staged in both directions before any spawn', async () => {
+    const rt = fakeRtHandler(() => ({ code: 0, stdout: '', stderr: '' }));
+    const app = mountSkills(new Hono(), rt.run);
+
+    const res = await postApply(app, {
+      pack: 'demo',
+      toPublic: ['watch-ci'],
+      toInternal: ['watch-ci'],
+    });
+
+    expect(res.status).toBe(400);
+    expect(rt.run).not.toHaveBeenCalled();
+  });
+
+  it('validates every name against the live roster before any set spawns -- FALSIFIED below', async () => {
+    const rt = fakeRtHandler(argv => {
+      if (isList(argv)) {
+        return {
+          code: 0,
+          stdout: surfaceList([
+            { name: 'watch-ci', kind: 'compiled', status: 'internal' },
+          ]),
+          stderr: '',
+        };
+      }
+      return { code: 0, stdout: 'ghost: public\n', stderr: '' };
+    });
+    const app = mountSkills(new Hono(), rt.run);
+
+    const res = await postApply(app, {
+      pack: 'demo',
+      toPublic: ['ghost'],
+      toInternal: [],
+    });
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      error: expect.stringContaining('ghost'),
+    });
+    // The unknown name never reached an argv: the only rt call made is the
+    // roster read used to reject it.
+    expect(rt.calls).toHaveLength(1);
+    expect(rt.calls.some(isSet)).toBe(false);
+  });
+
+  it('applies a single direction and reports rows re-read from disk', async () => {
+    const rt = fakeRtHandler(argv => {
+      if (isList(argv)) {
+        return {
+          code: 0,
+          stdout: surfaceList([
+            { name: 'watch-ci', kind: 'compiled', status: 'public' },
+          ]),
+          stderr: '',
+        };
+      }
+      return { code: 0, stdout: 'watch-ci: public\n', stderr: '' };
+    });
+    const app = mountSkills(new Hono(), rt.run);
+
+    const res = await postApply(app, {
+      pack: 'demo',
+      toPublic: ['watch-ci'],
+      toInternal: [],
+    });
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({
+      pack: 'demo',
+      steps: [{ direction: 'public', names: ['watch-ci'], ok: true }],
+      rows: [{ name: 'watch-ci', kind: 'compiled', status: 'public' }],
+    });
+    expect(rt.calls.find(isSet)).toEqual([
+      'skills',
+      'surface',
+      'set',
+      'watch-ci',
+      '--public',
+    ]);
+  });
+
+  it('sends every name going one direction in ONE set call, not one per name', async () => {
+    const rt = fakeRtHandler(argv => {
+      if (isList(argv))
+        return {
+          code: 0,
+          stdout: surfaceList([
+            { name: 'a', kind: 'hand-authored', status: 'internal' },
+            { name: 'b', kind: 'hand-authored', status: 'internal' },
+          ]),
+          stderr: '',
+        };
+      return { code: 0, stdout: 'ok\n', stderr: '' };
+    });
+    const app = mountSkills(new Hono(), rt.run);
+
+    await postApply(app, {
+      pack: 'demo',
+      toPublic: ['a', 'b'],
+      toInternal: [],
+    });
+
+    const setCalls = rt.calls.filter(isSet);
+    expect(setCalls).toHaveLength(1);
+    expect(setCalls[0]).toEqual([
+      'skills',
+      'surface',
+      'set',
+      'a',
+      'b',
+      '--public',
+    ]);
+  });
+
+  it('runs a bidirectional delta sequentially, public then internal', async () => {
+    const rt = fakeRtHandler(argv => {
+      if (isList(argv))
+        return {
+          code: 0,
+          stdout: surfaceList([
+            { name: 'a', kind: 'compiled', status: 'public' },
+            { name: 'b', kind: 'compiled', status: 'internal' },
+          ]),
+          stderr: '',
+        };
+      return { code: 0, stdout: 'ok\n', stderr: '' };
+    });
+    const app = mountSkills(new Hono(), rt.run);
+
+    const res = await postApply(app, {
+      pack: 'demo',
+      toPublic: ['a'],
+      toInternal: ['b'],
+    });
+
+    expect(res.status).toBe(200);
+    const setCalls = rt.calls.filter(isSet);
+    expect(setCalls).toEqual([
+      ['skills', 'surface', 'set', 'a', '--public'],
+      ['skills', 'surface', 'set', 'b', '--internal'],
+    ]);
+    await expect(res.json()).resolves.toMatchObject({
+      steps: [
+        { direction: 'public', names: ['a'], ok: true },
+        { direction: 'internal', names: ['b'], ok: true },
+      ],
+    });
+  });
+
+  it('stops at the first failure and reports which direction landed, which did not', async () => {
+    const rt = fakeRtHandler(argv => {
+      if (isList(argv))
+        return {
+          code: 0,
+          stdout: surfaceList([
+            { name: 'a', kind: 'compiled', status: 'public' },
+            { name: 'b', kind: 'compiled', status: 'internal' },
+          ]),
+          stderr: '',
+        };
+      if (isSet(argv) && argv.includes('--public'))
+        return { code: 0, stdout: 'a: public\n', stderr: '' };
+      return { code: 1, stdout: '', stderr: 'rt skills: git mv failed' };
+    });
+    const app = mountSkills(new Hono(), rt.run);
+
+    const res = await postApply(app, {
+      pack: 'demo',
+      toPublic: ['a'],
+      toInternal: ['b'],
+    });
+
+    expect(res.status).toBe(502);
+    await expect(res.json()).resolves.toMatchObject({
+      steps: [
+        { direction: 'public', names: ['a'], ok: true },
+        {
+          direction: 'internal',
+          names: ['b'],
+          ok: false,
+          error: expect.stringContaining('git mv failed'),
+        },
+      ],
+    });
+    // Exactly two set calls: public landed, internal was attempted and
+    // failed -- there is no third attempt to retry it.
+    expect(rt.calls.filter(isSet)).toHaveLength(2);
+  });
+
+  it('never attempts the second direction once the first has failed -- FALSIFIED below', async () => {
+    const rt = fakeRtHandler(argv => {
+      if (isList(argv))
+        return {
+          code: 0,
+          stdout: surfaceList([
+            { name: 'a', kind: 'compiled', status: 'public' },
+            { name: 'b', kind: 'compiled', status: 'internal' },
+          ]),
+          stderr: '',
+        };
+      if (isSet(argv) && argv.includes('--public'))
+        return { code: 1, stdout: '', stderr: 'rt skills: compile failed' };
+      return { code: 0, stdout: 'b: internal\n', stderr: '' };
+    });
+    const app = mountSkills(new Hono(), rt.run);
+
+    const res = await postApply(app, {
+      pack: 'demo',
+      toPublic: ['a'],
+      toInternal: ['b'],
+    });
+
+    expect(res.status).toBe(502);
+    await expect(res.json()).resolves.toMatchObject({
+      steps: [{ direction: 'public', ok: false }],
+    });
+    expect(rt.calls.filter(isSet)).toHaveLength(1);
+  });
+
+  it('invalidates the shared surface-list cache so a GET right after apply is never pre-write', async () => {
+    let writesApplied = false;
+    const rt = fakeRtHandler(argv => {
+      if (isList(argv)) {
+        return {
+          code: 0,
+          stdout: surfaceList([
+            {
+              name: 'watch-ci',
+              kind: 'compiled',
+              status: writesApplied ? 'public' : 'internal',
+            },
+          ]),
+          stderr: '',
+        };
+      }
+      writesApplied = true;
+      return { code: 0, stdout: 'watch-ci: public\n', stderr: '' };
+    });
+    const app = mountSkills(new Hono(), rt.run);
+
+    // Primes the shared cache with the PRE-write roster.
+    await app.request('/api/skills/surface?pack=demo');
+
+    await postApply(app, {
+      pack: 'demo',
+      toPublic: ['watch-ci'],
+      toInternal: [],
+    });
+
+    const after = await app.request('/api/skills/surface?pack=demo');
+    await expect(after.json()).resolves.toMatchObject({
+      rows: [{ name: 'watch-ci', status: 'public' }],
+    });
+  });
+});
