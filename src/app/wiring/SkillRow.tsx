@@ -31,6 +31,9 @@ function healthLines(entry: SpineEntry): string[] {
 
   if (entry.kind === 'orchestrator') {
     lines.push('reads the pipeline below and runs each stage in order');
+    lines.push(
+      'rt skills check covers roster verbs, so the numbered rows below state no health — bare is unmeasured there, not healthy'
+    );
   }
   if (entry.external) {
     lines.push("binds this pack's fills; nothing in the roster names these");
@@ -191,6 +194,7 @@ export function SkillRow({
             {entry.kind === 'outside' &&
               !entry.external &&
               !entry.invocable && <QuietBadge>internal</QuietBadge>}
+            {entry.unwired && <QuietBadge>unwired</QuietBadge>}
             {entry.sameWiringAsStep !== undefined && (
               <QuietBadge>
                 same wiring as stage {entry.sameWiringAsStep}

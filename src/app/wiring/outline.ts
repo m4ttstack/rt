@@ -82,6 +82,10 @@ export interface SpineEntry {
   invocable: boolean;
   /** A binder belonging to another plugin's roster, not this pack's. */
   external: boolean;
+  /** A roster verb no binder names. It binds nothing, so the manifest never
+      mentions it and the pipeline never reaches it -- but it still compiles
+      to an artifact `check` covers, so it can drift. */
+  unwired: boolean;
   sourcePath: string | null;
   artifactPath: string | null;
   health: WiringHealth;
@@ -161,6 +165,17 @@ function wiringSignature(slots: { name: string; boundTo: string | null }[]) {
     .map(s => `${s.name}=${s.boundTo ?? ''}`)
     .sort()
     .join('|');
+}
+
+/** Stated where a reader would otherwise be looking at an empty row. */
+function noSlotsNote(
+  kind: SpineEntryKind,
+  slots: SlotOutlineNode[]
+): string | undefined {
+  if (slots.length > 0) return undefined;
+  return kind === 'stage'
+    ? 'no slots — this stage takes nothing from the pack'
+    : 'no slots — this skill takes nothing from the pack';
 }
 
 function needsAttention(entry: SpineEntry): boolean {
@@ -284,18 +299,14 @@ export function buildSpine(
       step,
       invocable: verb?.public ?? false,
       external: false,
+      unwired: false,
       sourcePath: verb?.sourcePath ?? null,
       artifactPath: verb?.artifactPath ?? null,
       health: healthFromStatus(checkRow?.status),
       engineError: verb?.engineError,
       staleFiles: checkRow?.staleFiles ?? [],
       orphanFiles: checkRow?.orphanFiles ?? [],
-      note:
-        slots.length === 0
-          ? kind === 'stage'
-            ? 'no slots — this stage takes nothing from the pack'
-            : 'no slots — this skill takes nothing from the pack'
-          : undefined,
+      note: noSlotsNote(kind, slots),
       slots,
     };
   }
@@ -346,6 +357,7 @@ export function buildSpine(
           step: null,
           invocable: false,
           external: true,
+          unwired: false,
           sourcePath: null,
           artifactPath: null,
           health: 'unknown',
@@ -374,6 +386,42 @@ export function buildSpine(
     const sameStep = stageStepBySignature.get(wiringSignature(entry.slots));
     if (sameStep !== undefined) entry.sameWiringAsStep = sameStep;
     outside.push(entry);
+  }
+
+  // Every roster verb reaches a row. rt emits no binder for a verb that binds
+  // nothing, so such a verb is named by neither `binders[]` nor the pipeline
+  // and would otherwise render nowhere -- while `check` still reports its
+  // drift, which is the exact thing this surface exists to surface.
+  const placedVerbs = new Set(
+    [orchestrator, ...stages, ...outside]
+      .map(entry => entry?.verb)
+      .filter((name): name is string => typeof name === 'string')
+  );
+
+  for (const rosterVerb of composition.verbs) {
+    if (placedVerbs.has(rosterVerb.name)) continue;
+    const checkRow = checkByName.get(rosterVerb.name);
+    const slots = slotsFor(rosterVerb, undefined);
+
+    outside.push({
+      kind: 'outside',
+      key: rosterVerb.engineRef ?? `verb:${rosterVerb.name}`,
+      label: rosterVerb.name,
+      ref: rosterVerb.engineRef,
+      verb: rosterVerb.name,
+      step: null,
+      invocable: rosterVerb.public,
+      external: false,
+      unwired: true,
+      sourcePath: rosterVerb.sourcePath,
+      artifactPath: rosterVerb.artifactPath,
+      health: healthFromStatus(checkRow?.status),
+      engineError: rosterVerb.engineError,
+      staleFiles: checkRow?.staleFiles ?? [],
+      orphanFiles: checkRow?.orphanFiles ?? [],
+      note: noSlotsNote('outside', slots),
+      slots,
+    });
   }
 
   const orphans: OrphanFillEntry[] = composition.fills

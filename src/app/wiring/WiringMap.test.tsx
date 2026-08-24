@@ -89,6 +89,19 @@ const COMPOSITION = {
         },
       ],
     },
+    // No binder names it and no pipeline reaches it, which is exactly how rt
+    // reports a roster verb that binds nothing.
+    {
+      name: 'rebase-worktree',
+      engine: 'rebase-worktree',
+      engineRef: 'mattstack:rebase-worktree',
+      plugin: 'mattstack',
+      description: 'rebase a worktree',
+      public: true,
+      sourcePath: '/plugins/mattstack/skills/rebase-worktree/SKILL.md',
+      artifactPath: '/p/skills/rebase-worktree',
+      slots: [],
+    },
   ],
   fills: [
     {
@@ -166,6 +179,12 @@ const CHECK = {
       name: 'watch-ci',
       status: 'in-sync',
       staleFiles: [],
+      orphanFiles: [],
+    },
+    {
+      name: 'rebase-worktree',
+      status: 'stale',
+      staleFiles: ['SKILL.md'],
       orphanFiles: [],
     },
   ],
@@ -287,6 +306,48 @@ describe('WiringMap: the spine', () => {
     expect(
       screen.queryByTestId('orphan-fill-demo:work-provision')
     ).not.toBeInTheDocument();
+  });
+
+  it('draws a drifting roster verb no binder names, instead of dropping it', async () => {
+    mockHappyPath();
+    renderWiring();
+
+    const outside = await screen.findByTestId('outside-the-pipeline');
+    const row = within(outside).getByTestId(
+      'skill-row-mattstack:rebase-worktree'
+    );
+
+    expect(within(row).getByText('unwired')).toBeInTheDocument();
+    await waitFor(() =>
+      expect(within(row).getByTestId('health-badge')).toHaveTextContent(
+        'source newer'
+      )
+    );
+  });
+
+  it('counts that verb in the attention badge, so the badge matches what check reported', async () => {
+    mockHappyPath();
+    renderWiring();
+
+    // `work` is stale and so is `rebase-worktree`; `watch-ci` is in sync.
+    await waitFor(() =>
+      expect(screen.getByTestId('attention-count')).toHaveTextContent(
+        '2 need attention'
+      )
+    );
+  });
+
+  it('says why the numbered rows carry no health, rather than letting bare read as fine', async () => {
+    mockHappyPath();
+    renderWiring();
+
+    const orchestrator = await screen.findByTestId('skill-row-mattstack:work');
+
+    expect(
+      within(orchestrator).getByText(
+        'rt skills check covers roster verbs, so the numbered rows below state no health — bare is unmeasured there, not healthy'
+      )
+    ).toBeInTheDocument();
   });
 
   it('names the command that produced the panel', async () => {

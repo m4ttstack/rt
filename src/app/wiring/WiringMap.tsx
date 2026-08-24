@@ -101,8 +101,8 @@ function OutsideThePipeline({
   return (
     <Stack gap="sm" mt="sm" data-testid="outside-the-pipeline">
       <Text size="xs" c={text.muted}>
-        Wired skills the pipeline never calls — you invoke these directly, or
-        another plugin does. No order to run in.
+        Skills the pipeline never calls — you invoke these directly, or another
+        plugin does. No order to run in.
       </Text>
       {spine.outside.map(entry => (
         <SkillRow
@@ -150,6 +150,17 @@ function SpineSummary({ spine }: { spine: WiringSpine }) {
       <Text size="sm" c={text.muted}>
         {spine.stages.length} stages
       </Text>
+      {spine.stages.length > 0 && (
+        <>
+          <Text size="sm" c={text.muted}>
+            ·
+          </Text>
+          <Text size="xs" c={text.muted} truncate>
+            stages compile into the orchestrator, so they carry no artifact of
+            their own to check
+          </Text>
+        </>
+      )}
       <div style={{ flex: 1 }} />
       {spine.attentionCount > 0 && (
         <Badge

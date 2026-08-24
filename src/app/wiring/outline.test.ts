@@ -65,6 +65,8 @@ const PACK: SpineComposition = {
         },
       ],
     }),
+    // Binds nothing, so rt emits no binder for it and no pipeline names it.
+    verb('rebase-worktree', {}),
   ],
   fills: [
     fill('mattstack:model-tiering', 'model-tiering@1'),
@@ -177,18 +179,75 @@ describe('buildSpine: the run order comes from pipelines and nowhere else', () =
       'mattstack:ship',
       'mattstack:review-core',
       'external:mr-board',
+      'mattstack:rebase-worktree',
     ]);
   });
 
   it('names the stage an outside skill duplicates, by its bindings rather than its name', () => {
     const spine = buildSpine(PACK, EMPTY_CHECK);
     const ship = spine.outside.find(e => e.key === 'mattstack:ship');
+    const reviewCore = spine.outside.find(
+      e => e.key === 'mattstack:review-core'
+    );
 
     expect(ship?.sameWiringAsStep).toBe(3);
+    expect(reviewCore).toBeDefined();
+    expect(reviewCore?.sameWiringAsStep).toBeUndefined();
+  });
+});
+
+describe('buildSpine: a roster verb no binder names', () => {
+  it('lands outside the pipeline, marked unwired, rather than rendering nowhere', () => {
+    const entry = buildSpine(PACK, EMPTY_CHECK).outside.find(
+      e => e.key === 'mattstack:rebase-worktree'
+    );
+
+    expect(entry).toBeDefined();
+    expect(entry?.unwired).toBe(true);
+    expect(entry?.verb).toBe('rebase-worktree');
+    expect(entry?.note).toBe(
+      'no slots — this skill takes nothing from the pack'
+    );
+  });
+
+  it('keeps the source and artifact a compile action needs', () => {
+    const entry = buildSpine(PACK, EMPTY_CHECK).outside.find(
+      e => e.key === 'mattstack:rebase-worktree'
+    );
+
+    expect(entry?.sourcePath).toBe('/steps/rebase-worktree/SKILL.md');
+    expect(entry?.artifactPath).toBe('/p/skills/rebase-worktree');
+  });
+
+  it('carries its own drift, and that drift reaches the attention count', () => {
+    const check: OutlineCheck = {
+      verbs: [
+        {
+          name: 'rebase-worktree',
+          status: 'stale',
+          staleFiles: ['SKILL.md'],
+          orphanFiles: [],
+        },
+      ],
+    };
+    const spine = buildSpine(PACK, check);
+
     expect(
-      spine.outside.find(e => e.key === 'mattstack:review-core')
-        ?.sameWiringAsStep
-    ).toBeUndefined();
+      spine.outside.find(e => e.key === 'mattstack:rebase-worktree')?.health
+    ).toBe('source-newer');
+    expect(spine.attentionCount).toBe(1);
+  });
+
+  it('leaves every wired binder unmarked, so the badge means something', () => {
+    const spine = buildSpine(PACK, EMPTY_CHECK);
+
+    expect(spine.orchestrator?.unwired).toBe(false);
+    expect(spine.stages.map(s => s.unwired)).toEqual([false, false, false]);
+    expect(
+      spine.outside
+        .filter(e => e.key !== 'mattstack:rebase-worktree')
+        .map(e => e.unwired)
+    ).toEqual([false, false, false]);
   });
 });
 
@@ -300,6 +359,9 @@ describe('buildSpine: check-status health mapping', () => {
   it('a stage check never covers reads unknown, and never borrows a verb row', () => {
     const spine = buildSpine(PACK, checkFor('work', 'stale'));
 
+    // `every` is vacuously true on an empty list, so the length assertion is
+    // what makes this test able to fail.
+    expect(spine.stages).toHaveLength(3);
     expect(spine.stages.every(s => s.health === 'unknown')).toBe(true);
   });
 
@@ -321,7 +383,7 @@ describe('buildSpine: check-status health mapping', () => {
 });
 
 describe('buildSpine: nodes never vanish or narrate away real state', () => {
-  it('a verb with a null engineRef and an engineError still appears', () => {
+  it('a verb whose engine failed to resolve still leads the spine, carrying the error', () => {
     const composition: SpineComposition = {
       ...PACK,
       verbs: [verb('work', { engineError: 'engine "work" not found' })],
@@ -330,6 +392,26 @@ describe('buildSpine: nodes never vanish or narrate away real state', () => {
     const orchestrator = buildSpine(composition, EMPTY_CHECK).orchestrator;
     expect(orchestrator?.label).toBe('work');
     expect(orchestrator?.engineError).toBe('engine "work" not found');
+  });
+
+  it('a verb with a null engineRef still gets a row, keyed by its name', () => {
+    const composition: SpineComposition = {
+      ...PACK,
+      verbs: [
+        verb('work', {
+          engineRef: null,
+          engineError: 'engine "work" not found',
+        }),
+      ],
+    };
+
+    const spine = buildSpine(composition, EMPTY_CHECK);
+    const entry = spine.outside.find(e => e.key === 'verb:work');
+
+    expect(spine.orchestrator).toBeNull();
+    expect(entry).toBeDefined();
+    expect(entry?.label).toBe('work');
+    expect(entry?.engineError).toBe('engine "work" not found');
   });
 
   it('keeps sourcePath and artifactPath as distinct fields', () => {
