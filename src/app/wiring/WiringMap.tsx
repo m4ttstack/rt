@@ -22,6 +22,7 @@ import {
 } from '@ui/core';
 import { useSchemeColors } from '@ui/hooks';
 import { Icons } from '@ui/icons';
+import { notifications } from '@ui/notifications';
 import { Link } from '../router/Link';
 import { navigate, useSearch } from '../router/navigation';
 import { CommandProvenance } from '../runs/CommandProvenance';
@@ -413,13 +414,20 @@ function WiringSpineView({
       v => v.name === entry.verb
     );
     if (!verbEntry) return;
-    const preview = await fetchCompilePreview(queryClient, pack, entry.verb);
-    const seams = splitCompiledBody(preview.content).map(
-      section => section.seam
-    );
-    await navigator.clipboard.writeText(
-      buildAgentContext({ verb: verbEntry, seams })
-    );
+    try {
+      const preview = await fetchCompilePreview(queryClient, pack, entry.verb);
+      const seams = splitCompiledBody(preview.content).map(
+        section => section.seam
+      );
+      await navigator.clipboard.writeText(
+        buildAgentContext({ verb: verbEntry, seams })
+      );
+      notifications.success('Copied agent context');
+    } catch (err) {
+      notifications.error(
+        `Could not copy agent context: ${(err as Error).message}`
+      );
+    }
   };
 
   // Same rows, same order, same components -- the healthy ones simply are

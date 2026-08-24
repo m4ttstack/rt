@@ -1491,6 +1491,39 @@ describe('skills bind route', () => {
     expect(rt.calls.some(isBind)).toBe(false);
   });
 
+  it('rejects a fill whose provides does not match the slot contract before any bind spawn -- this is the falsification target', async () => {
+    const rt = fakeRtHandler(argv => {
+      if (isComposition(argv)) {
+        const composition = bindComposition();
+        composition.fills.push({
+          binding: 'demo:wrong-contract-fill',
+          provides: 'watch-ci-verdict@1',
+          sourcePath: '/f/c',
+          registered: false,
+        });
+        return { code: 0, stdout: JSON.stringify(composition), stderr: '' };
+      }
+      return { code: 0, stdout: 'ok\n', stderr: '' };
+    });
+    const app = mountSkills(new Hono(), rt.run);
+
+    const res = await postBind(app, {
+      pack: 'demo',
+      verb: 'watch-ci',
+      slot: 'domain',
+      fill: 'demo:wrong-contract-fill',
+    });
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      error: expect.stringContaining('watch-ci-domain@1'),
+    });
+    // A known-but-incompatible fill is still rejected before an argv: the
+    // only rt call made is the composition read it was checked against.
+    expect(rt.calls).toHaveLength(1);
+    expect(rt.calls.some(isBind)).toBe(false);
+  });
+
   it('threads verb, slot, fill, and --pack onto the bind call in order', async () => {
     const rt = fakeRtHandler(argv => {
       if (isComposition(argv)) {

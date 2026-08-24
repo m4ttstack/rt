@@ -770,6 +770,14 @@ export function mountSkills(
             400
           );
         }
+        if (fillEntry.provides !== slotEntry.contract) {
+          return c.json(
+            {
+              error: `"${fill}" provides "${fillEntry.provides}", not "${slotEntry.contract}" required by ${verb}'s "${slot}" slot`,
+            },
+            400
+          );
+        }
 
         const run = await runRt([
           'skills',

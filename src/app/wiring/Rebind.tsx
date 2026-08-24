@@ -159,11 +159,18 @@ export function Rebind({
   const verbEntry = composition.verbs.find(v => v.name === verb);
   const slotEntry = verbEntry?.slots.find(s => s.name === slot);
   const currentBinding = slotEntry?.boundTo ?? null;
+  const contract = slotEntry?.contract ?? null;
   const selfRef = verbEntry?.engineRef ?? null;
 
+  // Only a fill whose `provides` matches the slot's own `contract` is a
+  // legal target -- offering anything else would let Apply stage a bind rt
+  // itself will 502 on.
   const candidates = useMemo(
-    () => composition.fills.filter(f => f.binding !== currentBinding),
-    [composition.fills, currentBinding]
+    () =>
+      composition.fills.filter(
+        f => f.binding !== currentBinding && f.provides === contract
+      ),
+    [composition.fills, currentBinding, contract]
   );
 
   const [target, setTarget] = useState<string | null>(

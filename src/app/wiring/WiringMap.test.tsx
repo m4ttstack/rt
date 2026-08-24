@@ -1008,4 +1008,44 @@ describe('WiringMap: wiring the deferred surfaces', () => {
       '/plugins/mattstack/attachments/pipeline/work/SKILL.md:1-2'
     );
   });
+
+  it('surfaces a failed compile preview fetch instead of leaving the copy silently no-op', async () => {
+    mockHappyPath();
+    compileGet.mockResolvedValue(err(502, 'rt exited nonzero'));
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    renderWiring();
+
+    const row = await screen.findByTestId('skill-row-mattstack:work');
+    await user.click(within(row).getByTestId('copy-agent-context'));
+
+    await screen.findByText(/rt exited nonzero/);
+    expect(writeText).not.toHaveBeenCalled();
+  });
+
+  it('surfaces a clipboard write rejection instead of leaving the copy silently no-op', async () => {
+    mockHappyPath();
+    compileGet.mockResolvedValue(
+      ok({
+        content:
+          '<!-- part: step source=mattstack:work version=0.8.0 path=a/SKILL.md lines=1-2 -->\n\n# work',
+      })
+    );
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockRejectedValue(new Error('denied'));
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    renderWiring();
+
+    const row = await screen.findByTestId('skill-row-mattstack:work');
+    await user.click(within(row).getByTestId('copy-agent-context'));
+
+    await screen.findByText(/denied/);
+  });
 });

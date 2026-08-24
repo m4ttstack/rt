@@ -291,20 +291,24 @@ export function useSkillsApply(pack: string) {
   const onSuccess = () => invalidateSkillsQueries(queryClient, pack);
 
   const surfaceApply = useMutation({
-    mutationFn: (delta: { toPublic: string[]; toInternal: string[] }) =>
-      postSkillsWrite<SkillsSurfaceApplyResponse>(
+    mutationFn: (delta: { toPublic: string[]; toInternal: string[] }) => {
+      if (!pack) return Promise.reject(new Error('no pack selected'));
+      return postSkillsWrite<SkillsSurfaceApplyResponse>(
         client.api.skills.surface.apply.$post,
         { pack, ...delta }
-      ),
+      );
+    },
     onSuccess,
   });
 
   const bind = useMutation({
-    mutationFn: (write: { verb: string; slot: string; fill: string }) =>
-      postSkillsWrite<SkillsBindResponse>(client.api.skills.bind.$post, {
+    mutationFn: (write: { verb: string; slot: string; fill: string }) => {
+      if (!pack) return Promise.reject(new Error('no pack selected'));
+      return postSkillsWrite<SkillsBindResponse>(client.api.skills.bind.$post, {
         pack,
         ...write,
-      }),
+      });
+    },
     onSuccess,
   });
 

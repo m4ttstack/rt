@@ -69,7 +69,10 @@ const SHARED: SkillsComposition = {
       slots: [boundSlot('domain', 'demo:watch-ci-domain')],
     }),
   ],
-  fills: [fill('demo:watch-ci-domain'), fill('demo:solo-fill')],
+  fills: [
+    fill('demo:watch-ci-domain', { provides: 'domain@1' }),
+    fill('demo:solo-fill', { provides: 'domain@1' }),
+  ],
   binders: [
     {
       ref: 'mattstack:watch-ci',
@@ -96,7 +99,7 @@ const SOLO: SkillsComposition = {
   verbs: [
     verb('watch-ci', { slots: [boundSlot('domain', 'demo:solo-fill')] }),
   ],
-  fills: [fill('demo:solo-fill')],
+  fills: [fill('demo:solo-fill', { provides: 'domain@1' })],
   binders: [
     {
       ref: 'mattstack:watch-ci',
@@ -118,7 +121,10 @@ const STAGE_BOUND: SkillsComposition = {
       slots: [boundSlot('domain', 'demo:watch-ci-domain')],
     }),
   ],
-  fills: [fill('demo:watch-ci-domain'), fill('demo:new-fill')],
+  fills: [
+    fill('demo:watch-ci-domain', { provides: 'domain@1' }),
+    fill('demo:new-fill', { provides: 'domain@1' }),
+  ],
   binders: [
     {
       ref: 'mattstack:watch-ci',
@@ -132,6 +138,45 @@ const STAGE_BOUND: SkillsComposition = {
       kind: 'stage',
       slots: [{ name: 'domain', boundTo: 'demo:new-fill' }],
     },
+  ],
+};
+
+/** watch-ci's `domain` slot has contract `domain@1`; `wrong-contract-fill`
+    provides something else entirely. The rebind picker must never offer a
+    fill the target slot cannot actually accept -- rt's own bind would 502
+    on it, but the picker should not let it be chosen in the first place. */
+const MIXED_CONTRACTS: SkillsComposition = {
+  pack: 'demo',
+  packDir: '/repos/demo',
+  manifestPath: '/repos/gitlab.com-acme-acme-dev/skills.jsonc',
+  verbs: [
+    verb('watch-ci', {
+      slots: [boundSlot('domain', 'demo:watch-ci-domain')],
+    }),
+  ],
+  fills: [
+    fill('demo:watch-ci-domain', { provides: 'domain@1' }),
+    fill('demo:solo-fill', { provides: 'domain@1' }),
+    fill('demo:wrong-contract-fill', { provides: 'verdict@1' }),
+  ],
+  binders: [
+    {
+      ref: 'mattstack:watch-ci',
+      verb: 'watch-ci',
+      kind: 'verb',
+      slots: [{ name: 'domain', boundTo: 'demo:watch-ci-domain' }],
+    },
+  ],
+};
+
+/** Same shape as MIXED_CONTRACTS but with no compatible fill left once the
+    current binding is excluded -- the picker's zero-candidates state must
+    still render, not an empty `Select`. */
+const NO_COMPATIBLE_FILL: SkillsComposition = {
+  ...MIXED_CONTRACTS,
+  fills: [
+    fill('demo:watch-ci-domain', { provides: 'domain@1' }),
+    fill('demo:wrong-contract-fill', { provides: 'verdict@1' }),
   ],
 };
 
@@ -176,6 +221,43 @@ test('an incoming fill bound by a pipeline stage shows in the blast radius, not 
   expect(screen.getByText(/stage-implement/)).toBeInTheDocument();
   expect(
     screen.queryByText(/would be its first site/i)
+  ).not.toBeInTheDocument();
+});
+
+test('the picker omits a fill that does not provide the slot contract', async () => {
+  renderRebind({
+    verb: 'watch-ci',
+    slot: 'domain',
+    composition: MIXED_CONTRACTS,
+  });
+
+  await userEvent.click(screen.getByRole('button', { name: /rebind/i }));
+
+  await userEvent.click(
+    screen.getByRole('combobox', { name: /rebind target fill/i })
+  );
+  expect(
+    screen.getByRole('option', { name: 'demo:solo-fill' })
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole('option', { name: 'demo:wrong-contract-fill' })
+  ).not.toBeInTheDocument();
+});
+
+test('zero fills provide the slot contract shows the empty state, not an empty picker', async () => {
+  renderRebind({
+    verb: 'watch-ci',
+    slot: 'domain',
+    composition: NO_COMPATIBLE_FILL,
+  });
+
+  await userEvent.click(screen.getByRole('button', { name: /rebind/i }));
+
+  expect(
+    screen.getByText(/no other fill in this pack to rebind/i)
+  ).toBeInTheDocument();
+  expect(
+    screen.queryByRole('combobox', { name: /rebind target fill/i })
   ).not.toBeInTheDocument();
 });
 
