@@ -155,10 +155,14 @@ export function InverseIndex({
                   href={`vscode://file${sourcePath}`}
                   variant="subtle"
                   color="gray"
+                  // `sm` (22px), not the 28px the row actions use: at 28 the
+                  // action is taller than the title line and grows the
+                  // header past the height the design draws it at.
+                  size="sm"
                   aria-label={`open source for ${fill}`}
                   data-testid="open-fill-source"
                 >
-                  <Icons.edit size={16} />
+                  <Icons.edit size={14} />
                 </ActionIcon>
               </Tooltip>
             )}
