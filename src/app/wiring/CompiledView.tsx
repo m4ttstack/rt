@@ -1,8 +1,7 @@
 import { useMemo } from 'react';
 
-import { Group, Paper, Stack, Text } from '@ui/core';
+import { Code, Group, Paper, Stack, Text } from '@ui/core';
 import { useSchemeColors } from '@ui/hooks';
-import { CodeHighlight } from '@ui/lazy';
 import type { SlotOutlineNode } from './outline';
 import { splitCompiledBody, type Seam } from './parseSeam';
 import { QuietBadge } from './QuietBadge';
@@ -16,12 +15,8 @@ function spanOf(seam: Seam): string {
   return `${seam.path}:${seam.lines[0]}-${seam.lines[1]}`;
 }
 
-/**
- * `@mantine/code-highlight` ships its own type metrics -- a hard-coded
- * 0.8125rem and its own padding -- which are Mantine's defaults, not this
- * app's. Left alone the compiled text renders a third larger than every other
- * code surface in the console and indented away from the headings above it.
- */
+/** Matches every other code surface in the console rather than Code's own
+    default block padding and size. */
 const CODE_STYLE = {
   padding: 0,
   background: 'transparent',
@@ -196,13 +191,9 @@ export function CompiledView({ body, slots }: CompiledViewProps) {
               }
             >
               {section.seam && <SeamHeading seam={section.seam} />}
-              <CodeHighlight
-                code={section.text}
-                language="markdown"
-                withCopyButton={false}
-                background="transparent"
-                styles={{ pre: CODE_STYLE, code: CODE_STYLE }}
-              />
+              <Code block style={CODE_STYLE}>
+                {section.text}
+              </Code>
             </Stack>
           ))}
         </Stack>
