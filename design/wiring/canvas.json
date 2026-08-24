@@ -55,6 +55,14 @@
       "w": 720,
       "h": 900,
       "title": "Surface roster"
+    },
+    {
+      "file": "Rebind.dc.html",
+      "x": 840,
+      "y": 3260,
+      "w": 720,
+      "h": 900,
+      "title": "Staged rebinding"
     }
   ],
   "annotations": [

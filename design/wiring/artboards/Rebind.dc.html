@@ -1,0 +1,156 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .app {
+      --bg1: #e1e2e7; --bg2: #eff0f5; --bg3: #f6f6fa; --bg4: #e4e4e7;
+      --border: #c8cad6; --border-soft: #d5d7e2;
+      --fg: #111; --muted: #8990b3;
+      --accent: #2e7de9; --ok: #587539; --warn: #8c6c3e; --bad: #f52a65;
+      --purple: #7847bd; --cyan: #007197; --wash: 10%;
+    }
+    .app.dark {
+      --bg1: #16161e; --bg2: #232a47; --bg3: #2c3352; --bg4: #3b4160;
+      --border: #3b4261; --border-soft: #313853;
+      --fg: #e3e7f6; --muted: #7e86ad;
+      --accent: #7aa2f7; --ok: #9ece6a; --warn: #e0af68; --bad: #f7768e;
+      --purple: #bb9af7; --cyan: #7dcfff; --wash: 15%;
+    }
+    .app { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13.5px; line-height: 1.55; color: var(--fg); }
+    .row { display: flex; align-items: center; gap: 4.8px; min-width: 0; }
+    .stack { display: flex; flex-direction: column; }
+    .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .xs { font-size: 10.56px; }
+    .sm { font-size: 11.2px; }
+    .muted { color: var(--muted); }
+    .aicon { width: 28px; height: 28px; border-radius: 6px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); background: transparent; border: 0; cursor: pointer; }
+    .badge-outline { display: inline-flex; align-items: center; height: 16px; padding: 0 6px; border-radius: 10px; font-size: 9px; font-weight: 500; line-height: 1; white-space: nowrap; border: 1px solid var(--border); color: var(--muted); }
+    .well { background: var(--bg3); border: 1px solid var(--border-soft); border-radius: 4px; }
+    .code { font-size: 11.2px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+    .arrow { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+    .site { display: flex; align-items: center; gap: 7.2px; padding: 6px 9.6px; min-width: 0; }
+    .site + .site { border-top: 1px solid var(--border-soft); }
+    .kb { display: inline-flex; align-items: center; height: 15px; padding: 0 5px; border-radius: 3px; border: 1px solid var(--border); background: var(--bg4); font-size: 9px; color: var(--muted); }
+    .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+  </style>
+</helmet>
+
+<div class="app {{schemeClass}}" style="width: 720px; height: 900px; background: var(--bg2); border-left: 1px solid var(--border); box-shadow: -6px 0 32px rgba(0, 0, 0, 0.3); display: flex; flex-direction: column;">
+
+  <div class="row" style="flex: none; padding: 11.2px; gap: 7.2px; border-bottom: 1px solid var(--border);">
+    <div class="stack" style="gap: 2px; flex: 1; min-width: 0;">
+      <div class="row" style="gap: 4.8px;">
+        <span style="font-size: 14.72px; font-weight: 700;">Rebind</span>
+        <span class="sm muted truncate">watch-ci · slot domain</span>
+      </div>
+      <div class="row" style="gap: 6px; color: var(--muted);">
+        <span class="xs muted truncate">contract watch-ci-domain@1</span>
+      </div>
+    </div>
+    <button class="aicon" aria-label="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+  </div>
+
+  <div class="stack" style="flex: 1; min-height: 0; padding: 11.2px; gap: 11.2px; overflow: auto;">
+
+    <!-- The staged change, old -> new. Same delta discipline as the roster:
+         choosing a fill stages it, nothing is committed by the choice. -->
+    <div class="stack" style="gap: 4.8px;">
+      <span class="xs muted">Bind this slot to</span>
+      <div class="well" style="padding: 9.6px;">
+        <div class="row" style="gap: 6px;">
+          <span class="arrow"><span class="sm truncate">demo:watch-ci-domain</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--muted)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+            <span class="sm" style="font-weight: 700;">demo:watch-ci-domain-v2</span></span>
+        </div>
+        <div class="row" style="gap: 4.8px; margin-top: 4.8px;">
+          <span class="badge-outline">provides watch-ci-domain@1</span>
+          <span class="xs muted">2 other fills satisfy this contract</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- The blast radius IS the point of this view. Rebinding a slot without
+         showing what else binds the OUTGOING fill is the mistake it exists to
+         prevent, so the inverse index for both fills is on the confirm step,
+         not one click deeper. -->
+    <div class="stack" style="gap: 4.8px;">
+      <div class="row" style="gap: 6px;">
+        <div class="dot" style="background: var(--warn);"></div>
+        <span class="sm" style="font-weight: 600;">Unbinding demo:watch-ci-domain</span>
+      </div>
+      <span class="xs muted" style="padding-left: 12px;">It stays bound everywhere below. This change touches only watch-ci's slot.</span>
+      <div class="well" style="margin-left: 12px;">
+        <div class="site">
+          <span class="badge-outline" style="color: var(--warn); border-color: var(--warn);">verb</span>
+          <span class="sm truncate" style="flex: 1;">ship</span>
+          <span class="xs muted" style="flex: none;">slot domain</span>
+        </div>
+        <div class="site">
+          <span class="badge-outline" style="color: var(--warn); border-color: var(--warn);">verb</span>
+          <span class="sm truncate" style="flex: 1;">review</span>
+          <span class="xs muted" style="flex: none;">slot domain</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="stack" style="gap: 4.8px;">
+      <div class="row" style="gap: 6px;">
+        <div class="dot" style="background: var(--ok);"></div>
+        <span class="sm" style="font-weight: 600;">Binding demo:watch-ci-domain-v2</span>
+      </div>
+      <!-- "Nothing else binds this" is a stated fact. A blank region reads as
+           a rendering failure and leaves the reader unsure the check ran. -->
+      <div class="well" style="margin-left: 12px; padding: 7.2px 9.6px;">
+        <span class="xs muted">Nothing else binds this fill yet — watch-ci would be its first site.</span>
+      </div>
+    </div>
+
+    <!-- rt has no verb that writes a binding. So in place of Apply, the exact
+         edit is named: the manifest, the key, old -> new, and the compile that
+         has to follow. Honest missing capability the operator can see. -->
+    <div class="stack" style="flex: none; gap: 6px; border-top: 1px solid var(--border); padding-top: 9.6px;">
+      <div class="row" style="gap: 6px;">
+        <svg class="muted" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="flex: none;"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+        <span class="sm" style="font-weight: 600;">Make this edit by hand</span>
+      </div>
+      <span class="xs muted">rt has no verb that writes a binding yet, so the console does not write one either. Edit the manifest, then recompile:</span>
+      <div class="well" style="padding: 7.2px 9.6px;"><div class="code">~/.mattstack/repos/…/skills.jsonc
+  bindings.watch-ci.domain
+    "demo:watch-ci-domain"
+  → "demo:watch-ci-domain-v2"
+
+rt skills compile --pack demo --verb watch-ci</div></div>
+      <div class="row" style="gap: 6px; justify-content: flex-end;">
+        <button class="aicon" aria-label="Open manifest in editor" style="width: auto; padding: 0 9.6px; gap: 4.8px; border: 1px solid var(--border);">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>
+          <span class="xs">Open manifest</span>
+        </button>
+        <button class="aicon" aria-label="Copy the edit" style="width: auto; padding: 0 9.6px; gap: 4.8px; border: 1px solid var(--border);">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+          <span class="xs">Copy</span>
+        </button>
+      </div>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Theme"},"$preview":{"width":720,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { schemeClass: this.props.dark ? 'dark' : '' };
+  }
+}
+</script>
+</body>
+</html>
