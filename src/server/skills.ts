@@ -207,6 +207,46 @@ function clampLimit(raw: string | undefined): number {
 }
 
 /**
+ * `git status --porcelain` C-quotes a path that carries a space, a quote or a
+ * non-ASCII byte, and leaves every other path bare. Unquoted here so the list
+ * holds the same names `--name-only` prints; left quoted, such a path could
+ * never match anything a reader is looking at.
+ */
+function unquoteStatusPath(raw: string): string {
+  if (!raw.startsWith('"') || !raw.endsWith('"') || raw.length < 2) return raw;
+  const body = raw.slice(1, -1);
+  let out = '';
+  for (let i = 0; i < body.length; i += 1) {
+    if (body[i] !== '\\') {
+      out += body[i];
+      continue;
+    }
+    const next = body[i + 1];
+    // Octal is how git writes a non-ASCII byte; it emits three digits, and
+    // the bytes of one UTF-8 character arrive as consecutive escapes, so
+    // decoding them one at a time and letting them concatenate is correct
+    // only because the result is re-read as UTF-8 below.
+    if (next >= '0' && next <= '7') {
+      out += String.fromCharCode(parseInt(body.slice(i + 1, i + 4), 8));
+      i += 3;
+      continue;
+    }
+    const simple: Record<string, string> = {
+      n: '\n',
+      t: '\t',
+      r: '\r',
+      '"': '"',
+      '\\': '\\',
+    };
+    out += simple[next] ?? next;
+    i += 1;
+  }
+  // The octal escapes above produced raw BYTES as char codes; this is what
+  // turns a multi-byte sequence back into the character it spells.
+  return new TextDecoder().decode(Uint8Array.from(out, c => c.charCodeAt(0)));
+}
+
+/**
  * Paths out of `git status --porcelain`, which prints `XY <path>` and, for a
  * rename, `XY <orig> -> <new>`. The new name is the one that matches a
  * `--name-only` path and a seam's source, so a rename reports as its
@@ -217,8 +257,14 @@ function parseGitStatus(stdout: string): string[] {
   for (const line of stdout.split('\n')) {
     if (line.length < 4) continue;
     const entry = line.slice(3);
-    const arrow = entry.lastIndexOf(' -> ');
-    paths.push(arrow === -1 ? entry : entry.slice(arrow + 4));
+    // Only a rename or a copy carries the arrow. Splitting on it regardless
+    // would truncate a file whose own name contains ` -> `, which git quotes
+    // but does not escape.
+    const renamed = line[0] === 'R' || line[0] === 'C';
+    const arrow = renamed ? entry.lastIndexOf(' -> ') : -1;
+    paths.push(
+      unquoteStatusPath(arrow === -1 ? entry : entry.slice(arrow + 4))
+    );
   }
   return paths;
 }

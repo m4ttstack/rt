@@ -15,8 +15,9 @@ import { useSchemeColors } from '@ui/hooks';
 import { Icons } from '@ui/icons';
 import { CommandProvenance } from '../runs/CommandProvenance';
 import { useDrawerSurface } from './drawerSurface';
-import type { WiringHealth } from './outline';
+import type { SlotOutlineNode, WiringHealth } from './outline';
 import { QuietBadge } from './QuietBadge';
+import type { SeamSourceIndex } from './seamAttribution';
 import { SeamCompare } from './SeamCompare';
 import { SOFT_RULE } from './SlotRow';
 import {
@@ -155,6 +156,13 @@ export interface VersionTimelineProps {
   /** What `check` said about this verb, for the runtime region. */
   health: WiringHealth;
   staleFiles: string[];
+  /** rt's ABSOLUTE paths for this verb's step source and its compiled
+      artifact. The compare view places seams by these rather than by matching
+      a plugin-relative seam path against a pack-relative diff path -- see
+      `seamPackPath`. */
+  sourcePath: string | null;
+  artifactPath: string | null;
+  slots: SlotOutlineNode[];
   onClose: () => void;
 }
 
@@ -173,6 +181,9 @@ export function VersionTimeline({
   refName,
   health,
   staleFiles,
+  sourcePath,
+  artifactPath,
+  slots,
   onClose,
 }: VersionTimelineProps) {
   const { bg, text } = useSchemeColors();
@@ -223,6 +234,24 @@ export function VersionTimeline({
   const scope = history.data?.scope ?? `skills/${verb}`;
   const dirty = runtime?.dirtyFiles ?? null;
   const compiled = compiledOutputFact(health, staleFiles);
+
+  // `packDir` comes off the diff payload, so the index is only complete once
+  // the diff it places hunks for has landed.
+  const index = useMemo<SeamSourceIndex | null>(
+    () =>
+      diff.data
+        ? {
+            pack,
+            packDir: diff.data.packDir,
+            artifactPath,
+            stepSourcePath: sourcePath,
+            fillSourcePaths: Object.fromEntries(
+              slots.map(slot => [slot.name, slot.fillSourcePath])
+            ),
+          }
+        : null,
+    [diff.data, pack, artifactPath, sourcePath, slots]
+  );
 
   return (
     <Drawer
@@ -295,9 +324,11 @@ export function VersionTimeline({
             </Alert>
           )}
           <SeamCompare
+            verb={verb ?? ''}
             body={preview.data?.content}
             diff={diff.data?.diff}
             diffTruncated={diff.data?.truncated ?? false}
+            index={index}
             isPending={diff.isPending || preview.isPending}
             error={diff.isError ? (diff.error as Error).message : null}
           />
@@ -327,9 +358,13 @@ export function VersionTimeline({
                     ? `clean under ${scope}`
                     : `${dirty.length}${runtime?.moreDirtyFiles ? '+' : ''} uncommitted ${dirty.length === 1 ? 'file' : 'files'} under ${scope}`}
               </RuntimeRow>
-              <RuntimeRow label="installed">
+              {/* Not `installed`: what was read is the pack's own
+                  `.claude-plugin/plugin.json`. The version Claude will load
+                  lives in the plugin cache, which this request never opened,
+                  and the two can differ between an edit and its install. */}
+              <RuntimeRow label="pack manifest">
                 {runtime?.packVersion
-                  ? `${pack} ${runtime.packVersion}`
+                  ? `declares ${pack} ${runtime.packVersion}`
                   : 'no plugin manifest in this pack — nothing states a version'}
               </RuntimeRow>
               <RuntimeRow label="compiled output" color={compiled.color}>
@@ -376,6 +411,7 @@ export function VersionTimeline({
                 bg={bg.level3}
                 radius="sm"
                 style={{ border: `1px solid ${SOFT_RULE}` }}
+                data-testid="commit-list"
               >
                 {commits.map((commit, i) => (
                   <div

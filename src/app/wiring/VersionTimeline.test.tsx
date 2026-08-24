@@ -72,6 +72,26 @@ const DIFF = [
   '',
 ].join('\n');
 
+const PACK_DIR =
+  '/Users/matt/.mattstack/teams/demo/mattstack/packs/demo';
+const STEP_SOURCE =
+  '/Users/matt/.claude/plugins/cache/mattstack/mattstack/0.8.0/attachments/pipeline/watch-ci/SKILL.md';
+const ARTIFACT = `${PACK_DIR}/skills/watch-ci`;
+/** Only the two fields the compare view reads off a slot. */
+const SLOTS = [
+  {
+    name: 'domain',
+    contract: 'watch-ci-domain@1',
+    required: false,
+    boundTo: 'demo:watch-ci-domain',
+    fillSourcePath:
+      '/Users/matt/.claude/plugins/cache/acme/demo/0.4.11/attachments/watch-ci-domain/SKILL.md',
+    fill: null,
+    siteCount: 1,
+    inlined: true,
+  },
+];
+
 function renderTimeline(
   over: {
     verb?: string | null;
@@ -91,6 +111,9 @@ function renderTimeline(
         refName="mattstack:watch-ci"
         health={over.health ?? 'in-sync'}
         staleFiles={over.staleFiles ?? []}
+        sourcePath={STEP_SOURCE}
+        artifactPath={ARTIFACT}
+        slots={SLOTS}
         onClose={over.onClose ?? (() => {})}
       />
     </QueryClientProvider>
@@ -147,21 +170,33 @@ describe('relativeTime', () => {
 });
 
 describe('VersionTimeline: two kinds of truth, two regions', () => {
-  it('keeps runtime facts out of the commit list entirely', async () => {
+  it('keeps runtime facts and commits in two containers, each holding only its own', async () => {
     mockHappyPath();
     renderTimeline();
     await openedHistory();
 
     const runtime = screen.getByTestId('runtime-facts');
-    const commits = screen.getAllByTestId(/^commit-/);
+    const list = screen.getByTestId('commit-list');
+    const runtimeRows = screen.getAllByTestId(/^runtime-(?!facts)/);
+    const commitRows = screen.getAllByTestId(/^commit-(?!list)/);
 
-    // The separation IS the assertion: no commit row inside the runtime
-    // region, and no runtime row inside any commit.
-    expect(within(runtime).queryAllByTestId(/^commit-/)).toHaveLength(0);
-    for (const row of commits) {
-      expect(within(row).queryAllByTestId(/^runtime-/)).toHaveLength(0);
+    // Nesting assertions alone pass for a single merged region, so what is
+    // pinned here is that each container actually HOLDS its own rows and
+    // nothing else. Dropping the runtime rows into the history stack, or
+    // reducing either container to an empty marker, breaks this.
+    expect(runtimeRows.length).toBe(3);
+    expect(commitRows.length).toBe(3);
+    for (const row of runtimeRows) {
+      expect(runtime.contains(row)).toBe(true);
+      expect(list.contains(row)).toBe(false);
+    }
+    for (const row of commitRows) {
+      expect(list.contains(row)).toBe(true);
       expect(runtime.contains(row)).toBe(false);
     }
+    // Disjoint subtrees, not one nested in the other.
+    expect(runtime.contains(list)).toBe(false);
+    expect(list.contains(runtime)).toBe(false);
   });
 
   it('labels the runtime region as this machine rather than as history', async () => {
@@ -182,8 +217,10 @@ describe('VersionTimeline: two kinds of truth, two regions', () => {
     expect(screen.getByTestId('runtime-working-tree')).toHaveTextContent(
       'clean under skills/watch-ci'
     );
-    expect(screen.getByTestId('runtime-installed')).toHaveTextContent(
-      'demo 0.4.11'
+    // The label names what was read -- the pack's own manifest -- not what
+    // Claude will load, which lives in the plugin cache this never opened.
+    expect(screen.getByTestId('runtime-pack-manifest')).toHaveTextContent(
+      'declares demo 0.4.11'
     );
     expect(screen.getByTestId('runtime-compiled-output')).toHaveTextContent(
       'matches its sources'
@@ -203,7 +240,7 @@ describe('VersionTimeline: two kinds of truth, two regions', () => {
     expect(screen.getByTestId('runtime-working-tree')).toHaveTextContent(
       'not measured'
     );
-    expect(screen.getByTestId('runtime-installed')).toHaveTextContent(
+    expect(screen.getByTestId('runtime-pack-manifest')).toHaveTextContent(
       'nothing states a version'
     );
   });

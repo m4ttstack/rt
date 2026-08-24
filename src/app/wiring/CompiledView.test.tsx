@@ -40,6 +40,7 @@ function slot(
     contract: `${name}@1`,
     required: false,
     boundTo: `mattstack:${name}`,
+    fillSourcePath: null,
     fill: null,
     siteCount: 1,
     inlined: true,

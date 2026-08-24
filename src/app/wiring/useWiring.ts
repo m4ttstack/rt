@@ -151,7 +151,8 @@ export function useCompilePreview(
 
 /**
  * One verb's pack history, plus the runtime facts the same request measured.
- * Conditional on the drawer being open: this spawns git twice and rt once,
+ * Conditional on the drawer being open: this spawns git three times
+ * (`rev-parse`, `log`, `status`) and rt once, and reads the pack manifest --
  * which no page load should pay for a drawer nobody opened.
  *
  * `staleTime: 0` on purpose -- half this payload is momentary (a dirty

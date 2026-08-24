@@ -761,3 +761,56 @@ describe('skills diff route', () => {
     });
   });
 });
+
+describe('skills history route: quoted status paths', () => {
+  it('unquotes a C-quoted path so it matches what --name-only prints', async () => {
+    const rt = fakeRt({ code: 0, stdout: PACKS_STDOUT, stderr: '' });
+    const git = fakeGit(argv => {
+      if (argv.includes('rev-parse'))
+        return { code: 0, stdout: `${REPO_ROOT}\n`, stderr: '' };
+      if (argv.includes('status'))
+        return {
+          code: 0,
+          // git quotes a path with a space and octal-escapes a non-ASCII
+          // byte; left as-is these never match a seam or a log path.
+          stdout:
+            ' M "skills/watch ci/SKILL.md"\n' +
+            ' M "attachments/caf\\303\\251/SKILL.md"\n' +
+            ' M skills/plain/SKILL.md\n',
+          stderr: '',
+        };
+      return { code: 0, stdout: gitLogStdout(1), stderr: '' };
+    });
+    const app = mountGit(rt.run, git.run);
+
+    const res = await app.request('/api/skills/history?pack=demo');
+
+    await expect(res.json()).resolves.toMatchObject({
+      runtime: {
+        dirtyFiles: [
+          'skills/watch ci/SKILL.md',
+          'attachments/café/SKILL.md',
+          'skills/plain/SKILL.md',
+        ],
+      },
+    });
+  });
+
+  it('splits on the rename arrow only for a rename, not inside a name', async () => {
+    const rt = fakeRt({ code: 0, stdout: PACKS_STDOUT, stderr: '' });
+    const git = fakeGit(argv => {
+      if (argv.includes('rev-parse'))
+        return { code: 0, stdout: `${REPO_ROOT}\n`, stderr: '' };
+      if (argv.includes('status'))
+        return { code: 0, stdout: ' M "a -> b.md"\n', stderr: '' };
+      return { code: 0, stdout: gitLogStdout(1), stderr: '' };
+    });
+    const app = mountGit(rt.run, git.run);
+
+    const res = await app.request('/api/skills/history?pack=demo');
+
+    await expect(res.json()).resolves.toMatchObject({
+      runtime: { dirtyFiles: ['a -> b.md'] },
+    });
+  });
+});

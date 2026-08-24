@@ -60,6 +60,14 @@ export interface SlotOutlineNode {
   required: boolean | null;
   boundTo: string | null;
   resolveError?: string;
+  /**
+   * rt's ABSOLUTE path for the fill's own SKILL.md, computed inside rt as
+   * `join(<fill's plugin root>, srcPath)`. The only sound way to say which
+   * file a slot seam's line span is measured in: the seam states a path
+   * relative to a plugin root the client cannot resolve. Null for a
+   * binder-only slot and wherever rt states none.
+   */
+  fillSourcePath: string | null;
   fill: BoundFill | null;
   /** Binding sites across the whole manifest that resolve to this fill. */
   siteCount: number;
@@ -372,6 +380,7 @@ export function buildSpine(
       required: slot.required,
       boundTo: slot.boundTo,
       resolveError: slot.resolveError,
+      fillSourcePath: slot.fillSourcePath,
       fill: slot.boundTo ? (fillsByBinding.get(slot.boundTo) ?? null) : null,
       siteCount: siteCount(slot.boundTo),
       inlined: slot.inlined,
@@ -386,6 +395,7 @@ export function buildSpine(
         contract: fill?.provides ?? null,
         required: null,
         boundTo: slot.boundTo,
+        fillSourcePath: null,
         fill,
         siteCount: siteCount(slot.boundTo),
         inlined: null,
@@ -489,6 +499,7 @@ export function buildSpine(
           contract: slot.name,
           required: null,
           boundTo: slot.boundTo,
+          fillSourcePath: null,
           fill,
           siteCount: siteCount(slot.boundTo),
           inlined: null,

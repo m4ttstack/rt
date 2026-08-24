@@ -532,6 +532,9 @@ function WiringSpineView({
         refName={historyEntry?.ref ?? null}
         health={historyEntry?.health ?? 'unknown'}
         staleFiles={historyEntry?.staleFiles ?? []}
+        sourcePath={historyEntry?.sourcePath ?? null}
+        artifactPath={historyEntry?.artifactPath ?? null}
+        slots={historyEntry?.slots ?? []}
         onClose={() => setHistoryEntry(null)}
       />
 
