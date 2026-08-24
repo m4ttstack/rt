@@ -85,17 +85,25 @@ describe('runs api', () => {
     );
   });
 
-  it('renders a DOWNED daemon as JSON, not text/plain', async () => {
-    // rt-client THROWS when the daemon is unreachable rather than returning
-    // ok:false, so this path -- not the 502 above -- is what a stopped daemon
-    // actually produces. It exercises app.onError through the real route.
-    vi.mocked(rt.listRuns).mockRejectedValueOnce(new Error('daemon is down'));
+  it('renders a DOWNED daemon as JSON 502, not a thrown 500', async () => {
+    // rt-client cannot throw: rtCommand wraps its fetch in try/catch and
+    // returns { ok: false, error: 'rt daemon unreachable at <sock>: ...' } for
+    // connection-refused exactly as for a refusal (MAT-392). A stopped daemon
+    // therefore lands in the SAME ok:false/502 branch as a refusal, not in
+    // app.onError. Do not mockRejectedValue against rt-client -- that is a
+    // rejection the real client never produces.
+    vi.mocked(rt.listRuns).mockResolvedValueOnce({
+      ok: false,
+      error: 'rt daemon unreachable at /Users/x/.mattstack/rt/rt.sock: ECONNREFUSED',
+    });
 
     const res = await app.fetch(new Request('http://localhost/api/runs'));
 
-    expect(res.status).toBe(500);
+    expect(res.status).toBe(502);
     expect(res.headers.get('content-type')).toContain('application/json');
-    await expect(res.json()).resolves.toEqual({ error: 'daemon is down' });
+    await expect(res.json()).resolves.toMatchObject({
+      error: expect.stringContaining('rt daemon unreachable'),
+    });
   });
 
   it('survives a POST with no body at all', async () => {

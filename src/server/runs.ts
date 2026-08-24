@@ -26,10 +26,13 @@ function canonicalRepo(raw: string): string {
 }
 
 /**
- * 502, not 500: an `ok: false` from rt-client means the daemon answered and
- * refused, an upstream condition the client should see as "rt said no" rather
- * than a console crash. A thrown error means the daemon is unreachable and
- * falls through to `app.onError` as a 500 -- do not catch it here.
+ * 502 for every `ok: false` from rt-client. The client CANNOT throw: rtCommand
+ * wraps its fetch in try/catch and returns `{ ok: false, error }` for a downed
+ * daemon (`rt daemon unreachable at <sock>: ...`) exactly as for a refusal
+ * (MAT-392). So daemon-down and daemon-refused are indistinguishable by shape
+ * and both land here -- app.onError is never reached for this class. To tell a
+ * stopped daemon from a refusal, match the `rt daemon unreachable at ` prefix
+ * on the error string.
  */
 export const runs = new Hono()
   .get('/api/runs', async c => {
