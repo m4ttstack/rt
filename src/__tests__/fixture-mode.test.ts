@@ -27,7 +27,9 @@ writeFileSync(join(dir, "review-report.md"), "# canned review\n");
 
 const PORT = 47942; // test's own port, not even the fixture default (7942 collides with an unrelated local service on this machine)
 const proc = Bun.spawn(["bun", "run", join(import.meta.dir, "..", "server.ts")], {
-  env: { ...process.env, BOARD_FIXTURE: dir, PORT: String(PORT) },
+  // BOARD_APP_ROOT keeps the booted server from writing state/board-port into
+  // the repo, which would point a live board's status writers at a test port.
+  env: { ...process.env, BOARD_FIXTURE: dir, BOARD_APP_ROOT: dir, PORT: String(PORT) },
   stdout: "pipe", stderr: "pipe",
 });
 afterAll(() => proc.kill());

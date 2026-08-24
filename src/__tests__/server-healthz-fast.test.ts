@@ -40,6 +40,9 @@ const proc = Bun.spawn(["bun", "run", join(import.meta.dir, "..", "server.ts")],
   env: {
     ...process.env,
     HOME: fakeHome,
+    // Keeps the booted server from writing state/board-port into the repo,
+    // which would point a live board's status writers at a test port.
+    BOARD_APP_ROOT: fakeHome,
     PORT: String(PORT),
     // Force every token through the (wedged) daemon path -- a token
     // inherited from the developer's own shell env would skip it and let
