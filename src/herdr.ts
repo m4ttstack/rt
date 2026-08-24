@@ -76,16 +76,25 @@ function shellSingleQuote(s: string): string {
   return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
-/** Absolute path to the board's status-writer CLI for a given verb. The launched
-    skill runs in the target repo's cwd (config.reviewCwd), not the board's, so the
-    board passes this path in rather than the skill guessing where the board lives. */
-export function statusBinPath(kind: "review" | "respond" | "doctor"): string {
-  return join(import.meta.dir, "..", "bin", `${kind}-status.ts`);
+/** Absolute path to the board executable. The launched skill runs in the target
+    repo's cwd (config.reviewCwd), not the board's, so the board passes this in
+    rather than the skill guessing where the board lives; the skill appends the
+    verb it wants (`<status-bin> review-status <state> <status>`).
+
+    A compiled board has no source tree — `import.meta.dir` is `/$bunfs/root`
+    there — so a path into `bin/` names a file that exists on no distributed
+    install. That failure surfaces in the launched agent, later and silently:
+    a review that hangs forever having already done the work, failing only
+    when it reports. */
+export function statusBinPath(): string {
+  return import.meta.dir.startsWith("/$bunfs")
+    ? process.execPath
+    : join(import.meta.dir, "..", "bin", "board");
 }
 
-/** Absolute path to the board's draft-writer CLI (see doctor-draft.ts). */
+/** The same executable; the draft writer is one of its verbs (`doctor-draft`). */
 export function draftBinPath(): string {
-  return join(import.meta.dir, "..", "bin", "doctor-draft.ts");
+  return statusBinPath();
 }
 
 export interface SkillPromptOpts {
@@ -331,7 +340,7 @@ export async function launchReview(
   const prompt = await dispatchPrompt("mr-board:review", {
     mrUrl: opts.mrUrl,
     statePath: opts.statePath,
-    statusBin: statusBinPath("review"),
+    statusBin: statusBinPath(),
     reportPath: reviewReportPath(opts.statePath),
     skill: opts.skill,
     reReview: opts.reReview,
@@ -350,7 +359,7 @@ export async function launchRespond(
   const prompt = await dispatchPrompt("mr-board:respond", {
     mrUrl: opts.mrUrl,
     statePath: opts.statePath,
-    statusBin: statusBinPath("respond"),
+    statusBin: statusBinPath(),
     skill: opts.skill,
     note: opts.note,
   }, resolvePath);
@@ -366,7 +375,7 @@ export async function launchDoctor(
   const prompt = await dispatchPrompt("mr-board:doctor", {
     mrUrl: opts.mrUrl,
     statePath: opts.statePath,
-    statusBin: statusBinPath("doctor"),
+    statusBin: statusBinPath(),
     skill: opts.skill,
     tier: opts.tier,
     fixClasses: opts.fixClasses,

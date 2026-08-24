@@ -33,7 +33,7 @@ tool-specific knowledge — the board injects everything it needs as flags:
 Write status **only** by running the injected `--status-bin`:
 
 ```
-bun run <status-bin> <state> <status> [message] [--outcome <comment|approve>]
+<status-bin> review-status <state> <status> [message] [--outcome <comment|approve>]
 ```
 
 ## Operator note
@@ -71,7 +71,7 @@ answers; the order is fixed:
 
 ## Steps
 
-1. **Mark reviewing.** `bun run <status-bin> <state> reviewing`
+1. **Mark reviewing.** `<status-bin> review-status <state> reviewing`
 2. **Review.** If `--re-review` was passed, read "Re-review mode" below first —
    it changes how you frame this step (and what you hand the `--skill`).
    - **If a domain skill resolved** (explicit `--skill`, else the `review`
@@ -103,7 +103,7 @@ answers; the order is fixed:
 
    Only after the human has answered and you have posted accordingly, mark done
    with their disposition as the outcome:
-   `bun run <status-bin> <state> done "<one-line summary>" --outcome <comment|approve>`
+   `<status-bin> review-status <state> done "<one-line summary>" --outcome <comment|approve>`
 
    The board turns your status writes into the slack reactions on this MR's
    review-request message -- 👀 when you mark `reviewing`, 💬 or ✅ when you mark
@@ -117,7 +117,7 @@ answers; the order is fixed:
    unanswered verdict is not an approve.
 5. **On failure.** If the review can't proceed (bad MR link, mismatched
    MR/ticket, fetch failure, delegated skill failed):
-   `bun run <status-bin> <state> error "<what went wrong>"`
+   `<status-bin> review-status <state> error "<what went wrong>"`
    then stop and report to the human in the pane.
 
 ## Re-review mode

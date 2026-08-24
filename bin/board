@@ -1,0 +1,10 @@
+#!/usr/bin/env bun
+// The checkout's counterpart to the compiled binary: same subcommands, so the
+// path the board hands out as --status-bin is executable in both forms.
+import { runSubcommand, SUBCOMMANDS } from "../src/subcommands.ts";
+
+if (!(await runSubcommand(process.argv))) {
+  console.error(`usage: board <${SUBCOMMANDS.join("|")}> [args]`);
+  console.error(`unknown subcommand: ${process.argv[2] ?? "(none)"}`);
+  process.exit(1);
+}

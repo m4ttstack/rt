@@ -199,7 +199,7 @@ describe("launchReview", () => {
     const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
     expect(runCall?.[2]).toBe("w40:p7");
     expect(runCall?.[3]).toContain("claude '/mr-board:review https://x/mr/1 --state /s/1.json");
-    expect(runCall?.[3]).toContain("bin/review-status.ts --report /s/1.md'");
+    expect(runCall?.[3]).toContain("bin/board --report /s/1.md'");
   });
 
   test("launches the pane with the configured claude command when set", async () => {
@@ -322,7 +322,7 @@ import { doctorPrompt, draftBinPath, statusBinPath, dispatchPrompt, respondPromp
 describe("doctorPrompt tier flags", () => {
   test("emits --tier, --fix-classes, and --draft-bin when given", () => {
     const p = doctorPrompt({
-      mrUrl: "https://x/mr/1", statePath: "/s", statusBin: statusBinPath("doctor"),
+      mrUrl: "https://x/mr/1", statePath: "/s", statusBin: statusBinPath(),
       skill: "team:doctor-api", tier: "api", fixClasses: ["retry-flake", "inherited-note-draft"], draftBin: draftBinPath(),
     });
     expect(p).toContain("--tier api");
@@ -331,7 +331,7 @@ describe("doctorPrompt tier flags", () => {
   });
 
   test("omits the flags when absent (manual path unchanged)", () => {
-    const p = doctorPrompt({ mrUrl: "https://x/mr/1", statePath: "/s", statusBin: statusBinPath("doctor") });
+    const p = doctorPrompt({ mrUrl: "https://x/mr/1", statePath: "/s", statusBin: statusBinPath() });
     expect(p).not.toContain("--tier");
     expect(p).not.toContain("--fix-classes");
     expect(p).not.toContain("--draft-bin");
@@ -385,13 +385,13 @@ describe("dispatchPrompt (wrapper hop stays; --skill-path rides alongside --skil
   test("carries --re-review, doctor's tier, fix-classes, and draft-bin flags verbatim alongside --skill-path", async () => {
     const resolvePath = async () => "/cache/acme/attachments/mr-board-doctor-api/SKILL.md";
     const opts = {
-      mrUrl: "https://x/mr/1", statePath: "/s", statusBin: statusBinPath("doctor"),
+      mrUrl: "https://x/mr/1", statePath: "/s", statusBin: statusBinPath(),
       skill: "acme:mr-board-doctor-api", tier: "api",
       fixClasses: ["retry-flake"], draftBin: draftBinPath(),
     };
     const prompt = await dispatchPrompt("mr-board:doctor", opts, resolvePath);
     expect(prompt).toBe(
-      `/mr-board:doctor https://x/mr/1 --state /s --status-bin ${statusBinPath("doctor")} --skill acme:mr-board-doctor-api ` +
+      `/mr-board:doctor https://x/mr/1 --state /s --status-bin ${statusBinPath()} --skill acme:mr-board-doctor-api ` +
         `--skill-path /cache/acme/attachments/mr-board-doctor-api/SKILL.md ` +
         `--tier api --fix-classes retry-flake --draft-bin ${draftBinPath()}`,
     );
@@ -461,7 +461,7 @@ describe("launchReview / launchRespond / launchDoctor --skill-path wiring", () =
     const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
     expect(runCall?.[3]).toBe(
       buildPaneCommand("/repo", await dispatchPrompt("mr-board:respond", {
-        mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: statusBinPath("respond"), skill: "acme:mr-board-respond",
+        mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: statusBinPath(), skill: "acme:mr-board-respond",
       }, resolvePath)),
     );
   });

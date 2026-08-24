@@ -29,12 +29,12 @@ knowledge; the board injects it:
 | `--skill-path <path>` | absolute path to that skill's SKILL.md, when the board already resolved it (optional; see "Resolving the domain skill") |
 | `--tier api` | API-only repair tier: no checkout, no worktree, no local commits. Absent = the historical checkout-tier behavior. |
 | `--fix-classes <a,b>` | Comma-separated allowlist of fix classes the dispatching policy enabled (e.g. `retry-flake,inherited-note-draft`). Actions outside the list are escalations, not fixes. See "Fix classes" below for what each one licenses. |
-| `--draft-bin <path>` | Absolute path to the board's draft-writer CLI. Any outbound MR note MUST be written through it as a held draft: `bun run <draft-bin> <mrUrl> <iid> <kind> <body...>`. Never post a note directly. |
+| `--draft-bin <path>` | Absolute path to the board's draft-writer CLI. Any outbound MR note MUST be written through it as a held draft: `<draft-bin> doctor-draft <mrUrl> <iid> <kind> <body...>`. Never post a note directly. |
 
 Write status **only** by running the injected `--status-bin`:
 
 ```
-bun run <status-bin> <state> <status> [message]
+<status-bin> doctor-status <state> <status> [message]
 ```
 
 ## State progression
@@ -88,7 +88,7 @@ launch uses the `doctor` slot (mirroring `config.doctorSkill`).
 
 ## Steps
 
-1. **Mark `diagnosing`.** `bun run <status-bin> <state> diagnosing`
+1. **Mark `diagnosing`.** `<status-bin> doctor-status <state> diagnosing`
 2. **Do the repair.**
    - **If a domain skill resolved** (explicit `--skill`, else the tier's slot
      per "Resolving the domain skill"): delegate to that skill with the MR url. It owns

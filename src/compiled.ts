@@ -7,6 +7,7 @@ import pkg from "../package.json";
 import appJs from "../dist/client/app.js.txt" with { type: "text" };
 import appCss from "../dist/client/app.css" with { type: "text" };
 import { injectClientAssets } from "./client-assets.ts";
+import { runSubcommand } from "./subcommands.ts";
 
 // Bare semver, nothing else: the mattstack bundle gate compares this output
 // against the rt-tray deps.lock row verbatim. Answered before the server
@@ -16,14 +17,14 @@ if (Bun.argv.includes("--version")) {
   process.exit(0);
 }
 
-// One-shot triage pass, for rt cron to invoke on a machine that only has the
-// bundled binary (no checkout to `bun run bin/triage.ts` against). bin/
-// triage.ts is a top-level-execution script, not an exported function: the
-// dynamic import runs it to completion (or lets its rejection propagate, for
-// a real failure to exit non-zero). Never touches the client bundle/server
-// boot path below.
-if (Bun.argv[2] === "triage") {
-  await import("../bin/triage.ts");
+// The bin/ entry points, for a machine that has only the bundled binary and no
+// checkout to `bun run` against: the one-shot triage pass rt cron invokes, and
+// the status writers a launched agent pane runs to report back (the board hands
+// itself out as --status-bin; see statusBinPath). They are top-level-execution
+// scripts, not exported functions: each runs to completion, or lets its
+// rejection propagate so a real failure exits non-zero. Anything else falls
+// through to the client bundle and server boot below.
+if (await runSubcommand(Bun.argv)) {
   process.exit(0);
 }
 

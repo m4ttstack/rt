@@ -31,8 +31,8 @@ MRs and report status back to the board via a state file. This wrapper carries
 Write status **only** by running the injected `--status-bin`:
 
 ```
-bun run <status-bin> <state> <status> [message]
-bun run <status-bin> <state> done <message> --posted <n> --threads <n>
+<status-bin> respond-status <state> <status> [message]
+<status-bin> respond-status <state> done <message> --posted <n> --threads <n>
 ```
 
 The board tracks five in-flight statuses; emit each as you cross the milestone:
@@ -79,7 +79,7 @@ answers; the order is fixed:
 
 ## Steps
 
-1. **Mark triaging.** `bun run <status-bin> <state> triaging`
+1. **Mark triaging.** `<status-bin> respond-status <state> triaging`
 2. **Do the work.**
    - **If a domain skill resolved** (explicit `--skill`, else the `respond`
      slot per "Resolving the domain skill"): delegate to that skill with the MR url. It owns
@@ -90,13 +90,13 @@ answers; the order is fixed:
    - **If no domain skill resolved:** fetch the MR's unresolved review threads yourself,
      evaluate each on its merits, and draft replies. Hold at a posting gate.
 3. **Emit `drafting`** when the verdict table + per-thread draft replies are on
-   screen: `bun run <status-bin> <state> drafting`
+   screen: `<status-bin> respond-status <state> drafting`
 4. **Emit `implementing`** only if the human approves writing fixes:
-   `bun run <status-bin> <state> implementing`. When implementation finishes and
+   `<status-bin> respond-status <state> implementing`. When implementation finishes and
    you're back to finalized replies, emit `drafting` again before offering to post.
 5. **Mark done, with the counts.** After the run wraps, report what actually
    happened to the replies:
-   `bun run <status-bin> <state> done "<one-line summary>" --posted <n> --threads <n>`
+   `<status-bin> respond-status <state> done "<one-line summary>" --posted <n> --threads <n>`
    - `--threads` is the number of unresolved human threads the run set out to
      answer, i.e. the rows in the verdict table.
    - `--posted` is how many of those actually received a posted reply, counted
@@ -109,7 +109,7 @@ answers; the order is fixed:
    "replies drafted, not posted". Keep the message short, e.g.
    `"3 threads: 2 fixed, 1 pushback"` or
    `"no valid threads... replied with technical pushback"`.
-6. **On failure.** `bun run <status-bin> <state> error "<what went wrong>"`,
+6. **On failure.** `<status-bin> respond-status <state> error "<what went wrong>"`,
    then stop and report to the human in the pane.
 
 ## Rules
