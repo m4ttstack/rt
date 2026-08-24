@@ -4,6 +4,7 @@ import {
   CopyActionIcon,
   Drawer,
   Group,
+  Paper,
   Skeleton,
   Stack,
   Text,
@@ -14,6 +15,7 @@ import { CommandProvenance } from '../runs/CommandProvenance';
 import { CompiledView } from './CompiledView';
 import { useDrawerSurface } from './drawerSurface';
 import type { SlotOutlineNode } from './outline';
+import { SOFT_RULE } from './SlotRow';
 import { useCompilePreview } from './useWiring';
 
 export interface CompileDrawerProps {
@@ -56,7 +58,7 @@ export function CompileDrawer({
   slots,
   onClose,
 }: CompileDrawerProps) {
-  const { text } = useSchemeColors();
+  const { bg, text } = useSchemeColors();
   const surface = useDrawerSurface();
   const query = useCompilePreview(pack, verb ?? undefined);
   const internal = query.isError
@@ -127,20 +129,27 @@ export function CompileDrawer({
 
           {query.isPending && <Skeleton height={240} />}
           {internal && (
-            <Alert
-              variant="light"
-              color="gray"
-              icon={<Icons.info size={14} />}
+            // Drawn on the body's own surface rather than as a coloured
+            // Alert: nothing is wrong here, and `color="gray"` reads the
+            // border ramp this theme repoints -- see QuietBadge.
+            <Paper
+              bg={bg.level3}
+              p="md"
+              radius="sm"
+              style={{ border: `1px solid ${SOFT_RULE}` }}
               data-testid="compile-preview-internal"
             >
-              <Stack gap={2}>
-                <Text size="xs">{internal}</Text>
-                <Text size="xs" c={text.muted}>
-                  Internal verbs compile into the skills that name them, not
-                  into an artifact of their own, so there is no body to preview.
-                </Text>
-              </Stack>
-            </Alert>
+              <Group gap="xs" wrap="nowrap" align="flex-start">
+                <Icons.info size={14} color={text.muted} />
+                <Stack gap={2}>
+                  <Text size="xs">{internal}</Text>
+                  <Text size="xs" c={text.muted}>
+                    rt compiles no artifact for a roster verb the pack&apos;s
+                    surface does not publish, so there is no body to preview.
+                  </Text>
+                </Stack>
+              </Group>
+            </Paper>
           )}
           {query.isError && !internal && (
             <Alert

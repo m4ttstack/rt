@@ -17,6 +17,23 @@ function spanOf(seam: Seam): string {
 }
 
 /**
+ * `@mantine/code-highlight` ships its own type metrics -- a hard-coded
+ * 0.8125rem and its own padding -- which are Mantine's defaults, not this
+ * app's. Left alone the compiled text renders a third larger than every other
+ * code surface in the console and indented away from the headings above it.
+ */
+const CODE_STYLE = {
+  padding: 0,
+  background: 'transparent',
+  fontSize: 'var(--mantine-font-size-xs)',
+  lineHeight: 1.65,
+  // Compiled SKILL.md carries long frontmatter lines; wrapping them keeps the
+  // drawer's only scroll vertical.
+  whiteSpace: 'pre-wrap',
+  wordBreak: 'break-word',
+} as const;
+
+/**
  * What a slot contributed to this body, said from the COMPOSITION rather than
  * from the seams.
  *
@@ -184,12 +201,7 @@ export function CompiledView({ body, slots }: CompiledViewProps) {
                 language="markdown"
                 withCopyButton={false}
                 background="transparent"
-                // Compiled SKILL.md carries long frontmatter lines; wrapping
-                // them keeps the drawer's only scroll vertical.
-                styles={{
-                  pre: { whiteSpace: 'pre-wrap', wordBreak: 'break-word' },
-                  code: { whiteSpace: 'pre-wrap', wordBreak: 'break-word' },
-                }}
+                styles={{ pre: CODE_STYLE, code: CODE_STYLE }}
               />
             </Stack>
           ))}
