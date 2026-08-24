@@ -115,16 +115,25 @@
  *
  * READ THIS BEFORE TRUSTING ANY LINE BELOW. Mantine declares all of these in
  * its own `:root[data-mantine-color-scheme='…']` blocks, emitted at runtime
- * and later in the document, so a bare `:root` here LOSES. Several land on
- * the intended value anyway, by two accidents: the `--mantine-color-dark-*`
- * remap further down IS scheme-scoped, so Mantine's dark fallbacks resolve
- * back into Tokyo; and `anchor` arrives via the `blue`->`accent` virtualColor.
+ * and later in the document, so a bare `:root` here LOSES every time.
  *
- * These six do NOT take effect, and the app renders Mantine's value instead:
- * `body`, `dimmed`, `placeholder`, `default` (light only), `default-hover`,
- * `default-color`. They are kept because scheme-scoping them is a design
- * change rather than a repair -- `body` and `default` would repaint every
- * Modal, Popover and Drawer in light scheme from #fff to the Tokyo panel.
+ * Two of them land on the intended value regardless, and neither is this
+ * block's doing. `anchor` is derived by Mantine from `theme.primaryColor`,
+ * which `app-theme.ts` sets to `accent` -- the shades it reads (6 in light, a
+ * hard-coded 4 in dark) are the two the ramps are anchored on, so it resolves
+ * to the canonical hex either way. `text` lands in dark because the
+ * `--mantine-color-dark-*` remap further down IS scheme-scoped, so Mantine's
+ * `dark-0` fallback resolves back into Tokyo; in light it is Mantine's
+ * `theme.black` (#000) standing in for `--tk-fg` (#111), a difference no eye
+ * resolves.
+ *
+ * These six do NOT take effect, and the app renders Mantine's value instead.
+ * Four diverge in LIGHT only, landing correctly in dark by that same dark-ramp
+ * remap: `body`, `dimmed`, `placeholder`, `default`. Two diverge in BOTH:
+ * `default-hover`, `default-color`. They are kept because scheme-scoping them
+ * is a design change rather than a repair -- `body` and `default` would
+ * repaint every Modal, Popover and Drawer in light from #fff to the Tokyo
+ * panel.
  *
  * `error` was the only one that both diverged AND failed contrast, and it is
  * scheme-scoped below. Anything added here needs the same check: put it in a
