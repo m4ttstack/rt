@@ -42,6 +42,8 @@
     .site + .site { border-top: 1px solid var(--border-soft); }
     .kb { display: inline-flex; align-items: center; height: 15px; padding: 0 5px; border-radius: 3px; border: 1px solid var(--border); background: var(--bg4); font-size: 9px; color: var(--muted); }
     .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+    .btn { height: 28px; padding: 0 11.2px; border-radius: 6px; border: 0; font-family: inherit; font-size: 11.2px; font-weight: 500; cursor: pointer; background: var(--accent); color: #fff; }
+    .btn-quiet { background: transparent; color: var(--muted); border: 1px solid var(--border); }
   </style>
 </helmet>
 
@@ -115,30 +117,21 @@
       </div>
     </div>
 
-    <!-- rt has no verb that writes a binding. So in place of Apply, the exact
-         edit is named: the manifest, the key, old -> new, and the compile that
-         has to follow. Honest missing capability the operator can see. -->
+    <!-- Staged, then applied -- the same discipline as the surface roster.
+         Nothing is written until Apply, and the panel names the exact rt verb
+         it will run rather than describing it. `rt skills bind` writes the
+         binding into the manifest (comments preserved) and recompiles the
+         verb; the commit stays the operator's. -->
     <div class="stack" style="flex: none; gap: 6px; border-top: 1px solid var(--border); padding-top: 9.6px;">
       <div class="row" style="gap: 6px;">
-        <svg class="muted" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="flex: none;"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
-        <span class="sm" style="font-weight: 600;">Make this edit by hand</span>
+        <svg class="muted" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="flex: none;"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+        <span class="sm" style="font-weight: 600;">1 change staged — nothing is written until you apply</span>
       </div>
-      <span class="xs muted">rt has no verb that writes a binding yet, so the console does not write one either. Edit the manifest, then recompile:</span>
-      <div class="well" style="padding: 7.2px 9.6px;"><div class="code">~/.mattstack/repos/…/skills.jsonc
-  bindings.watch-ci.domain
-    "demo:watch-ci-domain"
-  → "demo:watch-ci-domain-v2"
-
-rt skills compile --pack demo --verb watch-ci</div></div>
+      <div class="well" style="padding: 7.2px 9.6px;"><div class="code">rt skills bind watch-ci domain demo:watch-ci-domain-v2 --pack demo</div></div>
+      <span class="xs muted truncate">writes bindings.watch-ci.domain in gitlab.com-…-dev/skills.jsonc, then recompiles watch-ci</span>
       <div class="row" style="gap: 6px; justify-content: flex-end;">
-        <button class="aicon" aria-label="Open manifest in editor" style="width: auto; padding: 0 9.6px; gap: 4.8px; border: 1px solid var(--border);">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6"/><path d="M10 14 21 3"/></svg>
-          <span class="xs">Open manifest</span>
-        </button>
-        <button class="aicon" aria-label="Copy the edit" style="width: auto; padding: 0 9.6px; gap: 4.8px; border: 1px solid var(--border);">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
-          <span class="xs">Copy</span>
-        </button>
+        <button class="btn btn-quiet">Discard</button>
+        <button class="btn">Apply</button>
       </div>
     </div>
 
