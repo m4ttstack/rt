@@ -1,6 +1,8 @@
 import { Hono } from 'hono';
 import { validator } from 'hono/validator';
 
+import { runGit as liveRunGit, type RunGit } from './git-bin';
+import { GIT_LOG_FORMAT, parseGitLog, type GitCommit } from './gitLog';
 import { runRt as liveRunRt, RtNotFoundError, type RunRt } from './rt-bin';
 
 interface SkillsPackRow {
@@ -88,6 +90,59 @@ interface SkillsCompilePreviewResponse {
   content: string;
 }
 
+interface SkillsHistoryResponse {
+  pack: string;
+  packDir: string;
+  /** The pack is a SUBDIRECTORY of its repo, not the repo -- for the live
+      demo pack, `packDir` sits three levels under this root. Reported
+      so a reader can see what the history was actually taken over. */
+  repoRoot: string;
+  /** The pathspec the log was scoped to, relative to `packDir`. */
+  scope: string;
+  verb: string | null;
+  /** The bound actually applied, which is the requested one clamped. */
+  limit: number;
+  /** True when the repo holds more history than `limit` returned. */
+  truncated: boolean;
+  commits: GitCommit[];
+}
+
+const historyQuery = validator(
+  'query',
+  (value): { pack?: string; verb?: string; limit?: string } => {
+    const v = value as { pack?: unknown; verb?: unknown; limit?: unknown };
+    return {
+      pack: typeof v?.pack === 'string' ? v.pack : undefined,
+      verb: typeof v?.verb === 'string' ? v.verb : undefined,
+      limit: typeof v?.limit === 'string' ? v.limit : undefined,
+    };
+  }
+);
+
+/** The verb reaches git as a pathspec, so it is checked against the shape rt
+    gives a verb rather than escaped: this rejects `../`, an absolute path,
+    and a leading `:` (which would make it one of git's magic pathspecs). */
+const VERB_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+const DEFAULT_HISTORY_LIMIT = 20;
+const MAX_HISTORY_LIMIT = 100;
+
+/** An unbounded `git log` is a hot endpoint waiting to happen, so there is no
+    way to ask for one: an absent, unparseable or oversized limit lands on a
+    bound rather than an error, and the payload reports what was applied. */
+function clampLimit(raw: string | undefined): number {
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 1) return DEFAULT_HISTORY_LIMIT;
+  return Math.min(Math.floor(parsed), MAX_HISTORY_LIMIT);
+}
+
+function findPackDir(payload: unknown, pack: string): string | null {
+  const packs = (payload as SkillsPacksResponse | undefined)?.packs;
+  if (!Array.isArray(packs)) return null;
+  const row = packs.find(p => p?.name === pack);
+  return typeof row?.dir === 'string' && row.dir.length > 0 ? row.dir : null;
+}
+
 type RtRunResult = { code: number; stdout: string; stderr: string };
 
 /**
@@ -133,7 +188,11 @@ const CACHE_TTL_MS = 5_000;
  * no `Bun` global involved. The return type is left inferred -- annotating
  * it `Hono` erases the chained route types and `AppType` loses this surface.
  */
-export function mountSkills(app: Hono, runRt: RunRt = liveRunRt) {
+export function mountSkills(
+  app: Hono,
+  runRt: RunRt = liveRunRt,
+  runGit: RunGit = liveRunGit
+) {
   const cache = new Map<string, { at: number; result: RtRunResult }>();
 
   async function cachedRun(argv: string[]): Promise<RtRunResult> {
@@ -271,6 +330,81 @@ export function mountSkills(app: Hono, runRt: RunRt = liveRunRt) {
           );
         }
         return c.json({ content: stdout } as SkillsCompilePreviewResponse, 200);
+      } catch (err) {
+        if (err instanceof RtNotFoundError) {
+          return c.json({ error: err.message }, 503);
+        }
+        return c.json({ error: (err as Error).message }, 502);
+      }
+    })
+    .get('/api/skills/history', historyQuery, async c => {
+      const { pack, verb, limit: rawLimit } = c.req.valid('query');
+      if (!pack) return c.json({ error: 'pack is required' }, 400);
+      if (verb !== undefined && !VERB_NAME.test(verb)) {
+        return c.json({ error: `invalid verb name: ${verb}` }, 400);
+      }
+      const limit = clampLimit(rawLimit);
+
+      try {
+        // The pack DIRECTORY comes from rt, never from the request: git is
+        // handed a path this server resolved, so no query string reaches the
+        // filesystem as a directory.
+        const packs = await cachedRun(['skills', 'packs', '--json']);
+        const payload = parseJsonPayload(packs.stdout);
+        if (payload === undefined) {
+          return c.json(
+            { error: packs.stderr.trim() || 'rt produced no output' },
+            502
+          );
+        }
+        const packDir = findPackDir(payload, pack);
+        if (packDir === null) {
+          return c.json({ error: `no pack named "${pack}"` }, 404);
+        }
+
+        const root = await runGit([
+          '-C',
+          packDir,
+          'rev-parse',
+          '--show-toplevel',
+        ]);
+        if (root.code !== 0 || !root.stdout.trim()) {
+          return c.json(
+            { error: root.stderr.trim() || `${packDir} is not in a git repo` },
+            502
+          );
+        }
+
+        const scope = verb ? `skills/${verb}` : '.';
+        // One over the bound, so "there is more history" is observed rather
+        // than inferred from a full page.
+        const log = await runGit([
+          '-C',
+          packDir,
+          'log',
+          `--max-count=${limit + 1}`,
+          '--no-color',
+          '--name-only',
+          `--format=${GIT_LOG_FORMAT}`,
+          '--',
+          scope,
+        ]);
+        if (log.code !== 0) {
+          return c.json({ error: log.stderr.trim() || 'git log failed' }, 502);
+        }
+
+        const commits = parseGitLog(log.stdout);
+        const response: SkillsHistoryResponse = {
+          pack,
+          packDir,
+          repoRoot: root.stdout.trim(),
+          scope,
+          verb: verb ?? null,
+          limit,
+          truncated: commits.length > limit,
+          commits: commits.slice(0, limit),
+        };
+        return c.json(response, 200);
       } catch (err) {
         if (err instanceof RtNotFoundError) {
           return c.json({ error: err.message }, 503);
