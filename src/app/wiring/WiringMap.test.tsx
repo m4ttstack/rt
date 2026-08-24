@@ -619,6 +619,61 @@ describe('WiringMap: actions', () => {
     ).toBeInTheDocument();
     expect(screen.queryByText('502')).not.toBeInTheDocument();
   });
+
+  it("states an internal verb's missing body as a fact, not as a failure", async () => {
+    mockHappyPath();
+    // rt prints this on stderr and leaves stdout empty, so the route answers
+    // 502 with the whole stderr -- banner and plugin warnings included.
+    compileGet.mockResolvedValue(
+      err(
+        502,
+        'rt: skipping plugin "current-time"\ninternal: work (not compiled; roster entry retired)'
+      )
+    );
+
+    const user = userEvent.setup();
+    renderWiring();
+
+    const row = await screen.findByTestId('skill-row-mattstack:work');
+    await user.click(within(row).getByTestId('toggle-compile-preview'));
+
+    const notice = await screen.findByTestId('compile-preview-internal');
+    expect(notice).toHaveTextContent(
+      'internal: work (not compiled; roster entry retired)'
+    );
+    expect(notice).not.toHaveTextContent('skipping plugin');
+    expect(
+      screen.queryByTestId('compile-preview-error')
+    ).not.toBeInTheDocument();
+  });
+
+  it("hands the drawer the verb's own slots, so a referenced fill is named at all", async () => {
+    mockHappyPath();
+    // The body carries a seam for the step only; `tiering` reaches the pane
+    // through the composition, which is the only record that it exists.
+    compileGet.mockResolvedValue(
+      ok({
+        content:
+          '<!-- part: step source=mattstack:work version=0.8.0 path=a/SKILL.md lines=1-2 -->\n\n# work',
+      })
+    );
+
+    const user = userEvent.setup();
+    renderWiring();
+
+    const row = await screen.findByTestId('skill-row-mattstack:work');
+    await user.click(within(row).getByTestId('toggle-compile-preview'));
+
+    const drawer = screen.getByTestId('compile-drawer');
+    await waitFor(() =>
+      expect(
+        within(drawer).getByTestId('compiled-slot-tiering')
+      ).toBeInTheDocument()
+    );
+    expect(
+      within(drawer).queryByTestId('compiled-slot-domain')
+    ).not.toBeInTheDocument();
+  });
 });
 
 const CHECK_CLEAN = {

@@ -39,6 +39,7 @@ import {
   suffixOf,
   type BindingSite,
   type OrphanFillEntry,
+  type SlotOutlineNode,
   type SpineEntry,
   type WiringHealth,
   type WiringSpine,
@@ -333,6 +334,7 @@ function WiringSpineView({
   const [preview, setPreview] = useState<{
     verb: string;
     changedFiles: string[];
+    slots: SlotOutlineNode[];
   } | null>(null);
   const [indexFill, setIndexFill] = useState<string | null>(null);
 
@@ -354,6 +356,7 @@ function WiringSpineView({
         : {
             verb: entry.verb as string,
             changedFiles: [...entry.staleFiles, ...entry.orphanFiles],
+            slots: entry.slots,
           }
     );
   };
@@ -502,6 +505,7 @@ function WiringSpineView({
         pack={pack}
         verb={preview?.verb ?? null}
         changedFiles={preview?.changedFiles ?? []}
+        slots={preview?.slots ?? []}
         onClose={() => setPreview(null)}
       />
 

@@ -1,7 +1,6 @@
 import {
   Alert,
   Badge,
-  Code,
   CopyActionIcon,
   Drawer,
   Group,
@@ -12,7 +11,9 @@ import {
 import { useSchemeColors } from '@ui/hooks';
 import { Icons } from '@ui/icons';
 import { CommandProvenance } from '../runs/CommandProvenance';
+import { CompiledView } from './CompiledView';
 import { useDrawerSurface } from './drawerSurface';
+import type { SlotOutlineNode } from './outline';
 import { useCompilePreview } from './useWiring';
 
 export interface CompileDrawerProps {
@@ -21,7 +22,23 @@ export interface CompileDrawerProps {
   verb: string | null;
   /** What `rt skills check` named as differing on disk for this verb. */
   changedFiles: string[];
+  /** The verb's slots, from the composition -- the record of what the body
+      SHOULD contain, which the body's own seams cannot supply. */
+  slots: SlotOutlineNode[];
   onClose: () => void;
+}
+
+/**
+ * rt answers a preview of an internal verb by printing a line to stderr and
+ * leaving stdout empty, so it reaches the client as an error. It is a fact
+ * about the verb -- rt compiles no artifact for it -- and not a failure, so
+ * it is pulled out of the surrounding stderr noise and shown plainly. Read
+ * from rt's own words rather than re-derived from the roster: the roster
+ * knowing a verb is internal is a second answer to a question rt already
+ * answered.
+ */
+function internalNotice(message: string): string | null {
+  return /^internal: .+$/m.exec(message)?.[0] ?? null;
 }
 
 /**
@@ -36,11 +53,15 @@ export function CompileDrawer({
   pack,
   verb,
   changedFiles,
+  slots,
   onClose,
 }: CompileDrawerProps) {
-  const { bg, text } = useSchemeColors();
+  const { text } = useSchemeColors();
   const surface = useDrawerSurface();
   const query = useCompilePreview(pack, verb ?? undefined);
+  const internal = query.isError
+    ? internalNotice((query.error as Error).message)
+    : null;
 
   return (
     <Drawer
@@ -105,7 +126,23 @@ export function CompileDrawer({
           </Group>
 
           {query.isPending && <Skeleton height={240} />}
-          {query.isError && (
+          {internal && (
+            <Alert
+              variant="light"
+              color="gray"
+              icon={<Icons.info size={14} />}
+              data-testid="compile-preview-internal"
+            >
+              <Stack gap={2}>
+                <Text size="xs">{internal}</Text>
+                <Text size="xs" c={text.muted}>
+                  Internal verbs compile into the skills that name them, not
+                  into an artifact of their own, so there is no body to preview.
+                </Text>
+              </Stack>
+            </Alert>
+          )}
+          {query.isError && !internal && (
             <Alert
               variant="light"
               color="bad"
@@ -116,28 +153,7 @@ export function CompileDrawer({
             </Alert>
           )}
           {query.data && (
-            <div
-              style={{
-                flex: 1,
-                minHeight: 0,
-                maxHeight: '60vh',
-                overflow: 'auto',
-                background: bg.level3,
-                border: `1px solid var(--mantine-color-gray-3)`,
-                borderRadius: 4,
-                padding: 'var(--mantine-spacing-md)',
-              }}
-              data-testid="compile-preview-body"
-            >
-              {/* Compiled SKILL.md carries long frontmatter lines; wrapping
-                  them keeps the drawer's only scroll vertical. */}
-              <Code
-                block
-                style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
-              >
-                {query.data.content}
-              </Code>
-            </div>
+            <CompiledView body={query.data.content} slots={slots} />
           )}
         </Stack>
       </Stack>
