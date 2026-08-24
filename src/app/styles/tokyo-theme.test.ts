@@ -23,34 +23,7 @@ describe('tokyo-theme.css', () => {
     const dark = varNames(blockFor(":root[data-mantine-color-scheme='dark']"));
 
     expect(light).toEqual(dark);
-    expect(light.length).toBe(19);
-  });
-
-  /** Mantine derives `-light` by parsing a tuple shade into `rgba()`; every
-      tuple here is `var(--tk-*)`, which that parse cannot read, so it emits
-      the hue for both the fill and the label -- a `variant="light"` Badge or
-      Alert renders same-on-same and its text vanishes. */
-  it('restates the light-variant wash for every hue, so light variants stay readable', () => {
-    for (const [name, hue] of [
-      ['accent', '--tk-accent'],
-      ['ok', '--tk-green'],
-      ['warn', '--tk-amber'],
-      ['bad', '--tk-red'],
-      ['purple', '--tk-purple'],
-      ['cyan', '--tk-cyan'],
-    ]) {
-      expect(css, `${name} has no light wash`).toMatch(
-        new RegExp(
-          `--mantine-color-${name}-light:\\s*color-mix\\(\\s*in srgb,\\s*var\\(${hue}\\) var\\(--tk-wash\\)`
-        )
-      );
-      expect(css).toContain(
-        `--mantine-color-${name}-light-color: var(${hue});`
-      );
-      expect(css, `${name} has no light hover`).toContain(
-        `--mantine-color-${name}-light-hover:`
-      );
-    }
+    expect(light.length).toBe(17);
   });
 
   it("carries tui-kit's exact Tokyo Day and Tokyo Night values", () => {

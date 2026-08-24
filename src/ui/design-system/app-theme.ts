@@ -1,4 +1,6 @@
-import { createTheme, type MantineColorsTuple } from '@mantine/core';
+import { createTheme, virtualColor } from '@mantine/core';
+
+import { ramp } from './app-ramps';
 
 // Re-exported so a brand can type its own component entries exactly the way
 // `base-theme.ts` does -- `themeComponents({ Button: { defaultProps: ... } })`
@@ -38,33 +40,49 @@ export { themeComponents } from './base-theme';
  * Leave it empty when the app is happy with the kit's defaults.
  */
 /**
- * Every hue is ONE scheme-aware CSS variable repeated across all ten shades,
- * not a generated ramp. tui-kit has one canonical value per colour and no
- * ramp, so deriving nine more shades would invent values parity forbids.
- * `isLightColor` short-circuits on `var(` strings, so these are safe through
- * Mantine's luminance checks -- the same trick the kit's own BG_LEVEL_COLORS
- * uses for its surface slots.
+ * Each hue is a PAIR of real ten-shade ramps joined by `virtualColor`, which
+ * is what picks between them per color scheme. The concrete `*Day`/`*Night`
+ * entries have to be registered as colors in their own right -- `virtualColor`
+ * takes color NAMES, not tuples, and resolves them out of this same map.
+ *
+ * `primaryShade` is not free: it is the index the ramps were anchored on, so
+ * `filled`/`outline`/`text` land on tui-kit's canonical hex exactly. Moving
+ * either number without regenerating `app-ramps.ts` silently re-points every
+ * primary surface at a shade tui-kit never specified.
  */
-const tokyo = (cssVar: string): MantineColorsTuple =>
-  Array(10).fill(`var(${cssVar})`) as unknown as MantineColorsTuple;
+const virtual = (name: string, hue: string) =>
+  virtualColor({ name, light: `${hue}Day`, dark: `${hue}Night` });
 
 export const appTheme = /* @__PURE__ */ createTheme({
   primaryColor: 'accent',
-  primaryShade: { light: 7, dark: 7 },
+  primaryShade: { light: 6, dark: 4 },
   colors: {
-    accent: tokyo('--tk-accent'),
-    ok: tokyo('--tk-green'),
-    warn: tokyo('--tk-amber'),
-    bad: tokyo('--tk-red'),
-    purple: tokyo('--tk-purple'),
+    accentDay: ramp('accentDay'),
+    accentNight: ramp('accentNight'),
+    okDay: ramp('okDay'),
+    okNight: ramp('okNight'),
+    warnDay: ramp('warnDay'),
+    warnNight: ramp('warnNight'),
+    badDay: ramp('badDay'),
+    badNight: ramp('badNight'),
+    purpleDay: ramp('purpleDay'),
+    purpleNight: ramp('purpleNight'),
+    cyanDay: ramp('cyanDay'),
+    cyanNight: ramp('cyanNight'),
+
+    accent: virtual('accent', 'accent'),
+    ok: virtual('ok', 'ok'),
+    warn: virtual('warn', 'warn'),
+    bad: virtual('bad', 'bad'),
+    purple: virtual('purple', 'purple'),
+    cyan: virtual('cyan', 'cyan'),
     // Mantine built-ins re-pointed, so stray stock-colour usage inside the
     // kit's own components still lands in palette.
-    blue: tokyo('--tk-accent'),
-    green: tokyo('--tk-green'),
-    red: tokyo('--tk-red'),
-    yellow: tokyo('--tk-amber'),
-    violet: tokyo('--tk-purple'),
-    cyan: tokyo('--tk-cyan'),
+    blue: virtual('blue', 'accent'),
+    green: virtual('green', 'ok'),
+    red: virtual('red', 'bad'),
+    yellow: virtual('yellow', 'warn'),
+    violet: virtual('violet', 'purple'),
   },
   radius: { xs: '3px', sm: '4px', md: '6px', lg: '8px', xl: '10px' },
   defaultRadius: 'md',
