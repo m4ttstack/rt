@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 
 import {
   ActionIcon,
+  Alert,
   Badge,
   Button,
   Group,
@@ -125,30 +126,32 @@ export interface RebindProps {
       fraction of it -- pipeline stages and other plugins' skills bind fills
       too), so this component cannot work from anything narrower. */
   composition: SkillsComposition;
-  /** Fired with the manifest path when "Open manifest" is pressed. Disabled
-      whenever `composition.manifestPath` is null or absent -- there is
-      nothing to open. */
-  onOpenManifest?: (manifestPath: string) => void;
-  /** Fired with the edit text when "Copy" is pressed. Disabled under the
-      same condition as `onOpenManifest`. */
-  onCopy?: (edit: string) => void;
+  /** Fired with the chosen fill when Apply is pressed. `Rebind` never writes
+      anything itself -- the caller owns the `rt skills bind` mutation and
+      passes `applying`/`applyError` back in from it. */
+  onApply?: (fill: string) => void;
+  /** True while the caller's apply is in flight -- disables Discard and
+      Apply so a second click cannot start a second, concurrent bind. */
+  applying?: boolean;
+  /** Set by the caller after a failed apply (a non-zero `rt skills bind`,
+      say), so the panel can say what went wrong. */
+  applyError?: string | null;
   onClose?: () => void;
 }
 
 /**
- * The staged rebind and its blast radius. rt has no verb that writes a
- * binding (`readManifestBindings` in `lib/skills/sources.ts` has no writer
- * counterpart), so this stops short of applying anything: it stages the
- * choice, shows what rebinding would touch on both sides, and -- in place of
- * Apply -- names the exact hand edit and the compile that has to follow it.
+ * The staged rebind and its blast radius, then a real staged Apply: nothing
+ * writes until Apply is pressed, and the panel names the exact `rt skills
+ * bind` command it will run rather than describing one for a person to type.
  */
 export function Rebind({
   pack,
   verb,
   slot,
   composition,
-  onOpenManifest,
-  onCopy,
+  onApply,
+  applying = false,
+  applyError = null,
   onClose,
 }: RebindProps) {
   const { text } = useSchemeColors();
@@ -190,13 +193,21 @@ export function Rebind({
 
   // `manifestPath` is optional on the wire (an rt older than the field
   // answers without it) and nullable (a rosterless pack). Both collapse to
-  // "nothing to show" -- never a guessed path.
+  // "nothing to show" -- never a guessed path; the command itself does not
+  // need it, `rt skills bind` resolves the manifest on its own.
   const manifestPath = composition.manifestPath ?? null;
   const bindingsKey = `bindings.${verb}.${slot}`;
-  const compileCommand = `rt skills compile --pack ${pack} --verb ${verb}`;
-  const editText = manifestPath
-    ? `${manifestPath}\n  ${bindingsKey}\n    "${currentBinding ?? ''}"\n  → "${target ?? ''}"\n\n${compileCommand}`
-    : `${bindingsKey}\n    "${currentBinding ?? ''}"\n  → "${target ?? ''}"\n\n${compileCommand}`;
+  const bindCommand = target
+    ? `rt skills bind ${verb} ${slot} ${target} --pack ${pack}`
+    : null;
+  const bindCaption = manifestPath
+    ? `writes ${bindingsKey} in ${manifestPath}, then recompiles ${verb}`
+    : `writes ${bindingsKey}, then recompiles ${verb}`;
+
+  function discard() {
+    setConfirmed(false);
+    setTarget(candidates[0]?.binding ?? null);
+  }
 
   return (
     <Stack gap="md" data-testid="rebind">
@@ -292,32 +303,19 @@ export function Rebind({
             />
           )}
 
-          {target && (
+          {target && bindCommand && (
             <Stack
               gap={6}
               pt="sm"
               style={{ borderTop: `1px solid ${SOFT_RULE}` }}
-              data-testid="manifest-edit"
+              data-testid="rebind-apply"
             >
               <Group gap={6} wrap="nowrap">
-                <Icons.edit size={14} color={text.muted} />
+                <Icons.checkCircle size={14} color={text.muted} />
                 <Text size="sm" fw={600}>
-                  Make this edit by hand
+                  1 change staged — nothing is written until you apply
                 </Text>
               </Group>
-              <Text size="xs" c={text.muted}>
-                rt has no verb that writes a binding yet, so the console does
-                not write one either.
-                {manifestPath
-                  ? ' Edit the manifest, then recompile:'
-                  : ' Recompile after making the edit below:'}
-              </Text>
-              {!manifestPath && (
-                <Text size="xs" c={text.muted}>
-                  Manifest path not available — this rt has not reported one for{' '}
-                  {pack}.
-                </Text>
-              )}
               <Paper
                 radius="sm"
                 p="xs"
@@ -328,25 +326,37 @@ export function Rebind({
                   ff="monospace"
                   style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
                 >
-                  {editText}
+                  {bindCommand}
                 </Text>
               </Paper>
+              <Text size="xs" c={text.muted} truncate>
+                {bindCaption}
+              </Text>
+              {applyError && (
+                <Alert
+                  variant="light"
+                  color="bad"
+                  icon={<Icons.error size={14} />}
+                >
+                  <Text size="xs">{applyError}</Text>
+                </Alert>
+              )}
               <Group gap={6} justify="flex-end">
                 <Button
                   size="xs"
                   variant="default"
-                  disabled={!manifestPath}
-                  onClick={() => manifestPath && onOpenManifest?.(manifestPath)}
+                  disabled={applying}
+                  onClick={discard}
                 >
-                  Open manifest
+                  Discard
                 </Button>
                 <Button
                   size="xs"
-                  variant="default"
-                  disabled={!manifestPath}
-                  onClick={() => manifestPath && onCopy?.(editText)}
+                  disabled={applying}
+                  loading={applying}
+                  onClick={() => onApply?.(target)}
                 >
-                  Copy
+                  Apply
                 </Button>
               </Group>
             </Stack>

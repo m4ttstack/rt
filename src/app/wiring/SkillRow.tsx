@@ -66,6 +66,7 @@ interface RowActionsProps {
   onPreview: () => void;
   historyOpen: boolean;
   onHistory: () => void;
+  onCopyContext: () => void;
 }
 
 /**
@@ -82,6 +83,7 @@ function RowActions({
   onPreview,
   historyOpen,
   onHistory,
+  onCopyContext,
 }: RowActionsProps) {
   if (!entry.sourcePath && !entry.artifactPath && !entry.verb) return null;
 
@@ -141,6 +143,19 @@ function RowActions({
           </ActionIcon>
         </Tooltip>
       )}
+      {entry.verb && (
+        <Tooltip label="Copy agent context">
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            onClick={onCopyContext}
+            aria-label={`copy agent context for ${entry.label}`}
+            data-testid="copy-agent-context"
+          >
+            <Icons.copy size={16} />
+          </ActionIcon>
+        </Tooltip>
+      )}
     </Group>
   );
 }
@@ -153,6 +168,14 @@ export interface SkillRowProps {
   onHistory: () => void;
   /** Opens the inverse index for a slot's fill. */
   onShowSites: (binding: string) => void;
+  /** Builds this verb's agent-context blob and writes it to the clipboard.
+      Absent wherever the entry has no verb -- `RowActions` already hides the
+      button in that case, so this stays optional rather than a no-op. */
+  onCopyContext?: () => void;
+  /** Opens Rebind for one of this entry's bound slots. Carries the slot
+      name; the verb is this entry's own, which only the caller (holding the
+      composition) can resolve into a real rebind target. */
+  onRebind?: (slotName: string) => void;
   /** Outside-the-pipeline rows carry no step number, so health rides a dot
       in front of the name instead of the timeline bullet. */
   withDot?: boolean;
@@ -170,6 +193,8 @@ export function SkillRow({
   historyOpen,
   onHistory,
   onShowSites,
+  onCopyContext,
+  onRebind,
   withDot = false,
 }: SkillRowProps) {
   const { text } = useSchemeColors();
@@ -243,9 +268,14 @@ export function SkillRow({
           onPreview={onPreview}
           historyOpen={historyOpen}
           onHistory={onHistory}
+          onCopyContext={onCopyContext ?? (() => {})}
         />
       </Group>
-      <SlotTable slots={entry.slots} onShowSites={onShowSites} />
+      <SlotTable
+        slots={entry.slots}
+        onShowSites={onShowSites}
+        onRebind={onRebind}
+      />
     </Stack>
   );
 }

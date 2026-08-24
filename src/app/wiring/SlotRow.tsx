@@ -1,10 +1,12 @@
 import {
+  ActionIcon,
   Anchor,
   Badge,
   Group,
   Paper,
   Stack,
   Text,
+  Tooltip,
   UnstyledButton,
 } from '@ui/core';
 import { useSchemeColors } from '@ui/hooks';
@@ -90,9 +92,15 @@ function FillLink({
 export function SlotRow({
   slot,
   onShowSites,
+  onRebind,
 }: {
   slot: SlotOutlineNode;
   onShowSites: (binding: string) => void;
+  /** Opens Rebind for this slot. Shown only on a BOUND slot -- rebinding an
+      empty one is a plain bind, a different action this table does not
+      offer. Omitted entirely wherever a caller has no rebind surface (e.g.
+      a binder-only view with nothing to stage a write against). */
+  onRebind?: (slotName: string) => void;
 }) {
   const { text } = useSchemeColors();
   const unbound = !slot.boundTo;
@@ -131,6 +139,21 @@ export function SlotRow({
             <QuietBadge>{slot.siteCount} sites</QuietBadge>
           </UnstyledButton>
         )}
+        {onRebind && slot.boundTo && (
+          <Tooltip label="Rebind">
+            <ActionIcon
+              variant="subtle"
+              color="gray"
+              size="sm"
+              onClick={() => onRebind(slot.name)}
+              aria-label={`rebind ${slot.name}`}
+              data-testid="rebind-slot"
+              style={{ flex: 'none' }}
+            >
+              <Icons.refresh size={12} />
+            </ActionIcon>
+          </Tooltip>
+        )}
       </Group>
       {slot.resolveError && (
         <Text
@@ -150,9 +173,11 @@ export function SlotRow({
 export function SlotTable({
   slots,
   onShowSites,
+  onRebind,
 }: {
   slots: SlotOutlineNode[];
   onShowSites: (binding: string) => void;
+  onRebind?: (slotName: string) => void;
 }) {
   const { bg } = useSchemeColors();
 
@@ -171,7 +196,7 @@ export function SlotTable({
           key={`${slot.name}-${slot.boundTo ?? i}`}
           style={i === 0 ? undefined : { borderTop: `1px solid ${SOFT_RULE}` }}
         >
-          <SlotRow slot={slot} onShowSites={onShowSites} />
+          <SlotRow slot={slot} onShowSites={onShowSites} onRebind={onRebind} />
         </div>
       ))}
     </Paper>

@@ -117,6 +117,18 @@ interface SkillsSurfaceApplyResponse {
   reReadError?: string;
 }
 
+/** One `rt skills bind <verb> <slot> <fill> --pack <pack>` invocation and
+    what it did. `ok: false` carries rt's own stderr as `error` -- the same
+    honest-failure shape `SkillsSurfaceApplyStep` uses. */
+interface SkillsBindResponse {
+  pack: string;
+  verb: string;
+  slot: string;
+  fill: string;
+  ok: boolean;
+  error?: string;
+}
+
 interface SkillsCompilePreviewResponse {
   content: string;
 }
@@ -368,6 +380,24 @@ const surfaceApplyBody = validator(
       pack: typeof v?.pack === 'string' ? v.pack : undefined,
       toPublic: stringArray(v?.toPublic),
       toInternal: stringArray(v?.toInternal),
+    };
+  }
+);
+
+const bindBody = validator(
+  'json',
+  (value): { pack?: string; verb?: string; slot?: string; fill?: string } => {
+    const v = value as {
+      pack?: unknown;
+      verb?: unknown;
+      slot?: unknown;
+      fill?: unknown;
+    };
+    return {
+      pack: typeof v?.pack === 'string' ? v.pack : undefined,
+      verb: typeof v?.verb === 'string' ? v.verb : undefined,
+      slot: typeof v?.slot === 'string' ? v.slot : undefined,
+      fill: typeof v?.fill === 'string' ? v.fill : undefined,
     };
   }
 );
@@ -685,6 +715,98 @@ export function mountSkills(
           reReadError,
         };
         return c.json(response, allOk ? 200 : 502);
+      } catch (err) {
+        if (err instanceof RtNotFoundError) {
+          return c.json({ error: err.message }, 503);
+        }
+        return c.json({ error: (err as Error).message }, 502);
+      }
+    })
+    .post('/api/skills/bind', bindBody, async c => {
+      const { pack, verb, slot, fill } = c.req.valid('json');
+      if (!pack) return c.json({ error: 'pack is required' }, 400);
+      if (!verb) return c.json({ error: 'verb is required' }, 400);
+      if (!slot) return c.json({ error: 'slot is required' }, 400);
+      if (!fill) return c.json({ error: 'fill is required' }, 400);
+
+      try {
+        // Never `cachedRun` here: this is about to write, so `verb`/`slot`/
+        // `fill` are checked against the roster and fills as they really are
+        // right now, not up to CACHE_TTL_MS stale -- the same rule the
+        // surface-apply route follows before its own write.
+        const compositionRun = await runRt([
+          'skills',
+          'composition',
+          '--pack',
+          pack,
+          '--json',
+        ]);
+        const compositionPayload = parseJsonPayload(compositionRun.stdout);
+        if (compositionPayload === undefined) {
+          return c.json(
+            {
+              error: compositionRun.stderr.trim() || 'rt produced no output',
+            },
+            502
+          );
+        }
+        const composition = compositionPayload as SkillsCompositionResponse;
+
+        // Checked against the roster/composition BEFORE any of the three
+        // names reaches an argv -- a name that is not really this pack's is
+        // rejected here, never handed to a spawn.
+        const verbEntry = composition.verbs.find(v => v.name === verb);
+        if (!verbEntry) {
+          return c.json({ error: `"${verb}" is not in ${pack}'s roster` }, 400);
+        }
+        const slotEntry = verbEntry.slots.find(s => s.name === slot);
+        if (!slotEntry) {
+          return c.json({ error: `"${slot}" is not a slot on "${verb}"` }, 400);
+        }
+        const fillEntry = composition.fills.find(f => f.binding === fill);
+        if (!fillEntry) {
+          return c.json(
+            { error: `"${fill}" is not a known fill in ${pack}` },
+            400
+          );
+        }
+
+        const run = await runRt([
+          'skills',
+          'bind',
+          verb,
+          slot,
+          fill,
+          '--pack',
+          pack,
+        ]);
+        const ok = run.code === 0;
+
+        if (ok) {
+          // `bind` recompiles the verb, so composition/check/compile all go
+          // stale too -- the same per-pack cache sweep the surface-apply
+          // route runs after `e8f4163`. Never a narrower invalidation: a
+          // written binding changes what every one of those routes answers.
+          for (const key of cache.keys()) {
+            let argv: unknown;
+            try {
+              argv = JSON.parse(key);
+            } catch {
+              continue;
+            }
+            if (Array.isArray(argv) && argv.includes(pack)) cache.delete(key);
+          }
+        }
+
+        const response: SkillsBindResponse = {
+          pack,
+          verb,
+          slot,
+          fill,
+          ok,
+          error: ok ? undefined : run.stderr.trim() || 'rt exited nonzero',
+        };
+        return c.json(response, ok ? 200 : 502);
       } catch (err) {
         if (err instanceof RtNotFoundError) {
           return c.json({ error: err.message }, 503);

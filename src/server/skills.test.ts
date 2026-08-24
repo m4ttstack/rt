@@ -1324,3 +1324,305 @@ describe('skills surface apply route', () => {
     );
   });
 });
+
+function bindComposition(over: { boundTo?: string } = {}) {
+  return {
+    pack: 'demo',
+    packDir: '/p',
+    manifestPath: '/repos/gitlab.com-acme-acme-dev/skills.jsonc',
+    verbs: [
+      {
+        name: 'watch-ci',
+        engine: 'watch-ci',
+        engineRef: 'mattstack:watch-ci',
+        plugin: 'mattstack',
+        description: '',
+        public: true,
+        sourcePath: '/s/watch-ci/SKILL.md',
+        artifactPath: '/p/skills/watch-ci',
+        slots: [
+          {
+            name: 'domain',
+            contract: 'watch-ci-domain@1',
+            required: true,
+            boundTo: over.boundTo ?? 'demo:watch-ci-domain',
+            fillSourcePath: null,
+            fillVersion: null,
+            registered: null,
+            inlined: null,
+          },
+        ],
+      },
+    ],
+    fills: [
+      {
+        binding: 'demo:watch-ci-domain',
+        provides: 'watch-ci-domain@1',
+        sourcePath: '/f/a',
+        registered: false,
+      },
+      {
+        binding: 'demo:watch-ci-domain-v2',
+        provides: 'watch-ci-domain@1',
+        sourcePath: '/f/b',
+        registered: false,
+      },
+    ],
+    binders: [],
+    pipelines: {},
+  };
+}
+
+const isComposition = (argv: string[]) => argv.includes('composition');
+const isBind = (argv: string[]) => argv.includes('bind');
+
+async function postBind(
+  app: ReturnType<typeof mountSkills>,
+  body: Record<string, unknown>
+) {
+  return app.request('/api/skills/bind', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+}
+
+describe('skills bind route', () => {
+  it('requires pack, verb, slot, and fill before touching rt', async () => {
+    const rt = fakeRtHandler(() => ({ code: 0, stdout: '', stderr: '' }));
+    const app = mountSkills(new Hono(), rt.run);
+
+    for (const body of [
+      { verb: 'watch-ci', slot: 'domain', fill: 'x' },
+      { pack: 'demo', slot: 'domain', fill: 'x' },
+      { pack: 'demo', verb: 'watch-ci', fill: 'x' },
+      { pack: 'demo', verb: 'watch-ci', slot: 'domain' },
+    ]) {
+      const res = await postBind(app, body);
+      expect(res.status).toBe(400);
+    }
+    expect(rt.run).not.toHaveBeenCalled();
+  });
+
+  it('rejects a verb not in the roster before any bind spawn', async () => {
+    const rt = fakeRtHandler(argv => {
+      if (isComposition(argv)) {
+        return {
+          code: 0,
+          stdout: JSON.stringify(bindComposition()),
+          stderr: '',
+        };
+      }
+      return { code: 0, stdout: 'ghost.domain: -> x\n', stderr: '' };
+    });
+    const app = mountSkills(new Hono(), rt.run);
+
+    const res = await postBind(app, {
+      pack: 'demo',
+      verb: 'ghost',
+      slot: 'domain',
+      fill: 'demo:watch-ci-domain-v2',
+    });
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      error: expect.stringContaining('ghost'),
+    });
+    // The unknown verb never reached an argv: the only rt call made is the
+    // composition read used to reject it.
+    expect(rt.calls).toHaveLength(1);
+    expect(rt.calls.some(isBind)).toBe(false);
+  });
+
+  it('rejects a slot not declared on the verb before any bind spawn', async () => {
+    const rt = fakeRtHandler(argv => {
+      if (isComposition(argv)) {
+        return {
+          code: 0,
+          stdout: JSON.stringify(bindComposition()),
+          stderr: '',
+        };
+      }
+      return { code: 0, stdout: 'ok\n', stderr: '' };
+    });
+    const app = mountSkills(new Hono(), rt.run);
+
+    const res = await postBind(app, {
+      pack: 'demo',
+      verb: 'watch-ci',
+      slot: 'ghost-slot',
+      fill: 'demo:watch-ci-domain-v2',
+    });
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      error: expect.stringContaining('ghost-slot'),
+    });
+    expect(rt.calls.some(isBind)).toBe(false);
+  });
+
+  it('rejects a fill that is not a known fill in the pack before any bind spawn -- this is the falsification target', async () => {
+    const rt = fakeRtHandler(argv => {
+      if (isComposition(argv)) {
+        return {
+          code: 0,
+          stdout: JSON.stringify(bindComposition()),
+          stderr: '',
+        };
+      }
+      return { code: 0, stdout: 'ok\n', stderr: '' };
+    });
+    const app = mountSkills(new Hono(), rt.run);
+
+    const res = await postBind(app, {
+      pack: 'demo',
+      verb: 'watch-ci',
+      slot: 'domain',
+      fill: 'demo:ghost-fill',
+    });
+
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toMatchObject({
+      error: expect.stringContaining('ghost-fill'),
+    });
+    // Nothing unvalidated reached an argv: the only rt call made is the
+    // composition read the fill was checked against.
+    expect(rt.calls).toHaveLength(1);
+    expect(rt.calls.some(isBind)).toBe(false);
+  });
+
+  it('threads verb, slot, fill, and --pack onto the bind call in order', async () => {
+    const rt = fakeRtHandler(argv => {
+      if (isComposition(argv)) {
+        return {
+          code: 0,
+          stdout: JSON.stringify(bindComposition()),
+          stderr: '',
+        };
+      }
+      return {
+        code: 0,
+        stdout: 'watch-ci.domain: -> demo:watch-ci-domain-v2\n',
+        stderr: '',
+      };
+    });
+    const app = mountSkills(new Hono(), rt.run);
+
+    const res = await postBind(app, {
+      pack: 'demo',
+      verb: 'watch-ci',
+      slot: 'domain',
+      fill: 'demo:watch-ci-domain-v2',
+    });
+
+    expect(res.status).toBe(200);
+    expect(rt.calls.find(isBind)).toEqual([
+      'skills',
+      'bind',
+      'watch-ci',
+      'domain',
+      'demo:watch-ci-domain-v2',
+      '--pack',
+      'demo',
+    ]);
+    await expect(res.json()).resolves.toEqual({
+      pack: 'demo',
+      verb: 'watch-ci',
+      slot: 'domain',
+      fill: 'demo:watch-ci-domain-v2',
+      ok: true,
+    });
+  });
+
+  it('surfaces a non-zero rt exit as 502, carrying rt own stderr -- never a false success', async () => {
+    const rt = fakeRtHandler(argv => {
+      if (isComposition(argv)) {
+        return {
+          code: 0,
+          stdout: JSON.stringify(bindComposition()),
+          stderr: '',
+        };
+      }
+      return {
+        code: 1,
+        stdout: '',
+        stderr: 'rt skills: unrecognized argument "bind"',
+      };
+    });
+    const app = mountSkills(new Hono(), rt.run);
+
+    const res = await postBind(app, {
+      pack: 'demo',
+      verb: 'watch-ci',
+      slot: 'domain',
+      fill: 'demo:watch-ci-domain-v2',
+    });
+
+    expect(res.status).toBe(502);
+    await expect(res.json()).resolves.toMatchObject({
+      ok: false,
+      error: expect.stringContaining('unrecognized argument'),
+    });
+  });
+
+  it('returns 503, not a false success, when rt cannot be found', async () => {
+    const rt = fakeRtHandler(() => {
+      throw new RtNotFoundError(['/nowhere/rt']);
+    });
+    const app = mountSkills(new Hono(), rt.run);
+
+    const res = await postBind(app, {
+      pack: 'demo',
+      verb: 'watch-ci',
+      slot: 'domain',
+      fill: 'demo:watch-ci-domain-v2',
+    });
+
+    expect(res.status).toBe(503);
+  });
+
+  it('invalidates every cached read for the pack after a successful bind -- this is the other falsification target', async () => {
+    let bound = false;
+    const rt = fakeRtHandler(argv => {
+      if (isComposition(argv)) {
+        return {
+          code: 0,
+          stdout: JSON.stringify(
+            bindComposition({
+              boundTo: bound
+                ? 'demo:watch-ci-domain-v2'
+                : 'demo:watch-ci-domain',
+            })
+          ),
+          stderr: '',
+        };
+      }
+      bound = true;
+      return {
+        code: 0,
+        stdout: 'watch-ci.domain: -> demo:watch-ci-domain-v2\n',
+        stderr: '',
+      };
+    });
+    const app = mountSkills(new Hono(), rt.run);
+
+    // Primes the shared cache with the PRE-bind composition.
+    const before = await app.request('/api/skills/composition?pack=demo');
+    await expect(before.json()).resolves.toMatchObject({
+      verbs: [{ slots: [{ boundTo: 'demo:watch-ci-domain' }] }],
+    });
+
+    await postBind(app, {
+      pack: 'demo',
+      verb: 'watch-ci',
+      slot: 'domain',
+      fill: 'demo:watch-ci-domain-v2',
+    });
+
+    // Must re-spawn, not serve the primed pre-bind composition.
+    const after = await app.request('/api/skills/composition?pack=demo');
+    await expect(after.json()).resolves.toMatchObject({
+      verbs: [{ slots: [{ boundTo: 'demo:watch-ci-domain-v2' }] }],
+    });
+  });
+});

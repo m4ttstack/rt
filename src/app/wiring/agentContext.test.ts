@@ -84,7 +84,7 @@ describe('buildAgentContext', () => {
     expect(ctx).not.toContain('skills/watch-ci/SKILL.md:8-42');
   });
 
-  it('pairs a slot seam to its fill by slot NAME, not by comparing path strings', () => {
+  it('pairs a slot seam to its fill by slot NAME, not by comparing path strings, index, or substring overlap', () => {
     const slotSeam = {
       kind: 'slot' as const,
       slot: 'tiering',
@@ -99,25 +99,41 @@ describe('buildAgentContext', () => {
         name: 'watch-ci',
         engineRef: 'mattstack:watch-ci',
         slots: [
+          // The target slot is SECOND, not first -- an implementation that
+          // pairs by index (verb.slots[0]) rather than by matching
+          // `seam.slot` against `slot.name` would grab this row instead.
+          {
+            name: 'domain',
+            boundTo: 'mattstack:watch-ci-domain',
+            fillSourcePath:
+              '/plugins/mattstack/attachments/model-tiering/SKILL.md',
+          },
           {
             name: 'tiering',
             boundTo: 'mattstack:model-tiering',
-            // Deliberately a different absolute root than the seam's own
-            // `path` string would suggest -- the pairing key is `name`, and
-            // this assertion fails if the builder ever falls back to
-            // matching path strings between the two coordinate systems.
-            fillSourcePath:
-              '/plugins/model-tiering-plugin/attachments/model-tiering/SKILL.md',
+            // No suffix in common with the seam's own `path` string
+            // ('attachments/model-tiering/SKILL.md') -- an implementation
+            // that pairs by suffix/substring overlap between the seam's
+            // plugin-relative path and a slot's absolute one, instead of by
+            // `name`, would fail to match this row (or would wrongly match
+            // the `domain` row above, whose fillSourcePath DOES share that
+            // suffix).
+            fillSourcePath: '/vendor/tiering-source/NOTES.txt',
           },
         ],
       },
       seams: [slotSeam],
     });
 
-    expect(ctx).toContain(
-      '/plugins/model-tiering-plugin/attachments/model-tiering/SKILL.md:8-117'
-    );
+    expect(ctx).toContain('/vendor/tiering-source/NOTES.txt:8-117');
     expect(ctx).toContain('tiering');
+    // Neither the other slot's path nor the seam's own plugin-relative path
+    // appears as the resolved span -- confirms the match was `tiering`'s row
+    // specifically, not the first slot or a suffix-overlap coincidence.
+    expect(ctx).not.toContain(
+      '/plugins/mattstack/attachments/model-tiering/SKILL.md:8-117'
+    );
+    expect(ctx).not.toContain('attachments/model-tiering/SKILL.md:8-117');
   });
 
   it('lists bound fills from the verb slots', () => {

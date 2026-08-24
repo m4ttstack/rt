@@ -1,10 +1,13 @@
 import { Component, useMemo, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 
 import {
   Alert,
   Anchor,
   Badge,
+  Button,
+  Drawer,
   GenericError,
   Group,
   LazyLoader,
@@ -22,6 +25,7 @@ import { Icons } from '@ui/icons';
 import { Link } from '../router/Link';
 import { navigate, useSearch } from '../router/navigation';
 import { CommandProvenance } from '../runs/CommandProvenance';
+import { buildAgentContext } from './agentContext';
 import { AttentionEmptyState } from './AttentionEmptyState';
 import {
   comparedVerbCount,
@@ -31,6 +35,7 @@ import {
   WIRING_HREF,
 } from './attentionFilter';
 import { CompileDrawer } from './CompileDrawer';
+import { useDrawerSurface } from './drawerSurface';
 import { InverseIndex } from './InverseIndex';
 import {
   buildSpine,
@@ -44,13 +49,19 @@ import {
   type WiringHealth,
   type WiringSpine,
 } from './outline';
+import { splitCompiledBody } from './parseSeam';
 import { QuietBadge } from './QuietBadge';
+import { Rebind } from './Rebind';
 import { HEALTH_COLOR, SkillRow } from './SkillRow';
+import { SurfaceRoster } from './SurfaceRoster';
 import {
+  fetchCompilePreview,
   useComposition,
   useCompositionSnapshot,
   usePacks,
+  useSkillsApply,
   useSkillsCheck,
+  useSurface,
 } from './useWiring';
 import { VersionTimeline } from './VersionTimeline';
 
@@ -125,6 +136,8 @@ function OutsideThePipeline({
   historyVerb,
   onHistory,
   onShowSites,
+  onCopyContext,
+  onRebind,
 }: {
   spine: WiringSpine;
   previewVerb: string | null;
@@ -132,6 +145,8 @@ function OutsideThePipeline({
   historyVerb: string | null;
   onHistory: (entry: SpineEntry) => void;
   onShowSites: (binding: string) => void;
+  onCopyContext: (entry: SpineEntry) => void;
+  onRebind: (entry: SpineEntry, slotName: string) => void;
 }) {
   const { text } = useSchemeColors();
 
@@ -151,6 +166,8 @@ function OutsideThePipeline({
           historyOpen={historyVerb === entry.verb}
           onHistory={() => onHistory(entry)}
           onShowSites={onShowSites}
+          onCopyContext={() => onCopyContext(entry)}
+          onRebind={slotName => onRebind(entry, slotName)}
         />
       ))}
       {spine.orphans.map(node => (
@@ -335,8 +352,11 @@ function WiringSpineView({
   attentionOnly: boolean;
 }) {
   const { bg, text, border } = useSchemeColors();
+  const surface = useDrawerSurface();
+  const queryClient = useQueryClient();
   const compositionQuery = useComposition(pack);
   const checkQuery = useSkillsCheck(pack);
+  const { bind } = useSkillsApply(pack);
   const bulletStyles = useBulletStyles();
   const [preview, setPreview] = useState<{
     verb: string;
@@ -345,6 +365,9 @@ function WiringSpineView({
   } | null>(null);
   const [indexFill, setIndexFill] = useState<string | null>(null);
   const [historyEntry, setHistoryEntry] = useState<SpineEntry | null>(null);
+  const [rebind, setRebind] = useState<{ verb: string; slot: string } | null>(
+    null
+  );
 
   const spine = useMemo(
     () =>
@@ -372,6 +395,31 @@ function WiringSpineView({
   const openHistory = (entry: SpineEntry) => {
     if (!entry.verb) return;
     setHistoryEntry(current => (current?.verb === entry.verb ? null : entry));
+  };
+
+  const openRebind = (entry: SpineEntry, slotName: string) => {
+    if (!entry.verb) return;
+    setRebind({ verb: entry.verb, slot: slotName });
+    bind.reset();
+  };
+
+  // Fetches the compiled preview on demand (whether or not anyone opened
+  // that verb's preview drawer) and reads its seams the same way
+  // `CompiledView` does, so the copied blob and the drawer's own reading of
+  // this verb's seams can never disagree.
+  const copyAgentContext = async (entry: SpineEntry) => {
+    if (!entry.verb) return;
+    const verbEntry = compositionQuery.data.verbs.find(
+      v => v.name === entry.verb
+    );
+    if (!verbEntry) return;
+    const preview = await fetchCompilePreview(queryClient, pack, entry.verb);
+    const seams = splitCompiledBody(preview.content).map(
+      section => section.seam
+    );
+    await navigator.clipboard.writeText(
+      buildAgentContext({ verb: verbEntry, seams })
+    );
   };
 
   // Same rows, same order, same components -- the healthy ones simply are
@@ -482,6 +530,8 @@ function WiringSpineView({
                 historyOpen={historyEntry?.verb === entry.verb}
                 onHistory={() => openHistory(entry)}
                 onShowSites={setIndexFill}
+                onCopyContext={() => void copyAgentContext(entry)}
+                onRebind={slotName => openRebind(entry, slotName)}
               />
             </Timeline.Item>
           ))}
@@ -504,6 +554,8 @@ function WiringSpineView({
                 historyVerb={historyEntry?.verb ?? null}
                 onHistory={openHistory}
                 onShowSites={setIndexFill}
+                onCopyContext={entry => void copyAgentContext(entry)}
+                onRebind={openRebind}
               />
             </Timeline.Item>
           )}
@@ -563,6 +615,41 @@ function WiringSpineView({
         }}
         onClose={() => setIndexFill(null)}
       />
+
+      <Drawer
+        opened={rebind !== null}
+        onClose={() => setRebind(null)}
+        position="right"
+        size={720}
+        padding="lg"
+        withCloseButton={false}
+        styles={surface}
+        data-testid="rebind-drawer"
+      >
+        {rebind && (
+          <Rebind
+            pack={pack}
+            verb={rebind.verb}
+            slot={rebind.slot}
+            composition={compositionQuery.data}
+            applying={bind.isPending}
+            applyError={
+              bind.isError
+                ? (bind.error as Error).message
+                : bind.data && !bind.data.ok
+                  ? (bind.data.error ?? 'rt exited nonzero')
+                  : null
+            }
+            onApply={fill => {
+              bind.mutate(
+                { verb: rebind.verb, slot: rebind.slot, fill },
+                { onSuccess: data => data.ok && setRebind(null) }
+              );
+            }}
+            onClose={() => setRebind(null)}
+          />
+        )}
+      </Drawer>
     </Paper>
   );
 }
@@ -603,11 +690,22 @@ export function WiringMap() {
   const attentionOnly = isAttentionOnly(useSearch());
   const [explicitPack, setExplicitPack] = useState<string | null>(null);
   const [explicitWorkType, setExplicitWorkType] = useState<string | null>(null);
+  const [surfaceOpen, setSurfaceOpen] = useState(false);
 
   const packs = packsQuery.data?.packs ?? [];
   const pack = explicitPack ?? packs[0]?.name ?? null;
 
   const snapshot = useCompositionSnapshot(pack);
+  // Fetched only while the drawer is open -- the roster is its own
+  // subprocess cost that no other view on this page needs.
+  const surfaceQuery = useSurface(pack, { enabled: surfaceOpen });
+  const { surfaceApply } = useSkillsApply(pack ?? '');
+  const surfaceApplyError = surfaceApply.isError
+    ? (surfaceApply.error as Error).message
+    : surfaceApply.data && !surfaceApply.data.steps.every(step => step.ok)
+      ? (surfaceApply.data.steps.find(step => !step.ok)?.error ??
+        'apply failed')
+      : null;
   const workTypes = useMemo(
     () => Object.keys(snapshot.data?.pipelines ?? {}),
     [snapshot.data]
@@ -649,6 +747,17 @@ export function WiringMap() {
               data-testid="work-type-select"
             />
           )}
+          {pack && (
+            <Button
+              size="xs"
+              variant="default"
+              leftSection={<Icons.layers size={14} />}
+              onClick={() => setSurfaceOpen(true)}
+              data-testid="open-surface-roster"
+            >
+              Surface
+            </Button>
+          )}
         </Group>
       }
     >
@@ -676,6 +785,18 @@ export function WiringMap() {
             />
           </LazyLoader>
         </WiringErrorBoundary>
+      )}
+
+      {pack && surfaceOpen && (
+        <SurfaceRoster
+          pack={pack}
+          rows={surfaceQuery.data?.rows ?? []}
+          asOf={surfaceQuery.dataUpdatedAt || undefined}
+          onApply={delta => surfaceApply.mutate(delta)}
+          onClose={() => setSurfaceOpen(false)}
+          applying={surfaceApply.isPending}
+          applyError={surfaceApplyError}
+        />
       )}
     </PageShell>
   );

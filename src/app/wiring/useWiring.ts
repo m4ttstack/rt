@@ -1,5 +1,11 @@
 import { useMemo } from 'react';
-import { useQuery, useSuspenseQuery } from '@tanstack/react-query';
+import {
+  useMutation,
+  useQuery,
+  useQueryClient,
+  useSuspenseQuery,
+} from '@tanstack/react-query';
+import type { QueryClient } from '@tanstack/react-query';
 import type { InferResponseType } from 'hono/client';
 
 import { client } from '../api';
@@ -15,7 +21,7 @@ export type SkillsSurface = InferResponseType<
   200
 >;
 export type SkillsSurfaceRow = SkillsSurface['rows'][number];
-type SkillsCompilePreview = InferResponseType<
+export type SkillsCompilePreview = InferResponseType<
   typeof client.api.skills.compile.$get,
   200
 >;
@@ -55,6 +61,7 @@ async function readOrThrow<T>(
 interface SharedQueryOptions {
   staleTime?: number;
   refetchOnWindowFocus?: boolean;
+  enabled?: boolean;
 }
 
 export function usePacks(options?: SharedQueryOptions) {
@@ -121,13 +128,21 @@ export function useSkillsCheck(
   });
 }
 
-export function useSurface(pack: string) {
+/** `pack` may be null while the caller has not resolved one yet (the same
+    shape `useSkillsCheck`/`useCompositionSnapshot` take) -- `enabled`
+    defaults to that, but a caller that only wants this to fetch once its own
+    drawer is open (the roster) overrides it via `options`. */
+export function useSurface(pack: string | null, options?: SharedQueryOptions) {
   return useQuery({
     queryKey: ['skills', 'surface', pack],
     queryFn: async () => {
-      const res = await client.api.skills.surface.$get({ query: { pack } });
+      const res = await client.api.skills.surface.$get({
+        query: { pack: pack ?? '' },
+      });
       return readOrThrow<SkillsSurface>(res, 'skills surface');
     },
+    enabled: pack !== null,
+    ...options,
   });
 }
 
@@ -194,6 +209,126 @@ export function useSkillsDiff(
       return readOrThrow<SkillsDiff>(res, 'skills diff');
     },
     enabled: Boolean(pack && from && to),
+  });
+}
+
+export interface SkillsSurfaceApplyStep {
+  direction: 'public' | 'internal';
+  names: string[];
+  ok: boolean;
+  error?: string;
+}
+
+export interface SkillsSurfaceApplyResponse {
+  pack: string;
+  steps: SkillsSurfaceApplyStep[];
+  rows: SkillsSurfaceRow[] | null;
+  reReadError?: string;
+}
+
+export interface SkillsBindResponse {
+  pack: string;
+  verb: string;
+  slot: string;
+  fill: string;
+  ok: boolean;
+  error?: string;
+}
+
+type SkillsPostFn = (args: {
+  json: Record<string, unknown>;
+}) => Promise<{ ok: boolean; status: number; json(): Promise<unknown> }>;
+
+/**
+ * Both write routes answer a genuine service failure (400 usage error, 503
+ * rt missing -- neither ever wrote anything) with an error body this throws
+ * on, and a write ATTEMPT (200, or 502 for an apply/bind rt refused or only
+ * partly landed) by resolving with the body -- callers read `ok`/`steps` off
+ * the data the same way the surface roster already reads a partial failure,
+ * rather than off the HTTP status alone.
+ */
+async function postSkillsWrite<TResponse>(
+  post: SkillsPostFn,
+  body: Record<string, unknown>
+): Promise<TResponse> {
+  const res = await post({ json: body });
+  const payload = await res.json();
+  if (!res.ok && res.status !== 502) {
+    const message =
+      payload &&
+      typeof payload === 'object' &&
+      'error' in payload &&
+      typeof (payload as { error?: unknown }).error === 'string'
+        ? (payload as { error: string }).error
+        : `request failed: ${res.status}`;
+    throw new Error(message);
+  }
+  return payload as TResponse;
+}
+
+/** Every cached read a write to this pack can go stale -- the client mirror
+    of the server's own per-pack cache sweep (`e8f4163`, mirrored again for
+    `/api/skills/bind`): composition, surface, check, compile, and history all
+    read the pack, and a surface-apply or a bind recompiles it. */
+function invalidateSkillsQueries(queryClient: QueryClient, pack: string) {
+  for (const scope of [
+    'composition',
+    'surface',
+    'check',
+    'compile',
+    'history',
+  ]) {
+    void queryClient.invalidateQueries({ queryKey: ['skills', scope, pack] });
+  }
+}
+
+/** The one client mutation surface for both skills writes -- the surface
+    roster's Apply and Rebind's Apply both go through this, so there is one
+    place that invalidates the pack's cache on success rather than two that
+    could drift apart. */
+export function useSkillsApply(pack: string) {
+  const queryClient = useQueryClient();
+  const onSuccess = () => invalidateSkillsQueries(queryClient, pack);
+
+  const surfaceApply = useMutation({
+    mutationFn: (delta: { toPublic: string[]; toInternal: string[] }) =>
+      postSkillsWrite<SkillsSurfaceApplyResponse>(
+        client.api.skills.surface.apply.$post,
+        { pack, ...delta }
+      ),
+    onSuccess,
+  });
+
+  const bind = useMutation({
+    mutationFn: (write: { verb: string; slot: string; fill: string }) =>
+      postSkillsWrite<SkillsBindResponse>(client.api.skills.bind.$post, {
+        pack,
+        ...write,
+      }),
+    onSuccess,
+  });
+
+  return { surfaceApply, bind };
+}
+
+/** Fetches one verb's compiled preview on demand, sharing the exact cache
+    entry `useCompilePreview` fills (same query key) so a verb whose drawer
+    is already open is not fetched twice. Used by the copy-agent-context
+    action, which needs a verb's seams whether or not anyone has opened its
+    compile preview. */
+export async function fetchCompilePreview(
+  queryClient: QueryClient,
+  pack: string,
+  verb: string
+): Promise<SkillsCompilePreview> {
+  return queryClient.fetchQuery({
+    queryKey: ['skills', 'compile', pack, verb],
+    queryFn: async () => {
+      const res = await client.api.skills.compile.$get({
+        query: { pack, verb },
+      });
+      return readOrThrow<SkillsCompilePreview>(res, 'skills compile preview');
+    },
   });
 }
 

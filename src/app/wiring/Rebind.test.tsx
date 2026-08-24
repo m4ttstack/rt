@@ -142,8 +142,9 @@ function renderRebind(over: Partial<RebindProps> = {}) {
       verb={over.verb ?? 'watch-ci'}
       slot={over.slot ?? 'domain'}
       composition={over.composition ?? SHARED}
-      onOpenManifest={over.onOpenManifest}
-      onCopy={over.onCopy}
+      onApply={over.onApply}
+      applying={over.applying}
+      applyError={over.applyError}
       onClose={over.onClose}
     />
   );
@@ -178,25 +179,35 @@ test('an incoming fill bound by a pipeline stage shows in the blast radius, not 
   ).not.toBeInTheDocument();
 });
 
-describe('Rebind: the edit rt cannot make for you', () => {
-  test('the panel names the real manifest path, the bindings key, and the old -> new values', async () => {
+describe('Rebind: the staged Apply', () => {
+  test('names the exact rt skills bind command, never a hand edit', async () => {
     renderRebind({ verb: 'watch-ci', slot: 'domain', composition: SHARED });
 
     await userEvent.click(screen.getByRole('button', { name: /rebind/i }));
 
-    const panel = screen.getByTestId('manifest-edit');
+    const panel = screen.getByTestId('rebind-apply');
+    expect(panel).toHaveTextContent(
+      'rt skills bind watch-ci domain demo:solo-fill --pack demo'
+    );
+    expect(panel).toHaveTextContent(
+      '1 change staged — nothing is written until you apply'
+    );
+    expect(screen.queryByTestId('manifest-edit')).not.toBeInTheDocument();
+  });
+
+  test('names the real manifest path and the bindings key in the caption', async () => {
+    renderRebind({ verb: 'watch-ci', slot: 'domain', composition: SHARED });
+
+    await userEvent.click(screen.getByRole('button', { name: /rebind/i }));
+
+    const panel = screen.getByTestId('rebind-apply');
+    expect(panel).toHaveTextContent('bindings.watch-ci.domain');
     expect(panel).toHaveTextContent(
       '/repos/gitlab.com-acme-acme-dev/skills.jsonc'
     );
-    expect(panel).toHaveTextContent('bindings.watch-ci.domain');
-    expect(panel).toHaveTextContent('demo:watch-ci-domain');
-    expect(panel).toHaveTextContent('demo:solo-fill');
-    expect(panel).toHaveTextContent(
-      'rt skills compile --pack demo --verb watch-ci'
-    );
   });
 
-  test('names the path as unavailable, never a constructed one, when rt reported none', async () => {
+  test('names the binding without a path, never a constructed one, when rt reported none', async () => {
     renderRebind({
       verb: 'watch-ci',
       slot: 'domain',
@@ -205,39 +216,60 @@ describe('Rebind: the edit rt cannot make for you', () => {
 
     await userEvent.click(screen.getByRole('button', { name: /rebind/i }));
 
-    const panel = screen.getByTestId('manifest-edit');
-    expect(panel).toHaveTextContent(/manifest path not available/i);
+    const panel = screen.getByTestId('rebind-apply');
+    expect(panel).toHaveTextContent('bindings.watch-ci.domain');
     expect(panel).not.toHaveTextContent('~/.mattstack');
     expect(panel).not.toHaveTextContent('demo/skills.jsonc');
-    expect(
-      screen.getByRole('button', { name: /open manifest/i })
-    ).toBeDisabled();
-    expect(screen.getByRole('button', { name: /^copy/i })).toBeDisabled();
   });
 
-  test('offers Open manifest and Copy actions rather than a write', async () => {
-    const onOpenManifest = vi.fn();
-    const onCopy = vi.fn();
+  test('pressing Apply calls onApply with the staged fill, never before pressed', async () => {
+    const onApply = vi.fn();
     renderRebind({
       verb: 'watch-ci',
       slot: 'domain',
       composition: SHARED,
-      onOpenManifest,
-      onCopy,
+      onApply,
     });
 
     await userEvent.click(screen.getByRole('button', { name: /rebind/i }));
-    await userEvent.click(
-      screen.getByRole('button', { name: /open manifest/i })
-    );
-    await userEvent.click(screen.getByRole('button', { name: /^copy/i }));
+    expect(onApply).not.toHaveBeenCalled();
 
-    expect(onOpenManifest).toHaveBeenCalledWith(
-      '/repos/gitlab.com-acme-acme-dev/skills.jsonc'
-    );
-    expect(onCopy).toHaveBeenCalledTimes(1);
+    await userEvent.click(screen.getByRole('button', { name: /^apply$/i }));
+
+    expect(onApply).toHaveBeenCalledWith('demo:solo-fill');
+  });
+
+  test('Discard steps back out of the confirm view without calling onApply', async () => {
+    const onApply = vi.fn();
+    renderRebind({
+      verb: 'watch-ci',
+      slot: 'domain',
+      composition: SHARED,
+      onApply,
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: /rebind/i }));
+    await userEvent.click(screen.getByRole('button', { name: /discard/i }));
+
+    expect(onApply).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('rebind-apply')).not.toBeInTheDocument();
+  });
+
+  test('disables Discard and Apply while applying, and shows a failed apply error', async () => {
+    renderRebind({
+      verb: 'watch-ci',
+      slot: 'domain',
+      composition: SHARED,
+      applying: true,
+      applyError: 'rt skills: manifest is not writable',
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: /rebind/i }));
+
+    expect(screen.getByRole('button', { name: /discard/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /^apply$/i })).toBeDisabled();
     expect(
-      screen.queryByRole('button', { name: /^apply$/i })
-    ).not.toBeInTheDocument();
+      screen.getByText('rt skills: manifest is not writable')
+    ).toBeInTheDocument();
   });
 });

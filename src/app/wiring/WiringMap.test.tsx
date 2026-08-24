@@ -10,6 +10,9 @@ const compositionGet = vi.fn();
 const checkGet = vi.fn();
 const compileGet = vi.fn();
 const historyGet = vi.fn();
+const surfaceGet = vi.fn();
+const surfaceApplyPost = vi.fn();
+const bindPost = vi.fn();
 
 vi.mock('../api', () => ({
   client: {
@@ -19,8 +22,10 @@ vi.mock('../api', () => ({
         composition: { $get: (...args: unknown[]) => compositionGet(...args) },
         check: { $get: (...args: unknown[]) => checkGet(...args) },
         surface: {
-          $get: () => Promise.resolve({ ok: true, json: async () => ({}) }),
+          $get: (...args: unknown[]) => surfaceGet(...args),
+          apply: { $post: (...args: unknown[]) => surfaceApplyPost(...args) },
         },
+        bind: { $post: (...args: unknown[]) => bindPost(...args) },
         compile: { $get: (...args: unknown[]) => compileGet(...args) },
         history: { $get: (...args: unknown[]) => historyGet(...args) },
         diff: {
@@ -919,5 +924,88 @@ describe('WiringMap: needs-attention only', () => {
       'rt skills check found no roster verbs in mattstack to compare'
     );
     expect(empty).not.toHaveTextContent('none differed');
+  });
+});
+
+describe('WiringMap: wiring the deferred surfaces', () => {
+  it('opens the surface roster from the toolbar action, fetching the live roster', async () => {
+    mockHappyPath();
+    surfaceGet.mockResolvedValue(
+      ok({
+        pack: 'demo',
+        packDir: '/p',
+        rows: [{ name: 'watch-ci', kind: 'compiled', status: 'public' }],
+      })
+    );
+    const user = userEvent.setup();
+    renderWiring();
+
+    // The roster is not fetched before the drawer is opened -- no rt
+    // subprocess is spent on a panel nobody asked to see.
+    await screen.findByTestId('wiring-timeline');
+    expect(surfaceGet).not.toHaveBeenCalled();
+
+    await user.click(await screen.findByTestId('open-surface-roster'));
+
+    const drawer = await screen.findByTestId('surface-roster');
+    expect(surfaceGet).toHaveBeenCalledWith(
+      expect.objectContaining({ query: { pack: 'demo' } })
+    );
+    await waitFor(() =>
+      expect(
+        within(drawer).getByTestId('surface-row-watch-ci')
+      ).toBeInTheDocument()
+    );
+  });
+
+  it("opens Rebind from a bound slot's rebind action, scoped to that verb and slot", async () => {
+    mockHappyPath();
+    const user = userEvent.setup();
+    renderWiring();
+
+    const row = await screen.findByTestId('skill-row-mattstack:watch-ci');
+    const slot = within(row).getByTestId('slot-domain');
+    await user.click(within(slot).getByTestId('rebind-slot'));
+
+    const drawer = screen.getByTestId('rebind-drawer');
+    const panel = await within(drawer).findByTestId('rebind');
+    expect(panel).toHaveTextContent('watch-ci');
+    expect(panel).toHaveTextContent('slot domain');
+  });
+
+  it('copies the agent context for a verb, built from the real composition entry and its seams', async () => {
+    mockHappyPath();
+    compileGet.mockResolvedValue(
+      ok({
+        content:
+          '<!-- part: step source=mattstack:work version=0.8.0 path=a/SKILL.md lines=1-2 -->\n\n# work',
+      })
+    );
+    const user = userEvent.setup();
+    // Set up AFTER `userEvent.setup()` -- it installs its own clipboard
+    // stub, which would otherwise clobber this one.
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+    renderWiring();
+
+    const row = await screen.findByTestId('skill-row-mattstack:work');
+    await user.click(within(row).getByTestId('copy-agent-context'));
+
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    const copied = writeText.mock.calls[0][0] as string;
+    // The real composition verb, not a hand-built stub -- its engine ref and
+    // its slot's bound fill both have to survive into the copied blob.
+    expect(copied).toContain('Verb: work');
+    expect(copied).toContain('Engine: mattstack:work');
+    expect(copied).toContain('tiering -> mattstack:model-tiering');
+    // The seam's span, resolved through the SAME parse `CompiledView` uses --
+    // `work`'s own `sourcePath` from the composition, not the seam's bare
+    // plugin-relative `path`.
+    expect(copied).toContain(
+      '/plugins/mattstack/attachments/pipeline/work/SKILL.md:1-2'
+    );
   });
 });
