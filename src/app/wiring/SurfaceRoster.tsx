@@ -56,9 +56,9 @@ function effectLine(
 }
 
 /** One direction of the delta as the CLI would run it. Every name going the
-    same direction lands in ONE `rt skills surface set` call -- the shipped
-    fix for the per-row N-compile cost -- so a whole direction is one line,
-    never one line per row. */
+    same direction lands in ONE `rt skills surface set` call, never one call
+    per row: a `set` per name would cost one full pack compile per row and
+    leave every intermediate state written to disk. */
 function commandLine(
   names: string[],
   direction: 'public' | 'internal'

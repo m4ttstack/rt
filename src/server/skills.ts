@@ -104,9 +104,12 @@ interface SkillsSurfaceApplyResponse {
       one `--public` call and one `--internal` call. */
   steps: SkillsSurfaceApplyStep[];
   /** Re-read from disk after the attempt, whatever it landed at -- the
-      honest partial-failure answer, not the roster this route validated
-      the request against before writing anything. */
-  rows: SkillsSurfaceRow[];
+      honest partial-failure answer. Null ONLY when that re-read itself
+      could not be parsed: never backfilled with the pre-write roster this
+      route validated against, which would dress stale data as current
+      truth. `reReadError` carries why when this is null. */
+  rows: SkillsSurfaceRow[] | null;
+  reReadError?: string;
 }
 
 interface SkillsCompilePreviewResponse {
@@ -604,6 +607,13 @@ export function mountSkills(
         // and run git in the same pack directory. Stops at the first
         // failure so a partial result is reported honestly rather than
         // papered over by a second write racing the first.
+        //
+        // REQUIRES an rt whose `skills surface set` accepts more than one
+        // name in a single call -- feat/skills-json `7c4b02c` or later. On
+        // an older rt (single-name `set` only), a step with >1 name exits
+        // non-zero with a usage error; `ok` below goes false and that step's
+        // `error` carries rt's own message. It never partially applies and
+        // never reports success against an rt that cannot do this.
         const steps: SkillsSurfaceApplyStep[] = [];
         for (const step of plan) {
           const run = await runRt([
@@ -612,6 +622,8 @@ export function mountSkills(
             'set',
             ...step.names,
             `--${step.direction}`,
+            '--pack',
+            pack,
           ]);
           const ok = run.code === 0;
           steps.push({
@@ -647,13 +659,25 @@ export function mountSkills(
           '--json',
         ]);
         const afterPayload = parseJsonPayload(after.stdout);
+        // Never the pre-write `roster.rows` here: an apply that landed and
+        // then hit an unparseable re-read must say "could not re-read", not
+        // silently show the caller what disk looked like before the write.
         const rows =
           afterPayload !== undefined
             ? (afterPayload as SkillsSurfaceResponse).rows
-            : roster.rows;
+            : null;
+        const reReadError =
+          afterPayload !== undefined
+            ? undefined
+            : after.stderr.trim() || 'rt produced no output';
 
         const allOk = steps.every(step => step.ok);
-        const response: SkillsSurfaceApplyResponse = { pack, steps, rows };
+        const response: SkillsSurfaceApplyResponse = {
+          pack,
+          steps,
+          rows,
+          reReadError,
+        };
         return c.json(response, allOk ? 200 : 502);
       } catch (err) {
         if (err instanceof RtNotFoundError) {

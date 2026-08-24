@@ -893,7 +893,7 @@ describe('skills surface apply route', () => {
     expect(rt.run).not.toHaveBeenCalled();
   });
 
-  it('validates every name against the live roster before any set spawns -- FALSIFIED below', async () => {
+  it('validates every name against the live roster before any set spawns', async () => {
     const rt = fakeRtHandler(argv => {
       if (isList(argv)) {
         return {
@@ -957,6 +957,8 @@ describe('skills surface apply route', () => {
       'set',
       'watch-ci',
       '--public',
+      '--pack',
+      'demo',
     ]);
   });
 
@@ -990,6 +992,8 @@ describe('skills surface apply route', () => {
       'a',
       'b',
       '--public',
+      '--pack',
+      'demo',
     ]);
   });
 
@@ -1017,8 +1021,8 @@ describe('skills surface apply route', () => {
     expect(res.status).toBe(200);
     const setCalls = rt.calls.filter(isSet);
     expect(setCalls).toEqual([
-      ['skills', 'surface', 'set', 'a', '--public'],
-      ['skills', 'surface', 'set', 'b', '--internal'],
+      ['skills', 'surface', 'set', 'a', '--public', '--pack', 'demo'],
+      ['skills', 'surface', 'set', 'b', '--internal', '--pack', 'demo'],
     ]);
     await expect(res.json()).resolves.toMatchObject({
       steps: [
@@ -1068,7 +1072,7 @@ describe('skills surface apply route', () => {
     expect(rt.calls.filter(isSet)).toHaveLength(2);
   });
 
-  it('never attempts the second direction once the first has failed -- FALSIFIED below', async () => {
+  it('never attempts the second direction once the first has failed', async () => {
     const rt = fakeRtHandler(argv => {
       if (isList(argv))
         return {
@@ -1132,5 +1136,121 @@ describe('skills surface apply route', () => {
     await expect(after.json()).resolves.toMatchObject({
       rows: [{ name: 'watch-ci', status: 'public' }],
     });
+  });
+
+  it('threads the validated pack onto every set call, not just the roster read', async () => {
+    const rt = fakeRtHandler(argv => {
+      if (isList(argv)) {
+        return {
+          code: 0,
+          stdout: surfaceList([
+            { name: 'watch-ci', kind: 'compiled', status: 'internal' },
+          ]),
+          stderr: '',
+        };
+      }
+      return { code: 0, stdout: 'watch-ci: public\n', stderr: '' };
+    });
+    const app = mountSkills(new Hono(), rt.run);
+
+    await postApply(app, {
+      pack: 'demo',
+      toPublic: ['watch-ci'],
+      toInternal: [],
+    });
+
+    // Without --pack, a lone-pack estate would write to whatever pack rt
+    // auto-selects -- which may not be the one the roster was validated
+    // against -- and a multi-pack estate with no TTY would refuse outright.
+    const setCall = rt.calls.find(isSet);
+    expect(setCall).toContain('--pack');
+    expect(setCall?.[(setCall?.indexOf('--pack') ?? -1) + 1]).toBe('demo');
+  });
+
+  it('fails loud, not silently, against an rt whose set takes only one name', async () => {
+    const rt = fakeRtHandler(argv => {
+      if (isList(argv)) {
+        return {
+          code: 0,
+          stdout: surfaceList([
+            { name: 'a', kind: 'hand-authored', status: 'internal' },
+            { name: 'b', kind: 'hand-authored', status: 'internal' },
+          ]),
+          stderr: '',
+        };
+      }
+      // What rt main (single-name `set`) actually does with a second
+      // positional: exits non-zero with a usage error.
+      if (isSet(argv) && argv.includes('a') && argv.includes('b')) {
+        return {
+          code: 1,
+          stdout: '',
+          stderr: 'rt skills: unrecognized argument "b"',
+        };
+      }
+      return { code: 0, stdout: 'ok\n', stderr: '' };
+    });
+    const app = mountSkills(new Hono(), rt.run);
+
+    const res = await postApply(app, {
+      pack: 'demo',
+      toPublic: ['a', 'b'],
+      toInternal: [],
+    });
+
+    expect(res.status).toBe(502);
+    await expect(res.json()).resolves.toMatchObject({
+      steps: [
+        {
+          direction: 'public',
+          names: ['a', 'b'],
+          ok: false,
+          error: expect.stringContaining('unrecognized argument'),
+        },
+      ],
+    });
+    // Never a second attempt, one name at a time -- that would be the N-compile
+    // pathology the multi-name substrate fix exists to avoid.
+    expect(rt.calls.filter(isSet)).toHaveLength(1);
+  });
+
+  it('reports "could not re-read" rather than the pre-write roster when the post-apply re-read is unparseable', async () => {
+    let wrote = false;
+    const rt = fakeRtHandler(argv => {
+      if (isList(argv)) {
+        if (!wrote) {
+          return {
+            code: 0,
+            stdout: surfaceList([
+              { name: 'watch-ci', kind: 'compiled', status: 'internal' },
+            ]),
+            stderr: '',
+          };
+        }
+        // The post-write re-read: rt answers nothing parseable.
+        return { code: 0, stdout: '', stderr: 'transient failure' };
+      }
+      wrote = true;
+      return { code: 0, stdout: 'watch-ci: public\n', stderr: '' };
+    });
+    const app = mountSkills(new Hono(), rt.run);
+
+    const res = await postApply(app, {
+      pack: 'demo',
+      toPublic: ['watch-ci'],
+      toInternal: [],
+    });
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      rows: unknown;
+      reReadError?: string;
+    };
+    // Not the pre-write roster (which had watch-ci as internal) dressed up
+    // as current truth -- an explicit "could not re-read" signal instead.
+    expect(body.rows).toBeNull();
+    expect(body.reReadError).toEqual(
+      expect.stringContaining('transient failure')
+    );
   });
 });
