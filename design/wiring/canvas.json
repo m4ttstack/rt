@@ -47,6 +47,14 @@
       "w": 720,
       "h": 900,
       "title": "Seam-aware compare"
+    },
+    {
+      "file": "SurfaceRoster.dc.html",
+      "x": 0,
+      "y": 3260,
+      "w": 720,
+      "h": 900,
+      "title": "Surface roster"
     }
   ],
   "annotations": [
