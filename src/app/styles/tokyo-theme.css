@@ -112,6 +112,23 @@
  * `--ui-bg-1` here only because the Tokyo layer above resolves to a literal:
  * the cycle scheme-vars.css warns about needs `--ui-bg-1` to read back
  * through `body`, and it no longer does.
+ *
+ * READ THIS BEFORE TRUSTING ANY LINE BELOW. Mantine declares all of these in
+ * its own `:root[data-mantine-color-scheme='…']` blocks, emitted at runtime
+ * and later in the document, so a bare `:root` here LOSES. Several land on
+ * the intended value anyway, by two accidents: the `--mantine-color-dark-*`
+ * remap further down IS scheme-scoped, so Mantine's dark fallbacks resolve
+ * back into Tokyo; and `anchor` arrives via the `blue`->`accent` virtualColor.
+ *
+ * These six do NOT take effect, and the app renders Mantine's value instead:
+ * `body`, `dimmed`, `placeholder`, `default` (light only), `default-hover`,
+ * `default-color`. They are kept because scheme-scoping them is a design
+ * change rather than a repair -- `body` and `default` would repaint every
+ * Modal, Popover and Drawer in light scheme from #fff to the Tokyo panel.
+ *
+ * `error` was the only one that both diverged AND failed contrast, and it is
+ * scheme-scoped below. Anything added here needs the same check: put it in a
+ * scheme block if it has to win.
  */
 :root {
   --mantine-color-body: var(--ui-bg-1);
