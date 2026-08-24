@@ -2,7 +2,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 /**
- * Appends the kit's `@font-face` declarations to the codegen output.
+ * Appends the kit's `@font-face` declaration to the codegen output.
  *
  * `soribashi build` fully OVERWRITES src/generated/theme.css from theme.ts's
  * tokens alone -- it has no concept of font assets. Font URLs live here
@@ -20,17 +20,19 @@ import { join } from "node:path";
 const REPO_ROOT = join(import.meta.dirname, "..");
 const THEME_CSS = join(REPO_ROOT, "src", "generated", "theme.css");
 
-const WEIGHTS = [400, 500, 600, 700] as const;
 
-const fontFaces = WEIGHTS.map(
-  (weight) => `@font-face {
-  font-family: "Tomorrow";
+/**
+ * One face, not one per weight: JetBrains Mono ships as a variable font, so a
+ * single woff2 carries the whole 100-800 axis and the browser interpolates
+ * every weight the kit asks for from it.
+ */
+const fontFaces = `@font-face {
+  font-family: "JetBrains Mono";
   font-style: normal;
-  font-weight: ${weight};
+  font-weight: 100 800;
   font-display: swap;
-  src: url("../../assets/fonts/tomorrow-${weight}.woff2") format("woff2");
-}`,
-).join("\n\n");
+  src: url("../../assets/fonts/jetbrains-mono.woff2") format("woff2");
+}`;
 
 const generated = readFileSync(THEME_CSS, "utf8");
 writeFileSync(THEME_CSS, `${generated.trimEnd()}\n\n${fontFaces}\n`);

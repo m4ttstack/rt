@@ -180,10 +180,10 @@ test("the census tables are the shape this suite expects", () => {
   }
 });
 
-// Font rows are excluded from the census-parity sweep below: `--font-mono` is
-// a deliberate, one-directional departure from the census (the kit leads
-// mr-board on font, not the reverse). See the "fonts" block further down for
-// its own coverage.
+// Font rows are excluded from the census-parity sweep below: both font slots
+// are a deliberate, one-directional departure from the census (the kit leads
+// its consumers on font, not the reverse). See the "fonts" block further down
+// for their own coverage.
 const LIGHT_COLORS = [...LIGHT].filter(([name]) => SLOT[name]!.kind === "color");
 
 test.each(LIGHT_COLORS)(
@@ -217,25 +217,26 @@ test("light and dark differ everywhere the census says they differ", () => {
 });
 
 // ── fonts ───────────────────────────────────────────────────────────────
-// `mono` is a deliberate departure from census parity (see the LIGHT_COLORS
-// filter above); `sans` is untouched, so it still tracks the census verbatim
-// like every colour row does.
+// Both slots are a deliberate departure from census parity (see the
+// LIGHT_COLORS filter above): the kit ships vendored JetBrains Mono for each.
 
-test("mono is the vendored Tomorrow stack; sans still carries its census value verbatim", () => {
-  const TOMORROW_STACK = '"Tomorrow", "Noto Sans JP", monospace';
-  expect(tuiTheme.tokens.fontFamily!.mono).toBe(TOMORROW_STACK);
-  expect(resolve("--font-mono", "light")).toBe(TOMORROW_STACK);
+const JETBRAINS_STACK = '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
 
-  const sans = LIGHT.get("--font-sans")!;
-  expect(tuiTheme.tokens.fontFamily!.sans).toBe(sans);
-  expect(resolve("--font-sans", "light")).toBe(sans);
+test("both font slots are the vendored JetBrains Mono stack", () => {
+  expect(tuiTheme.tokens.fontFamily!.mono).toBe(JETBRAINS_STACK);
+  expect(tuiTheme.tokens.fontFamily!.sans).toBe(JETBRAINS_STACK);
+  expect(resolve("--font-mono", "light")).toBe(JETBRAINS_STACK);
+  expect(resolve("--font-sans", "light")).toBe(JETBRAINS_STACK);
 });
 
-test("the four Tomorrow weights are declared as @font-face rules pointing at the vendored woff2 assets", () => {
-  for (const weight of [400, 500, 600, 700]) {
-    expect(css).toContain(`font-weight: ${weight};`);
-    expect(css).toContain(`url("../../assets/fonts/tomorrow-${weight}.woff2")`);
-  }
+test("the variable woff2 is declared as one @font-face spanning the whole weight axis", () => {
+  // A single face, not one per weight: a static-per-weight emitter would still
+  // satisfy a `toContain` on the family name while shipping four requests and
+  // silently losing every weight in between.
+  expect(css.match(/@font-face/g)).toHaveLength(1);
+  expect(css).toContain('font-family: "JetBrains Mono";');
+  expect(css).toContain("font-weight: 100 800;");
+  expect(css).toContain('url("../../assets/fonts/jetbrains-mono.woff2")');
   expect(css).toContain("font-display: swap;");
 });
 
@@ -253,13 +254,11 @@ test("--font-numeric aliases to tabular-nums", () => {
 // that line would silently 404 in a consumer app rather than fail here. 100KB
 // is comfortably under the observed cutoff, with headroom for a future
 // weight or subset swap.
-test("each vendored Tomorrow weight stays under Bun's CSS asset-inlining threshold", () => {
+test("the vendored woff2 stays under Bun's CSS asset-inlining threshold", () => {
   const INLINE_SAFE_BOUND_BYTES = 100 * 1024;
-  for (const weight of [400, 500, 600, 700]) {
-    const path = join(REPO, "assets", "fonts", `tomorrow-${weight}.woff2`);
-    const { size } = statSync(path);
-    expect(size, `${path} is ${size} bytes`).toBeLessThan(INLINE_SAFE_BOUND_BYTES);
-  }
+  const path = join(REPO, "assets", "fonts", "jetbrains-mono.woff2");
+  const { size } = statSync(path);
+  expect(size, `${path} is ${size} bytes`).toBeLessThan(INLINE_SAFE_BOUND_BYTES);
 });
 
 test("generated css exposes the alias contract with verbatim values reachable", () => {

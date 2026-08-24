@@ -170,17 +170,18 @@ export const tuiTheme = createTheme({
       px12: "12px",
       px13: "13px",
     },
-    // `mono` is vendored Tomorrow, not census parity: mr-board has
-    // not adopted this font, so this is a deliberate, one-directional
-    // departure -- see test/theme.test.ts's font block. `monospace` is a
-    // soft generic fallback, not a claim Tomorrow is monospaced (it isn't).
-    // Weights 400/500/600/700 ship as woff2 under assets/fonts/; the
-    // @font-face rules pointing at them are appended to
-    // src/generated/theme.css by scripts/append-font-faces.ts, run as the
-    // second half of the `codegen` script.
+    // Both slots are vendored JetBrains Mono, not census parity: the kit leads
+    // its consumers on font, so this is a deliberate, one-directional
+    // departure -- see test/theme.test.ts's font block. `sans` naming a
+    // monospace family is intentional rather than an oversight; the slot stays
+    // so consumers keep one stable token name either way.
+    // One variable woff2 under assets/fonts/ covers weights 100-800; the
+    // @font-face rule pointing at it is appended to src/generated/theme.css by
+    // scripts/append-font-faces.ts, run as the second half of the `codegen`
+    // script.
     fontFamily: {
-      mono: '"Tomorrow", "Noto Sans JP", monospace',
-      sans: '"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      mono: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+      sans: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
     },
     lineHeight: { base: "1.55" },
     shadow: {
