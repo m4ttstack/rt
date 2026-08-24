@@ -168,7 +168,6 @@ export function CompiledView({ body, slots }: CompiledViewProps) {
         style={{
           flex: 1,
           minHeight: 0,
-          maxHeight: '60vh',
           overflow: 'auto',
           background: bg.level3,
           border: `1px solid ${SOFT_RULE}`,

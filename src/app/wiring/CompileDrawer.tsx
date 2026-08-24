@@ -72,7 +72,26 @@ export function CompileDrawer({
       position="right"
       size={720}
       padding="lg"
-      styles={surface}
+      styles={{
+        ...surface,
+        // Mantine's drawer body has no intrinsic height, so a percentage or
+        // flex-fill child inside it has nothing to resolve against; making
+        // both levels a bounded flex column is what lets the compiled body
+        // below claim exactly the space between the alert and the drawer's
+        // bottom edge, and scroll on its own rather than the whole drawer.
+        content: {
+          ...surface.content,
+          display: 'flex',
+          flexDirection: 'column',
+        },
+        body: {
+          flex: 1,
+          minHeight: 0,
+          display: 'flex',
+          flexDirection: 'column',
+          overflow: 'hidden',
+        },
+      }}
       data-testid="compile-drawer"
       title={
         <Stack gap={2}>
@@ -86,7 +105,7 @@ export function CompileDrawer({
         </Stack>
       }
     >
-      <Stack gap="md" style={{ height: '100%', minHeight: 0 }}>
+      <Stack gap="md" style={{ flex: 1, minHeight: 0 }}>
         <Alert variant="light" color="accent" icon={<Icons.info size={14} />}>
           <Text size="xs">
             What a fresh compile would produce. Nothing is written to disk, and
