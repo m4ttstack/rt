@@ -41,6 +41,25 @@ export function AttentionEmptyState({
     );
   }
 
+  // A pack whose roster check covered nothing is empty for a third reason
+  // again -- there was nothing to compare. Saying "none differed" over zero
+  // comparisons is the same false achievement as claiming a measurement that
+  // never ran.
+  if (checkedVerbs === 0) {
+    return (
+      <Stack gap={4} py="xl" data-testid="attention-empty">
+        <Text fw={600} size="lg">
+          Nothing needs attention.
+        </Text>
+        <Text size="xs" c={text.muted}>
+          rt skills check found no roster verbs in {pack} to compare, so this is
+          empty for want of anything to check rather than because a compile came
+          back clean.
+        </Text>
+      </Stack>
+    );
+  }
+
   return (
     <Stack gap={4} py="xl" data-testid="attention-empty">
       <Group gap="xs" wrap="nowrap">

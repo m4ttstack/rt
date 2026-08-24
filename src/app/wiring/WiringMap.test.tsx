@@ -745,4 +745,30 @@ describe('WiringMap: needs-attention only', () => {
     );
     expect(empty).not.toHaveTextContent('Nothing needs attention.');
   });
+  it('does not call an empty roster a clean compile', async () => {
+    window.history.pushState(null, '', '/wiring?attention=1');
+    packsGet.mockResolvedValue(
+      ok({ packs: [{ name: 'mattstack', dir: '/m', layout: 'grouped' }] })
+    );
+    compositionGet.mockResolvedValue(
+      ok({
+        pack: 'mattstack',
+        packDir: '/m',
+        verbs: [],
+        fills: [],
+        binders: [],
+        pipelines: {},
+      })
+    );
+    checkGet.mockResolvedValue(
+      ok({ pack: 'mattstack', packDir: '/m', verbs: [] })
+    );
+    renderWiring();
+
+    const empty = await screen.findByTestId('attention-empty');
+    expect(empty).toHaveTextContent(
+      'rt skills check found no roster verbs in mattstack to compare'
+    );
+    expect(empty).not.toHaveTextContent('none differed');
+  });
 });
