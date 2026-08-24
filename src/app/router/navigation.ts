@@ -42,7 +42,21 @@ export function navigate(to: string, options?: { replace?: boolean }) {
   notify();
 }
 
+function getSearch(): string {
+  return window.location.search;
+}
+
 /** The current pathname, re-rendering on navigate() and popstate. */
 export function usePath(): string {
   return useSyncExternalStore(subscribe, getPathname);
+}
+
+/**
+ * The current query string, re-rendering on the same notifications `usePath`
+ * does. Which route renders is the pathname's business; this carries the
+ * state a link has to hand across a route boundary, which React state cannot
+ * do when the link is mounted outside the route it targets.
+ */
+export function useSearch(): string {
+  return useSyncExternalStore(subscribe, getSearch);
 }

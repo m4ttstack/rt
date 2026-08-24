@@ -1,17 +1,61 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 
 import { renderWithProviders } from '@ui/storybook/test-utils';
-import { ConsoleChrome } from './ConsoleChrome';
 
-describe('ConsoleChrome', () => {
-  it('renders both rail entries and its children', () => {
-    renderWithProviders(
+// The rail carries the Wiring drift badge, which reads the skills routes.
+// Answering them with an empty roster keeps this file about the chrome --
+// `WiringRailEntry.test.tsx` is where the badge itself is exercised.
+vi.mock('../api', () => ({
+  client: {
+    api: {
+      skills: {
+        packs: {
+          $get: async () => ({
+            ok: true,
+            status: 200,
+            json: async () => ({ packs: [] }),
+          }),
+        },
+        composition: {
+          $get: async () => ({
+            ok: true,
+            status: 200,
+            json: async () => ({ verbs: [], fills: [], binders: [] }),
+          }),
+        },
+        check: {
+          $get: async () => ({
+            ok: true,
+            status: 200,
+            json: async () => ({ verbs: [] }),
+          }),
+        },
+      },
+    },
+  },
+}));
+
+const { ConsoleChrome } = await import('./ConsoleChrome');
+
+function renderChrome() {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  return renderWithProviders(
+    <QueryClientProvider client={queryClient}>
       <ConsoleChrome section="runs">
         <p>content</p>
       </ConsoleChrome>
-    );
+    </QueryClientProvider>
+  );
+}
+
+describe('ConsoleChrome', () => {
+  it('renders both rail entries and its children', () => {
+    renderChrome();
 
     expect(screen.getByText('content')).toBeInTheDocument();
     expect(screen.getAllByLabelText(/Runs/i).length).toBeGreaterThan(0);
@@ -23,11 +67,7 @@ describe('ConsoleChrome', () => {
   // regression this guards.
   it('offers System/Light/Dark and can return to System after picking Dark', async () => {
     const user = userEvent.setup();
-    renderWithProviders(
-      <ConsoleChrome section="runs">
-        <p>content</p>
-      </ConsoleChrome>
-    );
+    renderChrome();
 
     await user.click(screen.getByLabelText('Color scheme'));
     await user.click(await screen.findByText('Dark'));

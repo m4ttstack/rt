@@ -3,6 +3,7 @@ import type { CSSProperties, ReactNode } from 'react';
 
 import {
   Alert,
+  Anchor,
   Badge,
   GenericError,
   Group,
@@ -18,7 +19,17 @@ import {
 } from '@ui/core';
 import { useSchemeColors } from '@ui/hooks';
 import { Icons } from '@ui/icons';
+import { Link } from '../router/Link';
+import { navigate, useSearch } from '../router/navigation';
 import { CommandProvenance } from '../runs/CommandProvenance';
+import { AttentionEmptyState } from './AttentionEmptyState';
+import {
+  comparedVerbCount,
+  isAttentionOnly,
+  onlyNeedsAttention,
+  WIRING_ATTENTION_HREF,
+  WIRING_HREF,
+} from './attentionFilter';
 import { CompileDrawer } from './CompileDrawer';
 import { InverseIndex } from './InverseIndex';
 import {
@@ -31,6 +42,7 @@ import {
   type WiringHealth,
   type WiringSpine,
 } from './outline';
+import { QuietBadge } from './QuietBadge';
 import { HEALTH_COLOR, SkillRow } from './SkillRow';
 import {
   useComposition,
@@ -139,7 +151,13 @@ function OutsideThePipeline({
   );
 }
 
-function SpineSummary({ spine }: { spine: WiringSpine }) {
+function SpineSummary({
+  spine,
+  attentionOnly,
+}: {
+  spine: WiringSpine;
+  attentionOnly: boolean;
+}) {
   const { text } = useSchemeColors();
 
   return (
@@ -181,15 +199,34 @@ function SpineSummary({ spine }: { spine: WiringSpine }) {
         </>
       )}
       <div style={{ flex: 1 }} />
-      {spine.attentionCount > 0 && (
-        <Badge
-          size="sm"
-          variant="light"
-          color="warn"
-          data-testid="attention-count"
-        >
-          {spine.attentionCount} need attention
-        </Badge>
+      {attentionOnly ? (
+        // Always offered while filtered, including at zero rows -- otherwise
+        // an empty inbox would have no way back to the full spine.
+        <Group gap="xs" wrap="nowrap">
+          <QuietBadge>needs attention only</QuietBadge>
+          <Anchor
+            component={Link}
+            href={WIRING_HREF}
+            size="sm"
+            data-testid="show-all-rows"
+          >
+            Show all
+          </Anchor>
+        </Group>
+      ) : (
+        spine.attentionCount > 0 && (
+          <Badge
+            component={Link}
+            href={WIRING_ATTENTION_HREF}
+            size="sm"
+            variant="light"
+            color="warn"
+            style={{ cursor: 'pointer' }}
+            data-testid="attention-count"
+          >
+            {spine.attentionCount} need attention
+          </Badge>
+        )
       )}
     </Group>
   );
@@ -245,9 +282,11 @@ function StepBullet({ step }: { step: number }) {
 function WiringSpineView({
   pack,
   workType,
+  attentionOnly,
 }: {
   pack: string;
   workType: string | null;
+  attentionOnly: boolean;
 }) {
   const { bg, text, border } = useSchemeColors();
   const compositionQuery = useComposition(pack);
@@ -281,10 +320,19 @@ function WiringSpineView({
     );
   };
 
+  // Same rows, same order, same components -- the healthy ones simply are
+  // not rendered. `spine` itself stays whole: the header's count, the
+  // binding-site index and the drawers all answer about the pack, not about
+  // what is currently on screen.
+  const shown = attentionOnly ? onlyNeedsAttention(spine) : spine;
+
   const spineEntries: SpineEntry[] = [
-    ...(spine.orchestrator ? [spine.orchestrator] : []),
-    ...spine.stages,
+    ...(shown.orchestrator ? [shown.orchestrator] : []),
+    ...shown.stages,
   ];
+  const showOutside = !attentionOnly || shown.outside.length > 0;
+  const nothingNeedsAttention =
+    attentionOnly && spineEntries.length === 0 && shown.outside.length === 0;
 
   // A cross-plugin binder has no row of its own: it is one line inside its
   // plugin's grouped row, keyed by the plugin rather than the ref.
@@ -311,7 +359,7 @@ function WiringSpineView({
       style={{ border: `1px solid ${border.default}` }}
       data-testid="wiring-spine"
     >
-      <SpineSummary spine={spine} />
+      <SpineSummary spine={spine} attentionOnly={attentionOnly} />
 
       {spine.pipelineState !== 'ok' && (
         <Alert
@@ -340,57 +388,77 @@ function WiringSpineView({
         </Alert>
       )}
 
-      <Timeline
-        bulletSize={BULLET_SIZE}
-        lineWidth={LINE_WIDTH}
-        data-testid="wiring-timeline"
-      >
-        {spineEntries.map(entry => (
-          <Timeline.Item
-            key={entry.key}
-            styles={{ itemBullet: bulletStyles(entry.health) }}
-            bullet={
-              entry.step === null ? (
-                <Icons.zap size={12} />
-              ) : (
-                <StepBullet step={entry.step} />
-              )
+      {nothingNeedsAttention ? (
+        // An empty inbox is a claim about a measurement, so it waits for the
+        // measurement -- otherwise every filtered load flashes "nothing was
+        // measured" on its way to the real answer.
+        checkQuery.isPending ? (
+          <Skeleton height={72} data-testid="attention-loading" />
+        ) : (
+          <AttentionEmptyState
+            pack={pack}
+            checkedVerbs={
+              checkQuery.data ? comparedVerbCount(checkQuery.data) : null
             }
-            data-testid={`timeline-item-${entry.key}`}
-          >
-            <SkillRow
-              entry={entry}
-              previewOpen={preview?.verb === entry.verb}
-              onPreview={() => openPreview(entry)}
-              onShowSites={setIndexFill}
-            />
-          </Timeline.Item>
-        ))}
-
-        <Timeline.Item
-          bullet={<Icons.link size={12} />}
-          styles={{ itemBullet: bulletStyles('unknown') }}
-          title={
-            <Text fw={600} size="lg">
-              Outside the pipeline
-            </Text>
-          }
-          data-testid="timeline-item-outside"
-        >
-          <OutsideThePipeline
-            spine={spine}
-            previewVerb={preview?.verb ?? null}
-            onPreview={openPreview}
-            onShowSites={setIndexFill}
           />
-        </Timeline.Item>
-      </Timeline>
+        )
+      ) : (
+        <Timeline
+          bulletSize={BULLET_SIZE}
+          lineWidth={LINE_WIDTH}
+          data-testid="wiring-timeline"
+        >
+          {spineEntries.map(entry => (
+            <Timeline.Item
+              key={entry.key}
+              styles={{ itemBullet: bulletStyles(entry.health) }}
+              bullet={
+                entry.step === null ? (
+                  <Icons.zap size={12} />
+                ) : (
+                  <StepBullet step={entry.step} />
+                )
+              }
+              data-testid={`timeline-item-${entry.key}`}
+            >
+              <SkillRow
+                entry={entry}
+                previewOpen={preview?.verb === entry.verb}
+                onPreview={() => openPreview(entry)}
+                onShowSites={setIndexFill}
+              />
+            </Timeline.Item>
+          ))}
 
-      {spine.outside.length === 0 && spine.orphans.length === 0 && (
-        <Text size="xs" c={text.dimmed}>
-          Nothing outside the pipeline: every binder in this pack is a stage.
-        </Text>
+          {showOutside && (
+            <Timeline.Item
+              bullet={<Icons.link size={12} />}
+              styles={{ itemBullet: bulletStyles('unknown') }}
+              title={
+                <Text fw={600} size="lg">
+                  Outside the pipeline
+                </Text>
+              }
+              data-testid="timeline-item-outside"
+            >
+              <OutsideThePipeline
+                spine={shown}
+                previewVerb={preview?.verb ?? null}
+                onPreview={openPreview}
+                onShowSites={setIndexFill}
+              />
+            </Timeline.Item>
+          )}
+        </Timeline>
       )}
+
+      {!attentionOnly &&
+        spine.outside.length === 0 &&
+        spine.orphans.length === 0 && (
+          <Text size="xs" c={text.dimmed}>
+            Nothing outside the pipeline: every binder in this pack is a stage.
+          </Text>
+        )}
 
       <CompileDrawer
         pack={pack}
@@ -412,9 +480,15 @@ function WiringSpineView({
           const key = rowKeyFor(site);
           setIndexFill(null);
           if (!key) return;
-          document
-            .querySelector(`[data-testid="skill-row-${key}"]`)
-            ?.scrollIntoView?.({ block: 'center' });
+          // The target row is usually a healthy one, which the filter is
+          // hiding -- so leave the filter before looking for it, and look on
+          // the next frame, once that navigation has rendered.
+          if (attentionOnly) navigate(WIRING_HREF);
+          requestAnimationFrame(() =>
+            document
+              .querySelector(`[data-testid="skill-row-${key}"]`)
+              ?.scrollIntoView?.({ block: 'center' })
+          );
         }}
         onClose={() => setIndexFill(null)}
       />
@@ -455,6 +529,7 @@ class WiringErrorBoundary extends Component<
 export function WiringMap() {
   const { text } = useSchemeColors();
   const packsQuery = usePacks();
+  const attentionOnly = isAttentionOnly(useSearch());
   const [explicitPack, setExplicitPack] = useState<string | null>(null);
   const [explicitWorkType, setExplicitWorkType] = useState<string | null>(null);
 
@@ -523,7 +598,11 @@ export function WiringMap() {
       ) : (
         <WiringErrorBoundary key={pack}>
           <LazyLoader>
-            <WiringSpineView pack={pack} workType={workType} />
+            <WiringSpineView
+              pack={pack}
+              workType={workType}
+              attentionOnly={attentionOnly}
+            />
           </LazyLoader>
         </WiringErrorBoundary>
       )}

@@ -253,7 +253,10 @@ function noSlotsNote(
     : 'no slots — this skill takes nothing from the pack';
 }
 
-function needsAttention(entry: SpineEntry): boolean {
+/** The one predicate behind both `attentionCount` and the "needs attention
+    only" filter -- a badge that disagreed with the list it links to would be
+    two derivations of the same claim. */
+export function needsAttention(entry: SpineEntry): boolean {
   if (entry.health === 'source-newer' || entry.health === 'never-compiled')
     return true;
   if (entry.engineError) return true;

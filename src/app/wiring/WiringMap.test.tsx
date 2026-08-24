@@ -209,8 +209,11 @@ function mockHappyPath() {
   checkGet.mockResolvedValue(ok(CHECK));
 }
 
+/** The filter rides the URL, so a test that navigated has to put it back or
+    the next one renders filtered. */
 afterEach(() => {
   vi.clearAllMocks();
+  window.history.pushState(null, '', '/');
 });
 
 describe('WiringMap: the spine', () => {
@@ -615,5 +618,131 @@ describe('WiringMap: actions', () => {
       screen.getByText('work: SKILL.md frontmatter is invalid YAML at line 4')
     ).toBeInTheDocument();
     expect(screen.queryByText('502')).not.toBeInTheDocument();
+  });
+});
+
+const CHECK_CLEAN = {
+  ...CHECK,
+  verbs: CHECK.verbs.map(row => ({
+    ...row,
+    status: 'in-sync',
+    staleFiles: [],
+  })),
+};
+
+describe('WiringMap: needs-attention only', () => {
+  it('renders the drifting rows and drops the healthy ones, same components, same order', async () => {
+    window.history.pushState(null, '', '/wiring?attention=1');
+    mockHappyPath();
+    renderWiring();
+
+    await screen.findByTestId('skill-row-mattstack:work');
+
+    // `work` drifted; the three stages carry no health and nothing else is
+    // wrong with them, so only the orchestrator survives above the terminal
+    // item.
+    expect(
+      screen.getAllByTestId(/^timeline-item-/).map(el => el.dataset.testid)
+    ).toEqual(['timeline-item-mattstack:work', 'timeline-item-outside']);
+
+    const outside = screen.getByTestId('outside-the-pipeline');
+    expect(
+      within(outside).getByTestId('skill-row-mattstack:rebase-worktree')
+    ).toBeInTheDocument();
+    // In sync, so it is not in the inbox.
+    expect(
+      within(outside).queryByTestId('skill-row-mattstack:watch-ci')
+    ).not.toBeInTheDocument();
+    // Never counted by attentionCount, so it would make the list longer than
+    // the badge that reached it.
+    expect(
+      screen.queryByTestId('orphan-fill-demo:unused')
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows exactly as many rows as the header said needed attention', async () => {
+    window.history.pushState(null, '', '/wiring?attention=1');
+    mockHappyPath();
+    renderWiring();
+
+    await screen.findByTestId('skill-row-mattstack:work');
+    expect(screen.getAllByTestId(/^skill-row-/)).toHaveLength(2);
+  });
+
+  it('is reachable from the count on the header, and reversible from there', async () => {
+    mockHappyPath();
+    const user = userEvent.setup();
+    renderWiring();
+
+    const badge = await screen.findByTestId('attention-count');
+    expect(badge).toHaveAttribute('href', '/wiring?attention=1');
+
+    await user.click(badge);
+
+    await waitFor(() =>
+      expect(
+        screen.queryByTestId('skill-row-mattstack:watch-ci')
+      ).not.toBeInTheDocument()
+    );
+
+    await user.click(screen.getByTestId('show-all-rows'));
+
+    await waitFor(() =>
+      expect(
+        screen.getByTestId('skill-row-mattstack:watch-ci')
+      ).toBeInTheDocument()
+    );
+  });
+
+  it('states the clean result as measured, naming what check compared', async () => {
+    window.history.pushState(null, '', '/wiring?attention=1');
+    packsGet.mockResolvedValue(
+      ok({ packs: [{ name: 'demo', dir: '/p', layout: 'flat' }] })
+    );
+    compositionGet.mockResolvedValue(ok(COMPOSITION));
+    checkGet.mockResolvedValue(ok(CHECK_CLEAN));
+    renderWiring();
+
+    const empty = await screen.findByTestId('attention-empty');
+    expect(empty).toHaveTextContent('Nothing needs attention.');
+    expect(empty).toHaveTextContent(
+      'rt skills check compared 3 roster verbs in demo against a fresh compile; none differed.'
+    );
+    // It must not claim to have checked the stages, which check never covers.
+    expect(empty).toHaveTextContent('so check does not cover them');
+    expect(screen.queryByTestId('wiring-timeline')).not.toBeInTheDocument();
+  });
+
+  it('keeps the header and the provenance the empty claim rests on', async () => {
+    window.history.pushState(null, '', '/wiring?attention=1');
+    packsGet.mockResolvedValue(
+      ok({ packs: [{ name: 'demo', dir: '/p', layout: 'flat' }] })
+    );
+    compositionGet.mockResolvedValue(ok(COMPOSITION));
+    checkGet.mockResolvedValue(ok(CHECK_CLEAN));
+    renderWiring();
+
+    await screen.findByTestId('attention-empty');
+    expect(screen.getByTestId('command-provenance')).toHaveTextContent(
+      'rt skills composition'
+    );
+    expect(screen.getByTestId('spine-summary')).toHaveTextContent('feature');
+    expect(screen.getByTestId('work-type-select')).toBeInTheDocument();
+  });
+
+  it('says "not measured" rather than "nothing wrong" when check never answered', async () => {
+    window.history.pushState(null, '', '/wiring?attention=1');
+    packsGet.mockResolvedValue(
+      ok({ packs: [{ name: 'demo', dir: '/p', layout: 'flat' }] })
+    );
+    compositionGet.mockResolvedValue(ok(COMPOSITION));
+    checkGet.mockResolvedValue(err(502, 'rt skills check: pack not found'));
+    renderWiring();
+
+    const empty = await screen.findByTestId('attention-empty');
+    expect(empty).toHaveTextContent(
+      'This list is empty because nothing was measured, not because nothing has drifted.'
+    );
+    expect(empty).not.toHaveTextContent('Nothing needs attention.');
   });
 });

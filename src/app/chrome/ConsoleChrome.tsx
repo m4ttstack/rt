@@ -9,6 +9,7 @@ import {
 } from '@ui/core';
 import { useColorScheme } from '@ui/hooks';
 import { Link } from '../router/Link';
+import { WiringRailEntry } from '../wiring/WiringRailEntry';
 
 export const CONSOLE_HEADER_HEIGHT = 64;
 
@@ -88,11 +89,7 @@ export function ConsoleChrome({
             active={section === 'search'}
             onClick={rail.close}
           />
-          <RailEntry
-            icon="zap"
-            label="Wiring"
-            component={Link}
-            href="/wiring"
+          <WiringRailEntry
             expanded={rail.effectiveExpanded}
             active={section === 'wiring'}
             onClick={rail.close}
