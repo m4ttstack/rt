@@ -1,0 +1,195 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+  <style>
+    body { margin: 0; }
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .app {
+      --bg1: #e1e2e7; --bg2: #eff0f5; --bg3: #f6f6fa; --bg4: #e4e4e7;
+      --border: #c8cad6; --border-soft: #d5d7e2;
+      --fg: #111; --muted: #8990b3;
+      --accent: #2e7de9; --ok: #587539; --warn: #8c6c3e; --bad: #f52a65;
+      --purple: #7847bd; --cyan: #007197;
+      --dot-ok: #1f9d3a; --dot-warn: #e08a00; --wash: 10%;
+    }
+    .app.dark {
+      --bg1: #16161e; --bg2: #232a47; --bg3: #2c3352; --bg4: #3b4160;
+      --border: #3b4261; --border-soft: #313853;
+      --fg: #e3e7f6; --muted: #7e86ad;
+      --accent: #7aa2f7; --ok: #9ece6a; --warn: #e0af68; --bad: #f7768e;
+      --purple: #bb9af7; --cyan: #7dcfff;
+      --dot-ok: #4ade5b; --dot-warn: #ffbb3d; --wash: 15%;
+    }
+    .app { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13.5px; line-height: 1.55; color: var(--fg); }
+    .row { display: flex; align-items: center; gap: 4.8px; min-width: 0; }
+    .stack { display: flex; flex-direction: column; }
+    .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .xs { font-size: 10.56px; }
+    .sm { font-size: 11.2px; }
+    .muted { color: var(--muted); }
+    .aicon { width: 28px; height: 28px; border-radius: 6px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); background: transparent; border: 0; cursor: pointer; }
+    .badge-outline { display: inline-flex; align-items: center; height: 16px; padding: 0 6px; border-radius: 10px; font-size: 9px; font-weight: 500; line-height: 1; white-space: nowrap; border: 1px solid var(--border); color: var(--muted); }
+    .dot { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+    .well { background: var(--bg3); border: 1px solid var(--border-soft); border-radius: 4px; }
+    .commit { display: flex; gap: 9.6px; padding: 7.2px 9.6px; min-width: 0; align-items: flex-start; }
+    .commit + .commit { border-top: 1px solid var(--border-soft); }
+    .commit.sel { background: color-mix(in srgb, var(--accent) var(--wash), transparent); }
+    .box { width: 13px; height: 13px; border-radius: 3px; border: 1px solid var(--border); flex: none; margin-top: 3px; }
+    .box.on { background: var(--accent); border-color: var(--accent); }
+    .btn { height: 28px; padding: 0 11.2px; border-radius: 6px; border: 0; font-family: inherit; font-size: 11.2px; font-weight: 500; cursor: pointer; background: var(--accent); color: #fff; }
+    .btn[disabled] { background: var(--bg4); color: var(--muted); cursor: default; }
+  </style>
+</helmet>
+
+<div class="app {{schemeClass}}" style="width: 720px; height: 900px; background: var(--bg2); border-left: 1px solid var(--border); box-shadow: -6px 0 32px rgba(0, 0, 0, 0.3); display: flex; flex-direction: column;">
+
+  <div class="row" style="flex: none; padding: 11.2px; gap: 7.2px; border-bottom: 1px solid var(--border);">
+    <div class="stack" style="gap: 2px; flex: 1; min-width: 0;">
+      <div class="row" style="gap: 4.8px;">
+        <span style="font-size: 14.72px; font-weight: 700;">watch-ci</span>
+        <span class="sm muted truncate">mattstack:watch-ci</span>
+      </div>
+      <div class="row" style="gap: 6px; color: var(--muted);">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg>
+        <span class="xs muted">git log -- skills/watch-ci</span>
+        <span class="xs" style="opacity: 0.75;">as of 10:14:02 AM</span>
+      </div>
+    </div>
+    <button class="aicon" aria-label="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+  </div>
+
+  <div class="stack" style="flex: 1; min-height: 0; padding: 11.2px; gap: 14.4px; overflow: auto;">
+
+    <!-- Region 1. Momentary, this machine, not ordered. Kept ABOVE and on a
+         different surface so a reader never reads one of these as a commit. -->
+    <div class="stack" style="gap: 4.8px;">
+      <span class="xs muted">Right now — this machine, not history</span>
+      <div class="well">
+        <div class="row" style="padding: 6px 9.6px; gap: 9.6px;">
+          <span class="sm" style="width: 148px; flex: none; font-weight: 600;">working tree</span>
+          <div class="dot" style="background: var(--dot-ok);"></div>
+          <span class="sm truncate" style="flex: 1;">clean for this pack</span>
+        </div>
+        <div class="row" style="padding: 6px 9.6px; gap: 9.6px; border-top: 1px solid var(--border-soft);">
+          <span class="sm" style="width: 148px; flex: none; font-weight: 600;">installed</span>
+          <span class="sm truncate" style="flex: 1;">demo 0.4.11</span>
+        </div>
+        <div class="row" style="padding: 6px 9.6px; gap: 9.6px; border-top: 1px solid var(--border-soft);">
+          <span class="sm" style="width: 148px; flex: none; font-weight: 600;">compiled output</span>
+          <div class="dot" style="background: var(--dot-ok);"></div>
+          <span class="sm truncate" style="flex: 1;">matches its sources</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Region 2. Ordered, immutable, attributable. -->
+    <div class="stack" style="gap: 4.8px; flex: 1; min-height: 0;">
+      <div class="row" style="justify-content: space-between;">
+        <span class="xs muted">History — 6 of 20 requested</span>
+        <button class="btn" disabled>Compare 2 commits</button>
+      </div>
+
+      <div class="well" style="flex: 1; min-height: 0; overflow: auto;">
+
+        <div class="commit sel">
+          <div class="box on"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+          <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
+            <div class="row" style="gap: 4.8px;">
+              <span class="sm" style="font-weight: 600; flex: none;">ed24bc4</span>
+              <span class="xs muted" style="flex: none;">2 days ago</span>
+              <span class="badge-outline">newest</span>
+            </div>
+            <span class="sm truncate">pack: restamp self-referential fills at the registered 0.4.11 install</span>
+            <span class="xs muted truncate">skills/watch-ci/SKILL.md</span>
+          </div>
+        </div>
+
+        <div class="commit sel">
+          <div class="box on"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></div>
+          <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
+            <div class="row" style="gap: 4.8px;">
+              <span class="sm" style="font-weight: 600; flex: none;">17f8273</span>
+              <span class="xs muted" style="flex: none;">2 days ago</span>
+            </div>
+            <span class="sm truncate">pack: 0.4.11 — compiled verbs carry run-DB state (mattstack 0.8.0 fills)</span>
+            <span class="xs muted truncate">skills/watch-ci/SKILL.md</span>
+          </div>
+        </div>
+
+        <div class="commit">
+          <div class="box"></div>
+          <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
+            <div class="row" style="gap: 4.8px;">
+              <span class="sm" style="font-weight: 600; flex: none;">d1c512c</span>
+              <span class="xs muted" style="flex: none;">2 days ago</span>
+            </div>
+            <span class="sm truncate">pack: restamp at the registered 0.4.10 install</span>
+            <span class="xs muted truncate">skills/watch-ci/SKILL.md</span>
+          </div>
+        </div>
+
+        <div class="commit">
+          <div class="box"></div>
+          <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
+            <div class="row" style="gap: 4.8px;">
+              <span class="sm" style="font-weight: 600; flex: none;">4ab90ce</span>
+              <span class="xs muted" style="flex: none;">2 days ago</span>
+            </div>
+            <span class="sm truncate">pack: restamp at the registered 0.4.9 install; voice rule compiled into review</span>
+            <span class="xs muted truncate">skills/watch-ci/SKILL.md</span>
+          </div>
+        </div>
+
+        <div class="commit">
+          <div class="box"></div>
+          <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
+            <div class="row" style="gap: 4.8px;">
+              <span class="sm" style="font-weight: 600; flex: none;">e2a6b2c</span>
+              <span class="xs muted" style="flex: none;">2 days ago</span>
+            </div>
+            <span class="sm truncate">pack: restamp at the registered 0.4.8 install</span>
+            <span class="xs muted truncate">skills/watch-ci/SKILL.md</span>
+          </div>
+        </div>
+
+        <div class="commit">
+          <div class="box"></div>
+          <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
+            <div class="row" style="gap: 4.8px;">
+              <span class="sm" style="font-weight: 600; flex: none;">3136d72</span>
+              <span class="xs muted" style="flex: none;">2 days ago</span>
+            </div>
+            <span class="sm truncate">pack: recompile with correct self-stamps after the 0.4.7 round; 0.4.8</span>
+            <span class="xs muted truncate">skills/watch-ci/SKILL.md</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- The boundary, stated where it is read rather than in a doc. -->
+    <div class="row" style="gap: 6px; align-items: flex-start;">
+      <svg class="muted" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" style="margin-top: 2px; flex: none;"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+      <span class="xs muted">This pack's repo holds the fills and the compiled output. The step's own source lives in the mattstack plugin, a different repo — its changes are not in this list.</span>
+    </div>
+
+  </div>
+</div>
+</x-dc>
+<script data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Theme"},"$preview":{"width":720,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { schemeClass: this.props.dark ? 'dark' : '' };
+  }
+}
+</script>
+</body>
+</html>
