@@ -27,6 +27,13 @@ Every value in the artboards is lifted from the app, not eyeballed:
 - the spine and its "Outside the pipeline" terminal item — `src/app/runs/Timeline.tsx`
 - provenance row — `src/app/runs/CommandProvenance.tsx`
 
+`History` and `SeamCompare` are drawn against real pack data: the commits are
+`git log -- skills/watch-ci` over the live demo pack, and the seam
+headers carry the plugin-relative paths and spans `rt skills compile
+--preview` actually emits. The diff bodies in `SeamCompare` are illustrative —
+the commit pair it names changed only compiled output, so a real capture of it
+would attribute nothing.
+
 Two values are derivations rather than lifts, both because the source has no
 such token: `--bg4` (`color-mix` of `--tk-fg` 8% over `--tk-card`, the same
 step `tokyo-theme.css` documents) and the badge wash.
@@ -82,10 +89,23 @@ real ones carry employer identifiers and the canvas is hosted.
 ```sh
 node design/wiring/build-references.mjs \
   design/wiring/artboards design/wiring/render \
-  Main.dc.html Indicators.dc.html CompileDrawer.dc.html InverseIndex.dc.html
-bash design/wiring/capture.sh          # re-captures reference/ from render/
+  Main.dc.html Indicators.dc.html CompileDrawer.dc.html \
+  InverseIndex.dc.html History.dc.html SeamCompare.dc.html
+bash design/wiring/capture.sh          # serves render/ for the capture
 node design/wiring/normalize-captures.mjs design/wiring/reference
 ```
+
+Each artboard is shot **at its own width**, full page, `deviceScaleFactor: 1`
+— Main 1440, Indicators 880, the four drawers 720. A wider viewport pads the
+capture with page background and makes two references of the same drawer
+disagree on where its right edge is. The captured PNG can still come out a
+few pixels wider than the number above: `Indicators` puts its padding on the
+sized element, so 880 renders as 909, and a drawer's 1px left border makes
+720 render as 721.
+
+Wait for `document.fonts.ready` before shooting. The artboards pull JetBrains
+Mono over the network, and a capture taken before it lands measures every box
+against fallback metrics.
 
 To check an implementation against the reference: serve the app, open
 `/wiring` at 1440 wide in both schemes, screenshot full-page, and compare
@@ -93,20 +113,19 @@ against `reference/Main.{light,dark}.png` element by element — surface
 colours, border colour, radii, font sizes, the 22px bullet on a 2px line, the
 28px action icons, slot column widths.
 
-**`CompileDrawer.{light,dark}.png` are stale** — the artboard now draws seams
-as headings over sections, which is what shipped; the capture still shows the
-older raw-comment body. Re-run the capture flow below.
+**The PNGs are sRGB and match the artboards exactly.** Run
+`normalize-captures.mjs` before committing whatever took the capture: some
+browsers tag a screenshot with their own display profile while the raw pixels
+live in that space, so an unnormalized `#eff0f5` panel samples as `#edeef3` —
+a flat 2-9 unit offset that reads as a code defect to anyone pixel-diffing
+against the artboard source or a value lifted from `tokyo-theme.css`. It is
+idempotent, so running it on an already-sRGB capture costs nothing and is the
+only way to know. The 2026-08-24 capture went through `playwright-core`
+driving `chromium_headless_shell`, which happened to emit sRGB already.
 
-**The PNGs are sRGB and match the artboards exactly** — but only because
-`normalize-captures.mjs` runs. Chromium tags screenshots with its own display
-profile and the raw pixels live in that space, so an unnormalized capture of a
-`#eff0f5` panel samples as `#edeef3`. That flat 2-9 unit offset reads as a code
-defect to anyone pixel-diffing against the artboard source or a value lifted
-from `tokyo-theme.css`. Never commit a capture that skipped it.
-
-Three capture constraints worth knowing before you fight them:
+Two capture constraints worth knowing before you fight them:
 
 - the browser refuses the `file:` protocol, so `render/` must be served over
   http (`capture.sh` does this);
-- screenshots can only be written under `~/.fast-browser` or the repo-tools
-  checkout, so `capture.sh` shoots there and copies the results back here.
+- some agent sandboxes confine where a browser may write. Shoot to a
+  directory that sandbox allows and copy the results into `reference/`.
