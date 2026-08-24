@@ -78,27 +78,38 @@
       </div>
     </div>
 
-    <div class="stack" style="gap: 4.8px; flex: 1; min-height: 0;">
+    <div class="stack" style="gap: 4.8px;">
+      <span class="xs muted">Slots</span>
+      <div style="background: var(--bg3); border: 1px solid var(--border-soft); border-radius: 4px;">
+        <div class="row" style="padding: 5px 9.6px; gap: 9.6px;">
+          <span class="sm" style="width: 104px; flex: none; font-weight: 600;">tiering</span>
+          <span class="badge-outline">inlined</span>
+          <span class="xs muted truncate" style="flex: 1;">mattstack:model-tiering · 48 lines at 1-48</span>
+        </div>
+        <div class="row" style="padding: 5px 9.6px; gap: 9.6px; border-top: 1px solid var(--border-soft);">
+          <span class="sm" style="width: 104px; flex: none; font-weight: 600;">policy</span>
+          <span class="badge-outline">referenced</span>
+          <span class="xs muted truncate" style="flex: 1;">demo:work-policy · public, invoked rather than inlined — no seam</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="stack" style="gap: 7.2px; flex: 1; min-height: 0;">
       <div class="row" style="justify-content: space-between;">
-        <span class="xs muted">Fresh compile</span>
+        <span class="xs muted">Compiled body</span>
         <button class="aicon" aria-label="Copy body"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg></button>
       </div>
-      <div style="flex: 1; min-height: 0; overflow: auto; background: var(--bg3); border: 1px solid var(--border-soft); border-radius: 4px; padding: 9.6px;"><div class="code"><span class="fm">---
-name: "work"
-description: "Run one unit of work end to end, from provisioning through ship and CI."
-allowed-tools:
-  - "Bash(${CLAUDE_SKILL_DIR}/scripts/resolve-pipeline.sh:*)"
-  - "Bash(${CLAUDE_SKILL_DIR}/scripts/resolve-args.sh:*)"
-  - "Bash(${CLAUDE_SKILL_DIR}/scripts/pipeline-state.sh:*)"
-metadata:
-  compiled: "mattstack@0.8.0 + mattstack:model-tiering@0.8.0"
----</span>
 
-<span class="seam">&lt;!-- compiled by rt skills compile from the sources below; slots pre-resolved; edits here are working-tree drift (rt skills promote) --&gt;</span>
+      <div class="stack" style="flex: 1; min-height: 0; overflow: auto; gap: 11.2px;">
 
-<span class="seam">&lt;!-- part: step source=mattstack:work version=0.8.0 path=attachments/pipeline/work/SKILL.md lines=17-135 --&gt;</span>
-
-# work — the do-a-unit-of-work orchestrator
+        <div class="stack" style="gap: 4.8px;">
+          <div class="row" style="gap: 4.8px;">
+            <span class="xs muted" style="flex: none;">step</span>
+            <span class="sm" style="font-weight: 600; flex: none;">mattstack:work</span>
+            <span class="badge-outline">0.8.0</span>
+            <span class="xs truncate" style="flex: 1; color: var(--muted); opacity: 0.75;">attachments/pipeline/work/SKILL.md:17-135</span>
+          </div>
+          <div style="background: var(--bg3); border: 1px solid var(--border-soft); border-radius: 4px; padding: 9.6px;"><div class="code"># work — the do-a-unit-of-work orchestrator
 
 You run one unit of work through the pipeline the consumer's manifest
 names, resolving each stage against the bindings this pack compiled in.
@@ -106,14 +117,23 @@ names, resolving each stage against the bindings this pack compiled in.
 ## Reading the pipeline
 
 Call `resolve-pipeline.sh` once at the start. It prints the ordered
-stage list for this pack; never infer stages from directory names.
+stage list for this pack; never infer stages from directory names.</div></div>
+        </div>
 
-<span class="seam">&lt;!-- part: slot:tiering binding=mattstack:model-tiering version=0.8.0 path=attachments/model-tiering/SKILL.md lines=1-48 --&gt;</span>
-
-## Model tiering
+        <div class="stack" style="gap: 4.8px;">
+          <div class="row" style="gap: 4.8px;">
+            <span class="xs muted" style="flex: none;">slot tiering</span>
+            <span class="sm" style="font-weight: 600; flex: none;">mattstack:model-tiering</span>
+            <span class="badge-outline">0.8.0</span>
+            <span class="xs truncate" style="flex: 1; color: var(--muted); opacity: 0.75;">attachments/model-tiering/SKILL.md:1-48</span>
+          </div>
+          <div style="background: var(--bg3); border: 1px solid var(--border-soft); border-radius: 4px; padding: 9.6px;"><div class="code">## Model tiering
 
 Pick the tier from the work type before any stage runs; never infer it
 from the ticket title.</div></div>
+        </div>
+
+      </div>
     </div>
 
   </div>

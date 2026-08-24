@@ -93,6 +93,10 @@ against `reference/Main.{light,dark}.png` element by element — surface
 colours, border colour, radii, font sizes, the 22px bullet on a 2px line, the
 28px action icons, slot column widths.
 
+**`CompileDrawer.{light,dark}.png` are stale** — the artboard now draws seams
+as headings over sections, which is what shipped; the capture still shows the
+older raw-comment body. Re-run the capture flow below.
+
 **The PNGs are sRGB and match the artboards exactly** — but only because
 `normalize-captures.mjs` runs. Chromium tags screenshots with its own display
 profile and the raw pixels live in that space, so an unnormalized capture of a
