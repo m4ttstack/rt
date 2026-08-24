@@ -359,6 +359,33 @@ describe('buildSpine: check-status health mapping', () => {
     expect(health).toBe('internal-unchecked');
   });
 
+  /**
+   * The other direction of the same rule, and the one a blanket filter breaks.
+   * `internal-unchecked` means rt SKIPPED a non-public verb whose output
+   * directory is missing. A non-public verb whose directory still EXISTS is
+   * compared in full and can come back drifted — real drift, since the next
+   * compile deletes what the last one left behind. Nothing in the filtering
+   * path reads `public`, and this pins that: suppressing internal verbs
+   * wholesale would hide a row that has to show.
+   */
+  it('a non-public verb that check DID compare still reports its drift', () => {
+    const internalPack: SpineComposition = {
+      ...PACK,
+      verbs: PACK.verbs.map(v =>
+        v.name === 'work' ? { ...v, public: false } : v
+      ),
+    };
+
+    const entry = buildSpine(
+      internalPack,
+      checkFor('work', 'stale')
+    ).orchestrator;
+
+    expect(entry).toBeDefined();
+    expect(entry?.health).toBe('source-newer');
+    expect(needsAttention(entry!)).toBe(true);
+  });
+
   it('a stage check never covers reads unknown, and never borrows a verb row', () => {
     const spine = buildSpine(PACK, checkFor('work', 'stale'));
 
