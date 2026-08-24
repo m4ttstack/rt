@@ -103,9 +103,11 @@ export const appTheme = /* @__PURE__ */ createTheme({
     xl: '0.9rem',
   },
   lineHeights: { md: '1.55' },
-  fontFamily: '"Tomorrow", "Noto Sans JP", monospace',
-  fontFamilyMonospace: '"Tomorrow", "Noto Sans JP", monospace',
-  headings: { fontFamily: '"Tomorrow", "Noto Sans JP", monospace' },
+  // Both slots are the same family on purpose: tui-kit names a monospace
+  // in its `sans` slot too, and the kit leads its consumers on font.
+  fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+  fontFamilyMonospace: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+  headings: { fontFamily: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace' },
   shadows: {
     md: '0 10px 30px rgba(0, 0, 0, 0.28), 0 2px 8px rgba(0, 0, 0, 0.18)',
     lg: '0 12px 40px rgba(0, 0, 0, 0.25)',

@@ -62,4 +62,4 @@ jobs:
           asset=$(curl -s localhost:11099/ | grep -oE '/assets/[^"]+\.js' | head -1)
           test -n "$asset"
           test "$(curl -s -o /dev/null -w '%{http_code}' "localhost:11099$asset")" = 200
-          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:11099/fonts/tomorrow-400.woff2)" = 200
+          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:11099/fonts/jetbrains-mono.woff2)" = 200

@@ -11,7 +11,7 @@ const manifest: EmbeddedManifest = {
   indexHtmlPath: '/embedded/index.html',
   files: {
     '/assets/app.js': '/embedded/assets/app.js',
-    '/fonts/tomorrow.woff2': '/embedded/fonts/tomorrow.woff2',
+    '/fonts/jetbrains-mono.woff2': '/embedded/fonts/jetbrains-mono.woff2',
     '/favicon.svg': '/embedded/favicon.svg',
   },
 };
@@ -32,7 +32,7 @@ describe('mountEmbeddedStatic', () => {
 
     const [assetRes, fontRes, faviconRes] = await Promise.all([
       app.request('/assets/app.js'),
-      app.request('/fonts/tomorrow.woff2'),
+      app.request('/fonts/jetbrains-mono.woff2'),
       app.request('/favicon.svg'),
     ]);
 
@@ -41,7 +41,7 @@ describe('mountEmbeddedStatic', () => {
     );
     expect(assetRes.headers.get('content-type')).toContain('javascript');
     await expect(fontRes.text()).resolves.toBe(
-      'served:/embedded/fonts/tomorrow.woff2'
+      'served:/embedded/fonts/jetbrains-mono.woff2'
     );
     expect(faviconRes.status).toBe(200);
   });

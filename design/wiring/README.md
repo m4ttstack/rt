@@ -19,6 +19,8 @@ Canvas (editable, hosted): https://claude.ai/code/artifact/a27ffb30-2a5d-48bd-8a
 Every value in the artboards is lifted from the app, not eyeballed:
 
 - palette, grid and `@font-face` — `src/app/styles/tokyo-theme.css`
+  (JetBrains Mono, one variable face spanning 100–800; the artboards reach it
+  through Google Fonts, the app through the vendored woff2)
 - font sizes, spacing, radii, `fontFamily` — `src/ui/design-system/app-theme.ts`
 - surface ladder and text tokens — `src/ui/hooks/useSchemeColors.ts`
 - row anatomy and action affordances — `src/app/runs/RunRow.tsx`

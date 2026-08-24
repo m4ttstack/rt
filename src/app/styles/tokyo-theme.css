@@ -14,33 +14,20 @@
  * join, and they are why the palette is declared twice instead of once.
  */
 
+/*
+ * ONE face, not one per weight: JetBrains Mono ships as a variable font, so a
+ * single woff2 carries the 100-800 axis and the browser interpolates every
+ * weight from it. Vendored byte-identical to tui-kit's own
+ * `assets/fonts/jetbrains-mono.woff2` -- the kit leads its consumers on font,
+ * so this is a one-directional departure the kit made deliberately, not a
+ * census value to reconcile.
+ */
 @font-face {
-  font-family: 'Tomorrow';
+  font-family: 'JetBrains Mono';
   font-style: normal;
-  font-weight: 400;
+  font-weight: 100 800;
   font-display: swap;
-  src: url('/fonts/tomorrow-400.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'Tomorrow';
-  font-style: normal;
-  font-weight: 500;
-  font-display: swap;
-  src: url('/fonts/tomorrow-500.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'Tomorrow';
-  font-style: normal;
-  font-weight: 600;
-  font-display: swap;
-  src: url('/fonts/tomorrow-600.woff2') format('woff2');
-}
-@font-face {
-  font-family: 'Tomorrow';
-  font-style: normal;
-  font-weight: 700;
-  font-display: swap;
-  src: url('/fonts/tomorrow-700.woff2') format('woff2');
+  src: url('/fonts/jetbrains-mono.woff2') format('woff2');
 }
 
 :root[data-mantine-color-scheme='light'] {

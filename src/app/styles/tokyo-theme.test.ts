@@ -50,10 +50,13 @@ describe('tokyo-theme.css', () => {
     );
   });
 
-  it('vendors Tomorrow at the four weights tui-kit ships', () => {
-    for (const weight of [400, 500, 600, 700]) {
-      expect(css).toContain(`/fonts/tomorrow-${weight}.woff2`);
-    }
+  /** One face carrying the whole axis, not four fixed weights: a variable
+      woff2 the browser interpolates from. A rule pinned to a single weight
+      would silently synthesise the others. */
+  it('vendors JetBrains Mono as one variable face spanning 100-800', () => {
+    expect(css).toContain('/fonts/jetbrains-mono.woff2');
+    expect(css).toMatch(/font-weight:\s*100 800/);
+    expect(css.match(/@font-face/g) ?? []).toHaveLength(1);
   });
 
   // PageShell's root and RailShell's AppShell.Main both fill the viewport
