@@ -56,8 +56,8 @@ function renderView(over: { body?: string; slots?: SlotOutlineNode[] } = {}) {
   );
 }
 
-/** `CodeHighlight` arrives through `React.lazy`, so the text of a section is
-    only in the DOM a tick after the first render. */
+/** The pane mounts before its content: the body arrives from a query, so the
+    second wait is for that fetch to resolve, not for a lazy component. */
 async function pane() {
   const found = await screen.findByTestId('compile-preview-body');
   await waitFor(() => expect(found.textContent).toContain('# work'));
