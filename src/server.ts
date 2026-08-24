@@ -352,9 +352,9 @@ const shell = `<!doctype html>
   mq.addEventListener("change", applyTheme);
   window.__applyTheme = applyTheme;
 </script>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap">
+<!-- No webfont link: the kit vendors JetBrains Mono for both font slots and
+     Bun inlines it into /app.css as a data URI, so the board renders its own
+     face with no external request and no flash of a fallback. -->
 <link rel="stylesheet" href="/app.css">
 <link rel="stylesheet" href="/style.css">
 </head>
