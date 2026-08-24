@@ -63,6 +63,15 @@ export interface SlotOutlineNode {
   fill: BoundFill | null;
   /** Binding sites across the whole manifest that resolve to this fill. */
   siteCount: number;
+  /**
+   * Whether the compiler vendors this fill's body into the verb's artifact
+   * (`true`) or leaves a reference to it (`false`) -- the reason a compiled
+   * body carries a seam for some fills and no trace of others. Null where rt
+   * states neither, which is a slot that is unbound or known only from a
+   * binder; three states, and collapsing null into false would claim a
+   * reference the compiler never emitted.
+   */
+  inlined: boolean | null;
 }
 
 export type BindingSiteKind = CompositionBinder['kind'];
@@ -365,6 +374,7 @@ export function buildSpine(
       resolveError: slot.resolveError,
       fill: slot.boundTo ? (fillsByBinding.get(slot.boundTo) ?? null) : null,
       siteCount: siteCount(slot.boundTo),
+      inlined: slot.inlined,
     }));
     const declared = new Set(slots.map(s => s.name));
 
@@ -378,6 +388,7 @@ export function buildSpine(
         boundTo: slot.boundTo,
         fill,
         siteCount: siteCount(slot.boundTo),
+        inlined: null,
       });
     }
     return slots;
@@ -480,6 +491,7 @@ export function buildSpine(
           boundTo: slot.boundTo,
           fill,
           siteCount: siteCount(slot.boundTo),
+          inlined: null,
         });
       }
       continue;

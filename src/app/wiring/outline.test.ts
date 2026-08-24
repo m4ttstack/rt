@@ -323,6 +323,43 @@ describe('buildSpine: slots', () => {
     expect(slot?.resolveError).toBe('no fill provides model-tiering@1');
     expect(slot?.fill).toBeNull();
   });
+
+  it("carries rt's inlined flag through, and leaves a binder-only slot at null", () => {
+    // The compiler emits a seam only for an INLINED fill, so this flag is the
+    // only thing that tells a reader whether a bound slot is absent from the
+    // compiled body because it is referenced or because something is wrong.
+    // A binder-only slot carries no flag at all -- neither, not false.
+    const spine = buildSpine(PACK, EMPTY_CHECK);
+
+    expect(spine.orchestrator?.slots[0].inlined).toBe(true);
+    expect(spine.stages[0].slots[0].inlined).toBeNull();
+  });
+
+  it('reports a referenced fill as referenced rather than as unflagged', () => {
+    const composition: SpineComposition = {
+      ...PACK,
+      verbs: [
+        verb('work', {
+          slots: [
+            {
+              name: 'tiering',
+              contract: 'model-tiering@1',
+              required: false,
+              boundTo: 'mattstack:model-tiering',
+              fillSourcePath: '/fills/mattstack:model-tiering',
+              fillVersion: '0.8.0',
+              registered: true,
+              inlined: false,
+            },
+          ],
+        }),
+      ],
+    };
+
+    expect(
+      buildSpine(composition, EMPTY_CHECK).orchestrator?.slots[0].inlined
+    ).toBe(false);
+  });
 });
 
 describe('buildSpine: check-status health mapping', () => {
