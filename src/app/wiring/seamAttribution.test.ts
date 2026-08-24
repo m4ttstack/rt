@@ -80,6 +80,30 @@ describe('attributeHunk', () => {
     ).toBe(CONVENTIONS);
   });
 
+  it('refuses a hunk that overlaps one seam without being inside it', () => {
+    // Lines 8-12 reach into CRITERIA (10-20) and touch no other seam, so the
+    // ambiguity guard cannot save this one: only containment can. An
+    // overlap test would name CRITERIA for a change that is mostly outside
+    // it.
+    expect(
+      attributeHunk(
+        { path: 'attachments/review-criteria/SKILL.md', lines: [8, 12] },
+        SEAMS
+      )
+    ).toBeNull();
+  });
+
+  it('refuses a hunk that runs off the end of one seam', () => {
+    // 18-40 covers the whole of CONVENTIONS (21-30) as well, so the guard
+    // would catch it -- 18-20 is the same shape against CRITERIA alone.
+    expect(
+      attributeHunk(
+        { path: 'attachments/review-criteria/SKILL.md', lines: [18, 24] },
+        [CRITERIA]
+      )
+    ).toBeNull();
+  });
+
   it('refuses a hunk that straddles two seams rather than picking one', () => {
     expect(
       attributeHunk(

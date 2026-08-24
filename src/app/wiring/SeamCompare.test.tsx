@@ -26,6 +26,12 @@ const DIFF = [
   '@@ -20,2 +20,3 @@ heading',
   ' The QA suite is the gate.',
   '+A red smoke job with a green QA suite is a ship.',
+  // Reaches into the domain seam (13-161) from line 8 without being inside
+  // it: only a containment test refuses this one, an overlap test names the
+  // seam for a change that is mostly above it.
+  '@@ -8,4 +8,6 @@ preamble',
+  ' before the body',
+  '+not this seam',
   'diff --git a/skills/watch-ci/SKILL.md b/skills/watch-ci/SKILL.md',
   '--- a/skills/watch-ci/SKILL.md',
   '+++ b/skills/watch-ci/SKILL.md',
@@ -76,14 +82,22 @@ describe('attributeDiff', () => {
   it('leaves a hunk in the compiled artifact unattributed', () => {
     // Line 1-3 of skills/watch-ci/SKILL.md is inside NO seam's span: every
     // span here is measured in a fill or a step source, a different file.
-    const [, artifact] = attributeDiff(DIFF, seamsOf(BODY));
+    const [, , artifact] = attributeDiff(DIFF, seamsOf(BODY));
 
     expect(artifact.hunk.path).toBe('skills/watch-ci/SKILL.md');
     expect(artifact.seam).toBeNull();
   });
 
+  it('refuses a hunk that reaches into a seam without sitting inside it', () => {
+    const [, overlapping] = attributeDiff(DIFF, seamsOf(BODY));
+
+    expect(overlapping.hunk.lines).toEqual([8, 13]);
+    expect(overlapping.seam).toBeNull();
+  });
+
   it('keeps the diff order rather than grouping the attributed ones', () => {
     expect(attributeDiff(DIFF, seamsOf(BODY)).map(a => a.hunk.path)).toEqual([
+      'attachments/watch-ci-domain/SKILL.md',
       'attachments/watch-ci-domain/SKILL.md',
       'skills/watch-ci/SKILL.md',
     ]);
@@ -108,7 +122,7 @@ describe('SeamCompare: what each hunk header claims', () => {
   it("names the HUNK's own file and span over an unattributed one", () => {
     renderCompare();
 
-    const loose = screen.getByTestId('unattributed-hunk');
+    const [, loose] = screen.getAllByTestId('unattributed-hunk');
     expect(
       within(loose).getByText('no seam contains this')
     ).toBeInTheDocument();
@@ -120,7 +134,7 @@ describe('SeamCompare: what each hunk header claims', () => {
   it('renders an unattributed hunk as itself rather than hiding it', () => {
     renderCompare();
 
-    const loose = screen.getByTestId('unattributed-hunk');
+    const [, loose] = screen.getAllByTestId('unattributed-hunk');
     expect(loose).toHaveTextContent('compiled: "mattstack@0.8.0"');
     expect(loose).toHaveTextContent("No part's body span contains these lines");
   });
@@ -129,7 +143,7 @@ describe('SeamCompare: what each hunk header claims', () => {
     renderCompare({ body: undefined });
 
     expect(screen.queryAllByTestId('attributed-hunk')).toHaveLength(0);
-    expect(screen.getAllByTestId('unattributed-hunk')).toHaveLength(2);
+    expect(screen.getAllByTestId('unattributed-hunk')).toHaveLength(3);
   });
 });
 
