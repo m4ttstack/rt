@@ -64,15 +64,25 @@ interface RowActionsProps {
   entry: SpineEntry;
   previewOpen: boolean;
   onPreview: () => void;
+  historyOpen: boolean;
+  onHistory: () => void;
 }
 
 /**
  * An action appears only when it has a real target. A pipeline stage is
  * compiled INTO its orchestrator rather than into a skill of its own, so the
  * payload carries no source, no artifact and no verb to compile for it --
- * three disabled buttons would be three lies about what this page can do.
+ * four disabled buttons would be four lies about what this page can do.
+ * History rides on the verb for the same reason: a stage has no artifact of
+ * its own for a commit to have touched.
  */
-function RowActions({ entry, previewOpen, onPreview }: RowActionsProps) {
+function RowActions({
+  entry,
+  previewOpen,
+  onPreview,
+  historyOpen,
+  onHistory,
+}: RowActionsProps) {
   if (!entry.sourcePath && !entry.artifactPath && !entry.verb) return null;
 
   return (
@@ -118,6 +128,19 @@ function RowActions({ entry, previewOpen, onPreview }: RowActionsProps) {
           </ActionIcon>
         </Tooltip>
       )}
+      {entry.verb && (
+        <Tooltip label="Version history">
+          <ActionIcon
+            variant={historyOpen ? 'light' : 'subtle'}
+            color={historyOpen ? 'accent' : 'gray'}
+            onClick={onHistory}
+            aria-label={`version history of ${entry.label}`}
+            data-testid="toggle-history"
+          >
+            <Icons.clock size={16} />
+          </ActionIcon>
+        </Tooltip>
+      )}
     </Group>
   );
 }
@@ -126,6 +149,8 @@ export interface SkillRowProps {
   entry: SpineEntry;
   previewOpen: boolean;
   onPreview: () => void;
+  historyOpen: boolean;
+  onHistory: () => void;
   /** Opens the inverse index for a slot's fill. */
   onShowSites: (binding: string) => void;
   /** Outside-the-pipeline rows carry no step number, so health rides a dot
@@ -142,6 +167,8 @@ export function SkillRow({
   entry,
   previewOpen,
   onPreview,
+  historyOpen,
+  onHistory,
   onShowSites,
   withDot = false,
 }: SkillRowProps) {
@@ -214,6 +241,8 @@ export function SkillRow({
           entry={entry}
           previewOpen={previewOpen}
           onPreview={onPreview}
+          historyOpen={historyOpen}
+          onHistory={onHistory}
         />
       </Group>
       <SlotTable slots={entry.slots} onShowSites={onShowSites} />

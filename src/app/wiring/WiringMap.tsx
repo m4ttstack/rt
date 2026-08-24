@@ -52,6 +52,7 @@ import {
   usePacks,
   useSkillsCheck,
 } from './useWiring';
+import { VersionTimeline } from './VersionTimeline';
 
 /** The spine's geometry, matching `RunDetail`'s Timeline so the two read as
     the same object: a 22px bullet on a 2px line. */
@@ -121,11 +122,15 @@ function OutsideThePipeline({
   spine,
   previewVerb,
   onPreview,
+  historyVerb,
+  onHistory,
   onShowSites,
 }: {
   spine: WiringSpine;
   previewVerb: string | null;
   onPreview: (entry: SpineEntry) => void;
+  historyVerb: string | null;
+  onHistory: (entry: SpineEntry) => void;
   onShowSites: (binding: string) => void;
 }) {
   const { text } = useSchemeColors();
@@ -143,6 +148,8 @@ function OutsideThePipeline({
           withDot
           previewOpen={previewVerb === entry.verb}
           onPreview={() => onPreview(entry)}
+          historyOpen={historyVerb === entry.verb}
+          onHistory={() => onHistory(entry)}
           onShowSites={onShowSites}
         />
       ))}
@@ -337,6 +344,7 @@ function WiringSpineView({
     slots: SlotOutlineNode[];
   } | null>(null);
   const [indexFill, setIndexFill] = useState<string | null>(null);
+  const [historyEntry, setHistoryEntry] = useState<SpineEntry | null>(null);
 
   const spine = useMemo(
     () =>
@@ -359,6 +367,11 @@ function WiringSpineView({
             slots: entry.slots,
           }
     );
+  };
+
+  const openHistory = (entry: SpineEntry) => {
+    if (!entry.verb) return;
+    setHistoryEntry(current => (current?.verb === entry.verb ? null : entry));
   };
 
   // Same rows, same order, same components -- the healthy ones simply are
@@ -466,6 +479,8 @@ function WiringSpineView({
                 entry={entry}
                 previewOpen={preview?.verb === entry.verb}
                 onPreview={() => openPreview(entry)}
+                historyOpen={historyEntry?.verb === entry.verb}
+                onHistory={() => openHistory(entry)}
                 onShowSites={setIndexFill}
               />
             </Timeline.Item>
@@ -486,6 +501,8 @@ function WiringSpineView({
                 spine={shown}
                 previewVerb={preview?.verb ?? null}
                 onPreview={openPreview}
+                historyVerb={historyEntry?.verb ?? null}
+                onHistory={openHistory}
                 onShowSites={setIndexFill}
               />
             </Timeline.Item>
@@ -507,6 +524,15 @@ function WiringSpineView({
         changedFiles={preview?.changedFiles ?? []}
         slots={preview?.slots ?? []}
         onClose={() => setPreview(null)}
+      />
+
+      <VersionTimeline
+        pack={pack}
+        verb={historyEntry?.verb ?? null}
+        refName={historyEntry?.ref ?? null}
+        health={historyEntry?.health ?? 'unknown'}
+        staleFiles={historyEntry?.staleFiles ?? []}
+        onClose={() => setHistoryEntry(null)}
       />
 
       <InverseIndex

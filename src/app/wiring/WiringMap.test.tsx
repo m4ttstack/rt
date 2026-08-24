@@ -9,6 +9,7 @@ const packsGet = vi.fn();
 const compositionGet = vi.fn();
 const checkGet = vi.fn();
 const compileGet = vi.fn();
+const historyGet = vi.fn();
 
 vi.mock('../api', () => ({
   client: {
@@ -21,6 +22,10 @@ vi.mock('../api', () => ({
           $get: () => Promise.resolve({ ok: true, json: async () => ({}) }),
         },
         compile: { $get: (...args: unknown[]) => compileGet(...args) },
+        history: { $get: (...args: unknown[]) => historyGet(...args) },
+        diff: {
+          $get: () => Promise.resolve({ ok: true, json: async () => ({}) }),
+        },
       },
     },
   },
@@ -570,6 +575,55 @@ describe('WiringMap: actions', () => {
     expect(
       within(stage).queryByTestId('toggle-compile-preview')
     ).not.toBeInTheDocument();
+  });
+
+  it('offers version history on a verb, and none on a stage', async () => {
+    mockHappyPath();
+    renderWiring();
+
+    const verb = await screen.findByTestId('skill-row-mattstack:work');
+    expect(within(verb).getByTestId('toggle-history')).toBeInTheDocument();
+
+    // A stage compiles INTO the orchestrator, so it has no artifact of its
+    // own for a commit to have touched -- the same reason it carries no
+    // health and no other action.
+    const stage = screen.getByTestId('skill-row-mattstack:stage-provision');
+    expect(
+      within(stage).queryByTestId('toggle-history')
+    ).not.toBeInTheDocument();
+  });
+
+  it('opens the history drawer from the row, scoped to that verb', async () => {
+    mockHappyPath();
+    historyGet.mockResolvedValue(
+      ok({
+        pack: 'demo',
+        packDir: '/p',
+        repoRoot: '/repo',
+        scope: 'skills/work',
+        verb: 'work',
+        limit: 20,
+        truncated: false,
+        commits: [],
+        runtime: {
+          dirtyFiles: [],
+          moreDirtyFiles: false,
+          packVersion: '0.4.11',
+        },
+      })
+    );
+    const user = userEvent.setup();
+    renderWiring();
+
+    const row = await screen.findByTestId('skill-row-mattstack:work');
+    await user.click(within(row).getByTestId('toggle-history'));
+
+    await waitFor(() =>
+      expect(screen.getByTestId('history-empty')).toBeInTheDocument()
+    );
+    expect(historyGet.mock.calls[0][0]).toMatchObject({
+      query: { pack: 'demo', verb: 'work' },
+    });
   });
 
   it('opens the compile drawer stating its own limit, with the files check flagged', async () => {
