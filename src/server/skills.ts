@@ -640,20 +640,21 @@ export function mountSkills(
           if (!ok) break;
         }
 
-        // A cached GET for this pack taken moments ago (including the
-        // validation read above, on a cache MISS it would have primed) must
-        // not go on answering with the pre-write roster -- an apply is the
-        // one action on this surface that invalidates it.
-        cache.delete(
-          JSON.stringify([
-            'skills',
-            'surface',
-            'list',
-            '--pack',
-            pack,
-            '--json',
-          ])
-        );
+        // `surface set` runs a full pack recompile, so it changes far more than
+        // the roster: composition (a verb's public flag), check (drift), and
+        // compile all read the pack too, and every one of them is cached in
+        // this same map under an argv that names the pack. Dropping only the
+        // `surface list` key would leave those answering pre-write for the rest
+        // of the TTL. Invalidate every entry whose argv carries this pack.
+        for (const key of cache.keys()) {
+          let argv: unknown;
+          try {
+            argv = JSON.parse(key);
+          } catch {
+            continue;
+          }
+          if (Array.isArray(argv) && argv.includes(pack)) cache.delete(key);
+        }
 
         const after = await runRt([
           'skills',

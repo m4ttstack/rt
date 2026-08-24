@@ -1139,6 +1139,75 @@ describe('skills surface apply route', () => {
     });
   });
 
+  it('invalidates every cached read for the pack, not only surface-list, since a set recompiles it', async () => {
+    // `surface set` recompiles the whole pack, so composition (a verb's public
+    // flag), check, and compile all go stale too -- not just the roster. All
+    // share one cache map keyed by an argv that names the pack.
+    let writesApplied = false;
+    const compositionPayload = () => ({
+      pack: 'demo',
+      packDir: '/p',
+      manifestPath: null,
+      verbs: [
+        {
+          name: 'watch-ci',
+          engine: 'watch-ci',
+          engineRef: 'mattstack:watch-ci',
+          plugin: 'mattstack',
+          description: '',
+          public: writesApplied,
+          sourcePath: '/s/watch-ci/SKILL.md',
+          artifactPath: '/p/skills/watch-ci',
+          slots: [],
+        },
+      ],
+      fills: [],
+      binders: [],
+      pipelines: {},
+    });
+    const rt = fakeRtHandler(argv => {
+      if (argv.includes('composition'))
+        return {
+          code: 0,
+          stdout: JSON.stringify(compositionPayload()),
+          stderr: '',
+        };
+      if (isList(argv))
+        return {
+          code: 0,
+          stdout: surfaceList([
+            {
+              name: 'watch-ci',
+              kind: 'compiled',
+              status: writesApplied ? 'public' : 'internal',
+            },
+          ]),
+          stderr: '',
+        };
+      writesApplied = true;
+      return { code: 0, stdout: 'watch-ci: public\n', stderr: '' };
+    });
+    const app = mountSkills(new Hono(), rt.run);
+
+    // Prime the COMPOSITION cache with the pre-write payload (public: false).
+    const before = await app.request('/api/skills/composition?pack=demo');
+    await expect(before.json()).resolves.toMatchObject({
+      verbs: [{ name: 'watch-ci', public: false }],
+    });
+
+    await postApply(app, {
+      pack: 'demo',
+      toPublic: ['watch-ci'],
+      toInternal: [],
+    });
+
+    // Must re-spawn, not serve the primed pre-write composition.
+    const after = await app.request('/api/skills/composition?pack=demo');
+    await expect(after.json()).resolves.toMatchObject({
+      verbs: [{ name: 'watch-ci', public: true }],
+    });
+  });
+
   it('threads the validated pack onto every set call, not just the roster read', async () => {
     const rt = fakeRtHandler(argv => {
       if (isList(argv)) {
