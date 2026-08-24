@@ -151,16 +151,27 @@ export function parseLaunchNote(body: unknown): { ok: true; note?: string } | { 
     by name. Omitting `skillPath` reproduces the historical flag string
     byte-for-byte, so the slash form never drifts when resolution fails. */
 function dispatchArgs(o: SkillPromptOpts, skillPath?: string | null): string {
-  const parts = [o.mrUrl, "--state", o.statePath, "--status-bin", o.statusBin];
-  if (o.reportPath) parts.push("--report", o.reportPath);
-  if (o.skill) parts.push("--skill", o.skill);
-  if (skillPath) parts.push("--skill-path", skillPath);
+  const parts = [o.mrUrl];
+  const flag = (name: string, value?: string | null) => {
+    if (value) parts.push(`${name} ${value}`);
+  };
+  flag("--state", o.statePath);
+  flag("--status-bin", o.statusBin);
+  flag("--report", o.reportPath);
+  flag("--skill", o.skill);
+  flag("--skill-path", skillPath);
   if (o.reReview) parts.push("--re-review");
-  if (o.tier) parts.push("--tier", o.tier);
-  if (o.fixClasses?.length) parts.push("--fix-classes", o.fixClasses.join(","));
-  if (o.draftBin) parts.push("--draft-bin", o.draftBin);
-  return parts.join(" ");
+  flag("--tier", o.tier);
+  flag("--fix-classes", o.fixClasses?.length ? o.fixClasses.join(",") : undefined);
+  flag("--draft-bin", o.draftBin);
+  return parts.join(FLAG_SEPARATOR);
 }
+
+/** One flag per line: the invocation runs past 500 characters and is the first
+    thing a human reads in the pane. Verified that arguments after a newline
+    still reach the skill -- a first-line-only parse would silently drop
+    --status-bin, which is the failure this whole surface exists to prevent. */
+const FLAG_SEPARATOR = "\n  ";
 
 function withNote(cmd: string, note?: string): string {
   return note ? `${cmd}\n\n${operatorNoteParagraph(note)}` : cmd;

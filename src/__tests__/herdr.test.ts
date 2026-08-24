@@ -64,13 +64,20 @@ describe("command builders", () => {
         skill: "myteam:review",
       }),
     ).toBe(
-      "/mr-board:review https://x/mr/1 --state /s/1.json --status-bin /b/review-status.ts --report /s/1.md --skill myteam:review",
+      `/mr-board:review https://x/mr/1
+  --state /s/1.json
+  --status-bin /b/review-status.ts
+  --report /s/1.md
+  --skill myteam:review`,
     );
   });
   test("reviewPrompt omits the skill flag when unconfigured", () => {
     expect(
       reviewPrompt({ mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: "/b/review-status.ts", reportPath: "/s/1.md" }),
-    ).toBe("/mr-board:review https://x/mr/1 --state /s/1.json --status-bin /b/review-status.ts --report /s/1.md");
+    ).toBe(`/mr-board:review https://x/mr/1
+  --state /s/1.json
+  --status-bin /b/review-status.ts
+  --report /s/1.md`);
   });
   test("a stale channel option can no longer put --channel in the prompt", () => {
     // channel is no longer on SkillPromptOpts; this simulates a stale caller
@@ -84,7 +91,10 @@ describe("command builders", () => {
     } as unknown as Parameters<typeof reviewPrompt>[0];
     expect(reviewPrompt(opts)).not.toContain("--channel");
     expect(reviewPrompt(opts)).toBe(
-      "/mr-board:review https://x/mr/1 --state /s/1.json --status-bin /b/review-status.ts --report /s/1.md",
+      `/mr-board:review https://x/mr/1
+  --state /s/1.json
+  --status-bin /b/review-status.ts
+  --report /s/1.md`,
     );
   });
   test("reviewPrompt appends the operator note as a trailing paragraph", () => {
@@ -94,7 +104,9 @@ describe("command builders", () => {
         note: "focus on the migration files",
       }),
     ).toBe(
-      "/mr-board:review https://x/mr/1 --state /s/1.json --status-bin /b/review-status.ts" +
+      `/mr-board:review https://x/mr/1
+  --state /s/1.json
+  --status-bin /b/review-status.ts` +
       "\n\nOperator note (from the human who launched this pane): focus on the migration files",
     );
   });
@@ -104,7 +116,10 @@ describe("command builders", () => {
       tier: "api", note: "the lint job is the real blocker",
     });
     expect(p).toBe(
-      "/mr-board:doctor https://x/mr/1 --state /s/1.json --status-bin /b/doctor-status.ts --tier api" +
+      `/mr-board:doctor https://x/mr/1
+  --state /s/1.json
+  --status-bin /b/doctor-status.ts
+  --tier api` +
       "\n\nOperator note (from the human who launched this pane): the lint job is the real blocker",
     );
   });
@@ -134,7 +149,11 @@ describe("command builders", () => {
   test("reviewPrompt appends --re-review when re-reviewing", () => {
     expect(
       reviewPrompt({ mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: "/b/review-status.ts", reportPath: "/s/1.md", reReview: true }),
-    ).toBe("/mr-board:review https://x/mr/1 --state /s/1.json --status-bin /b/review-status.ts --report /s/1.md --re-review");
+    ).toBe(`/mr-board:review https://x/mr/1
+  --state /s/1.json
+  --status-bin /b/review-status.ts
+  --report /s/1.md
+  --re-review`);
   });
   test("buildPaneCommand launches a configured claude command in place of plain claude", () => {
     expect(buildPaneCommand("/repo dir", "do it", "cswap run 2 --share-history -- claude")).toBe(
@@ -198,8 +217,8 @@ describe("launchReview", () => {
     // The pane runs the review command.
     const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
     expect(runCall?.[2]).toBe("w40:p7");
-    expect(runCall?.[3]).toContain("claude '/mr-board:review https://x/mr/1 --state /s/1.json");
-    expect(runCall?.[3]).toContain("bin/board --report /s/1.md'");
+    expect(runCall?.[3]).toContain("claude '/mr-board:review https://x/mr/1\n  --state /s/1.json");
+    expect(runCall?.[3]).toContain("bin/board\n  --report /s/1.md'");
   });
 
   test("launches the pane with the configured claude command when set", async () => {
@@ -313,7 +332,7 @@ describe("launchReview", () => {
     // The review command runs in the initial pane.
     const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
     expect(runCall?.[2]).toBe("w41:p1");
-    expect(runCall?.[3]).toContain("claude '/mr-board:review https://x/mr/2 --state /s/2.json");
+    expect(runCall?.[3]).toContain("claude '/mr-board:review https://x/mr/2\n  --state /s/2.json");
   });
 });
 
@@ -351,8 +370,12 @@ describe("dispatchPrompt (wrapper hop stays; --skill-path rides alongside --skil
     const resolvePath = async (name: string) => (name === "acme:mr-board-review" ? "/cache/acme/skills/mr-board-review/SKILL.md" : null);
     const prompt = await dispatchPrompt("mr-board:review", baseOpts, resolvePath);
     expect(prompt).toBe(
-      "/mr-board:review https://x/mr/1 --state /s/1.json --status-bin /b/review-status.ts --report /s/1.md " +
-        "--skill acme:mr-board-review --skill-path /cache/acme/skills/mr-board-review/SKILL.md",
+      `/mr-board:review https://x/mr/1
+  --state /s/1.json
+  --status-bin /b/review-status.ts
+  --report /s/1.md
+  --skill acme:mr-board-review
+  --skill-path /cache/acme/skills/mr-board-review/SKILL.md`,
     );
   });
 
@@ -391,16 +414,21 @@ describe("dispatchPrompt (wrapper hop stays; --skill-path rides alongside --skil
     };
     const prompt = await dispatchPrompt("mr-board:doctor", opts, resolvePath);
     expect(prompt).toBe(
-      `/mr-board:doctor https://x/mr/1 --state /s --status-bin ${statusBinPath()} --skill acme:mr-board-doctor-api ` +
-        `--skill-path /cache/acme/attachments/mr-board-doctor-api/SKILL.md ` +
-        `--tier api --fix-classes retry-flake --draft-bin ${draftBinPath()}`,
+      `/mr-board:doctor https://x/mr/1
+  --state /s
+  --status-bin ${statusBinPath()}
+  --skill acme:mr-board-doctor-api
+  --skill-path /cache/acme/attachments/mr-board-doctor-api/SKILL.md
+  --tier api
+  --fix-classes retry-flake
+  --draft-bin ${draftBinPath()}`,
     );
   });
 
   test("re-review keeps --skill-path and --re-review both present", async () => {
     const resolvePath = async () => "/cache/acme/skills/mr-board-review/SKILL.md";
     const prompt = await dispatchPrompt("mr-board:review", { ...baseOpts, reReview: true }, resolvePath);
-    expect(prompt).toContain("--skill-path /cache/acme/skills/mr-board-review/SKILL.md --re-review");
+    expect(prompt).toContain("--skill-path /cache/acme/skills/mr-board-review/SKILL.md\n  --re-review");
   });
 });
 
