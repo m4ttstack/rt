@@ -25,10 +25,17 @@ export interface DiffHunk {
   path: string;
   /** 1-indexed and inclusive, matching `Seam.lines`. */
   lines: [number, number];
+  /** The hunk's own body, each line keeping its leading ` `/`+`/`-`. Carried
+      here rather than re-split by the renderer: two walks of the same diff
+      text would eventually disagree about which body belongs to which span,
+      and that is exactly the misattribution this module exists to prevent. */
+  text: string[];
 }
 
 const HUNK_HEADER = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/;
 const NEW_FILE_HEADER = '+++ ';
+const OLD_FILE_HEADER = '--- ';
+const FILE_PAIR = 'diff --git ';
 
 /**
  * Parses unified diff text -- `git diff`'s output -- into hunks.
@@ -47,28 +54,50 @@ const NEW_FILE_HEADER = '+++ ';
 export function parseDiffHunks(diff: string): DiffHunk[] {
   const hunks: DiffHunk[] = [];
   let path: string | null = null;
+  let open: DiffHunk | null = null;
 
+  // A hunk's body runs until the next `@@`, the next file, or the end. Every
+  // line that closes one is named here rather than inferred, because two of
+  // them (`--- a/x`, `+++ b/x`) open with the same characters a body line
+  // does and would otherwise be read as a deletion and an addition.
   for (const line of diff.split('\n')) {
     if (line.startsWith(NEW_FILE_HEADER)) {
       const target = line.slice(NEW_FILE_HEADER.length).split('\t')[0].trim();
       // A deleted file's new side is /dev/null; its hunks belong to no path
       // in the version being compared to.
       path = target === '/dev/null' ? null : target.replace(/^b\//, '');
+      open = null;
+      continue;
+    }
+    if (line.startsWith(OLD_FILE_HEADER) || line.startsWith(FILE_PAIR)) {
+      open = null;
       continue;
     }
 
     const header = HUNK_HEADER.exec(line);
-    if (!header || path === null) continue;
+    if (!header) {
+      if (open && /^[ +-]/.test(line)) open.text.push(line);
+      continue;
+    }
+    if (path === null) {
+      open = null;
+      continue;
+    }
 
     const start = Number(header[1]);
     const count = header[2] === undefined ? 1 : Number(header[2]);
 
     if (count === 0) {
-      if (start < 1) continue;
-      hunks.push({ path, lines: [start, start] });
+      if (start < 1) {
+        open = null;
+        continue;
+      }
+      open = { path, lines: [start, start], text: [] };
+      hunks.push(open);
       continue;
     }
-    hunks.push({ path, lines: [start, start + count - 1] });
+    open = { path, lines: [start, start + count - 1], text: [] };
+    hunks.push(open);
   }
 
   return hunks;
@@ -82,7 +111,10 @@ export function parseDiffHunks(diff: string): DiffHunk[] {
  * provenance it does not have. Same trade `parseSeam` makes -- unattributed
  * beats misattributed.
  */
-export function attributeHunk(hunk: DiffHunk, seams: Seam[]): Seam | null {
+export function attributeHunk(
+  hunk: Pick<DiffHunk, 'path' | 'lines'>,
+  seams: Seam[]
+): Seam | null {
   const containing = seams.filter(
     seam =>
       seam.path === hunk.path &&

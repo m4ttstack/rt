@@ -139,11 +139,31 @@ diff --git a/skills/review/SKILL.md b/skills/review/SKILL.md
 
 describe('parseDiffHunks', () => {
   it('reads each hunk span off the new side, and carries the file with it', () => {
-    expect(parseDiffHunks(DIFF)).toEqual([
+    expect(
+      parseDiffHunks(DIFF).map(({ path, lines }) => ({ path, lines }))
+    ).toEqual([
       { path: 'attachments/review-criteria/SKILL.md', lines: [14, 17] },
       { path: 'attachments/review-criteria/SKILL.md', lines: [45, 45] },
       { path: 'skills/review/SKILL.md', lines: [1, 1] },
     ]);
+  });
+
+  it('carries each hunk body with the span it belongs to', () => {
+    expect(parseDiffHunks(DIFF).map(hunk => hunk.text)).toEqual([
+      [' unchanged', '-gone', '+added', '+added again'],
+      ['-only deletions here'],
+      ['-old', '+new'],
+    ]);
+  });
+
+  it("never reads a file header's own -/+ as a body line", () => {
+    // `--- a/x` and `+++ b/x` open with the characters a deletion and an
+    // addition do; read as body they would put the previous file's header
+    // into this file's first hunk.
+    for (const hunk of parseDiffHunks(DIFF)) {
+      expect(hunk.text.some(line => line.startsWith('-- '))).toBe(false);
+      expect(hunk.text.some(line => line.startsWith('++ '))).toBe(false);
+    }
   });
 
   it('feeds attribution directly -- a real hunk lands in a real seam', () => {

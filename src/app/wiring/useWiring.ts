@@ -18,6 +18,14 @@ type SkillsCompilePreview = InferResponseType<
   typeof client.api.skills.compile.$get,
   200
 >;
+export type SkillsHistory = InferResponseType<
+  typeof client.api.skills.history.$get,
+  200
+>;
+export type SkillsDiff = InferResponseType<
+  typeof client.api.skills.diff.$get,
+  200
+>;
 
 /** Every skills route answers a usage error and the surface's own "nothing
     to show" case with the same JSON shape -- pull the real message out of
@@ -138,6 +146,52 @@ export function useCompilePreview(
       return readOrThrow<SkillsCompilePreview>(res, 'skills compile preview');
     },
     enabled: Boolean(pack && verb),
+  });
+}
+
+/**
+ * One verb's pack history, plus the runtime facts the same request measured.
+ * Conditional on the drawer being open: this spawns git twice and rt once,
+ * which no page load should pay for a drawer nobody opened.
+ *
+ * `staleTime: 0` on purpose -- half this payload is momentary (a dirty
+ * working tree, a version on disk), so reopening the drawer must re-measure
+ * rather than redraw what was true when it was last closed.
+ */
+export function useSkillsHistory(
+  pack: string | undefined,
+  verb: string | null
+) {
+  return useQuery({
+    queryKey: ['skills', 'history', pack ?? null, verb],
+    queryFn: async () => {
+      const res = await client.api.skills.history.$get({
+        query: { pack: pack ?? '', verb: verb ?? undefined },
+      });
+      return readOrThrow<SkillsHistory>(res, 'skills history');
+    },
+    enabled: Boolean(pack && verb),
+    staleTime: 0,
+  });
+}
+
+/** The diff between two commits, over the WHOLE pack -- a verb's slot fills
+    live outside its own `skills/<verb>/`, so a verb-scoped diff would drop
+    exactly the hunks a seam can attribute. */
+export function useSkillsDiff(
+  pack: string | undefined,
+  from: string | null,
+  to: string | null
+) {
+  return useQuery({
+    queryKey: ['skills', 'diff', pack ?? null, from, to],
+    queryFn: async () => {
+      const res = await client.api.skills.diff.$get({
+        query: { pack: pack ?? '', from: from ?? '', to: to ?? '' },
+      });
+      return readOrThrow<SkillsDiff>(res, 'skills diff');
+    },
+    enabled: Boolean(pack && from && to),
   });
 }
 

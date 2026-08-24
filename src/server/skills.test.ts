@@ -3,7 +3,7 @@ import { Hono } from 'hono';
 import { describe, expect, it, vi } from 'vitest';
 
 import { RtNotFoundError } from './rt-bin';
-import { mountSkills } from './skills';
+import { mountSkills, type ReadPackFile } from './skills';
 
 const fakeRt = (result: { code: number; stdout: string; stderr: string }) => {
   const calls: string[][] = [];
@@ -287,20 +287,35 @@ function fakeGit(handler: (argv: string[]) => GitResult) {
   return { run, calls };
 }
 
-/** rev-parse answers with the repo root; log answers with `count` commits. */
+/** rev-parse answers with the repo root, status with a clean tree, log with
+    `count` commits. */
 function defaultGit(count: number) {
-  return fakeGit(argv =>
-    argv.includes('rev-parse')
-      ? { code: 0, stdout: `${REPO_ROOT}\n`, stderr: '' }
-      : { code: 0, stdout: gitLogStdout(count), stderr: '' }
-  );
+  return fakeGit(argv => {
+    if (argv.includes('rev-parse'))
+      return { code: 0, stdout: `${REPO_ROOT}\n`, stderr: '' };
+    if (argv.includes('status')) return { code: 0, stdout: '', stderr: '' };
+    return { code: 0, stdout: gitLogStdout(count), stderr: '' };
+  });
+}
+
+/** No plugin manifest, so no test reads the developer's real pack -- PACK_DIR
+    is the live path and the default reader would answer from it. */
+const noManifest: ReadPackFile = () =>
+  Promise.reject(new Error('ENOENT: no such file'));
+
+function mountGit(
+  runRt: Parameters<typeof mountSkills>[1],
+  runGit: Parameters<typeof mountSkills>[2],
+  readPackFile: ReadPackFile = noManifest
+) {
+  return mountSkills(new Hono(), runRt, runGit, readPackFile);
 }
 
 describe('skills history route', () => {
   it('runs git inside the pack dir rt reported, bounded, scoped to the pack', async () => {
     const rt = fakeRt({ code: 0, stdout: PACKS_STDOUT, stderr: '' });
     const git = defaultGit(2);
-    const app = mountSkills(new Hono(), rt.run, git.run);
+    const app = mountGit(rt.run, git.run);
 
     const res = await app.request('/api/skills/history?pack=demo');
 
@@ -313,7 +328,7 @@ describe('skills history route', () => {
 
   it('reports the repo root separately -- the pack is not the repo', async () => {
     const rt = fakeRt({ code: 0, stdout: PACKS_STDOUT, stderr: '' });
-    const app = mountSkills(new Hono(), rt.run, defaultGit(1).run);
+    const app = mountGit(rt.run, defaultGit(1).run);
 
     const res = await app.request('/api/skills/history?pack=demo');
 
@@ -337,7 +352,7 @@ describe('skills history route', () => {
   it('scopes the pathspec to one verb when asked', async () => {
     const rt = fakeRt({ code: 0, stdout: PACKS_STDOUT, stderr: '' });
     const git = defaultGit(1);
-    const app = mountSkills(new Hono(), rt.run, git.run);
+    const app = mountGit(rt.run, git.run);
 
     const res = await app.request(
       '/api/skills/history?pack=demo&verb=review'
@@ -354,7 +369,7 @@ describe('skills history route', () => {
   it('refuses a verb that would walk out of the pack, and spawns no git', async () => {
     const rt = fakeRt({ code: 0, stdout: PACKS_STDOUT, stderr: '' });
     const git = defaultGit(1);
-    const app = mountSkills(new Hono(), rt.run, git.run);
+    const app = mountGit(rt.run, git.run);
 
     const res = await app.request(
       '/api/skills/history?pack=demo&verb=..%2F..%2Fetc'
@@ -367,7 +382,7 @@ describe('skills history route', () => {
   it('answers a pack rt does not list with 404, not an empty timeline', async () => {
     const rt = fakeRt({ code: 0, stdout: PACKS_STDOUT, stderr: '' });
     const git = defaultGit(1);
-    const app = mountSkills(new Hono(), rt.run, git.run);
+    const app = mountGit(rt.run, git.run);
 
     const res = await app.request('/api/skills/history?pack=nope');
 
@@ -380,7 +395,7 @@ describe('skills history route', () => {
 
   it('marks the timeline truncated by looking one past the bound', async () => {
     const rt = fakeRt({ code: 0, stdout: PACKS_STDOUT, stderr: '' });
-    const app = mountSkills(new Hono(), rt.run, defaultGit(4).run);
+    const app = mountGit(rt.run, defaultGit(4).run);
 
     const res = await app.request('/api/skills/history?pack=demo&limit=3');
     const body = (await res.json()) as { truncated: boolean; commits: [] };
@@ -391,7 +406,7 @@ describe('skills history route', () => {
 
   it('leaves the timeline untruncated when the repo holds no more', async () => {
     const rt = fakeRt({ code: 0, stdout: PACKS_STDOUT, stderr: '' });
-    const app = mountSkills(new Hono(), rt.run, defaultGit(3).run);
+    const app = mountGit(rt.run, defaultGit(3).run);
 
     const res = await app.request('/api/skills/history?pack=demo&limit=3');
     const body = (await res.json()) as { truncated: boolean; commits: [] };
@@ -403,7 +418,7 @@ describe('skills history route', () => {
   it('clamps a limit past the ceiling and reports the bound it applied', async () => {
     const rt = fakeRt({ code: 0, stdout: PACKS_STDOUT, stderr: '' });
     const git = defaultGit(1);
-    const app = mountSkills(new Hono(), rt.run, git.run);
+    const app = mountGit(rt.run, git.run);
 
     const res = await app.request(
       '/api/skills/history?pack=demo&limit=99999'
@@ -417,7 +432,7 @@ describe('skills history route', () => {
   it('falls back to the default bound for a limit that is not a number', async () => {
     const rt = fakeRt({ code: 0, stdout: PACKS_STDOUT, stderr: '' });
     const git = defaultGit(1);
-    const app = mountSkills(new Hono(), rt.run, git.run);
+    const app = mountGit(rt.run, git.run);
 
     await app.request('/api/skills/history?pack=demo&limit=all');
 
@@ -432,7 +447,7 @@ describe('skills history route', () => {
       stdout: '',
       stderr: 'fatal: not a git repository',
     }));
-    const app = mountSkills(new Hono(), rt.run, git.run);
+    const app = mountGit(rt.run, git.run);
 
     const res = await app.request('/api/skills/history?pack=demo');
 
@@ -454,7 +469,7 @@ describe('skills history route', () => {
             stderr: "fatal: bad revision 'HEAD'",
           }
     );
-    const app = mountSkills(new Hono(), rt.run, git.run);
+    const app = mountGit(rt.run, git.run);
 
     const res = await app.request('/api/skills/history?pack=demo');
 
@@ -467,12 +482,282 @@ describe('skills history route', () => {
   it('requires ?pack= rather than logging whatever pack comes first', async () => {
     const rt = fakeRt({ code: 0, stdout: PACKS_STDOUT, stderr: '' });
     const git = defaultGit(1);
-    const app = mountSkills(new Hono(), rt.run, git.run);
+    const app = mountGit(rt.run, git.run);
 
     const res = await app.request('/api/skills/history');
 
     expect(res.status).toBe(400);
     expect(rt.run).not.toHaveBeenCalled();
     expect(git.run).not.toHaveBeenCalled();
+  });
+});
+
+describe('skills history route: runtime facts', () => {
+  it('reports the working tree separately from the commits, scoped the same way', async () => {
+    const rt = fakeRt({ code: 0, stdout: PACKS_STDOUT, stderr: '' });
+    const git = fakeGit(argv => {
+      if (argv.includes('rev-parse'))
+        return { code: 0, stdout: `${REPO_ROOT}\n`, stderr: '' };
+      if (argv.includes('status'))
+        return {
+          code: 0,
+          stdout:
+            ' M mattstack/packs/demo/skills/review/SKILL.md\n' +
+            '?? mattstack/packs/demo/skills/review/scripts/new.sh\n',
+          stderr: '',
+        };
+      return { code: 0, stdout: gitLogStdout(1), stderr: '' };
+    });
+    const app = mountGit(rt.run, git.run);
+
+    const res = await app.request(
+      '/api/skills/history?pack=demo&verb=review'
+    );
+
+    const status = git.calls.find(argv => argv.includes('status'));
+    expect(status?.slice(0, 3)).toEqual(['-C', PACK_DIR, 'status']);
+    expect(status?.slice(-2)).toEqual(['--', 'skills/review']);
+    await expect(res.json()).resolves.toMatchObject({
+      runtime: {
+        dirtyFiles: [
+          'mattstack/packs/demo/skills/review/SKILL.md',
+          'mattstack/packs/demo/skills/review/scripts/new.sh',
+        ],
+        moreDirtyFiles: false,
+      },
+    });
+  });
+
+  it('reads a rename as its destination, the name a seam could match', async () => {
+    const rt = fakeRt({ code: 0, stdout: PACKS_STDOUT, stderr: '' });
+    const git = fakeGit(argv => {
+      if (argv.includes('rev-parse'))
+        return { code: 0, stdout: `${REPO_ROOT}\n`, stderr: '' };
+      if (argv.includes('status'))
+        return {
+          code: 0,
+          stdout: 'R  old/SKILL.md -> new/SKILL.md\n',
+          stderr: '',
+        };
+      return { code: 0, stdout: gitLogStdout(1), stderr: '' };
+    });
+    const app = mountGit(rt.run, git.run);
+
+    const res = await app.request('/api/skills/history?pack=demo');
+
+    await expect(res.json()).resolves.toMatchObject({
+      runtime: { dirtyFiles: ['new/SKILL.md'] },
+    });
+  });
+
+  it('answers an unmeasured working tree with null, never with clean', async () => {
+    const rt = fakeRt({ code: 0, stdout: PACKS_STDOUT, stderr: '' });
+    const git = fakeGit(argv => {
+      if (argv.includes('rev-parse'))
+        return { code: 0, stdout: `${REPO_ROOT}\n`, stderr: '' };
+      if (argv.includes('status'))
+        return { code: 128, stdout: '', stderr: 'fatal: index lock' };
+      return { code: 0, stdout: gitLogStdout(1), stderr: '' };
+    });
+    const app = mountGit(rt.run, git.run);
+
+    const res = await app.request('/api/skills/history?pack=demo');
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toMatchObject({
+      runtime: { dirtyFiles: null },
+    });
+  });
+
+  it("names the version the pack's own plugin manifest declares", async () => {
+    const rt = fakeRt({ code: 0, stdout: PACKS_STDOUT, stderr: '' });
+    const read: ReadPackFile = vi.fn(async () =>
+      JSON.stringify({ version: '0.4.11' })
+    );
+    const app = mountGit(rt.run, defaultGit(1).run, read);
+
+    const res = await app.request('/api/skills/history?pack=demo');
+
+    expect(read).toHaveBeenCalledWith(`${PACK_DIR}/.claude-plugin/plugin.json`);
+    await expect(res.json()).resolves.toMatchObject({
+      runtime: { packVersion: '0.4.11' },
+    });
+  });
+
+  it('answers a pack with no plugin manifest with null, and still serves the timeline', async () => {
+    const rt = fakeRt({ code: 0, stdout: PACKS_STDOUT, stderr: '' });
+    const app = mountGit(rt.run, defaultGit(2).run);
+
+    const res = await app.request('/api/skills/history?pack=demo');
+    const body = (await res.json()) as {
+      commits: unknown[];
+      runtime: { packVersion: string | null };
+    };
+
+    expect(res.status).toBe(200);
+    expect(body.commits).toHaveLength(2);
+    expect(body.runtime.packVersion).toBeNull();
+  });
+
+  it('caps the dirty list and says there are more', async () => {
+    const rt = fakeRt({ code: 0, stdout: PACKS_STDOUT, stderr: '' });
+    const many = Array.from({ length: 25 }, (_, i) => ` M f${i}.md`).join('\n');
+    const git = fakeGit(argv => {
+      if (argv.includes('rev-parse'))
+        return { code: 0, stdout: `${REPO_ROOT}\n`, stderr: '' };
+      if (argv.includes('status')) return { code: 0, stdout: many, stderr: '' };
+      return { code: 0, stdout: gitLogStdout(1), stderr: '' };
+    });
+    const app = mountGit(rt.run, git.run);
+
+    const res = await app.request('/api/skills/history?pack=demo');
+    const body = (await res.json()) as {
+      runtime: { dirtyFiles: string[]; moreDirtyFiles: boolean };
+    };
+
+    expect(body.runtime.dirtyFiles).toHaveLength(20);
+    expect(body.runtime.moreDirtyFiles).toBe(true);
+  });
+});
+
+const DIFF_STDOUT = `diff --git a/attachments/watch-ci-domain/SKILL.md b/attachments/watch-ci-domain/SKILL.md
+--- a/attachments/watch-ci-domain/SKILL.md
++++ b/attachments/watch-ci-domain/SKILL.md
+@@ -20,3 +20,3 @@ context
+ unchanged
+-old
++new
+`;
+
+function diffGit(stdout = DIFF_STDOUT) {
+  return fakeGit(argv =>
+    argv.includes('rev-parse')
+      ? { code: 0, stdout: `${REPO_ROOT}\n`, stderr: '' }
+      : { code: 0, stdout, stderr: '' }
+  );
+}
+
+describe('skills diff route', () => {
+  it('diffs inside the pack dir rt reported, with pack-relative paths', async () => {
+    const rt = fakeRt({ code: 0, stdout: PACKS_STDOUT, stderr: '' });
+    const git = diffGit();
+    const app = mountGit(rt.run, git.run);
+
+    const res = await app.request(
+      '/api/skills/diff?pack=demo&from=17f8273&to=ed24bc4'
+    );
+
+    expect(res.status).toBe(200);
+    const diff = git.calls.find(argv => argv.includes('diff'));
+    expect(diff?.slice(0, 3)).toEqual(['-C', PACK_DIR, 'diff']);
+    // Without `--relative` git prints repo-root paths, which no seam's
+    // plugin-relative `path` can ever equal.
+    expect(diff).toContain('--relative');
+    expect(diff).toContain('17f8273..ed24bc4');
+    expect(diff?.slice(-2)).toEqual(['--', '.']);
+  });
+
+  it('returns the diff text and the two shas it was taken between', async () => {
+    const rt = fakeRt({ code: 0, stdout: PACKS_STDOUT, stderr: '' });
+    const app = mountGit(rt.run, diffGit().run);
+
+    const res = await app.request(
+      '/api/skills/diff?pack=demo&from=17f8273&to=ed24bc4'
+    );
+
+    await expect(res.json()).resolves.toMatchObject({
+      pack: 'demo',
+      packDir: PACK_DIR,
+      repoRoot: REPO_ROOT,
+      scope: '.',
+      from: '17f8273',
+      to: 'ed24bc4',
+      truncated: false,
+      diff: DIFF_STDOUT,
+    });
+  });
+
+  it.each([
+    ['HEAD', 'a revision that is not an object name'],
+    ['ed24bc4..HEAD', 'a range smuggled into one parameter'],
+    ['../../etc', 'a path'],
+    ['ED24BC4', 'uppercase, which git would not resolve as this object'],
+    ['ed24bc', 'shorter than any sha the log lists'],
+  ])('refuses %s (%s) and spawns no git', async sha => {
+    const rt = fakeRt({ code: 0, stdout: PACKS_STDOUT, stderr: '' });
+    const git = diffGit();
+    const app = mountGit(rt.run, git.run);
+
+    const res = await app.request(
+      `/api/skills/diff?pack=demo&from=${encodeURIComponent(sha)}&to=ed24bc4`
+    );
+
+    expect(res.status).toBe(400);
+    expect(git.run).not.toHaveBeenCalled();
+    expect(rt.run).not.toHaveBeenCalled();
+  });
+
+  it('requires both ends of the comparison', async () => {
+    const rt = fakeRt({ code: 0, stdout: PACKS_STDOUT, stderr: '' });
+    const git = diffGit();
+    const app = mountGit(rt.run, git.run);
+
+    const res = await app.request('/api/skills/diff?pack=demo&to=ed24bc4');
+
+    expect(res.status).toBe(400);
+    expect(git.run).not.toHaveBeenCalled();
+  });
+
+  it('takes the pack dir from rt, never from the request', async () => {
+    const rt = fakeRt({ code: 0, stdout: PACKS_STDOUT, stderr: '' });
+    const git = diffGit();
+    const app = mountGit(rt.run, git.run);
+
+    const res = await app.request(
+      '/api/skills/diff?pack=nope&from=17f8273&to=ed24bc4'
+    );
+
+    expect(res.status).toBe(404);
+    expect(git.run).not.toHaveBeenCalled();
+  });
+
+  it('cuts an oversized diff at a line boundary and says it did', async () => {
+    const rt = fakeRt({ code: 0, stdout: PACKS_STDOUT, stderr: '' });
+    const huge = `${'+padding line\n'.repeat(40_000)}@@ -1 +1 @@\n`;
+    const app = mountGit(rt.run, diffGit(huge).run);
+
+    const res = await app.request(
+      '/api/skills/diff?pack=demo&from=17f8273&to=ed24bc4'
+    );
+    const body = (await res.json()) as { diff: string; truncated: boolean };
+
+    expect(body.truncated).toBe(true);
+    expect(body.diff.length).toBeLessThan(huge.length);
+    // A cut mid-line could leave a half-written `@@` header that a parser
+    // would read as a real hunk.
+    expect(body.diff.endsWith('\n')).toBe(true);
+  });
+
+  it('surfaces a failed diff as 502 carrying git own message', async () => {
+    const rt = fakeRt({ code: 0, stdout: PACKS_STDOUT, stderr: '' });
+    const git = fakeGit(argv =>
+      argv.includes('rev-parse')
+        ? { code: 0, stdout: `${REPO_ROOT}\n`, stderr: '' }
+        : {
+            code: 128,
+            stdout: '',
+            stderr: 'fatal: bad object 0000000',
+          }
+    );
+    const app = mountGit(rt.run, git.run);
+
+    const res = await app.request(
+      '/api/skills/diff?pack=demo&from=0000000&to=ed24bc4'
+    );
+
+    expect(res.status).toBe(502);
+    await expect(res.json()).resolves.toMatchObject({
+      error: expect.stringContaining('bad object'),
+    });
   });
 });

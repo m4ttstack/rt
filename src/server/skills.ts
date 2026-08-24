@@ -1,3 +1,5 @@
+import { readFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { Hono } from 'hono';
 import { validator } from 'hono/validator';
 
@@ -90,6 +92,25 @@ interface SkillsCompilePreviewResponse {
   content: string;
 }
 
+/**
+ * What is true of this machine right now, as opposed to what the log says.
+ * `null` for a fact this request failed to measure -- unmeasured and clean
+ * are different answers, and collapsing them would report a dirty tree as a
+ * clean one whenever `git status` fell over.
+ */
+interface SkillsRuntimeFacts {
+  /** Paths `git status` reported as changed within `scope`, relative to the
+      REPOSITORY ROOT (the same frame `--name-only` uses), capped. Null when
+      status did not answer. */
+  dirtyFiles: string[] | null;
+  /** True when `dirtyFiles` was cut to the cap. */
+  moreDirtyFiles: boolean;
+  /** The version the pack's own `.claude-plugin/plugin.json` declares --
+      what an install of this pack registers. Null when the pack carries no
+      such manifest, or it does not parse. */
+  packVersion: string | null;
+}
+
 interface SkillsHistoryResponse {
   pack: string;
   packDir: string;
@@ -105,6 +126,27 @@ interface SkillsHistoryResponse {
   /** True when the repo holds more history than `limit` returned. */
   truncated: boolean;
   commits: GitCommit[];
+  /** Deliberately a SEPARATE object rather than extra rows in `commits`:
+      these are momentary and true only of this machine, and the surface
+      renders them as their own region for that reason. */
+  runtime: SkillsRuntimeFacts;
+}
+
+interface SkillsDiffResponse {
+  pack: string;
+  packDir: string;
+  repoRoot: string;
+  /** The pathspec the diff was taken over, relative to `packDir`. Whole-pack:
+      a verb's slot fills live under `attachments/`, outside its own
+      `skills/<verb>/`, so scoping to the verb would drop exactly the hunks a
+      seam can attribute. */
+  scope: string;
+  from: string;
+  to: string;
+  /** True when the diff was cut at the byte bound. */
+  truncated: boolean;
+  /** Unified diff text, verbatim, with paths relative to `packDir`. */
+  diff: string;
 }
 
 const historyQuery = validator(
@@ -119,13 +161,41 @@ const historyQuery = validator(
   }
 );
 
+const diffQuery = validator(
+  'query',
+  (value): { pack?: string; from?: string; to?: string } => {
+    const v = value as { pack?: unknown; from?: unknown; to?: unknown };
+    return {
+      pack: typeof v?.pack === 'string' ? v.pack : undefined,
+      from: typeof v?.from === 'string' ? v.from : undefined,
+      to: typeof v?.to === 'string' ? v.to : undefined,
+    };
+  }
+);
+
 /** The verb reaches git as a pathspec, so it is checked against the shape rt
     gives a verb rather than escaped: this rejects `../`, an absolute path,
     and a leading `:` (which would make it one of git's magic pathspecs). */
 const VERB_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 
+/** A commit reaches git as a revision, where a branch name, `HEAD@{1}` and
+    `..` all mean something. Only an object name gets through, so the only
+    revisions this route can name are ones the history route listed. */
+const COMMIT_SHA = /^[0-9a-f]{7,40}$/;
+
 const DEFAULT_HISTORY_LIMIT = 20;
 const MAX_HISTORY_LIMIT = 100;
+
+/** A restamp of a large pack rewrites every compiled verb at once, so a diff
+    across two of them is genuinely big; past this it is cut and says so
+    rather than streaming megabytes into a drawer. */
+const MAX_DIFF_BYTES = 400_000;
+
+/** The dirty list is a signal, not an inventory -- past this the count is
+    what matters and the surface says there are more. */
+const MAX_DIRTY_FILES = 20;
+
+const PLUGIN_MANIFEST = '.claude-plugin/plugin.json';
 
 /** An unbounded `git log` is a hot endpoint waiting to happen, so there is no
     way to ask for one: an absent, unparseable or oversized limit lands on a
@@ -134,6 +204,35 @@ function clampLimit(raw: string | undefined): number {
   const parsed = Number(raw);
   if (!Number.isFinite(parsed) || parsed < 1) return DEFAULT_HISTORY_LIMIT;
   return Math.min(Math.floor(parsed), MAX_HISTORY_LIMIT);
+}
+
+/**
+ * Paths out of `git status --porcelain`, which prints `XY <path>` and, for a
+ * rename, `XY <orig> -> <new>`. The new name is the one that matches a
+ * `--name-only` path and a seam's source, so a rename reports as its
+ * destination.
+ */
+function parseGitStatus(stdout: string): string[] {
+  const paths: string[] = [];
+  for (const line of stdout.split('\n')) {
+    if (line.length < 4) continue;
+    const entry = line.slice(3);
+    const arrow = entry.lastIndexOf(' -> ');
+    paths.push(arrow === -1 ? entry : entry.slice(arrow + 4));
+  }
+  return paths;
+}
+
+/** Cut at a line boundary, so the tail of a truncated diff is never half a
+    hunk header that a parser would then read as a real one. */
+function boundDiff(stdout: string): { diff: string; truncated: boolean } {
+  if (stdout.length <= MAX_DIFF_BYTES)
+    return { diff: stdout, truncated: false };
+  const cut = stdout.lastIndexOf('\n', MAX_DIFF_BYTES);
+  return {
+    diff: stdout.slice(0, cut === -1 ? MAX_DIFF_BYTES : cut + 1),
+    truncated: true,
+  };
 }
 
 function findPackDir(payload: unknown, pack: string): string | null {
@@ -160,6 +259,13 @@ function parseJsonPayload(stdout: string): unknown {
     return undefined;
   }
 }
+
+/** The one filesystem read on this surface, injected the same way `runRt`
+    and `runGit` are so the routes stay testable without touching a real
+    pack. Only ever handed a path built from a server-resolved `packDir`. */
+export type ReadPackFile = (path: string) => Promise<string>;
+
+const liveReadPackFile: ReadPackFile = path => readFile(path, 'utf8');
 
 const packQuery = validator('query', (value): { pack?: string } => {
   const v = value as { pack?: unknown };
@@ -191,9 +297,39 @@ const CACHE_TTL_MS = 5_000;
 export function mountSkills(
   app: Hono,
   runRt: RunRt = liveRunRt,
-  runGit: RunGit = liveRunGit
+  runGit: RunGit = liveRunGit,
+  readPackFile: ReadPackFile = liveReadPackFile
 ) {
   const cache = new Map<string, { at: number; result: RtRunResult }>();
+
+  /** The pack's registered version, or null. Never throws: a pack with no
+      plugin manifest is a pack whose version nothing states, which the
+      surface renders as such -- it is not a reason to fail the timeline. */
+  async function packVersionOf(packDir: string): Promise<string | null> {
+    try {
+      const raw = await readPackFile(join(packDir, PLUGIN_MANIFEST));
+      const version = (JSON.parse(raw) as { version?: unknown }).version;
+      return typeof version === 'string' && version.length > 0 ? version : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Null when status did not answer -- see `SkillsRuntimeFacts.dirtyFiles`. */
+  async function dirtyFilesIn(
+    packDir: string,
+    scope: string
+  ): Promise<string[] | null> {
+    const status = await runGit([
+      '-C',
+      packDir,
+      'status',
+      '--porcelain',
+      '--',
+      scope,
+    ]);
+    return status.code === 0 ? parseGitStatus(status.stdout) : null;
+  }
 
   async function cachedRun(argv: string[]): Promise<RtRunResult> {
     const key = JSON.stringify(argv);
@@ -393,6 +529,11 @@ export function mountSkills(
           return c.json({ error: log.stderr.trim() || 'git log failed' }, 502);
         }
 
+        const [dirtyFiles, packVersion] = await Promise.all([
+          dirtyFilesIn(packDir, scope),
+          packVersionOf(packDir),
+        ]);
+
         const commits = parseGitLog(log.stdout);
         const response: SkillsHistoryResponse = {
           pack,
@@ -403,6 +544,94 @@ export function mountSkills(
           limit,
           truncated: commits.length > limit,
           commits: commits.slice(0, limit),
+          runtime: {
+            dirtyFiles: dirtyFiles && dirtyFiles.slice(0, MAX_DIRTY_FILES),
+            moreDirtyFiles: (dirtyFiles?.length ?? 0) > MAX_DIRTY_FILES,
+            packVersion,
+          },
+        };
+        return c.json(response, 200);
+      } catch (err) {
+        if (err instanceof RtNotFoundError) {
+          return c.json({ error: err.message }, 503);
+        }
+        return c.json({ error: (err as Error).message }, 502);
+      }
+    })
+    .get('/api/skills/diff', diffQuery, async c => {
+      const { pack, from, to } = c.req.valid('query');
+      if (!pack) return c.json({ error: 'pack is required' }, 400);
+      if (!from || !to) {
+        return c.json({ error: 'from and to are required' }, 400);
+      }
+      // Both are checked BEFORE a pack dir is even resolved, so a revision
+      // that is not an object name never reaches git in any form.
+      for (const sha of [from, to]) {
+        if (!COMMIT_SHA.test(sha)) {
+          return c.json({ error: `invalid commit: ${sha}` }, 400);
+        }
+      }
+
+      try {
+        // Same rule as the history route: the directory comes from rt, never
+        // from the request.
+        const packs = await cachedRun(['skills', 'packs', '--json']);
+        const payload = parseJsonPayload(packs.stdout);
+        if (payload === undefined) {
+          return c.json(
+            { error: packs.stderr.trim() || 'rt produced no output' },
+            502
+          );
+        }
+        const packDir = findPackDir(payload, pack);
+        if (packDir === null) {
+          return c.json({ error: `no pack named "${pack}"` }, 404);
+        }
+
+        const root = await runGit([
+          '-C',
+          packDir,
+          'rev-parse',
+          '--show-toplevel',
+        ]);
+        if (root.code !== 0 || !root.stdout.trim()) {
+          return c.json(
+            { error: root.stderr.trim() || `${packDir} is not in a git repo` },
+            502
+          );
+        }
+
+        // `--relative` is what makes attribution possible at all: without it
+        // git prints repo-root paths, and a seam's `path` is relative to its
+        // own plugin root -- for this pack's fills, the same
+        // `attachments/<fill>/SKILL.md` the pack dir holds.
+        const diff = await runGit([
+          '-C',
+          packDir,
+          'diff',
+          '--no-color',
+          '--relative',
+          `${from}..${to}`,
+          '--',
+          '.',
+        ]);
+        if (diff.code !== 0) {
+          return c.json(
+            { error: diff.stderr.trim() || 'git diff failed' },
+            502
+          );
+        }
+
+        const bounded = boundDiff(diff.stdout);
+        const response: SkillsDiffResponse = {
+          pack,
+          packDir,
+          repoRoot: root.stdout.trim(),
+          scope: '.',
+          from,
+          to,
+          truncated: bounded.truncated,
+          diff: bounded.diff,
         };
         return c.json(response, 200);
       } catch (err) {
