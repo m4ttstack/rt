@@ -22,3 +22,14 @@ import { tmpdir } from "os";
 import { join } from "path";
 
 process.env.HOME = mkdtempSync(join(tmpdir(), "mr-board-test-home-"));
+
+/**
+ * Same hazard, second root: the board records its port and every state file
+ * under APP_ROOT, which from a checkout is the repo itself. A test that boots
+ * the real server without overriding this overwrites state/board-port, which
+ * is how a developer's live board finds its own port -- its status writers
+ * then post to whatever port the test used. Repointing the root by default
+ * makes that impossible rather than merely discouraged; a test that needs the
+ * repo's own state/ must now say so explicitly.
+ */
+process.env.BOARD_APP_ROOT = mkdtempSync(join(tmpdir(), "mr-board-test-root-"));
