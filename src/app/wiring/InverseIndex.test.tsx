@@ -124,6 +124,22 @@ describe('InverseIndex: bound by nothing', () => {
   });
 });
 
+describe('InverseIndex: closed', () => {
+  it('renders no panel until a fill is selected', () => {
+    // Mantine leaves `Drawer.Root` in the DOM whether or not it is open, so
+    // the absence has to be asserted on the panel's own content -- and the
+    // second half is what proves this harness renders any at all.
+    const { unmount } = renderIndex({ fill: null });
+    expect(screen.queryByTestId('site-count')).not.toBeInTheDocument();
+    expect(screen.queryAllByTestId(/^binding-site-/)).toHaveLength(0);
+
+    unmount();
+    renderIndex();
+    expect(screen.getByTestId('site-count')).toBeInTheDocument();
+    expect(screen.getAllByTestId(/^binding-site-/)).toHaveLength(4);
+  });
+});
+
 describe('InverseIndex: showing a site in the map', () => {
   it('hands the whole site back, so the caller can find its row', async () => {
     const onShowInMap = vi.fn();

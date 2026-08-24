@@ -375,7 +375,11 @@ describe('WiringMap: the inverse index', () => {
       within(within(stage).getByTestId('slot-domain')).getByTestId('slot-sites')
     );
 
-    const drawer = await screen.findByTestId('inverse-index');
+    // Mantine keeps `Drawer.Root` mounted whether or not it is open, so the
+    // drawer's own testid is no signal -- wait on content only an OPEN
+    // drawer has.
+    await screen.findByTestId('site-count');
+    const drawer = screen.getByTestId('inverse-index');
     expect(
       within(drawer).getByText('demo:watch-ci-domain')
     ).toBeInTheDocument();
@@ -405,7 +409,8 @@ describe('WiringMap: the inverse index', () => {
     expect(chip).toHaveTextContent('2 sites');
 
     await user.click(chip);
-    const drawer = await screen.findByTestId('inverse-index');
+    await screen.findByTestId('site-count');
+    const drawer = screen.getByTestId('inverse-index');
 
     expect(within(drawer).getByTestId('site-count')).toHaveTextContent('2');
     expect(within(drawer).getAllByTestId(/^binding-site-/)).toHaveLength(2);
@@ -419,7 +424,8 @@ describe('WiringMap: the inverse index', () => {
     const orphan = await screen.findByTestId('orphan-fill-demo:unused');
     await user.click(within(orphan).getByTestId('open-inverse-index'));
 
-    const drawer = await screen.findByTestId('inverse-index');
+    await screen.findByTestId('bound-by-nothing');
+    const drawer = screen.getByTestId('inverse-index');
     expect(within(drawer).getByTestId('site-count')).toHaveTextContent('0');
     expect(within(drawer).getByTestId('bound-by-nothing')).toHaveTextContent(
       'Bound by nothing. Not an error'
