@@ -672,9 +672,7 @@ describe('buildSpine: orphaned fills', () => {
   it('a fill bound only by a pipeline stage, never by a roster verb, is not orphaned', () => {
     const spine = buildSpine(PACK, EMPTY_CHECK);
 
-    expect(spine.orphans.map(o => o.fill)).not.toContain(
-      'demo:work-provision'
-    );
+    expect(spine.orphans.map(o => o.fill)).not.toContain('demo:work-provision');
   });
 
   it('a fill bound only by another plugin is not orphaned', () => {

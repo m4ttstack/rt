@@ -72,8 +72,7 @@ const DIFF = [
   '',
 ].join('\n');
 
-const PACK_DIR =
-  '/Users/matt/.mattstack/teams/demo/mattstack/packs/demo';
+const PACK_DIR = '/Users/matt/.mattstack/teams/demo/mattstack/packs/demo';
 const STEP_SOURCE =
   '/Users/matt/.claude/plugins/cache/mattstack/mattstack/0.8.0/attachments/pipeline/watch-ci/SKILL.md';
 const ARTIFACT = `${PACK_DIR}/skills/watch-ci`;

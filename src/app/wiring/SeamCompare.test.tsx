@@ -45,10 +45,8 @@ const DIFF = [
 
 /** The live demo shape: the pack repo is one tree and every source path
     rt reports is inside the INSTALLED plugin root, a different one. */
-const PACK_DIR =
-  '/Users/matt/.mattstack/teams/demo/mattstack/packs/demo';
-const DEMO_ROOT =
-  '/Users/matt/.claude/plugins/cache/acme/demo/0.4.11';
+const PACK_DIR = '/Users/matt/.mattstack/teams/demo/mattstack/packs/demo';
+const DEMO_ROOT = '/Users/matt/.claude/plugins/cache/acme/demo/0.4.11';
 const MATTSTACK_ROOT =
   '/Users/matt/.claude/plugins/cache/mattstack/mattstack/0.8.0';
 

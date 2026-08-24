@@ -196,9 +196,7 @@ describe('skills routes', () => {
     });
     const app = mountSkills(new Hono(), rt.run);
 
-    const res = await app.request(
-      '/api/skills/compile?pack=demo&verb=work'
-    );
+    const res = await app.request('/api/skills/compile?pack=demo&verb=work');
 
     expect(res.status).toBe(200);
     expect(rt.calls[0]).toEqual([
@@ -223,9 +221,7 @@ describe('skills routes', () => {
     });
     const app = mountSkills(new Hono(), rt.run);
 
-    const res = await app.request(
-      '/api/skills/compile?pack=demo&verb=nope'
-    );
+    const res = await app.request('/api/skills/compile?pack=demo&verb=nope');
 
     expect(res.status).toBe(502);
     await expect(res.json()).resolves.toMatchObject({
@@ -244,8 +240,7 @@ describe('skills routes', () => {
   });
 });
 
-const PACK_DIR =
-  '/Users/matt/.mattstack/teams/demo/mattstack/packs/demo';
+const PACK_DIR = '/Users/matt/.mattstack/teams/demo/mattstack/packs/demo';
 const REPO_ROOT = '/Users/matt/.mattstack/teams/demo';
 
 const PACKS_STDOUT = JSON.stringify({
@@ -355,9 +350,7 @@ describe('skills history route', () => {
     const git = defaultGit(1);
     const app = mountGit(rt.run, git.run);
 
-    const res = await app.request(
-      '/api/skills/history?pack=demo&verb=review'
-    );
+    const res = await app.request('/api/skills/history?pack=demo&verb=review');
 
     const log = git.calls.find(argv => argv.includes('log'));
     expect(log?.slice(-2)).toEqual(['--', 'skills/review']);
@@ -421,9 +414,7 @@ describe('skills history route', () => {
     const git = defaultGit(1);
     const app = mountGit(rt.run, git.run);
 
-    const res = await app.request(
-      '/api/skills/history?pack=demo&limit=99999'
-    );
+    const res = await app.request('/api/skills/history?pack=demo&limit=99999');
 
     const log = git.calls.find(argv => argv.includes('log'));
     expect(log).toContain('--max-count=101');
@@ -511,9 +502,7 @@ describe('skills history route: runtime facts', () => {
     });
     const app = mountGit(rt.run, git.run);
 
-    const res = await app.request(
-      '/api/skills/history?pack=demo&verb=review'
-    );
+    const res = await app.request('/api/skills/history?pack=demo&verb=review');
 
     const status = git.calls.find(argv => argv.includes('status'));
     expect(status?.slice(0, 3)).toEqual(['-C', PACK_DIR, 'status']);

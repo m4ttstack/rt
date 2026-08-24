@@ -96,9 +96,7 @@ const SOLO: SkillsComposition = {
   pack: 'demo',
   packDir: '/repos/demo',
   manifestPath: null,
-  verbs: [
-    verb('watch-ci', { slots: [boundSlot('domain', 'demo:solo-fill')] }),
-  ],
+  verbs: [verb('watch-ci', { slots: [boundSlot('domain', 'demo:solo-fill')] })],
   fills: [fill('demo:solo-fill', { provides: 'domain@1' })],
   binders: [
     {

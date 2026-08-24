@@ -311,9 +311,7 @@ describe('WiringMap: the spine', () => {
     renderWiring();
 
     await waitFor(() =>
-      expect(
-        screen.getByTestId('orphan-fill-demo:unused')
-      ).toBeInTheDocument()
+      expect(screen.getByTestId('orphan-fill-demo:unused')).toBeInTheDocument()
     );
     expect(
       screen.queryByTestId('orphan-fill-demo:work-provision')
