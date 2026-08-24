@@ -2,22 +2,29 @@
  * The seams `rt skills compile` writes into a compiled SKILL.md, and the
  * split of a compiled body along them.
  *
- * `lib/skills/compile.ts` emits exactly two shapes, one per line, each its
- * own paragraph:
+ * `lib/skills/compile.ts` emits three shapes, one per line, each its own
+ * paragraph:
  *
  *     <!-- part: step source=<plugin>:<name> version=<v> path=<p> lines=<a>-<b> -->
  *     <!-- part: slot:<slot> binding=<fill> version=<v> path=<p> lines=<a>-<b> -->
+ *     <!-- part: include:<attachment> source=<plugin>:<attachment> version=<v> path=<p> lines=<a>-<b> -->
  *
- * They differ in more than the kind word: a step carries `source=`, a slot
- * carries `binding=` and hides its own name inside the kind token. Both are
- * normalised to one result here so the renderer draws one thing.
+ * They differ in more than the kind word: a slot carries `binding=` (the fill
+ * a consumer bound) while step and include both carry `source=` (an
+ * author-fixed target). slot and include hide their own name inside the kind
+ * token. All three are normalised to one result here so the renderer draws one
+ * thing. The `include` kind arrives with the compile-native refactor; a
+ * shared attachment split around a verb's slot emits two `include` seams with
+ * the same ref and different spans, which containment attribution handles as
+ * any other pair.
  */
 
-export type SeamKind = 'step' | 'slot';
+export type SeamKind = 'step' | 'slot' | 'include';
 
 export interface Seam {
   kind: SeamKind;
-  /** The slot's name for a slot seam; null for a step. */
+  /** The slot's name for a slot seam, the attachment's name for an include;
+      null for a step. */
   slot: string | null;
   /** Whichever of `source=` / `binding=` the shape carried. */
   ref: string;
@@ -30,6 +37,7 @@ export interface Seam {
 const SEAM_PREFIX = '<!-- part: ';
 const SEAM_SUFFIX = ' -->';
 const SLOT_PREFIX = 'slot:';
+const INCLUDE_PREFIX = 'include:';
 
 function valueOf(token: string, key: string): string | null {
   const prefix = `${key}=`;
@@ -69,13 +77,19 @@ export function parseSeam(line: string): Seam | null {
     kind = 'slot';
     slot = kindToken.slice(SLOT_PREFIX.length);
     if (!slot) return null;
+  } else if (kindToken.startsWith(INCLUDE_PREFIX)) {
+    kind = 'include';
+    slot = kindToken.slice(INCLUDE_PREFIX.length);
+    if (!slot) return null;
   } else {
     return null;
   }
 
-  // The kind fixes which key carries the ref. A crossed pair is a shape the
-  // emitter cannot produce, so reading it would be inventing one.
-  const ref = valueOf(refToken, kind === 'step' ? 'source' : 'binding');
+  // The kind fixes which key carries the ref. Only a slot is consumer-bound
+  // (`binding=`); step and include are author-fixed (`source=`). A crossed
+  // pair is a shape the emitter cannot produce, so reading it would be
+  // inventing one.
+  const ref = valueOf(refToken, kind === 'slot' ? 'binding' : 'source');
   const version = valueOf(versionToken, 'version');
   const path = valueOf(pathToken, 'path');
   const lines = valueOf(linesToken, 'lines');

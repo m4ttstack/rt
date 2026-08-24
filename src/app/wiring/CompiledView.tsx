@@ -120,7 +120,7 @@ function SeamHeading({ seam }: { seam: Seam }) {
   return (
     <Group gap="xs" wrap="nowrap" data-testid="seam-heading">
       <Text size="xs" c={text.muted} style={{ flex: 'none' }}>
-        {seam.kind === 'step' ? 'step' : `slot ${seam.slot}`}
+        {seam.kind === 'step' ? 'step' : `${seam.kind} ${seam.slot}`}
       </Text>
       <Text size="sm" fw={600} style={{ flex: 'none' }}>
         {seam.ref}

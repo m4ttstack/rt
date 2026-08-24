@@ -12,8 +12,13 @@ const STEP_SEAM =
   '<!-- part: step source=mattstack:work version=0.8.0 path=attachments/pipeline/work/SKILL.md lines=17-135 -->';
 const SLOT_SEAM =
   '<!-- part: slot:tiering binding=mattstack:model-tiering version=0.8.0 path=attachments/model-tiering/SKILL.md lines=8-117 -->';
+/** The compile-native refactor's third shape (spec section 1, reply
+    2026-08-24): an author-fixed inline, so it carries `source=` like a step,
+    with the attachment name inside the kind token like a slot. */
+const INCLUDE_SEAM =
+  '<!-- part: include:review-shared source=mattstack:review-shared version=0.9.0 path=attachments/review-shared/SKILL.md lines=3-40 -->';
 
-describe('parseSeam: the two shapes the compiler emits', () => {
+describe('parseSeam: the shapes the compiler emits', () => {
   it('reads a step seam as its source, version, path and inclusive line span', () => {
     expect(parseSeam(STEP_SEAM)).toEqual({
       kind: 'step',
@@ -38,6 +43,37 @@ describe('parseSeam: the two shapes the compiler emits', () => {
       lines: [8, 117],
     });
   });
+
+  it('reads an include seam by its source, naming the attachment the kind token carries', () => {
+    // include is author-fixed, so its ref arrives under `source=` (not
+    // `binding=`), and its target name lives inside the kind token like a
+    // slot's. A parser that only knew step/slot would drop it, leaving the
+    // inlined region unattributed.
+    expect(parseSeam(INCLUDE_SEAM)).toEqual({
+      kind: 'include',
+      slot: 'review-shared',
+      ref: 'mattstack:review-shared',
+      version: '0.9.0',
+      path: 'attachments/review-shared/SKILL.md',
+      lines: [3, 40],
+    });
+  });
+
+  it('reads two include seams for one attachment split around a slot, by their spans', () => {
+    // A shared attachment interrupted by a verb's slot emits as two includes
+    // with the same ref and different spans (reply 2026-08-24). Both parse;
+    // enumeration by ref must expect the repeat.
+    const head = parseSeam(
+      '<!-- part: include:review-shared source=mattstack:review-shared version=0.9.0 path=attachments/review-shared/SKILL.md lines=3-19 -->'
+    );
+    const tail = parseSeam(
+      '<!-- part: include:review-shared source=mattstack:review-shared version=0.9.0 path=attachments/review-shared/SKILL.md lines=28-40 -->'
+    );
+    expect(head?.ref).toBe('mattstack:review-shared');
+    expect(tail?.ref).toBe('mattstack:review-shared');
+    expect(head?.lines).toEqual([3, 19]);
+    expect(tail?.lines).toEqual([28, 40]);
+  });
 });
 
 describe('parseSeam: everything else is not a seam', () => {
@@ -59,6 +95,13 @@ describe('parseSeam: everything else is not a seam', () => {
     expect(
       parseSeam(
         '<!-- part: slot:tiering source=mattstack:model-tiering version=0.8.0 path=a/SKILL.md lines=1-2 -->'
+      )
+    ).toBeNull();
+    // include is author-fixed like a step, so it pairs with `source=`; a
+    // `binding=` include is the same crossed shape the emitter never writes.
+    expect(
+      parseSeam(
+        '<!-- part: include:review-shared binding=mattstack:review-shared version=0.9.0 path=a/SKILL.md lines=1-2 -->'
       )
     ).toBeNull();
   });
