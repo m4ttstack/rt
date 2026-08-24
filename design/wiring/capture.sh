@@ -30,6 +30,12 @@ Screenshots can only be written under ~/.fast-browser or the repo-tools
 checkout, so shoot to ~/.fast-browser/wiring-ref/<Name>.<scheme>.png, then:
 
   cp ~/.fast-browser/wiring-ref/*.png $HERE/reference/
+  node $HERE/normalize-captures.mjs $HERE/reference
+
+The normalize step is not optional. Chromium tags screenshots with its own
+display profile and the raw pixels are in THAT space, so a panel authored as
+#eff0f5 samples as #edeef3 -- a flat offset that makes any pixel comparison
+against the artboards or against tokyo-theme.css read as a code defect.
 
 Press ctrl-c when the captures are done.
 EOF

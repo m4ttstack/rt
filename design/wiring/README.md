@@ -5,13 +5,14 @@ against it rather than against someone's memory of it.
 
 Canvas (editable, hosted): https://claude.ai/code/artifact/a27ffb30-2a5d-48bd-8ac2-ba9305d85a86
 
-| file                   | what it is                                              |
-| ---------------------- | ------------------------------------------------------- |
-| `artboards/*.dc.html`  | the design source; edit these, never `render/`          |
-| `render/*.html`        | generated standalone pages, one per scheme — gitignored |
-| `reference/*.png`      | the parity targets, captured from `render/`             |
-| `build-references.mjs` | `artboards/` → `render/`                                |
-| `capture.sh`           | `render/` → `reference/`                                |
+| file                     | what it is                                                   |
+| ------------------------ | ------------------------------------------------------------ |
+| `artboards/*.dc.html`    | the design source; edit these, never `render/`               |
+| `render/*.html`          | generated standalone pages, one per scheme — gitignored      |
+| `reference/*.png`        | the parity targets, captured from `render/`                  |
+| `build-references.mjs`   | `artboards/` → `render/`                                     |
+| `capture.sh`             | `render/` → `reference/`                                     |
+| `normalize-captures.mjs` | strips the capture's display profile; run after `capture.sh` |
 
 ## What the design fixes to
 
@@ -81,6 +82,7 @@ node design/wiring/build-references.mjs \
   design/wiring/artboards design/wiring/render \
   Main.dc.html Indicators.dc.html CompileDrawer.dc.html InverseIndex.dc.html
 bash design/wiring/capture.sh          # re-captures reference/ from render/
+node design/wiring/normalize-captures.mjs design/wiring/reference
 ```
 
 To check an implementation against the reference: serve the app, open
@@ -89,7 +91,14 @@ against `reference/Main.{light,dark}.png` element by element — surface
 colours, border colour, radii, font sizes, the 22px bullet on a 2px line, the
 28px action icons, slot column widths.
 
-Two capture constraints worth knowing before you fight them:
+**The PNGs are sRGB and match the artboards exactly** — but only because
+`normalize-captures.mjs` runs. Chromium tags screenshots with its own display
+profile and the raw pixels live in that space, so an unnormalized capture of a
+`#eff0f5` panel samples as `#edeef3`. That flat 2-9 unit offset reads as a code
+defect to anyone pixel-diffing against the artboard source or a value lifted
+from `tokyo-theme.css`. Never commit a capture that skipped it.
+
+Three capture constraints worth knowing before you fight them:
 
 - the browser refuses the `file:` protocol, so `render/` must be served over
   http (`capture.sh` does this);
