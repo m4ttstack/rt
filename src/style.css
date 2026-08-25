@@ -778,8 +778,8 @@
 .tui-config-value { font-family: var(--font-mono); font-size: 0.78rem; color: var(--muted); word-break: break-all; }
 .tui-config-flag { margin-left: 6px; color: var(--amber); font-family: var(--font-sans); font-size: 0.72rem; }
 .tui-config-link { background: none; border: none; padding: 0; color: var(--accent); cursor: pointer; font: inherit; font-size: 0.78rem; }
-.tui-config-leaves { display: flex; flex-direction: column; gap: 4px; flex: 1; }
-.tui-config-leaf { display: grid; grid-template-columns: 11em 1fr; gap: 10px; align-items: center; }
+.tui-config-leaves { display: grid; grid-template-columns: max-content 1fr; gap: 4px 10px; align-items: center; flex: 1; }
+.tui-config-leaf { display: contents; }
 .tui-config-leaf-label { font-family: var(--font-mono); font-size: 0.76rem; color: var(--muted); }
 .tui-config-chips { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; flex: 1; }
 .tui-config-chip {
