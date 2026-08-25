@@ -455,13 +455,12 @@ function WiringSpineView({
     ...shown.stages,
   ];
   // The drawer's switcher reads `spine`, never `shown`: `?attention=1` can
-  // collapse the pipeline to one row, and a switcher built from that would
-  // hide the rest of the pipeline exactly when a reader is drilling into
-  // one drifted stage.
-  const pipelineEntries: SpineEntry[] = [
-    ...(spine.orchestrator ? [spine.orchestrator] : []),
-    ...spine.stages,
-  ];
+  // collapse it to a handful of rows, and a switcher built from that would
+  // hide most of what's previewable exactly when a reader is drilling into
+  // one drifted stage. `OutsideThePipeline` rows open the same drawer, so
+  // `spineRows` -- not just the orchestrator and stages -- is what the
+  // switcher needs to have an option for whatever is currently open.
+  const switcherEntries: SpineEntry[] = spineRows(spine);
   const showOutside = !attentionOnly || shown.outside.length > 0;
   const nothingNeedsAttention =
     attentionOnly && spineEntries.length === 0 && shown.outside.length === 0;
@@ -605,7 +604,7 @@ function WiringSpineView({
         verb={preview?.verb ?? null}
         changedFiles={preview?.changedFiles ?? []}
         slots={preview?.slots ?? []}
-        entries={pipelineEntries}
+        entries={switcherEntries}
         onSwitch={switchPreview}
         onClose={() => setPreview(null)}
       />

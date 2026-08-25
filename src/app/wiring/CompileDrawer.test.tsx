@@ -99,7 +99,35 @@ const SHIP = entry({
   staleFiles: ['ship/SKILL.md'],
 });
 
-const PIPELINE = [ORCHESTRATOR, UNVERBED_STAGE, IMPLEMENT, SHIP];
+/** A roster verb the pipeline never calls -- the exact row `SkillRow` opens
+    this same drawer from under "Outside the pipeline". */
+const REVIEW = entry({
+  kind: 'outside',
+  key: 'mattstack:review',
+  label: 'review',
+  ref: 'mattstack:review',
+  verb: 'review',
+  invocable: true,
+  health: 'in-sync',
+});
+
+/** A cross-plugin group has no roster verb of its own -- `verb` stays null,
+    the same as `UNVERBED_STAGE`, but grouped under "Outside the pipeline". */
+const EXTERNAL_GROUP = entry({
+  kind: 'outside',
+  key: 'external:mr-board',
+  label: 'mr-board',
+  external: true,
+});
+
+const ALL_ENTRIES = [
+  ORCHESTRATOR,
+  UNVERBED_STAGE,
+  IMPLEMENT,
+  SHIP,
+  REVIEW,
+  EXTERNAL_GROUP,
+];
 
 function previewOf(target: SpineEntry) {
   return {
@@ -157,18 +185,62 @@ function renderHarness(props: {
   );
 }
 
-test('lists the pipeline in spine order, including an in-sync stage, and skips one with no verb', async () => {
+test('lists the pipeline in spine order, including an in-sync stage, grouped apart from what is outside it, skipping entries with no verb', async () => {
   compileGet.mockResolvedValue(ok({ content: '# work' }));
   const user = userEvent.setup();
-  renderHarness({ initial: ORCHESTRATOR, entries: PIPELINE });
+  renderHarness({ initial: ORCHESTRATOR, entries: ALL_ENTRIES });
 
   await user.click(switcher());
 
+  // `UNVERBED_STAGE` and `EXTERNAL_GROUP` bind no roster verb, so neither
+  // shows -- and the two groups carry the exact wording the spine's own
+  // "Outside the pipeline" timeline item uses.
+  expect(screen.getByText('Pipeline')).toBeInTheDocument();
+  expect(screen.getByText('Outside the pipeline')).toBeInTheDocument();
   expect(screen.getAllByRole('option').map(o => o.textContent)).toEqual([
     'work',
     'implement',
     'ship',
+    'review',
   ]);
+});
+
+test('opening on an outside-the-pipeline verb selects it in the switcher, which still offers the whole pipeline', async () => {
+  compileGet.mockResolvedValue(ok({ content: '# review' }));
+  const user = userEvent.setup();
+  renderHarness({ initial: REVIEW, entries: ALL_ENTRIES });
+
+  expect(switcher()).toHaveValue('review');
+
+  await user.click(switcher());
+  expect(screen.getByRole('option', { name: 'work' })).toBeInTheDocument();
+  expect(screen.getByRole('option', { name: 'implement' })).toBeInTheDocument();
+  expect(screen.getByRole('option', { name: 'ship' })).toBeInTheDocument();
+});
+
+test('switching from an outside verb into a pipeline stage refetches and previews that stage', async () => {
+  compileGet.mockImplementation(
+    async (args: { query: { pack: string; verb: string } }) =>
+      ok({ content: `# ${args.query.verb} body` })
+  );
+  const user = userEvent.setup();
+  renderHarness({ initial: REVIEW, entries: ALL_ENTRIES });
+
+  await waitFor(() =>
+    expect(compileGet).toHaveBeenCalledWith(
+      expect.objectContaining({ query: { pack: 'demo', verb: 'review' } })
+    )
+  );
+
+  await user.click(switcher());
+  await user.click(screen.getByRole('option', { name: 'ship' }));
+
+  await waitFor(() =>
+    expect(compileGet).toHaveBeenCalledWith(
+      expect.objectContaining({ query: { pack: 'demo', verb: 'ship' } })
+    )
+  );
+  expect(switcher()).toHaveValue('ship');
 });
 
 test('switching to another stage refetches and previews that verb', async () => {
@@ -177,7 +249,7 @@ test('switching to another stage refetches and previews that verb', async () => 
       ok({ content: `# ${args.query.verb} body` })
   );
   const user = userEvent.setup();
-  renderHarness({ initial: ORCHESTRATOR, entries: PIPELINE });
+  renderHarness({ initial: ORCHESTRATOR, entries: ALL_ENTRIES });
 
   await waitFor(() =>
     expect(compileGet).toHaveBeenCalledWith(
@@ -206,7 +278,7 @@ test('switching to another stage refetches and previews that verb', async () => 
 test("switching carries the NEW entry's changed files and slots, not the previous verb's", async () => {
   compileGet.mockResolvedValue(ok({ content: '# body' }));
   const user = userEvent.setup();
-  renderHarness({ initial: ORCHESTRATOR, entries: PIPELINE });
+  renderHarness({ initial: ORCHESTRATOR, entries: ALL_ENTRIES });
 
   await screen.findByText('work/SKILL.md');
 

@@ -29,11 +29,15 @@ export interface CompileDrawerProps {
       SHOULD contain, which the body's own seams cannot supply. */
   slots: SlotOutlineNode[];
   /**
-   * The pipeline in spine order (orchestrator, then stages) for the
-   * in-drawer switcher. Must come from the UNFILTERED spine -- the
-   * attention filter can collapse the pipeline to a single row, and a
-   * switcher fed from that would hide the rest of the pipeline exactly
-   * when a reader is drilling into one drifted stage.
+   * Every previewable entry in spine order -- orchestrator, then stages,
+   * then everything outside the pipeline -- for the in-drawer switcher
+   * (`spineRows(spine)` at the call site). Must come from the UNFILTERED
+   * spine, never the attention-filtered `shown`: that filter can collapse
+   * the pipeline to a single row, and a switcher fed from it would hide
+   * most of what's previewable exactly when a reader is drilling into one
+   * drifted stage. `OutsideThePipeline` rows open this same drawer, so
+   * outside entries have to ride along too, or the picker shows an empty
+   * combobox next to a heading that names a verb it has no option for.
    */
   entries: SpineEntry[];
   /** Fired with the entry to preview next; the caller owns replacing
@@ -84,6 +88,35 @@ export function CompileDrawer({
   const switchable = entries.filter(
     (entry): entry is SpineEntry & { verb: string } => entry.verb !== null
   );
+  const toOption = (entry: SpineEntry & { verb: string }) => ({
+    value: entry.verb,
+    label: entry.label,
+  });
+  // Same two sections the spine itself draws (the pipeline, then the
+  // "Outside the pipeline" timeline item) -- a picker that invented a third
+  // name for either would disagree with the page it switches within.
+  const switcherData = [
+    ...(switchable.some(entry => entry.kind !== 'outside')
+      ? [
+          {
+            group: 'Pipeline',
+            items: switchable
+              .filter(entry => entry.kind !== 'outside')
+              .map(toOption),
+          },
+        ]
+      : []),
+    ...(switchable.some(entry => entry.kind === 'outside')
+      ? [
+          {
+            group: 'Outside the pipeline',
+            items: switchable
+              .filter(entry => entry.kind === 'outside')
+              .map(toOption),
+          },
+        ]
+      : []),
+  ];
 
   return (
     <Drawer
@@ -122,10 +155,7 @@ export function CompileDrawer({
             <Select
               size="xs"
               w={240}
-              data={switchable.map(entry => ({
-                value: entry.verb,
-                label: entry.label,
-              }))}
+              data={switcherData}
               value={verb}
               onChange={value => {
                 const next = switchable.find(entry => entry.verb === value);

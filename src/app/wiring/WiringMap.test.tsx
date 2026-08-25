@@ -863,6 +863,39 @@ describe('WiringMap: walking the pipeline from the drawer', () => {
       screen.getByText(/not a diff against the artifact/)
     ).toBeInTheDocument();
   });
+
+  it('opens on an outside-the-pipeline verb with that verb selected, and shows both groups', async () => {
+    mockHappyPath();
+    compileGet.mockResolvedValue(ok({ content: '# watch-ci' }));
+
+    const user = userEvent.setup();
+    renderWiring();
+
+    // watch-ci binds nothing the pipeline names, so it renders under
+    // "Outside the pipeline" -- the exact row `SkillRow` opens this drawer
+    // from with the same `toggle-compile-preview` action a stage row uses.
+    const row = await screen.findByTestId('skill-row-mattstack:watch-ci');
+    await user.click(within(row).getByTestId('toggle-compile-preview'));
+    await screen.findByText(/not a diff against the artifact/);
+
+    const select = screen.getByRole('combobox', {
+      name: /walk the pipeline/i,
+    });
+    expect(select).toHaveValue('watch-ci');
+
+    await user.click(select);
+    // Scoped to the open listbox -- the page's own "Outside the pipeline"
+    // timeline heading carries the same text.
+    const listbox = screen.getByRole('listbox');
+    expect(within(listbox).getByText('Pipeline')).toBeInTheDocument();
+    expect(
+      within(listbox).getByText('Outside the pipeline')
+    ).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'work' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('option', { name: 'rebase-worktree' })
+    ).toBeInTheDocument();
+  });
 });
 
 const CHECK_CLEAN = {
