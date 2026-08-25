@@ -292,3 +292,31 @@ describe('LayerRow: staged edit-at-layer', () => {
     );
   });
 });
+
+describe('LayerRow: the file a layer was authored in', () => {
+  test('opens the store file in the editor, at the path the resolver named', () => {
+    // The spec's "file paths clickable": the console cannot edit a composite
+    // or inspect a store itself, so the path IS the handoff -- same
+    // `vscode://file` form every other outward action in the app uses.
+    renderWithProviders(
+      <LayerRow def={NUMBER_DEF} row={USER_ROW} role="winner" />
+    );
+
+    expect(
+      screen.getByRole('link', { name: /open \/stores\/user\.jsonc/i })
+    ).toHaveAttribute('href', 'vscode://file/stores/user.jsonc');
+  });
+
+  test('the registry default is stated, not linked — it lives in no file', () => {
+    renderWithProviders(
+      <LayerRow
+        def={NUMBER_DEF}
+        row={{ scope: 'default', file: null, present: true, value: 30 }}
+        role="winner"
+      />
+    );
+
+    expect(screen.getByText('registry default')).toBeInTheDocument();
+    expect(screen.queryByRole('link')).toBeNull();
+  });
+});

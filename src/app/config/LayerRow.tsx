@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActionIcon,
   Alert,
+  Anchor,
   Badge,
   Button,
   Group,
@@ -183,15 +184,29 @@ export function LayerRow({
             not writable through the resolver yet
           </Text>
         ) : null}
-        <Text
-          size="xs"
-          c={text.dimmed}
-          ff="monospace"
-          truncate
-          style={{ flex: 1 }}
-        >
-          {row.file ?? 'registry default'}
-        </Text>
+        {row.file === null ? (
+          <Text
+            size="xs"
+            c={text.dimmed}
+            ff="monospace"
+            truncate
+            style={{ flex: 1 }}
+          >
+            registry default
+          </Text>
+        ) : (
+          <Anchor
+            href={`vscode://file${row.file}`}
+            size="xs"
+            c={text.dimmed}
+            ff="monospace"
+            truncate
+            aria-label={`open ${row.file}`}
+            style={{ flex: 1 }}
+          >
+            {row.file}
+          </Anchor>
+        )}
       </Group>
       {row.invalid && (
         <Text size="xs" c={text.muted} pl={104}>
