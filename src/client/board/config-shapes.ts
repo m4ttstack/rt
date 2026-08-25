@@ -1,16 +1,6 @@
 import type { SettingDefWire } from "@mattstack/settings-kit/react";
 
-/** The winning layer for one key, as settings-kit ≥0.1.1 reports it on each
-    def. `scope` is a store scope, "default" for a registry default, or null
-    when nothing is set; `value` is omitted for secrets and unset keys. */
-export interface Effective {
-  scope: string | null;
-  value?: unknown;
-  file: string | null;
-  invalid?: string;
-}
-
-export type ConfigDef = SettingDefWire & { effective?: Effective };
+export type ConfigDef = SettingDefWire;
 
 export type LeafType = "string" | "number" | "boolean" | { enum: readonly string[] };
 
@@ -76,7 +66,7 @@ export function rowKind(def: ConfigDef): RowKind {
 }
 
 export function isSet(def: ConfigDef): boolean {
-  const scope = def.effective?.scope;
+  const scope = def.effective.scope;
   return scope != null && scope !== "default";
 }
 

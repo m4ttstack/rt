@@ -449,7 +449,7 @@ const httpServer = Bun.serve({
     // own routes and falls through for everything else. Writes ride board's
     // locality rule; reads are as public as /data.json already is.
     if (pathname.startsWith("/api/settings/")) {
-      const settingsRes = await settingsHandler(req, { allowWrite: isLocalRequest });
+      const settingsRes = await settingsHandler(req, { allowWrite: isLocalRequest, allowComposite: true });
       if (settingsRes) return settingsRes;
     }
 

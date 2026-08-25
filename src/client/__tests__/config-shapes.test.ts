@@ -28,6 +28,7 @@ function def(over: Partial<ConfigDef> & { key: string }): ConfigDef {
     description: "",
     hasDefault: false,
     defaultValue: undefined,
+    effective: { scope: null, file: null },
     ...over,
   };
 }

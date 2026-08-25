@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Modal } from "@mattstack/tui-kit";
-import { useSettingsScope } from "@mattstack/settings-kit/react";
+import { useSettingsScope, type SettingsScopeState } from "@mattstack/settings-kit/react";
 import {
   COMPOSITE_SHAPES,
   addToList,
@@ -20,18 +20,9 @@ import {
   type LeafType,
 } from "./config-shapes.ts";
 
-/** settings-kit ≥0.1.1's scope hook: the defs fetch carries each key's
-    effective value and `set` patches it in place, so a row never needs its
-    own explain round-trip. `unset` is 0.1.2's — feature-detected, so ↺ simply
-    stays hidden on a kit without it. Typed here until the installed kit's
-    own declarations carry the surface. */
-interface ConfigStore {
-  defs: ConfigDef[];
-  loading: boolean;
-  error: string | null;
-  set: (key: string, scope: string, value: unknown) => Promise<string | null>;
-  unset?: (key: string, scope: string) => Promise<string | null>;
-}
+/** The scope hook plus 0.1.2's `unset`, feature-detected so ↺ simply stays
+    hidden on a kit without it. */
+type ConfigStore = SettingsScopeState & { unset?: (key: string, scope: string) => Promise<string | null> };
 
 const SAVED_FLASH_MS = 1400;
 
@@ -334,15 +325,15 @@ function CompositeControl({
 function SettingRow({ def, store, onOpenRoster }: { def: ConfigDef; store: ConfigStore; onOpenRoster: () => void }) {
   const kind = rowKind(def);
   const row = useRowSave(store, def);
-  const value = def.effective?.value;
+  const value = def.effective.value;
   const shape = COMPOSITE_SHAPES[def.key];
   const set = isSet(def);
   const malformed = shape !== undefined && shape.kind !== "roster" && value !== undefined && !matchesShape(shape, value);
 
   let control;
   if (kind === "roster") {
-    const members = store.defs.find((d) => d.key === "board.members")?.effective?.value;
-    const hidden = store.defs.find((d) => d.key === "board.hiddenMembers")?.effective?.value;
+    const members = store.defs.find((d) => d.key === "board.members")?.effective.value;
+    const hidden = store.defs.find((d) => d.key === "board.hiddenMembers")?.effective.value;
     control = (
       <>
         <span className="tui-config-value">{rosterSummary(members, hidden)}</span>
@@ -352,7 +343,7 @@ function SettingRow({ def, store, onOpenRoster }: { def: ConfigDef; store: Confi
       </>
     );
   } else if (def.secret) {
-    control = <span className="tui-config-value">{def.effective?.scope ? "•••" : "unset"}</span>;
+    control = <span className="tui-config-value">{def.effective.scope ? "•••" : "unset"}</span>;
   } else if (kind === "readonly" || malformed) {
     control = (
       <span className="tui-config-value">
@@ -383,7 +374,7 @@ function SettingRow({ def, store, onOpenRoster }: { def: ConfigDef; store: Confi
         <span className={"tui-config-status" + (row.busy ? " busy" : "")}>{row.busy ? "saving…" : row.saved ? "saved ✓" : ""}</span>
       </div>
       {row.error && <p className="tui-config-error">{row.error}</p>}
-      {def.effective?.invalid && <p className="tui-config-error">stored value rejected: {def.effective.invalid}</p>}
+      {def.effective.invalid && <p className="tui-config-error">stored value rejected: {def.effective.invalid}</p>}
     </li>
   );
 }
@@ -394,10 +385,8 @@ function SettingRow({ def, store, onOpenRoster }: { def: ConfigDef; store: Confi
     which manages the team roster and owns the two roster keys shown here
     read-only. */
 function ConfigModal({ onClose, onOpenRoster }: { onClose: () => void; onOpenRoster: () => void }) {
-  const hook = useSettingsScope("board.") as unknown as ConfigStore;
+  const store: ConfigStore = useSettingsScope("board.");
   const [query, setQuery] = useState("");
-  const store: ConfigStore =
-    typeof hook.set === "function" ? hook : { ...hook, defs: hook.defs.map((d) => ({ ...d, writable: false })) };
   const groups = groupByScope(filterDefs(store.defs, query));
 
   return (
