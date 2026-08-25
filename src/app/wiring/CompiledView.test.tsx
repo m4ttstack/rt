@@ -185,3 +185,64 @@ describe('CompiledView: the slots a body cannot show', () => {
     expect(screen.getByTestId('compiled-section-step')).toBeInTheDocument();
   });
 });
+
+describe('CompiledView: a slot split by an include (compile-native contract)', () => {
+  // The next rt release may interleave a slot's fragments with include
+  // parts; every marker is a boundary, and one ref can appear twice.
+  const SPLIT_BODY = [
+    '---',
+    'name: "review"',
+    '---',
+    '',
+    HEADER_COMMENT,
+    '',
+    '<!-- part: slot:criteria binding=acme:review-criteria version=0.9.0 path=attachments/review-criteria/SKILL.md lines=12-40 -->',
+    '',
+    '# Criteria, first fragment',
+    '',
+    '<!-- part: include:review-core-body source=mattstack:review-core-body version=0.10.3 path=attachments/review-core-body/SKILL.md lines=7-48 -->',
+    '',
+    '# The shared body',
+    '',
+    '<!-- part: slot:criteria binding=acme:review-criteria version=0.9.0 path=attachments/review-criteria/SKILL.md lines=41-90 -->',
+    '',
+    '# Criteria, second fragment',
+  ].join('\n');
+
+  it('renders every fragment as its own section, both slot pieces included', async () => {
+    renderView({ body: SPLIT_BODY, slots: [slot('criteria')] });
+
+    const found = await screen.findByTestId('compile-preview-body');
+    await waitFor(() =>
+      expect(found.textContent).toContain('# Criteria, second fragment')
+    );
+    expect(found.textContent).toContain('# Criteria, first fragment');
+    expect(found.textContent).toContain('# The shared body');
+    expect(screen.getAllByTestId('compiled-section-criteria')).toHaveLength(2);
+  });
+
+  it("attributes the slot's contribution to its first fragment, not its last", async () => {
+    renderView({ body: SPLIT_BODY, slots: [slot('criteria')] });
+
+    const row = await screen.findByTestId('compiled-slot-criteria');
+    expect(row.textContent).toContain(
+      'attachments/review-criteria/SKILL.md:12-40'
+    );
+  });
+
+  it('never lets an include seam stand in for a same-named slot', async () => {
+    // include stores its attachment name in `slot` too; only kind 'slot'
+    // may reach the contribution map.
+    const body = [
+      '<!-- part: include:criteria source=mattstack:criteria version=1 path=attachments/criteria/SKILL.md lines=1-5 -->',
+      '',
+      '# An include that happens to share the slot name',
+    ].join('\n');
+    renderView({ body, slots: [slot('criteria')] });
+
+    const row = await screen.findByTestId('compiled-slot-criteria');
+    expect(row.textContent).toContain(
+      'inlined, but no seam for it in this body'
+    );
+  });
+});

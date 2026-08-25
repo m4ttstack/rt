@@ -156,7 +156,11 @@ export function CompiledView({ body, slots }: CompiledViewProps) {
   const seamsBySlot = useMemo(() => {
     const map = new Map<string, Seam>();
     for (const { seam } of sections) {
-      if (seam?.slot) map.set(seam.slot, seam);
+      // First fragment wins: a slot part can be SPLIT by an include part
+      // (compile-native contract), and the contribution row names where the
+      // slot's text begins, not where its last fragment happens to sit.
+      if (seam?.kind === 'slot' && seam.slot && !map.has(seam.slot))
+        map.set(seam.slot, seam);
     }
     return map;
   }, [sections]);
@@ -180,8 +184,13 @@ export function CompiledView({ body, slots }: CompiledViewProps) {
           {sections.map((section, i) => (
             <Stack
               gap={4}
+              // The span disambiguates: one ref can legally appear twice
+              // (an attachment split around a slot, a slot split by an
+              // include), and kind:ref alone would collide those keys.
               key={
-                section.seam ? `${section.seam.kind}:${section.seam.ref}` : i
+                section.seam
+                  ? `${section.seam.kind}:${section.seam.ref}:${section.seam.lines[0]}`
+                  : i
               }
               data-testid={
                 section.seam
