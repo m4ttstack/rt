@@ -19,6 +19,7 @@ import { Link } from '../router/Link';
 import { agingWarning } from './aging';
 import type { BoardRun } from './bands';
 import { BRANCH_CHECKOUT_LABEL, branchCheckoutCommand } from './branchCheckout';
+import { repoLabel } from './repoLabel';
 
 const STATUS_COLOR: Record<string, MantineColor> = {
   running: 'accent',
@@ -151,7 +152,7 @@ export function RunRow({ run, pruneDays }: RunRowProps) {
             {run.ticket ?? run.id}
           </Text>
           <Text c={text.muted} size="sm">
-            {run.repo}
+            {repoLabel(run.repo)}
           </Text>
           <Badge color={statusColor} variant="light" size="sm">
             {run.status}

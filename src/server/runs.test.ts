@@ -14,12 +14,23 @@ vi.mock('@mattstack/rt-client', () => ({
   abandonRun: vi.fn(async () => ({ ok: true, data: { ok: true } })),
   subscribe: vi.fn(() => () => {}),
   getSetting: vi.fn(() => ({ value: 30, provenance: [] })),
+  // Real implementation, not a stub: runs.ts's canonicalRepo re-serializes
+  // the identity Hono's param() decode corrupted, and the test asserts the
+  // exact round-tripped wire form.
+  serializeIdentity: (id: { kind: string; id: string }) =>
+    `${id.kind}:${encodeURIComponent(id.id)}`,
 }));
 
 const { app } = await import('./app');
 const rt = await import('@mattstack/rt-client');
 
 describe('runs api', () => {
+  it('a serialized identity with an internal slash survives the :repo/:runId round trip', async () => {
+    const wire = 'remote:gitlab.com%2Fgroup%2Frepo';
+    await app.fetch(new Request(`http://localhost/api/runs/${wire}/run-1`));
+    expect(rt.getRun).toHaveBeenCalledWith('run-1', wire);
+  });
+
   it('lists runs and passes repo through', async () => {
     const res = await app.fetch(
       new Request('http://localhost/api/runs?repo=repo-tools')

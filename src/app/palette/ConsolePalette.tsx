@@ -10,6 +10,7 @@ import {
   BRANCH_CHECKOUT_LABEL,
   branchCheckoutCommand,
 } from '../runs/branchCheckout';
+import { repoLabel } from '../runs/repoLabel';
 import { useRunList } from '../runs/useRuns';
 
 function runAction(run: {
@@ -21,7 +22,7 @@ function runAction(run: {
 }): SpotlightActionData {
   return {
     id: `run-${run.repo}-${run.id}`,
-    label: `${run.ticket ?? run.id} — ${run.repo} ${run.status}`,
+    label: `${run.ticket ?? run.id} — ${repoLabel(run.repo)} ${run.status}`,
     keywords: [run.repo, run.ticket, run.branch, run.status].filter(
       (v): v is string => typeof v === 'string'
     ),

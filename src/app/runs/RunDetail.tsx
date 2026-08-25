@@ -21,6 +21,7 @@ import { notifications } from '@ui/notifications';
 import { client } from '../api';
 import { CommandProvenance } from './CommandProvenance';
 import { EffectiveInputs } from './EffectiveInputs';
+import { repoLabel } from './repoLabel';
 import { fieldsByKey, Timeline } from './Timeline';
 import { useMarkSeen, useRun } from './useRuns';
 
@@ -174,7 +175,7 @@ function RunDetailContent({ repo, runId }: { repo: string; runId: string }) {
   return (
     <Stack gap="lg" data-testid="run-detail">
       <CommandProvenance
-        command={`rt runs show ${runId} --repo ${repo}`}
+        command={`rt runs show ${runId} --repo ${repoLabel(repo)}`}
         asOf={runQuery.dataUpdatedAt}
       />
       <Group align="flex-start" wrap="nowrap">
@@ -217,7 +218,7 @@ class RunDetailErrorBoundary extends Component<
       return (
         <Stack gap="lg" data-testid="run-detail-error">
           <CommandProvenance
-            command={`rt runs show ${runId} --repo ${repo}`}
+            command={`rt runs show ${runId} --repo ${repoLabel(repo)}`}
             asOf={undefined}
           />
           <GenericError
@@ -234,7 +235,7 @@ class RunDetailErrorBoundary extends Component<
 
 export function RunDetail({ repo, runId }: { repo: string; runId: string }) {
   return (
-    <PageShell title={`${repo} / ${runId}`}>
+    <PageShell title={`${repoLabel(repo)} / ${runId}`}>
       <RunDetailErrorBoundary repo={repo} runId={runId}>
         <LazyLoader>
           <RunDetailContent repo={repo} runId={runId} />
