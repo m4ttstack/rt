@@ -733,6 +733,138 @@ describe('WiringMap: actions', () => {
   });
 });
 
+/** A pipeline where two STAGES resolve to real roster verbs (their
+    `engineRef` matches the pipeline's own ref), unlike the `COMPOSITION`
+    fixture above where no stage ref happens to match a verb's engineRef --
+    needed so the switcher has more than the orchestrator to walk to. */
+const PIPELINE_COMPOSITION = {
+  pack: 'demo',
+  packDir: '/p',
+  verbs: [
+    {
+      name: 'work',
+      engine: 'work',
+      engineRef: 'mattstack:work',
+      plugin: 'mattstack',
+      description: 'the orchestrator',
+      public: true,
+      sourcePath: '/plugins/mattstack/attachments/pipeline/work/SKILL.md',
+      artifactPath: '/p/skills/work',
+      slots: [],
+    },
+    {
+      name: 'stage-implement',
+      engine: 'stage-implement',
+      engineRef: 'mattstack:stage-implement',
+      plugin: 'mattstack',
+      description: 'implement',
+      public: true,
+      sourcePath: '/plugins/mattstack/skills/pipeline/stage-implement/SKILL.md',
+      artifactPath: '/p/skills/stage-implement',
+      slots: [],
+    },
+    {
+      name: 'stage-ship',
+      engine: 'stage-ship',
+      engineRef: 'mattstack:stage-ship',
+      plugin: 'mattstack',
+      description: 'ship',
+      public: true,
+      sourcePath: '/plugins/mattstack/skills/pipeline/stage-ship/SKILL.md',
+      artifactPath: '/p/skills/stage-ship',
+      slots: [],
+    },
+  ],
+  fills: [],
+  binders: [],
+  pipelines: {
+    feature: ['mattstack:stage-implement', 'mattstack:stage-ship'],
+  },
+};
+
+const PIPELINE_CHECK = {
+  pack: 'demo',
+  packDir: '/p',
+  verbs: [
+    {
+      name: 'work',
+      status: 'stale',
+      staleFiles: ['SKILL.md'],
+      orphanFiles: [],
+    },
+    {
+      name: 'stage-implement',
+      status: 'in-sync',
+      staleFiles: [],
+      orphanFiles: [],
+    },
+    { name: 'stage-ship', status: 'in-sync', staleFiles: [], orphanFiles: [] },
+  ],
+};
+
+describe('WiringMap: walking the pipeline from the drawer', () => {
+  it('offers the whole pipeline from the switcher even while the attention filter hides most of it', async () => {
+    window.history.pushState(null, '', '/wiring?attention=1');
+    packsGet.mockResolvedValue(
+      ok({ packs: [{ name: 'demo', dir: '/p', layout: 'flat' }] })
+    );
+    compositionGet.mockResolvedValue(ok(PIPELINE_COMPOSITION));
+    checkGet.mockResolvedValue(ok(PIPELINE_CHECK));
+    compileGet.mockResolvedValue(ok({ content: '# work' }));
+    const user = userEvent.setup();
+    renderWiring();
+
+    // Only `work` drifted -- the filter drops both in-sync stages from the
+    // timeline entirely.
+    const row = await screen.findByTestId('skill-row-mattstack:work');
+    expect(
+      screen.queryByTestId('skill-row-mattstack:stage-implement')
+    ).not.toBeInTheDocument();
+
+    await user.click(within(row).getByTestId('toggle-compile-preview'));
+    await screen.findByText(/not a diff against the artifact/);
+
+    await user.click(
+      screen.getByRole('combobox', { name: /walk the pipeline/i })
+    );
+
+    expect(
+      screen.getByRole('option', { name: 'stage-implement' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('option', { name: 'stage-ship' })
+    ).toBeInTheDocument();
+  });
+
+  it('keeps the drawer open when the switcher re-selects the already-current verb', async () => {
+    packsGet.mockResolvedValue(
+      ok({ packs: [{ name: 'demo', dir: '/p', layout: 'flat' }] })
+    );
+    compositionGet.mockResolvedValue(ok(PIPELINE_COMPOSITION));
+    checkGet.mockResolvedValue(ok(PIPELINE_CHECK));
+    compileGet.mockResolvedValue(ok({ content: '# implement' }));
+    const user = userEvent.setup();
+    renderWiring();
+
+    const row = await screen.findByTestId(
+      'skill-row-mattstack:stage-implement'
+    );
+    await user.click(within(row).getByTestId('toggle-compile-preview'));
+    await screen.findByText(/not a diff against the artifact/);
+
+    await user.click(
+      screen.getByRole('combobox', { name: /walk the pipeline/i })
+    );
+    await user.click(screen.getByRole('option', { name: 'stage-implement' }));
+
+    // A row re-click toggles the drawer closed (see the compile-preview
+    // tests above); the switcher must not reuse that behaviour.
+    expect(
+      screen.getByText(/not a diff against the artifact/)
+    ).toBeInTheDocument();
+  });
+});
+
 const CHECK_CLEAN = {
   ...CHECK,
   verbs: CHECK.verbs.map(row => ({

@@ -5,6 +5,7 @@ import {
   Drawer,
   Group,
   Paper,
+  Select,
   Skeleton,
   Stack,
   Text,
@@ -14,7 +15,7 @@ import { Icons } from '@ui/icons';
 import { CommandProvenance } from '../runs/CommandProvenance';
 import { CompiledView } from './CompiledView';
 import { useDrawerSurface } from './drawerSurface';
-import type { SlotOutlineNode } from './outline';
+import type { SlotOutlineNode, SpineEntry } from './outline';
 import { SOFT_RULE } from './SlotRow';
 import { useCompilePreview } from './useWiring';
 
@@ -27,6 +28,17 @@ export interface CompileDrawerProps {
   /** The verb's slots, from the composition -- the record of what the body
       SHOULD contain, which the body's own seams cannot supply. */
   slots: SlotOutlineNode[];
+  /**
+   * The pipeline in spine order (orchestrator, then stages) for the
+   * in-drawer switcher. Must come from the UNFILTERED spine -- the
+   * attention filter can collapse the pipeline to a single row, and a
+   * switcher fed from that would hide the rest of the pipeline exactly
+   * when a reader is drilling into one drifted stage.
+   */
+  entries: SpineEntry[];
+  /** Fired with the entry to preview next; the caller owns replacing
+      `verb`/`changedFiles`/`slots` with THAT entry's own values. */
+  onSwitch: (entry: SpineEntry) => void;
   onClose: () => void;
 }
 
@@ -56,6 +68,8 @@ export function CompileDrawer({
   verb,
   changedFiles,
   slots,
+  entries,
+  onSwitch,
   onClose,
 }: CompileDrawerProps) {
   const { bg, text } = useSchemeColors();
@@ -64,6 +78,12 @@ export function CompileDrawer({
   const internal = query.isError
     ? internalNotice((query.error as Error).message)
     : null;
+
+  // No verb, no seam to preview -- rendering it as an option would be a
+  // dead entry the picker can select and never learn anything from.
+  const switchable = entries.filter(
+    (entry): entry is SpineEntry & { verb: string } => entry.verb !== null
+  );
 
   return (
     <Drawer
@@ -98,6 +118,24 @@ export function CompileDrawer({
           <Text fz="xl" fw={700}>
             {verb}
           </Text>
+          {switchable.length > 0 && (
+            <Select
+              size="xs"
+              w={240}
+              data={switchable.map(entry => ({
+                value: entry.verb,
+                label: entry.label,
+              }))}
+              value={verb}
+              onChange={value => {
+                const next = switchable.find(entry => entry.verb === value);
+                if (next) onSwitch(next);
+              }}
+              allowDeselect={false}
+              aria-label="walk the pipeline"
+              data-testid="compile-drawer-switcher"
+            />
+          )}
           <CommandProvenance
             command={`rt skills compile --verb ${verb} --preview`}
             asOf={query.dataUpdatedAt || undefined}

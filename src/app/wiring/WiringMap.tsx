@@ -343,6 +343,23 @@ function StepBullet({ step }: { step: number }) {
   );
 }
 
+interface PreviewState {
+  verb: string;
+  changedFiles: string[];
+  slots: SlotOutlineNode[];
+}
+
+/** Null for an entry with no verb -- a cross-plugin group, say -- which has
+    no compile to preview at all. */
+function previewFrom(entry: SpineEntry): PreviewState | null {
+  if (!entry.verb) return null;
+  return {
+    verb: entry.verb,
+    changedFiles: [...entry.staleFiles, ...entry.orphanFiles],
+    slots: entry.slots,
+  };
+}
+
 function WiringSpineView({
   pack,
   workType,
@@ -359,11 +376,7 @@ function WiringSpineView({
   const checkQuery = useSkillsCheck(pack);
   const { bind } = useSkillsApply(pack);
   const bulletStyles = useBulletStyles();
-  const [preview, setPreview] = useState<{
-    verb: string;
-    changedFiles: string[];
-    slots: SlotOutlineNode[];
-  } | null>(null);
+  const [preview, setPreview] = useState<PreviewState | null>(null);
   const [indexFill, setIndexFill] = useState<string | null>(null);
   const [historyEntry, setHistoryEntry] = useState<SpineEntry | null>(null);
   const [rebind, setRebind] = useState<{ verb: string; slot: string } | null>(
@@ -381,16 +394,17 @@ function WiringSpineView({
   );
 
   const openPreview = (entry: SpineEntry) => {
-    if (!entry.verb) return;
-    setPreview(current =>
-      current?.verb === entry.verb
-        ? null
-        : {
-            verb: entry.verb as string,
-            changedFiles: [...entry.staleFiles, ...entry.orphanFiles],
-            slots: entry.slots,
-          }
-    );
+    const next = previewFrom(entry);
+    if (!next) return;
+    setPreview(current => (current?.verb === next.verb ? null : next));
+  };
+
+  // Unlike `openPreview`, never toggles closed on the current verb -- a
+  // switcher re-selection is not a row re-click, and the drawer must stay
+  // open either way.
+  const switchPreview = (entry: SpineEntry) => {
+    const next = previewFrom(entry);
+    if (next) setPreview(next);
   };
 
   const openHistory = (entry: SpineEntry) => {
@@ -439,6 +453,14 @@ function WiringSpineView({
   const spineEntries: SpineEntry[] = [
     ...(shown.orchestrator ? [shown.orchestrator] : []),
     ...shown.stages,
+  ];
+  // The drawer's switcher reads `spine`, never `shown`: `?attention=1` can
+  // collapse the pipeline to one row, and a switcher built from that would
+  // hide the rest of the pipeline exactly when a reader is drilling into
+  // one drifted stage.
+  const pipelineEntries: SpineEntry[] = [
+    ...(spine.orchestrator ? [spine.orchestrator] : []),
+    ...spine.stages,
   ];
   const showOutside = !attentionOnly || shown.outside.length > 0;
   const nothingNeedsAttention =
@@ -583,6 +605,8 @@ function WiringSpineView({
         verb={preview?.verb ?? null}
         changedFiles={preview?.changedFiles ?? []}
         slots={preview?.slots ?? []}
+        entries={pipelineEntries}
+        onSwitch={switchPreview}
         onClose={() => setPreview(null)}
       />
 
