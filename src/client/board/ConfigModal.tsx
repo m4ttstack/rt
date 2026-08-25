@@ -8,7 +8,7 @@ import { useSettingsScope, useSettingKey, type SettingDefWire } from "@mattstack
     verbatim on a failed apply. */
 function KeyEditor({ def }: { def: SettingDefWire }) {
   const key = useSettingKey(def.key);
-  const [scope, setScope] = useState(def.scopes[0] ?? "user");
+  const [scope, setScope] = useState<string>(def.scopes[0] ?? "user");
   const [input, setInput] = useState("");
 
   const stageFromInput = () => {
@@ -36,7 +36,9 @@ function KeyEditor({ def }: { def: SettingDefWire }) {
                 {row.shadowed ? " (shadowed)" : ""}
                 {row.invalid ? ` (invalid: ${row.invalid})` : ""}
               </td>
-              <td className="tui-config-file" title={row.file}>{row.file.split("/").slice(-2).join("/")}</td>
+              <td className="tui-config-file" title={row.file ?? "registry default"}>
+                {row.file === null ? "default" : row.file.split("/").slice(-2).join("/")}
+              </td>
             </tr>
           ))}
         </tbody>
@@ -101,7 +103,7 @@ function ConfigModal({ onClose }: { onClose: () => void }) {
               onClick={() => setOpen(open === def.key ? null : def.key)}
               aria-expanded={open === def.key}
             >
-              <span className="tui-config-keyname">{def.key}</span>
+              <span className="tui-config-keyname">{open === def.key ? "▾" : "▸"} {def.key}</span>
               <span className="tui-modal-sub">{def.description}</span>
             </button>
             {open === def.key && <KeyEditor def={def} />}
