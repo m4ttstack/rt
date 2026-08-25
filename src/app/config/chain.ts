@@ -41,7 +41,7 @@ export function analyzeChain(
     return {
       kind: 'composite',
       contributors: active,
-      sentence: `${def.key} deep-merges key by key — ${n} layer${n === 1 ? '' : 's'} contribute; there is no single winner.`,
+      sentence: `${def.key} deep-merges key by key — ${n} layer${n === 1 ? '' : 's'} contribute${n === 1 ? 's' : ''}; there is no single winner.`,
     };
   }
 

@@ -36,6 +36,10 @@ export interface LayerRowProps {
   /** Set by the caller after a failed apply (a refused `rt settings set`,
       say), so the staged block can say what went wrong. */
   applyError?: string | null;
+  /** Fired when this row opens an edit or discards a staged one -- lets the
+      caller clear its shared mutation's error so a previous row's failure
+      can't leak into this row's next attempt. */
+  onResetError?: () => void;
 }
 
 /** `default` and the repo rungs are never write targets in v1; everything
@@ -72,12 +76,14 @@ export function LayerRow({
   onApply,
   applying = false,
   applyError = null,
+  onResetError,
 }: LayerRowProps) {
   const { text, border } = useSchemeColors();
   const rowId = `${row.scope}${row.file ? `:${row.file}` : ''}`;
   const composite = isComposite(def);
   const editable = isEditable(def, row);
   const scope = writeScopeOf(row);
+  const scopeDisallowed = scope !== null && !def.scopes.includes(scope);
 
   const [editing, setEditing] = useState(false);
   const [staged, setStaged] = useState(false);
@@ -86,13 +92,15 @@ export function LayerRow({
   function openEdit() {
     setDraft(initialDraft(def, row));
     setEditing(true);
+    onResetError?.();
   }
 
   const discard = useCallback(() => {
     setDraft(initialDraft(def, row));
     setStaged(false);
     setEditing(false);
-  }, [def, row]);
+    onResetError?.();
+  }, [def, row, onResetError]);
 
   // Props carry no explicit success signal -- ExplainKeyPage passes only
   // applying/applyError, and this row stays mounted (stably keyed) across
@@ -155,11 +163,15 @@ export function LayerRow({
               </ActionIcon>
             </Tooltip>
           )
-        ) : (
+        ) : scopeDisallowed ? (
           <Text size="xs" c={text.muted} style={{ flex: 'none' }}>
             not allowed at this layer (allowed: {def.scopes.join(', ')})
           </Text>
-        )}
+        ) : def.secret ? null : !def.writable ? (
+          <Text size="xs" c={text.muted} style={{ flex: 'none' }}>
+            not writable through the resolver yet
+          </Text>
+        ) : null}
         <Text size="xs" c={text.dimmed} ff="monospace" truncate style={{ flex: 1 }}>
           {row.file ?? 'registry default'}
         </Text>

@@ -1,11 +1,17 @@
 // @vitest-environment node
-import type { RunDetail, RunStageRow, RunSummary } from '@mattstack/rt-client';
+import type {
+  RunDetail,
+  RunStageRow,
+  RunSummary,
+  SettingDef,
+} from '@mattstack/rt-client';
 import { Hono } from 'hono';
 import { describe, expect, it, vi } from 'vitest';
 
 vi.mock('@mattstack/rt-client', () => ({
   getRun: vi.fn(),
   getSetting: vi.fn(),
+  getDef: vi.fn(),
 }));
 
 const { mountEffectiveInputs, parsePackCommits } =
@@ -226,6 +232,48 @@ describe('effective-inputs route', () => {
     expect(
       (body.config as { key: string }[]).some(row => row.key === 'rt.runaway')
     ).toBe(false);
+  });
+
+  it('excludes a config key whose def is marked secret from the payload, without reading its value', async () => {
+    vi.mocked(rt.getRun).mockResolvedValue({
+      ok: true,
+      data: baseDetail({ run: baseRun({ pack_commits: null }) }),
+    });
+    vi.mocked(rt.getSetting).mockImplementation((key: string) => ({
+      value: `val:${key}`,
+      provenance: [],
+    }));
+    vi.mocked(rt.getDef).mockImplementation((key: string): SettingDef | undefined =>
+      key === 'rt.runaway'
+        ? {
+            key,
+            type: 'boolean',
+            scopes: ['user'],
+            merge: 'replace',
+            secret: true,
+            description: 'Secret dep, never on the wire.',
+          }
+        : undefined
+    );
+    vi.mocked(rt.getSetting).mockClear();
+
+    const app = mountEffectiveInputs(
+      new Hono(),
+      fakeRt({ code: 0, stdout: '{}', stderr: '' }).run,
+      fakeRun(() => ({ code: 0, stdout: '', stderr: '' })).run
+    );
+
+    const res = await app.request(
+      '/api/runs/repo-tools/run-1/effective-inputs'
+    );
+
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.config).toHaveLength(CONFIG_DEPS.length - 1);
+    expect(
+      (body.config as { key: string }[]).some(row => row.key === 'rt.runaway')
+    ).toBe(false);
+    expect(rt.getSetting).not.toHaveBeenCalledWith('rt.runaway');
   });
 
   it('translates an unknown run into 404, not 502', async () => {

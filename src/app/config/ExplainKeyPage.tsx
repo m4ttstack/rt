@@ -1,4 +1,6 @@
-import { Alert, LazyLoader, Stack, Text } from '@ui/core';
+import { useState } from 'react';
+
+import { Alert, LazyLoader, PageShell, Stack, Text } from '@ui/core';
 import { useSchemeColors } from '@ui/hooks';
 import { Icons } from '@ui/icons';
 import { CommandProvenance } from '../runs/CommandProvenance';
@@ -6,11 +8,16 @@ import { analyzeChain } from './chain';
 import { LayerRow, type VerdictRole } from './LayerRow';
 import { useExplainKey, useSetSetting } from './useSettings';
 
+function rowId(row: { scope: string; file: string | null }): string {
+  return `${row.scope}:${row.file ?? 'default'}`;
+}
+
 function ExplainKeyPageContent({ settingKey }: { settingKey: string }) {
   const { data, dataUpdatedAt } = useExplainKey(settingKey);
   const { text } = useSchemeColors();
   const verdict = analyzeChain(data.def, data.rows);
   const setMutation = useSetSetting(settingKey);
+  const [applyingRowId, setApplyingRowId] = useState<string | null>(null);
 
   const roleOf = (row: (typeof data.rows)[number]): VerdictRole => {
     if (verdict.kind === 'composite')
@@ -25,14 +32,9 @@ function ExplainKeyPageContent({ settingKey }: { settingKey: string }) {
         command={`rt settings explain ${settingKey}`}
         asOf={dataUpdatedAt}
       />
-      <Stack gap={4}>
-        <Text fw={700} size="lg">
-          {settingKey}
-        </Text>
-        <Text size="sm" c={text.muted}>
-          {data.def.description}
-        </Text>
-      </Stack>
+      <Text size="sm" c={text.muted}>
+        {data.def.description}
+      </Text>
       <Text size="md" data-testid="explain-sentence">
         {verdict.sentence}
       </Text>
@@ -55,17 +57,32 @@ function ExplainKeyPageContent({ settingKey }: { settingKey: string }) {
         </Alert>
       )}
       <Stack gap={6}>
-        {data.rows.map(row => (
-          <LayerRow
-            key={`${row.scope}:${row.file ?? 'default'}`}
-            def={data.def}
-            row={row}
-            role={roleOf(row)}
-            onApply={(value, scope) => setMutation.mutate({ value, scope })}
-            applying={setMutation.isPending}
-            applyError={setMutation.error?.message ?? null}
-          />
-        ))}
+        {data.rows.map(row => {
+          const id = rowId(row);
+          const isApplyingRow = applyingRowId === id;
+          return (
+            <LayerRow
+              key={id}
+              def={data.def}
+              row={row}
+              role={roleOf(row)}
+              onApply={(value, scope) => {
+                setApplyingRowId(id);
+                setMutation.mutate(
+                  { value, scope },
+                  {
+                    onSettled: (_data, error) => {
+                      if (!error) setApplyingRowId(null);
+                    },
+                  }
+                );
+              }}
+              applying={isApplyingRow && setMutation.isPending}
+              applyError={isApplyingRow ? setMutation.error?.message ?? null : null}
+              onResetError={() => setMutation.reset()}
+            />
+          );
+        })}
       </Stack>
     </Stack>
   );
@@ -78,8 +95,10 @@ function ExplainKeyPageContent({ settingKey }: { settingKey: string }) {
  */
 export function ExplainKeyPage({ settingKey }: { settingKey: string }) {
   return (
-    <LazyLoader>
-      <ExplainKeyPageContent settingKey={settingKey} />
-    </LazyLoader>
+    <PageShell title={settingKey}>
+      <LazyLoader>
+        <ExplainKeyPageContent settingKey={settingKey} />
+      </LazyLoader>
+    </PageShell>
   );
 }

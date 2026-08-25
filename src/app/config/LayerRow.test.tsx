@@ -48,6 +48,20 @@ const COMPOSITE_ROW: ExplainRowWire = {
   value: { a: 1 },
 };
 
+const SECRET_DEF: SettingDefWire = {
+  key: 'board.apiToken',
+  type: 'string',
+  scopes: ['user'],
+  merge: 'replace',
+  secret: true,
+  teamLocked: false,
+  repoScoped: false,
+  writable: false,
+  description: 'Forge API token.',
+  hasDefault: false,
+  defaultValue: null,
+};
+
 async function stageChange(newValue: string) {
   await userEvent.click(screen.getByRole('button', { name: /edit/i }));
   const input = screen.getByRole('textbox', { name: /new value/i });
@@ -136,6 +150,36 @@ describe('LayerRow: staged edit-at-layer', () => {
     expect(
       screen.queryByRole('button', { name: /edit/i })
     ).not.toBeInTheDocument();
+  });
+
+  test('an allowed-scope row of a secret def does not show the allowed-list copy', () => {
+    const secretUserRow: ExplainRowWire = {
+      scope: 'user',
+      file: '/stores/user.jsonc',
+      present: true,
+    };
+    renderWithProviders(
+      <LayerRow def={SECRET_DEF} row={secretUserRow} role="winner" />
+    );
+
+    expect(
+      screen.queryByText(/not allowed at this layer/)
+    ).not.toBeInTheDocument();
+  });
+
+  test('a disallowed-scope row of a secret def still shows the allowed-list copy', () => {
+    const secretMachineRow: ExplainRowWire = {
+      scope: 'machine',
+      file: '/stores/machine.jsonc',
+      present: true,
+    };
+    renderWithProviders(
+      <LayerRow def={SECRET_DEF} row={secretMachineRow} role="inert" />
+    );
+
+    expect(
+      screen.getByText('not allowed at this layer (allowed: user)')
+    ).toBeInTheDocument();
   });
 
   test('a composite def renders the file-edit copy, never an edit affordance', () => {

@@ -126,6 +126,19 @@ describe('analyzeChain: deep-merged object keys have contributors, no winner', (
     );
   });
 
+  it('a single contributor gets singular layer AND verb agreement', () => {
+    const verdict = analyzeChain(
+      def({ type: 'object', merge: 'deep', defaultValue: {} }),
+      [row('user', true, { a: 1 })]
+    );
+
+    expect(verdict.kind).toBe('composite');
+    if (verdict.kind !== 'composite') return;
+    expect(verdict.sentence).toBe(
+      'rt.example deep-merges key by key — 1 layer contributes; there is no single winner.'
+    );
+  });
+
   it('two team rows from different files are distinct contributors', () => {
     // A scope can repeat once per cloned team; rows are identified by scope
     // AND file, never scope alone.

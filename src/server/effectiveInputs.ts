@@ -1,4 +1,4 @@
-import { getRun, getSetting } from '@mattstack/rt-client';
+import { getDef, getRun, getSetting } from '@mattstack/rt-client';
 import { Hono } from 'hono';
 import { validator } from 'hono/validator';
 
@@ -169,6 +169,8 @@ export function mountEffectiveInputs(
 
       const config: ConfigDepRow[] = [];
       for (const key of CONFIG_DEPS) {
+        // CONFIG_DEPS is otherwise the only guard on this path, and it serializes full values onto the wire -- a secret def must never reach config.push.
+        if (getDef(key)?.secret) continue;
         try {
           const { value, provenance } = getSetting(key);
           config.push({ key, value, provenance });

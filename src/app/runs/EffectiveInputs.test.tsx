@@ -108,13 +108,45 @@ describe('EffectiveInputs', () => {
         'Effective inputs — what was this run actually told?'
       )
     ).toBeInTheDocument();
+    const pipelineSection = await screen.findByTestId(
+      'effective-inputs-pipeline'
+    );
+    expect(pipelineSection).toBeInTheDocument();
     expect(
-      await screen.findByTestId('effective-inputs-pipeline')
+      within(pipelineSection).getByText('Pipeline & stages')
     ).toBeInTheDocument();
+
+    const decisionsSection = screen.getByTestId('effective-inputs-decisions');
+    expect(decisionsSection).toBeInTheDocument();
     expect(
-      screen.getByTestId('effective-inputs-decisions')
+      within(decisionsSection).getByText('Decisions in force')
     ).toBeInTheDocument();
-    expect(screen.getByTestId('effective-inputs-config')).toBeInTheDocument();
+
+    const configSection = screen.getByTestId('effective-inputs-config');
+    expect(configSection).toBeInTheDocument();
+    expect(
+      within(configSection).getByText('Configuration')
+    ).toBeInTheDocument();
+  });
+
+  it('renders "unset" (never the literal "undefined") for a config row with no value property', async () => {
+    effectiveInputsGet.mockResolvedValue(
+      ok({
+        ...PAYLOAD,
+        config: [
+          {
+            key: 'rt.runaway',
+            provenance: [{ scope: 'default', file: null }],
+          },
+        ],
+      })
+    );
+
+    renderPanel();
+
+    const row = await screen.findByTestId('config-row-rt.runaway');
+    expect(within(row).getByText('unset')).toBeInTheDocument();
+    expect(within(row).queryByText('undefined')).not.toBeInTheDocument();
   });
 
   it('shows the config caveat caption verbatim', async () => {

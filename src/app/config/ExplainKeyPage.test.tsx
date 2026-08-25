@@ -1,8 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { renderWithProviders } from '@ui/storybook/test-utils';
+
+const explainGet = vi.fn();
+const setPost = vi.fn();
 
 vi.mock('../api', () => ({
   client: {
@@ -10,49 +14,47 @@ vi.mock('../api', () => ({
       settings: {
         defs: { $get: vi.fn() },
         explain: {
-          ':key': {
-            $get: vi.fn(async () => ({
-              ok: true,
-              status: 200,
-              json: async () => ({
-                def: {
-                  key: 'rt.runsPruneDays',
-                  type: 'number',
-                  scopes: ['user', 'machine'],
-                  merge: 'replace',
-                  secret: false,
-                  teamLocked: false,
-                  repoScoped: false,
-                  writable: true,
-                  description: 'Days before pruning.',
-                  hasDefault: true,
-                  defaultValue: 30,
-                },
-                rows: [
-                  { scope: 'default', file: null, present: true, value: 30 },
-                  {
-                    scope: 'user',
-                    file: '/stores/user.jsonc',
-                    present: true,
-                    value: 45,
-                  },
-                  {
-                    scope: 'machine',
-                    file: '/stores/machine.jsonc',
-                    present: false,
-                  },
-                ],
-              }),
-            })),
-          },
+          ':key': { $get: (...args: unknown[]) => explainGet(...args) },
         },
-        set: { $post: vi.fn() },
+        set: { $post: (...args: unknown[]) => setPost(...args) },
       },
     },
   },
 }));
 
 const { ExplainKeyPage } = await import('./ExplainKeyPage');
+
+function ok(data: unknown) {
+  return { ok: true, status: 200, json: async () => data };
+}
+
+function fail(status: number, error: string) {
+  return { ok: false, status, json: async () => ({ error }) };
+}
+
+const EXPLAIN_FIXTURE = {
+  def: {
+    key: 'rt.runsPruneDays',
+    type: 'number',
+    scopes: ['user', 'machine'],
+    merge: 'replace',
+    secret: false,
+    teamLocked: false,
+    repoScoped: false,
+    writable: true,
+    description: 'Days before pruning.',
+    hasDefault: true,
+    defaultValue: 30,
+  },
+  rows: [
+    { scope: 'default', file: null, present: true, value: 30 },
+    { scope: 'user', file: '/stores/user.jsonc', present: true, value: 45 },
+    { scope: 'machine', file: '/stores/machine.jsonc', present: false },
+  ],
+};
+
+// The default every test starts from; individual tests override setPost as needed.
+explainGet.mockResolvedValue(ok(EXPLAIN_FIXTURE));
 
 function renderExplain(settingKey = 'rt.runsPruneDays') {
   const queryClient = new QueryClient({
@@ -64,6 +66,23 @@ function renderExplain(settingKey = 'rt.runsPruneDays') {
     </QueryClientProvider>
   );
 }
+
+async function stageWithin(container: HTMLElement, newValue: string) {
+  await userEvent.click(
+    within(container).getByRole('button', { name: /edit/i })
+  );
+  const input = within(container).getByRole('textbox', { name: /new value/i });
+  await userEvent.clear(input);
+  await userEvent.type(input, newValue);
+  await userEvent.click(
+    within(container).getByRole('button', { name: /^stage$/i })
+  );
+}
+
+afterEach(() => {
+  vi.clearAllMocks();
+  explainGet.mockResolvedValue(ok(EXPLAIN_FIXTURE));
+});
 
 describe('ExplainKeyPage', () => {
   it('renders the plain sentence first', async () => {
@@ -112,5 +131,123 @@ describe('ExplainKeyPage', () => {
     expect(
       screen.getByText('rt settings explain rt.runsPruneDays')
     ).toBeInTheDocument();
+  });
+
+  it('applying one of two staged rows closes only that row\'s staged block', async () => {
+    setPost.mockResolvedValue(ok({ rows: [] }));
+
+    renderExplain();
+    await screen.findByText(/is 45 because the user layer sets it/);
+
+    const userRow = screen.getByTestId('layer-row-user:/stores/user.jsonc');
+    const machineRow = screen.getByTestId(
+      'layer-row-machine:/stores/machine.jsonc'
+    );
+
+    await stageWithin(userRow, '14');
+    await stageWithin(machineRow, '7');
+
+    expect(
+      within(userRow).getByTestId('layer-stage-user:/stores/user.jsonc')
+    ).toBeInTheDocument();
+    expect(
+      within(machineRow).getByTestId(
+        'layer-stage-machine:/stores/machine.jsonc'
+      )
+    ).toBeInTheDocument();
+
+    await userEvent.click(
+      within(userRow).getByRole('button', { name: /^apply$/i })
+    );
+
+    await waitFor(() => {
+      expect(
+        within(userRow).queryByTestId('layer-stage-user:/stores/user.jsonc')
+      ).not.toBeInTheDocument();
+    });
+    expect(
+      within(machineRow).getByTestId(
+        'layer-stage-machine:/stores/machine.jsonc'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('a failed apply shows the error only in the row that was applied', async () => {
+    setPost.mockResolvedValue(
+      fail(400, 'rt: two teams have local stores — pass --team')
+    );
+
+    renderExplain();
+    await screen.findByText(/is 45 because the user layer sets it/);
+
+    const userRow = screen.getByTestId('layer-row-user:/stores/user.jsonc');
+    const machineRow = screen.getByTestId(
+      'layer-row-machine:/stores/machine.jsonc'
+    );
+
+    await stageWithin(userRow, '14');
+    await stageWithin(machineRow, '7');
+
+    await userEvent.click(
+      within(machineRow).getByRole('button', { name: /^apply$/i })
+    );
+
+    await waitFor(() => {
+      expect(
+        within(machineRow).getByText(
+          'rt: two teams have local stores — pass --team'
+        )
+      ).toBeInTheDocument();
+    });
+    expect(
+      within(userRow).queryByText(
+        'rt: two teams have local stores — pass --team'
+      )
+    ).not.toBeInTheDocument();
+    expect(
+      within(machineRow).getByTestId(
+        'layer-stage-machine:/stores/machine.jsonc'
+      )
+    ).toBeInTheDocument();
+  });
+
+  it('discarding a failed staged change clears the error so re-staging starts clean', async () => {
+    setPost.mockResolvedValue(
+      fail(400, 'rt: two teams have local stores — pass --team')
+    );
+
+    renderExplain();
+    await screen.findByText(/is 45 because the user layer sets it/);
+
+    const userRow = screen.getByTestId('layer-row-user:/stores/user.jsonc');
+
+    await stageWithin(userRow, '14');
+    await userEvent.click(
+      within(userRow).getByRole('button', { name: /^apply$/i })
+    );
+
+    await waitFor(() => {
+      expect(
+        within(userRow).getByText(
+          'rt: two teams have local stores — pass --team'
+        )
+      ).toBeInTheDocument();
+    });
+
+    await userEvent.click(
+      within(userRow).getByRole('button', { name: /discard/i })
+    );
+
+    expect(
+      within(userRow).queryByTestId('layer-stage-user:/stores/user.jsonc')
+    ).not.toBeInTheDocument();
+
+    await stageWithin(userRow, '20');
+
+    expect(
+      within(userRow).queryByText(
+        'rt: two teams have local stores — pass --team'
+      )
+    ).not.toBeInTheDocument();
   });
 });

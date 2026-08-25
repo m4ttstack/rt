@@ -226,7 +226,7 @@ function ConfigRow({ row }: { row: ConfigDepRow }) {
           {row.key}
         </Text>
         <Text size="xs" c={text.muted}>
-          {shortValue(row.value)}
+          {'value' in row ? shortValue(row.value) : 'unset'}
         </Text>
         {strongest && <QuietBadge>{strongest.scope}</QuietBadge>}
       </Group>
