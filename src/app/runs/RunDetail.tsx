@@ -23,7 +23,7 @@ import { CommandProvenance } from './CommandProvenance';
 import { EffectiveInputs } from './EffectiveInputs';
 import { repoLabel } from './repoLabel';
 import { fieldsByKey, Timeline } from './Timeline';
-import { useMarkSeen, useRun } from './useRuns';
+import { useMarkSeen, useRun, useRunEvents } from './useRuns';
 
 interface HandoffFieldSpec {
   key: string;
@@ -157,6 +157,7 @@ function AbandonAction({ repo, runId }: { repo: string; runId: string }) {
 }
 
 function RunDetailContent({ repo, runId }: { repo: string; runId: string }) {
+  useRunEvents();
   const runQuery = useRun(repo, runId);
   const { data } = runQuery;
   const markSeen = useMarkSeen();

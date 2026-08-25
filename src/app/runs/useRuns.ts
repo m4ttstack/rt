@@ -43,7 +43,11 @@ export function useRunEvents() {
     const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
     const socket = new WebSocket(url);
     socket.onmessage = () => {
+      // Both surfaces: ['runs'] is the board list, ['run'] every open detail.
+      // The daemon emits run-updated on every pipeline write (emit_update in
+      // pipeline-state.sh), so this is what makes the detail page live.
       void queryClient.invalidateQueries({ queryKey: ['runs'] });
+      void queryClient.invalidateQueries({ queryKey: ['run'] });
     };
     return () => socket.close();
   }, [queryClient]);
@@ -72,6 +76,9 @@ export function useRun(repo: string, runId: string) {
       if (!res.ok) throw new Error(`run detail failed: ${res.status}`);
       return res.json();
     },
+    // The websocket is the live path; this is the same slow-poll safety net
+    // the board list uses, for a socket that dropped without us noticing.
+    refetchInterval: POLL_MS,
   });
 }
 
