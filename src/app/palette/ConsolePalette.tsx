@@ -4,6 +4,7 @@ import { CopyActionIcon } from '@ui/core';
 import { Icons } from '@ui/icons';
 import { Spotlight } from '@ui/spotlight';
 import type { SpotlightActionData } from '@ui/spotlight';
+import { useSettingsDefs } from '../config/useSettings';
 import { navigate } from '../router/navigation';
 import {
   BRANCH_CHECKOUT_LABEL,
@@ -57,11 +58,21 @@ const STATIC_ACTIONS: SpotlightActionData[] = [
  */
 export function ConsolePalette() {
   const runsQuery = useRunList();
+  const defsQuery = useSettingsDefs();
 
   const actions: SpotlightActionData[] = useMemo(() => {
     const runs = runsQuery.data?.runs ?? [];
-    return [...runs.map(runAction), ...STATIC_ACTIONS];
-  }, [runsQuery.data]);
+    const configActions: SpotlightActionData[] = (
+      defsQuery.data?.defs ?? []
+    ).map(def => ({
+      id: `config-${def.key}`,
+      label: `${def.key} — ${def.description}`,
+      keywords: [def.key, ...def.key.split('.'), 'config', 'setting'],
+      onClick: () => navigate(`/config/${def.key}`),
+      leftSection: <Icons.settings size={16} />,
+    }));
+    return [...runs.map(runAction), ...configActions, ...STATIC_ACTIONS];
+  }, [runsQuery.data, defsQuery.data]);
 
   return (
     <Spotlight

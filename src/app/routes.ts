@@ -5,6 +5,7 @@ export type AppRoute =
   | { name: 'run'; repo: string; runId: string }
   | { name: 'search' }
   | { name: 'wiring' }
+  | { name: 'config'; key: string }
   | { name: 'not-found' };
 
 export function matchRoute(pathname: string): AppRoute {
@@ -14,6 +15,9 @@ export function matchRoute(pathname: string): AppRoute {
 
   const run = matchPath('/runs/:repo/:runId', pathname);
   if (run) return { name: 'run', repo: run.repo, runId: run.runId };
+
+  const config = matchPath('/config/:key', pathname);
+  if (config) return { name: 'config', key: config.key };
 
   return { name: 'not-found' };
 }

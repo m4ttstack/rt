@@ -2,12 +2,13 @@ import type { RunSummary } from '@mattstack/rt-client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Spotlight } from '@ui/spotlight';
 import { renderWithProviders } from '@ui/storybook/test-utils';
 
 const runsGet = vi.fn();
+const useSettingsDefs = vi.fn();
 
 vi.mock('../api', () => ({
   client: {
@@ -15,6 +16,10 @@ vi.mock('../api', () => ({
       runs: { $get: (...args: unknown[]) => runsGet(...args) },
     },
   },
+}));
+
+vi.mock('../config/useSettings', () => ({
+  useSettingsDefs: (...args: unknown[]) => useSettingsDefs(...args),
 }));
 
 const { ConsolePalette } = await import('./ConsolePalette');
@@ -54,6 +59,10 @@ function renderPalette() {
 }
 
 const originalClipboard = navigator.clipboard;
+
+beforeEach(() => {
+  useSettingsDefs.mockReturnValue({ data: undefined });
+});
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -107,5 +116,31 @@ describe('ConsolePalette', () => {
 
     expect(writeText).toHaveBeenCalledWith('git checkout feat/x');
     expect(window.location.pathname).toBe(before);
+  });
+
+  it('adds a config action per setting def, labeled "<key> — <description>", navigating to /config/:key', async () => {
+    runsGet.mockResolvedValue(ok({ runs: [] }));
+    useSettingsDefs.mockReturnValue({
+      data: {
+        defs: [
+          { key: 'rt.runsPruneDays', description: 'Days before pruning.' },
+          { key: 'rt.otherKey', description: 'Some other setting.' },
+        ],
+      },
+    });
+
+    renderPalette();
+    Spotlight.open();
+
+    const action = await screen.findByText(
+      'rt.runsPruneDays — Days before pruning.'
+    );
+    expect(
+      screen.getByText('rt.otherKey — Some other setting.')
+    ).toBeInTheDocument();
+
+    await userEvent.click(action);
+
+    expect(window.location.pathname).toBe('/config/rt.runsPruneDays');
   });
 });

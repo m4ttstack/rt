@@ -3,6 +3,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 
 import { GenericError, PageShell } from '@ui/core';
 import { ConsoleChrome, type ConsoleSection } from './chrome/ConsoleChrome';
+import { ExplainKeyPage } from './config/ExplainKeyPage';
 import { NotFoundPage } from './NotFoundPage';
 import { ConsolePalette } from './palette/ConsolePalette';
 import { usePath } from './router/navigation';
@@ -18,6 +19,7 @@ function chromeSection(route: AppRoute): ConsoleSection | null {
   if (route.name === 'search') return 'search';
   if (route.name === 'wiring') return 'wiring';
   if (route.name === 'not-found') return null;
+  if (route.name === 'config') return null;
   return 'runs';
 }
 
@@ -60,6 +62,8 @@ function RouteContent({ route }: { route: AppRoute }) {
       return <RunSearch />;
     case 'wiring':
       return <WiringMap />;
+    case 'config':
+      return <ExplainKeyPage settingKey={route.key} />;
     case 'not-found':
       return (
         <PageShell>
