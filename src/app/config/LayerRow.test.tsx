@@ -56,6 +56,21 @@ async function stageChange(newValue: string) {
   await userEvent.click(screen.getByRole('button', { name: /^stage$/i }));
 }
 
+function renderStagedRow() {
+  const onApply = vi.fn();
+  const utils = renderWithProviders(
+    <LayerRow
+      def={NUMBER_DEF}
+      row={USER_ROW}
+      role="winner"
+      onApply={onApply}
+      applying={false}
+      applyError={null}
+    />
+  );
+  return { onApply, ...utils };
+}
+
 describe('LayerRow: staged edit-at-layer', () => {
   test('staging shows the delta, the exact command, and the staged copy; onApply is not yet called', async () => {
     const onApply = vi.fn();
@@ -145,6 +160,68 @@ describe('LayerRow: staged edit-at-layer', () => {
     );
 
     await stageChange('14');
+
+    const panel = screen.getByTestId('layer-stage-user:/stores/user.jsonc');
+    expect(panel).toHaveTextContent(
+      'rt: two teams have local stores — pass --team'
+    );
+  });
+
+  test('the staged block closes on a successful apply, restoring the edit affordance', async () => {
+    const { onApply, rerender } = renderStagedRow();
+    await stageChange('14');
+
+    rerender(
+      <LayerRow
+        def={NUMBER_DEF}
+        row={USER_ROW}
+        role="winner"
+        onApply={onApply}
+        applying
+        applyError={null}
+      />
+    );
+    rerender(
+      <LayerRow
+        def={NUMBER_DEF}
+        row={USER_ROW}
+        role="winner"
+        onApply={onApply}
+        applying={false}
+        applyError={null}
+      />
+    );
+
+    expect(
+      screen.queryByTestId('layer-stage-user:/stores/user.jsonc')
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /edit/i })).toBeInTheDocument();
+  });
+
+  test('a failed apply leaves the staged block up, with the error shown, instead of closing', async () => {
+    const { onApply, rerender } = renderStagedRow();
+    await stageChange('14');
+
+    rerender(
+      <LayerRow
+        def={NUMBER_DEF}
+        row={USER_ROW}
+        role="winner"
+        onApply={onApply}
+        applying
+        applyError={null}
+      />
+    );
+    rerender(
+      <LayerRow
+        def={NUMBER_DEF}
+        row={USER_ROW}
+        role="winner"
+        onApply={onApply}
+        applying={false}
+        applyError="rt: two teams have local stores — pass --team"
+      />
+    );
 
     const panel = screen.getByTestId('layer-stage-user:/stores/user.jsonc');
     expect(panel).toHaveTextContent(

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   ActionIcon,
@@ -88,11 +88,22 @@ export function LayerRow({
     setEditing(true);
   }
 
-  function discard() {
+  const discard = useCallback(() => {
     setDraft(initialDraft(def, row));
     setStaged(false);
     setEditing(false);
-  }
+  }, [def, row]);
+
+  // Props carry no explicit success signal -- ExplainKeyPage passes only
+  // applying/applyError, and this row stays mounted (stably keyed) across
+  // the post-apply refetch. So the falling edge of `applying` with no
+  // `applyError` IS success, and is the only way this component can learn
+  // Apply worked and close its own stale staged block.
+  const wasApplying = useRef(applying);
+  useEffect(() => {
+    if (wasApplying.current && !applying && !applyError) discard();
+    wasApplying.current = applying;
+  }, [applying, applyError, discard]);
 
   return (
     <Paper
