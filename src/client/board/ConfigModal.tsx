@@ -20,13 +20,9 @@ import {
   type LeafType,
 } from "./config-shapes.ts";
 
-/** The scope hook plus 0.1.2's `unset`, feature-detected so ↺ simply stays
-    hidden on a kit without it. */
-type ConfigStore = SettingsScopeState & { unset?: (key: string, scope: string) => Promise<string | null> };
-
 const SAVED_FLASH_MS = 1400;
 
-function useRowSave(store: ConfigStore, def: ConfigDef) {
+function useRowSave(store: SettingsScopeState, def: ConfigDef) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
@@ -55,7 +51,7 @@ function useRowSave(store: ConfigStore, def: ConfigDef) {
     saved,
     setError,
     save: (value: unknown) => run(() => store.set(def.key, scope, value)),
-    clear: store.unset ? () => run(() => store.unset!(def.key, scope)) : undefined,
+    clear: () => run(() => store.unset(def.key, scope)),
   };
 }
 
@@ -322,7 +318,7 @@ function CompositeControl({
   }
 }
 
-function SettingRow({ def, store, onOpenRoster }: { def: ConfigDef; store: ConfigStore; onOpenRoster: () => void }) {
+function SettingRow({ def, store, onOpenRoster }: { def: ConfigDef; store: SettingsScopeState; onOpenRoster: () => void }) {
   const kind = rowKind(def);
   const row = useRowSave(store, def);
   const value = def.effective.value;
@@ -362,8 +358,8 @@ function SettingRow({ def, store, onOpenRoster }: { def: ConfigDef; store: Confi
       <div className="tui-config-head">
         <span className="tui-config-keyname">{def.key}</span>
         <span className="tui-config-badge">{def.secret ? "secret" : scopeLabel(def.scopes[0] ?? "user")}</span>
-        {set && row.clear && kind !== "roster" && (
-          <button className="tui-config-clear" title="clear from store" aria-label={`clear ${def.key}`} disabled={row.busy} onClick={() => void row.clear!()}>
+        {set && kind !== "roster" && (
+          <button className="tui-config-clear" title="clear from store" aria-label={`clear ${def.key}`} disabled={row.busy} onClick={() => void row.clear()}>
             ↺
           </button>
         )}
@@ -385,7 +381,7 @@ function SettingRow({ def, store, onOpenRoster }: { def: ConfigDef; store: Confi
     which manages the team roster and owns the two roster keys shown here
     read-only. */
 function ConfigModal({ onClose, onOpenRoster }: { onClose: () => void; onOpenRoster: () => void }) {
-  const store: ConfigStore = useSettingsScope("board.");
+  const store = useSettingsScope("board.");
   const [query, setQuery] = useState("");
   const groups = groupByScope(filterDefs(store.defs, query));
 
