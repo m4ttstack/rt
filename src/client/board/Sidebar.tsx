@@ -8,6 +8,7 @@ function Sidebar({
   active,
   onPick,
   onSettings,
+  onConfig,
   scopeUncovered,
 }: {
   members: RosterMember[];
@@ -15,6 +16,7 @@ function Sidebar({
   active: string;
   onPick: (member: string) => void;
   onSettings: () => void;
+  onConfig: () => void;
   /** Authors demanded from rt but not yet backfilled -- their counts may be
       undercounts, so the row says so instead of quietly showing a low number. */
   scopeUncovered: string[];
@@ -28,6 +30,9 @@ function Sidebar({
         </button>
         <button className="tui-side-gear" onClick={onSettings} title="manage roster — check people in/out" aria-label="manage roster">
           {ICONS.people}
+        </button>
+        <button className="tui-side-gear" onClick={onConfig} title="board settings" aria-label="board settings">
+          {ICONS.settings}
         </button>
       </div>
       {members.map((m) => (

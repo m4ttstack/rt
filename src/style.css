@@ -737,3 +737,18 @@
 
 /* rows are clickable (open MR); local rows also right-click for actions */
 .tui-row[data-local="1"], .tui-card[data-local="1"] { cursor: context-menu; }
+
+/* ── board settings (ConfigModal) ─────────────────────────────────────────── */
+.tui-config-key { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; background: none; border: none; cursor: pointer; padding: 6px 4px; text-align: left; }
+.tui-config-keyname { font-weight: 600; }
+.tui-config-key-row + .tui-config-key-row { border-top: 1px solid var(--border); }
+.tui-config-rows { width: 100%; border-collapse: collapse; font-size: 0.85em; margin: 4px 0; }
+.tui-config-rows td { padding: 2px 8px 2px 4px; vertical-align: top; }
+.tui-config-scope { font-weight: 600; white-space: nowrap; }
+.tui-config-value { word-break: break-all; }
+.tui-config-file { opacity: 0.6; white-space: nowrap; }
+.tui-config-absent { opacity: 0.45; }
+.tui-config-edit-row { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
+.tui-config-edit-row input { flex: 1; }
+.tui-config-error { color: var(--red, #d66); font-size: 0.85em; }
+.tui-config-editor { padding: 0 4px 8px; }

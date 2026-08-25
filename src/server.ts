@@ -16,6 +16,7 @@ import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } fro
 import { readProjectMRs, readDiscussions, subscribe } from "@mattstack/rt-client";
 import { SnapshotCache } from "./cache.ts";
 import { isLocalRequest } from "./local.ts";
+import { settingsHandler } from "@mattstack/settings-kit/server";
 import { readReviewStates, pruneReviewStates, reviewFilePath, writeReviewState, parseReviewRequestBody, attachReviews, readReviewReport } from "./review-state.ts";
 import { readRespondStates, pruneRespondStates, respondFilePath, writeRespondState, parseRespondRequestBody, attachResponds } from "./respond-state.ts";
 import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, parseDoctorRequestBody, attachDoctors } from "./doctor-state.ts";
@@ -444,6 +445,14 @@ const httpServer = Bun.serve({
       case "/app.js":
         return new Response(appJs, { headers: { "content-type": "text/javascript; charset=utf-8" } });
     }
+    // Store-backed settings for the ConfigModal — settings-kit answers its
+    // own routes and falls through for everything else. Writes ride board's
+    // locality rule; reads are as public as /data.json already is.
+    if (pathname.startsWith("/api/settings/")) {
+      const settingsRes = await settingsHandler(req, { allowWrite: isLocalRequest });
+      if (settingsRes) return settingsRes;
+    }
+
     // Resolved once per request, off the memoized getters above -- cheap
     // after the first daemon round trip, and every branch below expects a
     // plain string|null the way the removed module-level consts used to read.

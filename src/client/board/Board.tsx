@@ -23,6 +23,7 @@ import { SelectionBar } from "./SelectionBar.tsx";
 import { RowView } from "./RowView.tsx";
 import { GridView } from "./GridView.tsx";
 import { SettingsModal } from "./SettingsModal.tsx";
+import { ConfigModal } from "./ConfigModal.tsx";
 import { RowMenu } from "./RowMenu.tsx";
 import { ReviewModal } from "./ReviewModal.tsx";
 import { DraftModal } from "./DraftModal.tsx";
@@ -121,6 +122,7 @@ export function Board() {
   const clearSelection = useCallback(() => setSelected(new Set()), []);
 
   const [showSettings, setShowSettings] = useState(false);
+  const [showConfig, setShowConfig] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
   // Row action menu (right-click) and transient toasts.
@@ -445,6 +447,10 @@ export function Board() {
     setMenuOpen(false);
     setShowSettings(true);
   };
+  const openConfig = () => {
+    setMenuOpen(false);
+    setShowConfig(true);
+  };
   const controlProps = {
     state,
     update,
@@ -472,6 +478,7 @@ export function Board() {
         active={state.member}
         onPick={(member) => update({ member })}
         onSettings={openSettings}
+        onConfig={openConfig}
         scopeUncovered={data.scopeUncovered}
       />
 
@@ -572,6 +579,7 @@ export function Board() {
               setMenuOpen(false);
             }}
             onSettings={openSettings}
+            onConfig={openConfig}
             scopeUncovered={data.scopeUncovered}
           />
           <div className="tui-drawer-controls">
@@ -592,6 +600,8 @@ export function Board() {
           onClose={() => setShowSettings(false)}
         />
       )}
+
+      {showConfig && <ConfigModal onClose={() => setShowConfig(false)} />}
 
       {rowMenu && (
         <RowMenu
