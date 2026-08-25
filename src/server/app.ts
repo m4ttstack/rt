@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 import { HTTPException } from 'hono/http-exception';
 
 import pkg from '../../package.json' with { type: 'json' };
+import { mountEffectiveInputs } from './effectiveInputs';
 import { runs } from './runs';
 import { settings } from './settings';
 import { mountSkills } from './skills';
@@ -17,7 +18,8 @@ const routes = new Hono()
   )
   .route('/', runs)
   .route('/', settings)
-  .route('/', mountSkills(new Hono()));
+  .route('/', mountSkills(new Hono()))
+  .route('/', mountEffectiveInputs(new Hono()));
 
 /** The 404 every unmatched route falls to. `c.notFound()` would produce a
     response the RPC client cannot type. */
