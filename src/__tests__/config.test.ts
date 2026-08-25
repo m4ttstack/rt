@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { parseConfig, saveSwitchboardUrl, setHiddenInRaw } from "../config.ts";
+import { daemonRepoField, parseConfig, repoIdentityField, saveSwitchboardUrl, setHiddenInRaw } from "../config.ts";
 
 const base = {
   gitlabHost: "https://gitlab.com",
@@ -192,5 +192,20 @@ describe("setHiddenInRaw", () => {
 
   test("throws for an unknown member", () => {
     expect(() => setHiddenInRaw(raw, "carol", true)).toThrow(/unknown member/);
+  });
+});
+
+describe("daemonRepoField", () => {
+  test("a host/path config value is sent to the daemon as a serialized identity", () => {
+    const payload = daemonRepoField({ rtRepos: { "/proj": "gitlab.com/group/repo" } }, "/proj");
+    expect(payload).toBe("remote:gitlab.com%2Fgroup%2Frepo");
+  });
+
+  test("an unmapped project path returns null", () => {
+    expect(daemonRepoField({ rtRepos: {} }, "/proj")).toBeNull();
+  });
+
+  test("host casing is normalized, path casing is preserved", () => {
+    expect(repoIdentityField("GitLab.com/Group/Repo")).toBe("remote:gitlab.com%2FGroup%2FRepo");
   });
 });

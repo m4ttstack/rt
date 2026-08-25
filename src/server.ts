@@ -6,7 +6,7 @@ import { getClientAssets } from "./client-assets.ts";
 import styleCss from "./style.css" with { type: "text" };
 import faviconSvg from "./favicon.svg" with { type: "text" };
 import type { PullRequest, MRDetail } from "@mattstack/glance";
-import { loadConfig, loadGitLabToken, loadSlackToken, loadSwitchboardToken, loadSwitchboardAdminToken, saveMemberHidden, saveSwitchboardUrl, parseConfig, CONFIG_PATH } from "./config.ts";
+import { loadConfig, loadGitLabToken, loadSlackToken, loadSwitchboardToken, loadSwitchboardAdminToken, saveMemberHidden, saveSwitchboardUrl, parseConfig, CONFIG_PATH, daemonRepoField, repoIdentityField } from "./config.ts";
 import { memoizeAsync } from "./memoize-async.ts";
 import { resolveBoardSkill, type BoardSkillKind } from "./manifest-bindings.ts";
 import { upsertEnvKeys } from "./env-file.ts";
@@ -196,12 +196,12 @@ async function fetchTeamMRs(force = false): Promise<TeamMRsResult> {
   const reads: SyncScopeRead[] = [];
   const demand = boardDemand(config, port);
   for (const projectPath of config.projects) {
-    const repoName = config.rtRepos[projectPath];
-    if (!repoName) {
+    const repoId = daemonRepoField(config, projectPath);
+    if (!repoId) {
       errors.push(`${projectPath}: no rtRepos mapping in config.json`);
       continue;
     }
-    const res = await readProjectMRs(repoName, force ? 0 : undefined, {}, demand);
+    const res = await readProjectMRs(repoId, force ? 0 : undefined, {}, demand);
     if (!res.ok || !res.data) {
       errors.push(`${projectPath}: ${res.error ?? "empty daemon response"}`);
       continue;
@@ -250,7 +250,9 @@ async function enrichReviewerComments(mrs: BoardMR[]): Promise<void> {
       chunk.map(async (m) => {
         try {
           if (!m.rtRepo) return;
-          const res = await readDiscussions(m.rtRepo, m.iid);
+          const repoId = repoIdentityField(m.rtRepo);
+          if (!repoId) return; // keep the coarse fallback — same as any other skip in this loop
+          const res = await readDiscussions(repoId, m.iid);
           if (!res.ok || !res.data) return; // keep the coarse fallback
           const detail = { discussions: res.data.discussions } as MRDetail;
           const { threads, comments } = summarizeDiscussions(detail, m.author.username, config.botUsernames);
@@ -286,9 +288,9 @@ async function fetchMemberMRs(username: string): Promise<BoardMR[]> {
   const out: PullRequest[] = [];
   const errors: string[] = [];
   for (const projectPath of config.projects) {
-    const repoName = config.rtRepos[projectPath];
-    if (!repoName) { errors.push(`${projectPath}: no rtRepos mapping in config.json`); continue; }
-    const res = await readProjectMRs(repoName, 20_000);
+    const repoId = daemonRepoField(config, projectPath);
+    if (!repoId) { errors.push(`${projectPath}: no rtRepos mapping in config.json`); continue; }
+    const res = await readProjectMRs(repoId, 20_000);
     if (!res.ok || !res.data) { errors.push(`${projectPath}: ${res.error ?? "empty daemon response"}`); continue; }
     for (const entry of Object.values(res.data.mrs)) {
       if (entry.pr.state === "opened" && entry.pr.author?.username === username) out.push(entry.pr);
@@ -584,7 +586,9 @@ const httpServer = Bun.serve({
         const iid = Number(searchParams.get("iid"));
         const author = searchParams.get("author");
         if (!repo || !iid) return new Response("expected repo & iid", { status: 400 });
-        const res = await readDiscussions(repo, iid);
+        const repoId = repoIdentityField(repo);
+        if (!repoId) return new Response(`"${repo}" is not a recognized repo identity`, { status: 400 });
+        const res = await readDiscussions(repoId, iid);
         if (!res.ok || !res.data) {
           return new Response(`discussions read failed: ${res.error ?? "empty daemon response"}`, { status: 502 });
         }
@@ -1410,7 +1414,13 @@ let relayTimer: ReturnType<typeof setTimeout> | undefined;
 const stopRelay = FIXTURE_DIR ? () => {} : subscribe((type, data) => {
   if (!RELAY_TYPES.has(type)) return;
   const repoName = (data as { repoName?: string } | null)?.repoName;
-  if (!repoName || !Object.values(config.rtRepos).includes(repoName)) return;
+  // Relay events are keyed by the serialized identity now — compare
+  // like-for-like. Recomputed per event (not cached): config hot-reloads on
+  // config.json edits, so a cached Set could serve a stale allowlist.
+  const trackedIds = new Set(
+    Object.values(config.rtRepos).map(repoIdentityField).filter((id): id is string => id !== null),
+  );
+  if (!repoName || !trackedIds.has(repoName)) return;
   clearTimeout(relayTimer);
   relayTimer = setTimeout(() => {
     void cache.refreshNow().then(sseNudge).catch(() => {});

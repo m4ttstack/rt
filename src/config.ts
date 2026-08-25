@@ -1,8 +1,37 @@
 import { readFileSync, renameSync, writeFileSync } from "fs";
 import { join } from "path";
 import { APP_ROOT } from "./app-root.ts";
-import { getSetting, setSetting } from "@mattstack/rt-client";
+import { getSetting, setSetting, identityFromRemote, serializeIdentity, type RepoIdentity } from "@mattstack/rt-client";
 import { readBoardSecrets, type BoardSecretsData, type BoardSecretsDeps } from "./board-secrets.ts";
+
+/** A bare "host/path" config value (not a full remote URL) never matches
+    identityFromRemote's URL/scp-like parsing — it has no scheme and no
+    colon. Treat it as an already-normalized remote identity directly,
+    lowercasing only the host segment (parity with normalizeRemote). */
+function hostPathToIdentity(value: string): RepoIdentity | null {
+  const slash = value.indexOf("/");
+  if (slash <= 0 || slash === value.length - 1) return null;
+  const host = value.slice(0, slash).toLowerCase();
+  const path = value.slice(slash + 1);
+  return { kind: "remote", id: `${host}/${path}` };
+}
+
+/** Encode one rtRepos value for the daemon boundary: identityFromRemote
+    first (covers a pasted full remote URL, and any fork/multi-remote
+    override keyed on that exact string), else the bare host/path adapter.
+    Null propagates — an unmapped or malformed value must surface as a
+    fetchError, never reach the identity-only daemon as a bare string. */
+export function repoIdentityField(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const identity = identityFromRemote(value) ?? hostPathToIdentity(value);
+  return identity ? serializeIdentity(identity) : null;
+}
+
+/** Same, keyed by GitLab project path through config.rtRepos — the shape
+    every server.ts call site actually has in hand. */
+export function daemonRepoField(config: Pick<BoardConfig, "rtRepos">, projectPath: string): string | null {
+  return repoIdentityField(config.rtRepos[projectPath]);
+}
 
 export interface Member {
   username: string;
@@ -51,10 +80,11 @@ export interface BoardConfig {
       name, case-insensitive). Additive to the built-in heuristic — for named
       integration bots that don't match a bot-username pattern. */
   botUsernames: string[];
-  /** rt repo names keyed by GitLab project path ("group/project" → the name
-      registered in ~/.mattstack/rt/repos.json). The board can only show projects mapped
-      here whose repo has the project-mrs grant; an unmapped project surfaces
-      an instructive fetchError. */
+  /** rt repo identities keyed by GitLab project path ("group/project" → an
+      operator-authored `host/path` string, e.g. "gitlab.com/group/repo").
+      The board can only show projects mapped here whose repo has the
+      project-mrs grant; an unmapped project surfaces an instructive
+      fetchError. */
   rtRepos: Record<string, string>;
   slack: SlackConfig;
   /** Peer-boards relay. Empty url disables every peer feature (publish, poll,
