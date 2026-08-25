@@ -739,16 +739,57 @@
 .tui-row[data-local="1"], .tui-card[data-local="1"] { cursor: context-menu; }
 
 /* ── board settings (ConfigModal) ─────────────────────────────────────────── */
-.tui-config-key { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; background: none; border: none; cursor: pointer; padding: 6px 4px; text-align: left; }
-.tui-config-keyname { font-weight: 600; }
-.tui-config-key-row + .tui-config-key-row { border-top: 1px solid var(--border); }
-.tui-config-rows { width: 100%; border-collapse: collapse; font-size: 0.85em; margin: 4px 0; }
-.tui-config-rows td { padding: 2px 8px 2px 4px; vertical-align: top; }
-.tui-config-scope { font-weight: 600; white-space: nowrap; }
-.tui-config-value { word-break: break-all; }
-.tui-config-file { opacity: 0.6; white-space: nowrap; }
-.tui-config-absent { opacity: 0.45; }
-.tui-config-edit-row { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
-.tui-config-edit-row input { flex: 1; }
-.tui-config-error { color: var(--red, #d66); font-size: 0.85em; }
-.tui-config-editor { padding: 0 4px 8px; }
+.tui-config-modal { max-width: min(760px, 94vw); }
+.tui-config-filter { width: 100%; margin-bottom: 0.4rem; }
+.tui-config-group {
+  margin: 0.9rem 0 0.25rem; color: var(--muted); font-size: 0.68rem; font-weight: 600;
+  text-transform: uppercase; letter-spacing: 0.07em;
+}
+.tui-config-list { list-style: none; margin: 0; padding: 0; }
+.tui-config-row { position: relative; padding: 7px 8px 8px 14px; border-radius: 6px; }
+.tui-config-row + .tui-config-row { border-top: 1px solid var(--border-soft); }
+.tui-config-row:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+/* the bar means "present in a store" — board.* rows carry no registry
+   defaults, so the alternative is the app-side fallback, not a default */
+.tui-config-row.set::before {
+  content: ""; position: absolute; left: 4px; top: 9px; bottom: 9px; width: 2px;
+  border-radius: 1px; background: var(--accent);
+}
+.tui-config-head { display: flex; align-items: center; gap: 8px; }
+.tui-config-keyname { font-weight: 600; font-family: var(--font-mono); font-size: 0.84rem; }
+.tui-config-badge {
+  margin-left: auto; color: var(--muted); font-size: 0.66rem; white-space: nowrap;
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.tui-config-clear { background: none; border: none; color: var(--muted); cursor: pointer; padding: 0 4px; font: inherit; line-height: 1; }
+.tui-config-clear:hover:not(:disabled) { color: var(--fg); }
+.tui-config-clear:disabled { opacity: 0.5; cursor: default; }
+.tui-config-desc { margin: 2px 0 6px; color: var(--muted); font-size: 0.74rem; }
+.tui-config-control { display: flex; align-items: center; gap: 8px; }
+.tui-config-control > .tui-invite-input { flex: 1; max-width: 440px; }
+.tui-config-control .tui-invite-input.dirty { border-color: var(--accent); }
+.tui-config-control select {
+  font: inherit; font-size: 0.8rem; padding: 3px 6px; color: var(--fg);
+  background: var(--card); border: 1px solid var(--border); border-radius: 6px;
+}
+.tui-config-status { min-width: 4.5em; color: var(--dot-ok); font-size: 0.72rem; white-space: nowrap; }
+.tui-config-status.busy { color: var(--muted); }
+.tui-config-error { margin: 4px 0 0; color: var(--red, #d66); font-size: 0.78rem; }
+.tui-config-value { font-family: var(--font-mono); font-size: 0.78rem; color: var(--muted); word-break: break-all; }
+.tui-config-flag { margin-left: 6px; color: var(--amber); font-family: var(--font-sans); font-size: 0.72rem; }
+.tui-config-link { background: none; border: none; padding: 0; color: var(--accent); cursor: pointer; font: inherit; font-size: 0.78rem; }
+.tui-config-leaves { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.tui-config-leaf { display: grid; grid-template-columns: 11em 1fr; gap: 10px; align-items: center; }
+.tui-config-leaf-label { font-family: var(--font-mono); font-size: 0.76rem; color: var(--muted); }
+.tui-config-chips { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; flex: 1; }
+.tui-config-chip {
+  display: inline-flex; align-items: center; gap: 5px; padding: 1px 7px;
+  font-family: var(--font-mono); font-size: 0.76rem;
+  background: var(--card); border: 1px solid var(--border); border-radius: 999px;
+}
+.tui-config-chip button { background: none; border: none; padding: 0; color: var(--muted); cursor: pointer; font: inherit; line-height: 1; }
+.tui-config-chip button:hover:not(:disabled) { color: var(--red); }
+.tui-config-chips .tui-invite-input { flex: 0 1 150px; min-width: 90px; }
+.tui-config-pairs { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.tui-config-pair { display: grid; grid-template-columns: 1fr 1fr 1.4em; gap: 8px; align-items: center; }
+

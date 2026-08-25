@@ -601,7 +601,15 @@ export function Board() {
         />
       )}
 
-      {showConfig && <ConfigModal onClose={() => setShowConfig(false)} />}
+      {showConfig && (
+        <ConfigModal
+          onClose={() => setShowConfig(false)}
+          onOpenRoster={() => {
+            setShowConfig(false);
+            setShowSettings(true);
+          }}
+        />
+      )}
 
       {rowMenu && (
         <RowMenu
