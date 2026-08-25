@@ -616,6 +616,34 @@ export interface PullRequestsSnapshot {
   items: PullRequest[];
 }
 
+/** One approval rule as returned by GitLab's `approvalState`. */
+export interface ApprovalRuleLite {
+  type: string;
+  approved: boolean;
+  section: string | null;
+}
+
+/** Approval rules for a single MR, keyed by IID rather than global ID. */
+export interface MRApprovalRules {
+  iid: number;
+  rules: ApprovalRuleLite[];
+}
+
+/**
+ * Options for `GitLabProvider.fetchApprovalRules`. `updatedAfter` and `iids`
+ * are mutually exclusive: the former drives windowed discovery, the latter
+ * the targeted events-heal path.
+ */
+export interface FetchApprovalRulesOptions {
+  projectPath: string;
+  /** ISO timestamp; windowed mode. Mutually exclusive with iids. */
+  updatedAfter?: string;
+  /** Targeted mode: just these MRs (the events-heal path). */
+  iids?: number[];
+  /** Page size, default 100. */
+  pageSize?: number;
+}
+
 /** Feed event emitted as `feed_event` (incremental) or inside `feed_snapshot` (initial batch). */
 export interface FeedEvent {
   /** Stable event ID, e.g. "note-1234" or "projEvent-5678". */
