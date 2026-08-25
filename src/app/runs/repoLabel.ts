@@ -1,4 +1,4 @@
-import { parseIdentity } from '@mattstack/rt-client';
+import { parseIdentity } from '@mattstack/rt-client/identity';
 
 /** Human label for a repo identity: last path segment for a `remote` id
     (the repo name, dropping host/group), basename for a `path` id. Falls

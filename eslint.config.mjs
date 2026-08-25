@@ -13,6 +13,45 @@ const mantineWall = (pkg, barrel) => ({
   message: `Import from '${barrel}' instead. The kit barrel adds fixed defaults and overrides.`,
 });
 
+// One import wall, two scopes: the base rule for all non-ui src, and an
+// app-only extension below that appends patterns browser code alone must
+// obey. Extending, not redefining, keeps the two lists from drifting.
+const importWall = {
+  paths: [
+    mantineWall('@mantine/core', '@ui/core'),
+    mantineWall('@mantine/hooks', '@ui/hooks'),
+    mantineWall('@mantine/form', '@ui/forms'),
+    mantineWall('@mantine/modals', '@ui/modals'),
+    mantineWall('@mantine/notifications', '@ui/notifications'),
+    mantineWall('@mantine/spotlight', '@ui/spotlight'),
+    mantineWall('@mantine/code-highlight', '@ui/lazy'),
+    mantineWall('@mantine/dates', '@ui/core'),
+    {
+      name: 'lucide-react',
+      message: "Use the icon registry: import { Icon } from '@ui/icons'.",
+    },
+  ],
+  patterns: [
+    {
+      group: ['react-icons', 'react-icons/*'],
+      message: 'react-icons is banned. Use @ui/icons.',
+    },
+    {
+      group: ['codemirror', '@codemirror/*'],
+      message:
+        "Import from '@ui/lazy' instead. CodeMirror is only ever imported inside its lazy loader (src/ui/lazy/codemirror), so it stays out of the entry bundle.",
+    },
+    {
+      group: ['**/server/**'],
+      importNamePattern: '.*',
+      allowTypeImports: true,
+      message:
+        'The server runs on Bun and must never reach the browser bundle. ' +
+        'Only `import type` from src/server is allowed.',
+    },
+  ],
+};
+
 export default tseslint.config(
   // Codegen output (scripts/generate-embedded-assets.ts) -- gitignored,
   // regenerated on every build:binary run, never hand-edited or reviewed.
@@ -52,41 +91,29 @@ export default tseslint.config(
       // below; this template's own app still uses style= freely, so turning
       // it on here would flag existing demo code -- it ships for consumers.
       'local/no-inline-styles': 'off',
+      'no-restricted-imports': ['error', importWall],
+    },
+  },
+  {
+    // App code only: this block REPLACES the rule above for these files
+    // (flat config is last-wins per rule), so it must extend importWall
+    // rather than list its own patterns, or the two walls drift.
+    files: ['src/app/**/*.{ts,tsx}'],
+    rules: {
       'no-restricted-imports': [
         'error',
         {
-          paths: [
-            mantineWall('@mantine/core', '@ui/core'),
-            mantineWall('@mantine/hooks', '@ui/hooks'),
-            mantineWall('@mantine/form', '@ui/forms'),
-            mantineWall('@mantine/modals', '@ui/modals'),
-            mantineWall('@mantine/notifications', '@ui/notifications'),
-            mantineWall('@mantine/spotlight', '@ui/spotlight'),
-            mantineWall('@mantine/code-highlight', '@ui/lazy'),
-            mantineWall('@mantine/dates', '@ui/core'),
-            {
-              name: 'lucide-react',
-              message:
-                "Use the icon registry: import { Icon } from '@ui/icons'.",
-            },
-          ],
+          ...importWall,
           patterns: [
+            ...importWall.patterns,
             {
-              group: ['react-icons', 'react-icons/*'],
-              message: 'react-icons is banned. Use @ui/icons.',
-            },
-            {
-              group: ['codemirror', '@codemirror/*'],
-              message:
-                "Import from '@ui/lazy' instead. CodeMirror is only ever imported inside its lazy loader (src/ui/lazy/codemirror), so it stays out of the entry bundle.",
-            },
-            {
-              group: ['**/server/**'],
+              regex: '^@mattstack/rt-client$',
               importNamePattern: '.*',
               allowTypeImports: true,
               message:
-                'The server runs on Bun and must never reach the browser bundle. ' +
-                'Only `import type` from src/server is allowed.',
+                'The rt-client barrel evaluates the settings resolver (fs, os.homedir) at module ' +
+                'scope and crashes the browser bundle. Value imports in app code come from ' +
+                "'@mattstack/rt-client/identity'; everything else is `import type` only.",
             },
           ],
         },

@@ -1,4 +1,4 @@
-import { serializeIdentity } from '@mattstack/rt-client';
+import { serializeIdentity } from '@mattstack/rt-client/identity';
 
 import { matchPath } from './router/matchPath';
 
