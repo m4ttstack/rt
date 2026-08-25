@@ -211,6 +211,43 @@ describe('ExplainKeyPage', () => {
     ).toBeInTheDocument();
   });
 
+  it("a different row opening its edit does not clear the failed row's error", async () => {
+    setPost.mockResolvedValue(
+      fail(400, 'rt: two teams have local stores — pass --team')
+    );
+
+    renderExplain();
+    await screen.findByText(/is 45 because the user layer sets it/);
+
+    const userRow = screen.getByTestId('layer-row-user:/stores/user.jsonc');
+    const machineRow = screen.getByTestId(
+      'layer-row-machine:/stores/machine.jsonc'
+    );
+
+    await stageWithin(userRow, '14');
+    await userEvent.click(
+      within(userRow).getByRole('button', { name: /^apply$/i })
+    );
+
+    await waitFor(() => {
+      expect(
+        within(userRow).getByText(
+          'rt: two teams have local stores — pass --team'
+        )
+      ).toBeInTheDocument();
+    });
+
+    await userEvent.click(
+      within(machineRow).getByRole('button', { name: /edit/i })
+    );
+
+    expect(
+      within(userRow).getByText(
+        'rt: two teams have local stores — pass --team'
+      )
+    ).toBeInTheDocument();
+  });
+
   it('discarding a failed staged change clears the error so re-staging starts clean', async () => {
     setPost.mockResolvedValue(
       fail(400, 'rt: two teams have local stores — pass --team')

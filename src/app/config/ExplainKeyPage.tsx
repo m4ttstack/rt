@@ -79,7 +79,11 @@ function ExplainKeyPageContent({ settingKey }: { settingKey: string }) {
               }}
               applying={isApplyingRow && setMutation.isPending}
               applyError={isApplyingRow ? setMutation.error?.message ?? null : null}
-              onResetError={() => setMutation.reset()}
+              onResetError={() => {
+                if (!isApplyingRow) return;
+                setMutation.reset();
+                setApplyingRowId(null);
+              }}
             />
           );
         })}
