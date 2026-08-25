@@ -1,4 +1,4 @@
-import { Alert, Stack, Text } from '@ui/core';
+import { Alert, LazyLoader, Stack, Text } from '@ui/core';
 import { useSchemeColors } from '@ui/hooks';
 import { Icons } from '@ui/icons';
 import { CommandProvenance } from '../runs/CommandProvenance';
@@ -6,12 +6,7 @@ import { analyzeChain } from './chain';
 import { LayerRow, type VerdictRole } from './LayerRow';
 import { useExplainKey } from './useSettings';
 
-/**
- * Why is this value this? The plain sentence first, then the stack —
- * weakest-first, exactly as the resolver reads it. Reached from the palette
- * only: config is a lens, not a surface, so no rail entry points here.
- */
-export function ExplainKeyPage({ settingKey }: { settingKey: string }) {
+function ExplainKeyPageContent({ settingKey }: { settingKey: string }) {
   const { data, dataUpdatedAt } = useExplainKey(settingKey);
   const { text } = useSchemeColors();
   const verdict = analyzeChain(data.def, data.rows);
@@ -69,5 +64,18 @@ export function ExplainKeyPage({ settingKey }: { settingKey: string }) {
         ))}
       </Stack>
     </Stack>
+  );
+}
+
+/**
+ * Why is this value this? The plain sentence first, then the stack —
+ * weakest-first, exactly as the resolver reads it. Reached from the palette
+ * only: config is a lens, not a surface, so no rail entry points here.
+ */
+export function ExplainKeyPage({ settingKey }: { settingKey: string }) {
+  return (
+    <LazyLoader>
+      <ExplainKeyPageContent settingKey={settingKey} />
+    </LazyLoader>
   );
 }

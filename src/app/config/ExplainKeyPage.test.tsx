@@ -1,4 +1,3 @@
-import { Suspense } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
@@ -61,9 +60,7 @@ function renderExplain(settingKey = 'rt.runsPruneDays') {
   });
   return renderWithProviders(
     <QueryClientProvider client={queryClient}>
-      <Suspense fallback={<div>loading…</div>}>
-        <ExplainKeyPage settingKey={settingKey} />
-      </Suspense>
+      <ExplainKeyPage settingKey={settingKey} />
     </QueryClientProvider>
   );
 }
