@@ -20,6 +20,7 @@ import { modals } from '@ui/modals';
 import { notifications } from '@ui/notifications';
 import { client } from '../api';
 import { CommandProvenance } from './CommandProvenance';
+import { EffectiveInputs } from './EffectiveInputs';
 import { fieldsByKey, Timeline } from './Timeline';
 import { useMarkSeen, useRun } from './useRuns';
 
@@ -187,6 +188,7 @@ function RunDetailContent({ repo, runId }: { repo: string; runId: string }) {
         fields={data.fields}
         decisions={data.decisions}
       />
+      <EffectiveInputs repo={repo} runId={runId} decisions={data.decisions} />
     </Stack>
   );
 }

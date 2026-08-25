@@ -406,9 +406,11 @@ describe('RunDetail', () => {
 
     renderDetail();
 
-    expect(await screen.findByTestId('command-provenance')).toHaveTextContent(
-      'rt runs show run-1 --repo repo-tools'
-    );
+    // EffectiveInputs renders its own CommandProvenance-style attribution
+    // lower on the page, so this testid now matches twice -- the page-level
+    // one (asserted here) is the first in DOM order.
+    const [pageLevel] = await screen.findAllByTestId('command-provenance');
+    expect(pageLevel).toHaveTextContent('rt runs show run-1 --repo repo-tools');
   });
 
   it('marks the run abandoned with the entered reason', async () => {
