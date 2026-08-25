@@ -33,12 +33,7 @@ export interface OutlineCheck {
 export const ORCHESTRATOR_VERB = 'work';
 
 export type WiringHealth =
-  | 'in-sync'
-  | 'source-newer'
-  | 'never-compiled'
-  | 'internal-unchecked'
-  | 'orphaned'
-  | 'unknown';
+  'in-sync' | 'source-newer' | 'never-compiled' | 'orphaned' | 'unknown';
 
 export interface BoundFill {
   binding: string;
@@ -169,10 +164,9 @@ export interface WiringSpine {
   attentionCount: number;
 }
 
-/** `check.status` names rt's own vocabulary; `internal-unchecked` is rt
-    deliberately skipping the missing-output check for a non-public verb,
-    not a fifth degree of drift -- it must never collapse into
-    `never-compiled` or this view can never reach empty. */
+/** `check.status` names rt's own vocabulary; an unrecognized value degrades
+    to `unknown` rather than a guessed health, which is what keeps an older
+    rt's answer honest instead of silently claiming a status it never sent. */
 function healthFromStatus(
   status: CheckVerb['status'] | undefined
 ): WiringHealth {
@@ -183,8 +177,6 @@ function healthFromStatus(
       return 'source-newer';
     case 'never-compiled':
       return 'never-compiled';
-    case 'internal-unchecked':
-      return 'internal-unchecked';
     default:
       return 'unknown';
   }

@@ -181,7 +181,7 @@ describe('onlyNeedsAttention', () => {
 });
 
 describe('comparedVerbCount', () => {
-  it('counts only the verbs check actually compared', () => {
+  it('counts every verb check reported on', () => {
     expect(
       comparedVerbCount({
         verbs: [
@@ -189,12 +189,12 @@ describe('comparedVerbCount', () => {
           { name: 'b', status: 'stale', staleFiles: ['x'], orphanFiles: [] },
           {
             name: 'c',
-            status: 'internal-unchecked',
+            status: 'never-compiled',
             staleFiles: [],
             orphanFiles: [],
           },
         ],
       })
-    ).toBe(2);
+    ).toBe(3);
   });
 });

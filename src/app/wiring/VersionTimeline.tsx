@@ -85,11 +85,6 @@ function compiledOutputFact(
       };
     case 'never-compiled':
       return { text: 'no artifact on disk', color: 'bad' };
-    case 'internal-unchecked':
-      return {
-        text: 'not checked — rt compiles no artifact for an internal verb',
-        color: null,
-      };
     default:
       return {
         text: 'rt skills check said nothing about this verb',

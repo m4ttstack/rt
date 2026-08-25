@@ -14,15 +14,9 @@ export function isAttentionOnly(search: string): boolean {
   return new URLSearchParams(search).get(ATTENTION_PARAM) === '1';
 }
 
-/**
- * How many verbs `check` actually compared. `internal-unchecked` is rt
- * deliberately skipping a non-public verb whose output directory is missing,
- * so counting it would let the empty state claim a comparison that never
- * happened.
- */
+/** How many verbs `check` reported on. */
 export function comparedVerbCount(check: OutlineCheck): number {
-  return check.verbs.filter(verb => verb.status !== 'internal-unchecked')
-    .length;
+  return check.verbs.length;
 }
 
 /**

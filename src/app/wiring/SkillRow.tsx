@@ -6,9 +6,9 @@ import type { SpineEntry, WiringHealth } from './outline';
 import { QuietBadge } from './QuietBadge';
 import { SlotTable } from './SlotRow';
 
-/** Only the two states a reader has to act on carry a badge. `in-sync` and
-    `internal-unchecked` are the quiet answers, and `unknown` is rt having
-    said nothing about this ref -- none of the three earn a label. */
+/** Only the two states a reader has to act on carry a badge. `in-sync` is
+    the quiet answer, and `unknown` is rt having said nothing about this ref
+    -- neither earns a label. */
 const HEALTH_BADGE: Partial<Record<WiringHealth, string>> = {
   'source-newer': 'source newer',
   'never-compiled': 'never compiled',

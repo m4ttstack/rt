@@ -72,7 +72,7 @@ interface SkillsCompositionResponse {
 
 interface SkillsCheckVerbRow {
   name: string;
-  status: 'in-sync' | 'stale' | 'never-compiled' | 'internal-unchecked';
+  status: 'in-sync' | 'stale' | 'never-compiled';
   staleFiles: string[];
   orphanFiles: string[];
 }
