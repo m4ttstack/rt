@@ -1,24 +1,38 @@
 // @vitest-environment node
-import { describe, expect, it, vi } from 'vitest';
-
 import type { ExplainRow, SettingDef } from '@mattstack/rt-client';
+import { describe, expect, it, vi } from 'vitest';
 
 const DEFS: SettingDef[] = [
   {
-    key: 'rt.runsPruneDays', type: 'number', scopes: ['user', 'machine'],
-    default: 30, merge: 'replace', description: 'Days before a finished run is pruned.',
+    key: 'rt.runsPruneDays',
+    type: 'number',
+    scopes: ['user', 'machine'],
+    default: 30,
+    merge: 'replace',
+    description: 'Days before a finished run is pruned.',
   },
   {
-    key: 'rt.worktrees', type: 'object', scopes: ['user', 'team', 'machine'],
-    merge: 'deep', description: 'Worktree pool configuration.',
+    key: 'rt.worktrees',
+    type: 'object',
+    scopes: ['user', 'team', 'machine'],
+    merge: 'deep',
+    description: 'Worktree pool configuration.',
   },
   {
-    key: 'board.apiToken', type: 'string', scopes: ['user'],
-    merge: 'replace', secret: true, description: 'Forge API token.',
+    key: 'board.apiToken',
+    type: 'string',
+    scopes: ['user'],
+    merge: 'replace',
+    secret: true,
+    description: 'Forge API token.',
   },
   {
-    key: 'rt.legacyThing', type: 'string', scopes: ['user'],
-    merge: 'replace', migrated: false, legacyFile: '~/.rt/legacy.json',
+    key: 'rt.legacyThing',
+    type: 'string',
+    scopes: ['user'],
+    merge: 'replace',
+    migrated: false,
+    legacyFile: '~/.rt/legacy.json',
     description: 'Still read from a legacy file.',
   },
 ];
@@ -26,12 +40,26 @@ const DEFS: SettingDef[] = [
 const EXPLAIN: Record<string, ExplainRow[]> = {
   'rt.runsPruneDays': [
     { scope: 'default', file: null, present: true, value: 30 },
-    { scope: 'user', file: '/home/u/.mattstack/user/settings.jsonc', present: true, value: 45 },
-    { scope: 'machine', file: '/home/u/.mattstack/machine.jsonc', present: false },
+    {
+      scope: 'user',
+      file: '/home/u/.mattstack/user/settings.jsonc',
+      present: true,
+      value: 45,
+    },
+    {
+      scope: 'machine',
+      file: '/home/u/.mattstack/machine.jsonc',
+      present: false,
+    },
   ],
   'board.apiToken': [
     { scope: 'default', file: null, present: false },
-    { scope: 'user', file: '/home/u/.mattstack/user/settings.jsonc', present: true, value: 'sk-SECRET' },
+    {
+      scope: 'user',
+      file: '/home/u/.mattstack/user/settings.jsonc',
+      present: true,
+      value: 'sk-SECRET',
+    },
   ],
 };
 
@@ -136,7 +164,12 @@ describe('settings api', () => {
     );
 
     expect(res.status).toBe(200);
-    expect(rt.setSetting).toHaveBeenCalledWith('rt.runsPruneDays', 14, 'user', {});
+    expect(rt.setSetting).toHaveBeenCalledWith(
+      'rt.runsPruneDays',
+      14,
+      'user',
+      {}
+    );
     const body = (await res.json()) as { rows: unknown[] };
     expect(body.rows).toHaveLength(3);
   });
@@ -157,7 +190,10 @@ describe('settings api', () => {
     );
     expect(res.status).toBe(400);
     expect(rt.setSetting).not.toHaveBeenCalledWith(
-      'board.apiToken', expect.anything(), expect.anything(), expect.anything()
+      'board.apiToken',
+      expect.anything(),
+      expect.anything(),
+      expect.anything()
     );
   });
 
@@ -178,6 +214,22 @@ describe('settings api', () => {
     expect(res.status).toBe(400);
     const { error } = (await res.json()) as { error: string };
     expect(error).toContain('expected number');
+  });
+
+  it('refuses a non-migrated key at the front door, never reaching setSetting', async () => {
+    const res = await settings.fetch(
+      post({ key: 'rt.legacyThing', value: 'x', scope: 'user' })
+    );
+    expect(res.status).toBe(400);
+    await expect(res.json()).resolves.toEqual({
+      error: '"rt.legacyThing" is not writable through the resolver yet',
+    });
+    expect(rt.setSetting).not.toHaveBeenCalledWith(
+      'rt.legacyThing',
+      expect.anything(),
+      expect.anything(),
+      expect.anything()
+    );
   });
 
   it('surfaces a setSetting refusal as a 400, not a 500', async () => {

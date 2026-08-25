@@ -33,6 +33,10 @@ export interface LayerRowProps {
   /** True while the caller's apply is in flight -- disables Discard and
       Apply so a second click cannot start a second, concurrent write. */
   applying?: boolean;
+  /** True while a DIFFERENT row's apply is in flight -- the mutation is
+      single-writer, so every other row's Stage/Apply/edit affordances go
+      inert until it settles. */
+  applyLocked?: boolean;
   /** Set by the caller after a failed apply (a refused `rt settings set`,
       say), so the staged block can say what went wrong. */
   applyError?: string | null;
@@ -75,6 +79,7 @@ export function LayerRow({
   role,
   onApply,
   applying = false,
+  applyLocked = false,
   applyError = null,
   onResetError,
 }: LayerRowProps) {
@@ -123,7 +128,12 @@ export function LayerRow({
       data-overridden={role === 'overridden' || undefined}
     >
       <Group gap="md" wrap="nowrap" align="baseline">
-        <Text size="sm" fw={role === 'winner' ? 700 : 500} w={104} style={{ flex: 'none' }}>
+        <Text
+          size="sm"
+          fw={role === 'winner' ? 700 : 500}
+          w={104}
+          style={{ flex: 'none' }}
+        >
           {row.scope}
         </Text>
         {role === 'winner' && <Badge size="xs">wins</Badge>}
@@ -155,6 +165,7 @@ export function LayerRow({
                 color="gray"
                 size="sm"
                 onClick={openEdit}
+                disabled={applyLocked}
                 aria-label={`edit ${rowId}`}
                 data-testid={`edit-layer-${rowId}`}
                 style={{ flex: 'none' }}
@@ -172,7 +183,13 @@ export function LayerRow({
             not writable through the resolver yet
           </Text>
         ) : null}
-        <Text size="xs" c={text.dimmed} ff="monospace" truncate style={{ flex: 1 }}>
+        <Text
+          size="xs"
+          c={text.dimmed}
+          ff="monospace"
+          truncate
+          style={{ flex: 1 }}
+        >
           {row.file ?? 'registry default'}
         </Text>
       </Group>
@@ -184,7 +201,11 @@ export function LayerRow({
       {editable && editing && !staged && (
         <Group gap={6} wrap="nowrap" align="center" pl={104} pt={6}>
           <EditControl def={def} draft={draft} onChange={setDraft} />
-          <Button size="xs" onClick={() => setStaged(true)}>
+          <Button
+            size="xs"
+            disabled={applyLocked}
+            onClick={() => setStaged(true)}
+          >
             Stage
           </Button>
         </Group>
@@ -205,9 +226,14 @@ export function LayerRow({
             </Text>
           </Group>
           <Text size="xs" ff="monospace">
-            {row.present ? shortValue(row.value) : 'unset'} → {shortValue(draft)}
+            {row.present ? shortValue(row.value) : 'unset'} →{' '}
+            {shortValue(draft)}
           </Text>
-          <Paper radius="sm" p="xs" style={{ border: `1px solid ${border.default}` }}>
+          <Paper
+            radius="sm"
+            p="xs"
+            style={{ border: `1px solid ${border.default}` }}
+          >
             <Text
               size="xs"
               ff="monospace"
@@ -225,12 +251,17 @@ export function LayerRow({
             </Alert>
           )}
           <Group gap={6} justify="flex-end">
-            <Button size="xs" variant="default" disabled={applying} onClick={discard}>
+            <Button
+              size="xs"
+              variant="default"
+              disabled={applying}
+              onClick={discard}
+            >
               Discard
             </Button>
             <Button
               size="xs"
-              disabled={applying}
+              disabled={applying || applyLocked}
               loading={applying}
               onClick={() => onApply?.(draft, scope)}
             >
@@ -276,7 +307,9 @@ function EditControl({
         size="xs"
         w={140}
         value={typeof draft === 'number' ? draft : ''}
-        onChange={value => onChange(typeof value === 'number' ? value : Number(value) || 0)}
+        onChange={value =>
+          onChange(typeof value === 'number' ? value : Number(value) || 0)
+        }
         aria-label={label}
       />
     );

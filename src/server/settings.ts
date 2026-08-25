@@ -40,6 +40,10 @@ function isComposite(def: SettingDef): boolean {
   return def.type === 'object' || def.type === 'array';
 }
 
+function isWritable(def: SettingDef): boolean {
+  return isMigrated(def) && def.secret !== true && !isComposite(def);
+}
+
 export function defToWire(def: SettingDef): SettingDefWire {
   return {
     key: def.key,
@@ -49,7 +53,7 @@ export function defToWire(def: SettingDef): SettingDefWire {
     secret: def.secret === true,
     teamLocked: def.teamLocked === true,
     repoScoped: def.repoScoped === true,
-    writable: isMigrated(def) && def.secret !== true && !isComposite(def),
+    writable: isWritable(def),
     description: def.description,
     hasDefault: 'default' in def,
     defaultValue: def.default ?? null,
@@ -61,7 +65,10 @@ export function defToWire(def: SettingDef): SettingDefWire {
  * the ONLY place explain rows are serialized, so stripping here is the whole
  * guarantee; a second serialization path would reopen the leak.
  */
-export function sanitizeRows(def: SettingDef, rows: ExplainRow[]): ExplainRowWire[] {
+export function sanitizeRows(
+  def: SettingDef,
+  rows: ExplainRow[]
+): ExplainRowWire[] {
   return rows.map(row => {
     const wire: ExplainRowWire = {
       scope: row.scope,
@@ -104,7 +111,12 @@ export const settings = new Hono()
       'json',
       (
         value
-      ): { key: string; value: unknown; scope: SettingScope; team?: string } => {
+      ): {
+        key: string;
+        value: unknown;
+        scope: SettingScope;
+        team?: string;
+      } => {
         const v = value as Record<string, unknown>;
         return {
           key: typeof v?.key === 'string' ? v.key : '',
@@ -129,6 +141,11 @@ export const settings = new Hono()
           {
             error: `"${key}" cannot be set in the ${scope} store (allowed: ${def.scopes.join(', ')})`,
           },
+          400
+        );
+      if (!isWritable(def))
+        return c.json(
+          { error: `"${key}" is not writable through the resolver yet` },
           400
         );
       const check = validateValue(def, value);

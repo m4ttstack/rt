@@ -95,9 +95,9 @@ function baseDetail(overrides: Partial<RunDetail> = {}): RunDetail {
 
 describe('parsePackCommits', () => {
   it('parses whitespace-separated pack=sha pairs', () => {
-    expect(parsePackCommits('mattstack=59b90cd acme-web=abc123')).toEqual([
+    expect(parsePackCommits('mattstack=59b90cd demo=abc123')).toEqual([
       { pack: 'mattstack', sha: '59b90cd' },
-      { pack: 'acme-web', sha: 'abc123' },
+      { pack: 'demo', sha: 'abc123' },
     ]);
   });
 
@@ -243,17 +243,18 @@ describe('effective-inputs route', () => {
       value: `val:${key}`,
       provenance: [],
     }));
-    vi.mocked(rt.getDef).mockImplementation((key: string): SettingDef | undefined =>
-      key === 'rt.runaway'
-        ? {
-            key,
-            type: 'boolean',
-            scopes: ['user'],
-            merge: 'replace',
-            secret: true,
-            description: 'Secret dep, never on the wire.',
-          }
-        : undefined
+    vi.mocked(rt.getDef).mockImplementation(
+      (key: string): SettingDef | undefined =>
+        key === 'rt.runaway'
+          ? {
+              key,
+              type: 'boolean',
+              scopes: ['user'],
+              merge: 'replace',
+              secret: true,
+              description: 'Secret dep, never on the wire.',
+            }
+          : undefined
     );
     vi.mocked(rt.getSetting).mockClear();
 

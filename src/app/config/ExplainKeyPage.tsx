@@ -40,8 +40,8 @@ function ExplainKeyPageContent({ settingKey }: { settingKey: string }) {
       </Text>
       {verdict.kind === 'composite' && (
         <Text size="xs" c={text.muted}>
-          Deep merge, key by key; lists replace atomically — an array is a
-          leaf, never merged.
+          Deep merge, key by key; lists replace atomically — an array is a leaf,
+          never merged.
         </Text>
       )}
       {data.def.secret && (
@@ -78,7 +78,10 @@ function ExplainKeyPageContent({ settingKey }: { settingKey: string }) {
                 );
               }}
               applying={isApplyingRow && setMutation.isPending}
-              applyError={isApplyingRow ? setMutation.error?.message ?? null : null}
+              applyLocked={setMutation.isPending && !isApplyingRow}
+              applyError={
+                isApplyingRow ? (setMutation.error?.message ?? null) : null
+              }
               onResetError={() => {
                 if (!isApplyingRow) return;
                 setMutation.reset();

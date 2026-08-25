@@ -26,7 +26,13 @@ const row = (
   value?: unknown,
   extra?: Partial<ExplainRowWire>
 ): ExplainRowWire =>
-  ({ scope, file: scope === 'default' ? null : `/stores/${scope}.jsonc`, present, ...(present ? { value } : {}), ...extra }) as ExplainRowWire;
+  ({
+    scope,
+    file: scope === 'default' ? null : `/stores/${scope}.jsonc`,
+    present,
+    ...(present ? { value } : {}),
+    ...extra,
+  }) as ExplainRowWire;
 
 describe('analyzeChain: scalar keys have a single winner', () => {
   it('names the strongest present row the winner and lists what it overrode', () => {
@@ -59,7 +65,20 @@ describe('analyzeChain: scalar keys have a single winner', () => {
   });
 
   it('an entirely unset key without a default is stated, not invented', () => {
-    const verdict = analyzeChain(def({ hasDefault: false, defaultValue: null }), [
+    const verdict = analyzeChain(
+      def({ hasDefault: false, defaultValue: null }),
+      [row('default', false), row('user', false)]
+    );
+
+    if (verdict.kind !== 'scalar') throw new Error('expected scalar');
+    expect(verdict.winner).toBeNull();
+    expect(verdict.sentence).toBe(
+      'rt.example is unset — no layer sets it and the registry declares no default.'
+    );
+  });
+
+  it('an unset key with a registry default names that default, not "no default"', () => {
+    const verdict = analyzeChain(def({ hasDefault: true, defaultValue: 30 }), [
       row('default', false),
       row('user', false),
     ]);
@@ -67,7 +86,7 @@ describe('analyzeChain: scalar keys have a single winner', () => {
     if (verdict.kind !== 'scalar') throw new Error('expected scalar');
     expect(verdict.winner).toBeNull();
     expect(verdict.sentence).toBe(
-      'rt.example is unset — no layer sets it and the registry declares no default.'
+      'rt.example is unset in every layer — the registry default 30 applies.'
     );
   });
 
@@ -95,7 +114,11 @@ describe('analyzeChain: scalar keys have a single winner', () => {
   it('an array key replaces atomically — winner semantics, not a merge', () => {
     const verdict = analyzeChain(
       def({ type: 'array', merge: 'replace', defaultValue: [] }),
-      [row('default', true, []), row('user', true, ['a']), row('machine', true, ['b'])]
+      [
+        row('default', true, []),
+        row('user', true, ['a']),
+        row('machine', true, ['b']),
+      ]
     );
 
     expect(verdict.kind).toBe('scalar');
@@ -119,7 +142,9 @@ describe('analyzeChain: deep-merged object keys have contributors, no winner', (
     expect(verdict.kind).toBe('composite');
     if (verdict.kind !== 'composite') return;
     expect(verdict.contributors.map(r => r.scope)).toEqual([
-      'default', 'team', 'user',
+      'default',
+      'team',
+      'user',
     ]);
     expect(verdict.sentence).toBe(
       'rt.example deep-merges key by key — 3 layers contribute; there is no single winner.'
@@ -142,10 +167,25 @@ describe('analyzeChain: deep-merged object keys have contributors, no winner', (
   it('two team rows from different files are distinct contributors', () => {
     // A scope can repeat once per cloned team; rows are identified by scope
     // AND file, never scope alone.
-    const t1 = { scope: 'team', file: '/teams/a/settings.jsonc', present: true, value: { x: 1 } } as ExplainRowWire;
-    const t2 = { scope: 'team', file: '/teams/b/settings.jsonc', present: true, value: { y: 2 } } as ExplainRowWire;
+    const t1 = {
+      scope: 'team',
+      file: '/teams/a/settings.jsonc',
+      present: true,
+      value: { x: 1 },
+    } as ExplainRowWire;
+    const t2 = {
+      scope: 'team',
+      file: '/teams/b/settings.jsonc',
+      present: true,
+      value: { y: 2 },
+    } as ExplainRowWire;
     const verdict = analyzeChain(
-      def({ type: 'object', merge: 'deep', hasDefault: false, defaultValue: null }),
+      def({
+        type: 'object',
+        merge: 'deep',
+        hasDefault: false,
+        defaultValue: null,
+      }),
       [t1, t2]
     );
 

@@ -114,9 +114,7 @@ describe('ExplainKeyPage', () => {
 
     await screen.findByText(/is 45 because the user layer sets it/);
 
-    const winnerRow = screen.getByTestId(
-      'layer-row-user:/stores/user.jsonc'
-    );
+    const winnerRow = screen.getByTestId('layer-row-user:/stores/user.jsonc');
     expect(winnerRow.dataset.winner).toBe('true');
 
     const overriddenRow = screen.getByTestId('layer-row-default');
@@ -133,7 +131,7 @@ describe('ExplainKeyPage', () => {
     ).toBeInTheDocument();
   });
 
-  it('applying one of two staged rows closes only that row\'s staged block', async () => {
+  it("applying one of two staged rows closes only that row's staged block", async () => {
     setPost.mockResolvedValue(ok({ rows: [] }));
 
     renderExplain();
@@ -242,10 +240,49 @@ describe('ExplainKeyPage', () => {
     );
 
     expect(
-      within(userRow).getByText(
-        'rt: two teams have local stores — pass --team'
-      )
+      within(userRow).getByText('rt: two teams have local stores — pass --team')
     ).toBeInTheDocument();
+  });
+
+  it("while row A's apply is in flight, row B's Apply is disabled and re-enables once settled", async () => {
+    let resolveApply: (res: unknown) => void = () => {};
+    setPost.mockReturnValue(
+      new Promise(resolve => {
+        resolveApply = resolve;
+      })
+    );
+
+    renderExplain();
+    await screen.findByText(/is 45 because the user layer sets it/);
+
+    const userRow = screen.getByTestId('layer-row-user:/stores/user.jsonc');
+    const machineRow = screen.getByTestId(
+      'layer-row-machine:/stores/machine.jsonc'
+    );
+
+    await stageWithin(userRow, '14');
+    await stageWithin(machineRow, '7');
+
+    await userEvent.click(
+      within(userRow).getByRole('button', { name: /^apply$/i })
+    );
+
+    const machineApply = await waitFor(() => {
+      const btn = within(machineRow).getByRole('button', { name: /^apply$/i });
+      expect(btn).toBeDisabled();
+      return btn;
+    });
+
+    await userEvent.click(machineApply);
+    expect(setPost).toHaveBeenCalledTimes(1);
+
+    resolveApply(ok({ rows: [] }));
+
+    await waitFor(() => {
+      expect(
+        within(machineRow).getByRole('button', { name: /^apply$/i })
+      ).not.toBeDisabled();
+    });
   });
 
   it('discarding a failed staged change clears the error so re-staging starts clean', async () => {

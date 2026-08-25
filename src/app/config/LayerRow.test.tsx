@@ -89,7 +89,12 @@ describe('LayerRow: staged edit-at-layer', () => {
   test('staging shows the delta, the exact command, and the staged copy; onApply is not yet called', async () => {
     const onApply = vi.fn();
     renderWithProviders(
-      <LayerRow def={NUMBER_DEF} row={USER_ROW} role="winner" onApply={onApply} />
+      <LayerRow
+        def={NUMBER_DEF}
+        row={USER_ROW}
+        role="winner"
+        onApply={onApply}
+      />
     );
 
     await stageChange('14');
@@ -111,7 +116,12 @@ describe('LayerRow: staged edit-at-layer', () => {
   test('pressing Apply calls onApply with the staged draft and scope', async () => {
     const onApply = vi.fn();
     renderWithProviders(
-      <LayerRow def={NUMBER_DEF} row={USER_ROW} role="winner" onApply={onApply} />
+      <LayerRow
+        def={NUMBER_DEF}
+        row={USER_ROW}
+        role="winner"
+        onApply={onApply}
+      />
     );
 
     await stageChange('14');
@@ -123,7 +133,12 @@ describe('LayerRow: staged edit-at-layer', () => {
   test('pressing Discard closes the staged block without calling onApply', async () => {
     const onApply = vi.fn();
     renderWithProviders(
-      <LayerRow def={NUMBER_DEF} row={USER_ROW} role="winner" onApply={onApply} />
+      <LayerRow
+        def={NUMBER_DEF}
+        row={USER_ROW}
+        role="winner"
+        onApply={onApply}
+      />
     );
 
     await stageChange('14');
@@ -142,7 +157,9 @@ describe('LayerRow: staged edit-at-layer', () => {
       present: true,
       value: 10,
     };
-    renderWithProviders(<LayerRow def={NUMBER_DEF} row={teamRow} role="inert" />);
+    renderWithProviders(
+      <LayerRow def={NUMBER_DEF} row={teamRow} role="inert" />
+    );
 
     expect(
       screen.getByText('not allowed at this layer (allowed: user, machine)')
@@ -187,7 +204,9 @@ describe('LayerRow: staged edit-at-layer', () => {
       <LayerRow def={COMPOSITE_DEF} row={COMPOSITE_ROW} role="contributor" />
     );
 
-    expect(screen.getByText('composite value — edit the file')).toBeInTheDocument();
+    expect(
+      screen.getByText('composite value — edit the file')
+    ).toBeInTheDocument();
     expect(
       screen.queryByRole('button', { name: /edit/i })
     ).not.toBeInTheDocument();

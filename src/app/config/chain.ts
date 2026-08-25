@@ -53,7 +53,9 @@ export function analyzeChain(
       kind: 'scalar',
       winner: null,
       overridden: [],
-      sentence: `${def.key} is unset — no layer sets it and the registry declares no default.`,
+      sentence: def.hasDefault
+        ? `${def.key} is unset in every layer — the registry default ${shortValue(def.defaultValue)} applies.`
+        : `${def.key} is unset — no layer sets it and the registry declares no default.`,
     };
   }
 
