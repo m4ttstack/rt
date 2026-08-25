@@ -4,12 +4,13 @@ import { Icons } from '@ui/icons';
 import { CommandProvenance } from '../runs/CommandProvenance';
 import { analyzeChain } from './chain';
 import { LayerRow, type VerdictRole } from './LayerRow';
-import { useExplainKey } from './useSettings';
+import { useExplainKey, useSetSetting } from './useSettings';
 
 function ExplainKeyPageContent({ settingKey }: { settingKey: string }) {
   const { data, dataUpdatedAt } = useExplainKey(settingKey);
   const { text } = useSchemeColors();
   const verdict = analyzeChain(data.def, data.rows);
+  const setMutation = useSetSetting(settingKey);
 
   const roleOf = (row: (typeof data.rows)[number]): VerdictRole => {
     if (verdict.kind === 'composite')
@@ -60,6 +61,9 @@ function ExplainKeyPageContent({ settingKey }: { settingKey: string }) {
             def={data.def}
             row={row}
             role={roleOf(row)}
+            onApply={(value, scope) => setMutation.mutate({ value, scope })}
+            applying={setMutation.isPending}
+            applyError={setMutation.error?.message ?? null}
           />
         ))}
       </Stack>
