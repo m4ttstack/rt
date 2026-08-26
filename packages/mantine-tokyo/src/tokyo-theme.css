@@ -136,11 +136,10 @@
  * `theme.black` (#000) standing in for `--tk-fg` (#111), a difference no eye
  * resolves.
  *
- * `anchor` is the exception that has to be scheme-scoped (below, with
- * `error`): Mantine derives it from `theme.primaryColor` (= `accent`) as the
- * accent ramp's canonical shade, which fails contrast for LINK TEXT on a pale
- * ground. The bare `:root` cannot win against Mantine's own scheme block, so
- * the darker `--tk-accent-text` is applied there instead.
+ * `anchor` is the exception, overridden at raised specificity below: Mantine
+ * derives it from `theme.primaryColor` (= `accent`) as the accent ramp's
+ * canonical shade, which fails contrast for LINK TEXT on a pale ground. The
+ * darker `--tk-accent-text` is applied there instead.
  *
  * These six do NOT take effect, and the app renders Mantine's value instead.
  * Four diverge in LIGHT only, landing correctly in dark by that same dark-ramp
@@ -179,14 +178,21 @@
 }
 
 /*
- * Link text. Mantine derives `anchor` from the accent ramp's canonical shade,
- * which reads at 3.7:1 on the pale card in light -- under AA for text. The
- * darker `--tk-accent-text` clears 4.5:1 on bg 1-3; in dark it equals the
- * accent, which already passes. Scheme-scoped for the same reason `error` is:
- * a bare `:root` loses to Mantine's own per-scheme anchor declaration.
+ * Link text. Mantine derives `--mantine-color-anchor` from `theme.primaryColor`
+ * (= `accent`) as the ramp's canonical shade, which reads at 3.7:1 on the pale
+ * card in light -- under AA for text. `--tk-accent-text` clears 4.5:1 on bg 1-3;
+ * in dark it equals the accent, which already passes.
+ *
+ * This needs MORE than the scheme-scoping `error` gets. Mantine re-emits the
+ * anchor var from the theme into its runtime `data-mantine-styles` <style>,
+ * injected AFTER this file's imported CSS at the SAME specificity, so an
+ * equal-specificity override would lose on source order. The doubled `:root`
+ * raises specificity above Mantine's `:root[data-mantine-color-scheme=...]`,
+ * so this wins regardless of load order (dev or prod). `error` needs no such
+ * bump because the theme never re-emits it.
  */
-:root[data-mantine-color-scheme='light'],
-:root[data-mantine-color-scheme='dark'] {
+:root:root[data-mantine-color-scheme='light'],
+:root:root[data-mantine-color-scheme='dark'] {
   --mantine-color-anchor: var(--tk-accent-text);
 }
 
