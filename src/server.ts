@@ -1223,12 +1223,27 @@ const httpServer = Bun.serve({
         if (channel !== undefined && (typeof channel !== "string" || !allowedChannels.includes(channel))) {
           return new Response(`"channel" must be one of ${allowedChannels.join(", ")}`, { status: 400 });
         }
-        const targetChannel = typeof channel === "string" ? channel : config.slack.channel;
         const snapshot = await cache.get();
         const byUrl = new Map(snapshot.mrs.map((m) => [m.webUrl, m] as const));
         const picked = (mrUrls as string[]).map((u) => byUrl.get(u)).filter((m): m is BoardMR => !!m);
         if (picked.length !== mrUrls.length) {
           return new Response("one or more mrUrls are not on the board", { status: 400 });
+        }
+        // An explicit body channel (already validated above) always wins.
+        // Otherwise derive per-MR: resolve/sweeper look in the tab's channel
+        // via channelForMR, so a post with no explicit channel must land
+        // there too, or the ref would pin the wrong channelId. A multi-MR
+        // post only has one channel to post to, so every picked MR must
+        // resolve to the same one.
+        let targetChannel: string;
+        if (typeof channel === "string") {
+          targetChannel = channel;
+        } else {
+          const resolved = new Set(picked.map((m) => channelForMR(config, m)));
+          if (resolved.size > 1) {
+            return new Response("MRs span Slack channels; post them per tab", { status: 400 });
+          }
+          targetChannel = [...resolved][0]!;
         }
         // Guard against duplicate posts: check for an existing ref file first,
         // and for MRs we've never resolved, sync the channel index and look for

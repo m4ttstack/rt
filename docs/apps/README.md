@@ -61,6 +61,8 @@ each tab shows a filtered view of MRs sourced from one of two kinds. tabs have a
 - `"authors"`: MRs authored by configured team members (the default)
 - `"codeowners"`: MRs blocked on approval from a specific codeowners section. section name comes from your repo's `.gitlab/codeowners` (e.g. `Acme`, `Billing`), and excludeMembers (when true) hides MRs authored by team members so the queue shows work assigned to the team, not self-reviews. no excludeMembers = show all MRs (the section's full queue including team-authored ones)
 
+a codeowners tab needs `@mattstack/rt-client` >= 0.5.0 in the board and an rt daemon running the sections-aware `project-mrs:read` handler; an older daemon reports no codeowner sections at all, so the tab just renders empty with no badge explaining why.
+
 **per-tab overrides**:
 - `slackChannel`: posts/reactions for this tab go to a different channel (instead of config.slack.channel)
 - `reviewSkill`: skill binding for review launches from this tab (instead of the manifest binding or empty fallback)
