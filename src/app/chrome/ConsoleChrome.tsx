@@ -68,7 +68,7 @@ export function ConsoleChrome({
             height={30}
             style={{ display: 'block', flex: 'none' }}
           />
-          <Text fw={700} size="xl">
+          <Text fw={700} fz={22} lh={1}>
             console
           </Text>
         </Group>
