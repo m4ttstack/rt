@@ -1,6 +1,16 @@
 import { describe, expect, test } from "bun:test";
 import type { PullRequest } from "@mattstack/glance";
-import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, projectPathFromWebUrl, stripDraftPrefix, type BoardMR } from "../data.ts";
+import {
+  aggregateSyncScope,
+  boardDemand,
+  buildBoard,
+  buildRoster,
+  channelForMR,
+  configuredSlackChannels,
+  projectPathFromWebUrl,
+  stripDraftPrefix,
+  type BoardMR,
+} from "../data.ts";
 import { SnapshotCache, type FetchResult } from "../cache.ts";
 import { DEFAULT_SLACK_EMOJI, IMPLICIT_TABS, type BoardConfig, type TabConfig } from "../config.ts";
 import { extractTicketId } from "../ticket.ts";
@@ -347,6 +357,62 @@ describe("boardDemand", () => {
     const withTabs: BoardConfig = { ...config, tabs: tabsWithCodeowners };
     expect(boardDemand(withTabs, 1).codeownerSections).toEqual(["Acme"]);
     expect(boardDemand(config, 1).codeownerSections).toBeUndefined();
+  });
+});
+
+describe("channelForMR", () => {
+  const tabsWithSlackChannel: TabConfig[] = [
+    { id: "t", label: "T", source: { kind: "authors" } },
+    { id: "q", label: "Q", source: { kind: "codeowners", section: "Acme", excludeMembers: true }, slackChannel: "team-codeowners" },
+  ];
+  const withSlackTab: BoardConfig = { ...config, tabs: tabsWithSlackChannel };
+
+  test("routes a roster MR to the default channel", () => {
+    expect(
+      channelForMR(withSlackTab, { author: { id: "gitlab:1", username: "alice", name: "Alice", avatarUrl: null }, codeownerSections: [] }),
+    ).toBe("code-review");
+  });
+
+  test("routes a tagged stranger to their codeowners tab's channel", () => {
+    expect(
+      channelForMR(withSlackTab, {
+        author: { id: "gitlab:2", username: "outsider", name: "Outsider", avatarUrl: null },
+        codeownerSections: ["Acme"],
+      }),
+    ).toBe("team-codeowners");
+  });
+
+  test("falls back to the default channel when a stranger's tags match no tab's slackChannel", () => {
+    expect(
+      channelForMR(withSlackTab, {
+        author: { id: "gitlab:3", username: "outsider", name: "Outsider", avatarUrl: null },
+        codeownerSections: ["SomeOtherSection"],
+      }),
+    ).toBe("code-review");
+  });
+
+  test("a stranger with no tags falls back to the default channel", () => {
+    expect(
+      channelForMR(withSlackTab, { author: { id: "gitlab:4", username: "outsider", name: "Outsider", avatarUrl: null }, codeownerSections: [] }),
+    ).toBe("code-review");
+  });
+});
+
+describe("configuredSlackChannels", () => {
+  test("is the default channel plus every distinct tab slackChannel", () => {
+    const withTabs: BoardConfig = {
+      ...config,
+      tabs: [
+        { id: "t", label: "T", source: { kind: "authors" } },
+        { id: "q", label: "Q", source: { kind: "codeowners", section: "Acme" }, slackChannel: "team-codeowners" },
+        { id: "r", label: "R", source: { kind: "codeowners", section: "Billing" }, slackChannel: "team-codeowners" },
+      ],
+    };
+    expect(configuredSlackChannels(withTabs).sort()).toEqual(["code-review", "team-codeowners"]);
+  });
+
+  test("is just the default channel when no tab overrides it", () => {
+    expect(configuredSlackChannels(config)).toEqual(["code-review"]);
   });
 });
 

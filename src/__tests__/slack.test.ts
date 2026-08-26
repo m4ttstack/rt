@@ -1,13 +1,20 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, existsSync, writeFileSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
 import {
   buildPermalink,
   buildThreadPermalink,
   extractMrUrls,
   matchReviewMessage,
   slackRefPath,
+  slackIndexPath,
+  readIndex,
+  writeIndex,
   attachSlack,
   type SlackMessage,
   type SlackRef,
+  type SlackIndex,
 } from "../slack.ts";
 
 const URL_A = "https://gitlab.com/acme/webapp/-/merge_requests/4821";
@@ -75,6 +82,51 @@ describe("slackRefPath", () => {
     expect(slackRefPath(URL_A, "/s").startsWith("/s/")).toBe(true);
     expect(slackRefPath(URL_A, "/s").endsWith(".json")).toBe(true);
     expect(slackRefPath(URL_A, "/s")).not.toBe(slackRefPath(URL_B, "/s"));
+  });
+});
+
+describe("slackIndexPath", () => {
+  test("is stable per channel and distinct across channels", () => {
+    expect(slackIndexPath("code-review")).not.toBe(slackIndexPath("team-codeowners"));
+    expect(slackIndexPath("code-review")).toBe(slackIndexPath("code-review"));
+  });
+
+  test("slugs unsafe characters and lives under the given dir", () => {
+    expect(slackIndexPath("pod/weird name!", "/s")).toBe("/s/slack-index-pod-weird-name-.json");
+  });
+});
+
+describe("readIndex / writeIndex per-channel migration", () => {
+  let dir: string;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "slack-idx-")); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  const legacy: SlackIndex = { channelId: "C1", teamDomain: "acme.slack.com", lastTs: "100.0", messages: [] };
+
+  test("migrates the legacy single-channel index to the first channel that reads it", () => {
+    writeFileSync(join(dir, "slack-index.json"), JSON.stringify(legacy));
+    const migrated = readIndex("code-review", dir);
+    expect(migrated).toEqual(legacy);
+    expect(existsSync(join(dir, "slack-index.json"))).toBe(false); // legacy consumed
+    expect(existsSync(slackIndexPath("code-review", dir))).toBe(true);
+  });
+
+  test("a second channel reading after the legacy file is consumed starts fresh", () => {
+    writeFileSync(join(dir, "slack-index.json"), JSON.stringify(legacy));
+    readIndex("code-review", dir); // consumes the legacy file
+    expect(readIndex("team-codeowners", dir)).toBeNull();
+  });
+
+  test("with no legacy file, a fresh install just starts with null per channel", () => {
+    expect(readIndex("code-review", dir)).toBeNull();
+    expect(readIndex("team-codeowners", dir)).toBeNull();
+  });
+
+  test("writeIndex writes to the channel-specific path, independent of other channels", () => {
+    const idx: SlackIndex = { channelId: "C2", teamDomain: "acme.slack.com", lastTs: "200.0", messages: [] };
+    writeIndex("team-codeowners", idx, dir);
+    expect(readIndex("team-codeowners", dir)).toEqual(idx);
+    expect(readIndex("code-review", dir)).toBeNull();
   });
 });
 

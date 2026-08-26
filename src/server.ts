@@ -10,7 +10,7 @@ import { loadConfig, loadGitLabToken, loadSlackToken, loadSwitchboardToken, load
 import { memoizeAsync } from "./memoize-async.ts";
 import { resolveBoardSkill, type BoardSkillKind } from "./manifest-bindings.ts";
 import { upsertEnvKeys } from "./env-file.ts";
-import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, projectPathFromWebUrl, type BoardMR, type SyncScopeRead } from "./data.ts";
+import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, channelForMR, configuredSlackChannels, projectPathFromWebUrl, type BoardMR, type SyncScopeRead } from "./data.ts";
 import { GitLabProvider, ReadBackFailedError, NoteMutator, parseRepoId } from "@mattstack/glance";
 import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } from "./discussions.ts";
 import { readProjectMRs, readDiscussions, subscribe } from "@mattstack/rt-client";
@@ -920,9 +920,12 @@ const httpServer = Bun.serve({
         // The sweeper usually resolves the ref first, but a review launched and
         // finished inside one sweep interval can beat it here.
         try {
+          const signalSnapshot = await cache.get();
+          const signalMr = signalSnapshot.mrs.find((m) => m.webUrl === signal.mrUrl);
+          const signalChannel = signalMr ? channelForMR(config, signalMr) : config.slack.channel;
           const existing = readSlackRefs().get(signal.mrUrl);
           if (existing?.status !== "found" || !existing.messageTs) {
-            await resolveSlackRef(slackToken, config.slack.channel, signal.mrUrl, signal.iid);
+            await resolveSlackRef(slackToken, signalChannel, signal.mrUrl, signal.iid);
           }
           const ref = await reactToMR(slackToken, signal.mrUrl, emoji);
           return new Response(JSON.stringify({ ok: true, reacted: true, reactions: ref.reactions ?? [] }), {
@@ -1172,8 +1175,16 @@ const httpServer = Bun.serve({
         }
         const parsed = parseReviewRequestBody(body);
         if (!parsed) return new Response("expected { mrUrl: string, iid: number }", { status: 400 });
+        const { channel } = (body ?? {}) as { channel?: unknown };
+        const allowedChannels = configuredSlackChannels(config);
+        if (channel !== undefined && (typeof channel !== "string" || !allowedChannels.includes(channel))) {
+          return new Response(`"channel" must be one of ${allowedChannels.join(", ")}`, { status: 400 });
+        }
         try {
-          const ref = await resolveSlackRef(slackToken, config.slack.channel, parsed.mrUrl, parsed.iid);
+          const snapshot = await cache.get();
+          const mr = snapshot.mrs.find((m) => m.webUrl === parsed.mrUrl);
+          const resolvedChannel = typeof channel === "string" ? channel : mr ? channelForMR(config, mr) : config.slack.channel;
+          const ref = await resolveSlackRef(slackToken, resolvedChannel, parsed.mrUrl, parsed.iid);
           return new Response(
             JSON.stringify({ ok: true, status: ref.status, permalink: ref.permalink, reactions: ref.reactions ?? [] }),
             { headers: { "content-type": "application/json" } },
@@ -1200,7 +1211,7 @@ const httpServer = Bun.serve({
         } catch {
           return new Response("invalid json", { status: 400 });
         }
-        const { mrUrls, header } = (body ?? {}) as { mrUrls?: unknown; header?: unknown };
+        const { mrUrls, header, channel } = (body ?? {}) as { mrUrls?: unknown; header?: unknown; channel?: unknown };
         if (!Array.isArray(mrUrls) || mrUrls.length === 0 || !mrUrls.every((u) => typeof u === "string")) {
           return new Response("expected { mrUrls: string[] }", { status: 400 });
         }
@@ -1208,6 +1219,11 @@ const httpServer = Bun.serve({
         if (header !== undefined && headerOverride === null) {
           return new Response(`"header" must be a non-empty string of at most ${MAX_HEADER_LEN} characters`, { status: 400 });
         }
+        const allowedChannels = configuredSlackChannels(config);
+        if (channel !== undefined && (typeof channel !== "string" || !allowedChannels.includes(channel))) {
+          return new Response(`"channel" must be one of ${allowedChannels.join(", ")}`, { status: 400 });
+        }
+        const targetChannel = typeof channel === "string" ? channel : config.slack.channel;
         const snapshot = await cache.get();
         const byUrl = new Map(snapshot.mrs.map((m) => [m.webUrl, m] as const));
         const picked = (mrUrls as string[]).map((u) => byUrl.get(u)).filter((m): m is BoardMR => !!m);
@@ -1223,7 +1239,7 @@ const httpServer = Bun.serve({
         const freshlyFound: Array<{ iid: number; permalink?: string }> = [];
         try {
           for (const m of toResolve) {
-            const ref = await resolveSlackRef(slackToken, config.slack.channel, m.webUrl!, m.iid);
+            const ref = await resolveSlackRef(slackToken, targetChannel, m.webUrl!, m.iid);
             if (ref.status === "found") freshlyFound.push({ iid: m.iid, permalink: ref.permalink });
           }
         } catch (err) {
@@ -1268,7 +1284,7 @@ const httpServer = Bun.serve({
         try {
           const refs = await postToSlack(
             slackToken,
-            config.slack.channel,
+            targetChannel,
             text,
             picked.map((m) => ({ webUrl: m.webUrl!, iid: m.iid })),
           );
@@ -1365,7 +1381,7 @@ async function autoResolveSlackRefs(): Promise<void> {
     if (!targets.length) return;
     for (const mr of targets) {
       try {
-        await resolveSlackRef(slackToken, config.slack.channel, mr.webUrl!, mr.iid);
+        await resolveSlackRef(slackToken, channelForMR(config, mr), mr.webUrl!, mr.iid);
       } catch (err) {
         console.error(`auto-resolve !${mr.iid} failed: ${err instanceof Error ? err.message : err}`);
       }

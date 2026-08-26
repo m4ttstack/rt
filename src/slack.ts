@@ -1,10 +1,11 @@
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, renameSync } from "fs";
 import { join } from "path";
 import { APP_ROOT } from "./app-root.ts";
 
 const STATE_ROOT = join(APP_ROOT, "state");
 export const SLACK_REF_DIR = join(STATE_ROOT, "slack");
-const INDEX_PATH = join(STATE_ROOT, "slack-index.json");
+/** Pre-tabs installs had exactly one channel and one index at this path. */
+const LEGACY_INDEX_NAME = "slack-index.json";
 
 /** How far back the first index build reaches. Review requests older than the
     board's stale window are irrelevant, so we never page the whole channel. */
@@ -124,17 +125,43 @@ async function resolveChannelId(token: string, channelName: string): Promise<str
   throw new Error(`slack channel #${channelName} not found (is the token's user a member?)`);
 }
 
-function readIndex(): SlackIndex | null {
+/** Per-channel index path; the pre-tabs single-channel index migrates lazily
+    (see readIndex). `dir` defaults to the real state root and is only
+    overridden by tests. */
+export function slackIndexPath(channelName: string, dir: string = STATE_ROOT): string {
+  const slug = channelName.replace(/[^a-zA-Z0-9_-]+/g, "-");
+  return join(dir, `slack-index-${slug}.json`);
+}
+
+/**
+ * Read a channel's index, migrating the legacy single-channel index into
+ * place the first time any channel asks for it. The rename consumes the
+ * legacy file, so at most one channel ever inherits that history -- in
+ * practice the pre-tabs default channel, since it's the one every existing
+ * install already keeps syncing. A codeowners tab's channel is new with
+ * tabs, so it has no history to lose by starting fresh.
+ */
+export function readIndex(channelName: string, dir: string = STATE_ROOT): SlackIndex | null {
+  const path = slackIndexPath(channelName, dir);
+  const legacyPath = join(dir, LEGACY_INDEX_NAME);
+  if (!existsSync(path) && existsSync(legacyPath)) {
+    try {
+      renameSync(legacyPath, path);
+    } catch {
+      // Lost a rename race with another process's migration; read whatever
+      // landed at `path` below rather than fail the read.
+    }
+  }
   try {
-    return JSON.parse(readFileSync(INDEX_PATH, "utf8")) as SlackIndex;
+    return JSON.parse(readFileSync(path, "utf8")) as SlackIndex;
   } catch {
     return null;
   }
 }
 
-function writeIndex(index: SlackIndex): void {
-  mkdirSync(STATE_ROOT, { recursive: true });
-  writeFileSync(INDEX_PATH, JSON.stringify(index, null, 2) + "\n");
+export function writeIndex(channelName: string, index: SlackIndex, dir: string = STATE_ROOT): void {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(slackIndexPath(channelName, dir), JSON.stringify(index, null, 2) + "\n");
 }
 
 /**
@@ -143,7 +170,7 @@ function writeIndex(index: SlackIndex): void {
  * Message text/ts never change once posted, so the index only ever grows.
  */
 export async function syncIndex(token: string, channelName: string, now: number = Date.now()): Promise<SlackIndex> {
-  const existing = readIndex();
+  const existing = readIndex(channelName);
   const channelId = existing?.channelId ?? (await resolveChannelId(token, channelName));
   const domain = existing?.teamDomain ?? (await teamDomain(token));
   const oldest = existing?.lastTs && existing.lastTs !== "0"
@@ -170,7 +197,7 @@ export async function syncIndex(token: string, channelName: string, now: number 
   const merged = [...(existing?.messages ?? []), ...fresh];
   const lastTs = merged.reduce((max, m) => (parseFloat(m.ts) > parseFloat(max) ? m.ts : max), existing?.lastTs ?? "0");
   const index: SlackIndex = { channelId, teamDomain: domain, lastTs, messages: merged };
-  writeIndex(index);
+  writeIndex(channelName, index);
   return index;
 }
 
@@ -235,7 +262,7 @@ export async function postToSlack(
   now: number = Date.now(),
 ): Promise<SlackRef[]> {
   if (!mrs.length) throw new Error("nothing to post");
-  const existing = readIndex();
+  const existing = readIndex(channelName);
   const channelId = existing?.channelId ?? (await resolveChannelId(token, channelName));
   const domain = existing?.teamDomain ?? (await teamDomain(token));
   const ts = await postMessage(token, channelId, text);
