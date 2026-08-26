@@ -98,9 +98,10 @@ bundle is whatever `bun run build` last wrote to `dist/`.
 
 The app is a deck service named `chat`: `bun src/server/index.ts` in
 `~/Documents/GitHub/chat` on **port 11002**, reachable at
+https://chat.mattstack (deck's local HTTPS name, resolves to 127.0.0.1) or
 http://localhost:11002. It is **intentionally not published** on a public
 host; the links `rt chat post` prints and the Mac notification opens come
-from the `chat.viewerUrl` setting, which points at the local port. The
+from the `chat.viewerUrl` setting, which points at `https://chat.mattstack`. The
 deploy loop after a merge to main:
 
 ```bash
