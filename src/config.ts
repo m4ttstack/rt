@@ -250,6 +250,7 @@ export function parseConfig(raw: string, source = "config.json"): BoardConfig {
 function parseTabs(raw: unknown, source: string): TabConfig[] {
   if (raw === undefined) return IMPLICIT_TABS;
   if (!Array.isArray(raw)) throw new Error(`${source} "tabs" must be an array`);
+  if (raw.length === 0) throw new Error(`${source} "tabs" must not be empty (omit "tabs" for the implicit default)`);
   const seenIds = new Set<string>();
   return raw.map((entry, i) => {
     const label = `tabs[${i}]`;

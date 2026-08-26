@@ -294,6 +294,7 @@ const cache = new SnapshotCache(async () => {
  */
 async function fetchMemberMRs(username: string): Promise<BoardMR[]> {
   const out: PullRequest[] = [];
+  const tags = new Map<string, string[]>();
   const errors: string[] = [];
   for (const projectPath of config.projects) {
     const repoId = daemonRepoField(config, projectPath);
@@ -301,11 +302,13 @@ async function fetchMemberMRs(username: string): Promise<BoardMR[]> {
     const res = await readProjectMRs(repoId, 20_000);
     if (!res.ok || !res.data) { errors.push(`${projectPath}: ${res.error ?? "empty daemon response"}`); continue; }
     for (const entry of Object.values(res.data.mrs)) {
-      if (entry.pr.state === "opened" && entry.pr.author?.username === username) out.push(entry.pr);
+      if (entry.pr.state !== "opened" || entry.pr.author?.username !== username) continue;
+      out.push(entry.pr);
+      if (entry.codeownerSections?.length) tags.set(entry.pr.id, entry.codeownerSections);
     }
   }
   if (errors.length) throw new Error(errors.join(" · "));
-  const mrs = buildBoard(out, config);
+  const mrs = buildBoard(out, config, undefined, tags);
   await enrichReviewerComments(mrs);
   return mrs;
 }

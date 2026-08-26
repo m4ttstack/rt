@@ -112,6 +112,10 @@ describe("parseConfig", () => {
     expect(cfg.tabs).toEqual([{ id: "team", label: "Team", source: { kind: "authors" } }]);
   });
 
+  test("throws on an empty tabs array instead of silently producing a zero-tab board", () => {
+    expect(() => parseConfig(JSON.stringify({ ...base, tabs: [] }))).toThrow(/tabs.*must not be empty/);
+  });
+
   test("tabs validate: unique ids, codeowners needs a section", () => {
     expect(() => parseConfig(JSON.stringify({ ...base, tabs: [
       { id: "a", label: "A", source: { kind: "codeowners" } },

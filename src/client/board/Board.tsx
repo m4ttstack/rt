@@ -69,12 +69,10 @@ export function Board() {
   };
   const update = (patch: Partial<ViewState>) => {
     const clearsSelection = tabChangeClearsSelection(patch, state.tab);
-    setState((prev) => {
-      const next = { ...prev, ...patch };
-      localStorage.setItem(STATE_KEY, JSON.stringify(next));
-      history.replaceState(null, "", serializeViewState(next) || location.pathname);
-      return next;
-    });
+    const next = { ...state, ...patch };
+    localStorage.setItem(STATE_KEY, JSON.stringify(next));
+    history.replaceState(null, "", serializeViewState(next) || location.pathname);
+    setState(next);
     if (clearsSelection) setSelected(new Set());
   };
 

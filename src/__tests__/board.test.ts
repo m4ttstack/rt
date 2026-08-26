@@ -290,6 +290,17 @@ describe("buildBoard tagged rows (codeowner tabs)", () => {
     expect(out[0]!.codeownerSections).toEqual(["Acme"]);
   });
 
+  test("stamps codeownerSections on a roster member's own tagged MR too", () => {
+    // Mirrors fetchMemberMRs' scoped refresh: the row is kept on isMember
+    // alone, but a tags map must still be passed for codeownerSections to
+    // land -- an omitted map (server.ts's prior bug) silently zeroes it.
+    const memberMr = pr({ id: "gitlab:904", iid: 13 }); // default author: alice, a roster member
+    const tags = new Map([[memberMr.id, ["Acme"]]]);
+    const out = buildBoard([memberMr], withTabs, now, tags);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.codeownerSections).toEqual(["Acme"]);
+  });
+
   test("still drops an untagged stranger, and tag-kept rows skip the prefix filter", () => {
     const withPrefixes: BoardConfig = { ...withTabs, ticketPrefixes: ["CV"] };
     // untagged stranger -> dropped
