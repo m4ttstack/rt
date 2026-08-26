@@ -60,8 +60,17 @@ export function ConsoleChrome({
     <RailShell
       headerHeight={CONSOLE_HEADER_HEIGHT}
       header={
-        <Group gap="xs" wrap="nowrap">
-          <Text fw={700}>console</Text>
+        <Group gap="sm" wrap="nowrap">
+          <img
+            src="/favicon.svg"
+            alt=""
+            width={30}
+            height={30}
+            style={{ display: 'block', flex: 'none' }}
+          />
+          <Text fw={700} size="xl">
+            console
+          </Text>
         </Group>
       }
       rail={
