@@ -237,9 +237,6 @@ function useMessages(
     return () => {
       cancelled = true;
     };
-    // `seed` is a one-time starting value for the FIRST room only, not a
-    // prop to resync on; `room` is the real trigger for a real fetch.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [room]);
 
   return messages;
@@ -279,23 +276,29 @@ function useRoomMembers(
     return () => {
       cancelled = true;
     };
-    // `seed` is a one-time starting value for the FIRST room only, same
-    // reasoning as useMessages; `room` is the real trigger for a real fetch.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [room]);
 
   return members.map(m => m.handle);
 }
 
-/** Placeholder home content: no rooms exist at all (fresh daemon, nobody
- * has ever posted) -- distinct from "rooms exist but none selected yet". */
-function RoomsPlaceholder() {
+/**
+ * No rooms at all: nobody is signed in anywhere and the human has joined
+ * nothing. Distinct from "rooms exist but none selected".
+ *
+ * The copy matters. This used to read "the chat feature hasn't landed here
+ * yet", which was Task 1 scaffold text and became actively false the moment
+ * chat shipped -- it said the app was unfinished when the truth was that the
+ * fleet was asleep.
+ */
+function RoomsPlaceholder({ anyBuddies }: { anyBuddies: boolean }) {
   return (
-    <Center mih="60dvh">
+    <Center mih="40dvh">
       <Stack align="center" gap={4}>
-        <Text fw={600}>No rooms yet</Text>
+        <Text fw={600}>No rooms</Text>
         <Text size="sm" c="dimmed">
-          The chat feature hasn&apos;t landed here yet.
+          {anyBuddies
+            ? 'Agents are signed in but not in a room yet.'
+            : 'No agent has signed in. A room appears when one does.'}
         </Text>
       </Stack>
     </Center>
@@ -915,19 +918,28 @@ export function App({ initialState }: { initialState?: AppInitialState } = {}) {
             onProbeNow={daemon.probeNow}
           />
           {rooms.length === 0 ? (
-            <>
+            // Same two-column shape as the populated view rather than a
+            // bare stack: the roster is a 300px card, so dropping it into an
+            // unconstrained Box left it floating at the top-left with the
+            // empty state stranded below it.
+            <Group
+              align="stretch"
+              wrap="nowrap"
+              gap="lg"
+              style={{ minWidth: 0 }}
+            >
+              <Box style={{ flex: 1, minWidth: 0 }}>
+                <RoomsPlaceholder anyBuddies={buddies.length > 0} />
+              </Box>
               {buddies.length > 0 && (
-                <Box mb="lg">
-                  <Roster
-                    buddies={buddies}
-                    now={Date.now()}
-                    roomMembers={[]}
-                    daemonReachable={daemon.reachable}
-                  />
-                </Box>
+                <Roster
+                  buddies={buddies}
+                  now={Date.now()}
+                  roomMembers={[]}
+                  daemonReachable={daemon.reachable}
+                />
               )}
-              <RoomsPlaceholder />
-            </>
+            </Group>
           ) : (
             // The Main artboard stacks these: the page bar spans the FULL
             // content width as its own row, and the three cards sit in the

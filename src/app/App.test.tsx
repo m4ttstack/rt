@@ -46,7 +46,7 @@ test('/ renders the chat shell: wordmark, Rooms rail entry, placeholder home', (
   expect(rooms).toBeTruthy();
   expect(rooms.getAttribute('aria-current')).toBe('page');
 
-  expect(screen.getByText('No rooms yet')).toBeTruthy();
+  expect(screen.getByText('No rooms')).toBeTruthy();
 });
 
 test('the rail hosts the color-scheme toggle', () => {
@@ -111,7 +111,7 @@ test('unknown paths render the not-found page inside the chat chrome', () => {
   fireEvent.click(screen.getByRole('link', { name: /Back home/ }));
 
   expect(window.location.pathname).toBe('/');
-  expect(screen.getByText('No rooms yet')).toBeTruthy();
+  expect(screen.getByText('No rooms')).toBeTruthy();
 });
 
 test('the roster is actually mounted, not merely written', () => {
