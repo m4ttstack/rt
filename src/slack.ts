@@ -133,27 +133,17 @@ export function slackIndexPath(channelName: string, dir: string = STATE_ROOT): s
   return join(dir, `slack-index-${slug}.json`);
 }
 
-/**
- * Read a channel's index, migrating the legacy single-channel index into
- * place the first time any channel asks for it. The rename consumes the
- * legacy file, so at most one channel ever inherits that history -- in
- * practice the pre-tabs default channel, since it's the one every existing
- * install already keeps syncing. A codeowners tab's channel is new with
- * tabs, so it has no history to lose by starting fresh.
- */
+/** Where the pre-tabs single-channel index lives, if this install predates tabs. */
+export function legacyIndexPath(dir: string = STATE_ROOT): string {
+  return join(dir, LEGACY_INDEX_NAME);
+}
+
+/** Read a channel's own index. No legacy fallback here -- adoption needs a
+    resolved channel id to verify against (see adoptLegacyIndex), which this
+    plain fs read has no way to obtain. */
 export function readIndex(channelName: string, dir: string = STATE_ROOT): SlackIndex | null {
-  const path = slackIndexPath(channelName, dir);
-  const legacyPath = join(dir, LEGACY_INDEX_NAME);
-  if (!existsSync(path) && existsSync(legacyPath)) {
-    try {
-      renameSync(legacyPath, path);
-    } catch {
-      // Lost a rename race with another process's migration; read whatever
-      // landed at `path` below rather than fail the read.
-    }
-  }
   try {
-    return JSON.parse(readFileSync(path, "utf8")) as SlackIndex;
+    return JSON.parse(readFileSync(slackIndexPath(channelName, dir), "utf8")) as SlackIndex;
   } catch {
     return null;
   }
@@ -165,13 +155,46 @@ export function writeIndex(channelName: string, index: SlackIndex, dir: string =
 }
 
 /**
+ * Adopt the legacy single-channel index for `channelName`, but only when its
+ * cached channelId actually matches `resolvedChannelId` -- the id the caller
+ * just resolved by name from Slack. The legacy file predates tabs and stores
+ * no channel name, only a channelId, so an unverified adoption would let
+ * whichever channel asks first inherit a DIFFERENT channel's id and silently
+ * operate against the wrong Slack channel from then on. A mismatch leaves
+ * the legacy file untouched so the channel it actually belongs to can still
+ * adopt it later; the caller starts fresh with `resolvedChannelId` instead.
+ */
+export function adoptLegacyIndex(channelName: string, resolvedChannelId: string, dir: string = STATE_ROOT): SlackIndex | null {
+  const path = slackIndexPath(channelName, dir);
+  const legacyPath = legacyIndexPath(dir);
+  if (existsSync(path) || !existsSync(legacyPath)) return null;
+  let legacy: SlackIndex;
+  try {
+    legacy = JSON.parse(readFileSync(legacyPath, "utf8")) as SlackIndex;
+  } catch {
+    return null;
+  }
+  if (legacy.channelId !== resolvedChannelId) return null;
+  try {
+    renameSync(legacyPath, path);
+  } catch {
+    // Lost a rename race with another process's adoption; the file now at
+    // `path` (written by whoever won) is still correct for this channel.
+  }
+  return legacy;
+}
+
+/**
  * Bring the local channel index up to date and return it. First run seeds from
  * the last INITIAL_LOOKBACK_DAYS; later runs fetch only messages after lastTs.
  * Message text/ts never change once posted, so the index only ever grows.
  */
 export async function syncIndex(token: string, channelName: string, now: number = Date.now()): Promise<SlackIndex> {
-  const existing = readIndex(channelName);
+  let existing = readIndex(channelName);
   const channelId = existing?.channelId ?? (await resolveChannelId(token, channelName));
+  // No per-channel index yet: the resolved id above lets us verify (not just
+  // assume) whether the legacy single-channel index actually belongs here.
+  if (!existing) existing = adoptLegacyIndex(channelName, channelId);
   const domain = existing?.teamDomain ?? (await teamDomain(token));
   const oldest = existing?.lastTs && existing.lastTs !== "0"
     ? existing.lastTs
@@ -262,8 +285,9 @@ export async function postToSlack(
   now: number = Date.now(),
 ): Promise<SlackRef[]> {
   if (!mrs.length) throw new Error("nothing to post");
-  const existing = readIndex(channelName);
+  let existing = readIndex(channelName);
   const channelId = existing?.channelId ?? (await resolveChannelId(token, channelName));
+  if (!existing) existing = adoptLegacyIndex(channelName, channelId);
   const domain = existing?.teamDomain ?? (await teamDomain(token));
   const ts = await postMessage(token, channelId, text);
   const multi = mrs.length > 1;
