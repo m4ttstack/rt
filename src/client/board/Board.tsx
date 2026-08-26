@@ -208,15 +208,15 @@ export function Board() {
     axis: "review", path: "/review", verbing: "launching review", noun: "review",
     optimistic: optimisticLifecycle, addToast, reload: load,
   });
-  const handleLaunch = useCallback((mr: BoardMR, note?: string) => launchReview(mr, {}, note), [launchReview]);
+  const handleLaunch = useCallback((mr: BoardMR, note?: string) => launchReview(mr, { tabId: state.tab }, note), [launchReview, state.tab]);
 
   const reReviewAction = useLaunchAction({
     axis: "review", path: "/review", verbing: "re-reviewing", noun: "review",
     optimistic: optimisticLifecycle, addToast, reload: load,
   });
   const handleReReview = useCallback(
-    (mr: BoardMR, note?: string) => reReviewAction(mr, { reReview: true }, note),
-    [reReviewAction],
+    (mr: BoardMR, note?: string) => reReviewAction(mr, { reReview: true, tabId: state.tab }, note),
+    [reReviewAction, state.tab],
   );
 
   const respondAction = useLaunchAction({

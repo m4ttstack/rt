@@ -10,7 +10,7 @@ import { loadConfig, loadGitLabToken, loadSlackToken, loadSwitchboardToken, load
 import { memoizeAsync } from "./memoize-async.ts";
 import { resolveBoardSkill, type BoardSkillKind } from "./manifest-bindings.ts";
 import { upsertEnvKeys } from "./env-file.ts";
-import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, channelForMR, configuredSlackChannels, projectPathFromWebUrl, type BoardMR, type SyncScopeRead } from "./data.ts";
+import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, channelForMR, configuredSlackChannels, projectPathFromWebUrl, reviewSkillForTab, type BoardMR, type SyncScopeRead } from "./data.ts";
 import { GitLabProvider, ReadBackFailedError, NoteMutator, parseRepoId } from "@mattstack/glance";
 import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } from "./discussions.ts";
 import { readProjectMRs, readDiscussions, subscribe } from "@mattstack/rt-client";
@@ -628,6 +628,7 @@ const httpServer = Bun.serve({
         if (!parsed) return new Response("expected { mrUrl: string, iid: number }", { status: 400 });
         const resume = (body as { resume?: unknown })?.resume === true;
         const reReview = (body as { reReview?: unknown })?.reReview === true;
+        const tabId = (body as { tabId?: unknown })?.tabId;
         const noteParse = parseLaunchNote(body);
         if (!noteParse.ok) return new Response(noteParse.error, { status: 400 });
         const note = noteParse.note;
@@ -655,7 +656,7 @@ const httpServer = Bun.serve({
           void launchReReview(parsed.mrUrl, parsed.iid, {
             cwd: config.reviewCwd,
             workspaceLabel: config.reviewsWorkspace,
-            skill: resolveLaunchSkill("review", parsed.mrUrl),
+            skill: reviewSkillForTab(config, typeof tabId === "string" ? tabId : undefined, parsed.mrUrl, resolveLaunchSkill),
             author,
             claudeCommand: config.claudeCommand,
             note,
@@ -691,7 +692,7 @@ const httpServer = Bun.serve({
           cwd: config.reviewCwd,
           workspaceLabel: config.reviewsWorkspace,
           statePath,
-          skill: resolveLaunchSkill("review", parsed.mrUrl),
+          skill: reviewSkillForTab(config, typeof tabId === "string" ? tabId : undefined, parsed.mrUrl, resolveLaunchSkill),
           author,
           claudeCommand: config.claudeCommand,
           note,

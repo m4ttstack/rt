@@ -281,3 +281,17 @@ export function buildRoster(members: Member[], mrs: BoardMR[], names: Map<string
     count: mrs.filter((mr) => mr.author.username === member.username).length,
   }));
 }
+
+export function reviewSkillForTab(
+  config: BoardConfig,
+  tabId: string | undefined,
+  mrUrl: string,
+  fallback: (kind: "review", mrUrl: string) => string,
+): string {
+  const tab = tabId ? config.tabs.find((t) => t.id === tabId) : undefined;
+  if (tab?.reviewSkill) {
+    console.log(`review skill: ${tab.reviewSkill} (tab ${tab.id})`);
+    return tab.reviewSkill;
+  }
+  return fallback("review", mrUrl);
+}

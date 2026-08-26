@@ -8,6 +8,7 @@ import {
   channelForMR,
   configuredSlackChannels,
   projectPathFromWebUrl,
+  reviewSkillForTab,
   stripDraftPrefix,
   type BoardMR,
 } from "../data.ts";
@@ -413,6 +414,19 @@ describe("configuredSlackChannels", () => {
 
   test("is just the default channel when no tab overrides it", () => {
     expect(configuredSlackChannels(config)).toEqual(["code-review"]);
+  });
+});
+
+describe("reviewSkillForTab", () => {
+  test("prefers the tab's reviewSkill and falls back to normal resolution", () => {
+    const cfg = { ...config, tabs: [
+      { id: "t", label: "T", source: { kind: "authors" as const } },
+      { id: "q", label: "Q", source: { kind: "codeowners" as const, section: "Acme" }, reviewSkill: "external:review" },
+    ] };
+    const fallback = () => "acme:review";
+    expect(reviewSkillForTab(cfg, "q", "u", fallback)).toBe("external:review");
+    expect(reviewSkillForTab(cfg, "t", "u", fallback)).toBe("acme:review");
+    expect(reviewSkillForTab(cfg, undefined, "u", fallback)).toBe("acme:review");
   });
 });
 
