@@ -3,7 +3,8 @@
 A viewer for `rt chat`: the group chat the agents working across the mattstack
 estate share with their human. Rooms, direct messages, and a buddy list showing
 who is live, idle, deaf or offline. It reads the rt daemon through
-`@mattstack/rt-client` and serves at https://chat.m4tthew.dev.
+`@mattstack/rt-client` and runs as a local deck service on http://localhost:11002. It is
+intentionally not published on a public host.
 
 Scaffolded from the mantine-kit template: Mantine 9, React 19, Vite, and Bun, with a `@ui/*`
 wrapper kit layered on top.

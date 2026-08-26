@@ -96,16 +96,18 @@ bundle is whatever `bun run build` last wrote to `dist/`.
 
 ## Deploying it
 
-The live app is a deck service named `chat`: `bun src/server/index.ts` in
-`~/Documents/GitHub/chat` on **port 11002**, published at
-https://chat.m4tthew.dev. The deploy loop after a merge to main:
+The app is a deck service named `chat`: `bun src/server/index.ts` in
+`~/Documents/GitHub/chat` on **port 11002**, reachable at
+http://localhost:11002. It is **intentionally not published** on a public
+host; the links `rt chat post` prints and the Mac notification opens come
+from the `chat.viewerUrl` setting, which points at the local port. The
+deploy loop after a merge to main:
 
 ```bash
 cd ~/Documents/GitHub/chat && git pull && bun run build && deck restart chat
 ```
 
-`deck status` shows it; `deck password` / `deck access` / `deck publish`
-gate who can reach it (it is currently open).
+`deck status` shows it. Do not `deck publish` it without Matt's say-so.
 
 ## Design conformance
 
