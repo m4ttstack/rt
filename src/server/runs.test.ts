@@ -94,7 +94,8 @@ describe('runs api', () => {
     // rejection the real client never produces.
     vi.mocked(rt.listRuns).mockResolvedValueOnce({
       ok: false,
-      error: 'rt daemon unreachable at /Users/x/.mattstack/rt/rt.sock: ECONNREFUSED',
+      error:
+        'rt daemon unreachable at /Users/x/.mattstack/rt/rt.sock: ECONNREFUSED',
     });
 
     const res = await app.fetch(new Request('http://localhost/api/runs'));
