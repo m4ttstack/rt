@@ -15,27 +15,19 @@ export default defineConfig({
         // Vendor splitting, so no emitted chunk crosses Vite's 500 kB
         // warning threshold. Groups are matched in order; a group chunk is
         // only fetched when a chunk that needs it loads, so the lazily
-        // loaded packages (@codemirror/*, @mantine/code-highlight via
-        // @ui/lazy) must not share a group with eagerly loaded ones --
-        // that's why the mantine group lists its packages explicitly
-        // instead of matching all of node_modules/@mantine.
+        // loaded packages (@mantine/code-highlight via @ui/lazy) must not
+        // share a group with eagerly loaded ones -- that's why the mantine
+        // group lists its packages explicitly instead of matching all of
+        // node_modules/@mantine.
         codeSplitting: {
           groups: [
-            {
-              name: 'codemirror-lang',
-              test: /node_modules\/(?:@codemirror\/lang-|@lezer\/)/,
-            },
-            {
-              name: 'codemirror',
-              test: /node_modules\/(?:@codemirror\/|codemirror\/|style-mod|w3c-keyname|crelt)/,
-            },
             {
               name: 'react',
               test: /node_modules\/(?:react|react-dom|scheduler)\//,
             },
             {
               name: 'mantine',
-              test: /node_modules\/@mantine\/(?:core|dates|hooks|form|modals|notifications|spotlight)\//,
+              test: /node_modules\/@mantine\/(?:core|dates|hooks|form|modals|notifications)\//,
             },
           ],
         },

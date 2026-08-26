@@ -13,17 +13,14 @@ export function NotFoundPage() {
         <Title order={1} fz="h2">
           Page not found
         </Title>
-        <Text c="dimmed">
-          Nothing lives at this address. The landing page, the docs, and the
-          live demo are all one click away.
-        </Text>
+        <Text c="dimmed">Nothing lives at this address.</Text>
         <Button
           component={Link}
           href="/"
           mt="xs"
           leftSection={<Icon name="arrowLeft" size={16} />}
         >
-          Back to the landing page
+          Back home
         </Button>
       </Stack>
     </Box>

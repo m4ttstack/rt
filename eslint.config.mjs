@@ -1,8 +1,6 @@
 import js from '@eslint/js';
 import eslintConfigPrettier from 'eslint-config-prettier';
 import reactHooks from 'eslint-plugin-react-hooks';
-// See https://github.com/storybookjs/eslint-plugin-storybook#configuration-flat-config-format
-import storybook from 'eslint-plugin-storybook';
 import tseslint from 'typescript-eslint';
 
 import noInlineStyles from './eslint-local/no-inline-styles.js';
@@ -104,7 +102,6 @@ export default tseslint.config(
       ],
     },
   },
-  storybook.configs['flat/recommended'],
   // Must stay last: turns off every core/plugin stylistic rule that conflicts
   // with (or duplicates) Prettier, so formatting is Prettier's job alone.
   // No eslint import-order rule exists in this config to disable in favor of
