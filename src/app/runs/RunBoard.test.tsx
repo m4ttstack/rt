@@ -40,6 +40,7 @@ const FIXTURE: RunSummary[] = [
 
 const runsGet = vi.fn();
 const seenGet = vi.fn();
+const enrichPost = vi.fn();
 
 vi.mock('../api', () => ({
   client: {
@@ -60,6 +61,7 @@ vi.mock('../api', () => ({
             }),
           },
         },
+        enrich: { $post: (...args: unknown[]) => enrichPost(...args) },
       },
       seen: { $get: (...args: unknown[]) => seenGet(...args) },
     },
@@ -74,6 +76,7 @@ beforeEach(() => {
     json: async () => ({ runs: FIXTURE }),
   });
   seenGet.mockResolvedValue({ ok: true, json: async () => ({}) });
+  enrichPost.mockResolvedValue({ ok: true, json: async () => ({}) });
 });
 
 afterEach(() => {
@@ -331,6 +334,62 @@ describe('RunBoard', () => {
         ).toBeInTheDocument()
       );
       expect(screen.queryByTestId('board-update-pill')).not.toBeInTheDocument();
+    });
+  });
+
+  describe('the enrich join', () => {
+    it('issues one batched request for every visible branch and threads results into the matching row', async () => {
+      const runsWithBranches: RunSummary[] = [
+        run({ id: 'a', branch: 'feat/a', ticket: 'RT-1' }),
+        run({ id: 'b', branch: 'feat/b', ticket: 'RT-2', last_event_at: 5 }),
+      ];
+      runsGet.mockResolvedValue({
+        ok: true,
+        json: async () => ({ runs: runsWithBranches }),
+      });
+      enrichPost.mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          'feat/a': {
+            ticket: {
+              identifier: 'RT-1',
+              title: 'Board redesign',
+              url: 'https://linear.app/x',
+            },
+            mr: null,
+            fetchedAt: 0,
+          },
+        }),
+      });
+
+      renderBoard();
+
+      await waitFor(() =>
+        expect(screen.getByText('Board redesign')).toBeInTheDocument()
+      );
+
+      // Alphabetical: `useRunsEnrich` dedupes and sorts before requesting, so
+      // this holds regardless of which order the board discovered the runs in.
+      expect(enrichPost).toHaveBeenCalledTimes(1);
+      expect(enrichPost).toHaveBeenCalledWith({
+        json: { branches: ['feat/a', 'feat/b'] },
+      });
+
+      // `feat/b` has no entry in the enrich response -- its row renders with
+      // no title, not a second request retrying for it.
+      expect(
+        within(screen.getByTestId('run-row-b')).queryByText('Board redesign')
+      ).not.toBeInTheDocument();
+    });
+
+    it('skips the request entirely when no visible run has a branch', async () => {
+      renderBoard();
+
+      await waitFor(() =>
+        expect(screen.getByTestId('run-row-attn-1')).toBeInTheDocument()
+      );
+
+      expect(enrichPost).not.toHaveBeenCalled();
     });
   });
 });

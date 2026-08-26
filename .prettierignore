@@ -20,3 +20,6 @@ skills/**
 # pre-wrap`, so reflowing it changes what the reference PNG shows.
 design/wiring/artboards/**
 design/wiring/render/**
+
+# Committed design-reference sources stay byte-identical to the published canvas
+docs/design/**

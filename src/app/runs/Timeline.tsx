@@ -5,7 +5,9 @@ import type {
 } from '@mattstack/rt-client';
 
 import {
+  Anchor,
   Badge,
+  Box,
   Group,
   Timeline as MantineTimeline,
   Stack,
@@ -90,6 +92,21 @@ export function groupTimeline(
   return { stageGroups, outsideGroups: [...outsideByProducer.values()] };
 }
 
+/** How long a stage took, once it has both ends; a running stage measures
+    against now so the number keeps moving while you watch it. */
+function stageElapsed(stage: {
+  started_at: number | null;
+  ended_at: number | null;
+}): string | null {
+  if (stage.started_at == null) return null;
+  const ms = (stage.ended_at ?? Date.now()) - stage.started_at;
+  if (ms < 0) return null;
+  const mins = Math.round(ms / 60_000);
+  if (mins < 1) return '<1m';
+  if (mins < 60) return `${mins}m`;
+  return `${Math.floor(mins / 60)}h ${mins % 60}m`;
+}
+
 const STAGE_STATUS_COLOR: Record<string, MantineColor> = {
   done: 'ok',
   failed: 'bad',
@@ -103,6 +120,19 @@ function StageBullet({ status }: { status: string }) {
   return null;
 }
 
+/** Several recorded fields ARE forge URLs -- `mr` is the merge request, and
+    stages are free to record any other link. Rendering them as text makes the
+    reader copy-paste a URL that is already sitting in front of them. */
+function FieldValue({ value }: { value: string }) {
+  const url = /^https?:\/\/\S+$/.test(value.trim()) ? value.trim() : null;
+  if (!url) return <>{value}</>;
+  return (
+    <Anchor href={url} target="_blank" rel="noopener noreferrer">
+      {url}
+    </Anchor>
+  );
+}
+
 function FieldRow({ field }: { field: RunFieldRow }) {
   const { text } = useSchemeColors();
   return (
@@ -111,7 +141,7 @@ function FieldRow({ field }: { field: RunFieldRow }) {
         <Text span fw={600} c={text.muted}>
           {field.key}:
         </Text>{' '}
-        {field.value}
+        <FieldValue value={field.value} />
       </Text>
     </Group>
   );
@@ -132,6 +162,25 @@ export interface TimelineProps {
   stages: RunStageRow[];
   fields: RunFieldRow[];
   decisions: RunDecisionRow[];
+  /** `run.current_stage` -- names the stage that stays expanded; every other
+      stage (done or not) collapses to a condensed line. */
+  currentStage: string | null;
+}
+
+/**
+ * Same "last attempt wins" rule `groupTimeline` already applies to field/
+ * decision attribution: a retried stage repeats its name across attempts, so
+ * the LAST stageGroup matching `currentStage` is the live one.
+ */
+function findCurrentIndex(
+  stageGroups: StageGroup[],
+  currentStage: string | null
+): number {
+  let found = -1;
+  stageGroups.forEach((group, i) => {
+    if (group.stage.name === currentStage) found = i;
+  });
+  return found;
 }
 
 /**
@@ -139,109 +188,187 @@ export interface TimelineProps {
  * a separate tab -- provenance in place is the entire point of stamping an
  * event with its stage.
  */
+/**
+ * Everything recorded against the run by something other than a pipeline
+ * stage: the skill that started it, the run's own identity, and decisions a
+ * person made. Grouped by writer, which is the only thing these records have
+ * in common.
+ */
+export function RunContext({
+  fields,
+  decisions,
+  stages,
+}: Pick<TimelineProps, 'fields' | 'decisions' | 'stages'>) {
+  const { text } = useSchemeColors();
+  const { outsideGroups } = groupTimeline(stages, fields, decisions);
+
+  if (outsideGroups.length === 0) {
+    return (
+      <Text size="sm" c={text.muted} data-testid="run-context-empty">
+        Everything on this run was recorded by a pipeline stage.
+      </Text>
+    );
+  }
+
+  return (
+    <Stack gap="md" data-testid="run-context">
+      <Text size="xs" c={text.muted}>
+        Recorded against the run itself, not by a pipeline stage.
+      </Text>
+      {outsideGroups.map(group => (
+        <Stack key={group.producedBy} gap={4}>
+          <Text size="xs" fw={600} c={text.muted}>
+            {group.producedBy}
+          </Text>
+          {group.fields.map(field => (
+            <FieldRow key={field.key} field={field} />
+          ))}
+          {group.decisions.map(decision => (
+            <DecisionRow
+              key={`${decision.contract}-${decision.scope}-${decision.decided_at}`}
+              decision={decision}
+            />
+          ))}
+        </Stack>
+      ))}
+    </Stack>
+  );
+}
+
 export function Timeline({
   repo,
   runId,
   stages,
   fields,
   decisions,
+  currentStage,
 }: TimelineProps) {
-  const { text } = useSchemeColors();
-  const { stageGroups, outsideGroups } = groupTimeline(
-    stages,
-    fields,
-    decisions
-  );
+  const { text, bg, border } = useSchemeColors();
+  const { stageGroups } = groupTimeline(stages, fields, decisions);
+  const currentIndex = findCurrentIndex(stageGroups, currentStage);
 
   return (
-    <MantineTimeline
-      active={stageGroups.length}
-      bulletSize={22}
-      lineWidth={2}
-      data-testid="run-timeline"
-    >
-      {stageGroups.map(
-        ({ stage, fields: stageFields, decisions: stageDecisions }) => (
-          <MantineTimeline.Item
-            key={`${stage.name}-${stage.attempt}`}
-            bullet={<StageBullet status={stage.status} />}
-            color={STAGE_STATUS_COLOR[stage.status] ?? 'gray'}
-            data-testid={`timeline-stage-${stage.name}-${stage.attempt}`}
-            title={
+    <Stack gap="sm" data-testid="timeline-surface">
+      <Text fw={700} size="sm">
+        Pipeline
+      </Text>
+      <MantineTimeline
+        active={stageGroups.length}
+        bulletSize={22}
+        lineWidth={2}
+        data-testid="run-timeline"
+      >
+        {stageGroups.map(
+          ({ stage, fields: stageFields, decisions: stageDecisions }, i) => {
+            const isCurrent = i === currentIndex;
+            const summary = (
               <Group gap="xs" wrap="nowrap">
-                <Text fw={600}>{stage.name}</Text>
+                {/* Fixed width: without it a long name wraps and pushes its
+                    own status badge into an ellipsis, and every row's detail
+                    text starts at a different x. */}
+                <Text fw={600} w={104} style={{ flex: 'none' }}>
+                  {stage.name}
+                </Text>
                 {stage.attempt > 1 && (
                   <Badge size="xs" variant="light" color="gray">
                     attempt {stage.attempt}
                   </Badge>
                 )}
-                <Badge
-                  size="xs"
-                  variant="light"
-                  color={STAGE_STATUS_COLOR[stage.status] ?? 'gray'}
-                >
-                  {stage.status}
-                </Badge>
+                {/* The check mark on the rail already says "done"; a badge
+                    repeating it on every completed row is the noise the
+                    condensed timeline exists to remove. Anything else still
+                    earns a badge. */}
+                {stage.status !== 'done' && (
+                  <Badge
+                    size="xs"
+                    variant="light"
+                    color={STAGE_STATUS_COLOR[stage.status] ?? 'gray'}
+                  >
+                    {stage.status}
+                  </Badge>
+                )}
+                {stageElapsed(stage) && (
+                  <Text span c={text.muted} fz={11}>
+                    {stageElapsed(stage)}
+                  </Text>
+                )}
               </Group>
-            }
-          >
-            <Stack gap={4} mt={4}>
-              {stage.status === 'failed' && (
-                <>
-                  {stage.reason && (
-                    <Text size="sm" c={text.highContrast('bad')}>
-                      {stage.reason}
-                    </Text>
-                  )}
-                  {stage.detail_path && (
-                    <FailureExcerpt
-                      repo={repo}
-                      runId={runId}
-                      detailPath={stage.detail_path}
-                    />
-                  )}
-                </>
-              )}
-              {stageFields.map(field => (
-                <FieldRow key={field.key} field={field} />
-              ))}
-              {stageDecisions.map(decision => (
-                <DecisionRow
-                  key={`${decision.contract}-${decision.scope}-${decision.decided_at}`}
-                  decision={decision}
-                />
-              ))}
-            </Stack>
-          </MantineTimeline.Item>
-        )
-      )}
-      {outsideGroups.length > 0 && (
-        <MantineTimeline.Item
-          bullet={<Icons.link size={12} />}
-          color="gray"
-          title="Outside the pipeline"
-          data-testid="timeline-outside-pipeline"
-        >
-          <Stack gap="sm" mt={4}>
-            {outsideGroups.map(group => (
-              <Stack key={group.producedBy} gap={4}>
-                <Text size="xs" c={text.muted}>
-                  {group.producedBy}
-                </Text>
-                {group.fields.map(field => (
-                  <FieldRow key={field.key} field={field} />
-                ))}
-                {group.decisions.map(decision => (
-                  <DecisionRow
-                    key={`${decision.contract}-${decision.scope}-${decision.decided_at}`}
-                    decision={decision}
-                  />
-                ))}
-              </Stack>
-            ))}
-          </Stack>
-        </MantineTimeline.Item>
-      )}
-    </MantineTimeline>
+            );
+
+            return (
+              <MantineTimeline.Item
+                key={`${stage.name}-${stage.attempt}`}
+                bullet={<StageBullet status={stage.status} />}
+                color={STAGE_STATUS_COLOR[stage.status] ?? 'gray'}
+                data-testid={`timeline-stage-${stage.name}-${stage.attempt}`}
+                title={
+                  isCurrent ? (
+                    summary
+                  ) : (
+                    <Group
+                      gap="md"
+                      wrap="nowrap"
+                      data-testid="timeline-stage-condensed"
+                    >
+                      {summary}
+                      {stageFields.map(field => (
+                        <FieldRow key={field.key} field={field} />
+                      ))}
+                      {stageDecisions.map(decision => (
+                        <DecisionRow
+                          key={`${decision.contract}-${decision.scope}-${decision.decided_at}`}
+                          decision={decision}
+                        />
+                      ))}
+                    </Group>
+                  )
+                }
+              >
+                {isCurrent && (
+                  <Box
+                    data-testid="timeline-current-stage"
+                    bg={bg.lightened('accent')}
+                    p="xs"
+                    mt={4}
+                    style={{
+                      border: border.style('accent'),
+                      borderRadius: 8,
+                    }}
+                  >
+                    <Stack gap={4}>
+                      {stage.status === 'failed' && (
+                        <>
+                          {stage.reason && (
+                            <Text size="sm" c={text.highContrast('bad')}>
+                              {stage.reason}
+                            </Text>
+                          )}
+                          {stage.detail_path && (
+                            <FailureExcerpt
+                              repo={repo}
+                              runId={runId}
+                              detailPath={stage.detail_path}
+                            />
+                          )}
+                        </>
+                      )}
+                      {stageFields.map(field => (
+                        <FieldRow key={field.key} field={field} />
+                      ))}
+                      {stageDecisions.map(decision => (
+                        <DecisionRow
+                          key={`${decision.contract}-${decision.scope}-${decision.decided_at}`}
+                          decision={decision}
+                        />
+                      ))}
+                    </Stack>
+                  </Box>
+                )}
+              </MantineTimeline.Item>
+            );
+          }
+        )}
+      </MantineTimeline>
+    </Stack>
   );
 }

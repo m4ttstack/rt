@@ -1,4 +1,5 @@
 import { useEffect } from 'react';
+import type { BranchEnrichment } from '@mattstack/rt-client';
 import {
   keepPreviousData,
   useMutation,
@@ -95,6 +96,27 @@ export function useRunsPruneDays() {
       const { days } = await res.json();
       return days;
     },
+  });
+}
+
+/** One batched POST for every visible row's branch, keyed on the
+    de-duplicated, sorted branch list -- an unsorted key would treat the same
+    visible set in a different order as a different query and refetch
+    instead of hitting cache. Skips the request entirely for an empty board
+    rather than POSTing `{branches: []}`. */
+export function useRunsEnrich(branches: string[]) {
+  const key = [...new Set(branches)].sort();
+  return useQuery({
+    queryKey: ['runs-enrich', key],
+    queryFn: async (): Promise<Record<string, BranchEnrichment>> => {
+      const res = await client.api.runs.enrich.$post({
+        json: { branches: key },
+      });
+      if (!res.ok) throw new Error(`runs enrich failed: ${res.status}`);
+      return res.json();
+    },
+    enabled: key.length > 0,
+    staleTime: 60_000,
   });
 }
 

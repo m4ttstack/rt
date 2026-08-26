@@ -3,6 +3,7 @@ import { HTTPException } from 'hono/http-exception';
 
 import pkg from '../../package.json' with { type: 'json' };
 import { mountEffectiveInputs } from './effectiveInputs';
+import { enrich } from './enrich';
 import { runs } from './runs';
 import { settings } from './settings';
 import { mountSkills } from './skills';
@@ -17,6 +18,7 @@ const routes = new Hono()
     c.json({ ok: true, version: pkg.version }, 200)
   )
   .route('/', runs)
+  .route('/', enrich)
   .route('/', settings)
   .route('/', mountSkills(new Hono()))
   .route('/', mountEffectiveInputs(new Hono()));

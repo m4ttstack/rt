@@ -22,7 +22,13 @@ import {
 } from './bands';
 import { CommandProvenance } from './CommandProvenance';
 import { RunRow } from './RunRow';
-import { useRunEvents, useRunList, useRunsPruneDays, useSeen } from './useRuns';
+import {
+  useRunEvents,
+  useRunList,
+  useRunsEnrich,
+  useRunsPruneDays,
+  useSeen,
+} from './useRuns';
 
 /** The finished band is the whole retention window and grows unbounded --
     render only the most recent slice here; `RunSearch` is the surface for
@@ -116,6 +122,30 @@ export function RunBoard() {
     runsQuery.isSuccess && seenQuery.isSuccess
   );
 
+  // Computed once here (rather than inline per band below) so the same
+  // capped, sorted set that gets RENDERED is also what the enrich join
+  // fetches for -- a run capped out of the finished band shouldn't cost a
+  // branch in that batched request.
+  const displayByBand: Record<Band, BoardRun[]> = {
+    attention: bands.attention,
+    running: bands.running,
+    finished:
+      bands.finished.length > FINISHED_DISPLAY_CAP
+        ? [...bands.finished]
+            .sort((a, b) => b.last_event_at - a.last_event_at)
+            .slice(0, FINISHED_DISPLAY_CAP)
+        : bands.finished,
+  };
+
+  const visibleBranches = [
+    ...new Set(
+      BAND_ORDER.flatMap(band => displayByBand[band])
+        .map(run => run.branch)
+        .filter((branch): branch is string => branch != null)
+    ),
+  ];
+  const enrichQuery = useRunsEnrich(visibleBranches);
+
   if (runsQuery.isError) {
     return (
       <PageShell title="Runs">
@@ -154,15 +184,9 @@ export function RunBoard() {
         )}
         {BAND_ORDER.map(band => {
           const bandRuns = bands[band];
-          const isFinished = band === 'finished';
-          const capped = isFinished && bandRuns.length > FINISHED_DISPLAY_CAP;
-          // "Most recent" means highest `last_event_at`, which is the
-          // opposite end from `sortBand`'s silence-first order for this band.
-          const displayRuns = capped
-            ? [...bandRuns]
-                .sort((a, b) => b.last_event_at - a.last_event_at)
-                .slice(0, FINISHED_DISPLAY_CAP)
-            : bandRuns;
+          const capped =
+            band === 'finished' && bandRuns.length > FINISHED_DISPLAY_CAP;
+          const displayRuns = displayByBand[band];
 
           return (
             <Stack key={band} gap="sm" data-testid={`band-${band}`}>
@@ -177,12 +201,15 @@ export function RunBoard() {
                   {BAND_META[band].empty}
                 </Text>
               ) : (
-                <Stack gap="xs">
+                <Stack gap="sm">
                   {displayRuns.map(run => (
                     <RunRow
                       key={run.id}
                       run={run}
                       pruneDays={pruneDaysQuery.data}
+                      enrichment={
+                        run.branch ? enrichQuery.data?.[run.branch] : undefined
+                      }
                     />
                   ))}
                 </Stack>

@@ -1,11 +1,12 @@
 import type {
+  BranchEnrichment,
   RunDetail as RunDetailData,
   RunSummary,
 } from '@mattstack/rt-client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { renderWithProviders } from '@ui/storybook/test-utils';
 
@@ -13,6 +14,7 @@ const detailGet = vi.fn();
 const artifactGet = vi.fn();
 const seenPost = vi.fn();
 const abandonPost = vi.fn();
+const enrichPost = vi.fn();
 
 vi.mock('../api', () => ({
   client: {
@@ -25,6 +27,7 @@ vi.mock('../api', () => ({
             abandon: { $post: (...args: unknown[]) => abandonPost(...args) },
           },
         },
+        enrich: { $post: (...args: unknown[]) => enrichPost(...args) },
       },
       seen: {
         ':runId': { $post: (...args: unknown[]) => seenPost(...args) },
@@ -120,12 +123,35 @@ function renderDetail() {
   );
 }
 
+const enrichedBranch: BranchEnrichment = {
+  ticket: {
+    identifier: 'RT-1',
+    title: 'Redesign the run detail page',
+    url: 'https://linear.app/acme/issue/RT-1',
+  },
+  mr: {
+    iid: 7,
+    webUrl: 'https://example.com/mr/7',
+    state: 'opened',
+    pipeline: { status: 'success' },
+  },
+  fetchedAt: 0,
+};
+
 afterEach(() => {
   vi.clearAllMocks();
 });
 
+beforeEach(() => {
+  enrichPost.mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({}),
+  });
+});
+
 describe('RunDetail', () => {
-  it('renders the handoff card before the timeline, fields inside their producing stage, and the failure excerpt', async () => {
+  it('renders the summary card before the timeline, fields inside their producing stage, and the failure excerpt', async () => {
     detailGet.mockResolvedValue(detailResponse(FIXTURE));
     artifactGet.mockResolvedValue({
       ok: true,
@@ -143,13 +169,13 @@ describe('RunDetail', () => {
 
     renderDetail();
 
-    const handoffCard = await screen.findByTestId('handoff-card');
+    const summaryCard = await screen.findByTestId('summary-card');
     const timeline = await screen.findByTestId('run-timeline');
 
-    // DOCUMENT_POSITION_FOLLOWING (4) means handoffCard comes before timeline
-    // -- this is the "handoff card ON TOP" behaviour, not just "both present".
+    // DOCUMENT_POSITION_FOLLOWING (4) means summaryCard comes before timeline
+    // -- this is the "summary card ON TOP" behaviour, not just "both present".
     expect(
-      handoffCard.compareDocumentPosition(timeline) &
+      summaryCard.compareDocumentPosition(timeline) &
         Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
 
@@ -194,22 +220,26 @@ describe('RunDetail', () => {
 
     renderDetail();
 
-    const outside = await screen.findByTestId('timeline-outside-pipeline');
+    // The reconciled field must NOT appear under a real stage -- it has no
+    // matching stage name, so it belongs in exactly one place. Asserted on
+    // the Pipeline tab, before switching away unmounts it.
+    expect(
+      within(
+        await screen.findByTestId('timeline-stage-provision-1')
+      ).queryByTestId('field-reconciled')
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(
+      await screen.findByRole('tab', { name: 'Run context' })
+    );
+    const outside = await screen.findByTestId('run-context');
     expect(within(outside).getByText('rt runs abandon')).toBeInTheDocument();
     expect(within(outside).getByTestId('field-reconciled')).toHaveTextContent(
       'wedged overnight, no owning process'
     );
-
-    // The reconciled field must NOT also appear under a real stage -- it
-    // has no matching stage name, so it belongs in exactly one place.
-    expect(
-      within(screen.getByTestId('timeline-stage-provision-1')).queryByTestId(
-        'field-reconciled'
-      )
-    ).not.toBeInTheDocument();
   });
 
-  it('shows a missing handoff field as dimmed "not recorded", never an empty row', async () => {
+  it('shows a missing summary-card value as dimmed "not recorded", never an empty row', async () => {
     detailGet.mockResolvedValue(detailResponse(FIXTURE));
     artifactGet.mockResolvedValue({
       ok: true,
@@ -224,8 +254,9 @@ describe('RunDetail', () => {
 
     renderDetail();
 
-    await screen.findByTestId('handoff-card');
-    // FIXTURE never produces 'worktree', 'mr', or 'commits'.
+    await screen.findByTestId('summary-card');
+    // FIXTURE never produces 'worktree' or 'commits' fields, and enrich
+    // (mocked empty by beforeEach) never produces an 'mr' entry.
     expect(screen.getAllByText('not recorded')).toHaveLength(3);
   });
 
@@ -277,7 +308,10 @@ describe('RunDetail', () => {
 
     renderDetail();
 
-    const outside = await screen.findByTestId('timeline-outside-pipeline');
+    await userEvent.click(
+      await screen.findByRole('tab', { name: 'Run context' })
+    );
+    const outside = await screen.findByTestId('run-context');
     expect(within(outside).getByText(/human-override@1/)).toBeInTheDocument();
 
     // Must not also land under a real stage -- 'rt runs abandon' matches no
@@ -324,7 +358,7 @@ describe('RunDetail', () => {
 
     renderDetail();
 
-    await screen.findByTestId('handoff-card');
+    await screen.findByTestId('summary-card');
     expect(
       screen.queryByRole('button', { name: 'Mark abandoned' })
     ).not.toBeInTheDocument();
@@ -356,7 +390,7 @@ describe('RunDetail', () => {
     ).toBeInTheDocument();
   });
 
-  it('copies a handoff field to the clipboard on its single-key hotkey', async () => {
+  it('copies the ticket to the clipboard on its single-key hotkey', async () => {
     detailGet.mockResolvedValue(detailResponse(FIXTURE));
     artifactGet.mockResolvedValue({
       ok: true,
@@ -379,7 +413,7 @@ describe('RunDetail', () => {
     try {
       renderDetail();
 
-      await screen.findByTestId('handoff-card');
+      await screen.findByTestId('summary-card');
       await userEvent.keyboard('t');
 
       await waitFor(() => expect(writeText).toHaveBeenCalledWith('RT-1'));
@@ -389,6 +423,162 @@ describe('RunDetail', () => {
         configurable: true,
       });
     }
+  });
+
+  // The `b` hotkey moved from the deleted HandoffField into the SummaryCard
+  // header wiring -- this pins that the move didn't drop the binding.
+  it('copies the branch to the clipboard on hotkey b', async () => {
+    detailGet.mockResolvedValue(detailResponse(FIXTURE));
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    const originalClipboard = navigator.clipboard;
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+
+    try {
+      renderDetail();
+
+      await screen.findByTestId('summary-card');
+      await userEvent.keyboard('b');
+
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith('feat/x'));
+    } finally {
+      Object.defineProperty(navigator, 'clipboard', {
+        value: originalClipboard,
+        configurable: true,
+      });
+    }
+  });
+
+  it('shows the running stage/status pill for a run with no attention and no end time, not the liveness chip', async () => {
+    detailGet.mockResolvedValue(detailResponse(FIXTURE));
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+
+    renderDetail();
+
+    const card = await screen.findByTestId('summary-card');
+    expect(within(card).getByTestId('stage-status-pill')).toHaveTextContent(
+      'implement · failed'
+    );
+    expect(within(card).queryByTestId('liveness-chip')).not.toBeInTheDocument();
+  });
+
+  it('shows the liveness chip instead of the stage pill once a run needs attention', async () => {
+    const staleFixture: RunDetailData = {
+      ...FIXTURE,
+      run: run({
+        attention: { needs: true, reason: 'stale', evidence: 'quiet 3h' },
+      }),
+    };
+    detailGet.mockResolvedValue(detailResponse(staleFixture));
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+
+    renderDetail();
+
+    const card = await screen.findByTestId('summary-card');
+    expect(within(card).getByTestId('liveness-chip')).toBeInTheDocument();
+    expect(
+      within(card).queryByTestId('stage-status-pill')
+    ).not.toBeInTheDocument();
+  });
+
+  it('renders the enriched ticket title and links the MR iid+state to its webUrl, with CI status below', async () => {
+    enrichPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ 'feat/x': enrichedBranch }),
+    });
+    detailGet.mockResolvedValue(detailResponse(FIXTURE));
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+
+    renderDetail();
+
+    const card = await screen.findByTestId('summary-card');
+    expect(
+      await within(card).findByText('Redesign the run detail page')
+    ).toBeInTheDocument();
+
+    const mrLink = within(card).getByRole('link', { name: '!7 opened' });
+    expect(mrLink).toHaveAttribute('href', 'https://example.com/mr/7');
+    expect(within(card).getByText('success')).toBeInTheDocument();
+  });
+
+  it('shows the commits field and repoLabel under branch/worktree, and last-event recency under liveness', async () => {
+    const withMoreFields: RunDetailData = {
+      ...FIXTURE,
+      fields: [
+        ...FIXTURE.fields,
+        {
+          key: 'worktree',
+          value: '/Users/matt/work/repo-tools-wt',
+          produced_by: 'provision',
+          at: 3,
+        },
+        {
+          key: 'commits',
+          value: '3 commits @ a1b2c3d',
+          produced_by: 'implement',
+          at: 10,
+        },
+      ],
+    };
+    detailGet.mockResolvedValue(detailResponse(withMoreFields));
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+
+    renderDetail();
+
+    const card = await screen.findByTestId('summary-card');
+    expect(within(card).getByText('3 commits @ a1b2c3d')).toBeInTheDocument();
+    expect(within(card).getByText('repo-tools')).toBeInTheDocument();
+    expect(within(card).getByText(/last pipeline event/)).toBeInTheDocument();
   });
 
   it('names the rt verb that produced this panel, with the run and repo it was scoped to', async () => {

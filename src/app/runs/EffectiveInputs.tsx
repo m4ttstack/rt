@@ -323,8 +323,8 @@ export function EffectiveInputs({
 
   return (
     <Stack gap="md" data-testid="effective-inputs">
-      <Text fw={700} size="lg">
-        Effective inputs — what was this run actually told?
+      <Text size="xs" c={text.muted}>
+        What this run was actually told, as of the pack sha it recorded.
       </Text>
       <CommandProvenance
         command={ATTRIBUTION}

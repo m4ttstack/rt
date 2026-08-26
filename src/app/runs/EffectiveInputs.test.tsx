@@ -104,9 +104,7 @@ describe('EffectiveInputs', () => {
     renderPanel();
 
     expect(
-      await screen.findByText(
-        'Effective inputs — what was this run actually told?'
-      )
+      await screen.findByText(/What this run was actually told/)
     ).toBeInTheDocument();
     const pipelineSection = await screen.findByTestId(
       'effective-inputs-pipeline'
@@ -312,9 +310,9 @@ describe('EffectiveInputs', () => {
     expect(
       await screen.findByTestId('effective-inputs-error')
     ).toHaveTextContent('daemon unreachable');
-    // The rest of the panel (heading, attribution) survives the failed fetch.
+    // The rest of the panel (explainer, attribution) survives the failed fetch.
     expect(
-      screen.getByText('Effective inputs — what was this run actually told?')
+      screen.getByText(/What this run was actually told/)
     ).toBeInTheDocument();
   });
 });

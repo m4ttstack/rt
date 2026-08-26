@@ -1,5 +1,6 @@
+import type { BranchEnrichment } from '@mattstack/rt-client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -43,6 +44,21 @@ const baseRun: BoardRun = {
   seen: false,
 };
 
+const enrichedMr: BranchEnrichment = {
+  ticket: {
+    identifier: 'RT-1',
+    title: 'Redesign the board row',
+    url: 'https://linear.app/acme/issue/RT-1',
+  },
+  mr: {
+    iid: 42,
+    webUrl: 'https://example.com/pr/42',
+    state: 'opened',
+    pipeline: null,
+  },
+  fetchedAt: 0,
+};
+
 function detailResponse(fields: Array<{ key: string; value: string }>) {
   return {
     ok: true,
@@ -57,15 +73,26 @@ function detailResponse(fields: Array<{ key: string; value: string }>) {
   };
 }
 
-function renderRow(run: BoardRun, pruneDays?: number) {
+function renderRow(
+  run: BoardRun,
+  opts: { pruneDays?: number; enrichment?: BranchEnrichment } = {}
+) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
   return renderWithProviders(
     <QueryClientProvider client={queryClient}>
-      <RunRow run={run} pruneDays={pruneDays} />
+      <RunRow
+        run={run}
+        pruneDays={opts.pruneDays}
+        enrichment={opts.enrichment}
+      />
     </QueryClientProvider>
   );
+}
+
+async function openMenu() {
+  await userEvent.click(screen.getByRole('button', { name: 'run actions' }));
 }
 
 const originalClipboard = navigator.clipboard;
@@ -78,29 +105,205 @@ afterEach(() => {
     configurable: true,
   });
   window.open = originalOpen;
+  window.history.replaceState(null, '', '/');
 });
 
-// These three cases are RunRow's only branches with real async behaviour --
-// the rest of the component is pure render. Each assertion pins a path that
-// silently doing the wrong thing (opening nothing, opening a dead link,
-// staying quiet about a failure) would still leave "looking fine" without it.
-describe('RunRow outward actions', () => {
-  it('opens the MR in a new tab once the detail fetch resolves a real url', async () => {
-    detailGet.mockResolvedValueOnce(
-      detailResponse([{ key: 'mr', value: 'https://example.com/pr/1' }])
-    );
+describe('RunRow board redesign', () => {
+  it('renders the enriched Linear title next to the ticket id', () => {
+    renderRow(baseRun, { enrichment: enrichedMr });
+
+    expect(screen.getByText('RT-1')).toBeInTheDocument();
+    expect(screen.getByText('Redesign the board row')).toBeInTheDocument();
+  });
+
+  it('omits the title entirely when enrich has no entry for the branch', () => {
+    renderRow(baseRun, { enrichment: undefined });
+
+    expect(screen.getByText('RT-1')).toBeInTheDocument();
+    expect(
+      screen.queryByText('Redesign the board row')
+    ).not.toBeInTheDocument();
+  });
+
+  it('renders repoLabel and branch, appending the MR when enriched', () => {
+    renderRow(baseRun, { enrichment: enrichedMr });
+
+    expect(
+      screen.getByText('repo-tools · feat/x · MR !42 opened')
+    ).toBeInTheDocument();
+  });
+
+  it('renders repoLabel and branch with no MR suffix when unenriched', () => {
+    renderRow(baseRun);
+
+    expect(screen.getByText('repo-tools · feat/x')).toBeInTheDocument();
+  });
+
+  it('shows the current stage name, elapsed time, and StageProgress', () => {
+    const run: BoardRun = {
+      ...baseRun,
+      current_stage: 'implement',
+      stages: [
+        { name: 'plan', status: 'done', started_at: 1_000 },
+        { name: 'implement', status: 'running', started_at: 2_000 },
+      ],
+    };
+    renderRow(run);
+
+    expect(screen.getByText('implement')).toBeInTheDocument();
+    expect(screen.getByTestId('stage-progress')).toBeInTheDocument();
+  });
+
+  it('falls back to "not started" with no current stage', () => {
+    renderRow(baseRun);
+    expect(screen.getByText('not started')).toBeInTheDocument();
+  });
+
+  it('deletes the old standalone action icons -- only the ellipsis trigger remains', () => {
+    const { getByTestId } = renderRow(baseRun, { enrichment: enrichedMr });
+    const row = getByTestId('run-row-run-1');
+
+    expect(within(row).getAllByRole('button')).toHaveLength(1);
+    expect(
+      within(row).getByRole('button', { name: 'run actions' })
+    ).toBeInTheDocument();
+  });
+
+  it('opens exactly one menu with the four labeled items', async () => {
+    renderRow(baseRun, { enrichment: enrichedMr });
+
+    await openMenu();
+
+    expect(
+      screen.getByRole('menuitem', { name: 'Open MR' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('menuitem', { name: 'Open ticket' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('menuitem', { name: 'Copy worktree path' })
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('menuitem', { name: 'Copy branch' })
+    ).toBeInTheDocument();
+    expect(screen.getAllByRole('menuitem')).toHaveLength(4);
+  });
+
+  it('disables Open MR and Open ticket when the branch has no enrichment', async () => {
+    renderRow(baseRun);
+
+    await openMenu();
+
+    expect(screen.getByRole('menuitem', { name: 'Open MR' })).toBeDisabled();
+    expect(
+      screen.getByRole('menuitem', { name: 'Open ticket' })
+    ).toBeDisabled();
+  });
+
+  it('disables Copy branch when the run has no branch', async () => {
+    renderRow({ ...baseRun, branch: null });
+
+    await openMenu();
+
+    expect(
+      screen.getByRole('menuitem', { name: 'Copy branch' })
+    ).toBeDisabled();
+  });
+
+  it('navigates to the run detail page on a row click outside the menu', async () => {
+    renderRow(baseRun);
+
+    await userEvent.click(screen.getByText('RT-1'));
+
+    expect(window.location.pathname).toBe('/runs/repo-tools/run-1');
+  });
+
+  it('exposes the ticket-id/title text as a real link to the run detail page', () => {
+    const { getByTestId } = renderRow(baseRun, { enrichment: enrichedMr });
+    const row = getByTestId('run-row-run-1');
+
+    const link = within(row).getByRole('link', { name: /RT-1/ });
+    expect(link).toHaveAttribute('href', '/runs/repo-tools/run-1');
+  });
+
+  it('does not navigate when opening the actions menu', async () => {
+    renderRow(baseRun);
+
+    await openMenu();
+
+    expect(window.location.pathname).toBe('/');
+    expect(
+      screen.getByRole('menuitem', { name: 'Copy worktree path' })
+    ).toBeInTheDocument();
+  });
+});
+
+describe('RunRow menu actions', () => {
+  it('opens the MR in a new tab using the enriched MR url', async () => {
+    renderRow(baseRun, { enrichment: enrichedMr });
     window.open = vi.fn();
 
-    renderRow(baseRun);
-    await userEvent.click(screen.getByRole('button', { name: 'open MR' }));
+    await openMenu();
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Open MR' }));
 
-    await waitFor(() =>
-      expect(window.open).toHaveBeenCalledWith(
-        'https://example.com/pr/1',
-        '_blank',
-        'noopener'
-      )
+    expect(window.open).toHaveBeenCalledWith(
+      'https://example.com/pr/42',
+      '_blank',
+      'noopener'
     );
+  });
+
+  it('opens the ticket in a new tab using the enriched ticket url', async () => {
+    renderRow(baseRun, { enrichment: enrichedMr });
+    window.open = vi.fn();
+
+    await openMenu();
+    await userEvent.click(
+      screen.getByRole('menuitem', { name: 'Open ticket' })
+    );
+
+    expect(window.open).toHaveBeenCalledWith(
+      'https://linear.app/acme/issue/RT-1',
+      '_blank',
+      'noopener'
+    );
+  });
+
+  it('copies the raw branch name via Copy branch', async () => {
+    renderRow(baseRun);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+
+    await openMenu();
+    await userEvent.click(
+      screen.getByRole('menuitem', { name: 'Copy branch' })
+    );
+
+    expect(writeText).toHaveBeenCalledWith('feat/x');
+  });
+
+  // Regression: `Menu.Dropdown` is portalled, but React re-dispatches its
+  // bubbling clicks along the REACT tree (not the DOM tree the portal
+  // actually renders into), so an item click still reached the row's
+  // onClick and navigated to the detail page underneath the copy.
+  it('does not also navigate the row when a menu item is clicked', async () => {
+    renderRow(baseRun);
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    });
+
+    await openMenu();
+    await userEvent.click(
+      screen.getByRole('menuitem', { name: 'Copy branch' })
+    );
+
+    expect(writeText).toHaveBeenCalledWith('feat/x');
+    expect(window.location.pathname).toBe('/');
   });
 
   it('tells the user nothing is recorded yet rather than opening anything', async () => {
@@ -110,16 +313,15 @@ describe('RunRow outward actions', () => {
       value: { writeText },
       configurable: true,
     });
-    window.open = vi.fn();
 
     renderRow(baseRun);
+    await openMenu();
     await userEvent.click(
-      screen.getByRole('button', { name: 'copy worktree path' })
+      screen.getByRole('menuitem', { name: 'Copy worktree path' })
     );
 
     await screen.findByText('No worktree recorded for this run yet.');
     expect(writeText).not.toHaveBeenCalled();
-    expect(window.open).not.toHaveBeenCalled();
   });
 
   it('surfaces a failed detail fetch instead of failing silently', async () => {
@@ -128,13 +330,16 @@ describe('RunRow outward actions', () => {
       status: 502,
       json: async () => ({ error: 'daemon down' }),
     });
-    window.open = vi.fn();
 
     renderRow(baseRun);
-    await userEvent.click(screen.getByRole('button', { name: 'open MR' }));
+    await openMenu();
+    await userEvent.click(
+      screen.getByRole('menuitem', { name: 'Copy worktree path' })
+    );
 
-    await screen.findByText(/Could not open MR: run detail failed: 502/);
-    expect(window.open).not.toHaveBeenCalled();
+    await screen.findByText(
+      /Could not copy worktree path: run detail failed: 502/
+    );
   });
 
   // `window.open('file://...')` is silently refused by the browser from an
@@ -152,27 +357,27 @@ describe('RunRow outward actions', () => {
       value: { writeText },
       configurable: true,
     });
-    window.open = vi.fn();
 
     renderRow(baseRun);
+    await openMenu();
     await userEvent.click(
-      screen.getByRole('button', { name: 'copy worktree path' })
+      screen.getByRole('menuitem', { name: 'Copy worktree path' })
     );
 
     await waitFor(() =>
       expect(writeText).toHaveBeenCalledWith('/Users/matt/work/repo-tools-wt')
     );
-    expect(window.open).not.toHaveBeenCalled();
   });
 
-  // Both actions read off the SAME `['run', repo, runId]` query -- worktree
-  // then MR must share the one cached fetch, not issue a fresh detail
-  // request per click.
-  it('shares one detail fetch between the worktree and MR actions', async () => {
+  // The menu closes on each item click, so reusing the worktree action means
+  // reopening it -- this is what proves the SAME `['run', repo, runId]`
+  // query still gets reused rather than issuing a fresh detail request
+  // every time, now that the fetch lives behind a menu item instead of a
+  // standalone button.
+  it('reuses the cached detail fetch across repeated worktree copies', async () => {
     detailGet.mockResolvedValue(
       detailResponse([
         { key: 'worktree', value: '/Users/matt/work/repo-tools-wt' },
-        { key: 'mr', value: 'https://example.com/pr/1' },
       ])
     );
     const writeText = vi.fn().mockResolvedValue(undefined);
@@ -180,16 +385,20 @@ describe('RunRow outward actions', () => {
       value: { writeText },
       configurable: true,
     });
-    window.open = vi.fn();
 
     renderRow(baseRun);
-    await userEvent.click(
-      screen.getByRole('button', { name: 'copy worktree path' })
-    );
-    await waitFor(() => expect(writeText).toHaveBeenCalled());
 
-    await userEvent.click(screen.getByRole('button', { name: 'open MR' }));
-    await waitFor(() => expect(window.open).toHaveBeenCalled());
+    await openMenu();
+    await userEvent.click(
+      screen.getByRole('menuitem', { name: 'Copy worktree path' })
+    );
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+
+    await openMenu();
+    await userEvent.click(
+      screen.getByRole('menuitem', { name: 'Copy worktree path' })
+    );
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2));
 
     expect(detailGet).toHaveBeenCalledTimes(1);
   });
@@ -199,7 +408,6 @@ describe('RunRow aging warning', () => {
   const DAY_MS = 24 * 60 * 60 * 1000;
 
   it('warns once a finished run is close to the retention floor', () => {
-    detailGet.mockResolvedValue(detailResponse([]));
     const now = Date.now();
     const run: BoardRun = {
       ...baseRun,
@@ -208,7 +416,7 @@ describe('RunRow aging warning', () => {
       last_event_at: now - 28 * DAY_MS,
     };
 
-    renderRow(run, 30);
+    renderRow(run, { pruneDays: 30 });
 
     expect(screen.getByTestId('aging-warning')).toHaveTextContent(
       'ages out in 2 days'
@@ -216,7 +424,6 @@ describe('RunRow aging warning', () => {
   });
 
   it('stays quiet for a run nowhere near the floor', () => {
-    detailGet.mockResolvedValue(detailResponse([]));
     const now = Date.now();
     const run: BoardRun = {
       ...baseRun,
@@ -225,13 +432,12 @@ describe('RunRow aging warning', () => {
       last_event_at: now - 2 * DAY_MS,
     };
 
-    renderRow(run, 30);
+    renderRow(run, { pruneDays: 30 });
 
     expect(screen.queryByTestId('aging-warning')).not.toBeInTheDocument();
   });
 
   it('stays quiet before the prune-days setting has loaded', () => {
-    detailGet.mockResolvedValue(detailResponse([]));
     const now = Date.now();
     const run: BoardRun = {
       ...baseRun,
@@ -240,8 +446,21 @@ describe('RunRow aging warning', () => {
       last_event_at: now - 29 * DAY_MS,
     };
 
-    renderRow(run, undefined);
+    renderRow(run, { pruneDays: undefined });
 
     expect(screen.queryByTestId('aging-warning')).not.toBeInTheDocument();
   });
+});
+
+it('labels a finished row with total runtime, not the last-event sliver', () => {
+  const twoHours = 2 * 60 * 60 * 1000;
+  const run = {
+    ...baseRun,
+    status: 'done',
+    started_at: Date.now() - twoHours,
+    ended_at: Date.now(),
+    last_event_at: Date.now() - 30_000,
+  };
+  renderRow(run);
+  expect(screen.getByText(/2h/)).toBeInTheDocument();
 });

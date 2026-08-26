@@ -99,7 +99,7 @@ describe('App keyboard contract', () => {
     renderWithProviders(<App />);
 
     // Detail view is live and its hotkeys are registered.
-    await screen.findByTestId('handoff-card');
+    await screen.findByTestId('summary-card');
 
     Spotlight.open();
     const input = await screen.findByPlaceholderText(
