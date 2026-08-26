@@ -30,6 +30,14 @@
   src: url('./fonts/jetbrains-mono.woff2') format('woff2');
 }
 
+/* `--tk-wash` is the translucent tint an active or alert surface lays over
+   its background, as color-mix(in srgb, <token> var(--tk-wash), transparent):
+   the accent wash on a selected room and an armed icon, the mention-of-you
+   highlight, the deaf chip, and the daemon-down banner. It is lighter in the
+   light scheme because the same alpha reads heavier on a pale ground.
+
+   The declarations live in the per-scheme blocks below, one each, which
+   tokyo-theme.test.ts checks by name -- so this note sits outside them. */
 :root[data-mantine-color-scheme='light'] {
   --tk-bg: #e1e2e7;
   --tk-panel: #eff0f5;
@@ -49,10 +57,6 @@
   --tk-dot-warn: #e08a00;
   --tk-dot-bad: #e5153f;
 
-  /* The translucent tint an "active"/"alert" surface lays over its
-     background: `color-mix(in srgb, <token> var(--tk-wash), transparent)`.
-     Lighter in light scheme because the same alpha reads heavier on a pale
-     ground. Used by the accent-wash active states and the danger banner. */
   --tk-wash: 10%;
 }
 
