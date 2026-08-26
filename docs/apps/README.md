@@ -51,6 +51,22 @@ the listen port is `$PORT` (default 7930); the server always binds `127.0.0.1` -
 
 the board lists open, non-draft MRs authored by any configured member in one of `projects`. a left sidebar switches between **All** (the whole team) and a single member; the **All** view (and each member view) can be grouped by age / author / status / pipeline and sorted by oldest / pipeline / review progress. the current member, grouping, and sort live in the URL (shareable) and are remembered across visits.
 
+## tabs
+
+each tab shows a filtered view of MRs sourced from one of two kinds. tabs have a unique id, a sidebar label, and optional overrides for slack and review routing. define tabs in your team settings (`rt settings set board.tabs --scope team`) as an array of tab objects.
+
+**no tabs config**: the board creates a single implicit "Team" tab sourcing MRs from team members (the `authors` kind).
+
+**two source kinds**:
+- `"authors"`: MRs authored by configured team members (the default)
+- `"codeowners"`: MRs blocked on approval from a specific codeowners section. section name comes from your repo's `.gitlab/codeowners` (e.g. `Acme`, `Billing`), and excludeMembers (when true) hides MRs authored by team members so the queue shows work assigned to the team, not self-reviews. no excludeMembers = show all MRs (the section's full queue including team-authored ones)
+
+**per-tab overrides**:
+- `slackChannel`: posts/reactions for this tab go to a different channel (instead of config.slack.channel)
+- `reviewSkill`: skill binding for review launches from this tab (instead of the manifest binding or empty fallback)
+
+use `rt settings set` to edit tabs on the team scope -- `config.json` carries them until then, and a settings-store edit needs a board restart (settings are boot-read, not watched).
+
 ## tokens
 
 `bun run setup` handles both. `.env` becomes optional with the daemon fallback below, not retired -- an env var still wins first when it's set, `bun run setup` and `/peer/join` both still write to it (`SWITCHBOARD_TOKEN` in particular), and it stays the simplest path for a solo/local install with no rt daemon at all. under the hood:

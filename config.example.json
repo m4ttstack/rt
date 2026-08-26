@@ -54,5 +54,8 @@
   },
   "switchboard": {
     "url": ""
-  }
+  },
+  "tabs": [
+    { "id": "team", "label": "Team", "source": { "kind": "authors" } }
+  ]
 }
