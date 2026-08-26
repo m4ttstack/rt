@@ -1,3 +1,9 @@
+// Registers the jest-dom matchers (toBeInTheDocument, toHaveTextContent, ...)
+// on vitest's own `expect` -- the dedicated vitest entry point extends it
+// directly, unlike the plain `@testing-library/jest-dom` import which
+// assumes a jest global.
+import '@testing-library/jest-dom/vitest';
+
 // The matchMedia and ResizeObserver polyfills `src/ui` needs travel with it,
 // so vendoring apps get them by copying the kit rather than by reproducing
 // this file. See src/ui/storybook/jsdom-polyfills.ts.

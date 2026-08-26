@@ -1,10 +1,12 @@
 import { Hono } from 'hono';
 
-// Inline, not a health.ts module: this route stays here until a later task
-// adds a second one that owns its own module.
-export const app = new Hono().get('/api/health', c =>
-  c.json({ ok: true, version: '0.1.0' })
-);
+import { chat } from './chat';
+import { health } from './health';
+
+export const app = new Hono()
+  .get('/api/health', c => c.json({ ok: true, version: '0.1.0' }))
+  .route('/', chat)
+  .route('/', health);
 
 // c.notFound() alone produces a response the RPC client can't type; every
 // later route's error handling assumes a JSON floor.

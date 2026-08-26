@@ -1,0 +1,4 @@
+/* Tokyo Day / Tokyo Night tokens live in @mattstack/mantine-tokyo, shared
+   with console. Imported after the kit's own styles so the brand's
+   --tk-* tokens, surface ladder remap, grid and @font-face land on top. */
+@import '@mattstack/mantine-tokyo/tokyo-theme.css';

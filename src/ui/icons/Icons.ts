@@ -28,6 +28,7 @@ import {
   EyeOff,
   Filter,
   FlaskConical,
+  Hash,
   Info,
   Layers,
   Link,
@@ -138,6 +139,7 @@ const FeedbackIcons = {
 
 // General-purpose, domain-agnostic icons that don't fit a category above.
 const MiscIcons = {
+  hash: /* @__PURE__ */ lucideWrapperFn(Hash),
   layers: /* @__PURE__ */ lucideWrapperFn(Layers),
   package: /* @__PURE__ */ lucideWrapperFn(Package),
   wrench: /* @__PURE__ */ lucideWrapperFn(Wrench),

@@ -7,6 +7,7 @@ import { ModalsProvider } from '@ui/modals';
 import { Notifications } from '@ui/notifications';
 
 import '@ui/styles/index.css';
+import './app/styles/tokyo-theme.css';
 
 import { App } from './app/App.tsx';
 import { markMounted, registerSimpleAlerts } from './boot/SimpleAlerts';

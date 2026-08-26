@@ -19,6 +19,13 @@ export const DIST_ROOT = './dist';
  * answer an unmatched `/api/*` route with 200 and the SPA's index.html,
  * and an RPC client that checks `res.ok` before parsing JSON would then
  * throw parsing HTML as JSON.
+ *
+ * `/ws` is excluded for a sharper reason: it is not a 404 case, it is a
+ * live route. The fallback answering it with 200 and index.html means the
+ * upgrade never happens, the client sees "Expected 101 status code", and
+ * every push in the app silently stops working while the page still loads
+ * fine. Excluding it here rather than registering `/ws` first keeps this
+ * module order-independent, as the paragraph above intends.
  */
 export function mountStaticDisk(
   app: Hono,
@@ -31,6 +38,7 @@ export function mountStaticDisk(
   const indexHtml = serveStatic({ path: `${DIST_ROOT}/index.html` });
   app.use('*', async (c: Context, next: Next) => {
     if (c.req.path.startsWith('/api')) return c.notFound();
+    if (c.req.path === '/ws') return next();
     return indexHtml(c, next);
   });
 }

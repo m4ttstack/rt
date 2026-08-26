@@ -24,6 +24,7 @@
     "@mantine/hooks": "^9.5.2",
     "@mantine/modals": "^9.5.2",
     "@mantine/notifications": "^9.5.2",
+    "@mattstack/mantine-tokyo": "^0.1.0",
     "@mattstack/rt-client": "^0.6",
     "@tanstack/react-query": "^5.102.4",
     "@tanstack/react-virtual": "^3.14.6",
@@ -40,6 +41,7 @@
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@ianvs/prettier-plugin-sort-imports": "^4.7.1",
+    "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
     "@types/bun": "^1.3.14",
