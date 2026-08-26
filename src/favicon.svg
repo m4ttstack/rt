@@ -1,17 +1,15 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
-  <!-- Dark indigo tile, matching /Applications/mattstack.app's own icon
-       (#1d1830) so the board reads as part of that family in a tab strip
-       next to it. -->
-  <rect width="32" height="32" rx="7" fill="#1d1830"/>
-  <!-- main/target branch (right): mattstack's own accent pink (#ff84ad),
-       thicker stroke so the shape survives 16x16. -->
-  <circle cx="23" cy="5" r="4" fill="#ff84ad"/>
-  <line x1="23" y1="9" x2="23" y2="23" stroke="#ff84ad" stroke-width="4" stroke-linecap="round"/>
-  <circle cx="23" cy="27" r="4" fill="#ff84ad"/>
-  <!-- feature branch merging into main: a violet tint of the tile's own
-       indigo, so the second color reads as family rather than a clash. -->
-  <circle cx="7" cy="27" r="4" fill="#a78bfa"/>
-  <path d="M7 23 V 18 Q 7 12 13 12 H 16" fill="none" stroke="#a78bfa" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
-  <!-- Merge arrow tip: same violet, chunkier so it reads at favicon size. -->
-  <path d="M15 8 L 20 12 L 15 16" fill="none" stroke="#a78bfa" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- console's web recipe, verbatim: 32-unit tile, squircle rx=7.2, pink
+       tile + dark glyph (the inversion that pops at 16px, vs mattstack.app's
+       own dark-tile/pink-glyph native icon). See rt chat #mantine-tokyo for
+       the "why": meg's make-icon.swift measurements and the console
+       comparison that flagged the old thin-stroke branch diagram as mushy
+       at header size. -->
+  <rect width="32" height="32" rx="7.2" fill="#ff84ad"/>
+  <!-- Board pictograph: three kanban columns (bold solid fills, not thin
+       strokes, which go mushy under 30px). Uneven heights read as "a
+       board with cards in it" rather than a generic bar chart. -->
+  <rect x="7.25" y="6" width="4.5" height="19" rx="2.2" fill="#1d1830"/>
+  <rect x="13.75" y="13" width="4.5" height="12" rx="2.2" fill="#1d1830"/>
+  <rect x="20.25" y="9" width="4.5" height="16" rx="2.2" fill="#1d1830"/>
 </svg>

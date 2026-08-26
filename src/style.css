@@ -28,7 +28,7 @@
   background: color-mix(in srgb, var(--panel) 55%, transparent);
 }
 .tui-header h1 { font-size: 1.15rem; font-weight: 700; letter-spacing: 0.02em; margin: 0; }
-.tui-header-mark { vertical-align: -0.15em; margin-right: 0.15em; flex-shrink: 0; }
+.tui-header-title h1 svg { vertical-align: -22%; margin-right: 0.35rem; }
 .tui-prompt { color: var(--accent); }
 .tui-sub { margin: 0.15rem 0 0; }
 .tui-comment { color: var(--muted); font-size: 0.78rem; opacity: 0.9; }
