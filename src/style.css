@@ -332,6 +332,10 @@
 /* team sidebar layout */
 .tui-app { display: grid; grid-template-columns: 220px 1fr; gap: 20px; align-items: start; }
 .tui-app.tui-wide { max-width: 1400px; }
+/* No <Sidebar> rendered (a codeowners tab, scoped by section rather than
+   roster) -- drop the 220px track, or grid auto-placement strands the lone
+   .tui-main child in that empty first column instead of the 1fr one. */
+.tui-app.tui-no-sidebar { grid-template-columns: 1fr; }
 .tui-main { min-width: 0; }
 /* The roster gets the same framed-panel backdrop as the MR groups -- bare
    transparent buttons on the page grid disappear in dark mode. Item hover/

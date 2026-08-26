@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { selectionOf, postableOf } from "../selection.ts";
+import { selectionOf, postableOf, tabChangeClearsSelection } from "../selection.ts";
 
 const a = { webUrl: "https://gl/a", iid: 1 };
 const b = { webUrl: "https://gl/b", iid: 2 };
@@ -46,5 +46,21 @@ describe("postableOf", () => {
   test("drops MRs without a webUrl", () => {
     const orphan = { webUrl: null, iid: 7 };
     expect(postableOf([orphan, a])).toEqual([a]);
+  });
+});
+
+describe("tabChangeClearsSelection", () => {
+  test("an actual tab-id change clears the selection", () => {
+    expect(tabChangeClearsSelection({ tab: "q" }, "team")).toBe(true);
+  });
+
+  test("re-sending the already-active tab id is not a change", () => {
+    expect(tabChangeClearsSelection({ tab: "team" }, "team")).toBe(false);
+  });
+
+  test("a member/group/sort-only patch (no tab key) never clears it", () => {
+    expect(tabChangeClearsSelection({ member: "bob" }, "team")).toBe(false);
+    expect(tabChangeClearsSelection({ group: "status" }, "team")).toBe(false);
+    expect(tabChangeClearsSelection({ sort: "progress" }, "team")).toBe(false);
   });
 });

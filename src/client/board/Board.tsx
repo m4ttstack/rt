@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { BoardMR } from "../../data.ts";
 import { filterByMember, filterByTab, sortMRs, groupMRs, parseViewState, serializeViewState, dataAgeLabel } from "../../view.ts";
 import type { ViewState } from "../../view.ts";
-import { selectionOf, postableOf } from "../../selection.ts";
+import { selectionOf, postableOf, tabChangeClearsSelection } from "../../selection.ts";
 import type {
   DraftInfo,
   BoardMRWithReview,
@@ -68,12 +68,14 @@ export function Board() {
     setTheme(m);
   };
   const update = (patch: Partial<ViewState>) => {
+    const clearsSelection = tabChangeClearsSelection(patch, state.tab);
     setState((prev) => {
       const next = { ...prev, ...patch };
       localStorage.setItem(STATE_KEY, JSON.stringify(next));
       history.replaceState(null, "", serializeViewState(next) || location.pathname);
       return next;
     });
+    if (clearsSelection) setSelected(new Set());
   };
 
   // Re-resolve the view state's member against the roster the instant real
@@ -489,7 +491,9 @@ export function Board() {
   };
 
   return (
-    <div className={view === "grid" ? "tui tui-wide tui-app" : "tui tui-app"}>
+    <div
+      className={`tui tui-app${view === "grid" ? " tui-wide" : ""}${isCodeownersTab ? " tui-no-sidebar" : ""}`}
+    >
       {/* Desktop roster (hidden on mobile, where it moves into the drawer).
           Also hidden on a codeowners tab: it isn't filtered by member, so the
           roster has nothing to drive. */}
