@@ -28,7 +28,7 @@ import { Transcript } from '@ui/Transcript';
 import { AppChrome } from './chrome/AppChrome';
 import { PageShellDemoPage } from './demo/PageShellDemoPage';
 import { NotFoundPage } from './NotFoundPage';
-import { usePath } from './router/navigation';
+import { navigate, useHash, usePath } from './router/navigation';
 import { matchRoute } from './routes';
 
 /**
@@ -749,6 +749,7 @@ function PhoneChat({
   setActiveRoom,
   activeRoomSummary,
   messages,
+  anchor,
   roomMembers,
   composerRef,
   onNavigate,
@@ -760,6 +761,7 @@ function PhoneChat({
   setActiveRoom: (room: string) => void;
   activeRoomSummary: RoomSummary | undefined;
   messages: ChatMessage[];
+  anchor: string | undefined;
   roomMembers: string[];
   composerRef: RefObject<ComposerHandle | null>;
   onNavigate: (room: string) => void;
@@ -803,6 +805,7 @@ function PhoneChat({
           <Transcript
             room={activeRoom}
             messages={messages}
+            anchor={anchor}
             unreadCount={activeRoomSummary?.unread}
             bare
           />
@@ -857,17 +860,31 @@ export function App({ initialState }: { initialState?: AppInitialState } = {}) {
   const daemon = useDaemonHealth(initialState?.daemonReachable);
   const buddies = useBuddies(initialState?.buddies);
   const { rooms, refetchRooms } = useRooms(initialState?.rooms);
-  const [activeRoom, setActiveRoom] = useState<string | undefined>(undefined);
+  const routeRoom = route.name === 'room' ? route.room : undefined;
+  const [activeRoom, setActiveRoom] = useState<string | undefined>(routeRoom);
+  const chatRoute = route.name === 'home' || route.name === 'room';
+  const hash = useHash();
+  const anchor = hash.startsWith('#m-') ? hash.slice(1) : undefined;
   const isMobile = useIsMobile();
   const composerRef = useRef<ComposerHandle>(null);
 
-  // Lands on the first room once the list arrives; never overrides a room
-  // the viewer already picked.
+  // The URL owns the room: `/r/<room>` names it, and `/` means the first
+  // room, including after Back from a pick. A rail click writes the URL
+  // (selectRoom), so a room the viewer chose is always a `/r/` route.
   useEffect(() => {
-    if (activeRoom === undefined && rooms.length > 0) {
-      setActiveRoom(rooms[0]!.room);
+    if (route.name === 'room') {
+      if (route.room !== activeRoom) setActiveRoom(route.room);
+    } else if (route.name === 'home' && rooms.length > 0) {
+      const first = rooms[0]!.room;
+      if (activeRoom !== first) setActiveRoom(first);
     }
-  }, [rooms, activeRoom]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [route.name, routeRoom, rooms]);
+
+  function selectRoom(room: string) {
+    setActiveRoom(room);
+    navigate(`/r/${encodeURIComponent(room)}`);
+  }
 
   const messages = useMessages(activeRoom, initialState?.messages);
   const roomMembers = useRoomMembers(activeRoom, initialState?.members);
@@ -882,23 +899,24 @@ export function App({ initialState }: { initialState?: AppInitialState } = {}) {
       refetch so it lands in the rail's direct section, then switch to it. */
   function handleComposerNavigate(room: string) {
     refetchRooms();
-    setActiveRoom(room);
+    selectRoom(room);
   }
 
   if (route.name === 'demo-page-shell') {
     return <PageShellDemoPage />;
   }
 
-  if (route.name === 'home' && isMobile && rooms.length > 0) {
+  if (chatRoute && isMobile && rooms.length > 0) {
     return (
       <PhoneChat
         daemon={daemon}
         buddies={buddies}
         rooms={rooms}
         activeRoom={activeRoom}
-        setActiveRoom={setActiveRoom}
+        setActiveRoom={selectRoom}
         activeRoomSummary={activeRoomSummary}
         messages={messages}
+        anchor={anchor}
         roomMembers={roomMembers}
         composerRef={composerRef}
         onNavigate={handleComposerNavigate}
@@ -908,7 +926,7 @@ export function App({ initialState }: { initialState?: AppInitialState } = {}) {
 
   return (
     <AppChrome>
-      {route.name === 'home' ? (
+      {chatRoute ? (
         <PageShell>
           <DaemonBanner
             reachable={daemon.reachable}
@@ -963,12 +981,13 @@ export function App({ initialState }: { initialState?: AppInitialState } = {}) {
                 <RoomRail
                   rooms={rooms}
                   activeRoom={activeRoom}
-                  onSelectRoom={setActiveRoom}
+                  onSelectRoom={selectRoom}
                 />
                 {activeRoom && (
                   <Transcript
                     room={activeRoom}
                     messages={messages}
+                    anchor={anchor}
                     unreadCount={activeRoomSummary?.unread}
                     footer={
                       <Composer

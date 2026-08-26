@@ -94,3 +94,33 @@ test('a divider marks the read cursor before the unread tail', () => {
   expect(screen.getByTestId('transcript-divider')).toBeInTheDocument();
   expect(screen.getByText('1 new')).toBeInTheDocument();
 });
+
+test('the anchor scrolls once, and a later live merge does not repeat it', async () => {
+  const scrolled: string[] = [];
+  const original = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = function () {
+    scrolled.push((this as Element).id);
+  };
+  try {
+    const { pushFrame } = renderTranscriptWithFakeSocket({
+      room: 'build',
+      messages: [
+        {
+          id: 7,
+          room: 'build',
+          handle: 'deck-main',
+          body: 'anchored',
+          mentions: [],
+          postedAt: 1,
+        },
+      ],
+      anchor: 'm-7',
+    });
+    expect(scrolled).toEqual(['m-7']);
+    pushFrame({ topic: 'chat/build/msg', payload: { id: 8 } });
+    expect(await screen.findByTestId('message-8')).toBeInTheDocument();
+    expect(scrolled).toEqual(['m-7']);
+  } finally {
+    Element.prototype.scrollIntoView = original;
+  }
+});

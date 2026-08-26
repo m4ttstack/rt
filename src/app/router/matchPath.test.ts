@@ -39,3 +39,8 @@ test('rejects non-matching literal segments', () => {
   expect(matchPath('/docs/:slug', '/demo/theming')).toBeNull();
   expect(matchPath('/demo', '/docs')).toBeNull();
 });
+
+test('a parameter that is not valid percent-encoding is no match, not a throw', () => {
+  expect(matchPath('/r/:room', '/r/%')).toBeNull();
+  expect(matchPath('/r/:room', '/r/%E0%A4%A')).toBeNull();
+});

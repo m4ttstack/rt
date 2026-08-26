@@ -31,7 +31,11 @@ export function matchPath(
     const pathSegment = pathSegments[i];
 
     if (patternSegment.startsWith(':')) {
-      params[patternSegment.slice(1)] = decodeURIComponent(pathSegment);
+      try {
+        params[patternSegment.slice(1)] = decodeURIComponent(pathSegment);
+      } catch {
+        return null;
+      }
     } else if (patternSegment !== pathSegment) {
       return null;
     }

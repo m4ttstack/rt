@@ -11,16 +11,26 @@ function notify() {
 }
 
 function subscribe(listener: () => void): () => void {
-  if (listeners.size === 0) window.addEventListener('popstate', notify);
+  if (listeners.size === 0) {
+    window.addEventListener('popstate', notify);
+    window.addEventListener('hashchange', notify);
+  }
   listeners.add(listener);
   return () => {
     listeners.delete(listener);
-    if (listeners.size === 0) window.removeEventListener('popstate', notify);
+    if (listeners.size === 0) {
+      window.removeEventListener('popstate', notify);
+      window.removeEventListener('hashchange', notify);
+    }
   };
 }
 
 function getPathname(): string {
   return window.location.pathname;
+}
+
+function getHash(): string {
+  return window.location.hash;
 }
 
 /**
@@ -45,4 +55,9 @@ export function navigate(to: string, options?: { replace?: boolean }) {
 /** The current pathname, re-rendering on navigate() and popstate. */
 export function usePath(): string {
   return useSyncExternalStore(subscribe, getPathname);
+}
+
+/** The URL fragment, live: a same-page hash change re-renders subscribers. */
+export function useHash(): string {
+  return useSyncExternalStore(subscribe, getHash);
 }

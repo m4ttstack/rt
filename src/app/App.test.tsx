@@ -1,4 +1,4 @@
-import { fireEvent, screen, within } from '@testing-library/react';
+import { act, fireEvent, screen, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test } from 'vitest';
 
 import {
@@ -167,4 +167,124 @@ test('seeded messages survive to the first room, even if the fetch rejects', asy
   // mentions can carry their own colour.
   const transcript = await screen.findByTestId('transcript');
   expect(transcript).toHaveTextContent('seeded body');
+});
+
+const twoRooms = {
+  daemonReachable: true,
+  buddies: [],
+  rooms: [
+    { room: 'build', memberCount: 1, unread: 0, mentions: 0 },
+    { room: 'ops', memberCount: 1, unread: 0, mentions: 0 },
+  ],
+  messages: [],
+  members: [],
+};
+
+test('/r/<room> opens that room instead of the first one', () => {
+  window.history.replaceState(null, '', '/r/ops');
+  renderWithProviders(<App initialState={twoRooms} />);
+  expect(
+    within(screen.getByTestId('page-bar')).getByText('#ops')
+  ).toBeInTheDocument();
+});
+
+test('picking a room in the rail moves the URL to /r/<room>', () => {
+  window.history.replaceState(null, '', '/');
+  renderWithProviders(<App initialState={twoRooms} />);
+  fireEvent.click(screen.getByText('ops'));
+  expect(window.location.pathname).toBe('/r/ops');
+  expect(
+    within(screen.getByTestId('page-bar')).getByText('#ops')
+  ).toBeInTheDocument();
+});
+
+test('a #m-<id> anchor scrolls that message into view', () => {
+  const scrolled: string[] = [];
+  const original = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = function () {
+    scrolled.push((this as Element).id);
+  };
+  try {
+    window.history.replaceState(null, '', '/r/build#m-7');
+    renderWithProviders(
+      <App
+        initialState={{
+          ...twoRooms,
+          messages: [
+            {
+              id: 7,
+              room: 'build',
+              handle: 'deck-main',
+              body: 'anchored',
+              mentions: [],
+              postedAt: 1,
+            },
+          ],
+        }}
+      />
+    );
+    expect(scrolled).toContain('m-7');
+  } finally {
+    Element.prototype.scrollIntoView = original;
+  }
+});
+
+test('Back to / after picking a room shows the first room again', () => {
+  window.history.replaceState(null, '', '/');
+  renderWithProviders(<App initialState={twoRooms} />);
+  fireEvent.click(screen.getByText('ops'));
+  expect(
+    within(screen.getByTestId('page-bar')).getByText('#ops')
+  ).toBeInTheDocument();
+  act(() => {
+    window.history.replaceState(null, '', '/');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+  });
+  expect(
+    within(screen.getByTestId('page-bar')).getByText('#build')
+  ).toBeInTheDocument();
+});
+
+test('a same-room hash change scrolls to the new anchor', () => {
+  const scrolled: string[] = [];
+  const original = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = function () {
+    scrolled.push((this as Element).id);
+  };
+  try {
+    window.history.replaceState(null, '', '/r/build#m-7');
+    renderWithProviders(
+      <App
+        initialState={{
+          ...twoRooms,
+          messages: [
+            {
+              id: 7,
+              room: 'build',
+              handle: 'deck-main',
+              body: 'one',
+              mentions: [],
+              postedAt: 1,
+            },
+            {
+              id: 8,
+              room: 'build',
+              handle: 'deck-main',
+              body: 'two',
+              mentions: [],
+              postedAt: 2,
+            },
+          ],
+        }}
+      />
+    );
+    expect(scrolled).toEqual(['m-7']);
+    act(() => {
+      window.history.replaceState(null, '', '/r/build#m-8');
+      window.dispatchEvent(new HashChangeEvent('hashchange'));
+    });
+    expect(scrolled).toEqual(['m-7', 'm-8']);
+  } finally {
+    Element.prototype.scrollIntoView = original;
+  }
 });

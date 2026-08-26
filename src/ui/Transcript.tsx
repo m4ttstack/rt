@@ -17,6 +17,9 @@ export interface TranscriptProps {
       `lastReadId` in this prop surface -- but gives the divider a real,
       audit-reachable mount point. */
   unreadCount?: number;
+  /** Element id of the message a `#m-<id>` link points at; scrolled into
+      view once per room+anchor, the first time it is in the list. */
+  anchor?: string;
   onMarkRead?: () => void;
   /** Task 7's `Composer`, rendered inside this SAME card below the
       messages -- the artboard draws one `.card` (scroll area, then the
@@ -217,6 +220,7 @@ function MessageRow({
       align="flex-start"
       wrap="nowrap"
       gap="md"
+      id={`m-${message.id}`}
       data-testid={`message-${message.id}`}
       style={{
         padding: '8.4px 0',
@@ -275,6 +279,7 @@ export function Transcript({
   messages: initialMessages,
   humanHandle,
   unreadCount,
+  anchor,
   onMarkRead,
   footer,
   bare = false,
@@ -293,6 +298,22 @@ export function Transcript({
   useEffect(() => {
     setMessages(initialMessages);
   }, [room, initialMessages]);
+
+  // The `#m-<id>` anchor rt prints after a post and on a wake line. Scrolls
+  // once per room+anchor, the first time the message is in the list, so a
+  // later live merge or older-page load never yanks a viewer who scrolled
+  // away back to it. Older pages are not fetched for it: a link past the
+  // first page opens the room and only the scroll is skipped.
+  const anchorDone = useRef<string | null>(null);
+  useEffect(() => {
+    if (!anchor) return;
+    const target = `${room}#${anchor}`;
+    if (anchorDone.current === target) return;
+    const el = document.getElementById(anchor);
+    if (!el) return;
+    el.scrollIntoView({ block: 'center' });
+    anchorDone.current = target;
+  }, [room, anchor, messages]);
 
   useEffect(() => {
     const expectedTopic = `chat/${room}/msg`;
