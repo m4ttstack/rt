@@ -961,7 +961,7 @@ export class GitLabProvider implements GitProvider {
   }
 
   async fetchApprovalRules(options: FetchApprovalRulesOptions): Promise<MRApprovalRules[]> {
-    if (options.updatedAfter && options.iids) {
+    if (options.updatedAfter !== undefined && options.iids !== undefined) {
       throw new Error('fetchApprovalRules: updatedAfter and iids are mutually exclusive');
     }
 

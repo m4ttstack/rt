@@ -89,6 +89,13 @@ describe('fetchApprovalRules', () => {
         iids: [1, 2, 3],
       }),
     ).rejects.toThrow(/updatedAfter and iids are mutually exclusive/);
+    await expect(
+      p.fetchApprovalRules({
+        projectPath: 'g/p',
+        updatedAfter: '',
+        iids: [1, 2, 3],
+      }),
+    ).rejects.toThrow(/updatedAfter and iids are mutually exclusive/);
   });
 
   test('validates pageSize: rejects non-positive, fractional, and non-finite values', async () => {
