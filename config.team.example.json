@@ -35,5 +35,11 @@
       "approved": "white_check_mark"
     }
   },
-  "switchboard": { "url": "" }
+  "switchboard": { "url": "" },
+  "tabs": [
+    { "id": "team", "label": "Team", "source": { "kind": "authors" } },
+    { "id": "codeowner-queue", "label": "Codeowner Queue",
+      "source": { "kind": "codeowners", "section": "Acme", "excludeMembers": true },
+      "slackChannel": "team-codeowners" }
+  ]
 }
