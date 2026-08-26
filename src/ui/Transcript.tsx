@@ -126,6 +126,13 @@ function renderMentions(
 }
 
 const URL_RE = /(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/g;
+const BULLET_RE = /^\s*[-*] /;
+const NUMBERED_RE = /^\s*\d+[.)] /;
+/** `*text*` or `_text_` with no space just inside the markers and no word
+    character just outside, so `make_icon_swift` and `2*3*4` stay literal.
+    Runs after the URL split, so an underscore inside a link is never read. */
+const ITALIC_RE =
+  /((?<![\w*])\*(?!\s)[^*\n]+?(?<!\s)\*(?![\w*])|(?<!\w)_(?!\s)[^_\n]+?(?<!\s)_(?!\w))/g;
 /** Same source without `g`: `test` on a global regex advances `lastIndex`
     across calls, but `split` never resets it, so a second bare URL in one
     body would test false and render as text. Anchored, stateless. */
@@ -160,19 +167,37 @@ function renderInline(
         </a>
       ) : (
         <span key={`${keyPrefix}-t-${i}-${j}`}>
-          {renderMentions(
-            piece,
-            mentions,
-            humanHandle,
-            `${keyPrefix}-${i}-${j}`
-          )}
+          {renderItalic(piece, mentions, humanHandle, `${keyPrefix}-${i}-${j}`)}
         </span>
       )
     );
   });
 }
 
-/** Blank-line paragraphs and `- ` lists inside a prose part. Agents write
+function renderItalic(
+  text: string,
+  mentions: string[],
+  humanHandle: string | undefined,
+  keyPrefix: string
+): React.ReactNode[] {
+  return text.split(ITALIC_RE).map((piece, k) => {
+    const wrapped =
+      piece.length > 2 &&
+      ((piece.startsWith('*') && piece.endsWith('*')) ||
+        (piece.startsWith('_') && piece.endsWith('_')));
+    return wrapped ? (
+      <Text key={`${keyPrefix}-i-${k}`} component="em" fs="italic" inherit>
+        {piece.slice(1, -1)}
+      </Text>
+    ) : (
+      <span key={`${keyPrefix}-m-${k}`}>
+        {renderMentions(piece, mentions, humanHandle, `${keyPrefix}-${k}`)}
+      </span>
+    );
+  });
+}
+
+/** Blank-line paragraphs, `- ` and `1.` lists inside a prose part. Agents write
     markdown by reflex; this is the subset that gives their structure a
     place to land without rendering HTML. */
 function renderBlocks(
@@ -184,20 +209,22 @@ function renderBlocks(
   const blocks = text.split(/\n{2,}/).filter(b => b.trim().length > 0);
   return blocks.map((block, i) => {
     const lines = block.split('\n');
-    const isList = lines.every(l => /^\s*[-*] /.test(l));
+    const isBullets = lines.every(l => BULLET_RE.test(l));
+    const isNumbered = !isBullets && lines.every(l => NUMBERED_RE.test(l));
     const key = `${keyPrefix}-blk-${i}`;
-    if (isList) {
+    if (isBullets || isNumbered) {
+      const marker = isBullets ? BULLET_RE : NUMBERED_RE;
       return (
         <Box
           key={key}
-          component="ul"
+          component={isBullets ? 'ul' : 'ol'}
           data-testid="message-list"
           style={{ margin: '4px 0', paddingLeft: 18 }}
         >
           {lines.map((l, j) => (
             <li key={`${key}-${j}`}>
               {renderTextPart(
-                l.replace(/^\s*[-*] /, ''),
+                l.replace(marker, ''),
                 mentions,
                 humanHandle,
                 `${key}-${j}`

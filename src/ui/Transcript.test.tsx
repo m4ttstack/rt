@@ -202,6 +202,33 @@ test('a body renders its paragraphs, lists, bold and links, and leaves code alon
   expect(screen.getByText('**not bold**').tagName).toBe('CODE');
 });
 
+test('numbered lists, italic and underscore identifiers render as agents write them', () => {
+  renderWithProviders(
+    <Transcript
+      room="build"
+      messages={[
+        {
+          id: 1,
+          room: 'build',
+          handle: 'deck-main',
+          body: 'steps:\n\n1. bump the dep\n2) rebuild\n\nthis is *soft* and _quiet_, but make_icon_swift and 2*3*4 stay put; see http://x.test/a_b_c',
+          mentions: [],
+          postedAt: 1,
+        },
+      ]}
+    />
+  );
+  const list = screen.getByTestId('message-list');
+  expect(list.tagName).toBe('OL');
+  expect(list.querySelectorAll('li')).toHaveLength(2);
+  expect(screen.getByText('soft').tagName).toBe('EM');
+  expect(screen.getByText('quiet').tagName).toBe('EM');
+  expect(screen.getByText(/make_icon_swift and 2\*3\*4 stay put/)).toBeTruthy();
+  expect(
+    screen.getByRole('link', { name: 'http://x.test/a_b_c' })
+  ).toHaveAttribute('href', 'http://x.test/a_b_c');
+});
+
 test('two bare URLs in one body both render as links', () => {
   // Regression: URL_RE carries the `g` flag, so a global-regex `.test()` in
   // the render loop advanced `lastIndex` and the second URL fell through to
