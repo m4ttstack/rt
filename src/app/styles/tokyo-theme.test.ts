@@ -28,7 +28,7 @@ describe('tokyo-theme.css', () => {
     const dark = varNames(blockFor(":root[data-mantine-color-scheme='dark']"));
 
     expect(light).toEqual(dark);
-    expect(light.length).toBe(18);
+    expect(light.length).toBe(19);
   });
 
   it("carries tui-kit's exact Tokyo Day and Tokyo Night values", () => {
