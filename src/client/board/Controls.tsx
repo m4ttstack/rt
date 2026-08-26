@@ -1,7 +1,8 @@
 import { GROUP_KEYS, SORT_KEYS } from "../../view.ts";
 import type { ViewState } from "../../view.ts";
+import type { TabConfig } from "../../config.ts";
 import type { ThemeMode, ViewMode } from "../types.ts";
-import { CopyButton, ICONS, LabeledSeg, Segmented } from "@mattstack/tui-kit";
+import { Chip, CopyButton, ICONS, LabeledSeg, Segmented } from "@mattstack/tui-kit";
 import { GROUP_LABEL, SORT_LABEL } from "./format.ts";
 import { SLACK_ICON } from "./chips.tsx";
 
@@ -21,6 +22,8 @@ function Controls({
   onPostSummary,
   canPostSummary,
   postingSummary,
+  tabs,
+  tabSyncing,
   stacked = false,
 }: {
   state: ViewState;
@@ -36,17 +39,32 @@ function Controls({
   onPostSummary?: () => void;
   canPostSummary?: boolean;
   postingSummary?: boolean;
+  /** Board tabs, in display order; the bar itself only renders past one tab. */
+  tabs: TabConfig[];
+  /** Whether the active codeowners tab's section is still mid-backfill. */
+  tabSyncing: boolean;
   stacked?: boolean;
 }) {
   const group = <LabeledSeg legend="group" options={GROUP_KEYS} labels={GROUP_LABEL} value={state.group} onChange={(g) => update({ group: g })} />;
   const sort = <LabeledSeg legend="sort" options={SORT_KEYS} labels={SORT_LABEL} value={state.sort} onChange={(s) => update({ sort: s })} />;
   const viewSeg = <Segmented options={["rows", "grid"] as const} value={view} onChange={pickView} label="view" />;
   const themeSeg = <Segmented options={["light", "dark", "system"] as const} value={theme} onChange={pickTheme} label="theme" />;
+  const tabIds = tabs.map((t) => t.id);
+  const tabLabels = Object.fromEntries(tabs.map((t) => [t.id, t.label]));
+  const tabBar = tabs.length > 1 && (
+    <LabeledSeg legend="tab" options={tabIds} labels={tabLabels} value={state.tab} onChange={(tab) => update({ tab })} />
+  );
+  const syncingChip = tabSyncing && (
+    <Chip intent="warn" data-flag="" title="rt hasn't finished backfilling this codeowner section... counts may be low">
+      codeowner queue syncing
+    </Chip>
+  );
 
   // Drawer: labeled full-width rows, so a mobile user can tell what each does.
   if (stacked) {
     return (
       <>
+        {tabBar && <div className="tui-ctl-row"><span className="tui-ctl-label">tab</span>{tabBar}{syncingChip}</div>}
         <div className="tui-ctl-row"><span className="tui-ctl-label">group</span>{group}</div>
         <div className="tui-ctl-row"><span className="tui-ctl-label">sort</span>{sort}</div>
         <div className="tui-ctl-row"><span className="tui-ctl-label">view</span>{viewSeg}</div>
@@ -83,6 +101,8 @@ function Controls({
           board's own plain buttons (the refresh button above, the selection
           bar's post/clear), which are not CopyButton instances. */}
       {canCopy && <CopyButton text={summaryText} title="copy summary for Slack" />}
+      {tabBar}
+      {syncingChip}
       {group}
       {sort}
       {viewSeg}

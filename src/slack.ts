@@ -1,10 +1,11 @@
-import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync } from "fs";
+import { readFileSync, writeFileSync, mkdirSync, readdirSync, existsSync, renameSync } from "fs";
 import { join } from "path";
 import { APP_ROOT } from "./app-root.ts";
 
 const STATE_ROOT = join(APP_ROOT, "state");
 export const SLACK_REF_DIR = join(STATE_ROOT, "slack");
-const INDEX_PATH = join(STATE_ROOT, "slack-index.json");
+/** Pre-tabs installs had exactly one channel and one index at this path. */
+const LEGACY_INDEX_NAME = "slack-index.json";
 
 /** How far back the first index build reaches. Review requests older than the
     board's stale window are irrelevant, so we never page the whole channel. */
@@ -124,17 +125,63 @@ async function resolveChannelId(token: string, channelName: string): Promise<str
   throw new Error(`slack channel #${channelName} not found (is the token's user a member?)`);
 }
 
-function readIndex(): SlackIndex | null {
+/** Per-channel index path; the pre-tabs single-channel index migrates lazily
+    (see readIndex). `dir` defaults to the real state root and is only
+    overridden by tests. */
+export function slackIndexPath(channelName: string, dir: string = STATE_ROOT): string {
+  const slug = channelName.replace(/[^a-zA-Z0-9_-]+/g, "-");
+  return join(dir, `slack-index-${slug}.json`);
+}
+
+/** Where the pre-tabs single-channel index lives, if this install predates tabs. */
+export function legacyIndexPath(dir: string = STATE_ROOT): string {
+  return join(dir, LEGACY_INDEX_NAME);
+}
+
+/** Read a channel's own index. No legacy fallback here -- adoption needs a
+    resolved channel id to verify against (see adoptLegacyIndex), which this
+    plain fs read has no way to obtain. */
+export function readIndex(channelName: string, dir: string = STATE_ROOT): SlackIndex | null {
   try {
-    return JSON.parse(readFileSync(INDEX_PATH, "utf8")) as SlackIndex;
+    return JSON.parse(readFileSync(slackIndexPath(channelName, dir), "utf8")) as SlackIndex;
   } catch {
     return null;
   }
 }
 
-function writeIndex(index: SlackIndex): void {
-  mkdirSync(STATE_ROOT, { recursive: true });
-  writeFileSync(INDEX_PATH, JSON.stringify(index, null, 2) + "\n");
+export function writeIndex(channelName: string, index: SlackIndex, dir: string = STATE_ROOT): void {
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(slackIndexPath(channelName, dir), JSON.stringify(index, null, 2) + "\n");
+}
+
+/**
+ * Adopt the legacy single-channel index for `channelName`, but only when its
+ * cached channelId actually matches `resolvedChannelId` -- the id the caller
+ * just resolved by name from Slack. The legacy file predates tabs and stores
+ * no channel name, only a channelId, so an unverified adoption would let
+ * whichever channel asks first inherit a DIFFERENT channel's id and silently
+ * operate against the wrong Slack channel from then on. A mismatch leaves
+ * the legacy file untouched so the channel it actually belongs to can still
+ * adopt it later; the caller starts fresh with `resolvedChannelId` instead.
+ */
+export function adoptLegacyIndex(channelName: string, resolvedChannelId: string, dir: string = STATE_ROOT): SlackIndex | null {
+  const path = slackIndexPath(channelName, dir);
+  const legacyPath = legacyIndexPath(dir);
+  if (existsSync(path) || !existsSync(legacyPath)) return null;
+  let legacy: SlackIndex;
+  try {
+    legacy = JSON.parse(readFileSync(legacyPath, "utf8")) as SlackIndex;
+  } catch {
+    return null;
+  }
+  if (legacy.channelId !== resolvedChannelId) return null;
+  try {
+    renameSync(legacyPath, path);
+  } catch {
+    // Lost a rename race with another process's adoption; the file now at
+    // `path` (written by whoever won) is still correct for this channel.
+  }
+  return legacy;
 }
 
 /**
@@ -143,8 +190,11 @@ function writeIndex(index: SlackIndex): void {
  * Message text/ts never change once posted, so the index only ever grows.
  */
 export async function syncIndex(token: string, channelName: string, now: number = Date.now()): Promise<SlackIndex> {
-  const existing = readIndex();
+  let existing = readIndex(channelName);
   const channelId = existing?.channelId ?? (await resolveChannelId(token, channelName));
+  // No per-channel index yet: the resolved id above lets us verify (not just
+  // assume) whether the legacy single-channel index actually belongs here.
+  if (!existing) existing = adoptLegacyIndex(channelName, channelId);
   const domain = existing?.teamDomain ?? (await teamDomain(token));
   const oldest = existing?.lastTs && existing.lastTs !== "0"
     ? existing.lastTs
@@ -170,7 +220,7 @@ export async function syncIndex(token: string, channelName: string, now: number 
   const merged = [...(existing?.messages ?? []), ...fresh];
   const lastTs = merged.reduce((max, m) => (parseFloat(m.ts) > parseFloat(max) ? m.ts : max), existing?.lastTs ?? "0");
   const index: SlackIndex = { channelId, teamDomain: domain, lastTs, messages: merged };
-  writeIndex(index);
+  writeIndex(channelName, index);
   return index;
 }
 
@@ -235,8 +285,9 @@ export async function postToSlack(
   now: number = Date.now(),
 ): Promise<SlackRef[]> {
   if (!mrs.length) throw new Error("nothing to post");
-  const existing = readIndex();
+  let existing = readIndex(channelName);
   const channelId = existing?.channelId ?? (await resolveChannelId(token, channelName));
+  if (!existing) existing = adoptLegacyIndex(channelName, channelId);
   const domain = existing?.teamDomain ?? (await teamDomain(token));
   const ts = await postMessage(token, channelId, text);
   const multi = mrs.length > 1;

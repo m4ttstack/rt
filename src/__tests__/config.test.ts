@@ -107,6 +107,25 @@ describe("parseConfig", () => {
     expect(parseConfig(JSON.stringify(base)).rtRepos).toEqual({});
   });
 
+  test("config without tabs gets the implicit authors tab", () => {
+    const cfg = parseConfig(JSON.stringify(base));
+    expect(cfg.tabs).toEqual([{ id: "team", label: "Team", source: { kind: "authors" } }]);
+  });
+
+  test("throws on an empty tabs array instead of silently producing a zero-tab board", () => {
+    expect(() => parseConfig(JSON.stringify({ ...base, tabs: [] }))).toThrow(/tabs.*must not be empty/);
+  });
+
+  test("tabs validate: unique ids, codeowners needs a section", () => {
+    expect(() => parseConfig(JSON.stringify({ ...base, tabs: [
+      { id: "a", label: "A", source: { kind: "codeowners" } },
+    ] }))).toThrow(/section/);
+    expect(() => parseConfig(JSON.stringify({ ...base, tabs: [
+      { id: "a", label: "A", source: { kind: "authors" } },
+      { id: "a", label: "B", source: { kind: "authors" } },
+    ] }))).toThrow(/duplicate tab id/);
+  });
+
   test("port, host, reviewSkill, respondSkill, teamClone are gone from the parsed shape", () => {
     const cfg = parseConfig(JSON.stringify({
       ...base, port: 9999, host: "0.0.0.0", reviewSkill: "x:review", respondSkill: "x:respond", teamClone: "~/team",

@@ -33,6 +33,19 @@ export function daemonRepoField(config: Pick<BoardConfig, "rtRepos">, projectPat
   return repoIdentityField(config.rtRepos[projectPath]);
 }
 
+export interface TabConfig {
+  id: string;
+  label: string;
+  source: { kind: "authors" } | { kind: "codeowners"; section: string; excludeMembers?: boolean };
+  /** Overrides slack.channel for this tab's index, reactions, and posts. */
+  slackChannel?: string;
+  /** Overrides review-launch skill resolution for this tab. Empty/absent = normal resolution. */
+  reviewSkill?: string;
+}
+
+/** No config.json/store tabs = one classic authors-roster tab, never zero tabs. */
+export const IMPLICIT_TABS: TabConfig[] = [{ id: "team", label: "Team", source: { kind: "authors" } }];
+
 export interface Member {
   username: string;
   /** Optional display name; falls back to the GitLab profile lookup, then username. */
@@ -90,6 +103,8 @@ export interface BoardConfig {
   /** Peer-boards relay. Empty url disables every peer feature (publish, poll,
       nudge endpoint) cleanly. Token comes from SWITCHBOARD_TOKEN, not config. */
   switchboard: SwitchboardBoardConfig;
+  /** Board tabs, in display order. Absent in config.json/store = IMPLICIT_TABS. */
+  tabs: TabConfig[];
 }
 
 export interface SwitchboardBoardConfig {
@@ -202,6 +217,7 @@ export function parseConfig(raw: string, source = "config.json"): BoardConfig {
   }
   const slack = parseSlack(cfg.slack, source);
   const switchboard = parseSwitchboard(cfg.switchboard, source);
+  const tabs = parseTabs(cfg.tabs, source);
   const rtRepos = (cfg.rtRepos && typeof cfg.rtRepos === "object" && !Array.isArray(cfg.rtRepos))
     ? Object.fromEntries(Object.entries(cfg.rtRepos).filter(([, v]) => typeof v === "string"))
     : {};
@@ -226,7 +242,65 @@ export function parseConfig(raw: string, source = "config.json"): BoardConfig {
     rtRepos,
     slack,
     switchboard,
+    tabs,
   };
+}
+
+/** Absent = IMPLICIT_TABS (the classic single authors-roster board), never zero tabs. */
+function parseTabs(raw: unknown, source: string): TabConfig[] {
+  if (raw === undefined) return IMPLICIT_TABS;
+  if (!Array.isArray(raw)) throw new Error(`${source} "tabs" must be an array`);
+  if (raw.length === 0) throw new Error(`${source} "tabs" must not be empty (omit "tabs" for the implicit default)`);
+  const seenIds = new Set<string>();
+  return raw.map((entry, i) => {
+    const label = `tabs[${i}]`;
+    if (!entry || typeof entry !== "object") {
+      throw new Error(`${source} "${label}" must be an object`);
+    }
+    const t = entry as Partial<TabConfig>;
+    if (!t.id || typeof t.id !== "string") {
+      throw new Error(`${source} "${label}" is missing a non-empty "id"`);
+    }
+    if (seenIds.has(t.id)) {
+      throw new Error(`${source} has a duplicate tab id "${t.id}" in ${label}`);
+    }
+    seenIds.add(t.id);
+    if (!t.label || typeof t.label !== "string") {
+      throw new Error(`${source} "${label}" is missing a non-empty "label"`);
+    }
+    if (!t.source || typeof t.source !== "object") {
+      throw new Error(`${source} "${label}.source" must be an object`);
+    }
+    const src = t.source as { kind?: string; section?: string; excludeMembers?: unknown };
+    if (src.kind !== "authors" && src.kind !== "codeowners") {
+      throw new Error(`${source} "${label}.source.kind" must be "authors" or "codeowners"`);
+    }
+    let source_: TabConfig["source"];
+    if (src.kind === "authors") {
+      source_ = { kind: "authors" };
+    } else {
+      if (!src.section || typeof src.section !== "string") {
+        throw new Error(`${source} "${label}.source.section" is required for a codeowners tab`);
+      }
+      if (src.excludeMembers !== undefined && typeof src.excludeMembers !== "boolean") {
+        throw new Error(`${source} "${label}.source.excludeMembers" must be a boolean`);
+      }
+      source_ = { kind: "codeowners", section: src.section, ...(src.excludeMembers !== undefined ? { excludeMembers: src.excludeMembers } : {}) };
+    }
+    if (t.slackChannel !== undefined && typeof t.slackChannel !== "string") {
+      throw new Error(`${source} "${label}.slackChannel" must be a string`);
+    }
+    if (t.reviewSkill !== undefined && typeof t.reviewSkill !== "string") {
+      throw new Error(`${source} "${label}.reviewSkill" must be a string`);
+    }
+    return {
+      id: t.id,
+      label: t.label,
+      source: source_,
+      ...(t.slackChannel !== undefined ? { slackChannel: t.slackChannel } : {}),
+      ...(t.reviewSkill !== undefined ? { reviewSkill: t.reviewSkill } : {}),
+    };
+  });
 }
 
 /** Shared with saveSwitchboardUrl's owned-branch write, so a trailing slash
@@ -391,6 +465,7 @@ function withBoardStoreFallback(fileConfig: BoardConfig, resolve: GetSettingFn):
     doctorCwd: cwds?.doctor ?? fileConfig.doctorCwd,
     rtRepos: rtReposStore ? Object.fromEntries(rtReposStore.map((r) => [r.project, r.repo])) : fileConfig.rtRepos,
     switchboard: { url: storeValue("board.switchboardUrl", resolve) ?? fileConfig.switchboard.url },
+    tabs: storeValue("board.tabs", resolve) ?? fileConfig.tabs,
   };
 
   return parseConfig(JSON.stringify(merged), "a board.* team settings-store value");

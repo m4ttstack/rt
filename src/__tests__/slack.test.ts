@@ -1,13 +1,22 @@
-import { describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { mkdtempSync, rmSync, existsSync, writeFileSync } from "fs";
+import { join } from "path";
+import { tmpdir } from "os";
 import {
   buildPermalink,
   buildThreadPermalink,
   extractMrUrls,
   matchReviewMessage,
   slackRefPath,
+  slackIndexPath,
+  legacyIndexPath,
+  readIndex,
+  writeIndex,
+  adoptLegacyIndex,
   attachSlack,
   type SlackMessage,
   type SlackRef,
+  type SlackIndex,
 } from "../slack.ts";
 
 const URL_A = "https://gitlab.com/acme/webapp/-/merge_requests/4821";
@@ -75,6 +84,89 @@ describe("slackRefPath", () => {
     expect(slackRefPath(URL_A, "/s").startsWith("/s/")).toBe(true);
     expect(slackRefPath(URL_A, "/s").endsWith(".json")).toBe(true);
     expect(slackRefPath(URL_A, "/s")).not.toBe(slackRefPath(URL_B, "/s"));
+  });
+});
+
+describe("slackIndexPath", () => {
+  test("is stable per channel and distinct across channels", () => {
+    expect(slackIndexPath("code-review")).not.toBe(slackIndexPath("team-codeowners"));
+    expect(slackIndexPath("code-review")).toBe(slackIndexPath("code-review"));
+  });
+
+  test("slugs unsafe characters and lives under the given dir", () => {
+    expect(slackIndexPath("pod/weird name!", "/s")).toBe("/s/slack-index-pod-weird-name-.json");
+  });
+});
+
+describe("readIndex / writeIndex per-channel", () => {
+  let dir: string;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "slack-idx-")); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  test("readIndex never touches the legacy file -- adoption is a separate, id-verified step", () => {
+    const legacy: SlackIndex = { channelId: "C1", teamDomain: "acme.slack.com", lastTs: "100.0", messages: [] };
+    writeFileSync(legacyIndexPath(dir), JSON.stringify(legacy));
+    expect(readIndex("code-review", dir)).toBeNull();
+    expect(existsSync(legacyIndexPath(dir))).toBe(true); // untouched
+  });
+
+  test("with no legacy file, a fresh install just starts with null per channel", () => {
+    expect(readIndex("code-review", dir)).toBeNull();
+    expect(readIndex("team-codeowners", dir)).toBeNull();
+  });
+
+  test("writeIndex writes to the channel-specific path, independent of other channels", () => {
+    const idx: SlackIndex = { channelId: "C2", teamDomain: "acme.slack.com", lastTs: "200.0", messages: [] };
+    writeIndex("team-codeowners", idx, dir);
+    expect(readIndex("team-codeowners", dir)).toEqual(idx);
+    expect(readIndex("code-review", dir)).toBeNull();
+  });
+});
+
+describe("adoptLegacyIndex", () => {
+  let dir: string;
+  beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "slack-idx-")); });
+  afterEach(() => { rmSync(dir, { recursive: true, force: true }); });
+
+  // The legacy index's channelId is the real Slack id of whichever channel a
+  // pre-tabs install was actually using -- here, "code-review"'s.
+  const legacy: SlackIndex = { channelId: "C1", teamDomain: "acme.slack.com", lastTs: "100.0", messages: [] };
+
+  test("adopts when the resolved channel id matches (the default channel winning the race)", () => {
+    writeFileSync(legacyIndexPath(dir), JSON.stringify(legacy));
+    const adopted = adoptLegacyIndex("code-review", "C1", dir);
+    expect(adopted).toEqual(legacy);
+    expect(existsSync(legacyIndexPath(dir))).toBe(false); // consumed
+    expect(readIndex("code-review", dir)).toEqual(legacy);
+  });
+
+  test("refuses when the resolved channel id does not match (a codeowners tab winning the race), leaving the legacy file for its real owner", () => {
+    writeFileSync(legacyIndexPath(dir), JSON.stringify(legacy));
+    // team-codeowners's own resolved id ("C2") is not code-review's ("C1").
+    const adopted = adoptLegacyIndex("team-codeowners", "C2", dir);
+    expect(adopted).toBeNull();
+    expect(readIndex("team-codeowners", dir)).toBeNull(); // no fresh file written by adoptLegacyIndex itself
+    expect(existsSync(legacyIndexPath(dir))).toBe(true); // legacy file untouched, still there for code-review
+    expect(readIndex("code-review", dir)).toBeNull(); // not adopted for code-review either -- still pending
+
+    // The default channel can still adopt it afterward.
+    const laterAdopted = adoptLegacyIndex("code-review", "C1", dir);
+    expect(laterAdopted).toEqual(legacy);
+    expect(existsSync(legacyIndexPath(dir))).toBe(false);
+    expect(readIndex("code-review", dir)).toEqual(legacy);
+  });
+
+  test("returns null with no legacy file to adopt", () => {
+    expect(adoptLegacyIndex("code-review", "C1", dir)).toBeNull();
+  });
+
+  test("returns null (does not overwrite) when the channel already has its own index", () => {
+    const own: SlackIndex = { channelId: "C1", teamDomain: "acme.slack.com", lastTs: "50.0", messages: [] };
+    writeIndex("code-review", own, dir);
+    writeFileSync(legacyIndexPath(dir), JSON.stringify(legacy));
+    expect(adoptLegacyIndex("code-review", "C1", dir)).toBeNull();
+    expect(readIndex("code-review", dir)).toEqual(own); // untouched
+    expect(existsSync(legacyIndexPath(dir))).toBe(true); // legacy left alone too
   });
 });
 

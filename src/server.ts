@@ -10,7 +10,7 @@ import { loadConfig, loadGitLabToken, loadSlackToken, loadSwitchboardToken, load
 import { memoizeAsync } from "./memoize-async.ts";
 import { resolveBoardSkill, type BoardSkillKind } from "./manifest-bindings.ts";
 import { upsertEnvKeys } from "./env-file.ts";
-import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, projectPathFromWebUrl, type BoardMR, type SyncScopeRead } from "./data.ts";
+import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, channelForMR, configuredSlackChannels, projectPathFromWebUrl, reviewSkillForTab, visibleMrsFor, type BoardMR, type SyncScopeRead } from "./data.ts";
 import { GitLabProvider, ReadBackFailedError, NoteMutator, parseRepoId } from "@mattstack/glance";
 import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } from "./discussions.ts";
 import { readProjectMRs, readDiscussions, subscribe } from "@mattstack/rt-client";
@@ -168,12 +168,16 @@ function attachPeerState<T extends { webUrl?: string | null }>(mrs: T[], now: nu
 const FETCH_CONCURRENCY = 4;
 
 /** fetchTeamMRs' result: the opened MRs plus the aggregated sync facts from
-    every project read, for the caller to fold into the snapshot. */
+    every project read, for the caller to fold into the snapshot. `tags` is
+    every tagged MR's codeowner sections, keyed by pr.id, for buildBoard to
+    intersect against the configured tabs. */
 interface TeamMRsResult {
   prs: PullRequest[];
   dataSyncedAt: number | null;
   scopeUncovered: string[];
   scopeWindowDays: number | null;
+  scopeUncoveredSections: string[];
+  tags: Map<string, string[]>;
 }
 
 /**
@@ -193,6 +197,7 @@ interface TeamMRsResult {
  */
 async function fetchTeamMRs(force = false): Promise<TeamMRsResult> {
   const byId = new Map<string, PullRequest>();
+  const tags = new Map<string, string[]>();
   const errors: string[] = [];
   const reads: SyncScopeRead[] = [];
   const demand = boardDemand(config, port);
@@ -209,11 +214,13 @@ async function fetchTeamMRs(force = false): Promise<TeamMRsResult> {
     }
     reads.push({ syncedAt: res.data.syncedAt, scope: res.data.scope });
     for (const entry of Object.values(res.data.mrs)) {
-      if (entry.pr.state === "opened") byId.set(entry.pr.id, entry.pr);
+      if (entry.pr.state !== "opened") continue;
+      byId.set(entry.pr.id, entry.pr);
+      if (entry.codeownerSections?.length) tags.set(entry.pr.id, entry.codeownerSections);
     }
   }
   if (errors.length) throw new Error(errors.join(" · "));
-  return { prs: [...byId.values()], ...aggregateSyncScope(reads) };
+  return { prs: [...byId.values()], ...aggregateSyncScope(reads), tags };
 }
 
 /** Author string for a herdr tab label: the display name, else the username. */
@@ -274,10 +281,10 @@ const cache = new SnapshotCache(async () => {
   // latched for the background refreshes that follow.
   const force = forceNextFetch;
   forceNextFetch = false;
-  const { prs, dataSyncedAt, scopeUncovered, scopeWindowDays } = await fetchTeamMRs(force);
-  const mrs = buildBoard(prs, config);
+  const { prs, dataSyncedAt, scopeUncovered, scopeWindowDays, scopeUncoveredSections, tags } = await fetchTeamMRs(force);
+  const mrs = buildBoard(prs, config, undefined, tags);
   await enrichReviewerComments(mrs);
-  return { mrs, dataSyncedAt, scopeUncovered, scopeWindowDays };
+  return { mrs, dataSyncedAt, scopeUncovered, scopeWindowDays, scopeUncoveredSections };
 });
 
 /**
@@ -287,6 +294,7 @@ const cache = new SnapshotCache(async () => {
  */
 async function fetchMemberMRs(username: string): Promise<BoardMR[]> {
   const out: PullRequest[] = [];
+  const tags = new Map<string, string[]>();
   const errors: string[] = [];
   for (const projectPath of config.projects) {
     const repoId = daemonRepoField(config, projectPath);
@@ -294,11 +302,13 @@ async function fetchMemberMRs(username: string): Promise<BoardMR[]> {
     const res = await readProjectMRs(repoId, 20_000);
     if (!res.ok || !res.data) { errors.push(`${projectPath}: ${res.error ?? "empty daemon response"}`); continue; }
     for (const entry of Object.values(res.data.mrs)) {
-      if (entry.pr.state === "opened" && entry.pr.author?.username === username) out.push(entry.pr);
+      if (entry.pr.state !== "opened" || entry.pr.author?.username !== username) continue;
+      out.push(entry.pr);
+      if (entry.codeownerSections?.length) tags.set(entry.pr.id, entry.codeownerSections);
     }
   }
   if (errors.length) throw new Error(errors.join(" · "));
-  const mrs = buildBoard(out, config);
+  const mrs = buildBoard(out, config, undefined, tags);
   await enrichReviewerComments(mrs);
   return mrs;
 }
@@ -500,8 +510,7 @@ const httpServer = Bun.serve({
         // and its counts — but stay in `allMembers` so the settings modal can
         // check them back in.
         const visible = config.members.filter((m) => !m.hidden);
-        const visibleNames = new Set(visible.map((m) => m.username));
-        const visibleMrs = snapshot.mrs.filter((mr) => visibleNames.has(mr.author.username));
+        const visibleMrs = visibleMrsFor(snapshot.mrs, visible);
         // Retain review/respond/doctor state for exactly as long as its MR is on
         // the board; prune once it merges/closes/goes stale and drops off. Gated
         // on a healthy, non-empty snapshot so a failed fetch (stale/empty data)
@@ -559,7 +568,9 @@ const httpServer = Bun.serve({
             dataSyncedAt: snapshot.dataSyncedAt,
             scopeUncovered: snapshot.scopeUncovered,
             scopeWindowDays: snapshot.scopeWindowDays,
+            scopeUncoveredSections: snapshot.scopeUncoveredSections,
             staleAfterDays: config.staleAfterDays,
+            tabs: config.tabs,
           }),
           { headers: { "content-type": "application/json" } },
         );
@@ -619,6 +630,7 @@ const httpServer = Bun.serve({
         if (!parsed) return new Response("expected { mrUrl: string, iid: number }", { status: 400 });
         const resume = (body as { resume?: unknown })?.resume === true;
         const reReview = (body as { reReview?: unknown })?.reReview === true;
+        const tabId = (body as { tabId?: unknown })?.tabId;
         const noteParse = parseLaunchNote(body);
         if (!noteParse.ok) return new Response(noteParse.error, { status: 400 });
         const note = noteParse.note;
@@ -646,7 +658,7 @@ const httpServer = Bun.serve({
           void launchReReview(parsed.mrUrl, parsed.iid, {
             cwd: config.reviewCwd,
             workspaceLabel: config.reviewsWorkspace,
-            skill: resolveLaunchSkill("review", parsed.mrUrl),
+            skill: reviewSkillForTab(config, typeof tabId === "string" ? tabId : undefined, parsed.mrUrl, resolveLaunchSkill),
             author,
             claudeCommand: config.claudeCommand,
             note,
@@ -682,7 +694,7 @@ const httpServer = Bun.serve({
           cwd: config.reviewCwd,
           workspaceLabel: config.reviewsWorkspace,
           statePath,
-          skill: resolveLaunchSkill("review", parsed.mrUrl),
+          skill: reviewSkillForTab(config, typeof tabId === "string" ? tabId : undefined, parsed.mrUrl, resolveLaunchSkill),
           author,
           claudeCommand: config.claudeCommand,
           note,
@@ -911,9 +923,12 @@ const httpServer = Bun.serve({
         // The sweeper usually resolves the ref first, but a review launched and
         // finished inside one sweep interval can beat it here.
         try {
+          const signalSnapshot = await cache.get();
+          const signalMr = signalSnapshot.mrs.find((m) => m.webUrl === signal.mrUrl);
+          const signalChannel = signalMr ? channelForMR(config, signalMr) : config.slack.channel;
           const existing = readSlackRefs().get(signal.mrUrl);
           if (existing?.status !== "found" || !existing.messageTs) {
-            await resolveSlackRef(slackToken, config.slack.channel, signal.mrUrl, signal.iid);
+            await resolveSlackRef(slackToken, signalChannel, signal.mrUrl, signal.iid);
           }
           const ref = await reactToMR(slackToken, signal.mrUrl, emoji);
           return new Response(JSON.stringify({ ok: true, reacted: true, reactions: ref.reactions ?? [] }), {
@@ -1163,8 +1178,16 @@ const httpServer = Bun.serve({
         }
         const parsed = parseReviewRequestBody(body);
         if (!parsed) return new Response("expected { mrUrl: string, iid: number }", { status: 400 });
+        const { channel } = (body ?? {}) as { channel?: unknown };
+        const allowedChannels = configuredSlackChannels(config);
+        if (channel !== undefined && (typeof channel !== "string" || !allowedChannels.includes(channel))) {
+          return new Response(`"channel" must be one of ${allowedChannels.join(", ")}`, { status: 400 });
+        }
         try {
-          const ref = await resolveSlackRef(slackToken, config.slack.channel, parsed.mrUrl, parsed.iid);
+          const snapshot = await cache.get();
+          const mr = snapshot.mrs.find((m) => m.webUrl === parsed.mrUrl);
+          const resolvedChannel = typeof channel === "string" ? channel : mr ? channelForMR(config, mr) : config.slack.channel;
+          const ref = await resolveSlackRef(slackToken, resolvedChannel, parsed.mrUrl, parsed.iid);
           return new Response(
             JSON.stringify({ ok: true, status: ref.status, permalink: ref.permalink, reactions: ref.reactions ?? [] }),
             { headers: { "content-type": "application/json" } },
@@ -1191,7 +1214,7 @@ const httpServer = Bun.serve({
         } catch {
           return new Response("invalid json", { status: 400 });
         }
-        const { mrUrls, header } = (body ?? {}) as { mrUrls?: unknown; header?: unknown };
+        const { mrUrls, header, channel } = (body ?? {}) as { mrUrls?: unknown; header?: unknown; channel?: unknown };
         if (!Array.isArray(mrUrls) || mrUrls.length === 0 || !mrUrls.every((u) => typeof u === "string")) {
           return new Response("expected { mrUrls: string[] }", { status: 400 });
         }
@@ -1199,11 +1222,31 @@ const httpServer = Bun.serve({
         if (header !== undefined && headerOverride === null) {
           return new Response(`"header" must be a non-empty string of at most ${MAX_HEADER_LEN} characters`, { status: 400 });
         }
+        const allowedChannels = configuredSlackChannels(config);
+        if (channel !== undefined && (typeof channel !== "string" || !allowedChannels.includes(channel))) {
+          return new Response(`"channel" must be one of ${allowedChannels.join(", ")}`, { status: 400 });
+        }
         const snapshot = await cache.get();
         const byUrl = new Map(snapshot.mrs.map((m) => [m.webUrl, m] as const));
         const picked = (mrUrls as string[]).map((u) => byUrl.get(u)).filter((m): m is BoardMR => !!m);
         if (picked.length !== mrUrls.length) {
           return new Response("one or more mrUrls are not on the board", { status: 400 });
+        }
+        // An explicit body channel (already validated above) always wins.
+        // Otherwise derive per-MR: resolve/sweeper look in the tab's channel
+        // via channelForMR, so a post with no explicit channel must land
+        // there too, or the ref would pin the wrong channelId. A multi-MR
+        // post only has one channel to post to, so every picked MR must
+        // resolve to the same one.
+        let targetChannel: string;
+        if (typeof channel === "string") {
+          targetChannel = channel;
+        } else {
+          const resolved = new Set(picked.map((m) => channelForMR(config, m)));
+          if (resolved.size > 1) {
+            return new Response("MRs span Slack channels; post them per tab", { status: 400 });
+          }
+          targetChannel = [...resolved][0]!;
         }
         // Guard against duplicate posts: check for an existing ref file first,
         // and for MRs we've never resolved, sync the channel index and look for
@@ -1214,7 +1257,7 @@ const httpServer = Bun.serve({
         const freshlyFound: Array<{ iid: number; permalink?: string }> = [];
         try {
           for (const m of toResolve) {
-            const ref = await resolveSlackRef(slackToken, config.slack.channel, m.webUrl!, m.iid);
+            const ref = await resolveSlackRef(slackToken, targetChannel, m.webUrl!, m.iid);
             if (ref.status === "found") freshlyFound.push({ iid: m.iid, permalink: ref.permalink });
           }
         } catch (err) {
@@ -1259,7 +1302,7 @@ const httpServer = Bun.serve({
         try {
           const refs = await postToSlack(
             slackToken,
-            config.slack.channel,
+            targetChannel,
             text,
             picked.map((m) => ({ webUrl: m.webUrl!, iid: m.iid })),
           );
@@ -1356,7 +1399,7 @@ async function autoResolveSlackRefs(): Promise<void> {
     if (!targets.length) return;
     for (const mr of targets) {
       try {
-        await resolveSlackRef(slackToken, config.slack.channel, mr.webUrl!, mr.iid);
+        await resolveSlackRef(slackToken, channelForMR(config, mr), mr.webUrl!, mr.iid);
       } catch (err) {
         console.error(`auto-resolve !${mr.iid} failed: ${err instanceof Error ? err.message : err}`);
       }

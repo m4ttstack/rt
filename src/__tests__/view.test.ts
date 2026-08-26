@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { BoardMR } from "../data.ts";
-import { filterByMember, sortMRs, groupMRs, commentDot, dataAgeLabel, statusFlags, nestStacks, memberPeerState, joinRowState } from "../view.ts";
+import type { TabConfig } from "../config.ts";
+import { filterByMember, filterByTab, sortMRs, groupMRs, commentDot, dataAgeLabel, statusFlags, nestStacks, memberPeerState, joinRowState } from "../view.ts";
 
 function mr(overrides: Partial<BoardMR>): BoardMR {
   return {
@@ -25,6 +26,35 @@ describe("filterByMember", () => {
   });
   test("filters to one member", () => {
     expect(filterByMember(list, "bob").map((m) => m.iid)).toEqual([2]);
+  });
+});
+
+describe("filterByTab", () => {
+  const members = new Set(["ada"]);
+  const rows = [
+    mr({ iid: 1, author: { username: "ada" } as any, codeownerSections: ["Acme"] } as any),
+    mr({ iid: 2, author: { username: "outsider" } as any, codeownerSections: ["Acme"] } as any),
+    mr({ iid: 3, author: { username: "outsider" } as any, codeownerSections: [] } as any),
+  ];
+
+  test("authors tab excludes a tagged stranger, keeps roster rows", () => {
+    const team: TabConfig = { id: "t", label: "T", source: { kind: "authors" } };
+    expect(filterByTab(rows, team, members).map((m) => m.iid)).toEqual([1]);
+  });
+
+  test("codeowners tab filters to the section and excludes roster authors", () => {
+    const q: TabConfig = { id: "q", label: "Q", source: { kind: "codeowners", section: "Acme", excludeMembers: true } };
+    expect(filterByTab(rows, q, members).map((m) => m.iid)).toEqual([2]);
+  });
+
+  test("codeowners tab without excludeMembers keeps roster authors in the section", () => {
+    const q: TabConfig = { id: "q", label: "Q", source: { kind: "codeowners", section: "Acme" } };
+    expect(filterByTab(rows, q, members).map((m) => m.iid)).toEqual([1, 2]);
+  });
+
+  test("codeowners tab drops rows outside the section regardless of authorship", () => {
+    const q: TabConfig = { id: "q", label: "Q", source: { kind: "codeowners", section: "Acme", excludeMembers: true } };
+    expect(filterByTab(rows, q, members).some((m) => m.iid === 3)).toBe(false);
   });
 });
 
@@ -400,6 +430,7 @@ describe("parseViewState", () => {
       member: "bob",
       group: "status",
       sort: "progress",
+      tab: "",
     });
   });
   test("ignores unknown member and invalid group/sort", () => {
@@ -421,6 +452,22 @@ describe("parseViewState", () => {
   test("stored value still wins over defaultMember", () => {
     expect(parseViewState("", { member: "alice" }, members, "bob").member).toBe("alice");
   });
+
+  test("no validTabs known yet resolves tab to empty, matching DEFAULT_VIEW", () => {
+    expect(parseViewState("?tab=q", null, members).tab).toBe("");
+  });
+
+  test("a known tab id from the URL wins", () => {
+    expect(parseViewState("?tab=q", null, members, "all", ["t", "q"]).tab).toBe("q");
+  });
+
+  test("an unknown tab id falls back to the first configured tab", () => {
+    expect(parseViewState("?tab=zzz", null, members, "all", ["t", "q"]).tab).toBe("t");
+  });
+
+  test("no tab in the URL falls back to the first configured tab", () => {
+    expect(parseViewState("", null, members, "all", ["t", "q"]).tab).toBe("t");
+  });
 });
 
 describe("serializeViewState", () => {
@@ -428,7 +475,10 @@ describe("serializeViewState", () => {
     expect(serializeViewState(DEFAULT_VIEW)).toBe("");
   });
   test("includes non-defaults", () => {
-    expect(serializeViewState({ member: "bob", group: "status", sort: "oldest" })).toBe("?member=bob&group=status");
+    expect(serializeViewState({ member: "bob", group: "status", sort: "oldest", tab: "" })).toBe("?member=bob&group=status");
+  });
+  test("includes a set tab, even a first-tab id", () => {
+    expect(serializeViewState({ member: "all", group: "age", sort: "oldest", tab: "team" })).toBe("?tab=team");
   });
 });
 

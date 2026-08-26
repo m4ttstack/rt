@@ -199,6 +199,17 @@ describe("loadConfigFrom: config.json-optional boot once the team store owns the
   });
 });
 
+describe("loadConfigFrom: board.tabs overlay", () => {
+  test("board.tabs store value overlays config.json", () => {
+    const p = tmpConfig();
+    const resolve = fakeResolve({
+      "board.tabs": [{ id: "q", label: "Q", source: { kind: "codeowners", section: "Acme", excludeMembers: true }, slackChannel: "team-codeowners" }],
+    });
+    const cfg = loadConfigFrom(p, resolve);
+    expect(cfg.tabs[0]!.id).toBe("q");
+  });
+});
+
 describe("saveMemberHidden: latch-gated writer", () => {
   test("unowned: writes config.json's inline hidden flag, store untouched", () => {
     const p = tmpConfig({ ...base, members: [{ username: "alice" }, { username: "bob" }] });

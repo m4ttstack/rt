@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { BoardMR } from "../../data.ts";
-import { filterByMember, sortMRs, groupMRs, parseViewState, serializeViewState, dataAgeLabel } from "../../view.ts";
+import { filterByMember, filterByTab, sortMRs, groupMRs, parseViewState, serializeViewState, dataAgeLabel } from "../../view.ts";
 import type { ViewState } from "../../view.ts";
-import { selectionOf, postableOf } from "../../selection.ts";
+import { selectionOf, postableOf, tabChangeClearsSelection } from "../../selection.ts";
 import type {
   DraftInfo,
   BoardMRWithReview,
@@ -68,12 +68,12 @@ export function Board() {
     setTheme(m);
   };
   const update = (patch: Partial<ViewState>) => {
-    setState((prev) => {
-      const next = { ...prev, ...patch };
-      localStorage.setItem(STATE_KEY, JSON.stringify(next));
-      history.replaceState(null, "", serializeViewState(next) || location.pathname);
-      return next;
-    });
+    const clearsSelection = tabChangeClearsSelection(patch, state.tab);
+    const next = { ...state, ...patch };
+    localStorage.setItem(STATE_KEY, JSON.stringify(next));
+    history.replaceState(null, "", serializeViewState(next) || location.pathname);
+    setState(next);
+    if (clearsSelection) setSelected(new Set());
   };
 
   // Re-resolve the view state's member against the roster the instant real
@@ -93,7 +93,9 @@ export function Board() {
       } catch {
         stored = null;
       }
-      setState(parseViewState(location.search, stored, usernames, d.defaultMember));
+      // Tab validated once here, same as member -- never re-derived from the
+      // URL on later polls, so a live tab pick survives the 60s refresh cycle.
+      setState(parseViewState(location.search, stored, usernames, d.defaultMember, d.tabs.map((t) => t.id)));
     } else {
       setState((prev) => (prev.member === "all" || usernames.includes(prev.member) ? prev : { ...prev, member: "all" }));
     }
@@ -204,15 +206,15 @@ export function Board() {
     axis: "review", path: "/review", verbing: "launching review", noun: "review",
     optimistic: optimisticLifecycle, addToast, reload: load,
   });
-  const handleLaunch = useCallback((mr: BoardMR, note?: string) => launchReview(mr, {}, note), [launchReview]);
+  const handleLaunch = useCallback((mr: BoardMR, note?: string) => launchReview(mr, { tabId: state.tab }, note), [launchReview, state.tab]);
 
   const reReviewAction = useLaunchAction({
     axis: "review", path: "/review", verbing: "re-reviewing", noun: "review",
     optimistic: optimisticLifecycle, addToast, reload: load,
   });
   const handleReReview = useCallback(
-    (mr: BoardMR, note?: string) => reReviewAction(mr, { reReview: true }, note),
-    [reReviewAction],
+    (mr: BoardMR, note?: string) => reReviewAction(mr, { reReview: true, tabId: state.tab }, note),
+    [reReviewAction, state.tab],
   );
 
   const respondAction = useLaunchAction({
@@ -405,17 +407,32 @@ export function Board() {
       ? `board shows ${data.staleAfterDays} days but rt syncs ${data.scopeWindowDays} days... align configs`
       : null;
 
+  // data.tabs is always non-empty (server falls back to IMPLICIT_TABS); state.tab
+  // itself may briefly lag on the very first render before onData's validation
+  // pass lands, so fall back to the first tab rather than trust it blindly.
+  const activeTab = data.tabs.find((t) => t.id === state.tab) ?? data.tabs[0]!;
+  const isCodeownersTab = activeTab.source.kind === "codeowners";
+  // A codeowners tab's "who counts as roster" set for excludeMembers.
+  const rosterUsernames = new Set(data.members.map((m) => m.username));
+  const tabSyncing =
+    activeTab.source.kind === "codeowners" && data.scopeUncoveredSections.includes(activeTab.source.section);
+
   // Server state wins; otherwise show an optimistic "queued" badge if pending.
   const mrs = overlay(data.mrs, optimisticLifecycle.state);
-  const filtered = filterByMember(mrs, state.member);
+  const tabFiltered = filterByTab(mrs, activeTab, rosterUsernames);
+  // Codeowners tabs bypass member filtering entirely (and the sidebar that
+  // drives it) -- the queue is scoped by section, not by roster author.
+  const filtered = isCodeownersTab ? tabFiltered : filterByMember(tabFiltered, state.member);
   const groups = groupMRs(filtered, state.group, data.members.map((m) => m.username), now).map((g) => ({
     label: g.label,
     mrs: sortMRs(g.mrs, state.sort),
   }));
-  const activeMember = state.member === "all" ? null : data.members.find((m) => m.username === state.member) ?? null;
+  const activeMember =
+    !isCodeownersTab && state.member !== "all" ? data.members.find((m) => m.username === state.member) ?? null : null;
   // Show each row's author only when the view mixes authors: the All view
-  // grouped by anything but author (where the group header isn't the name).
-  const showAuthor = state.member === "all" && state.group !== "author";
+  // grouped by anything but author (where the group header isn't the name),
+  // or a codeowners tab, which is never narrowed to one author.
+  const showAuthor = isCodeownersTab || (state.member === "all" && state.group !== "author");
   // Under author grouping the header IS the name, so rows normally drop the
   // author tag -- but a stack pulled to its root's group can carry a
   // co-author's MR under someone else's header. Tag the rows whenever a group
@@ -467,20 +484,28 @@ export function Board() {
     canPostSummary: data.slackEnabled && data.local && postableMrs.length > 0,
     postingSummary,
     onPostSummary: () => handlePostSummary(postableMrs),
+    tabs: data.tabs,
+    tabSyncing,
   };
 
   return (
-    <div className={view === "grid" ? "tui tui-wide tui-app" : "tui tui-app"}>
-      {/* Desktop roster (hidden on mobile, where it moves into the drawer). */}
-      <Sidebar
-        members={data.members}
-        total={total}
-        active={state.member}
-        onPick={(member) => update({ member })}
-        onSettings={openSettings}
-        onConfig={openConfig}
-        scopeUncovered={data.scopeUncovered}
-      />
+    <div
+      className={`tui tui-app${view === "grid" ? " tui-wide" : ""}${isCodeownersTab ? " tui-no-sidebar" : ""}`}
+    >
+      {/* Desktop roster (hidden on mobile, where it moves into the drawer).
+          Also hidden on a codeowners tab: it isn't filtered by member, so the
+          roster has nothing to drive. */}
+      {!isCodeownersTab && (
+        <Sidebar
+          members={data.members}
+          total={total}
+          active={state.member}
+          onPick={(member) => update({ member })}
+          onSettings={openSettings}
+          onConfig={openConfig}
+          scopeUncovered={data.scopeUncovered}
+        />
+      )}
 
       <div className="tui-main">
         <header className="tui-header">
@@ -570,18 +595,20 @@ export function Board() {
               {ICONS.close}
             </button>
           </div>
-          <Sidebar
-            members={data.members}
-            total={total}
-            active={state.member}
-            onPick={(member) => {
-              update({ member });
-              setMenuOpen(false);
-            }}
-            onSettings={openSettings}
-            onConfig={openConfig}
-            scopeUncovered={data.scopeUncovered}
-          />
+          {!isCodeownersTab && (
+            <Sidebar
+              members={data.members}
+              total={total}
+              active={state.member}
+              onPick={(member) => {
+                update({ member });
+                setMenuOpen(false);
+              }}
+              onSettings={openSettings}
+              onConfig={openConfig}
+              scopeUncovered={data.scopeUncovered}
+            />
+          )}
           <div className="tui-drawer-controls">
             <Controls {...controlProps} stacked />
           </div>

@@ -3,7 +3,7 @@ import { SnapshotCache, type FetchResult } from "../cache.ts";
 
 /** Wrap a bare mrs array as the FetchResult shape SnapshotCache expects. */
 function fetchResult(mrs: unknown[]): FetchResult {
-  return { mrs: mrs as FetchResult["mrs"], dataSyncedAt: null, scopeUncovered: [], scopeWindowDays: null };
+  return { mrs: mrs as FetchResult["mrs"], dataSyncedAt: null, scopeUncovered: [], scopeWindowDays: null, scopeUncoveredSections: [] };
 }
 
 describe("SnapshotCache forced-refresh failure", () => {

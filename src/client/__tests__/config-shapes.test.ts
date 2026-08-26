@@ -33,13 +33,25 @@ function def(over: Partial<ConfigDef> & { key: string }): ConfigDef {
   };
 }
 
+/** Composite board.* registry keys with no edit UI yet -- rowKind's
+    "readonly" fallback (no COMPOSITE_SHAPES entry) is the intended
+    rendering for these, not a coverage gap. */
+const DELIBERATELY_READONLY_COMPOSITES = ["board.tabs"];
+
 describe("COMPOSITE_SHAPES", () => {
-  test("covers every composite board.* key in the registry", () => {
+  test("covers every composite board.* key in the registry except the deliberately-readonly ones", () => {
     const composites = allDefs()
       .filter((d) => d.key.startsWith("board.") && (d.type === "object" || d.type === "array"))
       .map((d) => d.key)
+      .filter((k) => !DELIBERATELY_READONLY_COMPOSITES.includes(k))
       .sort();
     expect(Object.keys(COMPOSITE_SHAPES).sort()).toEqual(composites);
+  });
+
+  test("board.tabs is a composite key deliberately left readonly", () => {
+    expect(allDefs().find((d) => d.key === "board.tabs")?.type).toBe("array");
+    expect(COMPOSITE_SHAPES["board.tabs"]).toBeUndefined();
+    expect(rowKind(def({ key: "board.tabs", type: "array" }))).toBe("readonly");
   });
 
   test("names no key the registry lacks", () => {

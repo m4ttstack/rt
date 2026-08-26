@@ -1,6 +1,7 @@
 import type { BoardMR } from "./data.ts";
 import { hasChangesRequested } from "./data.ts";
 import { projectKeyOf } from "./triage/stack.ts";
+import type { TabConfig } from "./config.ts";
 
 export type GroupKey = "age" | "author" | "status" | "review";
 export type SortKey = "oldest" | "progress";
@@ -151,6 +152,21 @@ function progress(mr: BoardMR): number {
 
 export function filterByMember(mrs: BoardMR[], member: string): BoardMR[] {
   return member === "all" ? mrs : mrs.filter((m) => m.author.username === member);
+}
+
+/** An authors tab narrows to roster members -- further per-member filtering
+    stays downstream in filterByMember. Without this narrowing, a
+    codeowner-tagged stranger (never a roster member, but let through the
+    server's visibility gate for the codeowners tab) would leak onto the
+    authors tab too. A codeowners tab narrows to rows tagged with its section;
+    excludeMembers additionally drops the roster's own authors, so the tab
+    reads as the outside-the-team queue for that section. */
+export function filterByTab(mrs: BoardMR[], tab: TabConfig, members: Set<string>): BoardMR[] {
+  if (tab.source.kind === "authors") return mrs.filter((mr) => members.has(mr.author.username));
+  const { section, excludeMembers } = tab.source;
+  return mrs.filter(
+    (mr) => mr.codeownerSections.includes(section) && (!excludeMembers || !members.has(mr.author.username)),
+  );
 }
 
 /** Return a new array ordered by the chosen sort. Never mutates the input. */
@@ -317,16 +333,22 @@ export interface ViewState {
   member: string;
   group: GroupKey;
   sort: SortKey;
+  tab: string;
 }
 
-export const DEFAULT_VIEW: ViewState = { member: "all", group: "age", sort: "oldest" };
+export const DEFAULT_VIEW: ViewState = { member: "all", group: "age", sort: "oldest", tab: "" };
 
-/** URL query params win, then stored localStorage values, then defaults. Invalid values are dropped. */
+/** URL query params win, then stored localStorage values, then defaults. Invalid
+    values are dropped. `validTabs` mirrors `validMembers`: an unknown or empty
+    tab (including "no tabs known yet", the state before /data.json's first
+    reply) resolves to the first configured tab, matching DEFAULT_VIEW.tab when
+    validTabs is empty. */
 export function parseViewState(
   search: string,
   stored: Partial<ViewState> | null,
   validMembers: string[],
   defaultMember: string = "all",
+  validTabs: string[] = [],
 ): ViewState {
   const params = new URLSearchParams(search);
   const members = ["all", ...validMembers];
@@ -344,6 +366,7 @@ export function parseViewState(
     member: resolve("member", members, memberFallback),
     group: resolve("group", GROUP_KEYS, "age"),
     sort: resolve("sort", SORT_KEYS, "oldest"),
+    tab: resolve("tab", validTabs, validTabs[0] ?? ""),
   };
 }
 
@@ -382,6 +405,7 @@ export function serializeViewState(v: ViewState): string {
   if (v.member !== DEFAULT_VIEW.member) params.set("member", v.member);
   if (v.group !== DEFAULT_VIEW.group) params.set("group", v.group);
   if (v.sort !== DEFAULT_VIEW.sort) params.set("sort", v.sort);
+  if (v.tab !== DEFAULT_VIEW.tab) params.set("tab", v.tab);
   const s = params.toString();
   return s ? `?${s}` : "";
 }

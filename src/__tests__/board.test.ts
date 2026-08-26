@@ -1,8 +1,20 @@
 import { describe, expect, test } from "bun:test";
 import type { PullRequest } from "@mattstack/glance";
-import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, projectPathFromWebUrl, stripDraftPrefix, type BoardMR } from "../data.ts";
+import {
+  aggregateSyncScope,
+  boardDemand,
+  buildBoard,
+  buildRoster,
+  channelForMR,
+  configuredSlackChannels,
+  projectPathFromWebUrl,
+  reviewSkillForTab,
+  stripDraftPrefix,
+  visibleMrsFor,
+  type BoardMR,
+} from "../data.ts";
 import { SnapshotCache, type FetchResult } from "../cache.ts";
-import { DEFAULT_SLACK_EMOJI, type BoardConfig } from "../config.ts";
+import { DEFAULT_SLACK_EMOJI, IMPLICIT_TABS, type BoardConfig, type TabConfig } from "../config.ts";
 import { extractTicketId } from "../ticket.ts";
 
 const config: BoardConfig = {
@@ -32,7 +44,15 @@ const config: BoardConfig = {
     emoji: DEFAULT_SLACK_EMOJI,
   },
   switchboard: { url: "" },
+  tabs: IMPLICIT_TABS,
 };
+
+/** A team tab plus one codeowners tab watching "Acme" -- used by the
+    boardDemand and tagged-row buildBoard tests below. */
+const tabsWithCodeowners: TabConfig[] = [
+  { id: "t", label: "T", source: { kind: "authors" } },
+  { id: "q", label: "Q", source: { kind: "codeowners", section: "Acme" } },
+];
 
 function pr(overrides: Partial<PullRequest>): PullRequest {
   return {
@@ -258,6 +278,88 @@ describe("buildBoard", () => {
   });
 });
 
+describe("buildBoard tagged rows (codeowner tabs)", () => {
+  const withTabs: BoardConfig = { ...config, tabs: tabsWithCodeowners };
+  const now = Date.parse("2026-07-11T00:00:00Z");
+
+  test("keeps a tagged stranger and stamps codeownerSections", () => {
+    const stranger = pr({ id: "gitlab:900", iid: 9, author: { id: "gitlab:99", username: "outsider", name: "Outsider", avatarUrl: null } });
+    const tags = new Map([[stranger.id, ["Acme"]]]);
+    const out = buildBoard([stranger], withTabs, now, tags);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.codeownerSections).toEqual(["Acme"]);
+  });
+
+  test("stamps codeownerSections on a roster member's own tagged MR too", () => {
+    // Mirrors fetchMemberMRs' scoped refresh: the row is kept on isMember
+    // alone, but a tags map must still be passed for codeownerSections to
+    // land -- an omitted map (server.ts's prior bug) silently zeroes it.
+    const memberMr = pr({ id: "gitlab:904", iid: 13 }); // default author: alice, a roster member
+    const tags = new Map([[memberMr.id, ["Acme"]]]);
+    const out = buildBoard([memberMr], withTabs, now, tags);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.codeownerSections).toEqual(["Acme"]);
+  });
+
+  test("still drops an untagged stranger, and tag-kept rows skip the prefix filter", () => {
+    const withPrefixes: BoardConfig = { ...withTabs, ticketPrefixes: ["CV"] };
+    // untagged stranger -> dropped
+    const untaggedStranger = pr({ id: "gitlab:901", iid: 10, author: { id: "gitlab:100", username: "ghost", name: "Ghost", avatarUrl: null } });
+    // tagged stranger with no ticket prefix while ticketPrefixes=["CV"] -> kept
+    const taggedNoPrefix = pr({
+      id: "gitlab:902",
+      iid: 11,
+      author: { id: "gitlab:101", username: "outsider", name: "Outsider", avatarUrl: null },
+      sourceBranch: "no-ticket",
+      title: "no ticket here",
+    });
+    // tagged MR from a section no tab declares -> dropped
+    const taggedWrongSection = pr({
+      id: "gitlab:903",
+      iid: 12,
+      author: { id: "gitlab:102", username: "outsider2", name: "Outsider2", avatarUrl: null },
+      sourceBranch: "no-ticket",
+      title: "no ticket either",
+    });
+    const tags = new Map([
+      [taggedNoPrefix.id, ["Acme"]],
+      [taggedWrongSection.id, ["OtherSection"]],
+    ]);
+    const out = buildBoard([untaggedStranger, taggedNoPrefix, taggedWrongSection], withPrefixes, now, tags);
+    expect(out.map((m) => m.iid)).toEqual([11]);
+  });
+});
+
+describe("visibleMrsFor (the /data.json payload gate)", () => {
+  test("keeps a tagged stranger's MR, drops a hidden member's own MR", () => {
+    const withHiddenAndTabs: BoardConfig = {
+      ...config,
+      members: [{ username: "alice" }, { username: "carol", hidden: true }],
+      tabs: tabsWithCodeowners,
+    };
+    const now = Date.parse("2026-07-11T00:00:00Z");
+    const hiddenMemberMr = pr({
+      id: "gitlab:910",
+      iid: 20,
+      author: { id: "gitlab:110", username: "carol", name: "Carol", avatarUrl: null },
+    });
+    const taggedStranger = pr({
+      id: "gitlab:911",
+      iid: 21,
+      author: { id: "gitlab:111", username: "outsider", name: "Outsider", avatarUrl: null },
+    });
+    const tags = new Map([[taggedStranger.id, ["Acme"]]]);
+    const snapshotMrs = buildBoard([hiddenMemberMr, taggedStranger], withHiddenAndTabs, now, tags);
+    // Both reach the snapshot -- buildBoard doesn't know about "hidden"; only
+    // visibleMrsFor (the /data.json gate) does.
+    expect(snapshotMrs.map((m) => m.iid)).toEqual([20, 21]);
+
+    const visibleMembers = withHiddenAndTabs.members.filter((m) => !m.hidden);
+    const served = visibleMrsFor(snapshotMrs, visibleMembers);
+    expect(served.map((m) => m.iid)).toEqual([21]);
+  });
+});
+
 describe("buildRoster", () => {
   const members = [{ username: "alice" }, { username: "bob", name: "Bobby" }, { username: "carol" }];
 
@@ -293,6 +395,81 @@ describe("boardDemand", () => {
     expect(d.authors).toEqual(["a", "b"]);          // hidden is a display state, not a demand state
     expect(d.declaredAt).toBeGreaterThan(0);
   });
+
+  test("declares the union of tab sections, and omits the field when no tab is codeowners", () => {
+    const withTabs: BoardConfig = { ...config, tabs: tabsWithCodeowners };
+    expect(boardDemand(withTabs, 1).codeownerSections).toEqual(["Acme"]);
+    expect(boardDemand(config, 1).codeownerSections).toBeUndefined();
+  });
+});
+
+describe("channelForMR", () => {
+  const tabsWithSlackChannel: TabConfig[] = [
+    { id: "t", label: "T", source: { kind: "authors" } },
+    { id: "q", label: "Q", source: { kind: "codeowners", section: "Acme", excludeMembers: true }, slackChannel: "team-codeowners" },
+  ];
+  const withSlackTab: BoardConfig = { ...config, tabs: tabsWithSlackChannel };
+
+  test("routes a roster MR to the default channel", () => {
+    expect(
+      channelForMR(withSlackTab, { author: { id: "gitlab:1", username: "alice", name: "Alice", avatarUrl: null }, codeownerSections: [] }),
+    ).toBe("code-review");
+  });
+
+  test("routes a tagged stranger to their codeowners tab's channel", () => {
+    expect(
+      channelForMR(withSlackTab, {
+        author: { id: "gitlab:2", username: "outsider", name: "Outsider", avatarUrl: null },
+        codeownerSections: ["Acme"],
+      }),
+    ).toBe("team-codeowners");
+  });
+
+  test("falls back to the default channel when a stranger's tags match no tab's slackChannel", () => {
+    expect(
+      channelForMR(withSlackTab, {
+        author: { id: "gitlab:3", username: "outsider", name: "Outsider", avatarUrl: null },
+        codeownerSections: ["SomeOtherSection"],
+      }),
+    ).toBe("code-review");
+  });
+
+  test("a stranger with no tags falls back to the default channel", () => {
+    expect(
+      channelForMR(withSlackTab, { author: { id: "gitlab:4", username: "outsider", name: "Outsider", avatarUrl: null }, codeownerSections: [] }),
+    ).toBe("code-review");
+  });
+});
+
+describe("configuredSlackChannels", () => {
+  test("is the default channel plus every distinct tab slackChannel", () => {
+    const withTabs: BoardConfig = {
+      ...config,
+      tabs: [
+        { id: "t", label: "T", source: { kind: "authors" } },
+        { id: "q", label: "Q", source: { kind: "codeowners", section: "Acme" }, slackChannel: "team-codeowners" },
+        { id: "r", label: "R", source: { kind: "codeowners", section: "Billing" }, slackChannel: "team-codeowners" },
+      ],
+    };
+    expect(configuredSlackChannels(withTabs).sort()).toEqual(["code-review", "team-codeowners"]);
+  });
+
+  test("is just the default channel when no tab overrides it", () => {
+    expect(configuredSlackChannels(config)).toEqual(["code-review"]);
+  });
+});
+
+describe("reviewSkillForTab", () => {
+  test("prefers the tab's reviewSkill and falls back to normal resolution", () => {
+    const cfg = { ...config, tabs: [
+      { id: "t", label: "T", source: { kind: "authors" as const } },
+      { id: "q", label: "Q", source: { kind: "codeowners" as const, section: "Acme" }, reviewSkill: "external:review" },
+    ] };
+    const fallback = () => "acme:review";
+    expect(reviewSkillForTab(cfg, "q", "u", fallback)).toBe("external:review");
+    expect(reviewSkillForTab(cfg, "t", "u", fallback)).toBe("acme:review");
+    expect(reviewSkillForTab(cfg, undefined, "u", fallback)).toBe("acme:review");
+  });
 });
 
 describe("aggregateSyncScope", () => {
@@ -302,7 +479,12 @@ describe("aggregateSyncScope", () => {
   });
 
   test("no reads yields null syncedAt/windowDays and an empty uncovered list", () => {
-    expect(aggregateSyncScope([])).toEqual({ dataSyncedAt: null, scopeUncovered: [], scopeWindowDays: null });
+    expect(aggregateSyncScope([])).toEqual({
+      dataSyncedAt: null,
+      scopeUncovered: [],
+      scopeWindowDays: null,
+      scopeUncoveredSections: [],
+    });
   });
 
   test("unions scope.uncovered across reads and takes the min windowDays", () => {
@@ -319,12 +501,20 @@ describe("aggregateSyncScope", () => {
     expect(agg.scopeWindowDays).toBeNull();
     expect(agg.scopeUncovered).toEqual([]);
   });
+
+  test("unions uncoveredSections", () => {
+    const agg = aggregateSyncScope([
+      { syncedAt: 1, scope: { authors: [], windowDays: 30, uncovered: [], sections: [], uncoveredSections: ["Acme"] } },
+      { syncedAt: 2 },
+    ]);
+    expect(agg.scopeUncoveredSections).toEqual(["Acme"]);
+  });
 });
 
 /** Wrap a bare mrs array as the FetchResult shape SnapshotCache now expects,
     for tests that only care about the mrs field. */
 function fetchResult(mrs: unknown[]): FetchResult {
-  return { mrs: mrs as BoardMR[], dataSyncedAt: null, scopeUncovered: [], scopeWindowDays: null };
+  return { mrs: mrs as BoardMR[], dataSyncedAt: null, scopeUncovered: [], scopeWindowDays: null, scopeUncoveredSections: [] };
 }
 
 describe("SnapshotCache", () => {
