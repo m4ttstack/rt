@@ -17,11 +17,11 @@ export function AppMark({ size = 22 }: { size?: number }) {
       style={{ flex: "none", display: "block" }}
     >
       <rect width="32" height="32" rx="7.2" fill="#ff84ad" />
-      <circle cx="22" cy="7" r="4" fill="#1d1830" />
-      <line x1="22" y1="11" x2="22" y2="21" stroke="#1d1830" strokeWidth="5" strokeLinecap="round" />
-      <circle cx="22" cy="25" r="4" fill="#1d1830" />
-      <circle cx="8" cy="25" r="4" fill="#1d1830" />
-      <path d="M8 21 V17 Q8 12 13 12 H22" fill="none" stroke="#1d1830" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="21" cy="10" r="3.2" fill="#1d1830" />
+      <line x1="21" y1="13" x2="21" y2="19" stroke="#1d1830" strokeWidth="3.6" strokeLinecap="round" />
+      <circle cx="21" cy="22" r="3.2" fill="#1d1830" />
+      <circle cx="11" cy="22" r="3.2" fill="#1d1830" />
+      <path d="M11 19 V17 Q11 14 14 14 H21" fill="none" stroke="#1d1830" strokeWidth="3.6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   );
 }
