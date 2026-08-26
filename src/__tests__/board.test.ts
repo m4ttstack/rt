@@ -10,6 +10,7 @@ import {
   projectPathFromWebUrl,
   reviewSkillForTab,
   stripDraftPrefix,
+  visibleMrsFor,
   type BoardMR,
 } from "../data.ts";
 import { SnapshotCache, type FetchResult } from "../cache.ts";
@@ -315,6 +316,36 @@ describe("buildBoard tagged rows (codeowner tabs)", () => {
     ]);
     const out = buildBoard([untaggedStranger, taggedNoPrefix, taggedWrongSection], withPrefixes, now, tags);
     expect(out.map((m) => m.iid)).toEqual([11]);
+  });
+});
+
+describe("visibleMrsFor (the /data.json payload gate)", () => {
+  test("keeps a tagged stranger's MR, drops a hidden member's own MR", () => {
+    const withHiddenAndTabs: BoardConfig = {
+      ...config,
+      members: [{ username: "alice" }, { username: "carol", hidden: true }],
+      tabs: tabsWithCodeowners,
+    };
+    const now = Date.parse("2026-07-11T00:00:00Z");
+    const hiddenMemberMr = pr({
+      id: "gitlab:910",
+      iid: 20,
+      author: { id: "gitlab:110", username: "carol", name: "Carol", avatarUrl: null },
+    });
+    const taggedStranger = pr({
+      id: "gitlab:911",
+      iid: 21,
+      author: { id: "gitlab:111", username: "outsider", name: "Outsider", avatarUrl: null },
+    });
+    const tags = new Map([[taggedStranger.id, ["Acme"]]]);
+    const snapshotMrs = buildBoard([hiddenMemberMr, taggedStranger], withHiddenAndTabs, now, tags);
+    // Both reach the snapshot -- buildBoard doesn't know about "hidden"; only
+    // visibleMrsFor (the /data.json gate) does.
+    expect(snapshotMrs.map((m) => m.iid)).toEqual([20, 21]);
+
+    const visibleMembers = withHiddenAndTabs.members.filter((m) => !m.hidden);
+    const served = visibleMrsFor(snapshotMrs, visibleMembers);
+    expect(served.map((m) => m.iid)).toEqual([21]);
   });
 });
 

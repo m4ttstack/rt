@@ -10,7 +10,7 @@ import { loadConfig, loadGitLabToken, loadSlackToken, loadSwitchboardToken, load
 import { memoizeAsync } from "./memoize-async.ts";
 import { resolveBoardSkill, type BoardSkillKind } from "./manifest-bindings.ts";
 import { upsertEnvKeys } from "./env-file.ts";
-import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, channelForMR, configuredSlackChannels, projectPathFromWebUrl, reviewSkillForTab, type BoardMR, type SyncScopeRead } from "./data.ts";
+import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, channelForMR, configuredSlackChannels, projectPathFromWebUrl, reviewSkillForTab, visibleMrsFor, type BoardMR, type SyncScopeRead } from "./data.ts";
 import { GitLabProvider, ReadBackFailedError, NoteMutator, parseRepoId } from "@mattstack/glance";
 import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } from "./discussions.ts";
 import { readProjectMRs, readDiscussions, subscribe } from "@mattstack/rt-client";
@@ -507,8 +507,7 @@ const httpServer = Bun.serve({
         // and its counts — but stay in `allMembers` so the settings modal can
         // check them back in.
         const visible = config.members.filter((m) => !m.hidden);
-        const visibleNames = new Set(visible.map((m) => m.username));
-        const visibleMrs = snapshot.mrs.filter((mr) => visibleNames.has(mr.author.username));
+        const visibleMrs = visibleMrsFor(snapshot.mrs, visible);
         // Retain review/respond/doctor state for exactly as long as its MR is on
         // the board; prune once it merges/closes/goes stale and drops off. Gated
         // on a healthy, non-empty snapshot so a failed fetch (stale/empty data)

@@ -37,9 +37,9 @@ describe("filterByTab", () => {
     mr({ iid: 3, author: { username: "outsider" } as any, codeownerSections: [] } as any),
   ];
 
-  test("authors tab passes every row through, deferring to filterByMember downstream", () => {
+  test("authors tab excludes a tagged stranger, keeps roster rows", () => {
     const team: TabConfig = { id: "t", label: "T", source: { kind: "authors" } };
-    expect(filterByTab(rows, team, members)).toHaveLength(3);
+    expect(filterByTab(rows, team, members).map((m) => m.iid)).toEqual([1]);
   });
 
   test("codeowners tab filters to the section and excludes roster authors", () => {

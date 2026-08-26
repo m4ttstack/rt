@@ -154,12 +154,15 @@ export function filterByMember(mrs: BoardMR[], member: string): BoardMR[] {
   return member === "all" ? mrs : mrs.filter((m) => m.author.username === member);
 }
 
-/** An authors tab passes every row through -- member filtering for it stays
-    downstream in filterByMember. A codeowners tab narrows to rows tagged with
-    its section; excludeMembers additionally drops the roster's own authors, so
-    the tab reads as the outside-the-team queue for that section. */
+/** An authors tab narrows to roster members -- further per-member filtering
+    stays downstream in filterByMember. Without this narrowing, a
+    codeowner-tagged stranger (never a roster member, but let through the
+    server's visibility gate for the codeowners tab) would leak onto the
+    authors tab too. A codeowners tab narrows to rows tagged with its section;
+    excludeMembers additionally drops the roster's own authors, so the tab
+    reads as the outside-the-team queue for that section. */
 export function filterByTab(mrs: BoardMR[], tab: TabConfig, members: Set<string>): BoardMR[] {
-  if (tab.source.kind === "authors") return mrs;
+  if (tab.source.kind === "authors") return mrs.filter((mr) => members.has(mr.author.username));
   const { section, excludeMembers } = tab.source;
   return mrs.filter(
     (mr) => mr.codeownerSections.includes(section) && (!excludeMembers || !members.has(mr.author.username)),

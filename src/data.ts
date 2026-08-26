@@ -267,6 +267,16 @@ export function hasChangesRequested(mr: BoardMR): boolean {
   return mr.reviews.reviewers?.some((r) => getReviewDisplayState(r.reviewState ?? null) === "changes_requested") ?? false;
 }
 
+/** Which snapshot MRs the served board keeps: a visible (non-hidden) roster
+    member's MR, or any MR carrying at least one codeowner tag. The tag arm is
+    what lets a codeowner-tagged stranger -- never a roster member -- reach a
+    codeowners tab; without it every tagged row from outside the roster would
+    be dropped here before a tab ever saw it. */
+export function visibleMrsFor(mrs: BoardMR[], visibleMembers: Member[]): BoardMR[] {
+  const visibleNames = new Set(visibleMembers.map((m) => m.username));
+  return mrs.filter((mr) => visibleNames.has(mr.author.username) || mr.codeownerSections.length > 0);
+}
+
 export interface RosterMember {
   username: string;
   name: string | null;
