@@ -272,6 +272,23 @@ and lose the point of a closed icon-name union.
 
 ## 4. Theme override patterns
 
+**The brand values live in `@mattstack/mantine-tokyo`, and editing them needs a
+re-install.** `app-theme.ts` and `app-colors.ts` are now one-line re-exports
+from that package (`packages/mantine-tokyo/`, consumed as a `file:` dependency),
+because a second app consumes the same tokens.
+
+The footgun: bun **copies** a `file:` dependency into `node_modules` rather than
+symlinking it, the same way `@mattstack/rt-client` behaves here. So an edit under
+`packages/mantine-tokyo/` is invisible to Vite and Vitest until you re-run
+`bun install`. The failure mode is quiet and convincing: a test you expect to
+fail keeps passing, and it looks like the test is wrong rather than stale. If a
+change to the package appears to have no effect, re-install before debugging
+anything else.
+
+Components never move into that package. It exports values, a type, and css.
+`RailShell`, `PageShell`, the hooks and every `.tsx` stay in this repo's own kit
+copy.
+
 **The theme is three files, and an app edits exactly one of them:**
 
 | File                          | Owner | What it holds                                                     |

@@ -40,10 +40,10 @@ step `tokyo-theme.css` documents) and the badge wash.
 
 The wash is the one place the artboards are a near-match rather than an exact
 one. They were drawn against tui-kit's translucent 10%/15% wash; what ships is
-Mantine 9.4.1's own `light` variant, which is **shade 1** in light scheme and
+Mantine's own `light` variant, which is **shade 1** in light scheme and
 `darken(shade 9, .5)` in dark — both opaque tints off the ramps in
-`app-ramps.ts`. Close, slightly warmer, and deliberate: deriving natively is
-what keeps `filled`, `text` and `outline-hover` correct too.
+`@mattstack/mantine-tokyo`. Close, slightly warmer, and deliberate: deriving
+natively is what keeps `filled`, `text` and `outline-hover` correct too.
 
 ## Structure is real; health states are not
 

@@ -2,7 +2,12 @@ import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
-const css = readFileSync(join(__dirname, 'tokyo-theme.css'), 'utf8');
+// The `--tk-*` declarations now live in the package this app consumes them
+// from; `tokyo-theme.css` alongside this test is just an `@import` of it.
+const css = readFileSync(
+  join(__dirname, '../../../packages/mantine-tokyo/src/tokyo-theme.css'),
+  'utf8'
+);
 
 /** Declarations inside the block whose selector is exactly `selector`. */
 function blockFor(selector: string): string {

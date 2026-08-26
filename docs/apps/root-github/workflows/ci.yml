@@ -62,4 +62,20 @@ jobs:
           asset=$(curl -s localhost:11099/ | grep -oE '/assets/[^"]+\.js' | head -1)
           test -n "$asset"
           test "$(curl -s -o /dev/null -w '%{http_code}' "localhost:11099$asset")" = 200
-          test "$(curl -s -o /dev/null -w '%{http_code}' localhost:11099/fonts/jetbrains-mono.woff2)" = 200
+          # The font ships inside @mattstack/mantine-tokyo, so Vite emits it as a
+          # content-hashed /assets/ URL rather than the literal /fonts/ path it
+          # had while it lived in public/. Discover it from the stylesheet that
+          # actually references it, the same way the js asset above is found.
+          #
+          # Assert the CONTENT TYPE, not just the status. The previous version of
+          # this check curled a hardcoded /fonts/ path and tested only for 200 --
+          # which the SPA catch-all satisfies by serving index.html as text/html.
+          # It passed whether or not the font existed, and would have kept passing
+          # through this extraction. A status-only assertion on a path a catch-all
+          # can answer proves nothing.
+          css=$(curl -s localhost:11099/ | grep -oE '/assets/[^"]+\.css' | head -1)
+          test -n "$css"
+          font=$(curl -s "localhost:11099$css" | grep -oE '/assets/[^)"]+\.woff2' | head -1)
+          test -n "$font"
+          test "$(curl -s -o /dev/null -w '%{http_code}' "localhost:11099$font")" = 200
+          test "$(curl -s -o /dev/null -w '%{content_type}' "localhost:11099$font")" = "font/woff2"

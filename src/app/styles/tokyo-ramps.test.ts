@@ -4,7 +4,12 @@ import { describe, expect, it } from 'vitest';
 
 import { appTheme } from '@ui/design-system';
 
-const css = readFileSync(join(__dirname, 'tokyo-theme.css'), 'utf8');
+// The `--tk-*` declarations now live in the package this app consumes them
+// from; `tokyo-theme.css` alongside this test is just an `@import` of it.
+const css = readFileSync(
+  join(__dirname, '../../../packages/mantine-tokyo/src/tokyo-theme.css'),
+  'utf8'
+);
 
 /** The `--tk-*` declaration for one hue, out of one scheme's block. */
 function tkVar(scheme: 'light' | 'dark', name: string): string {

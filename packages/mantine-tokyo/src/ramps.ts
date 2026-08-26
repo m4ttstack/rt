@@ -19,11 +19,11 @@ import type { MantineColorsTuple } from '@mantine/core';
  * hue, so unresampled output would leave `filled`, `outline` and `text` on a
  * colour tui-kit never specified.
  *
- * The anchors are `primaryShade` in `app-theme.ts` and must move together:
- * shade 6 in light, shade 4 in dark. `app-theme.test.ts` pins that each
- * canonical hex is exactly there.
+ * The anchors are `primaryShade` in `theme.ts` and must move together:
+ * shade 6 in light, shade 4 in dark. The consuming app's `tokyo-ramps.test.ts`
+ * pins that each canonical hex is exactly there.
  */
-export const TOKYO_RAMPS = {
+export const tokyoRamps = {
   accentDay: [
     '#e5f4ff',
     '#c7e1fd',
@@ -170,7 +170,7 @@ export const TOKYO_RAMPS = {
   ],
 } as const satisfies Record<string, readonly string[]>;
 
-export type TokyoRampName = keyof typeof TOKYO_RAMPS;
+export type TokyoRampName = keyof typeof tokyoRamps;
 
 export const ramp = (name: TokyoRampName): MantineColorsTuple =>
-  TOKYO_RAMPS[name] as unknown as MantineColorsTuple;
+  tokyoRamps[name] as unknown as MantineColorsTuple;
