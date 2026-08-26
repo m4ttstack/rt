@@ -96,6 +96,15 @@ Inside, a stack at `gap: 1px`:
   `white-space: pre-wrap` so posted newlines survive)
 - optional `.code` block: own `overflow-x: auto`, `margin-top: 4.8px`
 
+**Message body: the markdown subset.** The body is rendered by
+`src/ui/Transcript.tsx`, hand-rolled, no HTML: paragraphs on a blank line;
+`- `/`* ` bullet and `1.`/`1)` numbered lists (every line of the block a
+marker); `**bold**`; `*italic*`/`_italic_` with a non-word boundary outside
+the markers, so `make_icon_swift` stays literal; inline and fenced code, split
+off first so nothing inside code is read as markup or a mention; bare URLs as
+links; `@handle` only for handles in the message's `mentions`. Headings,
+tables, blockquotes and nested lists show literally.
+
 **No status dot beside a message.** A dot next to a 21:58 message would be a
 claim about 21:58; status lives on the roster row.
 

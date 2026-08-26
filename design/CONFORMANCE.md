@@ -20,6 +20,10 @@ declaration is wrong.
 ```bash
 python3 design/extract-spec.py     # only if build.py changed
 
+# 0. serve the artboards' own data, or the page is an empty shell with
+#    nothing to measure (src/server/fixtures.ts mirrors build.py's tables)
+CHAT_FIXTURES=1 bun src/server/index.ts
+
 # 1. get the page-side probe and run it through Fast Browser's browser_evaluate,
 #    pointing its `filename` at an absolute path under /Users/matt/.fast-browser
 node design/audit.mjs --probe
@@ -138,9 +142,11 @@ both is the most common way this gets flattened.
 
 ## Two things drawn that are deliberately not built
 
-Both are marked in the plan. Do not implement them because the artboard shows
-them:
+Do not implement them because the artboard shows them:
 
-- the `not joined` badge on a room (needs an all-rooms source the store does
-  not have)
+- the `not joined` badge on a room. The server does ship the data
+  (`/api/chat/rooms` unions the fleet's rooms with `joined: false`), and an
+  early build drew the badge; it was dropped in the PageShell rework because
+  posting auto-joins, so "not joined" told the human nothing he could act on.
+  `RailRoom.joined` is still typed and currently unread.
 - focusing a herdr pane from a member row (no route addresses a pane by id)
