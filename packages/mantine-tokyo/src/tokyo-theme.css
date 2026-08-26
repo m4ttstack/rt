@@ -48,6 +48,12 @@
   --tk-dot-ok: #1f9d3a;
   --tk-dot-warn: #e08a00;
   --tk-dot-bad: #e5153f;
+
+  /* The translucent tint an "active"/"alert" surface lays over its
+     background: `color-mix(in srgb, <token> var(--tk-wash), transparent)`.
+     Lighter in light scheme because the same alpha reads heavier on a pale
+     ground. Used by the accent-wash active states and the danger banner. */
+  --tk-wash: 10%;
 }
 
 :root[data-mantine-color-scheme='dark'] {
@@ -68,6 +74,8 @@
   --tk-dot-ok: #4ade5b;
   --tk-dot-warn: #ffbb3d;
   --tk-dot-bad: #ff5c72;
+
+  --tk-wash: 15%;
 }
 
 /*
