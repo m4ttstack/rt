@@ -330,12 +330,21 @@
 .tui-footer-stale { color: var(--amber); opacity: 1; }
 
 /* team sidebar layout */
-.tui-app { display: grid; grid-template-columns: 220px 1fr; gap: 20px; align-items: start; }
+.tui-app {
+  display: grid; grid-template-columns: 220px 1fr; gap: 20px; align-items: start;
+  transition: grid-template-columns 180ms ease, gap 180ms ease;
+}
 .tui-app.tui-wide { max-width: 1400px; }
 /* No <Sidebar> rendered (a codeowners tab, scoped by section rather than
    roster) -- drop the 220px track, or grid auto-placement strands the lone
    .tui-main child in that empty first column instead of the 1fr one. */
-.tui-app.tui-no-sidebar { grid-template-columns: 1fr; }
+@media (prefers-reduced-motion: reduce) { .tui-app { transition: none; } }
+/* Caption for a roster that is not the configured team (a codeowners tab's is
+   inferred from the MRs in view). */
+.tui-side-note {
+  margin: 0 0 4px; padding: 0 4px;
+  color: var(--muted); font-size: 11px; font-family: var(--font-mono);
+}
 .tui-main { min-width: 0; }
 /* The roster gets the same framed-panel backdrop as the MR groups -- bare
    transparent buttons on the page grid disappear in dark mode. Item hover/
@@ -743,8 +752,9 @@
 .tui-row[data-local="1"], .tui-card[data-local="1"] { cursor: context-menu; }
 
 /* ── board settings (ConfigModal) ─────────────────────────────────────────── */
-.tui-config-modal { max-width: min(760px, 94vw); }
-.tui-config-filter { width: 100%; margin-bottom: 0.4rem; }
+.tui-config-modal { max-width: min(920px, 94vw); display: flex; flex-direction: column; overflow: hidden; }
+.tui-config-body { flex: 1; min-height: 0; overflow-y: auto; padding-right: 0.4rem; margin-right: -0.4rem; }
+.tui-config-filter { width: 100%; margin: 0.6rem 0 0.5rem; }
 .tui-config-group {
   margin: 0.9rem 0 0.25rem; color: var(--muted); font-size: 0.68rem; font-weight: 600;
   text-transform: uppercase; letter-spacing: 0.07em;
@@ -752,7 +762,6 @@
 .tui-config-list { list-style: none; margin: 0; padding: 0; }
 .tui-config-row { position: relative; padding: 7px 8px 8px 14px; border-radius: 6px; }
 .tui-config-row + .tui-config-row { border-top: 1px solid var(--border-soft); }
-.tui-config-row:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
 /* the bar means "present in a store" — board.* rows carry no registry
    defaults, so the alternative is the app-side fallback, not a default */
 .tui-config-row.set::before {
@@ -760,6 +769,23 @@
   border-radius: 1px; background: var(--accent);
 }
 .tui-config-head { display: flex; align-items: center; gap: 8px; }
+.tui-disclosure-head { cursor: pointer; user-select: none; margin: -4px -6px; padding: 4px 6px; border-radius: 4px; }
+.tui-disclosure-head:hover { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.tui-disclosure-head:focus-visible { outline: 1px solid var(--accent); outline-offset: 1px; }
+.tui-disclosure-chevron {
+  flex: 0 0 auto; display: inline-block; width: 12px; color: var(--muted); font-size: 0.8rem; line-height: 1;
+  transition: transform 180ms ease, color 120ms ease;
+}
+.tui-disclosure-head.open .tui-disclosure-chevron { transform: rotate(90deg); }
+.tui-disclosure-head:hover .tui-disclosure-chevron { color: var(--fg); }
+.tui-config-tip { display: inline-flex; }
+.tui-disclosure { display: grid; grid-template-rows: 0fr; transition: grid-template-rows 180ms ease; }
+.tui-disclosure.open { grid-template-rows: 1fr; }
+.tui-disclosure-body { min-height: 0; overflow: hidden; }
+.tui-disclosure.open .tui-disclosure-body { padding-top: 6px; }
+@media (prefers-reduced-motion: reduce) {
+  .tui-disclosure, .tui-disclosure-chevron { transition: none; }
+}
 .tui-config-keyname { font-weight: 600; font-family: var(--font-mono); font-size: 0.84rem; }
 .tui-config-badge {
   margin-left: auto; color: var(--muted); font-size: 0.66rem; white-space: nowrap;
@@ -768,7 +794,18 @@
 .tui-config-clear { background: none; border: none; color: var(--muted); cursor: pointer; padding: 0 4px; font: inherit; line-height: 1; }
 .tui-config-clear:hover:not(:disabled) { color: var(--fg); }
 .tui-config-clear:disabled { opacity: 0.5; cursor: default; }
-.tui-config-desc { margin: 2px 0 6px; color: var(--muted); font-size: 0.74rem; }
+.tui-info {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 15px; height: 15px; padding: 0; border-radius: 50%;
+  border: 1px solid var(--muted); background: none; color: var(--muted);
+  font: 600 10px/1 var(--font-mono); cursor: help;
+}
+.tui-info:hover, .tui-info:focus-visible { color: var(--fg); border-color: var(--fg); }
+.tui-info-card {
+  max-width: 400px; font-family: var(--font-sans);
+  background: var(--fg); color: var(--bg); border-color: transparent;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.28);
+}
 .tui-config-control { display: flex; align-items: center; gap: 8px; }
 .tui-config-control > .tui-invite-input { flex: 1; max-width: 440px; }
 .tui-config-control .tui-invite-input.dirty { border-color: var(--accent); }
@@ -797,3 +834,71 @@
 .tui-config-pairs { display: flex; flex-direction: column; gap: 4px; flex: 1; }
 .tui-config-pair { display: grid; grid-template-columns: 1fr 1fr 1.4em; gap: 8px; align-items: center; }
 
+
+/* ── board tabs ──────────────────────────────────────────────────────────── */
+/* A strip above the content it scopes, not another control in the header row. */
+.tui-tabs {
+  display: flex; align-items: center; gap: 4px;
+  margin: 0 0 14px; padding-bottom: 0;
+  border-bottom: 1px solid var(--border);
+}
+/* The buttons carry the surface, not the strip: a tab sitting straight on the
+   page's grid-paper background is hard to read. */
+.tui-tab {
+  padding: 7px 14px; border: 0; border-bottom: 2px solid transparent;
+  margin-bottom: -1px; border-radius: 6px 6px 0 0;
+  background: color-mix(in srgb, var(--panel) 88%, transparent);
+  color: var(--muted); font: inherit; font-size: 13px; cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease, background 150ms ease;
+}
+.tui-tab:hover { color: var(--fg); background: var(--card); }
+.tui-tab.active { color: var(--fg); background: var(--card); border-bottom-color: var(--accent, var(--fg)); }
+.tui-tabs .tui-chip { margin-left: auto; }
+@media (prefers-reduced-motion: reduce) { .tui-tab { transition: none; } }
+
+/* Roster editing lives in board settings beside the key it edits; the roster
+   panel stays the quick check-in/out surface. */
+.tui-roster-edit { display: flex; flex-direction: column; gap: 6px; width: 100%; }
+.tui-roster-head { display: flex; align-items: center; gap: 8px; }
+.tui-roster-list {
+  display: flex; flex-direction: column; gap: 2px;
+  max-height: 220px; overflow-y: auto;
+  margin: 0; padding: 4px; list-style: none;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--bg);
+}
+.tui-roster-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 4px; }
+.tui-roster-who { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; font-size: 13px; }
+.tui-roster-handle { color: var(--muted); font-family: var(--font-mono); font-size: 11px; }
+.tui-roster-out { color: var(--muted); font-size: 11px; }
+.tui-roster-add { display: flex; gap: 6px; }
+.tui-roster-add .tui-modal-input { flex: 1; min-width: 0; }
+.tui-modal-input {
+  padding: 6px 9px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--card); color: var(--fg); font: inherit; font-size: 13px;
+}
+.tui-modal-btn {
+  padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--card); color: var(--muted); font: inherit; font-size: 12px; cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease;
+}
+.tui-modal-btn:hover:not(:disabled) { color: var(--fg); }
+.tui-modal-btn:disabled { opacity: 0.5; cursor: default; }
+.tui-modal-btn.danger { color: var(--bad, #e5484d); border-color: currentcolor; }
+.tui-modal-error { margin: 4px 0 0; color: var(--bad, #e5484d); font-size: 12px; }
+@media (prefers-reduced-motion: reduce) { .tui-modal-btn { transition: none; } }
+.tui-tabs-list { gap: 12px; padding: 10px; max-height: 60vh; }
+.tui-tabs-item { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
+.tui-tabs-item-head { display: flex; align-items: center; gap: 12px; }
+.tui-tabs-item-head .tui-invite-input { flex: 1; min-width: 0; font-size: 14px; }
+.tui-tabs-fields { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 14px; align-items: center; }
+.tui-tabs-field { display: contents; }
+.tui-tabs-field > span { color: var(--muted); font-family: var(--font-mono); font-size: 11px; white-space: nowrap; }
+.tui-tabs-field .tui-invite-input { width: 100%; max-width: 420px; min-width: 0; }
+.tui-tabs-check { display: flex; grid-column: 2; align-items: center; gap: 8px; }
+.tui-tabs-add { flex-wrap: wrap; gap: 8px; padding: 4px 0; }
+.tui-tabs-add .tui-modal-input { flex: 1 1 180px; }
+.tui-tabs-kind { flex: 0 0 auto; }
+.tui-tabs-drop { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--bad, #e5484d); border-radius: 4px; background: color-mix(in srgb, var(--bad, #e5484d) 8%, var(--panel)); }
+.tui-tabs-drop .tui-modal-error { flex: 1 1 100%; margin: 0; }
+.tui-tabs-drop .tui-modal-input { flex: 1 1 200px; }

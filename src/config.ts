@@ -247,7 +247,7 @@ export function parseConfig(raw: string, source = "config.json"): BoardConfig {
 }
 
 /** Absent = IMPLICIT_TABS (the classic single authors-roster board), never zero tabs. */
-function parseTabs(raw: unknown, source: string): TabConfig[] {
+export function parseTabs(raw: unknown, source: string): TabConfig[] {
   if (raw === undefined) return IMPLICIT_TABS;
   if (!Array.isArray(raw)) throw new Error(`${source} "tabs" must be an array`);
   if (raw.length === 0) throw new Error(`${source} "tabs" must not be empty (omit "tabs" for the implicit default)`);
@@ -553,6 +553,84 @@ function isHiddenMembersOwned(resolve: GetSettingFn): boolean {
  * to revert. A non-ENOENT file-read failure (a genuinely malformed
  * config.json) still surfaces loudly, same as today.
  */
+/** Whether the settings store owns the roster itself (as opposed to the
+    hidden overlay). Mirrors isHiddenMembersOwned: the ownership latch decides
+    which file a roster edit must land in. */
+function isMembersOwned(resolve: GetSettingFn): boolean {
+  return storeValue<Member[]>("board.members", resolve) !== undefined;
+}
+
+/**
+ * Replace the roster wholesale, honoring the ownership latch: a store-owned
+ * roster is written to the team store, otherwise to config.json. Callers own
+ * validation (duplicate, unknown) and pass the full next list; this only
+ * persists it and hands back the reloaded config so the server can swap its
+ * in-memory copy. Hidden flags ride along on the entries, matching how the
+ * roster is stored today.
+ */
+export function saveRosterMembers(
+  next: Member[],
+  path: string = CONFIG_PATH,
+  resolve: GetSettingFn = getSetting,
+  write: SetSettingFn = setSetting,
+): BoardConfig {
+  if (isMembersOwned(resolve)) {
+    write("board.members", next, "team");
+  } else {
+    let raw: string;
+    try {
+      raw = readFileSync(path, "utf8");
+    } catch {
+      throw new Error(`config.json not found at ${path}`);
+    }
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    parsed.members = next;
+    const tmp = `${path}.tmp`;
+    writeFileSync(tmp, JSON.stringify(parsed, null, 2) + "\n");
+    renameSync(tmp, path);
+  }
+  return loadConfigFrom(path, resolve);
+}
+
+function isTabsOwned(resolve: GetSettingFn): boolean {
+  return storeValue<unknown>("board.tabs", resolve) !== undefined;
+}
+
+/**
+ * Replace the tab list wholesale, honoring the same ownership latch as the
+ * roster: store-owned goes to the team store, otherwise config.json's "tabs"
+ * (temp-file-plus-rename), and with no config.json at all this establishes
+ * store ownership, per saveMemberHidden's ruling. The list is validated here
+ * so a bad write can never leave a config the next boot refuses to load.
+ */
+export function saveTabs(
+  next: unknown,
+  path: string = CONFIG_PATH,
+  resolve: GetSettingFn = getSetting,
+  write: SetSettingFn = setSetting,
+): BoardConfig {
+  const tabs = parseTabs(next, "tabs");
+  if (isTabsOwned(resolve)) {
+    write("board.tabs", tabs, "team");
+  } else {
+    let raw: Record<string, unknown> | undefined;
+    try {
+      raw = JSON.parse(readFileSync(path, "utf8")) as Record<string, unknown>;
+    } catch (err) {
+      if (!isEnoent(err)) throw err;
+    }
+    if (raw === undefined) {
+      loadConfigFrom(path, resolve);
+      write("board.tabs", tabs, "team");
+    } else {
+      raw.tabs = tabs;
+      writeFileSync(path + ".tmp", JSON.stringify(raw, null, 2) + "\n");
+      renameSync(path + ".tmp", path);
+    }
+  }
+  return loadConfigFrom(path, resolve);
+}
+
 export function saveMemberHidden(
   username: string,
   hidden: boolean,

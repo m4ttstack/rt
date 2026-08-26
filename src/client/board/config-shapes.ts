@@ -8,7 +8,8 @@ export type CompositeShape =
   | { kind: "stringList" }
   | { kind: "pairList"; fields: readonly [string, string] }
   | { kind: "leaves"; fields: Record<string, LeafType> }
-  | { kind: "roster" };
+  | { kind: "roster" }
+  | { kind: "tabs" };
 
 /** What the board knows about its own composite keys that the registry does
     not: rt validates only the top-level type, and `parseConfig` rejects a
@@ -51,6 +52,7 @@ export const COMPOSITE_SHAPES: Record<string, CompositeShape> = {
       "fixClasses.codeFix": "boolean",
     },
   },
+  "board.tabs": { kind: "tabs" },
   "board.members": { kind: "roster" },
   "board.hiddenMembers": { kind: "roster" },
 };
@@ -60,6 +62,7 @@ export type RowKind = "scalar" | CompositeShape["kind"] | "readonly";
 export function rowKind(def: ConfigDef): RowKind {
   const shape = COMPOSITE_SHAPES[def.key];
   if (shape?.kind === "roster") return "roster";
+  if (shape?.kind === "tabs") return "tabs";
   if (def.secret || !def.writable) return "readonly";
   if (def.type === "object" || def.type === "array") return shape?.kind ?? "readonly";
   return "scalar";
@@ -99,7 +102,40 @@ export function matchesShape(shape: CompositeShape, value: unknown): boolean {
       );
     case "roster":
       return Array.isArray(value);
+    case "tabs":
+      return (
+        Array.isArray(value) &&
+        value.length > 0 &&
+        value.every(isTabLike) &&
+        new Set(value.map((t) => (t as { id: string }).id)).size === value.length
+      );
   }
+}
+
+/** Mirrors the server's parseTabs closely enough that the editor never
+    renders a value the next boot would refuse. */
+function isTabLike(v: unknown): boolean {
+  if (!isRecord(v)) return false;
+  if (typeof v.id !== "string" || v.id === "" || typeof v.label !== "string" || v.label === "") return false;
+  if (v.slackChannel !== undefined && typeof v.slackChannel !== "string") return false;
+  if (v.reviewSkill !== undefined && typeof v.reviewSkill !== "string") return false;
+  const src = v.source;
+  if (!isRecord(src)) return false;
+  if (src.kind === "authors") return true;
+  if (src.kind !== "codeowners") return false;
+  if (typeof src.section !== "string" || src.section === "") return false;
+  return src.excludeMembers === undefined || typeof src.excludeMembers === "boolean";
+}
+
+/** A tab id from its label: lowercase, runs of anything but [a-z0-9] become
+    one dash, suffixed until it clears `taken`. */
+export function slugTabId(label: string, taken: Iterable<string>): string {
+  const base = label.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "") || "tab";
+  const used = new Set(taken);
+  if (!used.has(base)) return base;
+  let n = 2;
+  while (used.has(`${base}-${n}`)) n += 1;
+  return `${base}-${n}`;
 }
 
 export function getLeaf(obj: unknown, path: string): unknown {

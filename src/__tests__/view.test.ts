@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { BoardMR } from "../data.ts";
 import type { TabConfig } from "../config.ts";
-import { filterByMember, filterByTab, sortMRs, groupMRs, commentDot, dataAgeLabel, statusFlags, nestStacks, memberPeerState, joinRowState } from "../view.ts";
+import { filterByMember, filterByTab, rosterUsernamesFor, sortMRs, groupMRs, commentDot, dataAgeLabel, statusFlags, nestStacks, memberPeerState, joinRowState } from "../view.ts";
 
 function mr(overrides: Partial<BoardMR>): BoardMR {
   return {
@@ -26,6 +26,50 @@ describe("filterByMember", () => {
   });
   test("filters to one member", () => {
     expect(filterByMember(list, "bob").map((m) => m.iid)).toEqual([2]);
+  });
+});
+
+describe("rosterUsernamesFor", () => {
+  const configUsernames = ["ada", "grace"];
+  const rows = [
+    mr({ iid: 1, author: { username: "ada" } as any, codeownerSections: ["Acme"] } as any),
+    mr({ iid: 2, author: { username: "outsider" } as any, codeownerSections: ["Acme"] } as any),
+    mr({ iid: 3, author: { username: "drifter" } as any, codeownerSections: [] } as any),
+  ];
+
+  test("an authors tab answers with the configured roster", () => {
+    const team: TabConfig = { id: "t", label: "T", source: { kind: "authors" } };
+    expect([...rosterUsernamesFor(rows, team, configUsernames)].sort()).toEqual(["ada", "grace"]);
+  });
+
+  test("a codeowners tab answers with the authors of the rows it shows", () => {
+    const q: TabConfig = { id: "q", label: "Q", source: { kind: "codeowners", section: "Acme", excludeMembers: true } };
+    const valid = rosterUsernamesFor(rows, q, configUsernames);
+    expect([...valid]).toEqual(["outsider"]);        // the picked author survives re-validation
+    expect(valid.has("ada")).toBe(false);            // excludeMembers still applies
+    expect(valid.has("drifter")).toBe(false);        // untagged row is not on this tab
+  });
+
+  test("no tab falls back to the configured roster", () => {
+    expect([...rosterUsernamesFor(rows, undefined, configUsernames)].sort()).toEqual(["ada", "grace"]);
+  });
+
+  /* Board resolves the first load in two passes for this reason: the member's
+     valid set depends on which tab wins, so validating against the config
+     roster alone drops a stored codeowners-tab author on every reload. */
+  test("two-pass resolution keeps a stored codeowners-tab author across a reload", () => {
+    const q: TabConfig = { id: "q", label: "Q", source: { kind: "codeowners", section: "Acme", excludeMembers: true } };
+    const stored = { tab: "q", member: "outsider" };
+    const tabIds = ["t", "q"];
+
+    // Single pass drops the stored author as "not on the team" and lands on
+    // defaultMember, so a reload on the queue would silently filter to you.
+    const onePass = parseViewState("", stored, configUsernames, "ada", tabIds);
+    expect(onePass.tab).toBe("q");
+    expect(onePass.member).toBe("ada");
+
+    const valid = [...rosterUsernamesFor(rows, q, configUsernames)];
+    expect(parseViewState("", stored, valid, "ada", tabIds).member).toBe("outsider");
   });
 });
 

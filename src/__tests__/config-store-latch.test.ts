@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { getSetting, setSetting } from "@mattstack/rt-client";
-import { loadConfigFrom, saveMemberHidden, saveSwitchboardUrl, DEFAULT_SLACK_EMOJI } from "../config.ts";
+import { loadConfigFrom, saveMemberHidden, saveRosterMembers, saveSwitchboardUrl, saveTabs, DEFAULT_SLACK_EMOJI, type TabConfig } from "../config.ts";
 
 type GetSettingFn = typeof getSetting;
 type SetSettingFn = typeof setSetting;
@@ -210,6 +210,37 @@ describe("loadConfigFrom: board.tabs overlay", () => {
   });
 });
 
+describe("saveRosterMembers: latch-gated writer", () => {
+  test("unowned: rewrites config.json's members, store untouched", () => {
+    const p = tmpConfig({ ...base, members: [{ username: "alice" }] });
+    const calls: Array<{ key: string; value: unknown; scope: string }> = [];
+    const next = [{ username: "alice" }, { username: "bob", name: "Bob" }];
+    const cfg = saveRosterMembers(next, p, fakeResolve({}), fakeWrite(calls));
+    expect(calls).toEqual([]);
+    expect(cfg.members).toEqual(next);
+    expect(JSON.parse(readFileSync(p, "utf8")).members).toEqual(next);
+  });
+
+  test("owned: writes board.members (team), config.json untouched", () => {
+    const p = tmpConfig({ ...base, members: [{ username: "alice" }] });
+    const before = readFileSync(p, "utf8");
+    const calls: Array<{ key: string; value: unknown; scope: string }> = [];
+    const next = [{ username: "alice" }, { username: "bob" }];
+    saveRosterMembers(next, p, fakeResolve({ "board.members": [{ username: "alice" }] }), fakeWrite(calls));
+    expect(calls).toEqual([{ key: "board.members", value: next, scope: "team" }]);
+    expect(readFileSync(p, "utf8")).toBe(before);
+    expect(loadConfigFrom(p, fakeResolve({ "board.members": next })).members).toEqual(next);
+  });
+
+  test("removal round-trips through the same writer", () => {
+    const p = tmpConfig({ ...base, members: [{ username: "alice" }, { username: "bob" }] });
+    const calls: Array<{ key: string; value: unknown; scope: string }> = [];
+    const stored = [{ username: "alice" }, { username: "bob" }];
+    saveRosterMembers([{ username: "alice" }], p, fakeResolve({ "board.members": stored }), fakeWrite(calls));
+    expect(calls[0]!.value).toEqual([{ username: "alice" }]);
+  });
+});
+
 describe("saveMemberHidden: latch-gated writer", () => {
   test("unowned: writes config.json's inline hidden flag, store untouched", () => {
     const p = tmpConfig({ ...base, members: [{ username: "alice" }, { username: "bob" }] });
@@ -322,5 +353,54 @@ describe("saveSwitchboardUrl: latch-gated writer", () => {
 describe("slack default emoji re-export sanity", () => {
   test("still the standard set (unaffected by the migration)", () => {
     expect(DEFAULT_SLACK_EMOJI).toEqual({ looking: "eyes", commented: "speech_balloon", approved: "white_check_mark" });
+  });
+});
+
+describe("saveTabs: latch-gated writer", () => {
+  const codeowners: TabConfig = { id: "acme", label: "Acme", source: { kind: "codeowners", section: "Acme", excludeMembers: true } };
+  const team: TabConfig = { id: "team", label: "Team", source: { kind: "authors" } };
+
+  test("unowned: rewrites config.json's tabs, store untouched", () => {
+    const p = tmpConfig();
+    const calls: Array<{ key: string; value: unknown; scope: string }> = [];
+    const cfg = saveTabs([team, codeowners], p, fakeResolve({}), fakeWrite(calls));
+    expect(calls).toEqual([]);
+    expect(cfg.tabs.map((t) => t.id)).toEqual(["team", "acme"]);
+    expect(JSON.parse(readFileSync(p, "utf8")).tabs).toEqual([team, codeowners]);
+  });
+
+  test("owned: writes board.tabs (team), config.json untouched", () => {
+    const p = tmpConfig({ ...base, tabs: [team] });
+    const before = readFileSync(p, "utf8");
+    const calls: Array<{ key: string; value: unknown; scope: string }> = [];
+    saveTabs([team, codeowners], p, fakeResolve({ "board.tabs": [team] }), fakeWrite(calls));
+    expect(calls).toEqual([{ key: "board.tabs", value: [team, codeowners], scope: "team" }]);
+    expect(readFileSync(p, "utf8")).toBe(before);
+  });
+
+  test("no config.json with owned team keys establishes board.tabs ownership", () => {
+    const missing = join(mkdtempSync(join(tmpdir(), "board-latch-nofile-")), "config.json");
+    const calls: Array<{ key: string; value: unknown; scope: string }> = [];
+    const owned = { "board.gitlabHost": "https://gitlab.example.com", "board.projects": ["team/repo"], "board.members": [{ username: "carol" }] };
+    saveTabs([team, codeowners], missing, fakeResolve(owned), fakeWrite(calls));
+    expect(calls).toEqual([{ key: "board.tabs", value: [team, codeowners], scope: "team" }]);
+  });
+
+  test("an invalid list throws before any write, on either side of the latch", () => {
+    const p = tmpConfig();
+    const before = readFileSync(p, "utf8");
+    const calls: Array<{ key: string; value: unknown; scope: string }> = [];
+    expect(() => saveTabs([], p, fakeResolve({}), fakeWrite(calls))).toThrow(/must not be empty/);
+    expect(() => saveTabs([team, team], p, fakeResolve({ "board.tabs": [team] }), fakeWrite(calls))).toThrow(/duplicate tab id/);
+    expect(() => saveTabs([{ id: "x", label: "X", source: { kind: "codeowners" } }], p, fakeResolve({}), fakeWrite(calls))).toThrow(/section/);
+    expect(calls).toEqual([]);
+    expect(readFileSync(p, "utf8")).toBe(before);
+  });
+
+  test("optional per-tab fields survive the round trip and absent ones stay absent", () => {
+    const p = tmpConfig();
+    const cfg = saveTabs([{ ...codeowners, slackChannel: "team-codeowners", reviewSkill: "external-review" }], p, fakeResolve({}), fakeWrite([]));
+    expect(cfg.tabs[0]).toEqual({ ...codeowners, slackChannel: "team-codeowners", reviewSkill: "external-review" });
+    expect("slackChannel" in saveTabs([team], p, fakeResolve({}), fakeWrite([])).tabs[0]!).toBe(false);
   });
 });

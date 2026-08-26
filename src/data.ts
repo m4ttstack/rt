@@ -292,6 +292,25 @@ export function buildRoster(members: Member[], mrs: BoardMR[], names: Map<string
   }));
 }
 
+/** A roster derived from the MRs on screen rather than from config: a
+    codeowners tab lists other teams' MRs, so the configured roster has nothing
+    to drive there, but filtering by author is still useful. Busiest author
+    first, then alphabetical, so the list reads as "who is asking for review".
+    Bots and hidden members are not special-cased: whoever authored a row in
+    view belongs in the roster for that view. */
+export function inferRoster(mrs: BoardMR[]): RosterMember[] {
+  const byUsername = new Map<string, RosterMember>();
+  for (const mr of mrs) {
+    const { username, name } = mr.author;
+    const existing = byUsername.get(username);
+    if (existing) existing.count += 1;
+    else byUsername.set(username, { username, name: name ?? null, count: 1 });
+  }
+  return [...byUsername.values()].sort(
+    (a, b) => b.count - a.count || a.username.localeCompare(b.username),
+  );
+}
+
 export function reviewSkillForTab(
   config: BoardConfig,
   tabId: string | undefined,

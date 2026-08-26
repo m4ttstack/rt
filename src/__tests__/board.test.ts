@@ -5,6 +5,7 @@ import {
   boardDemand,
   buildBoard,
   buildRoster,
+  inferRoster,
   channelForMR,
   configuredSlackChannels,
   projectPathFromWebUrl,
@@ -357,6 +358,35 @@ describe("visibleMrsFor (the /data.json payload gate)", () => {
     const visibleMembers = withHiddenAndTabs.members.filter((m) => !m.hidden);
     const served = visibleMrsFor(snapshotMrs, visibleMembers);
     expect(served.map((m) => m.iid)).toEqual([21]);
+  });
+});
+
+describe("inferRoster", () => {
+  function authored(username: string, name: string | null = null): BoardMR {
+    return { author: { id: username, username, name, avatarUrl: null } } as unknown as BoardMR;
+  }
+
+  test("derives one entry per distinct author, busiest first", () => {
+    const roster = inferRoster([authored("zoe"), authored("adam"), authored("zoe"), authored("adam"), authored("zoe")]);
+    expect(roster).toEqual([
+      { username: "zoe", name: null, count: 3 },
+      { username: "adam", name: null, count: 2 },
+    ]);
+  });
+
+  test("ties break alphabetically so the order is stable across polls", () => {
+    const roster = inferRoster([authored("zoe"), authored("adam"), authored("mira")]);
+    expect(roster.map((r) => r.username)).toEqual(["adam", "mira", "zoe"]);
+  });
+
+  test("keeps the author's display name and tolerates a missing one", () => {
+    const roster = inferRoster([authored("adam", "Adam Stranger"), authored("mira")]);
+    expect(roster.find((r) => r.username === "adam")?.name).toBe("Adam Stranger");
+    expect(roster.find((r) => r.username === "mira")?.name).toBeNull();
+  });
+
+  test("no MRs means no roster", () => {
+    expect(inferRoster([])).toEqual([]);
   });
 });
 

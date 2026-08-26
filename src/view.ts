@@ -154,6 +154,22 @@ export function filterByMember(mrs: BoardMR[], member: string): BoardMR[] {
   return member === "all" ? mrs : mrs.filter((m) => m.author.username === member);
 }
 
+/** Usernames the member filter may legitimately hold on a given tab. An
+    authors tab answers with the configured roster; a codeowners tab answers
+    with the authors of the rows it shows, since its roster is inferred from
+    them. The poll's re-validation uses this: checking a picked author against
+    the config roster alone would drop an inferred one on the next refresh. */
+export function rosterUsernamesFor(
+  mrs: BoardMR[],
+  tab: TabConfig | undefined,
+  configUsernames: string[],
+): Set<string> {
+  if (!tab || tab.source.kind === "authors") return new Set(configUsernames);
+  return new Set(
+    filterByTab(mrs, tab, new Set(configUsernames)).map((mr) => mr.author.username),
+  );
+}
+
 /** An authors tab narrows to roster members -- further per-member filtering
     stays downstream in filterByMember. Without this narrowing, a
     codeowner-tagged stranger (never a roster member, but let through the

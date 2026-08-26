@@ -6,7 +6,7 @@ import { getClientAssets } from "./client-assets.ts";
 import styleCss from "./style.css" with { type: "text" };
 import faviconSvg from "./favicon.svg" with { type: "text" };
 import type { PullRequest, MRDetail } from "@mattstack/glance";
-import { loadConfig, loadGitLabToken, loadSlackToken, loadSwitchboardToken, loadSwitchboardAdminToken, saveMemberHidden, saveSwitchboardUrl, parseConfig, CONFIG_PATH, daemonRepoField, repoIdentityField } from "./config.ts";
+import { loadConfig, loadGitLabToken, loadSlackToken, loadSwitchboardToken, loadSwitchboardAdminToken, saveMemberHidden, saveRosterMembers, saveSwitchboardUrl, saveTabs, parseConfig, CONFIG_PATH, daemonRepoField, repoIdentityField } from "./config.ts";
 import { memoizeAsync } from "./memoize-async.ts";
 import { resolveBoardSkill, type BoardSkillKind } from "./manifest-bindings.ts";
 import { upsertEnvKeys } from "./env-file.ts";
@@ -473,7 +473,15 @@ const httpServer = Bun.serve({
       case "/member": {
         // Scoped refresh: just one member's MRs, cheap enough to poll often.
         const u = new URL(req.url).searchParams.get("u");
-        if (!u || !config.members.some((m) => m.username === u && !m.hidden)) {
+        // A codeowners tab's roster is inferred from the authors it shows, so
+        // a scoped refresh there names someone off the config roster. Serving
+        // them is safe (the snapshot already shows their tagged rows) and
+        // without it the tab's 15s poll and refresh button 400 while filtered.
+        const onRoster = !!u && config.members.some((m) => m.username === u && !m.hidden);
+        const taggedAuthor = !!u && (await cache.get()).mrs.some(
+          (mr) => mr.author.username === u && mr.codeownerSections.length > 0,
+        );
+        if (!u || (!onRoster && !taggedAuthor)) {
           return new Response("unknown member", { status: 400 });
         }
         void refreshMemberNames();
@@ -596,6 +604,78 @@ const httpServer = Bun.serve({
         return new Response(JSON.stringify({ ok: true }), {
           headers: { "content-type": "application/json" },
         });
+      }
+      case "/roster": {
+        // Add or drop a teammate. Sibling of /settings (which only flips the
+        // hidden overlay): both are single-writer config mutations that swap
+        // the in-memory roster so this and every later /data.json agree.
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+        if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return new Response("invalid json", { status: 400 });
+        }
+        const { action, username, name } = (body ?? {}) as { action?: unknown; username?: unknown; name?: unknown };
+        if ((action !== "add" && action !== "remove") || typeof username !== "string" || !username.trim()) {
+          return new Response('expected { action: "add" | "remove", username: string, name?: string }', { status: 400 });
+        }
+        if (name !== undefined && typeof name !== "string") {
+          return new Response("name must be a string", { status: 400 });
+        }
+        const handle = username.trim();
+        const present = config.members.some((m) => m.username === handle);
+        if (action === "add" && present) return new Response(`"${handle}" is already on the roster`, { status: 400 });
+        if (action === "remove" && !present) return new Response(`unknown member "${handle}"`, { status: 400 });
+        // The board needs someone to be: dropping the last member would leave
+        // a roster parseConfig refuses to load on the next boot, and dropping
+        // yourself strands every affordance keyed on defaultMember (drafts,
+        // respond, "yours" in general).
+        if (action === "remove" && config.members.length === 1) {
+          return new Response("the roster cannot be emptied", { status: 400 });
+        }
+        if (action === "remove" && handle === config.defaultMember) {
+          return new Response("you cannot drop yourself: this board runs as you", { status: 400 });
+        }
+        const trimmedName = typeof name === "string" ? name.trim() : "";
+        const next =
+          action === "add"
+            ? [...config.members, trimmedName ? { username: handle, name: trimmedName } : { username: handle }]
+            : config.members.filter((m) => m.username !== handle);
+        try {
+          config.members = saveRosterMembers(next).members;
+        } catch (err) {
+          return new Response(`roster write failed: ${err instanceof Error ? err.message : err}`, { status: 500 });
+        }
+        // A new member's MRs are not in the snapshot yet, and a dropped one's
+        // must leave it: the next full fetch declares the new demand to rt.
+        cache.invalidate();
+        return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });
+      }
+      case "/tabs": {
+        // Replace the tab list. Same single-writer contract as /roster: the
+        // in-memory config swaps so /data.json agrees at once, and the cache
+        // drops so the next fetch declares the new sections to rt.
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+        if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return new Response("invalid json", { status: 400 });
+        }
+        const { tabs } = (body ?? {}) as { tabs?: unknown };
+        if (!Array.isArray(tabs)) return new Response("expected { tabs: TabConfig[] }", { status: 400 });
+        try {
+          config.tabs = saveTabs(tabs).tabs;
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          const status = /^tabs\b/.test(message) ? 400 : 500;
+          return new Response(status === 400 ? message : `tabs write failed: ${message}`, { status });
+        }
+        cache.invalidate();
+        return new Response(JSON.stringify({ ok: true, tabs: config.tabs }), { headers: { "content-type": "application/json" } });
       }
       case "/discussions": {
         // Reviewer-participated comment threads for the drawer, from the rt

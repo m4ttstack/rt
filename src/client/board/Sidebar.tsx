@@ -10,6 +10,7 @@ function Sidebar({
   onSettings,
   onConfig,
   scopeUncovered,
+  note,
 }: {
   members: RosterMember[];
   total: number;
@@ -20,9 +21,12 @@ function Sidebar({
   /** Authors demanded from rt but not yet backfilled -- their counts may be
       undercounts, so the row says so instead of quietly showing a low number. */
   scopeUncovered: string[];
+  /** Caption under the roster, for when it is not the configured team. */
+  note?: string;
 }) {
   return (
     <nav className="tui-sidebar" aria-label="team members">
+      {note && <p className="tui-side-note">{note}</p>}
       <div className="tui-side-head">
         <button className={active === "all" ? "tui-side-item active" : "tui-side-item"} onClick={() => onPick("all")}>
           <span className="tui-side-name">◉ All</span>

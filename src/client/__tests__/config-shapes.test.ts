@@ -13,6 +13,7 @@ import {
   rowKind,
   scopeLabel,
   setLeaf,
+  slugTabId,
   type ConfigDef,
 } from "../board/config-shapes.ts";
 
@@ -36,7 +37,7 @@ function def(over: Partial<ConfigDef> & { key: string }): ConfigDef {
 /** Composite board.* registry keys with no edit UI yet -- rowKind's
     "readonly" fallback (no COMPOSITE_SHAPES entry) is the intended
     rendering for these, not a coverage gap. */
-const DELIBERATELY_READONLY_COMPOSITES = ["board.tabs"];
+const DELIBERATELY_READONLY_COMPOSITES: string[] = [];
 
 describe("COMPOSITE_SHAPES", () => {
   test("covers every composite board.* key in the registry except the deliberately-readonly ones", () => {
@@ -46,12 +47,6 @@ describe("COMPOSITE_SHAPES", () => {
       .filter((k) => !DELIBERATELY_READONLY_COMPOSITES.includes(k))
       .sort();
     expect(Object.keys(COMPOSITE_SHAPES).sort()).toEqual(composites);
-  });
-
-  test("board.tabs is a composite key deliberately left readonly", () => {
-    expect(allDefs().find((d) => d.key === "board.tabs")?.type).toBe("array");
-    expect(COMPOSITE_SHAPES["board.tabs"]).toBeUndefined();
-    expect(rowKind(def({ key: "board.tabs", type: "array" }))).toBe("readonly");
   });
 
   test("names no key the registry lacks", () => {
@@ -210,5 +205,44 @@ describe("rosterSummary", () => {
     expect(rosterSummary([{ username: "a" }, { username: "b", hidden: true }], ["c"])).toBe("2 members, 2 hidden");
     expect(rosterSummary(undefined, undefined)).toBe("no members");
     expect(rosterSummary([{ username: "a" }], undefined)).toBe("1 member");
+  });
+});
+
+describe("tabs shape", () => {
+  const s = COMPOSITE_SHAPES["board.tabs"]!;
+  const team = { id: "team", label: "Team", source: { kind: "authors" } };
+  const acme = { id: "acme", label: "Acme", source: { kind: "codeowners", section: "Acme", excludeMembers: true }, slackChannel: "c", reviewSkill: "s" };
+
+  test("board.tabs rows are the tabs kind regardless of writability", () => {
+    expect(rowKind(def({ key: "board.tabs", type: "array" }))).toBe("tabs");
+  });
+
+  test("accepts the shapes parseTabs accepts", () => {
+    expect(matchesShape(s, [team])).toBe(true);
+    expect(matchesShape(s, [team, acme])).toBe(true);
+  });
+
+  test("rejects an empty list and duplicate ids, like parseTabs", () => {
+    expect(matchesShape(s, [])).toBe(false);
+    expect(matchesShape(s, [team, { ...acme, id: "team" }])).toBe(false);
+  });
+
+  test("rejects what parseTabs rejects", () => {
+    expect(matchesShape(s, "team")).toBe(false);
+    expect(matchesShape(s, [{ ...team, id: "" }])).toBe(false);
+    expect(matchesShape(s, [{ ...team, label: 3 }])).toBe(false);
+    expect(matchesShape(s, [{ ...team, source: { kind: "codeowners" } }])).toBe(false);
+    expect(matchesShape(s, [{ ...acme, source: { ...acme.source, excludeMembers: "yes" } }])).toBe(false);
+    expect(matchesShape(s, [{ ...team, source: { kind: "other" } }])).toBe(false);
+    expect(matchesShape(s, [{ ...team, slackChannel: 1 }])).toBe(false);
+  });
+});
+
+describe("slugTabId", () => {
+  test("slugs the label and dodges taken ids", () => {
+    expect(slugTabId("Acme Codeowners", [])).toBe("acme-codeowners");
+    expect(slugTabId("  Team!  ", ["team"])).toBe("team-2");
+    expect(slugTabId("Team", ["team", "team-2"])).toBe("team-3");
+    expect(slugTabId("???", [])).toBe("tab");
   });
 });
