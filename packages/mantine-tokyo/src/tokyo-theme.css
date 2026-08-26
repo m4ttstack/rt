@@ -255,6 +255,27 @@ body {
 }
 
 /*
+ * The chrome ladder, one rung per surface: the app's rail and site header
+ * sit on the page surface, PageShell's sidebar and header a rung up on the
+ * panel surface, and whatever the route paints inside content (cards,
+ * panels) a rung above that. Every kit consumer lays out the same way by
+ * importing this file; without it the kit puts rail, header and sidebar
+ * on one surface and the chrome reads flat.
+ *
+ * `!important` for the same reason as the grid above: the kit sets these
+ * backgrounds as inline styles.
+ */
+.mantine-AppShell-header,
+.mantine-AppShell-navbar {
+  background-color: var(--tk-bg) !important;
+}
+
+#page-shell-header,
+#page-shell-sidebar {
+  background-color: var(--tk-panel) !important;
+}
+
+/*
  * Borders. Mantine's default border color is `--mantine-color-gray-4` /
  * `dark-4`; the Tokyo look leans on one border value per scheme, with the
  * soft variant reserved for internal rules.
