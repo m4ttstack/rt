@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="A batteries-included Mantine starter template: ESLint-enforced import walls, layered scheme-aware backgrounds, and typed UI facades."
+    />
+    <title>chat</title>
+    <!--
+      Pre-bundle loading bar: static markup + inline styles so this paints
+      the instant the browser has this HTML document -- before the module
+      script below is fetched/parsed/executed, before React exists, before
+      any bundler-owned stylesheet has loaded. `src/main.tsx`'s
+      `createRoot(...).render(...)` call replaces `#root`'s entire subtree
+      (this markup included) the moment React actually mounts, so this is
+      purely the loading state for the gap a client-side router or a React
+      loading spinner can't cover: the time before there's any JS at all.
+
+      Styles are inlined here on purpose, not linked via a stylesheet --
+      see `src/boot/simple-loading-bar.css`'s header comment for why (that
+      file is the reviewable reference copy of these same rules; this
+      inline block is the load-bearing one actually used at runtime). The
+      rules between the BEGIN/END markers below must stay byte-for-byte
+      in sync with that file -- `src/boot/loading-bar-sync.test.ts`
+      enforces this automatically, not just by review.
+    -->
+    <style>
+      /* BEGIN SYNCED RULES: keep in sync with src/boot/simple-loading-bar.css (see src/boot/loading-bar-sync.test.ts) */
+      .boot-loading-bar {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 3px;
+        overflow: hidden;
+        background: transparent;
+        z-index: 9999;
+      }
+
+      .boot-loading-bar__fill {
+        position: absolute;
+        top: 0;
+        left: 0;
+        height: 100%;
+        width: 40%;
+        background: #4c6ef5;
+        border-radius: 0 2px 2px 0;
+        animation: boot-loading-bar-slide 1.1s ease-in-out infinite;
+      }
+
+      @keyframes boot-loading-bar-slide {
+        0% {
+          transform: translateX(-100%);
+        }
+        100% {
+          transform: translateX(350%);
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        .boot-loading-bar__fill {
+          animation-duration: 2.2s;
+        }
+      }
+      /* END SYNCED RULES */
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div
+        class="boot-loading-bar"
+        role="status"
+        aria-live="polite"
+        aria-label="Loading application"
+      >
+        <div class="boot-loading-bar__fill"></div>
+      </div>
+    </div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
