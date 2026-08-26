@@ -6,10 +6,12 @@ import type {
   BranchProtectionRule,
   CreatePullRequestInput,
   DiffStats,
+  FetchApprovalRulesOptions,
   InvalidationBatch,
   JobDetail,
   MergeabilityCheck,
   MergePullRequestInput,
+  MRApprovalRules,
   MRDetail,
   Pipeline,
   PipelineJob,
@@ -607,6 +609,39 @@ interface MRProjectResponse {
   } | null;
 }
 
+/** Approval-rules discovery fragment: deliberately minimal. Wide queries
+    carrying per-MR dashboard resolvers are the timeout class the scoped
+    sync exists to avoid; this one is iid + rules only. */
+const MR_APPROVAL_RULES_QUERY = `
+  query GlanceMRApprovalRules($projectPath: ID!, $ua: Time, $first: Int!, $after: String) {
+    project(fullPath: $projectPath) {
+      mergeRequests(state: opened, updatedAfter: $ua, draft: false, first: $first, after: $after, sort: UPDATED_DESC) {
+        pageInfo { hasNextPage endCursor }
+        nodes { iid approvalState { rules { type approved section } } }
+      }
+    }
+  }
+`;
+
+const MR_APPROVAL_RULES_BY_IID_QUERY = `
+  query GlanceMRApprovalRulesByIid($projectPath: ID!, $iids: [String!]) {
+    project(fullPath: $projectPath) {
+      mergeRequests(iids: $iids) {
+        nodes { iid approvalState { rules { type approved section } } }
+      }
+    }
+  }
+`;
+
+interface ApprovalRulesResponse {
+  project: {
+    mergeRequests: {
+      pageInfo?: { hasNextPage: boolean; endCursor: string | null };
+      nodes: Array<{ iid: string; approvalState: { rules: Array<{ type: string; approved: boolean; section: string | null }> } | null }>;
+    } | null;
+  } | null;
+}
+
 // ---------------------------------------------------------------------------
 // GitLabProvider
 // ---------------------------------------------------------------------------
@@ -923,6 +958,59 @@ export class GitLabProvider implements GitProvider {
 
     this.log.debug('fetchPullRequests', { count: prs.length });
     return filterSet ? prs.filter((pr) => filterSet.has(pr.state as MRState)) : prs;
+  }
+
+  async fetchApprovalRules(options: FetchApprovalRulesOptions): Promise<MRApprovalRules[]> {
+    if (options.updatedAfter !== undefined && options.iids !== undefined) {
+      throw new Error('fetchApprovalRules: updatedAfter and iids are mutually exclusive');
+    }
+
+    const projectPath = options.projectPath;
+    const mapNodes = (resp: ApprovalRulesResponse): MRApprovalRules[] =>
+      (resp.project?.mergeRequests?.nodes ?? []).map((n) => ({
+        iid: Number(n.iid),
+        rules: n.approvalState?.rules ?? [],
+      }));
+
+    if (options.iids) {
+      const out: MRApprovalRules[] = [];
+      const chunkSize = 100;
+      for (let i = 0; i < options.iids.length; i += chunkSize) {
+        const chunk = options.iids.slice(i, i + chunkSize).map(String);
+        const resp = await this.runQuery<ApprovalRulesResponse>(
+          'fetchApprovalRules.iids', MR_APPROVAL_RULES_BY_IID_QUERY,
+          { projectPath, iids: chunk },
+        );
+        out.push(...mapNodes(resp));
+      }
+      return out;
+    }
+
+    parseUpdatedAfter(options.updatedAfter);
+    if (options.pageSize !== undefined) {
+      if (!Number.isInteger(options.pageSize) || !Number.isFinite(options.pageSize) || options.pageSize <= 0) {
+        throw new Error('fetchApprovalRules: pageSize must be a positive integer');
+      }
+    }
+    const first = options.pageSize ?? 100;
+    const out: MRApprovalRules[] = [];
+    let after: string | null = null;
+    do {
+      const resp: ApprovalRulesResponse = await this.runQuery<ApprovalRulesResponse>(
+        'fetchApprovalRules.project', MR_APPROVAL_RULES_QUERY,
+        { projectPath, ua: options.updatedAfter ?? null, first, after },
+      );
+      out.push(...mapNodes(resp));
+      const conn = resp.project?.mergeRequests;
+      const next = conn?.pageInfo?.hasNextPage ? (conn.pageInfo.endCursor ?? null) : null;
+      // Stricter than fetchPullRequests.project's guard on purpose: hasNextPage
+      // with a null or repeated cursor is an infinite loop either way.
+      if (conn?.pageInfo?.hasNextPage && (next === null || next === after)) {
+        throw new Error(`fetchApprovalRules.project: non-advancing cursor '${next}' for ${projectPath}`);
+      }
+      after = next;
+    } while (after);
+    return out;
   }
 
   async fetchMRDiscussions(repositoryId: string, mrIid: number): Promise<MRDetail> {

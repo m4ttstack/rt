@@ -25,6 +25,9 @@ type _ProvidersConform = ProviderParameterDrift;
 export type {
   PullRequest,
   PullRequestsSnapshot,
+  ApprovalRuleLite,
+  MRApprovalRules,
+  FetchApprovalRulesOptions,
   MergeabilityCheck,
   CreatePullRequestInput,
   UpdatePullRequestInput,
