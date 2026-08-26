@@ -21,6 +21,7 @@ import { ICONS, Panel, SideDrawer, ToastHost } from "@mattstack/tui-kit";
 import { Sidebar } from "./Sidebar.tsx";
 import { Controls } from "./Controls.tsx";
 import { TabBar } from "./TabBar.tsx";
+import { AppMark } from "./AppMark.tsx";
 import { SelectionBar } from "./SelectionBar.tsx";
 import { RowView } from "./RowView.tsx";
 import { GridView } from "./GridView.tsx";
@@ -539,7 +540,7 @@ export function Board() {
           </button>
           <div className="tui-header-title">
             <h1>
-              <span className="tui-prompt">❯</span> {data.title.toLowerCase()}{" "}
+              <AppMark className="tui-header-mark" /> {data.title.toLowerCase()}{" "}
               {activeMember && <span className="tui-author">--author @{activeMember.username}</span>}
             </h1>
             <p className="tui-sub">
