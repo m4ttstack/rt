@@ -32,6 +32,11 @@ export type BoardMR = MRDashboardProps & {
   /** rt repo name for daemon reads (config.rtRepos[projectPath]); null when the
       project has no mapping, which surfaces as a fetch error server-side. */
   rtRepo: string | null;
+  /** Codeowner sections this row was tagged into that a configured codeowners
+      tab also declares. Empty when the row wasn't tag-kept (a member's own
+      MR) or its tags matched no configured tab. Display filtering by tab is
+      Task 11's job -- buildBoard only stamps the intersection. */
+  codeownerSections: string[];
 };
 
 export interface Snapshot {
@@ -48,6 +53,9 @@ export interface Snapshot {
   /** Narrowest `scope.windowDays` among the daemon reads; null when no read
       carried a scope. */
   scopeWindowDays: number | null;
+  /** Union of `scope.uncoveredSections` across the daemon reads: codeowner
+      sections some project's sync hasn't swept yet. */
+  scopeUncoveredSections: string[];
 }
 
 /** Parse "group/project" out of a GitLab MR web URL. */
@@ -84,20 +92,37 @@ function scrubAvatarUrls(value: unknown): void {
 }
 
 /**
- * Shape raw MRs into a flat board list: authored by a configured member, open,
- * not draft, in a configured project. Each MR is tagged with its author, created
- * / updated timestamps, unresolved-thread count, and derived pipeline state. The
- * client owns all grouping and sorting, so this list is unsorted.
+ * Shape raw MRs into a flat board list: authored by a configured member (or
+ * tagged into a configured codeowners tab's section), open, not draft, in a
+ * configured project. Each MR is tagged with its author, created / updated
+ * timestamps, unresolved-thread count, derived pipeline state, and its kept
+ * codeowner tags. The client owns all grouping and sorting, so this list is
+ * unsorted. `tags` (keyed by pr.id) is the per-MR codeowner sections a daemon
+ * read reported; omitted entirely for callers that never declare
+ * codeownerSections demand (e.g. the single-member fetch).
  */
-export function buildBoard(prs: PullRequest[], config: BoardConfig, now: number = Date.now()): BoardMR[] {
+export function buildBoard(
+  prs: PullRequest[],
+  config: BoardConfig,
+  now: number = Date.now(),
+  tags?: Map<string, string[]>,
+): BoardMR[] {
   const members = new Set(config.members.map((m) => m.username));
   const projects = new Set(config.projects);
   const staleCutoff = now - config.staleAfterDays * 86_400_000;
   const prefixes = new Set(config.ticketPrefixes);
+  const tabSections = new Set(config.tabs.flatMap((t) => (t.source.kind === "codeowners" ? [t.source.section] : [])));
   const out: BoardMR[] = [];
   for (const pr of prs) {
     if (pr.state !== "opened") continue;
-    if (!pr.author || !members.has(pr.author.username)) continue;
+    if (!pr.author) continue;
+    const isMember = members.has(pr.author.username);
+    // Only tags matching a currently-configured tab count -- a tab removed
+    // from config must not keep stale-tagged rows on the board.
+    const tagged = (tags?.get(pr.id) ?? []).filter((s) => tabSections.has(s));
+    // A tagged row is on the board regardless of author; per-tab display
+    // filtering by section is Task 11's job, not buildBoard's.
+    if (!isMember && tagged.length === 0) continue;
     // Someone else's draft isn't yours to act on, so it stays off the board;
     // your own show up with a DRAFT chip and a "mark ready" action. With
     // defaultMember "all" there's no single "you", so no drafts are shown.
@@ -106,7 +131,9 @@ export function buildBoard(prs: PullRequest[], config: BoardConfig, now: number 
     if (pr.updatedAt && Date.parse(pr.updatedAt) < staleCutoff) continue;
     // Team filter: keep only MRs whose Linear ticket prefix is configured.
     // No prefixes configured → keep everything. Untagged MRs are dropped.
-    if (prefixes.size > 0) {
+    // Ticket-prefix filtering is a roster-board concept; a row kept by its
+    // codeowner tag rides the board regardless of whose ticket it carries.
+    if (prefixes.size > 0 && tagged.length === 0) {
       const ticket = extractTicketId(pr.sourceBranch, pr.title);
       const prefix = ticket ? ticket.slice(0, ticket.indexOf("-")) : null;
       if (!prefix || !prefixes.has(prefix)) continue;
@@ -132,6 +159,7 @@ export function buildBoard(prs: PullRequest[], config: BoardConfig, now: number 
       isDraft: pr.draft === true,
       repositoryId: pr.repositoryId,
       rtRepo: config.rtRepos[path] ?? null,
+      codeownerSections: tagged,
     });
   }
   return out;
@@ -161,9 +189,11 @@ export function stripDraftPrefix(title: string): string {
 // (the actual listen port is env/default-derived, not config), so callers
 // pass the resolved port explicitly.
 export function boardDemand(config: BoardConfig, port: number): DemandDecl {
+  const sections = [...new Set(config.tabs.flatMap((t) => (t.source.kind === "codeowners" ? [t.source.section] : [])))];
   return {
     client: `mr-board:${port}`,
     authors: config.members.map((m) => m.username),
+    ...(sections.length > 0 ? { codeownerSections: sections } : {}),
     declaredAt: Date.now(),
   };
 }
@@ -171,7 +201,7 @@ export function boardDemand(config: BoardConfig, port: number): DemandDecl {
 /** One project's sync facts, the shape aggregateSyncScope folds across projects. */
 export interface SyncScopeRead {
   syncedAt: number;
-  scope?: { authors: string[]; windowDays: number; uncovered: string[] };
+  scope?: { authors: string[]; windowDays: number; uncovered: string[]; sections?: string[]; uncoveredSections?: string[] };
 }
 
 /**
@@ -179,23 +209,26 @@ export interface SyncScopeRead {
  * board-wide picture. `dataSyncedAt` is the oldest syncedAt (the board is
  * only as fresh as its stalest project); `scopeUncovered` unions every
  * project's uncovered authors; `scopeWindowDays` is the narrowest window
- * (the tightest constraint any project reported). A project that errored
- * before yielding a read is simply absent from `reads`.
+ * (the tightest constraint any project reported); `scopeUncoveredSections`
+ * unions every project's uncovered codeowner sections. A project that
+ * errored before yielding a read is simply absent from `reads`.
  */
 export function aggregateSyncScope(
   reads: SyncScopeRead[],
-): { dataSyncedAt: number | null; scopeUncovered: string[]; scopeWindowDays: number | null } {
+): { dataSyncedAt: number | null; scopeUncovered: string[]; scopeWindowDays: number | null; scopeUncoveredSections: string[] } {
   let dataSyncedAt: number | null = null;
   let scopeWindowDays: number | null = null;
   const uncovered = new Set<string>();
+  const uncoveredSections = new Set<string>();
   for (const read of reads) {
     dataSyncedAt = dataSyncedAt === null ? read.syncedAt : Math.min(dataSyncedAt, read.syncedAt);
     if (read.scope) {
       scopeWindowDays = scopeWindowDays === null ? read.scope.windowDays : Math.min(scopeWindowDays, read.scope.windowDays);
       for (const author of read.scope.uncovered) uncovered.add(author);
+      for (const section of read.scope.uncoveredSections ?? []) uncoveredSections.add(section);
     }
   }
-  return { dataSyncedAt, scopeUncovered: [...uncovered], scopeWindowDays };
+  return { dataSyncedAt, scopeUncovered: [...uncovered], scopeWindowDays, scopeUncoveredSections: [...uncoveredSections] };
 }
 
 /**

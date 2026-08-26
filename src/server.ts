@@ -168,12 +168,16 @@ function attachPeerState<T extends { webUrl?: string | null }>(mrs: T[], now: nu
 const FETCH_CONCURRENCY = 4;
 
 /** fetchTeamMRs' result: the opened MRs plus the aggregated sync facts from
-    every project read, for the caller to fold into the snapshot. */
+    every project read, for the caller to fold into the snapshot. `tags` is
+    every tagged MR's codeowner sections, keyed by pr.id, for buildBoard to
+    intersect against the configured tabs. */
 interface TeamMRsResult {
   prs: PullRequest[];
   dataSyncedAt: number | null;
   scopeUncovered: string[];
   scopeWindowDays: number | null;
+  scopeUncoveredSections: string[];
+  tags: Map<string, string[]>;
 }
 
 /**
@@ -193,6 +197,7 @@ interface TeamMRsResult {
  */
 async function fetchTeamMRs(force = false): Promise<TeamMRsResult> {
   const byId = new Map<string, PullRequest>();
+  const tags = new Map<string, string[]>();
   const errors: string[] = [];
   const reads: SyncScopeRead[] = [];
   const demand = boardDemand(config, port);
@@ -209,11 +214,13 @@ async function fetchTeamMRs(force = false): Promise<TeamMRsResult> {
     }
     reads.push({ syncedAt: res.data.syncedAt, scope: res.data.scope });
     for (const entry of Object.values(res.data.mrs)) {
-      if (entry.pr.state === "opened") byId.set(entry.pr.id, entry.pr);
+      if (entry.pr.state !== "opened") continue;
+      byId.set(entry.pr.id, entry.pr);
+      if (entry.codeownerSections?.length) tags.set(entry.pr.id, entry.codeownerSections);
     }
   }
   if (errors.length) throw new Error(errors.join(" · "));
-  return { prs: [...byId.values()], ...aggregateSyncScope(reads) };
+  return { prs: [...byId.values()], ...aggregateSyncScope(reads), tags };
 }
 
 /** Author string for a herdr tab label: the display name, else the username. */
@@ -274,10 +281,10 @@ const cache = new SnapshotCache(async () => {
   // latched for the background refreshes that follow.
   const force = forceNextFetch;
   forceNextFetch = false;
-  const { prs, dataSyncedAt, scopeUncovered, scopeWindowDays } = await fetchTeamMRs(force);
-  const mrs = buildBoard(prs, config);
+  const { prs, dataSyncedAt, scopeUncovered, scopeWindowDays, scopeUncoveredSections, tags } = await fetchTeamMRs(force);
+  const mrs = buildBoard(prs, config, undefined, tags);
   await enrichReviewerComments(mrs);
-  return { mrs, dataSyncedAt, scopeUncovered, scopeWindowDays };
+  return { mrs, dataSyncedAt, scopeUncovered, scopeWindowDays, scopeUncoveredSections };
 });
 
 /**
@@ -559,7 +566,9 @@ const httpServer = Bun.serve({
             dataSyncedAt: snapshot.dataSyncedAt,
             scopeUncovered: snapshot.scopeUncovered,
             scopeWindowDays: snapshot.scopeWindowDays,
+            scopeUncoveredSections: snapshot.scopeUncoveredSections,
             staleAfterDays: config.staleAfterDays,
+            tabs: config.tabs,
           }),
           { headers: { "content-type": "application/json" } },
         );

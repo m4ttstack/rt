@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import type { PullRequest } from "@mattstack/glance";
 import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, projectPathFromWebUrl, stripDraftPrefix, type BoardMR } from "../data.ts";
 import { SnapshotCache, type FetchResult } from "../cache.ts";
-import { DEFAULT_SLACK_EMOJI, IMPLICIT_TABS, type BoardConfig } from "../config.ts";
+import { DEFAULT_SLACK_EMOJI, IMPLICIT_TABS, type BoardConfig, type TabConfig } from "../config.ts";
 import { extractTicketId } from "../ticket.ts";
 
 const config: BoardConfig = {
@@ -34,6 +34,13 @@ const config: BoardConfig = {
   switchboard: { url: "" },
   tabs: IMPLICIT_TABS,
 };
+
+/** A team tab plus one codeowners tab watching "Acme" -- used by the
+    boardDemand and tagged-row buildBoard tests below. */
+const tabsWithCodeowners: TabConfig[] = [
+  { id: "t", label: "T", source: { kind: "authors" } },
+  { id: "q", label: "Q", source: { kind: "codeowners", section: "Acme" } },
+];
 
 function pr(overrides: Partial<PullRequest>): PullRequest {
   return {
@@ -259,6 +266,47 @@ describe("buildBoard", () => {
   });
 });
 
+describe("buildBoard tagged rows (codeowner tabs)", () => {
+  const withTabs: BoardConfig = { ...config, tabs: tabsWithCodeowners };
+  const now = Date.parse("2026-07-11T00:00:00Z");
+
+  test("keeps a tagged stranger and stamps codeownerSections", () => {
+    const stranger = pr({ id: "gitlab:900", iid: 9, author: { id: "gitlab:99", username: "outsider", name: "Outsider", avatarUrl: null } });
+    const tags = new Map([[stranger.id, ["Acme"]]]);
+    const out = buildBoard([stranger], withTabs, now, tags);
+    expect(out).toHaveLength(1);
+    expect(out[0]!.codeownerSections).toEqual(["Acme"]);
+  });
+
+  test("still drops an untagged stranger, and tag-kept rows skip the prefix filter", () => {
+    const withPrefixes: BoardConfig = { ...withTabs, ticketPrefixes: ["CV"] };
+    // untagged stranger -> dropped
+    const untaggedStranger = pr({ id: "gitlab:901", iid: 10, author: { id: "gitlab:100", username: "ghost", name: "Ghost", avatarUrl: null } });
+    // tagged stranger with no ticket prefix while ticketPrefixes=["CV"] -> kept
+    const taggedNoPrefix = pr({
+      id: "gitlab:902",
+      iid: 11,
+      author: { id: "gitlab:101", username: "outsider", name: "Outsider", avatarUrl: null },
+      sourceBranch: "no-ticket",
+      title: "no ticket here",
+    });
+    // tagged MR from a section no tab declares -> dropped
+    const taggedWrongSection = pr({
+      id: "gitlab:903",
+      iid: 12,
+      author: { id: "gitlab:102", username: "outsider2", name: "Outsider2", avatarUrl: null },
+      sourceBranch: "no-ticket",
+      title: "no ticket either",
+    });
+    const tags = new Map([
+      [taggedNoPrefix.id, ["Acme"]],
+      [taggedWrongSection.id, ["OtherSection"]],
+    ]);
+    const out = buildBoard([untaggedStranger, taggedNoPrefix, taggedWrongSection], withPrefixes, now, tags);
+    expect(out.map((m) => m.iid)).toEqual([11]);
+  });
+});
+
 describe("buildRoster", () => {
   const members = [{ username: "alice" }, { username: "bob", name: "Bobby" }, { username: "carol" }];
 
@@ -294,6 +342,12 @@ describe("boardDemand", () => {
     expect(d.authors).toEqual(["a", "b"]);          // hidden is a display state, not a demand state
     expect(d.declaredAt).toBeGreaterThan(0);
   });
+
+  test("declares the union of tab sections, and omits the field when no tab is codeowners", () => {
+    const withTabs: BoardConfig = { ...config, tabs: tabsWithCodeowners };
+    expect(boardDemand(withTabs, 1).codeownerSections).toEqual(["Acme"]);
+    expect(boardDemand(config, 1).codeownerSections).toBeUndefined();
+  });
 });
 
 describe("aggregateSyncScope", () => {
@@ -303,7 +357,12 @@ describe("aggregateSyncScope", () => {
   });
 
   test("no reads yields null syncedAt/windowDays and an empty uncovered list", () => {
-    expect(aggregateSyncScope([])).toEqual({ dataSyncedAt: null, scopeUncovered: [], scopeWindowDays: null });
+    expect(aggregateSyncScope([])).toEqual({
+      dataSyncedAt: null,
+      scopeUncovered: [],
+      scopeWindowDays: null,
+      scopeUncoveredSections: [],
+    });
   });
 
   test("unions scope.uncovered across reads and takes the min windowDays", () => {
@@ -320,12 +379,20 @@ describe("aggregateSyncScope", () => {
     expect(agg.scopeWindowDays).toBeNull();
     expect(agg.scopeUncovered).toEqual([]);
   });
+
+  test("unions uncoveredSections", () => {
+    const agg = aggregateSyncScope([
+      { syncedAt: 1, scope: { authors: [], windowDays: 30, uncovered: [], sections: [], uncoveredSections: ["Acme"] } },
+      { syncedAt: 2 },
+    ]);
+    expect(agg.scopeUncoveredSections).toEqual(["Acme"]);
+  });
 });
 
 /** Wrap a bare mrs array as the FetchResult shape SnapshotCache now expects,
     for tests that only care about the mrs field. */
 function fetchResult(mrs: unknown[]): FetchResult {
-  return { mrs: mrs as BoardMR[], dataSyncedAt: null, scopeUncovered: [], scopeWindowDays: null };
+  return { mrs: mrs as BoardMR[], dataSyncedAt: null, scopeUncovered: [], scopeWindowDays: null, scopeUncoveredSections: [] };
 }
 
 describe("SnapshotCache", () => {

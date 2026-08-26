@@ -112,7 +112,15 @@ export class SnapshotCache {
         return settle(
           this.snapshot
             ? { ...this.snapshot, fetchError: message }
-            : { mrs: [], fetchedAt: this.now(), fetchError: message, dataSyncedAt: null, scopeUncovered: [], scopeWindowDays: null },
+            : {
+                mrs: [],
+                fetchedAt: this.now(),
+                fetchError: message,
+                dataSyncedAt: null,
+                scopeUncovered: [],
+                scopeWindowDays: null,
+                scopeUncoveredSections: [],
+              },
         );
       })
       .finally(() => {
