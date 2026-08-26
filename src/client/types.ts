@@ -2,6 +2,7 @@ import type { MouseEvent } from "react";
 import type { BoardMR } from "../data.ts";
 import type { SlackTemplates } from "../template.ts";
 import type { RespondStatus } from "../respond-outcome.ts";
+import type { TabConfig } from "../config.ts";
 
 export interface RosterMember {
   username: string;
@@ -64,6 +65,9 @@ export interface BoardData {
   dataSyncedAt: number | null;
   /** Authors this board demanded but rt hasn't finished backfilling yet. */
   scopeUncovered: string[];
+  /** Codeowners sections this board demanded but rt hasn't finished backfilling
+      yet -- drives the "codeowner queue syncing" badge on the matching tab. */
+  scopeUncoveredSections: string[];
   /** Narrowest sync window (days) among the daemon reads; null when none carried one. */
   scopeWindowDays: number | null;
   /** The board's own configured stale cutoff (days), for comparing against
@@ -75,6 +79,9 @@ export interface BoardData {
   /** Peering health: "ok" when the switchboard accepts us, "unauthorized" when
       it rejects us, null when this board isn't peering at all. */
   peering: "ok" | "unauthorized" | null;
+  /** Board tabs, in display order. Always non-empty (config.tabs falls back to
+      IMPLICIT_TABS server-side). */
+  tabs: TabConfig[];
 }
 
 export type ThemeMode = "light" | "dark" | "system";
