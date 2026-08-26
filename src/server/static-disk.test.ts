@@ -56,3 +56,12 @@ test('assets and fonts are served out of dist', async () => {
     './dist'
   );
 });
+
+test('the raster icons are served out of dist, never answered by the SPA shell', async () => {
+  const app = mounted();
+  for (const icon of ['favicon-32.png', 'apple-touch-icon.png']) {
+    expect(await (await app.request(`/${icon}`)).text()).toBe(
+      `STATIC:./dist/${icon}`
+    );
+  }
+});

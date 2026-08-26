@@ -3,6 +3,12 @@ import type { Context, Hono, MiddlewareHandler, Next } from 'hono';
 /** Where `bun run build` writes the client, relative to the process's
  * working directory (the repo root the server is launched from). */
 export const DIST_ROOT = './dist';
+const ICON_FILES = [
+  'favicon-16.png',
+  'favicon-32.png',
+  'apple-touch-icon.png',
+  'icon-512.png',
+] as const;
 
 /**
  * Wires the built client onto `app` from disk: `/assets/*` and `/fonts/*`
@@ -34,6 +40,11 @@ export function mountStaticDisk(
   app.use('/assets/*', serveStatic({ root: DIST_ROOT }));
   app.use('/fonts/*', serveStatic({ root: DIST_ROOT }));
   app.get('/favicon.svg', serveStatic({ path: `${DIST_ROOT}/favicon.svg` }));
+  // The raster icon set index.html links: each needs its own route, or the
+  // SPA fallback answers a PNG request with index.html.
+  for (const icon of ICON_FILES) {
+    app.get(`/${icon}`, serveStatic({ path: `${DIST_ROOT}/${icon}` }));
+  }
 
   const indexHtml = serveStatic({ path: `${DIST_ROOT}/index.html` });
   app.use('*', async (c: Context, next: Next) => {

@@ -3,7 +3,7 @@
 **The artboards under `artboards/` are the contract, not a mood board.** Every
 value in them was lifted from console's resolved theme, not eyeballed: palette,
 grid and `@font-face` from `tokyo-theme.css`; sizes, spacing and radii from
-`app-theme.ts`; rail 68px, header 64px, page bar 64px with the 26px title from
+`app-theme.ts`; rail 68px, header 64px, page bar 64px with the 20px title from
 `RailShell` + `ConsoleChrome`; row anatomy, 28px action icons and badge wash
 from `RunRow.tsx`.
 

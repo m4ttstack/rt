@@ -257,69 +257,60 @@ test('rooms includes rooms the FLEET is in that the human has not joined', async
   // his memberships. Two agents signed into #forge-leaderboard were visible
   // in the roster while the rail showed nothing -- the room he most needed
   // to read was the one room he could not see.
-  vi.mocked(rt.chatRooms).mockResolvedValueOnce({
+  // Memberships come from chat:rooms per handle: the human's own call, then
+  // one per buddy. `a` is also in a room joined by name that no repo
+  // derives, which is the case a repo-based union could never show.
+  const roomsByHandle: Record<string, string[]> = {
+    matt: ['build'],
+    a: ['forge-leaderboard', 'mantine-tokyo', 'dm-a1b2'],
+    b: ['forge-leaderboard'],
+    c: ['build'],
+  };
+  vi.mocked(rt.chatRooms).mockImplementation(async ({ handle }) => ({
     ok: true,
     data: {
-      rooms: [{ room: 'build', memberCount: 2, unread: 1, mentions: 0 }],
+      rooms: (roomsByHandle[handle] ?? []).map(room => ({
+        room,
+        memberCount: 2,
+        unread: handle === 'matt' ? 1 : 0,
+        mentions: 0,
+        ...(room.startsWith('dm-')
+          ? { kind: 'dm' as const, participants: { a: 'a', b: 'b' } }
+          : {}),
+      })),
     },
-  });
+  }));
   vi.mocked(rt.chatBuddies).mockResolvedValueOnce({
     ok: true,
     data: {
-      buddies: [
-        {
-          sessionId: 's1',
-          handle: 'a',
-          baseHandle: 'a',
-          signedInAt: 1,
-          lastSeenAt: 1,
-          status: 'live',
-          repo: 'forge-leaderboard',
-        },
-        {
-          sessionId: 's2',
-          handle: 'b',
-          baseHandle: 'b',
-          signedInAt: 1,
-          lastSeenAt: 1,
-          status: 'live',
-          repo: 'forge-leaderboard',
-        },
-        {
-          sessionId: 's3',
-          handle: 'c',
-          baseHandle: 'c',
-          signedInAt: 1,
-          lastSeenAt: 1,
-          status: 'live',
-          repo: 'build',
-        },
-      ],
+      buddies: (['a', 'b', 'c'] as const).map((handle, i) => ({
+        sessionId: `s${i + 1}`,
+        handle,
+        baseHandle: handle,
+        signedInAt: 1,
+        lastSeenAt: 1,
+        status: 'live' as const,
+        repo: handle === 'c' ? 'build' : 'forge-leaderboard',
+      })),
     },
   });
-  vi.mocked(rt.chatWho).mockResolvedValueOnce({
+  const member = (room: string, handle: string) => ({
+    room,
+    handle,
+    joinedAt: 1,
+    lastReadId: 0,
+    wakeOn: 'mention' as const,
+    status: 'live' as const,
+  });
+  vi.mocked(rt.chatWho).mockImplementation(async ({ room }) => ({
     ok: true,
     data: {
-      members: [
-        {
-          room: 'forge-leaderboard',
-          handle: 'a',
-          joinedAt: 1,
-          lastReadId: 0,
-          wakeOn: 'mention',
-          status: 'live',
-        },
-        {
-          room: 'forge-leaderboard',
-          handle: 'b',
-          joinedAt: 1,
-          lastReadId: 0,
-          wakeOn: 'mention',
-          status: 'live',
-        },
-      ],
+      members:
+        room === 'forge-leaderboard'
+          ? [member(room, 'a'), member(room, 'b')]
+          : [member(room, 'a')],
     },
-  });
+  }));
 
   const body = await (await app.request('/api/chat/rooms?handle=matt')).json();
 
@@ -327,7 +318,22 @@ test('rooms includes rooms the FLEET is in that the human has not joined', async
   expect(body.rooms.map((r: { room: string }) => r.room)).toEqual([
     'build',
     'forge-leaderboard',
+    'mantine-tokyo',
+    'dm-a1b2',
   ]);
+  // An agent-to-agent DM is the human's to read by design; the rail names
+  // it by its pair, so the pair travels with it.
+  expect(body.rooms[3]).toMatchObject({
+    room: 'dm-a1b2',
+    kind: 'dm',
+    participants: { a: 'a', b: 'b' },
+    joined: false,
+  });
+  expect(body.rooms[2]).toMatchObject({
+    room: 'mantine-tokyo',
+    memberCount: 1,
+    joined: false,
+  });
   expect(body.rooms[0]).toMatchObject({ room: 'build', unread: 1 });
   expect(body.rooms[1]).toMatchObject({
     room: 'forge-leaderboard',

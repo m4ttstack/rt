@@ -6,7 +6,11 @@ import {
   Transition,
   useMatches,
 } from '@mantine/core';
-import type { AppShellHeaderProps, GroupProps } from '@mantine/core';
+import type {
+  AppShellHeaderProps,
+  AppShellNavbarProps,
+  GroupProps,
+} from '@mantine/core';
 
 import { useIsMobile } from '@ui/hooks';
 import { Icon } from '@ui/icons';
@@ -27,6 +31,9 @@ export interface RailShellProps {
   headerProps?: AppShellHeaderProps;
   /** Horizontal padding of the header row. @default 'md' */
   headerPx?: GroupProps['px'];
+  /** Extra `AppShell.Navbar` props for the rail (e.g. a different surface).
+   * The shell's own width, z-index and shadow stay authoritative. */
+  railProps?: AppShellNavbarProps;
   /** Header content, rendered after the mobile rail toggle. */
   header: React.ReactNode;
   /** Rail content riding the navbar slot (typically a `Rail` of
@@ -77,6 +84,7 @@ export function RailShell({
   headerHeight,
   headerProps,
   headerPx = 'md',
+  railProps,
   header,
   rail,
   railExpanded,
@@ -129,11 +137,12 @@ export function RailShell({
         navbarWidth={currentRailWidth}
         navbarCollapsed={{ mobile: !railOpened }}
         navbarProps={{
+          ...railProps,
           zIndex: navbarZIndex,
           w: currentRailWidth,
           maw: currentRailWidth,
           className: classes.railNavbar,
-          style: { boxShadow: railShadow },
+          style: { ...railProps?.style, boxShadow: railShadow },
         }}
         // Hosted sections bring a PageShell whose `topOffset` clears the fixed
         // header (padding + height math in one place), so AppShell.Main must

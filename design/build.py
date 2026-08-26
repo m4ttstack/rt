@@ -6,7 +6,7 @@ CSS = r"""
     .app {
       --bg1: #e1e2e7; --bg2: #eff0f5; --bg3: #f6f6fa; --bg4: #e4e4e7;
       --border: #c8cad6; --border-soft: #d5d7e2;
-      --fg: #111; --muted: #8990b3;
+      --fg: #111; --muted: #8990b3; --muted-text: #565d80;
       --accent: #2e7de9; --ok: #587539; --warn: #8c6c3e; --bad: #f52a65;
       --purple: #7847bd; --cyan: #007197;
       --grid: rgba(52, 59, 88, 0.05);
@@ -17,7 +17,7 @@ CSS = r"""
     .app.dark {
       --bg1: #16161e; --bg2: #232a47; --bg3: #2c3352; --bg4: #3b4160;
       --border: #3b4261; --border-soft: #313853;
-      --fg: #e3e7f6; --muted: #7e86ad;
+      --fg: #e3e7f6; --muted: #7e86ad; --muted-text: #969ec2;
       --accent: #7aa2f7; --ok: #9ece6a; --warn: #e0af68; --bad: #f7768e;
       --purple: #bb9af7; --cyan: #7dcfff;
       --grid: rgba(122, 162, 247, 0.06);
@@ -32,17 +32,17 @@ CSS = r"""
     .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     .xs { font-size: 10.56px; }
     .sm { font-size: 11.2px; }
-    .muted { color: var(--muted); }
+    .muted { color: var(--muted-text); }
     .grid { background-color: var(--bg1); background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px); background-size: 28px 28px; }
     .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; }
     .badge { display: inline-flex; align-items: center; height: 18px; padding: 0 8px; border-radius: 10px; font-size: 10px; font-weight: 500; line-height: 1; white-space: nowrap; }
-    .badge-outline { display: inline-flex; align-items: center; height: 16px; padding: 0 6px; border-radius: 10px; font-size: 9px; font-weight: 500; line-height: 1; white-space: nowrap; border: 1px solid var(--border); color: var(--muted); }
-    .aicon { width: 28px; height: 28px; border-radius: 6px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--muted); background: transparent; border: 0; cursor: pointer; }
+    .badge-outline { display: inline-flex; align-items: center; height: 16px; padding: 0 6px; border-radius: 10px; font-size: 9px; font-weight: 500; line-height: 1; white-space: nowrap; border: 1px solid var(--border); color: var(--muted-text); }
+    .aicon { width: 28px; height: 28px; border-radius: 6px; flex: none; display: inline-flex; align-items: center; justify-content: center; color: var(--muted-text); background: transparent; border: 0; cursor: pointer; }
     .aicon:hover { background: var(--bg4); color: var(--fg); }
     .aicon.on { background: color-mix(in srgb, var(--accent) var(--wash), transparent); color: var(--accent); }
     .aicon.tap { width: 44px; height: 44px; }
     .aicon.filled { background: var(--accent-deep); color: var(--accent-on); }
-    .aicon.off { background: var(--bg4); color: var(--muted); cursor: default; }
+    .aicon.off { background: var(--bg4); color: var(--muted-text); cursor: default; }
     .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
     .dot.live { background: var(--dot-ok); }
     .dot.idle { background: var(--dot-warn); }
@@ -52,21 +52,22 @@ CSS = r"""
     .status.live { color: var(--ok); }
     .status.idle { color: var(--warn); }
     .status.deaf { color: var(--bad); }
-    .chip { display: inline-flex; align-items: center; gap: 4.8px; height: 22px; padding: 0 8px; border-radius: 6px; font-size: 10.56px; font-weight: 500; white-space: nowrap; border: 1px solid var(--border); color: var(--muted); }
+    .chip { display: inline-flex; align-items: center; gap: 4.8px; height: 22px; padding: 0 8px; border-radius: 6px; font-size: 10.56px; font-weight: 500; white-space: nowrap; border: 1px solid var(--border); color: var(--muted-text); }
     .chip.live { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
     .chip.idle { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
     .chip.deaf { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, transparent); background: color-mix(in srgb, var(--bad) 7%, transparent); }
     .room { display: flex; align-items: center; gap: 7.2px; height: 34px; padding: 0 9.6px; border-radius: 6px; min-width: 0; cursor: pointer; }
     .room:hover { background: var(--bg4); }
     .room.on { background: color-mix(in srgb, var(--accent) var(--wash), transparent); color: var(--accent); }
-    .room .hash { color: var(--muted); flex: none; }
+    .room .hash { color: var(--muted-text); flex: none; }
     .room.on .hash { color: var(--accent); }
     .mention { display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: 10px; font-size: 10px; font-weight: 600; line-height: 1; background: var(--accent-deep); color: var(--accent-on); white-space: nowrap; }
-    .unread { display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: 10px; font-size: 10px; font-weight: 500; line-height: 1; border: 1px solid var(--border); color: var(--muted); white-space: nowrap; }
+    .unread { display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: 10px; font-size: 10px; font-weight: 500; line-height: 1; border: 1px solid var(--border); color: var(--muted-text); white-space: nowrap; }
     .msg { display: flex; gap: 9.6px; padding: 8.4px 0; min-width: 0; }
     .msg + .msg { border-top: 1px solid var(--border-soft); }
-    .msg-body { font-size: 12.16px; line-height: 1.55; min-width: 0; overflow-wrap: anywhere; }
+    .msg-body { font-size: 12.16px; line-height: 1.55; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
     .msg-body code { font-family: inherit; font-size: 11.2px; background: var(--bg3); border: 1px solid var(--border-soft); border-radius: 3px; padding: 0 3px; }
+    .name:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) var(--wash), transparent); border-radius: 4px; padding: 2px 5px; margin: -2px -5px; }
     .at { color: var(--accent); font-weight: 600; }
     .at.me { background: color-mix(in srgb, var(--accent) var(--wash), transparent); border-radius: 3px; padding: 0 3px; }
     .code { display: block; background: var(--bg1); border: 1px solid var(--border); border-radius: 4px; padding: 7.2px 9.6px; font-size: 11.2px; line-height: 1.5; white-space: pre; overflow-x: auto; margin-top: 4.8px; }
@@ -79,15 +80,16 @@ CSS = r"""
     .path { direction: rtl; text-align: left; }
     .input { display: flex; align-items: center; gap: 7.2px; min-height: 36px; padding: 0 9.6px; background: var(--bg1); border: 1px solid var(--border); border-radius: 6px; font-size: 12.16px; }
     .input.focus { border-color: var(--accent); }
-    .input.off { background: var(--bg2); color: var(--muted); border-style: dashed; }
-    .placeholder { color: var(--muted); }
+    .input.off { background: var(--bg2); color: var(--muted-text); border-style: dashed; }
+    .placeholder { color: var(--muted-text); }
     .alert { display: flex; align-items: flex-start; gap: 9.6px; padding: 9.6px 11.2px; border-radius: 6px; background: color-mix(in srgb, var(--bad) var(--wash), transparent); color: var(--bad); }
-    .kbd { display: inline-flex; align-items: center; height: 16px; padding: 0 5px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; font-size: 9px; color: var(--muted); background: var(--bg3); }
-    .away { font-size: 10.56px; color: var(--muted); font-style: italic; }
-    .tag { display: inline-flex; align-items: center; height: 14px; padding: 0 5px; border-radius: 7px; font-size: 8.5px; font-weight: 500; border: 1px solid var(--border-soft); color: var(--muted); white-space: nowrap; }
+    .kbd { display: inline-flex; align-items: center; height: 16px; padding: 0 5px; border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; font-size: 9px; color: var(--muted-text); background: var(--bg3); }
+    .away { font-size: 10.56px; color: var(--muted-text); font-style: italic; }
+    .tag { display: inline-flex; align-items: center; height: 14px; padding: 0 5px; border-radius: 7px; font-size: 8.5px; font-weight: 500; border: 1px solid var(--border-soft); color: var(--muted-text); white-space: nowrap; }
     .tag.dm { color: var(--purple); border-color: color-mix(in srgb, var(--purple) 45%, transparent); }
+    .roster-panel { width: 300px; flex: none; padding: 11.2px 14.4px; background: var(--bg2); border-left: 1px solid var(--border); min-height: 0; }
     .sect { display: flex; align-items: center; gap: 6px; padding: 8px 0 4px; }
-    .sect .lbl { font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; color: var(--muted); }
+    .sect .lbl { font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; color: var(--muted-text); }
     .sect::after { content: ''; flex: 1; height: 1px; background: var(--border-soft); }
     .pair { display: inline-flex; align-items: center; gap: 4px; min-width: 0; }
     .pair .arrows { color: var(--purple); flex: none; }
@@ -96,6 +98,7 @@ CSS = r"""
     .opt.on { background: color-mix(in srgb, var(--accent) var(--wash), transparent); }
 """
 ICON = {
+    'collapse': '<svg width="{s}" height="{s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 19V5"/><path d="m13 6-6 6 6 6"/><path d="M7 12h14"/></svg>',
  'panel': '<svg width="{s}" height="{s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="m14 9 3 3-3 3"/></svg>',
  'rooms': '<svg width="{s}" height="{s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
  'users': '<svg width="{s}" height="{s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
@@ -141,7 +144,7 @@ class Component extends DCLogic {{
 def rail():
     return f"""
   <!-- Rail: 68px, RailShell's RAIL_WIDTH; 28px/16px icons as console's wiring artboards draw them -->
-  <div style="width: 68px; flex: none; background: var(--bg2); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: 11.2px 0;">
+  <div style="width: 68px; flex: none; background: var(--bg1); border-right: 1px solid var(--border); display: flex; flex-direction: column; align-items: center; padding: 11.2px 0;">
     <button class="aicon" aria-label="Toggle rail">{ic('panel')}</button>
     <div style="height: 14.4px;"></div>
     <div class="stack" style="gap: 4.8px; align-items: center;">
@@ -155,14 +158,14 @@ def rail():
 def rooms_rail(stale=False):
     st = ' <span class="badge-outline">last known</span>' if stale else ''
     return f"""
-      <div class="stack" style="width: 232px; flex: none; gap: 2px;">
+      <div class="stack" style="width: 100%; gap: 2px;">
         <div class="row" style="justify-content: space-between; padding: 0 9.6px 6px;">
           <span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">ROOMS</span>
           <span class="xs muted">3{st}</span>
         </div>
         <div class="room on"><span class="hash">{ic('hash', 14)}</span><span class="truncate" style="font-weight: 600; flex: 1;">build</span><span class="mention" aria-label="1 mention">@1</span><span class="unread" aria-label="4 unread">4</span></div>
         <div class="room"><span class="hash">{ic('hash', 14)}</span><span class="truncate" style="flex: 1;">demo-42</span><span class="unread" aria-label="2 unread">2</span></div>
-        <div class="room"><span class="hash">{ic('hash', 14)}</span><span class="truncate muted" style="flex: 1;">release</span><span class="badge-outline">not joined</span></div>
+        <div class="room"><span class="hash">{ic('hash', 14)}</span><span class="truncate muted" style="flex: 1;">release</span></div>
         <div class="sect" style="padding: 10px 9.6px 4px;"><span class="lbl">DIRECT</span></div>
         <div class="room"><span class="pair" style="flex: 1;"><span class="truncate sm">deck-main</span><span class="arrows">↔</span><span class="truncate sm">rt-chat-wt</span></span><span class="mention" aria-label="1 mention">@1</span></div>
         <div class="room"><span class="pair" style="flex: 1;"><span class="truncate sm">rt-chat-wt</span><span class="arrows">↔</span><span class="truncate sm" style="font-weight: 600;">matt</span></span><span class="unread" aria-label="1 unread">1</span></div>
@@ -191,7 +194,7 @@ def transcript(msgs=MSGS, edge=True):
         codeblk = f'\n            <span class="code">{code}</span>' if code else ''
         out.append(f"""        <div class="msg">
           <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
-            <div class="row" style="gap: 7.2px;"><span class="sm" style="font-weight: 600;">{h}</span><span class="xs muted">{t}</span></div>
+            <div class="row" style="gap: 7.2px;"><span class="name row" style="gap: 0; align-items: baseline;"><span style="font-size: 13.6px; font-weight: 600;">{h}</span>{repo_token(h)}</span><span class="xs muted">{t}</span></div>
             <span class="msg-body">{body}</span>{codeblk}
           </div>
         </div>""")
@@ -227,6 +230,12 @@ BUDDIES = [
 OFFLINE = [('workforest-e2e', 'signed out 2h ago')]
 STATUS_WORD = {'live': 'listening', 'idle': 'idle', 'deaf': 'deaf'}
 
+REPO = {'rt-chat-wt': 'repo-tools', 'rt-chat-wt-2': 'repo-tools', 'deck-main': 'deck', 'board-fix-auth': 'board', 'mr-board-onboard': 'mr-board', 'gitq-main': 'gitq'}
+
+def repo_token(h):
+    r = REPO.get(h)
+    return f'<span class="xs muted truncate"><span style="font-size: 12px; margin: 0 3px;">•</span>{r}</span>' if r else ''
+
 def buddy_row(h, st, br, pane, cwd, sub, away, tags, down=False, compact=False):
     dot = 'off' if down else st
     stw = '<span class="xs muted">—</span>' if down else f'<span class="status {st}">{STATUS_WORD[st]}</span>'
@@ -235,24 +244,50 @@ def buddy_row(h, st, br, pane, cwd, sub, away, tags, down=False, compact=False):
         f'<span class="tag{" dm" if t == "dm" else ""}">{t}</span>' for t in tags) + '</div>'
     path = '' if compact else f'<span class="xs muted truncate path">&lrm;{cwd}</span>'
     subl = 'presence unknown while the daemon is down' if down else sub
+    # One line per buddy plus the away message; branch/pane, path, heartbeat
+    # and tags live in the hover detail card (drawn once on the Roster
+    # artboard). The phone drawer (compact) has no hover, so it keeps the
+    # heartbeat line.
+    detail = f'<span class="xs muted">{subl}</span>' if compact else ''
     parts = [
-        f'<div class="row" style="gap: 7.2px;"><span class="sm truncate" style="font-weight: 600;">{h}</span>{stw}</div>',
+        f'<div class="row" style="gap: 7.2px;"><span class="name row" style="gap: 0; align-items: baseline;"><span class="sm" style="font-weight: 600; flex: none;">{h}</span>{repo_token(h)}</span></div>',
         awayline,
-        f'<span class="xs muted truncate">{br} · {pane}</span>',
-        path,
-        f'<span class="xs muted">{subl}</span>',
-        tagbits,
+        detail,
     ]
     inner = "\n            ".join(x for x in parts if x)
-    return ('        <div class="member">\n          <div class="dot ' + dot + '"></div>\n'
+    return ('        <div class="member">\n          <div class="dot ' + dot + '" title="' + ('presence withheld' if down else STATUS_WORD[st] + ' · ' + sub) + '"></div>\n'
             '          <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">\n            ' + inner + '\n          </div>\n        </div>')
 
-def roster(down=False, compact=False, offline_expanded=False):
+def detail_card(h, st, br, pane, cwd, sub, away, tags):
+    tagbits = ''.join(f'<span class="tag{" dm" if t == "dm" else ""}">{t}</span>' for t in tags)
+    awayline = f'<span class="away">“{away}”</span>' if away else ''
+    lbl = 'font-size: 9.5px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-text);'
+    return ('        <!-- the hover card for the row above, as AgentName draws it: 300px, left-start -->\n'
+            '        <div class="pop stack" style="gap: 6px; width: 300px; padding: 7.2px; margin: -4px 0 8px 0;">\n'
+            f'          <div class="row" style="gap: 7.2px; justify-content: space-between;"><div class="row" style="gap: 7.2px;"><span class="dot {st}"></span><span style="font-size: 13.6px; font-weight: 600;">{h}</span></div><span class="status {st}">{STATUS_WORD[st]}</span></div>\n'
+            f'          {awayline}\n'
+            '          <div style="height: 1px; background: var(--border-soft);"></div>\n'
+            '          <div style="display: grid; grid-template-columns: 52px minmax(0, 1fr); column-gap: 8px; row-gap: 3px; align-items: baseline;">\n'
+            f'            <span style="{lbl}">repo</span><span class="sm">{REPO.get(h, "")}</span>\n'
+            f'            <span style="{lbl}">where</span><span class="sm">{br} · {pane}</span>\n'
+            f'            <span style="{lbl}">path</span><span class="xs muted truncate path">&lrm;{cwd}</span>\n'
+            f'            <span style="{lbl}">tail</span><span class="xs muted">{sub}</span>\n'
+            f'            <span style="{lbl}">rooms</span><div class="row" style="gap: 3px;">{tagbits}</div>\n'
+            '          </div>\n'
+            '          <div style="height: 1px; background: var(--border-soft);"></div>\n'
+            '          <div class="row" style="gap: 7.2px;"><button class="row" style="height: 30px; padding: 0 9.6px; background: var(--bg1); border: 1px solid var(--border); border-radius: 6px; font-family: inherit; font-size: 12.16px; color: var(--fg);">@mention</button><button class="row" style="height: 30px; padding: 0 9.6px; background: var(--bg1); border: 1px solid var(--border); border-radius: 6px; font-family: inherit; font-size: 12.16px; color: var(--fg);">DM</button></div>\n'
+            '        </div>')
+
+def roster(down=False, compact=False, offline_expanded=False, with_detail=False):
     out = []
+    first = True
     for label, rows in BUDDIES:
         out.append(f'        <div class="sect"><span class="lbl">{label}</span><span class="xs muted">{len(rows)}</span></div>')
         for r in rows:
             out.append(buddy_row(*r, down=down, compact=compact))
+            if with_detail and first and not down:
+                out.append(detail_card(*r))
+            first = False
     if down:
         return "\n".join(out)
     if offline_expanded:
@@ -299,7 +334,7 @@ def members(down=False):
 
 def desktop(down=False):
     banner = "" if not down else f"""
-      <div class="alert" style="margin-bottom: 11.2px;">
+      <div class="alert" style="margin: 11.2px 11.2px 0;">
         <span style="flex: none; margin-top: 1px;">{ic('warning', 14)}</span>
         <div class="stack" style="gap: 1px; flex: 1;">
           <span class="sm" style="font-weight: 600;">rt daemon unreachable — down 4m · 48 probes</span>
@@ -308,30 +343,24 @@ def desktop(down=False):
         <button class="aicon" aria-label="Probe now" style="color: var(--bad);">{ic('refresh', 16)}</button>
       </div>"""
     if down:
-        chips = '<span class="chip">6 signed in · last known</span><span class="chip">presence withheld</span>'
+        chips = '<span class="chip">6 in room · last known</span><span class="chip">presence withheld</span>'
     else:
-        chips = '<span class="chip">6 signed in</span><span class="chip live"><span class="dot live"></span>3 listening</span><span class="chip idle"><span class="dot idle"></span>2 idle</span><span class="chip deaf"><span class="dot deaf"></span>1 deaf: gitq-main</span>'
+        chips = '<span class="chip">6 in room</span><span class="chip live"><span class="dot live"></span>3 listening</span><span class="chip idle"><span class="dot idle"></span>2 idle</span><span class="chip deaf"><span class="dot deaf"></span>1 deaf: gitq-main</span>'
     mem_style = 'opacity: 0.6;' if down else ''
-    row_h = '650px' if down else '740px'
     return head() + f"""
 <div class="app {{{{schemeClass}}}}" style="width: 1440px; min-height: 900px; display: flex;">
 {rail()}
   <div class="stack" style="flex: 1; min-width: 0;">
 
-    <div class="row" style="height: 64px; flex: none; padding: 0 11.2px; background: var(--bg2); border-bottom: 1px solid var(--border);">
-      <span style="font-weight: 700;">chat</span>
-      <div style="flex: 1;"></div>
-      <div class="row" style="gap: 6px; color: var(--muted);">
-        {ic('terminal', 12)}
-        <span class="xs muted">rt chat · rt.sock</span>
-        <span class="xs" style="opacity: 0.75;">{'no answer since 22:04:51' if down else 'as of 22:04:37'}</span>
-      </div>
+    <div class="row" style="height: 64px; flex: none; padding: 0 9.6px; background: var(--bg1); border-bottom: 1px solid var(--border); gap: 9.6px;">
+      <svg width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14.4" fill="#ff84ad"/><g transform="translate(7.8 11.25) scale(2)" fill="#1d1830"><path d="M6.5 2h11A4.5 4.5 0 0 1 22 6.5v5a4.5 4.5 0 0 1-4.5 4.5H13l-8.5 6.5L6 16a4.5 4.5 0 0 1-4-4.5v-5A4.5 4.5 0 0 1 6.5 2z"/></g></svg>
+      <span style="font-size: 22px; font-weight: 700; line-height: 1;">chat</span>
     </div>
 
     <!-- Page bar: console's second 64px bar. The room, and the one question this page exists to answer. -->
     <div class="row" style="height: 64px; flex: none; padding: 0 11.2px; background: var(--bg2); border-bottom: 1px solid var(--border); gap: 9.6px;">
       <span class="muted">{ic('hash', 18)}</span>
-      <span style="font-size: 26px; font-weight: 700; line-height: 1.35;">build</span>
+      <span style="font-size: 20px; font-weight: 700; line-height: 1.35;">build</span>
       <div style="width: 4.8px;"></div>
       {chips}
       <span class="chip">wakes: mention ▾</span>
@@ -345,29 +374,42 @@ def desktop(down=False):
       </div>
     </div>
 
-    <div class="grid" style="flex: 1; padding: 14.4px 11.2px;">
-{banner}
-      <div style="display: flex; gap: 11.2px; align-items: stretch; height: {row_h};">
+    <!-- PageShell's compound layout: rooms in the sidebar, the page bar as its
+         header, the banner in the content notch, transcript and roster as
+         edge-to-edge panels inside the scroll-clamped content. No moat. -->
+    <div style="display: flex; flex: 1; min-height: 0; height: 772px;">
 
-        <div class="card stack" style="padding: 11.2px 6px; flex: none;">
+      <div class="stack" style="width: 244px; flex: none; background: var(--bg2); border-right: 1px solid var(--border); padding: 11.2px 6px; overflow: auto; position: relative;">
 {rooms_rail(down)}
-        </div>
+        <!-- PageShell.Sidebar's collapse trigger: a 34px default ActionIcon centred on the sidebar edge -->
+        <button class="row" aria-label="Toggle sidebar" style="position: absolute; top: 50%; right: 0; transform: translate(50%, -50%); width: 34px; height: 34px; justify-content: center; background: var(--bg1); border: 1px solid var(--border); border-radius: 6px; color: var(--fg); cursor: pointer; padding: 0;">{ic('collapse', 18)}</button>
+      </div>
 
-        <div class="card stack" style="flex: 1; min-width: 0; padding: 11.2px 14.4px;">
-          <div class="stack" style="flex: 1; min-height: 0; overflow: auto;">
+      <div class="stack" style="flex: 1; min-width: 0; min-height: 0;">
+{banner}
+        <div style="display: flex; flex: 1; min-height: 0; align-items: stretch;">
+
+          <div class="stack" style="flex: 1; min-width: 0; padding: 11.2px 0; background: var(--bg3);">
+            <!-- horizontal insets live inside the scroller so its bar hugs the panel edge -->
+            <div class="stack" style="flex: 1; min-height: 0; overflow: auto; padding: 0 14.4px 0 31.4px;">
 {transcript()}
-          </div>
+            </div>
+            <div class="stack" style="padding: 0 14.4px 0 31.4px;">
 {composer(down)}
-        </div>
-
-        <div class="card stack" style="width: 300px; flex: none; padding: 11.2px 14.4px; {mem_style} overflow: auto;">
-          <div class="row" style="justify-content: space-between; padding-bottom: 7.2px; border-bottom: 1px solid var(--border-soft);">
-            <div class="row" style="gap: 6px;"><span class="muted">{ic('users', 14)}</span><span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">BUDDIES</span></div>
-            <span class="xs muted">{'last known' if down else 'the fleet, not the room'}</span>
+            </div>
           </div>
-{roster(down, compact=True)}
-        </div>
 
+          <div class="stack roster-panel" style="{mem_style}">
+            <div class="row" style="justify-content: space-between; padding-bottom: 4.8px; flex: none;">
+              <div class="row" style="gap: 6px;"><span class="muted">{ic('users', 14)}</span><span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">BUDDIES</span></div>
+              {'<span class="xs muted">last known</span>' if down else ''}
+            </div>
+            <div class="stack" style="flex: 1; min-height: 0; overflow: auto;">
+{roster(down, compact=False)}
+            </div>
+          </div>
+
+        </div>
       </div>
     </div>
   </div>
@@ -447,7 +489,7 @@ phone_rooms = head() + f"""
     </div>
     <div class="room on" style="height: 44px;"><span class="hash">{ic('hash', 14)}</span><span class="truncate" style="font-weight: 600; flex: 1; font-size: 14px;">build</span><span class="mention" aria-label="1 mention">@1</span><span class="unread" aria-label="4 unread">4</span></div>
     <div class="room" style="height: 44px;"><span class="hash">{ic('hash', 14)}</span><span class="truncate" style="flex: 1; font-size: 14px;">demo-42</span><span class="unread" aria-label="2 unread">2</span></div>
-    <div class="room" style="height: 44px;"><span class="hash">{ic('hash', 14)}</span><span class="truncate muted" style="flex: 1; font-size: 14px;">release</span><span class="badge-outline">not joined</span></div>
+    <div class="room" style="height: 44px;"><span class="hash">{ic('hash', 14)}</span><span class="truncate muted" style="flex: 1; font-size: 14px;">release</span></div>
 
     <div class="sect" style="padding: 10px 9.6px 4px;"><span class="lbl">DIRECT</span></div>
     <div class="room" style="height: 44px;"><span class="pair" style="flex: 1;"><span class="truncate sm">deck-main</span><span class="arrows">↔</span><span class="truncate sm">rt-chat-wt</span></span><span class="mention" aria-label="1 mention">@1</span></div>
@@ -501,7 +543,6 @@ ind = head() + f"""
 {entry('<span class="divider" style="width: 120px; margin-left: 8px;">2 new</span>', 'Your read cursor', 'Where your unread begins. Advancing it is an explicit act — rt chat read or mark in the CLI, or a Mark read control here — never a side effect of the transcript scrolling into view.')}
 {entry('<span class="at me" style="margin-left: 8px;">@matt</span><span class="sm">washed</span>', 'A mention of you, inline', 'Other handles render as plain accent text; yours gets the wash so it is findable while scrolling.')}
 {entry('<span class="badge-outline" style="margin-left: 8px;">you</span><span class="sm">on a member</span>', 'The human', 'matt carries no status: there is no tail to be live or deaf. wake: none is the default for a human who does not want a waiter.')}
-{entry('<span class="badge-outline" style="margin-left: 8px;">not joined</span><span class="sm">on a room</span>', 'Posting will join', 'You can read any room. Posting into one you have not joined joins it first, the same join-creates rule the CLI follows.')}
     </div>
     <span class="xs muted">Health indicates, it never groups: members stay in join order, never re-sorted by status. Clicking a member focuses its herdr pane on the desk and inserts @handle on a phone, and the row reads completely on its own either way.</span>
   </div>
@@ -521,7 +562,7 @@ rost = head() + f"""
     <span class="chip deaf"><span class="dot deaf"></span>1</span>
   </div>
   <div class="stack" style="flex: 1; min-height: 0; overflow: auto; padding: 4.8px 14.4px 14.4px;">
-{roster(False, compact=False, offline_expanded=True)}
+{roster(False, compact=False, offline_expanded=True, with_detail=True)}
     <span class="xs muted" style="padding-top: 9.6px; border-top: 1px solid var(--border-soft); margin-top: 9.6px;">A buddy is a session. Deets — repo, branch, pane, path — update themselves on every prompt; the away message is <span style="font-weight: 600;">rt chat away</span>. Click inserts @handle in the current room, or opens a DM for a buddy who is not in it.</span>
   </div>
 </div>
@@ -549,7 +590,7 @@ dmdesk = head() + f"""
     <div class="row" style="height: 64px; flex: none; padding: 0 11.2px; background: var(--bg2); border-bottom: 1px solid var(--border);">
       <span style="font-weight: 700;">chat</span>
       <div style="flex: 1;"></div>
-      <div class="row" style="gap: 6px; color: var(--muted);">{ic('terminal', 12)}<span class="xs muted">rt chat · rt.sock</span><span class="xs" style="opacity: 0.75;">as of 08:41:22</span></div>
+      <div class="row" style="gap: 6px; color: var(--muted-text);">{ic('terminal', 12)}<span class="xs muted">rt chat · rt.sock</span><span class="xs" style="opacity: 0.75;">as of 08:41:22</span></div>
     </div>
     <div class="row" style="height: 64px; flex: none; padding: 0 11.2px; background: var(--bg2); border-bottom: 1px solid var(--border); gap: 9.6px;">
       <span class="pair"><span style="font-size: 22px; font-weight: 700;">deck-main</span><span class="arrows" style="font-size: 18px;">↔</span><span style="font-size: 22px; font-weight: 700;">rt-chat-wt</span></span>
@@ -578,7 +619,6 @@ dmdesk = head() + f"""
         <div class="card stack" style="width: 300px; flex: none; padding: 11.2px 14.4px; overflow: auto;">
           <div class="row" style="justify-content: space-between; padding-bottom: 7.2px; border-bottom: 1px solid var(--border-soft);">
             <div class="row" style="gap: 6px;"><span class="muted">{ic('users', 14)}</span><span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">BUDDIES</span></div>
-            <span class="xs muted">the fleet, not the room</span>
           </div>
 {roster(False, compact=True)}
         </div>

@@ -184,7 +184,7 @@ test('/r/<room> opens that room instead of the first one', () => {
   window.history.replaceState(null, '', '/r/ops');
   renderWithProviders(<App initialState={twoRooms} />);
   expect(
-    within(screen.getByTestId('page-bar')).getByText('#ops')
+    within(screen.getByTestId('page-bar')).getByText('ops')
   ).toBeInTheDocument();
 });
 
@@ -194,7 +194,7 @@ test('picking a room in the rail moves the URL to /r/<room>', () => {
   fireEvent.click(screen.getByText('ops'));
   expect(window.location.pathname).toBe('/r/ops');
   expect(
-    within(screen.getByTestId('page-bar')).getByText('#ops')
+    within(screen.getByTestId('page-bar')).getByText('ops')
   ).toBeInTheDocument();
 });
 
@@ -234,14 +234,14 @@ test('Back to / after picking a room shows the first room again', () => {
   renderWithProviders(<App initialState={twoRooms} />);
   fireEvent.click(screen.getByText('ops'));
   expect(
-    within(screen.getByTestId('page-bar')).getByText('#ops')
+    within(screen.getByTestId('page-bar')).getByText('ops')
   ).toBeInTheDocument();
   act(() => {
     window.history.replaceState(null, '', '/');
     window.dispatchEvent(new PopStateEvent('popstate'));
   });
   expect(
-    within(screen.getByTestId('page-bar')).getByText('#build')
+    within(screen.getByTestId('page-bar')).getByText('build')
   ).toBeInTheDocument();
 });
 
@@ -287,4 +287,25 @@ test('a same-room hash change scrolls to the new anchor', () => {
   } finally {
     Element.prototype.scrollIntoView = original;
   }
+});
+
+test('the rooms rail lives in the PageShell sidebar and the roster is the right panel', () => {
+  window.history.replaceState(null, '', '/r/build');
+  renderWithProviders(<App initialState={twoRooms} />);
+  const sidebar = document.getElementById('page-shell-sidebar');
+  expect(sidebar).not.toBeNull();
+  expect(
+    within(sidebar as HTMLElement).getByTestId('room-rail')
+  ).toBeInTheDocument();
+  const content = document.getElementById('page-shell-content');
+  expect(content).not.toBeNull();
+  expect(
+    within(content as HTMLElement).getByTestId('transcript')
+  ).toBeInTheDocument();
+  expect(
+    within(content as HTMLElement).getByTestId('roster')
+  ).toBeInTheDocument();
+  expect(
+    within(screen.getByTestId('page-bar')).getByText('build')
+  ).toBeInTheDocument();
 });

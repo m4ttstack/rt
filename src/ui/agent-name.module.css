@@ -1,0 +1,30 @@
+/* A hoverable name says so: on hover the whole unit (handle, bullet, repo)
+   takes the mention accent and its wash, the same treatment a mention of
+   you gets in a message body, so "this opens something" reads without a
+   cursor change. */
+.target {
+  border-radius: 3px;
+  cursor: default;
+}
+
+.target .name {
+  border-radius: 4px;
+  padding: 2px 5px;
+  margin: -2px -5px;
+  transition:
+    color 120ms ease,
+    background-color 120ms ease;
+}
+
+.target:hover .name * {
+  color: var(--mantine-color-accent-text);
+}
+
+.target:hover .name {
+  color: var(--mantine-color-accent-text);
+  background-color: color-mix(
+    in srgb,
+    var(--mantine-color-accent-text) var(--tk-wash),
+    transparent
+  );
+}

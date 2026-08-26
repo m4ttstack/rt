@@ -7,8 +7,8 @@ import {
   useRailState,
 } from '@ui/core';
 import { useColorScheme } from '@ui/hooks';
+import { AppMark } from './AppMark';
 import { useSiteHeaderProps } from './layout';
-import { LogoMark } from './LogoMark';
 
 /** Height of the app's slim fixed header, in px. */
 export const APP_HEADER_HEIGHT = 64;
@@ -71,11 +71,15 @@ export function AppChrome({ children }: { children: React.ReactNode }) {
       headerHeight={APP_HEADER_HEIGHT}
       headerProps={headerProps}
       header={
-        <Group gap="xs" wrap="nowrap">
-          <LogoMark />
-          <Text fw={700} style={{ whiteSpace: 'nowrap' }}>
-            chat
-          </Text>
+        <Group wrap="nowrap" gap="xs" w="100%">
+          {/* Same recipe as console's header: a 30px mark, sm gap, 22px/700
+              wordmark on line-height 1. */}
+          <Group gap="sm" wrap="nowrap">
+            <AppMark size={30} />
+            <Text fw={700} fz={22} lh={1} style={{ whiteSpace: 'nowrap' }}>
+              chat
+            </Text>
+          </Group>
         </Group>
       }
       rail={

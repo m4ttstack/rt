@@ -42,6 +42,9 @@ test('the same buddy DOES render as listening when the daemon is reachable', () 
       }}
     />
   );
-  expect(screen.getByTestId('status-a')).toHaveTextContent('listening');
+  expect(screen.getByTestId('status-a')).toHaveAttribute(
+    'aria-label',
+    expect.stringMatching(/^listening · /)
+  );
   expect(screen.queryByRole('status')).toBeNull();
 });

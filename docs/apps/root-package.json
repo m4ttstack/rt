@@ -24,7 +24,7 @@
     "@mantine/hooks": "^9.5.2",
     "@mantine/modals": "^9.5.2",
     "@mantine/notifications": "^9.5.2",
-    "@mattstack/mantine-tokyo": "^0.1.1",
+    "@mattstack/mantine-tokyo": "^0.1.2",
     "@mattstack/rt-client": "^0.6",
     "@tanstack/react-query": "^5.102.4",
     "@tanstack/react-virtual": "^3.14.6",
@@ -36,6 +36,7 @@
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-interval-hook": "^1.1.5",
+    "react-scroll-to-bottom": "^4.2.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
@@ -48,6 +49,7 @@
     "@types/node": "^24.13.2",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
+    "@types/react-scroll-to-bottom": "^4.2.5",
     "@vitejs/plugin-react": "^6.0.3",
     "@vitest/browser": "^4.1.10",
     "eslint": "^10.7.0",

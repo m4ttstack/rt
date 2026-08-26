@@ -1,0 +1,49 @@
+/* react-scroll-to-bottom, wired the way console's chat wires it:
+   the root fills its box, the scroll view gets a thin scrollbar, and the
+   follow button is a small circle 30px in from the bottom-right corner. */
+/* `.box > .root`, not `.root`: the library injects its own root rules at
+   the same specificity, later, so a bare class loses and the root sizes to
+   its content instead of the box. */
+.box {
+  position: relative;
+  overflow: hidden;
+}
+
+.box > .root {
+  position: absolute;
+  inset: 0;
+}
+
+.view {
+  scrollbar-width: thin;
+  scrollbar-color: var(--tk-border) transparent;
+}
+
+.view::-webkit-scrollbar {
+  width: 8px;
+}
+
+.view::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.view::-webkit-scrollbar-thumb {
+  background-color: var(--tk-border);
+  border-radius: 4px;
+}
+
+.follow {
+  bottom: 30px;
+  right: 30px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+}
+
+:root[data-mantine-color-scheme='dark'] .follow {
+  background-color: rgba(155, 155, 155, 0.25);
+}
+
+:root[data-mantine-color-scheme='dark'] .follow:active {
+  background-color: rgba(155, 155, 155, 0.6);
+}

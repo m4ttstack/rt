@@ -129,13 +129,14 @@ export const TARGETS = [
   // now point at the real component's own testids. `find` targets a
   // fixture handle (CHAT_FIXTURES=1) rather than a class, same convention
   // RoomRail/PageBar's entries use.
+  // The roster is a PageShell panel since 2026-08-26 (no `.card` on the
+  // desktop page any more): its width, surface, hairline and padding are
+  // the container-level contract the member rows sit inside.
   {
-    spec: '.card',
+    spec: '.roster-panel',
     find: '[data-testid="roster"]',
-    props: ['background', 'border-radius'],
-    why: {
-      border: 'full shorthand (width/style/colour combined); not separately enumerated, verified by eye',
-    },
+    props: ['width', 'background-color', 'border-left-width', 'border-left-style', 'border-left-color', 'padding-top', 'padding-right', 'padding-bottom', 'padding-left'],
+    why: { flex: 'shorthand keyword (none), verified by eye', 'min-height': 'verified by eye: the panel scrolls its own sections' },
   },
   {
     spec: '.member',
@@ -164,6 +165,9 @@ export const TARGETS = [
       border: 'full shorthand (width/style/colour combined); not separately enumerated, verified by eye',
     },
   },
+  // `.status*`: the status word lives in the hover card header now (the row
+  // shows the dot, with the word in its tooltip), so these match only with a
+  // card open, like `.tag*` and `.pop`.
   {
     spec: '.status',
     find: '[data-testid="status-rt-chat-wt"]',

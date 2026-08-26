@@ -28,9 +28,13 @@ test('the page bar counts the fleet, names handles behind a small count, and sho
       ]}
     />
   );
-  expect(screen.getByText('4 signed in')).toBeInTheDocument();
-  expect(screen.getByText('2 listening: a, b')).toBeInTheDocument();
-  expect(screen.getByText('1 deaf: gitq-main')).toBeInTheDocument();
+  expect(screen.getByText('4 in room')).toBeInTheDocument();
+  expect(screen.getByTestId('chip-live')).toHaveTextContent(
+    '2 listening: a, b'
+  );
+  expect(screen.getByTestId('chip-deaf')).toHaveTextContent(
+    '1 deaf: gitq-main'
+  );
   expect(screen.getByText('wakes: mention')).toBeInTheDocument();
 });
 
@@ -61,7 +65,9 @@ test('a room with a small idle count also names its handles', () => {
       buddies={[{ handle: 'board-fix-auth', status: 'idle' }]}
     />
   );
-  expect(screen.getByText('1 idle: board-fix-auth')).toBeInTheDocument();
+  expect(screen.getByTestId('chip-idle')).toHaveTextContent(
+    '1 idle: board-fix-auth'
+  );
 });
 
 test('daemon down: exactly two plain chips, last known and withheld', () => {
@@ -75,7 +81,7 @@ test('daemon down: exactly two plain chips, last known and withheld', () => {
       reachable={false}
     />
   );
-  expect(screen.getByText('2 signed in · last known')).toBeInTheDocument();
+  expect(screen.getByText('2 in room · last known')).toBeInTheDocument();
   expect(screen.getByText('presence withheld')).toBeInTheDocument();
   expect(screen.queryByTestId('chip-live')).toBeNull();
   expect(screen.queryByTestId('chip-wakes')).toBeNull();

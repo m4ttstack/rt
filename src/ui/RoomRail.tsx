@@ -2,6 +2,7 @@ import { Box, Group, Stack, Text, UnstyledButton } from '@mantine/core';
 import type { RoomSummary } from '@mattstack/rt-client';
 
 import { Icon } from '@ui/icons';
+import { AgentName } from './AgentName';
 
 /**
  * `.accent-deep` has no direct `--tk-*` token: the artboard's own palette
@@ -27,6 +28,8 @@ export interface RoomRailProps {
   /** The human's own handle, bolded inside a DM pair when it appears there. */
   humanHandle?: string;
   onSelectRoom?: (room: string) => void;
+  /** Inside `PageShell.Sidebar`: the sidebar is the surface, so no card. */
+  sidebar?: boolean;
 }
 
 /**
@@ -59,35 +62,6 @@ function MentionBadge({ count }: { count: number }) {
   );
 }
 
-/**
- * `not joined`, per the artboard's `.badge-outline`. A room the FLEET is in
- * that the human is not a member of, so it has no unread cursor and shows no
- * counts. Posting into it still works: the server joins first.
- */
-function NotJoinedBadge() {
-  return (
-    <Box
-      component="span"
-      data-testid="not-joined-badge"
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        height: 16,
-        lineHeight: 1,
-        borderRadius: 'var(--mantine-radius-xl)',
-        padding: '0 6px',
-        fontSize: 9,
-        fontWeight: 500,
-        whiteSpace: 'nowrap',
-        border: '1px solid var(--tk-border)',
-        color: 'var(--tk-muted)',
-      }}
-    >
-      not joined
-    </Box>
-  );
-}
-
 /** Plain `N`, outlined -- the difference from `MentionBadge` is the glyph. */
 function UnreadBadge({ count }: { count: number }) {
   return (
@@ -106,7 +80,7 @@ function UnreadBadge({ count }: { count: number }) {
         fontWeight: 500,
         whiteSpace: 'nowrap',
         border: `1px solid ${BORDER_DEFAULT}`,
-        color: 'var(--tk-muted)',
+        color: 'var(--tk-muted-text)',
       }}
     >
       {count}
@@ -132,7 +106,9 @@ function DmPairName({ room, active }: { room: RoomSummary; active: boolean }) {
       truncate
       style={{ flex: 1, minWidth: 0 }}
     >
-      {a} <span style={{ color: 'var(--tk-purple)', flex: 'none' }}>↔</span> {b}
+      <AgentName handle={a} />{' '}
+      <span style={{ color: 'var(--tk-purple)', flex: 'none' }}>↔</span>{' '}
+      <AgentName handle={b} />
     </Text>
   );
 }
@@ -177,7 +153,7 @@ function RoomRow({
         <Icon
           name="hash"
           size={14}
-          color={active ? ACCENT_TEXT : 'var(--tk-muted)'}
+          color={active ? ACCENT_TEXT : 'var(--tk-muted-text)'}
           style={{ flex: 'none' }}
         />
       )}
@@ -192,14 +168,8 @@ function RoomRow({
           {room.room}
         </Text>
       )}
-      {room.joined === false ? (
-        <NotJoinedBadge />
-      ) : (
-        <>
-          {room.mentions > 0 && <MentionBadge count={room.mentions} />}
-          {room.unread > 0 && <UnreadBadge count={room.unread} />}
-        </>
-      )}
+      {room.mentions > 0 && <MentionBadge count={room.mentions} />}
+      {room.unread > 0 && <UnreadBadge count={room.unread} />}
     </UnstyledButton>
   );
 }
@@ -210,7 +180,12 @@ function RoomRow({
  * rows and a footnote. `RoomSummary` (the read routes' own shape) is used
  * directly as the room prop type, so no separate DTO drifts from it.
  */
-export function RoomRail({ rooms, activeRoom, onSelectRoom }: RoomRailProps) {
+export function RoomRail({
+  rooms,
+  activeRoom,
+  onSelectRoom,
+  sidebar = false,
+}: RoomRailProps) {
   const channelRooms = rooms.filter(r => r.kind !== 'dm');
   const directRooms = rooms.filter(r => r.kind === 'dm');
 
@@ -218,19 +193,15 @@ export function RoomRail({ rooms, activeRoom, onSelectRoom }: RoomRailProps) {
     <Stack
       gap={2}
       style={{
-        // The Main artboard puts each of the three columns in its own
-        // `.card`: panel surface, hairline border, 6px radius, and 11.2px/6px
-        // padding. Without it the rail's rows sit on the page grid and the
-        // column stops reading as a surface at all.
-        width: 232,
-        flex: 'none',
+        width: sidebar ? '100%' : 232 + 12,
+        flex: sidebar ? 1 : 'none',
         minWidth: 0,
-        background: 'var(--tk-panel)',
-        border: '1px solid var(--tk-border)',
-        borderRadius: 'var(--mantine-radius-md)',
+        background: sidebar ? undefined : 'var(--tk-panel)',
+        border: sidebar ? undefined : '1px solid var(--tk-border)',
+        borderRadius: sidebar ? undefined : 'var(--mantine-radius-md)',
         padding: 'var(--mantine-spacing-lg) 6px',
         alignSelf: 'stretch',
-        overflowY: 'auto',
+        overflowY: sidebar ? undefined : 'auto',
       }}
       data-testid="room-rail"
     >
@@ -245,13 +216,13 @@ export function RoomRail({ rooms, activeRoom, onSelectRoom }: RoomRailProps) {
           fw={600}
           style={{
             margin: 0,
-            color: 'var(--tk-muted)',
+            color: 'var(--tk-muted-text)',
             letterSpacing: '0.04em',
           }}
         >
           ROOMS
         </Text>
-        <Text size="xs" style={{ color: 'var(--tk-muted)' }}>
+        <Text size="xs" style={{ color: 'var(--tk-muted-text)' }}>
           {channelRooms.length}
         </Text>
       </Group>
@@ -281,7 +252,7 @@ export function RoomRail({ rooms, activeRoom, onSelectRoom }: RoomRailProps) {
               style={{
                 margin: 0,
                 fontSize: '9.5px',
-                color: 'var(--tk-muted)',
+                color: 'var(--tk-muted-text)',
                 letterSpacing: '0.06em',
               }}
             >
@@ -301,7 +272,7 @@ export function RoomRail({ rooms, activeRoom, onSelectRoom }: RoomRailProps) {
           <Text
             size="xs"
             style={{
-              color: 'var(--tk-muted)',
+              color: 'var(--tk-muted-text)',
               padding: '4px var(--mantine-spacing-md) 0',
             }}
           >

@@ -13,7 +13,7 @@ Canvas (editable, hosted): https://claude.ai/code/artifact/933b24c5-9edd-4c70-99
 
 Every value is lifted from console, not eyeballed: palette, grid and `@font-face` from
 `src/app/styles/tokyo-theme.css`; font sizes, spacing, radii from
-`src/ui/design-system/app-theme.ts`; rail 68px, header 64px, page bar 64px with the 26px
+`src/ui/design-system/app-theme.ts`; rail 68px, header 64px, page bar 64px with the 20px
 title from `RailShell` + `ConsoleChrome`; row anatomy, 28px action icons and badge wash from
 `RunRow.tsx`. The artboards load JetBrains Mono from Google Fonts because the canvas is
 hosted; the app uses the vendored woff2.
@@ -28,6 +28,10 @@ per-session buddies), the rail gains a DIRECT section, the page bar counts the f
 room's wake mode, and the picker offers DM-instead for buddies outside the room.
 
 Rooms, handles and paths are the shape of this machine's worktree pool; the conversations are
-illustrative. Two drawn affordances are not in plan 2 and are marked as such there: the
-`not joined` badge on a room (needs an all-rooms source the store does not have yet) and
+illustrative. One drawn affordance is not in plan 2 and is marked as such there:
 focusing a herdr pane from a member row (no route addresses a pane by id).
+
+Revised 2026-08-26 for the kit's `PageShell` layout: the three floating cards on
+a padded grid became edge-to-edge panels (rooms in the sidebar, page bar as the
+header, transcript and roster inside the scroll-clamped content), the page-bar
+title dropped from 26px to 20px, and the transcript scrolls sticky-bottom.

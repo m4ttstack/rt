@@ -20,7 +20,7 @@ import { Icon } from '@ui/icons';
 import { notifications } from '@ui/notifications';
 import { STATUS_WORD } from './statusDetail';
 
-const MUTED = 'var(--tk-muted)';
+const MUTED = 'var(--tk-muted-text)';
 const BORDER = 'var(--tk-border)';
 const BORDER_SOFT = 'var(--tk-border-soft)';
 const PURPLE = 'var(--tk-purple)';

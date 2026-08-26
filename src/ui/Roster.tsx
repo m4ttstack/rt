@@ -1,8 +1,17 @@
 import { Fragment } from 'react';
-import { Box, Group, Stack, Text, UnstyledButton } from '@mantine/core';
+import {
+  Box,
+  Group,
+  Stack,
+  Text,
+  Tooltip,
+  UnstyledButton,
+} from '@mantine/core';
 import type { BuddyStatus, PresenceRow } from '@mattstack/rt-client';
 
 import { Icon } from '@ui/icons';
+import { AgentName } from './AgentName';
+import { DOT_COLOR } from './presence-bits';
 import { STATUS_WORD, statusDetail } from './statusDetail';
 
 /** `/api/chat/buddies`' own shape: the daemon's `PresenceRow` plus the
@@ -27,6 +36,9 @@ export interface RosterProps {
   daemonReachable?: boolean;
   /** Drops the path line for the phone drawer (Task 7). @default false */
   compact?: boolean;
+  /** The desktop right column: edge-to-edge panel on the sidebar surface,
+      a hairline on its left, no card. */
+  panel?: boolean;
   onPick?: (handle: string, info: { inRoom: boolean }) => void;
 }
 
@@ -36,18 +48,6 @@ const SECTIONS: ReadonlyArray<{ status: BuddyStatus; label: string }> = [
   { status: 'deaf', label: STATUS_WORD.deaf },
   { status: 'offline', label: 'offline · last 24h' },
 ];
-
-const STATUS_TEXT_COLOR: Record<'live' | 'idle' | 'deaf', string> = {
-  live: 'var(--mantine-color-ok-text)',
-  idle: 'var(--mantine-color-warn-text)',
-  deaf: 'var(--mantine-color-bad-text)',
-};
-
-const DOT_COLOR: Record<'live' | 'idle' | 'deaf', string> = {
-  live: 'var(--tk-dot-ok)',
-  idle: 'var(--tk-dot-warn)',
-  deaf: 'var(--tk-dot-bad)',
-};
 
 /**
  * `…/mr-board-wt-invite-onboarding`: the leaf directory, always -- real
@@ -61,11 +61,6 @@ const DOT_COLOR: Record<'live' | 'idle' | 'deaf', string> = {
  * about, which is why it is deliberately absent below. `truncate` alone is
  * the safety net for a leaf name that is itself wider than the column.
  */
-function headTruncatePath(cwd: string): string {
-  const segments = cwd.split('/').filter(Boolean);
-  const leaf = segments.at(-1) ?? cwd;
-  return `…/${leaf}`;
-}
 
 function Dot({
   hollow,
@@ -89,34 +84,6 @@ function Dot({
         border: hollow ? '1px solid var(--tk-border)' : undefined,
       }}
     />
-  );
-}
-
-function Tag({ handle, room }: { handle: string; room: string }) {
-  const isDm = room === 'dm';
-  return (
-    <Box
-      component="span"
-      data-testid={`tag-${handle}-${room}`}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        height: 14,
-        padding: '0 5px',
-        borderRadius: 7,
-        fontSize: '8.5px',
-        fontWeight: 500,
-        whiteSpace: 'nowrap',
-        border: `1px solid ${
-          isDm
-            ? 'color-mix(in srgb, var(--tk-purple) 45%, transparent)'
-            : 'var(--tk-border-soft)'
-        }`,
-        color: isDm ? 'var(--tk-purple)' : 'var(--tk-muted)',
-      }}
-    >
-      {isDm ? 'dm' : `#${room}`}
-    </Box>
   );
 }
 
@@ -148,7 +115,7 @@ function SectionHeading({
         style={{
           fontSize: '9.5px',
           letterSpacing: '0.06em',
-          color: 'var(--tk-muted)',
+          color: 'var(--tk-muted-text)',
           textTransform: 'uppercase',
         }}
       >
@@ -156,7 +123,10 @@ function SectionHeading({
       </Text>{' '}
       <Text
         component="span"
-        style={{ fontSize: '10.56px', color: 'var(--tk-muted)' }}
+        style={{
+          fontSize: '10.56px',
+          color: 'var(--tk-muted-text)',
+        }}
       >
         {count}
       </Text>
@@ -167,15 +137,12 @@ function SectionHeading({
   );
 }
 
-/** `branch · pane N` -- either half omitted cleanly when absent. */
-function branchPaneLine(buddy: RosterBuddy): string | undefined {
-  const parts = [
-    buddy.branch,
-    buddy.pane !== undefined ? `pane ${buddy.pane}` : undefined,
-  ].filter((p): p is string => Boolean(p));
-  return parts.length > 0 ? parts.join(' · ') : undefined;
-}
-
+/** One line per buddy, the way a buddy list reads: dot, handle, status,
+    and the away message when there is one. Where it is (branch, pane,
+    path), its heartbeat and its rooms are a hover away in the detail card,
+    not on the row: five lines of 10px per buddy was the whole roster
+    shouting at once. The phone drawer has no hover, so its rows carry the
+    heartbeat line and nothing else. */
 function MemberRow({
   buddy,
   now,
@@ -193,8 +160,9 @@ function MemberRow({
 }) {
   const { handle } = buddy;
   const status = buddy.status as 'live' | 'idle' | 'deaf';
-  const branchPane = branchPaneLine(buddy);
-
+  const statusLabel = reachable
+    ? `${STATUS_WORD[buddy.status]} · ${statusDetail(buddy, now)}`
+    : 'presence withheld while the daemon is down';
   return (
     <UnstyledButton
       data-testid={`row-${handle}`}
@@ -210,71 +178,48 @@ function MemberRow({
         cursor: 'pointer',
       }}
     >
-      <Dot
-        hollow={!reachable}
-        color={DOT_COLOR[status]}
-        testId={`dot-${handle}`}
-      />
-      <Stack gap={1} style={{ flex: 1, minWidth: 0 }}>
-        <Group gap="sm" wrap="nowrap">
-          <Text size="sm" fw={600} truncate>
-            {handle}
-          </Text>
-          <Text
-            component="span"
-            data-testid={`status-${handle}`}
-            style={{
-              fontSize: '10.56px',
-              fontWeight: 500,
-              color: reachable ? STATUS_TEXT_COLOR[status] : 'var(--tk-muted)',
-            }}
-          >
-            {reachable ? STATUS_WORD[buddy.status] : '—'}
-          </Text>
-        </Group>
-
-        {reachable && buddy.statusText && (
-          <Text
-            component="span"
-            data-testid={`away-${handle}`}
-            style={{
-              fontSize: '10.56px',
-              color: 'var(--tk-muted)',
-              fontStyle: 'italic',
-            }}
-          >
-            “{buddy.statusText}”
-          </Text>
-        )}
-
-        {branchPane && (
-          <Text size="xs" c="dimmed" truncate>
-            {branchPane}
-          </Text>
-        )}
-
-        {!compact && buddy.cwd && (
-          <Text size="xs" c="dimmed" truncate>
-            {headTruncatePath(buddy.cwd)}
-          </Text>
-        )}
-
-        <Text
+      {/* The dot is the status; the word moved off the row into a tooltip
+          (and the card header) so a long `name • repo` has the width. */}
+      <Tooltip
+        label={statusLabel}
+        position="left"
+        openDelay={300}
+        withArrow
+        disabled={compact}
+      >
+        <Box
           component="span"
-          data-testid={`sub-${handle}`}
-          style={{ fontSize: '10.56px', color: 'var(--tk-muted)' }}
+          data-testid={`status-${handle}`}
+          aria-label={statusLabel}
+          style={{ display: 'inline-flex', flex: 'none' }}
         >
-          {reachable
-            ? statusDetail(buddy, now)
-            : 'presence unknown while the daemon is down'}
-        </Text>
-
-        {reachable && buddy.rooms.length > 0 && (
-          <Group gap={3} wrap="wrap" style={{ paddingTop: 2 }}>
-            {buddy.rooms.map(room => (
-              <Tag key={room} handle={handle} room={room} />
-            ))}
-          </Group>
+          <Dot
+            hollow={!reachable}
+            color={DOT_COLOR[status]}
+            testId={`dot-${handle}`}
+          />
+        </Box>
+      </Tooltip>
+      <Stack gap={1} style={{ flex: 1, minWidth: 0 }}>
+        <AgentName
+          handle={handle}
+          variant="row"
+          buddy={buddy}
+          reachable={reachable}
+          now={now}
+          inRoom={inRoom}
+          withCard={!compact}
+        />
+        {compact && (
+          <Text
+            component="span"
+            data-testid={`sub-${handle}`}
+            style={{ fontSize: '10.56px', color: 'var(--tk-muted-text)' }}
+          >
+            {reachable
+              ? statusDetail(buddy, now)
+              : 'presence unknown while the daemon is down'}
+          </Text>
         )}
       </Stack>
     </UnstyledButton>
@@ -328,6 +273,7 @@ export function Roster({
   roomMembers,
   daemonReachable = true,
   compact = false,
+  panel = false,
   onPick,
 }: RosterProps) {
   const sections = SECTIONS.filter(
@@ -351,29 +297,29 @@ export function Roster({
         flex: compact ? 1 : 'none',
         alignSelf: 'stretch',
         minWidth: 0,
+        minHeight: 0,
         background: compact ? undefined : 'var(--tk-panel)',
-        border: compact ? undefined : '1px solid var(--tk-border)',
-        borderRadius: compact ? undefined : 'var(--mantine-radius-md)',
+        border: compact || panel ? undefined : '1px solid var(--tk-border)',
+        borderLeft: panel ? '1px solid var(--tk-border)' : undefined,
+        borderRadius: compact || panel ? undefined : 'var(--mantine-radius-md)',
         padding: compact
           ? undefined
-          : 'var(--mantine-spacing-lg) var(--mantine-spacing-md)',
-        overflowY: 'auto',
+          : 'var(--mantine-spacing-lg) var(--mantine-spacing-xl)',
       }}
     >
       {!compact && (
         <Group
           justify="space-between"
           wrap="nowrap"
-          style={{
-            paddingBottom: 'var(--mantine-spacing-sm)',
-            borderBottom: '1px solid var(--tk-border-soft)',
-          }}
+          // No rule under the header: the first section heading draws its own
+          // hairline right beneath, and two rules 8px apart read as a mistake.
+          style={{ paddingBottom: 'var(--mantine-spacing-xs)' }}
         >
           <Group gap={6} wrap="nowrap">
             <Icon
               name="users"
               size={14}
-              color="var(--tk-muted)"
+              color="var(--tk-muted-text)"
               style={{ flex: 'none' }}
             />
             <Text
@@ -383,42 +329,52 @@ export function Roster({
                 fontSize: '10.56px',
                 fontWeight: 600,
                 letterSpacing: '0.04em',
-                color: 'var(--tk-muted)',
+                color: 'var(--tk-muted-text)',
               }}
             >
               BUDDIES
             </Text>
           </Group>
-          <Text style={{ fontSize: '10.56px', color: 'var(--tk-muted)' }}>
-            {daemonReachable ? 'the fleet, not the room' : 'last known'}
-          </Text>
+          {!daemonReachable && (
+            <Text
+              style={{ fontSize: '10.56px', color: 'var(--tk-muted-text)' }}
+            >
+              last known
+            </Text>
+          )}
         </Group>
       )}
 
-      {sections.map(section => (
-        <Fragment key={section.status}>
-          <SectionHeading
-            status={section.status}
-            label={section.label}
-            count={section.members.length}
-          />
-          {section.members.map(buddy =>
-            section.status === 'offline' ? (
-              <OfflineRow key={buddy.handle} buddy={buddy} now={now} />
-            ) : (
-              <MemberRow
-                key={buddy.handle}
-                buddy={buddy}
-                now={now}
-                reachable={daemonReachable}
-                inRoom={roomMembers.includes(buddy.handle)}
-                compact={compact}
-                onPick={onPick}
-              />
-            )
-          )}
-        </Fragment>
-      ))}
+      {/* The BUDDIES row stays put; only the sections scroll. */}
+      <Box
+        data-testid="roster-scroll"
+        style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}
+      >
+        {sections.map(section => (
+          <Fragment key={section.status}>
+            <SectionHeading
+              status={section.status}
+              label={section.label}
+              count={section.members.length}
+            />
+            {section.members.map(buddy =>
+              section.status === 'offline' ? (
+                <OfflineRow key={buddy.handle} buddy={buddy} now={now} />
+              ) : (
+                <MemberRow
+                  key={buddy.handle}
+                  buddy={buddy}
+                  now={now}
+                  reachable={daemonReachable}
+                  inRoom={roomMembers.includes(buddy.handle)}
+                  compact={compact}
+                  onPick={onPick}
+                />
+              )
+            )}
+          </Fragment>
+        ))}
+      </Box>
     </Stack>
   );
 }

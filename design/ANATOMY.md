@@ -18,7 +18,8 @@ button.
 
 ## Rooms rail — Task 5
 
-**Width 232px, `flex: none`, `gap: 2px`.**
+**`PageShell.Sidebar`, 244px border-box (231px of rows inside 6px of padding
+and the 1px hairline), on `bg2` with a `border-right`; a drawer on phones.** `gap: 2px`.
 
 Header row: `justify-content: space-between; padding: 0 9.6px 6px`, label
 `ROOMS` in `.xs.muted` at `font-weight: 600; letter-spacing: 0.04em`, count on
@@ -56,13 +57,14 @@ Footnote under the section, `.xs.muted`, `padding: 4px 9.6px 0`:
 
 ## Page bar — Task 5
 
-Console's second 64px bar. Title at **26px / 700** (`#build`, or the
+Console's second 64px bar. Title at **20px / 700** (`#build`, or the
 `a ↔ b` pair plus a `dm` tag for a DM).
 
 Then the fleet chips, all `.chip` (22px tall, radius 6px, `gap: 4.8px`,
 `padding: 0 8px`, 10.56px / 500):
 
-- `N signed in` — plain chip, no dot
+- `N in room` — plain chip, no dot (the bar counts this room's members; the
+  roster counts the fleet)
 - `N listening` — `.chip.live` with a `.dot.live`
 - `N idle` — `.chip.idle` with a `.dot.idle`
 - `N deaf` — `.chip.deaf` with a `.dot.deaf` (this one also gets a `bad` 7% wash)
@@ -72,12 +74,14 @@ A chip whose count is **≤2 names its handles**: `1 deaf: gitq-main`. That is
 what makes the stuck agent read first instead of found last. `offline` never
 gets a chip.
 
-Daemon down: exactly two plain chips, `N signed in · last known` and
+Daemon down: exactly two plain chips, `N in room · last known` and
 `presence withheld`. No dots, no status variants.
 
 ## Transcript — Task 5
 
-One card. Top edge row `.edge` (`.xs.muted`): `41 older messages · load on
+The main panel on `bg3`, `padding: 11.2px 14.4px`, inside the scroll-clamped
+`PageShell.Content`; the list scrolls in a sticky-bottom scroller
+(react-scroll-to-bottom) with the composer pinned beneath it. Top edge row `.edge` (`.xs.muted`): `41 older messages · load on
 scroll`, becoming `Loading older…` while a `before` page is in flight.
 
 Each message is a `.msg` (`display: flex; gap: 9.6px; padding: 8.4px 0`),
@@ -86,9 +90,10 @@ separated from the next by `border-top: 1px solid var(--border-soft)` — the
 
 Inside, a stack at `gap: 1px`:
 
-- header row, `gap: 7.2px`: handle in `.sm` at `font-weight: 600`, then time
-  in `.xs.muted`. **Local time.**
-- body in `.msg-body` (12.16px, `line-height: 1.55`, `overflow-wrap: anywhere`)
+- header row, `gap: 7.2px`: handle at 13.6px (`lg`, a step above the body)
+  and `font-weight: 600`, then time in `.xs.muted`. **Local time.**
+- body in `.msg-body` (12.16px, `line-height: 1.55`, `overflow-wrap: anywhere`,
+  `white-space: pre-wrap` so posted newlines survive)
 - optional `.code` block: own `overflow-x: auto`, `margin-top: 4.8px`
 
 **No status dot beside a message.** A dot next to a 21:58 message would be a
@@ -108,7 +113,10 @@ A DM transcript opens with `start of this conversation · <day>`.
 
 ## Roster — Task 6
 
-Heading `BUDDIES`, caption `the fleet, not the room`.
+A 300px panel on `bg2` with a `border-left`, `padding: 11.2px 14.4px`,
+scrolling on its own to the right of the transcript.
+
+Heading `BUDDIES` (caption `last known` only while the daemon is down).
 
 Four sections **in this order**, each a `.sect` with its count: `listening`,
 `idle`, `deaf`, `offline · last 24h`. Within a section, sign-in order.
@@ -117,9 +125,17 @@ Each row is a `.member` (`align-items: flex-start`, `gap: 7.2px`, `padding:
 7.2px 0`), separated by `--border-soft`. The `.dot` gets `margin-top: 6px`,
 which is **optical, not mathematical** — do not "fix" it to centre.
 
-Row contents, top to bottom:
+Every handle on the page is an `AgentName`: the name, then `· <repo>` in
+`.xs.muted` (the one inline token that says what a first name is doing), and
+a hover card (a `.pop`, 300px, `left-start` from the roster, `bottom-start`
+elsewhere) with the dot + handle + status header, the away message, a
+label/value grid (repo, where = `branch · pane N`, path, tail, rooms as
+tags) and `@mention` / `DM` buttons. Row contents, top to bottom (the row is
+one line plus the away message; only the phone drawer keeps item 5 on the
+row, it has no hover):
 
-1. 8px dot + handle (`.sm`, 600) + `STATUS_WORD[status]` in `.status.<status>`
+1. 8px dot (its tooltip carries `STATUS_WORD[status] · <heartbeat>`) + handle
+   (`.sm`, 600) + `• repo`; the status word itself appears only in the card
 2. the away message when `statusText` is set, as `.away` (10.56px, muted,
    *italic*, in curly quotes: `“waiting on CI”`)
 3. `branch · pane N` — either half omitted when absent

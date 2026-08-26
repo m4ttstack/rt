@@ -4,7 +4,7 @@
     "background": "transparent",
     "border": "0",
     "border-radius": "6px",
-    "color": "var(--muted)",
+    "color": "var(--muted-text)",
     "cursor": "pointer",
     "display": "inline-flex",
     "flex": "none",
@@ -18,7 +18,7 @@
   },
   ".aicon.off": {
     "background": "var(--bg4)",
-    "color": "var(--muted)",
+    "color": "var(--muted-text)",
     "cursor": "default"
   },
   ".aicon.on": {
@@ -60,6 +60,7 @@
     "--fg": "#111",
     "--grid": "rgba(52, 59, 88, 0.05)",
     "--muted": "#8990b3",
+    "--muted-text": "#565d80",
     "--ok": "#587539",
     "--purple": "#7847bd",
     "--warn": "#8c6c3e",
@@ -91,6 +92,7 @@
     "--fg": "#e3e7f6",
     "--grid": "rgba(122, 162, 247, 0.06)",
     "--muted": "#7e86ad",
+    "--muted-text": "#969ec2",
     "--ok": "#9ece6a",
     "--purple": "#bb9af7",
     "--warn": "#e0af68",
@@ -106,7 +108,7 @@
     "padding": "0 3px"
   },
   ".away": {
-    "color": "var(--muted)",
+    "color": "var(--muted-text)",
     "font-size": "10.56px",
     "font-style": "italic"
   },
@@ -125,7 +127,7 @@
     "align-items": "center",
     "border": "1px solid var(--border)",
     "border-radius": "10px",
-    "color": "var(--muted)",
+    "color": "var(--muted-text)",
     "display": "inline-flex",
     "font-size": "9px",
     "font-weight": "500",
@@ -143,7 +145,7 @@
     "align-items": "center",
     "border": "1px solid var(--border)",
     "border-radius": "6px",
-    "color": "var(--muted)",
+    "color": "var(--muted-text)",
     "display": "inline-flex",
     "font-size": "10.56px",
     "font-weight": "500",
@@ -237,7 +239,7 @@
   ".input.off": {
     "background": "var(--bg2)",
     "border-style": "dashed",
-    "color": "var(--muted)"
+    "color": "var(--muted-text)"
   },
   ".kbd": {
     "align-items": "center",
@@ -245,7 +247,7 @@
     "border": "1px solid var(--border)",
     "border-bottom-width": "2px",
     "border-radius": "4px",
-    "color": "var(--muted)",
+    "color": "var(--muted-text)",
     "display": "inline-flex",
     "font-size": "9px",
     "height": "16px",
@@ -291,7 +293,8 @@
     "font-size": "12.16px",
     "line-height": "1.55",
     "min-width": "0",
-    "overflow-wrap": "anywhere"
+    "overflow-wrap": "anywhere",
+    "white-space": "pre-wrap"
   },
   ".msg-body code": {
     "background": "var(--bg3)",
@@ -302,7 +305,14 @@
     "padding": "0 3px"
   },
   ".muted": {
-    "color": "var(--muted)"
+    "color": "var(--muted-text)"
+  },
+  ".name:hover": {
+    "background": "color-mix(in srgb, var(--accent) var(--wash), transparent)",
+    "border-radius": "4px",
+    "color": "var(--accent)",
+    "margin": "-2px -5px",
+    "padding": "2px 5px"
   },
   ".opt": {
     "align-items": "center",
@@ -331,7 +341,7 @@
     "text-align": "left"
   },
   ".placeholder": {
-    "color": "var(--muted)"
+    "color": "var(--muted-text)"
   },
   ".pop": {
     "background": "var(--bg2)",
@@ -351,7 +361,7 @@
     "padding": "0 9.6px"
   },
   ".room .hash": {
-    "color": "var(--muted)",
+    "color": "var(--muted-text)",
     "flex": "none"
   },
   ".room.on": {
@@ -363,6 +373,14 @@
   },
   ".room:hover": {
     "background": "var(--bg4)"
+  },
+  ".roster-panel": {
+    "background": "var(--bg2)",
+    "border-left": "1px solid var(--border)",
+    "flex": "none",
+    "min-height": "0",
+    "padding": "11.2px 14.4px",
+    "width": "300px"
   },
   ".row": {
     "align-items": "center",
@@ -377,7 +395,7 @@
     "padding": "8px 0 4px"
   },
   ".sect .lbl": {
-    "color": "var(--muted)",
+    "color": "var(--muted-text)",
     "font-size": "9.5px",
     "font-weight": "700",
     "letter-spacing": "0.06em"
@@ -412,7 +430,7 @@
     "align-items": "center",
     "border": "1px solid var(--border-soft)",
     "border-radius": "7px",
-    "color": "var(--muted)",
+    "color": "var(--muted-text)",
     "display": "inline-flex",
     "font-size": "8.5px",
     "font-weight": "500",
@@ -433,7 +451,7 @@
     "align-items": "center",
     "border": "1px solid var(--border)",
     "border-radius": "10px",
-    "color": "var(--muted)",
+    "color": "var(--muted-text)",
     "display": "inline-flex",
     "font-size": "10px",
     "font-weight": "500",

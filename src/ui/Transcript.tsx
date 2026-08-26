@@ -1,9 +1,19 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Box, Group, Stack, Text, UnstyledButton } from '@mantine/core';
 import type { ChatMessage } from '@mattstack/rt-client';
+import ScrollToBottom, { useAtTop } from 'react-scroll-to-bottom';
+
+import { AgentName } from './AgentName';
+import scrollClasses from './transcript-scroll.module.css';
 
 const BORDER_SOFT = 'var(--tk-border-soft)';
+/** The panel's horizontal insets, applied to the list content and the
+    footer rather than the panel: the extra 17px on the left clears the
+    sidebar's collapse trigger, which is a 34px button centred on the
+    sidebar edge. */
+const INNER_LEFT = 'calc(var(--mantine-spacing-xl) + 17px)';
+const INNER_RIGHT = 'var(--mantine-spacing-xl)';
 const ACCENT_TEXT = 'var(--mantine-color-accent-text)';
 const ACCENT_WASH = `color-mix(in srgb, ${ACCENT_TEXT} var(--tk-wash), transparent)`;
 
@@ -115,6 +125,101 @@ function renderMentions(
   return out;
 }
 
+const URL_RE = /(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/g;
+/** Same source without `g`: `test` on a global regex advances `lastIndex`
+    across calls, but `split` never resets it, so a second bare URL in one
+    body would test false and render as text. Anchored, stateless. */
+const URL_TEST = new RegExp(`^${URL_RE.source}$`);
+
+/** `**bold**` and bare URLs inside a prose chunk that has already been split
+    away from code spans, so neither markup form is ever read inside code. */
+function renderInline(
+  text: string,
+  mentions: string[],
+  humanHandle: string | undefined,
+  keyPrefix: string
+): React.ReactNode[] {
+  return text.split(/(\*\*[^*]+\*\*)/g).flatMap((chunk, i) => {
+    if (chunk.length > 4 && chunk.startsWith('**') && chunk.endsWith('**')) {
+      return [
+        <Text key={`${keyPrefix}-b-${i}`} component="strong" fw={600} inherit>
+          {chunk.slice(2, -2)}
+        </Text>,
+      ];
+    }
+    return chunk.split(URL_RE).map((piece, j) =>
+      URL_TEST.test(piece) ? (
+        <a
+          key={`${keyPrefix}-u-${i}-${j}`}
+          href={piece}
+          target="_blank"
+          rel="noreferrer"
+          style={{ color: ACCENT_TEXT, overflowWrap: 'anywhere' }}
+        >
+          {piece}
+        </a>
+      ) : (
+        <span key={`${keyPrefix}-t-${i}-${j}`}>
+          {renderMentions(
+            piece,
+            mentions,
+            humanHandle,
+            `${keyPrefix}-${i}-${j}`
+          )}
+        </span>
+      )
+    );
+  });
+}
+
+/** Blank-line paragraphs and `- ` lists inside a prose part. Agents write
+    markdown by reflex; this is the subset that gives their structure a
+    place to land without rendering HTML. */
+function renderBlocks(
+  text: string,
+  mentions: string[],
+  humanHandle: string | undefined,
+  keyPrefix: string
+): React.ReactNode[] {
+  const blocks = text.split(/\n{2,}/).filter(b => b.trim().length > 0);
+  return blocks.map((block, i) => {
+    const lines = block.split('\n');
+    const isList = lines.every(l => /^\s*[-*] /.test(l));
+    const key = `${keyPrefix}-blk-${i}`;
+    if (isList) {
+      return (
+        <Box
+          key={key}
+          component="ul"
+          data-testid="message-list"
+          style={{ margin: '4px 0', paddingLeft: 18 }}
+        >
+          {lines.map((l, j) => (
+            <li key={`${key}-${j}`}>
+              {renderTextPart(
+                l.replace(/^\s*[-*] /, ''),
+                mentions,
+                humanHandle,
+                `${key}-${j}`
+              )}
+            </li>
+          ))}
+        </Box>
+      );
+    }
+    return (
+      <Box
+        key={key}
+        component="p"
+        data-testid="message-paragraph"
+        style={{ margin: i === 0 ? 0 : '8px 0 0' }}
+      >
+        {renderTextPart(block, mentions, humanHandle, key)}
+      </Box>
+    );
+  });
+}
+
 /** Inline `` `code` `` spans within prose -- split first, so an `@` inside a
     code span is never mistaken for a mention. */
 function renderTextPart(
@@ -145,7 +250,7 @@ function renderTextPart(
     }
     return (
       <span key={`${keyPrefix}-t-${i}`}>
-        {renderMentions(chunk, mentions, humanHandle, `${keyPrefix}-${i}`)}
+        {renderInline(chunk, mentions, humanHandle, `${keyPrefix}-${i}`)}
       </span>
     );
   });
@@ -165,6 +270,9 @@ function MessageBody({
       style={{
         fontSize: '12.16px',
         lineHeight: 1.55,
+        // Agents post multi-line bodies; without this every newline collapses
+        // into one paragraph.
+        whiteSpace: 'pre-wrap',
         minWidth: 0,
         overflowWrap: 'anywhere',
       }}
@@ -193,12 +301,7 @@ function MessageBody({
           </Box>
         ) : (
           <span key={`part-${i}`}>
-            {renderTextPart(
-              part.content,
-              message.mentions,
-              humanHandle,
-              `p${i}`
-            )}
+            {renderBlocks(part.content, message.mentions, humanHandle, `p${i}`)}
           </span>
         )
       )}
@@ -230,16 +333,64 @@ function MessageRow({
     >
       <Stack gap={1} style={{ minWidth: 0, flex: 1 }}>
         <Group gap="sm" wrap="nowrap" align="baseline">
-          <Text size="sm" fw={600}>
-            {message.handle}
-          </Text>
-          <Text size="xs" style={{ color: 'var(--tk-muted)' }}>
+          <AgentName handle={message.handle} variant="inline" />
+          <Text size="xs" style={{ color: 'var(--tk-muted-text)' }}>
             {formatLocalTime(message.postedAt)}
           </Text>
         </Group>
         <MessageBody message={message} humanHandle={humanHandle} />
       </Stack>
     </Group>
+  );
+}
+
+/** The top edge of the list. Older pages load when the viewer scrolls to
+    the top of a list that actually scrolls (`useAtTop` is also true for a
+    list too short to scroll, which would page until the room ran dry);
+    the row stays a button for short lists and for tests. */
+function OlderEdge({
+  loading,
+  exhausted,
+  scrollView,
+  onLoad,
+}: {
+  loading: boolean;
+  exhausted: boolean;
+  scrollView: () => HTMLElement | null;
+  onLoad: () => void;
+}) {
+  const [atTop] = useAtTop();
+  useEffect(() => {
+    if (!atTop || loading || exhausted) return;
+    const view = scrollView();
+    if (!view || view.scrollHeight <= view.clientHeight) return;
+    onLoad();
+  }, [atTop, loading, exhausted, scrollView, onLoad]);
+  const label = exhausted
+    ? 'no older messages'
+    : loading
+      ? 'Loading older…'
+      : 'older messages · load on scroll';
+  return (
+    <Box
+      component="button"
+      type="button"
+      data-testid="transcript-edge"
+      onClick={onLoad}
+      disabled={exhausted}
+      style={{
+        width: '100%',
+        border: 0,
+        background: 'transparent',
+        cursor: exhausted ? 'default' : 'pointer',
+        padding: '6px 0 4px',
+        textAlign: 'center',
+        fontSize: '10.56px',
+        color: 'var(--tk-muted-text)',
+      }}
+    >
+      {label}
+    </Box>
   );
 }
 
@@ -286,6 +437,11 @@ export function Transcript({
 }: TranscriptProps) {
   const [messages, setMessages] = useState(initialMessages);
   const [loadingOlder, setLoadingOlder] = useState(false);
+  const [olderExhausted, setOlderExhausted] = useState(false);
+  const scrollBoxRef = useRef<HTMLDivElement>(null);
+  // Set before an older page is prepended; consumed once the DOM has the
+  // new rows, so the viewport stays on the message the viewer was reading.
+  const anchorHeight = useRef<number | null>(null);
   const roomRef = useRef(room);
   roomRef.current = room;
 
@@ -298,6 +454,11 @@ export function Transcript({
   useEffect(() => {
     setMessages(initialMessages);
   }, [room, initialMessages]);
+
+  useEffect(() => {
+    setOlderExhausted(false);
+    setLoadingOlder(false);
+  }, [room]);
 
   // The `#m-<id>` anchor rt prints after a post and on a wake line. Scrolls
   // once per room+anchor, the first time the message is in the list, so a
@@ -341,15 +502,42 @@ export function Transcript({
     return () => socket.close();
   }, [room]);
 
+  function scrollView(): HTMLElement | null {
+    return (
+      scrollBoxRef.current?.querySelector<HTMLElement>(
+        `.${scrollClasses.view}`
+      ) ?? null
+    );
+  }
+
+  useLayoutEffect(() => {
+    const before = anchorHeight.current;
+    const view = scrollView();
+    if (before === null || !view) return;
+    anchorHeight.current = null;
+    view.scrollTop += view.scrollHeight - before;
+  }, [messages]);
+
   async function loadOlder() {
     const oldest = messages[0];
-    if (!oldest || loadingOlder) return;
+    if (!oldest || loadingOlder || olderExhausted) return;
     setLoadingOlder(true);
+    // The request belongs to the room it was started for: a switch while it
+    // is in flight must neither prepend its page to the new room nor leave
+    // `loadingOlder` stuck.
+    const forRoom = room;
+    const current = () => roomRef.current === forRoom;
     try {
       const res = await fetch(`/api/chat/messages/${room}?before=${oldest.id}`);
+      if (!current()) return;
+      // An error page is not an empty page: the edge stays retryable.
+      if (!res.ok) return;
       const data = (await res.json()) as { messages?: ChatMessage[] };
+      if (!current()) return;
       const older = data.messages ?? [];
+      if (older.length === 0) setOlderExhausted(true);
       if (older.length > 0) {
+        anchorHeight.current = scrollView()?.scrollHeight ?? null;
         setMessages(prev => {
           const known = new Set(prev.map(m => m.id));
           const additions = older.filter(m => !known.has(m.id));
@@ -362,7 +550,7 @@ export function Transcript({
       // The daemon being down is silence, not a crash -- the edge control
       // just stays put for a retry.
     } finally {
-      setLoadingOlder(false);
+      if (current()) setLoadingOlder(false);
     }
   }
 
@@ -381,89 +569,113 @@ export function Transcript({
         // than widening the whole row.
         flex: 1,
         minWidth: 0,
-        background: bare ? undefined : 'var(--ui-bg-2)',
-        border: bare
-          ? undefined
-          : '1px solid var(--mantine-color-default-border)',
-        borderRadius: bare ? undefined : 'var(--mantine-radius-md)',
-        padding: bare
-          ? undefined
-          : 'var(--mantine-spacing-lg) var(--mantine-spacing-xl)',
+        minHeight: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        // The lightest surface, so the transcript reads a step above the
+        // sidebar and roster panels on `bg2` either side of it.
+        background: bare ? undefined : 'var(--tk-card)',
+        // The sidebar's collapse trigger is a 34px button centred on the
+        // sidebar edge, so 17px of it rides over this panel: the left
+        // padding clears it, and nothing else, so text never sits under it.
+        // Vertical padding only: the horizontal padding lives INSIDE the
+        // scroll view (and on the footer), so the scrollbar hugs the panel's
+        // edge instead of sitting inset beside the text.
+        padding: bare ? undefined : 'var(--mantine-spacing-lg) 0',
       }}
       data-testid="transcript"
     >
-      {messages.length > 0 && (
-        <Box
-          component="button"
-          type="button"
-          data-testid="transcript-edge"
-          onClick={() => void loadOlder()}
-          style={{
-            width: '100%',
-            border: 0,
-            background: 'transparent',
-            cursor: 'pointer',
-            padding: '6px 0 4px',
-            textAlign: 'center',
-            fontSize: '10.56px',
-            color: 'var(--tk-muted)',
-          }}
+      {/* Sticky-bottom scrolling, as console's chat does it: the
+          list follows new messages while the viewer is at the bottom, and a
+          follow button appears once they scroll up. The wrapper is the
+          positioned box the absolute root fills. */}
+      <Box
+        ref={scrollBoxRef}
+        data-testid="transcript-scroll"
+        className={scrollClasses.box}
+        style={{ flex: 1, minHeight: 0 }}
+      >
+        <ScrollToBottom
+          className={scrollClasses.root}
+          scrollViewClassName={scrollClasses.view}
+          followButtonClassName={scrollClasses.follow}
+          initialScrollBehavior="auto"
         >
-          {loadingOlder ? 'Loading older…' : 'Load older messages'}
+          <Box
+            style={
+              bare ? undefined : { padding: `0 ${INNER_RIGHT} 0 ${INNER_LEFT}` }
+            }
+          >
+            {messages.length > 0 && (
+              <OlderEdge
+                loading={loadingOlder}
+                exhausted={olderExhausted}
+                scrollView={scrollView}
+                onLoad={() => void loadOlder()}
+              />
+            )}
+
+            <Stack gap={0}>
+              {messages.map((message, i) => (
+                <Fragment key={message.id}>
+                  {i === dividerAt && (
+                    <Group
+                      gap="sm"
+                      wrap="nowrap"
+                      align="center"
+                      data-testid="transcript-divider"
+                      style={{
+                        color: ACCENT_TEXT,
+                        fontSize: '10.56px',
+                        fontWeight: 600,
+                        padding: 'var(--mantine-spacing-xs) 0',
+                      }}
+                    >
+                      <Box
+                        style={{
+                          flex: 1,
+                          height: 1,
+                          background: `color-mix(in srgb, ${ACCENT_TEXT} 45%, transparent)`,
+                        }}
+                      />
+                      <span>{unreadCount} new</span>
+                      <span>·</span>
+                      <UnstyledButton
+                        data-testid="transcript-mark-read"
+                        onClick={onMarkRead}
+                        style={{ color: ACCENT_TEXT, fontWeight: 600 }}
+                      >
+                        mark read
+                      </UnstyledButton>
+                      <Box
+                        style={{
+                          flex: 1,
+                          height: 1,
+                          background: `color-mix(in srgb, ${ACCENT_TEXT} 45%, transparent)`,
+                        }}
+                      />
+                    </Group>
+                  )}
+                  <MessageRow
+                    message={message}
+                    humanHandle={humanHandle}
+                    isFirst={i === 0}
+                  />
+                </Fragment>
+              ))}
+            </Stack>
+          </Box>
+        </ScrollToBottom>
+      </Box>
+      {footer && (
+        <Box
+          style={
+            bare ? undefined : { padding: `0 ${INNER_RIGHT} 0 ${INNER_LEFT}` }
+          }
+        >
+          {footer}
         </Box>
       )}
-
-      <Stack gap={0}>
-        {messages.map((message, i) => (
-          <Fragment key={message.id}>
-            {i === dividerAt && (
-              <Group
-                gap="sm"
-                wrap="nowrap"
-                align="center"
-                data-testid="transcript-divider"
-                style={{
-                  color: ACCENT_TEXT,
-                  fontSize: '10.56px',
-                  fontWeight: 600,
-                  padding: 'var(--mantine-spacing-xs) 0',
-                }}
-              >
-                <Box
-                  style={{
-                    flex: 1,
-                    height: 1,
-                    background: `color-mix(in srgb, ${ACCENT_TEXT} 45%, transparent)`,
-                  }}
-                />
-                <span>{unreadCount} new</span>
-                <span>·</span>
-                <UnstyledButton
-                  data-testid="transcript-mark-read"
-                  onClick={onMarkRead}
-                  style={{ color: ACCENT_TEXT, fontWeight: 600 }}
-                >
-                  mark read
-                </UnstyledButton>
-                <Box
-                  style={{
-                    flex: 1,
-                    height: 1,
-                    background: `color-mix(in srgb, ${ACCENT_TEXT} 45%, transparent)`,
-                  }}
-                />
-              </Group>
-            )}
-            <MessageRow
-              message={message}
-              humanHandle={humanHandle}
-              isFirst={i === 0}
-            />
-          </Fragment>
-        ))}
-      </Stack>
-
-      {footer}
     </Box>
   );
 }
