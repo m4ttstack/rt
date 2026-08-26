@@ -5,7 +5,10 @@ the parity spec**: every color, padding, font-size and radius in them is a
 literal, lifted from the real Tokyo theme. Implement against these values, do
 not eyeball them, and do not round or snap anything to a 4/8px grid.
 
-Published canvas (interactive): https://claude.ai/code/artifact/d753efeb-72fd-48ca-91e9-64798c66be32
+The interactive canvas these files were published to is no longer live (it was
+tied to a Claude Code account that is no longer in use). These `.dc.html` files
+are the source of record; re-seed a fresh canvas from them anytime with the
+`/design` skill (see "Regenerating the canvas" below).
 
 ## Artboards
 

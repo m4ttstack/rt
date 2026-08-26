@@ -17,6 +17,8 @@ import { Icons } from '@ui/icons';
 import {
   buildSpine,
   spineRows,
+  suffixOf,
+  type OrphanFillEntry,
   type SpineEntry,
   type WiringSpine,
 } from './outline';
@@ -49,6 +51,11 @@ function computeHealthGroups(spine: WiringSpine) {
     staleEntries,
     neverCompiledEntries,
     unwiredEntries,
+    // Fills nothing binds. Grouped WITH the unwired verbs below: both are
+    // "nothing binds this, safe to prune", and the On-demand tab's pointer
+    // counts the two together, so Health has to list the two together or the
+    // count it points at would be a claim about rows that were never shown.
+    orphanFills: spine.orphans,
   };
 }
 
@@ -67,6 +74,12 @@ function unwiredWhy(entry: SpineEntry): string {
   const n = entry.slots.length;
   const slotPart = n === 0 ? 'no slots' : n === 1 ? '1 slot' : `${n} slots`;
   return `${slotPart} · nothing binds it`;
+}
+
+function orphanWhy(orphan: OrphanFillEntry): string {
+  return orphan.registered
+    ? 'fill · nothing binds it'
+    : 'unregistered fill · nothing binds it';
 }
 
 function slugify(label: string): string {
@@ -122,7 +135,9 @@ interface HealthIssueRowProps {
   name: string;
   reference: string | null;
   why: string;
-  onOpen: () => void;
+  /** A verb row opens its detail panel; an orphan FILL has no panel to open,
+      so it renders as a plain, non-interactive line (no button, no chevron). */
+  onOpen?: () => void;
   /** Only the recompile/never-compiled groups offer this -- Unwired rows
       have nothing to preview compiling. */
   onPreviewCompile?: () => void;
@@ -139,6 +154,7 @@ function HealthIssueRow({
   const { bg, text, border } = useSchemeColors();
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!onOpen) return;
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault();
       onOpen();
@@ -150,12 +166,12 @@ function HealthIssueRow({
       gap={11}
       align="center"
       wrap="nowrap"
-      role="button"
-      tabIndex={0}
+      role={onOpen ? 'button' : undefined}
+      tabIndex={onOpen ? 0 : undefined}
       onClick={onOpen}
-      onKeyDown={handleKeyDown}
-      aria-label={`open ${name}`}
-      style={{ padding: '11px 16px', cursor: 'pointer' }}
+      onKeyDown={onOpen ? handleKeyDown : undefined}
+      aria-label={onOpen ? `open ${name}` : undefined}
+      style={{ padding: '11px 16px', cursor: onOpen ? 'pointer' : 'default' }}
       data-testid={`health-row-${testId}`}
     >
       <Text fz={13} fw={700} style={{ flex: 'none' }}>
@@ -200,33 +216,37 @@ function HealthIssueRow({
           Preview compile
         </UnstyledButton>
       )}
-      <Icons.chevronRight
-        size={16}
-        color={text.muted}
-        aria-hidden
-        style={{ flex: 'none' }}
-      />
+      {onOpen && (
+        <Icons.chevronRight
+          size={16}
+          color={text.muted}
+          aria-hidden
+          style={{ flex: 'none' }}
+        />
+      )}
     </Group>
   );
 }
 
-interface HealthGroupCardProps {
+interface HealthGroupCardProps<T> {
   title: string;
   /** `null` renders the neutral pill (Unwired, informational) via
       `QuietBadge` instead of a tinted `Badge`. */
   intent: MantineColor | null;
   caption: string;
-  entries: SpineEntry[];
-  renderRow: (entry: SpineEntry) => ReactNode;
+  entries: T[];
+  getKey: (entry: T) => string;
+  renderRow: (entry: T) => ReactNode;
 }
 
-function HealthGroupCard({
+function HealthGroupCard<T>({
   title,
   intent,
   caption,
   entries,
+  getKey,
   renderRow,
-}: HealthGroupCardProps) {
+}: HealthGroupCardProps<T>) {
   const { bg, text, border } = useSchemeColors();
   const dotColor = intent ? text.highContrast(intent) : text.muted;
 
@@ -281,7 +301,7 @@ function HealthGroupCard({
       <Stack gap={0}>
         {entries.map((entry, i) => (
           <div
-            key={entry.key}
+            key={getKey(entry)}
             style={
               i === 0 ? undefined : { borderTop: `1px solid ${SOFT_RULE}` }
             }
@@ -348,10 +368,26 @@ export function HealthTab({ pack, onOpenSkill }: HealthTabProps) {
     if (verb) onOpenSkill?.(verb);
   };
 
+  // Unwired verbs and orphan fills share one group: both are "nothing binds
+  // this". Verb rows open their detail panel; orphan-fill rows are inert (no
+  // panel exists for a fill).
+  const unwiredRows = [
+    ...groups.unwiredEntries.map(entry => ({
+      kind: 'verb' as const,
+      key: entry.key,
+      entry,
+    })),
+    ...groups.orphanFills.map(orphan => ({
+      kind: 'orphan' as const,
+      key: `orphan:${orphan.fill}`,
+      orphan,
+    })),
+  ];
+
   const clean =
     groups.staleEntries.length === 0 &&
     groups.neverCompiledEntries.length === 0 &&
-    groups.unwiredEntries.length === 0;
+    unwiredRows.length === 0;
 
   return (
     <Stack gap={0} data-testid="health-tab">
@@ -375,11 +411,7 @@ export function HealthTab({ pack, onOpenSkill }: HealthTabProps) {
           label="Never compiled"
           color="bad"
         />
-        <StatCard
-          count={groups.unwiredEntries.length}
-          label="Unwired"
-          color={null}
-        />
+        <StatCard count={unwiredRows.length} label="Unwired" color={null} />
       </div>
 
       <div style={{ marginTop: 18 }}>
@@ -410,6 +442,7 @@ export function HealthTab({ pack, onOpenSkill }: HealthTabProps) {
                 intent="warn"
                 caption="source edited since the artifact was last built"
                 entries={groups.staleEntries}
+                getKey={entry => entry.key}
                 renderRow={entry => (
                   <HealthIssueRow
                     testId={entry.key}
@@ -429,6 +462,7 @@ export function HealthTab({ pack, onOpenSkill }: HealthTabProps) {
                 intent="bad"
                 caption="wired into a verb but has no built artifact yet"
                 entries={groups.neverCompiledEntries}
+                getKey={entry => entry.key}
                 renderRow={entry => (
                   <HealthIssueRow
                     testId={entry.key}
@@ -442,21 +476,31 @@ export function HealthTab({ pack, onOpenSkill }: HealthTabProps) {
               />
             )}
 
-            {groups.unwiredEntries.length > 0 && (
+            {unwiredRows.length > 0 && (
               <HealthGroupCard
                 title="Unwired"
                 intent={null}
-                caption="internal skills nothing in the roster binds (safe to keep or prune)"
-                entries={groups.unwiredEntries}
-                renderRow={entry => (
-                  <HealthIssueRow
-                    testId={entry.key}
-                    name={entry.label}
-                    reference={entry.ref}
-                    why={unwiredWhy(entry)}
-                    onOpen={() => openSkill(entry.verb)}
-                  />
-                )}
+                caption="skills and fills nothing in the roster binds (safe to keep or prune)"
+                entries={unwiredRows}
+                getKey={row => row.key}
+                renderRow={row =>
+                  row.kind === 'verb' ? (
+                    <HealthIssueRow
+                      testId={row.entry.key}
+                      name={row.entry.label}
+                      reference={row.entry.ref}
+                      why={unwiredWhy(row.entry)}
+                      onOpen={() => openSkill(row.entry.verb)}
+                    />
+                  ) : (
+                    <HealthIssueRow
+                      testId={`orphan-${row.orphan.fill}`}
+                      name={suffixOf(row.orphan.fill)}
+                      reference={row.orphan.provides}
+                      why={orphanWhy(row.orphan)}
+                    />
+                  )
+                }
               />
             )}
           </Stack>

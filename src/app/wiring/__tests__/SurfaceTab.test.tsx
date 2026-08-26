@@ -7,6 +7,7 @@ import { renderWithProviders } from '@ui/storybook/test-utils';
 
 const surfaceGet = vi.fn();
 const surfaceApplyPost = vi.fn();
+const compositionGet = vi.fn();
 
 vi.mock('../../api', () => ({
   client: {
@@ -15,6 +16,9 @@ vi.mock('../../api', () => ({
         surface: {
           $get: (...args: unknown[]) => surfaceGet(...args),
           apply: { $post: (...args: unknown[]) => surfaceApplyPost(...args) },
+        },
+        composition: {
+          $get: (...args: unknown[]) => compositionGet(...args),
         },
       },
     },
@@ -37,8 +41,21 @@ const ROWS = [
   { name: 'model-tiering', kind: 'hand-authored', status: 'internal' },
 ];
 
-function renderSurfaceTab(rows: unknown[] = ROWS) {
+function renderSurfaceTab(
+  rows: unknown[] = ROWS,
+  composition: { verbs?: unknown[]; fills?: unknown[] } = {}
+) {
   surfaceGet.mockResolvedValue(ok({ pack: 'demo', packDir: '/p', rows }));
+  // The open-in-editor link joins composition by name; default to none so the
+  // staging tests are unaffected, and let a test supply verbs/fills to opt in.
+  compositionGet.mockResolvedValue(
+    ok({
+      pack: 'demo',
+      packDir: '/p',
+      verbs: composition.verbs ?? [],
+      fills: composition.fills ?? [],
+    })
+  );
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
@@ -313,5 +330,32 @@ describe('SurfaceTab: staging resets on pack switch', () => {
     );
     expect(screen.getByRole('button', { name: 'Apply' })).toBeDisabled();
     expect(surfaceApplyPost).not.toHaveBeenCalled();
+  });
+});
+
+describe('SurfaceTab: open in editor', () => {
+  it('links a row to its source, joining composition by name (verb) and binding suffix (fill)', async () => {
+    renderSurfaceTab(ROWS, {
+      verbs: [{ name: 'review', sourcePath: '/p/skills/review/SKILL.md' }],
+      fills: [
+        {
+          binding: 'demo:model-tiering',
+          sourcePath: '/p/fills/model-tiering/SKILL.md',
+        },
+      ],
+    });
+
+    expect(await screen.findByTestId('surface-open-review')).toHaveAttribute(
+      'href',
+      'vscode://file/p/skills/review/SKILL.md'
+    );
+    expect(screen.getByTestId('surface-open-model-tiering')).toHaveAttribute(
+      'href',
+      'vscode://file/p/fills/model-tiering/SKILL.md'
+    );
+    // A row composition has no source for shows no link, rather than a dead one.
+    expect(
+      screen.queryByTestId('surface-open-watch-ci')
+    ).not.toBeInTheDocument();
   });
 });

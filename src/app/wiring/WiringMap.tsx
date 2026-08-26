@@ -1,32 +1,27 @@
 import { Component, useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
 
 import {
   Alert,
   Anchor,
   Badge,
-  Collapse,
+  Button,
   GenericError,
   Group,
   LazyLoader,
   PageShell,
-  Paper,
   Select,
   Skeleton,
   Stack,
   Text,
   Timeline,
-  UnstyledButton,
 } from '@ui/core';
 import type { PageShellTab } from '@ui/core';
 import { useSchemeColors } from '@ui/hooks';
-import { AnimatedChevron, Icons } from '@ui/icons';
-import { notifications } from '@ui/notifications';
+import { Icons } from '@ui/icons';
 import { Link } from '../router/Link';
 import { navigate, useSearch } from '../router/navigation';
 import { CommandProvenance } from '../runs/CommandProvenance';
-import { buildAgentContext } from './agentContext';
 import { AttentionEmptyState } from './AttentionEmptyState';
 import {
   comparedVerbCount,
@@ -36,25 +31,21 @@ import {
 } from './attentionFilter';
 import { HEALTH_COLOR } from './HealthChip';
 import { HealthTab } from './HealthTab';
+import { OnDemandView } from './OnDemandView';
 import {
   buildSpine,
-  pluginOf,
   spineRows,
-  suffixOf,
-  type BindingSite,
-  type OrphanFillEntry,
   type SpineEntry,
   type WiringHealth,
   type WiringSpine,
 } from './outline';
-import { splitCompiledBody } from './parseSeam';
 import { QuietBadge } from './QuietBadge';
-import { SkillDetailPanel } from './SkillDetailPanel';
 import { SkillRow } from './SkillRow';
+import { SkillSplitLayout } from './SkillSplitLayout';
 import { SummaryStrip } from './SummaryStrip';
 import { SurfaceTab } from './SurfaceTab';
+import { useSkillSelection } from './useSkillSelection';
 import {
-  fetchCompilePreview,
   useAttentionCount,
   useComposition,
   useCompositionSnapshot,
@@ -75,147 +66,6 @@ const PIPELINE_NOTICE: Record<'absent' | 'empty', string> = {
 };
 
 /**
- * A fill nothing binds. Now that the inverse index lives in the detail panel's
- * Used-by tab (and a fill has no panel of its own), the row states the whole
- * answer inline rather than opening a drawer onto "bound by nothing".
- */
-function OrphanFillRow({ node }: { node: OrphanFillEntry }) {
-  const { text } = useSchemeColors();
-
-  return (
-    <Stack gap={1} data-testid={`orphan-fill-${node.fill}`}>
-      <Group gap="xs" wrap="nowrap">
-        <div
-          aria-hidden
-          style={{
-            width: 6,
-            height: 6,
-            borderRadius: '50%',
-            flex: 'none',
-            background: text.highContrast('purple'),
-          }}
-        />
-        <Text fw={600} size="lg">
-          {suffixOf(node.fill)}
-        </Text>
-        <Text size="sm" c={text.muted} truncate>
-          {node.fill}
-        </Text>
-        <Badge size="sm" variant="light" color="purple">
-          bound by nothing
-        </Badge>
-      </Group>
-      <Text size="xs" c={text.muted} pl="lg">
-        A fill nothing resolves to — not a stage&apos;s slot, not a verb&apos;s,
-        not another plugin&apos;s. Safe to delete unless something outside this
-        manifest reaches it.
-      </Text>
-    </Stack>
-  );
-}
-
-/**
- * The last stop on the spine, not a second section: one continuous list, the
- * same way `RunDetail`'s Timeline ends. Orphaned fills sit at its end because
- * the question they answer -- "can I delete this?" -- is the last one asked.
- * Collapsed by default: this list answers "what's outside the run order?",
- * a question most visits to the page never ask.
- */
-function OutsideThePipeline({
-  spine,
-  onOpen,
-  compact = false,
-  selectedKey = null,
-}: {
-  spine: WiringSpine;
-  onOpen: (entry: SpineEntry) => void;
-  /** The split view's compact left column: rows shrink to the mini shape and
-      the verbose orphan-fill rows drop out (they open no panel to navigate to). */
-  compact?: boolean;
-  selectedKey?: string | null;
-}) {
-  const { text } = useSchemeColors();
-  const [opened, setOpened] = useState(false);
-
-  // `external` groups are already one row per OTHER plugin (see
-  // `buildSpine`'s `externalGroups`), so this length IS the plugin count --
-  // no separate dedupe needed.
-  const externalCount = spine.outside.filter(entry => entry.external).length;
-  const unwiredCount = spine.outside.filter(entry => entry.unwired).length;
-
-  return (
-    <Stack gap={0} mt="sm" data-testid="outside-the-pipeline">
-      <UnstyledButton
-        onClick={() => setOpened(current => !current)}
-        aria-expanded={opened}
-        aria-label="toggle not run by this pipeline"
-        data-testid="offpipe-toggle"
-        style={{ width: '100%' }}
-      >
-        <Group gap="sm" wrap="nowrap" py="sm">
-          <AnimatedChevron
-            size={16}
-            opened={opened}
-            color={text.muted}
-            aria-hidden
-            style={{ flex: 'none' }}
-          />
-          <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
-            <Text fw={700} size="sm">
-              Not run by this pipeline
-            </Text>
-            <Text size="xs" c={text.muted}>
-              {spine.outside.length} skills you invoke directly, plus fills
-              another plugin binds. No run order.
-            </Text>
-          </Stack>
-          <Group gap="xs" wrap="nowrap">
-            {externalCount > 0 && (
-              <Badge
-                size="sm"
-                variant="light"
-                color="purple"
-                data-testid="offpipe-external-count"
-              >
-                {externalCount} other plugin
-              </Badge>
-            )}
-            {unwiredCount > 0 && (
-              <Badge
-                size="sm"
-                variant="light"
-                color="bad"
-                data-testid="offpipe-unwired-count"
-              >
-                {unwiredCount} unwired
-              </Badge>
-            )}
-          </Group>
-        </Group>
-      </UnstyledButton>
-      <Collapse expanded={opened} data-testid="offpipe-body">
-        <Stack gap={compact ? 2 : 'sm'} pt="xs">
-          {spine.outside.map(entry => (
-            <SkillRow
-              key={entry.key}
-              entry={entry}
-              slim
-              compact={compact}
-              selected={compact && entry.key === selectedKey}
-              onOpen={() => onOpen(entry)}
-            />
-          ))}
-          {!compact &&
-            spine.orphans.map(node => (
-              <OrphanFillRow key={node.fill} node={node} />
-            ))}
-        </Stack>
-      </Collapse>
-    </Stack>
-  );
-}
-
-/**
  * Shown only while the attention filter is on: which rows survived it, how
  * many stages that dropped (check has no artifact to flag on a stage, so
  * hiding one is not the same as it being healthy), and the way back to the
@@ -231,6 +81,12 @@ function AttentionFilterNotice({
 }) {
   const { text } = useSchemeColors();
   const hiddenStages = spine.stages.length - shown.stages.length;
+  // Count only the rows the Pipeline tab actually draws (orchestrator +
+  // stages). Everything outside the run order now lives on the On-demand
+  // tab, so counting `spine.outside` here would claim rows this list never
+  // renders -- "showing 2 of 6" while one row is on screen.
+  const pipelineRows = (s: WiringSpine) =>
+    (s.orchestrator ? 1 : 0) + s.stages.length;
 
   return (
     <Group gap="xs" wrap="nowrap" pb="lg" data-testid="spine-summary">
@@ -244,7 +100,7 @@ function AttentionFilterNotice({
         ·
       </Text>
       <Text size="sm" c={text.muted} data-testid="shown-of-total">
-        showing {spineRows(shown).length} of {spineRows(spine).length} rows
+        showing {pipelineRows(shown)} of {pipelineRows(spine)} rows
       </Text>
       {hiddenStages > 0 && (
         <>
@@ -340,15 +196,10 @@ function WiringSpineView({
   pendingVerb?: string | null;
   onPendingVerbHandled?: () => void;
 }) {
-  const { bg, text, border } = useSchemeColors();
-  const queryClient = useQueryClient();
+  const { text } = useSchemeColors();
   const compositionQuery = useComposition(pack);
   const checkQuery = useSkillsCheck(pack);
   const bulletStyles = useBulletStyles();
-  // The panel keys on the ref, not a snapshot: a rebind or surface change
-  // refetches the composition and rebuilds the spine, and the panel has to
-  // read the fresh entry rather than the one captured when the row was clicked.
-  const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
   const spine = useMemo(
     () =>
@@ -360,6 +211,28 @@ function WiringSpineView({
     [compositionQuery.data, checkQuery.data, workType]
   );
 
+  // Every row the Pipeline tab can select into its panel: the orchestrator,
+  // every stage, and everything outside the run order (a Used-by site can
+  // point at any of the three, even one the attention filter is hiding).
+  const allRows = useMemo(
+    () =>
+      [spine.orchestrator, ...spine.stages, ...spine.outside].filter(
+        (entry): entry is SpineEntry => entry !== null
+      ),
+    [spine]
+  );
+  const selection = useSkillSelection({
+    pack,
+    entries: allRows,
+    composition: compositionQuery.data,
+    // The target row may be a healthy one the filter is hiding -- leave the
+    // filter first, then scroll on the next frame once it has rendered.
+    beforeShowInMap: () => {
+      if (attentionOnly) navigate(WIRING_HREF);
+    },
+  });
+  const { selectedKey, setSelectedKey, panelOpen } = selection;
+
   // Every roster verb gets exactly one row in every work type (see
   // `buildSpine`'s own comment on `attentionCount`), so this always finds a
   // pending verb regardless of which work type is currently selected.
@@ -368,32 +241,7 @@ function WiringSpineView({
     const target = spineRows(spine).find(entry => entry.verb === pendingVerb);
     if (target) setSelectedKey(target.key);
     onPendingVerbHandled?.();
-  }, [pendingVerb, spine, onPendingVerbHandled]);
-
-  // Fetches the compiled preview on demand and reads its seams the same way
-  // `CompiledView` does, so the copied blob and the panel's own reading of
-  // this verb's seams can never disagree.
-  const copyAgentContext = async (entry: SpineEntry) => {
-    if (!entry.verb) return;
-    const verbEntry = compositionQuery.data.verbs.find(
-      v => v.name === entry.verb
-    );
-    if (!verbEntry) return;
-    try {
-      const preview = await fetchCompilePreview(queryClient, pack, entry.verb);
-      const seams = splitCompiledBody(preview.content).map(
-        section => section.seam
-      );
-      await navigator.clipboard.writeText(
-        buildAgentContext({ verb: verbEntry, seams })
-      );
-      notifications.success('Copied agent context');
-    } catch (err) {
-      notifications.error(
-        `Could not copy agent context: ${(err as Error).message}`
-      );
-    }
-  };
+  }, [pendingVerb, spine, onPendingVerbHandled, setSelectedKey]);
 
   // Same rows, same order, same components -- the healthy ones simply are
   // not rendered. `spine` itself stays whole: the header's count and the
@@ -405,231 +253,151 @@ function WiringSpineView({
     ...(shown.orchestrator ? [shown.orchestrator] : []),
     ...shown.stages,
   ];
-  // Resolved from the whole spine, never `shown`: the attention filter can
-  // hide the selected row while its panel stays open and correct.
-  const selectedEntry =
-    selectedKey !== null
-      ? (spineRows(spine).find(entry => entry.key === selectedKey) ?? null)
-      : null;
-  const panelOpen = selectedEntry !== null;
-  // Only render the section when it has something in it: in the normal view an
-  // empty section would otherwise draw its "0" header next to the
-  // "Nothing outside the pipeline" empty-state below. Attention mode never
-  // shows orphans, so it keys on the filtered outside list alone.
-  const showOutside = attentionOnly
-    ? shown.outside.length > 0
-    : spine.outside.length > 0 || spine.orphans.length > 0;
-  const nothingNeedsAttention =
-    attentionOnly && spineEntries.length === 0 && shown.outside.length === 0;
-
-  // A cross-plugin binder has no row of its own: it is one line inside its
-  // plugin's grouped row, keyed by the plugin rather than the ref.
-  const rowKeys = useMemo(
-    () =>
-      new Set(
-        [spine.orchestrator, ...spine.stages, ...spine.outside]
-          .filter((entry): entry is SpineEntry => entry !== null)
-          .map(entry => entry.key)
-      ),
-    [spine]
-  );
-  const rowKeyFor = (site: BindingSite): string | null => {
-    if (rowKeys.has(site.ref)) return site.ref;
-    const grouped = `external:${pluginOf(site.ref)}`;
-    return rowKeys.has(grouped) ? grouped : null;
-  };
-
-  // The Used-by tab's "show in map" jumps the split view to that site's own
-  // skill. A cross-plugin binder rides in its grouped row, so resolve the ref
-  // to whatever key actually owns a row before selecting it.
-  const showInMap = (site: BindingSite) => {
-    const key = rowKeyFor(site);
-    if (!key) return;
-    // The target row may be a healthy one the filter is hiding -- leave the
-    // filter first, then scroll on the next frame once it has rendered.
-    if (attentionOnly) navigate(WIRING_HREF);
-    setSelectedKey(key);
-    requestAnimationFrame(() =>
-      document
-        .querySelector(`[data-testid="skill-row-${key}"]`)
-        ?.scrollIntoView?.({ block: 'center' })
-    );
-  };
+  // "Nothing needs attention" is a claim about the WHOLE pack, so it reads the
+  // pack-wide count -- not `spineEntries`, which only sees pipeline rows. An
+  // unwired verb that drifted lives outside the pipeline (On-demand/Health),
+  // and calling the compile clean while one differed would be a false all-clear.
+  const nothingNeedsAttention = attentionOnly && spine.attentionCount === 0;
+  // The pipeline itself is clean but attention is owed elsewhere: point there
+  // rather than stranding an empty Timeline under the filter.
+  const attentionElsewhere = attentionOnly && spineEntries.length === 0;
 
   return (
-    <div
-      style={{
-        display: 'flex',
-        alignItems: 'flex-start',
-        // Detail.dc.html: 18px gutter between the spine and the panel (= xxl).
-        gap: 'var(--mantine-spacing-xxl)',
-      }}
-      data-testid="wiring-split"
-    >
-      <Paper
-        bg={bg.level2}
-        p={panelOpen ? 'md' : 'xl'}
-        radius="xl"
-        style={{
-          // Detail.dc.html: the condensed left column is a fixed 400px rail
-          // once the panel is open; full-width otherwise.
-          flex: panelOpen ? '0 0 400px' : '1 1 0',
-          minWidth: 0,
-          border: `1px solid ${border.default}`,
-        }}
-        data-testid="wiring-spine"
-      >
-        {panelOpen ? (
-          <Text
-            fz="xs"
-            fw={600}
-            c={text.muted}
-            px="xs"
-            pb="xs"
-            data-testid="compact-spine-header"
-            style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}
-          >
-            Pipeline · {spine.stages.length}{' '}
-            {spine.stages.length === 1 ? 'stage' : 'stages'}
-          </Text>
-        ) : (
-          <>
-            <SummaryStrip
-              orchestrator={spine.orchestrator}
-              workType={spine.workType}
-              stageCount={spine.stages.length}
-              health={spine.orchestrator?.health ?? 'unknown'}
-              attentionCount={spine.attentionCount}
-            />
-            {attentionOnly && (
-              <AttentionFilterNotice spine={spine} shown={shown} />
-            )}
-
-            {spine.pipelineState !== 'ok' && (
-              <Alert
-                variant="light"
-                color="warn"
-                icon={<Icons.warning size={14} />}
-                mb="lg"
-                data-testid="pipeline-notice"
-              >
-                <Text size="xs">{PIPELINE_NOTICE[spine.pipelineState]}</Text>
-              </Alert>
-            )}
-
-            {checkQuery.isError && (
-              <Alert
-                variant="light"
-                color="warn"
-                icon={<Icons.warning size={14} />}
-                mb="lg"
-                data-testid="check-error"
-              >
-                <Text size="xs">
-                  rt skills check failed, so no row below can state its drift:{' '}
-                  {(checkQuery.error as Error).message}
-                </Text>
-              </Alert>
-            )}
-          </>
-        )}
-
-        {nothingNeedsAttention ? (
-          // An empty inbox is a claim about a measurement, so it waits for the
-          // measurement -- otherwise every filtered load flashes "nothing was
-          // measured" on its way to the real answer.
-          checkQuery.isPending ? (
-            <Skeleton height={72} data-testid="attention-loading" />
-          ) : (
-            <AttentionEmptyState
-              pack={pack}
-              checkedVerbs={
-                checkQuery.data ? comparedVerbCount(checkQuery.data) : null
-              }
-            />
-          )
-        ) : (
-          <>
-            {!panelOpen && spine.orchestrator && (
-              <Text size="xs" c={text.muted} pb="md" data-testid="spine-note">
-                The orchestrator reads the pipeline and runs each stage in
-                order. Stages compile into it, so they carry no artifact of
-                their own to check.
-              </Text>
-            )}
-            <Timeline
-              bulletSize={BULLET_SIZE}
-              lineWidth={LINE_WIDTH}
-              data-testid="wiring-timeline"
+    <SkillSplitLayout
+      pack={pack}
+      composition={compositionQuery.data}
+      bindingSites={spine.bindingSites}
+      asOf={compositionQuery.dataUpdatedAt || undefined}
+      selection={selection}
+      left={
+        <>
+          {panelOpen ? (
+            <Text
+              fz="xs"
+              fw={600}
+              c={text.muted}
+              px="xs"
+              pb="xs"
+              data-testid="compact-spine-header"
+              style={{ textTransform: 'uppercase', letterSpacing: '0.06em' }}
             >
-              {spineEntries.map(entry => (
-                <Timeline.Item
-                  key={entry.key}
-                  styles={{ itemBullet: bulletStyles(entry.health) }}
-                  bullet={
-                    entry.step === null ? (
-                      <Icons.zap size={12} />
-                    ) : (
-                      <StepBullet step={entry.step} />
-                    )
-                  }
-                  data-testid={`timeline-item-${entry.key}`}
-                >
-                  <SkillRow
-                    entry={entry}
-                    slim
-                    compact={panelOpen}
-                    selected={panelOpen && entry.key === selectedKey}
-                    onOpen={() => setSelectedKey(entry.key)}
-                  />
-                </Timeline.Item>
-              ))}
-
-              {showOutside && (
-                <Timeline.Item
-                  bullet={<Icons.link size={12} />}
-                  styles={{ itemBullet: bulletStyles('unknown') }}
-                  data-testid="timeline-item-outside"
-                >
-                  <OutsideThePipeline
-                    spine={shown}
-                    compact={panelOpen}
-                    selectedKey={selectedKey}
-                    onOpen={entry => setSelectedKey(entry.key)}
-                  />
-                </Timeline.Item>
-              )}
-            </Timeline>
-          </>
-        )}
-
-        {!panelOpen &&
-          !attentionOnly &&
-          spine.outside.length === 0 &&
-          spine.orphans.length === 0 && (
-            <Text size="xs" c={text.dimmed}>
-              Nothing outside the pipeline: every binder in this pack is a
-              stage.
+              Pipeline · {spine.stages.length}{' '}
+              {spine.stages.length === 1 ? 'stage' : 'stages'}
             </Text>
-          )}
-      </Paper>
+          ) : (
+            <>
+              <SummaryStrip
+                orchestrator={spine.orchestrator}
+                workType={spine.workType}
+                stageCount={spine.stages.length}
+                health={spine.orchestrator?.health ?? 'unknown'}
+                attentionCount={spine.attentionCount}
+              />
+              {attentionOnly && (
+                <AttentionFilterNotice spine={spine} shown={shown} />
+              )}
 
-      {selectedEntry && (
-        <div style={{ flex: '1 1 0', minWidth: 0 }}>
-          <SkillDetailPanel
-            key={selectedEntry.key}
-            pack={pack}
-            entry={selectedEntry}
-            composition={compositionQuery.data}
-            bindingSites={spine.bindingSites}
-            asOf={compositionQuery.dataUpdatedAt || undefined}
-            onClose={() => setSelectedKey(null)}
-            onCopyContext={() => void copyAgentContext(selectedEntry)}
-            onShowInMap={showInMap}
-          />
-        </div>
-      )}
-    </div>
+              {spine.pipelineState !== 'ok' && (
+                <Alert
+                  variant="light"
+                  color="warn"
+                  icon={<Icons.warning size={14} />}
+                  mb="lg"
+                  data-testid="pipeline-notice"
+                >
+                  <Text size="xs">{PIPELINE_NOTICE[spine.pipelineState]}</Text>
+                </Alert>
+              )}
+
+              {checkQuery.isError && (
+                <Alert
+                  variant="light"
+                  color="warn"
+                  icon={<Icons.warning size={14} />}
+                  mb="lg"
+                  data-testid="check-error"
+                >
+                  <Text size="xs">
+                    rt skills check failed, so no row below can state its drift:{' '}
+                    {(checkQuery.error as Error).message}
+                  </Text>
+                </Alert>
+              )}
+            </>
+          )}
+
+          {nothingNeedsAttention ? (
+            // An empty inbox is a claim about a measurement, so it waits for
+            // the measurement -- otherwise every filtered load flashes
+            // "nothing was measured" on its way to the real answer.
+            checkQuery.isPending ? (
+              <Skeleton height={72} data-testid="attention-loading" />
+            ) : (
+              <AttentionEmptyState
+                pack={pack}
+                checkedVerbs={
+                  checkQuery.data ? comparedVerbCount(checkQuery.data) : null
+                }
+              />
+            )
+          ) : attentionElsewhere ? (
+            <Stack gap={4} py="xl" data-testid="attention-elsewhere">
+              <Group gap="xs" wrap="nowrap">
+                <Icons.checkCircle size={18} color={text.highContrast('ok')} />
+                <Text fw={600} size="lg">
+                  No pipeline stage needs attention.
+                </Text>
+              </Group>
+              <Text size="xs" c={text.muted}>
+                {spine.attentionCount}{' '}
+                {spine.attentionCount === 1 ? 'skill' : 'skills'} outside the
+                run order {spine.attentionCount === 1 ? 'does' : 'do'} — open
+                the On-demand or Health tab to see{' '}
+                {spine.attentionCount === 1 ? 'it' : 'them'}.
+              </Text>
+            </Stack>
+          ) : (
+            <>
+              {!panelOpen && spine.orchestrator && (
+                <Text size="xs" c={text.muted} pb="md" data-testid="spine-note">
+                  The orchestrator reads the pipeline and runs each stage in
+                  order. Stages compile into it, so they carry no artifact of
+                  their own to check.
+                </Text>
+              )}
+              <Timeline
+                bulletSize={BULLET_SIZE}
+                lineWidth={LINE_WIDTH}
+                data-testid="wiring-timeline"
+              >
+                {spineEntries.map(entry => (
+                  <Timeline.Item
+                    key={entry.key}
+                    styles={{ itemBullet: bulletStyles(entry.health) }}
+                    bullet={
+                      entry.step === null ? (
+                        <Icons.zap size={12} />
+                      ) : (
+                        <StepBullet step={entry.step} />
+                      )
+                    }
+                    data-testid={`timeline-item-${entry.key}`}
+                  >
+                    <SkillRow
+                      entry={entry}
+                      slim
+                      compact={panelOpen}
+                      selected={panelOpen && entry.key === selectedKey}
+                      onOpen={() => setSelectedKey(entry.key)}
+                    />
+                  </Timeline.Item>
+                ))}
+              </Timeline>
+            </>
+          )}
+        </>
+      }
+    />
   );
 }
 
@@ -669,9 +437,9 @@ export function WiringMap() {
   const attentionOnly = isAttentionOnly(useSearch());
   const [explicitPack, setExplicitPack] = useState<string | null>(null);
   const [explicitWorkType, setExplicitWorkType] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'pipeline' | 'surface' | 'health'>(
-    'pipeline'
-  );
+  const [activeTab, setActiveTab] = useState<
+    'pipeline' | 'ondemand' | 'surface' | 'health'
+  >('pipeline');
   // Health rows open a skill on the Pipeline tab's own panel rather than a
   // second one -- see `WiringSpineView`'s `pendingVerb` prop.
   const [pendingVerb, setPendingVerb] = useState<string | null>(null);
@@ -683,6 +451,7 @@ export function WiringMap() {
 
   const packs = packsQuery.data?.packs ?? [];
   const pack = explicitPack ?? packs[0]?.name ?? null;
+  const packDir = packs.find(p => p.name === pack)?.dir ?? null;
 
   const snapshot = useCompositionSnapshot(pack);
   const workTypes = useMemo(
@@ -704,6 +473,13 @@ export function WiringMap() {
           icon: 'zap',
           active: activeTab === 'pipeline',
           onClick: () => setActiveTab('pipeline'),
+        },
+        {
+          id: 'ondemand',
+          label: 'On-demand',
+          icon: 'terminal',
+          active: activeTab === 'ondemand',
+          onClick: () => setActiveTab('ondemand'),
         },
         {
           id: 'surface',
@@ -752,6 +528,18 @@ export function WiringMap() {
             command="rt skills composition"
             asOf={snapshot.dataUpdatedAt || undefined}
           />
+          {packDir && (
+            <Button
+              size="xs"
+              variant="default"
+              component="a"
+              href={`vscode://file${packDir}`}
+              leftSection={<Icons.package size={14} />}
+              data-testid="open-pack"
+            >
+              Open pack
+            </Button>
+          )}
           {packs.length > 1 && pack && (
             <Select
               size="xs"
@@ -803,6 +591,17 @@ export function WiringMap() {
                   attentionOnly={attentionOnly}
                   pendingVerb={pendingVerb}
                   onPendingVerbHandled={() => setPendingVerb(null)}
+                />
+              </LazyLoader>
+            </WiringErrorBoundary>
+          )}
+          {activeTab === 'ondemand' && (
+            <WiringErrorBoundary key={pack}>
+              <LazyLoader>
+                <OnDemandView
+                  pack={pack}
+                  workType={workType}
+                  onGoToHealth={() => setActiveTab('health')}
                 />
               </LazyLoader>
             </WiringErrorBoundary>

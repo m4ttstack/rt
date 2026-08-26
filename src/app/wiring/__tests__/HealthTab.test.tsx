@@ -129,6 +129,20 @@ const ALL_IN_SYNC_CHECK = {
   ],
 };
 
+/** COMPOSITION plus one fill (`demo:unused`) that no binder names -- an
+    orphan, which Health lists in the Unwired group beside the unwired verbs. */
+const COMPOSITION_WITH_ORPHAN = {
+  ...COMPOSITION,
+  fills: [
+    {
+      binding: 'demo:unused',
+      provides: 'unused@1',
+      sourcePath: '/fills/unused/SKILL.md',
+      registered: false,
+    },
+  ],
+};
+
 function renderHealthTab(
   onOpenSkill?: (verb: string) => void,
   composition: unknown = COMPOSITION,
@@ -197,6 +211,23 @@ describe('HealthTab: grouped issues', () => {
     expect(group).toHaveTextContent('no slots · nothing binds it');
     expect(
       screen.queryByTestId('health-preview-compile-mattstack:checkout')
+    ).not.toBeInTheDocument();
+  });
+
+  it('lists orphan fills in the Unwired group, counted with the verbs and non-clickable', async () => {
+    renderHealthTab(undefined, COMPOSITION_WITH_ORPHAN, CHECK);
+
+    const group = await screen.findByTestId('health-group-unwired');
+    expect(group).toHaveTextContent('checkout');
+    expect(group).toHaveTextContent('unused');
+    expect(group).toHaveTextContent('unused@1');
+    expect(group).toHaveTextContent('unregistered fill · nothing binds it');
+    // 2 unwired verbs + 1 orphan fill; the pointer on the On-demand tab counts
+    // the same three, so the two surfaces now agree.
+    expect(screen.getByTestId('health-stat-unwired')).toHaveTextContent('3');
+    // A fill has no detail panel, so its row opens nothing.
+    expect(
+      screen.queryByRole('button', { name: 'open unused' })
     ).not.toBeInTheDocument();
   });
 });

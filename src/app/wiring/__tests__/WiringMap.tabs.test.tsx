@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -57,9 +57,24 @@ const COMPOSITION = {
       artifactPath: '/p/skills/work',
       slots: [],
     },
+    // Bound by a `verb` binder outside the pipeline -- Group 1 on the
+    // On-demand tab, so that tab has content to show once selected.
+    {
+      name: 'review',
+      engine: 'review',
+      engineRef: 'mattstack:review',
+      plugin: 'mattstack',
+      description: 'review',
+      public: true,
+      sourcePath: '/plugins/mattstack/skills/review/SKILL.md',
+      artifactPath: '/p/skills/review',
+      slots: [],
+    },
   ],
   fills: [],
-  binders: [],
+  binders: [
+    { ref: 'mattstack:review', verb: 'review', kind: 'verb', slots: [] },
+  ],
   // Empty stage list -- this fixture only needs the orchestrator row to
   // exist and to drift, not a real pipeline order.
   pipelines: { feature: [] },
@@ -110,15 +125,26 @@ afterEach(() => {
 });
 
 describe('WiringMap: top-level tabs', () => {
-  it('renders the three tabs with Pipeline active by default', async () => {
+  it('renders Pipeline / On-demand / Surface / Health, in that order, with Pipeline active by default', async () => {
     mockHappyPath();
     renderWiring();
 
     await screen.findByTestId('wiring-timeline');
 
+    expect(screen.getAllByRole('tab').map(tab => tab.textContent)).toEqual([
+      'Pipeline',
+      'On-demand',
+      'Surface',
+      expect.stringMatching(/^Health/),
+    ]);
+
     expect(screen.getByRole('tab', { name: 'Pipeline' })).toHaveAttribute(
       'aria-selected',
       'true'
+    );
+    expect(screen.getByRole('tab', { name: 'On-demand' })).toHaveAttribute(
+      'aria-selected',
+      'false'
     );
     expect(screen.getByRole('tab', { name: /^Surface/ })).toHaveAttribute(
       'aria-selected',
@@ -128,6 +154,34 @@ describe('WiringMap: top-level tabs', () => {
       'aria-selected',
       'false'
     );
+  });
+
+  it('the Pipeline tab no longer renders the retired "Not run by this pipeline" section', async () => {
+    mockHappyPath();
+    renderWiring();
+
+    await screen.findByTestId('wiring-timeline');
+
+    expect(
+      screen.queryByTestId('outside-the-pipeline')
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId('offpipe-toggle')).not.toBeInTheDocument();
+  });
+
+  it('clicking On-demand hides the pipeline spine and shows Group 1 verbs', async () => {
+    mockHappyPath();
+    const user = userEvent.setup();
+    renderWiring();
+
+    await screen.findByTestId('wiring-timeline');
+
+    await user.click(screen.getByRole('tab', { name: 'On-demand' }));
+
+    expect(screen.queryByTestId('wiring-timeline')).not.toBeInTheDocument();
+    const view = await screen.findByTestId('ondemand-split');
+    expect(
+      within(view).getByTestId('skill-row-mattstack:review')
+    ).toBeInTheDocument();
   });
 
   it('shows the attention count as a badge on the Health tab', async () => {

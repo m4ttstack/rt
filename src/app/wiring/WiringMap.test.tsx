@@ -253,12 +253,13 @@ describe('WiringMap: the spine', () => {
       .getAllByTestId(/^timeline-item-/)
       .map(el => el.getAttribute('data-testid'));
 
+    // `outside` (watch-ci, rebase-worktree) no longer draws a Timeline.Item
+    // on this tab at all -- it moved wholesale to the On-demand tab.
     expect(items).toEqual([
       'timeline-item-mattstack:work',
       'timeline-item-mattstack:stage-provision',
       'timeline-item-mattstack:stage-implement',
       'timeline-item-mattstack:stage-watch-ci',
-      'timeline-item-outside',
     ]);
     expect(
       within(
@@ -302,25 +303,9 @@ describe('WiringMap: the spine', () => {
     );
   });
 
-  it('shows every slot open, with the fill and how many sites bind it', async () => {
-    mockHappyPath();
-    const user = userEvent.setup();
-    renderWiring();
-
-    // Slot detail moved to the panel's Slots tab. `watch-ci` (the roster verb)
-    // binds the SAME fill a stage does and stays outside the pipeline; open its
-    // panel to read the wiring `buildSpine` computed for it.
-    await screen.findByTestId('skill-row-mattstack:watch-ci');
-    await user.click(screen.getByTestId('offpipe-toggle'));
-    const panel = await openPanel(user, 'watch-ci');
-    const card = within(panel).getByTestId('slot-card-domain');
-
-    expect(within(card).getByText('watch-ci-domain@1')).toBeInTheDocument();
-    expect(within(card).getByTestId('slot-fill')).toHaveTextContent(
-      'demo:watch-ci-domain'
-    );
-    expect(within(card).getByTestId('slot-sites')).toHaveTextContent('2 sites');
-  });
+  // `watch-ci`'s slot detail (the fill, the site count) now opens from the
+  // On-demand tab -- see `OnDemandView.test.tsx`, "shows every slot open,
+  // with the fill and how many sites bind it".
 
   it('states a pipeline stage as a compact slot count, with the table itself deferred to the detail panel', async () => {
     mockHappyPath();
@@ -334,39 +319,17 @@ describe('WiringMap: the spine', () => {
     expect(within(stage).queryByTestId('slot-domain')).not.toBeInTheDocument();
   });
 
-  it('puts a fill nothing binds outside the pipeline, and a stage-bound fill nowhere near it', async () => {
-    mockHappyPath();
-    renderWiring();
+  // A fill nothing binds (`demo:unused`, orphaned) vs. one a stage binds
+  // (`demo:work-provision`, not orphaned) is `buildSpine`'s own claim --
+  // covered at the data layer in `outline.test.ts`'s "buildSpine: orphaned
+  // fills" suite. The On-demand tab now only counts orphans into its Group 3
+  // pointer rather than listing them; see `OnDemandView.test.tsx`.
 
-    await waitFor(() =>
-      expect(screen.getByTestId('orphan-fill-demo:unused')).toBeInTheDocument()
-    );
-    expect(
-      screen.queryByTestId('orphan-fill-demo:work-provision')
-    ).not.toBeInTheDocument();
-  });
-
-  it('draws a drifting roster verb no binder names, instead of dropping it', async () => {
-    mockHappyPath();
-    const user = userEvent.setup();
-    renderWiring();
-
-    // "Not run by this pipeline" is collapsed by default; expand it before
-    // reaching for a row inside, and await the row (the section renders the
-    // container first, its rows on the next commit).
-    await user.click(await screen.findByTestId('offpipe-toggle'));
-    const outside = await screen.findByTestId('outside-the-pipeline');
-    const row = await within(outside).findByTestId(
-      'skill-row-mattstack:rebase-worktree'
-    );
-
-    expect(within(row).getByText('unwired')).toBeInTheDocument();
-    await waitFor(() =>
-      expect(within(row).getByTestId('health-badge')).toHaveTextContent(
-        'source newer'
-      )
-    );
-  });
+  // `rebase-worktree` (unwired, drifting) no longer renders as a row on this
+  // tab at all -- it is counted into the On-demand tab's Group 3 pointer.
+  // The combination of "unwired" and "carries its own drift" is `buildSpine`
+  // logic, covered in `outline.test.ts`'s "a roster verb no binder names"
+  // suite; the pointer's count is covered in `OnDemandView.test.tsx`.
 
   it('counts that verb in the attention badge, so the badge matches what check reported', async () => {
     mockHappyPath();
@@ -407,108 +370,20 @@ describe('WiringMap: the spine', () => {
   });
 });
 
-describe('WiringMap: not run by this pipeline', () => {
-  it('renames the section and states its count, collapsed by default', async () => {
-    mockHappyPath();
-    renderWiring();
-
-    const toggle = await screen.findByTestId('offpipe-toggle');
-    expect(
-      within(toggle).getByText('Not run by this pipeline')
-    ).toBeInTheDocument();
-    // `watch-ci` and `rebase-worktree`: the two rows this fixture puts
-    // outside the pipeline.
-    expect(
-      within(toggle).getByText(
-        '2 skills you invoke directly, plus fills another plugin binds. No run order.'
-      )
-    ).toBeInTheDocument();
-
-    // `aria-hidden`/`aria-expanded`, not element presence, are the reliable
-    // cross-state signal here: Mantine's Collapse keeps its body mounted, so
-    // a testid lookup would find the rows whether or not the section is open.
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.getByTestId('offpipe-body')).toHaveAttribute(
-      'aria-hidden',
-      'true'
-    );
-  });
-
-  it('badges the unwired count from spine.outside, with no plugin badge when nothing external binds', async () => {
-    mockHappyPath();
-    renderWiring();
-
-    const toggle = await screen.findByTestId('offpipe-toggle');
-    // Only `rebase-worktree` is unwired in this fixture; no binder in it is
-    // `external`, so the plugin badge must not render at all.
-    expect(
-      within(toggle).getByTestId('offpipe-unwired-count')
-    ).toHaveTextContent('1 unwired');
-    expect(
-      within(toggle).queryByTestId('offpipe-external-count')
-    ).not.toBeInTheDocument();
-  });
-
-  it('expands on click', async () => {
-    mockHappyPath();
-    const user = userEvent.setup();
-    renderWiring();
-
-    const toggle = await screen.findByTestId('offpipe-toggle');
-    await user.click(toggle);
-
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
-    expect(screen.getByTestId('offpipe-body')).toHaveAttribute(
-      'aria-hidden',
-      'false'
-    );
-  });
-
-  it('expands on Enter, the same as a click', async () => {
-    mockHappyPath();
-    const user = userEvent.setup();
-    renderWiring();
-
-    const toggle = await screen.findByTestId('offpipe-toggle');
-    toggle.focus();
-    await user.keyboard('{Enter}');
-
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
-  });
-});
+// The "Not run by this pipeline" section (its count, its collapse/expand)
+// is retired -- that content now lives on the On-demand tab as Group 1's own
+// list plus the Group 2 footnote and Group 3 pointer, with no collapse
+// affordance. See `OnDemandView.test.tsx` and `WiringMap.tabs.test.tsx`
+// ("top-level tabs") for its coverage.
 
 describe('WiringMap: the inverse index (Used-by tab)', () => {
-  /** Expand the off-pipeline section, open watch-ci's panel, and jump to its
-      Used-by tab via the slot's `N sites` chip -- the same fill a stage binds. */
-  async function openWatchCiUsedBy(user: ReturnType<typeof userEvent.setup>) {
-    await screen.findByTestId('skill-row-mattstack:watch-ci');
-    await user.click(screen.getByTestId('offpipe-toggle'));
-    const panel = await openPanel(user, 'watch-ci');
-    await user.click(
-      within(within(panel).getByTestId('slot-card-domain')).getByTestId(
-        'slot-sites'
-      )
-    );
-    return within(panel).findByTestId('inverse-index');
-  }
-
-  it('lists every site with its kind for the fill whose chip was clicked', async () => {
-    mockHappyPath();
-    const user = userEvent.setup();
-    renderWiring();
-
-    const index = await openWatchCiUsedBy(user);
-    expect(within(index).getByText('demo:watch-ci-domain')).toBeInTheDocument();
-    // The roster verb and the pipeline stage that both bind it.
-    expect(
-      within(index)
-        .getAllByTestId(/^binding-site-/)
-        .map(row => row.getAttribute('data-testid'))
-    ).toEqual([
-      'binding-site-mattstack:watch-ci:domain',
-      'binding-site-mattstack:stage-watch-ci:domain',
-    ]);
-  });
+  // `watch-ci`'s Used-by cases (listing every site the `N sites` chip
+  // claims, and the fill's own source link) now open from the On-demand
+  // tab -- see `OnDemandView.test.tsx`, "the inverse index (Used-by tab)".
+  // The orphan-fill "bound by nothing" inline claim is retired along with
+  // the detailed orphan row: `OnDemandView` only counts orphans into its
+  // Group 3 pointer now, and the underlying orphan-detection fact stays
+  // covered in `outline.test.ts`'s "buildSpine: orphaned fills" suite.
 
   it('reaches a fill bound in exactly one place from its slot fill link', async () => {
     mockHappyPath();
@@ -529,42 +404,6 @@ describe('WiringMap: the inverse index (Used-by tab)', () => {
     const index = await within(panel).findByTestId('inverse-index');
     expect(within(index).getByTestId('site-count')).toHaveTextContent('1');
     expect(within(index).getAllByTestId(/^binding-site-/)).toHaveLength(1);
-  });
-
-  it("carries the fill's own source, which the slot row used to link to", async () => {
-    mockHappyPath();
-    const user = userEvent.setup();
-    renderWiring();
-
-    const index = await openWatchCiUsedBy(user);
-    expect(within(index).getByTestId('open-fill-source')).toHaveAttribute(
-      'href',
-      'vscode://file/fills/watch-ci-domain/SKILL.md'
-    );
-  });
-
-  it('lists exactly as many sites as the chip on the slot claimed', async () => {
-    mockHappyPath();
-    const user = userEvent.setup();
-    renderWiring();
-
-    const index = await openWatchCiUsedBy(user);
-    expect(within(index).getByTestId('site-count')).toHaveTextContent('2');
-    expect(within(index).getAllByTestId(/^binding-site-/)).toHaveLength(2);
-  });
-
-  it('answers for a fill nothing binds too, which is the question asked before deleting it', async () => {
-    mockHappyPath();
-    const user = userEvent.setup();
-    renderWiring();
-
-    // An orphan fill has no skill and so no panel; the row itself now states
-    // "bound by nothing" inline rather than opening a drawer onto it.
-    await screen.findByTestId('orphan-fill-demo:unused');
-    await user.click(screen.getByTestId('offpipe-toggle'));
-
-    const orphan = screen.getByTestId('orphan-fill-demo:unused');
-    expect(within(orphan).getByText('bound by nothing')).toBeInTheDocument();
   });
 });
 
@@ -874,28 +713,15 @@ describe('WiringMap: needs-attention only', () => {
     await screen.findByTestId('skill-row-mattstack:work');
 
     // `work` drifted; the three stages carry no health and nothing else is
-    // wrong with them, so only the orchestrator survives above the terminal
-    // item. The outside attention row mounts a commit after `work`, so wait
-    // for the filtered set to settle rather than reading it synchronously.
+    // wrong with them. `outside` (watch-ci, rebase-worktree) no longer draws
+    // a Timeline.Item on this tab regardless of the filter -- the attention-
+    // worthy one (`rebase-worktree`, unwired) now surfaces only in the
+    // On-demand tab's Group 3 pointer, covered in `OnDemandView.test.tsx`.
     await waitFor(() =>
       expect(
         screen.getAllByTestId(/^timeline-item-/).map(el => el.dataset.testid)
-      ).toEqual(['timeline-item-mattstack:work', 'timeline-item-outside'])
+      ).toEqual(['timeline-item-mattstack:work'])
     );
-
-    const outside = await screen.findByTestId('outside-the-pipeline');
-    expect(
-      await within(outside).findByTestId('skill-row-mattstack:rebase-worktree')
-    ).toBeInTheDocument();
-    // In sync, so it is not in the inbox.
-    expect(
-      within(outside).queryByTestId('skill-row-mattstack:watch-ci')
-    ).not.toBeInTheDocument();
-    // Never counted by attentionCount, so it would make the list longer than
-    // the badge that reached it.
-    expect(
-      screen.queryByTestId('orphan-fill-demo:unused')
-    ).not.toBeInTheDocument();
   });
 
   it('shows exactly as many rows as the header said needed attention', async () => {
@@ -903,11 +729,10 @@ describe('WiringMap: needs-attention only', () => {
     mockHappyPath();
     renderWiring();
 
-    await screen.findByTestId('skill-row-mattstack:work');
-    // The second attention row (an outside verb) mounts a commit after `work`;
-    // wait for the count to settle instead of reading it on the first render.
+    // Only `work` renders on this tab now -- the other attention-worthy row
+    // (`rebase-worktree`) lives entirely on the On-demand tab.
     await waitFor(() =>
-      expect(screen.getAllByTestId(/^skill-row-/)).toHaveLength(2)
+      expect(screen.getAllByTestId(/^skill-row-/)).toHaveLength(1)
     );
   });
 
@@ -921,9 +746,12 @@ describe('WiringMap: needs-attention only', () => {
 
     await user.click(badge);
 
+    // `stage-implement` is healthy (no slots, nothing wrong), so the filter
+    // drops it; `watch-ci`/`rebase-worktree` never render on this tab at all
+    // now, so a Pipeline-tab row is what proves the filter and its reversal.
     await waitFor(() =>
       expect(
-        screen.queryByTestId('skill-row-mattstack:watch-ci')
+        screen.queryByTestId('skill-row-mattstack:stage-implement')
       ).not.toBeInTheDocument()
     );
 
@@ -931,7 +759,7 @@ describe('WiringMap: needs-attention only', () => {
 
     await waitFor(() =>
       expect(
-        screen.getByTestId('skill-row-mattstack:watch-ci')
+        screen.getByTestId('skill-row-mattstack:stage-implement')
       ).toBeInTheDocument()
     );
   });
@@ -947,9 +775,11 @@ describe('WiringMap: needs-attention only', () => {
 
     const empty = await screen.findByTestId('attention-empty');
     expect(empty).toHaveTextContent('Nothing needs attention.');
-    // The header counts the rows on screen, which at empty is none of them.
+    // The header counts the pipeline rows this tab draws (orchestrator + 3
+    // stages = 4), which at empty is none of them. Rows outside the run order
+    // live on the On-demand tab and are not in this denominator.
     expect(screen.getByTestId('spine-summary')).toHaveTextContent(
-      'showing 0 of 6 rows'
+      'showing 0 of 4 rows'
     );
     expect(empty).toHaveTextContent(
       'rt skills check compared 3 roster verbs in demo against a fresh compile; none differed.'
@@ -999,9 +829,11 @@ describe('WiringMap: needs-attention only', () => {
     await screen.findByTestId('skill-row-mattstack:work');
     const summary = screen.getByTestId('spine-summary');
 
-    // Six rows in the pack: the orchestrator, three stages, and two
-    // outside it. Two of them drifted.
-    expect(summary).toHaveTextContent('showing 2 of 6 rows');
+    // The Pipeline tab draws 4 rows: the orchestrator and three stages. Of
+    // those, only the orchestrator (`work`) drifted -- the other drifted row
+    // (`rebase-worktree`) is outside the run order, on the On-demand tab, and
+    // is not counted here.
+    expect(summary).toHaveTextContent('showing 1 of 4 rows');
     // The pipeline did not vanish -- it is named, hidden, and explained.
     expect(summary).toHaveTextContent('3 stages hidden');
     expect(summary).toHaveTextContent(
@@ -1055,6 +887,47 @@ describe('WiringMap: needs-attention only', () => {
     );
     expect(empty).not.toHaveTextContent('none differed');
   });
+
+  it('points to the other tabs when the pipeline is clean but an outside skill drifted', async () => {
+    window.history.pushState(null, '', '/wiring?attention=1');
+    packsGet.mockResolvedValue(
+      ok({ packs: [{ name: 'demo', dir: '/p', layout: 'flat' }] })
+    );
+    compositionGet.mockResolvedValue(ok(COMPOSITION));
+    // `work` (orchestrator) is in-sync; only `rebase-worktree` (unwired, so
+    // it lives on the On-demand/Health tabs) drifted. No pipeline row needs
+    // attention, but the pack is not clean.
+    checkGet.mockResolvedValue(
+      ok({
+        pack: 'demo',
+        packDir: '/p',
+        verbs: [
+          { name: 'work', status: 'in-sync', staleFiles: [], orphanFiles: [] },
+          {
+            name: 'watch-ci',
+            status: 'in-sync',
+            staleFiles: [],
+            orphanFiles: [],
+          },
+          {
+            name: 'rebase-worktree',
+            status: 'stale',
+            staleFiles: ['SKILL.md'],
+            orphanFiles: [],
+          },
+        ],
+      })
+    );
+    renderWiring();
+
+    const elsewhere = await screen.findByTestId('attention-elsewhere');
+    expect(elsewhere).toHaveTextContent('No pipeline stage needs attention.');
+    expect(elsewhere).toHaveTextContent('1 skill outside the run order does');
+    expect(elsewhere).toHaveTextContent('On-demand or Health tab');
+    // Not stranded on an empty Timeline, and not a false all-clear.
+    expect(screen.queryByTestId('wiring-timeline')).not.toBeInTheDocument();
+    expect(screen.queryByTestId('attention-empty')).not.toBeInTheDocument();
+  });
 });
 
 describe('WiringMap: wiring the deferred surfaces', () => {
@@ -1088,26 +961,9 @@ describe('WiringMap: wiring the deferred surfaces', () => {
     );
   });
 
-  it("opens Rebind inline from a bound slot's rebind action, scoped to that verb and slot", async () => {
-    mockHappyPath();
-    const user = userEvent.setup();
-    renderWiring();
-
-    // watch-ci sits in the collapsed off-pipeline section -- expand it before
-    // its row is reachable.
-    await screen.findByTestId('skill-row-mattstack:watch-ci');
-    await user.click(screen.getByTestId('offpipe-toggle'));
-    const detail = await openPanel(user, 'watch-ci');
-
-    // Slots & bindings is the default sub-tab; the rebind lives on the slot
-    // card, and its editor mounts inline inside that card (no drawer).
-    const slot = within(detail).getByTestId('slot-card-domain');
-    await user.click(within(slot).getByTestId('rebind-slot'));
-
-    const rebind = await within(slot).findByTestId('rebind');
-    expect(rebind).toHaveTextContent('watch-ci');
-    expect(rebind).toHaveTextContent('slot domain');
-  });
+  // `watch-ci`'s inline Rebind (opened from its slot card) now opens from
+  // the On-demand tab -- see `OnDemandView.test.tsx`, "opens Rebind inline
+  // from a bound slot's rebind action, scoped to that verb and slot".
 
   it('copies the agent context for a verb, built from the real composition entry and its seams', async () => {
     mockHappyPath();
@@ -1186,5 +1042,15 @@ describe('WiringMap: wiring the deferred surfaces', () => {
     await user.click(within(panel).getByTestId('copy-agent-context'));
 
     await screen.findByText(/denied/);
+  });
+});
+
+describe('WiringMap: the pack', () => {
+  it('offers an Open pack link straight to the pack directory', async () => {
+    mockHappyPath();
+    renderWiring();
+
+    const open = await screen.findByTestId('open-pack');
+    expect(open).toHaveAttribute('href', 'vscode://file/p');
   });
 });

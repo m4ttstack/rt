@@ -418,6 +418,7 @@ export function VersionTimeline({
                     data-testid={`commit-${commit.shortSha}`}
                   >
                     <Checkbox
+                      size="xs"
                       checked={selected.includes(commit.sha)}
                       onChange={() => toggle(commit.sha)}
                       styles={{

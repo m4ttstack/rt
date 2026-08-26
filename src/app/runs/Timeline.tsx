@@ -18,6 +18,11 @@ import { useSchemeColors } from '@ui/hooks';
 import { Icons } from '@ui/icons';
 import { FailureExcerpt } from './FailureExcerpt';
 
+/** Same geometry as the Wiring spine (`WiringMap`): a 22px bullet on a 2px
+    line, so the two timelines read as one object. */
+const BULLET_SIZE = 22;
+const LINE_WIDTH = 2;
+
 /**
  * `fields`' primary key is `(run_id, key)`, written via `INSERT OR REPLACE`
  * -- the API can never return two rows sharing a `key` for one run, so this
@@ -254,15 +259,18 @@ export function Timeline({
       </Text>
       <MantineTimeline
         active={stageGroups.length}
-        bulletSize={22}
-        lineWidth={2}
+        bulletSize={BULLET_SIZE}
+        lineWidth={LINE_WIDTH}
         data-testid="run-timeline"
       >
         {stageGroups.map(
           ({ stage, fields: stageFields, decisions: stageDecisions }, i) => {
             const isCurrent = i === currentIndex;
             const summary = (
-              <Group gap="xs" wrap="nowrap">
+              // Match the bullet's height and center within it, so the stage
+              // name aligns to the check mark rather than sitting ~2px below
+              // its center (a top-aligned 22px bullet is taller than the name).
+              <Group gap="xs" wrap="nowrap" mih={BULLET_SIZE} align="center">
                 {/* Fixed width: without it a long name wraps and pushes its
                     own status badge into an ellipsis, and every row's detail
                     text starts at a different x. */}
@@ -308,6 +316,10 @@ export function Timeline({
                     <Group
                       gap="md"
                       wrap="nowrap"
+                      // Top-align: when a field value wraps the row grows tall,
+                      // and centering it would drop the stage name below the
+                      // bullet. The name stays on the first line, by the check.
+                      align="flex-start"
                       data-testid="timeline-stage-condensed"
                     >
                       {summary}

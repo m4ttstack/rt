@@ -1,11 +1,12 @@
 import type { KeyboardEvent } from 'react';
 
-import { Badge, Group, Stack, Text } from '@ui/core';
+import { Badge, Group, Stack, Text, UnstyledButton } from '@ui/core';
 import { useSchemeColors } from '@ui/hooks';
 import { Icons } from '@ui/icons';
 import { HEALTH_COLOR, HealthChip } from './HealthChip';
 import type { SpineEntry, WiringHealth } from './outline';
 import { QuietBadge } from './QuietBadge';
+import classes from './SkillRow.module.css';
 
 /** Only the two states a reader has to act on carry a badge. `in-sync` is
     the quiet answer, and `unknown` is rt having said nothing about this ref
@@ -99,10 +100,6 @@ function HealthDot({ health }: { health: WiringHealth }) {
   );
 }
 
-/** The full accent outline the selected mini row wears (`Detail.dc.html`
-    `.mini.sel`), not the muted per-scheme border. */
-const ACCENT = 'var(--mantine-color-accent-filled)';
-
 /**
  * One skill's row: what it is, what state it is in, and every slot it opens.
  * Health indicates ON the row -- it never groups the rows, never sorts them,
@@ -127,26 +124,8 @@ export function SkillRow({
   };
 
   if (compact) {
-    return (
-      <Group
-        gap="sm"
-        wrap="nowrap"
-        align="center"
-        role={onOpen ? 'button' : undefined}
-        tabIndex={onOpen ? 0 : undefined}
-        onClick={onOpen}
-        onKeyDown={onOpen ? handleKeyDown : undefined}
-        aria-label={onOpen ? `open ${entry.label}` : undefined}
-        data-testid={`skill-row-${entry.key}`}
-        px="xs"
-        py={6}
-        style={{
-          cursor: onOpen ? 'pointer' : undefined,
-          borderRadius: 'var(--mantine-radius-md)',
-          border: `1px solid ${selected ? ACCENT : 'transparent'}`,
-          boxShadow: selected ? `0 0 0 1px ${ACCENT} inset` : undefined,
-        }}
-      >
+    const inner = (
+      <>
         <Text
           fw={selected ? 700 : 600}
           size="md"
@@ -156,80 +135,123 @@ export function SkillRow({
           {entry.label}
         </Text>
         <HealthDot health={entry.health} />
-      </Group>
+      </>
     );
-  }
 
-  if (slim) {
-    return (
-      <Stack gap={1} data-testid={`skill-row-${entry.key}`}>
+    if (!onOpen) {
+      return (
         <Group
           gap="sm"
           wrap="nowrap"
           align="center"
-          role={onOpen ? 'button' : undefined}
-          tabIndex={onOpen ? 0 : undefined}
-          onClick={onOpen}
-          onKeyDown={onOpen ? handleKeyDown : undefined}
-          aria-label={onOpen ? `open ${entry.label}` : undefined}
-          style={{ cursor: onOpen ? 'pointer' : undefined }}
+          px="sm"
+          py="xs"
+          data-testid={`skill-row-${entry.key}`}
         >
-          <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
-            <Text fw={700} size="lg" style={{ flex: 'none' }}>
-              {entry.label}
-            </Text>
-            {entry.ref && (
-              <Text size="sm" c={text.muted} truncate style={{ minWidth: 0 }}>
-                {entry.ref}
-              </Text>
-            )}
-            {entry.kind === 'orchestrator' && (
-              <Badge
-                size="xs"
-                variant="light"
-                color="accent"
-                style={{ flex: 'none' }}
-              >
-                orchestrator
-              </Badge>
-            )}
-            {entry.external && (
-              <Badge
-                size="xs"
-                variant="light"
-                color="purple"
-                style={{ flex: 'none' }}
-              >
-                another plugin
-              </Badge>
-            )}
-            {entry.kind === 'outside' &&
-              !entry.external &&
-              !entry.invocable && <QuietBadge>internal</QuietBadge>}
-            {entry.unwired && <QuietBadge>unwired</QuietBadge>}
-            {entry.sameWiringAsStep !== undefined && (
-              <QuietBadge>
-                same wiring as stage {entry.sameWiringAsStep}
-              </QuietBadge>
-            )}
-          </Group>
-          <div aria-hidden style={{ flex: 1 }} />
-          <Text
-            size="sm"
-            c={text.muted}
-            style={{ flex: 'none', whiteSpace: 'nowrap' }}
-          >
-            {slotCountLabel(entry.slots.length)}
-          </Text>
-          <HealthChip health={entry.health} />
-          <Icons.chevronRight
-            size={16}
-            color={text.muted}
-            aria-hidden
-            style={{ flex: 'none' }}
-          />
+          {inner}
         </Group>
-      </Stack>
+      );
+    }
+
+    return (
+      <UnstyledButton
+        className={classes.row}
+        mod={{ selected }}
+        onClick={onOpen}
+        aria-label={`open ${entry.label}`}
+        data-testid={`skill-row-${entry.key}`}
+      >
+        {inner}
+      </UnstyledButton>
+    );
+  }
+
+  if (slim) {
+    const inner = (
+      <>
+        <Group gap="xs" wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
+          <Text fw={700} size="lg" style={{ flex: 'none' }}>
+            {entry.label}
+          </Text>
+          {entry.ref && (
+            <Text size="sm" c={text.muted} truncate style={{ minWidth: 0 }}>
+              {entry.ref}
+            </Text>
+          )}
+          {entry.kind === 'orchestrator' && (
+            <Badge
+              size="xs"
+              variant="light"
+              color="accent"
+              style={{ flex: 'none' }}
+            >
+              orchestrator
+            </Badge>
+          )}
+          {entry.external && (
+            <Badge
+              size="xs"
+              variant="light"
+              color="purple"
+              style={{ flex: 'none' }}
+            >
+              another plugin
+            </Badge>
+          )}
+          {entry.kind === 'outside' && !entry.external && !entry.invocable && (
+            <QuietBadge>internal</QuietBadge>
+          )}
+          {entry.unwired && <QuietBadge>unwired</QuietBadge>}
+          {entry.sameWiringAsStep !== undefined && (
+            <QuietBadge>
+              same wiring as stage {entry.sameWiringAsStep}
+            </QuietBadge>
+          )}
+        </Group>
+        <Text
+          size="sm"
+          c={text.muted}
+          style={{ flex: 'none', whiteSpace: 'nowrap' }}
+        >
+          {slotCountLabel(entry.slots.length)}
+        </Text>
+        <HealthChip health={entry.health} />
+        <Icons.chevronRight
+          size={16}
+          color={text.muted}
+          aria-hidden
+          style={{ flex: 'none' }}
+        />
+      </>
+    );
+
+    // Only a row that opens something is a button; a display-only row is a
+    // plain padded Group (no hover, not focusable).
+    if (!onOpen) {
+      return (
+        <Group
+          gap="sm"
+          wrap="nowrap"
+          align="center"
+          px="sm"
+          py="xs"
+          data-testid={`skill-row-${entry.key}`}
+        >
+          {inner}
+        </Group>
+      );
+    }
+
+    return (
+      <UnstyledButton
+        className={classes.row}
+        mod={{ selected }}
+        onClick={onOpen}
+        aria-label={`open ${entry.label}`}
+        data-testid={`skill-row-${entry.key}`}
+      >
+        {inner}
+      </UnstyledButton>
     );
   }
 

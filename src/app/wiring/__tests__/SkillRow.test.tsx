@@ -127,7 +127,9 @@ describe('SkillRow: slim pipeline rows', () => {
     const surface = screen.getByRole('button', {
       name: 'open stage-provision',
     });
-    expect(surface).toHaveAttribute('tabindex', '0');
+    // A native button element -- focusable and Enter/Space-activatable without
+    // a hand-rolled tabIndex/keydown.
+    expect(surface.tagName).toBe('BUTTON');
 
     await user.click(surface);
     expect(onOpen).toHaveBeenCalledTimes(1);

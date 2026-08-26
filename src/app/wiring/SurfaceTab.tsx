@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import {
+  ActionIcon,
   Alert,
   Badge,
   Box,
@@ -13,12 +14,18 @@ import {
   Switch,
   Text,
   TextInput,
+  Tooltip,
   UnstyledButton,
 } from '@ui/core';
 import { useSchemeColors } from '@ui/hooks';
 import { Icons } from '@ui/icons';
+import { suffixOf } from './outline';
 import type { SkillsSurfaceRow } from './useWiring';
-import { useSkillsApply, useSurface } from './useWiring';
+import {
+  useCompositionSnapshot,
+  useSkillsApply,
+  useSurface,
+} from './useWiring';
 
 /** Mirrors `SurfaceDelta` from rt's `commands/skills.ts` exactly -- this is
     not a parallel type, it is the same shape the CLI already exports. */
@@ -196,12 +203,20 @@ interface SurfaceGridRowProps {
   row: SkillsSurfaceRow;
   next: 'public' | 'internal';
   onToggle: (name: string) => void;
+  /** Absolute path to the skill's source, joined from composition; null when
+      it has no on-disk source to open (e.g. a `missing` row). */
+  sourcePath: string | null;
 }
 
 /** A staged row is outlined in the full accent (Surface.dc.html `.changed`);
     an unstaged public row keeps the `bg.level3` wash so "what's public right
     now" reads at a glance even with nothing pending. */
-function SurfaceGridRow({ row, next, onToggle }: SurfaceGridRowProps) {
+function SurfaceGridRow({
+  row,
+  next,
+  onToggle,
+  sourcePath,
+}: SurfaceGridRowProps) {
   const { bg, text, border } = useSchemeColors();
   const staged = next !== row.status;
   const badge = KIND_BADGE[row.kind];
@@ -253,6 +268,22 @@ function SurfaceGridRow({ row, next, onToggle }: SurfaceGridRowProps) {
           public
         </Text>
       ) : null}
+      {sourcePath && (
+        <Tooltip label="Open in editor" openDelay={300}>
+          <ActionIcon
+            component="a"
+            href={`vscode://file${sourcePath}`}
+            variant="subtle"
+            color="gray"
+            size="sm"
+            aria-label={`open ${row.name} in editor`}
+            data-testid={`surface-open-${row.name}`}
+            style={{ flex: 'none' }}
+          >
+            <Icons.edit size={14} />
+          </ActionIcon>
+        </Tooltip>
+      )}
     </Group>
   );
 }
@@ -278,6 +309,22 @@ export function SurfaceTab({ pack }: SurfaceTabProps) {
     [surfaceQuery.data]
   );
   const { staged, delta, toggle, discard } = useSurfaceStaging(rows, pack);
+
+  // Surface rows carry no path, so join composition (which does) by bare name
+  // to offer a per-row "open in editor" link. A verb matches by name; a fill
+  // by its binding suffix. Rows with no match (e.g. `missing`) get no link.
+  const compositionQuery = useCompositionSnapshot(pack);
+  const sourceByName = useMemo(() => {
+    const map = new Map<string, string>();
+    const comp = compositionQuery.data;
+    if (comp) {
+      for (const v of comp.verbs)
+        if (v.sourcePath) map.set(v.name, v.sourcePath);
+      for (const f of comp.fills)
+        if (f.sourcePath) map.set(suffixOf(f.binding), f.sourcePath);
+    }
+    return map;
+  }, [compositionQuery.data]);
 
   const [filterText, setFilterText] = useState('');
   const [filterKind, setFilterKind] = useState<SurfaceFilterKind>('all');
@@ -406,6 +453,7 @@ export function SurfaceTab({ pack }: SurfaceTabProps) {
                 row={row}
                 next={staged.get(row.name) ?? row.status}
                 onToggle={toggle}
+                sourcePath={sourceByName.get(row.name) ?? null}
               />
             ))
           )}

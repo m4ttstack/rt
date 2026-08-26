@@ -108,7 +108,14 @@ function CompiledTab({ entry, pack }: { entry: SpineEntry; pack: string }) {
       style={{ flex: 1, minHeight: 0 }}
       data-testid="detail-compiled"
     >
-      <Alert variant="light" color="accent" icon={<Icons.info size={14} />}>
+      <Alert
+        variant="light"
+        color="accent"
+        icon={<Icons.info size={14} />}
+        // The compiled body below is the flex:1 scroller; without this the
+        // alert shrinks below its content and clips its icon.
+        style={{ flex: 'none' }}
+      >
         <Text size="xs">
           What a fresh compile would produce. Nothing is written to disk, and
           this is not a diff against the artifact that is there.

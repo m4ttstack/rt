@@ -1,0 +1,29 @@
+/*
+ * An interactive skill row. Padded and rounded so the list reads as a set of
+ * individually selectable rows rather than a cramped block, and it lifts one
+ * surface level on hover (the same treatment the kit's `AcceptableList` uses)
+ * so what you are about to select is unmistakable. The open row wears the
+ * accent outline via `data-selected` (set by Mantine's `mod` prop).
+ *
+ * :hover cannot be an inline style, so this lives in a CSS module per the
+ * kit's styling discipline; every value is a theme token, never a literal.
+ */
+.row {
+  display: flex;
+  align-items: center;
+  gap: var(--mantine-spacing-sm);
+  width: 100%;
+  padding: var(--mantine-spacing-xs) var(--mantine-spacing-sm);
+  border-radius: var(--mantine-radius-md);
+  border: 1px solid transparent;
+  transition: background-color 100ms ease;
+}
+
+.row:hover {
+  background-color: var(--ui-bg-3);
+}
+
+.row[data-selected] {
+  border-color: var(--mantine-color-accent-filled);
+  box-shadow: 0 0 0 1px var(--mantine-color-accent-filled) inset;
+}
