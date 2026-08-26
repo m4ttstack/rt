@@ -987,6 +987,11 @@ export class GitLabProvider implements GitProvider {
     }
 
     parseUpdatedAfter(options.updatedAfter);
+    if (options.pageSize !== undefined) {
+      if (!Number.isInteger(options.pageSize) || !Number.isFinite(options.pageSize) || options.pageSize <= 0) {
+        throw new Error('fetchApprovalRules: pageSize must be a positive integer');
+      }
+    }
     const first = options.pageSize ?? 100;
     const out: MRApprovalRules[] = [];
     let after: string | null = null;

@@ -90,4 +90,32 @@ describe('fetchApprovalRules', () => {
       }),
     ).rejects.toThrow(/updatedAfter and iids are mutually exclusive/);
   });
+
+  test('validates pageSize: rejects non-positive, fractional, and non-finite values', async () => {
+    const p = new GitLabProvider('https://gitlab.example', 't');
+    stubRunQuery(p, [page([], false, null)]);
+    const invalidValues = [0, -1, -100, 1.5, 3.14, Infinity, -Infinity, NaN];
+    for (const value of invalidValues) {
+      await expect(
+        p.fetchApprovalRules({
+          projectPath: 'g/p',
+          updatedAfter: '2026-07-26T00:00:00Z',
+          pageSize: value,
+        }),
+      ).rejects.toThrow(/pageSize must be a positive integer/);
+    }
+  });
+
+  test('accepts valid pageSize like 200 and passes it through as first', async () => {
+    const p = new GitLabProvider('https://gitlab.example', 't');
+    const calls = stubRunQuery(p, [
+      page([node(1, [])], false, null),
+    ]);
+    await p.fetchApprovalRules({
+      projectPath: 'g/p',
+      updatedAfter: '2026-07-26T00:00:00Z',
+      pageSize: 200,
+    });
+    expect(calls[0]!.vars.first).toBe(200);
+  });
 });
