@@ -540,7 +540,8 @@ export function Board() {
           </button>
           <div className="tui-header-title">
             <h1>
-              <AppMark /> {data.title.toLowerCase()}{" "}
+              <AppMark />
+              <span>{data.title.toLowerCase()}</span>{" "}
               {activeMember && <span className="tui-author">--author @{activeMember.username}</span>}
             </h1>
             <p className="tui-sub">
