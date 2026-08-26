@@ -636,9 +636,9 @@ export interface MRApprovalRules {
  */
 export interface FetchApprovalRulesOptions {
   projectPath: string;
-  /** ISO timestamp; windowed mode. Mutually exclusive with iids. */
+  /** ISO timestamp; windowed mode. Mutually exclusive with iids... enforced at runtime. */
   updatedAfter?: string;
-  /** Targeted mode: just these MRs (the events-heal path). */
+  /** Targeted mode: just these MRs (the events-heal path). Mutually exclusive with updatedAfter... enforced at runtime. */
   iids?: number[];
   /** Page size, default 100. */
   pageSize?: number;

@@ -961,6 +961,10 @@ export class GitLabProvider implements GitProvider {
   }
 
   async fetchApprovalRules(options: FetchApprovalRulesOptions): Promise<MRApprovalRules[]> {
+    if (options.updatedAfter && options.iids) {
+      throw new Error('fetchApprovalRules: updatedAfter and iids are mutually exclusive');
+    }
+
     const projectPath = options.projectPath;
     const mapNodes = (resp: ApprovalRulesResponse): MRApprovalRules[] =>
       (resp.project?.mergeRequests?.nodes ?? []).map((n) => ({
@@ -969,11 +973,17 @@ export class GitLabProvider implements GitProvider {
       }));
 
     if (options.iids) {
-      const resp = await this.runQuery<ApprovalRulesResponse>(
-        'fetchApprovalRules.iids', MR_APPROVAL_RULES_BY_IID_QUERY,
-        { projectPath, iids: options.iids.map(String) },
-      );
-      return mapNodes(resp);
+      const out: MRApprovalRules[] = [];
+      const chunkSize = 100;
+      for (let i = 0; i < options.iids.length; i += chunkSize) {
+        const chunk = options.iids.slice(i, i + chunkSize).map(String);
+        const resp = await this.runQuery<ApprovalRulesResponse>(
+          'fetchApprovalRules.iids', MR_APPROVAL_RULES_BY_IID_QUERY,
+          { projectPath, iids: chunk },
+        );
+        out.push(...mapNodes(resp));
+      }
+      return out;
     }
 
     parseUpdatedAfter(options.updatedAfter);

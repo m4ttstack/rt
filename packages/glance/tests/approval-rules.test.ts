@@ -60,4 +60,34 @@ describe('fetchApprovalRules', () => {
     await expect(p.fetchApprovalRules({ projectPath: 'g/p', updatedAfter: '2026-07-26T00:00:00Z' }))
       .rejects.toThrow(/non-advancing cursor/);
   });
+
+  test('chunks iids into batches of 100', async () => {
+    const p = new GitLabProvider('https://gitlab.example', 't');
+    const iids = Array.from({ length: 150 }, (_, i) => i + 1);
+    const calls = stubRunQuery(p, [
+      page(iids.slice(0, 100).map((id) => node(id, [])), false, null),
+      page(iids.slice(100, 150).map((id) => node(id, [])), false, null),
+    ]);
+    const out = await p.fetchApprovalRules({ projectPath: 'g/p', iids });
+    expect(out).toHaveLength(150);
+    expect(calls).toHaveLength(2);
+    expect(calls[0]!.vars.iids).toHaveLength(100);
+    expect(calls[1]!.vars.iids).toHaveLength(50);
+    expect(calls[0]!.vars.iids[0]).toBe('1');
+    expect(calls[0]!.vars.iids[99]).toBe('100');
+    expect(calls[1]!.vars.iids[0]).toBe('101');
+    expect(calls[1]!.vars.iids[49]).toBe('150');
+  });
+
+  test('rejects when both updatedAfter and iids are provided', async () => {
+    const p = new GitLabProvider('https://gitlab.example', 't');
+    stubRunQuery(p, [page([], false, null)]);
+    await expect(
+      p.fetchApprovalRules({
+        projectPath: 'g/p',
+        updatedAfter: '2026-07-26T00:00:00Z',
+        iids: [1, 2, 3],
+      }),
+    ).rejects.toThrow(/updatedAfter and iids are mutually exclusive/);
+  });
 });
