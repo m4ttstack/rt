@@ -251,3 +251,103 @@ test("dm opens or reuses the pair's room and posts as the human", async () => {
     expect.anything()
   );
 });
+
+test('rooms includes rooms the FLEET is in that the human has not joined', async () => {
+  // `chat:rooms` is listRooms(handle), so asking as the human returns only
+  // his memberships. Two agents signed into #forge-leaderboard were visible
+  // in the roster while the rail showed nothing -- the room he most needed
+  // to read was the one room he could not see.
+  vi.mocked(rt.chatRooms).mockResolvedValueOnce({
+    ok: true,
+    data: {
+      rooms: [{ room: 'build', memberCount: 2, unread: 1, mentions: 0 }],
+    },
+  });
+  vi.mocked(rt.chatBuddies).mockResolvedValueOnce({
+    ok: true,
+    data: {
+      buddies: [
+        {
+          sessionId: 's1',
+          handle: 'a',
+          baseHandle: 'a',
+          signedInAt: 1,
+          lastSeenAt: 1,
+          status: 'live',
+          repo: 'forge-leaderboard',
+        },
+        {
+          sessionId: 's2',
+          handle: 'b',
+          baseHandle: 'b',
+          signedInAt: 1,
+          lastSeenAt: 1,
+          status: 'live',
+          repo: 'forge-leaderboard',
+        },
+        {
+          sessionId: 's3',
+          handle: 'c',
+          baseHandle: 'c',
+          signedInAt: 1,
+          lastSeenAt: 1,
+          status: 'live',
+          repo: 'build',
+        },
+      ],
+    },
+  });
+  vi.mocked(rt.chatWho).mockResolvedValueOnce({
+    ok: true,
+    data: {
+      members: [
+        {
+          room: 'forge-leaderboard',
+          handle: 'a',
+          joinedAt: 1,
+          lastReadId: 0,
+          wakeOn: 'mention',
+          status: 'live',
+        },
+        {
+          room: 'forge-leaderboard',
+          handle: 'b',
+          joinedAt: 1,
+          lastReadId: 0,
+          wakeOn: 'mention',
+          status: 'live',
+        },
+      ],
+    },
+  });
+
+  const body = await (await app.request('/api/chat/rooms?handle=matt')).json();
+
+  // `build` is already the human's, so it is not duplicated from presence.
+  expect(body.rooms.map((r: { room: string }) => r.room)).toEqual([
+    'build',
+    'forge-leaderboard',
+  ]);
+  expect(body.rooms[0]).toMatchObject({ room: 'build', unread: 1 });
+  expect(body.rooms[1]).toMatchObject({
+    room: 'forge-leaderboard',
+    memberCount: 2,
+    joined: false,
+    // No read cursor in a room he never joined, so no honest unread count.
+    unread: 0,
+  });
+});
+
+test('a failed presence lookup degrades to the human rooms, not an error', async () => {
+  vi.mocked(rt.chatRooms).mockResolvedValueOnce({
+    ok: true,
+    data: {
+      rooms: [{ room: 'build', memberCount: 2, unread: 0, mentions: 0 }],
+    },
+  });
+  vi.mocked(rt.chatBuddies).mockResolvedValueOnce({ ok: false, error: 'nope' });
+
+  const res = await app.request('/api/chat/rooms?handle=matt');
+  expect(res.status).toBe(200);
+  expect((await res.json()).rooms).toHaveLength(1);
+});

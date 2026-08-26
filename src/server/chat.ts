@@ -8,6 +8,7 @@ import {
   chatRooms,
   chatWho,
   getSetting,
+  type RoomSummary,
   type RtClientOptions,
 } from '@mattstack/rt-client';
 import { Hono } from 'hono';
@@ -59,12 +60,72 @@ function roomTag(room: { room: string; kind?: 'dm' }): string {
   return room.kind === 'dm' ? 'dm' : room.room;
 }
 
+/**
+ * The rooms the FLEET is in that the human has not joined.
+ *
+ * `chat:rooms` is `listRooms(handle)`, so asking as the human returns only
+ * his own memberships. That is correct for a chat client and wrong for this
+ * viewer: two agents can be signed into a room, visible in the roster, and
+ * the rail would show nothing. The room is exactly what he needs to read.
+ *
+ * There is still no all-rooms verb in the daemon. Presence is the next best
+ * source and a sufficient one here: `PresenceRow.repo` is the room sign-in
+ * derives from a cwd, so "rooms with at least one signed-in agent" is the
+ * set this viewer cares about. A room nobody is signed into is not a room
+ * whose silence needs explaining.
+ *
+ * Rows come back `joined: false` so the rail can mark them, per the
+ * artboard's `not joined` badge. Posting into one still works: the server
+ * joins before it posts.
+ */
+async function unjoinedFleetRooms(
+  joined: RoomSummary[]
+): Promise<RoomSummary[]> {
+  // Deliberately non-fatal: the human's own rooms are the important half of
+  // this list, so a failed presence lookup degrades to "no extra rooms"
+  // rather than failing the whole rail.
+  const buddiesRes = await chatBuddies(rtOpts());
+  if (!buddiesRes?.ok || !buddiesRes.data) return [];
+
+  const known = new Set(joined.map(r => r.room));
+  const candidates = [
+    ...new Set(
+      buddiesRes.data.buddies
+        .map(b => b.repo)
+        .filter((r): r is string => !!r && !known.has(r))
+    ),
+  ];
+
+  const whos = await Promise.all(
+    candidates.map(room => chatWho({ room }, rtOpts()))
+  );
+
+  return candidates.flatMap((room, i) => {
+    const who = whos[i];
+    if (!who?.ok || !who.data) return [];
+    return [
+      {
+        room,
+        memberCount: who.data.members.length,
+        // The human has no read cursor in a room he never joined, so there
+        // is no honest unread count to report. Zero, not a guess.
+        unread: 0,
+        mentions: 0,
+        joined: false,
+      },
+    ];
+  });
+}
+
 export const chat = new Hono()
   .get('/api/chat/rooms', async c => {
     if (fixturesEnabled()) return c.json({ rooms: fixtureRooms() }, 200);
     const res = await chatRooms({ handle: humanHandle(c) }, rtOpts());
     if (!res.ok) return c.json({ error: res.error }, 502);
-    return c.json(res.data, 200);
+
+    const joined = res.data?.rooms ?? [];
+    const extra = await unjoinedFleetRooms(joined);
+    return c.json({ rooms: [...joined, ...extra] }, 200);
   })
   .get('/api/chat/who/:room', async c => {
     const room = c.req.param('room');
