@@ -22,6 +22,7 @@ import {
 function makeRow(overrides: Partial<Row> = {}): Row {
   return {
     name: "app",
+    displayTld: "localhost",
     port: 3000,
     url: "http://app.localhost",
     publicUrl: null,

@@ -165,6 +165,7 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
       return {
         name: a.name,
         displayTld,
+        port: a.port,
         // The href must match the rendered identity: an owned app joins on
         // whichever of its routes sorts first (often name.localhost), so the
         // joined route's url would contradict the .mattstack the row displays.

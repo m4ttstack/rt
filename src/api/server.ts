@@ -1,5 +1,5 @@
 import {
-  publicDomainFor, readRoutes, readServices, restartService, tailFile, bareName,
+  publicDomainFor, readRoutes, readServices, restartService, tailFile, bareName, MATTSTACK_TLD,
 } from "../../core/discover.ts";
 import {
   setPublished, setPassword, clearPassword, getOverride, setOverride,
@@ -107,6 +107,9 @@ function safeRecord(record: AppRecord): SafeRecord {
 function rowFor(record: AppRecord, byName: Map<string, StatusRow>, redact: boolean): StatusRow {
   return byName.get(record.name) ?? {
     name: record.name,
+    // Same ownership rule as buildStatus: a managed record is a mattstack
+    // product and surfaces as name.mattstack even before its route lands.
+    displayTld: record.managedBy != null && record.managedBy !== "user" ? MATTSTACK_TLD : "localhost",
     port: record.port,
     url: null,
     publicUrl: null,
