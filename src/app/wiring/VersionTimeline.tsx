@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import {
+  ActionIcon,
   Alert,
   Button,
   Checkbox,
-  Drawer,
   Group,
   Paper,
   Skeleton,
@@ -14,7 +14,6 @@ import {
 import { useSchemeColors } from '@ui/hooks';
 import { Icons } from '@ui/icons';
 import { CommandProvenance } from '../runs/CommandProvenance';
-import { useDrawerSurface } from './drawerSurface';
 import type { SlotOutlineNode, WiringHealth } from './outline';
 import { QuietBadge } from './QuietBadge';
 import type { SeamSourceIndex } from './seamAttribution';
@@ -144,9 +143,10 @@ function RuntimeRow({
 
 export interface VersionTimelineProps {
   pack: string;
-  /** The roster verb whose history this is; `null` closes the drawer. */
+  /** The roster verb whose history this is; `null` renders nothing (a
+      verb-less entry -- a pipeline stage -- has no artifact with a history). */
   verb: string | null;
-  /** The verb's ref, for the drawer title. */
+  /** The verb's ref, for the panel heading. */
   refName: string | null;
   /** What `check` said about this verb, for the runtime region. */
   health: WiringHealth;
@@ -158,12 +158,12 @@ export interface VersionTimelineProps {
   sourcePath: string | null;
   artifactPath: string | null;
   slots: SlotOutlineNode[];
-  onClose: () => void;
 }
 
 /**
  * A verb's pack history, and — on selecting two commits — the diff between
- * them with each hunk placed against the seam it fell inside.
+ * them with each hunk placed against the seam it fell inside. Folded out of
+ * its old drawer into the detail panel's "History" tab.
  *
  * The panel's one structural rule: runtime facts and git history are two
  * regions on two surfaces, never one list. A commit row and a "working tree
@@ -179,10 +179,8 @@ export function VersionTimeline({
   sourcePath,
   artifactPath,
   slots,
-  onClose,
 }: VersionTimelineProps) {
   const { bg, text } = useSchemeColors();
-  const surface = useDrawerSurface();
   const [selected, setSelected] = useState<string[]>([]);
   const [comparing, setComparing] = useState<{
     from: string;
@@ -248,25 +246,24 @@ export function VersionTimeline({
     [diff.data, pack, artifactPath, sourcePath, slots]
   );
 
+  if (verb === null) return null;
+
   return (
-    <Drawer
-      opened={verb !== null}
-      onClose={comparing ? () => setComparing(null) : onClose}
-      position="right"
-      size={720}
-      padding="lg"
-      styles={surface}
-      closeButtonProps={
-        comparing
-          ? {
-              icon: <Icons.arrowLeft size={16} />,
-              'aria-label': 'Back to history',
-            }
-          : undefined
-      }
-      data-testid="version-timeline"
-      title={
-        <Stack gap={2}>
+    <Stack gap="lg" data-testid="version-timeline">
+      <Group gap="xs" wrap="nowrap" align="flex-start">
+        {comparing && (
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            size="sm"
+            onClick={() => setComparing(null)}
+            aria-label="Back to history"
+            style={{ flex: 'none', marginTop: 2 }}
+          >
+            <Icons.arrowLeft size={16} />
+          </ActionIcon>
+        )}
+        <Stack gap={2} style={{ flex: 1, minWidth: 0 }}>
           <Group gap="xs" wrap="nowrap">
             <Text fz="xl" fw={700}>
               {verb}
@@ -301,8 +298,8 @@ export function VersionTimeline({
             }
           />
         </Stack>
-      }
-    >
+      </Group>
+
       {comparing ? (
         <Stack gap="md">
           {preview.isError && (
@@ -474,6 +471,6 @@ export function VersionTimeline({
           </Group>
         </Stack>
       )}
-    </Drawer>
+    </Stack>
   );
 }

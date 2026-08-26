@@ -96,7 +96,6 @@ function renderTimeline(
     verb?: string | null;
     health?: 'in-sync' | 'source-newer' | 'never-compiled' | 'unknown';
     staleFiles?: string[];
-    onClose?: () => void;
   } = {}
 ) {
   const queryClient = new QueryClient({
@@ -113,7 +112,6 @@ function renderTimeline(
         sourcePath={STEP_SOURCE}
         artifactPath={ARTIFACT}
         slots={SLOTS}
-        onClose={over.onClose ?? (() => {})}
       />
     </QueryClientProvider>
   );
@@ -391,11 +389,10 @@ describe('VersionTimeline: compare', () => {
     );
   });
 
-  it('goes back to the history region rather than closing the drawer', async () => {
+  it('goes back to the history region from a compare, keeping the tab open', async () => {
     mockHappyPath();
-    const onClose = vi.fn();
     const user = userEvent.setup();
-    renderTimeline({ onClose });
+    renderTimeline();
     await openedHistory();
 
     await user.click(
@@ -409,11 +406,13 @@ describe('VersionTimeline: compare', () => {
       expect(screen.getByTestId('seam-compare')).toBeInTheDocument()
     );
 
+    // The compare view replaces the history region; Back restores it in place
+    // rather than dismissing the whole tab.
     await user.click(screen.getByLabelText('Back to history'));
 
-    expect(onClose).not.toHaveBeenCalled();
     await waitFor(() =>
       expect(screen.getByTestId('runtime-facts')).toBeInTheDocument()
     );
+    expect(screen.queryByTestId('seam-compare')).not.toBeInTheDocument();
   });
 });

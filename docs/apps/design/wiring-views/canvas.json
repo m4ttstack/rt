@@ -1,0 +1,13 @@
+{
+  "artboards": [
+    { "file": "Main.dc.html", "title": "Pipeline tab", "x": 0, "y": 0, "w": 1180, "h": 900 },
+    { "file": "Detail.dc.html", "title": "Skill detail (replaces 5 drawers)", "x": 1260, "y": 0, "w": 1180, "h": 900 },
+    { "file": "Surface.dc.html", "title": "Surface tab (was a drawer)", "x": 0, "y": 1020, "w": 1180, "h": 900 },
+    { "file": "Health.dc.html", "title": "Health tab", "x": 1260, "y": 1020, "w": 1180, "h": 900 }
+  ],
+  "annotations": [
+    { "id": "intro", "x": 0, "y": -150, "w": 900, "text": "Wiring redesign — three tabs (Pipeline / Surface / Health) + one detail panel.\nThe single tall page becomes a scannable spine; the five scattered drawers collapse into one per-skill detail panel; Surface is promoted from a floating drawer to its own tab." },
+    { "id": "note-detail", "x": 1260, "y": -95, "w": 520, "text": "Click any skill → this panel. Slots & bindings / Compiled / History / Used-by in one place. Rebind is inline here (shown open on the domain slot), not a separate drawer." }
+  ],
+  "launch": { "view": "canvas" }
+}

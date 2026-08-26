@@ -219,6 +219,20 @@ function mockHappyPath() {
   checkGet.mockResolvedValue(ok(CHECK));
 }
 
+/** Post-4a the per-skill actions (open source, preview compile, version
+    history, copy agent context, rebind) live in the detail panel, not on the
+    row. Every migrated interaction opens the panel first, then drives its
+    header or Slots tab. */
+async function openPanel(
+  user: ReturnType<typeof userEvent.setup>,
+  label: string
+) {
+  await user.click(
+    await screen.findByRole('button', { name: `open ${label}` })
+  );
+  return screen.getByTestId('skill-detail-panel');
+}
+
 /** The filter rides the URL, so a test that navigated has to put it back or
     the next one renders filtered. */
 afterEach(() => {
@@ -263,10 +277,12 @@ describe('WiringMap: the spine', () => {
       ).toBeInTheDocument()
     );
 
+    // The slim row states this as its compact slot count rather than a
+    // sentence -- slot detail itself moves to the Task 4 detail panel.
     expect(
       within(
         screen.getByTestId('skill-row-mattstack:stage-implement')
-      ).getByText('no slots — this stage takes nothing from the pack')
+      ).getByText('no slots')
     ).toBeInTheDocument();
   });
 
@@ -276,34 +292,46 @@ describe('WiringMap: the spine', () => {
 
     const row = await screen.findByTestId('skill-row-mattstack:work');
 
+    // Which file drifted now lives behind the row's history action, not in
+    // a prose line the slim row has no room for -- the row itself only
+    // states the health label.
     await waitFor(() =>
       expect(within(row).getByTestId('health-badge')).toHaveTextContent(
         'source newer'
       )
     );
-    expect(
-      within(row).getByText(
-        'SKILL.md on disk is older than its sources — Claude is reading the previous compile'
-      )
-    ).toBeInTheDocument();
   });
 
   it('shows every slot open, with the fill and how many sites bind it', async () => {
+    mockHappyPath();
+    const user = userEvent.setup();
+    renderWiring();
+
+    // Slot detail moved to the panel's Slots tab. `watch-ci` (the roster verb)
+    // binds the SAME fill a stage does and stays outside the pipeline; open its
+    // panel to read the wiring `buildSpine` computed for it.
+    await screen.findByTestId('skill-row-mattstack:watch-ci');
+    await user.click(screen.getByTestId('offpipe-toggle'));
+    const panel = await openPanel(user, 'watch-ci');
+    const card = within(panel).getByTestId('slot-card-domain');
+
+    expect(within(card).getByText('watch-ci-domain@1')).toBeInTheDocument();
+    expect(within(card).getByTestId('slot-fill')).toHaveTextContent(
+      'demo:watch-ci-domain'
+    );
+    expect(within(card).getByTestId('slot-sites')).toHaveTextContent('2 sites');
+  });
+
+  it('states a pipeline stage as a compact slot count, with the table itself deferred to the detail panel', async () => {
     mockHappyPath();
     renderWiring();
 
     const stage = await screen.findByTestId(
       'skill-row-mattstack:stage-watch-ci'
     );
-    const slot = within(stage).getByTestId('slot-domain');
 
-    // The stage binder declares no contract, so the row shows what the bound
-    // fill provides rather than nothing at all.
-    expect(within(slot).getByText('watch-ci-domain@1')).toBeInTheDocument();
-    expect(within(slot).getByTestId('slot-fill')).toHaveTextContent(
-      'demo:watch-ci-domain'
-    );
-    expect(within(slot).getByTestId('slot-sites')).toHaveTextContent('2 sites');
+    expect(within(stage).getByText('1 slot')).toBeInTheDocument();
+    expect(within(stage).queryByTestId('slot-domain')).not.toBeInTheDocument();
   });
 
   it('puts a fill nothing binds outside the pipeline, and a stage-bound fill nowhere near it', async () => {
@@ -320,10 +348,15 @@ describe('WiringMap: the spine', () => {
 
   it('draws a drifting roster verb no binder names, instead of dropping it', async () => {
     mockHappyPath();
+    const user = userEvent.setup();
     renderWiring();
 
+    // "Not run by this pipeline" is collapsed by default; expand it before
+    // reaching for a row inside, and await the row (the section renders the
+    // container first, its rows on the next commit).
+    await user.click(await screen.findByTestId('offpipe-toggle'));
     const outside = await screen.findByTestId('outside-the-pipeline');
-    const row = within(outside).getByTestId(
+    const row = await within(outside).findByTestId(
       'skill-row-mattstack:rebase-worktree'
     );
 
@@ -351,11 +384,13 @@ describe('WiringMap: the spine', () => {
     mockHappyPath();
     renderWiring();
 
-    const orchestrator = await screen.findByTestId('skill-row-mattstack:work');
-
+    // This explanation now sits once above the lane (`.spine-note` in the
+    // parity spec), not repeated as two prose lines inside the orchestrator's
+    // own row.
+    await screen.findByTestId('skill-row-mattstack:work');
     expect(
-      within(orchestrator).getByText(
-        'rt skills check covers roster verbs, so the numbered rows below state no health — bare is unmeasured there, not healthy'
+      within(screen.getByTestId('spine-note')).getByText(
+        /Stages compile into it, so they carry no artifact of their own to check/
       )
     ).toBeInTheDocument();
   });
@@ -372,31 +407,101 @@ describe('WiringMap: the spine', () => {
   });
 });
 
-describe('WiringMap: the inverse index', () => {
-  it('opens on the fill whose sites chip was clicked, listing every site with its kind', async () => {
+describe('WiringMap: not run by this pipeline', () => {
+  it('renames the section and states its count, collapsed by default', async () => {
+    mockHappyPath();
+    renderWiring();
+
+    const toggle = await screen.findByTestId('offpipe-toggle');
+    expect(
+      within(toggle).getByText('Not run by this pipeline')
+    ).toBeInTheDocument();
+    // `watch-ci` and `rebase-worktree`: the two rows this fixture puts
+    // outside the pipeline.
+    expect(
+      within(toggle).getByText(
+        '2 skills you invoke directly, plus fills another plugin binds. No run order.'
+      )
+    ).toBeInTheDocument();
+
+    // `aria-hidden`/`aria-expanded`, not element presence, are the reliable
+    // cross-state signal here: Mantine's Collapse keeps its body mounted, so
+    // a testid lookup would find the rows whether or not the section is open.
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByTestId('offpipe-body')).toHaveAttribute(
+      'aria-hidden',
+      'true'
+    );
+  });
+
+  it('badges the unwired count from spine.outside, with no plugin badge when nothing external binds', async () => {
+    mockHappyPath();
+    renderWiring();
+
+    const toggle = await screen.findByTestId('offpipe-toggle');
+    // Only `rebase-worktree` is unwired in this fixture; no binder in it is
+    // `external`, so the plugin badge must not render at all.
+    expect(
+      within(toggle).getByTestId('offpipe-unwired-count')
+    ).toHaveTextContent('1 unwired');
+    expect(
+      within(toggle).queryByTestId('offpipe-external-count')
+    ).not.toBeInTheDocument();
+  });
+
+  it('expands on click', async () => {
     mockHappyPath();
     const user = userEvent.setup();
     renderWiring();
 
-    const stage = await screen.findByTestId(
-      'skill-row-mattstack:stage-watch-ci'
-    );
-    await user.click(
-      within(within(stage).getByTestId('slot-domain')).getByTestId('slot-sites')
-    );
+    const toggle = await screen.findByTestId('offpipe-toggle');
+    await user.click(toggle);
 
-    // Mantine keeps `Drawer.Root` mounted whether or not it is open, so the
-    // drawer's own testid is no signal -- wait on content only an OPEN
-    // drawer has.
-    await screen.findByTestId('site-count');
-    const drawer = screen.getByTestId('inverse-index');
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByTestId('offpipe-body')).toHaveAttribute(
+      'aria-hidden',
+      'false'
+    );
+  });
+
+  it('expands on Enter, the same as a click', async () => {
+    mockHappyPath();
+    const user = userEvent.setup();
+    renderWiring();
+
+    const toggle = await screen.findByTestId('offpipe-toggle');
+    toggle.focus();
+    await user.keyboard('{Enter}');
+
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  });
+});
+
+describe('WiringMap: the inverse index (Used-by tab)', () => {
+  /** Expand the off-pipeline section, open watch-ci's panel, and jump to its
+      Used-by tab via the slot's `N sites` chip -- the same fill a stage binds. */
+  async function openWatchCiUsedBy(user: ReturnType<typeof userEvent.setup>) {
+    await screen.findByTestId('skill-row-mattstack:watch-ci');
+    await user.click(screen.getByTestId('offpipe-toggle'));
+    const panel = await openPanel(user, 'watch-ci');
+    await user.click(
+      within(within(panel).getByTestId('slot-card-domain')).getByTestId(
+        'slot-sites'
+      )
+    );
+    return within(panel).findByTestId('inverse-index');
+  }
+
+  it('lists every site with its kind for the fill whose chip was clicked', async () => {
+    mockHappyPath();
+    const user = userEvent.setup();
+    renderWiring();
+
+    const index = await openWatchCiUsedBy(user);
+    expect(within(index).getByText('demo:watch-ci-domain')).toBeInTheDocument();
+    // The roster verb and the pipeline stage that both bind it.
     expect(
-      within(drawer).getByText('demo:watch-ci-domain')
-    ).toBeInTheDocument();
-    // The roster verb and the pipeline stage that both bind it -- neither is
-    // reachable from the other's row.
-    expect(
-      within(drawer)
+      within(index)
         .getAllByTestId(/^binding-site-/)
         .map(row => row.getAttribute('data-testid'))
     ).toEqual([
@@ -405,30 +510,25 @@ describe('WiringMap: the inverse index', () => {
     ]);
   });
 
-  it('opens on a fill bound in exactly one place, which carries no chip at all', async () => {
+  it('reaches a fill bound in exactly one place from its slot fill link', async () => {
     mockHappyPath();
     const user = userEvent.setup();
     renderWiring();
 
-    // stage-provision's fill is bound once, so its row has no `N sites`
-    // chip. The fill name is the only way in -- and a fill bound in one
-    // place is the one a reader is most likely about to delete.
-    const stage = await screen.findByTestId(
-      'skill-row-mattstack:stage-provision'
-    );
-    const slot = within(stage).getByTestId('slot-domain');
-    expect(within(slot).queryByTestId('slot-sites')).not.toBeInTheDocument();
-
-    await user.click(within(slot).getByTestId('slot-fill'));
-
-    await screen.findByTestId('site-count');
-    const drawer = screen.getByTestId('inverse-index');
-    expect(within(drawer).getByTestId('site-count')).toHaveTextContent('1');
-    expect(
-      within(drawer).getByTestId(
-        'binding-site-mattstack:stage-provision:domain'
+    // stage-provision binds `demo:work-provision`, bound in exactly one place
+    // and carrying no `N sites` chip. The Slots tab's fill link still reaches
+    // its Used-by list -- restoring the single-site fill-click Task 2 dropped.
+    await screen.findByTestId('skill-row-mattstack:stage-provision');
+    const panel = await openPanel(user, 'stage-provision');
+    await user.click(
+      within(within(panel).getByTestId('slot-card-domain')).getByTestId(
+        'slot-fill'
       )
-    ).toBeInTheDocument();
+    );
+
+    const index = await within(panel).findByTestId('inverse-index');
+    expect(within(index).getByTestId('site-count')).toHaveTextContent('1');
+    expect(within(index).getAllByTestId(/^binding-site-/)).toHaveLength(1);
   });
 
   it("carries the fill's own source, which the slot row used to link to", async () => {
@@ -436,37 +536,21 @@ describe('WiringMap: the inverse index', () => {
     const user = userEvent.setup();
     renderWiring();
 
-    const row = await screen.findByTestId('skill-row-mattstack:stage-watch-ci');
-    await user.click(
-      within(within(row).getByTestId('slot-domain')).getByTestId('slot-fill')
-    );
-
-    await screen.findByTestId('site-count');
-    expect(screen.getByTestId('open-fill-source')).toHaveAttribute(
+    const index = await openWatchCiUsedBy(user);
+    expect(within(index).getByTestId('open-fill-source')).toHaveAttribute(
       'href',
       'vscode://file/fills/watch-ci-domain/SKILL.md'
     );
   });
 
-  it('lists exactly as many sites as the chip on the row claims', async () => {
+  it('lists exactly as many sites as the chip on the slot claimed', async () => {
     mockHappyPath();
     const user = userEvent.setup();
     renderWiring();
 
-    const stage = await screen.findByTestId(
-      'skill-row-mattstack:stage-watch-ci'
-    );
-    const chip = within(within(stage).getByTestId('slot-domain')).getByTestId(
-      'slot-sites'
-    );
-    expect(chip).toHaveTextContent('2 sites');
-
-    await user.click(chip);
-    await screen.findByTestId('site-count');
-    const drawer = screen.getByTestId('inverse-index');
-
-    expect(within(drawer).getByTestId('site-count')).toHaveTextContent('2');
-    expect(within(drawer).getAllByTestId(/^binding-site-/)).toHaveLength(2);
+    const index = await openWatchCiUsedBy(user);
+    expect(within(index).getByTestId('site-count')).toHaveTextContent('2');
+    expect(within(index).getAllByTestId(/^binding-site-/)).toHaveLength(2);
   });
 
   it('answers for a fill nothing binds too, which is the question asked before deleting it', async () => {
@@ -474,15 +558,13 @@ describe('WiringMap: the inverse index', () => {
     const user = userEvent.setup();
     renderWiring();
 
-    const orphan = await screen.findByTestId('orphan-fill-demo:unused');
-    await user.click(within(orphan).getByTestId('open-inverse-index'));
+    // An orphan fill has no skill and so no panel; the row itself now states
+    // "bound by nothing" inline rather than opening a drawer onto it.
+    await screen.findByTestId('orphan-fill-demo:unused');
+    await user.click(screen.getByTestId('offpipe-toggle'));
 
-    await screen.findByTestId('bound-by-nothing');
-    const drawer = screen.getByTestId('inverse-index');
-    expect(within(drawer).getByTestId('site-count')).toHaveTextContent('0');
-    expect(within(drawer).getByTestId('bound-by-nothing')).toHaveTextContent(
-      'Bound by nothing. Not an error'
-    );
+    const orphan = screen.getByTestId('orphan-fill-demo:unused');
+    expect(within(orphan).getByText('bound by nothing')).toBeInTheDocument();
   });
 });
 
@@ -546,57 +628,33 @@ describe('WiringMap: the work-type picker', () => {
 });
 
 describe('WiringMap: actions', () => {
-  it('points open-source and reveal-artifact at their own distinct files', async () => {
+  it('points open-source at the verb source file', async () => {
     mockHappyPath();
+    const user = userEvent.setup();
     renderWiring();
 
-    const row = await screen.findByTestId('skill-row-mattstack:work');
-    const openSource = within(row).getByTestId('open-source');
-    const revealArtifact = within(row).getByTestId('reveal-artifact');
+    await screen.findByTestId('skill-row-mattstack:work');
+    const panel = await openPanel(user, 'work');
 
-    expect(openSource).toHaveAttribute(
+    expect(within(panel).getByTestId('open-source')).toHaveAttribute(
       'href',
       'vscode://file/plugins/mattstack/attachments/pipeline/work/SKILL.md'
     );
-    expect(revealArtifact).toHaveAttribute(
-      'href',
-      'vscode://file/p/skills/work'
-    );
-    expect(openSource.getAttribute('href')).not.toBe(
-      revealArtifact.getAttribute('href')
-    );
   });
 
-  it('offers no compile action for a stage, which has no verb to compile', async () => {
+  it('states a stage has no compiled artifact of its own on the Compiled tab', async () => {
     mockHappyPath();
+    const user = userEvent.setup();
     renderWiring();
 
-    const stage = await screen.findByTestId(
-      'skill-row-mattstack:stage-provision'
-    );
+    await screen.findByTestId('skill-row-mattstack:stage-provision');
+    const panel = await openPanel(user, 'stage-provision');
+    await user.click(within(panel).getByRole('tab', { name: 'Compiled' }));
 
-    expect(
-      within(stage).queryByTestId('toggle-compile-preview')
-    ).not.toBeInTheDocument();
+    expect(within(panel).getByTestId('detail-no-verb')).toBeInTheDocument();
   });
 
-  it('offers version history on a verb, and none on a stage', async () => {
-    mockHappyPath();
-    renderWiring();
-
-    const verb = await screen.findByTestId('skill-row-mattstack:work');
-    expect(within(verb).getByTestId('toggle-history')).toBeInTheDocument();
-
-    // A stage compiles INTO the orchestrator, so it has no artifact of its
-    // own for a commit to have touched -- the same reason it carries no
-    // health and no other action.
-    const stage = screen.getByTestId('skill-row-mattstack:stage-provision');
-    expect(
-      within(stage).queryByTestId('toggle-history')
-    ).not.toBeInTheDocument();
-  });
-
-  it('opens the history drawer from the row, scoped to that verb', async () => {
+  it('offers version history on a verb, and states a stage has none', async () => {
     mockHappyPath();
     historyGet.mockResolvedValue(
       ok({
@@ -618,8 +676,47 @@ describe('WiringMap: actions', () => {
     const user = userEvent.setup();
     renderWiring();
 
-    const row = await screen.findByTestId('skill-row-mattstack:work');
-    await user.click(within(row).getByTestId('toggle-history'));
+    await screen.findByTestId('skill-row-mattstack:work');
+    const verbPanel = await openPanel(user, 'work');
+    await user.click(within(verbPanel).getByRole('tab', { name: 'History' }));
+    expect(
+      await within(verbPanel).findByTestId('version-timeline')
+    ).toBeInTheDocument();
+
+    // A stage compiles INTO the orchestrator, so it has no artifact of its own
+    // for a commit to have touched -- the same reason it carries no health.
+    const stagePanel = await openPanel(user, 'stage-provision');
+    await user.click(within(stagePanel).getByRole('tab', { name: 'History' }));
+    expect(
+      within(stagePanel).getByTestId('detail-no-verb')
+    ).toBeInTheDocument();
+  });
+
+  it('reads the verb history scoped to that verb from the History tab', async () => {
+    mockHappyPath();
+    historyGet.mockResolvedValue(
+      ok({
+        pack: 'demo',
+        packDir: '/p',
+        repoRoot: '/repo',
+        scope: 'skills/work',
+        verb: 'work',
+        limit: 20,
+        truncated: false,
+        commits: [],
+        runtime: {
+          dirtyFiles: [],
+          moreDirtyFiles: false,
+          packVersion: '0.4.11',
+        },
+      })
+    );
+    const user = userEvent.setup();
+    renderWiring();
+
+    await screen.findByTestId('skill-row-mattstack:work');
+    const panel = await openPanel(user, 'work');
+    await user.click(within(panel).getByRole('tab', { name: 'History' }));
 
     await waitFor(() =>
       expect(screen.getByTestId('history-empty')).toBeInTheDocument()
@@ -629,30 +726,28 @@ describe('WiringMap: actions', () => {
     });
   });
 
-  it('opens the compile drawer stating its own limit, with the files check flagged', async () => {
+  it('shows the compiled body from the Compiled tab, stating it is not a diff', async () => {
     mockHappyPath();
     compileGet.mockResolvedValue(ok({ content: '---\nname: work\n---\n' }));
 
     const user = userEvent.setup();
     renderWiring();
 
-    const row = await screen.findByTestId('skill-row-mattstack:work');
-    await user.click(within(row).getByTestId('toggle-compile-preview'));
+    await screen.findByTestId('skill-row-mattstack:work');
+    const panel = await openPanel(user, 'work');
+    await user.click(within(panel).getByRole('tab', { name: 'Compiled' }));
 
-    // Mantine keeps `Drawer.Root` mounted whether or not it is open, so the
-    // drawer's own testid resolves on a CLOSED drawer -- wait on content
-    // only an open one has, or the negative assertion below is vacuous.
-    await screen.findByText(/not a diff against the artifact/);
-    const drawer = screen.getByTestId('compile-drawer');
-    expect(within(drawer).getByText('SKILL.md')).toBeInTheDocument();
+    expect(
+      await within(panel).findByText(/not a diff against the artifact/)
+    ).toBeInTheDocument();
     await waitFor(() =>
       expect(
-        within(drawer).getByTestId('compile-preview-body')
+        within(panel).getByTestId('compile-preview-body')
       ).toHaveTextContent('name: work')
     );
     // No write route exists, so the panel must not offer to apply anything.
     expect(
-      within(drawer).queryByRole('button', { name: /compile|apply|write/i })
+      within(panel).queryByRole('button', { name: /compile|apply|write/i })
     ).not.toBeInTheDocument();
   });
 
@@ -665,8 +760,9 @@ describe('WiringMap: actions', () => {
     const user = userEvent.setup();
     renderWiring();
 
-    const row = await screen.findByTestId('skill-row-mattstack:work');
-    await user.click(within(row).getByTestId('toggle-compile-preview'));
+    await screen.findByTestId('skill-row-mattstack:work');
+    const panel = await openPanel(user, 'work');
+    await user.click(within(panel).getByRole('tab', { name: 'Compiled' }));
 
     await waitFor(() =>
       expect(screen.getByTestId('compile-preview-error')).toBeInTheDocument()
@@ -691,8 +787,9 @@ describe('WiringMap: actions', () => {
     const user = userEvent.setup();
     renderWiring();
 
-    const row = await screen.findByTestId('skill-row-mattstack:work');
-    await user.click(within(row).getByTestId('toggle-compile-preview'));
+    await screen.findByTestId('skill-row-mattstack:work');
+    const panel = await openPanel(user, 'work');
+    await user.click(within(panel).getByRole('tab', { name: 'Compiled' }));
 
     const notice = await screen.findByTestId('compile-preview-internal');
     expect(notice).toHaveTextContent(
@@ -704,7 +801,7 @@ describe('WiringMap: actions', () => {
     ).not.toBeInTheDocument();
   });
 
-  it("hands the drawer the verb's own slots, so a referenced fill is named at all", async () => {
+  it("names a referenced fill through the verb's own slots on the Compiled tab", async () => {
     mockHappyPath();
     // The body carries a seam for the step only; `tiering` reaches the pane
     // through the composition, which is the only record that it exists.
@@ -718,183 +815,44 @@ describe('WiringMap: actions', () => {
     const user = userEvent.setup();
     renderWiring();
 
-    const row = await screen.findByTestId('skill-row-mattstack:work');
-    await user.click(within(row).getByTestId('toggle-compile-preview'));
+    await screen.findByTestId('skill-row-mattstack:work');
+    const panel = await openPanel(user, 'work');
+    await user.click(within(panel).getByRole('tab', { name: 'Compiled' }));
 
-    const drawer = screen.getByTestId('compile-drawer');
     await waitFor(() =>
       expect(
-        within(drawer).getByTestId('compiled-slot-tiering')
+        within(panel).getByTestId('compiled-slot-tiering')
       ).toBeInTheDocument()
     );
     expect(
-      within(drawer).queryByTestId('compiled-slot-domain')
+      within(panel).queryByTestId('compiled-slot-domain')
     ).not.toBeInTheDocument();
   });
 });
 
-/** A pipeline where two STAGES resolve to real roster verbs (their
-    `engineRef` matches the pipeline's own ref), unlike the `COMPOSITION`
-    fixture above where no stage ref happens to match a verb's engineRef --
-    needed so the switcher has more than the orchestrator to walk to. */
-const PIPELINE_COMPOSITION = {
-  pack: 'demo',
-  packDir: '/p',
-  verbs: [
-    {
-      name: 'work',
-      engine: 'work',
-      engineRef: 'mattstack:work',
-      plugin: 'mattstack',
-      description: 'the orchestrator',
-      public: true,
-      sourcePath: '/plugins/mattstack/attachments/pipeline/work/SKILL.md',
-      artifactPath: '/p/skills/work',
-      slots: [],
-    },
-    {
-      name: 'stage-implement',
-      engine: 'stage-implement',
-      engineRef: 'mattstack:stage-implement',
-      plugin: 'mattstack',
-      description: 'implement',
-      public: true,
-      sourcePath: '/plugins/mattstack/skills/pipeline/stage-implement/SKILL.md',
-      artifactPath: '/p/skills/stage-implement',
-      slots: [],
-    },
-    {
-      name: 'stage-ship',
-      engine: 'stage-ship',
-      engineRef: 'mattstack:stage-ship',
-      plugin: 'mattstack',
-      description: 'ship',
-      public: true,
-      sourcePath: '/plugins/mattstack/skills/pipeline/stage-ship/SKILL.md',
-      artifactPath: '/p/skills/stage-ship',
-      slots: [],
-    },
-  ],
-  fills: [],
-  binders: [],
-  pipelines: {
-    feature: ['mattstack:stage-implement', 'mattstack:stage-ship'],
-  },
-};
-
-const PIPELINE_CHECK = {
-  pack: 'demo',
-  packDir: '/p',
-  verbs: [
-    {
-      name: 'work',
-      status: 'stale',
-      staleFiles: ['SKILL.md'],
-      orphanFiles: [],
-    },
-    {
-      name: 'stage-implement',
-      status: 'in-sync',
-      staleFiles: [],
-      orphanFiles: [],
-    },
-    { name: 'stage-ship', status: 'in-sync', staleFiles: [], orphanFiles: [] },
-  ],
-};
-
-describe('WiringMap: walking the pipeline from the drawer', () => {
-  it('offers the whole pipeline from the switcher even while the attention filter hides most of it', async () => {
-    window.history.pushState(null, '', '/wiring?attention=1');
-    packsGet.mockResolvedValue(
-      ok({ packs: [{ name: 'demo', dir: '/p', layout: 'flat' }] })
-    );
-    compositionGet.mockResolvedValue(ok(PIPELINE_COMPOSITION));
-    checkGet.mockResolvedValue(ok(PIPELINE_CHECK));
-    compileGet.mockResolvedValue(ok({ content: '# work' }));
-    const user = userEvent.setup();
-    renderWiring();
-
-    // Only `work` drifted -- the filter drops both in-sync stages from the
-    // timeline entirely.
-    const row = await screen.findByTestId('skill-row-mattstack:work');
-    expect(
-      screen.queryByTestId('skill-row-mattstack:stage-implement')
-    ).not.toBeInTheDocument();
-
-    await user.click(within(row).getByTestId('toggle-compile-preview'));
-    await screen.findByText(/not a diff against the artifact/);
-
-    await user.click(
-      screen.getByRole('combobox', { name: /walk the pipeline/i })
-    );
-
-    expect(
-      screen.getByRole('option', { name: 'stage-implement' })
-    ).toBeInTheDocument();
-    expect(
-      screen.getByRole('option', { name: 'stage-ship' })
-    ).toBeInTheDocument();
-  });
-
-  it('keeps the drawer open when the switcher re-selects the already-current verb', async () => {
-    packsGet.mockResolvedValue(
-      ok({ packs: [{ name: 'demo', dir: '/p', layout: 'flat' }] })
-    );
-    compositionGet.mockResolvedValue(ok(PIPELINE_COMPOSITION));
-    checkGet.mockResolvedValue(ok(PIPELINE_CHECK));
-    compileGet.mockResolvedValue(ok({ content: '# implement' }));
-    const user = userEvent.setup();
-    renderWiring();
-
-    const row = await screen.findByTestId(
-      'skill-row-mattstack:stage-implement'
-    );
-    await user.click(within(row).getByTestId('toggle-compile-preview'));
-    await screen.findByText(/not a diff against the artifact/);
-
-    await user.click(
-      screen.getByRole('combobox', { name: /walk the pipeline/i })
-    );
-    await user.click(screen.getByRole('option', { name: 'stage-implement' }));
-
-    // A row re-click toggles the drawer closed (see the compile-preview
-    // tests above); the switcher must not reuse that behaviour.
-    expect(
-      screen.getByText(/not a diff against the artifact/)
-    ).toBeInTheDocument();
-  });
-
-  it('opens on an outside-the-pipeline verb with that verb selected, and shows both groups', async () => {
+describe('WiringMap: walking the pipeline in the split view', () => {
+  it('switches the panel to the skill clicked in the compact left list', async () => {
     mockHappyPath();
-    compileGet.mockResolvedValue(ok({ content: '# watch-ci' }));
-
     const user = userEvent.setup();
     renderWiring();
 
-    // watch-ci binds nothing the pipeline names, so it renders under
-    // "Outside the pipeline" -- the exact row `SkillRow` opens this drawer
-    // from with the same `toggle-compile-preview` action a stage row uses.
-    const row = await screen.findByTestId('skill-row-mattstack:watch-ci');
-    await user.click(within(row).getByTestId('toggle-compile-preview'));
-    await screen.findByText(/not a diff against the artifact/);
+    await screen.findByTestId('skill-row-mattstack:work');
+    const panel = await openPanel(user, 'work');
+    expect(within(panel).getByText('work')).toBeInTheDocument();
 
-    const select = screen.getByRole('combobox', {
-      name: /walk the pipeline/i,
-    });
-    expect(select).toHaveValue('watch-ci');
+    // The left column is the compact mini-list once a panel is open; clicking
+    // another row swaps the panel to that skill, with no drawer to chase.
+    await user.click(
+      await screen.findByRole('button', { name: 'open stage-watch-ci' })
+    );
 
-    await user.click(select);
-    // Scoped to the open listbox -- the page's own "Outside the pipeline"
-    // timeline heading carries the same text.
-    const listbox = screen.getByRole('listbox');
-    expect(within(listbox).getByText('Pipeline')).toBeInTheDocument();
-    expect(
-      within(listbox).getByText('Outside the pipeline')
-    ).toBeInTheDocument();
-    expect(screen.getByRole('option', { name: 'work' })).toBeInTheDocument();
-    expect(
-      screen.getByRole('option', { name: 'rebase-worktree' })
-    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId('skill-detail-panel')).getByText(
+          'stage-watch-ci'
+        )
+      ).toBeInTheDocument()
+    );
   });
 });
 
@@ -917,14 +875,17 @@ describe('WiringMap: needs-attention only', () => {
 
     // `work` drifted; the three stages carry no health and nothing else is
     // wrong with them, so only the orchestrator survives above the terminal
-    // item.
-    expect(
-      screen.getAllByTestId(/^timeline-item-/).map(el => el.dataset.testid)
-    ).toEqual(['timeline-item-mattstack:work', 'timeline-item-outside']);
+    // item. The outside attention row mounts a commit after `work`, so wait
+    // for the filtered set to settle rather than reading it synchronously.
+    await waitFor(() =>
+      expect(
+        screen.getAllByTestId(/^timeline-item-/).map(el => el.dataset.testid)
+      ).toEqual(['timeline-item-mattstack:work', 'timeline-item-outside'])
+    );
 
-    const outside = screen.getByTestId('outside-the-pipeline');
+    const outside = await screen.findByTestId('outside-the-pipeline');
     expect(
-      within(outside).getByTestId('skill-row-mattstack:rebase-worktree')
+      await within(outside).findByTestId('skill-row-mattstack:rebase-worktree')
     ).toBeInTheDocument();
     // In sync, so it is not in the inbox.
     expect(
@@ -943,7 +904,11 @@ describe('WiringMap: needs-attention only', () => {
     renderWiring();
 
     await screen.findByTestId('skill-row-mattstack:work');
-    expect(screen.getAllByTestId(/^skill-row-/)).toHaveLength(2);
+    // The second attention row (an outside verb) mounts a commit after `work`;
+    // wait for the count to settle instead of reading it on the first render.
+    await waitFor(() =>
+      expect(screen.getAllByTestId(/^skill-row-/)).toHaveLength(2)
+    );
   });
 
   it('is reachable from the count on the header, and reversible from there', async () => {
@@ -1055,11 +1020,13 @@ describe('WiringMap: needs-attention only', () => {
     renderWiring();
 
     await screen.findByTestId('skill-row-mattstack:work');
-    const summary = screen.getByTestId('spine-summary');
 
-    expect(summary).toHaveTextContent('3 stages');
-    expect(summary).not.toHaveTextContent('showing');
-    expect(summary).not.toHaveTextContent('hidden');
+    // The always-on `SummaryStrip` carries the stage count now; the
+    // filter's own "showing N of M" notice does not exist unfiltered.
+    expect(screen.getByTestId('fact-stages')).toHaveTextContent(
+      '3 in run order'
+    );
+    expect(screen.queryByTestId('spine-summary')).not.toBeInTheDocument();
   });
 
   it('does not call an empty roster a clean compile', async () => {
@@ -1091,7 +1058,7 @@ describe('WiringMap: needs-attention only', () => {
 });
 
 describe('WiringMap: wiring the deferred surfaces', () => {
-  it('opens the surface roster from the toolbar action, fetching the live roster', async () => {
+  it('fetches the live roster only once the Surface tab is opened', async () => {
     mockHappyPath();
     surfaceGet.mockResolvedValue(
       ok({
@@ -1103,37 +1070,43 @@ describe('WiringMap: wiring the deferred surfaces', () => {
     const user = userEvent.setup();
     renderWiring();
 
-    // The roster is not fetched before the drawer is opened -- no rt
+    // The roster is not fetched before its tab is selected -- no rt
     // subprocess is spent on a panel nobody asked to see.
     await screen.findByTestId('wiring-timeline');
     expect(surfaceGet).not.toHaveBeenCalled();
 
-    await user.click(await screen.findByTestId('open-surface-roster'));
+    await user.click(screen.getByRole('tab', { name: 'Surface' }));
 
-    const drawer = await screen.findByTestId('surface-roster');
+    const panel = await screen.findByTestId('surface-tab');
     expect(surfaceGet).toHaveBeenCalledWith(
       expect.objectContaining({ query: { pack: 'demo' } })
     );
     await waitFor(() =>
       expect(
-        within(drawer).getByTestId('surface-row-watch-ci')
+        within(panel).getByTestId('surface-row-watch-ci')
       ).toBeInTheDocument()
     );
   });
 
-  it("opens Rebind from a bound slot's rebind action, scoped to that verb and slot", async () => {
+  it("opens Rebind inline from a bound slot's rebind action, scoped to that verb and slot", async () => {
     mockHappyPath();
     const user = userEvent.setup();
     renderWiring();
 
-    const row = await screen.findByTestId('skill-row-mattstack:watch-ci');
-    const slot = within(row).getByTestId('slot-domain');
+    // watch-ci sits in the collapsed off-pipeline section -- expand it before
+    // its row is reachable.
+    await screen.findByTestId('skill-row-mattstack:watch-ci');
+    await user.click(screen.getByTestId('offpipe-toggle'));
+    const detail = await openPanel(user, 'watch-ci');
+
+    // Slots & bindings is the default sub-tab; the rebind lives on the slot
+    // card, and its editor mounts inline inside that card (no drawer).
+    const slot = within(detail).getByTestId('slot-card-domain');
     await user.click(within(slot).getByTestId('rebind-slot'));
 
-    const drawer = screen.getByTestId('rebind-drawer');
-    const panel = await within(drawer).findByTestId('rebind');
-    expect(panel).toHaveTextContent('watch-ci');
-    expect(panel).toHaveTextContent('slot domain');
+    const rebind = await within(slot).findByTestId('rebind');
+    expect(rebind).toHaveTextContent('watch-ci');
+    expect(rebind).toHaveTextContent('slot domain');
   });
 
   it('copies the agent context for a verb, built from the real composition entry and its seams', async () => {
@@ -1154,8 +1127,9 @@ describe('WiringMap: wiring the deferred surfaces', () => {
     });
     renderWiring();
 
-    const row = await screen.findByTestId('skill-row-mattstack:work');
-    await user.click(within(row).getByTestId('copy-agent-context'));
+    await screen.findByTestId('skill-row-mattstack:work');
+    const panel = await openPanel(user, 'work');
+    await user.click(within(panel).getByTestId('copy-agent-context'));
 
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
     const copied = writeText.mock.calls[0][0] as string;
@@ -1183,8 +1157,9 @@ describe('WiringMap: wiring the deferred surfaces', () => {
     });
     renderWiring();
 
-    const row = await screen.findByTestId('skill-row-mattstack:work');
-    await user.click(within(row).getByTestId('copy-agent-context'));
+    await screen.findByTestId('skill-row-mattstack:work');
+    const panel = await openPanel(user, 'work');
+    await user.click(within(panel).getByTestId('copy-agent-context'));
 
     await screen.findByText(/rt exited nonzero/);
     expect(writeText).not.toHaveBeenCalled();
@@ -1206,8 +1181,9 @@ describe('WiringMap: wiring the deferred surfaces', () => {
     });
     renderWiring();
 
-    const row = await screen.findByTestId('skill-row-mattstack:work');
-    await user.click(within(row).getByTestId('copy-agent-context'));
+    await screen.findByTestId('skill-row-mattstack:work');
+    const panel = await openPanel(user, 'work');
+    await user.click(within(panel).getByTestId('copy-agent-context'));
 
     await screen.findByText(/denied/);
   });

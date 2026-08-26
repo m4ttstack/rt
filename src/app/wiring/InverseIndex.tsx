@@ -2,7 +2,6 @@ import {
   ActionIcon,
   Alert,
   Badge,
-  Drawer,
   Group,
   Paper,
   Stack,
@@ -13,7 +12,6 @@ import type { MantineColor } from '@ui/core';
 import { useSchemeColors } from '@ui/hooks';
 import { Icons } from '@ui/icons';
 import { CommandProvenance } from '../runs/CommandProvenance';
-import { useDrawerSurface } from './drawerSurface';
 import type { BindingSite, BindingSiteKind } from './outline';
 import { suffixOf } from './outline';
 import { SOFT_RULE } from './SlotRow';
@@ -94,7 +92,8 @@ function SiteRow({
 
 export interface InverseIndexProps {
   pack: string;
-  /** The fill being inspected; `null` closes the drawer. */
+  /** The fill being inspected; `null` renders nothing (the tab has no fill to
+      answer for -- an unbound skill, say). */
   fill: string | null;
   /** Every site that resolves to `fill`, already ordered. Empty is a real
       answer -- "bound by nothing" -- not a loading state. */
@@ -104,19 +103,19 @@ export interface InverseIndexProps {
   sourcePath: string | null;
   /** `dataUpdatedAt` off the composition query that produced `sites`. */
   asOf: number | undefined;
-  /** Scrolls the spine to that site's row and closes the drawer. Every ref
-      the index can list has one: a binder the pipeline never names still
-      lands under "Outside the pipeline". */
+  /** Jumps the split view to that site's own skill. Every ref the index can
+      list has a row: a binder the pipeline never names still lands under
+      "Not run by this pipeline". */
   onShowInMap: (site: BindingSite) => void;
-  onClose: () => void;
 }
 
 /**
  * The inverse of the map: one fill, and every place in the manifest that
- * resolves to it. It is the view consulted before deleting a fill, so an
- * empty list is rendered as the plain fact it is rather than as an error --
- * and it is drawn from the same inversion the slot rows' `N sites` chip
- * counts, so the two can never disagree.
+ * resolves to it. Folded out of its old drawer into the detail panel's
+ * "Used by" tab. It is the view consulted before deleting a fill, so an empty
+ * list is rendered as the plain fact it is rather than as an error -- and it is
+ * drawn from the same inversion the slot rows' `N sites` chip counts, so the
+ * two can never disagree.
  */
 export function InverseIndex({
   pack,
@@ -125,110 +124,96 @@ export function InverseIndex({
   sourcePath,
   asOf,
   onShowInMap,
-  onClose,
 }: InverseIndexProps) {
   const { text } = useSchemeColors();
-  const surface = useDrawerSurface();
+
+  if (fill === null) return null;
 
   return (
-    <Drawer
-      opened={fill !== null}
-      onClose={onClose}
-      position="right"
-      size={720}
-      padding="lg"
-      styles={surface}
-      data-testid="inverse-index"
-      title={
-        <Stack gap={2}>
+    <Stack gap="lg" data-testid="inverse-index">
+      <Stack gap={2}>
+        <Group gap="xs" wrap="nowrap">
+          <Text fz="xl" fw={700} truncate>
+            {fill}
+          </Text>
+          {/* The fill's source moved here from the slot row, where the name
+              now opens this panel. One affordance per control: the slot
+              answers "what binds it", this answers "where is it". */}
+          {sourcePath && (
+            <Tooltip label="Open source">
+              <ActionIcon
+                component="a"
+                href={`vscode://file${sourcePath}`}
+                variant="subtle"
+                color="gray"
+                size="sm"
+                aria-label={`open source for ${fill}`}
+                data-testid="open-fill-source"
+              >
+                <Icons.edit size={14} />
+              </ActionIcon>
+            </Tooltip>
+          )}
+        </Group>
+        <CommandProvenance
+          command={`rt skills composition --pack ${pack}`}
+          asOf={asOf}
+        />
+      </Stack>
+
+      <Stack gap="xs">
+        <Group justify="space-between" wrap="nowrap">
+          <Text fw={700} size="lg">
+            What binds this
+          </Text>
+          <Text size="sm" c={text.muted} data-testid="site-count">
+            {sites.length}
+          </Text>
+        </Group>
+        <Text size="xs" c={text.muted}>
+          Every site that resolves to this fill — a roster verb&apos;s slot, a
+          pipeline stage, a mattstack skill that is neither, or another
+          plugin&apos;s skill. Deleting the fill breaks every one.
+        </Text>
+      </Stack>
+
+      {sites.length === 0 ? (
+        <Stack gap="xs" data-testid="bound-by-nothing">
           <Group gap="xs" wrap="nowrap">
-            <Text fz="xl" fw={700}>
+            <Badge size="sm" variant="light" color="purple">
+              orphaned
+            </Badge>
+            <Text size="lg" truncate>
               {fill}
             </Text>
-            {/* The fill's source moved here from the slot row, where the
-                name now opens this panel. One affordance per control: the
-                row answers "what binds it", this answers "where is it". */}
-            {sourcePath && (
-              <Tooltip label="Open source">
-                <ActionIcon
-                  component="a"
-                  href={`vscode://file${sourcePath}`}
-                  variant="subtle"
-                  color="gray"
-                  // `sm` (22px), not the 28px the row actions use: at 28 the
-                  // action is taller than the title line and grows the
-                  // header past the height the design draws it at.
-                  size="sm"
-                  aria-label={`open source for ${fill}`}
-                  data-testid="open-fill-source"
-                >
-                  <Icons.edit size={14} />
-                </ActionIcon>
-              </Tooltip>
-            )}
           </Group>
-          <CommandProvenance
-            command={`rt skills composition --pack ${pack}`}
-            asOf={asOf}
-          />
+          <Alert
+            variant="default"
+            radius="md"
+            icon={<Icons.info size={14} />}
+            styles={{
+              root: { border: `1px solid ${SOFT_RULE}` },
+              icon: { color: text.muted },
+            }}
+          >
+            <Text size="xs" c={text.muted}>
+              Bound by nothing. Not an error — a fill that no verb, stage, or
+              other plugin resolves to. Safe to delete unless something outside
+              this pack&apos;s manifest reaches it.
+            </Text>
+          </Alert>
         </Stack>
-      }
-    >
-      <Stack gap="lg">
+      ) : (
         <Stack gap="xs">
-          <Group justify="space-between" wrap="nowrap">
-            <Text fw={700} size="lg">
-              What binds this
-            </Text>
-            <Text size="sm" c={text.muted} data-testid="site-count">
-              {sites.length}
-            </Text>
-          </Group>
-          <Text size="xs" c={text.muted}>
-            Every site that resolves to this fill — a roster verb&apos;s slot, a
-            pipeline stage, a mattstack skill that is neither, or another
-            plugin&apos;s skill. Deleting the fill breaks every one.
-          </Text>
+          {sites.map(site => (
+            <SiteRow
+              key={`${site.ref}:${site.slot}`}
+              site={site}
+              onShowInMap={() => onShowInMap(site)}
+            />
+          ))}
         </Stack>
-
-        {sites.length === 0 ? (
-          <Stack gap="xs" data-testid="bound-by-nothing">
-            <Group gap="xs" wrap="nowrap">
-              <Badge size="sm" variant="light" color="purple">
-                orphaned
-              </Badge>
-              <Text size="lg" truncate>
-                {fill}
-              </Text>
-            </Group>
-            <Alert
-              variant="default"
-              radius="md"
-              icon={<Icons.info size={14} />}
-              styles={{
-                root: { border: `1px solid ${SOFT_RULE}` },
-                icon: { color: text.muted },
-              }}
-            >
-              <Text size="xs" c={text.muted}>
-                Bound by nothing. Not an error — a fill that no verb, stage, or
-                other plugin resolves to. Safe to delete unless something
-                outside this pack&apos;s manifest reaches it.
-              </Text>
-            </Alert>
-          </Stack>
-        ) : (
-          <Stack gap="xs">
-            {sites.map(site => (
-              <SiteRow
-                key={`${site.ref}:${site.slot}`}
-                site={site}
-                onShowInMap={() => onShowInMap(site)}
-              />
-            ))}
-          </Stack>
-        )}
-      </Stack>
-    </Drawer>
+      )}
+    </Stack>
   );
 }

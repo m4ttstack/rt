@@ -1,10 +1,11 @@
-import { ActionIcon, Badge, Group, Stack, Text, Tooltip } from '@ui/core';
-import type { MantineColor } from '@ui/core';
+import type { KeyboardEvent } from 'react';
+
+import { Badge, Group, Stack, Text } from '@ui/core';
 import { useSchemeColors } from '@ui/hooks';
 import { Icons } from '@ui/icons';
+import { HEALTH_COLOR, HealthChip } from './HealthChip';
 import type { SpineEntry, WiringHealth } from './outline';
 import { QuietBadge } from './QuietBadge';
-import { SlotTable } from './SlotRow';
 
 /** Only the two states a reader has to act on carry a badge. `in-sync` is
     the quiet answer, and `unknown` is rt having said nothing about this ref
@@ -12,13 +13,6 @@ import { SlotTable } from './SlotRow';
 const HEALTH_BADGE: Partial<Record<WiringHealth, string>> = {
   'source-newer': 'source newer',
   'never-compiled': 'never compiled',
-};
-
-export const HEALTH_COLOR: Partial<Record<WiringHealth, MantineColor>> = {
-  'in-sync': 'ok',
-  'source-newer': 'warn',
-  'never-compiled': 'bad',
-  orphaned: 'purple',
 };
 
 /**
@@ -29,12 +23,6 @@ export const HEALTH_COLOR: Partial<Record<WiringHealth, MantineColor>> = {
 function healthLines(entry: SpineEntry): string[] {
   const lines: string[] = [];
 
-  if (entry.kind === 'orchestrator') {
-    lines.push('reads the pipeline below and runs each stage in order');
-    lines.push(
-      'rt skills check covers roster verbs, so the numbered rows below state no health — bare is unmeasured there, not healthy'
-    );
-  }
   if (entry.external) {
     lines.push("binds this pack's fills; nothing in the roster names these");
   }
@@ -60,126 +48,60 @@ function healthLines(entry: SpineEntry): string[] {
   return lines;
 }
 
-interface RowActionsProps {
-  entry: SpineEntry;
-  previewOpen: boolean;
-  onPreview: () => void;
-  historyOpen: boolean;
-  onHistory: () => void;
-  onCopyContext: () => void;
-}
-
-/**
- * An action appears only when it has a real target. A pipeline stage is
- * compiled INTO its orchestrator rather than into a skill of its own, so the
- * payload carries no source, no artifact and no verb to compile for it --
- * four disabled buttons would be four lies about what this page can do.
- * History rides on the verb for the same reason: a stage has no artifact of
- * its own for a commit to have touched.
- */
-function RowActions({
-  entry,
-  previewOpen,
-  onPreview,
-  historyOpen,
-  onHistory,
-  onCopyContext,
-}: RowActionsProps) {
-  if (!entry.sourcePath && !entry.artifactPath && !entry.verb) return null;
-
-  return (
-    <Group gap="xs" wrap="nowrap" style={{ flex: 'none' }}>
-      {entry.sourcePath && (
-        <Tooltip label="Open source">
-          <ActionIcon
-            component="a"
-            href={`vscode://file${entry.sourcePath}`}
-            variant="subtle"
-            color="gray"
-            aria-label={`open source for ${entry.label}`}
-            data-testid="open-source"
-          >
-            <Icons.edit size={16} />
-          </ActionIcon>
-        </Tooltip>
-      )}
-      {entry.artifactPath && (
-        <Tooltip label="Reveal artifact">
-          <ActionIcon
-            component="a"
-            href={`vscode://file${entry.artifactPath}`}
-            variant="subtle"
-            color="gray"
-            aria-label={`reveal artifact for ${entry.label}`}
-            data-testid="reveal-artifact"
-          >
-            <Icons.eye size={16} />
-          </ActionIcon>
-        </Tooltip>
-      )}
-      {entry.verb && (
-        <Tooltip label="Preview compile">
-          <ActionIcon
-            variant={previewOpen ? 'light' : 'subtle'}
-            color={previewOpen ? 'accent' : 'gray'}
-            onClick={onPreview}
-            aria-label={`preview compile of ${entry.label}`}
-            data-testid="toggle-compile-preview"
-          >
-            <Icons.zap size={16} />
-          </ActionIcon>
-        </Tooltip>
-      )}
-      {entry.verb && (
-        <Tooltip label="Version history">
-          <ActionIcon
-            variant={historyOpen ? 'light' : 'subtle'}
-            color={historyOpen ? 'accent' : 'gray'}
-            onClick={onHistory}
-            aria-label={`version history of ${entry.label}`}
-            data-testid="toggle-history"
-          >
-            <Icons.clock size={16} />
-          </ActionIcon>
-        </Tooltip>
-      )}
-      {entry.verb && (
-        <Tooltip label="Copy agent context">
-          <ActionIcon
-            variant="subtle"
-            color="gray"
-            onClick={onCopyContext}
-            aria-label={`copy agent context for ${entry.label}`}
-            data-testid="copy-agent-context"
-          >
-            <Icons.copy size={16} />
-          </ActionIcon>
-        </Tooltip>
-      )}
-    </Group>
-  );
+/** `1 slot` / `2 slots` / `no slots` -- the compact count the slim row shows
+    in place of the slot table it no longer renders inline. */
+function slotCountLabel(count: number): string {
+  if (count === 0) return 'no slots';
+  return count === 1 ? '1 slot' : `${count} slots`;
 }
 
 export interface SkillRowProps {
   entry: SpineEntry;
-  previewOpen: boolean;
-  onPreview: () => void;
-  historyOpen: boolean;
-  onHistory: () => void;
-  /** Opens the inverse index for a slot's fill. */
-  onShowSites: (binding: string) => void;
-  /** Builds this verb's agent-context blob and writes it to the clipboard.
-      Absent wherever the entry has no verb -- `RowActions` already hides the
-      button in that case, so this stays optional rather than a no-op. */
-  onCopyContext?: () => void;
-  /** Opens Rebind for one of this entry's bound slots. Carries the slot
-      name; the verb is this entry's own, which only the caller (holding the
-      composition) can resolve into a real rebind target. */
-  onRebind?: (slotName: string) => void;
   /** Outside-the-pipeline rows carry no step number, so health rides a dot
       in front of the name instead of the timeline bullet. */
   withDot?: boolean;
+  /** Renders the compact ONE-LINE pipeline row (`Main.dc.html` parity) in
+      place of the outside-the-pipeline stacked layout. The orchestrator and
+      numbered stages are slim; outside-the-pipeline rows are not (Task 3
+      owns that section's redesign). */
+  slim?: boolean;
+  /** Opens this entry's detail panel. The whole row (slim or stacked) becomes
+      the click/keyboard target when given; the per-skill actions that used to
+      sit on the row now live in the panel header. */
+  onOpen?: () => void;
+  /** The mini-list shape the split view draws on the left while a panel is
+      open (`Detail.dc.html` `.mini`): name + a health dot only, no slot count
+      and no chevron. Implies `slim`. */
+  compact?: boolean;
+  /** The row whose panel is open, in the compact mini-list: outlined in the
+      full accent (`Detail.dc.html` `.mini.sel`). */
+  selected?: boolean;
 }
+
+/** The mini-list's health tell: a bare dot for a measured state, a muted dot
+    for `unknown` -- the compact row has no room for the label `HealthChip`
+    carries, so the dot stands alone. */
+function HealthDot({ health }: { health: WiringHealth }) {
+  const { text } = useSchemeColors();
+  const color = HEALTH_COLOR[health];
+  return (
+    <div
+      aria-hidden
+      data-testid="health-dot"
+      style={{
+        width: 7,
+        height: 7,
+        borderRadius: '50%',
+        flex: 'none',
+        background: color ? text.highContrast(color) : text.dimmed,
+      }}
+    />
+  );
+}
+
+/** The full accent outline the selected mini row wears (`Detail.dc.html`
+    `.mini.sel`), not the muted per-scheme border. */
+const ACCENT = 'var(--mantine-color-accent-filled)';
 
 /**
  * One skill's row: what it is, what state it is in, and every slot it opens.
@@ -188,23 +110,146 @@ export interface SkillRowProps {
  */
 export function SkillRow({
   entry,
-  previewOpen,
-  onPreview,
-  historyOpen,
-  onHistory,
-  onShowSites,
-  onCopyContext,
-  onRebind,
   withDot = false,
+  slim = false,
+  onOpen,
+  compact = false,
+  selected = false,
 }: SkillRowProps) {
   const { text } = useSchemeColors();
+
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (!onOpen) return;
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault();
+      onOpen();
+    }
+  };
+
+  if (compact) {
+    return (
+      <Group
+        gap="sm"
+        wrap="nowrap"
+        align="center"
+        role={onOpen ? 'button' : undefined}
+        tabIndex={onOpen ? 0 : undefined}
+        onClick={onOpen}
+        onKeyDown={onOpen ? handleKeyDown : undefined}
+        aria-label={onOpen ? `open ${entry.label}` : undefined}
+        data-testid={`skill-row-${entry.key}`}
+        px="xs"
+        py={6}
+        style={{
+          cursor: onOpen ? 'pointer' : undefined,
+          borderRadius: 'var(--mantine-radius-md)',
+          border: `1px solid ${selected ? ACCENT : 'transparent'}`,
+          boxShadow: selected ? `0 0 0 1px ${ACCENT} inset` : undefined,
+        }}
+      >
+        <Text
+          fw={selected ? 700 : 600}
+          size="md"
+          truncate
+          style={{ flex: 1, minWidth: 0 }}
+        >
+          {entry.label}
+        </Text>
+        <HealthDot health={entry.health} />
+      </Group>
+    );
+  }
+
+  if (slim) {
+    return (
+      <Stack gap={1} data-testid={`skill-row-${entry.key}`}>
+        <Group
+          gap="sm"
+          wrap="nowrap"
+          align="center"
+          role={onOpen ? 'button' : undefined}
+          tabIndex={onOpen ? 0 : undefined}
+          onClick={onOpen}
+          onKeyDown={onOpen ? handleKeyDown : undefined}
+          aria-label={onOpen ? `open ${entry.label}` : undefined}
+          style={{ cursor: onOpen ? 'pointer' : undefined }}
+        >
+          <Group gap="xs" wrap="nowrap" style={{ minWidth: 0 }}>
+            <Text fw={700} size="lg" style={{ flex: 'none' }}>
+              {entry.label}
+            </Text>
+            {entry.ref && (
+              <Text size="sm" c={text.muted} truncate style={{ minWidth: 0 }}>
+                {entry.ref}
+              </Text>
+            )}
+            {entry.kind === 'orchestrator' && (
+              <Badge
+                size="xs"
+                variant="light"
+                color="accent"
+                style={{ flex: 'none' }}
+              >
+                orchestrator
+              </Badge>
+            )}
+            {entry.external && (
+              <Badge
+                size="xs"
+                variant="light"
+                color="purple"
+                style={{ flex: 'none' }}
+              >
+                another plugin
+              </Badge>
+            )}
+            {entry.kind === 'outside' &&
+              !entry.external &&
+              !entry.invocable && <QuietBadge>internal</QuietBadge>}
+            {entry.unwired && <QuietBadge>unwired</QuietBadge>}
+            {entry.sameWiringAsStep !== undefined && (
+              <QuietBadge>
+                same wiring as stage {entry.sameWiringAsStep}
+              </QuietBadge>
+            )}
+          </Group>
+          <div aria-hidden style={{ flex: 1 }} />
+          <Text
+            size="sm"
+            c={text.muted}
+            style={{ flex: 'none', whiteSpace: 'nowrap' }}
+          >
+            {slotCountLabel(entry.slots.length)}
+          </Text>
+          <HealthChip health={entry.health} />
+          <Icons.chevronRight
+            size={16}
+            color={text.muted}
+            aria-hidden
+            style={{ flex: 'none' }}
+          />
+        </Group>
+      </Stack>
+    );
+  }
+
   const badge = HEALTH_BADGE[entry.health];
   const color = HEALTH_COLOR[entry.health];
   const lines = healthLines(entry);
 
   return (
     <Stack gap={1} data-testid={`skill-row-${entry.key}`}>
-      <Group gap="sm" wrap="nowrap" align="flex-start">
+      <Group
+        gap="sm"
+        wrap="nowrap"
+        align="flex-start"
+        role={onOpen ? 'button' : undefined}
+        tabIndex={onOpen ? 0 : undefined}
+        onClick={onOpen}
+        onKeyDown={onOpen ? handleKeyDown : undefined}
+        aria-label={onOpen ? `open ${entry.label}` : undefined}
+        style={{ cursor: onOpen ? 'pointer' : undefined }}
+      >
         <Stack gap={1} style={{ flex: 1, minWidth: 0 }}>
           <Group gap="xs" wrap="nowrap">
             {withDot && (
@@ -262,20 +307,15 @@ export function SkillRow({
             </Text>
           ))}
         </Stack>
-        <RowActions
-          entry={entry}
-          previewOpen={previewOpen}
-          onPreview={onPreview}
-          historyOpen={historyOpen}
-          onHistory={onHistory}
-          onCopyContext={onCopyContext ?? (() => {})}
-        />
+        {onOpen && (
+          <Icons.chevronRight
+            size={16}
+            color={text.muted}
+            aria-hidden
+            style={{ flex: 'none' }}
+          />
+        )}
       </Group>
-      <SlotTable
-        slots={entry.slots}
-        onShowSites={onShowSites}
-        onRebind={onRebind}
-      />
     </Stack>
   );
 }

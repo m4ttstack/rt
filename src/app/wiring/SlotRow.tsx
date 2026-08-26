@@ -3,7 +3,6 @@ import {
   Anchor,
   Badge,
   Group,
-  Paper,
   Stack,
   Text,
   Tooltip,
@@ -165,40 +164,5 @@ export function SlotRow({
         </Text>
       )}
     </Stack>
-  );
-}
-
-/** The nested surface holding a skill's slots. Rendered even for one slot:
-    the alignment is what makes a column of skills readable as one wiring. */
-export function SlotTable({
-  slots,
-  onShowSites,
-  onRebind,
-}: {
-  slots: SlotOutlineNode[];
-  onShowSites: (binding: string) => void;
-  onRebind?: (slotName: string) => void;
-}) {
-  const { bg } = useSchemeColors();
-
-  if (slots.length === 0) return null;
-
-  return (
-    <Paper
-      bg={bg.level3}
-      mt="xs"
-      radius="sm"
-      style={{ border: `1px solid ${SOFT_RULE}` }}
-      data-testid="slot-table"
-    >
-      {slots.map((slot, i) => (
-        <div
-          key={`${slot.name}-${slot.boundTo ?? i}`}
-          style={i === 0 ? undefined : { borderTop: `1px solid ${SOFT_RULE}` }}
-        >
-          <SlotRow slot={slot} onShowSites={onShowSites} onRebind={onRebind} />
-        </div>
-      ))}
-    </Paper>
   );
 }

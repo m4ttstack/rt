@@ -38,7 +38,6 @@ function renderIndex(
     sites?: BindingSite[];
     sourcePath?: string | null;
     onShowInMap?: (site: BindingSite) => void;
-    onClose?: () => void;
   } = {}
 ) {
   return renderWithProviders(
@@ -53,7 +52,6 @@ function renderIndex(
       }
       asOf={1_700_000_000_000}
       onShowInMap={over.onShowInMap ?? (() => {})}
-      onClose={over.onClose ?? (() => {})}
     />
   );
 }
@@ -151,10 +149,9 @@ describe('InverseIndex: bound by nothing', () => {
 });
 
 describe('InverseIndex: closed', () => {
-  it('renders no panel until a fill is selected', () => {
-    // Mantine leaves `Drawer.Root` in the DOM whether or not it is open, so
-    // the absence has to be asserted on the panel's own content -- and the
-    // second half is what proves this harness renders any at all.
+  it('renders nothing until a fill is selected', () => {
+    // A null fill (an unbound skill's Used-by tab) renders nothing at all;
+    // the second half is what proves this harness renders any at all.
     const { unmount } = renderIndex({ fill: null });
     expect(screen.queryByTestId('site-count')).not.toBeInTheDocument();
     expect(screen.queryAllByTestId(/^binding-site-/)).toHaveLength(0);

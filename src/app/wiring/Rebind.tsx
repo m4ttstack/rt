@@ -154,7 +154,7 @@ export function Rebind({
   applyError = null,
   onClose,
 }: RebindProps) {
-  const { text } = useSchemeColors();
+  const { bg, text } = useSchemeColors();
 
   const verbEntry = composition.verbs.find(v => v.name === verb);
   const slotEntry = verbEntry?.slots.find(s => s.name === slot);
@@ -324,6 +324,7 @@ export function Rebind({
                 </Text>
               </Group>
               <Paper
+                bg={bg.level1}
                 radius="sm"
                 p="xs"
                 style={{ border: `1px solid ${SOFT_RULE}` }}
