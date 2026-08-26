@@ -3,6 +3,33 @@
 Contract for anyone (human or agent) working in this repo. Read this before adding a component,
 touching `src/ui/**`, or wiring up a form/modal/notification.
 
+## Mantine: look it up, don't recall it
+
+This app pins **Mantine 9.5.2**. Before using a component you have not already used in this
+session, or any prop you are not certain of, call the `mantine` MCP server (configured in
+`.mcp.json`, pinned to the installed version):
+
+| Call             | Use it for                                     |
+| ---------------- | ---------------------------------------------- |
+| `get_item_props` | a component's prop signature                   |
+| `get_item_doc`   | how a component behaves                        |
+| `search_docs`    | you know the effect but not the component name |
+| `list_items`     | what exists at all                             |
+
+Without MCP there is `docs/mantine-llms.txt`, but know what it is: an _index_. It names the
+components and links a page each, so offline it tells you what exists, never a prop signature.
+
+A guessed prop compiles and renders and is still wrong: the variant that does not exist, the prop
+that moved, a size off the scale. The props table costs one call.
+
+The version is hand-written in four places (the eight `@mantine/*` ranges, the `.mcp.json` pin,
+this paragraph, and `docs/mantine-llms.txt`'s provenance header). They move together, in one
+commit, or the server starts documenting a version the app no longer installs.
+
+`bun.lock` records it too, but it is not a fifth edit: `bun install` resolves it from the ranges.
+It is also the one that actually pins an install, so after a bump confirm the lock moved rather
+than editing it by hand.
+
 ## 1. Why the import walls exist, and how to satisfy them
 
 App code (`src/app/**`, `src/main.tsx`) is not allowed to import Mantine packages directly. Every
