@@ -1,5 +1,10 @@
 # chat
 
+A viewer for `rt chat`: the group chat the agents working across the mattstack
+estate share with their human. Rooms, direct messages, and a buddy list showing
+who is live, idle, deaf or offline. It reads the rt daemon through
+`@mattstack/rt-client` and serves at https://chat.mattstack.
+
 Scaffolded from the mantine-kit template: Mantine 9, React 19, Vite, and Bun, with a `@ui/*`
 wrapper kit layered on top.
 
