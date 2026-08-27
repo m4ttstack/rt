@@ -12,6 +12,7 @@ import {
 import { CANARY_PATH } from "../../core/canary.ts";
 import { boardHtml, boardJs, boardCss } from "../../core/board-assets.ts";
 import { buildStatus, type StatusRow } from "./status.ts";
+import { buildDiscoveryApps, iconResponse } from "./discovery.ts";
 import { registerApp, unregisterApp, editApp, adoptApp, restartManagedApps, removeManagedApps,
   type Drivers, knownRouteApp,
 } from "./register.ts";
@@ -53,6 +54,19 @@ function json(body: unknown, status = 200): Response {
     status,
     headers: { "content-type": "application/json; charset=utf-8" },
   });
+}
+
+/**
+ * The absolute origin the discovery API's icon URLs resolve against: deck
+ * itself, on whichever tld the requesting app's own host carries (its last
+ * dotted label), so an icon URL a browser fetches lands on the same tld as
+ * the page that requested it. Falls back to MATTSTACK_TLD when no host is
+ * available (e.g. a direct request with neither x-forwarded-host nor host).
+ */
+function deckBaseFor(host: string | undefined): string {
+  if (!host) return `https://deck.${MATTSTACK_TLD}`;
+  const labels = host.replace(/:\d+$/, "").split(".");
+  return `https://deck.${labels[labels.length - 1] || MATTSTACK_TLD}`;
 }
 
 async function body(req: Request): Promise<Record<string, unknown>> {
@@ -172,6 +186,22 @@ export function startApi(deps: ApiDeps) {
         return new Response(String(deps.port), { headers: { "content-type": "text/plain" } });
       }
       if (pathname === "/favicon.ico") return new Response(null, { status: 204 });
+
+      // ---- launcher discovery API (unversioned, browser-facing, GET only) ----
+      if (pathname === "/api/apps" && req.method === "GET") {
+        const base = deckBaseFor(host); // https://deck.<tld> from the request host
+        const apps = (await buildDiscoveryApps(statusOpts)).map((a) => ({
+          ...a,
+          icon: a.icon ? `${base}/api/apps/${a.icon}/icon` : null,
+        }));
+        return json({ apps }); // CORS added in Task 5
+      }
+      {
+        const m = pathname.match(/^\/api\/apps\/([^/]+)\/icon$/);
+        if (m && req.method === "GET") {
+          return iconResponse(m[1]!); // CORS added in Task 5
+        }
+      }
 
       // ---- versioned API ----
       if (pathname.startsWith("/api/v1/")) {
