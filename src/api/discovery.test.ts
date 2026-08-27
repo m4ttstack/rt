@@ -165,3 +165,31 @@ test("GET /api/apps/:name/icon serves 200 svg for a real icon, 404 for a missing
   const missing = await api("/api/apps/nope/icon");
   expect(missing.status).toBe(404);
 });
+
+// ---- CORS on the discovery routes ----
+
+test("GET /api/apps echoes an allowed mattstack origin in CORS", async () => {
+  const res = await fetch(`http://127.0.0.1:${PORT}/api/apps`, { headers: { origin: "https://chat.mattstack" } });
+  expect(res.headers.get("access-control-allow-origin")).toBe("https://chat.mattstack");
+});
+
+test("GET /api/apps does not CORS-allow a foreign origin", async () => {
+  const res = await fetch(`http://127.0.0.1:${PORT}/api/apps`, { headers: { origin: "https://evil.example.com" } });
+  expect(res.headers.get("access-control-allow-origin")).toBeNull();
+});
+
+test("OPTIONS /api/apps preflight returns the CORS headers", async () => {
+  const res = await fetch(`http://127.0.0.1:${PORT}/api/apps`, { method: "OPTIONS", headers: { origin: "https://chat.mattstack" } });
+  expect(res.status).toBe(204);
+  expect(res.headers.get("access-control-allow-origin")).toBe("https://chat.mattstack");
+});
+
+test("the icon route is CORS-allowed too", async () => {
+  const res = await fetch(`http://127.0.0.1:${PORT}/api/apps/chat/icon`, { headers: { origin: "https://console.mattstack" } });
+  expect(res.headers.get("access-control-allow-origin")).toBe("https://console.mattstack");
+});
+
+test("the versioned /api/v1 surface is NOT CORS-opened", async () => {
+  const res = await fetch(`http://127.0.0.1:${PORT}/api/v1/status`, { headers: { origin: "https://chat.mattstack" } });
+  expect(res.headers.get("access-control-allow-origin")).toBeNull();
+});

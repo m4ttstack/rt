@@ -56,6 +56,32 @@ function json(body: unknown, status = 200): Response {
   });
 }
 
+const ICON_ROUTE = /^\/api\/apps\/([^/]+)\/icon$/;
+
+/**
+ * MATTSTACK_TLD is always allowed even though it is a derived cache entry
+ * (tld-reconcile.ts) that may be absent from getPlatformSettings().tlds,
+ * especially in an isolated test harness whose stored tlds default to
+ * ["localhost"] only. getPlatformSettings().tlds carries that default plus
+ * any bound custom domain.
+ */
+function allowedCorsTlds(): string[] {
+  return [MATTSTACK_TLD, ...getPlatformSettings().tlds];
+}
+
+function corsHeadersFor(origin: string | null): Record<string, string> {
+  if (!origin) return {};
+  let host: string;
+  try { host = new URL(origin).hostname; } catch { return {}; }
+  const allowed = allowedCorsTlds().some((t) => host === t || host.endsWith(`.${t}`));
+  if (!allowed) return {};
+  return {
+    "access-control-allow-origin": origin,
+    "access-control-allow-methods": "GET, OPTIONS",
+    "vary": "origin",
+  };
+}
+
 /**
  * The absolute origin the discovery API's icon URLs resolve against: deck
  * itself, on whichever tld the requesting app's own host carries (its last
@@ -187,19 +213,25 @@ export function startApi(deps: ApiDeps) {
       }
       if (pathname === "/favicon.ico") return new Response(null, { status: 204 });
 
-      // ---- launcher discovery API (unversioned, browser-facing, GET only) ----
-      if (pathname === "/api/apps" && req.method === "GET") {
-        const base = deckBaseFor(host); // https://deck.<tld> from the request host
-        const apps = (await buildDiscoveryApps(statusOpts)).map((a) => ({
-          ...a,
-          icon: a.icon ? `${base}/api/apps/${a.icon}/icon` : null,
-        }));
-        return json({ apps }); // CORS added in Task 5
-      }
-      {
-        const m = pathname.match(/^\/api\/apps\/([^/]+)\/icon$/);
+      // ---- launcher discovery API (unversioned, browser-facing, GET only, CORS) ----
+      if (pathname === "/api/apps" || ICON_ROUTE.test(pathname)) {
+        const cors = corsHeadersFor(req.headers.get("origin"));
+        if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
+        if (pathname === "/api/apps" && req.method === "GET") {
+          const base = deckBaseFor(host); // https://deck.<tld> from the request host
+          const apps = (await buildDiscoveryApps(statusOpts)).map((a) => ({
+            ...a,
+            icon: a.icon ? `${base}/api/apps/${a.icon}/icon` : null,
+          }));
+          return new Response(JSON.stringify({ apps }), {
+            headers: { "content-type": "application/json", ...cors },
+          });
+        }
+        const m = pathname.match(ICON_ROUTE);
         if (m && req.method === "GET") {
-          return iconResponse(m[1]!); // CORS added in Task 5
+          const res = iconResponse(m[1]!);
+          for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);
+          return res;
         }
       }
 
