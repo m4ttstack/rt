@@ -108,7 +108,7 @@ test("end-to-end: adopt a fixture app, then list/serve/CORS/refresh it through t
   expect(chat.displayName).toBe("Chat");
   expect(chat.description).toBe("Group chat");
   expect(chat.url).toBe("https://chat.mattstack");
-  expect(chat.icon).toContain("https://deck.mattstack/api/apps/chat/icon");
+  expect(chat.icon).toBe("https://deck.mattstack/api/apps/chat/icon");
   expect(chat.workingDirectory).toBeUndefined();
   expect(chat.port).toBeUndefined();
   expect(chat.command).toBeUndefined();
