@@ -1,14 +1,12 @@
+// Hand-authored JavaScript, not compiled from vite.ts. A Vite config runs
+// through Node's config loader before the consumer's own build pipeline, so
+// it cannot be type-stripped from node_modules the way the kit's TSX and
+// CSS can. Vite's default `bundle` loader externalizes node_modules
+// dependencies and fails importing a `.ts` here, and the upcoming `native`
+// default breaks the same way, so this preset ships as plain JS (types live
+// in vite.d.ts) the same way vitest/config, @nx/vite, and @epic-web/config
+// ship their shared configs.
 import react from '@vitejs/plugin-react';
-import type { UserConfig } from 'vite';
-
-export interface MattstackViteOptions {
-  /** The Bun/Hono server's port; the dev proxy forwards /api and /ws to it. */
-  apiPort: number;
-  /** @default true */
-  proxy?: boolean;
-  /** Additional `codeSplitting.groups`, matched before the kit's. */
-  extraGroups?: { name: string; test: RegExp }[];
-}
 
 const GROUPS = [
   {
@@ -31,7 +29,7 @@ const GROUPS = [
  * node_modules, so they are excluded from dependency pre-bundling and the
  * react plugin is told not to skip them.
  */
-export function mattstackVite(opts: MattstackViteOptions): UserConfig {
+export function mattstackVite(opts) {
   const { apiPort, proxy = true, extraGroups = [] } = opts;
   return {
     plugins: [react({ exclude: /\/node_modules\/(?!@mattstack\/)/ })],
@@ -63,5 +61,5 @@ export function mattstackVite(opts: MattstackViteOptions): UserConfig {
       globals: true,
       setupFiles: ['./vitest.setup.ts'],
     },
-  } as UserConfig;
+  };
 }

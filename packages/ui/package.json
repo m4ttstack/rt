@@ -37,7 +37,10 @@
     "./test-utils": "./src/test-utils/index.ts",
     "./styles.css": "./src/styles/index.css",
     "./eslint": "./presets/eslint.js",
-    "./vite": "./presets/vite.ts",
+    "./vite": {
+      "types": "./presets/vite.d.ts",
+      "default": "./presets/vite.js"
+    },
     "./tsconfig.base.json": "./tsconfig.base.json"
   },
   "scripts": {

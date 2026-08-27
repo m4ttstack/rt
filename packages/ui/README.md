@@ -61,7 +61,8 @@ export function App() {
 ```
 
 ```ts
-// vite.config.ts -- run every vite/vitest script with --configLoader runner
+// vite.config.ts -- the preset ships as hand-authored .js, so no
+// special vite/vitest flags are needed
 import { defineConfig } from 'vite';
 
 import { mattstackVite } from '@mattstack/app-kit/vite';

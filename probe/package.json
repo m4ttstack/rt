@@ -4,12 +4,12 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite --configLoader runner",
-    "build": "tsc -p tsconfig.json && vite build --configLoader runner",
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json && vite build",
     "serve": "bun run src/server/index.ts",
     "typecheck": "tsc -p tsconfig.json",
     "lint": "eslint src",
-    "test": "vitest --configLoader runner"
+    "test": "vitest"
   },
   "dependencies": {
     "@mattstack/app-kit": "file:./vendor/mattstack-app-kit-0.1.0.tgz",

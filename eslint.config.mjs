@@ -8,6 +8,13 @@ export default tseslint.config(
   { ignores: ['packages/ui/scripts/treeshake-probe/dist/**'] },
   ...mattstackEslint({ app: ['probe/src/**/*.{ts,tsx}'] }),
   {
+    // Config presets ship as plain JS (see packages/ui/presets/vite.js) and
+    // run in Node, unlike the .tsx source that typescript-eslint's ts-file
+    // override already exempts from no-undef.
+    files: ['packages/ui/presets/*.js'],
+    languageOptions: { globals: { process: 'readonly' } },
+  },
+  {
     files: ['packages/ui/src/**/*.{ts,tsx}'],
     ignores: ['packages/ui/src/core/index.ts'],
     rules: {

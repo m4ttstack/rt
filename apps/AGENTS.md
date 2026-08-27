@@ -659,17 +659,15 @@ wrong":
 }` block) are named to avoid exactly this collision -- do not name the
    augmentation file `icons.d.ts` next to an `icons.ts`.
 
-3. **The vite preset ships as TypeScript** (`presets/vite.ts`, exported as
-   `@mattstack/app-kit/vite`). Node cannot type-strip a `.ts` file inside
-   `node_modules`, so a consumer whose `vite.config.ts` imports
-   `@mattstack/app-kit/vite` must run every Vite invocation with
-   `--configLoader runner` (`vite --configLoader runner`, `vite build
---configLoader runner`, `vitest --configLoader runner`; see
-   `probe/package.json`'s `dev`/`build`/`test` scripts). **Known
-   follow-up, not a resolved decision**: shipping `presets/vite.ts` as
-   hand-written `.js` (the way `presets/eslint.js` already ships) would
-   remove this burden entirely. Nobody has done that work yet; until then,
-   every consumer's Vite scripts need the flag.
+3. **The vite preset ships as hand-authored JavaScript** (`presets/vite.js`,
+   typed by `presets/vite.d.ts`, exported as `@mattstack/app-kit/vite`), the
+   same way `presets/eslint.js` ships. A Vite config runs through Node's
+   config loader before the consumer's own build pipeline, so a `.ts` file
+   cannot be type-stripped from inside `node_modules`; shipping `.js`
+   avoids that entirely. A consumer whose `vite.config.ts` imports
+   `@mattstack/app-kit/vite` needs no special config-loading flag on any
+   Vite invocation (`vite`, `vite build`, `vitest`; see
+   `probe/package.json`'s `dev`/`build`/`test` scripts).
 
 4. **Depend on packed tarballs, not bare `file:` directories, until these
    packages are published.** Bun 1.3 installs a bare `file:../packages/ui`
