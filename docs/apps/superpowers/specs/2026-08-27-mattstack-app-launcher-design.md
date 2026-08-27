@@ -107,6 +107,10 @@ string }` (or a boolean plus a conventional path). Only managed apps
 copies the referenced icon to `~/.mattstack/deck/icons/<name>.svg`, and writes
 `displayName`/`description`/`icon` onto the record. Pure read/validate split
 from the fs-writing half so the parser is unit-testable without a real repo.
+`workingDirectory` is set only for service-kind apps registered with `--dir`;
+a `--port`-only app has none, so `ingestManifest` guards
+`record.workingDirectory === undefined` and treats it as a skip (the mattstack
+products are all supervised services, so this is the rare case, not the norm).
 
 **When it runs.**
 - At **adopt** (`/api/v1/apps/:name/adopt`, the path rt setup already calls):
@@ -127,8 +131,13 @@ Two new routes, mounted alongside the existing `/api/v1` surface, deliberately
 NOT versioned under it (they are a minimal public contract, not the board's
 internal API):
 
-**`GET /api/apps`** returns mattstack products only (`managedBy !== "user"`),
-each as a slim discovery row:
+**`GET /api/apps`** returns mattstack products only, each as a slim discovery
+row. The precise filter is `managedBy !== "user" && !isPlatformManagedBy(
+managedBy)`: deck's OWN dashboard row is `managedBy: "deck"`, which is also
+`!== "user"`, so the bare `!== "user"` shorthand used elsewhere in this spec
+must be tightened here. The mechanism exists: `isPlatformManagedBy`
+(`src/services/manager.ts`, true for `"deck"` and legacy `"local"`), or
+equivalently the `StatusRow.self` flag. The row shape:
 
 ```json
 {
@@ -233,7 +242,13 @@ user clicks a tile -> navigates to that app's domain
    Docs-only-adjacent: this is real service code, so it ships through deck's
    normal flow, not straight to main.
 2. **app-kit**: the `MattstackMark` asset, `<AppLauncher />`, the grid popover,
-   `MattstackShell` wiring, tests. A new package export if needed.
+   `MattstackShell` wiring, tests. A new package export if needed. NOTE: the
+   app-kit source this depends on (`MattstackShell`, `HybridMenu`, the `core`
+   and `app` subpaths) currently lives on the unmerged `feat/packages` branch,
+   not `main`; the app-kit plan targets a MERGED app-kit. `MattstackShell`'s
+   header today is just `<Group>{mark}{name}</Group>` with no right-hand slot,
+   so mounting the launcher is genuinely new header wiring (the `appName` prop
+   plus a right slot), not a drop-in.
 3. **consuming apps**: add `mattstack.json` + an `icon.svg` to chat and
    console (and board if it should appear, even if board does not itself show
    the launcher). Then re-adopt or `deck manifest refresh` each.
