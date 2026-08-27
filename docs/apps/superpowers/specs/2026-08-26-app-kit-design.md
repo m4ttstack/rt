@@ -89,6 +89,8 @@ Packaging rules, all three packages:
     `@tanstack/react-virtual`, `codemirror`, `@codemirror/state`,
     `@codemirror/view`, `@codemirror/commands`, `@codemirror/lang-javascript`,
     `@codemirror/lang-json`.
+  - Optional peers (only `./test-utils` needs them; declared under
+    `peerDependenciesMeta` as optional): `@testing-library/react`, `vitest`.
   - `@mattstack/app-server` peers: `hono` (4.x), `@mattstack/rt-client`
     (0.6 line). No dependencies.
   Ranges match what chat and console pin today. The probe verifies that a
@@ -117,11 +119,11 @@ day-to-day iteration. After Matt publishes, apps switch to version ranges.
 | `./lazy` | `LazyLoader`, `CodeHighlight`, `CodeMirror` (console's loader moves in) |
 | `./spotlight` | spotlight re-exports (from console) |
 | `./design-system` | `theme` (pre-branded), `baseTheme`, `ThemeIsland`, `ScopedThemeProvider`, `ThemeInitializer`, `ThemeOverrideWrapper`, `getColorSchemeFromDocument` |
-| `./boot` | `registerSimpleAlerts`, `markMounted`, `LOADING_BAR_CSS` (the synced block as a string); `./boot/simple-loading-bar.css` is the stylesheet |
+| `./boot` | `registerSimpleAlerts`, `markMounted`; `./boot/simple-loading-bar.css` is the stylesheet |
 | `./app` | `mountMattstackApp`, `MattstackShell`, `DaemonBanner`, `useDaemonHealth`, `NotFoundPage` |
 | `./router` | `RailLink`, `Link`, `useHash` |
 | `./utils` | `createDynamicTable`, `noop` |
-| `./test-utils` | `renderWithProviders`, `spyableAction`, jsdom polyfills (today's `@ui/storybook/*`; chat's product tests import `renderWithProviders`), `expectLoadingBarInSync(indexHtml: string)` |
+| `./test-utils` | `renderWithProviders`, `spyableAction`, jsdom polyfills (today's `@ui/storybook/*`; chat's product tests import `renderWithProviders`), `expectLoadingBarInSync(indexHtml: string)`. Node-only: it reads `boot/simple-loading-bar.css` off disk, so the synced block has exactly one copy in the package |
 | `./styles.css` | kit styles entry (Mantine styles, scheme vars, overrides) |
 | `./eslint` | flat config array |
 | `./vite` | `mattstackVite()` |
@@ -140,12 +142,13 @@ consumers get it by importing any subpath.
 `src/boot/` moves into the package: `SimpleAlerts.ts` (with its test) and
 `simple-loading-bar.css`. The two-file sync contract from mantine-kit's
 AGENTS.md section 7 is kept with a clear owner on each side: the package
-owns the stylesheet and exports its synced block as `LOADING_BAR_CSS`; the
-app owns `index.html` (it must inline the block so the bar paints before
+owns the stylesheet; the app owns `index.html` (it must inline the block so the bar paints before
 the bundle loads) and keeps a one-line `loading-bar-sync.test.ts` that
-calls `expectLoadingBarInSync(readFileSync('index.html'))`. The check
-therefore runs in every app against the package version it actually
-installed. `mountMattstackApp` calls `registerSimpleAlerts()` before render
+calls `expectLoadingBarInSync(readFileSync('index.html'))`. The helper
+extracts the block between the `BEGIN SYNCED RULES` / `END SYNCED RULES`
+markers from the package's own stylesheet at test time (no string constant
+to drift), so the check runs in every app against the package version it
+actually installed. `mountMattstackApp` calls `registerSimpleAlerts()` before render
 and `markMounted()` after, exactly as the apps' `main.tsx` do today.
 
 ### Pre-branded design-system
@@ -302,7 +305,8 @@ Error), `/api/health` payload, `/api/daemon` relays the down envelope,
 
 ## D. Migration
 
-Order: app-kit repo, probe, chat. Console is a separate plan after #15.
+Order: app-kit repo, probe, chat. Console is a separate plan from its
+post-#15 `main`.
 
 ### app-kit bring-up
 
@@ -316,8 +320,11 @@ Order: app-kit repo, probe, chat. Console is a separate plan after #15.
    with chat's `RailShell.railProps` addition folded in and chat's `Hash`
    icon left out; `.storybook/` from console; chat's `src/boot/` as the
    boot module; the apps' `eslint-local/` rules and `scripts/treeshake-*`
-   moved into the package; barrels re-pathed; then `app`, `router`, presets
-   written fresh.
+   moved into the package; barrels re-pathed; the trailing
+   `@import '../../app/styles/tokyo-theme.css'` dropped from
+   `styles/index.css` (the Tokyo CSS is imported by `mountMattstackApp`
+   from the tokyo package instead); then `app`, `router`, presets written
+   fresh.
 4. `packages/server` written fresh from the two servers, tests ported.
 5. `probe/`: a minimal app (shell, one route, one registered icon, a
    `tokyo.*` colour, one API route, relay) that must typecheck, lint against
@@ -357,9 +364,10 @@ Order: app-kit repo, probe, chat. Console is a separate plan after #15.
 - Config files become preset one-liners. `package.json`: add the two
   `file:` packages; add the peers chat lacks today (`@mantine/spotlight`);
   keep every other peer installed; drop the direct deps that became package
-  internals (`clsx`, `dayjs`, `lucide-react`, `mantine-form-zod-resolver`,
-  `react-interval-hook`, `@tanstack/react-virtual`) unless product code
-  imports them.
+  internals and that no product code imports (`clsx`, `dayjs`,
+  `lucide-react`, `mantine-form-zod-resolver`, `@tanstack/react-virtual`).
+  `react-interval-hook` stays: `App.tsx`'s buddies poll uses `useInterval`
+  (the daemon-probe use leaves with `useDaemonHealth`).
 - Docs: `ARCHITECTURE.md`, `CLAUDE.md`, `AGENTS.md` re-pointed; `AGENTS.md`
   shrinks to what is app-specific plus a pointer at app-kit's own
   `AGENTS.md` (the kit contract moves there).
