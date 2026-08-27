@@ -780,7 +780,7 @@ git commit -m "docs: mattstack.json manifest and the /api/apps launcher registry
 
 - [ ] **Step 1: Write one full-path test**
 
-Isolate state + fakes, `startApi`. Create a real temp app dir with `mattstack.json` (displayName "Chat", description, icon `./public/icon.svg`) and the SVG. Register `chat` (managedBy user, kind service, workingDirectory = that dir), a `deck` platform row, and a `mine` user app. Adopt `chat` via `POST /api/v1/apps/chat/adopt` (or `adoptApp`). Then:
+Isolate state + fakes, `startApi`. Carry the same request headers Task 4 Step 6 models on every fetch: `x-forwarded-host: <name>.mattstack` (so `deckBaseFor` yields a real tld for the absolute icon URL) and an `origin: https://console.mattstack` (for the CORS echo assertion). Create a real temp app dir with `mattstack.json` (displayName "Chat", description, icon `./public/icon.svg`) and the SVG. Register `chat` (managedBy user, kind service, workingDirectory = that dir), a `deck` platform row, and a `mine` user app. Adopt `chat` via `POST /api/v1/apps/chat/adopt` (or `adoptApp`). Then:
 - `GET /api/apps` returns exactly `[chat]`, with `chat.url` matching `https://chat.<tld>` and `chat.icon` an absolute `https://deck.<tld>/api/apps/chat/icon`.
 - `GET /api/apps/chat/icon` is 200 `image/svg+xml` and the body contains `<svg`.
 - The CORS header echoes `https://console.mattstack`.
