@@ -7,6 +7,7 @@ import {
   getRecord, putRecord, deleteRecord, listRecords, addIssue, clearIssues, reloadRegistry,
   type AppRecord, type SyncIssue,
 } from "../registry/records.ts";
+import { ingestManifest, removeIcon } from "../registry/manifest.ts";
 import { renameAppSettings, getOverride, clearOverride } from "../../core/settings.ts";
 import { renameOAuth } from "../edge/oauth.ts";
 import { allocatePort } from "../registry/allocate.ts";
@@ -178,6 +179,7 @@ async function teardownRecord(record: AppRecord, drivers: Drivers): Promise<{ ok
     return { ok: false };
   }
   deleteRecord(record.name);
+  removeIcon(record.name);
   return { ok: true };
 }
 
@@ -408,6 +410,12 @@ export async function adoptApp(
     putRecord({ ...current, managedBy });
     changed = true;
   }
+  // Pull the app's launcher metadata (mattstack.json + icon) into the registry
+  // now that it is a managed product. Outside the managedBy guard above, so an
+  // idempotent re-adopt and the rename path both refresh the metadata. A
+  // missing or bad manifest is a quiet skip inside ingestManifest, so adopt
+  // never fails on it.
+  ingestManifest(target);
   reconcileMattstackTld();
   return { status: 200, body: summary(getRecord(target)!, name, changed) };
 }

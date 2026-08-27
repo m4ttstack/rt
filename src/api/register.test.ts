@@ -402,6 +402,23 @@ test("adopt refuses managedBy user — adoption IS the ownership flip", async ()
   expect(res.status).toBe(400);
 });
 
+test("adopt ingests the app's mattstack.json onto the record and icon store", async () => {
+  await Bun.write(process.env.LOCAL_APPS_ROUTES_PATH!, "[]");
+  const { iconPathFor } = await import("../registry/manifest.ts");
+  const appDir = mkdtempSync(join(tmpdir(), "adopt-manifest-"));
+  await Bun.write(join(appDir, "mattstack.json"), JSON.stringify({ displayName: "Chat", icon: "./i.svg" }));
+  await Bun.write(
+    join(appDir, "i.svg"),
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64"/></svg>',
+  );
+  await registerApp({ ...input, name: "chat", workingDirectory: appDir }, drivers);
+
+  const res = await adoptApp("chat", { managedBy: "rt" }, drivers);
+  expect(res.status).toBe(200);
+  expect(getRecord("chat")!.displayName).toBe("Chat");
+  expect(existsSync(iconPathFor("chat"))).toBe(true);
+});
+
 test("restartManagedApps: kickstarts every non-user record, skips user apps and staticPort externals", async () => {
   await registerApp({ ...input, name: "board", managedBy: "rt" }, drivers);
   await registerApp({ name: "gitq", managedBy: "rt", staticPort: 4200 }, drivers); // external: no label to kickstart

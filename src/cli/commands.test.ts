@@ -20,6 +20,8 @@ const { FakeServiceManager } = await import("../services/fake.ts");
 const { FakeEdgeProxy } = await import("../edge/portless.ts");
 const { FakeTunnelDriver } = await import("../edge/tunnel.ts");
 const { runCommand } = await import("./commands.ts");
+const { putRecord, getRecord } = await import("../registry/records.ts");
+const { ingestManifest } = await import("../registry/manifest.ts");
 
 const PORT = 18971;
 let server: ReturnType<typeof startApi>;
@@ -287,4 +289,39 @@ test("--version prints the bare semver — the bundle gate matches it against de
   expect(await runCommand(["--version"], x)).toBe(0);
   expect(x.lines).toHaveLength(1);
   expect(x.lines[0]).toMatch(/^\d+\.\d+\.\d+$/);
+});
+
+test("manifest refresh re-ingests the app's mattstack.json and prints a confirmation", async () => {
+  const appDir = mkdtempSync(join(tmpdir(), "local-cli-manifest-"));
+  writeFileSync(
+    join(appDir, "mattstack.json"),
+    JSON.stringify({ displayName: "Chat", icon: "./icon.svg" }),
+  );
+  writeFileSync(
+    join(appDir, "icon.svg"),
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64"/></svg>',
+  );
+  putRecord({
+    name: "chat", managedBy: "rt", port: 11005, kind: "service",
+    workingDirectory: appDir, createdAt: "2026-08-10T00:00:00Z",
+  });
+  ingestManifest("chat");
+  expect(getRecord("chat")!.displayName).toBe("Chat");
+
+  writeFileSync(
+    join(appDir, "mattstack.json"),
+    JSON.stringify({ displayName: "Chatter", icon: "./icon.svg" }),
+  );
+
+  const x = io();
+  expect(await runCommand(["manifest", "refresh", "chat"], x)).toBe(0);
+  expect(x.lines).toEqual(["refreshed chat"]);
+  expect(getRecord("chat")!.displayName).toBe("Chatter");
+});
+
+test("manifest refresh without a sub-verb or name is usage", async () => {
+  const x = io();
+  expect(await runCommand(["manifest"], x)).toBe(2);
+  const y = io();
+  expect(await runCommand(["manifest", "refresh"], y)).toBe(2);
 });

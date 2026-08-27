@@ -12,10 +12,13 @@ import {
 import { CANARY_PATH } from "../../core/canary.ts";
 import { boardHtml, boardJs, boardCss } from "../../core/board-assets.ts";
 import { buildStatus, type StatusRow } from "./status.ts";
+import { buildDiscoveryApps, iconResponse } from "./discovery.ts";
 import { registerApp, unregisterApp, editApp, adoptApp, restartManagedApps, removeManagedApps,
   type Drivers, knownRouteApp,
 } from "./register.ts";
 import { getRecord, listRecords, type AppRecord, type SyncIssue } from "../registry/records.ts";
+import { ingestManifest } from "../registry/manifest.ts";
+import { isPlatformManagedBy } from "../services/manager.ts";
 import { migrate } from "../registry/migrate.ts";
 import { convert } from "../registry/convert.ts";
 import { redactedSettings, updatePlatformSettings, getPlatformSettings } from "./platform-settings.ts";
@@ -53,6 +56,45 @@ function json(body: unknown, status = 200): Response {
     status,
     headers: { "content-type": "application/json; charset=utf-8" },
   });
+}
+
+const ICON_ROUTE = /^\/api\/apps\/([^/]+)\/icon$/;
+
+/**
+ * MATTSTACK_TLD is always allowed even though it is a derived cache entry
+ * (tld-reconcile.ts) that may be absent from getPlatformSettings().tlds,
+ * especially in an isolated test harness whose stored tlds default to
+ * ["localhost"] only. getPlatformSettings().tlds carries that default plus
+ * any bound custom domain.
+ */
+function allowedCorsTlds(): string[] {
+  return [MATTSTACK_TLD, ...getPlatformSettings().tlds];
+}
+
+function corsHeadersFor(origin: string | null): Record<string, string> {
+  if (!origin) return {};
+  let host: string;
+  try { host = new URL(origin).hostname; } catch { return {}; }
+  const allowed = allowedCorsTlds().some((t) => host === t || host.endsWith(`.${t}`));
+  if (!allowed) return {};
+  return {
+    "access-control-allow-origin": origin,
+    "access-control-allow-methods": "GET, OPTIONS",
+    "vary": "origin",
+  };
+}
+
+/**
+ * The absolute origin the discovery API's icon URLs resolve against: deck
+ * itself, on whichever tld the requesting app's own host carries (its last
+ * dotted label), so an icon URL a browser fetches lands on the same tld as
+ * the page that requested it. Falls back to MATTSTACK_TLD when no host is
+ * available (e.g. a direct request with neither x-forwarded-host nor host).
+ */
+function deckBaseFor(host: string | undefined): string {
+  if (!host) return `https://deck.${MATTSTACK_TLD}`;
+  const labels = host.replace(/:\d+$/, "").split(".");
+  return `https://deck.${labels[labels.length - 1] || MATTSTACK_TLD}`;
 }
 
 async function body(req: Request): Promise<Record<string, unknown>> {
@@ -173,6 +215,34 @@ export function startApi(deps: ApiDeps) {
       }
       if (pathname === "/favicon.ico") return new Response(null, { status: 204 });
 
+      // ---- launcher discovery API (unversioned, browser-facing, GET only, CORS) ----
+      if (pathname === "/api/apps" || ICON_ROUTE.test(pathname)) {
+        const cors = corsHeadersFor(req.headers.get("origin"));
+        if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
+        if (pathname === "/api/apps" && req.method === "GET") {
+          const base = deckBaseFor(host); // https://deck.<tld> from the request host
+          const apps = (await buildDiscoveryApps(statusOpts)).map((a) => ({
+            ...a,
+            icon: a.icon ? `${base}/api/apps/${a.icon}/icon` : null,
+          }));
+          // vary: origin unconditionally, allowed or not: a browser must never
+          // reuse a cached response for one origin's CORS decision on another's.
+          return new Response(JSON.stringify({ apps }), {
+            headers: { "content-type": "application/json", vary: "origin", ...cors },
+          });
+        }
+        const m = pathname.match(ICON_ROUTE);
+        if (m && req.method === "GET") {
+          const res = iconResponse(m[1]!);
+          // cache-control: max-age=300 on this response means a denied-origin
+          // fetch, cached without vary, would shadow later cross-origin fetches
+          // for up to 5 minutes -- vary: origin must be set even when cors is {}.
+          res.headers.set("vary", "origin");
+          for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);
+          return res;
+        }
+      }
+
       // ---- versioned API ----
       if (pathname.startsWith("/api/v1/")) {
         if (req.method !== "GET" && isPublic) return json({ error: "forbidden" }, 403);
@@ -232,6 +302,25 @@ export function startApi(deps: ApiDeps) {
         if (pathname === "/api/v1/apps/managed/remove" && req.method === "POST") {
           const r = await removeManagedApps(deps);
           return json(r.body, r.status);
+        }
+
+        // Explicit branch ahead of the single-sub-segment matcher below: that
+        // matcher's ([a-z-]+) captures only one path segment, and this route
+        // has two ("manifest/refresh").
+        {
+          const mr = pathname.match(/^\/api\/v1\/apps\/([^/]+)\/manifest\/refresh$/);
+          if (mr && req.method === "POST") {
+            const name = mr[1]!;
+            const record = getRecord(name);
+            if (!record) return json({ error: "not-found" }, 404);
+            // Only managed (adopted) products are ever ingested: a user app or
+            // deck's own platform row never carries a mattstack.json contract.
+            if (record.managedBy === "user" || isPlatformManagedBy(record.managedBy)) {
+              return json({ error: "not-a-managed-product" }, 409);
+            }
+            ingestManifest(name);
+            return json({ ok: true });
+          }
         }
 
         const m = pathname.match(/^\/api\/v1\/apps\/([^/]+)(?:\/([a-z-]+))?$/);
