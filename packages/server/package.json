@@ -1,0 +1,34 @@
+{
+  "name": "@mattstack/app-server",
+  "version": "0.1.0",
+  "description": "The Hono/Bun server frame for mattstack apps: health, JSON floors, static or embedded assets, the rt-client relay, Bun.serve.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/m4ttstack/app-kit.git",
+    "directory": "packages/server"
+  },
+  "files": [
+    "src",
+    "bin",
+    "!src/**/*.test.*"
+  ],
+  "bin": {
+    "mattstack-embed-assets": "./bin/mattstack-embed-assets.ts"
+  },
+  "exports": {
+    ".": "./src/serve.ts",
+    "./app": "./src/app.ts",
+    "./relays": "./src/relays.ts",
+    "./static": "./src/static.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "test": "vitest"
+  },
+  "peerDependencies": {
+    "@mattstack/rt-client": "^0.6",
+    "hono": "^4.13.3"
+  }
+}
