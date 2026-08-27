@@ -82,9 +82,13 @@ Packaging rules, all three packages:
     context): `react`, `react-dom`, `@mantine/core`, `@mantine/dates`,
     `@mantine/hooks`, `@mantine/form`, `@mantine/modals`,
     `@mantine/notifications`, `@mantine/spotlight`, `@mantine/code-highlight`
-    (all on the 9.5 line), `wouter` (3.x), `zod` (4.x).
+    (all on the 9.5 line), `wouter` (3.x), `zod` (4.x),
+    `@mattstack/mantine-tokyo` (0.2 line; a peer rather than a dependency
+    because a copied `file:` install resolves nested ranges against npm,
+    where the new version is not yet published, and consumers already
+    install tokyo at the top level).
   - Dependencies (internal to the kit, apps never import them):
-    `@mattstack/mantine-tokyo` (workspace version), `clsx`, `dayjs`,
+    `clsx`, `dayjs`,
     `lucide-react`, `mantine-form-zod-resolver`, `react-interval-hook`,
     `@tanstack/react-virtual`, `codemirror`, `@codemirror/state`,
     `@codemirror/view`, `@codemirror/commands`, `@codemirror/lang-javascript`,
