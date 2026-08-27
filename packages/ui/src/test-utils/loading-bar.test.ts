@@ -1,16 +1,15 @@
-// @vitest-environment node
-// Under the package's default jsdom environment, Vite's client asset
-// transform rewrites the `new URL(literal, import.meta.url)` calls below
-// into browser asset URLs (`import.meta.url` becomes `self.location`),
-// which breaks `readFileSync`. This check is pure Node/string logic with
-// no DOM dependency, so it opts into the node environment instead.
 import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { expect, test } from 'vitest';
 
 import { expectLoadingBarInSync } from './loading-bar';
 
 const css = readFileSync(
-  new URL('../boot/simple-loading-bar.css', import.meta.url),
+  resolve(
+    dirname(fileURLToPath(import.meta.url)),
+    '../boot/simple-loading-bar.css'
+  ),
   'utf-8'
 );
 

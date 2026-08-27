@@ -1,7 +1,14 @@
 import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 const BEGIN_MARKER = 'BEGIN SYNCED RULES';
 const END_MARKER = 'END SYNCED RULES';
+
+const STYLESHEET = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  '../boot/simple-loading-bar.css'
+);
 
 function normalize(css: string): string {
   return css.replace(/\s+/g, ' ').trim();
@@ -30,10 +37,7 @@ function extractBetweenMarkers(source: string, label: string): string {
  * copy is the one source, and throws when the app's inline block drifts.
  */
 export function expectLoadingBarInSync(indexHtml: string): void {
-  const css = readFileSync(
-    new URL('../boot/simple-loading-bar.css', import.meta.url),
-    'utf-8'
-  );
+  const css = readFileSync(STYLESHEET, 'utf-8');
   const expected = normalize(
     extractBetweenMarkers(css, 'simple-loading-bar.css')
   );
