@@ -20,6 +20,12 @@ export interface AppRecord {
   env?: Record<string, string>;
   /** launchd label; present for kind "service". Grandfathered records keep their legacy label. */
   label?: string;
+  /** Launcher metadata, ingested from the app's mattstack.json (see
+      registry/manifest.ts). Only managed products carry these. */
+  displayName?: string;
+  description?: string;
+  /** Present once an icon has been ingested to the deck icon store. */
+  icon?: { ext: "svg" };
   grandfathered?: boolean;
   createdAt: string;
   /** Loud degradation: failed syncs land here and render on the board row. */
