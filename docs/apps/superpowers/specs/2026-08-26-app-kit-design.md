@@ -5,9 +5,10 @@ Date: 2026-08-26. Status: approved design, awaiting implementation plan.
 ## Problem
 
 Every mattstack web app (chat, console today) is scaffolded from `mantine-kit`
-and carries its own copy of the kit: `src/ui/**` (about 7k LOC, 102 of 122
-files byte-identical between chat and console), the Vite/ESLint/tsconfig
-files, the boot family, and a Hono/Bun server whose plumbing (health route,
+and carries its own copy of the kit: `src/ui/**` (about 11k lines of
+ts/tsx/css, 126 of 135 shared-path files byte-identical between chat and
+console), the Vite/ESLint/tsconfig files, the boot family, and a Hono/Bun
+server whose plumbing (health route,
 JSON error floors, static serving, `/ws` relay, `Bun.serve`, signals) is 90%
 the same in both. Every cross-cutting change lands twice: the wouter swap
 (chat #5, console #15), the Tokyo contrast fix, the theme extraction.
@@ -21,8 +22,8 @@ Two source-shipped packages, one repo, so an app is only its product code:
 - `@mattstack/app-server`: the Hono/Bun server frame with rt-client relay,
   static/embedded serving, and the JSON contract both apps rely on.
 
-Chat migrates in this pass. Console migrates in a second plan after its
-wouter PR (#15) lands.
+Chat migrates in this pass. Console migrates in a second plan from its
+post-wouter `main` (#15 merged 2026-08-26 as `2481b18`).
 
 ## Non-goals
 
@@ -54,19 +55,21 @@ wouter PR (#15) lands.
 app-kit/                          m4ttstack/app-kit (bun workspace)
   packages/ui/                    @mattstack/app-kit
     src/core, hooks, forms, modals, notifications, icons, lazy, spotlight,
-        design-system, styles, utils      (the kit, moved verbatim)
-    src/app/                      mountMattstackApp, MattstackShell, DaemonBanner, NotFoundPage
+        design-system, styles, utils, storybook   (the kit, moved verbatim, stories included)
+    src/boot/                     SimpleAlerts, simple-loading-bar.css (the boot family)
+    src/app/                      mountMattstackApp, MattstackShell, DaemonBanner, useDaemonHealth, NotFoundPage
     src/router/                   RailLink, Link, useHash (wouter)
-    presets/eslint.js             flat config with the import wall
+    presets/eslint.js             flat config with the import wall and the local rules
+    presets/eslint-local/         no-inline-styles.js, require-data-testid.js (from the apps' eslint-local/)
     presets/vite.ts               mattstackVite()
     tsconfig.base.json
-    scripts/treeshake-check.sh    moved with the kit
+    scripts/treeshake-check.sh + scripts/treeshake-probe/   moved with the kit
   packages/server/                @mattstack/app-server
-    src/createApp.ts, relays.ts, static-disk.ts, embedded/*, serve.ts
+    src/app.ts, relays.ts, static.ts, serving-mode.ts, embedded/*, serve.ts
     bin/mattstack-embed-assets.ts
-  packages/tokyo/                 @mattstack/mantine-tokyo (moved from console/packages, version line continues from 0.1.2)
+  packages/tokyo/                 @mattstack/mantine-tokyo (moved from console/packages: seven files incl. src/fonts/jetbrains-mono.woff2, a binary; version line continues from 0.1.2)
   probe/                          private app that consumes the packages the way chat will; CI target
-  .storybook/                     the kit's stories
+  .storybook/                     main.ts + preview.tsx, moved from console
   docs/superpowers/specs/         this spec
 ```
 
@@ -74,10 +77,22 @@ Packaging rules, all three packages:
 
 - Source-shipped: `exports` point at `src/*.ts(x)` and `.css`; no `dist`, no
   build step, nothing to go stale for `file:` consumers.
-- Peers, not dependencies, for everything the app also imports directly:
-  `react`, `react-dom`, `@mantine/*` (9.5 line), `wouter` (3.x), `hono`
-  (4.x), `@mattstack/rt-client` (server only). Ranges match what chat and
-  console pin today.
+- Dependency classification for `@mattstack/app-kit`:
+  - Peers (the app installs them; a second copy would break types or
+    context): `react`, `react-dom`, `@mantine/core`, `@mantine/dates`,
+    `@mantine/hooks`, `@mantine/form`, `@mantine/modals`,
+    `@mantine/notifications`, `@mantine/spotlight`, `@mantine/code-highlight`
+    (all on the 9.5 line), `wouter` (3.x), `zod` (4.x).
+  - Dependencies (internal to the kit, apps never import them):
+    `@mattstack/mantine-tokyo` (workspace version), `clsx`, `dayjs`,
+    `lucide-react`, `mantine-form-zod-resolver`, `react-interval-hook`,
+    `@tanstack/react-virtual`, `codemirror`, `@codemirror/state`,
+    `@codemirror/view`, `@codemirror/commands`, `@codemirror/lang-javascript`,
+    `@codemirror/lang-json`.
+  - `@mattstack/app-server` peers: `hono` (4.x), `@mattstack/rt-client`
+    (0.6 line). No dependencies.
+  Ranges match what chat and console pin today. The probe verifies that a
+  `file:` install resolves `react` and `@mantine/core` exactly once.
 - One version per package, bumped by hand. `sideEffects: ["*.css"]` on the
   UI package so tree-shaking keeps working.
 - Repository field points at `m4ttstack/app-kit` with the package
@@ -98,22 +113,40 @@ day-to-day iteration. After Matt publishes, apps switch to version ranges.
 | `./forms` | `FormContainer`, `useModalForm`, `useModalFormSubmit`, validation, types |
 | `./modals` | `modals` facade (`confirm`, `prompt`), `ModalsProvider` |
 | `./notifications` | `notifications` facade, `TimedRingProgress` |
-| `./icons` | `Icon`, `IconName`, `AnimatedChevron`, `registerIcons` |
+| `./icons` | `Icon`, `IconName`, `AnimatedChevron`, `registerIcons`. The registry is the kit's; chat's `Hash` is NOT folded in (it becomes chat's example app registration) |
 | `./lazy` | `LazyLoader`, `CodeHighlight`, `CodeMirror` (console's loader moves in) |
 | `./spotlight` | spotlight re-exports (from console) |
 | `./design-system` | `theme` (pre-branded), `baseTheme`, `ThemeIsland`, `ScopedThemeProvider`, `ThemeInitializer`, `ThemeOverrideWrapper`, `getColorSchemeFromDocument` |
+| `./boot` | `registerSimpleAlerts`, `markMounted`, `LOADING_BAR_CSS` (the synced block as a string); `./boot/simple-loading-bar.css` is the stylesheet |
 | `./app` | `mountMattstackApp`, `MattstackShell`, `DaemonBanner`, `useDaemonHealth`, `NotFoundPage` |
 | `./router` | `RailLink`, `Link`, `useHash` |
 | `./utils` | `createDynamicTable`, `noop` |
-| `./test-utils` | `renderWithProviders`, `spyableAction`, jsdom polyfills (today's `@ui/storybook/*`; chat's product tests import `renderWithProviders`) |
+| `./test-utils` | `renderWithProviders`, `spyableAction`, jsdom polyfills (today's `@ui/storybook/*`; chat's product tests import `renderWithProviders`), `expectLoadingBarInSync(indexHtml: string)` |
 | `./styles.css` | kit styles entry (Mantine styles, scheme vars, overrides) |
 | `./eslint` | flat config array |
 | `./vite` | `mattstackVite()` |
 
 Internal relative imports inside the kit folders stay as they are; only the
-barrels' public paths change. The kit's `mantine.d.ts` (the `tokyo.*` colour
-name augmentation of `@mantine/core`) ships in the package so consumers get
-it by importing any subpath.
+barrels' public paths change. Deep specifiers apps use today are flattened
+to the barrels during migration: `@ui/storybook/test-utils` and
+`@ui/storybook/jsdom-polyfills` -> `./test-utils`, `@ui/styles/index.css`
+-> `./styles.css`, `@ui/hooks/useSchemeColors` -> `./hooks`,
+`@ui/utils/noop` -> `./utils`. The kit's `mantine.d.ts` (the `tokyo.*`
+colour name augmentation of `@mantine/core`) ships in the package so
+consumers get it by importing any subpath.
+
+### Boot family
+
+`src/boot/` moves into the package: `SimpleAlerts.ts` (with its test) and
+`simple-loading-bar.css`. The two-file sync contract from mantine-kit's
+AGENTS.md section 7 is kept with a clear owner on each side: the package
+owns the stylesheet and exports its synced block as `LOADING_BAR_CSS`; the
+app owns `index.html` (it must inline the block so the bar paints before
+the bundle loads) and keeps a one-line `loading-bar-sync.test.ts` that
+calls `expectLoadingBarInSync(readFileSync('index.html'))`. The check
+therefore runs in every app against the package version it actually
+installed. `mountMattstackApp` calls `registerSimpleAlerts()` before render
+and `markMounted()` after, exactly as the apps' `main.tsx` do today.
 
 ### Pre-branded design-system
 
@@ -121,6 +154,13 @@ it by importing any subpath.
 `theme` is `mergeThemeOverrides(baseTheme, tokyoTheme)`. `baseTheme` stays
 exported so `<ThemeIsland theme={baseTheme} baseSurfaces>` still gives the
 unbranded kit look inside a subtree. Apps never carry theme files.
+
+This closes the kit's per-app brand-colour extension point on purpose:
+`MantineThemeColorsOverride` can be declared once per program, and the
+package declares it with the Tokyo names. A mattstack app that needs a new
+named colour adds it to `@mattstack/mantine-tokyo` (a kit change), not to
+itself. Theme values other than colour names are overridable through
+`mountMattstackApp(node, { theme })`.
 
 ### `app` module
 
@@ -154,10 +194,14 @@ wordmark recipe, and the colour-scheme control pinned to the rail bottom
 `RailBottom` are compound statics attached with a `/* @__PURE__ */
 Object.assign`, per the kit's tree-shake rules.
 
-`DaemonBanner` is chat's component generalised; `useDaemonHealth()` polls
-`/api/daemon` (the route `@mattstack/app-server` mounts) and returns
-`{ reachable, downSince, probeCount, lastAnsweredAt, probeNow }`.
-`NotFoundPage` takes `home` (default `/`).
+`DaemonBanner` is chat's presentational component, moved as is.
+`useDaemonHealth(seed?: boolean)` is the hook that lives inside chat's
+`App.tsx` today, extracted: it polls `/api/daemon` (the route
+`@mattstack/app-server` mounts) and returns `{ reachable, downSince,
+probeCount, lastAnsweredAt, probeNow }`. `seed` is the initial `reachable`
+value, kept so chat's `App.test.tsx` can still drive the daemon's starting
+state through `initialState.daemonReachable`. `NotFoundPage` takes `home`
+(default `/`).
 
 ### `router` module
 
@@ -172,7 +216,9 @@ so apps have one door. `useHash()` is
   `declare module '@mattstack/app-kit/icons' { interface AppIcons { hash: true } }`
   in the app's `.d.ts`. `IconName` is `keyof KitIcons | keyof AppIcons`, so it
   stays a closed union that includes app additions. `Icon` reads a
-  module-level registry; registration before first render is the contract.
+  module-level registry; registration before first render is the contract,
+  and registering a key the kit already has throws. Chat's `Hash` is the
+  first real registration (it is not in the package registry).
 - Theme: `mountMattstackApp(node, { theme })` merges on top of Tokyo.
 - Lazy loaders: heavy dependencies get a loader in the package, never in an
   app, so vendor splitting has one owner.
@@ -183,9 +229,12 @@ so apps have one door. `useHash()` is
   (`@mantine/core` -> `@mattstack/app-kit/core`, `@mantine/hooks` ->
   `.../hooks`, form, modals, notifications, spotlight, code-highlight ->
   `.../lazy`, dates -> `.../core`), the `lucide-react` / `react-icons` /
-  `codemirror` bans, the `**/server/**` browser guard (type imports only),
-  react-hooks, and prettier last. Exported as an array the app spreads;
-  storybook rules are not included (stories live in app-kit).
+  `codemirror` bans, the `**/server/**` browser guard (type imports only;
+  new to chat, whose client has no value import from `src/server`, so it
+  passes clean), the `local/no-inline-styles` and `local/require-data-testid`
+  rules (the apps' `eslint-local/` moves into the preset), react-hooks, and
+  prettier last. Exported as an array the app spreads; storybook rules are
+  not included (stories live in app-kit).
 - `presets/vite.ts`: `mattstackVite({ apiPort, proxy = true, extraGroups = [] })`
   returns a `UserConfig` with the react plugin, the vendor `codeSplitting`
   groups (react, mantine incl. spotlight, codemirror, codemirror-lang), the
@@ -195,16 +244,20 @@ so apps have one door. `useHash()` is
   needed for a source-shipped TSX package under `node_modules`.
 - `tsconfig.base.json`: the kit's `tsconfig.app.json` compiler options
   (bundler resolution, strict, `jsx: react-jsx`, `types: ["vite/client",
-  "vitest/globals", "bun"]`) for `extends`.
+  "vitest/globals", "bun", "@testing-library/jest-dom"]`, chat's convention;
+  console's `src/jest-dom.d.ts` goes when it migrates) for `extends`.
 
 ### Tests, stories, guards
 
-The kit's 27 tests and 34 stories move with their components. The treeshake
-check script moves and its probe imports through the package subpaths. New
-tests: `MattstackShell` (rail entries, scheme control, header), `registerIcons`
+The kit's 27 tests and 34 stories move with their components; the stories
+and `.storybook/` come from console (chat has none). The treeshake check
+script and probe move and import through the package subpaths. New tests:
+`MattstackShell` (rail entries, scheme control, header), `registerIcons`
 (union extension, duplicate key rejection), `mountMattstackApp` (theme
-override merged, alerts bracket order), `useDaemonHealth`, `RailLink`
-(navigates, closes rail).
+override merged, alerts bracket order), `useDaemonHealth` (seed honoured,
+probe cadence), `RailLink` (navigates, closes rail),
+`expectLoadingBarInSync` (passes on the probe's `index.html`, fails on a
+drifted block).
 
 ## C. `@mattstack/app-server`
 
@@ -222,13 +275,14 @@ serveMattstackApp({
 });
 ```
 
-| Export | Does | Importable under vitest |
+Subpath exports, so the vitest-safe seams never load `hono/bun`:
+
+| Subpath | Exports | Importable under vitest |
 |---|---|---|
-| `createApp({ name, version, routes })` | mounts `/api/health` (`{ ok: true, name, version }`), `/api/daemon` (rt-client `daemonHealth`, always 200), then `routes`; JSON 404 `{ error: 'not found' }`; `onError` answers `{ error: err.message }` with the `HTTPException` status or 500 | yes |
-| `startRelays(relays, publish)` | one rt-client `createRelay` per entry; returns a single stop function | yes |
-| `decideServingMode({ manifestLoaded, isCompiledBinary })` | console's rule verbatim: manifest -> embedded; compiled binary without manifest -> fatal with the build:binary message; else disk | yes |
-| `mountStatic(app, { embedded? })` | disk: `/assets/*`, `/fonts/*`, `favicon.svg` and the raster icon set from `./dist`; embedded: manifest-driven serving; SPA fallback for every other path except `/api/*` (JSON 404) and `/ws` (next) | no (`hono/bun`) |
-| `serveMattstackApp(opts)` | `createApp` + `mountStatic` + `/ws` upgrade subscribing each socket to every relay topic + `Bun.serve({ hostname: '127.0.0.1' })` + `server.publish` fan-out + SIGINT/SIGTERM -> stop relays, stop server | no |
+| `./app` | `createApp({ name, version, routes })`: mounts `/api/health` (`{ ok: true, name, version }`), `/api/daemon` (rt-client `daemonHealth`, always 200), then `routes`; JSON 404 `{ error: 'not found' }`; `onError` answers `{ error: err.message }` with the `HTTPException` status or 500 | yes |
+| `./relays` | `startRelays(relays, publish)`: one rt-client `createRelay` per entry; returns a single stop function | yes |
+| `./static` | `mountStatic(app, serveStatic, { embedded? })`: `serveStatic` is injected (chat's seam, so the path rules are testable with a fake); disk: `/assets/*`, `/fonts/*`, `favicon.svg` and the raster icon set from `./dist`; embedded: manifest-driven serving; SPA fallback for every other path except `/api/*` (JSON 404) and `/ws` (next). Also `decideServingMode({ manifestLoaded, isCompiledBinary })`, console's rule verbatim (manifest -> embedded; compiled binary without manifest -> fatal with the build:binary message; else disk), `loadEmbeddedManifest`, `isCompiledBinary` | yes |
+| `.` | `serveMattstackApp(opts)`: `createApp` + `mountStatic` with `hono/bun`'s `serveStatic` + `/ws` upgrade subscribing each socket to every relay topic + `Bun.serve({ hostname: '127.0.0.1' })` + `server.publish` fan-out + SIGINT/SIGTERM -> stop relays, stop server | no (`hono/bun`) |
 
 `bin/mattstack-embed-assets.ts` is console's `generate-embedded-assets.ts`
 generalised: walks `dist/`, writes `src/server/embedded/manifest.ts` with
@@ -242,8 +296,9 @@ untouched by the frame.
 Tests: `createApp` floors (unknown route, thrown `HTTPException`, thrown
 Error), `/api/health` payload, `/api/daemon` relays the down envelope,
 `startRelays` fans two entries into one stop, `decideServingMode` table,
-`mountStatic` path rules (from chat's and console's existing tests),
-embedded `serve` / `mount` tests from console.
+`mountStatic` path rules with a fake `serveStatic` (chat's
+`static-disk.test.ts`, extended for embedded mode), embedded
+`manifest-loader` / `mount` / `serve` / `compiled-binary` tests from console.
 
 ## D. Migration
 
@@ -253,12 +308,16 @@ Order: app-kit repo, probe, chat. Console is a separate plan after #15.
 
 1. Workspace skeleton, CI (typecheck, lint, test, storybook build, treeshake,
    probe build).
-2. `packages/tokyo` copied from `console/packages/mantine-tokyo` (six files;
-   history not preserved).
-3. `packages/ui`: kit folders copied from chat's `src/ui` (the superset:
-   chat's `Hash` icon and `railProps` plus console's CodeMirror loader and
-   spotlight folder folded in), barrels re-pathed, tests and stories moved,
-   then `app`, `router`, presets written fresh.
+2. `packages/tokyo` copied from `console/packages/mantine-tokyo` (seven
+   files including the `woff2` font, copied as bytes; history not
+   preserved).
+3. `packages/ui`: kit folders copied from console's `src/ui` (the copy that
+   carries the 34 stories, the CodeMirror loader and the spotlight folder),
+   with chat's `RailShell.railProps` addition folded in and chat's `Hash`
+   icon left out; `.storybook/` from console; chat's `src/boot/` as the
+   boot module; the apps' `eslint-local/` rules and `scripts/treeshake-*`
+   moved into the package; barrels re-pathed; then `app`, `router`, presets
+   written fresh.
 4. `packages/server` written fresh from the two servers, tests ported.
 5. `probe/`: a minimal app (shell, one route, one registered icon, a
    `tokyo.*` colour, one API route, relay) that must typecheck, lint against
@@ -274,16 +333,33 @@ Order: app-kit repo, probe, chat. Console is a separate plan after #15.
   `buddies-context`, `statusDetail`, `test-utils.tsx` (its Transcript fetch
   mocks; `renderWithProviders` now comes from `@mattstack/app-kit/test-utils`),
   their CSS modules and tests.
-- `'@ui/` -> `'@mattstack/app-kit/` across `src/`.
+- `'@ui/` -> `'@mattstack/app-kit/` across `src/`, plus the deep-specifier
+  flattening listed in section B.
+- Also deleted, made redundant by the package: `src/boot/` (its
+  `loading-bar-sync.test.ts` is replaced by the one-liner calling
+  `expectLoadingBarInSync`), `src/app/NotFoundPage.tsx`,
+  `src/app/styles/tokyo-theme.css` (and its import in `main.tsx`),
+  `scripts/treeshake-check.sh`, `scripts/treeshake-probe/`, the `treeshake`
+  script in `package.json`, `eslint-local/`. `index.html` stays (it inlines
+  the loading-bar block).
 - `AppChrome`, `AppMark`'s header wiring, `layout.ts` replaced by
-  `MattstackShell`; `main.tsx` becomes `mountMattstackApp(<App />)`; `Hash`
-  registered via `registerIcons`.
+  `MattstackShell` (`AppMark` itself stays as the `mark`); `main.tsx` becomes
+  `mountMattstackApp(<App />)`; `useDaemonHealth` leaves `App.tsx` for the
+  package (seed preserved); `Hash` registered via `registerIcons` with the
+  `AppIcons` augmentation in `src/app/icons.d.ts`.
 - `src/server/{app,index,static-disk,ws,health}.ts` replaced by `routes.ts`
   (the existing `chat` Hono chain) and an `index.ts` calling
-  `serveMattstackApp`. Error envelope switched to `{ error }`; the client's
-  `ok` checks adjusted.
+  `serveMattstackApp` with `port: 11002` (deck's port for chat; today's
+  code defaults to 3000 and binds all interfaces, the package binds
+  127.0.0.1). Error envelope switched to `{ error }`; the client's `ok`
+  checks adjusted. A `serve` script (`bun run src/server/index.ts`) added
+  to `package.json` to match console.
 - Config files become preset one-liners. `package.json`: add the two
-  `file:` packages; keep peers installed; drop nothing that a peer requires.
+  `file:` packages; add the peers chat lacks today (`@mantine/spotlight`);
+  keep every other peer installed; drop the direct deps that became package
+  internals (`clsx`, `dayjs`, `lucide-react`, `mantine-form-zod-resolver`,
+  `react-interval-hook`, `@tanstack/react-virtual`) unless product code
+  imports them.
 - Docs: `ARCHITECTURE.md`, `CLAUDE.md`, `AGENTS.md` re-pointed; `AGENTS.md`
   shrinks to what is app-specific plus a pointer at app-kit's own
   `AGENTS.md` (the kit contract moves there).
@@ -300,10 +376,12 @@ onto the shell. Starts from post-#15 `main`.
 
 - app-kit CI green: vitest, storybook build, treeshake, probe typecheck +
   lint + build.
-- chat: test file count after the move equals before minus the 27 kit tests
-  (the 6 product tests under `src/ui` move with their components);
-  `bun run typecheck`, `bun run lint`, `bun run build`, and `bun run serve`
-  against the real daemon (rooms load, a post renders, `/ws` delivers).
+- chat: of the 33 test files under `src/ui`, 27 are removed (26 kit tests
+  plus `DaemonBanner.test.tsx`, whose component now lives in the package)
+  and 6 move to `src/app`; `src/boot`'s two tests are removed and the
+  loading-bar one-liner added. `bun run typecheck`, `bun run lint`,
+  `bun run build`, and `bun run serve` against the real daemon (rooms load,
+  a post renders, `/ws` delivers).
 - No browser verification without Matt's go-ahead; the deck preview port is
   available as for chat #5.
 
@@ -314,7 +392,7 @@ onto the shell. Starts from post-#15 `main`.
 | Vite does not transform TSX + CSS modules under `node_modules` for a source-shipped package | Probe app is the first plan task; the vite preset carries `optimizeDeps.exclude` and the react plugin `include` for the package. If it cannot be made clean, fall back to a `tsc` emit to `dist` on `prepack` (rt-client's shape) and amend this spec. |
 | `@mantine/core` augmentation and `IconName` augmentation across the package boundary | Probe asserts both compile. |
 | Peer version skew | Peers pinned to the ranges chat and console use; the probe installs exactly those. |
-| Console #15 landing near this work | Console is untouched in this pass. |
+| Console drifting while this lands | Console is untouched in this pass; its plan starts from `main` at `2481b18` or later. |
 | `file:` deps until publish | Stated in the chat PR; publishing is Matt's step. |
 | Duplicate React from a `file:` link resolving its own `node_modules` | Peers are not installed inside the packages; the probe checks `react` resolves once. |
 
