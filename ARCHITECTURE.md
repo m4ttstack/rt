@@ -55,6 +55,12 @@ comes from the daemon's roster, never inferred from traffic.
 
 ## Routes and the cross-repo link
 
+Routing is [wouter](https://github.com/molefrog/wouter): `src/app/routes.ts`
+turns the location into a typed `AppRoute` with `useRoute`, `useHash` reads
+the fragment through wouter's location store, and `navigate` comes from
+`wouter/use-browser-location`. Links are wouter's `Link` behind Mantine's
+`component` prop (`<Button component={Link} href="/">`).
+
 | Path               | Screen                                                   |
 | ------------------ | -------------------------------------------------------- |
 | `/`                | first room                                               |

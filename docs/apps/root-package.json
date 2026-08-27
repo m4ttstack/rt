@@ -37,6 +37,7 @@
     "react-dom": "^19.2.7",
     "react-interval-hook": "^1.1.5",
     "react-scroll-to-bottom": "^4.2.0",
+    "wouter": "^3.10.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {

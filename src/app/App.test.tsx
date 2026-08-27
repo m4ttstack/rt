@@ -180,6 +180,11 @@ const twoRooms = {
   members: [],
 };
 
+test('a malformed room escape renders not-found instead of throwing', () => {
+  renderAt('/r/%E0%A4%A');
+  expect(screen.getByText('Nothing lives at this address.')).toBeTruthy();
+});
+
 test('/r/<room> opens that room instead of the first one', () => {
   window.history.replaceState(null, '', '/r/ops');
   renderWithProviders(<App initialState={twoRooms} />);

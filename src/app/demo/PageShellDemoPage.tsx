@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'wouter';
 
 import {
   Badge,
@@ -17,7 +18,6 @@ import {
   useRailState,
 } from '@ui/core';
 import { Icon } from '@ui/icons';
-import { Link } from '../router/Link';
 
 const APP_HEADER_HEIGHT = 64;
 

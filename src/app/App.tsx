@@ -6,6 +6,8 @@ import type {
   RoomSummary,
 } from '@mattstack/rt-client';
 import { useInterval } from 'react-interval-hook';
+import { useLocation } from 'wouter';
+import { navigate } from 'wouter/use-browser-location';
 
 import { BuddiesProvider } from '@ui/buddies-context';
 import { Composer, type ComposerHandle } from '@ui/Composer';
@@ -29,8 +31,7 @@ import { Transcript } from '@ui/Transcript';
 import { AppChrome } from './chrome/AppChrome';
 import { PageShellDemoPage } from './demo/PageShellDemoPage';
 import { NotFoundPage } from './NotFoundPage';
-import { navigate, useHash, usePath } from './router/navigation';
-import { matchRoute } from './routes';
+import { useAppRoute, useHash } from './routes';
 
 /**
  * `/api/chat/buddies`' own wire shape -- `Roster` reads the full
@@ -856,8 +857,8 @@ function PhoneChat({
  * never passes it: the daemon poll and the buddies fetch run for real.
  */
 export function App({ initialState }: { initialState?: AppInitialState } = {}) {
-  const path = usePath();
-  const route = matchRoute(path);
+  const [path] = useLocation();
+  const route = useAppRoute();
   const daemon = useDaemonHealth(initialState?.daemonReachable);
   const buddies = useBuddies(initialState?.buddies);
   const { rooms, refetchRooms } = useRooms(initialState?.rooms);
@@ -884,7 +885,8 @@ export function App({ initialState }: { initialState?: AppInitialState } = {}) {
 
   function selectRoom(room: string) {
     setActiveRoom(room);
-    navigate(`/r/${encodeURIComponent(room)}`);
+    const to = `/r/${encodeURIComponent(room)}`;
+    if (window.location.pathname !== to) navigate(to);
   }
 
   const buddyActions = useMemo(
