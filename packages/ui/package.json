@@ -31,6 +31,7 @@
     "./icons": "./src/icons/index.ts",
     "./lazy": "./src/lazy/index.ts",
     "./spotlight": "./src/spotlight/index.ts",
+    "./router": "./src/router/index.ts",
     "./design-system": "./src/design-system/index.ts",
     "./utils": "./src/utils/index.ts",
     "./test-utils": "./src/test-utils/index.ts",
