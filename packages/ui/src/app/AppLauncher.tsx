@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import {
   ActionIcon,
   Anchor,
+  Box,
   Image,
   Popover,
   SimpleGrid,
@@ -9,6 +10,7 @@ import {
   Text,
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
+import { Icon } from '@mattstack/app-kit/icons';
 
 import { deriveDeckBase } from './deck-discovery';
 import type { DiscoveryApp } from './deck-discovery';
@@ -44,7 +46,12 @@ function Tile({ app, current }: { app: DiscoveryApp; current: boolean }) {
         {app.icon ? (
           <Image src={app.icon} w={40} h={40} alt="" />
         ) : (
-          <MattstackMark size={40} title="" />
+          <MattstackMark size={40} decorative />
+        )}
+        {current && (
+          <Box data-testid="current-app-marker" c="var(--mantine-primary-color-filled)">
+            <Icon name="check" size={14} />
+          </Box>
         )}
         <Text size="xs" ta="center" lh={1.1}>
           {app.displayName}

@@ -1,4 +1,4 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 import { renderWithProviders } from '@mattstack/app-kit/test-utils';
@@ -36,6 +36,16 @@ test('marks the current app', async () => {
   await user.click(screen.getByRole('button', { name: /apps/i }));
   const chat = await screen.findByRole('link', { name: /Chat/ });
   expect(chat).toHaveAttribute('data-current', 'true');
+  expect(within(chat).getByTestId('current-app-marker')).toBeInTheDocument();
+});
+
+test('does not mark a non-current app', async () => {
+  const user = userEvent.setup();
+  renderWithProviders(<AppLauncher currentApp="chat" />);
+  await user.click(screen.getByRole('button', { name: /apps/i }));
+  const board = await screen.findByRole('link', { name: /Board/ });
+  expect(board).toHaveAttribute('data-current', 'false');
+  expect(within(board).queryByTestId('current-app-marker')).toBeNull();
 });
 
 test('renders no launcher when the origin is not a mattstack surface and no override', () => {
