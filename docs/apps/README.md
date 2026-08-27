@@ -63,6 +63,27 @@ State - the registry, logs, settings, sign-in rules - lives under
 `~/.mattstack/deck` as plain JSON on your own disk. No database, no
 account, nothing to sign into.
 
+## App launcher registry
+
+An adopted app can carry a `mattstack.json` at its repo root:
+
+    { "displayName": "Chat", "description": "Group chat", "icon": "./icon.svg" }
+
+`displayName` and `icon` (a repo-relative path to an SVG, at most 64 KB) are
+required; `description` is optional. Deck reads it and copies the icon into
+its own store on adopt, so only managed (adopted) products are ever ingested
+- a plain `deck add` app never is.
+
+`GET /api/apps` returns that slim list - name, displayName, description,
+url, icon - for managed products only. It's unversioned, GET-only, and
+CORS-enabled for mattstack-TLD origins, built for an app launcher to fetch
+across origins without touching the versioned `/api/v1` API. `GET
+/api/apps/:name/icon` serves the stored SVG.
+
+Edited the manifest or swapped the icon after adopting? `deck manifest
+refresh <name>` re-reads `mattstack.json` and re-ingests the icon without
+re-adopting the app.
+
 ## Already running things by hand?
 
 `deck migrate` adopts your existing LaunchAgents and routes in place -
