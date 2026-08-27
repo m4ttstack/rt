@@ -1,0 +1,107 @@
+/*
+ * Layered background scheme: level1 = the page itself, level2 = the default
+ * surface sitting on it (cards, panels), level3 = a surface nested inside
+ * that (wells, content areas), level4 = the contrast/accent surface (table
+ * headers, hover/active states).
+ *
+ * Direction: levels 1 -> 3 step progressively AWAY from the page in the
+ * quiet direction (light scheme: gradually deeper greys; dark scheme:
+ * gradually deeper darks), while level4 is the deliberate contrast step --
+ * deeper still in light, but LIGHTER in dark -- so an accent surface always
+ * reads as distinct from the page in either scheme.
+ *
+ * The contract is four scheme-aware surface SLOTS, not the ordering:
+ * re-theming apps may remap them to their own role ladder (see AGENTS.md
+ * section 4). Consumed via `useSchemeColors()` / `staticSchemeColors` in
+ * `@mattstack/app-kit/hooks/useSchemeColors`, and as the `bg-level-1..4` theme colors.
+ *
+ * TWO layers, for the same reason `base-theme.ts` and `app-theme.ts` are
+ * separate files:
+ *
+ *   --ui-base-*  the kit's own ramp. KIT-OWNED: never remap these.
+ *   --ui-*       the live slots every component reads. An app remaps THESE.
+ *
+ * Keeping the kit's values in their own layer is what makes them restorable:
+ * `.ui-base-surfaces` re-points the live slots back at the base ramp, so a
+ * dev route or embedded view inside a heavily re-themed app gets the kit's
+ * surfaces back as one class instead of eight hand-copied values.
+ *
+ * Level 1 points at the scheme's page color DIRECTLY (`--mantine-color-white`
+ * / `--mantine-color-dark-7`, which is exactly what Mantine's own resolver
+ * derives `--mantine-color-body` from) rather than at `--mantine-color-body`
+ * itself. Going through `body` would be equivalent until a re-theming app
+ * remaps the ramp, at which point the natural inverse
+ * (`--mantine-color-body: var(--ui-bg-1)`) closes a CSS CYCLE -- and a cycle
+ * makes both custom properties invalid at computed-value time, so both
+ * silently fall back to their initial values instead of erroring.
+ * Referencing the underlying color keeps that inversion safe.
+ */
+:root[data-mantine-color-scheme='light'] {
+  --ui-base-bg-1: var(--mantine-color-white);
+  --ui-base-bg-2: var(--mantine-color-gray-0);
+  --ui-base-bg-3: var(--mantine-color-gray-1);
+  --ui-base-bg-4: var(--mantine-color-gray-3);
+
+  /* Text steps below the default body color, quietest last. */
+  --ui-base-text-muted: var(--mantine-color-gray-7);
+  --ui-base-text-gray: var(--mantine-color-gray-9);
+  --ui-base-text-dimmed: var(--mantine-color-gray-8);
+
+  /* Soft ambient shadow for floating chrome (sidebar toggles, fabs). */
+  --ui-shadow-floating: 0 1px 3px rgb(0 0 0 / 12%), 0 1px 2px rgb(0 0 0 / 24%);
+}
+:root[data-mantine-color-scheme='dark'] {
+  --ui-base-bg-1: var(--mantine-color-dark-7);
+  --ui-base-bg-2: var(--mantine-color-dark-8);
+  --ui-base-bg-3: var(--mantine-color-dark-9);
+  --ui-base-bg-4: var(--mantine-color-dark-5);
+
+  --ui-base-text-muted: var(--mantine-color-gray-5);
+  --ui-base-text-gray: var(--mantine-color-gray-0);
+  --ui-base-text-dimmed: var(--mantine-color-gray-6);
+
+  --ui-shadow-floating: 0 1px 3px rgb(0 0 0 / 36%), 0 1px 2px rgb(0 0 0 / 48%);
+}
+
+/*
+ * The live slots. A re-theming app overrides this block (or any of these
+ * properties on a narrower selector) to point the ladder at its own roles;
+ * everything the kit renders follows automatically.
+ */
+:root {
+  --ui-bg-1: var(--ui-base-bg-1);
+  --ui-bg-2: var(--ui-base-bg-2);
+  --ui-bg-3: var(--ui-base-bg-3);
+  --ui-bg-4: var(--ui-base-bg-4);
+
+  --ui-text-muted: var(--ui-base-text-muted);
+  --ui-text-gray: var(--ui-base-text-gray);
+  --ui-text-dimmed: var(--ui-base-text-dimmed);
+}
+
+/*
+ * Restores the kit's own surfaces on a subtree of an app that remapped the
+ * ramp -- the CSS half of what `ThemeIsland` + `baseTheme` do for the theme.
+ * Scheme-aware in both directions with no duplication here, because the base
+ * layer it points at is already per-scheme. Cannot cycle: the base layer
+ * never reads the live slots.
+ */
+.ui-base-surfaces {
+  --ui-bg-1: var(--ui-base-bg-1);
+  --ui-bg-2: var(--ui-base-bg-2);
+  --ui-bg-3: var(--ui-base-bg-3);
+  --ui-bg-4: var(--ui-base-bg-4);
+
+  --ui-text-muted: var(--ui-base-text-muted);
+  --ui-text-gray: var(--ui-base-text-gray);
+  --ui-text-dimmed: var(--ui-base-text-dimmed);
+}
+
+/* Hides a scroll container's scrollbar while keeping it scrollable. */
+.ui-hidden-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.ui-hidden-scrollbar::-webkit-scrollbar {
+  display: none;
+}

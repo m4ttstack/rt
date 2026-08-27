@@ -21,6 +21,7 @@
     "probe:serve-check": "probe/scripts/serve-check.sh"
   },
   "devDependencies": {
+    "@mattstack/app-kit": "workspace:*",
     "@chromatic-com/storybook": "^5.2.1",
     "@eslint/js": "^10.0.1",
     "@ianvs/prettier-plugin-sort-imports": "^4.7.1",

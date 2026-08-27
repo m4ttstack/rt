@@ -1,0 +1,21 @@
+/*
+ * The rail navbar carries explicit inline w/maw caps (so Mantine's mobile
+ * full-width navbar default never applies), which takes the width out of
+ * AppShell's own animated CSS variable -- this restores the transition for
+ * the inline widths, and keeps transform/top/height animated for the
+ * mobile slide-in. Duration matches the shell's transitionDuration.
+ *
+ * The selector is doubled on purpose: Mantine's own AppShell.Navbar rule
+ * declares `transition-property: transform, top, height` at single-class
+ * specificity, and this kit stylesheet is bundled BEFORE Mantine's, so at
+ * equal specificity Mantine's later rule would win and drop the width
+ * tween. Doubling makes the winner a matter of specificity, not bundle
+ * order (an inline declaration is no alternative: it loses to the global
+ * `transition: none !important` suppressor Mantine injects on real scheme
+ * changes -- see useColorScheme's guard).
+ */
+.railNavbar.railNavbar {
+  transition-property: transform, top, height, width, max-width;
+  transition-duration: 200ms;
+  transition-timing-function: ease;
+}
