@@ -6,6 +6,8 @@ export interface MattstackMarkProps {
   size?: number;
   /** Accessible name / tooltip title. @default 'mattstack' */
   title?: string;
+  /** Render as a decorative image: `aria-hidden`, no role/name/title. @default false */
+  decorative?: boolean;
 }
 
 /**
@@ -15,17 +17,22 @@ export interface MattstackMarkProps {
  * and geometry are parity anchors to the installer/tray icon -- keep them in
  * sync with that source.
  */
-export function MattstackMark({ size = 28, title = 'mattstack' }: MattstackMarkProps) {
+export function MattstackMark({
+  size = 28,
+  title = 'mattstack',
+  decorative = false,
+}: MattstackMarkProps) {
   return (
     <svg
-      role="img"
-      aria-label={title}
+      {...(decorative
+        ? { 'aria-hidden': 'true' }
+        : { role: 'img', 'aria-label': title })}
       width={size}
       height={size}
       viewBox="0 0 64 64"
       xmlns="http://www.w3.org/2000/svg"
     >
-      <title>{title}</title>
+      {!decorative && <title>{title}</title>}
       <rect width="64" height="64" rx="14.4" fill={BG} />
       <text
         x="13"

@@ -17,3 +17,10 @@ test('honors the size prop on the svg element', () => {
   expect(svg).toHaveAttribute('width', '40');
   expect(svg).toHaveAttribute('height', '40');
 });
+
+test('decorative mode hides the svg from accessibility tree', () => {
+  const { container, queryByRole } = render(<MattstackMark decorative />);
+  expect(queryByRole('img')).toBeNull();
+  const svg = container.querySelector('svg');
+  expect(svg).toHaveAttribute('aria-hidden', 'true');
+});
