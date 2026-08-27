@@ -10,8 +10,8 @@ export interface ResolvedAsset {
 /**
  * Pure lookup -- no Bun API touched -- so it stays importable and testable
  * under vitest's Node runtime. `toResponse` below is the only piece that
- * actually reads a file (`Bun.file`), same Bun-only-reachable-from-a-real-
- * runtime split `ws.ts` documents for `hono/bun`.
+ * actually reads a file (`Bun.file`), reachable only from a real Bun
+ * runtime, never vitest.
  */
 export function resolveEmbeddedAsset(
   manifest: EmbeddedManifest,

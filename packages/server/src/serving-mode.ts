@@ -3,7 +3,7 @@ export type ServingModeDecision =
 
 /**
  * A compiled binary with no manifest means `bun build --compile` ran
- * without `generate:embedded` first (`build:binary` runs both, in order,
+ * without `mattstack-embed-assets` first (`build:binary` runs both, in order,
  * but nothing stops a bare `bun build --compile` from skipping the first
  * step) -- there is no `dist/` on a user's machine for that binary to fall
  * back to, so this combination must refuse to serve rather than silently

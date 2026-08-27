@@ -11,9 +11,9 @@ import type { EmbeddedManifest } from './types';
 /**
  * Mounts `/assets/*`, `/fonts/*`, and `/favicon.svg` against files embedded
  * in the compiled binary, and returns the SPA-fallback handler for the
- * catch-all route in index.ts -- same three-mounts-plus-fallback shape as
- * `mountDiskStatic` (`../static-disk.ts`), so index.ts picks between the two
- * without the routes themselves knowing which mode is live.
+ * caller's catch-all route. `static.ts`'s `mountStatic` calls this (or the
+ * disk-mode branch) so the routes themselves never need to know which mode
+ * is live.
  *
  * `toResponseFn` defaults to the real, Bun-backed `toResponse`; tests pass a
  * Bun-free stand-in so the routing itself -- match, miss, fallthrough -- runs
