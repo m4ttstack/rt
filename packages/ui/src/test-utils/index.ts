@@ -1,3 +1,4 @@
+export { expectLoadingBarInSync } from './loading-bar';
 export { spyableAction } from './spyableAction';
 export {
   installJsdomPolyfills,

@@ -20,6 +20,8 @@
     "*.css"
   ],
   "exports": {
+    "./boot": "./src/boot/index.ts",
+    "./boot/simple-loading-bar.css": "./src/boot/simple-loading-bar.css",
     "./core": "./src/core/index.ts",
     "./hooks": "./src/hooks/index.ts",
     "./forms": "./src/forms/index.ts",
