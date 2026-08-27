@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'wouter';
 
 import {
   Anchor,
@@ -11,7 +12,6 @@ import {
 } from '@ui/core';
 import { useSchemeColors } from '@ui/hooks';
 import { Icons } from '@ui/icons';
-import { Link } from '../router/Link';
 import {
   BAND_ORDER,
   computeBandIds,

@@ -1,13 +1,14 @@
+import { type MouseEvent } from 'react';
 import type { BranchEnrichment } from '@mattstack/rt-client';
 import { useQueryClient, type QueryClient } from '@tanstack/react-query';
+import { Link } from 'wouter';
+import { navigate } from 'wouter/use-browser-location';
 
 import { ActionIcon, Anchor, Group, Menu, Stack, Text } from '@ui/core';
 import { useClipboard, useSchemeColors } from '@ui/hooks';
 import { Icons } from '@ui/icons';
 import { notifications } from '@ui/notifications';
 import { client } from '../api';
-import { Link } from '../router/Link';
-import { navigate } from '../router/navigation';
 import { agingWarning } from './aging';
 import type { BoardRun } from './bands';
 import { LivenessChip } from './LivenessChip';
@@ -148,7 +149,9 @@ export function RunRow({ run, pruneDays, enrichment }: RunRowProps) {
         <Anchor
           component={Link}
           href={detailHref}
-          onClick={event => event.stopPropagation()}
+          onClick={(event: MouseEvent<HTMLAnchorElement>) =>
+            event.stopPropagation()
+          }
           style={{ textDecoration: 'none', color: 'inherit', display: 'block' }}
         >
           <Group gap="xs" wrap="nowrap">

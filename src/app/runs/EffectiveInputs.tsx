@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { RunDecisionRow } from '@mattstack/rt-client';
 import { useQuery } from '@tanstack/react-query';
+import { navigate } from 'wouter/use-browser-location';
 
 import {
   Badge,
@@ -21,7 +22,6 @@ import type {
 } from '../../server/effectiveInputs';
 import { client } from '../api';
 import { shortValue } from '../config/chain';
-import { navigate } from '../router/navigation';
 import { useDrawerSurface } from '../wiring/drawerSurface';
 import { QuietBadge } from '../wiring/QuietBadge';
 import { CommandProvenance } from './CommandProvenance';

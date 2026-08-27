@@ -1,5 +1,7 @@
 import { Component, useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
+import { Link, useSearch } from 'wouter';
+import { navigate } from 'wouter/use-browser-location';
 
 import {
   Alert,
@@ -19,8 +21,6 @@ import {
 import type { PageShellTab } from '@ui/core';
 import { useSchemeColors } from '@ui/hooks';
 import { Icons } from '@ui/icons';
-import { Link } from '../router/Link';
-import { navigate, useSearch } from '../router/navigation';
 import { CommandProvenance } from '../runs/CommandProvenance';
 import { AttentionEmptyState } from './AttentionEmptyState';
 import {

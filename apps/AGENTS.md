@@ -912,53 +912,19 @@ job (`.github/workflows/ci.yml`) exercises this end-to-end: it scaffolds a probe
 typechecks, builds, tests, and runs the de-brand gate against it, so a forgotten `TOKEN_FILES` entry
 that leaks a forbidden string would fail there too.
 
-## 10. Bring your own router
+## 10. Router
 
-The kit is **router-agnostic by design**. Nothing in `@ui/*` imports or assumes a router -- the demo
-app's hand-rolled router (`src/app/router/`: `Link`, `matchPath`, `navigation`) exists only so the
-template runs standalone, and it's deliberately disposable. Adding a real router is one child swap
-in `main.tsx`: keep every provider (`MantineProvider`, `ModalsProvider`, `Notifications`, the
-`SimpleAlerts` bracketing from §7) and replace the `<App />` child with your router's provider/root.
+This app uses **wouter** (`src/app/routes.ts`: `useAppRoute` maps the location to a structured
+`AppRoute` via wouter's `useRoute`; `navigate` comes from `wouter/use-browser-location`, `useSearch`
+from `wouter`, and wouter's `Link` sits behind Mantine's `component` prop, e.g.
+`<RailEntry component={Link} href="/wiring">`). The kit itself is router-agnostic: nothing in
+`@ui/*` imports or assumes a router. The kit template's hand-rolled router that used to live in
+`src/app/router/` is gone.
 
 **The typed-link trap (TanStack Router and friends)**: Mantine's polymorphic `component` prop
-happily accepts a router `Link` -- `<Anchor component={Link} to="/settings">` renders and works. But
-the polymorphic prop machinery types the passthrough props loosely (`Omit<any, ...>`), which
-silently **widens a typed router's route-literal `to` prop to `string`** -- with TanStack Router,
-nonexistent routes compile without complaint. So:
-
-- **Do not rely on bare `component={Link}` for internal navigation** when using a typed router.
-  Reserve it for cases where route typing genuinely doesn't matter.
-- **Wrap Mantine components with the router's `createLink()`** (TanStack's official API for exactly
-  this) to get typed `to` props on kit components. Because Mantine's components are polymorphic,
-  give `createLink` a concretely-typed `forwardRef` wrapper -- the same small-wrapper trick §4
-  prescribes for presetting non-factory components.
-
-Consumer-side sketch (this repo has no TanStack dependency; shape follows TanStack Router's
-custom-link docs):
-
-```tsx
-// app code, e.g. src/app/router-links.tsx -- NOT part of this kit
-import { forwardRef } from 'react';
-import { createLink } from '@tanstack/react-router';
-
-import { Anchor, type AnchorProps } from '@ui/core';
-
-const AnchorBase = forwardRef<HTMLAnchorElement, Omit<AnchorProps, 'href'>>(
-  (props, ref) => <Anchor ref={ref} {...props} />
-);
-
-export const AnchorLink = createLink(AnchorBase);
-
-// <AnchorLink to="/settings">Settings</AnchorLink>  -- `to` is route-literal typed;
-// a typo'd route is now a compile error instead of a silent string.
-```
-
-The kit's own components use the `component={...}` idiom internally (e.g. `Notch` renders
-`Paper component={Group}`) -- that's fine, those are layout polymorphism, not navigation. The trap
-is specifically _typed router links_ flowing through a polymorphic prop. One kit component invites
-exactly that: `RailEntry` (§2's app chrome recipe) links via `component={Link}`, so with a typed
-router, wrap it through `createLink()` the same way as `Anchor` above instead of passing the bare
-router `Link`.
+happily accepts a router `Link`, but it silently widens a typed router's route-literal `to` prop to
+`string`. wouter's `Link` takes a plain `href`, so nothing is lost here; if the router ever changes
+to a typed one, wrap `Link` in a typed facade instead of passing it to `component`.
 
 ## 11. Formatting
 

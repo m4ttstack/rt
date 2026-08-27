@@ -1,13 +1,13 @@
 import { Component, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { useLocation } from 'wouter';
 
 import { GenericError, PageShell } from '@ui/core';
 import { ConsoleChrome, type ConsoleSection } from './chrome/ConsoleChrome';
 import { ExplainKeyPage } from './config/ExplainKeyPage';
 import { NotFoundPage } from './NotFoundPage';
 import { ConsolePalette } from './palette/ConsolePalette';
-import { usePath } from './router/navigation';
-import { matchRoute, type AppRoute } from './routes';
+import { useAppRoute, type AppRoute } from './routes';
 import { RunBoard } from './runs/RunBoard';
 import { RunDetail } from './runs/RunDetail';
 import { RunSearch } from './runs/RunSearch';
@@ -79,8 +79,8 @@ function RouteContent({ route }: { route: AppRoute }) {
  * boundary between them so a thrown query doesn't take the rail with it.
  */
 export function App() {
-  const path = usePath();
-  const route = matchRoute(path);
+  const [path] = useLocation();
+  const route = useAppRoute();
 
   return (
     <QueryClientProvider client={queryClient}>

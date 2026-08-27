@@ -1,5 +1,6 @@
+import { Link } from 'wouter';
+
 import { Indicator, RailEntry } from '@ui/core';
-import { Link } from '../router/Link';
 import { WIRING_ATTENTION_HREF, WIRING_HREF } from './attentionFilter';
 import { useAttentionCount } from './useWiring';
 

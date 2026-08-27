@@ -1,3 +1,5 @@
+import { Link } from 'wouter';
+
 import {
   Group,
   HybridMenu,
@@ -8,7 +10,6 @@ import {
   useRailState,
 } from '@ui/core';
 import { useColorScheme } from '@ui/hooks';
-import { Link } from '../router/Link';
 import { WiringRailEntry } from '../wiring/WiringRailEntry';
 
 export const CONSOLE_HEADER_HEIGHT = 64;

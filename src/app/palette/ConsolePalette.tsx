@@ -1,17 +1,27 @@
 import { useMemo } from 'react';
+import { navigate } from 'wouter/use-browser-location';
 
 import { CopyActionIcon } from '@ui/core';
 import { Icons } from '@ui/icons';
 import { Spotlight } from '@ui/spotlight';
 import type { SpotlightActionData } from '@ui/spotlight';
 import { useSettingsDefs } from '../config/useSettings';
-import { navigate } from '../router/navigation';
 import {
   BRANCH_CHECKOUT_LABEL,
   branchCheckoutCommand,
 } from '../runs/branchCheckout';
 import { repoLabel } from '../runs/repoLabel';
 import { useRunList } from '../runs/useRuns';
+
+/** wouter's `navigate` pushes a history entry even when `to` is the current
+    URL; the palette can select the page you are already on, so this guards
+    the no-op to avoid a dead back-button entry (the retired router did the
+    same). */
+function go(to: string) {
+  const current =
+    window.location.pathname + window.location.search + window.location.hash;
+  if (to !== current) navigate(to);
+}
 
 function runAction(run: {
   id: string;
@@ -26,7 +36,7 @@ function runAction(run: {
     keywords: [run.repo, run.ticket, run.branch, run.status].filter(
       (v): v is string => typeof v === 'string'
     ),
-    onClick: () => navigate(`/runs/${run.repo}/${run.id}`),
+    onClick: () => go(`/runs/${run.repo}/${run.id}`),
     leftSection: <Icons.layers size={16} />,
     rightSection: run.branch ? (
       <CopyActionIcon
@@ -42,13 +52,13 @@ const STATIC_ACTIONS: SpotlightActionData[] = [
     id: 'nav-board',
     label: 'Run board',
     leftSection: <Icons.layers size={16} />,
-    onClick: () => navigate('/'),
+    onClick: () => go('/'),
   },
   {
     id: 'nav-search',
     label: 'Search runs',
     leftSection: <Icons.search size={16} />,
-    onClick: () => navigate('/search'),
+    onClick: () => go('/search'),
   },
 ];
 
@@ -69,7 +79,7 @@ export function ConsolePalette() {
       id: `config-${def.key}`,
       label: `${def.key} — ${def.description}`,
       keywords: [def.key, ...def.key.split('.'), 'config', 'setting'],
-      onClick: () => navigate(`/config/${def.key}`),
+      onClick: () => go(`/config/${def.key}`),
       leftSection: <Icons.settings size={16} />,
     }));
     return [...runs.map(runAction), ...configActions, ...STATIC_ACTIONS];
