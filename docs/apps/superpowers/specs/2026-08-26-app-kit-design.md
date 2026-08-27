@@ -118,7 +118,7 @@ day-to-day iteration. After Matt publishes, apps switch to version ranges.
 | `./icons` | `Icon`, `IconName`, `AnimatedChevron`, `registerIcons`. The registry is the kit's; chat's `Hash` is NOT folded in (it becomes chat's example app registration) |
 | `./lazy` | `LazyLoader`, `CodeHighlight`, `CodeMirror` (console's loader moves in) |
 | `./spotlight` | spotlight re-exports (from console) |
-| `./design-system` | `theme` (pre-branded), `baseTheme`, `ThemeIsland`, `ScopedThemeProvider`, `ThemeInitializer`, `ThemeOverrideWrapper`, `getColorSchemeFromDocument` |
+| `./design-system` | `theme` (pre-branded), `baseTheme`, `ThemeIsland`, `ThemeInitializer`, `ThemeOverrideWrapper`, `getColorSchemeFromDocument`, `variantColorResolver` |
 | `./boot` | `registerSimpleAlerts`, `markMounted`; `./boot/simple-loading-bar.css` is the stylesheet |
 | `./app` | `mountMattstackApp`, `MattstackShell`, `DaemonBanner`, `useDaemonHealth`, `NotFoundPage` |
 | `./router` | `RailLink`, `Link`, `useHash` |
@@ -129,13 +129,17 @@ day-to-day iteration. After Matt publishes, apps switch to version ranges.
 | `./vite` | `mattstackVite()` |
 
 Internal relative imports inside the kit folders stay as they are; only the
-barrels' public paths change. Deep specifiers apps use today are flattened
+barrels' public paths change. The Mantine colour-name augmentation moves
+from the standalone `mantine.d.ts` into `design-system/colors.ts`, a module
+every consumer imports transitively (via `theme`), so the augmentation is
+part of any program that uses the kit without a reference line. Deep
+specifiers apps use today are flattened
 to the barrels during migration: `@ui/storybook/test-utils` and
 `@ui/storybook/jsdom-polyfills` -> `./test-utils`, `@ui/styles/index.css`
 -> `./styles.css`, `@ui/hooks/useSchemeColors` -> `./hooks`,
 `@ui/utils/noop` -> `./utils`. The kit's `mantine.d.ts` (the `tokyo.*`
-colour name augmentation of `@mantine/core`) ships in the package so
-consumers get it by importing any subpath.
+colour name augmentation of `@mantine/core`) is therefore in the package's
+`design-system`, not a separate declaration file.
 
 ### Boot family
 
@@ -177,12 +181,12 @@ mountMattstackApp(
 Renders `StrictMode > MantineProvider(theme merged with opts.theme,
 defaultColorScheme "auto") > ModalsProvider > node + Notifications`, brackets
 the render with `registerSimpleAlerts()` / `markMounted()`, and imports
-`./styles.css` and the Tokyo CSS as a side effect of the module. Target
+`./styles.css` (which pulls in the Tokyo CSS) as a side effect of the module. Target
 element is `#root`.
 
 ```tsx
-<MattstackShell name="chat" mark={<AppMark size={30} />} headerHeight?={64}>
-  <MattstackShell.Rail label?="App sections">
+<MattstackShell name="chat" mark={<AppMark size={30} />} headerHeight?={64} railLabel?="App sections">
+  <MattstackShell.Rail>
     <RailLink icon="users" label="Rooms" href="/" active />
   </MattstackShell.Rail>
   <MattstackShell.RailBottom>{/* optional, above the scheme control */}</MattstackShell.RailBottom>
@@ -321,10 +325,10 @@ post-#15 `main`.
    icon left out; `.storybook/` from console; chat's `src/boot/` as the
    boot module; the apps' `eslint-local/` rules and `scripts/treeshake-*`
    moved into the package; barrels re-pathed; the trailing
-   `@import '../../app/styles/tokyo-theme.css'` dropped from
-   `styles/index.css` (the Tokyo CSS is imported by `mountMattstackApp`
-   from the tokyo package instead); then `app`, `router`, presets written
-   fresh.
+   `@import '../../app/styles/tokyo-theme.css'` in `styles/index.css`
+   re-pointed at `@mattstack/mantine-tokyo/tokyo-theme.css` (so
+   `styles.css` is the one stylesheet a consumer loads); then `app`,
+   `router`, presets written fresh.
 4. `packages/server` written fresh from the two servers, tests ported.
 5. `probe/`: a minimal app (shell, one route, one registered icon, a
    `tokyo.*` colour, one API route, relay) that must typecheck, lint against
