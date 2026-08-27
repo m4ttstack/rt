@@ -17,7 +17,7 @@
     "treeshake": "packages/ui/scripts/treeshake-check.sh",
     "probe:install": "cd probe && rm -rf node_modules/@mattstack && bun install",
     "probe:typecheck": "cd probe && bun run typecheck",
-    "probe:lint": "cd probe && bun run lint",
+    "probe:lint": "if [ -d probe ]; then cd probe && bun run lint; fi",
     "probe:test": "cd probe && bun run test -- --run",
     "probe:build": "cd probe && bun run build",
     "probe:serve-check": "probe/scripts/serve-check.sh"

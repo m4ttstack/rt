@@ -35,7 +35,10 @@
     "./design-system": "./src/design-system/index.ts",
     "./utils": "./src/utils/index.ts",
     "./test-utils": "./src/test-utils/index.ts",
-    "./styles.css": "./src/styles/index.css"
+    "./styles.css": "./src/styles/index.css",
+    "./eslint": "./presets/eslint.js",
+    "./vite": "./presets/vite.ts",
+    "./tsconfig.base.json": "./tsconfig.base.json"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
