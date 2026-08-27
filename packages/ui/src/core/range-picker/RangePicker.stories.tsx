@@ -43,7 +43,7 @@ function RangePickerDemo() {
       />
       <Text size="sm" mt="md" c="dimmed">
         {value[0] && value[1]
-          ? `${dayjs(value[0]).format('MMM D, YYYY')} – ${dayjs(value[1]).format('MMM D, YYYY')}`
+          ? `${dayjs(value[0]).format('MMM D, YYYY')} to ${dayjs(value[1]).format('MMM D, YYYY')}`
           : 'No range selected'}
       </Text>
     </Box>

@@ -7,9 +7,10 @@ import { BG_LEVEL_COLORS, theme } from '@mattstack/app-kit/design-system';
 import type { ExtendedCustomColors } from '@mattstack/app-kit/design-system';
 import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 
-// Compile-time check that the mantine.d.ts augmentation stays in sync with
-// BG_LEVEL_COLORS: every registered name must be a valid MantineColor (so
-// it autocompletes on `c`/`bg`/`color` props).
+// Compile-time check that the augmentation in this file's sibling
+// colors.ts stays in sync with BG_LEVEL_COLORS: every registered name
+// must be a valid MantineColor (so it autocompletes on `c`/`bg`/`color`
+// props).
 const _typeCheck: MantineColor[] = Object.keys(
   BG_LEVEL_COLORS
 ) as (keyof typeof BG_LEVEL_COLORS)[];

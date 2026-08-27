@@ -10,10 +10,10 @@ export * from '@mantine/core';
 export * from '@mantine/dates';
 
 // Shadows (Table, TextInput, CopyButton -- see the eslint wall in
-// src/ui/**). Named exports placed AFTER the `export *` above, so they win
-// over the star-exported Mantine originals (proven by the
-// reference-inequality tests in src/ui/forms/forms.test.tsx for each
-// shadow).
+// packages/ui/src/**). Named exports placed AFTER the `export *` above, so
+// they win over the star-exported Mantine originals (proven by the
+// reference-inequality tests in packages/ui/src/forms/forms.test.tsx for
+// each shadow).
 export { MantineTable, Table } from './table/Table';
 export type { TableProps } from './table/Table';
 export { TextInput } from './text-input/TextInput';

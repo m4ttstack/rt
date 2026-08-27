@@ -22,9 +22,13 @@ defaults and overrides (a shadowed `Table`, a themed `Modal`, a typed
 the app. This wall ships AS the `mattstackEslint()` preset
 (`packages/ui/presets/eslint.js`, exported as `@mattstack/app-kit/eslint`)
 -- a consumer spreads it into its own `eslint.config.js` and passes an
-`app` glob matching its own source. This repo's own root `eslint.config.js`
-does exactly that for `probe/src/**/*.{ts,tsx}`; it is the reference
-wiring a migrating app copies:
+`app` glob matching its own source. `probe/eslint.config.js` does exactly
+that, spreading `mattstackEslint()` with its default `src/**/*.{ts,tsx}`
+glob; it is the reference wiring a migrating app copies. (The root
+`eslint.config.js` also carries an `app: ['probe/src/**/*.{ts,tsx}']`
+entry, but the root `lint` script only points `eslint` at `packages
+.storybook` and then shells out to `bun run probe:lint`, so probe is
+actually linted through its own config, not the root one.)
 
 ```js
 const wall = (pkg, subpath) => ({
@@ -57,7 +61,11 @@ If ESLint reports `Import from '@mattstack/app-kit/core' instead...` on a
 `@mantine/core` import, the fix is always the same: change the import
 specifier to the matching `@mattstack/app-kit/*` barrel. Never disable the
 rule at the call site in app code -- the whole point is that app code
-never needs to.
+never needs to. The one sanctioned exception is an app's own
+icon-registration file (e.g. `src/app/icons.ts`): it may
+`eslint-disable-next-line no-restricted-imports` to import `lucide-react`
+directly for the `registerIcons` call -- see §8's `AppIcons` augmentation
+contract and `probe/src/app/icons.ts:1` for the reference wiring.
 
 **Inside `packages/ui/src/**` itself**, a second, stricter rule applies --
 this one is NOT shipped in the `@mattstack/app-kit/eslint` preset (a
@@ -121,7 +129,7 @@ logic. Every kit component follows the same shape:
 
 If the component's name collides with something `@mantine/core` (or
 `@mantine/dates`, also star-exported there) already exports, the barrel's
-export order is load-bearing:
+export order is a deliberate convention:
 
 ```ts
 export * from '@mantine/core';
@@ -212,7 +220,9 @@ of the three patterns above is the reason.
 
 All icons go through the registry in `packages/ui/src/icons/Icons.ts` --
 nothing imports `lucide-react` directly outside that file (the wall bans
-it: `import { Icon } from '@mattstack/app-kit/icons'`).
+it: `import { Icon } from '@mattstack/app-kit/icons'`), with one sanctioned
+exception: an app's own icon-registration file, which disables the rule
+locally to call `registerIcons` -- see §8.
 
 **Adding a lucide icon**: import it from `lucide-react` at the top of
 `Icons.ts`, wrap it with `lucideWrapperFn` (adapts a `LucideIcon` to the
@@ -507,8 +517,8 @@ before the module script is fetched/parsed/executed, before React exists.
 `mountMattstackApp`'s render replaces `#root`'s entire subtree (this
 markup included) the moment React actually mounts.
 
-That inline block exists in two copies: the load-bearing one in the
-consuming app's own `index.html`, and the package's
+That inline block exists in two copies: the copy actually served at
+runtime in the consuming app's own `index.html`, and the package's
 `@mattstack/app-kit/boot/simple-loading-bar.css` (a reviewable, lintable
 reference; not itself linked/loaded). Both wrap the shared rules in
 matching markers:
@@ -587,8 +597,11 @@ lucideWrapperFn(Hash) })` at boot, plus `declare module
 app's own `.d.ts`, extends the closed `IconName` union with the app's
 registration. `Icon` reads a module-level registry; registration before
 first render is the contract, and registering a key the kit already has
-throws. See "Consumer requirements" below for the one real trap in
-writing that `.d.ts` file.
+throws. The registration file is the one sanctioned place outside the
+kit's own `Icons.ts` where an app may
+`eslint-disable-next-line no-restricted-imports` to import `lucide-react`
+directly, e.g. `probe/src/app/icons.ts:1`. See "Consumer requirements"
+below for the one real trap in writing that `.d.ts` file.
 
 **Theme extension**: `mountMattstackApp(node, { theme })` merges on top of
 Tokyo (see §4 for why this is the ONLY per-app theme extension point in

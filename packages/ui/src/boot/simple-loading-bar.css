@@ -2,8 +2,8 @@
  * Reviewable, lintable reference copy of the pre-bundle loading bar's
  * styles.
  *
- * This file is NOT loaded at runtime by anything -- the load-bearing copy
- * of these same rules is duplicated verbatim inline in `index.html`'s
+ * This file is NOT loaded at runtime by anything -- the copy actually
+ * used at runtime is duplicated verbatim inline in `index.html`'s
  * `<style>` tag (see the comment there). This file exists so the rules
  * have a normal, diffable, lintable `.css` home instead of living only
  * inside an HTML comment-adjacent `<style>` block.
@@ -18,7 +18,8 @@
  * inline `<style>` is -- it'd need to be resolved as a module/asset by the
  * dev server or bundler first). Only CSS physically inside the initial
  * HTML response is guaranteed to be present the instant the browser paints
- * `#root`'s first frame, so the real, load-bearing copy has to live there.
+ * `#root`'s first frame, so the real copy actually used at runtime has to
+ * live there.
  *
  * If you change one copy, change the other. This is enforced automatically
  * by `expectLoadingBarInSync (@mattstack/app-kit/test-utils)`, which reads

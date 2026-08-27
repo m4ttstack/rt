@@ -91,7 +91,7 @@ export const tokyoTheme = /* @__PURE__ */ createTheme({
       '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
     // Mantine's stock ladder (h1 2.125rem … h2 1.625rem) is sized for a
     // proportional sans on a roomy page. Against this kit's dense monospace
-    // body — xl tops out at 0.92rem — an unsized h2 renders ~2x the largest
+    // body: xl tops out at 0.92rem, an unsized h2 renders ~2x the largest
     // body text and swallows its own header row. The ladder below keeps the
     // step ratios but lands the whole scale on the body's scale.
     sizes: {

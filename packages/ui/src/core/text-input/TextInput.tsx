@@ -24,8 +24,8 @@ export interface TextInputProps extends MantineTextInputProps {
  *
  * Size/radius are intentionally NOT re-specified here -- they already follow
  * the kit theme's `defaultRadius`/component defaults (see
- * src/ui/design-system/theme.ts), so every input in the app stays consistent
- * without each shadow re-asserting the same values.
+ * packages/ui/src/design-system/theme.ts), so every input in the app stays
+ * consistent without each shadow re-asserting the same values.
  */
 export const TextInput = /* @__PURE__ */ forwardRef<
   HTMLInputElement,

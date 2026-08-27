@@ -1,14 +1,14 @@
 // jsdom implements neither `window.matchMedia` nor `ResizeObserver`, and
-// `src/ui` needs both: Mantine's color-scheme hooks call `matchMedia`
+// this package needs both: Mantine's color-scheme hooks call `matchMedia`
 // unconditionally (to detect the OS preference for "auto"), and
 // `@mantine/core`'s `ScrollArea` -- used directly by `AcceptableList` and
 // `RangePicker`, transitively by `VirtualList` and `SearchableMenu` --
 // observes its viewport on mount.
 //
-// These live inside `src/ui` rather than in the repo-root vitest setup so the
-// vendored surface stays self-contained: an app that copies `src/ui` gets the
-// polyfills its tests require, and calls `installJsdomPolyfills()` from
-// whatever setup file it already has.
+// These live inside `packages/ui/src` rather than in the repo-root vitest
+// setup so the package stays self-contained: a consuming app gets the
+// polyfills its tests require via `@mattstack/app-kit/test-utils`, and
+// calls `installJsdomPolyfills()` from whatever setup file it already has.
 import { afterEach } from 'vitest';
 
 type ColorSchemePreference = 'light' | 'dark';

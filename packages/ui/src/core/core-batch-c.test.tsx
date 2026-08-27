@@ -447,7 +447,7 @@ describe('SelectableList', () => {
   // Vitest compiles CSS modules through Vite, so the classes from
   // SelectableList.module.css come out hash-scoped but keep their source
   // name as a substring (`_list_<hash>`, `_rowSelected_<hash>`). These
-  // assert the load-bearing ones: `list` carries the kit surface
+  // assert the essential ones: `list` carries the kit surface
   // (bg.level2 + hairline + radius + clipped overflow), `rowSelected`
   // carries the --mantine-primary-color-light selection tint.
   test('renders its own kit surface and tints only the selected row', async () => {
