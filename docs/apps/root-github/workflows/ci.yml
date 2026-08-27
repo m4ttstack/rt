@@ -11,13 +11,17 @@ jobs:
           persist-credentials: false
       - uses: oven-sh/setup-bun@v2
       - run: bun install --frozen-lockfile
+      # probe:install packs the three packages and installs the probe (which
+      # is outside the workspace). It must precede typecheck/lint, because the
+      # root typecheck and lint scripts chain probe:typecheck / probe:lint,
+      # which need the probe's node_modules present.
+      - run: bun run probe:install
       - run: bun run typecheck
       - run: bun run lint
       - run: bun run format:check
       - run: bun run test -- --run
       - run: bun run build-storybook
       - run: bun run treeshake
-      - run: bun run probe:install
       - run: bun run probe:test
       - run: bun run probe:build
       - run: bun run probe:serve-check
