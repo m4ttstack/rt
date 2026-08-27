@@ -63,7 +63,7 @@ specifier to the matching `@mattstack/app-kit/*` barrel. Never disable the
 rule at the call site in app code -- the whole point is that app code
 never needs to. The one sanctioned exception is an app's own
 icon-registration file (e.g. `src/app/icons.ts`): it may
-`eslint-disable-next-line no-restricted-imports` to import `lucide-react`
+`eslint-disable-line no-restricted-imports` to import `lucide-react`
 directly for the `registerIcons` call -- see §8's `AppIcons` augmentation
 contract and `probe/src/app/icons.ts:1` for the reference wiring.
 
@@ -599,7 +599,7 @@ registration. `Icon` reads a module-level registry; registration before
 first render is the contract, and registering a key the kit already has
 throws. The registration file is the one sanctioned place outside the
 kit's own `Icons.ts` where an app may
-`eslint-disable-next-line no-restricted-imports` to import `lucide-react`
+`eslint-disable-line no-restricted-imports` to import `lucide-react`
 directly, e.g. `probe/src/app/icons.ts:1`. See "Consumer requirements"
 below for the one real trap in writing that `.d.ts` file.
 
