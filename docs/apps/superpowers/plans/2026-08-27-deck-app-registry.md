@@ -373,7 +373,7 @@ test("adopt ingests the app's mattstack.json", async () => {
   reloadRegistry();
   const appDir = /* mkdtemp with mattstack.json {displayName:"Chat",icon:"./i.svg"} + i.svg "<svg.../>" */ "";
   putRecord({ name: "chat", managedBy: "user", port: 11002, kind: "service", workingDirectory: appDir, createdAt: "x" });
-  adoptApp("chat", { managedBy: "rt" }, drivers);  // drivers = { manager: new FakeServiceManager(), edge: new FakeEdgeProxy(), tunnel: new FakeTunnelDriver(), ... } per register.test.ts
+  adoptApp("chat", { managedBy: "rt" }, drivers);  // drivers: Drivers = { manager: new FakeServiceManager(), edge: new FakeEdgeProxy() } per register.test.ts (tunnel belongs to startApi's ApiDeps, not Drivers)
   expect(getRecord("chat")!.displayName).toBe("Chat");
   expect(require("fs").existsSync(iconPathFor("chat"))).toBe(true);
 });
@@ -427,7 +427,7 @@ git commit -m "feat: ingest launcher manifest on adopt, drop icon on unregister"
 
 Create `src/api/discovery.test.ts` (use the server-test harness: temp dir, env vars, HOME, fakes). Register three records via `putRecord`: `chat` (managedBy rt, with displayName/icon ingested from a temp manifest dir), a `deck` platform row (managedBy "deck"), and `mine` (managedBy user).
 
-IMPORTANT: `buildDiscoveryApps` gets each app's `url` from `buildStatus`, whose rows come from `routes.json` (via `dedupeRoutes`), NOT from the registry. `FakeEdgeProxy.alias` does not write routes.json, and the harness seeds it as `"[]"`. So a registry-only setup makes `buildStatus().apps` empty and the builder returns `[]`. Before asserting, SEED the route: write `JSON.stringify([{ hostname: "chat.mattstack", port: 11002 }])` to `process.env.LOCAL_APPS_ROUTES_PATH` (confirm the route record shape against `core/discover.ts`'s `dedupeRoutes`/`joinApps`; adjust field names if they differ). Then assert `buildDiscoveryApps` returns only `chat`, with `url` present (matching `https://chat.mattstack`), `icon` equal to `"chat"` (the builder's host-agnostic form; the route makes it absolute), and none of `command`/`workingDirectory`/`port` on the row.
+IMPORTANT: `buildDiscoveryApps` gets each app's `url` from `buildStatus`, whose rows come from `routes.json` (via `dedupeRoutes`), NOT from the registry. `FakeEdgeProxy.alias` does not write routes.json, and the harness seeds it as `"[]"`. So a registry-only setup makes `buildStatus().apps` empty and the builder returns `[]`. Before asserting, SEED the route: write `JSON.stringify([{ hostname: "chat.localhost", port: 11002 }])` to `process.env.LOCAL_APPS_ROUTES_PATH`. Use `chat.localhost`, NOT `chat.mattstack`: `buildStatus` names each row via `bareName(hostname, tlds)`, and `bareName` strips a trailing label only when it is IN `tlds` (`core/discover.ts:170`). The isolated harness's default `tlds` is `["localhost"]` (`platform-settings.ts:14`), and nothing adopts here to derive `"mattstack"` into it, so `bareName("chat.mattstack", ["localhost"])` stays `"chat.mattstack"` (wrong key, builder skips it), while `bareName("chat.localhost", ["localhost"])` = `"chat"` (the registry key). The `chat` record is `managedBy: "rt"` so it is `owned`, and `displayTld` resolves to `MATTSTACK_TLD`, giving `url = "https://chat.mattstack"` (`status.ts:163-172`) even though the seeded route was `.localhost`. Then assert `buildDiscoveryApps` returns only `chat`, with `url` matching `https://chat.mattstack`, `icon` equal to `"chat"` (the builder's host-agnostic form; the route makes it absolute), and none of `command`/`workingDirectory`/`port` on the row.
 
 ```ts
 test("discovery returns managed products only, no internal fields", async () => {
@@ -545,7 +545,7 @@ Add a `deckBaseFor(host)` helper near the top of `server.ts`'s module (or in dis
 
 - [ ] **Step 6: Write the route tests**
 
-Add to `src/api/discovery.test.ts` a `startApi` server block (like `server.test.ts`) and assert: `GET /api/apps` returns `{ apps: [...] }` with only `chat`, its `icon` an absolute `https://deck.<tld>/api/apps/chat/icon`; `GET /api/apps/chat/icon` returns 200 `image/svg+xml`; `GET /api/apps/nope/icon` returns 404.
+Add to `src/api/discovery.test.ts` a `startApi` server block (like `server.test.ts`). `deckBaseFor(host)` derives the tld from the request Host's last dotted label, but a test fetching `http://127.0.0.1:${PORT}/...` has Host `127.0.0.1:PORT`, which yields a garbage base. So send an explicit `headers: { "x-forwarded-host": "chat.mattstack" }` on the fetches (`server.ts` reads `x-forwarded-host` before `host`). Assert: `GET /api/apps` returns `{ apps: [...] }` with only `chat`, its `icon` the absolute `https://deck.mattstack/api/apps/chat/icon`; `GET /api/apps/chat/icon` returns 200 `image/svg+xml`; `GET /api/apps/nope/icon` returns 404. (Or assert the icon loosely with `toContain("/api/apps/chat/icon")` if you prefer not to pin the tld.)
 
 - [ ] **Step 7: Run + full suite + commit**
 
@@ -609,8 +609,8 @@ Expected: FAIL, no CORS headers present.
 Add `corsHeadersFor` to `src/api/server.ts`. Allowed when the origin's host equals or ends in one of the allowed TLDs. CRITICAL: deck's default `getPlatformSettings().tlds` is `["localhost"]` only (`src/api/platform-settings.ts:14`); `"mattstack"` is a DERIVED cache entry (`tld-reconcile.ts`) that is ABSENT in the isolated test harness (empty platform.json). So do NOT source `"mattstack"` from `getPlatformSettings().tlds`, or every `*.mattstack` CORS test fails. Union in the `MATTSTACK_TLD` constant explicitly (it is `"mattstack"`, `core/discover.ts:56`, and `server.ts` already imports it):
 
 ```ts
-import { getPlatformSettings } from "./platform-settings.ts";
-// MATTSTACK_TLD is already imported at the top of server.ts.
+// getPlatformSettings is already imported at server.ts:21 and MATTSTACK_TLD at
+// server.ts:2; reuse both, do not add duplicate import statements.
 
 function allowedCorsTlds(): string[] {
   // MATTSTACK_TLD is always allowed (it is derived, so may be absent from the
