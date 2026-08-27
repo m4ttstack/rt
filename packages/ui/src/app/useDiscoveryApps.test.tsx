@@ -75,6 +75,7 @@ test('non-array apps payload loads empty and never throws', async () => {
   });
   expect(result.current.loaded).toBe(true);
   expect(result.current.apps).toEqual([]);
+  expect(fn).toHaveBeenCalledTimes(1);
 });
 
 test('missing apps key loads empty and never throws', async () => {
@@ -87,4 +88,5 @@ test('missing apps key loads empty and never throws', async () => {
   });
   expect(result.current.loaded).toBe(true);
   expect(result.current.apps).toEqual([]);
+  expect(fn).toHaveBeenCalledTimes(1);
 });
