@@ -47,6 +47,16 @@ test('renders no launcher when the origin is not a mattstack surface and no over
   expect(screen.queryByRole('button', { name: 'Apps' })).toBeNull();
 });
 
+test('sorts the current app first even when it is not first in the fetch response', async () => {
+  const user = userEvent.setup();
+  renderWithProviders(<AppLauncher currentApp="board" />);
+  await user.click(screen.getByRole('button', { name: /apps/i }));
+  await screen.findByRole('link', { name: 'Board' });
+  const links = screen.getAllByRole('link');
+  expect(links[0]).toHaveAccessibleName('Board');
+  expect(links[1]).toHaveAccessibleName('Chat');
+});
+
 test('an empty list shows a muted note, not a crash', async () => {
   vi.stubGlobal(
     'fetch',
