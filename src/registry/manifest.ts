@@ -39,6 +39,15 @@ export function readManifest(dir: string): Manifest | null {
 
 const MAX_ICON_BYTES = 64 * 1024;
 
+// Accepts a valid SVG whose root is <svg>, allowing a leading XML prolog,
+// comments, or DOCTYPE that standard exporters (Illustrator, Inkscape) emit
+// before the root element.
+const SVG_ROOT = /^\s*(?:<\?xml\b[^>]*\?>\s*|<!--[\s\S]*?-->\s*|<!DOCTYPE\b[^>]*>\s*)*<svg[\s>]/i;
+
+function looksLikeSvg(content: string): boolean {
+  return SVG_ROOT.test(content);
+}
+
 export function iconsDir(): string {
   return join(stateDir(), "icons");
 }
@@ -75,7 +84,7 @@ export function ingestManifest(name: string): void {
   } catch {
     return;
   }
-  if (!svg.trimStart().startsWith("<svg")) return;
+  if (!looksLikeSvg(svg)) return;
   try {
     mkdirSync(iconsDir(), { recursive: true });
     writeFileSync(iconPathFor(name), svg);

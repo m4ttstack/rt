@@ -95,6 +95,37 @@ test("ingest skips a manifest whose icon is not svg or is too large", async () =
   expect(existsSync(iconPathFor("bad"))).toBe(false);
 });
 
+test("ingest accepts an svg icon that starts with an XML prolog", async () => {
+  isolate();
+  const { putRecord, getRecord, reloadRegistry } = await import("./records.ts");
+  reloadRegistry();
+  const prologSvg = `<?xml version="1.0" encoding="UTF-8"?>\n${SVG}`;
+  const appDir = repo({
+    "mattstack.json": JSON.stringify({ displayName: "Prolog", icon: "./icon.svg" }),
+    "icon.svg": prologSvg,
+  });
+  putRecord({ name: "prolog", managedBy: "rt", port: 6001, kind: "service", workingDirectory: appDir, createdAt: "x" });
+  ingestManifest("prolog");
+  const r = getRecord("prolog")!;
+  expect(r.displayName).toBe("Prolog");
+  expect(existsSync(iconPathFor("prolog"))).toBe(true);
+});
+
+test("ingest skips a non-svg icon file that is under the size cap", async () => {
+  isolate();
+  const { putRecord, getRecord, reloadRegistry } = await import("./records.ts");
+  reloadRegistry();
+  const appDir = repo({
+    "mattstack.json": JSON.stringify({ displayName: "NotSvg", icon: "./icon.svg" }),
+    "icon.svg": "<html></html>",
+  });
+  putRecord({ name: "notsvg", managedBy: "rt", port: 6002, kind: "service", workingDirectory: appDir, createdAt: "x" });
+  ingestManifest("notsvg");
+  const r = getRecord("notsvg")!;
+  expect(r.displayName).toBeUndefined();
+  expect(existsSync(iconPathFor("notsvg"))).toBe(false);
+});
+
 test("ingest never throws when the icon store is unwritable, and leaves the record untouched", async () => {
   const dir = isolate();
   const { putRecord, getRecord, reloadRegistry } = await import("./records.ts");
