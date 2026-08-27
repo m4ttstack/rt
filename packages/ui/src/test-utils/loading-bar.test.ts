@@ -5,6 +5,8 @@ import { expect, test } from 'vitest';
 
 import { expectLoadingBarInSync } from './loading-bar';
 
+// Built from fileURLToPath, not `new URL(path, import.meta.url)`: Vite's
+// asset-import-meta-url rewrite mangles that idiom under the jsdom env.
 const css = readFileSync(
   resolve(
     dirname(fileURLToPath(import.meta.url)),

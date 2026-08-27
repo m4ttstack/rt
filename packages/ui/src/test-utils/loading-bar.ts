@@ -5,6 +5,8 @@ import { fileURLToPath } from 'node:url';
 const BEGIN_MARKER = 'BEGIN SYNCED RULES';
 const END_MARKER = 'END SYNCED RULES';
 
+// Built from fileURLToPath, not `new URL(path, import.meta.url)`: Vite's
+// asset-import-meta-url rewrite mangles that idiom under the jsdom env.
 const STYLESHEET = resolve(
   dirname(fileURLToPath(import.meta.url)),
   '../boot/simple-loading-bar.css'
