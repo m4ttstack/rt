@@ -1,0 +1,23 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: oven-sh/setup-bun@v2
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run lint
+      - run: bun run format:check
+      - run: bun run test -- --run
+      - run: bun run build-storybook
+      - run: bun run treeshake
+      - run: bun run probe:install
+      - run: bun run probe:test
+      - run: bun run probe:build
+      - run: bun run probe:serve-check

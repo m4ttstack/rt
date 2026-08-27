@@ -1,0 +1,286 @@
+/*
+ * Tokyo Day / Tokyo Night -- tui-kit's palette, carried into the mantine-kit
+ * surface ladder.
+ *
+ * Every hex below is tui-kit's exact string (src/theme.ts, cross-checked
+ * against its docs/token-census.md, which censused mr-board's style.css).
+ * Nothing here may be rounded or re-derived: parity with tui-kit is by
+ * construction. Two values are DERIVATIONS rather than parity, and both are
+ * marked at their definition -- tui-kit has no fourth surface and no
+ * scheme-varying shadow ramp.
+ *
+ * tui-kit switches scheme with `light-dark()` under `.dark`; Mantine switches
+ * on `[data-mantine-color-scheme]`. The attribute selectors below are that
+ * join, and they are why the palette is declared twice instead of once.
+ */
+
+/*
+ * ONE face, not one per weight: JetBrains Mono ships as a variable font, so a
+ * single woff2 carries the 100-800 axis and the browser interpolates every
+ * weight from it. Vendored byte-identical to tui-kit's own
+ * `assets/fonts/jetbrains-mono.woff2` -- the kit leads its consumers on font,
+ * so this is a one-directional departure the kit made deliberately, not a
+ * census value to reconcile.
+ */
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url('./fonts/jetbrains-mono.woff2') format('woff2');
+}
+
+/* `--tk-wash` is the translucent tint an active or alert surface lays over
+   its background, as color-mix(in srgb, <token> var(--tk-wash), transparent):
+   the accent wash on a selected room and an armed icon, the mention-of-you
+   highlight, the deaf chip, and the daemon-down banner. It is lighter in the
+   light scheme because the same alpha reads heavier on a pale ground.
+
+   The declarations live in the per-scheme blocks below, one each, which
+   tokyo-theme.test.ts checks by name -- so this note sits outside them. */
+:root[data-mantine-color-scheme='light'] {
+  --tk-bg: #e1e2e7;
+  --tk-panel: #eff0f5;
+  --tk-card: #f6f6fa;
+  --tk-border: #c8cad6;
+  --tk-border-soft: #d5d7e2;
+  --tk-fg: #111;
+  --tk-muted: #8990b3;
+  /* AA-compliant muted for TEXT (>=4.5:1 on bg 1-3). The raw muted token above
+     stays tui-kit's exact hex for dots/borders; only the muted TEXT roles read
+     the value below, which the scheme-vars contract lets an app remap. */
+  --tk-muted-text: #565d80;
+  --tk-accent: #2e7de9;
+  /* AA-compliant accent for LINK TEXT (>=4.5:1 on bg 1-3). The raw accent
+     token above stays tui-kit's exact hex for fills and badges; only anchor
+     text reads the darker value below. Same split as the muted pair. */
+  --tk-accent-text: #1c5fbf;
+  --tk-green: #587539;
+  --tk-red: #f52a65;
+  --tk-amber: #8c6c3e;
+  --tk-purple: #7847bd;
+  --tk-cyan: #007197;
+  --tk-grid-line: rgba(52, 59, 88, 0.05);
+  --tk-dot-ok: #1f9d3a;
+  --tk-dot-warn: #e08a00;
+  --tk-dot-bad: #e5153f;
+
+  --tk-wash: 10%;
+}
+
+:root[data-mantine-color-scheme='dark'] {
+  --tk-bg: #16161e;
+  --tk-panel: #232a47;
+  --tk-card: #2c3352;
+  --tk-border: #3b4261;
+  --tk-border-soft: #313853;
+  --tk-fg: #e3e7f6;
+  --tk-muted: #7e86ad;
+  /* AA-compliant muted text for the dark scheme (>=4.5:1 on bg 1-3). */
+  --tk-muted-text: #969ec2;
+  --tk-accent: #7aa2f7;
+  /* Accent for link text in dark (>=4.5:1 on bg 1-3); the accent already
+     clears AA there, so this equals it. */
+  --tk-accent-text: #7aa2f7;
+  --tk-green: #9ece6a;
+  --tk-red: #f7768e;
+  --tk-amber: #e0af68;
+  --tk-purple: #bb9af7;
+  --tk-cyan: #7dcfff;
+  --tk-grid-line: rgba(122, 162, 247, 0.06);
+  --tk-dot-ok: #4ade5b;
+  --tk-dot-warn: #ffbb3d;
+  --tk-dot-bad: #ff5c72;
+
+  --tk-wash: 15%;
+}
+
+/*
+ * The kit's live surface slots, re-pointed at the Tokyo roles. Only the
+ * `--ui-*` layer moves; `--ui-base-*` stays kit-owned, so `.ui-base-surfaces`
+ * and `ThemeIsland` still restore the unbranded look on a dev route.
+ *
+ * The ladder runs the opposite direction from the kit's own (Tokyo steps
+ * toward the light in both schemes, away from the page), which the slot
+ * contract permits: it fixes four scheme-aware roles, not their ordering.
+ *
+ * DERIVATION, not parity: tui-kit has three surfaces, so level 4 -- the
+ * contrast/hover step -- is built from the wash tui-kit itself uses for hover
+ * (`wash-fg-8`) laid over the card.
+ */
+:root {
+  --ui-bg-1: var(--tk-bg);
+  --ui-bg-2: var(--tk-panel);
+  --ui-bg-3: var(--tk-card);
+  --ui-bg-4: color-mix(in srgb, var(--tk-fg) 8%, var(--tk-card));
+
+  --ui-text-muted: var(--tk-muted-text);
+  --ui-text-dimmed: var(--tk-muted-text);
+  --ui-text-gray: var(--tk-fg);
+}
+
+/*
+ * Mantine's own semantic slots. Safe to point `--mantine-color-body` at
+ * `--ui-bg-1` here only because the Tokyo layer above resolves to a literal:
+ * the cycle scheme-vars.css warns about needs `--ui-bg-1` to read back
+ * through `body`, and it no longer does.
+ *
+ * READ THIS BEFORE TRUSTING ANY LINE BELOW. Mantine declares all of these in
+ * its own `:root[data-mantine-color-scheme='…']` blocks, emitted at runtime
+ * and later in the document, so a bare `:root` here LOSES every time.
+ *
+ * One of them lands on the intended value regardless, and not by this
+ * block's doing. `text` lands in dark because the
+ * `--mantine-color-dark-*` remap further down IS scheme-scoped, so Mantine's
+ * `dark-0` fallback resolves back into Tokyo; in light it is Mantine's
+ * `theme.black` (#000) standing in for `--tk-fg` (#111), a difference no eye
+ * resolves.
+ *
+ * `anchor` is the exception, overridden at raised specificity below: Mantine
+ * derives it from `theme.primaryColor` (= `accent`) as the accent ramp's
+ * canonical shade, which fails contrast for LINK TEXT on a pale ground. The
+ * darker `--tk-accent-text` is applied there instead.
+ *
+ * These six do NOT take effect, and the app renders Mantine's value instead.
+ * Four diverge in LIGHT only, landing correctly in dark by that same dark-ramp
+ * remap: `body`, `dimmed`, `placeholder`, `default`. Two diverge in BOTH:
+ * `default-hover`, `default-color`. They are kept because scheme-scoping them
+ * is a design change rather than a repair -- `body` and `default` would
+ * repaint every Modal, Popover and Drawer in light from #fff to the Tokyo
+ * panel.
+ *
+ * `error` was the only one that both diverged AND failed contrast, and it is
+ * scheme-scoped below. Anything added here needs the same check: put it in a
+ * scheme block if it has to win.
+ */
+:root {
+  --mantine-color-body: var(--ui-bg-1);
+  --mantine-color-text: var(--tk-fg);
+  --mantine-color-dimmed: var(--tk-muted);
+  --mantine-color-placeholder: var(--tk-muted);
+
+  --mantine-color-default: var(--tk-panel);
+  --mantine-color-default-hover: var(--ui-bg-4);
+  --mantine-color-default-color: var(--tk-fg);
+  --mantine-color-default-border: var(--tk-border);
+}
+
+/*
+ * Mantine declares this in its own `[data-mantine-color-scheme]` blocks, which
+ * outrank the bare `:root` above -- scoping the override per scheme is what
+ * makes it win, and `--tk-red` already varies by scheme so one grouped
+ * selector covers both. Without this, dark falls back to `red-8`: a deep
+ * #b92739 that fails contrast on `--tk-panel`.
+ */
+:root[data-mantine-color-scheme='light'],
+:root[data-mantine-color-scheme='dark'] {
+  --mantine-color-error: var(--tk-red);
+}
+
+/*
+ * Link text. Mantine derives `--mantine-color-anchor` from `theme.primaryColor`
+ * (= `accent`) as the ramp's canonical shade, which reads at 3.7:1 on the pale
+ * card in light -- under AA for text. `--tk-accent-text` clears 4.5:1 on bg 1-3;
+ * in dark it equals the accent, which already passes.
+ *
+ * This needs MORE than the scheme-scoping `error` gets. Mantine re-emits the
+ * anchor var from the theme into its runtime `data-mantine-styles` <style>,
+ * injected AFTER this file's imported CSS at the SAME specificity, so an
+ * equal-specificity override would lose on source order. The doubled `:root`
+ * raises specificity above Mantine's `:root[data-mantine-color-scheme=...]`,
+ * so this wins regardless of load order (dev or prod). `error` needs no such
+ * bump because the theme never re-emits it.
+ */
+:root:root[data-mantine-color-scheme='light'],
+:root:root[data-mantine-color-scheme='dark'] {
+  --mantine-color-anchor: var(--tk-accent-text);
+}
+
+/*
+ * Mantine reaches for the `dark-*` ramp directly for surfaces and borders in
+ * dark scheme (Paper, Menu dropdown, input backgrounds), so the ramp itself
+ * has to land in-palette or those components sit off-theme while every
+ * `--ui-*` consumer looks right.
+ */
+:root[data-mantine-color-scheme='dark'] {
+  --mantine-color-dark-0: var(--tk-fg);
+  --mantine-color-dark-1: var(--tk-fg);
+  --mantine-color-dark-2: var(--tk-muted);
+  --mantine-color-dark-3: var(--tk-muted);
+  --mantine-color-dark-4: var(--tk-border);
+  --mantine-color-dark-5: var(--tk-border-soft);
+  --mantine-color-dark-6: var(--tk-panel);
+  --mantine-color-dark-7: var(--tk-bg);
+  --mantine-color-dark-8: var(--tk-bg);
+  --mantine-color-dark-9: var(--tk-bg);
+}
+
+/*
+ * Mono body type at 13.5px/1.55 -- tui-kit canvas identity (its canvas.css
+ * keeps this literal for the same reason -- single-use, not a theme token).
+ */
+body {
+  font-family: var(--mantine-font-family);
+  font-size: 13.5px;
+  line-height: 1.55;
+  background-color: var(--tk-bg);
+}
+
+/*
+ * The graph-paper grid. NOT painted on `body`: PageShell's root and
+ * RailShell's `AppShell.Main` both sit between body and every route, and
+ * both fill the viewport with an opaque `bg.level1` (the same `--tk-bg`),
+ * so a body-level grid is permanently covered and never reaches the
+ * screen. `#page-shell-content` -- PageShell's own capped `ScrollArea`,
+ * the one surface every route (board/search/run detail) actually scrolls
+ * inside -- is the first point in that stack that is genuinely visible.
+ *
+ * `!important` is required on every sub-property: PageShell sets this
+ * element's background via Mantine's `bg` style prop, which lands as an
+ * inline `background` declaration, and only `!important` in a stylesheet
+ * outranks an inline non-important one.
+ *
+ * `background-attachment: fixed` still anchors to the viewport, not to
+ * this element's own scroll box, even though this element -- not
+ * `body` -- is what actually scrolls (confirmed by loading the app: the
+ * grid holds still while the list scrolls past it).
+ */
+#page-shell-content {
+  background-color: var(--tk-bg) !important;
+  background-image:
+    linear-gradient(var(--tk-grid-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--tk-grid-line) 1px, transparent 1px) !important;
+  background-size: 28px 28px !important;
+  background-attachment: fixed !important;
+}
+
+/*
+ * The chrome ladder, one rung per surface: the app's rail and site header
+ * sit on the page surface, PageShell's sidebar and header a rung up on the
+ * panel surface, and whatever the route paints inside content (cards,
+ * panels) a rung above that. Every kit consumer lays out the same way by
+ * importing this file; without it the kit puts rail, header and sidebar
+ * on one surface and the chrome reads flat.
+ *
+ * `!important` for the same reason as the grid above: the kit sets these
+ * backgrounds as inline styles.
+ */
+.mantine-AppShell-header,
+.mantine-AppShell-navbar {
+  background-color: var(--tk-bg) !important;
+}
+
+#page-shell-header,
+#page-shell-sidebar {
+  background-color: var(--tk-panel) !important;
+}
+
+/*
+ * Borders. Mantine's default border color is `--mantine-color-gray-4` /
+ * `dark-4`; the Tokyo look leans on one border value per scheme, with the
+ * soft variant reserved for internal rules.
+ */
+:root {
+  --mantine-color-gray-4: var(--tk-border);
+  --mantine-color-gray-3: var(--tk-border-soft);
+}

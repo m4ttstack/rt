@@ -1,0 +1,30 @@
+{
+  "name": "@mattstack/mantine-tokyo",
+  "version": "0.2.0",
+  "description": "Tokyo Day/Night brand tokens (colour ramps, theme values, colour names, css, font) for mantine-kit apps.",
+  "type": "module",
+  "types": "./src/index.ts",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./tokyo-theme.css": "./src/tokyo-theme.css"
+  },
+  "files": [
+    "src"
+  ],
+  "sideEffects": [
+    "*.css"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/m4ttstack/app-kit.git",
+    "directory": "packages/tokyo"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "@mantine/core": "^9.5.2"
+  }
+}
