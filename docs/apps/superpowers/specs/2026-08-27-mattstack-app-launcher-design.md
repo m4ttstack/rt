@@ -149,8 +149,11 @@ each as a slim discovery row:
 - `icon` is an absolute URL to the icon route below. Rows with no stored icon
   get a sentinel the component renders as the fallback mark (either omit
   `icon` or point at a shared `/api/apps/_fallback/icon`).
-- Excludes the board/deck's own row and any user apps. Sort stable (by
-  `displayName`, then `name`).
+- Excludes deck's own platform/dashboard row (the `managedBy: "deck"` / self
+  row at `deck.mattstack`) and all user apps. The **board app** (`managedBy:
+  "rt"`) IS included like any other product, so it is discoverable/linkable
+  from the grid even though board does not itself host the launcher until it
+  moves onto app-kit. Sort stable (by `displayName`, then `name`).
 
 **`GET /api/apps/:name/icon`** streams `~/.mattstack/deck/icons/<name>.svg`
 with `content-type: image/svg+xml` and cache headers; 404 (or the fallback)
@@ -168,9 +171,12 @@ these two GET routes get CORS; the `/api/v1` surface is unchanged.
 Shipped from `@mattstack/app-kit` (the `app` subpath), mounted by
 `MattstackShell` in the header's right slot (option B).
 
-**Trigger.** The shared mattstack platform mark (a new `MattstackMark` asset in
+**Trigger.** The shared mattstack platform mark (a `MattstackMark` asset in
 app-kit, distinct from each app's own brand mark), as an icon button. Clicking
-opens a popover.
+opens a popover. The mark is **lifted from the mattstack `.app` iconset**
+(traced/extracted to an inline SVG) so the launcher button matches the
+installer/tray icon exactly and reads as one platform identity, rather than
+being drawn fresh.
 
 **Popover.** A Google-style grid: one tile per app from `/api/apps`, each an
 icon (from the app's `icon` URL) above its `displayName`, linking to the app's
@@ -250,15 +256,17 @@ existing-app migrations onto app-kit.
 - **manual**: with chat + console adopted and manifests in place, the launcher
   in each shows both apps with correct icons and cross-links.
 
-## H. Open items for spec review
+## H. Resolved decisions (from spec review)
 
-- Whether the board (`deck`'s own dashboard) should appear as a launcher tile,
-  or be excluded like a user app. Leaning: exclude deck's own row; include
-  board only if board ships a `mattstack.json`.
-- Icon format: SVG-only v1 is proposed. PNG fallback is a later addition if any
-  app cannot ship an SVG mark.
-- Whether the shared `MattstackMark` is authored fresh in app-kit or lifted
-  from the existing `make-icon.swift` source of the mattstack `.app` icon so
-  the platform mark and the installer icon stay identical.
-- Exact home for the launcher in the shell header (dedicated right slot vs the
-  shell rendering it whenever `appName` is set).
+- **Board appears as a launcher tile** (it is `managedBy: "rt"`, so it lists
+  once it ships a `mattstack.json`); deck's own dashboard row is excluded.
+  Board does not host the launcher itself until it moves onto app-kit.
+- **SVG only for v1.** PNG is a later addition only if some app cannot ship an
+  SVG mark; not built now.
+- **The shared `MattstackMark` is lifted from the mattstack `.app` iconset**,
+  not authored fresh, so the platform mark and the installer/tray icon stay
+  identical.
+
+Remaining implementer choice (not blocking): the exact home for the launcher
+in the shell header (a dedicated right slot vs the shell rendering it whenever
+the app passes its `appName`).
