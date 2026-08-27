@@ -20,6 +20,7 @@
     "*.css"
   ],
   "exports": {
+    "./app": "./src/app/index.ts",
     "./boot": "./src/boot/index.ts",
     "./boot/simple-loading-bar.css": "./src/boot/simple-loading-bar.css",
     "./core": "./src/core/index.ts",
