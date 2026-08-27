@@ -68,7 +68,7 @@ app-kit/                          m4ttstack/app-kit (bun workspace)
     src/app.ts, relays.ts, static.ts, serving-mode.ts, embedded/*, serve.ts
     bin/mattstack-embed-assets.ts
   packages/tokyo/                 @mattstack/mantine-tokyo (moved from console/packages: seven files incl. src/fonts/jetbrains-mono.woff2, a binary; version line continues from 0.1.2)
-  probe/                          private app that consumes the packages the way chat will; CI target
+  probe/                          private app consuming the packages via file: (NOT a workspace member, so bun copies them under node_modules exactly as it will for chat); CI target
   .storybook/                     main.ts + preview.tsx, moved from console
   docs/superpowers/specs/         this spec
 ```
