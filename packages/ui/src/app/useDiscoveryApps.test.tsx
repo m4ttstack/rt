@@ -52,3 +52,39 @@ test('a rejected fetch loads empty and never throws', async () => {
   expect(result.current.loaded).toBe(true);
   expect(result.current.apps).toEqual([]);
 });
+
+test('refresh caches for 30s and does not refetch within the window', async () => {
+  const fn = stubFetch({ apps: [{ name: 'chat', displayName: 'Chat', url: 'https://chat.mattstack', icon: null }] });
+  const { result } = renderHook(() =>
+    useDiscoveryApps('https://deck.mattstack')
+  );
+  await act(async () => {
+    await result.current.refresh();
+    await result.current.refresh();
+  });
+  expect(fn).toHaveBeenCalledTimes(1);
+});
+
+test('non-array apps payload loads empty and never throws', async () => {
+  const fn = stubFetch({ apps: 'nope' });
+  const { result } = renderHook(() =>
+    useDiscoveryApps('https://deck.mattstack')
+  );
+  await act(async () => {
+    await result.current.refresh();
+  });
+  expect(result.current.loaded).toBe(true);
+  expect(result.current.apps).toEqual([]);
+});
+
+test('missing apps key loads empty and never throws', async () => {
+  const fn = stubFetch({});
+  const { result } = renderHook(() =>
+    useDiscoveryApps('https://deck.mattstack')
+  );
+  await act(async () => {
+    await result.current.refresh();
+  });
+  expect(result.current.loaded).toBe(true);
+  expect(result.current.apps).toEqual([]);
+});
