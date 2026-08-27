@@ -460,7 +460,16 @@ const httpServer = Bun.serve({
     // locality rule; reads are as public as /data.json already is.
     if (pathname.startsWith("/api/settings/")) {
       const settingsRes = await settingsHandler(req, { allowWrite: isLocalRequest, allowComposite: true });
-      if (settingsRes) return settingsRes;
+      if (settingsRes) {
+        // Board's config is a snapshot resolved once at boot (see `config`
+        // below) and otherwise only refreshed by the config.json watcher --
+        // a write through this very API would otherwise sit in the settings
+        // store, correctly persisted, but invisible to this running process
+        // until a manual restart. A modal edit is the same kind of change as
+        // a config.json edit, so it gets the same live-reload treatment.
+        if (req.method === "POST" && settingsRes.ok) reloadConfig("settings changed");
+        return settingsRes;
+      }
     }
 
     // Resolved once per request, off the memoized getters above -- cheap
@@ -1562,27 +1571,32 @@ const stopRelay = FIXTURE_DIR ? () => {} : subscribe((type, data) => {
 // Hot-reload config.json so adding/removing members (or any setting) takes
 // effect without a restart. Watch the directory — that survives editors that
 // save atomically by swapping the file — and filter to our file. A mid-edit
-// invalid file is ignored, keeping the last good config.
+// invalid file is ignored, keeping the last good config. A store-backed
+// setting (rt settings set, or anything outside the /api/settings/ mount
+// above) still needs a restart to be picked up here -- only a write through
+// this process's own API refreshes live.
 let reloadTimer: ReturnType<typeof setTimeout> | undefined;
+function reloadConfig(reason: string): void {
+  try {
+    Object.assign(config, loadConfig());
+    namesFetchedAt = 0; // re-resolve display names, including new members
+    // Stale, not dropped: checking a member in/out lands here (the board
+    // writes config.json itself), and dropping the snapshot would stall every
+    // reader for a full team refetch. Serve the old board until this lands.
+    cache.markStale();
+    void refreshMemberNames();
+    void cache.get().catch(() => {});
+    void scheduleAutoResolve();
+    console.log(`${reason} — reloaded members/settings (no restart needed)`);
+  } catch (err) {
+    console.error(`config reload skipped (invalid): ${err instanceof Error ? err.message : err}`);
+  }
+}
+
 if (!FIXTURE_DIR) watch(dirname(CONFIG_PATH), (_event, filename) => {
   if (filename && filename !== basename(CONFIG_PATH)) return;
   clearTimeout(reloadTimer);
-  reloadTimer = setTimeout(() => {
-    try {
-      Object.assign(config, loadConfig());
-      namesFetchedAt = 0; // re-resolve display names, including new members
-      // Stale, not dropped: checking a member in/out lands here (the board
-      // writes config.json itself), and dropping the snapshot would stall every
-      // reader for a full team refetch. Serve the old board until this lands.
-      cache.markStale();
-      void refreshMemberNames();
-      void cache.get().catch(() => {});
-      void scheduleAutoResolve();
-      console.log("config.json changed — reloaded members/settings (no restart needed)");
-    } catch (err) {
-      console.error(`config reload skipped (invalid): ${err instanceof Error ? err.message : err}`);
-    }
-  }, 150);
+  reloadTimer = setTimeout(() => reloadConfig("config.json changed"), 150);
 });
 
 // Graceful shutdown: Sparkle replaces the whole bundle on update (this
