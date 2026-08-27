@@ -3,7 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "workspaces": ["packages/*"],
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "typecheck": "bun run --filter '@mattstack/*' typecheck && bun run probe:typecheck",
     "lint": "eslint --no-error-on-unmatched-pattern packages .storybook && bun run probe:lint",

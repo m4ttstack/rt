@@ -1,5 +1,12 @@
-import { Badge, Button, Card, Group, Stack, Text } from '@mantine/core';
-import { createTheme } from '@mantine/core';
+import {
+  Badge,
+  Button,
+  Card,
+  createTheme,
+  Group,
+  Stack,
+  Text,
+} from '@mantine/core';
 import type { Meta, StoryObj } from '@storybook/react-vite';
 
 import { baseTheme } from './base-theme';
@@ -43,8 +50,8 @@ export const KitLookInsideABrandedApp: Story = {
       <Stack p="md">
         <Text size="sm" c="dimmed">
           The outer island carries a heavy brand (square corners, orange,
-          bordered cards, shouting badges). The inner one restores the kit&apos;s
-          own defaults with `theme={'{baseTheme}'}` -- one import, no
+          bordered cards, shouting badges). The inner one restores the
+          kit&apos;s own defaults with `theme={'{baseTheme}'}` -- one import, no
           transcription. A merge-based override could not express this: merging
           only adds, so every brand treatment would have to be individually
           restated to be removed.
@@ -66,9 +73,9 @@ export const ScopedEmission: Story = {
     <Stack p="md">
       <Text size="sm" c="dimmed">
         The island emits its CSS variables against its own scope class rather
-        than `:root`, so the surrounding page keeps the kit theme. A bare
-        nested MantineProvider defaults that selector to `:root` and repaints
-        the whole document.
+        than `:root`, so the surrounding page keeps the kit theme. A bare nested
+        MantineProvider defaults that selector to `:root` and repaints the whole
+        document.
       </Text>
       <Group align="flex-start">
         <Sample label="Page theme" />

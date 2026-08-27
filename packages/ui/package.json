@@ -9,8 +9,16 @@
     "url": "git+https://github.com/m4ttstack/app-kit.git",
     "directory": "packages/ui"
   },
-  "files": ["src", "presets", "tsconfig.base.json", "!src/**/*.test.*", "!src/**/*.stories.*"],
-  "sideEffects": ["*.css"],
+  "files": [
+    "src",
+    "presets",
+    "tsconfig.base.json",
+    "!src/**/*.test.*",
+    "!src/**/*.stories.*"
+  ],
+  "sideEffects": [
+    "*.css"
+  ],
   "exports": {
     "./core": "./src/core/index.ts",
     "./hooks": "./src/hooks/index.ts",
@@ -47,8 +55,12 @@
     "zod": "^4.4.3"
   },
   "peerDependenciesMeta": {
-    "@testing-library/react": { "optional": true },
-    "vitest": { "optional": true }
+    "@testing-library/react": {
+      "optional": true
+    },
+    "vitest": {
+      "optional": true
+    }
   },
   "dependencies": {
     "@codemirror/commands": "^6.10.4",

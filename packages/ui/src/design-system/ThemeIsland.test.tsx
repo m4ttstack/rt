@@ -2,7 +2,11 @@ import { createTheme, MantineProvider, Text } from '@mantine/core';
 import { render } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { baseTheme, ThemeIsland, ThemeOverrideWrapper } from '@mattstack/app-kit/design-system';
+import {
+  baseTheme,
+  ThemeIsland,
+  ThemeOverrideWrapper,
+} from '@mattstack/app-kit/design-system';
 
 afterEach(() => {
   // Mantine's default colorSchemeManager is localStorage-backed, and the
@@ -105,18 +109,14 @@ describe('scoped subtree theming', () => {
         <Text>island</Text>
       </ThemeIsland>
     );
-    expect(
-      withRamp.container.querySelector('.ui-base-surfaces')
-    ).toBeTruthy();
+    expect(withRamp.container.querySelector('.ui-base-surfaces')).toBeTruthy();
 
     const withoutRamp = renderInApp(
       <ThemeIsland theme={baseTheme}>
         <Text>island</Text>
       </ThemeIsland>
     );
-    expect(
-      withoutRamp.container.querySelector('.ui-base-surfaces')
-    ).toBeNull();
+    expect(withoutRamp.container.querySelector('.ui-base-surfaces')).toBeNull();
   });
 });
 
