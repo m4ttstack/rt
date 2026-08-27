@@ -47,3 +47,31 @@ test('pins a colour-scheme control to the rail', () => {
   renderShell();
   expect(screen.getByLabelText('Color scheme')).toBeInTheDocument();
 });
+
+test('mounts the app launcher when appName is passed', () => {
+  const { hook } = memoryLocation({ path: '/' });
+  renderWithProviders(
+    <Router hook={hook}>
+      <MattstackShell name="Chat" appName="chat" deckBase="https://deck.mattstack">
+        <main>page</main>
+      </MattstackShell>
+    </Router>
+  );
+  expect(
+    within(screen.getByRole('banner')).getByRole('button', { name: 'Apps' })
+  ).toBeInTheDocument();
+});
+
+test('omits the launcher when appName is absent', () => {
+  const { hook } = memoryLocation({ path: '/' });
+  renderWithProviders(
+    <Router hook={hook}>
+      <MattstackShell name="Chat">
+        <main>page</main>
+      </MattstackShell>
+    </Router>
+  );
+  expect(
+    within(screen.getByRole('banner')).queryByRole('button', { name: 'Apps' })
+  ).not.toBeInTheDocument();
+});
