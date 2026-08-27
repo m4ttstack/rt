@@ -58,7 +58,8 @@ export function removeIcon(name: string): void {
  * displayName/description/icon onto the record. Every failure path is a quiet
  * skip that leaves the record's launcher fields untouched: a missing
  * workingDirectory (external, port-only apps have none), a missing or
- * malformed manifest, or an icon that fails validation. Never throws.
+ * malformed manifest, an icon that fails validation, or the icon store being
+ * unwritable (full disk, permissions) partway through the write. Never throws.
  */
 export function ingestManifest(name: string): void {
   const record = getRecord(name);
@@ -75,12 +76,16 @@ export function ingestManifest(name: string): void {
     return;
   }
   if (!svg.trimStart().startsWith("<svg")) return;
-  mkdirSync(iconsDir(), { recursive: true });
-  writeFileSync(iconPathFor(name), svg);
-  putRecord({
-    ...record,
-    displayName: manifest.displayName,
-    description: manifest.description,
-    icon: { ext: "svg" },
-  });
+  try {
+    mkdirSync(iconsDir(), { recursive: true });
+    writeFileSync(iconPathFor(name), svg);
+    putRecord({
+      ...record,
+      displayName: manifest.displayName,
+      description: manifest.description,
+      icon: { ext: "svg" },
+    });
+  } catch {
+    return;
+  }
 }

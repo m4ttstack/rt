@@ -95,6 +95,24 @@ test("ingest skips a manifest whose icon is not svg or is too large", async () =
   expect(existsSync(iconPathFor("bad"))).toBe(false);
 });
 
+test("ingest never throws when the icon store is unwritable, and leaves the record untouched", async () => {
+  const dir = isolate();
+  const { putRecord, getRecord, reloadRegistry } = await import("./records.ts");
+  reloadRegistry();
+  // Pre-create the icons dir's path AS A FILE, so mkdirSync(iconsDir()) throws
+  // EEXIST instead of creating the directory the write tail needs.
+  writeFileSync(join(dir, "icons"), "not a directory");
+  const appDir = repo({
+    "mattstack.json": JSON.stringify({ displayName: "Chat", description: "Group chat", icon: "./public/icon.svg" }),
+    "public/icon.svg": SVG,
+  });
+  putRecord({ name: "chat", managedBy: "rt", port: 11002, kind: "service", workingDirectory: appDir, createdAt: "x" });
+  expect(() => ingestManifest("chat")).not.toThrow();
+  const r = getRecord("chat")!;
+  expect(r.displayName).toBeUndefined();
+  expect(r.icon).toBeUndefined();
+});
+
 test("removeIcon deletes the stored file", async () => {
   isolate();
   const { putRecord, reloadRegistry } = await import("./records.ts");

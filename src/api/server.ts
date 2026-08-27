@@ -18,6 +18,7 @@ import { registerApp, unregisterApp, editApp, adoptApp, restartManagedApps, remo
 } from "./register.ts";
 import { getRecord, listRecords, type AppRecord, type SyncIssue } from "../registry/records.ts";
 import { ingestManifest } from "../registry/manifest.ts";
+import { isPlatformManagedBy } from "../services/manager.ts";
 import { migrate } from "../registry/migrate.ts";
 import { convert } from "../registry/convert.ts";
 import { redactedSettings, updatePlatformSettings, getPlatformSettings } from "./platform-settings.ts";
@@ -224,13 +225,19 @@ export function startApi(deps: ApiDeps) {
             ...a,
             icon: a.icon ? `${base}/api/apps/${a.icon}/icon` : null,
           }));
+          // vary: origin unconditionally, allowed or not: a browser must never
+          // reuse a cached response for one origin's CORS decision on another's.
           return new Response(JSON.stringify({ apps }), {
-            headers: { "content-type": "application/json", ...cors },
+            headers: { "content-type": "application/json", vary: "origin", ...cors },
           });
         }
         const m = pathname.match(ICON_ROUTE);
         if (m && req.method === "GET") {
           const res = iconResponse(m[1]!);
+          // cache-control: max-age=300 on this response means a denied-origin
+          // fetch, cached without vary, would shadow later cross-origin fetches
+          // for up to 5 minutes -- vary: origin must be set even when cors is {}.
+          res.headers.set("vary", "origin");
           for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);
           return res;
         }
@@ -304,7 +311,13 @@ export function startApi(deps: ApiDeps) {
           const mr = pathname.match(/^\/api\/v1\/apps\/([^/]+)\/manifest\/refresh$/);
           if (mr && req.method === "POST") {
             const name = mr[1]!;
-            if (!getRecord(name)) return json({ error: "not-found" }, 404);
+            const record = getRecord(name);
+            if (!record) return json({ error: "not-found" }, 404);
+            // Only managed (adopted) products are ever ingested: a user app or
+            // deck's own platform row never carries a mattstack.json contract.
+            if (record.managedBy === "user" || isPlatformManagedBy(record.managedBy)) {
+              return json({ error: "not-a-managed-product" }, 409);
+            }
             ingestManifest(name);
             return json({ ok: true });
           }

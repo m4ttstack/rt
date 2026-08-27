@@ -195,6 +195,19 @@ test("POST /api/v1/apps/:name/manifest/refresh 404s for an unregistered name", a
   expect(res.status).toBe(404);
 });
 
+test("POST /api/v1/apps/:name/manifest/refresh refuses a user app, never ingests it", async () => {
+  const mineDir = manifestDir();
+  putRecord({
+    name: "mine", managedBy: "user", port: 11005, kind: "service",
+    workingDirectory: mineDir, createdAt: "2026-08-10T00:00:00Z",
+  });
+
+  const res = await fetch(`http://127.0.0.1:${PORT}/api/v1/apps/mine/manifest/refresh`, { method: "POST" });
+  expect(res.status).toBe(409);
+  expect(await res.json()).toEqual({ error: "not-a-managed-product" });
+  expect(getRecord("mine")!.displayName).toBeUndefined();
+});
+
 // ---- CORS on the discovery routes ----
 
 test("GET /api/apps echoes an allowed mattstack origin in CORS", async () => {
@@ -220,5 +233,43 @@ test("the icon route is CORS-allowed too", async () => {
 
 test("the versioned /api/v1 surface is NOT CORS-opened", async () => {
   const res = await fetch(`http://127.0.0.1:${PORT}/api/v1/status`, { headers: { origin: "https://chat.mattstack" } });
+  expect(res.headers.get("access-control-allow-origin")).toBeNull();
+});
+
+test("GET /api/apps carries vary: origin for a foreign origin, without allowing it", async () => {
+  const res = await fetch(`http://127.0.0.1:${PORT}/api/apps`, { headers: { origin: "https://evil.example.com" } });
+  expect(res.headers.get("vary")).toBe("origin");
+  expect(res.headers.get("access-control-allow-origin")).toBeNull();
+});
+
+test("GET /api/apps carries vary: origin with no Origin header at all", async () => {
+  const res = await fetch(`http://127.0.0.1:${PORT}/api/apps`);
+  expect(res.headers.get("vary")).toBe("origin");
+  expect(res.headers.get("access-control-allow-origin")).toBeNull();
+});
+
+test("GET /api/apps/:name/icon carries vary: origin for a foreign origin, without allowing it", async () => {
+  const chatDir = manifestDir();
+  putRecord({
+    name: "chat", managedBy: "rt", port: 11002, kind: "service",
+    workingDirectory: chatDir, createdAt: "2026-08-10T00:00:00Z",
+  });
+  ingestManifest("chat");
+
+  const res = await fetch(`http://127.0.0.1:${PORT}/api/apps/chat/icon`, { headers: { origin: "https://evil.example.com" } });
+  expect(res.headers.get("vary")).toBe("origin");
+  expect(res.headers.get("access-control-allow-origin")).toBeNull();
+});
+
+test("GET /api/apps/:name/icon carries vary: origin with no Origin header at all", async () => {
+  const chatDir = manifestDir();
+  putRecord({
+    name: "chat", managedBy: "rt", port: 11002, kind: "service",
+    workingDirectory: chatDir, createdAt: "2026-08-10T00:00:00Z",
+  });
+  ingestManifest("chat");
+
+  const res = await fetch(`http://127.0.0.1:${PORT}/api/apps/chat/icon`);
+  expect(res.headers.get("vary")).toBe("origin");
   expect(res.headers.get("access-control-allow-origin")).toBeNull();
 });
