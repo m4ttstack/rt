@@ -442,10 +442,13 @@ test('marks the current app', async () => {
   expect(chat).toHaveAttribute('data-current', 'true');
 });
 
-test('renders null when the origin is not a mattstack surface and no override', () => {
+test('renders no launcher when the origin is not a mattstack surface and no override', () => {
   vi.stubGlobal('location', { origin: 'https://example.com' } as Location);
-  const { container } = renderWithProviders(<AppLauncher />);
-  expect(container).toBeEmptyDOMElement();
+  renderWithProviders(<AppLauncher />);
+  // Assert the trigger's absence, not container emptiness: renderWithProviders
+  // always mounts Notifications + ModalsProvider scaffolding, so `container` is
+  // never empty even when AppLauncher correctly returns null.
+  expect(screen.queryByRole('button', { name: 'Apps' })).toBeNull();
 });
 
 test('an empty list shows a muted note, not a crash', async () => {
@@ -549,7 +552,7 @@ export function AppLauncher({ currentApp, deckBase }: AppLauncherProps) {
   return (
     <Popover
       opened={opened}
-      onChange={handlers.toggle}
+      onChange={o => (o ? handlers.open() : handlers.close())}
       onOpen={refresh}
       position="bottom-end"
       withArrow
@@ -661,12 +664,12 @@ In `MattstackShell.tsx`, extend the props and header. Add to `MattstackShellProp
   deckBase?: string;
 ```
 
-Import the launcher and `Group` is already imported; replace the header node:
+Import the launcher and `Group` is already imported. In `Shell()`, add `appName` and `deckBase` to the destructured props (alongside `name`, `mark`, `headerHeight`, `railLabel`, `children`), then replace the header node:
 
 ```tsx
 import { AppLauncher } from './AppLauncher';
 
-// ...in Shell(), destructure appName and deckBase, then:
+// in Shell(): function Shell({ name, mark, appName, deckBase, ... }: MattstackShellProps)
         header={
           <Group justify="space-between" w="100%" wrap="nowrap">
             <Group gap="sm" wrap="nowrap">
