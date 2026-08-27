@@ -15,7 +15,7 @@ process.env.LOCAL_PLATFORM_SETTINGS_PATH = join(dir, "platform.json");
 process.env.HOME = dir;
 
 const { buildDiscoveryApps, iconResponse } = await import("./discovery.ts");
-const { putRecord, reloadRegistry } = await import("../registry/records.ts");
+const { putRecord, getRecord, reloadRegistry } = await import("../registry/records.ts");
 const { ingestManifest } = await import("../registry/manifest.ts");
 
 const SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64"/></svg>';
@@ -164,6 +164,35 @@ test("GET /api/apps/:name/icon serves 200 svg for a real icon, 404 for a missing
 
   const missing = await api("/api/apps/nope/icon");
   expect(missing.status).toBe(404);
+});
+
+// ---- POST /api/v1/apps/:name/manifest/refresh ----
+
+test("POST /api/v1/apps/:name/manifest/refresh re-ingests the manifest from disk", async () => {
+  const chatDir = manifestDir();
+  putRecord({
+    name: "chat", managedBy: "rt", port: 11002, kind: "service",
+    workingDirectory: chatDir, createdAt: "2026-08-10T00:00:00Z",
+  });
+  ingestManifest("chat");
+  expect(getRecord("chat")!.displayName).toBe("Chat");
+
+  writeFileSync(
+    join(chatDir, "mattstack.json"),
+    JSON.stringify({ displayName: "Chatter", description: "Group chat", icon: "./icon.svg" }),
+  );
+
+  // No x-forwarded-host: the request host is not a public mattstack tld, so
+  // the /api/v1/ mutation guard lets a plain POST through.
+  const res = await fetch(`http://127.0.0.1:${PORT}/api/v1/apps/chat/manifest/refresh`, { method: "POST" });
+  expect(res.status).toBe(200);
+  expect(await res.json()).toEqual({ ok: true });
+  expect(getRecord("chat")!.displayName).toBe("Chatter");
+});
+
+test("POST /api/v1/apps/:name/manifest/refresh 404s for an unregistered name", async () => {
+  const res = await fetch(`http://127.0.0.1:${PORT}/api/v1/apps/nope/manifest/refresh`, { method: "POST" });
+  expect(res.status).toBe(404);
 });
 
 // ---- CORS on the discovery routes ----

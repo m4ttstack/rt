@@ -26,6 +26,7 @@ usage:
   deck password <name> [--clear]           password gate (prompts)
   deck access <name> off | emails a,b | domains c,d    google sign-in gate
   deck adopt <name> [--as NEW] [--managed-by ID] [--json]   claim a user app as a mattstack product
+  deck manifest refresh <name>             re-read the app's mattstack.json (name, icon)
   deck domain <domain>                     bind your own domain (cloudflared)
   deck migrate                             adopt existing plists + routes
   deck migrate --convert                   relabel adopted legacy apps to com.mattstack.deck.<name>
@@ -218,6 +219,17 @@ export async function runCommand(
         io.out(body.changed
           ? `adopted ${name} — now ${host} (managed by ${body.app.managedBy})`
           : `already adopted — ${host}`);
+        return 0;
+      }
+      case "manifest": {
+        const [sub, name] = rest;
+        if (sub !== "refresh" || !name) {
+          io.err("usage: deck manifest refresh <name>");
+          return 2;
+        }
+        const { status, body } = await apiJson(`/api/v1/apps/${name}/manifest/refresh`, { method: "POST" });
+        if (status >= 400) { io.err(body.error ?? "refresh failed"); return 1; }
+        io.out(`refreshed ${name}`);
         return 0;
       }
       case "domain": {
