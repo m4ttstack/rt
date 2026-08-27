@@ -356,7 +356,9 @@ git commit -m "feat: ingest mattstack.json icon into the deck icon store"
 
 - [ ] **Step 1: Read the adopt and unregister paths**
 
-Read `src/api/register.ts`: find `adoptApp` (it stamps `managedBy` via `putRecord(next)` near the "stamp managedBy" comment) and `unregisterApp`/`deleteRecord`. Confirm their signatures and where the record is final.
+Read `src/api/register.ts`. The real shapes (verified):
+- `adoptApp(name: string, opts: { as?: string; managedBy?: string }, drivers: Drivers)` (`register.ts:362`). Three positional args; `drivers` (the fakes in tests) is required because adopt reaches `reconcileMattstackTld`/`editApp`. The record local is `current`; the adopted name is `target`; the stamp is `putRecord({ ...current, managedBy })` at `register.ts:408`; the function ends with `reconcileMattstackTld(...)` and return around `register.ts:411`.
+- The delete site is NOT in `unregisterApp` directly: it is `teardownRecord`'s `deleteRecord(record.name)` at `register.ts:180`, shared by both `unregisterApp` and `removeManagedApps`, and it only fires when the record actually goes away.
 
 - [ ] **Step 2: Write the failing test**
 
@@ -371,7 +373,7 @@ test("adopt ingests the app's mattstack.json", async () => {
   reloadRegistry();
   const appDir = /* mkdtemp with mattstack.json {displayName:"Chat",icon:"./i.svg"} + i.svg "<svg.../>" */ "";
   putRecord({ name: "chat", managedBy: "user", port: 11002, kind: "service", workingDirectory: appDir, createdAt: "x" });
-  adoptApp({ name: "chat", managedBy: "rt" });
+  adoptApp("chat", { managedBy: "rt" }, drivers);  // drivers = { manager: new FakeServiceManager(), edge: new FakeEdgeProxy(), tunnel: new FakeTunnelDriver(), ... } per register.test.ts
   expect(getRecord("chat")!.displayName).toBe("Chat");
   expect(require("fs").existsSync(iconPathFor("chat"))).toBe(true);
 });
@@ -386,16 +388,18 @@ Expected: FAIL, `displayName` undefined (adopt does not yet ingest).
 
 - [ ] **Step 4: Implement**
 
-In `adoptApp`, after the final `putRecord(next)` that stamps the managed record, add:
+In `adoptApp`, immediately before the closing `reconcileMattstackTld(...)`/return (around `register.ts:411`, AFTER the `putRecord({ ...current, managedBy })` stamp at `:408`), add:
 
 ```ts
   // Pull the app's launcher metadata (mattstack.json + icon) into the registry
-  // now that it is a managed product. A missing or bad manifest is a quiet
-  // skip inside ingestManifest, so adopt never fails on it.
-  ingestManifest(next.name);
+  // now that it is a managed product. Placed here, not inside the
+  // `current.managedBy !== managedBy` guard, so an idempotent re-adopt (and the
+  // rename path) still refreshes the metadata. A missing or bad manifest is a
+  // quiet skip inside ingestManifest, so adopt never fails on it.
+  ingestManifest(target);
 ```
 
-In `unregisterApp` (or wherever a record is deleted from the registry), after the delete, add `removeIcon(name);` so a removed app does not leave an orphaned icon. Add the import: `import { ingestManifest, removeIcon } from "../registry/manifest.ts";`.
+In `teardownRecord` (`register.ts:180`), immediately after `deleteRecord(record.name)`, add `removeIcon(record.name);` so a removed app does not leave an orphaned icon (this covers both `unregisterApp` and `removeManagedApps`, and only fires when the record actually goes away). Add the import: `import { ingestManifest, removeIcon } from "../registry/manifest.ts";`.
 
 - [ ] **Step 5: Run + full suite + commit**
 
@@ -421,7 +425,9 @@ git commit -m "feat: ingest launcher manifest on adopt, drop icon on unregister"
 
 - [ ] **Step 1: Write the failing test for the builder**
 
-Create `src/api/discovery.test.ts` (use the server-test harness: temp dir, env vars, HOME, fakes). Register three records: `chat` (managedBy rt, with displayName/icon), a `deck` platform row (managedBy "deck"), and `mine` (managedBy user). Assert `buildDiscoveryApps` returns only `chat`, with `url` present, `icon` an absolute `/api/apps/chat/icon` URL, and none of `command`/`workingDirectory`/`port` present on the row.
+Create `src/api/discovery.test.ts` (use the server-test harness: temp dir, env vars, HOME, fakes). Register three records via `putRecord`: `chat` (managedBy rt, with displayName/icon ingested from a temp manifest dir), a `deck` platform row (managedBy "deck"), and `mine` (managedBy user).
+
+IMPORTANT: `buildDiscoveryApps` gets each app's `url` from `buildStatus`, whose rows come from `routes.json` (via `dedupeRoutes`), NOT from the registry. `FakeEdgeProxy.alias` does not write routes.json, and the harness seeds it as `"[]"`. So a registry-only setup makes `buildStatus().apps` empty and the builder returns `[]`. Before asserting, SEED the route: write `JSON.stringify([{ hostname: "chat.mattstack", port: 11002 }])` to `process.env.LOCAL_APPS_ROUTES_PATH` (confirm the route record shape against `core/discover.ts`'s `dedupeRoutes`/`joinApps`; adjust field names if they differ). Then assert `buildDiscoveryApps` returns only `chat`, with `url` present (matching `https://chat.mattstack`), `icon` equal to `"chat"` (the builder's host-agnostic form; the route makes it absolute), and none of `command`/`workingDirectory`/`port` on the row.
 
 ```ts
 test("discovery returns managed products only, no internal fields", async () => {
@@ -600,15 +606,24 @@ Expected: FAIL, no CORS headers present.
 
 - [ ] **Step 3: Implement CORS**
 
-Add `corsHeadersFor` to `src/api/server.ts` (or discovery.ts). Allowed when the origin's host ends in one of the platform TLDs (read them from the platform settings deck already loads; the defaults are `localhost` and `mattstack`, see `platform.json.tlds`) or equals a bound public domain:
+Add `corsHeadersFor` to `src/api/server.ts`. Allowed when the origin's host equals or ends in one of the allowed TLDs. CRITICAL: deck's default `getPlatformSettings().tlds` is `["localhost"]` only (`src/api/platform-settings.ts:14`); `"mattstack"` is a DERIVED cache entry (`tld-reconcile.ts`) that is ABSENT in the isolated test harness (empty platform.json). So do NOT source `"mattstack"` from `getPlatformSettings().tlds`, or every `*.mattstack` CORS test fails. Union in the `MATTSTACK_TLD` constant explicitly (it is `"mattstack"`, `core/discover.ts:56`, and `server.ts` already imports it):
 
 ```ts
+import { getPlatformSettings } from "./platform-settings.ts";
+// MATTSTACK_TLD is already imported at the top of server.ts.
+
+function allowedCorsTlds(): string[] {
+  // MATTSTACK_TLD is always allowed (it is derived, so may be absent from the
+  // stored tlds list, especially in tests); getPlatformSettings().tlds carries
+  // localhost plus any bound custom domain.
+  return [MATTSTACK_TLD, ...getPlatformSettings().tlds];
+}
+
 function corsHeadersFor(origin: string | null): Record<string, string> {
   if (!origin) return {};
   let host: string;
   try { host = new URL(origin).hostname; } catch { return {}; }
-  const tlds = platformTlds();                 // ["localhost","mattstack"] plus any bound domain label
-  const allowed = tlds.some((t) => host === t || host.endsWith(`.${t}`));
+  const allowed = allowedCorsTlds().some((t) => host === t || host.endsWith(`.${t}`));
   if (!allowed) return {};
   return {
     "access-control-allow-origin": origin,
@@ -618,17 +633,33 @@ function corsHeadersFor(origin: string | null): Record<string, string> {
 }
 ```
 
-Use whatever accessor deck already has for the TLD list (the same source `displayTld`/`MATTSTACK_TLD` come from; grep `tlds` in `src/api/platform-settings.ts` / `core/discover.ts`). Apply the headers to both `/api/apps` responses (spread into the `json()` call's headers, or wrap), and add an `OPTIONS` preflight branch above the GET branches:
+Compute `cors` ONCE at the top of the discovery block so both the preflight and the GET handlers share it. This SUPERSEDES the Task 4 Step 5 route block: Task 4 lands the routes without CORS; this task rewrites that block to the CORS-bearing version below (build the two GET responses directly, not via `json()`, so the CORS headers attach):
 
 ```ts
-      if (pathname === "/api/apps" || /^\/api\/apps\/[^/]+\/icon$/.test(pathname)) {
+      // ---- launcher discovery API (unversioned, browser-facing, GET only, CORS) ----
+      if (pathname === "/api/apps" || ICON_ROUTE.test(pathname)) {
         const cors = corsHeadersFor(req.headers.get("origin"));
         if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: cors });
-        // fall through to the GET handlers below, which merge `cors` into their headers
+        if (pathname === "/api/apps" && req.method === "GET") {
+          const base = deckBaseFor(host);
+          const apps = (await buildDiscoveryApps(statusOpts)).map((a) => ({
+            ...a,
+            icon: a.icon ? `${base}/api/apps/${a.icon}/icon` : null,
+          }));
+          return new Response(JSON.stringify({ apps }), {
+            headers: { "content-type": "application/json", ...cors },
+          });
+        }
+        const m = pathname.match(ICON_ROUTE);
+        if (m && req.method === "GET") {
+          const res = iconResponse(m[1]!);
+          for (const [k, v] of Object.entries(cors)) res.headers.set(k, v);
+          return res;
+        }
       }
 ```
 
-The GET handlers merge `cors` into their response headers. `json()` takes only `(data, status)` today; either add an optional headers arg to `json` or build the `Response` directly for these two routes so the CORS headers attach. Do NOT touch the `/api/v1` responses.
+Define `ICON_ROUTE` once at module scope: `const ICON_ROUTE = /^\/api\/apps\/([^/]+)\/icon$/;` (a single shared regex avoids duplicating the pattern). Do NOT touch the `/api/v1` responses.
 
 - [ ] **Step 4: Run + full suite + commit**
 
