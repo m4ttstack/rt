@@ -13,7 +13,7 @@ import { Badge } from "./Badge.tsx";
  *
  * THE ANIMATION FREEZE IS INSTALLED HERE, following Button/Spinner's
  * precedent: the warn cell embeds a Spinner, whose ring carries a PERPETUAL
- * `animation` (Spinner.module.css). Without the freeze, that cell would be
+ * `animation` (Spinner.keyframes.css). Without the freeze, that cell would be
  * captured at whatever rotation the keyframe happened to be interpolating
  * through at that instant, different on every run.
  */

@@ -31,7 +31,7 @@ const CHIP_VARIANTS = ["outline", "subtle"] as const;
 const CHIP_VOCABULARY_AXES = ["intent", "variant"] as const;
 
 /** Verbatim mr-board values, retunable via `Chip.extend({ vars })`. The pulse
-    period is the FULL cycle (Chip.module.css owns the keyframe stops). */
+    period is the FULL cycle (Chip.keyframes.css owns the keyframe stops). */
 const CHIP_SCALARS: Record<string, string> = {
   "--sb-chip-pulse-period": "1.4s",
   "--sb-chip-dimmed-opacity": "0.7",
