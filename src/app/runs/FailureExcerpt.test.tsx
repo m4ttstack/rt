@@ -1,8 +1,7 @@
+import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { screen } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-
-import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 
 const artifactGet = vi.fn();
 

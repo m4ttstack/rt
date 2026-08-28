@@ -10,6 +10,7 @@ import {
 } from '@mattstack/app-kit/core';
 import { useSchemeColors } from '@mattstack/app-kit/hooks';
 import { Icons } from '@mattstack/app-kit/icons';
+
 import type { SlotOutlineNode } from './outline';
 import { QuietBadge } from './QuietBadge';
 

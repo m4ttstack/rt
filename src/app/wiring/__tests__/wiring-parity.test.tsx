@@ -1,9 +1,9 @@
+import { theme } from '@mattstack/app-kit/design-system';
+import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 
-import { theme } from '@mattstack/app-kit/design-system';
-import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import type { SpineEntry } from '../outline';
 import { SummaryStrip } from '../SummaryStrip';
 

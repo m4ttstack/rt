@@ -1,10 +1,10 @@
+import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import type { RunDecisionRow } from '@mattstack/rt-client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import type { EffectiveInputsPayload } from '../../server/effectiveInputs';
 
 const effectiveInputsGet = vi.fn();

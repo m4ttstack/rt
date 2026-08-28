@@ -1,6 +1,7 @@
 import type { MantineColor } from '@mattstack/app-kit/core';
 import { Group, Text } from '@mattstack/app-kit/core';
 import { useSchemeColors } from '@mattstack/app-kit/hooks';
+
 import type { WiringHealth } from './outline';
 
 /** Only the two states a reader has to act on carry an intent color.

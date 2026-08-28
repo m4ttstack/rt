@@ -1,10 +1,10 @@
 import { Component, type ReactNode } from 'react';
+import { MattstackShell } from '@mattstack/app-kit/app';
+import { GenericError, PageShell } from '@mattstack/app-kit/core';
+import { RailLink } from '@mattstack/app-kit/router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 
-import { GenericError, PageShell } from '@mattstack/app-kit/core';
-import { MattstackShell } from '@mattstack/app-kit/app';
-import { RailLink } from '@mattstack/app-kit/router';
 import { ExplainKeyPage } from './config/ExplainKeyPage';
 import { NotFoundPage } from './NotFoundPage';
 import { ConsolePalette } from './palette/ConsolePalette';
@@ -102,8 +102,18 @@ export function App() {
         }
       >
         <MattstackShell.Rail>
-          <RailLink icon="layers" label="Runs" href="/" active={section === 'runs'} />
-          <RailLink icon="search" label="Search" href="/search" active={section === 'search'} />
+          <RailLink
+            icon="layers"
+            label="Runs"
+            href="/"
+            active={section === 'runs'}
+          />
+          <RailLink
+            icon="search"
+            label="Search"
+            href="/search"
+            active={section === 'search'}
+          />
           <WiringRailEntry active={section === 'wiring'} />
         </MattstackShell.Rail>
         {/* Keyed on path: without a remount, an error caught on one route

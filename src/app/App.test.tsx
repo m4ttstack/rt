@@ -1,3 +1,5 @@
+import { Spotlight } from '@mattstack/app-kit/spotlight';
+import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import type {
   RunDetail as RunDetailData,
   RunSummary,
@@ -5,9 +7,6 @@ import type {
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-
-import { Spotlight } from '@mattstack/app-kit/spotlight';
-import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 
 const runsGet = vi.fn();
 const detailGet = vi.fn();

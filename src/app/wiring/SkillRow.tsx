@@ -1,8 +1,14 @@
 import type { KeyboardEvent } from 'react';
-
-import { Badge, Group, Stack, Text, UnstyledButton } from '@mattstack/app-kit/core';
+import {
+  Badge,
+  Group,
+  Stack,
+  Text,
+  UnstyledButton,
+} from '@mattstack/app-kit/core';
 import { useSchemeColors } from '@mattstack/app-kit/hooks';
 import { Icons } from '@mattstack/app-kit/icons';
+
 import { HEALTH_COLOR, HealthChip } from './HealthChip';
 import type { SpineEntry, WiringHealth } from './outline';
 import { QuietBadge } from './QuietBadge';

@@ -1,8 +1,4 @@
 import { useState } from 'react';
-import type { RunDecisionRow } from '@mattstack/rt-client';
-import { useQuery } from '@tanstack/react-query';
-import { navigate } from 'wouter/use-browser-location';
-
 import {
   Badge,
   Code,
@@ -15,6 +11,10 @@ import {
 } from '@mattstack/app-kit/core';
 import { useSchemeColors } from '@mattstack/app-kit/hooks';
 import { Icons } from '@mattstack/app-kit/icons';
+import type { RunDecisionRow } from '@mattstack/rt-client';
+import { useQuery } from '@tanstack/react-query';
+import { navigate } from 'wouter/use-browser-location';
+
 import type {
   ConfigDepRow,
   EffectiveInputsPayload,

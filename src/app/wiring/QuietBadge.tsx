@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react';
-
 import { Badge } from '@mattstack/app-kit/core';
 import { useSchemeColors } from '@mattstack/app-kit/hooks';
 

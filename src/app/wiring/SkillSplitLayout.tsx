@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react';
-
 import { Paper } from '@mattstack/app-kit/core';
 import { useSchemeColors } from '@mattstack/app-kit/hooks';
+
 import type { BindingSite, SkillsComposition } from './outline';
 import { SkillDetailPanel } from './SkillDetailPanel';
 import type { SkillSelection } from './useSkillSelection';

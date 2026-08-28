@@ -377,12 +377,12 @@ mountMattstackApp(<App />, { notificationMaxHeight: 400 });
 
 ```tsx
 import { Component, type ReactNode } from 'react';
+import { MattstackShell } from '@mattstack/app-kit/app';
+import { GenericError, PageShell } from '@mattstack/app-kit/core';
+import { RailLink } from '@mattstack/app-kit/router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 
-import { GenericError, PageShell } from '@mattstack/app-kit/core';
-import { MattstackShell } from '@mattstack/app-kit/app';
-import { RailLink } from '@mattstack/app-kit/router';
 import { ExplainKeyPage } from './config/ExplainKeyPage';
 import { NotFoundPage } from './NotFoundPage';
 import { ConsolePalette } from './palette/ConsolePalette';
@@ -430,8 +430,18 @@ export function App() {
         }
       >
         <MattstackShell.Rail>
-          <RailLink icon="layers" label="Runs" href="/" active={section === 'runs'} />
-          <RailLink icon="search" label="Search" href="/search" active={section === 'search'} />
+          <RailLink
+            icon="layers"
+            label="Runs"
+            href="/"
+            active={section === 'runs'}
+          />
+          <RailLink
+            icon="search"
+            label="Search"
+            href="/search"
+            active={section === 'search'}
+          />
           <WiringRailEntry active={section === 'wiring'} />
         </MattstackShell.Rail>
         <RouteErrorBoundary key={path}>
@@ -448,9 +458,10 @@ export function App() {
 - [ ] **Step 3: `WiringRailEntry.tsx`** — rebuild on `RailLink` + `useShellRail`. The primary entry becomes a `RailLink` (closes the rail itself); the attention badge stays an `Indicator`-hosted `Link` and now reads `close` from the shell context (Task 1's export) instead of an `onClick` prop. The component takes only `active`:
 
 ```tsx
-import { Indicator } from '@mattstack/app-kit/core';
 import { useShellRail } from '@mattstack/app-kit/app';
+import { Indicator } from '@mattstack/app-kit/core';
 import { Link, RailLink } from '@mattstack/app-kit/router';
+
 import { WIRING_ATTENTION_HREF, WIRING_HREF } from './attentionFilter';
 import { useAttentionCount } from './useWiring';
 

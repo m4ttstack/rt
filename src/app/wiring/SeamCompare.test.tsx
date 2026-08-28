@@ -1,7 +1,7 @@
+import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import { screen, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import type { SeamSourceIndex } from './seamAttribution';
 import { attributeDiff, SeamCompare, seamsOf } from './SeamCompare';
 

@@ -35,9 +35,6 @@ jobs:
       - run: bun run format:check
       - run: bun run test -- --run
       - run: bun run build
-      - run: bun run build-storybook
-      - run: bun run debrand
-      - run: bun run treeshake
       - run: bun run build:binary
       # The binary embeds its own assets, so the only honest test is to run it
       # where `dist/` is not: a binary built without the codegen step falls back

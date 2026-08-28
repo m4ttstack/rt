@@ -1,6 +1,7 @@
-import { Indicator } from '@mattstack/app-kit/core';
 import { useShellRail } from '@mattstack/app-kit/app';
+import { Indicator } from '@mattstack/app-kit/core';
 import { Link, RailLink } from '@mattstack/app-kit/router';
+
 import { WIRING_ATTENTION_HREF, WIRING_HREF } from './attentionFilter';
 import { useAttentionCount } from './useWiring';
 

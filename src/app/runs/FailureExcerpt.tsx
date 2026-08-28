@@ -1,5 +1,3 @@
-import { useQuery } from '@tanstack/react-query';
-
 import {
   Anchor,
   Code,
@@ -11,6 +9,8 @@ import {
 } from '@mattstack/app-kit/core';
 import { useSchemeColors } from '@mattstack/app-kit/hooks';
 import { Icons } from '@mattstack/app-kit/icons';
+import { useQuery } from '@tanstack/react-query';
+
 import { client } from '../api';
 
 const MAX_HEIGHT = 240;

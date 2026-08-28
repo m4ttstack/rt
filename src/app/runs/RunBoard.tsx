@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'wouter';
-
 import {
   Anchor,
   Button,
@@ -12,6 +10,8 @@ import {
 } from '@mattstack/app-kit/core';
 import { useSchemeColors } from '@mattstack/app-kit/hooks';
 import { Icons } from '@mattstack/app-kit/icons';
+import { Link } from 'wouter';
+
 import {
   BAND_ORDER,
   computeBandIds,

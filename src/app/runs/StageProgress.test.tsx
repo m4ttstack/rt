@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest';
-
 import { staticSchemeColors } from '@mattstack/app-kit/hooks';
 import { renderWithProviders } from '@mattstack/app-kit/test-utils';
+import { describe, expect, it } from 'vitest';
+
 import { segmentColor } from './StageProgress';
 
 const { StageProgress } = await import('./StageProgress');

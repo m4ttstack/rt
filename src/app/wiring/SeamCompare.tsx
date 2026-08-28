@@ -1,8 +1,15 @@
 import { useMemo } from 'react';
-
-import { Alert, Group, Paper, Skeleton, Stack, Text } from '@mattstack/app-kit/core';
+import {
+  Alert,
+  Group,
+  Paper,
+  Skeleton,
+  Stack,
+  Text,
+} from '@mattstack/app-kit/core';
 import { useSchemeColors } from '@mattstack/app-kit/hooks';
 import { Icons } from '@mattstack/app-kit/icons';
+
 import { parseSeam, type Seam } from './parseSeam';
 import { QuietBadge } from './QuietBadge';
 import {
