@@ -367,7 +367,7 @@ function opensWithRecipesLayer(source: string): boolean {
  * keyframe, so the only layout both bundlers get right keeps both halves in
  * the plain `<Recipe>.keyframes.css` sibling (docs/decisions.md).
  */
-const MOTION_IN_MODULE = /@keyframes\b|(?<![\w-])animation(?:-name)?\s*:/g;
+const MOTION_IN_MODULE = /@keyframes\b|(?<![\w-])animation(?:-name)?\s*:/gi;
 
 function findMotionInModule(source: string, path: string): Violation[] {
   const scanned = stripCommentsPreservingLines(source);
@@ -779,6 +779,14 @@ describe("findMotionInModule", () => {
       "",
     ].join("\n");
     expect(findMotionInModule(css, "fixture.module.css")).toEqual([]);
+  });
+
+  it("matches regardless of case, like the CSS parser does", () => {
+    const css = ["@layer soribashi.recipes {", "  .root { ANIMATION: spin 1s; }", "  @Keyframes spin { to { opacity: 0; } }", "}", ""].join("\n");
+    expect(findMotionInModule(css, "fixture.module.css").map((v) => [v.line, v.token])).toEqual([
+      [2, "ANIMATION:"],
+      [3, "@keyframes"],
+    ]);
   });
 });
 
