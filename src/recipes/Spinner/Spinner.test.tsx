@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { renderWithTheme } from "../../../test/test-utils.tsx";
+import { animationResolution } from "../../../test/keyframes.ts";
 import { SPINNER_PARTS, Spinner } from "./Spinner.tsx";
 
 /**
@@ -58,5 +59,13 @@ describe("Spinner (browser)", () => {
       // SpinnerOwnProps.
       <Spinner intent="ok" />,
     );
+  });
+
+  it("spins via a @keyframes rule a loaded sheet actually declares, under its global name", async () => {
+    const screen = await renderWithTheme(<Spinner />);
+
+    const { name, found } = animationResolution(rootOf(screen.container));
+    expect(found, `no @keyframes rule named "${name}" in any loaded sheet`).toBe(true);
+    expect(name).toBe("sb-spinner-spin");
   });
 });

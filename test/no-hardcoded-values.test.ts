@@ -720,43 +720,65 @@ describe("scanCssModule", () => {
 
 const RECIPES_DIR = join(import.meta.dirname, "..", "src", "recipes");
 
-function findModuleCssFiles(dir: string): string[] {
+function findCssFiles(dir: string, suffix: string): string[] {
   if (!existsSync(dir)) return [];
   const out: string[] = [];
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) {
-      out.push(...findModuleCssFiles(full));
-    } else if (entry.endsWith(".module.css")) {
+      out.push(...findCssFiles(full, suffix));
+    } else if (entry.endsWith(suffix)) {
       out.push(full);
     }
   }
   return out;
 }
 
+function toPosix(file: string): string {
+  return relative(RECIPES_DIR, file).split(/[\\/]/).join("/");
+}
+
 describe("no hardcoded values: real recipe stylesheets", () => {
-  const files = findModuleCssFiles(RECIPES_DIR).sort((a, b) => a.localeCompare(b));
+  const moduleFiles = findCssFiles(RECIPES_DIR, ".module.css").sort((a, b) => a.localeCompare(b));
+  const keyframesFiles = findCssFiles(RECIPES_DIR, ".keyframes.css").sort((a, b) =>
+    a.localeCompare(b),
+  );
 
   /**
    * soribashi's floor here is `files.length > 0`, which cannot hold in this
    * kit: the gate is committed before the first recipe exists (Icon lands
    * next), and a floor that has to be disabled for a while is a floor nobody
-   * re-enables. The replacement is strictly stronger AND true at zero — it
+   * re-enables. The replacement is strictly stronger AND true at zero... it
    * pins the sweep to the directory listing, so a recipe folder whose
    * stylesheet is missing, misnamed, or in a subfolder the walker doesn't
    * reach fails here rather than being silently skipped.
    */
-  it("sweeps exactly one stylesheet per recipe directory", () => {
-    expect(files.map((f) => relative(RECIPES_DIR, f).split(/[\\/]/).join("/"))).toEqual(
+  it("sweeps exactly one CSS module per recipe directory", () => {
+    expect(moduleFiles.map(toPosix)).toEqual(
       listRecipeDirs().map((name) => `${name}/${name}.module.css`),
     );
   });
 
-  it.each(files.map((f) => [relative(RECIPES_DIR, f), f] as const))(
+  /**
+   * A keyframes sibling is optional (only recipes that animate carry one),
+   * so there is no one-per-directory floor; what IS pinned is that each one
+   * sits directly in its recipe directory under `<Recipe>.keyframes.css`,
+   * the path the copy script, derive.ts and the recipe's own import agree on.
+   */
+  it("every keyframes stylesheet sits in its recipe directory, named after it", () => {
+    const dirs = listRecipeDirs();
+    for (const rel of keyframesFiles.map(toPosix)) {
+      const dir = rel.split("/")[0] as string;
+      expect(dirs, `${rel} is not inside a recipe directory`).toContain(dir);
+      expect(rel).toBe(`${dir}/${dir}.keyframes.css`);
+    }
+  });
+
+  it.each([...moduleFiles, ...keyframesFiles].map((f) => [toPosix(f), f] as const))(
     "%s has no hardcoded colour/length values outside the allowlist",
     (_label, file) => {
       const source = readFileSync(file, "utf8");
-      const violations = scanCssModule(source, relative(RECIPES_DIR, file));
+      const violations = scanCssModule(source, toPosix(file));
       expect(violations, formatViolations(violations)).toEqual([]);
     },
   );

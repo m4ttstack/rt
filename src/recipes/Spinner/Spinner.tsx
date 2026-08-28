@@ -1,6 +1,7 @@
 import type { ComponentProps, HTMLAttributes } from "react";
 import { defineComponent } from "../../builders.ts";
 import classes from "./Spinner.module.css";
+import "./Spinner.keyframes.css";
 
 /** Authoring category (1 = pure styled primitive). Read off this module by
     scripts/derive.ts to build the kit's manifest; not dead code. */
