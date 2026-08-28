@@ -32,7 +32,7 @@ export function useRunList(repo?: string) {
 
 /**
  * One socket per tab. Invalidating on EVERY message is safe only because the
- * server already filtered to run-updated (see startRelay) -- the daemon
+ * server already filtered to run-updated (see startRelays/createRelay) -- the daemon
  * multiplexes ports/status/system-processes/project-mrs through the same
  * upstream socket, and without that filter this would refetch the run list on
  * every unrelated daemon tick.

@@ -20,15 +20,15 @@
       loading spinner can't cover: the time before there's any JS at all.
 
       Styles are inlined here on purpose, not linked via a stylesheet --
-      see `src/boot/simple-loading-bar.css`'s header comment for why (that
-      file is the reviewable reference copy of these same rules; this
-      inline block is the load-bearing one actually used at runtime). The
-      rules between the BEGIN/END markers below must stay byte-for-byte
-      in sync with that file -- `src/boot/loading-bar-sync.test.ts`
+      see `@mattstack/app-kit/boot/simple-loading-bar.css`'s header comment
+      for why (that file is the reviewable reference copy of these same
+      rules; this inline block is the load-bearing one actually used at
+      runtime). The rules between the BEGIN/END markers below must stay
+      byte-for-byte in sync with that file -- `src/loading-bar-sync.test.ts`
       enforces this automatically, not just by review.
     -->
     <style>
-      /* BEGIN SYNCED RULES: keep in sync with src/boot/simple-loading-bar.css (see src/boot/loading-bar-sync.test.ts) */
+      /* BEGIN SYNCED RULES: keep in sync with @mattstack/app-kit/boot/simple-loading-bar.css (see src/loading-bar-sync.test.ts) */
       .boot-loading-bar {
         position: fixed;
         top: 0;
