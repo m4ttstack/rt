@@ -26,6 +26,10 @@ import { listRecipeDirs } from "../scripts/derive.ts";
  *      and is never flagged, no matter what number it is (SORI-18). This is
  *      NOT the same as allowlisting a percentage value: `width: 50%;`
  *      inside or outside a keyframes block is still flagged.
+ *   6. A CSS MODULE may declare no `@keyframes` block and no `animation` /
+ *      `animation-name`. Those live in the recipe's `<Name>.keyframes.css`
+ *      sibling, which this file sweeps with rules 1 to 5 as well
+ *      (docs/decisions.md, "Keyframes live outside the CSS module").
  *
  * The two allowlists below are soribashi's, plus one documented kit
  * extension: `ALLOWED_LENGTH_LITERALS` adds `320px` globally (not
@@ -39,7 +43,7 @@ interface Violation {
   path: string;
   line: number;
   token: string;
-  kind: "layer" | "color" | "length";
+  kind: "layer" | "color" | "length" | "motion";
 }
 
 // The CSS Color Module Level 4 / SVG1.1 extended keyword set, plus the three
@@ -355,6 +359,26 @@ function opensWithRecipesLayer(source: string): boolean {
   return /^@layer\s+soribashi\.recipes\s*\{/.test(rest);
 }
 
+/**
+ * A `@keyframes` block or an `animation` / `animation-name` declaration
+ * inside a CSS MODULE. Bun hashes a module's `@keyframes` ident without
+ * rewriting the `animation` that names it (oven-sh/bun#18921), and Vite
+ * hashes the `animation` ident whether or not the module declares the
+ * keyframe, so the only layout both bundlers get right keeps both halves in
+ * the plain `<Recipe>.keyframes.css` sibling (docs/decisions.md).
+ */
+const MOTION_IN_MODULE = /@keyframes\b|(?<![\w-])animation(?:-name)?\s*:/g;
+
+function findMotionInModule(source: string, path: string): Violation[] {
+  const scanned = stripCommentsPreservingLines(source);
+  const violations: Violation[] = [];
+  for (const m of scanned.matchAll(MOTION_IN_MODULE)) {
+    const token = m[0].startsWith("@") ? "@keyframes" : m[0].replace(/\s+/g, "");
+    violations.push({ path, line: lineOf(scanned, m.index), token, kind: "motion" });
+  }
+  return violations;
+}
+
 function scanCssModule(source: string, path: string): Violation[] {
   const violations: Violation[] = [];
 
@@ -398,7 +422,11 @@ function scanCssModule(source: string, path: string): Violation[] {
 function formatViolations(violations: Violation[]): string {
   if (violations.length === 0) return "";
   return violations
-    .map((v) => `${v.path}:${v.line}: hardcoded ${v.kind} literal "${v.token}"`)
+    .map((v) =>
+      v.kind === "motion"
+        ? `${v.path}:${v.line}: "${v.token}" belongs in the recipe's *.keyframes.css, not its CSS module (docs/decisions.md)`
+        : `${v.path}:${v.line}: hardcoded ${v.kind} literal "${v.token}"`,
+    )
     .join("\n");
 }
 
@@ -712,6 +740,48 @@ describe("scanCssModule", () => {
   });
 });
 
+describe("findMotionInModule", () => {
+  it("flags an @keyframes block inside a CSS module", () => {
+    const css = [
+      "@layer soribashi.recipes {",
+      "  @keyframes spin { to { transform: rotate(360deg); } }",
+      "}",
+      "",
+    ].join("\n");
+    expect(findMotionInModule(css, "fixture.module.css")).toEqual([
+      { path: "fixture.module.css", line: 2, token: "@keyframes", kind: "motion" },
+    ]);
+  });
+
+  it("flags animation and animation-name declarations, whatever their value", () => {
+    const css = [
+      "@layer soribashi.recipes {",
+      "  .root { animation: spin 1s linear infinite; }",
+      "  .root[data-x] { animation-name: none; }",
+      "}",
+      "",
+    ].join("\n");
+    expect(findMotionInModule(css, "fixture.module.css").map((v) => [v.line, v.token])).toEqual([
+      [2, "animation:"],
+      [3, "animation-name:"],
+    ]);
+  });
+
+  it("ignores commented-out motion and other animation-* longhands", () => {
+    // `animation-duration` and friends are harmless on their own: only the
+    // NAME binding (shorthand or `animation-name`) has to sit next to the
+    // `@keyframes` it names.
+    const css = [
+      "@layer soribashi.recipes {",
+      "  /* animation: spin 1s; */",
+      "  .root { animation-duration: var(--sb-x-period); transition: opacity 1s; }",
+      "}",
+      "",
+    ].join("\n");
+    expect(findMotionInModule(css, "fixture.module.css")).toEqual([]);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Part 2: run the scanner over every real recipe stylesheet. Walks the
 // directory rather than listing files by name, so a future recipe's CSS is
@@ -779,6 +849,14 @@ describe("no hardcoded values: real recipe stylesheets", () => {
     (_label, file) => {
       const source = readFileSync(file, "utf8");
       const violations = scanCssModule(source, toPosix(file));
+      expect(violations, formatViolations(violations)).toEqual([]);
+    },
+  );
+
+  it.each(moduleFiles.map((f) => [toPosix(f), f] as const))(
+    "%s keeps @keyframes and animation declarations out of the CSS module",
+    (_label, file) => {
+      const violations = findMotionInModule(readFileSync(file, "utf8"), toPosix(file));
       expect(violations, formatViolations(violations)).toEqual([]);
     },
   );

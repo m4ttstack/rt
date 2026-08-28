@@ -83,6 +83,56 @@ and an unlayered author rule beats any layered one:
 The third case is a consumer deliberately overriding the kit and is out of
 scope.
 
+## Keyframes live outside the CSS module
+
+Every `@keyframes` block, together with the `animation` / `animation-name`
+declaration that names it (and any `prefers-reduced-motion` override of that
+declaration), lives in a plain `<Recipe>.keyframes.css` sibling of the
+recipe's `.module.css`, still inside `@layer soribashi.recipes`, selected by
+the recipe's public `data-part`, and side-effect-imported from the recipe
+TSX. Five recipes carry one: Spinner (`sb-spinner-spin`), Chip
+(`chip-pulse`), Drawer (`drawer-slide-in`), ContextMenu (`contextmenu-in`),
+ToastHost (`toasthost-in`).
+
+Two bundlers disagree about a keyframe inside a CSS module, in opposite
+directions, and no single-file layout satisfies both:
+
+- Bun through 1.3.14 hashes the `@keyframes` ident but emits `animation` /
+  `animation-name` verbatim (oven-sh/bun#18921). In a `Bun.build` consumer
+  the ring painted its first frame and never moved: `animation:
+  sb-spinner-spin` next to `@keyframes sb-spinner-spin_UXKcrg`. The upstream
+  fix is not in a released Bun that consumers pin, and the kit has to animate
+  on the ones that still have the bug.
+- Vite hashes the `animation` ident whether or not the module declares that
+  keyframe. Moving only the `@keyframes` out would have frozen the workshop
+  and the browser test tier instead.
+
+`:global()` is not an escape hatch: `@keyframes :global(name)` is a parse
+error in Bun.
+
+Consequences a later change must keep:
+
+- The idents are global now, so their uniqueness is the collision avoidance
+  (ContextMenu's `contextmenu-in` rather than mr-board's `tui-menu-in`). The
+  hash never protected them in Bun, and no longer exists to protect them
+  anywhere.
+- The `[data-part]` rule applies even under `unstyled`, which suppresses the
+  module class but still stamps the part. An `unstyled` Spinner still spins;
+  an `unstyled` Chip with `pulse` still pulses. Nothing in the kit relies on
+  `unstyled` silencing motion.
+- `scripts/copy-recipe-css.ts` ships `*.keyframes.css` next to
+  `*.module.css`, `scripts/derive.ts` scrapes both for `tokenDependencies`,
+  and `test/no-hardcoded-values.test.ts` sweeps both with the same rules and
+  rejects any `@keyframes` / `animation` that reappears inside a module.
+- `test/bun-build-keyframes.test.ts` bundles the barrel with the local `bun`
+  and reads the emitted CSS; the browser tiers assert the computed
+  `animationName` matches a real `CSSKeyframesRule` (`test/keyframes.ts`).
+  Computed styles and `animationName !== "none"` alone cannot see this bug,
+  and the visual tiers freeze motion on purpose.
+
+Do not fold the two halves back into the module "to keep the recipe in one
+file". That is the layout that froze deck.
+
 ## Why `src/provider.ts` exists
 
 Bundlers key module identity by *resolved path*. Before this file, an adopter
