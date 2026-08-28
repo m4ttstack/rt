@@ -8,11 +8,15 @@ touching anything under `src/server/` or wiring a new screen.
 ## Request path
 
 ```
-browser ──HTTP/WS──▶ Bun + Hono (src/server) ──rt-client──▶ rt.sock ──▶ rt daemon ──▶ ~/.mattstack/rt/state.db
+browser ──HTTP/WS──▶ Bun + Hono (@mattstack/app-server + src/server) ──rt-client──▶ rt.sock ──▶ rt daemon ──▶ ~/.mattstack/rt/state.db
 ```
 
-- `src/server/app.ts` composes the Hono app; `index.ts` adds static serving,
-  the `/ws` upgrade and starts the relay, then `Bun.serve`s it.
+- `src/server/index.ts` calls `serveMattstackApp({ name: 'chat', routes,
+  port: 11002, relay: [...] })` from `@mattstack/app-server`. The package
+  composes the Hono app (`/api/health`, `/api/daemon`, then `routes`), mounts
+  static serving and the `/ws` upgrade, starts the relay, and `Bun.serve`s
+  it; chat supplies only `src/server/routes.ts` (chat's own `/api/chat/*`
+  handlers, from `src/server/chat.ts`) and the relay topic mapping.
 - Every daemon call goes through `@mattstack/rt-client` (`chatRooms`,
   `chatWho`, `chatBuddies`, `chatMessages`, `chatPost`, `chatArchive`,
   `chatDmOpen`, `chatMark`, `chatJoin`, `daemonHealth`, `createRelay`).
@@ -25,12 +29,12 @@ browser ──HTTP/WS──▶ Bun + Hono (src/server) ──rt-client──▶ 
 ## The API
 
 All under `/api`; JSON in and out. An unmatched `/api/*` is a JSON 404, never
-the SPA shell (`src/server/static-disk.ts`).
+the SPA shell (`@mattstack/app-server`'s `mountStatic`).
 
 | Route                                         | Returns                                                                                                                                                               |
 | --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/health`                             | `{ ok: true }` (process liveness only)                                                                                                                                |
-| `GET /api/daemon`                             | `daemonHealth()`: `{ reachable, ... }`; never errors                                                                                                                  |
+| `GET /api/health`                             | `{ ok: true, name, version }` (from `@mattstack/app-server`'s `createApp`, not chat's own routes)                                                                     |
+| `GET /api/daemon`                             | `daemonHealth()`: `{ reachable, ... }`; never errors (also from `createApp`)                                                                                          |
 | `GET /api/chat/rooms`                         | `{ rooms: RoomSummary[] }`: the human's rooms including archived ones (`archivedAt` set), then every room a fleet buddy is in that the human is not (`joined: false`) |
 | `GET /api/chat/who/:room`                     | `{ members }` with status, cwd, pane                                                                                                                                  |
 | `GET /api/chat/buddies`                       | `{ buddies }`: the fleet roster with each buddy's room tags                                                                                                           |
@@ -45,10 +49,13 @@ message row); the server passes them through rather than reshaping.
 
 ## Live updates
 
-`src/server/ws.ts` opens **one** daemon subscription per process and
-republishes every `chat/*` frame onto a single Bun pub/sub topic, `chat`.
-Every browser socket (`/ws`) subscribes to that topic, so N tabs cost one
-daemon subscription. Topics are `chat/<room>/msg` and `chat/wake/<handle>`.
+`@mattstack/app-server`'s `serveMattstackApp` opens **one** daemon
+subscription per relay entry and republishes matching frames onto a Bun
+pub/sub topic; chat's `index.ts` supplies the one relay it needs
+(`match: t => t.startsWith('chat/')` → topic `chat`). Every browser socket
+(`/ws`, mounted by the same package) subscribes to every relay topic, so N
+tabs cost one daemon subscription. Topics are `chat/<room>/msg` and
+`chat/wake/<handle>`.
 
 A wake frame is a hint, not a status: the client (`src/app/App.tsx`) refetches
 the room's tail and the roster when one arrives. Presence status only ever
@@ -66,7 +73,7 @@ the fragment through wouter's location store, and `navigate` comes from
 | ------------------ | -------------------------------------------------------- |
 | `/`                | first room                                               |
 | `/r/<room>`        | that room; `#m-<id>` scrolls to and highlights a message |
-| `/demo/page-shell` | the kit's PageShell demo                                 |
+| `/demo/page-shell` | the app-kit's PageShell demo                              |
 
 `/r/<room>#m-<id>` is a **contract with `rt`**: `rt chat post` prints it after
 every post and every wake line ends with it, built by
@@ -76,7 +83,7 @@ Changing this app's route table means changing that file too.
 ## What renders in a message body
 
 The transcript renders a fixed markdown subset, hand-rolled in
-`src/ui/Transcript.tsx` (no markdown library, no HTML):
+`src/app/Transcript.tsx` (no markdown library, no HTML):
 
 - paragraphs on a blank line
 - `- ` / `* ` bullets and `1.` / `1)` numbered lists (a block where every line is a marker)
@@ -98,7 +105,7 @@ Day dividers split the list at local-date boundaries; a `↓ N new` pill appears
 | Command                                    | What you get                                                                                                                                                       |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `bun run dev`                              | Vite only: the client with **no** `/api` and no `/ws`; fine for pure component work                                                                                |
-| `bun run build && bun src/server/index.ts` | the real thing on `PORT` (default 3000): `dist/` plus the API and relay, against the live daemon                                                                   |
+| `bun run build && bun src/server/index.ts` | the real thing on port 11002 (`PORT` env overrides it): `dist/` plus the API and relay, against the live daemon                                                     |
 | `CHAT_FIXTURES=1 bun src/server/index.ts`  | the same server answering with `src/server/fixtures.ts`, the artboards' own data, so the page shows what `design/artboards` draw even when the daemon has no rooms |
 | `RT_SOCK_PATH=...`                         | point at a different daemon socket                                                                                                                                 |
 

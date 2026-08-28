@@ -1,4 +1,4 @@
-import { Button, Group, Text } from '@mantine/core';
+import { Button, Group, Text } from '@mattstack/app-kit/core';
 
 import { dayLabel } from './day-label';
 

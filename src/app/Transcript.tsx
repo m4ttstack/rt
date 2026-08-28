@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Box, Group, Stack, Text, UnstyledButton } from '@mantine/core';
+import { Box, Group, Stack, Text, UnstyledButton } from '@mattstack/app-kit/core';
 import type { ChatMessage } from '@mattstack/rt-client';
 import ScrollToBottom, { useAtTop } from 'react-scroll-to-bottom';
 

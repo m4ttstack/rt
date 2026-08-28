@@ -7,7 +7,7 @@ import {
   Stack,
   Text,
   UnstyledButton,
-} from '@mantine/core';
+} from '@mattstack/app-kit/core';
 import type { BuddyStatus } from '@mattstack/rt-client';
 
 import { Icon } from '@mattstack/app-kit/icons';

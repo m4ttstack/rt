@@ -1,4 +1,4 @@
-import { Box } from '@mantine/core';
+import { Box } from '@mattstack/app-kit/core';
 
 export const STATUS_TEXT_COLOR: Record<'live' | 'idle' | 'deaf', string> = {
   live: 'var(--mantine-color-ok-text)',

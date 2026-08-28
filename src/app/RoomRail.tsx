@@ -1,4 +1,4 @@
-import { Box, Group, Stack, Text, UnstyledButton } from '@mantine/core';
+import { Box, Group, Stack, Text, UnstyledButton } from '@mattstack/app-kit/core';
 import type { RoomSummary } from '@mattstack/rt-client';
 
 import { useLocalStorage } from '@mattstack/app-kit/hooks';

@@ -6,7 +6,7 @@ import {
   Text,
   Tooltip,
   UnstyledButton,
-} from '@mantine/core';
+} from '@mattstack/app-kit/core';
 import type { BuddyStatus, PresenceRow } from '@mattstack/rt-client';
 
 import { Icon } from '@mattstack/app-kit/icons';

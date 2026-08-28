@@ -6,7 +6,7 @@ import {
   Menu,
   Select,
   Text,
-} from '@mantine/core';
+} from '@mattstack/app-kit/core';
 import type { BuddyStatus, RoomSummary } from '@mattstack/rt-client';
 
 import { Icon } from '@mattstack/app-kit/icons';

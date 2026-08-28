@@ -1,4 +1,4 @@
-import { UnstyledButton } from '@mantine/core';
+import { UnstyledButton } from '@mattstack/app-kit/core';
 
 const ACCENT_TEXT = 'var(--mantine-color-accent-text)';
 
