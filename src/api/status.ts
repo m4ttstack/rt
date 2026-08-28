@@ -71,6 +71,12 @@ export interface StatusRow {
   self: boolean;
   /** Registry owner, or null for a route/service the registry has no record for (pre-migrate legacy). */
   managedBy: string | null;
+  /**
+   * URL of the app's icon (the mattstack mark) for the board to render, or null.
+   * The platform's own row resolves to the bundled deck mark at /favicon.svg;
+   * other managed products resolve to their ingested icon; user apps get null.
+   */
+  icon: string | null;
   issues: SyncIssue[];
   /**
    * The registry record's structural shape, for the board's edit dialog to
@@ -186,6 +192,13 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
           a.port === opts.canaryPort ||
           (platformRecord !== undefined && a.port === platformRecord.port),
         managedBy: record?.managedBy ?? null,
+        icon: record
+          ? isPlatformManagedBy(record.managedBy)
+            ? "/favicon.svg"
+            : record.icon
+              ? `/api/apps/${a.name}/icon`
+              : null
+          : null,
         issues: record?.issues ?? [],
         record: record
           ? {
@@ -216,6 +229,7 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
     preflight: null,
     self: false,
     managedBy: null,
+    icon: null,
     issues: [],
     record: null,
     oauth: { mode: "off" },

@@ -36,6 +36,7 @@ function makeRow(overrides: Partial<Row> = {}): Row {
     preflight: null,
     self: false,
     managedBy: "deck",
+    icon: null,
     issues: [],
     record: { kind: "service", command: null, workingDirectory: null },
     oauth: { mode: "off" },
@@ -74,7 +75,7 @@ test("subline: null data reads loading", () => {
   expect(subline(null)).toBe("loading…");
 });
 
-test("subline: full data reports healthy/public/protected/next port", () => {
+test("subline: reports healthy/public/protected, no next-port or auto-refreshes", () => {
   const data = makeData({
     up: 2,
     total: 3,
@@ -84,29 +85,28 @@ test("subline: full data reports healthy/public/protected/next port", () => {
       makeRow({ published: false, hasPassword: true }),
     ],
   });
-  expect(subline(data)).toBe("2/3 healthy · 1 public · 1 protected · next port 11012 · auto-refreshes");
+  expect(subline(data)).toBe("2 of 3 healthy · 1 public · 1 protected");
 });
 
-test("subline: protected and next-port segments omitted when 0/absent", () => {
+test("subline: protected segment omitted when none are protected", () => {
   const data = makeData({
     up: 1,
     total: 1,
-    nextPort: null,
     apps: [makeRow({ published: true, hasPassword: false })],
   });
-  expect(subline(data)).toBe("1/1 healthy · 1 public · auto-refreshes");
+  expect(subline(data)).toBe("1 of 1 healthy · 1 public");
 });
 
 // ---- sublineHealthy ----
 
 test("sublineHealthy: ok tone when every app is healthy", () => {
   const data = makeData({ up: 3, total: 3 });
-  expect(sublineHealthy(data)).toEqual({ text: "3/3 healthy", ok: true });
+  expect(sublineHealthy(data)).toEqual({ text: "3 of 3 healthy", ok: true });
 });
 
 test("sublineHealthy: bad tone when any app is unhealthy", () => {
   const data = makeData({ up: 3, total: 4 });
-  expect(sublineHealthy(data)).toEqual({ text: "3/4 healthy", ok: false });
+  expect(sublineHealthy(data)).toEqual({ text: "3 of 4 healthy", ok: false });
 });
 
 // ---- isPlatform ----
@@ -136,10 +136,27 @@ test("tunnelDomain: public suffix passes through", () => {
 
 // ---- sections ----
 
-test("sections: apps section always present, keyed 'apps' with no title", () => {
-  const data = makeData({ apps: [makeRow({ name: "one" })] });
-  const out = sections(data);
-  expect(out[0]).toEqual({ key: "apps", title: null, rows: data.apps });
+test("sections: mattstack-managed apps get their own titled section above 'your apps'", () => {
+  const mine = makeRow({ name: "mine", managedBy: "user" });
+  const product = makeRow({ name: "board", managedBy: "rt" });
+  const out = sections(makeData({ apps: [mine, product] }));
+  expect(out[0]).toEqual({ key: "mattstack", title: "mattstack", rows: [product] });
+  expect(out[1]).toEqual({ key: "apps", title: "your apps", rows: [mine] });
+});
+
+test("sections: mattstack group sorts the platform (deck) row to the top, rest alphabetical", () => {
+  const rows = [
+    makeRow({ name: "gitq", managedBy: "rt" }),
+    makeRow({ name: "deck", managedBy: "deck" }),
+    makeRow({ name: "board", managedBy: "rt" }),
+  ];
+  const out = sections(makeData({ apps: rows }));
+  expect(out[0]!.rows.map((r) => r.name)).toEqual(["deck", "board", "gitq"]);
+});
+
+test("sections: with no mattstack apps the list stays a single untitled 'apps' section", () => {
+  const mine = makeRow({ name: "mine", managedBy: "user" });
+  expect(sections(makeData({ apps: [mine] }))).toEqual([{ key: "apps", title: null, rows: [mine] }]);
 });
 
 test("sections: strays section appears only for non-tunnel orphans", () => {

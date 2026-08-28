@@ -11,6 +11,7 @@ import {
 } from "../../core/proxy-restart.ts";
 import { CANARY_PATH } from "../../core/canary.ts";
 import { boardHtml, boardJs, boardCss } from "../../core/board-assets.ts";
+import { DECK_ICON_SVG } from "../../core/deck-icon.ts";
 import { buildStatus, type StatusRow } from "./status.ts";
 import { buildDiscoveryApps, iconResponse } from "./discovery.ts";
 import { registerApp, unregisterApp, editApp, adoptApp, restartManagedApps, removeManagedApps,
@@ -165,6 +166,11 @@ function rowFor(record: AppRecord, byName: Map<string, StatusRow>, redact: boole
     preflight: null,
     self: false,
     managedBy: record.managedBy,
+    icon: isPlatformManagedBy(record.managedBy)
+      ? "/favicon.svg"
+      : record.icon
+        ? `/api/apps/${record.name}/icon`
+        : null,
     issues: record.issues ?? [],
     record: {
       kind: record.kind,
@@ -214,6 +220,11 @@ export function startApi(deps: ApiDeps) {
         return new Response(String(deps.port), { headers: { "content-type": "text/plain" } });
       }
       if (pathname === "/favicon.ico") return new Response(null, { status: 204 });
+      if (pathname === "/favicon.svg") {
+        return new Response(DECK_ICON_SVG, {
+          headers: { "content-type": "image/svg+xml; charset=utf-8", "cache-control": "max-age=300" },
+        });
+      }
 
       // ---- launcher discovery API (unversioned, browser-facing, GET only, CORS) ----
       if (pathname === "/api/apps" || ICON_ROUTE.test(pathname)) {
