@@ -37,6 +37,9 @@ export function useDiscoveryApps(deckBase: string | null) {
   const reqId = useRef(0);
 
   const refresh = useCallback(async () => {
+    // Bump on every entry, including early returns: a cache-hit or
+    // null-base call must still invalidate any older pending request.
+    const myReq = ++reqId.current;
     if (!deckBase) {
       setState({ apps: [], loaded: true });
       return;
@@ -47,9 +50,6 @@ export function useDiscoveryApps(deckBase: string | null) {
       Date.now() - cache.current.at < CACHE_MS
     )
       return;
-    // Only the most recently issued request may write state/cache; an older
-    // in-flight request that resolves after a newer one is discarded.
-    const myReq = ++reqId.current;
     try {
       const res = await fetch(`${deckBase}/api/apps`);
       if (myReq !== reqId.current) return;

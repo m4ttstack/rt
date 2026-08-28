@@ -224,6 +224,58 @@ test('a stale in-flight request is discarded when a newer one resolves first', a
   expect(fn).toHaveBeenCalledTimes(2);
 });
 
+test('a cache-hit refresh still bumps the request generation, discarding an older pending request', async () => {
+  const appsA = [
+    { name: 'a', displayName: 'A', url: 'https://a.mattstack', icon: null },
+  ];
+  const appsB = [
+    { name: 'b', displayName: 'B', url: 'https://b.mattstack', icon: null },
+  ];
+  const defA = deferredResponse();
+  const fn = vi.fn((url: string) =>
+    url.startsWith('https://deck.mattstack')
+      ? defA.promise
+      : (Promise.resolve({
+          ok: true,
+          json: async () => ({ apps: appsB }),
+        }) as Promise<Response>)
+  );
+  vi.stubGlobal('fetch', fn);
+
+  const { result, rerender } = renderHook(
+    ({ deckBase }: { deckBase: string }) => useDiscoveryApps(deckBase),
+    { initialProps: { deckBase: 'https://other.mattstack' } }
+  );
+
+  // Prime the cache for base B.
+  await act(async () => {
+    await result.current.refresh();
+  });
+  expect(result.current.apps).toEqual(appsB);
+
+  // Switch to base A and start a request that never resolves yet.
+  rerender({ deckBase: 'https://deck.mattstack' });
+  let refreshA!: Promise<void>;
+  act(() => {
+    refreshA = result.current.refresh();
+  });
+
+  // Switch back to base B, still within the cache window: a cache hit.
+  rerender({ deckBase: 'https://other.mattstack' });
+  await act(async () => {
+    await result.current.refresh();
+  });
+  expect(fn).toHaveBeenCalledTimes(2);
+
+  // A's stale pending fetch resolves after the cache-hit refresh.
+  defA.resolve({ apps: appsA });
+  await act(async () => {
+    await refreshA;
+  });
+
+  expect(result.current.apps).toEqual(appsB);
+});
+
 test('a non-OK response loads empty and never throws', async () => {
   const fn = stubFetch(
     {
