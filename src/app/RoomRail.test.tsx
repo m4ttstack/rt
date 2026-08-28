@@ -3,6 +3,9 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test } from 'vitest';
 
 import { renderWithProviders } from '@mattstack/app-kit/test-utils';
+
+import './icons';
+
 import { RoomRail } from './RoomRail';
 
 test('mention badges are visually distinct from plain unread', () => {

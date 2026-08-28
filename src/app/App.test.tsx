@@ -18,6 +18,9 @@ import {
   installFetchMock,
   restoreWebSocket,
 } from './test-utils';
+
+import './icons';
+
 import { App } from './App';
 
 const DESKTOP_WIDTH = window.innerWidth;

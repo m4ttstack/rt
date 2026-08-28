@@ -3,6 +3,9 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test, vi } from 'vitest';
 
 import { renderWithProviders } from '@mattstack/app-kit/test-utils';
+
+import './icons';
+
 import { memberList, PageBar, RoomMenu } from './PageBar';
 import { fetchMock, installFetchMock } from './test-utils';
 
