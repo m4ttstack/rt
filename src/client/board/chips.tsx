@@ -322,17 +322,20 @@ function SlackReactionChips({ reactions }: { reactions?: string[] }) {
 }
 
 /** The Slack squircle with a ✓ overlay: the posted-in-slack mark. Shared by
-    the row chip and the header filter button so the two read as one thing. */
-function SlackPostedMark({ title }: { title?: string }) {
+    the row chip and the header filter button so the two read as one thing.
+    `mono` is the filter's off state: currentColor, no badge, so colour in the
+    header only ever means on. */
+function SlackPostedMark({ title, mono = false }: { title?: string; mono?: boolean }) {
+  const fill = (brand: string) => (mono ? "currentColor" : brand);
   return (
     <span className="tui-slack-posted" title={title}>
       <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden>
-        <path fill="#E01E5A" d="M5 15a2 2 0 1 1-2-2h2v2Zm1 0a2 2 0 0 1 4 0v5a2 2 0 1 1-4 0v-5Z" />
-        <path fill="#36C5F0" d="M9 5a2 2 0 1 1 2-2v2H9Zm0 1a2 2 0 0 1 0 4H4a2 2 0 1 1 0-4h5Z" />
-        <path fill="#2EB67D" d="M19 9a2 2 0 1 1 2 2h-2V9Zm-1 0a2 2 0 0 1-4 0V4a2 2 0 1 1 4 0v5Z" />
-        <path fill="#ECB22E" d="M15 19a2 2 0 1 1-2 2v-2h2Zm0-1a2 2 0 0 1 0-4h5a2 2 0 1 1 0 4h-5Z" />
+        <path fill={fill("#E01E5A")} d="M5 15a2 2 0 1 1-2-2h2v2Zm1 0a2 2 0 0 1 4 0v5a2 2 0 1 1-4 0v-5Z" />
+        <path fill={fill("#36C5F0")} d="M9 5a2 2 0 1 1 2-2v2H9Zm0 1a2 2 0 0 1 0 4H4a2 2 0 1 1 0-4h5Z" />
+        <path fill={fill("#2EB67D")} d="M19 9a2 2 0 1 1 2 2h-2V9Zm-1 0a2 2 0 0 1-4 0V4a2 2 0 1 1 4 0v5Z" />
+        <path fill={fill("#ECB22E")} d="M15 19a2 2 0 1 1-2 2v-2h2Zm0-1a2 2 0 0 1 0-4h5a2 2 0 1 1 0 4h-5Z" />
       </svg>
-      <span className="tui-slack-posted-check" aria-hidden>✓</span>
+      {!mono && <span className="tui-slack-posted-check" aria-hidden>✓</span>}
     </span>
   );
 }
