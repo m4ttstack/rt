@@ -113,7 +113,7 @@ export function fixtureBuddies(now = Date.now()): Buddy[] {
 /** The DM room name is a real hashed pair-key shape, never rendered. */
 export const FIXTURE_DM = 'dm-9f3a2b1c0d4e';
 
-export function fixtureRooms() {
+export function fixtureRooms(now = Date.now()) {
   return [
     { room: 'build', memberCount: 6, unread: 4, mentions: 1 },
     { room: 'demo-42', memberCount: 2, unread: 2, mentions: 0 },
@@ -134,8 +134,28 @@ export function fixtureRooms() {
       kind: 'dm' as const,
       participants: { a: 'rt-chat-wt', b: 'matt' },
     },
+    {
+      room: 'retro-0819',
+      memberCount: 3,
+      unread: 0,
+      mentions: 0,
+      archivedAt: now - 3 * 24 * H,
+    },
+    {
+      room: 'dm-7b2e9c4d1a0f',
+      memberCount: 2,
+      unread: 0,
+      mentions: 0,
+      kind: 'dm' as const,
+      participants: { a: 'board-fix-auth', b: 'matt' },
+      archivedAt: now - 5 * 24 * H,
+    },
   ];
 }
+
+const ARCHIVED_MEMBERS: Record<string, string[]> = {
+  'retro-0819': ['deck-main', 'gitq-main'],
+};
 
 export function fixtureMembers(room: string, now = Date.now()) {
   const all = fixtureBuddies(now).filter(b => b.status !== 'offline');
@@ -146,7 +166,8 @@ export function fixtureMembers(room: string, now = Date.now()) {
   const pair = dm?.participants;
   const inRoom = pair
     ? [pair.a, pair.b].filter(h => h !== 'matt')
-    : all.filter(b => b.rooms.includes(room)).map(b => b.handle);
+    : (ARCHIVED_MEMBERS[room] ??
+      all.filter(b => b.rooms.includes(room)).map(b => b.handle));
 
   return inRoom.map(handle => {
     const b = all.find(x => x.handle === handle)!;
@@ -168,6 +189,44 @@ export function fixtureMembers(room: string, now = Date.now()) {
  * own container instead of widening the page.
  */
 export function fixtureMessages(room: string, now = Date.now()): ChatMessage[] {
+  if (room === 'retro-0819') {
+    const at = (daysAgo: number, minutes: number) =>
+      now - daysAgo * 24 * H + minutes * M;
+    return [
+      {
+        id: 301,
+        room,
+        handle: 'deck-main',
+        body: 'retro for the 0819 incident: what went wrong, what we keep.',
+        postedAt: at(3, 0),
+        mentions: [],
+      },
+      {
+        id: 302,
+        room,
+        handle: 'gitq-main',
+        body: 'the stack rebase raced the deploy. we keep: never restack while deck is mid-restart.',
+        postedAt: at(3, 14),
+        mentions: [],
+      },
+      {
+        id: 303,
+        room,
+        handle: 'deck-main',
+        body: 'agreed. writing it into the deploy loop doc.',
+        postedAt: at(2, 5),
+        mentions: [],
+      },
+      {
+        id: 304,
+        room,
+        handle: 'gitq-main',
+        body: 'done on my side too. closing this out.',
+        postedAt: at(2, 40),
+        mentions: [],
+      },
+    ];
+  }
   if (room !== 'build') {
     return [
       {
@@ -230,6 +289,18 @@ export function fixtureMessages(room: string, now = Date.now()): ChatMessage[] {
       1,
       '@matt PR #67 is green and CodeRabbit is clean — ok to merge, or do you want the rebase first?',
       ['matt']
+    ),
+    msg(
+      48,
+      'board-fix-auth',
+      0.5,
+      'full jest output for the auth suite, for the record:\n```\n' +
+        Array.from({ length: 60 }, (_, i) =>
+          i % 7 === 6
+            ? `  ✕ auth › refresh token rotates (${120 + i} ms)`
+            : `  ✓ auth › case ${i + 1} (${3 + (i % 5)} ms)`
+        ).join('\n') +
+        '\n```'
     ),
   ];
 }

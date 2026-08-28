@@ -1,5 +1,6 @@
-import { screen } from '@testing-library/react';
-import { expect, test } from 'vitest';
+import { screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, expect, test } from 'vitest';
 
 import { renderWithProviders } from '@ui/storybook/test-utils';
 import { RoomRail } from './RoomRail';
@@ -80,4 +81,75 @@ test('no DM rooms means no direct section at all', () => {
     />
   );
   expect(screen.queryByRole('heading', { name: /direct/i })).toBeNull();
+});
+
+afterEach(() => window.localStorage.removeItem('chat.rail.archived'));
+
+test('archived rooms sit in a collapsed section, badge-less and dimmed, and the toggle remembers itself', async () => {
+  const { unmount } = renderWithProviders(
+    <RoomRail
+      rooms={[
+        { room: 'build', memberCount: 2, unread: 1, mentions: 0 },
+        {
+          room: 'retro',
+          memberCount: 2,
+          unread: 3,
+          mentions: 1,
+          archivedAt: 5,
+        },
+        {
+          room: 'dm-1',
+          memberCount: 2,
+          unread: 0,
+          mentions: 0,
+          kind: 'dm',
+          participants: { a: 'fred', b: 'matt' },
+          archivedAt: 6,
+        },
+      ]}
+      activeRoom="build"
+    />
+  );
+  expect(screen.getByText('ROOMS').nextSibling).toHaveTextContent('1');
+  expect(screen.queryByTestId('room-row-retro')).toBeNull();
+  const toggle = screen.getByTestId('archived-toggle');
+  expect(toggle).toHaveTextContent('ARCHIVED');
+  expect(toggle).toHaveTextContent('2');
+  expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+  await userEvent.click(toggle);
+  const row = screen.getByTestId('room-row-retro');
+  expect(row).toHaveAttribute('data-archived', 'true');
+  expect(row.style.opacity).toBe('0.6');
+  expect(within(row).queryByTestId('unread-badge')).toBeNull();
+  expect(within(row).queryByTestId('mention-badge')).toBeNull();
+  expect(screen.getByTestId('room-row-dm-1')).toHaveTextContent('fred');
+
+  unmount();
+  renderWithProviders(
+    <RoomRail
+      rooms={[
+        {
+          room: 'retro',
+          memberCount: 2,
+          unread: 0,
+          mentions: 0,
+          archivedAt: 5,
+        },
+      ]}
+    />
+  );
+  expect(screen.getByTestId('archived-toggle')).toHaveAttribute(
+    'aria-expanded',
+    'true'
+  );
+});
+
+test('no archived rooms means no archived section', () => {
+  renderWithProviders(
+    <RoomRail
+      rooms={[{ room: 'build', memberCount: 2, unread: 0, mentions: 0 }]}
+    />
+  );
+  expect(screen.queryByTestId('archived-toggle')).toBeNull();
 });

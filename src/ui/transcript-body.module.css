@@ -1,0 +1,41 @@
+/* The copy control rides the block's top-right corner and shows on hover or
+   focus; a touch screen has no hover, so there it is always shown. */
+.codeWrap {
+  position: relative;
+}
+
+.copy {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  opacity: 0;
+  transition: opacity 120ms ease;
+}
+
+.codeWrap:hover .copy,
+.copy:focus-within {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .copy {
+    opacity: 1;
+  }
+}
+
+.fold {
+  position: relative;
+  max-height: 320px;
+  overflow: hidden;
+}
+
+.fold::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 48px;
+  background: linear-gradient(to bottom, transparent, var(--tk-card));
+  pointer-events: none;
+}

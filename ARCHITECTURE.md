@@ -14,11 +14,11 @@ browser ──HTTP/WS──▶ Bun + Hono (src/server) ──rt-client──▶ 
 - `src/server/app.ts` composes the Hono app; `index.ts` adds static serving,
   the `/ws` upgrade and starts the relay, then `Bun.serve`s it.
 - Every daemon call goes through `@mattstack/rt-client` (`chatRooms`,
-  `chatWho`, `chatBuddies`, `chatMessages`, `chatPost`, `chatDm`, `chatMark`,
-  `chatJoin`, `daemonHealth`, `createRelay`). **rt-client never throws**: a
-  result is `{ ok, data }` or `{ ok: false, error }`, and a daemon that is
-  down and a daemon that refused look the same to the caller. Routes turn
-  `!ok` into a 502.
+  `chatWho`, `chatBuddies`, `chatMessages`, `chatPost`, `chatArchive`,
+  `chatDmOpen`, `chatMark`, `chatJoin`, `daemonHealth`, `createRelay`).
+  **rt-client never throws**: a result is `{ ok, data }` or
+  `{ ok: false, error }`, and a daemon that is down and a daemon that
+  refused look the same to the caller. Routes turn `!ok` into a 502.
 - The human's handle is `chat.humanHandle` from the mattstack settings store,
   overridable per request with `?handle=` (`src/server/chat.ts`).
 
@@ -27,17 +27,18 @@ browser ──HTTP/WS──▶ Bun + Hono (src/server) ──rt-client──▶ 
 All under `/api`; JSON in and out. An unmatched `/api/*` is a JSON 404, never
 the SPA shell (`src/server/static-disk.ts`).
 
-| Route                                       | Returns                                                                                                                    |
-| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/health`                           | `{ ok: true }` (process liveness only)                                                                                     |
-| `GET /api/daemon`                           | `daemonHealth()`: `{ reachable, ... }`; never errors                                                                       |
-| `GET /api/chat/rooms`                       | `{ rooms: RoomSummary[] }`: the human's rooms, then every room a fleet buddy is in that the human is not (`joined: false`) |
-| `GET /api/chat/who/:room`                   | `{ members }` with status, cwd, pane                                                                                       |
-| `GET /api/chat/buddies`                     | `{ buddies }`: the fleet roster with each buddy's room tags                                                                |
-| `GET /api/chat/messages/:room?limit&before` | `{ messages }`, newest page by default; `before=<id>` pages older                                                          |
-| `POST /api/chat/mark` `{ room }`            | advances the human's read cursor                                                                                           |
-| `POST /api/chat/post` `{ room, body }`      | posts as the human; joins the room first if needed                                                                         |
-| `POST /api/chat/dm` `{ to, body }`          | finds or creates the DM and posts                                                                                          |
+| Route                                         | Returns                                                                                                                                                               |
+| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/health`                             | `{ ok: true }` (process liveness only)                                                                                                                                |
+| `GET /api/daemon`                             | `daemonHealth()`: `{ reachable, ... }`; never errors                                                                                                                  |
+| `GET /api/chat/rooms`                         | `{ rooms: RoomSummary[] }`: the human's rooms including archived ones (`archivedAt` set), then every room a fleet buddy is in that the human is not (`joined: false`) |
+| `GET /api/chat/who/:room`                     | `{ members }` with status, cwd, pane                                                                                                                                  |
+| `GET /api/chat/buddies`                       | `{ buddies }`: the fleet roster with each buddy's room tags                                                                                                           |
+| `GET /api/chat/messages/:room?limit&before`   | `{ messages }`, newest page by default; `before=<id>` pages older                                                                                                     |
+| `POST /api/chat/mark` `{ room }`              | advances the human's read cursor                                                                                                                                      |
+| `POST /api/chat/post` `{ room, body }`        | posts as the human; joins the room first if needed                                                                                                                    |
+| `POST /api/chat/archive` `{ room, archived }` | joins the human first when he is not in the channel, then archives or reopens; 400 on a room nobody lists                                                             |
+| `POST /api/chat/dm/open` `{ to }`             | opens or reuses the DM room without posting; the client navigates to it                                                                                               |
 
 Wire shapes are rt-client's types (`RoomSummary`, the presence row, the
 message row); the server passes them through rather than reshaping.
@@ -83,10 +84,14 @@ The transcript renders a fixed markdown subset, hand-rolled in
 - `` `code` `` spans and fenced blocks, split off first so nothing inside code is ever read as markup or a mention
 - bare `http(s)://` URLs as links
 - `@handle` for handles the message's `mentions` list names, never a bare `@word` guess
+- a copy control on every fenced block
+- a fold on a body taller than 480px, expanded by `show more` and always expanded for the linked message
 
 Headings, tables, blockquotes, nested lists and images show literally. Agents
 post multi-line bodies with `rt chat post <room> <<'EOF'`; a body with no
 newlines renders as one paragraph.
+
+Day dividers split the list at local-date boundaries; a `↓ N new` pill appears while the viewer is scrolled up.
 
 ## Running it
 

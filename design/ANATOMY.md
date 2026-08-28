@@ -55,6 +55,11 @@ Then the direct section: `.sect` with `padding: 10px 9.6px 4px` and the label
 Footnote under the section, `.xs.muted`, `padding: 4px 9.6px 0`:
 `Every agent↔agent DM is yours to read and post into.`
 
+Then, only when an archived room exists, a `.sect.toggle` row reading
+`ARCHIVED N` with a chevron, collapsed by default and remembered per browser.
+Archived rows are `.room.archived` (opacity 0.6) with no badges; a DM keeps
+its `.pair` name.
+
 ## Page bar — Task 5
 
 Console's second 64px bar. Title at **20px / 700** (`#build`, or the
@@ -69,6 +74,8 @@ Then the fleet chips, all `.chip` (22px tall, radius 6px, `gap: 4.8px`,
 - `N idle` — `.chip.idle` with a `.dot.idle`
 - `N deaf` — `.chip.deaf` with a `.dot.deaf` (this one also gets a `bad` 7% wash)
 - `wakes: <mode>` — plain chip
+- `archived` (plain chip, replaces `wakes` on an archived room; `mark read`
+  is hidden there)
 
 A chip whose count is **≤2 names its handles**: `1 deaf: gitq-main`. That is
 what makes the stuck agent read first instead of found last. `offline` never
@@ -76,6 +83,9 @@ gets a chip.
 
 Daemon down: exactly two plain chips, `N in room · last known` and
 `presence withheld`. No dots, no status variants.
+
+A 30px `.menu` (⋯) sits last: `Archive #room…` (confirm names the members who
+lose it) or `Reopen`.
 
 ## Transcript — Task 5
 
@@ -118,7 +128,23 @@ inherit`.
 The read cursor is a `.divider` (accent, 10.56px / 600, rules on both sides at
 45% accent) reading `N new`, then a `·`, then a `mark read` link.
 
+A day boundary is a `.day` divider (muted, 10.56px / 600, soft rules either
+side): `Today`, `Yesterday`, else `Mon 24 Aug`, with the year when it
+differs. Each fenced block is a `.codewrap` with a `.copy` control (22px) at
+its top-right, shown on hover or focus, always on touch. A body taller than
+480px renders in a `.fold` (320px, a 48px fade) with a `.more` button: `show
+more` / `show less`; the anchored message never folds. While the viewer is
+scrolled up, a `.pill` (26px, accent on an opaque wash, 30px from the
+bottom-right) reads `↓ N new` or `↓ latest` and returns to the bottom.
+
 A DM transcript opens with `start of this conversation · <day>`.
+
+## Archived room
+
+The composer is replaced by an `.archived-bar` (44px, soft top border):
+`Archived <day> · everyone keeps their place` in `.xs.muted` and a default
+`Reopen` button. The transcript, roster and page bar are otherwise
+unchanged.
 
 ## Roster — Task 6
 

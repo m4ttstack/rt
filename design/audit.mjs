@@ -465,6 +465,112 @@ export const TARGETS = [
       display: DISPLAY_BLOCKIFIES_TO_FLEX,
     },
   },
+
+  // QoL round 1 -- day dividers, the new pill, code copy, the fold.
+  {
+    spec: '.day',
+    find: '[data-testid="day-divider"]',
+    props: ['align-items', 'color', 'display', 'font-size', 'font-weight', 'gap'],
+    why: { padding: 'shorthand not enumerated; longhands verified by eye' },
+  },
+  {
+    spec: '.pill',
+    find: '[data-testid="new-pill"]',
+    props: ['position', 'right', 'bottom', 'height', 'border-radius', 'font-size', 'font-weight', 'color'],
+    why: {
+      background: 'color-mix over the card token, verified by eye',
+      border: 'verified by eye',
+      padding: 'shorthand not enumerated; longhands verified by eye',
+      display: 'inline-flex blockifies in some parents; verified in source',
+      gap: 'verified by eye',
+    },
+  },
+  {
+    spec: '.copy',
+    find: '[data-testid="code-copy"] button',
+    props: ['width', 'height', 'border-radius'],
+    why: {
+      position: 'on the wrapper, not the button; verified by eye',
+      top: 'wrapper',
+      right: 'wrapper',
+      display: 'ActionIcon authors inline-flex',
+      background: 'theme token',
+      border: 'theme token',
+      color: 'theme token',
+      'align-items': 'verified by eye',
+      'justify-content': 'verified by eye',
+    },
+  },
+  {
+    spec: '.fold',
+    find: '[data-testid="message-fold"][data-folded="true"] > div',
+    props: ['max-height', 'overflow', 'position'],
+  },
+  {
+    spec: '.more',
+    find: '[data-testid="fold-toggle"]',
+    props: ['font-size', 'font-weight', 'color', 'margin-top'],
+    why: {
+      background: 'UnstyledButton, verified by eye',
+      border: 'UnstyledButton',
+      padding: 'UnstyledButton',
+      cursor: 'verified by eye',
+    },
+  },
+
+  // QoL round 1 -- archive: the menu, the rail section, the chip, the bar.
+  {
+    spec: '.menu',
+    find: '[data-testid="room-menu"]',
+    props: ['width', 'height', 'border-radius'],
+    why: {
+      display: 'ActionIcon authors inline-flex; blockifies as a flex item',
+      background: 'CONTROL_SURFACE token, verified by eye',
+      border: 'token',
+      color: 'token',
+      'align-items': 'verified by eye',
+      'justify-content': 'verified by eye',
+    },
+  },
+  {
+    spec: '.room.archived',
+    find: '[data-testid="room-row-retro-0819"]',
+    props: ['opacity'],
+  },
+  {
+    spec: '.chip',
+    find: '[data-testid="chip-archived"]',
+    props: ['display', 'align-items', 'gap', 'height', 'border-radius', 'font-size', 'font-weight', 'white-space', 'color'],
+    why: {
+      padding: 'shorthand not enumerated; longhands verified by eye',
+      border: 'token',
+    },
+  },
+  {
+    spec: '.archived-bar',
+    find: '[data-testid="archived-bar"]',
+    props: ['display', 'align-items', 'justify-content', 'height', 'margin-top'],
+    why: {
+      padding: 'shorthand not enumerated; longhands verified by eye',
+      'border-top': 'token',
+    },
+  },
+  // The rail's collapsed ARCHIVED section header (RoomRail.tsx): `.sect.toggle`
+  // adds only `cursor` over the base `.sect` row, already asserted by the
+  // `section-live` target above -- re-checking align-items/display/gap here
+  // would just duplicate that entry against the same shared CSS rule.
+  {
+    spec: '.sect.toggle',
+    find: '[data-testid="archived-toggle"]',
+    props: ['cursor'],
+  },
+  // `archived-reopen` (ArchivedBar.tsx's Reopen control) is intentionally
+  // NOT a target: it is a real kit `Button` (variant="default", size="xs"),
+  // not one of the artboard's own named CSS classes -- the artboard drew it
+  // with one-off inline styles that `extract-spec.py` never lifts into
+  // spec.json, the same way the page bar's "mark read" and the DM detail
+  // card's buttons never got a class either. There is no selector to diff
+  // against without exempting every property, which would check nothing.
 ];
 
 const norm = v => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : v);
@@ -568,6 +674,10 @@ const LONGHAND_FALLBACK = {
   // name IS what getComputedStyle's iterator yields directly, so this entry
   // exists for symmetry/documentation rather than because it was missing.
   'border-color': 'border-top-color',
+  // `.fold`'s rule is a single-value `overflow: hidden`, so `overflow-x`
+  // (which getComputedStyle DOES enumerate) is a faithful stand-in for the
+  // shorthand it never enumerates.
+  overflow: 'overflow-x',
 };
 
 function readActual(actual, prop) {
@@ -616,7 +726,9 @@ function probeSource() {
   const out = { __scheme__: document.documentElement.getAttribute('data-mantine-color-scheme') };
   for (const t of targets) {
     const el = document.querySelector(t.find);
-    if (!el) { out[t.spec] = null; continue; }
+    // Two TARGETS can share a CSS-selector spec key (e.g. two '.chip'
+    // entries); a miss on the second must not erase the first's real hit.
+    if (!el) { if (!(t.spec in out)) out[t.spec] = null; continue; }
     const cs = getComputedStyle(el);
     const props = {};
     for (const p of cs) props[p] = cs.getPropertyValue(p);

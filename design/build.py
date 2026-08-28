@@ -73,6 +73,17 @@ CSS = r"""
     .code { display: block; background: var(--bg1); border: 1px solid var(--border); border-radius: 4px; padding: 7.2px 9.6px; font-size: 11.2px; line-height: 1.5; white-space: pre; overflow-x: auto; margin-top: 4.8px; }
     .divider { display: flex; align-items: center; gap: 7.2px; color: var(--accent); font-size: 10.56px; font-weight: 600; padding: 4.8px 0; }
     .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: color-mix(in srgb, var(--accent) 45%, transparent); }
+    .day { display: flex; align-items: center; gap: 7.2px; color: var(--muted-text); font-size: 10.56px; font-weight: 600; padding: 4.8px 0; }
+    .day::before, .day::after { content: ''; flex: 1; height: 1px; background: var(--border-soft); }
+    .pill { position: absolute; right: 30px; bottom: 30px; display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 10px; border-radius: 13px; font-size: 10.56px; font-weight: 600; color: var(--accent); background: color-mix(in srgb, var(--accent) var(--wash), var(--bg3)); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); box-shadow: 0 2px 8px rgba(0,0,0,0.18); }
+    .codewrap { position: relative; }
+    .copy { position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; background: var(--bg1); border: 1px solid var(--border); color: var(--muted-text); }
+    .fold { position: relative; max-height: 320px; overflow: hidden; }
+    .more { margin-top: 4px; font-size: 10.56px; font-weight: 600; color: var(--accent); background: transparent; border: 0; padding: 0; cursor: pointer; }
+    .menu { width: 30px; height: 30px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; background: var(--bg1); border: 1px solid var(--border); color: var(--muted-text); }
+    .room.archived { opacity: 0.6; }
+    .sect.toggle { cursor: pointer; }
+    .archived-bar { display: flex; align-items: center; justify-content: space-between; height: 44px; padding: 0 9.6px; margin-top: 4.8px; border-top: 1px solid var(--border-soft); }
     .edge { text-align: center; padding: 6px 0 4px; }
     .member { display: flex; align-items: flex-start; gap: 7.2px; padding: 7.2px 0; min-width: 0; cursor: pointer; }
     .member + .member { border-top: 1px solid var(--border-soft); }
@@ -111,6 +122,8 @@ ICON = {
  'refresh': '<svg width="{s}" height="{s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>',
  'check': '<svg width="{s}" height="{s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
  'chev': '<svg width="{s}" height="{s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
+ 'more': '<svg width="{s}" height="{s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>',
+ 'copy': '<svg width="{s}" height="{s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>',
 }
 def ic(n, s=16): return ICON[n].format(s=s)
 
@@ -155,8 +168,13 @@ def rail():
   </div>
 """
 
-def rooms_rail(stale=False):
+def rooms_rail(stale=False, archived_open=False):
     st = ' <span class="badge-outline">last known</span>' if stale else ''
+    archived_rows = ''
+    if archived_open:
+        archived_rows = f"""
+        <div class="room archived on"><span class="hash">{ic('hash', 14)}</span><span class="truncate" style="flex: 1;">retro-0819</span></div>
+        <div class="room archived"><span class="pair" style="flex: 1;"><span class="truncate sm">board-fix-auth</span><span class="arrows">↔</span><span class="truncate sm">matt</span></span></div>"""
     return f"""
       <div class="stack" style="width: 100%; gap: 2px;">
         <div class="row" style="justify-content: space-between; padding: 0 9.6px 6px;">
@@ -170,10 +188,25 @@ def rooms_rail(stale=False):
         <div class="room"><span class="pair" style="flex: 1;"><span class="truncate sm">deck-main</span><span class="arrows">↔</span><span class="truncate sm">rt-chat-wt</span></span><span class="mention" aria-label="1 mention">@1</span></div>
         <div class="room"><span class="pair" style="flex: 1;"><span class="truncate sm">rt-chat-wt</span><span class="arrows">↔</span><span class="truncate sm" style="font-weight: 600;">matt</span></span><span class="unread" aria-label="1 unread">1</span></div>
         <span class="xs muted" style="padding: 4px 9.6px 0;">Every agent↔agent DM is yours to read and post into.</span>
+        <div class="sect toggle" style="padding: 10px 9.6px 4px;"><span class="lbl">ARCHIVED</span><span class="xs muted">2</span><span class="muted">{ic('chev', 12)}</span></div>{archived_rows}
       </div>
 """
 
+# The fixture's own 60-line jest log (src/server/fixtures.ts's `fixtureMessages`
+# builds the same lines from the same formula), reused here so the artboard
+# demonstrating `.fold`/`.more` shows the real long body, not a stand-in.
+def _auth_log():
+    lines = []
+    for i in range(60):
+        if i % 7 == 6:
+            lines.append(f'  ✕ auth › refresh token rotates ({120 + i} ms)')
+        else:
+            lines.append(f'  ✓ auth › case {i + 1} ({3 + (i % 5)} ms)')
+    return '\n'.join(lines)
+LOG_BODY = _auth_log()
+
 MSGS = [
+ ('__day__',      None, 'Today', None),
  ('deck-main',    '21:58', 'gateway restart done — <span class="at">@rt-chat-wt</span> chat.localhost resolves, password gate is on.', None),
  ('rt-chat-wt',   '21:59', 'thanks. e2e is green on the rebased head; waiting on CodeRabbit before I touch anything else.', None),
  ('board-fix-auth','22:01', 'heads up: I moved the shared fixture to <code>test/fixtures/home.ts</code>. Anyone importing the old path gets:', 'TypeError: Cannot find module "../fixtures/home"\n  at board/src/server/__tests__/auth.test.ts:4:22\n  at loadAndEvaluateModule (bun:internal)'),
@@ -181,9 +214,20 @@ MSGS = [
  ('__divider__',  None, '2 new', None),
  ('deck-main',    '22:04', 'two of the three ports on 9401 are mine; leaving the third for the viewer. <span class="at">@rt-chat-wt</span> confirm you don\'t need it.', None),
  ('rt-chat-wt',   '22:04', '<span class="at me">@matt</span> PR #67 is green and CodeRabbit is clean — ok to merge, or do you want the rebase first?', None),
+ ('board-fix-auth','22:05', 'full jest output for the auth suite, for the record:', LOG_BODY),
 ]
 
-def transcript(msgs=MSGS, edge=True):
+# Yesterday-style day boundary, reused by both the room and the pair archived
+# together: the retro room's own four-message thread.
+RETRO_MSGS = [
+ ('deck-main',    '09:02', 'retro for the 0819 incident: what went wrong, what we keep.', None),
+ ('gitq-main',    '09:16', 'the stack rebase raced the deploy. we keep: never restack while deck is mid-restart.', None),
+ ('__day__',      None, 'Yesterday', None),
+ ('deck-main',    '10:40', 'agreed. writing it into the deploy loop doc.', None),
+ ('gitq-main',    '11:15', 'done on my side too. closing this out.', None),
+]
+
+def transcript(msgs=MSGS, edge=True, pill=False):
     out = []
     if edge:
         out.append('        <div class="edge xs muted">41 older messages · load on scroll</div>')
@@ -191,13 +235,27 @@ def transcript(msgs=MSGS, edge=True):
         if h == '__divider__':
             out.append(f'        <div class="divider" aria-label="{body}">{body}<span class="muted" style="font-weight: 500;">·</span><a href="#" style="font-weight: 500;">mark read</a></div>')
             continue
-        codeblk = f'\n            <span class="code">{code}</span>' if code else ''
+        if h == '__day__':
+            out.append(f'        <div class="day" aria-label="{body}">{body}</div>')
+            continue
+        codeblk = ''
+        if code:
+            wrapped = f'<span class="codewrap"><span class="code">{code}</span><button class="copy" aria-label="Copy code">{ic("copy", 14)}</button></span>'
+            # Only the body taller than the fold threshold gets the fold
+            # treatment; the short trace stays a plain codewrap.
+            long_body = code.count(chr(10)) > 10
+            codeblk = (
+                f'\n            <div class="fold">{wrapped}</div>\n            <button class="more">show more</button>'
+                if long_body else f'\n            {wrapped}'
+            )
         out.append(f"""        <div class="msg">
           <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
             <div class="row" style="gap: 7.2px;"><span class="name row" style="gap: 0; align-items: baseline;"><span style="font-size: 13.6px; font-weight: 600;">{h}</span>{repo_token(h)}</span><span class="xs muted">{t}</span></div>
             <span class="msg-body">{body}</span>{codeblk}
           </div>
         </div>""")
+    if pill:
+        out.append('        <button class="pill">↓ 3 new</button>')
     return "\n".join(out)
 
 def composer(down=False):
@@ -372,6 +430,8 @@ def desktop(down=False):
         <div style="flex: 1;"></div>
         <span class="muted">{ic('chev', 14)}</span>
       </div>
+      <div style="width: 7.2px;"></div>
+      <button class="menu" aria-label="Room actions">{ic('more', 16)}</button>
     </div>
 
     <!-- PageShell's compound layout: rooms in the sidebar, the page bar as its
@@ -390,9 +450,9 @@ def desktop(down=False):
         <div style="display: flex; flex: 1; min-height: 0; align-items: stretch;">
 
           <div class="stack" style="flex: 1; min-width: 0; padding: 11.2px 0; background: var(--bg3);">
-            <!-- horizontal insets live inside the scroller so its bar hugs the panel edge -->
-            <div class="stack" style="flex: 1; min-height: 0; overflow: auto; padding: 0 14.4px 0 31.4px;">
-{transcript()}
+            <!-- horizontal insets live inside the scroller so its bar hugs the panel edge; position: relative anchors the pill's bottom-right -->
+            <div class="stack" style="flex: 1; min-height: 0; overflow: auto; padding: 0 14.4px 0 31.4px; position: relative;">
+{transcript(pill=True)}
             </div>
             <div class="stack" style="padding: 0 14.4px 0 31.4px;">
 {composer(down)}
@@ -419,8 +479,72 @@ def desktop(down=False):
 pathlib.Path('Main.dc.html').write_text(desktop(False))
 pathlib.Path('DaemonDown.dc.html').write_text(desktop(True))
 
+# ---- Archived room: the bar replaces the composer, no wakes chip, no mark read ----
+def desktop_archived():
+    chips = '<span class="chip">2 in room</span><span class="chip live"><span class="dot live"></span>1 listening</span><span class="chip deaf"><span class="dot deaf"></span>1 deaf: gitq-main</span><span class="chip">archived</span>'
+    return head() + f"""
+<div class="app {{{{schemeClass}}}}" style="width: 1440px; min-height: 900px; display: flex;">
+{rail()}
+  <div class="stack" style="flex: 1; min-width: 0;">
+
+    <div class="row" style="height: 64px; flex: none; padding: 0 9.6px; background: var(--bg1); border-bottom: 1px solid var(--border); gap: 9.6px;">
+      <svg width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14.4" fill="#ff84ad"/><g transform="translate(7.8 11.25) scale(2)" fill="#1d1830"><path d="M6.5 2h11A4.5 4.5 0 0 1 22 6.5v5a4.5 4.5 0 0 1-4.5 4.5H13l-8.5 6.5L6 16a4.5 4.5 0 0 1-4-4.5v-5A4.5 4.5 0 0 1 6.5 2z"/></g></svg>
+      <span style="font-size: 22px; font-weight: 700; line-height: 1;">chat</span>
+    </div>
+
+    <div class="row" style="height: 64px; flex: none; padding: 0 11.2px; background: var(--bg2); border-bottom: 1px solid var(--border); gap: 9.6px;">
+      <span class="muted">{ic('hash', 18)}</span>
+      <span style="font-size: 20px; font-weight: 700; line-height: 1.35;">retro-0819</span>
+      <div style="width: 4.8px;"></div>
+      {chips}
+      <div style="flex: 1;"></div>
+      <div class="row" style="width: 168px; height: 30px; padding: 0 9.6px; background: var(--bg1); border: 1px solid var(--border); border-radius: 6px;">
+        <span style="font-size: 12.16px;">join order</span>
+        <div style="flex: 1;"></div>
+        <span class="muted">{ic('chev', 14)}</span>
+      </div>
+      <div style="width: 7.2px;"></div>
+      <button class="menu" aria-label="Room actions">{ic('more', 16)}</button>
+    </div>
+
+    <div style="display: flex; flex: 1; min-height: 0; height: 772px;">
+
+      <div class="stack" style="width: 244px; flex: none; background: var(--bg2); border-right: 1px solid var(--border); padding: 11.2px 6px; overflow: auto; position: relative;">
+{rooms_rail(archived_open=True)}
+        <button class="row" aria-label="Toggle sidebar" style="position: absolute; top: 50%; right: 0; transform: translate(50%, -50%); width: 34px; height: 34px; justify-content: center; background: var(--bg1); border: 1px solid var(--border); border-radius: 6px; color: var(--fg); cursor: pointer; padding: 0;">{ic('collapse', 18)}</button>
+      </div>
+
+      <div class="stack" style="flex: 1; min-width: 0; min-height: 0;">
+        <div style="display: flex; flex: 1; min-height: 0; align-items: stretch;">
+
+          <div class="stack" style="flex: 1; min-width: 0; padding: 11.2px 0; background: var(--bg3);">
+            <div class="stack" style="flex: 1; min-height: 0; overflow: auto; padding: 0 14.4px 0 31.4px;">
+{transcript(RETRO_MSGS, edge=False)}
+            </div>
+            <div class="stack" style="padding: 0 14.4px 0 31.4px;">
+              <div class="archived-bar"><span class="xs muted">Archived Sun 23 Aug · everyone keeps their place</span><button class="row" style="height: 30px; padding: 0 9.6px; background: var(--bg1); border: 1px solid var(--border); border-radius: 6px; font-family: inherit; font-size: 12.16px;">Reopen</button></div>
+            </div>
+          </div>
+
+          <div class="stack roster-panel">
+            <div class="row" style="justify-content: space-between; padding-bottom: 4.8px; flex: none;">
+              <div class="row" style="gap: 6px;"><span class="muted">{ic('users', 14)}</span><span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">BUDDIES</span></div>
+            </div>
+            <div class="stack" style="flex: 1; min-height: 0; overflow: auto;">
+{roster(False, compact=False)}
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+""" + tail(1440, 900)
+pathlib.Path('Archived.dc.html').write_text(desktop_archived())
+
 # ---- Phone: transcript + composer, @-autocomplete open ----
-PHONE_MSGS = MSGS[2:]
+PHONE_MSGS = MSGS[3:]
 phone = head() + f"""
 <div class="app {{{{schemeClass}}}}" style="width: 390px; min-height: 844px; display: flex; flex-direction: column;">
 
@@ -473,7 +597,7 @@ phone_rooms = head() + f"""
     <div style="flex: 1;"></div>
   </div>
   <div class="stack" style="flex: 1; min-height: 0; padding: 9.6px 11.2px 0; opacity: 0.5; background: var(--bg1);">
-{transcript(MSGS[3:], edge=False)}
+{transcript(MSGS[4:], edge=False)}
   </div>
 
   <!-- Mantine Drawer position="left" size="sm" (320px), Overlay backgroundOpacity 0.4 -->
@@ -634,6 +758,7 @@ canvas = {
     {"file": "Main.dc.html", "x": 0, "y": 0, "w": 1440, "h": 900, "title": "Chat — desktop"},
     {"file": "DaemonDown.dc.html", "x": 0, "y": 1020, "w": 1440, "h": 900, "title": "Chat — daemon down"},
     {"file": "DirectMessage.dc.html", "x": 0, "y": 2040, "w": 1440, "h": 900, "title": "A DM — with you in it"},
+    {"file": "Archived.dc.html", "x": 0, "y": 3060, "w": 1440, "h": 900, "title": "An archived room"},
     {"file": "Phone.dc.html", "x": 1560, "y": 0, "w": 390, "h": 844, "title": "Phone — answering @matt"},
     {"file": "PhoneRooms.dc.html", "x": 2030, "y": 0, "w": 390, "h": 844, "title": "Phone — rooms and buddies"},
     {"file": "Roster.dc.html", "x": 2500, "y": 0, "w": 420, "h": 900, "title": "The buddy list"},
@@ -643,9 +768,9 @@ canvas = {
     {"id": "presence-ux", "x": 2500, "y": 1020, "w": 420, "text": "AIM, deliberately.\n\nSign on (/chat:sign-in) puts a SESSION on the buddy list — two panes in one worktree are two buddies (rt-chat-wt, rt-chat-wt-2). Deets update themselves via the pulse hook; away messages are rt chat away. Sign off keeps your rooms.\n\nlistening = tail armed and touching (a DM is a notification). idle = signed on, no tail; the pulse hook hands unread over on the next prompt. deaf = the tail died. offline (24h) = greyed, like AIM.\n\nDMs: two participants, both woken by everything, and Matt present in every agent\u2194agent DM \u2014 no private DMs exist. The picker offers DM-instead for buddies not in the room."},
     {"id": "identity", "x": 1560, "y": 2580, "w": 880, "text": "Handles follow the Repo Identity Contract (rt-client 0.4.0).\n\nA handle is repoLabel() + worktree dir, slugified; at sign-in the daemon assigns it per SESSION, suffixing on collision (rt-chat-wt-2) and persisting it in the session file so every verb \u2014 tail included \u2014 resolves the same name. A serialized identity (remote:gitlab.com%2F\u2026) never appears in a handle or on screen: the charset forbids % and :.\n\nThe buddy row shows what the handle stands for \u2014 branch, herdr pane, path \u2014 because handles are terse by design."},
     {"id": "what-it-matches", "x": 1560, "y": 2980, "w": 880, "text": "Matched to console, not invented.\n\nPalette, grid and JetBrains Mono: src/app/styles/tokyo-theme.css. Font sizes (xs 10.56 / sm 11.2 / md 12.16), spacing, 6px radii: src/ui/design-system/app-theme.ts. Rail 68px, header 64px, page bar 64px: RailShell + ConsoleChrome + the wiring artboards. Row anatomy, 28px action icons, badge wash: RunRow.tsx. Alert = Mantine light variant, color bad. Drawer = position left, size sm, overlay 0.4.\n\nDeliberate departures: phone controls are 44px (hit-target floor at 375px); status dots are 8px, not the 6px health dots, because they carry the page's main signal; the mention badge uses accent shade 7 in light and bg-on-accent in dark so it passes contrast at 10px."},
-    {"id": "laws", "x": 0, "y": 3060, "w": 1440, "text": "Laws this surface holds.\n\n1. Never render presence while the daemon is unreachable. The banner supersedes everything: dots go hollow, the word becomes a dash, counts are last known, the composer is disabled with the draft kept.\n2. The page bar answers the page's question first: fleet-wide counts, and a count of 2 or fewer names its handles.\n3. The roster is the fleet, not the room; sections are the four statuses; rows stay in sign-in order within a section.\n4. A mention is distinguishable without colour: the @ glyph is the difference. A DM is a pair with \u2194, never a hashed id on screen.\n5. Status lives on the buddy, not on the message. Wide content scrolls inside its own block; prose wraps anywhere.\n6. Times are local. Phone inputs are 16px; controls 44px; return adds a line, the button sends.\n7. Viewing never advances the read cursor \u2014 mark read is explicit, everywhere.\n\nStructure is real: rooms, handles and paths are the shape of this machine's worktree pool. The conversations are illustrative."}
+    {"id": "laws", "x": 0, "y": 4080, "w": 1440, "text": "Laws this surface holds.\n\n1. Never render presence while the daemon is unreachable. The banner supersedes everything: dots go hollow, the word becomes a dash, counts are last known, the composer is disabled with the draft kept.\n2. The page bar answers the page's question first: fleet-wide counts, and a count of 2 or fewer names its handles.\n3. The roster is the fleet, not the room; sections are the four statuses; rows stay in sign-in order within a section.\n4. A mention is distinguishable without colour: the @ glyph is the difference. A DM is a pair with \u2194, never a hashed id on screen.\n5. Status lives on the buddy, not on the message. Wide content scrolls inside its own block; prose wraps anywhere.\n6. Times are local. Phone inputs are 16px; controls 44px; return adds a line, the button sends.\n7. Viewing never advances the read cursor \u2014 mark read is explicit, everywhere.\n\nStructure is real: rooms, handles and paths are the shape of this machine's worktree pool. The conversations are illustrative."}
   ],
   "launch": {"view": "canvas"}
 }
 pathlib.Path('canvas.json').write_text(json.dumps(canvas, indent=2))
-print("built 5 artboards + canvas.json")
+print("built 8 artboards + canvas.json")

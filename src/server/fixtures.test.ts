@@ -64,7 +64,9 @@ test('the roster exercises the states that break layout', () => {
 });
 
 test('DM rooms carry participants and a hashed name that is never shown', () => {
-  const dms = fixtureRooms().filter(r => r.kind === 'dm');
+  const dms = fixtureRooms().filter(
+    r => r.kind === 'dm' && r.archivedAt === undefined
+  );
   expect(dms).toHaveLength(2);
   for (const dm of dms) {
     expect(dm.room).toMatch(/^dm-[0-9a-f]{12}$/);
@@ -88,4 +90,22 @@ test('the build transcript carries the wide code block on purpose', () => {
   expect(withCode!.body).toContain('loadAndEvaluateModule');
   // And a mention of the human, so the .at.me treatment has something to hit.
   expect(msgs.some(m => m.mentions.includes('matt'))).toBe(true);
+});
+
+test('fixtures carry an archived channel, an archived DM, and a long code post', () => {
+  const rooms = fixtureRooms();
+  const archived = rooms.filter(r => r.archivedAt !== undefined);
+  expect(archived.map(r => r.room)).toEqual(['retro-0819', 'dm-7b2e9c4d1a0f']);
+  expect(
+    fixtureMessages('build').at(-1)?.body.split('\n').length
+  ).toBeGreaterThan(60);
+  const retro = fixtureMessages('retro-0819');
+  expect(retro).toHaveLength(4);
+  expect(new Date(retro[0]!.postedAt).getDate()).not.toBe(
+    new Date(retro[3]!.postedAt).getDate()
+  );
+  expect(fixtureMembers('retro-0819').map(m => m.handle)).toEqual([
+    'deck-main',
+    'gitq-main',
+  ]);
 });

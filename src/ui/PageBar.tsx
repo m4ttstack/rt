@@ -1,7 +1,16 @@
-import { Box, Button, Group, Select, Text } from '@mantine/core';
+import {
+  ActionIcon,
+  Box,
+  Button,
+  Group,
+  Menu,
+  Select,
+  Text,
+} from '@mantine/core';
 import type { BuddyStatus, RoomSummary } from '@mattstack/rt-client';
 
 import { Icon } from '@ui/icons';
+import { modals } from '@ui/modals';
 import { STATUS_WORD } from '@ui/statusDetail';
 import { AgentName } from './AgentName';
 
@@ -70,6 +79,12 @@ export interface PageBarProps {
   /** The rail's sort, the artboard's `join order` select. */
   order?: RoomOrder;
   onOrderChange?: (order: RoomOrder) => void;
+  /** The room's full membership for the archive confirm; defaults to the
+      buddies' handles, which omit offline members. */
+  memberHandles?: string[];
+  /** Archive (true) or reopen (false) the room; the bar confirms an archive
+      itself, naming who loses the room from their rail. */
+  onArchive?: (room: string, archived: boolean) => void;
 }
 
 function Dot({ color, testId }: { color: string; testId: string }) {
@@ -120,6 +135,95 @@ function markReadLabel(room: RoomSummary): string {
     : `Mark #${room.room} read`;
 }
 
+export function memberList(handles: string[]): string {
+  if (handles.length === 0) return '';
+  if (handles.length === 1) return handles[0]!;
+  if (handles.length <= 4) {
+    return `${handles.slice(0, -1).join(', ')} and ${handles[handles.length - 1]}`;
+  }
+  return `${handles.slice(0, 3).join(', ')} and ${handles.length - 3} more`;
+}
+
+function archiveLabel(room: RoomSummary): string {
+  return room.kind === 'dm'
+    ? 'Archive this conversation…'
+    : `Archive #${room.room}…`;
+}
+
+function archiveTitle(room: RoomSummary): string {
+  return room.kind === 'dm'
+    ? 'Archive this conversation?'
+    : `Archive #${room.room}?`;
+}
+
+/** The ⋯ control and its menu. One component for the desk's page bar and
+    the phone header, so both offer the same two actions. */
+export function RoomMenu({
+  room,
+  memberHandles,
+  humanHandle = 'matt',
+  onArchive,
+  size = 30,
+}: {
+  /** `joined` is the viewer-side flag the rooms route stamps onto a fleet
+      (agent-to-agent) DM the human is not a member of. */
+  room: RoomSummary & { joined?: boolean };
+  /** The room's current members; the human is filtered out of the confirm
+      text since it already says "for you". */
+  memberHandles: string[];
+  humanHandle?: string;
+  onArchive?: (room: string, archived: boolean) => void;
+  size?: number;
+}) {
+  const archived = room.archivedAt !== undefined;
+  // A fleet DM archive would succeed server-side with no membership row for
+  // the human, dropping the room from his listing and stranding the page.
+  // His OWN DMs carry `joined` truthy and stay archivable.
+  const fleetDm = room.kind === 'dm' && room.joined === false;
+  const others = memberList(memberHandles.filter(h => h !== humanHandle));
+  const confirmArchive = () =>
+    modals.confirm({
+      title: archiveTitle(room),
+      message: `It leaves the rail for you${others ? ` and for ${others}` : ''}. Everyone keeps their place in it, and any new post reopens it.`,
+      labels: { confirm: 'Archive', cancel: 'Keep' },
+      onConfirm: () => onArchive?.(room.room, true),
+    });
+  // The menu's only actions are Archive (hidden for a fleet DM) and Reopen
+  // (archived rooms only), so an OPEN fleet DM would leave it empty. Render
+  // no trigger at all rather than a button that opens an empty dropdown.
+  if (!archived && fleetDm) return null;
+  return (
+    <Menu position="bottom-end" withinPortal radius="md" shadow="md">
+      <Menu.Target>
+        <ActionIcon
+          variant="default"
+          size={size}
+          radius="md"
+          aria-label="Room actions"
+          data-testid="room-menu"
+          styles={{ root: CONTROL_SURFACE }}
+        >
+          <Icon name="moreHorizontal" size={16} />
+        </ActionIcon>
+      </Menu.Target>
+      <Menu.Dropdown data-testid="room-menu-dropdown">
+        {archived ? (
+          <Menu.Item
+            data-testid="room-menu-reopen"
+            onClick={() => onArchive?.(room.room, false)}
+          >
+            Reopen
+          </Menu.Item>
+        ) : (
+          <Menu.Item data-testid="room-menu-archive" onClick={confirmArchive}>
+            {archiveLabel(room)}
+          </Menu.Item>
+        )}
+      </Menu.Dropdown>
+    </Menu>
+  );
+}
+
 export function PageBar({
   room,
   buddies,
@@ -127,6 +231,8 @@ export function PageBar({
   onMarkRead,
   order = 'join',
   onOrderChange,
+  memberHandles,
+  onArchive,
 }: PageBarProps) {
   const handleMarkRead = () => {
     // Refresh only after the POST resolves: the count clears server-side
@@ -170,7 +276,7 @@ export function PageBar({
 
   const controls = (
     <>
-      {room.unread > 0 && (
+      {room.unread > 0 && room.archivedAt === undefined && (
         <Button
           variant="default"
           size="xs"
@@ -211,6 +317,13 @@ export function PageBar({
           styles={{ input: CONTROL_SURFACE }}
         />
       )}
+      <Box ml={7.2} style={{ flex: 'none' }}>
+        <RoomMenu
+          room={room}
+          memberHandles={memberHandles ?? buddies.map(b => b.handle)}
+          onArchive={onArchive}
+        />
+      </Box>
     </>
   );
 
@@ -316,9 +429,15 @@ export function PageBar({
             <NamesSuffix handles={deaf.map(b => b.handle)} />
           </Box>
         )}
-        <Box component="span" style={CHIP_BASE} data-testid="chip-wakes">
-          wakes: {wakeMode}
-        </Box>
+        {room.archivedAt !== undefined ? (
+          <Box component="span" style={CHIP_BASE} data-testid="chip-archived">
+            archived
+          </Box>
+        ) : (
+          <Box component="span" style={CHIP_BASE} data-testid="chip-wakes">
+            wakes: {wakeMode}
+          </Box>
+        )}
       </Group>
       <Group gap={0} ml="auto" wrap="nowrap">
         {controls}

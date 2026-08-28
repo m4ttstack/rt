@@ -9,6 +9,7 @@ import { useInterval } from 'react-interval-hook';
 import { useLocation } from 'wouter';
 import { navigate } from 'wouter/use-browser-location';
 
+import { ArchivedBar } from '@ui/ArchivedBar';
 import { BuddiesProvider } from '@ui/buddies-context';
 import { Composer, type ComposerHandle } from '@ui/Composer';
 import {
@@ -22,9 +23,10 @@ import {
   UnstyledButton,
 } from '@ui/core';
 import { DaemonBanner } from '@ui/DaemonBanner';
-import { useColorScheme, useIsMobile } from '@ui/hooks';
-import { Icon } from '@ui/icons';
-import { PageBar, type RoomOrder } from '@ui/PageBar';
+import { useColorScheme, useIsMobile, useLocalStorage } from '@ui/hooks';
+import { AnimatedChevron, Icon } from '@ui/icons';
+import { notifications } from '@ui/notifications';
+import { PageBar, RoomMenu, type RoomOrder } from '@ui/PageBar';
 import { RoomRail } from '@ui/RoomRail';
 import { Roster, type RosterBuddy } from '@ui/Roster';
 import { Transcript } from '@ui/Transcript';
@@ -169,23 +171,31 @@ function useBuddies(seed: Buddy[] | undefined): Buddy[] {
 /**
  * Fetches the room list on mount (skipped when `seed` replaces it) and
  * exposes `refetchRooms` for after a write that can introduce a room the
- * mount-time fetch never saw -- opening a DM through the composer's
- * DM-instead path opens or reuses a room this list has no reason to have
- * fetched yet.
+ * mount-time fetch never saw -- `openDm` opens or reuses a room this list
+ * has no reason to have fetched yet.
  */
 function useRooms(seed: RoomSummary[] | undefined) {
   const [rooms, setRooms] = useState<RoomSummary[]>(seed ?? []);
 
-  const refetchRooms = useCallback(() => {
-    fetch('/api/chat/rooms')
-      .then(res => res.json())
-      .then((data: { rooms?: RoomSummary[] }) => setRooms(data.rooms ?? []))
-      .catch(() => {});
+  // Resolves to the fetched list so a caller can act on what came back --
+  // `setArchived` needs to know whether the room it just archived is still
+  // listed. A failed fetch resolves to [] with `rooms` left untouched, which
+  // reads as "nothing to navigate to", never as "the room vanished".
+  const refetchRooms = useCallback(async (): Promise<RoomSummary[]> => {
+    try {
+      const res = await fetch('/api/chat/rooms');
+      const data = (await res.json()) as { rooms?: RoomSummary[] };
+      const next = data.rooms ?? [];
+      setRooms(next);
+      return next;
+    } catch {
+      return [];
+    }
   }, []);
 
   useEffect(() => {
     if (seed !== undefined) return;
-    refetchRooms();
+    void refetchRooms();
     // Mount-only, same reasoning as useBuddies.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -366,11 +376,15 @@ function PhoneHeader({
   buddies,
   reachable,
   onOpenDrawer,
+  memberHandles,
+  onArchive,
 }: {
   room: RoomSummary | undefined;
   buddies: Buddy[];
   reachable: boolean;
   onOpenDrawer: () => void;
+  memberHandles: string[];
+  onArchive: (room: string, archived: boolean) => void;
 }) {
   const live = buddies.filter(b => b.status === 'live').length;
   const idle = buddies.filter(b => b.status === 'idle').length;
@@ -441,6 +455,14 @@ function PhoneHeader({
           </Text>
         )}
       </UnstyledButton>
+      {room && (
+        <RoomMenu
+          room={room}
+          memberHandles={memberHandles}
+          onArchive={onArchive}
+          size={PHONE_TAP}
+        />
+      )}
     </Group>
   );
 }
@@ -450,10 +472,12 @@ function PhoneHeader({
 function PhoneRoomRow({
   room,
   active,
+  archived,
   onSelect,
 }: {
   room: RoomSummary;
   active: boolean;
+  archived?: boolean;
   onSelect: () => void;
 }) {
   const isDm = room.kind === 'dm';
@@ -463,6 +487,7 @@ function PhoneRoomRow({
   return (
     <UnstyledButton
       data-testid={`phone-room-${room.room}`}
+      data-archived={archived ? 'true' : undefined}
       onClick={onSelect}
       style={{
         display: 'flex',
@@ -477,6 +502,7 @@ function PhoneRoomRow({
           ? 'color-mix(in srgb, var(--mantine-color-accent-text) var(--tk-wash), transparent)'
           : undefined,
         color: active ? accentText : undefined,
+        opacity: archived ? 0.6 : undefined,
       }}
     >
       {!isDm && (
@@ -494,7 +520,7 @@ function PhoneRoomRow({
       >
         {title}
       </Text>
-      {room.mentions > 0 && (
+      {!archived && room.mentions > 0 && (
         <Box
           component="span"
           aria-label={`${room.mentions} mention`}
@@ -516,7 +542,7 @@ function PhoneRoomRow({
           @{room.mentions}
         </Box>
       )}
-      {room.unread > 0 && (
+      {!archived && room.unread > 0 && (
         <Box
           component="span"
           aria-label={`${room.unread} unread`}
@@ -545,7 +571,7 @@ function PhoneRoomRow({
  * The rooms/roster Drawer (`PhoneRooms.dc.html`): rooms with the same
  * badges, the direct section, then buddies rendered by `Roster` with
  * `compact`. Tapping a buddy inserts `@handle` when in the room, otherwise
- * starts a DM, and closes -- same as `Roster`'s desktop-panel `onPick`.
+ * opens the DM room, and closes -- same as `Roster`'s desktop-panel `onPick`.
  */
 function PhoneDrawer({
   opened,
@@ -556,7 +582,8 @@ function PhoneDrawer({
   buddies,
   roomMembers,
   daemonReachable,
-  composerRef,
+  onMention,
+  onOpenDm,
 }: {
   opened: boolean;
   onClose: () => void;
@@ -566,12 +593,19 @@ function PhoneDrawer({
   buddies: Buddy[];
   roomMembers: string[];
   daemonReachable: boolean;
-  composerRef: RefObject<ComposerHandle | null>;
+  onMention: (handle: string) => void;
+  onOpenDm: (handle: string) => void;
 }) {
   const { computedColorScheme, setColorScheme } = useColorScheme();
   const isDark = computedColorScheme === 'dark';
-  const channelRooms = rooms.filter(r => r.kind !== 'dm');
-  const directRooms = rooms.filter(r => r.kind === 'dm');
+  const openRooms = rooms.filter(r => r.archivedAt === undefined);
+  const channelRooms = openRooms.filter(r => r.kind !== 'dm');
+  const directRooms = openRooms.filter(r => r.kind === 'dm');
+  const archivedRooms = rooms.filter(r => r.archivedAt !== undefined);
+  const [archivedCollapsed, setArchivedCollapsed] = useLocalStorage<boolean>({
+    key: 'chat.rail.archived',
+    defaultValue: true,
+  });
 
   function selectRoom(room: string) {
     onSelectRoom(room);
@@ -677,6 +711,55 @@ function PhoneDrawer({
           </>
         )}
 
+        {archivedRooms.length > 0 && (
+          <>
+            <UnstyledButton
+              data-testid="phone-archived-toggle"
+              aria-expanded={!archivedCollapsed}
+              onClick={() => setArchivedCollapsed(!archivedCollapsed)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 6,
+                width: '100%',
+                padding: '10px var(--mantine-spacing-md) 4px',
+                borderBottom: '1px solid var(--tk-border-soft)',
+                flex: 'none',
+              }}
+            >
+              <Text
+                fw={700}
+                style={{
+                  fontSize: '9.5px',
+                  color: PHONE_MUTED,
+                  letterSpacing: '0.06em',
+                }}
+              >
+                ARCHIVED
+              </Text>
+              <Text size="xs" style={{ color: PHONE_MUTED }}>
+                {archivedRooms.length}
+              </Text>
+              <Box style={{ flex: 1 }} />
+              <AnimatedChevron
+                opened={!archivedCollapsed}
+                size={12}
+                color={PHONE_MUTED}
+              />
+            </UnstyledButton>
+            {!archivedCollapsed &&
+              archivedRooms.map(room => (
+                <PhoneRoomRow
+                  key={room.room}
+                  room={room}
+                  archived
+                  active={room.room === activeRoom}
+                  onSelect={() => selectRoom(room.room)}
+                />
+              ))}
+          </>
+        )}
+
         <Group
           justify="space-between"
           wrap="nowrap"
@@ -708,8 +791,8 @@ function PhoneDrawer({
             daemonReachable={daemonReachable}
             compact
             onPick={(handle, { inRoom }) => {
-              if (inRoom) composerRef.current?.insertMention(handle);
-              else composerRef.current?.startDm(handle);
+              if (inRoom) onMention(handle);
+              else onOpenDm(handle);
               onClose();
             }}
           />
@@ -754,7 +837,8 @@ function PhoneChat({
   anchor,
   roomMembers,
   composerRef,
-  onNavigate,
+  onOpenDm,
+  onArchive,
 }: {
   daemon: ReturnType<typeof useDaemonHealth>;
   buddies: Buddy[];
@@ -766,7 +850,8 @@ function PhoneChat({
   anchor: string | undefined;
   roomMembers: string[];
   composerRef: RefObject<ComposerHandle | null>;
-  onNavigate: (room: string) => void;
+  onOpenDm: (handle: string) => void;
+  onArchive: (room: string, archived: boolean) => void;
 }) {
   const [drawerOpen, setDrawerOpen] = useState(false);
 
@@ -785,6 +870,8 @@ function PhoneChat({
         buddies={buddies}
         reachable={daemon.reachable}
         onOpenDrawer={() => setDrawerOpen(true)}
+        memberHandles={roomMembers}
+        onArchive={onArchive}
       />
 
       <DaemonBanner
@@ -814,21 +901,25 @@ function PhoneChat({
         </Box>
       )}
 
-      {activeRoom && (
-        <Composer
-          ref={composerRef}
-          phone
-          room={activeRoom}
-          roomMembers={roomMembers}
-          buddies={buddies}
-          isDm={activeRoomSummary?.kind === 'dm'}
-          daemonReachable={daemon.reachable}
-          onNavigate={room => {
-            onNavigate(room);
-            setDrawerOpen(false);
-          }}
-        />
-      )}
+      {activeRoom &&
+        (activeRoomSummary?.archivedAt !== undefined ? (
+          <ArchivedBar
+            phone
+            archivedAt={activeRoomSummary.archivedAt}
+            onReopen={() => onArchive(activeRoom, false)}
+          />
+        ) : (
+          <Composer
+            ref={composerRef}
+            phone
+            room={activeRoom}
+            roomMembers={roomMembers}
+            buddies={buddies}
+            isDm={activeRoomSummary?.kind === 'dm'}
+            daemonReachable={daemon.reachable}
+            onOpenDm={onOpenDm}
+          />
+        ))}
 
       <PhoneDrawer
         opened={drawerOpen}
@@ -839,7 +930,11 @@ function PhoneChat({
         buddies={buddies}
         roomMembers={roomMembers}
         daemonReachable={daemon.reachable}
-        composerRef={composerRef}
+        onMention={handle => composerRef.current?.insertMention(handle)}
+        onOpenDm={handle => {
+          onOpenDm(handle);
+          setDrawerOpen(false);
+        }}
       />
     </Box>
   );
@@ -862,6 +957,11 @@ export function App({ initialState }: { initialState?: AppInitialState } = {}) {
   const daemon = useDaemonHealth(initialState?.daemonReachable);
   const buddies = useBuddies(initialState?.buddies);
   const { rooms, refetchRooms } = useRooms(initialState?.rooms);
+  // A post clears a room's archivedAt server-side (a post revives it) while
+  // the transcript already streams those posts live; without a poll an
+  // archived room would keep its read-only ArchivedBar over the new messages
+  // until a manual refresh. Matches the buddies/daemon 5s cadence.
+  useInterval(refetchRooms, 5000);
   const routeRoom = route.name === 'room' ? route.room : undefined;
   const [activeRoom, setActiveRoom] = useState<string | undefined>(routeRoom);
   const chatRoute = route.name === 'home' || route.name === 'room';
@@ -877,7 +977,12 @@ export function App({ initialState }: { initialState?: AppInitialState } = {}) {
     if (route.name === 'room') {
       if (route.room !== activeRoom) setActiveRoom(route.room);
     } else if (route.name === 'home' && rooms.length > 0) {
-      const first = rooms[0]!.room;
+      // The listing now includes archived rooms, alphabetically ordered, so
+      // the first row can be an archived (read-only) room. Land on the first
+      // OPEN room, falling back to the first row only if every room is
+      // archived.
+      const first = (rooms.find(r => r.archivedAt === undefined) ?? rooms[0]!)
+        .room;
       if (activeRoom !== first) setActiveRoom(first);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -889,12 +994,73 @@ export function App({ initialState }: { initialState?: AppInitialState } = {}) {
     if (window.location.pathname !== to) navigate(to);
   }
 
+  const openDm = useCallback(
+    async (handle: string) => {
+      try {
+        const res = await fetch('/api/chat/dm/open', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ to: handle }),
+        });
+        if (!res.ok) throw new Error('dm open failed');
+        const data = (await res.json()) as { room: string };
+        void refetchRooms();
+        setActiveRoom(data.room);
+        const to = `/r/${encodeURIComponent(data.room)}`;
+        if (window.location.pathname !== to) navigate(to);
+        composerRef.current?.focus();
+      } catch {
+        notifications.error("Couldn't open the DM");
+      }
+    },
+    [refetchRooms]
+  );
+
+  const setArchived = useCallback(
+    async (room: string, archived: boolean) => {
+      try {
+        const res = await fetch('/api/chat/archive', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ room, archived }),
+        });
+        if (!res.ok) throw new Error('archive failed');
+      } catch {
+        notifications.error(
+          archived ? "Couldn't archive the room" : "Couldn't reopen the room"
+        );
+        return;
+      }
+      const next = await refetchRooms();
+      // Archiving a fleet (agent-to-agent) DM leaves the human no membership
+      // row, so it drops out of his listing entirely. Staying on it would
+      // fall the footer through to the composer for a room the rail no longer
+      // shows, with no Reopen; navigate to the same open-first landing the
+      // home route uses. A room still listed (a normal archive, or a reopen)
+      // keeps the page where it is.
+      if (
+        archived &&
+        room === activeRoom &&
+        next.length > 0 &&
+        !next.some(r => r.room === room)
+      ) {
+        const fallback = (
+          next.find(r => r.archivedAt === undefined) ?? next[0]!
+        ).room;
+        setActiveRoom(fallback);
+        const to = `/r/${encodeURIComponent(fallback)}`;
+        if (window.location.pathname !== to) navigate(to);
+      }
+    },
+    [refetchRooms, activeRoom]
+  );
+
   const buddyActions = useMemo(
     () => ({
       mention: (handle: string) => composerRef.current?.insertMention(handle),
-      dm: (handle: string) => composerRef.current?.startDm(handle),
+      dm: (handle: string) => void openDm(handle),
     }),
-    []
+    [openDm]
   );
   const [roomOrder, setRoomOrder] = useState<RoomOrder>('join');
   const orderedRooms =
@@ -910,13 +1076,6 @@ export function App({ initialState }: { initialState?: AppInitialState } = {}) {
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [path]);
-
-  /** The DM-instead path opens or reuses a room this app hasn't fetched --
-      refetch so it lands in the rail's direct section, then switch to it. */
-  function handleComposerNavigate(room: string) {
-    refetchRooms();
-    selectRoom(room);
-  }
 
   if (route.name === 'demo-page-shell') {
     return <PageShellDemoPage />;
@@ -935,7 +1094,8 @@ export function App({ initialState }: { initialState?: AppInitialState } = {}) {
         anchor={anchor}
         roomMembers={roomMembers}
         composerRef={composerRef}
-        onNavigate={handleComposerNavigate}
+        onOpenDm={openDm}
+        onArchive={setArchived}
       />
     );
   }
@@ -981,7 +1141,9 @@ export function App({ initialState }: { initialState?: AppInitialState } = {}) {
                     reachable={daemon.reachable}
                     order={roomOrder}
                     onOrderChange={setRoomOrder}
-                    onMarkRead={() => refetchRooms()}
+                    onMarkRead={() => void refetchRooms()}
+                    memberHandles={roomMembers}
+                    onArchive={setArchived}
                   />
                 </PageShell.Header>
               )}
@@ -1025,15 +1187,24 @@ export function App({ initialState }: { initialState?: AppInitialState } = {}) {
                         anchor={anchor}
                         unreadCount={activeRoomSummary?.unread}
                         footer={
-                          <Composer
-                            ref={composerRef}
-                            room={activeRoom}
-                            roomMembers={roomMembers}
-                            buddies={buddies}
-                            isDm={activeRoomSummary?.kind === 'dm'}
-                            daemonReachable={daemon.reachable}
-                            onNavigate={handleComposerNavigate}
-                          />
+                          activeRoomSummary?.archivedAt !== undefined ? (
+                            <ArchivedBar
+                              archivedAt={activeRoomSummary.archivedAt}
+                              onReopen={() =>
+                                void setArchived(activeRoom, false)
+                              }
+                            />
+                          ) : (
+                            <Composer
+                              ref={composerRef}
+                              room={activeRoom}
+                              roomMembers={roomMembers}
+                              buddies={buddies}
+                              isDm={activeRoomSummary?.kind === 'dm'}
+                              daemonReachable={daemon.reachable}
+                              onOpenDm={openDm}
+                            />
+                          )
                         }
                       />
                     )
@@ -1047,7 +1218,7 @@ export function App({ initialState }: { initialState?: AppInitialState } = {}) {
                       daemonReachable={daemon.reachable}
                       onPick={(handle, { inRoom }) => {
                         if (inRoom) composerRef.current?.insertMention(handle);
-                        else composerRef.current?.startDm(handle);
+                        else void openDm(handle);
                       }}
                     />
                   )}

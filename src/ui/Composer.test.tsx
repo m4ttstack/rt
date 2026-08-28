@@ -28,20 +28,17 @@ test('@ autocompletes from the roster, offers DM instead for a buddy outside the
   expect(
     screen.getByText(/won't see this until its tail restarts/)
   ).toBeInTheDocument();
-  expect(screen.getByText(/not in #build — DM instead/)).toBeInTheDocument();
+  expect(screen.getByText(/not in #build, DM instead/)).toBeInTheDocument();
   expect(screen.getByText(/@here/)).toHaveTextContent(/wakes 2 agents/);
 });
 
-test("choosing DM instead posts through /api/chat/dm and navigates to the pair's room", async () => {
-  fetchMock.mockResolvedValueOnce(
-    new Response(JSON.stringify({ room: 'dm-1a2b3c4d5e6f', id: 3 }))
-  );
-  const onNavigate = vi.fn();
+test('choosing DM instead hands the handle to onOpenDm, drops the @ token and keeps the draft', async () => {
+  const onOpenDm = vi.fn();
   renderWithProviders(
     <Composer
       room="build"
       roomMembers={[]}
-      onNavigate={onNavigate}
+      onOpenDm={onOpenDm}
       buddies={[{ handle: 'board-fix-auth', status: 'idle' }]}
     />
   );
@@ -50,12 +47,12 @@ test("choosing DM instead posts through /api/chat/dm and navigates to the pair's
     'can you take the flaky one? @'
   );
   await userEvent.click(await screen.findByText('board-fix-auth'));
-  await userEvent.click(screen.getByRole('button', { name: /send/i }));
-  expect(fetchMock).toHaveBeenCalledWith(
-    '/api/chat/dm',
-    expect.objectContaining({ method: 'POST' })
+  expect(onOpenDm).toHaveBeenCalledWith('board-fix-auth');
+  expect(screen.getByRole('textbox')).toHaveValue(
+    'can you take the flaky one? '
   );
-  expect(onNavigate).toHaveBeenCalledWith('dm-1a2b3c4d5e6f');
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(screen.queryByText(/direct message to/)).toBeNull();
 });
 
 test('the composer is disabled, draft kept, while the daemon is unreachable', async () => {

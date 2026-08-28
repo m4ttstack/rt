@@ -1,7 +1,8 @@
 import { Box, Group, Stack, Text, UnstyledButton } from '@mantine/core';
 import type { RoomSummary } from '@mattstack/rt-client';
 
-import { Icon } from '@ui/icons';
+import { useLocalStorage } from '@ui/hooks';
+import { AnimatedChevron, Icon } from '@ui/icons';
 import { AgentName } from './AgentName';
 
 /**
@@ -120,10 +121,12 @@ type RailRoom = RoomSummary & { joined?: boolean };
 function RoomRow({
   room,
   active,
+  archived,
   onSelect,
 }: {
   room: RailRoom;
   active: boolean;
+  archived?: boolean;
   onSelect?: () => void;
 }) {
   const isDm = room.kind === 'dm';
@@ -132,6 +135,7 @@ function RoomRow({
     <UnstyledButton
       data-testid={`room-row-${room.room}`}
       data-active={active ? 'true' : undefined}
+      data-archived={archived ? 'true' : undefined}
       onClick={onSelect}
       style={{
         display: 'flex',
@@ -145,6 +149,7 @@ function RoomRow({
         cursor: 'pointer',
         background: active ? ACCENT_WASH : undefined,
         color: active ? ACCENT_TEXT : undefined,
+        opacity: archived ? 0.6 : undefined,
       }}
     >
       {/* Channels get the hash; a DM is named by its pair, and the artboard
@@ -168,8 +173,8 @@ function RoomRow({
           {room.room}
         </Text>
       )}
-      {room.mentions > 0 && <MentionBadge count={room.mentions} />}
-      {room.unread > 0 && <UnreadBadge count={room.unread} />}
+      {!archived && room.mentions > 0 && <MentionBadge count={room.mentions} />}
+      {!archived && room.unread > 0 && <UnreadBadge count={room.unread} />}
     </UnstyledButton>
   );
 }
@@ -177,8 +182,10 @@ function RoomRow({
 /**
  * The 232px rooms rail: a header row (`ROOMS` + count), the plain rooms,
  * then -- only when at least one DM exists -- a `DIRECT` section of `.pair`
- * rows and a footnote. `RoomSummary` (the read routes' own shape) is used
- * directly as the room prop type, so no separate DTO drifts from it.
+ * rows and a footnote, then -- only when at least one room is archived -- a
+ * collapsed `ARCHIVED` section whose open state persists across sessions.
+ * `RoomSummary` (the read routes' own shape) is used directly as the room
+ * prop type, so no separate DTO drifts from it.
  */
 export function RoomRail({
   rooms,
@@ -186,8 +193,14 @@ export function RoomRail({
   onSelectRoom,
   sidebar = false,
 }: RoomRailProps) {
-  const channelRooms = rooms.filter(r => r.kind !== 'dm');
-  const directRooms = rooms.filter(r => r.kind === 'dm');
+  const openRooms = rooms.filter(r => r.archivedAt === undefined);
+  const channelRooms = openRooms.filter(r => r.kind !== 'dm');
+  const directRooms = openRooms.filter(r => r.kind === 'dm');
+  const archivedRooms = rooms.filter(r => r.archivedAt !== undefined);
+  const [archivedCollapsed, setArchivedCollapsed] = useLocalStorage<boolean>({
+    key: 'chat.rail.archived',
+    defaultValue: true,
+  });
 
   return (
     <Stack
@@ -278,6 +291,56 @@ export function RoomRail({
           >
             Every agent↔agent DM is yours to read and post into.
           </Text>
+        </>
+      )}
+
+      {archivedRooms.length > 0 && (
+        <>
+          <UnstyledButton
+            data-testid="archived-toggle"
+            aria-expanded={!archivedCollapsed}
+            onClick={() => setArchivedCollapsed(!archivedCollapsed)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 6,
+              width: '100%',
+              padding: '10px var(--mantine-spacing-md) 4px',
+              borderBottom: `1px solid var(--tk-border-soft)`,
+            }}
+          >
+            <Text
+              component="h3"
+              fw={700}
+              style={{
+                margin: 0,
+                fontSize: '9.5px',
+                color: 'var(--tk-muted-text)',
+                letterSpacing: '0.06em',
+              }}
+            >
+              ARCHIVED
+            </Text>
+            <Text size="xs" style={{ color: 'var(--tk-muted-text)' }}>
+              {archivedRooms.length}
+            </Text>
+            <Box style={{ flex: 1 }} />
+            <AnimatedChevron
+              opened={!archivedCollapsed}
+              size={12}
+              color="var(--tk-muted-text)"
+            />
+          </UnstyledButton>
+          {!archivedCollapsed &&
+            archivedRooms.map(room => (
+              <RoomRow
+                key={room.room}
+                room={room}
+                archived
+                active={room.room === activeRoom}
+                onSelect={() => onSelectRoom?.(room.room)}
+              />
+            ))}
         </>
       )}
     </Stack>

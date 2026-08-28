@@ -82,6 +82,17 @@
     .code { display: block; background: var(--bg1); border: 1px solid var(--border); border-radius: 4px; padding: 7.2px 9.6px; font-size: 11.2px; line-height: 1.5; white-space: pre; overflow-x: auto; margin-top: 4.8px; }
     .divider { display: flex; align-items: center; gap: 7.2px; color: var(--accent); font-size: 10.56px; font-weight: 600; padding: 4.8px 0; }
     .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: color-mix(in srgb, var(--accent) 45%, transparent); }
+    .day { display: flex; align-items: center; gap: 7.2px; color: var(--muted-text); font-size: 10.56px; font-weight: 600; padding: 4.8px 0; }
+    .day::before, .day::after { content: ''; flex: 1; height: 1px; background: var(--border-soft); }
+    .pill { position: absolute; right: 30px; bottom: 30px; display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 10px; border-radius: 13px; font-size: 10.56px; font-weight: 600; color: var(--accent); background: color-mix(in srgb, var(--accent) var(--wash), var(--bg3)); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); box-shadow: 0 2px 8px rgba(0,0,0,0.18); }
+    .codewrap { position: relative; }
+    .copy { position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; background: var(--bg1); border: 1px solid var(--border); color: var(--muted-text); }
+    .fold { position: relative; max-height: 320px; overflow: hidden; }
+    .more { margin-top: 4px; font-size: 10.56px; font-weight: 600; color: var(--accent); background: transparent; border: 0; padding: 0; cursor: pointer; }
+    .menu { width: 30px; height: 30px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; background: var(--bg1); border: 1px solid var(--border); color: var(--muted-text); }
+    .room.archived { opacity: 0.6; }
+    .sect.toggle { cursor: pointer; }
+    .archived-bar { display: flex; align-items: center; justify-content: space-between; height: 44px; padding: 0 9.6px; margin-top: 4.8px; border-top: 1px solid var(--border-soft); }
     .edge { text-align: center; padding: 6px 0 4px; }
     .member { display: flex; align-items: flex-start; gap: 7.2px; padding: 7.2px 0; min-width: 0; cursor: pointer; }
     .member + .member { border-top: 1px solid var(--border-soft); }
@@ -143,6 +154,8 @@
         <div style="flex: 1;"></div>
         <span class="muted"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span>
       </div>
+      <div style="width: 7.2px;"></div>
+      <button class="menu" aria-label="Room actions"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg></button>
     </div>
 
     <!-- PageShell's compound layout: rooms in the sidebar, the page bar as its
@@ -164,6 +177,7 @@
         <div class="room"><span class="pair" style="flex: 1;"><span class="truncate sm">deck-main</span><span class="arrows">↔</span><span class="truncate sm">rt-chat-wt</span></span><span class="mention" aria-label="1 mention">@1</span></div>
         <div class="room"><span class="pair" style="flex: 1;"><span class="truncate sm">rt-chat-wt</span><span class="arrows">↔</span><span class="truncate sm" style="font-weight: 600;">matt</span></span><span class="unread" aria-label="1 unread">1</span></div>
         <span class="xs muted" style="padding: 4px 9.6px 0;">Every agent↔agent DM is yours to read and post into.</span>
+        <div class="sect toggle" style="padding: 10px 9.6px 4px;"><span class="lbl">ARCHIVED</span><span class="xs muted">2</span><span class="muted"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span></div>
       </div>
 
         <!-- PageShell.Sidebar's collapse trigger: a 34px default ActionIcon centred on the sidebar edge -->
@@ -183,9 +197,10 @@
         <div style="display: flex; flex: 1; min-height: 0; align-items: stretch;">
 
           <div class="stack" style="flex: 1; min-width: 0; padding: 11.2px 0; background: var(--bg3);">
-            <!-- horizontal insets live inside the scroller so its bar hugs the panel edge -->
-            <div class="stack" style="flex: 1; min-height: 0; overflow: auto; padding: 0 14.4px 0 31.4px;">
+            <!-- horizontal insets live inside the scroller so its bar hugs the panel edge; position: relative anchors the pill's bottom-right -->
+            <div class="stack" style="flex: 1; min-height: 0; overflow: auto; padding: 0 14.4px 0 31.4px; position: relative;">
         <div class="edge xs muted">41 older messages · load on scroll</div>
+        <div class="day" aria-label="Today">Today</div>
         <div class="msg">
           <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
             <div class="row" style="gap: 7.2px;"><span class="name row" style="gap: 0; align-items: baseline;"><span style="font-size: 13.6px; font-weight: 600;">deck-main</span><span class="xs muted truncate"><span style="font-size: 12px; margin: 0 3px;">•</span>deck</span></span><span class="xs muted">21:58</span></div>
@@ -202,9 +217,9 @@
           <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
             <div class="row" style="gap: 7.2px;"><span class="name row" style="gap: 0; align-items: baseline;"><span style="font-size: 13.6px; font-weight: 600;">board-fix-auth</span><span class="xs muted truncate"><span style="font-size: 12px; margin: 0 3px;">•</span>board</span></span><span class="xs muted">22:01</span></div>
             <span class="msg-body">heads up: I moved the shared fixture to <code>test/fixtures/home.ts</code>. Anyone importing the old path gets:</span>
-            <span class="code">TypeError: Cannot find module "../fixtures/home"
+            <span class="codewrap"><span class="code">TypeError: Cannot find module "../fixtures/home"
   at board/src/server/__tests__/auth.test.ts:4:22
-  at loadAndEvaluateModule (bun:internal)</span>
+  at loadAndEvaluateModule (bun:internal)</span><button class="copy" aria-label="Copy code"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button></span>
           </div>
         </div>
         <div class="msg">
@@ -226,6 +241,74 @@
             <span class="msg-body"><span class="at me">@matt</span> PR #67 is green and CodeRabbit is clean — ok to merge, or do you want the rebase first?</span>
           </div>
         </div>
+        <div class="msg">
+          <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
+            <div class="row" style="gap: 7.2px;"><span class="name row" style="gap: 0; align-items: baseline;"><span style="font-size: 13.6px; font-weight: 600;">board-fix-auth</span><span class="xs muted truncate"><span style="font-size: 12px; margin: 0 3px;">•</span>board</span></span><span class="xs muted">22:05</span></div>
+            <span class="msg-body">full jest output for the auth suite, for the record:</span>
+            <div class="fold"><span class="codewrap"><span class="code">  ✓ auth › case 1 (3 ms)
+  ✓ auth › case 2 (4 ms)
+  ✓ auth › case 3 (5 ms)
+  ✓ auth › case 4 (6 ms)
+  ✓ auth › case 5 (7 ms)
+  ✓ auth › case 6 (3 ms)
+  ✕ auth › refresh token rotates (126 ms)
+  ✓ auth › case 8 (5 ms)
+  ✓ auth › case 9 (6 ms)
+  ✓ auth › case 10 (7 ms)
+  ✓ auth › case 11 (3 ms)
+  ✓ auth › case 12 (4 ms)
+  ✓ auth › case 13 (5 ms)
+  ✕ auth › refresh token rotates (133 ms)
+  ✓ auth › case 15 (7 ms)
+  ✓ auth › case 16 (3 ms)
+  ✓ auth › case 17 (4 ms)
+  ✓ auth › case 18 (5 ms)
+  ✓ auth › case 19 (6 ms)
+  ✓ auth › case 20 (7 ms)
+  ✕ auth › refresh token rotates (140 ms)
+  ✓ auth › case 22 (4 ms)
+  ✓ auth › case 23 (5 ms)
+  ✓ auth › case 24 (6 ms)
+  ✓ auth › case 25 (7 ms)
+  ✓ auth › case 26 (3 ms)
+  ✓ auth › case 27 (4 ms)
+  ✕ auth › refresh token rotates (147 ms)
+  ✓ auth › case 29 (6 ms)
+  ✓ auth › case 30 (7 ms)
+  ✓ auth › case 31 (3 ms)
+  ✓ auth › case 32 (4 ms)
+  ✓ auth › case 33 (5 ms)
+  ✓ auth › case 34 (6 ms)
+  ✕ auth › refresh token rotates (154 ms)
+  ✓ auth › case 36 (3 ms)
+  ✓ auth › case 37 (4 ms)
+  ✓ auth › case 38 (5 ms)
+  ✓ auth › case 39 (6 ms)
+  ✓ auth › case 40 (7 ms)
+  ✓ auth › case 41 (3 ms)
+  ✕ auth › refresh token rotates (161 ms)
+  ✓ auth › case 43 (5 ms)
+  ✓ auth › case 44 (6 ms)
+  ✓ auth › case 45 (7 ms)
+  ✓ auth › case 46 (3 ms)
+  ✓ auth › case 47 (4 ms)
+  ✓ auth › case 48 (5 ms)
+  ✕ auth › refresh token rotates (168 ms)
+  ✓ auth › case 50 (7 ms)
+  ✓ auth › case 51 (3 ms)
+  ✓ auth › case 52 (4 ms)
+  ✓ auth › case 53 (5 ms)
+  ✓ auth › case 54 (6 ms)
+  ✓ auth › case 55 (7 ms)
+  ✕ auth › refresh token rotates (175 ms)
+  ✓ auth › case 57 (4 ms)
+  ✓ auth › case 58 (5 ms)
+  ✓ auth › case 59 (6 ms)
+  ✓ auth › case 60 (7 ms)</span><button class="copy" aria-label="Copy code"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button></span></div>
+            <button class="more">show more</button>
+          </div>
+        </div>
+        <button class="pill">↓ 3 new</button>
             </div>
             <div class="stack" style="padding: 0 14.4px 0 31.4px;">
         <div class="row" style="gap: 7.2px; padding-top: 9.6px; border-top: 1px solid var(--border-soft); margin-top: 4.8px;">

@@ -1,9 +1,9 @@
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, expect, test } from 'vitest';
+import { beforeEach, expect, test, vi } from 'vitest';
 
 import { renderWithProviders } from '@ui/storybook/test-utils';
-import { PageBar } from './PageBar';
+import { memberList, PageBar, RoomMenu } from './PageBar';
 import { fetchMock, installFetchMock } from './test-utils';
 
 beforeEach(() => {
@@ -103,4 +103,124 @@ test('a DM room shows the pair as its title and wakes: all regardless of default
   );
   expect(screen.getByText('deck-main ↔ rt-chat-wt')).toBeInTheDocument();
   expect(screen.getByText('wakes: all')).toBeInTheDocument();
+});
+
+test('the ⋯ menu offers Archive with a confirm that names the members, and confirms through onArchive', async () => {
+  const onArchive = vi.fn();
+  renderWithProviders(
+    <PageBar
+      room={{ room: 'build', memberCount: 3, unread: 0, mentions: 0 }}
+      buddies={[
+        { handle: 'fred', status: 'live' },
+        { handle: 'gitq-main', status: 'deaf' },
+      ]}
+      onArchive={onArchive}
+    />
+  );
+  await userEvent.click(screen.getByTestId('room-menu'));
+  await userEvent.click(await screen.findByTestId('room-menu-archive'));
+  expect(await screen.findByText('Archive #build?')).toBeInTheDocument();
+  expect(
+    screen.getByText(/for you and for fred and gitq-main/)
+  ).toBeInTheDocument();
+  expect(onArchive).not.toHaveBeenCalled();
+  await userEvent.click(screen.getByRole('button', { name: 'Archive' }));
+  expect(onArchive).toHaveBeenCalledWith('build', true);
+});
+
+test('an archived room shows the archived chip, hides mark read, and its menu offers Reopen with no confirm', async () => {
+  const onArchive = vi.fn();
+  renderWithProviders(
+    <PageBar
+      room={{
+        room: 'retro',
+        memberCount: 2,
+        unread: 4,
+        mentions: 1,
+        archivedAt: Date.now() - 3 * 86_400_000,
+      }}
+      buddies={[{ handle: 'fred', status: 'live' }]}
+      onArchive={onArchive}
+    />
+  );
+  expect(screen.getByTestId('chip-archived')).toHaveTextContent('archived');
+  expect(screen.queryByTestId('chip-wakes')).toBeNull();
+  expect(screen.queryByTestId('mark-read-button')).toBeNull();
+  await userEvent.click(screen.getByTestId('room-menu'));
+  await userEvent.click(await screen.findByTestId('room-menu-reopen'));
+  expect(onArchive).toHaveBeenCalledWith('retro', false);
+  expect(screen.queryByText(/Archive #retro\?/)).toBeNull();
+});
+
+const fleetDm = {
+  room: 'dm-aaaa1111bbbb',
+  memberCount: 2,
+  unread: 0,
+  mentions: 0,
+  kind: 'dm' as const,
+  participants: { a: 'fred', b: 'gitq-main' },
+};
+
+test('an open fleet DM renders no ⋯ trigger at all (its only action would be a hidden Archive)', () => {
+  const onArchive = vi.fn();
+  renderWithProviders(
+    <RoomMenu
+      room={{ ...fleetDm, joined: false }}
+      memberHandles={['fred', 'gitq-main']}
+      onArchive={onArchive}
+    />
+  );
+  expect(screen.queryByTestId('room-menu')).toBeNull();
+});
+
+test('an open non-fleet room still renders the ⋯ trigger with Archive', async () => {
+  const onArchive = vi.fn();
+  renderWithProviders(
+    <RoomMenu
+      room={{ room: 'build', memberCount: 3, unread: 0, mentions: 0 }}
+      memberHandles={['fred']}
+      onArchive={onArchive}
+    />
+  );
+  await userEvent.click(screen.getByTestId('room-menu'));
+  expect(await screen.findByTestId('room-menu-archive')).toBeInTheDocument();
+});
+
+test('an archived fleet DM still renders the ⋯ trigger with Reopen', async () => {
+  const onArchive = vi.fn();
+  renderWithProviders(
+    <RoomMenu
+      room={{
+        ...fleetDm,
+        joined: false,
+        archivedAt: Date.now() - 86_400_000,
+      }}
+      memberHandles={['fred', 'gitq-main']}
+      onArchive={onArchive}
+    />
+  );
+  await userEvent.click(screen.getByTestId('room-menu'));
+  expect(await screen.findByTestId('room-menu-reopen')).toBeInTheDocument();
+  expect(screen.queryByTestId('room-menu-archive')).toBeNull();
+});
+
+test('the ⋯ menu keeps Archive for the human’s own DM', async () => {
+  const onArchive = vi.fn();
+  renderWithProviders(
+    <RoomMenu
+      room={{ ...fleetDm, participants: { a: 'fred', b: 'matt' } }}
+      memberHandles={['fred', 'matt']}
+      onArchive={onArchive}
+    />
+  );
+  await userEvent.click(screen.getByTestId('room-menu'));
+  expect(await screen.findByTestId('room-menu-archive')).toBeInTheDocument();
+});
+
+test('memberList reads like a sentence and caps at three names', () => {
+  expect(memberList([])).toBe('');
+  expect(memberList(['fred'])).toBe('fred');
+  expect(memberList(['fred', 'gitq'])).toBe('fred and gitq');
+  expect(memberList(['a', 'b', 'c', 'd'])).toBe('a, b, c and d');
+  expect(memberList(['a', 'b', 'c', 'd', 'e'])).toBe('a, b, c and 2 more');
 });

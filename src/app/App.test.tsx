@@ -1,4 +1,11 @@
-import { act, fireEvent, screen, within } from '@testing-library/react';
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test } from 'vitest';
 
 import {
@@ -313,4 +320,202 @@ test('the rooms rail lives in the PageShell sidebar and the roster is the right 
   expect(
     within(screen.getByTestId('page-bar')).getByText('build')
   ).toBeInTheDocument();
+});
+
+function jsonResponse(body: unknown): Response {
+  return { ok: true, status: 200, json: async () => body } as Response;
+}
+
+test('DM on a sender’s card opens the pair’s room and focuses the composer there', async () => {
+  installFetchMock();
+  const now = Date.now();
+  const dmRoom = {
+    room: 'dm-1a2b3c4d5e6f',
+    memberCount: 2,
+    unread: 0,
+    mentions: 0,
+    kind: 'dm' as const,
+    participants: { a: 'fred', b: 'matt' },
+  };
+  const build = { room: 'build', memberCount: 2, unread: 0, mentions: 0 };
+  fetchMock.mockImplementation((url: string) => {
+    if (url === '/api/chat/dm/open')
+      return Promise.resolve(
+        jsonResponse({ room: dmRoom.room, created: true })
+      );
+    if (url === '/api/chat/rooms')
+      return Promise.resolve(jsonResponse({ rooms: [build, dmRoom] }));
+    return Promise.resolve(jsonResponse({}));
+  });
+  window.history.replaceState(null, '', '/r/build');
+  renderWithProviders(
+    <App
+      initialState={{
+        daemonReachable: true,
+        buddies: [
+          {
+            sessionId: 's',
+            handle: 'fred',
+            baseHandle: 'fred',
+            signedInAt: now,
+            lastSeenAt: now,
+            armedAt: now,
+            tailSeenAt: now,
+            status: 'live',
+            rooms: ['build'],
+          },
+        ],
+        rooms: [build],
+        members: [
+          {
+            room: 'build',
+            handle: 'fred',
+            joinedAt: now,
+            lastReadId: 0,
+            wakeOn: 'mention',
+            status: 'live',
+          },
+        ],
+        messages: [
+          {
+            id: 7,
+            room: 'build',
+            handle: 'fred',
+            body: 'hello',
+            mentions: [],
+            postedAt: now,
+          },
+        ],
+      }}
+    />
+  );
+  const transcript = await screen.findByTestId('transcript');
+  await userEvent.hover(within(transcript).getByText('fred'));
+  await userEvent.click(await screen.findByTestId('card-dm-fred'));
+
+  expect(fetchMock).toHaveBeenCalledWith(
+    '/api/chat/dm/open',
+    expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ to: 'fred' }),
+    })
+  );
+  await screen.findByTestId(`room-row-${dmRoom.room}`);
+  expect(window.location.pathname).toBe(`/r/${dmRoom.room}`);
+  // `focus()` defers through requestAnimationFrame.
+  await waitFor(() =>
+    expect(screen.getByRole('textbox', { name: 'Message' })).toHaveFocus()
+  );
+  expect(screen.queryByText(/direct message to/)).toBeNull();
+});
+
+test('an archived room renders the archived bar instead of the composer, and Reopen posts archived:false', async () => {
+  installFetchMock();
+  window.history.replaceState(null, '', '/r/retro');
+  renderWithProviders(
+    <App
+      initialState={{
+        daemonReachable: true,
+        buddies: [],
+        rooms: [
+          {
+            room: 'retro',
+            memberCount: 1,
+            unread: 0,
+            mentions: 0,
+            archivedAt: Date.now() - 3 * 86_400_000,
+          },
+        ],
+        members: [],
+        messages: [
+          {
+            id: 1,
+            room: 'retro',
+            handle: 'fred',
+            body: 'closing out',
+            mentions: [],
+            postedAt: Date.now(),
+          },
+        ],
+      }}
+    />
+  );
+  expect(await screen.findByTestId('archived-bar')).toBeInTheDocument();
+  expect(screen.queryByTestId('composer')).toBeNull();
+  expect(screen.queryByTestId('mark-read-button')).toBeNull();
+  await userEvent.click(screen.getByTestId('archived-reopen'));
+  expect(fetchMock).toHaveBeenCalledWith(
+    '/api/chat/archive',
+    expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ room: 'retro', archived: false }),
+    })
+  );
+});
+
+test('the home route lands on the first OPEN room when an archived room sorts first', () => {
+  window.history.replaceState(null, '', '/');
+  renderWithProviders(
+    <App
+      initialState={{
+        daemonReachable: true,
+        buddies: [],
+        rooms: [
+          {
+            room: 'archived-first',
+            memberCount: 1,
+            unread: 0,
+            mentions: 0,
+            archivedAt: Date.now() - 3 * 86_400_000,
+          },
+          { room: 'build', memberCount: 1, unread: 0, mentions: 0 },
+        ],
+        members: [],
+        messages: [],
+      }}
+    />
+  );
+  expect(
+    within(screen.getByTestId('page-bar')).getByText('build')
+  ).toBeInTheDocument();
+  expect(screen.queryByTestId('archived-bar')).toBeNull();
+  expect(screen.getByTestId('composer')).toBeInTheDocument();
+});
+
+test('archiving the active room navigates away when it vanishes from the refetched list', async () => {
+  installFetchMock();
+  const build = { room: 'build', memberCount: 1, unread: 0, mentions: 0 };
+  fetchMock.mockImplementation((url: string) => {
+    if (url === '/api/chat/archive')
+      return Promise.resolve(jsonResponse({ ok: true }));
+    // The archived room is gone from the human's listing (the fleet-DM case:
+    // no membership row survives the archive); only `build` comes back.
+    if (url === '/api/chat/rooms')
+      return Promise.resolve(jsonResponse({ rooms: [build] }));
+    return Promise.resolve(jsonResponse({}));
+  });
+  window.history.replaceState(null, '', '/r/ghost');
+  renderWithProviders(
+    <App
+      initialState={{
+        daemonReachable: true,
+        buddies: [],
+        rooms: [
+          { room: 'ghost', memberCount: 1, unread: 0, mentions: 0 },
+          build,
+        ],
+        members: [],
+        messages: [],
+      }}
+    />
+  );
+  await userEvent.click(screen.getByTestId('room-menu'));
+  await userEvent.click(await screen.findByTestId('room-menu-archive'));
+  await userEvent.click(screen.getByRole('button', { name: 'Archive' }));
+
+  await waitFor(() => expect(window.location.pathname).toBe('/r/build'));
+  expect(
+    within(screen.getByTestId('page-bar')).getByText('build')
+  ).toBeInTheDocument();
+  expect(screen.getByTestId('composer')).toBeInTheDocument();
 });

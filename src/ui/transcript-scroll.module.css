@@ -32,18 +32,8 @@
   border-radius: 4px;
 }
 
+/* The library's own follow circle is replaced by NewPill, which knows how
+   many messages arrived; the class must still exist for the prop. */
 .follow {
-  bottom: 30px;
-  right: 30px;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-}
-
-:root[data-mantine-color-scheme='dark'] .follow {
-  background-color: rgba(155, 155, 155, 0.25);
-}
-
-:root[data-mantine-color-scheme='dark'] .follow:active {
-  background-color: rgba(155, 155, 155, 0.6);
+  display: none;
 }

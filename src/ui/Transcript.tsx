@@ -4,7 +4,11 @@ import { Box, Group, Stack, Text, UnstyledButton } from '@mantine/core';
 import type { ChatMessage } from '@mattstack/rt-client';
 import ScrollToBottom, { useAtTop } from 'react-scroll-to-bottom';
 
+import { CopyActionIcon } from '@ui/core';
 import { AgentName } from './AgentName';
+import { dayKey, dayLabel } from './day-label';
+import { NewPill } from './NewPill';
+import bodyClasses from './transcript-body.module.css';
 import scrollClasses from './transcript-scroll.module.css';
 
 const BORDER_SOFT = 'var(--tk-border-soft)';
@@ -16,6 +20,10 @@ const INNER_LEFT = 'calc(var(--mantine-spacing-xl) + 17px)';
 const INNER_RIGHT = 'var(--mantine-spacing-xl)';
 const ACCENT_TEXT = 'var(--mantine-color-accent-text)';
 const ACCENT_WASH = `color-mix(in srgb, ${ACCENT_TEXT} var(--tk-wash), transparent)`;
+/** A body taller than this (its unconstrained scrollHeight) folds behind a
+    show more control; the anchored message is the one exception, since it
+    mounted expanded on purpose. */
+const COLLAPSE_AT = 480;
 
 export interface TranscriptProps {
   room: string;
@@ -286,14 +294,30 @@ function renderTextPart(
 function MessageBody({
   message,
   humanHandle,
+  startExpanded,
 }: {
   message: ChatMessage;
   humanHandle: string | undefined;
+  startExpanded: boolean;
 }) {
   const parts = splitCodeFences(message.body);
-  return (
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [tall, setTall] = useState(false);
+  const [expanded, setExpanded] = useState(startExpanded);
+
+  // Measures the unconstrained body once per message: a body's height only
+  // changes with its content, so a ResizeObserver would be watching for an
+  // event that never happens here.
+  useLayoutEffect(() => {
+    setTall((bodyRef.current?.scrollHeight ?? 0) > COLLAPSE_AT);
+  }, [message.id]);
+
+  const folded = tall && !expanded;
+  const body = (
     <Text
+      ref={bodyRef}
       component="div"
+      data-testid="message-body"
       style={{
         fontSize: '12.16px',
         lineHeight: 1.55,
@@ -308,23 +332,38 @@ function MessageBody({
         part.type === 'code' ? (
           <Box
             key={`part-${i}`}
-            component="pre"
-            data-testid="code-block"
-            style={{
-              display: 'block',
-              background: 'var(--ui-bg-1)',
-              border: '1px solid var(--mantine-color-default-border)',
-              borderRadius: 'var(--mantine-radius-sm)',
-              fontSize: '11.2px',
-              lineHeight: 1.5,
-              marginTop: 'var(--mantine-spacing-xs)',
-              overflowX: 'auto',
-              padding: 'var(--mantine-spacing-sm) var(--mantine-spacing-md)',
-              whiteSpace: 'pre',
-              fontFamily: 'inherit',
-            }}
+            className={bodyClasses.codeWrap}
+            data-testid="code-wrap"
           >
-            {part.content}
+            <Box
+              component="pre"
+              data-testid="code-block"
+              style={{
+                display: 'block',
+                background: 'var(--ui-bg-1)',
+                border: '1px solid var(--mantine-color-default-border)',
+                borderRadius: 'var(--mantine-radius-sm)',
+                fontSize: '11.2px',
+                lineHeight: 1.5,
+                marginTop: 'var(--mantine-spacing-xs)',
+                overflowX: 'auto',
+                padding: 'var(--mantine-spacing-sm) var(--mantine-spacing-md)',
+                whiteSpace: 'pre',
+                fontFamily: 'inherit',
+              }}
+            >
+              {part.content}
+            </Box>
+            <Box className={bodyClasses.copy} data-testid="code-copy">
+              <CopyActionIcon
+                value={part.content}
+                label="Copy"
+                size="sm"
+                variant="default"
+                iconSize={14}
+                aria-label="Copy code"
+              />
+            </Box>
           </Box>
         ) : (
           <span key={`part-${i}`}>
@@ -334,16 +373,65 @@ function MessageBody({
       )}
     </Text>
   );
+  if (!tall) return body;
+  return (
+    <Box data-testid="message-fold" data-folded={folded ? 'true' : 'false'}>
+      <Box className={folded ? bodyClasses.fold : undefined}>{body}</Box>
+      <UnstyledButton
+        data-testid="fold-toggle"
+        onClick={() => setExpanded(e => !e)}
+        style={{
+          marginTop: 4,
+          fontSize: '10.56px',
+          fontWeight: 600,
+          color: ACCENT_TEXT,
+        }}
+      >
+        {folded ? 'show more' : 'show less'}
+      </UnstyledButton>
+    </Box>
+  );
+}
+
+/** A muted counterpart of the read-cursor divider: rules either side, the
+    day in the middle. */
+function DayDivider({ label }: { label: string }) {
+  const rule = {
+    flex: 1,
+    height: 1,
+    background: 'var(--tk-border-soft)',
+  } as const;
+  return (
+    <Group
+      gap="sm"
+      wrap="nowrap"
+      align="center"
+      data-testid="day-divider"
+      aria-label={label}
+      style={{
+        color: 'var(--tk-muted-text)',
+        fontSize: '10.56px',
+        fontWeight: 600,
+        padding: 'var(--mantine-spacing-xs) 0',
+      }}
+    >
+      <Box style={rule} />
+      <span>{label}</span>
+      <Box style={rule} />
+    </Group>
+  );
 }
 
 function MessageRow({
   message,
   humanHandle,
   isFirst,
+  anchored,
 }: {
   message: ChatMessage;
   humanHandle: string | undefined;
   isFirst: boolean;
+  anchored: boolean;
 }) {
   return (
     <Group
@@ -361,11 +449,19 @@ function MessageRow({
       <Stack gap={1} style={{ minWidth: 0, flex: 1 }}>
         <Group gap="sm" wrap="nowrap" align="baseline">
           <AgentName handle={message.handle} variant="inline" />
-          <Text size="xs" style={{ color: 'var(--tk-muted-text)' }}>
+          <Text
+            size="xs"
+            title={new Date(message.postedAt).toLocaleString()}
+            style={{ color: 'var(--tk-muted-text)' }}
+          >
             {formatLocalTime(message.postedAt)}
           </Text>
         </Group>
-        <MessageBody message={message} humanHandle={humanHandle} />
+        <MessageBody
+          message={message}
+          humanHandle={humanHandle}
+          startExpanded={anchored}
+        />
       </Stack>
     </Group>
   );
@@ -465,12 +561,18 @@ export function Transcript({
   const [messages, setMessages] = useState(initialMessages);
   const [loadingOlder, setLoadingOlder] = useState(false);
   const [olderExhausted, setOlderExhausted] = useState(false);
+  const [olderLoaded, setOlderLoaded] = useState(false);
+  const [awayFromBottom, setAwayFromBottom] = useState(false);
+  const [newSinceAway, setNewSinceAway] = useState(0);
   const scrollBoxRef = useRef<HTMLDivElement>(null);
   // Set before an older page is prepended; consumed once the DOM has the
   // new rows, so the viewport stays on the message the viewer was reading.
   const anchorHeight = useRef<number | null>(null);
   const roomRef = useRef(room);
   roomRef.current = room;
+  const awayRef = useRef(false);
+  const messagesRef = useRef(messages);
+  messagesRef.current = messages;
 
   // Re-seeds local state whenever the CALLER's own messages array changes
   // identity -- not just when `room` changes. The caller fetches
@@ -485,6 +587,10 @@ export function Transcript({
   useEffect(() => {
     setOlderExhausted(false);
     setLoadingOlder(false);
+    setOlderLoaded(false);
+    setNewSinceAway(0);
+    setAwayFromBottom(false);
+    awayRef.current = false;
   }, [room]);
 
   // The `#m-<id>` anchor rt prints after a post and on a wake line. Scrolls
@@ -521,12 +627,28 @@ export function Transcript({
         .then(res => res.json())
         .then((data: { messages?: ChatMessage[] }) => {
           if (roomRef.current !== room) return;
-          setMessages(prev => mergeMessages(prev, data.messages ?? []));
+          const next = mergeMessages(messagesRef.current, data.messages ?? []);
+          const added = next.length - messagesRef.current.length;
+          if (added > 0 && awayRef.current) setNewSinceAway(n => n + added);
+          setMessages(next);
         })
         .catch(() => {});
     };
 
     return () => socket.close();
+  }, [room]);
+
+  useEffect(() => {
+    const view = scrollView();
+    if (!view) return;
+    const onScroll = () => {
+      const away = view.scrollHeight - view.scrollTop - view.clientHeight > 4;
+      awayRef.current = away;
+      setAwayFromBottom(away);
+      if (!away) setNewSinceAway(0);
+    };
+    view.addEventListener('scroll', onScroll, { passive: true });
+    return () => view.removeEventListener('scroll', onScroll);
   }, [room]);
 
   function scrollView(): HTMLElement | null {
@@ -564,6 +686,7 @@ export function Transcript({
       const older = data.messages ?? [];
       if (older.length === 0) setOlderExhausted(true);
       if (older.length > 0) {
+        setOlderLoaded(true);
         anchorHeight.current = scrollView()?.scrollHeight ?? null;
         setMessages(prev => {
           const known = new Set(prev.map(m => m.id));
@@ -645,6 +768,12 @@ export function Transcript({
             <Stack gap={0}>
               {messages.map((message, i) => (
                 <Fragment key={message.id}>
+                  {(i === 0
+                    ? olderLoaded
+                    : dayKey(messages[i - 1]!.postedAt) !==
+                      dayKey(message.postedAt)) && (
+                    <DayDivider label={dayLabel(message.postedAt)} />
+                  )}
                   {i === dividerAt && (
                     <Group
                       gap="sm"
@@ -687,12 +816,27 @@ export function Transcript({
                     message={message}
                     humanHandle={humanHandle}
                     isFirst={i === 0}
+                    anchored={anchor === `m-${message.id}`}
                   />
                 </Fragment>
               ))}
             </Stack>
           </Box>
         </ScrollToBottom>
+        {awayFromBottom && (
+          <NewPill
+            count={newSinceAway}
+            onClick={() => {
+              const view = scrollView();
+              if (!view) return;
+              if (typeof view.scrollTo === 'function') {
+                view.scrollTo({ top: view.scrollHeight, behavior: 'smooth' });
+              } else {
+                view.scrollTop = view.scrollHeight;
+              }
+            }}
+          />
+        )}
       </Box>
       {footer && (
         <Box

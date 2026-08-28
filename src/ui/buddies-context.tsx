@@ -6,7 +6,7 @@ import type { RosterBuddy } from './Roster';
 export interface BuddyActions {
   /** Insert `@handle` into the composer (the buddy is in the open room). */
   mention: (handle: string) => void;
-  /** Open or reuse the DM with `handle`. */
+  /** Open the DM room with `handle` and move to it. */
   dm: (handle: string) => void;
 }
 

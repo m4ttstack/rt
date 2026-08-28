@@ -1,10 +1,4 @@
-import {
-  forwardRef,
-  useEffect,
-  useImperativeHandle,
-  useRef,
-  useState,
-} from 'react';
+import { forwardRef, useImperativeHandle, useRef, useState } from 'react';
 import type { ChangeEvent, KeyboardEvent } from 'react';
 import {
   Box,
@@ -80,19 +74,16 @@ export interface ComposerProps {
   /** Phone chrome: 16px input (below it, iOS zooms on focus), 44px tap
       targets, Enter is a newline -- only the button sends. @default false */
   phone?: boolean;
-  /** Called with the DM room's slug once a "DM instead" send succeeds. */
-  onNavigate?: (room: string) => void;
+  /** A buddy outside the room was picked in the `@` popover: the caller
+      opens the DM room and moves there; the draft stays in this instance. */
+  onOpenDm?: (handle: string) => void;
 }
 
-/**
- * The imperative surface `Roster`'s `onPick` drives (desktop panel and the
- * phone drawer's "tap to mention or DM" both go through this): a tap in
- * room inserts a mention at the caret, a tap outside it starts the same
- * DM-instead handoff the popover's own option triggers.
- */
+/** The imperative surface the roster and the app drive: insert a mention at
+    the caret, or take focus after a room change. */
 export interface ComposerHandle {
   insertMention(handle: string): void;
-  startDm(handle: string): void;
+  focus(): void;
 }
 
 interface MentionToken {
@@ -159,7 +150,7 @@ function BuddyOption({
           color: STATUS_TEXT_COLOR.deaf,
         }
       : !inRoom
-        ? { text: `not in #${room} — DM instead`, color: PURPLE }
+        ? { text: `not in #${room}, DM instead`, color: PURPLE }
         : undefined;
 
   return (
@@ -255,10 +246,9 @@ function HereOption({
 }
 
 /**
- * The composer: an `@`-popover input, DM-instead handoff, and the two
- * write routes behind it. The server owns joining (`POST /api/chat/post`)
- * and opening a DM (`POST /api/chat/dm`) -- this component only ever calls
- * its own app routes, never rt-client.
+ * The composer: an `@`-popover input and its one write route. Picking a
+ * buddy outside the room hands off to `onOpenDm` instead of posting here --
+ * opening a DM is the app's job, not this component's.
  */
 export const Composer = forwardRef<ComposerHandle, ComposerProps>(
   function Composer(
@@ -270,25 +260,16 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       isDm = false,
       daemonReachable = true,
       phone = false,
-      onNavigate,
+      onOpenDm,
     },
     ref
   ) {
     const [value, setValue] = useState('');
     const [mentions, setMentions] = useState<string[]>([]);
-    const [dmTarget, setDmTarget] = useState<string | undefined>(undefined);
     const [sending, setSending] = useState(false);
     const [token, setToken] = useState<MentionToken | null>(null);
     const [focused, setFocused] = useState(false);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-    // The draft itself survives a room switch (same leniency as surviving a
-    // daemon outage), but a DM-instead handoff is chosen IN a room's
-    // context -- carrying it into the next room read as the banner naming
-    // a target the room switch had nothing to do with.
-    useEffect(() => {
-      setDmTarget(undefined);
-    }, [room]);
 
     const showPopover = token !== null && daemonReachable;
 
@@ -344,10 +325,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
 
     function switchToDm(handle: string) {
       replaceToken('');
-      setDmTarget(handle);
       closePopover();
-      focusAt(0);
-      textareaRef.current?.focus();
+      onOpenDm?.(handle);
     }
 
     function insertHere() {
@@ -369,41 +348,20 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       if (!body || !daemonReachable || sending) return;
       setSending(true);
       try {
-        if (dmTarget) {
-          try {
-            const res = await fetch('/api/chat/dm', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ to: dmTarget, body }),
-            });
-            if (!res.ok) throw new Error('dm failed');
-            const data = (await res.json()) as { room: string };
-            setValue('');
-            setMentions([]);
-            setDmTarget(undefined);
-            onNavigate?.(data.room);
-          } catch {
-            notifications.error("Couldn't send — the draft is kept.");
-          }
-          return;
-        }
-
-        try {
-          const res = await fetch('/api/chat/post', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              room,
-              body,
-              mentions: mentions.length ? mentions : undefined,
-            }),
-          });
-          if (!res.ok) throw new Error('post failed');
-          setValue('');
-          setMentions([]);
-        } catch {
-          notifications.error("Couldn't send — the draft is kept.");
-        }
+        const res = await fetch('/api/chat/post', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            room,
+            body,
+            mentions: mentions.length ? mentions : undefined,
+          }),
+        });
+        if (!res.ok) throw new Error('post failed');
+        setValue('');
+        setMentions([]);
+      } catch {
+        notifications.error("Couldn't send. The draft is kept.");
       } finally {
         setSending(false);
       }
@@ -444,10 +402,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
 
     useImperativeHandle(ref, () => ({
       insertMention: insertMentionAtCaret,
-      startDm: (handle: string) => {
-        setDmTarget(handle);
-        focusAt(value.length);
-      },
+      focus: () => focusAt(value.length),
     }));
 
     // Phone drops each hint suffix -- the room-width placeholder wraps to a
@@ -456,18 +411,14 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const placeholder = !daemonReachable
       ? phone
         ? 'rt daemon unreachable'
-        : "Can't post — rt daemon unreachable. Your draft is kept."
-      : dmTarget
+        : "Can't post: rt daemon unreachable. Your draft is kept."
+      : isDm
         ? phone
-          ? `Message ${dmTarget}`
-          : `Message ${dmTarget} — will DM`
-        : isDm
-          ? phone
-            ? `Message ${roomMembers.join(' ↔ ')}`
-            : `Message ${roomMembers.join(' ↔ ')} — both will wake`
-          : phone
-            ? `Message #${room}`
-            : `Message #${room} — @ to mention`;
+          ? `Message ${roomMembers.join(' ↔ ')}`
+          : `Message ${roomMembers.join(' ↔ ')} (both will wake)`
+        : phone
+          ? `Message #${room}`
+          : `Message #${room} (@ to mention)`;
 
     const inputBorderColor = !daemonReachable
       ? BORDER
@@ -625,24 +576,8 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         >
           {!daemonReachable ? (
             <Text size="xs" style={{ color: STATUS_TEXT_COLOR.deaf }}>
-              Can&apos;t post — rt daemon unreachable. Your draft is kept.
+              Can&apos;t post: rt daemon unreachable. Your draft is kept.
             </Text>
-          ) : dmTarget ? (
-            <>
-              <Text size="xs" style={{ color: PURPLE }}>
-                → direct message to {dmTarget}
-              </Text>
-              <UnstyledButton
-                data-testid="composer-cancel-dm"
-                onClick={() => setDmTarget(undefined)}
-                style={{
-                  fontSize: 'var(--mantine-font-size-xs)',
-                  color: MUTED,
-                }}
-              >
-                cancel
-              </UnstyledButton>
-            </>
           ) : (
             <>
               <Text size="xs" style={{ color: MUTED }}>

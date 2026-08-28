@@ -1,6 +1,7 @@
 import {
+  chatArchive,
   chatBuddies,
-  chatDm,
+  chatDmOpen,
   chatJoin,
   chatMark,
   chatMessages,
@@ -49,6 +50,8 @@ function parseIntParam(raw: string | undefined): number | undefined {
   const n = Number(raw);
   return Number.isSafeInteger(n) && n >= 0 ? n : undefined;
 }
+
+const CHAT_NAME = /^[a-z0-9._-]+$/;
 
 /**
  * A DM room's name is a hashed pair-key -- an internal lookup, not something
@@ -139,7 +142,10 @@ async function unjoinedFleetRooms(
 export const chat = new Hono()
   .get('/api/chat/rooms', async c => {
     if (fixturesEnabled()) return c.json({ rooms: fixtureRooms() }, 200);
-    const res = await chatRooms({ handle: humanHandle(c) }, rtOpts());
+    const res = await chatRooms(
+      { handle: humanHandle(c), includeArchived: true },
+      rtOpts()
+    );
     if (!res.ok) return c.json({ error: res.error }, 502);
 
     const joined = res.data?.rooms ?? [];
@@ -280,23 +286,68 @@ export const chat = new Hono()
     if (!postRes.ok) return c.json({ error: postRes.error }, 502);
     return c.json(postRes.data, 200);
   })
-  // Opens or reuses the pair's room and posts the first message as the
-  // human -- the client navigates to the returned room afterward, which is
-  // what makes it appear in the rail's direct section. Parsed by hand for
-  // the same reason as `/api/chat/post` above.
-  .post('/api/chat/dm', async c => {
-    let raw: { to?: unknown; body?: unknown };
+  // Archive is the one write that needs the human IN the room first: an
+  // archived room only stays listed for members, and most channels are
+  // join-created by agents. Joining first (never for a DM, which already
+  // holds him) is the same move the post route makes. A name that neither
+  // his listing nor the fleet union knows is refused before that join, so
+  // a typo can never create-and-archive a room.
+  .post('/api/chat/archive', async c => {
+    let raw: { room?: unknown; archived?: unknown };
+    try {
+      raw = await c.req.json();
+    } catch {
+      return c.json({ error: 'Malformed JSON in request body' }, 400);
+    }
+    const room = typeof raw?.room === 'string' ? raw.room : undefined;
+    const archived =
+      typeof raw?.archived === 'boolean' ? raw.archived : undefined;
+    if (!room) return c.json({ error: 'room is required' }, 400);
+    if (archived === undefined) {
+      return c.json({ error: 'archived must be true or false' }, 400);
+    }
+    const handle = humanHandle(c);
+
+    const roomsRes = await chatRooms(
+      { handle, includeArchived: true },
+      rtOpts()
+    );
+    if (!roomsRes.ok || !roomsRes.data) {
+      return c.json({ error: roomsRes.error ?? 'rooms: no data' }, 502);
+    }
+    const mine = roomsRes.data.rooms.find(r => r.room === room);
+    if (!mine) {
+      const fleet = (await unjoinedFleetRooms(roomsRes.data.rooms)).find(
+        r => r.room === room
+      );
+      if (!fleet) return c.json({ error: `unknown room "${room}"` }, 400);
+      if (fleet.kind !== 'dm') {
+        const joinRes = await chatJoin({ room, handle }, rtOpts());
+        if (!joinRes.ok) return c.json({ error: joinRes.error }, 502);
+      }
+    }
+
+    const res = await chatArchive({ room, handle, archived }, rtOpts());
+    if (!res.ok) return c.json({ error: res.error }, 502);
+    return c.json(res.data, 200);
+  })
+  // Opens or reuses the pair's room with no first message: the client
+  // navigates to it and the composer there is the DM. Parsed by hand for
+  // the same reason as `/api/chat/post`.
+  .post('/api/chat/dm/open', async c => {
+    let raw: { to?: unknown };
     try {
       raw = await c.req.json();
     } catch {
       return c.json({ error: 'Malformed JSON in request body' }, 400);
     }
     const to = typeof raw?.to === 'string' ? raw.to : undefined;
-    const body = typeof raw?.body === 'string' ? raw.body : undefined;
-    if (!to || body === undefined) {
-      return c.json({ error: 'to and body are required' }, 400);
-    }
-    const res = await chatDm({ from: humanHandle(c), to, body }, rtOpts());
+    if (!to) return c.json({ error: 'to is required' }, 400);
+    if (!CHAT_NAME.test(to))
+      return c.json({ error: `invalid handle "${to}"` }, 400);
+    const from = humanHandle(c);
+    if (to === from) return c.json({ error: "can't DM yourself" }, 400);
+    const res = await chatDmOpen({ from, to }, rtOpts());
     if (!res.ok) return c.json({ error: res.error }, 502);
     return c.json(res.data, 200);
   });
