@@ -14,6 +14,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { defineCompound } from "../../builders.ts";
 import { useEscapeClose } from "../../hooks/index.ts";
 import classes from "./ContextMenu.module.css";
+import "./ContextMenu.keyframes.css";
 
 /** Authoring category (3 = persistent navigational compound). Read off this
     module by scripts/derive.ts to build the kit's manifest; not dead code. */

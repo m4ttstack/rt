@@ -8,9 +8,10 @@ import { ContextMenu } from "./ContextMenu.tsx";
  * Visual tier for the ContextMenu recipe.
  *
  *  * THE ANIMATION FREEZE IS INSTALLED HERE, following Chip's and ToastHost's
- * precedent: ContextMenu.module.css's `.root` carries a real (one-shot, not
- * perpetual) `animation` (`contextmenu-in`), so a capture mid-open would be
- * non-deterministic between runs in BOTH opacity and geometry — the keyframe
+ * precedent: ContextMenu.keyframes.css puts a real (one-shot, not
+ * perpetual) animation (contextmenu-in) on [data-part="contextmenu"], so a
+ * capture mid-open would be non-deterministic between runs in BOTH opacity
+ * and geometry — the keyframe
  * opens on `scale(0.97) translateY(-2px)`. `animation: none !important` is
  * what closes that; `transition: none` alone would do nothing for an
  * `animation`.
