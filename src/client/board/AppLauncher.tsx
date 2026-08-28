@@ -99,7 +99,7 @@ function Tile({ app }: { app: DiscoveryApp }) {
               justifyContent: "center",
             }}
           >
-            <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#1d1830" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
+            <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="#ffffff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round">
               <path d="M20 6 9 17l-5-5" />
             </svg>
           </span>
