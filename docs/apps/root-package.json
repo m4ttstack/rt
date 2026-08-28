@@ -47,7 +47,7 @@
     "prepack": "bun run build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "gates": "vitest run --project node test/no-hardcoded-values.test.ts test/token-existence.test.ts test/no-node-builtins.test.ts test/copy-recipe-css.test.ts test/bun-build-keyframes.test.ts && bun run codegen && git diff --exit-code src/generated/theme.css",
+    "gates": "vitest run --project node test/no-hardcoded-values.test.ts test/token-existence.test.ts test/no-node-builtins.test.ts test/copy-recipe-css.test.ts test/bun-build-keyframes.test.ts test/fix-dts-extensions.test.ts && bun run codegen && git diff --exit-code src/generated/theme.css",
     "dev:workshop": "cd workshop && bunx vite"
   },
   "dependencies": {
