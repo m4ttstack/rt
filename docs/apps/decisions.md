@@ -134,10 +134,10 @@ Consequences a later change must keep:
   `animationName` matches a real `CSSKeyframesRule` (`test/keyframes.ts`).
   Computed styles and `animationName !== "none"` alone cannot see this bug,
   and the visual tiers freeze motion on purpose.
-- An animated recipe added later needs its ident appended to `KIT_KEYFRAMES`
-  in `test/bun-build-keyframes.test.ts`. The "every ident resolves" row would
-  still catch a hashed reference without that, but the per-name rows are what
-  pin the ident's exact global spelling.
+- `test/bun-build-keyframes.test.ts` reads its expected idents from the
+  `*.keyframes.css` files themselves, so a new animated recipe is gated the
+  moment its sibling file exists; the one hand-written list left is the
+  five-name pin that keeps that derivation from going quietly empty.
 
 Do not fold the two halves back into the module "to keep the recipe in one
 file". That is the layout that froze deck.

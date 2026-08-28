@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
@@ -13,6 +13,14 @@ function cssImportsOf(tsxPath: string): string[] {
   const source = readFileSync(tsxPath, "utf8");
   const re = /import\s+(?:[^"']*?\s+from\s+)?["'](\.[^"']*\.css)["']/g;
   return [...source.matchAll(re)].map((m) => resolve(dirname(tsxPath), m[1] as string));
+}
+
+/** `.ts` / `.tsx` files in a recipe directory, tests excluded, so a helper
+    module (e.g. `Tooltip/TooltipCard.tsx`) is covered alongside `<Name>.tsx`. */
+function recipeModulesOf(dir: string): string[] {
+  return readdirSync(dir)
+    .filter((entry) => /\.tsx?$/.test(entry) && !/\.test\.tsx?$/.test(entry))
+    .map((entry) => join(dir, entry));
 }
 
 describe("listShippedCss", () => {
@@ -42,13 +50,15 @@ describe("listShippedCss", () => {
 });
 
 describe("copy-recipe-css ships every stylesheet a recipe imports", () => {
-  it("covers each relative .css import in every recipe's TSX", () => {
+  it("covers each relative .css import in every module of every recipe directory", () => {
     const shipped = new Set(listShippedCss(SRC).map((f) => relative(SRC, f)));
     const missing: string[] = [];
     for (const name of listRecipeDirs()) {
-      for (const css of cssImportsOf(join(SRC, "recipes", name, `${name}.tsx`))) {
-        const rel = relative(SRC, css);
-        if (!shipped.has(rel)) missing.push(rel);
+      for (const modulePath of recipeModulesOf(join(SRC, "recipes", name))) {
+        for (const css of cssImportsOf(modulePath)) {
+          const rel = relative(SRC, css);
+          if (!shipped.has(rel)) missing.push(rel);
+        }
       }
     }
     expect(missing).toEqual([]);

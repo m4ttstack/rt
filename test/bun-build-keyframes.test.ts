@@ -1,8 +1,9 @@
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { beforeAll, describe, expect, it } from "vitest";
+import { listShippedCss } from "../scripts/copy-recipe-css.ts";
 
 /**
  * Packaging gate for oven-sh/bun#18921: Bun through 1.3.14 hashes a CSS
@@ -17,15 +18,21 @@ import { beforeAll, describe, expect, it } from "vitest";
  */
 
 const ENTRY = join(import.meta.dirname, "fixtures", "bun-build-entry.ts");
+const SRC = resolve(import.meta.dirname, "..", "src");
+
+/** Every `@keyframes` ident declared in a `<Recipe>.keyframes.css`, sorted and
+    deduped: the global names the bundle must emit verbatim. */
+function sourceKeyframesNames(): string[] {
+  const names = new Set<string>();
+  for (const file of listShippedCss(SRC)) {
+    if (!file.endsWith(".keyframes.css")) continue;
+    for (const name of keyframesNames(readFileSync(file, "utf8"))) names.add(name);
+  }
+  return [...names].sort();
+}
 
 /** Every keyframe ident the kit ships, under the global name it must keep. */
-const KIT_KEYFRAMES = [
-  "chip-pulse",
-  "contextmenu-in",
-  "drawer-slide-in",
-  "sb-spinner-spin",
-  "toasthost-in",
-] as const;
+const KIT_KEYFRAMES = sourceKeyframesNames();
 
 /** `animation` shorthand words that are never a custom ident. */
 const ANIMATION_KEYWORDS = new Set([
@@ -57,9 +64,18 @@ const ANIMATION_KEYWORDS = new Set([
 function bundleWithBun(): string {
   const outdir = mkdtempSync(join(tmpdir(), "tui-kit-bun-build-"));
   try {
-    execFileSync("bun", ["build", ENTRY, "--outdir", outdir, "--target", "browser"], {
-      stdio: "pipe",
-    });
+    try {
+      execFileSync("bun", ["build", ENTRY, "--outdir", outdir, "--target", "browser"], {
+        stdio: "pipe",
+      });
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+        throw new Error(
+          "bun is not on PATH; this gate bundles with the bun CLI, as every package.json script already assumes",
+        );
+      }
+      throw error;
+    }
     return readdirSync(outdir)
       .filter((file) => file.endsWith(".css"))
       .map((file) => readFileSync(join(outdir, file), "utf8"))
@@ -70,13 +86,15 @@ function bundleWithBun(): string {
 }
 
 function keyframesNames(css: string): Set<string> {
-  return new Set([...css.matchAll(/@keyframes\s+([^\s{]+)/g)].map((m) => m[1] as string));
+  return new Set(
+    [...css.matchAll(/@(?:-webkit-)?keyframes\s+([^\s{]+)/g)].map((m) => m[1] as string),
+  );
 }
 
 /** Custom idents named by every `animation` / `animation-name` declaration. */
 function referencedAnimationNames(css: string): string[] {
   const names: string[] = [];
-  for (const m of css.matchAll(/(?<![\w-])animation(?:-name)?\s*:\s*([^;}]+)/g)) {
+  for (const m of css.matchAll(/(?<![\w-])(?:-webkit-)?animation(?:-name)?\s*:\s*([^;}]+)/g)) {
     const value = (m[1] as string).replace(/[\w-]+\([^)]*\)/g, " ");
     for (const token of value.split(/[\s,]+/)) {
       if (!token || ANIMATION_KEYWORDS.has(token)) continue;
@@ -96,6 +114,16 @@ describe("Bun.build: every animation ident resolves inside the emitted bundle", 
   it("the bundle carries CSS with keyframes at all", () => {
     expect(css.length).toBeGreaterThan(0);
     expect(keyframesNames(css).size).toBeGreaterThanOrEqual(KIT_KEYFRAMES.length);
+  });
+
+  it("the source keyframes files declare the five idents the kit ships today", () => {
+    expect(KIT_KEYFRAMES).toEqual([
+      "chip-pulse",
+      "contextmenu-in",
+      "drawer-slide-in",
+      "sb-spinner-spin",
+      "toasthost-in",
+    ]);
   });
 
   it.each(KIT_KEYFRAMES)("emits @keyframes %s under its global, unhashed name", (name) => {
