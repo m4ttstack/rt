@@ -1,4 +1,8 @@
 import {
+  renderWithProviders,
+  setViewportWidth,
+} from '@mattstack/app-kit/test-utils';
+import {
   act,
   fireEvent,
   screen,
@@ -9,15 +13,14 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test } from 'vitest';
 
 import {
-  renderWithProviders,
-  setViewportWidth,
-} from '@ui/storybook/test-utils';
-import {
   fetchMock,
   installFakeWebSocket,
   installFetchMock,
   restoreWebSocket,
-} from '@ui/test-utils';
+} from './test-utils';
+
+import './icons';
+
 import { App } from './App';
 
 const DESKTOP_WIDTH = window.innerWidth;
@@ -49,14 +52,18 @@ test('/ renders the chat shell: wordmark, Rooms rail entry, placeholder home', (
   expect(screen.getByText('chat')).toBeTruthy();
 
   const rail = within(screen.getByRole('navigation', { name: 'App sections' }));
-  const rooms = rail.getByRole('button', { name: 'Rooms' });
+  const rooms = rail.getByRole('link', { name: 'Rooms' });
   expect(rooms).toBeTruthy();
   expect(rooms.getAttribute('aria-current')).toBe('page');
+
+  expect(
+    within(screen.getByRole('banner')).getByRole('button', { name: 'Apps' })
+  ).toBeTruthy();
 
   expect(screen.getByText('No rooms')).toBeTruthy();
 });
 
-test('the rail hosts the color-scheme toggle', () => {
+test('the rail hosts the color-scheme control', () => {
   renderAt('/');
   const rail = within(screen.getByRole('navigation', { name: 'App sections' }));
   const scheme = () =>
@@ -65,9 +72,15 @@ test('the rail hosts the color-scheme toggle', () => {
   // vitest.setup.ts's matchMedia polyfill defaults the OS preference to
   // light, so the initial computed scheme under `auto` is deterministic.
   expect(scheme()).toBe('light');
-  fireEvent.click(rail.getByRole('button', { name: 'Switch to dark mode' }));
+
+  // `ColorSchemeControl` is a System/Light/Dark `HybridMenu`, not chat's own
+  // sun/moon toggle: open it from its rail entry and pick each option.
+  fireEvent.click(rail.getByRole('button', { name: 'Color scheme' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Dark' }));
   expect(scheme()).toBe('dark');
-  fireEvent.click(rail.getByRole('button', { name: 'Switch to light mode' }));
+
+  fireEvent.click(rail.getByRole('button', { name: 'Color scheme' }));
+  fireEvent.click(screen.getByRole('menuitem', { name: 'Light' }));
   expect(scheme()).toBe('light');
 });
 
@@ -93,7 +106,7 @@ test('on mobile the rail opens from the header toggle and navigating closes it',
   expect(screen.getByTestId('rail-overlay')).toBeTruthy();
 
   const rail = within(screen.getByRole('navigation', { name: 'App sections' }));
-  fireEvent.click(rail.getByRole('button', { name: 'Rooms' }));
+  fireEvent.click(rail.getByRole('link', { name: 'Rooms' }));
 
   expect(screen.queryByTestId('rail-overlay')).toBeNull();
 });

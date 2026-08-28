@@ -1,10 +1,10 @@
-import { fireEvent, screen } from '@testing-library/react';
-import { afterEach, expect, test } from 'vitest';
-
 import {
   renderWithProviders,
   setViewportWidth,
-} from '@ui/storybook/test-utils';
+} from '@mattstack/app-kit/test-utils';
+import { fireEvent, screen } from '@testing-library/react';
+import { afterEach, expect, test } from 'vitest';
+
 import { PageShellDemoPage } from './PageShellDemoPage';
 
 const DESKTOP_WIDTH = window.innerWidth;
