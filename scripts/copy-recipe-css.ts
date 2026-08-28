@@ -1,20 +1,14 @@
 #!/usr/bin/env bun
 /**
- * Copies every `*.module.css` under `src/recipes/**` into the matching path
- * under `dist/recipes/**`.
- *
- * WHY THIS EXISTS
- * ---------------
- * Each recipe imports its CSS module by relative specifier, e.g.
- * `import classes from "./Button.module.css"` in src/recipes/Button/Button.tsx.
- * `tsc` only emits JS/`.d.ts` for `.ts`/`.tsx` inputs — it does not copy the
- * `.module.css` siblings those imports point at. Left uncopied, the compiled
- * `dist/recipes/Button/Button.js` would carry an import to a file that does
- * not exist in the published package, breaking at the consumer's bundler.
- *
- * Unlike @soribashi/core (framework-only, no components), tui-kit ships real
- * components with real CSS Modules, so this step has no equivalent in the
- * reference package's build.
+ * Copies every recipe stylesheet under `src/` into the matching path under
+ * `dist/src/`: the `*.module.css` each recipe default-imports, and the
+ * `*.keyframes.css` siblings that carry `@keyframes` and their `animation`
+ * declarations (docs/decisions.md). `tsc` emits JS and `.d.ts` for `.ts` /
+ * `.tsx` inputs only; left uncopied, the compiled `dist/recipes/X/X.js`
+ * would import a stylesheet that does not exist in the published package
+ * and break at the consumer's bundler. `src/canvas.css` and
+ * `src/generated/theme.css` are deliberately NOT matched: package.json ships
+ * them at their `src/` paths.
  */
 import { copyFileSync, mkdirSync, readdirSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -22,28 +16,33 @@ import { dirname, join, resolve } from "node:path";
 const SRC_ROOT = resolve(import.meta.dirname, "..", "src");
 const DIST_ROOT = resolve(import.meta.dirname, "..", "dist", "src");
 
-function* walkModuleCss(dir: string): Generator<string> {
-  for (const entry of readdirSync(dir)) {
-    const full = join(dir, entry);
+const SHIPPED_CSS_SUFFIXES = [".module.css", ".keyframes.css"] as const;
+
+/** Absolute paths of every stylesheet the build must copy, `__screenshots__` skipped. */
+export function listShippedCss(root: string = SRC_ROOT): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(root)) {
+    const full = join(root, entry);
     if (statSync(full).isDirectory()) {
       if (entry === "__screenshots__") continue;
-      yield* walkModuleCss(full);
-    } else if (full.endsWith(".module.css")) {
-      yield full;
+      out.push(...listShippedCss(full));
+    } else if (SHIPPED_CSS_SUFFIXES.some((suffix) => full.endsWith(suffix))) {
+      out.push(full);
     }
   }
+  return out;
 }
 
 function main(): void {
   let copied = 0;
-  for (const file of walkModuleCss(SRC_ROOT)) {
+  for (const file of listShippedCss()) {
     const relative = file.slice(SRC_ROOT.length + 1);
     const dest = join(DIST_ROOT, relative);
     mkdirSync(dirname(dest), { recursive: true });
     copyFileSync(file, dest);
     copied += 1;
   }
-  console.log(`[tui-kit] copy-recipe-css: copied ${copied} CSS module file(s) into dist`);
+  console.log(`[tui-kit] copy-recipe-css: copied ${copied} recipe stylesheet(s) into dist`);
 }
 
-main();
+if (import.meta.main) main();

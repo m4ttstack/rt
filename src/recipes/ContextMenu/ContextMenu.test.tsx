@@ -3,6 +3,7 @@ import { useRef } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { userEvent } from "vitest/browser";
 import { renderWithTheme } from "../../../test/test-utils.tsx";
+import { animationResolution } from "../../../test/keyframes.ts";
 import { tuiTheme } from "../../theme.ts";
 import { CONTEXTMENU_PARTS, ContextMenu } from "./ContextMenu.tsx";
 
@@ -91,6 +92,20 @@ describe("ContextMenu (browser)", () => {
     await expect.element(screen.getByRole("menu", { name: "actions for !42" })).toBeVisible();
     await expect.element(screen.getByRole("menuitem", { name: "open in gitlab" })).toBeVisible();
     expect(screen.container.textContent).toContain("!42");
+  });
+
+  it("opens via a @keyframes rule a loaded sheet actually declares, under its global name", async () => {
+    const screen = await renderWithTheme(
+      <ContextMenu x={40} y={40} ariaLabel="m" onClose={noop}>
+        <ContextMenu.Item label="open in gitlab" onClick={noop} />
+      </ContextMenu>,
+    );
+
+    // `animation-name` is a static computed value: it still reads the ident
+    // after the 90ms entry animation has finished, so no settle wait here.
+    const { name, found } = animationResolution(rootOf(screen.container));
+    expect(found, `no @keyframes rule named "${name}" in any loaded sheet`).toBe(true);
+    expect(name).toBe("contextmenu-in");
   });
 
   it("an item fires its onClick, and does NOT close the menu by itself", async () => {

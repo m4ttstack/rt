@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 /**
- * Rewrites relative `.ts` / `.tsx` module specifiers to `.js` inside emitted
- * `.d.ts` files.
+ * Rewrites relative `.ts` / `.tsx` module specifiers to `.js`, and drops
+ * stylesheet side-effect imports, inside emitted `.d.ts` files.
  *
  * WHY THIS EXISTS
  * ---------------
@@ -38,11 +38,18 @@ import { join, resolve } from "node:path";
  */
 const SPECIFIER = /(\bfrom\s*|\bimport\s*\(\s*)(['"])(\.[^'"]*?)\.tsx?\2/g;
 
+/**
+ * A side-effect stylesheet import (`import "./X.keyframes.css";`) on its own
+ * line. tsc keeps these in declaration emit even though a .d.ts declares no
+ * runtime, so without this a consumer type-checking the package needs an
+ * ambient `*.css` module just to read the types.
+ */
+const CSS_SIDE_EFFECT_IMPORT = /^[ \t]*import\s*(['"])[^'"]*\.css\1\s*;?[ \t]*\r?\n?/gm;
+
 export function rewriteDeclarationSource(source: string): string {
-  return source.replace(
-    SPECIFIER,
-    (_match, prefix, quote, path) => `${prefix}${quote}${path}.js${quote}`,
-  );
+  return source
+    .replace(SPECIFIER, (_match, prefix, quote, path) => `${prefix}${quote}${path}.js${quote}`)
+    .replace(CSS_SIDE_EFFECT_IMPORT, "");
 }
 
 function* walkDeclarationFiles(dir: string): Generator<string> {
@@ -72,12 +79,13 @@ function main(): void {
     // specifier is a shape this script's regex does not understand, and would
     // ship a broken declaration file.
     SPECIFIER.lastIndex = 0;
-    if (SPECIFIER.test(fixed)) offenders.push(file);
+    CSS_SIDE_EFFECT_IMPORT.lastIndex = 0;
+    if (SPECIFIER.test(fixed) || CSS_SIDE_EFFECT_IMPORT.test(fixed)) offenders.push(file);
   }
 
   if (offenders.length > 0) {
     console.error(
-      `[tui-kit] fix-dts-extensions: ${offenders.length} declaration file(s) still carry relative .ts/.tsx specifiers:\n  ${offenders.join("\n  ")}`,
+      `[tui-kit] fix-dts-extensions: ${offenders.length} declaration file(s) still carry relative .ts/.tsx specifiers or stylesheet side-effect imports:\n  ${offenders.join("\n  ")}`,
     );
     process.exit(1);
   }

@@ -26,6 +26,10 @@ import { listRecipeDirs } from "../scripts/derive.ts";
  *      and is never flagged, no matter what number it is (SORI-18). This is
  *      NOT the same as allowlisting a percentage value: `width: 50%;`
  *      inside or outside a keyframes block is still flagged.
+ *   6. A CSS MODULE may declare no `@keyframes` block and no `animation` /
+ *      `animation-name`. Those live in the recipe's `<Name>.keyframes.css`
+ *      sibling, which this file sweeps with rules 1 to 5 as well
+ *      (docs/decisions.md, "Keyframes live outside the CSS module").
  *
  * The two allowlists below are soribashi's, plus one documented kit
  * extension: `ALLOWED_LENGTH_LITERALS` adds `320px` globally (not
@@ -39,7 +43,7 @@ interface Violation {
   path: string;
   line: number;
   token: string;
-  kind: "layer" | "color" | "length";
+  kind: "layer" | "color" | "length" | "motion";
 }
 
 // The CSS Color Module Level 4 / SVG1.1 extended keyword set, plus the three
@@ -355,7 +359,28 @@ function opensWithRecipesLayer(source: string): boolean {
   return /^@layer\s+soribashi\.recipes\s*\{/.test(rest);
 }
 
-function scanCssModule(source: string, path: string): Violation[] {
+/**
+ * A `@keyframes` block or an `animation` / `animation-name` declaration
+ * inside a CSS MODULE. Bun hashes a module's `@keyframes` ident without
+ * rewriting the `animation` that names it (oven-sh/bun#18921), and Vite
+ * hashes the `animation` ident whether or not the module declares the
+ * keyframe, so the only layout both bundlers get right keeps both halves in
+ * the plain `<Recipe>.keyframes.css` sibling (docs/decisions.md).
+ */
+const MOTION_IN_MODULE =
+  /@(?:-webkit-)?keyframes\b|(?<![\w-])(?:-webkit-)?animation(?:-name)?\s*:/gi;
+
+function findMotionInModule(source: string, path: string): Violation[] {
+  const scanned = stripCommentsPreservingLines(source);
+  const violations: Violation[] = [];
+  for (const m of scanned.matchAll(MOTION_IN_MODULE)) {
+    const token = m[0].startsWith("@") ? "@keyframes" : m[0].replace(/\s+/g, "");
+    violations.push({ path, line: lineOf(scanned, m.index), token, kind: "motion" });
+  }
+  return violations;
+}
+
+function scanRecipeStylesheet(source: string, path: string): Violation[] {
   const violations: Violation[] = [];
 
   if (!opensWithRecipesLayer(source)) {
@@ -398,7 +423,11 @@ function scanCssModule(source: string, path: string): Violation[] {
 function formatViolations(violations: Violation[]): string {
   if (violations.length === 0) return "";
   return violations
-    .map((v) => `${v.path}:${v.line}: hardcoded ${v.kind} literal "${v.token}"`)
+    .map((v) =>
+      v.kind === "motion"
+        ? `${v.path}:${v.line}: "${v.token}" belongs in the recipe's *.keyframes.css, not its CSS module (docs/decisions.md)`
+        : `${v.path}:${v.line}: hardcoded ${v.kind} literal "${v.token}"`,
+    )
     .join("\n");
 }
 
@@ -408,9 +437,9 @@ function formatViolations(violations: Violation[]): string {
 // run and mean something at zero recipes.
 // ---------------------------------------------------------------------------
 
-describe("scanCssModule", () => {
+describe("scanRecipeStylesheet", () => {
   it("flags a file whose first statement is not the soribashi.recipes layer", () => {
-    const violations = scanCssModule(".root { color: red; }", "fixture.module.css");
+    const violations = scanRecipeStylesheet(".root { color: red; }", "fixture.module.css");
     expect(violations.some((v) => v.kind === "layer")).toBe(true);
   });
 
@@ -423,7 +452,7 @@ describe("scanCssModule", () => {
       "}",
       "",
     ].join("\n");
-    expect(scanCssModule(css, "fixture.module.css")).toEqual([]);
+    expect(scanRecipeStylesheet(css, "fixture.module.css")).toEqual([]);
   });
 
   it("strips comments before scanning, including a commented-out violation", () => {
@@ -434,7 +463,7 @@ describe("scanCssModule", () => {
       "}",
       "",
     ].join("\n");
-    expect(scanCssModule(css, "fixture.module.css")).toEqual([]);
+    expect(scanRecipeStylesheet(css, "fixture.module.css")).toEqual([]);
   });
 
   it("tolerates a leading comment before the layer statement", () => {
@@ -445,7 +474,7 @@ describe("scanCssModule", () => {
       "}",
       "",
     ].join("\n");
-    expect(scanCssModule(css, "fixture.module.css").some((v) => v.kind === "layer")).toBe(false);
+    expect(scanRecipeStylesheet(css, "fixture.module.css").some((v) => v.kind === "layer")).toBe(false);
   });
 
   it("flags a hex colour literal, reporting path/line/token", () => {
@@ -457,7 +486,7 @@ describe("scanCssModule", () => {
       "}",
       "",
     ].join("\n");
-    const violations = scanCssModule(css, "fixture.module.css");
+    const violations = scanRecipeStylesheet(css, "fixture.module.css");
     expect(violations).toEqual([
       { path: "fixture.module.css", line: 3, token: "#ffffff", kind: "color" },
     ]);
@@ -482,7 +511,7 @@ describe("scanCssModule", () => {
       "}",
       "",
     ].join("\n");
-    const violations = scanCssModule(css, "fixture.module.css");
+    const violations = scanRecipeStylesheet(css, "fixture.module.css");
     expect(violations).toHaveLength(9);
     expect(violations.map((v) => v.token)).toEqual([
       "rgb(",
@@ -508,7 +537,7 @@ describe("scanCssModule", () => {
       "}",
       "",
     ].join("\n");
-    const violations = scanCssModule(css, "fixture.module.css");
+    const violations = scanRecipeStylesheet(css, "fixture.module.css");
     expect(violations.map((v) => v.token)).toEqual(["red", "white"]);
   });
 
@@ -524,7 +553,7 @@ describe("scanCssModule", () => {
       "}",
       "",
     ].join("\n");
-    expect(scanCssModule(css, "fixture.module.css")).toEqual([]);
+    expect(scanRecipeStylesheet(css, "fixture.module.css")).toEqual([]);
   });
 
   it("does not flag the allowlisted keywords: transparent, currentColor, currentcolor, inherit", () => {
@@ -539,7 +568,7 @@ describe("scanCssModule", () => {
       "}",
       "",
     ].join("\n");
-    expect(scanCssModule(css, "fixture.module.css")).toEqual([]);
+    expect(scanRecipeStylesheet(css, "fixture.module.css")).toEqual([]);
   });
 
   it("flags a length literal outside the allowlist, reporting path/line/token", () => {
@@ -551,7 +580,7 @@ describe("scanCssModule", () => {
       "}",
       "",
     ].join("\n");
-    const violations = scanCssModule(css, "fixture.module.css");
+    const violations = scanRecipeStylesheet(css, "fixture.module.css");
     expect(violations).toEqual([
       { path: "fixture.module.css", line: 3, token: "8px", kind: "length" },
     ]);
@@ -569,7 +598,7 @@ describe("scanCssModule", () => {
       "}",
       "",
     ].join("\n");
-    expect(scanCssModule(css, "fixture.module.css")).toEqual([]);
+    expect(scanRecipeStylesheet(css, "fixture.module.css")).toEqual([]);
   });
 
   it("does not flag unitless numbers or time values (ms/s)", () => {
@@ -583,7 +612,7 @@ describe("scanCssModule", () => {
       "}",
       "",
     ].join("\n");
-    expect(scanCssModule(css, "fixture.module.css")).toEqual([]);
+    expect(scanRecipeStylesheet(css, "fixture.module.css")).toEqual([]);
   });
 
   it("does not flag a colour/length literal that only appears inside a var() fallback", () => {
@@ -596,7 +625,7 @@ describe("scanCssModule", () => {
       "}",
       "",
     ].join("\n");
-    expect(scanCssModule(css, "fixture.module.css")).toEqual([]);
+    expect(scanRecipeStylesheet(css, "fixture.module.css")).toEqual([]);
   });
 
   it("correctly strips a nested var() fallback via paren-counting, not a truncating regex", () => {
@@ -608,7 +637,7 @@ describe("scanCssModule", () => {
       "}",
       "",
     ].join("\n");
-    expect(scanCssModule(css, "fixture.module.css")).toEqual([]);
+    expect(scanRecipeStylesheet(css, "fixture.module.css")).toEqual([]);
   });
 
   it("does not leak trailing fallback content past a nested var() close paren", () => {
@@ -624,7 +653,7 @@ describe("scanCssModule", () => {
       "}",
       "",
     ].join("\n");
-    expect(scanCssModule(css, "fixture.module.css")).toEqual([]);
+    expect(scanRecipeStylesheet(css, "fixture.module.css")).toEqual([]);
   });
 
   it("still flags a genuine violation alongside a correctly stripped nested var()", () => {
@@ -637,7 +666,7 @@ describe("scanCssModule", () => {
       "}",
       "",
     ].join("\n");
-    const violations = scanCssModule(css, "fixture.module.css");
+    const violations = scanRecipeStylesheet(css, "fixture.module.css");
     expect(violations).toEqual([
       { path: "fixture.module.css", line: 4, token: "#fff", kind: "color" },
     ]);
@@ -662,7 +691,7 @@ describe("scanCssModule", () => {
       "}",
       "",
     ].join("\n");
-    expect(scanCssModule(css, "fixture.module.css")).toEqual([]);
+    expect(scanRecipeStylesheet(css, "fixture.module.css")).toEqual([]);
   });
 
   it("does not flag a comma-separated keyframe selector list (0%, 100%)", () => {
@@ -676,7 +705,7 @@ describe("scanCssModule", () => {
       "}",
       "",
     ].join("\n");
-    expect(scanCssModule(css, "fixture.module.css")).toEqual([]);
+    expect(scanRecipeStylesheet(css, "fixture.module.css")).toEqual([]);
   });
 
   it("still flags a non-allowlisted percentage used as a declared VALUE, even inside a keyframes block", () => {
@@ -694,7 +723,7 @@ describe("scanCssModule", () => {
       "}",
       "",
     ].join("\n");
-    const violations = scanCssModule(css, "fixture.module.css");
+    const violations = scanRecipeStylesheet(css, "fixture.module.css");
     expect(violations).toEqual([{ path: "fixture.module.css", line: 4, token: "50%", kind: "length" }]);
   });
 
@@ -707,8 +736,72 @@ describe("scanCssModule", () => {
       "}",
       "",
     ].join("\n");
-    const violations = scanCssModule(css, "fixture.module.css");
+    const violations = scanRecipeStylesheet(css, "fixture.module.css");
     expect(violations).toEqual([{ path: "fixture.module.css", line: 3, token: "50%", kind: "length" }]);
+  });
+});
+
+describe("findMotionInModule", () => {
+  it("flags an @keyframes block inside a CSS module", () => {
+    const css = [
+      "@layer soribashi.recipes {",
+      "  @keyframes spin { to { transform: rotate(360deg); } }",
+      "}",
+      "",
+    ].join("\n");
+    expect(findMotionInModule(css, "fixture.module.css")).toEqual([
+      { path: "fixture.module.css", line: 2, token: "@keyframes", kind: "motion" },
+    ]);
+  });
+
+  it("flags animation and animation-name declarations, whatever their value", () => {
+    const css = [
+      "@layer soribashi.recipes {",
+      "  .root { animation: spin 1s linear infinite; }",
+      "  .root[data-x] { animation-name: none; }",
+      "}",
+      "",
+    ].join("\n");
+    expect(findMotionInModule(css, "fixture.module.css").map((v) => [v.line, v.token])).toEqual([
+      [2, "animation:"],
+      [3, "animation-name:"],
+    ]);
+  });
+
+  it("ignores commented-out motion and other animation-* longhands", () => {
+    // `animation-duration` and friends are harmless on their own: only the
+    // NAME binding (shorthand or `animation-name`) has to sit next to the
+    // `@keyframes` it names.
+    const css = [
+      "@layer soribashi.recipes {",
+      "  /* animation: spin 1s; */",
+      "  .root { animation-duration: var(--sb-x-period); transition: opacity 1s; }",
+      "}",
+      "",
+    ].join("\n");
+    expect(findMotionInModule(css, "fixture.module.css")).toEqual([]);
+  });
+
+  it("matches regardless of case, like the CSS parser does", () => {
+    const css = ["@layer soribashi.recipes {", "  .root { ANIMATION: spin 1s; }", "  @Keyframes spin { to { opacity: 0; } }", "}", ""].join("\n");
+    expect(findMotionInModule(css, "fixture.module.css").map((v) => [v.line, v.token])).toEqual([
+      [2, "ANIMATION:"],
+      [3, "@keyframes"],
+    ]);
+  });
+
+  it("catches vendor-prefixed motion too", () => {
+    const css = [
+      "@layer soribashi.recipes {",
+      "  .root { -webkit-animation: spin 1s; }",
+      "  @-webkit-keyframes spin { to { opacity: 0; } }",
+      "}",
+      "",
+    ].join("\n");
+    expect(findMotionInModule(css, "fixture.module.css").map((v) => [v.line, v.token])).toEqual([
+      [2, "-webkit-animation:"],
+      [3, "@keyframes"],
+    ]);
   });
 });
 
@@ -720,43 +813,73 @@ describe("scanCssModule", () => {
 
 const RECIPES_DIR = join(import.meta.dirname, "..", "src", "recipes");
 
-function findModuleCssFiles(dir: string): string[] {
+function findCssFiles(dir: string, suffix: string): string[] {
   if (!existsSync(dir)) return [];
   const out: string[] = [];
   for (const entry of readdirSync(dir)) {
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) {
-      out.push(...findModuleCssFiles(full));
-    } else if (entry.endsWith(".module.css")) {
+      out.push(...findCssFiles(full, suffix));
+    } else if (entry.endsWith(suffix)) {
       out.push(full);
     }
   }
   return out;
 }
 
+function toPosix(file: string): string {
+  return relative(RECIPES_DIR, file).split(/[\\/]/).join("/");
+}
+
 describe("no hardcoded values: real recipe stylesheets", () => {
-  const files = findModuleCssFiles(RECIPES_DIR).sort((a, b) => a.localeCompare(b));
+  const moduleFiles = findCssFiles(RECIPES_DIR, ".module.css").sort((a, b) => a.localeCompare(b));
+  const keyframesFiles = findCssFiles(RECIPES_DIR, ".keyframes.css").sort((a, b) =>
+    a.localeCompare(b),
+  );
 
   /**
    * soribashi's floor here is `files.length > 0`, which cannot hold in this
    * kit: the gate is committed before the first recipe exists (Icon lands
    * next), and a floor that has to be disabled for a while is a floor nobody
-   * re-enables. The replacement is strictly stronger AND true at zero — it
+   * re-enables. The replacement is strictly stronger AND true at zero... it
    * pins the sweep to the directory listing, so a recipe folder whose
    * stylesheet is missing, misnamed, or in a subfolder the walker doesn't
    * reach fails here rather than being silently skipped.
    */
-  it("sweeps exactly one stylesheet per recipe directory", () => {
-    expect(files.map((f) => relative(RECIPES_DIR, f).split(/[\\/]/).join("/"))).toEqual(
+  it("sweeps exactly one CSS module per recipe directory", () => {
+    expect(moduleFiles.map(toPosix)).toEqual(
       listRecipeDirs().map((name) => `${name}/${name}.module.css`),
     );
   });
 
-  it.each(files.map((f) => [relative(RECIPES_DIR, f), f] as const))(
+  /**
+   * A keyframes sibling is optional (only recipes that animate carry one),
+   * so there is no one-per-directory floor; what IS pinned is that each one
+   * sits directly in its recipe directory under `<Recipe>.keyframes.css`,
+   * the path the copy script, derive.ts and the recipe's own import agree on.
+   */
+  it("every keyframes stylesheet sits in its recipe directory, named after it", () => {
+    const dirs = listRecipeDirs();
+    for (const rel of keyframesFiles.map(toPosix)) {
+      const dir = rel.split("/")[0] as string;
+      expect(dirs, `${rel} is not inside a recipe directory`).toContain(dir);
+      expect(rel).toBe(`${dir}/${dir}.keyframes.css`);
+    }
+  });
+
+  it.each([...moduleFiles, ...keyframesFiles].map((f) => [toPosix(f), f] as const))(
     "%s has no hardcoded colour/length values outside the allowlist",
     (_label, file) => {
       const source = readFileSync(file, "utf8");
-      const violations = scanCssModule(source, relative(RECIPES_DIR, file));
+      const violations = scanRecipeStylesheet(source, toPosix(file));
+      expect(violations, formatViolations(violations)).toEqual([]);
+    },
+  );
+
+  it.each(moduleFiles.map((f) => [toPosix(f), f] as const))(
+    "%s keeps @keyframes and animation declarations out of the CSS module",
+    (_label, file) => {
+      const violations = findMotionInModule(readFileSync(file, "utf8"), toPosix(file));
       expect(violations, formatViolations(violations)).toEqual([]);
     },
   );

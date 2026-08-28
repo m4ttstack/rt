@@ -10,9 +10,9 @@ import { Drawer, type DrawerScreen } from "./Drawer.tsx";
  * BASELINES ARE TRACKED IN GIT — see Icon.visual.test.tsx.
  *
  * THE ANIMATION FREEZE IS INSTALLED HERE, following ToastHost's precedent:
- * Drawer.module.css's `.content` carries a real (one-shot, not perpetual)
- * `animation` (`drawer-slide-in`), so a capture mid-slide-in would be
- * non-deterministic between runs.
+ * Drawer.keyframes.css puts a real (one-shot, not perpetual) animation
+ * (drawer-slide-in) on [data-part="drawer-content"], so a capture mid-slide-in
+ * would be non-deterministic between runs.
  *
  * THE OVERLAY IS THE CAPTURE TARGET, not the panel — same reasoning as
  * SideDrawer.visual.test.tsx: it is `position: fixed; inset: 0`, so its

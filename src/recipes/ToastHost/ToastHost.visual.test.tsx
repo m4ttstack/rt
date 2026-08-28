@@ -9,9 +9,9 @@ import { ToastHost } from "./ToastHost.tsx";
  * Visual tier for the ToastHost recipe.
  *
  *  * THE ANIMATION FREEZE IS INSTALLED HERE, following Chip's precedent:
- * ToastHost.module.css's `.toast` carries a real (one-shot, not perpetual)
- * `animation` (`toasthost-in`), so a capture mid-slide-in would be
- * non-deterministic between runs. `animation: none !important` is what
+ * ToastHost.keyframes.css puts a real (one-shot, not perpetual) animation
+ * (toasthost-in) on [data-part="toasthost-toast"], so a capture mid-slide-in
+ * would be non-deterministic between runs. `animation: none !important` is what
  * closes that — `transition: none` alone would do nothing for an `animation`
  *.
  */

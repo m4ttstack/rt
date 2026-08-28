@@ -36,29 +36,6 @@
     border-color: var(--chip-border, currentColor);
   }
 
-  .root[data-pulse] {
-    animation-name: chip-pulse;
-    animation-duration: var(--sb-chip-pulse-period);
-    animation-timing-function: ease-in-out;
-    animation-iteration-count: infinite;
-  }
-
-  @media (prefers-reduced-motion: reduce) {
-    .root[data-pulse] {
-      animation-name: none;
-    }
-  }
-
-  @keyframes chip-pulse {
-    0%,
-    100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.5;
-    }
-  }
-
   /* Overriding this from an app is route-sensitive, and getting it wrong is
      silent: `Chip.extend({ vars })` or a per-instance `vars` prop works (both
      land in the element's inline style); an app rule setting

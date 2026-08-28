@@ -82,9 +82,11 @@ export interface ManifestEntry {
   vocabularyAxes: readonly string[];
   variants: readonly string[];
   defaults: Record<string, unknown>;
-  /** The four recipe files (tsx, module.css, test.tsx, visual.test.tsx), repo-relative. */
+  /** The four recipe files (tsx, module.css, test.tsx, visual.test.tsx), repo-relative,
+      plus `<Name>.keyframes.css` when the recipe ships one. */
   files: string[];
-  /** Sorted, deduped theme CSS custom-property names the recipe's stylesheet depends on. */
+  /** Sorted, deduped theme CSS custom-property names the recipe's stylesheets (module
+      and keyframes) depend on. */
   tokenDependencies: string[];
   /** Registry-item names of sibling recipes this recipe's .tsx imports (empty for most). */
   registryDependencies: string[];
@@ -249,6 +251,8 @@ async function buildManifestEntriesForDir(name: string): Promise<ManifestEntry[]
   const cssPath = join(recipeDir, `${name}.module.css`);
   const testPath = join(recipeDir, `${name}.test.tsx`);
   const visualTestPath = join(recipeDir, `${name}.visual.test.tsx`);
+  const keyframesPath = join(recipeDir, `${name}.keyframes.css`);
+  const hasKeyframes = existsSync(keyframesPath);
 
   const tsxSource = readFileSync(tsxPath, "utf-8");
   const cssSource = readFileSync(cssPath, "utf-8");
@@ -306,8 +310,15 @@ async function buildManifestEntriesForDir(name: string): Promise<ManifestEntry[]
     );
   }
 
-  const files = [tsxPath, cssPath, testPath, visualTestPath].map(toRepoRelative);
-  const tokenDependencies = extractTokenDependencies(cssSource);
+  const keyframesSource = hasKeyframes ? readFileSync(keyframesPath, "utf-8") : "";
+  const files = [
+    tsxPath,
+    cssPath,
+    testPath,
+    visualTestPath,
+    ...(hasKeyframes ? [keyframesPath] : []),
+  ].map(toRepoRelative);
+  const tokenDependencies = extractTokenDependencies(`${cssSource}\n${keyframesSource}`);
   const registryDependencies = extractRecipeDependencies(tsxSource);
 
   return metas.map((meta) => ({

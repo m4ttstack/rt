@@ -1,0 +1,14 @@
+/* Both halves of the spin live here, outside Spinner.module.css, keyed on
+   the public `data-part`: see docs/decisions.md, "Keyframes live outside
+   the CSS module". */
+@layer soribashi.recipes {
+  [data-part="spinner"] {
+    animation: sb-spinner-spin 0.8s linear infinite;
+  }
+
+  @keyframes sb-spinner-spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+}

@@ -1,0 +1,27 @@
+/* The content slide-in, its reduced-motion override and its keyframes live
+   here, outside Drawer.module.css, keyed on the public `data-part`: see
+   docs/decisions.md, "Keyframes live outside the CSS module".
+   `--sb-drawer-slide-x` is set inline on the content element by Drawer.tsx
+   (push vs. pop direction). */
+@layer soribashi.recipes {
+  [data-part="drawer-content"] {
+    animation: drawer-slide-in 160ms ease-out;
+  }
+
+  @keyframes drawer-slide-in {
+    from {
+      opacity: 0;
+      transform: translateX(var(--sb-drawer-slide-x));
+    }
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-part="drawer-content"] {
+      animation: none;
+    }
+  }
+}

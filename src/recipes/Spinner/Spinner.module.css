@@ -9,13 +9,6 @@
     border: 2px solid var(--border);
     border-top-color: var(--accent);
     border-radius: var(--radius-round);
-    animation: sb-spinner-spin 0.8s linear infinite;
     vertical-align: middle;
-  }
-
-  @keyframes sb-spinner-spin {
-    to {
-      transform: rotate(360deg);
-    }
   }
 }

@@ -8,9 +8,9 @@ import { Spinner } from "./Spinner.tsx";
  * Visual tier for the Spinner recipe.
  *
  * THE ANIMATION FREEZE IS INSTALLED HERE, following StatusDot's precedent,
- * but `animation: none` rather than `transition: none`: Spinner.module.css's
- * `.root` carries a perpetual `animation` (the spin), not a transition, so a
- * capture mid-rotation would be non-deterministic between runs.
+ * but `animation: none` rather than `transition: none`: Spinner.keyframes.css
+ * puts a perpetual `animation` (the spin) on `[data-part="spinner"]`, not a
+ * transition, so a capture mid-rotation would be non-deterministic between runs.
  */
 
 const NO_MOTION_CLASS = "spinner-visual-no-motion";
