@@ -1,4 +1,11 @@
-import { Box, Button, Group, HoverCard, Stack, Text } from '@mattstack/app-kit/core';
+import {
+  Box,
+  Button,
+  Group,
+  HoverCard,
+  Stack,
+  Text,
+} from '@mattstack/app-kit/core';
 
 import classes from './agent-name.module.css';
 import { useBuddies } from './buddies-context';

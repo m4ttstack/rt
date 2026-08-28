@@ -7,9 +7,9 @@ import {
   Tooltip,
   UnstyledButton,
 } from '@mattstack/app-kit/core';
+import { Icon } from '@mattstack/app-kit/icons';
 import type { BuddyStatus, PresenceRow } from '@mattstack/rt-client';
 
-import { Icon } from '@mattstack/app-kit/icons';
 import { AgentName } from './AgentName';
 import { DOT_COLOR } from './presence-bits';
 import { STATUS_WORD, statusDetail } from './statusDetail';

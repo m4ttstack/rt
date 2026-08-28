@@ -8,10 +8,10 @@ import {
   Text,
   UnstyledButton,
 } from '@mattstack/app-kit/core';
-import type { BuddyStatus } from '@mattstack/rt-client';
-
 import { Icon } from '@mattstack/app-kit/icons';
 import { notifications } from '@mattstack/app-kit/notifications';
+import type { BuddyStatus } from '@mattstack/rt-client';
+
 import { STATUS_WORD } from './statusDetail';
 
 const MUTED = 'var(--tk-muted-text)';

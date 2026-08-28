@@ -12,7 +12,7 @@ browser ──HTTP/WS──▶ Bun + Hono (@mattstack/app-server + src/server) �
 ```
 
 - `src/server/index.ts` calls `serveMattstackApp({ name: 'chat', routes,
-  port: 11002, relay: [...] })` from `@mattstack/app-server`. The package
+port: 11002, relay: [...] })` from `@mattstack/app-server`. The package
   composes the Hono app (`/api/health`, `/api/daemon`, then `routes`), mounts
   static serving and the `/ws` upgrade, starts the relay, and `Bun.serve`s
   it; chat supplies only `src/server/routes.ts` (chat's own `/api/chat/*`
@@ -73,7 +73,7 @@ the fragment through wouter's location store, and `navigate` comes from
 | ------------------ | -------------------------------------------------------- |
 | `/`                | first room                                               |
 | `/r/<room>`        | that room; `#m-<id>` scrolls to and highlights a message |
-| `/demo/page-shell` | the app-kit's PageShell demo                              |
+| `/demo/page-shell` | the app-kit's PageShell demo                             |
 
 `/r/<room>#m-<id>` is a **contract with `rt`**: `rt chat post` prints it after
 every post and every wake line ends with it, built by
@@ -105,7 +105,7 @@ Day dividers split the list at local-date boundaries; a `↓ N new` pill appears
 | Command                                    | What you get                                                                                                                                                       |
 | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `bun run dev`                              | Vite only: the client with **no** `/api` and no `/ws`; fine for pure component work                                                                                |
-| `bun run build && bun src/server/index.ts` | the real thing on port 11002 (`PORT` env overrides it): `dist/` plus the API and relay, against the live daemon                                                     |
+| `bun run build && bun src/server/index.ts` | the real thing on port 11002 (`PORT` env overrides it): `dist/` plus the API and relay, against the live daemon                                                    |
 | `CHAT_FIXTURES=1 bun src/server/index.ts`  | the same server answering with `src/server/fixtures.ts`, the artboards' own data, so the page shows what `design/artboards` draw even when the daemon has no rooms |
 | `RT_SOCK_PATH=...`                         | point at a different daemon socket                                                                                                                                 |
 

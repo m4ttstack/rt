@@ -1,7 +1,6 @@
 import { readFileSync } from 'node:fs';
-import { expect, test } from 'vitest';
-
 import { expectLoadingBarInSync } from '@mattstack/app-kit/test-utils';
+import { expect, test } from 'vitest';
 
 test('index.html inlines the package loading-bar block', () => {
   expect(() =>

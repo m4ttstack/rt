@@ -1,8 +1,7 @@
+import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, test } from 'vitest';
-
-import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 
 import './icons';
 

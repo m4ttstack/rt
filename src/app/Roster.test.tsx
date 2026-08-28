@@ -1,9 +1,9 @@
+import { renderWithProviders as render } from '@mattstack/app-kit/test-utils';
 import type { PresenceRow } from '@mattstack/rt-client';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, test, vi } from 'vitest';
 
-import { renderWithProviders as render } from '@mattstack/app-kit/test-utils';
 import { Roster, type RosterBuddy } from './Roster';
 
 const now = 1_700_000_000_000;

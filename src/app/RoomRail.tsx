@@ -1,8 +1,14 @@
-import { Box, Group, Stack, Text, UnstyledButton } from '@mattstack/app-kit/core';
-import type { RoomSummary } from '@mattstack/rt-client';
-
+import {
+  Box,
+  Group,
+  Stack,
+  Text,
+  UnstyledButton,
+} from '@mattstack/app-kit/core';
 import { useLocalStorage } from '@mattstack/app-kit/hooks';
 import { AnimatedChevron, Icon } from '@mattstack/app-kit/icons';
+import type { RoomSummary } from '@mattstack/rt-client';
+
 import { AgentName } from './AgentName';
 
 /**

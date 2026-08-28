@@ -1,17 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RefObject } from 'react';
-import type {
-  ChatMember,
-  ChatMessage,
-  RoomSummary,
-} from '@mattstack/rt-client';
-import { useInterval } from 'react-interval-hook';
-import { useLocation } from 'wouter';
-import { navigate } from 'wouter/use-browser-location';
-
-import { ArchivedBar } from './ArchivedBar';
-import { BuddiesProvider } from './buddies-context';
-import { Composer, type ComposerHandle } from './Composer';
+import {
+  DaemonBanner,
+  MattstackShell,
+  NotFoundPage,
+  useDaemonHealth,
+} from '@mattstack/app-kit/app';
 import {
   Box,
   Center,
@@ -23,22 +17,32 @@ import {
   UnstyledButton,
 } from '@mattstack/app-kit/core';
 import {
-  DaemonBanner,
-  MattstackShell,
-  NotFoundPage,
-  useDaemonHealth,
-} from '@mattstack/app-kit/app';
-import { useColorScheme, useIsMobile, useLocalStorage } from '@mattstack/app-kit/hooks';
+  useColorScheme,
+  useIsMobile,
+  useLocalStorage,
+} from '@mattstack/app-kit/hooks';
 import { AnimatedChevron, Icon } from '@mattstack/app-kit/icons';
 import { notifications } from '@mattstack/app-kit/notifications';
 import { RailLink } from '@mattstack/app-kit/router';
+import type {
+  ChatMember,
+  ChatMessage,
+  RoomSummary,
+} from '@mattstack/rt-client';
+import { useInterval } from 'react-interval-hook';
+import { useLocation } from 'wouter';
+import { navigate } from 'wouter/use-browser-location';
+
+import { ArchivedBar } from './ArchivedBar';
+import { BuddiesProvider } from './buddies-context';
+import { AppMark } from './chrome/AppMark';
+import { Composer, type ComposerHandle } from './Composer';
+import { PageShellDemoPage } from './demo/PageShellDemoPage';
 import { PageBar, RoomMenu, type RoomOrder } from './PageBar';
 import { RoomRail } from './RoomRail';
 import { Roster, type RosterBuddy } from './Roster';
-import { Transcript } from './Transcript';
-import { AppMark } from './chrome/AppMark';
-import { PageShellDemoPage } from './demo/PageShellDemoPage';
 import { useAppRoute, useHash } from './routes';
+import { Transcript } from './Transcript';
 
 /**
  * `/api/chat/buddies`' own wire shape -- `Roster` reads the full

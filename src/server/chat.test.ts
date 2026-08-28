@@ -45,7 +45,9 @@ test("rooms returns the daemon's payload, DM rows included", async () => {
 
 test('an ok:false from the daemon becomes a 502, not a crash', async () => {
   vi.mocked(rt.chatRooms).mockResolvedValueOnce({ ok: false, error: 'nope' });
-  expect((await routes.request('/api/chat/rooms?handle=matt')).status).toBe(502);
+  expect((await routes.request('/api/chat/rooms?handle=matt')).status).toBe(
+    502
+  );
 });
 
 test('daemon-unreachable ALSO arrives as ok:false, never a throw', async () => {
@@ -55,7 +57,9 @@ test('daemon-unreachable ALSO arrives as ok:false, never a throw', async () => {
     ok: false,
     error: 'rt daemon unreachable at /x/rt.sock: ECONNREFUSED',
   });
-  expect((await routes.request('/api/chat/rooms?handle=matt')).status).toBe(502);
+  expect((await routes.request('/api/chat/rooms?handle=matt')).status).toBe(
+    502
+  );
 });
 
 test("who passes the daemon's status through and never spawns git", async () => {
@@ -297,7 +301,9 @@ test('rooms includes rooms the FLEET is in that the human has not joined', async
     },
   }));
 
-  const body = await (await routes.request('/api/chat/rooms?handle=matt')).json();
+  const body = await (
+    await routes.request('/api/chat/rooms?handle=matt')
+  ).json();
 
   // `build` is already the human's, so it is not duplicated from presence.
   expect(body.rooms.map((r: { room: string }) => r.room)).toEqual([

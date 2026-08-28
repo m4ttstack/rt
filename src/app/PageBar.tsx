@@ -7,12 +7,12 @@ import {
   Select,
   Text,
 } from '@mattstack/app-kit/core';
-import type { BuddyStatus, RoomSummary } from '@mattstack/rt-client';
-
 import { Icon } from '@mattstack/app-kit/icons';
 import { modals } from '@mattstack/app-kit/modals';
-import { STATUS_WORD } from './statusDetail';
+import type { BuddyStatus, RoomSummary } from '@mattstack/rt-client';
+
 import { AgentName } from './AgentName';
+import { STATUS_WORD } from './statusDetail';
 
 function signedInCount(buddies: { status: BuddyStatus }[]): number {
   return buddies.filter(b => b.status !== 'offline').length;

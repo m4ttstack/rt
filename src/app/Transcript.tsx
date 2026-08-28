@@ -1,10 +1,16 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Box, Group, Stack, Text, UnstyledButton } from '@mattstack/app-kit/core';
+import {
+  Box,
+  CopyActionIcon,
+  Group,
+  Stack,
+  Text,
+  UnstyledButton,
+} from '@mattstack/app-kit/core';
 import type { ChatMessage } from '@mattstack/rt-client';
 import ScrollToBottom, { useAtTop } from 'react-scroll-to-bottom';
 
-import { CopyActionIcon } from '@mattstack/app-kit/core';
 import { AgentName } from './AgentName';
 import { dayKey, dayLabel } from './day-label';
 import { NewPill } from './NewPill';

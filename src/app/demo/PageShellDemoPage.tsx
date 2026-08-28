@@ -1,6 +1,4 @@
 import { useState } from 'react';
-import { Link } from 'wouter';
-
 import {
   Badge,
   Box,
@@ -18,6 +16,7 @@ import {
   useRailState,
 } from '@mattstack/app-kit/core';
 import { Icon } from '@mattstack/app-kit/icons';
+import { Link } from 'wouter';
 
 const APP_HEADER_HEIGHT = 64;
 

@@ -1,4 +1,8 @@
 import {
+  renderWithProviders,
+  setViewportWidth,
+} from '@mattstack/app-kit/test-utils';
+import {
   act,
   fireEvent,
   screen,
@@ -8,10 +12,6 @@ import {
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test } from 'vitest';
 
-import {
-  renderWithProviders,
-  setViewportWidth,
-} from '@mattstack/app-kit/test-utils';
 import {
   fetchMock,
   installFakeWebSocket,

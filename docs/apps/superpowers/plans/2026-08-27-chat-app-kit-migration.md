@@ -8,7 +8,7 @@
 
 **Tech Stack:** React 19, Mantine 9.5, `@mattstack/app-kit` + `@mattstack/app-server` + `@mattstack/mantine-tokyo` (consumed as packed tarballs), Hono 4, wouter 3, Vitest 4 (jsdom), Bun.
 
-**Spec:** `~/Documents/GitHub/app-kit/docs/superpowers/specs/2026-08-26-app-kit-design.md` (section D Migration → chat; section 10 Consumer requirements). This plan reconciles that design with chat's *current* code (which added `ArchivedBar`/`NewPill`/`day-label` and moved its shell to `src/app/chrome/` since the spec was written) and applies the three consumer requirements the spec predates.
+**Spec:** `~/Documents/GitHub/app-kit/docs/superpowers/specs/2026-08-26-app-kit-design.md` (section D Migration → chat; section 10 Consumer requirements). This plan reconciles that design with chat's _current_ code (which added `ArchivedBar`/`NewPill`/`day-label` and moved its shell to `src/app/chrome/` since the spec was written) and applies the three consumer requirements the spec predates.
 
 ## Global Constraints
 
@@ -26,11 +26,13 @@
 ### Task 1: Vendor the packages + rewrite `package.json` deps
 
 **Files:**
+
 - Create: `vendor/` (three `.tgz` files, git-ignored or committed per repo norm)
 - Modify: `package.json`
 - Modify: `.gitignore` (if vendoring committed vs ignored — match probe's choice)
 
 **Interfaces:**
+
 - Produces: a resolvable dependency graph with `@mattstack/app-kit`, `@mattstack/app-server`, `@mattstack/mantine-tokyo` as tarballs, `@mantine/spotlight` added, the internalized deps dropped.
 
 - [ ] **Step 1: Pack the three app-kit packages into `vendor/`**
@@ -47,12 +49,14 @@ ls vendor/   # note the exact filenames + versions for the file: specifiers
 - [ ] **Step 2: Rewrite `package.json` dependencies**
 
 Add (tarball specifiers use the exact packed filenames from Step 1):
+
 ```jsonc
 "@mattstack/app-kit": "file:./vendor/mattstack-app-kit-<ver>.tgz",
 "@mattstack/app-server": "file:./vendor/mattstack-app-server-<ver>.tgz",
 "@mattstack/mantine-tokyo": "file:./vendor/mattstack-mantine-tokyo-<ver>.tgz",
 "@mantine/spotlight": "^9.5.2",
 ```
+
 Keep all existing `@mantine/*` peers, `@mattstack/rt-client`, `@tanstack/react-query`, `hono`, `react`, `react-dom`, `react-interval-hook` (App.tsx's buddies poll uses `useInterval`), `react-scroll-to-bottom`, `wouter`, `zod`.
 DROP the deps that became package internals and that no product code imports after the rewrite: `clsx`, `dayjs`, `mantine-form-zod-resolver`, `@tanstack/react-virtual`. Leave `lucide-react` for now — Task 7 decides it based on real icon usage.
 Add a `serve` script: `"serve": "bun run src/server/index.ts"`. Change `build` to `"tsc -p tsconfig.json && vite build"` and `typecheck` to `"tsc -p tsconfig.json"` (single tsconfig, per Task 2). Drop the `treeshake` and `debrand` scripts if their scripts are deleted (Task 2/3).
@@ -64,6 +68,7 @@ cd ~/Documents/GitHub/chat-app-kit-wt && bun install
 # Confirm a single react/vite/wouter copy (tarballs must not duplicate peers):
 bun pm ls 2>/dev/null | grep -E "react@|vite@|wouter@" | sort -u
 ```
+
 Expected: install succeeds; one copy each of react/vite/wouter. If a peer is duplicated, STOP and report — the tarball packing is the fix, not a resolution override.
 
 Known warning (not a failure): the `@mattstack/app-server` tarball declares peer `@mattstack/rt-client@^0.6` while chat pins `^0.7` (non-overlapping ranges), so `bun install` prints an unmet-peer warning. Runtime is fine — chat already uses the same `daemonHealth`/`createRelay` APIs. Confirm it is a warning only (install still succeeds); do not "fix" it by downgrading chat's rt-client.
@@ -80,23 +85,25 @@ git commit -m "chat: vendor app-kit packages as tarballs, rewrite deps"
 ### Task 2: Swap config files for the app-kit presets
 
 **Files:**
+
 - Modify: `vite.config.ts`, `vitest.setup.ts`, `eslint.config.js`
 - Replace: `tsconfig.json` (collapse the `app`/`node`/`tools` split into one)
 - Delete: `tsconfig.app.json`, `tsconfig.node.json`, `tsconfig.tools.json`, `eslint-local/`, `scripts/treeshake-check.sh`, `scripts/treeshake-probe/`, `scripts/debrand-check.sh`
 
 **Interfaces:**
+
 - Consumes: the `@mattstack/app-kit/{vite,eslint,tsconfig.base.json,test-utils}` subpaths (installed in Task 1).
 - Produces: config with no `@ui/*` alias anywhere.
 
 - [ ] **Step 1: `vite.config.ts`** — replace with the preset (mirrors probe):
 
 ```ts
-import { defineConfig } from 'vite';
-
 import { mattstackVite } from '@mattstack/app-kit/vite';
+import { defineConfig } from 'vite';
 
 export default defineConfig(mattstackVite({ apiPort: 11002 }));
 ```
+
 If chat's custom rolldown chunk `groups` prove necessary after the build gate (Task 10), reintroduce them via a merge on top of `mattstackVite(...)`; default is to drop them (YAGNI) and confirm the build still splits vendors acceptably.
 
 - [ ] **Step 2: `tsconfig.json`** — single config extending the base (mirrors probe):
@@ -104,10 +111,13 @@ If chat's custom rolldown chunk `groups` prove necessary after the build gate (T
 ```jsonc
 {
   "extends": "@mattstack/app-kit/tsconfig.base.json",
-  "compilerOptions": { "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tsbuildinfo" },
-  "include": ["src", "vite.config.ts", "vitest.setup.ts"]
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tsbuildinfo",
+  },
+  "include": ["src", "vite.config.ts", "vitest.setup.ts"],
 }
 ```
+
 Delete `tsconfig.app.json`, `tsconfig.node.json`, `tsconfig.tools.json`. There is no `@ui/*` `paths` entry anywhere anymore.
 
 - [ ] **Step 3: `vitest.setup.ts`** — use the package's polyfills (mirrors probe):
@@ -124,9 +134,8 @@ if (typeof window !== 'undefined') window.scrollTo = () => {};
 - [ ] **Step 4: `eslint.config.js`** — use the preset (mirrors probe); delete `eslint-local/`:
 
 ```js
-import tseslint from 'typescript-eslint';
-
 import { mattstackEslint } from '@mattstack/app-kit/eslint';
+import tseslint from 'typescript-eslint';
 
 export default tseslint.config(...mattstackEslint());
 ```
@@ -144,12 +153,14 @@ git add -A && git commit -m "chat: swap config for app-kit vite/eslint/tsconfig 
 ### Task 3: Delete the vendored kit, the boot module, and redundant app files
 
 **Files:**
+
 - Delete: `src/ui/{core,design-system,forms,hooks,icons,lazy,modals,notifications,storybook,styles,utils}/`, `src/ui/mantine.d.ts`
 - Delete: `src/boot/` (its `SimpleAlerts` + loading-bar CSS + tests are the app-kit `boot` subpath + `test-utils`)
 - Delete: `src/app/NotFoundPage.tsx`, `src/app/styles/tokyo-theme.css`
 - Delete: `src/ui/DaemonBanner.tsx`, `src/ui/DaemonBanner.test.tsx` (the package's `DaemonBanner` replaces them)
 
 **Interfaces:**
+
 - Produces: a `src/ui/` containing ONLY chat's product files (moved out in Task 4). After Task 4, `src/ui/` is empty and removed.
 
 - [ ] **Step 1: Delete the kit folders + boot + redundant files**
@@ -173,6 +184,7 @@ git commit -m "chat: delete vendored kit, boot module, redundant app files"
 ### Task 4: Move chat's product files from `src/ui/` to `src/app/`
 
 **Files (git mv each with its companions):**
+
 - `Transcript.tsx` (+ `Transcript.test.tsx`, `transcript-body.module.css`, `transcript-scroll.module.css`)
 - `Composer.tsx` (+ `Composer.test.tsx`), `Roster.tsx` (+ `Roster.test.tsx`), `RoomRail.tsx` (+ `RoomRail.test.tsx`), `PageBar.tsx` (+ `PageBar.test.tsx`)
 - `AgentName.tsx` (+ `agent-name.module.css`), `ArchivedBar.tsx` (+ `ArchivedBar.test.tsx`), `NewPill.tsx`
@@ -180,6 +192,7 @@ git commit -m "chat: delete vendored kit, boot module, redundant app files"
 - `test-utils.tsx` → `src/app/test-utils.tsx` (chat's product test helper; renames nothing, but its `renderWithProviders` import switches to the package in Task 5)
 
 **Interfaces:**
+
 - Produces: all product modules under `src/app/` with their existing relative cross-imports (`./AgentName`, `./day-label`, `./statusDetail`, `./presence-bits`, `./buddies-context`) intact.
 
 - [ ] **Step 1: Move the files** (relative cross-imports survive a same-directory move; only `@ui/*` and `@ui/statusDetail`-style specifiers get rewritten in Task 5):
@@ -210,6 +223,7 @@ git add -A && git commit -m "chat: move product modules from src/ui to src/app"
 **Files:** every `src/**/*.{ts,tsx}` that imported `@ui/*` (73 files pre-move) plus `vitest.setup.ts` (already handled in Task 2).
 
 **Interfaces:**
+
 - Consumes: the moved product files (Task 4), the deleted kit (Task 3).
 - Produces: zero `@ui/` specifiers remaining in the tree.
 
@@ -229,6 +243,7 @@ grep -rl "@ui/" src | xargs sed -i '' -E "s#@ui/(core|hooks|design-system|notifi
 ```bash
 grep -rl "@ui/storybook/test-utils" src | xargs sed -i '' -E "s#@ui/storybook/test-utils#@mattstack/app-kit/test-utils#g"
 ```
+
 (There is no surviving `@ui/hooks/useSchemeColors` deep import in app code — `layout.ts` imports the `@ui/hooks` barrel and is deleted in Task 6; the deep occurrences were in kit files deleted in Task 3. If Step 4's grep surfaces any deep `@mattstack/app-kit/hooks/<name>`, flatten it to the `@mattstack/app-kit/hooks` barrel.)
 
 - [ ] **Step 3: Fix the product-module + intra-product specifiers**
@@ -239,6 +254,7 @@ Product-module specifiers that resolved to `src/ui/<File>` now resolve to siblin
 grep -rl -E "@ui/(Transcript|Composer|Roster|RoomRail|PageBar|ArchivedBar|AgentName|NewPill|day-label|statusDetail|presence-bits|buddies-context|test-utils)" src \
   | xargs sed -i '' -E "s#@ui/(Transcript|Composer|Roster|RoomRail|PageBar|ArchivedBar|AgentName|NewPill|day-label|statusDetail|presence-bits|buddies-context|test-utils)#./\1#g"
 ```
+
 Then: `@ui/DaemonBanner` importers switch to `import { DaemonBanner } from '@mattstack/app-kit/app'` (Task 6 owns the render-site reconciliation). Chat's `src/app/test-utils.tsx` switches its own `renderWithProviders` import to `@mattstack/app-kit/test-utils`. Fix any `./` path that is wrong for an importer not in `src/app/` (Step 4's typecheck catches these).
 
 - [ ] **Step 4: Verify no `@ui/` remains** (except `src/main.tsx`, which Task 6 rewrites wholesale)
@@ -259,12 +275,14 @@ git add -A && git commit -m "chat: rewrite @ui imports to @mattstack/app-kit sub
 ### Task 6: Shell, entry, and daemon health
 
 **Files:**
+
 - Delete: `src/app/chrome/{AppChrome.tsx,layout.ts}` (replaced by `MattstackShell`); KEEP `src/app/chrome/AppMark.tsx`
 - Modify: `src/app/App.tsx` (mount `MattstackShell`; replace inline `useDaemonHealth` + product `DaemonBanner` with the package's)
 - Rewrite: `src/main.tsx`
 - Test: `src/app/App.test.tsx` (adjust to the new shell)
 
 **Interfaces:**
+
 - Consumes: `MattstackShell`, `mountMattstackApp`, `useDaemonHealth`, `DaemonBanner` from `@mattstack/app-kit/app` (`mountMattstackApp` brackets the pre-mount `registerSimpleAlerts`/`markMounted` internally, so `main.tsx` never imports the `boot` subpath directly).
 - Produces: chat rendering inside `MattstackShell` with `appName="chat"`, so `<AppLauncher>` mounts header-right.
 
@@ -274,10 +292,12 @@ git add -A && git commit -m "chat: rewrite @ui imports to @mattstack/app-kit sub
 import { mountMattstackApp } from '@mattstack/app-kit/app';
 
 import './app/icons'; // only if Task 7 keeps an icon registration; otherwise omit
+
 import { App } from './app/App';
 
 mountMattstackApp(<App />);
 ```
+
 Drop the `@ui/styles/index.css` and `./app/styles/tokyo-theme.css` imports (the package's `styles.css` is loaded by `mountMattstackApp`; probe imports no stylesheet in `main.tsx`).
 
 - [ ] **Step 2: Replace the shell in `App.tsx`** — swap `<AppChrome>…</AppChrome>` (the wrapper around the routed body) for:
@@ -290,6 +310,7 @@ Drop the `@ui/styles/index.css` and `./app/styles/tokyo-theme.css` imports (the 
   {/* the existing routed body */}
 </MattstackShell>
 ```
+
 `name="chat"` is lowercase — `MattstackShell` renders `{name}` as the wordmark and `App.test.tsx` asserts `getByText('chat')` (case-sensitive), matching the current `AppChrome`. Use `AppChrome`'s actual Rooms entry icon (`users`). The scheme toggle is now the shell's built-in `ColorSchemeControl` (a System/Light/Dark `HybridMenu`), so drop chat's hand-wired sun/moon toggle. `MattstackShell`/`RailLink` import from `@mattstack/app-kit/app` and `@mattstack/app-kit/router`. Delete `AppChrome.tsx` and `layout.ts`; keep `AppMark.tsx`.
 
 - [ ] **Step 2b: Re-point `NotFoundPage`** — Task 3 deleted `src/app/NotFoundPage.tsx`, but `App.tsx` still imports `{ NotFoundPage } from './NotFoundPage'` (a relative path Task 5's `@ui` sed never touched). Change it to `import { NotFoundPage } from '@mattstack/app-kit/app'` (as probe's `App.tsx` does). Grep `src` for any other import of the deleted `./NotFoundPage`/`./styles/tokyo-theme.css` and re-point or drop them.
@@ -303,6 +324,7 @@ The scheme-toggle test (`'the rail hosts the color-scheme toggle'`, App.test.tsx
 ```bash
 bunx vitest run src/app/App.test.tsx
 ```
+
 Expected: PASS after the scheme-toggle test is reworked and the render tree updated.
 
 - [ ] **Step 5: Commit**
@@ -316,10 +338,12 @@ git add -A && git commit -m "chat: mount MattstackShell (appName=chat), use pack
 ### Task 7: Icon registration (verify, then minimal)
 
 **Files:**
+
 - Maybe create: `src/app/icons.ts`, `src/app/app-icons.d.ts`
 - Maybe modify: `package.json` (drop `lucide-react`)
 
 **Interfaces:**
+
 - Produces: every `<Icon name="…">` chat renders resolves — either from app-kit's built-in registry or a chat registration.
 
 - [ ] **Step 1: Enumerate chat's icon names and check them against the package registry**
@@ -338,17 +362,22 @@ comm -23 /tmp/chat-icon-names.txt /tmp/kit-icon-names.txt   # names chat uses th
 
 ```ts
 // src/app/icons.ts
-import { Hash } from 'lucide-react'; // eslint-disable-line no-restricted-imports
 import { lucideWrapperFn, registerIcons } from '@mattstack/app-kit/icons';
+import { Hash } from 'lucide-react'; // eslint-disable-line no-restricted-imports
+
 registerIcons({ hash: lucideWrapperFn(Hash) });
 ```
+
 ```ts
 // src/app/app-icons.d.ts
 declare module '@mattstack/app-kit/icons' {
-  interface AppIcons { hash: true }
+  interface AppIcons {
+    hash: true;
+  }
 }
 export {};
 ```
+
 Keep `lucide-react` in `package.json`. Keep the `import './app/icons'` line in `main.tsx`.
 
 - [ ] **Step 3: Commit**
@@ -362,6 +391,7 @@ git add -A && git commit -m "chat: reconcile icon registration against the packa
 ### Task 8: Server — routes only, `serveMattstackApp` for the rest
 
 **Files:**
+
 - Create: `src/server/routes.ts` (chat's Hono chain + `AppType`)
 - Rewrite: `src/server/index.ts`
 - Delete: `src/server/{app.ts,ws.ts,health.ts,static-disk.ts}` and their tests (the package provides all of it)
@@ -369,6 +399,7 @@ git add -A && git commit -m "chat: reconcile icon registration against the packa
 - Test: port `chat.test.ts` + `fixtures.test.ts` to target `routes`
 
 **Interfaces:**
+
 - Consumes: `serveMattstackApp` from `@mattstack/app-server` (provides `/api/daemon`, SPA static, ws, `{ error }` envelope, binds `127.0.0.1`).
 - Produces: chat served on `127.0.0.1:11002` with its `/api/chat/*` routes and the `chat/` relay.
 
@@ -380,12 +411,14 @@ import { Hono } from 'hono';
 export const routes = /* the chat Hono chain */;
 export type AppType = typeof routes;
 ```
+
 Move `chat.ts`'s route definitions here (or keep `chat.ts`/`fixtures.ts` and have `routes.ts` compose them). Drop the `/api/health` route if unused (the client polls `/api/daemon`, which the package provides); keep `/api/chat/*` verbatim.
 
 - [ ] **Step 2: `index.ts`** — mirror probe:
 
 ```ts
 import { serveMattstackApp } from '@mattstack/app-server';
+
 import { routes } from './routes';
 
 await serveMattstackApp({
@@ -396,6 +429,7 @@ await serveMattstackApp({
   relay: [{ match: t => t.startsWith('chat/'), topic: 'chat' }],
 });
 ```
+
 Delete `app.ts`, `ws.ts`, `health.ts`, `static-disk.ts` and their tests — `serveMattstackApp` supplies the listener, static SPA serving, `/api/daemon`, ws plumbing, and the `{ error }` envelope. The client only checks `res.ok` (HTTP status), never the envelope body (verified), so the envelope change is safe.
 
 - [ ] **Step 3: Port the server tests** — `chat.test.ts` and `fixtures.test.ts` now import from `./routes`. Delete `app.test.ts`, `ws.test.ts`, `health.test.ts`, `static-disk.test.ts` (their targets are gone; the package owns those tests).
@@ -405,6 +439,7 @@ Delete `app.ts`, `ws.ts`, `health.ts`, `static-disk.ts` and their tests — `ser
 ```bash
 bunx vitest run src/server
 ```
+
 Expected: PASS.
 
 - [ ] **Step 5: Commit**
@@ -418,22 +453,26 @@ git add -A && git commit -m "chat: serve via @mattstack/app-server, keep only ch
 ### Task 9: `index.html` loading-bar sync
 
 **Files:**
+
 - Modify: `index.html` (loading-bar block matches the package's)
 - Create: `src/loading-bar-sync.test.ts` (mirrors probe)
 - Delete: chat's old `src/boot/loading-bar-sync.test.ts` (already removed with `src/boot/` in Task 3)
 
 **Interfaces:**
+
 - Consumes: `expectLoadingBarInSync` from `@mattstack/app-kit/test-utils`.
 
 - [ ] **Step 1: Add the sync test** (mirrors probe):
 
 ```ts
 import { readFileSync } from 'node:fs';
-import { expect, test } from 'vitest';
 import { expectLoadingBarInSync } from '@mattstack/app-kit/test-utils';
+import { expect, test } from 'vitest';
 
 test('index.html inlines the package loading-bar block', () => {
-  expect(() => expectLoadingBarInSync(readFileSync('index.html', 'utf-8'))).not.toThrow();
+  expect(() =>
+    expectLoadingBarInSync(readFileSync('index.html', 'utf-8'))
+  ).not.toThrow();
 });
 ```
 
@@ -454,6 +493,7 @@ git add -A && git commit -m "chat: sync index.html loading-bar with the package 
 ### Task 10: Docs re-point + full verification gate
 
 **Files:**
+
 - Modify: `ARCHITECTURE.md`, `CLAUDE.md`, `AGENTS.md`
 - No source changes (verification).
 
@@ -468,6 +508,7 @@ bun run typecheck        # tsc -p tsconfig.json, clean
 bun run lint             # eslint src, clean (mantine wall via the preset)
 bun run build            # tsc + vite build succeeds
 ```
+
 Expected: all green. If the vite build's vendor splitting regressed (Task 2 dropped the custom chunk groups), decide whether to reintroduce a `groups` merge on top of `mattstackVite(...)` or accept the preset default.
 
 - [ ] **Step 3: Commit any doc/gate fixups**

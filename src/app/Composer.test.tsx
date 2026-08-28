@@ -1,8 +1,8 @@
+import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test, vi } from 'vitest';
 
-import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import { Composer } from './Composer';
 import { fetchMock, installFetchMock } from './test-utils';
 
