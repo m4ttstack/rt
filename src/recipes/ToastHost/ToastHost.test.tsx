@@ -1,6 +1,7 @@
 import { createTheme } from "@soribashi/core";
 import { describe, expect, it } from "vitest";
 import { renderWithTheme } from "../../../test/test-utils.tsx";
+import { animationResolution } from "../../../test/keyframes.ts";
 import type { Toast } from "../../hooks/index.ts";
 import { tuiTheme } from "../../theme.ts";
 import { TOASTHOST_PARTS, ToastHost } from "./ToastHost.tsx";
@@ -84,6 +85,15 @@ describe("ToastHost (browser)", () => {
     // .tui-toasts's `position: fixed` (the CSS-less default for a <div> is
     // `static`), proving ToastHost.module.css actually reached the DOM.
     expect(getComputedStyle(rootQuery(screen.container) as HTMLElement).position).toBe("fixed");
+  });
+
+  it("each toast slides in via a @keyframes rule a loaded sheet actually declares, under its global name", async () => {
+    const screen = await renderWithTheme(<ToastHost toasts={TOASTS} />);
+
+    const [first] = toastsOf(screen.container);
+    const { name, found } = animationResolution(first as HTMLElement);
+    expect(found, `no @keyframes rule named "${name}" in any loaded sheet`).toBe(true);
+    expect(name).toBe("toasthost-in");
   });
 
   it("a consumer can override the default role via {...rest}", async () => {
