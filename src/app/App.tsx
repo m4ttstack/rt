@@ -9,9 +9,9 @@ import { useInterval } from 'react-interval-hook';
 import { useLocation } from 'wouter';
 import { navigate } from 'wouter/use-browser-location';
 
-import { ArchivedBar } from '@ui/ArchivedBar';
-import { BuddiesProvider } from '@ui/buddies-context';
-import { Composer, type ComposerHandle } from '@ui/Composer';
+import { ArchivedBar } from './ArchivedBar';
+import { BuddiesProvider } from './buddies-context';
+import { Composer, type ComposerHandle } from './Composer';
 import {
   Box,
   Center,
@@ -21,15 +21,15 @@ import {
   Stack,
   Text,
   UnstyledButton,
-} from '@ui/core';
-import { DaemonBanner } from '@ui/DaemonBanner';
-import { useColorScheme, useIsMobile, useLocalStorage } from '@ui/hooks';
-import { AnimatedChevron, Icon } from '@ui/icons';
-import { notifications } from '@ui/notifications';
-import { PageBar, RoomMenu, type RoomOrder } from '@ui/PageBar';
-import { RoomRail } from '@ui/RoomRail';
-import { Roster, type RosterBuddy } from '@ui/Roster';
-import { Transcript } from '@ui/Transcript';
+} from '@mattstack/app-kit/core';
+import { DaemonBanner } from '@mattstack/app-kit/app';
+import { useColorScheme, useIsMobile, useLocalStorage } from '@mattstack/app-kit/hooks';
+import { AnimatedChevron, Icon } from '@mattstack/app-kit/icons';
+import { notifications } from '@mattstack/app-kit/notifications';
+import { PageBar, RoomMenu, type RoomOrder } from './PageBar';
+import { RoomRail } from './RoomRail';
+import { Roster, type RosterBuddy } from './Roster';
+import { Transcript } from './Transcript';
 import { AppChrome } from './chrome/AppChrome';
 import { PageShellDemoPage } from './demo/PageShellDemoPage';
 import { NotFoundPage } from './NotFoundPage';

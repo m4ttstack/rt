@@ -10,8 +10,8 @@ import {
 } from '@mantine/core';
 import type { BuddyStatus } from '@mattstack/rt-client';
 
-import { Icon } from '@ui/icons';
-import { notifications } from '@ui/notifications';
+import { Icon } from '@mattstack/app-kit/icons';
+import { notifications } from '@mattstack/app-kit/notifications';
 import { STATUS_WORD } from './statusDetail';
 
 const MUTED = 'var(--tk-muted-text)';

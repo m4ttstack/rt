@@ -5,8 +5,8 @@ import {
   RailShell,
   Text,
   useRailState,
-} from '@ui/core';
-import { useColorScheme } from '@ui/hooks';
+} from '@mattstack/app-kit/core';
+import { useColorScheme } from '@mattstack/app-kit/hooks';
 import { AppMark } from './AppMark';
 import { useSiteHeaderProps } from './layout';
 

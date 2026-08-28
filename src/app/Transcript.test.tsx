@@ -1,7 +1,7 @@
 import { fireEvent, screen } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
-import { renderWithProviders } from '@ui/storybook/test-utils';
+import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import {
   fetchMock,
   installFakeWebSocket,

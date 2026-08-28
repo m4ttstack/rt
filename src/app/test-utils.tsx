@@ -1,7 +1,7 @@
 import type { ChatMessage } from '@mattstack/rt-client';
 import { vi } from 'vitest';
 
-import { renderWithProviders } from '@ui/storybook/test-utils';
+import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import { Transcript, type TranscriptProps } from './Transcript';
 
 /**

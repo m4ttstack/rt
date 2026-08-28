@@ -4,7 +4,7 @@ import { afterEach, expect, test } from 'vitest';
 import {
   renderWithProviders,
   setViewportWidth,
-} from '@ui/storybook/test-utils';
+} from '@mattstack/app-kit/test-utils';
 import { PageShellDemoPage } from './PageShellDemoPage';
 
 const DESKTOP_WIDTH = window.innerWidth;

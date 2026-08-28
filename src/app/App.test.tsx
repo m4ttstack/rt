@@ -11,13 +11,13 @@ import { afterEach, beforeEach, expect, test } from 'vitest';
 import {
   renderWithProviders,
   setViewportWidth,
-} from '@ui/storybook/test-utils';
+} from '@mattstack/app-kit/test-utils';
 import {
   fetchMock,
   installFakeWebSocket,
   installFetchMock,
   restoreWebSocket,
-} from '@ui/test-utils';
+} from './test-utils';
 import { App } from './App';
 
 const DESKTOP_WIDTH = window.innerWidth;

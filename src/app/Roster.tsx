@@ -9,7 +9,7 @@ import {
 } from '@mantine/core';
 import type { BuddyStatus, PresenceRow } from '@mattstack/rt-client';
 
-import { Icon } from '@ui/icons';
+import { Icon } from '@mattstack/app-kit/icons';
 import { AgentName } from './AgentName';
 import { DOT_COLOR } from './presence-bits';
 import { STATUS_WORD, statusDetail } from './statusDetail';

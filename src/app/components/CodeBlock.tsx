@@ -1,5 +1,5 @@
-import { Box, Paper } from '@ui/core';
-import { CodeHighlight } from '@ui/lazy';
+import { Box, Paper } from '@mattstack/app-kit/core';
+import { CodeHighlight } from '@mattstack/app-kit/lazy';
 
 export interface CodeBlockProps {
   code: string;
@@ -12,7 +12,7 @@ export interface CodeBlockProps {
 
 /**
  * A `CodeHighlight` inside a bordered, fixed-min-height frame. The
- * highlighter is lazily loaded (`@ui/lazy`), so the wrapper reserves the
+ * highlighter is lazily loaded (`@mattstack/app-kit/lazy`), so the wrapper reserves the
  * block's approximate final height up front -- no layout shift when the
  * chunk resolves.
  */

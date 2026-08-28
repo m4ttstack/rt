@@ -1,8 +1,8 @@
 import { Box, Group, Stack, Text, UnstyledButton } from '@mantine/core';
 import type { RoomSummary } from '@mattstack/rt-client';
 
-import { useLocalStorage } from '@ui/hooks';
-import { AnimatedChevron, Icon } from '@ui/icons';
+import { useLocalStorage } from '@mattstack/app-kit/hooks';
+import { AnimatedChevron, Icon } from '@mattstack/app-kit/icons';
 import { AgentName } from './AgentName';
 
 /**

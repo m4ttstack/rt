@@ -9,9 +9,9 @@ import {
 } from '@mantine/core';
 import type { BuddyStatus, RoomSummary } from '@mattstack/rt-client';
 
-import { Icon } from '@ui/icons';
-import { modals } from '@ui/modals';
-import { STATUS_WORD } from '@ui/statusDetail';
+import { Icon } from '@mattstack/app-kit/icons';
+import { modals } from '@mattstack/app-kit/modals';
+import { STATUS_WORD } from './statusDetail';
 import { AgentName } from './AgentName';
 
 function signedInCount(buddies: { status: BuddyStatus }[]): number {

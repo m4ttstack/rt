@@ -1,4 +1,4 @@
-import { useSchemeColors } from '@ui/hooks';
+import { useSchemeColors } from '@mattstack/app-kit/hooks';
 
 /**
  * The app's header surface, as `SiteShell`/`RailShell` `headerProps`: a

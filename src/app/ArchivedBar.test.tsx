@@ -2,7 +2,7 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { expect, test, vi } from 'vitest';
 
-import { renderWithProviders } from '@ui/storybook/test-utils';
+import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import { ArchivedBar } from './ArchivedBar';
 
 test('the archived bar says when, reassures, and reopens on its one button', async () => {
