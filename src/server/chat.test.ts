@@ -14,7 +14,7 @@ vi.mock('@mattstack/rt-client', () => ({
   getSetting: vi.fn(() => ({ value: 'matt' })),
 }));
 const rt = await import('@mattstack/rt-client');
-const { app } = await import('./app');
+const { routes } = await import('./routes');
 
 beforeEach(() => vi.resetAllMocks());
 
@@ -35,7 +35,7 @@ test("rooms returns the daemon's payload, DM rows included", async () => {
       ],
     },
   });
-  const res = await app.request('/api/chat/rooms?handle=matt');
+  const res = await routes.request('/api/chat/rooms?handle=matt');
   expect(res.status).toBe(200);
   expect((await res.json()).rooms[1]).toMatchObject({
     kind: 'dm',
@@ -45,7 +45,7 @@ test("rooms returns the daemon's payload, DM rows included", async () => {
 
 test('an ok:false from the daemon becomes a 502, not a crash', async () => {
   vi.mocked(rt.chatRooms).mockResolvedValueOnce({ ok: false, error: 'nope' });
-  expect((await app.request('/api/chat/rooms?handle=matt')).status).toBe(502);
+  expect((await routes.request('/api/chat/rooms?handle=matt')).status).toBe(502);
 });
 
 test('daemon-unreachable ALSO arrives as ok:false, never a throw', async () => {
@@ -55,7 +55,7 @@ test('daemon-unreachable ALSO arrives as ok:false, never a throw', async () => {
     ok: false,
     error: 'rt daemon unreachable at /x/rt.sock: ECONNREFUSED',
   });
-  expect((await app.request('/api/chat/rooms?handle=matt')).status).toBe(502);
+  expect((await routes.request('/api/chat/rooms?handle=matt')).status).toBe(502);
 });
 
 test("who passes the daemon's status through and never spawns git", async () => {
@@ -75,7 +75,7 @@ test("who passes the daemon's status through and never spawns git", async () => 
       ],
     },
   });
-  const res = await app.request('/api/chat/who/build');
+  const res = await routes.request('/api/chat/who/build');
   // One read. A Response body is a stream, so a second res.json() throws
   // "Body is unusable" rather than returning the same payload again.
   const body = await res.json();
@@ -147,7 +147,7 @@ test("buddies carries each buddy's rooms as tags, with DMs collapsed to `dm`", a
         ],
       },
     });
-  const res = await app.request('/api/chat/buddies');
+  const res = await routes.request('/api/chat/buddies');
   expect((await res.json()).buddies[0]).toMatchObject({
     handle: 'a',
     status: 'live',
@@ -171,7 +171,7 @@ test('a dropped write surfaces as an error, never a silent success', async () =>
   });
   expect(
     (
-      await app.request('/api/chat/post', {
+      await routes.request('/api/chat/post', {
         method: 'POST',
         body: JSON.stringify({ room: 'r', body: 'x' }),
       })
@@ -192,7 +192,7 @@ test('posting into a room the human has not joined joins first, then posts', asy
     ok: true,
     data: { id: 1, recipients: [] },
   });
-  const res = await app.request('/api/chat/post', {
+  const res = await routes.request('/api/chat/post', {
     method: 'POST',
     body: JSON.stringify({ room: 'release', body: 'hello' }),
   });
@@ -226,7 +226,7 @@ test('posting into a DM never joins: the human is already its silent member and 
     ok: true,
     data: { id: 2, recipients: ['deck-main', 'rt-chat-wt'] },
   });
-  const res = await app.request('/api/chat/post', {
+  const res = await routes.request('/api/chat/post', {
     method: 'POST',
     body: JSON.stringify({
       room: 'dm-9f3a2b1c0d4e',
@@ -297,7 +297,7 @@ test('rooms includes rooms the FLEET is in that the human has not joined', async
     },
   }));
 
-  const body = await (await app.request('/api/chat/rooms?handle=matt')).json();
+  const body = await (await routes.request('/api/chat/rooms?handle=matt')).json();
 
   // `build` is already the human's, so it is not duplicated from presence.
   expect(body.rooms.map((r: { room: string }) => r.room)).toEqual([
@@ -338,7 +338,7 @@ test('a failed presence lookup degrades to the human rooms, not an error', async
   });
   vi.mocked(rt.chatBuddies).mockResolvedValueOnce({ ok: false, error: 'nope' });
 
-  const res = await app.request('/api/chat/rooms?handle=matt');
+  const res = await routes.request('/api/chat/rooms?handle=matt');
   expect(res.status).toBe(200);
   expect((await res.json()).rooms).toHaveLength(1);
 });
@@ -363,7 +363,7 @@ test('rooms asks for the human’s archived rooms too and passes archivedAt thro
     ok: true,
     data: { buddies: [] },
   });
-  const res = await app.request('/api/chat/rooms?handle=matt');
+  const res = await routes.request('/api/chat/rooms?handle=matt');
   expect(res.status).toBe(200);
   expect(rt.chatRooms).toHaveBeenCalledWith(
     { handle: 'matt', includeArchived: true },
@@ -411,7 +411,7 @@ test('archiving a channel the human never joined joins him first, then archives'
     data: { room: 'build', archivedAt: 5 },
   });
 
-  const res = await app.request('/api/chat/archive?handle=matt', {
+  const res = await routes.request('/api/chat/archive?handle=matt', {
     method: 'POST',
     body: JSON.stringify({ room: 'build', archived: true }),
   });
@@ -448,7 +448,7 @@ test('archiving a room already in the human’s listing never joins; a DM never 
     ok: true,
     data: { room: 'build', archivedAt: 5 },
   });
-  await app.request('/api/chat/archive?handle=matt', {
+  await routes.request('/api/chat/archive?handle=matt', {
     method: 'POST',
     body: JSON.stringify({ room: 'build', archived: true }),
   });
@@ -467,7 +467,7 @@ test('archiving a room already in the human’s listing never joins; a DM never 
       ],
     },
   });
-  await app.request('/api/chat/archive?handle=matt', {
+  await routes.request('/api/chat/archive?handle=matt', {
     method: 'POST',
     body: JSON.stringify({ room: 'dm-1', archived: true }),
   });
@@ -475,13 +475,13 @@ test('archiving a room already in the human’s listing never joins; a DM never 
 });
 
 test('archive 400s on a bad body and on a room nobody lists, and never join-creates', async () => {
-  const bad = await app.request('/api/chat/archive?handle=matt', {
+  const bad = await routes.request('/api/chat/archive?handle=matt', {
     method: 'POST',
     body: JSON.stringify({ room: 'build' }),
   });
   expect(bad.status).toBe(400);
   expect((await bad.json()).error).toBe('archived must be true or false');
-  const noRoom = await app.request('/api/chat/archive?handle=matt', {
+  const noRoom = await routes.request('/api/chat/archive?handle=matt', {
     method: 'POST',
     body: JSON.stringify({ archived: true }),
   });
@@ -493,7 +493,7 @@ test('archive 400s on a bad body and on a room nobody lists, and never join-crea
     ok: true,
     data: { buddies: [] },
   });
-  const ghost = await app.request('/api/chat/archive?handle=matt', {
+  const ghost = await routes.request('/api/chat/archive?handle=matt', {
     method: 'POST',
     body: JSON.stringify({ room: 'ghost', archived: true }),
   });
@@ -566,7 +566,7 @@ test('archiving a DM known only through the fleet union never joins', async () =
     data: { room: 'dm-1', archivedAt: 5 },
   });
 
-  const res = await app.request('/api/chat/archive?handle=matt', {
+  const res = await routes.request('/api/chat/archive?handle=matt', {
     method: 'POST',
     body: JSON.stringify({ room: 'dm-1', archived: true }),
   });
@@ -589,7 +589,7 @@ test('archive surfaces a dropped write as a 502 with the daemon message', async 
     ok: false,
     error: 'archive dropped',
   });
-  const res = await app.request('/api/chat/archive?handle=matt', {
+  const res = await routes.request('/api/chat/archive?handle=matt', {
     method: 'POST',
     body: JSON.stringify({ room: 'build', archived: true }),
   });
@@ -616,7 +616,7 @@ test('reopen posts archived:false for a room in the human’s listing', async ()
     ok: true,
     data: { room: 'retro', archivedAt: null },
   });
-  const res = await app.request('/api/chat/archive?handle=matt', {
+  const res = await routes.request('/api/chat/archive?handle=matt', {
     method: 'POST',
     body: JSON.stringify({ room: 'retro', archived: false }),
   });
@@ -633,7 +633,7 @@ test('dm/open opens or reuses the pair’s room as the human without posting', a
     ok: true,
     data: { room: 'dm-1a2b3c4d5e6f', created: true },
   });
-  const res = await app.request('/api/chat/dm/open?handle=matt', {
+  const res = await routes.request('/api/chat/dm/open?handle=matt', {
     method: 'POST',
     body: JSON.stringify({ to: 'fred' }),
   });
@@ -651,7 +651,7 @@ test('dm/open surfaces a dropped write as a 502 with the daemon message', async 
     ok: false,
     error: 'dm-open dropped',
   });
-  const res = await app.request('/api/chat/dm/open?handle=matt', {
+  const res = await routes.request('/api/chat/dm/open?handle=matt', {
     method: 'POST',
     body: JSON.stringify({ to: 'fred' }),
   });
@@ -666,7 +666,7 @@ test('dm/open 400s on a missing, invalid, or own handle before touching the daem
     [{ to: 'matt' }, "can't DM yourself"],
   ];
   for (const [body, message] of cases) {
-    const res = await app.request('/api/chat/dm/open?handle=matt', {
+    const res = await routes.request('/api/chat/dm/open?handle=matt', {
       method: 'POST',
       body: JSON.stringify(body),
     });
@@ -676,11 +676,12 @@ test('dm/open 400s on a missing, invalid, or own handle before touching the daem
   expect(rt.chatDmOpen).not.toHaveBeenCalled();
 });
 
-test('POST /api/chat/dm is gone: a JSON 404, never the SPA shell', async () => {
-  const res = await app.request('/api/chat/dm', {
+test('POST /api/chat/dm is gone', async () => {
+  // The JSON-vs-SPA-shell 404 shape is @mattstack/app-server's createApp
+  // concern now (covered there); this only guards the route stays retired.
+  const res = await routes.request('/api/chat/dm', {
     method: 'POST',
     body: JSON.stringify({ to: 'fred', body: 'hi' }),
   });
   expect(res.status).toBe(404);
-  expect(res.headers.get('content-type')).toContain('application/json');
 });
