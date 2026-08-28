@@ -22,17 +22,22 @@ import {
   Text,
   UnstyledButton,
 } from '@mattstack/app-kit/core';
-import { DaemonBanner } from '@mattstack/app-kit/app';
+import {
+  DaemonBanner,
+  MattstackShell,
+  NotFoundPage,
+  useDaemonHealth,
+} from '@mattstack/app-kit/app';
 import { useColorScheme, useIsMobile, useLocalStorage } from '@mattstack/app-kit/hooks';
 import { AnimatedChevron, Icon } from '@mattstack/app-kit/icons';
 import { notifications } from '@mattstack/app-kit/notifications';
+import { RailLink } from '@mattstack/app-kit/router';
 import { PageBar, RoomMenu, type RoomOrder } from './PageBar';
 import { RoomRail } from './RoomRail';
 import { Roster, type RosterBuddy } from './Roster';
 import { Transcript } from './Transcript';
-import { AppChrome } from './chrome/AppChrome';
+import { AppMark } from './chrome/AppMark';
 import { PageShellDemoPage } from './demo/PageShellDemoPage';
-import { NotFoundPage } from './NotFoundPage';
 import { useAppRoute, useHash } from './routes';
 
 /**
@@ -56,61 +61,6 @@ export interface AppInitialState {
   rooms?: RoomSummary[];
   members?: ChatMember[];
   messages?: ChatMessage[];
-}
-
-interface DaemonHealthState {
-  reachable: boolean;
-  downSince?: number;
-  probeCount: number;
-  lastAnsweredAt?: number;
-}
-
-/**
- * Polls `GET /api/daemon` every 5s and tracks the shape `DaemonBanner` needs
- * beyond the bare boolean: how long the current outage has run and how many
- * probes it has seen, neither of which the server tracks across requests.
- * `seed` (from `initialState.daemonReachable`) is a one-time starting value,
- * matched against the house `initialState` seam every other UI test uses --
- * it is read once, not watched, so a test never needs a live poll.
- */
-function useDaemonHealth(seed: boolean | undefined) {
-  const [state, setState] = useState<DaemonHealthState>(() => {
-    const now = Date.now();
-    if (seed === false)
-      return { reachable: false, downSince: now, probeCount: 1 };
-    return {
-      reachable: true,
-      probeCount: 0,
-      lastAnsweredAt: seed === true ? now : undefined,
-    };
-  });
-
-  const probe = useCallback(async () => {
-    let reachable = false;
-    try {
-      const res = await fetch('/api/daemon');
-      const data = (await res.json()) as { reachable: boolean };
-      reachable = data.reachable;
-    } catch {
-      reachable = false;
-    }
-
-    const now = Date.now();
-    setState(prev => {
-      if (reachable)
-        return { reachable: true, probeCount: 0, lastAnsweredAt: now };
-      return {
-        reachable: false,
-        downSince: prev.reachable ? now : (prev.downSince ?? now),
-        probeCount: prev.reachable ? 1 : prev.probeCount + 1,
-        lastAnsweredAt: prev.lastAnsweredAt,
-      };
-    });
-  }, []);
-
-  useInterval(probe, 5000);
-
-  return { ...state, probeNow: probe };
 }
 
 function wsUrl(): string {
@@ -941,11 +891,12 @@ function PhoneChat({
 }
 
 /**
- * The whole app, today: the fixed rail + header chrome (`AppChrome`) around
- * the Rooms placeholder, routed by the hand-rolled history router in
- * ./router (no router dependency). The kit's full-screen PageShell demo
- * stays reachable at '/demo' -- inherited scaffold content, unrelated to
- * chat, and it bypasses the chrome entirely the same way it always has.
+ * The whole app, today: `MattstackShell` (rail + header chrome, appName=chat
+ * so the shared app launcher mounts) around the Rooms placeholder, routed by
+ * wouter's default browser-location hooks (see ./routes). The kit's
+ * full-screen PageShell demo stays reachable at '/demo' -- inherited
+ * scaffold content, unrelated to chat, and it bypasses the chrome entirely
+ * the same way it always has.
  *
  * `initialState` seeds the daemon-health and buddies data instead of a
  * network call -- the seam every UI test in this repo uses. Production
@@ -1108,7 +1059,10 @@ export function App({ initialState }: { initialState?: AppInitialState } = {}) {
       reachable={daemon.reachable}
       actions={buddyActions}
     >
-      <AppChrome>
+      <MattstackShell name="chat" appName="chat" mark={<AppMark size={30} />}>
+        <MattstackShell.Rail>
+          <RailLink icon="users" label="Rooms" href="/" active={chatRoute} />
+        </MattstackShell.Rail>
         {chatRoute ? (
           // The kit's own page layout: rooms in the collapsible Sidebar (a
           // drawer on phones), the page bar as the Header, the daemon banner in
@@ -1229,7 +1183,7 @@ export function App({ initialState }: { initialState?: AppInitialState } = {}) {
         ) : (
           <NotFoundPage />
         )}
-      </AppChrome>
+      </MattstackShell>
     </BuddiesProvider>
   );
 }
