@@ -7,28 +7,10 @@ jobs:
       run:
         working-directory: console
     steps:
-      # Checked out as SIBLINGS because package.json reaches rt-client through
-      # `file:../repo-tools/packages/rt-client`; a lone checkout cannot resolve
-      # that path, and install fails before any gate gets to run.
       - uses: actions/checkout@v4
         with:
           path: console
-      - uses: actions/checkout@v4
-        with:
-          repository: m4ttstack/rt
-          path: repo-tools
       - uses: oven-sh/setup-bun@v2
-      # rt-client's dist/ is gitignored and `file:` consumers copy it verbatim,
-      # so it must be built here or the console installs an empty package.
-      #
-      # --ignore-scripts is load-bearing on BOTH installs: rt-client's `prepack`
-      # runs its build, which bun fires during install, before @types/node and
-      # @types/bun are in place — so the build must be an explicit step between
-      # the two installs, never a lifecycle hook during either.
-      - run: bun install --ignore-scripts
-        working-directory: repo-tools
-      - run: bun run build
-        working-directory: repo-tools/packages/rt-client
       - run: bun install --frozen-lockfile --ignore-scripts
       - run: bun run typecheck
       - run: bun run lint
