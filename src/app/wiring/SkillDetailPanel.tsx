@@ -18,6 +18,7 @@ import { Icons } from '@mattstack/app-kit/icons';
 
 import { CompiledView } from './CompiledView';
 import { HealthChip } from './HealthChip';
+import { IncludeRow } from './IncludeRow';
 import { InverseIndex } from './InverseIndex';
 import type { BindingSite, SkillsComposition, SpineEntry } from './outline';
 import { QuietBadge } from './QuietBadge';
@@ -424,6 +425,36 @@ export function SkillDetailPanel({
               })
             )}
           </Stack>
+
+          {entry.includes.length > 0 && (
+            <Stack gap="xs" mt="md" data-testid="detail-includes">
+              <Stack gap={2}>
+                <Text size="sm" fw={600}>
+                  Includes
+                </Text>
+                <Text size="xs" c={text.muted}>
+                  Inlined by the skill&apos;s author. The pack cannot rebind
+                  these.
+                </Text>
+              </Stack>
+              <Paper
+                bg={bg.level3}
+                radius="lg"
+                style={{ border: `1px solid ${SOFT_RULE}` }}
+              >
+                {entry.includes.map((include, i) => (
+                  <Box
+                    key={include.name}
+                    style={{
+                      borderTop: i > 0 ? `1px solid ${SOFT_RULE}` : undefined,
+                    }}
+                  >
+                    <IncludeRow include={include} />
+                  </Box>
+                ))}
+              </Paper>
+            </Stack>
+          )}
         </Tabs.Panel>
 
         <Tabs.Panel
