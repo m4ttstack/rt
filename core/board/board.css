@@ -9,10 +9,45 @@ body {
   background: var(--bg);
 }
 .board-header { display: flex; justify-content: space-between; align-items: center; }
-.board-subline { color: var(--muted); }
+/* Title lockup: the deck mark at full size beside the wordmark. */
+.board-title { display: flex; align-items: center; gap: var(--spacing-md); }
+.board-logo { width: 32px; height: 32px; display: block; flex: none; }
+
+/* Subline reads as one quiet caption: the health count carries its tone, the
+   supporting counts trail dimmed with a gap rather than another dotted run. */
+.board-subline { color: var(--muted); margin: var(--spacing-lg) 0 var(--spacing-rem150); }
+.subline-rest { margin-left: var(--spacing-xl); opacity: 0.72; }
 
 .header-actions { display: flex; align-items: center; gap: var(--spacing-xs); }
 .mt-6 { margin-top: 1.5rem; }
+
+/* The app icon (mattstack mark) leads a managed row's identity, ahead of the
+   health dot; unmanaged rows carry none and start at the dot. */
+.app-icon {
+  width: 22px;
+  height: 22px;
+  display: inline-block;
+  vertical-align: middle;
+  margin-right: var(--spacing-sm);
+  flex: none;
+}
+
+/* Cloudflare tunnel health, collapsed from its own row to a header badge that
+   opens the tunnel drawer -- a bare button reset to read as a status chip. */
+.tunnel-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  margin-right: var(--spacing-sm);
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: var(--muted);
+  cursor: pointer;
+}
+.tunnel-label { font-size: var(--font-size-sm); }
+.tunnel-badge:hover .tunnel-label { color: var(--fg); }
 
 .unstyled { color: inherit; text-decoration: none; }
 .muted { color: var(--muted); text-decoration: none; }

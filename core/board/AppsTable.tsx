@@ -24,16 +24,17 @@ export interface DrawerRowProps {
 
 export function AppsTable({
   section,
+  showHead,
   data,
   board,
   openRowName,
   onOpenRow,
   registerChevron,
-}: { section: AppsSection; data: StatusData; board: BoardState } & DrawerRowProps) {
+}: { section: AppsSection; showHead: boolean; data: StatusData; board: BoardState } & DrawerRowProps) {
   const { isRestarting, onRestart, onPublish } = board;
   return (
     <Table>
-      {section.key === "apps" && (
+      {showHead && (
         <Table.Head>
           <Table.HeadCell>site</Table.HeadCell>
           <Table.HeadCell>port</Table.HeadCell>
@@ -124,6 +125,7 @@ function healthTip(row: Row, restarting: boolean): string {
 function SiteCell({ row, data, restarting }: { row: Row; data: StatusData; restarting: boolean }) {
   return (
     <>
+      {row.icon && <img className="app-icon" src={row.icon} alt="" aria-hidden="true" />}
       <StatusDot intent={healthTone(row, restarting)} tip={healthTip(row, restarting)} />
       {row.url ? (
         <span className="site-name">
@@ -164,13 +166,6 @@ function SiteCell({ row, data, restarting }: { row: Row; data: StatusData; resta
         <Tooltip className="cell-tag" tip="this is Deck itself, `deck uninstall` to remove it">
           <Chip uppercase aria-label="this is Deck itself, `deck uninstall` to remove it">
             this board
-          </Chip>
-        </Tooltip>
-      )}
-      {row.managedBy && row.managedBy !== "user" && !isPlatform(row.managedBy) && (
-        <Tooltip className="cell-tag" tip={`structure is owned by ${row.managedBy}`}>
-          <Chip uppercase aria-label={`structure is owned by ${row.managedBy}`}>
-            managed · {row.managedBy}
           </Chip>
         </Tooltip>
       )}
@@ -301,8 +296,8 @@ function RestartCell({
     rather than needing its own handler). A plain `<button>`, not the kit
     `Button`, because it needs the `row-chevron` part that wiring selects on
     -- Button's non-overridable tail always stamps `data-part="button"`.
-    Exported: TunnelSection's rows share this same cell. `registerRef` feeds
-    the drawer's chevron map, read on close to restore focus. */
+    `registerRef` feeds the drawer's chevron map, read on close to restore
+    focus. */
 export function ChevronCell({
   row,
   registerRef,

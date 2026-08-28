@@ -31,6 +31,8 @@ interface StatusRow {
   preflight: { code: string; message: string; fix?: string }[] | null;
   self: boolean;
   managedBy: string | null;
+  /** URL of the app's icon (the mattstack mark), null for unmanaged apps. */
+  icon: string | null;
   issues: { source: "portless" | "launchd" | "cloudflare"; message: string; at: string }[];
   record: { kind: "service" | "external"; command: string[] | null; workingDirectory: string | null } | null;
   oauth: { mode: "off" } | { mode: "emails"; emails: string[] } | { mode: "domains"; domains: string[] };
@@ -56,7 +58,7 @@ export type RestartingMap = Record<string, { pid: number | null; at: number }>;
 export type Notice = { kind: "ok" | "bad"; message: string; command?: string };
 
 function healthyFraction(data: StatusData): string {
-  return `${data.up}/${data.total} healthy`;
+  return `${data.up} of ${data.total} healthy`;
 }
 
 export function subline(data: StatusData | null): string {
@@ -65,8 +67,6 @@ export function subline(data: StatusData | null): string {
   const prot = data.apps.filter((r) => r.hasPassword).length;
   const parts = [healthyFraction(data), `${pub} public`];
   if (prot) parts.push(`${prot} protected`);
-  if (data.nextPort) parts.push(`next port ${data.nextPort}`);
-  parts.push("auto-refreshes");
   return parts.join(" · ");
 }
 
@@ -86,11 +86,33 @@ export function tunnelDomain(data: StatusData): string {
   return data.suffix === "localhost" ? "" : data.suffix;
 }
 
-// The apps table and the strays table share one row template in board.html.
+/** A mattstack-managed product: owned by rt or by the platform itself (deck),
+    as opposed to a user-added app. These get the mattstack section and icons. */
+export function isMattstack(row: Row): boolean {
+  return row.managedBy != null && row.managedBy !== "user";
+}
+
+// The apps tables and the strays table share one row template in board.html.
 export function sections(data: StatusData | null): { key: string; title: string | null; rows: Row[] }[] {
   const apps = data ? data.apps : [];
   const strays = data ? data.orphans.filter((r) => !r.isTunnel) : [];
-  const out: { key: string; title: string | null; rows: Row[] }[] = [{ key: "apps", title: null, rows: apps }];
+  // Platform (deck) sorts to the head of its own group; the rest alphabetical.
+  const mattstack = apps
+    .filter(isMattstack)
+    .sort(
+      (a, b) =>
+        Number(!isPlatform(a.managedBy ?? undefined)) - Number(!isPlatform(b.managedBy ?? undefined)) ||
+        a.name.localeCompare(b.name),
+    );
+  const yours = apps.filter((r) => !isMattstack(r));
+  const out: { key: string; title: string | null; rows: Row[] }[] = [];
+  if (mattstack.length) out.push({ key: "mattstack", title: "mattstack", rows: mattstack });
+  // The "your apps" heading only earns its place once a mattstack group sits
+  // above it; as the sole list it needs no label. Keep an (even empty) list
+  // section when there is no mattstack group, matching the pre-split board.
+  if (yours.length || !mattstack.length) {
+    out.push({ key: "apps", title: mattstack.length ? "your apps" : null, rows: yours });
+  }
   if (strays.length) out.push({ key: "strays", title: "services without routes", rows: strays });
   return out;
 }
