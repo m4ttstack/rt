@@ -14,6 +14,7 @@ const USAGE = `deck: named https domains, supervision, and sharing for local app
 
 usage:
   deck status | list                       show every app
+  deck url <name> [--public]               print its local url (or public url with --public)
   deck add <name> --port N                 route an app you run yourself
   deck add <name> --cmd "…" --dir PATH     register a supervised app
   deck remove <name> [--force]             unregister (registrar-owned; --force is the escape hatch)
@@ -63,6 +64,28 @@ export async function runCommand(
           const issues = (row.issues ?? []).map((i: any) => ` !${i.source}`).join("");
           io.out(`${row.name.padEnd(24)} ${String(row.port ?? "-").padEnd(6)} ${health.padEnd(5)} ${managed}${issues}`);
         }
+        return 0;
+      }
+      case "url": {
+        const [name] = rest;
+        if (!name) { io.err(USAGE); return 2; }
+        const wantPublic = rest.includes("--public");
+        const { status, body } = await apiJson(`/api/v1/apps/${name}`);
+        if (status === 404) { io.err(`unknown service: ${name}`); return 1; }
+        if (status !== 200) { io.err(body.error ?? `failed (${status})`); return 1; }
+        const row = body.row;
+        if (wantPublic) {
+          // publicUrl is set even for unpublished apps, so `published` is the
+          // gate on whether the shareable URL actually resolves.
+          if (!row?.published) { io.err(`${name} is not published; run \`deck publish ${name} on\``); return 1; }
+          if (!row.publicUrl) { io.err(`${name} has no public url`); return 1; }
+          io.out(row.publicUrl);
+          return 0;
+        }
+        // A record with no route has a null url: it has no reachable address,
+        // so it reads as not found rather than printing an empty line.
+        if (!row?.url) { io.err(`unknown service: ${name}`); return 1; }
+        io.out(row.url);
         return 0;
       }
       case "add": {
