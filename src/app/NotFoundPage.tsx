@@ -1,7 +1,7 @@
 import { Link } from 'wouter';
 
-import { Box, Button, Stack, Text, Title } from '@ui/core';
-import { Icon } from '@ui/icons';
+import { Box, Button, Stack, Text, Title } from '@mattstack/app-kit/core';
+import { Icon } from '@mattstack/app-kit/icons';
 
 /** Rendered for any path the route table doesn't recognize. */
 export function NotFoundPage() {

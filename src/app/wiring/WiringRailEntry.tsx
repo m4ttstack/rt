@@ -1,6 +1,6 @@
 import { Link } from 'wouter';
 
-import { Indicator, RailEntry } from '@ui/core';
+import { Indicator, RailEntry } from '@mattstack/app-kit/core';
 import { WIRING_ATTENTION_HREF, WIRING_HREF } from './attentionFilter';
 import { useAttentionCount } from './useWiring';
 

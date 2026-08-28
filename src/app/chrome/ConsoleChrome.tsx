@@ -8,8 +8,8 @@ import {
   RailShell,
   Text,
   useRailState,
-} from '@ui/core';
-import { useColorScheme } from '@ui/hooks';
+} from '@mattstack/app-kit/core';
+import { useColorScheme } from '@mattstack/app-kit/hooks';
 import { WiringRailEntry } from '../wiring/WiringRailEntry';
 
 export const CONSOLE_HEADER_HEIGHT = 64;
@@ -17,8 +17,8 @@ export const CONSOLE_HEADER_HEIGHT = 64;
 export type ConsoleSection = 'runs' | 'search' | 'wiring';
 
 // Matches `MantineColorScheme` structurally without importing it -- the
-// `@mantine/core` import wall requires going through `@ui/*`, which doesn't
-// re-export this type.
+// `@mantine/core` import wall requires going through `@mattstack/app-kit/*`,
+// which doesn't re-export this type.
 type ColorSchemePreference = 'auto' | 'light' | 'dark';
 
 const COLOR_SCHEME_OPTIONS: { label: string; value: ColorSchemePreference }[] =

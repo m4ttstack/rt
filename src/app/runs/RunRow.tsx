@@ -4,10 +4,10 @@ import { useQueryClient, type QueryClient } from '@tanstack/react-query';
 import { Link } from 'wouter';
 import { navigate } from 'wouter/use-browser-location';
 
-import { ActionIcon, Anchor, Group, Menu, Stack, Text } from '@ui/core';
-import { useClipboard, useSchemeColors } from '@ui/hooks';
-import { Icons } from '@ui/icons';
-import { notifications } from '@ui/notifications';
+import { ActionIcon, Anchor, Group, Menu, Stack, Text } from '@mattstack/app-kit/core';
+import { useClipboard, useSchemeColors } from '@mattstack/app-kit/hooks';
+import { Icons } from '@mattstack/app-kit/icons';
+import { notifications } from '@mattstack/app-kit/notifications';
 import { client } from '../api';
 import { agingWarning } from './aging';
 import type { BoardRun } from './bands';

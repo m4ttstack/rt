@@ -3,7 +3,7 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
-import { renderWithProviders } from '@ui/storybook/test-utils';
+import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 
 // The rail carries the Wiring drift badge, which reads the skills routes.
 // Answering them with an empty roster keeps this file about the chrome --

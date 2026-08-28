@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 
-import { notifications } from '@ui/notifications';
+import { notifications } from '@mattstack/app-kit/notifications';
 import { buildAgentContext } from './agentContext';
 import {
   pluginOf,

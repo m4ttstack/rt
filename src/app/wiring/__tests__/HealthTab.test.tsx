@@ -3,7 +3,7 @@ import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { renderWithProviders } from '@ui/storybook/test-utils';
+import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 
 const compositionGet = vi.fn();
 const checkGet = vi.fn();

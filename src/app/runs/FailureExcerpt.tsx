@@ -8,9 +8,9 @@ import {
   Skeleton,
   Stack,
   Text,
-} from '@ui/core';
-import { useSchemeColors } from '@ui/hooks';
-import { Icons } from '@ui/icons';
+} from '@mattstack/app-kit/core';
+import { useSchemeColors } from '@mattstack/app-kit/hooks';
+import { Icons } from '@mattstack/app-kit/icons';
 import { client } from '../api';
 
 const MAX_HEIGHT = 240;

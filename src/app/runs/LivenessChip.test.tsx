@@ -2,7 +2,7 @@ import type { RunSummary } from '@mattstack/rt-client';
 import { screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { renderWithProviders } from '@ui/storybook/test-utils';
+import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import { pillTint } from './LivenessChip';
 
 const { LivenessChip } = await import('./LivenessChip');

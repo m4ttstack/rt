@@ -1,8 +1,8 @@
 import type { ReactNode } from 'react';
 import { Link } from 'wouter';
 
-import { Anchor, Badge, Group, Stack, Text } from '@ui/core';
-import { useSchemeColors } from '@ui/hooks';
+import { Anchor, Badge, Group, Stack, Text } from '@mattstack/app-kit/core';
+import { useSchemeColors } from '@mattstack/app-kit/hooks';
 import { WIRING_ATTENTION_HREF } from './attentionFilter';
 import { HealthChip } from './HealthChip';
 import type { SpineEntry, WiringHealth } from './outline';

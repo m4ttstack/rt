@@ -2,7 +2,7 @@ import { Component, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 
-import { GenericError, PageShell } from '@ui/core';
+import { GenericError, PageShell } from '@mattstack/app-kit/core';
 import { ConsoleChrome, type ConsoleSection } from './chrome/ConsoleChrome';
 import { ExplainKeyPage } from './config/ExplainKeyPage';
 import { NotFoundPage } from './NotFoundPage';

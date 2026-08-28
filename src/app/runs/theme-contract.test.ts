@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { theme } from '@ui/design-system/theme';
+import { theme } from '@mattstack/app-kit/design-system';
 
 /**
  * The run views consume theme keys BY NAME (`px="xxl"`, `p="xxxl"`,

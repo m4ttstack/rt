@@ -14,9 +14,9 @@ import {
   Text,
   TextInput,
   Tooltip,
-} from '@ui/core';
-import { useSchemeColors } from '@ui/hooks';
-import { Icons } from '@ui/icons';
+} from '@mattstack/app-kit/core';
+import { useSchemeColors } from '@mattstack/app-kit/hooks';
+import { Icons } from '@mattstack/app-kit/icons';
 import type { ExplainRowWire, SettingDefWire } from '../../server/settings';
 import { shortValue } from './chain';
 

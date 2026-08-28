@@ -16,11 +16,11 @@ import {
   Stack,
   Tabs,
   Text,
-} from '@ui/core';
-import { useClipboard, useHotkeys, useSchemeColors } from '@ui/hooks';
-import { Icons } from '@ui/icons';
-import { modals } from '@ui/modals';
-import { notifications } from '@ui/notifications';
+} from '@mattstack/app-kit/core';
+import { useClipboard, useHotkeys, useSchemeColors } from '@mattstack/app-kit/hooks';
+import { Icons } from '@mattstack/app-kit/icons';
+import { modals } from '@mattstack/app-kit/modals';
+import { notifications } from '@mattstack/app-kit/notifications';
 import { client } from '../api';
 import { CommandProvenance } from './CommandProvenance';
 import { EffectiveInputs } from './EffectiveInputs';
