@@ -82,7 +82,7 @@ git commit -m "chat: vendor app-kit packages as tarballs, rewrite deps"
 **Files:**
 - Modify: `vite.config.ts`, `vitest.setup.ts`, `eslint.config.js`
 - Replace: `tsconfig.json` (collapse the `app`/`node`/`tools` split into one)
-- Delete: `tsconfig.app.json`, `tsconfig.node.json`, `tsconfig.tools.json`, `eslint-local/`, `scripts/treeshake-check.sh`, `scripts/treeshake-probe/`
+- Delete: `tsconfig.app.json`, `tsconfig.node.json`, `tsconfig.tools.json`, `eslint-local/`, `scripts/treeshake-check.sh`, `scripts/treeshake-probe/`, `scripts/debrand-check.sh`
 
 **Interfaces:**
 - Consumes: the `@mattstack/app-kit/{vite,eslint,tsconfig.base.json,test-utils}` subpaths (installed in Task 1).
@@ -265,7 +265,7 @@ git add -A && git commit -m "chat: rewrite @ui imports to @mattstack/app-kit sub
 - Test: `src/app/App.test.tsx` (adjust to the new shell)
 
 **Interfaces:**
-- Consumes: `MattstackShell`, `mountMattstackApp`, `useDaemonHealth`, `DaemonBanner` from `@mattstack/app-kit/app`; `registerSimpleAlerts`/`markMounted` from `@mattstack/app-kit/boot`.
+- Consumes: `MattstackShell`, `mountMattstackApp`, `useDaemonHealth`, `DaemonBanner` from `@mattstack/app-kit/app` (`mountMattstackApp` brackets the pre-mount `registerSimpleAlerts`/`markMounted` internally, so `main.tsx` never imports the `boot` subpath directly).
 - Produces: chat rendering inside `MattstackShell` with `appName="chat"`, so `<AppLauncher>` mounts header-right.
 
 - [ ] **Step 1: `main.tsx`** — collapse to the probe shape exactly. `mountMattstackApp` (`packages/ui/src/app/mount.tsx`) already brackets the render with `registerSimpleAlerts()`/`markMounted()` internally, so `main.tsx` does NOT call them:
