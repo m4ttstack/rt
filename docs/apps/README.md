@@ -6,8 +6,8 @@ who is live, idle, deaf or offline. It reads the rt daemon through
 `@mattstack/rt-client` and runs as a local deck service at https://chat.mattstack (deck's
 local HTTPS name for port 11002). It is intentionally not published on a public host.
 
-Scaffolded from the mantine-kit template: Mantine 9, React 19, Vite, and Bun, with a `@ui/*`
-wrapper kit layered on top.
+Built on `@mattstack/app-kit` and `@mattstack/app-server`: Mantine 9, React 19,
+Vite, and Bun, with the shared kit consumed as vendored tarballs.
 
 ## Quickstart
 
@@ -27,8 +27,6 @@ bun run dev
 | `bun run typecheck`       | `tsc -b` project-references typecheck, no emit.                                     |
 | `bun run lint`            | ESLint over `src`.                                                                  |
 | `bun run format`          | Prettier (`--write`); `format:check` is what CI runs.                               |
-| `bun run debrand`         | Guard against leftover source-project naming (`scripts/debrand-check.sh`).          |
-| `bun run treeshake`       | Guard that the bundle only carries the kit it uses (`scripts/treeshake-check.sh`).  |
 | `bun run preview`         | Preview the production build locally.                                               |
 
 ## Learn more
@@ -38,10 +36,10 @@ bun run dev
   body renders, how to run it with real or fixture data, and the deploy loop.
 - `design/CONFORMANCE.md` and `design/ANATOMY.md`: the UI contract. The
   artboards under `design/artboards` are the authority on layout and values.
-- `AGENTS.md`: the mantine-kit conventions the app is built on (import walls,
-  icon registry, theme overrides, facades, boot family). `PUBLISHING.md` and
-  the "scaffolding a new app" section are inherited from the kit template and
-  do not apply to this app.
+- `AGENTS.md`: what's app-specific about chat's use of `@mattstack/app-kit` and
+  `@mattstack/app-server` (icon registration, vendored-tarball deps). The kit
+  contract itself (import walls, theme, facades, the mattstack shell, the
+  server package) lives in `~/Documents/GitHub/app-kit/AGENTS.md`.
 - The `rt chat` side (CLI, daemon, wake protocol) is documented in
   `~/Documents/GitHub/repo-tools`: `skills/rt-chat/SKILL.md` and
   `docs/superpowers/specs/2026-08-2{3,4}-rt-chat-*.md`.
