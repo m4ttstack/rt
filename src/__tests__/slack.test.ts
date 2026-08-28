@@ -194,3 +194,107 @@ describe("attachSlack", () => {
     expect(a!.slack?.posted).toBe(false);
   });
 });
+
+import { slackSweepTargets, sweepSlackRefs, readSlackRefs } from "../slack.ts";
+
+/** Counting stand-in for slack.com: answers just enough of the API for a
+    sweep and records which methods were hit. */
+function mockSlackApi(messagesByChannel: Record<string, SlackMessage[]>): { calls: string[]; restore: () => void } {
+  const real = globalThis.fetch;
+  const calls: string[] = [];
+  const ids: Record<string, string> = { "code-review": "C_REVIEW", "acme-channel": "C_ACME" };
+  const ok = (data: Record<string, unknown>) => new Response(JSON.stringify({ ok: true, ...data }));
+  globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
+    const url = typeof input === "string" ? input : input instanceof URL ? input.href : (input as Request).url;
+    const method = url.slice("https://slack.com/api/".length).split("?")[0]!;
+    const params = Object.fromEntries(new URL(url).searchParams);
+    calls.push(method);
+    switch (method) {
+      case "auth.test":
+        return ok({ url: "https://mockteam.slack.com/" });
+      case "conversations.list":
+        return ok({ channels: Object.entries(ids).map(([name, id]) => ({ id, name })), response_metadata: { next_cursor: "" } });
+      case "conversations.history": {
+        const name = Object.entries(ids).find(([, id]) => id === params.channel)?.[0] ?? "";
+        return ok({ messages: messagesByChannel[name] ?? [], has_more: false });
+      }
+      case "reactions.get":
+        return ok({ message: { reactions: [] } });
+      default:
+        return ok({});
+    }
+  }) as typeof fetch;
+  return { calls, restore: () => { globalThis.fetch = real; } };
+}
+
+describe("slackSweepTargets", () => {
+  const now = 1_000_000;
+  const retryAfter = now - 60_000;
+  const mrs = [
+    { webUrl: URL_A, iid: 1 },
+    { webUrl: URL_B, iid: 2 },
+    { webUrl: "https://gitlab.com/acme/webapp/-/merge_requests/3", iid: 3 },
+    { webUrl: null, iid: 4 },
+  ];
+  const refs = new Map<string, SlackRef>([
+    [URL_A, { mrUrl: URL_A, iid: 1, status: "found", messageTs: "1.1", checkedAt: now - 5 }],
+    [URL_B, { mrUrl: URL_B, iid: 2, status: "notfound", checkedAt: now - 5 }],
+  ]);
+  test("periodic: missing refs and stale notfound refs only", () => {
+    const stale = new Map(refs);
+    stale.set(URL_B, { ...refs.get(URL_B)!, checkedAt: retryAfter - 1 });
+    expect(slackSweepTargets(mrs, stale, { retryAfter }).map((m) => m.iid)).toEqual([2, 3]);
+  });
+  test("periodic: a fresh notfound ref waits for its retry window", () => {
+    expect(slackSweepTargets(mrs, refs, { retryAfter }).map((m) => m.iid)).toEqual([3]);
+  });
+  test("forced: every notfound ref is retried, found refs never are", () => {
+    expect(slackSweepTargets(mrs, refs, { retryAfter, force: true }).map((m) => m.iid)).toEqual([2, 3]);
+  });
+});
+
+describe("sweepSlackRefs", () => {
+  let api: ReturnType<typeof mockSlackApi>;
+  // Indexes only ever grow and refs persist, so each sweep starts from an
+  // empty state root or an earlier test's channel history leaks in.
+  beforeEach(() => rmSync(join(process.env.BOARD_APP_ROOT!, "state"), { recursive: true, force: true }));
+  afterEach(() => api.restore());
+
+  test("syncs each channel once, then resolves every target against that index", async () => {
+    api = mockSlackApi({ "code-review": [msg("100.1", `please review ${URL_A}`)] });
+    const targets = [
+      { mrUrl: URL_A, iid: 1, channel: "code-review" },
+      { mrUrl: URL_B, iid: 2, channel: "code-review" },
+      { mrUrl: "https://gitlab.com/acme/webapp/-/merge_requests/3", iid: 3, channel: "code-review" },
+    ];
+    await sweepSlackRefs("tok", targets, { gapMs: 0 });
+    expect(api.calls.filter((c) => c === "conversations.history")).toHaveLength(1);
+    const refs = readSlackRefs();
+    expect(refs.get(URL_A)?.status).toBe("found");
+    expect(refs.get(URL_B)?.status).toBe("notfound");
+    expect(refs.get(targets[2]!.mrUrl)?.status).toBe("notfound");
+  });
+
+  test("two channels means two syncs, not one per target", async () => {
+    api = mockSlackApi({ "code-review": [], "acme-channel": [msg("100.2", `review ${URL_B}`)] });
+    const targets = [
+      { mrUrl: URL_A, iid: 1, channel: "code-review" },
+      { mrUrl: URL_B, iid: 2, channel: "acme-channel" },
+      { mrUrl: "https://gitlab.com/acme/webapp/-/merge_requests/3", iid: 3, channel: "acme-channel" },
+    ];
+    await sweepSlackRefs("tok", targets, { gapMs: 0 });
+    expect(api.calls.filter((c) => c === "conversations.history")).toHaveLength(2);
+    expect(readSlackRefs().get(URL_B)?.status).toBe("found");
+  });
+
+  test("a failing channel sync is reported and does not stop the other channel", async () => {
+    api = mockSlackApi({ "acme-channel": [] });
+    const targets = [
+      { mrUrl: URL_A, iid: 1, channel: "no-such-channel" },
+      { mrUrl: URL_B, iid: 2, channel: "acme-channel" },
+    ];
+    const result = await sweepSlackRefs("tok", targets, { gapMs: 0 });
+    expect(result.failed).toBe(1);
+    expect(readSlackRefs().get(URL_B)?.status).toBe("notfound");
+  });
+});
