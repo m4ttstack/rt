@@ -23,10 +23,18 @@
    and controls off the page grid without competing with the MR groups. */
 .tui-header {
   display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;
-  margin-bottom: 1.6rem; padding: 0.7rem 0.9rem;
+  margin-bottom: 1.6rem; padding: 0.7rem 3rem 0.7rem 0.9rem;
   border: 1px solid var(--border-soft); border-radius: 8px;
   background: color-mix(in srgb, var(--panel) 55%, transparent);
+  position: relative;
 }
+/* Cross-app switcher: pinned to the header card's top-right corner via
+   absolute positioning, since `.tui-header` wraps (`flex-wrap: wrap`) --
+   on the real board the controls row wraps below the title, so a flex
+   sibling would land after the controls rather than in the corner. The
+   header's extra right padding above reserves room so the title/controls
+   never run under this ~40px button. */
+.tui-app-launcher { position: absolute; top: 0.5rem; right: 0.7rem; z-index: 2; }
 .tui-header h1 {
   display: flex; align-items: center; gap: 0.35rem;
   font-size: 1.15rem; font-weight: 700; letter-spacing: 0.02em; margin: 0;
