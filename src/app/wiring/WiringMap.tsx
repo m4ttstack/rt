@@ -1,8 +1,5 @@
 import { Component, useEffect, useMemo, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
-import { Link, useSearch } from 'wouter';
-import { navigate } from 'wouter/use-browser-location';
-
 import {
   Alert,
   Anchor,
@@ -17,10 +14,13 @@ import {
   Stack,
   Text,
   Timeline,
-} from '@ui/core';
-import type { PageShellTab } from '@ui/core';
-import { useSchemeColors } from '@ui/hooks';
-import { Icons } from '@ui/icons';
+} from '@mattstack/app-kit/core';
+import type { PageShellTab } from '@mattstack/app-kit/core';
+import { useSchemeColors } from '@mattstack/app-kit/hooks';
+import { Icons } from '@mattstack/app-kit/icons';
+import { Link, useSearch } from 'wouter';
+import { navigate } from 'wouter/use-browser-location';
+
 import { CommandProvenance } from '../runs/CommandProvenance';
 import { AttentionEmptyState } from './AttentionEmptyState';
 import {

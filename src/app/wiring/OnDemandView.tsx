@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
+import { Anchor, Stack, Text } from '@mattstack/app-kit/core';
+import { useSchemeColors } from '@mattstack/app-kit/hooks';
 
-import { Anchor, Stack, Text } from '@ui/core';
-import { useSchemeColors } from '@ui/hooks';
 import { buildSpine } from './outline';
 import { SkillRow } from './SkillRow';
 import { SkillSplitLayout } from './SkillSplitLayout';

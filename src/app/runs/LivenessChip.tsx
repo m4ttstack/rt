@@ -1,8 +1,7 @@
 import type { ReactNode } from 'react';
+import { Box } from '@mattstack/app-kit/core';
+import type { MantineColor } from '@mattstack/app-kit/core';
 import type { RunSummary } from '@mattstack/rt-client';
-
-import { Box } from '@ui/core';
-import type { MantineColor } from '@ui/core';
 
 /** The pill's tint/ink pair. Exported so surfaces and their tests read the
     same definition rather than each spelling the CSS out. */

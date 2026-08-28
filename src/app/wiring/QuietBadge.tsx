@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
-
-import { Badge } from '@ui/core';
-import { useSchemeColors } from '@ui/hooks';
+import { Badge } from '@mattstack/app-kit/core';
+import { useSchemeColors } from '@mattstack/app-kit/hooks';
 
 /**
  * The spine's non-health label: a hairline outline in muted text, for the

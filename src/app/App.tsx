@@ -1,9 +1,10 @@
 import { Component, type ReactNode } from 'react';
+import { MattstackShell } from '@mattstack/app-kit/app';
+import { GenericError, PageShell } from '@mattstack/app-kit/core';
+import { RailLink } from '@mattstack/app-kit/router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 
-import { GenericError, PageShell } from '@ui/core';
-import { ConsoleChrome, type ConsoleSection } from './chrome/ConsoleChrome';
 import { ExplainKeyPage } from './config/ExplainKeyPage';
 import { NotFoundPage } from './NotFoundPage';
 import { ConsolePalette } from './palette/ConsolePalette';
@@ -12,8 +13,11 @@ import { RunBoard } from './runs/RunBoard';
 import { RunDetail } from './runs/RunDetail';
 import { RunSearch } from './runs/RunSearch';
 import { WiringMap } from './wiring/WiringMap';
+import { WiringRailEntry } from './wiring/WiringRailEntry';
 
 const queryClient = new QueryClient();
+
+type ConsoleSection = 'runs' | 'search' | 'wiring';
 
 function chromeSection(route: AppRoute): ConsoleSection | null {
   if (route.name === 'search') return 'search';
@@ -73,14 +77,10 @@ function RouteContent({ route }: { route: AppRoute }) {
   }
 }
 
-/**
- * The console's whole client shell: one `QueryClientProvider` over the app,
- * one `ConsoleChrome` hosting the route switch, and a route-level error
- * boundary between them so a thrown query doesn't take the rail with it.
- */
 export function App() {
   const [path] = useLocation();
   const route = useAppRoute();
+  const section = chromeSection(route);
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -88,13 +88,40 @@ export function App() {
           search input, which already owns keyboard focus while open -- the
           detail view's single-key copies never see those keys. */}
       <ConsolePalette />
-      <ConsoleChrome section={chromeSection(route)}>
+      <MattstackShell
+        name="console"
+        appName="console"
+        mark={
+          <img
+            src="/favicon.svg"
+            alt=""
+            width={30}
+            height={30}
+            style={{ display: 'block', flex: 'none' }}
+          />
+        }
+      >
+        <MattstackShell.Rail>
+          <RailLink
+            icon="layers"
+            label="Runs"
+            href="/"
+            active={section === 'runs'}
+          />
+          <RailLink
+            icon="search"
+            label="Search"
+            href="/search"
+            active={section === 'search'}
+          />
+          <WiringRailEntry active={section === 'wiring'} />
+        </MattstackShell.Rail>
         {/* Keyed on path: without a remount, an error caught on one route
             would keep showing the fallback after navigating to another. */}
         <RouteErrorBoundary key={path}>
           <RouteContent route={route} />
         </RouteErrorBoundary>
-      </ConsoleChrome>
+      </MattstackShell>
     </QueryClientProvider>
   );
 }

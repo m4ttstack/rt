@@ -1,3 +1,4 @@
+import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import type {
   BranchEnrichment,
   RunDetail as RunDetailData,
@@ -7,8 +8,6 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-
-import { renderWithProviders } from '@ui/storybook/test-utils';
 
 const detailGet = vi.fn();
 const artifactGet = vi.fn();

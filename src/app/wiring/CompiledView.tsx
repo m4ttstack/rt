@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
+import { Code, Group, Paper, Stack, Text } from '@mattstack/app-kit/core';
+import { useSchemeColors } from '@mattstack/app-kit/hooks';
 
-import { Code, Group, Paper, Stack, Text } from '@ui/core';
-import { useSchemeColors } from '@ui/hooks';
 import type { SlotOutlineNode } from './outline';
 import { splitCompiledBody, type Seam } from './parseSeam';
 import { QuietBadge } from './QuietBadge';

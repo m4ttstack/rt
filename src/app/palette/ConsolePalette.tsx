@@ -1,10 +1,10 @@
 import { useMemo } from 'react';
+import { CopyActionIcon } from '@mattstack/app-kit/core';
+import { Icons } from '@mattstack/app-kit/icons';
+import { Spotlight } from '@mattstack/app-kit/spotlight';
+import type { SpotlightActionData } from '@mattstack/app-kit/spotlight';
 import { navigate } from 'wouter/use-browser-location';
 
-import { CopyActionIcon } from '@ui/core';
-import { Icons } from '@ui/icons';
-import { Spotlight } from '@ui/spotlight';
-import type { SpotlightActionData } from '@ui/spotlight';
 import { useSettingsDefs } from '../config/useSettings';
 import {
   BRANCH_CHECKOUT_LABEL,

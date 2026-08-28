@@ -1,9 +1,3 @@
-import type {
-  RunDecisionRow,
-  RunFieldRow,
-  RunStageRow,
-} from '@mattstack/rt-client';
-
 import {
   Anchor,
   Badge,
@@ -12,10 +6,16 @@ import {
   Timeline as MantineTimeline,
   Stack,
   Text,
-} from '@ui/core';
-import type { MantineColor } from '@ui/core';
-import { useSchemeColors } from '@ui/hooks';
-import { Icons } from '@ui/icons';
+} from '@mattstack/app-kit/core';
+import type { MantineColor } from '@mattstack/app-kit/core';
+import { useSchemeColors } from '@mattstack/app-kit/hooks';
+import { Icons } from '@mattstack/app-kit/icons';
+import type {
+  RunDecisionRow,
+  RunFieldRow,
+  RunStageRow,
+} from '@mattstack/rt-client';
+
 import { FailureExcerpt } from './FailureExcerpt';
 
 /** Same geometry as the Wiring spine (`WiringMap`): a 22px bullet on a 2px

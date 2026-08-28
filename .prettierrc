@@ -10,7 +10,6 @@
     "^(react/(.*)$)|^(react$)",
     "<THIRD_PARTY_MODULES>",
     "",
-    "^@ui/(.*)$",
     "^[./]"
   ],
   "importOrderParserPlugins": ["typescript", "jsx"]

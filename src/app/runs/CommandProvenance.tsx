@@ -1,6 +1,6 @@
-import { Group, Text } from '@ui/core';
-import { useSchemeColors } from '@ui/hooks';
-import { Icons } from '@ui/icons';
+import { Group, Text } from '@mattstack/app-kit/core';
+import { useSchemeColors } from '@mattstack/app-kit/hooks';
+import { Icons } from '@mattstack/app-kit/icons';
 
 export interface CommandProvenanceProps {
   /** The rt verb a person would type to get this panel's data. */

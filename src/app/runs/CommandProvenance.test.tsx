@@ -1,7 +1,7 @@
+import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import { screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
-import { renderWithProviders } from '@ui/storybook/test-utils';
 import { CommandProvenance } from './CommandProvenance';
 
 describe('CommandProvenance', () => {

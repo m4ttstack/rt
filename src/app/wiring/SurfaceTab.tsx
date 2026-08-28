@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-
 import {
   ActionIcon,
   Alert,
@@ -16,9 +15,10 @@ import {
   TextInput,
   Tooltip,
   UnstyledButton,
-} from '@ui/core';
-import { useSchemeColors } from '@ui/hooks';
-import { Icons } from '@ui/icons';
+} from '@mattstack/app-kit/core';
+import { useSchemeColors } from '@mattstack/app-kit/hooks';
+import { Icons } from '@mattstack/app-kit/icons';
+
 import { suffixOf } from './outline';
 import type { SkillsSurfaceRow } from './useWiring';
 import {

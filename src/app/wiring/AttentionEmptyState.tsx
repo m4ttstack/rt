@@ -1,6 +1,6 @@
-import { Group, Stack, Text } from '@ui/core';
-import { useSchemeColors } from '@ui/hooks';
-import { Icons } from '@ui/icons';
+import { Group, Stack, Text } from '@mattstack/app-kit/core';
+import { useSchemeColors } from '@mattstack/app-kit/hooks';
+import { Icons } from '@mattstack/app-kit/icons';
 
 export interface AttentionEmptyStateProps {
   pack: string;

@@ -13,9 +13,9 @@ dist-ssr
 dist-bin
 *.local
 
-# `bun run generate:embedded` output (see scripts/generate-embedded-assets.ts)
-# -- rebuilt from `dist/` on every `build:binary` run, never hand-edited.
-src/server/embedded/generated
+# `mattstack-embed-assets` output (see @mattstack/app-server's bin) --
+# rebuilt from `dist/` on every `build:binary` run, never hand-edited.
+src/server/embedded/manifest.ts
 
 # Editor directories and files
 .vscode/*

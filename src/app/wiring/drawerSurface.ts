@@ -1,4 +1,4 @@
-import { useSchemeColors } from '@ui/hooks';
+import { useSchemeColors } from '@mattstack/app-kit/hooks';
 
 /**
  * The panel surface both of this surface's drawers are drawn on.

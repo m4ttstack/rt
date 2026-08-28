@@ -1,6 +1,5 @@
 import type { KeyboardEvent, ReactNode } from 'react';
 import { useMemo } from 'react';
-
 import {
   Badge,
   GenericError,
@@ -10,10 +9,11 @@ import {
   Stack,
   Text,
   UnstyledButton,
-} from '@ui/core';
-import type { MantineColor } from '@ui/core';
-import { useSchemeColors } from '@ui/hooks';
-import { Icons } from '@ui/icons';
+} from '@mattstack/app-kit/core';
+import type { MantineColor } from '@mattstack/app-kit/core';
+import { useSchemeColors } from '@mattstack/app-kit/hooks';
+import { Icons } from '@mattstack/app-kit/icons';
+
 import {
   buildSpine,
   spineRows,

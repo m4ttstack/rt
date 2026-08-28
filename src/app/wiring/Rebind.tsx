@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-
 import {
   ActionIcon,
   Alert,
@@ -10,9 +9,10 @@ import {
   Select,
   Stack,
   Text,
-} from '@ui/core';
-import { useSchemeColors } from '@ui/hooks';
-import { Icons } from '@ui/icons';
+} from '@mattstack/app-kit/core';
+import { useSchemeColors } from '@mattstack/app-kit/hooks';
+import { Icons } from '@mattstack/app-kit/icons';
+
 import type { BindingSite, SkillsComposition } from './outline';
 import { invertBindings, suffixOf } from './outline';
 import { SOFT_RULE } from './SlotRow';

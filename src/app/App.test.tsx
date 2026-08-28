@@ -1,3 +1,5 @@
+import { Spotlight } from '@mattstack/app-kit/spotlight';
+import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import type {
   RunDetail as RunDetailData,
   RunSummary,
@@ -5,9 +7,6 @@ import type {
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-
-import { Spotlight } from '@ui/spotlight';
-import { renderWithProviders } from '@ui/storybook/test-utils';
 
 const runsGet = vi.fn();
 const detailGet = vi.fn();
@@ -100,6 +99,12 @@ describe('App keyboard contract', () => {
 
     // Detail view is live and its hotkeys are registered.
     await screen.findByTestId('summary-card');
+
+    // The shell renders console's wordmark and the cross-app launcher
+    // trigger -- proof `MattstackShell` is actually mounted with
+    // `appName="console"`, not just that some tree rendered.
+    expect(screen.getByText('console')).toBeInTheDocument();
+    expect(screen.getByLabelText('Apps')).toBeInTheDocument();
 
     Spotlight.open();
     const input = await screen.findByPlaceholderText(

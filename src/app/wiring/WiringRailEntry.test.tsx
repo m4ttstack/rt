@@ -1,9 +1,8 @@
+import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-
-import { renderWithProviders } from '@ui/storybook/test-utils';
 
 const packsGet = vi.fn();
 const compositionGet = vi.fn();
@@ -85,7 +84,7 @@ function renderRail(check: unknown) {
   });
   return renderWithProviders(
     <QueryClientProvider client={queryClient}>
-      <WiringRailEntry expanded active={false} onClick={() => {}} />
+      <WiringRailEntry active={false} />
     </QueryClientProvider>
   );
 }

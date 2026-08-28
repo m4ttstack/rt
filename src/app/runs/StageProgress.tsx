@@ -1,6 +1,6 @@
-import type { MantineColor } from '@ui/core';
-import { Group } from '@ui/core';
-import { useSchemeColors } from '@ui/hooks';
+import type { MantineColor } from '@mattstack/app-kit/core';
+import { Group } from '@mattstack/app-kit/core';
+import { useSchemeColors } from '@mattstack/app-kit/hooks';
 
 const STAGE_STATUS_COLOR: Record<string, MantineColor> = {
   done: 'ok',
