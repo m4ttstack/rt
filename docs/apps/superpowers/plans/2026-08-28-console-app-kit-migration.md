@@ -371,7 +371,7 @@ import { App } from './app/App';
 mountMattstackApp(<App />, { notificationMaxHeight: 400 });
 ```
 
-(No `import './app/icons'` — console registers no custom icons. Confirm `MountOptions` exposes `notificationMaxHeight`; the spec's `app` module signature includes it. If it does not, pass it another way per the package's actual `MountOptions` and note the reconciliation.)
+(No `import './app/icons'` — console registers no custom icons. `MountOptions.notificationMaxHeight` is confirmed present in `packages/ui/src/app/mount.tsx`, and its default is already `400` — passing `{ notificationMaxHeight: 400 }` is explicit-but-redundant, so `mountMattstackApp(<App />)` alone is equally correct; keep the explicit form to mirror console's current intent.)
 
 - [ ] **Step 2: `App.tsx`** — replace `ConsoleChrome` with `MattstackShell`. Keep `QueryClientProvider`, `ConsolePalette`, `RouteErrorBoundary`, `RouteContent`, and the `chromeSection(route)` active-section logic (move the `ConsoleSection` type + `chromeSection` inline into `App.tsx`, since `ConsoleChrome.tsx` is deleted). The shell owns the header (mark + wordmark + launcher) and the color-scheme control:
 
@@ -541,6 +541,7 @@ git add -A && git commit -m "console: mount MattstackShell (appName=console), re
 
 - Create: `src/server/routes.ts`
 - Rewrite: `src/server/index.ts`
+- Modify: `src/app/api.ts` (repoint the `AppType` type import off the deleted `../server/app`)
 - Delete: `src/server/app.ts`, `src/server/ws.ts`, `src/server/static-disk.ts`, `src/server/embedded/{compiled-binary,manifest-loader,mount,serve,serving-mode,types}.ts` and every `*.test.ts` beside them; `scripts/generate-embedded-assets.ts`
 - Delete tests: `src/server/app.test.ts`, `src/server/ws.test.ts`, `src/server/static-disk.test.ts`, `src/server/embedded/*.test.ts`
 - Keep: `src/server/{runs,enrich,settings,skills,effectiveInputs,artifact,gitLog,seen,rt-bin,git-bin}.ts` and their tests
@@ -577,7 +578,13 @@ export const routes = new Hono()
 export type AppType = typeof routes;
 ```
 
-Console's client (`src/app/api.ts`) does `hc<AppType>('/')`; `AppType` is still `typeof routes`, so RPC typing is unchanged. Verify no client value-imports `app` from `src/server/app` (it should import the `AppType` type only).
+- [ ] **Step 1b: Repoint the client's `AppType` import** — `src/app/api.ts` does `import type { AppType } from '../server/app'`, and this task deletes `../server/app`. Change that line to:
+
+```ts
+import type { AppType } from '../server/routes';
+```
+
+`AppType` is still `typeof routes`, so the `hc<AppType>('/')` RPC client typing is unchanged. `src/app/api.ts` is the ONLY surviving importer of `../server/app` (the other two are `index.ts`, rewritten this task, and `app.test.ts`, deleted this task), so this single repoint fully closes the deletion — without it, `bun run typecheck`/`bun run build` fail at the Task 9 gate on a missing module.
 
 - [ ] **Step 2: `index.ts`** — replace the hand-wired server with `serveMattstackApp`:
 
@@ -624,13 +631,13 @@ The `mattstack-embed-assets` bin writes the generated manifest to `src/server/em
 
 - [ ] **Step 4: `.gitignore`** — the generated manifest path changed from `src/server/embedded/generated/` to `src/server/embedded/manifest.ts`:
 
-Replace the console line ignoring `src/server/embedded/generated/` (or `dist-bin/…generated`) with:
+Replace the console line ignoring `src/server/embedded/generated/` with:
 
 ```
 src/server/embedded/manifest.ts
 ```
 
-Keep the existing `dist/`, `dist-bin/`, `node_modules/` ignores. If `src/server/embedded/generated/` still exists on disk from an old build, `git rm -r --cached` it and delete the directory.
+If a comment above that ignore line references the deleted `generate:embedded` script or the old `generated/` path, update or remove it so it doesn't dangle. Keep the existing `dist/`, `dist-bin/`, `node_modules/` ignores. If `src/server/embedded/generated/` still exists on disk from an old build, `git rm -r --cached` it and delete the directory.
 
 - [ ] **Step 5: Run the surviving server tests**
 
@@ -735,6 +742,6 @@ git add -A && git commit -m "console: update CI (drop storybook/debrand/treeshak
 
 **Placeholder scan:** the conditional steps (Task 3 Step 3 extra vitest setup, Task 5 Step 4 unexpected-export handling, Task 6 Step 5 test reworks, Task 7 Step 5 route-test re-point) are decision points with both branches specified against real files, not placeholders. Every code step carries the actual code.
 
-**Type/interface consistency:** `serveMattstackApp`/`ServeOptions`, `mountMattstackApp`/`MountOptions`, `MattstackShell`/`MattstackShell.Rail`, `RailLink`/`RailLinkProps`, `useShellRail`/`ShellRailState`, `RelaySpec { match, topic }`, and the `mattstack-embed-assets` output path (`src/server/embedded/manifest.ts` exporting `manifest: EmbeddedManifest`) are all taken from the installed/packed app-kit source, not invented. `AppType = typeof routes` is preserved so console's RPC client is untouched.
+**Type/interface consistency:** `serveMattstackApp`/`ServeOptions`, `mountMattstackApp`/`MountOptions`, `MattstackShell`/`MattstackShell.Rail`, `RailLink`/`RailLinkProps`, `useShellRail`/`ShellRailState`, `RelaySpec { match, topic }`, and the `mattstack-embed-assets` output path (`src/server/embedded/manifest.ts` exporting `manifest: EmbeddedManifest`) are all taken from the installed/packed app-kit source, not invented. `AppType = typeof routes` is preserved, so console's RPC client typing is unchanged apart from one import line — `src/app/api.ts` repoints its `AppType` type import from the deleted `../server/app` to `../server/routes` (Task 7 Step 1b).
 
 **Open implementer choices (non-blocking):** the exact `MountOptions` field for `notificationMaxHeight` (Task 6 Step 1, reconciled against the package if named differently); whether any surviving server route test wraps `routes` in `createApp` or tests the sub-router directly (Task 7 Step 5); the precise `App.test.tsx` reworks (Task 6 Step 5).
