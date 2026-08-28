@@ -52,7 +52,11 @@ test('mounts the app launcher when appName is passed', () => {
   const { hook } = memoryLocation({ path: '/' });
   renderWithProviders(
     <Router hook={hook}>
-      <MattstackShell name="Chat" appName="chat" deckBase="https://deck.mattstack">
+      <MattstackShell
+        name="Chat"
+        appName="chat"
+        deckBase="https://deck.mattstack"
+      >
         <main>page</main>
       </MattstackShell>
     </Router>

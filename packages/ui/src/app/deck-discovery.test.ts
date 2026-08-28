@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest';
+
 import { deriveDeckBase } from './deck-discovery';
 
 describe('deriveDeckBase', () => {
@@ -15,9 +16,9 @@ describe('deriveDeckBase', () => {
   });
 
   test('an override wins and its trailing slash is trimmed', () => {
-    expect(deriveDeckBase('https://chat.mattstack', 'http://localhost:11007/')).toBe(
-      'http://localhost:11007'
-    );
+    expect(
+      deriveDeckBase('https://chat.mattstack', 'http://localhost:11007/')
+    ).toBe('http://localhost:11007');
   });
 
   test('an unrecognized origin with no override is null', () => {

@@ -10,8 +10,8 @@ import {
   Text,
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { Icon } from '@mattstack/app-kit/icons';
 
+import { Icon } from '@mattstack/app-kit/icons';
 import { deriveDeckBase } from './deck-discovery';
 import type { DiscoveryApp } from './deck-discovery';
 import { MattstackMark } from './MattstackMark';
@@ -49,7 +49,10 @@ function Tile({ app, current }: { app: DiscoveryApp; current: boolean }) {
           <MattstackMark size={40} decorative />
         )}
         {current && (
-          <Box data-testid="current-app-marker" c="var(--mantine-primary-color-filled)">
+          <Box
+            data-testid="current-app-marker"
+            c="var(--mantine-primary-color-filled)"
+          >
             <Icon name="check" size={14} />
           </Box>
         )}
@@ -74,10 +77,7 @@ export function AppLauncher({ currentApp, deckBase }: AppLauncherProps) {
   const base = deriveDeckBase(origin, deckBase);
   const { apps, loaded, refresh } = useDiscoveryApps(base);
   const [opened, handlers] = useDisclosure(false);
-  const ordered = useMemo(
-    () => sortApps(apps, currentApp),
-    [apps, currentApp]
-  );
+  const ordered = useMemo(() => sortApps(apps, currentApp), [apps, currentApp]);
 
   if (!base) return null;
 

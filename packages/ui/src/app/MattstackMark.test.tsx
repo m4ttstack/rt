@@ -1,5 +1,6 @@
 import { render } from '@testing-library/react';
 import { expect, test } from 'vitest';
+
 import { MattstackMark } from './MattstackMark';
 
 test('renders an accessible svg with the plum canvas and pink mark', () => {

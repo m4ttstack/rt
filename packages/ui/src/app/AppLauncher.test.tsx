@@ -1,19 +1,32 @@
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+
 import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import { AppLauncher } from './AppLauncher';
 
 const APPS = [
-  { name: 'chat', displayName: 'Chat', url: 'https://chat.mattstack', icon: 'https://deck.mattstack/api/apps/chat/icon' },
-  { name: 'board', displayName: 'Board', url: 'https://board.mattstack', icon: null },
+  {
+    name: 'chat',
+    displayName: 'Chat',
+    url: 'https://chat.mattstack',
+    icon: 'https://deck.mattstack/api/apps/chat/icon',
+  },
+  {
+    name: 'board',
+    displayName: 'Board',
+    url: 'https://board.mattstack',
+    icon: null,
+  },
 ];
 
 beforeEach(() => {
   vi.stubGlobal('location', { origin: 'https://chat.mattstack' } as Location);
   vi.stubGlobal(
     'fetch',
-    vi.fn(async () => ({ ok: true, json: async () => ({ apps: APPS }) }) as Response)
+    vi.fn(
+      async () => ({ ok: true, json: async () => ({ apps: APPS }) }) as Response
+    )
   );
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -70,12 +83,12 @@ test('sorts the current app first even when it is not first in the fetch respons
 test('an empty list shows a muted note, not a crash', async () => {
   vi.stubGlobal(
     'fetch',
-    vi.fn(async () => ({ ok: true, json: async () => ({ apps: [] }) }) as Response)
+    vi.fn(
+      async () => ({ ok: true, json: async () => ({ apps: [] }) }) as Response
+    )
   );
   const user = userEvent.setup();
   renderWithProviders(<AppLauncher />);
   await user.click(screen.getByRole('button', { name: /apps/i }));
-  await waitFor(() =>
-    expect(screen.getByText(/no apps/i)).toBeInTheDocument()
-  );
+  await waitFor(() => expect(screen.getByText(/no apps/i)).toBeInTheDocument());
 });
