@@ -6,21 +6,16 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "tsc -p tsconfig.json && vite build",
     "preview": "vite preview",
     "serve": "bun run src/server/index.ts",
     "dev:server": "bun run --hot src/server/index.ts",
-    "generate:embedded": "bun run scripts/generate-embedded-assets.ts",
-    "build:binary": "vite build && bun run generate:embedded && bun build --compile --outfile dist-bin/console src/server/index.ts",
-    "typecheck": "tsc -b",
-    "lint": "eslint --no-error-on-unmatched-pattern src .storybook packages",
+    "build:binary": "vite build && mattstack-embed-assets && bun build --compile --outfile dist-bin/console src/server/index.ts",
+    "typecheck": "tsc -p tsconfig.json",
+    "lint": "eslint src",
     "test": "vitest",
-    "storybook": "storybook dev -p 6006",
-    "build-storybook": "storybook build",
     "format": "prettier --write . --cache",
-    "format:check": "prettier --check . --cache",
-    "debrand": "scripts/debrand-check.sh",
-    "treeshake": "scripts/treeshake-check.sh"
+    "format:check": "prettier --check . --cache"
   },
   "dependencies": {
     "@mantine/code-highlight": "^9.5.2",

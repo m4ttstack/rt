@@ -1,103 +1,14 @@
-import js from '@eslint/js';
-import eslintConfigPrettier from 'eslint-config-prettier';
-import reactHooks from 'eslint-plugin-react-hooks';
-// See https://github.com/storybookjs/eslint-plugin-storybook#configuration-flat-config-format
-import storybook from 'eslint-plugin-storybook';
+import { importWall, mattstackEslint } from '@mattstack/app-kit/eslint';
 import tseslint from 'typescript-eslint';
 
-import noInlineStyles from './eslint-local/no-inline-styles.js';
-import requireDataTestid from './eslint-local/require-data-testid.js';
-
-const mantineWall = (pkg, barrel) => ({
-  name: pkg,
-  message: `Import from '${barrel}' instead. The kit barrel adds fixed defaults and overrides.`,
-});
-
-// One import wall, two scopes: the base rule for all non-ui src, and an
-// app-only extension below that appends patterns browser code alone must
-// obey. Extending, not redefining, keeps the two lists from drifting.
-const importWall = {
-  paths: [
-    mantineWall('@mantine/core', '@ui/core'),
-    mantineWall('@mantine/hooks', '@ui/hooks'),
-    mantineWall('@mantine/form', '@ui/forms'),
-    mantineWall('@mantine/modals', '@ui/modals'),
-    mantineWall('@mantine/notifications', '@ui/notifications'),
-    mantineWall('@mantine/spotlight', '@ui/spotlight'),
-    mantineWall('@mantine/code-highlight', '@ui/lazy'),
-    mantineWall('@mantine/dates', '@ui/core'),
-    {
-      name: 'lucide-react',
-      message: "Use the icon registry: import { Icon } from '@ui/icons'.",
-    },
-  ],
-  patterns: [
-    {
-      group: ['react-icons', 'react-icons/*'],
-      message: 'react-icons is banned. Use @ui/icons.',
-    },
-    {
-      group: ['codemirror', '@codemirror/*'],
-      message:
-        "Import from '@ui/lazy' instead. CodeMirror is only ever imported inside its lazy loader (src/ui/lazy/codemirror), so it stays out of the entry bundle.",
-    },
-    {
-      group: ['**/server/**'],
-      importNamePattern: '.*',
-      allowTypeImports: true,
-      message:
-        'The server runs on Bun and must never reach the browser bundle. ' +
-        'Only `import type` from src/server is allowed.',
-    },
-  ],
-};
-
 export default tseslint.config(
-  // Codegen output (scripts/generate-embedded-assets.ts) -- gitignored,
-  // regenerated on every build:binary run, never hand-edited or reviewed.
-  { ignores: ['src/server/embedded/generated/**'] },
-  js.configs.recommended,
-  ...tseslint.configs.recommended,
-  // The two classic react-hooks rules: rules-of-hooks as an error,
-  // exhaustive-deps as a warning -- so hook misuse is caught and
-  // `eslint-disable-next-line react-hooks/exhaustive-deps` comments in
-  // consumer code resolve instead of erroring with "Definition for rule
-  // not found". Deliberately NOT the plugin's full flat.recommended: that
-  // enables the React Compiler rule set (refs, set-state-in-effect,
-  // purity, ...), which this kit doesn't adopt yet.
+  ...mattstackEslint(),
+  // The preset's import wall doesn't know about @mattstack/rt-client, so
+  // console layers its own value-import ban on top. This block REPLACES the
+  // preset's `no-restricted-imports` rule for these files (flat config is
+  // last-wins per rule), so it must extend `importWall` rather than list
+  // its own patterns, or the two walls drift.
   {
-    plugins: { 'react-hooks': reactHooks },
-    rules: {
-      'react-hooks/rules-of-hooks': 'error',
-      'react-hooks/exhaustive-deps': 'warn',
-    },
-  },
-  {
-    files: ['src/**/*.{ts,tsx}'],
-    ignores: ['src/ui/**'],
-    plugins: {
-      local: {
-        rules: {
-          'require-data-testid': requireDataTestid,
-          'no-inline-styles': noInlineStyles,
-        },
-      },
-    },
-    rules: {
-      // Optional rules, off by default. Flip to 'error' per project when ready to enforce.
-      'local/require-data-testid': 'off',
-      // Bans JSX style=/styles=/sx= in app code in favor of theme extend,
-      // token vars, and CSS modules. Same app-code-only scope as the wall
-      // below; this template's own app still uses style= freely, so turning
-      // it on here would flag existing demo code -- it ships for consumers.
-      'local/no-inline-styles': 'off',
-      'no-restricted-imports': ['error', importWall],
-    },
-  },
-  {
-    // App code only: this block REPLACES the rule above for these files
-    // (flat config is last-wins per rule), so it must extend importWall
-    // rather than list its own patterns, or the two walls drift.
     files: ['src/app/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': [
@@ -120,33 +31,4 @@ export default tseslint.config(
       ],
     },
   },
-  {
-    files: ['src/ui/**/*.{ts,tsx}'],
-    // The @ui/core barrel's own `export * from '@mantine/core'` is exempt: until
-    // the Table/TextInput shadows land (Task 9), the barrel's job is to pass the
-    // whole module through, star-exports included. Every other file under
-    // src/ui/** stays subject to the rule.
-    ignores: ['src/ui/core/index.ts'],
-    rules: {
-      'no-restricted-imports': [
-        'error',
-        {
-          paths: [
-            {
-              name: '@mantine/core',
-              importNames: ['Table', 'TextInput', 'CopyButton'],
-              message: 'Use the shadowed versions from @ui/core.',
-            },
-          ],
-        },
-      ],
-    },
-  },
-  storybook.configs['flat/recommended'],
-  // Must stay last: turns off every core/plugin stylistic rule that conflicts
-  // with (or duplicates) Prettier, so formatting is Prettier's job alone.
-  // No eslint import-order rule exists in this config to disable in favor of
-  // the sort-imports plugin (see .prettierrc) -- no-restricted-imports above
-  // is a semantic import wall, not an ordering rule, so it keeps working.
-  eslintConfigPrettier
 );
