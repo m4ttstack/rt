@@ -445,8 +445,8 @@ describe("Drawer (browser)", () => {
     expect(panel.isConnected).toBe(true);
     const style = getComputedStyle(panel);
     expect(style.animationName).toBe("sidedrawer-out");
-    // Slightly quicker than the 200ms entry, so leaving never drags.
-    expect(style.animationDuration).toBe("0.15s");
+    // Slightly quicker than the 160ms entry, so leaving never drags.
+    expect(style.animationDuration).toBe("0.12s");
     expect(animationResolution(panel).found).toBe(true);
 
     await vi.waitFor(() => expect(panel.isConnected).toBe(false), { timeout: 1000 });

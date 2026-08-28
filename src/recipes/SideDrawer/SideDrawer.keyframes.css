@@ -4,7 +4,7 @@
    from mr-board, whose drawers appeared in place. */
 @layer soribashi.recipes {
   [data-part="sidedrawer"] {
-    animation: sidedrawer-in 200ms ease-out;
+    animation: sidedrawer-in 160ms ease-out;
   }
 
   [data-part="sidedrawer"][data-side="right"] {
@@ -19,7 +19,7 @@
      mounted until this animation finishes; `forwards` holds it off-screen
      for the frame between `finished` and unmount. */
   [data-part="sidedrawer"][data-closing] {
-    animation: sidedrawer-out 150ms ease-in forwards;
+    animation: sidedrawer-out 120ms ease-in forwards;
   }
 
   @keyframes sidedrawer-in {
