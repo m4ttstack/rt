@@ -13,6 +13,7 @@ import {
   useRailState,
 } from '@mattstack/app-kit/core';
 import { useSchemeColors } from '@mattstack/app-kit/hooks';
+import { AppLauncher } from './AppLauncher';
 import { ColorSchemeControl } from './ColorSchemeControl';
 import { ShellRailContext } from './shell-context';
 
@@ -31,6 +32,11 @@ export interface MattstackShellProps {
   mark?: ReactNode;
   headerHeight?: number;
   railLabel?: string;
+  /** This app's deck registry name. When set, the header shows the shared
+   *  app launcher marking this app as current. */
+  appName?: string;
+  /** Override the launcher's derived deck base URL (dev, custom domain). */
+  deckBase?: string;
   children: ReactNode;
 }
 
@@ -67,6 +73,8 @@ function Shell({
   mark,
   headerHeight = MATTSTACK_HEADER_HEIGHT,
   railLabel = 'App sections',
+  appName,
+  deckBase,
   children,
 }: MattstackShellProps) {
   const rail = useRailState();
@@ -79,11 +87,16 @@ function Shell({
         headerHeight={headerHeight}
         headerProps={headerProps}
         header={
-          <Group gap="sm" wrap="nowrap">
-            {mark}
-            <Text fw={700} fz={22} lh={1} style={{ whiteSpace: 'nowrap' }}>
-              {name}
-            </Text>
+          <Group justify="space-between" w="100%" wrap="nowrap">
+            <Group gap="sm" wrap="nowrap">
+              {mark}
+              <Text fw={700} fz={22} lh={1} style={{ whiteSpace: 'nowrap' }}>
+                {name}
+              </Text>
+            </Group>
+            {appName && (
+              <AppLauncher currentApp={appName} deckBase={deckBase} />
+            )}
           </Group>
         }
         rail={
