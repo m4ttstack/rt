@@ -91,7 +91,7 @@ declaration), lives in a plain `<Recipe>.keyframes.css` sibling of the
 recipe's `.module.css`, still inside `@layer soribashi.recipes`, selected by
 the recipe's public `data-part`, and side-effect-imported from the recipe
 TSX. Five recipes carry one: Spinner (`sb-spinner-spin`), Chip
-(`chip-pulse`), Drawer (`drawer-slide-in`), ContextMenu (`contextmenu-in`),
+(`chip-pulse`), SideDrawer (`sidedrawer-in`), ContextMenu (`contextmenu-in`),
 ToastHost (`toasthost-in`).
 
 Two bundlers disagree about a keyframe inside a CSS module, in opposite
@@ -259,6 +259,13 @@ otherwise read them as drift:
   `type="button"`; mr-board's never set one, so they defaulted to `submit`.
 - **ContextMenu.Separator** adds `role="separator"`, valid owned content for
   `role="menu"`.
+- **SideDrawer**'s panel slides in from its own edge (`sidedrawer-in`, 200ms
+  ease-out, a full panel width, off under `prefers-reduced-motion`); both
+  board families appeared in place. Drawer composes SideDrawer, so it gets the
+  same slide, and its content body no longer animates on push/pop: the panel
+  is the thing that moves, not the text inside it.
+- **ToastHost**'s slide-in runs 220ms rather than mr-board's 140ms, which read
+  as a jump once the stack re-laid out around a new entry.
 - **SideDrawer** carries no `aria-modal` — only mr-board's Modal has it, and
   adding it would change how a screen reader treats the rest of the page.
 - **Modal**'s close button gets no `font: inherit`; mr-board's never had one, so
