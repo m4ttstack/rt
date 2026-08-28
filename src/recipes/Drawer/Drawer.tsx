@@ -146,11 +146,20 @@ export const Drawer = defineComponent<
       else onClose();
     }, [stack.length, onBack, onClose]);
 
+    // A caller may clear `stack` in the same update that closes; the panel
+    // still has to show something while it slides out, so the closing render
+    // reads the stack from the last open commit instead.
+    const lastOpenStackRef = useRef(stack);
+    useEffect(() => {
+      if (open) lastOpenStackRef.current = stack;
+    });
+
     if (phase === "closed") return null;
 
-    const top = stack[stack.length - 1];
+    const shownStack = phase === "closing" ? lastOpenStackRef.current : stack;
+    const top = shownStack[shownStack.length - 1];
     if (!top) return null;
-    const previous = stack.length > 1 ? stack[stack.length - 2] : undefined;
+    const previous = shownStack.length > 1 ? shownStack[shownStack.length - 2] : undefined;
     const navAction = top.navAction;
 
     const contentStyles = getStyles("content");

@@ -452,6 +452,36 @@ describe("Drawer (browser)", () => {
     await vi.waitFor(() => expect(panel.isConnected).toBe(false), { timeout: 1000 });
   });
 
+  it("keeps the last screen on screen through the slide-out even if the caller clears the stack on close", async () => {
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      const [stack, setStack] = useState<DrawerScreen[]>(rootStack());
+      return (
+        <Drawer
+          open={open}
+          stack={stack}
+          onBack={noop}
+          onClose={() => {
+            setOpen(false);
+            setStack([]);
+          }}
+          ariaLabel="d"
+        />
+      );
+    }
+
+    const screen = await renderWithTheme(<Harness />);
+    const panel = panelOf(screen.container);
+    await Promise.all(panel.getAnimations().map((a) => a.finished.catch(() => undefined)));
+
+    partOf(screen.container, DRAWER_PARTS.close).click();
+
+    await vi.waitFor(() => expect(panel.getAttribute("data-closing")).toBe("true"));
+    expect(panel.isConnected).toBe(true);
+    expect(screen.container.textContent).toContain("settings body");
+    await vi.waitFor(() => expect(panel.isConnected).toBe(false), { timeout: 1000 });
+  });
+
   it("with no exit animation to wait for, closing unmounts at once", async () => {
     // Reduced motion (and any consumer freeze) turns the slide-out into
     // `animation: none`; nothing then fires `finished`, so presence must not
