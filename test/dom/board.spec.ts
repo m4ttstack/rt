@@ -191,7 +191,31 @@ test("restart button posts and flips the row to a restarting badge with a spinne
 
     const healthCell = atlasRow.locator('[data-part="table-cell"]').nth(2);
     await healthCell.locator('[data-part="badge"]', { hasText: "restarting" }).waitFor({ state: "visible" });
-    expect(await healthCell.locator('[data-part="spinner"]').count()).toBe(1);
+    const spinner = healthCell.locator('[data-part="spinner"]');
+    expect(await spinner.count()).toBe(1);
+    // Computed `animation-name` is the specified ident even when no matching
+    // `@keyframes` exists (the ring then sits on frame zero). Walk the sheets
+    // so a hash-mismatch (Bun CSS modules vs. the kit Spinner) fails this.
+    const keyframes = await spinner.evaluate((el) => {
+      const name = getComputedStyle(el).animationName;
+      if (!name || name === "none") return { name, found: false };
+      const walk = (rules) => {
+        for (const rule of rules) {
+          if (rule instanceof CSSKeyframesRule && rule.name === name) return true;
+          if ("cssRules" in rule && rule.cssRules && walk(rule.cssRules)) return true;
+        }
+        return false;
+      };
+      for (const sheet of document.styleSheets) {
+        try {
+          if (walk(sheet.cssRules)) return { name, found: true };
+        } catch {
+          /* opaque sheet */
+        }
+      }
+      return { name, found: false };
+    });
+    expect(keyframes.found).toBe(true);
   });
 });
 
