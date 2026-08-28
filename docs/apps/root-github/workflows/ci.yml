@@ -18,8 +18,6 @@ jobs:
       - run: bun run format:check
       - run: bun run test -- --run
       - run: bun run build
-      - run: bun run debrand
-      - run: bun run treeshake
 
       # Console proves its compiled binary serves its own embedded assets.
       # chat ships no binary (deck supervises the process), so the equivalent
