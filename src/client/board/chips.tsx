@@ -321,12 +321,11 @@ function SlackReactionChips({ reactions }: { reactions?: string[] }) {
   );
 }
 
-/** Chip shown when the MR has a resolved (or posted-by-us) slack message.
-    Renders the Slack squircle with a check overlay; clicks open the message. */
-function SlackPostedChip({ slack }: { slack?: SlackInfo }) {
-  if (!slack?.posted) return null;
-  const chip = (
-    <span className="tui-slack-posted" title="posted in slack">
+/** The Slack squircle with a ✓ overlay: the posted-in-slack mark. Shared by
+    the row chip and the header filter button so the two read as one thing. */
+function SlackPostedMark({ title }: { title?: string }) {
+  return (
+    <span className="tui-slack-posted" title={title}>
       <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden>
         <path fill="#E01E5A" d="M5 15a2 2 0 1 1-2-2h2v2Zm1 0a2 2 0 0 1 4 0v5a2 2 0 1 1-4 0v-5Z" />
         <path fill="#36C5F0" d="M9 5a2 2 0 1 1 2-2v2H9Zm0 1a2 2 0 0 1 0 4H4a2 2 0 1 1 0-4h5Z" />
@@ -336,6 +335,13 @@ function SlackPostedChip({ slack }: { slack?: SlackInfo }) {
       <span className="tui-slack-posted-check" aria-hidden>✓</span>
     </span>
   );
+}
+
+/** Chip shown when the MR has a resolved (or posted-by-us) slack message;
+    clicks open the message. */
+function SlackPostedChip({ slack }: { slack?: SlackInfo }) {
+  if (!slack?.posted) return null;
+  const chip = <SlackPostedMark title="posted in slack" />;
   if (!slack.permalink) return chip;
   return (
     <a
@@ -375,4 +381,5 @@ export {
   SlackReactionChips,
   SlackPostedChip,
   SLACK_ICON,
+  SlackPostedMark,
 };
