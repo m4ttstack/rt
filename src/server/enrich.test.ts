@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-// See runs.test.ts for why every export any sub-app under `app.ts` touches
+// See runs.test.ts for why every export any sub-app under `routes.ts` touches
 // must be present here, even the ones these tests never call.
 vi.mock('@mattstack/rt-client', () => ({
   listRuns: vi.fn(async () => ({ ok: true, data: { runs: [] } })),
@@ -14,11 +14,11 @@ vi.mock('@mattstack/rt-client', () => ({
   readBranchCache: vi.fn(async () => ({ ok: true, data: {} })),
 }));
 
-const { app } = await import('./app');
+const { routes } = await import('./routes');
 const rt = await import('@mattstack/rt-client');
 
 function post(body: unknown) {
-  return app.fetch(
+  return routes.fetch(
     new Request('http://localhost/api/runs/enrich', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },

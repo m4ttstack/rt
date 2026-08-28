@@ -5,9 +5,9 @@ import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 // `subscribe` and `getSetting` must be in this factory even though these
-// tests never call them: the websocket sub-app and the settings sub-app both
-// share this `app.ts`, and every named export either one uses must be
-// present here or vitest throws "No `X` export is defined on the mock".
+// tests never call them: the websocket relay and the settings sub-app both
+// share `@mattstack/rt-client`, and every named export either one uses must
+// be present here or vitest throws "No `X` export is defined on the mock".
 vi.mock('@mattstack/rt-client', () => ({
   listRuns: vi.fn(async () => ({ ok: true, data: { runs: [] } })),
   getRun: vi.fn(async () => ({ ok: false, error: 'no such run' })),
@@ -21,18 +21,18 @@ vi.mock('@mattstack/rt-client', () => ({
     `${id.kind}:${encodeURIComponent(id.id)}`,
 }));
 
-const { app } = await import('./app');
+const { routes } = await import('./routes');
 const rt = await import('@mattstack/rt-client');
 
 describe('runs api', () => {
   it('a serialized identity with an internal slash survives the :repo/:runId round trip', async () => {
     const wire = 'remote:gitlab.com%2Fgroup%2Frepo';
-    await app.fetch(new Request(`http://localhost/api/runs/${wire}/run-1`));
+    await routes.fetch(new Request(`http://localhost/api/runs/${wire}/run-1`));
     expect(rt.getRun).toHaveBeenCalledWith('run-1', wire);
   });
 
   it('lists runs and passes repo through', async () => {
-    const res = await app.fetch(
+    const res = await routes.fetch(
       new Request('http://localhost/api/runs?repo=repo-tools')
     );
 
@@ -42,7 +42,7 @@ describe('runs api', () => {
   });
 
   it('translates a genuine daemon failure into 502, not a thrown 500', async () => {
-    const res = await app.fetch(
+    const res = await routes.fetch(
       new Request('http://localhost/api/runs/repo-tools/run-1')
     );
 
@@ -60,7 +60,7 @@ describe('runs api', () => {
       error: 'run not found',
     });
 
-    const res = await app.fetch(
+    const res = await routes.fetch(
       new Request('http://localhost/api/runs/repo-tools/does-not-exist')
     );
 
@@ -69,7 +69,7 @@ describe('runs api', () => {
   });
 
   it('abandons a run with the reason from the body', async () => {
-    const res = await app.fetch(
+    const res = await routes.fetch(
       new Request('http://localhost/api/runs/repo-tools/run-1/abandon', {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
@@ -90,15 +90,15 @@ describe('runs api', () => {
     // returns { ok: false, error: 'rt daemon unreachable at <sock>: ...' } for
     // connection-refused exactly as for a refusal (MAT-392). A stopped daemon
     // therefore lands in the SAME ok:false/502 branch as a refusal, not in
-    // app.onError. Do not mockRejectedValue against rt-client -- that is a
-    // rejection the real client never produces.
+    // the server's onError floor. Do not mockRejectedValue against rt-client
+    // -- that is a rejection the real client never produces.
     vi.mocked(rt.listRuns).mockResolvedValueOnce({
       ok: false,
       error:
         'rt daemon unreachable at /Users/x/.mattstack/rt/rt.sock: ECONNREFUSED',
     });
 
-    const res = await app.fetch(new Request('http://localhost/api/runs'));
+    const res = await routes.fetch(new Request('http://localhost/api/runs'));
 
     expect(res.status).toBe(502);
     expect(res.headers.get('content-type')).toContain('application/json');
@@ -111,7 +111,7 @@ describe('runs api', () => {
     // An ABSENT body: the validator sees `undefined` and still returns a
     // valid `{ reason: undefined }`, so the handler runs. A MALFORMED body is
     // deliberately different -- 400, handler skipped.
-    const res = await app.fetch(
+    const res = await routes.fetch(
       new Request('http://localhost/api/runs/repo-tools/run-2/abandon', {
         method: 'POST',
       })
@@ -145,7 +145,7 @@ describe('runs api artifact route', () => {
   });
 
   it('reads an artifact under the run directory it derives from repo/runId', async () => {
-    const res = await app.fetch(
+    const res = await routes.fetch(
       new Request(
         'http://localhost/api/runs/repo-tools/run-1/artifact?path=' +
           encodeURIComponent(
@@ -170,7 +170,7 @@ describe('runs api artifact route', () => {
     const otherRunFile = join(runsRoot, 'repo-tools', 'run-2', 'secret.log');
     writeFileSync(otherRunFile, 'not yours');
 
-    const res = await app.fetch(
+    const res = await routes.fetch(
       new Request(
         'http://localhost/api/runs/repo-tools/run-1/artifact?path=' +
           encodeURIComponent(otherRunFile)
@@ -184,7 +184,7 @@ describe('runs api artifact route', () => {
   });
 
   it('requires a path query param', async () => {
-    const res = await app.fetch(
+    const res = await routes.fetch(
       new Request('http://localhost/api/runs/repo-tools/run-1/artifact')
     );
 
@@ -208,7 +208,7 @@ describe('runs api artifact route', () => {
       },
     });
 
-    const res = await app.fetch(
+    const res = await routes.fetch(
       new Request(
         'http://localhost/api/runs/repo-tools/run-1/artifact?path=' +
           encodeURIComponent(detailPath)
@@ -240,7 +240,7 @@ describe('runs api artifact route', () => {
       },
     });
 
-    const res = await app.fetch(
+    const res = await routes.fetch(
       new Request(
         'http://localhost/api/runs/repo-tools/run-1/artifact?path=' +
           encodeURIComponent(strayPath)
