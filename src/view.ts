@@ -6,8 +6,11 @@ import type { TabConfig } from "./config.ts";
 export type GroupKey = "age" | "author" | "status" | "review";
 export type SortKey = "oldest" | "progress";
 
+export type SlackFilter = "all" | "posted";
+
 export const GROUP_KEYS: readonly GroupKey[] = ["age", "author", "status", "review"];
 export const SORT_KEYS: readonly SortKey[] = ["oldest", "progress"];
+export const SLACK_FILTER_KEYS: readonly SlackFilter[] = ["all", "posted"];
 
 /** Sentinel that sorts after any ISO date, so null timestamps land last. */
 const LATEST = "9999";
@@ -152,6 +155,12 @@ function progress(mr: BoardMR): number {
 
 export function filterByMember(mrs: BoardMR[], member: string): BoardMR[] {
   return member === "all" ? mrs : mrs.filter((m) => m.author.username === member);
+}
+
+/** Same predicate as the "posted in slack" chip, so the filtered view is
+    exactly the rows carrying it. */
+export function filterBySlack<T extends { webUrl?: string | null; slack?: { posted?: boolean } | null }>(mrs: T[], filter: SlackFilter): T[] {
+  return filter === "all" ? mrs : mrs.filter((m) => !!m.slack?.posted);
 }
 
 /** Usernames the member filter may legitimately hold on a given tab. An
@@ -350,9 +359,10 @@ export interface ViewState {
   group: GroupKey;
   sort: SortKey;
   tab: string;
+  slack: SlackFilter;
 }
 
-export const DEFAULT_VIEW: ViewState = { member: "all", group: "age", sort: "oldest", tab: "" };
+export const DEFAULT_VIEW: ViewState = { member: "all", group: "age", sort: "oldest", tab: "", slack: "all" };
 
 /** URL query params win, then stored localStorage values, then defaults. Invalid
     values are dropped. `validTabs` mirrors `validMembers`: an unknown or empty
@@ -383,6 +393,7 @@ export function parseViewState(
     group: resolve("group", GROUP_KEYS, "age"),
     sort: resolve("sort", SORT_KEYS, "oldest"),
     tab: resolve("tab", validTabs, validTabs[0] ?? ""),
+    slack: resolve("slack", SLACK_FILTER_KEYS, "all"),
   };
 }
 
@@ -422,6 +433,7 @@ export function serializeViewState(v: ViewState): string {
   if (v.group !== DEFAULT_VIEW.group) params.set("group", v.group);
   if (v.sort !== DEFAULT_VIEW.sort) params.set("sort", v.sort);
   if (v.tab !== DEFAULT_VIEW.tab) params.set("tab", v.tab);
+  if (v.slack !== DEFAULT_VIEW.slack) params.set("slack", v.slack);
   const s = params.toString();
   return s ? `?${s}` : "";
 }
