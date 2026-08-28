@@ -13,7 +13,7 @@ beforeEach(() => {
   vi.stubGlobal('location', { origin: 'https://chat.mattstack' } as Location);
   vi.stubGlobal(
     'fetch',
-    vi.fn(async () => ({ json: async () => ({ apps: APPS }) }) as Response)
+    vi.fn(async () => ({ ok: true, json: async () => ({ apps: APPS }) }) as Response)
   );
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -70,7 +70,7 @@ test('sorts the current app first even when it is not first in the fetch respons
 test('an empty list shows a muted note, not a crash', async () => {
   vi.stubGlobal(
     'fetch',
-    vi.fn(async () => ({ json: async () => ({ apps: [] }) }) as Response)
+    vi.fn(async () => ({ ok: true, json: async () => ({ apps: [] }) }) as Response)
   );
   const user = userEvent.setup();
   renderWithProviders(<AppLauncher />);

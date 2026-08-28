@@ -9,31 +9,54 @@ interface DiscoveryState {
 
 const CACHE_MS = 30_000;
 
+function isValidApp(a: unknown): a is DiscoveryApp {
+  if (typeof a !== 'object' || a === null) return false;
+  const o = a as Record<string, unknown>;
+  return (
+    typeof o.name === 'string' &&
+    typeof o.displayName === 'string' &&
+    typeof o.url === 'string' &&
+    (o.icon === null || typeof o.icon === 'string')
+  );
+}
+
 /**
  * Fetches `${deckBase}/api/apps` on demand (the launcher calls `refresh` when
- * its popover opens) and caches the last good list for CACHE_MS so rapid
- * reopens do not refetch. A null base, a rejected fetch, or a non-array
- * payload all resolve to an empty (or last-good) list and never throw: an
- * unreachable deck must not break the host app's header.
+ * its popover opens) and caches the last good list for CACHE_MS, keyed by
+ * `deckBase` so a base change is never served the previous deck's cache. A
+ * null base, a rejected fetch, a non-OK response, or a non-array payload all
+ * resolve to an empty (or last-good) list, are never cached, and never
+ * throw: an unreachable deck must not break the host app's header.
  */
 export function useDiscoveryApps(deckBase: string | null) {
   const [state, setState] = useState<DiscoveryState>({
     apps: [],
     loaded: false,
   });
-  const fetchedAt = useRef(0);
+  const cache = useRef<{ base: string; at: number } | null>(null);
 
   const refresh = useCallback(async () => {
     if (!deckBase) {
       setState({ apps: [], loaded: true });
       return;
     }
-    if (fetchedAt.current && Date.now() - fetchedAt.current < CACHE_MS) return;
+    if (
+      cache.current &&
+      cache.current.base === deckBase &&
+      Date.now() - cache.current.at < CACHE_MS
+    )
+      return;
     try {
       const res = await fetch(`${deckBase}/api/apps`);
+      if (!res.ok) {
+        setState({ apps: [], loaded: true });
+        return;
+      }
       const data = (await res.json()) as DiscoveryResponse;
-      const apps = Array.isArray(data?.apps) ? data.apps : [];
-      fetchedAt.current = Date.now();
+      const apps = (Array.isArray(data?.apps) ? data.apps : []).filter(
+        isValidApp
+      );
+      cache.current = { base: deckBase, at: Date.now() };
       setState({ apps, loaded: true });
     } catch {
       setState(prev => ({ apps: prev.apps, loaded: true }));
