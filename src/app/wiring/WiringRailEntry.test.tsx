@@ -85,7 +85,7 @@ function renderRail(check: unknown) {
   });
   return renderWithProviders(
     <QueryClientProvider client={queryClient}>
-      <WiringRailEntry expanded active={false} onClick={() => {}} />
+      <WiringRailEntry active={false} />
     </QueryClientProvider>
   );
 }

@@ -101,6 +101,12 @@ describe('App keyboard contract', () => {
     // Detail view is live and its hotkeys are registered.
     await screen.findByTestId('summary-card');
 
+    // The shell renders console's wordmark and the cross-app launcher
+    // trigger -- proof `MattstackShell` is actually mounted with
+    // `appName="console"`, not just that some tree rendered.
+    expect(screen.getByText('console')).toBeInTheDocument();
+    expect(screen.getByLabelText('Apps')).toBeInTheDocument();
+
     Spotlight.open();
     const input = await screen.findByPlaceholderText(
       'Search runs, or jump to a page…'
