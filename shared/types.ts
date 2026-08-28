@@ -4,7 +4,7 @@
  */
 
 export type RangePreset = "7d" | "30d" | "90d";
-export type RangeKey = RangePreset | "custom";
+export type RangeKey = RangePreset | "custom" | "base90" | "base180";
 
 export interface TimeWindow {
   /** Inclusive start, ISO 8601. */

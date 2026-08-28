@@ -9,6 +9,7 @@ export function mapMrListNode(raw: RawMrListNode): NormMr {
     authorUsername: raw.author?.username ?? null,
     state: normalizeState(raw.state),
     createdAt: raw.createdAt,
+    updatedAt: raw.updatedAt,
     preparedAt: raw.preparedAt ?? null,
     mergedAt: raw.mergedAt,
     title: raw.title,
@@ -38,6 +39,16 @@ export function applyMrDetail(mr: NormMr, detail: RawMrDetail): NormMr {
     notes: (detail.notes?.nodes ?? []).map(mapNote),
     description: detail.description ?? mr.description,
   };
+}
+
+/**
+ * Overlay list-node fields the permanent store cannot be trusted for onto a store-hydrated
+ * record. `updatedAt` keeps moving even on merged MRs (comments, labels), and records
+ * written before the field existed lack it entirely; without this, sliceOutcome's
+ * `Date.parse` gets NaN and silently drops the MR and every Linear ticket linked via it.
+ */
+export function refreshFromList(stored: NormMr, fresh: NormMr): NormMr {
+  return { ...stored, updatedAt: fresh.updatedAt };
 }
 
 function mapNote(raw: RawNoteNode): NormNote {

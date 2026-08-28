@@ -2,7 +2,7 @@ import type { Env } from "../env.js";
 import { mapLimit } from "../util/concurrency.js";
 import { collectConnection, gqlRequest } from "../gitlab/graphql.js";
 import { GitLabApiError } from "../gitlab/errors.js";
-import { applyMrDetail, mapEvent, mapMrListNode, mapPipeline } from "../gitlab/map.js";
+import { applyMrDetail, mapEvent, mapMrListNode, mapPipeline, refreshFromList } from "../gitlab/map.js";
 import { getCachedMrKeys, getMrByKey, mrKey, putMrDetails, getCachedMrList, putMrListNodes, getLastListScan, setLastListScan } from "../cache/mr-store.js";
 import { scopeKey } from "../cache/store.js";
 import { isRevertTitle } from "../metrics/reverts.js";
@@ -164,10 +164,13 @@ async function fetchMergeRequests(
   const cachedKeys = await getCachedMrKeys(teamBases);
 
   const uncached = teamBases.filter((m) => !cachedKeys.has(mrKey(m.projectPath, m.iid)));
+  const baseByKey = new Map(teamBases.map((m) => [mrKey(m.projectPath, m.iid), m]));
   const fromStore: NormMr[] = [];
   for (const key of cachedKeys) {
     const mr = await getMrByKey(key);
-    if (mr) fromStore.push(mr);
+    if (!mr) continue;
+    const base = baseByKey.get(key);
+    fromStore.push(base ? refreshFromList(mr, base) : mr);
   }
 
   let detailFailures = 0;

@@ -22,6 +22,7 @@ export const mr = (m: Partial<NormMr> & Pick<NormMr, "iid" | "authorUsername" | 
   projectPath: "org/app",
   state: "merged",
   createdAt: "2026-05-01T00:00:00.000Z",
+  updatedAt: m.updatedAt ?? m.createdAt ?? "2026-05-01T00:00:00.000Z",
   preparedAt: null,
   mergedAt: null,
   sourceBranch: null,
