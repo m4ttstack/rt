@@ -1,6 +1,6 @@
 {
   "name": "@mattstack/app-kit",
-  "version": "0.1.0",
+  "version": "0.1.3",
   "description": "mantine-kit plus the mattstack layer: Tokyo theme, app shell, boot, router helpers, config presets.",
   "type": "module",
   "license": "MIT",

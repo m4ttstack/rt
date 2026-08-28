@@ -1,0 +1,88 @@
+/* Launcher popover surface + tiles. Colors come from the tokyo scheme vars
+ * (`--tk-*`), which are redefined per color scheme, so the launcher follows
+ * light/dark automatically without a JS scheme read. */
+
+.dropdown {
+  background: var(--tk-panel);
+  border: 1px solid var(--tk-border);
+  padding: 10px;
+}
+
+/* The popover arrow is a separate element; match it to the dropdown so it
+ * does not paint as a stray white notch. */
+.arrow {
+  background: var(--tk-panel);
+  border-color: var(--tk-border);
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
+  width: 240px;
+}
+
+.tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 11px 6px;
+  border-radius: 10px;
+  text-decoration: none;
+  color: var(--tk-fg);
+  transition:
+    background-color 120ms ease,
+    box-shadow 120ms ease;
+}
+
+.tile:hover {
+  background: color-mix(in srgb, var(--tk-accent) 12%, transparent);
+}
+
+.tile:active {
+  background: color-mix(in srgb, var(--tk-accent) 20%, transparent);
+}
+
+/* Current app: a persistent highlight + inset ring. The "you are here"
+ * treatment lives on the tile background, never in flow, so no tile's label
+ * shifts relative to its neighbours. */
+.tile[data-current='true'] {
+  background: color-mix(in srgb, var(--tk-accent) 15%, transparent);
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--tk-accent) 38%, transparent);
+}
+
+.iconWrap {
+  position: relative;
+  width: 40px;
+  height: 40px;
+}
+
+/* The current-app check rides the icon's corner, absolutely positioned, so it
+ * adds no height to the tile. */
+.badge {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: var(--tk-accent);
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--tk-panel);
+}
+
+.label {
+  font-size: 12px;
+  line-height: 1.15;
+  text-align: center;
+}
+
+.label[data-current='true'] {
+  color: var(--tk-accent-text);
+  font-weight: 600;
+}

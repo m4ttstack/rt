@@ -1,17 +1,9 @@
-import { useMemo } from 'react';
-import {
-  ActionIcon,
-  Anchor,
-  Box,
-  Image,
-  Popover,
-  SimpleGrid,
-  Stack,
-  Text,
-} from '@mantine/core';
+import { useEffect, useMemo } from 'react';
+import { ActionIcon, Anchor, Image, Popover, Text } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 
 import { Icon } from '@mattstack/app-kit/icons';
+import classes from './AppLauncher.module.css';
 import { deriveDeckBase } from './deck-discovery';
 import type { DiscoveryApp } from './deck-discovery';
 import { MattstackMark } from './MattstackMark';
@@ -38,28 +30,28 @@ function Tile({ app, current }: { app: DiscoveryApp; current: boolean }) {
   return (
     <Anchor
       href={app.url}
+      target="_blank"
+      rel="noopener noreferrer"
       underline="never"
       data-current={current}
       aria-label={app.displayName}
+      className={classes.tile}
     >
-      <Stack align="center" gap={4} p="xs">
+      <div className={classes.iconWrap}>
         {app.icon ? (
           <Image src={app.icon} w={40} h={40} alt="" />
         ) : (
           <MattstackMark size={40} decorative />
         )}
         {current && (
-          <Box
-            data-testid="current-app-marker"
-            c="var(--mantine-primary-color-filled)"
-          >
-            <Icon name="check" size={14} />
-          </Box>
+          <span data-testid="current-app-marker" className={classes.badge}>
+            <Icon name="check" size={10} />
+          </span>
         )}
-        <Text size="xs" ta="center" lh={1.1}>
-          {app.displayName}
-        </Text>
-      </Stack>
+      </div>
+      <span className={classes.label} data-current={current}>
+        {app.displayName}
+      </span>
     </Anchor>
   );
 }
@@ -79,6 +71,15 @@ export function AppLauncher({ currentApp, deckBase }: AppLauncherProps) {
   const [opened, handlers] = useDisclosure(false);
   const ordered = useMemo(() => sortApps(apps, currentApp), [apps, currentApp]);
 
+  // Preload the app list on mount so the popover opens fully-sized on first
+  // click, instead of painting an empty sliver and popping the tiles in when
+  // the fetch lands. `refresh` is `deckBase`-stable and the hook's 30s cache
+  // makes the `onOpen` refresh a no-op within the window (a freshness refetch
+  // after it), so this adds one fetch per page load, not per open.
+  useEffect(() => {
+    void refresh();
+  }, [refresh]);
+
   if (!base) return null;
 
   return (
@@ -89,15 +90,16 @@ export function AppLauncher({ currentApp, deckBase }: AppLauncherProps) {
       position="bottom-end"
       withArrow
       shadow="md"
+      classNames={{ dropdown: classes.dropdown, arrow: classes.arrow }}
     >
       <Popover.Target>
         <ActionIcon
           variant="subtle"
-          size="lg"
+          size="xl"
           aria-label="Apps"
           onClick={handlers.toggle}
         >
-          <MattstackMark size={24} />
+          <MattstackMark size={34} />
         </ActionIcon>
       </Popover.Target>
       <Popover.Dropdown>
@@ -106,7 +108,7 @@ export function AppLauncher({ currentApp, deckBase }: AppLauncherProps) {
             No apps
           </Text>
         ) : (
-          <SimpleGrid cols={3} spacing="xs" w={240}>
+          <div className={classes.grid}>
             {ordered.map(app => (
               <Tile
                 key={app.name}
@@ -114,7 +116,7 @@ export function AppLauncher({ currentApp, deckBase }: AppLauncherProps) {
                 current={app.name === currentApp}
               />
             ))}
-          </SimpleGrid>
+          </div>
         )}
       </Popover.Dropdown>
     </Popover>
