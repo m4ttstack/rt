@@ -34,6 +34,7 @@ export function useDiscoveryApps(deckBase: string | null) {
     loaded: false,
   });
   const cache = useRef<{ base: string; at: number } | null>(null);
+  const reqId = useRef(0);
 
   const refresh = useCallback(async () => {
     if (!deckBase) {
@@ -46,19 +47,27 @@ export function useDiscoveryApps(deckBase: string | null) {
       Date.now() - cache.current.at < CACHE_MS
     )
       return;
+    // Only the most recently issued request may write state/cache; an older
+    // in-flight request that resolves after a newer one is discarded.
+    const myReq = ++reqId.current;
     try {
       const res = await fetch(`${deckBase}/api/apps`);
+      if (myReq !== reqId.current) return;
       if (!res.ok) {
         setState({ apps: [], loaded: true });
         return;
       }
       const data = (await res.json()) as DiscoveryResponse;
-      const apps = (Array.isArray(data?.apps) ? data.apps : []).filter(
-        isValidApp
-      );
+      if (myReq !== reqId.current) return;
+      if (!Array.isArray(data?.apps)) {
+        setState({ apps: [], loaded: true });
+        return;
+      }
+      const apps = data.apps.filter(isValidApp);
       cache.current = { base: deckBase, at: Date.now() };
       setState({ apps, loaded: true });
     } catch {
+      if (myReq !== reqId.current) return;
       setState(prev => ({ apps: prev.apps, loaded: true }));
     }
   }, [deckBase]);
