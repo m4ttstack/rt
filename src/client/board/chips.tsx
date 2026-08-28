@@ -323,9 +323,10 @@ function SlackReactionChips({ reactions }: { reactions?: string[] }) {
 
 /** The Slack squircle with a ✓ overlay: the posted-in-slack mark. Shared by
     the row chip and the header filter button so the two read as one thing.
-    `mono` is the filter's off state: currentColor, no badge, so colour in the
-    header only ever means on. */
-function SlackPostedMark({ title, mono = false }: { title?: string; mono?: boolean }) {
+    `mono` paints the squircle in currentColor (the filter button: muted when
+    off, page colour on the accent fill when on); `badge` defaults to the
+    brand form only, so an off-state glyph carries no ✓. */
+function SlackPostedMark({ title, mono = false, badge = !mono }: { title?: string; mono?: boolean; badge?: boolean }) {
   const fill = (brand: string) => (mono ? "currentColor" : brand);
   return (
     <span className="tui-slack-posted" title={title}>
@@ -335,7 +336,7 @@ function SlackPostedMark({ title, mono = false }: { title?: string; mono?: boole
         <path fill={fill("#2EB67D")} d="M19 9a2 2 0 1 1 2 2h-2V9Zm-1 0a2 2 0 0 1-4 0V4a2 2 0 1 1 4 0v5Z" />
         <path fill={fill("#ECB22E")} d="M15 19a2 2 0 1 1-2 2v-2h2Zm0-1a2 2 0 0 1 0-4h5a2 2 0 1 1 0 4h-5Z" />
       </svg>
-      {!mono && <span className="tui-slack-posted-check" aria-hidden>✓</span>}
+      {badge && <span className="tui-slack-posted-check" aria-hidden>✓</span>}
     </span>
   );
 }

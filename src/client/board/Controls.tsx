@@ -65,7 +65,7 @@ function Controls({
             aria-pressed={slackFilter.active}
             onClick={slackFilter.toggle}
           >
-            <SlackPostedMark mono={!slackFilter.active} /> {slackFilter.active ? "showing only posted in slack" : "only posted in slack"}
+            <SlackPostedMark mono badge={slackFilter.active} /> {slackFilter.active ? "showing only posted in slack" : "only posted in slack"}
           </button>
         )}
         {canCopy && (
@@ -106,7 +106,7 @@ function Controls({
           title={slackFilterLabel}
           onClick={slackFilter.toggle}
         >
-          <SlackPostedMark mono={!slackFilter.active} />
+          <SlackPostedMark mono badge={slackFilter.active} />
         </button>
       )}
       {group}

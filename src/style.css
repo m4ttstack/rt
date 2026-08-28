@@ -64,8 +64,13 @@
 .tui-copy:hover { color: var(--fg); border-color: var(--accent); }
 .tui-refresh:disabled { cursor: default; color: var(--accent); border-color: var(--accent); }
 /* Posted-to-slack filter: off is a muted mono glyph like its neighbours; on
-   is the row chip in full colour inside an accent border. */
-.tui-slack-filter[data-active], .tui-drawer-action[data-active] { border-color: var(--accent); color: var(--fg); }
+   is the segmented control's active state (accent fill, glyph in page
+   colour, the chip's ✓ badge kept). The hover rule below outranks
+   `.tui-copy:hover`, which would otherwise flip the glyph to --fg on accent. */
+.tui-slack-filter[data-active], .tui-drawer-action[data-active] {
+  background: var(--accent); border-color: var(--accent); color: var(--bg);
+}
+.tui-slack-filter[data-active]:hover, .tui-drawer-action[data-active]:hover { color: var(--bg); }
 .tui-refresh.spinning svg { animation: tui-spin 0.8s linear infinite; }
 @keyframes tui-spin { to { transform: rotate(360deg); } }
 .tui-copy-inline {
