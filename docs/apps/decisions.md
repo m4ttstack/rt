@@ -124,6 +124,11 @@ Consequences a later change must keep:
   `*.module.css`, `scripts/derive.ts` scrapes both for `tokenDependencies`,
   and `test/no-hardcoded-values.test.ts` sweeps both with the same rules and
   rejects any `@keyframes` / `animation` that reappears inside a module.
+- `scripts/fix-dts-extensions.ts` strips the `import "./<Name>.keyframes.css"`
+  line that tsc carries into each recipe's `.d.ts`. The JS keeps it (that is
+  what loads the stylesheet); the declaration has no use for it, and leaving
+  it would make every adopter without `skipLibCheck` declare an ambient
+  `*.css` module just to read the kit's types.
 - `test/bun-build-keyframes.test.ts` bundles the barrel with the local `bun`
   and reads the emitted CSS; the browser tiers assert the computed
   `animationName` matches a real `CSSKeyframesRule` (`test/keyframes.ts`).
