@@ -27,6 +27,11 @@
   border: 1px solid var(--border-soft); border-radius: 8px;
   background: color-mix(in srgb, var(--panel) 55%, transparent);
 }
+/* Cross-app switcher: a flex sibling of the title/controls, so it lands at
+   the header card's top-right corner (`.tui-controls-header`'s own
+   `margin-left: auto` absorbs the row's free space, pushing controls + this
+   flush right together) without sitting inside the controls row itself. */
+.tui-app-launcher { flex: none; }
 .tui-header h1 {
   display: flex; align-items: center; gap: 0.35rem;
   font-size: 1.15rem; font-weight: 700; letter-spacing: 0.02em; margin: 0;

@@ -22,6 +22,7 @@ import { Sidebar } from "./Sidebar.tsx";
 import { Controls } from "./Controls.tsx";
 import { TabBar } from "./TabBar.tsx";
 import { AppMark } from "./AppMark.tsx";
+import { AppLauncher } from "./AppLauncher.tsx";
 import { SelectionBar } from "./SelectionBar.tsx";
 import { RowView } from "./RowView.tsx";
 import { GridView } from "./GridView.tsx";
@@ -550,6 +551,9 @@ export function Board() {
           </div>
           <div className="tui-controls tui-controls-header">
             <Controls {...controlProps} />
+          </div>
+          <div className="tui-app-launcher">
+            <AppLauncher />
           </div>
         </header>
 
