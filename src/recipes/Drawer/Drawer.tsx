@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { defineComponent } from "../../builders.ts";
 import { SideDrawer } from "../SideDrawer/SideDrawer.tsx";
 import classes from "./Drawer.module.css";
+import "./Drawer.keyframes.css";
 
 /** Authoring category (2 = transient overlay). Read off this module by
     scripts/derive.ts to build the kit's manifest; not dead code.

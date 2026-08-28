@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { page, userEvent } from "vitest/browser";
 import { renderWithTheme } from "../../../test/test-utils.tsx";
+import { animationResolution } from "../../../test/keyframes.ts";
 import { DRAWER_PARTS, Drawer, type DrawerScreen } from "./Drawer.tsx";
 
 /**
@@ -288,13 +289,15 @@ describe("Drawer (browser)", () => {
     expect(window.matchMedia("(prefers-reduced-motion: reduce)").matches).toBe(false);
   });
 
-  it("the content slot slides in on mount", async () => {
+  it("the content slot slides in on mount, via a @keyframes rule a loaded sheet declares", async () => {
     const screen = await renderWithTheme(
       <Drawer open stack={rootStack()} onBack={noop} onClose={noop} ariaLabel="d" />,
     );
 
     const content = partOf(screen.container, DRAWER_PARTS.content);
-    expect(getComputedStyle(content).animationName).not.toBe("none");
+    const { name, found } = animationResolution(content);
+    expect(found, `no @keyframes rule named "${name}" in any loaded sheet`).toBe(true);
+    expect(name).toBe("drawer-slide-in");
   });
 
   it("the content region scrolls under tall content; the nav bar stays pinned", async () => {
