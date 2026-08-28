@@ -1,8 +1,0 @@
-/* Each row lifts to the next surface slot on hover, so the list reads as a
-   set of individually actionable rows rather than a flat block. */
-.row {
-  transition: background-color 100ms ease;
-}
-.row:hover {
-  background-color: var(--ui-bg-3);
-}

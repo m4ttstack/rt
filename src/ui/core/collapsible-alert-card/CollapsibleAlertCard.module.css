@@ -1,8 +1,0 @@
-.section {
-  cursor: pointer;
-  background-color: var(--collapsible-alert-card-accent);
-}
-
-.section:active {
-  background-color: var(--collapsible-alert-card-accent-active);
-}
