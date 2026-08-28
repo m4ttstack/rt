@@ -1,6 +1,6 @@
 {
   "name": "@mattstack/app-server",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "The Hono/Bun server frame for mattstack apps: health, JSON floors, static or embedded assets, the rt-client relay, Bun.serve.",
   "type": "module",
   "license": "MIT",
@@ -28,7 +28,7 @@
     "test": "vitest"
   },
   "peerDependencies": {
-    "@mattstack/rt-client": "^0.6",
+    "@mattstack/rt-client": ">=0.6 <1",
     "hono": "^4.13.3"
   }
 }
