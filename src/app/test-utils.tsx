@@ -41,7 +41,7 @@ let originalWebSocket: typeof WebSocket | undefined;
  * assigned by the component, and the test drives it via the returned
  * `pushFrame`, never by dispatching a real socket event.
  */
-class FakeWebSocket {
+export class FakeWebSocket {
   static instances: FakeWebSocket[] = [];
   url: string;
   onmessage: ((event: { data: string }) => void) | null = null;

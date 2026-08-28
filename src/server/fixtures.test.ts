@@ -2,11 +2,16 @@ import { afterEach, expect, test } from 'vitest';
 
 import {
   FIXTURE_DM,
+  fixtureAccounts,
   fixtureBuddies,
+  fixtureDirectories,
+  fixtureInvite,
   fixtureMembers,
   fixtureMessages,
+  fixturePanes,
   fixtureRooms,
   fixturesEnabled,
+  fixtureSpawn,
 } from './fixtures';
 
 afterEach(() => {
@@ -108,4 +113,44 @@ test('fixtures carry an archived channel, an archived DM, and a long code post',
     'deck-main',
     'gitq-main',
   ]);
+});
+
+test('the pane fixtures cover every row state the picker artboard draws', () => {
+  const panes = fixturePanes();
+  const states = new Set(
+    panes.map(p => (p.presence ? p.presence.status : 'none'))
+  );
+  expect(states).toEqual(new Set(['live', 'idle', 'deaf', 'none']));
+  expect(panes.some(p => p.agentStatus === 'working')).toBe(true);
+  expect(panes.some(p => p.agentStatus === 'blocked')).toBe(true);
+  expect(panes.some(p => p.presence?.rooms.includes('build'))).toBe(true);
+  expect(panes.every(p => p.paneId && p.workspace)).toBe(true);
+});
+
+test('invite fixtures answer per pane: a working pane queues, a blocked one refuses', () => {
+  const working = fixturePanes().find(p => p.agentStatus === 'working')!;
+  const blocked = fixturePanes().find(p => p.agentStatus === 'blocked')!;
+  const idle = fixturePanes().find(
+    p => p.agentStatus === 'idle' && !p.presence
+  )!;
+  expect(fixtureInvite(working.paneId).delivered).toBe('queued');
+  expect(fixtureInvite(blocked.paneId)).toMatchObject({
+    delivered: 'refused',
+    reason: 'at a prompt',
+  });
+  expect(fixtureInvite(idle.paneId).delivered).toBe('accepted');
+});
+
+test('directories filter by substring; accounts carry headroom; spawn returns a ready pane', () => {
+  expect(fixtureDirectories('acme').every(d => d.path.includes('acme'))).toBe(
+    true
+  );
+  expect(fixtureDirectories().length).toBeGreaterThan(
+    fixtureDirectories('acme').length
+  );
+  expect(fixtureAccounts()[0]).toMatchObject({ slot: 1, alias: 'Acme' });
+  expect(fixtureSpawn('/Users/matt/Documents/GitHub/chat')).toMatchObject({
+    ready: true,
+    pane: { cwd: '/Users/matt/Documents/GitHub/chat', agentStatus: 'idle' },
+  });
 });

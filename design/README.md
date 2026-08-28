@@ -7,7 +7,7 @@ Canvas (editable, hosted): https://claude.ai/code/artifact/933b24c5-9edd-4c70-99
 
 | file | what it is |
 | --- | --- |
-| `artboards/*.dc.html` | the design source — `Main`, `DaemonDown`, `DirectMessage` (Matt inside an agent↔agent DM), `Phone`, `PhoneRooms`, `Roster` (the AIM-style buddy list), `Indicators` |
+| `artboards/*.dc.html` | the design source — `Main`, `DaemonDown`, `DirectMessage` (Matt inside an agent↔agent DM), `Phone`, `PhoneRooms`, `Roster` (the AIM-style buddy list), `Indicators`, `NewRoom` (Task 7's modal), `PanePicker` (Task 6's standalone picker), `NewPane` (the picker's second view, starting a pane), `EntryPoints` (Task 8's rail `+` and page-bar `add agents`) |
 | `canvas.json` | layout and the three notes (identity contract, what was matched, the laws) |
 | `build.py` | regenerates the artboards from one shared CSS block; edit it, not the outputs |
 

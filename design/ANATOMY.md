@@ -212,6 +212,66 @@ outside the room reads `not in #room — DM instead`. A deaf buddy carries
 `won't see this until its tail restarts`. `@here` sits last with its cost:
 `wakes N agents`.
 
+## Pane picker (Task 6)
+
+A `.pop` modal, 640px (a full-height drawer on phones). Header: the terminal
+icon, `Pick herdr panes` at 20px / 700, the caller's context in `.sm.muted`.
+Then the filter `.input` (30px, 11.2px, search icon), a count line in
+`.xs.muted` (`N panes running Claude`) with `N selected` and, with
+`allowCreate`, a `.btn.sm` `new pane` on the right. The list is a `.card` on
+`bg2`, `padding: 2px 0`, rows separated by `--border-soft`.
+
+Each row is a `.pane` (`gap: 9.6px`, `padding: 8.4px 9.6px`, radius 6px,
+`align-items: flex-start`); `.pane.on` carries the accent wash, `.pane.na`
+is `opacity: 0.55; cursor: default`. Two lines, not three: repo, branch and
+room tags are repeated detail, so they moved off the row into hover
+tooltips instead of sitting underneath in muted text.
+
+| part | detail |
+| --- | --- |
+| checkbox | `.cb`, 16px, radius 4px; `.cb.on` accent-deep with a 11px check; `.cb.off` on `bg4` with a muted border for a row the caller disabled |
+| dot | 8px `.dot` at `margin-top: 5px`, status colour; `.dot.off` hollow for a pane with no presence |
+| who | the handle at `.sm` / 600, or `not signed in` in `.sm.muted` |
+| where | `.xs.muted.truncate`, the workspace, plus ` · <title>` when the title is not the handle |
+| state | `.state` on the right, the word alone: `.working` (warn) `working`, `.blocked` (bad) `at a prompt`, `starting` (warn), `.idle` muted with no tooltip. A hover explains the rest: `working` -> `the invite queues until its turn ends`, `at a prompt` -> `answer its prompt first`, `starting` -> `selectable once it reaches idle`. A caller's disable reason (e.g. `in #build`) still replaces the word inline, with no tooltip |
+| eye | a 22px `.aicon`, tooltip `peek at recent output` |
+| path (line 2) | `…/leaf`, `.xs.muted`, real text (never `direction: rtl`); tooltip carries the detail the row dropped: `repo · branch`, plus ` · in #room, #room2` when the pane is already in rooms |
+| peek | `.peek` inside the row: `bg1`, hairline, radius 4px, 11.2px, `white-space: pre`, own `overflow-x`; the prompt line in `--fg` |
+
+Footer: just `Cancel` (`.btn`) and `Use N panes` (`.btn.primary`), no hint
+line.
+
+**New pane** is a second view in the same modal: back arrow + `New pane` +
+`a herdr tab running Claude`; `.field`s (`.lbl2` label, `.input`, `.hint`)
+for Directory (with a `.card` of `.opt` suggestions), a 2-column grid of
+Account / Model then Effort / Workspace, and the Opening prompt `.area`;
+footer hint with the launch command, `Back`, `Start pane`.
+
+## New room (Task 7)
+
+A `.pop` modal, 680px. Header: hash icon + `New room`. `.field`s: Room
+(`#` prefix, hint `lowercase, digits, dashes · the room exists once you
+post the seed`), Seed (`.input.area`, 96px min, hints `posted as matt · every
+invitee is told to read it first` and `markdown subset · blank line between
+points`), Wakes (a `.chip` select, hint `all = a war room, nobody has to
+@here`). The Agents section: `AGENTS · N to invite` with `pick panes`
+(`.btn.sm`, terminal icon) on the right; a `.card` of `.pane` rows without
+checkboxes, one line plus a 28px note `.input`: the workspace/title text
+itself carries the tooltip here (`repo · branch`, no room list, since the
+row has no path line to hang it on), and a remove `.aicon` sits at the end of
+the line. Footer:
+the hint (`N invites · <handle> picks it up when its turn ends`), `Create
+without inviting` (`.btn`), `Create #<room> · invite N` (`.btn.primary`).
+
+## Entry points (Task 8)
+
+The rooms rail header gains a 24px `.aicon` `+` beside the count. The page
+bar gains `add agents` (`.btn.sm`, user-plus icon) before `mark read`. After
+an invite the transcript opens with a `.notice` row (the `.edge` values, left-aligned): `invited 2 ·
+<ok>acme pane accepted</ok> · <warn>fred queued (working)</warn> ·
+members appear as they sign in`. Both entry points hide when rt reports
+herdr unavailable and disable with the daemon down.
+
 ## Keyboard hint
 
 `.kbd`: 16px tall, `padding: 0 5px`, `border-bottom-width: 2px`, radius 4px,

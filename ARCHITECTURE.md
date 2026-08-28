@@ -31,21 +31,30 @@ port: 11002, relay: [...] })` from `@mattstack/app-server`. The package
 All under `/api`; JSON in and out. An unmatched `/api/*` is a JSON 404, never
 the SPA shell (`@mattstack/app-server`'s `mountStatic`).
 
-| Route                                         | Returns                                                                                                                                                               |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/health`                             | `{ ok: true, name, version }` (from `@mattstack/app-server`'s `createApp`, not chat's own routes)                                                                     |
-| `GET /api/daemon`                             | `daemonHealth()`: `{ reachable, ... }`; never errors (also from `createApp`)                                                                                          |
-| `GET /api/chat/rooms`                         | `{ rooms: RoomSummary[] }`: the human's rooms including archived ones (`archivedAt` set), then every room a fleet buddy is in that the human is not (`joined: false`) |
-| `GET /api/chat/who/:room`                     | `{ members }` with status, cwd, pane                                                                                                                                  |
-| `GET /api/chat/buddies`                       | `{ buddies }`: the fleet roster with each buddy's room tags                                                                                                           |
-| `GET /api/chat/messages/:room?limit&before`   | `{ messages }`, newest page by default; `before=<id>` pages older                                                                                                     |
-| `POST /api/chat/mark` `{ room }`              | advances the human's read cursor                                                                                                                                      |
-| `POST /api/chat/post` `{ room, body }`        | posts as the human; joins the room first if needed                                                                                                                    |
-| `POST /api/chat/archive` `{ room, archived }` | joins the human first when he is not in the channel, then archives or reopens; 400 on a room nobody lists                                                             |
-| `POST /api/chat/dm/open` `{ to }`             | opens or reuses the DM room without posting; the client navigates to it                                                                                               |
+| Route                                              | Returns                                                                                                                                                               |
+| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/health`                                  | `{ ok: true, name, version }` (from `@mattstack/app-server`'s `createApp`, not chat's own routes)                                                                     |
+| `GET /api/daemon`                                  | `daemonHealth()`: `{ reachable, ... }`; never errors (also from `createApp`)                                                                                          |
+| `GET /api/chat/rooms`                              | `{ rooms: RoomSummary[] }`: the human's rooms including archived ones (`archivedAt` set), then every room a fleet buddy is in that the human is not (`joined: false`) |
+| `GET /api/chat/who/:room`                          | `{ members }` with status, cwd, pane                                                                                                                                  |
+| `GET /api/chat/buddies`                            | `{ buddies }`: the fleet roster with each buddy's room tags                                                                                                           |
+| `GET /api/chat/messages/:room?limit&before`        | `{ messages }`, newest page by default; `before=<id>` pages older                                                                                                     |
+| `POST /api/chat/mark` `{ room }`                   | advances the human's read cursor                                                                                                                                      |
+| `POST /api/chat/post` `{ room, body }`             | posts as the human; joins the room first if needed                                                                                                                    |
+| `POST /api/chat/archive` `{ room, archived }`      | joins the human first when he is not in the channel, then archives or reopens; 400 on a room nobody lists                                                             |
+| `POST /api/chat/dm/open` `{ to }`                  | opens or reuses the DM room without posting; the client navigates to it                                                                                               |
+| `POST /api/chat/rooms` `{ room, seed?, wakeOn? }`  | joins (creating) as the human, then posts the optional seed; `{ room, seedId? }`                                                                                      |
+| `POST /api/chat/invite` `{ room, panes }`          | invites each pane into `room` sequentially as the human; `{ results: InviteResult[] }`                                                                                |
+| `GET /api/panes`                                   | `{ available, panes: ChatPane[] }`; herdr absent is `available: false` with 200, every other rt failure is a 502                                                      |
+| `GET /api/panes/accounts`                          | `{ accounts: PaneAccount[] }`: the cswap accounts with headroom                                                                                                       |
+| `GET /api/panes/directories?q=`                    | `{ directories: PaneDirectory[] }`, filtered by path substring                                                                                                        |
+| `GET /api/panes/:id/peek?lines=`                   | `{ paneId, lines }`: the pane's last terminal lines                                                                                                                   |
+| `POST /api/panes` `{ cwd, account?, model?, ... }` | spawns a herdr pane running Claude; `{ pane, ready }`; 400 on a missing or relative `cwd` or an unknown account                                                       |
 
 Wire shapes are rt-client's types (`RoomSummary`, the presence row, the
-message row); the server passes them through rather than reshaping.
+message row); the server passes them through rather than reshaping. The pane
+routes live in `src/server/panes.ts`, a separate Hono sub-app mounted into
+`routes.ts` alongside `chat.ts`.
 
 ## Live updates
 
@@ -60,6 +69,21 @@ tabs cost one daemon subscription. Topics are `chat/<room>/msg` and
 A wake frame is a hint, not a status: the client (`src/app/App.tsx`) refetches
 the room's tail and the roster when one arrives. Presence status only ever
 comes from the daemon's roster, never inferred from traffic.
+
+The open room also refetches its members (`/api/chat/who`) on every
+`chat/<room>/msg` frame: the daemon emits no membership event, so an arriving
+agent's first post is the one signal that a new member has joined.
+
+## Panes
+
+`PanePicker` (`src/app/PanePicker/`) is a provider-hosted modal: any component
+under `PanePickerProvider` calls `usePanePicker()` and awaits the rows the
+human picks. It owns the `/api/panes*` calls (list, filter, sort, peek, and
+spawning a new pane). `NewRoomModal` names a room, seeds it, and invites the
+picked panes through `POST /api/chat/rooms` then `POST /api/chat/invite`. The
+two entry points, the `+` in the rooms rail and `add agents` in the page bar,
+appear only when `GET /api/panes` reports `available: true`, and disable while
+the daemon is unreachable.
 
 ## Routes and the cross-repo link
 

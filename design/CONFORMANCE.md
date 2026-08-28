@@ -149,4 +149,6 @@ Do not implement them because the artboard shows them:
   early build drew the badge; it was dropped in the PageShell rework because
   posting auto-joins, so "not joined" told the human nothing he could act on.
   `RailRoom.joined` is still typed and currently unread.
-- focusing a herdr pane from a member row (no route addresses a pane by id)
+- focusing a herdr pane from a roster member row. The picker now addresses a
+  pane by id (`/api/panes/:id/peek`), so that is no longer a blocker, but the
+  roster row itself still has no focus action wired.

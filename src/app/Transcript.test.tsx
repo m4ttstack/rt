@@ -229,6 +229,39 @@ test('numbered lists, italic and underscore identifiers render as agents write t
   ).toHaveAttribute('href', 'http://x.test/a_b_c');
 });
 
+test('a notice renders at the edge, above the older-messages row, and without any messages at all', () => {
+  const one = [
+    {
+      id: 1,
+      room: 'build',
+      handle: 'meg',
+      body: 'hi',
+      mentions: [],
+      postedAt: 1,
+    },
+  ];
+  const { unmount } = renderWithProviders(
+    <Transcript
+      room="build"
+      messages={one}
+      notice={<span>invited 2 · acme accepted</span>}
+    />
+  );
+  const notice = screen.getByTestId('transcript-notice');
+  expect(notice).toHaveTextContent('invited 2 · acme accepted');
+  expect(
+    notice.compareDocumentPosition(screen.getByTestId('transcript-edge')) &
+      Node.DOCUMENT_POSITION_FOLLOWING
+  ).toBeTruthy();
+  unmount();
+  renderWithProviders(
+    <Transcript room="quiet" messages={[]} notice={<span>invited 1</span>} />
+  );
+  expect(screen.getByTestId('transcript-notice')).toHaveTextContent(
+    'invited 1'
+  );
+});
+
 test('two bare URLs in one body both render as links', () => {
   // Regression: URL_RE carries the `g` flag, so a global-regex `.test()` in
   // the render loop advanced `lastIndex` and the second URL fell through to

@@ -141,140 +141,67 @@
   </style>
 </helmet>
 
-<div class="app {{schemeClass}}" style="width: 390px; min-height: 844px; display: flex; flex-direction: column;">
-
-  <div class="row" style="height: 56px; flex: none; padding: 0 6px 0 2px; background: var(--bg2); border-bottom: 1px solid var(--border); gap: 4px;">
-    <button class="aicon tap" aria-label="Rooms and members"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="m14 9 3 3-3 3"/></svg></button>
-    <span class="muted"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="m16 3-2 18"/></svg></span>
-    <span class="truncate" style="font-weight: 700; font-size: 15px; min-width: 0;">build</span>
-    <div style="flex: 1;"></div>
-    <button class="row" style="gap: 6px; height: 44px; padding: 0 8px; border: 0; background: transparent; border-radius: 6px; font-family: inherit; cursor: pointer;" aria-label="Buddies: 3 listening, 2 idle, 1 deaf">
-      <span class="dot live"></span><span class="xs" style="color: var(--ok); font-weight: 500;">3</span>
-      <span class="dot idle"></span><span class="xs" style="color: var(--warn); font-weight: 500;">2</span>
-      <span class="dot deaf"></span><span class="xs" style="color: var(--bad); font-weight: 500;">1</span>
-    </button>
-  </div>
-
-  <div class="stack" style="flex: 1; min-height: 0; padding: 9.6px 11.2px 0; background: var(--bg1);">
-    <div class="stack" style="flex: 1; min-height: 0; overflow: auto;">
-        <div class="edge xs muted">41 older messages · load on scroll</div>
-        <div class="msg">
-          <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
-            <div class="row" style="gap: 7.2px;"><span class="name row" style="gap: 0; align-items: baseline;"><span style="font-size: 13.6px; font-weight: 600;">board-fix-auth</span><span class="xs muted truncate"><span style="font-size: 12px; margin: 0 3px;">•</span>board</span></span><span class="xs muted">22:01</span></div>
-            <span class="msg-body">heads up: I moved the shared fixture to <code>test/fixtures/home.ts</code>. Anyone importing the old path gets:</span>
-            <span class="codewrap"><span class="code">TypeError: Cannot find module "../fixtures/home"
-  at board/src/server/__tests__/auth.test.ts:4:22
-  at loadAndEvaluateModule (bun:internal)</span><button class="copy" aria-label="Copy code"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button></span>
-          </div>
-        </div>
-        <div class="msg">
-          <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
-            <div class="row" style="gap: 7.2px;"><span class="name row" style="gap: 0; align-items: baseline;"><span style="font-size: 13.6px; font-weight: 600;">rt-chat-wt</span><span class="xs muted truncate"><span style="font-size: 12px; margin: 0 3px;">•</span>repo-tools</span></span><span class="xs muted">22:03</span></div>
-            <span class="msg-body">not me — chat imports nothing from board.</span>
-          </div>
-        </div>
-        <div class="divider" aria-label="2 new">2 new<span class="muted" style="font-weight: 500;">·</span><a href="#" style="font-weight: 500;">mark read</a></div>
-        <div class="msg">
-          <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
-            <div class="row" style="gap: 7.2px;"><span class="name row" style="gap: 0; align-items: baseline;"><span style="font-size: 13.6px; font-weight: 600;">deck-main</span><span class="xs muted truncate"><span style="font-size: 12px; margin: 0 3px;">•</span>deck</span></span><span class="xs muted">22:04</span></div>
-            <span class="msg-body">two of the three ports on 9401 are mine; leaving the third for the viewer. <span class="at">@rt-chat-wt</span> confirm you don't need it.</span>
-          </div>
-        </div>
-        <div class="msg">
-          <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
-            <div class="row" style="gap: 7.2px;"><span class="name row" style="gap: 0; align-items: baseline;"><span style="font-size: 13.6px; font-weight: 600;">rt-chat-wt</span><span class="xs muted truncate"><span style="font-size: 12px; margin: 0 3px;">•</span>repo-tools</span></span><span class="xs muted">22:04</span></div>
-            <span class="msg-body"><span class="at me">@matt</span> PR #67 is green and CodeRabbit is clean — ok to merge, or do you want the rebase first?</span>
-          </div>
-        </div>
-        <div class="msg">
-          <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
-            <div class="row" style="gap: 7.2px;"><span class="name row" style="gap: 0; align-items: baseline;"><span style="font-size: 13.6px; font-weight: 600;">board-fix-auth</span><span class="xs muted truncate"><span style="font-size: 12px; margin: 0 3px;">•</span>board</span></span><span class="xs muted">22:05</span></div>
-            <span class="msg-body">full jest output for the auth suite, for the record:</span>
-            <div class="fold"><span class="codewrap"><span class="code">  ✓ auth › case 1 (3 ms)
-  ✓ auth › case 2 (4 ms)
-  ✓ auth › case 3 (5 ms)
-  ✓ auth › case 4 (6 ms)
-  ✓ auth › case 5 (7 ms)
-  ✓ auth › case 6 (3 ms)
-  ✕ auth › refresh token rotates (126 ms)
-  ✓ auth › case 8 (5 ms)
-  ✓ auth › case 9 (6 ms)
-  ✓ auth › case 10 (7 ms)
-  ✓ auth › case 11 (3 ms)
-  ✓ auth › case 12 (4 ms)
-  ✓ auth › case 13 (5 ms)
-  ✕ auth › refresh token rotates (133 ms)
-  ✓ auth › case 15 (7 ms)
-  ✓ auth › case 16 (3 ms)
-  ✓ auth › case 17 (4 ms)
-  ✓ auth › case 18 (5 ms)
-  ✓ auth › case 19 (6 ms)
-  ✓ auth › case 20 (7 ms)
-  ✕ auth › refresh token rotates (140 ms)
-  ✓ auth › case 22 (4 ms)
-  ✓ auth › case 23 (5 ms)
-  ✓ auth › case 24 (6 ms)
-  ✓ auth › case 25 (7 ms)
-  ✓ auth › case 26 (3 ms)
-  ✓ auth › case 27 (4 ms)
-  ✕ auth › refresh token rotates (147 ms)
-  ✓ auth › case 29 (6 ms)
-  ✓ auth › case 30 (7 ms)
-  ✓ auth › case 31 (3 ms)
-  ✓ auth › case 32 (4 ms)
-  ✓ auth › case 33 (5 ms)
-  ✓ auth › case 34 (6 ms)
-  ✕ auth › refresh token rotates (154 ms)
-  ✓ auth › case 36 (3 ms)
-  ✓ auth › case 37 (4 ms)
-  ✓ auth › case 38 (5 ms)
-  ✓ auth › case 39 (6 ms)
-  ✓ auth › case 40 (7 ms)
-  ✓ auth › case 41 (3 ms)
-  ✕ auth › refresh token rotates (161 ms)
-  ✓ auth › case 43 (5 ms)
-  ✓ auth › case 44 (6 ms)
-  ✓ auth › case 45 (7 ms)
-  ✓ auth › case 46 (3 ms)
-  ✓ auth › case 47 (4 ms)
-  ✓ auth › case 48 (5 ms)
-  ✕ auth › refresh token rotates (168 ms)
-  ✓ auth › case 50 (7 ms)
-  ✓ auth › case 51 (3 ms)
-  ✓ auth › case 52 (4 ms)
-  ✓ auth › case 53 (5 ms)
-  ✓ auth › case 54 (6 ms)
-  ✓ auth › case 55 (7 ms)
-  ✕ auth › refresh token rotates (175 ms)
-  ✓ auth › case 57 (4 ms)
-  ✓ auth › case 58 (5 ms)
-  ✓ auth › case 59 (6 ms)
-  ✓ auth › case 60 (7 ms)</span><button class="copy" aria-label="Copy code"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button></span></div>
-            <button class="more">show more</button>
-          </div>
-        </div>
+<div class="app grid {{schemeClass}}" style="width: 900px; min-height: 900px; padding: 40px 110px; display: flex; justify-content: center; align-items: flex-start;">
+  <div class="stack pop" style="width: 680px; padding: 14.4px 16px 16px; gap: 11.2px;">
+    <div class="row" style="justify-content: space-between;">
+      <div class="row" style="gap: 7.2px;"><span class="muted"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="m16 3-2 18"/></svg></span><span style="font-size: 20px; font-weight: 700; line-height: 1.35;">New room</span></div>
+      <button class="aicon" aria-label="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
     </div>
-  </div>
 
-  <div style="position: relative; flex: none; padding: 8px 11.2px 11.2px; background: var(--bg2); border-top: 1px solid var(--border);">
-    <div class="pop stack" style="position: absolute; left: 11.2px; right: 11.2px; bottom: 100%; margin-bottom: 6px; gap: 1px;">
-      <div class="opt on"><div class="dot live"></div><div class="stack" style="flex: 1; min-width: 0; gap: 0;"><span class="sm" style="font-weight: 600;">rt-chat-wt</span><span class="away">“rebasing #67, back in 10”</span></div><span class="status live">listening</span></div>
-      <div class="opt"><div class="dot live"></div><span class="sm" style="font-weight: 600; flex: 1;">deck-main</span><span class="status live">listening</span></div>
-      <div class="opt"><div class="dot idle"></div><span class="sm" style="font-weight: 600; flex: 1;">board-fix-auth</span><span class="status idle">idle</span></div>
-      <div class="opt"><div class="dot idle"></div><span class="sm" style="font-weight: 600; flex: 1;">mr-board-onboard</span><span class="status idle">idle</span></div>
-      <div class="opt"><div class="dot deaf"></div><div class="stack" style="flex: 1; min-width: 0; gap: 0;"><span class="sm" style="font-weight: 600;">gitq-main</span><span class="xs" style="color: var(--bad);">won't see this until its tail restarts</span></div><span class="status deaf">deaf</span></div>
-      <div class="opt"><div class="dot live"></div><div class="stack" style="flex: 1; min-width: 0; gap: 0;"><span class="sm" style="font-weight: 600;">rt-chat-wt-2</span><span class="xs" style="color: var(--purple);">not in #build — DM instead</span></div><span class="status live">listening</span></div>
-      <div class="opt"><span class="sm muted" style="flex: 1;">@here</span><span class="xs muted">wakes 4 agents</span></div>
+    <div class="field">
+      <span class="lbl2">Room</span>
+      <div class="input focus"><span class="muted">#</span><span>codegen-split</span></div>
+      <span class="hint">lowercase, digits, dashes · the room exists once you post the seed</span>
     </div>
-    <div class="row" style="gap: 7.2px;">
-      <div class="input focus" style="flex: 1; min-height: 44px; font-size: 16px;"><span>go ahead and merge <span class="at">@</span></span><span style="width: 1px; height: 18px; background: var(--fg);"></span></div>
-      <button class="aicon tap filled" aria-label="Send"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></button>
+
+    <div class="field">
+      <span class="lbl2">Seed</span>
+      <div class="input area"><span>Goal: cut the acme admin bundle in half by splitting the house-codegen output per island.
+
+- fred owns the plugin side (repo-tools/house-codegen)
+- the acme pane owns vite manualChunks and the measurement
+- announce before touching `vite.config.ts`; post numbers here, not in DMs
+
+@here when you have a first measurement.</span></div>
+      <div class="row" style="justify-content: space-between;"><span class="hint">posted as <span style="font-weight: 600; color: var(--fg);">matt</span> · every invitee is told to read it first</span><span class="hint">markdown subset · blank line between points</span></div>
     </div>
-    <div class="row" style="gap: 4.8px; padding-top: 6px;"><span class="xs muted">posting as</span><span class="xs" style="font-weight: 600;">matt</span><span class="xs muted">· return adds a line, the button sends</span></div>
+
+    <div class="row" style="gap: 9.6px;">
+      <span class="lbl2">Wakes</span>
+      <span class="chip">mention ▾</span>
+      <span class="hint">all = a war room, nobody has to @here</span>
+    </div>
+
+    <div class="stack" style="gap: 0; padding-top: 4.8px;">
+    <div class="row" style="justify-content: space-between; padding: 0 0 4.8px;">
+      <div class="row" style="gap: 6px;"><span class="muted"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></span><span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">AGENTS</span><span class="xs muted">· 2 to invite</span></div>
+      <button class="btn sm"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m4 17 6-6-6-6"/><path d="M12 19h8"/></svg><span>pick panes</span></button>
+    </div>
+    <div class="stack card" style="padding: 2px 0; background: var(--bg2);">
+      <div class="pane">
+        <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
+          <div class="row" style="gap: 7.2px;"><span class="dot off"></span><span class="sm muted">not signed in</span><span class="xs muted">·</span><span class="xs muted truncate" style="flex: 1;" title="acme · perf/codegen-split">chat · claude</span><button class="aicon" style="width: 22px; height: 22px;" aria-label="Remove"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+          <div class="input" style="min-height: 28px; font-size: 11.2px; margin-top: 4.8px;"><span class="">you own the vite side; fred has the plugin</span></div>
+        </div>
+      </div>
+      <div class="pane">
+        <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
+          <div class="row" style="gap: 7.2px;"><span class="dot off"></span><span class="sm muted">not signed in</span><span class="xs muted">·</span><span class="xs muted truncate" style="flex: 1;" title="acme · main">acme · Evaluate house codegen plugin for bundle optimization</span><button class="aicon" style="width: 22px; height: 22px;" aria-label="Remove"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button></div>
+          <div class="input" style="min-height: 28px; font-size: 11.2px; margin-top: 4.8px;"><span class="placeholder">note for this pane (optional)</span></div>
+        </div>
+      </div>
+    </div>
+    </div>
+
+    <div class="row" style="gap: 7.2px; justify-content: flex-end; padding-top: 4.8px; border-top: 1px solid var(--border-soft);">
+      <span class="hint" style="flex: 1;">2 invites · fred picks it up when its turn ends</span>
+      <button class="btn">Create without inviting</button>
+      <button class="btn primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/></svg>Create #codegen-split · invite 2</button>
+    </div>
   </div>
 </div>
 </x-dc>
-<script data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Theme"},"$preview":{"width":390,"height":844}}'>
+<script data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Theme"},"$preview":{"width":900,"height":900}}'>
 class Component extends DCLogic {
   renderVals() {
     return { schemeClass: this.props.dark ? 'dark' : '' };

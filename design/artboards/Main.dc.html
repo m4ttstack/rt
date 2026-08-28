@@ -116,6 +116,28 @@
     .pop { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 10px 30px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.18); padding: 4.8px; }
     .opt { display: flex; align-items: center; gap: 7.2px; height: 44px; padding: 0 9.6px; border-radius: 4px; min-width: 0; }
     .opt.on { background: color-mix(in srgb, var(--accent) var(--wash), transparent); }
+    .field { display: flex; flex-direction: column; gap: 4.8px; }
+    .lbl2 { font-size: 11.2px; font-weight: 600; }
+    .hint { font-size: 10.56px; color: var(--muted-text); }
+    .area { min-height: 96px; align-items: flex-start; padding: 7.2px 9.6px; white-space: pre-wrap; line-height: 1.55; }
+    .cb { width: 16px; height: 16px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg1); flex: none; display: inline-flex; align-items: center; justify-content: center; }
+    .cb.on { background: var(--accent-deep); border-color: var(--accent-deep); color: var(--accent-on); }
+    .cb.off { background: var(--bg4); border-color: var(--muted); }
+    .pane { display: flex; gap: 9.6px; padding: 8.4px 9.6px; border-radius: 6px; min-width: 0; align-items: flex-start; }
+    .pane + .pane { border-top: 1px solid var(--border-soft); }
+    .pane.on { background: color-mix(in srgb, var(--accent) var(--wash), transparent); }
+    .pane.na { opacity: 0.55; cursor: default; }
+    .pane .dot { margin-top: 5px; }
+    .peek { margin-top: 4.8px; padding: 7.2px 9.6px; background: var(--bg1); border: 1px solid var(--border); border-radius: 4px; font-size: 11.2px; line-height: 1.5; white-space: pre; overflow-x: auto; color: var(--muted-text); }
+    .peek .cur { color: var(--fg); }
+    .btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 6px; font-family: inherit; font-size: 12.16px; font-weight: 600; border: 1px solid var(--border); background: var(--bg1); color: var(--fg); cursor: pointer; white-space: nowrap; }
+    .btn.primary { background: var(--accent-deep); border-color: var(--accent-deep); color: var(--accent-on); }
+    .btn.sm { height: 30px; padding: 0 9.6px; font-weight: 500; }
+    .state { font-size: 10.56px; font-weight: 500; }
+    .state.working { color: var(--warn); }
+    .state.blocked { color: var(--bad); }
+    .state.idle { color: var(--muted-text); }
+    .notice { padding: 6px 0 4px; text-align: left; font-size: 10.56px; color: var(--muted-text); }
   </style>
 </helmet>
 

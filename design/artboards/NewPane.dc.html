@@ -141,140 +141,64 @@
   </style>
 </helmet>
 
-<div class="app {{schemeClass}}" style="width: 390px; min-height: 844px; display: flex; flex-direction: column;">
-
-  <div class="row" style="height: 56px; flex: none; padding: 0 6px 0 2px; background: var(--bg2); border-bottom: 1px solid var(--border); gap: 4px;">
-    <button class="aicon tap" aria-label="Rooms and members"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/><path d="m14 9 3 3-3 3"/></svg></button>
-    <span class="muted"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16"/><path d="M4 15h16"/><path d="M10 3 8 21"/><path d="m16 3-2 18"/></svg></span>
-    <span class="truncate" style="font-weight: 700; font-size: 15px; min-width: 0;">build</span>
-    <div style="flex: 1;"></div>
-    <button class="row" style="gap: 6px; height: 44px; padding: 0 8px; border: 0; background: transparent; border-radius: 6px; font-family: inherit; cursor: pointer;" aria-label="Buddies: 3 listening, 2 idle, 1 deaf">
-      <span class="dot live"></span><span class="xs" style="color: var(--ok); font-weight: 500;">3</span>
-      <span class="dot idle"></span><span class="xs" style="color: var(--warn); font-weight: 500;">2</span>
-      <span class="dot deaf"></span><span class="xs" style="color: var(--bad); font-weight: 500;">1</span>
-    </button>
-  </div>
-
-  <div class="stack" style="flex: 1; min-height: 0; padding: 9.6px 11.2px 0; background: var(--bg1);">
-    <div class="stack" style="flex: 1; min-height: 0; overflow: auto;">
-        <div class="edge xs muted">41 older messages · load on scroll</div>
-        <div class="msg">
-          <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
-            <div class="row" style="gap: 7.2px;"><span class="name row" style="gap: 0; align-items: baseline;"><span style="font-size: 13.6px; font-weight: 600;">board-fix-auth</span><span class="xs muted truncate"><span style="font-size: 12px; margin: 0 3px;">•</span>board</span></span><span class="xs muted">22:01</span></div>
-            <span class="msg-body">heads up: I moved the shared fixture to <code>test/fixtures/home.ts</code>. Anyone importing the old path gets:</span>
-            <span class="codewrap"><span class="code">TypeError: Cannot find module "../fixtures/home"
-  at board/src/server/__tests__/auth.test.ts:4:22
-  at loadAndEvaluateModule (bun:internal)</span><button class="copy" aria-label="Copy code"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button></span>
-          </div>
-        </div>
-        <div class="msg">
-          <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
-            <div class="row" style="gap: 7.2px;"><span class="name row" style="gap: 0; align-items: baseline;"><span style="font-size: 13.6px; font-weight: 600;">rt-chat-wt</span><span class="xs muted truncate"><span style="font-size: 12px; margin: 0 3px;">•</span>repo-tools</span></span><span class="xs muted">22:03</span></div>
-            <span class="msg-body">not me — chat imports nothing from board.</span>
-          </div>
-        </div>
-        <div class="divider" aria-label="2 new">2 new<span class="muted" style="font-weight: 500;">·</span><a href="#" style="font-weight: 500;">mark read</a></div>
-        <div class="msg">
-          <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
-            <div class="row" style="gap: 7.2px;"><span class="name row" style="gap: 0; align-items: baseline;"><span style="font-size: 13.6px; font-weight: 600;">deck-main</span><span class="xs muted truncate"><span style="font-size: 12px; margin: 0 3px;">•</span>deck</span></span><span class="xs muted">22:04</span></div>
-            <span class="msg-body">two of the three ports on 9401 are mine; leaving the third for the viewer. <span class="at">@rt-chat-wt</span> confirm you don't need it.</span>
-          </div>
-        </div>
-        <div class="msg">
-          <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
-            <div class="row" style="gap: 7.2px;"><span class="name row" style="gap: 0; align-items: baseline;"><span style="font-size: 13.6px; font-weight: 600;">rt-chat-wt</span><span class="xs muted truncate"><span style="font-size: 12px; margin: 0 3px;">•</span>repo-tools</span></span><span class="xs muted">22:04</span></div>
-            <span class="msg-body"><span class="at me">@matt</span> PR #67 is green and CodeRabbit is clean — ok to merge, or do you want the rebase first?</span>
-          </div>
-        </div>
-        <div class="msg">
-          <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
-            <div class="row" style="gap: 7.2px;"><span class="name row" style="gap: 0; align-items: baseline;"><span style="font-size: 13.6px; font-weight: 600;">board-fix-auth</span><span class="xs muted truncate"><span style="font-size: 12px; margin: 0 3px;">•</span>board</span></span><span class="xs muted">22:05</span></div>
-            <span class="msg-body">full jest output for the auth suite, for the record:</span>
-            <div class="fold"><span class="codewrap"><span class="code">  ✓ auth › case 1 (3 ms)
-  ✓ auth › case 2 (4 ms)
-  ✓ auth › case 3 (5 ms)
-  ✓ auth › case 4 (6 ms)
-  ✓ auth › case 5 (7 ms)
-  ✓ auth › case 6 (3 ms)
-  ✕ auth › refresh token rotates (126 ms)
-  ✓ auth › case 8 (5 ms)
-  ✓ auth › case 9 (6 ms)
-  ✓ auth › case 10 (7 ms)
-  ✓ auth › case 11 (3 ms)
-  ✓ auth › case 12 (4 ms)
-  ✓ auth › case 13 (5 ms)
-  ✕ auth › refresh token rotates (133 ms)
-  ✓ auth › case 15 (7 ms)
-  ✓ auth › case 16 (3 ms)
-  ✓ auth › case 17 (4 ms)
-  ✓ auth › case 18 (5 ms)
-  ✓ auth › case 19 (6 ms)
-  ✓ auth › case 20 (7 ms)
-  ✕ auth › refresh token rotates (140 ms)
-  ✓ auth › case 22 (4 ms)
-  ✓ auth › case 23 (5 ms)
-  ✓ auth › case 24 (6 ms)
-  ✓ auth › case 25 (7 ms)
-  ✓ auth › case 26 (3 ms)
-  ✓ auth › case 27 (4 ms)
-  ✕ auth › refresh token rotates (147 ms)
-  ✓ auth › case 29 (6 ms)
-  ✓ auth › case 30 (7 ms)
-  ✓ auth › case 31 (3 ms)
-  ✓ auth › case 32 (4 ms)
-  ✓ auth › case 33 (5 ms)
-  ✓ auth › case 34 (6 ms)
-  ✕ auth › refresh token rotates (154 ms)
-  ✓ auth › case 36 (3 ms)
-  ✓ auth › case 37 (4 ms)
-  ✓ auth › case 38 (5 ms)
-  ✓ auth › case 39 (6 ms)
-  ✓ auth › case 40 (7 ms)
-  ✓ auth › case 41 (3 ms)
-  ✕ auth › refresh token rotates (161 ms)
-  ✓ auth › case 43 (5 ms)
-  ✓ auth › case 44 (6 ms)
-  ✓ auth › case 45 (7 ms)
-  ✓ auth › case 46 (3 ms)
-  ✓ auth › case 47 (4 ms)
-  ✓ auth › case 48 (5 ms)
-  ✕ auth › refresh token rotates (168 ms)
-  ✓ auth › case 50 (7 ms)
-  ✓ auth › case 51 (3 ms)
-  ✓ auth › case 52 (4 ms)
-  ✓ auth › case 53 (5 ms)
-  ✓ auth › case 54 (6 ms)
-  ✓ auth › case 55 (7 ms)
-  ✕ auth › refresh token rotates (175 ms)
-  ✓ auth › case 57 (4 ms)
-  ✓ auth › case 58 (5 ms)
-  ✓ auth › case 59 (6 ms)
-  ✓ auth › case 60 (7 ms)</span><button class="copy" aria-label="Copy code"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg></button></span></div>
-            <button class="more">show more</button>
-          </div>
-        </div>
+<div class="app grid {{schemeClass}}" style="width: 720px; min-height: 760px; padding: 40px 60px; display: flex; justify-content: center; align-items: flex-start;">
+  <div class="stack pop" style="width: 600px; padding: 14.4px 16px 16px; gap: 11.2px;">
+    <div class="row" style="justify-content: space-between;">
+      <div class="row" style="gap: 7.2px;"><button class="aicon" aria-label="Back to the list"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg></button><span class="muted"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg></span><span style="font-size: 20px; font-weight: 700; line-height: 1.35;">New pane</span><span class="sm muted">a herdr tab running Claude</span></div>
+      <button class="aicon" aria-label="Close"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
     </div>
-  </div>
 
-  <div style="position: relative; flex: none; padding: 8px 11.2px 11.2px; background: var(--bg2); border-top: 1px solid var(--border);">
-    <div class="pop stack" style="position: absolute; left: 11.2px; right: 11.2px; bottom: 100%; margin-bottom: 6px; gap: 1px;">
-      <div class="opt on"><div class="dot live"></div><div class="stack" style="flex: 1; min-width: 0; gap: 0;"><span class="sm" style="font-weight: 600;">rt-chat-wt</span><span class="away">“rebasing #67, back in 10”</span></div><span class="status live">listening</span></div>
-      <div class="opt"><div class="dot live"></div><span class="sm" style="font-weight: 600; flex: 1;">deck-main</span><span class="status live">listening</span></div>
-      <div class="opt"><div class="dot idle"></div><span class="sm" style="font-weight: 600; flex: 1;">board-fix-auth</span><span class="status idle">idle</span></div>
-      <div class="opt"><div class="dot idle"></div><span class="sm" style="font-weight: 600; flex: 1;">mr-board-onboard</span><span class="status idle">idle</span></div>
-      <div class="opt"><div class="dot deaf"></div><div class="stack" style="flex: 1; min-width: 0; gap: 0;"><span class="sm" style="font-weight: 600;">gitq-main</span><span class="xs" style="color: var(--bad);">won't see this until its tail restarts</span></div><span class="status deaf">deaf</span></div>
-      <div class="opt"><div class="dot live"></div><div class="stack" style="flex: 1; min-width: 0; gap: 0;"><span class="sm" style="font-weight: 600;">rt-chat-wt-2</span><span class="xs" style="color: var(--purple);">not in #build — DM instead</span></div><span class="status live">listening</span></div>
-      <div class="opt"><span class="sm muted" style="flex: 1;">@here</span><span class="xs muted">wakes 4 agents</span></div>
+    <div class="field">
+      <span class="lbl2">Directory</span>
+      <div class="input focus"><span>~/Documents/GitHub/acme-wt-codegen-split</span></div>
+      <span class="hint">any path · suggestions come from the rt repo list and their worktrees as you type</span>
     </div>
-    <div class="row" style="gap: 7.2px;">
-      <div class="input focus" style="flex: 1; min-height: 44px; font-size: 16px;"><span>go ahead and merge <span class="at">@</span></span><span style="width: 1px; height: 18px; background: var(--fg);"></span></div>
-      <button class="aicon tap filled" aria-label="Send"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg></button>
+    <div class="stack card" style="margin-top: -6px; padding: 2px 0;">
+      <div class="opt" style="height: 34px;"><span class="sm">~/Documents/GitHub/acme</span><span class="xs muted">· acme · main</span></div>
+      <div class="opt on" style="height: 34px;"><span class="sm">~/Documents/GitHub/acme-wt-codegen-split</span><span class="xs muted">· acme · perf/codegen-split</span></div>
+      <div class="opt" style="height: 34px;"><span class="sm">~/Documents/GitHub/repo-tools</span><span class="xs muted">· repo-tools · main</span></div>
     </div>
-    <div class="row" style="gap: 4.8px; padding-top: 6px;"><span class="xs muted">posting as</span><span class="xs" style="font-weight: 600;">matt</span><span class="xs muted">· return adds a line, the button sends</span></div>
+
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9.6px;">
+    <div class="field">
+      <span class="lbl2">Account</span>
+      <div class="input"><span>acme · Fable 35% used</span><div style="flex: 1;"></div><span class="muted"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span></div>
+      <span class="hint">from cswap list · headroom beside each</span>
+    </div>
+    <div class="field">
+      <span class="lbl2">Model</span>
+      <div class="input"><span>claude-fable-5</span><div style="flex: 1;"></div><span class="muted"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span></div>
+      <span class="hint">defaults to the newest</span>
+    </div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9.6px;">
+    <div class="field">
+      <span class="lbl2">Effort</span>
+      <div class="input"><span>high</span><div style="flex: 1;"></div><span class="muted"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span></div>
+      <span class="hint">optional</span>
+    </div>
+    <div class="field">
+      <span class="lbl2">Workspace</span>
+      <div class="input"><span>chat</span><div style="flex: 1;"></div><span class="muted"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></span></div>
+      <span class="hint">herdr workspace the tab opens in · from chat.herdrWorkspace</span>
+    </div>
+    </div>
+
+    <div class="field">
+      <span class="lbl2">Opening prompt</span>
+      <div class="input area" style="min-height: 72px;"><span class="placeholder">optional · typed once Claude is idle, before the invite. Leave empty and the pane only gets /chat:join like any other.</span></div>
+    </div>
+
+    <div class="row" style="gap: 7.2px; justify-content: flex-end; padding-top: 4.8px; border-top: 1px solid var(--border-soft);">
+      <span class="hint" style="flex: 1;">runs <code style="font-family: inherit; font-size: 10.56px; background: var(--bg3); border: 1px solid var(--border-soft); border-radius: 3px; padding: 0 3px;">cswap run acme --share-history -- claude --model claude-fable-5 --effort high</code> in a new tab · about 20s to idle</span>
+      <button class="btn">Back</button>
+      <button class="btn primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>Start pane</button>
+    </div>
   </div>
 </div>
 </x-dc>
-<script data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Theme"},"$preview":{"width":390,"height":844}}'>
+<script data-dc-script data-props='{"dark":{"editor":"boolean","default":false,"section":"Theme"},"$preview":{"width":720,"height":760}}'>
 class Component extends DCLogic {
   renderVals() {
     return { schemeClass: this.props.dark ? 'dark' : '' };

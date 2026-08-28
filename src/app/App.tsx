@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { RefObject } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import {
   DaemonBanner,
   MattstackShell,
@@ -27,6 +27,8 @@ import { RailLink } from '@mattstack/app-kit/router';
 import type {
   ChatMember,
   ChatMessage,
+  ChatPane,
+  InviteResult,
   RoomSummary,
 } from '@mattstack/rt-client';
 import { useInterval } from 'react-interval-hook';
@@ -38,7 +40,9 @@ import { BuddiesProvider } from './buddies-context';
 import { AppMark } from './chrome/AppMark';
 import { Composer, type ComposerHandle } from './Composer';
 import { PageShellDemoPage } from './demo/PageShellDemoPage';
+import { NewRoomModal } from './NewRoomModal';
 import { PageBar, RoomMenu, type RoomOrder } from './PageBar';
+import { PanePickerProvider, usePanePicker } from './PanePicker';
 import { RoomRail } from './RoomRail';
 import { Roster, type RosterBuddy } from './Roster';
 import { useAppRoute, useHash } from './routes';
@@ -221,6 +225,18 @@ function useRoomMembers(
   const [members, setMembers] = useState<ChatMember[]>(seed ?? []);
   // Same one-shot rule as useMessages: pending until the first defined room.
   const seedPending = useRef(seed !== undefined);
+  const roomRef = useRef(room);
+  roomRef.current = room;
+
+  const fetchMembers = useCallback(() => {
+    if (!room) return;
+    fetch(`/api/chat/who/${room}`)
+      .then(res => res.json())
+      .then((data: { members?: ChatMember[] }) => {
+        if (roomRef.current === room) setMembers(data.members ?? []);
+      })
+      .catch(() => {});
+  }, [room]);
 
   useEffect(() => {
     if (!room) {
@@ -232,19 +248,104 @@ function useRoomMembers(
       return;
     }
     setMembers([]);
-    let cancelled = false;
-    fetch(`/api/chat/who/${room}`)
-      .then(res => res.json())
-      .then((data: { members?: ChatMember[] }) => {
-        if (!cancelled) setMembers(data.members ?? []);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
+    fetchMembers();
+  }, [room, fetchMembers]);
+
+  // A post is the one signal an arriving member makes: the join skill's
+  // first line. The daemon emits no membership frame, so this is the hook.
+  useEffect(() => {
+    if (!room) return;
+    const expectedTopic = `chat/${room}/msg`;
+    const socket = new WebSocket(wsUrl());
+    socket.onmessage = event => {
+      let frame: { topic?: unknown } | undefined;
+      try {
+        frame = JSON.parse(String((event as { data: unknown }).data));
+      } catch {
+        return;
+      }
+      if (frame?.topic === expectedTopic) fetchMembers();
     };
-  }, [room]);
+    return () => socket.close();
+  }, [room, fetchMembers]);
 
   return members.map(m => m.handle);
+}
+
+/**
+ * Whether herdr is up (so there are panes to invite). Polls `GET /api/panes`
+ * on mount and every 30s. `undefined` until the first answer, which is the
+ * gate the entry points read: the `+` and `add agents` mount only once this
+ * is `true`, so neither flashes before herdr's availability is known.
+ */
+function usePanesAvailable(): boolean | undefined {
+  const [available, setAvailable] = useState<boolean | undefined>(undefined);
+  const probe = useCallback(() => {
+    fetch('/api/panes')
+      .then(res =>
+        res.json().then((data: { available?: boolean }) => {
+          // Herdr genuinely absent (a 200 saying so) is the only case that
+          // hides the entry points. A daemon-down response (502) or a
+          // network error keeps them mounted so `daemonReachable` disables
+          // them instead, per the spec's failure table.
+          if (res.ok) setAvailable(data.available === true);
+          else setAvailable(true);
+        })
+      )
+      .catch(() => setAvailable(true));
+  }, []);
+  useEffect(() => {
+    probe();
+  }, [probe]);
+  useInterval(probe, 30_000);
+  return available;
+}
+
+/**
+ * The transcript-edge line after a create-room or add-agents: `invited N`,
+ * one span per pane coloured by its delivery, then the standing note that
+ * members surface as they sign in. A pane is named by its live handle, else
+ * its workspace, else the bare id.
+ */
+export function resultLine(
+  results: InviteResult[],
+  panes: ChatPane[]
+): ReactNode {
+  const label = (r: InviteResult) => {
+    const pane = panes.find(p => p.paneId === r.paneId);
+    const name =
+      pane?.presence?.handle ??
+      (pane?.workspace ? `${pane.workspace} pane` : r.paneId);
+    if (r.delivered === 'accepted')
+      return (
+        <span key={r.paneId} style={{ color: 'var(--mantine-color-ok-text)' }}>
+          {name} accepted
+        </span>
+      );
+    if (r.delivered === 'queued')
+      return (
+        <span
+          key={r.paneId}
+          style={{ color: 'var(--mantine-color-warn-text)' }}
+        >
+          {name} queued (working)
+        </span>
+      );
+    return (
+      <span key={r.paneId} style={{ color: 'var(--mantine-color-bad-text)' }}>
+        {name} refused: {r.reason ?? 'unknown'}
+      </span>
+    );
+  };
+  return (
+    <>
+      invited {results.length}
+      {results.map(r => (
+        <span key={r.paneId}> · {label(r)}</span>
+      ))}
+      {' · members appear as they sign in'}
+    </>
+  );
 }
 
 /**
@@ -894,6 +995,226 @@ function PhoneChat({
   );
 }
 
+interface ChatPageProps {
+  rooms: RoomSummary[];
+  orderedRooms: RoomSummary[];
+  activeRoom: string | undefined;
+  activeRoomSummary: RoomSummary | undefined;
+  selectRoom: (room: string) => void;
+  roomOrder: RoomOrder;
+  setRoomOrder: (order: RoomOrder) => void;
+  refetchRooms: () => Promise<RoomSummary[]>;
+  daemon: ReturnType<typeof useDaemonHealth>;
+  buddies: Buddy[];
+  roomMembers: string[];
+  messages: ChatMessage[];
+  anchor: string | undefined;
+  composerRef: RefObject<ComposerHandle | null>;
+  onOpenDm: (handle: string) => void;
+  onArchive: (room: string, archived: boolean) => void;
+}
+
+/**
+ * The desktop chat page, rendered inside `PanePickerProvider` so it -- and
+ * the `NewRoomModal` it mounts -- can `usePanePicker()`. Owns the two invite
+ * entry points (the rail `+` and the page-bar `add agents`), the new-room
+ * modal, and the transcript-edge invite notice; every other prop is passed
+ * down from `App`, whose behaviour this extraction preserves verbatim.
+ */
+function ChatPage({
+  rooms,
+  orderedRooms,
+  activeRoom,
+  activeRoomSummary,
+  selectRoom,
+  roomOrder,
+  setRoomOrder,
+  refetchRooms,
+  daemon,
+  buddies,
+  roomMembers,
+  messages,
+  anchor,
+  composerRef,
+  onOpenDm,
+  onArchive,
+}: ChatPageProps) {
+  const pickPanes = usePanePicker();
+  const panesAvailable = usePanesAvailable();
+  const [newRoomOpen, setNewRoomOpen] = useState(false);
+  const [notice, setNotice] = useState<{
+    room: string;
+    node: ReactNode;
+  } | null>(null);
+
+  // The notice belongs to the room it was raised in; a room switch clears it.
+  useEffect(() => {
+    if (notice && notice.room !== activeRoom) setNotice(null);
+  }, [activeRoom, notice]);
+
+  async function addAgents() {
+    if (!activeRoom) return;
+    const picked = await pickPanes({
+      context: `to invite to #${activeRoom}`,
+      allowCreate: true,
+      disable: p =>
+        p.agentStatus === 'blocked'
+          ? 'at a prompt · answer it first'
+          : p.presence?.rooms.includes(activeRoom)
+            ? `in #${activeRoom}`
+            : null,
+    });
+    if (!picked || picked.length === 0) return;
+    try {
+      const res = await fetch('/api/chat/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          room: activeRoom,
+          panes: picked.map(p => ({ paneId: p.paneId })),
+        }),
+      });
+      if (!res.ok) throw new Error('invite failed');
+      const { results } = (await res.json()) as { results: InviteResult[] };
+      setNotice({ room: activeRoom, node: resultLine(results, picked) });
+    } catch {
+      notifications.error("Couldn't invite; nothing was typed into any pane.");
+    }
+  }
+
+  return (
+    <>
+      {/* The kit's own page layout: rooms in the collapsible Sidebar (a
+          drawer on phones), the page bar as the Header, the daemon banner in
+          Content's notch slot, and a scroll-clamped Content whose transcript
+          and roster manage their own scrolling. No ContentContainer: the
+          capped, centred column is what boxed this page before. */}
+      <PageShell
+        scrollClamp
+        sidebarWidth={244}
+        drawerStateKey="chat-rooms-sidebar"
+      >
+        {rooms.length > 0 && (
+          <PageShell.Sidebar>
+            <RoomRail
+              sidebar
+              rooms={orderedRooms}
+              activeRoom={activeRoom}
+              onSelectRoom={selectRoom}
+              daemonReachable={daemon.reachable}
+              onNewRoom={
+                panesAvailable ? () => setNewRoomOpen(true) : undefined
+              }
+            />
+          </PageShell.Sidebar>
+        )}
+        <PageShell.Main>
+          {rooms.length > 0 && activeRoomSummary && (
+            <PageShell.Header>
+              <PageBar
+                room={activeRoomSummary}
+                buddies={buddies.filter(b => roomMembers.includes(b.handle))}
+                reachable={daemon.reachable}
+                order={roomOrder}
+                onOrderChange={setRoomOrder}
+                onMarkRead={() => void refetchRooms()}
+                onAddAgents={panesAvailable ? addAgents : undefined}
+                memberHandles={roomMembers}
+                onArchive={onArchive}
+              />
+            </PageShell.Header>
+          )}
+          <PageShell.Content
+            contentContainer={false}
+            topNotch={{
+              opened: !daemon.reachable,
+              content: (
+                <Box w="100%" px="lg" pt="lg" data-testid="daemon-banner-slot">
+                  <DaemonBanner
+                    reachable={daemon.reachable}
+                    downSince={daemon.downSince}
+                    probeCount={daemon.probeCount}
+                    lastAnsweredAt={daemon.lastAnsweredAt}
+                    onProbeNow={daemon.probeNow}
+                  />
+                </Box>
+              ),
+            }}
+          >
+            <Group
+              align="stretch"
+              wrap="nowrap"
+              gap={0}
+              style={{ flex: 1, minHeight: 0, minWidth: 0 }}
+            >
+              {rooms.length === 0 ? (
+                <Box style={{ flex: 1, minWidth: 0 }} p="xl">
+                  <RoomsPlaceholder anyBuddies={buddies.length > 0} />
+                </Box>
+              ) : (
+                activeRoom && (
+                  <Transcript
+                    room={activeRoom}
+                    messages={messages}
+                    anchor={anchor}
+                    unreadCount={activeRoomSummary?.unread}
+                    notice={
+                      notice?.room === activeRoom ? notice.node : undefined
+                    }
+                    footer={
+                      activeRoomSummary?.archivedAt !== undefined ? (
+                        <ArchivedBar
+                          archivedAt={activeRoomSummary.archivedAt}
+                          onReopen={() => void onArchive(activeRoom, false)}
+                        />
+                      ) : (
+                        <Composer
+                          ref={composerRef}
+                          room={activeRoom}
+                          roomMembers={roomMembers}
+                          buddies={buddies}
+                          isDm={activeRoomSummary?.kind === 'dm'}
+                          daemonReachable={daemon.reachable}
+                          onOpenDm={onOpenDm}
+                        />
+                      )
+                    }
+                  />
+                )
+              )}
+              {(rooms.length > 0 || buddies.length > 0) && (
+                <Roster
+                  panel
+                  buddies={buddies}
+                  now={Date.now()}
+                  roomMembers={roomMembers}
+                  daemonReachable={daemon.reachable}
+                  onPick={(handle, { inRoom }) => {
+                    if (inRoom) composerRef.current?.insertMention(handle);
+                    else onOpenDm(handle);
+                  }}
+                />
+              )}
+            </Group>
+          </PageShell.Content>
+        </PageShell.Main>
+      </PageShell>
+      <NewRoomModal
+        opened={newRoomOpen}
+        onClose={() => setNewRoomOpen(false)}
+        daemonReachable={daemon.reachable}
+        onCreated={(room, results, picked) => {
+          setNewRoomOpen(false);
+          void refetchRooms();
+          selectRoom(room);
+          if (results.length)
+            setNotice({ room, node: resultLine(results, picked) });
+        }}
+      />
+    </>
+  );
+}
+
 /**
  * The whole app, today: `MattstackShell` (rail + header chrome, appName=chat
  * so the shared app launcher mounts) around the Rooms placeholder, routed by
@@ -1063,131 +1384,35 @@ export function App({ initialState }: { initialState?: AppInitialState } = {}) {
       reachable={daemon.reachable}
       actions={buddyActions}
     >
-      <MattstackShell name="chat" appName="chat" mark={<AppMark size={30} />}>
-        <MattstackShell.Rail>
-          <RailLink icon="users" label="Rooms" href="/" active={chatRoute} />
-        </MattstackShell.Rail>
-        {chatRoute ? (
-          // The kit's own page layout: rooms in the collapsible Sidebar (a
-          // drawer on phones), the page bar as the Header, the daemon banner in
-          // Content's notch slot, and a scroll-clamped Content whose transcript
-          // and roster manage their own scrolling. No ContentContainer: the
-          // capped, centred column is what boxed this page before.
-          <PageShell
-            scrollClamp
-            sidebarWidth={244}
-            drawerStateKey="chat-rooms-sidebar"
-          >
-            {rooms.length > 0 && (
-              <PageShell.Sidebar>
-                <RoomRail
-                  sidebar
-                  rooms={orderedRooms}
-                  activeRoom={activeRoom}
-                  onSelectRoom={selectRoom}
-                />
-              </PageShell.Sidebar>
-            )}
-            <PageShell.Main>
-              {rooms.length > 0 && activeRoomSummary && (
-                <PageShell.Header>
-                  <PageBar
-                    room={activeRoomSummary}
-                    buddies={buddies.filter(b =>
-                      roomMembers.includes(b.handle)
-                    )}
-                    reachable={daemon.reachable}
-                    order={roomOrder}
-                    onOrderChange={setRoomOrder}
-                    onMarkRead={() => void refetchRooms()}
-                    memberHandles={roomMembers}
-                    onArchive={setArchived}
-                  />
-                </PageShell.Header>
-              )}
-              <PageShell.Content
-                contentContainer={false}
-                topNotch={{
-                  opened: !daemon.reachable,
-                  content: (
-                    <Box
-                      w="100%"
-                      px="lg"
-                      pt="lg"
-                      data-testid="daemon-banner-slot"
-                    >
-                      <DaemonBanner
-                        reachable={daemon.reachable}
-                        downSince={daemon.downSince}
-                        probeCount={daemon.probeCount}
-                        lastAnsweredAt={daemon.lastAnsweredAt}
-                        onProbeNow={daemon.probeNow}
-                      />
-                    </Box>
-                  ),
-                }}
-              >
-                <Group
-                  align="stretch"
-                  wrap="nowrap"
-                  gap={0}
-                  style={{ flex: 1, minHeight: 0, minWidth: 0 }}
-                >
-                  {rooms.length === 0 ? (
-                    <Box style={{ flex: 1, minWidth: 0 }} p="xl">
-                      <RoomsPlaceholder anyBuddies={buddies.length > 0} />
-                    </Box>
-                  ) : (
-                    activeRoom && (
-                      <Transcript
-                        room={activeRoom}
-                        messages={messages}
-                        anchor={anchor}
-                        unreadCount={activeRoomSummary?.unread}
-                        footer={
-                          activeRoomSummary?.archivedAt !== undefined ? (
-                            <ArchivedBar
-                              archivedAt={activeRoomSummary.archivedAt}
-                              onReopen={() =>
-                                void setArchived(activeRoom, false)
-                              }
-                            />
-                          ) : (
-                            <Composer
-                              ref={composerRef}
-                              room={activeRoom}
-                              roomMembers={roomMembers}
-                              buddies={buddies}
-                              isDm={activeRoomSummary?.kind === 'dm'}
-                              daemonReachable={daemon.reachable}
-                              onOpenDm={openDm}
-                            />
-                          )
-                        }
-                      />
-                    )
-                  )}
-                  {(rooms.length > 0 || buddies.length > 0) && (
-                    <Roster
-                      panel
-                      buddies={buddies}
-                      now={Date.now()}
-                      roomMembers={roomMembers}
-                      daemonReachable={daemon.reachable}
-                      onPick={(handle, { inRoom }) => {
-                        if (inRoom) composerRef.current?.insertMention(handle);
-                        else void openDm(handle);
-                      }}
-                    />
-                  )}
-                </Group>
-              </PageShell.Content>
-            </PageShell.Main>
-          </PageShell>
-        ) : (
-          <NotFoundPage />
-        )}
-      </MattstackShell>
+      <PanePickerProvider>
+        <MattstackShell name="chat" appName="chat" mark={<AppMark size={30} />}>
+          <MattstackShell.Rail>
+            <RailLink icon="users" label="Rooms" href="/" active={chatRoute} />
+          </MattstackShell.Rail>
+          {chatRoute ? (
+            <ChatPage
+              rooms={rooms}
+              orderedRooms={orderedRooms}
+              activeRoom={activeRoom}
+              activeRoomSummary={activeRoomSummary}
+              selectRoom={selectRoom}
+              roomOrder={roomOrder}
+              setRoomOrder={setRoomOrder}
+              refetchRooms={refetchRooms}
+              daemon={daemon}
+              buddies={buddies}
+              roomMembers={roomMembers}
+              messages={messages}
+              anchor={anchor}
+              composerRef={composerRef}
+              onOpenDm={openDm}
+              onArchive={setArchived}
+            />
+          ) : (
+            <NotFoundPage />
+          )}
+        </MattstackShell>
+      </PanePickerProvider>
     </BuddiesProvider>
   );
 }

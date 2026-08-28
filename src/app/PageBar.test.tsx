@@ -226,3 +226,39 @@ test('memberList reads like a sentence and caps at three names', () => {
   expect(memberList(['a', 'b', 'c', 'd'])).toBe('a, b, c and d');
   expect(memberList(['a', 'b', 'c', 'd', 'e'])).toBe('a, b, c and 2 more');
 });
+
+test('add agents sits before mark read, only when wired, disabled while the daemon is down', async () => {
+  const onAddAgents = vi.fn();
+  const room = { room: 'build', memberCount: 2, unread: 3, mentions: 0 };
+  const { rerender } = renderWithProviders(
+    <PageBar room={room} buddies={[]} />
+  );
+  expect(screen.queryByTestId('add-agents-button')).toBeNull();
+  rerender(
+    <PageBar
+      room={room}
+      buddies={[]}
+      onAddAgents={onAddAgents}
+      reachable={false}
+    />
+  );
+  expect(screen.getByTestId('add-agents-button')).toBeDisabled();
+  rerender(
+    <PageBar
+      room={room}
+      buddies={[]}
+      onAddAgents={onAddAgents}
+      onMarkRead={() => {}}
+    />
+  );
+  const buttons = screen
+    .getAllByRole('button')
+    .map(b => b.getAttribute('data-testid'));
+  expect(buttons.indexOf('add-agents-button')).toBeLessThan(
+    buttons.indexOf('mark-read-button')
+  );
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Add agents to #build' })
+  );
+  expect(onAddAgents).toHaveBeenCalled();
+});

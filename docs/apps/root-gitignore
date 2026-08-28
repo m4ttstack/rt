@@ -31,3 +31,4 @@ storybook-static
 # Consumer friction logs: per-app, untracked by convention (see the
 # adopting-mantine-kit skill). Ignored so a `git add -A` cannot sweep one in.
 FEEDBACK-*.md
+design/artboards/canvas.json

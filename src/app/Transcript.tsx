@@ -53,6 +53,10 @@ export interface TranscriptProps {
       the page background, no border or radius -- since the phone shell's
       own header and composer bar already read as chrome. @default false */
   bare?: boolean;
+  /** An edge row above the older-messages control: the invite result line
+      after a create-room or add-agents. Renders even with no messages yet,
+      so a room created without inviting still shows it. */
+  notice?: ReactNode;
 }
 
 function pad(n: number): string {
@@ -563,6 +567,7 @@ export function Transcript({
   onMarkRead,
   footer,
   bare = false,
+  notice,
 }: TranscriptProps) {
   const [messages, setMessages] = useState(initialMessages);
   const [loadingOlder, setLoadingOlder] = useState(false);
@@ -762,6 +767,19 @@ export function Transcript({
               bare ? undefined : { padding: `0 ${INNER_RIGHT} 0 ${INNER_LEFT}` }
             }
           >
+            {notice && (
+              <Box
+                data-testid="transcript-notice"
+                style={{
+                  padding: '6px 0 4px',
+                  textAlign: 'left',
+                  fontSize: '10.56px',
+                  color: 'var(--tk-muted-text)',
+                }}
+              >
+                {notice}
+              </Box>
+            )}
             {messages.length > 0 && (
               <OlderEdge
                 loading={loadingOlder}

@@ -571,6 +571,29 @@ export const TARGETS = [
   // spec.json, the same way the page bar's "mark read" and the DM detail
   // card's buttons never got a class either. There is no selector to diff
   // against without exempting every property, which would check nothing.
+
+  // Tasks 6-8 -- PanePicker (design/artboards/PanePicker.dc.html) and its
+  // NewRoomModal caller (design/artboards/NewRoom.dc.html). The `.pop` shell
+  // is Mantine's own Modal.Content, not a hand-rolled popover like the
+  // composer's -- `mantine-Modal-content` is the static class name
+  // Mantine's styles API stamps on it (`${classNamesPrefix}-${staticSelector}-${selector}`,
+  // confirmed in @mantine/core's get-static-class-names.ts and ModalContent.tsx;
+  // this app never overrides classNamesPrefix or withStaticClasses).
+  {
+    spec: '.pop',
+    find: '[data-testid="pane-picker"] .mantine-Modal-content',
+    props: ['background', 'border-radius', 'box-shadow', 'padding'],
+    why: {
+      padding: 'shorthand not enumerated by getComputedStyle; longhands verified by eye',
+      border: 'full shorthand (width/style/colour combined); not separately enumerated, verified by eye',
+      'box-shadow': BOX_SHADOW_SERIALIZATION_DIFFERS,
+    },
+  },
+  { spec: '.pane', find: '[data-testid^="pane-row-"]', props: ['display', 'align-items', 'gap', 'border-radius', 'min-width', 'padding'], why: { padding: 'shorthand not enumerated by getComputedStyle; longhands verified by eye' } },
+  { spec: '.cb', find: '[data-testid^="pane-check-"]', props: ['width', 'height', 'border-radius', 'align-items', 'justify-content'], why: { display: 'authored inline-flex blockifies to flex as a flex item in the row; verified in source' } },
+  { spec: '.peek', find: '[data-testid^="pane-peek-"]:not([data-testid^="pane-peek-button-"])', props: ['padding', 'background', 'border-radius', 'font-size', 'line-height', 'white-space', 'overflow-x', 'color'], why: { padding: 'shorthand not enumerated by getComputedStyle; longhands verified by eye', 'white-space': WHITE_SPACE_NOT_ENUMERATED, 'line-height': LINE_HEIGHT_RESOLVES_TO_PX } },
+  { spec: '.btn.sm', find: '[data-testid="add-agents-button"]', props: ['height', 'font-size', 'font-weight', 'border-radius'] },
+  { spec: '.notice', find: '[data-testid="transcript-notice"]', props: ['padding', 'text-align', 'font-size', 'color'], why: { padding: 'shorthand not enumerated by getComputedStyle; longhands verified by eye' } },
 ];
 
 const norm = v => (typeof v === 'string' ? v.replace(/\s+/g, ' ').trim() : v);

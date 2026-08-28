@@ -5,7 +5,7 @@ import {
   Text,
   UnstyledButton,
 } from '@mattstack/app-kit/core';
-import { useLocalStorage } from '@mattstack/app-kit/hooks';
+import { useHover, useLocalStorage } from '@mattstack/app-kit/hooks';
 import { AnimatedChevron, Icon } from '@mattstack/app-kit/icons';
 import type { RoomSummary } from '@mattstack/rt-client';
 
@@ -35,8 +35,47 @@ export interface RoomRailProps {
   /** The human's own handle, bolded inside a DM pair when it appears there. */
   humanHandle?: string;
   onSelectRoom?: (room: string) => void;
+  /** rt daemon reachability: the `+` is disabled while it is down, since a
+      room cannot be created without it. @default true */
+  daemonReachable?: boolean;
+  /** Opens the new-room modal. The `+` renders only when this is wired. */
+  onNewRoom?: () => void;
   /** Inside `PageShell.Sidebar`: the sidebar is the surface, so no card. */
   sidebar?: boolean;
+}
+
+/** The header's `+`: `.aicon` (24px, 6px radius, muted, `bg4` on hover). */
+function NewRoomButton({
+  disabled,
+  onClick,
+}: {
+  disabled: boolean;
+  onClick?: () => void;
+}) {
+  const { ref, hovered } = useHover<HTMLButtonElement>();
+  return (
+    <UnstyledButton
+      ref={ref}
+      data-testid="new-room-button"
+      aria-label="New room"
+      disabled={disabled}
+      onClick={onClick}
+      style={{
+        display: 'inline-flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        width: 24,
+        height: 24,
+        flex: 'none',
+        borderRadius: 6,
+        color: 'var(--tk-muted-text)',
+        background: hovered && !disabled ? 'var(--ui-bg-4)' : 'transparent',
+        cursor: disabled ? 'default' : 'pointer',
+      }}
+    >
+      <Icon name="plus" size={14} />
+    </UnstyledButton>
+  );
 }
 
 /**
@@ -197,6 +236,8 @@ export function RoomRail({
   rooms,
   activeRoom,
   onSelectRoom,
+  daemonReachable = true,
+  onNewRoom,
   sidebar = false,
 }: RoomRailProps) {
   const openRooms = rooms.filter(r => r.archivedAt === undefined);
@@ -241,9 +282,14 @@ export function RoomRail({
         >
           ROOMS
         </Text>
-        <Text size="xs" style={{ color: 'var(--tk-muted-text)' }}>
-          {channelRooms.length}
-        </Text>
+        <Group gap={2} wrap="nowrap">
+          <Text size="xs" style={{ color: 'var(--tk-muted-text)' }}>
+            {channelRooms.length}
+          </Text>
+          {onNewRoom && (
+            <NewRoomButton disabled={!daemonReachable} onClick={onNewRoom} />
+          )}
+        </Group>
       </Group>
 
       {channelRooms.map(room => (

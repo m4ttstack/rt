@@ -76,6 +76,9 @@ export interface PageBarProps {
       room, the roster counts the fleet. */
   reachable?: boolean;
   onMarkRead?: (room: string) => void;
+  /** Opens the pane picker to invite agents to this room. The button renders
+      only when this is wired, and is disabled while the daemon is down. */
+  onAddAgents?: () => void;
   /** The rail's sort, the artboard's `join order` select. */
   order?: RoomOrder;
   onOrderChange?: (order: RoomOrder) => void;
@@ -229,6 +232,7 @@ export function PageBar({
   buddies,
   reachable = true,
   onMarkRead,
+  onAddAgents,
   order = 'join',
   onOrderChange,
   memberHandles,
@@ -276,6 +280,22 @@ export function PageBar({
 
   const controls = (
     <>
+      {onAddAgents && (
+        <Button
+          variant="default"
+          size="xs"
+          radius="md"
+          mr={7.2}
+          data-testid="add-agents-button"
+          aria-label={`Add agents to #${room.room}`}
+          onClick={onAddAgents}
+          disabled={!reachable}
+          leftSection={<Icon name="userPlus" size={14} />}
+          styles={{ root: { ...CONTROL_SURFACE, fontWeight: 500 } }}
+        >
+          add agents
+        </Button>
+      )}
       {room.unread > 0 && room.archivedAt === undefined && (
         <Button
           variant="default"

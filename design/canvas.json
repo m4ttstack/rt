@@ -63,6 +63,38 @@
       "w": 880,
       "h": 1440,
       "title": "Indicators"
+    },
+    {
+      "file": "NewRoom.dc.html",
+      "x": 0,
+      "y": 4200,
+      "w": 900,
+      "h": 900,
+      "title": "New room"
+    },
+    {
+      "file": "PanePicker.dc.html",
+      "x": 1000,
+      "y": 4200,
+      "w": 820,
+      "h": 960,
+      "title": "Pane picker"
+    },
+    {
+      "file": "NewPane.dc.html",
+      "x": 1920,
+      "y": 4200,
+      "w": 720,
+      "h": 760,
+      "title": "New pane"
+    },
+    {
+      "file": "EntryPoints.dc.html",
+      "x": 0,
+      "y": 5300,
+      "w": 900,
+      "h": 560,
+      "title": "Entry points"
     }
   ],
   "annotations": [
@@ -93,6 +125,20 @@
       "y": 4080,
       "w": 1440,
       "text": "Laws this surface holds.\n\n1. Never render presence while the daemon is unreachable. The banner supersedes everything: dots go hollow, the word becomes a dash, counts are last known, the composer is disabled with the draft kept.\n2. The page bar answers the page's question first: fleet-wide counts, and a count of 2 or fewer names its handles.\n3. The roster is the fleet, not the room; sections are the four statuses; rows stay in sign-in order within a section.\n4. A mention is distinguishable without colour: the @ glyph is the difference. A DM is a pair with \u2194, never a hashed id on screen.\n5. Status lives on the buddy, not on the message. Wide content scrolls inside its own block; prose wraps anywhere.\n6. Times are local. Phone inputs are 16px; controls 44px; return adds a line, the button sends.\n7. Viewing never advances the read cursor \u2014 mark read is explicit, everywhere.\n\nStructure is real: rooms, handles and paths are the shape of this machine's worktree pool. The conversations are illustrative."
+    },
+    {
+      "id": "brief",
+      "x": 0,
+      "y": 5900,
+      "w": 420,
+      "text": "Two components.\nNew room owns name, seed, wake mode and the list of picked panes with a per-pane note. Its 'pick panes' button launches PanePicker.\nPanePicker is standalone: it fetches the pane list, filters, peeks, selects, and resolves with the picked rows. The caller decides which rows are disabled and why. With allowCreate it can also start a new pane (cwd, account, model, effort, opening prompt) and list it as 'starting' until Claude is idle."
+    },
+    {
+      "id": "states",
+      "x": 1000,
+      "y": 5900,
+      "w": 380,
+      "text": "Picker row states drawn: selected (acme, with peek open), selected but working (fred: invite queues), disabled by the caller (meg: already in the room; june: blocked at a prompt), deaf (otis), not signed in (mr-board), starting (a pane the picker just spawned).\nLight is the default here, matching every other artboard; flip dark to check it."
     }
   ],
   "launch": {

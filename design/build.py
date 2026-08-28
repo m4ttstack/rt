@@ -107,6 +107,28 @@ CSS = r"""
     .pop { background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 10px 30px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.18); padding: 4.8px; }
     .opt { display: flex; align-items: center; gap: 7.2px; height: 44px; padding: 0 9.6px; border-radius: 4px; min-width: 0; }
     .opt.on { background: color-mix(in srgb, var(--accent) var(--wash), transparent); }
+    .field { display: flex; flex-direction: column; gap: 4.8px; }
+    .lbl2 { font-size: 11.2px; font-weight: 600; }
+    .hint { font-size: 10.56px; color: var(--muted-text); }
+    .area { min-height: 96px; align-items: flex-start; padding: 7.2px 9.6px; white-space: pre-wrap; line-height: 1.55; }
+    .cb { width: 16px; height: 16px; border-radius: 4px; border: 1px solid var(--border); background: var(--bg1); flex: none; display: inline-flex; align-items: center; justify-content: center; }
+    .cb.on { background: var(--accent-deep); border-color: var(--accent-deep); color: var(--accent-on); }
+    .cb.off { background: var(--bg4); border-color: var(--muted); }
+    .pane { display: flex; gap: 9.6px; padding: 8.4px 9.6px; border-radius: 6px; min-width: 0; align-items: flex-start; }
+    .pane + .pane { border-top: 1px solid var(--border-soft); }
+    .pane.on { background: color-mix(in srgb, var(--accent) var(--wash), transparent); }
+    .pane.na { opacity: 0.55; cursor: default; }
+    .pane .dot { margin-top: 5px; }
+    .peek { margin-top: 4.8px; padding: 7.2px 9.6px; background: var(--bg1); border: 1px solid var(--border); border-radius: 4px; font-size: 11.2px; line-height: 1.5; white-space: pre; overflow-x: auto; color: var(--muted-text); }
+    .peek .cur { color: var(--fg); }
+    .btn { display: inline-flex; align-items: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 6px; font-family: inherit; font-size: 12.16px; font-weight: 600; border: 1px solid var(--border); background: var(--bg1); color: var(--fg); cursor: pointer; white-space: nowrap; }
+    .btn.primary { background: var(--accent-deep); border-color: var(--accent-deep); color: var(--accent-on); }
+    .btn.sm { height: 30px; padding: 0 9.6px; font-weight: 500; }
+    .state { font-size: 10.56px; font-weight: 500; }
+    .state.working { color: var(--warn); }
+    .state.blocked { color: var(--bad); }
+    .state.idle { color: var(--muted-text); }
+    .notice { padding: 6px 0 4px; text-align: left; font-size: 10.56px; color: var(--muted-text); }
 """
 ICON = {
     'collapse': '<svg width="{s}" height="{s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 19V5"/><path d="m13 6-6 6 6 6"/><path d="M7 12h14"/></svg>',
@@ -124,6 +146,11 @@ ICON = {
  'chev': '<svg width="{s}" height="{s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>',
  'more': '<svg width="{s}" height="{s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>',
  'copy': '<svg width="{s}" height="{s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>',
+ 'plus': '<svg width="{s}" height="{s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>',
+ 'x': '<svg width="{s}" height="{s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>',
+ 'eye': '<svg width="{s}" height="{s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></svg>',
+ 'userplus': '<svg width="{s}" height="{s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M19 8v6"/><path d="M22 11h-6"/></svg>',
+ 'search': '<svg width="{s}" height="{s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>',
 }
 def ic(n, s=16): return ICON[n].format(s=s)
 
@@ -753,6 +780,290 @@ dmdesk = head() + f"""
 """ + tail(1440, 900)
 pathlib.Path('DirectMessage.dc.html').write_text(dmdesk)
 
+# ---------------------------------------------------------------- panes (Tasks 6-8)
+# (pane_id, workspace, title, handle, status, repo, branch, path, agent_status, tags, selected, note, peek)
+PANES = [
+ ('wC2:p1', 'chat', 'claude', None, None, 'acme', 'perf/codegen-split', '~/Documents/GitHub/acme-wt-codegen-split', 'unknown', [], 'starting', None, None),
+ ('w7A:pY', 'acme', 'Evaluate house codegen plugin for bundle optimization', None, None, 'acme', 'main', '~/Documents/GitHub/acme', 'idle', [], True, 'you own the vite side; fred has the plugin', [
+    '⏺ Read(src/plugins/house-codegen/index.ts)',
+    '  ⎿  Read 212 lines',
+    '⏺ The plugin emits one chunk per island; the split itself',
+    '  happens in vite manualChunks, not here. Checking that next.',
+    '❯ ']),
+ ('w3f:p2', 'repo-tools', 'fred', 'fred', 'live', 'repo-tools', 'rt-63-68-locate', '~/Documents/GitHub/repo-tools/.claude/worktrees/rt-63-68-locate', 'working', ['repo-tools'], True, None, None),
+ ('w3f:p4', 'chat', 'meg', 'meg', 'live', 'chat', 'main', '~/Documents/GitHub/chat', 'idle', ['build', 'chat'], 'member', None, None),
+ ('wB1:p1', 'mr-board', 'Fix invite onboarding modal focus trap', None, None, 'mr-board', 'invite-onboarding', '~/Documents/GitHub/mr-board-wt-invite-onboarding', 'working', [], False, None, None),
+ ('w9c:p3', 'gitq', 'june', 'june', 'idle', 'gitq', 'main', '~/Documents/GitHub/gitq', 'blocked', ['gitq'], 'blocked', None, None),
+ ('w2d:p1', 'deck', 'otis', 'otis', 'deaf', 'deck', 'main', '~/Documents/GitHub/deck', 'idle', ['deck'], False, None, None),
+]
+
+def pane_row(p, room):
+    pid, ws, title, handle, st, repo, br, path, ag, ts, sel, note, peek = p
+    member = sel == 'member'
+    blocked = sel == 'blocked'
+    on = sel is True
+    cls = 'pane' + (' on' if on else '') + (' na' if member or blocked or sel == 'starting' else '')
+    starting = sel == 'starting'
+    if member or blocked or starting:
+        cb = '<span class="cb off"></span>'
+    elif on:
+        cb = f'<span class="cb on">{ic("check", 11)}</span>'
+    else:
+        cb = '<span class="cb"></span>'
+    if handle:
+        who = f'<span class="dot {st}"></span><span class="sm" style="font-weight: 600;">{handle}</span>'
+    else:
+        who = f'<span class="dot off"></span><span class="sm muted">not signed in</span>'
+    if starting:
+        right = '<span class="state working" title="selectable once it reaches idle">starting</span>'
+    elif member:
+        right = f'<span class="tag" style="color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent);">in #{room}</span>'
+    elif blocked:
+        right = '<span class="state blocked" title="answer its prompt first">at a prompt</span>'
+    elif ag == 'working':
+        right = '<span class="state working" title="the invite queues until its turn ends">working</span>'
+    else:
+        right = f'<span class="state idle">{ag}</span>'
+    peek_btn = f'<button class="aicon" style="width: 22px; height: 22px;" aria-label="Peek at pane" title="peek at recent output">{ic("eye", 13)}</button>'
+    peek_html = ''
+    if peek:
+        lines = '\n'.join(f'<span class="cur">{l}</span>' if l.startswith('❯') else l for l in peek)
+        peek_html = f'<div class="peek">{lines}</div>'
+    note_html = ''
+    if on:
+        placeholder = note or 'note for this pane (optional)'
+        ph_cls = '' if note else 'placeholder'
+        note_html = f'<div class="input" style="min-height: 28px; font-size: 11.2px; margin-top: 4.8px;"><span class="{ph_cls}">{placeholder}</span></div>'
+    detail = f'{repo} · {br}' + (' · in ' + ', '.join('#' + t for t in ts) if ts else '')
+    row = f"""      <div class="{cls}">
+        {cb}
+        <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
+          <div class="row" style="gap: 7.2px;">{who}<span class="xs muted">·</span><span class="xs muted truncate" style="flex: 1;">{ws}{'' if title == handle else ' · ' + title}</span>{right}{peek_btn}</div>
+          <span class="xs muted path truncate" title="{detail}"><bdi dir="ltr">{path}</bdi></span>
+          {note_html}{peek_html}
+        </div>
+      </div>"""
+    return row
+
+def pane_list(room, filter_text='filter panes'):
+    rows = '\n'.join(pane_row(p, room) for p in PANES)
+    return f"""    <div class="row" style="justify-content: space-between; padding: 0 0 4.8px;">
+      <div class="row" style="gap: 6px;"><span class="muted">{ic('terminal', 14)}</span><span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">HERDR PANES</span></div>
+      <span class="xs muted">6 panes · 2 selected</span>
+    </div>
+    <div class="input" style="min-height: 30px; font-size: 11.2px; margin-bottom: 4.8px;"><span class="muted">{ic('search', 13)}</span><span class="placeholder">{filter_text}</span></div>
+    <div class="stack card" style="padding: 2px 0; background: var(--bg2);">
+{rows}
+    </div>"""
+
+# ---------------------------------------------------------------- picked list (owned by the caller)
+def picked_row(p, note):
+    pid, ws, title, handle, st, repo, br, path, ag, ts, sel, _n, peek = p
+    who = (f'<span class="dot {st}"></span><span class="sm" style="font-weight: 600;">{handle}</span>' if handle
+           else '<span class="dot off"></span><span class="sm muted">not signed in</span>')
+    sub = ws if title == handle else f'{ws} · {title}'
+    state = '<span class="state working" title="the invite queues until its turn ends">working</span>' if ag == 'working' else ''
+    ph_cls = '' if note else 'placeholder'
+    return f"""      <div class="pane">
+        <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
+          <div class="row" style="gap: 7.2px;">{who}<span class="xs muted">·</span><span class="xs muted truncate" style="flex: 1;" title="{repo} · {br}">{sub}</span>{state}<button class="aicon" style="width: 22px; height: 22px;" aria-label="Remove">{ic('x', 13)}</button></div>
+          <div class="input" style="min-height: 28px; font-size: 11.2px; margin-top: 4.8px;"><span class="{ph_cls}">{note or 'note for this pane (optional)'}</span></div>
+        </div>
+      </div>"""
+
+def picked_list(room):
+    rows = picked_row(PANES[0], 'you own the vite side; fred has the plugin') + '\n' + picked_row(PANES[1], None)
+    return f"""    <div class="row" style="justify-content: space-between; padding: 0 0 4.8px;">
+      <div class="row" style="gap: 6px;"><span class="muted">{ic('users', 14)}</span><span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">AGENTS</span><span class="xs muted">· 2 to invite</span></div>
+      <button class="btn sm">{ic('terminal', 14)}<span>pick panes</span></button>
+    </div>
+    <div class="stack card" style="padding: 2px 0; background: var(--bg2);">
+{rows}
+    </div>"""
+
+# ---------------------------------------------------------------- New room modal (Task 7)
+def new_room():
+    return head() + f"""
+<div class="app grid {{{{schemeClass}}}}" style="width: 900px; min-height: 900px; padding: 40px 110px; display: flex; justify-content: center; align-items: flex-start;">
+  <div class="stack pop" style="width: 680px; padding: 14.4px 16px 16px; gap: 11.2px;">
+    <div class="row" style="justify-content: space-between;">
+      <div class="row" style="gap: 7.2px;"><span class="muted">{ic('hash', 18)}</span><span style="font-size: 20px; font-weight: 700; line-height: 1.35;">New room</span></div>
+      <button class="aicon" aria-label="Close">{ic('x', 16)}</button>
+    </div>
+
+    <div class="field">
+      <span class="lbl2">Room</span>
+      <div class="input focus"><span class="muted">#</span><span>codegen-split</span></div>
+      <span class="hint">lowercase, digits, dashes · the room exists once you post the seed</span>
+    </div>
+
+    <div class="field">
+      <span class="lbl2">Seed</span>
+      <div class="input area"><span>Goal: cut the acme admin bundle in half by splitting the house-codegen output per island.
+
+- fred owns the plugin side (repo-tools/house-codegen)
+- the acme pane owns vite manualChunks and the measurement
+- announce before touching `vite.config.ts`; post numbers here, not in DMs
+
+@here when you have a first measurement.</span></div>
+      <div class="row" style="justify-content: space-between;"><span class="hint">posted as <span style="font-weight: 600; color: var(--fg);">matt</span> · every invitee is told to read it first</span><span class="hint">markdown subset · blank line between points</span></div>
+    </div>
+
+    <div class="row" style="gap: 9.6px;">
+      <span class="lbl2">Wakes</span>
+      <span class="chip">mention ▾</span>
+      <span class="hint">all = a war room, nobody has to @here</span>
+    </div>
+
+    <div class="stack" style="gap: 0; padding-top: 4.8px;">
+{picked_list('codegen-split')}
+    </div>
+
+    <div class="row" style="gap: 7.2px; justify-content: flex-end; padding-top: 4.8px; border-top: 1px solid var(--border-soft);">
+      <span class="hint" style="flex: 1;">2 invites · fred picks it up when its turn ends</span>
+      <button class="btn">Create without inviting</button>
+      <button class="btn primary">{ic('userplus', 14)}Create #codegen-split · invite 2</button>
+    </div>
+  </div>
+</div>
+""" + tail(900, 900)
+
+# ---------------------------------------------------------------- the standalone picker (Task 6)
+def picker():
+    rows = '\n'.join(pane_row(p, 'codegen-split') for p in PANES)
+    return head() + f"""
+<div class="app grid {{{{schemeClass}}}}" style="width: 820px; min-height: 900px; padding: 40px 90px; display: flex; justify-content: center; align-items: flex-start;">
+  <div class="stack pop" style="width: 640px; padding: 14.4px 16px 16px; gap: 9.6px;">
+    <div class="row" style="justify-content: space-between;">
+      <div class="row" style="gap: 7.2px;"><span class="muted">{ic('terminal', 18)}</span><span style="font-size: 20px; font-weight: 700; line-height: 1.35;">Pick herdr panes</span><span class="sm muted">to invite to #codegen-split</span></div>
+      <button class="aicon" aria-label="Close">{ic('x', 16)}</button>
+    </div>
+    <div class="input" style="min-height: 30px; font-size: 11.2px;"><span class="muted">{ic('search', 13)}</span><span class="placeholder">filter by handle, workspace, title, repo, path</span></div>
+    <div class="row" style="justify-content: space-between;">
+      <span class="xs muted">7 panes running Claude</span>
+      <div class="row" style="gap: 7.2px;"><span class="xs muted">2 selected</span><button class="btn sm">{ic('plus', 14)}<span>new pane</span></button></div>
+    </div>
+    <div class="stack card" style="padding: 2px 0; background: var(--bg2); max-height: 560px; overflow: auto;">
+{rows}
+    </div>
+    <div class="row" style="gap: 7.2px; justify-content: flex-end; padding-top: 4.8px; border-top: 1px solid var(--border-soft);">
+      <div style="flex: 1;"></div>
+      <button class="btn">Cancel</button>
+      <button class="btn primary">{ic('check', 14)}Use 2 panes</button>
+    </div>
+  </div>
+</div>
+""" + tail(820, 900)
+
+# ---------------------------------------------------------------- New pane form, inside the picker (Task 6)
+def new_pane():
+    def field(label, value, hint, placeholder=False, chev=False, focus=False):
+        cls = 'input focus' if focus else 'input'
+        val = f'<span class="placeholder">{value}</span>' if placeholder else f'<span>{value}</span>'
+        arrow = f'<div style="flex: 1;"></div><span class="muted">{ic("chev", 14)}</span>' if chev else ''
+        return f"""    <div class="field">
+      <span class="lbl2">{label}</span>
+      <div class="{cls}">{val}{arrow}</div>
+      <span class="hint">{hint}</span>
+    </div>"""
+    return head() + f"""
+<div class="app grid {{{{schemeClass}}}}" style="width: 720px; min-height: 760px; padding: 40px 60px; display: flex; justify-content: center; align-items: flex-start;">
+  <div class="stack pop" style="width: 600px; padding: 14.4px 16px 16px; gap: 11.2px;">
+    <div class="row" style="justify-content: space-between;">
+      <div class="row" style="gap: 7.2px;"><button class="aicon" aria-label="Back to the list">{ic('back', 16)}</button><span class="muted">{ic('plus', 18)}</span><span style="font-size: 20px; font-weight: 700; line-height: 1.35;">New pane</span><span class="sm muted">a herdr tab running Claude</span></div>
+      <button class="aicon" aria-label="Close">{ic('x', 16)}</button>
+    </div>
+
+{field('Directory', '~/Documents/GitHub/acme-wt-codegen-split', 'any path · suggestions come from the rt repo list and their worktrees as you type', focus=True)}
+    <div class="stack card" style="margin-top: -6px; padding: 2px 0;">
+      <div class="opt" style="height: 34px;"><span class="sm">~/Documents/GitHub/acme</span><span class="xs muted">· acme · main</span></div>
+      <div class="opt on" style="height: 34px;"><span class="sm">~/Documents/GitHub/acme-wt-codegen-split</span><span class="xs muted">· acme · perf/codegen-split</span></div>
+      <div class="opt" style="height: 34px;"><span class="sm">~/Documents/GitHub/repo-tools</span><span class="xs muted">· repo-tools · main</span></div>
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9.6px;">
+{field('Account', 'acme · Fable 35% used', 'from cswap list · headroom beside each', chev=True)}
+{field('Model', 'claude-fable-5', 'defaults to the newest', chev=True)}
+    </div>
+
+    <div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9.6px;">
+{field('Effort', 'high', 'optional', chev=True)}
+{field('Workspace', 'chat', 'herdr workspace the tab opens in · from chat.herdrWorkspace', chev=True)}
+    </div>
+
+    <div class="field">
+      <span class="lbl2">Opening prompt</span>
+      <div class="input area" style="min-height: 72px;"><span class="placeholder">optional · typed once Claude is idle, before the invite. Leave empty and the pane only gets /chat:join like any other.</span></div>
+    </div>
+
+    <div class="row" style="gap: 7.2px; justify-content: flex-end; padding-top: 4.8px; border-top: 1px solid var(--border-soft);">
+      <span class="hint" style="flex: 1;">runs <code style="font-family: inherit; font-size: 10.56px; background: var(--bg3); border: 1px solid var(--border-soft); border-radius: 3px; padding: 0 3px;">cswap run acme --share-history -- claude --model claude-fable-5 --effort high</code> in a new tab · about 20s to idle</span>
+      <button class="btn">Back</button>
+      <button class="btn primary">{ic('plus', 14)}Start pane</button>
+    </div>
+  </div>
+</div>
+""" + tail(720, 760)
+
+# ---------------------------------------------------------------- Entry points strip (Task 8)
+def entry_points():
+    return head() + f"""
+<div class="app {{{{schemeClass}}}}" style="width: 900px; min-height: 560px; padding: 14.4px; display: flex; flex-direction: column; gap: 14.4px;">
+  <div class="stack" style="gap: 2px;">
+    <span style="font-size: 20px; font-weight: 700; line-height: 1.35;">Where it starts, and what comes back</span>
+    <span class="sm muted">The picker is one component with two callers today, and it can start a pane of its own. Both entry points hide entirely when rt says herdr is unavailable.</span>
+  </div>
+
+  <div class="stack" style="gap: 4.8px;">
+    <span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">ROOMS RAIL · a 24px + beside the count opens New room, which launches the picker from its Agents section</span>
+    <div class="stack" style="width: 244px; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 11.2px 6px; gap: 2px;">
+      <div class="row" style="justify-content: space-between; padding: 0 0 6px 9.6px;">
+        <span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">ROOMS</span>
+        <div class="row" style="gap: 2px;"><span class="xs muted">3</span><button class="aicon" style="width: 24px; height: 24px;" aria-label="New room">{ic('plus', 14)}</button></div>
+      </div>
+      <div class="room on"><span class="hash">{ic('hash', 14)}</span><span class="truncate" style="font-weight: 600; flex: 1;">build</span><span class="mention" aria-label="1 mention">@1</span><span class="unread" aria-label="4 unread">4</span></div>
+      <div class="room"><span class="hash">{ic('hash', 14)}</span><span class="truncate" style="flex: 1;">demo-42</span><span class="unread" aria-label="2 unread">2</span></div>
+      <div class="room"><span class="hash">{ic('hash', 14)}</span><span class="truncate muted" style="flex: 1;">release</span></div>
+    </div>
+  </div>
+
+  <div class="stack" style="gap: 4.8px;">
+    <span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">PAGE BAR · add agents launches the picker directly; the room page is the caller and invites what comes back</span>
+    <div class="row" style="height: 64px; padding: 0 11.2px; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; gap: 9.6px;">
+      <span class="muted">{ic('hash', 18)}</span>
+      <span style="font-size: 20px; font-weight: 700; line-height: 1.35;">build</span>
+      <div style="width: 4.8px;"></div>
+      <span class="chip">6 in room</span><span class="chip live"><span class="dot live"></span>3 listening</span><span class="chip idle"><span class="dot idle"></span>2 idle</span><span class="chip deaf"><span class="dot deaf"></span>1 deaf: june</span>
+      <span class="chip">wakes: mention ▾</span>
+      <div style="flex: 1;"></div>
+      <button class="btn sm" aria-label="Add agents to #build">{ic('userplus', 14)}<span>add agents</span></button>
+      <button class="btn sm" aria-label="Mark #build read">{ic('check', 14)}<span>mark read</span><span class="unread">4</span></button>
+    </div>
+  </div>
+
+  <div class="stack" style="gap: 4.8px;">
+    <span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">WHAT THE PICKER RETURNS · the rt pane rows, verbatim; null on cancel</span>
+    <div class="code" style="margin: 0;">const picked = await pickPanes({{ context: 'to invite to #build', disable: notInvitable, allowCreate: true }});
+// ChatPane[] | null
+// {{ paneId: 'w7A:pY', workspace: 'acme', title: 'Evaluate house codegen…',
+//    cwd: '~/Documents/GitHub/acme', repo: 'acme', branch: 'main',
+//    agentStatus: 'idle', sessionId: '1363c82f-…', presence: undefined }}</div>
+  </div>
+
+  <div class="stack" style="gap: 4.8px;">
+    <span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">AFTER INVITING · the modal closes, the room opens, the result rides the transcript edge</span>
+    <div class="stack" style="background: var(--bg3); border: 1px solid var(--border); border-radius: 6px; padding: 9.6px 14.4px; gap: 4.8px;">
+      <div class="notice">invited 2 · <span style="color: var(--ok);">acme pane accepted</span> · <span style="color: var(--warn);">fred queued (working)</span> · members appear as they sign in</div>
+    </div>
+  </div>
+</div>
+""" + tail(900, 560)
+
+pathlib.Path('NewRoom.dc.html').write_text(new_room())
+pathlib.Path('PanePicker.dc.html').write_text(picker())
+pathlib.Path('NewPane.dc.html').write_text(new_pane())
+pathlib.Path('EntryPoints.dc.html').write_text(entry_points())
+
 canvas = {
   "artboards": [
     {"file": "Main.dc.html", "x": 0, "y": 0, "w": 1440, "h": 900, "title": "Chat — desktop"},
@@ -763,14 +1074,20 @@ canvas = {
     {"file": "PhoneRooms.dc.html", "x": 2030, "y": 0, "w": 390, "h": 844, "title": "Phone — rooms and buddies"},
     {"file": "Roster.dc.html", "x": 2500, "y": 0, "w": 420, "h": 900, "title": "The buddy list"},
     {"file": "Indicators.dc.html", "x": 1560, "y": 1020, "w": 880, "h": 1440, "title": "Indicators"},
+    {"file": "NewRoom.dc.html", "x": 0, "y": 4200, "w": 900, "h": 900, "title": "New room"},
+    {"file": "PanePicker.dc.html", "x": 1000, "y": 4200, "w": 820, "h": 960, "title": "Pane picker"},
+    {"file": "NewPane.dc.html", "x": 1920, "y": 4200, "w": 720, "h": 760, "title": "New pane"},
+    {"file": "EntryPoints.dc.html", "x": 0, "y": 5300, "w": 900, "h": 560, "title": "Entry points"},
   ],
   "annotations": [
     {"id": "presence-ux", "x": 2500, "y": 1020, "w": 420, "text": "AIM, deliberately.\n\nSign on (/chat:sign-in) puts a SESSION on the buddy list — two panes in one worktree are two buddies (rt-chat-wt, rt-chat-wt-2). Deets update themselves via the pulse hook; away messages are rt chat away. Sign off keeps your rooms.\n\nlistening = tail armed and touching (a DM is a notification). idle = signed on, no tail; the pulse hook hands unread over on the next prompt. deaf = the tail died. offline (24h) = greyed, like AIM.\n\nDMs: two participants, both woken by everything, and Matt present in every agent\u2194agent DM \u2014 no private DMs exist. The picker offers DM-instead for buddies not in the room."},
     {"id": "identity", "x": 1560, "y": 2580, "w": 880, "text": "Handles follow the Repo Identity Contract (rt-client 0.4.0).\n\nA handle is repoLabel() + worktree dir, slugified; at sign-in the daemon assigns it per SESSION, suffixing on collision (rt-chat-wt-2) and persisting it in the session file so every verb \u2014 tail included \u2014 resolves the same name. A serialized identity (remote:gitlab.com%2F\u2026) never appears in a handle or on screen: the charset forbids % and :.\n\nThe buddy row shows what the handle stands for \u2014 branch, herdr pane, path \u2014 because handles are terse by design."},
     {"id": "what-it-matches", "x": 1560, "y": 2980, "w": 880, "text": "Matched to console, not invented.\n\nPalette, grid and JetBrains Mono: src/app/styles/tokyo-theme.css. Font sizes (xs 10.56 / sm 11.2 / md 12.16), spacing, 6px radii: src/ui/design-system/app-theme.ts. Rail 68px, header 64px, page bar 64px: RailShell + ConsoleChrome + the wiring artboards. Row anatomy, 28px action icons, badge wash: RunRow.tsx. Alert = Mantine light variant, color bad. Drawer = position left, size sm, overlay 0.4.\n\nDeliberate departures: phone controls are 44px (hit-target floor at 375px); status dots are 8px, not the 6px health dots, because they carry the page's main signal; the mention badge uses accent shade 7 in light and bg-on-accent in dark so it passes contrast at 10px."},
-    {"id": "laws", "x": 0, "y": 4080, "w": 1440, "text": "Laws this surface holds.\n\n1. Never render presence while the daemon is unreachable. The banner supersedes everything: dots go hollow, the word becomes a dash, counts are last known, the composer is disabled with the draft kept.\n2. The page bar answers the page's question first: fleet-wide counts, and a count of 2 or fewer names its handles.\n3. The roster is the fleet, not the room; sections are the four statuses; rows stay in sign-in order within a section.\n4. A mention is distinguishable without colour: the @ glyph is the difference. A DM is a pair with \u2194, never a hashed id on screen.\n5. Status lives on the buddy, not on the message. Wide content scrolls inside its own block; prose wraps anywhere.\n6. Times are local. Phone inputs are 16px; controls 44px; return adds a line, the button sends.\n7. Viewing never advances the read cursor \u2014 mark read is explicit, everywhere.\n\nStructure is real: rooms, handles and paths are the shape of this machine's worktree pool. The conversations are illustrative."}
+    {"id": "laws", "x": 0, "y": 4080, "w": 1440, "text": "Laws this surface holds.\n\n1. Never render presence while the daemon is unreachable. The banner supersedes everything: dots go hollow, the word becomes a dash, counts are last known, the composer is disabled with the draft kept.\n2. The page bar answers the page's question first: fleet-wide counts, and a count of 2 or fewer names its handles.\n3. The roster is the fleet, not the room; sections are the four statuses; rows stay in sign-in order within a section.\n4. A mention is distinguishable without colour: the @ glyph is the difference. A DM is a pair with \u2194, never a hashed id on screen.\n5. Status lives on the buddy, not on the message. Wide content scrolls inside its own block; prose wraps anywhere.\n6. Times are local. Phone inputs are 16px; controls 44px; return adds a line, the button sends.\n7. Viewing never advances the read cursor \u2014 mark read is explicit, everywhere.\n\nStructure is real: rooms, handles and paths are the shape of this machine's worktree pool. The conversations are illustrative."},
+    {"id": "brief", "x": 0, "y": 5900, "w": 420, "text": "Two components.\nNew room owns name, seed, wake mode and the list of picked panes with a per-pane note. Its 'pick panes' button launches PanePicker.\nPanePicker is standalone: it fetches the pane list, filters, peeks, selects, and resolves with the picked rows. The caller decides which rows are disabled and why. With allowCreate it can also start a new pane (cwd, account, model, effort, opening prompt) and list it as 'starting' until Claude is idle."},
+    {"id": "states", "x": 1000, "y": 5900, "w": 380, "text": "Picker row states drawn: selected (acme, with peek open), selected but working (fred: invite queues), disabled by the caller (meg: already in the room; june: blocked at a prompt), deaf (otis), not signed in (mr-board), starting (a pane the picker just spawned).\nLight is the default here, matching every other artboard; flip dark to check it."}
   ],
   "launch": {"view": "canvas"}
 }
 pathlib.Path('canvas.json').write_text(json.dumps(canvas, indent=2))
-print("built 8 artboards + canvas.json")
+print("built 12 artboards + canvas.json")

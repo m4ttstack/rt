@@ -1,7 +1,7 @@
 import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import { screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, expect, test } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 
 import './icons';
 
@@ -154,4 +154,18 @@ test('no archived rooms means no archived section', () => {
     />
   );
   expect(screen.queryByTestId('archived-toggle')).toBeNull();
+});
+
+test('the + renders only with onNewRoom, disables with the daemon down, and fires', async () => {
+  const onNewRoom = vi.fn();
+  const rooms = [{ room: 'build', memberCount: 1, unread: 0, mentions: 0 }];
+  const { rerender } = renderWithProviders(<RoomRail rooms={rooms} />);
+  expect(screen.queryByTestId('new-room-button')).toBeNull();
+  rerender(
+    <RoomRail rooms={rooms} onNewRoom={onNewRoom} daemonReachable={false} />
+  );
+  expect(screen.getByTestId('new-room-button')).toBeDisabled();
+  rerender(<RoomRail rooms={rooms} onNewRoom={onNewRoom} />);
+  await userEvent.click(screen.getByRole('button', { name: 'New room' }));
+  expect(onNewRoom).toHaveBeenCalled();
 });

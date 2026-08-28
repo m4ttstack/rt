@@ -2,6 +2,7 @@ import {
   chatArchive,
   chatBuddies,
   chatDmOpen,
+  chatInvite,
   chatJoin,
   chatMark,
   chatMessages,
@@ -9,6 +10,7 @@ import {
   chatRooms,
   chatWho,
   getSetting,
+  type InviteResult,
   type RoomSummary,
   type RtClientOptions,
 } from '@mattstack/rt-client';
@@ -18,6 +20,7 @@ import { validator } from 'hono/validator';
 
 import {
   fixtureBuddies,
+  fixtureInvite,
   fixtureMembers,
   fixtureMessages,
   fixtureRooms,
@@ -350,4 +353,89 @@ export const chat = new Hono()
     const res = await chatDmOpen({ from, to }, rtOpts());
     if (!res.ok) return c.json({ error: res.error }, 502);
     return c.json(res.data, 200);
+  })
+  // Join-creates, so "create a room" is the human joining it; the seed is
+  // the first post. A room whose seed fails still exists, so the error
+  // carries the room name and the client keeps the draft.
+  .post('/api/chat/rooms', async c => {
+    let raw: { room?: unknown; seed?: unknown; wakeOn?: unknown };
+    try {
+      raw = await c.req.json();
+    } catch {
+      return c.json({ error: 'Malformed JSON in request body' }, 400);
+    }
+    const room = typeof raw?.room === 'string' ? raw.room : '';
+    if (!CHAT_NAME.test(room))
+      return c.json({ error: 'room must match ^[a-z0-9._-]+$' }, 400);
+    const seed =
+      typeof raw?.seed === 'string' && raw.seed.trim() ? raw.seed : undefined;
+    if (fixturesEnabled())
+      return c.json(seed ? { room, seedId: 1 } : { room }, 200);
+    const wakeOn =
+      raw?.wakeOn === 'all' ||
+      raw?.wakeOn === 'mention' ||
+      raw?.wakeOn === 'none'
+        ? raw.wakeOn
+        : undefined;
+    const handle = humanHandle(c);
+    const joinRes = await chatJoin(
+      wakeOn ? { room, handle, wakeOn } : { room, handle },
+      rtOpts()
+    );
+    if (!joinRes.ok) return c.json({ error: joinRes.error }, 502);
+    if (!seed) return c.json({ room }, 200);
+    const postRes = await chatPost({ room, handle, body: seed }, rtOpts());
+    if (!postRes.ok) return c.json({ error: postRes.error, room }, 502);
+    return c.json({ room, seedId: postRes.data?.id }, 200);
+  })
+  // Sequential on purpose: each invite types into a live terminal.
+  .post('/api/chat/invite', async c => {
+    let raw: { room?: unknown; panes?: unknown };
+    try {
+      raw = await c.req.json();
+    } catch {
+      return c.json({ error: 'Malformed JSON in request body' }, 400);
+    }
+    const room = typeof raw?.room === 'string' ? raw.room : '';
+    if (!CHAT_NAME.test(room))
+      return c.json({ error: 'room must match ^[a-z0-9._-]+$' }, 400);
+    const panes = Array.isArray(raw?.panes)
+      ? raw.panes.flatMap((p): { paneId: string; note?: string }[] =>
+          p &&
+          typeof p === 'object' &&
+          typeof (p as { paneId?: unknown }).paneId === 'string'
+            ? [
+                {
+                  paneId: (p as { paneId: string }).paneId,
+                  ...(typeof (p as { note?: unknown }).note === 'string' &&
+                  (p as { note: string }).note.trim()
+                    ? { note: (p as { note: string }).note }
+                    : {}),
+                },
+              ]
+            : []
+        )
+      : [];
+    if (panes.length === 0)
+      return c.json({ error: 'panes must name at least one pane' }, 400);
+    if (fixturesEnabled())
+      return c.json({ results: panes.map(p => fixtureInvite(p.paneId)) }, 200);
+    const from = humanHandle(c);
+    const results: InviteResult[] = [];
+    for (const p of panes) {
+      const res = await chatInvite(
+        { paneId: p.paneId, room, from, ...(p.note ? { note: p.note } : {}) },
+        rtOpts()
+      );
+      results.push(
+        res.ok && res.data
+          ? res.data
+          : {
+              paneId: p.paneId,
+              delivered: 'refused',
+              reason: res.error ?? 'invite failed',
+            }
+      );
+    }
+    return c.json({ results }, 200);
   });

@@ -13,6 +13,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, expect, test } from 'vitest';
 
 import {
+  FakeWebSocket,
   fetchMock,
   installFakeWebSocket,
   installFetchMock,
@@ -531,4 +532,147 @@ test('archiving the active room navigates away when it vanishes from the refetch
     within(screen.getByTestId('page-bar')).getByText('build')
   ).toBeInTheDocument();
   expect(screen.getByTestId('composer')).toBeInTheDocument();
+});
+
+test("a chat/<room>/msg frame refetches the open room's members", async () => {
+  installFetchMock();
+  fetchMock.mockImplementation(
+    async (url: string) =>
+      new Response(
+        JSON.stringify(
+          String(url).startsWith('/api/chat/who/')
+            ? {
+                members: [
+                  {
+                    room: 'build',
+                    handle: 'fred',
+                    joinedAt: 1,
+                    lastReadId: 0,
+                    wakeOn: 'mention',
+                    status: 'live',
+                  },
+                ],
+              }
+            : {}
+        )
+      )
+  );
+  window.history.replaceState(null, '', '/r/build');
+  await act(async () => {
+    renderWithProviders(<App initialState={{ ...twoRooms, members: [] }} />);
+  });
+  const before = fetchMock.mock.calls.filter(([u]) =>
+    String(u).startsWith('/api/chat/who/build')
+  ).length;
+  await act(async () => {
+    for (const socket of FakeWebSocket.instances)
+      socket.onmessage?.({
+        data: JSON.stringify({ topic: 'chat/build/msg', payload: { id: 7 } }),
+      });
+  });
+  const after = fetchMock.mock.calls.filter(([u]) =>
+    String(u).startsWith('/api/chat/who/build')
+  ).length;
+  expect(after).toBeGreaterThan(before);
+});
+
+test('the entry points hide while herdr is unavailable and show once /api/panes says available', async () => {
+  installFetchMock();
+  fetchMock.mockImplementation(
+    async (url: string) =>
+      new Response(
+        JSON.stringify(
+          String(url).startsWith('/api/panes')
+            ? { available: false, panes: [] }
+            : {}
+        )
+      )
+  );
+  window.history.replaceState(null, '', '/r/build');
+  const { unmount } = renderWithProviders(<App initialState={twoRooms} />);
+  await act(async () => {});
+  expect(screen.queryByTestId('new-room-button')).toBeNull();
+  expect(screen.queryByTestId('add-agents-button')).toBeNull();
+  unmount();
+  fetchMock.mockImplementation(
+    async (url: string) =>
+      new Response(
+        JSON.stringify(
+          String(url).startsWith('/api/panes')
+            ? { available: true, panes: [] }
+            : {}
+        )
+      )
+  );
+  renderWithProviders(<App initialState={twoRooms} />);
+  expect(await screen.findByTestId('new-room-button')).toBeInTheDocument();
+  expect(screen.getByTestId('add-agents-button')).toBeInTheDocument();
+});
+
+test('a daemon-down 502 from /api/panes keeps the entry points mounted (disabled, not hidden)', async () => {
+  installFetchMock();
+  fetchMock.mockImplementation(async (url: string) =>
+    String(url).startsWith('/api/panes')
+      ? new Response(JSON.stringify({ error: 'rt daemon unreachable' }), {
+          status: 502,
+        })
+      : new Response(JSON.stringify({}))
+  );
+  window.history.replaceState(null, '', '/r/build');
+  renderWithProviders(<App initialState={twoRooms} />);
+  expect(await screen.findByTestId('new-room-button')).toBeInTheDocument();
+  expect(screen.getByTestId('add-agents-button')).toBeInTheDocument();
+});
+
+test('add agents invites the picked panes and shows the result line on the transcript edge', async () => {
+  installFetchMock();
+  fetchMock.mockImplementation(async (url: string, init?: RequestInit) => {
+    const path = String(url).split('?')[0];
+    if (path === '/api/panes')
+      return new Response(
+        JSON.stringify({
+          available: true,
+          panes: [
+            {
+              paneId: 'w1:p4',
+              workspace: 'acme',
+              title: 'Evaluate codegen',
+              cwd: '/r/acme',
+              agentStatus: 'idle',
+            },
+          ],
+        })
+      );
+    if (path === '/api/chat/invite' && init?.method === 'POST')
+      return new Response(
+        JSON.stringify({
+          results: [{ paneId: 'w1:p4', delivered: 'accepted' }],
+        })
+      );
+    return new Response(JSON.stringify({}));
+  });
+  window.history.replaceState(null, '', '/r/build');
+  renderWithProviders(
+    <App
+      initialState={{
+        ...twoRooms,
+        messages: [
+          {
+            id: 1,
+            room: 'build',
+            handle: 'meg',
+            body: 'hi',
+            mentions: [],
+            postedAt: 1,
+          },
+        ],
+      }}
+    />
+  );
+  await userEvent.click(await screen.findByTestId('add-agents-button'));
+  await userEvent.click(await screen.findByTestId('pane-check-w1:p4'));
+  await userEvent.click(screen.getByTestId('pane-use'));
+  expect(await screen.findByTestId('transcript-notice')).toHaveTextContent(
+    'invited 1 · acme pane accepted'
+  );
 });
