@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { BoardMR } from "../data.ts";
 import type { TabConfig } from "../config.ts";
-import { filterByMember, filterByTab, rosterUsernamesFor, sortMRs, groupMRs, commentDot, dataAgeLabel, statusFlags, nestStacks, memberPeerState, joinRowState } from "../view.ts";
+import { filterByMember, filterBySlack, filterByTab, rosterUsernamesFor, sortMRs, groupMRs, commentDot, dataAgeLabel, statusFlags, nestStacks, memberPeerState, joinRowState } from "../view.ts";
 
 function mr(overrides: Partial<BoardMR>): BoardMR {
   return {
@@ -18,6 +18,20 @@ function mr(overrides: Partial<BoardMR>): BoardMR {
     ...overrides,
   } as unknown as BoardMR;
 }
+
+describe("filterBySlack", () => {
+  const posted = mr({ iid: 1, slack: { status: "found", reactions: [], posted: true } } as any);
+  const foundNoReply = mr({ iid: 2, slack: { status: "found", reactions: [], posted: false } } as any);
+  const notFound = mr({ iid: 3, slack: { status: "notfound", reactions: [], posted: false } } as any);
+  const unresolved = mr({ iid: 4 });
+  const list = [posted, foundNoReply, notFound, unresolved];
+  test("all returns everything", () => {
+    expect(filterBySlack(list, "all")).toHaveLength(4);
+  });
+  test("posted keeps only rows the posted-in-slack chip would mark", () => {
+    expect(filterBySlack(list, "posted").map((m) => m.iid)).toEqual([1]);
+  });
+});
 
 describe("filterByMember", () => {
   const list = [mr({ iid: 1, author: { username: "alice" } as any }), mr({ iid: 2, author: { username: "bob" } as any })];
@@ -475,6 +489,7 @@ describe("parseViewState", () => {
       group: "status",
       sort: "progress",
       tab: "",
+      slack: "all",
     });
   });
   test("ignores unknown member and invalid group/sort", () => {
@@ -512,6 +527,22 @@ describe("parseViewState", () => {
   test("no tab in the URL falls back to the first configured tab", () => {
     expect(parseViewState("", null, members, "all", ["t", "q"]).tab).toBe("t");
   });
+
+  test("slack filter defaults to all", () => {
+    expect(parseViewState("", null, members).slack).toBe("all");
+  });
+
+  test("slack=posted from the URL", () => {
+    expect(parseViewState("?slack=posted", null, members).slack).toBe("posted");
+  });
+
+  test("stored slack filter is honoured", () => {
+    expect(parseViewState("", { slack: "posted" }, members).slack).toBe("posted");
+  });
+
+  test("an unknown slack filter value falls back to all", () => {
+    expect(parseViewState("?slack=bogus", null, members).slack).toBe("all");
+  });
 });
 
 describe("serializeViewState", () => {
@@ -519,10 +550,13 @@ describe("serializeViewState", () => {
     expect(serializeViewState(DEFAULT_VIEW)).toBe("");
   });
   test("includes non-defaults", () => {
-    expect(serializeViewState({ member: "bob", group: "status", sort: "oldest", tab: "" })).toBe("?member=bob&group=status");
+    expect(serializeViewState({ member: "bob", group: "status", sort: "oldest", tab: "", slack: "all" })).toBe("?member=bob&group=status");
   });
   test("includes a set tab, even a first-tab id", () => {
-    expect(serializeViewState({ member: "all", group: "age", sort: "oldest", tab: "team" })).toBe("?tab=team");
+    expect(serializeViewState({ member: "all", group: "age", sort: "oldest", tab: "team", slack: "all" })).toBe("?tab=team");
+  });
+  test("includes the slack filter when it is on", () => {
+    expect(serializeViewState({ ...DEFAULT_VIEW, slack: "posted" })).toBe("?slack=posted");
   });
 });
 

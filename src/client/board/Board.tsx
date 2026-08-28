@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { BoardMR } from "../../data.ts";
 import { inferRoster } from "../../data.ts";
-import { filterByMember, filterByTab, rosterUsernamesFor, sortMRs, groupMRs, parseViewState, serializeViewState, dataAgeLabel } from "../../view.ts";
+import { filterByMember, filterBySlack, filterByTab, rosterUsernamesFor, sortMRs, groupMRs, parseViewState, serializeViewState, dataAgeLabel } from "../../view.ts";
 import type { ViewState } from "../../view.ts";
 import { selectionOf, postableOf, tabChangeClearsSelection } from "../../selection.ts";
 import type {
@@ -451,7 +451,11 @@ export function Board() {
   // author filter (and the settings gears that live in this panel) available.
   const roster = isCodeownersTab ? inferRoster(tabFiltered) : data.members;
   const rosterTotal = isCodeownersTab ? tabFiltered.length : total;
-  const filtered = filterByMember(tabFiltered, state.member);
+  // A stored "posted" pick with slack unconfigured would hide every row
+  // behind a control that isn't rendered, so the filter only bites when
+  // there are refs to filter on.
+  const slackFilter = data.slackEnabled ? state.slack : "all";
+  const filtered = filterBySlack(filterByMember(tabFiltered, state.member), slackFilter);
   const groups = groupMRs(filtered, state.group, data.members.map((m) => m.username), now).map((g) => ({
     label: g.label,
     mrs: sortMRs(g.mrs, state.sort),
@@ -497,6 +501,20 @@ export function Board() {
     setMenuOpen(false);
     setShowConfig(true);
   };
+  // Refs go stale between sweeps, so switching the filter on re-checks the
+  // board (forced sweep, server-side); the current data filters immediately
+  // and newly found rows land on the reload.
+  const toggleSlackFilter = () => {
+    const next = state.slack === "posted" ? "all" : "posted";
+    update({ slack: next });
+    if (next !== "posted" || !data.local) return;
+    addToast("refreshing slack status…");
+    postAction("/slack/refresh", {}).then((result) => {
+      if (!result.ok) return addToast(`slack refresh failed (${result.status})`);
+      addToast("slack status refreshed");
+      load();
+    });
+  };
   const controlProps = {
     state,
     update,
@@ -513,6 +531,7 @@ export function Board() {
     canPostSummary: data.slackEnabled && data.local && postableMrs.length > 0,
     postingSummary,
     onPostSummary: () => handlePostSummary(postableMrs),
+    slackFilter: data.slackEnabled ? { active: slackFilter === "posted", toggle: toggleSlackFilter } : null,
   };
 
   return (
@@ -589,7 +608,7 @@ export function Board() {
         {windowMismatch && <div className="tui-banner">⚠ {windowMismatch}</div>}
 
         {filtered.length === 0 && !data.fetchError ? (
-          <p className="tui-empty">nothing waiting on review ✓</p>
+          <p className="tui-empty">{slackFilter === "posted" ? "nothing posted in slack yet" : "nothing waiting on review ✓"}</p>
         ) : (
           groups.map((g) => (
             <Panel

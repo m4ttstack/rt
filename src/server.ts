@@ -23,7 +23,7 @@ import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, 
 import { readDrafts, heldDraftsByMr, attachDrafts, pruneDrafts, draftFilePath, writeDraft } from "./draft-state.ts";
 import { launchReview, launchRespond, launchDoctor, launchResume, focusTab, operatorNoteParagraph, parseLaunchNote } from "./herdr.ts";
 import { launchReReview } from "./review-launch.ts";
-import { readSlackRefs, attachSlack, resolveSlackRef, reactToMR, unreactFromMR, postToSlack } from "./slack.ts";
+import { readSlackRefs, attachSlack, resolveSlackRef, reactToMR, unreactFromMR, postToSlack, slackSweepTargets, sweepSlackRefs } from "./slack.ts";
 import { signalEmoji, parseAgentSignal } from "./agent-signal.ts";
 import { makeSwitchboardClient, type SwitchboardClient } from "./peer/client.ts";
 import { type MaterializeDeps } from "./peer/inbox.ts";
@@ -1285,6 +1285,21 @@ const httpServer = Bun.serve({
           return new Response(`slack resolve failed: ${err instanceof Error ? err.message : err}`, { status: 502 });
         }
       }
+      case "/slack/refresh": {
+        // Forced sweep for the posted-to-slack filter: every notfound ref is
+        // re-checked against a fresh channel index; found refs are left alone.
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+        if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
+        if (!slackToken) return new Response("slack not configured", { status: 400 });
+        try {
+          const { resolved, failed } = await runSlackSweep(true);
+          return new Response(JSON.stringify({ ok: true, resolved, failed }), {
+            headers: { "content-type": "application/json" },
+          });
+        } catch (err) {
+          return new Response(`slack refresh failed: ${err instanceof Error ? err.message : err}`, { status: 502 });
+        }
+      }
       case "/slack/post": {
         // Post an MR (or a summary of many MRs) to the configured channel and
         // write a slack ref pinned to the new message so reactions target it.
@@ -1460,43 +1475,34 @@ void cache.get().catch(() => {});
 /**
  * Background sweep: resolve Slack refs for every MR on the board that doesn't
  * have one yet, and retry `notfound` refs older than one sweep interval (an MR
- * posted just now won't be in the index until the next sync). Spaced calls so
- * a full board doesn't hammer Slack's rate limits. Failures per-MR are logged
- * and skipped — one bad MR shouldn't kill the sweep.
+ * posted just now won't be in the index until the next sync). `force` retries
+ * every `notfound` ref regardless of age; the posted-to-slack filter's
+ * on-demand refresh uses it. Sweeps are serialized: one requested mid-sweep
+ * runs after the current one, never alongside it.
  */
-const AUTO_RESOLVE_GAP_MS = 250;
+let sweepChain: Promise<unknown> = Promise.resolve();
 let autoResolveTimer: ReturnType<typeof setTimeout> | undefined;
-let autoResolveRunning = false;
 
-async function autoResolveSlackRefs(): Promise<void> {
-  if (autoResolveRunning) return;
+async function sweepOnce(force: boolean): Promise<{ resolved: number; failed: number }> {
   const slackToken = await getSlackToken();
-  if (!slackToken) return;
-  autoResolveRunning = true;
-  try {
-    const snapshot = await cache.get().catch(() => null);
-    if (!snapshot) return;
-    const refs = readSlackRefs();
-    const retryAfter = Date.now() - config.slack.autoResolveIntervalMinutes * 60_000;
-    const targets = snapshot.mrs.filter((mr) => {
-      if (!mr.webUrl) return false;
-      const ref = refs.get(mr.webUrl);
-      if (!ref) return true;
-      if (ref.status === "notfound" && ref.checkedAt < retryAfter) return true;
-      return false;
-    });
-    if (!targets.length) return;
-    for (const mr of targets) {
-      try {
-        await resolveSlackRef(slackToken, channelForMR(config, mr), mr.webUrl!, mr.iid);
-      } catch (err) {
-        console.error(`auto-resolve !${mr.iid} failed: ${err instanceof Error ? err.message : err}`);
-      }
-      await new Promise((r) => setTimeout(r, AUTO_RESOLVE_GAP_MS));
-    }
-  } finally {
-    autoResolveRunning = false;
-  }
+  if (!slackToken) return { resolved: 0, failed: 0 };
+  const snapshot = await cache.get().catch(() => null);
+  if (!snapshot) return { resolved: 0, failed: 0 };
+  const retryAfter = Date.now() - config.slack.autoResolveIntervalMinutes * 60_000;
+  const targets = slackSweepTargets(snapshot.mrs, readSlackRefs(), { retryAfter, force });
+  const result = await sweepSlackRefs(
+    slackToken,
+    targets.map((mr) => ({ mrUrl: mr.webUrl!, iid: mr.iid, channel: channelForMR(config, mr) })),
+  );
+  for (const e of result.errors) console.error(`auto-resolve ${e}`);
+  return { resolved: result.resolved, failed: result.failed };
+}
+
+function runSlackSweep(force = false): Promise<{ resolved: number; failed: number }> {
+  const run = () => sweepOnce(force);
+  const result = sweepChain.then(run, run);
+  sweepChain = result.catch(() => {});
+  return result;
 }
 
 async function scheduleAutoResolve(): Promise<void> {
@@ -1514,7 +1520,7 @@ async function scheduleAutoResolve(): Promise<void> {
   clearTimeout(autoResolveTimer);
   if (!slackToken) return;
   const tick = () => {
-    void autoResolveSlackRefs().catch((err) =>
+    void runSlackSweep().catch((err) =>
       console.error(`auto-resolve sweep failed: ${err instanceof Error ? err.message : err}`),
     );
     autoResolveTimer = setTimeout(tick, mins * 60_000);

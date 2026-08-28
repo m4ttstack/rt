@@ -100,12 +100,15 @@ if your team already reviews this way, the board drops in as-is. the moving part
 
 the emoji names drive everything: the right-click mark/unmark actions, the reaction chips on each row, and the reaction the board drops automatically when a launched review starts (👀) or lands (💬/✅).
 
+**filter to what's been posted.** the slack-mark button in the header (next to refresh) narrows the board to MRs whose review request the board has found in the channel, the same rows that carry the ✓ chip. an author posting their own MR is often the signal it's ready for eyes, so this is a quick "what's actually asking for review" view. the state lives in the URL as `?slack=posted`. switching it on re-checks every unresolved MR against a fresh channel index (one history call per channel, not per MR) so a request posted since the last sweep shows up right away; the same sweep otherwise runs every `slack.autoResolveIntervalMinutes`.
+
 ## endpoints
 
 - `/` -- the board
 - `/data.json` -- the snapshot the client renders: `{ title, members, mrs, fetchedAt, fetchError, local, canInvite, peering }`; each MR may carry a `review` status when a review is in flight. `canInvite` is true when the request is local and this board has both a switchboard url and an admin secret, so it can hand out invites. `peering` is `"ok"` or `"unauthorized"` for a board that is peered, and `null` when it is not peering at all
 - `/review` -- POST `{ mrUrl, iid }` to launch a review (local requests only; see below)
 - `/nudge` -- POST `{ mrUrl, iid, reviewer }` to ask a peer's board for a re-review on your own MR (local requests only; see [peer boards + switchboard](#peer-boards--switchboard-optional))
+- `/slack/refresh` -- POST (no body) to force a slack sweep: every MR without a found review request is re-checked now instead of on the next scheduled sweep (local requests only)
 - `/healthz` -- 200 `ok`, for supervisors and tunnels
 
 data is cached in memory for 60s with stale-while-revalidate: bursts of visitors cost one gitlab round trip, and if gitlab is down the board serves the last good snapshot with a "data from N minutes ago" banner.

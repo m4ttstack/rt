@@ -363,8 +363,15 @@ export function attachSlack<T extends { webUrl?: string | null }>(
  * URL, fetch the message's live reactions, and cache the ref. Returns the ref
  * (status "notfound" when no message references the MR yet).
  */
-export async function resolveSlackRef(token: string, channelName: string, mrUrl: string, iid: number, now: number = Date.now()): Promise<SlackRef> {
-  const index = await syncIndex(token, channelName, now);
+export async function resolveSlackRef(
+  token: string,
+  channelName: string,
+  mrUrl: string,
+  iid: number,
+  now: number = Date.now(),
+  presynced?: SlackIndex,
+): Promise<SlackRef> {
+  const index = presynced ?? (await syncIndex(token, channelName, now));
   const msg = matchReviewMessage(index.messages, mrUrl);
   if (!msg) {
     const ref: SlackRef = { mrUrl, iid, status: "notfound", checkedAt: now };
@@ -408,6 +415,68 @@ export async function resolveSlackRef(token: string, channelName: string, mrUrl:
   };
   writeSlackRef(ref);
   return ref;
+}
+
+export interface SweepTarget {
+  mrUrl: string;
+  iid: number;
+  channel: string;
+}
+
+/**
+ * Which MRs a sweep should (re)resolve: anything without a ref, plus
+ * `notfound` refs older than `retryAfter` (an MR posted just now isn't in the
+ * index until the next sync). `force` retries every `notfound` ref regardless
+ * of age. A `found` ref is never retried: a message doesn't stop containing
+ * the URL.
+ */
+export function slackSweepTargets<T extends { webUrl?: string | null }>(
+  mrs: T[],
+  refs: Map<string, SlackRef>,
+  opts: { retryAfter: number; force?: boolean },
+): T[] {
+  return mrs.filter((mr) => {
+    if (!mr.webUrl) return false;
+    const ref = refs.get(mr.webUrl);
+    if (!ref) return true;
+    return ref.status === "notfound" && (!!opts.force || ref.checkedAt < opts.retryAfter);
+  });
+}
+
+/**
+ * Resolve every target, syncing each channel's index once and matching the
+ * rest locally: the only per-target API traffic is the reactions fetch on a
+ * hit, which is what `gapMs` spaces out. Per-target failures are collected,
+ * not thrown, so one bad MR (or one unreachable channel) can't end the sweep.
+ */
+export async function sweepSlackRefs(
+  token: string,
+  targets: SweepTarget[],
+  opts: { gapMs?: number; now?: number } = {},
+): Promise<{ resolved: number; failed: number; errors: string[] }> {
+  const gapMs = opts.gapMs ?? 250;
+  const now = opts.now ?? Date.now();
+  const indexes = new Map<string, Promise<SlackIndex>>();
+  const indexFor = (channel: string): Promise<SlackIndex> => {
+    let pending = indexes.get(channel);
+    if (!pending) {
+      pending = syncIndex(token, channel, now);
+      indexes.set(channel, pending);
+    }
+    return pending;
+  };
+  const errors: string[] = [];
+  let resolved = 0;
+  for (const t of targets) {
+    try {
+      const ref = await resolveSlackRef(token, t.channel, t.mrUrl, t.iid, now, await indexFor(t.channel));
+      resolved++;
+      if (ref.status === "found" && gapMs > 0) await new Promise((r) => setTimeout(r, gapMs));
+    } catch (err) {
+      errors.push(`!${t.iid}: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+  return { resolved, failed: errors.length, errors };
 }
 
 /**
