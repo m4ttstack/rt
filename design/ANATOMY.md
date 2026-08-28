@@ -107,7 +107,7 @@ Inside, a stack at `gap: 1px`:
 - optional `.code` block: own `overflow-x: auto`, `margin-top: 4.8px`
 
 **Message body: the markdown subset.** The body is rendered by
-`src/ui/Transcript.tsx`, hand-rolled, no HTML: paragraphs on a blank line;
+`src/app/Transcript.tsx`, hand-rolled, no HTML: paragraphs on a blank line;
 `- `/`* ` bullet and `1.`/`1)` numbered lists (every line of the block a
 marker); `**bold**`; `*italic*`/`_italic_` with a non-word boundary outside
 the markers, so `make_icon_swift` stays literal; inline and fenced code, split

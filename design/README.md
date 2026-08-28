@@ -13,7 +13,7 @@ Canvas (editable, hosted): https://claude.ai/code/artifact/933b24c5-9edd-4c70-99
 
 Every value is lifted from console, not eyeballed: palette, grid and `@font-face` from
 `src/app/styles/tokyo-theme.css`; font sizes, spacing, radii from
-`src/ui/design-system/app-theme.ts`; rail 68px, header 64px, page bar 64px with the 20px
+`@mattstack/app-kit`'s `design-system/app-theme.ts`; rail 68px, header 64px, page bar 64px with the 20px
 title from `RailShell` + `ConsoleChrome`; row anatomy, 28px action icons and badge wash from
 `RunRow.tsx`. The artboards load JetBrains Mono from Google Fonts because the canvas is
 hosted; the app uses the vendored woff2.

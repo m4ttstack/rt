@@ -96,7 +96,7 @@ pass it now, and only one of them survives the next token change.
 
 The artboards were generated from **console's resolved tokyo theme**, which
 this app now consumes as `@mattstack/mantine-tokyo` through the kit's brand
-slots (`src/ui/design-system/app-theme.ts` and `app-colors.ts`), with its css
+slots (`@mattstack/app-kit`'s `design-system/app-theme.ts` and `app-colors.ts`), with its css
 imported from `src/app/styles/tokyo-theme.css`.
 
 That is what makes everything below achievable. A component that derives from
