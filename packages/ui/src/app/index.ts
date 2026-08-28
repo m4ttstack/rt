@@ -11,3 +11,5 @@ export { DaemonBanner } from './DaemonBanner';
 export type { DaemonBannerProps } from './DaemonBanner';
 export { NotFoundPage } from './NotFoundPage';
 export { useDaemonHealth } from './useDaemonHealth';
+export { useShellRail } from './shell-context';
+export type { ShellRailState } from './shell-context';

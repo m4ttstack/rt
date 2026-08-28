@@ -3,6 +3,7 @@ import { expect, test } from 'vitest';
 import { Router } from 'wouter';
 import { memoryLocation } from 'wouter/memory-location';
 
+import { useShellRail } from '@mattstack/app-kit/app';
 import { RailLink } from '@mattstack/app-kit/router';
 import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import { MattstackShell } from './MattstackShell';
@@ -78,4 +79,14 @@ test('omits the launcher when appName is absent', () => {
   expect(
     within(screen.getByRole('banner')).queryByRole('button', { name: 'Apps' })
   ).not.toBeInTheDocument();
+});
+
+test('useShellRail is exported and defaults to a closed rail', () => {
+  const seen: { expanded: boolean } = { expanded: true };
+  function Probe() {
+    seen.expanded = useShellRail().expanded;
+    return null;
+  }
+  renderWithProviders(<Probe />);
+  expect(seen.expanded).toBe(false); // default context: collapsed
 });
