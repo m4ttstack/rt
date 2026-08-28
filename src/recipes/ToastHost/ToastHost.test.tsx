@@ -94,6 +94,10 @@ describe("ToastHost (browser)", () => {
     const { name, found } = animationResolution(first as HTMLElement);
     expect(found, `no @keyframes rule named "${name}" in any loaded sheet`).toBe(true);
     expect(name).toBe("toasthost-in");
+    // Slower than mr-board's 140ms, which read as a jump; see docs/decisions.md.
+    const style = getComputedStyle(first as HTMLElement);
+    expect(style.animationDuration).toBe("0.22s");
+    expect(style.animationTimingFunction).toBe("ease-out");
   });
 
   it("a consumer can override the default role via {...rest}", async () => {

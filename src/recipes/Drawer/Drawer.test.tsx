@@ -289,15 +289,17 @@ describe("Drawer (browser)", () => {
     expect(window.matchMedia("(prefers-reduced-motion: reduce)").matches).toBe(false);
   });
 
-  it("the content slot slides in on mount, via a @keyframes rule a loaded sheet declares", async () => {
+  it("the panel slides in from its edge; the content slot itself does not animate", async () => {
     const screen = await renderWithTheme(
       <Drawer open stack={rootStack()} onBack={noop} onClose={noop} ariaLabel="d" />,
     );
 
     const content = partOf(screen.container, DRAWER_PARTS.content);
-    const { name, found } = animationResolution(content);
+    expect(getComputedStyle(content).animationName).toBe("none");
+
+    const { name, found } = animationResolution(panelOf(screen.container));
     expect(found, `no @keyframes rule named "${name}" in any loaded sheet`).toBe(true);
-    expect(name).toBe("drawer-slide-in");
+    expect(name).toBe("sidedrawer-in");
   });
 
   it("the content region scrolls under tall content; the nav bar stays pinned", async () => {
@@ -398,6 +400,13 @@ describe("Drawer (browser)", () => {
 
     const screen = await renderWithTheme(<Harness />);
     expect(queryPart(screen.container, DRAWER_PARTS.back)).toBeNull();
+    // The panel is still sliding in from the right edge; a click dispatched
+    // mid-slide lands on wherever the trigger was at that instant.
+    await Promise.all(
+      panelOf(screen.container)
+        .getAnimations()
+        .map((a) => a.finished.catch(() => undefined)),
+    );
 
     await screen.getByRole("button", { name: "push edit" }).click();
     expect(partOf(screen.container, DRAWER_PARTS.back).textContent).toContain("Settings");
@@ -407,6 +416,100 @@ describe("Drawer (browser)", () => {
     expect(screen.container.textContent).toContain("push edit");
 
     await userEvent.keyboard("{Escape}");
-    expect(queryPart(screen.container, "sidedrawer")).toBeNull();
+    await vi.waitFor(() => expect(queryPart(screen.container, "sidedrawer")).toBeNull());
+  });
+
+  it("closing keeps the panel mounted through its slide-out, then unmounts it", async () => {
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <Drawer
+          open={open}
+          stack={rootStack()}
+          onBack={noop}
+          onClose={() => setOpen(false)}
+          ariaLabel="d"
+        />
+      );
+    }
+
+    const screen = await renderWithTheme(<Harness />);
+    const panel = panelOf(screen.container);
+    await Promise.all(panel.getAnimations().map((a) => a.finished.catch(() => undefined)));
+
+    partOf(screen.container, DRAWER_PARTS.close).click();
+
+    // React commits a discrete event's update on the next tick, not inside
+    // `click()` itself; the panel must still be there when it does.
+    await vi.waitFor(() => expect(panel.getAttribute("data-closing")).toBe("true"));
+    expect(panel.isConnected).toBe(true);
+    const style = getComputedStyle(panel);
+    expect(style.animationName).toBe("sidedrawer-out");
+    // Slightly quicker than the 160ms entry, so leaving never drags.
+    expect(style.animationDuration).toBe("0.12s");
+    expect(animationResolution(panel).found).toBe(true);
+
+    await vi.waitFor(() => expect(panel.isConnected).toBe(false), { timeout: 1000 });
+  });
+
+  it("keeps the last screen on screen through the slide-out even if the caller clears the stack on close", async () => {
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      const [stack, setStack] = useState<DrawerScreen[]>(rootStack());
+      return (
+        <Drawer
+          open={open}
+          stack={stack}
+          onBack={noop}
+          onClose={() => {
+            setOpen(false);
+            setStack([]);
+          }}
+          ariaLabel="d"
+        />
+      );
+    }
+
+    const screen = await renderWithTheme(<Harness />);
+    const panel = panelOf(screen.container);
+    await Promise.all(panel.getAnimations().map((a) => a.finished.catch(() => undefined)));
+
+    partOf(screen.container, DRAWER_PARTS.close).click();
+
+    await vi.waitFor(() => expect(panel.getAttribute("data-closing")).toBe("true"));
+    expect(panel.isConnected).toBe(true);
+    expect(screen.container.textContent).toContain("settings body");
+    await vi.waitFor(() => expect(panel.isConnected).toBe(false), { timeout: 1000 });
+  });
+
+  it("with no exit animation to wait for, closing unmounts at once", async () => {
+    // Reduced motion (and any consumer freeze) turns the slide-out into
+    // `animation: none`; nothing then fires `finished`, so presence must not
+    // depend on it.
+    const freeze = document.createElement("style");
+    freeze.textContent = '[data-part="sidedrawer"] { animation: none !important; }';
+    document.head.appendChild(freeze);
+    try {
+      function Harness() {
+        const [open, setOpen] = useState(true);
+        return (
+          <Drawer
+            open={open}
+            stack={rootStack()}
+            onBack={noop}
+            onClose={() => setOpen(false)}
+            ariaLabel="d"
+          />
+        );
+      }
+
+      const screen = await renderWithTheme(<Harness />);
+      const panel = panelOf(screen.container);
+      partOf(screen.container, DRAWER_PARTS.close).click();
+
+      await vi.waitFor(() => expect(panel.isConnected).toBe(false), { timeout: 120 });
+    } finally {
+      freeze.remove();
+    }
   });
 });

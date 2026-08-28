@@ -2,8 +2,7 @@
  * Drawer — a right-edge screen-stack panel, composed on top of SideDrawer
  * rather than owning its own overlay/panel mechanism (see Drawer.tsx). This
  * stylesheet covers only the parts Drawer itself draws: the nav bar and its
- * back/title/close row, the optional header strip, and the sliding content
- * body. The panel chrome (border, shadow, scrim) stays SideDrawer's.
+ * back/title/close row, the optional header strip, and the content body. The panel chrome (border, shadow, scrim) stays SideDrawer's.
  */
 @layer soribashi.recipes {
   /* Fills SideDrawer's `.root` exactly (a flex item under its own

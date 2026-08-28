@@ -2,6 +2,7 @@ import { createTheme } from "@soribashi/core";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { userEvent } from "vitest/browser";
+import { animationResolution } from "../../../test/keyframes.ts";
 import { renderWithTheme } from "../../../test/test-utils.tsx";
 import { tuiTheme } from "../../theme.ts";
 import { SIDEDRAWER_PARTS, SideDrawer } from "./SideDrawer.tsx";
@@ -45,6 +46,14 @@ function overlayOf(container: HTMLElement): HTMLElement {
   const el = container.querySelector<HTMLElement>(`[data-part="${SIDEDRAWER_PARTS.overlay}"]`);
   if (!el) throw new Error("no drawer overlay rendered");
   return el;
+}
+
+/** The panel's box AFTER its slide-in has finished: `sidedrawer-in` starts a
+    full panel width off-screen, so a rect read in flight is the translated
+    box, not the one the panel settles on. */
+async function settledBox(el: HTMLElement): Promise<DOMRect> {
+  await Promise.all(el.getAnimations().map((a) => a.finished.catch(() => undefined)));
+  return el.getBoundingClientRect();
 }
 
 function panelOf(container: HTMLElement): HTMLElement {
@@ -109,7 +118,7 @@ describe("SideDrawer (browser)", () => {
     expect(getComputedStyle(overlayOf(right.container)).justifyContent).toBe("flex-end");
     // Real geometry, not just the declaration: the panel's right edge sits on
     // the viewport's right edge.
-    const rightBox = panelOf(right.container).getBoundingClientRect();
+    const rightBox = await settledBox(panelOf(right.container));
     expect(Math.round(rightBox.right)).toBe(Math.round(window.innerWidth));
     await right.unmount();
 
@@ -124,7 +133,7 @@ describe("SideDrawer (browser)", () => {
     // writing `justify-content: flex-start` into the recipe would have been a
     // computed-style change, not a port.
     expect(getComputedStyle(overlayOf(left.container)).justifyContent).toBe("normal");
-    const leftBox = panelOf(left.container).getBoundingClientRect();
+    const leftBox = await settledBox(panelOf(left.container));
     expect(Math.round(leftBox.left)).toBe(0);
   });
 
@@ -461,4 +470,31 @@ describe("SideDrawer (browser)", () => {
     expect(screen.container.textContent).toContain("drawer body");
     expect(document.body.style.overflow).toBe("hidden");
   });
+});
+
+describe("SideDrawer motion (browser)", () => {
+  it("runs under no-preference reduced motion, so the slide-in rows below mean something", () => {
+    expect(window.matchMedia("(prefers-reduced-motion: reduce)").matches).toBe(false);
+  });
+
+  it.each(["right", "left"] as const)(
+    "the %s panel slides in from its own edge via a @keyframes rule a loaded sheet declares",
+    async (side) => {
+      const screen = await renderWithTheme(
+        <SideDrawer side={side} ariaLabel="d" onClose={noop}>
+          body
+        </SideDrawer>,
+      );
+
+      const panel = panelOf(screen.container);
+      const { name, found } = animationResolution(panel);
+      expect(found, `no @keyframes rule named "${name}" in any loaded sheet`).toBe(true);
+      expect(name).toBe("sidedrawer-in");
+      // The slide starts fully off-screen on the panel's own edge, so the
+      // offset is a full panel width, signed by side.
+      expect(getComputedStyle(panel).getPropertyValue("--sb-sidedrawer-slide-x").trim()).toBe(
+        side === "right" ? "100%" : "-100%",
+      );
+    },
+  );
 });

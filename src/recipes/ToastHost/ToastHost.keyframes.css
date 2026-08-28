@@ -3,7 +3,7 @@
    docs/decisions.md, "Keyframes live outside the CSS module". */
 @layer soribashi.recipes {
   [data-part="toasthost-toast"] {
-    animation: toasthost-in 140ms ease-out;
+    animation: toasthost-in 220ms ease-out;
   }
 
   @keyframes toasthost-in {

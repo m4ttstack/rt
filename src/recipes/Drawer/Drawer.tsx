@@ -1,10 +1,9 @@
 import { mergeRefs } from "@soribashi/core";
-import type { ComponentProps, CSSProperties, ReactNode, RefObject } from "react";
+import type { ComponentProps, ReactNode, RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { defineComponent } from "../../builders.ts";
 import { SideDrawer } from "../SideDrawer/SideDrawer.tsx";
 import classes from "./Drawer.module.css";
-import "./Drawer.keyframes.css";
 
 /** Authoring category (2 = transient overlay). Read off this module by
     scripts/derive.ts to build the kit's manifest; not dead code.
@@ -87,18 +86,31 @@ export const Drawer = defineComponent<
     const panelRef = useRef<HTMLDivElement>(null);
     const setRefs = useMemo(() => mergeRefs(panelRef, ref), [ref]);
 
-    // Derives push/pop from a length delta rather than tracking the action
-    // that caused it — Drawer only ever sees the stack it is handed, never
-    // the call that produced it. Mutated during render, not an effect: the
-    // canonical "compare to the previous render" ref pattern, and it must
-    // settle within the SAME render the length changed in, before the
-    // content below reads it for this paint.
-    const prevLenRef = useRef(stack.length);
-    const directionRef = useRef<"push" | "pop">("push");
-    if (stack.length !== prevLenRef.current) {
-      directionRef.current = stack.length > prevLenRef.current ? "push" : "pop";
-      prevLenRef.current = stack.length;
-    }
+    // `open` going false does not unmount the panel: it stamps `data-closing`
+    // (SideDrawer.keyframes.css keys the slide-out on it) and unmounts once
+    // every animation the panel is then running has finished. Derived during
+    // render, not in an effect, so the very first commit after `open` flips
+    // already carries the attribute. Read from the element rather than from
+    // a timer so a reduced-motion or frozen panel, which starts no animation,
+    // leaves at once.
+    const [phase, setPhase] = useState<"open" | "closing" | "closed">(open ? "open" : "closed");
+    if (open && phase !== "open") setPhase("open");
+    if (!open && phase === "open") setPhase("closing");
+    useEffect(() => {
+      if (phase !== "closing") return;
+      const animations = panelRef.current?.getAnimations() ?? [];
+      if (animations.length === 0) {
+        setPhase("closed");
+        return;
+      }
+      let cancelled = false;
+      void Promise.all(animations.map((a) => a.finished.catch(() => undefined))).then(() => {
+        if (!cancelled) setPhase("closed");
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, [phase]);
 
     // Focus enters the panel for as long as `open` is true and leaves for
     // `returnFocusRef` the moment it isn't — the cleanup, not the body, is
@@ -134,18 +146,23 @@ export const Drawer = defineComponent<
       else onClose();
     }, [stack.length, onBack, onClose]);
 
-    if (!open) return null;
+    // A caller may clear `stack` in the same update that closes; the panel
+    // still has to show something while it slides out, so the closing render
+    // reads the stack from the last open commit instead.
+    const lastOpenStackRef = useRef(stack);
+    useEffect(() => {
+      if (open) lastOpenStackRef.current = stack;
+    });
 
-    const top = stack[stack.length - 1];
+    if (phase === "closed") return null;
+
+    const shownStack = phase === "closing" ? lastOpenStackRef.current : stack;
+    const top = shownStack[shownStack.length - 1];
     if (!top) return null;
-    const previous = stack.length > 1 ? stack[stack.length - 2] : undefined;
+    const previous = shownStack.length > 1 ? shownStack[shownStack.length - 2] : undefined;
     const navAction = top.navAction;
 
     const contentStyles = getStyles("content");
-    const slideStyle = {
-      ...contentStyles.style,
-      "--sb-drawer-slide-x": directionRef.current === "push" ? "1.5rem" : "-1.5rem",
-    } as CSSProperties;
 
     return (
       <SideDrawer
@@ -160,7 +177,12 @@ export const Drawer = defineComponent<
         // for `--sb-sidedrawer-w` without touching SideDrawer's defaults or
         // fighting it on class specificity.
         vars={() => ({ root: { "--sb-sidedrawer-w": isNarrow ? "100%" : DRAWER_WIDTH } })}
-        {...getStyles("root", { dataAttrs: { "data-full-width": isNarrow ? "true" : undefined } })}
+        {...getStyles("root", {
+          dataAttrs: {
+            "data-full-width": isNarrow ? "true" : undefined,
+            "data-closing": phase === "closing" ? "true" : undefined,
+          },
+        })}
       >
         <div className={classes.frame}>
           <div {...getStyles("nav")} data-part={DRAWER_PARTS.nav}>
@@ -211,7 +233,6 @@ export const Drawer = defineComponent<
           <div
             key={top.id}
             {...contentStyles}
-            style={slideStyle}
             data-part={DRAWER_PARTS.content}
           >
             {top.content}
