@@ -66,6 +66,8 @@ bun pm ls 2>/dev/null | grep -E "react@|vite@|wouter@" | sort -u
 ```
 Expected: install succeeds; one copy each of react/vite/wouter. If a peer is duplicated, STOP and report — the tarball packing is the fix, not a resolution override.
 
+Known warning (not a failure): the `@mattstack/app-server` tarball declares peer `@mattstack/rt-client@^0.6` while chat pins `^0.7` (non-overlapping ranges), so `bun install` prints an unmet-peer warning. Runtime is fine — chat already uses the same `daemonHealth`/`createRelay` APIs. Confirm it is a warning only (install still succeeds); do not "fix" it by downgrading chat's rt-client.
+
 - [ ] **Step 4: Commit**
 
 ```bash
@@ -129,7 +131,7 @@ import { mattstackEslint } from '@mattstack/app-kit/eslint';
 export default tseslint.config(...mattstackEslint());
 ```
 
-- [ ] **Step 5: Delete the treeshake scripts** (`scripts/treeshake-check.sh`, `scripts/treeshake-probe/`) and remove their `package.json` script entries if not already done in Task 1.
+- [ ] **Step 5: Delete the treeshake + debrand scripts** (`scripts/treeshake-check.sh`, `scripts/treeshake-probe/`, `scripts/debrand-check.sh`) and remove their `package.json` script entries (`treeshake`, `debrand`) if not already dropped in Task 1.
 
 - [ ] **Step 6: Commit** (config only — the suite will not pass until Tasks 3-8 land; that is expected):
 
@@ -219,26 +221,31 @@ cd ~/Documents/GitHub/chat-app-kit-wt
 grep -rl "@ui/" src | xargs sed -i '' -E "s#@ui/(core|hooks|design-system|notifications|modals|forms|lazy|icons)#@mattstack/app-kit/\1#g"
 ```
 
-- [ ] **Step 2: Flatten the one app-code deep specifier + the storybook test-util specifiers**
+- [ ] **Step 2: Rewrite the storybook test-util specifiers**
 
-- `@mattstack/app-kit/hooks/useSchemeColors` → `@mattstack/app-kit/hooks` (the deep import in the old `src/app/chrome/layout.ts`; `useSchemeColors` is a public export of the `hooks` barrel). If `layout.ts` is deleted in Task 6, this line vanishes with it.
 - `@ui/storybook/test-utils` (21 sites) → `@mattstack/app-kit/test-utils` (its `renderWithProviders` lives there).
 - `@ui/storybook/jsdom-polyfills` → `@mattstack/app-kit/test-utils` (already done in `vitest.setup.ts`, Task 2).
 
 ```bash
 grep -rl "@ui/storybook/test-utils" src | xargs sed -i '' -E "s#@ui/storybook/test-utils#@mattstack/app-kit/test-utils#g"
 ```
+(There is no surviving `@ui/hooks/useSchemeColors` deep import in app code — `layout.ts` imports the `@ui/hooks` barrel and is deleted in Task 6; the deep occurrences were in kit files deleted in Task 3. If Step 4's grep surfaces any deep `@mattstack/app-kit/hooks/<name>`, flatten it to the `@mattstack/app-kit/hooks` barrel.)
 
 - [ ] **Step 3: Fix the product-module + intra-product specifiers**
 
-- Product-module specifiers that resolved to `src/ui/<File>` (e.g. `@ui/Transcript`, `@ui/Composer`, `@ui/statusDetail`, `@ui/test-utils`, `@ui/DaemonBanner`) now resolve to siblings under `src/app/`. Rewrite each to a relative `./<File>` (or the correct relative path from the importer). `PageBar`'s `@ui/statusDetail` becomes `./statusDetail`.
-- `@ui/DaemonBanner` importers switch to `import { DaemonBanner } from '@mattstack/app-kit/app'` (Task 6 owns the render-site reconciliation).
-- Chat's `src/app/test-utils.tsx` switches its `renderWithProviders` import to `@mattstack/app-kit/test-utils`.
-
-- [ ] **Step 4: Verify no `@ui/` remains**
+Product-module specifiers that resolved to `src/ui/<File>` now resolve to siblings under `src/app/`. A sed handles the common ones (adjust the relative prefix per importer depth; most importers are in `src/app/` so `./` is correct):
 
 ```bash
-grep -rn "@ui/" src && echo "STILL HAS @ui — fix before commit" || echo "clean: no @ui specifiers"
+grep -rl -E "@ui/(Transcript|Composer|Roster|RoomRail|PageBar|ArchivedBar|AgentName|NewPill|day-label|statusDetail|presence-bits|buddies-context|test-utils)" src \
+  | xargs sed -i '' -E "s#@ui/(Transcript|Composer|Roster|RoomRail|PageBar|ArchivedBar|AgentName|NewPill|day-label|statusDetail|presence-bits|buddies-context|test-utils)#./\1#g"
+```
+Then: `@ui/DaemonBanner` importers switch to `import { DaemonBanner } from '@mattstack/app-kit/app'` (Task 6 owns the render-site reconciliation). Chat's `src/app/test-utils.tsx` switches its own `renderWithProviders` import to `@mattstack/app-kit/test-utils`. Fix any `./` path that is wrong for an importer not in `src/app/` (Step 4's typecheck catches these).
+
+- [ ] **Step 4: Verify no `@ui/` remains** (except `src/main.tsx`, which Task 6 rewrites wholesale)
+
+```bash
+grep -rn "@ui/" src | grep -v "src/main.tsx$" | grep -v "src/main.tsx:" \
+  && echo "STILL HAS @ui outside main.tsx — fix before commit" || echo "clean: only src/main.tsx (Task 6) remains"
 ```
 
 - [ ] **Step 5: Commit**
@@ -261,41 +268,42 @@ git add -A && git commit -m "chat: rewrite @ui imports to @mattstack/app-kit sub
 - Consumes: `MattstackShell`, `mountMattstackApp`, `useDaemonHealth`, `DaemonBanner` from `@mattstack/app-kit/app`; `registerSimpleAlerts`/`markMounted` from `@mattstack/app-kit/boot`.
 - Produces: chat rendering inside `MattstackShell` with `appName="chat"`, so `<AppLauncher>` mounts header-right.
 
-- [ ] **Step 1: `main.tsx`** — collapse to the probe shape, preserving chat's pre-mount error capture via the package `boot` subpath:
+- [ ] **Step 1: `main.tsx`** — collapse to the probe shape exactly. `mountMattstackApp` (`packages/ui/src/app/mount.tsx`) already brackets the render with `registerSimpleAlerts()`/`markMounted()` internally, so `main.tsx` does NOT call them:
 
 ```tsx
 import { mountMattstackApp } from '@mattstack/app-kit/app';
-import { markMounted, registerSimpleAlerts } from '@mattstack/app-kit/boot';
 
 import './app/icons'; // only if Task 7 keeps an icon registration; otherwise omit
 import { App } from './app/App';
 
-registerSimpleAlerts();
 mountMattstackApp(<App />);
-markMounted();
 ```
-Drop the `@ui/styles/index.css` and `./app/styles/tokyo-theme.css` imports (the package's `styles.css` is loaded by `mountMattstackApp`; confirm against probe — probe imports no stylesheet in `main.tsx`).
+Drop the `@ui/styles/index.css` and `./app/styles/tokyo-theme.css` imports (the package's `styles.css` is loaded by `mountMattstackApp`; probe imports no stylesheet in `main.tsx`).
 
 - [ ] **Step 2: Replace the shell in `App.tsx`** — swap `<AppChrome>…</AppChrome>` (the wrapper around the routed body) for:
 
 ```tsx
-<MattstackShell name="Chat" appName="chat" mark={<AppMark size={30} />}>
+<MattstackShell name="chat" appName="chat" mark={<AppMark size={30} />}>
   <MattstackShell.Rail>
-    <RailLink icon="layers" label="Rooms" href="/" />
+    <RailLink icon="users" label="Rooms" href="/" />
   </MattstackShell.Rail>
   {/* the existing routed body */}
 </MattstackShell>
 ```
-Use the actual rail entry/icon chat's `AppChrome` had (the map notes one "Rooms" `RailEntry`); the scheme toggle is now the shell's built-in `ColorSchemeControl`, so drop chat's hand-wired toggle. `MattstackShell` and `RailLink` import from `@mattstack/app-kit/app` and `@mattstack/app-kit/router`. Delete `AppChrome.tsx` and `layout.ts`; keep `AppMark.tsx`.
+`name="chat"` is lowercase — `MattstackShell` renders `{name}` as the wordmark and `App.test.tsx` asserts `getByText('chat')` (case-sensitive), matching the current `AppChrome`. Use `AppChrome`'s actual Rooms entry icon (`users`). The scheme toggle is now the shell's built-in `ColorSchemeControl` (a System/Light/Dark `HybridMenu`), so drop chat's hand-wired sun/moon toggle. `MattstackShell`/`RailLink` import from `@mattstack/app-kit/app` and `@mattstack/app-kit/router`. Delete `AppChrome.tsx` and `layout.ts`; keep `AppMark.tsx`.
+
+- [ ] **Step 2b: Re-point `NotFoundPage`** — Task 3 deleted `src/app/NotFoundPage.tsx`, but `App.tsx` still imports `{ NotFoundPage } from './NotFoundPage'` (a relative path Task 5's `@ui` sed never touched). Change it to `import { NotFoundPage } from '@mattstack/app-kit/app'` (as probe's `App.tsx` does). Grep `src` for any other import of the deleted `./NotFoundPage`/`./styles/tokyo-theme.css` and re-point or drop them.
 
 - [ ] **Step 3: Daemon health** — delete the inline `useDaemonHealth` in `App.tsx` and import it from `@mattstack/app-kit/app` (seed argument preserved). At the two `DaemonBanner` render sites, pass the hook's state to the package `DaemonBanner` (`DaemonBannerProps { reachable, downSince?, probeCount, lastAnsweredAt? }` — read the package's prop names and map the call sites).
 
-- [ ] **Step 4: Run the app + shell tests**
+- [ ] **Step 4: Rework `App.test.tsx` for the new shell, then run it**
+
+The scheme-toggle test (`'the rail hosts the color-scheme toggle'`, App.test.tsx ~lines 59-71) clicks buttons named `'Switch to dark mode'`/`'Switch to light mode'` — those were `AppChrome`'s hand-wired sun/moon `RailEntry`, which this task deletes. The shell's `ColorSchemeControl` is a `System/Light/Dark` `HybridMenu` with no such buttons, so **that test must be rewritten or removed** (the scheme control is now the package's tested surface, not chat's). These survive unchanged (MattstackShell reuses the same `RailShell`/`Rail`, and the package `NotFoundPage` uses the same heading): the wordmark `getByText('chat')`, the expand `'Expand/Collapse navigation'`, the mobile `'Toggle navigation'`/`rail-overlay`, and the `'Page not found'` h1. The launcher trigger (`aria-label="Apps"`) now appears in the banner — add an assertion for it if useful.
 
 ```bash
 bunx vitest run src/app/App.test.tsx
 ```
-Expected: PASS after the render tree is updated. The launcher trigger (`aria-label="Apps"`) now appears in the banner — add or adjust an assertion if `App.test.tsx` asserts header contents.
+Expected: PASS after the scheme-toggle test is reworked and the render tree updated.
 
 - [ ] **Step 5: Commit**
 
