@@ -122,6 +122,7 @@ describe("Bun.build: every animation ident resolves inside the emitted bundle", 
       "contextmenu-in",
       "sb-spinner-spin",
       "sidedrawer-in",
+      "sidedrawer-out",
       "toasthost-in",
     ]);
   });

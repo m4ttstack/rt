@@ -416,6 +416,70 @@ describe("Drawer (browser)", () => {
     expect(screen.container.textContent).toContain("push edit");
 
     await userEvent.keyboard("{Escape}");
-    expect(queryPart(screen.container, "sidedrawer")).toBeNull();
+    await vi.waitFor(() => expect(queryPart(screen.container, "sidedrawer")).toBeNull());
+  });
+
+  it("closing keeps the panel mounted through its slide-out, then unmounts it", async () => {
+    function Harness() {
+      const [open, setOpen] = useState(true);
+      return (
+        <Drawer
+          open={open}
+          stack={rootStack()}
+          onBack={noop}
+          onClose={() => setOpen(false)}
+          ariaLabel="d"
+        />
+      );
+    }
+
+    const screen = await renderWithTheme(<Harness />);
+    const panel = panelOf(screen.container);
+    await Promise.all(panel.getAnimations().map((a) => a.finished.catch(() => undefined)));
+
+    partOf(screen.container, DRAWER_PARTS.close).click();
+
+    // React commits a discrete event's update on the next tick, not inside
+    // `click()` itself; the panel must still be there when it does.
+    await vi.waitFor(() => expect(panel.getAttribute("data-closing")).toBe("true"));
+    expect(panel.isConnected).toBe(true);
+    const style = getComputedStyle(panel);
+    expect(style.animationName).toBe("sidedrawer-out");
+    // Slightly quicker than the 200ms entry, so leaving never drags.
+    expect(style.animationDuration).toBe("0.15s");
+    expect(animationResolution(panel).found).toBe(true);
+
+    await vi.waitFor(() => expect(panel.isConnected).toBe(false), { timeout: 1000 });
+  });
+
+  it("with no exit animation to wait for, closing unmounts at once", async () => {
+    // Reduced motion (and any consumer freeze) turns the slide-out into
+    // `animation: none`; nothing then fires `finished`, so presence must not
+    // depend on it.
+    const freeze = document.createElement("style");
+    freeze.textContent = '[data-part="sidedrawer"] { animation: none !important; }';
+    document.head.appendChild(freeze);
+    try {
+      function Harness() {
+        const [open, setOpen] = useState(true);
+        return (
+          <Drawer
+            open={open}
+            stack={rootStack()}
+            onBack={noop}
+            onClose={() => setOpen(false)}
+            ariaLabel="d"
+          />
+        );
+      }
+
+      const screen = await renderWithTheme(<Harness />);
+      const panel = panelOf(screen.container);
+      partOf(screen.container, DRAWER_PARTS.close).click();
+
+      await vi.waitFor(() => expect(panel.isConnected).toBe(false), { timeout: 120 });
+    } finally {
+      freeze.remove();
+    }
   });
 });

@@ -86,6 +86,32 @@ export const Drawer = defineComponent<
     const panelRef = useRef<HTMLDivElement>(null);
     const setRefs = useMemo(() => mergeRefs(panelRef, ref), [ref]);
 
+    // `open` going false does not unmount the panel: it stamps `data-closing`
+    // (SideDrawer.keyframes.css keys the slide-out on it) and unmounts once
+    // every animation the panel is then running has finished. Derived during
+    // render, not in an effect, so the very first commit after `open` flips
+    // already carries the attribute. Read from the element rather than from
+    // a timer so a reduced-motion or frozen panel, which starts no animation,
+    // leaves at once.
+    const [phase, setPhase] = useState<"open" | "closing" | "closed">(open ? "open" : "closed");
+    if (open && phase !== "open") setPhase("open");
+    if (!open && phase === "open") setPhase("closing");
+    useEffect(() => {
+      if (phase !== "closing") return;
+      const animations = panelRef.current?.getAnimations() ?? [];
+      if (animations.length === 0) {
+        setPhase("closed");
+        return;
+      }
+      let cancelled = false;
+      void Promise.all(animations.map((a) => a.finished.catch(() => undefined))).then(() => {
+        if (!cancelled) setPhase("closed");
+      });
+      return () => {
+        cancelled = true;
+      };
+    }, [phase]);
+
     // Focus enters the panel for as long as `open` is true and leaves for
     // `returnFocusRef` the moment it isn't — the cleanup, not the body, is
     // what fires on the true -> false transition, so this needs no separate
@@ -120,7 +146,7 @@ export const Drawer = defineComponent<
       else onClose();
     }, [stack.length, onBack, onClose]);
 
-    if (!open) return null;
+    if (phase === "closed") return null;
 
     const top = stack[stack.length - 1];
     if (!top) return null;
@@ -142,7 +168,12 @@ export const Drawer = defineComponent<
         // for `--sb-sidedrawer-w` without touching SideDrawer's defaults or
         // fighting it on class specificity.
         vars={() => ({ root: { "--sb-sidedrawer-w": isNarrow ? "100%" : DRAWER_WIDTH } })}
-        {...getStyles("root", { dataAttrs: { "data-full-width": isNarrow ? "true" : undefined } })}
+        {...getStyles("root", {
+          dataAttrs: {
+            "data-full-width": isNarrow ? "true" : undefined,
+            "data-closing": phase === "closing" ? "true" : undefined,
+          },
+        })}
       >
         <div className={classes.frame}>
           <div {...getStyles("nav")} data-part={DRAWER_PARTS.nav}>

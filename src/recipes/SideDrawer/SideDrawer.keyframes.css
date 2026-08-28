@@ -1,4 +1,4 @@
-/* The panel's slide-in from its own edge lives here, outside
+/* The panel's slide-in and slide-out along its own edge live here, outside
    SideDrawer.module.css, keyed on the public `data-part`: see
    docs/decisions.md, "Keyframes live outside the CSS module". A departure
    from mr-board, whose drawers appeared in place. */
@@ -15,6 +15,13 @@
     --sb-sidedrawer-slide-x: -100%;
   }
 
+  /* `data-closing` is stamped by a composer (Drawer) that keeps the panel
+     mounted until this animation finishes; `forwards` holds it off-screen
+     for the frame between `finished` and unmount. */
+  [data-part="sidedrawer"][data-closing] {
+    animation: sidedrawer-out 150ms ease-in forwards;
+  }
+
   @keyframes sidedrawer-in {
     from {
       transform: translateX(var(--sb-sidedrawer-slide-x));
@@ -24,8 +31,15 @@
     }
   }
 
+  @keyframes sidedrawer-out {
+    to {
+      transform: translateX(var(--sb-sidedrawer-slide-x));
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
-    [data-part="sidedrawer"] {
+    [data-part="sidedrawer"],
+    [data-part="sidedrawer"][data-closing] {
       animation: none;
     }
   }
