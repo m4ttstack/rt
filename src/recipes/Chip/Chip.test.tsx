@@ -1,6 +1,7 @@
 import { createTheme } from "@soribashi/core";
 import { describe, expect, it } from "vitest";
 import { renderWithTheme } from "../../../test/test-utils.tsx";
+import { animationResolution } from "../../../test/keyframes.ts";
 import { retunedTextColor } from "../../intent-resolver.ts";
 import { tuiTheme } from "../../theme.ts";
 import { Chip, CHIP_PARTS, type ChipOwnProps, type ChipProps } from "./Chip.tsx";
@@ -460,7 +461,7 @@ describe("Chip (browser)", () => {
   });
 
   it("runs under no-preference reduced motion, so the pulse cases mean something", () => {
-    // The pulse assertions read `animationName`, which Chip.module.css sets to
+    // The pulse assertions read `animationName`, which Chip.keyframes.css sets to
     // `none` under `prefers-reduced-motion`. That media query is an ENVIRONMENT
     // input, pinned to `no-preference` in vitest.browser.config.ts. This case is
     // that pin's canary: drop the option and this fails FIRST and names the
@@ -480,6 +481,14 @@ describe("Chip (browser)", () => {
     // mr-board's `1.4s ease-in-out infinite` over keyframes 0/50/100, verbatim.
     expect(style.animationDirection).toBe("normal");
     expect(style.animationDuration).toBe("1.4s");
+  });
+
+  it("pulses via a @keyframes rule a loaded sheet actually declares, under its global name", async () => {
+    const screen = await renderWithTheme(<Chip pulse>reviewing</Chip>);
+
+    const { name, found } = animationResolution(chipOf(screen.container));
+    expect(found, `no @keyframes rule named "${name}" in any loaded sheet`).toBe(true);
+    expect(name).toBe("chip-pulse");
   });
 
   it("renders as a real button when asked, and is reachable by role", async () => {

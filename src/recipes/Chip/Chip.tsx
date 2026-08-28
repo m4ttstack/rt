@@ -2,6 +2,7 @@ import { autoVars } from "@soribashi/core";
 import type { ComponentProps, ReactNode } from "react";
 import { definePolymorphicComponent } from "../../builders.ts";
 import classes from "./Chip.module.css";
+import "./Chip.keyframes.css";
 
 /** Authoring category (1 = pure styled primitive). Read off this module by
     scripts/derive.ts to build the kit's manifest; not dead code. */

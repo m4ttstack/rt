@@ -9,7 +9,7 @@ import { Chip } from "./Chip.tsx";
  *
  * BASELINES ARE TRACKED IN GIT — see Icon.visual.test.tsx.
  *
- * THE ANIMATION FREEZE IS INSTALLED HERE because Chip.module.css carries a
+ * THE ANIMATION FREEZE IS INSTALLED HERE because Chip.keyframes.css carries a
  * PERPETUAL `animation` (the pulse), and
  * `transition: none` does nothing for an animation — they are separate CSS
  * mechanisms. Without the freeze a pulse cell would be
