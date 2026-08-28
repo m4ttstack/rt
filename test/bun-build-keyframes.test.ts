@@ -120,8 +120,8 @@ describe("Bun.build: every animation ident resolves inside the emitted bundle", 
     expect(KIT_KEYFRAMES).toEqual([
       "chip-pulse",
       "contextmenu-in",
-      "drawer-slide-in",
       "sb-spinner-spin",
+      "sidedrawer-in",
       "toasthost-in",
     ]);
   });

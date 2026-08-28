@@ -289,15 +289,17 @@ describe("Drawer (browser)", () => {
     expect(window.matchMedia("(prefers-reduced-motion: reduce)").matches).toBe(false);
   });
 
-  it("the content slot slides in on mount, via a @keyframes rule a loaded sheet declares", async () => {
+  it("the panel slides in from its edge; the content slot itself does not animate", async () => {
     const screen = await renderWithTheme(
       <Drawer open stack={rootStack()} onBack={noop} onClose={noop} ariaLabel="d" />,
     );
 
     const content = partOf(screen.container, DRAWER_PARTS.content);
-    const { name, found } = animationResolution(content);
+    expect(getComputedStyle(content).animationName).toBe("none");
+
+    const { name, found } = animationResolution(panelOf(screen.container));
     expect(found, `no @keyframes rule named "${name}" in any loaded sheet`).toBe(true);
-    expect(name).toBe("drawer-slide-in");
+    expect(name).toBe("sidedrawer-in");
   });
 
   it("the content region scrolls under tall content; the nav bar stays pinned", async () => {
@@ -398,6 +400,13 @@ describe("Drawer (browser)", () => {
 
     const screen = await renderWithTheme(<Harness />);
     expect(queryPart(screen.container, DRAWER_PARTS.back)).toBeNull();
+    // The panel is still sliding in from the right edge; a click dispatched
+    // mid-slide lands on wherever the trigger was at that instant.
+    await Promise.all(
+      panelOf(screen.container)
+        .getAnimations()
+        .map((a) => a.finished.catch(() => undefined)),
+    );
 
     await screen.getByRole("button", { name: "push edit" }).click();
     expect(partOf(screen.container, DRAWER_PARTS.back).textContent).toContain("Settings");

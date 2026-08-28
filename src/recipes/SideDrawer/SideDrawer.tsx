@@ -2,6 +2,7 @@ import type { ComponentProps, HTMLAttributes, MouseEvent, ReactNode } from "reac
 import { defineComponent } from "../../builders.ts";
 import { useBodyScrollLock, useEscapeClose } from "../../hooks/index.ts";
 import classes from "./SideDrawer.module.css";
+import "./SideDrawer.keyframes.css";
 
 /** Authoring category (2 = transient overlay). Read off this module by
     scripts/derive.ts to build the kit's manifest; not dead code.

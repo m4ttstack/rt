@@ -1,10 +1,9 @@
 import { mergeRefs } from "@soribashi/core";
-import type { ComponentProps, CSSProperties, ReactNode, RefObject } from "react";
+import type { ComponentProps, ReactNode, RefObject } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { defineComponent } from "../../builders.ts";
 import { SideDrawer } from "../SideDrawer/SideDrawer.tsx";
 import classes from "./Drawer.module.css";
-import "./Drawer.keyframes.css";
 
 /** Authoring category (2 = transient overlay). Read off this module by
     scripts/derive.ts to build the kit's manifest; not dead code.
@@ -87,19 +86,6 @@ export const Drawer = defineComponent<
     const panelRef = useRef<HTMLDivElement>(null);
     const setRefs = useMemo(() => mergeRefs(panelRef, ref), [ref]);
 
-    // Derives push/pop from a length delta rather than tracking the action
-    // that caused it — Drawer only ever sees the stack it is handed, never
-    // the call that produced it. Mutated during render, not an effect: the
-    // canonical "compare to the previous render" ref pattern, and it must
-    // settle within the SAME render the length changed in, before the
-    // content below reads it for this paint.
-    const prevLenRef = useRef(stack.length);
-    const directionRef = useRef<"push" | "pop">("push");
-    if (stack.length !== prevLenRef.current) {
-      directionRef.current = stack.length > prevLenRef.current ? "push" : "pop";
-      prevLenRef.current = stack.length;
-    }
-
     // Focus enters the panel for as long as `open` is true and leaves for
     // `returnFocusRef` the moment it isn't — the cleanup, not the body, is
     // what fires on the true -> false transition, so this needs no separate
@@ -142,10 +128,6 @@ export const Drawer = defineComponent<
     const navAction = top.navAction;
 
     const contentStyles = getStyles("content");
-    const slideStyle = {
-      ...contentStyles.style,
-      "--sb-drawer-slide-x": directionRef.current === "push" ? "1.5rem" : "-1.5rem",
-    } as CSSProperties;
 
     return (
       <SideDrawer
@@ -211,7 +193,6 @@ export const Drawer = defineComponent<
           <div
             key={top.id}
             {...contentStyles}
-            style={slideStyle}
             data-part={DRAWER_PARTS.content}
           >
             {top.content}

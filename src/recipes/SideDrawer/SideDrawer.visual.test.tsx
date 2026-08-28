@@ -13,11 +13,10 @@ import { SideDrawer, type SideDrawerSide } from "./SideDrawer.tsx";
  * `--shadow-drawer-left` throws right) and, for the left, its own padding and
  * gap — a two-baseline set would leave half the recipe unpinned.
  *
- * NO MOTION FREEZE IS INSTALLED, deliberately: SideDrawer.module.css declares
- * neither a `transition` nor an `animation`, and neither did either board
- * family — mr-board's drawers appear and disappear with their mount, with no
- * slide-in. Copying ToastHost's/Chip's freeze in anyway would teach the next
- * recipe to cargo-cult it.
+ * THE ANIMATION FREEZE IS INSTALLED HERE: SideDrawer.keyframes.css slides the
+ * panel in from its own edge (sidedrawer-in), so a capture mid-slide would be
+ * non-deterministic between runs. `animation: none !important` is what closes
+ * that.
  *
  * THE OVERLAY IS THE CAPTURE TARGET, not the panel: it is `position: fixed;
  * inset: 0`, so its layout box IS the viewport, and the screenshot carries the
@@ -27,11 +26,26 @@ import { SideDrawer, type SideDrawerSide } from "./SideDrawer.tsx";
  * does — 55% of the page colour over the page colour is invisible.
  */
 
+const NO_MOTION_CLASS = "sidedrawer-visual-no-motion";
+
+function installNoMotionStyle() {
+  if (document.getElementById(NO_MOTION_CLASS)) return;
+  const style = document.createElement("style");
+  style.id = NO_MOTION_CLASS;
+  style.textContent = `.${NO_MOTION_CLASS}, .${NO_MOTION_CLASS} * {
+    animation: none !important;
+    transition: none !important;
+  }`;
+  document.head.appendChild(style);
+}
+
 /** Mounts into a fresh container that already carries `dark` when asked. */
 async function renderFixture(ui: ReactNode, { dark = false } = {}) {
   await page.viewport(700, 460);
+  installNoMotionStyle();
 
   const container = document.createElement("div");
+  container.classList.add(NO_MOTION_CLASS);
   if (dark) container.classList.add("dark");
   Object.assign(container.style, {
     position: "fixed",

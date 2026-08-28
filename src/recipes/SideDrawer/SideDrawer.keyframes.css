@@ -1,0 +1,32 @@
+/* The panel's slide-in from its own edge lives here, outside
+   SideDrawer.module.css, keyed on the public `data-part`: see
+   docs/decisions.md, "Keyframes live outside the CSS module". A departure
+   from mr-board, whose drawers appeared in place. */
+@layer soribashi.recipes {
+  [data-part="sidedrawer"] {
+    animation: sidedrawer-in 200ms ease-out;
+  }
+
+  [data-part="sidedrawer"][data-side="right"] {
+    --sb-sidedrawer-slide-x: 100%;
+  }
+
+  [data-part="sidedrawer"][data-side="left"] {
+    --sb-sidedrawer-slide-x: -100%;
+  }
+
+  @keyframes sidedrawer-in {
+    from {
+      transform: translateX(var(--sb-sidedrawer-slide-x));
+    }
+    to {
+      transform: none;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    [data-part="sidedrawer"] {
+      animation: none;
+    }
+  }
+}
