@@ -31,3 +31,7 @@ storybook-static
 # Consumer friction logs: per-app, untracked by convention (see the
 # adopting-mantine-kit skill). Ignored so a `git add -A` cannot sweep one in.
 FEEDBACK-*.md
+
+# app-kit tarballs, packed locally from ~/Documents/GitHub/app-kit (matches
+# app-kit's probe app, which also gitignores its vendor/ tarballs).
+vendor
