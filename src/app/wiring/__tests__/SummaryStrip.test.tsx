@@ -22,6 +22,7 @@ function orchestrator(over: Partial<SpineEntry> = {}): SpineEntry {
     staleFiles: [],
     orphanFiles: [],
     slots: [],
+    includes: [],
     ...over,
   };
 }

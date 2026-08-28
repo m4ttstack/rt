@@ -77,6 +77,33 @@ export interface SlotOutlineNode {
   inlined: boolean | null;
 }
 
+/**
+ * One `{{include:<name>}}` the verb's author wrote. Always a mattstack
+ * attachment: rt resolves every include against the mattstack plugin root,
+ * whichever plugin the verb itself lives in, so the ref never varies by
+ * pack. `sourcePath` is that resolution replayed from a mattstack verb's own
+ * source path; null when the composition carries none to derive the root
+ * from.
+ */
+export interface IncludeOutlineNode {
+  name: string;
+  ref: string;
+  sourcePath: string | null;
+}
+
+const PLUGIN_LAYOUT =
+  /^(.*)\/(?:skills|attachments)\/(?:[^/]+\/)?[^/]+\/SKILL\.md$/;
+
+/**
+ * rt lays a plugin out as `<root>/skills/<name>` or
+ * `<root>/attachments/[<group>/]<name>`; this walks a SKILL.md path back to
+ * that root. Greedy on purpose: the root is the longest such prefix, so a
+ * plugin that itself sits under some `skills/` directory still resolves.
+ */
+export function pluginRootOf(sourcePath: string): string | null {
+  return PLUGIN_LAYOUT.exec(sourcePath)?.[1] ?? null;
+}
+
 export type BindingSiteKind = CompositionBinder['kind'];
 
 /** One place in the manifest that resolves to a fill: a ref, the slot on it,
@@ -131,6 +158,7 @@ export interface SpineEntry {
   /** An outside skill whose slots bind exactly what a stage binds. */
   sameWiringAsStep?: number;
   slots: SlotOutlineNode[];
+  includes: IncludeOutlineNode[];
 }
 
 export interface OrphanFillEntry {
@@ -362,6 +390,24 @@ export function buildSpine(
       : (workTypes[0] ?? null);
   const stageRefs = workType ? (composition.pipelines?.[workType] ?? []) : [];
 
+  const mattstackRoot =
+    composition.verbs
+      .filter(v => v.plugin === 'mattstack' && v.sourcePath)
+      .map(v => pluginRootOf(v.sourcePath as string))
+      .find((root): root is string => root !== null) ?? null;
+
+  function includesFor(
+    verb: CompositionVerb | undefined
+  ): IncludeOutlineNode[] {
+    return (verb?.includes ?? []).map(name => ({
+      name,
+      ref: `mattstack:${name}`,
+      sourcePath: mattstackRoot
+        ? `${mattstackRoot}/attachments/${name}/SKILL.md`
+        : null,
+    }));
+  }
+
   function slotsFor(
     verb: CompositionVerb | undefined,
     binder: CompositionBinder | undefined
@@ -424,6 +470,7 @@ export function buildSpine(
       orphanFiles: checkRow?.orphanFiles ?? [],
       note: noSlotsNote(kind, slots),
       slots,
+      includes: includesFor(verb),
     };
   }
 
@@ -480,6 +527,7 @@ export function buildSpine(
           staleFiles: [],
           orphanFiles: [],
           slots: [],
+          includes: [],
         };
         externalGroups.set(plugin, group);
         outside.push(group);
@@ -539,6 +587,7 @@ export function buildSpine(
       orphanFiles: checkRow?.orphanFiles ?? [],
       note: noSlotsNote('outside', slots),
       slots,
+      includes: includesFor(rosterVerb),
     });
   }
 

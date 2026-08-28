@@ -4,6 +4,7 @@ import {
   buildSpine,
   invertBindings,
   needsAttention,
+  pluginRootOf,
   spineRows,
   type OutlineCheck,
   type SpineComposition,
@@ -669,5 +670,114 @@ describe('buildSpine: orphaned fills', () => {
     expect(spine.orphans.map(o => o.fill)).not.toContain(
       'demo:mr-board-review'
     );
+  });
+});
+
+describe('buildSpine: includes', () => {
+  const MATTSTACK_ROOT = '/plugins/mattstack';
+
+  function withShipIncludes(
+    includes: string[] | undefined,
+    sourcePath:
+      string | null = `${MATTSTACK_ROOT}/attachments/review/ship/SKILL.md`
+  ): SpineComposition {
+    return {
+      ...PACK,
+      verbs: PACK.verbs.map(v =>
+        v.name === 'ship' ? { ...v, sourcePath, includes } : v
+      ),
+    };
+  }
+
+  it("threads a verb's includes onto its row, each as the mattstack attachment rt inlines", () => {
+    const ship = buildSpine(
+      withShipIncludes(['review-core-body', 'review-posting']),
+      EMPTY_CHECK
+    ).outside.find(e => e.verb === 'ship');
+
+    expect(ship?.includes).toEqual([
+      {
+        name: 'review-core-body',
+        ref: 'mattstack:review-core-body',
+        sourcePath: `${MATTSTACK_ROOT}/attachments/review-core-body/SKILL.md`,
+      },
+      {
+        name: 'review-posting',
+        ref: 'mattstack:review-posting',
+        sourcePath: `${MATTSTACK_ROOT}/attachments/review-posting/SKILL.md`,
+      },
+    ]);
+  });
+
+  it('reads an rt older than the includes field as a verb including nothing', () => {
+    const spine = buildSpine(PACK, EMPTY_CHECK);
+
+    expect(spine.orchestrator?.includes).toEqual([]);
+    for (const row of [...spine.stages, ...spine.outside])
+      expect(row.includes).toEqual([]);
+  });
+
+  it('resolves includes at the mattstack root even for a verb from another plugin', () => {
+    const composition: SpineComposition = {
+      ...withShipIncludes(undefined, `${MATTSTACK_ROOT}/skills/ship/SKILL.md`),
+    };
+    composition.verbs = [
+      ...composition.verbs,
+      verb('custom', {
+        plugin: 'demo',
+        engineRef: 'demo:custom',
+        sourcePath: '/packs/demo/skills/custom/SKILL.md',
+        includes: ['gitlab-mr-threads'],
+      } as Partial<SpineComposition['verbs'][number]>),
+    ];
+
+    const custom = buildSpine(composition, EMPTY_CHECK).outside.find(
+      e => e.verb === 'custom'
+    );
+
+    expect(custom?.includes).toEqual([
+      {
+        name: 'gitlab-mr-threads',
+        ref: 'mattstack:gitlab-mr-threads',
+        sourcePath: `${MATTSTACK_ROOT}/attachments/gitlab-mr-threads/SKILL.md`,
+      },
+    ]);
+  });
+
+  it('leaves the include path null, ref intact, when no mattstack source is on hand to derive the root from', () => {
+    const ship = buildSpine(
+      withShipIncludes(['review-posting'], null),
+      EMPTY_CHECK
+    ).outside.find(e => e.verb === 'ship');
+
+    expect(ship?.includes).toEqual([
+      {
+        name: 'review-posting',
+        ref: 'mattstack:review-posting',
+        sourcePath: null,
+      },
+    ]);
+  });
+});
+
+describe('pluginRootOf', () => {
+  it('strips a flat skills or attachments layout back to the plugin root', () => {
+    expect(pluginRootOf('/r/skills/ship/SKILL.md')).toBe('/r');
+    expect(pluginRootOf('/r/attachments/review-posting/SKILL.md')).toBe('/r');
+  });
+
+  it('strips a grouped attachments layout back to the plugin root', () => {
+    expect(pluginRootOf('/r/attachments/review/review/SKILL.md')).toBe('/r');
+  });
+
+  it('takes the innermost layout when the root itself contains a skills dir', () => {
+    expect(pluginRootOf('/a/skills/b/attachments/c/SKILL.md')).toBe(
+      '/a/skills/b'
+    );
+  });
+
+  it('answers null for a path in neither layout rather than guessing', () => {
+    expect(pluginRootOf('/steps/ship/SKILL.md')).toBeNull();
+    expect(pluginRootOf('/r/skills/ship/README.md')).toBeNull();
   });
 });

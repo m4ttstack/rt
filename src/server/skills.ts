@@ -37,6 +37,9 @@ interface SkillsCompositionVerb {
   sourcePath: string | null;
   artifactPath: string;
   slots: SkillsCompositionSlot[];
+  /** The `{{include:<name>}}` attachments the compiler inlines, in source
+      order. Optional because an rt older than the field answers without it. */
+  includes?: string[];
   engineError?: string;
 }
 interface SkillsCompositionBinder {
