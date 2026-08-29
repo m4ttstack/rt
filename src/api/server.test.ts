@@ -48,6 +48,12 @@ const cannedAccessFetch = (async (url: string | URL | Request, init?: RequestIni
   return Response.json({ success: true, result: { id: "pol-1" } });
 }) as typeof fetch;
 
+// A dev-gated server: devMode: () => true unlocks the action-command routes
+// regardless of the real machine's mattstack.mode, which this test environment
+// can never set to "dev" (rt-client 0.3.0 does not register that key).
+const DEV_PORT = 18923;
+let devServer: ReturnType<typeof startApi>;
+
 beforeAll(() => {
   manager = new FakeServiceManager();
   edge = new FakeEdgeProxy();
@@ -56,6 +62,15 @@ beforeAll(() => {
     port: PORT, canaryPort: PORT + 1,
     freshness: () => "unknown", autoHeal: () => null, onRouteWrite: () => {},
     tunnel: new FakeTunnelDriver(),
+    devMode: () => false,
+  });
+
+  devServer = startApi({
+    manager: new FakeServiceManager(), edge: new FakeEdgeProxy(),
+    port: DEV_PORT, canaryPort: DEV_PORT + 1,
+    freshness: () => "unknown", autoHeal: () => null, onRouteWrite: () => {},
+    tunnel: new FakeTunnelDriver(),
+    devMode: () => true,
   });
 
   domainCfDir = mkdtempSync(join(tmpdir(), "local-cfdir-"));
@@ -83,6 +98,7 @@ afterAll(() => {
   server.stop(true);
   domainServer.stop(true);
   cfServer.stop(true);
+  devServer.stop(true);
   rmSync(dir, { recursive: true, force: true });
   rmSync(domainCfDir, { recursive: true, force: true });
 });
@@ -101,6 +117,13 @@ beforeEach(() => {
 const api = (path: string, init?: RequestInit) => fetch(`http://127.0.0.1:${PORT}${path}`, init);
 const post = (path: string, body: unknown, headers: Record<string, string> = {}) =>
   api(path, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+// prodPost is the default (devMode: () => false) server: used where a test
+// specifically needs the production gate rather than any of the other servers.
+const prodPost = post;
+
+const devApi = (path: string, init?: RequestInit) => fetch(`http://127.0.0.1:${DEV_PORT}${path}`, init);
+const devPost = (path: string, body: unknown, headers: Record<string, string> = {}) =>
+  devApi(path, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
 
 test("healthz answers ok (health contract)", async () => {
   expect(await (await api("/healthz")).text()).toBe("ok");
@@ -465,4 +488,26 @@ test("POST /apps/:name/alt activates and clears an overlay", async () => {
 
 test("alt on an unknown app is 404", async () => {
   expect((await post("/api/v1/apps/ghost/alt", { alt: "dev" })).status).toBe(404);
+});
+
+test("command route runs a declared command in dev", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cmd-"));
+  writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({ name: "cmdapp", port: 4800, commands: { start: "s", build: "echo built" } }));
+  await devPost("/api/v1/apps/register", { dir });
+  const run = await devPost("/api/v1/apps/cmdapp/commands/build", {});
+  expect(run.status).toBe(200);
+  const body = await run.json();
+  expect(body.started).toBe(true);
+  expect(typeof body.runId).toBe("string");
+});
+
+test("unknown command name is 404 in dev", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cmd-"));
+  writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({ name: "cmdapp2", port: 4801, commands: { start: "s" } }));
+  await devPost("/api/v1/apps/register", { dir });
+  expect((await devPost("/api/v1/apps/cmdapp2/commands/ghost", {})).status).toBe(404);
+});
+
+test("command route is 404 in production", async () => {
+  expect((await prodPost("/api/v1/apps/anything/commands/build", {})).status).toBe(404);
 });

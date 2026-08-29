@@ -24,6 +24,8 @@ import { migrate } from "../registry/migrate.ts";
 import { convert } from "../registry/convert.ts";
 import { redactedSettings, updatePlatformSettings, getPlatformSettings } from "./platform-settings.ts";
 import { logsDir } from "./state.ts";
+import { isDevMode } from "./dev-mode.ts";
+import { startCommandRun, commandRunStatus } from "../services/command-runner.ts";
 import { join } from "path";
 import { userInfo } from "os";
 import type { TunnelDriver } from "../edge/tunnel.ts";
@@ -46,6 +48,8 @@ export interface ApiDeps extends Drivers {
   accessFetch?: typeof fetch;
   /** Fake rt-secrets transport for CF Access driver tests; production omits it and reads the real daemon. */
   deckSecrets?: RtSecretsDeps;
+  /** Dev-mode gate for action commands. Defaults to isDevMode in production wiring; tests inject it. */
+  devMode?: () => boolean;
 }
 
 export function callerOf(req: Request): string {
@@ -337,6 +341,30 @@ export function startApi(deps: ApiDeps) {
             }
             ingestManifest(name);
             return json({ ok: true });
+          }
+        }
+
+        // Dev-only action-command routes: production must 404 exactly as if the
+        // route did not exist, so no command metadata leaks off-machine.
+        {
+          const cm = pathname.match(/^\/api\/v1\/apps\/([^/]+)\/commands\/([a-z0-9-]+)(?:\/([a-z0-9]+))?$/);
+          if (cm) {
+            const dev = (deps.devMode ?? isDevMode)();
+            if (!dev) return json({ error: "not found" }, 404); // production: indistinguishable from absent
+            const [, name, cmd, runId] = cm as unknown as [string, string, string, string | undefined];
+            const record = getRecord(name);
+            if (!record?.commands || !(cmd in record.commands)) return json({ error: "not found" }, 404);
+            if (runId && req.method === "GET") {
+              const st = commandRunStatus(name, runId);
+              return st ? json(st) : json({ error: "unknown run" }, 404);
+            }
+            if (!runId && req.method === "POST") {
+              const started = startCommandRun({
+                name, cmd, shell: record.commands[cmd]!, workingDirectory: record.workingDirectory!,
+              });
+              if (!started.started) return json({ error: "busy" }, 409);
+              return json({ started: true, runId: started.runId });
+            }
           }
         }
 
