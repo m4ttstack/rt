@@ -1,5 +1,5 @@
 import { useLayoutEffect } from 'react';
-import { Group, Tabs, Title } from '@mantine/core';
+import { Divider, Group, Tabs, Title } from '@mantine/core';
 import type { TabsProps } from '@mantine/core';
 
 import { Icon, type IconName } from '@mattstack/app-kit/icons';
@@ -40,8 +40,9 @@ export interface PageShellTab {
 export interface PageShellTabBarProps {
   tabs: PageShellTab[];
   /**
-   * Page title leading the tabs, rendered as a `Title` order 2 -- the same
-   * heading `Header` renders, for a page whose tab row is its header row.
+   * Page title leading the tabs: the same `Title` order 2 `Header` renders,
+   * for a page whose tab row is its header row, but sized to the row it
+   * shares with the tabs and set off from them by a short hairline.
    */
   title?: React.ReactNode;
   /** Right-aligned actions cluster trailing the tabs, as on `Header`. */
@@ -101,7 +102,14 @@ export const TabBar = ({
         borderBottom: '1px solid var(--mantine-color-default-border)',
       }}
     >
-      {title != null && <Title order={2}>{title}</Title>}
+      {title != null && (
+        <Group gap="md" wrap="nowrap" pl="xs">
+          <Title order={2} size="h5" fw={700} style={{ whiteSpace: 'nowrap' }}>
+            {title}
+          </Title>
+          <Divider orientation="vertical" h="1.25em" />
+        </Group>
+      )}
       <Tabs
         variant="default"
         value={tabs.find(tab => tab.active)?.id ?? null}
