@@ -68,7 +68,10 @@ export type { PageShellSidebarProps } from './page-shell/components/Sidebar';
 // Collision-checked like the names above: neither exists in
 // `@mantine/core`/`@mantine/dates`.
 export { PAGE_SHELL_TAB_BAR_HEIGHT } from './page-shell/components/TabBar';
-export type { PageShellTab } from './page-shell/components/TabBar';
+export type {
+  PageShellTab,
+  PageShellTabBarProps,
+} from './page-shell/components/TabBar';
 // `SiteShell` collision-checked the same way as the names above: neither
 // `@mantine/core` nor `@mantine/dates` exports a `SiteShell` (Mantine's own
 // shell is `AppShell`), so this is a plain named export, not a shadow.

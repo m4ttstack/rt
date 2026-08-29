@@ -517,3 +517,48 @@ test('TabBar threads color/radius to the underlying Mantine Tabs', () => {
     'var(--mantine-radius-md)'
   );
 });
+
+test('TabBar title leads the tablist as the page heading and actions trail it, neither inside the tablist', () => {
+  renderWithProviders(
+    <PageShell>
+      <PageShell.Main>
+        <PageShell.TabBar
+          title="Wiring"
+          tabs={[{ id: 'pipeline', label: 'Pipeline', active: true }]}
+          actions={<button>Open pack</button>}
+        />
+        <PageShell.Content>
+          <div>content body</div>
+        </PageShell.Content>
+      </PageShell.Main>
+    </PageShell>
+  );
+
+  const tabList = screen.getByRole('tablist', { name: 'Page tabs' });
+  const heading = screen.getByRole('heading', { level: 2, name: 'Wiring' });
+  const action = screen.getByRole('button', { name: 'Open pack' });
+
+  expect(tabList.contains(heading)).toBe(false);
+  expect(tabList.contains(action)).toBe(false);
+  expect(
+    heading.compareDocumentPosition(tabList) & Node.DOCUMENT_POSITION_FOLLOWING
+  ).toBeTruthy();
+  expect(
+    tabList.compareDocumentPosition(action) & Node.DOCUMENT_POSITION_FOLLOWING
+  ).toBeTruthy();
+});
+
+test('a TabBar with neither title nor actions renders no heading', () => {
+  renderWithProviders(
+    <PageShell tabs={[{ id: 'inventory', label: 'Inventory', active: true }]}>
+      <div>content body</div>
+    </PageShell>
+  );
+
+  expect(screen.getByRole('tablist', { name: 'Page tabs' })).toBeTruthy();
+  expect(screen.queryByRole('heading')).toBeNull();
+});
+
+test('PageShell.TabBar is the same component the root renders for its tabs prop', () => {
+  expect(PageShell.TabBar).toBe(TabBar);
+});

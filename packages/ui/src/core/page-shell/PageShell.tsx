@@ -82,7 +82,10 @@ export interface PageShellProps extends Omit<StackProps, 'children' | 'title'> {
    * sub-navigation between sibling views. Tabs link router-agnostically:
    * `onClick`, or `component`/`href` per `RailEntry`'s pattern (typed-router
    * caveat: AGENTS.md section 10). Works in both simple and compound mode;
-   * the content/sidebar height math subtracts the bar automatically.
+   * the content/sidebar height math subtracts the bar automatically. This
+   * shorthand threads only the tab shape: for a `title`, `actions`, or the
+   * bar-level `color`/`radius`, compose `PageShell.TabBar` inside
+   * `PageShell.Main` instead.
    */
   tabs?: PageShellTab[];
   /** Height of the tab bar when `tabs` is set. @default 46 */
@@ -283,4 +286,5 @@ export const PageShell = /* @__PURE__ */ Object.assign(PageShellRoot, {
   Main,
   Header,
   Content,
+  TabBar,
 });

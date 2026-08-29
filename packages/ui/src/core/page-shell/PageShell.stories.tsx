@@ -198,6 +198,42 @@ function WithTabIconsAndColorDemo() {
   );
 }
 
+function WithTabBarTitleAndActionsDemo() {
+  const [activeTab, setActiveTab] = useState('pipeline');
+
+  const tab = (id: string, label: string) => ({
+    id,
+    label,
+    active: activeTab === id,
+    onClick: () => setActiveTab(id),
+  });
+
+  return (
+    <Box h="100vh">
+      <PageShell tabBarHeight={40}>
+        <PageShell.Main>
+          {/* One row standing in for the header: the page title leads the
+              tabs and the page's actions trail them, for a page with no
+              sidebar for a root-level tab bar to span. */}
+          <PageShell.TabBar
+            title="Wiring"
+            tabs={[tab('pipeline', 'Pipeline'), tab('surface', 'Surface')]}
+            actions={<Button size="xs">Open pack</Button>}
+          />
+          <PageShell.Content>
+            <SomeContent />
+          </PageShell.Content>
+        </PageShell.Main>
+      </PageShell>
+    </Box>
+  );
+}
+
+export const WithTabBarTitleAndActions: Story = {
+  name: 'TabBar title + actions (the tab row as the header row)',
+  render: () => <WithTabBarTitleAndActionsDemo />,
+};
+
 export const WithTabIconsAndColor: Story = {
   name: 'Tabs (iconRight, labelComponent, color, radius)',
   render: () => <WithTabIconsAndColorDemo />,
