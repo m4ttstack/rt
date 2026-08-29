@@ -18,7 +18,7 @@ const { startApi } = await import("./server.ts");
 const { FakeServiceManager } = await import("../services/fake.ts");
 const { FakeEdgeProxy } = await import("../edge/portless.ts");
 const { FakeTunnelDriver } = await import("../edge/tunnel.ts");
-const { reloadRegistry } = await import("../registry/records.ts");
+const { reloadRegistry, getRecord } = await import("../registry/records.ts");
 const { reloadPlatformSettings } = await import("./platform-settings.ts");
 
 const PORT = 18917;
@@ -460,6 +460,28 @@ test("adopt endpoint: renames + flips ownership, and a re-run is an idempotent 2
   const ghost = await post("/api/v1/apps/ghost/adopt", {});
   expect(ghost.status).toBe(404);
   expect(await ghost.json()).toEqual({ error: "unknown app" });
+});
+
+// Proves adoptApp rides the shared ingestManifest path (register.ts:420)
+// rather than any bespoke mattstack.json-only read: identity here can only
+// have come from mattstack.deck.json, since no mattstack.json exists.
+test("adopt ingests identity from mattstack.deck.json", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "adopt-"));
+  writeFileSync(
+    join(dir, "mattstack.deck.json"),
+    JSON.stringify({ name: "adoptme", commands: { start: "s" }, displayName: "Adopt Me", icon: "icon.svg" }),
+  );
+  writeFileSync(join(dir, "icon.svg"), '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+  await post("/api/v1/apps", { name: "adoptme", command: ["sh", "-c", "s"], workingDirectory: dir });
+
+  const res = await post("/api/v1/apps/adoptme/adopt", { managedBy: "rt" });
+  expect(res.status).toBe(200);
+
+  const row = await (await api("/api/v1/apps/adoptme")).json();
+  expect(row.record.managedBy).toBe("rt");
+  const record = getRecord("adoptme")!;
+  expect(record.displayName).toBe("Adopt Me");
+  expect(record.icon).toEqual({ ext: "svg" });
 });
 
 test("POST /apps/register creates a record from a manifest dir", async () => {
