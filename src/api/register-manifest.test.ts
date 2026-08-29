@@ -11,6 +11,10 @@ function scratch(): string {
   process.env.LOCAL_APPS_SETTINGS_PATH = join(dir, "settings.json");
   process.env.LOCAL_PLATFORM_SETTINGS_PATH = join(dir, "platform.json");
   process.env.HOME = dir;
+  // Isolate readServices() from this machine's real launchd agents: without
+  // this, registerApp/editApp's port-collision check (Fix 1) reads whatever
+  // is actually running on the developer's Mac instead of a clean fixture.
+  process.env.LOCAL_AGENTS_DIR = join(dir, "agents-not-present");
   writeFileSync(process.env.LOCAL_APPS_ROUTES_PATH, "[]");
   return dir;
 }
@@ -104,4 +108,29 @@ test("an absent manifest is a 400", async () => {
   reloadRegistry();
   const r = await applyManifest(mkdtempSync(join(tmpdir(), "empty-")), undefined, { manager: new FakeServiceManager(), edge: new FakeEdgeProxy() });
   expect(r.status).toBe(400);
+});
+
+test("registering a manifest onto an already-declared service port is a 409, not a silent alias onto it", async () => {
+  scratch();
+  const { FakeServiceManager } = await import("../services/fake.ts");
+  const { FakeEdgeProxy } = await import("../edge/portless.ts");
+  const { reloadRegistry, getRecord } = await import("../registry/records.ts");
+  const { applyManifest } = await import("./register-manifest.ts");
+  reloadRegistry();
+  const drivers = { manager: new FakeServiceManager(), edge: new FakeEdgeProxy() };
+
+  const dirA = appRepo({ name: "appa", port: 5000, commands: { start: "bun run serve" } });
+  const a = await applyManifest(dirA, undefined, drivers);
+  expect(a.status).toBe(200);
+
+  const dirB = appRepo({ name: "appb", port: 5000, commands: { start: "bun run serve" } });
+  const b = await applyManifest(dirB, undefined, drivers);
+  expect(b.status).toBe(409);
+  expect(getRecord("appb")).toBeUndefined();
+
+  // Control: the same manifest B on a free port succeeds.
+  const dirC = appRepo({ name: "appb", port: 5001, commands: { start: "bun run serve" } });
+  const c = await applyManifest(dirC, undefined, drivers);
+  expect(c.status).toBe(200);
+  expect(getRecord("appb")!.port).toBe(5001);
 });

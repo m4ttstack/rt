@@ -79,7 +79,17 @@ export function ingestManifest(name: string): void {
     deck && deck.ok && deck.manifest.displayName && deck.manifest.icon
       ? { displayName: deck.manifest.displayName, description: deck.manifest.description, icon: deck.manifest.icon }
       : readManifest(record.workingDirectory); // deprecated mattstack.json fallback (identity only)
-  if (!manifest) return;
+  if (!manifest) {
+    // The manifest is the source of truth for identity: if neither deck.json
+    // nor mattstack.json supplies one anymore, a previously-ingested
+    // displayName/description/icon must not linger as stale leftovers.
+    if (record.displayName !== undefined || record.description !== undefined || record.icon !== undefined) {
+      removeIcon(name);
+      const { displayName: _displayName, description: _description, icon: _icon, ...rest } = record;
+      putRecord(rest);
+    }
+    return;
+  }
   let svg: string;
   try {
     const iconPath = resolve(record.workingDirectory, manifest.icon);

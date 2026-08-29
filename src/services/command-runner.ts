@@ -40,11 +40,21 @@ export function startCommandRun(
   const run: Run = { runId, cmd: input.cmd, status: "running" };
   runs.set(input.name, run);
 
-  const proc = (deps.spawn ?? defaultSpawn)(["sh", "-c", input.shell], {
-    cwd: input.workingDirectory,
-    stdout: out,
-    stderr: errFd,
-  });
+  let proc: ReturnType<SpawnFn>;
+  try {
+    proc = (deps.spawn ?? defaultSpawn)(["sh", "-c", input.shell], {
+      cwd: input.workingDirectory,
+      stdout: out,
+      stderr: errFd,
+    });
+  } catch (err) {
+    // A synchronous spawn failure must not leave the app permanently busy or
+    // leak the two fds opened above -- nothing else will ever close them.
+    runs.delete(input.name);
+    try { closeSync(out); } catch { /* already closed */ }
+    try { closeSync(errFd); } catch { /* already closed */ }
+    throw err;
+  }
   proc.exited.then((code) => {
     run.status = "exited";
     run.exitCode = code;

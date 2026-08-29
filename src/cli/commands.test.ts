@@ -2,6 +2,7 @@ import { test, expect, beforeAll, afterAll } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
+import { configInit } from "./config-init.ts";
 
 const dir = mkdtempSync(join(tmpdir(), "local-cli-"));
 process.env.LOCAL_STATE_DIR = dir;
@@ -298,6 +299,9 @@ test("register from a manifest dir, then config init refuses overwrite", async (
   const s = io();
   expect(await runCommand(["status"], s)).toBe(0);
   expect(s.lines.join("\n")).toContain("regcli");
+
+  const c = io();
+  expect(configInit(appDir, c)).toBe(1);
 });
 
 test("deck alt on/off round-trip", async () => {

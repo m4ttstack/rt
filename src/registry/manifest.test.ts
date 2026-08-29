@@ -161,6 +161,30 @@ test("re-ingest overwrites identity: a second ingestManifest call picks up a cha
   expect(getRecord("resync")!.displayName).toBe("Two");
 });
 
+test("ingest clears stale identity when a re-ingest finds no manifest to supply it", async () => {
+  isolate();
+  const { putRecord, getRecord, reloadRegistry } = await import("./records.ts");
+  reloadRegistry();
+  const appDir = repo({
+    "mattstack.deck.json": JSON.stringify({ name: "stale", displayName: "Stale App", icon: "./icon.svg", commands: { start: "s" } }),
+    "icon.svg": SVG,
+  });
+  putRecord({ name: "stale", managedBy: "rt", port: 6200, kind: "service", workingDirectory: appDir, createdAt: "x" });
+  ingestManifest("stale");
+  expect(getRecord("stale")!.displayName).toBe("Stale App");
+  expect(existsSync(iconPathFor("stale"))).toBe(true);
+
+  // Re-point at a dir whose deck.json declares commands but no displayName/icon,
+  // and carries no mattstack.json fallback either.
+  const bareDir = repo({
+    "mattstack.deck.json": JSON.stringify({ name: "stale", commands: { start: "s" } }),
+  });
+  putRecord({ ...getRecord("stale")!, workingDirectory: bareDir });
+  ingestManifest("stale");
+  expect(getRecord("stale")!.displayName).toBeUndefined();
+  expect(existsSync(iconPathFor("stale"))).toBe(false);
+});
+
 test("removeIcon deletes the stored file", async () => {
   isolate();
   const { putRecord, reloadRegistry } = await import("./records.ts");

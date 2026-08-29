@@ -523,6 +523,13 @@ test("command route runs a declared command in dev", async () => {
   expect(typeof body.runId).toBe("string");
 });
 
+test("an inherited Object.prototype command name is 404 in dev, not a silent match", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cmd-"));
+  writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({ name: "cmdapp3", port: 4802, commands: { start: "s", build: "echo built" } }));
+  await devPost("/api/v1/apps/register", { dir });
+  expect((await devPost("/api/v1/apps/cmdapp3/commands/constructor", {})).status).toBe(404);
+});
+
 test("unknown command name is 404 in dev", async () => {
   const dir = mkdtempSync(join(tmpdir(), "cmd-"));
   writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({ name: "cmdapp2", port: 4801, commands: { start: "s" } }));

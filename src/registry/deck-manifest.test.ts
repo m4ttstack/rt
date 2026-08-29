@@ -118,6 +118,12 @@ test("unknown alt throws", () => {
   expect(() => resolveServeShape({ name: "c", commands: { start: "s" } }, "nope")).toThrow();
 });
 
+test("an inherited Object.prototype name is not a known alt", () => {
+  const manifest = { name: "c", commands: { start: "s" } };
+  expect(() => resolveServeShape(manifest, "toString")).toThrow();
+  expect(() => resolveServeShape(manifest, "constructor")).toThrow();
+});
+
 test("no start command yields no argv (port-only app)", () => {
   expect(resolveServeShape({ name: "c", port: 4200, commands: {} })).toEqual({ port: 4200, command: undefined });
 });

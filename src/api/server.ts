@@ -334,7 +334,9 @@ export function startApi(deps: ApiDeps) {
             if (!dev) return json({ error: "not found" }, 404); // production: indistinguishable from absent
             const [, name, cmd, runId] = cm as unknown as [string, string, string, string | undefined];
             const record = getRecord(name);
-            if (!record?.commands || !(cmd in record.commands)) return json({ error: "not found" }, 404);
+            if (!record?.commands || !Object.prototype.hasOwnProperty.call(record.commands, cmd)) {
+              return json({ error: "not found" }, 404);
+            }
             if (runId && req.method === "GET") {
               const st = commandRunStatus(name, runId);
               return st ? json(st) : json({ error: "unknown run" }, 404);

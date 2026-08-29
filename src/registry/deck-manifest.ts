@@ -108,10 +108,15 @@ export function resolveServeShape(
   manifest: DeckManifest,
   altName?: string,
 ): { port?: number; command?: string[] } {
-  const overlay = altName === undefined ? undefined : manifest.altConfigs?.[altName];
-  if (altName !== undefined && overlay === undefined) {
+  // Object.prototype.hasOwnProperty, not `in` or a bare index: altConfigs is a
+  // plain object, so an inherited name (toString, constructor, ...) would
+  // otherwise resolve to a real member and silently fall through as "known".
+  const hasOverlay = altName !== undefined
+    && Object.prototype.hasOwnProperty.call(manifest.altConfigs ?? {}, altName);
+  if (altName !== undefined && !hasOverlay) {
     throw new Error(`unknown alt config: ${altName}`);
   }
+  const overlay = hasOverlay ? manifest.altConfigs![altName!] : undefined;
   const port = overlay?.port ?? manifest.port;
   const start = overlay?.start ?? manifest.commands.start;
   return { port, command: start === undefined ? undefined : ["sh", "-c", start] };

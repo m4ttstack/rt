@@ -47,3 +47,17 @@ test("status flips to exited with the code when the process ends", async () => {
 test("unknown run is null", () => {
   expect(commandRunStatus("chat", "nope")).toBeNull();
 });
+
+test("a synchronous spawn failure cleans up the run record instead of leaving the app stuck busy", () => {
+  const logDir = mkdtempSync(join(tmpdir(), "runlog-"));
+  const throwingSpawn = () => {
+    throw new Error("spawn failed");
+  };
+  expect(() =>
+    startCommandRun({ name: "chat", cmd: "deploy", shell: "bun run deploy", workingDirectory: "/tmp/app" }, { spawn: throwingSpawn, logDir }),
+  ).toThrow("spawn failed");
+
+  const { spawn } = fakeSpawn(new Promise(() => {}));
+  const retry = startCommandRun({ name: "chat", cmd: "deploy", shell: "bun run deploy", workingDirectory: "/tmp/app" }, { spawn, logDir });
+  expect(retry.started).toBe(true);
+});
