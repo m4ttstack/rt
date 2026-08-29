@@ -12,8 +12,8 @@
     "test": "vitest"
   },
   "dependencies": {
-    "@mattstack/app-kit": "file:./vendor/mattstack-app-kit-0.1.0.tgz",
-    "@mattstack/app-server": "file:./vendor/mattstack-app-server-0.1.0.tgz",
+    "@mattstack/app-kit": "file:./vendor/mattstack-app-kit-0.1.5.tgz",
+    "@mattstack/app-server": "file:./vendor/mattstack-app-server-0.1.1.tgz",
     "@mattstack/mantine-tokyo": "file:./vendor/mattstack-mantine-tokyo-0.2.0.tgz",
     "@mantine/code-highlight": "^9.5.2",
     "@mantine/core": "^9.5.2",
