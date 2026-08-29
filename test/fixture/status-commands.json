@@ -1,0 +1,258 @@
+{
+  "suffix": "mattstack",
+  "canRestart": true,
+  "canManage": true,
+  "up": 3,
+  "total": 4,
+  "nextPort": 11012,
+  "proxyStale": false,
+  "autoHeal": null,
+  "apps": [
+    {
+      "name": "atlas",
+      "displayTld": "mattstack",
+      "port": 11001,
+      "url": "https://atlas.localhost",
+      "publicUrl": "https://atlas.mattstack",
+      "health": {
+        "ok": true,
+        "status": 200,
+        "ms": 34
+      },
+      "service": {
+        "label": "com.mattstack.deck.atlas",
+        "short": "atlas",
+        "pid": 5123,
+        "lastExitStatus": 0,
+        "unmanaged": null,
+        "stderr": []
+      },
+      "published": true,
+      "hasPassword": true,
+      "isTunnel": false,
+      "override": null,
+      "publicFollowsOverride": false,
+      "preflight": null,
+      "self": false,
+      "managedBy": "mattstack",
+      "issues": [],
+      "record": {
+        "kind": "service",
+        "command": [
+          "bun",
+          "run",
+          "server.ts"
+        ],
+        "workingDirectory": "/Users/matt/Documents/GitHub/atlas"
+      },
+      "oauth": {
+        "mode": "emails",
+        "emails": [
+          "matt@example.com",
+          "guest@example.com"
+        ]
+      },
+      "commands": [
+        "deploy",
+        "build"
+      ]
+    },
+    {
+      "name": "forecast",
+      "displayTld": "mattstack",
+      "port": 11003,
+      "url": "https://forecast.localhost",
+      "publicUrl": "https://forecast.mattstack",
+      "health": {
+        "ok": true,
+        "status": 200,
+        "ms": 51
+      },
+      "service": {
+        "label": "com.mattstack.deck.forecast",
+        "short": "forecast",
+        "pid": 5140,
+        "lastExitStatus": 0,
+        "unmanaged": null,
+        "stderr": []
+      },
+      "published": true,
+      "hasPassword": false,
+      "isTunnel": false,
+      "override": {
+        "devPort": 3000,
+        "basePort": 11003
+      },
+      "publicFollowsOverride": false,
+      "preflight": [],
+      "self": true,
+      "managedBy": "deck",
+      "issues": [],
+      "record": {
+        "kind": "service",
+        "command": [
+          "bun",
+          "run",
+          "dev"
+        ],
+        "workingDirectory": "/Users/matt/Documents/GitHub/forecast"
+      },
+      "oauth": {
+        "mode": "off"
+      }
+    },
+    {
+      "name": "ledger",
+      "displayTld": "mattstack",
+      "port": 11005,
+      "url": "https://ledger.localhost",
+      "publicUrl": null,
+      "health": {
+        "ok": false,
+        "status": null,
+        "ms": null
+      },
+      "service": {
+        "label": "com.mattstack.deck.ledger",
+        "short": "ledger",
+        "pid": null,
+        "lastExitStatus": 1,
+        "unmanaged": null,
+        "stderr": [
+          "Error: connect ECONNREFUSED"
+        ]
+      },
+      "published": false,
+      "hasPassword": false,
+      "isTunnel": false,
+      "override": null,
+      "publicFollowsOverride": false,
+      "preflight": null,
+      "self": false,
+      "managedBy": "mattstack",
+      "issues": [
+        {
+          "source": "cloudflare",
+          "message": "Access sync failed: 502 from Cloudflare API",
+          "at": "2026-08-18T10:00:00.000Z"
+        }
+      ],
+      "record": {
+        "kind": "service",
+        "command": [
+          "bun",
+          "run",
+          "server.ts"
+        ],
+        "workingDirectory": "/Users/matt/Documents/GitHub/ledger"
+      },
+      "oauth": {
+        "mode": "off"
+      }
+    },
+    {
+      "name": "orbit",
+      "displayTld": "localhost",
+      "port": 3007,
+      "url": "https://orbit.localhost",
+      "publicUrl": "https://orbit.mattstack",
+      "health": {
+        "ok": true,
+        "status": 200,
+        "ms": 18
+      },
+      "service": {
+        "label": "com.mattstack.deck.orbit",
+        "short": "orbit",
+        "pid": 5311,
+        "lastExitStatus": 0,
+        "unmanaged": null,
+        "stderr": []
+      },
+      "published": true,
+      "hasPassword": false,
+      "isTunnel": false,
+      "override": {
+        "devPort": 3007,
+        "basePort": 11007
+      },
+      "publicFollowsOverride": false,
+      "preflight": null,
+      "self": false,
+      "managedBy": "user",
+      "issues": [],
+      "record": {
+        "kind": "service",
+        "command": [
+          "bun",
+          "run",
+          "dev"
+        ],
+        "workingDirectory": "/Users/matt/Documents/GitHub/orbit"
+      },
+      "oauth": {
+        "mode": "off"
+      }
+    }
+  ],
+  "orphans": [
+    {
+      "name": "cloudflared",
+      "displayTld": null,
+      "port": null,
+      "url": null,
+      "publicUrl": null,
+      "health": null,
+      "service": {
+        "label": "com.mattstack.deck.cloudflared",
+        "short": "cloudflared",
+        "pid": 4200,
+        "lastExitStatus": 0,
+        "unmanaged": null,
+        "stderr": []
+      },
+      "published": true,
+      "hasPassword": false,
+      "isTunnel": true,
+      "override": null,
+      "publicFollowsOverride": false,
+      "preflight": null,
+      "self": false,
+      "managedBy": null,
+      "issues": [],
+      "record": null,
+      "oauth": {
+        "mode": "off"
+      }
+    },
+    {
+      "name": "stray-agent",
+      "displayTld": null,
+      "port": null,
+      "url": null,
+      "publicUrl": null,
+      "health": null,
+      "service": {
+        "label": "com.mattstack.deck.stray-agent",
+        "short": "stray-agent",
+        "pid": null,
+        "lastExitStatus": 1,
+        "unmanaged": null,
+        "stderr": []
+      },
+      "published": true,
+      "hasPassword": false,
+      "isTunnel": false,
+      "override": null,
+      "publicFollowsOverride": false,
+      "preflight": null,
+      "self": false,
+      "managedBy": null,
+      "issues": [],
+      "record": null,
+      "oauth": {
+        "mode": "off"
+      }
+    }
+  ]
+}

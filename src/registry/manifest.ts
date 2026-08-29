@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from "fs";
 import { join, resolve } from "path";
 import { stateDir } from "../api/state.ts";
 import { getRecord, putRecord } from "./records.ts";
+import { readDeckManifest } from "./deck-manifest.ts";
 
 export interface Manifest {
   displayName: string;
@@ -73,8 +74,22 @@ export function removeIcon(name: string): void {
 export function ingestManifest(name: string): void {
   const record = getRecord(name);
   if (!record || record.workingDirectory === undefined) return;
-  const manifest = readManifest(record.workingDirectory);
-  if (!manifest) return;
+  const deck = readDeckManifest(record.workingDirectory);
+  const manifest =
+    deck && deck.ok && deck.manifest.displayName && deck.manifest.icon
+      ? { displayName: deck.manifest.displayName, description: deck.manifest.description, icon: deck.manifest.icon }
+      : readManifest(record.workingDirectory); // deprecated mattstack.json fallback (identity only)
+  if (!manifest) {
+    // The manifest is the source of truth for identity: if neither deck.json
+    // nor mattstack.json supplies one anymore, a previously-ingested
+    // displayName/description/icon must not linger as stale leftovers.
+    if (record.displayName !== undefined || record.description !== undefined || record.icon !== undefined) {
+      removeIcon(name);
+      const { displayName: _displayName, description: _description, icon: _icon, ...rest } = record;
+      putRecord(rest);
+    }
+    return;
+  }
   let svg: string;
   try {
     const iconPath = resolve(record.workingDirectory, manifest.icon);

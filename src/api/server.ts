@@ -18,12 +18,13 @@ import { registerApp, unregisterApp, editApp, adoptApp, restartManagedApps, remo
   type Drivers, knownRouteApp,
 } from "./register.ts";
 import { getRecord, listRecords, type AppRecord, type SyncIssue } from "../registry/records.ts";
-import { ingestManifest } from "../registry/manifest.ts";
 import { isPlatformManagedBy } from "../services/manager.ts";
 import { migrate } from "../registry/migrate.ts";
 import { convert } from "../registry/convert.ts";
 import { redactedSettings, updatePlatformSettings, getPlatformSettings } from "./platform-settings.ts";
 import { logsDir } from "./state.ts";
+import { isDevMode } from "./dev-mode.ts";
+import { startCommandRun, commandRunStatus } from "../services/command-runner.ts";
 import { join } from "path";
 import { userInfo } from "os";
 import type { TunnelDriver } from "../edge/tunnel.ts";
@@ -46,6 +47,8 @@ export interface ApiDeps extends Drivers {
   accessFetch?: typeof fetch;
   /** Fake rt-secrets transport for CF Access driver tests; production omits it and reads the real daemon. */
   deckSecrets?: RtSecretsDeps;
+  /** Dev-mode gate for action commands. Defaults to isDevMode in production wiring; tests inject it. */
+  devMode?: () => boolean;
 }
 
 export function callerOf(req: Request): string {
@@ -210,6 +213,7 @@ export function startApi(deps: ApiDeps) {
       const statusOpts = {
         requestHost: host, port: deps.port, canaryPort: deps.canaryPort,
         proxyFreshness: deps.freshness(), autoHeal: deps.autoHeal(),
+        devMode: (deps.devMode ?? isDevMode)(),
       };
 
       // ---- static / identity (carried from core/server.ts) ----
@@ -305,7 +309,13 @@ export function startApi(deps: ApiDeps) {
         }
 
         // Checked ahead of the generic /apps/:name matcher below so a real app
-        // named "managed" can never shadow these bulk lifecycle routes.
+        // named "register" or "managed" can never shadow these routes.
+        if (pathname === "/api/v1/apps/register" && req.method === "POST") {
+          const b = await body(req);
+          const { applyManifest } = await import("./register-manifest.ts");
+          const r = await applyManifest(String(b.dir ?? ""), undefined, deps);
+          return json(r.body, r.status);
+        }
         if (pathname === "/api/v1/apps/managed/restart" && req.method === "POST") {
           const r = await restartManagedApps(deps);
           return json(r.body, r.status);
@@ -315,22 +325,32 @@ export function startApi(deps: ApiDeps) {
           return json(r.body, r.status);
         }
 
-        // Explicit branch ahead of the single-sub-segment matcher below: that
-        // matcher's ([a-z-]+) captures only one path segment, and this route
-        // has two ("manifest/refresh").
+        // Dev-only action-command routes: production must 404 exactly as if the
+        // route did not exist, so no command metadata leaks off-machine.
         {
-          const mr = pathname.match(/^\/api\/v1\/apps\/([^/]+)\/manifest\/refresh$/);
-          if (mr && req.method === "POST") {
-            const name = mr[1]!;
+          const cm = pathname.match(/^\/api\/v1\/apps\/([^/]+)\/commands\/([a-z0-9-]+)(?:\/([a-z0-9]+))?$/);
+          if (cm) {
+            const dev = (deps.devMode ?? isDevMode)();
+            if (!dev) return json({ error: "not found" }, 404); // production: indistinguishable from absent
+            const [, name, cmd, runId] = cm as unknown as [string, string, string, string | undefined];
             const record = getRecord(name);
-            if (!record) return json({ error: "not-found" }, 404);
-            // Only managed (adopted) products are ever ingested: a user app or
-            // deck's own platform row never carries a mattstack.json contract.
-            if (record.managedBy === "user" || isPlatformManagedBy(record.managedBy)) {
-              return json({ error: "not-a-managed-product" }, 409);
+            if (!record?.commands || !Object.prototype.hasOwnProperty.call(record.commands, cmd)) {
+              return json({ error: "not found" }, 404);
             }
-            ingestManifest(name);
-            return json({ ok: true });
+            if (runId && req.method === "GET") {
+              const st = commandRunStatus(name, runId);
+              return st ? json(st) : json({ error: "unknown run" }, 404);
+            }
+            if (!runId && req.method === "POST") {
+              // A port-only (external) manifest carries commands but no workingDirectory:
+              // never spawn with cwd undefined, which would run in deck's own directory.
+              if (!record.workingDirectory) return json({ error: "app has no manifest directory" }, 400);
+              const started = startCommandRun({
+                name, cmd, shell: record.commands[cmd]!, workingDirectory: record.workingDirectory,
+              });
+              if (!started.started) return json({ error: "busy" }, 409);
+              return json({ started: true, runId: started.runId });
+            }
           }
         }
 
@@ -376,6 +396,16 @@ export function startApi(deps: ApiDeps) {
             const svc = (await readServices()).find((s) => s.label.endsWith(`.${name}`) || s.label.split(".").pop() === name);
             if (!svc) return json({ error: "unknown app" }, 404);
             return json({ ok: await restartService(svc.label) });
+          }
+          if (sub === "alt" && req.method === "POST") {
+            const record = getRecord(name);
+            if (!record) return json({ error: "unknown app" }, 404);
+            if (!record.workingDirectory) return json({ error: "app has no manifest directory" }, 400);
+            const b = await body(req);
+            const alt = b.alt == null ? undefined : String(b.alt);
+            const { applyManifest } = await import("./register-manifest.ts");
+            const r = await applyManifest(record.workingDirectory, alt, deps);
+            return json(r.body, r.status);
           }
           if (sub === "logs" && req.method === "GET") {
             const lines = Number(url.searchParams.get("lines") ?? 40);

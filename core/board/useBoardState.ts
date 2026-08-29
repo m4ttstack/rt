@@ -146,6 +146,12 @@ export function useBoardState() {
     apiPost(`/api/v1/apps/${row.name}/restart`).catch(() => {});
   }, []);
 
+  // Swallow the rejection: a self-restarting deploy kills the API mid-POST,
+  // exactly like onRestart; the 5s poll re-syncs once it returns.
+  const onRunCommand = useCallback((row: Row, name: string) => {
+    apiPost(`/api/v1/apps/${row.name}/commands/${name}`).catch(() => {});
+  }, []);
+
   const onPublish = useCallback(
     async (row: Row) => {
       try {
@@ -485,6 +491,7 @@ export function useBoardState() {
     isRestarting,
     refresh,
     onRestart,
+    onRunCommand,
     onPublish,
     editing,
     startEdit,

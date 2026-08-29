@@ -26,7 +26,8 @@
     "test:e2e": "LOCAL_E2E=1 bun test test/e2e.smoke.test.ts",
     "capture": "bun test/capture.ts --out test/.captures",
     "capture:baseline": "bun test/capture.ts --out test/baselines",
-    "capture:compare": "bun test/compare.ts"
+    "capture:compare": "bun test/compare.ts",
+    "deploy": "bun run scripts/deploy.ts"
   },
   "dependencies": {
     "@mattstack/rt-client": "^0.3.0",

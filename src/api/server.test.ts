@@ -18,7 +18,7 @@ const { startApi } = await import("./server.ts");
 const { FakeServiceManager } = await import("../services/fake.ts");
 const { FakeEdgeProxy } = await import("../edge/portless.ts");
 const { FakeTunnelDriver } = await import("../edge/tunnel.ts");
-const { reloadRegistry } = await import("../registry/records.ts");
+const { reloadRegistry, getRecord } = await import("../registry/records.ts");
 const { reloadPlatformSettings } = await import("./platform-settings.ts");
 
 const PORT = 18917;
@@ -48,6 +48,12 @@ const cannedAccessFetch = (async (url: string | URL | Request, init?: RequestIni
   return Response.json({ success: true, result: { id: "pol-1" } });
 }) as typeof fetch;
 
+// A dev-gated server: devMode: () => true unlocks the action-command routes
+// regardless of the real machine's mattstack.mode, which this test environment
+// can never set to "dev" (rt-client 0.3.0 does not register that key).
+const DEV_PORT = 18923;
+let devServer: ReturnType<typeof startApi>;
+
 beforeAll(() => {
   manager = new FakeServiceManager();
   edge = new FakeEdgeProxy();
@@ -56,6 +62,15 @@ beforeAll(() => {
     port: PORT, canaryPort: PORT + 1,
     freshness: () => "unknown", autoHeal: () => null, onRouteWrite: () => {},
     tunnel: new FakeTunnelDriver(),
+    devMode: () => false,
+  });
+
+  devServer = startApi({
+    manager: new FakeServiceManager(), edge: new FakeEdgeProxy(),
+    port: DEV_PORT, canaryPort: DEV_PORT + 1,
+    freshness: () => "unknown", autoHeal: () => null, onRouteWrite: () => {},
+    tunnel: new FakeTunnelDriver(),
+    devMode: () => true,
   });
 
   domainCfDir = mkdtempSync(join(tmpdir(), "local-cfdir-"));
@@ -83,6 +98,7 @@ afterAll(() => {
   server.stop(true);
   domainServer.stop(true);
   cfServer.stop(true);
+  devServer.stop(true);
   rmSync(dir, { recursive: true, force: true });
   rmSync(domainCfDir, { recursive: true, force: true });
 });
@@ -101,6 +117,13 @@ beforeEach(() => {
 const api = (path: string, init?: RequestInit) => fetch(`http://127.0.0.1:${PORT}${path}`, init);
 const post = (path: string, body: unknown, headers: Record<string, string> = {}) =>
   api(path, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
+// prodPost is the default (devMode: () => false) server: used where a test
+// specifically needs the production gate rather than any of the other servers.
+const prodPost = post;
+
+const devApi = (path: string, init?: RequestInit) => fetch(`http://127.0.0.1:${DEV_PORT}${path}`, init);
+const devPost = (path: string, body: unknown, headers: Record<string, string> = {}) =>
+  devApi(path, { method: "POST", headers: { "content-type": "application/json", ...headers }, body: JSON.stringify(body) });
 
 test("healthz answers ok (health contract)", async () => {
   expect(await (await api("/healthz")).text()).toBe("ok");
@@ -437,4 +460,104 @@ test("adopt endpoint: renames + flips ownership, and a re-run is an idempotent 2
   const ghost = await post("/api/v1/apps/ghost/adopt", {});
   expect(ghost.status).toBe(404);
   expect(await ghost.json()).toEqual({ error: "unknown app" });
+});
+
+// Proves adoptApp rides the shared ingestManifest path (register.ts:420)
+// rather than any bespoke mattstack.json-only read: identity here can only
+// have come from mattstack.deck.json, since no mattstack.json exists.
+test("adopt ingests identity from mattstack.deck.json", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "adopt-"));
+  writeFileSync(
+    join(dir, "mattstack.deck.json"),
+    JSON.stringify({ name: "adoptme", commands: { start: "s" }, displayName: "Adopt Me", icon: "icon.svg" }),
+  );
+  writeFileSync(join(dir, "icon.svg"), '<svg xmlns="http://www.w3.org/2000/svg"></svg>');
+  await post("/api/v1/apps", { name: "adoptme", command: ["sh", "-c", "s"], workingDirectory: dir });
+
+  const res = await post("/api/v1/apps/adoptme/adopt", { managedBy: "rt" });
+  expect(res.status).toBe(200);
+
+  const row = await (await api("/api/v1/apps/adoptme")).json();
+  expect(row.record.managedBy).toBe("rt");
+  const record = getRecord("adoptme")!;
+  expect(record.displayName).toBe("Adopt Me");
+  expect(record.icon).toEqual({ ext: "svg" });
+});
+
+test("POST /apps/register creates a record from a manifest dir", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "reg-"));
+  writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({ name: "regtest", port: 4321, commands: { start: "bun run serve" } }));
+  const res = await post("/api/v1/apps/register", { dir });
+  expect(res.status).toBe(200);
+  const get = await api("/api/v1/apps/regtest");
+  expect(get.status).toBe(200);
+});
+
+test("POST /apps/:name/alt activates and clears an overlay", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "alt-"));
+  writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({
+    name: "altapp", port: 4400, commands: { start: "bun run serve" },
+    altConfigs: { dev: { port: 4500, commands: { start: "bun run dev" } } },
+  }));
+  await post("/api/v1/apps/register", { dir });
+  const on = await post("/api/v1/apps/altapp/alt", { alt: "dev" });
+  expect(on.status).toBe(200);
+  expect((await (await api("/api/v1/apps/altapp")).json()).record.port).toBe(4500);
+  const off = await post("/api/v1/apps/altapp/alt", { alt: null });
+  expect(off.status).toBe(200);
+  expect((await (await api("/api/v1/apps/altapp")).json()).record.port).toBe(4400);
+});
+
+test("alt on an unknown app is 404", async () => {
+  expect((await post("/api/v1/apps/ghost/alt", { alt: "dev" })).status).toBe(404);
+});
+
+test("command route runs a declared command in dev", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cmd-"));
+  writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({ name: "cmdapp", port: 4800, commands: { start: "s", build: "echo built" } }));
+  await devPost("/api/v1/apps/register", { dir });
+  const run = await devPost("/api/v1/apps/cmdapp/commands/build", {});
+  expect(run.status).toBe(200);
+  const body = await run.json();
+  expect(body.started).toBe(true);
+  expect(typeof body.runId).toBe("string");
+});
+
+test("an inherited Object.prototype command name is 404 in dev, not a silent match", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cmd-"));
+  writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({ name: "cmdapp3", port: 4802, commands: { start: "s", build: "echo built" } }));
+  await devPost("/api/v1/apps/register", { dir });
+  expect((await devPost("/api/v1/apps/cmdapp3/commands/constructor", {})).status).toBe(404);
+});
+
+test("unknown command name is 404 in dev", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cmd-"));
+  writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({ name: "cmdapp2", port: 4801, commands: { start: "s" } }));
+  await devPost("/api/v1/apps/register", { dir });
+  expect((await devPost("/api/v1/apps/cmdapp2/commands/ghost", {})).status).toBe(404);
+});
+
+test("command route is 404 in production", async () => {
+  expect((await prodPost("/api/v1/apps/anything/commands/build", {})).status).toBe(404);
+});
+
+test("a port-only manifest with an action command but no workingDirectory 400s instead of spawning with cwd undefined", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cmd-"));
+  writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({ name: "portonly", port: 4890, commands: { build: "echo hi" } }));
+  await devPost("/api/v1/apps/register", { dir });
+  expect((await devPost("/api/v1/apps/portonly/commands/build", {})).status).toBe(400);
+});
+
+test("status carries command names in dev, omits them in prod", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "meta-"));
+  writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({ name: "metaapp", port: 4950, commands: { start: "s", deploy: "d" } }));
+  await devPost("/api/v1/apps/register", { dir });
+  // Registration only creates the registry record and an in-memory alias (the
+  // fake edge driver never persists to routes.json); a status row needs a
+  // route on disk too, same as the other status-row tests in this file.
+  writeFileSync(process.env.LOCAL_APPS_ROUTES_PATH!, JSON.stringify([{ hostname: "metaapp.localhost", port: 4950, pid: 0 }]));
+  const devRow = (await (await devApi("/api/v1/status")).json()).apps.find((a: any) => a.name === "metaapp");
+  expect(devRow.commands).toEqual(["deploy"]);
+  const prodRow = (await (await api("/api/v1/status")).json()).apps.find((a: any) => a.name === "metaapp");
+  expect(prodRow.commands).toBeUndefined();
 });

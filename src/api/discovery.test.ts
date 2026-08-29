@@ -166,48 +166,6 @@ test("GET /api/apps/:name/icon serves 200 svg for a real icon, 404 for a missing
   expect(missing.status).toBe(404);
 });
 
-// ---- POST /api/v1/apps/:name/manifest/refresh ----
-
-test("POST /api/v1/apps/:name/manifest/refresh re-ingests the manifest from disk", async () => {
-  const chatDir = manifestDir();
-  putRecord({
-    name: "chat", managedBy: "rt", port: 11002, kind: "service",
-    workingDirectory: chatDir, createdAt: "2026-08-10T00:00:00Z",
-  });
-  ingestManifest("chat");
-  expect(getRecord("chat")!.displayName).toBe("Chat");
-
-  writeFileSync(
-    join(chatDir, "mattstack.json"),
-    JSON.stringify({ displayName: "Chatter", description: "Group chat", icon: "./icon.svg" }),
-  );
-
-  // No x-forwarded-host: the request host is not a public mattstack tld, so
-  // the /api/v1/ mutation guard lets a plain POST through.
-  const res = await fetch(`http://127.0.0.1:${PORT}/api/v1/apps/chat/manifest/refresh`, { method: "POST" });
-  expect(res.status).toBe(200);
-  expect(await res.json()).toEqual({ ok: true });
-  expect(getRecord("chat")!.displayName).toBe("Chatter");
-});
-
-test("POST /api/v1/apps/:name/manifest/refresh 404s for an unregistered name", async () => {
-  const res = await fetch(`http://127.0.0.1:${PORT}/api/v1/apps/nope/manifest/refresh`, { method: "POST" });
-  expect(res.status).toBe(404);
-});
-
-test("POST /api/v1/apps/:name/manifest/refresh refuses a user app, never ingests it", async () => {
-  const mineDir = manifestDir();
-  putRecord({
-    name: "mine", managedBy: "user", port: 11005, kind: "service",
-    workingDirectory: mineDir, createdAt: "2026-08-10T00:00:00Z",
-  });
-
-  const res = await fetch(`http://127.0.0.1:${PORT}/api/v1/apps/mine/manifest/refresh`, { method: "POST" });
-  expect(res.status).toBe(409);
-  expect(await res.json()).toEqual({ error: "not-a-managed-product" });
-  expect(getRecord("mine")!.displayName).toBeUndefined();
-});
-
 // ---- CORS on the discovery routes ----
 
 test("GET /api/apps echoes an allowed mattstack origin in CORS", async () => {

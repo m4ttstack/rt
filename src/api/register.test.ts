@@ -134,6 +134,23 @@ test("edit re-ports: reinstalls the service on the new port and re-aliases", asy
   expect(drivers.edge.aliases.get("myapp")).toBe(11500);
 });
 
+test("edit re-ports onto a port already held by another record is a 409, and the port stays unchanged", async () => {
+  await registerApp(input, drivers);
+  const otherRes = await registerApp({ name: "other", command: ["bun", "x"], workingDirectory: "/tmp/other" }, drivers);
+  const otherPort = (otherRes.body as any).record.port as number;
+  const res = await editApp("myapp", { port: otherPort }, "user", false, drivers);
+  expect(res.status).toBe(409);
+  expect(getRecord("myapp")!.port).toBe(11000);
+});
+
+test("edit re-ports an external (staticPort) record onto an occupied port still succeeds — staticPort is exempt from the collision guard", async () => {
+  await registerApp(input, drivers); // myapp: a service on 11000
+  await registerApp({ name: "ext", staticPort: 4200 }, drivers);
+  const res = await editApp("ext", { port: 11000 }, "user", false, drivers);
+  expect(res.status).toBe(200);
+  expect(getRecord("ext")!.port).toBe(11000);
+});
+
 test("edit rename: moves record, label, and alias", async () => {
   await registerApp(input, drivers);
   const res = await editApp("myapp", { name: "renamed" }, "user", false, drivers);
