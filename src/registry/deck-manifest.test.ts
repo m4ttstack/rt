@@ -105,3 +105,11 @@ test("unknown alt throws", () => {
 test("no start command yields no argv (port-only app)", () => {
   expect(resolveServeShape({ name: "c", port: 4200, commands: {} })).toEqual({ port: 4200, command: undefined });
 });
+
+test("deck's own repo manifest parses", () => {
+  const r = readDeckManifest(join(import.meta.dir, "..", ".."));
+  expect(r?.ok).toBe(true);
+  if (!r || !r.ok) throw new Error("unreachable");
+  expect(r.manifest.name).toBe("deck");
+  expect(r.manifest.commands.deploy).toBeDefined();
+});
