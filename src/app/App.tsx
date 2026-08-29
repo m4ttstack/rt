@@ -5,6 +5,7 @@ import { RailLink } from '@mattstack/app-kit/router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useLocation } from 'wouter';
 
+import { SHELL_HEADER_HEIGHT } from './chrome';
 import { ExplainKeyPage } from './config/ExplainKeyPage';
 import { NotFoundPage } from './NotFoundPage';
 import { ConsolePalette } from './palette/ConsolePalette';
@@ -91,7 +92,7 @@ export function App() {
       <MattstackShell
         name="console"
         appName="console"
-        headerHeight={48}
+        headerHeight={SHELL_HEADER_HEIGHT}
         mark={
           <img
             src="/favicon.svg"
