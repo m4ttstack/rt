@@ -21,6 +21,7 @@ usage:
   deck config init                         scaffold mattstack.deck.json in cwd
   deck register [--dir PATH]               create/sync an app from its mattstack.deck.json
   deck alt <app> <name|off>                activate a declared serve overlay, or return to base
+  deck cmd <app> <name>                    run a declared action command (dev mode only)
   deck remove <name> [--force]             unregister (registrar-owned; --force is the escape hatch)
   deck remove --managed                    unregister every app deck manages (installer's uninstall step)
   deck restart <name>                      kickstart its service
@@ -271,6 +272,16 @@ export async function runCommand(
         });
         if (status !== 200) { io.err(body.error ?? `failed (${status})`); return 1; }
         io.out(which === "off" ? `${name} back on its base config` : `${name} now on alt "${which}"`);
+        return 0;
+      }
+      case "cmd": {
+        const [app, name] = rest;
+        if (!app || !name) { io.err(USAGE); return 2; }
+        const { status, body } = await apiJson(`/api/v1/apps/${app}/commands/${name}`, { method: "POST" });
+        if (status === 404) { io.err(`no such command (is deck in dev mode?): ${app} ${name}`); return 1; }
+        if (status === 409) { io.err(`${app} is already running a command`); return 1; }
+        if (status !== 200) { io.err(body.error ?? `failed (${status})`); return 1; }
+        io.out(`started ${app} ${name} (run ${body.runId})`);
         return 0;
       }
       case "manifest": {

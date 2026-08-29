@@ -33,6 +33,7 @@ beforeAll(() => {
     cloudflaredDir: dir,
     port: PORT, canaryPort: PORT + 1,
     freshness: () => "unknown", autoHeal: () => null, onRouteWrite: () => {},
+    devMode: () => true,
   });
   writeApiInfo(PORT);
 });
@@ -345,4 +346,13 @@ test("deck alt on/off round-trip", async () => {
   expect(await runCommand(["register", "--dir", appDir], io())).toBe(0);
   expect(await runCommand(["alt", "altcli", "dev"], io())).toBe(0);
   expect(await runCommand(["alt", "altcli", "off"], io())).toBe(0);
+});
+
+test("deck cmd runs a declared action command", async () => {
+  const appDir = mkdtempSync(join(tmpdir(), "cmdcli-"));
+  writeFileSync(join(appDir, "mattstack.deck.json"), JSON.stringify({ name: "cmdcli", port: 4900, commands: { start: "s", build: "echo hi" } }));
+  expect(await runCommand(["register", "--dir", appDir], io())).toBe(0);
+  const a = io();
+  expect(await runCommand(["cmd", "cmdcli", "build"], a)).toBe(0);
+  expect(a.lines.join("\n")).toContain("started");
 });
