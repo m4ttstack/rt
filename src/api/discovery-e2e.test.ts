@@ -5,7 +5,7 @@ import { tmpdir } from "os";
 
 // One full-path test proving the launcher registry works end to end: adopt a
 // real fixture app (mattstack.json + SVG), then hit the API and assert the
-// list, the absolute icon URL, the served icon, CORS, exclusions, and refresh.
+// list, the absolute icon URL, the served icon, CORS, and exclusions.
 // Same isolation harness as discovery.test.ts, with its own state dir/env/port
 // so it never collides with that file's fixtures or its running fake server.
 
@@ -70,7 +70,7 @@ function apiHeaders(extra?: Record<string, string>): Record<string, string> {
   return { "x-forwarded-host": "chat.mattstack", ...extra };
 }
 
-test("end-to-end: adopt a fixture app, then list/serve/CORS/refresh it through the real API", async () => {
+test("end-to-end: adopt a fixture app, then list/serve/CORS it through the real API", async () => {
   const chatDir = fixtureAppDir();
 
   putRecord({
@@ -125,21 +125,4 @@ test("end-to-end: adopt a fixture app, then list/serve/CORS/refresh it through t
     headers: apiHeaders({ origin: "https://console.mattstack" }),
   });
   expect(cors.headers.get("access-control-allow-origin")).toBe("https://console.mattstack");
-
-  // Edit the manifest on disk, refresh, and see the new name reflected.
-  writeFileSync(
-    join(chatDir, "mattstack.json"),
-    JSON.stringify({ displayName: "Chat Room", description: "Group chat", icon: "./public/icon.svg" }),
-  );
-  const refresh = await fetch(`http://127.0.0.1:${PORT}/api/v1/apps/chat/manifest/refresh`, {
-    method: "POST",
-    headers: apiHeaders(),
-  });
-  expect(refresh.status).toBe(200);
-  expect(await refresh.json()).toEqual({ ok: true });
-
-  const relisted = await fetch(`http://127.0.0.1:${PORT}/api/apps`, { headers: apiHeaders() });
-  const relistedBody = (await relisted.json()) as { apps: Array<Record<string, unknown>> };
-  expect(relistedBody.apps.map((a) => a.name)).toEqual(["chat"]);
-  expect(relistedBody.apps[0]!.displayName).toBe("Chat Room");
 });

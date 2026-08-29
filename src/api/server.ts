@@ -18,7 +18,6 @@ import { registerApp, unregisterApp, editApp, adoptApp, restartManagedApps, remo
   type Drivers, knownRouteApp,
 } from "./register.ts";
 import { getRecord, listRecords, type AppRecord, type SyncIssue } from "../registry/records.ts";
-import { ingestManifest } from "../registry/manifest.ts";
 import { isPlatformManagedBy } from "../services/manager.ts";
 import { migrate } from "../registry/migrate.ts";
 import { convert } from "../registry/convert.ts";
@@ -324,25 +323,6 @@ export function startApi(deps: ApiDeps) {
         if (pathname === "/api/v1/apps/managed/remove" && req.method === "POST") {
           const r = await removeManagedApps(deps);
           return json(r.body, r.status);
-        }
-
-        // Explicit branch ahead of the single-sub-segment matcher below: that
-        // matcher's ([a-z-]+) captures only one path segment, and this route
-        // has two ("manifest/refresh").
-        {
-          const mr = pathname.match(/^\/api\/v1\/apps\/([^/]+)\/manifest\/refresh$/);
-          if (mr && req.method === "POST") {
-            const name = mr[1]!;
-            const record = getRecord(name);
-            if (!record) return json({ error: "not-found" }, 404);
-            // Only managed (adopted) products are ever ingested: a user app or
-            // deck's own platform row never carries a mattstack.json contract.
-            if (record.managedBy === "user" || isPlatformManagedBy(record.managedBy)) {
-              return json({ error: "not-a-managed-product" }, 409);
-            }
-            ingestManifest(name);
-            return json({ ok: true });
-          }
         }
 
         // Dev-only action-command routes: production must 404 exactly as if the
