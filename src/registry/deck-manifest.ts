@@ -19,6 +19,7 @@ export type ParseResult =
   | null;
 
 const NAME_RE = /^[a-z0-9][a-z0-9.-]*$/;
+const COMMAND_KEY_RE = /^[a-z0-9-]+$/;
 
 function err(error: string): ParseResult {
   return { ok: false, error };
@@ -48,6 +49,9 @@ export function readDeckManifest(dir: string): ParseResult {
   if (m.commands !== undefined) {
     if (typeof m.commands !== "object" || m.commands === null) return err("commands must be an object");
     for (const [key, val] of Object.entries(m.commands as Record<string, unknown>)) {
+      // Every non-start key becomes a board button routed at /commands/:key; the route
+      // regex only accepts [a-z0-9-], so anything else is a silent 404, not a dead click.
+      if (!COMMAND_KEY_RE.test(key)) return err(`command key ${key} must match ${COMMAND_KEY_RE}`);
       if (typeof val !== "string" || val.length === 0) return err(`command ${key} must be a non-empty string`);
       commands[key] = val;
     }

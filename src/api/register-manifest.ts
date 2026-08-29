@@ -45,6 +45,10 @@ export async function applyManifest(
   } else if (shape.command) {
     // Serve shape (command/port) can change between runs and on alt switches;
     // editApp tears the old launchd service down and stands the new one up.
+    // register/alt must be able to sync a MANAGED app from the local-only user
+    // CLI, so the caller is the app's own manager with force=true to clear
+    // authorizeStructural (mirrors adoptApp's force-bless). Safe because the
+    // whole mutation plane is 127.0.0.1-local and public mutations are already 403'd.
     const edited = await editApp(
       manifest.name,
       { command: shape.command, workingDirectory: dir, ...(shape.port !== undefined && { port: shape.port }) },

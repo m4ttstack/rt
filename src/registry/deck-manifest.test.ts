@@ -65,6 +65,22 @@ test("rejects a non-string command value", () => {
   expect(r?.ok).toBe(false);
 });
 
+test("rejects a command key that would 404 the board route", () => {
+  const dir = repo({ "mattstack.deck.json": JSON.stringify({ name: "chat", commands: { start: "s", "db:migrate": "x" } }) });
+  const r = readDeckManifest(dir);
+  expect(r?.ok).toBe(false);
+});
+
+test("accepts start/build/deploy command keys", () => {
+  const dir = repo({
+    "mattstack.deck.json": JSON.stringify({
+      name: "chat", commands: { start: "bun run serve", build: "bun run build", deploy: "bun run deploy" },
+    }),
+  });
+  const r = readDeckManifest(dir);
+  expect(r?.ok).toBe(true);
+});
+
 test("rejects a bad name", () => {
   const dir = repo({ "mattstack.deck.json": JSON.stringify({ name: "Bad Name", commands: {} }) });
   const r = readDeckManifest(dir);

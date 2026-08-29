@@ -1,4 +1,4 @@
-import { openSync, mkdirSync } from "fs";
+import { openSync, closeSync, mkdirSync } from "fs";
 import { join } from "path";
 import { randomBytes } from "crypto";
 import { logsDir } from "../api/state.ts";
@@ -48,6 +48,10 @@ export function startCommandRun(
   proc.exited.then((code) => {
     run.status = "exited";
     run.exitCode = code;
+    // Bun.spawn's ownership of numeric stdio fds is ambiguous; a bare closeSync
+    // could double-close and throw EBADF, so each close is independently guarded.
+    try { closeSync(out); } catch { /* already closed */ }
+    try { closeSync(errFd); } catch { /* already closed */ }
   });
 
   return { started: true, runId };

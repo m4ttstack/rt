@@ -1,5 +1,5 @@
-import { test, expect, beforeEach } from "bun:test";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "fs";
+import { test, expect } from "bun:test";
+import { mkdtempSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 
@@ -20,8 +20,6 @@ function appRepo(manifest: object): string {
   writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify(manifest));
   return dir;
 }
-
-const SVG = '<svg xmlns="http://www.w3.org/2000/svg"></svg>';
 
 test("register creates a supervised record from the manifest", async () => {
   scratch();
