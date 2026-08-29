@@ -35,6 +35,24 @@ export function mattstackVite(opts) {
     plugins: [react({ exclude: /\/node_modules\/(?!@mattstack\/)/ })],
     optimizeDeps: {
       exclude: ['@mattstack/app-kit', '@mattstack/mantine-tokyo'],
+      // Deps reachable ONLY through the excluded kit source must be listed
+      // here: Vite scans no excluded importer, so a consumer whose own code
+      // imports UI solely via the kit gets every one of these served raw.
+      // Raw ESM survives that, but any CJS on the path (dayjs and its
+      // plugins, prop-types) has no `default` export and blanks the whole
+      // app under `vite dev`. Prebundling the kit's full re-exported peer
+      // set keeps the CJS interop inside the optimized bundles.
+      include: [
+        'dayjs',
+        '@mantine/core',
+        '@mantine/dates',
+        '@mantine/hooks',
+        '@mantine/form',
+        '@mantine/modals',
+        '@mantine/notifications',
+        '@mantine/spotlight',
+        '@mantine/code-highlight',
+      ],
     },
     build: {
       rolldownOptions: {
