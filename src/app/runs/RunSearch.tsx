@@ -9,7 +9,7 @@ import {
 import { useSchemeColors } from '@mattstack/app-kit/hooks';
 import { Icons } from '@mattstack/app-kit/icons';
 
-import { PAGE_HEADER_HEIGHT } from '../chrome';
+import { PAGE_ROW_HEIGHT } from '../chrome';
 import type { BoardRun } from './bands';
 import { CommandProvenance } from './CommandProvenance';
 import { RunRow } from './RunRow';
@@ -48,7 +48,7 @@ export function RunSearch() {
 
   if (runsQuery.isError) {
     return (
-      <PageShell title="Search" headerHeight={PAGE_HEADER_HEIGHT}>
+      <PageShell title="Search" headerHeight={PAGE_ROW_HEIGHT} compactHeader>
         <GenericError
           title="Couldn't load runs"
           message={(runsQuery.error as Error).message}
@@ -61,7 +61,8 @@ export function RunSearch() {
   return (
     <PageShell
       title="Search"
-      headerHeight={PAGE_HEADER_HEIGHT}
+      headerHeight={PAGE_ROW_HEIGHT}
+      compactHeader
       actions={
         <CommandProvenance command="rt runs" asOf={runsQuery.dataUpdatedAt} />
       }

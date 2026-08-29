@@ -22,7 +22,7 @@ import { Icons } from '@mattstack/app-kit/icons';
 import { Link, useSearch } from 'wouter';
 import { navigate } from 'wouter/use-browser-location';
 
-import { PAGE_TAB_BAR_HEIGHT } from '../chrome';
+import { PAGE_ROW_HEIGHT } from '../chrome';
 import { CommandProvenance } from '../runs/CommandProvenance';
 import { AttentionEmptyState } from './AttentionEmptyState';
 import {
@@ -521,7 +521,7 @@ export function WiringMap() {
     : [];
 
   return (
-    <PageShell tabBarHeight={PAGE_TAB_BAR_HEIGHT}>
+    <PageShell tabBarHeight={PAGE_ROW_HEIGHT}>
       <PageShell.Main>
         {/* No sidebar here for a root-level tab bar to span, so the tab row
             is the header row: the title leads it and the pack actions trail

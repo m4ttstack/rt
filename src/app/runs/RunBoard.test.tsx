@@ -399,6 +399,10 @@ describe('RunBoard: chrome', () => {
 
     await screen.findByRole('heading', { level: 2 });
     const header = document.querySelector('#page-shell-header') as HTMLElement;
-    expect(header.style.height).toContain('2.75rem');
+    expect(header.style.height).toContain('2.5rem');
+    const heading = document.querySelector(
+      '#page-shell-header h2'
+    ) as HTMLElement;
+    expect(heading.style.getPropertyValue('--title-fz')).toContain('h5');
   });
 });

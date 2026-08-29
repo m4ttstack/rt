@@ -26,7 +26,7 @@
     "@mantine/modals": "^9.5.2",
     "@mantine/notifications": "^9.5.2",
     "@mantine/spotlight": "^9.5.2",
-    "@mattstack/app-kit": "file:./vendor/mattstack-app-kit-0.1.6.tgz",
+    "@mattstack/app-kit": "file:./vendor/mattstack-app-kit-0.1.7.tgz",
     "@mattstack/app-server": "file:./vendor/mattstack-app-server-0.1.1.tgz",
     "@mattstack/mantine-tokyo": "file:./vendor/mattstack-mantine-tokyo-0.2.0.tgz",
     "@mattstack/rt-client": "^0.8.0",

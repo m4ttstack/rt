@@ -26,7 +26,7 @@ import type { RunFieldRow, RunSummary } from '@mattstack/rt-client';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { client } from '../api';
-import { PAGE_HEADER_HEIGHT } from '../chrome';
+import { PAGE_ROW_HEIGHT } from '../chrome';
 import { CommandProvenance } from './CommandProvenance';
 import { EffectiveInputs } from './EffectiveInputs';
 import { LivenessChip, livenessSpec, Pill } from './LivenessChip';
@@ -477,7 +477,8 @@ function RunIdInTitle({ runId }: { runId: string }) {
 export function RunDetail({ repo, runId }: { repo: string; runId: string }) {
   return (
     <PageShell
-      headerHeight={PAGE_HEADER_HEIGHT}
+      headerHeight={PAGE_ROW_HEIGHT}
+      compactHeader
       title={
         <>
           {repoLabel(repo)} <RunIdInTitle runId={runId} />
