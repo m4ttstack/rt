@@ -359,8 +359,11 @@ export function startApi(deps: ApiDeps) {
               return st ? json(st) : json({ error: "unknown run" }, 404);
             }
             if (!runId && req.method === "POST") {
+              // A port-only (external) manifest carries commands but no workingDirectory:
+              // never spawn with cwd undefined, which would run in deck's own directory.
+              if (!record.workingDirectory) return json({ error: "app has no manifest directory" }, 400);
               const started = startCommandRun({
-                name, cmd, shell: record.commands[cmd]!, workingDirectory: record.workingDirectory!,
+                name, cmd, shell: record.commands[cmd]!, workingDirectory: record.workingDirectory,
               });
               if (!started.started) return json({ error: "busy" }, 409);
               return json({ started: true, runId: started.runId });

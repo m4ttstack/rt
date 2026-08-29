@@ -511,3 +511,10 @@ test("unknown command name is 404 in dev", async () => {
 test("command route is 404 in production", async () => {
   expect((await prodPost("/api/v1/apps/anything/commands/build", {})).status).toBe(404);
 });
+
+test("a port-only manifest with an action command but no workingDirectory 400s instead of spawning with cwd undefined", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "cmd-"));
+  writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({ name: "portonly", port: 4890, commands: { build: "echo hi" } }));
+  await devPost("/api/v1/apps/register", { dir });
+  expect((await devPost("/api/v1/apps/portonly/commands/build", {})).status).toBe(400);
+});
