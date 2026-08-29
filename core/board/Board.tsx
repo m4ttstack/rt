@@ -24,8 +24,22 @@ function TunnelBadge({
   const label = restarting ? "restarting…" : up ? "up" : "down";
   return (
     <Tooltip tip={tunnels.map((t) => t.name).join(", ")}>
-      <button className="tunnel-badge" onClick={() => onOpen(tunnels[0]!.name)} aria-label={`cloudflare tunnel ${label}`}>
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <button
+        className="tunnel-badge"
+        onClick={() => onOpen(tunnels[0]!.name)}
+        aria-label={`cloudflare tunnel ${label}`}
+      >
+        <svg
+          width="15"
+          height="15"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
           <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
         </svg>
         <span className="muted tunnel-label">tunnel</span>
@@ -37,7 +51,17 @@ function TunnelBadge({
 
 export function Board() {
   const board = useBoardState();
-  const { data, sections, tunnels, subline, isRestarting, reloadingProxy, onProxyReload, openAdd, proxyNotice } = board;
+  const {
+    data,
+    sections,
+    tunnels,
+    subline,
+    isRestarting,
+    reloadingProxy,
+    onProxyReload,
+    openAdd,
+    proxyNotice,
+  } = board;
 
   const mainRef = useRef<HTMLElement>(null);
   const chevronRefs = useRef(new Map<string, HTMLButtonElement>()).current;
@@ -47,18 +71,35 @@ export function Board() {
   };
   const [openRowName, setOpenRowName] = useState<string | null>(null);
   // Table display order: apps, then strays, then tunnels -- what ↑/↓ walks.
-  const allRows = useMemo(() => [...sections.flatMap((s) => s.rows), ...tunnels], [sections, tunnels]);
+  const allRows = useMemo(
+    () => [...sections.flatMap((s) => s.rows), ...tunnels],
+    [sections, tunnels],
+  );
   const healthy = data ? sublineHealthy(data) : null;
 
   return (
-    <main className="board" ref={mainRef} tabIndex={-1} data-board-ready={data != null ? "" : undefined}>
+    <main
+      className="board"
+      ref={mainRef}
+      tabIndex={-1}
+      data-board-ready={data != null ? "" : undefined}
+    >
       <header className="board-header">
         <div className="board-title">
-          <img className="board-logo" src="/favicon.svg" alt="" aria-hidden="true" />
+          <img
+            className="board-logo"
+            src="/favicon.svg"
+            alt=""
+            aria-hidden="true"
+          />
           <h1>Deck</h1>
         </div>
         <span className="header-actions">
-          <TunnelBadge tunnels={tunnels} isRestarting={isRestarting} onOpen={setOpenRowName} />
+          <TunnelBadge
+            tunnels={tunnels}
+            isRestarting={isRestarting}
+            onOpen={setOpenRowName}
+          />
           {data && data.canManage && (
             <>
               <Button size="sm" busy={reloadingProxy} onClick={onProxyReload}>
@@ -74,9 +115,13 @@ export function Board() {
       <p className="board-subline">
         {healthy ? (
           <>
-            <span className={healthy.ok ? "t-ok" : "t-bad"}>{healthy.text}</span>
+            <span className={healthy.ok ? "t-ok" : "t-bad"}>
+              {healthy.text}
+            </span>
             {subline.length > healthy.text.length && (
-              <span className="subline-rest">{subline.slice(healthy.text.length).replace(/^\s*·\s*/, "")}</span>
+              <span className="subline-rest">
+                {subline.slice(healthy.text.length).replace(/^\s*·\s*/, "")}
+              </span>
             )}
           </>
         ) : (
@@ -116,9 +161,6 @@ export function Board() {
           />
         </>
       )}
-
-      <footer className="muted-more mt-6">discovered from portless routes + LaunchAgents · local.mattstack</footer>
-
       <AddAppModal board={board} />
       <RemoveConfirm board={board} />
     </main>
