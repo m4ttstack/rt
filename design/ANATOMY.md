@@ -154,8 +154,9 @@ scrolling on its own to the right of the transcript.
 
 Heading `BUDDIES` (caption `last known` only while the daemon is down).
 
-Three sections **in this order**, each a `.sect` with its count: `working`,
-`idle`, `offline · last 24h`. Within a section, sign-in order.
+One online list with no heading of its own -- the dot alone says working vs
+idle, so a status flip never regroups a row under the pointer -- then an
+`offline · last 24h` `.sect` with its count. Within each, sign-in order.
 
 Each row is a `.member` (`align-items: flex-start`, `gap: 7.2px`, `padding:
 7.2px 0`), separated by `--border-soft`. The `.dot` gets `margin-top: 6px`,
@@ -165,7 +166,7 @@ Every handle on the page is an `AgentName`: the name, then `· <repo>` in
 `.xs.muted` (the one inline token that says what a first name is doing), and
 a hover card (a `.pop`, 300px, `left-start` from the roster, `bottom-start`
 elsewhere) with the dot + handle + status header, the away message, a
-label/value grid (repo, where = `branch · pane N`, path, tail, rooms as
+label/value grid (repo, where = `branch · pane N`, path, seen, rooms as
 tags) and `@mention` / `DM` buttons. Row contents, top to bottom (the row is
 one line plus the away message; only the phone drawer keeps item 5 on the
 row, it has no hover):

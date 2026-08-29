@@ -215,13 +215,13 @@ export const TARGETS = [
   },
   {
     spec: '.sect',
-    find: '[data-testid="section-live"]',
+    find: '[data-testid="section-offline"]',
     props: ['align-items', 'display', 'gap'],
     why: { padding: 'shorthand not enumerated by getComputedStyle; longhands verified by eye' },
   },
   {
     spec: '.sect .lbl',
-    find: '[data-testid="section-label-live"]',
+    find: '[data-testid="section-label-offline"]',
     props: ['color', 'font-size', 'font-weight', 'letter-spacing'],
     why: { 'letter-spacing': LETTER_SPACING_RESOLVES_TO_PX },
   },

@@ -1195,9 +1195,11 @@ function ChatPage({
                   now={Date.now()}
                   roomMembers={roomMembers}
                   daemonReachable={daemon.reachable}
+                  // Desktop: a click only mentions; DM lives on the hover
+                  // card's button. The phone drawer keeps tap-to-DM above --
+                  // it has no hover card to carry the action.
                   onPick={(handle, { inRoom }) => {
                     if (inRoom) composerRef.current?.insertMention(handle);
-                    else onOpenDm(handle);
                   }}
                 />
               )}

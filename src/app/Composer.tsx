@@ -377,6 +377,13 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     function insertMentionAtCaret(handle: string) {
       const el = textareaRef.current;
       const caret = el?.selectionStart ?? value.length;
+      // A repeat pick focuses instead of stacking another `@handle`: the
+      // draft already carries the mention.
+      const escaped = handle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      if (new RegExp(`@${escaped}(?![A-Za-z0-9._-])`).test(value)) {
+        focusAt(caret);
+        return;
+      }
       const before = value.slice(0, caret);
       const after = value.slice(caret);
       const needsSpace = before.length > 0 && !/\s$/.test(before);

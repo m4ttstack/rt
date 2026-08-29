@@ -23,7 +23,7 @@ const b = (
     ...extra,
   }) as RosterBuddy;
 
-test("three sections in the spec's order, offline collapsed to one line", async () => {
+test('one stable online list, then the offline section collapsed to one line', async () => {
   render(
     <Roster
       now={now}
@@ -42,10 +42,12 @@ test("three sections in the spec's order, offline collapsed to one line", async 
       ]}
     />
   );
+  // One heading only: online rows carry no section of their own (the dot is
+  // the status), so a busy<->idle flip never regroups a row.
   const headings = screen
     .getAllByRole('heading', { level: 3 })
     .map(h => h.textContent);
-  expect(headings).toEqual(['working 1', 'idle 1', 'offline · last 24h 1']);
+  expect(headings).toEqual(['offline · last 24h 1']);
   expect(screen.getByTestId('status-rt-chat-wt')).toHaveAttribute(
     'aria-label',
     expect.stringMatching(/^working · /)

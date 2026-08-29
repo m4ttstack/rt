@@ -183,7 +183,7 @@ export function AgentCard({
             <span style={MUTED_XS}>{headTruncatePath(buddy.cwd)}</span>
           </CardRow>
         )}
-        <CardRow label="tail">
+        <CardRow label="seen">
           <span style={MUTED_XS} data-testid={`sub-${buddy.handle}`}>
             {reachable
               ? statusDetail(buddy, now)

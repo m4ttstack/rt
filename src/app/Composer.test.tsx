@@ -1,9 +1,11 @@
+import { createRef } from 'react';
+
 import { renderWithProviders } from '@mattstack/app-kit/test-utils';
-import { screen } from '@testing-library/react';
+import { act, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, expect, test, vi } from 'vitest';
 
-import { Composer } from './Composer';
+import { Composer, type ComposerHandle } from './Composer';
 import { fetchMock, installFetchMock } from './test-utils';
 
 beforeEach(() => {
@@ -50,6 +52,22 @@ test('choosing DM instead hands the handle to onOpenDm, drops the @ token and ke
   );
   expect(fetchMock).not.toHaveBeenCalled();
   expect(screen.queryByText(/direct message to/)).toBeNull();
+});
+
+test('a repeat roster pick focuses instead of stacking another @handle', async () => {
+  const ref = createRef<ComposerHandle>();
+  renderWithProviders(
+    <Composer
+      ref={ref}
+      room="build"
+      roomMembers={['kai']}
+      buddies={[{ handle: 'kai', status: 'live' }]}
+    />
+  );
+  act(() => ref.current!.insertMention('kai'));
+  expect(screen.getByRole('textbox')).toHaveValue('@kai ');
+  act(() => ref.current!.insertMention('kai'));
+  expect(screen.getByRole('textbox')).toHaveValue('@kai ');
 });
 
 test('the composer is disabled, draft kept, while the daemon is unreachable', async () => {

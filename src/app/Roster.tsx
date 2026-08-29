@@ -42,11 +42,7 @@ export interface RosterProps {
   onPick?: (handle: string, info: { inRoom: boolean }) => void;
 }
 
-const SECTIONS: ReadonlyArray<{ status: BuddyStatus; label: string }> = [
-  { status: 'live', label: STATUS_WORD.live },
-  { status: 'idle', label: STATUS_WORD.idle },
-  { status: 'offline', label: 'offline · last 24h' },
-];
+const OFFLINE_LABEL = 'offline · last 24h';
 
 /**
  * `…/mr-board-wt-invite-onboarding`: the leaf directory, always -- real
@@ -255,10 +251,10 @@ function OfflineRow({ buddy, now }: { buddy: RosterBuddy; now: number }) {
 }
 
 /**
- * The fleet, not the room: every signed-in agent session, grouped into the
- * four sections the spec fixes the order of. Sections are the sort -- a
- * buddy's status IS the question this panel answers, so nothing inside a
- * section re-sorts by anything but `signedInAt`.
+ * The fleet, not the room: every signed-in agent session, one stable online
+ * list plus an offline section. Online rows never regroup by status -- the
+ * dot alone carries working vs idle, so a busy<->idle flip cannot move a
+ * row out from under the pointer. Order is `signedInAt` and nothing else.
  *
  * `daemonReachable={false}` withholds every presence claim (status word,
  * sub-line, away message, tags, dot colour) and drops the offline section
@@ -275,14 +271,9 @@ export function Roster({
   panel = false,
   onPick,
 }: RosterProps) {
-  const sections = SECTIONS.filter(
-    s => s.status !== 'offline' || daemonReachable
-  ).map(section => ({
-    ...section,
-    members: buddies
-      .filter(b => b.status === section.status)
-      .sort((a, b) => a.signedInAt - b.signedInAt),
-  }));
+  const bySignIn = (a: RosterBuddy, b: RosterBuddy) => a.signedInAt - b.signedInAt;
+  const online = buddies.filter(b => b.status !== 'offline').sort(bySignIn);
+  const offline = buddies.filter(b => b.status === 'offline').sort(bySignIn);
 
   return (
     <Stack
@@ -310,8 +301,8 @@ export function Roster({
         <Group
           justify="space-between"
           wrap="nowrap"
-          // No rule under the header: the first section heading draws its own
-          // hairline right beneath, and two rules 8px apart read as a mistake.
+          // No rule under the header: the online list starts right beneath,
+          // and a rule here would read as a second frame.
           style={{ paddingBottom: 'var(--mantine-spacing-xs)' }}
         >
           <Group gap={6} wrap="nowrap">
@@ -349,30 +340,29 @@ export function Roster({
         data-testid="roster-scroll"
         style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}
       >
-        {sections.map(section => (
-          <Fragment key={section.status}>
-            <SectionHeading
-              status={section.status}
-              label={section.label}
-              count={section.members.length}
-            />
-            {section.members.map(buddy =>
-              section.status === 'offline' ? (
-                <OfflineRow key={buddy.handle} buddy={buddy} now={now} />
-              ) : (
-                <MemberRow
-                  key={buddy.handle}
-                  buddy={buddy}
-                  now={now}
-                  reachable={daemonReachable}
-                  inRoom={roomMembers.includes(buddy.handle)}
-                  compact={compact}
-                  onPick={onPick}
-                />
-              )
-            )}
-          </Fragment>
+        {online.map(buddy => (
+          <MemberRow
+            key={buddy.handle}
+            buddy={buddy}
+            now={now}
+            reachable={daemonReachable}
+            inRoom={roomMembers.includes(buddy.handle)}
+            compact={compact}
+            onPick={onPick}
+          />
         ))}
+        {daemonReachable && (
+          <Fragment>
+            <SectionHeading
+              status="offline"
+              label={OFFLINE_LABEL}
+              count={offline.length}
+            />
+            {offline.map(buddy => (
+              <OfflineRow key={buddy.handle} buddy={buddy} now={now} />
+            ))}
+          </Fragment>
+        )}
       </Box>
     </Stack>
   );
