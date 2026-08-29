@@ -3,6 +3,7 @@ import { Group, Title } from '@mantine/core';
 import type { GroupProps } from '@mantine/core';
 
 import { useIsInMain, useIsInPageShell, usePageShellContext } from '../hooks';
+import { RowTitle } from './RowTitle';
 import { SidebarToggleButton } from './SidebarToggleButton';
 
 export interface PageShellHeaderProps extends Omit<GroupProps, 'h' | 'title'> {
@@ -23,7 +24,9 @@ export interface PageShellHeaderProps extends Omit<GroupProps, 'h' | 'title'> {
  * the shared shell surface. Registers its presence so `Content` can
  * subtract it from the available height, renders the mobile sidebar opener
  * when the sidebar is collapsed into a drawer, and turns `position: fixed`
- * when the root sets `fixedHeader`.
+ * when the root sets `fixedHeader`, and renders a row-scale title when the
+ * root sets `compactHeader` -- the same title `TabBar` renders, for a page
+ * whose header row should match a sibling's tab row.
  */
 export const Header = ({
   title,
@@ -45,6 +48,7 @@ export const Header = ({
     hasSidebar,
     toggleSidebar,
     fixedHeader,
+    compactHeader,
   } = usePageShellContext();
 
   useLayoutEffect(() => {
@@ -77,7 +81,12 @@ export const Header = ({
       {collapsedSidebar && hasSidebar && (
         <SidebarToggleButton size="lg" onClick={toggleSidebar} />
       )}
-      {title != null && <Title order={2}>{title}</Title>}
+      {title != null &&
+        (compactHeader ? (
+          <RowTitle>{title}</RowTitle>
+        ) : (
+          <Title order={2}>{title}</Title>
+        ))}
       {children}
       {actions != null && (
         <Group gap="sm" ml="auto" wrap="nowrap">

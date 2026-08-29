@@ -39,6 +39,8 @@ export interface PageShellContextValue {
   heightMode: '100%' | '100vh' | 'auto';
   topOffset: string | number;
   fixedHeader: boolean;
+  /** True when the header renders its title at row scale (see `Header`). */
+  compactHeader: boolean;
 }
 
 export const PageShellContext = /* @__PURE__ */ createContext<

@@ -1,10 +1,11 @@
 import { useLayoutEffect } from 'react';
-import { Divider, Group, Tabs, Title } from '@mantine/core';
+import { Divider, Group, Tabs } from '@mantine/core';
 import type { TabsProps } from '@mantine/core';
 
 import { Icon, type IconName } from '@mattstack/app-kit/icons';
 import { useIsInPageShell, usePageShellContext } from '../hooks';
 import classes from '../PageShell.module.css';
+import { RowTitle } from './RowTitle';
 
 /** Tab bar height in px, the default for the root's `tabBarHeight`. */
 export const PAGE_SHELL_TAB_BAR_HEIGHT = 46;
@@ -104,9 +105,7 @@ export const TabBar = ({
     >
       {title != null && (
         <Group gap="md" wrap="nowrap" pl="xs">
-          <Title order={2} size="h5" fw={700} style={{ whiteSpace: 'nowrap' }}>
-            {title}
-          </Title>
+          <RowTitle>{title}</RowTitle>
           <Divider orientation="vertical" h="1.25em" />
         </Group>
       )}

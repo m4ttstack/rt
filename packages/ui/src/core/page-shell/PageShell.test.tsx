@@ -562,3 +562,46 @@ test('a TabBar with neither title nor actions renders no heading', () => {
 test('PageShell.TabBar is the same component the root renders for its tabs prop', () => {
   expect(PageShell.TabBar).toBe(TabBar);
 });
+
+test('compactHeader sizes the auto-rendered header title to the row, as TabBar sizes its title', () => {
+  renderWithProviders(
+    <PageShell title="Runs" compactHeader>
+      <div>content body</div>
+    </PageShell>
+  );
+
+  const heading = screen.getByRole('heading', { level: 2, name: 'Runs' });
+  expect(heading.style.getPropertyValue('--title-fz')).toContain('h5');
+  expect(heading.style.fontWeight).toBe('700');
+});
+
+test('a default header keeps the full-size title', () => {
+  renderWithProviders(
+    <PageShell title="Runs">
+      <div>content body</div>
+    </PageShell>
+  );
+
+  const heading = screen.getByRole('heading', { level: 2, name: 'Runs' });
+  expect(heading.style.getPropertyValue('--title-fz')).not.toContain('h5');
+});
+
+test("TabBar's title is the same row-scale title a compact header renders", () => {
+  renderWithProviders(
+    <PageShell>
+      <PageShell.Main>
+        <PageShell.TabBar
+          title="Wiring"
+          tabs={[{ id: 'pipeline', label: 'Pipeline', active: true }]}
+        />
+        <PageShell.Content>
+          <div>content body</div>
+        </PageShell.Content>
+      </PageShell.Main>
+    </PageShell>
+  );
+
+  const heading = screen.getByRole('heading', { level: 2, name: 'Wiring' });
+  expect(heading.style.getPropertyValue('--title-fz')).toContain('h5');
+  expect(heading.style.fontWeight).toBe('700');
+});

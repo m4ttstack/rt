@@ -68,6 +68,13 @@ export interface PageShellProps extends Omit<StackProps, 'children' | 'title'> {
    */
   fixedHeader?: boolean;
   /**
+   * Renders the auto-rendered (or composed) `Header`'s title at the same
+   * row scale `TabBar` uses for its `title`, so a page whose header is a
+   * plain title row matches a sibling whose header is a tab row.
+   * @default false
+   */
+  compactHeader?: boolean;
+  /**
    * Simple mode: page title for an auto-rendered `PageShell.Header`. Only
    * used when no compound children (`PageShell.Main`/`PageShell.Sidebar`)
    * are given.
@@ -154,6 +161,7 @@ function PageShellRoot({
   heightMode = '100vh',
   topOffset,
   fixedHeader = false,
+  compactHeader = false,
   title,
   actions,
   topNotch,
@@ -246,6 +254,7 @@ function PageShellRoot({
         heightMode,
         topOffset: resolvedTopOffset,
         fixedHeader,
+        compactHeader,
       }}
     >
       <Stack
