@@ -99,3 +99,16 @@ export function readDeckManifest(dir: string): ParseResult {
 
   return { ok: true, manifest: out };
 }
+
+export function resolveServeShape(
+  manifest: DeckManifest,
+  altName?: string,
+): { port?: number; command?: string[] } {
+  const overlay = altName === undefined ? undefined : manifest.altConfigs?.[altName];
+  if (altName !== undefined && overlay === undefined) {
+    throw new Error(`unknown alt config: ${altName}`);
+  }
+  const port = overlay?.port ?? manifest.port;
+  const start = overlay?.start ?? manifest.commands.start;
+  return { port, command: start === undefined ? undefined : ["sh", "-c", start] };
+}

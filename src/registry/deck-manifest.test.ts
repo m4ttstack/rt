@@ -2,7 +2,7 @@ import { test, expect } from "bun:test";
 import { mkdtempSync, mkdirSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
-import { readDeckManifest } from "./deck-manifest.ts";
+import { readDeckManifest, resolveServeShape } from "./deck-manifest.ts";
 
 function repo(files: Record<string, string>): string {
   const dir = mkdtempSync(join(tmpdir(), "deckman-"));
@@ -75,4 +75,33 @@ test("unparseable JSON is a loud error, not null", () => {
   const dir = repo({ "mattstack.deck.json": "{ not json" });
   const r = readDeckManifest(dir);
   expect(r?.ok).toBe(false);
+});
+
+test("base serve shape wraps start in sh -c", () => {
+  const shape = resolveServeShape({ name: "chat", port: 11002, commands: { start: "bun run serve" } });
+  expect(shape).toEqual({ port: 11002, command: ["sh", "-c", "bun run serve"] });
+});
+
+test("overlay overrides port and start", () => {
+  const shape = resolveServeShape(
+    { name: "chat", port: 11002, commands: { start: "bun run serve" }, altConfigs: { dev: { port: 5173, start: "bun run dev" } } },
+    "dev",
+  );
+  expect(shape).toEqual({ port: 5173, command: ["sh", "-c", "bun run dev"] });
+});
+
+test("overlay that omits a field inherits the base for it", () => {
+  const shape = resolveServeShape(
+    { name: "chat", port: 11002, commands: { start: "bun run serve" }, altConfigs: { hmr: { port: 5173 } } },
+    "hmr",
+  );
+  expect(shape).toEqual({ port: 5173, command: ["sh", "-c", "bun run serve"] });
+});
+
+test("unknown alt throws", () => {
+  expect(() => resolveServeShape({ name: "c", commands: { start: "s" } }, "nope")).toThrow();
+});
+
+test("no start command yields no argv (port-only app)", () => {
+  expect(resolveServeShape({ name: "c", port: 4200, commands: {} })).toEqual({ port: 4200, command: undefined });
 });
