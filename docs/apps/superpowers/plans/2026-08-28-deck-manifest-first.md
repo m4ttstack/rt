@@ -417,6 +417,7 @@ git commit -m "records: add commands/altConfigs/activeAlt to AppRecord"
 
 **Files:**
 - Create: `src/api/register-manifest.ts`
+- Modify: `src/api/register.ts` (`RegisterInput` + `registerApp` honor a declared service port)
 - Modify: `src/registry/manifest.ts` (identity ingest reads deck.json first)
 - Test: `src/api/register-manifest.test.ts`
 
@@ -581,10 +582,14 @@ export async function applyManifest(
   const existing = getRecord(manifest.name);
 
   if (!existing) {
+    // A manifest with neither a start command nor a port declares nothing to stand up.
+    if (!shape.command && shape.port === undefined) {
+      return { status: 400, body: { error: "manifest must declare commands.start or a port" } };
+    }
     const created = await registerApp(
       shape.command
-        ? { name: manifest.name, command: shape.command, workingDirectory: dir }
-        : { name: manifest.name, staticPort: shape.port ?? 0 },
+        ? { name: manifest.name, command: shape.command, workingDirectory: dir, port: shape.port }
+        : { name: manifest.name, staticPort: shape.port! },
       drivers,
     );
     if (created.status !== 201) return created;
@@ -615,6 +620,20 @@ export async function applyManifest(
   return { status: 200, body: { record: getRecord(manifest.name) } };
 }
 ```
+
+Honor a manifest-declared **service** port (this is why register.ts changes). `registerApp` today allocates a port for every service (`staticPort` forces `kind: "external"`), so a declared `port: 11002` would be ignored and the service would come up on an allocated 11000. Add `port?: number` to `RegisterInput` (`src/api/register.ts:27-37`) and let a supplied port win over allocation:
+
+```ts
+// src/api/register.ts, in registerApp, replacing `let port = input.staticPort;`
+let port = input.staticPort ?? input.port;
+if (port === undefined) {
+  const allocated = allocatePort(listRecords(), routes, await readServices());
+  if (allocated === null) return { status: 507, body: { error: "port range exhausted" } };
+  port = allocated;
+}
+```
+
+`isService` still keys off `staticPort === undefined`, so a service with a declared `port` stays `kind: "service"` and installs at the declared port. Existing callers pass no `port`, so they keep allocating ... backward compatible.
 
 Then generalize identity ingest to prefer the deck manifest (edit `src/registry/manifest.ts`, `ingestManifest`, after the `if (!record || record.workingDirectory === undefined) return;` line):
 
@@ -1211,8 +1230,9 @@ Add a helper to `server.test.ts` that boots a server whose `devMode` returns tru
 ```ts
 // append to src/api/server.test.ts
 // (devServer is a second startApi(...) built in beforeAll with devMode: () => true,
-//  on DEV_PORT; devApi/devPost are its fetch helpers. prodPost hits the default
-//  server, whose devMode defaults to () => false in the test wiring.)
+//  on DEV_PORT; devApi/devPost are its fetch helpers. Build the DEFAULT (prod)
+//  server explicitly with devMode: () => false so these assertions never depend
+//  on the dev machine's real mattstack.mode; prodPost hits that server.)
 test("command route runs a declared command in dev", async () => {
   const dir = mkdtempSync(join(tmpdir(), "cmd-"));
   writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({ name: "cmdapp", port: 4800, commands: { start: "s", build: "echo built" } }));
@@ -1396,7 +1416,7 @@ Expected: FAIL.
 
 - [ ] **Step 3: Thread dev-mode + populate commands**
 
-In `src/api/status.ts`: add `commands?: string[]` to `StatusRow`; accept a `devMode: boolean` in the options `buildStatus` takes; for each row whose record has `commands`, set `commands: devMode ? Object.keys(record.commands) : undefined`.
+In `src/api/status.ts`: add `commands?: string[]` to `StatusRow`; add an **optional** `devMode?: boolean` (default false) to the options object `buildStatus` takes ... it MUST be optional so the existing `buildStatus(opts)` call sites in `src/api/status.test.ts` (~10 calls) and `src/api/discovery.test.ts` still compile unchanged. For each row whose record has `commands`, set `commands: opts.devMode && record.commands ? Object.keys(record.commands) : undefined`.
 
 In `src/api/server.ts`: where `statusOpts` is built (around line 210), add `devMode: (deps.devMode ?? isDevMode)()`.
 
@@ -1425,30 +1445,33 @@ git commit -m "status: dev-gated command names on the row"
 
 - [ ] **Step 1: Write the failing DOM test**
 
-Create `test/fixture/status-commands.json` (copy `test/fixture/status.json`, add `"commands": ["deploy", "build"]` to one app row). Then:
+Create `test/fixture/status-commands.json` by copying `test/fixture/status.json` and adding `"commands": ["deploy", "build"]` to the `atlas` app row (the row `board.spec.ts` already exercises, so the `aria-label` below is deterministic). The DOM harness is `withBoard(fn, { fixture })` under `bun:test` with a raw `playwright` `Page` (NOT `@playwright/test`, no `mount`, no Playwright matchers ... assert with `bun` `expect` on `.count()` and a `posted` flag, exactly like `board.spec.ts:180-220`):
 
 ```ts
-// test/dom/commands.spec.ts (mirror test/dom/board.spec.ts's rig usage)
-import { test, expect } from "@playwright/test";
-import { mount } from "./rig.ts";
+// test/dom/commands.spec.ts
+import { test, expect } from "bun:test";
+import { withBoard } from "./rig.ts";
 
-test("renders a button per command and POSTs on click", async ({ page }) => {
-  await mount(page, { fixture: "status-commands.json" });
-  const deploy = page.getByRole("button", { name: /deploy/i });
-  await expect(deploy).toBeVisible();
-  const posted: string[] = [];
-  await page.route("**/api/v1/apps/*/commands/*", (route) => { posted.push(route.request().url()); route.fulfill({ json: { started: true, runId: "x" } }); });
-  await deploy.click();
-  expect(posted.some((u) => u.includes("/commands/deploy"))).toBe(true);
+test("renders a button per command and POSTs on click", async () => {
+  await withBoard(async (page) => {
+    let postedUrl = "";
+    await page.route("**/api/v1/apps/*/commands/*", async (route) => {
+      postedUrl = route.request().url();
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ started: true, runId: "x" }) });
+    });
+    const deploy = page.locator('[aria-label="deploy atlas"]');
+    expect(await deploy.count()).toBe(1);
+    await deploy.click();
+    expect(postedUrl).toContain("/api/v1/apps/atlas/commands/deploy");
+  }, { fixture: "status-commands.json" });
 });
 
-test("no command buttons when the row omits commands", async ({ page }) => {
-  await mount(page, { fixture: "status.json" });
-  await expect(page.getByRole("button", { name: /deploy/i })).toHaveCount(0);
+test("no command buttons when the row omits commands", async () => {
+  await withBoard(async (page) => {
+    expect(await page.locator('[aria-label="deploy atlas"]').count()).toBe(0);
+  }, { fixture: "status.json" });
 });
 ```
-
-(Match `test/dom/rig.ts`'s real signature for mounting with a `DECK_FIXTURE`; `board.spec.ts:180-220` is the closest existing precedent for the route-interception + click assertion.)
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -1515,9 +1538,9 @@ git commit -m "board: per-command action buttons on the app row"
 **Interfaces:**
 - Removes: the `manifest` verb and `POST /api/v1/apps/:name/manifest/refresh`. `deck register`'s sync path is the replacement (re-running it re-ingests identity/icon, already covered by Task 4's idempotent-resync test and `manifest.test.ts`).
 
-- [ ] **Step 1: Delete the manifest-refresh CLI test**
+- [ ] **Step 1: Delete the manifest-refresh CLI tests**
 
-Remove the `manifest refresh` test block in `src/cli/commands.test.ts` (~lines 294-320).
+`src/cli/commands.test.ts` has TWO manifest tests, not one: one near line 294 and another at ~lines 322-326. Remove BOTH. After removing them, the `ingestManifest` import (line 24, used only inside the first block ~line 308) is unused ... drop that import line too, or `bun test` will fail on the unused binding under the repo's TS settings. Grep to confirm no other reference: `grep -n ingestManifest src/cli/commands.test.ts`.
 
 - [ ] **Step 2: Run tests to confirm the suite is green without it**
 
