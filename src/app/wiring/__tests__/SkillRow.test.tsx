@@ -23,6 +23,7 @@ function entry(
     staleFiles: [],
     orphanFiles: [],
     slots: [],
+    includes: [],
     ...over,
   };
 }

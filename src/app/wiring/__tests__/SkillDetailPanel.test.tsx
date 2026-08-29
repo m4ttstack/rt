@@ -338,3 +338,60 @@ describe('SkillDetailPanel: the Used-by tab', () => {
     expect(screen.getByTestId('detail-usedby-empty')).toBeInTheDocument();
   });
 });
+
+describe('SkillDetailPanel: includes', () => {
+  const INCLUDES = [
+    {
+      name: 'review-core-body',
+      ref: 'mattstack:review-core-body',
+      sourcePath: '/plugins/mattstack/attachments/review-core-body/SKILL.md',
+    },
+    {
+      name: 'review-posting',
+      ref: 'mattstack:review-posting',
+      sourcePath: null,
+    },
+  ];
+
+  it('lists the author-fixed includes below the slots, linking each to its source when known', () => {
+    renderPanel({ entry: { ...WATCH_CI, includes: INCLUDES } });
+
+    const block = screen.getByTestId('detail-includes');
+    const core = within(block).getByTestId('include-review-core-body');
+    expect(within(core).getByText('review-core-body')).toBeInTheDocument();
+    expect(
+      within(core).getByText('mattstack:review-core-body')
+    ).toBeInTheDocument();
+    expect(within(core).getByTestId('open-include-source')).toHaveAttribute(
+      'href',
+      'vscode://file/plugins/mattstack/attachments/review-core-body/SKILL.md'
+    );
+
+    const posting = within(block).getByTestId('include-review-posting');
+    expect(
+      within(posting).queryByTestId('open-include-source')
+    ).not.toBeInTheDocument();
+  });
+
+  it('shows no includes block for a skill that includes nothing', () => {
+    renderPanel();
+
+    expect(screen.queryByTestId('detail-includes')).not.toBeInTheDocument();
+  });
+
+  it('keeps the takes-nothing note and still lists includes for a slotless skill', () => {
+    renderPanel({
+      entry: {
+        ...WATCH_CI,
+        slots: [],
+        note: undefined,
+        includes: INCLUDES,
+      },
+    });
+
+    expect(
+      screen.getByText('This skill takes nothing from the pack.')
+    ).toBeInTheDocument();
+    expect(screen.getByTestId('detail-includes')).toBeInTheDocument();
+  });
+});
