@@ -35,3 +35,8 @@ Revised 2026-08-26 for the kit's `PageShell` layout: the three floating cards on
 a padded grid became edge-to-edge panels (rooms in the sidebar, page bar as the
 header, transcript and roster inside the scroll-clamped content), the page-bar
 title dropped from 26px to 20px, and the transcript scrolls sticky-bottom.
+
+Revised 2026-08-28 for rt chat delivery v2: the daemon pushes straight to a
+session's socket instead of waking a polled tail, so `deaf` (an armed tail
+that died) cannot happen and is gone. The roster is three sections now
+(working/idle/offline), not four.

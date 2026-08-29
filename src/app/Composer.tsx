@@ -29,21 +29,16 @@ const ACCENT_DEEP =
   'light-dark(var(--mantine-color-accent-7), var(--mantine-color-accent-text))';
 const ACCENT_ON = 'light-dark(var(--mantine-color-white), var(--tk-bg))';
 
-const STATUS_TEXT_COLOR: Record<'live' | 'idle' | 'deaf', string> = {
+const STATUS_TEXT_COLOR: Record<'live' | 'idle', string> = {
   live: 'var(--mantine-color-ok-text)',
   idle: 'var(--mantine-color-warn-text)',
-  deaf: 'var(--mantine-color-bad-text)',
 };
-const DOT_COLOR: Record<'live' | 'idle' | 'deaf', string> = {
+const DOT_COLOR: Record<'live' | 'idle', string> = {
   live: 'var(--tk-dot-ok)',
   idle: 'var(--tk-dot-warn)',
-  deaf: 'var(--tk-dot-bad)',
 };
-const STATUS_ORDER: readonly ('live' | 'idle' | 'deaf')[] = [
-  'live',
-  'idle',
-  'deaf',
-];
+const STATUS_ORDER: readonly ('live' | 'idle')[] = ['live', 'idle'];
+const BAD_TEXT = 'var(--mantine-color-bad-text)';
 
 export interface ComposerBuddy {
   handle: string;
@@ -108,7 +103,7 @@ function detectMentionToken(text: string, caret: number): MentionToken | null {
   return { start: atIndex, end: caret, query };
 }
 
-function Dot({ status }: { status: 'live' | 'idle' | 'deaf' }) {
+function Dot({ status }: { status: 'live' | 'idle' }) {
   return (
     <Box
       component="span"
@@ -124,11 +119,8 @@ function Dot({ status }: { status: 'live' | 'idle' | 'deaf' }) {
 }
 
 /**
- * One `.opt` row. A deaf buddy always carries the deaf warning even when
- * they are also outside the room -- that is the one failure this whole
- * viewer exists to catch, so it is never displaced by the (lower-stakes)
- * DM-instead note. Clicking still routes on room membership alone: a
- * mention still lands in a deaf buddy's unread, it just won't wake them.
+ * One `.opt` row. Clicking routes on room membership alone: a mention still
+ * lands in an idle buddy's unread, it just doesn't wake them yet.
  */
 function BuddyOption({
   handle,
@@ -138,20 +130,14 @@ function BuddyOption({
   onSelect,
 }: {
   handle: string;
-  status: 'live' | 'idle' | 'deaf';
+  status: 'live' | 'idle';
   inRoom: boolean;
   room: string;
   onSelect: (handle: string, inRoom: boolean) => void;
 }) {
-  const subtext =
-    status === 'deaf'
-      ? {
-          text: "won't see this until its tail restarts",
-          color: STATUS_TEXT_COLOR.deaf,
-        }
-      : !inRoom
-        ? { text: `not in #${room}, DM instead`, color: PURPLE }
-        : undefined;
+  const subtext = !inRoom
+    ? { text: `not in #${room}, DM instead`, color: PURPLE }
+    : undefined;
 
   return (
     <UnstyledButton
@@ -556,7 +542,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                 <BuddyOption
                   key={b.handle}
                   handle={b.handle}
-                  status={b.status as 'live' | 'idle' | 'deaf'}
+                  status={b.status as 'live' | 'idle'}
                   inRoom={roomMembers.includes(b.handle)}
                   room={room}
                   onSelect={selectBuddy}
@@ -575,7 +561,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
           style={{ paddingTop: 'var(--mantine-spacing-xs)' }}
         >
           {!daemonReachable ? (
-            <Text size="xs" style={{ color: STATUS_TEXT_COLOR.deaf }}>
+            <Text size="xs" style={{ color: BAD_TEXT }}>
               Can&apos;t post: rt daemon unreachable. Your draft is kept.
             </Text>
           ) : (

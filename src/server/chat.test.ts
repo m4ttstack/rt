@@ -83,7 +83,7 @@ test("who passes the daemon's status through and never spawns git", async () => 
           lastReadId: 0,
           wakeOn: 'mention',
           cwd: '/w/a',
-          status: 'deaf',
+          status: 'idle',
         },
       ],
     },
@@ -92,7 +92,7 @@ test("who passes the daemon's status through and never spawns git", async () => 
   // One read. A Response body is a stream, so a second res.json() throws
   // "Body is unusable" rather than returning the same payload again.
   const body = await res.json();
-  expect(body.members[0]).toMatchObject({ status: 'deaf' });
+  expect(body.members[0]).toMatchObject({ status: 'idle' });
   expect(body.members[0].branch).toBeUndefined();
 });
 

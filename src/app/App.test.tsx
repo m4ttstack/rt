@@ -27,7 +27,7 @@ import { App } from './App';
 const DESKTOP_WIDTH = window.innerWidth;
 
 // `useBuddies` opens a real `/ws` connection on every mount now (for the
-// chat/wake/* refetch) -- stub it the same way Transcript's own suite does,
+// chat/*/msg refetch) -- stub it the same way Transcript's own suite does,
 // rather than letting every test in this file hit jsdom's real WebSocket.
 beforeEach(() => {
   installFakeWebSocket();
@@ -373,8 +373,6 @@ test('DM on a sender’s card opens the pair’s room and focuses the composer t
             baseHandle: 'fred',
             signedInAt: now,
             lastSeenAt: now,
-            armedAt: now,
-            tailSeenAt: now,
             status: 'live',
             rooms: ['build'],
           },

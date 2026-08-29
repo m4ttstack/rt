@@ -175,12 +175,17 @@ export function PaneRow({
               marginTop: 5,
               flex: 'none',
               borderRadius: '50%',
-              background: pane.presence
-                ? (DOT_COLOR[
-                    pane.presence.status as 'live' | 'idle' | 'deaf'
-                  ] ?? 'transparent')
-                : 'transparent',
-              border: pane.presence ? undefined : `1px solid ${BORDER}`,
+              // Hollow for both "no presence" and an offline one -- the same
+              // muted/grey treatment `Roster`'s offline dot uses.
+              background:
+                pane.presence && pane.presence.status !== 'offline'
+                  ? (DOT_COLOR[pane.presence.status as 'live' | 'idle'] ??
+                    'transparent')
+                  : 'transparent',
+              border:
+                pane.presence && pane.presence.status !== 'offline'
+                  ? undefined
+                  : `1px solid ${BORDER}`,
             }}
           />
           {handle ? (

@@ -61,8 +61,7 @@ export function fixtureBuddies(now = Date.now()): Buddy[] {
       branch: 'feat/rt-chat',
       pane: '3',
       cwd: '/Users/matt/GitHub/repo-tools-chat-wt',
-      armedAt: now - 3 * H,
-      tailSeenAt: now - 12 * S,
+      lastSeenAt: now - 12 * S,
       statusText: 'rebasing #67, back in 10',
       rooms: ['build', 'repo-tools', 'dm'],
     }),
@@ -70,16 +69,14 @@ export function fixtureBuddies(now = Date.now()): Buddy[] {
       branch: 'feat/rt-chat',
       pane: '7',
       cwd: '/Users/matt/GitHub/repo-tools-chat-wt',
-      armedAt: now - 2 * H,
-      tailSeenAt: now - 4 * S,
+      lastSeenAt: now - 4 * S,
       rooms: ['repo-tools'],
     }),
     row('deck-main', 'live', 5 * H, {
       branch: 'main',
       pane: '1',
       cwd: '/Users/matt/GitHub/deck',
-      armedAt: now - 5 * H,
-      tailSeenAt: now - 40 * S,
+      lastSeenAt: now - 40 * S,
       rooms: ['build', 'dm'],
     }),
     row('board-fix-auth', 'idle', 4 * H, {
@@ -97,12 +94,11 @@ export function fixtureBuddies(now = Date.now()): Buddy[] {
       lastSeenAt: now - 31 * M,
       rooms: ['build'],
     }),
-    row('gitq-main', 'deaf', 7 * H, {
+    row('gitq-main', 'offline', 7 * H, {
       branch: 'main',
       pane: '6',
       cwd: '/Users/matt/GitHub/gitq',
-      armedAt: now - 7 * H,
-      tailSeenAt: now - 22 * M,
+      signedOutAt: now - 22 * M,
       rooms: ['build'],
     }),
     row('workforest-e2e', 'offline', 9 * H, {
@@ -162,7 +158,8 @@ const ARCHIVED_MEMBERS: Record<string, string[]> = {
 };
 
 export function fixtureMembers(room: string, now = Date.now()) {
-  const all = fixtureBuddies(now).filter(b => b.status !== 'offline');
+  const buddies = fixtureBuddies(now);
+  const online = buddies.filter(b => b.status !== 'offline');
   // A DM's membership is its participant pair, which is not discoverable
   // from `rooms` (that carries the literal tag "dm", never the room name).
   // Looking it up keeps the second DM from reporting an empty room.
@@ -171,10 +168,13 @@ export function fixtureMembers(room: string, now = Date.now()) {
   const inRoom = pair
     ? [pair.a, pair.b].filter(h => h !== 'matt')
     : (ARCHIVED_MEMBERS[room] ??
-      all.filter(b => b.rooms.includes(room)).map(b => b.handle));
+      online.filter(b => b.rooms.includes(room)).map(b => b.handle));
 
   return inRoom.map(handle => {
-    const b = all.find(x => x.handle === handle)!;
+    // The full (unfiltered) list: `ARCHIVED_MEMBERS` can name a buddy who has
+    // since gone offline, and an archived room keeping a stale member is
+    // exactly the case worth fixturing, not a lookup to fail on.
+    const b = buddies.find(x => x.handle === handle)!;
     return {
       room,
       handle,
@@ -355,7 +355,7 @@ export function fixturePanes(): ChatPane[] {
       branch: 'main',
       agentStatus: 'idle',
       sessionId: 'fixture-otis',
-      presence: { handle: 'otis', status: 'deaf', rooms: ['deck'] },
+      presence: { handle: 'otis', status: 'offline', rooms: ['deck'] },
     },
     {
       paneId: 'w7A:pY',

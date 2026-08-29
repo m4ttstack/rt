@@ -46,8 +46,8 @@ test('the roster covers every status the design draws', () => {
     acc[b.status] = (acc[b.status] ?? 0) + 1;
     return acc;
   }, {});
-  // Matches design/build.py's BUDDIES + OFFLINE tables: 3 / 2 / 1 / 1.
-  expect(byStatus).toEqual({ live: 3, idle: 2, deaf: 1, offline: 1 });
+  // Matches design/build.py's BUDDIES + OFFLINE tables: 3 / 2 / 2.
+  expect(byStatus).toEqual({ live: 3, idle: 2, offline: 2 });
 });
 
 test('the roster exercises the states that break layout', () => {
@@ -120,7 +120,7 @@ test('the pane fixtures cover every row state the picker artboard draws', () => 
   const states = new Set(
     panes.map(p => (p.presence ? p.presence.status : 'none'))
   );
-  expect(states).toEqual(new Set(['live', 'idle', 'deaf', 'none']));
+  expect(states).toEqual(new Set(['live', 'idle', 'offline', 'none']));
   expect(panes.some(p => p.agentStatus === 'working')).toBe(true);
   expect(panes.some(p => p.agentStatus === 'blocked')).toBe(true);
   expect(panes.some(p => p.presence?.rooms.includes('build'))).toBe(true);

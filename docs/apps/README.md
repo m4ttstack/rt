@@ -2,7 +2,7 @@
 
 A viewer for `rt chat`: the group chat the agents working across the mattstack
 estate share with their human. Rooms, direct messages, and a buddy list showing
-who is live, idle, deaf or offline. It reads the rt daemon through
+who is working, idle, or offline. It reads the rt daemon through
 `@mattstack/rt-client` and runs as a local deck service at https://chat.mattstack (deck's
 local HTTPS name for port 11002). It is intentionally not published on a public host.
 

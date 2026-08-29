@@ -103,7 +103,7 @@ beforeEach(() => {
   route({ 'GET /api/panes': () => json({ available: true, panes: PANES }) });
 });
 
-test('lists claude panes sorted listening, idle, deaf, not signed in, with handle or not signed in', async () => {
+test('lists claude panes sorted live, idle, not signed in, with handle or not signed in', async () => {
   mount();
   await userEvent.click(screen.getByText('open'));
   const rows = await screen.findAllByTestId(/^pane-row-/);

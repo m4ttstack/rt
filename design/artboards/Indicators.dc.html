@@ -55,16 +55,15 @@
     .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
     .dot.live { background: var(--dot-ok); }
     .dot.idle { background: var(--dot-warn); }
-    .dot.deaf { background: var(--dot-bad); }
     .dot.off { background: transparent; border: 1px solid var(--border); }
+    .dot.offline { background: transparent; border: 1px solid var(--border); }
     .status { font-size: 10.56px; font-weight: 500; }
     .status.live { color: var(--ok); }
     .status.idle { color: var(--warn); }
-    .status.deaf { color: var(--bad); }
     .chip { display: inline-flex; align-items: center; gap: 4.8px; height: 22px; padding: 0 8px; border-radius: 6px; font-size: 10.56px; font-weight: 500; white-space: nowrap; border: 1px solid var(--border); color: var(--muted-text); }
     .chip.live { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
     .chip.idle { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
-    .chip.deaf { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, transparent); background: color-mix(in srgb, var(--bad) 7%, transparent); }
+    .chip.offline { color: var(--muted-text); border-color: var(--border); }
     .room { display: flex; align-items: center; gap: 7.2px; height: 34px; padding: 0 9.6px; border-radius: 6px; min-width: 0; cursor: pointer; }
     .room:hover { background: var(--bg4); }
     .room.on { background: color-mix(in srgb, var(--accent) var(--wash), transparent); color: var(--accent); }
@@ -149,31 +148,17 @@
     </div>
     <div class="card" style="padding: 0 14.4px;">
       <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; ">
-        <div style="width: 190px; flex: none; display: flex; align-items: center; gap: 7.2px;"><div class="dot live" style="margin-left: 8px;"></div><span class="status live">listening</span></div>
+        <div style="width: 190px; flex: none; display: flex; align-items: center; gap: 7.2px;"><div class="dot live" style="margin-left: 8px;"></div><span class="status live">working</span></div>
         <div class="stack" style="gap: 1px; flex: 1;">
-          <span class="sm" style="font-weight: 600;">Signed in, tail armed and touching — will hear you now</span>
-          <span class="xs muted">The tail heartbeat is fresh within 10 minutes, the arm itself counting as its first beat. A DM or mention becomes a notification in its pane.</span>
+          <span class="sm" style="font-weight: 600;">Signed in, mid-turn — the daemon pushes straight to its pane</span>
+          <span class="xs muted">Delivery is a direct socket push now, not a polled tail: if the session is connected it hears you the moment you post. The heartbeat (`seen Ns ago`) marks its last sign-in or delivery.</span>
         </div>
       </div>
       <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; border-top: 1px solid var(--border-soft);">
         <div style="width: 190px; flex: none; display: flex; align-items: center; gap: 7.2px;"><div class="dot idle" style="margin-left: 8px;"></div><span class="status idle">idle</span></div>
         <div class="stack" style="gap: 1px; flex: 1;">
-          <span class="sm" style="font-weight: 600;">Signed on, not listening</span>
-          <span class="xs muted">No tail armed; the session heartbeat is fresh within an hour. A DM lands in its unread and the pulse hook hands it over on its next prompt — slower than a wake, never lost.</span>
-        </div>
-      </div>
-      <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; border-top: 1px solid var(--border-soft);">
-        <div style="width: 190px; flex: none; display: flex; align-items: center; gap: 7.2px;"><div class="dot deaf" style="margin-left: 8px;"></div><span class="status deaf">deaf</span></div>
-        <div class="stack" style="gap: 1px; flex: 1;">
-          <span class="sm" style="font-weight: 600;">Its tail died and nothing restarted it</span>
-          <span class="xs muted">The one failure the CLI cannot prevent — the daemon went away, the session ended, or leave was called. The status that earns this view its keep: see it before you waste a message on it.</span>
-        </div>
-      </div>
-      <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; border-top: 1px solid var(--border-soft);">
-        <div style="width: 190px; flex: none; display: flex; align-items: center; gap: 7.2px;"><div class="dot deaf" style="margin-left: 8px;"></div><span class="xs muted">armed, silent 22m</span></div>
-        <div class="stack" style="gap: 1px; flex: 1;">
-          <span class="sm" style="font-weight: 600;">Also deaf: armed but not heard from</span>
-          <span class="xs muted">The tail heartbeat went stale while armed. The waiter exists on paper; the process behind it stopped touching. Reported as deaf, with the sub-line saying which kind.</span>
+          <span class="sm" style="font-weight: 600;">Signed in, waiting on a prompt</span>
+          <span class="xs muted">Still connected and still pushed to the same as working — idle only means its Claude session is between turns, not that it will hear you any slower.</span>
         </div>
       </div>
       <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; border-top: 1px solid var(--border-soft);">
@@ -187,7 +172,7 @@
         <div style="width: 190px; flex: none; display: flex; align-items: center; gap: 7.2px;"><span class="away" style="margin-left: 8px;">“rebasing #67, back in 10”</span></div>
         <div class="stack" style="gap: 1px; flex: 1;">
           <span class="sm" style="font-weight: 600;">Away message</span>
-          <span class="xs muted">rt chat away sets it, back clears it. An overlay on whatever status the buddy has — a listening agent with an away message still wakes.</span>
+          <span class="xs muted">rt chat away sets it, back clears it. An overlay on whatever status the buddy has — a working agent with an away message still gets pushed to.</span>
         </div>
       </div>
       <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; border-top: 1px solid var(--border-soft);">
@@ -222,14 +207,14 @@
         <div style="width: 190px; flex: none; display: flex; align-items: center; gap: 7.2px;"><div class="dot off" style="margin-left: 8px;"></div><span class="xs muted">—</span></div>
         <div class="stack" style="gap: 1px; flex: 1;">
           <span class="sm" style="font-weight: 600;">Withheld</span>
-          <span class="xs muted">Rendered for every member while the daemon banner is up. Never live, never idle, never deaf: those claims need a daemon that answered, and live is the one that costs a wasted message.</span>
+          <span class="xs muted">Rendered for every member while the daemon banner is up. Never live, never idle, never offline: those claims need a daemon that answered.</span>
         </div>
       </div>
       <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; border-top: 1px solid var(--border-soft);">
-        <div style="width: 190px; flex: none; display: flex; align-items: center; gap: 7.2px;"><span class="chip deaf" style="margin-left: 8px;"><span class="dot deaf"></span>1 deaf: gitq-main</span></div>
+        <div style="width: 190px; flex: none; display: flex; align-items: center; gap: 7.2px;"><span class="chip offline" style="margin-left: 8px;"><span class="dot offline"></span>1 offline: gitq-main</span></div>
         <div class="stack" style="gap: 1px; flex: 1;">
           <span class="sm" style="font-weight: 600;">Named in the page bar</span>
-          <span class="xs muted">When a status count is 2 or fewer the chip names the handles, so the stuck agent is read first, not found last. The list itself stays in join order.</span>
+          <span class="xs muted">When a status count is 2 or fewer the chip names the handles, so a member gone offline mid-conversation is read first, not found last. The list itself stays in join order.</span>
         </div>
       </div>
       <div style="display: flex; gap: 11.2px; align-items: flex-start; padding: 9.6px 0; border-top: 1px solid var(--border-soft);">
@@ -264,7 +249,7 @@
         <div style="width: 190px; flex: none; display: flex; align-items: center; gap: 7.2px;"><span class="badge-outline" style="margin-left: 8px;">you</span><span class="sm">on a member</span></div>
         <div class="stack" style="gap: 1px; flex: 1;">
           <span class="sm" style="font-weight: 600;">The human</span>
-          <span class="xs muted">matt carries no status: there is no tail to be live or deaf. wake: none is the default for a human who does not want a waiter.</span>
+          <span class="xs muted">matt carries no status: there is no session to be live or idle. wake: none is the default for a human who does not want a waiter.</span>
         </div>
       </div>
     </div>

@@ -23,23 +23,19 @@ const b = (
     ...extra,
   }) as RosterBuddy;
 
-test("four sections in the spec's order, offline collapsed to one line", async () => {
+test("three sections in the spec's order, offline collapsed to one line", async () => {
   render(
     <Roster
       now={now}
       roomMembers={[]}
       buddies={[
-        b('gitq-main', 'deaf', {
-          armedAt: now - 30 * 60_000,
-          tailSeenAt: now - 22 * 60_000,
-        }),
         b('rt-chat-wt', 'live', {
-          armedAt: now,
-          tailSeenAt: now - 12_000,
+          lastSeenAt: now - 12_000,
           rooms: ['build', 'repo-tools', 'dm'],
         }),
         b('workforest-e2e', 'offline', { signedOutAt: now - 2 * 60 * 60_000 }),
         b('board-fix-auth', 'idle', {
+          lastSeenAt: now - 9 * 60_000,
           statusText: 'waiting on CI',
           rooms: ['build'],
         }),
@@ -49,21 +45,18 @@ test("four sections in the spec's order, offline collapsed to one line", async (
   const headings = screen
     .getAllByRole('heading', { level: 3 })
     .map(h => h.textContent);
-  expect(headings).toEqual([
-    'listening 1',
-    'idle 1',
-    'deaf 1',
-    'offline · last 24h 1',
-  ]);
+  expect(headings).toEqual(['working 1', 'idle 1', 'offline · last 24h 1']);
   expect(screen.getByTestId('status-rt-chat-wt')).toHaveAttribute(
     'aria-label',
-    expect.stringMatching(/^listening · /)
+    expect.stringMatching(/^working · /)
   );
-  await userEvent.hover(screen.getByText('gitq-main'));
-  expect(await screen.findByTestId('sub-gitq-main')).toHaveTextContent(
-    /armed, silent 22m — tail died/
+  expect(screen.getByTestId('away-board-fix-auth')).toHaveTextContent(
+    '“waiting on CI”'
   );
-  expect(screen.getByText('“waiting on CI”')).toBeInTheDocument();
+  await userEvent.hover(screen.getByText('board-fix-auth'));
+  expect(await screen.findByTestId('sub-board-fix-auth')).toHaveTextContent(
+    /seen 9m ago/
+  );
   expect(screen.getByTestId('row-workforest-e2e')).toHaveTextContent(
     /signed out 2h ago/
   );
@@ -123,7 +116,7 @@ test('withheld: no status word or colour while the daemon is unreachable', async
       now={now}
       roomMembers={[]}
       daemonReachable={false}
-      buddies={[b('a', 'live', { armedAt: now })]}
+      buddies={[b('a', 'live', {})]}
     />
   );
   expect(screen.getByTestId('status-a')).toHaveAttribute(

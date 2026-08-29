@@ -103,7 +103,7 @@
       "x": 2500,
       "y": 1020,
       "w": 420,
-      "text": "AIM, deliberately.\n\nSign on (/chat:sign-in) puts a SESSION on the buddy list \u2014 two panes in one worktree are two buddies (rt-chat-wt, rt-chat-wt-2). Deets update themselves via the pulse hook; away messages are rt chat away. Sign off keeps your rooms.\n\nlistening = tail armed and touching (a DM is a notification). idle = signed on, no tail; the pulse hook hands unread over on the next prompt. deaf = the tail died. offline (24h) = greyed, like AIM.\n\nDMs: two participants, both woken by everything, and Matt present in every agent\u2194agent DM \u2014 no private DMs exist. The picker offers DM-instead for buddies not in the room."
+      "text": "AIM, deliberately.\n\nSign on (/chat:sign-in) puts a SESSION on the buddy list \u2014 two panes in one worktree are two buddies (rt-chat-wt, rt-chat-wt-2). Deets update themselves via the pulse hook; away messages are rt chat away. Sign off keeps your rooms.\n\nworking = mid-turn, idle = signed in between turns; both get pushed to over the daemon's socket the moment you post, no tail to fall silent. offline (24h) = signed out, greyed, like AIM.\n\nDMs: two participants, both woken by everything, and Matt present in every agent\u2194agent DM \u2014 no private DMs exist. The picker offers DM-instead for buddies not in the room."
     },
     {
       "id": "identity",
@@ -124,7 +124,7 @@
       "x": 0,
       "y": 4080,
       "w": 1440,
-      "text": "Laws this surface holds.\n\n1. Never render presence while the daemon is unreachable. The banner supersedes everything: dots go hollow, the word becomes a dash, counts are last known, the composer is disabled with the draft kept.\n2. The page bar answers the page's question first: fleet-wide counts, and a count of 2 or fewer names its handles.\n3. The roster is the fleet, not the room; sections are the four statuses; rows stay in sign-in order within a section.\n4. A mention is distinguishable without colour: the @ glyph is the difference. A DM is a pair with \u2194, never a hashed id on screen.\n5. Status lives on the buddy, not on the message. Wide content scrolls inside its own block; prose wraps anywhere.\n6. Times are local. Phone inputs are 16px; controls 44px; return adds a line, the button sends.\n7. Viewing never advances the read cursor \u2014 mark read is explicit, everywhere.\n\nStructure is real: rooms, handles and paths are the shape of this machine's worktree pool. The conversations are illustrative."
+      "text": "Laws this surface holds.\n\n1. Never render presence while the daemon is unreachable. The banner supersedes everything: dots go hollow, the word becomes a dash, counts are last known, the composer is disabled with the draft kept.\n2. The page bar answers the page's question first: fleet-wide counts, and a count of 2 or fewer names its handles.\n3. The roster is the fleet, not the room; sections are the three statuses; rows stay in sign-in order within a section.\n4. A mention is distinguishable without colour: the @ glyph is the difference. A DM is a pair with \u2194, never a hashed id on screen.\n5. Status lives on the buddy, not on the message. Wide content scrolls inside its own block; prose wraps anywhere.\n6. Times are local. Phone inputs are 16px; controls 44px; return adds a line, the button sends.\n7. Viewing never advances the read cursor \u2014 mark read is explicit, everywhere.\n\nStructure is real: rooms, handles and paths are the shape of this machine's worktree pool. The conversations are illustrative."
     },
     {
       "id": "brief",
@@ -138,7 +138,7 @@
       "x": 1000,
       "y": 5900,
       "w": 380,
-      "text": "Picker row states drawn: selected (acme, with peek open), selected but working (fred: invite queues), disabled by the caller (meg: already in the room; june: blocked at a prompt), deaf (otis), not signed in (mr-board), starting (a pane the picker just spawned).\nLight is the default here, matching every other artboard; flip dark to check it."
+      "text": "Picker row states drawn: selected (acme, with peek open), selected but working (fred: invite queues), disabled by the caller (meg: already in the room; june: blocked at a prompt), offline (otis), not signed in (mr-board), starting (a pane the picker just spawned).\nLight is the default here, matching every other artboard; flip dark to check it."
     }
   ],
   "launch": {

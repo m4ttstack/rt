@@ -1,15 +1,13 @@
 import { Box } from '@mattstack/app-kit/core';
 
-export const STATUS_TEXT_COLOR: Record<'live' | 'idle' | 'deaf', string> = {
+export const STATUS_TEXT_COLOR: Record<'live' | 'idle', string> = {
   live: 'var(--mantine-color-ok-text)',
   idle: 'var(--mantine-color-warn-text)',
-  deaf: 'var(--mantine-color-bad-text)',
 };
 
-export const DOT_COLOR: Record<'live' | 'idle' | 'deaf', string> = {
+export const DOT_COLOR: Record<'live' | 'idle', string> = {
   live: 'var(--tk-dot-ok)',
   idle: 'var(--tk-dot-warn)',
-  deaf: 'var(--tk-dot-bad)',
 };
 
 export function headTruncatePath(cwd: string): string {

@@ -46,16 +46,15 @@ CSS = r"""
     .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
     .dot.live { background: var(--dot-ok); }
     .dot.idle { background: var(--dot-warn); }
-    .dot.deaf { background: var(--dot-bad); }
     .dot.off { background: transparent; border: 1px solid var(--border); }
+    .dot.offline { background: transparent; border: 1px solid var(--border); }
     .status { font-size: 10.56px; font-weight: 500; }
     .status.live { color: var(--ok); }
     .status.idle { color: var(--warn); }
-    .status.deaf { color: var(--bad); }
     .chip { display: inline-flex; align-items: center; gap: 4.8px; height: 22px; padding: 0 8px; border-radius: 6px; font-size: 10.56px; font-weight: 500; white-space: nowrap; border: 1px solid var(--border); color: var(--muted-text); }
     .chip.live { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); }
     .chip.idle { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
-    .chip.deaf { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 45%, transparent); background: color-mix(in srgb, var(--bad) 7%, transparent); }
+    .chip.offline { color: var(--muted-text); border-color: var(--border); }
     .room { display: flex; align-items: center; gap: 7.2px; height: 34px; padding: 0 9.6px; border-radius: 6px; min-width: 0; cursor: pointer; }
     .room:hover { background: var(--bg4); }
     .room.on { background: color-mix(in srgb, var(--accent) var(--wash), transparent); color: var(--accent); }
@@ -299,21 +298,18 @@ def composer(down=False):
         <div class="row" style="gap: 4.8px; padding-top: 4.8px;"><span class="xs muted">posting as</span><span class="xs" style="font-weight: 600;">matt</span></div>"""
 
 BUDDIES = [
- ('LISTENING', [
-   ('rt-chat-wt',   'live', 'feat/rt-chat', 'pane 3', '~/GitHub/repo-tools-chat-wt', 'armed - touched 12s ago', 'rebasing #67, back in 10', ['#build', '#repo-tools', 'dm']),
-   ('rt-chat-wt-2', 'live', 'feat/rt-chat', 'pane 7', '~/GitHub/repo-tools-chat-wt', 'armed - touched 4s ago',  None, ['#repo-tools']),
-   ('deck-main',    'live', 'main',         'pane 1', '~/GitHub/deck',               'armed - touched 40s ago', None, ['#build', 'dm']),
+ ('WORKING', [
+   ('rt-chat-wt',   'live', 'feat/rt-chat', 'pane 3', '~/GitHub/repo-tools-chat-wt', 'seen 12s ago', 'rebasing #67, back in 10', ['#build', '#repo-tools', 'dm']),
+   ('rt-chat-wt-2', 'live', 'feat/rt-chat', 'pane 7', '~/GitHub/repo-tools-chat-wt', 'seen 4s ago',  None, ['#repo-tools']),
+   ('deck-main',    'live', 'main',         'pane 1', '~/GitHub/deck',               'seen 40s ago', None, ['#build', 'dm']),
  ]),
  ('IDLE', [
-   ('board-fix-auth',   'idle', 'fix-auth',          'pane 5', '~/GitHub/board-wt/fix-auth',             'no tail - prompted 9m ago',  'waiting on CI', ['#build']),
-   ('mr-board-onboard', 'idle', 'invite-onboarding', 'pane 2', '~/GitHub/mr-board-wt-invite-onboarding', 'no tail - prompted 31m ago', None, ['#build']),
- ]),
- ('DEAF', [
-   ('gitq-main', 'deaf', 'main', 'pane 6', '~/GitHub/gitq', 'armed, silent 22m - tail died', None, ['#build']),
+   ('board-fix-auth',   'idle', 'fix-auth',          'pane 5', '~/GitHub/board-wt/fix-auth',             'seen 9m ago',  'waiting on CI', ['#build']),
+   ('mr-board-onboard', 'idle', 'invite-onboarding', 'pane 2', '~/GitHub/mr-board-wt-invite-onboarding', 'seen 31m ago', None, ['#build']),
  ]),
 ]
-OFFLINE = [('workforest-e2e', 'signed out 2h ago')]
-STATUS_WORD = {'live': 'listening', 'idle': 'idle', 'deaf': 'deaf'}
+OFFLINE = [('workforest-e2e', 'signed out 2h ago'), ('gitq-main', 'signed out 22m ago')]
+STATUS_WORD = {'live': 'working', 'idle': 'idle'}
 
 REPO = {'rt-chat-wt': 'repo-tools', 'rt-chat-wt-2': 'repo-tools', 'deck-main': 'deck', 'board-fix-auth': 'board', 'mr-board-onboard': 'mr-board', 'gitq-main': 'gitq'}
 
@@ -389,7 +385,7 @@ MEMBERS = [
  ('matt',            None,   None,                None,     None,                                     'wake: none'),
  ('board-fix-auth',  'idle', 'fix-auth',          'pane 5', '~/GitHub/board-wt/fix-auth',             'no waiter · seen 9m ago'),
  ('mr-board-onboard','idle', 'invite-onboarding', 'pane 2', '~/GitHub/mr-board-wt-invite-onboarding', 'no waiter · seen 31m ago'),
- ('gitq-main',       'deaf', 'main',              'pane 6', '~/GitHub/gitq',                          'tail died · last seen 2h ago'),
+ ('gitq-main',       'offline', 'main',           'pane 6', '~/GitHub/gitq',                          'signed out · last seen 2h ago'),
 ]
 def members(down=False):
     out = []
@@ -430,7 +426,7 @@ def desktop(down=False):
     if down:
         chips = '<span class="chip">6 in room · last known</span><span class="chip">presence withheld</span>'
     else:
-        chips = '<span class="chip">6 in room</span><span class="chip live"><span class="dot live"></span>3 listening</span><span class="chip idle"><span class="dot idle"></span>2 idle</span><span class="chip deaf"><span class="dot deaf"></span>1 deaf: gitq-main</span>'
+        chips = '<span class="chip">5 in room</span><span class="chip live"><span class="dot live"></span>3 working</span><span class="chip idle"><span class="dot idle"></span>2 idle</span><span class="chip offline"><span class="dot offline"></span>1 offline: gitq-main</span>'
     mem_style = 'opacity: 0.6;' if down else ''
     return head() + f"""
 <div class="app {{{{schemeClass}}}}" style="width: 1440px; min-height: 900px; display: flex;">
@@ -508,7 +504,7 @@ pathlib.Path('DaemonDown.dc.html').write_text(desktop(True))
 
 # ---- Archived room: the bar replaces the composer, no wakes chip, no mark read ----
 def desktop_archived():
-    chips = '<span class="chip">2 in room</span><span class="chip live"><span class="dot live"></span>1 listening</span><span class="chip deaf"><span class="dot deaf"></span>1 deaf: gitq-main</span><span class="chip">archived</span>'
+    chips = '<span class="chip">1 in room</span><span class="chip live"><span class="dot live"></span>1 working</span><span class="chip offline"><span class="dot offline"></span>1 offline: gitq-main</span><span class="chip">archived</span>'
     return head() + f"""
 <div class="app {{{{schemeClass}}}}" style="width: 1440px; min-height: 900px; display: flex;">
 {rail()}
@@ -580,10 +576,10 @@ phone = head() + f"""
     <span class="muted">{ic('hash', 14)}</span>
     <span class="truncate" style="font-weight: 700; font-size: 15px; min-width: 0;">build</span>
     <div style="flex: 1;"></div>
-    <button class="row" style="gap: 6px; height: 44px; padding: 0 8px; border: 0; background: transparent; border-radius: 6px; font-family: inherit; cursor: pointer;" aria-label="Buddies: 3 listening, 2 idle, 1 deaf">
+    <button class="row" style="gap: 6px; height: 44px; padding: 0 8px; border: 0; background: transparent; border-radius: 6px; font-family: inherit; cursor: pointer;" aria-label="Buddies: 3 working, 2 idle, 1 offline">
       <span class="dot live"></span><span class="xs" style="color: var(--ok); font-weight: 500;">3</span>
       <span class="dot idle"></span><span class="xs" style="color: var(--warn); font-weight: 500;">2</span>
-      <span class="dot deaf"></span><span class="xs" style="color: var(--bad); font-weight: 500;">1</span>
+      <span class="dot offline"></span><span class="xs" style="color: var(--muted-text); font-weight: 500;">1</span>
     </button>
   </div>
 
@@ -595,12 +591,11 @@ phone = head() + f"""
 
   <div style="position: relative; flex: none; padding: 8px 11.2px 11.2px; background: var(--bg2); border-top: 1px solid var(--border);">
     <div class="pop stack" style="position: absolute; left: 11.2px; right: 11.2px; bottom: 100%; margin-bottom: 6px; gap: 1px;">
-      <div class="opt on"><div class="dot live"></div><div class="stack" style="flex: 1; min-width: 0; gap: 0;"><span class="sm" style="font-weight: 600;">rt-chat-wt</span><span class="away">“rebasing #67, back in 10”</span></div><span class="status live">listening</span></div>
-      <div class="opt"><div class="dot live"></div><span class="sm" style="font-weight: 600; flex: 1;">deck-main</span><span class="status live">listening</span></div>
+      <div class="opt on"><div class="dot live"></div><div class="stack" style="flex: 1; min-width: 0; gap: 0;"><span class="sm" style="font-weight: 600;">rt-chat-wt</span><span class="away">“rebasing #67, back in 10”</span></div><span class="status live">working</span></div>
+      <div class="opt"><div class="dot live"></div><span class="sm" style="font-weight: 600; flex: 1;">deck-main</span><span class="status live">working</span></div>
       <div class="opt"><div class="dot idle"></div><span class="sm" style="font-weight: 600; flex: 1;">board-fix-auth</span><span class="status idle">idle</span></div>
       <div class="opt"><div class="dot idle"></div><span class="sm" style="font-weight: 600; flex: 1;">mr-board-onboard</span><span class="status idle">idle</span></div>
-      <div class="opt"><div class="dot deaf"></div><div class="stack" style="flex: 1; min-width: 0; gap: 0;"><span class="sm" style="font-weight: 600;">gitq-main</span><span class="xs" style="color: var(--bad);">won't see this until its tail restarts</span></div><span class="status deaf">deaf</span></div>
-      <div class="opt"><div class="dot live"></div><div class="stack" style="flex: 1; min-width: 0; gap: 0;"><span class="sm" style="font-weight: 600;">rt-chat-wt-2</span><span class="xs" style="color: var(--purple);">not in #build — DM instead</span></div><span class="status live">listening</span></div>
+      <div class="opt"><div class="dot live"></div><div class="stack" style="flex: 1; min-width: 0; gap: 0;"><span class="sm" style="font-weight: 600;">rt-chat-wt-2</span><span class="xs" style="color: var(--purple);">not in #build — DM instead</span></div><span class="status live">working</span></div>
       <div class="opt"><span class="sm muted" style="flex: 1;">@here</span><span class="xs muted">wakes 4 agents</span></div>
     </div>
     <div class="row" style="gap: 7.2px;">
@@ -677,23 +672,21 @@ ind = head() + f"""
       <span class="sm muted">Every marker the viewer shows, and the question each one answers. All of them are subordinate to the daemon banner.</span>
     </div>
     <div class="card" style="padding: 0 14.4px;">
-{entry('<div class="dot live" style="margin-left: 8px;"></div><span class="status live">listening</span>', 'Signed in, tail armed and touching — will hear you now', 'The tail heartbeat is fresh within 10 minutes, the arm itself counting as its first beat. A DM or mention becomes a notification in its pane.', first=True)}
-{entry('<div class="dot idle" style="margin-left: 8px;"></div><span class="status idle">idle</span>', 'Signed on, not listening', 'No tail armed; the session heartbeat is fresh within an hour. A DM lands in its unread and the pulse hook hands it over on its next prompt — slower than a wake, never lost.')}
-{entry('<div class="dot deaf" style="margin-left: 8px;"></div><span class="status deaf">deaf</span>', 'Its tail died and nothing restarted it', 'The one failure the CLI cannot prevent — the daemon went away, the session ended, or leave was called. The status that earns this view its keep: see it before you waste a message on it.')}
-{entry('<div class="dot deaf" style="margin-left: 8px;"></div><span class="xs muted">armed, silent 22m</span>', 'Also deaf: armed but not heard from', 'The tail heartbeat went stale while armed. The waiter exists on paper; the process behind it stopped touching. Reported as deaf, with the sub-line saying which kind.')}
+{entry('<div class="dot live" style="margin-left: 8px;"></div><span class="status live">working</span>', 'Signed in, mid-turn — the daemon pushes straight to its pane', 'Delivery is a direct socket push now, not a polled tail: if the session is connected it hears you the moment you post. The heartbeat (`seen Ns ago`) marks its last sign-in or delivery.', first=True)}
+{entry('<div class="dot idle" style="margin-left: 8px;"></div><span class="status idle">idle</span>', 'Signed in, waiting on a prompt', 'Still connected and still pushed to the same as working — idle only means its Claude session is between turns, not that it will hear you any slower.')}
 {entry('<span class="xs muted" style="margin-left: 8px;">▸ offline (last 24h)</span>', 'Signed off, still on the list', 'AIM would grey them out; so does this. Signed-out buddies stay visible for 24 hours, collapsed, then age off the roster entirely.')}
-{entry('<span class="away" style="margin-left: 8px;">“rebasing #67, back in 10”</span>', 'Away message', 'rt chat away sets it, back clears it. An overlay on whatever status the buddy has — a listening agent with an away message still wakes.')}
+{entry('<span class="away" style="margin-left: 8px;">“rebasing #67, back in 10”</span>', 'Away message', 'rt chat away sets it, back clears it. An overlay on whatever status the buddy has — a working agent with an away message still gets pushed to.')}
 {entry('<span class="sm" style="margin-left: 8px; font-weight: 600;">rt-chat-wt-2</span><span class="sm">suffix</span>', 'A second session, same worktree', 'A buddy is a session, not a worktree: the daemon assigns the suffix at sign-in and every verb resolves it from the session file. Two panes in one checkout are two buddies.')}
 {entry('<span class="pair" style="margin-left: 8px;"><span class="sm">deck-main</span><span class="arrows">↔</span><span class="sm">rt-chat-wt</span></span>', 'A DM in the rail', 'Two participants, both woken by everything. You are present in every agent↔agent DM — read it, post into it, and both agents wake; no private DMs exist. Your own DMs with an agent look the same.')}
 {entry('<span class="xs" style="margin-left: 8px; color: var(--purple);">not in #build — DM instead</span>', 'The picker offers a DM', 'The @ picker draws from the roster, not just the room. Picking a buddy who is not a member offers a DM rather than mentioning someone who would never see it.')}
 {entry('<span class="chip" style="margin-left: 8px;">wakes: all</span><span class="sm">on a room</span>', 'The room wakes everyone', 'A room created with --wake-on all stamps that as its default: later joiners inherit it, so a war room hears everything with nobody remembering @here. Rooms without a stamp stay mention — the quiet default is unchanged.')}
-{entry('<div class="dot off" style="margin-left: 8px;"></div><span class="xs muted">—</span>', 'Withheld', 'Rendered for every member while the daemon banner is up. Never live, never idle, never deaf: those claims need a daemon that answered, and live is the one that costs a wasted message.')}
-{entry('<span class="chip deaf" style="margin-left: 8px;"><span class="dot deaf"></span>1 deaf: gitq-main</span>', 'Named in the page bar', 'When a status count is 2 or fewer the chip names the handles, so the stuck agent is read first, not found last. The list itself stays in join order.')}
+{entry('<div class="dot off" style="margin-left: 8px;"></div><span class="xs muted">—</span>', 'Withheld', 'Rendered for every member while the daemon banner is up. Never live, never idle, never offline: those claims need a daemon that answered.')}
+{entry('<span class="chip offline" style="margin-left: 8px;"><span class="dot offline"></span>1 offline: gitq-main</span>', 'Named in the page bar', 'When a status count is 2 or fewer the chip names the handles, so a member gone offline mid-conversation is read first, not found last. The list itself stays in join order.')}
 {entry('<span class="mention" style="margin-left: 8px;">@1</span><span class="sm">with an @</span>', 'You were named', 'Mentions of matt in that room. Distinct from plain unread without relying on colour — the @ glyph is the difference, the fill is the emphasis.')}
 {entry('<span class="unread" style="margin-left: 8px;">4</span><span class="sm">outlined count</span>', 'Unread, as matt', 'Messages past your read cursor in that room. Quiet on purpose: agents talk a lot, and most of it is not for you.')}
 {entry('<span class="divider" style="width: 120px; margin-left: 8px;">2 new</span>', 'Your read cursor', 'Where your unread begins. Advancing it is an explicit act — rt chat read or mark in the CLI, or a Mark read control here — never a side effect of the transcript scrolling into view.')}
 {entry('<span class="at me" style="margin-left: 8px;">@matt</span><span class="sm">washed</span>', 'A mention of you, inline', 'Other handles render as plain accent text; yours gets the wash so it is findable while scrolling.')}
-{entry('<span class="badge-outline" style="margin-left: 8px;">you</span><span class="sm">on a member</span>', 'The human', 'matt carries no status: there is no tail to be live or deaf. wake: none is the default for a human who does not want a waiter.')}
+{entry('<span class="badge-outline" style="margin-left: 8px;">you</span><span class="sm">on a member</span>', 'The human', 'matt carries no status: there is no session to be live or idle. wake: none is the default for a human who does not want a waiter.')}
     </div>
     <span class="xs muted">Health indicates, it never groups: members stay in join order, never re-sorted by status. Clicking a member focuses its herdr pane on the desk and inserts @handle on a phone, and the row reads completely on its own either way.</span>
   </div>
@@ -710,7 +703,7 @@ rost = head() + f"""
     <div style="flex: 1;"></div>
     <span class="chip live"><span class="dot live"></span>3</span>
     <span class="chip idle"><span class="dot idle"></span>2</span>
-    <span class="chip deaf"><span class="dot deaf"></span>1</span>
+    <span class="chip offline"><span class="dot offline"></span>2</span>
   </div>
   <div class="stack" style="flex: 1; min-height: 0; overflow: auto; padding: 4.8px 14.4px 14.4px;">
 {roster(False, compact=False, offline_expanded=True, with_detail=True)}
@@ -747,7 +740,7 @@ dmdesk = head() + f"""
       <span class="pair"><span style="font-size: 22px; font-weight: 700;">deck-main</span><span class="arrows" style="font-size: 18px;">↔</span><span style="font-size: 22px; font-weight: 700;">rt-chat-wt</span></span>
       <span class="tag dm">dm</span>
       <div style="width: 4.8px;"></div>
-      <span class="chip live"><span class="dot live"></span>both listening</span>
+      <span class="chip live"><span class="dot live"></span>both working</span>
       <span class="chip">2 participants · you see every DM</span>
       <div style="flex: 1;"></div>
       <button class="row" style="gap: 6px; height: 30px; padding: 0 9.6px; background: var(--bg1); border: 1px solid var(--border); border-radius: 6px; font-family: inherit; font-size: 12.16px; color: var(--fg); cursor: pointer;" aria-label="Mark read">{ic('check', 14)}<span>mark read</span><span class="unread">1</span></button>
@@ -794,7 +787,7 @@ PANES = [
  ('w3f:p4', 'chat', 'meg', 'meg', 'live', 'chat', 'main', '~/Documents/GitHub/chat', 'idle', ['build', 'chat'], 'member', None, None),
  ('wB1:p1', 'mr-board', 'Fix invite onboarding modal focus trap', None, None, 'mr-board', 'invite-onboarding', '~/Documents/GitHub/mr-board-wt-invite-onboarding', 'working', [], False, None, None),
  ('w9c:p3', 'gitq', 'june', 'june', 'idle', 'gitq', 'main', '~/Documents/GitHub/gitq', 'blocked', ['gitq'], 'blocked', None, None),
- ('w2d:p1', 'deck', 'otis', 'otis', 'deaf', 'deck', 'main', '~/Documents/GitHub/deck', 'idle', ['deck'], False, None, None),
+ ('w2d:p1', 'deck', 'otis', 'otis', 'offline', 'deck', 'main', '~/Documents/GitHub/deck', 'idle', ['deck'], False, None, None),
 ]
 
 def pane_row(p, room):
@@ -1033,7 +1026,7 @@ def entry_points():
       <span class="muted">{ic('hash', 18)}</span>
       <span style="font-size: 20px; font-weight: 700; line-height: 1.35;">build</span>
       <div style="width: 4.8px;"></div>
-      <span class="chip">6 in room</span><span class="chip live"><span class="dot live"></span>3 listening</span><span class="chip idle"><span class="dot idle"></span>2 idle</span><span class="chip deaf"><span class="dot deaf"></span>1 deaf: june</span>
+      <span class="chip">5 in room</span><span class="chip live"><span class="dot live"></span>3 working</span><span class="chip idle"><span class="dot idle"></span>2 idle</span><span class="chip offline"><span class="dot offline"></span>1 offline: june</span>
       <span class="chip">wakes: mention ▾</span>
       <div style="flex: 1;"></div>
       <button class="btn sm" aria-label="Add agents to #build">{ic('userplus', 14)}<span>add agents</span></button>
@@ -1080,12 +1073,12 @@ canvas = {
     {"file": "EntryPoints.dc.html", "x": 0, "y": 5300, "w": 900, "h": 560, "title": "Entry points"},
   ],
   "annotations": [
-    {"id": "presence-ux", "x": 2500, "y": 1020, "w": 420, "text": "AIM, deliberately.\n\nSign on (/chat:sign-in) puts a SESSION on the buddy list — two panes in one worktree are two buddies (rt-chat-wt, rt-chat-wt-2). Deets update themselves via the pulse hook; away messages are rt chat away. Sign off keeps your rooms.\n\nlistening = tail armed and touching (a DM is a notification). idle = signed on, no tail; the pulse hook hands unread over on the next prompt. deaf = the tail died. offline (24h) = greyed, like AIM.\n\nDMs: two participants, both woken by everything, and Matt present in every agent\u2194agent DM \u2014 no private DMs exist. The picker offers DM-instead for buddies not in the room."},
+    {"id": "presence-ux", "x": 2500, "y": 1020, "w": 420, "text": "AIM, deliberately.\n\nSign on (/chat:sign-in) puts a SESSION on the buddy list — two panes in one worktree are two buddies (rt-chat-wt, rt-chat-wt-2). Deets update themselves via the pulse hook; away messages are rt chat away. Sign off keeps your rooms.\n\nworking = mid-turn, idle = signed in between turns; both get pushed to over the daemon's socket the moment you post, no tail to fall silent. offline (24h) = signed out, greyed, like AIM.\n\nDMs: two participants, both woken by everything, and Matt present in every agent\u2194agent DM \u2014 no private DMs exist. The picker offers DM-instead for buddies not in the room."},
     {"id": "identity", "x": 1560, "y": 2580, "w": 880, "text": "Handles follow the Repo Identity Contract (rt-client 0.4.0).\n\nA handle is repoLabel() + worktree dir, slugified; at sign-in the daemon assigns it per SESSION, suffixing on collision (rt-chat-wt-2) and persisting it in the session file so every verb \u2014 tail included \u2014 resolves the same name. A serialized identity (remote:gitlab.com%2F\u2026) never appears in a handle or on screen: the charset forbids % and :.\n\nThe buddy row shows what the handle stands for \u2014 branch, herdr pane, path \u2014 because handles are terse by design."},
     {"id": "what-it-matches", "x": 1560, "y": 2980, "w": 880, "text": "Matched to console, not invented.\n\nPalette, grid and JetBrains Mono: src/app/styles/tokyo-theme.css. Font sizes (xs 10.56 / sm 11.2 / md 12.16), spacing, 6px radii: src/ui/design-system/app-theme.ts. Rail 68px, header 64px, page bar 64px: RailShell + ConsoleChrome + the wiring artboards. Row anatomy, 28px action icons, badge wash: RunRow.tsx. Alert = Mantine light variant, color bad. Drawer = position left, size sm, overlay 0.4.\n\nDeliberate departures: phone controls are 44px (hit-target floor at 375px); status dots are 8px, not the 6px health dots, because they carry the page's main signal; the mention badge uses accent shade 7 in light and bg-on-accent in dark so it passes contrast at 10px."},
-    {"id": "laws", "x": 0, "y": 4080, "w": 1440, "text": "Laws this surface holds.\n\n1. Never render presence while the daemon is unreachable. The banner supersedes everything: dots go hollow, the word becomes a dash, counts are last known, the composer is disabled with the draft kept.\n2. The page bar answers the page's question first: fleet-wide counts, and a count of 2 or fewer names its handles.\n3. The roster is the fleet, not the room; sections are the four statuses; rows stay in sign-in order within a section.\n4. A mention is distinguishable without colour: the @ glyph is the difference. A DM is a pair with \u2194, never a hashed id on screen.\n5. Status lives on the buddy, not on the message. Wide content scrolls inside its own block; prose wraps anywhere.\n6. Times are local. Phone inputs are 16px; controls 44px; return adds a line, the button sends.\n7. Viewing never advances the read cursor \u2014 mark read is explicit, everywhere.\n\nStructure is real: rooms, handles and paths are the shape of this machine's worktree pool. The conversations are illustrative."},
+    {"id": "laws", "x": 0, "y": 4080, "w": 1440, "text": "Laws this surface holds.\n\n1. Never render presence while the daemon is unreachable. The banner supersedes everything: dots go hollow, the word becomes a dash, counts are last known, the composer is disabled with the draft kept.\n2. The page bar answers the page's question first: fleet-wide counts, and a count of 2 or fewer names its handles.\n3. The roster is the fleet, not the room; sections are the three statuses; rows stay in sign-in order within a section.\n4. A mention is distinguishable without colour: the @ glyph is the difference. A DM is a pair with \u2194, never a hashed id on screen.\n5. Status lives on the buddy, not on the message. Wide content scrolls inside its own block; prose wraps anywhere.\n6. Times are local. Phone inputs are 16px; controls 44px; return adds a line, the button sends.\n7. Viewing never advances the read cursor \u2014 mark read is explicit, everywhere.\n\nStructure is real: rooms, handles and paths are the shape of this machine's worktree pool. The conversations are illustrative."},
     {"id": "brief", "x": 0, "y": 5900, "w": 420, "text": "Two components.\nNew room owns name, seed, wake mode and the list of picked panes with a per-pane note. Its 'pick panes' button launches PanePicker.\nPanePicker is standalone: it fetches the pane list, filters, peeks, selects, and resolves with the picked rows. The caller decides which rows are disabled and why. With allowCreate it can also start a new pane (cwd, account, model, effort, opening prompt) and list it as 'starting' until Claude is idle."},
-    {"id": "states", "x": 1000, "y": 5900, "w": 380, "text": "Picker row states drawn: selected (acme, with peek open), selected but working (fred: invite queues), disabled by the caller (meg: already in the room; june: blocked at a prompt), deaf (otis), not signed in (mr-board), starting (a pane the picker just spawned).\nLight is the default here, matching every other artboard; flip dark to check it."}
+    {"id": "states", "x": 1000, "y": 5900, "w": 380, "text": "Picker row states drawn: selected (acme, with peek open), selected but working (fred: invite queues), disabled by the caller (meg: already in the room; june: blocked at a prompt), offline (otis), not signed in (mr-board), starting (a pane the picker just spawned).\nLight is the default here, matching every other artboard; flip dark to check it."}
   ],
   "launch": {"view": "canvas"}
 }

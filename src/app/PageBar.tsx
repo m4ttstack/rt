@@ -90,7 +90,15 @@ export interface PageBarProps {
   onArchive?: (room: string, archived: boolean) => void;
 }
 
-function Dot({ color, testId }: { color: string; testId: string }) {
+function Dot({
+  color,
+  testId,
+  hollow,
+}: {
+  color?: string;
+  testId: string;
+  hollow?: boolean;
+}) {
   return (
     <Box
       component="span"
@@ -101,7 +109,8 @@ function Dot({ color, testId }: { color: string; testId: string }) {
         height: 8,
         borderRadius: '50%',
         flex: 'none',
-        background: color,
+        background: hollow ? 'transparent' : color,
+        border: hollow ? '1px solid var(--tk-border)' : undefined,
       }}
     />
   );
@@ -379,7 +388,7 @@ export function PageBar({
   const wakeMode = room.kind === 'dm' ? 'all' : (room.defaultWake ?? 'mention');
   const live = buddies.filter(b => b.status === 'live');
   const idle = buddies.filter(b => b.status === 'idle');
-  const deaf = buddies.filter(b => b.status === 'deaf');
+  const offline = buddies.filter(b => b.status === 'offline');
   const signedInTotal = signedInCount(buddies);
 
   return (
@@ -431,22 +440,15 @@ export function PageBar({
             <NamesSuffix handles={idle.map(b => b.handle)} />
           </Box>
         )}
-        {deaf.length > 0 && (
+        {offline.length > 0 && (
           <Box
             component="span"
-            style={{
-              ...CHIP_BASE,
-              background:
-                'color-mix(in srgb, var(--mantine-color-bad-text) 7%, transparent)',
-              borderColor:
-                'color-mix(in srgb, var(--mantine-color-bad-text) 45%, transparent)',
-              color: 'var(--mantine-color-bad-text)',
-            }}
-            data-testid="chip-deaf"
+            style={CHIP_BASE}
+            data-testid="chip-offline"
           >
-            <Dot color="var(--tk-dot-bad)" testId="dot-deaf" />
-            {deaf.length} {STATUS_WORD.deaf}
-            <NamesSuffix handles={deaf.map(b => b.handle)} />
+            <Dot hollow testId="dot-offline" />
+            {offline.length} {STATUS_WORD.offline}
+            <NamesSuffix handles={offline.map(b => b.handle)} />
           </Box>
         )}
         {room.archivedAt !== undefined ? (

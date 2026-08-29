@@ -45,7 +45,6 @@ export interface RosterProps {
 const SECTIONS: ReadonlyArray<{ status: BuddyStatus; label: string }> = [
   { status: 'live', label: STATUS_WORD.live },
   { status: 'idle', label: STATUS_WORD.idle },
-  { status: 'deaf', label: STATUS_WORD.deaf },
   { status: 'offline', label: 'offline · last 24h' },
 ];
 
@@ -159,7 +158,7 @@ function MemberRow({
   onPick?: (handle: string, info: { inRoom: boolean }) => void;
 }) {
   const { handle } = buddy;
-  const status = buddy.status as 'live' | 'idle' | 'deaf';
+  const status = buddy.status as 'live' | 'idle';
   const statusLabel = reachable
     ? `${STATUS_WORD[buddy.status]} · ${statusDetail(buddy, now)}`
     : 'presence withheld while the daemon is down';

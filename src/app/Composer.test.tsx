@@ -10,24 +10,21 @@ beforeEach(() => {
   installFetchMock();
 });
 
-test('@ autocompletes from the roster, offers DM instead for a buddy outside the room, and warns on deaf', async () => {
+test('@ autocompletes from the roster, offers DM instead for a buddy outside the room, and never lists an offline buddy', async () => {
   renderWithProviders(
     <Composer
       room="build"
       roomMembers={['acme-dev-42', 'gitq-main']}
       buddies={[
         { handle: 'acme-dev-42', status: 'live' },
-        { handle: 'gitq-main', status: 'deaf' },
+        { handle: 'gitq-main', status: 'offline' },
         { handle: 'board-fix-auth', status: 'idle' },
       ]}
     />
   );
   await userEvent.type(screen.getByRole('textbox'), '@');
   expect(await screen.findByText('acme-dev-42')).toBeInTheDocument();
-  expect(screen.getByText('gitq-main')).toBeInTheDocument();
-  expect(
-    screen.getByText(/won't see this until its tail restarts/)
-  ).toBeInTheDocument();
+  expect(screen.queryByText('gitq-main')).toBeNull();
   expect(screen.getByText(/not in #build, DM instead/)).toBeInTheDocument();
   expect(screen.getByText(/@here/)).toHaveTextContent(/wakes 2 agents/);
 });

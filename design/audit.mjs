@@ -184,11 +184,6 @@ export const TARGETS = [
     props: ['color'],
   },
   {
-    spec: '.status.deaf',
-    find: '[data-testid="status-gitq-main"]',
-    props: ['color'],
-  },
-  {
     spec: '.away',
     find: '[data-testid="away-rt-chat-wt"]',
     props: ['color', 'font-size', 'font-style'],
@@ -340,9 +335,9 @@ export const TARGETS = [
     props: ['border-color', 'color'],
   },
   {
-    spec: '.chip.deaf',
-    find: '[data-testid="chip-deaf"]',
-    props: ['background', 'border-color', 'color'],
+    spec: '.chip.offline',
+    find: '[data-testid="chip-offline"]',
+    props: ['border-color', 'color'],
   },
   // `.dot`'s own base props (border-radius/height/width) are already
   // registered once above (Task 4's buddy-dot check) -- re-declaring the
@@ -360,9 +355,12 @@ export const TARGETS = [
     props: ['background'],
   },
   {
-    spec: '.dot.deaf',
-    find: '[data-testid="dot-deaf"]',
+    spec: '.dot.offline',
+    find: '[data-testid="dot-offline"]',
     props: ['background'],
+    why: {
+      border: 'full shorthand (width/style/colour combined); not separately enumerated, verified by eye',
+    },
   },
 
   // Task 5 -- Transcript (design/artboards/Main.dc.html's message list).
@@ -692,7 +690,7 @@ const LONGHAND_FALLBACK = {
   gap: 'column-gap',
   'border-radius': 'border-top-left-radius',
   background: 'background-color',
-  // `.chip.live`/`.idle`/`.deaf` (and the mark-read control) only override
+  // `.chip.live`/`.idle`/`.offline` (and the mark-read control) only override
   // `border-color`, not the full `border` shorthand -- that one longhand
   // name IS what getComputedStyle's iterator yields directly, so this entry
   // exists for symmetry/documentation rather than because it was missing.

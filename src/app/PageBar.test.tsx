@@ -26,16 +26,14 @@ test('the page bar counts the fleet, names handles behind a small count, and sho
         { handle: 'a', status: 'live' },
         { handle: 'b', status: 'live' },
         { handle: 'c', status: 'idle' },
-        { handle: 'gitq-main', status: 'deaf' },
+        { handle: 'gitq-main', status: 'offline' },
       ]}
     />
   );
-  expect(screen.getByText('4 in room')).toBeInTheDocument();
-  expect(screen.getByTestId('chip-live')).toHaveTextContent(
-    '2 listening: a, b'
-  );
-  expect(screen.getByTestId('chip-deaf')).toHaveTextContent(
-    '1 deaf: gitq-main'
+  expect(screen.getByText('3 in room')).toBeInTheDocument();
+  expect(screen.getByTestId('chip-live')).toHaveTextContent('2 working: a, b');
+  expect(screen.getByTestId('chip-offline')).toHaveTextContent(
+    '1 offline: gitq-main'
   );
   expect(screen.getByText('wakes: mention')).toBeInTheDocument();
 });
@@ -114,7 +112,7 @@ test('the ⋯ menu offers Archive with a confirm that names the members, and con
       room={{ room: 'build', memberCount: 3, unread: 0, mentions: 0 }}
       buddies={[
         { handle: 'fred', status: 'live' },
-        { handle: 'gitq-main', status: 'deaf' },
+        { handle: 'gitq-main', status: 'offline' },
       ]}
       onArchive={onArchive}
     />

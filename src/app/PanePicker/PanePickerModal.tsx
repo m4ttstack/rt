@@ -15,7 +15,7 @@ import { NewPaneForm } from './NewPaneForm';
 import { PaneRow } from './PaneRow';
 import type { ChatPane, PickPanesOptions } from './types';
 
-const ORDER: Record<string, number> = { live: 0, idle: 1, deaf: 2 };
+const ORDER: Record<string, number> = { live: 0, idle: 1 };
 
 export function sortPanes(panes: ChatPane[]): ChatPane[] {
   return panes

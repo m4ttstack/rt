@@ -77,13 +77,23 @@ function wsUrl(): string {
   return `${proto}://${window.location.host}/ws`;
 }
 
+/** A `chat/<room>/msg` relay topic -- the only frame the daemon still emits
+    for chat (delivery v2 dropped the separate `chat/wake/<handle>` relay). */
+function isMsgTopic(topic: unknown): topic is string {
+  return (
+    typeof topic === 'string' &&
+    topic.startsWith('chat/') &&
+    topic.endsWith('/msg')
+  );
+}
+
 /**
  * Fetches the buddy roster on mount (skipped when `seed` replaces it, the
  * same test seam `useDaemonHealth` reads), every 5s, and again on any
- * `chat/wake/*` relay frame. A wake frame means a buddy's tail needs a
- * nudge, not that its status changed -- the daemon still owns status,
- * always -- but it is a hint this snapshot is worth refreshing before the
- * next scheduled poll.
+ * `chat/<room>/msg` relay frame. A post is a hint a buddy's presence may
+ * have moved (it is the daemon's own signal that a session touched
+ * something), not that its status changed -- the daemon still owns status,
+ * always -- but it is worth refreshing before the next scheduled poll.
  */
 function useBuddies(seed: Buddy[] | undefined): Buddy[] {
   const [buddies, setBuddies] = useState<Buddy[]>(seed ?? []);
@@ -113,12 +123,7 @@ function useBuddies(seed: Buddy[] | undefined): Buddy[] {
       } catch {
         return;
       }
-      if (
-        typeof frame?.topic === 'string' &&
-        frame.topic.startsWith('chat/wake/')
-      ) {
-        fetchBuddies();
-      }
+      if (isMsgTopic(frame?.topic)) fetchBuddies();
     };
     return () => socket.close();
   }, [fetchBuddies]);
@@ -399,7 +404,7 @@ function tapButtonStyle(size: number) {
   };
 }
 
-function FleetDot({ color }: { color: string }) {
+function FleetDot({ color, hollow }: { color?: string; hollow?: boolean }) {
   return (
     <Box
       component="span"
@@ -407,7 +412,8 @@ function FleetDot({ color }: { color: string }) {
         width: 8,
         height: 8,
         borderRadius: '50%',
-        background: color,
+        background: hollow ? 'transparent' : color,
+        border: hollow ? '1px solid var(--tk-border)' : undefined,
         flex: 'none',
       }}
     />
@@ -443,7 +449,7 @@ function PhoneHeader({
 }) {
   const live = buddies.filter(b => b.status === 'live').length;
   const idle = buddies.filter(b => b.status === 'idle').length;
-  const deaf = buddies.filter(b => b.status === 'deaf').length;
+  const offline = buddies.filter(b => b.status === 'offline').length;
 
   return (
     <Group
@@ -473,7 +479,7 @@ function PhoneHeader({
       <UnstyledButton
         aria-label={
           reachable
-            ? `Buddies: ${live} listening, ${idle} idle, ${deaf} deaf`
+            ? `Buddies: ${live} working, ${idle} idle, ${offline} offline`
             : 'Buddies unavailable while the daemon is down'
         }
         data-testid="phone-fleet-toggle"
@@ -499,9 +505,9 @@ function PhoneHeader({
             <Text size="xs" style={{ color: 'var(--mantine-color-warn-text)' }}>
               {idle}
             </Text>
-            <FleetDot color="var(--tk-dot-bad)" />
-            <Text size="xs" style={{ color: 'var(--mantine-color-bad-text)' }}>
-              {deaf}
+            <FleetDot hollow />
+            <Text size="xs" style={{ color: PHONE_MUTED }}>
+              {offline}
             </Text>
           </>
         ) : (

@@ -68,18 +68,19 @@ Console's second 64px bar. Title at **20px / 700** (`#build`, or the
 Then the fleet chips, all `.chip` (22px tall, radius 6px, `gap: 4.8px`,
 `padding: 0 8px`, 10.56px / 500):
 
-- `N in room` — plain chip, no dot (the bar counts this room's members; the
-  roster counts the fleet)
-- `N listening` — `.chip.live` with a `.dot.live`
+- `N in room` — plain chip, no dot (working + idle members of this room;
+  the roster counts the fleet)
+- `N working` — `.chip.live` with a `.dot.live`
 - `N idle` — `.chip.idle` with a `.dot.idle`
-- `N deaf` — `.chip.deaf` with a `.dot.deaf` (this one also gets a `bad` 7% wash)
+- `N offline` — `.chip.offline` with a `.dot.offline` (muted, the same
+  transparent-and-bordered dot the roster's offline row uses)
 - `wakes: <mode>` — plain chip
 - `archived` (plain chip, replaces `wakes` on an archived room; `mark read`
   is hidden there)
 
-A chip whose count is **≤2 names its handles**: `1 deaf: gitq-main`. That is
-what makes the stuck agent read first instead of found last. `offline` never
-gets a chip.
+A chip whose count is **≤2 names its handles**: `1 offline: gitq-main`. That
+is what makes a member gone offline mid-conversation read first instead of
+found last.
 
 Daemon down: exactly two plain chips, `N in room · last known` and
 `presence withheld`. No dots, no status variants.
@@ -153,8 +154,8 @@ scrolling on its own to the right of the transcript.
 
 Heading `BUDDIES` (caption `last known` only while the daemon is down).
 
-Four sections **in this order**, each a `.sect` with its count: `listening`,
-`idle`, `deaf`, `offline · last 24h`. Within a section, sign-in order.
+Three sections **in this order**, each a `.sect` with its count: `working`,
+`idle`, `offline · last 24h`. Within a section, sign-in order.
 
 Each row is a `.member` (`align-items: flex-start`, `gap: 7.2px`, `padding:
 7.2px 0`), separated by `--border-soft`. The `.dot` gets `margin-top: 6px`,
@@ -206,11 +207,11 @@ a real shadow: `0 10px 30px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.18)`).
 Each option is a `.opt`: **44px tall**, `gap: 7.2px`, `padding: 0 9.6px`,
 radius 4px, `.opt.on` in the accent wash.
 
-Option order: listening first, then idle and deaf — **listed, never
-filtered**, because a mention still lands in an idle agent's unread. A buddy
-outside the room reads `not in #room — DM instead`. A deaf buddy carries
-`won't see this until its tail restarts`. `@here` sits last with its cost:
-`wakes N agents`.
+Option order: working first, then idle — **listed, never filtered**, because
+a mention still lands in an idle agent's unread; offline buddies are the one
+status left out (there is no pane left to push a mention to). A buddy
+outside the room reads `not in #room — DM instead`. `@here` sits last with
+its cost: `wakes N agents`.
 
 ## Pane picker (Task 6)
 

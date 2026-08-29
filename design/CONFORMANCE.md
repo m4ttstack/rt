@@ -131,9 +131,8 @@ Status colour pairs, which are easy to swap:
 
 | status | dot | text |
 | --- | --- | --- |
-| live / listening | `--dot-ok` | `--ok` |
+| live / working | `--dot-ok` | `--ok` |
 | idle | `--dot-warn` | `--warn` |
-| deaf | `--dot-bad` | `--bad` |
 | offline | transparent, `1px solid var(--border)` | `--muted` |
 
 The dot ramp and the text ramp are **different colours on purpose** — the dots
