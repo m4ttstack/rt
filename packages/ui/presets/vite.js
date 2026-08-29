@@ -35,15 +35,32 @@ export function mattstackVite(opts) {
     plugins: [react({ exclude: /\/node_modules\/(?!@mattstack\/)/ })],
     optimizeDeps: {
       exclude: ['@mattstack/app-kit', '@mattstack/mantine-tokyo'],
-      // Deps reachable ONLY through the excluded kit source must be listed
-      // here: Vite scans no excluded importer, so a consumer whose own code
-      // imports UI solely via the kit gets every one of these served raw.
-      // Raw ESM survives that, but any CJS on the path (dayjs and its
-      // plugins, prop-types) has no `default` export and blanks the whole
-      // app under `vite dev`. Prebundling the kit's full re-exported peer
-      // set keeps the CJS interop inside the optimized bundles.
+      // Vite scans no excluded importer, so every bare specifier the kit
+      // source imports must be listed here or a consumer that reaches it
+      // only through the kit gets it served raw. Raw ESM survives that;
+      // raw CJS (react-dom/client, dayjs and its plugins, prop-types via
+      // @mantine ESM) has no `default` export and blanks the whole app
+      // under `vite dev`. So: the kit's peers, its own deps, and the CJS
+      // subpaths its source touches. Prebundling something a consumer
+      // never mounts costs one optimize pass; missing one blanks the page.
       include: [
+        'react',
+        'react-dom',
+        'react-dom/client',
         'dayjs',
+        'zod',
+        'wouter',
+        'lucide-react',
+        'react-interval-hook',
+        'clsx',
+        'mantine-form-zod-resolver',
+        '@tanstack/react-virtual',
+        'codemirror',
+        '@codemirror/commands',
+        '@codemirror/lang-javascript',
+        '@codemirror/lang-json',
+        '@codemirror/state',
+        '@codemirror/view',
         '@mantine/core',
         '@mantine/dates',
         '@mantine/hooks',
