@@ -52,3 +52,16 @@ test("issues accumulate per source and clear per source", () => {
   expect(getRecord("a")!.issues).toHaveLength(1);
   expect(getRecord("a")!.issues![0]!.source).toBe("launchd");
 });
+
+test("putRecord round-trips manifest command fields", () => {
+  putRecord({
+    name: "chat", managedBy: "user", port: 11002, kind: "service" as const, createdAt: "x",
+    commands: { build: "bun run build", deploy: "bun run deploy" },
+    altConfigs: { dev: { port: 5173, start: "bun run dev" } },
+    activeAlt: "dev",
+  });
+  const r = getRecord("chat")!;
+  expect(r.commands).toEqual({ build: "bun run build", deploy: "bun run deploy" });
+  expect(r.altConfigs).toEqual({ dev: { port: 5173, start: "bun run dev" } });
+  expect(r.activeAlt).toBe("dev");
+});
