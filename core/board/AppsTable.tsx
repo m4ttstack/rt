@@ -31,7 +31,7 @@ export function AppsTable({
   onOpenRow,
   registerChevron,
 }: { section: AppsSection; showHead: boolean; data: StatusData; board: BoardState } & DrawerRowProps) {
-  const { isRestarting, onRestart, onPublish } = board;
+  const { isRestarting, onRestart, onRunCommand, onPublish } = board;
   return (
     <Table>
       {showHead && (
@@ -43,6 +43,7 @@ export function AppsTable({
           {/* border-left gap, not margin: a margin on a <th> collapses in
               table layout, per board-composite.html's own gap treatment. */}
           <Table.HeadCell className="col-gap">public</Table.HeadCell>
+          <Table.HeadCell />
           <Table.HeadCell />
           <Table.HeadCell />
         </Table.Head>
@@ -75,6 +76,9 @@ export function AppsTable({
               </Table.Cell>
               <Table.Cell>
                 <RestartCell row={row} data={data} restarting={restarting} onRestart={onRestart} />
+              </Table.Cell>
+              <Table.Cell>
+                <CommandsCell row={row} onRunCommand={onRunCommand} />
               </Table.Cell>
               <Table.Cell>
                 <ChevronCell row={row} registerRef={(el) => registerChevron(row.name, el)} />
@@ -288,6 +292,19 @@ function RestartCell({
     >
       {ICONS["refresh-cw"]}
     </Button>
+  );
+}
+
+function CommandsCell({ row, onRunCommand }: { row: Row; onRunCommand: (row: Row, name: string) => void }) {
+  if (!row.commands?.length) return null;
+  return (
+    <>
+      {row.commands.map((name) => (
+        <Button key={name} variant="subtle" size="sm" aria-label={`${name} ${row.name}`} onClick={() => onRunCommand(row, name)}>
+          {name}
+        </Button>
+      ))}
+    </>
   );
 }
 

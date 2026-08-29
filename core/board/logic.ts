@@ -36,6 +36,9 @@ interface StatusRow {
   issues: { source: "portless" | "launchd" | "cloudflare"; message: string; at: string }[];
   record: { kind: "service" | "external"; command: string[] | null; workingDirectory: string | null } | null;
   oauth: { mode: "off" } | { mode: "emails"; emails: string[] } | { mode: "domains"; domains: string[] };
+  /** Names of manifest-defined commands the server has gated in for this row;
+      absent or empty renders no command buttons. */
+  commands?: string[];
 }
 
 export interface StatusData {
