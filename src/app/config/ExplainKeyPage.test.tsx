@@ -324,3 +324,13 @@ describe('ExplainKeyPage', () => {
     ).not.toBeInTheDocument();
   });
 });
+
+describe('ExplainKeyPage: chrome', () => {
+  it("draws its title row at console's page header height, not the kit default", async () => {
+    renderExplain();
+
+    await screen.findByRole('heading', { level: 2 });
+    const header = document.querySelector('#page-shell-header') as HTMLElement;
+    expect(header.style.height).toContain('2.75rem');
+  });
+});

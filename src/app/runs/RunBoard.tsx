@@ -12,6 +12,7 @@ import { useSchemeColors } from '@mattstack/app-kit/hooks';
 import { Icons } from '@mattstack/app-kit/icons';
 import { Link } from 'wouter';
 
+import { PAGE_HEADER_HEIGHT } from '../chrome';
 import {
   BAND_ORDER,
   computeBandIds,
@@ -148,7 +149,7 @@ export function RunBoard() {
 
   if (runsQuery.isError) {
     return (
-      <PageShell title="Runs">
+      <PageShell title="Runs" headerHeight={PAGE_HEADER_HEIGHT}>
         <GenericError
           title="Couldn't load runs"
           message={(runsQuery.error as Error).message}
@@ -161,6 +162,7 @@ export function RunBoard() {
   return (
     <PageShell
       title="Runs"
+      headerHeight={PAGE_HEADER_HEIGHT}
       actions={
         <CommandProvenance command="rt runs" asOf={runsQuery.dataUpdatedAt} />
       }

@@ -131,3 +131,13 @@ describe('RunSearch', () => {
     expect(screen.getByText('No runs match.')).toBeInTheDocument();
   });
 });
+
+describe('RunSearch: chrome', () => {
+  it("draws its title row at console's page header height, not the kit default", async () => {
+    renderSearch();
+
+    await screen.findByRole('heading', { level: 2 });
+    const header = document.querySelector('#page-shell-header') as HTMLElement;
+    expect(header.style.height).toContain('2.75rem');
+  });
+});

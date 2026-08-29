@@ -9,6 +9,7 @@ import {
 import { useSchemeColors } from '@mattstack/app-kit/hooks';
 import { Icons } from '@mattstack/app-kit/icons';
 
+import { PAGE_HEADER_HEIGHT } from '../chrome';
 import { CommandProvenance } from '../runs/CommandProvenance';
 import { analyzeChain } from './chain';
 import { LayerRow, type VerdictRole } from './LayerRow';
@@ -108,7 +109,7 @@ function ExplainKeyPageContent({ settingKey }: { settingKey: string }) {
  */
 export function ExplainKeyPage({ settingKey }: { settingKey: string }) {
   return (
-    <PageShell title={settingKey}>
+    <PageShell title={settingKey} headerHeight={PAGE_HEADER_HEIGHT}>
       <LazyLoader>
         <ExplainKeyPageContent settingKey={settingKey} />
       </LazyLoader>
