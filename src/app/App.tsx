@@ -1339,12 +1339,23 @@ export function App({ initialState }: { initialState?: AppInitialState } = {}) {
     [refetchRooms, activeRoom]
   );
 
+  const focusPane = useCallback(async (paneId: string) => {
+    try {
+      // Raw pane id in the path, like the peek route; Hono routes the colon.
+      const res = await fetch(`/api/panes/${paneId}/focus`, { method: 'POST' });
+      if (!res.ok) throw new Error('focus failed');
+    } catch {
+      notifications.error("Couldn't focus the pane");
+    }
+  }, []);
+
   const buddyActions = useMemo(
     () => ({
       mention: (handle: string) => composerRef.current?.insertMention(handle),
       dm: (handle: string) => void openDm(handle),
+      focusPane: (paneId: string) => void focusPane(paneId),
     }),
-    [openDm]
+    [openDm, focusPane]
   );
   const [roomOrder, setRoomOrder] = useState<RoomOrder>('join');
   const orderedRooms =

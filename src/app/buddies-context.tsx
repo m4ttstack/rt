@@ -8,6 +8,8 @@ export interface BuddyActions {
   mention: (handle: string) => void;
   /** Open the DM room with `handle` and move to it. */
   dm: (handle: string) => void;
+  /** Bring the buddy's herdr pane to the front (only when it has one). */
+  focusPane?: (paneId: string) => void;
 }
 
 export interface BuddiesContextValue {

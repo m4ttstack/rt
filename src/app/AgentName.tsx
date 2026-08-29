@@ -223,6 +223,17 @@ export function AgentCard({
             >
               DM
             </Button>
+            {buddy.pane !== undefined && ctx.actions.focusPane && (
+              <Button
+                size="xs"
+                variant="default"
+                radius="md"
+                onClick={() => ctx.actions?.focusPane?.(buddy.pane!)}
+                data-testid={`card-focus-${buddy.handle}`}
+              >
+                Focus pane
+              </Button>
+            )}
           </Group>
         </>
       )}

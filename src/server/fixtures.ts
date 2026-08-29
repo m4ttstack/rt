@@ -24,6 +24,7 @@ import type {
   InviteResult,
   PaneAccount,
   PaneDirectory,
+  PaneFocusResult,
   PresenceRow,
 } from '@mattstack/rt-client';
 
@@ -432,6 +433,10 @@ export function fixtureInvite(paneId: string): InviteResult {
     return { paneId, delivered: 'refused', reason: 'at a prompt' };
   if (pane.agentStatus === 'working') return { paneId, delivered: 'queued' };
   return { paneId, delivered: 'accepted' };
+}
+
+export function fixtureFocus(paneId: string): PaneFocusResult {
+  return { paneId, focused: fixturePanes().some(p => p.paneId === paneId) };
 }
 
 let spawned = 0;

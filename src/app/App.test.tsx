@@ -421,6 +421,116 @@ test('DM on a sender’s card opens the pair’s room and focuses the composer t
   expect(screen.queryByText(/direct message to/)).toBeNull();
 });
 
+test('Focus pane on a buddy in a herdr pane posts to that pane’s focus route', async () => {
+  installFetchMock();
+  const now = Date.now();
+  const build = { room: 'build', memberCount: 2, unread: 0, mentions: 0 };
+  fetchMock.mockImplementation((url: string) => {
+    if (url === '/api/panes/w1:p1/focus')
+      return Promise.resolve(jsonResponse({ paneId: 'w1:p1', focused: true }));
+    return Promise.resolve(jsonResponse({}));
+  });
+  window.history.replaceState(null, '', '/r/build');
+  renderWithProviders(
+    <App
+      initialState={{
+        daemonReachable: true,
+        buddies: [
+          {
+            sessionId: 's',
+            handle: 'fred',
+            baseHandle: 'fred',
+            signedInAt: now,
+            lastSeenAt: now,
+            status: 'live',
+            rooms: ['build'],
+            pane: 'w1:p1',
+          },
+        ],
+        rooms: [build],
+        members: [
+          {
+            room: 'build',
+            handle: 'fred',
+            joinedAt: now,
+            lastReadId: 0,
+            wakeOn: 'mention',
+            status: 'live',
+          },
+        ],
+        messages: [
+          {
+            id: 7,
+            room: 'build',
+            handle: 'fred',
+            body: 'hello',
+            mentions: [],
+            postedAt: now,
+          },
+        ],
+      }}
+    />
+  );
+  const transcript = await screen.findByTestId('transcript');
+  await userEvent.hover(within(transcript).getByText('fred'));
+  await userEvent.click(await screen.findByTestId('card-focus-fred'));
+
+  expect(fetchMock).toHaveBeenCalledWith(
+    '/api/panes/w1:p1/focus',
+    expect.objectContaining({ method: 'POST' })
+  );
+});
+
+test('a buddy with no herdr pane shows no Focus pane button', async () => {
+  installFetchMock();
+  const now = Date.now();
+  const build = { room: 'build', memberCount: 2, unread: 0, mentions: 0 };
+  window.history.replaceState(null, '', '/r/build');
+  renderWithProviders(
+    <App
+      initialState={{
+        daemonReachable: true,
+        buddies: [
+          {
+            sessionId: 's',
+            handle: 'fred',
+            baseHandle: 'fred',
+            signedInAt: now,
+            lastSeenAt: now,
+            status: 'live',
+            rooms: ['build'],
+          },
+        ],
+        rooms: [build],
+        members: [
+          {
+            room: 'build',
+            handle: 'fred',
+            joinedAt: now,
+            lastReadId: 0,
+            wakeOn: 'mention',
+            status: 'live',
+          },
+        ],
+        messages: [
+          {
+            id: 7,
+            room: 'build',
+            handle: 'fred',
+            body: 'hello',
+            mentions: [],
+            postedAt: now,
+          },
+        ],
+      }}
+    />
+  );
+  const transcript = await screen.findByTestId('transcript');
+  await userEvent.hover(within(transcript).getByText('fred'));
+  await screen.findByTestId('card-dm-fred');
+  expect(screen.queryByTestId('card-focus-fred')).toBeNull();
+});
+
 test('an archived room renders the archived bar instead of the composer, and Reopen posts archived:false', async () => {
   installFetchMock();
   window.history.replaceState(null, '', '/r/retro');

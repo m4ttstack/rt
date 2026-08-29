@@ -1,6 +1,7 @@
 import {
   paneAccounts,
   paneDirectories,
+  paneFocus,
   paneList,
   panePeek,
   paneSpawn,
@@ -11,6 +12,7 @@ import { Hono } from 'hono';
 import {
   fixtureAccounts,
   fixtureDirectories,
+  fixtureFocus,
   fixturePanes,
   fixturePeek,
   fixturesEnabled,
@@ -66,6 +68,13 @@ export const panes = new Hono()
       lines === undefined ? { paneId } : { paneId, lines },
       rtOpts()
     );
+    if (!res.ok) return c.json({ error: res.error }, 502);
+    return c.json(res.data, 200);
+  })
+  .post('/api/panes/:id/focus', async c => {
+    const paneId = c.req.param('id');
+    if (fixturesEnabled()) return c.json(fixtureFocus(paneId), 200);
+    const res = await paneFocus({ paneId }, rtOpts());
     if (!res.ok) return c.json({ error: res.error }, 502);
     return c.json(res.data, 200);
   })
