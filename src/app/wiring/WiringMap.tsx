@@ -4,6 +4,7 @@ import {
   Alert,
   Anchor,
   Badge,
+  Box,
   Button,
   GenericError,
   Group,
@@ -519,99 +520,109 @@ export function WiringMap() {
     : [];
 
   return (
-    <PageShell
-      title="Wiring"
-      tabs={tabs}
-      actions={
-        <Group gap="sm" wrap="nowrap">
-          <CommandProvenance
-            command="rt skills composition"
-            asOf={snapshot.dataUpdatedAt || undefined}
-          />
-          {packDir && (
-            <Button
-              size="xs"
-              variant="default"
-              component="a"
-              href={`vscode://file${packDir}`}
-              leftSection={<Icons.package size={14} />}
-              data-testid="open-pack"
-            >
-              Open pack
-            </Button>
-          )}
-          {packs.length > 1 && pack && (
-            <Select
-              size="xs"
-              w={168}
-              data={packs.map(p => ({ value: p.name, label: p.name }))}
-              value={pack}
-              onChange={value => {
-                setExplicitPack(value);
-                setExplicitWorkType(null);
-              }}
-              data-testid="pack-select"
-            />
-          )}
-          {workTypes.length > 1 && workType && (
-            <Select
-              size="xs"
-              w={132}
-              data={workTypes.map(t => ({ value: t, label: t }))}
-              value={workType}
-              onChange={setExplicitWorkType}
-              data-testid="work-type-select"
-            />
-          )}
-        </Group>
-      }
-    >
-      {packsQuery.isError ? (
-        <GenericError
-          title="Couldn't load skills packs"
-          message={(packsQuery.error as Error).message}
-          onRetry={() => void packsQuery.refetch()}
+    <PageShell tabBarHeight={40}>
+      <PageShell.Main>
+        {/* No sidebar here for a root-level tab bar to span, so the tab row
+            is the header row: the title leads it and the pack actions trail
+            it, rather than stacking a title row under the tabs. */}
+        <PageShell.TabBar
+          title="Wiring"
+          tabs={tabs}
+          actions={
+            <>
+              <Box visibleFrom="lg">
+                <CommandProvenance
+                  command="rt skills composition"
+                  asOf={snapshot.dataUpdatedAt || undefined}
+                />
+              </Box>
+              {packDir && (
+                <Button
+                  size="xs"
+                  variant="default"
+                  component="a"
+                  href={`vscode://file${packDir}`}
+                  leftSection={<Icons.package size={14} />}
+                  data-testid="open-pack"
+                >
+                  Open pack
+                </Button>
+              )}
+              {packs.length > 1 && pack && (
+                <Select
+                  size="xs"
+                  w={168}
+                  data={packs.map(p => ({ value: p.name, label: p.name }))}
+                  value={pack}
+                  onChange={value => {
+                    setExplicitPack(value);
+                    setExplicitWorkType(null);
+                  }}
+                  data-testid="pack-select"
+                />
+              )}
+              {workTypes.length > 1 && workType && (
+                <Select
+                  size="xs"
+                  w={132}
+                  data={workTypes.map(t => ({ value: t, label: t }))}
+                  value={workType}
+                  onChange={setExplicitWorkType}
+                  data-testid="work-type-select"
+                />
+              )}
+            </>
+          }
         />
-      ) : !pack ? (
-        packsQuery.isPending ? (
-          <Skeleton height={200} data-testid="packs-loading" />
-        ) : (
-          <Text size="sm" c={text.dimmed} data-testid="no-packs">
-            No skills packs found.
-          </Text>
-        )
-      ) : (
-        <>
-          {activeTab === 'pipeline' && (
-            <WiringErrorBoundary key={pack}>
-              <LazyLoader>
-                <WiringSpineView
-                  pack={pack}
-                  workType={workType}
-                  attentionOnly={attentionOnly}
-                  pendingVerb={pendingVerb}
-                  onPendingVerbHandled={() => setPendingVerb(null)}
-                />
-              </LazyLoader>
-            </WiringErrorBoundary>
+        <PageShell.Content>
+          {packsQuery.isError ? (
+            <GenericError
+              title="Couldn't load skills packs"
+              message={(packsQuery.error as Error).message}
+              onRetry={() => void packsQuery.refetch()}
+            />
+          ) : !pack ? (
+            packsQuery.isPending ? (
+              <Skeleton height={200} data-testid="packs-loading" />
+            ) : (
+              <Text size="sm" c={text.dimmed} data-testid="no-packs">
+                No skills packs found.
+              </Text>
+            )
+          ) : (
+            <>
+              {activeTab === 'pipeline' && (
+                <WiringErrorBoundary key={pack}>
+                  <LazyLoader>
+                    <WiringSpineView
+                      pack={pack}
+                      workType={workType}
+                      attentionOnly={attentionOnly}
+                      pendingVerb={pendingVerb}
+                      onPendingVerbHandled={() => setPendingVerb(null)}
+                    />
+                  </LazyLoader>
+                </WiringErrorBoundary>
+              )}
+              {activeTab === 'ondemand' && (
+                <WiringErrorBoundary key={pack}>
+                  <LazyLoader>
+                    <OnDemandView
+                      pack={pack}
+                      workType={workType}
+                      onGoToHealth={() => setActiveTab('health')}
+                    />
+                  </LazyLoader>
+                </WiringErrorBoundary>
+              )}
+              {activeTab === 'surface' && <SurfaceTab pack={pack} />}
+              {activeTab === 'health' && (
+                <HealthTab pack={pack} onOpenSkill={openSkillFromHealth} />
+              )}
+            </>
           )}
-          {activeTab === 'ondemand' && (
-            <WiringErrorBoundary key={pack}>
-              <LazyLoader>
-                <OnDemandView
-                  pack={pack}
-                  workType={workType}
-                  onGoToHealth={() => setActiveTab('health')}
-                />
-              </LazyLoader>
-            </WiringErrorBoundary>
-          )}
-          {activeTab === 'surface' && <SurfaceTab pack={pack} />}
-          {activeTab === 'health' && (
-            <HealthTab pack={pack} onOpenSkill={openSkillFromHealth} />
-          )}
-        </>
-      )}
+        </PageShell.Content>
+      </PageShell.Main>
     </PageShell>
   );
 }
