@@ -89,6 +89,48 @@ Rules:
   button). Dev-mode gated like the route.
 - **`deck add`** survives unchanged for quick, unmanifested apps.
 
+## CLI cleanup: verbs removed, slimmed, narrowed
+
+`register`, `alt`, and `cmd` retire or narrow part of the existing verb
+surface. Audit of every current verb against the manifest model:
+
+**Removed**
+
+- **`deck manifest refresh <name>`**: deleted. Its whole job (re-read the
+  app's manifest, re-ingest identity/icon via `ingestManifest`) is exactly
+  what `deck register` does on every run, so nothing is left for a separate
+  refresh to do. The `POST /api/v1/apps/:name/manifest/refresh` route is
+  deleted with it; register's sync path is its replacement.
+
+**Slimmed**
+
+- **`deck adopt <name> [--as] [--managed-by]`**: survives as the claim verb
+  (assign `managedBy`, optional rename, force-bless the `.mattstack` route)
+  but stops carrying its own manifest ingest. It reads the manifest through
+  register's shared sync path, so an rt-spawned product and a hand-run
+  `deck register` ingest through identical code. (Considered and deferred:
+  folding adopt entirely into `deck register --managed-by <id> --as <name>`
+  and dropping the verb. Kept separate because "claim as a managed product"
+  is a distinct intent from "sync my record to my manifest".)
+
+**Narrowed in role, kept**
+
+- **`deck add <name> --cmd --dir --port`**: the manifest-free path.
+  `register` is now the primary registration route; `add` stays for quick
+  apps that never write a manifest. Behavior unchanged.
+- **`deck override <name> <port|off>`**: the flag-based twin of `deck alt`.
+  For a manifested app the declared overlay (`deck alt <app> dev`) is native
+  and the board dev-toggle maps onto it; `override` stays as the escape
+  hatch for unmanifested apps.
+
+**Untouched** (no manifest relationship): `status`/`list`, `url`, `remove`,
+`restart`, `logs`, `publish`, `password`, `access`, `domain`, `migrate`
+(+`--convert`), `version`/`--version`, `help`.
+
+Net: one verb deleted (`manifest refresh`), one slimmed (`adopt`), two
+narrowed but retained (`add`, `override`). No other verb is dead weight
+under the manifest model.
+
 ## Action commands: routes, buttons, gate
 
 - **Route**: `POST /api/v1/apps/:name/commands/:cmd` next to
@@ -137,6 +179,10 @@ deck's existing harness (scratch state dir via env paths, fake HOME,
   overwrite).
 - `deck register` create and sync paths (record mirrors manifest; removed
   manifest fields clear their record fields).
+- Register subsumes `manifest refresh`: a re-run re-ingests identity/icon
+  (coverage moved off the deleted refresh route), and `deck adopt`
+  delegates its manifest ingest to the same sync path (adopt still assigns
+  `managedBy` and renames; the manifest read is no longer its own).
 - Dev gate both ways with a fake dev-mode reader: routes absent in
   production, present in dev; fail-closed on read error.
 - Command runs with a fake spawn: log streaming, run status, 409 overlap,
