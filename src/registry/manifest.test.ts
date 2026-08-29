@@ -144,6 +144,23 @@ test("ingest never throws when the icon store is unwritable, and leaves the reco
   expect(r.icon).toBeUndefined();
 });
 
+test("re-ingest overwrites identity: a second ingestManifest call picks up a changed displayName", async () => {
+  isolate();
+  const { putRecord, getRecord, reloadRegistry } = await import("./records.ts");
+  reloadRegistry();
+  const appDir = repo({
+    "mattstack.json": JSON.stringify({ displayName: "One", icon: "./icon.svg" }),
+    "icon.svg": SVG,
+  });
+  putRecord({ name: "resync", managedBy: "rt", port: 6100, kind: "service", workingDirectory: appDir, createdAt: "x" });
+  ingestManifest("resync");
+  expect(getRecord("resync")!.displayName).toBe("One");
+
+  writeFileSync(join(appDir, "mattstack.json"), JSON.stringify({ displayName: "Two", icon: "./icon.svg" }));
+  ingestManifest("resync");
+  expect(getRecord("resync")!.displayName).toBe("Two");
+});
+
 test("removeIcon deletes the stored file", async () => {
   isolate();
   const { putRecord, reloadRegistry } = await import("./records.ts");
