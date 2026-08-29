@@ -32,6 +32,8 @@ export interface RegisterInput {
   env?: Record<string, string>;
   /** For services someone runs themselves: route only, no launchd supervision. */
   staticPort?: number;
+  /** A declared port for a supervised service (manifest register); wins over allocation. */
+  port?: number;
   /** Record-only creation: no driver calls. Used by bootstrap catch-up and migrate. */
   adopt?: boolean;
 }
@@ -122,7 +124,7 @@ export async function registerApp(input: RegisterInput, drivers: Drivers): Promi
     (!input.adopt && routes.some((r) => bareName(r.hostname, getPlatformSettings().tlds) === name));
   if (taken) return { status: 409, body: { error: "name taken", name } };
 
-  let port = input.staticPort;
+  let port = input.staticPort ?? input.port;
   if (port === undefined) {
     const allocated = allocatePort(listRecords(), routes, await readServices());
     if (allocated === null) return { status: 507, body: { error: "port range exhausted" } };

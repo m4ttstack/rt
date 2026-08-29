@@ -2,6 +2,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from "fs";
 import { join, resolve } from "path";
 import { stateDir } from "../api/state.ts";
 import { getRecord, putRecord } from "./records.ts";
+import { readDeckManifest } from "./deck-manifest.ts";
 
 export interface Manifest {
   displayName: string;
@@ -73,7 +74,11 @@ export function removeIcon(name: string): void {
 export function ingestManifest(name: string): void {
   const record = getRecord(name);
   if (!record || record.workingDirectory === undefined) return;
-  const manifest = readManifest(record.workingDirectory);
+  const deck = readDeckManifest(record.workingDirectory);
+  const manifest =
+    deck && deck.ok && deck.manifest.displayName && deck.manifest.icon
+      ? { displayName: deck.manifest.displayName, description: deck.manifest.description, icon: deck.manifest.icon }
+      : readManifest(record.workingDirectory); // deprecated mattstack.json fallback (identity only)
   if (!manifest) return;
   let svg: string;
   try {
