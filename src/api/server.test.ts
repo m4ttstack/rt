@@ -438,3 +438,12 @@ test("adopt endpoint: renames + flips ownership, and a re-run is an idempotent 2
   expect(ghost.status).toBe(404);
   expect(await ghost.json()).toEqual({ error: "unknown app" });
 });
+
+test("POST /apps/register creates a record from a manifest dir", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "reg-"));
+  writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({ name: "regtest", port: 4321, commands: { start: "bun run serve" } }));
+  const res = await post("/api/v1/apps/register", { dir });
+  expect(res.status).toBe(200);
+  const get = await api("/api/v1/apps/regtest");
+  expect(get.status).toBe(200);
+});

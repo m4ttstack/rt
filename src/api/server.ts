@@ -305,7 +305,13 @@ export function startApi(deps: ApiDeps) {
         }
 
         // Checked ahead of the generic /apps/:name matcher below so a real app
-        // named "managed" can never shadow these bulk lifecycle routes.
+        // named "register" or "managed" can never shadow these routes.
+        if (pathname === "/api/v1/apps/register" && req.method === "POST") {
+          const b = await body(req);
+          const { applyManifest } = await import("./register-manifest.ts");
+          const r = await applyManifest(String(b.dir ?? ""), undefined, deps);
+          return json(r.body, r.status);
+        }
         if (pathname === "/api/v1/apps/managed/restart" && req.method === "POST") {
           const r = await restartManagedApps(deps);
           return json(r.body, r.status);

@@ -325,3 +325,13 @@ test("manifest refresh without a sub-verb or name is usage", async () => {
   const y = io();
   expect(await runCommand(["manifest", "refresh"], y)).toBe(2);
 });
+
+test("register from a manifest dir, then config init refuses overwrite", async () => {
+  const appDir = mkdtempSync(join(tmpdir(), "regcli-"));
+  writeFileSync(join(appDir, "mattstack.deck.json"), JSON.stringify({ name: "regcli", port: 4322, commands: { start: "bun run serve" } }));
+  const a = io();
+  expect(await runCommand(["register", "--dir", appDir], a)).toBe(0);
+  const s = io();
+  expect(await runCommand(["status"], s)).toBe(0);
+  expect(s.lines.join("\n")).toContain("regcli");
+});

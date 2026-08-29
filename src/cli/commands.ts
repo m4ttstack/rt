@@ -1,5 +1,6 @@
 // src/cli/commands.ts
 import { apiJson } from "./client.ts";
+import { configInit } from "./config-init.ts";
 import pkg from "../../package.json";
 
 export const VERSION = pkg.version;
@@ -17,6 +18,8 @@ usage:
   deck url <name> [--public]               print its local url (or public url with --public)
   deck add <name> --port N                 route an app you run yourself
   deck add <name> --cmd "…" --dir PATH     register a supervised app
+  deck config init                         scaffold mattstack.deck.json in cwd
+  deck register [--dir PATH]               create/sync an app from its mattstack.deck.json
   deck remove <name> [--force]             unregister (registrar-owned; --force is the escape hatch)
   deck remove --managed                    unregister every app deck manages (installer's uninstall step)
   deck restart <name>                      kickstart its service
@@ -242,6 +245,20 @@ export async function runCommand(
         io.out(body.changed
           ? `adopted ${name} — now ${host} (managed by ${body.app.managedBy})`
           : `already adopted — ${host}`);
+        return 0;
+      }
+      case "config": {
+        const [sub] = rest;
+        if (sub !== "init") { io.err("usage: deck config init"); return 2; }
+        return configInit(process.cwd(), io);
+      }
+      case "register": {
+        const dir = flag(rest, "--dir") ?? process.cwd();
+        const { status, body } = await apiJson("/api/v1/apps/register", {
+          method: "POST", body: JSON.stringify({ dir }),
+        });
+        if (status !== 200) { io.err(body.error ?? `failed (${status})`); return 1; }
+        io.out(`registered ${body.record.name} on port ${body.record.port}`);
         return 0;
       }
       case "manifest": {
