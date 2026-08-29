@@ -383,6 +383,16 @@ export function startApi(deps: ApiDeps) {
             if (!svc) return json({ error: "unknown app" }, 404);
             return json({ ok: await restartService(svc.label) });
           }
+          if (sub === "alt" && req.method === "POST") {
+            const record = getRecord(name);
+            if (!record) return json({ error: "unknown app" }, 404);
+            if (!record.workingDirectory) return json({ error: "app has no manifest directory" }, 400);
+            const b = await body(req);
+            const alt = b.alt == null ? undefined : String(b.alt);
+            const { applyManifest } = await import("./register-manifest.ts");
+            const r = await applyManifest(record.workingDirectory, alt, deps);
+            return json(r.body, r.status);
+          }
           if (sub === "logs" && req.method === "GET") {
             const lines = Number(url.searchParams.get("lines") ?? 40);
             const record = getRecord(name);

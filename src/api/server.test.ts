@@ -447,3 +447,22 @@ test("POST /apps/register creates a record from a manifest dir", async () => {
   const get = await api("/api/v1/apps/regtest");
   expect(get.status).toBe(200);
 });
+
+test("POST /apps/:name/alt activates and clears an overlay", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "alt-"));
+  writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({
+    name: "altapp", port: 4400, commands: { start: "bun run serve" },
+    altConfigs: { dev: { port: 4500, commands: { start: "bun run dev" } } },
+  }));
+  await post("/api/v1/apps/register", { dir });
+  const on = await post("/api/v1/apps/altapp/alt", { alt: "dev" });
+  expect(on.status).toBe(200);
+  expect((await (await api("/api/v1/apps/altapp")).json()).record.port).toBe(4500);
+  const off = await post("/api/v1/apps/altapp/alt", { alt: null });
+  expect(off.status).toBe(200);
+  expect((await (await api("/api/v1/apps/altapp")).json()).record.port).toBe(4400);
+});
+
+test("alt on an unknown app is 404", async () => {
+  expect((await post("/api/v1/apps/ghost/alt", { alt: "dev" })).status).toBe(404);
+});

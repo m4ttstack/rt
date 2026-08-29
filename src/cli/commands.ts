@@ -20,6 +20,7 @@ usage:
   deck add <name> --cmd "…" --dir PATH     register a supervised app
   deck config init                         scaffold mattstack.deck.json in cwd
   deck register [--dir PATH]               create/sync an app from its mattstack.deck.json
+  deck alt <app> <name|off>                activate a declared serve overlay, or return to base
   deck remove <name> [--force]             unregister (registrar-owned; --force is the escape hatch)
   deck remove --managed                    unregister every app deck manages (installer's uninstall step)
   deck restart <name>                      kickstart its service
@@ -259,6 +260,17 @@ export async function runCommand(
         });
         if (status !== 200) { io.err(body.error ?? `failed (${status})`); return 1; }
         io.out(`registered ${body.record.name} on port ${body.record.port}`);
+        return 0;
+      }
+      case "alt": {
+        const [name, which] = rest;
+        if (!name || !which) { io.err(USAGE); return 2; }
+        const alt = which === "off" ? null : which;
+        const { status, body } = await apiJson(`/api/v1/apps/${name}/alt`, {
+          method: "POST", body: JSON.stringify({ alt }),
+        });
+        if (status !== 200) { io.err(body.error ?? `failed (${status})`); return 1; }
+        io.out(which === "off" ? `${name} back on its base config` : `${name} now on alt "${which}"`);
         return 0;
       }
       case "manifest": {

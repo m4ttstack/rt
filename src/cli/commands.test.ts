@@ -335,3 +335,14 @@ test("register from a manifest dir, then config init refuses overwrite", async (
   expect(await runCommand(["status"], s)).toBe(0);
   expect(s.lines.join("\n")).toContain("regcli");
 });
+
+test("deck alt on/off round-trip", async () => {
+  const appDir = mkdtempSync(join(tmpdir(), "altcli-"));
+  writeFileSync(join(appDir, "mattstack.deck.json"), JSON.stringify({
+    name: "altcli", port: 4600, commands: { start: "bun run serve" },
+    altConfigs: { dev: { port: 4700 } },
+  }));
+  expect(await runCommand(["register", "--dir", appDir], io())).toBe(0);
+  expect(await runCommand(["alt", "altcli", "dev"], io())).toBe(0);
+  expect(await runCommand(["alt", "altcli", "off"], io())).toBe(0);
+});
