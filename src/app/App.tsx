@@ -91,6 +91,7 @@ export function App() {
       <MattstackShell
         name="console"
         appName="console"
+        headerHeight={48}
         mark={
           <img
             src="/favicon.svg"

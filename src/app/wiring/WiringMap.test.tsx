@@ -1053,3 +1053,34 @@ describe('WiringMap: the pack', () => {
     expect(open).toHaveAttribute('href', 'vscode://file/p');
   });
 });
+
+describe('WiringMap: the header row', () => {
+  it('leads the tab row with the page title and trails it with the pack actions, outside the tablist', async () => {
+    mockHappyPath();
+    renderWiring();
+
+    const tabList = await screen.findByRole('tablist', { name: 'Page tabs' });
+    const heading = screen.getByRole('heading', { level: 2, name: 'Wiring' });
+    const open = await screen.findByTestId('open-pack');
+
+    expect(tabList).not.toContainElement(heading);
+    expect(tabList).not.toContainElement(open);
+    expect(
+      heading.compareDocumentPosition(tabList) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      tabList.compareDocumentPosition(open) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+  });
+
+  it('keeps the title on screen when no packs are found', async () => {
+    packsGet.mockResolvedValue(ok({ packs: [] }));
+    renderWiring();
+
+    await screen.findByTestId('no-packs');
+    expect(
+      screen.getByRole('heading', { level: 2, name: 'Wiring' })
+    ).toBeInTheDocument();
+  });
+});
