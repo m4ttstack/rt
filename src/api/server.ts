@@ -214,6 +214,7 @@ export function startApi(deps: ApiDeps) {
       const statusOpts = {
         requestHost: host, port: deps.port, canaryPort: deps.canaryPort,
         proxyFreshness: deps.freshness(), autoHeal: deps.autoHeal(),
+        devMode: (deps.devMode ?? isDevMode)(),
       };
 
       // ---- static / identity (carried from core/server.ts) ----

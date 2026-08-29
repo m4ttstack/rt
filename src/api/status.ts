@@ -27,6 +27,8 @@ export interface BuildStatusOpts {
   canaryPort: number;
   proxyFreshness: "fresh" | "stale" | "unknown";
   autoHeal: { at: number; ok: boolean | null } | null;
+  /** Gates `StatusRow.commands`: action-command names leak only to the local dev UI. */
+  devMode?: boolean;
 }
 
 export interface StatusService {
@@ -92,6 +94,8 @@ export interface StatusRow {
    */
   record: { kind: "service" | "external"; command: string[] | null; workingDirectory: string | null } | null;
   oauth: OAuth;
+  /** Action-command names (excludes `start`), dev-mode only. */
+  commands?: string[];
 }
 
 export interface Status {
@@ -208,6 +212,7 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
             }
           : null,
         oauth: getOAuth(a.name),
+        commands: opts.devMode && record?.commands ? Object.keys(record.commands) : undefined,
       };
     }),
   );
