@@ -134,3 +134,19 @@ test("registering a manifest onto an already-declared service port is a 409, not
   expect(c.status).toBe(200);
   expect(getRecord("appb")!.port).toBe(5001);
 });
+
+test("registering a manifest onto a port already held by a bare portless route (no registry record) is a 409", async () => {
+  scratch();
+  writeFileSync(process.env.LOCAL_APPS_ROUTES_PATH!, JSON.stringify([{ hostname: "someapp.localhost", port: 5002, pid: 0 }]));
+  const { FakeServiceManager } = await import("../services/fake.ts");
+  const { FakeEdgeProxy } = await import("../edge/portless.ts");
+  const { reloadRegistry, getRecord } = await import("../registry/records.ts");
+  const { applyManifest } = await import("./register-manifest.ts");
+  reloadRegistry();
+  const drivers = { manager: new FakeServiceManager(), edge: new FakeEdgeProxy() };
+
+  const appDir = appRepo({ name: "routeconflict", port: 5002, commands: { start: "bun run serve" } });
+  const r = await applyManifest(appDir, undefined, drivers);
+  expect(r.status).toBe(409);
+  expect(getRecord("routeconflict")).toBeUndefined();
+});

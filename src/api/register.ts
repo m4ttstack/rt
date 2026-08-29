@@ -295,7 +295,10 @@ export async function editApp(
   if (patch.port !== undefined && (!Number.isInteger(patch.port) || patch.port < 1 || patch.port > 65535)) {
     return { status: 400, body: { error: "bad port" } };
   }
-  if (patch.port !== undefined && patch.port !== record.port) {
+  if (patch.port !== undefined && patch.port !== record.port && record.kind === "service") {
+    // External (staticPort-originated) records route to a port the user
+    // already owns and runs themselves -- same exemption registerApp gives
+    // staticPort. Only a supervised service's declared port needs guarding.
     if (await portCollides(patch.port, record.name, readRoutes())) {
       return { status: 409, body: { error: "port in use", port: patch.port } };
     }
