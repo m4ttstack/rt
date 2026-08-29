@@ -1,5 +1,7 @@
 /** Provider-agnostic GraphQL POST transport shared by the GitLab and Linear clients. */
 
+import { RetryableError, asRetryable, isTransientStatus, retryAfterMs, withRetry } from "./http.js";
+
 export interface GraphqlEndpoint {
   url: string;
   headers: Record<string, string>;
@@ -13,32 +15,52 @@ interface GqlResponse<T> {
   errors?: Array<{ message: string }>;
 }
 
-/** POST a query and unwrap the data envelope. Throws the endpoint's error class on transport or query errors. */
+/**
+ * POST a query and unwrap the data envelope. Throws the endpoint's error class on transport
+ * or query errors. Stalls and transient server faults are retried under a per-attempt
+ * deadline; a query error (a bad field) is final and fails on the first attempt.
+ */
 export async function postGraphql<T>(
   endpoint: GraphqlEndpoint,
   query: string,
   variables: Record<string, unknown>,
   signal?: AbortSignal,
 ): Promise<T> {
-  let res: Response;
-  try {
-    res = await fetch(endpoint.url, {
-      method: "POST",
-      headers: { ...endpoint.headers, "Content-Type": "application/json" },
-      body: JSON.stringify({ query, variables }),
-      signal,
-    });
-  } catch (err) {
-    if ((err as Error).name === "AbortError") throw err;
-    throw endpoint.makeError(`${endpoint.label} request failed: ${(err as Error).message}`);
-  }
+  const body = JSON.stringify({ query, variables });
 
-  if (!res.ok) {
-    const body = (await res.text()).slice(0, 300);
-    throw endpoint.makeError(`${endpoint.label} HTTP ${res.status}: ${body}`, res.status);
-  }
+  const json = await withRetry<GqlResponse<T>>(async (attemptSignal) => {
+    let res: Response;
+    try {
+      res = await fetch(endpoint.url, {
+        method: "POST",
+        headers: { ...endpoint.headers, "Content-Type": "application/json" },
+        body,
+        signal: attemptSignal,
+      });
+    } catch (err) {
+      throw asRetryable(
+        (err as Error).name === "AbortError"
+          ? err
+          : endpoint.makeError(`${endpoint.label} request failed: ${(err as Error).message}`),
+        signal,
+      );
+    }
 
-  const json = (await res.json()) as GqlResponse<T>;
+    if (!res.ok) {
+      const text = (await res.text().catch(() => "")).slice(0, 300);
+      const error = endpoint.makeError(`${endpoint.label} HTTP ${res.status}: ${text}`, res.status);
+      if (isTransientStatus(res.status)) throw new RetryableError(error, retryAfterMs(res));
+      throw error;
+    }
+
+    try {
+      return (await res.json()) as GqlResponse<T>;
+    } catch (err) {
+      // A body that stalls or truncates mid-stream lands here, not on the fetch above.
+      throw asRetryable(err, signal);
+    }
+  }, { signal });
+
   // Providers can return partial data alongside field-level errors (e.g. per-field
   // timeouts). Prefer whatever data came back; only throw when there is none at all.
   if (!json.data) {

@@ -1,5 +1,6 @@
 import type { Env } from "../env.js";
 import { GitLabApiError } from "./errors.js";
+import { RetryableError, asRetryable, isTransientStatus, retryAfterMs, withRetry } from "../util/http.js";
 
 export type QueryParams = Record<string, string | number | undefined>;
 
@@ -16,31 +17,45 @@ interface RestPage<T> {
   nextPage: number | null;
 }
 
+/**
+ * One page GET. Stalls and transient faults (429/5xx) are retried under a per-attempt
+ * deadline; a 4xx is final. Every call here is a read, so a retry is always safe.
+ */
 async function restGet<T>(
   env: Env,
   path: string,
   query: QueryParams,
   signal?: AbortSignal,
 ): Promise<RestPage<T>> {
-  let res: Response;
-  try {
-    res = await fetch(buildUrl(env, path, query), {
-      headers: { "PRIVATE-TOKEN": env.token },
-      signal,
-    });
-  } catch (err) {
-    if ((err as Error).name === "AbortError") throw err;
-    throw new GitLabApiError(`REST request failed: ${(err as Error).message}`);
-  }
-  if (!res.ok) {
-    const body = (await res.text()).slice(0, 300);
-    throw new GitLabApiError(`REST HTTP ${res.status} for ${path}: ${body}`, res.status);
-  }
-  const next = res.headers.get("x-next-page");
-  return {
-    body: (await res.json()) as T,
-    nextPage: next ? Number(next) : null,
-  };
+  const url = buildUrl(env, path, query);
+
+  return withRetry<RestPage<T>>(async (attemptSignal) => {
+    let res: Response;
+    try {
+      res = await fetch(url, { headers: { "PRIVATE-TOKEN": env.token }, signal: attemptSignal });
+    } catch (err) {
+      throw asRetryable(
+        (err as Error).name === "AbortError"
+          ? err
+          : new GitLabApiError(`REST request failed: ${(err as Error).message}`),
+        signal,
+      );
+    }
+
+    if (!res.ok) {
+      const body = (await res.text().catch(() => "")).slice(0, 300);
+      const error = new GitLabApiError(`REST HTTP ${res.status} for ${path}: ${body}`, res.status);
+      if (isTransientStatus(res.status)) throw new RetryableError(error, retryAfterMs(res));
+      throw error;
+    }
+
+    const next = res.headers.get("x-next-page");
+    try {
+      return { body: (await res.json()) as T, nextPage: next ? Number(next) : null };
+    } catch (err) {
+      throw asRetryable(err, signal);
+    }
+  }, { signal });
 }
 
 /** Single-page GET (caller doesn't care about pagination). */

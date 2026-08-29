@@ -1,5 +1,5 @@
 import { config } from "../config.js";
-import { cacheKey, readCache, writeCache } from "./cache/store.js";
+import { cacheKey, readCache, readCoveringCache, writeCache } from "./cache/store.js";
 import { getEnv, type Env } from "./env.js";
 import { getSettings } from "./settings.js";
 import { buildUserEvidence } from "./metrics/evidence.js";
@@ -75,6 +75,16 @@ async function loadOrFetch(
     const cached = await readCache<FetchOutcome>(key);
     if (cached) {
       return { outcome: sliceOutcome(cached.data, window), fromCache: true };
+    }
+    // The base window ends at "now", so its key rolls at UTC midnight and the envelope
+    // fetched hours ago stops being reachable by exact key while still holding a superset
+    // of what's being asked for. Slice that rather than refetch 90 days for the edge.
+    //
+    // Deliberately not re-written under `key`: a fresh savedAt would let one fetch be
+    // reused off its own copy indefinitely, and the data would never refresh at all.
+    const covering = await readCoveringCache<FetchOutcome>(scope, target);
+    if (covering) {
+      return { outcome: sliceOutcome(covering.data, window), fromCache: true };
     }
     if (cacheOnly) throw new ColdCacheError(`no cache for ${key}`);
   }

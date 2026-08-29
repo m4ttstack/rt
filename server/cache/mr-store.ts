@@ -3,7 +3,8 @@ import { unlink } from "node:fs/promises";
 import type { NormMr } from "../pipeline/model.js";
 import type { RawMrListNode } from "../gitlab/raw-types.js";
 
-const DB_PATH = ".cache/mr-details.sqlite";
+const CACHE_DIR = process.env.BOXSCORE_CACHE_DIR ?? ".cache";
+const DB_PATH = `${CACHE_DIR}/mr-details.sqlite`;
 const SCHEMA_VERSION = 3;
 
 interface Store {
@@ -39,7 +40,7 @@ let store: Store | null = null;
 function createSqliteStore(): Store {
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { Database } = require("bun:sqlite") as typeof import("bun:sqlite");
-  mkdirSync(".cache", { recursive: true });
+  mkdirSync(CACHE_DIR, { recursive: true });
   const db = new Database(DB_PATH);
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA synchronous = NORMAL");

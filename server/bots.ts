@@ -1,4 +1,5 @@
 import { readdir, readFile } from "node:fs/promises";
+import { CACHE_DIR } from "./cache/store.js";
 import { compileBotPatterns } from "./metrics/stats.js";
 import { BUILTIN_BOT_PATTERNS } from "../shared/bots.js";
 import type { FetchOutcome } from "./pipeline/fetch.js";
@@ -27,7 +28,7 @@ export async function scanSuspectedBots(
   // Find the most recent cache file.
   let files: string[];
   try {
-    files = (await readdir(".cache")).filter((f) => f.endsWith(".json"));
+    files = (await readdir(CACHE_DIR)).filter((f) => f.endsWith(".json"));
   } catch {
     return [];
   }
@@ -38,7 +39,7 @@ export async function scanSuspectedBots(
   let envelope: CacheEnvelope | null = null;
   for (const f of files.slice(0, 10)) {
     try {
-      const raw = await readFile(`.cache/${f}`, "utf8");
+      const raw = await readFile(`${CACHE_DIR}/${f}`, "utf8");
       const parsed = JSON.parse(raw);
       if (parsed.data?.result?.mrs) {
         envelope = parsed;

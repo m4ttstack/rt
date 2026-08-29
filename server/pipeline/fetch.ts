@@ -33,6 +33,9 @@ export interface FetchOutcome {
 const DAY_MS = 24 * 60 * 60 * 1000;
 const dateOnly = (iso: string): string => iso.slice(0, 10);
 
+/** How many fetched MR details to buffer before writing them to the permanent store. */
+const PERSIST_BATCH = 25;
+
 export async function fetchAll(opts: FetchOptions): Promise<FetchOutcome> {
   const { env, scope, window, users, concurrency, signal, onProgress } = opts;
   const warnings: LeaderboardWarning[] = [];
@@ -183,32 +186,49 @@ async function fetchMergeRequests(
     total,
   });
 
-  const freshlyFetched = await mapLimit(uncached, concurrency, async (base) => {
-    signal?.throwIfAborted();
-    try {
-      const data = await gqlRequest<{ project: { mergeRequest: RawMrDetail | null } | null }>(
-        env,
-        MR_DETAIL_QUERY,
-        { fullPath: base.projectPath, iid: String(base.iid) },
-        signal,
-      );
-      const detail = data.project?.mergeRequest;
-      return detail ? applyMrDetail(base, detail) : base;
-    } catch (err) {
-      if ((err as Error).name === "AbortError") throw err;
-      detailFailures++;
-      lastDetailError = (err as Error).message;
-      return base;
-    }
-  }, (done) => report({
-    phase: "mrs-detail",
-    label: `Fetching MR details (${cachedKeys.size} cached, ${total} new)`,
-    done,
-    total,
-  }));
+  // Persist details as they land, not in one write after all of them. A single stalled
+  // request used to hold the whole phase open until the job's abort fired, and that abort
+  // then threw away every detail the run had already paid for.
+  const pending: NormMr[] = [];
+  const flush = async () => {
+    if (pending.length > 0) await putMrDetails(pending.splice(0));
+  };
 
-  if (freshlyFetched.length > 0) {
-    await putMrDetails(freshlyFetched);
+  let freshlyFetched: NormMr[];
+  try {
+    freshlyFetched = await mapLimit(uncached, concurrency, async (base) => {
+      signal?.throwIfAborted();
+      try {
+        const data = await gqlRequest<{ project: { mergeRequest: RawMrDetail | null } | null }>(
+          env,
+          MR_DETAIL_QUERY,
+          { fullPath: base.projectPath, iid: String(base.iid) },
+          signal,
+        );
+        const detail = data.project?.mergeRequest;
+        // Store only what we actually got detail for. A null mergeRequest and a failed fetch
+        // both leave a zeroed record, and for a merged MR getCachedMrKeys would then serve
+        // that empty diff/notes back on every later refresh instead of re-fetching it.
+        if (!detail) return base;
+        const enriched = applyMrDetail(base, detail);
+        pending.push(enriched);
+        if (pending.length >= PERSIST_BATCH) await flush();
+        return enriched;
+      } catch (err) {
+        if ((err as Error).name === "AbortError") throw err;
+        detailFailures++;
+        lastDetailError = (err as Error).message;
+        return base;
+      }
+    }, (done) => report({
+      phase: "mrs-detail",
+      label: `Fetching MR details (${cachedKeys.size} cached, ${total} new)`,
+      done,
+      total,
+    }));
+  } finally {
+    // Runs on cancellation too, so a timed-out or cancelled refresh still banks its work.
+    await flush();
   }
 
   if (detailFailures > 0) {

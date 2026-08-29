@@ -2,7 +2,7 @@ import { unlink } from "node:fs/promises";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { app } from "../server/app.js";
 import { config } from "../config.js";
-import { cacheKey, writeCache } from "../server/cache/store.js";
+import { CACHE_DIR, cacheKey, writeCache } from "../server/cache/store.js";
 import { startRefresh, __resetJobs } from "../server/jobs/refresh.js";
 import { baseWindow, customWindow } from "../server/util/window.js";
 import type { FetchOutcome } from "../server/pipeline/fetch.js";
@@ -87,7 +87,7 @@ describe("refresh endpoints", () => {
       const body = await res.json() as Record<string, unknown>;
       expect(body.cached).toBe(false);
     } finally {
-      await unlink(`.cache/${key}.json`).catch(() => {});
+      await unlink(`${CACHE_DIR}/${key}.json`).catch(() => {});
     }
   });
 
@@ -104,7 +104,7 @@ describe("refresh endpoints", () => {
       expect(body.cached).toBeUndefined();
       expect(body.hasTrend).toBe(false);
     } finally {
-      await unlink(`.cache/${key}.json`).catch(() => {});
+      await unlink(`${CACHE_DIR}/${key}.json`).catch(() => {});
     }
   });
 
@@ -121,7 +121,7 @@ describe("refresh endpoints", () => {
       const body = await res.json() as Record<string, unknown>;
       expect(body.cached).toBeUndefined();
     } finally {
-      await unlink(`.cache/${key}.json`).catch(() => {});
+      await unlink(`${CACHE_DIR}/${key}.json`).catch(() => {});
     }
   });
 });

@@ -1,4 +1,6 @@
+import { useEffect, useRef, useState } from "react";
 import type { RefreshProgress as Progress } from "../../../shared/types";
+import { progressKey, stallNotice } from "../lib/progress";
 
 interface Props {
   progress: Progress | null;
@@ -12,17 +14,33 @@ export function RefreshProgress({ progress, onCancel }: Props) {
   const pct = determinate ? Math.round((progress.done / progress.total) * 100) : null;
   const windowHint = progress?.window === "prior" ? " · trend window (2 of 2)" : "";
 
+  // A single stalled request holds the count still. Without this the bar looks healthy the
+  // whole time and there's no way to tell "working" from "wedged".
+  const stalled = stallNotice(useIdleMs(progressKey(progress)));
+
   return (
-    <div className="mt-4 flex items-center gap-3 rounded-lg border border-border bg-muted px-4 py-2.5 text-sm">
+    <div
+      className={`mt-4 flex items-center gap-3 rounded-lg border px-4 py-2.5 text-sm ${
+        stalled ? "border-amber-500/40 bg-amber-500/10" : "border-border bg-muted"
+      }`}
+    >
       <span className="font-medium text-foreground">
         Refreshing · {label}
         {windowHint}
       </span>
 
+      {stalled && (
+        <span className="whitespace-nowrap text-xs text-amber-700 dark:text-amber-300/90">
+          {stalled}
+        </span>
+      )}
+
       <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-background">
         {determinate ? (
           <div
-            className="h-full rounded-full bg-primary transition-[width] duration-300"
+            className={`h-full rounded-full transition-[width] duration-300 ${
+              stalled ? "animate-pulse bg-amber-500" : "bg-primary"
+            }`}
             style={{ width: `${pct}%` }}
           />
         ) : (
@@ -44,4 +62,22 @@ export function RefreshProgress({ progress, onCancel }: Props) {
       </button>
     </div>
   );
+}
+
+/** Milliseconds since `key` last changed, re-rendering once a second while it holds. */
+function useIdleMs(key: string): number {
+  const changedAt = useRef(Date.now());
+  const [idleMs, setIdleMs] = useState(0);
+
+  useEffect(() => {
+    changedAt.current = Date.now();
+    setIdleMs(0);
+  }, [key]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setIdleMs(Date.now() - changedAt.current), 1_000);
+    return () => clearInterval(timer);
+  }, []);
+
+  return idleMs;
 }

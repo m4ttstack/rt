@@ -19,7 +19,7 @@ const mergedMr = mr({
 });
 
 describe("abort signal threading", () => {
-  it("forwards the signal to fetch for REST", async () => {
+  it("forwards a signal to fetch for REST that the caller's abort still trips", async () => {
     const inits: RequestInit[] = [];
     vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
       inits.push(init);
@@ -27,7 +27,15 @@ describe("abort signal threading", () => {
     });
     const c = new AbortController();
     await restGetOne(ENV, "/users", { username: "x" }, c.signal);
-    expect(inits[0]?.signal).toBe(c.signal);
+
+    // Not the caller's signal itself: each attempt combines it with that attempt's deadline,
+    // so a stalled socket ends without waiting on the job-level abort. Cancellation must
+    // still reach fetch through the composite.
+    const passed = inits[0]?.signal;
+    expect(passed).toBeDefined();
+    expect(passed!.aborted).toBe(false);
+    c.abort();
+    expect(passed!.aborted).toBe(true);
   });
 
   it("rethrows an AbortError instead of wrapping it (REST)", async () => {

@@ -1,6 +1,7 @@
 node_modules/
 dist/
 .cache/
+.cache-test/
 .env
 .env.local
 *.log
