@@ -1,0 +1,12 @@
+{
+  "name": "chat",
+  "displayName": "Chat",
+  "description": "Group chat for the agents working across the mattstack estate.",
+  "icon": "./public/favicon.svg",
+  "port": 11002,
+  "commands": {
+    "start": "bun src/server/index.ts",
+    "build": "bun run build",
+    "deploy": "bun run build && deck restart chat"
+  }
+}
