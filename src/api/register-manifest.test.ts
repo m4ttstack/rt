@@ -218,3 +218,37 @@ test("dropping commands.start on a supervised app is refused, service kept", asy
   expect(getRecord("svc")!.kind).toBe("service");
   expect(getRecord("svc")!.command).toEqual(["sh", "-c", "bun run serve"]);
 });
+
+test("register carries the manifest env onto the supervised service", async () => {
+  scratch();
+  const { FakeServiceManager } = await import("../services/fake.ts");
+  const { FakeEdgeProxy } = await import("../edge/portless.ts");
+  const { reloadRegistry, getRecord } = await import("../registry/records.ts");
+  const { applyManifest } = await import("./register-manifest.ts");
+  reloadRegistry();
+  const drivers = { manager: new FakeServiceManager(), edge: new FakeEdgeProxy() };
+  const dir = appRepo({ name: "envapp", port: 4800, commands: { start: "bun s.ts" }, env: { API_PORT: "4800", SERVE_STATIC: "1" } });
+
+  expect((await applyManifest(dir, undefined, drivers)).status).toBe(200);
+  expect(getRecord("envapp")!.env).toEqual({ API_PORT: "4800", SERVE_STATIC: "1" });
+});
+
+test("re-register syncs env from the manifest; removing it clears the record env", async () => {
+  scratch();
+  const { FakeServiceManager } = await import("../services/fake.ts");
+  const { FakeEdgeProxy } = await import("../edge/portless.ts");
+  const { reloadRegistry, getRecord } = await import("../registry/records.ts");
+  const { applyManifest } = await import("./register-manifest.ts");
+  reloadRegistry();
+  const drivers = { manager: new FakeServiceManager(), edge: new FakeEdgeProxy() };
+  const dir = appRepo({ name: "envsync", port: 4801, commands: { start: "bun s.ts" }, env: { A: "1" } });
+  await applyManifest(dir, undefined, drivers);
+
+  writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({ name: "envsync", port: 4801, commands: { start: "bun s.ts" }, env: { A: "2", B: "3" } }));
+  await applyManifest(dir, undefined, drivers);
+  expect(getRecord("envsync")!.env).toEqual({ A: "2", B: "3" });
+
+  writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({ name: "envsync", port: 4801, commands: { start: "bun s.ts" } }));
+  await applyManifest(dir, undefined, drivers);
+  expect(getRecord("envsync")!.env ?? {}).toEqual({});
+});

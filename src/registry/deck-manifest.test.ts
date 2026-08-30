@@ -135,3 +135,27 @@ test("deck's own repo manifest parses", () => {
   expect(r.manifest.name).toBe("deck");
   expect(r.manifest.commands.deploy).toBeDefined();
 });
+
+test("reads a top-level env for the supervised service", () => {
+  const dir = repo({
+    "mattstack.deck.json": JSON.stringify({
+      name: "api", port: 11010, commands: { start: "bun server/index.ts" },
+      env: { API_PORT: "11010", SERVE_STATIC: "1" },
+    }),
+  });
+  const r = readDeckManifest(dir);
+  if (!r || !r.ok) throw new Error("expected ok");
+  expect(r.manifest.env).toEqual({ API_PORT: "11010", SERVE_STATIC: "1" });
+});
+
+test("rejects a non-string env value", () => {
+  const dir = repo({ "mattstack.deck.json": JSON.stringify({ name: "api", commands: { start: "s" }, env: { PORT: 11010 } }) });
+  expect(readDeckManifest(dir)?.ok).toBe(false);
+});
+
+test("an overlay may not override env", () => {
+  const dir = repo({
+    "mattstack.deck.json": JSON.stringify({ name: "api", commands: { start: "s" }, altConfigs: { dev: { env: { X: "1" } } } }),
+  });
+  expect(readDeckManifest(dir)?.ok).toBe(false);
+});

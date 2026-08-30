@@ -37,7 +37,7 @@ export async function applyManifest(
     }
     const created = await registerApp(
       shape.command
-        ? { name: manifest.name, command: shape.command, workingDirectory: dir, port: shape.port }
+        ? { name: manifest.name, command: shape.command, workingDirectory: dir, port: shape.port, env: manifest.env }
         : { name: manifest.name, staticPort: shape.port! },
       drivers,
     );
@@ -60,7 +60,10 @@ export async function applyManifest(
     }
     const edited = await editApp(
       manifest.name,
-      { command: shape.command, workingDirectory: dir, ...(shape.port !== undefined && { port: shape.port }) },
+      // env: `?? {}` rather than undefined, because editApp keeps the record's old
+      // env on undefined and the manifest is the source of truth: dropping env
+      // from the manifest must clear it on the service, not silently retain it.
+      { command: shape.command, workingDirectory: dir, env: manifest.env ?? {}, ...(shape.port !== undefined && { port: shape.port }) },
       existing.managedBy,
       true,
       drivers,

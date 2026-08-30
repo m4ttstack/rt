@@ -9,6 +9,8 @@ export interface DeckManifest {
   port?: number;
   /** Shell strings. `start` (when present) is the supervised service; every other key is an action command. */
   commands: Record<string, string>;
+  /** Environment for the supervised `start` service (specFor layers PORT on top). Overlays may not override it. */
+  env?: Record<string, string>;
   /** Normalized overlays: each may carry only `port` and/or `start`. */
   altConfigs?: Record<string, { port?: number; start?: string }>;
 }
@@ -64,6 +66,17 @@ export function readDeckManifest(dir: string): ParseResult {
   if (m.port !== undefined) {
     if (!Number.isInteger(m.port) || (m.port as number) < 1 || (m.port as number) > 65535) return err("port must be 1-65535");
     out.port = m.port as number;
+  }
+
+  if (m.env !== undefined) {
+    if (typeof m.env !== "object" || m.env === null || Array.isArray(m.env)) return err("env must be an object");
+    const env: Record<string, string> = {};
+    for (const [key, val] of Object.entries(m.env as Record<string, unknown>)) {
+      if (key.length === 0) return err("env keys must be non-empty");
+      if (typeof val !== "string") return err(`env ${key} must be a string`);
+      env[key] = val;
+    }
+    out.env = env;
   }
 
   if (m.altConfigs !== undefined) {
