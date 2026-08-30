@@ -15,7 +15,7 @@ import {
 } from "../../core/discover.ts";
 import { getAppSettings, type PortOverride } from "../../core/settings.ts";
 import { checkApp, type Issue } from "../../core/preflight.ts";
-import { listRecords, type SyncIssue } from "../registry/records.ts";
+import { listRecords, type SyncIssue, type RemoteState } from "../registry/records.ts";
 import { allocatePort } from "../registry/allocate.ts";
 import { getOAuth, type OAuth } from "../edge/oauth.ts";
 import { getPlatformSettings } from "./platform-settings.ts";
@@ -96,6 +96,8 @@ export interface StatusRow {
   oauth: OAuth;
   /** Action-command names (excludes `start`), dev-mode only. */
   commands?: string[];
+  publicOrigin: "tunnel" | "railway";
+  remote: { status: RemoteState["status"]; url: string | null } | null;
 }
 
 export interface Status {
@@ -213,6 +215,8 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
           : null,
         oauth: getOAuth(a.name),
         commands: opts.devMode && record?.commands ? Object.keys(record.commands) : undefined,
+        publicOrigin: record?.remote?.status === "live" ? "railway" as const : "tunnel" as const,
+        remote: record?.remote ? { status: record.remote.status, url: record.remote.url ?? null } : null,
       };
     }),
   );
@@ -238,6 +242,8 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
     issues: [],
     record: null,
     oauth: { mode: "off" },
+    publicOrigin: "tunnel" as const,
+    remote: null,
   }));
 
   return {

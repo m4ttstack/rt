@@ -68,7 +68,8 @@ export async function runCommand(
           const health = row.health ? (row.health.ok ? "up" : "DOWN") : "-";
           const managed = row.managedBy ?? "unregistered";
           const issues = (row.issues ?? []).map((i: any) => ` !${i.source}`).join("");
-          io.out(`${row.name.padEnd(24)} ${String(row.port ?? "-").padEnd(6)} ${health.padEnd(5)} ${managed}${issues}`);
+          const origin = row.remote ? ` [public:railway/${row.remote.status}]` : "";
+          io.out(`${row.name.padEnd(24)} ${String(row.port ?? "-").padEnd(6)} ${health.padEnd(5)} ${managed}${issues}${origin}`);
         }
         return 0;
       }
