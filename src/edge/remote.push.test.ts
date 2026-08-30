@@ -21,6 +21,13 @@ test("push configures build/start/PORT/env, uploads, records provenance", async 
   expect(rw.calls).toContain("configure:svc_1");
   expect(rw.calls).toContain("up:svc_1");
   expect(getRecord("site")!.remote!.lastPush).toEqual({ sha: "abc123", dirty: true, at: expect.any(String) });
+  expect(rw.configured.get("svc_1")).toEqual({
+    buildCommand: undefined,
+    startCommand: "bun run serve",
+    port: 11010,
+    variables: { API: "x", PORT: "11010" },
+  });
+  expect(rw.upCalls).toEqual([{ serviceId: "svc_1", cwd: "/tmp/site", token: "rw" }]);
 });
 
 test("refuses when an untracked .env would upload", async () => {

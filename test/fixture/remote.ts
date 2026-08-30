@@ -8,6 +8,8 @@ export class FakeRailwayDriver implements RailwayDriver {
   calls: string[] = [];
   upResult: { ok: boolean; log: string } = { ok: true, log: "built" };
   byName = new Map<string, string>();
+  configured = new Map<string, { buildCommand?: string; startCommand: string; port: number; variables: Record<string, string> }>();
+  upCalls: Array<{ serviceId: string; cwd: string; token: string }> = [];
 
   async ensureService(name: string, _o: { projectId: string; environmentId: string }) {
     this.calls.push(`ensureService:${name}`);
@@ -17,8 +19,8 @@ export class FakeRailwayDriver implements RailwayDriver {
     this.services.set(id, { name }); this.byName.set(name, id);
     return { serviceId: id, created: true };
   }
-  async configureService(id: string, _cfg: any) { this.calls.push(`configure:${id}`); }
-  async up(id: string, _o: { cwd: string; token: string }) { this.calls.push(`up:${id}`); return this.upResult; }
+  async configureService(id: string, cfg: any) { this.calls.push(`configure:${id}`); this.configured.set(id, cfg); }
+  async up(id: string, o: { cwd: string; token: string }) { this.calls.push(`up:${id}`); this.upCalls.push({ serviceId: id, ...o }); return this.upResult; }
   async ensureCustomDomain(serviceId: string, host: string, targetPort: number) {
     this.calls.push(`ensureDomain:${host}`);
     const created = !this.domains.has(host);
