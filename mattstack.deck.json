@@ -1,0 +1,10 @@
+{
+  "name": "board",
+  "displayName": "Board",
+  "description": "Your team's open GitLab MRs that are ready for review, on one shareable page.",
+  "icon": "./src/favicon.svg",
+  "port": 11006,
+  "commands": {
+    "start": "caffeinate -s bun src/server.ts"
+  }
+}
