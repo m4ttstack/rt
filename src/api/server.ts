@@ -329,7 +329,10 @@ export function startApi(deps: ApiDeps) {
           return json(r.body, r.status);
         }
         if (pathname === "/api/v1/apps/managed/remove" && req.method === "POST") {
-          const r = await removeManagedApps(deps);
+          const remoteDrivers = listRecords().some((r) => r.managedBy !== "user" && r.remote)
+            ? resolveRemoteDrivers(deps, await readDeckSecrets(deps.deckSecrets))
+            : {};
+          const r = await removeManagedApps({ ...deps, ...remoteDrivers });
           return json(r.body, r.status);
         }
 
@@ -383,7 +386,10 @@ export function startApi(deps: ApiDeps) {
               return json(r.body, r.status);
             }
             if (req.method === "DELETE") {
-              const r = await unregisterApp(name, caller, force, deps);
+              const remoteDrivers = getRecord(name)?.remote
+                ? resolveRemoteDrivers(deps, await readDeckSecrets(deps.deckSecrets))
+                : {};
+              const r = await unregisterApp(name, caller, force, { ...deps, ...remoteDrivers });
               return json(r.body, r.status);
             }
           }

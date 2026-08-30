@@ -18,10 +18,16 @@ import {
 import { composeServicePath, resolveProgram } from "../services/exec-env.ts";
 import type { EdgeProxy } from "../edge/portless.ts";
 import { logsDir } from "./state.ts";
+import { disableRemote } from "../edge/remote.ts";
+import type { RailwayDriver } from "../edge/railway.ts";
+import type { CfDns } from "../edge/cf-dns.ts";
 
 export interface Drivers {
   manager: ServiceManager;
   edge: EdgeProxy;
+  /** Only needed to remove a remote app: unregisterApp/removeManagedApps flip it back via disableRemote first. Resolved once per request via resolveRemoteDrivers (src/edge/remote.ts). */
+  railway?: RailwayDriver;
+  dns?: CfDns;
 }
 
 export interface RegisterInput {
@@ -186,6 +192,21 @@ export function knownRouteApp(app: string): boolean {
   return readRoutes().some((r) => bareName(r.hostname, tlds) === app);
 }
 
+/**
+ * Shared by unregisterApp and removeManagedApps: when a record is in remote
+ * (Railway) mode, flip it back to local BEFORE the caller runs teardownRecord.
+ * A non-null return means the flip failed and the remove must abort right
+ * there -- never proceed to teardownRecord, or the Railway service is orphaned.
+ */
+async function flipRemoteBack(record: AppRecord, drivers: Drivers): Promise<FlowResult | null> {
+  if (!record.remote) return null;
+  if (!drivers.railway || !drivers.dns) {
+    throw new Error(`remote drivers missing: cannot remove remote app ${record.name}`);
+  }
+  const flip = await disableRemote(record.name, { railway: drivers.railway, dns: drivers.dns });
+  return flip.status === 200 ? null : flip;
+}
+
 /** Shared by unregisterApp and removeManagedApps: tears down a record's launchd service and portless alias. */
 async function teardownRecord(record: AppRecord, drivers: Drivers): Promise<{ ok: boolean }> {
   const issues: SyncIssue[] = [];
@@ -228,6 +249,9 @@ export async function unregisterApp(
   const verdict = authorizeStructural(record, caller, force);
   if (!verdict.ok) return { status: verdict.status, body: verdict.body };
 
+  const flipFailure = await flipRemoteBack(record, drivers);
+  if (flipFailure) return flipFailure;
+
   const { ok } = await teardownRecord(record, drivers);
   return { status: 200, body: ok ? { ok: true } : { ok: false, record: getRecord(name) } };
 }
@@ -268,6 +292,8 @@ export async function removeManagedApps(drivers: Drivers): Promise<FlowResult> {
   const removed: string[] = [];
   const failed: string[] = [];
   for (const record of managed) {
+    const flipFailure = await flipRemoteBack(record, drivers);
+    if (flipFailure) { failed.push(record.name); continue; }
     const { ok } = await teardownRecord(record, drivers);
     if (ok) removed.push(record.name);
     else failed.push(record.name);
