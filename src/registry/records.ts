@@ -2,8 +2,23 @@ import { readFileSync, writeFileSync, renameSync, mkdirSync } from "fs";
 import { dirname, join } from "path";
 import { stateDir } from "../api/state.ts";
 
+export interface RemoteState {
+  target: "railway";
+  serviceId: string;
+  customDomain: string;
+  /** Railway-assigned CNAME target (<id>.up.railway.app), from ensureCustomDomain; set at the verifying stage so reconcileRemote can write the CNAME. */
+  cnameTarget?: string;
+  status: "deploying" | "verifying" | "live" | "error";
+  /** Which cutover path a real run took; set when the CNAME is written. */
+  cutover?: "verified-first" | "cname-first";
+  url?: string;
+  lastPush?: { sha: string; dirty: boolean; at: string };
+  /** Backoff gate for reconcileRemote: ISO time before which not to re-poll. */
+  nextPollAt?: string;
+}
+
 export interface SyncIssue {
-  source: "portless" | "launchd" | "cloudflare";
+  source: "portless" | "launchd" | "cloudflare" | "railway";
   message: string;
   at: string;
 }
@@ -38,6 +53,8 @@ export interface AppRecord {
   createdAt: string;
   /** Loud degradation: failed syncs land here and render on the board row. */
   issues?: SyncIssue[];
+  /** Present only while the app is in remote (Railway) public-serving mode. */
+  remote?: RemoteState;
 }
 
 interface RegistryFile {
