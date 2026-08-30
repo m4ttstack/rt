@@ -113,3 +113,17 @@ export async function enableRemote(name: string, deps: EnableDeps): Promise<Flow
   putRecord({ ...getRecord(name)!, remote: { ...getRecord(name)!.remote!, status: "live", cutover, url: `https://${host}` } });
   return { status: 200, body: { ok: true, url: `https://${host}`, cutover } };
 }
+
+export async function disableRemote(name: string, deps: { railway: RailwayDriver; dns: CfDns }): Promise<FlowResult> {
+  const record = getRecord(name);
+  if (!record?.remote) return { status: 200, body: { ok: true, alreadyOff: true } };
+  const { serviceId, customDomain } = record.remote;
+  await deps.dns.deleteHostRecords(customDomain);      // wildcard tunnel reclaims the host
+  await deps.dns.deleteTxt(`_railway.${customDomain}`);
+  await deps.railway.removeCustomDomain(serviceId, customDomain);
+  await deps.railway.deleteService(serviceId);
+  const { remote: _drop, ...rest } = getRecord(name)!;
+  putRecord(rest);
+  clearIssues(name, "railway");
+  return { status: 200, body: { ok: true } };
+}
