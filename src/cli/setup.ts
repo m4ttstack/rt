@@ -186,5 +186,12 @@ export async function uninstall(drivers: Drivers, io: Io, opts: { force: boolean
 
   io.out("Deck uninstalled: its launchd agent, route aliases, and api.json are gone.");
   io.out("Left in place: portless itself, and any per-app launchd plists it still supervises.");
+
+  // Remote apps outlive deck and the tunnel by design: never torn down here,
+  // only reported. Read-only over listRecords -- no Railway driver involved.
+  for (const r of listRecords().filter((r) => r.remote)) {
+    io.out(`kept remote service ${r.name} (${r.remote!.url}) (running on Railway)`);
+  }
+
   return 0;
 }
