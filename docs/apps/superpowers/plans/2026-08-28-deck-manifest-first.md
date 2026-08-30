@@ -1625,7 +1625,7 @@ git commit -m "adopt: ingest identity through the shared deck-manifest path"
 - Test: `src/registry/deck-manifest.test.ts` (parse the real repo manifest)
 
 **Interfaces:**
-- Produces: deck's own manifest with `start`/`build`/`deploy`; `deploy` builds the binary, installs it over `~/.local/bin/deck`, and runs `deck restart deck` (the self-restart connection drop is expected and handled by the board's re-poll, Task 13's swallow).
+- Produces: deck's own manifest with `start`/`build`/`deploy`; `deploy` builds the binary, installs it over `~/.mattstack/deck/bin/deck` (the launchd-registered path, matching `install.sh`), and runs `deck restart deck` (the self-restart connection drop is expected and handled by the board's re-poll, Task 13's swallow).
 
 - [ ] **Step 1: Write the failing test**
 
@@ -1668,10 +1668,18 @@ import { $ } from "bun";
 import { homedir } from "os";
 import { join } from "path";
 
-const target = join(homedir(), ".local", "bin", "deck");
+// The launchd plist runs the binary from this exact path (see install.sh's
+// BIN_DIR), so deploy must overwrite it here, not ~/.local/bin, or `deck
+// restart deck` would re-exec the stale binary.
+const binDir = join(homedir(), ".mattstack", "deck", "bin");
+const target = join(binDir, "deck");
 await $`bun run build`;
 await $`bun run build:board`;
-await $`install -m 0755 dist/deck ${target}`;
+await $`mkdir -p ${binDir}`;
+// Same-directory temp + rename: an atomic swap avoids ETXTBSY replacing the
+// running binary; the live process keeps its old inode.
+await $`install -m 0755 dist/deck ${target}.new`;
+await $`mv -f ${target}.new ${target}`;
 // The self-restart drops the API mid-response; the board tolerates and re-polls.
 await $`deck restart deck`;
 ```

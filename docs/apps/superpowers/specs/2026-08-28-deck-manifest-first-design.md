@@ -161,9 +161,9 @@ under the manifest model.
 - **chat**: manifest with `start`/`build`/`deploy` (deploy = build + `deck
   restart chat`).
 - **deck itself**: same contract; its `deploy` script builds, installs
-  `dist/deck` over `~/.local/bin/deck`, and runs `deck restart deck` (the
-  self-restart connection drop is expected and handled by the board's
-  re-poll).
+  `dist/deck` over `~/.mattstack/deck/bin/deck` (the launchd-registered path,
+  matching `install.sh`), and runs `deck restart deck` (the self-restart
+  connection drop is expected and handled by the board's re-poll).
 - rt-managed adopt reads the same manifest so rt-spawned products flow
   through the identical ingest.
 
