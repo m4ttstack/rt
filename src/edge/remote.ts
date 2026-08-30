@@ -1,4 +1,4 @@
-import { getRecord, putRecord, addIssue, clearIssues, type AppRecord } from "../registry/records.ts";
+import { getRecord, putRecord, addIssue, clearIssues, listRecords, type AppRecord } from "../registry/records.ts";
 import type { FlowResult } from "../api/register.ts";
 import type { RailwayDriver } from "./railway.ts";
 import type { CfDns } from "./cf-dns.ts";
@@ -112,6 +112,23 @@ export async function enableRemote(name: string, deps: EnableDeps): Promise<Flow
   await deps.dns.writeProxiedCname(host, dom.cnameTarget); // the cutover -- always last
   putRecord({ ...getRecord(name)!, remote: { ...getRecord(name)!.remote!, status: "live", cutover, url: `https://${host}` } });
   return { status: 200, body: { ok: true, url: `https://${host}`, cutover } };
+}
+
+const POLL_BACKOFF_MS = 30000;
+
+export async function reconcileRemote(deps: { railway: RailwayDriver; dns: CfDns; now(): number }): Promise<void> {
+  for (const r of listRecords()) {
+    const rem = r.remote;
+    if (!rem || (rem.status !== "deploying" && rem.status !== "verifying")) continue;
+    if (rem.nextPollAt && deps.now() < Date.parse(rem.nextPollAt)) continue;
+    const s = await deps.railway.domainStatus(rem.serviceId, rem.customDomain);
+    if (s.verified && s.proxyDetected && rem.cnameTarget) {
+      await deps.dns.writeProxiedCname(rem.customDomain, rem.cnameTarget); // stored Railway-assigned target, never a guessed host
+      putRecord({ ...getRecord(r.name)!, remote: { ...rem, status: "live", cutover: rem.cutover ?? "verified-first", url: `https://${rem.customDomain}` } });
+    } else {
+      putRecord({ ...getRecord(r.name)!, remote: { ...rem, nextPollAt: new Date(deps.now() + POLL_BACKOFF_MS).toISOString() } });
+    }
+  }
 }
 
 export async function disableRemote(name: string, deps: { railway: RailwayDriver; dns: CfDns }): Promise<FlowResult> {
