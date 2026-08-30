@@ -271,6 +271,9 @@ remote: {
   target: "railway",
   serviceId: string,
   customDomain: string,
+  // Railway-assigned CNAME target (<id>.up.railway.app), returned by
+  // ensureCustomDomain and stored so reconcileRemote can write the CNAME.
+  cnameTarget: string,
   status: "off" | "deploying" | "verifying" | "live" | "error",
   cutover: "verified-first" | "cname-first",
   url: string,
@@ -346,21 +349,38 @@ deck's existing harness (scratch state dir via env paths, fake `HOME`,
 No real Railway in the unit suite; a real-Railway e2e stays opt-in like the
 existing launchd smoke test and counts its flip cycles.
 
-## Open spike (settle before pipeline code)
+## Spike result (settled 2026-08-30 — verified-first CONFIRMED)
 
-The zero-gap cutover assumes Railway marks a custom domain verified on **TXT
+The zero-gap cutover assumed Railway marks a custom domain verified on **TXT
 ownership + Cloudflare-proxy-detected** alone, before the specific traffic CNAME
-exists. That is inferred from Railway's troubleshooting docs (under proxy,
-Railway reports "Cloudflare proxy detected" and cannot observe the CNAME
-target), not a documented guarantee.
+exists. **Confirmed empirically** against the real `mattstack deck` Railway
+project and the live `m4tthew.dev` Cloudflare zone:
 
-**Spike (one-off, ~10 min, first task in the plan):** with Matt's Railway token
-and a throwaway service, add a custom domain for a hostname the wildcard already
-covers, write only the TXT record, and confirm Railway reports the domain
-verified without the specific CNAME (via `railway domain` status or the Railway
-`domain-status` MCP read). If confirmed, build the verified-first pipeline. If
-not, keep the sequence but rely on the documented `cname-first` fallback and
-hold the app private until `status: live`.
+- Added a custom domain `spike.m4tthew.dev` (wildcard `*.m4tthew.dev` already
+  proxied → cloudflared tunnel), wrote **only** the `_railway-verify.spike` TXT
+  (no CNAME), and Railway flipped **`Verified: yes` after ~90 seconds**. So deck
+  can write the TXT, wait for verified, then write the proxied CNAME LAST as an
+  atomic, zero-404 cutover. `cname-first` remains as insurance only.
+
+Concrete facts the pipeline must encode (from the live run):
+
+- **TXT** name is `_railway-verify.<sub>` (relative to the zone), value
+  `railway-verify=<hex>` — both returned by `railway domain <host>`.
+- **CNAME** target is a Railway-assigned `<id>.up.railway.app` (e.g.
+  `kw1ig666.up.railway.app`), NOT derivable from the host — so the driver must
+  RETURN it from `ensureCustomDomain` and the record must STORE it
+  (`RemoteState.cnameTarget`) for `reconcileRemote` to write later.
+- Certificate status stays `VALIDATING_OWNERSHIP` after verify; for a proxied
+  domain Railway serves CF→origin under its default `*.up.railway.app` cert, so
+  the cert does not gate the cutover (matches the Full-not-strict requirement).
+- **Auth**: a Railway **project token** (`RAILWAY_TOKEN`, scoped to a
+  pre-provisioned project) is sufficient for service/domain/status — no account
+  token. This refines the target model: deck uses ONE pre-provisioned project +
+  a project token, not an account token that creates projects. `projectId` /
+  `environmentId` are read once from `railway status` into platform settings.
+- **CF token scope**: confirmed deck's existing Access-scoped token CANNOT
+  read/write DNS — a `Zone.DNS:Edit` token (scoped to the public zone) is
+  required, exactly as refuse-check #4 states. Setup docs must say so.
 
 ## Deferred (v2+)
 

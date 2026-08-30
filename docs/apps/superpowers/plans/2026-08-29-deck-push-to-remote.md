@@ -54,7 +54,9 @@ Test conventions (from the existing suite): scratch state via `LOCAL_REGISTRY_PA
 
 ---
 
-## Task 1: Spike — does Railway verify a custom domain on TXT + wildcard alone?
+## Task 1: Spike — does Railway verify a custom domain on TXT + wildcard alone? ✅ DONE (2026-08-30)
+
+**Result: CONFIRMED.** Against the real `mattstack deck` project + live `m4tthew.dev` zone: with only the `_railway-verify.spike` TXT written (no CNAME) and the proxied wildcard covering `spike.m4tthew.dev`, Railway flipped `Verified: yes` in ~90s. Build the verified-first pipeline (Task 8). Real shapes observed: TXT `_railway-verify.<sub>` = `railway-verify=<hex>`; CNAME target `<id>.up.railway.app` (Railway-assigned, store it — Task 2/8/10). Auth = a Railway PROJECT token (`RAILWAY_TOKEN`) on a pre-provisioned project; CF needs a `Zone.DNS:Edit` token (the Access-scoped one cannot write DNS). The steps below are kept as the record of what was run.
 
 The zero-gap cutover assumes Railway marks a custom domain verified from the **TXT ownership record + Cloudflare-proxy-detection**, before the specific traffic CNAME exists. Settle this empirically before building the pipeline. This task writes no committed code.
 
@@ -125,6 +127,8 @@ export interface RemoteState {
   target: "railway";
   serviceId: string;
   customDomain: string;
+  /** Railway-assigned CNAME target (<id>.up.railway.app), from ensureCustomDomain; set at the verifying stage so reconcileRemote can write the CNAME. */
+  cnameTarget?: string;
   status: "deploying" | "verifying" | "live" | "error";
   /** Which cutover path a real run took; set when the CNAME is written. */
   cutover?: "verified-first" | "cname-first";
@@ -335,7 +339,7 @@ export class FakeRailwayDriver implements RailwayDriver {
     this.calls.push(`ensureDomain:${host}`);
     const created = !this.domains.has(host);
     this.domains.set(host, { serviceId, targetPort });
-    return { cnameTarget: `${host}.up.railway.app`, txtName: `_railway.${host}`, txtValue: `rw-verify-${host}`, created };
+    return { cnameTarget: `kw1ig666.up.railway.app`, txtName: `_railway-verify.${host}`, txtValue: `railway-verify=deadbeef${host.length}`, created };
   }
   async domainStatus(_id: string, host: string) { return this.status.get(host) ?? { verified: false, proxyDetected: false }; }
   async removeCustomDomain(_id: string, host: string) { this.calls.push(`removeDomain:${host}`); this.domains.delete(host); }
@@ -778,7 +782,7 @@ export async function enableRemote(name: string, deps: EnableDeps): Promise<Flow
 
   const dom = await deps.railway.ensureCustomDomain(serviceId, host, record.port);
   await deps.dns.writeTxt(dom.txtName, dom.txtValue);
-  putRecord({ ...getRecord(name)!, remote: { ...getRecord(name)!.remote!, status: "verifying" } });
+  putRecord({ ...getRecord(name)!, remote: { ...getRecord(name)!.remote!, status: "verifying", cnameTarget: dom.cnameTarget } });
 
   const deadline = deps.now() + deps.pollBudgetMs;
   let cutover: "verified-first" | "cname-first" = "cname-first";
@@ -959,8 +963,8 @@ export async function reconcileRemote(deps: { railway: RailwayDriver; dns: CfDns
     if (!rem || (rem.status !== "deploying" && rem.status !== "verifying")) continue;
     if (rem.nextPollAt && deps.now() < Date.parse(rem.nextPollAt)) continue;
     const s = await deps.railway.domainStatus(rem.serviceId, rem.customDomain);
-    if (s.verified && s.proxyDetected) {
-      await deps.dns.writeProxiedCname(rem.customDomain, `${rem.customDomain}.up.railway.app`);
+    if (s.verified && s.proxyDetected && rem.cnameTarget) {
+      await deps.dns.writeProxiedCname(rem.customDomain, rem.cnameTarget); // stored Railway-assigned target, never a guessed host
       putRecord({ ...getRecord(r.name)!, remote: { ...rem, status: "live", cutover: rem.cutover ?? "verified-first", url: `https://${rem.customDomain}` } });
     } else {
       putRecord({ ...getRecord(r.name)!, remote: { ...rem, nextPollAt: new Date(deps.now() + POLL_BACKOFF_MS).toISOString() } });
