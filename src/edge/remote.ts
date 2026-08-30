@@ -1,7 +1,8 @@
 import { getRecord, putRecord, addIssue, clearIssues, listRecords, type AppRecord } from "../registry/records.ts";
 import type { FlowResult } from "../api/register.ts";
-import type { RailwayDriver } from "./railway.ts";
-import type { CfDns } from "./cf-dns.ts";
+import { RailwayCli, type RailwayDriver } from "./railway.ts";
+import { CfDnsApi, type CfDns } from "./cf-dns.ts";
+import type { DeckSecretsResult } from "./rt-secrets.ts";
 
 export interface RefuseCtx {
   record: AppRecord;
@@ -27,6 +28,26 @@ export function remoteRefuseChecks(ctx: RefuseCtx): Refusal | null {
   if (!ctx.cfCanEditDns) return refuse(400, "cf-token-needs-zone-dns");
   if (ctx.zoneSslMode !== "full") return refuse(400, "zone-ssl-mode-full-required");
   return null;
+}
+
+/**
+ * The real Railway/Cloudflare-DNS drivers, resolved once per request from
+ * whichever secrets that request already read. A single shared constructor
+ * so the remote/push routes and unregisterApp's teardown never each build a
+ * divergently-configured instance; deps.railway/deps.dns let tests inject
+ * fakes in place of either.
+ */
+export function resolveRemoteDrivers(
+  deps: { railway?: RailwayDriver; dns?: CfDns },
+  sec: DeckSecretsResult,
+): { railway: RailwayDriver; dns: CfDns } {
+  return {
+    railway: deps.railway ?? new RailwayCli(),
+    dns: deps.dns ?? new CfDnsApi({
+      zoneId: sec.ok ? sec.cfZoneId ?? "" : "",
+      token: sec.ok ? sec.cfApiToken ?? "" : "",
+    }),
+  };
 }
 
 export interface PushDeps {

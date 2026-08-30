@@ -31,7 +31,11 @@ import type { TunnelDriver } from "../edge/tunnel.ts";
 import { bindDomain, TUNNEL_LABEL } from "../edge/domain.ts";
 import { parseOAuth, setOAuth, getOAuth, oauthRequiresCf } from "../edge/oauth.ts";
 import { syncOAuth } from "../edge/access.ts";
-import type { RtSecretsDeps } from "../edge/rt-secrets.ts";
+import { readDeckSecrets, type RtSecretsDeps } from "../edge/rt-secrets.ts";
+import { enableRemote, disableRemote, pushRemote, resolveRemoteDrivers } from "../edge/remote.ts";
+import type { RailwayDriver } from "../edge/railway.ts";
+import type { CfDns } from "../edge/cf-dns.ts";
+import { gitProvenance, untrackedEnvPresent } from "../edge/source.ts";
 
 export interface ApiDeps extends Drivers {
   port: number;
@@ -49,6 +53,10 @@ export interface ApiDeps extends Drivers {
   deckSecrets?: RtSecretsDeps;
   /** Dev-mode gate for action commands. Defaults to isDevMode in production wiring; tests inject it. */
   devMode?: () => boolean;
+  /** Real RailwayCli in production; tests inject FakeRailwayDriver. See resolveRemoteDrivers. */
+  railway?: RailwayDriver;
+  /** Real CfDnsApi in production; tests inject FakeCfDns. See resolveRemoteDrivers. */
+  dns?: CfDns;
 }
 
 export function callerOf(req: Request): string {
@@ -472,6 +480,34 @@ export function startApi(deps: ApiDeps) {
             setOAuth(name, rule);
             const sync = await syncOAuth(name, rule, deps);
             return json({ ok: true, oauth: rule, cfSynced: sync.ok });
+          }
+          if (sub === "remote" && req.method === "POST") {
+            const b = await body(req);
+            const sec = await readDeckSecrets(deps.deckSecrets);
+            const settings = getPlatformSettings();
+            const { railway, dns } = resolveRemoteDrivers(deps, sec);
+            const result = b.enabled === true
+              ? await enableRemote(name, {
+                  railway, dns, token: sec.ok ? sec.railwayToken ?? "" : "",
+                  projectId: settings.railway?.projectId ?? "", environmentId: settings.railway?.environmentId ?? "",
+                  railwayConf: settings.railway, publicDomain: settings.publicDomain,
+                  oauth: getOAuth(name), hasRailwayToken: sec.ok && !!sec.railwayToken,
+                  provenance: gitProvenance, hasUntrackedEnv: untrackedEnvPresent,
+                  pollBudgetMs: 600000, sleep: (ms) => new Promise((r) => setTimeout(r, ms)), now: Date.now,
+                })
+              : await disableRemote(name, { railway, dns });
+            return json(result.body, result.status);
+          }
+          if (sub === "push" && req.method === "POST") {
+            const sec = await readDeckSecrets(deps.deckSecrets);
+            const settings = getPlatformSettings();
+            const { railway } = resolveRemoteDrivers(deps, sec);
+            const result = await pushRemote(name, {
+              railway, token: sec.ok ? sec.railwayToken ?? "" : "",
+              projectId: settings.railway?.projectId ?? "", environmentId: settings.railway?.environmentId ?? "",
+              provenance: gitProvenance, hasUntrackedEnv: untrackedEnvPresent,
+            });
+            return json(result.body, result.status);
           }
         }
 
