@@ -44,9 +44,12 @@ Lives at the app repo root. Example (chat):
 
 Rules:
 
-- **Commands are shell strings**, executed via `sh -c` with the app's
-  `workingDirectory` as cwd. (Friendlier than argv; the manifest is
-  hand-written by app authors.)
+- **Commands are shell strings** with the app's `workingDirectory` as cwd.
+  (Friendlier than argv; the manifest is hand-written by app authors.) A
+  plain word list (`bun src/server.ts`, `caffeinate -s bun src/server.ts`)
+  is run directly so launchd's program, and what macOS Login Items shows,
+  is the real executable; only a string using shell syntax (`&&`, `|`,
+  quotes, `$`, redirects, a leading `NAME=value`) is wrapped in `sh -c`.
 - **`commands.start`** is what deck supervises as the service. Every OTHER
   entry in `commands` is an action command: it becomes a dev-mode board
   button, an API route, and a CLI verb (below). Names are free-form

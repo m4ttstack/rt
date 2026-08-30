@@ -39,7 +39,7 @@ test("register creates a supervised record from the manifest", async () => {
   const r = await applyManifest(dir, undefined, { manager, edge });
   expect(r.status).toBe(200);
   const rec = getRecord("chat")!;
-  expect(rec.command).toEqual(["sh", "-c", "bun run serve"]);
+  expect(rec.command).toEqual(["bun", "run", "serve"]);
   expect(rec.port).toBe(11002);
   expect(rec.commands).toEqual({ deploy: "bun run deploy" });
   expect(rec.workingDirectory).toBe(dir);
@@ -59,7 +59,7 @@ test("register is idempotent and re-syncs a changed start command", async () => 
   await applyManifest(dir, undefined, drivers);
   writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({ name: "chat", port: 11002, commands: { start: "bun run serve2" } }));
   await applyManifest(dir, undefined, drivers);
-  expect(getRecord("chat")!.command).toEqual(["sh", "-c", "bun run serve2"]);
+  expect(getRecord("chat")!.command).toEqual(["bun", "run", "serve2"]);
 });
 
 test("activating an overlay swaps port and start; off restores base", async () => {
@@ -78,12 +78,12 @@ test("activating an overlay swaps port and start; off restores base", async () =
   await applyManifest(dir, "dev", drivers);
   let rec = getRecord("chat")!;
   expect(rec.port).toBe(5173);
-  expect(rec.command).toEqual(["sh", "-c", "bun run dev"]);
+  expect(rec.command).toEqual(["bun", "run", "dev"]);
   expect(rec.activeAlt).toBe("dev");
   await applyManifest(dir, undefined, drivers);
   rec = getRecord("chat")!;
   expect(rec.port).toBe(11002);
-  expect(rec.command).toEqual(["sh", "-c", "bun run serve"]);
+  expect(rec.command).toEqual(["bun", "run", "serve"]);
   expect(rec.activeAlt).toBeUndefined();
 });
 
@@ -216,7 +216,7 @@ test("dropping commands.start on a supervised app is refused, service kept", asy
   const r = await applyManifest(dir, undefined, drivers);
   expect(r.status).toBe(400);
   expect(getRecord("svc")!.kind).toBe("service");
-  expect(getRecord("svc")!.command).toEqual(["sh", "-c", "bun run serve"]);
+  expect(getRecord("svc")!.command).toEqual(["bun", "run", "serve"]);
 });
 
 test("register carries the manifest env onto the supervised service", async () => {

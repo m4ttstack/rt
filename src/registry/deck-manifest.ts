@@ -117,6 +117,18 @@ export function readDeckManifest(dir: string): ParseResult {
   return { ok: true, manifest: out };
 }
 
+// Shell syntax that needs /bin/sh: operators, redirects, quoting, expansion,
+// and leading env assignments. A plain word list runs directly instead, so
+// launchd's ProgramArguments[0] (what macOS Login Items shows) is the real
+// program, not "sh".
+const SHELL_SYNTAX = /[|&;<>()$`\\"'*?\[\]{}~\n]|(^|\s)\w+=/;
+
+export function startArgv(start: string): string[] {
+  const s = start.trim();
+  if (SHELL_SYNTAX.test(s)) return ["sh", "-c", start];
+  return s.split(/\s+/);
+}
+
 export function resolveServeShape(
   manifest: DeckManifest,
   altName?: string,
@@ -132,5 +144,5 @@ export function resolveServeShape(
   const overlay = hasOverlay ? manifest.altConfigs![altName!] : undefined;
   const port = overlay?.port ?? manifest.port;
   const start = overlay?.start ?? manifest.commands.start;
-  return { port, command: start === undefined ? undefined : ["sh", "-c", start] };
+  return { port, command: start === undefined ? undefined : startArgv(start) };
 }

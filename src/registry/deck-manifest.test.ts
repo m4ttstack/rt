@@ -95,7 +95,7 @@ test("unparseable JSON is a loud error, not null", () => {
 
 test("base serve shape wraps start in sh -c", () => {
   const shape = resolveServeShape({ name: "chat", port: 11002, commands: { start: "bun run serve" } });
-  expect(shape).toEqual({ port: 11002, command: ["sh", "-c", "bun run serve"] });
+  expect(shape).toEqual({ port: 11002, command: ["bun", "run", "serve"] });
 });
 
 test("overlay overrides port and start", () => {
@@ -103,7 +103,7 @@ test("overlay overrides port and start", () => {
     { name: "chat", port: 11002, commands: { start: "bun run serve" }, altConfigs: { dev: { port: 5173, start: "bun run dev" } } },
     "dev",
   );
-  expect(shape).toEqual({ port: 5173, command: ["sh", "-c", "bun run dev"] });
+  expect(shape).toEqual({ port: 5173, command: ["bun", "run", "dev"] });
 });
 
 test("overlay that omits a field inherits the base for it", () => {
@@ -111,7 +111,7 @@ test("overlay that omits a field inherits the base for it", () => {
     { name: "chat", port: 11002, commands: { start: "bun run serve" }, altConfigs: { hmr: { port: 5173 } } },
     "hmr",
   );
-  expect(shape).toEqual({ port: 5173, command: ["sh", "-c", "bun run serve"] });
+  expect(shape).toEqual({ port: 5173, command: ["bun", "run", "serve"] });
 });
 
 test("unknown alt throws", () => {
@@ -158,4 +158,25 @@ test("an overlay may not override env", () => {
     "mattstack.deck.json": JSON.stringify({ name: "api", commands: { start: "s" }, altConfigs: { dev: { env: { X: "1" } } } }),
   });
   expect(readDeckManifest(dir)?.ok).toBe(false);
+});
+
+import { startArgv } from "./deck-manifest.ts";
+
+test("a plain start runs directly, not under sh", () => {
+  expect(startArgv("bun src/server.ts")).toEqual(["bun", "src/server.ts"]);
+  expect(startArgv("caffeinate -s bun src/server.ts")).toEqual(["caffeinate", "-s", "bun", "src/server.ts"]);
+  expect(startArgv("bun x vite preview --port 11003 --strictPort --host 127.0.0.1"))
+    .toEqual(["bun", "x", "vite", "preview", "--port", "11003", "--strictPort", "--host", "127.0.0.1"]);
+});
+
+test("a --flag=value word is not mistaken for an env assignment", () => {
+  expect(startArgv("bun serve --port=11003")).toEqual(["bun", "serve", "--port=11003"]);
+});
+
+test("shell syntax keeps the sh -c wrapper", () => {
+  expect(startArgv("bun run build && deck restart chat")).toEqual(["sh", "-c", "bun run build && deck restart chat"]);
+  expect(startArgv("NODE_ENV=production bun server/index.ts")).toEqual(["sh", "-c", "NODE_ENV=production bun server/index.ts"]);
+  expect(startArgv('bun run "my script"')).toEqual(["sh", "-c", 'bun run "my script"']);
+  expect(startArgv("bun s.ts > out.log")).toEqual(["sh", "-c", "bun s.ts > out.log"]);
+  expect(startArgv("echo $HOME")).toEqual(["sh", "-c", "echo $HOME"]);
 });
