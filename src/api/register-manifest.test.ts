@@ -150,3 +150,71 @@ test("registering a manifest onto a port already held by a bare portless route (
   expect(r.status).toBe(409);
   expect(getRecord("routeconflict")).toBeUndefined();
 });
+
+test("port-only app reconciles a changed port via alt (route re-points)", async () => {
+  scratch();
+  const { FakeServiceManager } = await import("../services/fake.ts");
+  const { FakeEdgeProxy } = await import("../edge/portless.ts");
+  const { reloadRegistry, getRecord } = await import("../registry/records.ts");
+  const { applyManifest } = await import("./register-manifest.ts");
+  reloadRegistry();
+  const drivers = { manager: new FakeServiceManager(), edge: new FakeEdgeProxy() };
+  const dir = appRepo({ name: "extapp", port: 4400, altConfigs: { dev: { port: 4500 } } });
+
+  await applyManifest(dir, undefined, drivers);
+  expect(getRecord("extapp")!.kind).toBe("external");
+  expect(getRecord("extapp")!.port).toBe(4400);
+  expect(drivers.edge.aliases.get("extapp")).toBe(4400);
+
+  const on = await applyManifest(dir, "dev", drivers);
+  expect(on.status).toBe(200);
+  expect(getRecord("extapp")!.port).toBe(4500);
+  expect(getRecord("extapp")!.activeAlt).toBe("dev");
+  expect(drivers.edge.aliases.get("extapp")).toBe(4500);
+
+  const off = await applyManifest(dir, undefined, drivers);
+  expect(off.status).toBe(200);
+  expect(getRecord("extapp")!.port).toBe(4400);
+  expect(getRecord("extapp")!.activeAlt).toBeUndefined();
+  expect(drivers.edge.aliases.get("extapp")).toBe(4400);
+});
+
+test("adding commands.start to a route-only app is refused, not half-applied", async () => {
+  scratch();
+  const { FakeServiceManager } = await import("../services/fake.ts");
+  const { FakeEdgeProxy } = await import("../edge/portless.ts");
+  const { reloadRegistry, getRecord } = await import("../registry/records.ts");
+  const { applyManifest } = await import("./register-manifest.ts");
+  reloadRegistry();
+  const drivers = { manager: new FakeServiceManager(), edge: new FakeEdgeProxy() };
+  const dir = appRepo({ name: "flip", port: 4600 });
+
+  await applyManifest(dir, undefined, drivers);
+  expect(getRecord("flip")!.kind).toBe("external");
+
+  writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({ name: "flip", port: 4600, commands: { start: "bun run serve" } }));
+  const r = await applyManifest(dir, undefined, drivers);
+  expect(r.status).toBe(400);
+  expect(getRecord("flip")!.kind).toBe("external");
+  expect(getRecord("flip")!.command).toBeUndefined();
+});
+
+test("dropping commands.start on a supervised app is refused, service kept", async () => {
+  scratch();
+  const { FakeServiceManager } = await import("../services/fake.ts");
+  const { FakeEdgeProxy } = await import("../edge/portless.ts");
+  const { reloadRegistry, getRecord } = await import("../registry/records.ts");
+  const { applyManifest } = await import("./register-manifest.ts");
+  reloadRegistry();
+  const drivers = { manager: new FakeServiceManager(), edge: new FakeEdgeProxy() };
+  const dir = appRepo({ name: "svc", port: 4700, commands: { start: "bun run serve" } });
+
+  await applyManifest(dir, undefined, drivers);
+  expect(getRecord("svc")!.kind).toBe("service");
+
+  writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({ name: "svc", port: 4700 }));
+  const r = await applyManifest(dir, undefined, drivers);
+  expect(r.status).toBe(400);
+  expect(getRecord("svc")!.kind).toBe("service");
+  expect(getRecord("svc")!.command).toEqual(["sh", "-c", "bun run serve"]);
+});

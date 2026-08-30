@@ -49,6 +49,15 @@ export async function applyManifest(
     // CLI, so the caller is the app's own manager with force=true to clear
     // authorizeStructural (mirrors adoptApp's force-bless). Safe because the
     // whole mutation plane is 127.0.0.1-local and public mutations are already 403'd.
+    if (existing.kind !== "service") {
+      // external -> service: editApp keeps a record's kind, so it would set the
+      // command but never install launchd, leaving a route-only app with a
+      // command and no running service. Refuse loudly instead of half-applying.
+      return {
+        status: 400,
+        body: { error: `cannot add commands.start to route-only app ${manifest.name} via register; run \`deck remove ${manifest.name}\` then re-register` },
+      };
+    }
     const edited = await editApp(
       manifest.name,
       { command: shape.command, workingDirectory: dir, ...(shape.port !== undefined && { port: shape.port }) },
@@ -56,6 +65,22 @@ export async function applyManifest(
       true,
       drivers,
     );
+    if (edited.status !== 200) return edited;
+  } else if (existing.kind === "service") {
+    // service -> route-only: the manifest dropped commands.start on a supervised
+    // app. Tearing a live service down to route-only is a structural change
+    // editApp does not perform; silently keeping the old service is worse than
+    // refusing. `deck remove` + re-register is the explicit path.
+    return {
+      status: 400,
+      body: { error: `cannot drop commands.start on supervised app ${manifest.name} via register; run \`deck remove ${manifest.name}\` then re-register as route-only` },
+    };
+  } else if (shape.port !== undefined && shape.port !== existing.port) {
+    // Port-only (external) app whose declared or overlay port changed: propagate
+    // the new port and route alias. editApp's external path updates the alias
+    // without touching launchd, so `deck alt` actually re-routes a port-only app
+    // instead of returning success while the route stays on the old port.
+    const edited = await editApp(manifest.name, { port: shape.port }, existing.managedBy, true, drivers);
     if (edited.status !== 200) return edited;
   }
 
