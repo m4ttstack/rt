@@ -32,6 +32,8 @@ export interface AppRecord {
   altConfigs?: Record<string, { port?: number; start?: string }>;
   /** The active overlay (an `altConfigs` key), if any; absent means the base serve shape. */
   activeAlt?: string;
+  /** Where action commands run when it differs from workingDirectory. Only the platform sets it today. */
+  sourceDirectory?: string;
   grandfathered?: boolean;
   createdAt: string;
   /** Loud degradation: failed syncs land here and render on the board row. */

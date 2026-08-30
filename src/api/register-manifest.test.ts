@@ -252,3 +252,83 @@ test("re-register syncs env from the manifest; removing it clears the record env
   await applyManifest(dir, undefined, drivers);
   expect(getRecord("envsync")!.env ?? {}).toEqual({});
 });
+
+function platformRecord() {
+  return {
+    name: "deck", managedBy: "deck", port: 11007, kind: "service" as const, createdAt: "x",
+    label: "com.mattstack.deck", command: ["/Users/someone/.local/bin/deck", "serve"],
+    workingDirectory: "/Users/someone/.mattstack/deck",
+  };
+}
+
+test("platform record: register attaches source + commands, never touches the serve shape", async () => {
+  scratch();
+  const { FakeServiceManager } = await import("../services/fake.ts");
+  const { FakeEdgeProxy } = await import("../edge/portless.ts");
+  const { reloadRegistry, getRecord, putRecord } = await import("../registry/records.ts");
+  const { applyManifest } = await import("./register-manifest.ts");
+  reloadRegistry();
+  const drivers = { manager: new FakeServiceManager(), edge: new FakeEdgeProxy() };
+  putRecord(platformRecord());
+  const dir = appRepo({ name: "deck", commands: { deploy: "bun run deploy" } });
+
+  const r = await applyManifest(dir, undefined, drivers);
+  expect(r.status).toBe(200);
+  const rec = getRecord("deck")!;
+  expect(rec.sourceDirectory).toBe(dir);
+  expect(rec.commands).toEqual({ deploy: "bun run deploy" });
+  expect(rec.command).toEqual(["/Users/someone/.local/bin/deck", "serve"]);
+  expect(rec.port).toBe(11007);
+  expect(rec.workingDirectory).toBe("/Users/someone/.mattstack/deck");
+  expect(rec.label).toBe("com.mattstack.deck");
+  expect(drivers.manager.installed.size).toBe(0);
+  expect(drivers.edge.aliases.size).toBe(0);
+});
+
+test("platform record: a manifest declaring a serve shape is refused, record untouched", async () => {
+  scratch();
+  const { FakeServiceManager } = await import("../services/fake.ts");
+  const { FakeEdgeProxy } = await import("../edge/portless.ts");
+  const { reloadRegistry, getRecord, putRecord } = await import("../registry/records.ts");
+  const { applyManifest } = await import("./register-manifest.ts");
+  reloadRegistry();
+  const drivers = { manager: new FakeServiceManager(), edge: new FakeEdgeProxy() };
+  putRecord(platformRecord());
+  const before = JSON.stringify(getRecord("deck"));
+  for (const bad of [
+    { name: "deck", commands: { start: "bun run serve", deploy: "d" } },
+    { name: "deck", port: 11007, commands: { deploy: "d" } },
+    { name: "deck", commands: { deploy: "d" }, altConfigs: { dev: { port: 5173 } } },
+    { name: "deck", commands: { deploy: "d" }, env: { X: "1" } },
+  ]) {
+    const r = await applyManifest(appRepo(bad), undefined, drivers);
+    expect(r.status).toBe(400);
+  }
+  expect(JSON.stringify(getRecord("deck"))).toBe(before);
+});
+
+test("platform record: alt is refused", async () => {
+  scratch();
+  const { FakeServiceManager } = await import("../services/fake.ts");
+  const { FakeEdgeProxy } = await import("../edge/portless.ts");
+  const { reloadRegistry, putRecord } = await import("../registry/records.ts");
+  const { applyManifest } = await import("./register-manifest.ts");
+  reloadRegistry();
+  putRecord(platformRecord());
+  const dir = appRepo({ name: "deck", commands: { deploy: "d" } });
+  const r = await applyManifest(dir, "dev", { manager: new FakeServiceManager(), edge: new FakeEdgeProxy() });
+  expect(r.status).toBe(400);
+});
+
+test("a manifest named deck with no self record is refused, nothing created", async () => {
+  scratch();
+  const { FakeServiceManager } = await import("../services/fake.ts");
+  const { FakeEdgeProxy } = await import("../edge/portless.ts");
+  const { reloadRegistry, getRecord } = await import("../registry/records.ts");
+  const { applyManifest } = await import("./register-manifest.ts");
+  reloadRegistry();
+  const dir = appRepo({ name: "deck", port: 11007, commands: { start: "bun run serve" } });
+  const r = await applyManifest(dir, undefined, { manager: new FakeServiceManager(), edge: new FakeEdgeProxy() });
+  expect(r.status).toBe(400);
+  expect(getRecord("deck")).toBeUndefined();
+});

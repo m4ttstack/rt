@@ -2,6 +2,44 @@ import { readDeckManifest, resolveServeShape } from "../registry/deck-manifest.t
 import { getRecord, putRecord } from "../registry/records.ts";
 import { registerApp, editApp, type Drivers, type FlowResult } from "./register.ts";
 import { ingestManifest } from "../registry/manifest.ts";
+import { isPlatformManagedBy, PLATFORM_NAME, LEGACY_PLATFORM_NAME } from "../services/manager.ts";
+import type { DeckManifest } from "../registry/deck-manifest.ts";
+import type { AppRecord } from "../registry/records.ts";
+
+/**
+ * The platform's own record: bootstrapSelf owns its serve shape (the installed
+ * binary, its port, the state dir), so its manifest may only attach a source
+ * checkout and action commands. Running deck from a checkout is refused, not
+ * supported: deploy rebuilds FROM source and installs over the binary instead.
+ */
+function attachSource(
+  existing: AppRecord,
+  manifest: DeckManifest,
+  dir: string,
+  activeAlt: string | undefined,
+  actionCommands: Record<string, string>,
+): FlowResult {
+  if (activeAlt !== undefined) {
+    return { status: 400, body: { error: "the platform has no alt configs" } };
+  }
+  const declaresServeShape =
+    manifest.commands.start !== undefined ||
+    manifest.port !== undefined ||
+    manifest.altConfigs !== undefined ||
+    manifest.env !== undefined;
+  if (declaresServeShape) {
+    return {
+      status: 400,
+      body: { error: "deck manages its own service; the platform manifest may only declare action commands" },
+    };
+  }
+  putRecord({
+    ...existing,
+    sourceDirectory: dir,
+    commands: Object.keys(actionCommands).length ? actionCommands : undefined,
+  });
+  return { status: 200, body: { record: getRecord(existing.name) } };
+}
 
 /**
  * Mirror a record to its manifest. The single flow behind both `deck register`
@@ -29,6 +67,15 @@ export async function applyManifest(
 
   const { start: _start, ...actionCommands } = manifest.commands;
   const existing = getRecord(manifest.name);
+
+  // The create path below would register a user app named deck running from a
+  // checkout; the platform registers itself in `deck setup`.
+  if (!existing && (manifest.name === PLATFORM_NAME || manifest.name === LEGACY_PLATFORM_NAME)) {
+    return { status: 400, body: { error: "run deck setup first; the platform registers itself" } };
+  }
+  if (existing && isPlatformManagedBy(existing.managedBy)) {
+    return attachSource(existing, manifest, dir, activeAlt, actionCommands);
+  }
 
   if (!existing) {
     // A manifest with neither a start command nor a port declares nothing to stand up.

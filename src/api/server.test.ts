@@ -561,3 +561,21 @@ test("status carries command names in dev, omits them in prod", async () => {
   const prodRow = (await (await api("/api/v1/status")).json()).apps.find((a: any) => a.name === "metaapp");
   expect(prodRow.commands).toBeUndefined();
 });
+
+test("command route spawns in sourceDirectory when set, else workingDirectory", async () => {
+  const { putRecord, reloadRegistry } = await import("../registry/records.ts");
+  const { existsSync } = await import("fs");
+  reloadRegistry();
+  const source = mkdtempSync(join(tmpdir(), "src-"));
+  const state = mkdtempSync(join(tmpdir(), "state-"));
+  putRecord({
+    name: "deck", managedBy: "deck", port: 11007, kind: "service", createdAt: "x",
+    label: "com.mattstack.deck", command: ["/bin/true"], workingDirectory: state,
+    sourceDirectory: source, commands: { mark: "touch marker" },
+  });
+  const res = await devPost("/api/v1/apps/deck/commands/mark", {});
+  expect(res.status).toBe(200);
+  for (let i = 0; i < 40 && !existsSync(join(source, "marker")); i++) await new Promise((r) => setTimeout(r, 50));
+  expect(existsSync(join(source, "marker"))).toBe(true);
+  expect(existsSync(join(state, "marker"))).toBe(false);
+});
