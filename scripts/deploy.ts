@@ -1,15 +1,14 @@
 import { $ } from "bun";
-import { homedir } from "os";
-import { join } from "path";
+import { dirname } from "path";
+import { deployTarget } from "../src/cli/deploy-target.ts";
 
-const binDir = join(homedir(), ".mattstack", "deck", "bin");
-const target = join(binDir, "deck");
+// The plist's ProgramArguments[0], read from deck's own registry record rather
+// than hardcoded: kickstart re-execs that exact path, so the new binary must
+// land there or the restart below keeps running the stale build.
+const target = deployTarget();
 await $`bun run build`;
 await $`bun run build:board`;
-// The plist's ProgramArguments[0] is this exact path; kickstart re-execs it
-// without re-reading anything else, so the binary must land here (not just
-// anywhere on PATH) for the restart below to pick up the new build.
-await $`mkdir -p ${binDir}`;
+await $`mkdir -p ${dirname(target)}`;
 // install truncates-in-place, which can ETXTBSY on macOS against the currently-running
 // binary; installing to a temp path in the same dir and renaming over it is atomic and
 // leaves the running process holding its old inode.
