@@ -8,10 +8,11 @@ export interface PlatformSettings {
   tlds: string[];
   legacyPrefixes: string[];
   secrets: { cfApiToken?: string; cfZoneId?: string };
+  railway: { projectId: string; environmentId: string } | null;
 }
 
 const DEFAULTS: PlatformSettings = {
-  publicDomain: null, tlds: ["localhost"], legacyPrefixes: [], secrets: {},
+  publicDomain: null, tlds: ["localhost"], legacyPrefixes: [], secrets: {}, railway: null,
 };
 
 const STORE_KEY = "deck.platform";

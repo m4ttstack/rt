@@ -30,6 +30,7 @@ import { rtCommand, type RtResponse } from "@mattstack/rt-client";
 export interface DeckCfSecrets {
   cfApiToken?: string;
   cfZoneId?: string;
+  railwayToken?: string;
 }
 
 interface RawDeckSecretsData extends DeckCfSecrets {
@@ -126,5 +127,5 @@ export async function readDeckSecrets(deps: RtSecretsDeps = {}): Promise<DeckSec
     return { ok: false, message: UPDATE_RT_MESSAGE };
   }
 
-  return { ok: true, cfApiToken: data.cfApiToken, cfZoneId: data.cfZoneId };
+  return { ok: true, cfApiToken: data.cfApiToken, cfZoneId: data.cfZoneId, railwayToken: data.railwayToken };
 }
