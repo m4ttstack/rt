@@ -39,8 +39,8 @@ export class FakeCfDns implements CfDns {
   ssl: ZoneSslMode = "full";
   canEdit = true;
   calls: string[] = [];
-  async zoneSslMode() { return this.ssl; }
-  async tokenCanEditDns() { return this.canEdit; }
+  async zoneSslMode() { this.calls.push("sslmode"); return this.ssl; }
+  async tokenCanEditDns() { this.calls.push("canedit"); return this.canEdit; }
   async writeTxt(n: string, v: string) { this.calls.push(`txt:${n}`); this.txt.set(n, v); }
   async deleteTxt(n: string) { this.calls.push(`delTxt:${n}`); this.txt.delete(n); }
   async writeProxiedCname(h: string, t: string) { this.calls.push(`cname:${h}`); this.cname.set(h, { target: t, proxied: true }); }

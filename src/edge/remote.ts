@@ -76,6 +76,14 @@ export async function enableRemote(name: string, deps: EnableDeps): Promise<Flow
   const record = getRecord(name);
   if (!record) return { status: 404, body: { error: "unknown app" } };
 
+  // Local-only gates first, with passing dns placeholders -- avoids touching
+  // the dns driver until the record/domain/oauth/token checks already pass.
+  const localOnly = remoteRefuseChecks({
+    record, publicDomain: deps.publicDomain, railway: deps.railwayConf, oauth: deps.oauth,
+    hasRailwayToken: deps.hasRailwayToken, cfCanEditDns: true, zoneSslMode: "full",
+  });
+  if (localOnly) return localOnly;
+
   const refusal = remoteRefuseChecks({
     record, publicDomain: deps.publicDomain, railway: deps.railwayConf, oauth: deps.oauth,
     hasRailwayToken: deps.hasRailwayToken, cfCanEditDns: await deps.dns.tokenCanEditDns(),
@@ -84,7 +92,7 @@ export async function enableRemote(name: string, deps: EnableDeps): Promise<Flow
   if (refusal) return refusal;
 
   const host = `${name}.${deps.publicDomain}`;
-  putRecord({ ...record, remote: { target: "railway", serviceId: "", customDomain: host, status: "deploying" } });
+  putRecord({ ...record, remote: { ...record.remote, target: "railway", serviceId: record.remote?.serviceId ?? "", customDomain: host, status: "deploying" } });
 
   const push = await pushRemote(name, deps); // ensureService + configure + up + provenance
   if (push.status !== 200) return push;
