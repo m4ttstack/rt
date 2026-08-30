@@ -35,6 +35,8 @@ usage:
   deck domain <domain>                     bind your own domain (cloudflared)
   deck migrate                             adopt existing plists + routes
   deck migrate --convert                   relabel adopted legacy apps to com.mattstack.deck.<name>
+  deck remote <name> on|off                serve <name> publicly from Railway (on) or the tunnel (off)
+  deck push <name>                         redeploy a remote app from the local checkout
   deck serve | setup | uninstall | update  platform lifecycle
   deck version`;
 
@@ -299,6 +301,25 @@ export async function runCommand(
         if (status === 428) { io.err(`One step first: run \`${body.command}\`, then re-run this.`); return 1; }
         if (status !== 200) { io.err(body.error ?? `failed (${status})`); return 1; }
         io.out(`bound ${body.domain} — every published app is now https://<name>.${body.domain}`);
+        return 0;
+      }
+      case "remote": {
+        const [app, onOff] = rest;
+        if (!app || (onOff !== "on" && onOff !== "off")) { io.err(USAGE); return 2; }
+        const { status, body } = await apiJson(`/api/v1/apps/${app}/remote`, { method: "POST", body: JSON.stringify({ enabled: onOff === "on" }) });
+        if (status === 428) { io.err("Railway needs a token... store with: rt secrets set deck railwayToken"); return 1; }
+        if (status !== 200) { io.err(body.error ?? `failed (${status})`); return 1; }
+        if (onOff === "off") { io.out(`${app} back on the tunnel (public: tunnel)`); return 0; }
+        io.out(`${app} now served remotely: ${body.url} (cutover: ${body.cutover})`);
+        return 0;
+      }
+      case "push": {
+        const [app] = rest;
+        if (!app) { io.err(USAGE); return 2; }
+        const { status, body } = await apiJson(`/api/v1/apps/${app}/push`, { method: "POST" });
+        if (status !== 200) { io.err(body.error ?? `failed (${status})`); return 1; }
+        const lp = body.lastPush;
+        io.out(`pushed ${app} @ ${lp.sha}${lp.dirty ? " (dirty)" : ""}`);
         return 0;
       }
       case "migrate": {
