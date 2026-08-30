@@ -1,4 +1,5 @@
 import type { RailwayDriver } from "../../src/edge/railway.ts";
+import type { CfDns, ZoneSslMode } from "../../src/edge/cf-dns.ts";
 
 export class FakeRailwayDriver implements RailwayDriver {
   services = new Map<string, { name: string }>();
@@ -28,4 +29,18 @@ export class FakeRailwayDriver implements RailwayDriver {
   async removeCustomDomain(_id: string, host: string) { this.calls.push(`removeDomain:${host}`); this.domains.delete(host); }
   async deleteService(id: string) { this.calls.push(`deleteService:${id}`); this.services.delete(id); }
   setVerified(host: string, s: { verified: boolean; proxyDetected: boolean }) { this.status.set(host, s); }
+}
+
+export class FakeCfDns implements CfDns {
+  txt = new Map<string, string>();
+  cname = new Map<string, { target: string; proxied: boolean }>();
+  ssl: ZoneSslMode = "full";
+  canEdit = true;
+  calls: string[] = [];
+  async zoneSslMode() { return this.ssl; }
+  async tokenCanEditDns() { return this.canEdit; }
+  async writeTxt(n: string, v: string) { this.calls.push(`txt:${n}`); this.txt.set(n, v); }
+  async deleteTxt(n: string) { this.calls.push(`delTxt:${n}`); this.txt.delete(n); }
+  async writeProxiedCname(h: string, t: string) { this.calls.push(`cname:${h}`); this.cname.set(h, { target: t, proxied: true }); }
+  async deleteHostRecords(h: string) { this.calls.push(`delCname:${h}`); this.cname.delete(h); }
 }
