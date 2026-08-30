@@ -30,12 +30,6 @@ interface CfDnsRecord {
   [key: string]: unknown;
 }
 
-interface CfTokenVerifyResult {
-  id: string;
-  status: string;
-  [key: string]: unknown;
-}
-
 export class CfDnsApi implements CfDns {
   private zoneId: string;
   private token: string;
@@ -75,8 +69,15 @@ export class CfDnsApi implements CfDns {
   }
 
   async tokenCanEditDns(): Promise<boolean> {
-    const result = await this.req<CfTokenVerifyResult>("GET", `${BASE}/user/tokens/verify`);
-    return result.status === "active";
+    // An Access-scoped token can be `status: "active"` on /user/tokens/verify
+    // yet still fail a dns_records read -- the only reliable signal is to
+    // probe the real DNS read the token would need for writeTxt/writeProxiedCname.
+    try {
+      await this.req("GET", `${BASE}/zones/${this.zoneId}/dns_records?per_page=1`);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   async writeTxt(name: string, value: string): Promise<void> {
