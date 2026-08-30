@@ -6,3 +6,5 @@ dist/
 test/.captures/
 data/settings.json
 .superpowers/brainstorm/.last-token
+.env
+.env.*
