@@ -41,20 +41,61 @@ Pages static target, multi-region, deck-remote, public-origin failover,
 
 ## The app contract
 
-No manifest changes. Remote consumes what the app already declares:
+No manifest changes. Remote consumes what the app already declares (the
+manifest model shipped on main: `commands.start` is the supervised service,
+every other `commands` key is a local action command, and `env` is the service
+environment — `src/registry/deck-manifest.ts`):
 
-- **Build/start** come from the manifest's default `commands` (`commands.build`,
-  `commands.start`), never an `altConfig` overlay — overlays stay local-only in
-  v1.
-- **Env** comes from `record.env`, which `deck` already merges with `PORT` into
-  the supervised plist (`src/api/register.ts`). Mirroring `record.env` to the
-  remote service is what makes "the same app moves unmodified" true.
+- **Start** is the supervised `commands.start` (stored as the record's
+  `command`). It is the Railway start command too, so the same app runs
+  unchanged. Never an `altConfig` overlay — overlays stay local-only in v1.
+- **Build** is `commands.build` when the app declares it, else nixpacks
+  auto-detect. Deck NEVER runs the local `deploy` action command on Railway:
+  `deploy` means "rebuild + restart the local service" (see the next section),
+  which is meaningless on a host that builds and runs the app itself.
+- **Env** is manifest-first now: `manifest.env → record.env`, which `specFor`
+  merges with `PORT` into the supervised plist (`src/api/register.ts`,
+  `src/api/register-manifest.ts`). Remote mirrors the same `record.env` (plus
+  `PORT`) onto the Railway service, which is what makes "the same app moves
+  unmodified" true.
+- **Upload cwd** is `record.sourceDirectory ?? record.workingDirectory`,
+  matching how the command route resolves an action command's cwd
+  (`src/api/server.ts`). Ordinary apps set only `workingDirectory`.
 - A v1 candidate is a **supervised** record: it has `commands.start` and, being
-  deck-supervised, already honors `$PORT` (deck sets `PORT` in every plist —
-  `src/api/register.ts`, `src/registry/convert.ts`, `src/registry/bootstrap.ts`).
+  deck-supervised, already honors `$PORT` (deck sets `PORT` in every plist).
   A port-only `deck add --port` app and an `external` record have no start
   command; the toggle refuses them with **"no start command, cannot push"**.
-  The docs still name `$PORT` so a hand-written manifest author knows why.
+  deck itself is never a candidate: its manifest declares only a `deploy` action
+  command and no serve shape (`attachSource` in `src/api/register-manifest.ts`),
+  so remote's supervised-record check excludes it. The docs still name `$PORT`
+  so a hand-written manifest author knows why.
+
+## Relationship to local build/deploy (action commands)
+
+Every app's manifest already turns its non-`start` `commands` into **local
+action buttons** on the board (`build`, `deploy`, …): the board's `CommandsCell`
+renders one button per command (`core/board/AppsTable.tsx`), and
+`POST /api/v1/apps/:name/commands/:cmd` spawns the shell string in the app's
+directory, streamed to the app log, dev-mode gated
+(`src/services/command-runner.ts`). These run **on the laptop**. `deploy` is the
+local "rebuild + restart the local service" button; deck's own row has exactly
+one, `deploy` (`bun run deploy` = rebuild the binary + self-restart).
+
+Push-to-remote is a **separate platform capability**, not another action
+command:
+
+- `deck push` deploys the app to **Railway**; the local `deploy` button
+  rebuilds + restarts the **local** service. Different destinations, both stay.
+- `deck remote` / `deck push` are **platform verbs** (like `publish` / `domain`),
+  so they are NOT dev-mode gated and are declared in no manifest — deck
+  orchestrates provisioning, DNS, and Access, which is not a shell string an app
+  could carry.
+- On the board they render as a distinct **Remote** control group (toggle +
+  Push), labeled to read unmistakably as Railway and kept clear of the manifest
+  action buttons, so "deploy" (local) and "push" (Railway) are never confused.
+- If an app happens to name a manifest command `push` or `remote`, it still gets
+  that as a local action button; the platform Remote controls are separate and
+  win the UI copy (the button reads "Push to Railway").
 
 ## Target model (Railway)
 
@@ -82,17 +123,18 @@ per-app projects, and there is one place for billing and observability.
 
 `deck push` uploads the app's own checkout and lets Railway build it:
 
-- **`railway up`** from the app's `workingDirectory`. The upload respects
-  `.gitignore` (plus `.railwayignore` if present) — `node_modules`, `dist`,
-  logs, `.env` never ship. If an **untracked `.env`-shaped file** would be
-  uploaded, push **refuses** rather than leak it.
-- **Builder = nixpacks auto-detect.** v1 does not let apps configure the
-  builder. If detection fails, the push fails **loudly**: the Railway build log
-  is surfaced as a `SyncIssue` on the app row, the same channel Cloudflare
-  failures already use (`src/registry/records.ts` `addIssue`).
-- **Build/start injected from the manifest** into the service config via the
-  Railway API — the app carries no `railway.json` / `Dockerfile` / nixpacks
-  file.
+- **`railway up`** from `record.sourceDirectory ?? record.workingDirectory`.
+  The upload respects `.gitignore` (plus `.railwayignore` if present) —
+  `node_modules`, `dist`, logs, `.env` never ship. If an **untracked
+  `.env`-shaped file** would be uploaded, push **refuses** rather than leak it.
+- **Builder = nixpacks auto-detect**, with `commands.build` fed as the explicit
+  build command when the app declares one. v1 does not let apps configure the
+  builder further. If detection/build fails, the push fails **loudly**: the
+  Railway build log is surfaced as a `SyncIssue` on the app row, the same
+  channel Cloudflare failures already use (`src/registry/records.ts` `addIssue`).
+- **Start injected from the manifest** (`commands.start`) into the service
+  config via the Railway API — the app carries no `railway.json` / `Dockerfile`
+  / nixpacks file. The local `deploy` command is never sent.
 - **`PORT` set explicitly** on the service to the record's local port (parity
   with local), and the custom domain's target port set to the same value. Never
   rely on Railway port auto-detect.
@@ -245,10 +287,13 @@ rewrite them — no legacy shim (house rule).
   push → TXT → verify → CNAME; `off` = flip-back).
 - `deck push <app>` — redeploy (re-run `railway up`).
 
-**Board**: a Remote toggle and a Push button on the app row, with
-`deploying`/`verifying`/`live`/`error` state and the live URL + last-push sha
-surfaced the way restart state already is. Failures reuse the per-record
-`SyncIssue` channel.
+**Board**: a distinct **Remote** control group (a toggle + a "Push to Railway"
+button) on the app row, separate from the manifest action buttons `CommandsCell`
+already renders (`core/board/AppsTable.tsx`) so local `deploy` and remote push
+never blur. It shows `deploying`/`verifying`/`live`/`error` state and the live
+URL + last-push sha the way restart state already is, and — unlike the action
+buttons — is **not** dev-mode gated (it is a platform control, like publish).
+Failures reuse the per-record `SyncIssue` channel.
 
 **Reconcile**: the `verifying → live` transition is driven by the existing
 reconcile tick (`core/reconcile.ts` / `src/api/tld-reconcile.ts`). Only records

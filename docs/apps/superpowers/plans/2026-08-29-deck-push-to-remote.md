@@ -18,7 +18,8 @@ Every task's requirements implicitly include these (verbatim from the spec):
 - **Access-gated only.** Remote refuses a password-gated app: the gateway (`core/gateway.ts`) is out of the path once the origin is Railway.
 - **Zone SSL/TLS mode must be `full` (NOT `strict`).** Deck checks and refuses `zone-ssl-mode-full-required`; it never mutates the zone.
 - **First-level subdomain only.** `app.<publicDomain>` must be first-level; refuse if `publicDomain` is itself a subdomain.
-- **No manifest changes.** Build/start come from the manifest default `commands` (never an `altConfig`); env is `record.env`, re-pushed on every `deck push` so remote cannot drift; deck classifies no key as secret.
+- **No manifest changes.** Start comes from `commands.start`; build from `commands.build` if declared, else nixpacks auto-detect; the local `deploy` action command is NEVER sent to Railway (it rebuilds+restarts the local service). Env is manifest-first (`manifest.env → record.env`), re-pushed on every `deck push` so remote cannot drift; deck classifies no key as secret.
+- **Local build/deploy vs remote push.** Manifest non-`start` commands (`build`, `deploy`, …) are LOCAL action buttons (`CommandsCell`, `POST …/commands/:cmd`, dev-mode gated). `deck remote`/`deck push` are separate platform verbs (not dev-gated, not in any manifest). Both stay; the board keeps them visually distinct.
 - **`$PORT` set explicitly** on the service to the record's local port; the custom domain's target port is the same value. Never rely on Railway port auto-detect.
 - **No browser login.** One Railway API token in deck-secrets drives both the API and `railway up`. A missing token is a 428 `railway-token-required`.
 - **Let's Encrypt rate limit (5 duplicate certs/domain/week).** Idempotent resume REUSES an existing custom domain, never delete-and-re-add. Unit suite uses fakes only; any real-Railway e2e counts its flip cycles.
@@ -624,7 +625,7 @@ export interface PushDeps {
 export async function pushRemote(name: string, deps: PushDeps): Promise<FlowResult> {
   const record = getRecord(name);
   if (!record?.remote) return { status: 404, body: { error: "not in remote mode" } };
-  const dir = record.workingDirectory!;
+  const dir = record.sourceDirectory ?? record.workingDirectory!; // matches the command route's cwd
   if (deps.hasUntrackedEnv(dir)) return { status: 400, body: { error: "untracked .env would upload; add it to .gitignore first" } };
 
   const { serviceId } = await deps.railway.ensureService(`deck-${name}`, { projectId: deps.projectId, environmentId: deps.environmentId });
@@ -1373,7 +1374,7 @@ export const pushRemote = (name: string) => postJson(`/api/v1/apps/${name}/push`
 
 - [ ] **Step 2: Write the failing DOM test** in `test/dom/` against fixture data (see `test/dom/rig.ts`): a row whose `remote.status === "live"` renders a "public: railway" badge and a Push button; a non-remote row renders a Remote toggle in the drawer. Run `bun run test:dom` → FAIL.
 
-- [ ] **Step 3: Render the controls.** In the app drawer (beside the existing publish/access controls), add a Remote toggle bound to `setRemote`, disabled with a tooltip when the app is password-gated (`hasPassword && oauth.mode === "off"`), reflecting `remote.status` (`deploying`/`verifying`/`live`/`error`). On the row, show `public: railway` when `publicOrigin === "railway"` and a Push button when `remote` is non-null. Follow the existing optimistic-update pattern (`core/board/optimistic.tsx`).
+- [ ] **Step 3: Render the controls.** In the app drawer (beside the existing publish/access controls), add a **Remote** group bound to `setRemote`, disabled with a tooltip when the app is password-gated (`hasPassword && oauth.mode === "off"`), reflecting `remote.status` (`deploying`/`verifying`/`live`/`error`). Keep it visually separate from the manifest action buttons `CommandsCell` renders (build/deploy) so the local `deploy` button and the remote push never blur; label the remote deploy button **"Push to Railway"** (not "deploy"). On the row, show `public: railway` when `publicOrigin === "railway"` and the Push button when `remote` is non-null. Unlike `CommandsCell`, the Remote group is NOT dev-mode gated (platform control). Follow the existing optimistic-update pattern (`core/board/optimistic.tsx`).
 
 - [ ] **Step 4: Rebuild the board.**
 
