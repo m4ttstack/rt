@@ -30,7 +30,7 @@
     "deploy": "bun run scripts/deploy.ts"
   },
   "dependencies": {
-    "@mattstack/rt-client": "^0.3.0",
+    "@mattstack/rt-client": "^0.10.1",
     "@mattstack/tui-kit": "file:../tui-kit",
     "react": "19.2.8",
     "react-dom": "19.2.8"
