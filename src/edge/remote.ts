@@ -1,6 +1,7 @@
 import { getRecord, putRecord, addIssue, clearIssues, type AppRecord } from "../registry/records.ts";
 import type { FlowResult } from "../api/register.ts";
 import type { RailwayDriver } from "./railway.ts";
+import type { CfDns } from "./cf-dns.ts";
 
 export interface RefuseCtx {
   record: AppRecord;
@@ -58,4 +59,49 @@ export async function pushRemote(name: string, deps: PushDeps): Promise<FlowResu
   const prov = deps.provenance(dir);
   putRecord({ ...getRecord(name)!, remote: { ...getRecord(name)!.remote!, serviceId, lastPush: { ...prov, at: new Date().toISOString() } } });
   return { status: 200, body: { ok: true, lastPush: getRecord(name)!.remote!.lastPush } };
+}
+
+export interface EnableDeps extends PushDeps {
+  dns: CfDns;
+  publicDomain: string | null;
+  oauth: { mode: "off" | "emails" | "domains" };
+  hasRailwayToken: boolean;
+  railwayConf: { projectId: string; environmentId: string } | null;
+  pollBudgetMs: number;
+  sleep(ms: number): Promise<void>;
+  now(): number;
+}
+
+export async function enableRemote(name: string, deps: EnableDeps): Promise<FlowResult> {
+  const record = getRecord(name);
+  if (!record) return { status: 404, body: { error: "unknown app" } };
+
+  const refusal = remoteRefuseChecks({
+    record, publicDomain: deps.publicDomain, railway: deps.railwayConf, oauth: deps.oauth,
+    hasRailwayToken: deps.hasRailwayToken, cfCanEditDns: await deps.dns.tokenCanEditDns(),
+    zoneSslMode: await deps.dns.zoneSslMode(),
+  });
+  if (refusal) return refusal;
+
+  const host = `${name}.${deps.publicDomain}`;
+  putRecord({ ...record, remote: { target: "railway", serviceId: "", customDomain: host, status: "deploying" } });
+
+  const push = await pushRemote(name, deps); // ensureService + configure + up + provenance
+  if (push.status !== 200) return push;
+  const serviceId = getRecord(name)!.remote!.serviceId;
+
+  const dom = await deps.railway.ensureCustomDomain(serviceId, host, record.port);
+  await deps.dns.writeTxt(dom.txtName, dom.txtValue);
+  putRecord({ ...getRecord(name)!, remote: { ...getRecord(name)!.remote!, status: "verifying", cnameTarget: dom.cnameTarget } });
+
+  const deadline = deps.now() + deps.pollBudgetMs;
+  let cutover: "verified-first" | "cname-first" = "cname-first";
+  while (deps.now() < deadline) {
+    const s = await deps.railway.domainStatus(serviceId, host);
+    if (s.verified && s.proxyDetected) { cutover = "verified-first"; break; }
+    await deps.sleep(15000);
+  }
+  await deps.dns.writeProxiedCname(host, dom.cnameTarget); // the cutover -- always last
+  putRecord({ ...getRecord(name)!, remote: { ...getRecord(name)!.remote!, status: "live", cutover, url: `https://${host}` } });
+  return { status: 200, body: { ok: true, url: `https://${host}`, cutover } };
 }
