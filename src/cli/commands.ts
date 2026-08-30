@@ -1,5 +1,6 @@
 // src/cli/commands.ts
 import { apiJson } from "./client.ts";
+import { configInit } from "./config-init.ts";
 import pkg from "../../package.json";
 
 export const VERSION = pkg.version;
@@ -17,6 +18,10 @@ usage:
   deck url <name> [--public]               print its local url (or public url with --public)
   deck add <name> --port N                 route an app you run yourself
   deck add <name> --cmd "…" --dir PATH     register a supervised app
+  deck config init                         scaffold mattstack.deck.json in cwd
+  deck register [--dir PATH]               create/sync an app from its mattstack.deck.json
+  deck alt <app> <name|off>                activate a declared serve overlay, or return to base
+  deck cmd <app> <name>                    run a declared action command (dev mode only)
   deck remove <name> [--force]             unregister (registrar-owned; --force is the escape hatch)
   deck remove --managed                    unregister every app deck manages (installer's uninstall step)
   deck restart <name>                      kickstart its service
@@ -27,7 +32,6 @@ usage:
   deck password <name> [--clear]           password gate (prompts)
   deck access <name> off | emails a,b | domains c,d    google sign-in gate
   deck adopt <name> [--as NEW] [--managed-by ID] [--json]   claim a user app as a mattstack product
-  deck manifest refresh <name>             re-read the app's mattstack.json (name, icon)
   deck domain <domain>                     bind your own domain (cloudflared)
   deck migrate                             adopt existing plists + routes
   deck migrate --convert                   relabel adopted legacy apps to com.mattstack.deck.<name>
@@ -244,15 +248,39 @@ export async function runCommand(
           : `already adopted — ${host}`);
         return 0;
       }
-      case "manifest": {
-        const [sub, name] = rest;
-        if (sub !== "refresh" || !name) {
-          io.err("usage: deck manifest refresh <name>");
-          return 2;
-        }
-        const { status, body } = await apiJson(`/api/v1/apps/${name}/manifest/refresh`, { method: "POST" });
-        if (status >= 400) { io.err(body.error ?? "refresh failed"); return 1; }
-        io.out(`refreshed ${name}`);
+      case "config": {
+        const [sub] = rest;
+        if (sub !== "init") { io.err("usage: deck config init"); return 2; }
+        return configInit(process.cwd(), io);
+      }
+      case "register": {
+        const dir = flag(rest, "--dir") ?? process.cwd();
+        const { status, body } = await apiJson("/api/v1/apps/register", {
+          method: "POST", body: JSON.stringify({ dir }),
+        });
+        if (status !== 200) { io.err(body.error ?? `failed (${status})`); return 1; }
+        io.out(`registered ${body.record.name} on port ${body.record.port}`);
+        return 0;
+      }
+      case "alt": {
+        const [name, which] = rest;
+        if (!name || !which) { io.err(USAGE); return 2; }
+        const alt = which === "off" ? null : which;
+        const { status, body } = await apiJson(`/api/v1/apps/${name}/alt`, {
+          method: "POST", body: JSON.stringify({ alt }),
+        });
+        if (status !== 200) { io.err(body.error ?? `failed (${status})`); return 1; }
+        io.out(which === "off" ? `${name} back on its base config` : `${name} now on alt "${which}"`);
+        return 0;
+      }
+      case "cmd": {
+        const [app, name] = rest;
+        if (!app || !name) { io.err(USAGE); return 2; }
+        const { status, body } = await apiJson(`/api/v1/apps/${app}/commands/${name}`, { method: "POST" });
+        if (status === 404) { io.err(`no such command (is deck in dev mode?): ${app} ${name}`); return 1; }
+        if (status === 409) { io.err(`${app} is already running a command`); return 1; }
+        if (status !== 200) { io.err(body.error ?? `failed (${status})`); return 1; }
+        io.out(`started ${app} ${name} (run ${body.runId})`);
         return 0;
       }
       case "domain": {

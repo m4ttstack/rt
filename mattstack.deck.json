@@ -1,0 +1,10 @@
+{
+  "name": "deck",
+  "displayName": "Deck",
+  "description": "named https domains, supervision, and sharing for local apps",
+  "commands": {
+    "start": "bun run serve",
+    "build": "bun run build && bun run build:board",
+    "deploy": "bun run deploy"
+  }
+}

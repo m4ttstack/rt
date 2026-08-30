@@ -1,6 +1,6 @@
 import { mkdirSync } from "fs";
 import { join } from "path";
-import { readRoutes, readServices, bareName, MATTSTACK_TLD } from "../../core/discover.ts";
+import { readRoutes, readServices, bareName, MATTSTACK_TLD, type PortlessRoute } from "../../core/discover.ts";
 import { reconcileMattstackTld } from "./tld-reconcile.ts";
 import { getPlatformSettings } from "./platform-settings.ts";
 import {
@@ -32,6 +32,8 @@ export interface RegisterInput {
   env?: Record<string, string>;
   /** For services someone runs themselves: route only, no launchd supervision. */
   staticPort?: number;
+  /** A declared port for a supervised service (manifest register); wins over allocation. */
+  port?: number;
   /** Record-only creation: no driver calls. Used by bootstrap catch-up and migrate. */
   adopt?: boolean;
 }
@@ -104,6 +106,21 @@ async function runDriver(
   }
 }
 
+/**
+ * True when `port` is already held by another record, a portless route, or a
+ * launchd service. Used only for a manifest-declared SERVICE port
+ * (`registerApp`'s `input.port`, `editApp`'s `patch.port`): `allocatePort`
+ * never sees a caller-declared port, so nothing else guards against handing
+ * out a port a real process is already bound to.
+ */
+async function portCollides(port: number, excludeName: string, routes: PortlessRoute[]): Promise<boolean> {
+  if (listRecords().some((r) => r.name !== excludeName && r.port === port)) return true;
+  const tlds = getPlatformSettings().tlds;
+  if (routes.some((r) => bareName(r.hostname, tlds) !== excludeName && r.port === port)) return true;
+  const services = await readServices();
+  return services.some((s) => s.port === port);
+}
+
 export async function registerApp(input: RegisterInput, drivers: Drivers): Promise<FlowResult> {
   const name = input.name?.trim() ?? "";
   if (!NAME_RE.test(name)) return { status: 400, body: { error: "bad name" } };
@@ -122,11 +139,19 @@ export async function registerApp(input: RegisterInput, drivers: Drivers): Promi
     (!input.adopt && routes.some((r) => bareName(r.hostname, getPlatformSettings().tlds) === name));
   if (taken) return { status: 409, body: { error: "name taken", name } };
 
-  let port = input.staticPort;
+  let port = input.staticPort ?? input.port;
   if (port === undefined) {
     const allocated = allocatePort(listRecords(), routes, await readServices());
     if (allocated === null) return { status: 507, body: { error: "port range exhausted" } };
     port = allocated;
+  } else if (input.staticPort === undefined) {
+    // A manifest-declared SERVICE port bypasses allocatePort's conflict
+    // detection entirely, so it needs its own collision check here. staticPort
+    // (external apps routing to something the user already runs) is exempt --
+    // that's an intentional route onto someone else's process.
+    if (await portCollides(port, name, routes)) {
+      return { status: 409, body: { error: "port in use", port } };
+    }
   }
 
   const record: AppRecord = {
@@ -269,6 +294,14 @@ export async function editApp(
   }
   if (patch.port !== undefined && (!Number.isInteger(patch.port) || patch.port < 1 || patch.port > 65535)) {
     return { status: 400, body: { error: "bad port" } };
+  }
+  if (patch.port !== undefined && patch.port !== record.port && record.kind === "service") {
+    // External (staticPort-originated) records route to a port the user
+    // already owns and runs themselves -- same exemption registerApp gives
+    // staticPort. Only a supervised service's declared port needs guarding.
+    if (await portCollides(patch.port, record.name, readRoutes())) {
+      return { status: 409, body: { error: "port in use", port: patch.port } };
+    }
   }
 
   // Tear down the old shape, write the new record, stand the new shape up.
