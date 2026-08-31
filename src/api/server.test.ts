@@ -18,6 +18,7 @@ const { startApi } = await import("./server.ts");
 const { FakeServiceManager } = await import("../services/fake.ts");
 const { FakeEdgeProxy } = await import("../edge/portless.ts");
 const { FakeTunnelDriver } = await import("../edge/tunnel.ts");
+const { FakeCfDns } = await import("../../test/fixture/remote.ts");
 const { reloadRegistry, getRecord } = await import("../registry/records.ts");
 const { reloadPlatformSettings } = await import("./platform-settings.ts");
 
@@ -78,7 +79,8 @@ beforeAll(() => {
     manager: new FakeServiceManager(), edge: new FakeEdgeProxy(),
     port: DOMAIN_PORT, canaryPort: DOMAIN_PORT + 1,
     freshness: () => "unknown", autoHeal: () => null, onRouteWrite: () => {},
-    tunnel: new FakeTunnelDriver(), cloudflaredDir: domainCfDir,
+    tunnel: new FakeTunnelDriver(domainCfDir), cloudflaredDir: domainCfDir,
+    dns: new FakeCfDns(), resolveCloudflared: () => "/opt/homebrew/bin/cloudflared",
   });
 
   cfServer = startApi({
@@ -411,21 +413,24 @@ test("POST /api/v1/migrate with convert:true skips a non-service (external) reco
   expect([...manager.installed.keys()].some((label) => label.includes("static-app"))).toBe(false);
 });
 
-test("domain bind flow: POST binds, GET reports the bound domain", async () => {
+test("domain flow: bind, show reports identity + edge, unbind clears", async () => {
   const domainApi = (path: string, init?: RequestInit) => fetch(`http://127.0.0.1:${DOMAIN_PORT}${path}`, init);
   const before = await (await domainApi("/api/v1/domain")).json();
-  expect(before.domain).toBeNull();
+  expect(before).toMatchObject({ domain: null, tunnel: null, edge: null });
 
-  writeFileSync(join(domainCfDir, "cert.pem"), "x"); // login evidence
-  const bind = await domainApi("/api/v1/domain/bind", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ domain: "example.dev" }),
-  });
+  writeFileSync(join(domainCfDir, "cert.pem"), "x");
+  const bind = await domainApi("/api/v1/domain/bind", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ domain: "example.dev" }) });
   expect(bind.status).toBe(200);
+  const shown = await (await domainApi("/api/v1/domain")).json();
+  expect(shown.domain).toBe("example.dev");
+  expect(shown.tunnel.name).toMatch(/^deck-edge-/);
+  expect(shown.edge.state).toBe("stopped"); // fake manager installs without a pid
 
-  const after = await (await domainApi("/api/v1/domain")).json();
-  expect(after.domain).toBe("example.dev");
+  const refused = await domainApi("/api/v1/domain/unbind", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
+  expect([200, 409]).toContain(refused.status); // 409 apps-will-go-offline when the suite has records; 200 otherwise
+  const unbind = await domainApi("/api/v1/domain/unbind", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ force: true }) });
+  expect(unbind.status).toBe(200);
+  expect((await (await domainApi("/api/v1/domain")).json()).domain).toBeNull();
 });
 
 test("DELETE tears down a route-only row through the edge driver instead of 404ing", async () => {

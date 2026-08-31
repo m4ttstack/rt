@@ -32,7 +32,9 @@ usage:
   deck password <name> [--clear]           password gate (prompts)
   deck access <name> off | emails a,b | domains c,d    google sign-in gate
   deck adopt <name> [--as NEW] [--managed-by ID] [--json]   claim a user app as a mattstack product
-  deck domain <domain>                     bind your own domain (cloudflared)
+  deck domain                              show the bound domain, tunnel identity and edge health
+  deck domain <domain> [--force]           bind your own domain (cloudflared wildcard tunnel + DNS)
+  deck domain unbind [--force]             tear the edge down (tunnel, DNS record, launchd service)
   deck migrate                             adopt existing plists + routes
   deck migrate --convert                   relabel adopted legacy apps to com.mattstack.deck.<name>
   deck remote <name> on|off                serve <name> publicly from Railway (on) or the tunnel (off)
@@ -287,21 +289,35 @@ export async function runCommand(
         return 0;
       }
       case "domain": {
-        const [domain] = rest;
-        if (!domain) { io.err(USAGE); return 2; }
-        // A Google sign-in gate needs a Cloudflare API token scoped to this
-        // zone (Access: Apps and Policies, Edit) -- but this CLI no longer
-        // collects or stores it. The rt daemon owns it now.
-        io.out(
-          "A Google sign-in gate needs a Cloudflare API token — store with: rt secrets set deck cfApiToken "
-            + "(and: rt secrets set deck cfZoneId) — interactive prompt; add --stdin when piping from a script",
-        );
-        const { status, body } = await apiJson("/api/v1/domain/bind", {
-          method: "POST", body: JSON.stringify({ domain }),
-        });
+        const force = rest.includes("--force");
+        const [arg] = rest.filter((a) => a !== "--force");
+        if (!arg) {
+          const { body } = await apiJson("/api/v1/domain");
+          if (!body.tunnel && !body.domain) { io.out("no edge bound. bind one with: deck domain <domain>"); return 0; }
+          io.out(`domain: ${body.domain ?? "(none: partial bind, run deck domain <domain> or deck domain unbind)"}`);
+          if (body.tunnel) io.out(`tunnel: ${body.tunnel.name} (${body.tunnel.uuid})`);
+          if (body.edge) io.out(`edge: ${body.edge.state} (${body.edge.detail})${body.edge.hint ? ` ... ${body.edge.hint}` : ""}`);
+          return 0;
+        }
+        if (arg === "unbind") {
+          const { status, body } = await apiJson("/api/v1/domain/unbind", { method: "POST", body: JSON.stringify({ force }) });
+          if (status === 409 && body.error === "apps-will-go-offline") {
+            io.err(`unbinding takes these apps offline: ${body.apps.join(", ")}`);
+            io.err("re-run with --force to confirm.");
+            return 1;
+          }
+          if (status === 409) { io.err(`${body.error}: ${(body.apps ?? []).join(", ")} (re-run with --force)`); return 1; }
+          if (status !== 200) { io.err(body.error ?? `failed (${status})`); return 1; }
+          io.out("unbound: the tunnel, its DNS record and launchd service are gone");
+          return 0;
+        }
+        io.out("DNS writes need a Cloudflare token with Zone.DNS:Edit: rt secrets set deck cfDnsToken (and: rt secrets set deck cfZoneId)");
+        const { status, body } = await apiJson("/api/v1/domain/bind", { method: "POST", body: JSON.stringify({ domain: arg, force }) });
         if (status === 428) { io.err(`One step first: run \`${body.command}\`, then re-run this.`); return 1; }
-        if (status !== 200) { io.err(body.error ?? `failed (${status})`); return 1; }
-        io.out(`bound ${body.domain} — every published app is now https://<name>.${body.domain}`);
+        if (status === 409) { io.err(`${body.error}: ${(body.apps ?? []).join(", ")} (re-run with --force to rebind anyway)`); return 1; }
+        if (status !== 200) { io.err(`${body.error ?? `failed (${status})`}${body.hint ? ` (${body.hint})` : ""}`); return 1; }
+        const connectors = body.connectors > 0 ? `${body.connectors} connector${body.connectors === 1 ? "" : "s"}` : "connector still starting, check deck domain in a moment";
+        io.out(`bound ${body.domain} via ${body.tunnel.name} (${connectors}) ... every published app is now https://<name>.${body.domain}`);
         return 0;
       }
       case "remote": {

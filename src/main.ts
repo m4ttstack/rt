@@ -6,6 +6,8 @@ import { writeApiInfo } from "./api/state.ts";
 import { LaunchdManager } from "./services/launchd.ts";
 import { PortlessCli } from "./edge/portless.ts";
 import { CloudflaredCli } from "./edge/tunnel.ts";
+import { CfDnsApi, type CfDns } from "./edge/cf-dns.ts";
+import { readDeckSecrets } from "./edge/rt-secrets.ts";
 import { startGateway } from "../core/gateway.ts";
 import {
   CANARY_PATH, checkProxyFreshness, startCanaryListener, type Freshness,
@@ -128,6 +130,15 @@ export function serve(): void {
   process.on("SIGINT", shutdown);
 }
 
+/** Best-effort DNS driver for the uninstall teardown: undefined when the deck
+    secrets carry no zone id and DNS-capable token, so unbindDomain skips the
+    DNS delete rather than fail the whole uninstall over it. */
+async function uninstallDns(): Promise<CfDns | undefined> {
+  const s = await readDeckSecrets();
+  const token = s.ok ? s.cfDnsToken ?? s.cfApiToken : undefined;
+  return s.ok && s.cfZoneId && token ? new CfDnsApi({ zoneId: s.cfZoneId, token }) : undefined;
+}
+
 const cmd = Bun.argv[2] ?? "serve";
 if (cmd === "serve") serve();
 else if (cmd === "setup") {
@@ -136,7 +147,7 @@ else if (cmd === "setup") {
   process.exit(await setup(drivers, { out: console.log, err: console.error }));
 } else if (cmd === "uninstall") {
   const { uninstall } = await import("./cli/setup.ts");
-  const drivers = { manager: new LaunchdManager(), edge: new PortlessCli() };
+  const drivers = { manager: new LaunchdManager(), edge: new PortlessCli(), tunnel: new CloudflaredCli(), dns: await uninstallDns() };
   const force = Bun.argv.includes("--force");
   process.exit(await uninstall(drivers, { out: console.log, err: console.error }, { force }));
 } else if (cmd === "update") {

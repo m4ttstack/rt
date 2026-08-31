@@ -3,6 +3,7 @@ import { readFileSync, rmSync } from "fs";
 import { basename, join } from "path";
 import { bootstrapSelf } from "../registry/bootstrap.ts";
 import { readProxyTlds } from "../edge/portless.ts";
+import { unbindDomain } from "../edge/domain.ts";
 import type { Drivers } from "../api/register.ts";
 import { listRecords, getRecord, deleteRecord } from "../registry/records.ts";
 import { stateDir, logsDir } from "../api/state.ts";
@@ -176,6 +177,15 @@ export async function uninstall(drivers: Drivers, io: Io, opts: { force: boolean
       }
     }
     deleteRecord(self.name);
+  }
+
+  if (drivers.tunnel) {
+    try {
+      const r = await unbindDomain({ tunnel: drivers.tunnel, manager: drivers.manager, dns: drivers.dns ?? null }, { force: true });
+      if (r.status === 200 && !(r.body as { alreadyUnbound?: boolean }).alreadyUnbound) io.out("edge unbound: tunnel, DNS record and launchd service removed");
+    } catch {
+      // best-effort teardown; uninstall must not get stuck on a driver failure
+    }
   }
 
   try {

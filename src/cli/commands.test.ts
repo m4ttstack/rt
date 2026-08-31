@@ -20,6 +20,7 @@ const { writeApiInfo } = await import("../api/state.ts");
 const { FakeServiceManager } = await import("../services/fake.ts");
 const { FakeEdgeProxy } = await import("../edge/portless.ts");
 const { FakeTunnelDriver } = await import("../edge/tunnel.ts");
+const { FakeCfDns } = await import("../../test/fixture/remote.ts");
 const { runCommand } = await import("./commands.ts");
 
 const PORT = 18971;
@@ -29,7 +30,9 @@ beforeAll(() => {
     manager: new FakeServiceManager(), edge: new FakeEdgeProxy(), tunnel: new FakeTunnelDriver(),
     // Scratch cloudflaredDir with no cert.pem: the domain verb's bind step
     // deterministically 428s here regardless of this machine's ~/.cloudflared.
-    cloudflaredDir: dir,
+    // dns + resolveCloudflared are explicit fakes too, so the 428 holds
+    // regardless of this machine's daemon and PATH.
+    cloudflaredDir: dir, dns: new FakeCfDns(), resolveCloudflared: () => "/opt/homebrew/bin/cloudflared",
     port: PORT, canaryPort: PORT + 1,
     freshness: () => "unknown", autoHeal: () => null, onRouteWrite: () => {},
     devMode: () => true,
@@ -126,9 +129,8 @@ test("domain verb no longer prompts for or persists a CF token; it points at rt 
   // what this test pins is the CLI's own behavior before the bind attempt.
   expect(await runCommand(["domain", "example.dev"], d, promptFn)).toBe(1);
   const out = d.lines.join("\n");
-  expect(out).toContain("rt secrets set deck cfApiToken");
-  expect(out).toContain("rt secrets set deck cfZoneId");
-  expect(out).toContain("--stdin");
+  expect(out).toContain("rt secrets set deck cfDnsToken");
+  expect(out).toContain("cfZoneId");
   const settingsRaw = await (await fetch(`http://127.0.0.1:${PORT}/api/v1/settings`)).text();
   expect(settingsRaw).not.toContain("hasCfToken");
 });
