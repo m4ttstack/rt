@@ -112,9 +112,8 @@ test('a DM room shows the pair as its title and wakes: all regardless of default
 test('the ⋯ menu offers Close for a channel, with no confirm', async () => {
   const onClose = vi.fn();
   renderWithProviders(
-    <PageBar
+    <RoomMenu
       room={{ room: 'build', memberCount: 3, unread: 0, mentions: 0 }}
-      buddies={[{ handle: 'fred', status: 'live' }]}
       onClose={onClose}
     />
   );

@@ -673,7 +673,7 @@ test('a closed room reached by link opens with a live composer and is listed onl
   expect(screen.queryByTestId('room-row-retro')).toBeNull();
 });
 
-test('closing the open room from the ⋯ menu lands on / and the first open room', async () => {
+test('closing the open room from the rail lands on / and the first open room', async () => {
   installFetchMock();
   const build = { room: 'build', memberCount: 1, unread: 0, mentions: 0 };
   fetchMock.mockImplementation((url: string) => {
@@ -698,8 +698,8 @@ test('closing the open room from the ⋯ menu lands on / and the first open room
       }}
     />
   );
-  await userEvent.click(screen.getByTestId('room-menu'));
-  await userEvent.click(await screen.findByTestId('room-menu-close'));
+  await userEvent.hover(screen.getByTestId('room-row-ghost'));
+  await userEvent.click(await screen.findByTestId('room-close-ghost'));
   expect(fetchMock).toHaveBeenCalledWith(
     '/api/chat/close',
     expect.objectContaining({

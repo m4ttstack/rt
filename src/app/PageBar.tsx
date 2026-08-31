@@ -87,8 +87,6 @@ export interface PageBarProps {
   /** The rail's sort, the artboard's `join order` select. */
   order?: RoomOrder;
   onOrderChange?: (order: RoomOrder) => void;
-  /** Closes the room from the ⋯ menu. */
-  onClose?: (room: string) => void;
 }
 
 function Dot({
@@ -211,7 +209,6 @@ export function PageBar({
   onAddAgents,
   order = 'join',
   onOrderChange,
-  onClose,
 }: PageBarProps) {
   const [expandAll, setExpandAll] = useExpandAll();
   const handleMarkRead = () => {
@@ -330,9 +327,6 @@ export function PageBar({
           />
         </ActionIcon>
       </Tooltip>
-      <Box ml={7.2} style={{ flex: 'none' }}>
-        <RoomMenu room={room} onClose={onClose} />
-      </Box>
     </>
   );
 

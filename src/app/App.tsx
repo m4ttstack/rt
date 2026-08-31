@@ -1063,7 +1063,6 @@ function ChatPage({
                 onOrderChange={setRoomOrder}
                 onMarkedRead={() => void refetchRooms()}
                 onAddAgents={panesAvailable ? addAgents : undefined}
-                onClose={onCloseRoom}
               />
             </PageShell.Header>
           )}
