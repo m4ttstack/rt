@@ -1,4 +1,4 @@
-import { ListGroup, Switch } from "@mattstack/tui-kit";
+import { ListGroup, Switch, Tooltip } from "@mattstack/tui-kit";
 import { useOptimistic, useTransition } from "react";
 
 /** Optimistic boolean for a Switch backed by a server mutation: the shown
@@ -48,4 +48,40 @@ export function OptimisticToggleRow({
 }) {
   const [shown, toggle] = useOptimisticToggle(checked, mutate);
   return <ListGroup.Toggle label={label} checked={shown} onChange={toggle} aria-label={ariaLabel} />;
+}
+
+/** Same shell as ListGroup.Toggle (label span + Switch, same `data-part`s so
+    it reads identically to app-side CSS and to `[data-part="listgroup-*"]`
+    queries) but with a `disabled` + tooltip escape hatch the kit row has no
+    prop for -- same "hand-roll the shell" move `.drawer-mode-row` already
+    makes for the radio rows the kit doesn't offer either. Only the Switch,
+    not the whole row, is tooltip-wrapped: wrapping the `<li>` itself in
+    Tooltip's `<span>` would nest a list item inside inline content. */
+export function OptimisticGatedToggleRow({
+  label,
+  checked,
+  mutate,
+  disabled,
+  disabledTip,
+  "aria-label": ariaLabel,
+}: {
+  label: string;
+  checked: boolean;
+  mutate: () => Promise<void>;
+  disabled?: boolean;
+  disabledTip?: string;
+  "aria-label": string;
+}) {
+  const [shown, toggle] = useOptimisticToggle(checked, mutate);
+  const control = (
+    <Switch checked={shown} onChange={disabled ? () => {} : toggle} disabled={disabled} aria-label={ariaLabel} />
+  );
+  return (
+    <li className="drawer-toggle-row" data-part="listgroup-toggle">
+      <span className="drawer-toggle-label" data-part="listgroup-label">
+        {label}
+      </span>
+      {disabled && disabledTip ? <Tooltip tip={disabledTip}>{control}</Tooltip> : control}
+    </li>
+  );
 }

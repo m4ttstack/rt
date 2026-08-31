@@ -31,3 +31,11 @@ export function apiPatch(path: string, payload: unknown): Promise<Response> {
 export function apiDelete(path: string): Promise<Response> {
   return fetch(path, { method: "DELETE" });
 }
+
+export function setRemote(name: string, enabled: boolean): Promise<Response> {
+  return apiPost(`/api/v1/apps/${name}/remote`, { enabled });
+}
+
+export function pushRemote(name: string): Promise<Response> {
+  return apiPost(`/api/v1/apps/${name}/push`, {});
+}

@@ -205,6 +205,23 @@ body {
   color: var(--accent);
 }
 
+/* The remote toggle row: same shell ListGroup.Toggle renders (label +
+   control), hand-rolled because the kit row has no `disabled` prop -- see
+   OptimisticGatedToggleRow. Matches ListGroup's own row padding/gap tokens
+   so it reads identically next to the "public" toggle above it. */
+.drawer-toggle-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-sm) var(--spacing-md);
+  list-style: none;
+}
+.drawer-toggle-label {
+  color: inherit;
+}
+
 /* Access "who" mode picker: two ListGroup rows acting as a radiogroup
    (checkmark-selected, not a chevron nav) -- ListGroup has no radio row of
    its own, so these replicate its row shell (kit tokens only). */

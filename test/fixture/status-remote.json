@@ -1,0 +1,152 @@
+{
+  "suffix": "mattstack",
+  "canRestart": true,
+  "canManage": true,
+  "up": 3,
+  "total": 3,
+  "nextPort": 11012,
+  "proxyStale": false,
+  "autoHeal": null,
+  "apps": [
+    {
+      "name": "atlas",
+      "displayTld": "mattstack",
+      "port": 11001,
+      "url": "https://atlas.localhost",
+      "publicUrl": "https://atlas.mattstack",
+      "health": {
+        "ok": true,
+        "status": 200,
+        "ms": 34
+      },
+      "service": {
+        "label": "com.mattstack.deck.atlas",
+        "short": "atlas",
+        "pid": 5123,
+        "lastExitStatus": 0,
+        "unmanaged": null,
+        "stderr": []
+      },
+      "published": true,
+      "hasPassword": true,
+      "isTunnel": false,
+      "override": null,
+      "publicFollowsOverride": false,
+      "preflight": null,
+      "self": false,
+      "managedBy": "mattstack",
+      "issues": [],
+      "record": {
+        "kind": "service",
+        "command": [
+          "bun",
+          "run",
+          "server.ts"
+        ],
+        "workingDirectory": "/Users/matt/Documents/GitHub/atlas"
+      },
+      "oauth": {
+        "mode": "emails",
+        "emails": [
+          "matt@example.com",
+          "guest@example.com"
+        ]
+      },
+      "publicOrigin": "tunnel",
+      "remote": null
+    },
+    {
+      "name": "railwayapp",
+      "displayTld": "mattstack",
+      "port": 11002,
+      "url": "https://railwayapp.localhost",
+      "publicUrl": "https://railwayapp.mattstack",
+      "health": {
+        "ok": true,
+        "status": 200,
+        "ms": 22
+      },
+      "service": {
+        "label": "com.mattstack.deck.railwayapp",
+        "short": "railwayapp",
+        "pid": 5200,
+        "lastExitStatus": 0,
+        "unmanaged": null,
+        "stderr": []
+      },
+      "published": true,
+      "hasPassword": false,
+      "isTunnel": false,
+      "override": null,
+      "publicFollowsOverride": false,
+      "preflight": null,
+      "self": false,
+      "managedBy": "user",
+      "issues": [],
+      "record": {
+        "kind": "service",
+        "command": [
+          "bun",
+          "run",
+          "server.ts"
+        ],
+        "workingDirectory": "/Users/matt/Documents/GitHub/railwayapp"
+      },
+      "oauth": {
+        "mode": "emails",
+        "emails": [
+          "matt@example.com"
+        ]
+      },
+      "publicOrigin": "railway",
+      "remote": {
+        "status": "live",
+        "url": "https://railwayapp.m4tthew.dev"
+      }
+    },
+    {
+      "name": "gatedapp",
+      "displayTld": "mattstack",
+      "port": 11003,
+      "url": "https://gatedapp.localhost",
+      "publicUrl": "https://gatedapp.mattstack",
+      "health": {
+        "ok": true,
+        "status": 200,
+        "ms": 41
+      },
+      "service": {
+        "label": "com.mattstack.deck.gatedapp",
+        "short": "gatedapp",
+        "pid": 5210,
+        "lastExitStatus": 0,
+        "unmanaged": null,
+        "stderr": []
+      },
+      "published": true,
+      "hasPassword": true,
+      "isTunnel": false,
+      "override": null,
+      "publicFollowsOverride": false,
+      "preflight": null,
+      "self": false,
+      "managedBy": "user",
+      "issues": [],
+      "record": {
+        "kind": "service",
+        "command": [
+          "bun",
+          "run",
+          "server.ts"
+        ],
+        "workingDirectory": "/Users/matt/Documents/GitHub/gatedapp"
+      },
+      "oauth": {
+        "mode": "off"
+      },
+      "publicOrigin": "tunnel",
+      "remote": null
+    }
+  ],
+  "orphans": []
+}

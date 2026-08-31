@@ -31,7 +31,7 @@ export function AppsTable({
   onOpenRow,
   registerChevron,
 }: { section: AppsSection; showHead: boolean; data: StatusData; board: BoardState } & DrawerRowProps) {
-  const { isRestarting, onRestart, onRunCommand, onPublish } = board;
+  const { isRestarting, onRestart, onRunCommand, onPublish, onPushRemote } = board;
   return (
     <Table>
       {showHead && (
@@ -44,6 +44,10 @@ export function AppsTable({
               table layout, per board-composite.html's own gap treatment. */}
           <Table.HeadCell className="col-gap">public</Table.HeadCell>
           <Table.HeadCell />
+          <Table.HeadCell />
+          {/* Its own blank header cell, distinct from the manifest commands
+              column just before it -- a remote push is never a manifest
+              action-command, so it never shares that cell. */}
           <Table.HeadCell />
           <Table.HeadCell />
         </Table.Head>
@@ -79,6 +83,9 @@ export function AppsTable({
               </Table.Cell>
               <Table.Cell>
                 <CommandsCell row={row} onRunCommand={onRunCommand} />
+              </Table.Cell>
+              <Table.Cell>
+                <RemotePushCell row={row} data={data} onPushRemote={onPushRemote} />
               </Table.Cell>
               <Table.Cell>
                 <ChevronCell row={row} registerRef={(el) => registerChevron(row.name, el)} />
@@ -250,6 +257,21 @@ function ServiceCell({ row }: { row: Row }) {
   return <span className="muted">stopped</span>;
 }
 
+/** Marks a row already serving public traffic straight off Railway rather
+    than through the cloudflared tunnel -- shown regardless of `canManage` (a
+    read-only fact about how the row is served, not a control). */
+function PublicOriginTag({ row }: { row: Row }) {
+  if (row.publicOrigin !== "railway") return null;
+  const tip = "serving public traffic directly from Railway, not the tunnel";
+  return (
+    <Tooltip className="cell-tag" tip={tip}>
+      <Chip uppercase aria-label={tip}>
+        public: railway
+      </Chip>
+    </Tooltip>
+  );
+}
+
 function PublishCell({
   row,
   data,
@@ -259,12 +281,48 @@ function PublishCell({
   data: StatusData;
   onPublish: (row: Row) => Promise<void>;
 }) {
-  if (!(data.canManage && row.port != null)) return null;
+  const tag = <PublicOriginTag row={row} />;
+  if (!(data.canManage && row.port != null)) return tag;
   const label = row.published ? `make ${row.name} private` : `publish ${row.name}`;
   const tip = row.published ? "public — click to make private" : "private — click to publish";
   return (
-    <Tooltip tip={tip}>
-      <OptimisticSwitch checked={row.published} mutate={() => onPublish(row)} aria-label={label} />
+    <>
+      {tag}
+      <Tooltip tip={tip}>
+        <OptimisticSwitch checked={row.published} mutate={() => onPublish(row)} aria-label={label} />
+      </Tooltip>
+    </>
+  );
+}
+
+/** A distinct cell/column from CommandsCell's manifest action buttons -- see
+    the header comment above it -- so "deploy" (local) and "Push to Railway"
+    (remote) never sit in the same cluster of buttons. Gated on `canManage`
+    like Publish/Restart: pushing is a local-only control, never exposed
+    through a public tunnel host. */
+function RemotePushCell({
+  row,
+  data,
+  onPushRemote,
+}: {
+  row: Row;
+  data: StatusData;
+  onPushRemote: (row: Row) => void;
+}) {
+  if (!(data.canManage && row.remote != null)) return null;
+  const remote = row.remote!;
+  const busy = remote.status === "deploying" || remote.status === "verifying";
+  return (
+    <Tooltip tip={`remote: ${remote.status}`}>
+      <Button
+        variant="subtle"
+        size="sm"
+        disabled={busy}
+        aria-label={`push ${row.name} to Railway`}
+        onClick={() => onPushRemote(row)}
+      >
+        Push to Railway
+      </Button>
     </Tooltip>
   );
 }

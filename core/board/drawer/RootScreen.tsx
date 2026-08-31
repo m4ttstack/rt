@@ -3,7 +3,7 @@
 // (DevPortScreen.tsx), access (AccessScreens.tsx), logs (LogsScreen.tsx),
 // and edit (EditScreen.tsx).
 import { Alert, ICONS, ListGroup, StatusDot, type DrawerScreen } from "@mattstack/tui-kit";
-import { OptimisticToggleRow } from "../optimistic.tsx";
+import { OptimisticGatedToggleRow, OptimisticToggleRow } from "../optimistic.tsx";
 import { servicePid } from "../AppsTable.tsx";
 import { type Row, type StatusData, tunnelDomain } from "../logic.ts";
 import type { BoardState } from "../useBoardState.ts";
@@ -129,6 +129,30 @@ function accessValue(row: Row): string {
   return parts.length ? parts.join(" · ") : "open";
 }
 
+function remoteStatusText(status: NonNullable<Row["remote"]>["status"]): string {
+  if (status === "deploying") return "deploying...";
+  if (status === "verifying") return "verifying...";
+  if (status === "live") return "live";
+  return "error";
+}
+
+function remoteFooter(row: Row): string {
+  return row.remote
+    ? `serving public traffic from Railway (${remoteStatusText(row.remote.status)})`
+    : "off, this app is only reachable through the local tunnel";
+}
+
+// Only enabling remote requires a sign-in gate (the server's own refuse
+// check applies to `{enabled:true}` only) -- disabling a row that is
+// already remote must stay reachable even if oauth was since turned off, or
+// there would be no way back out of that state from the board.
+function remoteToggleTip(row: Row): string | undefined {
+  if (row.remote == null && row.hasPassword && row.oauth.mode === "off") {
+    return "add sign-in access before pushing this app to Railway (a password alone does not gate the public origin)";
+  }
+  return undefined;
+}
+
 export function buildAppRoot(
   row: Row,
   nav: Nav,
@@ -159,6 +183,30 @@ export function buildAppRoot(
             aria-label={row.published ? `make ${row.name} private` : `publish ${row.name}`}
           />
         </ListGroup>
+        {/* A distinct group from "public" above -- remote is a platform
+            control like publish (not dev-mode gated), but pushing to
+            Railway and toggling the local tunnel's publish flag are
+            different axes and stay visually separate rows/groups. */}
+        <ListGroup footer={remoteFooter(row)}>
+          <OptimisticGatedToggleRow
+            label="remote"
+            checked={row.remote != null}
+            mutate={() => board.onSetRemote(row, row.remote == null)}
+            disabled={remoteToggleTip(row) != null}
+            disabledTip={remoteToggleTip(row)}
+            aria-label={row.remote != null ? `turn off remote for ${row.name}` : `push ${row.name} to Railway`}
+          />
+          {row.remote && <ListGroup.Fact label="status" value={remoteStatusText(row.remote.status)} />}
+        </ListGroup>
+        {row.remote && (
+          <ListGroup>
+            <ListGroup.Action
+              label="Push to Railway"
+              onClick={() => board.onPushRemote(row)}
+              disabled={row.remote.status === "deploying" || row.remote.status === "verifying"}
+            />
+          </ListGroup>
+        )}
         <ListGroup>
           <ListGroup.Nav
             label="dev port"

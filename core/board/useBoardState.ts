@@ -6,7 +6,7 @@
 // leaving `checked`-backing state untouched on a failed request already
 // re-renders the control back to the server's last-known truth.
 import { useCallback, useEffect, useRef, useState } from "react";
-import { apiDelete, apiPatch, apiPost, apiPut, getStatus } from "./api.ts";
+import { apiDelete, apiPatch, apiPost, apiPut, getStatus, pushRemote as postPushRemote, setRemote as postSetRemote } from "./api.ts";
 import {
   PROXY_WAIT_MS,
   REFRESH_MS,
@@ -219,6 +219,30 @@ export function useBoardState() {
     },
     [refresh, notice],
   );
+
+  // ---- remote (Railway push) ----
+  const onSetRemote = useCallback(
+    async (row: Row, enabled: boolean) => {
+      try {
+        const res = await postSetRemote(row.name, enabled);
+        if (!res.ok) {
+          const body = await res.json().catch(() => ({}) as { error?: string; message?: string });
+          notice("bad", body.message || body.error || "the board rejected that change.", 10000);
+        }
+      } catch {
+        /* transient -- the next refresh shows the true state */
+      }
+      await refresh();
+    },
+    [refresh, notice],
+  );
+
+  // Fire-and-forget, same as onRunCommand: the deploy that follows can
+  // restart the app itself, so a rejected fetch here is expected, not an
+  // error -- the poll loop picks the new remote.status up on its own.
+  const onPushRemote = useCallback((row: Row) => {
+    postPushRemote(row.name).catch(() => {});
+  }, []);
 
   // ---- add ----
   const openAdd = useCallback(() => {
@@ -500,6 +524,8 @@ export function useBoardState() {
     cancelEdit,
     clearPort,
     onPublicFollows,
+    onSetRemote,
+    onPushRemote,
     addModal,
     openAdd,
     closeAdd,
