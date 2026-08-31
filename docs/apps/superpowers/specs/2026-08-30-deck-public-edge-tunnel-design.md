@@ -216,13 +216,20 @@ Health), not also on the command line, so there is a single source of truth.
    `--force` mandatory and the guard theater. A first bind, or a rebind to the
    **same** domain, is unguarded: same-domain is an idempotent reconcile of steps
    4 to 9.
-4. Resolve the tunnel: if `deck.platform.tunnel` is already recorded, take its
-   `{ name, uuid }`; otherwise mint a fresh unique name
-   (`deck-edge-<machine-key>-<short-random>`) and create the tunnel, capturing its
-   uuid. If the recorded name is present in `list()` but its local credentials
-   file `<uuid>.json` is missing (a wiped `~/.cloudflared`), delete and recreate
-   under the same name -- safe precisely because the minted random suffix makes
-   that name this deck's alone, never another machine's live tunnel.
+4. Resolve the tunnel. With no recorded `deck.platform.tunnel`, mint a fresh
+   unique name (`deck-edge-<machine-key>-<short-random>`), create the tunnel, and
+   capture its uuid. With a recorded `{ name, uuid }`, branch on `list()`:
+   - present in `list()`, local creds `<uuid>.json` present: reuse as-is.
+   - present in `list()`, local creds missing (a wiped `~/.cloudflared`): delete
+     and recreate under the same name, capturing a fresh uuid.
+   - absent from `list()` (the remotely-deleted case the health "re-run" hint
+     points at): create under the recorded name, capturing a fresh uuid.
+
+   Recreating under the recorded name is safe precisely because the minted random
+   suffix makes that name this deck's alone, never another machine's live tunnel.
+   Any branch that produces a new uuid re-records at step 5; everything
+   downstream (config, DNS upsert, kickstart, the bind-time `info`) keys off
+   whatever uuid this step resolves.
 5. **Record `{ tunnel: { name, uuid } }` in `deck.platform` immediately**, before
    any further step. A crash after tunnel creation but before this would orphan a
    CF tunnel the deck cannot see; recording first keeps a partial bind visible to
@@ -273,8 +280,8 @@ Tunnel health is the tunnel's live Cloudflare connection state, read on the
 status poll from the connector's **local metrics endpoint**, not from
 `cloudflared tunnel info`. `tunnel info` is a CF API roundtrip that needs
 `cert.pem` and would sit inside every status response (the board polls at 5s and
-`buildStatus` runs per GET). The launchd unit pins
-`--metrics 127.0.0.1:<fixed-port>`, and the deck reads
+`buildStatus` runs per GET). The config file pins
+`metrics: 127.0.0.1:<fixed-port>`, and the deck reads
 `http://127.0.0.1:<fixed-port>/ready`, whose `readyConnections` is the health
 signal (a cheap local HTTP GET, no cert, no CF API).
 
@@ -371,8 +378,9 @@ Unit tests with fakes for `TunnelDriver`, `CfDns`, and `ServiceManager` (a
   rows of the table.
 - `writeProxiedCname` upsert: create when absent, update when present (no 81053).
 - `deck.platform` round-trip: `tunnel` writes to and reads from the store, is
-  store-migrated across all four seams, and survives a reload (mirrors the
-  existing railway test).
+  store-migrated across every seam (Pick, DEFAULTS, fallback, store write,
+  error-revert, file-strip), and survives a reload (mirrors the existing railway
+  test).
 
 No live Cloudflare or launchd calls in the suite; the real drivers are validated
 by hand during the migration apply.
