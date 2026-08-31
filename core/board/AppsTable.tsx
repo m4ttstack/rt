@@ -1,9 +1,20 @@
 // The apps table and the strays table share one row template, per
 // board.html.
-import { Badge, Button, Chip, ICONS, Spinner, StatusDot, Table, Tooltip } from "@mattstack/tui-kit";
+import { Badge, Button, Chip, Icon, ICONS, Spinner, StatusDot, Table, Tooltip } from "@mattstack/tui-kit";
 import { OptimisticSwitch } from "./optimistic.tsx";
 import { isPlatform, type Row, type StatusData } from "./logic.ts";
 import type { BoardState } from "./useBoardState.ts";
+
+/** A lucide globe as one path (subpaths joined with explicit `M`, the same
+    convention the kit's own ICONS follow): circle + equator + two meridians.
+    Marks a row that is served from Railway, in the site cell. */
+const RAILWAY_GLOBE = "M2 12a10 10 0 1 0 20 0a10 10 0 1 0-20 0M2 12h20M12 2a15 15 0 0 1 0 20M12 2a15 15 0 0 0 0 20";
+
+/** Shared column widths, one entry per column below, so both section tables
+    (mattstack / your apps) line up down the page: `.apps-grid` fixes the
+    layout in board.css and every AppsTable renders this same colgroup, so the
+    grid no longer sizes to each table's own content. */
+const COL_WIDTHS = ["33%", "7%", "9%", "12%", "7%", "5%", "12%", "10%", "5%"];
 
 export interface AppsSection {
   key: string;
@@ -33,7 +44,12 @@ export function AppsTable({
 }: { section: AppsSection; showHead: boolean; data: StatusData; board: BoardState } & DrawerRowProps) {
   const { isRestarting, onRestart, onRunCommand, onPublish, onPushRemote } = board;
   return (
-    <Table>
+    <Table className="apps-grid">
+      <colgroup>
+        {COL_WIDTHS.map((w, i) => (
+          <col key={i} style={{ width: w }} />
+        ))}
+      </colgroup>
       {showHead && (
         <Table.Head>
           <Table.HeadCell>site</Table.HeadCell>
@@ -165,6 +181,16 @@ function SiteCell({ row, data, restarting }: { row: Row; data: StatusData; resta
               >
                 {ICONS["external-link"]}
               </a>
+            </Tooltip>
+          )}
+          {row.remote && (
+            <Tooltip tip={`served from Railway (${row.remote.status})`}>
+              <span
+                className={`railway-globe railway-${row.remote.status}`}
+                aria-label={`served from Railway (${row.remote.status})`}
+              >
+                <Icon d={RAILWAY_GLOBE} />
+              </span>
             </Tooltip>
           )}
         </span>

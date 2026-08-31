@@ -160,6 +160,32 @@ body {
   border-left: 14px solid transparent;
 }
 
+/* Both section tables (mattstack / your apps) are separate <table>s; a fixed
+   layout plus the identical colgroup each AppsTable renders pins one shared
+   column grid, so columns line up down the whole page instead of each table
+   sizing to its own content. */
+.apps-grid [data-part="table"] {
+  table-layout: fixed;
+}
+
+/* Railway origin marker in the site cell: present when a row is pushed to
+   Railway, tinted by deploy state so "live on Railway" reads at a glance. */
+.railway-globe {
+  display: inline-flex;
+  align-items: center;
+  margin-left: var(--spacing-xs);
+}
+.railway-globe.railway-live {
+  color: var(--accent);
+}
+.railway-globe.railway-deploying,
+.railway-globe.railway-verifying {
+  color: var(--amber);
+}
+.railway-globe.railway-error {
+  color: var(--red);
+}
+
 .row-selected {
   background: var(--surface-wash-accent-14);
 }
