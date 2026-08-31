@@ -110,14 +110,22 @@ per-app projects, and there is one place for billing and observability.
 - **Ownership boundary**: deck only ever touches services it created
   (name-prefixed, e.g. `deck-<app>`), and never another service in the project
   — the same posture as `deck uninstall` refusing to touch apps it does not own.
-- **Credentials**: one Railway API token in the existing deck-secrets store
-  (`src/edge/rt-secrets.ts`, the same store the Cloudflare token is read from).
-  It drives **both** the Railway API and the `railway` CLI (as
-  `RAILWAY_API_TOKEN` on `railway up`), so there is one credential and **no
-  browser login step**. A missing token surfaces as a 428
-  **`railway-token-required`**, exactly the way a missing Cloudflare token
-  surfaces today. (This supersedes an earlier draft that mirrored cloudflared's
-  interactive `railway login`; there is no interactive login.)
+- **Credentials** (two Railway tokens in the deck-secrets store
+  `src/edge/rt-secrets.ts`, validated against the live API; no browser login):
+  - `railwayApiToken` — an **account/team** token, used for the **GraphQL**
+    Public API (`serviceCreate` / `serviceInstanceUpdate` build+start /
+    `variableCollectionUpsert` / `serviceDelete`). A *project* token cannot
+    delete a service (GraphQL returns "Not Authorized"), which is why service
+    management needs account/team scope.
+  - `railwayToken` — a **project** token, used for the **`railway` CLI**
+    (`railway up` source upload + `railway domain` add/status/delete). The CLI
+    needs a project token for implicit project context; an account token yields
+    "no linked project" there.
+  `RailwayCli` (`src/edge/railway.ts`) is the REAL driver, not a stub, built
+  from both tokens plus `railwayProjectId`/`railwayEnvironmentId`. A missing
+  Railway token surfaces as a 428 **`railway-token-required`**, like a missing
+  Cloudflare token. (This supersedes an earlier "one token drives both" draft;
+  the CLI and GraphQL genuinely need different token scopes.)
 
 ## Deploy pipeline (`deck push <app>`)
 
