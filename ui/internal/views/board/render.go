@@ -129,7 +129,7 @@ func nameWidth(b *Board) int {
 }
 
 // pkgWidth grows the pkg·repo column to its longest content so labels like
-// "@acme0/acme4 · seamus" are not clipped when the row has the room, with
+// "@acme/widget · gadget" are not clipped when the row has the room, with
 // the const as a cap so it cannot crowd out the flexible command column on a
 // narrow terminal. The command column absorbs whatever width is left.
 func pkgWidth(b *Board) int {
