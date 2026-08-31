@@ -29,7 +29,7 @@ const SITES: BindingSite[] = [
     kind: 'skill',
     slot: 'criteria',
   },
-  { ref: 'mr-board:review', verb: null, kind: 'external', slot: 'skill' },
+  { ref: 'board:review', verb: null, kind: 'external', slot: 'skill' },
 ];
 
 function renderIndex(
@@ -105,9 +105,9 @@ describe('InverseIndex: what binds this fill', () => {
 
   it("keeps a cross-plugin site's plugin in its title and says it has no verb", () => {
     renderIndex();
-    const row = site('mr-board:review', 'skill');
+    const row = site('board:review', 'skill');
 
-    expect(within(row).getByText('mr-board:review')).toBeInTheDocument();
+    expect(within(row).getByText('board:review')).toBeInTheDocument();
     expect(row).toHaveTextContent(
       "another plugin's skill · slot skill · no roster verb"
     );

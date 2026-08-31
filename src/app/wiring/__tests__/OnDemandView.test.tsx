@@ -51,7 +51,7 @@ function ok(json: unknown) {
 /**
  * `watch-ci` is Group 1 (invocable, wired, not external, not unwired):
  * bound by a `verb` binder AND the same fill a pipeline stage binds, so its
- * Used-by list carries two sites. `mr-board:review` is Group 2 (another
+ * Used-by list carries two sites. `board:review` is Group 2 (another
  * plugin). `rebase-worktree` is Group 3 (unwired -- no binder, no pipeline).
  * `demo:unused` is a fill nothing binds at all, counted into Group 3's
  * pointer alongside the unwired verb.
@@ -139,7 +139,7 @@ const COMPOSITION = {
       slots: [{ name: 'domain', boundTo: 'demo:watch-ci-domain' }],
     },
     {
-      ref: 'mr-board:review',
+      ref: 'board:review',
       verb: null,
       kind: 'external',
       slots: [{ name: 'skill', boundTo: 'demo:mr-board-review' }],
@@ -209,7 +209,7 @@ describe('OnDemandView: Group 1 (invocable verbs)', () => {
       within(view).queryByTestId('skill-row-mattstack:rebase-worktree')
     ).not.toBeInTheDocument();
     expect(
-      within(view).queryByTestId('skill-row-external:mr-board')
+      within(view).queryByTestId('skill-row-external:board')
     ).not.toBeInTheDocument();
   });
 

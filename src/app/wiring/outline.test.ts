@@ -111,7 +111,7 @@ const PACK: SpineComposition = {
       slots: [{ name: 'criteria', boundTo: 'demo:work-provision' }],
     },
     {
-      ref: 'mr-board:review',
+      ref: 'board:review',
       verb: null,
       kind: 'external',
       slots: [{ name: 'skill', boundTo: 'demo:mr-board-review' }],
@@ -182,7 +182,7 @@ describe('buildSpine: the run order comes from pipelines and nowhere else', () =
     expect(spine.outside.map(e => e.key)).toEqual([
       'mattstack:ship',
       'mattstack:review-core',
-      'external:mr-board',
+      'external:board',
       'mattstack:rebase-worktree',
     ]);
   });
@@ -579,7 +579,7 @@ describe('invertBindings: every site that resolves to a fill', () => {
 
     expect(sites).toHaveLength(1);
     expect(sites[0]).toEqual({
-      ref: 'mr-board:review',
+      ref: 'board:review',
       verb: null,
       kind: 'external',
       slot: 'skill',
