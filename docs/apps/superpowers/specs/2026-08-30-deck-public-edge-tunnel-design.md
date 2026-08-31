@@ -344,8 +344,9 @@ read rather than hardcoded `null`.
 | bind | cert.pem missing | 428, `cloudflared tunnel login` |
 | bind | DNS token cannot edit zone | error, token-scope hint |
 | bind | rebind to new domain, an app is remote | 409 unless `--force`; runs as unbind-then-bind |
-| bind | tunnel name exists, local creds present | reuse its uuid (idempotent) |
-| bind | tunnel name exists, local creds absent | delete and recreate |
+| bind | recorded tunnel in `list()`, local creds present | reuse its uuid (idempotent) |
+| bind | recorded tunnel in `list()`, local creds absent | delete and recreate, fresh uuid |
+| bind | recorded tunnel absent from `list()` (deleted remotely) | create under the recorded name, fresh uuid |
 | bind | DNS record already exists | overwrite (upsert) |
 | unbind | an app is remote | 409 unless `--force` |
 | unbind | tunnel-served apps exist | confirm (list apps going offline) unless `--force` |
