@@ -1,7 +1,7 @@
 import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import './icons';
 
@@ -10,6 +10,10 @@ import { fetchMock, installFetchMock } from './test-utils';
 
 beforeEach(() => {
   installFetchMock();
+});
+
+afterEach(() => {
+  window.localStorage.removeItem('chat-expand-all');
 });
 
 test('the page bar counts the fleet, names handles behind a small count, and shows the room’s wake mode', () => {
@@ -193,4 +197,18 @@ test('add agents sits before mark read, only when wired, disabled while the daem
     screen.getByRole('button', { name: 'Add agents to #build' })
   );
   expect(onAddAgents).toHaveBeenCalled();
+});
+
+test('the expand-all toggle flips and persists the app-wide preference', async () => {
+  renderWithProviders(
+    <PageBar
+      room={{ room: 'build', memberCount: 1, unread: 0, mentions: 0 }}
+      buddies={[]}
+    />
+  );
+  const toggle = screen.getByTestId('expand-all-toggle');
+  expect(toggle).toHaveAttribute('aria-pressed', 'false');
+  await userEvent.click(toggle);
+  expect(toggle).toHaveAttribute('aria-pressed', 'true');
+  expect(window.localStorage.getItem('chat-expand-all')).toBe('true');
 });

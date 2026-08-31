@@ -25,6 +25,7 @@ import { useRelayFrames, useRelayOpen } from './relay-socket';
 import { speakerHue } from './speaker-hue';
 import prose from './transcript-prose.module.css';
 import scrollClasses from './transcript-scroll.module.css';
+import { useExpandAll } from './use-expand-all';
 
 /** The panel's horizontal insets, applied to the list content and the
     footer rather than the panel: the extra 17px on the left clears the
@@ -88,6 +89,9 @@ function MessageBody({
   const bodyRef = useRef<HTMLDivElement>(null);
   const [tall, setTall] = useState(false);
   const [expanded, setExpanded] = useState(startExpanded);
+  // App-wide override: when on, nothing folds and the per-message control
+  // stays hidden, since there is nothing left to reveal.
+  const [expandAll] = useExpandAll();
 
   // A fenced code block's highlighter loads lazily and can grow the body
   // well after this mounts, so a one-shot measurement would miss it; the
@@ -104,7 +108,7 @@ function MessageBody({
     return () => observer.disconnect();
   }, [message.id]);
 
-  const folded = tall && !expanded;
+  const folded = tall && !expanded && !expandAll;
   // The wrapper shape stays IDENTICAL whether or not `tall` is true: a
   // position whose element type changes on re-render gets remounted by
   // React, which would drop the live CodeHighlight instance and reset the
@@ -123,7 +127,7 @@ function MessageBody({
           />
         </div>
       </Box>
-      {tall && (
+      {tall && !expandAll && (
         <UnstyledButton
           data-testid="fold-toggle"
           onClick={() => setExpanded(e => !e)}

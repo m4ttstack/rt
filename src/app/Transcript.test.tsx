@@ -18,6 +18,7 @@ beforeEach(() => {
 
 afterEach(() => {
   restoreWebSocket();
+  window.localStorage.removeItem('chat-expand-all');
 });
 
 test('a chat frame appends to the transcript without a refetch', async () => {
@@ -506,6 +507,18 @@ test('a tall body folds with a show more control, and unfolds on click', async (
   fireEvent.click(screen.getByTestId('fold-toggle'));
   expect(fold).toHaveAttribute('data-folded', 'false');
   expect(screen.getByTestId('fold-toggle')).toHaveTextContent('show less');
+});
+
+test('the app-wide expand-all preference unfolds a tall body and hides its control', () => {
+  window.localStorage.setItem('chat-expand-all', 'true');
+  withTallBodies(() => {
+    renderWithProviders(<Transcript room="build" messages={[tall]} />);
+  });
+  expect(screen.getByTestId('message-fold')).toHaveAttribute(
+    'data-folded',
+    'false'
+  );
+  expect(screen.queryByTestId('fold-toggle')).not.toBeInTheDocument();
 });
 
 test('a body that grows after mount folds, without remounting the message body', () => {

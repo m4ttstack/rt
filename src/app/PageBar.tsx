@@ -6,6 +6,7 @@ import {
   Menu,
   Select,
   Text,
+  Tooltip,
 } from '@mattstack/app-kit/core';
 import { Icon } from '@mattstack/app-kit/icons';
 import type { BuddyStatus, RoomSummary } from '@mattstack/rt-client';
@@ -13,6 +14,7 @@ import type { BuddyStatus, RoomSummary } from '@mattstack/rt-client';
 import { AgentName } from './AgentName';
 import { postMarkRead } from './mark-read';
 import { STATUS_WORD } from './statusDetail';
+import { useExpandAll } from './use-expand-all';
 
 function signedInCount(buddies: { status: BuddyStatus }[]): number {
   return buddies.filter(b => b.status !== 'offline').length;
@@ -211,6 +213,7 @@ export function PageBar({
   onOrderChange,
   onClose,
 }: PageBarProps) {
+  const [expandAll, setExpandAll] = useExpandAll();
   const handleMarkRead = () => {
     void postMarkRead(room.room)
       .then(() => onMarkedRead?.(room.room))
@@ -304,6 +307,29 @@ export function PageBar({
           styles={{ input: CONTROL_SURFACE }}
         />
       )}
+      <Tooltip
+        label={expandAll ? 'Clip long messages' : 'Show every message in full'}
+        position="bottom"
+        withinPortal
+      >
+        <ActionIcon
+          variant={expandAll ? 'filled' : 'default'}
+          color={expandAll ? 'accent' : undefined}
+          size={30}
+          radius="md"
+          ml={7.2}
+          aria-label="Expand all messages"
+          aria-pressed={expandAll}
+          data-testid="expand-all-toggle"
+          onClick={() => setExpandAll(!expandAll)}
+          styles={{ root: expandAll ? undefined : CONTROL_SURFACE }}
+        >
+          <Icon
+            name={expandAll ? 'foldVertical' : 'unfoldVertical'}
+            size={16}
+          />
+        </ActionIcon>
+      </Tooltip>
       <Box ml={7.2} style={{ flex: 'none' }}>
         <RoomMenu room={room} onClose={onClose} />
       </Box>
