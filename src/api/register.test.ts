@@ -379,7 +379,7 @@ test("edit: a valid dev link stores dev.workingDirectory and reinstalls the serv
   expect(drivers.manager.installed.has(`${LABEL_PREFIX}myapp`)).toBe(true);
 });
 
-test("edit: dev link validation rejects a relative path, a missing dir, a bad manifest, and a name mismatch, before any teardown", async () => {
+test("edit: dev link validation rejects a relative path, a missing dir, a missing manifest file, a bad manifest, and a name mismatch, before any teardown", async () => {
   await registerApp(input, drivers);
   const label = `${LABEL_PREFIX}myapp`;
   const installedBefore = drivers.manager.installed.get(label);
@@ -392,6 +392,11 @@ test("edit: dev link validation rejects a relative path, a missing dir, a bad ma
   const missing = await editApp("myapp", { dev: { workingDirectory: missingDir } }, "user", false, drivers);
   expect(missing.status).toBe(400);
   expect((missing.body as any).error).toBe("directory not found");
+
+  const noManifestDir = mkdtempSync(join(tmpdir(), "dev-link-no-manifest-"));
+  const noManifest = await editApp("myapp", { dev: { workingDirectory: noManifestDir } }, "user", false, drivers);
+  expect(noManifest.status).toBe(400);
+  expect((noManifest.body as any).error).toBe(`no mattstack.deck.json in ${noManifestDir}`);
 
   const badManifestDir = mkdtempSync(join(tmpdir(), "dev-link-bad-"));
   writeFileSync(join(badManifestDir, "mattstack.deck.json"), "not json");

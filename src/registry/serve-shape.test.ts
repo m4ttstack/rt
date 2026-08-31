@@ -98,12 +98,39 @@ describe("serveShape matrix", () => {
     expect(getRecord("chat")?.issues).toBeUndefined();
   });
 
+  test("unlinked managed row: dev mode, bundle installed: bundle, clean", () => {
+    const helpers = mkdtempSync(join(tmpdir(), "helpers-"));
+    writeFileSync(join(helpers, "chat"), "");
+    const r = rec({});
+    putRecord(r);
+    expect(serveShape(r, { devMode: () => true, helpersDir: helpers })).toEqual({
+      command: [join(helpers, "chat")], cwd: dataDir("chat"),
+    });
+    expect(getRecord("chat")?.issues).toBeUndefined();
+  });
+
   test("never a phantom bundle: prod, source linked, no bundle: serves source loudly", () => {
     const dir = linkedDir(CHAT_DEV);
     const r = rec({ dev: { workingDirectory: dir } });
     putRecord(r);
     expect(serveShape(r, { devMode: () => false, helpersDir: null })?.cwd).toBe(dir);
     expect(getRecord("chat")?.issues?.[0]?.message).toContain("not installed");
+  });
+
+  test("dev-link issue clears when the bundle appears, same record across two resolves", () => {
+    const dir = linkedDir(CHAT_DEV);
+    const r = rec({ dev: { workingDirectory: dir } });
+    putRecord(r);
+
+    expect(serveShape(r, { devMode: () => false, helpersDir: null })?.cwd).toBe(dir);
+    expect(getRecord("chat")?.issues?.[0]?.message).toContain("not installed");
+
+    const helpers = mkdtempSync(join(tmpdir(), "helpers-"));
+    writeFileSync(join(helpers, "chat"), "");
+    expect(serveShape(r, { devMode: () => false, helpersDir: helpers })).toEqual({
+      command: [join(helpers, "chat")], cwd: dataDir("chat"),
+    });
+    expect(getRecord("chat")?.issues).toBeUndefined();
   });
 
   test("dev + broken link + bundle: bundle with loud issue; issue clears on next clean resolve", () => {
