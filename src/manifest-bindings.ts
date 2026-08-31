@@ -54,8 +54,12 @@ export function boardRepoSlug(gitlabHost: string, project: string): string {
  * `project`: the per-repo mattstack manifest's `board:<kind>` binding when
  * present and a non-empty string, else `cfg`'s own skill field for `kind`.
  *
+ * The inner key is the wrapper's slot name (`bindings["board:review"].review`),
+ * matching the parameterized-skills convention so the wrapper's vendored
+ * resolve-args.sh reads the same entry on the no-flag fallback path.
+ *
  * Never throws. A missing manifest file, a manifest that fails to parse, an
- * absent `bindings["board:<kind>"]`, or an empty `skill` value are all
+ * absent `bindings["board:<kind>"]`, or an empty slot value are all
  * silent falls back to config -- the board must never break because a
  * repo's manifest is absent or malformed.
  */
@@ -93,7 +97,7 @@ export function resolveBoardSkill(
   const binding = (bindings as Record<string, unknown>)[`board:${kind}`];
   if (!binding || typeof binding !== "object" || Array.isArray(binding)) return fallback;
 
-  const skill = (binding as Record<string, unknown>).skill;
+  const skill = (binding as Record<string, unknown>)[kind];
   if (typeof skill !== "string" || skill === "") return fallback;
 
   return { skill, source: "manifest" };
