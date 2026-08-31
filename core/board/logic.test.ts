@@ -176,6 +176,18 @@ test("sections: null data yields an empty apps section", () => {
   expect(sections(null)).toEqual([{ key: "apps", title: null, rows: [] }]);
 });
 
+test("sections: devLink passes through onto the row untouched", () => {
+  const row = makeRow({ name: "gitq", devLink: "linked" });
+  const [group] = sections(makeData({ apps: [row] }));
+  expect(group!.rows[0]!.devLink).toBe("linked");
+});
+
+test("sections: an unlinked row carries no commands", () => {
+  const row = makeRow({ name: "gitq", devLink: "unlinked", commands: undefined });
+  const [group] = sections(makeData({ apps: [row] }));
+  expect(group!.rows[0]!.commands).toBeUndefined();
+});
+
 // ---- tunnels ----
 
 test("tunnels: filters orphans down to isTunnel rows", () => {

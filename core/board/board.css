@@ -120,6 +120,23 @@ body {
   word-break: break-word;
 }
 
+/* Replaces the commands cell's buttons one row at a time (Link source / fix
+   link), so the field takes the cell's fixed width rather than the input's
+   browser-default size, which would overrun the fixed-layout column. */
+.dev-link-input {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  width: 100%;
+}
+.dev-link-input [data-part="field"] {
+  flex: 1;
+  min-width: 0;
+}
+.dev-link-input [data-part="field-input"] {
+  width: 100%;
+}
+
 .modal-form {
   display: flex;
   flex-direction: column;

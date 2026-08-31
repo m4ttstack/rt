@@ -1,6 +1,7 @@
 // The apps table and the strays table share one row template, per
 // board.html.
-import { Badge, Button, Chip, Icon, ICONS, Spinner, StatusDot, Table, Tooltip } from "@mattstack/tui-kit";
+import { useState } from "react";
+import { Badge, Button, Chip, Icon, ICONS, Spinner, StatusDot, Table, TextField, Tooltip } from "@mattstack/tui-kit";
 import { OptimisticSwitch } from "./optimistic.tsx";
 import { isPlatform, type Row, type StatusData } from "./logic.ts";
 import type { BoardState } from "./useBoardState.ts";
@@ -42,7 +43,7 @@ export function AppsTable({
   onOpenRow,
   registerChevron,
 }: { section: AppsSection; showHead: boolean; data: StatusData; board: BoardState } & DrawerRowProps) {
-  const { isRestarting, onRestart, onRunCommand, onPublish, onPushRemote } = board;
+  const { isRestarting, onRestart, onRunCommand, linkSource, unlinkSource, onPublish, onPushRemote } = board;
   return (
     <Table className="apps-grid">
       <colgroup>
@@ -98,7 +99,7 @@ export function AppsTable({
                 <RestartCell row={row} data={data} restarting={restarting} onRestart={onRestart} />
               </Table.Cell>
               <Table.Cell>
-                <CommandsCell row={row} onRunCommand={onRunCommand} />
+                <CommandsCell row={row} onRunCommand={onRunCommand} linkSource={linkSource} unlinkSource={unlinkSource} />
               </Table.Cell>
               <Table.Cell>
                 <RemotePushCell row={row} data={data} onPushRemote={onPushRemote} />
@@ -379,16 +380,119 @@ function RestartCell({
   );
 }
 
-function CommandsCell({ row, onRunCommand }: { row: Row; onRunCommand: (row: Row, name: string) => void }) {
-  if (!row.commands?.length) return null;
+/** Dev-mode source linking replaces the manifest command buttons rather than
+    sharing the cell with them: `unlinked`/`broken` rows have nothing else to
+    run yet, and `linked` rows keep their buttons with Unlink appended, per
+    the board's dev/prod matrix. */
+function CommandsCell({
+  row,
+  onRunCommand,
+  linkSource,
+  unlinkSource,
+}: {
+  row: Row;
+  onRunCommand: (row: Row, name: string) => void;
+  linkSource: (row: Row, workingDirectory: string) => Promise<string | null>;
+  unlinkSource: (row: Row) => Promise<void>;
+}) {
+  if (row.devLink === "unlinked" || row.devLink === "broken") {
+    return (
+      <DevLinkPrompt row={row} label={row.devLink === "unlinked" ? "Link source" : "fix link"} linkSource={linkSource} />
+    );
+  }
   return (
     <>
-      {row.commands.map((name) => (
+      {(row.commands ?? []).map((name) => (
         <Button key={name} variant="subtle" size="sm" aria-label={`${name} ${row.name}`} onClick={() => onRunCommand(row, name)}>
           {name}
         </Button>
       ))}
+      {row.devLink === "linked" && (
+        <Button variant="subtle" size="sm" aria-label={`unlink ${row.name}`} onClick={() => unlinkSource(row)}>
+          Unlink
+        </Button>
+      )}
     </>
+  );
+}
+
+/** The one inline input shared by "Link source" (unlinked) and "fix link"
+    (broken): both just resubmit `{ dev: { workingDirectory } }`, so a single
+    open/value/error state serves either entry point. */
+function DevLinkPrompt({
+  row,
+  label,
+  linkSource,
+}: {
+  row: Row;
+  label: string;
+  linkSource: (row: Row, workingDirectory: string) => Promise<string | null>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [value, setValue] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  if (!open) {
+    return (
+      <Button variant="subtle" size="sm" aria-label={`${label} for ${row.name}`} onClick={() => setOpen(true)}>
+        {label}
+      </Button>
+    );
+  }
+
+  const cancel = () => {
+    setOpen(false);
+    setValue("");
+    setError(null);
+  };
+
+  const submit = async () => {
+    const workingDirectory = value.trim();
+    if (!workingDirectory) return;
+    setBusy(true);
+    const message = await linkSource(row, workingDirectory);
+    setBusy(false);
+    if (message) {
+      setError(message);
+      return;
+    }
+    setOpen(false);
+    setValue("");
+  };
+
+  return (
+    <span className="dev-link-input">
+      <TextField
+        value={value}
+        onChange={(ev) => {
+          setValue(ev.target.value);
+          setError(null);
+        }}
+        onKeyDown={(ev) => {
+          if (ev.key === "Enter") submit();
+          if (ev.key === "Escape") cancel();
+        }}
+        placeholder="/path/to/source"
+        aria-label={`source path for ${row.name}`}
+        error={error}
+        disabled={busy}
+        inputRef={(el) => el?.focus()}
+      />
+      <Button
+        variant="subtle"
+        size="sm"
+        iconOnly
+        disabled={busy}
+        aria-label={`confirm source path for ${row.name}`}
+        onClick={submit}
+      >
+        {ICONS["circle-check"]}
+      </Button>
+      <Button variant="subtle" size="sm" iconOnly disabled={busy} aria-label={`cancel linking ${row.name}`} onClick={cancel}>
+        {ICONS.close}
+      </Button>
+    </span>
   );
 }
 
