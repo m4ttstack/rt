@@ -69,7 +69,12 @@ export function serve(): void {
     }, 15_000);
   }
 
-  migrateManagedDevShape();
+  try {
+    const migrated = migrateManagedDevShape();
+    if (migrated.slimmed.length || migrated.skipped.length) {
+      console.log(`[migrate] dev shape: slimmed ${migrated.slimmed.join(", ") || "none"}; skipped ${migrated.skipped.join(", ") || "none"}`);
+    }
+  } catch (err) { console.error("registry dev-shape migration failed:", err); }
 
   const apiServer = startApi({
     manager: new LaunchdManager(),

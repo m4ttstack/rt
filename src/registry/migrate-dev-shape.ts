@@ -11,6 +11,12 @@ export function assertSlimRowKeepsAFallback(name: string, next: AppRecord): void
   }
 }
 
+/** The only sanctioned way to persist a slimmed row: asserts, then writes. */
+function writeSlimRow(next: AppRecord): void {
+  assertSlimRowKeepsAFallback(next.name, next);
+  putRecord(next);
+}
+
 export function migrateManagedDevShape(): { slimmed: string[]; skipped: string[] } {
   const slimmed: string[] = [];
   const skipped: string[] = [];
@@ -38,8 +44,7 @@ export function migrateManagedDevShape(): { slimmed: string[]; skipped: string[]
       commands: undefined,
       sourceDirectory: undefined,
     };
-    assertSlimRowKeepsAFallback(record.name, next);
-    putRecord(next);
+    writeSlimRow(next);
     slimmed.push(record.name);
   }
   return { slimmed, skipped };

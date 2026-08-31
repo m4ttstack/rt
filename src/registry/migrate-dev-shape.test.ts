@@ -30,6 +30,10 @@ test("slims an old-shape bundle-ready row, and a second run is a no-op", () => {
   expect(r.workingDirectory).toBeUndefined();
   expect(r.commands).toBeUndefined();
   expect(migrateManagedDevShape().slimmed).toEqual([]);
+  const r2 = getRecord("chat")!;
+  expect(r2.dev?.workingDirectory).toBe(dir);
+  expect(r2.command).toBeUndefined();
+  expect(r2.commands).toBeUndefined();
 });
 
 test("skips gitq-shaped (no includeInBundle) and fresh-install (no manifest) rows untouched", () => {
@@ -49,6 +53,7 @@ test("platform row: sourceDirectory moves to dev.workingDirectory, command survi
   expect(r.dev?.workingDirectory).toBe("/repos/deck");
   expect(r.sourceDirectory).toBeUndefined();
   expect(r.command).toEqual(["/app/deck", "serve"]);
+  expect(r.commands).toBeUndefined();
 });
 
 test("user rows are untouched", () => {
