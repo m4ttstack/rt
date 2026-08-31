@@ -289,7 +289,7 @@ git commit -m "cf-dns: upsert proxied CNAMEs and read a host's CNAME target"
 
 **Files:**
 - Modify: `src/edge/tunnel.ts`
-- Test: `src/edge/tunnel.test.ts` (create)
+- Test: `src/edge/tunnel.test.ts` (REWRITE: this file already exists with old-API tests for `routeDns` and the old `writeTunnelConfig` signature; `Write` the complete content below over it, discarding the old tests)
 
 **Interfaces:**
 - Produces:
@@ -855,7 +855,7 @@ test("an existing wildcard record is overwritten, not duplicated", async () => {
 
 - [ ] **Step 3: Update `src/edge/domain.remote-guard.test.ts`**
 
-Change the imports/fixtures to the new deps (add `FakeCfDns`, pass `dns`, `resolveBin: () => "/opt/homebrew/bin/cloudflared"`, `sleep: async () => {}`, `tunnel = new FakeTunnelDriver(cfDir)`), keep the two existing tests' assertions, and append:
+Change the imports/fixtures to the new deps: import `FakeCfDns`, construct `dns = new FakeCfDns()` and `tunnel = new FakeTunnelDriver(cfDir)` in `beforeEach`. **Both existing tests** call `bindDomain(..., { tunnel: fakeTunnel, manager: fakeManager }, { cloudflaredDir: cfDir })` today; update BOTH call sites to `bindDomain(..., { tunnel: fakeTunnel, manager: fakeManager, dns }, { cloudflaredDir: cfDir, resolveBin: () => "/opt/homebrew/bin/cloudflared", sleep: async () => {} })`. This is not optional: `bindDomain` now calls `dns.tokenCanEditDns()` before the different-domain guard, so a call site without `dns` throws before the 409 the test asserts. Keep both tests' assertions, then append:
 
 ```ts
 test("--force on a different-domain rebind runs unbind-then-bind and leaves no stranded old wildcard", async () => {
@@ -1636,7 +1636,7 @@ git commit -m "edge: self-heal the tunnel service, config and wildcard DNS on a 
 
 - [ ] **Step 1: Update `src/api/server.test.ts`**
 
-Add `dns: new FakeCfDns()` and a canned `deckSecrets` (as `cfServer` already does; the secrets must include `cfZoneId` and `cfDnsToken`) to `domainServer`'s `startApi` call, give its `FakeTunnelDriver` the `domainCfDir` so creds files exist, and replace the domain test with:
+Add these to `domainServer`'s `startApi` deps (all three, so the route never reaches the real daemon, Cloudflare, or PATH): `dns: new FakeCfDns()`, `resolveCloudflared: () => "/opt/homebrew/bin/cloudflared"`, and `tunnel: new FakeTunnelDriver(domainCfDir)` (creds files land in the cf dir). The `dns` dep short-circuits `edgeDns`, so no `deckSecrets` stand-in is needed. Replace the domain test with:
 
 ```ts
 test("domain flow: bind, show reports identity + edge, unbind clears", async () => {
@@ -1793,7 +1793,7 @@ Update the existing domain test in `src/cli/commands.test.ts` ("domain verb no l
 
 `src/main.ts` uninstall branch: build `drivers = { manager: new LaunchdManager(), edge: new PortlessCli(), tunnel: new CloudflaredCli(), dns: await uninstallDns() }` where `uninstallDns` mirrors `edgeDns` above (best-effort: returns `undefined` when secrets are unavailable).
 
-`src/cli/setup.ts` `uninstall`, after the self-record teardown and before the api.json removal:
+`src/cli/setup.ts`: add `import { unbindDomain } from "../edge/domain.ts";` at the top, then in `uninstall`, after the self-record teardown and before the api.json removal:
 
 ```ts
   if (drivers.tunnel) {
