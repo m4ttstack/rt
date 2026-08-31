@@ -850,88 +850,90 @@ function PhoneChat({
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   return (
-    <Box
-      data-testid="phone-shell"
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        minHeight: '100dvh',
-        background: 'var(--ui-bg-1)',
-      }}
-    >
-      <PhoneHeader
-        room={activeRoomSummary}
-        buddies={buddies}
-        reachable={daemon.reachable}
-        onOpenDrawer={() => setDrawerOpen(true)}
-        onCloseRoom={onCloseRoom}
-      />
-
-      <DaemonBanner
-        reachable={daemon.reachable}
-        downSince={daemon.downSince}
-        probeCount={daemon.probeCount}
-        lastAnsweredAt={daemon.lastAnsweredAt}
-        onProbeNow={daemon.probeNow}
-      />
-
-      {activeRoom && (
-        // `display: flex` here, not just `flex: 1`: a bare Transcript root
-        // sizes ITSELF via `flex: 1; min-height: 0` on the assumption its
-        // parent is a flex container -- a plain (block) Box gives it no
-        // such context, so it falls back to auto height and its own inner
-        // scroll box (also `flex: 1; min-height: 0`) collapses to zero.
-        // Scrolling belongs to Transcript's own scroll view, so this
-        // wrapper stays a non-scrolling flex column, not `overflowY: auto`.
-        <Box
-          style={{
-            flex: 1,
-            minHeight: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            padding: '9.6px 11.2px 0',
-          }}
-        >
-          <Transcript
-            room={activeRoom}
-            messages={messages}
-            humanHandle={HUMAN_HANDLE}
-            anchor={anchor}
-            unreadCount={activeRoomSummary?.unread}
-            bare
-          />
-        </Box>
-      )}
-
-      {activeRoom && (
-        <Composer
-          ref={composerRef}
-          phone
-          room={activeRoom}
-          roomMembers={roomMembers}
-          buddies={buddies}
-          isDm={activeRoomSummary?.kind === 'dm'}
-          daemonReachable={daemon.reachable}
-          onOpenDm={onOpenDm}
-        />
-      )}
-
-      <PhoneDrawer
-        opened={drawerOpen}
-        onClose={() => setDrawerOpen(false)}
-        rooms={rooms}
-        activeRoom={activeRoom}
-        onSelectRoom={setActiveRoom}
-        buddies={buddies}
-        roomMembers={roomMembers}
-        daemonReachable={daemon.reachable}
-        onMention={handle => composerRef.current?.insertMention(handle)}
-        onOpenDm={handle => {
-          onOpenDm(handle);
-          setDrawerOpen(false);
+    <ThemeOverrideWrapper theme={chatFontTheme}>
+      <Box
+        data-testid="phone-shell"
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: '100dvh',
+          background: 'var(--ui-bg-1)',
         }}
-      />
-    </Box>
+      >
+        <PhoneHeader
+          room={activeRoomSummary}
+          buddies={buddies}
+          reachable={daemon.reachable}
+          onOpenDrawer={() => setDrawerOpen(true)}
+          onCloseRoom={onCloseRoom}
+        />
+
+        <DaemonBanner
+          reachable={daemon.reachable}
+          downSince={daemon.downSince}
+          probeCount={daemon.probeCount}
+          lastAnsweredAt={daemon.lastAnsweredAt}
+          onProbeNow={daemon.probeNow}
+        />
+
+        {activeRoom && (
+          // `display: flex` here, not just `flex: 1`: a bare Transcript root
+          // sizes ITSELF via `flex: 1; min-height: 0` on the assumption its
+          // parent is a flex container -- a plain (block) Box gives it no
+          // such context, so it falls back to auto height and its own inner
+          // scroll box (also `flex: 1; min-height: 0`) collapses to zero.
+          // Scrolling belongs to Transcript's own scroll view, so this
+          // wrapper stays a non-scrolling flex column, not `overflowY: auto`.
+          <Box
+            style={{
+              flex: 1,
+              minHeight: 0,
+              display: 'flex',
+              flexDirection: 'column',
+              padding: '9.6px 11.2px 0',
+            }}
+          >
+            <Transcript
+              room={activeRoom}
+              messages={messages}
+              humanHandle={HUMAN_HANDLE}
+              anchor={anchor}
+              unreadCount={activeRoomSummary?.unread}
+              bare
+            />
+          </Box>
+        )}
+
+        {activeRoom && (
+          <Composer
+            ref={composerRef}
+            phone
+            room={activeRoom}
+            roomMembers={roomMembers}
+            buddies={buddies}
+            isDm={activeRoomSummary?.kind === 'dm'}
+            daemonReachable={daemon.reachable}
+            onOpenDm={onOpenDm}
+          />
+        )}
+
+        <PhoneDrawer
+          opened={drawerOpen}
+          onClose={() => setDrawerOpen(false)}
+          rooms={rooms}
+          activeRoom={activeRoom}
+          onSelectRoom={setActiveRoom}
+          buddies={buddies}
+          roomMembers={roomMembers}
+          daemonReachable={daemon.reachable}
+          onMention={handle => composerRef.current?.insertMention(handle)}
+          onOpenDm={handle => {
+            onOpenDm(handle);
+            setDrawerOpen(false);
+          }}
+        />
+      </Box>
+    </ThemeOverrideWrapper>
   );
 }
 
