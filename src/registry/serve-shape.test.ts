@@ -173,4 +173,17 @@ describe("serveShape matrix", () => {
     expect(serveShape(r, { devMode: () => false, helpersDir: null })).toEqual({ command: [bin], cwd: "/data/chat" });
     expect(serveShape(r, { devMode: () => true, helpersDir: null })?.cwd).toBe(dir);
   });
+
+  test("linked row: a stored relative argv0 still resolves as the bundle shape, not a phantom", () => {
+    // launchd never searches PATH for argv0, but a legacy stored command
+    // predates that rule, and bare "bun" is exactly that shape: existsSync
+    // on it directly is always false, so this only passes with a PATH lookup.
+    const dir = linkedDir(CHAT_DEV);
+    const r = rec({ command: ["bun", "board"], workingDirectory: "/data/chat", dev: { workingDirectory: dir } });
+    putRecord(r);
+    expect(serveShape(r, { devMode: () => false, helpersDir: null })).toEqual({
+      command: ["bun", "board"], cwd: "/data/chat",
+    });
+    expect(getRecord("chat")?.issues).toBeUndefined();
+  });
 });

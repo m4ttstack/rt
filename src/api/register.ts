@@ -13,6 +13,7 @@ import { renameAppSettings, getOverride, clearOverride } from "../../core/settin
 import { renameOAuth } from "../edge/oauth.ts";
 import { allocatePort } from "../registry/allocate.ts";
 import { authorizeStructural } from "../registry/lifecycle.ts";
+import { resetDevModeCache } from "./dev-mode.ts";
 import {
   LABEL_PREFIX, isPlatformManagedBy, type ServiceManager, type ServiceSpec,
 } from "../services/manager.ts";
@@ -305,6 +306,10 @@ export async function restartManagedApps(drivers: Drivers): Promise<FlowResult> 
  * a flip-back reads as the same "unchanged" outcome both times.
  */
 export async function reresolveManagedApps(drivers: Drivers): Promise<FlowResult> {
+  // rt writes mattstack.mode then pokes this route immediately; a status poll
+  // in the preceding 2s can have already warmed isDevMode's cache with the
+  // OLD mode, which would resolve every shape below unchanged.
+  resetDevModeCache();
   const restarted: string[] = [];
   const unchanged: string[] = [];
   const failed: Array<{ name: string; error: string }> = [];
@@ -398,6 +403,13 @@ export async function editApp(
       return { status: 400, body: { error: "manifest name mismatch", expected: record.name, got: parsed.manifest.name } };
     }
   }
+  // bootstrapSelf owns the platform's serve shape and plist, so a dev-only PATCH
+  // on the platform's own record is a record-only write here: it must never
+  // reach the label rewrite or the driver teardown/stand-up below.
+  if (devOnly && isPlatformManagedBy(record.managedBy)) {
+    putRecord({ ...record, dev: patch.dev === null ? undefined : (patch.dev ?? record.dev) });
+    return { status: 200, body: { record: getRecord(record.name) } };
+  }
   // The link is developer-local machine state, not registrar-owned structure,
   // and the mutation plane is already 127.0.0.1-only with public writes 403'd --
   // but any patch that also touches a structural field keeps the gate.
@@ -442,6 +454,17 @@ export async function editApp(
   // revert to the wrong port, so the edit drops the override rather than
   // leave it silently wrong.
   const portChanged = next.port !== record.port;
+
+  // Never uninstall the old shape unless the patch is guaranteed to leave a
+  // runnable one: resolve the prospective shape before any teardown call, not
+  // after, or a patch that resolves to nothing tears down with nothing to fall
+  // back on.
+  if (next.kind === "service" && !serveShape(next, serveShapeDeps)) {
+    return {
+      status: 400,
+      body: { error: `edit would leave ${next.name} with no runnable shape (no bundle, no valid source)` },
+    };
+  }
 
   // Teardown-phase failures are collected, not recorded yet: the record they
   // belong to doesn't exist under its final cache key yet (a rename deletes the

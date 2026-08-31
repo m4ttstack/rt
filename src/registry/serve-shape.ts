@@ -2,6 +2,7 @@ import { existsSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { bundleHelpersDir } from "../services/bundle-layout.ts";
+import { composeServicePath, resolveProgram } from "../services/exec-env.ts";
 import { readDeckManifest, startArgv, type DeckManifest } from "./deck-manifest.ts";
 import { addIssue, clearIssues, type AppRecord } from "./records.ts";
 import { isDevMode } from "../api/dev-mode.ts";
@@ -69,13 +70,21 @@ export function sourceShape(record: AppRecord): ResolvedShape | null {
   return { command: startArgv(start), cwd: link.dir };
 }
 
+/** launchd never searches PATH for argv0, but a stored command predates that
+    rule for legacy rows, so a bare name here still has to resolve the same
+    way specFor's render-time lookup would, or a legacy relative argv0 always
+    reads as a phantom bundle. */
+function storedCommandExists(argv0: string): boolean {
+  return argv0.includes("/") ? existsSync(argv0) : resolveProgram(argv0, composeServicePath()) !== null;
+}
+
 export function bundleShape(record: AppRecord, helpersDir?: string | null): ResolvedShape | null {
   // A stored command on a dev-linked row is the prod shape rt setup registered
   // (absolute bundled binary, possibly with serve args); it outranks derivation
   // so args like gitq's `board` are never lost. Existence-checked like the
   // derived path: never a phantom bundle.
   if (record.command?.length) {
-    return existsSync(record.command[0]!)
+    return storedCommandExists(record.command[0]!)
       ? { command: record.command, cwd: record.workingDirectory ?? dataDir(record.name) }
       : null;
   }

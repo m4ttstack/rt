@@ -32,7 +32,7 @@ const {
 } = await import("../../core/settings.ts");
 const { setOAuth, getOAuth, reloadOAuth } = await import("../edge/oauth.ts");
 const { adoptApp } = await import("./register.ts");
-const { LABEL_PREFIX, PLATFORM_NAME } = await import("../services/manager.ts");
+const { LABEL_PREFIX, PLATFORM_NAME, PLATFORM_LABEL } = await import("../services/manager.ts");
 type ServiceSpec = Parameters<InstanceType<typeof FakeServiceManager>["install"]>[0];
 const { agentsDir } = await import("../services/launchd.ts");
 const { renderPlist } = await import("../services/plist.ts");
@@ -450,6 +450,53 @@ test("edit: dev: null unlinks", async () => {
   expect(getRecord("myapp")!.dev).toBeUndefined();
 });
 
+// ─── editApp: the platform's own record takes a record-only dev path ──────
+
+test("edit: a dev-only PATCH on the platform record is record-only -- no label rewrite, no driver call", async () => {
+  const srcDir = mkdtempSync(join(tmpdir(), "dev-link-"));
+  writeFileSync(join(srcDir, "mattstack.deck.json"), JSON.stringify({ name: "deck" }));
+  const installedBefore: ServiceSpec = {
+    label: PLATFORM_LABEL, programArguments: ["/bundle/deck"], workingDirectory: "/tmp",
+    environment: {}, stdoutPath: "/tmp/o", stderrPath: "/tmp/e",
+  };
+  drivers.manager.installed.set(PLATFORM_LABEL, installedBefore);
+  putRecord({
+    name: "deck", managedBy: PLATFORM_NAME, port: 11999, kind: "service",
+    label: PLATFORM_LABEL, command: ["/bundle/deck"], createdAt: new Date().toISOString(),
+  });
+
+  const res = await editApp("deck", { dev: { workingDirectory: srcDir } }, "user", false, drivers);
+
+  expect(res.status).toBe(200);
+  expect(getRecord("deck")!.dev).toEqual({ workingDirectory: srcDir });
+  // Never rewritten to `${LABEL_PREFIX}deck` -- the bare platform label stays bare.
+  expect(getRecord("deck")!.label).toBe(PLATFORM_LABEL);
+  expect(drivers.manager.installed.size).toBe(1);
+  expect(drivers.manager.installed.get(PLATFORM_LABEL)).toEqual(installedBefore);
+});
+
+test("edit: a dev-only UNLINK on the platform record is also record-only", async () => {
+  const srcDir = mkdtempSync(join(tmpdir(), "dev-link-"));
+  writeFileSync(join(srcDir, "mattstack.deck.json"), JSON.stringify({ name: "deck" }));
+  putRecord({
+    name: "deck", managedBy: PLATFORM_NAME, port: 11999, kind: "service",
+    label: PLATFORM_LABEL, dev: { workingDirectory: srcDir }, createdAt: new Date().toISOString(),
+  });
+  const installedBefore: ServiceSpec = {
+    label: PLATFORM_LABEL, programArguments: ["/bundle/deck"], workingDirectory: "/tmp",
+    environment: {}, stdoutPath: "/tmp/o", stderrPath: "/tmp/e",
+  };
+  drivers.manager.installed.set(PLATFORM_LABEL, installedBefore);
+
+  const res = await editApp("deck", { dev: null }, "user", false, drivers);
+
+  expect(res.status).toBe(200);
+  expect(getRecord("deck")!.dev).toBeUndefined();
+  expect(getRecord("deck")!.label).toBe(PLATFORM_LABEL);
+  expect(drivers.manager.installed.size).toBe(1);
+  expect(drivers.manager.installed.get(PLATFORM_LABEL)).toEqual(installedBefore);
+});
+
 // ─── adopt: user app -> mattstack product (ownership flip + optional rename) ──
 
 function routesOnDisk(): Array<{ hostname: string; port: number }> {
@@ -779,4 +826,75 @@ test("reresolve: a later successful install clears the launchd issue a previous 
 
   expect(res.body).toMatchObject({ ok: true, restarted: ["recovered"], unchanged: [], failed: [] });
   expect(getRecord("recovered")!.issues ?? []).toEqual([]);
+});
+
+test("reresolve reads mattstack.mode fresh, not a cache a prior status poll already warmed", async () => {
+  const { setSetting } = await import("@mattstack/rt-client");
+  const { isDevMode, resetDevModeCache } = await import("./dev-mode.ts");
+  const counting = new CountingManager();
+  const reresolveDrivers = { manager: counting, edge: drivers.edge };
+
+  const helpers = mkdtempSync(join(tmpdir(), "helpers-"));
+  writeFileSync(join(helpers, "flip"), "");
+  const srcDir = mkdtempSync(join(tmpdir(), "src-"));
+  writeFileSync(join(srcDir, "mattstack.deck.json"), JSON.stringify({ name: "flip", dev: { start: "bun run serve" } }));
+
+  setSetting("mattstack.mode", "prod", "machine");
+  resetDevModeCache();
+  setServeShapeDeps({ helpersDir: helpers });
+
+  await registerApp({ ...input, name: "flip", managedBy: "rt" }, reresolveDrivers);
+  const rec = getRecord("flip")!;
+  const label = rec.label!;
+  putRecord({ ...rec, command: undefined, workingDirectory: undefined, dev: { workingDirectory: srcDir } });
+  // The shape a prod resolve would already have installed (bundle binary, no
+  // args), so the mode flip below is what produces the diff, not this seed.
+  seedPlist(label, [join(helpers, "flip")]);
+  counting.installCalls = [];
+  counting.uninstallCalls = [];
+
+  // A status poll in the moment before the flag flips warms the cache with
+  // the stale "prod" reading -- the same 2-second window rt's real poke races.
+  isDevMode();
+  setSetting("mattstack.mode", "dev", "machine");
+
+  try {
+    const res = await reresolveManagedApps(reresolveDrivers);
+
+    expect(res.body).toMatchObject({ ok: true, restarted: ["flip"], unchanged: [], failed: [] });
+    const installed = counting.installed.get(label)!;
+    expect(installed.workingDirectory).toBe(srcDir);
+    expect(installed.programArguments.slice(1)).toEqual(["run", "serve"]);
+  } finally {
+    // The cache is keyed by wall-clock TTL, not by HOME: left warm, it can leak
+    // a "dev" reading into another test file's assertions for up to 2 seconds.
+    resetDevModeCache();
+  }
+});
+
+// ─── editApp: never uninstall a shape the patch can't replace ─────────────
+
+test("edit: unlinking a slim row with no bundle installed is rejected before any teardown", async () => {
+  setServeShapeDeps({ helpersDir: null });
+  const counting = new CountingManager();
+  const noBundleDrivers = { manager: counting, edge: drivers.edge };
+  const srcDir = mkdtempSync(join(tmpdir(), "dev-link-"));
+  writeFileSync(join(srcDir, "mattstack.deck.json"), JSON.stringify({ name: "myapp", dev: { start: "bun run serve" } }));
+  await registerApp({ ...input, name: "myapp", managedBy: "rt" }, noBundleDrivers);
+  const rec = getRecord("myapp")!;
+  const label = rec.label!;
+  putRecord({ ...rec, command: undefined, workingDirectory: undefined, dev: { workingDirectory: srcDir } });
+  const installedBefore = counting.installed.get(label);
+  counting.installCalls = [];
+  counting.uninstallCalls = [];
+
+  const res = await editApp("myapp", { dev: null }, "rt", true, noBundleDrivers);
+
+  expect(res.status).toBe(400);
+  expect((res.body as any).error).toContain("no runnable shape");
+  // Unlinking never landed: dev is still set, and neither driver call fired.
+  expect(getRecord("myapp")!.dev).toEqual({ workingDirectory: srcDir });
+  expect(counting.uninstallCalls).toEqual([]);
+  expect(counting.installCalls).toEqual([]);
+  expect(counting.installed.get(label)).toEqual(installedBefore);
 });

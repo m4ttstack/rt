@@ -387,6 +387,10 @@ export function startApi(deps: ApiDeps) {
               cwd = record.sourceDirectory ?? record.workingDirectory;
             } else {
               if (!dev || !record.dev?.workingDirectory) return json({ error: "not found" }, 404);
+              // dev.start is the supervised server's own boot command, already running
+              // under launchd: routing it here would spawn a second instance fighting
+              // the supervised one for the port.
+              if (cmd === "start") return json({ error: "not found" }, 404);
               const link = readLinkedManifest(record);
               if (link.state !== "linked") return json({ error: "not found" }, 404); // a broken link 404s rather than failing later
               shell = ownCommand(link.manifest.dev, cmd);

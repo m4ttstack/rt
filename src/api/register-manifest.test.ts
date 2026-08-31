@@ -340,10 +340,10 @@ test("a manifest named deck with no self record is refused, nothing created", as
   expect(getRecord("deck")).toBeUndefined();
 });
 
-function managedRecord() {
+function managedRecord(commandPath: string) {
   return {
     name: "chat", managedBy: "rt", port: 11020, kind: "service" as const, createdAt: "x",
-    label: "com.mattstack.deck.chat", command: ["/Users/someone/.local/bin/chat"],
+    label: "com.mattstack.deck.chat", command: [commandPath],
     workingDirectory: "/Users/someone/.mattstack/chat",
   };
 }
@@ -356,14 +356,20 @@ test("register on a managed app links the checkout instead of rewriting its serv
   const { applyManifest } = await import("./register-manifest.ts");
   reloadRegistry();
   const drivers = { manager: new FakeServiceManager(), edge: new FakeEdgeProxy() };
-  putRecord(managedRecord());
+  // Stands in for the bundle binary rt setup actually installed: it has to
+  // exist, or linking a checkout whose manifest has no dev.start resolves to
+  // no runnable shape at all and the link is refused.
+  const bundleDir = mkdtempSync(join(tmpdir(), "chat-bundle-"));
+  const commandPath = join(bundleDir, "chat");
+  writeFileSync(commandPath, "");
+  putRecord(managedRecord(commandPath));
   const dir = appRepo({ name: "chat", port: 5173, commands: { start: "bun run serve", deploy: "bun run deploy" } });
 
   const r = await applyManifest(dir, undefined, drivers);
   expect(r.status).toBe(200);
   const rec = getRecord("chat")!;
   expect(rec.dev).toEqual({ workingDirectory: dir });
-  expect(rec.command).toEqual(["/Users/someone/.local/bin/chat"]);
+  expect(rec.command).toEqual([commandPath]);
   expect(rec.port).toBe(11020);
   expect(rec.commands).toBeUndefined();
 

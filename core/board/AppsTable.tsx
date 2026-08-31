@@ -395,7 +395,10 @@ function CommandsCell({
   linkSource: (row: Row, workingDirectory: string) => Promise<string | null>;
   unlinkSource: (row: Row) => Promise<void>;
 }) {
-  if (row.devLink === "unlinked" || row.devLink === "broken") {
+  // The platform's own row never gets Link/Unlink: bootstrapSelf owns its serve
+  // shape, and editApp refuses to touch it structurally, so those controls
+  // would only ever produce a 200 that changes nothing this button implies.
+  if (!row.self && (row.devLink === "unlinked" || row.devLink === "broken")) {
     return (
       <DevLinkPrompt row={row} label={row.devLink === "unlinked" ? "Link source" : "fix link"} linkSource={linkSource} />
     );
@@ -407,7 +410,7 @@ function CommandsCell({
           {name}
         </Button>
       ))}
-      {row.devLink === "linked" && (
+      {!row.self && row.devLink === "linked" && (
         <Button variant="subtle" size="sm" aria-label={`unlink ${row.name}`} onClick={() => unlinkSource(row)}>
           Unlink
         </Button>

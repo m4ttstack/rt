@@ -692,6 +692,21 @@ describe("command route gating by app class", () => {
     expect((await devPost("/api/v1/apps/slimapp3/commands/build", {})).status).toBe(404);
   });
 
+  test("slim managed row 404s dev.start: the supervised job already owns that boot command", async () => {
+    const { putRecord } = await import("../registry/records.ts");
+    const dir = mkdtempSync(join(tmpdir(), "slim-start-"));
+    writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({
+      name: "startapp", dev: { start: "bun run serve", build: "touch built" },
+    }));
+    putRecord({
+      name: "startapp", managedBy: "rt", port: 4909, kind: "service", createdAt: "x",
+      dev: { workingDirectory: dir },
+    });
+    expect((await devPost("/api/v1/apps/startapp/commands/start", {})).status).toBe(404);
+    // Sibling dev keys on the same manifest still run: only start is excluded.
+    expect((await devPost("/api/v1/apps/startapp/commands/build", {})).status).toBe(200);
+  });
+
   test("slim managed row runs a live-read dev key when linked in dev mode", async () => {
     const { putRecord } = await import("../registry/records.ts");
     const { existsSync } = await import("fs");
