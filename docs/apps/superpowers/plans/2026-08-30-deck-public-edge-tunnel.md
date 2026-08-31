@@ -887,7 +887,7 @@ Expected: FAIL (old `bindDomain`).
 - [ ] **Step 5: Rewrite `src/edge/domain.ts`**
 
 ```ts
-import { existsSync, readFileSync, rmSync } from "fs";
+import { existsSync, rmSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import type { TunnelDriver } from "./tunnel.ts";
@@ -1602,9 +1602,6 @@ async function reconcileEdgeTick(): Promise<void> {
 
 (`resolveCloudflared` is imported from `../src/edge/domain.ts`; it returns the absolute path launchd needs.)
 
-```ts
-```
-
 and append `await reconcileEdgeTick();` at the end of `reconcileOnce()`.
 
 In `src/api/status.ts`, change the `edgeDrift` default to the real getter: `(opts.edgeDrift ?? edgeDrift)()` with `import { edgeDrift } from "../edge/edge-reconcile.ts";`.
@@ -1665,7 +1662,7 @@ test("domain flow: bind, show reports identity + edge, unbind clears", async () 
 
 - [ ] **Step 2: Create `src/cli/commands.domain.test.ts`**
 
-Follow `src/cli/commands.test.ts`'s pattern (start a `startApi` with fakes on a free port, point the CLI at it the same way that test does), then:
+Follow `src/cli/commands.test.ts`'s pattern for the env preamble and for pointing the CLI at a test API on a free port, but enumerate the `startApi` deps explicitly so nothing reaches the real rt daemon or Cloudflare: `dns: new FakeCfDns()`, `tunnel: new FakeTunnelDriver(cfDir)`, `cloudflaredDir: cfDir`, `resolveCloudflared: () => "/opt/homebrew/bin/cloudflared"`, plus the `manager`/`edge`/`freshness`/`autoHeal`/`onRouteWrite` fakes that test already passes. (The `dns` dep short-circuits `edgeDns`, so no `deckSecrets` stand-in is needed.) Then:
 
 ```ts
 test("deck domain (show) prints no edge bound; bind prints the domain; unbind refuses then forces", async () => {
@@ -1787,6 +1784,8 @@ Update `USAGE`:
   deck domain <domain> [--force]           bind your own domain (cloudflared wildcard tunnel + DNS)
   deck domain unbind [--force]             tear the edge down (tunnel, DNS record, launchd service)
 ```
+
+Update the existing domain test in `src/cli/commands.test.ts` ("domain verb no longer prompts for or persists a CF token", around line 122): its output assertions must match the new hint line (assert it contains `rt secrets set deck cfDnsToken` and `cfZoneId`; drop the `cfApiToken` / `--stdin` expectations), and give that test's `startApi` the same explicit deps as Step 2 (`dns: new FakeCfDns()`, `resolveCloudflared: () => "/opt/homebrew/bin/cloudflared"`, a scratch `cloudflaredDir` with NO `cert.pem`) so its "bind deterministically 428s" claim holds regardless of this machine's daemon and PATH.
 
 - [ ] **Step 6: `deck uninstall` teardown**
 
