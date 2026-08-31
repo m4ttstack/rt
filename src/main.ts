@@ -86,7 +86,7 @@ export function serve(): void {
   // never hand-authored configuration.
   try { reconcileMattstackTld(); } catch (err) { console.error("mattstack-tld reconcile failed:", err); }
 
-  const reconcileInterval = setInterval(() => { try { reconcileOnce(); } catch {} }, 5000);
+  const reconcileInterval = setInterval(() => { reconcileOnce().catch((err) => console.error("reconcile tick failed:", err)); }, 5000);
 
   let gatewayServer: ReturnType<typeof startGateway> | null = null;
   let canaryServer: ReturnType<typeof startCanaryListener> | null = null;

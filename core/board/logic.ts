@@ -39,6 +39,12 @@ interface StatusRow {
   /** Names of manifest-defined commands the server has gated in for this row;
       absent or empty renders no command buttons. */
   commands?: string[];
+  /** Which origin serves this row's public traffic -- the cloudflared tunnel
+      (default) or, once pushed live, Railway directly. */
+  publicOrigin: "tunnel" | "railway";
+  /** Non-null once the app has ever been pushed toward Railway; null means
+      remote was never turned on for this row. */
+  remote: { status: "deploying" | "verifying" | "live" | "error"; url: string | null } | null;
 }
 
 export interface StatusData {

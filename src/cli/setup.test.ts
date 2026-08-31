@@ -73,6 +73,29 @@ test("uninstall refuses while other records exist, force overrides", async () =>
   expect(await uninstall({ manager, edge }, io(), { force: true })).toBe(0);
 });
 
+test("uninstall --force spares remote services: prints name + url, never touches Railway", async () => {
+  const manager = new FakeServiceManager();
+  const edge = new FakeEdgeProxy();
+  putRecord({
+    name: "storefront", managedBy: "user", port: 4001, kind: "service",
+    createdAt: new Date().toISOString(),
+    remote: {
+      target: "railway", serviceId: "svc_123", customDomain: "storefront.example.com",
+      status: "live", url: "https://storefront.example.com",
+    },
+  });
+
+  const o = io();
+  // No `railway` driver in `drivers` -- if uninstall ever touched drivers.railway
+  // this would throw on undefined, so a clean pass proves the path is read-only.
+  expect(await uninstall({ manager, edge }, o, { force: true })).toBe(0);
+  const out = o.lines.join("\n");
+  expect(out).toContain("storefront");
+  expect(out).toContain("https://storefront.example.com");
+  // Remote apps outlive deck: uninstall must never delete their record.
+  expect(getRecord("storefront")).toBeDefined();
+});
+
 test("uninstall removes Deck's own agent + aliases when no other apps are registered", async () => {
   const manager = new FakeServiceManager();
   const edge = new FakeEdgeProxy();

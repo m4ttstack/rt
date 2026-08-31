@@ -30,6 +30,14 @@ import { rtCommand, type RtResponse } from "@mattstack/rt-client";
 export interface DeckCfSecrets {
   cfApiToken?: string;
   cfZoneId?: string;
+  /** Cloudflare Zone.DNS:Edit token for remote's DNS writes. Distinct from the
+      Access-scoped `cfApiToken`; falls back to `cfApiToken` when unset (a single
+      token carrying both Access and Zone.DNS scopes). */
+  cfDnsToken?: string;
+  /** Railway PROJECT token — CLI `railway up` + `railway domain` (implicit project context). */
+  railwayToken?: string;
+  /** Railway ACCOUNT/TEAM token — GraphQL service management (create/configure/delete). */
+  railwayApiToken?: string;
 }
 
 interface RawDeckSecretsData extends DeckCfSecrets {
@@ -126,5 +134,5 @@ export async function readDeckSecrets(deps: RtSecretsDeps = {}): Promise<DeckSec
     return { ok: false, message: UPDATE_RT_MESSAGE };
   }
 
-  return { ok: true, cfApiToken: data.cfApiToken, cfZoneId: data.cfZoneId };
+  return { ok: true, cfApiToken: data.cfApiToken, cfZoneId: data.cfZoneId, cfDnsToken: data.cfDnsToken, railwayToken: data.railwayToken, railwayApiToken: data.railwayApiToken };
 }
