@@ -1,10 +1,10 @@
 ---
-name: mr-board:review
+name: board:review
 description: >-
   Thin, domain-agnostic wrapper the mr-board launches to review an MR in a fresh
   herdr pane. Emits lifecycle status to a state file the board reads, then
   delegates the actual review to the skill named by --skill (or reviews
-  generically when none is given). Invoked as "/mr-board:review
+  generically when none is given). Invoked as "/board:review
   <mrUrl> --state <path> --status-bin <path> [--report <path>] [--skill <name>]
   [--re-review]". When no --skill is given, the domain skill is resolved from
   the review slot binding in .mattstack/skills.jsonc. Not for manual use.

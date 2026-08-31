@@ -51,11 +51,11 @@ export function boardRepoSlug(gitlabHost: string, project: string): string {
 
 /**
  * Resolve which skill a board launch (review/respond/doctor) should use for
- * `project`: the per-repo mattstack manifest's `mr-board:<kind>` binding when
+ * `project`: the per-repo mattstack manifest's `board:<kind>` binding when
  * present and a non-empty string, else `cfg`'s own skill field for `kind`.
  *
  * Never throws. A missing manifest file, a manifest that fails to parse, an
- * absent `bindings["mr-board:<kind>"]`, or an empty `skill` value are all
+ * absent `bindings["board:<kind>"]`, or an empty `skill` value are all
  * silent falls back to config -- the board must never break because a
  * repo's manifest is absent or malformed.
  */
@@ -90,7 +90,7 @@ export function resolveBoardSkill(
   const bindings = (parsed as Record<string, unknown>).bindings;
   if (!bindings || typeof bindings !== "object" || Array.isArray(bindings)) return fallback;
 
-  const binding = (bindings as Record<string, unknown>)[`mr-board:${kind}`];
+  const binding = (bindings as Record<string, unknown>)[`board:${kind}`];
   if (!binding || typeof binding !== "object" || Array.isArray(binding)) return fallback;
 
   const skill = (binding as Record<string, unknown>).skill;

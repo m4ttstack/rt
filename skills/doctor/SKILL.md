@@ -1,9 +1,9 @@
 ---
-name: mr-board:doctor
+name: board:doctor
 description: >-
   Use when the mr-board launches a pane to auto-repair mechanical breakage
   (merge conflicts and/or red CI) on ONE MR, yours or a teammate's, invoked as
-  "/mr-board:doctor <mrUrl> --state <path> --status-bin <path> [--skill <name>]"
+  "/board:doctor <mrUrl> --state <path> --status-bin <path> [--skill <name>]"
   with optional --tier, --fix-classes and --draft-bin flags. Not for manual use.
 allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/resolve-args.sh:*)
 metadata:

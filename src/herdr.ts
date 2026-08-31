@@ -185,15 +185,15 @@ function buildSkillPrompt(wrapper: string, o: SkillPromptOpts): string {
 }
 
 export function reviewPrompt(o: SkillPromptOpts): string {
-  return buildSkillPrompt("mr-board:review", o);
+  return buildSkillPrompt("board:review", o);
 }
 
 export function respondPrompt(o: SkillPromptOpts): string {
-  return buildSkillPrompt("mr-board:respond", o);
+  return buildSkillPrompt("board:respond", o);
 }
 
 export function doctorPrompt(o: SkillPromptOpts): string {
-  return buildSkillPrompt("mr-board:doctor", o);
+  return buildSkillPrompt("board:doctor", o);
 }
 
 /** Resolves a skill name (e.g. "acme:mr-board-review") to the absolute
@@ -348,7 +348,7 @@ export async function launchReview(
   runner: HerdrRunner = defaultRunner,
   resolvePath: SkillPathResolver = resolveSkillPath,
 ): Promise<{ tabId: string; workspaceId: string }> {
-  const prompt = await dispatchPrompt("mr-board:review", {
+  const prompt = await dispatchPrompt("board:review", {
     mrUrl: opts.mrUrl,
     statePath: opts.statePath,
     statusBin: statusBinPath(),
@@ -367,7 +367,7 @@ export async function launchRespond(
   runner: HerdrRunner = defaultRunner,
   resolvePath: SkillPathResolver = resolveSkillPath,
 ): Promise<{ tabId: string; workspaceId: string }> {
-  const prompt = await dispatchPrompt("mr-board:respond", {
+  const prompt = await dispatchPrompt("board:respond", {
     mrUrl: opts.mrUrl,
     statePath: opts.statePath,
     statusBin: statusBinPath(),
@@ -383,7 +383,7 @@ export async function launchDoctor(
   runner: HerdrRunner = defaultRunner,
   resolvePath: SkillPathResolver = resolveSkillPath,
 ): Promise<{ tabId: string; workspaceId: string }> {
-  const prompt = await dispatchPrompt("mr-board:doctor", {
+  const prompt = await dispatchPrompt("board:doctor", {
     mrUrl: opts.mrUrl,
     statePath: opts.statePath,
     statusBin: statusBinPath(),

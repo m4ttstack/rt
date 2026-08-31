@@ -127,19 +127,19 @@ the server always binds `127.0.0.1`, so nothing on your LAN can reach it directl
 
 ## review integration (local only)
 
-when you open the board from a local hostname (`board.mattstack`, `board.localhost`, `localhost`, `127.0.0.1`), right-clicking an MR row opens an action menu with **launch review**: the server spawns a fresh [herdr](https://herdr.dev) tab (in the `reviewsWorkspace`, labelled `!<iid>`), starts `claude` in `reviewCwd`, and runs `/mr-board:review <url> --state <path> --status-bin <path> [--skill <skill>]`. the board injects the domain skill and its own status-writer path as flags, so the wrapper skill itself carries no repo- or team-specific knowledge -- for review/respond that skill comes solely from the repo's `skills.jsonc` manifest binding (see below); with no binding the wrapper reviews generically. the wrapper reports each lifecycle status back to the board, which owns every slack reaction (👀 on `reviewing`, 💬/✅ on `done`) so the agent never touches slack. that thin wrapper emits `reviewing` / `done` / `error` to a state file the board reads, so the row shows a live badge (with an instant optimistic badge + toast the moment you launch). launching again while a review is live re-focuses its tab instead of spawning another.
+when you open the board from a local hostname (`board.mattstack`, `board.localhost`, `localhost`, `127.0.0.1`), right-clicking an MR row opens an action menu with **launch review**: the server spawns a fresh [herdr](https://herdr.dev) tab (in the `reviewsWorkspace`, labelled `!<iid>`), starts `claude` in `reviewCwd`, and runs `/board:review <url> --state <path> --status-bin <path> [--skill <skill>]`. the board injects the domain skill and its own status-writer path as flags, so the wrapper skill itself carries no repo- or team-specific knowledge -- for review/respond that skill comes solely from the repo's `skills.jsonc` manifest binding (see below); with no binding the wrapper reviews generically. the wrapper reports each lifecycle status back to the board, which owns every slack reaction (👀 on `reviewing`, 💬/✅ on `done`) so the agent never touches slack. that thin wrapper emits `reviewing` / `done` / `error` to a state file the board reads, so the row shows a live badge (with an instant optimistic badge + toast the moment you launch). launching again while a review is live re-focuses its tab instead of spawning another.
 
 hold **alt/option** over any pane-launching menu item (launch review, re-review, respond, doctor, resume) and its hint flips to `+ note`: alt-clicking opens a small note box instead of firing, and the note you type is appended to the launched prompt as an `Operator note (from the human who launched this pane): …` paragraph the wrapper skills honor (resumes send it as the session's first message). enter launches with the note, esc goes back. notes cap at 2000 chars; triage never sends one.
 
 a plain click still opens the MR in a new browser tab (the menu also has open-in-gitlab and copy-for-slack). the review action is gated by an `isLocal` check on both the client (the menu item only appears locally) and the server (`POST /review` returns 403), so it never fires when the board is viewed through a public tunnel. review status files live in the gitignored `state/reviews/` dir and are pruned after 24h.
 
-depends on herdr running locally and on the `mr-board:{review,respond,doctor}` wrapper skills being installed (plus whatever doctor skill you point `doctorSkill` at -- review/respond have no config fallback, only the manifest binding below -- or bind any of the three via the manifest).
+depends on herdr running locally and on the `board:{review,respond,doctor}` wrapper skills being installed (plus whatever doctor skill you point `doctorSkill` at -- review/respond have no config fallback, only the manifest binding below -- or bind any of the three via the manifest).
 
 ### skill bindings (.mattstack/skills.jsonc)
 
 the wrapper skills are parameterized skills (the convention lives in the mattstack-skills plugin's `parameterized-skills` skill): each declares slots for the domain skills that own the actual work, and resolves them with a vendored `scripts/resolve-args.sh`. resolution order, in each wrapper: an explicit `--skill` flag (what the board injects -- `doctorSkill` from config for doctor, the manifest binding or nothing for review/respond) always wins, unchanged; with no `--skill`, the wrapper resolves its slot bindings from the nearest `.mattstack/skills.jsonc` (walking up from the working dir, then `~/.mattstack/skills.jsonc`); a failed resolution degrades loudly (the resolver prints machine-readable json errors, the wrapper never guesses a binding) before falling back to the generic domain-free behavior.
 
-slots and contracts: `mr-board:review` has slot `review` (contract `mr-review@1`), `mr-board:respond` has slot `respond` (`mr-respond@1`), and `mr-board:doctor` has slots `doctor` (`mr-doctor@1`, the checkout tier) and `doctor-api` (`mr-doctor-api@1`, the `--tier api` no-checkout tier). a bound skill must declare the matching contract in its `metadata.provides`.
+slots and contracts: `board:review` has slot `review` (contract `mr-review@1`), `board:respond` has slot `respond` (`mr-respond@1`), and `board:doctor` has slots `doctor` (`mr-doctor@1`, the checkout tier) and `doctor-api` (`mr-doctor-api@1`, the `--tier api` no-checkout tier). a bound skill must declare the matching contract in its `metadata.provides`.
 
 example bindings, as the acme domain pack provides them:
 
@@ -148,9 +148,9 @@ example bindings, as the acme domain pack provides them:
 {
   "version": 1,
   "bindings": {
-    "mr-board:review":  { "review": "acme:mr-board-review" },
-    "mr-board:respond": { "respond": "acme:mr-board-respond" },
-    "mr-board:doctor": {
+    "board:review":  { "review": "acme:mr-board-review" },
+    "board:respond": { "respond": "acme:mr-board-respond" },
+    "board:doctor": {
       "doctor": "acme:mr-board-doctor",
       "doctor-api": "acme:mr-board-doctor-api"
     }

@@ -1,10 +1,10 @@
 ---
-name: mr-board:respond
+name: board:respond
 description: >-
   Thin, domain-agnostic wrapper the mr-board launches to process review feedback
   on your OWN MR in a fresh herdr pane. Emits lifecycle status to a state file
   the board reads, then delegates the actual work to the skill named by --skill.
-  Invoked as "/mr-board:respond <mrUrl> --state <path> --status-bin
+  Invoked as "/board:respond <mrUrl> --state <path> --status-bin
   <path> [--skill <name>]". When no --skill is given, the domain skill is
   resolved from the respond slot binding in .mattstack/skills.jsonc. Not for
   manual use.

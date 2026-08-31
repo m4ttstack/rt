@@ -64,7 +64,7 @@ describe("command builders", () => {
         skill: "myteam:review",
       }),
     ).toBe(
-      `/mr-board:review https://x/mr/1
+      `/board:review https://x/mr/1
   --state /s/1.json
   --status-bin /b/review-status.ts
   --report /s/1.md
@@ -74,7 +74,7 @@ describe("command builders", () => {
   test("reviewPrompt omits the skill flag when unconfigured", () => {
     expect(
       reviewPrompt({ mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: "/b/review-status.ts", reportPath: "/s/1.md" }),
-    ).toBe(`/mr-board:review https://x/mr/1
+    ).toBe(`/board:review https://x/mr/1
   --state /s/1.json
   --status-bin /b/review-status.ts
   --report /s/1.md`);
@@ -91,7 +91,7 @@ describe("command builders", () => {
     } as unknown as Parameters<typeof reviewPrompt>[0];
     expect(reviewPrompt(opts)).not.toContain("--channel");
     expect(reviewPrompt(opts)).toBe(
-      `/mr-board:review https://x/mr/1
+      `/board:review https://x/mr/1
   --state /s/1.json
   --status-bin /b/review-status.ts
   --report /s/1.md`,
@@ -104,7 +104,7 @@ describe("command builders", () => {
         note: "focus on the migration files",
       }),
     ).toBe(
-      `/mr-board:review https://x/mr/1
+      `/board:review https://x/mr/1
   --state /s/1.json
   --status-bin /b/review-status.ts` +
       "\n\nOperator note (from the human who launched this pane): focus on the migration files",
@@ -116,7 +116,7 @@ describe("command builders", () => {
       tier: "api", note: "the lint job is the real blocker",
     });
     expect(p).toBe(
-      `/mr-board:doctor https://x/mr/1
+      `/board:doctor https://x/mr/1
   --state /s/1.json
   --status-bin /b/doctor-status.ts
   --tier api` +
@@ -143,13 +143,13 @@ describe("command builders", () => {
     expect(parseLaunchNote({ note: "x".repeat(2000) })).toEqual({ ok: true, note: "x".repeat(2000) });
   });
   test("buildPaneCommand cds then launches claude with a single-quoted prompt", () => {
-    const cmd = buildPaneCommand("/repo dir", "/mr-board:review https://x/mr/1 --state /s/1.json");
-    expect(cmd).toBe("cd '/repo dir' && claude '/mr-board:review https://x/mr/1 --state /s/1.json'");
+    const cmd = buildPaneCommand("/repo dir", "/board:review https://x/mr/1 --state /s/1.json");
+    expect(cmd).toBe("cd '/repo dir' && claude '/board:review https://x/mr/1 --state /s/1.json'");
   });
   test("reviewPrompt appends --re-review when re-reviewing", () => {
     expect(
       reviewPrompt({ mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: "/b/review-status.ts", reportPath: "/s/1.md", reReview: true }),
-    ).toBe(`/mr-board:review https://x/mr/1
+    ).toBe(`/board:review https://x/mr/1
   --state /s/1.json
   --status-bin /b/review-status.ts
   --report /s/1.md
@@ -217,7 +217,7 @@ describe("launchReview", () => {
     // The pane runs the review command.
     const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
     expect(runCall?.[2]).toBe("w40:p7");
-    expect(runCall?.[3]).toContain("claude '/mr-board:review https://x/mr/1\n  --state /s/1.json");
+    expect(runCall?.[3]).toContain("claude '/board:review https://x/mr/1\n  --state /s/1.json");
     expect(runCall?.[3]).toContain("bin/board\n  --report /s/1.md'");
   });
 
@@ -237,7 +237,7 @@ describe("launchReview", () => {
       runner,
     );
     const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
-    expect(runCall?.[3]).toStartWith("cd '/repo' && cswap run 2 --share-history -- claude '/mr-board:review ");
+    expect(runCall?.[3]).toStartWith("cd '/repo' && cswap run 2 --share-history -- claude '/board:review ");
   });
 
   test("threads the operator note into the launched prompt", async () => {
@@ -332,7 +332,7 @@ describe("launchReview", () => {
     // The review command runs in the initial pane.
     const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
     expect(runCall?.[2]).toBe("w41:p1");
-    expect(runCall?.[3]).toContain("claude '/mr-board:review https://x/mr/2\n  --state /s/2.json");
+    expect(runCall?.[3]).toContain("claude '/board:review https://x/mr/2\n  --state /s/2.json");
   });
 });
 
@@ -368,9 +368,9 @@ describe("dispatchPrompt (wrapper hop stays; --skill-path rides alongside --skil
 
   test("adds --skill-path after --skill when resolution succeeds, keeping the wrapper hop", async () => {
     const resolvePath = async (name: string) => (name === "acme:mr-board-review" ? "/cache/acme/skills/mr-board-review/SKILL.md" : null);
-    const prompt = await dispatchPrompt("mr-board:review", baseOpts, resolvePath);
+    const prompt = await dispatchPrompt("board:review", baseOpts, resolvePath);
     expect(prompt).toBe(
-      `/mr-board:review https://x/mr/1
+      `/board:review https://x/mr/1
   --state /s/1.json
   --status-bin /b/review-status.ts
   --report /s/1.md
@@ -381,7 +381,7 @@ describe("dispatchPrompt (wrapper hop stays; --skill-path rides alongside --skil
 
   test("byte-identical to the historical slash form when path resolution returns null", async () => {
     const resolvePath = async () => null;
-    const prompt = await dispatchPrompt("mr-board:review", baseOpts, resolvePath);
+    const prompt = await dispatchPrompt("board:review", baseOpts, resolvePath);
     expect(prompt).toBe(reviewPrompt(baseOpts));
     expect(prompt).not.toContain("--skill-path");
   });
@@ -393,14 +393,14 @@ describe("dispatchPrompt (wrapper hop stays; --skill-path rides alongside --skil
       return "/should/not/be/used/SKILL.md";
     };
     const opts = { mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: "/b/review-status.ts" };
-    const prompt = await dispatchPrompt("mr-board:review", opts, resolvePath);
+    const prompt = await dispatchPrompt("board:review", opts, resolvePath);
     expect(called).toBe(false);
     expect(prompt).toBe(reviewPrompt(opts));
   });
 
   test("keeps the operator note as a trailing paragraph after --skill-path", async () => {
     const resolvePath = async () => "/cache/acme/skills/mr-board-review/SKILL.md";
-    const prompt = await dispatchPrompt("mr-board:review", { ...baseOpts, note: "focus on the migration files" }, resolvePath);
+    const prompt = await dispatchPrompt("board:review", { ...baseOpts, note: "focus on the migration files" }, resolvePath);
     expect(prompt).toContain("--skill-path /cache/acme/skills/mr-board-review/SKILL.md");
     expect(prompt).toContain("\n\nOperator note (from the human who launched this pane): focus on the migration files");
   });
@@ -412,9 +412,9 @@ describe("dispatchPrompt (wrapper hop stays; --skill-path rides alongside --skil
       skill: "acme:mr-board-doctor-api", tier: "api",
       fixClasses: ["retry-flake"], draftBin: draftBinPath(),
     };
-    const prompt = await dispatchPrompt("mr-board:doctor", opts, resolvePath);
+    const prompt = await dispatchPrompt("board:doctor", opts, resolvePath);
     expect(prompt).toBe(
-      `/mr-board:doctor https://x/mr/1
+      `/board:doctor https://x/mr/1
   --state /s
   --status-bin ${statusBinPath()}
   --skill acme:mr-board-doctor-api
@@ -427,7 +427,7 @@ describe("dispatchPrompt (wrapper hop stays; --skill-path rides alongside --skil
 
   test("re-review keeps --skill-path and --re-review both present", async () => {
     const resolvePath = async () => "/cache/acme/skills/mr-board-review/SKILL.md";
-    const prompt = await dispatchPrompt("mr-board:review", { ...baseOpts, reReview: true }, resolvePath);
+    const prompt = await dispatchPrompt("board:review", { ...baseOpts, reReview: true }, resolvePath);
     expect(prompt).toContain("--skill-path /cache/acme/skills/mr-board-review/SKILL.md\n  --re-review");
   });
 });
@@ -440,7 +440,7 @@ describe("launchReview / launchRespond / launchDoctor --skill-path wiring", () =
     return JSON.stringify({ result: { type: "ok" } });
   };
 
-  test("launchReview adds --skill-path but keeps launching the /mr-board:review wrapper", async () => {
+  test("launchReview adds --skill-path but keeps launching the /board:review wrapper", async () => {
     const calls: string[][] = [];
     const runner: HerdrRunner = async (args) => {
       calls.push(args);
@@ -453,7 +453,7 @@ describe("launchReview / launchRespond / launchDoctor --skill-path wiring", () =
       resolvePath,
     );
     const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
-    expect(runCall?.[3]).toContain("claude '/mr-board:review https://x/mr/1");
+    expect(runCall?.[3]).toContain("claude '/board:review https://x/mr/1");
     expect(runCall?.[3]).toContain("--skill-path /cache/acme/skills/mr-board-review/SKILL.md");
   });
 
@@ -470,11 +470,11 @@ describe("launchReview / launchRespond / launchDoctor --skill-path wiring", () =
       resolvePath,
     );
     const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
-    expect(runCall?.[3]).toContain("claude '/mr-board:review https://x/mr/1");
+    expect(runCall?.[3]).toContain("claude '/board:review https://x/mr/1");
     expect(runCall?.[3]).not.toContain("--skill-path");
   });
 
-  test("launchRespond adds --skill-path but keeps launching the /mr-board:respond wrapper", async () => {
+  test("launchRespond adds --skill-path but keeps launching the /board:respond wrapper", async () => {
     const calls: string[][] = [];
     const runner: HerdrRunner = async (args) => {
       calls.push(args);
@@ -488,13 +488,13 @@ describe("launchReview / launchRespond / launchDoctor --skill-path wiring", () =
     );
     const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
     expect(runCall?.[3]).toBe(
-      buildPaneCommand("/repo", await dispatchPrompt("mr-board:respond", {
+      buildPaneCommand("/repo", await dispatchPrompt("board:respond", {
         mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: statusBinPath(), skill: "acme:mr-board-respond",
       }, resolvePath)),
     );
   });
 
-  test("launchDoctor adds --skill-path but keeps launching the /mr-board:doctor wrapper, tier intact", async () => {
+  test("launchDoctor adds --skill-path but keeps launching the /board:doctor wrapper, tier intact", async () => {
     const calls: string[][] = [];
     const runner: HerdrRunner = async (args) => {
       calls.push(args);
@@ -510,7 +510,7 @@ describe("launchReview / launchRespond / launchDoctor --skill-path wiring", () =
       resolvePath,
     );
     const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
-    expect(runCall?.[3]).toContain("claude '/mr-board:doctor https://x/mr/1");
+    expect(runCall?.[3]).toContain("claude '/board:doctor https://x/mr/1");
     expect(runCall?.[3]).toContain("--skill-path /cache/acme/attachments/mr-board-doctor-api/SKILL.md");
     expect(runCall?.[3]).toContain("--tier api");
   });

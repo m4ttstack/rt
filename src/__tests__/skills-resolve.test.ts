@@ -10,11 +10,11 @@ import { fileURLToPath } from "node:url";
 // the board have to agree on these strings exactly.
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 const wrappers = [
-  { dir: "review", name: "mr-board:review", slots: { review: "mr-review@1" } },
-  { dir: "respond", name: "mr-board:respond", slots: { respond: "mr-respond@1" } },
+  { dir: "review", name: "board:review", slots: { review: "mr-review@1" } },
+  { dir: "respond", name: "board:respond", slots: { respond: "mr-respond@1" } },
   {
     dir: "doctor",
-    name: "mr-board:doctor",
+    name: "board:doctor",
     slots: { doctor: "mr-doctor@1", "doctor-api": "mr-doctor-api@1" },
   },
 ] as const;
@@ -47,9 +47,9 @@ writeFileSync(
 {
   "version": 1,
   "bindings": {
-    "mr-board:review":  { "review": "fake:review" },
-    "mr-board:respond": { "respond": "fake:respond" },
-    "mr-board:doctor":  { "doctor": "fake:doctor", "doctor-api": "fake:doctor-api" }
+    "board:review":  { "review": "fake:review" },
+    "board:respond": { "respond": "fake:respond" },
+    "board:doctor":  { "doctor": "fake:doctor", "doctor-api": "fake:doctor-api" }
   }
 }
 `,
@@ -57,7 +57,7 @@ writeFileSync(
 const mismatchManifest = join(fix, "mismatch.jsonc");
 writeFileSync(
   mismatchManifest,
-  `{ "version": 1, "bindings": { "mr-board:review": { "review": "fake:wrong-contract" } } }\n`,
+  `{ "version": 1, "bindings": { "board:review": { "review": "fake:wrong-contract" } } }\n`,
 );
 const missingManifest = join(fix, "does-not-exist.jsonc");
 
