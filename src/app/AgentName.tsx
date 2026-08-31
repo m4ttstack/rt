@@ -30,7 +30,10 @@ export interface AgentNameProps {
       message sender (lg name, repo token). `name`: the bare name at the
       surrounding size, for chips and DM pairs. */
   variant?: AgentNameVariant;
-  /** `false` for touch surfaces (the phone drawer): no hover, no card. */
+  /** `false` drops the hover card and, with it, the hover styling -- both
+      hang off the card's `.target` wrapper, so neither survives without it.
+      For touch surfaces (the phone drawer) and dense lists that should not
+      react to hover (the sidebar DM rows). */
   withCard?: boolean;
   /** `inline` only: renders the handle as a chip in this hue (color and
       wash background). Unset keeps today's plain-name rendering. */
