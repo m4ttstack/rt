@@ -553,7 +553,9 @@ export function startApi(deps: ApiDeps) {
         }
         if (pathname === "/api/v1/domain/unbind" && req.method === "POST") {
           const b = await body(req);
-          const r = await unbindDomain({ tunnel: deps.tunnel, manager: deps.manager, dns: await edgeDns(deps) }, { force: b.force === true, cloudflaredDir: deps.cloudflaredDir });
+          const dns = await edgeDns(deps);
+          if (!dns) return json({ error: "cf-secrets-required", hint: "rt secrets set deck cfZoneId / cfDnsToken" }, 400);
+          const r = await unbindDomain({ tunnel: deps.tunnel, manager: deps.manager, dns }, { force: b.force === true, cloudflaredDir: deps.cloudflaredDir });
           if (r.status === 200) edgeBindingChanged();
           return json(r.body, r.status);
         }

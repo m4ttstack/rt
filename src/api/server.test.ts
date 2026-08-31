@@ -413,24 +413,44 @@ test("POST /api/v1/migrate with convert:true skips a non-service (external) reco
   expect([...manager.installed.keys()].some((label) => label.includes("static-app"))).toBe(false);
 });
 
-test("domain flow: bind, show reports identity + edge, unbind clears", async () => {
+test("domain flow: bind, show reports identity + edge, unbind refuses served apps then forces", async () => {
   const domainApi = (path: string, init?: RequestInit) => fetch(`http://127.0.0.1:${DOMAIN_PORT}${path}`, init);
+  const domainPost = (path: string, body: unknown) =>
+    domainApi(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   const before = await (await domainApi("/api/v1/domain")).json();
   expect(before).toMatchObject({ domain: null, tunnel: null, edge: null });
 
   writeFileSync(join(domainCfDir, "cert.pem"), "x");
-  const bind = await domainApi("/api/v1/domain/bind", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ domain: "example.dev" }) });
+  const bind = await domainPost("/api/v1/domain/bind", { domain: "example.dev" });
   expect(bind.status).toBe(200);
   const shown = await (await domainApi("/api/v1/domain")).json();
   expect(shown.domain).toBe("example.dev");
   expect(shown.tunnel.name).toMatch(/^deck-edge-/);
   expect(shown.edge.state).toBe("stopped"); // fake manager installs without a pid
 
-  const refused = await domainApi("/api/v1/domain/unbind", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-  expect([200, 409]).toContain(refused.status); // 409 apps-will-go-offline when the suite has records; 200 otherwise
-  const unbind = await domainApi("/api/v1/domain/unbind", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ force: true }) });
+  // Seed a published, non-remote record so the unforced unbind deterministically
+  // 409s (apps-will-go-offline) instead of depending on incidental suite state.
+  await domainPost("/api/v1/apps", { name: "domain-flow-served", staticPort: 41999 });
+  await domainApi("/api/v1/apps/domain-flow-served/publish", {
+    method: "PUT", headers: { "content-type": "application/json" }, body: JSON.stringify({ published: true }),
+  });
+
+  const refused = await domainPost("/api/v1/domain/unbind", {});
+  expect(refused.status).toBe(409);
+  expect((await refused.json()).error).toBe("apps-will-go-offline");
+
+  const unbind = await domainPost("/api/v1/domain/unbind", { force: true });
   expect(unbind.status).toBe(200);
   expect((await (await domainApi("/api/v1/domain")).json()).domain).toBeNull();
+});
+
+test("unbind requires DNS-capable cf secrets: no dns dep and no deckSecrets stand-in answers 400 cf-secrets-required", async () => {
+  // The main `server` fixture injects neither `dns` nor `deckSecrets`; edgeDns()
+  // falls through to readDeckSecrets(), which fails closed against this test's
+  // fresh, real-daemon-free HOME (no ~/.mattstack/rt/api-token there).
+  const res = await post("/api/v1/domain/unbind", {});
+  expect(res.status).toBe(400);
+  expect((await res.json()).error).toBe("cf-secrets-required");
 });
 
 test("DELETE tears down a route-only row through the edge driver instead of 404ing", async () => {
