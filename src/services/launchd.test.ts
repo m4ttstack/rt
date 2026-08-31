@@ -5,7 +5,7 @@ import { tmpdir } from "os";
 
 const dir = mkdtempSync(join(tmpdir(), "local-agents-"));
 process.env.LOCAL_AGENTS_DIR = dir;
-const { LaunchdManager } = await import("./launchd.ts");
+const { LaunchdManager, readInstalledProgramArguments } = await import("./launchd.ts");
 
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -79,4 +79,23 @@ test("uninstall still surfaces a genuine removal failure (not just a missing fil
   // failure that must NOT be swallowed as though it were "already gone".
   mkdirSync(plist);
   await expect(mgr.uninstall(label)).rejects.toBeTruthy();
+});
+
+test("readInstalledProgramArguments round-trips renderPlist, escapes included", async () => {
+  const testDir = mkdtempSync(join(tmpdir(), "agents-"));
+  process.env.LOCAL_AGENTS_DIR = testDir;
+  try {
+    const manager = new LaunchdManager(async () => 0);
+    const spec = {
+      label: "com.mattstack.deck.chat",
+      programArguments: ["/usr/bin/env", "arg<with&odd>chars", "plain"],
+      workingDirectory: "/tmp", environment: {}, stdoutPath: "/tmp/o", stderrPath: "/tmp/e",
+    };
+    await manager.install(spec);
+    expect(readInstalledProgramArguments("com.mattstack.deck.chat")).toEqual(spec.programArguments);
+    expect(readInstalledProgramArguments("com.mattstack.deck.ghost")).toBeNull();
+  } finally {
+    rmSync(testDir, { recursive: true, force: true });
+    process.env.LOCAL_AGENTS_DIR = dir;
+  }
 });

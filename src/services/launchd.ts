@@ -1,4 +1,4 @@
-import { writeFileSync, rmSync, existsSync, mkdirSync } from "fs";
+import { writeFileSync, rmSync, existsSync, mkdirSync, readFileSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import type { ServiceManager, ServiceSpec } from "./manager.ts";
@@ -13,6 +13,26 @@ const realExec: Exec = async (argv) => {
 
 export function agentsDir(): string {
   return process.env.LOCAL_AGENTS_DIR ?? join(homedir(), "Library", "LaunchAgents");
+}
+
+/** ProgramArguments read back from an installed plist deck itself rendered
+    (renderPlist's known shape); the plist stays the source of truth for
+    "what is actually running" so no last-resolved command is stored. */
+export function readInstalledProgramArguments(label: string): string[] | null {
+  let xml: string;
+  try {
+    xml = readFileSync(join(agentsDir(), `${label}.plist`), "utf8");
+  } catch {
+    return null;
+  }
+  const array = xml.match(/<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/);
+  if (!array) return null;
+  // Unescape in reverse order of esc(): &lt; to <, &gt; to >, &amp; to & last.
+  // Reversing the order is critical: if &amp; was unescaped first, then & in
+  // &lt; would be replaced again, corrupting the result.
+  return [...array[1]!.matchAll(/<string>([\s\S]*?)<\/string>/g)].map((m) =>
+    m[1]!.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&"),
+  );
 }
 
 export class LaunchdManager implements ServiceManager {
