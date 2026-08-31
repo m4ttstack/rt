@@ -1,5 +1,5 @@
-import { test, expect, beforeEach } from "bun:test";
-import { mkdtempSync, rmSync, existsSync } from "fs";
+import { test, expect, beforeEach, afterEach } from "bun:test";
+import { mkdtempSync, rmSync, existsSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -21,15 +21,17 @@ process.env.LOCAL_APPS_SETTINGS_PATH = join(dir, "settings.json");
 // ~/.mattstack; beforeEach repoints it to a fresh dir per test below.
 process.env.HOME = dir;
 
-const { registerApp, unregisterApp, editApp, restartManagedApps, removeManagedApps } = await import("./register.ts");
+const { registerApp, unregisterApp, editApp, restartManagedApps, removeManagedApps, setServeShapeDeps } =
+  await import("./register.ts");
 const { FakeServiceManager } = await import("../services/fake.ts");
 const { FakeEdgeProxy } = await import("../edge/portless.ts");
-const { getRecord, reloadRegistry, listRecords, deleteRecord } = await import("../registry/records.ts");
+const { getRecord, putRecord, reloadRegistry, listRecords, deleteRecord } = await import("../registry/records.ts");
 const {
   getAppSettings, setPublished, setPassword, setOverride, getOverride, setPublicFollowsOverride, reloadSettings,
 } = await import("../../core/settings.ts");
 const { setOAuth, getOAuth, reloadOAuth } = await import("../edge/oauth.ts");
 const { adoptApp } = await import("./register.ts");
+const { LABEL_PREFIX } = await import("../services/manager.ts");
 
 let drivers: { manager: InstanceType<typeof FakeServiceManager>; edge: InstanceType<typeof FakeEdgeProxy> };
 beforeEach(() => {
@@ -41,6 +43,10 @@ beforeEach(() => {
   reloadRegistry();
   reloadSettings();
   drivers = { manager: new FakeServiceManager(), edge: new FakeEdgeProxy() };
+});
+
+afterEach(() => {
+  setServeShapeDeps({});
 });
 
 const input = {
@@ -337,6 +343,22 @@ test("refuses to install a service whose program cannot be found", async () => {
   expect(drivers.manager.installed.has("com.mattstack.deck.ghostapp")).toBe(false);
   const issues = getRecord("ghostapp")!.issues!;
   expect(issues.some((i) => i.source === "launchd" && i.message.includes("not found"))).toBe(true);
+});
+
+test("a linked managed record installs its resolved source shape in dev mode", async () => {
+  setServeShapeDeps({ devMode: () => true, helpersDir: null });
+  const dir = mkdtempSync(join(tmpdir(), "src-"));
+  writeFileSync(join(dir, "mattstack.deck.json"),
+    JSON.stringify({ name: "srcapp", dev: { start: "bun run serve" } }));
+  // register as a user app first to get a record + label, then repoint it to managed+linked
+  await registerApp({ name: "srcapp", command: ["bun", "x.ts"], workingDirectory: "/tmp" }, drivers);
+  const r = getRecord("srcapp")!;
+  putRecord({ ...r, managedBy: "rt", command: undefined, workingDirectory: undefined, dev: { workingDirectory: dir } });
+  // editApp re-renders the plist through the resolver
+  await editApp("srcapp", {}, "rt", true, drivers);
+  const installed = drivers.manager.installed.get(`${LABEL_PREFIX}srcapp`)!;
+  expect(installed.workingDirectory).toBe(dir);
+  expect(installed.programArguments.slice(1)).toEqual(["run", "serve"]);
 });
 
 // ─── adopt: user app -> mattstack product (ownership flip + optional rename) ──

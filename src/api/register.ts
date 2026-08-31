@@ -16,6 +16,7 @@ import {
   LABEL_PREFIX, isPlatformManagedBy, type ServiceManager, type ServiceSpec,
 } from "../services/manager.ts";
 import { composeServicePath, resolveProgram } from "../services/exec-env.ts";
+import { serveShape, type ResolvedShape, type ServeShapeDeps } from "../registry/serve-shape.ts";
 import type { EdgeProxy } from "../edge/portless.ts";
 import { logsDir } from "./state.ts";
 import { disableRemote } from "../edge/remote.ts";
@@ -51,27 +52,32 @@ export type FlowResult = { status: number; body: unknown };
 
 const NAME_RE = /^[a-z0-9][a-z0-9.-]*$/;
 
+/** Test seam: overrides the resolver's mode read; production leaves it unset. */
+export let serveShapeDeps: ServeShapeDeps = {};
+export function setServeShapeDeps(deps: ServeShapeDeps): void { serveShapeDeps = deps; }
+
 /**
  * launchd does not search PATH for `ProgramArguments[0]`, so argv0 must be
- * absolute in the plist. The registry deliberately keeps the logical command
- * (`node server.js`) and this resolves it on every render, so an interpreter
- * that moves — a version manager reorganizing, or being swapped for another —
- * is picked up by the next render instead of being frozen at registration.
+ * absolute in the plist. The caller passes the shape resolved for this render
+ * (bundled binary or linked source), and this resolves argv0 to an absolute
+ * path on every render, so an interpreter that moves -- a version manager
+ * reorganizing, or being swapped for another -- is picked up by the next
+ * render instead of being frozen at registration.
  *
  * Throws rather than naming a program that does not exist: launchd declines
  * to start such a job without logging anything, so writing it anyway produces
  * an app that is silently, inexplicably down.
  */
-function specFor(record: AppRecord): ServiceSpec {
+function specFor(record: AppRecord, shape: ResolvedShape): ServiceSpec {
   const env = { ...(record.env ?? {}), PORT: String(record.port) };
   const path = env.PATH ?? composeServicePath();
-  const [argv0, ...rest] = record.command!;
+  const [argv0, ...rest] = shape.command;
   const program = resolveProgram(argv0!, path);
   if (!program) throw new Error(`${argv0} not found on the service PATH (${path})`);
   return {
     label: record.label!,
     programArguments: [program, ...rest],
-    workingDirectory: record.workingDirectory!,
+    workingDirectory: shape.cwd,
     environment: { ...env, PATH: path },
     stdoutPath: join(logsDir(), `${record.name}.out.log`),
     stderrPath: join(logsDir(), `${record.name}.err.log`),
@@ -180,7 +186,10 @@ export async function registerApp(input: RegisterInput, drivers: Drivers): Promi
 
   if (!input.adopt) {
     mkdirSync(logsDir(), { recursive: true });
-    if (isService) await tryDriver(name, "launchd", () => drivers.manager.install(specFor(record)));
+    if (isService) {
+      const shape = serveShape(record, serveShapeDeps);
+      if (shape) await tryDriver(name, "launchd", () => drivers.manager.install(specFor(record, shape)));
+    }
     await tryDriver(name, "portless", () => drivers.edge.alias(name, record.port));
   }
   return { status: 201, body: { record: getRecord(name) } };
@@ -393,7 +402,8 @@ export async function editApp(
   if (portChanged) clearOverride(next.name);
   putRecord(next);
   if (next.kind === "service") {
-    await tryDriver(next.name, "launchd", () => drivers.manager.install(specFor(next)));
+    const shape = serveShape(next, serveShapeDeps);
+    if (shape) await tryDriver(next.name, "launchd", () => drivers.manager.install(specFor(next, shape)));
   }
   // Unchanged base port + an active override: the live route stays pointed at
   // the override's devPort instead of being reset to the base port. A changed
@@ -501,10 +511,11 @@ export async function reinstallSupervised(
   const reinstalled: string[] = [];
   const failed: string[] = [];
   for (const record of listRecords()) {
-    if (record.kind !== "service" || isPlatformManagedBy(record.managedBy)) continue;
-    if (!record.label || !record.command?.length) continue;
+    if (record.kind !== "service" || isPlatformManagedBy(record.managedBy) || !record.label) continue;
+    const shape = serveShape(record, serveShapeDeps);
+    if (!shape) { failed.push(record.name); continue; }
     try {
-      await drivers.manager.install(specFor(record));
+      await drivers.manager.install(specFor(record, shape));
       clearIssues(record.name, "launchd");
       reinstalled.push(record.name);
     } catch (err) {
