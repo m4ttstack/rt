@@ -22,6 +22,7 @@ import { getPlatformSettings } from "./platform-settings.ts";
 import { isPlatformManagedBy } from "../services/manager.ts";
 import { TUNNEL_LABEL } from "../edge/domain.ts";
 import { tunnelRowHealth } from "../edge/edge-health.ts";
+import { edgeDrift } from "../edge/edge-reconcile.ts";
 
 export interface BuildStatusOpts {
   requestHost?: string;
@@ -232,7 +233,7 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
   const edgeHealth = edgeService && platform.tunnel
     ? await tunnelRowHealth({
         running: edgeService.pid !== null,
-        tunnelGone: (opts.edgeDrift ?? (() => ({ tunnelGone: false })))().tunnelGone,
+        tunnelGone: (opts.edgeDrift ?? edgeDrift)().tunnelGone,
         domain: platform.publicDomain,
         fetchImpl: opts.readyFetch,
       })
