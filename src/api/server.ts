@@ -25,6 +25,7 @@ import { redactedSettings, updatePlatformSettings, getPlatformSettings } from ".
 import { logsDir } from "./state.ts";
 import { isDevMode } from "./dev-mode.ts";
 import { startCommandRun, commandRunStatus } from "../services/command-runner.ts";
+import { readLinkedManifest } from "../registry/serve-shape.ts";
 import { join } from "path";
 import { userInfo } from "os";
 import type { TunnelDriver } from "../edge/tunnel.ts";
@@ -79,6 +80,13 @@ function json(body: unknown, status = 200): Response {
     status,
     headers: { "content-type": "application/json; charset=utf-8" },
   });
+}
+
+// hasOwnProperty, not bracket access alone: an inherited Object.prototype
+// name (constructor, toString, ...) must never resolve as a command.
+function ownCommand(commands: Record<string, string> | undefined, key: string): string | undefined {
+  if (!commands || !Object.prototype.hasOwnProperty.call(commands, key)) return undefined;
+  return commands[key];
 }
 
 const ICON_ROUTE = /^\/api\/apps\/([^/]+)\/icon$/;
@@ -348,18 +356,40 @@ export function startApi(deps: ApiDeps) {
           return json(r.body, r.status);
         }
 
-        // Dev-only action-command routes: production must 404 exactly as if the
-        // route did not exist, so no command metadata leaks off-machine.
+        // Action-command routes, gated per app class: user rows are never
+        // mode-gated (fixes a prod over-gate), grandfathered managed rows keep
+        // the dev-gated record.commands behavior verbatim, and slim managed
+        // rows read commands live off the linked manifest. Production must
+        // 404 exactly as if the route did not exist, so no command metadata
+        // leaks off-machine.
         {
           const cm = pathname.match(/^\/api\/v1\/apps\/([^/]+)\/commands\/([a-z0-9-]+)(?:\/([a-z0-9]+))?$/);
           if (cm) {
-            const dev = (deps.devMode ?? isDevMode)();
-            if (!dev) return json({ error: "not found" }, 404); // production: indistinguishable from absent
             const [, name, cmd, runId] = cm as unknown as [string, string, string, string | undefined];
             const record = getRecord(name);
-            if (!record?.commands || !Object.prototype.hasOwnProperty.call(record.commands, cmd)) {
-              return json({ error: "not found" }, 404);
+            if (!record) return json({ error: "not found" }, 404);
+            const dev = (deps.devMode ?? isDevMode)();
+            let shell: string | undefined;
+            let cwd: string | undefined;
+            // A managed row with commands and no dev link predates the dev-link
+            // migration: route it through the legacy branch, not the manifest one.
+            const grandfathered = !record.dev?.workingDirectory && !!record.commands;
+            if (record.managedBy === "user") {
+              shell = ownCommand(record.commands, cmd);
+              cwd = record.sourceDirectory ?? record.workingDirectory;
+            } else if (grandfathered) {
+              if (!dev) return json({ error: "not found" }, 404); // production: indistinguishable from absent
+              shell = ownCommand(record.commands, cmd);
+              cwd = record.sourceDirectory ?? record.workingDirectory;
+            } else {
+              if (!dev || !record.dev?.workingDirectory) return json({ error: "not found" }, 404);
+              const link = readLinkedManifest(record);
+              if (link.state !== "linked") return json({ error: "not found" }, 404); // a broken link 404s rather than failing later
+              shell = ownCommand(link.manifest.dev, cmd);
+              cwd = link.dir;
             }
+            if (!shell) return json({ error: "not found" }, 404);
+
             if (runId && req.method === "GET") {
               const st = commandRunStatus(name, runId);
               return st ? json(st) : json({ error: "unknown run" }, 404);
@@ -369,11 +399,8 @@ export function startApi(deps: ApiDeps) {
               // never spawn with cwd undefined, which would run in deck's own directory.
               // The platform's service runs from the state dir but its commands
               // belong to the source checkout attached at register time.
-              const cwd = record.sourceDirectory ?? record.workingDirectory;
               if (!cwd) return json({ error: "app has no manifest directory" }, 400);
-              const started = startCommandRun({
-                name, cmd, shell: record.commands[cmd]!, workingDirectory: cwd,
-              });
+              const started = startCommandRun({ name, cmd, shell, workingDirectory: cwd });
               if (!started.started) return json({ error: "busy" }, 409);
               return json({ started: true, runId: started.runId });
             }

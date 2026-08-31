@@ -1,4 +1,4 @@
-import { test, expect, beforeAll, afterAll, beforeEach } from "bun:test";
+import { test, expect, beforeAll, afterAll, beforeEach, describe } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -604,4 +604,123 @@ test("command route spawns in sourceDirectory when set, else workingDirectory", 
   for (let i = 0; i < 40 && !existsSync(join(source, "marker")); i++) await new Promise((r) => setTimeout(r, 50));
   expect(existsSync(join(source, "marker"))).toBe(true);
   expect(existsSync(join(state, "marker"))).toBe(false);
+});
+
+describe("command route gating by app class", () => {
+  test("user app runs its declared key in prod", async () => {
+    const { putRecord } = await import("../registry/records.ts");
+    const dir = mkdtempSync(join(tmpdir(), "cmd-user-"));
+    putRecord({
+      name: "useredapp", managedBy: "user", port: 4900, kind: "service", createdAt: "x",
+      workingDirectory: dir, commands: { build: "echo built" },
+    });
+    const res = await prodPost("/api/v1/apps/useredapp/commands/build", {});
+    expect(res.status).toBe(200);
+    expect((await res.json()).started).toBe(true);
+  });
+
+  test("user app 404s on an undeclared key", async () => {
+    const { putRecord } = await import("../registry/records.ts");
+    const dir = mkdtempSync(join(tmpdir(), "cmd-user-"));
+    putRecord({
+      name: "useredapp2", managedBy: "user", port: 4901, kind: "service", createdAt: "x",
+      workingDirectory: dir, commands: { build: "echo built" },
+    });
+    const res = await prodPost("/api/v1/apps/useredapp2/commands/ghost", {});
+    expect(res.status).toBe(404);
+  });
+
+  test("grandfathered managed row keeps dev-gated record.commands", async () => {
+    const { putRecord } = await import("../registry/records.ts");
+    const { existsSync } = await import("fs");
+    const source = mkdtempSync(join(tmpdir(), "gf-src-"));
+    const state = mkdtempSync(join(tmpdir(), "gf-state-"));
+    putRecord({
+      name: "gfapp", managedBy: "rt", port: 4902, kind: "service", createdAt: "x",
+      workingDirectory: state, sourceDirectory: source, commands: { build: "touch built" },
+    });
+
+    const prodRes = await prodPost("/api/v1/apps/gfapp/commands/build", {});
+    expect(prodRes.status).toBe(404);
+
+    const devRes = await devPost("/api/v1/apps/gfapp/commands/build", {});
+    expect(devRes.status).toBe(200);
+    for (let i = 0; i < 40 && !existsSync(join(source, "built")); i++) await new Promise((r) => setTimeout(r, 50));
+    expect(existsSync(join(source, "built"))).toBe(true);
+    expect(existsSync(join(state, "built"))).toBe(false);
+  });
+
+  test("slim managed row 404s in prod, when unlinked, and on a broken link", async () => {
+    const { putRecord } = await import("../registry/records.ts");
+
+    // A fully valid link still 404s in production.
+    const linkedDir = mkdtempSync(join(tmpdir(), "slim-linked-"));
+    writeFileSync(join(linkedDir, "mattstack.deck.json"), JSON.stringify({
+      name: "slimapp", commands: {}, dev: { build: "touch built" },
+    }));
+    putRecord({
+      name: "slimapp", managedBy: "rt", port: 4903, kind: "service", createdAt: "x",
+      dev: { workingDirectory: linkedDir },
+    });
+    expect((await prodPost("/api/v1/apps/slimapp/commands/build", {})).status).toBe(404);
+
+    // No dev.workingDirectory at all: unlinked, even in dev mode.
+    putRecord({
+      name: "slimapp2", managedBy: "rt", port: 4904, kind: "service", createdAt: "x",
+    });
+    expect((await devPost("/api/v1/apps/slimapp2/commands/build", {})).status).toBe(404);
+
+    // dev.workingDirectory points at a real directory with no manifest: broken link.
+    const brokenDir = mkdtempSync(join(tmpdir(), "slim-broken-"));
+    putRecord({
+      name: "slimapp3", managedBy: "rt", port: 4905, kind: "service", createdAt: "x",
+      dev: { workingDirectory: brokenDir },
+    });
+    expect((await devPost("/api/v1/apps/slimapp3/commands/build", {})).status).toBe(404);
+  });
+
+  test("slim managed row runs a live-read dev key when linked in dev mode", async () => {
+    const { putRecord } = await import("../registry/records.ts");
+    const { existsSync } = await import("fs");
+    const dir = mkdtempSync(join(tmpdir(), "slim-live-"));
+    const manifestPath = join(dir, "mattstack.deck.json");
+    writeFileSync(manifestPath, JSON.stringify({ name: "liveapp", commands: {}, dev: { build: "touch marker1" } }));
+    putRecord({
+      name: "liveapp", managedBy: "rt", port: 4906, kind: "service", createdAt: "x",
+      dev: { workingDirectory: dir },
+    });
+
+    const first = await devPost("/api/v1/apps/liveapp/commands/build", {});
+    expect(first.status).toBe(200);
+    const firstRunId = (await first.json()).runId as string;
+    for (let i = 0; i < 40 && !existsSync(join(dir, "marker1")); i++) await new Promise((r) => setTimeout(r, 50));
+    expect(existsSync(join(dir, "marker1"))).toBe(true);
+    // Wait for the first run to exit: only one run per app name may be in flight.
+    for (let i = 0; i < 40; i++) {
+      const st = (await (await devApi(`/api/v1/apps/liveapp/commands/build/${firstRunId}`)).json()) as { status: string };
+      if (st.status === "exited") break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+
+    writeFileSync(manifestPath, JSON.stringify({ name: "liveapp", commands: {}, dev: { build: "touch marker2" } }));
+    const second = await devPost("/api/v1/apps/liveapp/commands/build", {});
+    expect(second.status).toBe(200);
+    for (let i = 0; i < 40 && !existsSync(join(dir, "marker2")); i++) await new Promise((r) => setTimeout(r, 50));
+    expect(existsSync(join(dir, "marker2"))).toBe(true);
+  });
+
+  test("deck-self shape: linked manifest with dev.deploy and no dev.start still runs deploy", async () => {
+    const { putRecord } = await import("../registry/records.ts");
+    const dir = mkdtempSync(join(tmpdir(), "deckself-"));
+    writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({
+      name: "deckself", commands: {}, dev: { deploy: "echo deployed" },
+    }));
+    putRecord({
+      name: "deckself", managedBy: "deck", port: 4907, kind: "service", createdAt: "x",
+      dev: { workingDirectory: dir },
+    });
+    const res = await devPost("/api/v1/apps/deckself/commands/deploy", {});
+    expect(res.status).toBe(200);
+    expect((await res.json()).started).toBe(true);
+  });
 });
