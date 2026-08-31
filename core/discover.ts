@@ -110,7 +110,28 @@ async function plistToJson(path: string): Promise<Record<string, unknown> | null
   }
 }
 
+/**
+ * Test seam for the pid read. `agentsDir()` is isolated per suite but labels
+ * are not, so a fixture plist carrying a real label (com.mattstack.deck.tunnel)
+ * otherwise picks up the pid of that service actually running on the machine,
+ * and the suite passes or fails on whether the developer happens to be serving.
+ * Unset reads launchctl. "" is nothing running; entries are `label=pid`.
+ */
+function seamedPids(): Map<string, { pid: number | null; status: number }> | null {
+  const raw = process.env.LOCAL_LAUNCHCTL_PIDS;
+  if (raw === undefined) return null;
+  const map = new Map<string, { pid: number | null; status: number }>();
+  for (const entry of raw.split(",").map((s) => s.trim()).filter(Boolean)) {
+    const [label, pid] = entry.split("=");
+    if (!label) continue;
+    map.set(label, { pid: pid === undefined || pid === "-" ? null : Number(pid), status: 0 });
+  }
+  return map;
+}
+
 async function launchctlPids(): Promise<Map<string, { pid: number | null; status: number }>> {
+  const seamed = seamedPids();
+  if (seamed) return seamed;
   const proc = Bun.spawn(["launchctl", "list"], { stderr: "ignore" });
   const out = await new Response(proc.stdout).text();
   await proc.exited;

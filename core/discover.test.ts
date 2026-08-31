@@ -1,5 +1,8 @@
 import { test, expect } from "bun:test";
-import { nextFreePort, bareName, dedupeRoutes, type LaunchdService, type PortlessRoute } from "./discover.ts";
+import { mkdtempSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
+import { join } from "path";
+import { nextFreePort, bareName, dedupeRoutes, readServices, type LaunchdService, type PortlessRoute } from "./discover.ts";
 
 const route = (port: number): PortlessRoute => ({ hostname: `a${port}.localhost`, port });
 const svc = (port: number | null): LaunchdService => ({
@@ -74,4 +77,37 @@ test("shortLabel strips whichever prefix matches", () => {
   expect(shortLabel("com.mattstack.deck.myapp", prefixes)).toBe("myapp");
   expect(shortLabel("com.example.legacy.boxscore", prefixes)).toBe("boxscore");
   expect(shortLabel("com.mattstack.deck", prefixes)).toBe("deck");
+});
+
+// The pid seam: a fixture plist carries a real label, so without this the
+// suite reads whatever is actually running on the developer's machine.
+test("LOCAL_LAUNCHCTL_PIDS replaces the launchctl read", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "discover-pids-"));
+  const prevAgents = process.env.LOCAL_AGENTS_DIR;
+  const prevPids = process.env.LOCAL_LAUNCHCTL_PIDS;
+  process.env.LOCAL_AGENTS_DIR = dir;
+  try {
+    writeFileSync(
+      join(dir, "com.mattstack.deck.tunnel.plist"),
+      `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>Label</key><string>com.mattstack.deck.tunnel</string>
+<key>ProgramArguments</key><array><string>/opt/homebrew/bin/cloudflared</string></array>
+</dict></plist>`,
+    );
+
+    process.env.LOCAL_LAUNCHCTL_PIDS = "";
+    expect((await readServices(["com.mattstack.deck."]))[0]!.pid).toBeNull();
+
+    process.env.LOCAL_LAUNCHCTL_PIDS = "com.mattstack.deck.tunnel=4242";
+    expect((await readServices(["com.mattstack.deck."]))[0]!.pid).toBe(4242);
+
+    process.env.LOCAL_LAUNCHCTL_PIDS = "com.mattstack.deck.tunnel=-";
+    expect((await readServices(["com.mattstack.deck."]))[0]!.pid).toBeNull();
+  } finally {
+    if (prevAgents === undefined) delete process.env.LOCAL_AGENTS_DIR; else process.env.LOCAL_AGENTS_DIR = prevAgents;
+    if (prevPids === undefined) delete process.env.LOCAL_LAUNCHCTL_PIDS; else process.env.LOCAL_LAUNCHCTL_PIDS = prevPids;
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

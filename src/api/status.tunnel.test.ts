@@ -10,6 +10,7 @@ process.env.LOCAL_APPS_SETTINGS_PATH = join(dir, "settings.json");
 process.env.LOCAL_PLATFORM_SETTINGS_PATH = join(dir, "platform.json");
 process.env.LOCAL_STATE_DIR = dir;
 process.env.LOCAL_AGENTS_DIR = mkdtempSync(join(tmpdir(), "local-status-tunnel-agents-"));
+process.env.LOCAL_LAUNCHCTL_PIDS = ""; // fixture plists carry real labels; never read the machine's launchctl
 process.env.HOME = dir;
 
 const { buildStatus, serviceJson } = await import("./status.ts");

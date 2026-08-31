@@ -9,6 +9,7 @@ process.env.LOCAL_STATE_DIR = dir;
 process.env.LOCAL_APPS_ROUTES_PATH = join(dir, "routes.json");
 process.env.LOCAL_APPS_SETTINGS_PATH = join(dir, "settings.json");
 process.env.LOCAL_PLATFORM_SETTINGS_PATH = join(dir, "platform.json");
+process.env.LOCAL_LAUNCHCTL_PIDS = ""; // fixture plists carry real labels; never read the machine's launchctl
 // deck.platform reads through rt-client, which resolves HOME at call time (not overridable
 // via a LOCAL_*_PATH var) -- must be faked here too, or this test touches the real ~/.mattstack.
 process.env.HOME = dir;
