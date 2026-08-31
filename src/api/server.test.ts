@@ -7,6 +7,9 @@ const dir = mkdtempSync(join(tmpdir(), "local-api-"));
 process.env.LOCAL_REGISTRY_PATH = join(dir, "registry.json");
 process.env.LOCAL_STATE_DIR = dir;
 process.env.LOCAL_APPS_ROUTES_PATH = join(dir, "routes.json");
+// managed/reresolve reads installed plists back off disk; point it at a
+// throwaway dir so the diff never sees (or writes near) real launchd agents.
+process.env.LOCAL_AGENTS_DIR = join(dir, "agents-not-present");
 process.env.LOCAL_APPS_SETTINGS_PATH = join(dir, "settings.json");
 process.env.LOCAL_PLATFORM_SETTINGS_PATH = join(dir, "platform.json");
 process.env.LOCAL_LAUNCHCTL_PIDS = ""; // fixture plists carry real labels; never read the machine's launchctl
@@ -232,6 +235,16 @@ test("restart 404s on an unknown app, kickstarts a known service record", async 
   const res = await post("/api/v1/apps/r1/restart", {});
   expect(res.status).toBe(200);
   expect(manager.kickstarts).toContain("com.mattstack.deck.r1");
+});
+
+test("managed/reresolve answers 200 with the ok/restarted/unchanged/failed body shape", async () => {
+  await post("/api/v1/apps", { name: "rr1", command: ["bun", "s.ts"], workingDirectory: "/tmp" }, { "x-local-caller": "rt" });
+  const res = await post("/api/v1/apps/managed/reresolve", {});
+  expect(res.status).toBe(200);
+  const body = await res.json();
+  // No plist exists on disk for this in-memory fake manager, so the resolved
+  // command always reads as changed here; the diff itself is register.test.ts's job.
+  expect(body).toMatchObject({ ok: true, restarted: ["rr1"], unchanged: [], failed: [] });
 });
 
 test("publish flips settings through the versioned path", async () => {

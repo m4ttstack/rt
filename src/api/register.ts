@@ -17,6 +17,7 @@ import {
   LABEL_PREFIX, isPlatformManagedBy, type ServiceManager, type ServiceSpec,
 } from "../services/manager.ts";
 import { composeServicePath, resolveProgram } from "../services/exec-env.ts";
+import { readInstalledProgramArguments } from "../services/launchd.ts";
 import { serveShape, type ResolvedShape, type ServeShapeDeps } from "../registry/serve-shape.ts";
 import type { EdgeProxy } from "../edge/portless.ts";
 import { logsDir } from "./state.ts";
@@ -293,6 +294,48 @@ export async function restartManagedApps(drivers: Drivers): Promise<FlowResult> 
     }
   }
   return { status: 200, body: { ok: failed.length === 0, restarted, failed } };
+}
+
+/**
+ * Selective restart behind a mattstack dev/prod mode flip: rt pokes this after
+ * `rt settings dev-mode` changes, so every managed app must re-resolve its
+ * shape, but only the ones whose resolved command actually moved get torn
+ * down and rebuilt. The diff is against the installed plist's
+ * ProgramArguments, not any last-resolved value on the record, so a flip and
+ * a flip-back reads as the same "unchanged" outcome both times.
+ */
+export async function reresolveManagedApps(drivers: Drivers): Promise<FlowResult> {
+  const restarted: string[] = [];
+  const unchanged: string[] = [];
+  const failed: Array<{ name: string; error: string }> = [];
+  for (const record of listRecords()) {
+    if (record.managedBy === "user" || record.kind !== "service" || !record.label) continue;
+    // The platform never restarts itself mid-request; bootstrapSelf owns its shape.
+    if (isPlatformManagedBy(record.managedBy)) continue;
+    const shape = serveShape(record, serveShapeDeps);
+    if (!shape) { failed.push({ name: record.name, error: "no runnable shape" }); continue; }
+    let spec: ServiceSpec;
+    try {
+      spec = specFor(record, shape);
+    } catch (err) {
+      failed.push({ name: record.name, error: String(err).slice(0, 300) });
+      continue;
+    }
+    const installed = readInstalledProgramArguments(record.label);
+    if (installed !== null && installed.length === spec.programArguments.length
+        && installed.every((a, i) => a === spec.programArguments[i])) {
+      unchanged.push(record.name);
+      continue;
+    }
+    try {
+      await drivers.manager.uninstall(record.label);
+      await drivers.manager.install(spec);
+      restarted.push(record.name);
+    } catch (err) {
+      failed.push({ name: record.name, error: String(err).slice(0, 300) });
+    }
+  }
+  return { status: 200, body: { ok: failed.length === 0, restarted, unchanged, failed } };
 }
 
 /**

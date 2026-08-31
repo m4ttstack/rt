@@ -14,7 +14,7 @@ import { boardHtml, boardJs, boardCss } from "../../core/board-assets.ts";
 import { DECK_ICON_SVG } from "../../core/deck-icon.ts";
 import { buildStatus, type StatusRow } from "./status.ts";
 import { buildDiscoveryApps, iconResponse } from "./discovery.ts";
-import { registerApp, unregisterApp, editApp, adoptApp, restartManagedApps, removeManagedApps,
+import { registerApp, unregisterApp, editApp, adoptApp, restartManagedApps, reresolveManagedApps, removeManagedApps,
   type Drivers, knownRouteApp,
 } from "./register.ts";
 import { getRecord, listRecords, type AppRecord, type SyncIssue } from "../registry/records.ts";
@@ -346,6 +346,10 @@ export function startApi(deps: ApiDeps) {
         }
         if (pathname === "/api/v1/apps/managed/restart" && req.method === "POST") {
           const r = await restartManagedApps(deps);
+          return json(r.body, r.status);
+        }
+        if (pathname === "/api/v1/apps/managed/reresolve" && req.method === "POST") {
+          const r = await reresolveManagedApps(deps);
           return json(r.body, r.status);
         }
         if (pathname === "/api/v1/apps/managed/remove" && req.method === "POST") {

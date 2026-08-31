@@ -1,5 +1,5 @@
 import { test, expect, beforeEach, afterEach } from "bun:test";
-import { mkdtempSync, rmSync, existsSync, writeFileSync } from "fs";
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -21,8 +21,9 @@ process.env.LOCAL_APPS_SETTINGS_PATH = join(dir, "settings.json");
 // ~/.mattstack; beforeEach repoints it to a fresh dir per test below.
 process.env.HOME = dir;
 
-const { registerApp, unregisterApp, editApp, restartManagedApps, removeManagedApps, setServeShapeDeps } =
-  await import("./register.ts");
+const {
+  registerApp, unregisterApp, editApp, restartManagedApps, reresolveManagedApps, removeManagedApps, setServeShapeDeps,
+} = await import("./register.ts");
 const { FakeServiceManager } = await import("../services/fake.ts");
 const { FakeEdgeProxy } = await import("../edge/portless.ts");
 const { getRecord, putRecord, reloadRegistry, listRecords, deleteRecord } = await import("../registry/records.ts");
@@ -31,7 +32,10 @@ const {
 } = await import("../../core/settings.ts");
 const { setOAuth, getOAuth, reloadOAuth } = await import("../edge/oauth.ts");
 const { adoptApp } = await import("./register.ts");
-const { LABEL_PREFIX } = await import("../services/manager.ts");
+const { LABEL_PREFIX, PLATFORM_NAME } = await import("../services/manager.ts");
+type ServiceSpec = Parameters<InstanceType<typeof FakeServiceManager>["install"]>[0];
+const { agentsDir } = await import("../services/launchd.ts");
+const { renderPlist } = await import("../services/plist.ts");
 
 let drivers: { manager: InstanceType<typeof FakeServiceManager>; edge: InstanceType<typeof FakeEdgeProxy> };
 beforeEach(() => {
@@ -576,4 +580,119 @@ test("removeManagedApps: a driver failure keeps the record and reports it in fai
   const res = await removeManagedApps(drivers);
   expect(res.body).toMatchObject({ ok: false, removed: [], failed: ["board"] });
   expect(getRecord("board")).toBeDefined();
+});
+
+// ─── reresolveManagedApps: selective restart on plist diff (dev/prod flip) ──
+
+/** Seeds the on-disk plist reresolveManagedApps diffs against, independent of
+    whatever the in-memory FakeServiceManager thinks is installed. */
+function seedPlist(label: string, programArguments: string[]): void {
+  mkdirSync(agentsDir(), { recursive: true });
+  writeFileSync(join(agentsDir(), `${label}.plist`), renderPlist({
+    label, programArguments, workingDirectory: "/tmp", environment: {}, stdoutPath: "/tmp/o", stderrPath: "/tmp/e",
+  }));
+}
+
+class CountingManager extends FakeServiceManager {
+  installCalls: string[] = [];
+  uninstallCalls: string[] = [];
+  override async install(spec: ServiceSpec): Promise<void> {
+    this.installCalls.push(spec.label);
+    return super.install(spec);
+  }
+  override async uninstall(label: string): Promise<void> {
+    this.uninstallCalls.push(label);
+    return super.uninstall(label);
+  }
+}
+
+test("reresolve: reinstalls only the app whose resolved command differs from its installed plist", async () => {
+  const counting = new CountingManager();
+  const reresolveDrivers = { manager: counting, edge: drivers.edge };
+  await registerApp({ ...input, name: "same", managedBy: "rt" }, reresolveDrivers);
+  await registerApp({ ...input, name: "changed", managedBy: "rt", workingDirectory: "/tmp/changed" }, reresolveDrivers);
+  const sameSpec = counting.installed.get(`${LABEL_PREFIX}same`)!;
+  const changedSpec = counting.installed.get(`${LABEL_PREFIX}changed`)!;
+  seedPlist(sameSpec.label, sameSpec.programArguments);
+  seedPlist(changedSpec.label, [...changedSpec.programArguments.slice(0, -1), "stale-arg"]);
+  counting.installCalls = [];
+  counting.uninstallCalls = [];
+
+  const res = await reresolveManagedApps(reresolveDrivers);
+
+  expect(res.status).toBe(200);
+  expect(res.body).toMatchObject({ ok: true, restarted: ["changed"], unchanged: ["same"], failed: [] });
+  expect(counting.uninstallCalls).toEqual([changedSpec.label]);
+  expect(counting.installCalls).toEqual([changedSpec.label]);
+});
+
+test("reresolve: a flip-then-flip-back is a no-op (restarts nothing, churns no driver calls)", async () => {
+  const counting = new CountingManager();
+  const reresolveDrivers = { manager: counting, edge: drivers.edge };
+  await registerApp({ ...input, name: "app1", managedBy: "rt" }, reresolveDrivers);
+  await registerApp({ ...input, name: "app2", managedBy: "rt", workingDirectory: "/tmp/app2" }, reresolveDrivers);
+  for (const name of ["app1", "app2"]) {
+    const spec = counting.installed.get(`${LABEL_PREFIX}${name}`)!;
+    seedPlist(spec.label, spec.programArguments);
+  }
+  counting.installCalls = [];
+  counting.uninstallCalls = [];
+
+  const first = await reresolveManagedApps(reresolveDrivers);
+  const second = await reresolveManagedApps(reresolveDrivers); // the "flip back": identical inputs, run again
+
+  for (const res of [first, second]) {
+    expect(res.body).toMatchObject({ ok: true, restarted: [] });
+    expect((res.body as any).unchanged.slice().sort()).toEqual(["app1", "app2"]);
+  }
+  // If the diff check were dropped (always reinstall), these would be non-empty.
+  expect(counting.installCalls).toEqual([]);
+  expect(counting.uninstallCalls).toEqual([]);
+});
+
+test("reresolve: skips user records and the platform record even when their plist would differ", async () => {
+  const counting = new CountingManager();
+  const reresolveDrivers = { manager: counting, edge: drivers.edge };
+  await registerApp({ ...input, name: "useronly" }, reresolveDrivers); // managedBy defaults to "user"
+  putRecord({
+    name: "deck", managedBy: PLATFORM_NAME, port: 11999, kind: "service",
+    command: ["bun", "platform.ts"], workingDirectory: "/tmp/deck", label: `${LABEL_PREFIX}deck`,
+    createdAt: new Date().toISOString(),
+  });
+  // Neither has a matching (or even present) plist: a processed row would land
+  // in restarted or failed, never silently absent from every list.
+  counting.installCalls = [];
+  counting.uninstallCalls = [];
+
+  const res = await reresolveManagedApps(reresolveDrivers);
+
+  expect(res.body).toMatchObject({ ok: true, restarted: [], unchanged: [], failed: [] });
+  expect(counting.installCalls).toEqual([]);
+  expect(counting.uninstallCalls).toEqual([]);
+});
+
+test("reresolve: a null shape lands the app in failed and leaves its installed service untouched", async () => {
+  const counting = new CountingManager();
+  const reresolveDrivers = { manager: counting, edge: drivers.edge };
+  await registerApp({ ...input, name: "brokenlink" }, reresolveDrivers);
+  const rec = getRecord("brokenlink")!;
+  const label = rec.label!;
+  putRecord({
+    ...rec, managedBy: "rt", command: undefined, workingDirectory: undefined,
+    dev: { workingDirectory: join(tmpdir(), "reresolve-nonexistent-dev-link-dir") },
+  });
+  seedPlist(label, ["/bin/echo", "still-here"]);
+  // No bundle and a dev link pointing nowhere: serveShape resolves neither shape.
+  setServeShapeDeps({ helpersDir: null });
+  counting.installCalls = [];
+  counting.uninstallCalls = [];
+
+  const res = await reresolveManagedApps(reresolveDrivers);
+
+  expect(res.body).toMatchObject({
+    ok: false, restarted: [], unchanged: [], failed: [{ name: "brokenlink", error: "no runnable shape" }],
+  });
+  expect(counting.installCalls).toEqual([]);
+  expect(counting.uninstallCalls).toEqual([]);
+  expect(readFileSync(join(agentsDir(), `${label}.plist`), "utf8")).toContain("still-here");
 });
