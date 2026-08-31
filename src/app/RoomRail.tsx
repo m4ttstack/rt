@@ -423,16 +423,6 @@ export function RoomRail({
               onMarkRead={onMarkRead}
             />
           ))}
-
-          <Text
-            size="xs"
-            style={{
-              color: 'var(--tk-muted-text)',
-              padding: '4px var(--mantine-spacing-md) 0',
-            }}
-          >
-            Every agent↔agent DM is yours to read and post into.
-          </Text>
         </>
       )}
     </Stack>
