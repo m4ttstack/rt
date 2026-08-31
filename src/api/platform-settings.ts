@@ -3,20 +3,26 @@ import { dirname, join } from "path";
 import { stateDir } from "./state.ts";
 import { getSetting, setSetting } from "@mattstack/rt-client";
 
+export interface TunnelIdentity {
+  name: string;
+  uuid: string;
+}
+
 export interface PlatformSettings {
   publicDomain: string | null;
   tlds: string[];
   legacyPrefixes: string[];
   secrets: { cfApiToken?: string; cfZoneId?: string };
   railway: { projectId: string; environmentId: string } | null;
+  tunnel: TunnelIdentity | null;
 }
 
 const DEFAULTS: PlatformSettings = {
-  publicDomain: null, tlds: ["localhost"], legacyPrefixes: [], secrets: {}, railway: null,
+  publicDomain: null, tlds: ["localhost"], legacyPrefixes: [], secrets: {}, railway: null, tunnel: null,
 };
 
 const STORE_KEY = "deck.platform";
-type MigratedFields = Pick<PlatformSettings, "publicDomain" | "legacyPrefixes" | "railway">;
+type MigratedFields = Pick<PlatformSettings, "publicDomain" | "legacyPrefixes" | "railway" | "tunnel">;
 
 export function platformSettingsPath(): string {
   return process.env.LOCAL_PLATFORM_SETTINGS_PATH ?? join(stateDir(), "platform.json");
@@ -45,6 +51,7 @@ function withPlatformStoreFallback(fileValues: MigratedFields, resolve: GetSetti
     publicDomain: store.publicDomain !== undefined ? store.publicDomain : fileValues.publicDomain,
     legacyPrefixes: store.legacyPrefixes !== undefined ? store.legacyPrefixes : fileValues.legacyPrefixes,
     railway: store.railway !== undefined ? store.railway : fileValues.railway,
+    tunnel: store.tunnel !== undefined ? store.tunnel : fileValues.tunnel,
   };
 }
 
@@ -98,7 +105,7 @@ export function updatePlatformSettings(patch: Partial<PlatformSettings>, resolve
       // a field another process wrote to the store after this process
       // booted is clobbered here, same as any other boot-read config in
       // deck (a restart is what picks up an external edit).
-      setSetting(STORE_KEY, { publicDomain: cache.publicDomain, legacyPrefixes: cache.legacyPrefixes, railway: cache.railway }, "machine");
+      setSetting(STORE_KEY, { publicDomain: cache.publicDomain, legacyPrefixes: cache.legacyPrefixes, railway: cache.railway, tunnel: cache.tunnel }, "machine");
     } catch (err) {
       cache = previous; // never claim a value neither the store nor the file actually holds
       throw err;
@@ -107,7 +114,7 @@ export function updatePlatformSettings(patch: Partial<PlatformSettings>, resolve
 
   const fileBody: Record<string, unknown> = owned
     ? (() => {
-        const { publicDomain: _publicDomain, legacyPrefixes: _legacyPrefixes, railway: _railway, ...rest } = cache;
+        const { publicDomain: _publicDomain, legacyPrefixes: _legacyPrefixes, railway: _railway, tunnel: _tunnel, ...rest } = cache;
         return rest;
       })()
     : cache; // unowned: the file is the only place holding these fields, so it keeps them
@@ -122,7 +129,7 @@ export function updatePlatformSettings(patch: Partial<PlatformSettings>, resolve
   } catch (err) {
     if (owned) {
       try {
-        setSetting(STORE_KEY, { publicDomain: previous.publicDomain, legacyPrefixes: previous.legacyPrefixes, railway: previous.railway }, "machine");
+        setSetting(STORE_KEY, { publicDomain: previous.publicDomain, legacyPrefixes: previous.legacyPrefixes, railway: previous.railway, tunnel: previous.tunnel }, "machine");
       } catch (revertErr) {
         console.error("platform settings save: failed to revert deck.platform after a file-write failure", revertErr);
       }
