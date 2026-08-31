@@ -363,19 +363,19 @@ describe("dispatchPrompt (wrapper hop stays; --skill-path rides alongside --skil
     statePath: "/s/1.json",
     statusBin: "/b/review-status.ts",
     reportPath: "/s/1.md",
-    skill: "acme:mr-board-review",
+    skill: "acme:board-review",
   };
 
   test("adds --skill-path after --skill when resolution succeeds, keeping the wrapper hop", async () => {
-    const resolvePath = async (name: string) => (name === "acme:mr-board-review" ? "/cache/acme/skills/mr-board-review/SKILL.md" : null);
+    const resolvePath = async (name: string) => (name === "acme:board-review" ? "/cache/acme/skills/board-review/SKILL.md" : null);
     const prompt = await dispatchPrompt("board:review", baseOpts, resolvePath);
     expect(prompt).toBe(
       `/board:review https://x/mr/1
   --state /s/1.json
   --status-bin /b/review-status.ts
   --report /s/1.md
-  --skill acme:mr-board-review
-  --skill-path /cache/acme/skills/mr-board-review/SKILL.md`,
+  --skill acme:board-review
+  --skill-path /cache/acme/skills/board-review/SKILL.md`,
     );
   });
 
@@ -399,17 +399,17 @@ describe("dispatchPrompt (wrapper hop stays; --skill-path rides alongside --skil
   });
 
   test("keeps the operator note as a trailing paragraph after --skill-path", async () => {
-    const resolvePath = async () => "/cache/acme/skills/mr-board-review/SKILL.md";
+    const resolvePath = async () => "/cache/acme/skills/board-review/SKILL.md";
     const prompt = await dispatchPrompt("board:review", { ...baseOpts, note: "focus on the migration files" }, resolvePath);
-    expect(prompt).toContain("--skill-path /cache/acme/skills/mr-board-review/SKILL.md");
+    expect(prompt).toContain("--skill-path /cache/acme/skills/board-review/SKILL.md");
     expect(prompt).toContain("\n\nOperator note (from the human who launched this pane): focus on the migration files");
   });
 
   test("carries --re-review, doctor's tier, fix-classes, and draft-bin flags verbatim alongside --skill-path", async () => {
-    const resolvePath = async () => "/cache/acme/attachments/mr-board-doctor-api/SKILL.md";
+    const resolvePath = async () => "/cache/acme/attachments/board-doctor-api/SKILL.md";
     const opts = {
       mrUrl: "https://x/mr/1", statePath: "/s", statusBin: statusBinPath(),
-      skill: "acme:mr-board-doctor-api", tier: "api",
+      skill: "acme:board-doctor-api", tier: "api",
       fixClasses: ["retry-flake"], draftBin: draftBinPath(),
     };
     const prompt = await dispatchPrompt("board:doctor", opts, resolvePath);
@@ -417,8 +417,8 @@ describe("dispatchPrompt (wrapper hop stays; --skill-path rides alongside --skil
       `/board:doctor https://x/mr/1
   --state /s
   --status-bin ${statusBinPath()}
-  --skill acme:mr-board-doctor-api
-  --skill-path /cache/acme/attachments/mr-board-doctor-api/SKILL.md
+  --skill acme:board-doctor-api
+  --skill-path /cache/acme/attachments/board-doctor-api/SKILL.md
   --tier api
   --fix-classes retry-flake
   --draft-bin ${draftBinPath()}`,
@@ -426,9 +426,9 @@ describe("dispatchPrompt (wrapper hop stays; --skill-path rides alongside --skil
   });
 
   test("re-review keeps --skill-path and --re-review both present", async () => {
-    const resolvePath = async () => "/cache/acme/skills/mr-board-review/SKILL.md";
+    const resolvePath = async () => "/cache/acme/skills/board-review/SKILL.md";
     const prompt = await dispatchPrompt("board:review", { ...baseOpts, reReview: true }, resolvePath);
-    expect(prompt).toContain("--skill-path /cache/acme/skills/mr-board-review/SKILL.md\n  --re-review");
+    expect(prompt).toContain("--skill-path /cache/acme/skills/board-review/SKILL.md\n  --re-review");
   });
 });
 
@@ -446,15 +446,15 @@ describe("launchReview / launchRespond / launchDoctor --skill-path wiring", () =
       calls.push(args);
       return okRunner(args);
     };
-    const resolvePath = async () => "/cache/acme/skills/mr-board-review/SKILL.md";
+    const resolvePath = async () => "/cache/acme/skills/board-review/SKILL.md";
     await launchReview(
-      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "reviews", statePath: "/s/1.json", skill: "acme:mr-board-review" },
+      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "reviews", statePath: "/s/1.json", skill: "acme:board-review" },
       runner,
       resolvePath,
     );
     const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
     expect(runCall?.[3]).toContain("claude '/board:review https://x/mr/1");
-    expect(runCall?.[3]).toContain("--skill-path /cache/acme/skills/mr-board-review/SKILL.md");
+    expect(runCall?.[3]).toContain("--skill-path /cache/acme/skills/board-review/SKILL.md");
   });
 
   test("launchReview falls back to the slash form (no --skill-path) when resolution fails", async () => {
@@ -465,7 +465,7 @@ describe("launchReview / launchRespond / launchDoctor --skill-path wiring", () =
     };
     const resolvePath = async () => null;
     await launchReview(
-      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "reviews", statePath: "/s/1.json", skill: "acme:mr-board-review" },
+      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "reviews", statePath: "/s/1.json", skill: "acme:board-review" },
       runner,
       resolvePath,
     );
@@ -480,16 +480,16 @@ describe("launchReview / launchRespond / launchDoctor --skill-path wiring", () =
       calls.push(args);
       return okRunner(args);
     };
-    const resolvePath = async () => "/cache/acme/skills/mr-board-respond/SKILL.md";
+    const resolvePath = async () => "/cache/acme/skills/board-respond/SKILL.md";
     await launchRespond(
-      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "responds", statePath: "/s/1.json", skill: "acme:mr-board-respond" },
+      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "responds", statePath: "/s/1.json", skill: "acme:board-respond" },
       runner,
       resolvePath,
     );
     const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
     expect(runCall?.[3]).toBe(
       buildPaneCommand("/repo", await dispatchPrompt("board:respond", {
-        mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: statusBinPath(), skill: "acme:mr-board-respond",
+        mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: statusBinPath(), skill: "acme:board-respond",
       }, resolvePath)),
     );
   });
@@ -500,18 +500,18 @@ describe("launchReview / launchRespond / launchDoctor --skill-path wiring", () =
       calls.push(args);
       return okRunner(args);
     };
-    const resolvePath = async () => "/cache/acme/attachments/mr-board-doctor-api/SKILL.md";
+    const resolvePath = async () => "/cache/acme/attachments/board-doctor-api/SKILL.md";
     await launchDoctor(
       {
         mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "doctors", statePath: "/s/1.json",
-        skill: "acme:mr-board-doctor-api", tier: "api",
+        skill: "acme:board-doctor-api", tier: "api",
       },
       runner,
       resolvePath,
     );
     const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
     expect(runCall?.[3]).toContain("claude '/board:doctor https://x/mr/1");
-    expect(runCall?.[3]).toContain("--skill-path /cache/acme/attachments/mr-board-doctor-api/SKILL.md");
+    expect(runCall?.[3]).toContain("--skill-path /cache/acme/attachments/board-doctor-api/SKILL.md");
     expect(runCall?.[3]).toContain("--tier api");
   });
 });

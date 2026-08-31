@@ -26,10 +26,10 @@ describe("resolveSkillPath", () => {
   test("resolves a skills/<name>/SKILL.md path", async () => {
     const root = mkdtempSync(join(tmpdir(), "skill-path-"));
     try {
-      writeSkillMd(join(root, "skills", "mr-board-review"));
+      writeSkillMd(join(root, "skills", "board-review"));
       const listPlugins = async () => [fixturePlugin(root)];
-      const path = await resolveSkillPath("acme:mr-board-review", listPlugins);
-      expect(path).toBe(realpathSync(join(root, "skills", "mr-board-review", "SKILL.md")));
+      const path = await resolveSkillPath("acme:board-review", listPlugins);
+      expect(path).toBe(realpathSync(join(root, "skills", "board-review", "SKILL.md")));
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -38,10 +38,10 @@ describe("resolveSkillPath", () => {
   test("resolves a skills/<category>/<name>/SKILL.md path", async () => {
     const root = mkdtempSync(join(tmpdir(), "skill-path-"));
     try {
-      writeSkillMd(join(root, "skills", "board", "mr-board-doctor"));
+      writeSkillMd(join(root, "skills", "board", "board-doctor"));
       const listPlugins = async () => [fixturePlugin(root)];
-      const path = await resolveSkillPath("acme:mr-board-doctor", listPlugins);
-      expect(path).toBe(realpathSync(join(root, "skills", "board", "mr-board-doctor", "SKILL.md")));
+      const path = await resolveSkillPath("acme:board-doctor", listPlugins);
+      expect(path).toBe(realpathSync(join(root, "skills", "board", "board-doctor", "SKILL.md")));
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -50,10 +50,10 @@ describe("resolveSkillPath", () => {
   test("resolves an attachments/<name>/SKILL.md path when not under skills/", async () => {
     const root = mkdtempSync(join(tmpdir(), "skill-path-"));
     try {
-      writeSkillMd(join(root, "attachments", "mr-board-respond"));
+      writeSkillMd(join(root, "attachments", "board-respond"));
       const listPlugins = async () => [fixturePlugin(root)];
-      const path = await resolveSkillPath("acme:mr-board-respond", listPlugins);
-      expect(path).toBe(realpathSync(join(root, "attachments", "mr-board-respond", "SKILL.md")));
+      const path = await resolveSkillPath("acme:board-respond", listPlugins);
+      expect(path).toBe(realpathSync(join(root, "attachments", "board-respond", "SKILL.md")));
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -86,15 +86,15 @@ describe("resolveSkillPath", () => {
 
   test("returns null when no plugin id matches the name's prefix", async () => {
     const listPlugins = async () => [fixturePlugin("/nowhere", { id: "other@marketplace" })];
-    expect(await resolveSkillPath("acme:mr-board-review", listPlugins)).toBeNull();
+    expect(await resolveSkillPath("acme:board-review", listPlugins)).toBeNull();
   });
 
   test("returns null when the matching plugin is disabled", async () => {
     const root = mkdtempSync(join(tmpdir(), "skill-path-"));
     try {
-      writeSkillMd(join(root, "skills", "mr-board-review"));
+      writeSkillMd(join(root, "skills", "board-review"));
       const listPlugins = async () => [fixturePlugin(root, { enabled: false })];
-      expect(await resolveSkillPath("acme:mr-board-review", listPlugins)).toBeNull();
+      expect(await resolveSkillPath("acme:board-review", listPlugins)).toBeNull();
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -109,12 +109,12 @@ describe("resolveSkillPath", () => {
     const listPlugins = async () => {
       throw new Error("claude: command not found");
     };
-    expect(await resolveSkillPath("acme:mr-board-review", listPlugins)).toBeNull();
+    expect(await resolveSkillPath("acme:board-review", listPlugins)).toBeNull();
   });
 
   test("returns null when installPath does not exist on disk", async () => {
     const listPlugins = async () => [fixturePlugin("/definitely/not/a/real/path/xyz")];
-    expect(await resolveSkillPath("acme:mr-board-review", listPlugins)).toBeNull();
+    expect(await resolveSkillPath("acme:board-review", listPlugins)).toBeNull();
   });
 });
 

@@ -62,7 +62,7 @@ function skillMdIn(dir: string): string | null {
 
 /**
  * Resolve a fully-qualified skill name ("<plugin>:<skill>", e.g.
- * "acme:mr-board-review") to the absolute path of its SKILL.md,
+ * "acme:board-review") to the absolute path of its SKILL.md,
  * mirroring loadAttachment's search order (repo-tools lib/skills/sources.ts):
  * skills/<name>/SKILL.md, then skills/*<name>/SKILL.md (one category level),
  * then attachments/<name>/SKILL.md. The plugin itself is found via

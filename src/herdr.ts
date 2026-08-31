@@ -196,7 +196,7 @@ export function doctorPrompt(o: SkillPromptOpts): string {
   return buildSkillPrompt("board:doctor", o);
 }
 
-/** Resolves a skill name (e.g. "acme:mr-board-review") to the absolute
+/** Resolves a skill name (e.g. "acme:board-review") to the absolute
     path of its SKILL.md, or null when it can't be found (see skill-path.ts). */
 export type SkillPathResolver = (name: string) => Promise<string | null>;
 
