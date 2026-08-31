@@ -65,3 +65,16 @@ test("putRecord round-trips manifest command fields", () => {
   expect(r.altConfigs).toEqual({ dev: { port: 5173, start: "bun run dev" } });
   expect(r.activeAlt).toBe("dev");
 });
+
+test("dev.workingDirectory round-trips and dev-link issues clear by source", () => {
+  putRecord({
+    name: "chat", managedBy: "rt", port: 11002, kind: "service",
+    dev: { workingDirectory: "/tmp/chat-checkout" },
+    createdAt: new Date().toISOString(),
+  });
+  expect(getRecord("chat")?.dev?.workingDirectory).toBe("/tmp/chat-checkout");
+  addIssue("chat", { source: "dev-link", message: "broken", at: new Date().toISOString() });
+  expect(getRecord("chat")?.issues?.[0]?.source).toBe("dev-link");
+  clearIssues("chat", "dev-link");
+  expect(getRecord("chat")?.issues).toBeUndefined();
+});
