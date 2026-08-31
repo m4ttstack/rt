@@ -86,9 +86,12 @@ export async function bindDomain(domain: string, deps: EdgeDeps, opts: EdgeOpts 
     uuid: identity.uuid, credentialsFile: credentialsPath(cfDir, identity.uuid), domain, gatewayPort, metricsPort: EDGE_METRICS_PORT,
   });
   await deps.dns.writeProxiedCname(`*.${domain}`, `${identity.uuid}.cfargotunnel.com`);
+  // Recorded as soon as DNS points at our tunnel, before install/kickstart can throw:
+  // an unbind afterward can still find and remove the wildcard CNAME, and a failed
+  // install self-heals on the next reconcile tick since both tunnel + domain are recorded.
+  updatePlatformSettings({ publicDomain: domain });
   await deps.manager.install(tunnelServiceSpec({ configPath, cloudflaredBin: bin }));
   await deps.manager.kickstart(TUNNEL_LABEL);
-  updatePlatformSettings({ publicDomain: domain });
   const connectors = await awaitConnector(deps.tunnel, identity.name, opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))));
   return { status: 200, body: { domain, tunnel: identity, connectors } };
 }

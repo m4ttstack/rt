@@ -127,6 +127,16 @@ test("a deleted wildcard record is upserted back; a correct one is left alone", 
   expect(dns.calls.some((c) => c.startsWith("cname:"))).toBe(false);
 });
 
+test("a wildcard record drifted to DNS-only (correct target, not proxied) is re-proxied", async () => {
+  await bindDomain("e.dev", { tunnel, manager, dns }, opts());
+  dns.cname.set("*.e.dev", { target: "fake-uuid-1.cfargotunnel.com", proxied: false });
+  dns.calls.length = 0;
+  clock.t += EDGE_CF_INTERVAL_MS;
+  await reconcileEdge(deps());
+  expect(dns.calls.some((c) => c.startsWith("cname:"))).toBe(true);
+  expect(dns.cname.get("*.e.dev")).toEqual({ target: "fake-uuid-1.cfargotunnel.com", proxied: true });
+});
+
 test("a tunnel absent from list() flips tunnelGone and is NOT recreated", async () => {
   await bindDomain("e.dev", { tunnel, manager, dns }, opts());
   tunnel.tunnels.clear();

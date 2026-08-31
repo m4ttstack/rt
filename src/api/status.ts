@@ -122,7 +122,7 @@ export interface Status {
   autoHeal: { at: number; ok: boolean | null } | null;
 }
 
-function serviceJson(
+export function serviceJson(
   s: LaunchdService,
   health: Health | null,
   unmanaged: { pid: number; command: string } | null,
@@ -246,7 +246,9 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
     url: null,
     publicUrl: null,
     health: s.label === TUNNEL_LABEL ? edgeHealth : null,
-    service: serviceJson(s, null, null),
+    // The tunnel's own health (may be pid!=null but disconnected) decides its stderr tail;
+    // every other orphan service still falls back to the pid-null check inside serviceJson.
+    service: serviceJson(s, s.label === TUNNEL_LABEL ? edgeHealth : null, null),
     published: true,
     hasPassword: false,
     // cloudflared tunnels are infrastructure, not stray app services.

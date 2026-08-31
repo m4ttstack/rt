@@ -46,6 +46,13 @@ test("identity is recorded before DNS or the service are touched", async () => {
   expect(manager.installed.has(TUNNEL_LABEL)).toBe(false);
 });
 
+test("publicDomain is recorded even when install() throws after DNS is written, so unbind can still clean up the CNAME", async () => {
+  manager.failNext = TUNNEL_LABEL;
+  await expect(bindDomain("example.dev", { tunnel, manager, dns }, opts())).rejects.toThrow(/install failed/);
+  expect(getPlatformSettings().publicDomain).toBe("example.dev");
+  expect(dns.cname.get("*.example.dev")!.target).toBe("fake-uuid-1.cfargotunnel.com");
+});
+
 test("same-domain re-run reuses the recorded tunnel (creds present) and repairs a drifted config", async () => {
   await bindDomain("example.dev", { tunnel, manager, dns }, opts());
   const first = getPlatformSettings().tunnel!;

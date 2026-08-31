@@ -80,13 +80,13 @@ test("writeProxiedCname creates when no record exists", async () => {
   expect(calls).toEqual(["GET", "POST"]);
 });
 
-test("cnameTarget reads the existing record's content, null when absent", async () => {
+test("cnameTarget reads the existing record's content + proxied state, null when absent", async () => {
   // URLSearchParams leaves `*` unencoded, so match on the parsed param, never on a hand-encoded string.
   const fetchImpl = (async (url: string | URL | Request) =>
-    Response.json({ success: true, result: new URL(String(url)).searchParams.get("name") === "*.example.dev" ? [{ id: "r", type: "CNAME", name: "*.example.dev", content: "u.cfargotunnel.com" }] : [] })
+    Response.json({ success: true, result: new URL(String(url)).searchParams.get("name") === "*.example.dev" ? [{ id: "r", type: "CNAME", name: "*.example.dev", content: "u.cfargotunnel.com", proxied: true }] : [] })
   ) as typeof fetch;
   const dns = new CfDnsApi({ zoneId: "z1", token: "t", fetchImpl });
-  expect(await dns.cnameTarget("*.example.dev")).toBe("u.cfargotunnel.com");
+  expect(await dns.cnameTarget("*.example.dev")).toEqual({ target: "u.cfargotunnel.com", proxied: true });
   expect(await dns.cnameTarget("*.other.dev")).toBeNull();
 });
 
@@ -95,6 +95,6 @@ test("FakeCfDns mirrors upsert + cnameTarget", async () => {
   await dns.writeProxiedCname("*.e.dev", "a.cfargotunnel.com");
   await dns.writeProxiedCname("*.e.dev", "b.cfargotunnel.com");
   expect(dns.cname.size).toBe(1);
-  expect(await dns.cnameTarget("*.e.dev")).toBe("b.cfargotunnel.com");
+  expect(await dns.cnameTarget("*.e.dev")).toEqual({ target: "b.cfargotunnel.com", proxied: true });
   expect(await dns.cnameTarget("*.none.dev")).toBeNull();
 });

@@ -62,7 +62,8 @@ export async function reconcileEdge(deps: EdgeReconcileDeps): Promise<void> {
         if (!drift.tunnelGone) {
           const host = `*.${publicDomain}`;
           const target = `${tunnel.uuid}.cfargotunnel.com`;
-          if ((await dns.cnameTarget(host)) !== target) await dns.writeProxiedCname(host, target);
+          const cur = await dns.cnameTarget(host);
+          if (!cur || cur.target !== target || !cur.proxied) await dns.writeProxiedCname(host, target);
         }
         nextCfAt = now + EDGE_CF_INTERVAL_MS;
       }

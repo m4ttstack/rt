@@ -44,6 +44,6 @@ export class FakeCfDns implements CfDns {
   async writeTxt(n: string, v: string) { this.calls.push(`txt:${n}`); this.txt.set(n, v); }
   async deleteTxt(n: string) { this.calls.push(`delTxt:${n}`); this.txt.delete(n); }
   async writeProxiedCname(h: string, t: string) { this.calls.push(`cname:${h}`); this.cname.set(h, { target: t, proxied: true }); }
-  async cnameTarget(h: string) { this.calls.push(`readCname:${h}`); return this.cname.get(h)?.target ?? null; }
+  async cnameTarget(h: string) { this.calls.push(`readCname:${h}`); return this.cname.get(h) ?? null; }
   async deleteHostRecords(h: string) { this.calls.push(`delCname:${h}`); this.cname.delete(h); }
 }

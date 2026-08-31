@@ -12,11 +12,11 @@ process.env.LOCAL_STATE_DIR = dir;
 process.env.LOCAL_AGENTS_DIR = mkdtempSync(join(tmpdir(), "local-status-tunnel-agents-"));
 process.env.HOME = dir;
 
-const { buildStatus } = await import("./status.ts");
+const { buildStatus, serviceJson } = await import("./status.ts");
 const { reloadRegistry } = await import("../registry/records.ts");
 const { updatePlatformSettings, reloadPlatformSettings } = await import("./platform-settings.ts");
 const { renderPlist } = await import("../services/plist.ts");
-const { tunnelServiceSpec } = await import("../edge/domain.ts");
+const { tunnelServiceSpec, TUNNEL_LABEL } = await import("../edge/domain.ts");
 
 beforeEach(() => {
   rmSync(process.env.LOCAL_REGISTRY_PATH!, { force: true });
@@ -42,4 +42,27 @@ test("the deck tunnel row carries edge health when a domain is bound", async () 
 test("no bound domain: the tunnel row keeps health null", async () => {
   const s = await buildStatus({ port: 1, canaryPort: 2, proxyFreshness: "unknown", autoHeal: null });
   expect(s.orphans.find((r) => r.isTunnel)!.health).toBeNull();
+});
+
+// buildStatus derives `pid` from a real `launchctl list`, which never actually
+// runs the tunnel label in this harness, so a running-but-disconnected tunnel
+// can't be produced end to end. This unit-covers the intent directly: a
+// tunnel whose process IS running (pid set) but whose edge health reports
+// unhealthy must still surface its stderr tail, not the pid-based fallback.
+test("serviceJson: a running tunnel with unhealthy edge health surfaces stderr, not silence", () => {
+  const stderrPath = join(dir, "tunnel.err.log");
+  writeFileSync(stderrPath, "ERR: connection refused\n");
+  const svc = {
+    label: TUNNEL_LABEL,
+    plistPath: "",
+    program: ["/opt/homebrew/bin/cloudflared"],
+    workingDirectory: null,
+    stderrPath,
+    port: null,
+    pid: 4242,
+    lastExitStatus: null,
+  };
+  const disconnected = { ok: false, tone: "warn" as const, detail: "not connected to Cloudflare", status: null, ms: null };
+  const svcJson = serviceJson(svc, disconnected, null);
+  expect(svcJson.stderr).toEqual(["ERR: connection refused"]);
 });
