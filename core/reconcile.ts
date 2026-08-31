@@ -3,16 +3,14 @@ import { getOverrides, type PortOverride } from "./settings.ts";
 import { setRoutePort } from "./routes-writer.ts";
 import { reconcileRemote } from "../src/edge/remote.ts";
 import { RailwayCli } from "../src/edge/railway.ts";
-import { CfDnsApi, type CfDns } from "../src/edge/cf-dns.ts";
+import { CfDnsApi, resolveCfDns, type CfDns } from "../src/edge/cf-dns.ts";
 import { readDeckSecrets } from "../src/edge/rt-secrets.ts";
 import { getPlatformSettings } from "../src/api/platform-settings.ts";
 import { listRecords } from "../src/registry/records.ts";
 import { reconcileEdge } from "../src/edge/edge-reconcile.ts";
-import { resolveCloudflared } from "../src/edge/domain.ts";
+import { resolveCloudflared, defaultCfDir } from "../src/edge/domain.ts";
 import { CloudflaredCli } from "../src/edge/tunnel.ts";
 import { LaunchdManager } from "../src/services/launchd.ts";
-import { homedir } from "os";
-import { join } from "path";
 
 export type Overrides = Record<string, PortOverride>;
 
@@ -56,9 +54,7 @@ async function reconcileRemoteTick(): Promise<void> {
 
 // dns is a factory so the rt-daemon secrets read happens only when a CF pass is due.
 async function edgeDns(): Promise<CfDns | null> {
-  const s = await readDeckSecrets();
-  const token = s.ok ? s.cfDnsToken ?? s.cfApiToken : undefined;
-  return s.ok && s.cfZoneId && token ? new CfDnsApi({ zoneId: s.cfZoneId, token }) : null;
+  return resolveCfDns();
 }
 
 async function reconcileEdgeTick(): Promise<void> {
@@ -67,7 +63,7 @@ async function reconcileEdgeTick(): Promise<void> {
   try {
     await reconcileEdge({
       tunnel: new CloudflaredCli(), manager: new LaunchdManager(), dns: edgeDns, services: () => readServices(),
-      now: Date.now, cloudflaredDir: join(homedir(), ".cloudflared"), cloudflaredBin, gatewayPort: 7950,
+      now: Date.now, cloudflaredDir: defaultCfDir(), cloudflaredBin, gatewayPort: 7950,
     });
   } catch (err) {
     console.error("edge reconcile tick failed:", err);

@@ -34,7 +34,7 @@ export function tunnelConfigPath(): string { return join(stateDir(), "tunnel.yml
 export function credentialsPath(cfDir: string, uuid: string): string { return join(cfDir, `${uuid}.json`); }
 // process.env.HOME over homedir() alone: Bun freezes homedir() to whatever HOME
 // was at process start, so a test's later HOME reassignment (see state.ts) never moves it.
-function defaultCfDir(): string { return join(process.env.HOME ?? homedir(), ".cloudflared"); }
+export function defaultCfDir(): string { return join(process.env.HOME ?? homedir(), ".cloudflared"); }
 export function resolveCloudflared(): string | null { return resolveProgram("cloudflared", composeServicePath()); }
 
 // launchd does not search PATH for ProgramArguments[0]; the caller passes an absolute path.

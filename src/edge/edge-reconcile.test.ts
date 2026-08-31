@@ -175,8 +175,10 @@ test("a throwing pass backs off EDGE_ERROR_BACKOFF_MS and the latch prevents ove
   let resolveSlow!: () => void;
   const slow = deps({ services: () => new Promise((r) => { resolveSlow = () => r([]); }) });
   clock.t += EDGE_LOCAL_INTERVAL_MS;
+  manager.kickstarts.length = 0;
   const p = reconcileEdge(slow);
-  await reconcileEdge(deps()); // overlapped call returns immediately
+  await reconcileEdge(deps()); // overlapped call must early-return on the inFlight latch, not run a real pass
+  expect(manager.kickstarts).toEqual([]);
   resolveSlow();
   await p;
 });

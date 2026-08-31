@@ -6,8 +6,7 @@ import { writeApiInfo } from "./api/state.ts";
 import { LaunchdManager } from "./services/launchd.ts";
 import { PortlessCli } from "./edge/portless.ts";
 import { CloudflaredCli } from "./edge/tunnel.ts";
-import { CfDnsApi, type CfDns } from "./edge/cf-dns.ts";
-import { readDeckSecrets } from "./edge/rt-secrets.ts";
+import { resolveCfDns, type CfDns } from "./edge/cf-dns.ts";
 import { startGateway } from "../core/gateway.ts";
 import {
   CANARY_PATH, checkProxyFreshness, startCanaryListener, type Freshness,
@@ -134,9 +133,7 @@ export function serve(): void {
     secrets carry no zone id and DNS-capable token, so unbindDomain skips the
     DNS delete rather than fail the whole uninstall over it. */
 async function uninstallDns(): Promise<CfDns | undefined> {
-  const s = await readDeckSecrets();
-  const token = s.ok ? s.cfDnsToken ?? s.cfApiToken : undefined;
-  return s.ok && s.cfZoneId && token ? new CfDnsApi({ zoneId: s.cfZoneId, token }) : undefined;
+  return (await resolveCfDns()) ?? undefined;
 }
 
 const cmd = Bun.argv[2] ?? "serve";

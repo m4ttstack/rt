@@ -36,7 +36,7 @@ import { syncOAuth } from "../edge/access.ts";
 import { readDeckSecrets, type RtSecretsDeps } from "../edge/rt-secrets.ts";
 import { enableRemote, disableRemote, pushRemote, resolveRemoteDrivers } from "../edge/remote.ts";
 import type { RailwayDriver } from "../edge/railway.ts";
-import { CfDnsApi, type CfDns } from "../edge/cf-dns.ts";
+import { resolveCfDns, type CfDns } from "../edge/cf-dns.ts";
 import { gitProvenance, untrackedEnvPresent } from "../edge/source.ts";
 
 export interface ApiDeps extends Drivers {
@@ -67,10 +67,7 @@ export interface ApiDeps extends Drivers {
 
 /** DNS driver for the edge routes, or null when the deck secrets do not carry a zone id and a DNS-capable token. */
 async function edgeDns(deps: ApiDeps): Promise<CfDns | null> {
-  if (deps.dns) return deps.dns;
-  const s = await readDeckSecrets(deps.deckSecrets);
-  const token = s.ok ? s.cfDnsToken ?? s.cfApiToken : undefined;
-  return s.ok && s.cfZoneId && token ? new CfDnsApi({ zoneId: s.cfZoneId, token }) : null;
+  return deps.dns ?? (await resolveCfDns(deps.deckSecrets));
 }
 
 export function callerOf(req: Request): string {

@@ -3,6 +3,8 @@
 // throws a truncated message rather than degrading silently. Callers
 // construct it with { zoneId, token, fetchImpl }, sourcing zoneId/token
 // from readDeckSecrets (cfApiToken/cfZoneId).
+import { readDeckSecrets, type RtSecretsDeps } from "./rt-secrets.ts";
+
 const BASE = "https://api.cloudflare.com/client/v4";
 
 export type ZoneSslMode = "off" | "flexible" | "full" | "strict";
@@ -117,4 +119,13 @@ export class CfDnsApi implements CfDns {
       await this.req("DELETE", `${BASE}/zones/${this.zoneId}/dns_records/${record.id}`);
     }
   }
+}
+
+// Shared secrets-to-driver resolution for every edge caller that needs a
+// CfDns: fails closed to null when the deck secrets carry no zone id and no
+// DNS-capable token (cfDnsToken, falling back to cfApiToken).
+export async function resolveCfDns(deps?: RtSecretsDeps): Promise<CfDns | null> {
+  const s = await readDeckSecrets(deps);
+  const token = s.ok ? s.cfDnsToken ?? s.cfApiToken : undefined;
+  return s.ok && s.cfZoneId && token ? new CfDnsApi({ zoneId: s.cfZoneId, token }) : null;
 }
