@@ -1,4 +1,4 @@
-import { mkdirSync } from "fs";
+import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { readRoutes, readServices, bareName, MATTSTACK_TLD, type PortlessRoute } from "../../core/discover.ts";
 import { reconcileMattstackTld } from "./tld-reconcile.ts";
@@ -7,6 +7,7 @@ import {
   getRecord, putRecord, deleteRecord, listRecords, addIssue, clearIssues, reloadRegistry,
   type AppRecord, type SyncIssue,
 } from "../registry/records.ts";
+import { readDeckManifest } from "../registry/deck-manifest.ts";
 import { ingestManifest, removeIcon } from "../registry/manifest.ts";
 import { renameAppSettings, getOverride, clearOverride } from "../../core/settings.ts";
 import { renameOAuth } from "../edge/oauth.ts";
@@ -315,15 +316,40 @@ export async function removeManagedApps(drivers: Drivers): Promise<FlowResult> {
 
 export async function editApp(
   name: string,
-  patch: { name?: string; command?: string[]; workingDirectory?: string; env?: Record<string, string>; port?: number },
+  patch: {
+    name?: string; command?: string[]; workingDirectory?: string; env?: Record<string, string>; port?: number;
+    dev?: { workingDirectory: string } | null;
+  },
   caller: string,
   force: boolean,
   drivers: Drivers,
 ): Promise<FlowResult> {
   const record = getRecord(name);
   if (!record) return { status: 404, body: { error: "unknown app" } };
-  const verdict = authorizeStructural(record, caller, force);
-  if (!verdict.ok) return { status: verdict.status, body: verdict.body };
+
+  // Computed from the patch's own keys, not a hand-listed set of the other
+  // fields: a future patch field must not be silently swept into this carve-out.
+  const devOnly = Object.keys(patch).length === 1 && Object.prototype.hasOwnProperty.call(patch, "dev");
+  if (patch.dev != null) {
+    const dir = patch.dev.workingDirectory;
+    if (typeof dir !== "string" || !dir.startsWith("/")) {
+      return { status: 400, body: { error: "dev.workingDirectory must be an absolute path" } };
+    }
+    if (!existsSync(dir)) return { status: 400, body: { error: "directory not found", dir } };
+    const parsed = readDeckManifest(dir);
+    if (parsed === null) return { status: 400, body: { error: `no mattstack.deck.json in ${dir}` } };
+    if (!parsed.ok) return { status: 400, body: { error: parsed.error } };
+    if (parsed.manifest.name !== record.name) {
+      return { status: 400, body: { error: "manifest name mismatch", expected: record.name, got: parsed.manifest.name } };
+    }
+  }
+  // The link is developer-local machine state, not registrar-owned structure,
+  // and the mutation plane is already 127.0.0.1-only with public writes 403'd --
+  // but any patch that also touches a structural field keeps the gate.
+  if (!devOnly) {
+    const verdict = authorizeStructural(record, caller, force);
+    if (!verdict.ok) return { status: verdict.status, body: verdict.body };
+  }
   if (patch.name !== undefined && !NAME_RE.test(patch.name)) {
     return { status: 400, body: { error: "bad name" } };
   }
@@ -352,6 +378,7 @@ export async function editApp(
     workingDirectory: patch.workingDirectory ?? record.workingDirectory,
     env: patch.env ?? record.env,
     port: patch.port ?? record.port,
+    dev: patch.dev === null ? undefined : (patch.dev ?? record.dev),
   };
   if (next.kind === "service") next.label = `${LABEL_PREFIX}${next.name}`;
   // A dev-port override lives entirely in settings, keyed off the app's base

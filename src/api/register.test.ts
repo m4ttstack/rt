@@ -361,6 +361,86 @@ test("a linked managed record installs its resolved source shape in dev mode", a
   expect(installed.programArguments.slice(1)).toEqual(["run", "serve"]);
 });
 
+// ─── editApp: dev.workingDirectory link/unlink ─────────────────────────────
+
+test("edit: a valid dev link stores dev.workingDirectory and reinstalls the service", async () => {
+  await registerApp(input, drivers);
+  const srcDir = mkdtempSync(join(tmpdir(), "dev-link-"));
+  writeFileSync(join(srcDir, "mattstack.deck.json"), JSON.stringify({ name: "myapp" }));
+
+  const res = await editApp("myapp", { dev: { workingDirectory: srcDir } }, "user", false, drivers);
+
+  expect(res.status).toBe(200);
+  expect(getRecord("myapp")!.dev).toEqual({ workingDirectory: srcDir });
+  expect(drivers.manager.installed.has(`${LABEL_PREFIX}myapp`)).toBe(true);
+});
+
+test("edit: dev link validation rejects a relative path, a missing dir, a bad manifest, and a name mismatch, before any teardown", async () => {
+  await registerApp(input, drivers);
+  const label = `${LABEL_PREFIX}myapp`;
+  const installedBefore = drivers.manager.installed.get(label);
+
+  const relative = await editApp("myapp", { dev: { workingDirectory: "not/absolute" } }, "user", false, drivers);
+  expect(relative.status).toBe(400);
+  expect((relative.body as any).error).toBe("dev.workingDirectory must be an absolute path");
+
+  const missingDir = join(tmpdir(), "dev-link-does-not-exist-xyz");
+  const missing = await editApp("myapp", { dev: { workingDirectory: missingDir } }, "user", false, drivers);
+  expect(missing.status).toBe(400);
+  expect((missing.body as any).error).toBe("directory not found");
+
+  const badManifestDir = mkdtempSync(join(tmpdir(), "dev-link-bad-"));
+  writeFileSync(join(badManifestDir, "mattstack.deck.json"), "not json");
+  const bad = await editApp("myapp", { dev: { workingDirectory: badManifestDir } }, "user", false, drivers);
+  expect(bad.status).toBe(400);
+  expect((bad.body as any).error).toBe("mattstack.deck.json is not valid JSON");
+
+  const mismatchDir = mkdtempSync(join(tmpdir(), "dev-link-mismatch-"));
+  writeFileSync(join(mismatchDir, "mattstack.deck.json"), JSON.stringify({ name: "otherapp" }));
+  const mismatch = await editApp("myapp", { dev: { workingDirectory: mismatchDir } }, "user", false, drivers);
+  expect(mismatch.status).toBe(400);
+  expect(mismatch.body).toEqual({ error: "manifest name mismatch", expected: "myapp", got: "otherapp" });
+
+  // None of the rejected links tore down or reinstalled the running service.
+  expect(drivers.manager.installed.get(label)).toEqual(installedBefore);
+  expect(getRecord("myapp")!.dev).toBeUndefined();
+});
+
+test("edit: a dev-only patch on a managed record needs no force", async () => {
+  await registerApp({ ...input, managedBy: "rt" }, drivers);
+  const srcDir = mkdtempSync(join(tmpdir(), "dev-link-"));
+  writeFileSync(join(srcDir, "mattstack.deck.json"), JSON.stringify({ name: "myapp" }));
+
+  const res = await editApp("myapp", { dev: { workingDirectory: srcDir } }, "user", false, drivers);
+
+  expect(res.status).toBe(200);
+  expect(getRecord("myapp")!.dev).toEqual({ workingDirectory: srcDir });
+});
+
+test("edit: a structural patch on a managed record still needs force even when it also sets dev", async () => {
+  await registerApp({ ...input, managedBy: "rt" }, drivers);
+  const srcDir = mkdtempSync(join(tmpdir(), "dev-link-"));
+  writeFileSync(join(srcDir, "mattstack.deck.json"), JSON.stringify({ name: "myapp" }));
+
+  const res = await editApp("myapp", { port: 11500, dev: { workingDirectory: srcDir } }, "user", false, drivers);
+
+  expect(res.status).toBe(409);
+  expect(getRecord("myapp")!.dev).toBeUndefined();
+});
+
+test("edit: dev: null unlinks", async () => {
+  await registerApp(input, drivers);
+  const srcDir = mkdtempSync(join(tmpdir(), "dev-link-"));
+  writeFileSync(join(srcDir, "mattstack.deck.json"), JSON.stringify({ name: "myapp" }));
+  await editApp("myapp", { dev: { workingDirectory: srcDir } }, "user", false, drivers);
+  expect(getRecord("myapp")!.dev).toEqual({ workingDirectory: srcDir });
+
+  const res = await editApp("myapp", { dev: null }, "user", false, drivers);
+
+  expect(res.status).toBe(200);
+  expect(getRecord("myapp")!.dev).toBeUndefined();
+});
+
 // ─── adopt: user app -> mattstack product (ownership flip + optional rename) ──
 
 function routesOnDisk(): Array<{ hostname: string; port: number }> {
