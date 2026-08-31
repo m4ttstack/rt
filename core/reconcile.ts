@@ -5,6 +5,7 @@ import { reconcileRemote } from "../src/edge/remote.ts";
 import { RailwayCli } from "../src/edge/railway.ts";
 import { CfDnsApi } from "../src/edge/cf-dns.ts";
 import { readDeckSecrets } from "../src/edge/rt-secrets.ts";
+import { getPlatformSettings } from "../src/api/platform-settings.ts";
 import { listRecords } from "../src/registry/records.ts";
 
 export type Overrides = Record<string, PortOverride>;
@@ -36,8 +37,10 @@ async function reconcileRemoteTick(): Promise<void> {
   if (!hasPendingRemoteWork()) return;
   try {
     const secrets = await readDeckSecrets();
-    if (!secrets.ok || !secrets.cfApiToken || !secrets.cfZoneId) return; // not configured yet; nothing to reconcile against
-    const railway = new RailwayCli();
+    const rc = getPlatformSettings().railway;
+    // Not fully configured yet: needs both CF and Railway credentials plus the project/env.
+    if (!secrets.ok || !secrets.cfApiToken || !secrets.cfZoneId || !secrets.railwayApiToken || !secrets.railwayToken || !rc) return;
+    const railway = new RailwayCli({ apiToken: secrets.railwayApiToken, projectToken: secrets.railwayToken, projectId: rc.projectId, environmentId: rc.environmentId });
     const dns = new CfDnsApi({ zoneId: secrets.cfZoneId, token: secrets.cfApiToken });
     await reconcileRemote({ railway, dns, now: Date.now });
   } catch (err) {

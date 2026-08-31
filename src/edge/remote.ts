@@ -3,6 +3,7 @@ import type { FlowResult } from "../api/register.ts";
 import { RailwayCli, type RailwayDriver } from "./railway.ts";
 import { CfDnsApi, type CfDns } from "./cf-dns.ts";
 import type { DeckSecretsResult } from "./rt-secrets.ts";
+import { getPlatformSettings } from "../api/platform-settings.ts";
 
 export interface RefuseCtx {
   record: AppRecord;
@@ -41,8 +42,14 @@ export function resolveRemoteDrivers(
   deps: { railway?: RailwayDriver; dns?: CfDns },
   sec: DeckSecretsResult,
 ): { railway: RailwayDriver; dns: CfDns } {
+  const rc = getPlatformSettings().railway;
   return {
-    railway: deps.railway ?? new RailwayCli(),
+    railway: deps.railway ?? new RailwayCli({
+      apiToken: sec.ok ? sec.railwayApiToken ?? "" : "",
+      projectToken: sec.ok ? sec.railwayToken ?? "" : "",
+      projectId: rc?.projectId ?? "",
+      environmentId: rc?.environmentId ?? "",
+    }),
     dns: deps.dns ?? new CfDnsApi({
       zoneId: sec.ok ? sec.cfZoneId ?? "" : "",
       token: sec.ok ? sec.cfApiToken ?? "" : "",
