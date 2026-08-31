@@ -29,7 +29,7 @@ export function NewPill({ count, onClick }: NewPillProps) {
         height: 26,
         padding: '0 10px',
         borderRadius: 13,
-        fontSize: '10.56px',
+        fontSize: 'var(--tk-fs-3xs)',
         fontWeight: 600,
         color: ACCENT_TEXT,
         background: `color-mix(in srgb, ${ACCENT_TEXT} var(--tk-wash), var(--tk-card))`,

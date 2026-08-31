@@ -45,7 +45,7 @@ export interface AgentNameProps {
 }
 
 const LABEL = {
-  fontSize: '9.5px',
+  fontSize: 'var(--tk-fs-4xs)',
   fontWeight: 700,
   letterSpacing: '0.06em',
   textTransform: 'uppercase',
@@ -53,7 +53,7 @@ const LABEL = {
 } as const;
 
 const MUTED_XS = {
-  fontSize: '10.56px',
+  fontSize: 'var(--tk-fs-3xs)',
   color: 'var(--tk-muted-text)',
 } as const;
 
@@ -68,7 +68,7 @@ function RepoToken({ repo }: { repo: string }) {
       truncate
       style={{ ...MUTED_XS, minWidth: 0, alignSelf: 'baseline' }}
     >
-      <span style={{ fontSize: '12px', margin: '0 3px' }}>•</span>
+      <span style={{ fontSize: 'var(--tk-fs-2xs)', margin: '0 3px' }}>•</span>
       {repo}
     </Text>
   );
@@ -154,7 +154,7 @@ export function AgentCard({
         <Text
           component="span"
           style={{
-            fontSize: '10.56px',
+            fontSize: 'var(--tk-fs-3xs)',
             fontWeight: 500,
             flex: 'none',
             color:

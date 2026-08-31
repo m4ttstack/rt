@@ -1,0 +1,15 @@
+/*
+ * Sub-xs type steps for chat's dense meta text. Mantine's scale stops at
+ * `xs` (0.75rem), but the artboards run smaller: chips, timestamps, status
+ * letters and section labels. These three tokens carry those sizes so a
+ * component references a token, never a literal, per design/CONFORMANCE.md.
+ * rem at a 16px root, matching the artboards' own value relationship.
+ *
+ * Defined on :root (not the scoped theme wrapper) so portalled surfaces --
+ * menus, tooltips, agent hover cards -- resolve them too.
+ */
+:root {
+  --tk-fs-2xs: 0.76rem; /* 12.16px */
+  --tk-fs-3xs: 0.66rem; /* 10.56px */
+  --tk-fs-4xs: 0.59rem; /* 9.5px */
+}

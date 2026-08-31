@@ -600,7 +600,7 @@ function Kbd({ children }: { children: React.ReactNode }) {
         border: `1px solid ${BORDER}`,
         borderBottomWidth: 2,
         borderRadius: 'var(--mantine-radius-sm)',
-        fontSize: 9,
+        fontSize: 'var(--tk-fs-4xs)',
         color: MUTED,
         background: 'var(--ui-bg-3)',
       }}

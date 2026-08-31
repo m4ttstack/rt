@@ -28,7 +28,7 @@ export function Tag({ handle, room }: { handle: string; room: string }) {
         height: 14,
         padding: '0 5px',
         borderRadius: 7,
-        fontSize: '8.5px',
+        fontSize: 'var(--tk-fs-4xs)',
         fontWeight: 500,
         whiteSpace: 'nowrap',
         border: `1px solid ${

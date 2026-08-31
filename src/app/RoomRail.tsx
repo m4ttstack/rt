@@ -104,7 +104,7 @@ function MentionBadge({ count }: { count: number }) {
         lineHeight: 1,
         borderRadius: 'var(--mantine-radius-xl)',
         padding: '0 7px',
-        fontSize: 10,
+        fontSize: 'var(--tk-fs-3xs)',
         fontWeight: 600,
         whiteSpace: 'nowrap',
         background: ACCENT_DEEP,
@@ -130,7 +130,7 @@ function UnreadBadge({ count }: { count: number }) {
         lineHeight: 1,
         borderRadius: 'var(--mantine-radius-xl)',
         padding: '0 7px',
-        fontSize: 10,
+        fontSize: 'var(--tk-fs-3xs)',
         fontWeight: 500,
         whiteSpace: 'nowrap',
         border: `1px solid ${BORDER_DEFAULT}`,
@@ -404,7 +404,7 @@ export function RoomRail({
               fw={700}
               style={{
                 margin: 0,
-                fontSize: '9.5px',
+                fontSize: 'var(--tk-fs-4xs)',
                 color: 'var(--tk-muted-text)',
                 letterSpacing: '0.06em',
               }}

@@ -470,7 +470,11 @@ function PhoneHeader({
       >
         <Icon name="panelLeftOpen" size={20} />
       </UnstyledButton>
-      <Text truncate fw={700} style={{ fontSize: 15, minWidth: 0 }}>
+      <Text
+        truncate
+        fw={700}
+        style={{ fontSize: 'var(--mantine-font-size-sm)', minWidth: 0 }}
+      >
         {roomHeaderTitle(room)}
       </Text>
       <Box style={{ flex: 1 }} />
@@ -564,7 +568,11 @@ function PhoneRoomRow({
       <Text
         truncate
         fw={active ? 600 : undefined}
-        style={{ flex: 1, minWidth: 0, fontSize: 14 }}
+        style={{
+          flex: 1,
+          minWidth: 0,
+          fontSize: 'var(--mantine-font-size-lg)',
+        }}
       >
         {title}
       </Text>
@@ -579,7 +587,7 @@ function PhoneRoomRow({
             lineHeight: 1,
             borderRadius: 'var(--mantine-radius-xl)',
             padding: '0 7px',
-            fontSize: 10,
+            fontSize: 'var(--tk-fs-3xs)',
             fontWeight: 600,
             whiteSpace: 'nowrap',
             background:
@@ -601,7 +609,7 @@ function PhoneRoomRow({
             lineHeight: 1,
             borderRadius: 'var(--mantine-radius-xl)',
             padding: '0 7px',
-            fontSize: 10,
+            fontSize: 'var(--tk-fs-3xs)',
             fontWeight: 500,
             whiteSpace: 'nowrap',
             border: `1px solid ${PHONE_BORDER}`,
@@ -735,7 +743,7 @@ function PhoneDrawer({
               <Text
                 fw={700}
                 style={{
-                  fontSize: '9.5px',
+                  fontSize: 'var(--tk-fs-4xs)',
                   color: PHONE_MUTED,
                   letterSpacing: '0.06em',
                 }}

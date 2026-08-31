@@ -255,7 +255,7 @@ export function PaneRow({
               border: `1px solid ${BORDER}`,
               borderRadius: 4,
               fontFamily: 'inherit',
-              fontSize: '11.2px',
+              fontSize: 'var(--tk-fs-2xs)',
               lineHeight: 1.5,
               whiteSpace: 'pre',
               overflowX: 'auto',

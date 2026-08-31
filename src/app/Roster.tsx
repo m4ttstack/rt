@@ -108,7 +108,7 @@ function SectionHeading({
         data-testid={`section-label-${status}`}
         fw={700}
         style={{
-          fontSize: '9.5px',
+          fontSize: 'var(--tk-fs-4xs)',
           letterSpacing: '0.06em',
           color: 'var(--tk-muted-text)',
           textTransform: 'uppercase',
@@ -119,7 +119,7 @@ function SectionHeading({
       <Text
         component="span"
         style={{
-          fontSize: '10.56px',
+          fontSize: 'var(--tk-fs-3xs)',
           color: 'var(--tk-muted-text)',
         }}
       >
@@ -209,7 +209,10 @@ function MemberRow({
           <Text
             component="span"
             data-testid={`sub-${handle}`}
-            style={{ fontSize: '10.56px', color: 'var(--tk-muted-text)' }}
+            style={{
+              fontSize: 'var(--tk-fs-3xs)',
+              color: 'var(--tk-muted-text)',
+            }}
           >
             {reachable
               ? statusDetail(buddy, now)
@@ -317,7 +320,7 @@ export function Roster({
               component="h2"
               style={{
                 margin: 0,
-                fontSize: '10.56px',
+                fontSize: 'var(--tk-fs-3xs)',
                 fontWeight: 600,
                 letterSpacing: '0.04em',
                 color: 'var(--tk-muted-text)',
@@ -328,7 +331,10 @@ export function Roster({
           </Group>
           {!daemonReachable && (
             <Text
-              style={{ fontSize: '10.56px', color: 'var(--tk-muted-text)' }}
+              style={{
+                fontSize: 'var(--tk-fs-3xs)',
+                color: 'var(--tk-muted-text)',
+              }}
             >
               last known
             </Text>

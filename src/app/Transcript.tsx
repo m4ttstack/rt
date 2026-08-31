@@ -133,7 +133,7 @@ function MessageBody({
           onClick={() => setExpanded(e => !e)}
           style={{
             marginTop: 4,
-            fontSize: '10.56px',
+            fontSize: 'var(--tk-fs-3xs)',
             fontWeight: 600,
             color: ACCENT_TEXT,
           }}
@@ -162,7 +162,7 @@ function DayDivider({ label }: { label: string }) {
       aria-label={label}
       style={{
         color: 'var(--tk-muted-text)',
-        fontSize: '10.56px',
+        fontSize: 'var(--tk-fs-3xs)',
         fontWeight: 600,
         padding: 'var(--mantine-spacing-xs) 0',
       }}
@@ -185,7 +185,7 @@ function YouBadge() {
         height: 16,
         padding: '0 6px',
         borderRadius: 10,
-        fontSize: 9,
+        fontSize: 'var(--tk-fs-4xs)',
         fontWeight: 500,
         lineHeight: 1,
         border: '1px solid var(--tk-border)',
@@ -279,7 +279,7 @@ function OlderEdge({
         cursor: exhausted ? 'default' : 'pointer',
         padding: '6px 0 4px',
         textAlign: 'center',
-        fontSize: '10.56px',
+        fontSize: 'var(--tk-fs-3xs)',
         color: 'var(--tk-muted-text)',
       }}
     >
@@ -527,7 +527,7 @@ export function Transcript({
                   style={{
                     padding: '6px 0 4px',
                     textAlign: 'left',
-                    fontSize: '10.56px',
+                    fontSize: 'var(--tk-fs-3xs)',
                     color: 'var(--tk-muted-text)',
                   }}
                 >
@@ -560,7 +560,7 @@ export function Transcript({
                         data-testid="transcript-divider"
                         style={{
                           color: ACCENT_TEXT,
-                          fontSize: '10.56px',
+                          fontSize: 'var(--tk-fs-3xs)',
                           fontWeight: 600,
                           padding: 'var(--mantine-spacing-xs) 0',
                         }}

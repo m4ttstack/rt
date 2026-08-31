@@ -35,7 +35,7 @@ const CHIP_BASE = {
   height: 22,
   borderRadius: 'var(--mantine-radius-md)',
   padding: '0 8px',
-  fontSize: '10.56px',
+  fontSize: 'var(--tk-fs-3xs)',
   fontWeight: 500,
   whiteSpace: 'nowrap',
   border: '1px solid var(--mantine-color-default-border)',
@@ -47,7 +47,7 @@ const CHIP_BASE = {
 const CONTROL_SURFACE = {
   background: 'var(--tk-bg)',
   borderColor: 'var(--tk-border)',
-  fontSize: '12.16px',
+  fontSize: 'var(--tk-fs-2xs)',
 } as const;
 
 const UNREAD_BADGE = {
@@ -56,7 +56,7 @@ const UNREAD_BADGE = {
   height: 18,
   padding: '0 7px',
   borderRadius: 10,
-  fontSize: 10,
+  fontSize: 'var(--tk-fs-3xs)',
   fontWeight: 500,
   lineHeight: 1,
   border: '1px solid var(--tk-border)',
@@ -234,7 +234,7 @@ export function PageBar({
       )}
       <Text
         fw={700}
-        size="20px"
+        size="xl"
         lh={1.35}
         truncate
         style={{ flex: 'none', maxWidth: '38%', minWidth: 0 }}
