@@ -39,6 +39,22 @@ export function readLinkedManifest(record: AppRecord): LinkedManifest {
   return { state: "linked", manifest: parsed.manifest, dir };
 }
 
+/** Command keys the board may show for a record, mirroring the command route's gate. */
+export function commandKeysFor(record: AppRecord, devMode: boolean): string[] | undefined {
+  if (record.managedBy === "user") {
+    const keys = Object.keys(record.commands ?? {});
+    return keys.length ? keys : undefined;
+  }
+  if (!record.dev?.workingDirectory && record.commands) {
+    return devMode ? Object.keys(record.commands) : undefined;
+  }
+  if (!devMode || !record.dev?.workingDirectory) return undefined;
+  const link = readLinkedManifest(record);
+  if (link.state !== "linked") return undefined;
+  const keys = Object.keys(link.manifest.dev ?? {}).filter((k) => k !== "start");
+  return keys.length ? keys : undefined;
+}
+
 export interface ServeShapeDeps {
   devMode?: () => boolean;
   /** Test seam for bundleBinaryPath's helpers dir; default derives from the running bundle. */
