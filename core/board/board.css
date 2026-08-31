@@ -4,9 +4,13 @@
   font-family: var(--font-mono);
   color: var(--fg);
 }
+/* Body sits on --card, not --bg: this page has no graph-paper texture to
+   lean on, and its content (the apps table) isn't wrapped in its own card
+   surface the way board's rows are, so the page canvas takes the raised
+   tone instead. */
 body {
   margin: 0;
-  background: var(--bg);
+  background: var(--card);
 }
 .board-header { display: flex; justify-content: space-between; align-items: center; }
 /* Title lockup: the deck mark at full size beside the wordmark. */
