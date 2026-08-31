@@ -150,8 +150,10 @@ test("a grandfathered managed row's commands are present only in dev mode", asyn
   });
   const dev = await buildStatus({ ...opts, devMode: true });
   expect(dev.apps.find((a) => a.name === "myapp")!.commands).toEqual(["restart"]);
+  expect(dev.apps.find((a) => a.name === "myapp")!.devLink).toBeUndefined();
   const prod = await buildStatus({ ...opts, devMode: false });
   expect(prod.apps.find((a) => a.name === "myapp")!.commands).toBeUndefined();
+  expect(prod.apps.find((a) => a.name === "myapp")!.devLink).toBeUndefined();
 });
 
 test("a slim linked row lists manifest dev keys minus start, dev only, with devLink linked", async () => {

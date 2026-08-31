@@ -43,7 +43,7 @@ export interface AppRecord {
   description?: string;
   /** Present once an icon has been ingested to the deck icon store. */
   icon?: { ext: "svg" };
-  /** Action commands from mattstack.deck.json (shell strings), excluding `start`. Dev-mode-gated at the API. */
+  /** Action commands from mattstack.deck.json (shell strings), excluding `start`. Dev-mode-gated at the API for managed apps; never gated for user apps. */
   commands?: Record<string, string>;
   /** Declared serve-shape overlays; each may carry only `port` and/or `start`. */
   altConfigs?: Record<string, { port?: number; start?: string }>;
