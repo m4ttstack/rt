@@ -8,6 +8,8 @@ export interface RemoteState {
   customDomain: string;
   /** Railway-assigned CNAME target (<id>.up.railway.app), from ensureCustomDomain; set at the verifying stage so reconcileRemote can write the CNAME. */
   cnameTarget?: string;
+  /** Railway-returned TXT record name, stored so disableRemote deletes the exact record enableRemote created. */
+  txtName?: string;
   status: "deploying" | "verifying" | "live" | "error";
   /** Which cutover path a real run took; set when the CNAME is written. */
   cutover?: "verified-first" | "cname-first";

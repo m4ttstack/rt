@@ -1,5 +1,5 @@
 import { expect, test, beforeEach } from "bun:test";
-import { enableRemote } from "./remote.ts";
+import { enableRemote, disableRemote } from "./remote.ts";
 import { FakeRailwayDriver, FakeCfDns } from "../../test/fixture/remote.ts";
 import { putRecord, getRecord, reloadRegistry, type AppRecord } from "../registry/records.ts";
 
@@ -27,6 +27,18 @@ test("verified-first: TXT is written before the CNAME, CNAME is last, status liv
   expect(cnameIdx).toBeGreaterThan(txtIdx);
   expect(getRecord("site")!.remote!.status).toBe("live");
   expect(getRecord("site")!.remote!.cutover).toBe("verified-first");
+  expect(getRecord("site")!.remote!.txtName).toBe("_railway-verify.site.m4tthew.dev");
+});
+
+test("enable then disable: the exact TXT written is the exact TXT deleted, txt map ends empty", async () => {
+  const rw = new FakeRailwayDriver(); const dns = new FakeCfDns();
+  rw.setVerified("site.m4tthew.dev", { verified: true, proxyDetected: true });
+  await enableRemote("site", deps(rw, dns));
+  const written = getRecord("site")!.remote!.txtName!;
+  expect(dns.txt.has(written)).toBe(true);
+  await disableRemote("site", { railway: rw, dns });
+  expect(dns.calls).toContain(`delTxt:${written}`);
+  expect(dns.txt.size).toBe(0);
 });
 
 test("cname-first fallback: never verifies within budget, writes CNAME anyway", async () => {

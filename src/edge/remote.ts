@@ -121,7 +121,7 @@ export async function enableRemote(name: string, deps: EnableDeps): Promise<Flow
 
   const dom = await deps.railway.ensureCustomDomain(serviceId, host, record.port);
   await deps.dns.writeTxt(dom.txtName, dom.txtValue);
-  putRecord({ ...getRecord(name)!, remote: { ...getRecord(name)!.remote!, status: "verifying", cnameTarget: dom.cnameTarget } });
+  putRecord({ ...getRecord(name)!, remote: { ...getRecord(name)!.remote!, status: "verifying", cnameTarget: dom.cnameTarget, txtName: dom.txtName } });
 
   const deadline = deps.now() + deps.pollBudgetMs;
   let cutover: "verified-first" | "cname-first" = "cname-first";
@@ -155,9 +155,9 @@ export async function reconcileRemote(deps: { railway: RailwayDriver; dns: CfDns
 export async function disableRemote(name: string, deps: { railway: RailwayDriver; dns: CfDns }): Promise<FlowResult> {
   const record = getRecord(name);
   if (!record?.remote) return { status: 200, body: { ok: true, alreadyOff: true } };
-  const { serviceId, customDomain } = record.remote;
+  const { serviceId, customDomain, txtName } = record.remote;
   await deps.dns.deleteHostRecords(customDomain);      // wildcard tunnel reclaims the host
-  await deps.dns.deleteTxt(`_railway.${customDomain}`);
+  if (txtName) await deps.dns.deleteTxt(txtName);       // stored Railway-returned name, never a guessed one
   await deps.railway.removeCustomDomain(serviceId, customDomain);
   await deps.railway.deleteService(serviceId);
   const { remote: _drop, ...rest } = getRecord(name)!;
