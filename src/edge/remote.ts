@@ -121,7 +121,10 @@ export async function enableRemote(name: string, deps: EnableDeps): Promise<Flow
 
   const dom = await deps.railway.ensureCustomDomain(serviceId, host, record.port);
   await deps.dns.writeTxt(dom.txtName, dom.txtValue);
-  putRecord({ ...getRecord(name)!, remote: { ...getRecord(name)!.remote!, status: "verifying", cnameTarget: dom.cnameTarget, txtName: dom.txtName } });
+  // nextPollAt spans the whole enable window so reconcileRemote's 5s tick stays
+  // out of this record's way while enable is the one actively driving it; if
+  // enable dies mid-loop, reconcile resumes after the budget elapses.
+  putRecord({ ...getRecord(name)!, remote: { ...getRecord(name)!.remote!, status: "verifying", cnameTarget: dom.cnameTarget, txtName: dom.txtName, nextPollAt: new Date(deps.now() + deps.pollBudgetMs).toISOString() } });
 
   const deadline = deps.now() + deps.pollBudgetMs;
   let cutover: "verified-first" | "cname-first" = "cname-first";
@@ -137,7 +140,22 @@ export async function enableRemote(name: string, deps: EnableDeps): Promise<Flow
 
 const POLL_BACKOFF_MS = 30000;
 
+// Guards against overlapping 5s ticks driving the same record twice (e.g. one
+// tick's awaits outlive the 5s interval). Module-level: reconcileRemote has a
+// single timer source, so one flag per process is correct.
+let reconcileInFlight = false;
+
 export async function reconcileRemote(deps: { railway: RailwayDriver; dns: CfDns; now(): number }): Promise<void> {
+  if (reconcileInFlight) return;
+  reconcileInFlight = true;
+  try {
+    await reconcileRemoteOnce(deps);
+  } finally {
+    reconcileInFlight = false;
+  }
+}
+
+async function reconcileRemoteOnce(deps: { railway: RailwayDriver; dns: CfDns; now(): number }): Promise<void> {
   for (const r of listRecords()) {
     const rem = r.remote;
     if (!rem || (rem.status !== "deploying" && rem.status !== "verifying")) continue;

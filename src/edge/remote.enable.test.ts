@@ -41,6 +41,14 @@ test("enable then disable: the exact TXT written is the exact TXT deleted, txt m
   expect(dns.txt.size).toBe(0);
 });
 
+test("verifying transition sets nextPollAt to gate reconcileRemote out for the whole enable window", async () => {
+  const rw = new FakeRailwayDriver(); const dns = new FakeCfDns();
+  rw.setVerified("site.m4tthew.dev", { verified: true, proxyDetected: true });
+  const r = await enableRemote("site", deps(rw, dns, { now: () => 0 })); // fixed clock: verified on first check, no sleep
+  expect(r.status).toBe(200);
+  expect(Date.parse(getRecord("site")!.remote!.nextPollAt!)).toBe(600000); // 0 + pollBudgetMs
+});
+
 test("cname-first fallback: never verifies within budget, writes CNAME anyway", async () => {
   const rw = new FakeRailwayDriver(); const dns = new FakeCfDns(); // never setVerified
   const r = await enableRemote("site", deps(rw, dns));
