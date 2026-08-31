@@ -596,8 +596,17 @@ function seedPlist(label: string, programArguments: string[]): void {
 class CountingManager extends FakeServiceManager {
   installCalls: string[] = [];
   uninstallCalls: string[] = [];
+  /** One-shot, like FakeServiceManager's own failNext, but scoped to install only:
+      failNext fails whichever op runs next for a label, and reresolve always
+      uninstalls before installing the same label, so failNext alone can never
+      isolate an install failure from a preceding, successful uninstall. */
+  failInstallFor: string | null = null;
   override async install(spec: ServiceSpec): Promise<void> {
     this.installCalls.push(spec.label);
+    if (this.failInstallFor === spec.label) {
+      this.failInstallFor = null;
+      throw new Error(`fake launchd: install failed for ${spec.label}`);
+    }
     return super.install(spec);
   }
   override async uninstall(label: string): Promise<void> {
@@ -695,4 +704,74 @@ test("reresolve: a null shape lands the app in failed and leaves its installed s
   expect(counting.installCalls).toEqual([]);
   expect(counting.uninstallCalls).toEqual([]);
   expect(readFileSync(join(agentsDir(), `${label}.plist`), "utf8")).toContain("still-here");
+});
+
+test("reresolve: a specFor throw for one app does not block a healthy app in the same sweep", async () => {
+  const counting = new CountingManager();
+  const reresolveDrivers = { manager: counting, edge: drivers.edge };
+  await registerApp(
+    { ...input, name: "ghost", managedBy: "rt", command: ["definitely-not-a-real-binary-xyz", "x.js"] },
+    reresolveDrivers,
+  );
+  await registerApp({ ...input, name: "healthy", managedBy: "rt", workingDirectory: "/tmp/healthy" }, reresolveDrivers);
+  const healthySpec = counting.installed.get(`${LABEL_PREFIX}healthy`)!;
+  seedPlist(healthySpec.label, healthySpec.programArguments);
+  counting.installCalls = [];
+  counting.uninstallCalls = [];
+
+  const res = await reresolveManagedApps(reresolveDrivers);
+
+  const body = res.body as { ok: boolean; restarted: string[]; unchanged: string[]; failed: Array<{ name: string; error: string }> };
+  expect(body.ok).toBe(false);
+  expect(body.restarted).toEqual([]);
+  expect(body.unchanged).toEqual(["healthy"]);
+  expect(body.failed).toHaveLength(1);
+  expect(body.failed[0]!.name).toBe("ghost");
+  expect(body.failed[0]!.error).toContain("not found");
+  // The broken app never reaches a driver call, and the healthy one is unchanged: neither installs or uninstalls.
+  expect(counting.installCalls).toEqual([]);
+  expect(counting.uninstallCalls).toEqual([]);
+});
+
+test("reresolve: an install failure lands the app in failed and leaves a launchd issue on its record", async () => {
+  const counting = new CountingManager();
+  const reresolveDrivers = { manager: counting, edge: drivers.edge };
+  await registerApp({ ...input, name: "flaky", managedBy: "rt" }, reresolveDrivers);
+  const spec = counting.installed.get(`${LABEL_PREFIX}flaky`)!;
+  // A mismatched plist forces reresolve down the uninstall+install path.
+  seedPlist(spec.label, [...spec.programArguments.slice(0, -1), "stale-arg"]);
+  counting.installCalls = [];
+  counting.uninstallCalls = [];
+  counting.failInstallFor = spec.label;
+
+  const res = await reresolveManagedApps(reresolveDrivers);
+
+  const body = res.body as { ok: boolean; restarted: string[]; unchanged: string[]; failed: Array<{ name: string; error: string }> };
+  expect(body.ok).toBe(false);
+  expect(body.restarted).toEqual([]);
+  expect(body.unchanged).toEqual([]);
+  expect(body.failed).toHaveLength(1);
+  expect(body.failed[0]!.name).toBe("flaky");
+  expect(body.failed[0]!.error).toContain("install failed");
+  // The uninstall still ran (it succeeded); the install after it is what threw.
+  expect(counting.uninstallCalls).toEqual([spec.label]);
+  const rec = getRecord("flaky")!;
+  expect(rec.issues).toHaveLength(1);
+  expect(rec.issues![0]!.source).toBe("launchd");
+});
+
+test("reresolve: a later successful install clears the launchd issue a previous failed sweep left", async () => {
+  const counting = new CountingManager();
+  const reresolveDrivers = { manager: counting, edge: drivers.edge };
+  await registerApp({ ...input, name: "recovered", managedBy: "rt" }, reresolveDrivers);
+  const spec = counting.installed.get(`${LABEL_PREFIX}recovered`)!;
+  seedPlist(spec.label, [...spec.programArguments.slice(0, -1), "stale-arg"]);
+  counting.failInstallFor = spec.label;
+  await reresolveManagedApps(reresolveDrivers); // first sweep: install fails, issue lands
+  expect(getRecord("recovered")!.issues).toHaveLength(1);
+
+  const res = await reresolveManagedApps(reresolveDrivers); // second sweep: same stale plist, install succeeds this time
+
+  expect(res.body).toMatchObject({ ok: true, restarted: ["recovered"], unchanged: [], failed: [] });
+  expect(getRecord("recovered")!.issues ?? []).toEqual([]);
 });

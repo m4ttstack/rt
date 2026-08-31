@@ -327,13 +327,25 @@ export async function reresolveManagedApps(drivers: Drivers): Promise<FlowResult
       unchanged.push(record.name);
       continue;
     }
-    try {
-      await drivers.manager.uninstall(record.label);
-      await drivers.manager.install(spec);
-      restarted.push(record.name);
-    } catch (err) {
-      failed.push({ name: record.name, error: String(err).slice(0, 300) });
+    // launchd has no atomic replace, so a failure between the two calls is a
+    // real possibility, not just a defensive catch: an uninstall that throws
+    // must not be followed by an install attempt (nothing to replace), and an
+    // install that throws leaves the app down -- loud enough to survive past
+    // this response body via a SyncIssue, the same convention editApp and
+    // registerApp already use for their own install failures.
+    const uninstallIssue = await runDriver("launchd", () => drivers.manager.uninstall(record.label!));
+    if (uninstallIssue) {
+      failed.push({ name: record.name, error: uninstallIssue.message });
+      continue;
     }
+    const installIssue = await runDriver("launchd", () => drivers.manager.install(spec));
+    if (installIssue) {
+      addIssue(record.name, installIssue);
+      failed.push({ name: record.name, error: installIssue.message });
+      continue;
+    }
+    clearIssues(record.name, "launchd");
+    restarted.push(record.name);
   }
   return { status: 200, body: { ok: failed.length === 0, restarted, unchanged, failed } };
 }
