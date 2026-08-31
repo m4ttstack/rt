@@ -51,7 +51,7 @@ export interface AppRecord {
   activeAlt?: string;
   /** Where action commands run when it differs from workingDirectory. Only the platform sets it today. */
   sourceDirectory?: string;
-  /** The developer's linked source checkout (RT-94). The one stored dev value:
+  /** The developer's linked source checkout. The one stored dev value:
       serve/build/deploy commands are read live from its mattstack.deck.json. */
   dev?: { workingDirectory: string };
   grandfathered?: boolean;
