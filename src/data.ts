@@ -191,7 +191,7 @@ export function stripDraftPrefix(title: string): string {
 export function boardDemand(config: BoardConfig, port: number): DemandDecl {
   const sections = [...new Set(config.tabs.flatMap((t) => (t.source.kind === "codeowners" ? [t.source.section] : [])))];
   return {
-    client: `mr-board:${port}`,
+    client: `board:${port}`,
     authors: config.members.map((m) => m.username),
     ...(sections.length > 0 ? { codeownerSections: sections } : {}),
     declaredAt: Date.now(),
