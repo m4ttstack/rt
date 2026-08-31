@@ -574,7 +574,7 @@ test("a port-only manifest with an action command but no workingDirectory 400s i
   expect((await devPost("/api/v1/apps/portonly/commands/build", {})).status).toBe(400);
 });
 
-test("status carries command names in dev, omits them in prod", async () => {
+test("status carries a user app's command names in both dev and prod", async () => {
   const dir = mkdtempSync(join(tmpdir(), "meta-"));
   writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({ name: "metaapp", port: 4950, commands: { start: "s", deploy: "d" } }));
   await devPost("/api/v1/apps/register", { dir });
@@ -585,7 +585,7 @@ test("status carries command names in dev, omits them in prod", async () => {
   const devRow = (await (await devApi("/api/v1/status")).json()).apps.find((a: any) => a.name === "metaapp");
   expect(devRow.commands).toEqual(["deploy"]);
   const prodRow = (await (await api("/api/v1/status")).json()).apps.find((a: any) => a.name === "metaapp");
-  expect(prodRow.commands).toBeUndefined();
+  expect(prodRow.commands).toEqual(["deploy"]);
 });
 
 test("command route spawns in sourceDirectory when set, else workingDirectory", async () => {
