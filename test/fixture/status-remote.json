@@ -2,8 +2,8 @@
   "suffix": "mattstack",
   "canRestart": true,
   "canManage": true,
-  "up": 3,
-  "total": 3,
+  "up": 4,
+  "total": 4,
   "nextPort": 11012,
   "proxyStale": false,
   "autoHeal": null,
@@ -146,6 +146,52 @@
       },
       "publicOrigin": "tunnel",
       "remote": null
+    },
+    {
+      "name": "lockedout",
+      "displayTld": "mattstack",
+      "port": 11004,
+      "url": "https://lockedout.localhost",
+      "publicUrl": "https://lockedout.mattstack",
+      "health": {
+        "ok": true,
+        "status": 200,
+        "ms": 19
+      },
+      "service": {
+        "label": "com.mattstack.deck.lockedout",
+        "short": "lockedout",
+        "pid": 5220,
+        "lastExitStatus": 0,
+        "unmanaged": null,
+        "stderr": []
+      },
+      "published": true,
+      "hasPassword": true,
+      "isTunnel": false,
+      "override": null,
+      "publicFollowsOverride": false,
+      "preflight": null,
+      "self": false,
+      "managedBy": "user",
+      "issues": [],
+      "record": {
+        "kind": "service",
+        "command": [
+          "bun",
+          "run",
+          "server.ts"
+        ],
+        "workingDirectory": "/Users/matt/Documents/GitHub/lockedout"
+      },
+      "oauth": {
+        "mode": "off"
+      },
+      "publicOrigin": "railway",
+      "remote": {
+        "status": "live",
+        "url": "https://lockedout.m4tthew.dev"
+      }
     }
   ],
   "orphans": []

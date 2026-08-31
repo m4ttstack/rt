@@ -1,8 +1,10 @@
 // Remote toggle + Push button + public-origin row marker (task 17). Uses its
 // own fixture (status-remote.json): atlas is a plain non-remote row that can
-// still turn remote on, railwayapp is already live on Railway, and gatedapp
-// is password-only (no sign-in gate) with remote off -- the one combination
-// that disables the toggle.
+// still turn remote on, railwayapp is already live on Railway, gatedapp is
+// password-only (no sign-in gate) with remote off -- the one combination
+// that disables the toggle -- and lockedout is the same password-only/no-gate
+// combination but already remote, proving the toggle stays enabled so the OFF
+// path is never blocked.
 import { test, expect } from "bun:test";
 import type { Page } from "playwright";
 import { withBoard } from "./rig.ts";
@@ -124,6 +126,25 @@ test("a password-only row (no sign-in gate) has its Remote toggle disabled with 
       const control = remoteToggle(page).locator('[data-part="switch-control"]');
       expect(await control.isDisabled()).toBe(true);
       expect(await remoteToggle(page).locator('[data-tip]').count()).toBe(1);
+    },
+    { fixture: "status-remote.json" },
+  );
+});
+
+// The defining case for the "disable only when about to turn ON" refinement:
+// a row already remote, password-only, no sign-in gate -- the same gate as
+// gatedapp above, but with remote already live. The toggle must stay enabled
+// (no disabled attr, no tooltip) so the OFF path is never blocked; the
+// server's own refuse check only gates `{enabled:true}` (server.remote.test.ts).
+test("an already-remote password-only row keeps its Remote toggle enabled, so it can still be turned off", async () => {
+  await withBoard(
+    async (page) => {
+      await openDrawer(page, "lockedout");
+      const toggle = remoteToggle(page);
+      const control = toggle.locator('[data-part="switch-control"]');
+      expect(await control.isChecked()).toBe(true);
+      expect(await control.isDisabled()).toBe(false);
+      expect(await toggle.locator('[data-tip]').count()).toBe(0);
     },
     { fixture: "status-remote.json" },
   );
