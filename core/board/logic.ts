@@ -93,6 +93,18 @@ export function isPlatform(managedBy: string | undefined): boolean {
   return managedBy === "deck" || managedBy === "local";
 }
 
+/** Link source / fix link: only for a mutable row on a host the viewer can
+    manage. The PATCH they submit is 403'd server-side otherwise, so a public
+    board must never render the control that would trigger it. */
+export function showDevLinkPrompt(row: Row, canManage: boolean): boolean {
+  return canManage && !row.self && (row.devLink === "unlinked" || row.devLink === "broken");
+}
+
+/** Unlink: same canManage gate as showDevLinkPrompt, for a row already linked. */
+export function showUnlinkButton(row: Row, canManage: boolean): boolean {
+  return canManage && !row.self && row.devLink === "linked";
+}
+
 export function tunnelDomain(data: StatusData): string {
   return data.suffix === "localhost" ? "" : data.suffix;
 }

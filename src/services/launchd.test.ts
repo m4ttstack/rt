@@ -5,7 +5,7 @@ import { tmpdir } from "os";
 
 const dir = mkdtempSync(join(tmpdir(), "local-agents-"));
 process.env.LOCAL_AGENTS_DIR = dir;
-const { LaunchdManager, readInstalledProgramArguments } = await import("./launchd.ts");
+const { LaunchdManager, readInstalledProgramArguments, readInstalledWorkingDirectory } = await import("./launchd.ts");
 
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -94,6 +94,26 @@ test("readInstalledProgramArguments round-trips renderPlist, escapes included", 
     await manager.install(spec);
     expect(readInstalledProgramArguments("com.mattstack.deck.chat")).toEqual(spec.programArguments);
     expect(readInstalledProgramArguments("com.mattstack.deck.ghost")).toBeNull();
+  } finally {
+    rmSync(testDir, { recursive: true, force: true });
+    process.env.LOCAL_AGENTS_DIR = dir;
+  }
+});
+
+test("readInstalledWorkingDirectory round-trips renderPlist's WorkingDirectory, escapes included, and returns null when absent", async () => {
+  const testDir = mkdtempSync(join(tmpdir(), "agents-"));
+  process.env.LOCAL_AGENTS_DIR = testDir;
+  try {
+    const manager = new LaunchdManager(async () => 0);
+    const spec = {
+      label: "com.mattstack.deck.chat",
+      programArguments: ["/usr/bin/env"],
+      workingDirectory: "/repos/a&b<c>d",
+      environment: {}, stdoutPath: "/tmp/o", stderrPath: "/tmp/e",
+    };
+    await manager.install(spec);
+    expect(readInstalledWorkingDirectory("com.mattstack.deck.chat")).toBe(spec.workingDirectory);
+    expect(readInstalledWorkingDirectory("com.mattstack.deck.ghost")).toBeNull();
   } finally {
     rmSync(testDir, { recursive: true, force: true });
     process.env.LOCAL_AGENTS_DIR = dir;

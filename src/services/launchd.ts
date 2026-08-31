@@ -35,6 +35,21 @@ export function readInstalledProgramArguments(label: string): string[] | null {
   );
 }
 
+/** WorkingDirectory read back from an installed plist, same contract as
+    readInstalledProgramArguments: null when the plist or the key is absent. */
+export function readInstalledWorkingDirectory(label: string): string | null {
+  let xml: string;
+  try {
+    xml = readFileSync(join(agentsDir(), `${label}.plist`), "utf8");
+  } catch {
+    return null;
+  }
+  const match = xml.match(/<key>WorkingDirectory<\/key>\s*<string>([\s\S]*?)<\/string>/);
+  if (!match) return null;
+  // Same reverse-of-esc() ordering as readInstalledProgramArguments: &amp; last.
+  return match[1]!.replaceAll("&lt;", "<").replaceAll("&gt;", ">").replaceAll("&amp;", "&");
+}
+
 export class LaunchdManager implements ServiceManager {
   constructor(private exec: Exec = realExec) {}
 

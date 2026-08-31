@@ -114,6 +114,7 @@ export async function bootstrapSelf(
   rec.managedBy = PLATFORM_NAME;
   rec.command = programArguments;
   rec.workingDirectory = stateDir();
+  rec.dev = undefined;
   if (opts.entry) {
     // entry is <checkout>/src/main.ts; the manifest name check validates the derivation.
     const repoRoot = dirname(dirname(opts.entry));

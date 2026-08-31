@@ -18,7 +18,7 @@ import {
   LABEL_PREFIX, isPlatformManagedBy, type ServiceManager, type ServiceSpec,
 } from "../services/manager.ts";
 import { composeServicePath, resolveProgram } from "../services/exec-env.ts";
-import { readInstalledProgramArguments } from "../services/launchd.ts";
+import { readInstalledProgramArguments, readInstalledWorkingDirectory } from "../services/launchd.ts";
 import { serveShape, type ResolvedShape, type ServeShapeDeps } from "../registry/serve-shape.ts";
 import type { EdgeProxy } from "../edge/portless.ts";
 import { logsDir } from "./state.ts";
@@ -327,8 +327,10 @@ export async function reresolveManagedApps(drivers: Drivers): Promise<FlowResult
       continue;
     }
     const installed = readInstalledProgramArguments(record.label);
+    const installedCwd = readInstalledWorkingDirectory(record.label);
     if (installed !== null && installed.length === spec.programArguments.length
-        && installed.every((a, i) => a === spec.programArguments[i])) {
+        && installed.every((a, i) => a === spec.programArguments[i])
+        && installedCwd === spec.workingDirectory) {
       unchanged.push(record.name);
       continue;
     }

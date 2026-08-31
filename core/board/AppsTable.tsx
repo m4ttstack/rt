@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Badge, Button, Chip, Icon, ICONS, Spinner, StatusDot, Table, TextField, Tooltip } from "@mattstack/tui-kit";
 import { OptimisticSwitch } from "./optimistic.tsx";
-import { isPlatform, type Row, type StatusData } from "./logic.ts";
+import { isPlatform, showDevLinkPrompt, showUnlinkButton, type Row, type StatusData } from "./logic.ts";
 import type { BoardState } from "./useBoardState.ts";
 
 /** A lucide globe as one path (subpaths joined with explicit `M`, the same
@@ -99,7 +99,7 @@ export function AppsTable({
                 <RestartCell row={row} data={data} restarting={restarting} onRestart={onRestart} />
               </Table.Cell>
               <Table.Cell>
-                <CommandsCell row={row} onRunCommand={onRunCommand} linkSource={linkSource} unlinkSource={unlinkSource} />
+                <CommandsCell row={row} canManage={data.canManage} onRunCommand={onRunCommand} linkSource={linkSource} unlinkSource={unlinkSource} />
               </Table.Cell>
               <Table.Cell>
                 <RemotePushCell row={row} data={data} onPushRemote={onPushRemote} />
@@ -386,11 +386,13 @@ function RestartCell({
     the board's dev/prod matrix. */
 function CommandsCell({
   row,
+  canManage,
   onRunCommand,
   linkSource,
   unlinkSource,
 }: {
   row: Row;
+  canManage: boolean;
   onRunCommand: (row: Row, name: string) => void;
   linkSource: (row: Row, workingDirectory: string) => Promise<string | null>;
   unlinkSource: (row: Row) => Promise<void>;
@@ -398,7 +400,10 @@ function CommandsCell({
   // The platform's own row never gets Link/Unlink: bootstrapSelf owns its serve
   // shape, and editApp refuses to touch it structurally, so those controls
   // would only ever produce a 200 that changes nothing this button implies.
-  if (!row.self && (row.devLink === "unlinked" || row.devLink === "broken")) {
+  // canManage mirrors the gate every other mutating control in this file uses
+  // (Publish, Restart, Push to Railway): the PATCH these submit is 403'd on a
+  // public board host, so the control must not render there either.
+  if (showDevLinkPrompt(row, canManage)) {
     return (
       <DevLinkPrompt row={row} label={row.devLink === "unlinked" ? "Link source" : "fix link"} linkSource={linkSource} />
     );
@@ -410,7 +415,7 @@ function CommandsCell({
           {name}
         </Button>
       ))}
-      {!row.self && row.devLink === "linked" && (
+      {showUnlinkButton(row, canManage) && (
         <Button variant="subtle" size="sm" aria-label={`unlink ${row.name}`} onClick={() => unlinkSource(row)}>
           Unlink
         </Button>

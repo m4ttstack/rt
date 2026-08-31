@@ -4,6 +4,7 @@ import { RailwayCli, type RailwayDriver } from "./railway.ts";
 import { CfDnsApi, type CfDns } from "./cf-dns.ts";
 import type { DeckSecretsResult } from "./rt-secrets.ts";
 import { getPlatformSettings } from "../api/platform-settings.ts";
+import { readLinkedManifest } from "../registry/serve-shape.ts";
 
 export interface RefuseCtx {
   record: AppRecord;
@@ -65,16 +66,36 @@ export interface PushDeps {
   projectId: string; environmentId: string;
 }
 
+/** The build/start commands Railway should run for the uploaded checkout. A
+    dev-linked row uploads record.dev.workingDirectory (see pushRemote's dir
+    selection), so its commands must come from that checkout's own manifest:
+    the record's legacy command/commands fields are cleared on a migrated row,
+    and on a fresh-install linked row `record.command` still names the local
+    bundle binary, which does not exist inside the uploaded checkout. */
+function remoteCommands(record: AppRecord): { start: string; build?: string } | null {
+  if (record.dev?.workingDirectory) {
+    const link = readLinkedManifest(record);
+    const start = link.state === "linked" ? link.manifest.dev?.start : undefined;
+    if (!start) return null;
+    return { start, build: link.state === "linked" ? link.manifest.dev?.build : undefined };
+  }
+  if (!record.command?.length) return null;
+  return { start: record.command.join(" "), build: record.commands?.build };
+}
+
 export async function pushRemote(name: string, deps: PushDeps): Promise<FlowResult> {
   const record = getRecord(name);
   if (!record?.remote) return { status: 404, body: { error: "not in remote mode" } };
   const dir = record.dev?.workingDirectory ?? record.sourceDirectory ?? record.workingDirectory!; // matches the command route's cwd
   if (deps.hasUntrackedEnv(dir)) return { status: 400, body: { error: "untracked .env would upload; add it to .gitignore first" } };
 
+  const commands = remoteCommands(record);
+  if (!commands) return { status: 400, body: { error: `no start command for ${name}, cannot push` } };
+
   const { serviceId } = await deps.railway.ensureService(`deck-${name}`, { projectId: deps.projectId, environmentId: deps.environmentId });
   await deps.railway.configureService(serviceId, {
-    buildCommand: record.commands?.build,
-    startCommand: record.command!.join(" "),
+    buildCommand: commands.build,
+    startCommand: commands.start,
     port: record.port,
     variables: { ...(record.env ?? {}), PORT: String(record.port) },
   });

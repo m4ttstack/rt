@@ -1,6 +1,7 @@
 import { listRecords, putRecord, type AppRecord } from "./records.ts";
 import { readDeckManifest } from "./deck-manifest.ts";
 import { isPlatformManagedBy } from "../services/manager.ts";
+import { sourceShape, bundleShape } from "./serve-shape.ts";
 
 /** Uptime guard: a slim row must carry its dev
     link in the same write that clears its legacy source command, or the app
@@ -44,6 +45,14 @@ export function migrateManagedDevShape(): { slimmed: string[]; skipped: string[]
       commands: undefined,
       sourceDirectory: undefined,
     };
+    // includeInBundle does not itself guarantee a runnable replacement: the
+    // manifest may lack dev.start, or the bundle binary may not be installed
+    // on this machine. Use the pure candidate helpers, not serveShape, so a
+    // row left untouched never gets a spurious dev-link issue written onto it.
+    if (!sourceShape(next) && !bundleShape(next)) {
+      skipped.push(record.name);
+      continue;
+    }
     writeSlimRow(next);
     slimmed.push(record.name);
   }

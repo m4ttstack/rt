@@ -217,6 +217,22 @@ test("compiled binary mode: dev is not set when entry is null", async () => {
   expect(rec.dev).toBeUndefined();
 });
 
+test("compiled-binary bootstrap clears a dev link a previous checkout bootstrap left set", async () => {
+  putRecord({
+    name: PLATFORM_NAME, managedBy: PLATFORM_NAME, port: 11000, kind: "service",
+    label: "com.mattstack.deck", createdAt: "2026-01-01T00:00:00Z",
+    dev: { workingDirectory: "/repos/stale-deck-checkout" },
+  });
+  const manager = new FakeServiceManager();
+  const edge = new FakeEdgeProxy();
+  await bootstrapSelf({ manager, edge }, {
+    execPath: "/usr/local/bin/deck", entry: null, tlds: ["localhost"],
+  });
+
+  const rec = getRecord("deck")!;
+  expect(rec.dev).toBeUndefined();
+});
+
 test("checkout mode: dev is not set when manifest name does not match PLATFORM_NAME", async () => {
   const checkoutDir = mkdtempSync(join(tmpdir(), "wrong-checkout-"));
   const srcDir = join(checkoutDir, "src");

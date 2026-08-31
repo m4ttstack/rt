@@ -638,10 +638,10 @@ test("removeManagedApps: a driver failure keeps the record and reports it in fai
 
 /** Seeds the on-disk plist reresolveManagedApps diffs against, independent of
     whatever the in-memory FakeServiceManager thinks is installed. */
-function seedPlist(label: string, programArguments: string[]): void {
+function seedPlist(label: string, programArguments: string[], workingDirectory = "/tmp"): void {
   mkdirSync(agentsDir(), { recursive: true });
   writeFileSync(join(agentsDir(), `${label}.plist`), renderPlist({
-    label, programArguments, workingDirectory: "/tmp", environment: {}, stdoutPath: "/tmp/o", stderrPath: "/tmp/e",
+    label, programArguments, workingDirectory, environment: {}, stdoutPath: "/tmp/o", stderrPath: "/tmp/e",
   }));
 }
 
@@ -674,8 +674,8 @@ test("reresolve: reinstalls only the app whose resolved command differs from its
   await registerApp({ ...input, name: "changed", managedBy: "rt", workingDirectory: "/tmp/changed" }, reresolveDrivers);
   const sameSpec = counting.installed.get(`${LABEL_PREFIX}same`)!;
   const changedSpec = counting.installed.get(`${LABEL_PREFIX}changed`)!;
-  seedPlist(sameSpec.label, sameSpec.programArguments);
-  seedPlist(changedSpec.label, [...changedSpec.programArguments.slice(0, -1), "stale-arg"]);
+  seedPlist(sameSpec.label, sameSpec.programArguments, sameSpec.workingDirectory);
+  seedPlist(changedSpec.label, [...changedSpec.programArguments.slice(0, -1), "stale-arg"], changedSpec.workingDirectory);
   counting.installCalls = [];
   counting.uninstallCalls = [];
 
@@ -694,7 +694,7 @@ test("reresolve: a flip-then-flip-back is a no-op (restarts nothing, churns no d
   await registerApp({ ...input, name: "app2", managedBy: "rt", workingDirectory: "/tmp/app2" }, reresolveDrivers);
   for (const name of ["app1", "app2"]) {
     const spec = counting.installed.get(`${LABEL_PREFIX}${name}`)!;
-    seedPlist(spec.label, spec.programArguments);
+    seedPlist(spec.label, spec.programArguments, spec.workingDirectory);
   }
   counting.installCalls = [];
   counting.uninstallCalls = [];
@@ -709,6 +709,29 @@ test("reresolve: a flip-then-flip-back is a no-op (restarts nothing, churns no d
   // If the diff check were dropped (always reinstall), these would be non-empty.
   expect(counting.installCalls).toEqual([]);
   expect(counting.uninstallCalls).toEqual([]);
+});
+
+test("reresolve: restarts an app whose working directory changed even though its resolved argv did not", async () => {
+  const counting = new CountingManager();
+  const reresolveDrivers = { manager: counting, edge: drivers.edge };
+  const dirA = mkdtempSync(join(tmpdir(), "cwdapp-a-"));
+  const dirB = mkdtempSync(join(tmpdir(), "cwdapp-b-"));
+  // Same dev.start as the original command, so the resolved argv is identical;
+  // only the linked checkout (and so the resolved cwd) differs.
+  writeFileSync(join(dirB, "mattstack.deck.json"), JSON.stringify({ name: "cwdapp", dev: { start: "bun run serve" } }));
+  await registerApp({ name: "cwdapp", managedBy: "rt", command: ["bun", "run", "serve"], workingDirectory: dirA }, reresolveDrivers);
+  const spec = counting.installed.get(`${LABEL_PREFIX}cwdapp`)!;
+  seedPlist(spec.label, spec.programArguments, spec.workingDirectory); // baseline: argv and cwd both match dirA
+  const rec = getRecord("cwdapp")!;
+  // Re-linking to a different clone of the same repo: same dev.start argv, a new cwd.
+  putRecord({ ...rec, command: undefined, workingDirectory: undefined, dev: { workingDirectory: dirB } });
+  counting.installCalls = [];
+  counting.uninstallCalls = [];
+
+  const res = await reresolveManagedApps(reresolveDrivers);
+
+  expect(res.body).toMatchObject({ ok: true, restarted: ["cwdapp"], unchanged: [], failed: [] });
+  expect(counting.installed.get(spec.label)!.workingDirectory).toBe(dirB);
 });
 
 test("reresolve: skips user records and the platform record even when their plist would differ", async () => {
@@ -767,7 +790,7 @@ test("reresolve: a specFor throw for one app does not block a healthy app in the
   );
   await registerApp({ ...input, name: "healthy", managedBy: "rt", workingDirectory: "/tmp/healthy" }, reresolveDrivers);
   const healthySpec = counting.installed.get(`${LABEL_PREFIX}healthy`)!;
-  seedPlist(healthySpec.label, healthySpec.programArguments);
+  seedPlist(healthySpec.label, healthySpec.programArguments, healthySpec.workingDirectory);
   counting.installCalls = [];
   counting.uninstallCalls = [];
 

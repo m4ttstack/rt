@@ -31,7 +31,7 @@ function attachSource(
   if (declaresServeShape) {
     return {
       status: 400,
-      body: { error: "deck manages its own service; the platform manifest may only declare action commands" },
+      body: { error: "deck manages its own service; the platform manifest may only link a source checkout" },
     };
   }
   putRecord({ ...existing, dev: { workingDirectory: dir }, sourceDirectory: undefined, commands: undefined });

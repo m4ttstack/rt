@@ -63,6 +63,19 @@ test("user rows are untouched", () => {
   expect(getRecord("mine")?.dev).toBeUndefined();
 });
 
+test("skips a bundle-ready row with no dev.start and no installed bundle, leaving it fully untouched", () => {
+  const dir = repoWith({ name: "chat", includeInBundle: true });
+  putRecord(row({ command: ["bun", "src/server/index.ts"], workingDirectory: dir, commands: { build: "b" } }));
+  const result = migrateManagedDevShape();
+  expect(result.slimmed).toEqual([]);
+  expect(result.skipped).toEqual(["chat"]);
+  const r = getRecord("chat")!;
+  expect(r.command).toEqual(["bun", "src/server/index.ts"]);
+  expect(r.workingDirectory).toBe(dir);
+  expect(r.commands).toEqual({ build: "b" });
+  expect(r.dev).toBeUndefined();
+});
+
 test("uptime guard throws on a slim write without a dev link", () => {
   expect(() => assertSlimRowKeepsAFallback("chat", row({}))).toThrow(/refusing to slim/);
 });
