@@ -34,7 +34,7 @@ process Deck watches so it comes back after a reboot or a crash.
 
 - zero-setup, casual: `portless --funnel` (public URL, no auth - treat accordingly)
 - password gate: set a password on the board - served by Deck's own gateway, no accounts needed
-- your own domain: `deck domain yourdomain.dev` (Cloudflare tunnel, wildcard DNS), then per-app gates: a password, a Google sign-in list of people or domains, or both
+- your own domain: `deck domain yourdomain.dev` creates and owns a wildcard Cloudflare tunnel (`*.yourdomain.dev` -> the local gateway), writes the DNS record, supervises the connector and records its identity; `deck domain` shows the bound domain, tunnel and live edge health; `deck domain unbind` tears it all down (refuses while apps are served from Railway, warns about apps that go offline; `--force` overrides). Needs `cloudflared` plus a one-time `cloudflared tunnel login`, and `rt secrets set deck cfZoneId` / `cfDnsToken` (Zone.DNS:Edit). Then per-app gates: a password, a Google sign-in list of people or domains, or both
 
 Nothing is public by default. An app stays on `.localhost` until you publish
 it, and publishing is a toggle on the board or a single API call, not a

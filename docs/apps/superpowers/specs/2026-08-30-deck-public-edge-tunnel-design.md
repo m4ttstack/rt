@@ -1,6 +1,6 @@
 # Deck Public Edge (Cloudflare Tunnel) Design
 
-**Status:** Draft for review
+**Status:** Implemented (see docs/superpowers/plans/2026-08-30-deck-public-edge-tunnel.md)
 **Date:** 2026-08-30
 **Author:** Claude (with Matt)
 
