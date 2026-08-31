@@ -210,8 +210,13 @@ body {
    OptimisticGatedToggleRow. Matches ListGroup's own row padding/gap tokens
    so it reads identically next to the "public" toggle above it. */
 .drawer-toggle-row {
+  /* No `width: 100%`: this row is an `<li>` (content-box, no border-box
+     reset in this app), so width:100% plus the horizontal padding would
+     overflow the card and push the right-aligned Switch past its edge. The
+     block-level `<li>` already fills the list; padding then insets inward.
+     The kit's own `.toggleRow` omits width for the same reason -- only its
+     button rows (border-box UA default) set it. */
   display: flex;
-  width: 100%;
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-sm);
@@ -220,6 +225,7 @@ body {
 }
 .drawer-toggle-label {
   color: inherit;
+  min-width: 0;
 }
 
 /* Access "who" mode picker: two ListGroup rows acting as a radiogroup
