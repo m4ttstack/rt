@@ -21,6 +21,7 @@ import { logsDir } from "./state.ts";
 import { disableRemote } from "../edge/remote.ts";
 import type { RailwayDriver } from "../edge/railway.ts";
 import type { CfDns } from "../edge/cf-dns.ts";
+import type { TunnelDriver } from "../edge/tunnel.ts";
 
 export interface Drivers {
   manager: ServiceManager;
@@ -28,6 +29,8 @@ export interface Drivers {
   /** Only needed to remove a remote app: unregisterApp/removeManagedApps flip it back via disableRemote first. Resolved once per request via resolveRemoteDrivers (src/edge/remote.ts). */
   railway?: RailwayDriver;
   dns?: CfDns;
+  /** Only needed for the edge teardown call in `deck uninstall`; see src/cli/setup.ts. */
+  tunnel?: TunnelDriver;
 }
 
 export interface RegisterInput {

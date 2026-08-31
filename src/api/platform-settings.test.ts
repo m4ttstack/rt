@@ -48,7 +48,7 @@ function writeLegacyFile(body: Record<string, unknown>): void {
 
 test("defaults are the stranger's defaults", () => {
   expect(getPlatformSettings()).toEqual({
-    publicDomain: null, tlds: ["localhost"], legacyPrefixes: [], secrets: {}, railway: null,
+    publicDomain: null, tlds: ["localhost"], legacyPrefixes: [], secrets: {}, railway: null, tunnel: null,
   });
 });
 
@@ -62,7 +62,7 @@ test("updates persist and merge", () => {
 test("redaction: the secrets field never transits, in any shape -- CF creds come from the rt daemon now", () => {
   updatePlatformSettings({ secrets: { cfApiToken: "tok", cfZoneId: "z1" } });
   const r = redactedSettings();
-  expect(r).toEqual({ publicDomain: null, tlds: ["localhost"], legacyPrefixes: [], railway: null });
+  expect(r).toEqual({ publicDomain: null, tlds: ["localhost"], legacyPrefixes: [], railway: null, tunnel: null });
   expect(JSON.stringify(r)).not.toContain("tok");
 });
 

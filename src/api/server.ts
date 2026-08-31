@@ -28,13 +28,15 @@ import { startCommandRun, commandRunStatus } from "../services/command-runner.ts
 import { join } from "path";
 import { userInfo } from "os";
 import type { TunnelDriver } from "../edge/tunnel.ts";
-import { bindDomain, TUNNEL_LABEL } from "../edge/domain.ts";
+import { bindDomain, unbindDomain, TUNNEL_LABEL } from "../edge/domain.ts";
+import { describeEdge } from "../edge/edge-health.ts";
+import { edgeDrift, edgeBindingChanged } from "../edge/edge-reconcile.ts";
 import { parseOAuth, setOAuth, getOAuth, oauthRequiresCf } from "../edge/oauth.ts";
 import { syncOAuth } from "../edge/access.ts";
 import { readDeckSecrets, type RtSecretsDeps } from "../edge/rt-secrets.ts";
 import { enableRemote, disableRemote, pushRemote, resolveRemoteDrivers } from "../edge/remote.ts";
 import type { RailwayDriver } from "../edge/railway.ts";
-import type { CfDns } from "../edge/cf-dns.ts";
+import { resolveCfDns, type CfDns } from "../edge/cf-dns.ts";
 import { gitProvenance, untrackedEnvPresent } from "../edge/source.ts";
 
 export interface ApiDeps extends Drivers {
@@ -57,6 +59,15 @@ export interface ApiDeps extends Drivers {
   railway?: RailwayDriver;
   /** Real CfDnsApi in production; tests inject FakeCfDns. See resolveRemoteDrivers. */
   dns?: CfDns;
+  /** Fake `/ready` fetch for tests; production reads the connector's local metrics endpoint. */
+  readyFetch?: typeof fetch;
+  /** Tests inject an absolute fake path; production resolves cloudflared on the service PATH. */
+  resolveCloudflared?: () => string | null;
+}
+
+/** DNS driver for the edge routes, or null when the deck secrets do not carry a zone id and a DNS-capable token. */
+async function edgeDns(deps: ApiDeps): Promise<CfDns | null> {
+  return deps.dns ?? (await resolveCfDns(deps.deckSecrets));
 }
 
 export function callerOf(req: Request): string {
@@ -222,6 +233,7 @@ export function startApi(deps: ApiDeps) {
         requestHost: host, port: deps.port, canaryPort: deps.canaryPort,
         proxyFreshness: deps.freshness(), autoHeal: deps.autoHeal(),
         devMode: (deps.devMode ?? isDevMode)(),
+        readyFetch: deps.readyFetch, edgeDrift,
       };
 
       // ---- static / identity (carried from core/server.ts) ----
@@ -519,17 +531,29 @@ export function startApi(deps: ApiDeps) {
 
         if (pathname === "/api/v1/domain" && req.method === "GET") {
           const s = getPlatformSettings();
-          return json({
-            domain: s.publicDomain,
-            tunnelInstalled: await deps.manager.isInstalled(TUNNEL_LABEL),
-          });
+          const installed = await deps.manager.isInstalled(TUNNEL_LABEL);
+          const svc = (await readServices()).find((x) => x.label === TUNNEL_LABEL);
+          const edge = s.tunnel
+            ? await describeEdge({ installed, running: !!svc && svc.pid !== null, tunnelGone: edgeDrift().tunnelGone, domain: s.publicDomain, fetchImpl: deps.readyFetch })
+            : null;
+          return json({ domain: s.publicDomain, tunnel: s.tunnel, partial: !!s.tunnel && !s.publicDomain, edge });
         }
         if (pathname === "/api/v1/domain/bind" && req.method === "POST") {
           const b = await body(req);
-          const r = await bindDomain(String(b.domain ?? ""), deps, {
-            gatewayPort: 7950,
-            cloudflaredDir: deps.cloudflaredDir,
+          const dns = await edgeDns(deps);
+          if (!dns) return json({ error: "cf-secrets-required", hint: "rt secrets set deck cfZoneId / cfDnsToken" }, 400);
+          const r = await bindDomain(String(b.domain ?? ""), { tunnel: deps.tunnel, manager: deps.manager, dns }, {
+            gatewayPort: 7950, cloudflaredDir: deps.cloudflaredDir, force: b.force === true, resolveBin: deps.resolveCloudflared,
           });
+          if (r.status === 200) edgeBindingChanged();
+          return json(r.body, r.status);
+        }
+        if (pathname === "/api/v1/domain/unbind" && req.method === "POST") {
+          const b = await body(req);
+          const dns = await edgeDns(deps);
+          if (!dns) return json({ error: "cf-secrets-required", hint: "rt secrets set deck cfZoneId / cfDnsToken" }, 400);
+          const r = await unbindDomain({ tunnel: deps.tunnel, manager: deps.manager, dns }, { force: b.force === true, cloudflaredDir: deps.cloudflaredDir });
+          if (r.status === 200) edgeBindingChanged();
           return json(r.body, r.status);
         }
 

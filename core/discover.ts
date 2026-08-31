@@ -236,6 +236,10 @@ export interface Health {
   ok: boolean;
   status: number | null;
   ms: number | null;
+  /** Edge rows only: a badge tone plus human text. App rows never set these. */
+  tone?: "ok" | "warn" | "bad";
+  detail?: string;
+  hint?: string;
 }
 
 /** Probe a route over http on its port directly (portless proxy adds TLS we can skip). */

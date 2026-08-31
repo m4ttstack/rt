@@ -160,6 +160,32 @@ body {
   border-left: 14px solid transparent;
 }
 
+/* Both section tables (mattstack / your apps) are separate <table>s; a fixed
+   layout plus the identical colgroup each AppsTable renders pins one shared
+   column grid, so columns line up down the whole page instead of each table
+   sizing to its own content. */
+.apps-grid [data-part="table"] {
+  table-layout: fixed;
+}
+
+/* Railway origin marker in the site cell: present when a row is pushed to
+   Railway, tinted by deploy state so "live on Railway" reads at a glance. */
+.railway-globe {
+  display: inline-flex;
+  align-items: center;
+  margin-left: var(--spacing-xs);
+}
+.railway-globe.railway-live {
+  color: var(--accent);
+}
+.railway-globe.railway-deploying,
+.railway-globe.railway-verifying {
+  color: var(--amber);
+}
+.railway-globe.railway-error {
+  color: var(--red);
+}
+
 .row-selected {
   background: var(--surface-wash-accent-14);
 }
@@ -210,8 +236,13 @@ body {
    OptimisticGatedToggleRow. Matches ListGroup's own row padding/gap tokens
    so it reads identically next to the "public" toggle above it. */
 .drawer-toggle-row {
+  /* No `width: 100%`: this row is an `<li>` (content-box, no border-box
+     reset in this app), so width:100% plus the horizontal padding would
+     overflow the card and push the right-aligned Switch past its edge. The
+     block-level `<li>` already fills the list; padding then insets inward.
+     The kit's own `.toggleRow` omits width for the same reason -- only its
+     button rows (border-box UA default) set it. */
   display: flex;
-  width: 100%;
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-sm);
@@ -220,6 +251,7 @@ body {
 }
 .drawer-toggle-label {
   color: inherit;
+  min-width: 0;
 }
 
 /* Access "who" mode picker: two ListGroup rows acting as a radiogroup

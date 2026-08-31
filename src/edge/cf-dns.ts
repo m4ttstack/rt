@@ -3,6 +3,8 @@
 // throws a truncated message rather than degrading silently. Callers
 // construct it with { zoneId, token, fetchImpl }, sourcing zoneId/token
 // from readDeckSecrets (cfApiToken/cfZoneId).
+import { readDeckSecrets, type RtSecretsDeps } from "./rt-secrets.ts";
+
 const BASE = "https://api.cloudflare.com/client/v4";
 
 export type ZoneSslMode = "off" | "flexible" | "full" | "strict";
@@ -13,6 +15,7 @@ export interface CfDns {
   writeTxt(name: string, value: string): Promise<void>;
   deleteTxt(name: string): Promise<void>;
   writeProxiedCname(host: string, target: string): Promise<void>;
+  cnameTarget(host: string): Promise<{ target: string; proxied: boolean } | null>;
   deleteHostRecords(host: string): Promise<void>;
 }
 
@@ -96,12 +99,18 @@ export class CfDnsApi implements CfDns {
   }
 
   async writeProxiedCname(host: string, target: string): Promise<void> {
-    await this.req("POST", `${BASE}/zones/${this.zoneId}/dns_records`, {
-      type: "CNAME",
-      name: host,
-      content: target,
-      proxied: true,
-    });
+    const payload = { type: "CNAME", name: host, content: target, proxied: true };
+    const existing = (await this.listRecords(host, "CNAME"))[0];
+    if (existing) {
+      await this.req("PATCH", `${BASE}/zones/${this.zoneId}/dns_records/${existing.id}`, payload);
+      return;
+    }
+    await this.req("POST", `${BASE}/zones/${this.zoneId}/dns_records`, payload);
+  }
+
+  async cnameTarget(host: string): Promise<{ target: string; proxied: boolean } | null> {
+    const existing = (await this.listRecords(host, "CNAME"))[0];
+    return existing ? { target: existing.content, proxied: !!existing.proxied } : null;
   }
 
   async deleteHostRecords(host: string): Promise<void> {
@@ -110,4 +119,13 @@ export class CfDnsApi implements CfDns {
       await this.req("DELETE", `${BASE}/zones/${this.zoneId}/dns_records/${record.id}`);
     }
   }
+}
+
+// Shared secrets-to-driver resolution for every edge caller that needs a
+// CfDns: fails closed to null when the deck secrets carry no zone id and no
+// DNS-capable token (cfDnsToken, falling back to cfApiToken).
+export async function resolveCfDns(deps?: RtSecretsDeps): Promise<CfDns | null> {
+  const s = await readDeckSecrets(deps);
+  const token = s.ok ? s.cfDnsToken ?? s.cfApiToken : undefined;
+  return s.ok && s.cfZoneId && token ? new CfDnsApi({ zoneId: s.cfZoneId, token }) : null;
 }
