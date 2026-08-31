@@ -11,13 +11,13 @@
 # changes upstream.
 #
 # Canonical source: $MATTSTACK_SKILLS_REPO (default
-# ~/Documents/GitHub/mattstack-skills)/plugin/skills/parameterized-skills/scripts/resolve-args.sh
+# ~/Documents/GitHub/mattstack-skills)/attachments/parameterized-skills/scripts/resolve-args.sh
 # Requires: sh, find, jq.
 set -eu
 
 repo_root=$(cd "$(dirname "$0")/.." && pwd)
 canonical_repo="${MATTSTACK_SKILLS_REPO:-$HOME/Documents/GitHub/mattstack-skills}"
-canonical="$canonical_repo/plugin/skills/parameterized-skills/scripts/resolve-args.sh"
+canonical="$canonical_repo/attachments/parameterized-skills/scripts/resolve-args.sh"
 plugin_json="$canonical_repo/.claude-plugin/plugin.json"
 
 if [ ! -f "$canonical" ]; then

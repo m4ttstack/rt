@@ -235,12 +235,28 @@ else
                 fi
               done
             fi
+            if [ -z "$INNER_DIR" ]; then
+              # Same flat-then-one-category-level shape as skills/ above --
+              # an engine moved out of skills/ keeps its group nesting.
+              if [ -f "$INSTALL_PATH/attachments/$INNER_SKILL/SKILL.md" ]; then
+                INNER_DIR="$INSTALL_PATH/attachments/$INNER_SKILL"
+                SOURCE=attachments
+              else
+                for CAT_DIR in "$INSTALL_PATH"/attachments/*/"$INNER_SKILL"; do
+                  if [ -f "$CAT_DIR/SKILL.md" ]; then
+                    INNER_DIR="$CAT_DIR"
+                    SOURCE=attachments
+                    break
+                  fi
+                done
+              fi
+            fi
           fi
           ;;
       esac
     fi
     if [ -z "$INNER_DIR" ]; then
-      err "$SLOT" skill-not-installed "slot \"$SLOT\" is bound to \"$BINDING\" but it is not in $SKILLS_DIR or any enabled plugin"
+      err "$SLOT" skill-not-installed "slot \"$SLOT\" is bound to \"$BINDING\" but it is not in $SKILLS_DIR, and no enabled plugin has it under skills/ or attachments/ (flat or one group level)"
       continue
     fi
 
