@@ -107,6 +107,7 @@ function MentionBadge({ count }: { count: number }) {
         fontSize: 'var(--tk-fs-3xs)',
         fontWeight: 600,
         whiteSpace: 'nowrap',
+        flex: 'none',
         background: ACCENT_DEEP,
         color: ACCENT_ON,
       }}
@@ -133,6 +134,7 @@ function UnreadBadge({ count }: { count: number }) {
         fontSize: 'var(--tk-fs-3xs)',
         fontWeight: 500,
         whiteSpace: 'nowrap',
+        flex: 'none',
         border: `1px solid ${BORDER_DEFAULT}`,
         color: 'var(--tk-muted-text)',
       }}
