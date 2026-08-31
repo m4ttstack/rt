@@ -108,12 +108,12 @@ interface PlatformSettings {
 }
 ```
 
-`tunnel` is added to the store-migrated `MigratedFields` Pick and threaded
-through **four seams** in `src/api/platform-settings.ts` (mirroring `railway`):
-the `DEFAULTS`, `withPlatformStoreFallback`, the store write in
-`updatePlatformSettings`, **and the error-revert `setSetting` in that same
-function, which independently enumerates the migrated fields** (this is the
-fourth seam the first draft missed), plus the file-strip destructure. No
+`tunnel` is added to every place `railway` already appears in
+`src/api/platform-settings.ts`: the `MigratedFields` Pick, `DEFAULTS`,
+`withPlatformStoreFallback`, the store write in `updatePlatformSettings`, **the
+error-revert `setSetting` in that same function** (which independently
+enumerates the migrated fields, and was missed in the first draft), and the
+file-strip destructure. No
 rt-client registry change is needed: `deck.platform` is registered as a loose
 `object`, and `setSetting` replaces the key's value wholesale, so `tunnel: null`
 clears cleanly. Default is `null`.
@@ -123,17 +123,22 @@ deterministic: the deck never asks "what is my tunnel called," it reads it.
 
 ### Tunnel naming
 
-cloudflared tunnel names are account-global, so two machines each running a deck
-would collide on a shared constant. The tunnel name is therefore
-per-machine-unique: `deck-edge-<machine-key>`, where `<machine-key>` is the
-stable machine identity rt uses for machine-scoped settings (the
-`user/local/<machine-key>/` segment). `machineKey()` exists in rt-client
-(`settings/paths.ts`) but is not re-exported from the package index; the
-implementation either re-exports it or derives an equivalent stable key (it must
-survive reboots and must not fall back to a shared literal like `"default"`,
-which would reintroduce the collision). The launchd label stays the fixed
-`com.mattstack.deck.tunnel` (one deck per machine, so the label need not vary),
-which is what the existing service scan keys the badge on.
+cloudflared tunnel names are account-global, so a name derived purely from a
+machine identity can still collide (two machines with the same hostname slug, or
+a `machineKey()` that fell back to a shared literal). Because the identity is
+recorded and never re-derived, the name is minted ONCE at first bind and stored:
+`deck-edge-<machine-key>-<short-random>`, where `<machine-key>` is the stable
+machine identity rt uses for machine-scoped settings (`user/local/<machine-key>/`)
+kept only as a human-readable middle segment, and `<short-random>` is a few
+random characters minted at creation. The random suffix is the actual
+uniqueness guarantee: it makes two machines mint different names even on a slug
+collision, so bind's delete-and-recreate (below) can only ever touch this deck's
+own recorded tunnel, never another machine's live one. `machineKey()` exists in
+rt-client (`settings/paths.ts`) but is not re-exported from the package index;
+the implementation re-exports it or derives an equivalent (used only for the
+readable segment now, not as the uniqueness guarantee). The launchd label stays
+the fixed `com.mattstack.deck.tunnel` (one deck per machine, so the label need
+not vary), which is what the existing service scan keys the badge on.
 
 ## Drivers (seams)
 
@@ -188,8 +193,9 @@ zone id, and account details already live in the deck secrets store
 
 Reuses the existing `ServiceManager` (`install`, `uninstall`, `isInstalled`,
 `kickstart`). The tunnel is a supervised service like any app, under label
-`com.mattstack.deck.tunnel`, RunAtLoad + KeepAlive, with its own log paths, and
-its ProgramArguments include the pinned `--metrics 127.0.0.1:<fixed-port>`.
+`com.mattstack.deck.tunnel`, RunAtLoad + KeepAlive, with its own log paths. The
+metrics address is pinned in the config file (the byte-matched artifact, see
+Health), not also on the command line, so there is a single source of truth.
 
 ## Lifecycle
 
@@ -202,18 +208,21 @@ its ProgramArguments include the pinned `--metrics 127.0.0.1:<fixed-port>`.
      deck cannot automate: `cloudflared tunnel login` (a browser login). This is
      a 428-style "operator action required" result, not a failure.
    - `CfDns.tokenCanEditDns()` true, else the token-scope error.
-3. Guard: refuse (409) unless `--force` if any app is **remote** (those apps
-   carry per-host CNAMEs pinned to this domain, exactly the case the existing
-   `bindDomain` guard checks). Do NOT gate on `published`: it defaults to `true`
-   for every routed app, so gating on it makes `--force` mandatory and the guard
-   theater. A rebind to a **different** domain runs as unbind-then-bind (so the
-   old `*.<old>` wildcard is not stranded); rebinding the **same** domain is an
-   idempotent reconcile of steps 4 to 9.
-4. Create the tunnel `deck-edge-<machine-key>`, capture its uuid. If a tunnel of
-   that name already exists in `list()`, reuse its uuid **only when the local
-   credentials file `<uuid>.json` exists**; otherwise delete and recreate, since
-   a name whose creds are gone (a wiped `~/.cloudflared`, or a name owned by
-   another machine) yields a service that can never connect.
+3. Guard: a rebind to a **different** domain runs as unbind-then-bind (so the
+   old `*.<old>` wildcard is not stranded) and refuses (409, unless `--force`) if
+   any app is **remote** (those apps carry per-host CNAMEs pinned to the current
+   domain, the case the existing `bindDomain` guard checks). Do NOT gate on
+   `published`: it defaults to `true` for every routed app, so gating on it makes
+   `--force` mandatory and the guard theater. A first bind, or a rebind to the
+   **same** domain, is unguarded: same-domain is an idempotent reconcile of steps
+   4 to 9.
+4. Resolve the tunnel: if `deck.platform.tunnel` is already recorded, take its
+   `{ name, uuid }`; otherwise mint a fresh unique name
+   (`deck-edge-<machine-key>-<short-random>`) and create the tunnel, capturing its
+   uuid. If the recorded name is present in `list()` but its local credentials
+   file `<uuid>.json` is missing (a wiped `~/.cloudflared`), delete and recreate
+   under the same name -- safe precisely because the minted random suffix makes
+   that name this deck's alone, never another machine's live tunnel.
 5. **Record `{ tunnel: { name, uuid } }` in `deck.platform` immediately**, before
    any further step. A crash after tunnel creation but before this would orphan a
    CF tunnel the deck cannot see; recording first keeps a partial bind visible to
@@ -231,7 +240,9 @@ its ProgramArguments include the pinned `--metrics 127.0.0.1:<fixed-port>`.
 Prints the current `publicDomain`, the recorded tunnel `{ name, uuid }`, and a
 live health read from the local metrics `/ready` endpoint (see Health):
 connected (n ready connections), running-but-disconnected, not installed, or the
-bad "re-run `deck domain`" state.
+bad "re-run `deck domain`" state. A partial bind (a recorded `tunnel` with a
+null `publicDomain`, from a crash between steps 5 and 9) is shown plainly rather
+than hidden, so it is visible and resolvable.
 
 ### `deck domain unbind` (teardown)
 
@@ -246,6 +257,11 @@ bad "re-run `deck domain`" state.
    the Cloudflare account.
 5. Remove the config file.
 6. Clear `{ publicDomain: null, tunnel: null }` in `deck.platform`.
+
+Unbind tolerates a partial bind (a recorded `tunnel` with a null `publicDomain`):
+it skips step 3's DNS delete when there is no domain and still removes the
+tunnel, credentials, config, and recorded state, so a crashed bind can always be
+cleaned up.
 
 Teardown never happens as a silent side effect of another command. `deck
 uninstall` (the whole-deck removal) calls the same teardown, reading the
@@ -267,7 +283,7 @@ signal (a cheap local HTTP GET, no cert, no CF API).
 | readyConnections >= 1 | edge is serving | ok |
 | installed, running, readyConnections 0 | process up, not reaching Cloudflare | warn |
 | installed, not running | crashed or stopped | bad |
-| bound, tunnel deleted remotely / cert revoked | edge gone; reconcile cannot rebuild it (it never creates tunnels) | bad + hint: re-run `deck domain <domain>` |
+| bound, tunnel deleted remotely / cert revoked | edge gone; detected by the reconcile `list()` check (poll `/ready` cannot see it, see Reconciliation); reconcile never rebuilds it | bad + hint: re-run `deck domain <domain>` |
 | not installed / no binding | no edge bound | badge absent |
 
 `StatusRow.health` is currently `{ ok, status, ms }` and orphan (tunnel) rows
@@ -290,14 +306,19 @@ drift:
   kickstart** (cloudflared reads its config only at start, so a rewrite without a
   restart is inert).
 - wildcard DNS record present and pointing at `<uuid>.cfargotunnel.com`, else
-  upsert. The DNS check is throttled so the loop hits the CF API at most once per
-  N minutes, not every tick.
+  upsert; and, in the same throttled CF pass, the recorded tunnel still present
+  in `list()`. A recorded uuid absent from `list()` is a remotely-deleted tunnel:
+  this throttled `list()` check is the sole detection source for that state, since
+  poll-cadence `/ready` cannot distinguish it from a network outage (both read
+  `readyConnections 0`). Reconcile does NOT recreate it (it never creates a tunnel
+  from nothing); it flips the bad "re-run `deck domain`" health state. The CF pass
+  is throttled so the loop hits the API at most once per N minutes, not every tick.
 
 It must tolerate the rt daemon being down at boot: secrets unreachable is not DNS
-drift, so it backs off rather than treating it as something to repair. It never
-creates a tunnel or DNS from nothing; a remotely-deleted tunnel surfaces as the
-bad "re-run `deck domain`" health state rather than being silently recreated.
-With no recorded binding, `reconcileEdge()` is a no-op.
+drift, so it backs off rather than treating it as something to repair. Reconcile
+runs only with BOTH a recorded `domain` and `tunnel`: a partial bind (a recorded
+tunnel with no domain) is left for `show` to surface and the operator to resolve,
+not silently repaired, and no recorded binding at all is a no-op.
 
 ## Board / detection
 
@@ -362,10 +383,10 @@ Applying this design to Matt's existing machine, once the feature ships. Order
 matters: **bind first, remove second**, or the old tunnel is gone while the new
 one is still coming up and `*.m4tthew.dev` 1033s.
 
-1. Run `deck domain m4tthew.dev` **first**. The deck creates
-   `deck-edge-<machine-key>`, upserts the existing `*.m4tthew.dev` wildcard record
-   to the new tunnel's target, installs `com.mattstack.deck.tunnel`, records
-   identity, and confirms the connector. The proxied-CNAME flip is CF-internal
+1. Run `deck domain m4tthew.dev` **first**. The deck mints and creates its edge
+   tunnel (`deck-edge-<machine-key>-<short-random>`), upserts the existing
+   `*.m4tthew.dev` wildcard record to the new tunnel's target, installs
+   `com.mattstack.deck.tunnel`, records identity, and confirms the connector. The proxied-CNAME flip is CF-internal
    and near-instant (no public DNS TTL), and Cloudflare Access policies are
    hostname-scoped so sessions survive. The cutover is genuinely gapless: the old
    and new tunnels both forward `*.m4tthew.dev` to gateway:7950, so the record
@@ -402,5 +423,8 @@ one is still coming up and `*.m4tthew.dev` 1033s.
 - The concrete pinned metrics port and the DNS-reconcile throttle interval. Both
   are simple constants chosen in the plan.
 - Whether to re-export `machineKey()` from rt-client's index or derive an
-  equivalent stable per-machine key in the deck. Decided in the plan; the
-  no-shared-fallback invariant is fixed regardless.
+  equivalent in the deck. Lower stakes now that the minted random suffix (not the
+  machine key) carries uniqueness; the machine key is only the readable middle
+  segment. Decided in the plan.
+- The number of random characters in the minted suffix and the RNG source. A
+  simple constant chosen in the plan.
