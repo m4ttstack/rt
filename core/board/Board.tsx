@@ -19,11 +19,13 @@ function TunnelBadge({
 }) {
   if (!tunnels.length) return null;
   const restarting = tunnels.some(isRestarting);
+  const health = tunnels[0]?.health ?? null;
   const up = tunnels.every((t) => t.service && t.service.pid !== null);
-  const intent = restarting ? "warn" : up ? "ok" : "bad";
-  const label = restarting ? "restarting…" : up ? "up" : "down";
+  const intent = restarting ? "warn" : health?.tone ?? (up ? "ok" : "bad");
+  const label = restarting ? "restarting…" : health?.detail ?? (up ? "up" : "down");
+  const tip = health?.hint ? `${tunnels.map((t) => t.name).join(", ")} · ${health.hint}` : tunnels.map((t) => t.name).join(", ");
   return (
-    <Tooltip tip={tunnels.map((t) => t.name).join(", ")}>
+    <Tooltip tip={tip}>
       <button
         className="tunnel-badge"
         onClick={() => onOpen(tunnels[0]!.name)}

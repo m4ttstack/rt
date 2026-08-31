@@ -13,7 +13,7 @@ interface StatusRow {
   port: number | null;
   url: string | null;
   publicUrl: string | null;
-  health: { ok: boolean; status: number | null; ms: number | null } | null;
+  health: { ok: boolean; status: number | null; ms: number | null; tone?: "ok" | "warn" | "bad"; detail?: string; hint?: string } | null;
   service: {
     label: string;
     short: string;

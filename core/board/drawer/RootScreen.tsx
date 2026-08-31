@@ -95,14 +95,15 @@ function TunnelStatusStrip({ row, restarting }: { row: Row; restarting: boolean 
   }
   const pid = row.service ? servicePid(row.service) : null;
   const up = pid !== null;
-  const parts = [up ? "up" : "down"];
-  if (row.service) {
-    if (pid !== null) parts.push(`running pid ${pid}`);
-    else if (row.service.lastExitStatus != null) parts.push(`exit ${row.service.lastExitStatus}`);
-  }
+  const health = row.health;
+  const intent = health?.tone ?? (up ? "ok" : "bad");
+  const parts = [health?.detail ?? (up ? "up" : "down")];
+  if (row.service && pid !== null) parts.push(`running pid ${pid}`);
+  else if (row.service?.lastExitStatus != null) parts.push(`exit ${row.service.lastExitStatus}`);
+  if (health?.hint) parts.push(health.hint);
   return (
     <p className="drawer-status">
-      <StatusDot intent={up ? "ok" : "bad"} tip={parts.join(" · ")} />
+      <StatusDot intent={intent} tip={parts.join(" · ")} />
       {parts.join(" · ")}
     </p>
   );

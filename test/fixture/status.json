@@ -198,7 +198,7 @@
       "port": null,
       "url": null,
       "publicUrl": null,
-      "health": null,
+      "health": { "ok": true, "status": null, "ms": null, "tone": "ok", "detail": "4 connections" },
       "service": {
         "label": "com.mattstack.deck.cloudflared",
         "short": "cloudflared",
