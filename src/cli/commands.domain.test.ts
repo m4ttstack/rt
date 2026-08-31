@@ -21,12 +21,17 @@ const { FakeEdgeProxy } = await import("../edge/portless.ts");
 const { FakeTunnelDriver } = await import("../edge/tunnel.ts");
 const { FakeCfDns } = await import("../../test/fixture/remote.ts");
 const { runCommand } = await import("./commands.ts");
+const { reloadPlatformSettings } = await import("../api/platform-settings.ts");
 
 const PORT = 18973;
 let server: ReturnType<typeof startApi>;
 const cfDir = mkdtempSync(join(tmpdir(), "local-cli-domain-cfdir-"));
 
 beforeAll(() => {
+  // Bun shares module state across files in one run; an earlier test file may
+  // have already cached platform settings with a bound domain, so refresh the
+  // cache against this file's platform.json before serving requests.
+  reloadPlatformSettings();
   server = startApi({
     manager: new FakeServiceManager(), edge: new FakeEdgeProxy(),
     tunnel: new FakeTunnelDriver(cfDir), dns: new FakeCfDns(),
@@ -41,6 +46,7 @@ afterAll(() => {
   server.stop(true);
   rmSync(dir, { recursive: true, force: true });
   rmSync(cfDir, { recursive: true, force: true });
+  reloadPlatformSettings();
 });
 
 test("deck domain (show) prints no edge bound; bind prints the domain; unbind refuses then forces", async () => {
