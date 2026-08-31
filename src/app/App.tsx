@@ -16,6 +16,7 @@ import {
   Text,
   UnstyledButton,
 } from '@mattstack/app-kit/core';
+import { ThemeOverrideWrapper } from '@mattstack/app-kit/design-system';
 import { useColorScheme, useIsMobile } from '@mattstack/app-kit/hooks';
 import { Icon } from '@mattstack/app-kit/icons';
 import { notifications } from '@mattstack/app-kit/notifications';
@@ -32,6 +33,7 @@ import { useLocation } from 'wouter';
 import { navigate } from 'wouter/use-browser-location';
 
 import { BuddiesProvider } from './buddies-context';
+import { chatFontTheme } from './chat-font-theme';
 import { AppMark } from './chrome/AppMark';
 import { Composer, type ComposerHandle } from './Composer';
 import { PageShellDemoPage } from './demo/PageShellDemoPage';
@@ -1031,115 +1033,122 @@ function ChatPage({
           Content's notch slot, and a scroll-clamped Content whose transcript
           and roster manage their own scrolling. No ContentContainer: the
           capped, centred column is what boxed this page before. */}
-      <PageShell
-        scrollClamp
-        sidebarWidth={244}
-        drawerStateKey="chat-rooms-sidebar"
-      >
-        {rooms.length > 0 && (
-          <PageShell.Sidebar>
-            <RoomRail
-              sidebar
-              rooms={railRooms}
-              activeRoom={activeRoom}
-              onSelectRoom={selectRoom}
-              daemonReachable={daemon.reachable}
-              onNewRoom={
-                panesAvailable ? () => setNewRoomOpen(true) : undefined
-              }
-              onCloseRoom={onCloseRoom}
-              onMarkRead={onMarkRead}
-            />
-          </PageShell.Sidebar>
-        )}
-        <PageShell.Main>
-          {activeRoomSummary && (
-            <PageShell.Header>
-              <PageBar
-                room={activeRoomSummary}
-                buddies={buddies.filter(b => roomMembers.includes(b.handle))}
-                reachable={daemon.reachable}
-                order={roomOrder}
-                onOrderChange={setRoomOrder}
-                onMarkedRead={() => void refetchRooms()}
-                onAddAgents={panesAvailable ? addAgents : undefined}
+      <ThemeOverrideWrapper theme={chatFontTheme}>
+        <PageShell
+          scrollClamp
+          sidebarWidth={244}
+          drawerStateKey="chat-rooms-sidebar"
+        >
+          {rooms.length > 0 && (
+            <PageShell.Sidebar>
+              <RoomRail
+                sidebar
+                rooms={railRooms}
+                activeRoom={activeRoom}
+                onSelectRoom={selectRoom}
+                daemonReachable={daemon.reachable}
+                onNewRoom={
+                  panesAvailable ? () => setNewRoomOpen(true) : undefined
+                }
+                onCloseRoom={onCloseRoom}
+                onMarkRead={onMarkRead}
               />
-            </PageShell.Header>
+            </PageShell.Sidebar>
           )}
-          <PageShell.Content
-            contentContainer={false}
-            topNotch={{
-              opened: !daemon.reachable,
-              content: (
-                <Box w="100%" px="lg" pt="lg" data-testid="daemon-banner-slot">
-                  <DaemonBanner
-                    reachable={daemon.reachable}
-                    downSince={daemon.downSince}
-                    probeCount={daemon.probeCount}
-                    lastAnsweredAt={daemon.lastAnsweredAt}
-                    onProbeNow={daemon.probeNow}
-                  />
-                </Box>
-              ),
-            }}
-          >
-            <Group
-              align="stretch"
-              wrap="nowrap"
-              gap={0}
-              style={{ flex: 1, minHeight: 0, minWidth: 0 }}
-            >
-              {openRooms.length === 0 && !activeRoomSummary ? (
-                <Box style={{ flex: 1, minWidth: 0 }} p="xl">
-                  <RoomsPlaceholder
-                    anyBuddies={buddies.length > 0}
-                    allClosed={rooms.length > 0}
-                  />
-                </Box>
-              ) : (
-                activeRoom && (
-                  <Transcript
-                    room={activeRoom}
-                    messages={messages}
-                    humanHandle={HUMAN_HANDLE}
-                    anchor={anchor}
-                    unreadCount={activeRoomSummary?.unread}
-                    notice={
-                      notice?.room === activeRoom ? notice.node : undefined
-                    }
-                    footer={
-                      <Composer
-                        ref={composerRef}
-                        room={activeRoom}
-                        roomMembers={roomMembers}
-                        buddies={buddies}
-                        isDm={activeRoomSummary?.kind === 'dm'}
-                        daemonReachable={daemon.reachable}
-                        onOpenDm={onOpenDm}
-                      />
-                    }
-                  />
-                )
-              )}
-              {(railRooms.length > 0 || buddies.length > 0) && (
-                <Roster
-                  panel
-                  buddies={buddies}
-                  now={Date.now()}
-                  roomMembers={roomMembers}
-                  daemonReachable={daemon.reachable}
-                  // Desktop: a click only mentions; DM lives on the hover
-                  // card's button. The phone drawer keeps tap-to-DM above --
-                  // it has no hover card to carry the action.
-                  onPick={(handle, { inRoom }) => {
-                    if (inRoom) composerRef.current?.insertMention(handle);
-                  }}
+          <PageShell.Main>
+            {activeRoomSummary && (
+              <PageShell.Header>
+                <PageBar
+                  room={activeRoomSummary}
+                  buddies={buddies.filter(b => roomMembers.includes(b.handle))}
+                  reachable={daemon.reachable}
+                  order={roomOrder}
+                  onOrderChange={setRoomOrder}
+                  onMarkedRead={() => void refetchRooms()}
+                  onAddAgents={panesAvailable ? addAgents : undefined}
                 />
-              )}
-            </Group>
-          </PageShell.Content>
-        </PageShell.Main>
-      </PageShell>
+              </PageShell.Header>
+            )}
+            <PageShell.Content
+              contentContainer={false}
+              topNotch={{
+                opened: !daemon.reachable,
+                content: (
+                  <Box
+                    w="100%"
+                    px="lg"
+                    pt="lg"
+                    data-testid="daemon-banner-slot"
+                  >
+                    <DaemonBanner
+                      reachable={daemon.reachable}
+                      downSince={daemon.downSince}
+                      probeCount={daemon.probeCount}
+                      lastAnsweredAt={daemon.lastAnsweredAt}
+                      onProbeNow={daemon.probeNow}
+                    />
+                  </Box>
+                ),
+              }}
+            >
+              <Group
+                align="stretch"
+                wrap="nowrap"
+                gap={0}
+                style={{ flex: 1, minHeight: 0, minWidth: 0 }}
+              >
+                {openRooms.length === 0 && !activeRoomSummary ? (
+                  <Box style={{ flex: 1, minWidth: 0 }} p="xl">
+                    <RoomsPlaceholder
+                      anyBuddies={buddies.length > 0}
+                      allClosed={rooms.length > 0}
+                    />
+                  </Box>
+                ) : (
+                  activeRoom && (
+                    <Transcript
+                      room={activeRoom}
+                      messages={messages}
+                      humanHandle={HUMAN_HANDLE}
+                      anchor={anchor}
+                      unreadCount={activeRoomSummary?.unread}
+                      notice={
+                        notice?.room === activeRoom ? notice.node : undefined
+                      }
+                      footer={
+                        <Composer
+                          ref={composerRef}
+                          room={activeRoom}
+                          roomMembers={roomMembers}
+                          buddies={buddies}
+                          isDm={activeRoomSummary?.kind === 'dm'}
+                          daemonReachable={daemon.reachable}
+                          onOpenDm={onOpenDm}
+                        />
+                      }
+                    />
+                  )
+                )}
+                {(railRooms.length > 0 || buddies.length > 0) && (
+                  <Roster
+                    panel
+                    buddies={buddies}
+                    now={Date.now()}
+                    roomMembers={roomMembers}
+                    daemonReachable={daemon.reachable}
+                    // Desktop: a click only mentions; DM lives on the hover
+                    // card's button. The phone drawer keeps tap-to-DM above --
+                    // it has no hover card to carry the action.
+                    onPick={(handle, { inRoom }) => {
+                      if (inRoom) composerRef.current?.insertMention(handle);
+                    }}
+                  />
+                )}
+              </Group>
+            </PageShell.Content>
+          </PageShell.Main>
+        </PageShell>
+      </ThemeOverrideWrapper>
       <NewRoomModal
         opened={newRoomOpen}
         onClose={() => setNewRoomOpen(false)}
