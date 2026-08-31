@@ -5,6 +5,8 @@
   "icon": "./src/favicon.svg",
   "port": 11006,
   "commands": {
-    "start": "caffeinate -s bun src/server.ts"
+    "start": "caffeinate -s bun src/server.ts",
+    "build": "bun run build",
+    "deploy": "bun run build && deck restart board"
   }
 }
