@@ -133,7 +133,8 @@ test("deck's own repo manifest parses", () => {
   expect(r?.ok).toBe(true);
   if (!r || !r.ok) throw new Error("unreachable");
   expect(r.manifest.name).toBe("deck");
-  expect(r.manifest.commands.deploy).toBeDefined();
+  expect(r.manifest.dev?.deploy).toBeDefined();
+  expect(r.manifest.dev?.start).toBeUndefined();
 });
 
 test("reads a top-level env for the supervised service", () => {
