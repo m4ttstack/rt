@@ -1,5 +1,5 @@
 import { test, expect, beforeEach } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync } from "fs";
+import { mkdtempSync, rmSync, writeFileSync, existsSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -72,6 +72,7 @@ test("unbind lists tunnel-served apps that will go offline and requires force", 
   const r = await unbindDomain({ tunnel, manager, dns }, { cloudflaredDir: cfDir });
   expect(r.status).toBe(409);
   expect((r.body as any)).toEqual({ error: "apps-will-go-offline", apps: ["blog"] });
+  expect((await unbindDomain({ tunnel, manager, dns }, { cloudflaredDir: cfDir, force: true })).status).toBe(200);
 });
 
 test("unbind tolerates a partial bind (tunnel recorded, no domain): skips DNS, still removes the rest", async () => {
@@ -91,4 +92,6 @@ test("unbind with no DNS driver (secrets unavailable) still removes local + tunn
   const r = await unbindDomain({ tunnel, manager, dns: null }, { cloudflaredDir: cfDir, force: true });
   expect(r.status).toBe(200);
   expect(getPlatformSettings().publicDomain).toBeNull();
+  expect(getPlatformSettings().tunnel).toBeNull();
+  expect(manager.installed.has(TUNNEL_LABEL)).toBe(false);
 });
