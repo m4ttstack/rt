@@ -212,8 +212,9 @@ test("writeProxiedCname creates when no record exists", async () => {
 });
 
 test("cnameTarget reads the existing record's content, null when absent", async () => {
+  // URLSearchParams leaves `*` unencoded, so match on the parsed param, never on a hand-encoded string.
   const fetchImpl = (async (url: string | URL | Request) =>
-    Response.json({ success: true, result: String(url).includes("name=%2A.example.dev") ? [{ id: "r", type: "CNAME", name: "*.example.dev", content: "u.cfargotunnel.com" }] : [] })
+    Response.json({ success: true, result: new URL(String(url)).searchParams.get("name") === "*.example.dev" ? [{ id: "r", type: "CNAME", name: "*.example.dev", content: "u.cfargotunnel.com" }] : [] })
   ) as typeof fetch;
   const dns = new CfDnsApi({ zoneId: "z1", token: "t", fetchImpl });
   expect(await dns.cnameTarget("*.example.dev")).toBe("u.cfargotunnel.com");
@@ -651,9 +652,16 @@ git commit -m "edge: machine key mirror and minted tunnel names"
   export const TUNNEL_LABEL = "com.mattstack.deck.tunnel";
   export const EDGE_METRICS_PORT = 7951;               // re-exported from edge-health in Task 7; define here first
   export interface EdgeDeps { tunnel: TunnelDriver; manager: ServiceManager; dns: CfDns }
-  export interface EdgeOpts { gatewayPort?: number; cloudflaredDir?: string; cloudflaredBin?: string; force?: boolean; random?: () => string; hasCloudflared?: () => boolean }
+  export interface EdgeOpts {
+    gatewayPort?: number; cloudflaredDir?: string; force?: boolean; random?: () => string;
+    /** Absolute cloudflared path, or null when not installed. Defaults to resolveProgram("cloudflared", composeServicePath()) from src/services/exec-env.ts. Tests inject. */
+    resolveBin?: () => string | null;
+    /** Pause between bind-time connector polls; tests inject a no-op. */
+    sleep?: (ms: number) => Promise<void>;
+  }
   export function tunnelConfigPath(): string;          // join(stateDir(), "tunnel.yml")
   export function credentialsPath(cfDir: string, uuid: string): string;
+  /** `cloudflaredBin` MUST be absolute: launchd does not search PATH for ProgramArguments[0] (see exec-env.ts); a bare "cloudflared" silently never starts. */
   export function tunnelServiceSpec(o: { configPath: string; cloudflaredBin: string }): ServiceSpec;
   export async function bindDomain(domain: string, deps: EdgeDeps, opts?: EdgeOpts): Promise<FlowResult>;
   export async function unbindDomain(deps: { tunnel: TunnelDriver; manager: ServiceManager; dns: CfDns | null }, opts?: { force?: boolean; cloudflaredDir?: string }): Promise<FlowResult>; // full body lands in this task (Step 5); Task 6 adds its dedicated tests
@@ -680,11 +688,12 @@ const { FakeCfDns } = await import("../../test/fixture/remote.ts");
 const { getPlatformSettings, reloadPlatformSettings } = await import("../api/platform-settings.ts");
 const { reloadRegistry } = await import("../registry/records.ts");
 
+const CLOUDFLARED = "/opt/homebrew/bin/cloudflared";
 let cfDir: string;
 let tunnel: InstanceType<typeof FakeTunnelDriver>;
 let manager: InstanceType<typeof FakeServiceManager>;
 let dns: InstanceType<typeof FakeCfDns>;
-const opts = () => ({ cloudflaredDir: cfDir, gatewayPort: 7950, random: () => "abc123", hasCloudflared: () => true });
+const opts = () => ({ cloudflaredDir: cfDir, gatewayPort: 7950, random: () => "abc123", resolveBin: () => CLOUDFLARED, sleep: async () => {} });
 
 beforeEach(() => {
   rmSync(process.env.LOCAL_PLATFORM_SETTINGS_PATH!, { force: true });
@@ -706,7 +715,7 @@ test("refuses a malformed domain", async () => {
 });
 
 test("refuses when cloudflared is not installed", async () => {
-  const r = await bindDomain("example.dev", { tunnel, manager, dns }, { ...opts(), hasCloudflared: () => false });
+  const r = await bindDomain("example.dev", { tunnel, manager, dns }, { ...opts(), resolveBin: () => null });
   expect(r.status).toBe(400);
   expect((r.body as any).error).toBe("cloudflared-missing");
 });
@@ -737,9 +746,20 @@ test("binds: mints + creates the tunnel, records identity, config, upserts DNS, 
   expect(readFileSync(tunnelConfigPath(), "utf8")).toContain(`metrics: 127.0.0.1:7951`);
   expect(dns.cname.get("*.example.dev")).toEqual({ target: "fake-uuid-1.cfargotunnel.com", proxied: true });
   const agent = manager.installed.get(TUNNEL_LABEL)!;
-  expect(agent.programArguments).toEqual(["cloudflared", "tunnel", "--config", tunnelConfigPath(), "run"]);
+  expect(agent.programArguments).toEqual([CLOUDFLARED, "tunnel", "--config", tunnelConfigPath(), "run"]);
   expect(manager.kickstarts).toEqual([TUNNEL_LABEL]);
   expect((r.body as any).connectors).toBe(1);
+});
+
+test("bind polls info() until a connector registers, bounded", async () => {
+  writeFileSync(join(cfDir, "cert.pem"), "x");
+  tunnel.connectors = 0;
+  const slept: number[] = [];
+  const r = await bindDomain("example.dev", { tunnel, manager, dns }, { ...opts(), sleep: async (ms) => { slept.push(ms); if (slept.length === 2) tunnel.connectors = 2; } });
+  expect(r.status).toBe(200);
+  expect((r.body as any).connectors).toBe(2);
+  expect(tunnel.calls.filter((c) => c[0] === "info")).toHaveLength(3);
+  expect(slept).toEqual([3000, 3000]);
 });
 ```
 
@@ -764,11 +784,12 @@ const { FakeCfDns } = await import("../../test/fixture/remote.ts");
 const { getPlatformSettings, reloadPlatformSettings, updatePlatformSettings } = await import("../api/platform-settings.ts");
 const { reloadRegistry } = await import("../registry/records.ts");
 
+const CLOUDFLARED = "/opt/homebrew/bin/cloudflared";
 let cfDir: string;
 let tunnel: InstanceType<typeof FakeTunnelDriver>;
 let manager: InstanceType<typeof FakeServiceManager>;
 let dns: InstanceType<typeof FakeCfDns>;
-const opts = () => ({ cloudflaredDir: cfDir, gatewayPort: 7950, random: () => "abc123", hasCloudflared: () => true });
+const opts = () => ({ cloudflaredDir: cfDir, gatewayPort: 7950, random: () => "abc123", resolveBin: () => CLOUDFLARED, sleep: async () => {} });
 
 beforeEach(() => {
   rmSync(process.env.LOCAL_PLATFORM_SETTINGS_PATH!, { force: true });
@@ -834,21 +855,21 @@ test("an existing wildcard record is overwritten, not duplicated", async () => {
 
 - [ ] **Step 3: Update `src/edge/domain.remote-guard.test.ts`**
 
-Change the imports/fixtures to the new deps (add `FakeCfDns`, pass `dns`, `hasCloudflared: () => true`, `tunnel = new FakeTunnelDriver(cfDir)`), keep the two existing tests' assertions, and append:
+Change the imports/fixtures to the new deps (add `FakeCfDns`, pass `dns`, `resolveBin: () => "/opt/homebrew/bin/cloudflared"`, `sleep: async () => {}`, `tunnel = new FakeTunnelDriver(cfDir)`), keep the two existing tests' assertions, and append:
 
 ```ts
 test("--force on a different-domain rebind runs unbind-then-bind and leaves no stranded old wildcard", async () => {
   const dns = new FakeCfDns();
-  const r0 = await bindDomain("m4tthew.dev", { tunnel: fakeTunnel, manager: fakeManager, dns }, { cloudflaredDir: cfDir, random: () => "abc123", hasCloudflared: () => true });
+  const r0 = await bindDomain("m4tthew.dev", { tunnel: fakeTunnel, manager: fakeManager, dns }, { cloudflaredDir: cfDir, random: () => "abc123", resolveBin: () => "/opt/homebrew/bin/cloudflared", sleep: async () => {} });
   expect(r0.status).toBe(200);
   const first = getPlatformSettings().tunnel!;
   putRecord({ name: "site", managedBy: "user", port: 3000, kind: "service", createdAt: new Date().toISOString(),
     remote: { target: "railway", serviceId: "svc", customDomain: "site.m4tthew.dev", status: "live" } });
 
-  const refused = await bindDomain("other.dev", { tunnel: fakeTunnel, manager: fakeManager, dns }, { cloudflaredDir: cfDir, hasCloudflared: () => true });
+  const refused = await bindDomain("other.dev", { tunnel: fakeTunnel, manager: fakeManager, dns }, { cloudflaredDir: cfDir, resolveBin: () => "/opt/homebrew/bin/cloudflared", sleep: async () => {} });
   expect(refused.status).toBe(409);
 
-  const forced = await bindDomain("other.dev", { tunnel: fakeTunnel, manager: fakeManager, dns }, { cloudflaredDir: cfDir, force: true, random: () => "def456", hasCloudflared: () => true });
+  const forced = await bindDomain("other.dev", { tunnel: fakeTunnel, manager: fakeManager, dns }, { cloudflaredDir: cfDir, force: true, random: () => "def456", resolveBin: () => "/opt/homebrew/bin/cloudflared", sleep: async () => {} });
   expect(forced.status).toBe(200);
   expect(fakeTunnel.calls).toContainEqual(["delete", first.name]);
   expect(dns.cname.has("*.m4tthew.dev")).toBe(false);
@@ -874,6 +895,7 @@ import { renderTunnelConfig, writeTunnelConfig } from "./tunnel.ts";
 import type { CfDns } from "./cf-dns.ts";
 import { mintTunnelName, randomSuffix } from "./machine-key.ts";
 import { LABEL_PREFIX, type ServiceManager, type ServiceSpec } from "../services/manager.ts";
+import { composeServicePath, resolveProgram } from "../services/exec-env.ts";
 import { getPlatformSettings, updatePlatformSettings, type TunnelIdentity } from "../api/platform-settings.ts";
 import { logsDir, stateDir } from "../api/state.ts";
 import { listRecords } from "../registry/records.ts";
@@ -883,21 +905,25 @@ import type { FlowResult } from "../api/register.ts";
 export const TUNNEL_LABEL = `${LABEL_PREFIX}tunnel`;
 export const EDGE_METRICS_PORT = 7951;
 const DOMAIN_RE = /^[a-z0-9-]+(\.[a-z0-9-]+)+$/;
+const CONNECTOR_POLLS = 5;
+const CONNECTOR_POLL_MS = 3000;
 
 export interface EdgeDeps { tunnel: TunnelDriver; manager: ServiceManager; dns: CfDns }
 export interface EdgeOpts {
   gatewayPort?: number;
   cloudflaredDir?: string;
-  cloudflaredBin?: string;
   force?: boolean;
   random?: () => string;
-  hasCloudflared?: () => boolean;
+  resolveBin?: () => string | null;
+  sleep?: (ms: number) => Promise<void>;
 }
 
 export function tunnelConfigPath(): string { return join(stateDir(), "tunnel.yml"); }
 export function credentialsPath(cfDir: string, uuid: string): string { return join(cfDir, `${uuid}.json`); }
 function defaultCfDir(): string { return join(homedir(), ".cloudflared"); }
+export function resolveCloudflared(): string | null { return resolveProgram("cloudflared", composeServicePath()); }
 
+// launchd does not search PATH for ProgramArguments[0]; the caller passes an absolute path.
 export function tunnelServiceSpec(o: { configPath: string; cloudflaredBin: string }): ServiceSpec {
   return {
     label: TUNNEL_LABEL,
@@ -919,9 +945,8 @@ export function expectedTunnelConfig(o: { uuid: string; domain: string; cfDir: s
 export async function bindDomain(domain: string, deps: EdgeDeps, opts: EdgeOpts = {}): Promise<FlowResult> {
   if (!DOMAIN_RE.test(domain)) return { status: 400, body: { error: "bad domain" } };
   const cfDir = opts.cloudflaredDir ?? defaultCfDir();
-  const bin = opts.cloudflaredBin ?? "cloudflared";
-  const hasCloudflared = opts.hasCloudflared ?? (() => Bun.which(bin) !== null);
-  if (!hasCloudflared()) return { status: 400, body: { error: "cloudflared-missing", hint: "brew install cloudflared" } };
+  const bin = (opts.resolveBin ?? resolveCloudflared)();
+  if (!bin) return { status: 400, body: { error: "cloudflared-missing", hint: "brew install cloudflared" } };
   // The guided flow checks the operator step; it never performs the browser login.
   if (!existsSync(join(cfDir, "cert.pem"))) {
     return { status: 428, body: { error: "cloudflared-login-required", command: "cloudflared tunnel login" } };
@@ -950,8 +975,20 @@ export async function bindDomain(domain: string, deps: EdgeDeps, opts: EdgeOpts 
   await deps.manager.install(tunnelServiceSpec({ configPath, cloudflaredBin: bin }));
   await deps.manager.kickstart(TUNNEL_LABEL);
   updatePlatformSettings({ publicDomain: domain });
-  const { connectors } = await deps.tunnel.info(identity.name);
+  const connectors = await awaitConnector(deps.tunnel, identity.name, opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))));
   return { status: 200, body: { domain, tunnel: identity, connectors } };
+}
+
+// Edge registration takes a few seconds after kickstart; a bounded poll keeps a
+// healthy bind from reporting zero connectors.
+async function awaitConnector(tunnel: TunnelDriver, name: string, sleep: (ms: number) => Promise<void>): Promise<number> {
+  let connectors = 0;
+  for (let i = 0; i < CONNECTOR_POLLS; i++) {
+    ({ connectors } = await tunnel.info(name));
+    if (connectors > 0) break;
+    if (i < CONNECTOR_POLLS - 1) await sleep(CONNECTOR_POLL_MS);
+  }
+  return connectors;
 }
 
 // Recreating under the recorded name is safe: the minted suffix makes it this
@@ -1023,7 +1060,7 @@ git commit -m "domain: bind resolves + records the edge tunnel, upserts DNS, sup
 
 - [ ] **Step 1: Write the failing tests**
 
-Create `src/edge/domain.unbind.test.ts` (same env preamble as `domain.bind.test.ts`, with `writeFileSync(join(cfDir, "cert.pem"), "x")` in `beforeEach`):
+Create `src/edge/domain.unbind.test.ts` (same env preamble and `opts()` helper as `domain.bind.test.ts`, with `writeFileSync(join(cfDir, "cert.pem"), "x")` in `beforeEach`; imports it needs beyond that file's: `existsSync` from `fs`, `unbindDomain` and `tunnelConfigPath` from `./domain.ts`, `putRecord` from `../registry/records.ts`):
 
 ```ts
 test("unbind with nothing bound is a no-op 200", async () => {
@@ -1175,7 +1212,7 @@ test("no bound domain: the tunnel row keeps health null", async () => {
 });
 ```
 
-Implementer: the plist body can be produced with `renderPlist(tunnelServiceSpec({ configPath: "/x/tunnel.yml", cloudflaredBin: "cloudflared" }))` from `src/services/plist.ts` and written to `join(process.env.LOCAL_AGENTS_DIR, "com.mattstack.deck.tunnel.plist")`.
+Implementer: the plist body can be produced with `renderPlist(tunnelServiceSpec({ configPath: "/x/tunnel.yml", cloudflaredBin: "/opt/homebrew/bin/cloudflared" }))` from `src/services/plist.ts` and written to `join(process.env.LOCAL_AGENTS_DIR, "com.mattstack.deck.tunnel.plist")`.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
@@ -1239,21 +1276,27 @@ export function edgeHealthRow(state: EdgeState, readyConnections: number, domain
   }
 }
 
-export async function tunnelRowHealth(d: { running: boolean; tunnelGone: boolean; domain: string | null; fetchImpl?: typeof fetch }): Promise<Health> {
+interface EdgeProbe { running: boolean; tunnelGone: boolean; domain: string | null; fetchImpl?: typeof fetch }
+
+// The metrics read is skipped when the process is down: nothing is listening.
+async function probeEdge(d: EdgeProbe): Promise<{ state: EdgeState; readyConnections: number }> {
   const ready = d.running ? await readReady(d.fetchImpl) : { up: false, readyConnections: 0 };
   const state = edgeState({ running: d.running && ready.up, readyConnections: ready.readyConnections, tunnelGone: d.tunnelGone });
-  return edgeHealthRow(state, ready.readyConnections, d.domain);
+  return { state, readyConnections: ready.readyConnections };
 }
 
-export async function describeEdge(d: { installed: boolean; running: boolean; tunnelGone: boolean; domain: string | null; fetchImpl?: typeof fetch }) {
+export async function tunnelRowHealth(d: EdgeProbe): Promise<Health> {
+  const { state, readyConnections } = await probeEdge(d);
+  return edgeHealthRow(state, readyConnections, d.domain);
+}
+
+export async function describeEdge(d: EdgeProbe & { installed: boolean }) {
   if (!d.installed) return { state: "not-installed" as const, readyConnections: 0, detail: "tunnel service not installed" };
-  const h = await tunnelRowHealth(d);
-  const state = edgeState({ running: d.running && h.tone !== "bad", readyConnections: h.tone === "ok" ? Number.parseInt(h.detail ?? "0", 10) : 0, tunnelGone: d.tunnelGone });
-  return { state, readyConnections: h.tone === "ok" ? Number.parseInt(h.detail ?? "0", 10) : 0, detail: h.detail ?? "", hint: h.hint };
+  const { state, readyConnections } = await probeEdge(d);
+  const row = edgeHealthRow(state, readyConnections, d.domain);
+  return { state, readyConnections, detail: row.detail ?? "", hint: row.hint };
 }
 ```
-
-Implementer note on `describeEdge`: it exists for `GET /api/v1/domain` (Task 9). If deriving `readyConnections` back out of `detail` reads as a smell, refactor so `tunnelRowHealth` returns `{ health, state, readyConnections }` and `describeEdge` uses that directly; the tests above only pin `readReady`, `edgeState`, `edgeHealthRow`, and `tunnelRowHealth`'s skip-when-not-running behavior.
 
 `src/api/status.ts`: add to `BuildStatusOpts`:
 
@@ -1316,7 +1359,9 @@ git commit -m "edge: connection health from the connector's metrics endpoint on 
     cloudflaredDir: string; cloudflaredBin: string; gatewayPort: number;
   }
   export function edgeDrift(): { tunnelGone: boolean };
-  export function resetEdgeReconcileForTests(): void;
+  /** Called after a successful bind/unbind: clears drift flags and makes the next tick run both passes immediately, so a fresh bind is not reported "tunnel missing" for up to EDGE_CF_INTERVAL_MS. */
+  export function edgeBindingChanged(): void;
+  export function resetEdgeReconcileForTests(): void;   // same as edgeBindingChanged plus inFlight = false
   export async function reconcileEdge(deps: EdgeReconcileDeps): Promise<void>;
   ```
 
@@ -1329,7 +1374,7 @@ function deps(over: Partial<EdgeReconcileDeps> = {}): EdgeReconcileDeps {
   return {
     tunnel, manager, dns: async () => dns, now: () => clock.t,
     services: async () => [{ label: TUNNEL_LABEL, plistPath: "", program: ["cloudflared"], workingDirectory: null, stderrPath: null, port: null, pid: running ? 1 : null, lastExitStatus: null }],
-    cloudflaredDir: cfDir, cloudflaredBin: "cloudflared", gatewayPort: 7950, ...over,
+    cloudflaredDir: cfDir, cloudflaredBin: CLOUDFLARED, gatewayPort: 7950, ...over,
   };
 }
 
@@ -1393,6 +1438,21 @@ test("a tunnel absent from list() flips tunnelGone and is NOT recreated", async 
   await reconcileEdge(deps());
   expect(edgeDrift().tunnelGone).toBe(true);
   expect(tunnel.calls.filter((c) => c[0] === "create")).toHaveLength(1);
+});
+
+test("edgeBindingChanged clears the gone flag and the next tick runs the CF pass at once", async () => {
+  await bindDomain("e.dev", { tunnel, manager, dns }, opts());
+  tunnel.tunnels.clear();
+  await reconcileEdge(deps());
+  expect(edgeDrift().tunnelGone).toBe(true);
+  await bindDomain("e.dev", { tunnel, manager, dns }, opts());   // the operator's re-run recreates it
+  edgeBindingChanged();
+  expect(edgeDrift().tunnelGone).toBe(false);
+  tunnel.calls.length = 0;
+  clock.t += 1_000;                                                // well inside both intervals
+  await reconcileEdge(deps());
+  expect(tunnel.calls).toEqual([["list"]]);
+  expect(edgeDrift().tunnelGone).toBe(false);
 });
 
 test("dns unavailable (rt daemon down) skips the CF pass without error and retries next time", async () => {
@@ -1461,7 +1521,8 @@ let nextCfAt = 0;
 let drift = { tunnelGone: false };
 
 export function edgeDrift(): { tunnelGone: boolean } { return drift; }
-export function resetEdgeReconcileForTests(): void { inFlight = false; nextLocalAt = 0; nextCfAt = 0; drift = { tunnelGone: false }; }
+export function edgeBindingChanged(): void { nextLocalAt = 0; nextCfAt = 0; drift = { tunnelGone: false }; }
+export function resetEdgeReconcileForTests(): void { inFlight = false; edgeBindingChanged(); }
 
 // Never creates a tunnel or a DNS record from nothing: only deck domain binds.
 export async function reconcileEdge(deps: EdgeReconcileDeps): Promise<void> {
@@ -1526,15 +1587,22 @@ async function edgeDns() {
 }
 
 async function reconcileEdgeTick(): Promise<void> {
+  const cloudflaredBin = resolveCloudflared();
+  if (!cloudflaredBin) return;   // nothing to supervise without the binary; bind reports the install hint
   try {
     await reconcileEdge({
       tunnel: new CloudflaredCli(), manager: new LaunchdManager(), dns: edgeDns, services: () => readServices(),
-      now: Date.now, cloudflaredDir: join(homedir(), ".cloudflared"), cloudflaredBin: "cloudflared", gatewayPort: 7950,
+      now: Date.now, cloudflaredDir: join(homedir(), ".cloudflared"), cloudflaredBin, gatewayPort: 7950,
     });
   } catch (err) {
     console.error("edge reconcile tick failed:", err);
   }
 }
+```
+
+(`resolveCloudflared` is imported from `../src/edge/domain.ts`; it returns the absolute path launchd needs.)
+
+```ts
 ```
 
 and append `await reconcileEdgeTick();` at the end of `reconcileOnce()`.
@@ -1640,13 +1708,15 @@ Replace the two existing domain routes with:
           const dns = await edgeDns(deps);
           if (!dns) return json({ error: "cf-secrets-required", hint: "rt secrets set deck cfZoneId / cfDnsToken" }, 400);
           const r = await bindDomain(String(b.domain ?? ""), { tunnel: deps.tunnel, manager: deps.manager, dns }, {
-            gatewayPort: 7950, cloudflaredDir: deps.cloudflaredDir, force: b.force === true, hasCloudflared: deps.hasCloudflared,
+            gatewayPort: 7950, cloudflaredDir: deps.cloudflaredDir, force: b.force === true, resolveBin: deps.resolveCloudflared,
           });
+          if (r.status === 200) edgeBindingChanged();
           return json(r.body, r.status);
         }
         if (pathname === "/api/v1/domain/unbind" && req.method === "POST") {
           const b = await body(req);
           const r = await unbindDomain({ tunnel: deps.tunnel, manager: deps.manager, dns: await edgeDns(deps) }, { force: b.force === true, cloudflaredDir: deps.cloudflaredDir });
+          if (r.status === 200) edgeBindingChanged();
           return json(r.body, r.status);
         }
 ```
@@ -1665,11 +1735,11 @@ async function edgeDns(deps: ApiDeps): Promise<CfDns | null> {
 ```ts
   /** Fake `/ready` fetch for tests; production reads the connector's local metrics endpoint. */
   readyFetch?: typeof fetch;
-  /** Tests force cloudflared "present"; production probes PATH. */
-  hasCloudflared?: () => boolean;
+  /** Tests inject an absolute fake path; production resolves cloudflared on the service PATH. */
+  resolveCloudflared?: () => string | null;
 ```
 
-Imports: `bindDomain, unbindDomain, TUNNEL_LABEL` from `../edge/domain.ts`; `describeEdge` from `../edge/edge-health.ts`; `edgeDrift` from `../edge/edge-reconcile.ts`; `readServices` from `../../core/discover.ts`; `CfDnsApi, type CfDns` from `../edge/cf-dns.ts`. Pass `readyFetch: deps.readyFetch` and `edgeDrift` through `statusOpts` too. The test `domainServer` sets `hasCloudflared: () => true`.
+Imports: `bindDomain, unbindDomain, TUNNEL_LABEL` from `../edge/domain.ts`; `describeEdge` from `../edge/edge-health.ts`; `edgeDrift, edgeBindingChanged` from `../edge/edge-reconcile.ts`; `readServices` from `../../core/discover.ts`; `CfDnsApi, type CfDns` from `../edge/cf-dns.ts`. Pass `readyFetch: deps.readyFetch` and `edgeDrift` through `statusOpts` too. The test `domainServer` sets `resolveCloudflared: () => "/opt/homebrew/bin/cloudflared"`.
 
 - [ ] **Step 5: Implement the CLI verb in `src/cli/commands.ts`**
 
@@ -1704,7 +1774,8 @@ Replace the `case "domain"` body:
         if (status === 428) { io.err(`One step first: run \`${body.command}\`, then re-run this.`); return 1; }
         if (status === 409) { io.err(`${body.error}: ${(body.apps ?? []).join(", ")} (re-run with --force to rebind anyway)`); return 1; }
         if (status !== 200) { io.err(`${body.error ?? `failed (${status})`}${body.hint ? ` (${body.hint})` : ""}`); return 1; }
-        io.out(`bound ${body.domain} via ${body.tunnel.name} (${body.connectors} connector${body.connectors === 1 ? "" : "s"}) ... every published app is now https://<name>.${body.domain}`);
+        const connectors = body.connectors > 0 ? `${body.connectors} connector${body.connectors === 1 ? "" : "s"}` : "connector still starting, check deck domain in a moment";
+        io.out(`bound ${body.domain} via ${body.tunnel.name} (${connectors}) ... every published app is now https://<name>.${body.domain}`);
         return 0;
       }
 ```
@@ -1788,6 +1859,8 @@ and use `tip` in the `Tooltip`.
 ```
 
 (keep the `restarting` early return; use `intent` for the `StatusDot`).
+
+Behavior note, intentional: `core/board/logic.ts` restart detection (`healthy = row.health ? row.health.ok : pid !== null`) now keys the tunnel row on connection state rather than pid, so the "restarting…" spinner persists until the connector is back (still bounded by the existing stuck timeout). That is the correct signal for a tunnel; do not special-case it back to pid.
 
 - [ ] **Step 4: Fixture** `test/fixture/status.json`: on the orphan tunnel row set
 
