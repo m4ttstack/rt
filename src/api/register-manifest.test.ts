@@ -261,7 +261,7 @@ function platformRecord() {
   };
 }
 
-test("platform record: register attaches source + commands, never touches the serve shape", async () => {
+test("register on the platform row writes dev.workingDirectory, not sourceDirectory", async () => {
   scratch();
   const { FakeServiceManager } = await import("../services/fake.ts");
   const { FakeEdgeProxy } = await import("../edge/portless.ts");
@@ -275,14 +275,21 @@ test("platform record: register attaches source + commands, never touches the se
   const r = await applyManifest(dir, undefined, drivers);
   expect(r.status).toBe(200);
   const rec = getRecord("deck")!;
-  expect(rec.sourceDirectory).toBe(dir);
-  expect(rec.commands).toEqual({ deploy: "bun run deploy" });
+  expect(rec.dev).toEqual({ workingDirectory: dir });
+  expect(rec.sourceDirectory).toBeUndefined();
+  expect(rec.commands).toBeUndefined();
   expect(rec.command).toEqual(["/Users/someone/.local/bin/deck", "serve"]);
   expect(rec.port).toBe(11007);
   expect(rec.workingDirectory).toBe("/Users/someone/.mattstack/deck");
   expect(rec.label).toBe("com.mattstack.deck");
   expect(drivers.manager.installed.size).toBe(0);
   expect(drivers.edge.aliases.size).toBe(0);
+
+  // deck refuses to run itself from a checkout, so a manifest that declares a
+  // dev serve command is a serve-shape declaration too, same as commands.start.
+  const serveDir = appRepo({ name: "deck", commands: { deploy: "d" }, dev: { start: "bun run dev" } });
+  const refused = await applyManifest(serveDir, undefined, drivers);
+  expect(refused.status).toBe(400);
 });
 
 test("platform record: a manifest declaring a serve shape is refused, record untouched", async () => {
@@ -331,4 +338,37 @@ test("a manifest named deck with no self record is refused, nothing created", as
   const r = await applyManifest(dir, undefined, { manager: new FakeServiceManager(), edge: new FakeEdgeProxy() });
   expect(r.status).toBe(400);
   expect(getRecord("deck")).toBeUndefined();
+});
+
+function managedRecord() {
+  return {
+    name: "chat", managedBy: "rt", port: 11020, kind: "service" as const, createdAt: "x",
+    label: "com.mattstack.deck.chat", command: ["/Users/someone/.local/bin/chat"],
+    workingDirectory: "/Users/someone/.mattstack/chat",
+  };
+}
+
+test("register on a managed app links the checkout instead of rewriting its serve shape", async () => {
+  scratch();
+  const { FakeServiceManager } = await import("../services/fake.ts");
+  const { FakeEdgeProxy } = await import("../edge/portless.ts");
+  const { reloadRegistry, getRecord, putRecord } = await import("../registry/records.ts");
+  const { applyManifest } = await import("./register-manifest.ts");
+  reloadRegistry();
+  const drivers = { manager: new FakeServiceManager(), edge: new FakeEdgeProxy() };
+  putRecord(managedRecord());
+  const dir = appRepo({ name: "chat", port: 5173, commands: { start: "bun run serve", deploy: "bun run deploy" } });
+
+  const r = await applyManifest(dir, undefined, drivers);
+  expect(r.status).toBe(200);
+  const rec = getRecord("chat")!;
+  expect(rec.dev).toEqual({ workingDirectory: dir });
+  expect(rec.command).toEqual(["/Users/someone/.local/bin/chat"]);
+  expect(rec.port).toBe(11020);
+  expect(rec.commands).toBeUndefined();
+
+  // An alt config selects an overlay in the manifest that owns the serve shape;
+  // a linked managed app's shape comes from the resolver, so there is nothing to overlay.
+  const altResult = await applyManifest(dir, "dev", drivers);
+  expect(altResult.status).toBe(400);
 });

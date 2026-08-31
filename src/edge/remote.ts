@@ -68,7 +68,7 @@ export interface PushDeps {
 export async function pushRemote(name: string, deps: PushDeps): Promise<FlowResult> {
   const record = getRecord(name);
   if (!record?.remote) return { status: 404, body: { error: "not in remote mode" } };
-  const dir = record.sourceDirectory ?? record.workingDirectory!; // matches the command route's cwd
+  const dir = record.dev?.workingDirectory ?? record.sourceDirectory ?? record.workingDirectory!; // matches the command route's cwd
   if (deps.hasUntrackedEnv(dir)) return { status: 400, body: { error: "untracked .env would upload; add it to .gitignore first" } };
 
   const { serviceId } = await deps.railway.ensureService(`deck-${name}`, { projectId: deps.projectId, environmentId: deps.environmentId });
