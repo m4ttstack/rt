@@ -180,3 +180,47 @@ test("shell syntax keeps the sh -c wrapper", () => {
   expect(startArgv("bun s.ts > out.log")).toEqual(["sh", "-c", "bun s.ts > out.log"]);
   expect(startArgv("echo $HOME")).toEqual(["sh", "-c", "echo $HOME"]);
 });
+
+test("parses dev node and includeInBundle", () => {
+  const dir = repo({
+    "mattstack.deck.json": JSON.stringify({
+      name: "chat",
+      port: 11002,
+      includeInBundle: true,
+      dev: { start: "bun src/server/index.ts", build: "bun run build", deploy: "bun run deploy" },
+    }),
+  });
+  const parsed = readDeckManifest(dir);
+  expect(parsed?.ok).toBe(true);
+  if (parsed?.ok) {
+    expect(parsed.manifest.includeInBundle).toBe(true);
+    expect(parsed.manifest.dev).toEqual({
+      start: "bun src/server/index.ts",
+      build: "bun run build",
+      deploy: "bun run deploy",
+    });
+  }
+});
+
+test("rejects a non-boolean includeInBundle", () => {
+  const dir = repo({ "mattstack.deck.json": JSON.stringify({ name: "chat", includeInBundle: "yes" }) });
+  const parsed = readDeckManifest(dir);
+  expect(parsed?.ok).toBe(false);
+});
+
+test("rejects bad dev nodes", () => {
+  for (const dev of [["a"], { "BAD KEY": "x" }, { build: "" }, { build: 3 }]) {
+    const dir = repo({ "mattstack.deck.json": JSON.stringify({ name: "chat", dev }) });
+    expect(readDeckManifest(dir)?.ok).toBe(false);
+  }
+});
+
+test("dev node absent stays undefined", () => {
+  const dir = repo({ "mattstack.deck.json": JSON.stringify({ name: "chat", port: 11002 }) });
+  const parsed = readDeckManifest(dir);
+  expect(parsed?.ok).toBe(true);
+  if (parsed?.ok) {
+    expect(parsed.manifest.dev).toBeUndefined();
+    expect(parsed.manifest.includeInBundle).toBeUndefined();
+  }
+});
