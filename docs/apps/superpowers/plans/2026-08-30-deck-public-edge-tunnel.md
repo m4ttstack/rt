@@ -19,7 +19,7 @@ Every task's requirements implicitly include these (from the spec; the constants
 - **Config is deck-generated and byte-exact** (`renderTunnelConfig`), written to `join(stateDir(), "tunnel.yml")`, with `metrics: 127.0.0.1:7951` pinned in the file only (never on the command line). `EDGE_METRICS_PORT = 7951`.
 - **DNS is owned through `CfDns`, never `cloudflared tunnel route dns`.** `writeProxiedCname` MUST upsert (list, then PATCH the existing record or POST a new one). CNAME target is `<uuid>.cfargotunnel.com`, proxied.
 - **`TunnelDriver.delete` passes `-f`.** `tunnel info` is called ONLY at bind time (it is a CF API roundtrip); poll-cadence health reads `http://127.0.0.1:7951/ready` (`{"status":200,"readyConnections":N,...}`; a non-200 or `readyConnections 0` means not connected).
-- **Bind ordering:** identity `{ tunnel }` is recorded in `deck.platform` immediately after the tunnel is resolved, BEFORE config, DNS, or service install; `publicDomain` is set last.
+- **Bind ordering:** identity `{ tunnel }` is recorded in `deck.platform` immediately after the tunnel is resolved, BEFORE config, DNS, or service install; `publicDomain` is set immediately after the DNS write and BEFORE the service install, so a post-DNS install failure leaves `publicDomain` recorded (unbind can remove the wildcard, reconcile self-heals the service) rather than stranding the CNAME.
 - **Guards key on REMOTE apps only** (records with `remote` set), never on `published` (which defaults to `true`). Different-domain rebind = unbind-then-bind, 409 `remote-apps-pinned-to-domain` unless `force`. Unbind additionally returns 409 `apps-will-go-offline` (listing non-remote apps) unless `force`; first bind and same-domain rebind are unguarded.
 - **Reconcile never runs from the status GET** and never creates a tunnel or DNS from nothing. It runs inside the existing 5s tick with an in-flight latch: local pass at most every 30s (`EDGE_LOCAL_INTERVAL_MS`), CF pass (DNS + `list()`) at most every 10 min (`EDGE_CF_INTERVAL_MS`), 60s backoff after an error. A config rewrite is always followed by a kickstart. A recorded uuid absent from `list()` sets the `tunnelGone` drift flag (the ONLY source of the "re-run `deck domain`" bad state). Reconcile runs only when BOTH `publicDomain` and `tunnel` are recorded.
 - **Health widening is additive:** `Health` gains optional `tone`/`detail`/`hint`; app rows never set them; `ok` keeps its meaning so `useBoardState`'s restart detection is unaffected.
@@ -972,9 +972,9 @@ export async function bindDomain(domain: string, deps: EdgeDeps, opts: EdgeOpts 
     uuid: identity.uuid, credentialsFile: credentialsPath(cfDir, identity.uuid), domain, gatewayPort, metricsPort: EDGE_METRICS_PORT,
   });
   await deps.dns.writeProxiedCname(`*.${domain}`, `${identity.uuid}.cfargotunnel.com`);
+  updatePlatformSettings({ publicDomain: domain });   // after DNS, before install: a failed install stays recoverable/self-healing, never strands the CNAME
   await deps.manager.install(tunnelServiceSpec({ configPath, cloudflaredBin: bin }));
   await deps.manager.kickstart(TUNNEL_LABEL);
-  updatePlatformSettings({ publicDomain: domain });
   const connectors = await awaitConnector(deps.tunnel, identity.name, opts.sleep ?? ((ms) => new Promise((r) => setTimeout(r, ms))));
   return { status: 200, body: { domain, tunnel: identity, connectors } };
 }

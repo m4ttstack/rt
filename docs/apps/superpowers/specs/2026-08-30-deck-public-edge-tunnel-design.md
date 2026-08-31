@@ -237,10 +237,15 @@ Health), not also on the command line, so there is a single source of truth.
 6. Write the config file (the exact ingress shape above, metrics pinned) to the
    deck-owned path.
 7. `CfDns.writeProxiedCname("*.<domain>", "<uuid>.cfargotunnel.com")` (upsert).
-8. `ServiceManager.install(...)` the `com.mattstack.deck.tunnel` unit and
-   `kickstart` it.
-9. Set `publicDomain: <domain>` in `deck.platform`, and confirm the connector
-   registered via `TunnelDriver.info(name)` (the one bind-time use of `info`).
+8. Set `publicDomain: <domain>` in `deck.platform`, immediately after the DNS
+   record points at our tunnel and BEFORE the service install. Once the wildcard
+   record is ours, the domain is recorded so a later `unbind` can always remove
+   it, and if the install below fails, `reconcileEdge` (which requires both
+   `publicDomain` and `tunnel`) self-heals the service rather than the bind
+   stranding the CNAME.
+9. `ServiceManager.install(...)` the `com.mattstack.deck.tunnel` unit and
+   `kickstart` it, then confirm the connector registered via
+   `TunnelDriver.info(name)` (the one bind-time use of `info`).
 
 ### `deck domain` (show)
 
