@@ -132,7 +132,7 @@ function MessageBody({
           data-testid="fold-toggle"
           onClick={() => setExpanded(e => !e)}
           style={{
-            marginTop: 4,
+            marginTop: 'var(--mantine-spacing-xs)',
             fontSize: 'var(--tk-fs-3xs)',
             fontWeight: 600,
             color: ACCENT_TEXT,
@@ -183,8 +183,8 @@ function YouBadge() {
         display: 'inline-flex',
         alignItems: 'center',
         height: 16,
-        padding: '0 6px',
-        borderRadius: 10,
+        padding: '0 var(--mantine-spacing-sm)',
+        borderRadius: 'var(--mantine-radius-xl)',
         fontSize: 'var(--tk-fs-4xs)',
         fontWeight: 500,
         lineHeight: 1,
@@ -277,7 +277,7 @@ function OlderEdge({
         border: 0,
         background: 'transparent',
         cursor: exhausted ? 'default' : 'pointer',
-        padding: '6px 0 4px',
+        padding: 'var(--mantine-spacing-sm) 0 var(--mantine-spacing-xs)',
         textAlign: 'center',
         fontSize: 'var(--tk-fs-3xs)',
         color: 'var(--tk-muted-text)',
@@ -525,7 +525,8 @@ export function Transcript({
                 <Box
                   data-testid="transcript-notice"
                   style={{
-                    padding: '6px 0 4px',
+                    padding:
+                      'var(--mantine-spacing-sm) 0 var(--mantine-spacing-xs)',
                     textAlign: 'left',
                     fontSize: 'var(--tk-fs-3xs)',
                     color: 'var(--tk-muted-text)',

@@ -501,11 +501,11 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                     fontFamily: 'inherit',
                     fontSize: phone ? 16 : 'var(--mantine-font-size-md)',
                     lineHeight: 1.4,
-                    padding: '8px 0',
+                    padding: 'var(--mantine-spacing-sm) 0',
                   }}
                 />
                 {!phone && daemonReachable && (
-                  <Group gap={4} wrap="nowrap" style={{ flex: 'none' }}>
+                  <Group gap="xs" wrap="nowrap" style={{ flex: 'none' }}>
                     <Kbd>↵ send</Kbd>
                     <Kbd>⇧↵ newline</Kbd>
                   </Group>
@@ -563,7 +563,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
         </Popover>
 
         <Group
-          gap={4}
+          gap="xs"
           wrap="nowrap"
           style={{ paddingTop: 'var(--mantine-spacing-xs)' }}
         >
@@ -596,7 +596,7 @@ function Kbd({ children }: { children: React.ReactNode }) {
         display: 'inline-flex',
         alignItems: 'center',
         height: 16,
-        padding: '0 5px',
+        padding: '0 var(--mantine-spacing-xs)',
         border: `1px solid ${BORDER}`,
         borderBottomWidth: 2,
         borderRadius: 'var(--mantine-radius-sm)',

@@ -124,7 +124,7 @@ export function PaneRow({
         display: 'flex',
         alignItems: 'flex-start',
         gap: 'var(--mantine-spacing-md)',
-        padding: '8.4px var(--mantine-spacing-md)',
+        padding: 'var(--mantine-spacing-sm) var(--mantine-spacing-md)',
         borderRadius: 'var(--mantine-radius-md)',
         borderTop: first ? undefined : `1px solid ${BORDER_SOFT}`,
         minWidth: 0,
@@ -147,7 +147,7 @@ export function PaneRow({
             height: checkSize,
             marginTop: 2,
             flex: 'none',
-            borderRadius: 4,
+            borderRadius: 'var(--mantine-radius-sm)',
             display: 'inline-flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -172,7 +172,7 @@ export function PaneRow({
             style={{
               width: 8,
               height: 8,
-              marginTop: 5,
+              marginTop: 'var(--mantine-spacing-xs)',
               flex: 'none',
               borderRadius: '50%',
               // Hollow for both "no presence" and an offline one -- the same
@@ -249,11 +249,11 @@ export function PaneRow({
             component="pre"
             data-testid={`pane-peek-${pane.paneId}`}
             style={{
-              margin: '4.8px 0 0',
-              padding: '7.2px var(--mantine-spacing-md)',
+              margin: 'var(--mantine-spacing-xs) 0 0',
+              padding: 'var(--mantine-spacing-sm) var(--mantine-spacing-md)',
               background: 'var(--tk-bg)',
               border: `1px solid ${BORDER}`,
-              borderRadius: 4,
+              borderRadius: 'var(--mantine-radius-sm)',
               fontFamily: 'inherit',
               fontSize: 'var(--tk-fs-2xs)',
               lineHeight: 1.5,

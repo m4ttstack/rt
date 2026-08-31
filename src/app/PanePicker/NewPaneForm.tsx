@@ -85,7 +85,7 @@ export function NewPaneForm({ onBack, onStart }: NewPaneFormProps) {
 
   return (
     <Stack gap="sm">
-      <Stack gap={4}>
+      <Stack gap="xs">
         <TextInput
           label="Directory"
           placeholder="/path/to/a/repo"

@@ -75,7 +75,7 @@ function NewRoomButton({
         width: 24,
         height: 24,
         flex: 'none',
-        borderRadius: 6,
+        borderRadius: 'var(--mantine-radius-md)',
         color: 'var(--tk-muted-text)',
         background: hovered && !disabled ? 'var(--ui-bg-4)' : 'transparent',
         cursor: disabled ? 'default' : 'pointer',
@@ -103,7 +103,7 @@ function MentionBadge({ count }: { count: number }) {
         height: 18,
         lineHeight: 1,
         borderRadius: 'var(--mantine-radius-xl)',
-        padding: '0 7px',
+        padding: '0 var(--mantine-spacing-sm)',
         fontSize: 'var(--tk-fs-3xs)',
         fontWeight: 600,
         whiteSpace: 'nowrap',
@@ -129,7 +129,7 @@ function UnreadBadge({ count }: { count: number }) {
         height: 18,
         lineHeight: 1,
         borderRadius: 'var(--mantine-radius-xl)',
-        padding: '0 7px',
+        padding: '0 var(--mantine-spacing-sm)',
         fontSize: 'var(--tk-fs-3xs)',
         fontWeight: 500,
         whiteSpace: 'nowrap',
@@ -345,7 +345,7 @@ export function RoomRail({
         background: sidebar ? undefined : 'var(--tk-panel)',
         border: sidebar ? undefined : '1px solid var(--tk-border)',
         borderRadius: sidebar ? undefined : 'var(--mantine-radius-md)',
-        padding: 'var(--mantine-spacing-lg) 6px',
+        padding: 'var(--mantine-spacing-lg) var(--mantine-spacing-sm)',
         alignSelf: 'stretch',
         overflowY: sidebar ? undefined : 'auto',
       }}
@@ -354,7 +354,9 @@ export function RoomRail({
       <Group
         justify="space-between"
         wrap="nowrap"
-        style={{ padding: '0 var(--mantine-spacing-md) 6px' }}
+        style={{
+          padding: '0 var(--mantine-spacing-md) var(--mantine-spacing-sm)',
+        }}
       >
         <Text
           component="h3"
@@ -392,10 +394,11 @@ export function RoomRail({
       {directRooms.length > 0 && (
         <>
           <Group
-            gap={6}
+            gap="sm"
             wrap="nowrap"
             style={{
-              padding: '10px var(--mantine-spacing-md) 4px',
+              padding:
+                'var(--mantine-spacing-md) var(--mantine-spacing-md) var(--mantine-spacing-xs)',
               borderBottom: `1px solid var(--tk-border-soft)`,
             }}
           >

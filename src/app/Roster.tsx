@@ -72,7 +72,7 @@ function Dot({
       style={{
         width: 8,
         height: 8,
-        marginTop: 6,
+        marginTop: 'var(--mantine-spacing-sm)',
         flex: 'none',
         borderRadius: '50%',
         background: hollow ? 'transparent' : color,
@@ -98,9 +98,9 @@ function SectionHeading({
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: 6,
+        gap: 'var(--mantine-spacing-sm)',
         margin: 0,
-        padding: '8px 0 4px',
+        padding: 'var(--mantine-spacing-sm) 0 var(--mantine-spacing-xs)',
       }}
     >
       <Text
@@ -309,7 +309,7 @@ export function Roster({
           // and a rule here would read as a second frame.
           style={{ paddingBottom: 'var(--mantine-spacing-xs)' }}
         >
-          <Group gap={6} wrap="nowrap">
+          <Group gap="sm" wrap="nowrap">
             <Icon
               name="users"
               size={14}

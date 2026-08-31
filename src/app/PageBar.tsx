@@ -34,7 +34,7 @@ const CHIP_BASE = {
   gap: 'var(--mantine-spacing-xs)',
   height: 22,
   borderRadius: 'var(--mantine-radius-md)',
-  padding: '0 8px',
+  padding: '0 var(--mantine-spacing-sm)',
   fontSize: 'var(--tk-fs-3xs)',
   fontWeight: 500,
   whiteSpace: 'nowrap',
@@ -54,8 +54,8 @@ const UNREAD_BADGE = {
   display: 'inline-flex',
   alignItems: 'center',
   height: 18,
-  padding: '0 7px',
-  borderRadius: 10,
+  padding: '0 var(--mantine-spacing-sm)',
+  borderRadius: 'var(--mantine-radius-xl)',
   fontSize: 'var(--tk-fs-3xs)',
   fontWeight: 500,
   lineHeight: 1,
@@ -252,7 +252,7 @@ export function PageBar({
           variant="default"
           size="xs"
           radius="md"
-          mr={7.2}
+          mr="sm"
           data-testid="add-agents-button"
           aria-label={`Add agents to #${room.room}`}
           onClick={onAddAgents}
@@ -287,7 +287,7 @@ export function PageBar({
           size="xs"
           radius="md"
           w={168}
-          ml={7.2}
+          ml="sm"
           aria-label="Room order"
           data-testid="room-order"
           value={order}
@@ -314,7 +314,7 @@ export function PageBar({
           color={expandAll ? 'accent' : undefined}
           size={30}
           radius="md"
-          ml={7.2}
+          ml="sm"
           aria-label="Expand all messages"
           aria-pressed={expandAll}
           data-testid="expand-all-toggle"

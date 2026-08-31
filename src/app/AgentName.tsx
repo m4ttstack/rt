@@ -128,7 +128,7 @@ export function AgentCard({
     .filter((p): p is string => Boolean(p))
     .join(' · ');
   return (
-    <Stack gap={6} data-testid={`detail-${buddy.handle}`}>
+    <Stack gap="sm" data-testid={`detail-${buddy.handle}`}>
       <Group gap="sm" wrap="nowrap" justify="space-between">
         <Group gap="sm" wrap="nowrap" style={{ minWidth: 0 }}>
           <Box
@@ -178,7 +178,7 @@ export function AgentCard({
           display: 'grid',
           gridTemplateColumns: '52px minmax(0, 1fr)',
           alignItems: 'baseline',
-          columnGap: 8,
+          columnGap: 'var(--mantine-spacing-sm)',
           rowGap: 3,
           margin: 0,
         }}

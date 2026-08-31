@@ -363,7 +363,7 @@ function RoomsPlaceholder({
 }) {
   return (
     <Center mih="40dvh">
-      <Stack align="center" gap={4}>
+      <Stack align="center" gap="xs">
         <Text fw={600}>No rooms</Text>
         <Text size="sm" c="dimmed">
           {allClosed
@@ -452,12 +452,12 @@ function PhoneHeader({
   return (
     <Group
       wrap="nowrap"
-      gap={4}
+      gap="xs"
       data-testid="phone-header"
       style={{
         height: 56,
         flex: 'none',
-        padding: '0 6px 0 2px',
+        padding: '0 var(--mantine-spacing-sm) 0 2px',
         background: 'var(--tk-panel)',
         borderBottom: `1px solid ${PHONE_BORDER}`,
       }}
@@ -489,9 +489,9 @@ function PhoneHeader({
         style={{
           display: 'flex',
           alignItems: 'center',
-          gap: 6,
+          gap: 'var(--mantine-spacing-sm)',
           height: PHONE_TAP,
-          padding: '0 8px',
+          padding: '0 var(--mantine-spacing-sm)',
           borderRadius: 'var(--mantine-radius-md)',
           background: 'transparent',
           border: 0,
@@ -586,7 +586,7 @@ function PhoneRoomRow({
             height: 18,
             lineHeight: 1,
             borderRadius: 'var(--mantine-radius-xl)',
-            padding: '0 7px',
+            padding: '0 var(--mantine-spacing-sm)',
             fontSize: 'var(--tk-fs-3xs)',
             fontWeight: 600,
             whiteSpace: 'nowrap',
@@ -608,7 +608,7 @@ function PhoneRoomRow({
             height: 18,
             lineHeight: 1,
             borderRadius: 'var(--mantine-radius-xl)',
-            padding: '0 7px',
+            padding: '0 var(--mantine-spacing-sm)',
             fontSize: 'var(--tk-fs-3xs)',
             fontWeight: 500,
             whiteSpace: 'nowrap',
@@ -682,7 +682,11 @@ function PhoneDrawer({
     >
       <Stack
         gap={2}
-        style={{ height: '100%', padding: '11.2px 6px', minHeight: 0 }}
+        style={{
+          height: '100%',
+          padding: 'var(--mantine-spacing-lg) var(--mantine-spacing-sm)',
+          minHeight: 0,
+        }}
       >
         <Group
           justify="space-between"
@@ -707,7 +711,10 @@ function PhoneDrawer({
         <Group
           justify="space-between"
           wrap="nowrap"
-          style={{ padding: '6px var(--mantine-spacing-md)', flex: 'none' }}
+          style={{
+            padding: 'var(--mantine-spacing-sm) var(--mantine-spacing-md)',
+            flex: 'none',
+          }}
         >
           <Text
             size="xs"
@@ -732,10 +739,11 @@ function PhoneDrawer({
         {directRooms.length > 0 && (
           <>
             <Group
-              gap={6}
+              gap="sm"
               wrap="nowrap"
               style={{
-                padding: '10px var(--mantine-spacing-md) 4px',
+                padding:
+                  'var(--mantine-spacing-md) var(--mantine-spacing-md) var(--mantine-spacing-xs)',
                 borderBottom: '1px solid var(--tk-border-soft)',
                 flex: 'none',
               }}
@@ -765,7 +773,10 @@ function PhoneDrawer({
         <Group
           justify="space-between"
           wrap="nowrap"
-          style={{ padding: '10px var(--mantine-spacing-md) 0', flex: 'none' }}
+          style={{
+            padding: 'var(--mantine-spacing-md) var(--mantine-spacing-md) 0',
+            flex: 'none',
+          }}
         >
           <Text
             size="xs"
@@ -898,7 +909,7 @@ function PhoneChat({
               minHeight: 0,
               display: 'flex',
               flexDirection: 'column',
-              padding: '9.6px 11.2px 0',
+              padding: 'var(--mantine-spacing-md) var(--mantine-spacing-lg) 0',
             }}
           >
             <Transcript
