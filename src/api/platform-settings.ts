@@ -16,7 +16,7 @@ const DEFAULTS: PlatformSettings = {
 };
 
 const STORE_KEY = "deck.platform";
-type MigratedFields = Pick<PlatformSettings, "publicDomain" | "legacyPrefixes">;
+type MigratedFields = Pick<PlatformSettings, "publicDomain" | "legacyPrefixes" | "railway">;
 
 export function platformSettingsPath(): string {
   return process.env.LOCAL_PLATFORM_SETTINGS_PATH ?? join(stateDir(), "platform.json");
@@ -44,6 +44,7 @@ function withPlatformStoreFallback(fileValues: MigratedFields, resolve: GetSetti
   return {
     publicDomain: store.publicDomain !== undefined ? store.publicDomain : fileValues.publicDomain,
     legacyPrefixes: store.legacyPrefixes !== undefined ? store.legacyPrefixes : fileValues.legacyPrefixes,
+    railway: store.railway !== undefined ? store.railway : fileValues.railway,
   };
 }
 
@@ -89,7 +90,7 @@ export function updatePlatformSettings(patch: Partial<PlatformSettings>, resolve
   if (owned) {
     try {
       // Unconditional, not just when `patch` touches a migrated field: the
-      // file write below always strips these two fields, so gating this on
+      // file write below always strips these migrated fields, so gating this on
       // the patch would let a tlds/secrets-only patch erase them from disk
       // with nowhere left holding the value. Writing the cache's current
       // values back is a no-op when they're unchanged. This REPLACES
@@ -97,7 +98,7 @@ export function updatePlatformSettings(patch: Partial<PlatformSettings>, resolve
       // a field another process wrote to the store after this process
       // booted is clobbered here, same as any other boot-read config in
       // deck (a restart is what picks up an external edit).
-      setSetting(STORE_KEY, { publicDomain: cache.publicDomain, legacyPrefixes: cache.legacyPrefixes }, "machine");
+      setSetting(STORE_KEY, { publicDomain: cache.publicDomain, legacyPrefixes: cache.legacyPrefixes, railway: cache.railway }, "machine");
     } catch (err) {
       cache = previous; // never claim a value neither the store nor the file actually holds
       throw err;
@@ -106,7 +107,7 @@ export function updatePlatformSettings(patch: Partial<PlatformSettings>, resolve
 
   const fileBody: Record<string, unknown> = owned
     ? (() => {
-        const { publicDomain: _publicDomain, legacyPrefixes: _legacyPrefixes, ...rest } = cache;
+        const { publicDomain: _publicDomain, legacyPrefixes: _legacyPrefixes, railway: _railway, ...rest } = cache;
         return rest;
       })()
     : cache; // unowned: the file is the only place holding these fields, so it keeps them
@@ -121,7 +122,7 @@ export function updatePlatformSettings(patch: Partial<PlatformSettings>, resolve
   } catch (err) {
     if (owned) {
       try {
-        setSetting(STORE_KEY, { publicDomain: previous.publicDomain, legacyPrefixes: previous.legacyPrefixes }, "machine");
+        setSetting(STORE_KEY, { publicDomain: previous.publicDomain, legacyPrefixes: previous.legacyPrefixes, railway: previous.railway }, "machine");
       } catch (revertErr) {
         console.error("platform settings save: failed to revert deck.platform after a file-write failure", revertErr);
       }

@@ -41,7 +41,7 @@ async function reconcileRemoteTick(): Promise<void> {
     // Not fully configured yet: needs both CF and Railway credentials plus the project/env.
     if (!secrets.ok || !secrets.cfApiToken || !secrets.cfZoneId || !secrets.railwayApiToken || !secrets.railwayToken || !rc) return;
     const railway = new RailwayCli({ apiToken: secrets.railwayApiToken, projectToken: secrets.railwayToken, projectId: rc.projectId, environmentId: rc.environmentId });
-    const dns = new CfDnsApi({ zoneId: secrets.cfZoneId, token: secrets.cfApiToken });
+    const dns = new CfDnsApi({ zoneId: secrets.cfZoneId, token: secrets.cfDnsToken ?? secrets.cfApiToken });
     await reconcileRemote({ railway, dns, now: Date.now });
   } catch (err) {
     console.error("remote reconcile failed:", err);

@@ -269,8 +269,14 @@ Railway warns against repeatedly deleting and re-adding a domain. Therefore:
 
 ## State and surfaces
 
-**Platform settings** gain `railway { projectId, environmentId }`; `publicDomain`
-already exists.
+**Platform settings** gain `railway { projectId, environmentId }` — a
+store-migrated field of the **`deck.platform`** rt-settings key (machine scope),
+routed through the same `getSetting`/`setSetting` ownership latch as
+`publicDomain` (MAT-384), NOT a bespoke deck config or a raw `platform.json`
+field. An operator sets it with `rt settings set deck.platform …`; no deck verb
+is added. The Cloudflare DNS token is a **secret** (`cfDnsToken` via rt secrets,
+falling back to `cfApiToken` when a single token carries both Access and
+Zone.DNS scopes) — a secret is never a setting.
 
 **App record** gains an additive, optional `remote` block:
 

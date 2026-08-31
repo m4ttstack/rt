@@ -52,7 +52,7 @@ export function resolveRemoteDrivers(
     }),
     dns: deps.dns ?? new CfDnsApi({
       zoneId: sec.ok ? sec.cfZoneId ?? "" : "",
-      token: sec.ok ? sec.cfApiToken ?? "" : "",
+      token: sec.ok ? sec.cfDnsToken ?? sec.cfApiToken ?? "" : "",
     }),
   };
 }
