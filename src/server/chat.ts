@@ -289,26 +289,22 @@ export const chat = new Hono()
     if (!postRes.ok) return c.json({ error: postRes.error }, 502);
     return c.json(postRes.data, 200);
   })
-  // Archive is the one write that needs the human IN the room first: an
-  // archived room only stays listed for members, and most channels are
-  // join-created by agents. Joining first (never for a DM, which already
-  // holds him) is the same move the post route makes. A name that neither
-  // his listing nor the fleet union knows is refused before that join, so
-  // a typo can never create-and-archive a room.
-  .post('/api/chat/archive', async c => {
-    let raw: { room?: unknown; archived?: unknown };
+  // Close is the one write that needs the human IN the room first: a closed
+  // room only stays listed for members, and most channels are join-created
+  // by agents. Joining first (never for a DM, which already holds him) is
+  // the same move the post route makes. A name that neither his listing nor
+  // the fleet union knows is refused before that join, so a typo can never
+  // create-and-close a room. The daemon verb is archive; the viewer never
+  // reopens, since any post revives the room.
+  .post('/api/chat/close', async c => {
+    let raw: { room?: unknown };
     try {
       raw = await c.req.json();
     } catch {
       return c.json({ error: 'Malformed JSON in request body' }, 400);
     }
     const room = typeof raw?.room === 'string' ? raw.room : undefined;
-    const archived =
-      typeof raw?.archived === 'boolean' ? raw.archived : undefined;
     if (!room) return c.json({ error: 'room is required' }, 400);
-    if (archived === undefined) {
-      return c.json({ error: 'archived must be true or false' }, 400);
-    }
     const handle = humanHandle(c);
 
     const roomsRes = await chatRooms(
@@ -330,9 +326,12 @@ export const chat = new Hono()
       }
     }
 
-    const res = await chatArchive({ room, handle, archived }, rtOpts());
+    const res = await chatArchive({ room, handle, archived: true }, rtOpts());
     if (!res.ok) return c.json({ error: res.error }, 502);
-    return c.json(res.data, 200);
+    return c.json(
+      { room: res.data?.room ?? room, closedAt: res.data?.archivedAt ?? null },
+      200
+    );
   })
   // Opens or reuses the pair's room with no first message: the client
   // navigates to it and the composer there is the DM. Parsed by hand for

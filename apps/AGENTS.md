@@ -65,3 +65,15 @@ components and links a page each, never a prop signature offline.
 artboards under `design/artboards` are the authority on layout and values,
 and no UI task is done until `design/audit.mjs` passes against them. See
 `CLAUDE.md` for the read order.
+
+## Right-click menus
+
+Use `Menu.ContextMenu` (Mantine 9.5.2), never a `Menu.Target` with a
+hand-rolled `onContextMenu`: `Menu.Target` composes a click handler, so a
+left click would open the menu too. `Menu.ContextMenu` wraps the one
+element that should answer a right-click (and a long press on touch),
+positions the dropdown at the cursor, and suppresses the native menu
+itself; the child must not call `preventDefault()` in its own
+`onContextMenu`. Keep the `Menu` uncontrolled and read its state through
+`onChange` when the UI needs to know it is open. One `Menu` per row, never
+a shared portal. `src/app/RoomRail.tsx` is the reference.

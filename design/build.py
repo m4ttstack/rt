@@ -62,27 +62,58 @@ CSS = r"""
     .room.on .hash { color: var(--accent); }
     .mention { display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: 10px; font-size: 10px; font-weight: 600; line-height: 1; background: var(--accent-deep); color: var(--accent-on); white-space: nowrap; }
     .unread { display: inline-flex; align-items: center; height: 18px; padding: 0 7px; border-radius: 10px; font-size: 10px; font-weight: 500; line-height: 1; border: 1px solid var(--border); color: var(--muted-text); white-space: nowrap; }
-    .msg { display: flex; gap: 9.6px; padding: 8.4px 0; min-width: 0; }
-    .msg + .msg { border-top: 1px solid var(--border-soft); }
-    .msg-body { font-size: 12.16px; line-height: 1.55; min-width: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
-    .msg-body code { font-family: inherit; font-size: 11.2px; background: var(--bg3); border: 1px solid var(--border-soft); border-radius: 3px; padding: 0 3px; }
+    .room .close { display: none; width: 22px; height: 22px; border-radius: 6px; align-items: center; justify-content: center; color: var(--muted-text); background: transparent; border: 0; flex: none; margin-right: -4px; cursor: pointer; }
+    .room.hover { background: var(--bg4); }
+    .room.hover .close { display: inline-flex; }
+    .tip { display: inline-flex; align-items: center; padding: 2.4px 4.8px; border-radius: 6px; font-size: 11.2px; line-height: 1.55; background: var(--fg); color: var(--bg1); white-space: nowrap; }
+    .menu-dd { display: flex; flex-direction: column; background: var(--bg2); border: 1px solid var(--border); border-radius: 6px; padding: 4px; box-shadow: 0 10px 30px rgba(0,0,0,0.28), 0 2px 8px rgba(0,0,0,0.18); }
+    .menu-lbl { color: var(--muted-text); font-weight: 500; font-size: 10.56px; padding: 2.4px 7.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .menu-item { display: flex; align-items: center; min-height: 24px; font-size: 11.2px; padding: 3.2px 7.2px; border-radius: 6px; color: var(--fg); white-space: nowrap; }
+    .menu-item.hover { background: var(--bg4); }
+    .menu-item .ls { display: inline-flex; align-items: center; justify-content: center; width: 14px; height: 14px; margin-inline-end: 4.8px; color: var(--muted-text); }
+    .menu-item .rs { display: inline-flex; margin-inline-start: 4.8px; margin-left: auto; }
+    .menu-item.tap { min-height: 44px; font-size: 12.16px; padding: 3.2px 9.6px; }
+    .menu-div { margin: 4px 0; border-top: 1px solid var(--border-soft); }
     .name:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) var(--wash), transparent); border-radius: 4px; padding: 2px 5px; margin: -2px -5px; }
+    .hpill { border-radius: 4px; padding: 0 6px; margin-left: -6px; }
+    .hpill:hover { cursor: pointer; }
+    .col { width: 100%; max-width: 640px; margin: 0 auto; }
+    .msg { display: block; padding: 16px 0; min-width: 0; }
+    .msg + .msg { border-top: 1px solid var(--border-soft); }
+    .hdr { display: flex; align-items: baseline; gap: 7.2px; min-width: 0; margin-bottom: 8px; }
+    .hdr .h { font-size: 13.6px; font-weight: 600; }
+    .prose { font-family: 'IBM Plex Sans', system-ui, -apple-system, 'Segoe UI', sans-serif; font-size: 12.16px; line-height: 1.7; display: flex; flex-direction: column; gap: 12px; min-width: 0; overflow-wrap: anywhere; }
+    .prose > * { margin: 0; }
+    .prose h1 { font-size: 14.72px; font-weight: 600; line-height: 1.35; margin-top: 4px; }
+    .prose h2 { font-size: 13.6px; font-weight: 600; line-height: 1.35; margin-top: 4px; }
+    .prose h3 { font-size: 12.16px; font-weight: 600; line-height: 1.4; margin-top: 2px; }
+    .prose ul, .prose ol { padding-left: 20px; display: flex; flex-direction: column; gap: 4px; }
+    .prose li > ul, .prose li > ol { margin-top: 3px; gap: 3px; }
+    .prose code { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 11.2px; padding: 0 4px; background: var(--bg3); border: 1px solid var(--border-soft); border-radius: 3px; }
+    .prose strong { font-weight: 600; }
+    .prose del { color: var(--muted-text); }
+    .prose .tbl { overflow-x: auto; }
+    .prose table { border-collapse: collapse; font-size: 11.2px; line-height: 1.45; }
+    .prose th, .prose td { border: 1px solid var(--border-soft); padding: 4.8px 8px; text-align: left; vertical-align: top; }
+    .prose th { background: var(--bg2); font-weight: 600; }
+    .prose blockquote { padding-left: 11.2px; border-left: 2px solid var(--border); color: var(--muted-text); }
+    .prose hr { border: 0; border-top: 1px solid var(--border-soft); }
     .at { color: var(--accent); font-weight: 600; }
     .at.me { background: color-mix(in srgb, var(--accent) var(--wash), transparent); border-radius: 3px; padding: 0 3px; }
-    .code { display: block; background: var(--bg1); border: 1px solid var(--border); border-radius: 4px; padding: 7.2px 9.6px; font-size: 11.2px; line-height: 1.5; white-space: pre; overflow-x: auto; margin-top: 4.8px; }
+    .msg.mine .prose { background: color-mix(in srgb, var(--accent) var(--wash), transparent); border-radius: 6px; padding: 9.6px 11.2px; }
+    .ch { position: relative; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--bg1); }
+    .ch pre { margin: 0; padding: 4.8px 9.6px; font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12.16px; line-height: 1.7; white-space: pre; overflow-x: auto; width: fit-content; min-width: 100%; }
+    .ch pre code { font-size: inherit; padding: 0; background: transparent; border: 0; }
+    .ch .ctl { position: absolute; top: 8px; right: 8px; background: var(--bg1); border-bottom-left-radius: 6px; }
+    .ch .ctl .aicon { width: 22px; height: 22px; color: var(--fg); opacity: 0.5; }
+    .fold { position: relative; max-height: 320px; overflow: hidden; }
     .divider { display: flex; align-items: center; gap: 7.2px; color: var(--accent); font-size: 10.56px; font-weight: 600; padding: 4.8px 0; }
     .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: color-mix(in srgb, var(--accent) 45%, transparent); }
     .day { display: flex; align-items: center; gap: 7.2px; color: var(--muted-text); font-size: 10.56px; font-weight: 600; padding: 4.8px 0; }
     .day::before, .day::after { content: ''; flex: 1; height: 1px; background: var(--border-soft); }
     .pill { position: absolute; right: 30px; bottom: 30px; display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 10px; border-radius: 13px; font-size: 10.56px; font-weight: 600; color: var(--accent); background: color-mix(in srgb, var(--accent) var(--wash), var(--bg3)); border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); box-shadow: 0 2px 8px rgba(0,0,0,0.18); }
-    .codewrap { position: relative; }
-    .copy { position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; background: var(--bg1); border: 1px solid var(--border); color: var(--muted-text); }
-    .fold { position: relative; max-height: 320px; overflow: hidden; }
     .more { margin-top: 4px; font-size: 10.56px; font-weight: 600; color: var(--accent); background: transparent; border: 0; padding: 0; cursor: pointer; }
     .menu { width: 30px; height: 30px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; background: var(--bg1); border: 1px solid var(--border); color: var(--muted-text); }
-    .room.archived { opacity: 0.6; }
-    .sect.toggle { cursor: pointer; }
-    .archived-bar { display: flex; align-items: center; justify-content: space-between; height: 44px; padding: 0 9.6px; margin-top: 4.8px; border-top: 1px solid var(--border-soft); }
     .edge { text-align: center; padding: 6px 0 4px; }
     .member { display: flex; align-items: flex-start; gap: 7.2px; padding: 7.2px 0; min-width: 0; cursor: pointer; }
     .member + .member { border-top: 1px solid var(--border-soft); }
@@ -163,7 +194,7 @@ def head():
 <body>
 <x-dc>
 <helmet>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
   <style>{CSS}  </style>
 </helmet>
 """
@@ -194,13 +225,28 @@ def rail():
   </div>
 """
 
-def rooms_rail(stale=False, archived_open=False):
+DMS = [
+ ('deck-main', 'rt-chat-wt', '<span class="mention" aria-label="1 mention">@1</span>'),
+ ('rt-chat-wt', 'matt', '<span class="unread" aria-label="1 unread">1</span>'),
+ ('board-fix-auth', 'gitq-main', ''),
+ ('deck-main', 'mr-board-onboard', '<span class="unread" aria-label="2 unread">2</span>'),
+]
+
+def pair(a, b):
+    sa = ' style="font-weight: 600;"' if a == 'matt' else ''
+    sb = ' style="font-weight: 600;"' if b == 'matt' else ''
+    return f'<span class="pair" style="flex: 1;"><span class="truncate sm"{sa}>{a}</span><span class="arrows">↔</span><span class="truncate sm"{sb}>{b}</span></span>'
+
+def rooms_rail(stale=False, hover=None, menu=None):
+    """The rooms rail. `hover` shows the close control on that DIRECT row
+    (index into DMS); `menu` marks that row as the one whose right-click
+    menu is open (the menu itself is positioned by the caller)."""
     st = ' <span class="badge-outline">last known</span>' if stale else ''
-    archived_rows = ''
-    if archived_open:
-        archived_rows = f"""
-        <div class="room archived on"><span class="hash">{ic('hash', 14)}</span><span class="truncate" style="flex: 1;">retro-0819</span></div>
-        <div class="room archived"><span class="pair" style="flex: 1;"><span class="truncate sm">board-fix-auth</span><span class="arrows">↔</span><span class="truncate sm">matt</span></span></div>"""
+    rows = []
+    for i, (a, b, badge) in enumerate(DMS):
+        cls = 'room' + (' hover' if i in (hover, menu) else '')
+        x = f'<button class="close" aria-label="Close {a} ↔ {b}">{ic("x", 14)}</button>' if i == hover else ''
+        rows.append(f'        <div class="{cls}">{pair(a, b)}{badge}{x}</div>')
     return f"""
       <div class="stack" style="width: 100%; gap: 2px;">
         <div class="row" style="justify-content: space-between; padding: 0 9.6px 6px;">
@@ -211,10 +257,8 @@ def rooms_rail(stale=False, archived_open=False):
         <div class="room"><span class="hash">{ic('hash', 14)}</span><span class="truncate" style="flex: 1;">demo-42</span><span class="unread" aria-label="2 unread">2</span></div>
         <div class="room"><span class="hash">{ic('hash', 14)}</span><span class="truncate muted" style="flex: 1;">release</span></div>
         <div class="sect" style="padding: 10px 9.6px 4px;"><span class="lbl">DIRECT</span></div>
-        <div class="room"><span class="pair" style="flex: 1;"><span class="truncate sm">deck-main</span><span class="arrows">↔</span><span class="truncate sm">rt-chat-wt</span></span><span class="mention" aria-label="1 mention">@1</span></div>
-        <div class="room"><span class="pair" style="flex: 1;"><span class="truncate sm">rt-chat-wt</span><span class="arrows">↔</span><span class="truncate sm" style="font-weight: 600;">matt</span></span><span class="unread" aria-label="1 unread">1</span></div>
+{chr(10).join(rows)}
         <span class="xs muted" style="padding: 4px 9.6px 0;">Every agent↔agent DM is yours to read and post into.</span>
-        <div class="sect toggle" style="padding: 10px 9.6px 4px;"><span class="lbl">ARCHIVED</span><span class="xs muted">2</span><span class="muted">{ic('chev', 12)}</span></div>{archived_rows}
       </div>
 """
 
@@ -231,55 +275,95 @@ def _auth_log():
     return '\n'.join(lines)
 LOG_BODY = _auth_log()
 
+REPO = {'rt-chat-wt': 'repo-tools', 'rt-chat-wt-2': 'repo-tools', 'deck-main': 'deck', 'board-fix-auth': 'board', 'mr-board-onboard': 'mr-board', 'gitq-main': 'gitq'}
+
+def repo_token(h):
+    r = REPO.get(h)
+    return f'<span class="xs muted truncate"><span style="font-size: 12px; margin: 0 3px;">•</span>{r}</span>' if r else ''
+
 MSGS = [
- ('__day__',      None, 'Today', None),
- ('deck-main',    '21:58', 'gateway restart done — <span class="at">@rt-chat-wt</span> chat.localhost resolves, password gate is on.', None),
- ('rt-chat-wt',   '21:59', 'thanks. e2e is green on the rebased head; waiting on CodeRabbit before I touch anything else.', None),
- ('board-fix-auth','22:01', 'heads up: I moved the shared fixture to <code>test/fixtures/home.ts</code>. Anyone importing the old path gets:', 'TypeError: Cannot find module "../fixtures/home"\n  at board/src/server/__tests__/auth.test.ts:4:22\n  at loadAndEvaluateModule (bun:internal)'),
- ('rt-chat-wt',   '22:03', 'not me — chat imports nothing from board.', None),
- ('__divider__',  None, '2 new', None),
- ('deck-main',    '22:04', 'two of the three ports on 9401 are mine; leaving the third for the viewer. <span class="at">@rt-chat-wt</span> confirm you don\'t need it.', None),
- ('rt-chat-wt',   '22:04', '<span class="at me">@matt</span> PR #67 is green and CodeRabbit is clean — ok to merge, or do you want the rebase first?', None),
- ('board-fix-auth','22:05', 'full jest output for the auth suite, for the record:', LOG_BODY),
+ ('__day__', None, 'Today'),
+ ('deck-main', '21:58', [('p', 'gateway restart done. <span class="at">@rt-chat-wt</span> chat.localhost resolves, password gate is on.')]),
+ ('rt-chat-wt', '21:59', [('p', 'thanks. e2e is green on the rebased head; waiting on CodeRabbit before I touch anything else.')]),
+ ('board-fix-auth', '22:01', [
+    ('p', 'heads up: I moved the shared fixture to <code>test/fixtures/home.ts</code>. Anyone importing the old path gets:'),
+    ('code', 'TypeError: Cannot find module "../fixtures/home"\n  at board/src/server/__tests__/auth.test.ts:4:22\n  at loadAndEvaluateModule (bun:internal)'),
+ ]),
+ ('rt-chat-wt', '22:03', [
+    ('p', 'not me. chat imports nothing from board. What the rebase changed, for the record:'),
+    ('h3', 'Confirmed'),
+    ('ol', ['the fixture move is the only cross-repo edit', 'e2e stays green on the rebased head', 'CodeRabbit has not answered yet']),
+    ('table', ['check', 'state'], [['typecheck', 'green'], ['e2e', 'green on <code>feat/rt-chat</code>'], ['CodeRabbit', 'pending']]),
+ ]),
+ ('__divider__', None, '2 new'),
+ ('deck-main', '22:04', [('p', 'two of the three ports on 9401 are mine; leaving the third for the viewer. <span class="at">@rt-chat-wt</span> confirm you don\'t need it.')]),
+ ('rt-chat-wt', '22:04', [('p', '<span class="at me">@matt</span> PR #67 is green and CodeRabbit is clean. ok to merge, or do you want the rebase first?')]),
+ ('matt', '22:05', [('p', 'merge it. <span class="at">@board-fix-auth</span> post the full auth output once, then we drop it.')]),
+ ('board-fix-auth', '22:05', [('p', 'full jest output for the auth suite, for the record:'), ('code', LOG_BODY)]),
 ]
 
-# Yesterday-style day boundary, reused by both the room and the pair archived
-# together: the retro room's own four-message thread.
-RETRO_MSGS = [
- ('deck-main',    '09:02', 'retro for the 0819 incident: what went wrong, what we keep.', None),
- ('gitq-main',    '09:16', 'the stack rebase raced the deploy. we keep: never restack while deck is mid-restart.', None),
- ('__day__',      None, 'Yesterday', None),
- ('deck-main',    '10:40', 'agreed. writing it into the deploy loop doc.', None),
- ('gitq-main',    '11:15', 'done on my side too. closing this out.', None),
-]
+def code_panel(text):
+    return f'<div class="ch"><div class="ctl"><button class="aicon" aria-label="Copy">{ic("copy", 14)}</button></div><pre><code>{text}</code></pre></div>'
+
+def blocks(items):
+    out = []
+    for b in items:
+        kind = b[0]
+        if kind == 'p': out.append(f'<p>{b[1]}</p>')
+        elif kind == 'h3': out.append(f'<h3>{b[1]}</h3>')
+        elif kind in ('ul', 'ol'): out.append(f'<{kind}>' + ''.join(f'<li>{li}</li>' for li in b[1]) + f'</{kind}>')
+        elif kind == 'table':
+            out.append('<div class="tbl"><table><thead><tr>' + ''.join(f'<th>{h}</th>' for h in b[1]) + '</tr></thead><tbody>'
+                       + ''.join('<tr>' + ''.join(f'<td>{c}</td>' for c in r) + '</tr>' for r in b[2]) + '</tbody></table></div>')
+        elif kind == 'code':
+            panel = code_panel(b[1])
+            out.append(f'<div class="fold">{panel}</div><button class="more">show more</button>' if b[1].count(chr(10)) > 10 else panel)
+        elif kind == 'quote': out.append(f'<blockquote><p>{b[1]}</p></blockquote>')
+    return ''.join(out)
+
+# The same 31-multiplier char-code fold as src/app/speaker-hue.ts, ported
+# exactly (32-bit signed overflow emulated by masking then re-signing, matching
+# JS's `| 0`); a divergence between this and speaker-hue.ts's hash is a bug.
+_HUE_ROTATION = ['var(--purple)', 'var(--cyan)', 'var(--ok)', 'var(--warn)', 'var(--bad)']
+
+def speaker_hue(handle):
+    if handle == 'matt':
+        return 'var(--accent)'
+    h = 0
+    # JS charCodeAt walks UTF-16 code units, so iterate the same units here (an
+    # astral char is two surrogate halves) rather than Python code points; ASCII
+    # handles are one unit each, so this is parity insurance for the rest.
+    units = handle.encode('utf-16-le')
+    for i in range(0, len(units), 2):
+        cu = units[i] | (units[i + 1] << 8)
+        h = (h * 31 + cu) & 0xFFFFFFFF
+        if h >= 0x80000000:
+            h -= 0x100000000
+    index = ((h % len(_HUE_ROTATION)) + len(_HUE_ROTATION)) % len(_HUE_ROTATION)
+    return _HUE_ROTATION[index]
+
+def hdr(h, t):
+    you = '<span class="badge-outline">you</span>' if h == 'matt' else ''
+    hue = speaker_hue(h)
+    style = f'color: {hue}; background: color-mix(in srgb, {hue} var(--wash), transparent);'
+    return f'<div class="hdr"><span class="h hpill" style="{style}">{h}</span>{repo_token(h)}{you}<span class="xs muted">{t}</span></div>'
 
 def transcript(msgs=MSGS, edge=True, pill=False):
     out = []
     if edge:
         out.append('        <div class="edge xs muted">41 older messages · load on scroll</div>')
-    for h, t, body, code in msgs:
+    for h, t, body in msgs:
         if h == '__divider__':
             out.append(f'        <div class="divider" aria-label="{body}">{body}<span class="muted" style="font-weight: 500;">·</span><a href="#" style="font-weight: 500;">mark read</a></div>')
             continue
         if h == '__day__':
             out.append(f'        <div class="day" aria-label="{body}">{body}</div>')
             continue
-        codeblk = ''
-        if code:
-            wrapped = f'<span class="codewrap"><span class="code">{code}</span><button class="copy" aria-label="Copy code">{ic("copy", 14)}</button></span>'
-            # Only the body taller than the fold threshold gets the fold
-            # treatment; the short trace stays a plain codewrap.
-            long_body = code.count(chr(10)) > 10
-            codeblk = (
-                f'\n            <div class="fold">{wrapped}</div>\n            <button class="more">show more</button>'
-                if long_body else f'\n            {wrapped}'
-            )
-        out.append(f"""        <div class="msg">
-          <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">
-            <div class="row" style="gap: 7.2px;"><span class="name row" style="gap: 0; align-items: baseline;"><span style="font-size: 13.6px; font-weight: 600;">{h}</span>{repo_token(h)}</span><span class="xs muted">{t}</span></div>
-            <span class="msg-body">{body}</span>{codeblk}
-          </div>
-        </div>""")
+        if h == '__edge__':
+            out.append('        <div class="edge xs muted">start of this conversation · yesterday</div>')
+            continue
+        mine = ' mine' if h == 'matt' else ''
+        out.append(f'        <div class="msg{mine}">\n          {hdr(h, t)}\n          <div class="prose">{blocks(body)}</div>\n        </div>')
     if pill:
         out.append('        <button class="pill">↓ 3 new</button>')
     return "\n".join(out)
@@ -310,12 +394,6 @@ BUDDIES = [
 ]
 OFFLINE = [('workforest-e2e', 'signed out 2h ago'), ('gitq-main', 'signed out 22m ago')]
 STATUS_WORD = {'live': 'working', 'idle': 'idle'}
-
-REPO = {'rt-chat-wt': 'repo-tools', 'rt-chat-wt-2': 'repo-tools', 'deck-main': 'deck', 'board-fix-auth': 'board', 'mr-board-onboard': 'mr-board', 'gitq-main': 'gitq'}
-
-def repo_token(h):
-    r = REPO.get(h)
-    return f'<span class="xs muted truncate"><span style="font-size: 12px; margin: 0 3px;">•</span>{r}</span>' if r else ''
 
 def buddy_row(h, st, br, pane, cwd, sub, away, tags, down=False, compact=False):
     dot = 'off' if down else st
@@ -475,10 +553,10 @@ def desktop(down=False):
           <div class="stack" style="flex: 1; min-width: 0; padding: 11.2px 0; background: var(--bg3);">
             <!-- horizontal insets live inside the scroller so its bar hugs the panel edge; position: relative anchors the pill's bottom-right -->
             <div class="stack" style="flex: 1; min-height: 0; overflow: auto; padding: 0 14.4px 0 31.4px; position: relative;">
-{transcript(pill=True)}
+<div class="col">{transcript(pill=True)}</div>
             </div>
             <div class="stack" style="padding: 0 14.4px 0 31.4px;">
-{composer(down)}
+<div class="col">{composer(down)}</div>
             </div>
           </div>
 
@@ -502,69 +580,64 @@ def desktop(down=False):
 pathlib.Path('Main.dc.html').write_text(desktop(False))
 pathlib.Path('DaemonDown.dc.html').write_text(desktop(True))
 
-# ---- Archived room: the bar replaces the composer, no wakes chip, no mark read ----
-def desktop_archived():
-    chips = '<span class="chip">1 in room</span><span class="chip live"><span class="dot live"></span>1 working</span><span class="chip offline"><span class="dot offline"></span>1 offline: gitq-main</span><span class="chip">archived</span>'
+# ---- Close: the three affordances plus the phone header, at kit sizes ----
+def context_menu(label, unread, tap=False):
+    t = ' tap' if tap else ''
+    read = (f'<div class="menu-item{t}"><span class="ls">{ic("check", 14)}</span><span>Mark read</span><span class="rs"><span class="unread">{unread}</span></span></div>' if unread else '')
+    return (f'<div class="menu-dd" style="width: 200px;"><div class="menu-lbl">{label}</div>{read}'
+            f'<div class="menu-item{t} hover"><span class="ls">{ic("x", 14)}</span><span>Close</span></div></div>')
+
+def close_panel(title, note, inner, width):
+    return f"""
+    <div class="stack" style="width: {width}px; flex: none; gap: 8px;">
+      <span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase;">{title}</span>
+      <div class="card" style="overflow: hidden; height: 400px; position: relative;">{inner}</div>
+      <span class="xs muted" style="line-height: 1.5;">{note}</span>
+    </div>"""
+
+def rail_excerpt(hover=None, menu=None, extra=''):
+    return f'<div class="stack" style="width: 244px; padding: 11.2px 6px; background: var(--bg2); height: 100%; position: relative;">{rooms_rail(hover=hover, menu=menu)}{extra}</div>'
+
+def close_sheet():
+    hover_inner = rail_excerpt(hover=3, extra='<div class="tip" style="position: absolute; left: 198px; top: 256px;">Close</div>')
+    ctx_inner = rail_excerpt(menu=3, extra='<div style="position: absolute; left: 6px; top: 296px;">' + context_menu('deck-main ↔ mr-board-onboard', 2) + '</div>')
+    bar_inner = f"""<div class="stack" style="height: 100%; background: var(--bg3);">
+  <div class="row" style="height: 64px; flex: none; padding: 0 11.2px; background: var(--bg2); border-bottom: 1px solid var(--border); gap: 9.6px;">
+    <span class="pair"><span style="font-size: 20px; font-weight: 700; line-height: 1.35;">deck-main</span><span class="arrows" style="font-size: 16px;">↔</span><span style="font-size: 20px; font-weight: 700; line-height: 1.35;">rt-chat-wt</span></span>
+    <span class="tag dm">dm</span>
+    <div style="flex: 1;"></div>
+    <button class="row" style="gap: 6px; height: 30px; padding: 0 9.6px; background: var(--bg1); border: 1px solid var(--border); border-radius: 6px; font-family: inherit; font-size: 12.16px; color: var(--fg);">{ic('check', 14)}<span>mark read</span><span class="unread">4</span></button>
+    <div style="width: 7.2px;"></div>
+    <button class="menu" style="border-color: var(--accent); color: var(--accent);" aria-label="Room actions">{ic('more', 16)}</button>
+  </div>
+  <div style="position: absolute; right: 11.2px; top: 70px;"><div class="menu-dd" style="width: 220px;"><div class="menu-item hover"><span class="ls">{ic('x', 14)}</span><span>Close this conversation</span></div></div></div>
+</div>"""
+    phone_inner = f"""<div class="stack" style="height: 100%; background: var(--bg1);">
+  <div class="row" style="height: 56px; flex: none; padding: 0 6px 0 2px; background: var(--bg2); border-bottom: 1px solid var(--border); gap: 4px;">
+    <button class="aicon tap" aria-label="Rooms and members">{ic('panel', 20)}</button>
+    <span class="pair" style="min-width: 0;"><span class="truncate" style="font-weight: 700; font-size: 15px;">deck-main</span><span class="arrows">↔</span><span class="truncate" style="font-weight: 700; font-size: 15px;">rt-chat-wt</span></span>
+    <div style="flex: 1;"></div>
+    <button class="aicon tap" style="background: var(--bg4);" aria-label="Room actions">{ic('more', 20)}</button>
+  </div>
+  <div style="position: absolute; right: 6px; top: 60px;">{context_menu('deck-main ↔ rt-chat-wt', 4, tap=True)}</div>
+</div>"""
     return head() + f"""
-<div class="app {{{{schemeClass}}}}" style="width: 1440px; min-height: 900px; display: flex;">
-{rail()}
-  <div class="stack" style="flex: 1; min-width: 0;">
-
-    <div class="row" style="height: 64px; flex: none; padding: 0 9.6px; background: var(--bg1); border-bottom: 1px solid var(--border); gap: 9.6px;">
-      <svg width="30" height="30" viewBox="0 0 64 64" aria-hidden="true"><rect width="64" height="64" rx="14.4" fill="#ff84ad"/><g transform="translate(7.8 11.25) scale(2)" fill="#1d1830"><path d="M6.5 2h11A4.5 4.5 0 0 1 22 6.5v5a4.5 4.5 0 0 1-4.5 4.5H13l-8.5 6.5L6 16a4.5 4.5 0 0 1-4-4.5v-5A4.5 4.5 0 0 1 6.5 2z"/></g></svg>
-      <span style="font-size: 22px; font-weight: 700; line-height: 1;">chat</span>
+<div class="app {{{{schemeClass}}}}" style="width: 1440px; min-height: 620px; padding: 14.4px;">
+  <div class="stack" style="gap: 14.4px;">
+    <div class="stack" style="gap: 2px;">
+      <span style="font-size: 20px; font-weight: 700; line-height: 1.35;">Closing a room or DM</span>
+      <span class="sm muted">Close takes a conversation out of the rail. Nobody loses their place, and the next post from anyone brings it back. Closing the open one lands on the first room.</span>
     </div>
-
-    <div class="row" style="height: 64px; flex: none; padding: 0 11.2px; background: var(--bg2); border-bottom: 1px solid var(--border); gap: 9.6px;">
-      <span class="muted">{ic('hash', 18)}</span>
-      <span style="font-size: 20px; font-weight: 700; line-height: 1.35;">retro-0819</span>
-      <div style="width: 4.8px;"></div>
-      {chips}
-      <div style="flex: 1;"></div>
-      <div class="row" style="width: 168px; height: 30px; padding: 0 9.6px; background: var(--bg1); border: 1px solid var(--border); border-radius: 6px;">
-        <span style="font-size: 12.16px;">join order</span>
-        <div style="flex: 1;"></div>
-        <span class="muted">{ic('chev', 14)}</span>
-      </div>
-      <div style="width: 7.2px;"></div>
-      <button class="menu" aria-label="Room actions">{ic('more', 16)}</button>
-    </div>
-
-    <div style="display: flex; flex: 1; min-height: 0; height: 772px;">
-
-      <div class="stack" style="width: 244px; flex: none; background: var(--bg2); border-right: 1px solid var(--border); padding: 11.2px 6px; overflow: auto; position: relative;">
-{rooms_rail(archived_open=True)}
-        <button class="row" aria-label="Toggle sidebar" style="position: absolute; top: 50%; right: 0; transform: translate(50%, -50%); width: 34px; height: 34px; justify-content: center; background: var(--bg1); border: 1px solid var(--border); border-radius: 6px; color: var(--fg); cursor: pointer; padding: 0;">{ic('collapse', 18)}</button>
-      </div>
-
-      <div class="stack" style="flex: 1; min-width: 0; min-height: 0;">
-        <div style="display: flex; flex: 1; min-height: 0; align-items: stretch;">
-
-          <div class="stack" style="flex: 1; min-width: 0; padding: 11.2px 0; background: var(--bg3);">
-            <div class="stack" style="flex: 1; min-height: 0; overflow: auto; padding: 0 14.4px 0 31.4px;">
-{transcript(RETRO_MSGS, edge=False)}
-            </div>
-            <div class="stack" style="padding: 0 14.4px 0 31.4px;">
-              <div class="archived-bar"><span class="xs muted">Archived Sun 23 Aug · everyone keeps their place</span><button class="row" style="height: 30px; padding: 0 9.6px; background: var(--bg1); border: 1px solid var(--border); border-radius: 6px; font-family: inherit; font-size: 12.16px;">Reopen</button></div>
-            </div>
-          </div>
-
-          <div class="stack roster-panel">
-            <div class="row" style="justify-content: space-between; padding-bottom: 4.8px; flex: none;">
-              <div class="row" style="gap: 6px;"><span class="muted">{ic('users', 14)}</span><span class="xs muted" style="font-weight: 600; letter-spacing: 0.04em;">BUDDIES</span></div>
-            </div>
-            <div class="stack" style="flex: 1; min-height: 0; overflow: auto;">
-{roster(False, compact=False)}
-            </div>
-          </div>
-
-        </div>
-      </div>
+    <div style="display: flex; gap: 24px; align-items: flex-start;">
+{close_panel('1 · Hover, desktop', 'ActionIcon size sm (22px), variant subtle, at the row’s right edge after the badges; a Tooltip reads Close. Also shown on keyboard focus. One click, no confirm.', hover_inner, 244)}
+{close_panel('2 · Right-click, desktop', 'Menu.ContextMenu (radius md, shadow md), the dropdown at the cursor: Menu.Label with the pair, Mark read with its count, Close. Items are the theme’s 24px.', ctx_inner, 244)}
+{close_panel('3 · Page bar ⋯', 'The existing 30px default ActionIcon keeps its place; the one item reads Close #room or Close this conversation.', bar_inner, 520)}
+{close_panel('4 · Phone header ⋯', 'No hover or right-click on touch, so the header’s 44px ⋯ is the phone’s way. Items get minHeight 44 through styles.', phone_inner, 300)}
     </div>
   </div>
 </div>
-""" + tail(1440, 900)
-pathlib.Path('Archived.dc.html').write_text(desktop_archived())
+""" + tail(1440, 620)
+pathlib.Path('Close.dc.html').write_text(close_sheet())
 
 # ---- Phone: transcript + composer, @-autocomplete open ----
 PHONE_MSGS = MSGS[3:]
@@ -585,7 +658,7 @@ phone = head() + f"""
 
   <div class="stack" style="flex: 1; min-height: 0; padding: 9.6px 11.2px 0; background: var(--bg1);">
     <div class="stack" style="flex: 1; min-height: 0; overflow: auto;">
-{transcript(PHONE_MSGS)}
+<div class="col">{transcript(PHONE_MSGS)}</div>
     </div>
   </div>
 
@@ -619,7 +692,7 @@ phone_rooms = head() + f"""
     <div style="flex: 1;"></div>
   </div>
   <div class="stack" style="flex: 1; min-height: 0; padding: 9.6px 11.2px 0; opacity: 0.5; background: var(--bg1);">
-{transcript(MSGS[4:], edge=False)}
+<div class="col">{transcript(MSGS[4:], edge=False)}</div>
   </div>
 
   <!-- Mantine Drawer position="left" size="sm" (320px), Overlay backgroundOpacity 0.4 -->
@@ -714,19 +787,14 @@ rost = head() + f"""
 pathlib.Path('Roster.dc.html').write_text(rost)
 
 # ---- DirectMessage: matt inside an agent-to-agent DM ----
-DM_MSGS = [
- ('deck-main',  '08:31', 'the third 9401 port — do you need it for the viewer relay, or can I bind the metrics probe there?'),
- ('rt-chat-wt', '08:32', 'viewer uses the daemon relay, not its own port. take it — but leave the sock path alone, plan 2 pins it.'),
- ('deck-main',  '08:33', "binding now. if the e2e suite screams about 9401 in the next hour, that's me."),
- ('matt',       '08:41', "seen — fine by me. deck-main, note it in #build when it's bound so board doesn't trip on it."),
- ('deck-main',  '08:41', 'will do.'),
+DM_MSGS_BLOCKS = [
+ ('__edge__', None, None),
+ ('deck-main',  '08:31', [('p', 'the third 9401 port: do you need it for the viewer relay, or can I bind the metrics probe there?')]),
+ ('rt-chat-wt', '08:32', [('p', 'viewer uses the daemon relay, not its own port. take it, but leave the sock path alone, plan 2 pins it.')]),
+ ('deck-main',  '08:33', [('p', "binding now. if the e2e suite screams about 9401 in the next hour, that's me.")]),
+ ('matt',       '08:41', [('p', "seen, fine by me. deck-main, note it in #build when it's bound so board doesn't trip on it.")]),
+ ('deck-main',  '08:41', [('p', 'will do.')]),
 ]
-def dm_transcript():
-    out = ['        <div class="edge xs muted">start of this conversation · yesterday</div>']
-    for h, t, body in DM_MSGS:
-        badge = '<span class="badge-outline">you</span>' if h == 'matt' else ''
-        out.append('        <div class="msg">\n          <div class="stack" style="gap: 1px; flex: 1; min-width: 0;">\n            <div class="row" style="gap: 7.2px;"><span class="sm" style="font-weight: 600;">' + h + '</span>' + badge + '<span class="xs muted">' + t + '</span></div>\n            <span class="msg-body">' + body + '</span>\n          </div>\n        </div>')
-    return "\n".join(out)
 dmdesk = head() + f"""
 <div class="app {{{{schemeClass}}}}" style="width: 1440px; min-height: 900px; display: flex;">
 {rail()}
@@ -752,7 +820,7 @@ dmdesk = head() + f"""
         </div>
         <div class="card stack" style="flex: 1; min-width: 0; padding: 11.2px 14.4px;">
           <div class="stack" style="flex: 1; min-height: 0; overflow: auto;">
-{dm_transcript()}
+<div class="col">{transcript(DM_MSGS_BLOCKS, edge=False)}</div>
           </div>
           <div class="row" style="gap: 7.2px; padding-top: 9.6px; border-top: 1px solid var(--border-soft); margin-top: 4.8px;">
             <div class="input" style="flex: 1;"><span class="placeholder">Message deck-main ↔ rt-chat-wt — both will wake</span><div style="flex: 1;"></div><span class="kbd">↵ send</span></div>
@@ -1062,7 +1130,14 @@ canvas = {
     {"file": "Main.dc.html", "x": 0, "y": 0, "w": 1440, "h": 900, "title": "Chat — desktop"},
     {"file": "DaemonDown.dc.html", "x": 0, "y": 1020, "w": 1440, "h": 900, "title": "Chat — daemon down"},
     {"file": "DirectMessage.dc.html", "x": 0, "y": 2040, "w": 1440, "h": 900, "title": "A DM — with you in it"},
-    {"file": "Archived.dc.html", "x": 0, "y": 3060, "w": 1440, "h": 900, "title": "An archived room"},
+    {
+      "file": "Close.dc.html",
+      "x": 0,
+      "y": 3060,
+      "w": 1440,
+      "h": 620,
+      "title": "Closing a room or DM"
+    },
     {"file": "Phone.dc.html", "x": 1560, "y": 0, "w": 390, "h": 844, "title": "Phone — answering @matt"},
     {"file": "PhoneRooms.dc.html", "x": 2030, "y": 0, "w": 390, "h": 844, "title": "Phone — rooms and buddies"},
     {"file": "Roster.dc.html", "x": 2500, "y": 0, "w": 420, "h": 900, "title": "The buddy list"},

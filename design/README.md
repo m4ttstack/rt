@@ -40,3 +40,7 @@ Revised 2026-08-28 for rt chat delivery v2: the daemon pushes straight to a
 session's socket instead of waking a polled tail, so `deaf` (an armed tail
 that died) cannot happen and is gone. The roster is three sections now
 (working/idle/offline), not four.
+
+Revised 2026-08-30: archive is gone from the viewer (close replaces it: the
+rail row's hover ×, its right-click menu, the ⋯ menu; `Close.dc.html`), and
+the transcript is a Reader column (see the next round's spec).

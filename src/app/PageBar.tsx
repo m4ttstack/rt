@@ -8,10 +8,10 @@ import {
   Text,
 } from '@mattstack/app-kit/core';
 import { Icon } from '@mattstack/app-kit/icons';
-import { modals } from '@mattstack/app-kit/modals';
 import type { BuddyStatus, RoomSummary } from '@mattstack/rt-client';
 
 import { AgentName } from './AgentName';
+import { postMarkRead } from './mark-read';
 import { STATUS_WORD } from './statusDetail';
 
 function signedInCount(buddies: { status: BuddyStatus }[]): number {
@@ -75,19 +75,18 @@ export interface PageBarProps {
   /** The room's members with their presence: the bar counts who is in THIS
       room, the roster counts the fleet. */
   reachable?: boolean;
-  onMarkRead?: (room: string) => void;
+  /** Called after the mark-read POST has already landed: a reaction to the
+      mark, not a request to make it (compare `RoomRail`'s `onMarkRead`,
+      which does post it). */
+  onMarkedRead?: (room: string) => void;
   /** Opens the pane picker to invite agents to this room. The button renders
       only when this is wired, and is disabled while the daemon is down. */
   onAddAgents?: () => void;
   /** The rail's sort, the artboard's `join order` select. */
   order?: RoomOrder;
   onOrderChange?: (order: RoomOrder) => void;
-  /** The room's full membership for the archive confirm; defaults to the
-      buddies' handles, which omit offline members. */
-  memberHandles?: string[];
-  /** Archive (true) or reopen (false) the room; the bar confirms an archive
-      itself, naming who loses the room from their rail. */
-  onArchive?: (room: string, archived: boolean) => void;
+  /** Closes the room from the ⋯ menu. */
+  onClose?: (room: string) => void;
 }
 
 function Dot({
@@ -147,65 +146,36 @@ function markReadLabel(room: RoomSummary): string {
     : `Mark #${room.room} read`;
 }
 
-export function memberList(handles: string[]): string {
-  if (handles.length === 0) return '';
-  if (handles.length === 1) return handles[0]!;
-  if (handles.length <= 4) {
-    return `${handles.slice(0, -1).join(', ')} and ${handles[handles.length - 1]}`;
-  }
-  return `${handles.slice(0, 3).join(', ')} and ${handles.length - 3} more`;
+function closeLabel(room: RoomSummary): string {
+  return room.kind === 'dm' ? 'Close this conversation' : `Close #${room.room}`;
 }
 
-function archiveLabel(room: RoomSummary): string {
-  return room.kind === 'dm'
-    ? 'Archive this conversation…'
-    : `Archive #${room.room}…`;
-}
-
-function archiveTitle(room: RoomSummary): string {
-  return room.kind === 'dm'
-    ? 'Archive this conversation?'
-    : `Archive #${room.room}?`;
-}
-
-/** The ⋯ control and its menu. One component for the desk's page bar and
-    the phone header, so both offer the same two actions. */
+/** The ⋯ control and its one item. One component for the desk's page bar
+    and the phone header; at the phone's 44px the item grows to match. */
 export function RoomMenu({
   room,
-  memberHandles,
-  humanHandle = 'matt',
-  onArchive,
+  onClose,
   size = 30,
 }: {
-  /** `joined` is the viewer-side flag the rooms route stamps onto a fleet
-      (agent-to-agent) DM the human is not a member of. */
-  room: RoomSummary & { joined?: boolean };
-  /** The room's current members; the human is filtered out of the confirm
-      text since it already says "for you". */
-  memberHandles: string[];
-  humanHandle?: string;
-  onArchive?: (room: string, archived: boolean) => void;
+  room: RoomSummary;
+  onClose?: (room: string) => void;
   size?: number;
 }) {
-  const archived = room.archivedAt !== undefined;
-  // A fleet DM archive would succeed server-side with no membership row for
-  // the human, dropping the room from his listing and stranding the page.
-  // His OWN DMs carry `joined` truthy and stay archivable.
-  const fleetDm = room.kind === 'dm' && room.joined === false;
-  const others = memberList(memberHandles.filter(h => h !== humanHandle));
-  const confirmArchive = () =>
-    modals.confirm({
-      title: archiveTitle(room),
-      message: `It leaves the rail for you${others ? ` and for ${others}` : ''}. Everyone keeps their place in it, and any new post reopens it.`,
-      labels: { confirm: 'Archive', cancel: 'Keep' },
-      onConfirm: () => onArchive?.(room.room, true),
-    });
-  // The menu's only actions are Archive (hidden for a fleet DM) and Reopen
-  // (archived rooms only), so an OPEN fleet DM would leave it empty. Render
-  // no trigger at all rather than a button that opens an empty dropdown.
-  if (!archived && fleetDm) return null;
   return (
-    <Menu position="bottom-end" withinPortal radius="md" shadow="md">
+    <Menu
+      position="bottom-end"
+      withinPortal
+      radius="md"
+      shadow="md"
+      styles={{
+        item: { minHeight: size >= 44 ? 44 : 24, color: 'var(--tk-fg)' },
+        dropdown: {
+          display: 'flex',
+          flexDirection: 'column',
+          background: 'var(--tk-panel)',
+        },
+      }}
+    >
       <Menu.Target>
         <ActionIcon
           variant="default"
@@ -219,18 +189,13 @@ export function RoomMenu({
         </ActionIcon>
       </Menu.Target>
       <Menu.Dropdown data-testid="room-menu-dropdown">
-        {archived ? (
-          <Menu.Item
-            data-testid="room-menu-reopen"
-            onClick={() => onArchive?.(room.room, false)}
-          >
-            Reopen
-          </Menu.Item>
-        ) : (
-          <Menu.Item data-testid="room-menu-archive" onClick={confirmArchive}>
-            {archiveLabel(room)}
-          </Menu.Item>
-        )}
+        <Menu.Item
+          data-testid="room-menu-close"
+          leftSection={<Icon name="close" size={14} />}
+          onClick={() => onClose?.(room.room)}
+        >
+          {closeLabel(room)}
+        </Menu.Item>
       </Menu.Dropdown>
     </Menu>
   );
@@ -240,22 +205,15 @@ export function PageBar({
   room,
   buddies,
   reachable = true,
-  onMarkRead,
+  onMarkedRead,
   onAddAgents,
   order = 'join',
   onOrderChange,
-  memberHandles,
-  onArchive,
+  onClose,
 }: PageBarProps) {
   const handleMarkRead = () => {
-    // Refresh only after the POST resolves: the count clears server-side
-    // first, so a refetch fired before it would read the stale unread.
-    void fetch('/api/chat/mark', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ room: room.room }),
-    })
-      .then(() => onMarkRead?.(room.room))
+    void postMarkRead(room.room)
+      .then(() => onMarkedRead?.(room.room))
       .catch(() => {});
   };
 
@@ -305,7 +263,7 @@ export function PageBar({
           add agents
         </Button>
       )}
-      {room.unread > 0 && room.archivedAt === undefined && (
+      {room.unread > 0 && (
         <Button
           variant="default"
           size="xs"
@@ -347,11 +305,7 @@ export function PageBar({
         />
       )}
       <Box ml={7.2} style={{ flex: 'none' }}>
-        <RoomMenu
-          room={room}
-          memberHandles={memberHandles ?? buddies.map(b => b.handle)}
-          onArchive={onArchive}
-        />
+        <RoomMenu room={room} onClose={onClose} />
       </Box>
     </>
   );
@@ -441,25 +395,15 @@ export function PageBar({
           </Box>
         )}
         {offline.length > 0 && (
-          <Box
-            component="span"
-            style={CHIP_BASE}
-            data-testid="chip-offline"
-          >
+          <Box component="span" style={CHIP_BASE} data-testid="chip-offline">
             <Dot hollow testId="dot-offline" />
             {offline.length} {STATUS_WORD.offline}
             <NamesSuffix handles={offline.map(b => b.handle)} />
           </Box>
         )}
-        {room.archivedAt !== undefined ? (
-          <Box component="span" style={CHIP_BASE} data-testid="chip-archived">
-            archived
-          </Box>
-        ) : (
-          <Box component="span" style={CHIP_BASE} data-testid="chip-wakes">
-            wakes: {wakeMode}
-          </Box>
-        )}
+        <Box component="span" style={CHIP_BASE} data-testid="chip-wakes">
+          wakes: {wakeMode}
+        </Box>
       </Group>
       <Group gap={0} ml="auto" wrap="nowrap">
         {controls}

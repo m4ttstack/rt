@@ -1,12 +1,16 @@
+import { useState } from 'react';
 import {
+  ActionIcon,
   Box,
   Group,
+  Menu,
   Stack,
   Text,
+  Tooltip,
   UnstyledButton,
 } from '@mattstack/app-kit/core';
-import { useHover, useLocalStorage } from '@mattstack/app-kit/hooks';
-import { AnimatedChevron, Icon } from '@mattstack/app-kit/icons';
+import { useHover } from '@mattstack/app-kit/hooks';
+import { Icon } from '@mattstack/app-kit/icons';
 import type { RoomSummary } from '@mattstack/rt-client';
 
 import { AgentName } from './AgentName';
@@ -32,14 +36,18 @@ export interface RoomRailProps {
   rooms: RoomSummary[];
   /** The room open in the transcript, so its row carries the accent wash. */
   activeRoom?: string;
-  /** The human's own handle, bolded inside a DM pair when it appears there. */
-  humanHandle?: string;
   onSelectRoom?: (room: string) => void;
   /** rt daemon reachability: the `+` is disabled while it is down, since a
       room cannot be created without it. @default true */
   daemonReachable?: boolean;
   /** Opens the new-room modal. The `+` renders only when this is wired. */
   onNewRoom?: () => void;
+  /** Closes a room (leaves it off the listing until a post revives it): the
+      row's hover × and its right-click menu. Neither renders when this is
+      absent. */
+  onCloseRoom?: (room: string) => void;
+  /** The right-click menu's Mark read, offered only on a row with unread. */
+  onMarkRead?: (room: string) => void;
   /** Inside `PageShell.Sidebar`: the sidebar is the surface, so no card. */
   sidebar?: boolean;
 }
@@ -159,29 +167,61 @@ function DmPairName({ room, active }: { room: RoomSummary; active: boolean }) {
   );
 }
 
-/** `RoomSummary` plus the viewer-side flag the rooms route adds for a room
-    the fleet is in that the human has not joined. */
-type RailRoom = RoomSummary & { joined?: boolean };
+function roomLabel(room: RoomSummary): string {
+  return room.kind === 'dm' && room.participants
+    ? `${room.participants.a} ↔ ${room.participants.b}`
+    : `#${room.room}`;
+}
 
+/**
+ * A rail row is a `div[role=button]`, not a `<button>`: the close control
+ * inside it is a real button, and a button may not nest a button. Enter and
+ * Space select, like the button they replace. The × shows on hover, on
+ * focus within, and while the row's menu is open; the menu is Mantine's
+ * `Menu.ContextMenu` (right-click, and a long press on touch), positioned
+ * at the cursor, one instance per row.
+ */
 function RoomRow({
   room,
   active,
-  archived,
   onSelect,
+  onClose,
+  onMarkRead,
 }: {
-  room: RailRoom;
+  room: RoomSummary;
   active: boolean;
-  archived?: boolean;
   onSelect?: () => void;
+  onClose?: (room: string) => void;
+  onMarkRead?: (room: string) => void;
 }) {
   const isDm = room.kind === 'dm';
+  const label = roomLabel(room);
+  const { ref, hovered } = useHover<HTMLDivElement>();
+  const [menuOpened, setMenuOpened] = useState(false);
+  const [focusWithin, setFocusWithin] = useState(false);
+  const closable = onClose !== undefined;
+  const showClose = closable && (hovered || focusWithin || menuOpened);
 
-  return (
-    <UnstyledButton
+  const row = (
+    <Box
+      ref={ref}
+      role="button"
+      tabIndex={0}
       data-testid={`room-row-${room.room}`}
       data-active={active ? 'true' : undefined}
-      data-archived={archived ? 'true' : undefined}
       onClick={onSelect}
+      onKeyDown={e => {
+        if (e.target !== e.currentTarget) return;
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onSelect?.();
+        }
+      }}
+      onFocus={() => setFocusWithin(true)}
+      onBlur={e => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node | null))
+          setFocusWithin(false);
+      }}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -192,13 +232,14 @@ function RoomRow({
         padding: '0 var(--mantine-spacing-md)',
         borderRadius: 'var(--mantine-radius-md)',
         cursor: 'pointer',
-        background: active ? ACCENT_WASH : undefined,
+        background: active
+          ? ACCENT_WASH
+          : hovered || menuOpened
+            ? 'var(--ui-bg-4)'
+            : undefined,
         color: active ? ACCENT_TEXT : undefined,
-        opacity: archived ? 0.6 : undefined,
       }}
     >
-      {/* Channels get the hash; a DM is named by its pair, and the artboard
-          draws no glyph in front of it. */}
       {!isDm && (
         <Icon
           name="hash"
@@ -218,19 +259,68 @@ function RoomRow({
           {room.room}
         </Text>
       )}
-      {!archived && room.mentions > 0 && <MentionBadge count={room.mentions} />}
-      {!archived && room.unread > 0 && <UnreadBadge count={room.unread} />}
-    </UnstyledButton>
+      {room.mentions > 0 && <MentionBadge count={room.mentions} />}
+      {room.unread > 0 && <UnreadBadge count={room.unread} />}
+      {closable && (
+        <Tooltip label="Close" position="top" withinPortal>
+          <ActionIcon
+            variant="subtle"
+            size="sm"
+            radius="md"
+            color="gray"
+            aria-label={`Close ${label}`}
+            data-testid={`room-close-${room.room}`}
+            onClick={e => {
+              e.stopPropagation();
+              onClose(room.room);
+            }}
+            style={{
+              display: showClose ? undefined : 'none',
+              flex: 'none',
+              marginRight: -4,
+              color: 'var(--tk-muted-text)',
+            }}
+          >
+            <Icon name="close" size={14} />
+          </ActionIcon>
+        </Tooltip>
+      )}
+    </Box>
+  );
+
+  if (!closable) return row;
+
+  return (
+    <Menu onChange={setMenuOpened} radius="md" shadow="md" withinPortal>
+      <Menu.ContextMenu>{row}</Menu.ContextMenu>
+      <Menu.Dropdown data-testid={`room-context-${room.room}`}>
+        <Menu.Label>{label}</Menu.Label>
+        {room.unread > 0 && onMarkRead && (
+          <Menu.Item
+            data-testid="room-context-mark-read"
+            leftSection={<Icon name="check" size={14} />}
+            rightSection={<UnreadBadge count={room.unread} />}
+            onClick={() => onMarkRead(room.room)}
+          >
+            Mark read
+          </Menu.Item>
+        )}
+        <Menu.Item
+          data-testid="room-context-close"
+          leftSection={<Icon name="close" size={14} />}
+          onClick={() => onClose(room.room)}
+        >
+          Close
+        </Menu.Item>
+      </Menu.Dropdown>
+    </Menu>
   );
 }
 
 /**
  * The 232px rooms rail: a header row (`ROOMS` + count), the plain rooms,
  * then -- only when at least one DM exists -- a `DIRECT` section of `.pair`
- * rows and a footnote, then -- only when at least one room is archived -- a
- * collapsed `ARCHIVED` section whose open state persists across sessions.
- * `RoomSummary` (the read routes' own shape) is used directly as the room
- * prop type, so no separate DTO drifts from it.
+ * rows and a footnote.
  */
 export function RoomRail({
   rooms,
@@ -238,16 +328,12 @@ export function RoomRail({
   onSelectRoom,
   daemonReachable = true,
   onNewRoom,
+  onCloseRoom,
+  onMarkRead,
   sidebar = false,
 }: RoomRailProps) {
-  const openRooms = rooms.filter(r => r.archivedAt === undefined);
-  const channelRooms = openRooms.filter(r => r.kind !== 'dm');
-  const directRooms = openRooms.filter(r => r.kind === 'dm');
-  const archivedRooms = rooms.filter(r => r.archivedAt !== undefined);
-  const [archivedCollapsed, setArchivedCollapsed] = useLocalStorage<boolean>({
-    key: 'chat.rail.archived',
-    defaultValue: true,
-  });
+  const channelRooms = rooms.filter(r => r.kind !== 'dm');
+  const directRooms = rooms.filter(r => r.kind === 'dm');
 
   return (
     <Stack
@@ -298,6 +384,8 @@ export function RoomRail({
           room={room}
           active={room.room === activeRoom}
           onSelect={() => onSelectRoom?.(room.room)}
+          onClose={onCloseRoom}
+          onMarkRead={onMarkRead}
         />
       ))}
 
@@ -331,6 +419,8 @@ export function RoomRail({
               room={room}
               active={room.room === activeRoom}
               onSelect={() => onSelectRoom?.(room.room)}
+              onClose={onCloseRoom}
+              onMarkRead={onMarkRead}
             />
           ))}
 
@@ -343,56 +433,6 @@ export function RoomRail({
           >
             Every agent↔agent DM is yours to read and post into.
           </Text>
-        </>
-      )}
-
-      {archivedRooms.length > 0 && (
-        <>
-          <UnstyledButton
-            data-testid="archived-toggle"
-            aria-expanded={!archivedCollapsed}
-            onClick={() => setArchivedCollapsed(!archivedCollapsed)}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: 6,
-              width: '100%',
-              padding: '10px var(--mantine-spacing-md) 4px',
-              borderBottom: `1px solid var(--tk-border-soft)`,
-            }}
-          >
-            <Text
-              component="h3"
-              fw={700}
-              style={{
-                margin: 0,
-                fontSize: '9.5px',
-                color: 'var(--tk-muted-text)',
-                letterSpacing: '0.06em',
-              }}
-            >
-              ARCHIVED
-            </Text>
-            <Text size="xs" style={{ color: 'var(--tk-muted-text)' }}>
-              {archivedRooms.length}
-            </Text>
-            <Box style={{ flex: 1 }} />
-            <AnimatedChevron
-              opened={!archivedCollapsed}
-              size={12}
-              color="var(--tk-muted-text)"
-            />
-          </UnstyledButton>
-          {!archivedCollapsed &&
-            archivedRooms.map(room => (
-              <RoomRow
-                key={room.room}
-                room={room}
-                archived
-                active={room.room === activeRoom}
-                onSelect={() => onSelectRoom?.(room.room)}
-              />
-            ))}
         </>
       )}
     </Stack>

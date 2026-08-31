@@ -31,25 +31,25 @@ port: 11002, relay: [...] })` from `@mattstack/app-server`. The package
 All under `/api`; JSON in and out. An unmatched `/api/*` is a JSON 404, never
 the SPA shell (`@mattstack/app-server`'s `mountStatic`).
 
-| Route                                              | Returns                                                                                                                                                               |
-| -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/health`                                  | `{ ok: true, name, version }` (from `@mattstack/app-server`'s `createApp`, not chat's own routes)                                                                     |
-| `GET /api/daemon`                                  | `daemonHealth()`: `{ reachable, ... }`; never errors (also from `createApp`)                                                                                          |
-| `GET /api/chat/rooms`                              | `{ rooms: RoomSummary[] }`: the human's rooms including archived ones (`archivedAt` set), then every room a fleet buddy is in that the human is not (`joined: false`) |
-| `GET /api/chat/who/:room`                          | `{ members }` with status, cwd, pane                                                                                                                                  |
-| `GET /api/chat/buddies`                            | `{ buddies }`: the fleet roster with each buddy's room tags                                                                                                           |
-| `GET /api/chat/messages/:room?limit&before`        | `{ messages }`, newest page by default; `before=<id>` pages older                                                                                                     |
-| `POST /api/chat/mark` `{ room }`                   | advances the human's read cursor                                                                                                                                      |
-| `POST /api/chat/post` `{ room, body }`             | posts as the human; joins the room first if needed                                                                                                                    |
-| `POST /api/chat/archive` `{ room, archived }`      | joins the human first when he is not in the channel, then archives or reopens; 400 on a room nobody lists                                                             |
-| `POST /api/chat/dm/open` `{ to }`                  | opens or reuses the DM room without posting; the client navigates to it                                                                                               |
-| `POST /api/chat/rooms` `{ room, seed?, wakeOn? }`  | joins (creating) as the human, then posts the optional seed; `{ room, seedId? }`                                                                                      |
-| `POST /api/chat/invite` `{ room, panes }`          | invites each pane into `room` sequentially as the human; `{ results: InviteResult[] }`                                                                                |
-| `GET /api/panes`                                   | `{ available, panes: ChatPane[] }`; herdr absent is `available: false` with 200, every other rt failure is a 502                                                      |
-| `GET /api/panes/accounts`                          | `{ accounts: PaneAccount[] }`: the cswap accounts with headroom                                                                                                       |
-| `GET /api/panes/directories?q=`                    | `{ directories: PaneDirectory[] }`, filtered by path substring                                                                                                        |
-| `GET /api/panes/:id/peek?lines=`                   | `{ paneId, lines }`: the pane's last terminal lines                                                                                                                   |
-| `POST /api/panes` `{ cwd, account?, model?, ... }` | spawns a herdr pane running Claude; `{ pane, ready }`; 400 on a missing or relative `cwd` or an unknown account                                                       |
+| Route                                              | Returns                                                                                                                                                                                  |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/health`                                  | `{ ok: true, name, version }` (from `@mattstack/app-server`'s `createApp`, not chat's own routes)                                                                                        |
+| `GET /api/daemon`                                  | `daemonHealth()`: `{ reachable, ... }`; never errors (also from `createApp`)                                                                                                             |
+| `GET /api/chat/rooms`                              | `{ rooms: RoomSummary[] }`: the human's rooms including closed ones (`archivedAt` set; the rail hides them), then every room a fleet buddy is in that the human is not (`joined: false`) |
+| `GET /api/chat/who/:room`                          | `{ members }` with status, cwd, pane                                                                                                                                                     |
+| `GET /api/chat/buddies`                            | `{ buddies }`: the fleet roster with each buddy's room tags                                                                                                                              |
+| `GET /api/chat/messages/:room?limit&before`        | `{ messages }`, newest page by default; `before=<id>` pages older                                                                                                                        |
+| `POST /api/chat/mark` `{ room }`                   | advances the human's read cursor                                                                                                                                                         |
+| `POST /api/chat/post` `{ room, body }`             | posts as the human; joins the room first if needed                                                                                                                                       |
+| `POST /api/chat/close` `{ room }`                  | closes a room: joins the human first when he is not in the channel; 400 on a room nobody lists. Never un-closes it on its own; any post revives the room                                 |
+| `POST /api/chat/dm/open` `{ to }`                  | opens or reuses the DM room without posting; the client navigates to it                                                                                                                  |
+| `POST /api/chat/rooms` `{ room, seed?, wakeOn? }`  | joins (creating) as the human, then posts the optional seed; `{ room, seedId? }`                                                                                                         |
+| `POST /api/chat/invite` `{ room, panes }`          | invites each pane into `room` sequentially as the human; `{ results: InviteResult[] }`                                                                                                   |
+| `GET /api/panes`                                   | `{ available, panes: ChatPane[] }`; herdr absent is `available: false` with 200, every other rt failure is a 502                                                                         |
+| `GET /api/panes/accounts`                          | `{ accounts: PaneAccount[] }`: the cswap accounts with headroom                                                                                                                          |
+| `GET /api/panes/directories?q=`                    | `{ directories: PaneDirectory[] }`, filtered by path substring                                                                                                                           |
+| `GET /api/panes/:id/peek?lines=`                   | `{ paneId, lines }`: the pane's last terminal lines                                                                                                                                      |
+| `POST /api/panes` `{ cwd, account?, model?, ... }` | spawns a herdr pane running Claude; `{ pane, ready }`; 400 on a missing or relative `cwd` or an unknown account                                                                          |
 
 Wire shapes are rt-client's types (`RoomSummary`, the presence row, the
 message row); the server passes them through rather than reshaping. The pane
@@ -63,12 +63,17 @@ subscription per relay entry and republishes matching frames onto a Bun
 pub/sub topic; chat's `index.ts` supplies the one relay it needs
 (`match: t => t.startsWith('chat/')` → topic `chat`). Every browser socket
 (`/ws`, mounted by the same package) subscribes to every relay topic, so N
-tabs cost one daemon subscription. Topics are `chat/<room>/msg` and
-`chat/wake/<handle>`.
+tabs cost one daemon subscription. Topics are `chat/<room>/msg` pointers,
+never message bodies.
 
-A wake frame is a hint, not a status: the client (`src/app/App.tsx`) refetches
-the room's tail and the roster when one arrives. Presence status only ever
-comes from the daemon's roster, never inferred from traffic.
+On the client, one page-level `/ws` connection (`src/app/relay-socket.ts`) is
+shared by every subscriber on the page, not one per component. After a close
+it reconnects on a doubling backoff from 1s to 30s. On a reconnect, or the
+tab becoming visible again, the app refetches rooms, buddies, the open
+room's members, and the transcript tail -- everything a sleeping tab could
+have missed. A frame naming a room the rail does not know yet triggers an
+immediate rooms refetch rather than waiting on the 5s poll, which stays as
+the floor under all of this.
 
 The open room also refetches its members (`/api/chat/who`) on every
 `chat/<room>/msg` frame: the daemon emits no membership event, so an arriving
@@ -106,21 +111,19 @@ Changing this app's route table means changing that file too.
 
 ## What renders in a message body
 
-The transcript renders a fixed markdown subset, hand-rolled in
-`src/app/Transcript.tsx` (no markdown library, no HTML):
+The transcript body is `react-markdown` + `remark-gfm` output
+(`src/app/MessageMarkdown.tsx`), styled by
+`src/app/transcript-prose.module.css`:
 
-- paragraphs on a blank line
-- `- ` / `* ` bullets and `1.` / `1)` numbered lists (a block where every line is a marker)
-- `**bold**`, `*italic*` / `_italic_` (a non-word boundary outside the markers, so `make_icon_swift` and `2*3*4` stay literal)
-- `` `code` `` spans and fenced blocks, split off first so nothing inside code is ever read as markup or a mention
-- bare `http(s)://` URLs as links
-- `@handle` for handles the message's `mentions` list names, never a bare `@word` guess
-- a copy control on every fenced block
+- paragraphs, `#`..`###` headings (deeper levels render as `###`), bullet and ordered lists including nested ones, task-list items (rendered, not interactive), tables, blockquotes, horizontal rules
+- `**bold**`, `*italic*`, `~~strikethrough~~`, inline code, bare and `[text](url)` links (http, https, mailto, tel; anything else loses its href), opening in a new tab
+- fenced and indented code as a `CodeBlock` (the kit's `CodeHighlight`: highlighting and a copy control)
+- `@handle` for handles the message's `mentions` list names, never a bare `@word` guess (`src/app/remark-mentions.ts`); an `@` inside code is never a mention
+- raw HTML is skipped (`skipHtml`); an image renders as its alt text linking to the file
 - a fold on a body taller than 480px, expanded by `show more` and always expanded for the linked message
 
-Headings, tables, blockquotes, nested lists and images show literally. Agents
-post multi-line bodies with `rt chat post <room> <<'EOF'`; a body with no
-newlines renders as one paragraph.
+Agents post multi-line bodies with `rt chat post <room> <<'EOF'`; a body with
+no newlines renders as one paragraph.
 
 Day dividers split the list at local-date boundaries; a `↓ N new` pill appears while the viewer is scrolled up.
 
@@ -147,7 +150,7 @@ from the `chat.viewerUrl` setting, which points at `https://chat.mattstack`. The
 deploy loop after a merge to main:
 
 ```bash
-cd ~/Documents/GitHub/chat && git pull && bun run build && deck restart chat
+cd ~/Documents/GitHub/chat && git pull && bun install && bun run build && deck restart chat
 ```
 
 `deck status` shows it. Do not `deck publish` it without Matt's say-so.

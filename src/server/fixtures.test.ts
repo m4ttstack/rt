@@ -95,6 +95,13 @@ test('the build transcript carries the wide code block on purpose', () => {
   expect(withCode!.body).toContain('loadAndEvaluateModule');
   // And a mention of the human, so the .at.me treatment has something to hit.
   expect(msgs.some(m => m.mentions.includes('matt'))).toBe(true);
+  // The structured message walks the whole heading ramp (h1/h2/h3) plus a
+  // table, so the design audit has an h1, an h2 and a th to probe.
+  const structured = msgs.find(m => m.body.includes('## Confirmed'));
+  expect(structured?.body).toContain('# Rebase record');
+  expect(structured?.body).toContain('### Checks');
+  expect(structured?.body).toContain('| check | state |');
+  expect(msgs.some(m => m.handle === 'matt')).toBe(true);
 });
 
 test('fixtures carry an archived channel, an archived DM, and a long code post', () => {

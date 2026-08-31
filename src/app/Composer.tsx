@@ -12,6 +12,7 @@ import { Icon } from '@mattstack/app-kit/icons';
 import { notifications } from '@mattstack/app-kit/notifications';
 import type { BuddyStatus } from '@mattstack/rt-client';
 
+import { HUMAN_HANDLE } from './human';
 import { STATUS_WORD } from './statusDetail';
 
 const MUTED = 'var(--tk-muted-text)';
@@ -56,9 +57,8 @@ export interface ComposerProps {
   /** The fleet, not the room -- same source `Roster` reads, so the popover
       can offer a DM to a buddy who has never joined this room. */
   buddies: ComposerBuddy[];
-  /** @default 'matt'. There is no live source for this yet (see RoomRail's
-      own unwired `humanHandle` prop) -- a caller passes a real handle once
-      one exists. */
+  /** @default HUMAN_HANDLE (`./human`), the same single source every other
+      caller of the human's own handle reads. */
   humanHandle?: string;
   /** True inside a DM room: narrows the popover to the other participant
       and drops `@here` (there is nobody else to wake). @default false */
@@ -242,7 +242,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       room,
       roomMembers,
       buddies,
-      humanHandle = 'matt',
+      humanHandle = HUMAN_HANDLE,
       isDm = false,
       daemonReachable = true,
       phone = false,

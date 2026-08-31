@@ -271,7 +271,8 @@ export function Roster({
   panel = false,
   onPick,
 }: RosterProps) {
-  const bySignIn = (a: RosterBuddy, b: RosterBuddy) => a.signedInAt - b.signedInAt;
+  const bySignIn = (a: RosterBuddy, b: RosterBuddy) =>
+    a.signedInAt - b.signedInAt;
   const online = buddies.filter(b => b.status !== 'offline').sort(bySignIn);
   const offline = buddies.filter(b => b.status === 'offline').sort(bySignIn);
 

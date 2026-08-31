@@ -1,7 +1,7 @@
 import { renderWithProviders } from '@mattstack/app-kit/test-utils';
-import { screen, within } from '@testing-library/react';
+import { fireEvent, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, expect, test, vi } from 'vitest';
+import { expect, test, vi } from 'vitest';
 
 import './icons';
 
@@ -85,75 +85,119 @@ test('no DM rooms means no direct section at all', () => {
   expect(screen.queryByRole('heading', { name: /direct/i })).toBeNull();
 });
 
-afterEach(() => window.localStorage.removeItem('chat.rail.archived'));
-
-test('archived rooms sit in a collapsed section, badge-less and dimmed, and the toggle remembers itself', async () => {
-  const { unmount } = renderWithProviders(
+test('no ARCHIVED section renders, and a closed room passed in is listed like any other', () => {
+  renderWithProviders(
     <RoomRail
       rooms={[
         { room: 'build', memberCount: 2, unread: 1, mentions: 0 },
         {
           room: 'retro',
           memberCount: 2,
-          unread: 3,
-          mentions: 1,
-          archivedAt: 5,
-        },
-        {
-          room: 'dm-1',
-          memberCount: 2,
           unread: 0,
           mentions: 0,
-          kind: 'dm',
-          participants: { a: 'fred', b: 'matt' },
-          archivedAt: 6,
+          archivedAt: 5,
         },
       ]}
-      activeRoom="build"
+      activeRoom="retro"
     />
   );
-  expect(screen.getByText('ROOMS').nextSibling).toHaveTextContent('1');
-  expect(screen.queryByTestId('room-row-retro')).toBeNull();
-  const toggle = screen.getByTestId('archived-toggle');
-  expect(toggle).toHaveTextContent('ARCHIVED');
-  expect(toggle).toHaveTextContent('2');
-  expect(toggle).toHaveAttribute('aria-expanded', 'false');
+  expect(screen.queryByText('ARCHIVED')).toBeNull();
+  expect(screen.queryByTestId('archived-toggle')).toBeNull();
+  expect(screen.getByTestId('room-row-retro').dataset.active).toBe('true');
+  expect(screen.getByTestId('room-row-retro').style.opacity).toBe('');
+});
 
-  await userEvent.click(toggle);
-  const row = screen.getByTestId('room-row-retro');
-  expect(row).toHaveAttribute('data-archived', 'true');
-  expect(row.style.opacity).toBe('0.6');
-  expect(within(row).queryByTestId('unread-badge')).toBeNull();
-  expect(within(row).queryByTestId('mention-badge')).toBeNull();
-  expect(screen.getByTestId('room-row-dm-1')).toHaveTextContent('fred');
-
-  unmount();
+test('the hover × closes that row without selecting it', async () => {
+  const onCloseRoom = vi.fn();
+  const onSelectRoom = vi.fn();
   renderWithProviders(
     <RoomRail
       rooms={[
+        { room: 'build', memberCount: 2, unread: 0, mentions: 0 },
         {
-          room: 'retro',
+          room: 'dm-1',
           memberCount: 2,
-          unread: 0,
+          unread: 2,
           mentions: 0,
-          archivedAt: 5,
+          kind: 'dm',
+          participants: { a: 'fred', b: 'gitq-main' },
         },
       ]}
+      onCloseRoom={onCloseRoom}
+      onSelectRoom={onSelectRoom}
     />
   );
-  expect(screen.getByTestId('archived-toggle')).toHaveAttribute(
-    'aria-expanded',
-    'true'
+  const close = screen.getByTestId('room-close-dm-1');
+  expect(close).toHaveAttribute('aria-label', 'Close fred ↔ gitq-main');
+  expect(close.style.display).toBe('none');
+  await userEvent.hover(screen.getByTestId('room-row-dm-1'));
+  expect(close.style.display).toBe('');
+  await userEvent.click(close);
+  expect(onCloseRoom).toHaveBeenCalledWith('dm-1');
+  expect(onSelectRoom).not.toHaveBeenCalled();
+  expect(screen.getByTestId('room-close-build')).toHaveAttribute(
+    'aria-label',
+    'Close #build'
   );
 });
 
-test('no archived rooms means no archived section', () => {
+test('a left click selects the row and never opens its menu', async () => {
+  const onCloseRoom = vi.fn();
+  const onSelectRoom = vi.fn();
+  renderWithProviders(
+    <RoomRail
+      rooms={[{ room: 'build', memberCount: 2, unread: 0, mentions: 0 }]}
+      onCloseRoom={onCloseRoom}
+      onSelectRoom={onSelectRoom}
+    />
+  );
+  const row = screen.getByTestId('room-row-build');
+  await userEvent.click(row);
+  expect(onSelectRoom).toHaveBeenCalledWith('build');
+  expect(screen.queryByTestId('room-context-build')).toBeNull();
+
+  fireEvent.contextMenu(row);
+  expect(await screen.findByTestId('room-context-build')).toBeInTheDocument();
+});
+
+test('right-click opens a menu for that row: Mark read with its count, then Close', async () => {
+  const onCloseRoom = vi.fn();
+  const onMarkRead = vi.fn();
+  renderWithProviders(
+    <RoomRail
+      rooms={[
+        { room: 'build', memberCount: 2, unread: 3, mentions: 0 },
+        { room: 'quiet', memberCount: 2, unread: 0, mentions: 0 },
+      ]}
+      onCloseRoom={onCloseRoom}
+      onMarkRead={onMarkRead}
+    />
+  );
+  fireEvent.contextMenu(screen.getByTestId('room-row-build'));
+  const menu = await screen.findByTestId('room-context-build');
+  expect(menu).toHaveTextContent('#build');
+  expect(within(menu).getByTestId('room-context-mark-read')).toHaveTextContent(
+    '3'
+  );
+  await userEvent.click(within(menu).getByTestId('room-context-mark-read'));
+  expect(onMarkRead).toHaveBeenCalledWith('build');
+
+  fireEvent.contextMenu(screen.getByTestId('room-row-quiet'));
+  const quiet = await screen.findByTestId('room-context-quiet');
+  expect(within(quiet).queryByTestId('room-context-mark-read')).toBeNull();
+  await userEvent.click(within(quiet).getByTestId('room-context-close'));
+  expect(onCloseRoom).toHaveBeenCalledWith('quiet');
+});
+
+test('without onCloseRoom there is no × and right-click does nothing', () => {
   renderWithProviders(
     <RoomRail
       rooms={[{ room: 'build', memberCount: 2, unread: 0, mentions: 0 }]}
     />
   );
-  expect(screen.queryByTestId('archived-toggle')).toBeNull();
+  expect(screen.queryByTestId('room-close-build')).toBeNull();
+  fireEvent.contextMenu(screen.getByTestId('room-row-build'));
+  expect(screen.queryByTestId('room-context-build')).toBeNull();
 });
 
 test('the + renders only with onNewRoom, disables with the daemon down, and fires', async () => {

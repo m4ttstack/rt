@@ -265,7 +265,7 @@ export function fixtureMessages(room: string, now = Date.now()): ChatMessage[] {
       42,
       'deck-main',
       8,
-      'gateway restart done — @rt-chat-wt chat.mattstack resolves, password gate is on.',
+      'gateway restart done: @rt-chat-wt chat.mattstack resolves, password gate is on.',
       ['rt-chat-wt']
     ),
     msg(
@@ -280,7 +280,7 @@ export function fixtureMessages(room: string, now = Date.now()): ChatMessage[] {
       5,
       'heads up: I moved the shared fixture to `test/fixtures/home.ts`. Anyone importing the old path gets:\n```\nTypeError: Cannot find module "../fixtures/home"\n  at board/src/server/__tests__/auth.test.ts:4:22\n  at loadAndEvaluateModule (bun:internal)\n```'
     ),
-    msg(45, 'rt-chat-wt', 4, 'not me — chat imports nothing from board.'),
+    msg(45, 'rt-chat-wt', 4, 'not me: chat imports nothing from board.'),
     msg(
       46,
       'deck-main',
@@ -292,8 +292,21 @@ export function fixtureMessages(room: string, now = Date.now()): ChatMessage[] {
       47,
       'rt-chat-wt',
       1,
-      '@matt PR #67 is green and CodeRabbit is clean — ok to merge, or do you want the rebase first?',
+      '@matt PR #67 is green and CodeRabbit is clean: ok to merge, or do you want the rebase first?',
       ['matt']
+    ),
+    msg(
+      1005,
+      'rt-chat-wt',
+      0.9,
+      'not me. chat imports nothing from board.\n\n# Rebase record\n\nWhat the rebase changed, for the record:\n\n## Confirmed\n\n1. the fixture move is the only cross-repo edit\n2. e2e stays green on the rebased head\n3. CodeRabbit has not answered yet\n\n### Checks\n\n| check | state |\n| --- | --- |\n| typecheck | green |\n| e2e | green on `feat/rt-chat` |\n| CodeRabbit | pending |'
+    ),
+    msg(
+      1006,
+      'matt',
+      0.7,
+      'merge it. @board-fix-auth post the full auth output once, then we drop it.',
+      ['board-fix-auth']
     ),
     msg(
       48,

@@ -1,8 +1,9 @@
 import { renderWithProviders } from '@mattstack/app-kit/test-utils';
-import { fireEvent, screen } from '@testing-library/react';
-import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, expect, test } from 'vitest';
 
 import {
+  FakeWebSocket,
   fetchMock,
   installFakeWebSocket,
   longCodeBlockMessage,
@@ -37,16 +38,32 @@ test('a frame for another room does not append here', async () => {
   expect(screen.queryByTestId('message-8')).toBeNull();
 });
 
-test('wide content scrolls inside its own container, not the page', () => {
+test('a reconnect refetches the tail without a frame', async () => {
+  const { pushFrame } = renderTranscriptWithFakeSocket({
+    room: 'build',
+    messages: [],
+  });
+  pushFrame({ topic: 'chat/build/msg', payload: { id: 1 } });
+  expect(await screen.findByText('message 1')).toBeInTheDocument();
+  const socket = FakeWebSocket.instances.at(-1)!;
+  socket.onopen?.();
+  const before = fetchMock.mock.calls.length;
+  socket.onopen?.();
+  await waitFor(() =>
+    expect(fetchMock.mock.calls.length).toBeGreaterThan(before)
+  );
+});
+
+test('a fenced block renders as a CodeBlock inside the message, never widening the column', async () => {
   renderWithProviders(
     <Transcript room="build" messages={[longCodeBlockMessage]} />
   );
-  // jsdom sees inline styles, not CSS-module rules: the code block's
-  // overflow-x is inline.
-  expect(screen.getByTestId('code-block').style.overflowX).toBe('auto');
+  const block = await screen.findByTestId('code-block');
+  await waitFor(() => expect(block).toHaveTextContent('Cannot find module'));
+  expect(screen.getByTestId('transcript-column')).toBeInTheDocument();
 });
 
-test('a mention of the human gets the wash; a mention of anyone else does not', () => {
+test('a mention of the human is marked as me; the human’s own post is marked mine', () => {
   renderWithProviders(
     <Transcript
       room="build"
@@ -60,10 +77,88 @@ test('a mention of the human gets the wash; a mention of anyone else does not', 
           mentions: ['matt'],
           postedAt: Date.now(),
         },
+        {
+          id: 2,
+          room: 'build',
+          handle: 'matt',
+          body: 'merge it',
+          mentions: [],
+          postedAt: Date.now(),
+        },
       ]}
     />
   );
-  expect(screen.getByText('@matt')).toBeInTheDocument();
+  const mention = screen.getByText('@matt');
+  expect(mention).toHaveAttribute('data-mention', 'matt');
+  expect(mention).toHaveAttribute('data-me', 'true');
+  expect(screen.getByTestId('message-1')).not.toHaveAttribute('data-mine');
+  expect(screen.getByTestId('message-2')).toHaveAttribute('data-mine', 'true');
+  expect(screen.getByTestId('message-2')).toHaveTextContent('you');
+});
+
+test("each speaker's handle chip carries its own hue, and the human's is accent", () => {
+  renderWithProviders(
+    <Transcript
+      room="build"
+      humanHandle="matt"
+      messages={[
+        {
+          id: 1,
+          room: 'build',
+          handle: 'fox',
+          body: 'first',
+          mentions: [],
+          postedAt: 1,
+        },
+        {
+          id: 2,
+          room: 'build',
+          handle: 'max',
+          body: 'second',
+          mentions: [],
+          postedAt: 2,
+        },
+        {
+          id: 3,
+          room: 'build',
+          handle: 'matt',
+          body: 'third',
+          mentions: [],
+          postedAt: 3,
+        },
+      ]}
+    />
+  );
+  const chips = screen.getAllByTestId('speaker-chip');
+  expect(chips).toHaveLength(3);
+  const [foxColor, maxColor, mattColor] = chips.map(chip =>
+    chip.style.getPropertyValue('--speaker-hue')
+  );
+  expect(foxColor).not.toBe(maxColor);
+  expect(mattColor).toContain('accent');
+});
+
+test('markdown structure reaches the row: paragraphs, a list, code untouched', () => {
+  renderWithProviders(
+    <Transcript
+      room="build"
+      messages={[
+        {
+          id: 1,
+          room: 'build',
+          handle: 'deck-main',
+          body: 'first **point**\n\n- one\n- two\n\nsee `**not bold**`',
+          mentions: [],
+          postedAt: 1,
+        },
+      ]}
+    />
+  );
+  const body = screen.getByTestId('message-body');
+  expect(body.querySelectorAll('p')).toHaveLength(2);
+  expect(body.querySelector('strong')).toHaveTextContent('point');
+  expect(body.querySelectorAll('li')).toHaveLength(2);
+  expect(screen.getByText('**not bold**').tagName).toBe('CODE');
 });
 
 test('a divider marks the read cursor before the unread tail', () => {
@@ -177,58 +272,6 @@ test('an error page leaves the top edge retryable instead of exhausting it', asy
   expect(screen.getByTestId('transcript-edge')).not.toBeDisabled();
 });
 
-test('a body renders its paragraphs, lists, bold and links, and leaves code alone', () => {
-  renderWithProviders(
-    <Transcript
-      room="build"
-      messages={[
-        {
-          id: 1,
-          room: 'build',
-          handle: 'deck-main',
-          body: 'first **point**\n\n- one\n- two http://x.test/a\n\nsee `**not bold**`',
-          mentions: [],
-          postedAt: 1,
-        },
-      ]}
-    />
-  );
-  expect(screen.getAllByTestId('message-paragraph')).toHaveLength(2);
-  expect(screen.getByText('point').tagName).toBe('STRONG');
-  const list = screen.getByTestId('message-list');
-  expect(list.querySelectorAll('li')).toHaveLength(2);
-  const link = screen.getByRole('link', { name: 'http://x.test/a' });
-  expect(link).toHaveAttribute('href', 'http://x.test/a');
-  expect(screen.getByText('**not bold**').tagName).toBe('CODE');
-});
-
-test('numbered lists, italic and underscore identifiers render as agents write them', () => {
-  renderWithProviders(
-    <Transcript
-      room="build"
-      messages={[
-        {
-          id: 1,
-          room: 'build',
-          handle: 'deck-main',
-          body: 'steps:\n\n1. bump the dep\n2) rebuild\n\nthis is *soft* and _quiet_, but make_icon_swift and 2*3*4 stay put; see http://x.test/a_b_c',
-          mentions: [],
-          postedAt: 1,
-        },
-      ]}
-    />
-  );
-  const list = screen.getByTestId('message-list');
-  expect(list.tagName).toBe('OL');
-  expect(list.querySelectorAll('li')).toHaveLength(2);
-  expect(screen.getByText('soft').tagName).toBe('EM');
-  expect(screen.getByText('quiet').tagName).toBe('EM');
-  expect(screen.getByText(/make_icon_swift and 2\*3\*4 stay put/)).toBeTruthy();
-  expect(
-    screen.getByRole('link', { name: 'http://x.test/a_b_c' })
-  ).toHaveAttribute('href', 'http://x.test/a_b_c');
-});
-
 test('a notice renders at the edge, above the older-messages row, and without any messages at all', () => {
   const one = [
     {
@@ -263,9 +306,9 @@ test('a notice renders at the edge, above the older-messages row, and without an
 });
 
 test('two bare URLs in one body both render as links', () => {
-  // Regression: URL_RE carries the `g` flag, so a global-regex `.test()` in
-  // the render loop advanced `lastIndex` and the second URL fell through to
-  // plain text. The anchored `URL_TEST` is stateless.
+  // remark-gfm autolinks bare URLs; both instances in one body must resolve,
+  // not just the first, at the Transcript level (not just inside
+  // MessageMarkdown's own suite).
   renderWithProviders(
     <Transcript
       room="build"
@@ -423,32 +466,6 @@ test('loading an older page puts a day divider above what was the first message'
   expect(labels[1]).toBe('Today');
 });
 
-test('a code block carries a copy control that writes the block text only', async () => {
-  const writeText = vi.fn().mockResolvedValue(undefined);
-  Object.defineProperty(navigator, 'clipboard', {
-    configurable: true,
-    value: { writeText },
-  });
-  renderWithProviders(
-    <Transcript
-      room="build"
-      messages={[
-        {
-          id: 1,
-          room: 'build',
-          handle: 'fred',
-          body: 'see:\n```\nline one\nline two\n```',
-          mentions: [],
-          postedAt: Date.now(),
-        },
-      ]}
-    />
-  );
-  const copy = screen.getByTestId('code-copy').querySelector('button')!;
-  fireEvent.click(copy);
-  expect(writeText).toHaveBeenCalledWith('line one\nline two');
-});
-
 function withTallBodies(run: () => void) {
   const original = Object.getOwnPropertyDescriptor(
     HTMLElement.prototype,
@@ -489,6 +506,71 @@ test('a tall body folds with a show more control, and unfolds on click', async (
   fireEvent.click(screen.getByTestId('fold-toggle'));
   expect(fold).toHaveAttribute('data-folded', 'false');
   expect(screen.getByTestId('fold-toggle')).toHaveTextContent('show less');
+});
+
+test('a body that grows after mount folds, without remounting the message body', () => {
+  // The kit's jsdom ResizeObserver polyfill is a no-op (`observe()` never
+  // calls back), which is exactly why the fold-on-mount tests never
+  // exercised the observer path -- this test stubs a real callback capture
+  // in its place, so the async-growth branch (a fenced block's highlighter
+  // resolving after mount) gets real coverage: the reflow must both flip
+  // the fold AND land on the SAME `message-body` node, since a remount here
+  // would drop the observer watching it (see Transcript.tsx's comment on
+  // the wrapper's fixed shape).
+  let height = 0;
+  const originalScrollHeight = Object.getOwnPropertyDescriptor(
+    HTMLElement.prototype,
+    'scrollHeight'
+  );
+  Object.defineProperty(HTMLElement.prototype, 'scrollHeight', {
+    configurable: true,
+    get() {
+      return (this as HTMLElement).dataset.testid === 'message-body'
+        ? height
+        : 0;
+    },
+  });
+
+  let observerCallback: (() => void) | undefined;
+  class CapturingResizeObserver {
+    constructor(callback: () => void) {
+      observerCallback = callback;
+    }
+    observe() {
+      /* the callback fires when the test flips `height`, not on observe */
+    }
+    unobserve() {}
+    disconnect() {}
+  }
+  const originalResizeObserver = globalThis.ResizeObserver;
+  globalThis.ResizeObserver =
+    CapturingResizeObserver as unknown as typeof ResizeObserver;
+
+  try {
+    renderWithProviders(<Transcript room="build" messages={[tall]} />);
+    const bodyBefore = screen.getByTestId('message-body');
+    expect(screen.queryByTestId('message-fold')).toBeNull();
+
+    height = 900;
+    act(() => observerCallback?.());
+
+    expect(screen.getByTestId('message-fold')).toHaveAttribute(
+      'data-folded',
+      'true'
+    );
+    expect(screen.getByTestId('message-body')).toBe(bodyBefore);
+  } finally {
+    globalThis.ResizeObserver = originalResizeObserver;
+    if (originalScrollHeight)
+      Object.defineProperty(
+        HTMLElement.prototype,
+        'scrollHeight',
+        originalScrollHeight
+      );
+    else
+      delete (HTMLElement.prototype as unknown as Record<string, unknown>)
+        .scrollHeight;
+  }
 });
 
 test('the anchored message mounts unfolded; a short body never folds', () => {

@@ -363,35 +363,126 @@ export const TARGETS = [
     },
   },
 
-  // Task 5 -- Transcript (design/artboards/Main.dc.html's message list).
+  // Reader transcript (design/artboards/Main.dc.html): the column, the row,
+  // the prose module, the code panel, the human's tinted post.
   {
-    spec: '.msg',
-    find: '[data-testid^="message-"]',
-    props: ['display', 'gap', 'min-width', 'padding'],
+    spec: '.col',
+    find: '[data-testid="transcript-column"]',
+    props: ['max-width', 'width'],
     why: {
-      padding: 'shorthand not enumerated by getComputedStyle; longhands verified by eye',
+      margin: 'auto resolves to px at computed-style time; verified by eye',
+      width:
+        'percentage resolves to an absolute px value at computed-style time (100% clamped by max-width here, so the resolved number is the max-width itself); verified by eye',
     },
   },
   {
-    spec: '.code',
-    find: '[data-testid="code-block"]',
-    props: [
-      'background',
-      'display',
-      'border-radius',
-      'font-size',
-      'line-height',
-      'margin-top',
-      'overflow-x',
-      'white-space',
-      'padding',
-    ],
+    spec: '.msg',
+    find: '[data-testid^="message-"]:not([data-testid="message-body"]):not([data-testid="message-fold"])',
+    props: ['display', 'min-width', 'padding'],
+    why: { padding: 'shorthand not enumerated by getComputedStyle; longhands verified by eye' },
+  },
+  {
+    spec: '.hpill',
+    find: '[data-testid="speaker-chip"]',
+    props: ['border-radius'],
     why: {
-      padding: 'shorthand not enumerated by getComputedStyle; longhands verified by eye',
-      border: 'full shorthand (width/style/colour combined); not separately enumerated, verified by eye',
-      'white-space': WHITE_SPACE_NOT_ENUMERATED,
+      padding: 'shorthand not enumerated; longhands verified by eye',
+      'margin-left': 'verified by eye',
+      color: 'per-speaker hue, inline; verified by eye',
+      background: 'per-speaker hue, inline; verified by eye',
+    },
+  },
+  {
+    spec: '.prose',
+    find: '[data-testid="message-body"]',
+    props: ['font-size', 'display', 'flex-direction', 'gap', 'min-width', 'overflow-wrap'],
+    why: {
+      'font-family': 'serialized with double quotes; same stack, verified by eye',
       'line-height': LINE_HEIGHT_RESOLVES_TO_PX,
     },
+  },
+  {
+    spec: '.prose h1',
+    find: '[data-testid="message-body"] h1',
+    props: ['font-size', 'font-weight', 'margin-top'],
+    why: { 'line-height': LINE_HEIGHT_RESOLVES_TO_PX },
+  },
+  {
+    spec: '.prose h2',
+    find: '[data-testid="message-body"] h2',
+    props: ['font-size', 'font-weight', 'margin-top'],
+    why: { 'line-height': LINE_HEIGHT_RESOLVES_TO_PX },
+  },
+  {
+    spec: '.prose h3',
+    find: '[data-testid="message-body"] h3',
+    props: ['font-size', 'font-weight', 'margin-top'],
+    why: { 'line-height': LINE_HEIGHT_RESOLVES_TO_PX },
+  },
+  {
+    spec: '.prose ul, .prose ol',
+    find: '[data-testid="message-body"] ol',
+    props: ['padding-left', 'display', 'flex-direction', 'gap'],
+  },
+  {
+    spec: '.prose code',
+    find: '[data-testid="message-body"] p > code',
+    props: ['font-size', 'background', 'border-radius', 'padding'],
+    why: {
+      'font-family': 'serialized with double quotes; same stack, verified by eye',
+      border: 'token',
+      padding: 'shorthand not enumerated; longhands verified by eye',
+    },
+  },
+  {
+    spec: '.prose table',
+    find: '[data-testid="message-body"] table',
+    props: ['border-collapse', 'font-size'],
+    why: { 'line-height': LINE_HEIGHT_RESOLVES_TO_PX },
+  },
+  {
+    spec: '.prose th, .prose td',
+    find: '[data-testid="message-body"] td',
+    props: ['text-align', 'vertical-align', 'padding'],
+    why: { border: 'token', padding: 'shorthand not enumerated; longhands verified by eye' },
+  },
+  {
+    spec: '.prose th',
+    find: '[data-testid="message-body"] th',
+    props: ['font-weight'],
+    why: { background: 'token; color prop, verified by eye' },
+  },
+  {
+    spec: '.ch',
+    find: '[data-testid="code-block"]',
+    props: ['border-radius', 'overflow', 'position'],
+    why: { border: 'Paper withBorder token', background: 'CodeHighlight owns it; verified by eye' },
+  },
+  {
+    spec: '.ch pre',
+    find: '[data-testid="code-block"] pre',
+    props: ['font-size', 'overflow-x'],
+    why: {
+      'font-family': 'serialized with double quotes; same stack',
+      'line-height': LINE_HEIGHT_RESOLVES_TO_PX,
+      'white-space': WHITE_SPACE_NOT_ENUMERATED,
+      padding: 'shorthand not enumerated; longhands verified by eye',
+      margin: 'CodeHighlight resets it; verified by eye',
+      width: 'fit-content resolves to px',
+      'min-width': 'percentage resolves to px',
+    },
+  },
+  {
+    spec: '.msg.mine .prose',
+    find: '[data-mine="true"] [data-testid="message-body"]',
+    props: ['background', 'border-radius', 'padding'],
+    why: { padding: 'shorthand not enumerated; longhands verified by eye' },
+  },
+  {
+    spec: '.at.me',
+    find: '[data-testid="message-body"] [data-me="true"]',
+    props: ['background', 'border-radius', 'padding', 'color', 'font-weight'],
+    why: { padding: 'shorthand not enumerated; longhands verified by eye' },
   },
   {
     spec: '.divider',
@@ -484,22 +575,6 @@ export const TARGETS = [
     },
   },
   {
-    spec: '.copy',
-    find: '[data-testid="code-copy"] button',
-    props: ['width', 'height', 'border-radius'],
-    why: {
-      position: 'on the wrapper, not the button; verified by eye',
-      top: 'wrapper',
-      right: 'wrapper',
-      display: 'ActionIcon authors inline-flex',
-      background: 'theme token',
-      border: 'theme token',
-      color: 'theme token',
-      'align-items': 'verified by eye',
-      'justify-content': 'verified by eye',
-    },
-  },
-  {
     spec: '.fold',
     find: '[data-testid="message-fold"][data-folded="true"] > div',
     props: ['max-height', 'overflow', 'position'],
@@ -516,7 +591,6 @@ export const TARGETS = [
     },
   },
 
-  // QoL round 1 -- archive: the menu, the rail section, the chip, the bar.
   {
     spec: '.menu',
     find: '[data-testid="room-menu"]',
@@ -530,45 +604,42 @@ export const TARGETS = [
       'justify-content': 'verified by eye',
     },
   },
+  // Close: the rail row's hover × and the menus' items. The × is `display:
+  // none` until hover, so its size and shape are read at rest; the menu
+  // items exist only while their menu is open, so capture with the page
+  // bar's ⋯ open (same convention as the composer popover).
   {
-    spec: '.room.archived',
-    find: '[data-testid="room-row-retro-0819"]',
-    props: ['opacity'],
+    spec: '.room .close',
+    find: '[data-testid^="room-close-"]',
+    props: ['width', 'height', 'border-radius', 'align-items', 'justify-content', 'color'],
+    why: {
+      display: 'none until hover or focus; the audit reads the resting state',
+      background: 'transparent until hover; verified by eye',
+      border: '0, not separately enumerated',
+      flex: 'set by the row, not the control',
+      'margin-right': 'verified by eye',
+      cursor: 'verified by eye',
+    },
   },
   {
-    spec: '.chip',
-    find: '[data-testid="chip-archived"]',
-    props: ['display', 'align-items', 'gap', 'height', 'border-radius', 'font-size', 'font-weight', 'white-space', 'color'],
+    spec: '.menu-item',
+    find: '[data-testid="room-menu-close"]',
+    props: ['display', 'align-items', 'min-height', 'font-size', 'border-radius', 'color', 'padding'],
+    why: {
+      padding: 'shorthand not enumerated; longhands verified by eye',
+      'white-space': WHITE_SPACE_NOT_ENUMERATED,
+    },
+  },
+  {
+    spec: '.menu-dd',
+    find: '[data-testid="room-menu-dropdown"]',
+    props: ['display', 'flex-direction', 'background', 'border-radius', 'padding'],
     why: {
       padding: 'shorthand not enumerated; longhands verified by eye',
       border: 'token',
+      'box-shadow': BOX_SHADOW_SERIALIZATION_DIFFERS,
     },
   },
-  {
-    spec: '.archived-bar',
-    find: '[data-testid="archived-bar"]',
-    props: ['display', 'align-items', 'justify-content', 'height', 'margin-top'],
-    why: {
-      padding: 'shorthand not enumerated; longhands verified by eye',
-      'border-top': 'token',
-    },
-  },
-  // The rail's collapsed ARCHIVED section header (RoomRail.tsx): `.sect.toggle`
-  // adds only `cursor` over the base `.sect` row, already asserted by the
-  // `section-live` target above -- re-checking align-items/display/gap here
-  // would just duplicate that entry against the same shared CSS rule.
-  {
-    spec: '.sect.toggle',
-    find: '[data-testid="archived-toggle"]',
-    props: ['cursor'],
-  },
-  // `archived-reopen` (ArchivedBar.tsx's Reopen control) is intentionally
-  // NOT a target: it is a real kit `Button` (variant="default", size="xs"),
-  // not one of the artboard's own named CSS classes -- the artboard drew it
-  // with one-off inline styles that `extract-spec.py` never lifts into
-  // spec.json, the same way the page bar's "mark read" and the DM detail
-  // card's buttons never got a class either. There is no selector to diff
-  // against without exempting every property, which would check nothing.
 
   // Tasks 6-8 -- PanePicker (design/artboards/PanePicker.dc.html) and its
   // NewRoomModal caller (design/artboards/NewRoom.dc.html). The `.pop` shell

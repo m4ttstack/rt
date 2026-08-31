@@ -71,15 +71,18 @@ approximated:
 | status dot | **8px** | 6px, the health dot from console |
 | action icon | **28px** square, 6px radius | 24px or 32px |
 | phone control | **44px** | 40px, below the hit-target floor |
-| message row | `gap: 9.6px`, `padding: 8.4px 0` | 8px / 10px rounded |
+| message row | `padding: 16px 0`, block, soft border between | 8.4px, a flex row |
 | member row | `gap: 7.2px`, `padding: 7.2px 0` | 8px |
 | room row | `height: 34px`, `padding: 0 9.6px` | 32px / 36px |
-| message body | `font-size: 12.16px` | 12px |
+| message body | `.prose` 12.16px / 1.7, blocks 12px apart, column `max-width: 640px` | 13px, 14px, 16px, or the panel's full width |
+| code panel | `pre` 12.16px / 1.7, `padding: 4.8px 9.6px` | 13px (CodeHighlight's default), 11.2px |
 | small text | `11.2px`, extra-small `10.56px` | 11px / 10px |
 | badge / mention / unread | `height: 18px`, `radius: 10px` | 20px, or a pill radius |
 | tag | `height: 14px`, `radius: 7px`, `8.5px` type | 16px |
 | chip | `height: 22px`, `radius: 6px` | 24px |
 | separators | `1px solid var(--border-soft)` between rows | `--border`, the heavier one |
+| close control | **22px** (ActionIcon `sm`), radius 6px | 24px, the rail's `+` |
+| menu item | `min-height: 24px`, 11.2px, `padding: 3.2px 7.2px` | 30px, or 12.16px type |
 
 **The odd numbers are the point.** 7.2px is `0.45rem`, 9.6px is `0.6rem`,
 11.2px is `0.7rem`, 12.16px is `0.76rem`, 4.8px is `0.3rem`. They are Mantine

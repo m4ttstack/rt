@@ -28,3 +28,29 @@
     transparent
   );
 }
+
+/* The speaker chip owns its own box: `--speaker-hue` is set inline per
+   render, so geometry lives here once and never changes between rest and
+   hover -- only the wash strength does. A hover-time padding/margin swap
+   here would shear every row's content to its right, so it never touches
+   these declarations again below. */
+.hueChip {
+  border-radius: 4px;
+  padding: 0 6px;
+  margin-left: -6px;
+  color: var(--speaker-hue);
+  background-color: color-mix(
+    in srgb,
+    var(--speaker-hue) var(--tk-wash),
+    transparent
+  );
+  transition: background-color 120ms ease;
+}
+
+.target:hover .hueChip {
+  background-color: color-mix(
+    in srgb,
+    var(--speaker-hue) calc(var(--tk-wash) * 2),
+    transparent
+  );
+}

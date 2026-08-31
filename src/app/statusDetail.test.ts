@@ -5,9 +5,9 @@ import { STATUS_WORD, statusDetail } from './statusDetail';
 const now = 1_700_000_000_000;
 
 test("statusDetail explains the daemon's status; it never contradicts it", () => {
-  expect(
-    statusDetail({ status: 'live', lastSeenAt: now - 12_000 }, now)
-  ).toBe('seen 12s ago');
+  expect(statusDetail({ status: 'live', lastSeenAt: now - 12_000 }, now)).toBe(
+    'seen 12s ago'
+  );
   expect(
     statusDetail({ status: 'idle', lastSeenAt: now - 9 * 60_000 }, now)
   ).toBe('seen 9m ago');

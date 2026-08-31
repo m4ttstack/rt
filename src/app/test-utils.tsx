@@ -2,6 +2,7 @@ import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import type { ChatMessage } from '@mattstack/rt-client';
 import { vi } from 'vitest';
 
+import { resetRelayForTests } from './relay-socket';
 import { Transcript, type TranscriptProps } from './Transcript';
 
 /**
@@ -66,6 +67,7 @@ export class FakeWebSocket {
  * `/ws` nothing is serving.
  */
 export function installFakeWebSocket() {
+  resetRelayForTests();
   originalWebSocket ??= globalThis.WebSocket;
   FakeWebSocket.instances = [];
   globalThis.WebSocket = FakeWebSocket as unknown as typeof WebSocket;

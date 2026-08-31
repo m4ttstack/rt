@@ -20,6 +20,10 @@ import { STATUS_WORD, statusDetail } from './statusDetail';
 
 export type AgentNameVariant = 'row' | 'inline' | 'name';
 
+/** Carries the per-speaker hue into `.hueChip`'s CSS as a custom property,
+    since the color itself is only known at render time. */
+type HueStyle = React.CSSProperties & { '--speaker-hue': string };
+
 export interface AgentNameProps {
   handle: string;
   /** `row`: a roster row (sm name, status word, away line). `inline`: a
@@ -28,6 +32,9 @@ export interface AgentNameProps {
   variant?: AgentNameVariant;
   /** `false` for touch surfaces (the phone drawer): no hover, no card. */
   withCard?: boolean;
+  /** `inline` only: renders the handle as a chip in this hue (color and
+      wash background). Unset keeps today's plain-name rendering. */
+  hue?: string;
   /** The roster already holds the buddy and its room membership; these
       override the context lookup so the roster renders outside a provider
       (and in its own tests) the same way. */
@@ -253,6 +260,7 @@ export function AgentName({
   reachable: reachableProp,
   now,
   inRoom,
+  hue,
 }: AgentNameProps) {
   const ctx = useBuddies();
   const buddy = buddyProp ?? ctx?.byHandle.get(handle);
@@ -300,10 +308,21 @@ export function AgentName({
         wrap="nowrap"
         align="baseline"
         component="span"
-        className={classes.name}
+        className={hue ? undefined : classes.name}
         style={{ minWidth: 0 }}
       >
-        <Text component="span" size="lg" fw={600} style={{ flex: 'none' }}>
+        <Text
+          component="span"
+          size="lg"
+          fw={600}
+          className={hue ? classes.hueChip : undefined}
+          data-testid={hue ? 'speaker-chip' : undefined}
+          style={
+            hue
+              ? ({ flex: 'none', '--speaker-hue': hue } as HueStyle)
+              : { flex: 'none' }
+          }
+        >
           {handle}
         </Text>
         {repo && <RepoToken repo={repo} />}

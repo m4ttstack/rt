@@ -55,10 +55,15 @@ Then the direct section: `.sect` with `padding: 10px 9.6px 4px` and the label
 Footnote under the section, `.xs.muted`, `padding: 4px 9.6px 0`:
 `Every agent↔agent DM is yours to read and post into.`
 
-Then, only when an archived room exists, a `.sect.toggle` row reading
-`ARCHIVED N` with a chevron, collapsed by default and remembered per browser.
-Archived rows are `.room.archived` (opacity 0.6) with no badges; a DM keeps
-its `.pair` name.
+Every `.room` closes: a 22px `.close` control (ActionIcon size sm, subtle)
+after the badges, shown on hover, on keyboard focus and while the row's menu
+is open, with a Tooltip reading `Close`; and a right-click menu (Mantine's
+`Menu.ContextMenu`, radius md, shadow md, the dropdown at the cursor, a long
+press on touch) whose `.menu-lbl` names the room or pair, then `Mark read`
+with its count (only with unread), then `Close`. Items are `.menu-item`:
+11.2px at 3.2px 7.2px, 24px tall, a 14px icon with a 4.8px gap. No section of
+the rail lists closed rooms; a closed room is listed only while it is the
+active one.
 
 ## Page bar — Task 5
 
@@ -75,8 +80,6 @@ Then the fleet chips, all `.chip` (22px tall, radius 6px, `gap: 4.8px`,
 - `N offline` — `.chip.offline` with a `.dot.offline` (muted, the same
   transparent-and-bordered dot the roster's offline row uses)
 - `wakes: <mode>` — plain chip
-- `archived` (plain chip, replaces `wakes` on an archived room; `mark read`
-  is hidden there)
 
 A chip whose count is **≤2 names its handles**: `1 offline: gitq-main`. That
 is what makes a member gone offline mid-conversation read first instead of
@@ -85,8 +88,8 @@ found last.
 Daemon down: exactly two plain chips, `N in room · last known` and
 `presence withheld`. No dots, no status variants.
 
-A 30px `.menu` (⋯) sits last: `Archive #room…` (confirm names the members who
-lose it) or `Reopen`.
+A 30px `.menu` (⋯) sits last with one item: `Close #room`, or `Close this
+conversation` on a DM. No confirm.
 
 ## Transcript — Task 5
 
@@ -95,57 +98,59 @@ The main panel on `bg3`, `padding: 11.2px 14.4px`, inside the scroll-clamped
 (react-scroll-to-bottom) with the composer pinned beneath it. Top edge row `.edge` (`.xs.muted`): `41 older messages · load on
 scroll`, becoming `Loading older…` while a `before` page is in flight.
 
-Each message is a `.msg` (`display: flex; gap: 9.6px; padding: 8.4px 0`),
-separated from the next by `border-top: 1px solid var(--border-soft)` — the
-**soft** border, not `--border`.
+The list and the composer sit in a `.col`: `max-width: 640px; margin: 0 auto`
+(about 100 characters at md). Each message is a `.msg` (`display: block;
+padding: 16px 0`), separated by `border-top: 1px solid var(--border-soft)`.
 
-Inside, a stack at `gap: 1px`:
+Inside: a `.hdr` (`display: flex; align-items: baseline; gap: 7.2px;
+margin-bottom: 8px`) with the handle at 13.6px / 600, the `· repo` token, a
+`you` badge on the human's post, and the local time in `.xs.muted`; then the
+body in `.prose`. The handle itself is a `.hpill` chip in the speaker's hue
+(a stable hash per handle, purple/cyan/ok/warn/bad; the human always
+accent); hover only deepens the wash, never moving a pixel.
 
-- header row, `gap: 7.2px`: handle at 13.6px (`lg`, a step above the body)
-  and `font-weight: 600`, then time in `.xs.muted`. **Local time.**
-- body in `.msg-body` (12.16px, `line-height: 1.55`, `overflow-wrap: anywhere`,
-  `white-space: pre-wrap` so posted newlines survive)
-- optional `.code` block: own `overflow-x: auto`, `margin-top: 4.8px`
+**`.prose` is react-markdown's output with its tags untouched**: 12.16px IBM
+Plex Sans at `line-height: 1.7`, blocks 12px apart (`display: flex;
+flex-direction: column; gap: 12px`), `overflow-wrap: anywhere`. `h1`/`h2`/`h3`
+at 14.72 / 13.6 / 12.16px, 600 (h4 and deeper demote to h3); `ul`/`ol` at
+`padding-left: 20px`, items 4px apart, nested 3px; task items render their
+checkbox as decoration; `table` (inside a `.tbl` `overflow-x: auto` wrapper)
+at 11.2px with `4.8px 8px` cells and a `bg2` header row; `blockquote` with an
+11.2px inset behind a 2px rule; `hr` soft; inline `code` at 11.2px mono on
+`bg3`; links accent. Raw HTML never renders; an image is its alt text linking
+to the file.
 
-**Message body: the markdown subset.** The body is rendered by
-`src/app/Transcript.tsx`, hand-rolled, no HTML: paragraphs on a blank line;
-`- `/`* ` bullet and `1.`/`1)` numbered lists (every line of the block a
-marker); `**bold**`; `*italic*`/`_italic_` with a non-word boundary outside
-the markers, so `make_icon_swift` stays literal; inline and fenced code, split
-off first so nothing inside code is read as markup or a mention; bare URLs as
-links; `@handle` only for handles in the message's `mentions`. Headings,
-tables, blockquotes and nested lists show literally.
+A fenced block is a `CodeBlock`: `Paper withBorder` (radius 6px) around the
+kit's lazy `CodeHighlight`, `pre` at 12.16px mono / 1.7 with `4.8px 9.6px`
+padding on `bg1`, the component's own copy control 8px in from the top-right.
+Nothing else in the transcript draws a copy control.
 
-**No status dot beside a message.** A dot next to a 21:58 message would be a
-claim about 21:58; status lives on the roster row.
-
-Mentions inside a body are `.at` (accent, 600). A mention *of the human* is
-`.at.me`, which adds the accent wash and `padding: 0 3px`.
-
-Inline `code` inside a body: `background: var(--bg3)`, `1px solid
-var(--border-soft)`, radius 3px, `padding: 0 3px`, 11.2px, `font-family:
-inherit`.
+Mentions are `.at` (accent, 600), only for handles in the message's
+`mentions`; a mention of the human is `.at.me` (the accent wash, `padding: 0
+3px`). The human's own post is `.msg.mine`: its `.prose` sits in the accent
+wash at radius 6px, `padding: 9.6px 11.2px`.
 
 The read cursor is a `.divider` (accent, 10.56px / 600, rules on both sides at
 45% accent) reading `N new`, then a `·`, then a `mark read` link.
 
 A day boundary is a `.day` divider (muted, 10.56px / 600, soft rules either
 side): `Today`, `Yesterday`, else `Mon 24 Aug`, with the year when it
-differs. Each fenced block is a `.codewrap` with a `.copy` control (22px) at
-its top-right, shown on hover or focus, always on touch. A body taller than
-480px renders in a `.fold` (320px, a 48px fade) with a `.more` button: `show
-more` / `show less`; the anchored message never folds. While the viewer is
-scrolled up, a `.pill` (26px, accent on an opaque wash, 30px from the
-bottom-right) reads `↓ N new` or `↓ latest` and returns to the bottom.
+differs. A body taller than 480px renders in a `.fold` (320px, a 48px fade)
+with a `.more` button: `show more` / `show less`; the anchored message never
+folds. While the viewer is scrolled up, a `.pill` (26px, accent on an opaque
+wash, 30px from the bottom-right) reads `↓ N new` or `↓ latest` and returns
+to the bottom.
 
 A DM transcript opens with `start of this conversation · <day>`.
 
-## Archived room
+## Close sheet
 
-The composer is replaced by an `.archived-bar` (44px, soft top border):
-`Archived <day> · everyone keeps their place` in `.xs.muted` and a default
-`Reopen` button. The transcript, roster and page bar are otherwise
-unchanged.
+`Close.dc.html` draws the four ways to close at the kit's own sizes: the rail
+row's hover × with its tooltip, the row's right-click menu, the page bar's ⋯
+with `Close this conversation`, and the phone header's 44px ⋯ with
+`.menu-item.tap` items (minHeight 44 via `styles`). Closing parks the room
+daemon-side (the `archivedAt` bit); the composer stays live and any post
+revives the room for everyone.
 
 ## Roster — Task 6
 

@@ -1,3 +1,4 @@
+import { notifications } from '@mattstack/app-kit/notifications';
 import {
   renderWithProviders,
   setViewportWidth,
@@ -38,7 +39,16 @@ beforeEach(() => {
 afterEach(() => {
   window.history.replaceState(null, '', '/');
   window.localStorage.removeItem('ui-color-scheme');
+  // The mobile-viewport test below leaves `chat-rooms-sidebar` collapsed:
+  // `PageShell`'s own mobile effect persists `sidebarOpen: false` to this
+  // key regardless of which test set the viewport, and a later desktop
+  // test would otherwise inherit a collapsed (pointer-events: none) rail.
+  window.localStorage.removeItem('chat-rooms-sidebar');
   setViewportWidth(DESKTOP_WIDTH);
+  // The notifications store lives outside React (a module-level singleton),
+  // so an error toast from one test survives that test's unmount and can
+  // collide with a later test asserting the same message.
+  notifications.clean();
   restoreWebSocket();
 });
 
@@ -110,6 +120,39 @@ test('on mobile the rail opens from the header toggle and navigating closes it',
   fireEvent.click(rail.getByRole('link', { name: 'Rooms' }));
 
   expect(screen.queryByTestId('rail-overlay')).toBeNull();
+});
+
+test('the phone transcript wrapper is a flex column, so the bare transcript can size itself', () => {
+  // Regression: a plain (block) wrapper Box gives the bare Transcript root no
+  // flex context to size against, so its own inner scroll box (also
+  // `flex: 1; min-height: 0`) collapses to zero height and the transcript
+  // renders empty on a phone. jsdom never computes real layout, so this pins
+  // the wrapper's actual style contract instead of a faked measurement.
+  setViewportWidth(390);
+  window.history.replaceState(null, '', '/');
+  renderWithProviders(
+    <App
+      initialState={{
+        daemonReachable: true,
+        rooms: [{ room: 'build', memberCount: 1, unread: 0, mentions: 0 }],
+        messages: [
+          {
+            id: 7,
+            room: 'build',
+            handle: 'deck-main',
+            body: 'seeded body',
+            mentions: [],
+            postedAt: 1,
+          },
+        ],
+      }}
+    />
+  );
+
+  expect(screen.getByTestId('phone-shell')).toBeInTheDocument();
+  const wrapper = screen.getByTestId('transcript').parentElement;
+  expect(wrapper).toHaveStyle({ display: 'flex', flexDirection: 'column' });
+  expect(wrapper).not.toHaveStyle({ overflowY: 'auto' });
 });
 
 test('/demo renders the kit full-screen PageShell showcase, bypassing the chat chrome', () => {
@@ -336,6 +379,35 @@ test('the rooms rail lives in the PageShell sidebar and the roster is the right 
   ).toBeInTheDocument();
 });
 
+test('with every room closed, the rail still mounts and the placeholder says rooms come back', () => {
+  window.history.replaceState(null, '', '/');
+  renderWithProviders(
+    <App
+      initialState={{
+        daemonReachable: true,
+        buddies: [],
+        rooms: [
+          {
+            room: 'build',
+            memberCount: 1,
+            unread: 0,
+            mentions: 0,
+            archivedAt: Date.now(),
+          },
+        ],
+        messages: [],
+        members: [],
+      }}
+    />
+  );
+  expect(screen.getByTestId('room-rail')).toBeInTheDocument();
+  expect(
+    screen.getByText(
+      'Every room is closed. A post from anyone brings its room back, and the + starts a new one.'
+    )
+  ).toBeInTheDocument();
+});
+
 function jsonResponse(body: unknown): Response {
   return { ok: true, status: 200, json: async () => body } as Response;
 }
@@ -531,51 +603,15 @@ test('a buddy with no herdr pane shows no Focus pane button', async () => {
   expect(screen.queryByTestId('card-focus-fred')).toBeNull();
 });
 
-test('an archived room renders the archived bar instead of the composer, and Reopen posts archived:false', async () => {
-  installFetchMock();
-  window.history.replaceState(null, '', '/r/retro');
-  renderWithProviders(
-    <App
-      initialState={{
-        daemonReachable: true,
-        buddies: [],
-        rooms: [
-          {
-            room: 'retro',
-            memberCount: 1,
-            unread: 0,
-            mentions: 0,
-            archivedAt: Date.now() - 3 * 86_400_000,
-          },
-        ],
-        members: [],
-        messages: [
-          {
-            id: 1,
-            room: 'retro',
-            handle: 'fred',
-            body: 'closing out',
-            mentions: [],
-            postedAt: Date.now(),
-          },
-        ],
-      }}
-    />
-  );
-  expect(await screen.findByTestId('archived-bar')).toBeInTheDocument();
-  expect(screen.queryByTestId('composer')).toBeNull();
-  expect(screen.queryByTestId('mark-read-button')).toBeNull();
-  await userEvent.click(screen.getByTestId('archived-reopen'));
-  expect(fetchMock).toHaveBeenCalledWith(
-    '/api/chat/archive',
-    expect.objectContaining({
-      method: 'POST',
-      body: JSON.stringify({ room: 'retro', archived: false }),
-    })
-  );
-});
+function errorResponse(status: number): Response {
+  return {
+    ok: false,
+    status,
+    json: async () => ({ error: 'nope' }),
+  } as Response;
+}
 
-test('the home route lands on the first OPEN room when an archived room sorts first', () => {
+test('the home route lands on the first OPEN room, and a closed room never shows a read-only bar', () => {
   window.history.replaceState(null, '', '/');
   renderWithProviders(
     <App
@@ -584,7 +620,7 @@ test('the home route lands on the first OPEN room when an archived room sorts fi
         buddies: [],
         rooms: [
           {
-            room: 'archived-first',
+            room: 'closed-first',
             memberCount: 1,
             unread: 0,
             mentions: 0,
@@ -601,17 +637,48 @@ test('the home route lands on the first OPEN room when an archived room sorts fi
     within(screen.getByTestId('page-bar')).getByText('build')
   ).toBeInTheDocument();
   expect(screen.queryByTestId('archived-bar')).toBeNull();
+  expect(screen.queryByTestId('room-row-closed-first')).toBeNull();
   expect(screen.getByTestId('composer')).toBeInTheDocument();
 });
 
-test('archiving the active room navigates away when it vanishes from the refetched list', async () => {
+test('a closed room reached by link opens with a live composer and is listed only while open', async () => {
+  installFetchMock();
+  window.history.replaceState(null, '', '/r/retro');
+  renderWithProviders(
+    <App
+      initialState={{
+        daemonReachable: true,
+        buddies: [],
+        rooms: [
+          { room: 'build', memberCount: 1, unread: 0, mentions: 0 },
+          {
+            room: 'retro',
+            memberCount: 1,
+            unread: 0,
+            mentions: 0,
+            archivedAt: Date.now() - 3 * 86_400_000,
+          },
+        ],
+        members: [],
+        messages: [],
+      }}
+    />
+  );
+  expect(screen.getByTestId('composer')).toBeInTheDocument();
+  expect(screen.queryByTestId('archived-bar')).toBeNull();
+  expect(screen.getByTestId('room-row-retro').dataset.active).toBe('true');
+  expect(screen.queryByText(/archiv/i)).toBeNull();
+  await userEvent.click(screen.getByTestId('room-row-build'));
+  await waitFor(() => expect(window.location.pathname).toBe('/r/build'));
+  expect(screen.queryByTestId('room-row-retro')).toBeNull();
+});
+
+test('closing the open room from the ⋯ menu lands on / and the first open room', async () => {
   installFetchMock();
   const build = { room: 'build', memberCount: 1, unread: 0, mentions: 0 };
   fetchMock.mockImplementation((url: string) => {
-    if (url === '/api/chat/archive')
-      return Promise.resolve(jsonResponse({ ok: true }));
-    // The archived room is gone from the human's listing (the fleet-DM case:
-    // no membership row survives the archive); only `build` comes back.
+    if (url === '/api/chat/close')
+      return Promise.resolve(jsonResponse({ room: 'ghost', closedAt: 5 }));
     if (url === '/api/chat/rooms')
       return Promise.resolve(jsonResponse({ rooms: [build] }));
     return Promise.resolve(jsonResponse({}));
@@ -632,14 +699,190 @@ test('archiving the active room navigates away when it vanishes from the refetch
     />
   );
   await userEvent.click(screen.getByTestId('room-menu'));
-  await userEvent.click(await screen.findByTestId('room-menu-archive'));
-  await userEvent.click(screen.getByRole('button', { name: 'Archive' }));
-
-  await waitFor(() => expect(window.location.pathname).toBe('/r/build'));
+  await userEvent.click(await screen.findByTestId('room-menu-close'));
+  expect(fetchMock).toHaveBeenCalledWith(
+    '/api/chat/close',
+    expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ room: 'ghost' }),
+    })
+  );
+  await waitFor(() => expect(window.location.pathname).toBe('/'));
   expect(
     within(screen.getByTestId('page-bar')).getByText('build')
   ).toBeInTheDocument();
+  expect(screen.queryByTestId('room-row-ghost')).toBeNull();
   expect(screen.getByTestId('composer')).toBeInTheDocument();
+});
+
+test('closing another room from its rail × drops the row at once and keeps the page', async () => {
+  installFetchMock();
+  fetchMock.mockImplementation((url: string) => {
+    if (url === '/api/chat/close')
+      return Promise.resolve(jsonResponse({ room: 'ghost', closedAt: 5 }));
+    if (url === '/api/chat/rooms')
+      return Promise.resolve(
+        jsonResponse({
+          rooms: [{ room: 'build', memberCount: 1, unread: 0, mentions: 0 }],
+        })
+      );
+    return Promise.resolve(jsonResponse({}));
+  });
+  window.history.replaceState(null, '', '/r/build');
+  renderWithProviders(
+    <App
+      initialState={{
+        daemonReachable: true,
+        buddies: [],
+        rooms: [
+          { room: 'build', memberCount: 1, unread: 0, mentions: 0 },
+          { room: 'ghost', memberCount: 1, unread: 2, mentions: 0 },
+        ],
+        members: [],
+        messages: [],
+      }}
+    />
+  );
+  await userEvent.hover(screen.getByTestId('room-row-ghost'));
+  await userEvent.click(screen.getByTestId('room-close-ghost'));
+  expect(screen.queryByTestId('room-row-ghost')).toBeNull();
+  expect(window.location.pathname).toBe('/r/build');
+  expect(
+    within(screen.getByTestId('page-bar')).getByText('build')
+  ).toBeInTheDocument();
+});
+
+test('a failed close restores the row and says so', async () => {
+  installFetchMock();
+  fetchMock.mockImplementation((url: string) => {
+    if (url === '/api/chat/close') return Promise.resolve(errorResponse(502));
+    return Promise.resolve(jsonResponse({}));
+  });
+  window.history.replaceState(null, '', '/r/build');
+  renderWithProviders(
+    <App
+      initialState={{
+        daemonReachable: true,
+        buddies: [],
+        rooms: [
+          { room: 'build', memberCount: 1, unread: 0, mentions: 0 },
+          { room: 'ghost', memberCount: 1, unread: 0, mentions: 0 },
+        ],
+        members: [],
+        messages: [],
+      }}
+    />
+  );
+  await userEvent.hover(screen.getByTestId('room-row-ghost'));
+  await userEvent.click(screen.getByTestId('room-close-ghost'));
+  expect(
+    await screen.findByText("Couldn't close the room")
+  ).toBeInTheDocument();
+  expect(screen.getByTestId('room-row-ghost')).toBeInTheDocument();
+});
+
+test('the row leaves the rail before the close resolves, and comes back when it fails', async () => {
+  installFetchMock();
+  let rejectClose!: (e: Error) => void;
+  fetchMock.mockImplementation((url: string) => {
+    if (url === '/api/chat/close')
+      return new Promise<Response>((_, reject) => {
+        rejectClose = reject;
+      });
+    // Both rooms, always: if the row's absence were explained by a refetch
+    // landing rather than the optimistic filter, this response would put
+    // `ghost` right back before the assertion below runs.
+    if (url === '/api/chat/rooms')
+      return Promise.resolve(
+        jsonResponse({
+          rooms: [
+            { room: 'build', memberCount: 1, unread: 0, mentions: 0 },
+            { room: 'ghost', memberCount: 1, unread: 0, mentions: 0 },
+          ],
+        })
+      );
+    return Promise.resolve(jsonResponse({}));
+  });
+  window.history.replaceState(null, '', '/r/build');
+  renderWithProviders(
+    <App
+      initialState={{
+        daemonReachable: true,
+        buddies: [],
+        rooms: [
+          { room: 'build', memberCount: 1, unread: 0, mentions: 0 },
+          { room: 'ghost', memberCount: 1, unread: 0, mentions: 0 },
+        ],
+        members: [],
+        messages: [],
+      }}
+    />
+  );
+  await userEvent.hover(screen.getByTestId('room-row-ghost'));
+  await userEvent.click(screen.getByTestId('room-close-ghost'));
+
+  // The close request is still pending (rejectClose hasn't been called yet):
+  // the row is gone and the page hasn't moved, so only the optimistic
+  // removal -- not a response -- explains it.
+  expect(screen.queryByTestId('room-row-ghost')).toBeNull();
+  expect(window.location.pathname).toBe('/r/build');
+
+  await act(async () => {
+    rejectClose(new Error('boom'));
+  });
+
+  expect(
+    await screen.findByText("Couldn't close the room")
+  ).toBeInTheDocument();
+  expect(screen.getByTestId('room-row-ghost')).toBeInTheDocument();
+});
+
+test('the rail menu’s Mark read posts the mark and refetches rooms', async () => {
+  installFetchMock();
+  let marked = false;
+  fetchMock.mockImplementation((url: string) => {
+    if (url === '/api/chat/mark') {
+      marked = true;
+      return Promise.resolve(jsonResponse({}));
+    }
+    if (url === '/api/chat/rooms')
+      return Promise.resolve(
+        jsonResponse({
+          rooms: [
+            {
+              room: 'build',
+              memberCount: 1,
+              unread: marked ? 0 : 3,
+              mentions: 0,
+            },
+          ],
+        })
+      );
+    return Promise.resolve(jsonResponse({}));
+  });
+  window.history.replaceState(null, '', '/r/build');
+  renderWithProviders(
+    <App
+      initialState={{
+        daemonReachable: true,
+        buddies: [],
+        rooms: [{ room: 'build', memberCount: 1, unread: 3, mentions: 0 }],
+        members: [],
+        messages: [],
+      }}
+    />
+  );
+  fireEvent.contextMenu(screen.getByTestId('room-row-build'));
+  await userEvent.click(await screen.findByTestId('room-context-mark-read'));
+  expect(fetchMock).toHaveBeenCalledWith(
+    '/api/chat/mark',
+    expect.objectContaining({ body: JSON.stringify({ room: 'build' }) })
+  );
+  await waitFor(() =>
+    expect(
+      within(screen.getByTestId('room-row-build')).queryByTestId('unread-badge')
+    ).toBeNull()
+  );
 });
 
 test("a chat/<room>/msg frame refetches the open room's members", async () => {
@@ -682,6 +925,117 @@ test("a chat/<room>/msg frame refetches the open room's members", async () => {
     String(u).startsWith('/api/chat/who/build')
   ).length;
   expect(after).toBeGreaterThan(before);
+});
+
+test('a msg frame for a room the rail does not know refetches rooms at once', async () => {
+  installFetchMock();
+  fetchMock.mockImplementation((url: string) =>
+    Promise.resolve(
+      jsonResponse(
+        url === '/api/chat/rooms'
+          ? {
+              rooms: [
+                { room: 'build', memberCount: 1, unread: 0, mentions: 0 },
+                { room: 'fresh', memberCount: 1, unread: 1, mentions: 0 },
+              ],
+            }
+          : {}
+      )
+    )
+  );
+  window.history.replaceState(null, '', '/r/build');
+  await act(async () => {
+    renderWithProviders(
+      <App
+        initialState={{
+          daemonReachable: true,
+          buddies: [],
+          rooms: [{ room: 'build', memberCount: 1, unread: 0, mentions: 0 }],
+          members: [],
+          messages: [],
+        }}
+      />
+    );
+  });
+  const before = fetchMock.mock.calls.filter(
+    ([u]) => u === '/api/chat/rooms'
+  ).length;
+  await act(async () => {
+    for (const socket of FakeWebSocket.instances)
+      socket.onmessage?.({
+        data: JSON.stringify({ topic: 'chat/fresh/msg', payload: { id: 9 } }),
+      });
+  });
+  expect(
+    fetchMock.mock.calls.filter(([u]) => u === '/api/chat/rooms').length
+  ).toBe(before + 1);
+  expect(await screen.findByTestId('room-row-fresh')).toBeInTheDocument();
+  await act(async () => {
+    for (const socket of FakeWebSocket.instances)
+      socket.onmessage?.({
+        data: JSON.stringify({ topic: 'chat/build/msg', payload: { id: 10 } }),
+      });
+  });
+  expect(
+    fetchMock.mock.calls.filter(([u]) => u === '/api/chat/rooms').length
+  ).toBe(before + 1);
+});
+
+test('a reconnect and a tab becoming visible refetch rooms, buddies and members, in that order', async () => {
+  installFetchMock();
+  fetchMock.mockImplementation((url: string) =>
+    Promise.resolve(
+      jsonResponse(
+        url === '/api/chat/rooms'
+          ? {
+              rooms: [
+                { room: 'build', memberCount: 1, unread: 0, mentions: 0 },
+              ],
+            }
+          : { buddies: [], members: [] }
+      )
+    )
+  );
+  window.history.replaceState(null, '', '/r/build');
+  await act(async () => {
+    renderWithProviders(<App initialState={{ ...twoRooms, members: [] }} />);
+  });
+  const socket = FakeWebSocket.instances[0]!;
+  await act(async () => {
+    socket.onopen?.();
+  });
+  fetchMock.mockClear();
+  await act(async () => {
+    socket.onclose?.();
+  });
+  const again = FakeWebSocket.instances.at(-1)!;
+  await act(async () => {
+    again.onopen?.();
+  });
+  await waitFor(() => {
+    const urls = fetchMock.mock.calls.map(([u]) => String(u));
+    expect(urls.indexOf('/api/chat/rooms')).toBeGreaterThanOrEqual(0);
+    expect(urls.indexOf('/api/chat/buddies')).toBeGreaterThan(
+      urls.indexOf('/api/chat/rooms')
+    );
+    expect(
+      urls.findIndex(u => u.startsWith('/api/chat/who/build'))
+    ).toBeGreaterThan(urls.indexOf('/api/chat/buddies'));
+  });
+
+  fetchMock.mockClear();
+  Object.defineProperty(document, 'visibilityState', {
+    configurable: true,
+    get: () => 'visible',
+  });
+  await act(async () => {
+    document.dispatchEvent(new Event('visibilitychange'));
+  });
+  await waitFor(() =>
+    expect(fetchMock.mock.calls.some(([u]) => u === '/api/chat/rooms')).toBe(
+      true
+    )
+  );
 });
 
 test('the entry points hide while herdr is unavailable and show once /api/panes says available', async () => {
