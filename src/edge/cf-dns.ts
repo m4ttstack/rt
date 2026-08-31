@@ -13,6 +13,7 @@ export interface CfDns {
   writeTxt(name: string, value: string): Promise<void>;
   deleteTxt(name: string): Promise<void>;
   writeProxiedCname(host: string, target: string): Promise<void>;
+  cnameTarget(host: string): Promise<string | null>;
   deleteHostRecords(host: string): Promise<void>;
 }
 
@@ -96,12 +97,18 @@ export class CfDnsApi implements CfDns {
   }
 
   async writeProxiedCname(host: string, target: string): Promise<void> {
-    await this.req("POST", `${BASE}/zones/${this.zoneId}/dns_records`, {
-      type: "CNAME",
-      name: host,
-      content: target,
-      proxied: true,
-    });
+    const payload = { type: "CNAME", name: host, content: target, proxied: true };
+    const existing = (await this.listRecords(host, "CNAME"))[0];
+    if (existing) {
+      await this.req("PATCH", `${BASE}/zones/${this.zoneId}/dns_records/${existing.id}`, payload);
+      return;
+    }
+    await this.req("POST", `${BASE}/zones/${this.zoneId}/dns_records`, payload);
+  }
+
+  async cnameTarget(host: string): Promise<string | null> {
+    const existing = (await this.listRecords(host, "CNAME"))[0];
+    return existing ? existing.content : null;
   }
 
   async deleteHostRecords(host: string): Promise<void> {

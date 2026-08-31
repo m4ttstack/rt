@@ -45,3 +45,56 @@ test("tokenCanEditDns probes a real dns_records read, not just token status", as
   const zoneDnsDns = new CfDnsApi({ zoneId: "z1", token: "zone-dns-tok", fetchImpl: zoneDnsFetch });
   expect(await zoneDnsDns.tokenCanEditDns()).toBe(true);
 });
+
+// Cloudflare rejects a CNAME create when a record with that name exists
+// (error 81053), so the write must find and PATCH the existing record.
+test("writeProxiedCname updates an existing record instead of creating a duplicate", async () => {
+  const calls: { method: string; url: string; body: any }[] = [];
+  const existing = { id: "rec-1", type: "CNAME", name: "*.example.dev", content: "old.cfargotunnel.com", proxied: true };
+  const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+    const method = init?.method ?? "GET";
+    const body = init?.body ? JSON.parse(String(init.body)) : undefined;
+    calls.push({ method, url: String(url), body });
+    if (method === "GET") return Response.json({ success: true, result: [existing] });
+    if (method === "POST") return Response.json({ success: false, errors: [{ code: 81053, message: "already exists" }] });
+    return Response.json({ success: true, result: { ...existing, content: body.content } });
+  }) as typeof fetch;
+  const dns = new CfDnsApi({ zoneId: "z1", token: "t", fetchImpl });
+  await dns.writeProxiedCname("*.example.dev", "new.cfargotunnel.com");
+  const write = calls.find((c) => c.method !== "GET")!;
+  expect(write.method).toBe("PATCH");
+  expect(write.url).toContain("/dns_records/rec-1");
+  expect(write.body).toEqual({ type: "CNAME", name: "*.example.dev", content: "new.cfargotunnel.com", proxied: true });
+});
+
+test("writeProxiedCname creates when no record exists", async () => {
+  const calls: string[] = [];
+  const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+    const method = init?.method ?? "GET";
+    calls.push(method);
+    if (method === "GET") return Response.json({ success: true, result: [] });
+    return Response.json({ success: true, result: { id: "rec-2" } });
+  }) as typeof fetch;
+  const dns = new CfDnsApi({ zoneId: "z1", token: "t", fetchImpl });
+  await dns.writeProxiedCname("*.example.dev", "u.cfargotunnel.com");
+  expect(calls).toEqual(["GET", "POST"]);
+});
+
+test("cnameTarget reads the existing record's content, null when absent", async () => {
+  // URLSearchParams leaves `*` unencoded, so match on the parsed param, never on a hand-encoded string.
+  const fetchImpl = (async (url: string | URL | Request) =>
+    Response.json({ success: true, result: new URL(String(url)).searchParams.get("name") === "*.example.dev" ? [{ id: "r", type: "CNAME", name: "*.example.dev", content: "u.cfargotunnel.com" }] : [] })
+  ) as typeof fetch;
+  const dns = new CfDnsApi({ zoneId: "z1", token: "t", fetchImpl });
+  expect(await dns.cnameTarget("*.example.dev")).toBe("u.cfargotunnel.com");
+  expect(await dns.cnameTarget("*.other.dev")).toBeNull();
+});
+
+test("FakeCfDns mirrors upsert + cnameTarget", async () => {
+  const dns = new FakeCfDns();
+  await dns.writeProxiedCname("*.e.dev", "a.cfargotunnel.com");
+  await dns.writeProxiedCname("*.e.dev", "b.cfargotunnel.com");
+  expect(dns.cname.size).toBe(1);
+  expect(await dns.cnameTarget("*.e.dev")).toBe("b.cfargotunnel.com");
+  expect(await dns.cnameTarget("*.none.dev")).toBeNull();
+});
