@@ -1,4 +1,4 @@
-import { join } from "path";
+import { dirname, join } from "path";
 import { mkdirSync } from "fs";
 import { readRoutes, readServices } from "../../core/discover.ts";
 import {
@@ -9,6 +9,7 @@ import { listRecords, getRecord, deleteRecord, putRecord } from "./records.ts";
 import { registerApp, reinstallSupervised, type Drivers } from "../api/register.ts";
 import { stateDir, logsDir } from "../api/state.ts";
 import { composeServicePath } from "../services/exec-env.ts";
+import { readDeckManifest } from "./deck-manifest.ts";
 
 export interface BootstrapResult {
   port: number;
@@ -113,6 +114,14 @@ export async function bootstrapSelf(
   rec.managedBy = PLATFORM_NAME;
   rec.command = programArguments;
   rec.workingDirectory = stateDir();
+  if (opts.entry) {
+    // entry is <checkout>/src/main.ts; the manifest name check validates the derivation.
+    const repoRoot = dirname(dirname(opts.entry));
+    const parsed = readDeckManifest(repoRoot);
+    if (parsed?.ok && parsed.manifest.name === PLATFORM_NAME) {
+      rec.dev = { workingDirectory: repoRoot };
+    }
+  }
   putRecord(rec);
 
   // Re-render the apps' plists too. Their programs are resolved at render

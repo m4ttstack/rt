@@ -1,5 +1,5 @@
 import { test, expect, beforeEach } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync } from "fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -14,7 +14,7 @@ const { bootstrapSelf } = await import("./bootstrap.ts");
 const { FakeServiceManager } = await import("../services/fake.ts");
 const { FakeEdgeProxy } = await import("../edge/portless.ts");
 const { getRecord, putRecord, reloadRegistry } = await import("./records.ts");
-const { LEGACY_PLATFORM_LABEL } = await import("../services/manager.ts");
+const { LEGACY_PLATFORM_LABEL, PLATFORM_NAME } = await import("../services/manager.ts");
 
 beforeEach(() => {
   rmSync(process.env.LOCAL_REGISTRY_PATH!, { force: true });
@@ -181,4 +181,61 @@ test("setup re-renders supervised apps' plists so a moved interpreter self-heals
   expect(spec).toBeDefined();
   expect(spec.programArguments[0]!.startsWith("/")).toBe(true);
   expect(spec.programArguments[0]!.endsWith("/bun")).toBe(true);
+});
+
+test("checkout mode: dev.workingDirectory is set when entry points to a valid deck checkout", async () => {
+  const checkoutDir = mkdtempSync(join(tmpdir(), "deck-checkout-"));
+  const srcDir = join(checkoutDir, "src");
+  mkdirSync(srcDir, { recursive: true });
+  const mainPath = join(srcDir, "main.ts");
+  writeFileSync(mainPath, "// main");
+  writeFileSync(
+    join(checkoutDir, "mattstack.deck.json"),
+    JSON.stringify({ name: "deck", commands: { deploy: "bun run deploy" } }),
+  );
+
+  const manager = new FakeServiceManager();
+  const edge = new FakeEdgeProxy();
+  await bootstrapSelf({ manager, edge }, {
+    execPath: "/usr/bin/bun", entry: mainPath, tlds: ["localhost"],
+  });
+
+  const rec = getRecord("deck")!;
+  expect(rec.dev?.workingDirectory).toBe(checkoutDir);
+
+  rmSync(checkoutDir, { recursive: true });
+});
+
+test("compiled binary mode: dev is not set when entry is null", async () => {
+  const manager = new FakeServiceManager();
+  const edge = new FakeEdgeProxy();
+  await bootstrapSelf({ manager, edge }, {
+    execPath: "/usr/local/bin/deck", entry: null, tlds: ["localhost"],
+  });
+
+  const rec = getRecord("deck")!;
+  expect(rec.dev).toBeUndefined();
+});
+
+test("checkout mode: dev is not set when manifest name does not match PLATFORM_NAME", async () => {
+  const checkoutDir = mkdtempSync(join(tmpdir(), "wrong-checkout-"));
+  const srcDir = join(checkoutDir, "src");
+  mkdirSync(srcDir, { recursive: true });
+  const mainPath = join(srcDir, "main.ts");
+  writeFileSync(mainPath, "// main");
+  writeFileSync(
+    join(checkoutDir, "mattstack.deck.json"),
+    JSON.stringify({ name: "other-app", commands: { deploy: "bun run deploy" } }),
+  );
+
+  const manager = new FakeServiceManager();
+  const edge = new FakeEdgeProxy();
+  await bootstrapSelf({ manager, edge }, {
+    execPath: "/usr/bin/bun", entry: mainPath, tlds: ["localhost"],
+  });
+
+  const rec = getRecord("deck")!;
+  expect(rec.dev).toBeUndefined();
+
+  rmSync(checkoutDir, { recursive: true });
 });
