@@ -20,6 +20,8 @@ import { allocatePort } from "../registry/allocate.ts";
 import { getOAuth, type OAuth } from "../edge/oauth.ts";
 import { getPlatformSettings } from "./platform-settings.ts";
 import { isPlatformManagedBy } from "../services/manager.ts";
+import { TUNNEL_LABEL } from "../edge/domain.ts";
+import { tunnelRowHealth } from "../edge/edge-health.ts";
 
 export interface BuildStatusOpts {
   requestHost?: string;
@@ -29,6 +31,10 @@ export interface BuildStatusOpts {
   autoHeal: { at: number; ok: boolean | null } | null;
   /** Gates `StatusRow.commands`: action-command names leak only to the local dev UI. */
   devMode?: boolean;
+  /** Fake `/ready` fetch for tests; production reads the connector's local metrics endpoint. */
+  readyFetch?: typeof fetch;
+  /** Drift flags from the edge reconcile loop; tests inject, production reads edgeDrift(). */
+  edgeDrift?: () => { tunnelGone: boolean };
 }
 
 export interface StatusService {
@@ -221,13 +227,24 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
     }),
   );
 
+  const platform = getPlatformSettings();
+  const edgeService = orphans.find((s) => s.label === TUNNEL_LABEL);
+  const edgeHealth = edgeService && platform.tunnel
+    ? await tunnelRowHealth({
+        running: edgeService.pid !== null,
+        tunnelGone: (opts.edgeDrift ?? (() => ({ tunnelGone: false })))().tunnelGone,
+        domain: platform.publicDomain,
+        fetchImpl: opts.readyFetch,
+      })
+    : null;
+
   const orphanRows: StatusRow[] = orphans.map((s) => ({
     name: shortLabel(s.label, servicePrefixes(getPlatformSettings().legacyPrefixes)),
     displayTld: null,
     port: null,
     url: null,
     publicUrl: null,
-    health: null,
+    health: s.label === TUNNEL_LABEL ? edgeHealth : null,
     service: serviceJson(s, null, null),
     published: true,
     hasPassword: false,
