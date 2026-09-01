@@ -211,10 +211,20 @@ no-op — `.root`'s own font/size/line-height sit directly on the wrapper elemen
 which beats an ancestor's inherited font regardless of layer ordering, so
 comment bodies would silently pick up `.tui-md` typography they never had.
 
-The escape hatch is the Styles API's `unstyled` prop, which suppresses `.root`'s
+The escape hatch is the Styles API's `unstyled` prop, read off props
+automatically by every builder before `render` runs. It suppresses `.root`'s
 CSS-module class entirely while still stamping `data-part="markdown"` (that is
-hand-stamped in the render body, not part of `getStyles`'s class resolution).
-`unstyled` is the choice that preserves parity.
+hand-stamped in the render body, not part of `getStyles`'s class resolution),
+leaving `.tui-cd-note-body`'s own rules to apply exactly as they do today:
+
+```tsx
+<Markdown unstyled linkTargetBlank>{note.body}</Markdown>
+```
+
+`unstyled` is the choice that preserves parity. Adopting without it is a
+deliberate opt-in to `.tui-md` typography inside comment bodies, and should be
+made knowingly rather than by omission. `Markdown.test.tsx`'s "unstyled
+suppresses the recipe's own stylesheet" case pins the mechanism.
 
 ## Adoption rules that survive in mr-board's stylesheet
 
@@ -224,9 +234,21 @@ absorbs the class they name — each one fails silently if dropped:
 - `.tui-modal-title` / `.tui-modal-x` — the mobile drawer head and the comments
   drawer head render their own copies inside a SideDrawer's `children`. Those
   are not Modal slots.
-- `.tui-review-body .tui-md { max-width: 820px; … }` — an ancestor-scoped
-  reading-measure cap, not part of `.tui-md`'s typography. Rewrite onto
-  `.tui-review-body [data-part="markdown"]`.
+- `.tui-review-body .tui-md { max-width: 820px; margin: 0 auto; padding-bottom:
+  1.5rem; }` ... an ancestor-scoped reading-measure cap, not part of `.tui-md`'s
+  typography, and never lifted into the Markdown recipe (a recipe has no
+  ancestor to key off). It reads exactly like one of the `.tui-md` rules an
+  adoption may delete once the recipe absorbs them, but deleting it silently
+  drops the review modal's 820px reading measure and centre alignment. Rewrite
+  it onto the recipe's `data-part` instead:
+
+  ```css
+  .tui-review-body [data-part="markdown"] {
+    max-width: 820px;
+    margin: 0 auto;
+    padding-bottom: 1.5rem;
+  }
+  ```
 - The left overlay's `display: none` plus its `@media (max-width: 720px)`
   unhide — a board layout decision (the left drawer *is* the burger menu), not a
   property of "a left drawer". Rewrite onto
