@@ -154,3 +154,14 @@ Launches, guardrail rejections, and expiries also raise a desktop notification;
 a rejection caused by a failed launch attempt is still audited and published,
 just without one. An unresolved nudge self-expires after 48 hours with a
 visible retry cue on the asking board.
+
+**Latch handling.** A review that ends with a `comment` outcome posts one
+resolvable thread on the MR, the re-review latch. The author resolves it when
+they have addressed the feedback, and the next triage pass reads that resolved
+bit, runs it through the same guardrails as a peer nudge, launches the
+re-review, replies in the thread and unresolves it so the latch is armed again.
+
+The latch is spent, meaning resolved for good and rewritten, once a review
+approves the MR, so it can never block a merge on a project that requires all
+discussions resolved. Every disposal replies with what happened, so a
+cooldown or budget refusal is visible to the author rather than silent.

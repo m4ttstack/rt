@@ -15,6 +15,9 @@ What it adds:
   cron so an incoming nudge is picked up and re-dispatched automatically. See
   [agent actions](agent-actions.md#reviewer-side-automation) for the
   guardrails.
+- **Author-driven re-review.** Independent of the switchboard: the MR author can
+  ask by resolving the latch thread on the MR itself, with no peer board
+  involved. See [agent actions](agent-actions.md#reviewer-side-automation).
 
 ## Teammate setup
 
