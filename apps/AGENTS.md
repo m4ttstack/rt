@@ -19,8 +19,8 @@ how it wires up the shell and server packages.
 A local web app for the mattstack pipeline: what's running, what needs you, and what a run
 actually did. One `Bun.serve` process (Hono, via `@mattstack/app-server`) serves a built Vite SPA
 and an `/api` + `/ws` surface backed by `@mattstack/rt-client`, called in-process — no shelling out
-to `rt`, and nothing proxied through to another service. Dev default port and production port are
-both `11011` (the shared `deck` service convention for this app).
+to `rt`, and nothing proxied through to another service. The dev server defaults to port `11011` (`PORT`, and the `vite.config.ts` proxy); the production
+`deck` service runs on `11001` (`mattstack.deck.json`).
 
 ## Routes and chrome (`src/app/App.tsx`, `src/app/routes.ts`)
 
