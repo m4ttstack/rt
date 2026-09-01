@@ -196,4 +196,46 @@ export class NoteMutator {
       );
     }
   }
+
+  /**
+   * Upload a file to a project's markdown uploads store. The returned `url` is
+   * project-relative and only renders inside that project's markdown, so an
+   * upload cannot be shared across projects.
+   *
+   * Content-Type is deliberately unset: fetch derives the multipart boundary
+   * from the FormData body, and setting the header by hand strips it.
+   */
+  async uploadFile(
+    projectId: number,
+    filename: string,
+    bytes: Uint8Array,
+    contentType = "application/octet-stream",
+  ): Promise<UploadedFile> {
+    const path = `/api/v4/projects/${projectId}/uploads`;
+    const url = `${this.baseURL}${path}`;
+    const started = performance.now();
+
+    const form = new FormData();
+    form.append("file", new Blob([new Uint8Array(bytes)], { type: contentType }), filename);
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "PRIVATE-TOKEN": this.token },
+      body: form,
+    });
+
+    safeEmit(this.onRequest, {
+      op: 'noteMutator.uploadFile',
+      transport: 'rest',
+      method: 'POST',
+      path,
+      durationMs: performance.now() - started,
+      status: res.status,
+    });
+
+    if (!res.ok) {
+      throw new Error(`uploadFile failed: ${res.status} ${await res.text()}`);
+    }
+    return (await res.json()) as UploadedFile;
+  }
 }

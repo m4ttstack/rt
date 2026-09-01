@@ -62,3 +62,34 @@ describe('createDiscussion', () => {
     await expect(m.createDiscussion(42, 9, 'hi')).rejects.toThrow(/403/);
   });
 });
+
+describe('uploadFile', () => {
+  test('posts multipart to /uploads and returns the markdown path', async () => {
+    const calls = stub(201, {
+      alt: 'latch',
+      url: '/uploads/ab12cd34/latch.png',
+      full_path: '/acme/web/uploads/ab12cd34/latch.png',
+      markdown: '![latch](/uploads/ab12cd34/latch.png)',
+    });
+    const m = new NoteMutator('https://gitlab.example.com', 'tok');
+    const up = await m.uploadFile(42, 'latch.png', new Uint8Array([1, 2, 3]), 'image/png');
+
+    expect(up.url).toBe('/uploads/ab12cd34/latch.png');
+    expect(up.markdown).toBe('![latch](/uploads/ab12cd34/latch.png)');
+    expect(calls[0]!.url).toBe('https://gitlab.example.com/api/v4/projects/42/uploads');
+    expect(calls[0]!.method).toBe('POST');
+    expect(calls[0]!.headers['PRIVATE-TOKEN']).toBe('tok');
+    // Multipart: the body is FormData and Content-Type must NOT be set by hand,
+    // or the boundary is lost.
+    expect(calls[0]!.body).toBeInstanceOf(FormData);
+    expect(calls[0]!.headers['Content-Type']).toBeUndefined();
+  });
+
+  test('throws with status on failure', async () => {
+    stub(413, { message: 'too big' });
+    const m = new NoteMutator('https://gitlab.example.com', 'tok');
+    await expect(
+      m.uploadFile(42, 'latch.png', new Uint8Array([1]), 'image/png'),
+    ).rejects.toThrow(/413/);
+  });
+});
