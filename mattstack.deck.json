@@ -5,6 +5,10 @@
   "icon": "./public/favicon.svg",
   "port": 11001,
   "includeInBundle": true,
+  "bundle": {
+    "build": "bun install --frozen-lockfile && bun run build:binary",
+    "artifact": "dist-bin/console"
+  },
   "dev": {
     "start": "bun run src/server/index.ts",
     "build": "bun run build",

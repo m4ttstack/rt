@@ -27,7 +27,7 @@
     "@mantine/notifications": "^9.5.2",
     "@mantine/spotlight": "^9.5.2",
     "@mattstack/app-kit": "^0.1.9",
-    "@mattstack/app-server": "^0.1.1",
+    "@mattstack/app-server": "^0.1.2",
     "@mattstack/mantine-tokyo": "^0.2.0",
     "@mattstack/rt-client": "^0.11.0",
     "@tanstack/react-query": "^5.102.0",
