@@ -152,6 +152,41 @@ export function useBoardState() {
     apiPost(`/api/v1/apps/${row.name}/commands/${name}`).catch(() => {});
   }, []);
 
+  // ---- dev-mode source linking ----
+  // Unlike onRunCommand/onRestart, a link attempt reports its own error
+  // inline next to the input rather than through the transient proxyNotice --
+  // the server is the sole validator, so a typo'd path must resurface as text
+  // the caller can read and correct, not a toast that has already vanished.
+  const linkSource = useCallback(
+    async (row: Row, workingDirectory: string): Promise<string | null> => {
+      let res: Response | null = null;
+      try {
+        res = await apiPatch(`/api/v1/apps/${row.name}`, { dev: { workingDirectory } });
+      } catch {
+        res = null;
+      }
+      if (!res || !res.ok) {
+        const body = res ? await res.json().catch(() => ({}) as { message?: string; error?: string }) : {};
+        return (body as { message?: string }).message || (body as { error?: string }).error || "linking failed, the board did not answer.";
+      }
+      await refresh();
+      return null;
+    },
+    [refresh],
+  );
+
+  const unlinkSource = useCallback(
+    async (row: Row): Promise<void> => {
+      try {
+        await apiPatch(`/api/v1/apps/${row.name}`, { dev: null });
+      } catch {
+        /* transient -- the next refresh shows the true state */
+      }
+      await refresh();
+    },
+    [refresh],
+  );
+
   const onPublish = useCallback(
     async (row: Row) => {
       try {
@@ -516,6 +551,8 @@ export function useBoardState() {
     refresh,
     onRestart,
     onRunCommand,
+    linkSource,
+    unlinkSource,
     onPublish,
     editing,
     startEdit,

@@ -33,12 +33,14 @@ interface StatusRow {
   managedBy: string | null;
   /** URL of the app's icon (the mattstack mark), null for unmanaged apps. */
   icon: string | null;
-  issues: { source: "portless" | "launchd" | "cloudflare"; message: string; at: string }[];
+  issues: { source: "portless" | "launchd" | "cloudflare" | "dev-link"; message: string; at: string }[];
   record: { kind: "service" | "external"; command: string[] | null; workingDirectory: string | null } | null;
   oauth: { mode: "off" } | { mode: "emails"; emails: string[] } | { mode: "domains"; domains: string[] };
   /** Names of manifest-defined commands the server has gated in for this row;
       absent or empty renders no command buttons. */
   commands?: string[];
+  /** Managed rows in dev mode only: drives the board's Link source / fix link affordances. */
+  devLink?: "unlinked" | "linked" | "broken";
   /** Which origin serves this row's public traffic -- the cloudflared tunnel
       (default) or, once pushed live, Railway directly. */
   publicOrigin: "tunnel" | "railway";
@@ -89,6 +91,18 @@ export function sublineHealthy(data: StatusData): { text: string; ok: boolean } 
 // still appears on records written before the Deck rename.
 export function isPlatform(managedBy: string | undefined): boolean {
   return managedBy === "deck" || managedBy === "local";
+}
+
+/** Link source / fix link: only for a mutable row on a host the viewer can
+    manage. The PATCH they submit is 403'd server-side otherwise, so a public
+    board must never render the control that would trigger it. */
+export function showDevLinkPrompt(row: Row, canManage: boolean): boolean {
+  return canManage && !row.self && (row.devLink === "unlinked" || row.devLink === "broken");
+}
+
+/** Unlink: same canManage gate as showDevLinkPrompt, for a row already linked. */
+export function showUnlinkButton(row: Row, canManage: boolean): boolean {
+  return canManage && !row.self && row.devLink === "linked";
 }
 
 export function tunnelDomain(data: StatusData): string {

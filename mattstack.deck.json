@@ -1,6 +1,6 @@
 {
   "name": "deck",
-  "commands": {
+  "dev": {
     "deploy": "bun run deploy"
   },
   "bundle": {

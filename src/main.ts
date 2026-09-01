@@ -16,6 +16,7 @@ import { reconcileOnce } from "../core/reconcile.ts";
 import { isAuthorized, startRestartDetached } from "../core/proxy-restart.ts";
 import { listRecords } from "./registry/records.ts";
 import { isPlatformManagedBy } from "./services/manager.ts";
+import { migrateManagedDevShape } from "./registry/migrate-dev-shape.ts";
 
 const PORT = Number(process.env.PORT ?? 7940);
 const CANARY_PORT = Number(process.env.LOCAL_APPS_CANARY_PORT ?? 7942);
@@ -67,6 +68,13 @@ export function serve(): void {
         : `[auto-heal] proxy still not in sync (${healFailures} in a row)`);
     }, 15_000);
   }
+
+  try {
+    const migrated = migrateManagedDevShape();
+    if (migrated.slimmed.length || migrated.skipped.length) {
+      console.log(`[migrate] dev shape: slimmed ${migrated.slimmed.join(", ") || "none"}; skipped ${migrated.skipped.join(", ") || "none"}`);
+    }
+  } catch (err) { console.error("registry dev-shape migration failed:", err); }
 
   const apiServer = startApi({
     manager: new LaunchdManager(),

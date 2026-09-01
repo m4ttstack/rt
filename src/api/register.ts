@@ -1,4 +1,4 @@
-import { mkdirSync } from "fs";
+import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { readRoutes, readServices, bareName, MATTSTACK_TLD, type PortlessRoute } from "../../core/discover.ts";
 import { reconcileMattstackTld } from "./tld-reconcile.ts";
@@ -7,15 +7,19 @@ import {
   getRecord, putRecord, deleteRecord, listRecords, addIssue, clearIssues, reloadRegistry,
   type AppRecord, type SyncIssue,
 } from "../registry/records.ts";
+import { readDeckManifest } from "../registry/deck-manifest.ts";
 import { ingestManifest, removeIcon } from "../registry/manifest.ts";
 import { renameAppSettings, getOverride, clearOverride } from "../../core/settings.ts";
 import { renameOAuth } from "../edge/oauth.ts";
 import { allocatePort } from "../registry/allocate.ts";
 import { authorizeStructural } from "../registry/lifecycle.ts";
+import { resetDevModeCache } from "./dev-mode.ts";
 import {
   LABEL_PREFIX, isPlatformManagedBy, type ServiceManager, type ServiceSpec,
 } from "../services/manager.ts";
 import { composeServicePath, resolveProgram } from "../services/exec-env.ts";
+import { readInstalledProgramArguments, readInstalledWorkingDirectory } from "../services/launchd.ts";
+import { serveShape, type ResolvedShape, type ServeShapeDeps } from "../registry/serve-shape.ts";
 import type { EdgeProxy } from "../edge/portless.ts";
 import { logsDir } from "./state.ts";
 import { disableRemote } from "../edge/remote.ts";
@@ -51,27 +55,32 @@ export type FlowResult = { status: number; body: unknown };
 
 const NAME_RE = /^[a-z0-9][a-z0-9.-]*$/;
 
+/** Test seam: overrides the resolver's mode read; production leaves it unset. */
+export let serveShapeDeps: ServeShapeDeps = {};
+export function setServeShapeDeps(deps: ServeShapeDeps): void { serveShapeDeps = deps; }
+
 /**
  * launchd does not search PATH for `ProgramArguments[0]`, so argv0 must be
- * absolute in the plist. The registry deliberately keeps the logical command
- * (`node server.js`) and this resolves it on every render, so an interpreter
- * that moves — a version manager reorganizing, or being swapped for another —
- * is picked up by the next render instead of being frozen at registration.
+ * absolute in the plist. The caller passes the shape resolved for this render
+ * (bundled binary or linked source), and this resolves argv0 to an absolute
+ * path on every render, so an interpreter that moves -- a version manager
+ * reorganizing, or being swapped for another -- is picked up by the next
+ * render instead of being frozen at registration.
  *
  * Throws rather than naming a program that does not exist: launchd declines
  * to start such a job without logging anything, so writing it anyway produces
  * an app that is silently, inexplicably down.
  */
-function specFor(record: AppRecord): ServiceSpec {
+function specFor(record: AppRecord, shape: ResolvedShape): ServiceSpec {
   const env = { ...(record.env ?? {}), PORT: String(record.port) };
   const path = env.PATH ?? composeServicePath();
-  const [argv0, ...rest] = record.command!;
+  const [argv0, ...rest] = shape.command;
   const program = resolveProgram(argv0!, path);
   if (!program) throw new Error(`${argv0} not found on the service PATH (${path})`);
   return {
     label: record.label!,
     programArguments: [program, ...rest],
-    workingDirectory: record.workingDirectory!,
+    workingDirectory: shape.cwd,
     environment: { ...env, PATH: path },
     stdoutPath: join(logsDir(), `${record.name}.out.log`),
     stderrPath: join(logsDir(), `${record.name}.err.log`),
@@ -180,7 +189,10 @@ export async function registerApp(input: RegisterInput, drivers: Drivers): Promi
 
   if (!input.adopt) {
     mkdirSync(logsDir(), { recursive: true });
-    if (isService) await tryDriver(name, "launchd", () => drivers.manager.install(specFor(record)));
+    if (isService) {
+      const shape = serveShape(record, serveShapeDeps);
+      if (shape) await tryDriver(name, "launchd", () => drivers.manager.install(specFor(record, shape)));
+    }
     await tryDriver(name, "portless", () => drivers.edge.alias(name, record.port));
   }
   return { status: 201, body: { record: getRecord(name) } };
@@ -286,6 +298,66 @@ export async function restartManagedApps(drivers: Drivers): Promise<FlowResult> 
 }
 
 /**
+ * Selective restart behind a mattstack dev/prod mode flip: rt pokes this after
+ * `rt settings dev-mode` changes, so every managed app must re-resolve its
+ * shape, but only the ones whose resolved command actually moved get torn
+ * down and rebuilt. The diff is against the installed plist's
+ * ProgramArguments, not any last-resolved value on the record, so a flip and
+ * a flip-back reads as the same "unchanged" outcome both times.
+ */
+export async function reresolveManagedApps(drivers: Drivers): Promise<FlowResult> {
+  // rt writes mattstack.mode then pokes this route immediately; a status poll
+  // in the preceding 2s can have already warmed isDevMode's cache with the
+  // OLD mode, which would resolve every shape below unchanged.
+  resetDevModeCache();
+  const restarted: string[] = [];
+  const unchanged: string[] = [];
+  const failed: Array<{ name: string; error: string }> = [];
+  for (const record of listRecords()) {
+    if (record.managedBy === "user" || record.kind !== "service" || !record.label) continue;
+    // The platform never restarts itself mid-request; bootstrapSelf owns its shape.
+    if (isPlatformManagedBy(record.managedBy)) continue;
+    const shape = serveShape(record, serveShapeDeps);
+    if (!shape) { failed.push({ name: record.name, error: "no runnable shape" }); continue; }
+    let spec: ServiceSpec;
+    try {
+      spec = specFor(record, shape);
+    } catch (err) {
+      failed.push({ name: record.name, error: String(err).slice(0, 300) });
+      continue;
+    }
+    const installed = readInstalledProgramArguments(record.label);
+    const installedCwd = readInstalledWorkingDirectory(record.label);
+    if (installed !== null && installed.length === spec.programArguments.length
+        && installed.every((a, i) => a === spec.programArguments[i])
+        && installedCwd === spec.workingDirectory) {
+      unchanged.push(record.name);
+      continue;
+    }
+    // launchd has no atomic replace, so a failure between the two calls is a
+    // real possibility, not just a defensive catch: an uninstall that throws
+    // must not be followed by an install attempt (nothing to replace), and an
+    // install that throws leaves the app down -- loud enough to survive past
+    // this response body via a SyncIssue, the same convention editApp and
+    // registerApp already use for their own install failures.
+    const uninstallIssue = await runDriver("launchd", () => drivers.manager.uninstall(record.label!));
+    if (uninstallIssue) {
+      failed.push({ name: record.name, error: uninstallIssue.message });
+      continue;
+    }
+    const installIssue = await runDriver("launchd", () => drivers.manager.install(spec));
+    if (installIssue) {
+      addIssue(record.name, installIssue);
+      failed.push({ name: record.name, error: installIssue.message });
+      continue;
+    }
+    clearIssues(record.name, "launchd");
+    restarted.push(record.name);
+  }
+  return { status: 200, body: { ok: failed.length === 0, restarted, unchanged, failed } };
+}
+
+/**
  * Bulk lifecycle verb behind `deck remove --managed`: the app calls this
  * during `rt uninstall` (installer spec §12.3) to unregister every non-user
  * record deck supervises. Same implicit-authority model as restartManagedApps.
@@ -306,15 +378,47 @@ export async function removeManagedApps(drivers: Drivers): Promise<FlowResult> {
 
 export async function editApp(
   name: string,
-  patch: { name?: string; command?: string[]; workingDirectory?: string; env?: Record<string, string>; port?: number },
+  patch: {
+    name?: string; command?: string[]; workingDirectory?: string; env?: Record<string, string>; port?: number;
+    dev?: { workingDirectory: string } | null;
+  },
   caller: string,
   force: boolean,
   drivers: Drivers,
 ): Promise<FlowResult> {
   const record = getRecord(name);
   if (!record) return { status: 404, body: { error: "unknown app" } };
-  const verdict = authorizeStructural(record, caller, force);
-  if (!verdict.ok) return { status: verdict.status, body: verdict.body };
+
+  // Computed from the patch's own keys, not a hand-listed set of the other
+  // fields: a future patch field must not be silently swept into this carve-out.
+  const devOnly = Object.keys(patch).length === 1 && Object.prototype.hasOwnProperty.call(patch, "dev");
+  if (patch.dev != null) {
+    const dir = patch.dev.workingDirectory;
+    if (typeof dir !== "string" || !dir.startsWith("/")) {
+      return { status: 400, body: { error: "dev.workingDirectory must be an absolute path" } };
+    }
+    if (!existsSync(dir)) return { status: 400, body: { error: "directory not found", dir } };
+    const parsed = readDeckManifest(dir);
+    if (parsed === null) return { status: 400, body: { error: `no mattstack.deck.json in ${dir}` } };
+    if (!parsed.ok) return { status: 400, body: { error: parsed.error } };
+    if (parsed.manifest.name !== record.name) {
+      return { status: 400, body: { error: "manifest name mismatch", expected: record.name, got: parsed.manifest.name } };
+    }
+  }
+  // bootstrapSelf owns the platform's serve shape and plist, so a dev-only PATCH
+  // on the platform's own record is a record-only write here: it must never
+  // reach the label rewrite or the driver teardown/stand-up below.
+  if (devOnly && isPlatformManagedBy(record.managedBy)) {
+    putRecord({ ...record, dev: patch.dev === null ? undefined : (patch.dev ?? record.dev) });
+    return { status: 200, body: { record: getRecord(record.name) } };
+  }
+  // The link is developer-local machine state, not registrar-owned structure,
+  // and the mutation plane is already 127.0.0.1-only with public writes 403'd --
+  // but any patch that also touches a structural field keeps the gate.
+  if (!devOnly) {
+    const verdict = authorizeStructural(record, caller, force);
+    if (!verdict.ok) return { status: verdict.status, body: verdict.body };
+  }
   if (patch.name !== undefined && !NAME_RE.test(patch.name)) {
     return { status: 400, body: { error: "bad name" } };
   }
@@ -343,6 +447,7 @@ export async function editApp(
     workingDirectory: patch.workingDirectory ?? record.workingDirectory,
     env: patch.env ?? record.env,
     port: patch.port ?? record.port,
+    dev: patch.dev === null ? undefined : (patch.dev ?? record.dev),
   };
   if (next.kind === "service") next.label = `${LABEL_PREFIX}${next.name}`;
   // A dev-port override lives entirely in settings, keyed off the app's base
@@ -351,6 +456,17 @@ export async function editApp(
   // revert to the wrong port, so the edit drops the override rather than
   // leave it silently wrong.
   const portChanged = next.port !== record.port;
+
+  // Never uninstall the old shape unless the patch is guaranteed to leave a
+  // runnable one: resolve the prospective shape before any teardown call, not
+  // after, or a patch that resolves to nothing tears down with nothing to fall
+  // back on.
+  if (next.kind === "service" && !serveShape(next, serveShapeDeps)) {
+    return {
+      status: 400,
+      body: { error: `edit would leave ${next.name} with no runnable shape (no bundle, no valid source)` },
+    };
+  }
 
   // Teardown-phase failures are collected, not recorded yet: the record they
   // belong to doesn't exist under its final cache key yet (a rename deletes the
@@ -393,7 +509,8 @@ export async function editApp(
   if (portChanged) clearOverride(next.name);
   putRecord(next);
   if (next.kind === "service") {
-    await tryDriver(next.name, "launchd", () => drivers.manager.install(specFor(next)));
+    const shape = serveShape(next, serveShapeDeps);
+    if (shape) await tryDriver(next.name, "launchd", () => drivers.manager.install(specFor(next, shape)));
   }
   // Unchanged base port + an active override: the live route stays pointed at
   // the override's devPort instead of being reset to the base port. A changed
@@ -501,10 +618,11 @@ export async function reinstallSupervised(
   const reinstalled: string[] = [];
   const failed: string[] = [];
   for (const record of listRecords()) {
-    if (record.kind !== "service" || isPlatformManagedBy(record.managedBy)) continue;
-    if (!record.label || !record.command?.length) continue;
+    if (record.kind !== "service" || isPlatformManagedBy(record.managedBy) || !record.label) continue;
+    const shape = serveShape(record, serveShapeDeps);
+    if (!shape) { failed.push(record.name); continue; }
     try {
-      await drivers.manager.install(specFor(record));
+      await drivers.manager.install(specFor(record, shape));
       clearIssues(record.name, "launchd");
       reinstalled.push(record.name);
     } catch (err) {

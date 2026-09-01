@@ -1,11 +1,11 @@
 import { test, expect, afterAll } from "bun:test";
-import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync } from "fs";
+import { mkdtempSync, rmSync, existsSync, readFileSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
 const dir = mkdtempSync(join(tmpdir(), "local-agents-"));
 process.env.LOCAL_AGENTS_DIR = dir;
-const { LaunchdManager } = await import("./launchd.ts");
+const { LaunchdManager, readInstalledProgramArguments, readInstalledWorkingDirectory } = await import("./launchd.ts");
 
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -79,4 +79,66 @@ test("uninstall still surfaces a genuine removal failure (not just a missing fil
   // failure that must NOT be swallowed as though it were "already gone".
   mkdirSync(plist);
   await expect(mgr.uninstall(label)).rejects.toBeTruthy();
+});
+
+test("readInstalledProgramArguments round-trips renderPlist, escapes included", async () => {
+  const testDir = mkdtempSync(join(tmpdir(), "agents-"));
+  process.env.LOCAL_AGENTS_DIR = testDir;
+  try {
+    const manager = new LaunchdManager(async () => 0);
+    const spec = {
+      label: "com.mattstack.deck.chat",
+      programArguments: ["/usr/bin/env", "arg<with&odd>chars", "a&lt;b", "plain"],
+      workingDirectory: "/tmp", environment: {}, stdoutPath: "/tmp/o", stderrPath: "/tmp/e",
+    };
+    await manager.install(spec);
+    expect(readInstalledProgramArguments("com.mattstack.deck.chat")).toEqual(spec.programArguments);
+    expect(readInstalledProgramArguments("com.mattstack.deck.ghost")).toBeNull();
+  } finally {
+    rmSync(testDir, { recursive: true, force: true });
+    process.env.LOCAL_AGENTS_DIR = dir;
+  }
+});
+
+test("readInstalledWorkingDirectory round-trips renderPlist's WorkingDirectory, escapes included, and returns null when absent", async () => {
+  const testDir = mkdtempSync(join(tmpdir(), "agents-"));
+  process.env.LOCAL_AGENTS_DIR = testDir;
+  try {
+    const manager = new LaunchdManager(async () => 0);
+    const spec = {
+      label: "com.mattstack.deck.chat",
+      programArguments: ["/usr/bin/env"],
+      workingDirectory: "/repos/a&b<c>d",
+      environment: {}, stdoutPath: "/tmp/o", stderrPath: "/tmp/e",
+    };
+    await manager.install(spec);
+    expect(readInstalledWorkingDirectory("com.mattstack.deck.chat")).toBe(spec.workingDirectory);
+    expect(readInstalledWorkingDirectory("com.mattstack.deck.ghost")).toBeNull();
+  } finally {
+    rmSync(testDir, { recursive: true, force: true });
+    process.env.LOCAL_AGENTS_DIR = dir;
+  }
+});
+
+test("readInstalledProgramArguments returns null for an existing plist lacking ProgramArguments", async () => {
+  const testDir = mkdtempSync(join(tmpdir(), "agents-"));
+  process.env.LOCAL_AGENTS_DIR = testDir;
+  try {
+    const label = "com.mattstack.deck.no-args";
+    const plistPath = join(testDir, `${label}.plist`);
+    const minimalPlist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>${label}</string>
+</dict>
+</plist>
+`;
+    writeFileSync(plistPath, minimalPlist);
+    expect(readInstalledProgramArguments(label)).toBeNull();
+  } finally {
+    rmSync(testDir, { recursive: true, force: true });
+    process.env.LOCAL_AGENTS_DIR = dir;
+  }
 });

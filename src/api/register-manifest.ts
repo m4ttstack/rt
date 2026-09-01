@@ -8,8 +8,9 @@ import type { AppRecord } from "../registry/records.ts";
 
 /**
  * The platform's own record: bootstrapSelf owns its serve shape (the installed
- * binary, its port, the state dir), so its manifest may only attach a source
- * checkout and action commands. Running deck from a checkout is refused, not
+ * binary, its port, the state dir), so its manifest may only link a source
+ * checkout; action commands are read live off that checkout's manifest, never
+ * copied onto the record. Running deck from a checkout is refused, not
  * supported: deploy rebuilds FROM source and installs over the binary instead.
  */
 function attachSource(
@@ -17,27 +18,23 @@ function attachSource(
   manifest: DeckManifest,
   dir: string,
   activeAlt: string | undefined,
-  actionCommands: Record<string, string>,
 ): FlowResult {
   if (activeAlt !== undefined) {
     return { status: 400, body: { error: "the platform has no alt configs" } };
   }
   const declaresServeShape =
     manifest.commands.start !== undefined ||
+    manifest.dev?.start !== undefined ||
     manifest.port !== undefined ||
     manifest.altConfigs !== undefined ||
     manifest.env !== undefined;
   if (declaresServeShape) {
     return {
       status: 400,
-      body: { error: "deck manages its own service; the platform manifest may only declare action commands" },
+      body: { error: "deck manages its own service; the platform manifest may only link a source checkout" },
     };
   }
-  putRecord({
-    ...existing,
-    sourceDirectory: dir,
-    commands: Object.keys(actionCommands).length ? actionCommands : undefined,
-  });
+  putRecord({ ...existing, dev: { workingDirectory: dir }, sourceDirectory: undefined, commands: undefined });
   return { status: 200, body: { record: getRecord(existing.name) } };
 }
 
@@ -73,8 +70,17 @@ export async function applyManifest(
   if (!existing && (manifest.name === PLATFORM_NAME || manifest.name === LEGACY_PLATFORM_NAME)) {
     return { status: 400, body: { error: "run deck setup first; the platform registers itself" } };
   }
-  if (existing && isPlatformManagedBy(existing.managedBy)) {
-    return attachSource(existing, manifest, dir, activeAlt, actionCommands);
+  if (existing && existing.managedBy !== "user") {
+    if (isPlatformManagedBy(existing.managedBy)) {
+      return attachSource(existing, manifest, dir, activeAlt);
+    }
+    // Linking, not reconciling: a managed app's serve shape comes from
+    // wherever the resolver decides (bundle vs. linked source), never from
+    // whichever manifest last called register.
+    if (activeAlt !== undefined) {
+      return { status: 400, body: { error: "alt configs do not apply to a linked managed app" } };
+    }
+    return editApp(manifest.name, { dev: { workingDirectory: dir } }, existing.managedBy, true, drivers);
   }
 
   if (!existing) {

@@ -1,4 +1,4 @@
-import { test, expect, beforeAll, afterAll, beforeEach } from "bun:test";
+import { test, expect, beforeAll, afterAll, beforeEach, describe } from "bun:test";
 import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
@@ -7,6 +7,9 @@ const dir = mkdtempSync(join(tmpdir(), "local-api-"));
 process.env.LOCAL_REGISTRY_PATH = join(dir, "registry.json");
 process.env.LOCAL_STATE_DIR = dir;
 process.env.LOCAL_APPS_ROUTES_PATH = join(dir, "routes.json");
+// managed/reresolve reads installed plists back off disk; point it at a
+// throwaway dir so the diff never sees (or writes near) real launchd agents.
+process.env.LOCAL_AGENTS_DIR = join(dir, "agents-not-present");
 process.env.LOCAL_APPS_SETTINGS_PATH = join(dir, "settings.json");
 process.env.LOCAL_PLATFORM_SETTINGS_PATH = join(dir, "platform.json");
 process.env.LOCAL_LAUNCHCTL_PIDS = ""; // fixture plists carry real labels; never read the machine's launchctl
@@ -232,6 +235,16 @@ test("restart 404s on an unknown app, kickstarts a known service record", async 
   const res = await post("/api/v1/apps/r1/restart", {});
   expect(res.status).toBe(200);
   expect(manager.kickstarts).toContain("com.mattstack.deck.r1");
+});
+
+test("managed/reresolve answers 200 with the ok/restarted/unchanged/failed body shape", async () => {
+  await post("/api/v1/apps", { name: "rr1", command: ["bun", "s.ts"], workingDirectory: "/tmp" }, { "x-local-caller": "rt" });
+  const res = await post("/api/v1/apps/managed/reresolve", {});
+  expect(res.status).toBe(200);
+  const body = await res.json();
+  // No plist exists on disk for this in-memory fake manager, so the resolved
+  // command always reads as changed here; the diff itself is register.test.ts's job.
+  expect(body).toMatchObject({ ok: true, restarted: ["rr1"], unchanged: [], failed: [] });
 });
 
 test("publish flips settings through the versioned path", async () => {
@@ -574,7 +587,7 @@ test("a port-only manifest with an action command but no workingDirectory 400s i
   expect((await devPost("/api/v1/apps/portonly/commands/build", {})).status).toBe(400);
 });
 
-test("status carries command names in dev, omits them in prod", async () => {
+test("status carries a user app's command names in both dev and prod", async () => {
   const dir = mkdtempSync(join(tmpdir(), "meta-"));
   writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({ name: "metaapp", port: 4950, commands: { start: "s", deploy: "d" } }));
   await devPost("/api/v1/apps/register", { dir });
@@ -585,7 +598,7 @@ test("status carries command names in dev, omits them in prod", async () => {
   const devRow = (await (await devApi("/api/v1/status")).json()).apps.find((a: any) => a.name === "metaapp");
   expect(devRow.commands).toEqual(["deploy"]);
   const prodRow = (await (await api("/api/v1/status")).json()).apps.find((a: any) => a.name === "metaapp");
-  expect(prodRow.commands).toBeUndefined();
+  expect(prodRow.commands).toEqual(["deploy"]);
 });
 
 test("command route spawns in sourceDirectory when set, else workingDirectory", async () => {
@@ -604,4 +617,226 @@ test("command route spawns in sourceDirectory when set, else workingDirectory", 
   for (let i = 0; i < 40 && !existsSync(join(source, "marker")); i++) await new Promise((r) => setTimeout(r, 50));
   expect(existsSync(join(source, "marker"))).toBe(true);
   expect(existsSync(join(state, "marker"))).toBe(false);
+});
+
+describe("command route gating by app class", () => {
+  test("user app runs its declared key in prod", async () => {
+    const { putRecord } = await import("../registry/records.ts");
+    const dir = mkdtempSync(join(tmpdir(), "cmd-user-"));
+    putRecord({
+      name: "useredapp", managedBy: "user", port: 4900, kind: "service", createdAt: "x",
+      workingDirectory: dir, commands: { build: "echo built" },
+    });
+    const res = await prodPost("/api/v1/apps/useredapp/commands/build", {});
+    expect(res.status).toBe(200);
+    expect((await res.json()).started).toBe(true);
+  });
+
+  test("user app 404s on an undeclared key", async () => {
+    const { putRecord } = await import("../registry/records.ts");
+    const dir = mkdtempSync(join(tmpdir(), "cmd-user-"));
+    putRecord({
+      name: "useredapp2", managedBy: "user", port: 4901, kind: "service", createdAt: "x",
+      workingDirectory: dir, commands: { build: "echo built" },
+    });
+    const res = await prodPost("/api/v1/apps/useredapp2/commands/ghost", {});
+    expect(res.status).toBe(404);
+  });
+
+  test("grandfathered managed row keeps dev-gated record.commands", async () => {
+    const { putRecord } = await import("../registry/records.ts");
+    const { existsSync } = await import("fs");
+    const source = mkdtempSync(join(tmpdir(), "gf-src-"));
+    const state = mkdtempSync(join(tmpdir(), "gf-state-"));
+    putRecord({
+      name: "gfapp", managedBy: "rt", port: 4902, kind: "service", createdAt: "x",
+      workingDirectory: state, sourceDirectory: source, commands: { build: "touch built" },
+    });
+
+    const prodRes = await prodPost("/api/v1/apps/gfapp/commands/build", {});
+    expect(prodRes.status).toBe(404);
+
+    const devRes = await devPost("/api/v1/apps/gfapp/commands/build", {});
+    expect(devRes.status).toBe(200);
+    for (let i = 0; i < 40 && !existsSync(join(source, "built")); i++) await new Promise((r) => setTimeout(r, 50));
+    expect(existsSync(join(source, "built"))).toBe(true);
+    expect(existsSync(join(state, "built"))).toBe(false);
+  });
+
+  test("slim managed row 404s in prod, when unlinked, and on a broken link", async () => {
+    const { putRecord } = await import("../registry/records.ts");
+
+    // A fully valid link still 404s in production.
+    const linkedDir = mkdtempSync(join(tmpdir(), "slim-linked-"));
+    writeFileSync(join(linkedDir, "mattstack.deck.json"), JSON.stringify({
+      name: "slimapp", commands: {}, dev: { build: "touch built" },
+    }));
+    putRecord({
+      name: "slimapp", managedBy: "rt", port: 4903, kind: "service", createdAt: "x",
+      dev: { workingDirectory: linkedDir },
+    });
+    expect((await prodPost("/api/v1/apps/slimapp/commands/build", {})).status).toBe(404);
+
+    // No dev.workingDirectory at all: unlinked, even in dev mode.
+    putRecord({
+      name: "slimapp2", managedBy: "rt", port: 4904, kind: "service", createdAt: "x",
+    });
+    expect((await devPost("/api/v1/apps/slimapp2/commands/build", {})).status).toBe(404);
+
+    // dev.workingDirectory points at a real directory with no manifest: broken link.
+    const brokenDir = mkdtempSync(join(tmpdir(), "slim-broken-"));
+    putRecord({
+      name: "slimapp3", managedBy: "rt", port: 4905, kind: "service", createdAt: "x",
+      dev: { workingDirectory: brokenDir },
+    });
+    expect((await devPost("/api/v1/apps/slimapp3/commands/build", {})).status).toBe(404);
+  });
+
+  test("slim managed row 404s dev.start: the supervised job already owns that boot command", async () => {
+    const { putRecord } = await import("../registry/records.ts");
+    const dir = mkdtempSync(join(tmpdir(), "slim-start-"));
+    writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({
+      name: "startapp", dev: { start: "bun run serve", build: "touch built" },
+    }));
+    putRecord({
+      name: "startapp", managedBy: "rt", port: 4909, kind: "service", createdAt: "x",
+      dev: { workingDirectory: dir },
+    });
+    expect((await devPost("/api/v1/apps/startapp/commands/start", {})).status).toBe(404);
+    // Sibling dev keys on the same manifest still run: only start is excluded.
+    expect((await devPost("/api/v1/apps/startapp/commands/build", {})).status).toBe(200);
+  });
+
+  test("slim managed row runs a live-read dev key when linked in dev mode", async () => {
+    const { putRecord } = await import("../registry/records.ts");
+    const { existsSync } = await import("fs");
+    const dir = mkdtempSync(join(tmpdir(), "slim-live-"));
+    const manifestPath = join(dir, "mattstack.deck.json");
+    writeFileSync(manifestPath, JSON.stringify({ name: "liveapp", commands: {}, dev: { build: "touch marker1" } }));
+    putRecord({
+      name: "liveapp", managedBy: "rt", port: 4906, kind: "service", createdAt: "x",
+      dev: { workingDirectory: dir },
+    });
+
+    const first = await devPost("/api/v1/apps/liveapp/commands/build", {});
+    expect(first.status).toBe(200);
+    const firstRunId = (await first.json()).runId as string;
+    for (let i = 0; i < 40 && !existsSync(join(dir, "marker1")); i++) await new Promise((r) => setTimeout(r, 50));
+    expect(existsSync(join(dir, "marker1"))).toBe(true);
+    // Wait for the first run to exit: only one run per app name may be in flight.
+    for (let i = 0; i < 40; i++) {
+      const st = (await (await devApi(`/api/v1/apps/liveapp/commands/build/${firstRunId}`)).json()) as { status: string };
+      if (st.status === "exited") break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+
+    writeFileSync(manifestPath, JSON.stringify({ name: "liveapp", commands: {}, dev: { build: "touch marker2" } }));
+    const second = await devPost("/api/v1/apps/liveapp/commands/build", {});
+    expect(second.status).toBe(200);
+    for (let i = 0; i < 40 && !existsSync(join(dir, "marker2")); i++) await new Promise((r) => setTimeout(r, 50));
+    expect(existsSync(join(dir, "marker2"))).toBe(true);
+  });
+
+  test("deck-self shape: linked manifest with dev.deploy and no dev.start still runs deploy", async () => {
+    const { putRecord } = await import("../registry/records.ts");
+    const dir = mkdtempSync(join(tmpdir(), "deckself-"));
+    writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({
+      name: "deckself", commands: {}, dev: { deploy: "echo deployed" },
+    }));
+    putRecord({
+      name: "deckself", managedBy: "deck", port: 4907, kind: "service", createdAt: "x",
+      dev: { workingDirectory: dir },
+    });
+    const res = await devPost("/api/v1/apps/deckself/commands/deploy", {});
+    expect(res.status).toBe(200);
+    expect((await res.json()).started).toBe(true);
+  });
+
+  test("a run's status stays readable after its manifest key is deleted mid-run", async () => {
+    const { putRecord } = await import("../registry/records.ts");
+    const { existsSync } = await import("fs");
+    const dir = mkdtempSync(join(tmpdir(), "slim-midrun-"));
+    const manifestPath = join(dir, "mattstack.deck.json");
+    writeFileSync(manifestPath, JSON.stringify({
+      name: "midrunapp", commands: {}, dev: { build: "sleep 0.2 && touch built" },
+    }));
+    putRecord({
+      name: "midrunapp", managedBy: "rt", port: 4910, kind: "service", createdAt: "x",
+      dev: { workingDirectory: dir },
+    });
+
+    const started = await devPost("/api/v1/apps/midrunapp/commands/build", {});
+    expect(started.status).toBe(200);
+    const runId = (await started.json()).runId as string;
+
+    // The manifest's "build" key is gone before the run finishes: a live re-resolve
+    // of the command would now 404, but the runId was already granted.
+    writeFileSync(manifestPath, JSON.stringify({ name: "midrunapp", commands: {}, dev: {} }));
+
+    const status = await devApi(`/api/v1/apps/midrunapp/commands/build/${runId}`);
+    expect(status.status).toBe(200);
+    expect(["running", "exited"]).toContain((await status.json()).status);
+
+    for (let i = 0; i < 40 && !existsSync(join(dir, "built")); i++) await new Promise((r) => setTimeout(r, 50));
+    expect(existsSync(join(dir, "built"))).toBe(true);
+  });
+
+  test("a run's status stays readable after its link breaks mid-run", async () => {
+    const { putRecord } = await import("../registry/records.ts");
+    const dir = mkdtempSync(join(tmpdir(), "slim-breaklink-"));
+    writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({
+      name: "breaklinkapp", commands: {}, dev: { build: "sleep 0.2 && true" },
+    }));
+    putRecord({
+      name: "breaklinkapp", managedBy: "rt", port: 4911, kind: "service", createdAt: "x",
+      dev: { workingDirectory: dir },
+    });
+
+    const started = await devPost("/api/v1/apps/breaklinkapp/commands/build", {});
+    expect(started.status).toBe(200);
+    const runId = (await started.json()).runId as string;
+
+    // The linked directory disappears entirely before the run finishes: a live
+    // re-resolve of the command would now see a broken link and 404.
+    rmSync(dir, { recursive: true, force: true });
+
+    const status = await devApi(`/api/v1/apps/breaklinkapp/commands/build/${runId}`);
+    expect(status.status).toBe(200);
+    expect(["running", "exited"]).toContain((await status.json()).status);
+  });
+
+  test("an unknown runId still 404s with the same body in dev and in production", async () => {
+    const { putRecord } = await import("../registry/records.ts");
+    const dir = mkdtempSync(join(tmpdir(), "cmd-user-unknownrun-"));
+    putRecord({
+      name: "unknownrunapp", managedBy: "user", port: 4912, kind: "service", createdAt: "x",
+      workingDirectory: dir, commands: { build: "echo built" },
+    });
+
+    const prodStatus = await api("/api/v1/apps/unknownrunapp/commands/build/deadbeefdeadbeef");
+    expect(prodStatus.status).toBe(404);
+    expect(await prodStatus.json()).toEqual({ error: "unknown run" });
+
+    const devStatus = await devApi("/api/v1/apps/unknownrunapp/commands/build/deadbeefdeadbeef");
+    expect(devStatus.status).toBe(404);
+    expect(await devStatus.json()).toEqual({ error: "unknown run" });
+  });
+
+  test("grandfathered managed row's run status is readable after starting in dev", async () => {
+    const { putRecord } = await import("../registry/records.ts");
+    const source = mkdtempSync(join(tmpdir(), "gf-status-src-"));
+    const state = mkdtempSync(join(tmpdir(), "gf-status-state-"));
+    putRecord({
+      name: "gfstatusapp", managedBy: "rt", port: 4913, kind: "service", createdAt: "x",
+      workingDirectory: state, sourceDirectory: source, commands: { build: "touch built" },
+    });
+
+    const started = await devPost("/api/v1/apps/gfstatusapp/commands/build", {});
+    expect(started.status).toBe(200);
+    const runId = (await started.json()).runId as string;
+
+    const status = await devApi(`/api/v1/apps/gfstatusapp/commands/build/${runId}`);
+    expect(status.status).toBe(200);
+    expect(["running", "exited"]).toContain((await status.json()).status);
+  });
 });

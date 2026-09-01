@@ -9,6 +9,10 @@ export interface DeckManifest {
   port?: number;
   /** Shell strings. `start` (when present) is the supervised service; every other key is an action command. */
   commands: Record<string, string>;
+  /** Marks the app bundle-ready and in scope for the dev/prod serve switch (field name provisional; fox owns this file's schema). */
+  includeInBundle?: boolean;
+  /** Dev-only shell strings: `start` is the source serve command; every other key is a dev action command. */
+  dev?: Record<string, string>;
   /** Environment for the supervised `start` service (specFor layers PORT on top). Overlays may not override it. */
   env?: Record<string, string>;
   /** Normalized overlays: each may carry only `port` and/or `start`. */
@@ -66,6 +70,22 @@ export function readDeckManifest(dir: string): ParseResult {
   if (m.port !== undefined) {
     if (!Number.isInteger(m.port) || (m.port as number) < 1 || (m.port as number) > 65535) return err("port must be 1-65535");
     out.port = m.port as number;
+  }
+
+  if (m.includeInBundle !== undefined) {
+    if (typeof m.includeInBundle !== "boolean") return err("includeInBundle must be a boolean");
+    out.includeInBundle = m.includeInBundle;
+  }
+
+  if (m.dev !== undefined) {
+    if (typeof m.dev !== "object" || m.dev === null || Array.isArray(m.dev)) return err("dev must be an object");
+    const dev: Record<string, string> = {};
+    for (const [key, val] of Object.entries(m.dev as Record<string, unknown>)) {
+      if (!COMMAND_KEY_RE.test(key)) return err(`dev command key ${key} must match ${COMMAND_KEY_RE}`);
+      if (typeof val !== "string" || val.length === 0) return err(`dev command ${key} must be a non-empty string`);
+      dev[key] = val;
+    }
+    out.dev = dev;
   }
 
   if (m.env !== undefined) {

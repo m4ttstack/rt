@@ -7,6 +7,8 @@ import {
   subline,
   sublineHealthy,
   isPlatform,
+  showDevLinkPrompt,
+  showUnlinkButton,
   tunnelDomain,
   sections,
   tunnels,
@@ -119,6 +121,28 @@ test("isPlatform: local is platform-managed (pre-rename)", () => {
   expect(isPlatform("local")).toBe(true);
 });
 
+test("showDevLinkPrompt: hidden on a public board (canManage false) even for an unlinked row", () => {
+  expect(showDevLinkPrompt(makeRow({ devLink: "unlinked" }), false)).toBe(false);
+  expect(showDevLinkPrompt(makeRow({ devLink: "broken" }), false)).toBe(false);
+});
+
+test("showDevLinkPrompt: shown for unlinked/broken rows when canManage is true, never for the platform's own row", () => {
+  expect(showDevLinkPrompt(makeRow({ devLink: "unlinked" }), true)).toBe(true);
+  expect(showDevLinkPrompt(makeRow({ devLink: "broken" }), true)).toBe(true);
+  expect(showDevLinkPrompt(makeRow({ devLink: "linked" }), true)).toBe(false);
+  expect(showDevLinkPrompt(makeRow({ devLink: "unlinked", self: true }), true)).toBe(false);
+});
+
+test("showUnlinkButton: hidden on a public board (canManage false) even for a linked row", () => {
+  expect(showUnlinkButton(makeRow({ devLink: "linked" }), false)).toBe(false);
+});
+
+test("showUnlinkButton: shown for a linked row when canManage is true, never for the platform's own row", () => {
+  expect(showUnlinkButton(makeRow({ devLink: "linked" }), true)).toBe(true);
+  expect(showUnlinkButton(makeRow({ devLink: "linked", self: true }), true)).toBe(false);
+  expect(showUnlinkButton(makeRow({ devLink: "unlinked" }), true)).toBe(false);
+});
+
 test("isPlatform: user-managed and undefined are not platform", () => {
   expect(isPlatform("user")).toBe(false);
   expect(isPlatform(undefined)).toBe(false);
@@ -174,6 +198,18 @@ test("sections: tunnel-only orphans do not produce a strays section", () => {
 
 test("sections: null data yields an empty apps section", () => {
   expect(sections(null)).toEqual([{ key: "apps", title: null, rows: [] }]);
+});
+
+test("sections: devLink passes through onto the row untouched", () => {
+  const row = makeRow({ name: "gitq", devLink: "linked" });
+  const [group] = sections(makeData({ apps: [row] }));
+  expect(group!.rows[0]!.devLink).toBe("linked");
+});
+
+test("sections: an unlinked row carries no commands", () => {
+  const row = makeRow({ name: "gitq", devLink: "unlinked", commands: undefined });
+  const [group] = sections(makeData({ apps: [row] }));
+  expect(group!.rows[0]!.commands).toBeUndefined();
 });
 
 // ---- tunnels ----

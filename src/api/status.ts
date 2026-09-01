@@ -16,6 +16,7 @@ import {
 import { getAppSettings, type PortOverride } from "../../core/settings.ts";
 import { checkApp, type Issue } from "../../core/preflight.ts";
 import { listRecords, type SyncIssue, type RemoteState } from "../registry/records.ts";
+import { commandKeysFor, readLinkedManifest } from "../registry/serve-shape.ts";
 import { allocatePort } from "../registry/allocate.ts";
 import { getOAuth, type OAuth } from "../edge/oauth.ts";
 import { getPlatformSettings } from "./platform-settings.ts";
@@ -30,7 +31,7 @@ export interface BuildStatusOpts {
   canaryPort: number;
   proxyFreshness: "fresh" | "stale" | "unknown";
   autoHeal: { at: number; ok: boolean | null } | null;
-  /** Gates `StatusRow.commands`: action-command names leak only to the local dev UI. */
+  /** Gates `StatusRow.commands`/`devLink` for managed apps; user apps are never gated. */
   devMode?: boolean;
   /** Fake `/ready` fetch for tests; production reads the connector's local metrics endpoint. */
   readyFetch?: typeof fetch;
@@ -101,8 +102,10 @@ export interface StatusRow {
    */
   record: { kind: "service" | "external"; command: string[] | null; workingDirectory: string | null } | null;
   oauth: OAuth;
-  /** Action-command names (excludes `start`), dev-mode only. */
+  /** Action-command names surfaced to the board: user apps always; managed apps per the dev gate. */
   commands?: string[];
+  /** Managed rows in dev mode only: drives the board's Link source / fix link affordances. */
+  devLink?: "unlinked" | "linked" | "broken";
   publicOrigin: "tunnel" | "railway";
   remote: { status: RemoteState["status"]; url: string | null } | null;
 }
@@ -221,7 +224,11 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
             }
           : null,
         oauth: getOAuth(a.name),
-        commands: opts.devMode && record?.commands ? Object.keys(record.commands) : undefined,
+        commands: record ? commandKeysFor(record, !!opts.devMode) : undefined,
+        devLink:
+          record && record.managedBy !== "user" && opts.devMode && !(record.commands && !record.dev)
+            ? readLinkedManifest(record).state
+            : undefined,
         publicOrigin: record?.remote?.status === "live" ? "railway" as const : "tunnel" as const,
         remote: record?.remote ? { status: record.remote.status, url: record.remote.url ?? null } : null,
       };

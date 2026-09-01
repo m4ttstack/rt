@@ -20,7 +20,7 @@ export interface RemoteState {
 }
 
 export interface SyncIssue {
-  source: "portless" | "launchd" | "cloudflare" | "railway";
+  source: "portless" | "launchd" | "cloudflare" | "railway" | "dev-link";
   message: string;
   at: string;
 }
@@ -43,7 +43,7 @@ export interface AppRecord {
   description?: string;
   /** Present once an icon has been ingested to the deck icon store. */
   icon?: { ext: "svg" };
-  /** Action commands from mattstack.deck.json (shell strings), excluding `start`. Dev-mode-gated at the API. */
+  /** Action commands from mattstack.deck.json (shell strings), excluding `start`. Dev-mode-gated at the API for managed apps; never gated for user apps. */
   commands?: Record<string, string>;
   /** Declared serve-shape overlays; each may carry only `port` and/or `start`. */
   altConfigs?: Record<string, { port?: number; start?: string }>;
@@ -51,6 +51,9 @@ export interface AppRecord {
   activeAlt?: string;
   /** Where action commands run when it differs from workingDirectory. Only the platform sets it today. */
   sourceDirectory?: string;
+  /** The developer's linked source checkout. The one stored dev value:
+      serve/build/deploy commands are read live from its mattstack.deck.json. */
+  dev?: { workingDirectory: string };
   grandfathered?: boolean;
   createdAt: string;
   /** Loud degradation: failed syncs land here and render on the board row. */

@@ -1,5 +1,5 @@
-import { test, expect, beforeEach } from "bun:test";
-import { mkdtempSync, rmSync, existsSync } from "fs";
+import { test, expect, beforeEach, afterEach } from "bun:test";
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 
@@ -21,15 +21,21 @@ process.env.LOCAL_APPS_SETTINGS_PATH = join(dir, "settings.json");
 // ~/.mattstack; beforeEach repoints it to a fresh dir per test below.
 process.env.HOME = dir;
 
-const { registerApp, unregisterApp, editApp, restartManagedApps, removeManagedApps } = await import("./register.ts");
+const {
+  registerApp, unregisterApp, editApp, restartManagedApps, reresolveManagedApps, removeManagedApps, setServeShapeDeps,
+} = await import("./register.ts");
 const { FakeServiceManager } = await import("../services/fake.ts");
 const { FakeEdgeProxy } = await import("../edge/portless.ts");
-const { getRecord, reloadRegistry, listRecords, deleteRecord } = await import("../registry/records.ts");
+const { getRecord, putRecord, reloadRegistry, listRecords, deleteRecord } = await import("../registry/records.ts");
 const {
   getAppSettings, setPublished, setPassword, setOverride, getOverride, setPublicFollowsOverride, reloadSettings,
 } = await import("../../core/settings.ts");
 const { setOAuth, getOAuth, reloadOAuth } = await import("../edge/oauth.ts");
 const { adoptApp } = await import("./register.ts");
+const { LABEL_PREFIX, PLATFORM_NAME, PLATFORM_LABEL } = await import("../services/manager.ts");
+type ServiceSpec = Parameters<InstanceType<typeof FakeServiceManager>["install"]>[0];
+const { agentsDir } = await import("../services/launchd.ts");
+const { renderPlist } = await import("../services/plist.ts");
 
 let drivers: { manager: InstanceType<typeof FakeServiceManager>; edge: InstanceType<typeof FakeEdgeProxy> };
 beforeEach(() => {
@@ -41,6 +47,10 @@ beforeEach(() => {
   reloadRegistry();
   reloadSettings();
   drivers = { manager: new FakeServiceManager(), edge: new FakeEdgeProxy() };
+});
+
+afterEach(() => {
+  setServeShapeDeps({});
 });
 
 const input = {
@@ -339,6 +349,154 @@ test("refuses to install a service whose program cannot be found", async () => {
   expect(issues.some((i) => i.source === "launchd" && i.message.includes("not found"))).toBe(true);
 });
 
+test("a linked managed record installs its resolved source shape in dev mode", async () => {
+  setServeShapeDeps({ devMode: () => true, helpersDir: null });
+  const dir = mkdtempSync(join(tmpdir(), "src-"));
+  writeFileSync(join(dir, "mattstack.deck.json"),
+    JSON.stringify({ name: "srcapp", dev: { start: "bun run serve" } }));
+  // register as a user app first to get a record + label, then repoint it to managed+linked
+  await registerApp({ name: "srcapp", command: ["bun", "x.ts"], workingDirectory: "/tmp" }, drivers);
+  const r = getRecord("srcapp")!;
+  putRecord({ ...r, managedBy: "rt", command: undefined, workingDirectory: undefined, dev: { workingDirectory: dir } });
+  // editApp re-renders the plist through the resolver
+  await editApp("srcapp", {}, "rt", true, drivers);
+  const installed = drivers.manager.installed.get(`${LABEL_PREFIX}srcapp`)!;
+  expect(installed.workingDirectory).toBe(dir);
+  expect(installed.programArguments.slice(1)).toEqual(["run", "serve"]);
+});
+
+// ─── editApp: dev.workingDirectory link/unlink ─────────────────────────────
+
+test("edit: a valid dev link stores dev.workingDirectory and reinstalls the service", async () => {
+  await registerApp(input, drivers);
+  const srcDir = mkdtempSync(join(tmpdir(), "dev-link-"));
+  writeFileSync(join(srcDir, "mattstack.deck.json"), JSON.stringify({ name: "myapp" }));
+
+  const res = await editApp("myapp", { dev: { workingDirectory: srcDir } }, "user", false, drivers);
+
+  expect(res.status).toBe(200);
+  expect(getRecord("myapp")!.dev).toEqual({ workingDirectory: srcDir });
+  expect(drivers.manager.installed.has(`${LABEL_PREFIX}myapp`)).toBe(true);
+});
+
+test("edit: dev link validation rejects a relative path, a missing dir, a missing manifest file, a bad manifest, and a name mismatch, before any teardown", async () => {
+  await registerApp(input, drivers);
+  const label = `${LABEL_PREFIX}myapp`;
+  const installedBefore = drivers.manager.installed.get(label);
+
+  const relative = await editApp("myapp", { dev: { workingDirectory: "not/absolute" } }, "user", false, drivers);
+  expect(relative.status).toBe(400);
+  expect((relative.body as any).error).toBe("dev.workingDirectory must be an absolute path");
+
+  const missingDir = join(tmpdir(), "dev-link-does-not-exist-xyz");
+  const missing = await editApp("myapp", { dev: { workingDirectory: missingDir } }, "user", false, drivers);
+  expect(missing.status).toBe(400);
+  expect((missing.body as any).error).toBe("directory not found");
+
+  const noManifestDir = mkdtempSync(join(tmpdir(), "dev-link-no-manifest-"));
+  const noManifest = await editApp("myapp", { dev: { workingDirectory: noManifestDir } }, "user", false, drivers);
+  expect(noManifest.status).toBe(400);
+  expect((noManifest.body as any).error).toBe(`no mattstack.deck.json in ${noManifestDir}`);
+
+  const badManifestDir = mkdtempSync(join(tmpdir(), "dev-link-bad-"));
+  writeFileSync(join(badManifestDir, "mattstack.deck.json"), "not json");
+  const bad = await editApp("myapp", { dev: { workingDirectory: badManifestDir } }, "user", false, drivers);
+  expect(bad.status).toBe(400);
+  expect((bad.body as any).error).toBe("mattstack.deck.json is not valid JSON");
+
+  const mismatchDir = mkdtempSync(join(tmpdir(), "dev-link-mismatch-"));
+  writeFileSync(join(mismatchDir, "mattstack.deck.json"), JSON.stringify({ name: "otherapp" }));
+  const mismatch = await editApp("myapp", { dev: { workingDirectory: mismatchDir } }, "user", false, drivers);
+  expect(mismatch.status).toBe(400);
+  expect(mismatch.body).toEqual({ error: "manifest name mismatch", expected: "myapp", got: "otherapp" });
+
+  // None of the rejected links tore down or reinstalled the running service.
+  expect(drivers.manager.installed.get(label)).toEqual(installedBefore);
+  expect(getRecord("myapp")!.dev).toBeUndefined();
+});
+
+test("edit: a dev-only patch on a managed record needs no force", async () => {
+  await registerApp({ ...input, managedBy: "rt" }, drivers);
+  const srcDir = mkdtempSync(join(tmpdir(), "dev-link-"));
+  writeFileSync(join(srcDir, "mattstack.deck.json"), JSON.stringify({ name: "myapp" }));
+
+  const res = await editApp("myapp", { dev: { workingDirectory: srcDir } }, "user", false, drivers);
+
+  expect(res.status).toBe(200);
+  expect(getRecord("myapp")!.dev).toEqual({ workingDirectory: srcDir });
+});
+
+test("edit: a structural patch on a managed record still needs force even when it also sets dev", async () => {
+  await registerApp({ ...input, managedBy: "rt" }, drivers);
+  const srcDir = mkdtempSync(join(tmpdir(), "dev-link-"));
+  writeFileSync(join(srcDir, "mattstack.deck.json"), JSON.stringify({ name: "myapp" }));
+
+  const res = await editApp("myapp", { port: 11500, dev: { workingDirectory: srcDir } }, "user", false, drivers);
+
+  expect(res.status).toBe(409);
+  expect(getRecord("myapp")!.dev).toBeUndefined();
+});
+
+test("edit: dev: null unlinks", async () => {
+  await registerApp(input, drivers);
+  const srcDir = mkdtempSync(join(tmpdir(), "dev-link-"));
+  writeFileSync(join(srcDir, "mattstack.deck.json"), JSON.stringify({ name: "myapp" }));
+  await editApp("myapp", { dev: { workingDirectory: srcDir } }, "user", false, drivers);
+  expect(getRecord("myapp")!.dev).toEqual({ workingDirectory: srcDir });
+
+  const res = await editApp("myapp", { dev: null }, "user", false, drivers);
+
+  expect(res.status).toBe(200);
+  expect(getRecord("myapp")!.dev).toBeUndefined();
+});
+
+// ─── editApp: the platform's own record takes a record-only dev path ──────
+
+test("edit: a dev-only PATCH on the platform record is record-only -- no label rewrite, no driver call", async () => {
+  const srcDir = mkdtempSync(join(tmpdir(), "dev-link-"));
+  writeFileSync(join(srcDir, "mattstack.deck.json"), JSON.stringify({ name: "deck" }));
+  const installedBefore: ServiceSpec = {
+    label: PLATFORM_LABEL, programArguments: ["/bundle/deck"], workingDirectory: "/tmp",
+    environment: {}, stdoutPath: "/tmp/o", stderrPath: "/tmp/e",
+  };
+  drivers.manager.installed.set(PLATFORM_LABEL, installedBefore);
+  putRecord({
+    name: "deck", managedBy: PLATFORM_NAME, port: 11999, kind: "service",
+    label: PLATFORM_LABEL, command: ["/bundle/deck"], createdAt: new Date().toISOString(),
+  });
+
+  const res = await editApp("deck", { dev: { workingDirectory: srcDir } }, "user", false, drivers);
+
+  expect(res.status).toBe(200);
+  expect(getRecord("deck")!.dev).toEqual({ workingDirectory: srcDir });
+  // Never rewritten to `${LABEL_PREFIX}deck` -- the bare platform label stays bare.
+  expect(getRecord("deck")!.label).toBe(PLATFORM_LABEL);
+  expect(drivers.manager.installed.size).toBe(1);
+  expect(drivers.manager.installed.get(PLATFORM_LABEL)).toEqual(installedBefore);
+});
+
+test("edit: a dev-only UNLINK on the platform record is also record-only", async () => {
+  const srcDir = mkdtempSync(join(tmpdir(), "dev-link-"));
+  writeFileSync(join(srcDir, "mattstack.deck.json"), JSON.stringify({ name: "deck" }));
+  putRecord({
+    name: "deck", managedBy: PLATFORM_NAME, port: 11999, kind: "service",
+    label: PLATFORM_LABEL, dev: { workingDirectory: srcDir }, createdAt: new Date().toISOString(),
+  });
+  const installedBefore: ServiceSpec = {
+    label: PLATFORM_LABEL, programArguments: ["/bundle/deck"], workingDirectory: "/tmp",
+    environment: {}, stdoutPath: "/tmp/o", stderrPath: "/tmp/e",
+  };
+  drivers.manager.installed.set(PLATFORM_LABEL, installedBefore);
+
+  const res = await editApp("deck", { dev: null }, "user", false, drivers);
+
+  expect(res.status).toBe(200);
+  expect(getRecord("deck")!.dev).toBeUndefined();
+  expect(getRecord("deck")!.label).toBe(PLATFORM_LABEL);
+  expect(drivers.manager.installed.size).toBe(1);
+  expect(drivers.manager.installed.get(PLATFORM_LABEL)).toEqual(installedBefore);
+});
+
 // ─── adopt: user app -> mattstack product (ownership flip + optional rename) ──
 
 function routesOnDisk(): Array<{ hostname: string; port: number }> {
@@ -474,4 +632,292 @@ test("removeManagedApps: a driver failure keeps the record and reports it in fai
   const res = await removeManagedApps(drivers);
   expect(res.body).toMatchObject({ ok: false, removed: [], failed: ["board"] });
   expect(getRecord("board")).toBeDefined();
+});
+
+// ─── reresolveManagedApps: selective restart on plist diff (dev/prod flip) ──
+
+/** Seeds the on-disk plist reresolveManagedApps diffs against, independent of
+    whatever the in-memory FakeServiceManager thinks is installed. */
+function seedPlist(label: string, programArguments: string[], workingDirectory = "/tmp"): void {
+  mkdirSync(agentsDir(), { recursive: true });
+  writeFileSync(join(agentsDir(), `${label}.plist`), renderPlist({
+    label, programArguments, workingDirectory, environment: {}, stdoutPath: "/tmp/o", stderrPath: "/tmp/e",
+  }));
+}
+
+class CountingManager extends FakeServiceManager {
+  installCalls: string[] = [];
+  uninstallCalls: string[] = [];
+  /** One-shot, like FakeServiceManager's own failNext, but scoped to install only:
+      failNext fails whichever op runs next for a label, and reresolve always
+      uninstalls before installing the same label, so failNext alone can never
+      isolate an install failure from a preceding, successful uninstall. */
+  failInstallFor: string | null = null;
+  override async install(spec: ServiceSpec): Promise<void> {
+    this.installCalls.push(spec.label);
+    if (this.failInstallFor === spec.label) {
+      this.failInstallFor = null;
+      throw new Error(`fake launchd: install failed for ${spec.label}`);
+    }
+    return super.install(spec);
+  }
+  override async uninstall(label: string): Promise<void> {
+    this.uninstallCalls.push(label);
+    return super.uninstall(label);
+  }
+}
+
+test("reresolve: reinstalls only the app whose resolved command differs from its installed plist", async () => {
+  const counting = new CountingManager();
+  const reresolveDrivers = { manager: counting, edge: drivers.edge };
+  await registerApp({ ...input, name: "same", managedBy: "rt" }, reresolveDrivers);
+  await registerApp({ ...input, name: "changed", managedBy: "rt", workingDirectory: "/tmp/changed" }, reresolveDrivers);
+  const sameSpec = counting.installed.get(`${LABEL_PREFIX}same`)!;
+  const changedSpec = counting.installed.get(`${LABEL_PREFIX}changed`)!;
+  seedPlist(sameSpec.label, sameSpec.programArguments, sameSpec.workingDirectory);
+  seedPlist(changedSpec.label, [...changedSpec.programArguments.slice(0, -1), "stale-arg"], changedSpec.workingDirectory);
+  counting.installCalls = [];
+  counting.uninstallCalls = [];
+
+  const res = await reresolveManagedApps(reresolveDrivers);
+
+  expect(res.status).toBe(200);
+  expect(res.body).toMatchObject({ ok: true, restarted: ["changed"], unchanged: ["same"], failed: [] });
+  expect(counting.uninstallCalls).toEqual([changedSpec.label]);
+  expect(counting.installCalls).toEqual([changedSpec.label]);
+});
+
+test("reresolve: a flip-then-flip-back is a no-op (restarts nothing, churns no driver calls)", async () => {
+  const counting = new CountingManager();
+  const reresolveDrivers = { manager: counting, edge: drivers.edge };
+  await registerApp({ ...input, name: "app1", managedBy: "rt" }, reresolveDrivers);
+  await registerApp({ ...input, name: "app2", managedBy: "rt", workingDirectory: "/tmp/app2" }, reresolveDrivers);
+  for (const name of ["app1", "app2"]) {
+    const spec = counting.installed.get(`${LABEL_PREFIX}${name}`)!;
+    seedPlist(spec.label, spec.programArguments, spec.workingDirectory);
+  }
+  counting.installCalls = [];
+  counting.uninstallCalls = [];
+
+  const first = await reresolveManagedApps(reresolveDrivers);
+  const second = await reresolveManagedApps(reresolveDrivers); // the "flip back": identical inputs, run again
+
+  for (const res of [first, second]) {
+    expect(res.body).toMatchObject({ ok: true, restarted: [] });
+    expect((res.body as any).unchanged.slice().sort()).toEqual(["app1", "app2"]);
+  }
+  // If the diff check were dropped (always reinstall), these would be non-empty.
+  expect(counting.installCalls).toEqual([]);
+  expect(counting.uninstallCalls).toEqual([]);
+});
+
+test("reresolve: restarts an app whose working directory changed even though its resolved argv did not", async () => {
+  const counting = new CountingManager();
+  const reresolveDrivers = { manager: counting, edge: drivers.edge };
+  const dirA = mkdtempSync(join(tmpdir(), "cwdapp-a-"));
+  const dirB = mkdtempSync(join(tmpdir(), "cwdapp-b-"));
+  // Same dev.start as the original command, so the resolved argv is identical;
+  // only the linked checkout (and so the resolved cwd) differs.
+  writeFileSync(join(dirB, "mattstack.deck.json"), JSON.stringify({ name: "cwdapp", dev: { start: "bun run serve" } }));
+  await registerApp({ name: "cwdapp", managedBy: "rt", command: ["bun", "run", "serve"], workingDirectory: dirA }, reresolveDrivers);
+  const spec = counting.installed.get(`${LABEL_PREFIX}cwdapp`)!;
+  seedPlist(spec.label, spec.programArguments, spec.workingDirectory); // baseline: argv and cwd both match dirA
+  const rec = getRecord("cwdapp")!;
+  // Re-linking to a different clone of the same repo: same dev.start argv, a new cwd.
+  putRecord({ ...rec, command: undefined, workingDirectory: undefined, dev: { workingDirectory: dirB } });
+  counting.installCalls = [];
+  counting.uninstallCalls = [];
+
+  const res = await reresolveManagedApps(reresolveDrivers);
+
+  expect(res.body).toMatchObject({ ok: true, restarted: ["cwdapp"], unchanged: [], failed: [] });
+  expect(counting.installed.get(spec.label)!.workingDirectory).toBe(dirB);
+});
+
+test("reresolve: skips user records and the platform record even when their plist would differ", async () => {
+  const counting = new CountingManager();
+  const reresolveDrivers = { manager: counting, edge: drivers.edge };
+  await registerApp({ ...input, name: "useronly" }, reresolveDrivers); // managedBy defaults to "user"
+  putRecord({
+    name: "deck", managedBy: PLATFORM_NAME, port: 11999, kind: "service",
+    command: ["bun", "platform.ts"], workingDirectory: "/tmp/deck", label: `${LABEL_PREFIX}deck`,
+    createdAt: new Date().toISOString(),
+  });
+  // Neither has a matching (or even present) plist: a processed row would land
+  // in restarted or failed, never silently absent from every list.
+  counting.installCalls = [];
+  counting.uninstallCalls = [];
+
+  const res = await reresolveManagedApps(reresolveDrivers);
+
+  expect(res.body).toMatchObject({ ok: true, restarted: [], unchanged: [], failed: [] });
+  expect(counting.installCalls).toEqual([]);
+  expect(counting.uninstallCalls).toEqual([]);
+});
+
+test("reresolve: a null shape lands the app in failed and leaves its installed service untouched", async () => {
+  const counting = new CountingManager();
+  const reresolveDrivers = { manager: counting, edge: drivers.edge };
+  await registerApp({ ...input, name: "brokenlink" }, reresolveDrivers);
+  const rec = getRecord("brokenlink")!;
+  const label = rec.label!;
+  putRecord({
+    ...rec, managedBy: "rt", command: undefined, workingDirectory: undefined,
+    dev: { workingDirectory: join(tmpdir(), "reresolve-nonexistent-dev-link-dir") },
+  });
+  seedPlist(label, ["/bin/echo", "still-here"]);
+  // No bundle and a dev link pointing nowhere: serveShape resolves neither shape.
+  setServeShapeDeps({ helpersDir: null });
+  counting.installCalls = [];
+  counting.uninstallCalls = [];
+
+  const res = await reresolveManagedApps(reresolveDrivers);
+
+  expect(res.body).toMatchObject({
+    ok: false, restarted: [], unchanged: [], failed: [{ name: "brokenlink", error: "no runnable shape" }],
+  });
+  expect(counting.installCalls).toEqual([]);
+  expect(counting.uninstallCalls).toEqual([]);
+  expect(readFileSync(join(agentsDir(), `${label}.plist`), "utf8")).toContain("still-here");
+});
+
+test("reresolve: a specFor throw for one app does not block a healthy app in the same sweep", async () => {
+  const counting = new CountingManager();
+  const reresolveDrivers = { manager: counting, edge: drivers.edge };
+  await registerApp(
+    { ...input, name: "ghost", managedBy: "rt", command: ["definitely-not-a-real-binary-xyz", "x.js"] },
+    reresolveDrivers,
+  );
+  await registerApp({ ...input, name: "healthy", managedBy: "rt", workingDirectory: "/tmp/healthy" }, reresolveDrivers);
+  const healthySpec = counting.installed.get(`${LABEL_PREFIX}healthy`)!;
+  seedPlist(healthySpec.label, healthySpec.programArguments, healthySpec.workingDirectory);
+  counting.installCalls = [];
+  counting.uninstallCalls = [];
+
+  const res = await reresolveManagedApps(reresolveDrivers);
+
+  const body = res.body as { ok: boolean; restarted: string[]; unchanged: string[]; failed: Array<{ name: string; error: string }> };
+  expect(body.ok).toBe(false);
+  expect(body.restarted).toEqual([]);
+  expect(body.unchanged).toEqual(["healthy"]);
+  expect(body.failed).toHaveLength(1);
+  expect(body.failed[0]!.name).toBe("ghost");
+  expect(body.failed[0]!.error).toContain("not found");
+  // The broken app never reaches a driver call, and the healthy one is unchanged: neither installs or uninstalls.
+  expect(counting.installCalls).toEqual([]);
+  expect(counting.uninstallCalls).toEqual([]);
+});
+
+test("reresolve: an install failure lands the app in failed and leaves a launchd issue on its record", async () => {
+  const counting = new CountingManager();
+  const reresolveDrivers = { manager: counting, edge: drivers.edge };
+  await registerApp({ ...input, name: "flaky", managedBy: "rt" }, reresolveDrivers);
+  const spec = counting.installed.get(`${LABEL_PREFIX}flaky`)!;
+  // A mismatched plist forces reresolve down the uninstall+install path.
+  seedPlist(spec.label, [...spec.programArguments.slice(0, -1), "stale-arg"]);
+  counting.installCalls = [];
+  counting.uninstallCalls = [];
+  counting.failInstallFor = spec.label;
+
+  const res = await reresolveManagedApps(reresolveDrivers);
+
+  const body = res.body as { ok: boolean; restarted: string[]; unchanged: string[]; failed: Array<{ name: string; error: string }> };
+  expect(body.ok).toBe(false);
+  expect(body.restarted).toEqual([]);
+  expect(body.unchanged).toEqual([]);
+  expect(body.failed).toHaveLength(1);
+  expect(body.failed[0]!.name).toBe("flaky");
+  expect(body.failed[0]!.error).toContain("install failed");
+  // The uninstall still ran (it succeeded); the install after it is what threw.
+  expect(counting.uninstallCalls).toEqual([spec.label]);
+  const rec = getRecord("flaky")!;
+  expect(rec.issues).toHaveLength(1);
+  expect(rec.issues![0]!.source).toBe("launchd");
+});
+
+test("reresolve: a later successful install clears the launchd issue a previous failed sweep left", async () => {
+  const counting = new CountingManager();
+  const reresolveDrivers = { manager: counting, edge: drivers.edge };
+  await registerApp({ ...input, name: "recovered", managedBy: "rt" }, reresolveDrivers);
+  const spec = counting.installed.get(`${LABEL_PREFIX}recovered`)!;
+  seedPlist(spec.label, [...spec.programArguments.slice(0, -1), "stale-arg"]);
+  counting.failInstallFor = spec.label;
+  await reresolveManagedApps(reresolveDrivers); // first sweep: install fails, issue lands
+  expect(getRecord("recovered")!.issues).toHaveLength(1);
+
+  const res = await reresolveManagedApps(reresolveDrivers); // second sweep: same stale plist, install succeeds this time
+
+  expect(res.body).toMatchObject({ ok: true, restarted: ["recovered"], unchanged: [], failed: [] });
+  expect(getRecord("recovered")!.issues ?? []).toEqual([]);
+});
+
+test("reresolve reads mattstack.mode fresh, not a cache a prior status poll already warmed", async () => {
+  const { setSetting } = await import("@mattstack/rt-client");
+  const { isDevMode, resetDevModeCache } = await import("./dev-mode.ts");
+  const counting = new CountingManager();
+  const reresolveDrivers = { manager: counting, edge: drivers.edge };
+
+  const helpers = mkdtempSync(join(tmpdir(), "helpers-"));
+  writeFileSync(join(helpers, "flip"), "");
+  const srcDir = mkdtempSync(join(tmpdir(), "src-"));
+  writeFileSync(join(srcDir, "mattstack.deck.json"), JSON.stringify({ name: "flip", dev: { start: "bun run serve" } }));
+
+  setSetting("mattstack.mode", "prod", "machine");
+  resetDevModeCache();
+  setServeShapeDeps({ helpersDir: helpers });
+
+  await registerApp({ ...input, name: "flip", managedBy: "rt" }, reresolveDrivers);
+  const rec = getRecord("flip")!;
+  const label = rec.label!;
+  putRecord({ ...rec, command: undefined, workingDirectory: undefined, dev: { workingDirectory: srcDir } });
+  // The shape a prod resolve would already have installed (bundle binary, no
+  // args), so the mode flip below is what produces the diff, not this seed.
+  seedPlist(label, [join(helpers, "flip")]);
+  counting.installCalls = [];
+  counting.uninstallCalls = [];
+
+  // A status poll in the moment before the flag flips warms the cache with
+  // the stale "prod" reading -- the same 2-second window rt's real poke races.
+  isDevMode();
+  setSetting("mattstack.mode", "dev", "machine");
+
+  try {
+    const res = await reresolveManagedApps(reresolveDrivers);
+
+    expect(res.body).toMatchObject({ ok: true, restarted: ["flip"], unchanged: [], failed: [] });
+    const installed = counting.installed.get(label)!;
+    expect(installed.workingDirectory).toBe(srcDir);
+    expect(installed.programArguments.slice(1)).toEqual(["run", "serve"]);
+  } finally {
+    // The cache is keyed by wall-clock TTL, not by HOME: left warm, it can leak
+    // a "dev" reading into another test file's assertions for up to 2 seconds.
+    resetDevModeCache();
+  }
+});
+
+// ─── editApp: never uninstall a shape the patch can't replace ─────────────
+
+test("edit: unlinking a slim row with no bundle installed is rejected before any teardown", async () => {
+  setServeShapeDeps({ helpersDir: null });
+  const counting = new CountingManager();
+  const noBundleDrivers = { manager: counting, edge: drivers.edge };
+  const srcDir = mkdtempSync(join(tmpdir(), "dev-link-"));
+  writeFileSync(join(srcDir, "mattstack.deck.json"), JSON.stringify({ name: "myapp", dev: { start: "bun run serve" } }));
+  await registerApp({ ...input, name: "myapp", managedBy: "rt" }, noBundleDrivers);
+  const rec = getRecord("myapp")!;
+  const label = rec.label!;
+  putRecord({ ...rec, command: undefined, workingDirectory: undefined, dev: { workingDirectory: srcDir } });
+  const installedBefore = counting.installed.get(label);
+  counting.installCalls = [];
+  counting.uninstallCalls = [];
+
+  const res = await editApp("myapp", { dev: null }, "rt", true, noBundleDrivers);
+
+  expect(res.status).toBe(400);
+  expect((res.body as any).error).toContain("no runnable shape");
+  // Unlinking never landed: dev is still set, and neither driver call fired.
+  expect(getRecord("myapp")!.dev).toEqual({ workingDirectory: srcDir });
+  expect(counting.uninstallCalls).toEqual([]);
+  expect(counting.installCalls).toEqual([]);
+  expect(counting.installed.get(label)).toEqual(installedBefore);
 });
