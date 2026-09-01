@@ -53,7 +53,7 @@ describe("chainOf", () => {
 
   test("an identical branch name in a different project never links a stack", () => {
     const other = mr({ mrUrl: "https://gitlab.com/other/repo/-/merge_requests/1", iid: 1, sourceBranch: "p" });
-    const child = mr({ mrUrl: "https://gitlab.com/acme/acme-dev/-/merge_requests/2", iid: 2, sourceBranch: "c", targetBranch: "p", isStacked: true });
+    const child = mr({ mrUrl: "https://gitlab.example.com/acme/webapp/-/merge_requests/2", iid: 2, sourceBranch: "c", targetBranch: "p", isStacked: true });
     const chain = chainOf([other, child], child.mrUrl);
     expect(chain.ancestors).toEqual([]);
     expect(chain.unresolvedParentBranch).toBe("p");

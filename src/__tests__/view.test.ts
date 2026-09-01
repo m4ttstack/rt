@@ -166,7 +166,7 @@ describe("statusFlags", () => {
 });
 
 describe("nestStacks", () => {
-  const url = (iid: number, project = "acme/acme-dev") => `https://gitlab.com/${project}/-/merge_requests/${iid}`;
+  const url = (iid: number, project = "acme/webapp") => `https://gitlab.com/${project}/-/merge_requests/${iid}`;
   const smr = (iid: number, source: string, target: string, opts: { project?: string; stacked?: boolean } = {}) =>
     mr({
       iid,
@@ -274,7 +274,7 @@ const NOW = Date.parse("2026-07-13T12:00:00Z");
 const daysAgo = (n: number) => new Date(NOW - n * 86_400_000).toISOString();
 
 describe("groupMRs stack cohesion", () => {
-  const url = (iid: number, project = "acme/acme-dev") => `https://gitlab.com/${project}/-/merge_requests/${iid}`;
+  const url = (iid: number, project = "acme/webapp") => `https://gitlab.com/${project}/-/merge_requests/${iid}`;
   const smr = (iid: number, source: string, target: string, extra: Record<string, unknown> = {}) =>
     mr({
       iid,

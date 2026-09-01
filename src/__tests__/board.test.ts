@@ -140,10 +140,10 @@ describe("buildBoard avatar scrub (BOARD-17)", () => {
 
 describe("extractTicketId", () => {
   test("exact branch segment", () => {
-    expect(extractTicketId("feature/ACME-1287", "whatever")).toBe("ACME-1287");
+    expect(extractTicketId("feature/acme-1287", "whatever")).toBe("ACME-1287");
   });
   test("prefixed branch segment", () => {
-    expect(extractTicketId("feature/ACME-1287-add-photos", "whatever")).toBe("ACME-1287");
+    expect(extractTicketId("feature/acme-1287-add-photos", "whatever")).toBe("ACME-1287");
   });
   test("falls back to title prefix", () => {
     expect(extractTicketId("some-branch", "ACME-2388: simplify things")).toBe("ACME-2388");
@@ -239,13 +239,13 @@ describe("buildBoard", () => {
   });
 
   test("ticketPrefixes filter: keeps only matching prefixes, drops other teams and untagged", () => {
-    const withPrefix = { ...config, ticketPrefixes: ["CV"] };
+    const withPrefix = { ...config, ticketPrefixes: ["ACME"] };
     const mrs = buildBoard(
       [
-        pr({ iid: 1, sourceBranch: "feature/ACME-2369-thing" }), // CV — keep
-        pr({ iid: 2, sourceBranch: "ing-595-transition", title: "ING work" }), // ING — drop
-        pr({ iid: 3, sourceBranch: "hotfix", title: "NO-TICKET quick fix" }), // untagged — drop
-        pr({ iid: 4, sourceBranch: "x", title: "ACME-2400: titled" }), // CV via title — keep
+        pr({ iid: 1, sourceBranch: "feature/acme-2369-thing" }), // ACME, keep
+        pr({ iid: 2, sourceBranch: "ing-595-transition", title: "ING work" }), // ING, drop
+        pr({ iid: 3, sourceBranch: "hotfix", title: "NO-TICKET quick fix" }), // untagged, drop
+        pr({ iid: 4, sourceBranch: "x", title: "ACME-2400: titled" }), // ACME via title, keep
       ],
       withPrefix,
     );

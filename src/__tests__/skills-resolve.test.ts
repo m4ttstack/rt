@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // The three wrapper skills and the slot contracts they must declare. The
-// contract names are cluster D's provides table (acme-pack): the pack and
+// contract names are cluster D's provides table (acme pack): the pack and
 // the board have to agree on these strings exactly.
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 const wrappers = [

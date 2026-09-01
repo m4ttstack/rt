@@ -13,7 +13,7 @@ import {
   type AttendantLease,
 } from "../triage/attendant.ts";
 
-const MR = "https://gitlab.com/acme/acme-dev/-/merge_requests/4821";
+const MR = "https://gitlab.example.com/acme/webapp/-/merge_requests/4821";
 const IID = 4821;
 const NOW = 1_700_000_000_000;
 
@@ -38,8 +38,8 @@ function lease(over: Partial<AttendantLease> = {}): AttendantLease {
 
 describe("leaseFileName", () => {
   test("keys on project path + iid, filesystem-safe, no collisions across projects", () => {
-    const a = leaseFileName("https://gitlab.com/acme/acme-dev/-/merge_requests/7", 7);
-    const b = leaseFileName("https://gitlab.com/acme/other-repo/-/merge_requests/7", 7);
+    const a = leaseFileName("https://gitlab.example.com/acme/webapp/-/merge_requests/7", 7);
+    const b = leaseFileName("https://gitlab.example.com/acme/other-repo/-/merge_requests/7", 7);
     expect(a).not.toBe(b);
     expect(a).toMatch(/^[a-z0-9._-]+\.json$/);
     expect(a).toContain("7");

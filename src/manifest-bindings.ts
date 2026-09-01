@@ -36,8 +36,8 @@ function configSkillFor(kind: BoardSkillKind, cfg: BoardConfig): string {
     name a per-repo manifest lives under: the host (scheme stripped,
     credentials stripped, truncated at the first "/", lowercased) and the
     project path joined by "-", with every "/" in the project path also
-    replaced by "-". E.g. "https://gitlab.com" + "acme/acme-dev" ->
-    "gitlab.com-acme-acme-dev". Normalization matches
+    replaced by "-". E.g. "https://gitlab.example.com" + "acme/webapp" ->
+    "gitlab.example.com-acme-webapp". Normalization matches
     merge-manifests.sh's norm_url so a trailing slash or embedded
     credentials on `gitlabHost` still resolve the same manifest. */
 export function boardRepoSlug(gitlabHost: string, project: string): string {

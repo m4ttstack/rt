@@ -4,7 +4,7 @@ const TITLE_RE = /^([A-Za-z]+-\d+)\b/;
 
 /**
  * Extract a Linear ticket id from an MR: branch segments first (exact, then
- * prefix — mirrors rt's extractLinearId), falling back to a "ACME-1234: ..."
+ * prefix — mirrors rt's extractLinearId), falling back to an "ACME-1234: ..."
  * title prefix.
  */
 export function extractTicketId(sourceBranch: string, title: string): string | null {

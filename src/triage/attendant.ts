@@ -4,7 +4,7 @@ import { join } from "node:path";
 /** BOARD-10: the one-CI-attendant-per-MR lease. A plain per-MR JSON file so
     every actor -- this board, the acme:watch-ci skill's shell helper, a
     human with `ls` -- can read and claim it with nothing but the filesystem
-    (acme-skills must stay free of rt/daemon dependencies). Freshness is
+    (acme skills must stay free of rt/daemon dependencies). Freshness is
     heartbeat + TTL; a crashed holder costs nothing and needs no cleanup. */
 
 export type AttendantHolder = "watch-ci" | "doctor";
