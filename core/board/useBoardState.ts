@@ -307,7 +307,9 @@ export function useBoardState() {
 
   // ---- edit ----
   // Only user records are structurally editable from the board; the API
-  // enforces this too - the UI just avoids offering a dead end.
+  // enforces this (authorizeStructural 409s managed rows), and the drawer
+  // only offers "edit app" on user rows since the source screen took over
+  // the managed story.
   const openEdit = useCallback((row: Row) => {
     setEditModal({
       original: row.name,

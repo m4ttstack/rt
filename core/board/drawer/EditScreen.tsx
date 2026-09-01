@@ -1,13 +1,15 @@
 // Edit screen, per drawer-states-atlas.html "4 · Logs, edit, remove", edit
-// phone. Command + directory exist only for managed apps -- external apps
-// show name and base port only, same split the add-app modal makes on entry.
+// phone. User apps only (managed rows get the source screen instead — the
+// resolver owns their shape). Command + directory exist only for supervised
+// services; external apps show name and base port, same split the add-app
+// modal makes on entry.
 import { ListGroup } from "@mattstack/tui-kit";
 import type { EditModalState } from "../useBoardState.ts";
 import type { ScreenBuilder } from "./RootScreen.tsx";
 
 const NAME_PATTERN = /^[a-z0-9][a-z0-9.-]*$/;
 
-const FIELD_FOOTER = "command and directory only exist for managed apps — external apps show name and port only";
+const FIELD_FOOTER = "command and directory only exist for supervised services — external apps show name and port only";
 
 function isSaveable(m: EditModalState): boolean {
   if (!NAME_PATTERN.test(m.name.trim())) return false;

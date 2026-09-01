@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Badge, Button, Chip, Icon, ICONS, Spinner, StatusDot, Table, TextField, Tooltip } from "@mattstack/tui-kit";
 import { OptimisticSwitch } from "./optimistic.tsx";
-import { isPlatform, showDevLinkPrompt, showUnlinkButton, type Row, type StatusData } from "./logic.ts";
+import { isPlatform, showDevLinkPrompt, type Row, type StatusData } from "./logic.ts";
 import type { BoardState } from "./useBoardState.ts";
 
 /** A lucide globe as one path (subpaths joined with explicit `M`, the same
@@ -43,7 +43,7 @@ export function AppsTable({
   onOpenRow,
   registerChevron,
 }: { section: AppsSection; showHead: boolean; data: StatusData; board: BoardState } & DrawerRowProps) {
-  const { isRestarting, onRestart, onRunCommand, linkSource, unlinkSource, onPublish, onPushRemote } = board;
+  const { isRestarting, onRestart, onRunCommand, linkSource, onPublish, onPushRemote } = board;
   return (
     <Table className="apps-grid">
       <colgroup>
@@ -99,7 +99,7 @@ export function AppsTable({
                 <RestartCell row={row} data={data} restarting={restarting} onRestart={onRestart} />
               </Table.Cell>
               <Table.Cell>
-                <CommandsCell row={row} canManage={data.canManage} onRunCommand={onRunCommand} linkSource={linkSource} unlinkSource={unlinkSource} />
+                <CommandsCell row={row} canManage={data.canManage} onRunCommand={onRunCommand} linkSource={linkSource} />
               </Table.Cell>
               <Table.Cell>
                 <RemotePushCell row={row} data={data} onPushRemote={onPushRemote} />
@@ -382,20 +382,18 @@ function RestartCell({
 
 /** Dev-mode source linking replaces the manifest command buttons rather than
     sharing the cell with them: `unlinked`/`broken` rows have nothing else to
-    run yet, and `linked` rows keep their buttons with Unlink appended, per
-    the board's dev/prod matrix. */
+    run yet. Unlink lives in the drawer's source screen, not here — the table
+    carries commands and the link-fix affordance only. */
 function CommandsCell({
   row,
   canManage,
   onRunCommand,
   linkSource,
-  unlinkSource,
 }: {
   row: Row;
   canManage: boolean;
   onRunCommand: (row: Row, name: string) => void;
   linkSource: (row: Row, workingDirectory: string) => Promise<string | null>;
-  unlinkSource: (row: Row) => Promise<void>;
 }) {
   // The platform's own row never gets Link/Unlink: bootstrapSelf owns its serve
   // shape, and editApp refuses to touch it structurally, so those controls
@@ -415,11 +413,6 @@ function CommandsCell({
           {name}
         </Button>
       ))}
-      {showUnlinkButton(row, canManage) && (
-        <Button variant="subtle" size="sm" aria-label={`unlink ${row.name}`} onClick={() => unlinkSource(row)}>
-          Unlink
-        </Button>
-      )}
     </>
   );
 }

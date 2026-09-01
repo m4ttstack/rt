@@ -457,20 +457,17 @@ async function openEdit(page: Page, name: string): Promise<void> {
   await page.locator('[data-part="listgroup-nav"] button', { hasText: "edit app" }).click();
 }
 
-test("edit app: a managed row shows name, base port, command and directory, prefilled from the row", async () => {
+test("edit app: a user service row shows name, base port, command and directory, prefilled from the row", async () => {
   await withBoard(async (page) => {
-    await openEdit(page, "atlas");
+    await openEdit(page, "orbit");
     expect(await page.locator('[data-part="drawer-title"]').textContent()).toBe("edit app");
-    expect(await page.locator('[data-part="drawer-back"]').textContent()).toBe("‹ atlas");
+    expect(await page.locator('[data-part="drawer-back"]').textContent()).toBe("‹ orbit");
 
     const drawer = page.locator('[data-part="sidedrawer"]');
     expect(await drawer.locator('[data-part="field"]').count()).toBe(4);
-    expect(await drawer.getByRole("textbox", { name: "name" }).inputValue()).toBe("atlas");
-    expect(await drawer.getByRole("textbox", { name: "base port" }).inputValue()).toBe("11001");
-    expect(await drawer.getByRole("textbox", { name: "command" }).inputValue()).toBe("bun run server.ts");
-    expect(await drawer.getByRole("textbox", { name: "directory" }).inputValue()).toBe(
-      "/Users/matt/Documents/GitHub/atlas",
-    );
+    expect(await drawer.getByRole("textbox", { name: "name" }).inputValue()).toBe("orbit");
+    expect(await drawer.getByRole("textbox", { name: "base port" }).inputValue()).toBe("11007"); // orbit overrides: base 11007, dev 3007
+    expect(await drawer.getByRole("textbox", { name: "command" }).inputValue()).toBe("bun run dev");
 
     const navAction = page.locator('[data-part="drawer-navaction"]');
     expect((await navAction.textContent())?.trim()).toBe("save");
@@ -478,22 +475,16 @@ test("edit app: a managed row shows name, base port, command and directory, pref
   });
 });
 
-test("edit app: an external row shows only name and base port", async () => {
-  await withBoard(
-    async (page) => {
-      await openEdit(page, "atlas");
-      const drawer = page.locator('[data-part="sidedrawer"]');
-      expect(await drawer.locator('[data-part="field"]').count()).toBe(2);
-      expect(await drawer.getByRole("textbox", { name: "name" }).inputValue()).toBe("atlas");
-      expect(await drawer.getByRole("textbox", { name: "base port" }).inputValue()).toBe("11001");
-      expect(await drawer.getByText("command", { exact: true }).count()).toBe(0);
-      expect(await drawer.getByText("directory", { exact: true }).count()).toBe(0);
-    },
-    { fixture: "status-external.json" },
-  );
+test("edit app: a managed row offers no edit nav — the resolver owns its shape; source replaces it", async () => {
+  await withBoard(async (page) => {
+    await openDrawer(page, "atlas");
+    const drawer = page.locator('[data-part="sidedrawer"]');
+    expect(await drawer.locator('[data-part="listgroup-nav"] button', { hasText: "edit app" }).count()).toBe(0);
+    expect(await drawer.locator('[data-part="listgroup-nav"] button', { hasText: "source" }).count()).toBe(1);
+  });
 });
 
-test("edit app: save PATCHes the edit payload and pops back to root", async () => {
+test("source screen: facts, relink, and Unlink PATCHes dev:null", async () => {
   await withBoard(async (page) => {
     let patchBody: unknown = null;
     await page.route("**/api/v1/apps/atlas", async (route) => {
@@ -505,26 +496,66 @@ test("edit app: save PATCHes the edit payload and pops back to root", async () =
       await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
     });
 
-    await openEdit(page, "atlas");
+    await openDrawer(page, "atlas");
+    await page.locator('[data-part="listgroup-nav"] button', { hasText: "source" }).click();
+    expect(await page.locator('[data-part="drawer-title"]').textContent()).toBe("source");
+    const drawer = page.locator('[data-part="sidedrawer"]');
+    expect(await drawer.getByText("/Users/matt/Documents/GitHub/atlas").count()).toBe(1);
+    expect(await drawer.getByText("build · deploy").count()).toBe(1);
+
+    await drawer.locator('[data-part="listgroup-action"] button', { hasText: "Unlink" }).click();
+    await waitUntil(async () => patchBody !== null);
+    expect(patchBody).toEqual({ dev: null });
+  });
+});
+
+test("edit app: an external row shows only name and base port", async () => {
+  await withBoard(
+    async (page) => {
+      await openEdit(page, "atlas");
+      const drawer = page.locator('[data-part="sidedrawer"]');
+      expect(await drawer.locator('[data-part="field"]').count()).toBe(2);
+      expect(await drawer.getByRole("textbox", { name: "name" }).inputValue()).toBe("orbit");
+      expect(await drawer.getByRole("textbox", { name: "base port" }).inputValue()).toBe("11001");
+      expect(await drawer.getByText("command", { exact: true }).count()).toBe(0);
+      expect(await drawer.getByText("directory", { exact: true }).count()).toBe(0);
+    },
+    { fixture: "status-external.json" },
+  );
+});
+
+test("edit app: save PATCHes the edit payload and pops back to root", async () => {
+  await withBoard(async (page) => {
+    let patchBody: unknown = null;
+    await page.route("**/api/v1/apps/orbit", async (route) => {
+      if (route.request().method() !== "PATCH") {
+        await route.continue();
+        return;
+      }
+      patchBody = route.request().postDataJSON();
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ ok: true }) });
+    });
+
+    await openEdit(page, "orbit");
     await page.getByRole("textbox", { name: "base port" }).fill("12345");
     await page.locator('[data-part="drawer-navaction"]').click();
 
     await waitUntil(async () => patchBody !== null);
     expect(patchBody).toEqual({
-      name: "atlas",
+      name: "orbit",
       port: 12345,
-      command: ["bun", "run", "server.ts"],
-      workingDirectory: "/Users/matt/Documents/GitHub/atlas",
+      command: ["bun", "run", "dev"],
+      workingDirectory: "/Users/matt/Documents/GitHub/orbit",
     });
 
-    await waitUntil(async () => (await page.locator('[data-part="drawer-title"]').textContent()) === "atlas");
+    await waitUntil(async () => (await page.locator('[data-part="drawer-title"]').textContent()) === "orbit");
     expect(await page.locator('[data-part="drawer-back"]').count()).toBe(0);
   });
 });
 
 test("edit app: an API validation error renders inline on the name field; the screen stays open", async () => {
   await withBoard(async (page) => {
-    await page.route("**/api/v1/apps/atlas", async (route) => {
+    await page.route("**/api/v1/apps/orbit", async (route) => {
       if (route.request().method() !== "PATCH") {
         await route.continue();
         return;
@@ -532,7 +563,7 @@ test("edit app: an API validation error renders inline on the name field; the sc
       await route.fulfill({ status: 400, contentType: "application/json", body: JSON.stringify({ message: "name taken" }) });
     });
 
-    await openEdit(page, "atlas");
+    await openEdit(page, "orbit");
     await page.locator('[data-part="drawer-navaction"]').click();
 
     const fieldError = page.locator('[data-part="sidedrawer"] [data-part="field-error"]');
@@ -545,35 +576,35 @@ test("edit app: an API validation error renders inline on the name field; the sc
 test("edit app: cancel via the kit back chevron discards the draft without saving", async () => {
   await withBoard(async (page) => {
     let patchCalled = false;
-    await page.route("**/api/v1/apps/atlas", async (route) => {
+    await page.route("**/api/v1/apps/orbit", async (route) => {
       if (route.request().method() === "PATCH") patchCalled = true;
       await route.continue();
     });
 
-    await openEdit(page, "atlas");
+    await openEdit(page, "orbit");
     await page.getByRole("textbox", { name: "name" }).fill("scratch");
     await page.locator('[data-part="drawer-back"]').click();
 
-    expect(await page.locator('[data-part="drawer-title"]').textContent()).toBe("atlas");
+    expect(await page.locator('[data-part="drawer-title"]').textContent()).toBe("orbit");
     expect(patchCalled).toBe(false);
   });
 });
 
 test("edit app: the kit back chevron clears the draft; reentering starts fresh, not resuming the discarded edit", async () => {
   await withBoard(async (page) => {
-    await openEdit(page, "atlas");
+    await openEdit(page, "orbit");
     const drawer = page.locator('[data-part="sidedrawer"]');
     await drawer.getByRole("textbox", { name: "name" }).fill("scratch");
     await drawer.getByRole("textbox", { name: "command" }).fill("garbage");
 
     await page.locator('[data-part="drawer-back"]').click();
-    expect(await page.locator('[data-part="drawer-title"]').textContent()).toBe("atlas");
+    expect(await page.locator('[data-part="drawer-title"]').textContent()).toBe("orbit");
     // Drawer's already open on root -- reenter via the nav row, not the
     // table chevron (which the open drawer panel now overlaps).
     await page.locator('[data-part="listgroup-nav"] button', { hasText: "edit app" }).click();
 
-    expect(await drawer.getByRole("textbox", { name: "name" }).inputValue()).toBe("atlas");
-    expect(await drawer.getByRole("textbox", { name: "command" }).inputValue()).toBe("bun run server.ts");
+    expect(await drawer.getByRole("textbox", { name: "name" }).inputValue()).toBe("orbit");
+    expect(await drawer.getByRole("textbox", { name: "command" }).inputValue()).toBe("bun run dev");
   });
 });
 

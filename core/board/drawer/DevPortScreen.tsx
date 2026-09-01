@@ -131,7 +131,7 @@ export const buildDevPortScreen: ScreenBuilder = (row, nav, board, data) => {
             row from ever overriding itself), so this row is never offered
             here -- the old inline UI gated both its entry points on
             `!row.self` the same way. */}
-        {!row.self && (
+        {!row.self && data.canManage && (
           <ListGroup>
             <ListGroup.Action
               label="set override…"

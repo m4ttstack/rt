@@ -32,7 +32,6 @@
       "isTunnel": false,
       "override": null,
       "publicFollowsOverride": false,
-      "preflight": null,
       "self": false,
       "managedBy": "mattstack",
       "issues": [],
@@ -84,7 +83,6 @@
         "basePort": 11003
       },
       "publicFollowsOverride": false,
-      "preflight": [],
       "self": true,
       "managedBy": "deck",
       "issues": [],
@@ -127,7 +125,6 @@
       "isTunnel": false,
       "override": null,
       "publicFollowsOverride": false,
-      "preflight": null,
       "self": false,
       "managedBy": "mattstack",
       "issues": [
@@ -177,7 +174,6 @@
         "basePort": 11007
       },
       "publicFollowsOverride": false,
-      "preflight": null,
       "self": false,
       "managedBy": "user",
       "issues": [],

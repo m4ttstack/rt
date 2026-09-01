@@ -32,7 +32,6 @@
       "isTunnel": false,
       "override": null,
       "publicFollowsOverride": false,
-      "preflight": null,
       "self": false,
       "managedBy": "mattstack",
       "issues": [],
@@ -51,7 +50,13 @@
           "matt@example.com",
           "guest@example.com"
         ]
-      }
+      },
+      "devLink": "linked",
+      "devDir": "/Users/matt/Documents/GitHub/atlas",
+      "commands": [
+        "build",
+        "deploy"
+      ]
     },
     {
       "name": "forecast",
@@ -80,7 +85,6 @@
         "basePort": 11003
       },
       "publicFollowsOverride": false,
-      "preflight": [],
       "self": true,
       "managedBy": "deck",
       "issues": [],
@@ -123,7 +127,6 @@
       "isTunnel": false,
       "override": null,
       "publicFollowsOverride": false,
-      "preflight": null,
       "self": false,
       "managedBy": "mattstack",
       "issues": [
@@ -144,7 +147,9 @@
       },
       "oauth": {
         "mode": "off"
-      }
+      },
+      "devLink": "unlinked",
+      "devDir": null
     },
     {
       "name": "orbit",
@@ -173,7 +178,6 @@
         "basePort": 11007
       },
       "publicFollowsOverride": false,
-      "preflight": null,
       "self": false,
       "managedBy": "user",
       "issues": [],
@@ -198,7 +202,13 @@
       "port": null,
       "url": null,
       "publicUrl": null,
-      "health": { "ok": true, "status": null, "ms": null, "tone": "ok", "detail": "4 connections" },
+      "health": {
+        "ok": true,
+        "status": null,
+        "ms": null,
+        "tone": "ok",
+        "detail": "4 connections"
+      },
       "service": {
         "label": "com.mattstack.deck.cloudflared",
         "short": "cloudflared",

@@ -14,7 +14,6 @@ import {
   MATTSTACK_TLD,
 } from "../../core/discover.ts";
 import { getAppSettings, type PortOverride } from "../../core/settings.ts";
-import { checkApp, type Issue } from "../../core/preflight.ts";
 import { listRecords, type SyncIssue, type RemoteState } from "../registry/records.ts";
 import { commandKeysFor, readLinkedManifest } from "../registry/serve-shape.ts";
 import { allocatePort } from "../registry/allocate.ts";
@@ -68,11 +67,6 @@ export interface StatusRow {
   /** Whether public traffic follows this app's override instead of its base port. */
   publicFollowsOverride: boolean;
   /**
-   * Dev-server config problems that would break public traffic. Only probed for
-   * apps that opted in, so it is null for everything else rather than empty.
-   */
-  preflight: Issue[] | null;
-  /**
    * The board's own row: never port-editable. True for the board's PORT, for
    * CANARY_PORT (its route points at the canary listener mid-freshness-check),
    * and for the port on the platform's own registry record, which after
@@ -106,6 +100,8 @@ export interface StatusRow {
   commands?: string[];
   /** Managed rows in dev mode only: drives the board's Link source / fix link affordances. */
   devLink?: "unlinked" | "linked" | "broken";
+  /** The linked source checkout, local-only (null through a public host), managed rows only. */
+  devDir?: string | null;
   publicOrigin: "tunnel" | "railway";
   remote: { status: RemoteState["status"]; url: string | null } | null;
 }
@@ -167,16 +163,6 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
         health.ok && a.service && a.service.pid === null ? await listenerFor(a.port) : null;
       const settings = getAppSettings(a.name);
       const follows = settings.publicFollowsOverride ?? false;
-      // Probing costs two requests per app, so only the apps actually routing
-      // public traffic at a dev server pay for it.
-      const preflight =
-        follows && settings.override && a.publicUrl
-          ? await checkApp({
-              app: a.name,
-              devPort: settings.override.devPort,
-              publicHost: new URL(a.publicUrl).host,
-            })
-          : null;
       const record = recordsByName.get(a.name);
       // Ownership decides the displayed TLD: a managed record (managedBy set
       // to anything but "user") is a mattstack product and surfaces as
@@ -200,7 +186,6 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
         isTunnel: false,
         override: settings.override ?? null,
         publicFollowsOverride: follows,
-        preflight,
         // Also matches CANARY_PORT: during a freshness check the board's route
         // points at its canary listener, and it is still the board's own row.
         self:
@@ -228,6 +213,10 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
         devLink:
           record && record.managedBy !== "user" && opts.devMode
             ? readLinkedManifest(record).state
+            : undefined,
+        devDir:
+          record && record.managedBy !== "user"
+            ? (publicDomain === null ? record.dev?.workingDirectory ?? null : null)
             : undefined,
         publicOrigin: record?.remote?.status === "live" ? "railway" as const : "tunnel" as const,
         remote: record?.remote ? { status: record.remote.status, url: record.remote.url ?? null } : null,
@@ -262,7 +251,6 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
     isTunnel: s.program.some((p) => p.includes("cloudflared")),
     override: null,
     publicFollowsOverride: false,
-    preflight: null,
     self: false,
     managedBy: null,
     icon: null,

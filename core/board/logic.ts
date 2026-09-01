@@ -28,7 +28,6 @@ interface StatusRow {
   isTunnel: boolean;
   override: { devPort: number; basePort: number } | null;
   publicFollowsOverride: boolean;
-  preflight: { code: string; message: string; fix?: string }[] | null;
   self: boolean;
   managedBy: string | null;
   /** URL of the app's icon (the mattstack mark), null for unmanaged apps. */
@@ -41,6 +40,8 @@ interface StatusRow {
   commands?: string[];
   /** Managed rows in dev mode only: drives the board's Link source / fix link affordances. */
   devLink?: "unlinked" | "linked" | "broken";
+  /** The linked source checkout (local hosts only), managed rows only. */
+  devDir?: string | null;
   /** Which origin serves this row's public traffic -- the cloudflared tunnel
       (default) or, once pushed live, Railway directly. */
   publicOrigin: "tunnel" | "railway";

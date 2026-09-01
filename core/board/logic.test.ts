@@ -35,7 +35,6 @@ function makeRow(overrides: Partial<Row> = {}): Row {
     isTunnel: false,
     override: null,
     publicFollowsOverride: false,
-    preflight: null,
     self: false,
     managedBy: "deck",
     icon: null,

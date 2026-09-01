@@ -193,7 +193,6 @@ function rowFor(record: AppRecord, byName: Map<string, StatusRow>, redact: boole
     isTunnel: false,
     override: null,
     publicFollowsOverride: false,
-    preflight: null,
     self: false,
     managedBy: record.managedBy,
     icon: isPlatformManagedBy(record.managedBy)

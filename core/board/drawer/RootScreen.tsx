@@ -5,12 +5,13 @@
 import { Alert, ICONS, ListGroup, StatusDot, type DrawerScreen } from "@mattstack/tui-kit";
 import { OptimisticGatedToggleRow, OptimisticToggleRow } from "../optimistic.tsx";
 import { servicePid } from "../AppsTable.tsx";
-import { type Row, type StatusData, tunnelDomain } from "../logic.ts";
+import { isMattstack, type Row, type StatusData, tunnelDomain } from "../logic.ts";
 import type { BoardState } from "../useBoardState.ts";
 import { buildAccessRoot } from "./AccessScreens.tsx";
 import { buildDevPortScreen } from "./DevPortScreen.tsx";
 import { buildEditScreen } from "./EditScreen.tsx";
 import { buildLogsScreen } from "./LogsScreen.tsx";
+import { buildSourceScreen, sourceValue } from "./SourceScreen.tsx";
 
 /** What a root/pushed screen's row builders push onto and pop off of. Drawer
     itself owns no mutation surface -- AppDrawer is the only implementation.
@@ -176,30 +177,37 @@ export function buildAppRoot(
     ),
     content: (
       <div className="drawer-groups">
-        <ListGroup footer={publicFooter(row, data)}>
-          <OptimisticToggleRow
-            label="public"
-            checked={row.published}
-            mutate={() => board.onPublish(row)}
-            aria-label={row.published ? `make ${row.name} private` : `publish ${row.name}`}
-          />
-        </ListGroup>
+        {/* Mutations gate on canManage like every mutating table cell: the
+            server 403s them from a public host, so a public board must not
+            render the controls that would trigger them. */}
+        {data.canManage && (
+          <ListGroup footer={publicFooter(row, data)}>
+            <OptimisticToggleRow
+              label="public"
+              checked={row.published}
+              mutate={() => board.onPublish(row)}
+              aria-label={row.published ? `make ${row.name} private` : `publish ${row.name}`}
+            />
+          </ListGroup>
+        )}
         {/* A distinct group from "public" above -- remote is a platform
             control like publish (not dev-mode gated), but pushing to
             Railway and toggling the local tunnel's publish flag are
             different axes and stay visually separate rows/groups. */}
-        <ListGroup footer={remoteFooter(row)}>
-          <OptimisticGatedToggleRow
-            label="remote"
-            checked={row.remote != null}
-            mutate={() => board.onSetRemote(row, row.remote == null)}
-            disabled={remoteToggleTip(row) != null}
-            disabledTip={remoteToggleTip(row)}
-            aria-label={row.remote != null ? `turn off remote for ${row.name}` : `push ${row.name} to Railway`}
-          />
-          {row.remote && <ListGroup.Fact label="status" value={remoteStatusText(row.remote.status)} />}
-        </ListGroup>
-        {row.remote && (
+        {data.canManage && (
+          <ListGroup footer={remoteFooter(row)}>
+            <OptimisticGatedToggleRow
+              label="remote"
+              checked={row.remote != null}
+              mutate={() => board.onSetRemote(row, row.remote == null)}
+              disabled={remoteToggleTip(row) != null}
+              disabledTip={remoteToggleTip(row)}
+              aria-label={row.remote != null ? `turn off remote for ${row.name}` : `push ${row.name} to Railway`}
+            />
+            {row.remote && <ListGroup.Fact label="status" value={remoteStatusText(row.remote.status)} />}
+          </ListGroup>
+        )}
+        {data.canManage && row.remote && (
           <ListGroup>
             <ListGroup.Action
               label="Push to Railway"
@@ -223,39 +231,59 @@ export function buildAppRoot(
             }}
           />
           <ListGroup.Nav label="logs" value={logsValue(row)} onClick={() => nav.push(buildLogsScreen)} />
+          {/* The dev link, tucked here rather than the table: read-only facts
+              plus relink/Unlink. Managed rows only; devLink is dev-mode gated. */}
+          {isMattstack(row) && !row.self && row.devLink !== undefined && (
+            <ListGroup.Nav
+              label="source"
+              value={
+                sourceValue(row).bad ? <span className="t-bad">{sourceValue(row).text}</span> : sourceValue(row).text
+              }
+              onClick={() => nav.push(buildSourceScreen)}
+            />
+          )}
         </ListGroup>
-        <ListGroup>
-          <ListGroup.Action
-            label={restarting ? "restarting…" : <>{ICONS["refresh-cw"]} restart service</>}
-            busy={restarting}
-            disabled={!row.service}
-            onClick={() => board.onRestart(row)}
-          />
-          <ListGroup.Nav
-            label={
-              <span className="drawer-accent-label">
-                {ICONS.pencil} edit app
-              </span>
-            }
-            onClick={() => {
-              board.openEdit(row);
-              // onLeave: firing closeEdit() on every exit path this frame
-              // has (kit back chevron, ✕, row switch) -- not just its own
-              // save/cancel -- is the only cleanup this screen needs; there
-              // is no row-level effect for editModal the way there is for
-              // dev port's `editing` and access's `accessModal`.
-              nav.push(buildEditScreen, () => board.closeEdit());
-            }}
-          />
-        </ListGroup>
+        {data.canManage && (
+          <ListGroup>
+            <ListGroup.Action
+              label={restarting ? "restarting…" : <>{ICONS["refresh-cw"]} restart service</>}
+              busy={restarting}
+              disabled={!row.service}
+              onClick={() => board.onRestart(row)}
+            />
+            {/* Managed rows have no record-level shape to edit: the resolver
+                owns serving and the manifest owns commands, so the edit
+                screen (a guaranteed dead end there) is user-apps only. */}
+            {!isMattstack(row) && (
+              <ListGroup.Nav
+                label={
+                  <span className="drawer-accent-label">
+                    {ICONS.pencil} edit app
+                  </span>
+                }
+                onClick={() => {
+                  board.openEdit(row);
+                  // onLeave: firing closeEdit() on every exit path this frame
+                  // has (kit back chevron, ✕, row switch) -- not just its own
+                  // save/cancel -- is the only cleanup this screen needs; there
+                  // is no row-level effect for editModal the way there is for
+                  // dev port's `editing` and access's `accessModal`.
+                  nav.push(buildEditScreen, () => board.closeEdit());
+                }}
+              />
+            )}
+          </ListGroup>
+        )}
         {/* Extra top margin beyond the group gap, per the atlas: destructive
             actions read as a visually separate cluster, not just the next
             group in the list. */}
-        <div className="drawer-danger-group">
-          <ListGroup>
-            <ListGroup.Danger label="remove app…" onClick={() => board.onRemove(row)} />
-          </ListGroup>
-        </div>
+        {data.canManage && (
+          <div className="drawer-danger-group">
+            <ListGroup>
+              <ListGroup.Danger label="remove app…" onClick={() => board.onRemove(row)} />
+            </ListGroup>
+          </div>
+        )}
       </div>
     ),
   };
