@@ -37,6 +37,13 @@ export interface ServeOptions {
 export async function serveMattstackApp(
   opts: ServeOptions
 ): Promise<Server<BunWebSocketData>> {
+  // Bare semver on stdout: the bundle pipeline's smoke step and
+  // check-bundle both probe compiled apps with `--version` and would
+  // otherwise start a real server that never exits.
+  if (process.argv.includes('--version')) {
+    console.log(opts.version);
+    process.exit(0);
+  }
   const app = createApp({
     name: opts.name,
     version: opts.version,
