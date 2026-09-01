@@ -3,6 +3,7 @@
   "version": "0.1.2",
   "type": "module",
   "private": true,
+  "license": "MIT",
   "scripts": {
     "setup": "bun run scripts/setup.ts",
     "serve": "bun run src/server.ts",
