@@ -31,7 +31,7 @@
   },
   "dependencies": {
     "@mattstack/rt-client": "^0.10.1",
-    "@mattstack/tui-kit": "file:../tui-kit",
+    "@mattstack/tui-kit": "^0.1.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"
   }
