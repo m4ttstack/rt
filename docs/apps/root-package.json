@@ -32,6 +32,7 @@
     "@mattstack/rt-client": "^0.11.0",
     "@tanstack/react-query": "^5.102.4",
     "hono": "^4.13.5",
+    "invadrs": "^0.2.1",
     "lucide-react": "^1.25.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",

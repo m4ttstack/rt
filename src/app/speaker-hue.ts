@@ -4,7 +4,7 @@ import { HUMAN_HANDLE } from './human';
     ok/warn/bad virtual-color text ramps -- accent is withheld here since
     the human owns it outright below. Ordered so adjacent hash values (the
     modulo wraps) land on visibly distinct hues. */
-const HUES = [
+export const HUES = [
   'var(--tk-purple)',
   'var(--tk-cyan)',
   'var(--mantine-color-ok-text)',
@@ -12,7 +12,13 @@ const HUES = [
   'var(--mantine-color-bad-text)',
 ];
 
-const ACCENT = 'var(--mantine-color-accent-text)';
+export const ACCENT = 'var(--mantine-color-accent-text)';
+
+/** The same rotation, accent included, for anything that wants the whole
+    set rather than one handle's pick -- the avatar sprite hashes `handle`
+    against this independently of `speakerHue`, so its color and the name
+    chip's color are drawn from the same tokens without being forced equal. */
+export const HANDLE_PALETTE = [ACCENT, ...HUES];
 
 /** A 31-multiplier char-code fold, the same shape as Java's `String.hashCode`. */
 function foldHash(handle: string): number {

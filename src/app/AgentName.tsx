@@ -6,6 +6,7 @@ import {
   Stack,
   Text,
 } from '@mattstack/app-kit/core';
+import { Invadr } from 'invadrs/react';
 
 import classes from './agent-name.module.css';
 import { useBuddies } from './buddies-context';
@@ -16,9 +17,37 @@ import {
   Tag,
 } from './presence-bits';
 import type { RosterBuddy } from './Roster';
+import { HANDLE_PALETTE } from './speaker-hue';
 import { STATUS_WORD, statusDetail } from './statusDetail';
 
 export type AgentNameVariant = 'row' | 'inline' | 'name';
+
+/** One avatar size per variant, each lifted from an existing spec value
+    (tag height, badge height, chip height) rather than a new number. */
+const AVATAR_SIZE: Record<AgentNameVariant, number> = {
+  row: 18,
+  inline: 22,
+  name: 14,
+};
+
+/** Every handle gets one, deterministically, from the same theme-token
+    palette the name chip's hue rotation draws from -- see `HANDLE_PALETTE`. */
+function HandleAvatar({
+  handle,
+  variant,
+}: {
+  handle: string;
+  variant: AgentNameVariant;
+}) {
+  return (
+    <Invadr
+      id={handle}
+      palette={HANDLE_PALETTE}
+      size={AVATAR_SIZE[variant]}
+      className={classes.avatar}
+    />
+  );
+}
 
 /** Carries the per-speaker hue into `.hueChip`'s CSS as a custom property,
     since the color itself is only known at render time. */
@@ -273,69 +302,90 @@ export function AgentName({
   let label: React.ReactNode;
   if (variant === 'row') {
     label = (
-      <Stack gap={1} style={{ flex: 1, minWidth: 0 }}>
-        <Group gap={0} wrap="nowrap" align="baseline" style={{ minWidth: 0 }}>
-          <Group
-            gap={0}
-            wrap="nowrap"
-            align="baseline"
-            className={classes.name}
-            style={{ minWidth: 0 }}
-          >
-            <Text
-              size="sm"
-              fw={600}
-
-              style={{ flex: 'none' }}
+      <Group gap="xs" wrap="nowrap" align="center" style={{ minWidth: 0 }}>
+        <HandleAvatar handle={handle} variant={variant} />
+        <Stack gap={1} style={{ flex: 1, minWidth: 0 }}>
+          <Group gap={0} wrap="nowrap" align="baseline" style={{ minWidth: 0 }}>
+            <Group
+              gap={0}
+              wrap="nowrap"
+              align="baseline"
+              className={classes.name}
+              style={{ minWidth: 0 }}
             >
-              {handle}
-            </Text>
-            {repo && <RepoToken repo={repo} />}
+              <Text
+                size="sm"
+                fw={600}
+
+                style={{ flex: 'none' }}
+              >
+                {handle}
+              </Text>
+              {repo && <RepoToken repo={repo} />}
+            </Group>
           </Group>
-        </Group>
-        {reachable && buddy?.statusText && (
-          <Text
-            component="span"
-            data-testid={`away-${handle}`}
-            style={{ ...MUTED_XS, fontStyle: 'italic' }}
-          >
-            “{buddy.statusText}”
-          </Text>
-        )}
-      </Stack>
+          {reachable && buddy?.statusText && (
+            <Text
+              component="span"
+              data-testid={`away-${handle}`}
+              style={{ ...MUTED_XS, fontStyle: 'italic' }}
+            >
+              “{buddy.statusText}”
+            </Text>
+          )}
+        </Stack>
+      </Group>
     );
   } else if (variant === 'inline') {
     label = (
       <Group
-        gap={0}
+        gap="xs"
         wrap="nowrap"
-        align="baseline"
+        align="center"
         component="span"
-        className={hue ? undefined : classes.name}
         style={{ minWidth: 0 }}
       >
-        <Text
+        <HandleAvatar handle={handle} variant={variant} />
+        <Group
+          gap={0}
+          wrap="nowrap"
+          align="baseline"
           component="span"
-          size="lg"
-          fw={600}
-          className={hue ? classes.hueChip : undefined}
-          data-testid={hue ? 'speaker-chip' : undefined}
-          style={
-            hue
-              ? ({ flex: 'none', '--speaker-hue': hue } as HueStyle)
-              : { flex: 'none' }
-          }
+          className={hue ? undefined : classes.name}
+          style={{ minWidth: 0 }}
         >
-          {handle}
-        </Text>
-        {repo && <RepoToken repo={repo} />}
+          <Text
+            component="span"
+            size="lg"
+            fw={600}
+            className={hue ? classes.hueChip : undefined}
+            data-testid={hue ? 'speaker-chip' : undefined}
+            style={
+              hue
+                ? ({ flex: 'none', '--speaker-hue': hue } as HueStyle)
+                : { flex: 'none' }
+            }
+          >
+            {handle}
+          </Text>
+          {repo && <RepoToken repo={repo} />}
+        </Group>
       </Group>
     );
   } else {
     label = (
-      <Text component="span" fw={600} inherit className={classes.name}>
-        {handle}
-      </Text>
+      <Group
+        gap="xs"
+        wrap="nowrap"
+        align="center"
+        component="span"
+        display="inline-flex"
+      >
+        <HandleAvatar handle={handle} variant={variant} />
+        <Text component="span" fw={600} inherit className={classes.name}>
+          {handle}
+        </Text>
+      </Group>
     );
   }
 

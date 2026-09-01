@@ -54,3 +54,10 @@
     transparent
   );
 }
+
+/* Inline SVG defaults to an inline box with a few px of descender gap below
+   it; block removes that so it doesn't nudge its flex siblings out of line. */
+.avatar {
+  flex: none;
+  display: block;
+}
