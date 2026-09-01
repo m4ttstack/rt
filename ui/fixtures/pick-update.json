@@ -1,6 +1,6 @@
 {
   "t": "update",
-  "message": "rt cd — acme0-dev worktrees",
+  "message": "rt cd (acme0-dev worktrees)",
   "rows": [
     {
       "value": "/Users/matt/Documents/GitHub/acme0-dev/.worktrees/hedwig",
