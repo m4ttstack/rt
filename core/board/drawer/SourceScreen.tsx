@@ -6,7 +6,7 @@ import { useState } from "react";
 import { ListGroup } from "@mattstack/tui-kit";
 import type { Row } from "../logic.ts";
 import type { BoardState } from "../useBoardState.ts";
-import type { Nav, ScreenBuilder } from "./RootScreen.tsx";
+import type { ScreenBuilder } from "./RootScreen.tsx";
 
 export function sourceValue(row: Row): { text: string; bad: boolean } {
   if (row.devLink === "linked") return { text: row.devDir ?? "linked", bad: false };
@@ -61,7 +61,7 @@ function SourceLinkInput({ row, board, done }: { row: Row; board: BoardState; do
   );
 }
 
-function SourceGroups({ row, board, nav }: { row: Row; board: BoardState; nav: Nav }) {
+function SourceGroups({ row, board }: { row: Row; board: BoardState }) {
   const [linking, setLinking] = useState(false);
   const linked = row.devLink === "linked";
   return (
@@ -84,13 +84,7 @@ function SourceGroups({ row, board, nav }: { row: Row; board: BoardState; nav: N
       {linked && (
         <div className="drawer-danger-group">
           <ListGroup footer="the app keeps running from its installed bundle; dev commands disappear until relinked">
-            <ListGroup.Danger
-              label="Unlink"
-              onClick={() => {
-                void board.unlinkSource(row);
-                nav.pop();
-              }}
-            />
+            <ListGroup.Danger label="Unlink" onClick={() => board.onUnlink(row)} />
           </ListGroup>
         </div>
       )}
@@ -98,8 +92,8 @@ function SourceGroups({ row, board, nav }: { row: Row; board: BoardState; nav: N
   );
 }
 
-export const buildSourceScreen: ScreenBuilder = (row, nav, board) => ({
+export const buildSourceScreen: ScreenBuilder = (row, _nav, board) => ({
   id: `source:${row.name}`,
   title: "source",
-  content: <SourceGroups row={row} board={board} nav={nav} />,
+  content: <SourceGroups row={row} board={board} />,
 });

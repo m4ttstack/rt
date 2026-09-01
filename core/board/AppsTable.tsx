@@ -43,7 +43,7 @@ export function AppsTable({
   onOpenRow,
   registerChevron,
 }: { section: AppsSection; showHead: boolean; data: StatusData; board: BoardState } & DrawerRowProps) {
-  const { isRestarting, onRestart, onRunCommand, linkSource, onPublish, onPushRemote } = board;
+  const { isRestarting, onRestart, onRunCommand, linkSource, onPublish } = board;
   return (
     <Table className="apps-grid">
       <colgroup>
@@ -100,9 +100,6 @@ export function AppsTable({
               </Table.Cell>
               <Table.Cell>
                 <CommandsCell row={row} canManage={data.canManage} onRunCommand={onRunCommand} linkSource={linkSource} />
-              </Table.Cell>
-              <Table.Cell>
-                <RemotePushCell row={row} data={data} onPushRemote={onPushRemote} />
               </Table.Cell>
               <Table.Cell>
                 <ChevronCell row={row} registerRef={(el) => registerChevron(row.name, el)} />
@@ -170,7 +167,7 @@ function SiteCell({ row, data, restarting }: { row: Row; data: StatusData; resta
               }
             >
               <a
-                className={`public-link ${row.published ? "muted" : "muted-more"}`}
+                className={`public-link${row.published ? "" : " public-link-private"}`}
                 href={row.publicUrl}
                 target="_blank"
                 rel="noopener"
@@ -180,7 +177,7 @@ function SiteCell({ row, data, restarting }: { row: Row; data: StatusData; resta
                     : "private — not publicly reachable"
                 }
               >
-                {ICONS["external-link"]}
+                <Icon d={RAILWAY_GLOBE} />
               </a>
             </Tooltip>
           )}
@@ -319,38 +316,6 @@ function PublishCell({
         <OptimisticSwitch checked={row.published} mutate={() => onPublish(row)} aria-label={label} />
       </Tooltip>
     </>
-  );
-}
-
-/** A distinct cell/column from CommandsCell's manifest action buttons -- see
-    the header comment above it -- so "deploy" (local) and "Push to Railway"
-    (remote) never sit in the same cluster of buttons. Gated on `canManage`
-    like Publish/Restart: pushing is a local-only control, never exposed
-    through a public tunnel host. */
-function RemotePushCell({
-  row,
-  data,
-  onPushRemote,
-}: {
-  row: Row;
-  data: StatusData;
-  onPushRemote: (row: Row) => void;
-}) {
-  if (!(data.canManage && row.remote != null)) return null;
-  const remote = row.remote!;
-  const busy = remote.status === "deploying" || remote.status === "verifying";
-  return (
-    <Tooltip tip={`remote: ${remote.status}`}>
-      <Button
-        variant="subtle"
-        size="sm"
-        disabled={busy}
-        aria-label={`push ${row.name} to Railway`}
-        onClick={() => onPushRemote(row)}
-      >
-        Push to Railway
-      </Button>
-    </Tooltip>
   );
 }
 

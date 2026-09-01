@@ -88,6 +88,22 @@ export function AddAppModal({ board }: { board: BoardState }) {
   );
 }
 
+export function UnlinkConfirm({ board }: { board: BoardState }) {
+  const { pendingUnlink, cancelUnlink, confirmUnlink } = board;
+  return (
+    <ConfirmDialog
+      open={pendingUnlink != null}
+      title={pendingUnlink ? `unlink ${pendingUnlink.name}?` : ""}
+      onConfirm={confirmUnlink}
+      onCancel={cancelUnlink}
+      confirmLabel="unlink"
+      cancelLabel="cancel"
+    >
+      the app keeps serving from its installed bundle; dev commands disappear until you relink the checkout.
+    </ConfirmDialog>
+  );
+}
+
 export function RemoveConfirm({ board }: { board: BoardState }) {
   const { pendingRemove, cancelRemove, confirmRemove } = board;
   return (

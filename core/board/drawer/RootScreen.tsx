@@ -222,14 +222,16 @@ export function buildAppRoot(
             value={devPortValue(row, data)}
             onClick={() => nav.push(buildDevPortScreen)}
           />
-          <ListGroup.Nav
-            label="access"
-            value={accessValue(row)}
-            onClick={() => {
-              board.openAccess(row);
-              nav.push(buildAccessRoot);
-            }}
-          />
+          {data.canManage && (
+            <ListGroup.Nav
+              label="access"
+              value={accessValue(row)}
+              onClick={() => {
+                board.openAccess(row);
+                nav.push(buildAccessRoot);
+              }}
+            />
+          )}
           <ListGroup.Nav label="logs" value={logsValue(row)} onClick={() => nav.push(buildLogsScreen)} />
           {/* The dev link, tucked here rather than the table: read-only facts
               plus relink/Unlink. Managed rows only; devLink is dev-mode gated. */}

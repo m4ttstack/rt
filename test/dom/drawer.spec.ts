@@ -504,6 +504,8 @@ test("source screen: facts, relink, and Unlink PATCHes dev:null", async () => {
     expect(await drawer.getByText("build · deploy").count()).toBe(1);
 
     await drawer.locator('[data-part="listgroup-action"] button', { hasText: "Unlink" }).click();
+    // Unlink asks first — same ConfirmDialog ceremony as remove-app.
+    await page.locator('[data-part="modal"] button', { hasText: "unlink" }).click();
     await waitUntil(async () => patchBody !== null);
     expect(patchBody).toEqual({ dev: null });
   });

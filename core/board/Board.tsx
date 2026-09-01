@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from "react";
 import { Alert, Badge, Button, ICONS, Tooltip } from "@mattstack/tui-kit";
 import { AppsTable } from "./AppsTable.tsx";
 import { AppDrawer } from "./drawer/AppDrawer.tsx";
-import { AddAppModal, RemoveConfirm } from "./modals.tsx";
+import { AddAppModal, RemoveConfirm, UnlinkConfirm } from "./modals.tsx";
 import { sublineHealthy, type Row } from "./logic.ts";
 import { useBoardState } from "./useBoardState.ts";
 
@@ -165,6 +165,7 @@ export function Board() {
       )}
       <AddAppModal board={board} />
       <RemoveConfirm board={board} />
+      <UnlinkConfirm board={board} />
     </main>
   );
 }

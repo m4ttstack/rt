@@ -93,15 +93,28 @@ body {
 .site-name a.unstyled:focus-visible {
   color: var(--accent);
 }
+/* Mantine light-variant ActionIcon look: accent-tinted wash, accent glyph,
+   margin keeping it clearly apart from the site link it sits beside. */
 .public-link {
   display: inline-flex;
-  padding: var(--spacing-xxs);
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-left: var(--spacing-sm);
   border-radius: var(--radius-sm);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
   transition: color 0.12s ease, background 0.12s ease;
 }
 .public-link:hover,
 .public-link:focus-visible {
   color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+}
+.public-link-private {
+  color: var(--fg-muted, currentColor);
+  opacity: 0.55;
   background: var(--surface-wash-fg-5);
 }
 
