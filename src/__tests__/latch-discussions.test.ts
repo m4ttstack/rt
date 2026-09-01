@@ -4,6 +4,7 @@ import { armedLatchBody, spentLatchBody } from "../latch/markers.ts";
 import {
   canonicalLatch,
   findLatches,
+  hasArmedLatch,
   hasRequest,
   requestCarriers,
 } from "../latch/discussions.ts";
@@ -142,5 +143,24 @@ describe("requestCarriers / hasRequest", () => {
       "canon",
       "extra",
     ]);
+  });
+});
+
+describe("hasArmedLatch", () => {
+  test("false with no latch at all", () => {
+    expect(hasArmedLatch(findLatches(detail()))).toBe(false);
+  });
+
+  test("true for an armed latch, resolved or not", () => {
+    expect(hasArmedLatch(findLatches(detail(disc("d1", armedLatchBody(IMG), "2026-09-01T10:00:00Z", false))))).toBe(true);
+    expect(hasArmedLatch(findLatches(detail(disc("d1", armedLatchBody(IMG), "2026-09-01T10:00:00Z", true))))).toBe(true);
+  });
+
+  // The bug this guards: canonicalLatch returns the newest latch of EITHER
+  // kind, so a spent-only MR must read as unlatched here, not as latched.
+  test("false when only a spent latch exists, even though canonicalLatch returns it", () => {
+    const latches = findLatches(detail(disc("d1", spentLatchBody(IMG), "2026-09-01T10:00:00Z", true)));
+    expect(canonicalLatch(latches)).not.toBeNull();
+    expect(hasArmedLatch(latches)).toBe(false);
   });
 });

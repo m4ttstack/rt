@@ -51,6 +51,18 @@ describe("bodies", () => {
     expect(body).toContain(IMG);
   });
 
+  test("spent body defaults to the approved wording", () => {
+    expect(spentLatchBody(IMG)).toContain("Approved, so this latch is spent");
+  });
+
+  // A duplicate consumed by a dispatch or a cooldown refusal must never read
+  // as an approval that did not happen, however the MR's real outcome lands.
+  test("a duplicate reason gets the superseded wording, not approved", () => {
+    const body = spentLatchBody(IMG, "duplicate");
+    expect(body).toContain("Superseded by the latch above");
+    expect(body).not.toContain("Approved");
+  });
+
   test("neither body uses an em dash or en dash", () => {
     expect(armedLatchBody(IMG)).not.toMatch(/[–—]/);
     expect(spentLatchBody(IMG)).not.toMatch(/[–—]/);

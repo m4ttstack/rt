@@ -25,9 +25,9 @@ import { launchReview, launchRespond, launchDoctor, launchResume, focusTab, oper
 import { launchReReview } from "./review-launch.ts";
 import { readSlackRefs, attachSlack, resolveSlackRef, reactToMR, unreactFromMR, postToSlack, slackSweepTargets, sweepSlackRefs } from "./slack.ts";
 import { signalEmoji, parseAgentSignal } from "./agent-signal.ts";
-import { canonicalLatch, findLatches } from "./latch/discussions.ts";
+import { findLatches, hasArmedLatch } from "./latch/discussions.ts";
 import { latchGateway } from "./latch/gateway.ts";
-import { postLatch, spendLatch } from "./latch/post.ts";
+import { postLatch, spendAllLatches } from "./latch/post.ts";
 import { makeSwitchboardClient, type SwitchboardClient } from "./peer/client.ts";
 import { type MaterializeDeps } from "./peer/inbox.ts";
 import { makePeering } from "./peer/runtime.ts";
@@ -1028,13 +1028,19 @@ const httpServer = Bun.serve({
               const gw = latchGateway(config.gitlabHost, gitlabToken);
               if (signal.outcome === "comment") {
                 const detail = await readLatchDetail(mr);
-                if (detail && !canonicalLatch(findLatches(detail))) {
+                // A live latch (armed, either resolved or not) already exists
+                // for this MR -- a spent one must never suppress a fresh post,
+                // or the feature disables itself forever the first time a
+                // latch is ever spent.
+                if (detail && !hasArmedLatch(findLatches(detail))) {
                   await postLatch(gw, projectId, projectPath, signal.mrUrl, mr.iid);
                 }
               } else if (signal.outcome === "approve") {
                 const detail = await readLatchDetail(mr);
-                const latch = detail ? canonicalLatch(findLatches(detail)) : null;
-                if (latch) await spendLatch(gw, projectId, projectPath, mr.iid, latch, latch.rootNoteId);
+                // Every latch found, not just the canonical one: an armed
+                // duplicate left behind here is unreachable to the triage
+                // pass's repair step once the canon it stops at is spent.
+                if (detail) await spendAllLatches(gw, projectId, projectPath, mr.iid, findLatches(detail));
               }
             }
           } catch (err) {

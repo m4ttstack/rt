@@ -26,14 +26,23 @@ const ARMED_COPY = [
   "Leave it open while there's still work in flight.",
 ].join("\n");
 
+/** Why a latch was spent -- the wording differs because only one of these is
+    a real reviewer verdict. "approved" is the terminal outcome; "duplicate"
+    is an extra copy going defunct because another latch on the same MR
+    already carries the live state, which must never read as an approval
+    that did not happen. */
+export type SpentReason = "approved" | "duplicate";
+
 const SPENT_COPY = "Approved, so this latch is spent. Nothing further to do here.";
+const DUPLICATE_COPY = "Superseded by the latch above; nothing to do here.";
 
 export function armedLatchBody(imageMarkdown: string): string {
   return `${LATCH_MARKER}\n\n${imageMarkdown}\n\n${ARMED_COPY}\n`;
 }
 
-export function spentLatchBody(imageMarkdown: string): string {
-  return `${LATCH_MARKER_SPENT}\n\n${imageMarkdown}\n\n${SPENT_COPY}\n`;
+export function spentLatchBody(imageMarkdown: string, reason: SpentReason = "approved"): string {
+  const copy = reason === "duplicate" ? DUPLICATE_COPY : SPENT_COPY;
+  return `${LATCH_MARKER_SPENT}\n\n${imageMarkdown}\n\n${copy}\n`;
 }
 
 /** The banner's markdown image, pulled back out of a latch body so the spend

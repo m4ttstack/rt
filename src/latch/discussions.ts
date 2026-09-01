@@ -49,6 +49,14 @@ export function canonicalLatch(latches: LatchRef[]): LatchRef | null {
   return latches[0] ?? null;
 }
 
+/** Whether the MR already has a live (unspent) latch, for gating a fresh
+    post. A spent latch must never suppress a new one -- canonicalLatch
+    returns the newest latch of EITHER kind, so testing against it would read
+    an MR whose only latch was ever spent as still latched, forever. */
+export function hasArmedLatch(latches: LatchRef[]): boolean {
+  return latches.some((l) => l.kind === "armed");
+}
+
 /** Every latch holding an unconsumed request. Disposing of a request must
     spend all of these, or the request bit survives in an extra and re-fires on
     every re-entry into scope. */

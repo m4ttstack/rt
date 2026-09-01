@@ -3,7 +3,7 @@
  * server share them and tests need no network.
  */
 import { latchBannerPng } from "./banner.ts";
-import { armedLatchBody, imageMarkdownOf, spentLatchBody } from "./markers.ts";
+import { armedLatchBody, imageMarkdownOf, spentLatchBody, type SpentReason } from "./markers.ts";
 import type { LatchRef } from "./discussions.ts";
 
 export interface LatchGateway {
@@ -56,6 +56,7 @@ export async function spendLatch(
   projectPath: string,
   iid: number,
   latch: LatchRef,
+  reason: SpentReason = "approved",
   rootNoteId: number = latch.rootNoteId,
 ): Promise<void> {
   if (latch.kind === "spent") {
@@ -65,7 +66,27 @@ export async function spendLatch(
     return;
   }
   const img = imageMarkdownOf(latch.body);
-  const body = spentLatchBody(img ?? "");
+  const body = spentLatchBody(img ?? "", reason);
   await gw.updateNote(projectId, iid, rootNoteId, body);
   await gw.resolveDiscussion(projectPath, iid, latch.discussionId);
+}
+
+/** Terminal disposal of every latch copy found on an MR, deduped by
+    discussion id. Every copy shares the same reason: whatever made the
+    canonical latch terminal (an approval, most often) applies to the whole
+    set, not just the newest one. */
+export async function spendAllLatches(
+  gw: LatchGateway,
+  projectId: number,
+  projectPath: string,
+  iid: number,
+  latches: LatchRef[],
+  reason: SpentReason = "approved",
+): Promise<void> {
+  const seen = new Set<string>();
+  for (const latch of latches) {
+    if (seen.has(latch.discussionId)) continue;
+    seen.add(latch.discussionId);
+    await spendLatch(gw, projectId, projectPath, iid, latch, reason);
+  }
 }

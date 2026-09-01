@@ -3,9 +3,9 @@
 // the same one idempotent evaluation pass. The board server NEVER runs this.
 import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "fs";
 import { join } from "path";
-import { GitLabProvider, parseRepoId, type MRDetail, type PullRequest } from "@mattstack/glance";
+import { GitLabProvider, parseRepoId, type MRDetail } from "@mattstack/glance";
 import { readDiscussions, readProjectMRs } from "@mattstack/rt-client";
-import { loadConfig, loadGitLabToken, loadSwitchboardToken } from "../src/config.ts";
+import { loadConfig, loadGitLabToken, loadSwitchboardToken, repoIdentityField } from "../src/config.ts";
 import { buildBoard, projectPathFromWebUrl } from "../src/data.ts";
 import { doctorFilePath, readDoctorStates, writeDoctorState } from "../src/doctor-state.ts";
 import { launchDoctor } from "../src/herdr.ts";
@@ -23,6 +23,7 @@ import { runLatchPass, type LatchMrFacts } from "../src/triage/latch.ts";
 import { MEMORY_PATH, readMemory, writeMemory } from "../src/triage/memory.ts";
 import { runNudgePass } from "../src/triage/nudge.ts";
 import { notifyEscalation } from "../src/triage/notify.ts";
+import { collectProjectPRs } from "../src/triage/projects.ts";
 import { numericPipelineId, runTriage } from "../src/triage/run.ts";
 import {
   claimLease,
@@ -82,14 +83,7 @@ try {
   // state, the in-flight dedup always sees what the board sees (no duplicate
   // panes), and the concurrency cap never undercounts.
   const fetchOwnMrs = async (): Promise<OwnMrFacts[]> => {
-    const prs: PullRequest[] = [];
-    for (const projectPath of boardConfig.projects) {
-      const repoName = boardConfig.rtRepos[projectPath];
-      if (!repoName) continue;
-      const res = await readProjectMRs(repoName);
-      if (!res.ok || !res.data) continue;
-      for (const entry of Object.values(res.data.mrs)) prs.push(entry.pr as PullRequest);
-    }
+    const prs = await collectProjectPRs(boardConfig, readProjectMRs);
     return buildBoard(prs, boardConfig)
       .filter((m) => m.author.username === username && m.webUrl)
       .map((m) => ({
@@ -112,14 +106,7 @@ try {
   // spend can be repaired; without them nothing ever would be.
   const fetchLatchMrs = async (): Promise<LatchMrFacts[]> => {
     const states = readReviewStates();
-    const prs: PullRequest[] = [];
-    for (const projectPath of boardConfig.projects) {
-      const repoName = boardConfig.rtRepos[projectPath];
-      if (!repoName) continue;
-      const res = await readProjectMRs(repoName);
-      if (!res.ok || !res.data) continue;
-      for (const entry of Object.values(res.data.mrs)) prs.push(entry.pr as PullRequest);
-    }
+    const prs = await collectProjectPRs(boardConfig, readProjectMRs);
     return buildBoard(prs, boardConfig)
       .filter((m) => m.webUrl && states.get(m.webUrl)?.status === "done")
       .map((m) => ({
@@ -127,7 +114,9 @@ try {
         iid: m.iid,
         projectId: parseRepoId(m.repositoryId),
         projectPath: projectPathFromWebUrl(m.webUrl!, boardConfig.gitlabHost) ?? "",
-        rtRepo: m.rtRepo ?? "",
+        // Encoded, not the bare rtRepos value: readDetail below passes this
+        // straight to readDiscussions, which is daemon-identity-keyed.
+        rtRepo: repoIdentityField(m.rtRepo) ?? "",
         isApproved: !!m.reviews.isApproved,
       }));
   };

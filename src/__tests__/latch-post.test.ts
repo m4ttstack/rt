@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { latchKindOf } from "../latch/markers.ts";
-import { postLatch, spendLatch, type LatchGateway } from "../latch/post.ts";
+import { postLatch, spendAllLatches, spendLatch, type LatchGateway } from "../latch/post.ts";
 import type { LatchRef } from "../latch/discussions.ts";
 
 const MR = "https://gitlab.com/acme/web/-/merge_requests/2317";
@@ -87,5 +87,43 @@ describe("spendLatch", () => {
     const { gw, calls } = gateway();
     await spendLatch(gw, 42, "acme/web", 2317, { ...armed, kind: "spent", resolved: false });
     expect(calls).toEqual(["resolve:d1"]);
+  });
+
+  test("defaults to the approved reason", async () => {
+    const { gw, bodies } = gateway();
+    await spendLatch(gw, 42, "acme/web", 2317, armed);
+    expect(bodies[0]).toContain("Approved, so this latch is spent");
+  });
+
+  test("a duplicate reason writes the superseded wording instead", async () => {
+    const { gw, bodies } = gateway();
+    await spendLatch(gw, 42, "acme/web", 2317, armed, "duplicate");
+    expect(bodies[0]).toContain("Superseded by the latch above");
+    expect(bodies[0]).not.toContain("Approved");
+  });
+});
+
+describe("spendAllLatches", () => {
+  const armed: LatchRef = {
+    discussionId: "d1",
+    rootNoteId: 1,
+    kind: "armed",
+    resolved: true,
+    createdAt: "2026-09-01T10:00:00Z",
+    body: `<!-- mattstack:board re-review-latch v1 -->\n\n${IMG}\n\nbody`,
+  };
+
+  test("spends every latch given, deduped by discussion id", async () => {
+    const { gw, calls } = gateway();
+    const other: LatchRef = { ...armed, discussionId: "d2", rootNoteId: 2 };
+    await spendAllLatches(gw, 42, "acme/web", 2317, [armed, other, armed]);
+    expect(calls).toEqual(["updateNote:1", "resolve:d1", "updateNote:2", "resolve:d2"]);
+  });
+
+  test("passes the reason through to every latch spent", async () => {
+    const { gw, bodies } = gateway();
+    const other: LatchRef = { ...armed, discussionId: "d2", rootNoteId: 2 };
+    await spendAllLatches(gw, 42, "acme/web", 2317, [armed, other], "duplicate");
+    expect(bodies.every((b) => b.includes("Superseded by the latch above"))).toBe(true);
   });
 });
