@@ -102,16 +102,38 @@ skill.
 
 Two drivers post latches, the server on a `comment` outcome and the pass's step
 0 below, both from a read-then-post sequence with no shared lock, so a notify
-landing mid-tick can produce two latch discussions. The pass therefore scans
-**all** discussions for latch markers and treats the oldest as the latch; any
-extra is spent on sight.
+landing mid-tick can produce two latch discussions. Worse, spent latches are
+never deleted, while review state is per-MR and reused across review cycles
+(`reviewFilePath` slugs the URL), so an MR reviewed twice carries a spent relic
+from cycle 1 beside cycle 2's live latch.
+
+One rule handles both:
+
+- The **newest** latch discussion is the canonical latch. Oldest-wins would
+  read a spent relic as canonical and destroy each later cycle's latch on
+  sight, silently disabling the feature on that MR from its first spend
+  onward.
+- The request predicate is **any** latch discussion resolved without the spent
+  marker, honored against the canonical one. An author who resolves the
+  duplicate rather than the canonical latch is still asking, and the
+  per-discussion invariant already says so; reading only the canonical one
+  would eat the request with no reply.
+- Disposing of an extra is idempotent, on the canonical latch's own terms:
+  already spent and resolved, leave it; spent but unresolved, re-resolve only;
+  live, spend it. For an extra, `spent` means defunct rather than approved.
+  GitLab collapses resolved threads so the stretch is invisible, and the
+  alternative is a live duplicate that double-prompts the author and blocks
+  merge on a strict project.
+- "A latch already exists", for the purpose of not posting another, means a
+  **live** latch. A spent one never suppresses a fresh post.
 
 `notifyBoard` is deliberately best-effort ("a board that is down or restarting
 must never fail the agent's status write"), so a review that finishes while the
 board is down would never get a latch, and an `approve` that lands while it is
 down would never spend one. The triage pass below reconciles both, because it
 walks every `done` review state of either outcome: a missing latch is posted on
-the next tick, and an unspent or half-spent one is completed. The feature is
+the next tick (with one descoped exception, named in step 0 below), and an
+unspent or half-spent one is completed. The feature is
 self-healing in both directions.
 
 ### Detecting the resolve
@@ -157,9 +179,16 @@ already-approved case above. The `projectPath` that `resolveDiscussion` and
 Order matters. For each MR in scope the pass reads the latch discussion and
 branches in exactly this order:
 
-0. **No latch discussion at all.** On a comment-outcome state, post one and
-   stop; this is the reconciliation the self-healing paragraph above describes.
-   On an approve-outcome state, post nothing: there is nothing left to arm.
+0. **No live latch.** On a comment-outcome state with no latch discussion at
+   all, post one and stop; this is the reconciliation the self-healing
+   paragraph above describes. On an approve-outcome state, post nothing: there
+   is nothing left to arm. **Descoped:** where a spent relic is present but no
+   live latch, the pass does not post either, because it cannot tell a cycle-2
+   relaunch from a settled cycle 1 without ordering information. Arming a
+   second cycle is the server's job, and if that notify was missed the
+   peer-board nudge is the existing fallback. Stamping a timestamp into the
+   spent marker would let the pass compare it against the review state and
+   self-heal this too; that is a later change, not v1.
 1. **Spent marker present.** Do nothing. Unconditional, and first. If the
    thread is also unresolved (a crash between the spend's two calls),
    re-resolve it and stop. Never rearm a spent latch.
@@ -282,7 +311,8 @@ feedback read as commented.
   author from the reviewer resolving it. The spent marker carries the invariant
   instead: **every board resolve either writes `v1 spent` in the same disposal
   or fires only when the marker is already present** (the branch-3 spend, the
-  step-2 completion, the step-1 repair), and the spent check is unconditional
+  step-2 completion, the step-1 repair, and the disposal of a duplicate), and
+  the spent check is unconditional
   and runs first, so **a
   resolved latch without the spent marker was resolved by a human**.
   `reviews.isApproved` chooses spend-versus-dispatch for live latches only and
@@ -312,6 +342,11 @@ a spent-but-unresolved latch is re-resolved rather than treated as a request.
 Two more cover the widened scope: on an approve-outcome review state, a
 spent-but-unresolved latch is re-resolved, and a still-live latch is spent
 rather than dispatched.
+
+The dedupe rule needs three: a resolved *extra* still triggers the request on
+the canonical latch, an already-spent extra draws no writes on a second tick,
+and the cycle-2 case (a spent relic beside a fresh live latch) picks the fresh
+one and leaves the relic untouched.
 
 The exclusion in `src/discussions.ts` needs a case proving an armed latch does
 not inflate `reviewerComments` or `threadSummary`, and a second for the spent
