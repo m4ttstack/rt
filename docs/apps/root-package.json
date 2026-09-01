@@ -1,6 +1,6 @@
 {
   "name": "@mattstack/tui-kit",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "license": "MIT",
   "type": "module",
   "main": "./dist/src/index.js",
@@ -37,7 +37,7 @@
     "README.md"
   ],
   "publishConfig": {
-    "access": "public"
+    "access": "restricted"
   },
   "scripts": {
     "setup": "bun install",
@@ -51,7 +51,7 @@
     "dev:workshop": "cd workshop && bunx vite"
   },
   "dependencies": {
-    "@soribashi/core": "^0.3.0",
+    "@soribashi/core": "^0.4.0",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1"
   },

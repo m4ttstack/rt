@@ -8,7 +8,7 @@
     "build": "vite build"
   },
   "dependencies": {
-    "@soribashi/core": "^0.1.0"
+    "@soribashi/core": "^0.4.0"
   },
   "devDependencies": {
     "vite": "^8"
