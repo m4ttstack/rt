@@ -43,7 +43,12 @@ re-block it every cycle. A spent latch sits resolved forever and never rearms.
 
 Dispatch and refusal are treated identically: reply in-thread with what
 happened, then unresolve. This is what makes the design stateless, and it is a
-deliberate tradeoff. A request refused for cooldown costs the author a second
+deliberate tradeoff.
+
+The rule is every disposal that leaves the latch **live**. The spend is the one
+terminal disposal and behaves the other way round: it resolves and rewrites the
+body instead of unresolving, and posts no reply, since the approving review has
+already commented and the rewritten banner says the latch is spent. A request refused for cooldown costs the author a second
 resolve click once the cooldown lifts, rather than the board remembering the
 pending request. Per-latch state was considered and rejected: it introduces a
 store to prune and a second source of truth that can drift from GitLab's actual
@@ -59,6 +64,13 @@ merge, which would otherwise dispatch a re-review nobody asked for.
 The pass therefore checks `reviews.isApproved` (glance `types.d.ts:264`, on the
 MR it already fetched): an approved MR **spends** the latch rather than
 dispatching. That is state 4's transition reached from the other direction.
+
+Unlike the server-driven spend, this one does not take the MR out of scope. The
+review state stays `done` with a `comment` outcome, so the pass keeps fetching
+that MR every tick until the state is pruned, and on every one of those ticks
+it reads a latch the board itself resolved. **The spend must therefore be
+idempotent**: a latch whose marker already reads `spent` is left alone. Without
+that, every tick re-runs `updateNote` and `resolveDiscussion` against GitLab.
 
 ## Where the code lives
 
@@ -128,6 +140,10 @@ as the first line of the latch's root note. Invisible when rendered,
 exact-match detectable, version-stamped for a future format change. A latch is
 identified by scanning a discussion's first note for this marker.
 
+The spend rewrites it to `<!-- mattstack:board re-review-latch v1 spent -->`.
+That is both how a spent latch is recognized on a later tick and what makes the
+spend idempotent.
+
 **Human marker.** A banner image, purely decorative. A blocked, broken or
 missing image can never break the latch.
 
@@ -157,9 +173,10 @@ gets its own creature, deterministically.
 uploaded SVG, so the banner is uploaded as a PNG. No SVG rasterizer is needed
 and none is added. The band artwork (background, wordmark, rule, caption) is
 rendered once at build time and committed as a template PNG; at post time the
-pass paints the sprite into a copy of that buffer. A `spawn()` sprite is a grid
-of 1x1 rects on a 10-unit viewBox, so painting it is a nested loop over pixels
-rather than glyph rendering. `pngjs` does the decode and encode: it is already
+pass paints the sprite into a copy of that buffer. `resolveSpawn()` returns the
+sprite's raw boolean grid, so the pass paints from that directly and never
+parses SVG: a nested loop over pixels rather than glyph rendering. `pngjs` does
+the decode and encode: it is already
 in the repo as a devDependency for the capture tests and moves to a runtime
 dependency.
 
@@ -199,12 +216,14 @@ feedback read as commented.
   GitLab first.
 - **Verifying who resolved the latch.** glance's `Note` type
   (`types.d.ts:608`) has no `resolved_by`, so the board cannot distinguish the
-  author from the reviewer resolving it. The board never resolves an *armed*
-  latch, though: it only unresolves, and its one resolve is the terminal spend
-  in state 4, after which the pass stops watching that MR. So every resolved
-  transition the pass actually reads was made by a human, and the cooldown plus
-  daily budget absorb a misfire. Closing it properly is a third glance
-  addition.
+  author from the reviewer resolving it. Stated conditionally, the invariant
+  still holds: both board resolve paths (the server's spend on an `approve`
+  outcome, and the pass's spend on an already-approved MR) require the MR to be
+  approved, so **on an MR that is not approved, every resolved transition the
+  pass reads was made by a human**. On an approved one the `isApproved` branch
+  routes the read to a spend rather than a dispatch, so a board-made resolve is
+  never mistaken for a request. The cooldown plus daily budget absorb a
+  misfire. Closing it properly is a third glance addition.
 - **Focus hints.** Free-text in the latch reply steering the re-review ("just
   the migration path") is a natural extension of the thread, not v1.
 
@@ -220,8 +239,15 @@ own cases: a latch among unrelated threads, a latch whose image failed to
 upload (marker present, no image), and a `v2` marker a `v1` board must ignore
 rather than misread.
 
+The already-approved path needs its own two: a resolved latch on an approved
+MR spends instead of dispatching, and a second tick over an already-spent latch
+writes nothing.
+
 The exclusion in `src/discussions.ts` needs a case proving an armed latch does
-not inflate `reviewerComments` or `threadSummary`.
+not inflate `reviewerComments` or `threadSummary`, and a second for the spent
+latch. A spent latch is a resolved thread, so `threadStatusCounts` would
+otherwise count it in `threadSummary.resolved`, which `commentsAllResolved`
+reads as a signal (`src/view.ts:43`).
 
 ## Risks
 
