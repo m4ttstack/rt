@@ -109,7 +109,12 @@ from cycle 1 beside cycle 2's live latch.
 
 One rule handles both:
 
-- The **newest** latch discussion is the canonical latch. Oldest-wins would
+- The **newest** latch discussion is the canonical latch, newest by its root
+  note's `createdAt`. glance's `Discussion` carries no timestamp of its own
+  (`types.d.ts:620`), but the marker scan already reads that root note and
+  `Note` has `createdAt`; ties break on discussion id. GitLab's `created_at` is
+  stable under the spend's `updateNote`, so a spend never reorders the list.
+  Oldest-wins would
   read a spent relic as canonical and destroy each later cycle's latch on
   sight, silently disabling the feature on that MR from its first spend
   onward.
@@ -118,9 +123,17 @@ One rule handles both:
   duplicate rather than the canonical latch is still asking, and the
   per-discussion invariant already says so; reading only the canonical one
   would eat the request with no reply.
-- Disposing of an extra is idempotent, on the canonical latch's own terms:
-  already spent and resolved, leave it; spent but unresolved, re-resolve only;
-  live, spend it. For an extra, `spent` means defunct rather than approved.
+- **Disposing of a request consumes it everywhere.** Dispatch and refusal both
+  spend every resolved-unspent extra in the same disposal, alongside whatever
+  they do to the canonical latch. Otherwise the request bit survives in the
+  extra and re-fires on every re-entry into scope: one unrequested dispatch per
+  completed re-review cycle, or one per cooldown expiry on the refusal path,
+  which would also quietly contradict the "second resolve click" tradeoff. It
+  is what keeps "a latch cannot go stale" true, and so what keeps the
+  `NUDGE_FRESH_MS` skip justified.
+- Disposing of an extra is otherwise idempotent, on the canonical latch's own
+  terms: already spent and resolved, leave it; spent but unresolved, re-resolve
+  only; live, spend it. For an extra, `spent` means defunct rather than approved.
   GitLab collapses resolved threads so the stretch is invisible, and the
   alternative is a live duplicate that double-prompts the author and blocks
   merge on a strict project.
@@ -184,8 +197,10 @@ branches in exactly this order:
    paragraph above describes. On an approve-outcome state, post nothing: there
    is nothing left to arm. **Descoped:** where a spent relic is present but no
    live latch, the pass does not post either, because it cannot tell a cycle-2
-   relaunch from a settled cycle 1 without ordering information. Arming a
-   second cycle is the server's job, and if that notify was missed the
+   relaunch from a settled cycle 1 without ordering information. The same rule
+   governs the other route into that state, a manual-approve spend followed by
+   approval revocation, which also leaves a spent relic and no live latch with
+   no relaunch in sight. Arming a second cycle is the server's job, and if that notify was missed the
    peer-board nudge is the existing fallback. Stamping a timestamp into the
    spent marker would let the pass compare it against the review state and
    self-heal this too; that is a later change, not v1.
@@ -344,7 +359,8 @@ spent-but-unresolved latch is re-resolved, and a still-live latch is spent
 rather than dispatched.
 
 The dedupe rule needs three: a resolved *extra* still triggers the request on
-the canonical latch, an already-spent extra draws no writes on a second tick,
+the canonical latch and is itself spent by that disposal, so a second completed
+cycle draws no second dispatch; an already-spent extra draws no writes on a second tick,
 and the cycle-2 case (a spent relic beside a fresh live latch) picks the fresh
 one and leaves the relic untouched.
 
