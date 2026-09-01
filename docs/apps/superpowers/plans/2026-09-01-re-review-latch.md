@@ -466,11 +466,11 @@ describe("latchKindOf", () => {
     expect(latchKindOf("looks good to me")).toBeNull();
   });
 
-  // The spent marker contains the armed marker's prefix, so a naive
-  // includes() check on the armed string would classify spent as armed.
-  test("does not misread a spent latch as armed", () => {
-    expect(spentLatchBody(IMG).includes("re-review-latch v1")).toBe(true);
-    expect(latchKindOf(spentLatchBody(IMG))).toBe("spent");
+  // A body may carry BOTH markers (a spent latch quoting the armed one, as a
+  // format-migration note would). Spent must win. Flip the order of the two
+  // checks in latchKindOf and this test fails.
+  test("classifies a body carrying both markers as spent", () => {
+    expect(latchKindOf(`${LATCH_MARKER_SPENT}\n\nquoted: ${LATCH_MARKER}`)).toBe("spent");
   });
 
   // Version skew: a v1 board must ignore a marker it does not understand
@@ -534,9 +534,10 @@ Create `src/latch/markers.ts`:
  * The latch's machine markers and the bodies built around them.
  *
  * Detection depends on the marker and never on the banner image, so a blocked,
- * broken or missing image can never break the latch. The two markers are exact
- * strings: matching by prefix would read the spent marker as armed, because
- * the spent form extends the armed one.
+ * broken or missing image can never break the latch. Spent is checked first
+ * because a body may carry both markers, and a spent latch that quotes the
+ * armed one must not read as armed: that is what would let the board rearm a
+ * spent latch and re-block a merge.
  */
 
 export const LATCH_MARKER = "<!-- mattstack:board re-review-latch v1 -->";

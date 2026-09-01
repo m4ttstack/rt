@@ -2,9 +2,9 @@
  * The latch's machine markers and the bodies built around them.
  *
  * Detection depends on the marker and never on the banner image, so a blocked,
- * broken or missing image can never break the latch. The two markers are exact
- * strings: matching by prefix would read the spent marker as armed, because
- * the spent form extends the armed one.
+ * broken or missing image can never break the latch. A body may contain both
+ * markers (e.g., a spent latch quoting the armed marker in its text), so spent
+ * is checked first... the spent classification must win over armed.
  */
 
 export const LATCH_MARKER = "<!-- mattstack:board re-review-latch v1 -->";

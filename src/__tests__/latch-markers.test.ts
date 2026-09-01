@@ -23,11 +23,11 @@ describe("latchKindOf", () => {
     expect(latchKindOf("looks good to me")).toBeNull();
   });
 
-  // The spent marker contains the armed marker's prefix, so a naive
-  // includes() check on the armed string would classify spent as armed.
-  test("does not misread a spent latch as armed", () => {
-    expect(spentLatchBody(IMG).includes("re-review-latch v1")).toBe(true);
-    expect(latchKindOf(spentLatchBody(IMG))).toBe("spent");
+  // A spent body that also quotes the armed marker must still read as spent.
+  // This is what actually forces the spent-first check: flip the order in
+  // latchKindOf and this test fails.
+  test("classifies a body carrying both markers as spent", () => {
+    expect(latchKindOf(`${LATCH_MARKER_SPENT}\n\nquoted: ${LATCH_MARKER}`)).toBe("spent");
   });
 
   // Version skew: a v1 board must ignore a marker it does not understand
