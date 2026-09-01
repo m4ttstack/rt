@@ -8,5 +8,9 @@
     "start": "caffeinate -s bun src/server.ts",
     "build": "bun run build",
     "deploy": "bun run build && deck restart board"
+  },
+  "bundle": {
+    "build": "bun install --frozen-lockfile && bun run build",
+    "artifact": "dist/board"
   }
 }
