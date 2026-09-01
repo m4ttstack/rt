@@ -105,10 +105,13 @@ export async function runLatchPass(deps: LatchPassDeps): Promise<LatchPassResult
 
     const carriers = requestCarriers(latches);
 
-    // Step 2: armed and nobody has asked.
+    // Step 2: armed and nobody has asked. Every duplicate gets spent here too:
+    // the canon alone would leave an older armed-unresolved duplicate stuck
+    // forever, since the next tick sees the now-spent canon and stops at step 1
+    // before ever looking at it.
     if (carriers.length === 0) {
       if (review.outcome === "approve") {
-        await spendLatch(deps.gateway, mr.projectId, mr.projectPath, mr.iid, canon);
+        await spendAll(deps, mr, latches);
         deps.appendAudit({ ts: now, mrUrl: mr.mrUrl, iid: mr.iid, event: "latch", action: "spent" });
         result.spent++;
       } else {

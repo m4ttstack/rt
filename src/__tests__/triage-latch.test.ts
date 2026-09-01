@@ -121,13 +121,17 @@ describe("step 1: spent latch", () => {
     expect(launches).toEqual([]);
   });
 
-  // Revoked approval must not resurrect a spent latch.
-  test("a spent latch on an unapproved MR is still left alone", async () => {
+  // Branch order only matters here. A lone spent latch can never be a carrier,
+  // so it lands in step 2 regardless; only a spent canon beside a resolved
+  // armed extra proves the spent check must come first.
+  test("a spent canon beside a resolved armed extra never dispatches", async () => {
     const { deps, calls, launches } = harness({
-      detail: detail(disc("d1", spentLatchBody(IMG), "2026-09-01T10:00:00Z", true)),
-      fetchLatchMrs: async () => [{ ...facts, isApproved: false }],
+      detail: detail(
+        disc("spent", spentLatchBody(IMG), "2026-09-01T10:00:00Z", true),
+        disc("extra", armedLatchBody(IMG), "2026-08-01T10:00:00Z", true),
+      ),
     });
-    await runLatchPass(deps);
+    expect((await runLatchPass(deps)).skipped).toBe(1);
     expect(calls).toEqual([]);
     expect(launches).toEqual([]);
   });
@@ -151,16 +155,36 @@ describe("step 2: armed and unresolved", () => {
     expect((await runLatchPass(deps)).spent).toBe(1);
     expect(calls).toEqual(["updateNote:1", "resolve:d1"]);
   });
+
+  // Step 2 must spend every duplicate, not just the canonical latch.
+  // Spending only the canon would strand an older armed-unresolved copy
+  // forever, since the next tick sees the now-spent canon and stops at step 1
+  // before ever looking at the older one.
+  test("spends every armed-unresolved duplicate on an approve-outcome state", async () => {
+    const approved: ReviewState = { ...commented, outcome: "approve" };
+    const { deps, calls } = harness({
+      detail: detail(
+        disc("newer", armedLatchBody(IMG), "2026-09-01T10:00:00Z", false),
+        disc("older", armedLatchBody(IMG), "2026-08-01T10:00:00Z", false),
+      ),
+      readReviewStates: () => new Map([[MR, approved]]),
+    });
+    expect((await runLatchPass(deps)).spent).toBe(1);
+    expect(calls).toContain("resolve:newer");
+    expect(calls).toContain("resolve:older");
+  });
 });
 
 describe("step 3: armed and resolved", () => {
   test("dispatches, replies, and unresolves to rearm", async () => {
-    const { deps, calls, launches } = harness({
+    const { deps, calls, launches, memory } = harness({
       detail: detail(disc("d1", armedLatchBody(IMG), "2026-09-01T10:00:00Z", true)),
     });
     expect((await runLatchPass(deps)).dispatched).toBe(1);
     expect(launches).toEqual([MR]);
     expect(calls).toEqual(["reply:d1", "unresolve:d1"]);
+    expect(memory.mrs[MR]?.attemptsToday).toBe(1);
+    expect(memory.mrs[MR]?.lastDispatchAt).toBe(NOW);
   });
 
   test("an approved MR spends instead of dispatching", async () => {
@@ -185,6 +209,22 @@ describe("step 3: armed and resolved", () => {
     expect((await runLatchPass(deps)).rejected).toBe(1);
     expect(launches).toEqual([]);
     expect(calls).toEqual(["reply:d1", "unresolve:d1"]);
+    expect(memory.mrs[MR]?.attemptsToday).toBe(0);
+    expect(memory.mrs[MR]?.lastDispatchAt).toBe(NOW - 60_000);
+  });
+
+  test("a failed launch replies, consumes the request, and counts a rejection", async () => {
+    const { deps, calls, launches } = harness({
+      detail: detail(
+        disc("canon", armedLatchBody(IMG), "2026-09-01T10:00:00Z", true),
+        disc("extra", armedLatchBody(IMG), "2026-08-01T10:00:00Z", true),
+      ),
+      launchReReview: async () => ({ kind: "error", message: "boom" }),
+    });
+    expect((await runLatchPass(deps)).rejected).toBe(1);
+    expect(launches).toEqual([]);
+    expect(calls).toContain("reply:canon");
+    expect(calls).toContain("resolve:extra");
   });
 });
 
