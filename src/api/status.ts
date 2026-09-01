@@ -226,7 +226,7 @@ export async function buildStatus(opts: BuildStatusOpts): Promise<Status> {
         oauth: getOAuth(a.name),
         commands: record ? commandKeysFor(record, !!opts.devMode) : undefined,
         devLink:
-          record && record.managedBy !== "user" && opts.devMode && !(record.commands && !record.dev)
+          record && record.managedBy !== "user" && opts.devMode
             ? readLinkedManifest(record).state
             : undefined,
         publicOrigin: record?.remote?.status === "live" ? "railway" as const : "tunnel" as const,

@@ -59,6 +59,16 @@ const input = {
   workingDirectory: "/tmp/myapp",
 };
 
+/** A managed row only serves what the resolver finds: a binary inside the
+    bundle helpers dir (or a linked source). Stands up a test-scoped helpers
+    dir holding "bundled" binaries and aims the resolver's seam at it. */
+function bundleHelpers(...names: string[]) {
+  const helpers = mkdtempSync(join(tmpdir(), "helpers-"));
+  for (const n of names) writeFileSync(join(helpers, n), "");
+  setServeShapeDeps({ helpersDir: helpers });
+  return { dir: helpers, command: (name: string, ...args: string[]) => [join(helpers, name), ...args] };
+}
+
 test("register: allocates from 11000, installs the service, registers the alias, writes the record", async () => {
   const res = await registerApp(input, drivers);
   expect(res.status).toBe(201);
@@ -418,7 +428,7 @@ test("edit: dev link validation rejects a relative path, a missing dir, a missin
 test("edit: a dev-only patch on a managed record needs no force", async () => {
   await registerApp({ ...input, managedBy: "rt" }, drivers);
   const srcDir = mkdtempSync(join(tmpdir(), "dev-link-"));
-  writeFileSync(join(srcDir, "mattstack.deck.json"), JSON.stringify({ name: "myapp" }));
+  writeFileSync(join(srcDir, "mattstack.deck.json"), JSON.stringify({ name: "myapp", dev: { start: "bun run serve" } }));
 
   const res = await editApp("myapp", { dev: { workingDirectory: srcDir } }, "user", false, drivers);
 
@@ -595,7 +605,8 @@ test("adopt ingests the app's mattstack.json onto the record and icon store", as
 });
 
 test("restartManagedApps: kickstarts every non-user record, skips user apps and staticPort externals", async () => {
-  await registerApp({ ...input, name: "board", managedBy: "rt" }, drivers);
+  const h = bundleHelpers("board");
+  await registerApp({ ...input, name: "board", managedBy: "rt", command: h.command("board", "serve") }, drivers);
   await registerApp({ name: "gitq", managedBy: "rt", staticPort: 4200 }, drivers); // external: no label to kickstart
   await registerApp({ ...input, name: "myuserapp" }, drivers); // managedBy defaults to "user"
 
@@ -670,8 +681,9 @@ class CountingManager extends FakeServiceManager {
 test("reresolve: reinstalls only the app whose resolved command differs from its installed plist", async () => {
   const counting = new CountingManager();
   const reresolveDrivers = { manager: counting, edge: drivers.edge };
-  await registerApp({ ...input, name: "same", managedBy: "rt" }, reresolveDrivers);
-  await registerApp({ ...input, name: "changed", managedBy: "rt", workingDirectory: "/tmp/changed" }, reresolveDrivers);
+  const h = bundleHelpers("same", "changed");
+  await registerApp({ ...input, name: "same", managedBy: "rt", command: h.command("same", "serve") }, reresolveDrivers);
+  await registerApp({ ...input, name: "changed", managedBy: "rt", command: h.command("changed", "serve"), workingDirectory: "/tmp/changed" }, reresolveDrivers);
   const sameSpec = counting.installed.get(`${LABEL_PREFIX}same`)!;
   const changedSpec = counting.installed.get(`${LABEL_PREFIX}changed`)!;
   seedPlist(sameSpec.label, sameSpec.programArguments, sameSpec.workingDirectory);
@@ -690,8 +702,9 @@ test("reresolve: reinstalls only the app whose resolved command differs from its
 test("reresolve: a flip-then-flip-back is a no-op (restarts nothing, churns no driver calls)", async () => {
   const counting = new CountingManager();
   const reresolveDrivers = { manager: counting, edge: drivers.edge };
-  await registerApp({ ...input, name: "app1", managedBy: "rt" }, reresolveDrivers);
-  await registerApp({ ...input, name: "app2", managedBy: "rt", workingDirectory: "/tmp/app2" }, reresolveDrivers);
+  const h = bundleHelpers("app1", "app2");
+  await registerApp({ ...input, name: "app1", managedBy: "rt", command: h.command("app1", "serve") }, reresolveDrivers);
+  await registerApp({ ...input, name: "app2", managedBy: "rt", command: h.command("app2", "serve"), workingDirectory: "/tmp/app2" }, reresolveDrivers);
   for (const name of ["app1", "app2"]) {
     const spec = counting.installed.get(`${LABEL_PREFIX}${name}`)!;
     seedPlist(spec.label, spec.programArguments, spec.workingDirectory);
@@ -719,12 +732,12 @@ test("reresolve: restarts an app whose working directory changed even though its
   // Same dev.start as the original command, so the resolved argv is identical;
   // only the linked checkout (and so the resolved cwd) differs.
   writeFileSync(join(dirB, "mattstack.deck.json"), JSON.stringify({ name: "cwdapp", dev: { start: "bun run serve" } }));
-  await registerApp({ name: "cwdapp", managedBy: "rt", command: ["bun", "run", "serve"], workingDirectory: dirA }, reresolveDrivers);
+  await registerApp({ name: "cwdapp", command: ["bun", "run", "serve"], workingDirectory: dirA }, reresolveDrivers);
   const spec = counting.installed.get(`${LABEL_PREFIX}cwdapp`)!;
   seedPlist(spec.label, spec.programArguments, spec.workingDirectory); // baseline: argv and cwd both match dirA
   const rec = getRecord("cwdapp")!;
   // Re-linking to a different clone of the same repo: same dev.start argv, a new cwd.
-  putRecord({ ...rec, command: undefined, workingDirectory: undefined, dev: { workingDirectory: dirB } });
+  putRecord({ ...rec, managedBy: "rt", command: undefined, workingDirectory: undefined, dev: { workingDirectory: dirB } });
   counting.installCalls = [];
   counting.uninstallCalls = [];
 
@@ -784,13 +797,16 @@ test("reresolve: a null shape lands the app in failed and leaves its installed s
 test("reresolve: a specFor throw for one app does not block a healthy app in the same sweep", async () => {
   const counting = new CountingManager();
   const reresolveDrivers = { manager: counting, edge: drivers.edge };
-  await registerApp(
-    { ...input, name: "ghost", managedBy: "rt", command: ["definitely-not-a-real-binary-xyz", "x.js"] },
-    reresolveDrivers,
-  );
-  await registerApp({ ...input, name: "healthy", managedBy: "rt", workingDirectory: "/tmp/healthy" }, reresolveDrivers);
+  const ghostDir = mkdtempSync(join(tmpdir(), "ghost-"));
+  writeFileSync(join(ghostDir, "mattstack.deck.json"), JSON.stringify({ name: "ghost", dev: { start: "definitely-not-a-real-binary-xyz x.js" } }));
+  await registerApp({ ...input, name: "ghost" }, reresolveDrivers);
+  putRecord({ ...getRecord("ghost")!, managedBy: "rt", command: undefined, workingDirectory: undefined, dev: { workingDirectory: ghostDir } });
+  const healthyDir = mkdtempSync(join(tmpdir(), "healthy-"));
+  writeFileSync(join(healthyDir, "mattstack.deck.json"), JSON.stringify({ name: "healthy", dev: { start: "bun src/server.ts" } }));
+  await registerApp({ ...input, name: "healthy", workingDirectory: healthyDir }, reresolveDrivers);
   const healthySpec = counting.installed.get(`${LABEL_PREFIX}healthy`)!;
   seedPlist(healthySpec.label, healthySpec.programArguments, healthySpec.workingDirectory);
+  putRecord({ ...getRecord("healthy")!, managedBy: "rt", command: undefined, workingDirectory: undefined, dev: { workingDirectory: healthyDir } });
   counting.installCalls = [];
   counting.uninstallCalls = [];
 
@@ -811,8 +827,12 @@ test("reresolve: a specFor throw for one app does not block a healthy app in the
 test("reresolve: an install failure lands the app in failed and leaves a launchd issue on its record", async () => {
   const counting = new CountingManager();
   const reresolveDrivers = { manager: counting, edge: drivers.edge };
-  await registerApp({ ...input, name: "flaky", managedBy: "rt" }, reresolveDrivers);
+  const flakyDir = mkdtempSync(join(tmpdir(), "flaky-"));
+  writeFileSync(join(flakyDir, "mattstack.deck.json"), JSON.stringify({ name: "flaky", dev: { start: "bun src/server.ts" } }));
+  await registerApp({ ...input, name: "flaky", workingDirectory: flakyDir }, reresolveDrivers);
   const spec = counting.installed.get(`${LABEL_PREFIX}flaky`)!;
+  putRecord({ ...getRecord("flaky")!, managedBy: "rt", command: undefined, workingDirectory: undefined, dev: { workingDirectory: flakyDir } });
+  setServeShapeDeps({ devMode: () => true, helpersDir: null }); // dev mode: source serves without a bundle issue
   // A mismatched plist forces reresolve down the uninstall+install path.
   seedPlist(spec.label, [...spec.programArguments.slice(0, -1), "stale-arg"]);
   counting.installCalls = [];
@@ -838,8 +858,12 @@ test("reresolve: an install failure lands the app in failed and leaves a launchd
 test("reresolve: a later successful install clears the launchd issue a previous failed sweep left", async () => {
   const counting = new CountingManager();
   const reresolveDrivers = { manager: counting, edge: drivers.edge };
-  await registerApp({ ...input, name: "recovered", managedBy: "rt" }, reresolveDrivers);
+  const recoveredDir = mkdtempSync(join(tmpdir(), "recovered-"));
+  writeFileSync(join(recoveredDir, "mattstack.deck.json"), JSON.stringify({ name: "recovered", dev: { start: "bun src/server.ts" } }));
+  await registerApp({ ...input, name: "recovered", workingDirectory: recoveredDir }, reresolveDrivers);
   const spec = counting.installed.get(`${LABEL_PREFIX}recovered`)!;
+  putRecord({ ...getRecord("recovered")!, managedBy: "rt", command: undefined, workingDirectory: undefined, dev: { workingDirectory: recoveredDir } });
+  setServeShapeDeps({ devMode: () => true, helpersDir: null }); // dev mode: source serves without a bundle issue
   seedPlist(spec.label, [...spec.programArguments.slice(0, -1), "stale-arg"]);
   counting.failInstallFor = spec.label;
   await reresolveManagedApps(reresolveDrivers); // first sweep: install fails, issue lands

@@ -80,7 +80,16 @@ export async function applyManifest(
     if (activeAlt !== undefined) {
       return { status: 400, body: { error: "alt configs do not apply to a linked managed app" } };
     }
-    return editApp(manifest.name, { dev: { workingDirectory: dir } }, existing.managedBy, true, drivers);
+    const linked = await editApp(manifest.name, { dev: { workingDirectory: dir } }, existing.managedBy, true, drivers);
+    if (linked.status !== 200) return linked;
+    // The resolver is the only serve truth for a managed row; stored
+    // command/commands/workingDirectory are pre-manifest residue that the
+    // resolver would otherwise flag as legacy drift forever.
+    const current = getRecord(manifest.name)!;
+    if (current.command || current.commands || current.workingDirectory) {
+      putRecord({ ...current, command: undefined, commands: undefined, workingDirectory: undefined });
+    }
+    return { status: 200, body: { record: getRecord(manifest.name) } };
   }
 
   if (!existing) {

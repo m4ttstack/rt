@@ -68,13 +68,24 @@ describe("serveShape matrix", () => {
     expect(serveShape(r, { devMode: () => true })).toEqual({ command: ["node", "s.js"], cwd: "/x" });
   });
 
-  test("grandfathered row: stored command verbatim, no issue, both modes", () => {
-    const r = rec({ command: ["/bundle/gitq", "board"], workingDirectory: "/data/gitq" });
+  test("legacy managed row (stored non-bundle command, no dev link): no shape, loud issue naming re-register", () => {
+    const r = rec({ command: ["bun", "src/server.ts"], workingDirectory: "/data/gitq" });
     putRecord(r);
-    for (const dev of [true, false]) {
-      expect(serveShape(r, { devMode: () => dev })).toEqual({ command: ["/bundle/gitq", "board"], cwd: "/data/gitq" });
-    }
-    expect(getRecord("chat")?.issues).toBeUndefined();
+    expect(serveShape(r, { devMode: () => true, helpersDir: null })).toBeNull();
+    const issue = getRecord("chat")?.issues?.[0];
+    expect(issue?.source).toBe("dev-link");
+    expect(issue?.message).toContain("deck register");
+  });
+
+  test("legacy stored command with a bundle installed: serves the derived bundle, still flags the legacy command", () => {
+    const helpers = mkdtempSync(join(tmpdir(), "helpers-"));
+    writeFileSync(join(helpers, "chat"), "");
+    const r = rec({ command: ["bun", "src/server.ts"], workingDirectory: "/data/chat" });
+    putRecord(r);
+    expect(serveShape(r, { devMode: () => false, helpersDir: helpers })).toEqual({
+      command: [join(helpers, "chat")], cwd: dataDir("chat"),
+    });
+    expect(getRecord("chat")?.issues?.[0]?.message).toContain("legacy");
   });
 
   test("dev + linked valid: source", () => {
@@ -163,27 +174,24 @@ describe("serveShape matrix", () => {
     expect(getRecord("chat")?.issues).toBeUndefined();
   });
 
-  test("linked fresh-install row: stored bundle command is the bundle shape", () => {
-    const binDir = mkdtempSync(join(tmpdir(), "bin-"));
-    const bin = join(binDir, "chat");
+  test("linked fresh-install row: a stored command inside the helpers dir is the bundle shape, args kept", () => {
+    const helpers = mkdtempSync(join(tmpdir(), "helpers-"));
+    const bin = join(helpers, "chat");
     writeFileSync(bin, "");
     const dir = linkedDir(CHAT_DEV);
-    const r = rec({ command: [bin], workingDirectory: "/data/chat", dev: { workingDirectory: dir } });
+    const r = rec({ command: [bin, "board"], workingDirectory: "/data/chat", dev: { workingDirectory: dir } });
     putRecord(r);
-    expect(serveShape(r, { devMode: () => false, helpersDir: null })).toEqual({ command: [bin], cwd: "/data/chat" });
-    expect(serveShape(r, { devMode: () => true, helpersDir: null })?.cwd).toBe(dir);
+    expect(serveShape(r, { devMode: () => false, helpersDir: helpers })).toEqual({ command: [bin, "board"], cwd: "/data/chat" });
+    expect(serveShape(r, { devMode: () => true, helpersDir: helpers })?.cwd).toBe(dir);
   });
 
-  test("linked row: a stored relative argv0 still resolves as the bundle shape, not a phantom", () => {
-    // launchd never searches PATH for argv0, but a legacy stored command
-    // predates that rule, and bare "bun" is exactly that shape: existsSync
-    // on it directly is always false, so this only passes with a PATH lookup.
+  test("linked row: a stored command OUTSIDE the helpers dir is never the bundle shape", () => {
     const dir = linkedDir(CHAT_DEV);
     const r = rec({ command: ["bun", "board"], workingDirectory: "/data/chat", dev: { workingDirectory: dir } });
     putRecord(r);
-    expect(serveShape(r, { devMode: () => false, helpersDir: null })).toEqual({
-      command: ["bun", "board"], cwd: "/data/chat",
-    });
-    expect(getRecord("chat")?.issues).toBeUndefined();
+    // dev mode: the valid source serves; the stored PATH-relative command never resurfaces
+    expect(serveShape(r, { devMode: () => true, helpersDir: null })?.cwd).toBe(dir);
+    // prod mode, no bundle: source serves loudly rather than the legacy command
+    expect(serveShape(r, { devMode: () => false, helpersDir: null })?.cwd).toBe(dir);
   });
 });

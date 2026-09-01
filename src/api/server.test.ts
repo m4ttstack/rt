@@ -239,6 +239,14 @@ test("restart 404s on an unknown app, kickstarts a known service record", async 
 
 test("managed/reresolve answers 200 with the ok/restarted/unchanged/failed body shape", async () => {
   await post("/api/v1/apps", { name: "rr1", command: ["bun", "s.ts"], workingDirectory: "/tmp" }, { "x-local-caller": "rt" });
+  // A managed row only resolves via a link (or a bundle): link a manifest so
+  // reresolve finds a source shape instead of failing on the legacy command.
+  const rrDir = mkdtempSync(join(tmpdir(), "rr1-"));
+  writeFileSync(join(rrDir, "mattstack.deck.json"), JSON.stringify({ name: "rr1", dev: { start: "bun s.ts" } }));
+  await api("/api/v1/apps/rr1", {
+    method: "PATCH", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ dev: { workingDirectory: rrDir } }),
+  });
   const res = await post("/api/v1/apps/managed/reresolve", {});
   expect(res.status).toBe(200);
   const body = await res.json();

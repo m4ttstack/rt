@@ -2,7 +2,6 @@ import { existsSync } from "fs";
 import { join } from "path";
 import { homedir } from "os";
 import { bundleHelpersDir } from "../services/bundle-layout.ts";
-import { composeServicePath, resolveProgram } from "../services/exec-env.ts";
 import { readDeckManifest, startArgv, type DeckManifest } from "./deck-manifest.ts";
 import { addIssue, clearIssues, type AppRecord } from "./records.ts";
 import { isDevMode } from "../api/dev-mode.ts";
@@ -46,9 +45,6 @@ export function commandKeysFor(record: AppRecord, devMode: boolean): string[] | 
     const keys = Object.keys(record.commands ?? {});
     return keys.length ? keys : undefined;
   }
-  if (!record.dev?.workingDirectory && record.commands) {
-    return devMode ? Object.keys(record.commands) : undefined;
-  }
   if (!devMode || !record.dev?.workingDirectory) return undefined;
   const link = readLinkedManifest(record);
   if (link.state !== "linked") return undefined;
@@ -70,25 +66,22 @@ export function sourceShape(record: AppRecord): ResolvedShape | null {
   return { command: startArgv(start), cwd: link.dir };
 }
 
-/** launchd never searches PATH for argv0, but a stored command predates that
-    rule for legacy rows, so a bare name here still has to resolve the same
-    way specFor's render-time lookup would, or a legacy relative argv0 always
-    reads as a phantom bundle. */
-function storedCommandExists(argv0: string): boolean {
-  return argv0.includes("/") ? existsSync(argv0) : resolveProgram(argv0, composeServicePath()) !== null;
+/** A stored command is the bundle shape ONLY when its argv0 lives inside the
+    installed bundle's Helpers dir — what rt setup genuinely registers
+    (absolute bundled binary, possibly with serve args like gitq's `board`).
+    Anything else stored on a managed row is legacy drift and never serves. */
+function storedBundleCommand(record: AppRecord, helpersDir: string | null): ResolvedShape | null {
+  const argv0 = record.command?.[0];
+  if (!argv0 || !helpersDir) return null;
+  if (!argv0.startsWith(helpersDir + "/") || !existsSync(argv0)) return null;
+  return { command: record.command!, cwd: record.workingDirectory ?? dataDir(record.name) };
 }
 
 export function bundleShape(record: AppRecord, helpersDir?: string | null): ResolvedShape | null {
-  // A stored command on a dev-linked row is the prod shape rt setup registered
-  // (absolute bundled binary, possibly with serve args); it outranks derivation
-  // so args like gitq's `board` are never lost. Existence-checked like the
-  // derived path: never a phantom bundle.
-  if (record.command?.length) {
-    return storedCommandExists(record.command[0]!)
-      ? { command: record.command, cwd: record.workingDirectory ?? dataDir(record.name) }
-      : null;
-  }
-  const bin = bundleBinaryPath(record.name, helpersDir);
+  const dir = helpersDir !== undefined ? helpersDir : bundleHelpersDir();
+  const stored = storedBundleCommand(record, dir);
+  if (stored) return stored;
+  const bin = bundleBinaryPath(record.name, dir);
   return bin ? { command: [bin], cwd: dataDir(record.name) } : null;
 }
 
@@ -101,24 +94,25 @@ export function serveShape(record: AppRecord, deps: ServeShapeDeps = {}): Resolv
     clearIssues(record.name, "dev-link");
     return { command: record.command!, cwd: record.workingDirectory! };
   }
-  // Grandfathered: a managed row with a stored command and no dev link keeps
-  // today's behavior verbatim (gitq, fresh installs, pre-migration rows).
-  if (!record.dev?.workingDirectory && record.command?.length) {
-    clearIssues(record.name, "dev-link");
-    return { command: record.command, cwd: record.workingDirectory! };
-  }
 
+  const helpersDir = deps.helpersDir !== undefined ? deps.helpersDir : bundleHelpersDir();
   const source = sourceShape(record);
-  const bundle = deps.helpersDir !== undefined ? bundleShape(record, deps.helpersDir) : bundleShape(record);
+  const bundle = bundleShape(record, helpersDir);
   const linkBroken = readLinkedManifest(record).state === "broken";
   const dev = (deps.devMode ?? isDevMode)();
   const chosen = dev ? (source ?? bundle) : (bundle ?? source);
+  // A stored command that is not the bundled binary is a pre-manifest row —
+  // it never serves, and staying quiet about it would hide real drift.
+  const legacyIgnored = !!record.command?.length && storedBundleCommand(record, helpersDir) === null;
 
   if (!chosen) {
-    issue(record.name, `no runnable shape for ${record.name} (no bundle, no valid source)`);
+    const legacyHint = legacyIgnored ? "; legacy stored command ignored — run `deck register --dir <source repo>` to relink" : "";
+    issue(record.name, `no runnable shape for ${record.name} (no bundle, no valid source)${legacyHint}`);
     return null;
   }
-  if (chosen === bundle && linkBroken) {
+  if (legacyIgnored) {
+    issue(record.name, `legacy stored command on ${record.name} ignored — run \`deck register --dir <source repo>\` to refresh it`);
+  } else if (chosen === bundle && linkBroken) {
     issue(record.name, `dev source ${record.dev!.workingDirectory} missing or invalid; running bundled`);
   } else if (chosen === source && !bundle && !dev) {
     issue(record.name, `bundle for ${record.name} not installed; serving source`);

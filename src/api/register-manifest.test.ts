@@ -363,13 +363,16 @@ test("register on a managed app links the checkout instead of rewriting its serv
   const commandPath = join(bundleDir, "chat");
   writeFileSync(commandPath, "");
   putRecord(managedRecord(commandPath));
-  const dir = appRepo({ name: "chat", port: 5173, commands: { start: "bun run serve", deploy: "bun run deploy" } });
+  const dir = appRepo({ name: "chat", port: 5173, dev: { start: "bun run serve", deploy: "bun run deploy" } });
 
   const r = await applyManifest(dir, undefined, drivers);
   expect(r.status).toBe(200);
   const rec = getRecord("chat")!;
   expect(rec.dev).toEqual({ workingDirectory: dir });
-  expect(rec.command).toEqual([commandPath]);
+  // The resolver (bundle vs linked source) is the only serve truth for a
+  // managed row: register slims the pre-manifest residue away.
+  expect(rec.command).toBeUndefined();
+  expect(rec.workingDirectory).toBeUndefined();
   expect(rec.port).toBe(11020);
   expect(rec.commands).toBeUndefined();
 

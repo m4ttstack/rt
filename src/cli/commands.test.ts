@@ -22,6 +22,7 @@ const { FakeEdgeProxy } = await import("../edge/portless.ts");
 const { FakeTunnelDriver } = await import("../edge/tunnel.ts");
 const { FakeCfDns } = await import("../../test/fixture/remote.ts");
 const { runCommand } = await import("./commands.ts");
+const { setServeShapeDeps } = await import("../api/register.ts");
 
 const PORT = 18971;
 let server: ReturnType<typeof startApi>;
@@ -73,13 +74,18 @@ test("remove on a managed record prints the escape hatch and exits 1", async () 
 });
 
 test("restart --managed / remove --managed only touch non-user records", async () => {
+  // A managed row only serves what the resolver finds: stand up a helpers dir
+  // holding the "bundled" binary and store the command under it.
+  const helpers = mkdtempSync(join(tmpdir(), "helpers-"));
+  writeFileSync(join(helpers, "t-managed"), "");
+  setServeShapeDeps({ helpersDir: helpers });
   const a = io();
-  await runCommand(["add", "t-managed", "--cmd", "sleep 1", "--dir", dir], a);
+  await runCommand(["add", "t-managed", "--cmd", join(helpers, "t-managed"), "--dir", dir], a);
   // Flip it to rt-managed the same way the "escape hatch" test above does.
   await fetch(`http://127.0.0.1:${PORT}/api/v1/apps/t-managed?force=true`, { method: "DELETE" });
   await fetch(`http://127.0.0.1:${PORT}/api/v1/apps`, {
     method: "POST", headers: { "content-type": "application/json", "x-local-caller": "rt" },
-    body: JSON.stringify({ name: "t-managed", command: ["sleep", "1"], workingDirectory: dir }),
+    body: JSON.stringify({ name: "t-managed", command: [join(helpers, "t-managed")], workingDirectory: dir }),
   });
   const b = io();
   await runCommand(["add", "t-user-only", "--port", "4997"], b);
@@ -97,6 +103,7 @@ test("restart --managed / remove --managed only touch non-user records", async (
   await runCommand(["status"], s);
   expect(s.lines.join("\n")).not.toContain("t-managed");
   expect(s.lines.join("\n")).toContain("t-user-only");
+  setServeShapeDeps({});
 
   await runCommand(["remove", "t-user-only"], io());
 });

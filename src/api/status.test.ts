@@ -142,15 +142,15 @@ test("a user app's commands are present regardless of dev mode", async () => {
   expect(row.commands).toEqual(["build"]);
 });
 
-test("a grandfathered managed row's commands are present only in dev mode", async () => {
+test("legacy record-level commands never produce buttons; the unlinked state shows in dev mode (no grandfathering)", async () => {
   putRecord({
     name: "myapp", managedBy: "rt", port: 19999, kind: "service",
     commands: { restart: "bun run restart" },
     label: "com.mattstack.deck.myapp", createdAt: "2026-08-10T00:00:00Z",
   });
   const dev = await buildStatus({ ...opts, devMode: true });
-  expect(dev.apps.find((a) => a.name === "myapp")!.commands).toEqual(["restart"]);
-  expect(dev.apps.find((a) => a.name === "myapp")!.devLink).toBeUndefined();
+  expect(dev.apps.find((a) => a.name === "myapp")!.commands).toBeUndefined();
+  expect(dev.apps.find((a) => a.name === "myapp")!.devLink).toBe("unlinked");
   const prod = await buildStatus({ ...opts, devMode: false });
   expect(prod.apps.find((a) => a.name === "myapp")!.commands).toBeUndefined();
   expect(prod.apps.find((a) => a.name === "myapp")!.devLink).toBeUndefined();
