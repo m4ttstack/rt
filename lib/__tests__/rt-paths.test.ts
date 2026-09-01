@@ -554,7 +554,7 @@ describe("worktreePoolRoot (friendly PATH-safe identity segment)", () => {
   });
 
   test("gitlab remote gets the gl alias", () => {
-    expect(basename(worktreePoolRoot("remote:gitlab.com%2Facme0%2Facme0-dev"))).toBe("gl-acme0-acme0-dev");
+    expect(basename(worktreePoolRoot("remote:gitlab.com%2Facme%2Facme-dev"))).toBe("gl-acme-acme-dev");
   });
 
   test("unknown host falls back to the dash-safe hostname", () => {
