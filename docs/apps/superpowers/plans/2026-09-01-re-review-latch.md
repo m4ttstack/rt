@@ -718,12 +718,16 @@ describe("latchBannerPng", () => {
 
   test("paints the sprite in the board pink, not a palette colour", () => {
     const png = decode(latchBannerPng(MR_A));
+    // Count ONLY inside the sprite box. The band's own pink rule spans the full
+    // width, so a whole-image count would pass even with sprite painting broken.
     let pink = 0;
-    for (let i = 0; i < png.data.length; i += 4) {
-      if (png.data[i] === 0xff && png.data[i + 1] === 0x6b && png.data[i + 2] === 0x9d) pink++;
+    for (let y = 44; y < 44 + 120; y++) {
+      for (let x = 120; x < 120 + 120; x++) {
+        const i = (png.width * y + x) << 2;
+        if (png.data[i] === 0xff && png.data[i + 1] === 0x6b && png.data[i + 2] === 0x9d) pink++;
+      }
     }
-    // The pink rule alone is thin; a painted sprite adds thousands of pixels.
-    expect(pink).toBeGreaterThan(5000);
+    expect(pink).toBeGreaterThan(1000);
   });
 });
 ```
@@ -765,6 +769,9 @@ const SPRITE_X = 120;
 const SPRITE_Y = 44;
 const SPRITE_SIDE = 120;
 
+// Resolves from a checkout, which is how the triage pass runs today. In the
+// compiled binary APP_ROOT is ~/.mattstack/board and this path does not exist,
+// so the pending board-binary embed work has to carry this asset too.
 const DEFAULT_BAND = join(APP_ROOT, "assets", "latch-band.png");
 
 export function latchBannerPng(mrUrl: string, bandPath: string = DEFAULT_BAND): Buffer {
@@ -1089,38 +1096,44 @@ Without this, the board's own thread inflates "N comments", and an armed latch m
 
 - [ ] **Step 1: Write the failing test**
 
-Append to `src/__tests__/discussions.test.ts`. Match the existing file's helpers for building an `MRDetail`; if it has none, reuse the `disc`/`detail` shape from Task 6's test.
+Append to `src/__tests__/discussions.test.ts`, using the helpers that file already defines: `note(username, opts)` at line 5 and `detail(discussions)` at line 19, which takes a single array of `{ notes }`. Do not introduce a second `detail`.
 
 ```ts
 describe("latch exclusion", () => {
+  const AUTHOR = "dorothy";
+  const IMG = "![re-review latch](/uploads/ab12/latch.png)";
+
   test("an armed latch is not counted as a reviewer thread", () => {
-    const d = detail(
-      disc("real", "please rename this", "2026-09-01T10:00:00Z", false, "reviewer"),
-      disc("latch", armedLatchBody(IMG), "2026-09-01T11:00:00Z", false, "reviewer"),
-    );
-    const { threads } = summarizeDiscussions(d, "author", []);
+    const d = detail([
+      { notes: [note("reviewer", { body: "please fix" })] },
+      { notes: [note("reviewer", { body: armedLatchBody(IMG) })] },
+    ]);
+    const { threads } = summarizeDiscussions(d, AUTHOR);
     expect(threads).toHaveLength(1);
     expect(unresolvedReviewerCount(threads)).toBe(1);
   });
 
   // A spent latch is a RESOLVED thread, so without the exclusion it lands in
   // threadSummary.resolved, which commentsAllResolved reads as a signal.
-  test("a spent latch does not inflate threadSummary.resolved", () => {
-    const d = detail(disc("latch", spentLatchBody(IMG), "2026-09-01T11:00:00Z", true, "reviewer"));
-    const { threads } = summarizeDiscussions(d, "author", []);
+  test("a spent latch is not counted as a resolved thread", () => {
+    const d = detail([
+      { notes: [note("reviewer", { body: spentLatchBody(IMG), resolved: true })] },
+    ]);
+    const { threads } = summarizeDiscussions(d, AUTHOR);
     expect(threads).toHaveLength(0);
-    expect(threadStatusCounts(threads)).toEqual({ awaiting: 0, replied: 0, resolved: 0 });
   });
 
   test("a latch is not counted as a general comment either", () => {
-    const d = detail(disc("latch", armedLatchBody(IMG), "2026-09-01T11:00:00Z", false, "reviewer"));
-    const { comments } = summarizeDiscussions(d, "author", []);
+    const d = detail([
+      { notes: [note("reviewer", { body: armedLatchBody(IMG), resolvable: false })] },
+    ]);
+    const { comments } = summarizeDiscussions(d, AUTHOR);
     expect(comments).toHaveLength(0);
   });
 });
 ```
 
-Add the imports this block needs to the top of the file:
+The only import this block adds is the markers module; `summarizeDiscussions` and `unresolvedReviewerCount` are already imported at line 3:
 
 ```ts
 import { armedLatchBody, spentLatchBody } from "../latch/markers.ts";
@@ -1174,7 +1187,7 @@ git commit -m "discussions: exclude latch threads from comment signals"
 `decideNudge` becomes the single judge for both sources. The freshness rule is skipped for latch requests, which cannot go stale because the pass consumes them on the next tick.
 
 **Files:**
-- Modify: `src/triage/nudge.ts:10-33`
+- Modify: `src/triage/nudge.ts:20-36`
 - Test: `src/__tests__/triage-nudge.test.ts`
 
 **Interfaces:**
@@ -1425,6 +1438,7 @@ describe("postLatch", () => {
 describe("spendLatch", () => {
   const armed: LatchRef = {
     discussionId: "d1",
+    rootNoteId: 1,
     kind: "armed",
     resolved: true,
     createdAt: "2026-09-01T10:00:00Z",
@@ -1562,7 +1576,7 @@ Expected: PASS, both files.
 
 - [ ] **Step 5: Wire the server's `/agent/status` handler**
 
-In `src/server.ts`, find the `/agent/status` case (near line 959) and the existing `signal.kind === "review"` branch near line 991. After the existing handling, add a best-effort latch step. Build the gateway from the same `NoteMutator` and `GitLabProvider` the draft path already constructs:
+In `src/server.ts`, find the `/agent/status` case (near line 959). Insert the latch step **after the peer-sync block closes (near line 1003) and before `const emoji = signalEmoji(...)`**. That position matters: the `signalEmoji` block early-returns when there is no emoji for the transition, and returns 400 when Slack is unconfigured, so anything appended below it is skipped on a Slack-less install.
 
 ```ts
         // Arm a latch when a review lands with a comment outcome, spend it when
@@ -1575,7 +1589,7 @@ In `src/server.ts`, find the `/agent/status` case (near line 959) and the existi
             const mr = snapshot.mrs.find((m) => m.webUrl === signal.mrUrl);
             if (mr) {
               const projectId = parseRepoId(mr.repositoryId);
-              const projectPath = projectPathFromWebUrl(signal.mrUrl) ?? "";
+              const projectPath = projectPathFromWebUrl(signal.mrUrl, config.gitlabHost) ?? "";
               const gw = latchGateway(config.gitlabHost, gitlabToken);
               if (signal.outcome === "comment") {
                 const detail = await readLatchDetail(mr);
@@ -1745,7 +1759,7 @@ function harness(over: Partial<LatchPassDeps> & { detail?: MRDetail | null } = {
     async unresolveDiscussion(_p, _i, id) { calls.push(`unresolve:${id}`); },
     async createNote(_p, _i, _b, d) { calls.push(`reply:${d}`); return { id: 9 }; },
   };
-  const memory: DispatchMemory = { mrs: {} };
+  const memory: DispatchMemory = { identity: null, mrs: {} };
   const deps: LatchPassDeps = {
     readReviewStates: () => new Map([[MR, commented]]),
     fetchLatchMrs: async () => [facts],
@@ -1867,7 +1881,10 @@ describe("step 3: armed and resolved", () => {
   });
 
   test("a refusal replies with the reason and still unresolves", async () => {
-    const memory: DispatchMemory = { mrs: { [MR]: { ...emptyMrMemory("1970-01-12"), lastDispatchAt: NOW - 60_000 } } };
+    const memory: DispatchMemory = {
+      identity: null,
+      mrs: { [MR]: { ...emptyMrMemory("1970-01-12"), lastDispatchAt: NOW - 60_000 } },
+    };
     const { deps, calls, launches } = harness({
       detail: detail(disc("d1", armedLatchBody(IMG), "2026-09-01T10:00:00Z", true)),
       memory,
@@ -1875,6 +1892,28 @@ describe("step 3: armed and resolved", () => {
     expect((await runLatchPass(deps)).rejected).toBe(1);
     expect(launches).toEqual([]);
     expect(calls).toEqual(["reply:d1", "unresolve:d1"]);
+  });
+});
+
+describe("idempotence across ticks", () => {
+  // The write-loop the design eliminated: a spent latch must draw no writes on
+  // any later tick, not merely on the tick that spent it.
+  test("a second tick over an already-spent latch writes nothing", async () => {
+    const spentDetail = detail(disc("d1", spentLatchBody(IMG), "2026-09-01T10:00:00Z", true));
+    const { deps, calls } = harness({ detail: spentDetail });
+    await runLatchPass(deps);
+    await runLatchPass(deps);
+    expect(calls).toEqual([]);
+  });
+
+  test("an approve-outcome state repairs a spent-but-unresolved latch once", async () => {
+    const approved: ReviewState = { ...commented, outcome: "approve" };
+    const { deps, calls } = harness({
+      detail: detail(disc("d1", spentLatchBody(IMG), "2026-09-01T10:00:00Z", false)),
+      readReviewStates: () => new Map([[MR, approved]]),
+    });
+    expect((await runLatchPass(deps)).repaired).toBe(1);
+    expect(calls).toEqual(["resolve:d1"]);
   });
 });
 
@@ -2174,18 +2213,32 @@ In `bin/triage.ts`, beside the existing `fetchOwnMrs`, add:
         mrUrl: m.webUrl!,
         iid: m.iid,
         projectId: parseRepoId(m.repositoryId),
-        projectPath: projectPathFromWebUrl(m.webUrl!) ?? "",
+        projectPath: projectPathFromWebUrl(m.webUrl!, boardConfig.gitlabHost) ?? "",
         rtRepo: m.rtRepo ?? "",
         isApproved: !!m.reviews.isApproved,
       }));
   };
 ```
 
-- [ ] **Step 2: Run the pass after the nudge pass**
+- [ ] **Step 2: Run the pass OUTSIDE the switchboard block**
 
-Immediately after the `runNudgePass` call's result is captured, add:
+`runNudgePass` lives inside `if (boardConfig.switchboard.url && switchboardToken) { ... }` (`bin/triage.ts:154`), and so does the `writeMemory(memory)` after it. The latch pass must **not** go in there: it exists precisely so a re-review needs no switchboard and no peer board.
+
+First move the persist so it covers both passes. Delete this line from inside the switchboard block:
 
 ```ts
+    writeMemory(memory);
+```
+
+Then, after that block's closing brace, add:
+
+```ts
+  // The latch pass writes to GitLab, so without a token there is nothing it
+  // can do. Both passes bank cooldown and budget counters into the same
+  // memory, and this one runs whether or not a switchboard is configured, so
+  // the persist below sits outside that block.
+  const latchToken = await loadGitLabToken();
+  if (latchToken) {
     const latchResult = await runLatchPass({
       readReviewStates,
       fetchLatchMrs,
@@ -2194,12 +2247,12 @@ Immediately after the `runNudgePass` call's result is captured, add:
         if (!res.ok || !res.data) return null;
         return { discussions: res.data.discussions } as MRDetail;
       },
-      gateway: latchGateway(boardConfig.gitlabHost, await loadGitLabToken() ?? ""),
+      gateway: latchGateway(boardConfig.gitlabHost, latchToken),
       launchReReview: (mrUrl, iid) =>
         launchReReview(mrUrl, iid, {
           cwd: boardConfig.reviewCwd,
           workspaceLabel: boardConfig.reviewsWorkspace,
-          skill: resolveLaunchSkill("review"),
+          skill: resolveLaunchSkill("review", mrUrl, boardConfig),
           claudeCommand: boardConfig.claudeCommand,
         }),
       memory,
@@ -2209,6 +2262,8 @@ Immediately after the `runNudgePass` call's result is captured, add:
       now: () => Date.now(),
     });
     console.log(`latch pass: ${JSON.stringify(latchResult)}`);
+  }
+  writeMemory(memory);
 ```
 
 - [ ] **Step 3: Add the imports**
@@ -2216,10 +2271,9 @@ Immediately after the `runNudgePass` call's result is captured, add:
 ```ts
 import { runLatchPass, type LatchMrFacts } from "../src/triage/latch.ts";
 import { latchGateway } from "../src/latch/gateway.ts";
-import { projectPathFromWebUrl } from "../src/data.ts";
-import { readDiscussions } from "@mattstack/rt-client";
-import type { MRDetail } from "@mattstack/glance";
 ```
+
+Extend three imports `bin/triage.ts` already has, rather than adding duplicates: add `projectPathFromWebUrl` to the existing `../src/data.ts` import, `readDiscussions` to the existing `@mattstack/rt-client` import, and `parseRepoId` to the existing `@mattstack/glance` import. Add `MRDetail` as a type import from `@mattstack/glance`.
 
 - [ ] **Step 4: Verify**
 
