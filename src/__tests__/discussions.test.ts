@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { MRDetail } from "@mattstack/glance";
 import { summarizeThreads, summarizeDiscussions, unresolvedReviewerCount, isBotUsername } from "../discussions.ts";
+import { armedLatchBody, spentLatchBody } from "../latch/markers.ts";
 
 function note(username: string, opts: { resolvable?: boolean; resolved?: boolean; system?: boolean; body?: string; at?: string } = {}) {
   return {
@@ -150,5 +151,38 @@ describe("summarizeDiscussions", () => {
   test("summarizeThreads still returns just the (flipped) threads", () => {
     const d = detail([{ notes: [note("reviewer", { body: "fix" })] }]);
     expect(summarizeThreads(d, AUTHOR)).toEqual(summarizeDiscussions(d, AUTHOR).threads);
+  });
+});
+
+describe("latch exclusion", () => {
+  const AUTHOR = "dorothy";
+  const IMG = "![re-review latch](/uploads/ab12/latch.png)";
+
+  test("an armed latch is not counted as a reviewer thread", () => {
+    const d = detail([
+      { notes: [note("reviewer", { body: "please fix" })] },
+      { notes: [note("reviewer", { body: armedLatchBody(IMG) })] },
+    ]);
+    const { threads } = summarizeDiscussions(d, AUTHOR);
+    expect(threads).toHaveLength(1);
+    expect(unresolvedReviewerCount(threads)).toBe(1);
+  });
+
+  // A spent latch is a RESOLVED thread, so without the exclusion it lands in
+  // threadSummary.resolved, which commentsAllResolved reads as a signal.
+  test("a spent latch is not counted as a resolved thread", () => {
+    const d = detail([
+      { notes: [note("reviewer", { body: spentLatchBody(IMG), resolved: true })] },
+    ]);
+    const { threads } = summarizeDiscussions(d, AUTHOR);
+    expect(threads).toHaveLength(0);
+  });
+
+  test("a latch is not counted as a general comment either", () => {
+    const d = detail([
+      { notes: [note("reviewer", { body: armedLatchBody(IMG), resolvable: false })] },
+    ]);
+    const { comments } = summarizeDiscussions(d, AUTHOR);
+    expect(comments).toHaveLength(0);
   });
 });

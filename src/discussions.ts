@@ -1,4 +1,5 @@
 import type { MRDetail } from "@mattstack/glance";
+import { latchKindOf } from "./latch/markers.ts";
 
 export type ThreadStatus = "resolved" | "replied" | "awaiting";
 
@@ -88,6 +89,7 @@ export function summarizeDiscussions(
   for (const d of detail.discussions) {
     const notes = d.notes.filter((n) => !n.system);
     if (!notes.length) continue;
+    if (latchKindOf(notes[0]!.body ?? "")) continue;
     const resolvable = notes.filter((n) => n.resolvable);
     if (!resolvable.length) {
       // No resolvable note ⇒ a general MR comment, not a review thread. Skip
