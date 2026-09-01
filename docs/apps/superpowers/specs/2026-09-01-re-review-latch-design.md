@@ -48,7 +48,14 @@ deliberate tradeoff.
 The rule is every disposal that leaves the latch **live**. The spend is the one
 terminal disposal and behaves the other way round: it resolves and rewrites the
 body instead of unresolving, and posts no reply, since the approving review has
-already commented and the rewritten banner says the latch is spent. A request refused for cooldown costs the author a second
+already commented and the rewritten banner says the latch is spent.
+
+The spend is two GitLab calls and is ordered `updateNote` **then**
+`resolveDiscussion`. A crash between them leaves a spent-but-unresolved latch,
+which step 1 of the pass repairs by re-resolving on the next tick. The reverse
+order would leave a resolved-but-unspent latch, which reads as a human request
+and costs a spurious dispatch plus a confusing "re-review started" reply on an
+MR that was just approved. A request refused for cooldown costs the author a second
 resolve click once the cooldown lifts, rather than the board remembering the
 pending request. Per-latch state was considered and rejected: it introduces a
 store to prune and a second source of truth that can drift from GitLab's actual
@@ -69,8 +76,9 @@ Unlike the server-driven spend, this one does not take the MR out of scope. The
 review state stays `done` with a `comment` outcome, so the pass keeps fetching
 that MR every tick until the state is pruned, and on every one of those ticks
 it reads a latch the board itself resolved. **The spend must therefore be
-idempotent**: a latch whose marker already reads `spent` is left alone. Without
-that, every tick re-runs `updateNote` and `resolveDiscussion` against GitLab.
+idempotent**, which the unconditional spent check above delivers: step 1 leaves
+an already-spent latch alone. Without it, every tick re-runs `updateNote` and
+`resolveDiscussion` against GitLab.
 
 ## Where the code lives
 
@@ -116,6 +124,24 @@ path uses at `src/server.ts:948`), the `iid`, and `reviews.isApproved` for the
 already-approved case above. The `projectPath` that `resolveDiscussion` and
 `unresolveDiscussion` want comes from `config.projects`.
 
+Order matters. For each MR in scope the pass reads the latch discussion and
+branches in exactly this order:
+
+1. **Spent marker present.** Do nothing. Unconditional, and first. If the
+   thread is also unresolved (a crash between the spend's two calls),
+   re-resolve it and stop. Never rearm a spent latch.
+2. **Not resolved.** Do nothing; the latch is armed and waiting.
+3. **Resolved, no spent marker.** A human resolved it. Spend it if the MR is
+   approved, otherwise run it through `decideNudge`.
+
+Putting the spent check ahead of everything is what holds the invariant under
+approval revocation. A project set to remove approvals when commits are added
+flips `isApproved` back to false after a spend, and the review state still
+reads `done`/`comment`, so the MR stays in scope. Without the unconditional
+check, the next tick would read a board-resolved latch as a human request,
+dispatch, and unresolve a spent latch, re-blocking the merge on a strict
+project.
+
 ### One decision function, two sources
 
 `decideNudge` (`src/triage/nudge.ts:20`) stays the only place a re-review
@@ -138,7 +164,8 @@ Two independent markers, and detection must never depend on the visual one.
 **Machine marker.** An HTML comment, `<!-- mattstack:board re-review-latch v1 -->`,
 as the first line of the latch's root note. Invisible when rendered,
 exact-match detectable, version-stamped for a future format change. A latch is
-identified by scanning a discussion's first note for this marker.
+identified by scanning a discussion's first note for one of the two v1 markers,
+this one and the spent form below.
 
 The spend rewrites it to `<!-- mattstack:board re-review-latch v1 spent -->`.
 That is both how a spent latch is recognized on a later tick and what makes the
@@ -216,14 +243,14 @@ feedback read as commented.
   GitLab first.
 - **Verifying who resolved the latch.** glance's `Note` type
   (`types.d.ts:608`) has no `resolved_by`, so the board cannot distinguish the
-  author from the reviewer resolving it. Stated conditionally, the invariant
-  still holds: both board resolve paths (the server's spend on an `approve`
-  outcome, and the pass's spend on an already-approved MR) require the MR to be
-  approved, so **on an MR that is not approved, every resolved transition the
-  pass reads was made by a human**. On an approved one the `isApproved` branch
-  routes the read to a spend rather than a dispatch, so a board-made resolve is
-  never mistaken for a request. The cooldown plus daily budget absorb a
-  misfire. Closing it properly is a third glance addition.
+  author from the reviewer resolving it. The spent marker carries the invariant
+  instead: both board resolve paths write `v1 spent` in the same disposal as
+  the resolve, and the spent check is unconditional and runs first, so **a
+  resolved latch without the spent marker was resolved by a human**.
+  `reviews.isApproved` chooses spend-versus-dispatch for live latches only and
+  plays no part in the invariant, which is what makes this survive approval
+  revocation. The cooldown plus daily budget absorb a misfire. Closing it
+  properly is a third glance addition.
 - **Focus hints.** Free-text in the latch reply steering the re-review ("just
   the migration path") is a natural extension of the thread, not v1.
 
@@ -239,9 +266,11 @@ own cases: a latch among unrelated threads, a latch whose image failed to
 upload (marker present, no image), and a `v2` marker a `v1` board must ignore
 rather than misread.
 
-The already-approved path needs its own two: a resolved latch on an approved
-MR spends instead of dispatching, and a second tick over an already-spent latch
-writes nothing.
+The already-approved path needs its own: a resolved latch on an approved MR
+spends instead of dispatching, and a second tick over an already-spent latch
+writes nothing. Two more pin the ordering: a spent latch on an MR whose
+approval was revoked is still left alone (never dispatched, never rearmed), and
+a spent-but-unresolved latch is re-resolved rather than treated as a request.
 
 The exclusion in `src/discussions.ts` needs a case proving an armed latch does
 not inflate `reviewerComments` or `threadSummary`, and a second for the spent
