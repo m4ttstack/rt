@@ -217,3 +217,35 @@ export function editPatch(m: {
   }
   return patch;
 }
+
+// ---- manifest command runs ----
+// The server already tracks one run per app: POST hands back a runId and GET
+// /commands/:cmd/:runId reports status + exitCode. These are the client half
+// of that contract.
+export const COMMAND_POLL_MS = 1000;
+export const COMMAND_TIMEOUT_MS = 600000;
+export const BOARD_WAIT_MS = 60000;
+
+/** `restarting` means the API stopped answering mid-run, which only happens
+    when the command took the board down with it (deck deploying itself). */
+export type CommandPhase = "running" | "restarting";
+export type CommandRuns = Record<string, CommandPhase>;
+
+// App names are bounded only by "no slash", so a printable separator could
+// collide across the pair; NUL cannot appear in either half.
+export function commandKey(app: string, cmd: string): string {
+  return `${app}\u0000${cmd}`;
+}
+
+export function commandButtonLabel(cmd: string, phase: CommandPhase | undefined): string {
+  if (phase === "restarting") return "restarting…";
+  return phase === "running" ? `${cmd}…` : cmd;
+}
+
+export function commandToast(app: string, cmd: string, exitCode: number): string {
+  return exitCode === 0 ? `${cmd} finished.` : `${cmd} failed (exit ${exitCode}) · deck logs ${app}`;
+}
+
+export function commandStuckToast(app: string, cmd: string): string {
+  return `${cmd} is still running after 10 minutes · deck logs ${app}`;
+}

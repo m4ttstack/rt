@@ -3,7 +3,15 @@
 import { useState } from "react";
 import { Badge, Button, Chip, Icon, ICONS, Spinner, StatusDot, Table, TextField, Tooltip } from "@mattstack/tui-kit";
 import { OptimisticSwitch } from "./optimistic.tsx";
-import { isPlatform, showDevLinkPrompt, type Row, type StatusData } from "./logic.ts";
+import {
+  commandButtonLabel,
+  commandKey,
+  isPlatform,
+  showDevLinkPrompt,
+  type CommandRuns,
+  type Row,
+  type StatusData,
+} from "./logic.ts";
 import type { BoardState } from "./useBoardState.ts";
 
 /** A lucide globe as one path (subpaths joined with explicit `M`, the same
@@ -43,7 +51,7 @@ export function AppsTable({
   onOpenRow,
   registerChevron,
 }: { section: AppsSection; showHead: boolean; data: StatusData; board: BoardState } & DrawerRowProps) {
-  const { isRestarting, onRestart, onRunCommand, linkSource, onPublish } = board;
+  const { isRestarting, onRestart, onRunCommand, commandRuns, linkSource, onPublish } = board;
   return (
     <Table className="apps-grid">
       <colgroup>
@@ -99,7 +107,13 @@ export function AppsTable({
                 <RestartCell row={row} data={data} restarting={restarting} onRestart={onRestart} />
               </Table.Cell>
               <Table.Cell>
-                <CommandsCell row={row} canManage={data.canManage} onRunCommand={onRunCommand} linkSource={linkSource} />
+                <CommandsCell
+                  row={row}
+                  canManage={data.canManage}
+                  onRunCommand={onRunCommand}
+                  commandRuns={commandRuns}
+                  linkSource={linkSource}
+                />
               </Table.Cell>
               <Table.Cell>
                 <ChevronCell row={row} registerRef={(el) => registerChevron(row.name, el)} />
@@ -353,11 +367,13 @@ function CommandsCell({
   row,
   canManage,
   onRunCommand,
+  commandRuns,
   linkSource,
 }: {
   row: Row;
   canManage: boolean;
   onRunCommand: (row: Row, name: string) => void;
+  commandRuns: CommandRuns;
   linkSource: (row: Row, workingDirectory: string) => Promise<string | null>;
 }) {
   // The platform's own row never gets Link/Unlink: bootstrapSelf owns its serve
@@ -373,11 +389,21 @@ function CommandsCell({
   }
   return (
     <>
-      {(row.commands ?? []).map((name) => (
-        <Button key={name} variant="subtle" size="sm" aria-label={`${name} ${row.name}`} onClick={() => onRunCommand(row, name)}>
-          {name}
-        </Button>
-      ))}
+      {(row.commands ?? []).map((name) => {
+        const phase = commandRuns[commandKey(row.name, name)];
+        return (
+          <Button
+            key={name}
+            variant="subtle"
+            size="sm"
+            busy={phase != null}
+            aria-label={`${name} ${row.name}`}
+            onClick={() => onRunCommand(row, name)}
+          >
+            {commandButtonLabel(name, phase)}
+          </Button>
+        );
+      })}
     </>
   );
 }

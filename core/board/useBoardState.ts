@@ -6,17 +6,26 @@
 // leaving `checked`-backing state untouched on a failed request already
 // re-renders the control back to the server's last-known truth.
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useToasts } from "@mattstack/tui-kit";
 import { apiDelete, apiPatch, apiPost, apiPut, getStatus, pushRemote as postPushRemote, setRemote as postSetRemote } from "./api.ts";
 import {
+  BOARD_WAIT_MS,
+  COMMAND_POLL_MS,
+  COMMAND_TIMEOUT_MS,
   PROXY_WAIT_MS,
   REFRESH_MS,
   addPayload,
   autoBanner,
+  commandKey,
+  commandStuckToast,
+  commandToast,
   editPatch,
   reconcileRestarting,
   sections as sectionsOf,
   subline as sublineOf,
   tunnels as tunnelsOf,
+  type CommandPhase,
+  type CommandRuns,
   type Notice,
   type RestartingMap,
   type Row,
@@ -80,6 +89,57 @@ async function waitForProxy(timeoutMs: number): Promise<boolean> {
   return false;
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Poll until the board's API answers again, for the case where a command
+    restarted the board itself. Unlike waitForProxy this needs no drop to have
+    been observed first: the caller only calls it having already seen one. */
+async function waitForBoard(timeoutMs: number): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await sleep(1000);
+    try {
+      if ((await fetch("/healthz", { cache: "no-store" })).ok) return true;
+    } catch {
+      /* still down */
+    }
+  }
+  return false;
+}
+
+type RunOutcome = { exitCode: number } | "restarted" | "timeout";
+
+/** Follow one command run to its end. `onDrop` fires once, the first time the
+    API stops answering, so the button can say so while the poll continues. */
+async function pollCommandRun(
+  app: string,
+  cmd: string,
+  runId: string,
+  onDrop: () => void,
+): Promise<RunOutcome> {
+  const deadline = Date.now() + COMMAND_TIMEOUT_MS;
+  let dropped = false;
+  while (Date.now() < deadline) {
+    await sleep(COMMAND_POLL_MS);
+    let res: Response;
+    try {
+      res = await fetch(`/api/v1/apps/${app}/commands/${cmd}/${runId}`, { cache: "no-store" });
+    } catch {
+      if (!dropped) {
+        dropped = true;
+        onDrop();
+      }
+      continue;
+    }
+    // Runs live in the server's memory, so a runId it just handed out can only
+    // go unknown by the process having restarted under us.
+    if (res.status === 404) return "restarted";
+    const st = (await res.json().catch(() => ({}))) as { status?: string; exitCode?: number };
+    if (st.status === "exited") return { exitCode: st.exitCode ?? 0 };
+  }
+  return "timeout";
+}
+
 export function useBoardState() {
   const [data, setData] = useState<StatusData | null>(null);
   const [restarting, setRestarting] = useState<RestartingMap>({});
@@ -91,6 +151,9 @@ export function useBoardState() {
   const [pendingUnlink, setPendingUnlink] = useState<Row | null>(null);
   const [proxyNotice, setProxyNotice] = useState<Notice | null>(null);
   const [reloadingProxy, setReloadingProxy] = useState(false);
+  const [commandRuns, setCommandRuns] = useState<CommandRuns>({});
+  const commandRunsRef = useRef<CommandRuns>({});
+  const { toasts, addToast } = useToasts();
 
   // refresh() runs off a setInterval closure, so it reads `editing` through a
   // ref rather than the state value -- otherwise it would always see the
@@ -147,11 +210,61 @@ export function useBoardState() {
     apiPost(`/api/v1/apps/${row.name}/restart`).catch(() => {});
   }, []);
 
-  // Swallow the rejection: a self-restarting deploy kills the API mid-POST,
-  // exactly like onRestart; the 5s poll re-syncs once it returns.
-  const onRunCommand = useCallback((row: Row, name: string) => {
-    apiPost(`/api/v1/apps/${row.name}/commands/${name}`).catch(() => {});
+  // The ref is authoritative and the state mirrors it for rendering: the
+  // async run loop below has to test and set the in-flight guard across
+  // awaits, where a captured state value is already stale.
+  const setCommandPhase = useCallback((key: string, phase: CommandPhase | null) => {
+    const next = { ...commandRunsRef.current };
+    if (phase === null) delete next[key];
+    else next[key] = phase;
+    commandRunsRef.current = next;
+    setCommandRuns(next);
   }, []);
+
+  const onRunCommand = useCallback(
+    async (row: Row, cmd: string) => {
+      const key = commandKey(row.name, cmd);
+      if (commandRunsRef.current[key]) return;
+      setCommandPhase(key, "running");
+
+      let runId: string | null = null;
+      try {
+        const res = await apiPost(`/api/v1/apps/${row.name}/commands/${cmd}`);
+        const body = (await res.json().catch(() => ({}))) as { runId?: string; error?: string };
+        if (!res.ok) {
+          addToast(body.error === "busy" ? `${cmd} is already running.` : `${cmd} could not start (${res.status}).`);
+          setCommandPhase(key, null);
+          return;
+        }
+        runId = body.runId ?? null;
+      } catch {
+        runId = null; // died before answering: the restart branch below owns it
+      }
+
+      const outcome = runId
+        ? await pollCommandRun(row.name, cmd, runId, () => setCommandPhase(key, "restarting"))
+        : "restarted";
+
+      if (outcome === "restarted") {
+        setCommandPhase(key, "restarting");
+        // Everything on screen came from the binary that just went away, the
+        // board bundle included, so refreshing state would leave the old page
+        // running against the new server.
+        if (await waitForBoard(BOARD_WAIT_MS)) {
+          location.reload();
+          return;
+        }
+        addToast(`${cmd}: deck did not come back within 60s.`);
+        setCommandPhase(key, null);
+        return;
+      }
+
+      setCommandPhase(key, null);
+      addToast(outcome === "timeout" ? commandStuckToast(row.name, cmd) : commandToast(row.name, cmd, outcome.exitCode));
+      await refresh();
+    },
+    [addToast, refresh, setCommandPhase],
+  );
 
   // ---- dev-mode source linking ----
   // Unlike onRunCommand/onRestart, a link attempt reports its own error
@@ -562,6 +675,8 @@ export function useBoardState() {
     refresh,
     onRestart,
     onRunCommand,
+    commandRuns,
+    toasts,
     linkSource,
     unlinkSource,
     onPublish,

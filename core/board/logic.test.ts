@@ -16,6 +16,10 @@ import {
   autoBanner,
   addPayload,
   editPatch,
+  commandKey,
+  commandButtonLabel,
+  commandToast,
+  commandStuckToast,
   type StatusData,
   type Row,
   type RestartingMap,
@@ -318,4 +322,26 @@ test("editPatch: external kind omits command and workingDirectory", () => {
   expect(
     editPatch({ name: "ext", port: "4300", kind: "external", command: "", workingDirectory: "" }),
   ).toEqual({ name: "ext", port: 4300 });
+});
+
+// ---- command runs ----
+
+test("commandKey: one app's command never collides with another's", () => {
+  expect(commandKey("deck", "deploy")).not.toBe(commandKey("deck deploy", ""));
+  expect(commandKey("app", "build")).toBe(commandKey("app", "build"));
+});
+
+test("commandButtonLabel: idle is the bare command, running trails it, restarting replaces it", () => {
+  expect(commandButtonLabel("deploy", undefined)).toBe("deploy");
+  expect(commandButtonLabel("deploy", "running")).toBe("deploy…");
+  expect(commandButtonLabel("deploy", "restarting")).toBe("restarting…");
+});
+
+test("commandToast: exit 0 stays quiet about logs, a failure carries the exit code and the log verb", () => {
+  expect(commandToast("myapp", "build", 0)).toBe("build finished.");
+  expect(commandToast("myapp", "build", 1)).toBe("build failed (exit 1) · deck logs myapp");
+});
+
+test("commandStuckToast: names the app to look at rather than claiming an outcome", () => {
+  expect(commandStuckToast("myapp", "deploy")).toBe("deploy is still running after 10 minutes · deck logs myapp");
 });
