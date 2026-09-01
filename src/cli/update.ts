@@ -1,7 +1,7 @@
 import { chmodSync, renameSync } from "fs";
 import { basename } from "path";
 
-export const REPO = "m4ttheweric/deck";
+export const REPO = "m4ttstack/deck";
 
 export function pickAsset(platform: string, arch: string): string {
   if (platform === "darwin" && arch === "arm64") return "deck-darwin-arm64";

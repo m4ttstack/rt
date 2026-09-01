@@ -9,12 +9,8 @@ if [ ! -f package.json ] || [ ! -d core ] || [ ! -d src ]; then
 fi
 
 echo "== purity greps =="
-    # update.ts/update.test.ts/release.sh carry the sanctioned REPO constant
-    # (the plan's one-constant repo-rename rule) -- "m4ttheweric" matches the
-    # "m4tthew" substring but is a legitimate, intentional value, not a leak.
 hits=$(grep -rn --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=.local-dev \
     --exclude-dir=docs --exclude=migrate.ts --exclude=migrate.test.ts --exclude=certify.sh \
-    --exclude=update.ts --exclude=update.test.ts --exclude=release.sh \
     -e "m4tthew" -e "matthewgoodwin" -e "/Users/matt" \
     core src scripts package.json README.md 2>/dev/null) || true
 if [ -n "$hits" ]; then

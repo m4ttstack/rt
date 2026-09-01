@@ -9,6 +9,6 @@ test("pickAsset matches this platform's naming", () => {
 
 test("latestAssetUrl reads the SAME releases the installer uses", () => {
   expect(latestAssetUrl("deck-darwin-arm64")).toBe(
-    "https://github.com/m4ttheweric/deck/releases/latest/download/deck-darwin-arm64",
+    "https://github.com/m4ttstack/deck/releases/latest/download/deck-darwin-arm64",
   );
 });
