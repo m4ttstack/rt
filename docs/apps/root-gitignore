@@ -32,3 +32,5 @@ storybook-static
 # adopting-mantine-kit skill). Ignored so a `git add -A` cannot sweep one in.
 FEEDBACK-*.md
 design/artboards/canvas.json
+dist-bin
+src/server/embedded/manifest.ts
