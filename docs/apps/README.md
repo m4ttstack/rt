@@ -1,55 +1,89 @@
 # mattstack-console
 
-A local web app for the mattstack pipeline: what's running, what needs you, and what a run
-actually did. One `Bun.serve` process (Hono) serves a built Vite SPA and an `/api` + `/ws` surface
-backed by `@mattstack/rt-client`, called in-process — no shelling out to `rt`, and nothing proxied
-through to another service.
+_Part of the [mattstack](https://github.com/m4ttstack) estate, alongside [`rt`](https://github.com/m4ttstack/rt),
+[`deck`](https://github.com/m4ttstack/deck), and [herdr](https://github.com/herdrdev/herdr)._
 
-Built on `@mattstack/app-kit`: Mantine 9, React 19, Vite, and Bun, with the shell, theme, and
-Mantine facades layered on top (see `AGENTS.md` for console's own contract, and
-`~/Documents/GitHub/app-kit/AGENTS.md` for the kit's).
+Console is the management console for mattstack: a local web app that shows what's running, what
+needs you, and what a run actually did. It reads run state, wiring, and settings straight through
+[`@mattstack/rt-client`](https://www.npmjs.com/package/@mattstack/rt-client), the same client the
+`rt` CLI and daemon use, so there's no separate database and no write path the CLI doesn't already
+have.
 
-## What it talks to
+## Features
 
-`src/server/*` reads pipeline run state, decisions, and settings through `@mattstack/rt-client`,
-which resolves against the same `~/.rt/` and `~/.mattstack/` state the `rt` CLI and daemon use.
-There's no separate console database and no write path the CLI doesn't also have — the console is
-a view onto the same substrate.
+- **Run board**: a live view of every pipeline run, with aging, liveness, and stage-progress
+  indicators.
+- **Run detail**: timeline, failure excerpts, command provenance, and effective inputs for a
+  single run.
+- **Search**: find a run across the whole board.
+- **Wiring map**: visualizes the skill/pipeline graph, its surfaces, seams, health, and version
+  history.
+- **Settings explorer**: inspect and edit settings across their layered scopes (default, user,
+  team, machine), staging a change before it's written.
+- **Command palette** (`mod+K`): jump straight to a run, a config key, or a nav action.
+- **Live updates**: the board and run pages update over WebSocket as runs change, no polling.
+- **Single-binary distribution**: ships as one self-contained executable with its built assets
+  embedded, no `dist/` or `node_modules` alongside it.
 
-## Dev
+## Installation
+
+Console needs [Bun](https://bun.sh) and reads its data through `@mattstack/rt-client`, so it's
+most useful once `rt` itself is set up locally; without that, the board and settings pages just
+start out empty.
+
+```bash
+git clone https://github.com/m4ttstack/console.git
+cd console
+bun install
+```
+
+## Usage
+
+### Local development
 
 Two processes: Vite serves the SPA with hot reload, and the Bun/Hono server answers `/api` and
 `/ws`. Vite's dev proxy (`vite.config.ts`) forwards both to `http://127.0.0.1:11011`, so the server
 must be listening there (its default `PORT`).
 
 ```bash
-bun install
-bun run dev:server   # Bun + Hono API, hot-reloaded, port 11011
-bun run dev           # Vite, in a second terminal
+$ bun run dev:server   # Bun + Hono API, hot-reloaded, port 11011
+$ bun run dev           # Vite, in a second terminal
 ```
 
 Open the Vite URL it prints; API and WebSocket calls transparently reach the Bun server.
 
-## Production
+### Production
 
 ```bash
-bun run build   # tsc -p tsconfig.json, then vite build -> dist/
-bun run serve   # bun run src/server/index.ts
+$ bun run build   # tsc -p tsconfig.json, then vite build -> dist/
+$ bun run serve   # bun run src/server/index.ts
 ```
 
 One process, one port. It serves `dist/` (assets, fonts, `index.html`) and answers `/api` and `/ws`
-itself — no Vite involved. Port defaults to `11011`; override with `PORT`.
+itself, with no Vite involved.
+
+### Single binary
 
 ```bash
-bun run build:binary   # vite build, embed dist/ into a manifest, bun --compile -> dist-bin/console
+$ bun run build:binary   # vite build, embed dist/ into a manifest, bun --compile -> dist-bin/console
 ```
 
-A single self-contained executable with no `dist/` or `node_modules` alongside it: `vite build`
-produces `dist/`, `mattstack-embed-assets` (from `@mattstack/app-server`) embeds it into a
-generated manifest, and `bun build --compile` bundles the server plus that manifest into
-`dist-bin/console`.
+`vite build` produces `dist/`, `mattstack-embed-assets` (from `@mattstack/app-server`) embeds it
+into a generated manifest, and `bun build --compile` bundles the server plus that manifest into
+`dist-bin/console`: a single self-contained executable that serves itself with no `dist/` or
+`node_modules` next to it.
 
-## Scripts
+## Configuration
+
+| Variable | Default | What it does                                                                                     |
+| -------- | ------- | ------------------------------------------------------------------------------------------------ |
+| `PORT`   | `11011` | Port the Bun server listens on, in both dev (`dev:server`) and production (`serve`, the binary). |
+
+Console has no config file of its own. Everything else it reads or writes is a setting in the
+shared mattstack settings store (default, user, team, and machine scopes), the same one `rt`
+reads. Browse and edit those values from the in-app settings pages rather than hand-editing files.
+
+## Development
 
 | Script                 | What it does                                                             |
 | ---------------------- | ------------------------------------------------------------------------ |
@@ -65,9 +99,29 @@ generated manifest, and `bun build --compile` bundles the server plus that manif
 | `bun run format:check` | Check formatting without writing (what CI runs).                         |
 | `bun run preview`      | Preview the production Vite build locally (SPA only, no `/api`).         |
 
-## Learn more
+Console is built on `@mattstack/app-kit` (Mantine 9, React 19, Vite, and Bun, with the shell,
+theme, and Mantine facades layered on top) and `@mattstack/app-server`. Both, along with
+`@mattstack/mantine-tokyo`, are vendored as `file:` tarball dependencies (see `package.json`); Bun
+copies a `file:` dependency into `node_modules` rather than symlinking it, so bumping one means
+dropping in a new tarball and re-running `bun install`.
 
-- `AGENTS.md` — console's own contract: routes, the runs domain, the wiring map, the embedded
-  binary pipeline, and where the vendored packages live.
-- `~/Documents/GitHub/app-kit/AGENTS.md` — the kit's contract: import walls, the shell, theme,
-  facades (modals, notifications, forms), the icon registry, and the server package.
+See `AGENTS.md` for console's own contract (routes, the runs domain, the wiring map, and the
+embedded-binary pipeline) and `~/Documents/GitHub/app-kit/AGENTS.md` for the kit's.
+
+## Contributing
+
+This repo is currently private. If you have access, open a PR against `main`; CI runs the same
+checks below on every push:
+
+```bash
+bun run format:check
+bun run lint
+bun run typecheck
+bun run test -- --run
+bun run build
+bun run build:binary
+```
+
+## License
+
+MIT, see [LICENSE](LICENSE).
