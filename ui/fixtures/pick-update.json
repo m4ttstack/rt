@@ -1,6 +1,8 @@
 {
   "t": "update",
   "message": "rt cd (acme0-dev worktrees)",
+  "breadcrumb": ["rt", "cd", "acme0-dev worktrees"],
+  "resetQuery": true,
   "rows": [
     {
       "value": "/Users/matt/Documents/GitHub/acme0-dev/.worktrees/hedwig",
