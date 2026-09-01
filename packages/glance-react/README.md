@@ -1,50 +1,55 @@
-# @forge-glance/react
+# @mattstack/glance-react
 
-React component library for Forge Glance — pre-themed MR dashboards, CI badges, and base primitives powered by the [GDS](https://graphite.dev) design system.
+React components and hooks for [`@mattstack/glance`](../glance): pre-themed MR
+dashboard cards, rows, reviewer and pipeline badges, and a small set of base
+UI primitives, all built on Radix UI with a bundled design-token CSS system
+(internal token prefix `gds`) that switches with a `.dark` class on `<html>`.
 
 ## Install
 
 ```bash
-npm install @forge-glance/react @forge-glance/sdk
+npm install @mattstack/glance-react @mattstack/glance
 # or
-bun add @forge-glance/react @forge-glance/sdk
+bun add @mattstack/glance-react @mattstack/glance
 ```
 
 ## Quick Start
 
 ```tsx
-import '@forge-glance/react/styles.css';
-import { MRCard, Button, Badge } from '@forge-glance/react';
+import '@mattstack/glance-react/styles.css';
+import { MRCard, Button, Badge } from '@mattstack/glance-react';
 ```
 
-The CSS import brings in all tokens, utilities, and component styles — no Tailwind required on your end.
+The CSS import brings in all tokens, utilities, and component styles... no Tailwind required on your end.
 
 ---
 
 ## Dashboard Integration
 
-The dashboard API provides real-time MR data and pre-bound mutation actions. There are three integration patterns depending on your architecture:
+The dashboard API lives in [`@mattstack/glance`](../glance) and provides
+real-time MR data plus pre-bound mutation actions (`merge`, `rebase`,
+`approve`, and more). The full `createDashboard` / `DashboardGroup` /
+`MRDashboardActions` reference is in
+[`packages/glance/README.md`](../glance/README.md#dashboard-api); this
+section covers the React-specific ways to consume it.
 
-### 1. React Hook — `useDashboard`
+### 1. React Hook: `useDashboard`
 
-The simplest approach for standard React apps. Handles the subscription lifecycle and state internally.
+The simplest approach for standard React apps. Wraps `createDashboard` and handles the subscription lifecycle internally.
 
 ```tsx
-import '@forge-glance/react/styles.css';
-import { useDashboard, MRCard, MRRow } from '@forge-glance/react';
+import '@mattstack/glance-react/styles.css';
+import { useDashboard, MRCard, MRCardError } from '@mattstack/glance-react';
 
 function MergeRequestDashboard({ provider, projectPath, mrIid, userId }) {
-  const { mr, actions, status } = useDashboard({
+  const { mr, actions, isInitialLoading, error } = useDashboard({
     provider, projectPath, mrIid, userId
   });
 
-  if (status === 'connecting' || !mr) return <p>Loading…</p>;
+  if (error) return <MRCardError error={error} />;
+  if (isInitialLoading || !mr) return <MRCard loading />;
 
-  // Full card view — status, pipeline, reviewers, merge/rebase actions
-  return <MRCard mr={mr} actions={actions} />;
-
-  // Or use the compact row view — same props, different layout
-  // return <MRRow mr={mr} actions={actions} />;
+  return <MRCard mr={mr} actions={actions ?? undefined} />;
 }
 ```
 
@@ -53,17 +58,19 @@ function MergeRequestDashboard({ provider, projectPath, mrIid, userId }) {
 | Field | Type | Description |
 |---|---|---|
 | `mr` | `MRDashboardProps \| null` | Render-ready props. `null` until first update. |
-| `actions` | `MRDashboardActions` | Pre-bound mutations (merge, rebase, approve, etc.) |
-| `status` | `'connecting' \| 'watching'` | Subscription state |
+| `actions` | `MRDashboardActions \| null` | Pre-bound mutations (merge, rebase, approve, etc.). `null` until an MR is resolved (relevant for branch-based dashboards). |
+| `isInitialLoading` | `boolean` | `true` until the first data payload arrives. |
+| `connectionStatus` | `'connecting' \| 'connected' \| 'disconnected' \| 'reconnecting' \| 'idle'` | WebSocket / push connection state. |
+| `error` | `Error \| null` | Last error from the realtime watcher, if any. |
 
 ### 2. SDK + State Manager (Zustand, Redux, etc.)
 
 Use `createDashboard` from the SDK directly when you manage state outside React (e.g., Zustand stores).
 
 ```tsx
-import { createDashboard } from '@forge-glance/sdk';
+import { createDashboard } from '@mattstack/glance';
 import { create } from 'zustand';
-import type { MRDashboardProps, MRDashboardActions } from '@forge-glance/sdk';
+import type { MRDashboardProps, MRDashboardActions } from '@mattstack/glance';
 
 // Create the store
 const useMRStore = create<{
@@ -74,34 +81,32 @@ const useMRStore = create<{
   actions: null,
 }));
 
-// Wire up the dashboard — call once on mount
-const { actions, subscribe, dispose } = createDashboard({
-  provider, projectPath: 'group/project', mrIid: 42, userId
-});
+// Wire up the dashboard, call once on mount
+const dashboard = createDashboard({ provider, projectPath: 'group/project', mrIid: 42, userId });
 
-// actions is available immediately — stable reference
-useMRStore.setState({ actions });
+// actions are available immediately (stable reference)
+useMRStore.setState({ actions: dashboard.actions });
 
 // subscribe feeds real-time MR updates into the store
-subscribe((mr) => useMRStore.setState({ mr }));
+dashboard.subscribe((mr) => useMRStore.setState({ mr }));
 
 // Later, when tearing down:
-dispose();
+dashboard.dispose();
 ```
 
 Then in your React component:
 
 ```tsx
-import '@forge-glance/react/styles.css';
-import { MRCard } from '@forge-glance/react';
+import '@mattstack/glance-react/styles.css';
+import { MRCard } from '@mattstack/glance-react';
 
 function Dashboard() {
   const mr = useMRStore((s) => s.mr);
   const actions = useMRStore((s) => s.actions);
 
-  if (!mr) return <p>Loading…</p>;
+  if (!mr) return <MRCard loading />;
 
-  return <MRCard mr={mr} actions={actions} />;
+  return <MRCard mr={mr} actions={actions ?? undefined} />;
 }
 ```
 
@@ -110,12 +115,12 @@ function Dashboard() {
 For displaying MR data without mutation buttons, simply omit the `actions` prop:
 
 ```tsx
-import { useDashboard, MRCard } from '@forge-glance/react';
+import { useDashboard, MRCard } from '@mattstack/glance-react';
 
 function ReadOnlyCard({ provider, projectPath, mrIid, userId }) {
   const { mr } = useDashboard({ provider, projectPath, mrIid, userId });
 
-  if (!mr) return <p>Loading…</p>;
+  if (!mr) return <MRCard loading />;
 
   // No actions prop → buttons are hidden / disabled
   return <MRCard mr={mr} />;
@@ -127,49 +132,21 @@ function ReadOnlyCard({ provider, projectPath, mrIid, userId }) {
 Watch multiple MRs over a single connection:
 
 ```tsx
-import { createDashboard } from '@forge-glance/sdk';
-import { MRRow } from '@forge-glance/react';
+import { createDashboard } from '@mattstack/glance';
+import { MRRow } from '@mattstack/glance-react';
 
-const { actionsFor, subscribe, dispose } = createDashboard({
+const group = createDashboard({
   provider, projectPath: 'group/project',
   mrIid: [42, 43, 44, 45],
   userId
 });
 
-subscribe((mrs) => {
+group.subscribe((mrs) => {
   for (const [iid, mr] of mrs) {
-    renderRow(mr, actionsFor(iid));
+    renderRow(mr, group.actionsFor(iid));
   }
 });
 ```
-
-### `createDashboard` Return Shape
-
-```ts
-const { actions, subscribe, dispose } = createDashboard(provider, path, iid, userId);
-```
-
-| Property | Type | Description |
-|---|---|---|
-| `actions` | `MRDashboardActions` | Pre-bound mutations — available immediately |
-| `subscribe(cb)` | `(listener: (mr: MRDashboardProps) => void) => void` | Register a listener for real-time MR updates |
-| `dispose()` | `() => void` | Stop the subscription and clean up |
-
-### `MRDashboardActions`
-
-Actions are pre-bound to the specific MR — no need to pass project path or IID:
-
-| Action | Description |
-|---|---|
-| `merge(input?)` | Merge the MR (optional merge options) |
-| `rebase()` | Rebase onto target branch |
-| `approve()` | Approve the MR |
-| `unapprove()` | Remove your approval |
-| `setAutoMerge()` | Enable auto-merge when pipeline passes |
-| `cancelAutoMerge()` | Cancel auto-merge |
-| `retryPipeline(id)` | Retry a specific pipeline |
-| `requestReReview(usernames?)` | Request re-review |
-| `can` | Provider capability flags |
 
 ---
 
@@ -177,17 +154,27 @@ Actions are pre-bound to the specific MR — no need to pass project path or IID
 
 ### Forge Components
 
-Built for GitLab/GitHub merge request dashboards. Feed them [`MRDashboardProps`](../sdk) from `@forge-glance/sdk`.
+Built for GitLab/GitHub merge request dashboards. Feed them [`MRDashboardProps`](../glance) from `@mattstack/glance`.
 
 | Component | Description |
 |---|---|
-| `MRCard` | Full MR card — status, pipeline, reviewers, merge/rebase actions, forge icon link |
-| `MRRow` | Compact MR row for list views |
-| `MRRowList` | Renders a list of `MRRow` items |
-| `MRStatusBadge` | Status badge — mergeable, blocked, draft, merged, closed |
-| `PipelineBadge` | CI pipeline badge — passing, failing, running, warnings |
-| `ReviewerList` | Reviewer avatars with approval state badges |
-| `ReviewerRow` | Single reviewer row (used by `ReviewerList`) |
+| `MRCard` | Full MR card: status, pipeline, reviewers, merge/rebase actions, forge icon link. Accepts `loading` for a skeleton state. |
+| `MRCardError` | Error banner for a dashboard component. `standalone` replaces the card; `inline` is a slim banner. |
+| `MRRow` | Compact MR row for list views. |
+| `MRRowList` | Renders a list of `MRRow` items. |
+| `MRNode` | Minimal MR representation for graph/tree views. |
+| `MRSidebar` | Sidebar panel pairing an MR with related tickets. |
+| `MRStatusBadge` | Status badge: mergeable, blocked, draft, merged, closed. |
+| `PipelineBadge` | CI pipeline badge: passing, failing, running, warnings. |
+| `ConnectionStatusBadge` | Small badge reflecting `connectionStatus` from `useDashboard`. |
+| `ReviewerList` | Reviewer avatars with approval state badges. |
+| `ReviewerRow` | Single reviewer row (used by `ReviewerList`). |
+
+`MRCard` is also available as smaller composable pieces (`MRHeader`,
+`MRStatusCard`, `MRActions`, `PipelineStatus`, `ReviewerStatus`,
+`BlockerList`, `StatusIcon`, `ExpandChevron`, and skeleton variants of the
+above) for consumers assembling their own layout; see
+[`lib/main.ts`](lib/main.ts) for the full export list.
 
 Both `MRCard` and `MRRow` accept an optional `actions` prop. When provided, the SDK actions
 take precedence over individual `onMerge`/`onRebase` callbacks (which still work for backward compatibility).
@@ -195,7 +182,7 @@ take precedence over individual `onMerge`/`onRebase` callbacks (which still work
 ### Brand Icons
 
 ```tsx
-import { GitLabIcon, GitHubIcon, IconButton } from '@forge-glance/react';
+import { GitLabIcon, GitHubIcon, IconButton } from '@mattstack/glance-react';
 
 <IconButton variant="ghost" aria-label="Open in GitLab">
   <GitLabIcon className="size-4" />
@@ -206,7 +193,7 @@ import { GitLabIcon, GitHubIcon, IconButton } from '@forge-glance/react';
 |---|---|
 | `GitLabIcon` | GitLab tanuki logo (official brand colors) |
 | `GitHubIcon` | GitHub octocat logo (uses `currentColor`) |
-| `IconButton` | Square icon-only button wrapper — supports all Button variants and colors |
+| `IconButton` | Square icon-only button wrapper, supports all Button variants and colors |
 
 ### Base Primitives
 
@@ -217,8 +204,9 @@ Themed variants of common UI elements. Built on [Radix UI](https://radix-ui.com)
 | `Button` | `filled` `outline` `subtle` `ghost` `link` | `emphasis` `action` `positive` `negative` `caution` `merge` `neutral` |
 | `IconButton` | `filled` `outline` `subtle` `ghost` | `emphasis` `action` `positive` `negative` `caution` `merge` `neutral` |
 | `Badge` | `filled` `outline` `subtle` | `emphasis` `action` `positive` `negative` `caution` `merge` `neutral` |
-| `Switch` | — | — |
-| `Tooltip` | — | — |
+| `Switch` | n/a | n/a |
+| `Skeleton` | n/a | n/a |
+| `Row` / `Stack` | flex row/column layout helpers | n/a |
 
 ## Theming
 
@@ -232,11 +220,11 @@ document.documentElement.classList.toggle('dark');
 
 ### Using Tokens in Your Own Tailwind Setup
 
-If you want to use the GDS tokens as Tailwind utilities in your own code, import `tokens.css` instead of `styles.css`:
+If you want to use the design tokens as Tailwind utilities in your own code, import `tokens.css` instead of `styles.css`:
 
 ```css
 @import 'tailwindcss';
-@import '@forge-glance/react/tokens.css';
+@import '@mattstack/glance-react/tokens.css';
 
 @theme inline {
   --color-positive: var(--positive);
@@ -246,9 +234,14 @@ If you want to use the GDS tokens as Tailwind utilities in your own code, import
 }
 ```
 
+An app that already defines its own `@theme` (and doesn't want a second
+`@import 'tailwindcss'`) can instead import `utilities.css`, which supplies
+just the `@utility` shorthands the components use, given the same token
+names are defined in that app's theme.
+
 ### Overriding Tokens
 
-All component colors are CSS custom properties — override any token to retheme:
+All component colors are CSS custom properties; override any token to retheme:
 
 ```css
 :root {
@@ -259,16 +252,17 @@ All component colors are CSS custom properties — override any token to retheme
 
 ## SDK Types
 
-Common types are re-exported so you don't need to install `@forge-glance/sdk` separately for types:
+Common types are re-exported so you don't need to install `@mattstack/glance` separately for types:
 
 ```tsx
 import type {
   MRDashboardProps,
   MRDashboardActions,
   Dashboard,
+  DashboardGroup,
   MRStatus,
   Reviewer,
-} from '@forge-glance/react';
+} from '@mattstack/glance-react';
 ```
 
 ## Development
@@ -282,13 +276,8 @@ bun run build          # production build → dist/
 
 ### Releasing
 
-This package uses [@changesets/cli](https://github.com/changesets/changesets) for independent versioning:
-
-```bash
-bun changeset          # create a changeset after making changes
-bun run version        # apply changesets → bump versions + changelogs
-bun run release        # build + npm publish + git tags
-```
+Versions are bumped by hand in `package.json` and published with `npm publish`,
+gated by the `prepublishOnly` script (`check-types` then `build`).
 
 ## License
 
