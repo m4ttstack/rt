@@ -51,11 +51,14 @@ body instead of unresolving, and posts no reply, since the approving review has
 already commented and the rewritten banner says the latch is spent.
 
 The spend is two GitLab calls and is ordered `updateNote` **then**
-`resolveDiscussion`. A crash between them leaves a spent-but-unresolved latch,
-which step 1 of the pass repairs by re-resolving on the next tick. The reverse
-order would leave a resolved-but-unspent latch, which reads as a human request
-and costs a spurious dispatch plus a confusing "re-review started" reply on an
-MR that was just approved. A request refused for cooldown costs the author a second
+`resolveDiscussion`. A crash between them leaves a spent-but-unresolved
+latch, which step 1 repairs by re-resolving on the next tick, whichever driver
+performed the spend. Every rewrite-first residue is repaired silently. The
+reverse order leaves a resolved-but-unspent latch, which is indistinguishable
+from a human request: usually harmless, since branch 3 re-spends it on a
+still-approved MR, but if approval was revoked in the meantime it becomes a
+real dispatch and a "re-review started" reply to an author who was just
+approved. A request refused for cooldown costs the author a second
 resolve click once the cooldown lifts, rather than the board remembering the
 pending request. Per-latch state was considered and rejected: it introduces a
 store to prune and a second source of truth that can drift from GitLab's actual
@@ -99,25 +102,32 @@ skill.
 
 `notifyBoard` is deliberately best-effort ("a board that is down or restarting
 must never fail the agent's status write"), so a review that finishes while the
-board is down would never get a latch. The triage pass below reconciles this:
-it already walks every review state with a `comment` outcome, so a missing
-latch is posted on the next tick. The feature is self-healing.
+board is down would never get a latch, and an `approve` that lands while it is
+down would never spend one. The triage pass below reconciles both, because it
+walks every `done` review state of either outcome: a missing latch is posted on
+the next tick, and an unspent or half-spent one is completed. The feature is
+self-healing in both directions.
 
 ### Detecting the resolve
 
 A new `runLatchPass` in `src/triage/`, beside `runNudgePass`, sharing the cron
 lock, daily budget, audit log and desktop notify.
 
-Its scope is `readReviewStates()`, not the board snapshot: only MRs this board
-reviewed to a `comment` outcome are checked. That is a handful of MRs per tick,
+Its scope is `readReviewStates()`, not the board snapshot: every `done` review
+state this board holds, of **either** outcome. Comment-outcome MRs get the full
+branch list below; approve-outcome MRs are restricted to repair and
+spend-completion and never reach `decideNudge`. Scoping to comment outcomes
+alone would leave the server-driven spend unrepairable, since the `approve`
+outcome that triggers it is the same fact that would remove the MR from view.
+That is a handful of MRs per tick,
 and it avoids `fetchOwnMrs` (`bin/triage.ts:82`), which is scoped to the board
 identity's own MRs, the opposite side of this feature. Discussions come from
 the same `readDiscussions` daemon read the server uses in
 `enrichReviewerComments` (`src/server.ts:254`).
 
 The pass builds its MR facts the way `fetchOwnMrs` does, `readProjectMRs` per
-configured project then `buildBoard`, but filters on *having a review state
-with a `comment` outcome* instead of on authorship. That one fetch supplies
+configured project then `buildBoard`, but filters on *having a `done` review
+state* instead of on authorship. That one fetch supplies
 everything the pass needs: `repositoryId`, from which the numeric `projectId`
 comes via `parseRepoId(mr.repositoryId)` (the same derivation the draft-note
 path uses at `src/server.ts:948`), the `iid`, and `reviews.isApproved` for the
@@ -127,12 +137,18 @@ already-approved case above. The `projectPath` that `resolveDiscussion` and
 Order matters. For each MR in scope the pass reads the latch discussion and
 branches in exactly this order:
 
+0. **No latch discussion at all.** On a comment-outcome state, post one and
+   stop; this is the reconciliation the self-healing paragraph above describes.
+   On an approve-outcome state, post nothing: there is nothing left to arm.
 1. **Spent marker present.** Do nothing. Unconditional, and first. If the
    thread is also unresolved (a crash between the spend's two calls),
    re-resolve it and stop. Never rearm a spent latch.
-2. **Not resolved.** Do nothing; the latch is armed and waiting.
+2. **Not resolved.** On a comment-outcome state, do nothing; the latch is armed
+   and waiting. On an approve-outcome state, spend it: either the server's
+   spend never ran, or it never completed.
 3. **Resolved, no spent marker.** A human resolved it. Spend it if the MR is
-   approved, otherwise run it through `decideNudge`.
+   approved or the review state's outcome is `approve`; otherwise run it
+   through `decideNudge`.
 
 Putting the spent check ahead of everything is what holds the invariant under
 approval revocation. A project set to remove approvals when commits are added
@@ -271,6 +287,9 @@ spends instead of dispatching, and a second tick over an already-spent latch
 writes nothing. Two more pin the ordering: a spent latch on an MR whose
 approval was revoked is still left alone (never dispatched, never rearmed), and
 a spent-but-unresolved latch is re-resolved rather than treated as a request.
+Two more cover the widened scope: on an approve-outcome review state, a
+spent-but-unresolved latch is re-resolved, and a still-live latch is spent
+rather than dispatched.
 
 The exclusion in `src/discussions.ts` needs a case proving an armed latch does
 not inflate `reviewerComments` or `threadSummary`, and a second for the spent
