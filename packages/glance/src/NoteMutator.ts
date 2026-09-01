@@ -7,6 +7,8 @@
  *   POST   /api/v4/projects/:id/merge_requests/:mrIid/discussions/:discussionId/notes
  *   PUT    /api/v4/projects/:id/merge_requests/:mrIid/notes/:noteId
  *   DELETE /api/v4/projects/:id/merge_requests/:mrIid/notes/:noteId
+ *   POST   /api/v4/projects/:id/merge_requests/:mrIid/discussions
+ *   POST   /api/v4/projects/:id/uploads
  */
 
 import { type OnRequestHook, safeEmit } from './instrumentation.ts';
@@ -23,6 +25,19 @@ export interface CreatedNote {
   created_at: string;
   resolvable: boolean | null;
   resolved: boolean | null;
+}
+
+export interface CreatedDiscussion {
+  id: string;
+  notes: CreatedNote[];
+}
+
+export interface UploadedFile {
+  alt: string;
+  url: string;
+  full_path: string;
+  /** Ready-to-paste markdown, e.g. `![latch](/uploads/<hash>/latch.png)`. */
+  markdown: string;
 }
 
 export class NoteMutator {
@@ -78,6 +93,45 @@ export class NoteMutator {
     }
 
     return (await res.json()) as CreatedNote;
+  }
+
+  /**
+   * Create a NEW discussion thread on an MR. Unlike createNote's /notes
+   * endpoint, a discussion created this way is resolvable, which is the whole
+   * reason to prefer it: callers that need a thread a human can resolve cannot
+   * get one from /notes.
+   */
+  async createDiscussion(
+    projectId: number,
+    mrIid: number,
+    body: string,
+  ): Promise<CreatedDiscussion> {
+    const path = `/api/v4/projects/${projectId}/merge_requests/${mrIid}/discussions`;
+    const url = `${this.baseURL}${path}`;
+    const started = performance.now();
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "PRIVATE-TOKEN": this.token,
+      },
+      body: JSON.stringify({ body }),
+    });
+
+    safeEmit(this.onRequest, {
+      op: 'noteMutator.createDiscussion',
+      transport: 'rest',
+      method: 'POST',
+      path,
+      durationMs: performance.now() - started,
+      status: res.status,
+    });
+
+    if (!res.ok) {
+      throw new Error(`createDiscussion failed: ${res.status} ${await res.text()}`);
+    }
+    return (await res.json()) as CreatedDiscussion;
   }
 
   /** Edit the body of an existing note. */
