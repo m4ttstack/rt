@@ -295,10 +295,9 @@ reuses the path already there. This is the one change the design pass made to
 the shape approved earlier, which assumed a fixed sprite uploaded once per
 project.
 
-Visual reference: the design canvas at
-`https://claude.ai/code/artifact/9abc5d8d-159b-425c-87c2-9387ac17b4e4` carries
-all five lifecycle states, a dark-theme check, and the two passed-over banner
-directions.
+Visual reference: `assets/latch-band.png` is the committed band artwork;
+`src/latch/banner.ts` composites the per-MR sprite into it to produce each
+banner.
 
 ## Upstream: glance additions
 

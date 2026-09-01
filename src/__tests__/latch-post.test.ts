@@ -1,16 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, cpSync } from "fs";
-import { join } from "path";
 import { latchKindOf } from "../latch/markers.ts";
 import { postLatch, spendLatch, type LatchGateway } from "../latch/post.ts";
 import type { LatchRef } from "../latch/discussions.ts";
-import { APP_ROOT } from "../app-root.ts";
-
-// test-setup.ts points BOARD_APP_ROOT at a throwaway temp dir per test file,
-// so postLatch's default banner path (derived from APP_ROOT) misses the real
-// committed band unless this file seeds it too, same as latch-banner.test.ts.
-mkdirSync(join(APP_ROOT, "assets"), { recursive: true });
-cpSync(join(import.meta.dir, "..", "..", "assets", "latch-band.png"), join(APP_ROOT, "assets", "latch-band.png"));
 
 const MR = "https://gitlab.com/acme/web/-/merge_requests/2317";
 const IMG = "![re-review latch](/uploads/ab12/latch-2317.png)";

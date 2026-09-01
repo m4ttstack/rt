@@ -1038,7 +1038,7 @@ const httpServer = Bun.serve({
               }
             }
           } catch (err) {
-            console.error(`latch step failed for ${signal.mrUrl}: ${err}`);
+            console.error(`latch step failed for ${signal.mrUrl}: ${err instanceof Error ? err.message : err}`);
           }
         }
         const emoji = signalEmoji(signal.kind, signal.status, config.slack.emoji, signal.outcome);

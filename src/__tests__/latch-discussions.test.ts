@@ -74,9 +74,12 @@ describe("findLatches", () => {
   });
 
   test("breaks createdAt ties on discussion id", () => {
+    // Seeded in ascending id order so a stable sort with no tie-break would
+    // return them unchanged; only a real descending id tie-break reorders
+    // them to bbb, aaa.
     const d = detail(
-      disc("bbb", armedLatchBody(IMG), "2026-09-01T10:00:00Z", false),
       disc("aaa", armedLatchBody(IMG), "2026-09-01T10:00:00Z", false),
+      disc("bbb", armedLatchBody(IMG), "2026-09-01T10:00:00Z", false),
     );
     expect(findLatches(d).map((l) => l.discussionId)).toEqual(["bbb", "aaa"]);
   });

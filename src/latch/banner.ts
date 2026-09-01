@@ -7,10 +7,9 @@
  * per-MR character comes from the creature's shape, and pink holds 6.84:1.
  */
 import { readFileSync } from "fs";
-import { join } from "path";
 import { PNG } from "pngjs";
 import { resolveSpawn } from "invadrs";
-import { APP_ROOT } from "../app-root.ts";
+import bandAsset from "../../assets/latch-band.png" with { type: "file" };
 
 export const BAND_W = 1656;
 export const BAND_H = 208;
@@ -22,10 +21,10 @@ const SPRITE_X = 120;
 const SPRITE_Y = 44;
 const SPRITE_SIDE = 120;
 
-// Resolves from a checkout, which is how the triage pass runs today. In the
-// compiled binary APP_ROOT is ~/.mattstack/board and this path does not exist,
-// so the pending board-binary embed work has to carry this asset too.
-const DEFAULT_BAND = join(APP_ROOT, "assets", "latch-band.png");
+// The `with { type: "file" }` import resolves to a real path in both a
+// checkout and a compiled binary: Bun embeds the file and extracts it to a
+// temp path at runtime, so readFileSync works unchanged either way.
+const DEFAULT_BAND = bandAsset;
 
 export function latchBannerPng(mrUrl: string, bandPath: string = DEFAULT_BAND): Buffer {
   const band = PNG.sync.read(readFileSync(bandPath));

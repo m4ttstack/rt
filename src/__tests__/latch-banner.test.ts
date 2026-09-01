@@ -1,16 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, cpSync } from "fs";
-import { join } from "path";
 import { PNG } from "pngjs";
 import { BAND_H, BAND_W, latchBannerPng } from "../latch/banner.ts";
-import { APP_ROOT } from "../app-root.ts";
-
-// test-setup.ts points BOARD_APP_ROOT at a throwaway temp dir for every test
-// file, so latchBannerPng's default bandPath (derived from APP_ROOT) would
-// otherwise miss the real committed band. Seed that temp dir with the real
-// asset so the default path resolves the same way it does outside tests.
-mkdirSync(join(APP_ROOT, "assets"), { recursive: true });
-cpSync(join(import.meta.dir, "..", "..", "assets", "latch-band.png"), join(APP_ROOT, "assets", "latch-band.png"));
 
 const MR_A = "https://gitlab.com/acme/web/-/merge_requests/2317";
 const MR_B = "https://gitlab.com/acme/web/-/merge_requests/2318";
