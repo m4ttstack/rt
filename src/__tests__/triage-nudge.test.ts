@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { parseTriageBlock } from "../triage/config.ts";
 import { emptyMrMemory, type DispatchMemory, type MrMemory } from "../triage/memory.ts";
-import { decideNudge, NUDGE_FRESH_MS, runNudgePass, type NudgePassDeps } from "../triage/nudge.ts";
+import { decideNudge, decideRequest, NUDGE_FRESH_MS, runNudgePass, type NudgePassDeps, type ReReviewRequest } from "../triage/nudge.ts";
 import type { NudgeState } from "../peer/nudges.ts";
 import type { NudgeOutcomePayload, NudgeResult } from "../peer/envelope.ts";
 import type { ReviewState } from "../review-state.ts";
@@ -146,5 +146,63 @@ describe("runNudgePass", () => {
     await runNudgePass(d);
     await runNudgePass(d);
     expect(d.audit).toHaveLength(0);
+  });
+});
+
+describe("decideRequest", () => {
+  const latchReq: ReReviewRequest = {
+    mrUrl: nudge.mrUrl,
+    iid: 1,
+    source: "latch",
+    receivedAt: null,
+    handled: false,
+  };
+
+  test("a latch request dispatches on a commented review", () => {
+    expect(decideRequest(latchReq, commentedReview, m, cfg, NOW)).toEqual({
+      action: "dispatch",
+      reason: "latch",
+    });
+  });
+
+  test("a latch request never expires, however old the MR is", () => {
+    const wayLater = NOW + NUDGE_FRESH_MS * 100;
+    expect(decideRequest(latchReq, commentedReview, m, cfg, wayLater).action).toBe("dispatch");
+  });
+
+  test("a latch request still respects an in-flight review", () => {
+    const inFlight: ReviewState = { ...commentedReview, status: "reviewing" };
+    expect(decideRequest(latchReq, inFlight, m, cfg, NOW)).toEqual({
+      action: "reject",
+      reason: "review-in-flight",
+    });
+  });
+
+  test("a latch request still respects the cooldown", () => {
+    const hot: MrMemory = { ...m, lastDispatchAt: NOW - 60_000 };
+    expect(decideRequest(latchReq, commentedReview, hot, cfg, NOW)).toEqual({
+      action: "reject",
+      reason: "cooldown",
+    });
+  });
+
+  test("a latch request still respects the daily budget", () => {
+    const spent: MrMemory = { ...m, attemptsToday: cfg.dailyAttemptBudget };
+    expect(decideRequest(latchReq, commentedReview, spent, cfg, NOW)).toEqual({
+      action: "reject",
+      reason: "budget-exhausted",
+    });
+  });
+
+  test("a nudge request with a stale receivedAt still expires", () => {
+    const stale: ReReviewRequest = {
+      ...latchReq,
+      source: "nudge",
+      receivedAt: NOW - NUDGE_FRESH_MS - 1,
+    };
+    expect(decideRequest(stale, commentedReview, m, cfg, NOW)).toEqual({
+      action: "expire",
+      reason: "stale",
+    });
   });
 });
