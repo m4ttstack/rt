@@ -1,9 +1,19 @@
 # app-kit
 
-Three source-shipped packages that let a mattstack web app be only its
-product code. No `dist`, no build step: `exports` in each package.json
-point straight at `src/*.ts(x)` and `.css`, so a consumer gets the same
-files whether it installs a tarball or a future npm release.
+app-kit ships three source-shipped packages that let a mattstack web app be
+only its product code: a Mantine-based UI kit, a Hono/Bun server frame, and
+the shared brand tokens they both theme from. No `dist`, no build step:
+`exports` in each package.json point straight at `src/*.ts(x)` and `.css`,
+so a consumer gets the same files whether it installs a packed tarball or,
+later, an npm release.
+
+app-kit is part of the mattstack estate, the same toolkit behind
+[rt](https://github.com/m4ttstack/rt), [deck](https://github.com/m4ttstack/deck),
+and [herdr-chat](https://github.com/m4ttstack/herdr-chat). Internally, it's
+the shared UI and server layer mattstack's own apps build on, including chat
+and console.
+
+## What's inside
 
 | Package           | Name                       | What it is                                                                                                                                       |
 | ----------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -11,42 +21,74 @@ files whether it installs a tarball or a future npm release.
 | `packages/server` | `@mattstack/app-server`    | The Hono/Bun server frame: health route, JSON error floors, static/embedded asset serving, the rt-client relay, `Bun.serve`.                     |
 | `packages/tokyo`  | `@mattstack/mantine-tokyo` | The Tokyo Day/Night brand tokens (colour ramps, theme values, colour names, CSS, font) `@mattstack/app-kit` themes itself with.                  |
 
-`probe/` is a private consumer app in this repo that installs the three
-packages the way an external app will, so CI proves the packages actually
-work outside their own workspace before a real app depends on them.
+`@mattstack/app-kit` has nineteen subpath exports: the Mantine-based
+components and shadows (`./core`), hooks, forms, modals, notifications, the
+icon registry, lazy-loaded editors, the app shell (`./app`), router
+helpers, theming (`./design-system`), boot sequencing, test utilities, and
+build presets (`./eslint`, `./vite`, `./tsconfig.base.json`). The full
+subpath-by-subpath table lives in `packages/ui/README.md`.
 
-See `packages/ui/README.md` and `packages/server/README.md` for
-per-package detail, `AGENTS.md` for the contract anyone editing
-`packages/ui/src` or consuming these packages needs, and
-`docs/superpowers/specs/2026-08-26-app-kit-design.md` for the full design.
+`@mattstack/app-server` exports four modules split along one rule:
+everything except the top-level `.` export is vitest-safe (never loads
+`hono/bun`); the top-level export (`serveMattstackApp`) is the one that
+does. The full table lives in `packages/server/README.md`.
 
-## `@mattstack/app-kit` subpaths
+`probe/` is an internal, unpublished consumer app in this repo that
+installs the three packages the way an external app will, so CI proves
+the packages actually work outside their own workspace before a real app
+depends on them.
 
-| Subpath           | Contents                                                                                                                                                                                                                                           |
-| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `./core`          | `export * from '@mantine/core'` and `@mantine/dates`, then the kit's shadows (`Table`, `TextInput`, `CopyButton`) and components (`PageShell`, `RailShell`, `Rail`, `RailEntry`, `SiteShell`, `HybridMenu`, `SelectableList`, `VirtualTable`, ...) |
-| `./hooks`         | `useColorScheme`, `useStorage`, `useUIState`, `useIsMobile`, `useSchemeColors`, `useHasOverflowX`, `useHoverableTextStyle`                                                                                                                         |
-| `./forms`         | `FormContainer`, `useModalForm`, `useModalFormSubmit`, validation, types                                                                                                                                                                           |
-| `./modals`        | `modals` facade (`confirm`, `prompt`), `ModalsProvider`                                                                                                                                                                                            |
-| `./notifications` | `notifications` facade, `TimedRingProgress`                                                                                                                                                                                                        |
-| `./icons`         | `Icon`, `IconName`, `AnimatedChevron`, `registerIcons`. The registry is the kit's; an app's own icons are the app's registration, not a kit fork.                                                                                                  |
-| `./lazy`          | `LazyLoader`, `CodeHighlight`, `CodeMirror`                                                                                                                                                                                                        |
-| `./spotlight`     | spotlight re-exports                                                                                                                                                                                                                               |
-| `./design-system` | `theme` (pre-branded), `baseTheme`, `ThemeIsland`, `ThemeInitializer`, `ThemeOverrideWrapper`, `getColorSchemeFromDocument`, `variantColorResolver`                                                                                                |
-| `./boot`          | `registerSimpleAlerts`, `markMounted`; `./boot/simple-loading-bar.css` is the stylesheet                                                                                                                                                           |
-| `./app`           | `mountMattstackApp`, `MattstackShell`, `DaemonBanner`, `useDaemonHealth`, `NotFoundPage`                                                                                                                                                           |
-| `./router`        | `RailLink`, `Link`, `useHash`                                                                                                                                                                                                                      |
-| `./utils`         | `createDynamicTable`, `noop`                                                                                                                                                                                                                       |
-| `./test-utils`    | `renderWithProviders`, `spyableAction`, jsdom polyfills, `expectLoadingBarInSync(indexHtml: string)`                                                                                                                                               |
-| `./styles.css`    | kit styles entry (Mantine styles, scheme vars, overrides)                                                                                                                                                                                          |
-| `./eslint`        | flat config array (`mattstackEslint()`)                                                                                                                                                                                                            |
-| `./vite`          | `mattstackVite()`                                                                                                                                                                                                                                  |
+See `AGENTS.md` for the contract anyone editing `packages/ui/src` or
+`packages/server/src`, or consuming either package, needs.
 
-`@mattstack/app-server` exports `.` (`serveMattstackApp`, the one module
-that touches `hono/bun`), plus the vitest-safe seams `./app`, `./relays`,
-`./static`. See `packages/server/README.md` for the full table.
+## Installation
 
-## Consumer snippets
+app-kit's packages aren't on npm yet, so a consumer depends on a packed
+tarball rather than a bare `file:` directory. Bun 1.3 installs a bare
+`file:../packages/ui` dependency as a symlink into the source tree, which
+resolves peers like `react` twice and breaks typecheck and tests in the
+consumer. Pack each package instead:
+
+```bash
+cd packages/tokyo && bun pm pack --destination ../../my-app/vendor --quiet
+cd ../ui && bun pm pack --destination ../../my-app/vendor --quiet
+cd ../server && bun pm pack --destination ../../my-app/vendor --quiet
+```
+
+Then depend on the tarballs:
+
+```json
+{
+  "dependencies": {
+    "@mattstack/app-kit": "file:./vendor/mattstack-app-kit-0.1.9.tgz",
+    "@mattstack/app-server": "file:./vendor/mattstack-app-server-0.1.2.tgz",
+    "@mattstack/mantine-tokyo": "file:./vendor/mattstack-mantine-tokyo-0.2.0.tgz"
+  }
+}
+```
+
+`probe/` in this repo is the reference implementation of exactly that
+flow; its `package.json` and the root `probe:install` script (below) show
+the pattern end to end. See `AGENTS.md`'s "Consumer requirements" section
+for the other real failure modes a migrating app hits (icon augmentation
+file naming, the Mantine colour augmentation, the vite preset's plain-JS
+shape).
+
+Once the packages are published, a consumer switches to a normal version
+range, the same as any other npm dependency:
+
+```json
+{
+  "dependencies": {
+    "@mattstack/app-kit": "^0.1.9"
+  }
+}
+```
+
+Each package is versioned and published independently, by hand, with no
+automated release step in this repo.
+
+## Quickstart
 
 ```tsx
 // src/main.tsx
@@ -88,36 +130,40 @@ await serveMattstackApp({
 });
 ```
 
-## Local development
+See `packages/ui/README.md` and `packages/server/README.md` for more
+snippets, including the vite and eslint presets.
+
+## Development
 
 ```bash
-bun install                 # workspace install: packages/ui, packages/server, packages/tokyo
-bun run test                # vitest across packages/ui + packages/server
-bun run storybook           # dev server at :6006 (packages/ui's stories)
-bun run probe:install       # packs the three packages as tarballs, installs the probe app against them
-bun run probe:build         # typechecks and builds the probe app against the packed packages
+$ git clone https://github.com/m4ttstack/app-kit.git
+$ cd app-kit
+$ bun install                 # workspace install: packages/ui, packages/server, packages/tokyo
+$ bun run test                # vitest across packages/ui + packages/server
+$ bun run storybook           # dev server at :6006 (packages/ui's stories)
+$ bun run probe:install       # packs the three packages as tarballs, installs the probe app against them
+$ bun run probe:build         # typechecks and builds the probe app against the packed packages
 ```
 
 `bun run typecheck`, `bun run lint`, `bun run format:check`,
 `bun run build-storybook`, and `bun run treeshake` are the other gates CI
 runs; `bun run probe:test` and `bun run probe:serve-check` exercise the
-probe's own tests and its running server. See `AGENTS.md`'s "Consumer
-requirements" section before wiring a new app to these packages: it
-documents four real failure modes a naive `file:` consumer hits.
+probe's own tests and its running server.
 
-## Consumption
+## Contributing
 
-**Today (pre-publish)**: depend on a packed tarball, not a bare `file:`
-directory. Bun 1.3 installs a bare `file:../packages/ui` dependency as a
-symlink into the source tree, which resolves peers like `react` twice and
-breaks typecheck and tests in the consumer. `probe/package.json` is the
-reference: it depends on `file:./vendor/mattstack-app-kit-0.1.0.tgz` etc,
-and `bun run probe:install` (root `package.json`) is the script that packs
-each package with `bun pm pack` into `probe/vendor/` before installing.
-A migrating app should do the same: pack each package into its own
-`vendor/` directory and depend on the `.tgz`.
+- Read `AGENTS.md` before touching `packages/ui/src` or `packages/server/src`:
+  it covers the import-wall rules, icon and theme extension points, the
+  boot family contract, and the real failure modes a migrating consumer
+  hits.
+- `bun run typecheck`, `bun run lint`, `bun run format:check`,
+  `bun run test -- --run`, `bun run build-storybook`, `bun run treeshake`,
+  `bun run probe:test`, and `bun run probe:build` are exactly what CI runs
+  (`.github/workflows/ci.yml`); run them locally before opening a pull
+  request.
+- `bun run format` (prettier --write) fixes most lint and format failures
+  automatically.
 
-**After publish**: Matt publishes each package to npm by hand (one version
-per package, bumped by hand, no automated release step in this repo).
-Once published, a consumer switches to a version range
-(`"@mattstack/app-kit": "^0.1.0"`) the same as any other npm dependency.
+## License
+
+MIT, see [LICENSE](./LICENSE).
