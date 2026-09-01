@@ -27,7 +27,7 @@
     "@mattstack/app-kit": "file:./vendor/mattstack-app-kit-0.1.9.tgz",
     "@mattstack/app-server": "file:./vendor/mattstack-app-server-0.1.1.tgz",
     "@mattstack/mantine-tokyo": "file:./vendor/mattstack-mantine-tokyo-0.2.0.tgz",
-    "@mattstack/rt-client": "^0.10.1",
+    "@mattstack/rt-client": "^0.11.0",
     "@tanstack/react-query": "^5.102.4",
     "hono": "^4.13.5",
     "lucide-react": "^1.25.0",
