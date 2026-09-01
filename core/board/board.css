@@ -112,11 +112,6 @@ body {
   color: var(--accent);
   background: color-mix(in srgb, var(--accent) 20%, transparent);
 }
-.public-link-private {
-  color: var(--fg-muted, currentColor);
-  opacity: 0.55;
-  background: var(--surface-wash-fg-5);
-}
 
 /* td is nowrap for port numbers; a config line has to be free to wrap. */
 .preflight-issue {

@@ -172,24 +172,17 @@ function SiteCell({ row, data, restarting }: { row: Row; data: StatusData; resta
             <strong>{row.name}</strong>
             {row.displayTld && <span className="muted">.{row.displayTld}</span>}
           </a>
-          {row.publicUrl && row.publicUrl !== row.url && (
-            <Tooltip
-              tip={
-                row.published
-                  ? `open ${row.publicUrl.replace("https://", "")}`
-                  : "private — not publicly reachable"
-              }
-            >
+          {/* An unpublished row has a publicUrl the edge will not serve, so
+              the globe is absent rather than dimmed: it is an open-this link,
+              and there is nothing to open until the row is published. */}
+          {row.published && row.publicUrl && row.publicUrl !== row.url && (
+            <Tooltip tip={`open ${row.publicUrl.replace("https://", "")}`}>
               <a
-                className={`public-link${row.published ? "" : " public-link-private"}`}
+                className="public-link"
                 href={row.publicUrl}
                 target="_blank"
                 rel="noopener"
-                aria-label={
-                  row.published
-                    ? `open ${row.publicUrl.replace("https://", "")}`
-                    : "private — not publicly reachable"
-                }
+                aria-label={`open ${row.publicUrl.replace("https://", "")}`}
               >
                 <Icon d={RAILWAY_GLOBE} />
               </a>
