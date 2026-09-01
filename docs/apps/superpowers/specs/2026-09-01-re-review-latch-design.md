@@ -49,6 +49,17 @@ pending request. Per-latch state was considered and rejected: it introduces a
 store to prune and a second source of truth that can drift from GitLab's actual
 resolved bit.
 
+### An already-approved MR
+
+A human can approve the MR by hand after a comment review. The board's review
+state stays `done` with a `comment` outcome, so the latch stays armed, and on a
+project requiring all discussions resolved the author has to resolve it to
+merge, which would otherwise dispatch a re-review nobody asked for.
+
+The pass therefore checks `reviews.isApproved` (glance `types.d.ts:264`, on the
+MR it already fetched): an approved MR **spends** the latch rather than
+dispatching. That is state 4's transition reached from the other direction.
+
 ## Where the code lives
 
 ### Posting the latch
@@ -79,10 +90,19 @@ lock, daily budget, audit log and desktop notify.
 
 Its scope is `readReviewStates()`, not the board snapshot: only MRs this board
 reviewed to a `comment` outcome are checked. That is a handful of MRs per tick,
-and it avoids `fetchOwnMrs` (`bin/triage.ts:87`), which is scoped to the board
+and it avoids `fetchOwnMrs` (`bin/triage.ts:82`), which is scoped to the board
 identity's own MRs, the opposite side of this feature. Discussions come from
 the same `readDiscussions` daemon read the server uses in
 `enrichReviewerComments` (`src/server.ts:254`).
+
+The pass builds its MR facts the way `fetchOwnMrs` does, `readProjectMRs` per
+configured project then `buildBoard`, but filters on *having a review state
+with a `comment` outcome* instead of on authorship. That one fetch supplies
+everything the pass needs: `repositoryId`, from which the numeric `projectId`
+comes via `parseRepoId(mr.repositoryId)` (the same derivation the draft-note
+path uses at `src/server.ts:948`), the `iid`, and `reviews.isApproved` for the
+already-approved case above. The `projectPath` that `resolveDiscussion` and
+`unresolveDiscussion` want comes from `config.projects`.
 
 ### One decision function, two sources
 
@@ -133,8 +153,15 @@ creature seeded from the MR URL via `invadrs`' `spawn()`, which is already a
 board dependency and whose hash is frozen by its stability contract. Every MR
 gets its own creature, deterministically.
 
-`invadrs` emits SVG. The banner is rasterized to PNG before upload, because
-GitLab instances vary in whether they render uploaded SVG.
+`invadrs` emits SVG, and GitLab instances vary in whether they render an
+uploaded SVG, so the banner is uploaded as a PNG. No SVG rasterizer is needed
+and none is added. The band artwork (background, wordmark, rule, caption) is
+rendered once at build time and committed as a template PNG; at post time the
+pass paints the sprite into a copy of that buffer. A `spawn()` sprite is a grid
+of 1x1 rects on a 10-unit viewBox, so painting it is a nested loop over pixels
+rather than glyph rendering. `pngjs` does the decode and encode: it is already
+in the repo as a devDependency for the capture tests and moves to a runtime
+dependency.
 
 Because the sprite is per-MR, the upload is per-MR: exactly one
 `POST /projects/:id/uploads` per latch, at post time. Nothing caches the
@@ -172,10 +199,12 @@ feedback read as commented.
   GitLab first.
 - **Verifying who resolved the latch.** glance's `Note` type
   (`types.d.ts:608`) has no `resolved_by`, so the board cannot distinguish the
-  author from the reviewer resolving it. The board never resolves the latch
-  itself (it only unresolves), so any resolved transition was a human other
-  than the board, and the cooldown plus daily budget absorb a misfire. Closing
-  it properly is a third glance addition.
+  author from the reviewer resolving it. The board never resolves an *armed*
+  latch, though: it only unresolves, and its one resolve is the terminal spend
+  in state 4, after which the pass stops watching that MR. So every resolved
+  transition the pass actually reads was made by a human, and the cooldown plus
+  daily budget absorb a misfire. Closing it properly is a third glance
+  addition.
 - **Focus hints.** Free-text in the latch reply steering the re-review ("just
   the migration path") is a natural extension of the thread, not v1.
 
