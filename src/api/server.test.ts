@@ -751,4 +751,92 @@ describe("command route gating by app class", () => {
     expect(res.status).toBe(200);
     expect((await res.json()).started).toBe(true);
   });
+
+  test("a run's status stays readable after its manifest key is deleted mid-run", async () => {
+    const { putRecord } = await import("../registry/records.ts");
+    const { existsSync } = await import("fs");
+    const dir = mkdtempSync(join(tmpdir(), "slim-midrun-"));
+    const manifestPath = join(dir, "mattstack.deck.json");
+    writeFileSync(manifestPath, JSON.stringify({
+      name: "midrunapp", commands: {}, dev: { build: "sleep 0.2 && touch built" },
+    }));
+    putRecord({
+      name: "midrunapp", managedBy: "rt", port: 4910, kind: "service", createdAt: "x",
+      dev: { workingDirectory: dir },
+    });
+
+    const started = await devPost("/api/v1/apps/midrunapp/commands/build", {});
+    expect(started.status).toBe(200);
+    const runId = (await started.json()).runId as string;
+
+    // The manifest's "build" key is gone before the run finishes: a live re-resolve
+    // of the command would now 404, but the runId was already granted.
+    writeFileSync(manifestPath, JSON.stringify({ name: "midrunapp", commands: {}, dev: {} }));
+
+    const status = await devApi(`/api/v1/apps/midrunapp/commands/build/${runId}`);
+    expect(status.status).toBe(200);
+    expect(["running", "exited"]).toContain((await status.json()).status);
+
+    for (let i = 0; i < 40 && !existsSync(join(dir, "built")); i++) await new Promise((r) => setTimeout(r, 50));
+    expect(existsSync(join(dir, "built"))).toBe(true);
+  });
+
+  test("a run's status stays readable after its link breaks mid-run", async () => {
+    const { putRecord } = await import("../registry/records.ts");
+    const dir = mkdtempSync(join(tmpdir(), "slim-breaklink-"));
+    writeFileSync(join(dir, "mattstack.deck.json"), JSON.stringify({
+      name: "breaklinkapp", commands: {}, dev: { build: "sleep 0.2 && true" },
+    }));
+    putRecord({
+      name: "breaklinkapp", managedBy: "rt", port: 4911, kind: "service", createdAt: "x",
+      dev: { workingDirectory: dir },
+    });
+
+    const started = await devPost("/api/v1/apps/breaklinkapp/commands/build", {});
+    expect(started.status).toBe(200);
+    const runId = (await started.json()).runId as string;
+
+    // The linked directory disappears entirely before the run finishes: a live
+    // re-resolve of the command would now see a broken link and 404.
+    rmSync(dir, { recursive: true, force: true });
+
+    const status = await devApi(`/api/v1/apps/breaklinkapp/commands/build/${runId}`);
+    expect(status.status).toBe(200);
+    expect(["running", "exited"]).toContain((await status.json()).status);
+  });
+
+  test("an unknown runId still 404s with the same body in dev and in production", async () => {
+    const { putRecord } = await import("../registry/records.ts");
+    const dir = mkdtempSync(join(tmpdir(), "cmd-user-unknownrun-"));
+    putRecord({
+      name: "unknownrunapp", managedBy: "user", port: 4912, kind: "service", createdAt: "x",
+      workingDirectory: dir, commands: { build: "echo built" },
+    });
+
+    const prodStatus = await api("/api/v1/apps/unknownrunapp/commands/build/deadbeefdeadbeef");
+    expect(prodStatus.status).toBe(404);
+    expect(await prodStatus.json()).toEqual({ error: "unknown run" });
+
+    const devStatus = await devApi("/api/v1/apps/unknownrunapp/commands/build/deadbeefdeadbeef");
+    expect(devStatus.status).toBe(404);
+    expect(await devStatus.json()).toEqual({ error: "unknown run" });
+  });
+
+  test("grandfathered managed row's run status is readable after starting in dev", async () => {
+    const { putRecord } = await import("../registry/records.ts");
+    const source = mkdtempSync(join(tmpdir(), "gf-status-src-"));
+    const state = mkdtempSync(join(tmpdir(), "gf-status-state-"));
+    putRecord({
+      name: "gfstatusapp", managedBy: "rt", port: 4913, kind: "service", createdAt: "x",
+      workingDirectory: state, sourceDirectory: source, commands: { build: "touch built" },
+    });
+
+    const started = await devPost("/api/v1/apps/gfstatusapp/commands/build", {});
+    expect(started.status).toBe(200);
+    const runId = (await started.json()).runId as string;
+
+    const status = await devApi(`/api/v1/apps/gfstatusapp/commands/build/${runId}`);
+    expect(status.status).toBe(200);
+    expect(["running", "exited"]).toContain((await status.json()).status);
+  });
 });

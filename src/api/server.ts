@@ -370,6 +370,18 @@ export function startApi(deps: ApiDeps) {
           const cm = pathname.match(/^\/api\/v1\/apps\/([^/]+)\/commands\/([a-z0-9-]+)(?:\/([a-z0-9]+))?$/);
           if (cm) {
             const [, name, cmd, runId] = cm as unknown as [string, string, string, string | undefined];
+
+            // A runId only exists because a run already cleared this same gate at
+            // start time, so a status read for it can bypass class resolution: it
+            // reveals nothing the gate had not already permitted. This keeps a
+            // command's status readable across a mid-run manifest edit or link
+            // break, without weakening the resolve-then-404 path any unresolved
+            // runId still falls through to below.
+            if (runId && req.method === "GET") {
+              const early = commandRunStatus(name, runId);
+              if (early) return json(early);
+            }
+
             const record = getRecord(name);
             if (!record) return json({ error: "not found" }, 404);
             const dev = (deps.devMode ?? isDevMode)();
