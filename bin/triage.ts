@@ -3,12 +3,13 @@
 // the same one idempotent evaluation pass. The board server NEVER runs this.
 import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "fs";
 import { join } from "path";
-import { GitLabProvider, type PullRequest } from "@mattstack/glance";
-import { readProjectMRs } from "@mattstack/rt-client";
+import { GitLabProvider, parseRepoId, type MRDetail, type PullRequest } from "@mattstack/glance";
+import { readDiscussions, readProjectMRs } from "@mattstack/rt-client";
 import { loadConfig, loadGitLabToken, loadSwitchboardToken } from "../src/config.ts";
-import { buildBoard } from "../src/data.ts";
+import { buildBoard, projectPathFromWebUrl } from "../src/data.ts";
 import { doctorFilePath, readDoctorStates, writeDoctorState } from "../src/doctor-state.ts";
 import { launchDoctor } from "../src/herdr.ts";
+import { latchGateway } from "../src/latch/gateway.ts";
 import { resolveLaunchSkill } from "../src/manifest-bindings.ts";
 import { makeEnvelope } from "../src/peer/envelope.ts";
 import { makeSwitchboardClient } from "../src/peer/client.ts";
@@ -18,6 +19,7 @@ import { launchReReview } from "../src/review-launch.ts";
 import { readReviewStates } from "../src/review-state.ts";
 import { appendAudit } from "../src/triage/audit.ts";
 import { loadTriageConfig } from "../src/triage/config.ts";
+import { runLatchPass, type LatchMrFacts } from "../src/triage/latch.ts";
 import { MEMORY_PATH, readMemory, writeMemory } from "../src/triage/memory.ts";
 import { runNudgePass } from "../src/triage/nudge.ts";
 import { notifyEscalation } from "../src/triage/notify.ts";
@@ -104,6 +106,32 @@ try {
       }));
   };
 
+  // The latch pass's mirror image of fetchOwnMrs: every MR this board holds a
+  // done review state for, whatever its outcome, rather than the MRs this
+  // identity authored. Approve-outcome states stay in scope so a half-finished
+  // spend can be repaired; without them nothing ever would be.
+  const fetchLatchMrs = async (): Promise<LatchMrFacts[]> => {
+    const states = readReviewStates();
+    const prs: PullRequest[] = [];
+    for (const projectPath of boardConfig.projects) {
+      const repoName = boardConfig.rtRepos[projectPath];
+      if (!repoName) continue;
+      const res = await readProjectMRs(repoName);
+      if (!res.ok || !res.data) continue;
+      for (const entry of Object.values(res.data.mrs)) prs.push(entry.pr as PullRequest);
+    }
+    return buildBoard(prs, boardConfig)
+      .filter((m) => m.webUrl && states.get(m.webUrl)?.status === "done")
+      .map((m) => ({
+        mrUrl: m.webUrl!,
+        iid: m.iid,
+        projectId: parseRepoId(m.repositoryId),
+        projectPath: projectPathFromWebUrl(m.webUrl!, boardConfig.gitlabHost) ?? "",
+        rtRepo: m.rtRepo ?? "",
+        isApproved: !!m.reviews.isApproved,
+      }));
+  };
+
   const result = await runTriage({
     triage,
     doctorCwd: boardConfig.doctorCwd || boardConfig.reviewCwd,
@@ -173,9 +201,47 @@ try {
       now: () => Date.now(),
     });
     await drainOutbox((d) => client.publish(d));
-    writeMemory(memory);
     console.log(`nudges: dispatched ${nudgeResult.dispatched}, rejected ${nudgeResult.rejected}, expired ${nudgeResult.expired}, skipped ${nudgeResult.skipped}`);
   }
+
+  // The latch pass writes to GitLab, so without a token there is nothing it
+  // can do. Both passes bank cooldown and budget counters into the same
+  // memory, and this one runs whether or not a switchboard is configured, so
+  // the persist below sits outside that block.
+  const latchToken = await loadGitLabToken();
+  if (latchToken) {
+    try {
+      const latchResult = await runLatchPass({
+        readReviewStates,
+        fetchLatchMrs,
+        readDetail: async (mr) => {
+          const res = await readDiscussions(mr.rtRepo, mr.iid);
+          if (!res.ok || !res.data) return null;
+          return { discussions: res.data.discussions } as MRDetail;
+        },
+        gateway: latchGateway(boardConfig.gitlabHost, latchToken),
+        launchReReview: (mrUrl, iid) =>
+          launchReReview(mrUrl, iid, {
+            cwd: boardConfig.reviewCwd,
+            workspaceLabel: boardConfig.reviewsWorkspace,
+            skill: resolveLaunchSkill("review", mrUrl, boardConfig),
+            claudeCommand: boardConfig.claudeCommand,
+          }),
+        memory,
+        cfg: triage,
+        appendAudit,
+        notify: (title, message) => notifyEscalation(title, message, triage.notify),
+        now: () => Date.now(),
+      });
+      console.log(`latch pass: ${JSON.stringify(latchResult)}`);
+    } catch (err) {
+      // The pass makes many unguarded GitLab calls. A throw here must not cost
+      // BOTH passes their cooldown and budget counters, which the persist
+      // below banks.
+      console.error(`latch pass failed: ${err}`);
+    }
+  }
+  writeMemory(memory);
 } finally {
   rmSync(LOCK_PATH, { force: true });
 }
