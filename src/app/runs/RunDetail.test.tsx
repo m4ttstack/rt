@@ -461,8 +461,15 @@ describe('RunDetail', () => {
     }
   });
 
-  it('shows the running stage/status pill for a run with no attention and no end time, not the liveness chip', async () => {
-    detailGet.mockResolvedValue(detailResponse(FIXTURE));
+  it('shows the same liveness chip the board row shows for a running run whose agent is idle', async () => {
+    const idleFixture: RunDetailData = {
+      ...FIXTURE,
+      run: run({
+        status: 'running',
+        agent: { status: 'idle', pane: 'w1:p1' },
+      }),
+    };
+    detailGet.mockResolvedValue(detailResponse(idleFixture));
     artifactGet.mockResolvedValue({
       ok: true,
       status: 200,
@@ -477,13 +484,13 @@ describe('RunDetail', () => {
     renderDetail();
 
     const card = await screen.findByTestId('summary-card');
-    expect(within(card).getByTestId('stage-status-pill')).toHaveTextContent(
-      'implement · failed'
+    expect(within(card).getByTestId('liveness-chip')).toHaveAttribute(
+      'data-state',
+      'idle'
     );
-    expect(within(card).queryByTestId('liveness-chip')).not.toBeInTheDocument();
   });
 
-  it('shows the liveness chip instead of the stage pill once a run needs attention', async () => {
+  it('shows the liveness chip once a run needs attention', async () => {
     const staleFixture: RunDetailData = {
       ...FIXTURE,
       run: run({
@@ -505,10 +512,10 @@ describe('RunDetail', () => {
     renderDetail();
 
     const card = await screen.findByTestId('summary-card');
-    expect(within(card).getByTestId('liveness-chip')).toBeInTheDocument();
-    expect(
-      within(card).queryByTestId('stage-status-pill')
-    ).not.toBeInTheDocument();
+    expect(within(card).getByTestId('liveness-chip')).toHaveAttribute(
+      'data-state',
+      'stale'
+    );
   });
 
   it('renders the enriched ticket title and links the MR iid+state to its webUrl, with CI status below', async () => {

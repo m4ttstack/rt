@@ -325,7 +325,7 @@ describe('OnDemandView: Group 2 (another plugin)', () => {
 
     expect(
       within(view).getByTestId('ondemand-external-footnote')
-    ).toHaveTextContent('Also bound by another plugin: mr-board');
+    ).toHaveTextContent('Also bound by another plugin: board');
   });
 });
 

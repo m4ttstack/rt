@@ -29,7 +29,7 @@ import { client } from '../api';
 import { PAGE_ROW_HEIGHT } from '../chrome';
 import { CommandProvenance } from './CommandProvenance';
 import { EffectiveInputs } from './EffectiveInputs';
-import { LivenessChip, livenessSpec, Pill } from './LivenessChip';
+import { LivenessChip, livenessSpec } from './LivenessChip';
 import { repoLabel } from './repoLabel';
 import { fieldsByKey, RunContext, Timeline } from './Timeline';
 import { useMarkSeen, useRun, useRunEvents, useRunsEnrich } from './useRuns';
@@ -191,10 +191,6 @@ function SummaryCard({
   const mr = enrichment?.mr;
 
   const showAbandon = run.attention.needs && run.attention.reason === 'stale';
-  // A run that needs attention or has already finished has more useful
-  // things to say than "which stage" -- the liveness chip takes over there so
-  // the card never shows two pills disagreeing about the same run.
-  const showStagePill = !run.attention.needs && run.ended_at == null;
   const { color: livenessColor, label: livenessLabel } = livenessSpec(run);
 
   return (
@@ -222,13 +218,10 @@ function SummaryCard({
           )}
         </Group>
         <Group gap="xs" wrap="nowrap">
-          {showStagePill ? (
-            <Pill color="accent" size="md" data-testid="stage-status-pill">
-              {run.current_stage ?? 'not started'} · {run.status}
-            </Pill>
-          ) : (
-            <LivenessChip run={run} size="md" />
-          )}
+          {/* The same chip the board row carries, so a run never reads
+              "idle" on the board and "running" here; the timeline below
+              already names the current stage. */}
+          <LivenessChip run={run} size="md" />
           {showAbandon && <AbandonAction repo={repo} runId={run.id} />}
         </Group>
       </Group>
