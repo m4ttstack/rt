@@ -2,7 +2,7 @@
 # Build, certify, and publish a GitHub release. Usage: scripts/release.sh v1.0.0
 set -eu
 TAG="${1:?usage: release.sh vX.Y.Z}"
-REPO="m4ttheweric/deck"
+REPO="m4ttstack/deck"
 
 PKG_VERSION="$(bun -e 'console.log(require("./package.json").version)')"
 TAG_VERSION="${TAG#v}"
