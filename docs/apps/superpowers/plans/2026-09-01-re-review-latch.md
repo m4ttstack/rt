@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- **Two repos.** Tasks 1-3 are in `~/Documents/GitHub/glance` (package `packages/glance`, published as `@mattstack/glance`). Tasks 4-11 are in `~/Documents/GitHub/board`. Board tasks 9 and 10 cannot pass their tests until glance 0.21.0 is published and installed (Task 3).
+- **Two repos.** Tasks 1-3 are in `~/Documents/GitHub/glance` (package `packages/glance`, published as `@mattstack/glance`). Tasks 4-12 are in `~/Documents/GitHub/board`. Board tasks 9 and 10 cannot pass their tests until glance 0.21.0 is published and installed (Task 3).
 - **Markers are exact strings.** `<!-- mattstack:board re-review-latch v1 -->` and `<!-- mattstack:board re-review-latch v1 spent -->`. Never construct them by concatenation at call sites; import the constants.
 - **The spent check is unconditional and runs first.** No code path may dispatch, rearm, or unresolve a latch carrying the spent marker. This is the invariant the whole design rests on.
 - **Newest wins.** The canonical latch is the one whose root note has the greatest `createdAt`, ties broken by discussion id. Never oldest.
@@ -2168,7 +2168,7 @@ async function spendAll(deps: LatchPassDeps, mr: LatchMrFacts, latches: LatchRef
 cd ~/Documents/GitHub/board && bun test src/__tests__/triage-latch.test.ts
 ```
 
-Expected: PASS, 14 tests. If the dedupe test's `calls` assertion is awkward, replace the filtered `toEqual` with explicit `toContain` assertions; the behaviour under test is that `fresh` is dispatched against and `relic` is untouched.
+Expected: PASS, 16 tests. If the dedupe test's `calls` assertion is awkward, replace the filtered `toEqual` with explicit `toContain` assertions; the behaviour under test is that `fresh` is dispatched against and `relic` is untouched.
 
 - [ ] **Step 5: Commit**
 
@@ -2239,6 +2239,7 @@ Then, after that block's closing brace, add:
   // the persist below sits outside that block.
   const latchToken = await loadGitLabToken();
   if (latchToken) {
+    try {
     const latchResult = await runLatchPass({
       readReviewStates,
       fetchLatchMrs,
@@ -2262,9 +2263,17 @@ Then, after that block's closing brace, add:
       now: () => Date.now(),
     });
     console.log(`latch pass: ${JSON.stringify(latchResult)}`);
+    } catch (err) {
+      // The pass makes many unguarded GitLab calls. A throw here must not cost
+      // BOTH passes their cooldown and budget counters, which the persist
+      // below banks.
+      console.error(`latch pass failed: ${err}`);
+    }
   }
   writeMemory(memory);
 ```
+
+Indent the `runLatchPass({ ... })` call one level to sit inside the `try`.
 
 - [ ] **Step 3: Add the imports**
 
