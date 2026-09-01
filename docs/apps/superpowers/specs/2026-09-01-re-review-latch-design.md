@@ -100,6 +100,12 @@ the GitLab token and `NoteMutator` (the inherited-note draft path at
 board's own behavior rather than a domain skill's, and works with any review
 skill.
 
+Two drivers post latches, the server on a `comment` outcome and the pass's step
+0 below, both from a read-then-post sequence with no shared lock, so a notify
+landing mid-tick can produce two latch discussions. The pass therefore scans
+**all** discussions for latch markers and treats the oldest as the latch; any
+extra is spent on sight.
+
 `notifyBoard` is deliberately best-effort ("a board that is down or restarting
 must never fail the agent's status write"), so a review that finishes while the
 board is down would never get a latch, and an `approve` that lands while it is
@@ -114,7 +120,13 @@ A new `runLatchPass` in `src/triage/`, beside `runNudgePass`, sharing the cron
 lock, daily budget, audit log and desktop notify.
 
 Its scope is `readReviewStates()`, not the board snapshot: every `done` review
-state this board holds, of **either** outcome. Comment-outcome MRs get the full
+state this board holds, of **either** outcome, and only those. A `done` state
+with no outcome at all is out of scope: `outcome` is optional on `ReviewState`
+(`src/review-state.ts:17`) and `bin/review-status.ts` never requires the flag,
+so such states exist on disk, and the pass ignores them exactly as
+`decideNudge` already does, where a missing outcome is `no-commented-review`.
+Posting a latch for a review that recorded no verdict would be a team-visible
+wrong action. Comment-outcome MRs get the full
 branch list below; approve-outcome MRs are restricted to repair and
 spend-completion and never reach `decideNudge`. Scoping to comment outcomes
 alone would leave the server-driven spend unrepairable, since the `approve`
@@ -124,6 +136,14 @@ and it avoids `fetchOwnMrs` (`bin/triage.ts:82`), which is scoped to the board
 identity's own MRs, the opposite side of this feature. Discussions come from
 the same `readDiscussions` daemon read the server uses in
 `enrichReviewerComments` (`src/server.ts:254`).
+
+Widening the scope costs one `readDiscussions` daemon read per approve-outcome
+state per tick, bounded by pruning: `pruneReviewStates`
+(`src/review-state.ts:112`), swept from the server at `src/server.ts:538`,
+keeps a review state only as long as its MR is on the board. Approve-outcome
+states therefore live from the approve until the MR merges or closes, so the
+tail is un-merged approved MRs, the same cost class the comment side already
+pays.
 
 The pass builds its MR facts the way `fetchOwnMrs` does, `readProjectMRs` per
 configured project then `buildBoard`, but filters on *having a `done` review
@@ -260,8 +280,10 @@ feedback read as commented.
 - **Verifying who resolved the latch.** glance's `Note` type
   (`types.d.ts:608`) has no `resolved_by`, so the board cannot distinguish the
   author from the reviewer resolving it. The spent marker carries the invariant
-  instead: both board resolve paths write `v1 spent` in the same disposal as
-  the resolve, and the spent check is unconditional and runs first, so **a
+  instead: **every board resolve either writes `v1 spent` in the same disposal
+  or fires only when the marker is already present** (the branch-3 spend, the
+  step-2 completion, the step-1 repair), and the spent check is unconditional
+  and runs first, so **a
   resolved latch without the spent marker was resolved by a human**.
   `reviews.isApproved` chooses spend-versus-dispatch for live latches only and
   plays no part in the invariant, which is what makes this survive approval
