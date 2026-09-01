@@ -129,7 +129,10 @@ export class NoteMutator {
     });
 
     if (!res.ok) {
-      throw new Error(`createDiscussion failed: ${res.status} ${await res.text()}`);
+      const text = await res.text().catch(() => "");
+      throw new Error(
+        `createDiscussion failed: ${res.status} ${res.statusText}${text ? `: ${text}` : ""}`,
+      );
     }
     return (await res.json()) as CreatedDiscussion;
   }
@@ -234,7 +237,10 @@ export class NoteMutator {
     });
 
     if (!res.ok) {
-      throw new Error(`uploadFile failed: ${res.status} ${await res.text()}`);
+      const text = await res.text().catch(() => "");
+      throw new Error(
+        `uploadFile failed: ${res.status} ${res.statusText}${text ? `: ${text}` : ""}`,
+      );
     }
     return (await res.json()) as UploadedFile;
   }
