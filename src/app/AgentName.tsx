@@ -64,6 +64,10 @@ export interface AgentNameProps {
       For touch surfaces (the phone drawer) and dense lists that should not
       react to hover (the sidebar DM rows). */
   withCard?: boolean;
+  /** `false` drops the invadrs sprite that otherwise leads every handle.
+      For dense rows (the sidebar's DM list) where a fifth icon per row
+      is more noise than signal. @default true */
+  withAvatar?: boolean;
   /** `inline` only: renders the handle as a chip in this hue (color and
       wash background). Unset keeps today's plain-name rendering. */
   hue?: string;
@@ -288,6 +292,7 @@ export function AgentName({
   handle,
   variant = 'name',
   withCard = true,
+  withAvatar = true,
   buddy: buddyProp,
   reachable: reachableProp,
   now,
@@ -303,7 +308,7 @@ export function AgentName({
   if (variant === 'row') {
     label = (
       <Group gap="xs" wrap="nowrap" align="center" style={{ minWidth: 0 }}>
-        <HandleAvatar handle={handle} variant={variant} />
+        {withAvatar && <HandleAvatar handle={handle} variant={variant} />}
         <Stack gap={1} style={{ flex: 1, minWidth: 0 }}>
           <Group gap={0} wrap="nowrap" align="baseline" style={{ minWidth: 0 }}>
             <Group
@@ -339,37 +344,32 @@ export function AgentName({
   } else if (variant === 'inline') {
     label = (
       <Group
-        gap="xs"
+        gap={0}
         wrap="nowrap"
-        align="center"
+        align="baseline"
         component="span"
+        className={hue ? undefined : classes.name}
         style={{ minWidth: 0 }}
       >
-        <HandleAvatar handle={handle} variant={variant} />
         <Group
-          gap={0}
+          gap="xs"
           wrap="nowrap"
-          align="baseline"
+          align="center"
           component="span"
-          className={hue ? undefined : classes.name}
-          style={{ minWidth: 0 }}
+          className={hue ? classes.hueChip : undefined}
+          data-testid={hue ? 'speaker-chip' : undefined}
+          style={
+            hue
+              ? ({ flex: 'none', '--speaker-hue': hue } as HueStyle)
+              : { flex: 'none' }
+          }
         >
-          <Text
-            component="span"
-            size="lg"
-            fw={600}
-            className={hue ? classes.hueChip : undefined}
-            data-testid={hue ? 'speaker-chip' : undefined}
-            style={
-              hue
-                ? ({ flex: 'none', '--speaker-hue': hue } as HueStyle)
-                : { flex: 'none' }
-            }
-          >
+          {withAvatar && <HandleAvatar handle={handle} variant={variant} />}
+          <Text component="span" size="lg" fw={600} style={{ flex: 'none' }}>
             {handle}
           </Text>
-          {repo && <RepoToken repo={repo} />}
         </Group>
+        {repo && <RepoToken repo={repo} />}
       </Group>
     );
   } else {
@@ -381,7 +381,7 @@ export function AgentName({
         component="span"
         display="inline-flex"
       >
-        <HandleAvatar handle={handle} variant={variant} />
+        {withAvatar && <HandleAvatar handle={handle} variant={variant} />}
         <Text component="span" fw={600} inherit className={classes.name}>
           {handle}
         </Text>

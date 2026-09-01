@@ -162,9 +162,9 @@ function DmPairName({ room, active }: { room: RoomSummary; active: boolean }) {
       truncate
       style={{ flex: 1, minWidth: 0 }}
     >
-      <AgentName handle={a} withCard={false} />{' '}
+      <AgentName handle={a} withCard={false} withAvatar={false} />{' '}
       <span style={{ color: 'var(--tk-purple)', flex: 'none' }}>↔</span>{' '}
-      <AgentName handle={b} withCard={false} />
+      <AgentName handle={b} withCard={false} withAvatar={false} />
     </Text>
   );
 }
