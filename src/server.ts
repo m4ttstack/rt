@@ -25,6 +25,9 @@ import { launchReview, launchRespond, launchDoctor, launchResume, focusTab, oper
 import { launchReReview } from "./review-launch.ts";
 import { readSlackRefs, attachSlack, resolveSlackRef, reactToMR, unreactFromMR, postToSlack, slackSweepTargets, sweepSlackRefs } from "./slack.ts";
 import { signalEmoji, parseAgentSignal } from "./agent-signal.ts";
+import { canonicalLatch, findLatches } from "./latch/discussions.ts";
+import { latchGateway } from "./latch/gateway.ts";
+import { postLatch, spendLatch } from "./latch/post.ts";
 import { makeSwitchboardClient, type SwitchboardClient } from "./peer/client.ts";
 import { type MaterializeDeps } from "./peer/inbox.ts";
 import { makePeering } from "./peer/runtime.ts";
@@ -273,6 +276,16 @@ async function enrichReviewerComments(mrs: BoardMR[]): Promise<void> {
       }),
     );
   }
+}
+
+/** This MR's discussions, from the daemon store the snapshot refresh uses. */
+async function readLatchDetail(mr: BoardMR): Promise<MRDetail | null> {
+  if (!mr.rtRepo) return null;
+  const repoId = repoIdentityField(mr.rtRepo);
+  if (!repoId) return null;
+  const res = await readDiscussions(repoId, mr.iid);
+  if (!res.ok || !res.data) return null;
+  return { discussions: res.data.discussions } as MRDetail;
 }
 
 let forceNextFetch = false;
@@ -999,6 +1012,33 @@ const httpServer = Bun.serve({
               outcome: signal.outcome, updatedAt: Date.now(),
             } satisfies ReviewStatePayload));
             kickOutbox(pc);
+          }
+        }
+        // Arm a latch when a review lands with a comment outcome, spend it when
+        // one lands approved. Best-effort, like every other side effect here:
+        // the triage latch pass reconciles anything a down or throwing board
+        // misses, so a failure must never fail the agent's status write.
+        if (signal.kind === "review" && signal.status === "done" && gitlabToken) {
+          try {
+            const snapshot = await cache.get();
+            const mr = snapshot.mrs.find((m) => m.webUrl === signal.mrUrl);
+            if (mr) {
+              const projectId = parseRepoId(mr.repositoryId);
+              const projectPath = projectPathFromWebUrl(signal.mrUrl, config.gitlabHost) ?? "";
+              const gw = latchGateway(config.gitlabHost, gitlabToken);
+              if (signal.outcome === "comment") {
+                const detail = await readLatchDetail(mr);
+                if (detail && !canonicalLatch(findLatches(detail))) {
+                  await postLatch(gw, projectId, projectPath, signal.mrUrl, mr.iid);
+                }
+              } else if (signal.outcome === "approve") {
+                const detail = await readLatchDetail(mr);
+                const latch = detail ? canonicalLatch(findLatches(detail)) : null;
+                if (latch) await spendLatch(gw, projectId, projectPath, mr.iid, latch, latch.rootNoteId);
+              }
+            }
+          } catch (err) {
+            console.error(`latch step failed for ${signal.mrUrl}: ${err}`);
           }
         }
         const emoji = signalEmoji(signal.kind, signal.status, config.slack.emoji, signal.outcome);
