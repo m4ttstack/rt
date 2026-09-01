@@ -1,6 +1,6 @@
 {
   "name": "deck",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "module": "src/main.ts",
   "type": "module",
   "private": true,
