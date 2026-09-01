@@ -1,82 +1,76 @@
 # @mattstack/tui-kit dev loop (mr-board adoption)
 
-mr-board consumes the kit as `"@mattstack/tui-kit": "file:../tui-kit"` — a
-sibling checkout at `~/Documents/GitHub/tui-kit`, resolved the same way
-`@mattstack/rt-client` already is (`file:../repo-tools/packages/rt-client`).
+mr-board consumes the kit from the **npm registry**:
+`"@mattstack/tui-kit": "^0.1.0"`. The package is published **private** under
+the `mattstack` org, so installing it needs an npm token with read access to
+that org (see Auth below). deck consumes it the same way.
 
-## Linker mode: symlinked, not copied
+It used to be a `file:../tui-kit` sibling checkout. That broke CI: the
+app-bundle pipeline clones one repo, so a path outside it can never resolve.
+The live-edit loop that spec bought is still available on demand, via
+`bun link`, which is the section below.
 
-`bun install` does **not** copy the kit's files into
-`node_modules/@mattstack/tui-kit`. It mirrors the kit's *directory
-structure* with real directories, then symlinks every leaf file back to the
-canonical checkout:
+## Auth
+
+A read token must be present before `bun install` can resolve the kit, in
+`~/.npmrc`:
 
 ```
-$ ls -la node_modules/@mattstack/tui-kit
-lrwxrwxrwx  package.json -> /Users/matt/Documents/GitHub/tui-kit/package.json
-lrwxrwxrwx  tsconfig.json -> /Users/matt/Documents/GitHub/tui-kit/tsconfig.json
-drwxr-xr-x  src/                    (real directory)
-drwxr-xr-x  types/                  (real directory)
-...
-
-$ readlink -f node_modules/@mattstack/tui-kit/src/theme.ts
-/Users/matt/Documents/GitHub/tui-kit/src/theme.ts
+//registry.npmjs.org/:_authToken=<npm token with read on the mattstack org>
 ```
 
-Every `.ts`/`.tsx` file we spot-checked (`src/index.ts`, `src/hooks/index.ts`,
-`src/theme.ts`, `src/builders.ts`) resolved as an individual symlink to the
-real file in `~/Documents/GitHub/tui-kit`, not an independent copy.
+Without it the install fails with a bare `404` for
+`@mattstack%2ftui-kit`, which reads like a missing package rather than a
+missing credential. A token that can *publish* is not automatically able to
+*read*: a granular npm token grants read and write separately, and a
+write-only token 404s on install exactly like no token at all.
 
-**Consequence:** editing an *existing* file's contents in the kit checkout is
-picked up immediately by mr-board — no reinstall needed, because bun and
-`tsc` both follow the symlink to the real file. What is **not** live is the
-*file set itself*: the list of symlinks bun creates is a snapshot taken at
-install time. A file added to (or removed from) the kit after that snapshot,
-or a change to the kit's `package.json` (new export, new dependency), needs a
-fresh install to regenerate the mirrored tree.
+CI needs the same token as a secret plus an `.npmrc` step; a job that only
+carries a GitHub token cannot install this package.
 
-## Refresh rule
+## Live editing the kit: `bun link`
 
-Two different situations, two different refreshes — they are **not**
-interchangeable, and using the lighter one for the heavier situation fails
-silently (the install succeeds, the lockfile is just wrong).
+The registry dep pins a published version, so a kit edit does not reach a
+consumer until it is published and bumped. To get the old immediate-feedback
+loop back for a working session:
 
-**Kit file contents changed, kit `package.json` unchanged** (edited an
-existing `.ts`/`.tsx`, added or removed a file):
+```
+cd ~/Documents/GitHub/tui-kit && bun link          # register the checkout once
+cd ~/Documents/GitHub/board  && bun link @mattstack/tui-kit
+```
+
+That replaces `node_modules/@mattstack/tui-kit` with a link to the checkout,
+so edits to existing files are picked up with no reinstall. Undo it with a
+plain reinstall, which restores the published version:
 
 ```
 bun install --force
 ```
 
-Argument-less. This forces a full reinstall and regenerates the symlink tree
-against the kit's current file set. Verified: ran it after adding the
-dependency, full suite (`bun test`) and both `tsc --noEmit` projects stayed
-green afterward.
+Two things to know before relying on it:
 
-**Never** run `bun install --force @mattstack/tui-kit` (or any other package
-name after `--force`). That is bun's *add* form — it goes to npm for a
-package by that name (which does not exist there, or exists as someone
-else's unrelated package) instead of re-resolving the `file:` spec already in
-`package.json`.
+- **A link is local and invisible to everyone else.** Nothing in
+  `package.json` or `bun.lock` records it, so a build that works only while
+  linked will fail in CI and for anyone who has not linked. Verify against
+  the published version before you push.
+- **Linking serves the kit's `src/`, publishing serves its `dist/`.** They
+  are different inputs to the bundler, so a linked build and a published
+  build are not byte-identical. The published package exposes only what its
+  `exports` map declares (`.`, `/hooks`, `/theme`, `/provider`,
+  `/theme.css`, `/canvas.css`, `/types/css-modules.d.ts`); an import that
+  resolves while linked can fail once published if it is not in that map.
 
-**Kit `package.json` changed** (a dependency added, removed, or bumped): bare
-`bun install --force` is **not** sufficient, and reaching for it here is the
-wrong call. For a locked `file:` dependency, bun reuses the *cached manifest*
-it already recorded for that package instead of re-reading the kit's
-`package.json` off disk — so a manifest change silently does not propagate,
-and `bun.lock` keeps recording the kit's OLD dependency list even after
-`--force`. Proven during the registry migration: the kit's `@soribashi/*`
-dependency went from four `file:` packages to one registry package
-(`@soribashi/core@^0.1.0`), and after `bun install --force` mr-board's
-`bun.lock` still listed the old four-package manifest. Only a genuinely clean
-install re-resolved it:
+## Publishing a kit change
 
 ```
-rm -rf node_modules bun.lock && bun install
+cd ~/Documents/GitHub/tui-kit
+# bump version in package.json
+npm publish --access restricted     # prepack runs the build
 ```
 
-Reach for that whenever the kit's own `dependencies` / `devDependencies` /
-`peerDependencies` change — not just `--force`.
+Then bump the range in each consumer and `bun install`. `--access
+restricted` keeps it private; the org must be on a paid plan for that to
+succeed, otherwise npm answers `402 Payment Required`.
 
 ## Transitive @soribashi resolution (adoption note, extends SORI-4) — SUPERSEDED, historical
 

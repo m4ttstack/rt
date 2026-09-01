@@ -21,7 +21,7 @@
     "@mattstack/glance": "^0.19.0",
     "@mattstack/rt-client": "^0.6.1",
     "@mattstack/settings-kit": "^0.1.2",
-    "@mattstack/tui-kit": "file:../tui-kit",
+    "@mattstack/tui-kit": "^0.1.0",
     "invadrs": "^0.2.0",
     "react": "19.2.7",
     "react-dom": "19.2.7",
