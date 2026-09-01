@@ -1,13 +1,13 @@
 # UI Guidelines
 
-> Source of truth for all UI work in `@workforge/ui` (packages/ui-react).
+> Source of truth for all UI work in `@mattstack/glance-react` (packages/glance-react).
 
 ---
 
 ## Tech Stack
 
 | Layer         | Technology                              |
-| ------------- | --------------------------------------- |
+| ------------- | ---------------------------------------- |
 | Framework     | React 19                                |
 | Build         | Vite                                    |
 | Package Mgr   | Bun                                     |
@@ -21,9 +21,9 @@
 ### File Structure
 
 ```
-palette.css     Raw hex values from the Graphite Design System (GDS)
+palette.css     Raw hex values for glance-react's own token system (GDS)
     ↓
-tokens.css      Semantic assignments + shadcn bridge (maps GDS → shadcn tokens)
+tokens.css      Semantic assignments + shadcn bridge (maps GDS to shadcn tokens)
     ↓
 styles.css      Tailwind @theme (3-tier color system) + @utility classes
     ↓
@@ -31,28 +31,33 @@ Components      Use Tailwind utilities, CVA variants, and surface utility classe
 ```
 
 | File           | Contents                                                    | Editable? |
-| -------------- | ----------------------------------------------------------- | --------- |
-| `palette.css`  | Raw GDS hex values — single source of truth for all colors  | No        |
-| `tokens.css`   | Semantic token assignments, shadcn bridge, dark/light modes | No        |
-| `styles.css`   | Tailwind theme registration, surface utilities, base styles | Yes       |
-| `inter.css`    | Inter/InterVariable font-face declarations                  | No        |
-| `mono.css`     | Monospace font-face declarations                            | No        |
+| -------------- | ------------------------------------------------------------ | --------- |
+| `palette.css`  | Raw hex values; single source of truth for all colors        | No        |
+| `tokens.css`   | Semantic token assignments, shadcn bridge, dark/light modes  | No        |
+| `styles.css`   | Tailwind theme registration, surface utilities, base styles  | Yes       |
+| `inter.css`    | Inter/InterVariable font-face declarations                   | No        |
+| `mono.css`     | Monospace font-face declarations                              | No        |
+
+`GDS` is this package's own internal name for its design-token system: it shows
+up as the `gds.*` CSS `@layer` names and the `--gds-*` custom properties in
+`tokens.css`. It is not an external design system; it lives entirely in this
+package.
 
 ### 3-Tier Tailwind Theme
 
 The `@theme inline` block in `styles.css` exposes colors in three tiers:
 
-**Tier 1 — Raw Palette** (shade numbers, like standard Tailwind):
+**Tier 1: Raw Palette** (shade numbers, like standard Tailwind):
 ```
 bg-blue-500, text-red-300, border-green-700
 ```
 
-**Tier 2 — Smart Defaults** (bare name = theme-appropriate shade):
+**Tier 2: Smart Defaults** (bare name = theme-appropriate shade):
 ```
 bg-blue, text-red, border-green
 ```
 
-**Tier 3 — Semantic Tokens** (domain vocabulary):
+**Tier 3: Semantic Tokens** (domain vocabulary):
 ```
 bg-emphasis, text-positive, border-caution, border-l-draft
 ```
@@ -67,12 +72,12 @@ GDS tokens auto-resolve via `data-theme="dark"` / `data-theme="light"` on `<html
 
 ## Semantic Color Vocabulary
 
-All colors in components must use **semantic names**. Tailwind's default palette is supplemented, not replaced — but semantic tokens should always be preferred.
+All colors in components must use **semantic names**. Tailwind's default palette is supplemented, not replaced, but semantic tokens should always be preferred.
 
 ### Intent Colors (3 contrast levels each)
 
 | Token      | Utilities                                            | Meaning                             |
-| ---------- | ---------------------------------------------------- | ----------------------------------- |
+| ---------- | ---------------------------------------------------- | ------------------------------------ |
 | `emphasis` | `bg-emphasis`, `text-emphasis-bright`, `bg-emphasis-high` | Primary actions, info, selected (blue)  |
 | `action`   | `bg-action`, `text-action-bright`, `bg-action-high`      | Generic action color (purple)           |
 | `positive` | `bg-positive`, `text-positive-bright`, `bg-positive-high` | Success, additions, approved (green)    |
@@ -82,16 +87,16 @@ All colors in components must use **semantic names**. Tailwind's default palette
 ### Domain Colors
 
 | Token   | Aliases          | Meaning                                 |
-| ------- | ---------------- | --------------------------------------- |
-| `merge` | action (purple)  | Git merge/publish operations            |
-| `draft` | border (gray)    | Draft/inactive/unpublished state        |
+| ------- | ---------------- | ----------------------------------------- |
+| `merge` | action (purple)  | Git merge/publish operations              |
+| `draft` | border (gray)    | Draft/inactive/unpublished state          |
 
 Use `merge` for git merge/publish/push operations. Use `action` for non-merge purple actions. Use `draft` for muted inactive states (e.g., `border-l-draft`).
 
 ### Surface Colors
 
 | Token     | Meaning                         |
-| --------- | ------------------------------- |
+| --------- | ---------------------------------- |
 | `neutral` | Neutral interactive surfaces    |
 | `neutral-hover` | Neutral hover state       |
 
@@ -142,23 +147,23 @@ Transparent background + colored text. Consumer adds their own hover.
 ### Complete Matrix
 
 | Color    | `filled-*` | `subtle-*` | `subtle-*-high` | `outline-*` | `ghost-*` |
-| -------- | ---------- | ---------- | --------------- | ----------- | --------- |
-| emphasis | ✅         | ✅         | ✅              | ✅          | ✅        |
-| merge    | ✅         | ✅         | ✅              | ✅          | ✅        |
-| action   | ✅         | ✅         | ✅              | ✅          | ✅        |
-| positive | ✅         | ✅         | ✅              | ✅          | ✅        |
-| negative | ✅         | ✅         | ✅              | ✅          | ✅        |
-| caution  | ✅         | ✅         | ✅              | ✅          | ✅        |
-| neutral  | ✅         | ✅         | ✅              | ✅          | —         |
+| -------- | ---------- | ---------- | ----------------- | ----------- | --------- |
+| emphasis | yes        | yes        | yes                | yes         | yes       |
+| merge    | yes        | yes        | yes                | yes         | yes       |
+| action   | yes        | yes        | yes                | yes         | yes       |
+| positive | yes        | yes        | yes                | yes         | yes       |
+| negative | yes        | yes        | yes                | yes         | yes       |
+| caution  | yes        | yes        | yes                | yes         | yes       |
+| neutral  | yes        | yes        | yes                | yes         | n/a       |
 
 ---
 
-## MR Status → Token Mapping
+## MR Status to Token Mapping
 
-All forge components use a consistent status → semantic color mapping:
+All forge components use a consistent status to semantic color mapping:
 
 | Status     | Border           | Header          | Icon              |
-| ---------- | ---------------- | --------------- | ----------------- |
+| ---------- | ------------------ | ----------------- | ------------------- |
 | mergeable  | `border-l-positive` | `subtle-positive` | `subtle-positive-high` |
 | merged     | `border-l-action`   | `subtle-action`   | `subtle-action-high`   |
 | blocked    | `border-l-caution`  | `subtle-caution`  | `subtle-caution-high`  |
@@ -172,32 +177,32 @@ All forge components use a consistent status → semantic color mapping:
 ### Use Variants, Not Manual Classes
 
 ```tsx
-// ✅ Correct — use component variant props
+// Correct: use component variant props
 <Button variant="filled" color="merge" size="sm">Merge</Button>
 <Badge variant="subtle" color="positive">Approved</Badge>
 
-// ❌ Wrong — manual class composition
+// Wrong: manual class composition
 <Button className="bg-positive text-primary-foreground">Merge</Button>
 ```
 
 ### Use Surface Utilities for Custom Elements
 
 ```tsx
-// ✅ Correct — reusable utility pattern
+// Correct: reusable utility pattern
 <div className="subtle-positive rounded-md p-2">Success</div>
 <div className="filled-emphasis rounded-md px-4">Primary</div>
 
-// ❌ Wrong — manual bg + text composition
+// Wrong: manual bg + text composition
 <div className="bg-positive/25 text-positive-bright rounded-md p-2">Success</div>
 ```
 
 ### Use Semantic Tokens for Borders
 
 ```tsx
-// ✅ Correct — semantic domain token
+// Correct: semantic domain token
 <div className="border-l-2 border-l-draft">Draft content</div>
 
-// ❌ Wrong — primitive token
+// Wrong: primitive token
 <div className="border-l-2 border-l-border">Draft content</div>
 <div className="border-l-2 border-l-secondary">Draft content</div>
 ```
@@ -207,14 +212,14 @@ All forge components use a consistent status → semantic color mapping:
 When placing a subtle element on top of another subtle surface, use the `-high` variant for contrast:
 
 ```tsx
-// ✅ Correct — visible contrast
+// Correct: visible contrast
 <div className="subtle-neutral">
   <div className="subtle-neutral-high rounded-full size-5">
     <Icon />
   </div>
 </div>
 
-// ❌ Wrong — invisible on tinted surface
+// Wrong: invisible on tinted surface
 <div className="subtle-neutral">
   <div className="subtle-neutral rounded-full size-5">
     <Icon />
@@ -226,8 +231,8 @@ When placing a subtle element on top of another subtle surface, use the `-high` 
 
 These internal CSS custom properties are implementation details. Always use the semantic utilities:
 
-| ❌ Don't use              | ✅ Use instead      |
-| ------------------------- | ------------------- |
+| Don't use                 | Use instead          |
+| -------------------------- | --------------------- |
 | `bg-btn-merge`            | `filled-merge`      |
 | `bg-btn-emphasis`         | `filled-emphasis`   |
 | `bg-btn-neutral`          | `bg-neutral`        |
@@ -253,10 +258,10 @@ Add new tokens to `tokens.css` referencing `palette.css` vars. Never add one-off
 ### 3. Use Import Aliases
 
 | Alias             | Path                |
-| ----------------- | ------------------- |
+| ----------------- | ---------------------- |
 | `@/components`    | `lib/components`    |
 | `@/components/ui` | `lib/components/ui` |
-| `@/utils`         | `lib/utils`         |
+| `@/utils`         | `lib/utils`          |
 
 ### 4. Do Not Overwrite shadcn Components
 

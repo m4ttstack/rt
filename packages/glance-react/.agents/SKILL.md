@@ -1,10 +1,12 @@
 ---
-name: glance-react — Canonical Design System (GDS)
+name: glance-react design system (GDS)
 description: >
-  @mattstack/glance-react is the authoritative design system for the entire
-  workforge monorepo. All apps and packages must import styles, tokens, and
-  components from here rather than defining their own. Read this before
-  touching any CSS, Tailwind config, or color values in any consumer package.
+  @mattstack/glance-react is the design system for its own React components:
+  color palette, semantic tokens, dark/light mode, and the shadcn/Radix
+  component set. Any app that installs this package should import its
+  styles, tokens, and components rather than redefining equivalents. Read
+  this before touching any CSS, Tailwind config, or color values in a
+  package that consumes glance-react.
 ---
 
 ## Role
@@ -26,8 +28,16 @@ a consumer app if an equivalent exists in glance-react.
 
 ### 1. Install the package
 
+Inside this repo (a package added under `packages/*`), use the workspace protocol:
+
 ```json
 { "dependencies": { "@mattstack/glance-react": "workspace:*" } }
+```
+
+From an app in another repo, install the published npm package:
+
+```bash
+bun add @mattstack/glance-react
 ```
 
 ### 2. Import the stylesheet (one line)
@@ -38,10 +48,10 @@ a consumer app if an equivalent exists in glance-react.
 ```
 
 This single import gives you everything:
-- All GDS CSS custom properties (palette → tokens → shadcn bridge)
+- All GDS CSS custom properties (palette to tokens to shadcn bridge)
 - Full `@theme inline` with all Tailwind color utilities (`bg-primary`, `text-muted-foreground`, semantic tokens, filled/subtle/outline/ghost utilities)
-- `@custom-variant dark (&:is(.dark *))` — `dark:` prefix ready
-- `@source` pointing to its own `lib/` — Tailwind scans glance-react's components automatically
+- `@custom-variant dark (&:is(.dark *))`, so `dark:` prefixes work
+- `@source` pointing to its own `lib/`, so Tailwind scans glance-react's components automatically
 - Dark/light mode switching via `html.dark` class
 
 ### 3. Add ThemeProvider (React)
@@ -72,7 +82,7 @@ Do **not** re-declare tokens that already exist in glance-react/styles.css.
 
 ## What NOT to do in consumer apps
 
-| ❌ Don't | ✅ Do instead |
+| Don't | Do instead |
 |---|---|
 | Define your own `--primary`, `--foreground`, etc. | Import `@mattstack/glance-react/styles.css` |
 | Add a `tailwind.config.js` with color definitions | Use the `@theme inline` bridge above |
@@ -82,6 +92,14 @@ Do **not** re-declare tokens that already exist in glance-react/styles.css.
 | Use `prose-neutral` or `prose-invert` with Tailwind Typography | Override `--tw-prose-*` vars using GDS tokens (`var(--foreground)` etc.) |
 
 ---
+
+## GDS: this package's own token system
+
+`GDS` is glance-react's internal name for its design-token system, not an
+external product. It shows up in code as the `gds.*` CSS `@layer` names and
+the `--gds-*` custom properties in `tokens.css`; a handful of bridge tokens
+(such as `--graphite-purple`) also carry that internal naming. Treat both
+names as local vocabulary scoped to this package.
 
 ## Dark Mode Token Architecture
 
@@ -102,9 +120,15 @@ For foreground/text use in dark mode, always use:
 - `--text-color-emphasis` for emphasis text
 - `--color-positive-higher-contrast` for positive/success text
 
-The shadcn bridge tokens already handle this correctly:
-- `--primary` → `--color-emphasis-higher-contrast` (dark) / `--color-emphasis-default` (light)
-- `--success` → `--color-positive-higher-contrast` (dark) / `--color-positive-default` (light)
+The shadcn bridge tokens already route through the higher-contrast names in
+both modes:
+- `--primary` and `--sidebar-primary` both resolve to `--color-emphasis-higher-contrast`
+- `--success` resolves to `--color-positive-higher-contrast`
+
+What changes between modes is the *value* those higher-contrast tokens carry,
+not which token the bridge points at: `--color-emphasis-higher-contrast` is
+`blue-20` under the dark-mode `:root` block and `blue-60` under the
+`html:not(.dark)` light-mode override in `tokens.css`.
 
 ---
 
