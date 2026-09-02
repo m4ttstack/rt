@@ -1,6 +1,6 @@
 import { getMRDashboardProps, getReviewDisplayState, stripDraftPrefix as glanceStripDraftPrefix, type MRDashboardProps, type PullRequest } from "@mattstack/glance";
 import type { BoardConfig, Member } from "./config.ts";
-import type { DemandDecl } from "@mattstack/rt-client";
+import type { DemandDecl, ProjectMRsScope } from "@mattstack/rt-client";
 import { extractTicketId } from "./ticket.ts";
 
 export type PipelineState = "passed" | "running" | "failed" | "none";
@@ -233,7 +233,7 @@ export function configuredSlackChannels(config: Pick<BoardConfig, "slack" | "tab
 /** One project's sync facts, the shape aggregateSyncScope folds across projects. */
 export interface SyncScopeRead {
   syncedAt: number;
-  scope?: { authors: string[]; windowDays: number; uncovered: string[]; sections?: string[]; uncoveredSections?: string[]; knownSections?: string[] };
+  scope?: ProjectMRsScope;
 }
 
 /**
