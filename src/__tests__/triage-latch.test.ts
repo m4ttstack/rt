@@ -323,7 +323,7 @@ describe("dedupe", () => {
       ),
     });
     await runLatchPass(deps);
-    expect(noteBodies.get(1)).toContain("Superseded by the latch above");
+    expect(noteBodies.get(1)).toContain("Superseded by a newer latch on this MR");
     expect(noteBodies.get(1)).not.toContain("Approved");
   });
 });

@@ -59,7 +59,7 @@ describe("bodies", () => {
   // as an approval that did not happen, however the MR's real outcome lands.
   test("a duplicate reason gets the superseded wording, not approved", () => {
     const body = spentLatchBody(IMG, "duplicate");
-    expect(body).toContain("Superseded by the latch above");
+    expect(body).toContain("Superseded by a newer latch on this MR");
     expect(body).not.toContain("Approved");
   });
 

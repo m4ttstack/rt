@@ -57,7 +57,6 @@ export async function spendLatch(
   iid: number,
   latch: LatchRef,
   reason: SpentReason = "approved",
-  rootNoteId: number = latch.rootNoteId,
 ): Promise<void> {
   if (latch.kind === "spent") {
     // Idempotent: an already-spent latch is left alone, except for the crash
@@ -67,7 +66,7 @@ export async function spendLatch(
   }
   const img = imageMarkdownOf(latch.body);
   const body = spentLatchBody(img ?? "", reason);
-  await gw.updateNote(projectId, iid, rootNoteId, body);
+  await gw.updateNote(projectId, iid, latch.rootNoteId, body);
   await gw.resolveDiscussion(projectPath, iid, latch.discussionId);
 }
 

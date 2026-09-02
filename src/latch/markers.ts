@@ -34,7 +34,7 @@ const ARMED_COPY = [
 export type SpentReason = "approved" | "duplicate";
 
 const SPENT_COPY = "Approved, so this latch is spent. Nothing further to do here.";
-const DUPLICATE_COPY = "Superseded by the latch above; nothing to do here.";
+const DUPLICATE_COPY = "Superseded by a newer latch on this MR; nothing to do here.";
 
 export function armedLatchBody(imageMarkdown: string): string {
   return `${LATCH_MARKER}\n\n${imageMarkdown}\n\n${ARMED_COPY}\n`;

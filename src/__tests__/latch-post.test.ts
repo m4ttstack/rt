@@ -98,7 +98,7 @@ describe("spendLatch", () => {
   test("a duplicate reason writes the superseded wording instead", async () => {
     const { gw, bodies } = gateway();
     await spendLatch(gw, 42, "acme/web", 2317, armed, "duplicate");
-    expect(bodies[0]).toContain("Superseded by the latch above");
+    expect(bodies[0]).toContain("Superseded by a newer latch on this MR");
     expect(bodies[0]).not.toContain("Approved");
   });
 });
@@ -124,6 +124,6 @@ describe("spendAllLatches", () => {
     const { gw, bodies } = gateway();
     const other: LatchRef = { ...armed, discussionId: "d2", rootNoteId: 2 };
     await spendAllLatches(gw, 42, "acme/web", 2317, [armed, other], "duplicate");
-    expect(bodies.every((b) => b.includes("Superseded by the latch above"))).toBe(true);
+    expect(bodies.every((b) => b.includes("Superseded by a newer latch on this MR"))).toBe(true);
   });
 });

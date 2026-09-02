@@ -21,8 +21,10 @@ export interface LatchMrFacts {
   iid: number;
   projectId: number;
   projectPath: string;
-  /** The rt repo name this MR's discussions are read from. Carried per MR
-      because a board can watch several projects. */
+  /** Encoded daemon identity for rt queries on this MR's discussions.
+      An unrecognized identity answers with an empty-but-ok result rather than
+      an error, so the distinction matters: sending a bare repo name here would
+      silently disable triage. */
   rtRepo: string;
   isApproved: boolean;
 }
