@@ -1,8 +1,14 @@
 #!/usr/bin/env bun
 /**
- * PullRequest.mergedAt and PullRequest.labels: both providers populate them,
- * so a consumer windowing on merge time or reading labels needs no second
- * fetch. Optional on the type because older SDK builds never set them.
+ * PullRequest.mergedAt: both providers populate it, so a consumer windowing
+ * on merge time needs no second fetch. Optional on the type because older
+ * SDK builds never set it.
+ *
+ * Labels stay off PullRequest: `labels(first: 50) { nodes { title } }` in the
+ * dashboard fragment pushed gitlab.com's query complexity over its cap
+ * (255 > 250). Labels ride the metric-grade reads instead
+ * (`MergeRequestIndexRow`, `MergeRequestMetrics`), which pull from separate
+ * queries that already stay under the cap.
  */
 import { describe, expect, test } from 'bun:test';
 import { GitLabProvider, MR_DASHBOARD_FRAGMENT, MR_LIST_FRAGMENT } from '../src/GitLabProvider.ts';
@@ -37,41 +43,38 @@ function gitlabNode(over: Record<string, unknown> = {}) {
   };
 }
 
-describe('GitLab PullRequest.mergedAt and labels', () => {
-  test('maps mergedAt and label titles from the fragment', async () => {
+describe('GitLab PullRequest.mergedAt', () => {
+  test('maps mergedAt from the fragment', async () => {
     const p = new GitLabProvider('https://gitlab.example', 't');
     (p as any).runQuery = async () => ({
       project: {
         mergeRequests: {
-          nodes: [gitlabNode({ mergedAt: '2026-08-02T10:00:00Z', labels: { nodes: [{ title: 'bug' }, { title: 'backend' }] } })],
+          nodes: [gitlabNode({ mergedAt: '2026-08-02T10:00:00Z' })],
         },
       },
     });
     const [pr] = await p.fetchPullRequests({ projectPath: 'g/p', iids: [7], state: 'merged' });
     expect(pr!.mergedAt).toBe('2026-08-02T10:00:00Z');
-    expect(pr!.labels).toEqual(['bug', 'backend']);
   });
 
-  test('an open MR has a null mergedAt and no labels', async () => {
+  test('an open MR has a null mergedAt', async () => {
     const p = new GitLabProvider('https://gitlab.example', 't');
     (p as any).runQuery = async () => ({
-      project: { mergeRequests: { nodes: [gitlabNode({ state: 'opened', mergedAt: null, labels: { nodes: [] } })] } },
+      project: { mergeRequests: { nodes: [gitlabNode({ state: 'opened', mergedAt: null })] } },
     });
     const [pr] = await p.fetchPullRequests({ projectPath: 'g/p', iids: [7], state: 'opened' });
     expect(pr!.mergedAt).toBeNull();
-    expect(pr!.labels).toEqual([]);
   });
 
-  test('both fragments request both fields', () => {
+  test('both fragments request the field', () => {
     for (const fragment of [MR_DASHBOARD_FRAGMENT, MR_LIST_FRAGMENT]) {
       expect(fragment).toContain('mergedAt');
-      expect(fragment).toContain('labels(first: 50) { nodes { title } }');
     }
   });
 });
 
-describe('GitHub PullRequest.mergedAt and labels', () => {
-  test('maps merged_at and label names in toPullRequest', () => {
+describe('GitHub PullRequest.mergedAt', () => {
+  test('maps merged_at in toPullRequest', () => {
     const p = new GitHubProvider('https://github.com', 't');
     const user = { id: 3, login: 'ada', avatar_url: null, name: 'Ada' };
     const raw = {
@@ -91,10 +94,8 @@ describe('GitHub PullRequest.mergedAt and labels', () => {
       user,
       assignees: [],
       requested_reviewers: [],
-      labels: [{ id: 1, name: 'bug', color: 'f00' }],
     };
     const pr = (p as any).toPullRequest(raw, ['author'], [], [], null);
     expect(pr.mergedAt).toBe('2026-08-02T10:00:00Z');
-    expect(pr.labels).toEqual(['bug']);
   });
 });

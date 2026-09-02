@@ -71,7 +71,6 @@ export const MR_DASHBOARD_FRAGMENT = `
     targetProject { repository { rootRef } }
     diffHeadSha
     updatedAt createdAt mergedAt
-    labels(first: 50) { nodes { title } }
     conflicts
     detailedMergeStatus
     approved
@@ -131,7 +130,6 @@ export const MR_LIST_FRAGMENT = `
     targetProject { repository { rootRef } }
     diffHeadSha
     updatedAt createdAt mergedAt
-    labels(first: 50) { nodes { title } }
     conflicts
     detailedMergeStatus
     approved
@@ -260,7 +258,6 @@ interface GQLMR {
   updatedAt: string;
   createdAt: string;
   mergedAt?: string | null;
-  labels?: { nodes: Array<{ title: string }> } | null;
   conflicts: boolean;
   detailedMergeStatus: string | null;
   approved: boolean;
@@ -462,7 +459,6 @@ function toMR(
     createdAt: gql.createdAt,
     updatedAt: gql.updatedAt,
     mergedAt: gql.mergedAt ?? null,
-    labels: (gql.labels?.nodes ?? []).map((l) => l.title),
     sha: gql.diffHeadSha,
     author: toUserRef(gql.author, baseURL, token),
     assignees: gql.assignees.nodes.map((u) => toUserRef(u, baseURL, token)),
