@@ -1,15 +1,25 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
+const FETCH_PIPELINE_DIRS = ["server/pipeline", "server/gitlab", "server/linear", "server/cache"];
+
+// Matches both static `from "../metrics/x.js"` and dynamic `import("../metrics/x.js")`,
+// one or two levels up, with or without a leading server/ segment.
+const METRICS_IMPORT = /["']\.\.\/(\.\.\/)?(server\/)?metrics\//;
+
 /**
- * Ratchet: the fetch pipeline feeds the metrics layer, never the reverse. A pipeline
- * module importing from server/metrics would make an external data source impossible.
+ * Ratchet: the fetch pipeline (server/pipeline, server/gitlab, server/linear, server/cache)
+ * feeds the metrics layer and never imports from it, so metrics stays swappable for an
+ * external data source. server/bots.ts is a settings-side helper outside the ratchet.
  */
 describe("layering", () => {
-  it("server/pipeline never imports server/metrics", () => {
-    for (const file of readdirSync("server/pipeline")) {
-      const src = readFileSync(`server/pipeline/${file}`, "utf8");
-      expect(src, file).not.toMatch(/from "\.\.\/metrics\//);
+  it("the fetch pipeline never imports server/metrics", () => {
+    for (const dir of FETCH_PIPELINE_DIRS) {
+      for (const file of readdirSync(dir)) {
+        if (!file.endsWith(".ts")) continue;
+        const src = readFileSync(`${dir}/${file}`, "utf8");
+        expect(src, `${dir}/${file}`).not.toMatch(METRICS_IMPORT);
+      }
     }
   });
 });

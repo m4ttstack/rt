@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { buildCorpus, buildUserCohorts } from "../server/metrics/cohorts.js";
-import { FETCH, WINDOW } from "./fixtures.js";
+import { FETCH, mr, WINDOW } from "./fixtures.js";
 
 const OPTS = { window: WINDOW, sizeBand: { tooSmall: 10, tooLarge: 400 } };
 
@@ -38,6 +38,24 @@ describe("buildUserCohorts for alice", () => {
     expect(r.notes).toHaveLength(3);
     expect(r.inlineCount).toBe(2);
     expect(r.responseHours).toBe(24);
+  });
+
+  it("an approval with no notes still counts as reviewed, with no response time", () => {
+    const approvedOnly = mr({
+      iid: 10,
+      authorUsername: "bob",
+      title: "Approved, no comment",
+      mergedAt: "2026-05-10T00:00:00.000Z",
+      approvedByUsernames: ["alice"],
+    });
+    const soloCorpus = buildCorpus({ ...FETCH, mrs: [approvedOnly] }, OPTS);
+    const soloC = buildUserCohorts(soloCorpus, "alice", OPTS);
+    expect(soloC.reviewed).toHaveLength(1);
+    const r = soloC.reviewed[0]!;
+    expect(r.mr.iid).toBe(10);
+    expect(r.notes).toEqual([]);
+    expect(r.inlineCount).toBe(0);
+    expect(r.responseHours).toBeNull();
   });
 
   it("waited is MR1 with the bot note ignored for first touch", () => {

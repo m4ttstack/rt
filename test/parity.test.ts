@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 
+import { buildCorpus, buildUserCohorts } from "../server/metrics/cohorts.js";
 import { buildUserEvidence } from "../server/metrics/evidence.js";
 import { computeSnapshot } from "../server/metrics/snapshot.js";
 import type { FetchResult } from "../server/pipeline/model.js";
@@ -42,4 +43,22 @@ describe("snapshot and evidence agree when a Linear team gates the merged cohort
     const ev = buildUserEvidence(GATED, "alice", { ...opts, baseUrl: "https://gitlab.com" });
     expect(ev.mrsMerged!.summary).toBe("1 MRs merged");
   });
+
+  const corpus = buildCorpus(GATED, opts);
+  for (const u of USERS) {
+    it(`${u}: the review-side evidence tables match the cohorts they're drawn from`, () => {
+      const c = buildUserCohorts(corpus, u, opts);
+      const ev = buildUserEvidence(GATED, u, { ...opts, baseUrl: "https://gitlab.com" });
+      expect(ev.reviewDepth!.rows.length).toBe(c.reviewed.length);
+      expect(ev.reviewLatencyHours!.rows.length).toBe(c.waited.length);
+      expect(ev.reciprocity!.rows.length).toBe(c.reviewersOfMine.size);
+
+      const responded = c.reviewed.filter((r) => r.responseHours !== null).length;
+      if (responded === 0) {
+        expect(ev.responseLatencyHours!.summary).toBe("no first response samples");
+      } else {
+        expect(ev.responseLatencyHours!.summary!.endsWith(`over ${responded} MR(s)`)).toBe(true);
+      }
+    });
+  }
 });
