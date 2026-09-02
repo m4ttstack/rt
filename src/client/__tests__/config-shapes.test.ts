@@ -37,7 +37,11 @@ function def(over: Partial<ConfigDef> & { key: string }): ConfigDef {
 /** Composite board.* registry keys with no edit UI yet -- rowKind's
     "readonly" fallback (no COMPOSITE_SHAPES entry) is the intended
     rendering for these, not a coverage gap. */
-const DELIBERATELY_READONLY_COMPOSITES: string[] = [];
+// board.rtRepos is retired: the board derives it from board.projects and
+// board.gitlabHost (config.ts deriveRtRepos). The registry row goes with the
+// next @mattstack/rt-client publish; until board picks that up, the key is
+// still registered and must not be offered for editing.
+const DELIBERATELY_READONLY_COMPOSITES: string[] = ["board.rtRepos"];
 
 describe("COMPOSITE_SHAPES", () => {
   test("covers every composite board.* key in the registry except the deliberately-readonly ones", () => {
@@ -68,7 +72,6 @@ describe("rowKind", () => {
 
   test("composites dispatch on their shape", () => {
     expect(rowKind(def({ key: "board.projects", type: "array" }))).toBe("stringList");
-    expect(rowKind(def({ key: "board.rtRepos", type: "array" }))).toBe("pairList");
     expect(rowKind(def({ key: "board.cwds", type: "object" }))).toBe("leaves");
   });
 
@@ -109,8 +112,12 @@ describe("matchesShape", () => {
     expect(matchesShape(s, "a")).toBe(false);
   });
 
+  test("board.rtRepos is no longer a configurable key: the board derives it", () => {
+    expect(COMPOSITE_SHAPES["board.rtRepos"]).toBeUndefined();
+  });
+
   test("pairList accepts arrays of objects carrying both string fields", () => {
-    const s = COMPOSITE_SHAPES["board.rtRepos"]!;
+    const s = { kind: "pairList", fields: ["project", "repo"] } as const;
     expect(matchesShape(s, [{ project: "g/p", repo: "host/x" }])).toBe(true);
     expect(matchesShape(s, [{ project: "g/p" }])).toBe(false);
     expect(matchesShape(s, [["g/p", "x"]])).toBe(false);

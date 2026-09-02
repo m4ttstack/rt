@@ -27,6 +27,18 @@ export function repoIdentityField(value: string | null | undefined): string | nu
   return identity ? serializeIdentity(identity) : null;
 }
 
+/**
+ * A GitLab project's rt identity is its host plus its path, so the map the
+ * daemon calls need is derived from the two team keys rather than kept as
+ * a third. A config.json entry still wins for its project: the one case
+ * where the tracked remote is not the project itself (a fork, a rename).
+ */
+export function deriveRtRepos(gitlabHost: string, projects: string[], overrides: Record<string, string> = {}): Record<string, string> {
+  const host = gitlabHost.replace(/^https?:\/\//, "").replace(/\/+$/, "").toLowerCase();
+  const derived = Object.fromEntries(projects.map((project) => [project, `${host}/${project}`]));
+  return { ...derived, ...overrides };
+}
+
 /** Same, keyed by GitLab project path through config.rtRepos — the shape
     every server.ts call site actually has in hand. */
 export function daemonRepoField(config: Pick<BoardConfig, "rtRepos">, projectPath: string): string | null {
@@ -99,6 +111,8 @@ export interface BoardConfig {
       project-mrs grant; an unmapped project surfaces an instructive
       fetchError. */
   rtRepos: Record<string, string>;
+  /** config.json's explicit project → remote entries, the only input to rtRepos that is not derived. */
+  rtRepoOverrides: Record<string, string>;
   slack: SlackConfig;
   /** Peer-boards relay. Empty url disables every peer feature (publish, poll,
       nudge endpoint) cleanly. Token comes from SWITCHBOARD_TOKEN, not config. */
@@ -239,7 +253,8 @@ export function parseConfig(raw: string, source = "config.json"): BoardConfig {
     claudeCommand: cfg.claudeCommand ?? "",
     doctorSkill: cfg.doctorSkill ?? "",
     botUsernames: (cfg.botUsernames ?? []).map((b) => b.trim()),
-    rtRepos,
+    rtRepos: deriveRtRepos(cfg.gitlabHost!, cfg.projects!, rtRepos),
+    rtRepoOverrides: rtRepos,
     slack,
     switchboard,
     tabs,
@@ -403,10 +418,9 @@ function storeValue<T>(key: string, resolve: GetSettingFn): T | undefined {
  * bundle several BoardConfig fields (`board.workspaces`, `board.cwds`) since
  * those three fields apiece were never independently meaningful to split;
  * store-wins is per SUB-field there so setting one doesn't blank the other
- * two back to their zero value. `board.rtRepos` is an array of pairs in the
- * store (registry type "array") but a path-keyed Record in config.json and in
- * BoardConfig — converted here, at the one seam that needs to know both
- * shapes. The members roster overlays `board.hiddenMembers` (user-scope
+ * two back to their zero value. `rtRepos` is derived from `board.gitlabHost`
+ * and `board.projects` (see deriveRtRepos), with config.json's entries as
+ * per-project overrides; there is no store key for it. The members roster overlays `board.hiddenMembers` (user-scope
  * usernames) onto the roster's `hidden` flags by username, replacing
  * whatever `hidden` flags the roster source (store or file) carried inline —
  * post-migration, hidden state lives only in the user key, never on the
@@ -435,7 +449,6 @@ function storeValue<T>(key: string, resolve: GetSettingFn): T | undefined {
 function withBoardStoreFallback(fileConfig: BoardConfig, resolve: GetSettingFn): BoardConfig {
   const workspaces = storeValue<{ reviews?: string; responds?: string; doctors?: string }>("board.workspaces", resolve);
   const cwds = storeValue<{ review?: string; respond?: string; doctor?: string }>("board.cwds", resolve);
-  const rtReposStore = storeValue<Array<{ project: string; repo: string }>>("board.rtRepos", resolve);
   const roster = storeValue<Member[]>("board.members", resolve) ?? fileConfig.members;
   const hiddenStore = storeValue<string[]>("board.hiddenMembers", resolve);
   const hiddenUsernames = new Set(hiddenStore ?? roster.filter((m) => m.hidden).map((m) => m.username));
@@ -463,7 +476,9 @@ function withBoardStoreFallback(fileConfig: BoardConfig, resolve: GetSettingFn):
     reviewCwd: cwds?.review ?? fileConfig.reviewCwd,
     respondCwd: cwds?.respond ?? fileConfig.respondCwd,
     doctorCwd: cwds?.doctor ?? fileConfig.doctorCwd,
-    rtRepos: rtReposStore ? Object.fromEntries(rtReposStore.map((r) => [r.project, r.repo])) : fileConfig.rtRepos,
+    // Explicit entries only: the reparse below validates gitlabHost/projects
+    // and derives the full map from them.
+    rtRepos: fileConfig.rtRepoOverrides,
     switchboard: { url: storeValue("board.switchboardUrl", resolve) ?? fileConfig.switchboard.url },
     tabs: storeValue("board.tabs", resolve) ?? fileConfig.tabs,
   };
