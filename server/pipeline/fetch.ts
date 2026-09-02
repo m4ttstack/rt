@@ -1,4 +1,4 @@
-import type { Env } from "../env.js";
+import type { Env } from "../config/index.js";
 import { mapLimit } from "../util/concurrency.js";
 import { collectConnection, gqlRequest } from "../gitlab/graphql.js";
 import { GitLabApiError } from "../gitlab/errors.js";

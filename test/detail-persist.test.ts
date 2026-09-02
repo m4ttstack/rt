@@ -2,10 +2,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { fetchAll } from "../server/pipeline/fetch.js";
 import { getMrByKey, mrKey } from "../server/cache/mr-store.js";
-import type { Env } from "../server/env.js";
+import type { Env } from "../server/config/index.js";
 import type { Scope, TimeWindow } from "../shared/types.js";
 
-const ENV: Env = { baseUrl: "https://gl.example", token: "tkn", port: 0 };
+const ENV: Env = { baseUrl: "https://gl.example", token: "tkn" };
 const WINDOW: TimeWindow = {
   start: "2026-05-01T00:00:00.000Z",
   end: "2026-05-31T00:00:00.000Z",

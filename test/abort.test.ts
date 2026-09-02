@@ -3,10 +3,10 @@ import { restGetOne } from "../server/gitlab/rest.js";
 import { gqlRequest } from "../server/gitlab/graphql.js";
 import { resolveLinearTickets } from "../server/linear/fetch.js";
 import { mr } from "./fixtures.js";
-import type { Env } from "../server/env.js";
+import type { Env } from "../server/config/index.js";
 import type { LeaderboardWarning } from "../shared/types.js";
 
-const ENV: Env = { baseUrl: "https://gl.example", token: "tkn", port: 0 };
+const ENV: Env = { baseUrl: "https://gl.example", token: "tkn" };
 afterEach(() => vi.unstubAllGlobals());
 
 const mergedMr = mr({

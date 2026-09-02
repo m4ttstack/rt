@@ -1,7 +1,7 @@
 import { unlink } from "node:fs/promises";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { app } from "../server/app.js";
-import { config } from "../config.js";
+import { __setSettingReader } from "../server/config/index.js";
 import { CACHE_DIR, cacheKey, writeCache } from "../server/cache/store.js";
 import { startRefresh, __resetJobs } from "../server/jobs/refresh.js";
 import { baseWindow, customWindow } from "../server/util/window.js";
@@ -12,8 +12,15 @@ const WINDOW: TimeWindow = { start: "2026-05-01T00:00:00.000Z", end: "2026-06-01
 const SELECTION = { range: "30d", trend: false };
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
-/** The scope resolveScope() derives from config (groupPath is empty -> projects scope). */
-const TEST_SCOPE: Scope = { type: "projects", projectPaths: config.projectPaths ?? [] };
+const PROJECTS = ["acme/acme-web"];
+const SETTINGS: Record<string, unknown> = {
+  "boxscore.projects": PROJECTS,
+  "mattstack.roster": [{ username: "m4ttheweric", name: "Matthew Goodwin" }],
+  "mattstack.integrations": { forge: { host: "gl.example" } },
+};
+
+/** The scope resolveScope() derives from settings (projects-only). */
+const TEST_SCOPE: Scope = { type: "projects", projectPaths: PROJECTS };
 
 /** A cacheable but empty outcome, so a warmed window computes an empty snapshot. */
 const EMPTY_OUTCOME: FetchOutcome = {
@@ -23,10 +30,11 @@ const EMPTY_OUTCOME: FetchOutcome = {
 };
 
 beforeAll(() => {
-  // getLeaderboard calls getEnv(); give it a valid-looking env so it reaches cache logic.
-  process.env.GITLAB_BASE_URL = "https://gl.example";
+  __setSettingReader(<T,>(k: string) => SETTINGS[k] as T | undefined);
+  // resolveEnv() reads GITLAB_TOKEN through the env-first secrets seam.
   process.env.GITLAB_TOKEN = "test-token";
 });
+afterAll(() => __setSettingReader(null));
 afterEach(() => __resetJobs());
 
 describe("refresh endpoints", () => {

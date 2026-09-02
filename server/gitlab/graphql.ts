@@ -1,4 +1,4 @@
-import type { Env } from "../env.js";
+import type { Env } from "../config/index.js";
 import { GitLabApiError } from "./errors.js";
 import { postGraphql } from "../util/graphql.js";
 import type { RawPageInfo } from "./raw-types.js";

@@ -1,7 +1,7 @@
-import { config } from "../config.js";
 import { cacheKey, readCache, readCoveringCache, writeCache } from "./cache/store.js";
-import { getEnv, type Env } from "./env.js";
-import { getSettings } from "./settings.js";
+import { CONCURRENCY, ConfigError, readSettings, type Env } from "./config/index.js";
+import { readSecrets } from "./config/secrets.js";
+import { getCurrentUser } from "./config/current-user.js";
 import { buildUserEvidence } from "./metrics/evidence.js";
 import { computeSnapshot, type Snapshot } from "./metrics/snapshot.js";
 import { buildResponse, type BuildContext } from "./metrics/trend.js";
@@ -44,11 +44,31 @@ export class UnknownUserError extends Error {
   override readonly name = "UnknownUserError";
 }
 
-function resolveScope(): Scope {
-  if (config.groupPath && config.groupPath.length > 0) {
-    return { type: "group", groupPath: config.groupPath };
+/** Assembles the fetchers' connection envelope from settings + daemon secrets (spec 5.4). */
+async function resolveEnv(): Promise<Env> {
+  const s = readSettings();
+  if (!s.baseUrl) {
+    throw new ConfigError(
+      "GitLab is not configured: set the forge host in mattstack.integrations (rt settings).",
+    );
   }
-  return { type: "projects", projectPaths: config.projectPaths ?? [] };
+  const secrets = await readSecrets();
+  if (secrets.warning) console.warn(`[config] ${secrets.warning}`);
+  if (!secrets.gitlabToken) {
+    throw new ConfigError(
+      "GitLab token is not configured: set gitlabToken in the rt secrets store (or GITLAB_TOKEN).",
+    );
+  }
+  return { baseUrl: s.baseUrl, token: secrets.gitlabToken, linearApiKey: secrets.linearApiKey };
+}
+
+/** Settings-driven, projects-only (spec 5.4; groupPath scoping was retired with config.ts). */
+function resolveScope(): Scope {
+  const projects = readSettings().projects;
+  if (projects.length === 0) {
+    throw new ConfigError("boxscore.projects is empty: add at least one \"group/project\" (rt settings).");
+  }
+  return { type: "projects", projectPaths: projects };
 }
 
 /**
@@ -93,8 +113,8 @@ async function loadOrFetch(
     env,
     scope,
     window: target,
-    users: getSettings().users,
-    concurrency: config.concurrency,
+    users: readSettings().users,
+    concurrency: CONCURRENCY,
     signal,
     onProgress,
   });
@@ -104,13 +124,13 @@ async function loadOrFetch(
 
 /** The settings-derived options shared by snapshot and evidence computation. */
 function metricOptionsFromSettings() {
-  const s = getSettings();
+  const s = readSettings();
   return {
     users: s.users,
     sizeBand: s.sizeBand,
     linearTeam: s.linearTeam || undefined,
     doneStates: s.doneStates,
-    extraBotPatterns: s.bots.extraPatterns,
+    extraBotPatterns: s.botPatterns,
     excludeFilePatterns: s.excludeFilePatterns,
     ignoredMrs: s.ignoredMrs,
   };
@@ -127,7 +147,7 @@ const snapshotFor = (outcome: FetchOutcome, window: TimeWindow): Snapshot =>
 async function buildLeaderboard(
   opts: LeaderboardOptions,
 ): Promise<{ response: LeaderboardResponse; current: FetchOutcome; env: Env }> {
-  const env = getEnv();
+  const env = await resolveEnv();
   const scope = resolveScope();
   const pw = priorWindow(opts.window);
 
@@ -156,12 +176,17 @@ async function buildLeaderboard(
 
   opts.onProgress?.({ phase: "compute", label: "Computing metrics", done: 0, total: 0, window: "current" });
 
+  const who = await getCurrentUser(env.baseUrl, env.token);
+  if (!who) {
+    warnings.push({ code: "user_lookup_failed", message: "GitLab /user lookup failed; no row is highlighted as you" });
+  }
+
   const ctx: BuildContext = {
     scope,
     window: opts.window,
     priorWindow: priorSnapshot ? pw : null,
     baseUrl: env.baseUrl,
-    currentUser: getSettings().currentUser,
+    currentUser: who?.username ?? "",
     generatedAt: new Date().toISOString(),
     fromCache: current.fromCache,
     identities: current.outcome.identities,

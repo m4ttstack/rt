@@ -1,8 +1,8 @@
 import { Hono } from "hono";
 import type { Context } from "hono";
 
-import { config } from "../config.js";
-import { getEnv, EnvError } from "./env.js";
+import { getEnv } from "./env.js";
+import { ConfigError, readSettings } from "./config/index.js";
 import { getLeaderboard, getUserDetail, UnknownUserError } from "./leaderboard.js";
 import { startRefresh, getRefresh, cancelRefresh, toStatusResponse } from "./jobs/refresh.js";
 import { clearMrStore, mrStoreSize, linearIdStats, mrListCacheSize } from "./cache/mr-store.js";
@@ -24,7 +24,7 @@ function windowFromQuery(c: Context): TimeWindow | Response {
       c.req.query("range"),
       c.req.query("start"),
       c.req.query("end"),
-      config.defaultRange,
+      readSettings().defaultRange,
     );
   } catch (err) {
     return c.json({ error: (err as Error).message }, 400);
@@ -44,7 +44,7 @@ app.get("/api/leaderboard", async (c) => {
     return c.json(result);
   } catch (err) {
     if ((err as Error).name === "ColdCacheError") return c.json({ cached: false }, 200);
-    if (err instanceof EnvError) return c.json({ error: err.message }, 400);
+    if (err instanceof ConfigError) return c.json({ error: err.message }, 400);
     console.error("[leaderboard] failed:", err);
     return c.json({ error: (err as Error).message ?? "Internal error" }, 500);
   }
@@ -65,7 +65,7 @@ app.get("/api/detail", async (c) => {
     return c.json(result);
   } catch (err) {
     if (err instanceof UnknownUserError) return c.json({ error: err.message }, 404);
-    if (err instanceof EnvError) return c.json({ error: err.message }, 400);
+    if (err instanceof ConfigError) return c.json({ error: err.message }, 400);
     console.error("[detail] failed:", err);
     return c.json({ error: (err as Error).message ?? "Internal error" }, 500);
   }
@@ -123,7 +123,7 @@ app.post("/api/refresh", (c) => {
     window,
     trend,
     selection: {
-      range: c.req.query("range") ?? config.defaultRange,
+      range: c.req.query("range") ?? readSettings().defaultRange,
       start: c.req.query("start"),
       end: c.req.query("end"),
       trend,

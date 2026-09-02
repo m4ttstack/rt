@@ -1,11 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fetchAll } from "../server/pipeline/fetch.js";
 import { withWindow } from "../server/leaderboard.js";
-import type { Env } from "../server/env.js";
+import type { Env } from "../server/config/index.js";
 import type { RefreshProgress } from "../shared/types.js";
 import { WINDOW } from "./fixtures.js";
 
-const ENV: Env = { baseUrl: "https://gl.example", token: "tkn", port: 0 };
+const ENV: Env = { baseUrl: "https://gl.example", token: "tkn" };
 afterEach(() => vi.unstubAllGlobals());
 
 describe("withWindow", () => {

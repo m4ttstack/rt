@@ -8,7 +8,7 @@
  *   bun server/cli.ts --range 30d --format validate --refresh   # run the evaluator (exit 1 on error)
  *   bun server/cli.ts --detail owen-at-acme --range 30d       # per-stat evidence for one person
  */
-import { config } from "../config.js";
+import { readSettings } from "./config/index.js";
 import { getLeaderboard, getUserDetail } from "./leaderboard.js";
 import { validateLeaderboard } from "./metrics/validate.js";
 import { resolveWindowArgs } from "./util/window.js";
@@ -26,7 +26,7 @@ interface Args {
 }
 
 function parseArgs(argv: string[]): Args {
-  const a: Args = { range: config.defaultRange, trend: false, refresh: false, format: "table" };
+  const a: Args = { range: readSettings().defaultRange, trend: false, refresh: false, format: "table" };
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--range") a.range = argv[++i] ?? a.range;
@@ -109,7 +109,7 @@ function printDetail(res: UserDetailResponse): void {
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
-  const window = resolveWindowArgs(args.range, args.start, args.end, config.defaultRange);
+  const window = resolveWindowArgs(args.range, args.start, args.end, readSettings().defaultRange);
 
   if (args.detail) {
     const detail = await getUserDetail({ window, refresh: args.refresh, trend: args.trend, user: args.detail });

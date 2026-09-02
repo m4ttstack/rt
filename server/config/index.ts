@@ -14,6 +14,13 @@ export interface RosterEntry {
   name?: string;
 }
 
+/** The fetchers' connection envelope; assembled per run from settings + secrets. */
+export interface Env {
+  baseUrl: string;
+  token: string;
+  linearApiKey?: string;
+}
+
 export interface BoxscoreSettings {
   projects: string[];
   roster: RosterEntry[];

@@ -1,4 +1,4 @@
-import type { Env } from "../env.js";
+import type { Env } from "../config/index.js";
 import { GitLabApiError } from "./errors.js";
 import { RetryableError, asRetryable, isTransientStatus, retryAfterMs, withRetry } from "../util/http.js";
 

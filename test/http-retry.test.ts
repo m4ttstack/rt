@@ -3,9 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { gqlRequest } from "../server/gitlab/graphql.js";
 import { restGetOne } from "../server/gitlab/rest.js";
 import { RetryableError, asRetryable, isTransientStatus, retryAfterMs, withRetry } from "../server/util/http.js";
-import type { Env } from "../server/env.js";
+import type { Env } from "../server/config/index.js";
 
-const ENV: Env = { baseUrl: "https://gl.example", token: "tkn", port: 0 };
+const ENV: Env = { baseUrl: "https://gl.example", token: "tkn" };
 afterEach(() => vi.unstubAllGlobals());
 
 /** A run body that only ever settles when its attempt signal fires, exactly as fetch would. */
