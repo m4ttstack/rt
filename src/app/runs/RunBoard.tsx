@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Anchor,
-  Button,
   Collapse,
   GenericError,
   Group,
@@ -11,16 +10,14 @@ import {
   UnstyledButton,
 } from '@mattstack/app-kit/core';
 import { useSchemeColors } from '@mattstack/app-kit/hooks';
-import { AnimatedChevron, Icons } from '@mattstack/app-kit/icons';
+import { AnimatedChevron } from '@mattstack/app-kit/icons';
 import { Link } from 'wouter';
 
 import { PAGE_ROW_HEIGHT } from '../chrome';
 import {
   BAND_ORDER,
   computeBandIds,
-  summarizeBoardChanges,
   type Band,
-  type BandIds,
   type BoardRun,
 } from './bands';
 import { CommandProvenance } from './CommandProvenance';
@@ -50,61 +47,22 @@ const BAND_META: Record<Band, { title: string; empty: string }> = {
   finished: { title: 'Recently finished', empty: 'No finished runs yet.' },
 };
 
-/**
- * The quiet-pill state machine. `committedIds` is the band/order the board
- * actually renders; it only ever changes on the first successful load (no
- * pill for the initial population) or when `applyUpdates` fires from a
- * click. Every render still maps `committedIds` through the LATEST run
- * objects, so a field on an already-placed row (status badge, current
- * stage) updates live -- only its band and position are held.
- */
-function useQuietBoard(boardRuns: BoardRun[], ready: boolean) {
-  const latestIds = useMemo(() => computeBandIds(boardRuns), [boardRuns]);
-  const [committedIds, setCommittedIds] = useState<BandIds | null>(null);
-
-  useEffect(() => {
-    setCommittedIds(prev => (ready && prev === null ? latestIds : prev));
-  }, [ready, latestIds]);
-
-  const summary = useMemo(
-    () =>
-      committedIds
-        ? summarizeBoardChanges(committedIds, latestIds)
-        : { count: 0, message: '' },
-    [committedIds, latestIds]
-  );
-
-  const applyUpdates = useCallback(
-    () => setCommittedIds(latestIds),
-    [latestIds]
-  );
-
-  const byId = useMemo(
-    () => new Map(boardRuns.map(run => [run.id, run] as const)),
-    [boardRuns]
-  );
-
-  const bands = useMemo(() => {
-    const displayIds = committedIds ?? latestIds;
+function useBoardBands(boardRuns: BoardRun[]): Record<Band, BoardRun[]> {
+  return useMemo(() => {
+    const ids = computeBandIds(boardRuns);
+    const byId = new Map(boardRuns.map(run => [run.id, run] as const));
     const result: Record<Band, BoardRun[]> = {
       attention: [],
       running: [],
       finished: [],
     };
     for (const band of BAND_ORDER) {
-      result[band] = displayIds[band]
+      result[band] = ids[band]
         .map(id => byId.get(id))
         .filter((run): run is BoardRun => run !== undefined);
     }
     return result;
-  }, [committedIds, latestIds, byId]);
-
-  return {
-    bands,
-    pendingCount: summary.count,
-    pendingMessage: summary.message,
-    applyUpdates,
-  };
+  }, [boardRuns]);
 }
 
 export function RunBoard() {
@@ -120,10 +78,7 @@ export function RunBoard() {
     return runs.map(run => ({ ...run, seen: run.id in seen }));
   }, [runsQuery.data, seenQuery.data]);
 
-  const { bands, pendingCount, pendingMessage, applyUpdates } = useQuietBoard(
-    boardRuns,
-    runsQuery.isSuccess && seenQuery.isSuccess
-  );
+  const bands = useBoardBands(boardRuns);
 
   // Finished runs are the least actionable band, and the longest -- start
   // it collapsed so the page opens on what needs attention, not history.
@@ -175,22 +130,6 @@ export function RunBoard() {
       }
     >
       <Stack gap="xl" data-testid="run-board">
-        {pendingCount > 0 && (
-          <Button
-            data-testid="board-update-pill"
-            size="xs"
-            radius="xl"
-            variant="filled"
-            color="accent"
-            leftSection={<Icons.refresh size={12} />}
-            onClick={applyUpdates}
-            pos="sticky"
-            top={0}
-            style={{ zIndex: 1, alignSelf: 'flex-end' }}
-          >
-            {pendingMessage}
-          </Button>
-        )}
         {BAND_ORDER.map(band => {
           const bandRuns = bands[band];
           const capped =
