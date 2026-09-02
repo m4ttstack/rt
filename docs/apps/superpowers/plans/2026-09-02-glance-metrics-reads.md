@@ -1672,9 +1672,11 @@ At the top of `CHANGELOG.md`, directly under the `# @mattstack/glance` heading, 
 ### Minor Changes
 
 - `PullRequest` carries `mergedAt` (when the MR merged, null while open or
-  closed unmerged) and `labels` (label names). Both providers populate them;
-  the fields are optional on the type so a `PullRequest` built by an older
-  SDK still type-checks.
+  closed unmerged). Both providers populate it; the field is optional on the
+  type so a `PullRequest` built by an older SDK still type-checks. Labels
+  are deliberately not on `PullRequest`: a connection in the dashboard
+  fragment pushes the role-based `fetchPullRequests` query past gitlab.com's
+  complexity cap of 250. They ride the metric-grade reads below.
 - Metric-grade reads on `GitProvider`, each optional and paired with a
   `ProviderCapabilities` flag; `GitLabProvider` implements all six,
   `GitHubProvider` declares them `false`:
@@ -1701,7 +1703,8 @@ In `README.md` (the package README at `packages/glance/README.md`), in the `## F
 
 ```markdown
 - **Metric-grade reads.** `fetchMergeRequestIndex` pages scalar MR rows
-  (with `mergedAt` and labels) across a group or project set,
+  (with `mergedAt` and labels) across a group or project set, and
+  `PullRequest` itself now carries `mergedAt`;
   `fetchMergeRequestMetrics` reads one MR's diff stats and every note, and
   `fetchProjectPipelines` / `fetchUserEvents` / `fetchGroupProjects` /
   `fetchProject` cover the rest of what an engineering-metrics consumer
@@ -1724,7 +1727,7 @@ Expected: PASS for all three. `check:node` builds `dist/` and imports it under p
 
 ```bash
 git add CHANGELOG.md README.md package.json
-git commit -m "glance 0.23.0: metric-grade reads and PullRequest.mergedAt/labels"
+git commit -m "glance 0.23.0: metric-grade reads and PullRequest.mergedAt"
 ```
 
 Publishing (`bun publish` from `packages/glance`, which runs `prepublishOnly`) is Matt's step after review; the plan ends here.
