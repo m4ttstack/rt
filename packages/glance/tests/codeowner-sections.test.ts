@@ -1,14 +1,15 @@
 #!/usr/bin/env bun
 /**
- * parseCodeownerSections: section headers only, verbatim, sorted, de-duplicated.
- * A path rule containing brackets is not a header because it does not start
- * with one; an approvals count and default owners are not part of the name.
+ * parseCodeownerSections: section headers only, verbatim, sorted, de-duplicated
+ * the way GitLab merges them (case-insensitively, first casing kept). A path
+ * rule containing brackets is not a header because it does not start with
+ * one; an approvals count and default owners are not part of the name.
  */
 import { describe, expect, test } from 'bun:test';
 import { parseCodeownerSections } from '../src/codeowners.ts';
 
 describe('parseCodeownerSections', () => {
-  test('reads plain, optional, counted, defaulted and indented headers once each', () => {
+  test('reads plain, optional, counted, defaulted and indented headers once each, first casing wins', () => {
     const text = [
       '# owners',
       '[Docs] @writers',
@@ -16,7 +17,7 @@ describe('parseCodeownerSections', () => {
       '[Backend][2] @acme/backend-pod',
       '  [Indented]',
       'src/foo/[bar].ts @someone',
-      '[Docs] @again',
+      '[DOCS] @again',
       '',
     ].join('\n');
     expect(parseCodeownerSections(text)).toEqual(['Backend', 'Docs', 'Indented', 'Optional Section']);
