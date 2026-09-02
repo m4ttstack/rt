@@ -16,6 +16,10 @@ describe("sectionStatus", () => {
     expect(sectionStatus("acme", known)).toEqual({ unknown: true, suggestion: "Acme - #pod-acme" });
   });
 
+  test("the match is exact on case: a lower-cased header is unknown and suggests the real one", () => {
+    expect(sectionStatus("platform qa", known)).toEqual({ unknown: true, suggestion: "Platform QA" });
+  });
+
   test("falls back to an entry that contains the name", () => {
     expect(sectionStatus("QA", known)).toEqual({ unknown: true, suggestion: "Platform QA" });
   });

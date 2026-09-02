@@ -70,7 +70,11 @@ its own snapshot is correct.
 | absent | The daemon predates this field, or no deep or backfill has run since a section was demanded |
 
 The board treats absent as "cannot judge" and shows today's behaviour. It
-never alarms on absent.
+never alarms on absent. A board spanning several projects unions the lists as
+each project's post-upgrade deep or backfill completes, so between the first
+project's deep and the last one's a section that exists only in a
+not-yet-swept project can alarm falsely; it heals on that project's next
+deep.
 
 Header text is kept as written. GitLab compares section names
 case-insensitively for ownership, but the approval rule's `section` carries
