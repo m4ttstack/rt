@@ -1,6 +1,6 @@
 import { Gitlab, GitbeakerRequestError, GitbeakerRetryError } from '@gitbeaker/rest';
 import type { CreateMergeRequestOptions, EditMergeRequestOptions } from '@gitbeaker/rest';
-import type { GitProvider, FetchPullRequestsOptions, MRState } from './GitProvider.ts';
+import type { GitProvider, FetchPullRequestsOptions, FetchMergeRequestIndexOptions, MRState } from './GitProvider.ts';
 import { parseUpdatedAfter, requireProjectPath } from './GitProvider.ts';
 import type {
   BranchProtectionRule,
@@ -11,6 +11,7 @@ import type {
   JobDetail,
   MergeabilityCheck,
   MergePullRequestInput,
+  MergeRequestIndexRow,
   MRApprovalRules,
   MRDetail,
   Pipeline,
@@ -673,6 +674,73 @@ interface CodeownersBlobsResponse {
   } | null;
 }
 
+const MR_INDEX_FIELDS = `
+  iid title state createdAt updatedAt mergedAt sourceBranch
+  author { username }
+  project { fullPath }
+  labels(first: 50) { nodes { title } }
+`;
+
+/**
+ * The index query for one root. Built rather than written four times: group
+ * and project roots differ only in `includeSubgroups`, and GitLab reads a
+ * null `state` argument as a filter, so a request for several states must
+ * omit the variable entirely.
+ */
+function mrIndexQuery(root: 'group' | 'project', withState: boolean): string {
+  const scopeArg = root === 'group' ? 'includeSubgroups: true, ' : '';
+  const stateVar = withState ? ', $state: MergeRequestState' : '';
+  const stateArg = withState ? 'state: $state, ' : '';
+  return `
+    query GlanceMRIndex($fullPath: ID!, $ua: Time!, $after: String${stateVar}) {
+      ${root}(fullPath: $fullPath) {
+        mergeRequests(${scopeArg}${stateArg}updatedAfter: $ua, sort: UPDATED_DESC, first: 100, after: $after) {
+          pageInfo { hasNextPage endCursor }
+          nodes { ${MR_INDEX_FIELDS} }
+        }
+      }
+    }
+  `;
+}
+
+interface GQLIndexNode {
+  iid: string;
+  title: string;
+  state: string;
+  createdAt: string;
+  updatedAt: string;
+  mergedAt: string | null;
+  sourceBranch: string;
+  author: { username: string } | null;
+  project: { fullPath: string };
+  labels: { nodes: Array<{ title: string }> } | null;
+}
+
+interface MRIndexConnection {
+  pageInfo: { hasNextPage: boolean; endCursor: string | null };
+  nodes: GQLIndexNode[];
+}
+
+interface MRIndexResponse {
+  group?: { mergeRequests: MRIndexConnection } | null;
+  project?: { mergeRequests: MRIndexConnection } | null;
+}
+
+function toIndexRow(n: GQLIndexNode): MergeRequestIndexRow {
+  return {
+    iid: parseInt(n.iid, 10),
+    projectPath: n.project.fullPath,
+    title: n.title,
+    state: n.state.toLowerCase(),
+    createdAt: n.createdAt,
+    updatedAt: n.updatedAt,
+    mergedAt: n.mergedAt ?? null,
+    authorUsername: n.author?.username ?? null,
+    sourceBranch: n.sourceBranch,
+    labels: (n.labels?.nodes ?? []).map((l) => l.title),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // GitLabProvider
 // ---------------------------------------------------------------------------
@@ -725,7 +793,7 @@ export class GitLabProvider implements GitProvider {
     canRetryPipeline: true,
     canRequestReReview: true,
     canWatchEvents: true,
-    canFetchMergeRequestIndex: false,
+    canFetchMergeRequestIndex: true,
     canFetchMergeRequestMetrics: false,
     canFetchGroupProjects: false,
     canFetchProject: false,
@@ -1074,6 +1142,46 @@ export class GitLabProvider implements GitProvider {
       }
     }
     return null;
+  }
+
+  async fetchMergeRequestIndex(options: FetchMergeRequestIndexOptions): Promise<MergeRequestIndexRow[]> {
+    const hasGroup = options.groupPath !== undefined;
+    const hasProjects = options.projectPaths !== undefined;
+    if (hasGroup === hasProjects) {
+      throw new Error('fetchMergeRequestIndex: pass exactly one of groupPath or projectPaths');
+    }
+    parseUpdatedAfter(options.updatedAfter);
+
+    const states = options.states ?? [];
+    const apiState = states.length === 1 ? states[0]! : null;
+    const filterSet = states.length > 1 ? new Set<string>(states) : null;
+    const scopes: Array<{ root: 'group' | 'project'; fullPath: string }> = hasGroup
+      ? [{ root: 'group', fullPath: options.groupPath! }]
+      : options.projectPaths!.map((fullPath) => ({ root: 'project' as const, fullPath }));
+
+    const out: MergeRequestIndexRow[] = [];
+    for (const scope of scopes) {
+      const query = mrIndexQuery(scope.root, apiState !== null);
+      let after: string | null = null;
+      do {
+        const vars: Record<string, unknown> = { fullPath: scope.fullPath, ua: options.updatedAfter, after };
+        if (apiState !== null) vars.state = apiState;
+        const resp: MRIndexResponse = await this.runQuery<MRIndexResponse>('fetchMergeRequestIndex', query, vars);
+        const conn = resp[scope.root]?.mergeRequests;
+        for (const n of conn?.nodes ?? []) {
+          const row = toIndexRow(n);
+          if (filterSet && !filterSet.has(row.state)) continue;
+          out.push(row);
+        }
+        options.onPage?.(out.length);
+        const next = conn?.pageInfo?.hasNextPage ? (conn.pageInfo.endCursor ?? null) : null;
+        if (conn?.pageInfo?.hasNextPage && (next === null || next === after)) {
+          throw new Error(`fetchMergeRequestIndex: non-advancing cursor '${next}' for ${scope.fullPath}`);
+        }
+        after = next;
+      } while (after);
+    }
+    return out;
   }
 
   async fetchMRDiscussions(repositoryId: string, mrIid: number): Promise<MRDetail> {

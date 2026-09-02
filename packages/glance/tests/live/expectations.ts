@@ -188,11 +188,7 @@ export const GITLAB_EXPECTATIONS: Record<ProviderMethod, Expectation> = {
   restRequest: { support: 'supported' },
   watchMR: { support: 'supported' },
   watchEvents: { support: 'supported', capability: 'canWatchEvents' },
-  fetchMergeRequestIndex: {
-    support: 'absent',
-    capability: 'canFetchMergeRequestIndex',
-    note: 'Interface method declared; GitLabProvider implements it in a later task of the metrics-reads plan.'
-  },
+  fetchMergeRequestIndex: { support: 'supported', capability: 'canFetchMergeRequestIndex' },
   fetchMergeRequestMetrics: {
     support: 'absent',
     capability: 'canFetchMergeRequestMetrics',
