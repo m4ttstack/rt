@@ -56,4 +56,22 @@ describe("metric metadata coherence", () => {
     expect(METRICS.some((d) => d.group === "quality")).toBe(true);
     expect(METRICS.some((d) => d.group === "delivery")).toBe(true);
   });
+
+  it("computed metrics are also described, so they display and rank", () => {
+    const reverted = METRICS.find((d) => d.key === "revertedCount");
+    const current = METRICS.find((d) => d.key === "currentStreak");
+    expect(reverted?.better).toBe("asc");
+    expect(reverted?.group).toBe("quality");
+    expect(current?.better).toBe("desc");
+    expect(current?.group).toBe("quality");
+  });
+
+  it("every rankable UserMetrics key has exactly one descriptor", () => {
+    const rankable = Object.entries(sample)
+      .filter(([, cell]) => typeof cell === "object" && cell !== null && "rank" in cell)
+      .map(([key]) => key)
+      .sort();
+    const described = METRICS.map((d) => d.key).sort();
+    expect(described).toEqual(rankable);
+  });
 });

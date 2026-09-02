@@ -30,7 +30,7 @@ export interface MetricDescriptor {
   description: string;
 }
 
-export const METRICS: MetricDescriptor[] = [
+const METRIC_TABLE = [
   // --- Delivery (Linear): tickets shipped ---
   { key: "issuesCompleted", kind: "scalar", label: "Issues done", group: "delivery", better: "desc",
     description: "Linear issues (by assignee, all teams) completed in the window, excluding stale backlog closed long after creation (default: completed within 90 days of being filed). Guards against bulk backlog-grooming inflating the count." },
@@ -56,15 +56,28 @@ export const METRICS: MetricDescriptor[] = [
     description: "Hours until the user gives a first response on MRs they review (p50). Lower is better." },
   { key: "revertRate", kind: "scalar", label: "Revert rate", group: "quality", better: "asc", percent: true,
     description: "Share of the user's merged MRs later reverted. Lower is better." },
+  { key: "revertedCount", kind: "scalar", label: "Reverted", group: "quality", better: "asc",
+    description: "Merged MRs the user authored that were later reverted (detected reverts only). Lower is better." },
   { key: "sizeHealthPct", kind: "scalar", label: "Size health", group: "quality", better: "desc", percent: true,
     description: "Share of the user's merged MRs in the reviewable size band. Higher is better." },
   { key: "codingDays", kind: "scalar", label: "Coding days", group: "quality", better: "desc",
     description: "Number of distinct days the user pushed at least one commit (to the tracked project) during the window." },
+  { key: "currentStreak", kind: "scalar", label: "Current streak", group: "quality", better: "desc",
+    description: "Consecutive calendar days, ending on the user's most recent merge day, on which they merged at least one MR." },
   { key: "longestStreak", kind: "scalar", label: "Merge streak", group: "quality", better: "desc",
     description: "Longest run of consecutive calendar days on which the user merged at least one MR, within the window. E.g. 4 = merged an MR on 4 days in a row at some point. (Based on merges, not pushes.)" },
   { key: "reciprocity", kind: "scalar", label: "Reciprocity", group: "quality", better: "desc",
     description: "Reviews given divided by reviews received ... ~1 means pulling your weight." },
-];
+] as const satisfies readonly MetricDescriptor[];
+
+type DescribedKey = (typeof METRIC_TABLE)[number]["key"];
+
+// A UserMetrics key without a row here is computed but never shown, ranked, or validated.
+// This fails tsc the moment such a key appears.
+const everyMetricKeyIsDescribed = {} satisfies Record<Exclude<MetricKey, DescribedKey>, never>;
+void everyMetricKeyIsDescribed;
+
+export const METRICS: MetricDescriptor[] = [...METRIC_TABLE];
 
 // --- Typed accessors so server + UI read scalar vs distribution uniformly ---
 
