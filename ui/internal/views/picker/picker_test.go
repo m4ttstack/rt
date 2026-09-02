@@ -256,15 +256,15 @@ func TestUpdateBreadcrumbReplacesRenderedHeader(t *testing.T) {
 	if !strings.Contains(before, "rt › nav") {
 		t.Fatalf("setup: initial breadcrumb missing:\n%s", before)
 	}
-	if strings.Contains(before, "acme0-dev") {
+	if strings.Contains(before, "acme") {
 		t.Fatalf("setup: unexpected breadcrumb content:\n%s", before)
 	}
 
-	next, _ := m.Update(UpdateMsg{Update: protocol.PickUpdate{Breadcrumb: []string{"acme0-dev", "worktrees"}}})
+	next, _ := m.Update(UpdateMsg{Update: protocol.PickUpdate{Breadcrumb: []string{"acme", "worktrees"}}})
 	m = next.(*Model)
 
 	after := ansi.Strip(render(m))
-	if !strings.Contains(after, "acme0-dev › worktrees") {
+	if !strings.Contains(after, "acme › worktrees") {
 		t.Fatalf("header did not update to the new breadcrumb:\n%s", after)
 	}
 	if strings.Contains(after, "rt › nav") {
@@ -1065,9 +1065,9 @@ func TestGroupHeadersRenderAboveFirstRowOfEachGroup(t *testing.T) {
 		T:        "pick",
 		Protocol: protocol.Version,
 		Rows: []protocol.PickRow{
-			{Value: "acme4+backend", Group: "presets", Left: []protocol.PickSegment{{Text: "acme4 + backend", Tone: "text"}}},
+			{Value: "web+backend", Group: "presets", Left: []protocol.PickSegment{{Text: "web + backend", Tone: "text"}}},
 			{Value: "backend", Group: "packages", Left: []protocol.PickSegment{{Text: "backend", Tone: "text"}}},
-			{Value: "acme4", Group: "packages", Left: []protocol.PickSegment{{Text: "acme4", Tone: "text"}}},
+			{Value: "web", Group: "packages", Left: []protocol.PickSegment{{Text: "web", Tone: "text"}}},
 		},
 	}
 	m := New(req)
@@ -1080,7 +1080,7 @@ func TestGroupHeadersRenderAboveFirstRowOfEachGroup(t *testing.T) {
 	if !strings.Contains(lines[3], "PRESETS") {
 		t.Fatalf("expected a PRESETS header above the first row:\n%s", plain)
 	}
-	if !strings.Contains(lines[4], "acme4 + backend") {
+	if !strings.Contains(lines[4], "web + backend") {
 		t.Fatalf("first real row should follow its header:\n%s", plain)
 	}
 	if !strings.Contains(lines[5], "PACKAGES") {
@@ -1103,7 +1103,7 @@ func TestGroupHeadersRenderAboveFirstRowOfEachGroup(t *testing.T) {
 			break
 		}
 	}
-	if !strings.Contains(ansi.Strip(cursorLine), "acme4 + backend") {
+	if !strings.Contains(ansi.Strip(cursorLine), "web + backend") {
 		t.Fatalf("cursor gutter should mark the first real row, not a header: %q", cursorLine)
 	}
 }
@@ -2979,17 +2979,17 @@ func TestMouseClickMapsThroughGroupHeadersToTheCorrectMatchIndex(t *testing.T) {
 	req := protocol.PickRequest{
 		T: "pick", Protocol: protocol.Version,
 		Rows: []protocol.PickRow{
-			{Value: "acme4+backend", Group: "presets", Left: []protocol.PickSegment{{Text: "acme4 + backend", Tone: "text"}}},
+			{Value: "web+backend", Group: "presets", Left: []protocol.PickSegment{{Text: "web + backend", Tone: "text"}}},
 			{Value: "backend", Group: "packages", Left: []protocol.PickSegment{{Text: "backend", Tone: "text"}}},
-			{Value: "acme4", Group: "packages", Left: []protocol.PickSegment{{Text: "acme4", Tone: "text"}}},
+			{Value: "web", Group: "packages", Left: []protocol.PickSegment{{Text: "web", Tone: "text"}}},
 		},
 	}
 	m := New(req)
 	m.width = 60
 	plain := ansi.Strip(render(m))
 	lines := strings.Split(plain, "\n")
-	if !strings.Contains(lines[3], "PRESETS") || !strings.Contains(lines[4], "acme4 + backend") ||
-		!strings.Contains(lines[5], "PACKAGES") || !strings.Contains(lines[6], "backend") || !strings.Contains(lines[7], "acme4") {
+	if !strings.Contains(lines[3], "PRESETS") || !strings.Contains(lines[4], "web + backend") ||
+		!strings.Contains(lines[5], "PACKAGES") || !strings.Contains(lines[6], "backend") || !strings.Contains(lines[7], "web") {
 		t.Fatalf("setup: unexpected chrome layout:\n%s", plain)
 	}
 
@@ -3014,7 +3014,7 @@ func TestMouseClickMapsThroughGroupHeadersToTheCorrectMatchIndex(t *testing.T) {
 	next, _ = m.Update(tea.MouseClickMsg{X: 5, Y: 7, Button: tea.MouseLeft})
 	m = next.(*Model)
 	if m.cursor != 2 {
-		t.Fatalf("expected match 2 (acme4), got cursor=%d", m.cursor)
+		t.Fatalf("expected match 2 (web), got cursor=%d", m.cursor)
 	}
 }
 
