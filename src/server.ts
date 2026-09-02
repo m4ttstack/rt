@@ -28,6 +28,7 @@ import { signalEmoji, parseAgentSignal } from "./agent-signal.ts";
 import { findLatches, hasArmedLatch } from "./latch/discussions.ts";
 import { latchGateway } from "./latch/gateway.ts";
 import { postLatch, spendAllLatches } from "./latch/post.ts";
+import { loadReReviewConfig } from "./triage/config.ts";
 import { makeSwitchboardClient, type SwitchboardClient } from "./peer/client.ts";
 import { type MaterializeDeps } from "./peer/inbox.ts";
 import { makePeering } from "./peer/runtime.ts";
@@ -1028,7 +1029,10 @@ const httpServer = Bun.serve({
               const projectId = parseRepoId(mr.repositoryId);
               const projectPath = projectPathFromWebUrl(signal.mrUrl, config.gitlabHost) ?? "";
               const gw = latchGateway(config.gitlabHost, gitlabToken);
-              if (signal.outcome === "comment") {
+              // Arming honours board.reReview; spending never does, since a
+              // latch left armed on a team that switched re-review off is a
+              // promise nothing keeps.
+              if (signal.outcome === "comment" && loadReReviewConfig().enabled) {
                 const detail = await readLatchDetail(mr);
                 // A live latch (armed, either resolved or not) already exists
                 // for this MR -- a spent one must never suppress a fresh post,

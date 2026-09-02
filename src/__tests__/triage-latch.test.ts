@@ -51,7 +51,7 @@ function harness(over: Partial<LatchPassDeps> & { detail?: MRDetail | null } = {
     readDetail: async () => (over.detail === undefined ? detail() : over.detail),
     gateway,
     launchReReview: async (u) => { launches.push(u); return { kind: "launched" }; },
-    memory, cfg, appendAudit: () => {}, notify: async () => {}, now: () => NOW,
+    memory, cfg, reReview: { enabled: true }, appendAudit: () => {}, notify: async () => {}, now: () => NOW,
     ...over,
   };
   return { deps, calls, launches, memory, noteBodies };
@@ -164,6 +164,29 @@ describe("step 2: armed and unresolved", () => {
     expect((await runLatchPass(deps)).spent).toBe(1);
     expect(calls).toContain("resolve:newer");
     expect(calls).toContain("resolve:older");
+  });
+});
+
+describe("the re-review switch is board.reReview, not board.triage", () => {
+  test("reReview disabled: a resolved latch is left alone, nothing is called", async () => {
+    const { deps, calls, launches } = harness({
+      detail: detail(disc("d1", armedLatchBody(IMG), "2026-09-01T10:00:00Z", true)),
+      reReview: { enabled: false },
+    });
+    const r = await runLatchPass(deps);
+    expect(r).toEqual({ posted: 0, dispatched: 0, rejected: 0, spent: 0, repaired: 0, skipped: 0, failed: 0 });
+    expect(calls).toEqual([]);
+    expect(launches).toEqual([]);
+  });
+
+  test("triage (doctor/nudge) disabled but reReview enabled: still dispatches", async () => {
+    const { deps, calls, launches } = harness({
+      detail: detail(disc("d1", armedLatchBody(IMG), "2026-09-01T10:00:00Z", true)),
+      cfg: parseTriageBlock({ enabled: false, cooldownMinutes: 30, dailyAttemptBudget: 3 }),
+    });
+    expect((await runLatchPass(deps)).dispatched).toBe(1);
+    expect(launches).toEqual([MR]);
+    expect(calls).toEqual(["reply:d1", "unresolve:d1"]);
   });
 });
 
