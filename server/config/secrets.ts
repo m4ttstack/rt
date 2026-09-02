@@ -57,8 +57,8 @@ function causeOf(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-const DAEMON_DOWN_MESSAGE = "secrets need the rt daemon — rt daemon start";
-const UPDATE_RT_MESSAGE = "the rt daemon predates the extension scope — update rt and restart the daemon";
+const DAEMON_DOWN_MESSAGE = "secrets need the rt daemon ... rt daemon start";
+const UPDATE_RT_MESSAGE = "the rt daemon predates the extension scope ... update rt and restart the daemon";
 // rtCommand never throws -- it collapses transport failures into
 // `{ ok:false, error: "rt daemon unreachable at <sock>: <cause>" }` itself.
 // That prefix is the only signal left distinguishing "never got a
@@ -103,7 +103,7 @@ export async function readSecrets(deps: SecretsDeps = {}): Promise<SecretsResult
     else if (err.startsWith("unknown command")) warning = UPDATE_RT_MESSAGE;
     else if (err === "bad-scope") warning = UPDATE_RT_MESSAGE;
     else if (err === "bad-token" || err === "missing-token")
-      warning = `rt daemon refused the secrets request (${err}) — check ~/.mattstack/rt/api-token`;
+      warning = `rt daemon refused the secrets request (${err}) ... check ~/.mattstack/rt/api-token`;
     // Some other daemon-side failure (e.g. a 500): surface it verbatim --
     // the api-token advice above would misdirect a fix for this one.
     else warning = `rt daemon refused the secrets request: ${err}`;
