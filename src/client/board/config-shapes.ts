@@ -21,7 +21,6 @@ export const COMPOSITE_SHAPES: Record<string, CompositeShape> = {
   "board.projects": { kind: "stringList" },
   "board.botUsernames": { kind: "stringList" },
   "board.ticketPrefixes": { kind: "stringList" },
-  "board.rtRepos": { kind: "pairList", fields: ["project", "repo"] },
   "board.workspaces": { kind: "leaves", fields: { reviews: "string", responds: "string", doctors: "string" } },
   "board.cwds": { kind: "leaves", fields: { review: "string", respond: "string", doctor: "string" } },
   "board.slack": {

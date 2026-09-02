@@ -75,12 +75,20 @@ describe("loadConfigFrom: per-key store-wins fallback", () => {
     expect(cfg.doctorCwd).toBe("/store/doctor");
   });
 
-  test("board.rtRepos converts the store's array-of-pairs to config.json's path-keyed record", () => {
-    const p = tmpConfig({ ...base, rtRepos: { "org/repo": "file-repo-name" } });
+  test("rtRepos derives from board.projects and board.gitlabHost; board.rtRepos in the store is not read", () => {
+    const p = tmpConfig({ ...base, projects: ["org/repo"] });
     const cfg = loadConfigFrom(p, fakeResolve({
-      "board.rtRepos": [{ project: "org/repo", repo: "store-repo-name" }, { project: "org/other", repo: "other-name" }],
+      "board.gitlabHost": "https://GitLab.example.com",
+      "board.projects": ["org/repo", "org/other"],
+      "board.rtRepos": [{ project: "org/repo", repo: "store-repo-name" }],
     }));
-    expect(cfg.rtRepos).toEqual({ "org/repo": "store-repo-name", "org/other": "other-name" });
+    expect(cfg.rtRepos).toEqual({ "org/repo": "gitlab.example.com/org/repo", "org/other": "gitlab.example.com/org/other" });
+  });
+
+  test("a config.json rtRepos entry still overrides the derived identity for its project (a fork or a renamed remote)", () => {
+    const p = tmpConfig({ ...base, projects: ["org/repo", "org/other"], rtRepos: { "org/repo": "gitlab.com/forks/repo" } });
+    const cfg = loadConfigFrom(p, fakeResolve({}));
+    expect(cfg.rtRepos).toEqual({ "org/repo": "gitlab.com/forks/repo", "org/other": "gitlab.com/org/other" });
   });
 
   test("a resolver throw degrades that key to config.json's value, never crashes the load", () => {

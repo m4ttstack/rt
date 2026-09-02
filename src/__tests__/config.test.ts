@@ -101,10 +101,11 @@ describe("parseConfig", () => {
     expect(() => parseConfig(JSON.stringify({ ...base, reviewCwd: 5 }))).toThrow(/reviewCwd/);
   });
 
-  test("rtRepos parses as a string map and defaults to {}", () => {
+  test("rtRepos derives one identity per project from gitlabHost; explicit config.json entries are kept as overrides", () => {
     const cfg = parseConfig(JSON.stringify({ ...base, rtRepos: { "group/proj": "proj-repo" } }));
-    expect(cfg.rtRepos).toEqual({ "group/proj": "proj-repo" });
-    expect(parseConfig(JSON.stringify(base)).rtRepos).toEqual({});
+    expect(cfg.rtRepos).toEqual({ "org/repo": "gitlab.com/org/repo", "group/proj": "proj-repo" });
+    expect(cfg.rtRepoOverrides).toEqual({ "group/proj": "proj-repo" });
+    expect(parseConfig(JSON.stringify(base)).rtRepos).toEqual({ "org/repo": "gitlab.com/org/repo" });
   });
 
   test("config without tabs gets the implicit authors tab", () => {

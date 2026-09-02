@@ -36,6 +36,7 @@ const config: BoardConfig = {
   doctorSkill: "",
   botUsernames: [],
   rtRepos: {},
+  rtRepoOverrides: {},
   slack: {
     channel: "code-review",
     singleTemplate: "{title}: {url}",
