@@ -12,7 +12,7 @@ import { postLatch, spendAllLatches, spendLatch, type LatchGateway } from "../la
 import type { ReviewState } from "../review-state.ts";
 import type { ReReviewLaunch } from "../review-launch.ts";
 import type { AuditEntry } from "./audit.ts";
-import type { TriageConfig } from "./config.ts";
+import type { ReReviewConfig, TriageConfig } from "./config.ts";
 import { decideRequest } from "./nudge.ts";
 import { emptyMrMemory, rollDay, type DispatchMemory } from "./memory.ts";
 
@@ -36,7 +36,10 @@ export interface LatchPassDeps {
   gateway: LatchGateway;
   launchReReview(mrUrl: string, iid: number): Promise<ReReviewLaunch>;
   memory: DispatchMemory;
+  /** Cooldown and budget only. The pass's on/off switch is `reReview`, never
+      cfg.enabled: that flag is the doctor/nudge sweeps' per-developer opt-in. */
   cfg: TriageConfig;
+  reReview: ReReviewConfig;
   appendAudit(entry: AuditEntry): void;
   notify(title: string, message: string): Promise<void>;
   now(): number;
@@ -58,7 +61,11 @@ const refusalReply = (reason: string) =>
 
 export async function runLatchPass(deps: LatchPassDeps): Promise<LatchPassResult> {
   const result: LatchPassResult = { posted: 0, dispatched: 0, rejected: 0, spent: 0, repaired: 0, skipped: 0, failed: 0 };
-  if (!deps.cfg.enabled) return result;
+  if (!deps.reReview.enabled) return result;
+  // decideRequest refuses with "disabled" on cfg.enabled, which is the
+  // doctor/nudge switch. A team with those sweeps off but re-review on must
+  // not see every resolved latch answered "Not yet: disabled".
+  const policy: TriageConfig = { ...deps.cfg, enabled: true };
 
   const reviews = deps.readReviewStates();
   const now = deps.now();
@@ -145,7 +152,7 @@ export async function runLatchPass(deps: LatchPassDeps): Promise<LatchPassResult
         { mrUrl: mr.mrUrl, iid: mr.iid, source: "latch", receivedAt: null, handled: false },
         review,
         m,
-        deps.cfg,
+        policy,
         now,
       );
       deps.appendAudit({
