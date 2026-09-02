@@ -643,10 +643,11 @@ interface ApprovalRulesResponse {
   } | null;
 }
 
-/** GitLab's documented CODEOWNERS locations in its precedence order: the first
-    that exists is the one GitLab reads. No `ref`: GitLab resolves the default
-    branch, which is the only branch whose sections new MRs will match. */
-const CODEOWNERS_PATHS = ['CODEOWNERS', '.gitlab/CODEOWNERS', 'docs/CODEOWNERS'] as const;
+/** GitLab's documented CODEOWNERS locations in its precedence order (root,
+    then docs/, then .gitlab/): the first that exists is the one GitLab reads.
+    No `ref`: GitLab resolves the default branch, which is the only branch
+    whose sections new MRs will match. */
+const CODEOWNERS_PATHS = ['CODEOWNERS', 'docs/CODEOWNERS', '.gitlab/CODEOWNERS'] as const;
 
 const CODEOWNERS_BLOBS_QUERY = `
   query GlanceCodeownersBlobs($projectPath: ID!, $paths: [String!]!) {

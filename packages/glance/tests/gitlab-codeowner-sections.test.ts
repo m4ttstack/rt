@@ -27,16 +27,21 @@ describe('fetchCodeownerSections', () => {
     expect(await p.fetchCodeownerSections({ projectPath: 'g/p' })).toEqual(['Api - #pod-x', 'Docs']);
     expect(calls).toHaveLength(1);
     expect(calls[0]!.op).toBe('fetchCodeownerSections');
-    expect(calls[0]!.vars).toEqual({ projectPath: 'g/p', paths: ['CODEOWNERS', '.gitlab/CODEOWNERS', 'docs/CODEOWNERS'] });
+    expect(calls[0]!.vars).toEqual({ projectPath: 'g/p', paths: ['CODEOWNERS', 'docs/CODEOWNERS', '.gitlab/CODEOWNERS'] });
   });
 
-  test('the root file wins when several locations exist', async () => {
+  test('the root file wins when several locations exist, then docs over .gitlab', async () => {
     const p = new GitLabProvider('https://gitlab.example', 't');
     stubRunQuery(p, blobs([
       { path: 'docs/CODEOWNERS', rawTextBlob: '[FromDocs]' },
       { path: 'CODEOWNERS', rawTextBlob: '[FromRoot]' },
     ]));
     expect(await p.fetchCodeownerSections({ projectPath: 'g/p' })).toEqual(['FromRoot']);
+    stubRunQuery(p, blobs([
+      { path: '.gitlab/CODEOWNERS', rawTextBlob: '[FromGitlabDir]' },
+      { path: 'docs/CODEOWNERS', rawTextBlob: '[FromDocs]' },
+    ]));
+    expect(await p.fetchCodeownerSections({ projectPath: 'g/p' })).toEqual(['FromDocs']);
   });
 
   test('null when no location exists; [] when the file has no sections', async () => {
