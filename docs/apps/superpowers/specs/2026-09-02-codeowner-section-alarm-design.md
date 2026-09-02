@@ -243,9 +243,10 @@ after each such tab's label, active or not. When a tab is both unknown and
 syncing, only the unknown chip shows.
 
 **Tab editor.** `ConfigModal` takes `knownSections: string[] | null`.
-`TextField` gains an optional `suggestions?: string[]` that renders a
-`<datalist>` and sets `list` on the input. Both section fields (each existing
-tab's, and the new-tab field) pass the known set. Under an existing tab's
+`TabsControl` renders one `<datalist>` (id from `useId`) populated from the
+known set, and `TextField` gains an optional `list?: string` it forwards to
+its `<input>`. Both section fields (each existing tab's, and the new-tab
+field) point at that same datalist id. Under an existing tab's
 section field, when `sectionStatus` says unknown, a one-line hint reads
 `not in CODEOWNERS · did you mean "…"?` in the bad text colour. The tabs help
 copy gains a sentence saying a section must match a CODEOWNERS header
