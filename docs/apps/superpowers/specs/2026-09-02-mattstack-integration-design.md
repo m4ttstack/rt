@@ -248,9 +248,12 @@ needed by `fetchUserEvents`.
 
 ### 6.3 Tests and release
 
-Unit tests per method against recorded fixtures, following the package's
-existing pattern. Live conformance entries under `tests/live/` behind
-`GLANCE_LIVE=1`. Release as a minor version; boxscore pins it in sub-project 4.
+Unit tests per method with the transport stubbed, following the package's
+existing pattern. Live conformance entries under `tests/live/` are deferred:
+the live fixture project carries no merged MRs, pipelines, or pushes to
+assert against, and sub-project 4 exercises every read against gitlab.com
+through boxscore's own refresh. Release as a minor version; boxscore pins it
+in sub-project 4.
 
 ## 7. Sub-project 4: boxscore data layer
 

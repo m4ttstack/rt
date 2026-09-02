@@ -8,7 +8,7 @@
 
 **Tech Stack:** Bun, TypeScript (glance imports carry `.ts` suffixes and use single quotes), `bun:test` unit tests that stub `runQuery` or `globalThis.fetch`, no new dependencies. Package version moves 0.22.0 to 0.23.0.
 
-**Spec:** `docs/superpowers/specs/2026-09-02-mattstack-integration-design.md` in the boxscore repo, section 6 (sub-project 3). Section 7 describes the consumer these reads serve.
+**Spec:** `docs/superpowers/specs/2026-09-02-mattstack-integration-design.md` in the boxscore repo, section 6 (sub-project 3). Section 7 describes the consumer these reads serve. Live conformance entries are deferred per spec section 6.3; the unit tests here stub the transport.
 
 ## Global Constraints
 
@@ -46,7 +46,7 @@ Create `tests/pr-merged-at-labels.test.ts`:
  * fetch. Optional on the type because older SDK builds never set them.
  */
 import { describe, expect, test } from 'bun:test';
-import { GitLabProvider } from '../src/GitLabProvider.ts';
+import { GitLabProvider, MR_DASHBOARD_FRAGMENT, MR_LIST_FRAGMENT } from '../src/GitLabProvider.ts';
 import { GitHubProvider } from '../src/GitHubProvider.ts';
 
 function gitlabNode(over: Record<string, unknown> = {}) {
@@ -103,12 +103,11 @@ describe('GitLab PullRequest.mergedAt and labels', () => {
     expect(pr!.labels).toEqual([]);
   });
 
-  test('the fragments request both fields', () => {
-    const src = (p: GitLabProvider) => p;
-    void src;
-    const { MR_DASHBOARD_FRAGMENT } = require('../src/GitLabProvider.ts') as { MR_DASHBOARD_FRAGMENT: string };
-    expect(MR_DASHBOARD_FRAGMENT).toContain('mergedAt');
-    expect(MR_DASHBOARD_FRAGMENT).toContain('labels(first: 50) { nodes { title } }');
+  test('both fragments request both fields', () => {
+    for (const fragment of [MR_DASHBOARD_FRAGMENT, MR_LIST_FRAGMENT]) {
+      expect(fragment).toContain('mergedAt');
+      expect(fragment).toContain('labels(first: 50) { nodes { title } }');
+    }
   });
 });
 
@@ -544,13 +543,17 @@ function node(iid: number, over: Record<string, unknown> = {}) {
   };
 }
 
-/** Serves one page per call, per root ("group" or "project"), and records every call. */
-function stubPages(provider: GitLabProvider, pages: Array<ReturnType<typeof node>[]>): Call[] {
+/**
+ * Serves one response per call under the root the query names ("group" or
+ * "project") and records every call. With `paged`, each response but the
+ * last points at the next; without it every response is a final page.
+ */
+function stubPages(provider: GitLabProvider, pages: Array<ReturnType<typeof node>[]>, paged = true): Call[] {
   const calls: Call[] = [];
   (provider as any).runQuery = async (op: string, query: string, vars: Record<string, unknown>) => {
     calls.push({ op, query, vars });
     const idx = calls.length - 1;
-    const hasNextPage = idx < pages.length - 1;
+    const hasNextPage = paged && idx < pages.length - 1;
     const root = query.includes('group(fullPath') ? 'group' : 'project';
     return {
       [root]: {
@@ -588,14 +591,7 @@ describe('GitLabProvider.fetchMergeRequestIndex', () => {
 
   test('project mode queries each project in turn and never sends includeSubgroups', async () => {
     const p = new GitLabProvider('https://gitlab.example', 't');
-    const calls = stubPages(p, [[node(1)], [node(9, { project: { fullPath: 'g/q' } })]]);
-    // Two projects, one page each: the stub's second "page" answers the second project.
-    (p as any).runQuery = (((orig) => async (op: string, query: string, vars: Record<string, unknown>) => {
-      const res = await orig(op, query, vars);
-      // Every scope is a single page here.
-      res.project.mergeRequests.pageInfo = { hasNextPage: false, endCursor: null };
-      return res;
-    })((p as any).runQuery));
+    const calls = stubPages(p, [[node(1)], [node(9, { project: { fullPath: 'g/q' } })]], false);
     const rows = await p.fetchMergeRequestIndex({ projectPaths: ['g/p', 'g/q'], updatedAfter: UA });
     expect(calls.map((c) => c.vars.fullPath)).toEqual(['g/p', 'g/q']);
     expect(calls[0]!.query).not.toContain('includeSubgroups');
@@ -604,7 +600,8 @@ describe('GitLabProvider.fetchMergeRequestIndex', () => {
 
   test('one state is sent to the API; several are filtered here with no state variable', async () => {
     const p = new GitLabProvider('https://gitlab.example', 't');
-    const calls = stubPages(p, [[node(1, { state: 'merged' }), node(2, { state: 'closed' }), node(3, { state: 'opened' })]]);
+    const page = [node(1, { state: 'merged' }), node(2, { state: 'closed' }), node(3, { state: 'opened' })];
+    const calls = stubPages(p, [page, page], false);
     const one = await p.fetchMergeRequestIndex({ groupPath: 'g', updatedAfter: UA, states: ['merged'] });
     expect(calls[0]!.vars.state).toBe('merged');
     expect(calls[0]!.query).toContain('$state: MergeRequestState');
