@@ -686,7 +686,7 @@ const MR_INDEX_FIELDS = `
   iid title state createdAt updatedAt mergedAt sourceBranch
   author { username }
   project { fullPath }
-  labels(first: 50) { nodes { title } }
+  labels(first: 100) { nodes { title } }
 `;
 
 /**
@@ -1257,7 +1257,7 @@ export class GitLabProvider implements GitProvider {
     if (hasGroup === hasProjects) {
       throw new Error('fetchMergeRequestIndex: pass exactly one of groupPath or projectPaths');
     }
-    parseUpdatedAfter(options.updatedAfter);
+    requireInstant('fetchMergeRequestIndex', 'updatedAfter', options.updatedAfter);
 
     const states = options.states ?? [];
     const apiState = states.length === 1 ? states[0]! : null;
@@ -1275,14 +1275,15 @@ export class GitLabProvider implements GitProvider {
         if (apiState !== null) vars.state = apiState;
         const resp: MRIndexResponse = await this.runQuery<MRIndexResponse>('fetchMergeRequestIndex', query, vars);
         const conn = resp[scope.root]?.mergeRequests;
-        for (const n of conn?.nodes ?? []) {
+        if (!conn) throw new Error(`fetchMergeRequestIndex: no ${scope.root} at ${scope.fullPath}`);
+        for (const n of conn.nodes) {
           const row = toIndexRow(n);
           if (filterSet && !filterSet.has(row.state)) continue;
           out.push(row);
         }
         options.onPage?.(out.length);
-        const next = conn?.pageInfo?.hasNextPage ? (conn.pageInfo.endCursor ?? null) : null;
-        if (conn?.pageInfo?.hasNextPage && (next === null || next === after)) {
+        const next = conn.pageInfo.hasNextPage ? (conn.pageInfo.endCursor ?? null) : null;
+        if (conn.pageInfo.hasNextPage && (next === null || next === after)) {
           throw new Error(`fetchMergeRequestIndex: non-advancing cursor '${next}' for ${scope.fullPath}`);
         }
         after = next;
@@ -1298,6 +1299,9 @@ export class GitLabProvider implements GitProvider {
     if (!mr) return null;
 
     const notes: MetricsNote[] = mr.notes.nodes.map(toMetricsNote);
+    if (mr.notes.pageInfo.hasNextPage && mr.notes.pageInfo.endCursor === null) {
+      throw new Error(`fetchMergeRequestMetrics: non-advancing notes cursor 'null' for ${projectPath}!${mrIid}`);
+    }
     let after: string | null = mr.notes.pageInfo.hasNextPage ? mr.notes.pageInfo.endCursor : null;
     while (after) {
       const more: MRMetricsNotesResponse = await this.runQuery<MRMetricsNotesResponse>(

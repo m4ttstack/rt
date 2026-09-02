@@ -110,6 +110,20 @@ describe('GitLabProvider.fetchMergeRequestIndex', () => {
     await expect(p.fetchMergeRequestIndex({ groupPath: 'g', updatedAfter: UA })).rejects.toThrow('non-advancing cursor');
   });
 
+  test('an unknown or inaccessible root throws instead of returning an empty page', async () => {
+    const projectProvider = new GitLabProvider('https://gitlab.example', 't');
+    (projectProvider as any).runQuery = async () => ({ project: null });
+    await expect(
+      projectProvider.fetchMergeRequestIndex({ projectPaths: ['g/missing'], updatedAfter: UA })
+    ).rejects.toThrow('no project at g/missing');
+
+    const groupProvider = new GitLabProvider('https://gitlab.example', 't');
+    (groupProvider as any).runQuery = async () => ({ group: null });
+    await expect(
+      groupProvider.fetchMergeRequestIndex({ groupPath: 'nope', updatedAfter: UA })
+    ).rejects.toThrow('no group at nope');
+  });
+
   test('the capability flag is on', () => {
     expect(new GitLabProvider('https://gitlab.example', 't').capabilities.canFetchMergeRequestIndex).toBe(true);
   });

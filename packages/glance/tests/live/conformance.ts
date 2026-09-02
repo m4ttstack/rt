@@ -399,6 +399,18 @@ export async function runMetricsReadConformance(
     assert(only.every((r) => r.state === 'merged'), 'a states filter returned a non-merged row');
   });
 
+  await check(report, fixture, 'fetchMergeRequestIndex', 'group mode includes the fixture project rows', async () => {
+    const slash = projectPath.lastIndexOf('/');
+    if (slash < 0) throw new Inconclusive(`fixture project "${projectPath}" has no group segment`);
+    const group = projectPath.slice(0, slash);
+    if (indexRows.length === 0) throw new Inconclusive('no MRs updated in the last year; group mode is unverified');
+    const groupRows = await provider.fetchMergeRequestIndex!({ groupPath: group, updatedAfter });
+    const groupIids = new Set(groupRows.filter((r) => r.projectPath === projectPath).map((r) => r.iid));
+    for (const row of indexRows) {
+      assert(groupIids.has(row.iid), `project-mode row !${row.iid} for "${projectPath}" missing from group-mode rows`);
+    }
+  });
+
   await check(report, fixture, 'fetchMergeRequestMetrics', 'reads one indexed MR and agrees with the index on labels', async () => {
     const sample = indexRows[0];
     if (!sample) throw new Inconclusive('no indexed MR to read metrics for');
