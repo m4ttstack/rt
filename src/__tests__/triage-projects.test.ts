@@ -32,7 +32,7 @@ describe("collectProjectPRs", () => {
       seen.push(repoId);
       return { ok: true, data: { mrs: {}, listSyncedAt: 0, source: "poll", syncedAt: 0 } };
     });
-    const prs = await collectProjectPRs(boardConfig, fetchProjectMRs);
+    const { prs } = await collectProjectPRs(boardConfig, fetchProjectMRs);
     expect(seen).toEqual([]);
     expect(prs).toEqual([]);
   });
@@ -46,7 +46,28 @@ describe("collectProjectPRs", () => {
       if (repoId.includes("c%2Fd")) return { ok: false };
       return { ok: true, data: { mrs: { x: { pr: { id: repoId }, fetchedAt: 0 } }, listSyncedAt: 0, source: "poll", syncedAt: 0 } };
     });
-    const prs = await collectProjectPRs(boardConfig, fetchProjectMRs);
+    const { prs } = await collectProjectPRs(boardConfig, fetchProjectMRs);
     expect(prs).toEqual([{ id: "remote:gitlab.com%2Fa%2Fb" }] as never);
+  });
+
+  // buildBoard keeps a codeowner-tagged MR whose author is not a configured
+  // member only when it is handed these sections. Dropping them here makes
+  // those MRs invisible to every pass reading from this loop.
+  test("carries codeowner sections back keyed by PR id", async () => {
+    const boardConfig = { projects: ["a/b"], rtRepos: { "a/b": "gitlab.com/a/b" } };
+    const fetchProjectMRs = stubReader(async () => ({
+      ok: true,
+      data: {
+        mrs: {
+          tagged: { pr: { id: "pr-1" }, codeownerSections: ["islands"], fetchedAt: 0 },
+          plain: { pr: { id: "pr-2" }, fetchedAt: 0 },
+        },
+        listSyncedAt: 0, source: "poll", syncedAt: 0,
+      },
+    }));
+    const { prs, tags } = await collectProjectPRs(boardConfig, fetchProjectMRs);
+    expect(prs.map((p) => p.id)).toEqual(["pr-1", "pr-2"]);
+    expect(tags.get("pr-1")).toEqual(["islands"]);
+    expect(tags.has("pr-2")).toBe(false);
   });
 });
