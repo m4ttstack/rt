@@ -86,7 +86,7 @@ fetchCodeownerSections(options: { projectPath: string }): Promise<string[] | nul
 ```
 
 - One `runQuery` call with the three documented locations, in GitLab's
-  precedence order: `CODEOWNERS`, `.gitlab/CODEOWNERS`, `docs/CODEOWNERS`.
+  precedence order: `CODEOWNERS`, `docs/CODEOWNERS`, `.gitlab/CODEOWNERS`.
   The first path present wins; the others are ignored even if present.
 - Returns `null` when no location exists, else `parseCodeownerSections(text)`.
 - No pagination, no `ref`.
@@ -100,7 +100,8 @@ next to the provider:
   (`[Name] @owner`) are ignored.
 - Comment lines (`#`) and blank lines are skipped. A `[` inside a path rule
   is not a header because the line does not start with it.
-- Output is de-duplicated and sorted.
+- Output is de-duplicated case-insensitively, keeping the first casing seen
+  (GitLab merges same-named sections that way), then sorted.
 
 Tests, `tests/gitlab-codeowner-sections.test.ts`, stub `runQuery` the way
 `tests/approval-rules.test.ts` does: precedence when two locations exist,

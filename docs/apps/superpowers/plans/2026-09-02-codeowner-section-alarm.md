@@ -44,15 +44,16 @@ Repo: `~/Documents/GitHub/glance`, package `packages/glance`. Branch `codeowner-
 ```ts
 #!/usr/bin/env bun
 /**
- * parseCodeownerSections: section headers only, verbatim, sorted, de-duplicated.
- * A path rule containing brackets is not a header because it does not start
- * with one; an approvals count and default owners are not part of the name.
+ * parseCodeownerSections: section headers only, verbatim, sorted, de-duplicated
+ * the way GitLab merges them (case-insensitively, first casing kept). A path
+ * rule containing brackets is not a header because it does not start with
+ * one; an approvals count and default owners are not part of the name.
  */
 import { describe, expect, test } from 'bun:test';
 import { parseCodeownerSections } from '../src/codeowners.ts';
 
 describe('parseCodeownerSections', () => {
-  test('reads plain, optional, counted, defaulted and indented headers once each', () => {
+  test('reads plain, optional, counted, defaulted and indented headers once each, first casing wins', () => {
     const text = [
       '# owners',
       '[Docs] @writers',
@@ -60,7 +61,7 @@ describe('parseCodeownerSections', () => {
       '[Backend][2] @acme/backend-pod',
       '  [Indented]',
       'src/foo/[bar].ts @someone',
-      '[Docs] @again',
+      '[DOCS] @again',
       '',
     ].join('\n');
     expect(parseCodeownerSections(text)).toEqual(['Backend', 'Docs', 'Indented', 'Optional Section']);
@@ -98,19 +99,22 @@ Expected: FAIL, cannot resolve `../src/codeowners.ts`.
  * Section headers of a GitLab CODEOWNERS file: a line whose first non-blank
  * character opens a bracket, optionally prefixed with `^` for an optional
  * section. The approvals-count suffix (`[Name][2]`) and trailing default
- * owners are not part of the name. Names are kept verbatim: GitLab matches
- * sections case-insensitively for ownership, but the approval rule's
- * `section` carries the header text and consumers match that exactly.
+ * owners are not part of the name. GitLab merges same-named sections
+ * case-insensitively and keeps the first heading's casing, so this does too;
+ * the kept text is what the approval rule's `section` carries and what
+ * consumers match exactly.
  */
 export function parseCodeownerSections(text: string): string[] {
-  const out = new Set<string>();
+  const byKey = new Map<string, string>();
   for (const raw of text.split(/\r?\n/)) {
     const m = /^\^?\[([^\]]*)\]/.exec(raw.trimStart());
     if (!m) continue;
     const name = m[1]!.trim();
-    if (name.length > 0) out.add(name);
+    if (name.length === 0) continue;
+    const key = name.toLowerCase();
+    if (!byKey.has(key)) byKey.set(key, name);
   }
-  return [...out].sort();
+  return [...byKey.values()].sort();
 }
 ```
 
@@ -175,16 +179,21 @@ describe('fetchCodeownerSections', () => {
     expect(await p.fetchCodeownerSections({ projectPath: 'g/p' })).toEqual(['Api - #pod-x', 'Docs']);
     expect(calls).toHaveLength(1);
     expect(calls[0]!.op).toBe('fetchCodeownerSections');
-    expect(calls[0]!.vars).toEqual({ projectPath: 'g/p', paths: ['CODEOWNERS', '.gitlab/CODEOWNERS', 'docs/CODEOWNERS'] });
+    expect(calls[0]!.vars).toEqual({ projectPath: 'g/p', paths: ['CODEOWNERS', 'docs/CODEOWNERS', '.gitlab/CODEOWNERS'] });
   });
 
-  test('the root file wins when several locations exist', async () => {
+  test('the root file wins when several locations exist, then docs over .gitlab', async () => {
     const p = new GitLabProvider('https://gitlab.example', 't');
     stubRunQuery(p, blobs([
       { path: 'docs/CODEOWNERS', rawTextBlob: '[FromDocs]' },
       { path: 'CODEOWNERS', rawTextBlob: '[FromRoot]' },
     ]));
     expect(await p.fetchCodeownerSections({ projectPath: 'g/p' })).toEqual(['FromRoot']);
+    stubRunQuery(p, blobs([
+      { path: '.gitlab/CODEOWNERS', rawTextBlob: '[FromGitlabDir]' },
+      { path: 'docs/CODEOWNERS', rawTextBlob: '[FromDocs]' },
+    ]));
+    expect(await p.fetchCodeownerSections({ projectPath: 'g/p' })).toEqual(['FromDocs']);
   });
 
   test('null when no location exists; [] when the file has no sections', async () => {
@@ -221,10 +230,11 @@ import { parseCodeownerSections } from './codeowners.ts';
 After the `ApprovalRulesResponse` interface (near line 645), add:
 
 ```ts
-/** GitLab's documented CODEOWNERS locations in its precedence order: the first
-    that exists is the one GitLab reads. No `ref`: GitLab resolves the default
-    branch, which is the only branch whose sections new MRs will match. */
-const CODEOWNERS_PATHS = ['CODEOWNERS', '.gitlab/CODEOWNERS', 'docs/CODEOWNERS'] as const;
+/** GitLab's documented CODEOWNERS locations in its precedence order (root,
+    then docs/, then .gitlab/): the first that exists is the one GitLab reads.
+    No `ref`: GitLab resolves the default branch, which is the only branch
+    whose sections new MRs will match. */
+const CODEOWNERS_PATHS = ['CODEOWNERS', 'docs/CODEOWNERS', '.gitlab/CODEOWNERS'] as const;
 
 const CODEOWNERS_BLOBS_QUERY = `
   query GlanceCodeownersBlobs($projectPath: ID!, $paths: [String!]!) {
