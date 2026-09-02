@@ -2,14 +2,16 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   Anchor,
   Button,
+  Collapse,
   GenericError,
   Group,
   PageShell,
   Stack,
   Text,
+  UnstyledButton,
 } from '@mattstack/app-kit/core';
 import { useSchemeColors } from '@mattstack/app-kit/hooks';
-import { Icons } from '@mattstack/app-kit/icons';
+import { AnimatedChevron, Icons } from '@mattstack/app-kit/icons';
 import { Link } from 'wouter';
 
 import { PAGE_ROW_HEIGHT } from '../chrome';
@@ -123,6 +125,10 @@ export function RunBoard() {
     runsQuery.isSuccess && seenQuery.isSuccess
   );
 
+  // Finished runs are the least actionable band, and the longest -- start
+  // it collapsed so the page opens on what needs attention, not history.
+  const [finishedOpened, setFinishedOpened] = useState(false);
+
   // Computed once here (rather than inline per band below) so the same
   // capped, sorted set that gets RENDERED is also what the enrich join
   // fetches for -- a run capped out of the finished band shouldn't cost a
@@ -190,15 +196,11 @@ export function RunBoard() {
           const capped =
             band === 'finished' && bandRuns.length > FINISHED_DISPLAY_CAP;
           const displayRuns = displayByBand[band];
+          const collapsible = band === 'finished';
+          const opened = collapsible ? finishedOpened : true;
 
-          return (
-            <Stack key={band} gap="sm" data-testid={`band-${band}`}>
-              <Group justify="space-between">
-                <Text fw={700}>{BAND_META[band].title}</Text>
-                <Text c={text.muted} size="sm">
-                  {bandRuns.length}
-                </Text>
-              </Group>
+          const content = (
+            <>
               {bandRuns.length === 0 ? (
                 <Text c={text.muted} size="sm">
                   {BAND_META[band].empty}
@@ -221,6 +223,35 @@ export function RunBoard() {
                 <Anchor component={Link} href="/search" size="sm">
                   See all {bandRuns.length} finished runs in search →
                 </Anchor>
+              )}
+            </>
+          );
+
+          return (
+            <Stack key={band} gap="sm" data-testid={`band-${band}`}>
+              <Group justify="space-between">
+                {collapsible ? (
+                  <UnstyledButton
+                    data-testid="band-finished-toggle"
+                    onClick={() => setFinishedOpened(prev => !prev)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+                  >
+                    <AnimatedChevron opened={opened} size={16} />
+                    <Text fw={700}>{BAND_META[band].title}</Text>
+                  </UnstyledButton>
+                ) : (
+                  <Text fw={700}>{BAND_META[band].title}</Text>
+                )}
+                <Text c={text.muted} size="sm">
+                  {bandRuns.length}
+                </Text>
+              </Group>
+              {collapsible ? (
+                <Collapse expanded={opened} keepMountedMode="display-none">
+                  {content}
+                </Collapse>
+              ) : (
+                content
               )}
             </Stack>
           );

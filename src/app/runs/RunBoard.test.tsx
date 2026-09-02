@@ -208,11 +208,47 @@ describe('RunBoard', () => {
       )
     ).not.toBeInTheDocument();
 
-    const seeAll = within(screen.getByTestId('band-finished')).getByRole(
-      'link',
-      { name: /see all 25 finished runs in search/i }
+    // The finished band starts collapsed -- expand it to reach the link.
+    await userEvent.click(screen.getByTestId('band-finished-toggle'));
+
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId('band-finished')).getByRole('link', {
+          name: /see all 25 finished runs in search/i,
+        })
+      ).toHaveAttribute('href', '/search')
     );
-    expect(seeAll).toHaveAttribute('href', '/search');
+  });
+
+  it('collapses the finished band by default, expanding on toggle click', async () => {
+    renderBoard();
+
+    await waitFor(() =>
+      expect(screen.getByTestId('run-row-finished-1')).toBeInTheDocument()
+    );
+
+    expect(
+      within(screen.getByTestId('band-finished')).queryByRole('link', {
+        name: 'finished-1',
+      })
+    ).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByTestId('band-finished-toggle'));
+
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId('band-finished')).getByRole('link', {
+          name: 'finished-1',
+        })
+      ).toBeInTheDocument()
+    );
+
+    // The other bands never collapse -- no toggle affordance on their headers.
+    expect(
+      within(screen.getByTestId('band-attention')).queryByTestId(
+        'band-finished-toggle'
+      )
+    ).not.toBeInTheDocument();
   });
 
   it('names the rt verb that produced the board', async () => {
