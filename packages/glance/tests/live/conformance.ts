@@ -446,20 +446,28 @@ export async function runMetricsReadConformance(
     const mine = await provider.fetchProjectPipelines!(projectPath, { username: self.username, updatedAfter, updatedBefore: now });
     assert(mine.length <= all.length, 'a username filter returned more pipelines than the unfiltered listing');
     assert(mine.every((p) => p.username === self.username), 'a filtered pipeline does not carry the filter username');
+    const ghost = await provider
+      .fetchProjectPipelines!(projectPath, { username: 'glance-conformance-no-such-user', updatedAfter, updatedBefore: now })
+      .catch(() => 'refused' as const);
+    assert(ghost === 'refused' || ghost.length === 0,
+      'a nonexistent-username filter returned pipelines, so username is not applied server-side');
   });
 
   await check(report, fixture, 'fetchUserEvents', 'reads the token user\'s push events', async () => {
     const self = await provider.validateToken();
-    const events = await provider.fetchUserEvents!(self.id, {
-      action: 'pushed',
-      after: dateOnly(isoDaysAgo(366)),
-      before: dateOnly(new Date(Date.now() + DAY_MS).toISOString())
-    });
+    const after = dateOnly(isoDaysAgo(366));
+    const before = dateOnly(new Date(Date.now() + DAY_MS).toISOString());
+    const events = await provider.fetchUserEvents!(self.id, { action: 'pushed', after, before });
     assert(Array.isArray(events), 'expected an array');
     if (events.length === 0) throw new Inconclusive('no push events in the last year for the token user');
     for (const e of events) {
-      assert(typeof e.action === 'string' && e.action.length > 0, `event has no action: ${JSON.stringify(e)}`);
-      assert(!Number.isNaN(Date.parse(e.createdAt)), `event createdAt "${e.createdAt}" does not parse`);
+      // GitLab's push category renders action_name 'pushed to' / 'pushed new', and 'deleted' or
+      // 'removed' for a push that deletes a ref; anything else means the action filter was ignored.
+      assert(/^(pushed( to| new)?|deleted|removed)$/.test(e.action), `event action "${e.action}" is not a push-category action`);
+      const t = Date.parse(e.createdAt);
+      assert(!Number.isNaN(t), `event createdAt "${e.createdAt}" does not parse`);
+      assert(t > Date.parse(after) && t < Date.parse(before) + DAY_MS,
+        `event createdAt "${e.createdAt}" falls outside the requested window`);
     }
   });
 }

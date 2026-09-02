@@ -97,6 +97,8 @@ describe('fetchProjectPipelines', () => {
   test('refuses an unparseable bound and a page that does not advance', async () => {
     await expect(p().fetchProjectPipelines('g/p', { updatedAfter: 'x', updatedBefore: '2026-08-31T00:00:00Z' })).rejects.toThrow('updatedAfter must be an ISO-8601 instant');
     await expect(p().fetchProjectPipelines('g/p', { updatedAfter: '2026-08-01T00:00:00Z', updatedBefore: 'x' })).rejects.toThrow('updatedBefore must be an ISO-8601 instant');
+    await expect(p().fetchProjectPipelines('g/p', { updatedAfter: '2026-08-01', updatedBefore: '2026-08-31T00:00:00Z' })).rejects.toThrow('updatedAfter must be an ISO-8601 instant');
+    await expect(p().fetchProjectPipelines('g/p', { updatedAfter: '2026-08-01T00:00:00', updatedBefore: '2026-08-31T00:00:00Z' })).rejects.toThrow('updatedAfter must be an ISO-8601 instant');
     stubFetch([{ body: [], nextPage: '1' }]);
     await expect(p().fetchProjectPipelines('g/p', { updatedAfter: '2026-08-01T00:00:00Z', updatedBefore: '2026-08-31T00:00:00Z' })).rejects.toThrow('non-advancing page');
   });

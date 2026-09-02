@@ -841,9 +841,11 @@ interface GroupProjectsResponse {
   } | null;
 }
 
-/** Throws unless `value` parses as an instant; the message names the operation and field. */
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+/** Throws unless `value` is an instant with an explicit time and zone; Date.parse alone admits date-only and zoneless-local values. */
 function requireInstant(op: string, field: string, value: string): void {
-  if (Number.isNaN(Date.parse(value))) {
+  if (!ISO_INSTANT.test(value) || Number.isNaN(Date.parse(value))) {
     throw new Error(`${op}: ${field} must be an ISO-8601 instant, got "${value}"`);
   }
 }
@@ -1308,7 +1310,9 @@ export class GitLabProvider implements GitProvider {
         'fetchMergeRequestMetrics.notes', MR_METRICS_NOTES_QUERY, { ...vars, after },
       );
       const conn = more.project?.mergeRequest?.notes;
-      if (!conn) break;
+      if (!conn) {
+        throw new Error(`fetchMergeRequestMetrics: ${projectPath}!${mrIid} disappeared while paging notes`);
+      }
       notes.push(...conn.nodes.map(toMetricsNote));
       const next = conn.pageInfo.hasNextPage ? conn.pageInfo.endCursor : null;
       if (conn.pageInfo.hasNextPage && (next === null || next === after)) {

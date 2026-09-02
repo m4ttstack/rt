@@ -98,6 +98,15 @@ describe('GitLabProvider.fetchMergeRequestMetrics', () => {
     await expect(p.fetchMergeRequestMetrics('g/p', 7)).rejects.toThrow('non-advancing notes cursor');
   });
 
+  test('an MR that disappears on a follow-up notes page throws instead of returning partial notes', async () => {
+    const p = new GitLabProvider('https://gitlab.example', 't');
+    stub(p, [
+      detail({ hasNextPage: true, endCursor: 'n1', nodes: [note('a', '2026-08-02T10:00:00Z')] }),
+      { project: { mergeRequest: null } },
+    ]);
+    await expect(p.fetchMergeRequestMetrics('g/p', 7)).rejects.toThrow('g/p!7 disappeared while paging notes');
+  });
+
   test('a non-advancing cursor on the first notes page throws instead of truncating silently', async () => {
     const p = new GitLabProvider('https://gitlab.example', 't');
     stub(p, [detail({ hasNextPage: true, endCursor: null, nodes: [note('a', '2026-08-02T10:00:00Z')] })]);
