@@ -11,6 +11,9 @@ What it adds:
   of flight on one of your MRs, your row picks up the badge.
 - **Request re-review.** A row action on your own MR ("request re-review from
   `<reviewer>`") asks that reviewer's board directly.
+- **Author-driven re-review.** Independent of the switchboard: the MR author can
+  ask by resolving the latch thread on the MR itself, with no peer board
+  involved. See [agent actions](agent-actions.md#reviewer-side-automation).
 - **Guarded auto re-review.** The reviewer side can run `bun run triage` on a
   cron so an incoming nudge is picked up and re-dispatched automatically. See
   [agent actions](agent-actions.md#reviewer-side-automation) for the

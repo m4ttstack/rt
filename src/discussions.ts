@@ -1,4 +1,5 @@
 import type { MRDetail } from "@mattstack/glance";
+import { latchKindOf } from "./latch/markers.ts";
 
 export type ThreadStatus = "resolved" | "replied" | "awaiting";
 
@@ -88,6 +89,11 @@ export function summarizeDiscussions(
   for (const d of detail.discussions) {
     const notes = d.notes.filter((n) => !n.system);
     if (!notes.length) continue;
+    // The board's own latch thread is machinery, not feedback. Counting it
+    // would inflate "N comments", and a spent latch is a resolved thread, so
+    // it would also feed threadSummary.resolved and make an MR with no real
+    // feedback read as all-resolved.
+    if (latchKindOf(notes[0]!.body ?? "")) continue;
     const resolvable = notes.filter((n) => n.resolvable);
     if (!resolvable.length) {
       // No resolvable note ⇒ a general MR comment, not a review thread. Skip

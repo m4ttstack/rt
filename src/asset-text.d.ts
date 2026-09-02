@@ -12,3 +12,11 @@ declare module "*.txt" {
   const text: string;
   export default text;
 }
+
+// File imports (`with { type: "file" }`): Bun resolves these to a path that
+// reads correctly both from a checkout and inside a compiled binary, where
+// the file is embedded and extracted to a temp path at runtime.
+declare module "*.png" {
+  const path: string;
+  export default path;
+}

@@ -13,14 +13,36 @@ export interface NudgeDecision {
   reason: string;
 }
 
-/** The whole nudge guardrail, one pure function. Freshness is judged on the
-    relay-stamped receivedAt (never sender-clock sentAt). Reject (vs skip) is
-    terminal: it publishes an outcome so the requester's chip resolves, and
-    the requester can re-nudge once the blocker clears. */
-export function decideNudge(nudge: NudgeState, ownReview: ReviewState | undefined, m: MrMemory, cfg: TriageConfig, now: number): NudgeDecision {
-  if (nudge.handled) return { action: "skip", reason: "already-handled" };
+export type ReReviewSource = "nudge" | "latch";
+
+/** A re-review request from either source, as the decision function sees it.
+    `receivedAt` is null for a latch: a latch cannot go stale, because the pass
+    consumes it on the tick after it is resolved, so there is no queue to age. */
+export interface ReReviewRequest {
+  mrUrl: string;
+  iid: number;
+  source: ReReviewSource;
+  receivedAt: number | null;
+  handled: boolean;
+}
+
+/** The whole re-review guardrail, one pure function, shared by both sources.
+    Freshness is judged on the relay-stamped receivedAt (never sender-clock
+    sentAt) and only when there is one. Reject (vs skip) is terminal: it
+    publishes an outcome so the requester's chip resolves, and the requester can
+    re-request once the blocker clears. */
+export function decideRequest(
+  req: ReReviewRequest,
+  ownReview: ReviewState | undefined,
+  m: MrMemory,
+  cfg: TriageConfig,
+  now: number,
+): NudgeDecision {
+  if (req.handled) return { action: "skip", reason: "already-handled" };
   if (!cfg.enabled) return { action: "skip", reason: "disabled" };
-  if (now - nudge.receivedAt > NUDGE_FRESH_MS) return { action: "expire", reason: "stale" };
+  if (req.receivedAt !== null && now - req.receivedAt > NUDGE_FRESH_MS) {
+    return { action: "expire", reason: "stale" };
+  }
   if (ownReview && (ownReview.status === "queued" || ownReview.status === "reviewing")) {
     return { action: "reject", reason: "review-in-flight" };
   }
@@ -31,7 +53,25 @@ export function decideNudge(nudge: NudgeState, ownReview: ReviewState | undefine
   if (m.lastDispatchAt !== null && now - m.lastDispatchAt < cfg.cooldownMinutes * 60_000) {
     return { action: "reject", reason: "cooldown" };
   }
-  return { action: "dispatch", reason: "nudge" };
+  return { action: "dispatch", reason: req.source };
+}
+
+/** Adapter for the peer-nudge source, so runNudgePass and its callers keep
+    their existing shape. */
+export function decideNudge(nudge: NudgeState, ownReview: ReviewState | undefined, m: MrMemory, cfg: TriageConfig, now: number): NudgeDecision {
+  return decideRequest(
+    {
+      mrUrl: nudge.mrUrl,
+      iid: nudge.iid,
+      source: "nudge",
+      receivedAt: nudge.receivedAt,
+      handled: !!nudge.handled,
+    },
+    ownReview,
+    m,
+    cfg,
+    now,
+  );
 }
 
 export interface NudgePassDeps {
