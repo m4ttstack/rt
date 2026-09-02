@@ -127,6 +127,29 @@ no newlines renders as one paragraph.
 
 Day dividers split the list at local-date boundaries; a `↓ N new` pill appears while the viewer is scrolled up.
 
+## Paging the transcript
+
+A room opens on its newest 30 messages (`PAGE_SIZE` in
+`src/app/Transcript.tsx`); every messages fetch, including the tail refetch a
+frame triggers, sends that `limit`. The next 30 older load by
+`before=<oldest id>` only when the viewer clicks the `load older messages`
+row at the top of the list; a page shorter than 30 marks the room exhausted
+and the row reads `no older messages`. There is deliberately no
+scroll-to-top trigger: the scroll library re-sticks to the bottom on a
+content change that lands inside its 200ms scroll debounce, which a jump to
+the top plus an instant page did every time, and an effect keyed on its
+at-top state (which starts `true`) paged whole rooms on mount.
+
+A `#m-<id>` link to a message below everything loaded pages older until the
+message arrives, at most 10 pages; an id inside the loaded range that is
+missing is pruned and gets no fetch. Once the message is in the list the
+transcript scrolls it to the centre and then parks the viewer there through
+the library's own `scrollTo`, the one call that clears its
+follow-the-bottom state; if the hunt runs out of pages the viewer gets the
+bottom back the same way. In fixtures mode the route pages
+`fixtureMessages` the way the daemon does, so `CHAT_FIXTURES=1` exercises
+the paging, though every fixtures room is shorter than one page.
+
 ## Running it
 
 | Command                                    | What you get                                                                                                                                                       |

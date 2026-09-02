@@ -1,4 +1,5 @@
 import { renderWithProviders } from '@mattstack/app-kit/test-utils';
+import type { ChatMessage } from '@mattstack/rt-client';
 import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, expect, test } from 'vitest';
 
@@ -6,11 +7,34 @@ import {
   FakeWebSocket,
   fetchMock,
   installFakeWebSocket,
+  installFetchMock,
   longCodeBlockMessage,
   renderTranscriptWithFakeSocket,
   restoreWebSocket,
 } from './test-utils';
-import { Transcript } from './Transcript';
+import { PAGE_SIZE, Transcript } from './Transcript';
+
+/** `count` messages with consecutive ids ending at `lastId`, all today. */
+function page(count: number, lastId = count): ChatMessage[] {
+  const now = Date.now();
+  return Array.from({ length: count }, (_, i) => {
+    const id = lastId - count + 1 + i;
+    return {
+      id,
+      room: 'build',
+      handle: 'fred',
+      body: `m${id}`,
+      mentions: [],
+      postedAt: now - (count - i) * 1000,
+    };
+  });
+}
+
+function olderRequests(): unknown[][] {
+  return fetchMock.mock.calls.filter(([url]) =>
+    String(url).includes('before=')
+  );
+}
 
 beforeEach(() => {
   installFakeWebSocket();
@@ -223,54 +247,267 @@ test('the anchor scrolls once, and a later live merge does not repeat it', async
 });
 
 test('an empty older page marks the top edge exhausted and stops paging', async () => {
-  renderTranscriptWithFakeSocket({
-    room: 'build',
-    messages: [
-      {
-        id: 7,
-        room: 'build',
-        handle: 'deck-main',
-        body: 'first',
-        mentions: [],
-        postedAt: 1,
-      },
-    ],
-  });
+  renderTranscriptWithFakeSocket({ room: 'build', messages: page(PAGE_SIZE) });
   const edge = screen.getByTestId('transcript-edge');
   expect(edge).toHaveTextContent('older messages');
   fireEvent.click(edge);
   await screen.findByText('no older messages');
-  const calls = fetchMock.mock.calls.filter(([url]) =>
-    String(url).includes('before=')
-  );
-  expect(calls).toHaveLength(1);
+  expect(olderRequests()).toHaveLength(1);
   fireEvent.click(screen.getByTestId('transcript-edge'));
-  expect(
-    fetchMock.mock.calls.filter(([url]) => String(url).includes('before='))
-  ).toHaveLength(1);
+  expect(olderRequests()).toHaveLength(1);
 });
 
 test('an error page leaves the top edge retryable instead of exhausting it', async () => {
-  renderTranscriptWithFakeSocket({
-    room: 'build',
-    messages: [
-      {
-        id: 7,
-        room: 'build',
-        handle: 'deck-main',
-        body: 'first',
-        mentions: [],
-        postedAt: 1,
-      },
-    ],
-  });
+  renderTranscriptWithFakeSocket({ room: 'build', messages: page(PAGE_SIZE) });
   fetchMock.mockImplementationOnce(
     async () => new Response('{}', { status: 502 })
   );
   fireEvent.click(screen.getByTestId('transcript-edge'));
-  await screen.findByText('older messages · load on scroll');
+  await screen.findByText('load older messages');
   expect(screen.queryByText('no older messages')).toBeNull();
   expect(screen.getByTestId('transcript-edge')).not.toBeDisabled();
+});
+
+test("after an older page loads, the reader's row stays put while content above it settles", async () => {
+  // Folds apply a render after mount and highlighters land later still, so
+  // the content above the reader shrinks after the first correction; every
+  // ResizeObserver callback is captured (folds make one per message too)
+  // and fired by hand to stand in for that settling.
+  const callbacks: (() => void)[] = [];
+  class CapturingResizeObserver {
+    constructor(callback: () => void) {
+      callbacks.push(callback);
+    }
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+  const originalResizeObserver = globalThis.ResizeObserver;
+  globalThis.ResizeObserver =
+    CapturingResizeObserver as unknown as typeof ResizeObserver;
+  try {
+    renderTranscriptWithFakeSocket({
+      room: 'build',
+      messages: page(PAGE_SIZE, 60),
+    });
+    const view = viewOf(screen.getByTestId('transcript-scroll'));
+    // The scroll library's own jump to the end lands a frame after mount
+    // and would overwrite a stub set any earlier.
+    await act(() => new Promise(resolve => setTimeout(resolve, 50)));
+    Object.defineProperty(view, 'scrollTop', {
+      configurable: true,
+      writable: true,
+      value: 1000,
+    });
+    view.getBoundingClientRect = () => ({ top: 0 }) as DOMRect;
+    let rowTop = 40;
+    const row = screen.getByTestId('message-31');
+    row.getBoundingClientRect = () => ({ top: rowTop }) as DOMRect;
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ messages: page(PAGE_SIZE, 30) }),
+    } as Response);
+    fireEvent.click(screen.getByTestId('transcript-edge'));
+    await screen.findByTestId('message-1');
+    expect(view.scrollTop).toBe(1000);
+
+    rowTop = -260;
+    act(() => {
+      for (const callback of callbacks) callback();
+    });
+    expect(view.scrollTop).toBe(700);
+  } finally {
+    globalThis.ResizeObserver = originalResizeObserver;
+  }
+});
+
+test('the older-messages control is a subtle Mantine button, so it reads as clickable', () => {
+  renderTranscriptWithFakeSocket({ room: 'build', messages: page(PAGE_SIZE) });
+  const edge = screen.getByTestId('transcript-edge');
+  expect(edge.tagName).toBe('BUTTON');
+  expect(edge).toHaveAttribute('data-variant', 'subtle');
+  expect(edge).toHaveTextContent('load older messages');
+});
+
+test('an older page shorter than the page size exhausts the edge without another round trip', async () => {
+  renderTranscriptWithFakeSocket({
+    room: 'build',
+    messages: page(PAGE_SIZE, 40),
+  });
+  fetchMock.mockResolvedValueOnce({
+    ok: true,
+    status: 200,
+    json: async () => ({ messages: page(3, 10) }),
+  } as Response);
+  fireEvent.click(screen.getByTestId('transcript-edge'));
+  await screen.findByText('no older messages');
+  expect(screen.getByTestId('message-8')).toBeInTheDocument();
+  expect(olderRequests()).toHaveLength(1);
+});
+
+test('a first page shorter than the page size opens with the edge already exhausted', () => {
+  renderTranscriptWithFakeSocket({
+    room: 'build',
+    messages: page(PAGE_SIZE - 1),
+  });
+  const edge = screen.getByTestId('transcript-edge');
+  expect(edge).toHaveTextContent('no older messages');
+  expect(edge).toBeDisabled();
+});
+
+test('the tail refetch and the older fetch each ask for one page', async () => {
+  const { pushFrame } = renderTranscriptWithFakeSocket({
+    room: 'build',
+    messages: page(PAGE_SIZE, 60),
+  });
+  pushFrame({ topic: 'chat/build/msg', payload: { id: 61 } });
+  await screen.findByTestId('message-61');
+  const tail = fetchMock.mock.calls.find(
+    ([url]) =>
+      String(url).includes('/api/chat/messages/build') &&
+      !String(url).includes('before=')
+  );
+  expect(String(tail?.[0])).toContain(`limit=${PAGE_SIZE}`);
+  fireEvent.click(screen.getByTestId('transcript-edge'));
+  await waitFor(() => expect(olderRequests()).toHaveLength(1));
+  expect(String(olderRequests()[0]![0])).toContain(`limit=${PAGE_SIZE}`);
+});
+
+/** Answers every messages request from one ordered history, paging older
+    by `before` and `limit` the way the daemon does. */
+function serveHistory(all: ChatMessage[]) {
+  installFetchMock();
+  fetchMock.mockImplementation(async (input: RequestInfo | URL) => {
+    const url = new URL(String(input), 'http://chat.test');
+    const before = url.searchParams.get('before');
+    const limit = Number(url.searchParams.get('limit'));
+    const messages = (
+      before === null ? all : all.filter(m => m.id < Number(before))
+    ).slice(-limit);
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ messages }),
+    } as Response;
+  });
+}
+
+function recordingScrollIntoView(run: (scrolled: string[]) => Promise<void>) {
+  const scrolled: string[] = [];
+  const original = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = function () {
+    scrolled.push((this as Element).id);
+  };
+  return run(scrolled).finally(() => {
+    Element.prototype.scrollIntoView = original;
+  });
+}
+
+test('a link to a message older than the first page pages back until it is in the list, then scrolls to it', () =>
+  recordingScrollIntoView(async scrolled => {
+    serveHistory(page(60, 60));
+    renderWithProviders(
+      <Transcript room="build" messages={page(PAGE_SIZE, 60)} anchor="m-5" />
+    );
+    await waitFor(() => expect(scrolled).toEqual(['m-5']));
+    expect(screen.getByTestId('message-5')).toBeInTheDocument();
+    expect(olderRequests()).toHaveLength(1);
+  }));
+
+test(
+  'anchor paging gives up after ten pages without ever scrolling',
+  () =>
+    recordingScrollIntoView(async scrolled => {
+      serveHistory(page(400, 400));
+      renderWithProviders(
+        <Transcript room="build" messages={page(PAGE_SIZE, 400)} anchor="m-1" />
+      );
+      // Ten pages is 330 rendered messages, which CI's runner takes a few
+      // seconds over; the default one-second wait gave up after seven.
+      await waitFor(() => expect(olderRequests()).toHaveLength(10), {
+        timeout: 15_000,
+      });
+      await act(async () => {});
+      expect(olderRequests()).toHaveLength(10);
+      expect(scrolled).toEqual([]);
+      expect(screen.queryByTestId('message-1')).toBeNull();
+    }),
+  20_000
+);
+
+test('a link into the loaded range that names a missing message never pages', () =>
+  recordingScrollIntoView(async scrolled => {
+    serveHistory(page(60, 60));
+    renderWithProviders(
+      <Transcript
+        room="build"
+        messages={page(PAGE_SIZE, 60).filter(m => m.id !== 45)}
+        anchor="m-45"
+      />
+    );
+    await act(async () => {});
+    expect(olderRequests()).toHaveLength(0);
+    expect(scrolled).toEqual([]);
+  }));
+
+function withScrollableView(run: () => void) {
+  const proto = HTMLElement.prototype;
+  const originals = (['scrollHeight', 'clientHeight'] as const).map(
+    name => [name, Object.getOwnPropertyDescriptor(proto, name)] as const
+  );
+  const isView = (el: unknown) =>
+    typeof (el as HTMLElement).className === 'string' &&
+    (el as HTMLElement).className.includes('view');
+  Object.defineProperty(proto, 'scrollHeight', {
+    configurable: true,
+    get() {
+      return isView(this) ? 1000 : 0;
+    },
+  });
+  Object.defineProperty(proto, 'clientHeight', {
+    configurable: true,
+    get() {
+      return isView(this) ? 300 : 0;
+    },
+  });
+  try {
+    run();
+  } finally {
+    for (const [name, original] of originals) {
+      if (original) Object.defineProperty(proto, name, original);
+      else delete (proto as unknown as Record<string, unknown>)[name];
+    }
+  }
+}
+
+test('opening a room never pages on its own, even when the list is taller than the view', async () => {
+  withScrollableView(() => {
+    renderTranscriptWithFakeSocket({
+      room: 'build',
+      messages: page(PAGE_SIZE),
+    });
+  });
+  await act(async () => {});
+  expect(olderRequests()).toHaveLength(0);
+  expect(screen.getByTestId('transcript-edge')).toHaveTextContent(
+    'load older messages'
+  );
+});
+
+test('scrolling to the top never pages on its own; only the edge button does', async () => {
+  renderTranscriptWithFakeSocket({
+    room: 'build',
+    messages: page(PAGE_SIZE, 60),
+  });
+  const view = viewOf(screen.getByTestId('transcript-scroll'));
+  scrollTo(view, 500);
+  scrollTo(view, 0);
+  await act(async () => {});
+  expect(olderRequests()).toHaveLength(0);
+  fireEvent.click(screen.getByTestId('transcript-edge'));
+  await waitFor(() => expect(olderRequests()).toHaveLength(1));
+  expect(String(olderRequests()[0]![0])).toContain('before=31');
 });
 
 test('a notice renders at the edge, above the older-messages row, and without any messages at all', () => {
@@ -426,16 +663,7 @@ test('loading an older page puts a day divider above what was the first message'
   const now = Date.now();
   renderTranscriptWithFakeSocket({
     room: 'build',
-    messages: [
-      {
-        id: 5,
-        room: 'build',
-        handle: 'fred',
-        body: 'new',
-        mentions: [],
-        postedAt: now,
-      },
-    ],
+    messages: page(PAGE_SIZE, 40),
   });
   expect(screen.queryByTestId('day-divider')).toBeNull();
   // Queued AFTER the render: `renderTranscriptWithFakeSocket` installs the

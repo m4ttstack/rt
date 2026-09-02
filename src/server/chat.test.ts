@@ -824,6 +824,23 @@ test('fixtures mode answers POST /api/chat/rooms without touching the daemon: a 
   expect(rt.chatPost).not.toHaveBeenCalled();
 });
 
+test('fixtures mode pages GET /api/chat/messages like the daemon: the newest `limit`, `before` walking older, oldest first', async () => {
+  process.env.CHAT_FIXTURES = '1';
+  const ids = async (query: string) =>
+    (
+      (await (
+        await routes.request(`/api/chat/messages/retro-0819${query}`)
+      ).json()) as {
+        messages: { id: number }[];
+      }
+    ).messages.map(m => m.id);
+  expect(await ids('?limit=2')).toEqual([303, 304]);
+  expect(await ids('?before=303&limit=2')).toEqual([301, 302]);
+  expect(await ids('?before=301&limit=2')).toEqual([]);
+  expect(await ids('')).toEqual([301, 302, 303, 304]);
+  expect(rt.chatMessages).not.toHaveBeenCalled();
+});
+
 test('fixtures mode answers POST /api/chat/invite from fixtureInvite, keyed by pane state, without touching the daemon', async () => {
   process.env.CHAT_FIXTURES = '1';
   const res = await routes.request('/api/chat/invite', {
