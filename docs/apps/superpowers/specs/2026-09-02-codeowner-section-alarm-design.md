@@ -144,6 +144,10 @@ Its default resolves the provider through `getRepoContext` and calls
   already rewrites. This is what makes a fix in the tab editor refresh the set
   immediately: the board re-declares the new section, the read handler sees it
   uncovered, and the backfill runs.
+- **backfillAuthors** rebuilds the scope through `setScope` too. It does not
+  fetch, but it carries the stored `knownSections` forward the same way it
+  already carries `sections`, or a new author demand would blank the list
+  until the next deep.
 - **Delta** never touches it. Containment holds: a repo with no demanded
   sections never fetches.
 

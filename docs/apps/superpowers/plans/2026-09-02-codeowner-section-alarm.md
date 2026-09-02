@@ -695,16 +695,45 @@ with
   }
 ```
 
-- [ ] **Step 4: Run the sync suite**
+- [ ] **Step 4: `backfillAuthors` carries `knownSections` forward**
 
-Run: `bun test lib/daemon/__tests__/project-sync.test.ts`
-Expected: PASS. The existing `with no existing scope leaves scope unset` test still passes because the fetch sits inside the `if (scope)` guard.
+`backfillAuthors` also rebuilds the scope through `setScope` (near line 524). It already carries `sections` forward; add the same for `knownSections` so an author backfill never blanks the list:
 
-- [ ] **Step 5: Commit**
+```ts
+  store.setScope(repoName, {
+    authors: [...union].sort(),
+    ...(record?.scope?.sections ? { sections: record.scope.sections } : {}),
+    ...(record?.scope?.knownSections ? { knownSections: record.scope.knownSections } : {}),
+    windowDays,
+  });
+```
+
+Add this test directly after `backfillAuthors preserves an existing scope's sections (finding 1)`:
+
+```ts
+  test("backfillAuthors preserves an existing scope's knownSections", async () => {
+    const store = tmpStore();
+    store.fullSync("ba-ks", "g/p", [], Date.now() - 1000);
+    store.setScope("ba-ks", { authors: ["alice"], sections: ["Acme"], windowDays: 30, knownSections: ["Acme", "Beta"] });
+    await backfillAuthors(
+      { repoIndex: () => ({ "ba-ks": "/tmp/repo" }), broadcast: () => {} },
+      "ba-ks", ["bob"],
+      { store, windowDays: 30, fetchAuthors: async () => ({ projectPath: "g/p", prs: [] }) },
+    );
+    expect(store.read("ba-ks")!.scope).toEqual({ authors: ["alice", "bob"], sections: ["Acme"], windowDays: 30, knownSections: ["Acme", "Beta"] });
+  });
+```
+
+- [ ] **Step 5: Run the sync suite and the type check**
+
+Run: `bun test lib/daemon/__tests__/project-sync.test.ts && bun run check-types`
+Expected: PASS. The existing `with no existing scope leaves scope unset` test still passes because the fetch sits inside the `if (scope)` guard. If the repo's type-check script has a different name, use the one `package.json` defines for `tsc`.
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add lib/daemon/project-sync.ts lib/daemon/__tests__/project-sync.test.ts
-git commit -m "project-sync: backfillSections refreshes knownSections"
+git commit -m "project-sync: backfillSections refreshes knownSections, backfillAuthors keeps it"
 ```
 
 ### Task 8: rt-client 0.11.1 and the rt PR
