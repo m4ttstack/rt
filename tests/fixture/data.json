@@ -1907,5 +1907,6 @@
       }
     }
   ],
-  "scopeUncoveredSections": []
+  "scopeUncoveredSections": [],
+  "scopeKnownSections": null
 }

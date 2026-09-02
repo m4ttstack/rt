@@ -180,6 +180,7 @@ interface TeamMRsResult {
   scopeUncovered: string[];
   scopeWindowDays: number | null;
   scopeUncoveredSections: string[];
+  scopeKnownSections: string[] | null;
   tags: Map<string, string[]>;
 }
 
@@ -294,10 +295,10 @@ const cache = new SnapshotCache(async () => {
   // latched for the background refreshes that follow.
   const force = forceNextFetch;
   forceNextFetch = false;
-  const { prs, dataSyncedAt, scopeUncovered, scopeWindowDays, scopeUncoveredSections, tags } = await fetchTeamMRs(force);
+  const { prs, dataSyncedAt, scopeUncovered, scopeWindowDays, scopeUncoveredSections, scopeKnownSections, tags } = await fetchTeamMRs(force);
   const mrs = buildBoard(prs, config, undefined, tags);
   await enrichReviewerComments(mrs);
-  return { mrs, dataSyncedAt, scopeUncovered, scopeWindowDays, scopeUncoveredSections };
+  return { mrs, dataSyncedAt, scopeUncovered, scopeWindowDays, scopeUncoveredSections, scopeKnownSections };
 });
 
 /**
@@ -599,6 +600,7 @@ const httpServer = Bun.serve({
             scopeUncovered: snapshot.scopeUncovered,
             scopeWindowDays: snapshot.scopeWindowDays,
             scopeUncoveredSections: snapshot.scopeUncoveredSections,
+            scopeKnownSections: snapshot.scopeKnownSections,
             staleAfterDays: config.staleAfterDays,
             tabs: config.tabs,
           }),

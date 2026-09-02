@@ -514,6 +514,7 @@ describe("aggregateSyncScope", () => {
       scopeUncovered: [],
       scopeWindowDays: null,
       scopeUncoveredSections: [],
+      scopeKnownSections: null,
     });
   });
 
@@ -539,12 +540,27 @@ describe("aggregateSyncScope", () => {
     ]);
     expect(agg.scopeUncoveredSections).toEqual(["Acme"]);
   });
+
+  test("scopeKnownSections is null until a read carries the field, then the sorted union", () => {
+    expect(aggregateSyncScope([{ syncedAt: 1, scope: { authors: [], windowDays: 30, uncovered: [] } }]).scopeKnownSections).toBeNull();
+    const agg = aggregateSyncScope([
+      { syncedAt: 1, scope: { authors: [], windowDays: 30, uncovered: [], knownSections: ["Zeta", "Acme"] } },
+      { syncedAt: 2, scope: { authors: [], windowDays: 30, uncovered: [], knownSections: ["Acme"] } },
+      { syncedAt: 3 },
+    ]);
+    expect(agg.scopeKnownSections).toEqual(["Acme", "Zeta"]);
+  });
+
+  test("an empty knownSections list is an answer, not null", () => {
+    const agg = aggregateSyncScope([{ syncedAt: 1, scope: { authors: [], windowDays: 30, uncovered: [], knownSections: [] } }]);
+    expect(agg.scopeKnownSections).toEqual([]);
+  });
 });
 
 /** Wrap a bare mrs array as the FetchResult shape SnapshotCache now expects,
     for tests that only care about the mrs field. */
 function fetchResult(mrs: unknown[]): FetchResult {
-  return { mrs: mrs as BoardMR[], dataSyncedAt: null, scopeUncovered: [], scopeWindowDays: null, scopeUncoveredSections: [] };
+  return { mrs: mrs as BoardMR[], dataSyncedAt: null, scopeUncovered: [], scopeWindowDays: null, scopeUncoveredSections: [], scopeKnownSections: null };
 }
 
 describe("SnapshotCache", () => {
