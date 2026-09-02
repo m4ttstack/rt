@@ -14,8 +14,10 @@ import type { BuddyStatus } from '@mattstack/rt-client';
 
 import { HUMAN_HANDLE } from './human';
 import { STATUS_WORD } from './statusDetail';
+import { useAutoGrowTextarea } from './use-auto-grow-textarea';
 
 const MUTED = 'var(--tk-muted-text)';
+const INPUT_LINE_HEIGHT = 1.4;
 const BORDER = 'var(--tk-border)';
 const BORDER_SOFT = 'var(--tk-border-soft)';
 const PURPLE = 'var(--tk-purple)';
@@ -256,6 +258,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
     const [token, setToken] = useState<MentionToken | null>(null);
     const [focused, setFocused] = useState(false);
     const textareaRef = useRef<HTMLTextAreaElement>(null);
+    useAutoGrowTextarea(textareaRef, value);
 
     const showPopover = token !== null && daemonReachable;
 
@@ -418,6 +421,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
       : focused
         ? ACCENT_TEXT
         : BORDER;
+    const inputFontSize = phone ? 16 : 'var(--mantine-font-size-md)';
 
     return (
       <Box
@@ -458,7 +462,7 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
               data-testid="composer-row"
               gap="sm"
               wrap="nowrap"
-              align="center"
+              align="flex-end"
             >
               <Box
                 data-testid="composer-input"
@@ -499,13 +503,25 @@ export const Composer = forwardRef<ComposerHandle, ComposerProps>(
                     background: 'transparent',
                     color: 'inherit',
                     fontFamily: 'inherit',
-                    fontSize: phone ? 16 : 'var(--mantine-font-size-md)',
-                    lineHeight: 1.4,
+                    fontSize: inputFontSize,
+                    lineHeight: INPUT_LINE_HEIGHT,
                     padding: 'var(--mantine-spacing-sm) 0',
+                    maxHeight: phone ? '25vh' : '40vh',
+                    overflowY: 'auto',
                   }}
                 />
                 {!phone && daemonReachable && (
-                  <Group gap="xs" wrap="nowrap" style={{ flex: 'none' }}>
+                  <Group
+                    gap="xs"
+                    wrap="nowrap"
+                    style={{
+                      flex: 'none',
+                      alignSelf: 'flex-end',
+                      fontSize: inputFontSize,
+                      height: `calc(${INPUT_LINE_HEIGHT}em + var(--mantine-spacing-sm))`,
+                      paddingBottom: 'var(--mantine-spacing-sm)',
+                    }}
+                  >
                     <Kbd>↵ send</Kbd>
                     <Kbd>⇧↵ newline</Kbd>
                   </Group>

@@ -1,14 +1,22 @@
 import { createRef } from 'react';
 import { renderWithProviders } from '@mattstack/app-kit/test-utils';
-import { act, screen } from '@testing-library/react';
+import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, expect, test, vi } from 'vitest';
+import { afterEach, beforeEach, expect, test, vi } from 'vitest';
 
 import { Composer, type ComposerHandle } from './Composer';
-import { fetchMock, installFetchMock } from './test-utils';
+import {
+  fetchMock,
+  installFetchMock,
+  stubTextareaScrollHeight,
+} from './test-utils';
 
 beforeEach(() => {
   installFetchMock();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 test('@ autocompletes from the roster, offers DM instead for a buddy outside the room, and never lists an offline buddy', async () => {
@@ -115,4 +123,37 @@ test('a second send while the first is in flight does not post twice', async () 
   expect(posts).toHaveLength(1);
 
   release(new Response(JSON.stringify({ id: 1 })));
+});
+
+test('the compose box grows with a multi-line draft and drops back to one line after a send', async () => {
+  stubTextareaScrollHeight(20);
+  renderWithProviders(<Composer room="build" roomMembers={[]} buddies={[]} />);
+  const box = screen.getByRole('textbox');
+  expect(box).toHaveStyle({ height: '20px' });
+
+  await userEvent.type(
+    box,
+    'one{Shift>}{Enter}{/Shift}two{Shift>}{Enter}{/Shift}three'
+  );
+  expect(box).toHaveValue('one\ntwo\nthree');
+  expect(box).toHaveStyle({ height: '60px' });
+
+  await userEvent.click(screen.getByRole('button', { name: /send/i }));
+  await waitFor(() => expect(box).toHaveValue(''));
+  expect(box).toHaveStyle({ height: '20px' });
+});
+
+test('a long draft scrolls inside the box instead of growing past the cap', () => {
+  renderWithProviders(<Composer room="build" roomMembers={[]} buddies={[]} />);
+  expect(screen.getByRole('textbox')).toHaveStyle({
+    maxHeight: '40vh',
+    overflowY: 'auto',
+  });
+});
+
+test('the phone keeps a shorter cap so the keyboard does not swallow the box', () => {
+  renderWithProviders(
+    <Composer room="build" roomMembers={[]} buddies={[]} phone />
+  );
+  expect(screen.getByRole('textbox')).toHaveStyle({ maxHeight: '25vh' });
 });

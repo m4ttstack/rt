@@ -171,3 +171,21 @@ export const longCodeBlockMessage: ChatMessage = {
   mentions: [],
   postedAt: Date.now(),
 };
+
+/**
+ * jsdom has no layout, so `scrollHeight` is always 0. This stub gives a
+ * textarea the one property auto-grow depends on: its scroll height is its
+ * line count at `lineHeight` px a line, but never less than the fixed
+ * `style.height` it currently has -- the same clamp a real browser applies,
+ * and the reason auto-grow must reset the height to `auto` before measuring.
+ */
+export function stubTextareaScrollHeight(lineHeight = 20) {
+  vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(
+    function (this: HTMLElement) {
+      const value = this instanceof HTMLTextAreaElement ? this.value : '';
+      const content = lineHeight * value.split('\n').length;
+      const fixed = parseFloat(this.style.height);
+      return Number.isNaN(fixed) ? content : Math.max(fixed, content);
+    }
+  );
+}
