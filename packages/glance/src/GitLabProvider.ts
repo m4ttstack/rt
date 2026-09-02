@@ -1,6 +1,13 @@
 import { Gitlab, GitbeakerRequestError, GitbeakerRetryError } from '@gitbeaker/rest';
 import type { CreateMergeRequestOptions, EditMergeRequestOptions } from '@gitbeaker/rest';
-import type { GitProvider, FetchPullRequestsOptions, MRState } from './GitProvider.ts';
+import type {
+  GitProvider,
+  FetchPullRequestsOptions,
+  FetchMergeRequestIndexOptions,
+  FetchProjectPipelinesOptions,
+  FetchUserEventsOptions,
+  MRState,
+} from './GitProvider.ts';
 import { parseUpdatedAfter, requireProjectPath } from './GitProvider.ts';
 import type {
   BranchProtectionRule,
@@ -11,14 +18,20 @@ import type {
   JobDetail,
   MergeabilityCheck,
   MergePullRequestInput,
+  MergeRequestIndexRow,
+  MergeRequestMetrics,
+  MetricsNote,
   MRApprovalRules,
   MRDetail,
   Pipeline,
   PipelineJob,
+  PipelineSummary,
+  ProjectRef,
   ProviderCapabilities,
   PullRequest,
   Reviewer,
   UpdatePullRequestInput,
+  UserEvent,
   UserRef,
   WatchEventsOptions,
 } from './types.ts';
@@ -57,7 +70,7 @@ export const MR_DASHBOARD_FRAGMENT = `
     sourceBranch targetBranch webUrl
     targetProject { repository { rootRef } }
     diffHeadSha
-    updatedAt createdAt
+    updatedAt createdAt mergedAt
     conflicts
     detailedMergeStatus
     approved
@@ -116,7 +129,7 @@ export const MR_LIST_FRAGMENT = `
     sourceBranch targetBranch webUrl
     targetProject { repository { rootRef } }
     diffHeadSha
-    updatedAt createdAt
+    updatedAt createdAt mergedAt
     conflicts
     detailedMergeStatus
     approved
@@ -244,6 +257,7 @@ interface GQLMR {
   diffHeadSha: string | null;
   updatedAt: string;
   createdAt: string;
+  mergedAt?: string | null;
   conflicts: boolean;
   detailedMergeStatus: string | null;
   approved: boolean;
@@ -444,6 +458,7 @@ function toMR(
     isStacked: !!rootRef && gql.targetBranch !== rootRef,
     createdAt: gql.createdAt,
     updatedAt: gql.updatedAt,
+    mergedAt: gql.mergedAt ?? null,
     sha: gql.diffHeadSha,
     author: toUserRef(gql.author, baseURL, token),
     assignees: gql.assignees.nodes.map((u) => toUserRef(u, baseURL, token)),
@@ -667,6 +682,174 @@ interface CodeownersBlobsResponse {
   } | null;
 }
 
+const MR_INDEX_FIELDS = `
+  iid title state createdAt updatedAt mergedAt sourceBranch
+  author { username }
+  project { fullPath }
+  labels(first: 100) { nodes { title } }
+`;
+
+/**
+ * The index query for one root. Built rather than written four times: group
+ * and project roots differ only in `includeSubgroups`, and GitLab reads a
+ * null `state` argument as a filter, so a request for several states must
+ * omit the variable entirely.
+ */
+function mrIndexQuery(root: 'group' | 'project', withState: boolean): string {
+  const scopeArg = root === 'group' ? 'includeSubgroups: true, ' : '';
+  const stateVar = withState ? ', $state: MergeRequestState' : '';
+  const stateArg = withState ? 'state: $state, ' : '';
+  return `
+    query GlanceMRIndex($fullPath: ID!, $ua: Time!, $after: String${stateVar}) {
+      ${root}(fullPath: $fullPath) {
+        mergeRequests(${scopeArg}${stateArg}updatedAfter: $ua, sort: UPDATED_DESC, first: 100, after: $after) {
+          pageInfo { hasNextPage endCursor }
+          nodes { ${MR_INDEX_FIELDS} }
+        }
+      }
+    }
+  `;
+}
+
+interface GQLIndexNode {
+  iid: string;
+  title: string;
+  state: string;
+  createdAt: string;
+  updatedAt: string;
+  mergedAt: string | null;
+  sourceBranch: string;
+  author: { username: string } | null;
+  project: { fullPath: string };
+  labels: { nodes: Array<{ title: string }> } | null;
+}
+
+interface MRIndexConnection {
+  pageInfo: { hasNextPage: boolean; endCursor: string | null };
+  nodes: GQLIndexNode[];
+}
+
+interface MRIndexResponse {
+  group?: { mergeRequests: MRIndexConnection } | null;
+  project?: { mergeRequests: MRIndexConnection } | null;
+}
+
+function toIndexRow(n: GQLIndexNode): MergeRequestIndexRow {
+  return {
+    iid: parseInt(n.iid, 10),
+    projectPath: n.project.fullPath,
+    title: n.title,
+    state: n.state.toLowerCase(),
+    createdAt: n.createdAt,
+    updatedAt: n.updatedAt,
+    mergedAt: n.mergedAt ?? null,
+    authorUsername: n.author?.username ?? null,
+    sourceBranch: n.sourceBranch,
+    labels: (n.labels?.nodes ?? []).map((l) => l.title),
+  };
+}
+
+const MR_METRICS_NOTE_FIELDS = 'system createdAt author { username } position { __typename }';
+
+const MR_METRICS_QUERY = `
+  query GlanceMRMetrics($fullPath: ID!, $iid: String!) {
+    project(fullPath: $fullPath) {
+      id
+      mergeRequest(iid: $iid) {
+        description
+        diffStatsSummary { additions deletions fileCount }
+        diffStats { path additions deletions }
+        labels(first: 100) { nodes { title } }
+        approvedBy(first: 100) { nodes { username } }
+        notes(first: 100) {
+          pageInfo { hasNextPage endCursor }
+          nodes { ${MR_METRICS_NOTE_FIELDS} }
+        }
+      }
+    }
+  }
+`;
+
+const MR_METRICS_NOTES_QUERY = `
+  query GlanceMRMetricsNotes($fullPath: ID!, $iid: String!, $after: String!) {
+    project(fullPath: $fullPath) {
+      mergeRequest(iid: $iid) {
+        notes(first: 100, after: $after) {
+          pageInfo { hasNextPage endCursor }
+          nodes { ${MR_METRICS_NOTE_FIELDS} }
+        }
+      }
+    }
+  }
+`;
+
+interface GQLMetricsNote {
+  system: boolean;
+  createdAt: string;
+  author: { username: string } | null;
+  position: { __typename: string } | null;
+}
+
+interface GQLNotesConnection {
+  pageInfo: { hasNextPage: boolean; endCursor: string | null };
+  nodes: GQLMetricsNote[];
+}
+
+interface MRMetricsResponse {
+  project: {
+    mergeRequest: {
+      description: string | null;
+      diffStatsSummary: GQLDiffStats | null;
+      diffStats: Array<{ path: string; additions: number; deletions: number }> | null;
+      labels: { nodes: Array<{ title: string }> } | null;
+      approvedBy: { nodes: Array<{ username: string }> } | null;
+      notes: GQLNotesConnection;
+    } | null;
+  } | null;
+}
+
+interface MRMetricsNotesResponse {
+  project: { mergeRequest: { notes: GQLNotesConnection } | null } | null;
+}
+
+function toMetricsNote(n: GQLMetricsNote): MetricsNote {
+  return {
+    authorUsername: n.author?.username ?? null,
+    createdAt: n.createdAt,
+    system: n.system,
+    inline: n.position !== null,
+  };
+}
+
+const GROUP_PROJECTS_QUERY = `
+  query GlanceGroupProjects($fullPath: ID!, $after: String) {
+    group(fullPath: $fullPath) {
+      projects(includeSubgroups: true, first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes { fullPath }
+      }
+    }
+  }
+`;
+
+interface GroupProjectsResponse {
+  group: {
+    projects: {
+      pageInfo: { hasNextPage: boolean; endCursor: string | null };
+      nodes: Array<{ fullPath: string }>;
+    };
+  } | null;
+}
+
+const ISO_INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:\d{2})$/;
+
+/** Throws unless `value` is an instant with an explicit time and zone; Date.parse alone admits date-only and zoneless-local values. */
+function requireInstant(op: string, field: string, value: string): void {
+  if (!ISO_INSTANT.test(value) || Number.isNaN(Date.parse(value))) {
+    throw new Error(`${op}: ${field} must be an ISO-8601 instant, got "${value}"`);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // GitLabProvider
 // ---------------------------------------------------------------------------
@@ -719,6 +902,12 @@ export class GitLabProvider implements GitProvider {
     canRetryPipeline: true,
     canRequestReReview: true,
     canWatchEvents: true,
+    canFetchMergeRequestIndex: true,
+    canFetchMergeRequestMetrics: true,
+    canFetchGroupProjects: true,
+    canFetchProject: true,
+    canFetchProjectPipelines: true,
+    canFetchUserEvents: true,
   };
 
   // MARK: - GitProvider
@@ -1062,6 +1251,183 @@ export class GitLabProvider implements GitProvider {
       }
     }
     return null;
+  }
+
+  async fetchMergeRequestIndex(options: FetchMergeRequestIndexOptions): Promise<MergeRequestIndexRow[]> {
+    const hasGroup = options.groupPath !== undefined;
+    const hasProjects = options.projectPaths !== undefined;
+    if (hasGroup === hasProjects) {
+      throw new Error('fetchMergeRequestIndex: pass exactly one of groupPath or projectPaths');
+    }
+    requireInstant('fetchMergeRequestIndex', 'updatedAfter', options.updatedAfter);
+
+    const states = options.states ?? [];
+    const apiState = states.length === 1 ? states[0]! : null;
+    const filterSet = states.length > 1 ? new Set<string>(states) : null;
+    const scopes: Array<{ root: 'group' | 'project'; fullPath: string }> = hasGroup
+      ? [{ root: 'group', fullPath: options.groupPath! }]
+      : options.projectPaths!.map((fullPath) => ({ root: 'project' as const, fullPath }));
+
+    const out: MergeRequestIndexRow[] = [];
+    for (const scope of scopes) {
+      const query = mrIndexQuery(scope.root, apiState !== null);
+      let after: string | null = null;
+      do {
+        const vars: Record<string, unknown> = { fullPath: scope.fullPath, ua: options.updatedAfter, after };
+        if (apiState !== null) vars.state = apiState;
+        const resp: MRIndexResponse = await this.runQuery<MRIndexResponse>('fetchMergeRequestIndex', query, vars);
+        const conn = resp[scope.root]?.mergeRequests;
+        if (!conn) throw new Error(`fetchMergeRequestIndex: no ${scope.root} at ${scope.fullPath}`);
+        for (const n of conn.nodes) {
+          const row = toIndexRow(n);
+          if (filterSet && !filterSet.has(row.state)) continue;
+          out.push(row);
+        }
+        options.onPage?.(out.length);
+        const next = conn.pageInfo.hasNextPage ? (conn.pageInfo.endCursor ?? null) : null;
+        if (conn.pageInfo.hasNextPage && (next === null || next === after)) {
+          throw new Error(`fetchMergeRequestIndex: non-advancing cursor '${next}' for ${scope.fullPath}`);
+        }
+        after = next;
+      } while (after);
+    }
+    return out;
+  }
+
+  async fetchMergeRequestMetrics(projectPath: string, mrIid: number): Promise<MergeRequestMetrics | null> {
+    const vars = { fullPath: projectPath, iid: String(mrIid) };
+    const resp = await this.runQuery<MRMetricsResponse>('fetchMergeRequestMetrics', MR_METRICS_QUERY, vars);
+    const mr = resp.project?.mergeRequest;
+    if (!mr) return null;
+
+    const notes: MetricsNote[] = mr.notes.nodes.map(toMetricsNote);
+    if (mr.notes.pageInfo.hasNextPage && mr.notes.pageInfo.endCursor === null) {
+      throw new Error(`fetchMergeRequestMetrics: non-advancing notes cursor 'null' for ${projectPath}!${mrIid}`);
+    }
+    let after: string | null = mr.notes.pageInfo.hasNextPage ? mr.notes.pageInfo.endCursor : null;
+    while (after) {
+      const more: MRMetricsNotesResponse = await this.runQuery<MRMetricsNotesResponse>(
+        'fetchMergeRequestMetrics.notes', MR_METRICS_NOTES_QUERY, { ...vars, after },
+      );
+      const conn = more.project?.mergeRequest?.notes;
+      if (!conn) {
+        throw new Error(`fetchMergeRequestMetrics: ${projectPath}!${mrIid} disappeared while paging notes`);
+      }
+      notes.push(...conn.nodes.map(toMetricsNote));
+      const next = conn.pageInfo.hasNextPage ? conn.pageInfo.endCursor : null;
+      if (conn.pageInfo.hasNextPage && (next === null || next === after)) {
+        throw new Error(`fetchMergeRequestMetrics: non-advancing notes cursor '${next}' for ${projectPath}!${mrIid}`);
+      }
+      after = next;
+    }
+
+    return {
+      iid: mrIid,
+      projectPath,
+      description: mr.description ?? null,
+      diffStats: mr.diffStatsSummary
+        ? {
+            additions: mr.diffStatsSummary.additions,
+            deletions: mr.diffStatsSummary.deletions,
+            filesChanged: mr.diffStatsSummary.fileCount,
+          }
+        : null,
+      fileStats: (mr.diffStats ?? []).map((f) => ({ path: f.path, additions: f.additions, deletions: f.deletions })),
+      labels: (mr.labels?.nodes ?? []).map((l) => l.title),
+      approvedByUsernames: (mr.approvedBy?.nodes ?? []).map((u) => u.username),
+      notes,
+    };
+  }
+
+  /**
+   * GET a list endpoint across every page. GitLab names the next page in
+   * `x-next-page` (empty on the last page); a page that names itself or an
+   * earlier page again would loop forever, so that throws.
+   */
+  private async restPages<T>(op: string, path: string, query: Record<string, string>): Promise<T[]> {
+    const out: T[] = [];
+    let page = 1;
+    for (;;) {
+      const params = new URLSearchParams({ ...query, per_page: '100', page: String(page) });
+      const res = await this.restRequest('GET', `${path}?${params.toString()}`, undefined, op);
+      if (!res.ok) throw new Error(`${op}: HTTP ${res.status} for ${path} page ${page}`);
+      out.push(...((await res.json()) as T[]));
+      const next = res.headers.get('x-next-page');
+      if (!next) return out;
+      const nextPage = Number(next);
+      if (!Number.isInteger(nextPage) || nextPage <= page) {
+        throw new Error(`${op}: non-advancing page '${next}' for ${path}`);
+      }
+      page = nextPage;
+    }
+  }
+
+  async fetchGroupProjects(groupPath: string): Promise<string[]> {
+    const out: string[] = [];
+    let after: string | null = null;
+    do {
+      const resp: GroupProjectsResponse = await this.runQuery<GroupProjectsResponse>(
+        'fetchGroupProjects', GROUP_PROJECTS_QUERY, { fullPath: groupPath, after },
+      );
+      const conn = resp.group?.projects;
+      if (!conn) throw new Error(`fetchGroupProjects: no group at ${groupPath}`);
+      out.push(...conn.nodes.map((n) => n.fullPath));
+      const next = conn.pageInfo.hasNextPage ? (conn.pageInfo.endCursor ?? null) : null;
+      if (conn.pageInfo.hasNextPage && (next === null || next === after)) {
+        throw new Error(`fetchGroupProjects: non-advancing cursor '${next}' for ${groupPath}`);
+      }
+      after = next;
+    } while (after);
+    return out;
+  }
+
+  async fetchProject(projectPath: string): Promise<ProjectRef | null> {
+    const res = await this.restRequest('GET', `/projects/${encodeURIComponent(projectPath)}`, undefined, 'fetchProject');
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`fetchProject: HTTP ${res.status} for ${projectPath}`);
+    const body = (await res.json()) as { id: number; path_with_namespace: string };
+    return { id: `gitlab:${body.id}`, fullPath: body.path_with_namespace };
+  }
+
+  async fetchProjectPipelines(projectPath: string, options: FetchProjectPipelinesOptions): Promise<PipelineSummary[]> {
+    requireInstant('fetchProjectPipelines', 'updatedAfter', options.updatedAfter);
+    requireInstant('fetchProjectPipelines', 'updatedBefore', options.updatedBefore);
+    const query: Record<string, string> = {};
+    if (options.username) query.username = options.username;
+    query.updated_after = options.updatedAfter;
+    query.updated_before = options.updatedBefore;
+    type RESTPipeline = { id: number; status: string; created_at: string | null };
+    const raws = await this.restPages<RESTPipeline>(
+      'fetchProjectPipelines', `/projects/${encodeURIComponent(projectPath)}/pipelines`, query,
+    );
+    return raws.map((r) => ({
+      id: domainId('pipeline', r.id),
+      status: r.status.toLowerCase(),
+      createdAt: r.created_at ?? null,
+      username: options.username ?? null,
+    }));
+  }
+
+  async fetchUserEvents(userId: string, options: FetchUserEventsOptions): Promise<UserEvent[]> {
+    const scoped = /^gitlab:user:(\d+)$/.exec(userId);
+    if (!scoped) {
+      throw new Error(`fetchUserEvents: userId must be a scoped GitLab user id like "gitlab:user:42", got "${userId}"`);
+    }
+    for (const [field, value] of [['after', options.after], ['before', options.before]] as const) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        throw new Error(`fetchUserEvents: ${field} must be a calendar date (YYYY-MM-DD), got "${value}"`);
+      }
+    }
+    type RESTEvent = { action_name: string; created_at: string; project_id: number | null };
+    const raws = await this.restPages<RESTEvent>(
+      'fetchUserEvents', `/users/${scoped[1]}/events`,
+      { action: options.action, after: options.after, before: options.before },
+    );
+    return raws.map((e) => ({
+      action: e.action_name,
+      createdAt: e.created_at,
+      repositoryId: e.project_id == null ? null : `gitlab:${e.project_id}`,
+    }));
   }
 
   async fetchMRDiscussions(repositoryId: string, mrIid: number): Promise<MRDetail> {

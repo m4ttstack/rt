@@ -1,5 +1,38 @@
 # @mattstack/glance
 
+## 0.23.0
+
+### Minor Changes
+
+- `PullRequest` carries `mergedAt` (when the MR merged, null while open or
+  closed unmerged). Both providers populate it; the field is optional on the
+  type so a `PullRequest` built by an older SDK still type-checks. Labels
+  are deliberately not on `PullRequest`: a connection in the dashboard
+  fragment pushes the role-based `fetchPullRequests` query past gitlab.com's
+  complexity cap of 250. They ride the metric-grade reads below.
+- Metric-grade reads on `GitProvider`, each optional and paired with a
+  `ProviderCapabilities` flag; `GitLabProvider` implements all six,
+  `GitHubProvider` declares them `false`:
+  - `fetchMergeRequestIndex({ groupPath | projectPaths, updatedAfter, states?, onPage? })`:
+    scalar MR rows (`MergeRequestIndexRow`) across a group with its
+    subgroups or a project set, 100 per page to exhaustion. The list a
+    metrics consumer keeps history from.
+  - `fetchMergeRequestMetrics(projectPath, iid)`: one MR's
+    `MergeRequestMetrics` (description, summary and per-file diff stats,
+    labels, approver usernames, every note with author, time, system flag,
+    and whether it sits on a diff line), notes paginated to exhaustion.
+  - `fetchGroupProjects(groupPath)`, `fetchProject(projectPath)`,
+    `fetchProjectPipelines(projectPath, { username?, updatedAfter, updatedBefore })`,
+    and `fetchUserEvents(userId, { action, after, before })`, returning
+    `string[]`, `ProjectRef | null`, `PipelineSummary[]`, and `UserEvent[]`.
+  - New exports: those five types plus `MetricsNote`, and the option types
+    `FetchMergeRequestIndexOptions`, `FetchProjectPipelinesOptions`,
+    `FetchUserEventsOptions`.
+- `ProviderCapabilities` gained six required boolean fields, one per
+  metric-grade read above. Any code constructing that type directly (test
+  doubles, a third-party provider) must add them, following the precedent
+  set by `canWatchEvents`.
+
 ## 0.22.1
 
 ### Patch Changes

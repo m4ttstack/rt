@@ -5,11 +5,16 @@ import type {
   InvalidationBatch,
   JobDetail,
   MergePullRequestInput,
+  MergeRequestIndexRow,
+  MergeRequestMetrics,
   MRDetail,
   Pipeline,
+  PipelineSummary,
+  ProjectRef,
   ProviderCapabilities,
   PullRequest,
   UpdatePullRequestInput,
+  UserEvent,
   UserRef,
   WatchEventsOptions,
 } from './types.ts';
@@ -184,6 +189,50 @@ export function parseUpdatedAfter(updatedAfter: string | undefined): number | nu
   return parsed;
 }
 
+/** Options for `fetchMergeRequestIndex`. Exactly one of `groupPath` or `projectPaths`. */
+export interface FetchMergeRequestIndexOptions {
+  /** A group, including its subgroups. */
+  groupPath?: string;
+  /** Explicit "group/project" paths. */
+  projectPaths?: string[];
+  /**
+   * Only MRs updated at/after this ISO-8601 instant. Required: an index with
+   * no lower bound walks the project's whole history.
+   *
+   * The walk is `UPDATED_DESC` keyset pagination, so an MR updated while the
+   * walk is in progress can move ahead of the cursor and be missed. A
+   * consumer keeping a watermark should take it from the instant the scan
+   * started, with a small overlap, never from the instant the scan ended.
+   */
+  updatedAfter: string;
+  /** Any state when omitted. */
+  states?: MRState[];
+  /** Called after each page with the rows collected so far. */
+  onPage?: (rowsSoFar: number) => void;
+}
+
+/** Options for `fetchProjectPipelines`. */
+export interface FetchProjectPipelinesOptions {
+  /** Only pipelines triggered by this username. */
+  username?: string;
+  /** ISO-8601 instants; GitLab applies both to the pipeline's `updated_at`. */
+  updatedAfter: string;
+  updatedBefore: string;
+}
+
+/** Options for `fetchUserEvents`. */
+export interface FetchUserEventsOptions {
+  /** The forge's action filter, e.g. "pushed". */
+  action: string;
+  /**
+   * Calendar dates (YYYY-MM-DD). GitLab treats both as exclusive, so a caller
+   * wanting the days D1..D2 inclusive passes the day before D1 and the day
+   * after D2.
+   */
+  after: string;
+  before: string;
+}
+
 /**
  * Provider-agnostic interface for a Git hosting service.
  *
@@ -320,6 +369,49 @@ export interface GitProvider {
    * Returns the MRDetail with discussions populated.
    */
   fetchMRDiscussions(repositoryId: string, mrIid: number): Promise<MRDetail>;
+
+  // ── Metric-grade reads (optional; check the matching capability flag) ───
+
+  /**
+   * Cheap index of merge requests across a group (with subgroups) or a set
+   * of projects, bounded by `updatedAfter`. Scalar fields only: this is the
+   * list a metrics consumer keeps history from, and it is what GitLab's
+   * resolvers can page through without timing out on a busy monorepo.
+   * Check `capabilities.canFetchMergeRequestIndex`.
+   */
+  fetchMergeRequestIndex?(options: FetchMergeRequestIndexOptions): Promise<MergeRequestIndexRow[]>;
+
+  /**
+   * One MR's metric-grade detail: description, summary and per-file diff
+   * stats, labels, approver usernames, and every note (paginated to
+   * exhaustion) with its author, time, system flag, and whether it sits on
+   * a diff line. Null when the project or MR does not exist.
+   * Check `capabilities.canFetchMergeRequestMetrics`.
+   */
+  fetchMergeRequestMetrics?(projectPath: string, mrIid: number): Promise<MergeRequestMetrics | null>;
+
+  /**
+   * Full paths of a group's projects, subgroups included. Check
+   * `capabilities.canFetchGroupProjects`. Throws when the group does not
+   * exist or is not visible to the token.
+   */
+  fetchGroupProjects?(groupPath: string): Promise<string[]>;
+
+  /** Resolve a "group/project" path, or null when it does not exist. Check `capabilities.canFetchProject`. */
+  fetchProject?(projectPath: string): Promise<ProjectRef | null>;
+
+  /**
+   * A project's pipelines inside a window, optionally for one user.
+   * Check `capabilities.canFetchProjectPipelines`.
+   */
+  fetchProjectPipelines?(projectPath: string, options: FetchProjectPipelinesOptions): Promise<PipelineSummary[]>;
+
+  /**
+   * A user's activity feed for one action between two dates. `userId` is
+   * the scoped id `UserRef.id` carries (`fetchUser` returns it).
+   * Check `capabilities.canFetchUserEvents`.
+   */
+  fetchUserEvents?(userId: string, options: FetchUserEventsOptions): Promise<UserEvent[]>;
 
   // ── Mutation capabilities ───────────────────────────────────────────────
 

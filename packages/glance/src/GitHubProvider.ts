@@ -625,7 +625,13 @@ export class GitHubProvider implements GitProvider {
      * feed. resume is a fast path, not a guarantee; full sync is the only
      * recovery.
      */
-    canWatchEvents: true
+    canWatchEvents: true,
+    canFetchMergeRequestIndex: false,
+    canFetchMergeRequestMetrics: false,
+    canFetchGroupProjects: false,
+    canFetchProject: false,
+    canFetchProjectPipelines: false,
+    canFetchUserEvents: false
   };
 
   // ── GitProvider interface ─────────────────────────────────────────────────
@@ -3176,6 +3182,7 @@ export class GitHubProvider implements GitProvider {
         pr.base.ref !== pr.base.repo.default_branch,
       createdAt: pr.created_at,
       updatedAt: pr.updated_at,
+      mergedAt: pr.merged_at ?? null,
       sha: pr.head.sha,
       author: toUserRef(pr.user),
       assignees: pr.assignees.map(toUserRef),
