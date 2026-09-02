@@ -5,13 +5,12 @@ import { GitLabApiError } from "../gitlab/errors.js";
 import { applyMrDetail, mapEvent, mapMrListNode, mapPipeline, refreshFromList } from "../gitlab/map.js";
 import { getCachedMrKeys, getMrByKey, mrKey, putMrDetails, getCachedMrList, putMrListNodes, getLastListScan, setLastListScan } from "../cache/mr-store.js";
 import { scopeKey } from "../cache/store.js";
-import { isRevertTitle } from "../metrics/reverts.js";
+import { isRevertTitle } from "../../shared/reverts.js";
 import { eligibleForLinearDiscovery, resolveLinearTickets } from "../linear/fetch.js";
 import { GROUP_MRS_QUERY, GROUP_PROJECTS_QUERY, MR_DETAIL_QUERY, PROJECT_MRS_QUERY } from "../gitlab/queries.js";
 import { encodePath, restGetAll, restGetOne } from "../gitlab/rest.js";
 import type { RawEvent, RawMrConnection, RawMrDetail, RawMrListNode, RawPipeline, RawUser } from "../gitlab/raw-types.js";
-import type { UserIdentity } from "../metrics/trend.js";
-import type { FetchResult, NormMr } from "./model.js";
+import type { FetchResult, NormMr, UserIdentity } from "./model.js";
 import type { RefreshProgress, LeaderboardWarning, Scope, TimeWindow } from "../../shared/types.js";
 
 export interface FetchOptions {

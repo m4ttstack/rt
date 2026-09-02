@@ -11,14 +11,8 @@ import type {
   UserMetrics,
   UserRow,
 } from "../../shared/types.js";
-
-export interface UserIdentity {
-  username: string;
-  name: string | null;
-  resolved: boolean;
-  /** GitLab numeric id, used internally for the per-user events endpoint. */
-  userId?: number;
-}
+import type { UserIdentity } from "../pipeline/model.js";
+export type { UserIdentity };
 
 export interface BuildContext {
   scope: Scope;

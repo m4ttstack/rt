@@ -82,3 +82,12 @@ export interface FetchResult {
   /** Whether approval data was actually available (drives the tier-fallback note). */
   approvalsAvailable: boolean;
 }
+
+/** A configured username resolved against the GitLab instance. */
+export interface UserIdentity {
+  username: string;
+  name: string | null;
+  resolved: boolean;
+  /** GitLab numeric id, used internally for the per-user events endpoint. */
+  userId?: number;
+}

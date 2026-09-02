@@ -6,6 +6,7 @@ import { isBotUsername, median, percentile, streaks } from "../server/metrics/st
 import { buildRevertedTitleSet, revertTarget } from "../server/metrics/reverts.js";
 import { priorWindow } from "../server/util/window.js";
 import { FETCH, USERS, WINDOW } from "./fixtures.js";
+import { isRevertTitle } from "../shared/reverts.js";
 
 const SIZE_BAND = { tooSmall: 10, tooLarge: 400 };
 
@@ -54,6 +55,11 @@ describe("revert detection", () => {
 
   it("builds the reverted-title set from the corpus", () => {
     expect(buildRevertedTitleSet(FETCH.mrs).has("add feature x")).toBe(true);
+  });
+
+  it("isRevertTitle is the dependency-free title test the fetcher uses", () => {
+    expect(isRevertTitle('Revert "Add feature X"')).toBe(true);
+    expect(isRevertTitle("Add feature X")).toBe(false);
   });
 });
 
