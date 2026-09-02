@@ -95,8 +95,11 @@ conversation` on a DM. No confirm.
 
 The main panel on `bg3`, `padding: 11.2px 14.4px`, inside the scroll-clamped
 `PageShell.Content`; the list scrolls in a sticky-bottom scroller
-(react-scroll-to-bottom) with the composer pinned beneath it. Top edge row `.edge` (`.xs.muted`): `41 older messages · load on
-scroll`, becoming `Loading older…` while a `before` page is in flight.
+(react-scroll-to-bottom) with the composer pinned beneath it. Top edge row `.edge` holds a subtle `xs` Button, `load older messages`,
+the only way older pages load; it shows its loader while a `before` page
+is in flight and reads `no older messages`, disabled, once the room is
+exhausted. (The artboard still draws the older muted-text `41 older
+messages · load on scroll` label.)
 
 The list and the composer sit in a `.col`: `max-width: 640px; margin: 0 auto`
 (about 100 characters at md). Each message is a `.msg` (`display: block;

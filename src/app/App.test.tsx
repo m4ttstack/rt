@@ -24,6 +24,7 @@ import {
 import './icons';
 
 import { App } from './App';
+import { PAGE_SIZE } from './Transcript';
 
 const DESKTOP_WIDTH = window.innerWidth;
 
@@ -925,6 +926,25 @@ test("a chat/<room>/msg frame refetches the open room's members", async () => {
     String(u).startsWith('/api/chat/who/build')
   ).length;
   expect(after).toBeGreaterThan(before);
+});
+
+test('opening a room asks for one page of messages, never the whole history', async () => {
+  installFetchMock();
+  window.history.replaceState(null, '', '/r/build');
+  await act(async () => {
+    renderWithProviders(
+      <App
+        initialState={{
+          daemonReachable: true,
+          rooms: [{ room: 'build', memberCount: 1, unread: 0, mentions: 0 }],
+        }}
+      />
+    );
+  });
+  const urls = fetchMock.mock.calls
+    .map(([u]) => String(u))
+    .filter(u => u.startsWith('/api/chat/messages/build'));
+  expect(urls).toContain(`/api/chat/messages/build?limit=${PAGE_SIZE}`);
 });
 
 test('a msg frame for a room the rail does not know refetches rooms at once', async () => {

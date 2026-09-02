@@ -10,6 +10,7 @@ import {
   chatRooms,
   chatWho,
   getSetting,
+  type ChatMessage,
   type InviteResult,
   type RoomSummary,
   type RtClientOptions,
@@ -55,6 +56,25 @@ function parseIntParam(raw: string | undefined): number | undefined {
 }
 
 const CHAT_NAME = /^[a-z0-9._-]+$/;
+
+/** The daemon's own defaults for `chat:messages`, so fixtures page the
+    same way: the newest `limit` (1..500, 50 unasked), oldest first, and
+    `before` walking older by id. */
+const FIXTURE_PAGE_DEFAULT = 50;
+const FIXTURE_PAGE_MAX = 500;
+
+function pageFixtureMessages(
+  all: ChatMessage[],
+  before: number | undefined,
+  limit: number | undefined
+): ChatMessage[] {
+  const size = Math.min(
+    Math.max(limit ?? FIXTURE_PAGE_DEFAULT, 1),
+    FIXTURE_PAGE_MAX
+  );
+  const older = before === undefined ? all : all.filter(m => m.id < before);
+  return older.slice(-size);
+}
 
 /**
  * A DM room's name is a hashed pair-key -- an internal lookup, not something
@@ -221,7 +241,12 @@ export const chat = new Hono()
       const room = c.req.param('room');
       const { before, limit } = c.req.valid('query');
       if (fixturesEnabled()) {
-        return c.json({ messages: fixtureMessages(room) }, 200);
+        return c.json(
+          {
+            messages: pageFixtureMessages(fixtureMessages(room), before, limit),
+          },
+          200
+        );
       }
       const res = await chatMessages({ room, before, limit }, rtOpts());
       if (!res.ok) return c.json({ error: res.error }, 502);

@@ -6,16 +6,20 @@ import {
   useRef,
   useState,
 } from 'react';
-import type { ReactNode } from 'react';
+import type { ReactNode, RefObject } from 'react';
 import {
   Box,
+  Button,
   Group,
   Stack,
   Text,
   UnstyledButton,
 } from '@mattstack/app-kit/core';
 import type { ChatMessage } from '@mattstack/rt-client';
-import ScrollToBottom, { useAtTop } from 'react-scroll-to-bottom';
+import ScrollToBottom, {
+  useAnimating,
+  useScrollTo,
+} from 'react-scroll-to-bottom';
 
 import { AgentName } from './AgentName';
 import { dayKey, dayLabel } from './day-label';
@@ -38,6 +42,117 @@ const ACCENT_TEXT = 'var(--mantine-color-accent-text)';
     show more control; the anchored message is the one exception, since it
     mounted expanded on purpose. */
 const COLLAPSE_AT = 480;
+/** Messages per page: the newest page on open, and one page per older
+    load. Agent posts run long, so this is one to two screens. */
+export const PAGE_SIZE = 30;
+/** How many older pages a `#m-<id>` link may pull in looking for its
+    message before the viewer is left where the room opened. */
+const ANCHOR_PAGES_MAX = 10;
+/** How long the reader's row is held at its viewport offset after a prepend
+    or an anchor scroll while the content above it settles: a fold applies
+    a render after mount, and a fenced block's highlighter lands later
+    still. Any gesture from the viewer ends the hold early. */
+const HOLD_MS = 1500;
+const HOLD_BREAKERS = [
+  'wheel',
+  'touchstart',
+  'pointerdown',
+  'keydown',
+] as const;
+
+/** Where message `id` sits in `view`, as an offset from the view's top. */
+function rowOffset(view: HTMLElement, id: number): number | null {
+  const el = document.getElementById(`m-${id}`);
+  if (!el) return null;
+  return el.getBoundingClientRect().top - view.getBoundingClientRect().top;
+}
+
+/** Puts message `id` back at viewport offset `offset` now, and again on
+    every resize of `column` for HOLD_MS, until the viewer scrolls or
+    clicks; `holds` keeps the one active hold so a new one ends the last.
+    Returns the correction so a deferred park can apply it. */
+function holdRow(
+  view: HTMLElement,
+  column: HTMLElement | null,
+  id: number,
+  offset: number,
+  holds: RefObject<(() => void) | null>
+): () => void {
+  holds.current?.();
+  const correct = () => {
+    const now = rowOffset(view, id);
+    if (now !== null && Math.abs(now - offset) > 1) {
+      view.scrollTop += now - offset;
+    }
+  };
+  correct();
+  if (!column) return correct;
+  const observer = new ResizeObserver(correct);
+  observer.observe(column);
+  const stop = () => {
+    observer.disconnect();
+    clearTimeout(timer);
+    for (const name of HOLD_BREAKERS) view.removeEventListener(name, stop);
+    if (holds.current === stop) holds.current = null;
+  };
+  const timer = setTimeout(stop, HOLD_MS);
+  for (const name of HOLD_BREAKERS) {
+    view.addEventListener(name, stop, { passive: true });
+  }
+  holds.current = stop;
+  return correct;
+}
+
+type ScrollToFn = (
+  top: number | '100%',
+  options?: { behavior: 'auto' | 'smooth' }
+) => void;
+
+interface ScrollControl {
+  /** Parks the viewer at the top `at` reports and stops the list following
+      the bottom. */
+  park: (at: () => number) => void;
+  /** Jumps to the bottom and follows it again. */
+  follow: () => void;
+}
+
+/** Lends the scroll library's own `scrollTo` to the transcript. Only that
+    call reaches the library's follow-the-bottom state, which a bare
+    `scrollIntoView` never clears, so the next content change while the
+    list still counts as following snaps it back to the bottom. The state
+    only clears while nothing is animating to the end, and every mount
+    starts with such an animation, so a request made mid-animation waits
+    for it to finish; `at` is read then, not when the request was made. */
+function ScrollHandle({ handle }: { handle: RefObject<ScrollControl | null> }) {
+  const scrollTo = useScrollTo() as ScrollToFn;
+  const [animating] = useAnimating();
+  const animatingRef = useRef(animating);
+  animatingRef.current = animating;
+  const pending = useRef<(() => number | '100%') | null>(null);
+  const flush = useCallback(() => {
+    const next = pending.current;
+    if (!next) return;
+    pending.current = null;
+    scrollTo(next(), { behavior: 'auto' });
+  }, [scrollTo]);
+  useEffect(() => {
+    if (!animating) flush();
+  }, [animating, flush]);
+  useEffect(() => {
+    const request = (next: () => number | '100%') => {
+      pending.current = next;
+      if (!animatingRef.current) flush();
+    };
+    handle.current = {
+      park: at => request(at),
+      follow: () => request(() => '100%'),
+    };
+    return () => {
+      handle.current = null;
+    };
+  }, [handle, flush]);
+  return null;
+}
 
 export interface TranscriptProps {
   room: string;
@@ -238,52 +353,37 @@ function MessageRow({
   );
 }
 
-/** The top edge of the list. Older pages load when the viewer scrolls to
-    the top of a list that actually scrolls (`useAtTop` is also true for a
-    list too short to scroll, which would page until the room ran dry);
-    the row stays a button for short lists and for tests. */
+/** The top edge of the list: the only way to load older, and the row that
+    reports a page in flight or a room with nothing older. Deliberately not
+    a scroll trigger: the scroll library re-sticks to the bottom on a
+    content change that lands within its 200ms scroll debounce, which a
+    fast jump to the top plus an instant page did every time. */
 function OlderEdge({
   loading,
   exhausted,
-  scrollView,
   onLoad,
 }: {
   loading: boolean;
   exhausted: boolean;
-  scrollView: () => HTMLElement | null;
   onLoad: () => void;
 }) {
-  const [atTop] = useAtTop();
-  useEffect(() => {
-    if (!atTop || loading || exhausted) return;
-    const view = scrollView();
-    if (!view || view.scrollHeight <= view.clientHeight) return;
-    onLoad();
-  }, [atTop, loading, exhausted, scrollView, onLoad]);
-  const label = exhausted
-    ? 'no older messages'
-    : loading
-      ? 'Loading older…'
-      : 'older messages · load on scroll';
   return (
     <Box
-      component="button"
-      type="button"
-      data-testid="transcript-edge"
-      onClick={onLoad}
-      disabled={exhausted}
       style={{
-        width: '100%',
-        border: 0,
-        background: 'transparent',
-        cursor: exhausted ? 'default' : 'pointer',
         padding: 'var(--mantine-spacing-sm) 0 var(--mantine-spacing-xs)',
         textAlign: 'center',
-        fontSize: 'var(--tk-fs-3xs)',
-        color: 'var(--tk-muted-text)',
       }}
     >
-      {label}
+      <Button
+        variant="subtle"
+        size="xs"
+        loading={loading}
+        disabled={exhausted}
+        onClick={onLoad}
+        data-testid="transcript-edge"
+      >
+        {exhausted ? 'no older messages' : 'load older messages'}
+      </Button>
     </Box>
   );
 }
@@ -332,14 +432,21 @@ export function Transcript({
   const [awayFromBottom, setAwayFromBottom] = useState(false);
   const [newSinceAway, setNewSinceAway] = useState(0);
   const scrollBoxRef = useRef<HTMLDivElement>(null);
+  const columnRef = useRef<HTMLDivElement>(null);
   // Set before an older page is prepended; consumed once the DOM has the
   // new rows, so the viewport stays on the message the viewer was reading.
-  const anchorHeight = useRef<number | null>(null);
+  const pendingHold = useRef<{ id: number; offset: number } | null>(null);
+  const hold = useRef<(() => void) | null>(null);
   const roomRef = useRef(room);
   roomRef.current = room;
   const awayRef = useRef(false);
   const messagesRef = useRef(messages);
   messagesRef.current = messages;
+  // The anchor effect keys on the list but must call the loader that sees
+  // the current render's flags, so it goes through a ref refreshed each
+  // render.
+  const loadOlderRef = useRef<() => void>(() => {});
+  const scrollHandle = useRef<ScrollControl | null>(null);
 
   // Re-seeds local state whenever the CALLER's own messages array changes
   // identity -- not just when `room` changes. The caller fetches
@@ -349,10 +456,14 @@ export function Transcript({
   // since `room` itself wouldn't change again.
   useEffect(() => {
     setMessages(initialMessages);
+    // A first page with room to spare is the whole room. An empty array is
+    // the caller's placeholder while its fetch is in flight, never a page.
+    setOlderExhausted(
+      initialMessages.length > 0 && initialMessages.length < PAGE_SIZE
+    );
   }, [room, initialMessages]);
 
   useEffect(() => {
-    setOlderExhausted(false);
     setLoadingOlder(false);
     setOlderLoaded(false);
     setNewSinceAway(0);
@@ -363,21 +474,56 @@ export function Transcript({
   // The `#m-<id>` anchor rt prints after a post and on a wake line. Scrolls
   // once per room+anchor, the first time the message is in the list, so a
   // later live merge or older-page load never yanks a viewer who scrolled
-  // away back to it. Older pages are not fetched for it: a link past the
-  // first page opens the room and only the scroll is skipped.
+  // away back to it. A link below everything loaded pages older until the
+  // message arrives or the page budget runs out; ids are monotonic, so an
+  // id inside the loaded range that is not there is pruned or bogus and
+  // earns no fetch.
   const anchorDone = useRef<string | null>(null);
+  const anchorPaging = useRef({ target: '', pages: 0 });
   useEffect(() => {
     if (!anchor) return;
     const target = `${room}#${anchor}`;
     if (anchorDone.current === target) return;
+    if (anchorPaging.current.target !== target) {
+      anchorPaging.current = { target, pages: 0 };
+    }
+    const paging = anchorPaging.current;
+    const id = Number(anchor.slice('m-'.length));
     const el = document.getElementById(anchor);
-    if (!el) return;
-    el.scrollIntoView({ block: 'center' });
-    anchorDone.current = target;
-  }, [room, anchor, messages]);
+    if (el) {
+      el.scrollIntoView({ block: 'center' });
+      const view = scrollView();
+      const offset = view ? rowOffset(view, id) : null;
+      const correct =
+        view && offset !== null
+          ? holdRow(view, columnRef.current, id, offset, hold)
+          : null;
+      scrollHandle.current?.park(() => {
+        correct?.();
+        return view?.scrollTop ?? 0;
+      });
+      anchorDone.current = target;
+      return;
+    }
+    if (loadingOlder) return;
+    const oldest = messages[0];
+    const below =
+      oldest !== undefined && Number.isInteger(id) && id < oldest.id;
+    if (below && !olderExhausted && paging.pages < ANCHOR_PAGES_MAX) {
+      paging.pages += 1;
+      loadOlderRef.current();
+      return;
+    }
+    // The hunt is over without the message: pages were pulled for it, so
+    // hand the viewer the bottom back rather than wherever it left them.
+    if (paging.pages > 0) {
+      scrollHandle.current?.follow();
+      anchorDone.current = target;
+    }
+  }, [room, anchor, messages, olderExhausted, loadingOlder]);
 
   const refetchTail = useCallback(() => {
-    void fetch(`/api/chat/messages/${room}`)
+    void fetch(`/api/chat/messages/${room}?limit=${PAGE_SIZE}`)
       .then(res => res.json())
       .then((data: { messages?: ChatMessage[] }) => {
         if (roomRef.current !== room) return;
@@ -423,35 +569,45 @@ export function Transcript({
     );
   }
 
+  useEffect(() => () => hold.current?.(), [room]);
+
   useLayoutEffect(() => {
-    const before = anchorHeight.current;
+    const pending = pendingHold.current;
     const view = scrollView();
-    if (before === null || !view) return;
-    anchorHeight.current = null;
-    view.scrollTop += view.scrollHeight - before;
+    if (!pending || !view) return;
+    pendingHold.current = null;
+    holdRow(view, columnRef.current, pending.id, pending.offset, hold);
   }, [messages]);
 
   async function loadOlder() {
     const oldest = messages[0];
     if (!oldest || loadingOlder || olderExhausted) return;
     setLoadingOlder(true);
+    // A short room can show the control while the list still follows the
+    // bottom; without this the prepend would snap the viewer back down.
+    scrollHandle.current?.park(() => scrollView()?.scrollTop ?? 0);
     // The request belongs to the room it was started for: a switch while it
     // is in flight must neither prepend its page to the new room nor leave
     // `loadingOlder` stuck.
     const forRoom = room;
     const current = () => roomRef.current === forRoom;
     try {
-      const res = await fetch(`/api/chat/messages/${room}?before=${oldest.id}`);
+      const res = await fetch(
+        `/api/chat/messages/${room}?before=${oldest.id}&limit=${PAGE_SIZE}`
+      );
       if (!current()) return;
       // An error page is not an empty page: the edge stays retryable.
       if (!res.ok) return;
       const data = (await res.json()) as { messages?: ChatMessage[] };
       if (!current()) return;
       const older = data.messages ?? [];
-      if (older.length === 0) setOlderExhausted(true);
+      if (older.length < PAGE_SIZE) setOlderExhausted(true);
       if (older.length > 0) {
         setOlderLoaded(true);
-        anchorHeight.current = scrollView()?.scrollHeight ?? null;
+        const view = scrollView();
+        const offset = view ? rowOffset(view, oldest.id) : null;
+        pendingHold.current =
+          offset === null ? null : { id: oldest.id, offset };
         setMessages(prev => {
           const known = new Set(prev.map(m => m.id));
           const additions = older.filter(m => !known.has(m.id));
@@ -467,6 +623,7 @@ export function Transcript({
       if (current()) setLoadingOlder(false);
     }
   }
+  loadOlderRef.current = () => void loadOlder();
 
   const dividerAt =
     unreadCount !== undefined &&
@@ -515,12 +672,17 @@ export function Transcript({
           followButtonClassName={scrollClasses.follow}
           initialScrollBehavior="auto"
         >
+          <ScrollHandle handle={scrollHandle} />
           <Box
             style={
               bare ? undefined : { padding: `0 ${INNER_RIGHT} 0 ${INNER_LEFT}` }
             }
           >
-            <div className={prose.col} data-testid="transcript-column">
+            <div
+              ref={columnRef}
+              className={prose.col}
+              data-testid="transcript-column"
+            >
               {notice && (
                 <Box
                   data-testid="transcript-notice"
@@ -539,7 +701,6 @@ export function Transcript({
                 <OlderEdge
                   loading={loadingOlder}
                   exhausted={olderExhausted}
-                  scrollView={scrollView}
                   onLoad={() => void loadOlder()}
                 />
               )}

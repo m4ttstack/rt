@@ -46,7 +46,7 @@ import { useRelayFrames, useRelayOpen } from './relay-socket';
 import { RoomRail } from './RoomRail';
 import { Roster, type RosterBuddy } from './Roster';
 import { useAppRoute, useHash } from './routes';
-import { Transcript } from './Transcript';
+import { PAGE_SIZE, Transcript } from './Transcript';
 import { visibleRooms } from './visible-rooms';
 
 /**
@@ -207,7 +207,7 @@ function useMessages(
     // re-seeds off this array's identity, not off `room` alone.
     setMessages([]);
     let cancelled = false;
-    fetch(`/api/chat/messages/${room}`)
+    fetch(`/api/chat/messages/${room}?limit=${PAGE_SIZE}`)
       .then(res => res.json())
       .then((data: { messages?: ChatMessage[] }) => {
         if (!cancelled) setMessages(data.messages ?? []);
