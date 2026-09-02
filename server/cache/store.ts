@@ -1,4 +1,6 @@
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { windowCacheKey } from "../util/window.js";
 import type { Scope, TimeWindow } from "../../shared/types.js";
 
@@ -8,7 +10,8 @@ import type { Scope, TimeWindow } from "../../shared/types.js";
  * window" computes the byte-identical key the running server just wrote, and its cleanup
  * would delete the live cache out from under the app.
  */
-export const CACHE_DIR = process.env.BOXSCORE_CACHE_DIR ?? ".cache";
+export const CACHE_DIR =
+  process.env.BOXSCORE_CACHE_DIR ?? join(process.env.HOME ?? homedir(), ".mattstack", "boxscore", "cache");
 
 /**
  * Bump whenever the cached FetchResult shape changes, so envelopes written by older code
