@@ -100,8 +100,21 @@ export interface Scope {
   projectPaths?: string[];
 }
 
+/** Every warning the pipeline can attach to a response. Adding a site means adding a code here. */
+export type WarningCode =
+  | "user_unresolved"
+  | "user_lookup_failed"
+  | "mr_fetch_failed"
+  | "mr_detail_partial"
+  | "projects_fetch_failed"
+  | "project_id_failed"
+  | "pipeline_fetch_failed"
+  | "events_fetch_failed"
+  | "linear_partial"
+  | "trend_unavailable";
+
 export interface LeaderboardWarning {
-  code: string;
+  code: WarningCode;
   message: string;
 }
 
