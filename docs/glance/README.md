@@ -61,6 +61,14 @@ are built from, not a wrapper around something published elsewhere.
   `getMRDashboardProps` turns a raw `PullRequest` into render-ready props
   (status, blocker flags, button labels and disabled states) with no
   conditional logic needed in the component layer.
+- **Metric-grade reads.** `fetchMergeRequestIndex` pages scalar MR rows
+  (with `mergedAt` and labels) across a group or project set, and
+  `PullRequest` itself now carries `mergedAt`;
+  `fetchMergeRequestMetrics` reads one MR's diff stats and every note, and
+  `fetchProjectPipelines` / `fetchUserEvents` / `fetchGroupProjects` /
+  `fetchProject` cover the rest of what an engineering-metrics consumer
+  needs. GitLab today; each is optional on `GitProvider` behind a
+  capability flag.
 - **Capability flags, not forge sniffing.** `provider.capabilities` reports
   which mutations a given forge actually supports (`canRebase`,
   `canAutoMerge`, `canResolveDiscussions`, and more), so a caller can show or
