@@ -118,8 +118,9 @@ A bound skill must declare the matching contract in its `metadata.provides`.
 ## Reviewer-side automation
 
 `bun run triage` is a one-shot pass meant for a cron entry (rt cron or a plain
-crontab line, either works). It is off unless `triage.enabled` is `true`. It
-does two jobs.
+crontab line, either works). It does three jobs behind two switches: the
+auto-doctor and nudge jobs are off unless `triage.enabled` is `true`; the
+latch job is on unless the `board.reReview` setting turns it off.
 
 **Auto-doctor.** It looks for mechanical breakage on the board identity's own
 MRs and dispatches a doctor pane at the configured `tier`. Which repairs it is
@@ -160,6 +161,10 @@ resolvable thread on the MR, the re-review latch. The author resolves it when
 they have addressed the feedback, and the next triage pass reads that resolved
 bit, runs it through the same guardrails as a peer nudge, launches the
 re-review, replies in the thread and unresolves it so the latch is armed again.
+This job is governed by `board.reReview` (user or team scope, default
+`{ "enabled": true }`), not by `triage.enabled`: a team can switch it off, but
+nobody has to opt in. With it off, no latch is armed and none is dispatched;
+spending on approval still runs, so an already-armed latch is cleaned up.
 
 The latch is spent, meaning resolved for good and rewritten, once a review
 approves the MR, so it can never block a merge on a project that requires all

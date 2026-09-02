@@ -18,7 +18,7 @@ import { drainOutbox, enqueueOutbox } from "../src/peer/outbox.ts";
 import { launchReReview } from "../src/review-launch.ts";
 import { readReviewStates } from "../src/review-state.ts";
 import { appendAudit } from "../src/triage/audit.ts";
-import { loadTriageConfig } from "../src/triage/config.ts";
+import { loadReReviewConfig, loadTriageConfig } from "../src/triage/config.ts";
 import { runLatchPass, type LatchMrFacts } from "../src/triage/latch.ts";
 import { MEMORY_PATH, readMemory, writeMemory } from "../src/triage/memory.ts";
 import { runNudgePass } from "../src/triage/nudge.ts";
@@ -40,10 +40,13 @@ const LOCK_PATH = MEMORY_PATH + ".lock";
 const LOCK_STALE_MS = 2 * 60_000;
 const IDENTITY_TTL_MS = 24 * 60 * 60_000;
 
-// Disabled is the common cron-invoked case: decide it BEFORE taking the lock,
-// because process.exit() skips finally blocks and would strand the lock file.
+// Fully disabled is the common cron-invoked case: decide it BEFORE taking the
+// lock, because process.exit() skips finally blocks and would strand the lock
+// file. Two switches: board.triage gates the doctor/nudge sweeps, board.reReview
+// gates the latch pass, and either one alone is reason to run.
 const triage = loadTriageConfig();
-if (!triage.enabled) process.exit(0);
+const reReview = loadReReviewConfig();
+if (!triage.enabled && !reReview.enabled) process.exit(0);
 
 // One run at a time: cron debounces, but a slow run + a fresh trigger must
 // not interleave dispatches. A stale lock (crashed run) is reclaimed.
@@ -198,7 +201,7 @@ try {
   // memory, and this one runs whether or not a switchboard is configured, so
   // the persist below sits outside that block.
   const latchToken = await loadGitLabToken();
-  if (latchToken) {
+  if (latchToken && reReview.enabled) {
     try {
       const latchResult = await runLatchPass({
         readReviewStates,
@@ -218,6 +221,7 @@ try {
           }),
         memory,
         cfg: triage,
+        reReview,
         appendAudit,
         notify: (title, message) => notifyEscalation(title, message, triage.notify),
         now: () => Date.now(),
