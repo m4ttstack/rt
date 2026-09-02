@@ -10,7 +10,7 @@ import { chromium } from "playwright";
 import { mkdirSync } from "fs";
 import { join } from "path";
 
-const W = 1656;
+const W = 1200;
 const H = 208;
 // Left inset reserved for the sprite the runtime paints in; the artwork must
 // leave it empty or the sprite lands on top of the band's own pixels.
