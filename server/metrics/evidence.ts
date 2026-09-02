@@ -7,7 +7,7 @@
 import { inWindow } from "../util/window.js";
 import { buildRevertedTitleSet, isReverted } from "./reverts.js";
 import { mean, percentile, round, streaks } from "./stats.js";
-import { buildIgnoredMrSet, buildMetricFilters, isDoneState, matchesTeam } from "./snapshot.js";
+import { buildIgnoredMrSet, buildMetricFilters, isDoneState, matchesTeam } from "./filters.js";
 import type { FetchResult, NormMr } from "../pipeline/model.js";
 import type { MetricEvidence, MetricKey, TimeWindow } from "../../shared/types.js";
 
