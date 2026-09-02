@@ -12,6 +12,8 @@ import type {
   MergeabilityCheck,
   MergePullRequestInput,
   MergeRequestIndexRow,
+  MergeRequestMetrics,
+  MetricsNote,
   MRApprovalRules,
   MRDetail,
   Pipeline,
@@ -741,6 +743,78 @@ function toIndexRow(n: GQLIndexNode): MergeRequestIndexRow {
   };
 }
 
+const MR_METRICS_NOTE_FIELDS = 'system createdAt author { username } position { __typename }';
+
+const MR_METRICS_QUERY = `
+  query GlanceMRMetrics($fullPath: ID!, $iid: String!) {
+    project(fullPath: $fullPath) {
+      id
+      mergeRequest(iid: $iid) {
+        description
+        diffStatsSummary { additions deletions fileCount }
+        diffStats { path additions deletions }
+        labels(first: 100) { nodes { title } }
+        approvedBy(first: 100) { nodes { username } }
+        notes(first: 100) {
+          pageInfo { hasNextPage endCursor }
+          nodes { ${MR_METRICS_NOTE_FIELDS} }
+        }
+      }
+    }
+  }
+`;
+
+const MR_METRICS_NOTES_QUERY = `
+  query GlanceMRMetricsNotes($fullPath: ID!, $iid: String!, $after: String!) {
+    project(fullPath: $fullPath) {
+      mergeRequest(iid: $iid) {
+        notes(first: 100, after: $after) {
+          pageInfo { hasNextPage endCursor }
+          nodes { ${MR_METRICS_NOTE_FIELDS} }
+        }
+      }
+    }
+  }
+`;
+
+interface GQLMetricsNote {
+  system: boolean;
+  createdAt: string;
+  author: { username: string } | null;
+  position: { __typename: string } | null;
+}
+
+interface GQLNotesConnection {
+  pageInfo: { hasNextPage: boolean; endCursor: string | null };
+  nodes: GQLMetricsNote[];
+}
+
+interface MRMetricsResponse {
+  project: {
+    mergeRequest: {
+      description: string | null;
+      diffStatsSummary: GQLDiffStats | null;
+      diffStats: Array<{ path: string; additions: number; deletions: number }> | null;
+      labels: { nodes: Array<{ title: string }> } | null;
+      approvedBy: { nodes: Array<{ username: string }> } | null;
+      notes: GQLNotesConnection;
+    } | null;
+  } | null;
+}
+
+interface MRMetricsNotesResponse {
+  project: { mergeRequest: { notes: GQLNotesConnection } | null } | null;
+}
+
+function toMetricsNote(n: GQLMetricsNote): MetricsNote {
+  return {
+    authorUsername: n.author?.username ?? null,
+    createdAt: n.createdAt,
+    system: n.system,
+    inline: n.position !== null,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // GitLabProvider
 // ---------------------------------------------------------------------------
@@ -794,7 +868,7 @@ export class GitLabProvider implements GitProvider {
     canRequestReReview: true,
     canWatchEvents: true,
     canFetchMergeRequestIndex: true,
-    canFetchMergeRequestMetrics: false,
+    canFetchMergeRequestMetrics: true,
     canFetchGroupProjects: false,
     canFetchProject: false,
     canFetchProjectPipelines: false,
@@ -1182,6 +1256,46 @@ export class GitLabProvider implements GitProvider {
       } while (after);
     }
     return out;
+  }
+
+  async fetchMergeRequestMetrics(projectPath: string, mrIid: number): Promise<MergeRequestMetrics | null> {
+    const vars = { fullPath: projectPath, iid: String(mrIid) };
+    const resp = await this.runQuery<MRMetricsResponse>('fetchMergeRequestMetrics', MR_METRICS_QUERY, vars);
+    const mr = resp.project?.mergeRequest;
+    if (!mr) return null;
+
+    const notes: MetricsNote[] = mr.notes.nodes.map(toMetricsNote);
+    let after: string | null = mr.notes.pageInfo.hasNextPage ? mr.notes.pageInfo.endCursor : null;
+    while (after) {
+      const more: MRMetricsNotesResponse = await this.runQuery<MRMetricsNotesResponse>(
+        'fetchMergeRequestMetrics.notes', MR_METRICS_NOTES_QUERY, { ...vars, after },
+      );
+      const conn = more.project?.mergeRequest?.notes;
+      if (!conn) break;
+      notes.push(...conn.nodes.map(toMetricsNote));
+      const next = conn.pageInfo.hasNextPage ? conn.pageInfo.endCursor : null;
+      if (conn.pageInfo.hasNextPage && (next === null || next === after)) {
+        throw new Error(`fetchMergeRequestMetrics: non-advancing notes cursor '${next}' for ${projectPath}!${mrIid}`);
+      }
+      after = next;
+    }
+
+    return {
+      iid: mrIid,
+      projectPath,
+      description: mr.description ?? null,
+      diffStats: mr.diffStatsSummary
+        ? {
+            additions: mr.diffStatsSummary.additions,
+            deletions: mr.diffStatsSummary.deletions,
+            filesChanged: mr.diffStatsSummary.fileCount,
+          }
+        : null,
+      fileStats: (mr.diffStats ?? []).map((f) => ({ path: f.path, additions: f.additions, deletions: f.deletions })),
+      labels: (mr.labels?.nodes ?? []).map((l) => l.title),
+      approvedByUsernames: (mr.approvedBy?.nodes ?? []).map((u) => u.username),
+      notes,
+    };
   }
 
   async fetchMRDiscussions(repositoryId: string, mrIid: number): Promise<MRDetail> {
