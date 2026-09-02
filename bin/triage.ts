@@ -83,8 +83,8 @@ try {
   // state, the in-flight dedup always sees what the board sees (no duplicate
   // panes), and the concurrency cap never undercounts.
   const fetchOwnMrs = async (): Promise<OwnMrFacts[]> => {
-    const prs = await collectProjectPRs(boardConfig, readProjectMRs);
-    return buildBoard(prs, boardConfig)
+    const { prs, tags } = await collectProjectPRs(boardConfig, readProjectMRs);
+    return buildBoard(prs, boardConfig, undefined, tags)
       .filter((m) => m.author.username === username && m.webUrl)
       .map((m) => ({
         mrUrl: m.webUrl!,
@@ -106,8 +106,8 @@ try {
   // spend can be repaired; without them nothing ever would be.
   const fetchLatchMrs = async (): Promise<LatchMrFacts[]> => {
     const states = readReviewStates();
-    const prs = await collectProjectPRs(boardConfig, readProjectMRs);
-    return buildBoard(prs, boardConfig)
+    const { prs, tags } = await collectProjectPRs(boardConfig, readProjectMRs);
+    return buildBoard(prs, boardConfig, undefined, tags)
       .filter((m) => m.webUrl && states.get(m.webUrl)?.status === "done")
       .map((m) => ({
         mrUrl: m.webUrl!,
