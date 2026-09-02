@@ -84,6 +84,21 @@ describe("step 0: no latch", () => {
     expect(calls).toEqual([]);
   });
 
+  // The server posts the instant a review lands; this pass checks for that
+  // post through the daemon's discussion store, which within its staleness
+  // window cannot prove the post exists yet. A freshly-done review defers to
+  // a later tick instead of racing the server into a double post.
+  test("holds off posting while the review is inside the grace window", async () => {
+    const fresh: ReviewState = { ...commented, updatedAt: NOW - 60_000 };
+    const { deps, calls } = harness({
+      detail: detail(), readReviewStates: () => new Map([[MR, fresh]]),
+    });
+    const r = await runLatchPass(deps);
+    expect(r.posted).toBe(0);
+    expect(r.skipped).toBe(1);
+    expect(calls).toEqual([]);
+  });
+
   test("ignores a done state with no outcome at all", async () => {
     const noOutcome: ReviewState = { ...commented, outcome: undefined };
     const { deps, calls } = harness({
