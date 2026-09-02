@@ -32,7 +32,7 @@ describe("latchBannerPng", () => {
     // width, so a whole-image count would pass even with sprite painting broken.
     let pink = 0;
     for (let y = 44; y < 44 + 120; y++) {
-      for (let x = 120; x < 120 + 120; x++) {
+      for (let x = 60; x < 60 + 120; x++) {
         const i = (png.width * y + x) << 2;
         if (png.data[i] === 0xff && png.data[i + 1] === 0x6b && png.data[i + 2] === 0x9d) pink++;
       }

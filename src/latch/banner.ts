@@ -16,8 +16,10 @@ export const BAND_H = 208;
 
 const SPRITE_PINK = { r: 0xff, g: 0x6b, b: 0x9d };
 /** Top-left of the sprite box inside the band, and its side, in band pixels.
-    Must match the left padding reserved by scripts/build-latch-band.ts. */
-const SPRITE_X = 120;
+    Centred in the 240px gutter that scripts/build-latch-band.ts reserves as
+    the band's left padding, so the leading margin matches the band's own 60px
+    trailing padding. */
+const SPRITE_X = 60;
 const SPRITE_Y = 44;
 const SPRITE_SIDE = 120;
 
