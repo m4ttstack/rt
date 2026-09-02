@@ -68,6 +68,10 @@ export interface BoardData {
   /** Codeowners sections this board demanded but rt hasn't finished backfilling
       yet -- drives the "codeowner queue syncing" badge on the matching tab. */
   scopeUncoveredSections: string[];
+  /** Section headers in the projects' default-branch CODEOWNERS, unioned; null
+      when rt did not report them. Drives the wrong-section banner, chip and
+      editor hints; null disables all three. */
+  scopeKnownSections: string[] | null;
   /** Narrowest sync window (days) among the daemon reads; null when none carried one. */
   scopeWindowDays: number | null;
   /** The board's own configured stale cutoff (days), for comparing against

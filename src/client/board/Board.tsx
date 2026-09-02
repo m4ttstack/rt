@@ -28,6 +28,7 @@ import { RowView } from "./RowView.tsx";
 import { GridView } from "./GridView.tsx";
 import { SettingsModal } from "./SettingsModal.tsx";
 import { ConfigModal } from "./ConfigModal.tsx";
+import { sectionStatus } from "../../sections.ts";
 import { RowMenu } from "./RowMenu.tsx";
 import { ReviewModal } from "./ReviewModal.tsx";
 import { DraftModal } from "./DraftModal.tsx";
@@ -438,8 +439,16 @@ export function Board() {
   const isCodeownersTab = activeTab.source.kind === "codeowners";
   // A codeowners tab's "who counts as roster" set for excludeMembers.
   const rosterUsernames = new Set(data.members.map((m) => m.username));
+  const activeSection =
+    activeTab.source.kind === "codeowners" ? sectionStatus(activeTab.source.section, data.scopeKnownSections) : null;
+  const unknownTabs = data.tabs.flatMap((t) =>
+    t.source.kind === "codeowners" && sectionStatus(t.source.section, data.scopeKnownSections).unknown ? [t.id] : [],
+  );
+  // A wrong name is not "still syncing": the unknown state owns the tab.
   const tabSyncing =
-    activeTab.source.kind === "codeowners" && data.scopeUncoveredSections.includes(activeTab.source.section);
+    activeTab.source.kind === "codeowners" &&
+    !activeSection?.unknown &&
+    data.scopeUncoveredSections.includes(activeTab.source.section);
 
   // Server state wins; otherwise show an optimistic "queued" badge if pending.
   const mrs = overlay(data.mrs, optimisticLifecycle.state);
@@ -581,6 +590,7 @@ export function Board() {
           active={state.tab}
           onPick={(tab) => update({ tab })}
           syncing={tabSyncing}
+          unknown={unknownTabs}
         />
 
         {selectedMrs.length > 0 && (
@@ -607,7 +617,17 @@ export function Board() {
         {data.fetchError && <div className="tui-banner">⚠ data from {staleMins}m ago — gitlab fetch failing</div>}
         {windowMismatch && <div className="tui-banner">⚠ {windowMismatch}</div>}
 
-        {filtered.length === 0 && !data.fetchError ? (
+        {activeTab.source.kind === "codeowners" && activeSection?.unknown && (
+          <div className="tui-banner" data-intent="bad" role="alert">
+            ⚠ no CODEOWNERS section "{activeTab.source.section}"
+            {activeSection.suggestion && <> · did you mean "{activeSection.suggestion}"?</>}
+            <button type="button" className="tui-banner-btn" onClick={openConfig}>
+              fix in settings
+            </button>
+          </div>
+        )}
+
+        {filtered.length === 0 && !data.fetchError && !activeSection?.unknown ? (
           <p className="tui-empty">{slackFilter === "posted" ? "nothing posted in slack yet" : "nothing waiting on review ✓"}</p>
         ) : (
           groups.map((g) => (
@@ -686,6 +706,7 @@ export function Board() {
       {showConfig && (
         <ConfigModal
           tabs={data.tabs}
+          knownSections={data.scopeKnownSections}
           onTabsSaved={() => load()}
           onClose={() => setShowConfig(false)}
           onOpenRoster={() => {

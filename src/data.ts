@@ -1,6 +1,6 @@
 import { getMRDashboardProps, getReviewDisplayState, stripDraftPrefix as glanceStripDraftPrefix, type MRDashboardProps, type PullRequest } from "@mattstack/glance";
 import type { BoardConfig, Member } from "./config.ts";
-import type { DemandDecl } from "@mattstack/rt-client";
+import type { DemandDecl, ProjectMRsScope } from "@mattstack/rt-client";
 import { extractTicketId } from "./ticket.ts";
 
 export type PipelineState = "passed" | "running" | "failed" | "none";
@@ -56,6 +56,11 @@ export interface Snapshot {
   /** Union of `scope.uncoveredSections` across the daemon reads: codeowner
       sections some project's sync hasn't swept yet. */
   scopeUncoveredSections: string[];
+  /** Union of `scope.knownSections` across the daemon reads: the section
+      headers in each project's default-branch CODEOWNERS. Null when no read
+      carried the field (an older rt), which disables the wrong-section alarm
+      rather than raising it. */
+  scopeKnownSections: string[] | null;
 }
 
 /** Parse "group/project" out of a GitLab MR web URL. */
@@ -228,7 +233,7 @@ export function configuredSlackChannels(config: Pick<BoardConfig, "slack" | "tab
 /** One project's sync facts, the shape aggregateSyncScope folds across projects. */
 export interface SyncScopeRead {
   syncedAt: number;
-  scope?: { authors: string[]; windowDays: number; uncovered: string[]; sections?: string[]; uncoveredSections?: string[] };
+  scope?: ProjectMRsScope;
 }
 
 /**
@@ -237,25 +242,38 @@ export interface SyncScopeRead {
  * only as fresh as its stalest project); `scopeUncovered` unions every
  * project's uncovered authors; `scopeWindowDays` is the narrowest window
  * (the tightest constraint any project reported); `scopeUncoveredSections`
- * unions every project's uncovered codeowner sections. A project that
- * errored before yielding a read is simply absent from `reads`.
+ * unions every project's uncovered codeowner sections; `scopeKnownSections`
+ * unions every project's CODEOWNERS headers and is null when none reported
+ * them. A project that errored before yielding a read is simply absent from
+ * `reads`.
  */
 export function aggregateSyncScope(
   reads: SyncScopeRead[],
-): { dataSyncedAt: number | null; scopeUncovered: string[]; scopeWindowDays: number | null; scopeUncoveredSections: string[] } {
+): { dataSyncedAt: number | null; scopeUncovered: string[]; scopeWindowDays: number | null; scopeUncoveredSections: string[]; scopeKnownSections: string[] | null } {
   let dataSyncedAt: number | null = null;
   let scopeWindowDays: number | null = null;
   const uncovered = new Set<string>();
   const uncoveredSections = new Set<string>();
+  let known: Set<string> | null = null;
   for (const read of reads) {
     dataSyncedAt = dataSyncedAt === null ? read.syncedAt : Math.min(dataSyncedAt, read.syncedAt);
     if (read.scope) {
       scopeWindowDays = scopeWindowDays === null ? read.scope.windowDays : Math.min(scopeWindowDays, read.scope.windowDays);
       for (const author of read.scope.uncovered) uncovered.add(author);
       for (const section of read.scope.uncoveredSections ?? []) uncoveredSections.add(section);
+      if (read.scope.knownSections) {
+        known ??= new Set<string>();
+        for (const section of read.scope.knownSections) known.add(section);
+      }
     }
   }
-  return { dataSyncedAt, scopeUncovered: [...uncovered], scopeWindowDays, scopeUncoveredSections: [...uncoveredSections] };
+  return {
+    dataSyncedAt,
+    scopeUncovered: [...uncovered],
+    scopeWindowDays,
+    scopeUncoveredSections: [...uncoveredSections],
+    scopeKnownSections: known ? [...known].sort() : null,
+  };
 }
 
 /**
