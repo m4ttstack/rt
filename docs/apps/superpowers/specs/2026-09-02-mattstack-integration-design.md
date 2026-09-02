@@ -134,8 +134,8 @@ A new `// --- mattstack (shared team truth) ---` row and a new
 
 | Need | Key | Note |
 |---|---|---|
-| GitLab host | field `forge.host` of the single object key `mattstack.integrations` (team, deep merge) | unset today. Suite precedent: team creation copies `forge.host` into `board.gitlabHost`, which the board fetches against, so boxscore fetching against it follows that precedent. |
-| Linear team key | field `linear.teamKey` of the same object key | unset today |
+| GitLab host | field `forge.host` of the single object key `mattstack.integrations` (team, deep merge) | present in the acme-web team store as of 2026-09-02 (written by the MAT-403 audit pass); the import verifies it and fills it only if missing. Suite precedent: team creation copies `forge.host` into `board.gitlabHost`, which the board fetches against, so boxscore fetching against it follows that precedent. |
+| Linear team key | field `linear.teamKey` of the same object key | present as of 2026-09-02 (same audit pass); the import verifies rather than writes |
 | Tokens | secrets store, `rt` domain | `gitlabToken`, `linearApiKey`; read env-first, then `secrets:read` scope `extension` |
 
 `mattstack.integrations` is one registry key holding one object; its fields
@@ -176,8 +176,10 @@ future apps; boxscore does not expose it.
 `scripts/import-legacy-settings.ts` reads `config.ts`, `settings.json`, and
 `.env`, writes each value with `setSetting(key, value, scope)`, then reads
 every key back and fails loudly if any read does not equal what was written.
-For `mattstack.integrations` it reads the current object, merges `forge` and
-`linear` in, and writes the merged object. From `.env` it consumes only
+For `mattstack.integrations` it reads the current object and fills only the
+fields that are missing (both are expected to be present already after the
+2026-09-02 audit pass), writing the merged object back only when something
+changed. From `.env` it consumes only
 `GITLAB_BASE_URL`; the two tokens cannot be settings, so the script instead
 checks that the `rt` secrets domain already holds `gitlabToken` and
 `linearApiKey` (both names exist there today) and stops with instructions if
@@ -200,10 +202,15 @@ possible without a page.
 
 ### 5.7 Delivery order
 
-1. Registry rows in repo-tools, plus a boxscore table in
+1. Registry rows in repo-tools, landed on main after the MAT-403 audit
+   commits (a `chat.viewerUrl` default; the `board.rtRepos` row removed),
+   plus a boxscore table in
    `docs/superpowers/specs/2026-08-20-suite-settings-migration.md` (the
    per-app key table the settings architecture doc points at); `bun run
-   build` in rt-client; publish a version bump.
+   build` in rt-client; publish a version bump. That audit pass publishes
+   nothing itself, so this publish carries its two row changes as well.
+   Agreed with max on 2026-09-02: max lands first, boxscore's rows go on
+   top.
 2. Bump `@mattstack/rt-client` in boxscore; add `server/config/`.
 3. Run the import script; commit and push the team store change.
 4. Delete the legacy files and routes; update README.
