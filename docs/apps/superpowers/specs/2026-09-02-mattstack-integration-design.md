@@ -42,8 +42,8 @@ owns permission and window." The `project-mrs` store holds open MRs in a
 (`[{username, name?}]`, GitLab usernames) with a per-user overlay
 `board.hiddenMembers`. It is not an app-kit adopter; it runs raw `Bun.serve`
 with tui-kit and settings-kit. Boxscore's roster (7 users) and the board's
-(5 users) already disagree; two of boxscore's users sit in the board's hidden
-overlay.
+(5 users) already disagree: one boxscore user sits in the board's hidden
+overlay and one appears in neither board list.
 
 **App-kit / app-server**: Mantine 9 behind an eslint import wall, wouter,
 `serveMattstackApp` over Hono. React 19, Vite 8, vitest 4 are floors. No SSE,
@@ -67,7 +67,7 @@ so a new key ships as registry row, build, publish, bump.
 | D5 | Settings UI during cut-over | The in-app settings page and its routes are deleted in sub-project 2. `rt settings` and the console settings page cover editing until sub-project 5 rebuilds the page on settings-kit. |
 | D6 | Current user | Derived from the token via `validateToken()`. No setting. |
 | D7 | Cache location | `~/.mattstack/boxscore/` (runtime layer per the suite's three-layer rule). HOME resolved at call time. `BOXSCORE_HOME` overrides for tests. |
-| D8 | Wire contract | The JSON shapes in `shared/types.ts` do not change in sub-projects 1 through 4. Type narrowings that keep the same JSON (such as the warning-code union in SP1) are allowed. |
+| D8 | Wire contract | The JSON shapes of the leaderboard, detail, refresh, and cache responses in `shared/types.ts` do not change in sub-projects 1 through 4. Type narrowings that keep the same JSON (such as the warning-code union in SP1) are allowed, and types whose only route is deleted in SP2 (`AppSettings`, `LinearStateInfo`, `SuspectedBot`) leave the file with that route. |
 
 ## 4. Sub-project 1: metrics-layer hardening
 
@@ -86,18 +86,22 @@ Work items:
    from cohorts; evidence derives rows from the same cohorts. The ~150
    duplicated lines in `evidence.ts` go away.
 3. **Metric table is the single source.** `UserMetrics` keys and the `METRICS`
-   descriptor table cannot diverge: `METRICS` is declared with a `satisfies`
-   check against `Record<MetricKey, ...>` so a key missing from either side
-   fails `tsc`.
+   descriptor table cannot diverge. `METRICS` is an ordered array, so the
+   check is type-level: a tuple of its `key` literals is asserted equal to
+   the `MetricKey` union (both directions), and a key missing from either
+   side fails `tsc`. Display order stays in the array.
    `revertedCount` and `currentStreak` are computed but never shown: add
    descriptors so they display. Dropping them is the fallback if the display
    is judged noise during sub-project 5.
 4. **Layering.** `pipeline/fetch.ts` stops importing `metrics/reverts.ts`; the
    revert-title predicate is passed in or moved to `shared/`. `UserIdentity`
    moves from `metrics/trend.ts` to `pipeline/model.ts`.
-5. **Doc alignment.** Review depth is documented as a median and computed as a
-   mean. Pick median (the spec's stated intent) and update the descriptor
-   text, README, and tests.
+5. **Doc alignment.** Review depth is computed as a mean on purpose:
+   `snapshot.ts` records that the median collapses to zero whenever fewer
+   than half of a reviewer's MRs carry inline comments, which is the common
+   case, and the README lists that collapse as a fixed bug. The code stays.
+   The README metrics table and the `UserMetrics.reviewDepth` comment in
+   `shared/types.ts` still say median; align both to mean.
 6. **Warning codes.** `LeaderboardWarning.code` becomes a string-literal union.
 
 Done when: all existing tests pass, the new parity test passes, and
@@ -130,13 +134,23 @@ A new `// --- mattstack (shared team truth) ---` row and a new
 
 | Need | Key | Note |
 |---|---|---|
-| GitLab host | `mattstack.integrations.forge.host` (team) | unset today; the import writes `forge: {host, provider: "gitlab"}` |
-| Linear team key | `mattstack.integrations.linear.teamKey` (team) | unset today; the import writes `linear: {teamKey: "CV"}` |
+| GitLab host | field `forge.host` of the single object key `mattstack.integrations` (team, deep merge) | unset today. Suite precedent: team creation copies `forge.host` into `board.gitlabHost`, which the board fetches against, so boxscore fetching against it follows that precedent. |
+| Linear team key | field `linear.teamKey` of the same object key | unset today |
+
+`mattstack.integrations` is one registry key holding one object; its fields
+are not keys. `rt settings explain mattstack.integrations.forge.host` reports
+an unknown setting, and that is expected. Reads call
+`getSetting("mattstack.integrations")` and pick the field. Writes must read
+the current object, merge the new fields in, and write the whole object back,
+because `setSetting` replaces the value at the key and the live team store
+already holds a `slack` block that a bare write would delete.
 | Tokens | secrets store, `rt` domain | `gitlabToken`, `linearApiKey`; read env-first, then `secrets:read` scope `extension` |
 
 ### 5.3 Boxscore reads
 
-- `server/config/` replaces `config.ts` and `server/settings.ts`: one module
+- `server/config/` replaces `config.ts`, `server/settings.ts`, and
+  `server/env.ts` (the `Env` type threaded through the fetchers becomes a
+  config-module type): one module
   that calls `getSetting` from `@mattstack/rt-client` per key on every read
   (no module-load caching) and applies fallbacks. Every key read goes through
   it. Nothing else in the server touches the resolver.
@@ -162,7 +176,13 @@ future apps; boxscore does not expose it.
 `scripts/import-legacy-settings.ts` reads `config.ts`, `settings.json`, and
 `.env`, writes each value with `setSetting(key, value, scope)`, then reads
 every key back and fails loudly if any read does not equal what was written.
-Only after a clean verify does the script print the `git rm` list. Team-scope
+For `mattstack.integrations` it reads the current object, merges `forge` and
+`linear` in, and writes the merged object. From `.env` it consumes only
+`GITLAB_BASE_URL`; the two tokens cannot be settings, so the script instead
+checks that the `rt` secrets domain already holds `gitlabToken` and
+`linearApiKey` (both names exist there today) and stops with instructions if
+either is missing. Only after a clean verify does the script print the
+`git rm` list. Team-scope
 writes land in the acme-web team repo working copy and need a commit and
 push; the script says so. The roster written to `mattstack.roster` is
 boxscore's 7-user list merged with the board's 5 (union, names from the
@@ -172,7 +192,7 @@ board where present). Users boxscore scored but the board hides go into
 ### 5.6 Deletions
 
 `config.ts`, `settings.json`, `.env`, `.env.example`, `server/settings.ts`,
-`web/src/components/SettingsPage.tsx`, the `/api/settings*` routes, the
+`server/env.ts`, `web/src/components/SettingsPage.tsx`, the `/api/settings*` routes, the
 `/api/settings/linear-states` and `/api/settings/suspected-bots` routes, and
 the settings link in `App.tsx`. `scanSuspectedBots` survives as a CLI
 subcommand (`bun server/cli.ts --format bots`) so bot discovery is still
@@ -180,8 +200,10 @@ possible without a page.
 
 ### 5.7 Delivery order
 
-1. Registry rows in repo-tools; `bun run build` in rt-client; publish a
-   version bump.
+1. Registry rows in repo-tools, plus a boxscore table in
+   `docs/superpowers/specs/2026-08-20-suite-settings-migration.md` (the
+   per-app key table the settings architecture doc points at); `bun run
+   build` in rt-client; publish a version bump.
 2. Bump `@mattstack/rt-client` in boxscore; add `server/config/`.
 3. Run the import script; commit and push the team store change.
 4. Delete the legacy files and routes; update README.
@@ -229,7 +251,7 @@ existing pattern. Live conformance entries under `tests/live/` behind
 
 ```
 server/
-  config/        settings + secrets reads (from sub-project 2)
+  config/        settings + secrets + env reads (from sub-project 2; replaces env.ts)
   source/        glance-backed fetchers -> domain model (replaces gitlab/, most of pipeline/fetch.ts)
   store/         sqlite store, one file (replaces cache/)
   refresh/       the refresh algorithm and job (replaces jobs/ and pipeline/slice.ts)
@@ -347,8 +369,10 @@ Preserved as-is: `shared/metrics.ts` descriptors and accessors,
 
 ## 11. Error handling
 
-- Settings resolver throws on an unknown key: that is a stale rt-client copy,
-  surfaced at boot with the key name and the bump instruction.
+- Settings resolver throws on an unknown key for a `boxscore.*` or
+  `mattstack.roster` read: that is a stale rt-client copy, surfaced at boot
+  with the key name and the bump instruction. Fields of
+  `mattstack.integrations` are never read as keys (section 5.2).
 - Secret read failure degrades to "not configured" with one warning per
   process; never retried per request.
 - Glance transport errors carry through as today's warning codes
@@ -360,9 +384,10 @@ Preserved as-is: `shared/metrics.ts` descriptors and accessors,
 
 - SP1: existing metrics tests plus the cohort parity test; characterization
   fixtures in `test/fixtures/outcome.ts` stay green.
-- SP2: config module tests against a temp `HOME` (the suite's bunfig preload
-  pattern); import script tested against fixture files; no test touches the
-  real `~/.mattstack`.
+- SP2: config module tests against a temp `HOME`, repointed in a vitest
+  `setupFiles` entry (boxscore runs vitest, not `bun test`, so the suite's
+  bunfig preload pattern is mirrored there); import script tested against
+  fixture files; no test touches the real `~/.mattstack`.
 - SP3: glance unit tests per method; live conformance behind `GLANCE_LIVE=1`.
 - SP4: store tests against a temp sqlite; source tests with a stubbed
   `GitProvider` (interface, not HTTP); refresh algorithm tests for the
