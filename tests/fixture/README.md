@@ -23,7 +23,8 @@ Hand-edit the JSON. The set of states the captures exercise lives here, not
 in `tests/capture.ts`: draft, stacked, conflicts, failing CI, approved,
 unresolved threads, a held draft, and the review / respond / doctor agent
 chips are each carried by one of the eight MRs. Adding a state means adding
-or amending an MR.
+or amending an MR. The second tab, "Acme Queue", names a section absent
+from scopeKnownSections so the wrong-section banner and chip render.
 
 `data.json` must satisfy the client's `BoardData` contract
 (`src/client/types.ts`), `tabs` and `scopeUncoveredSections` included. A

@@ -192,6 +192,7 @@
       "pipelineState": "passed",
       "repositoryId": "gitlab:1000042",
       "rtRepo": "webapp",
+      "codeownerSections": [],
       "threadSummary": {
         "awaiting": 0,
         "replied": 0,
@@ -437,6 +438,7 @@
       "pipelineState": "passed",
       "repositoryId": "gitlab:1000042",
       "rtRepo": "webapp",
+      "codeownerSections": [],
       "threadSummary": {
         "awaiting": 0,
         "replied": 0,
@@ -802,6 +804,7 @@
       "pipelineState": "passed",
       "repositoryId": "gitlab:1000042",
       "rtRepo": "webapp",
+      "codeownerSections": [],
       "threadSummary": {
         "awaiting": 0,
         "replied": 5,
@@ -1059,6 +1062,7 @@
       "pipelineState": "passed",
       "repositoryId": "gitlab:1000042",
       "rtRepo": "webapp",
+      "codeownerSections": [],
       "threadSummary": {
         "awaiting": 0,
         "replied": 0,
@@ -1187,6 +1191,7 @@
       "pipelineState": "failed",
       "repositoryId": "gitlab:1000042",
       "rtRepo": "webapp",
+      "codeownerSections": [],
       "threadSummary": {
         "awaiting": 0,
         "replied": 0,
@@ -1462,6 +1467,7 @@
       "pipelineState": "passed",
       "repositoryId": "gitlab:1000042",
       "rtRepo": "webapp",
+      "codeownerSections": [],
       "threadSummary": {
         "awaiting": 3,
         "replied": 0,
@@ -1589,6 +1595,7 @@
       "pipelineState": "passed",
       "repositoryId": "gitlab:1000042",
       "rtRepo": "webapp",
+      "codeownerSections": [],
       "threadSummary": {
         "awaiting": 0,
         "replied": 0,
@@ -1854,6 +1861,7 @@
       "pipelineState": "passed",
       "repositoryId": "gitlab:1000042",
       "rtRepo": "webapp",
+      "codeownerSections": [],
       "threadSummary": {
         "awaiting": 1,
         "replied": 0,
@@ -1905,8 +1913,17 @@
       "source": {
         "kind": "authors"
       }
+    },
+    {
+      "id": "acme-queue",
+      "label": "Acme Queue",
+      "source": {
+        "kind": "codeowners",
+        "section": "Acme",
+        "excludeMembers": true
+      }
     }
   ],
   "scopeUncoveredSections": [],
-  "scopeKnownSections": null
+  "scopeKnownSections": ["Acme - #pod-acme", "Docs"]
 }

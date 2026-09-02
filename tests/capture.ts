@@ -116,6 +116,12 @@ for (const theme of ["light", "dark"] as const) {
   await page.waitForSelector('[data-part="modal"]');
   await shoot(page, `settings-${theme}`);
   await page.keyboard.press("Escape");
+  // codeowners tab whose section is not a CODEOWNERS header: the alarm
+  await page.click('[role="tab"]:has-text("Acme Queue")');
+  await page.waitForSelector('.tui-banner[data-intent="bad"]');
+  await shoot(page, `badsection-${theme}`);
+  await page.click('[role="tab"]:has-text("Team")');
+  await page.waitForSelector(".tui-row, .tui-card");
   // selection bar
   await page.locator('[data-part="selectbox"]').first().click();
   await page.waitForSelector(".tui-selbar");
