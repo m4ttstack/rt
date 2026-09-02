@@ -526,15 +526,15 @@ In `src/index.ts`, extend the `export type { ... } from './types.ts'` block with
   }
 ```
 
-In `GITLAB_EXPECTATIONS`, after its `watchEvents` entry, add:
+In `GITLAB_EXPECTATIONS`, after its `watchEvents` entry, add the same six entries as `absent` with a note (the harness's invariant test requires a `supported` method to exist as a function, and none exists until Tasks 3 to 5; each of those tasks flips its entries to `supported`):
 
 ```ts
-  fetchMergeRequestIndex: { support: 'supported', capability: 'canFetchMergeRequestIndex' },
-  fetchMergeRequestMetrics: { support: 'supported', capability: 'canFetchMergeRequestMetrics' },
-  fetchGroupProjects: { support: 'supported', capability: 'canFetchGroupProjects' },
-  fetchProject: { support: 'supported', capability: 'canFetchProject' },
-  fetchProjectPipelines: { support: 'supported', capability: 'canFetchProjectPipelines' },
-  fetchUserEvents: { support: 'supported', capability: 'canFetchUserEvents' }
+  fetchMergeRequestIndex: { support: 'absent', capability: 'canFetchMergeRequestIndex', note: 'Lands in the next task of the metric-grade reads plan.' },
+  fetchMergeRequestMetrics: { support: 'absent', capability: 'canFetchMergeRequestMetrics', note: 'Lands in the next task of the metric-grade reads plan.' },
+  fetchGroupProjects: { support: 'absent', capability: 'canFetchGroupProjects', note: 'Lands in the next task of the metric-grade reads plan.' },
+  fetchProject: { support: 'absent', capability: 'canFetchProject', note: 'Lands in the next task of the metric-grade reads plan.' },
+  fetchProjectPipelines: { support: 'absent', capability: 'canFetchProjectPipelines', note: 'Lands in the next task of the metric-grade reads plan.' },
+  fetchUserEvents: { support: 'absent', capability: 'canFetchUserEvents', note: 'Lands in the next task of the metric-grade reads plan.' }
 ```
 
 Add a trailing comma to each table's existing `watchEvents` entry. In `tests/live-expectations.test.ts`, the test "only optional interface methods may be declared absent" holds `const OPTIONAL: string[] = ['fetchPullRequestsByBranches', 'watchEvents'];`; extend it to:
@@ -552,7 +552,7 @@ Add a trailing comma to each table's existing `watchEvents` entry. In `tests/liv
     ];
 ```
 
-That file's other invariants then bind the rest of this plan: an `absent` entry's flag must be `false` on GitHub (true after this task), and a `supported` entry's flag must be `true` on GitLab, which is what Tasks 3 to 5 deliver. The GitLab test "a supported method names a capability flag that is true" applies to the GitHub table only, so the GitLab flags being `false` until Tasks 3 to 5 does not fail here.
+That file's other invariants then bind the rest of this plan: an `absent` entry's flag must be `false` and its method undefined (true on both providers after this task), and every entry that is not plainly `supported` carries a note. Tasks 3 to 5 flip GitLab's entries to `{ support: 'supported', capability }` as each method lands.
 
 - [ ] **Step 8: Run the test, the suite, and the types**
 
@@ -572,6 +572,7 @@ git commit -m "glance: declare the metric-grade reads, their types, and capabili
 
 **Files:**
 - Modify: `src/GitLabProvider.ts` (queries, response types, the method, `canFetchMergeRequestIndex: true`)
+- Modify: `tests/live/expectations.ts` (the GitLab `fetchMergeRequestIndex` entry becomes `supported`)
 - Test: `tests/gitlab-mr-index.test.ts`
 
 **Interfaces:**
@@ -827,7 +828,7 @@ In `class GitLabProvider`, directly after `fetchCodeownerSections`, add:
   }
 ```
 
-Flip `canFetchMergeRequestIndex: false,` to `canFetchMergeRequestIndex: true,` in the class's `capabilities` literal.
+Flip `canFetchMergeRequestIndex: false,` to `canFetchMergeRequestIndex: true,` in the class's `capabilities` literal. In `tests/live/expectations.ts`, replace the GitLab table's `fetchMergeRequestIndex` entry with `fetchMergeRequestIndex: { support: 'supported', capability: 'canFetchMergeRequestIndex' },` (no note).
 
 - [ ] **Step 5: Run the test, the suite, and the types**
 
@@ -837,7 +838,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/GitLabProvider.ts tests/gitlab-mr-index.test.ts
+git add src/GitLabProvider.ts tests/gitlab-mr-index.test.ts tests/live/expectations.ts
 git commit -m "glance: fetchMergeRequestIndex lists scalar MR rows across a group or projects"
 ```
 
@@ -847,6 +848,7 @@ git commit -m "glance: fetchMergeRequestIndex lists scalar MR rows across a grou
 
 **Files:**
 - Modify: `src/GitLabProvider.ts` (queries, response types, the method, `canFetchMergeRequestMetrics: true`)
+- Modify: `tests/live/expectations.ts` (the GitLab `fetchMergeRequestMetrics` entry becomes `supported`)
 - Test: `tests/gitlab-mr-metrics.test.ts`
 
 **Interfaces:**
@@ -1095,7 +1097,7 @@ In `class GitLabProvider`, directly after `fetchMergeRequestIndex`, add:
   }
 ```
 
-Flip `canFetchMergeRequestMetrics: false,` to `true` in the `capabilities` literal.
+Flip `canFetchMergeRequestMetrics: false,` to `true` in the `capabilities` literal. In `tests/live/expectations.ts`, replace the GitLab table's `fetchMergeRequestMetrics` entry with `fetchMergeRequestMetrics: { support: 'supported', capability: 'canFetchMergeRequestMetrics' },` (no note).
 
 - [ ] **Step 5: Run the test, the suite, and the types**
 
@@ -1105,7 +1107,7 @@ Expected: PASS.
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/GitLabProvider.ts tests/gitlab-mr-metrics.test.ts
+git add src/GitLabProvider.ts tests/gitlab-mr-metrics.test.ts tests/live/expectations.ts
 git commit -m "glance: fetchMergeRequestMetrics reads one MR's metric-grade detail with every note"
 ```
 
@@ -1115,6 +1117,7 @@ git commit -m "glance: fetchMergeRequestMetrics reads one MR's metric-grade deta
 
 **Files:**
 - Modify: `src/GitLabProvider.ts` (a group-projects query, two private REST helpers, four methods, four flags flipped to `true`)
+- Modify: `tests/live/expectations.ts` (the GitLab entries for the four methods become `supported`)
 - Test: `tests/gitlab-metrics-rest.test.ts`
 
 **Interfaces:**
@@ -1395,7 +1398,16 @@ In `class GitLabProvider`, directly after `fetchMergeRequestMetrics`, add:
   }
 ```
 
-Flip `canFetchGroupProjects`, `canFetchProject`, `canFetchProjectPipelines`, and `canFetchUserEvents` from `false` to `true` in the `capabilities` literal.
+Flip `canFetchGroupProjects`, `canFetchProject`, `canFetchProjectPipelines`, and `canFetchUserEvents` from `false` to `true` in the `capabilities` literal. In `tests/live/expectations.ts`, replace the GitLab table's four entries with:
+
+```ts
+  fetchGroupProjects: { support: 'supported', capability: 'canFetchGroupProjects' },
+  fetchProject: { support: 'supported', capability: 'canFetchProject' },
+  fetchProjectPipelines: { support: 'supported', capability: 'canFetchProjectPipelines' },
+  fetchUserEvents: { support: 'supported', capability: 'canFetchUserEvents' }
+```
+
+After this task no GitLab entry for the six reads carries `absent`.
 
 - [ ] **Step 5: Run the test, the suite, and the types**
 
@@ -1405,7 +1417,7 @@ Expected: PASS. The pipelines URL assertion depends on `URLSearchParams` orderin
 - [ ] **Step 6: Commit**
 
 ```bash
-git add src/GitLabProvider.ts tests/gitlab-metrics-rest.test.ts
+git add src/GitLabProvider.ts tests/gitlab-metrics-rest.test.ts tests/live/expectations.ts
 git commit -m "glance: fetchGroupProjects, fetchProject, fetchProjectPipelines, fetchUserEvents"
 ```
 
