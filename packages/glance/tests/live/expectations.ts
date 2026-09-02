@@ -109,6 +109,36 @@ export const GITHUB_EXPECTATIONS: Record<ProviderMethod, Expectation> = {
     support: 'supported',
     capability: 'canWatchEvents',
     note: 'polls the repository events feed as an accelerator, not a replacement for a full poll: the feed carries no CI events, so pipelines invalidations never fire on GitHub.'
+  },
+  fetchMergeRequestIndex: {
+    support: 'absent',
+    capability: 'canFetchMergeRequestIndex',
+    note: 'Not implemented on GitHub yet; the metric-grade reads landed GitLab-first for boxscore.'
+  },
+  fetchMergeRequestMetrics: {
+    support: 'absent',
+    capability: 'canFetchMergeRequestMetrics',
+    note: 'Not implemented on GitHub yet; the metric-grade reads landed GitLab-first for boxscore.'
+  },
+  fetchGroupProjects: {
+    support: 'absent',
+    capability: 'canFetchGroupProjects',
+    note: 'Not implemented on GitHub yet; GitHub organizations would stand in for GitLab groups.'
+  },
+  fetchProject: {
+    support: 'absent',
+    capability: 'canFetchProject',
+    note: 'Not implemented on GitHub yet; the metric-grade reads landed GitLab-first for boxscore.'
+  },
+  fetchProjectPipelines: {
+    support: 'absent',
+    capability: 'canFetchProjectPipelines',
+    note: 'Not implemented on GitHub yet; workflow runs would stand in for GitLab pipelines.'
+  },
+  fetchUserEvents: {
+    support: 'absent',
+    capability: 'canFetchUserEvents',
+    note: 'Not implemented on GitHub yet; the user events feed would stand in for GitLab user events.'
   }
 };
 
@@ -157,7 +187,37 @@ export const GITLAB_EXPECTATIONS: Record<ProviderMethod, Expectation> = {
   requestReReview: { support: 'supported', capability: 'canRequestReReview' },
   restRequest: { support: 'supported' },
   watchMR: { support: 'supported' },
-  watchEvents: { support: 'supported', capability: 'canWatchEvents' }
+  watchEvents: { support: 'supported', capability: 'canWatchEvents' },
+  fetchMergeRequestIndex: {
+    support: 'absent',
+    capability: 'canFetchMergeRequestIndex',
+    note: 'Interface method declared; GitLabProvider implements it in a later task of the metrics-reads plan.'
+  },
+  fetchMergeRequestMetrics: {
+    support: 'absent',
+    capability: 'canFetchMergeRequestMetrics',
+    note: 'Interface method declared; GitLabProvider implements it in a later task of the metrics-reads plan.'
+  },
+  fetchGroupProjects: {
+    support: 'absent',
+    capability: 'canFetchGroupProjects',
+    note: 'Interface method declared; GitLabProvider implements it in a later task of the metrics-reads plan.'
+  },
+  fetchProject: {
+    support: 'absent',
+    capability: 'canFetchProject',
+    note: 'Interface method declared; GitLabProvider implements it in a later task of the metrics-reads plan.'
+  },
+  fetchProjectPipelines: {
+    support: 'absent',
+    capability: 'canFetchProjectPipelines',
+    note: 'Interface method declared; GitLabProvider implements it in a later task of the metrics-reads plan.'
+  },
+  fetchUserEvents: {
+    support: 'absent',
+    capability: 'canFetchUserEvents',
+    note: 'Interface method declared; GitLabProvider implements it in a later task of the metrics-reads plan.'
+  }
 };
 
 export function expectationFor(

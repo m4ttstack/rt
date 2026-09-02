@@ -625,7 +625,13 @@ export class GitHubProvider implements GitProvider {
      * feed. resume is a fast path, not a guarantee; full sync is the only
      * recovery.
      */
-    canWatchEvents: true
+    canWatchEvents: true,
+    canFetchMergeRequestIndex: false,
+    canFetchMergeRequestMetrics: false,
+    canFetchGroupProjects: false,
+    canFetchProject: false,
+    canFetchProjectPipelines: false,
+    canFetchUserEvents: false
   };
 
   // ── GitProvider interface ─────────────────────────────────────────────────

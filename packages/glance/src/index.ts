@@ -57,6 +57,12 @@ export type {
   EventCursor,
   WatchEventsOptions,
   WatchEventsStatus,
+  MergeRequestIndexRow,
+  MetricsNote,
+  MergeRequestMetrics,
+  ProjectRef,
+  PipelineSummary,
+  UserEvent,
 } from './types.ts';
 export { getReviewDisplayState, getReviewerSummaries } from './types.ts';
 // Exported because mergePullRequest's 405 message now names a
@@ -76,6 +82,9 @@ export type {
   GitProvider,
   FetchPullRequestsOptions,
   FetchPullRequestsWarning,
+  FetchMergeRequestIndexOptions,
+  FetchProjectPipelinesOptions,
+  FetchUserEventsOptions,
 } from './GitProvider.ts';
 // `warningTarget` is exported because `FetchPullRequestsWarning.target`'s
 // documentation tells a consumer to match on it by building the string with

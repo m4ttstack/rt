@@ -725,6 +725,12 @@ export class GitLabProvider implements GitProvider {
     canRetryPipeline: true,
     canRequestReReview: true,
     canWatchEvents: true,
+    canFetchMergeRequestIndex: false,
+    canFetchMergeRequestMetrics: false,
+    canFetchGroupProjects: false,
+    canFetchProject: false,
+    canFetchProjectPipelines: false,
+    canFetchUserEvents: false,
   };
 
   // MARK: - GitProvider

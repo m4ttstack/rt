@@ -41,7 +41,16 @@ describe('expectation tables', () => {
   });
 
   test('only optional interface methods may be declared absent', () => {
-    const OPTIONAL: string[] = ['fetchPullRequestsByBranches', 'watchEvents'];
+    const OPTIONAL: string[] = [
+      'fetchPullRequestsByBranches',
+      'watchEvents',
+      'fetchMergeRequestIndex',
+      'fetchMergeRequestMetrics',
+      'fetchGroupProjects',
+      'fetchProject',
+      'fetchProjectPipelines',
+      'fetchUserEvents',
+    ];
     for (const table of [GITHUB_EXPECTATIONS, GITLAB_EXPECTATIONS]) {
       for (const [method, exp] of Object.entries(table)) {
         if (exp.support !== 'absent') continue;

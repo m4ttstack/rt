@@ -601,6 +601,91 @@ export interface ProviderCapabilities {
   canRequestReReview: boolean;
   /** Can watch the project events feed for cache invalidations. */
   canWatchEvents: boolean;
+  /** Can list merge requests across a group or project set with `fetchMergeRequestIndex`. */
+  canFetchMergeRequestIndex: boolean;
+  /** Can read one MR's metric-grade detail with `fetchMergeRequestMetrics`. */
+  canFetchMergeRequestMetrics: boolean;
+  /** Can enumerate a group's projects with `fetchGroupProjects`. */
+  canFetchGroupProjects: boolean;
+  /** Can resolve a project path with `fetchProject`. */
+  canFetchProject: boolean;
+  /** Can list a project's pipelines by user and window with `fetchProjectPipelines`. */
+  canFetchProjectPipelines: boolean;
+  /** Can read a user's activity feed with `fetchUserEvents`. */
+  canFetchUserEvents: boolean;
+}
+
+// ── Metric-grade reads ────────────────────────────────────────────────────────
+
+/**
+ * One merge request as a metrics index sees it: cheap scalar fields only,
+ * none of the dashboard resolvers. A consumer keeps its own history from
+ * these rows and fetches `MergeRequestMetrics` for the ones it scores.
+ */
+export interface MergeRequestIndexRow {
+  iid: number;
+  /** "group/project", so a group-scoped index still names each MR's project. */
+  projectPath: string;
+  title: string;
+  /** The forge's lifecycle state, lowercased: "opened" | "merged" | "closed" | "locked". */
+  state: string;
+  createdAt: string;
+  updatedAt: string;
+  mergedAt: string | null;
+  /** Null when the author's account is gone. */
+  authorUsername: string | null;
+  sourceBranch: string;
+  labels: string[];
+}
+
+/** A note as review metrics read it: who, when, whether the forge wrote it, whether it sits on a diff line. */
+export interface MetricsNote {
+  authorUsername: string | null;
+  createdAt: string;
+  system: boolean;
+  /** Anchored to a diff line (GitLab's DiffNote), as opposed to a general comment. */
+  inline: boolean;
+}
+
+/** Everything one MR contributes to volume and quality metrics. */
+export interface MergeRequestMetrics {
+  iid: number;
+  projectPath: string;
+  description: string | null;
+  diffStats: DiffStats | null;
+  /** Per-file line counts, so a consumer can exclude generated files. */
+  fileStats: Array<{ path: string; additions: number; deletions: number }>;
+  labels: string[];
+  approvedByUsernames: string[];
+  /** Every note on the MR, paginated to exhaustion. */
+  notes: MetricsNote[];
+}
+
+/** A project resolved by path. */
+export interface ProjectRef {
+  /** Scoped provider ID, the same value `PullRequest.repositoryId` carries, e.g. "gitlab:42". */
+  id: string;
+  fullPath: string;
+}
+
+/** One pipeline as a per-user pipeline count reads it; no jobs. */
+export interface PipelineSummary {
+  /** Scoped provider ID, e.g. "gitlab:pipeline:12345". */
+  id: string;
+  /** The forge's status, lowercased. */
+  status: string;
+  createdAt: string | null;
+  /** The user the caller filtered by, or null for an unfiltered listing. */
+  username: string | null;
+}
+
+/** One entry of a user's activity feed. */
+export interface UserEvent {
+  /** The forge's action name, e.g. "pushed to". */
+  action: string;
+  createdAt: string;
+  /** Scoped repository ID the event happened in, e.g. "gitlab:42", or null when the feed omits it. */
+  repositoryId: string | null;
 }
 
 /** Branch protection rule (provider-agnostic). */
