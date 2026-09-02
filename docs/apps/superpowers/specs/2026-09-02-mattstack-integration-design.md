@@ -333,7 +333,7 @@ documented limitation, not a defect, and the README says so.
 ## 8. Sub-project 5: UI migration
 
 Designed on 2026-09-02 and approved. The canvas is
-https://claude.ai/code/artifact/6eb6743f-a7bc-4d7c-8381-9efa25152863 and its
+https://claude.ai/code/artifact/b6cec1df-5aab-42b0-aea1-d69f7c77c5dd and its
 working files live in `docs/superpowers/design/boxscore-ui/` (regenerate with
 `node build.mjs`). Five artboards: leaderboard, leaderboard mid-refresh with
 trend on, cards, person detail with evidence, settings. Inputs the plan
