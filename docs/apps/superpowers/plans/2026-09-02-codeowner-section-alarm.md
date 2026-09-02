@@ -726,8 +726,8 @@ Add this test directly after `backfillAuthors preserves an existing scope's sect
 
 - [ ] **Step 5: Run the sync suite and the type check**
 
-Run: `bun test lib/daemon/__tests__/project-sync.test.ts && bun run check-types`
-Expected: PASS. The existing `with no existing scope leaves scope unset` test still passes because the fetch sits inside the `if (scope)` guard. If the repo's type-check script has a different name, use the one `package.json` defines for `tsc`.
+Run: `bun test lib/daemon/__tests__/project-sync.test.ts && bunx tsc --noEmit -p tsconfig.json`
+Expected: PASS, and `tsc` exits 0 (repo-tools has no package-level type-check script; the root `tsconfig.json` covers `lib/`).
 
 - [ ] **Step 6: Commit**
 
