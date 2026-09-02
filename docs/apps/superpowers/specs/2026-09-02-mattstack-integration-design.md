@@ -316,7 +316,12 @@ documented limitation, not a defect, and the README says so.
 
 ## 8. Sub-project 5: UI migration
 
-Not designed here. Inputs to the design pass:
+Designed on 2026-09-02 and approved. The canvas is
+https://claude.ai/code/artifact/6eb6743f-a7bc-4d7c-8381-9efa25152863 and its
+working files live in `docs/superpowers/design/boxscore-ui/` (regenerate with
+`node build.mjs`). Five artboards: leaderboard, leaderboard mid-refresh with
+trend on, cards, person detail with evidence, settings. Inputs the plan
+still needs beyond the canvas:
 
 - Console's plan at `console/docs/superpowers/plans/2026-08-28-console-app-kit-migration.md` is the template.
 - React 19, Vite 8, vitest 4, Mantine 9 on `@mattstack/app-kit`; nothing under `web/src/components/ui` survives.
