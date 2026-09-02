@@ -19,7 +19,11 @@ export interface CohortOptions {
   ignoredMrs?: string[];
 }
 
-/** The fetch result with settings applied once: ignored MRs dropped, reverts and filters precomputed. */
+/**
+ * The fetch result with settings applied once: ignored MRs dropped, reverts and filters
+ * precomputed. `mrs` is expected to already be bounded to the window by `updatedAt`; revert
+ * detection and review attribution are only as complete as that bound.
+ */
 export interface Corpus {
   mrs: NormMr[];
   pipelines: NormPipeline[];
@@ -50,7 +54,10 @@ export interface ReviewedMr {
   mr: NormMr;
   notes: NormNote[];
   inlineCount: number;
-  /** Hours from the MR's clock start to the user's earliest note; null when they only approved. */
+  /**
+   * Hours from the MR's clock start to the user's earliest note; null when they only
+   * approved, or when their earliest note predates the MR's clock start.
+   */
   responseHours: number | null;
 }
 

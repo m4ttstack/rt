@@ -12,7 +12,6 @@ import type {
   UserRow,
 } from "../../shared/types.js";
 import type { UserIdentity } from "../pipeline/model.js";
-export type { UserIdentity };
 
 export interface BuildContext {
   scope: Scope;
