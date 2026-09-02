@@ -190,26 +190,10 @@ export const GITLAB_EXPECTATIONS: Record<ProviderMethod, Expectation> = {
   watchEvents: { support: 'supported', capability: 'canWatchEvents' },
   fetchMergeRequestIndex: { support: 'supported', capability: 'canFetchMergeRequestIndex' },
   fetchMergeRequestMetrics: { support: 'supported', capability: 'canFetchMergeRequestMetrics' },
-  fetchGroupProjects: {
-    support: 'absent',
-    capability: 'canFetchGroupProjects',
-    note: 'Interface method declared; GitLabProvider implements it in a later task of the metrics-reads plan.'
-  },
-  fetchProject: {
-    support: 'absent',
-    capability: 'canFetchProject',
-    note: 'Interface method declared; GitLabProvider implements it in a later task of the metrics-reads plan.'
-  },
-  fetchProjectPipelines: {
-    support: 'absent',
-    capability: 'canFetchProjectPipelines',
-    note: 'Interface method declared; GitLabProvider implements it in a later task of the metrics-reads plan.'
-  },
-  fetchUserEvents: {
-    support: 'absent',
-    capability: 'canFetchUserEvents',
-    note: 'Interface method declared; GitLabProvider implements it in a later task of the metrics-reads plan.'
-  }
+  fetchGroupProjects: { support: 'supported', capability: 'canFetchGroupProjects' },
+  fetchProject: { support: 'supported', capability: 'canFetchProject' },
+  fetchProjectPipelines: { support: 'supported', capability: 'canFetchProjectPipelines' },
+  fetchUserEvents: { support: 'supported', capability: 'canFetchUserEvents' }
 };
 
 export function expectationFor(

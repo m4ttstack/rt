@@ -1,6 +1,13 @@
 import { Gitlab, GitbeakerRequestError, GitbeakerRetryError } from '@gitbeaker/rest';
 import type { CreateMergeRequestOptions, EditMergeRequestOptions } from '@gitbeaker/rest';
-import type { GitProvider, FetchPullRequestsOptions, FetchMergeRequestIndexOptions, MRState } from './GitProvider.ts';
+import type {
+  GitProvider,
+  FetchPullRequestsOptions,
+  FetchMergeRequestIndexOptions,
+  FetchProjectPipelinesOptions,
+  FetchUserEventsOptions,
+  MRState,
+} from './GitProvider.ts';
 import { parseUpdatedAfter, requireProjectPath } from './GitProvider.ts';
 import type {
   BranchProtectionRule,
@@ -18,10 +25,13 @@ import type {
   MRDetail,
   Pipeline,
   PipelineJob,
+  PipelineSummary,
+  ProjectRef,
   ProviderCapabilities,
   PullRequest,
   Reviewer,
   UpdatePullRequestInput,
+  UserEvent,
   UserRef,
   WatchEventsOptions,
 } from './types.ts';
@@ -815,6 +825,33 @@ function toMetricsNote(n: GQLMetricsNote): MetricsNote {
   };
 }
 
+const GROUP_PROJECTS_QUERY = `
+  query GlanceGroupProjects($fullPath: ID!, $after: String) {
+    group(fullPath: $fullPath) {
+      projects(includeSubgroups: true, first: 100, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        nodes { fullPath }
+      }
+    }
+  }
+`;
+
+interface GroupProjectsResponse {
+  group: {
+    projects: {
+      pageInfo: { hasNextPage: boolean; endCursor: string | null };
+      nodes: Array<{ fullPath: string }>;
+    };
+  } | null;
+}
+
+/** Throws unless `value` parses as an instant; the message names the operation and field. */
+function requireInstant(op: string, field: string, value: string): void {
+  if (Number.isNaN(Date.parse(value))) {
+    throw new Error(`${op}: ${field} must be an ISO-8601 instant, got "${value}"`);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // GitLabProvider
 // ---------------------------------------------------------------------------
@@ -869,10 +906,10 @@ export class GitLabProvider implements GitProvider {
     canWatchEvents: true,
     canFetchMergeRequestIndex: true,
     canFetchMergeRequestMetrics: true,
-    canFetchGroupProjects: false,
-    canFetchProject: false,
-    canFetchProjectPipelines: false,
-    canFetchUserEvents: false,
+    canFetchGroupProjects: true,
+    canFetchProject: true,
+    canFetchProjectPipelines: true,
+    canFetchUserEvents: true,
   };
 
   // MARK: - GitProvider
@@ -1296,6 +1333,97 @@ export class GitLabProvider implements GitProvider {
       approvedByUsernames: (mr.approvedBy?.nodes ?? []).map((u) => u.username),
       notes,
     };
+  }
+
+  /**
+   * GET a list endpoint across every page. GitLab names the next page in
+   * `x-next-page` (empty on the last page); a page that names itself or an
+   * earlier page again would loop forever, so that throws.
+   */
+  private async restPages<T>(op: string, path: string, query: Record<string, string>): Promise<T[]> {
+    const out: T[] = [];
+    let page = 1;
+    for (;;) {
+      const params = new URLSearchParams({ ...query, per_page: '100', page: String(page) });
+      const res = await this.restRequest('GET', `${path}?${params.toString()}`, undefined, op);
+      if (!res.ok) throw new Error(`${op}: HTTP ${res.status} for ${path} page ${page}`);
+      out.push(...((await res.json()) as T[]));
+      const next = res.headers.get('x-next-page');
+      if (!next) return out;
+      const nextPage = Number(next);
+      if (!Number.isInteger(nextPage) || nextPage <= page) {
+        throw new Error(`${op}: non-advancing page '${next}' for ${path}`);
+      }
+      page = nextPage;
+    }
+  }
+
+  async fetchGroupProjects(groupPath: string): Promise<string[]> {
+    const out: string[] = [];
+    let after: string | null = null;
+    do {
+      const resp: GroupProjectsResponse = await this.runQuery<GroupProjectsResponse>(
+        'fetchGroupProjects', GROUP_PROJECTS_QUERY, { fullPath: groupPath, after },
+      );
+      const conn = resp.group?.projects;
+      if (!conn) throw new Error(`fetchGroupProjects: no group at ${groupPath}`);
+      out.push(...conn.nodes.map((n) => n.fullPath));
+      const next = conn.pageInfo.hasNextPage ? (conn.pageInfo.endCursor ?? null) : null;
+      if (conn.pageInfo.hasNextPage && (next === null || next === after)) {
+        throw new Error(`fetchGroupProjects: non-advancing cursor '${next}' for ${groupPath}`);
+      }
+      after = next;
+    } while (after);
+    return out;
+  }
+
+  async fetchProject(projectPath: string): Promise<ProjectRef | null> {
+    const res = await this.restRequest('GET', `/projects/${encodeURIComponent(projectPath)}`, undefined, 'fetchProject');
+    if (res.status === 404) return null;
+    if (!res.ok) throw new Error(`fetchProject: HTTP ${res.status} for ${projectPath}`);
+    const body = (await res.json()) as { id: number; path_with_namespace: string };
+    return { id: `gitlab:${body.id}`, fullPath: body.path_with_namespace };
+  }
+
+  async fetchProjectPipelines(projectPath: string, options: FetchProjectPipelinesOptions): Promise<PipelineSummary[]> {
+    requireInstant('fetchProjectPipelines', 'updatedAfter', options.updatedAfter);
+    requireInstant('fetchProjectPipelines', 'updatedBefore', options.updatedBefore);
+    const query: Record<string, string> = {};
+    if (options.username) query.username = options.username;
+    query.updated_after = options.updatedAfter;
+    query.updated_before = options.updatedBefore;
+    type RESTPipeline = { id: number; status: string; created_at: string | null };
+    const raws = await this.restPages<RESTPipeline>(
+      'fetchProjectPipelines', `/projects/${encodeURIComponent(projectPath)}/pipelines`, query,
+    );
+    return raws.map((r) => ({
+      id: domainId('pipeline', r.id),
+      status: r.status.toLowerCase(),
+      createdAt: r.created_at ?? null,
+      username: options.username ?? null,
+    }));
+  }
+
+  async fetchUserEvents(userId: string, options: FetchUserEventsOptions): Promise<UserEvent[]> {
+    const scoped = /^gitlab:user:(\d+)$/.exec(userId);
+    if (!scoped) {
+      throw new Error(`fetchUserEvents: userId must be a scoped GitLab user id like "gitlab:user:42", got "${userId}"`);
+    }
+    for (const [field, value] of [['after', options.after], ['before', options.before]] as const) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+        throw new Error(`fetchUserEvents: ${field} must be a calendar date (YYYY-MM-DD), got "${value}"`);
+      }
+    }
+    type RESTEvent = { action_name: string; created_at: string; project_id: number | null };
+    const raws = await this.restPages<RESTEvent>(
+      'fetchUserEvents', `/users/${scoped[1]}/events`,
+      { action: options.action, after: options.after, before: options.before },
+    );
+    return raws.map((e) => ({
+      action: e.action_name,
+      createdAt: e.created_at,
+      repositoryId: e.project_id == null ? null : `gitlab:${e.project_id}`,
+    }));
   }
 
   async fetchMRDiscussions(repositoryId: string, mrIid: number): Promise<MRDetail> {
