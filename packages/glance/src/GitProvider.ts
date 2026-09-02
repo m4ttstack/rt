@@ -198,6 +198,11 @@ export interface FetchMergeRequestIndexOptions {
   /**
    * Only MRs updated at/after this ISO-8601 instant. Required: an index with
    * no lower bound walks the project's whole history.
+   *
+   * The walk is `UPDATED_DESC` keyset pagination, so an MR updated while the
+   * walk is in progress can move ahead of the cursor and be missed. A
+   * consumer keeping a watermark should take it from the instant the scan
+   * started, with a small overlap, never from the instant the scan ended.
    */
   updatedAfter: string;
   /** Any state when omitted. */
@@ -385,7 +390,11 @@ export interface GitProvider {
    */
   fetchMergeRequestMetrics?(projectPath: string, mrIid: number): Promise<MergeRequestMetrics | null>;
 
-  /** Full paths of a group's projects, subgroups included. Check `capabilities.canFetchGroupProjects`. */
+  /**
+   * Full paths of a group's projects, subgroups included. Check
+   * `capabilities.canFetchGroupProjects`. Throws when the group does not
+   * exist or is not visible to the token.
+   */
   fetchGroupProjects?(groupPath: string): Promise<string[]>;
 
   /** Resolve a "group/project" path, or null when it does not exist. Check `capabilities.canFetchProject`. */

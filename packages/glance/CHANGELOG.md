@@ -28,6 +28,10 @@
   - New exports: those five types plus `MetricsNote`, and the option types
     `FetchMergeRequestIndexOptions`, `FetchProjectPipelinesOptions`,
     `FetchUserEventsOptions`.
+- `ProviderCapabilities` gained six required boolean fields, one per
+  metric-grade read above. Any code constructing that type directly (test
+  doubles, a third-party provider) must add them, following the precedent
+  set by `canWatchEvents`.
 
 ## 0.22.1
 
