@@ -10,7 +10,7 @@ import { chromium } from "playwright";
 import { mkdirSync } from "fs";
 import { join } from "path";
 
-const W = 1656;
+const W = 1200;
 const H = 208;
 // Left inset reserved for the sprite the runtime paints in; the artwork must
 // leave it empty or the sprite lands on top of the band's own pixels.
@@ -27,15 +27,18 @@ const html = `<!doctype html><meta charset="utf-8">
     background: #161224;
     background-image: repeating-linear-gradient(0deg, rgba(255,255,255,0.035) 0 2px, transparent 2px 6px);
   }
-  .stack { display: flex; flex-direction: column; gap: 18px; width: 100%; }
-  .title { font-family: 'Silkscreen', 'Courier New', monospace; font-weight: 700;
-           font-size: 50px; letter-spacing: 0.08em; color: #f6f2ff; line-height: 1; }
+  .stack { display: flex; flex-direction: column; gap: 16px; width: 100%; }
+  /* GitLab shows the band at about half width. Silkscreen draws on an 8px
+     grid, so 48px lands on whole pixels at 50% where 50px smeared; weight 400
+     keeps the counters open that 700 filled in. */
+  .title { font-family: 'Silkscreen', 'Courier New', monospace; font-weight: 400;
+           font-size: 48px; letter-spacing: 0.06em; color: #f6f2ff; line-height: 1; }
   .rule { height: 4px; background: #ff6b9d; width: 100%; }
-  .sub { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 24px;
-         letter-spacing: 0.16em; color: #ff6b9d; text-transform: uppercase; }
+  .sub { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-size: 30px;
+         letter-spacing: 0.08em; color: #ffd0e0; text-transform: uppercase; line-height: 1; }
 </style>
 <div class="band"><div class="stack">
-  <div class="title">RE-REVIEW LATCH</div>
+  <div class="title">READY FOR RE-REVIEW?</div>
   <div class="rule"></div>
   <div class="sub">resolve this thread to summon another pass</div>
 </div></div>`;

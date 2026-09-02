@@ -11,7 +11,7 @@ import { PNG } from "pngjs";
 import { resolveSpawn } from "invadrs";
 import bandAsset from "../../assets/latch-band.png" with { type: "file" };
 
-export const BAND_W = 1656;
+export const BAND_W = 1200;
 export const BAND_H = 208;
 
 const SPRITE_PINK = { r: 0xff, g: 0x6b, b: 0x9d };
