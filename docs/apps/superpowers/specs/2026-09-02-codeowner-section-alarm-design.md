@@ -227,8 +227,11 @@ modifier on the existing `tui-banner` class reads:
 > [fix in settings]
 
 Without a suggestion the sentence ends after the section name. The button
-calls the existing `openConfig`. An unknown section cannot have tagged rows,
-so there is no rows-plus-banner state to design.
+calls the existing `openConfig`. Rows can still appear under the banner: an
+MR whose per-MR rules still carry the old name stays tagged until GitLab
+re-syncs it, and it genuinely waits on that old rule, so the banner sits
+above the list rather than replacing it. Only the empty-state paragraph is
+suppressed.
 
 **Tab strip.** `TabBar` takes `unknown: string[]`, the ids of tabs whose
 section is unknown, and renders `<Chip intent="bad">no such section</Chip>`
