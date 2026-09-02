@@ -457,12 +457,10 @@ function withBoardStoreFallback(fileConfig: BoardConfig, resolve: GetSettingFn):
     return hiddenUsernames.has(m.username) ? { ...rest, hidden: true } : rest;
   });
 
-  const gitlabHost = storeValue<string>("board.gitlabHost", resolve) ?? fileConfig.gitlabHost;
-  const projects = storeValue<string[]>("board.projects", resolve) ?? fileConfig.projects;
   const merged: BoardConfig = {
     ...fileConfig,
-    gitlabHost,
-    projects,
+    gitlabHost: storeValue("board.gitlabHost", resolve) ?? fileConfig.gitlabHost,
+    projects: storeValue("board.projects", resolve) ?? fileConfig.projects,
     members,
     title: storeValue("board.title", resolve) ?? fileConfig.title,
     botUsernames: storeValue("board.botUsernames", resolve) ?? fileConfig.botUsernames,
@@ -478,7 +476,9 @@ function withBoardStoreFallback(fileConfig: BoardConfig, resolve: GetSettingFn):
     reviewCwd: cwds?.review ?? fileConfig.reviewCwd,
     respondCwd: cwds?.respond ?? fileConfig.respondCwd,
     doctorCwd: cwds?.doctor ?? fileConfig.doctorCwd,
-    rtRepos: deriveRtRepos(gitlabHost, projects, fileConfig.rtRepoOverrides),
+    // Explicit entries only: the reparse below validates gitlabHost/projects
+    // and derives the full map from them.
+    rtRepos: fileConfig.rtRepoOverrides,
     switchboard: { url: storeValue("board.switchboardUrl", resolve) ?? fileConfig.switchboard.url },
     tabs: storeValue("board.tabs", resolve) ?? fileConfig.tabs,
   };

@@ -89,6 +89,20 @@ describe("loadConfigFrom: per-key store-wins fallback", () => {
     const p = tmpConfig({ ...base, projects: ["org/repo", "org/other"], rtRepos: { "org/repo": "gitlab.com/forks/repo" } });
     const cfg = loadConfigFrom(p, fakeResolve({}));
     expect(cfg.rtRepos).toEqual({ "org/repo": "gitlab.com/forks/repo", "org/other": "gitlab.com/org/other" });
+    expect(cfg.rtRepoOverrides).toEqual({ "org/repo": "gitlab.com/forks/repo" });
+  });
+
+  test("rtRepoOverrides holds only config.json's explicit entries after the store overlay, never the derived map", () => {
+    const p = tmpConfig({ ...base, projects: ["org/repo"] });
+    const cfg = loadConfigFrom(p, fakeResolve({ "board.projects": ["org/repo", "org/other"] }));
+    expect(cfg.rtRepoOverrides).toEqual({});
+    expect(Object.keys(cfg.rtRepos).sort()).toEqual(["org/other", "org/repo"]);
+  });
+
+  test("a store gitlabHost or projects of the wrong type fails parseConfig's validation, never a TypeError inside derivation", () => {
+    const p = tmpConfig({ ...base, projects: ["org/repo"] });
+    expect(() => loadConfigFrom(p, fakeResolve({ "board.gitlabHost": 42 }))).toThrow(/gitlabHost/);
+    expect(() => loadConfigFrom(p, fakeResolve({ "board.projects": "org/repo" }))).toThrow(/projects/);
   });
 
   test("a resolver throw degrades that key to config.json's value, never crashes the load", () => {
