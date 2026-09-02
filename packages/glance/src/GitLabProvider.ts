@@ -24,6 +24,7 @@ import type {
 } from './types.ts';
 import { isTransitionalMergeStatus } from './types.ts';
 import { ReadBackFailedError } from './errors.ts';
+import { parseCodeownerSections } from './codeowners.ts';
 import { type ForgeLogger, noopLogger } from './logger.ts';
 import { MRDetailFetcher } from './MRDetailFetcher.ts';
 import { ActionCableClient } from './ActionCableClient.ts';
@@ -642,6 +643,30 @@ interface ApprovalRulesResponse {
   } | null;
 }
 
+/** GitLab's documented CODEOWNERS locations in its precedence order (root,
+    then docs/, then .gitlab/): the first that exists is the one GitLab reads.
+    No `ref`: GitLab resolves the default branch, which is the only branch
+    whose sections new MRs will match. */
+const CODEOWNERS_PATHS = ['CODEOWNERS', 'docs/CODEOWNERS', '.gitlab/CODEOWNERS'] as const;
+
+const CODEOWNERS_BLOBS_QUERY = `
+  query GlanceCodeownersBlobs($projectPath: ID!, $paths: [String!]!) {
+    project(fullPath: $projectPath) {
+      repository {
+        blobs(paths: $paths) { nodes { path rawTextBlob } }
+      }
+    }
+  }
+`;
+
+interface CodeownersBlobsResponse {
+  project: {
+    repository: {
+      blobs: { nodes: Array<{ path: string; rawTextBlob: string | null }> } | null;
+    } | null;
+  } | null;
+}
+
 // ---------------------------------------------------------------------------
 // GitLabProvider
 // ---------------------------------------------------------------------------
@@ -1011,6 +1036,25 @@ export class GitLabProvider implements GitProvider {
       after = next;
     } while (after);
     return out;
+  }
+
+  /**
+   * Section headers of the project's default-branch CODEOWNERS, or null when
+   * no CODEOWNERS file exists at any documented location. Per-MR approval
+   * rules snapshot section names at MR sync time and keep old names after a
+   * rename; this is the live list a new MR will match against.
+   */
+  async fetchCodeownerSections(options: { projectPath: string }): Promise<string[] | null> {
+    const resp = await this.runQuery<CodeownersBlobsResponse>(
+      'fetchCodeownerSections', CODEOWNERS_BLOBS_QUERY,
+      { projectPath: options.projectPath, paths: [...CODEOWNERS_PATHS] },
+    );
+    const nodes = resp.project?.repository?.blobs?.nodes ?? [];
+    for (const path of CODEOWNERS_PATHS) {
+      const node = nodes.find((n) => n.path === path);
+      if (node) return parseCodeownerSections(node.rawTextBlob ?? '');
+    }
+    return null;
   }
 
   async fetchMRDiscussions(repositoryId: string, mrIid: number): Promise<MRDetail> {

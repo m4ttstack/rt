@@ -107,6 +107,7 @@ export {
   stripDraftPrefix,
   draftTitle,
 } from './GitLabProvider.ts';
+export { parseCodeownerSections } from './codeowners.ts';
 export { GitHubProvider } from './GitHubProvider.ts';
 export { createProvider, SUPPORTED_PROVIDERS } from './providers.ts';
 export type { ProviderSlug } from './providers.ts';

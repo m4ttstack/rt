@@ -1,5 +1,17 @@
 # @mattstack/glance
 
+## 0.22.0
+
+### Minor Changes
+
+- New `GitLabProvider.fetchCodeownerSections({ projectPath })`: the section
+  headers of the project's default-branch CODEOWNERS (first documented
+  location wins), or `null` when the project has no such file. New export
+  `parseCodeownerSections(text)`, the pure parser behind it. Per-MR approval
+  rules keep a section name as it was when the MR last synced, so after a
+  section rename they cannot say which names still exist; this method
+  reports the names that exist now.
+
 ## 0.19.0
 
 ### Minor Changes
