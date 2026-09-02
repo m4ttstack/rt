@@ -1,34 +1,23 @@
 /**
  * Per-stat evidence: the underlying records behind one person's value for each metric.
- * Pure ... mirrors the cohort filters in snapshot.ts so the row counts here always match the
- * numbers there (test/evidence.test.ts asserts that). The output is render-agnostic
- * (columns + rows + summary), so the UI renders every stat with one component.
+ * Pure. Rows come from the same cohorts snapshot.ts counts (test/parity.test.ts pins that),
+ * and the output is render-agnostic (columns + rows + summary) so the UI renders every stat
+ * with one component.
  */
-import { inWindow } from "../util/window.js";
-import { buildRevertedTitleSet, isReverted } from "./reverts.js";
+import { buildCorpus, buildUserCohorts, type CohortOptions } from "./cohorts.js";
 import { mean, percentile, round, streaks } from "./stats.js";
-import { buildIgnoredMrSet, buildMetricFilters, isDoneState, matchesTeam } from "./filters.js";
 import type { FetchResult, NormMr } from "../pipeline/model.js";
-import type { MetricEvidence, MetricKey, TimeWindow } from "../../shared/types.js";
+import type { EvidenceRow, MetricEvidence, MetricKey } from "../../shared/types.js";
 
-export interface EvidenceContext {
-  window: TimeWindow;
+export interface EvidenceContext extends CohortOptions {
   baseUrl: string;
-  sizeBand: { tooSmall: number; tooLarge: number };
-  linearTeam?: string;
-  doneStates?: string[];
-  extraBotPatterns?: string[];
-  excludeFilePatterns?: string[];
-  ignoredMrs?: string[];
 }
 
-const HOUR_MS = 60 * 60 * 1000;
-const DAY_MS = 24 * HOUR_MS;
 const MAX_ROWS = 300;
 
 const day = (iso: string | null): string => (iso ? iso.slice(0, 10) : "—");
-const changed = (m: NormMr): number => m.additions + m.deletions;
 const hrs = (n: number): string => `${round(n, 1)}h`;
+const byIidDesc = (a: { mr: NormMr }, b: { mr: NormMr }): number => b.mr.iid - a.mr.iid;
 
 /** Build every metric's evidence for one user. Metrics with no records are omitted. */
 export function buildUserEvidence(
@@ -36,166 +25,102 @@ export function buildUserEvidence(
   u: string,
   ctx: EvidenceContext,
 ): Partial<Record<MetricKey, MetricEvidence>> {
-  const { window: w, baseUrl, sizeBand, linearTeam, doneStates } = ctx;
-  const isIgnored = buildIgnoredMrSet(ctx.ignoredMrs);
-  // Highest iid first so every MR-keyed table renders newest work at the top.
-  const mrs = fetched.mrs.filter((m) => !isIgnored(m)).sort((a, b) => b.iid - a.iid);
-  const { pipelines, pushEvents } = fetched;
-  const linearIssues = fetched.linearIssues ?? [];
-  const revertedTitles = buildRevertedTitleSet(mrs);
+  const { baseUrl, sizeBand } = ctx;
+  const corpus = buildCorpus(fetched, ctx);
+  const c = buildUserCohorts(corpus, u, ctx);
+  const lines = corpus.filters.lineCounts;
   const mrUrl = (m: NormMr) => `${baseUrl}/${m.projectPath}/-/merge_requests/${m.iid}`;
-  const { lineCounts: filteredLines, isBot } = buildMetricFilters(ctx);
 
   const out: Partial<Record<MetricKey, MetricEvidence>> = {};
 
-  // --- Authored & merged in window (drives most volume + several quality stats) ---
-  const authoredMerged = mrs.filter(
-    (m) => m.authorUsername === u && m.state === "merged" && inWindow(m.mergedAt, w),
-  );
+  // Highest iid first so every MR-keyed table renders newest work at the top.
+  const merged = [...c.authoredMerged].sort((a, b) => b.iid - a.iid);
 
   // additions / deletions / mrsMerged all share the merged-MR list.
-  const mergedRows = authoredMerged.map((m) => {
-    const f = filteredLines(m);
+  const mergedRows: EvidenceRow[] = merged.map((m) => {
+    const f = lines(m);
     return {
       cells: [`!${m.iid}`, m.title, `+${f.additions}`, `−${f.deletions}`, day(m.mergedAt)],
       href: mrUrl(m),
     };
   });
   const mergedCols = ["MR", "Title", "Added", "Deleted", "Merged"];
-  const totalAdd = authoredMerged.reduce((s, m) => s + filteredLines(m).additions, 0);
-  const totalDel = authoredMerged.reduce((s, m) => s + filteredLines(m).deletions, 0);
-  out.additions = { columns: mergedCols, rows: mergedRows, summary: `${totalAdd} lines added across ${authoredMerged.length} merged MRs` };
-  out.deletions = { columns: mergedCols, rows: mergedRows, summary: `${totalDel} lines deleted across ${authoredMerged.length} merged MRs` };
-  out.mrsMerged = { columns: mergedCols, rows: mergedRows, summary: `${authoredMerged.length} MRs merged` };
+  const totalAdd = merged.reduce((s, m) => s + lines(m).additions, 0);
+  const totalDel = merged.reduce((s, m) => s + lines(m).deletions, 0);
+  out.additions = { columns: mergedCols, rows: mergedRows, summary: `${totalAdd} lines added across ${merged.length} merged MRs` };
+  out.deletions = { columns: mergedCols, rows: mergedRows, summary: `${totalDel} lines deleted across ${merged.length} merged MRs` };
+  out.mrsMerged = { columns: mergedCols, rows: mergedRows, summary: `${merged.length} MRs merged` };
 
-  // sizeHealthPct: each merged MR's changed lines + whether it's in the band.
-  const healthy = (m: NormMr) => {
-    const f = filteredLines(m);
-    const c = f.additions + f.deletions;
-    return c >= sizeBand.tooSmall && c <= sizeBand.tooLarge;
-  };
   out.sizeHealthPct = {
     columns: ["MR", "Title", "Changed", "In band?"],
-    rows: authoredMerged.map((m) => {
-      const f = filteredLines(m);
+    rows: merged.map((m) => {
+      const f = lines(m);
       return {
-        cells: [`!${m.iid}`, m.title, String(f.additions + f.deletions), healthy(m) ? "✓" : "✗"],
+        cells: [`!${m.iid}`, m.title, String(f.additions + f.deletions), c.inBand(m) ? "✓" : "✗"],
         href: mrUrl(m),
-        muted: !healthy(m),
+        muted: !c.inBand(m),
       };
     }),
-    summary: `${authoredMerged.filter(healthy).length} of ${authoredMerged.length} MRs in the ${sizeBand.tooSmall}–${sizeBand.tooLarge} line band`,
+    summary: `${merged.filter(c.inBand).length} of ${merged.length} MRs in the ${sizeBand.tooSmall}–${sizeBand.tooLarge} line band`,
   };
 
-  // revertRate / revertedCount: merged MRs, reverted ones flagged.
-  const revertedRows = authoredMerged.map((m) => ({
-    cells: [`!${m.iid}`, m.title, day(m.mergedAt), isReverted(m, revertedTitles) ? "reverted" : "—"],
-    href: mrUrl(m),
-    muted: !isReverted(m, revertedTitles),
-  }));
-  const revertedN = authoredMerged.filter((m) => isReverted(m, revertedTitles)).length;
-  const revertEvidence = {
+  const reverted = new Set(c.reverted);
+  const revertEvidence: MetricEvidence = {
     columns: ["MR", "Title", "Merged", "Reverted?"],
-    rows: revertedRows,
-    summary: `${revertedN} of ${authoredMerged.length} merged MRs later reverted`,
+    rows: merged.map((m) => ({
+      cells: [`!${m.iid}`, m.title, day(m.mergedAt), reverted.has(m) ? "reverted" : "—"],
+      href: mrUrl(m),
+      muted: !reverted.has(m),
+    })),
+    summary: `${c.reverted.length} of ${merged.length} merged MRs later reverted`,
   };
   out.revertRate = revertEvidence;
   out.revertedCount = revertEvidence;
 
   // --- Reviewed teammates' MRs: depth + reviewer-side response latency ---
-  const reviewedRows: { cells: string[]; href: string }[] = [];
-  const depthRows: { cells: string[]; href: string }[] = [];
-  const responseRows: { cells: string[]; href: string }[] = [];
-  const responseSamples: number[] = [];
-  const reviewedAuthors = new Set<string>();
-
-  for (const m of mrs) {
-    if (m.authorUsername === u) continue;
-    const userNotes = m.notes.filter((n) => n.authorUsername === u && !n.system && inWindow(n.createdAt, w));
-    const approvedInScope = fetched.approvalsAvailable && m.approvedByUsernames.includes(u) && inWindow(m.mergedAt, w);
-    if (userNotes.length === 0 && !approvedInScope) continue;
-
-    const inline = userNotes.filter((n) => n.inline).length;
-    if (m.authorUsername) reviewedAuthors.add(m.authorUsername);
-    reviewedRows.push({
-      cells: [`!${m.iid}`, m.authorUsername ?? "—", m.title, String(userNotes.length), String(inline)],
-      href: mrUrl(m),
-    });
-    depthRows.push({ cells: [`!${m.iid}`, m.title, String(inline)], href: mrUrl(m) });
-
-    if (userNotes.length > 0) {
-      const earliest = Math.min(...userNotes.map((n) => Date.parse(n.createdAt)));
-      const clockStart = Date.parse(m.preparedAt ?? m.createdAt);
-      const h = (earliest - clockStart) / HOUR_MS;
-      if (h >= 0) {
-        responseSamples.push(h);
-        responseRows.push({ cells: [`!${m.iid}`, m.title, hrs(h)], href: mrUrl(m) });
-      }
-    }
-  }
+  const reviewed = [...c.reviewed].sort(byIidDesc);
   out.mrsReviewed = {
     columns: ["MR", "Author", "Title", "Comments", "Inline"],
-    rows: reviewedRows,
-    summary: `${reviewedRows.length} teammates' MRs reviewed`,
+    rows: reviewed.map((r) => ({
+      cells: [`!${r.mr.iid}`, r.mr.authorUsername ?? "—", r.mr.title, String(r.notes.length), String(r.inlineCount)],
+      href: mrUrl(r.mr),
+    })),
+    summary: `${reviewed.length} teammates' MRs reviewed`,
   };
   out.reviewDepth = {
     columns: ["MR", "Title", "Inline comments"],
-    rows: depthRows,
-    summary: `mean ${round(mean(depthRows.map((r) => Number(r.cells[2]))), 2)} inline comments per reviewed MR`,
+    rows: reviewed.map((r) => ({ cells: [`!${r.mr.iid}`, r.mr.title, String(r.inlineCount)], href: mrUrl(r.mr) })),
+    summary: `mean ${round(mean(reviewed.map((r) => r.inlineCount)), 2)} inline comments per reviewed MR`,
   };
+  const responded = reviewed.flatMap((r) => (r.responseHours === null ? [] : [{ mr: r.mr, hours: r.responseHours }]));
   out.responseLatencyHours = {
     columns: ["MR", "Title", "Response"],
-    rows: responseRows,
-    summary: distSummary(responseSamples, "first response"),
+    rows: responded.map((r) => ({ cells: [`!${r.mr.iid}`, r.mr.title, hrs(r.hours)], href: mrUrl(r.mr) })),
+    summary: distSummary(responded.map((r) => r.hours), "first response"),
   };
 
   // --- Author-side review latency: how long the user's own MRs waited ---
-  const authoredCohort = mrs.filter((m) => m.authorUsername === u && inWindow(m.createdAt, w));
-  const waitRows: { cells: string[]; href: string }[] = [];
-  const waitSamples: number[] = [];
-  for (const m of authoredCohort) {
-    const firstTouch = m.notes
-      .filter((n) => !n.system && n.authorUsername !== u && !isBot(n.authorUsername))
-      .map((n) => Date.parse(n.createdAt))
-      .sort((a, b) => a - b)[0];
-    if (firstTouch === undefined) continue;
-    const clockStart = Date.parse(m.preparedAt ?? m.createdAt);
-    const h = (firstTouch - clockStart) / HOUR_MS;
-    if (h >= 0) {
-      waitSamples.push(h);
-      waitRows.push({ cells: [`!${m.iid}`, m.title, hrs(h)], href: mrUrl(m) });
-    }
-  }
+  const waited = [...c.waited].sort(byIidDesc);
   out.reviewLatencyHours = {
     columns: ["MR", "Title", "Wait"],
-    rows: waitRows,
-    summary: distSummary(waitSamples, "first review"),
+    rows: waited.map((w) => ({ cells: [`!${w.mr.iid}`, w.mr.title, hrs(w.waitHours)], href: mrUrl(w.mr) })),
+    summary: distSummary(waited.map((w) => w.waitHours), "first review"),
   };
 
   // --- Reciprocity: who reviewed this user's merged MRs (received side) ---
-  const reviewers = new Map<string, number>();
-  for (const m of authoredMerged) {
-    const seen = new Set<string>();
-    for (const n of m.notes) {
-      if (!n.system && n.authorUsername && n.authorUsername !== u && !isBot(n.authorUsername)) seen.add(n.authorUsername);
-    }
-    if (fetched.approvalsAvailable) for (const a of m.approvedByUsernames) if (a !== u && !isBot(a)) seen.add(a);
-    for (const r of seen) reviewers.set(r, (reviewers.get(r) ?? 0) + 1);
-  }
-  const given = reviewedRows.length;
-  const received = reviewers.size;
+  const given = reviewed.length;
+  const received = c.reviewersOfMine.size;
   out.reciprocity = {
     columns: ["Reviewer", "Your MRs they reviewed"],
-    rows: [...reviewers.entries()].sort((a, b) => b[1] - a[1]).map(([name, n]) => ({ cells: [name, String(n)] })),
+    rows: [...c.reviewersOfMine.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).map(([name, n]) => ({ cells: [name, String(n)] })),
     summary: `gave ${given} reviews, received from ${received} reviewer(s) ... ratio ${received === 0 ? given : round(given / received, 2)}`,
   };
 
   // --- Pipelines triggered ---
-  const userPipes = pipelines.filter((p) => p.username === u && inWindow(p.createdAt, w));
-  const statusCount = userPipes.reduce<Record<string, number>>((acc, p) => ((acc[p.status] = (acc[p.status] ?? 0) + 1), acc), {});
+  const statusCount = c.pipelines.reduce<Record<string, number>>((acc, p) => ((acc[p.status] = (acc[p.status] ?? 0) + 1), acc), {});
   out.pipelines = {
     columns: ["Status", "Created"],
-    rows: [...userPipes]
+    rows: [...c.pipelines]
       .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
       .map((p) => ({ cells: [p.status, day(p.createdAt)], muted: p.status !== "success" })),
     summary: Object.entries(statusCount).map(([s, n]) => `${n} ${s}`).join(" · ") || "no pipelines",
@@ -203,9 +128,7 @@ export function buildUserEvidence(
 
   // --- Coding days: distinct days the user pushed to the tracked project ---
   const pushDays = new Map<string, number>();
-  for (const e of pushEvents) {
-    if (e.username === u && inWindow(e.createdAt, w)) pushDays.set(day(e.createdAt), (pushDays.get(day(e.createdAt)) ?? 0) + 1);
-  }
+  for (const ts of c.pushTimestamps) pushDays.set(day(ts), (pushDays.get(day(ts)) ?? 0) + 1);
   out.codingDays = {
     columns: ["Date", "Pushes"],
     rows: [...pushDays.entries()].sort().reverse().map(([d, n]) => ({ cells: [d, String(n)] })),
@@ -214,9 +137,9 @@ export function buildUserEvidence(
 
   // --- Merge streak: days the user merged at least one MR ---
   const mergeByDay = new Map<string, number>();
-  for (const m of authoredMerged) if (m.mergedAt) mergeByDay.set(day(m.mergedAt), (mergeByDay.get(day(m.mergedAt)) ?? 0) + 1);
-  const ms = streaks(authoredMerged.map((m) => m.mergedAt ?? "").filter(Boolean));
-  const mergeDayEvidence = {
+  for (const ts of c.mergeTimestamps) mergeByDay.set(day(ts), (mergeByDay.get(day(ts)) ?? 0) + 1);
+  const ms = streaks(c.mergeTimestamps);
+  const mergeDayEvidence: MetricEvidence = {
     columns: ["Date", "MRs merged"],
     rows: [...mergeByDay.entries()].sort().reverse().map(([d, n]) => ({ cells: [d, String(n)] })),
     summary: `longest run ${ms.longest} day(s), current ${ms.current}, across ${mergeByDay.size} merge day(s)`,
@@ -224,33 +147,18 @@ export function buildUserEvidence(
   out.longestStreak = mergeDayEvidence;
   out.currentStreak = mergeDayEvidence;
 
-  // --- Issues done (Linear): tickets linked from merged MRs, gated by team + state ---
-  // Gated-out issues (wrong team, not in a done state) are dropped from the rows
-  // entirely — only their counts surface in the summary.
-  // Highest ticket number first, with numeric collation so ACME-2007 outranks ACME-938
-  // (plain string compare would put 9xx after 2xxx).
-  const allUserIssues = linearIssues
-    .filter((i) => i.assignedUser === u)
-    .sort((a, b) => b.identifier.localeCompare(a.identifier, undefined, { numeric: true }));
-  let teamExcluded = 0;
-  let stateExcluded = 0;
-  const issueRows: { cells: string[]; href: string }[] = [];
-  for (const i of allUserIssues) {
-    if (!matchesTeam(i.identifier, linearTeam)) { teamExcluded++; continue; }
-    if (!isDoneState(i.stateType, i.stateName, doneStates)) { stateExcluded++; continue; }
-    const mrLinks = i.linkedMrs.map((m) => `!${m.iid}`).join(", ");
-    const stateLabel = i.stateName ?? i.stateType ?? "—";
-    issueRows.push({
-      cells: [i.identifier, i.title, stateLabel, mrLinks || "—"],
-      href: i.url,
-    });
-  }
-  const parts: string[] = [`${issueRows.length} counted`];
-  if (teamExcluded > 0) parts.push(`${teamExcluded} excluded by team`);
-  if (stateExcluded > 0) parts.push(`${stateExcluded} excluded by state`);
+  // --- Issues done (Linear): gated-out issues surface only as counts in the summary ---
+  // Highest ticket number first, with numeric collation so ACME-2007 outranks ACME-938.
+  const counted = [...c.issues.counted].sort((a, b) => b.identifier.localeCompare(a.identifier, undefined, { numeric: true }));
+  const parts: string[] = [`${counted.length} counted`];
+  if (c.issues.teamExcluded > 0) parts.push(`${c.issues.teamExcluded} excluded by team`);
+  if (c.issues.stateExcluded > 0) parts.push(`${c.issues.stateExcluded} excluded by state`);
   out.issuesCompleted = {
     columns: ["Issue", "Title", "State", "MR(s)"],
-    rows: issueRows,
+    rows: counted.map((i) => ({
+      cells: [i.identifier, i.title, i.stateName ?? i.stateType ?? "—", i.linkedMrs.map((m) => `!${m.iid}`).join(", ") || "—"],
+      href: i.url,
+    })),
     summary: parts.join(" · "),
   };
 
