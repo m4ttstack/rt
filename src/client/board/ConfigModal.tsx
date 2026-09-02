@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent } from "react";
 import { Modal } from "@mattstack/tui-kit";
 import {
   useSettingsScope,
@@ -6,6 +6,7 @@ import {
 } from "@mattstack/settings-kit/react";
 import { postAction } from "../api.ts";
 import type { TabConfig } from "../../config.ts";
+import { sectionStatus } from "../../sections.ts";
 import { InfoTip } from "./InfoTip.tsx";
 import { Disclosure, DisclosureHead } from "./Disclosure.tsx";
 import {
@@ -71,12 +72,15 @@ function TextField({
   placeholder,
   ariaLabel,
   disabled,
+  list,
   onCommit,
 }: {
   value: string;
   placeholder: string;
   ariaLabel: string;
   disabled?: boolean;
+  /** A datalist id for native suggestions. */
+  list?: string;
   onCommit: (text: string) => void;
 }) {
   const [text, setText] = useState(value);
@@ -99,6 +103,7 @@ function TextField({
       placeholder={placeholder}
       aria-label={ariaLabel}
       disabled={disabled}
+      list={list}
       onChange={(e) => setText(e.target.value)}
       onKeyDown={onKeyDown}
       onBlur={() => {
@@ -538,6 +543,18 @@ function RosterControl({
 
 type TabSource = TabConfig["source"];
 
+/** Under a tab's section field: the section is not a CODEOWNERS header, and
+    the closest one that is. Renders nothing while rt cannot say. */
+function SectionHint({ section, known }: { section: string; known: string[] | null }) {
+  const status = sectionStatus(section, known);
+  if (!status.unknown) return null;
+  return (
+    <p className="tui-modal-error">
+      not in CODEOWNERS{status.suggestion ? ` · did you mean "${status.suggestion}"?` : ""}
+    </p>
+  );
+}
+
 /** The tabs row's editor. Edits go through POST /tabs for the same reason
     roster edits go through /roster: the server validates the whole list and
     swaps its in-memory copy, so the board re-declares the new sections to rt
@@ -546,11 +563,14 @@ type TabSource = TabConfig["source"];
 function TabsControl({
   tabs,
   defaultChannel,
+  knownSections,
   onSaved,
 }: {
   tabs: TabConfig[];
   /** board.slack.channel, what a tab without its own slackChannel inherits. */
   defaultChannel: string | null;
+  /** Drives the section field's suggestions and the not-in-CODEOWNERS hint. */
+  knownSections: string[] | null;
   onSaved: () => void;
 }) {
   const [busy, setBusy] = useState(false);
@@ -562,6 +582,7 @@ function TabsControl({
   const [newLabel, setNewLabel] = useState("");
   const [newKind, setNewKind] = useState<TabSource["kind"]>("codeowners");
   const [newSection, setNewSection] = useState("");
+  const sectionListId = useId();
 
   const write = async (next: TabConfig[]) => {
     setBusy(true);
@@ -618,6 +639,11 @@ function TabsControl({
 
   return (
     <div className="tui-roster-edit">
+      <datalist id={sectionListId}>
+        {(knownSections ?? []).map((s) => (
+          <option key={s} value={s} />
+        ))}
+      </datalist>
       <ul className="tui-roster-list tui-tabs-list">
         {tabs.map((tab) => (
           <li key={tab.id} className="tui-tabs-item">
@@ -700,6 +726,7 @@ function TabsControl({
                       placeholder="CODEOWNERS section"
                       ariaLabel={`codeowners section for tab ${tab.id}`}
                       disabled={busy}
+                      list={sectionListId}
                       onCommit={(text) =>
                         patch(tab.id, (t) => ({
                           ...t,
@@ -714,6 +741,7 @@ function TabsControl({
                       }
                     />
                   </label>
+                  <SectionHint section={tab.source.section} known={knownSections} />
                   <label className="tui-tabs-field tui-tabs-check">
                     <input
                       type="checkbox"
@@ -808,6 +836,7 @@ function TabsControl({
             placeholder="CODEOWNERS section"
             aria-label="new tab codeowners section"
             disabled={busy}
+            list={sectionListId}
           />
         )}
         <button
@@ -832,7 +861,7 @@ function TabsControl({
 const ROW_HINTS: Record<string, string> = {
   "board.members": "A new teammate's MRs land once rt has synced them.",
   "board.tabs":
-    'A new section\'s MRs land once rt has backfilled it; the tab shows "syncing" until then.',
+    'A new section\'s MRs land once rt has backfilled it; the tab shows "syncing" until then. A section must match a CODEOWNERS header exactly; the field suggests the headers rt has seen.',
 };
 
 const OPEN_ROWS_KEY = "board.config.openRows";
@@ -876,6 +905,7 @@ function SettingRow({
   def,
   store,
   tabs,
+  knownSections,
   open,
   onToggle,
   onOpenRoster,
@@ -884,6 +914,7 @@ function SettingRow({
   def: ConfigDef;
   store: SettingsScopeState;
   tabs: TabConfig[];
+  knownSections: string[] | null;
   /** Expanded, for a collapsible row; ignored otherwise. */
   open: boolean;
   onToggle: () => void;
@@ -913,6 +944,7 @@ function SettingRow({
         defaultChannel={
           typeof channel === "string" && channel !== "" ? channel : null
         }
+        knownSections={knownSections}
         onSaved={() => {
           store.refresh();
           onTabsSaved();
@@ -1060,12 +1092,15 @@ function SettingRow({
     read-only. */
 function ConfigModal({
   tabs,
+  knownSections,
   onClose,
   onOpenRoster,
   onTabsSaved,
 }: {
   /** Effective tabs from /data.json: the editor's base whichever side owns them. */
   tabs: TabConfig[];
+  /** Section headers rt saw in the projects' CODEOWNERS; null when rt did not report them. */
+  knownSections: string[] | null;
   onClose: () => void;
   onOpenRoster: () => void;
   /** Reload board data so the new tab strip lands without waiting for a poll. */
@@ -1111,6 +1146,7 @@ function ConfigModal({
                   def={def}
                   store={store}
                   tabs={tabs}
+                  knownSections={knownSections}
                   open={openRows.has(def.key)}
                   onToggle={() => toggleRow(def.key)}
                   onOpenRoster={onOpenRoster}
