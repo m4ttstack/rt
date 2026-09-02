@@ -133,3 +133,10 @@ describe("refresh endpoints", () => {
     }
   });
 });
+
+describe("deleted routes", () => {
+  it("the settings API is gone", async () => {
+    expect((await app.request("/api/settings")).status).toBe(404);
+    expect((await app.request("/api/settings/linear-states")).status).toBe(404);
+  });
+});

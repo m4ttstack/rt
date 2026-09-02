@@ -3,9 +3,9 @@ import { mapIssue } from "./map.js";
 import { mrTicketHaystack } from "./ticket.js";
 import { mapLimit } from "../util/concurrency.js";
 import { isValidLinearId, putLinearIds } from "../cache/mr-store.js";
-import type { RawIssue, RawWorkflowStateConnection } from "./raw-types.js";
+import type { RawIssue } from "./raw-types.js";
 import type { NormMr, NormLinearIssue } from "../pipeline/model.js";
-import type { LeaderboardWarning, LinearStateInfo, RefreshProgress } from "../../shared/types.js";
+import type { LeaderboardWarning, RefreshProgress } from "../../shared/types.js";
 
 /** Extract Linear identifiers from a string, e.g. "ACME-123", "ENG-456", "HUB:299". */
 const LINEAR_ID_RE = /\b([A-Z]+[-:]\d+)\b/gi;
@@ -231,33 +231,4 @@ function extractLinearIds(text: string): string[] {
     ids.add(m[1]!);
   }
   return [...ids];
-}
-
-/** Fetch all workflow states by paginating (Linear caps `first` at 250). */
-export async function fetchWorkflowStates(apiKey: string, teamKey?: string): Promise<LinearStateInfo[]> {
-  try {
-    const filterClause = teamKey
-      ? `filter: { team: { key: { eq: ${JSON.stringify(teamKey)} } } }`
-      : "";
-    const all: LinearStateInfo[] = [];
-    let after = "";
-    for (let page = 0; page < 20; page++) {
-      const afterArg = after ? `after: ${JSON.stringify(after)}` : "";
-      const query = `query { workflowStates(first: 250, ${filterClause} ${afterArg}) { nodes { name type team { key name } } pageInfo { hasNextPage endCursor } } }`;
-      const data = await linearRequest<{ workflowStates: RawWorkflowStateConnection }>(
-        apiKey,
-        query,
-        {},
-      );
-      for (const s of data.workflowStates.nodes) {
-        all.push({ name: s.name, type: s.type, teamKey: s.team?.key ?? "", teamName: s.team?.name ?? "" });
-      }
-      if (!data.workflowStates.pageInfo.hasNextPage || !data.workflowStates.pageInfo.endCursor) break;
-      after = data.workflowStates.pageInfo.endCursor;
-    }
-    return all;
-  } catch (err) {
-    console.error("[linear] failed to fetch workflow states:", (err as Error).message);
-    return [];
-  }
 }

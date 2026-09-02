@@ -30,33 +30,34 @@ Requires [Bun](https://bun.sh) 1.1+.
 
 ```bash
 bun install
-cp .env.example .env          # then edit .env
 ```
 
-Put a **read-only** token in `.env`:
+Configuration lives in rt settings, not in a committed file. List boxscore's current
+values with:
 
+```bash
+rt settings list | grep boxscore
 ```
-GITLAB_BASE_URL=https://gitlab.com     # or your self-managed host
-GITLAB_TOKEN=glpat-...                 # PAT with the read_api scope ONLY
-```
 
-> Use the **`read_api`** scope. Do **not** use the full `api` scope ... this tool never
-> writes anything. Create a token at `<GITLAB_BASE_URL>/-/user_settings/personal_access_tokens`.
+The scope and roster come from the shared `mattstack.roster` and `mattstack.integrations`
+keys (GitLab host under `forge.host`, Linear team key under `linear.teamKey`); everything
+boxscore-specific (`boxscore.projects`, `boxscore.hiddenMembers`, `boxscore.sizeBand`,
+`boxscore.linearDoneStates`, `boxscore.excludeFilePatterns`, `boxscore.ignoredMrs`,
+`boxscore.botPatterns`, `boxscore.defaultRange`) is set the same way. See the `rt:settings`
+skill for how to write a key.
 
-Bun loads `.env` automatically ... no extra config needed.
+Secrets (the GitLab PAT and, optionally, a Linear API key) live in the rt secrets store
+under `gitlabToken` / `linearApiKey`, scope `extension`. Use a **read-only** GitLab PAT
+(`read_api` scope only, never full `api`). For a one-off run outside the daemon,
+`GITLAB_TOKEN` / `LINEAR_API_KEY` env vars still take priority.
 
-Then edit `config.ts` (committed, non-secret) to point at your people and scope:
+The port comes from deck via `PORT`.
 
-```ts
-export const config = {
-  groupPath: "my-org/my-group",   // preferred: one bulk query over the group
-  projectPaths: [],               // fallback: explicit "group/project" paths
-  users: ["matthew", "doug"],     // the comparison set, by username
-  currentUser: "matthew",         // highlighted + rank-badged
-  defaultRange: "30d",
-  concurrency: 6,
-  sizeBand: { tooSmall: 10, tooLarge: 400 },  // MR size-health band, in changed lines
-};
+Bot discovery (scanning the newest cache for suspected non-human commenters) is a CLI
+subcommand, not a UI page:
+
+```bash
+bun server/cli.ts --format bots
 ```
 
 ## Run

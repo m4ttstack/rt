@@ -1,4 +1,4 @@
-import type { AppSettings, CacheStatsResponse, LeaderboardResponse, LinearStateInfo, RefreshStatusResponse, SuspectedBot, UserDetailResponse } from "../../shared/types";
+import type { CacheStatsResponse, LeaderboardResponse, RefreshStatusResponse, UserDetailResponse } from "../../shared/types";
 
 export interface FetchParams {
   range: string;
@@ -58,32 +58,10 @@ export async function cancelRefresh(id: string): Promise<void> {
   }
 }
 
-export type { SuspectedBot } from "../../shared/types";
-
-export async function fetchSettings(): Promise<{ settings: AppSettings; defaults: AppSettings }> {
-  return requestJson("/api/settings");
-}
-
-export async function fetchLinearStates(): Promise<{ states: LinearStateInfo[] }> {
-  return requestJson("/api/settings/linear-states");
-}
-
-export async function fetchSuspectedBots(): Promise<{ bots: SuspectedBot[] }> {
-  return requestJson("/api/settings/suspected-bots");
-}
-
 export async function fetchCacheStats(): Promise<CacheStatsResponse> {
   return requestJson("/api/cache/stats");
 }
 
 export async function clearCache(): Promise<void> {
   await requestJson("/api/cache/clear", { method: "POST" });
-}
-
-export function saveSettings(partial: Partial<AppSettings>): Promise<{ settings: AppSettings }> {
-  return requestJson<{ settings: AppSettings }>("/api/settings", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(partial),
-  });
 }

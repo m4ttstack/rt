@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Settings } from "lucide-react";
 import type { LeaderboardResponse, RefreshProgress } from "../../shared/types";
 import { cancelRefresh, fetchLeaderboard, pollRefresh, startRefresh } from "./api";
 import { Controls, type ViewMode } from "./components/Controls";
@@ -7,9 +6,7 @@ import { DetailPage } from "./components/DetailPage";
 import { LeaderboardTable } from "./components/LeaderboardTable";
 import { MetricCards } from "./components/MetricCards";
 import { RefreshProgress as RefreshProgressBar } from "./components/RefreshProgress";
-import SettingsPage from "./components/SettingsPage";
 import { ThemeToggle } from "./components/ThemeToggle";
-import { Button } from "./components/ui/button";
 import { useHashRoute } from "./hooks/useHashRoute";
 import { usePersistentState } from "./hooks/usePersistentState";
 
@@ -140,10 +137,6 @@ export default function App() {
 
   const refreshing = jobId !== null;
 
-  if (route.page === "settings") {
-    return <SettingsPage />;
-  }
-
   if (route.user) {
     return (
       <DetailPage username={route.user} initialStat={route.stat} range={rangeState} trend={trend} />
@@ -161,16 +154,6 @@ export default function App() {
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            onClick={() => {
-              window.location.hash = "#settings";
-            }}
-            aria-label="Settings"
-          >
-            <Settings />
-          </Button>
           <ThemeToggle />
         </div>
       </header>
