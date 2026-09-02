@@ -8,16 +8,17 @@
 
 **Tech Stack:** Bun, TypeScript (glance imports carry `.ts` suffixes and use single quotes), `bun:test` unit tests that stub `runQuery` or `globalThis.fetch`, no new dependencies. Package version moves 0.22.0 to 0.23.0.
 
-**Spec:** `docs/superpowers/specs/2026-09-02-mattstack-integration-design.md` in the boxscore repo, section 6 (sub-project 3). Section 7 describes the consumer these reads serve. Live conformance entries are deferred per spec section 6.3; the unit tests here stub the transport.
+**Spec:** `docs/superpowers/specs/2026-09-02-mattstack-integration-design.md` in the boxscore repo, section 6 (sub-project 3). Section 7 describes the consumer these reads serve.
 
 ## Global Constraints
 
-- Work happens in the glance repo at `/Users/matt/Documents/GitHub/glance`, package `packages/glance`. Branch `feat/metrics-reads` from `main`, in a worktree at `.claude/worktrees/metrics-reads` (add `.claude/worktrees/` to the repo's `.gitignore` in a first commit on `main` if it is not ignored yet). All paths below are relative to `packages/glance` unless they start with `/`.
+- Work happens in the glance repo, package `packages/glance`, on branch `feat/metrics-reads` in an rt-managed worktree: glance is registered with rt, so the tree comes from `rt worktree provision --repo glance --branch feat/metrics-reads --json` (it lives under `~/.mattstack/rt/worktrees/gh-m4ttstack-glance/<name>`), never from `git worktree add`, and dependencies come from rt's ready step (`rt worktree await-ready <name>`), never from a hand-run `bun install`. All paths below are relative to `packages/glance` inside that tree unless they start with `/`.
 - Tests: `cd packages/glance && bun test` runs the unit suite (the live conformance suite is skipped without `GLANCE_LIVE=1`; never set it in this plan). Types: `bun run check-types`. Both must pass before every commit.
 - Style: single quotes, 2-space indent, `import type` for types, relative imports with `.ts` suffixes (`from './types.ts'`), `private async` methods on the provider class, a `non-advancing cursor` guard on every paginated loop (the existing `fetchApprovalRules` shape).
 - New `GitProvider` methods are optional (`name?(...)`), each paired with a boolean on `ProviderCapabilities` named `canFetch<Method>`. `GitHubProvider` sets every new flag to `false` and implements none of the methods. The `providerConformance.ts` guard already tolerates omitted optional methods.
 - `PullRequest.mergedAt` and `PullRequest.labels` are optional fields (`mergedAt?: string | null`, `labels?: string[]`), so no consumer that constructs a `PullRequest` literal breaks. Both providers populate them.
-- No existing export changes shape. No existing test is edited. The `build` script's explicit entry list is unchanged because no new source files are created.
+- No existing export changes shape. The only existing test files that change are `tests/live/expectations.ts`, `tests/live-expectations.test.ts`, `tests/live/conformance.ts`, and `tests/live/runner.ts`: the live harness keeps an exhaustive `Record<ProviderMethod, Expectation>` per provider, so every new interface method must be declared there or `check-types` fails, and the harness's coverage rule requires a report entry per method. The `build` script's explicit entry list is unchanged because no new source files are created under `src/`.
+- Live conformance runs against the harness project with the credentials at `/Users/matt/Documents/GitHub/glance/harness_credentials.json` (gitignored; copy it to the worktree root before a live run, never commit it, never print its values). The new reads are read-only, and the non-mutating `tests/live/reads-runner.ts` added in Task 6 is how they are exercised without the mutating suites.
 - Comments state constraints the code cannot show; never narrate the next line or the change. No em dashes anywhere (use "..." or rephrase).
 - One commit per task, messages in the repo's `glance: <what>` style. The final task bumps the version and writes the changelog entry; publishing to npm is Matt's step and is not part of this plan.
 
@@ -219,6 +220,7 @@ git commit -m "glance: PullRequest carries mergedAt and labels on both providers
 - Modify: `src/GitLabProvider.ts` (`capabilities` literal)
 - Modify: `src/GitHubProvider.ts` (`capabilities` literal)
 - Modify: `src/index.ts` (exports)
+- Modify: `tests/live/expectations.ts` (both tables), `tests/live-expectations.test.ts` (the `OPTIONAL` list)
 - Test: `tests/metrics-reads-capabilities.test.ts`
 
 **Interfaces:**
@@ -487,15 +489,80 @@ In `src/GitHubProvider.ts`, inside its `capabilities` literal, after the `canWat
 
 In `src/index.ts`, extend the `export type { ... } from './types.ts'` block with `MergeRequestIndexRow`, `MetricsNote`, `MergeRequestMetrics`, `ProjectRef`, `PipelineSummary`, `UserEvent`, and extend the `export type { GitProvider, FetchPullRequestsOptions, FetchPullRequestsWarning } from './GitProvider.ts'` block with `FetchMergeRequestIndexOptions`, `FetchProjectPipelinesOptions`, `FetchUserEventsOptions`.
 
-- [ ] **Step 7: Run the test, the suite, and the types**
+- [ ] **Step 7: Declare the six methods in the live expectation tables**
+
+`tests/live/expectations.ts` keys both tables on every `GitProvider` method, so `check-types` (which includes `tests/live`) fails until they are declared. In `GITHUB_EXPECTATIONS`, after the `watchEvents` entry, add:
+
+```ts
+  fetchMergeRequestIndex: {
+    support: 'absent',
+    capability: 'canFetchMergeRequestIndex',
+    note: 'Not implemented on GitHub yet; the metric-grade reads landed GitLab-first for boxscore.'
+  },
+  fetchMergeRequestMetrics: {
+    support: 'absent',
+    capability: 'canFetchMergeRequestMetrics',
+    note: 'Not implemented on GitHub yet; the metric-grade reads landed GitLab-first for boxscore.'
+  },
+  fetchGroupProjects: {
+    support: 'absent',
+    capability: 'canFetchGroupProjects',
+    note: 'Not implemented on GitHub yet; GitHub organizations would stand in for GitLab groups.'
+  },
+  fetchProject: {
+    support: 'absent',
+    capability: 'canFetchProject',
+    note: 'Not implemented on GitHub yet; the metric-grade reads landed GitLab-first for boxscore.'
+  },
+  fetchProjectPipelines: {
+    support: 'absent',
+    capability: 'canFetchProjectPipelines',
+    note: 'Not implemented on GitHub yet; workflow runs would stand in for GitLab pipelines.'
+  },
+  fetchUserEvents: {
+    support: 'absent',
+    capability: 'canFetchUserEvents',
+    note: 'Not implemented on GitHub yet; the user events feed would stand in for GitLab user events.'
+  }
+```
+
+In `GITLAB_EXPECTATIONS`, after its `watchEvents` entry, add:
+
+```ts
+  fetchMergeRequestIndex: { support: 'supported', capability: 'canFetchMergeRequestIndex' },
+  fetchMergeRequestMetrics: { support: 'supported', capability: 'canFetchMergeRequestMetrics' },
+  fetchGroupProjects: { support: 'supported', capability: 'canFetchGroupProjects' },
+  fetchProject: { support: 'supported', capability: 'canFetchProject' },
+  fetchProjectPipelines: { support: 'supported', capability: 'canFetchProjectPipelines' },
+  fetchUserEvents: { support: 'supported', capability: 'canFetchUserEvents' }
+```
+
+Add a trailing comma to each table's existing `watchEvents` entry. In `tests/live-expectations.test.ts`, the test "only optional interface methods may be declared absent" holds `const OPTIONAL: string[] = ['fetchPullRequestsByBranches', 'watchEvents'];`; extend it to:
+
+```ts
+    const OPTIONAL: string[] = [
+      'fetchPullRequestsByBranches',
+      'watchEvents',
+      'fetchMergeRequestIndex',
+      'fetchMergeRequestMetrics',
+      'fetchGroupProjects',
+      'fetchProject',
+      'fetchProjectPipelines',
+      'fetchUserEvents',
+    ];
+```
+
+That file's other invariants then bind the rest of this plan: an `absent` entry's flag must be `false` on GitHub (true after this task), and a `supported` entry's flag must be `true` on GitLab, which is what Tasks 3 to 5 deliver. The GitLab test "a supported method names a capability flag that is true" applies to the GitHub table only, so the GitLab flags being `false` until Tasks 3 to 5 does not fail here.
+
+- [ ] **Step 8: Run the test, the suite, and the types**
 
 Run: `cd packages/glance && bun test tests/metrics-reads-capabilities.test.ts && bun test && bun run check-types`
 Expected: PASS. If `check-types` names a test fixture that builds a `ProviderCapabilities` literal without the new flags, add the six flags as `false` to that fixture.
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add src/types.ts src/GitProvider.ts src/GitLabProvider.ts src/GitHubProvider.ts src/index.ts tests/metrics-reads-capabilities.test.ts
+git add src/types.ts src/GitProvider.ts src/GitLabProvider.ts src/GitHubProvider.ts src/index.ts tests/metrics-reads-capabilities.test.ts tests/live/expectations.ts tests/live-expectations.test.ts
 git commit -m "glance: declare the metric-grade reads, their types, and capability flags"
 ```
 
@@ -1344,7 +1411,237 @@ git commit -m "glance: fetchGroupProjects, fetchProject, fetchProjectPipelines, 
 
 ---
 
-### Task 6: Changelog, README, version 0.23.0, build smoke
+### Task 6: Live conformance for the metric-grade reads
+
+**Files:**
+- Modify: `tests/live/conformance.ts` (a new exported `runMetricsReadConformance`)
+- Modify: `tests/live/runner.ts` (call it after `runReadConformance`)
+- Create: `tests/live/reads-runner.ts` (non-mutating entry point)
+
+**Interfaces:**
+- Consumes: `check`, `Inconclusive`, `assert`, `fetchProjectId`, `expectationFor`, `ProviderFixture`, `Reporter` as they exist in `conformance.ts`; the six methods from Tasks 3 to 5; `buildFixtures` from `./fixture.ts`; `runReadConformance` and `Reporter` for the new runner.
+- Produces: `runMetricsReadConformance(fixture, report): Promise<void>`, which records a pass, fail, or skip for every one of the six methods on every fixture (an `absent` provider gets an absence check), so `assertFullCoverage` in the full runner stays green.
+
+- [ ] **Step 1: Add the conformance block**
+
+In `tests/live/conformance.ts`, directly after the `runReadConformance` function's closing brace, add:
+
+```ts
+const METRIC_READS = [
+  'fetchMergeRequestIndex',
+  'fetchMergeRequestMetrics',
+  'fetchGroupProjects',
+  'fetchProject',
+  'fetchProjectPipelines',
+  'fetchUserEvents',
+] as const satisfies readonly ProviderMethod[];
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const isoDaysAgo = (days: number): string => new Date(Date.now() - days * DAY_MS).toISOString();
+const dateOnly = (iso: string): string => iso.slice(0, 10);
+
+/**
+ * The metric-grade reads. Read-only against the fixture project, so this
+ * block is safe to run alone (see reads-runner.ts). A provider that declares
+ * a read absent gets an absence check instead, so every method still lands
+ * in the report for every fixture.
+ */
+export async function runMetricsReadConformance(
+  fixture: ProviderFixture,
+  report: Reporter
+): Promise<void> {
+  const { provider, projectPath } = fixture;
+
+  const absent: ProviderMethod[] = [];
+  for (const method of METRIC_READS) {
+    const expectation = expectationFor(fixture.name, method);
+    if (expectation.support !== 'absent') continue;
+    absent.push(method);
+    await check(report, fixture, method, 'is absent, and its capability flag is false', async () => {
+      assert(
+        typeof (provider as unknown as Record<string, unknown>)[method] === 'undefined',
+        `${method} is declared absent but is defined`
+      );
+      if (expectation.capability) {
+        assert(
+          provider.capabilities[expectation.capability] === false,
+          `capabilities.${expectation.capability} should be false`
+        );
+      }
+    });
+  }
+  if (absent.length === METRIC_READS.length) return;
+
+  const updatedAfter = isoDaysAgo(365);
+  const now = new Date().toISOString();
+
+  await check(report, fixture, 'fetchProject', 'resolves the fixture project to its scoped id', async () => {
+    const ref = await provider.fetchProject!(projectPath);
+    assert(ref !== null, `fetchProject("${projectPath}") returned null`);
+    assert(ref.fullPath === projectPath, `expected fullPath "${projectPath}", got "${ref.fullPath}"`);
+    const expected = `${fixture.name}:${await fetchProjectId(fixture)}`;
+    assert(ref.id === expected, `expected id "${expected}", got "${ref.id}"`);
+  });
+
+  await check(report, fixture, 'fetchProject', 'returns null for a project that does not exist', async () => {
+    const ref = await provider.fetchProject!('glance-no-such-group-8b3f/glance-no-such-project-8b3f');
+    assert(ref === null, `expected null, got ${JSON.stringify(ref)}`);
+  });
+
+  await check(report, fixture, 'fetchGroupProjects', 'lists the fixture project under its group', async () => {
+    const slash = projectPath.lastIndexOf('/');
+    if (slash < 0) throw new Inconclusive(`fixture project "${projectPath}" has no group segment`);
+    const group = projectPath.slice(0, slash);
+    const paths = await provider.fetchGroupProjects!(group);
+    assert(paths.includes(projectPath), `group "${group}" listing ${paths.length} project(s) does not include "${projectPath}"`);
+  });
+
+  let indexRows: Awaited<ReturnType<NonNullable<typeof provider.fetchMergeRequestIndex>>> = [];
+  await check(report, fixture, 'fetchMergeRequestIndex', 'lists well-formed rows for the fixture project', async () => {
+    indexRows = await provider.fetchMergeRequestIndex!({ projectPaths: [projectPath], updatedAfter });
+    assert(Array.isArray(indexRows), 'expected an array');
+    if (indexRows.length === 0) throw new Inconclusive('no MRs updated in the last year; row shape is unverified');
+    const cutoff = Date.parse(updatedAfter);
+    for (const row of indexRows) {
+      assert(row.projectPath === projectPath, `row !${row.iid} names project "${row.projectPath}"`);
+      assert(Number.isInteger(row.iid) && row.iid > 0, `row has a bad iid: ${JSON.stringify(row).slice(0, 80)}`);
+      assert(Date.parse(row.updatedAt) >= cutoff, `row !${row.iid} updatedAt ${row.updatedAt} is before the bound`);
+      assert(['opened', 'merged', 'closed', 'locked'].includes(row.state), `row !${row.iid} has state "${row.state}"`);
+      assert(Array.isArray(row.labels), `row !${row.iid} labels is not an array`);
+    }
+  });
+
+  await check(report, fixture, 'fetchMergeRequestIndex', 'merged rows carry mergedAt, and a states filter narrows', async () => {
+    const merged = indexRows.filter((r) => r.state === 'merged');
+    if (merged.length === 0) throw new Inconclusive('no merged MRs in the last year; mergedAt is unverified');
+    for (const row of merged) {
+      assert(row.mergedAt !== null && !Number.isNaN(Date.parse(row.mergedAt)), `merged row !${row.iid} has mergedAt ${row.mergedAt}`);
+    }
+    const only = await provider.fetchMergeRequestIndex!({ projectPaths: [projectPath], updatedAfter, states: ['merged'] });
+    assert(only.length === merged.length, `states: ['merged'] returned ${only.length} rows, unfiltered had ${merged.length} merged`);
+    assert(only.every((r) => r.state === 'merged'), 'a states filter returned a non-merged row');
+  });
+
+  await check(report, fixture, 'fetchMergeRequestMetrics', 'reads one indexed MR and agrees with the index on labels', async () => {
+    const sample = indexRows[0];
+    if (!sample) throw new Inconclusive('no indexed MR to read metrics for');
+    const metrics = await provider.fetchMergeRequestMetrics!(projectPath, sample.iid);
+    assert(metrics !== null, `fetchMergeRequestMetrics(!${sample.iid}) returned null for an indexed MR`);
+    assert(metrics.iid === sample.iid && metrics.projectPath === projectPath, 'metrics names a different MR');
+    assert(Array.isArray(metrics.notes), 'notes is not an array');
+    for (const note of metrics.notes) {
+      assert(typeof note.system === 'boolean' && typeof note.inline === 'boolean', `note is malformed: ${JSON.stringify(note)}`);
+      assert(!Number.isNaN(Date.parse(note.createdAt)), `note createdAt "${note.createdAt}" does not parse`);
+    }
+    assert(
+      JSON.stringify([...metrics.labels].sort()) === JSON.stringify([...sample.labels].sort()),
+      `labels disagree: index ${JSON.stringify(sample.labels)}, metrics ${JSON.stringify(metrics.labels)}`
+    );
+  });
+
+  await check(report, fixture, 'fetchMergeRequestMetrics', 'returns null for an MR that does not exist', async () => {
+    const metrics = await provider.fetchMergeRequestMetrics!(projectPath, 99_999_999);
+    assert(metrics === null, `expected null, got ${JSON.stringify(metrics)?.slice(0, 80)}`);
+  });
+
+  await check(report, fixture, 'fetchProjectPipelines', 'lists pipelines in a window, filtered by the token user', async () => {
+    const all = await provider.fetchProjectPipelines!(projectPath, { updatedAfter, updatedBefore: now });
+    assert(Array.isArray(all), 'expected an array');
+    if (all.length === 0) throw new Inconclusive('no pipelines in the last year; shape and filtering are unverified');
+    for (const p of all) {
+      assert(p.id.startsWith(`${fixture.name}:pipeline:`), `pipeline id "${p.id}" is not scoped`);
+      assert(typeof p.status === 'string' && p.status.length > 0, `pipeline ${p.id} has no status`);
+      assert(p.username === null, `unfiltered listing carried username "${p.username}"`);
+    }
+    const self = await provider.validateToken();
+    const mine = await provider.fetchProjectPipelines!(projectPath, { username: self.username, updatedAfter, updatedBefore: now });
+    assert(mine.length <= all.length, 'a username filter returned more pipelines than the unfiltered listing');
+    assert(mine.every((p) => p.username === self.username), 'a filtered pipeline does not carry the filter username');
+  });
+
+  await check(report, fixture, 'fetchUserEvents', 'reads the token user\'s push events', async () => {
+    const self = await provider.validateToken();
+    const events = await provider.fetchUserEvents!(self.id, {
+      action: 'pushed',
+      after: dateOnly(isoDaysAgo(366)),
+      before: dateOnly(new Date(Date.now() + DAY_MS).toISOString()),
+    });
+    assert(Array.isArray(events), 'expected an array');
+    if (events.length === 0) throw new Inconclusive('no push events in the last year for the token user');
+    for (const e of events) {
+      assert(typeof e.action === 'string' && e.action.length > 0, `event has no action: ${JSON.stringify(e)}`);
+      assert(!Number.isNaN(Date.parse(e.createdAt)), `event createdAt "${e.createdAt}" does not parse`);
+    }
+  });
+}
+```
+
+`ProviderMethod` is already imported in `conformance.ts` from `./expectations.ts`; if the file's import is `import { expectationFor, type ProviderMethod }`, nothing changes.
+
+- [ ] **Step 2: Hook it into the full runner and add the read-only runner**
+
+In `tests/live/runner.ts`, add `runMetricsReadConformance` to the import list from `./conformance.ts`, and directly after the line `await runReadConformance(fixture, report);` add:
+
+```ts
+    await runMetricsReadConformance(fixture, report);
+```
+
+Create `tests/live/reads-runner.ts`:
+
+```ts
+#!/usr/bin/env bun
+/**
+ * Read-only live conformance: the read suite plus the metric-grade reads,
+ * with none of the mutating cycles. Deliberately not named `*.test.ts`: it
+ * needs real credentials, so `bun test tests/` must never pick it up.
+ *
+ * Run: bun tests/live/reads-runner.ts
+ */
+
+import { runMetricsReadConformance, runReadConformance } from './conformance.ts';
+import { buildFixtures } from './fixture.ts';
+import { Reporter } from './report.ts';
+
+const { fixtures, missing } = await buildFixtures();
+for (const m of missing) console.error(`Skipping ${m.name}: ${m.reason}`);
+if (fixtures.length === 0) {
+  console.error('No fixtures could be built. Nothing to run.');
+  process.exit(1);
+}
+
+const report = new Reporter();
+for (const fixture of fixtures) {
+  console.log(`\n=== ${fixture.name} (${fixture.projectPath}) ===\n`);
+  await runReadConformance(fixture, report);
+  await runMetricsReadConformance(fixture, report);
+}
+
+console.log(`\n${report.render()}`);
+process.exit(report.exitCode);
+```
+
+- [ ] **Step 3: Typecheck and run the unit suite**
+
+Run: `cd packages/glance && bun run check-types && bun test`
+Expected: PASS. `tsconfig.tests.json` covers `tests/live`, so the new block is type-checked here.
+
+- [ ] **Step 4: Run the read-only live suite against the harness project**
+
+Copy the credentials into the worktree root without printing them: `cp /Users/matt/Documents/GitHub/glance/harness_credentials.json <worktree-root>/harness_credentials.json` (the file is gitignored; confirm with `git status --short` showing nothing for it). Then:
+
+Run: `cd packages/glance && bun tests/live/reads-runner.ts 2>&1 | tail -40`
+Expected: exit code 0. For the gitlab fixture every `fetchProject`, `fetchGroupProjects`, `fetchMergeRequestIndex`, `fetchMergeRequestMetrics`, `fetchProjectPipelines`, and `fetchUserEvents` line reads `ok` or `skip` (a `skip` names the fixture data that was absent; a `FAIL` is a defect in the read). For the github fixture, the six methods each read `ok ... is absent, and its capability flag is false`; if GitHub is missing from the credentials the runner reports it as skipped and that is fine. Paste the tail of the output into the report file, with no credential values in it.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add tests/live/conformance.ts tests/live/runner.ts tests/live/reads-runner.ts
+git commit -m "glance: live conformance for the metric-grade reads, plus a read-only runner"
+```
+
+---
+
+### Task 7: Changelog, README, version 0.23.0, build smoke
 
 **Files:**
 - Modify: `CHANGELOG.md` (new top section)
@@ -1425,4 +1722,5 @@ Publishing (`bun publish` from `packages/glance`, which runs `prepublishOnly`) i
 - `cd packages/glance && bun test`, `bun run check-types`, and `bun run check:node` pass on the branch.
 - `tests/pr-merged-at-labels.test.ts`, `tests/metrics-reads-capabilities.test.ts`, `tests/gitlab-mr-index.test.ts`, `tests/gitlab-mr-metrics.test.ts`, and `tests/gitlab-metrics-rest.test.ts` exist and pass; no existing test file changed.
 - `GitLabProvider.capabilities` reports all six new flags `true`; `GitHubProvider.capabilities` reports all six `false` and defines none of the methods.
+- `bun tests/live/reads-runner.ts` exits 0 against the harness project, with every metric read recorded as `ok` or `skip` for gitlab.
 - `CHANGELOG.md` has a `## 0.23.0` section and `package.json` is at `0.23.0`.

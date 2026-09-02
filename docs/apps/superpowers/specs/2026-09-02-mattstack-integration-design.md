@@ -249,11 +249,12 @@ needed by `fetchUserEvents`.
 ### 6.3 Tests and release
 
 Unit tests per method with the transport stubbed, following the package's
-existing pattern. Live conformance entries under `tests/live/` are deferred:
-the live fixture project carries no merged MRs, pipelines, or pushes to
-assert against, and sub-project 4 exercises every read against gitlab.com
-through boxscore's own refresh. Release as a minor version; boxscore pins it
-in sub-project 4.
+existing pattern. Live conformance: a `runMetricsReadConformance` block in
+`tests/live/conformance.ts`, run from the full runner and from a new
+read-only `tests/live/reads-runner.ts` against the harness project with the
+demo credentials in `harness_credentials.json`; every new method is also
+declared in the harness's expectation tables. Release as a minor version;
+boxscore pins it in sub-project 4.
 
 ## 7. Sub-project 4: boxscore data layer
 
