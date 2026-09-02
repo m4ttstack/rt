@@ -82,7 +82,7 @@ app from `web/dist`).
 | MRs merged | authored + `state: merged` in window | artificial micro-PRs |
 | MRs reviewed | non-authored MRs with your in-window note or approval | rubber-stamping |
 | Pipelines | REST `?username=` per project | trivial re-runs |
-| **Review depth** | median inline (DiffNote) comments per reviewed MR | nitpick-spam (use median, not totals) |
+| **Review depth** | mean inline (DiffNote) comments per reviewed MR | nitpick-spam (a per-MR mean, never a total; a median collapses to 0 for most reviewers) |
 | **Review latency** | first non-author note minus MR open (p50/p90) | a hollow "looking 👀" note ... pair with depth |
 | **Revert rate** | merged MRs later reverted (`Revert "…"` / label) | fix-forward evades detection (labeled "detected only") |
 | **MR size health** | % of merged MRs in the reviewable band | two-sided band resists both mega- and micro-PRs |
@@ -132,4 +132,4 @@ bun run validate -- --refresh        # run the evaluator; exits non-zero on any 
 `bun run validate` is the feedback loop: it asserts ranking integrity (rank 1 ⇔ best value,
 leaders correct, ties shared, trend consistency) and surfaces data-quality smells (a metric
 that's uniform/all-zero across everyone often means it isn't populating). This is how the
-bot-polluted review-latency and median-collapsed review-depth bugs were caught and fixed.
+bot-polluted review-latency and review-depth calculation bugs were caught and fixed.

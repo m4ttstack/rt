@@ -50,7 +50,7 @@ export interface UserMetrics {
   pipelineStatus: PipelineStatusBreakdown;
 
   // --- Quality / consistency metrics (spec 4.5-4.10) ---
-  /** Median inline (DiffNote) comments per reviewed MR. */
+  /** Mean inline (DiffNote) comments per reviewed MR. */
   reviewDepth: MetricValue;
   /** Author-side: how long this user's own MRs wait for first review. */
   reviewLatencyHours: DistributionValue;

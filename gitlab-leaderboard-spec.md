@@ -132,6 +132,8 @@ ones against the live schema at `/-/graphql-explorer` rather than trusting this 
 - Attribution: to the **note author** (reviewer), only on MRs they did not author.
 - Output per user: median DiffNotes per reviewed MR (median, not total ... totals reward
   nitpick-spam). Optionally the DiffNote:DiscussionNote ratio.
+- **Implemented as the mean.** A median collapses to 0 whenever fewer than half a reviewer's
+  MRs carry inline comments, which is the common case, so it cannot discriminate reviewers.
 - Purpose: quality counterweight to §4.3 (which counts approvals and rewards rubber-stamping).
 
 ### 4.6 Review latency (time-to-first-review)
