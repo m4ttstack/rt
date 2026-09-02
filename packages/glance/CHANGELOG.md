@@ -1,5 +1,13 @@
 # @mattstack/glance
 
+## 0.22.1
+
+### Patch Changes
+
+- `fetchCodeownerSections` throws when a CODEOWNERS file exists but GitLab
+  returns no text for it, instead of reading it as a file with no sections.
+  A consumer that keeps its previous list on failure now does so here too.
+
 ## 0.22.0
 
 ### Minor Changes
