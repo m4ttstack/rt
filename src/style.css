@@ -924,6 +924,7 @@
 .tui-tabs-field > span { color: var(--muted); font-family: var(--font-mono); font-size: 11px; white-space: nowrap; }
 .tui-tabs-field .tui-invite-input { width: 100%; max-width: 420px; min-width: 0; }
 .tui-tabs-check { display: flex; grid-column: 2; align-items: center; gap: 8px; }
+.tui-tabs-fields > .tui-modal-error { grid-column: 2; margin: -4px 0 0; }
 .tui-tabs-add { flex-wrap: wrap; gap: 8px; padding: 4px 0; }
 .tui-tabs-add .tui-modal-input { flex: 1 1 180px; }
 .tui-tabs-kind { flex: 0 0 auto; }
