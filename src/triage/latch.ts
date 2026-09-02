@@ -55,6 +55,14 @@ export interface LatchPassResult {
   failed: number;
 }
 
+/** How long a freshly-done review is left to the server before this pass will
+    arm a latch for it. The server posts the instant the done signal lands, but
+    both writers check for an existing latch through the daemon's discussion
+    store, which within its staleness window cannot show a post seconds old:
+    posting here inside that window double-posts. A genuinely missed post
+    (server down or throwing) still lands on the first tick past the window. */
+export const LATCH_POST_GRACE_MS = 5 * 60_000;
+
 const DISPATCH_REPLY = "Re-review started. I'll comment again when the pass is done, and this latch is armed for next time.";
 const refusalReply = (reason: string) =>
   `Not yet: ${reason}. Resolve this thread again once that clears and I'll pick it up.`;
@@ -95,7 +103,7 @@ export async function runLatchPass(deps: LatchPassDeps): Promise<LatchPassResult
       // Step 0: nothing to act on. A spent relic with no live latch is the
       // descoped case: arming a second review cycle is the server's job.
       if (!canon) {
-        if (review.outcome === "comment") {
+        if (review.outcome === "comment" && now - review.updatedAt >= LATCH_POST_GRACE_MS) {
           await postLatch(deps.gateway, mr.projectId, mr.projectPath, mr.mrUrl, mr.iid);
           deps.appendAudit({ ts: now, mrUrl: mr.mrUrl, iid: mr.iid, event: "latch", action: "posted" });
           result.posted++;
