@@ -165,6 +165,14 @@ export interface PullRequest {
   isStacked?: boolean;
   createdAt: string | null;
   updatedAt: string | null;
+  /**
+   * When the MR merged; null while it is open or closed unmerged. Absent on a
+   * PullRequest built by an SDK version before 0.23.0, populated by both
+   * providers from then on.
+   */
+  mergedAt?: string | null;
+  /** Label names as the forge shows them. Absent before 0.23.0, populated by both providers from then on. */
+  labels?: string[];
   /** Head commit SHA. */
   sha: string | null;
 

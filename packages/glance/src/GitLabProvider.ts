@@ -57,7 +57,8 @@ export const MR_DASHBOARD_FRAGMENT = `
     sourceBranch targetBranch webUrl
     targetProject { repository { rootRef } }
     diffHeadSha
-    updatedAt createdAt
+    updatedAt createdAt mergedAt
+    labels(first: 50) { nodes { title } }
     conflicts
     detailedMergeStatus
     approved
@@ -116,7 +117,8 @@ export const MR_LIST_FRAGMENT = `
     sourceBranch targetBranch webUrl
     targetProject { repository { rootRef } }
     diffHeadSha
-    updatedAt createdAt
+    updatedAt createdAt mergedAt
+    labels(first: 50) { nodes { title } }
     conflicts
     detailedMergeStatus
     approved
@@ -244,6 +246,8 @@ interface GQLMR {
   diffHeadSha: string | null;
   updatedAt: string;
   createdAt: string;
+  mergedAt?: string | null;
+  labels?: { nodes: Array<{ title: string }> } | null;
   conflicts: boolean;
   detailedMergeStatus: string | null;
   approved: boolean;
@@ -444,6 +448,8 @@ function toMR(
     isStacked: !!rootRef && gql.targetBranch !== rootRef,
     createdAt: gql.createdAt,
     updatedAt: gql.updatedAt,
+    mergedAt: gql.mergedAt ?? null,
+    labels: (gql.labels?.nodes ?? []).map((l) => l.title),
     sha: gql.diffHeadSha,
     author: toUserRef(gql.author, baseURL, token),
     assignees: gql.assignees.nodes.map((u) => toUserRef(u, baseURL, token)),
