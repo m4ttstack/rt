@@ -170,10 +170,14 @@ export async function runLatchPass(deps: LatchPassDeps): Promise<LatchPassResult
         continue;
       }
 
-      await deps.gateway.createNote(mr.projectId, mr.iid, DISPATCH_REPLY, canon.discussionId);
-      await consume(deps, mr, canon, carriers);
+      // The launch already happened, so the attempt is charged before the
+      // follow-up GitLab writes run: a write failing here must still count
+      // against cooldown and budget, or a failing write turns into a launch
+      // every tick.
       m.lastDispatchAt = now;
       m.attemptsToday++;
+      await deps.gateway.createNote(mr.projectId, mr.iid, DISPATCH_REPLY, canon.discussionId);
+      await consume(deps, mr, canon, carriers);
       await deps.notify(`re-review launched on !${mr.iid}`, "requested from the MR");
       result.dispatched++;
     } catch (err) {

@@ -222,6 +222,29 @@ describe("step 3: armed and resolved", () => {
     expect(memory.mrs[MR]?.lastDispatchAt).toBe(NOW - 60_000);
   });
 
+  // A GitLab write failing after a successful launch must still charge the
+  // attempt, or the next tick reads the same resolved latch as a fresh
+  // request and dispatches again every tick for as long as the write fails.
+  test("a successful launch with a failing createNote still charges the attempt", async () => {
+    const { deps, launches, memory } = harness({
+      detail: detail(disc("d1", armedLatchBody(IMG), "2026-09-01T10:00:00Z", true)),
+      gateway: {
+        async uploadFile() { return { alt: "", url: "", full_path: "", markdown: IMG }; },
+        async createDiscussion() { return { id: "new", notes: [{ id: 1 }] }; },
+        async updateNote() {},
+        async resolveDiscussion() {},
+        async unresolveDiscussion() {},
+        async createNote() { throw new Error("gitlab 500"); },
+      },
+    });
+    const result = await runLatchPass(deps);
+    expect(result.failed).toBe(1);
+    expect(result.dispatched).toBe(0);
+    expect(launches).toEqual([MR]);
+    expect(memory.mrs[MR]?.attemptsToday).toBe(1);
+    expect(memory.mrs[MR]?.lastDispatchAt).toBe(NOW);
+  });
+
   test("a failed launch replies, consumes the request, and counts a rejection", async () => {
     const { deps, calls, launches } = harness({
       detail: detail(

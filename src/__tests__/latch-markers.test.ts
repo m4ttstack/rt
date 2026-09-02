@@ -35,6 +35,12 @@ describe("latchKindOf", () => {
   test("ignores a v2 marker", () => {
     expect(latchKindOf("<!-- mattstack:board re-review-latch v2 -->\n\nhi")).toBeNull();
   });
+
+  // A quote further down the body is not a latch: only the first line counts.
+  test("returns null when a marker only appears quoted on a later line", () => {
+    const body = `what is this thread about?\n\nsomeone pasted: ${LATCH_MARKER}`;
+    expect(latchKindOf(body)).toBeNull();
+  });
 });
 
 describe("bodies", () => {
