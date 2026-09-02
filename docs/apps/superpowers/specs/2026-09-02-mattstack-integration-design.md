@@ -276,8 +276,9 @@ server/
 ```
 
 `server/gitlab/` and `server/util/graphql.ts` are deleted; glance owns
-transport, retry, and pagination. `server/util/http.ts` stays for Linear
-until Linear also moves behind a client.
+transport and pagination. `server/util/http.ts` stays: for Linear until it
+moves behind a client, and around the glance calls until the SDK gains
+retry and cancellation (section 9).
 
 ### 7.2 Store
 
@@ -352,6 +353,8 @@ still needs beyond the canvas:
 - **Board reads `mattstack.roster`** behind its latch with `board.members` as fallback; retire `board.members` once both apps read the new key.
 - **Promote `board.projects`** to a suite key and point `boxscore.projects` at it.
 - **Daemon retains merged MRs** within `projectMrsWindowDays` once glance carries `mergedAt`; boxscore then serves the recent window from `project-mrs:read` and backfills only history.
+- **Retry and cancellation on the glance reads**, before sub-project 4 consumes them: an additive `signal?: AbortSignal` on the three option types and a bounded retry on 408/429/5xx inside the GraphQL runner and the REST page walker (a follow-up minor). The final review of sub-project 3 found that `runQuery` and `restRequest` are bare `fetch` calls, so today a 429 mid-walk fails the whole index and an in-flight walk cannot be cancelled. Until that lands, sub-project 4 keeps boxscore's `server/util/http.ts` retry wrapper around the SDK calls instead of deleting it (section 7.1).
+- **`preparedAt` on `MergeRequestIndexRow`**, a cheap scalar, when the latency metrics start using it as the clock start.
 - **GitHub implementations** of the 6.2 methods.
 
 ## 10. Defect and structure inventory

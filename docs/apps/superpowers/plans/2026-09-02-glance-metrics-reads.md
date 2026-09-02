@@ -1737,7 +1737,7 @@ Publishing (`bun publish` from `packages/glance`, which runs `prepublishOnly`) i
 ## Done criteria
 
 - `cd packages/glance && bun test`, `bun run check-types`, and `bun run check:node` pass on the branch.
-- `tests/pr-merged-at-labels.test.ts`, `tests/metrics-reads-capabilities.test.ts`, `tests/gitlab-mr-index.test.ts`, `tests/gitlab-mr-metrics.test.ts`, and `tests/gitlab-metrics-rest.test.ts` exist and pass; no existing test file changed.
+- `tests/pr-merged-at.test.ts`, `tests/metrics-reads-capabilities.test.ts`, `tests/gitlab-mr-index.test.ts`, `tests/gitlab-mr-metrics.test.ts`, and `tests/gitlab-metrics-rest.test.ts` exist and pass; the only existing test files changed are the four live-harness files named in Global Constraints.
 - `GitLabProvider.capabilities` reports all six new flags `true`; `GitHubProvider.capabilities` reports all six `false` and defines none of the methods.
 - `bun tests/live/reads-runner.ts` exits 0 against the harness project, with every metric read recorded as `ok` or `skip` for gitlab.
 - `CHANGELOG.md` has a `## 0.23.0` section and `package.json` is at `0.23.0`.
