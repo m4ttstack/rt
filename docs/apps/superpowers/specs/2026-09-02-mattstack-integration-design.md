@@ -227,10 +227,14 @@ this wave.
 
 ### 6.1 Field additions
 
-`PullRequest` gains `mergedAt: string | null` and `labels: string[]`, added
-to both `MR_DASHBOARD_FRAGMENT` and `MR_LIST_FRAGMENT` and to the GitHub
-mapper (GitHub already has `merged_at` and labels available). Existing
-consumers are unaffected; the board may use `mergedAt` later.
+`PullRequest` gains `mergedAt?: string | null`, added to both
+`MR_DASHBOARD_FRAGMENT` and `MR_LIST_FRAGMENT` and to the GitHub mapper.
+Labels do not join `PullRequest`: gitlab.com caps GraphQL query complexity
+at 250 and the role-based `fetchPullRequests` query already sits at the
+edge, so a `labels` connection in the dashboard fragment broke it when
+tried live on 2026-09-02. Labels ride the index rows and the metrics detail
+instead, which is where boxscore reads them. Existing consumers are
+unaffected; the board may use `mergedAt` later.
 
 ### 6.2 New reads
 

@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Give `@mattstack/glance` the stateless, typed reads a metrics consumer needs (a cheap merge-request index with `mergedAt`, per-MR metric detail with paginated notes, group projects, project lookup, per-user pipelines, and user activity events), plus `mergedAt` and `labels` on `PullRequest`, so boxscore's data layer can be rebuilt on the SDK instead of its own GitLab client.
+**Goal:** Give `@mattstack/glance` the stateless, typed reads a metrics consumer needs (a cheap merge-request index with `mergedAt` and labels, per-MR metric detail with paginated notes, group projects, project lookup, per-user pipelines, and user activity events), plus `mergedAt` on `PullRequest`, so boxscore's data layer can be rebuilt on the SDK instead of its own GitLab client.
 
-**Architecture:** Every new read is an optional `GitProvider` method paired with a `ProviderCapabilities` flag; `GitLabProvider` implements all six over its existing GraphQL runner and `restRequest`, `GitHubProvider` declares the flags false and implements nothing. New domain types live in `types.ts`, new option types in `GitProvider.ts`, and everything is re-exported from `index.ts`. The two `PullRequest` additions are optional fields, following the `isStacked` precedent, and both providers populate them.
+**Architecture:** Every new read is an optional `GitProvider` method paired with a `ProviderCapabilities` flag; `GitLabProvider` implements all six over its existing GraphQL runner and `restRequest`, `GitHubProvider` declares the flags false and implements nothing. New domain types live in `types.ts`, new option types in `GitProvider.ts`, and everything is re-exported from `index.ts`. The one `PullRequest` addition (`mergedAt`) is an optional field, following the `isStacked` precedent, and both providers populate it. Labels are deliberately not added to `PullRequest`: gitlab.com caps GraphQL query complexity at 250 and the dashboard fragment sits at the edge, so a `labels(first: N)` connection there breaks the role-based `fetchPullRequests` query (measured live on 2026-09-02: 255). Labels ride the metric-grade reads instead.
 
 **Tech Stack:** Bun, TypeScript (glance imports carry `.ts` suffixes and use single quotes), `bun:test` unit tests that stub `runQuery` or `globalThis.fetch`, no new dependencies. Package version moves 0.22.0 to 0.23.0.
 
@@ -16,7 +16,7 @@
 - Tests: `cd packages/glance && bun test` runs the unit suite (the live conformance suite is skipped without `GLANCE_LIVE=1`; never set it in this plan). Types: `bun run check-types`. Both must pass before every commit.
 - Style: single quotes, 2-space indent, `import type` for types, relative imports with `.ts` suffixes (`from './types.ts'`), `private async` methods on the provider class, a `non-advancing cursor` guard on every paginated loop (the existing `fetchApprovalRules` shape).
 - New `GitProvider` methods are optional (`name?(...)`), each paired with a boolean on `ProviderCapabilities` named `canFetch<Method>`. `GitHubProvider` sets every new flag to `false` and implements none of the methods. The `providerConformance.ts` guard already tolerates omitted optional methods.
-- `PullRequest.mergedAt` and `PullRequest.labels` are optional fields (`mergedAt?: string | null`, `labels?: string[]`), so no consumer that constructs a `PullRequest` literal breaks. Both providers populate them.
+- `PullRequest.mergedAt` is an optional field (`mergedAt?: string | null`), so no consumer that constructs a `PullRequest` literal breaks. Both providers populate it. No new connection field goes into `MR_DASHBOARD_FRAGMENT` or `MR_LIST_FRAGMENT`: the role-based query is within 5 complexity points of gitlab.com's cap.
 - No existing export changes shape. The only existing test files that change are `tests/live/expectations.ts`, `tests/live-expectations.test.ts`, `tests/live/conformance.ts`, and `tests/live/runner.ts`: the live harness keeps an exhaustive `Record<ProviderMethod, Expectation>` per provider, so every new interface method must be declared there or `check-types` fails, and the harness's coverage rule requires a report entry per method. The `build` script's explicit entry list is unchanged because no new source files are created under `src/`.
 - Live conformance runs against the harness project with the credentials at `/Users/matt/Documents/GitHub/glance/harness_credentials.json` (gitignored; copy it to the worktree root before a live run, never commit it, never print its values). The new reads are read-only, and the non-mutating `tests/live/reads-runner.ts` added in Task 6 is how they are exercised without the mutating suites.
 - Comments state constraints the code cannot show; never narrate the next line or the change. No em dashes anywhere (use "..." or rephrase).
@@ -24,7 +24,9 @@
 
 ---
 
-### Task 1: `PullRequest` gains `mergedAt` and `labels` on both providers
+### Task 1: `PullRequest` gains `mergedAt` on both providers
+
+> Amended after the live run: the task as first executed also added `labels(first: 50)` to both fragments, which pushed the role-based `fetchPullRequests` query to complexity 255 on gitlab.com (cap 250). The fix round removed `labels` from `PullRequest`, both fragments, `GQLMR`, `toMR`, and `toPullRequest`; the text below is the post-fix requirement.
 
 **Files:**
 - Modify: `src/types.ts` (the `PullRequest` interface)
