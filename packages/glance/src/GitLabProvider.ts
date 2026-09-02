@@ -1042,7 +1042,9 @@ export class GitLabProvider implements GitProvider {
    * Section headers of the project's default-branch CODEOWNERS, or null when
    * no CODEOWNERS file exists at any documented location. Per-MR approval
    * rules snapshot section names at MR sync time and keep old names after a
-   * rename; this is the live list a new MR will match against.
+   * rename; this is the live list a new MR will match against. A present
+   * file whose text GitLab withholds throws rather than reading as empty,
+   * because empty means "no sections" to consumers.
    */
   async fetchCodeownerSections(options: { projectPath: string }): Promise<string[] | null> {
     const resp = await this.runQuery<CodeownersBlobsResponse>(
@@ -1052,7 +1054,12 @@ export class GitLabProvider implements GitProvider {
     const nodes = resp.project?.repository?.blobs?.nodes ?? [];
     for (const path of CODEOWNERS_PATHS) {
       const node = nodes.find((n) => n.path === path);
-      if (node) return parseCodeownerSections(node.rawTextBlob ?? '');
+      if (node) {
+        if (node.rawTextBlob === null) {
+          throw new Error(`fetchCodeownerSections: ${path} exists in ${options.projectPath} but GitLab returned no text for it`);
+        }
+        return parseCodeownerSections(node.rawTextBlob);
+      }
     }
     return null;
   }

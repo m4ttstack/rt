@@ -52,6 +52,12 @@ describe('fetchCodeownerSections', () => {
     expect(await p.fetchCodeownerSections({ projectPath: 'g/p' })).toEqual([]);
   });
 
+  test('a present file with no text is a failed read, not an empty section list', async () => {
+    const p = new GitLabProvider('https://gitlab.example', 't');
+    stubRunQuery(p, blobs([{ path: 'CODEOWNERS', rawTextBlob: null }]));
+    await expect(p.fetchCodeownerSections({ projectPath: 'g/p' })).rejects.toThrow('returned no text');
+  });
+
   test('a missing project or repository reads as no file', async () => {
     const p = new GitLabProvider('https://gitlab.example', 't');
     stubRunQuery(p, { project: null });
