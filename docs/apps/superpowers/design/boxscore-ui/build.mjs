@@ -65,7 +65,7 @@ const STYLE = `
     .frame { font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 13.5px; line-height: 1.55; color: var(--tk-fg); background: var(--tk-bg); }
     .content { background-color: var(--tk-bg); background-image: linear-gradient(var(--tk-grid) 1px, transparent 1px), linear-gradient(90deg, var(--tk-grid) 1px, transparent 1px); background-size: 28px 28px; }
     .num { font-variant-numeric: tabular-nums; }
-    .th { font-size: 11.2px; font-weight: 600; color: var(--tk-muted-text); text-align: right; padding: 4.8px 7.2px; white-space: nowrap; border-bottom: 1px solid var(--tk-border-soft); }
+    .th { font-size: 11.2px; font-weight: 600; color: var(--tk-muted-text); text-align: right; padding: 4.8px 7.2px; white-space: normal; line-height: 1.2; vertical-align: bottom; border-bottom: 1px solid var(--tk-border-soft); }
     .td { font-size: 12.16px; text-align: right; padding: 4.8px 7.2px; white-space: nowrap; border-bottom: 1px solid var(--tk-border-soft); }
     .tr-you .td { background: color-mix(in srgb, var(--tk-accent) var(--tk-wash), transparent); }
     .group-l { border-left: 1px solid var(--tk-border); }
@@ -121,9 +121,9 @@ const COLS = [
   { key: "reciprocity", label: "Reciprocity", group: "quality", better: "desc" },
 ];
 const PEOPLE = [
-  { name: "Matthew Goodwin", user: "m4ttheweric", you: true, v: ["9", "4,812", "2,106", "14", "11", "88", "2.4/MR", "3.1h", "1.9h", "0%", "71%", "19", "4", "1.2"], r: [1, 2, 2, 1, 2, 2, 2, 2, 2, 1, 3, 1, 2, 3], d: ["+2", "+640", "-212", "+3", "+1", "+9", "+0.3", "-1.4", "+0.2", "0", "+6", "+2", "+1", "+0.1"] },
-  { name: "Nadia Fenwick", user: "nadia1", v: ["7", "3,340", "1,522", "11", "16", "74", "3.1/MR", "5.8h", "1.2h", "9%", "64%", "17", "3", "1.6"], d: ["+1", "-410", "+88", "-1", "+4", "+2", "+0.6", "+0.9", "-0.4", "+9", "-5", "0", "0", "+0.3"] },
+  { name: "Matthew Goodwin", user: "m4ttheweric", you: true, v: ["9", "4,812", "2,106", "14", "11", "88", "2.4/MR", "3.1h", "1.9h", "0%", "71%", "19", "4", "1.2"], r: [1, 2, 2, 1, 2, 2, 2, 2, 2, 1, 4, 1, 2, 3], d: ["+2", "+640", "-212", "+3", "+1", "+9", "+0.3", "-1.4", "+0.2", "0", "+6", "+2", "+1", "+0.1"] },
   { name: "Owen Marsh", user: "owen-at-acme", v: ["8", "6,105", "3,988", "12", "6", "97", "1.1/MR", "2.7h", "6.8h", "8%", "50%", "18", "5", "0.6"], d: ["+3", "+1,930", "+1,204", "+4", "-2", "+21", "-0.2", "-0.6", "+2.1", "+8", "-11", "+1", "+2", "-0.2"] },
+  { name: "Nadia Fenwick", user: "nadia1", v: ["7", "3,340", "1,522", "11", "16", "74", "3.1/MR", "5.8h", "1.2h", "9%", "64%", "17", "3", "1.6"], d: ["+1", "-410", "+88", "-1", "+4", "+2", "+0.6", "+0.9", "-0.4", "+9", "-5", "0", "0", "+0.3"] },
   { name: "Sam Kestrel", user: "samkestrel", v: ["6", "2,918", "905", "9", "8", "61", "1.7/MR", "6.4h", "4.3h", "0%", "78%", "15", "3", "0.9"], d: ["0", "+120", "-60", "0", "+1", "-4", "+0.1", "+1.1", "-0.8", "0", "+3", "-1", "0", "+0.1"] },
   { name: "Marco Villanueva", user: "marcovillanueva", v: ["5", "1,764", "640", "7", "9", "52", "2.0/MR", "8.9h", "2.6h", "0%", "86%", "14", "2", "1.3"], d: ["+1", "+300", "+95", "+1", "+2", "+6", "+0.4", "-2.0", "-0.5", "0", "+4", "+1", "0", "+0.2"] },
   { name: "Reggie Voss", user: "nightowl2", v: ["4", "2,230", "1,110", "6", "5", "40", "1.4/MR", "12.2h", "5.1h", "17%", "67%", "12", "2", "0.8"], d: ["-1", "-880", "-402", "-2", "-1", "-12", "-0.5", "+3.4", "+1.2", "+17", "-8", "-3", "-1", "-0.3"] },
@@ -174,7 +174,7 @@ function controls({ trend, view, refreshing }) {
     </div>
     ${seg(["Table", "Cards"], view)}
     <div style="flex: 1"></div>
-    <div class="btn" style="${refreshing ? "opacity: 0.55" : ""}">${icon("refresh", 14)}Refresh</div>
+    <div class="btn"${refreshing ? ' style="opacity: 0.55"' : ""}>${icon("refresh", 14)}Refresh</div>
   </div>
   <div style="display: flex; gap: 14.4px; font-size: 10.56px; color: var(--tk-muted-text); margin-top: -7.2px">
     <div>Scope: <span style="color: var(--tk-fg)">acme/acme-web</span></div>
@@ -220,12 +220,15 @@ function leaderboardTable({ trend, sortKey = "mrsMerged" }) {
     const cells = p.v.map((v, i) => {
       const col = COLS[i];
       const gl = i > 0 && COLS[i - 1].group !== col.group ? " group-l" : "";
-      const inner = trend ? deltaCell(p.d[i], col) : `<span>${v}</span>${p.you ? `<span class="badge badge-accent" style="margin-left: 6px; height: 14px; padding: 0 4px; font-size: 9.5px">#${p.r[i]}</span>` : ""}`;
+      const chip = p.you ? `<span class="badge badge-accent" style="margin-left: 6px; height: 14px; padding: 0 4px; font-size: 9.5px">#${p.r[i]}</span>` : "";
+      const inner = trend
+        ? `<span>${v}</span><span style="margin-left: 6px; font-size: 10.56px">${deltaCell(p.d[i], col)}</span>${chip}`
+        : `<span>${v}</span>${chip}`;
       return `<td class="td num${gl}">${inner}</td>`;
     }).join("");
     return `<tr class="${p.you ? "tr-you" : ""}">
       <td class="td" style="text-align: left; position: sticky; left: 0; background: ${p.you ? "color-mix(in srgb, var(--tk-accent) var(--tk-wash), var(--tk-card))" : "var(--tk-card)"}">
-        <span style="${p.you ? "font-weight: 600; color: var(--tk-accent-text)" : ""}">${p.name}</span><span style="margin-left: 6px; font-size: 10.56px; color: var(--tk-muted-text)">@${p.user}</span>
+        <div style="display: flex; flex-direction: column; line-height: 1.3"><span style="${p.you ? "font-weight: 600; color: var(--tk-accent-text)" : "color: var(--tk-fg)"}">${p.name}</span><span style="font-size: 10.56px; color: var(--tk-muted-text)">@${p.user}</span></div>
       </td>${cells}</tr>`;
   }).join("");
   return `<div class="paper" style="overflow: hidden">
@@ -256,7 +259,7 @@ function cards() {
     });
     const g = GROUPS.find((g) => g.key === col.group);
     const gcolor = g.color === "mutedText" ? "var(--tk-muted-text)" : g.color === "accentText" ? "var(--tk-accent-text)" : "var(--tk-green)";
-    const rows = ranked.map((p, rank) => `<div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px; ${p.you ? "color: var(--tk-accent-text); font-weight: 600" : ""}">
+    const rows = ranked.map((p, rank) => `<div style="display: flex; justify-content: space-between; align-items: center; padding: 2px 4px; border-radius: 4px; font-size: 12.16px${p.you ? "; color: var(--tk-accent-text); font-weight: 600" : ""}">
         <div style="display: flex; gap: 8px; align-items: baseline"><span class="num" style="width: 14px; text-align: right; font-size: 10.56px; color: var(--tk-muted-text); font-weight: 400">${rank + 1}</span><span>${p.name}</span></div>
         <div class="num" style="display: flex; gap: 8px; align-items: baseline; font-weight: 400"><span style="${p.you ? "color: var(--tk-accent-text)" : ""}">${p.v[i]}</span><span style="font-size: 10.56px">${deltaCell(p.d[i], col)}</span></div>
       </div>`).join("");
@@ -268,7 +271,7 @@ function cards() {
       <div style="display: flex; flex-direction: column; gap: 1px">${rows}</div>
     </div>`;
   };
-  return `<div style="display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14.4px">${COLS.map(card).join("")}</div>`;
+  return `<div style="display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14.4px">${COLS.map(card).join("")}</div>`;
 }
 
 // --- Detail ---
@@ -293,6 +296,11 @@ function detail() {
     ["!1014", "ACME-244: remove dead codeowner section resolver", "+3", "−212", "2026-08-14"],
     ["!1011", "ACME-239: order island reads GFM Q&A source", "+276", "−118", "2026-08-12"],
     ["!1008", "ACME-231: sticky summary strip on fulfillment order view", "+189", "−54", "2026-08-08"],
+    ["!1005", "ACME-226: dedupe workflow states by name in the tracker picker", "+22", "−31", "2026-08-07"],
+    ["!1002", "ACME-219: island loader reads the classification map once", "+87", "−140", "2026-08-06"],
+    ["!999", "ACME-214: item-damage chip copy and tooltip parity", "+41", "−18", "2026-08-05"],
+    ["!996", "ACME-208: order timeline collapses system notes", "+133", "−62", "2026-08-04"],
+    ["!993", "ACME-203: remove legacy cart section resolver", "+9", "−241", "2026-08-03"],
   ];
   const ev = `<div class="paper" style="overflow: hidden">
     <table style="border-collapse: collapse; width: 100%">
@@ -334,18 +342,18 @@ function settings() {
     const color = kind === "team" ? "var(--tk-purple)" : kind === "user" ? "var(--tk-cyan)" : "var(--tk-muted)";
     return `<div class="scope"><span class="dot" style="background: ${color}"></span>${where}</div>`;
   };
-  const row = (label, key, desc, value, sc, extra = "") => `<div class="setting-row">
+  const row = (label, key, desc, value, sc, extra = "", editable = true) => `<div class="setting-row">
     <div><div style="font-size: 12.16px; font-weight: 600">${label}</div><div style="font-size: 10.56px; color: var(--tk-muted)">${key}</div></div>
     <div style="min-width: 0"><div style="font-size: 11.2px; color: var(--tk-muted-text); margin-bottom: 3px">${desc}</div><div class="num" style="font-size: 11.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">${value}</div>${extra}</div>
     ${sc}
-    <div style="width: 26px; height: 26px; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: var(--tk-muted-text)">${icon("pencil", 14)}</div>
+    <div style="width: 26px; height: 26px; border-radius: 6px; display: flex; align-items: center; justify-content: center; color: var(--tk-muted-text)">${editable ? icon("pencil", 14) : ""}</div>
   </div>`;
   const rosterRows = PEOPLE.map((p, i) => {
     const hidden = false;
     return `<div style="display: grid; grid-template-columns: 200px minmax(0, 1fr) 90px; gap: 12px; align-items: center; padding: 4.8px 9.6px; border-top: 1px solid var(--tk-border-soft); font-size: 11.2px">
       <div style="color: var(--tk-fg)">${p.user}</div>
       <div style="color: var(--tk-muted-text)">${p.name}${i >= 5 ? ` <span class="badge badge-muted" style="margin-left: 6px">not on the board</span>` : ""}</div>
-      <div style="display: flex; align-items: center; gap: 6px; justify-content: flex-end; color: var(--tk-muted-text); font-size: 10.56px">${icon("eyeOff", 12)}<div class="switch ${hidden ? "switch-on" : "switch-off"}" style="width: 26px; height: 16px"><div class="thumb" style="width: 10px; height: 10px; top: 2px; ${hidden ? "right: 2px" : "left: 2px"}"></div></div></div>
+      <div style="display: flex; align-items: center; gap: 6px; justify-content: flex-end; color: var(--tk-muted-text); font-size: 10.56px">${icon("eyeOff", 12)}<div class="switch ${hidden ? "switch-on" : "switch-off"}"><div class="thumb" style="${hidden ? "right: 2px" : "left: 2px"}"></div></div></div>
     </div>`;
   }).join("");
   const rosterPanel = `<div class="paper" style="margin-top: 7.2px; overflow: hidden">
@@ -372,9 +380,9 @@ function settings() {
     row("Hidden members", "boxscore.hiddenMembers", "Roster members left out of your leaderboard.", "none", scope("unset", "unset")) +
     row("Default range", "boxscore.defaultRange", "The window the leaderboard opens on.", "30d", scope("user", "user store")));
   const from = section("Read from the suite", "not editable here",
-    row("GitLab host", "mattstack.integrations · forge.host", "Where merge requests are fetched from.", "https://gitlab.com", scope("team", "team store")) +
-    row("Linear team", "mattstack.integrations · linear.teamKey", "Only tickets with this prefix count toward delivery.", "CV", scope("team", "team store")) +
-    row("Tokens", "secrets · rt domain", "GitLab and Linear tokens come from the secrets store, never from settings.", "gitlabToken ✓ · linearApiKey ✓", scope("unset", "secrets")));
+    row("GitLab host", "mattstack.integrations · forge.host", "Where merge requests are fetched from.", "https://gitlab.com", scope("team", "team store"), "", false) +
+    row("Linear team", "mattstack.integrations · linear.teamKey", "Only tickets with this prefix count toward delivery.", "CV", scope("team", "team store"), "", false) +
+    row("Tokens", "secrets · rt domain", "GitLab and Linear tokens come from the secrets store, never from settings.", "gitlabToken set · linearApiKey set", scope("unset", "secrets"), "", false));
   const title = `<div style="font-size: 13.6px; font-weight: 600">Settings</div><div style="font-size: 10.56px; color: var(--tk-muted-text)">rt settings explain &lt;key&gt; shows the full chain</div>`;
   const content = `<div style="display: flex; flex-direction: column; gap: 18px; max-width: 1080px">${team}${you}${from}</div>`;
   return shell({ title, content, activeRail: "settings", height: 1280 });
@@ -441,7 +449,7 @@ const canvas = {
   ],
   annotations: [
     { id: "brief", x: 0, y: -170, w: 520, text: "Boxscore on app-kit. Matched: Tokyo Day/Night tokens, JetBrains Mono 13.5px, console's 48px header + 40px page row, 68px rail, 6px radii, Mantine table spacing.\nEach artboard has a Dark tweak. Metric values are sample data; the roster is the live acme-web one plus boxscore's two extras." },
-    { id: "settings-note", x: 0, y: 2080, w: 520, text: "Settings: sections mirror the scopes in the spec (team, user, read-only suite values). Roster is the featured composite because it is the shared key.\nEdits go through settings-kit; team values are local until committed and pushed, so the section header says so." },
+    { id: "settings-note", x: 0, y: 2320, w: 520, text: "Settings: sections mirror the scopes in the spec (team, user, read-only suite values). Roster is the featured composite because it is the shared key.\nEdits go through settings-kit; team values are local until committed and pushed, so the section header says so." },
   ],
   launch: { view: "canvas" },
 };

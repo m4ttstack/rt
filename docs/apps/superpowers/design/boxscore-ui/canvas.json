@@ -52,7 +52,7 @@
     {
       "id": "settings-note",
       "x": 0,
-      "y": 2080,
+      "y": 2320,
       "w": 520,
       "text": "Settings: sections mirror the scopes in the spec (team, user, read-only suite values). Roster is the featured composite because it is the shared key.\nEdits go through settings-kit; team values are local until committed and pushed, so the section header says so."
     }
