@@ -136,6 +136,7 @@ A new `// --- mattstack (shared team truth) ---` row and a new
 |---|---|---|
 | GitLab host | field `forge.host` of the single object key `mattstack.integrations` (team, deep merge) | unset today. Suite precedent: team creation copies `forge.host` into `board.gitlabHost`, which the board fetches against, so boxscore fetching against it follows that precedent. |
 | Linear team key | field `linear.teamKey` of the same object key | unset today |
+| Tokens | secrets store, `rt` domain | `gitlabToken`, `linearApiKey`; read env-first, then `secrets:read` scope `extension` |
 
 `mattstack.integrations` is one registry key holding one object; its fields
 are not keys. `rt settings explain mattstack.integrations.forge.host` reports
@@ -144,7 +145,6 @@ an unknown setting, and that is expected. Reads call
 the current object, merge the new fields in, and write the whole object back,
 because `setSetting` replaces the value at the key and the live team store
 already holds a `slack` block that a bare write would delete.
-| Tokens | secrets store, `rt` domain | `gitlabToken`, `linearApiKey`; read env-first, then `secrets:read` scope `extension` |
 
 ### 5.3 Boxscore reads
 
@@ -162,7 +162,7 @@ already holds a `slack` block that a bare write would delete.
 - Current user: `provider.validateToken()` at boot and after any secrets
   reload; cached in memory between those points.
 - Concurrency becomes a code constant (6). Port comes from `PORT`, set by
-  deck. Base URL comes from the forge host key.
+  deck. Base URL comes from the forge host field of `mattstack.integrations`.
 
 ### 5.4 Scope change
 
