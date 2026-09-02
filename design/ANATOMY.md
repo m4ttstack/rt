@@ -201,6 +201,15 @@ unknown while the daemon is down`, and the offline section omitted entirely.
 **16px font on mobile.** Below 16px iOS zooms the viewport on focus and the
 page scrolls sideways — the exact failure the 375px rule forbids.
 
+**The box grows with the draft.** The textarea is `rows=1` and takes the
+height of its content on every change (reset to `auto`, then `scrollHeight`,
+the same mechanism as the board's launch note), capped at **40vh** on desktop
+and **25vh** on the phone, scrolling inside itself past that. The hint chips
+pin to the last line (`align-self: flex-end` inside the still-centred
+`.input`) and the send button bottom-aligns with the box. A send clears the
+draft, which drops the box back to one line. The artboards show only that
+one-line state.
+
 Send is a `.aicon.filled` (accent-deep background, `--accent-on` text). On the
 phone it and every header control are **44px** (`.aicon.tap`).
 

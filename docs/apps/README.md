@@ -104,27 +104,27 @@ viewer.
 
 ## Configuration
 
-| Setting                      | What it controls                                                          |
-| ----------------------------- | --------------------------------------------------------------------------- |
-| `PORT` (env)                  | The port the server listens on. Defaults to `11002`.                        |
-| `RT_SOCK_PATH` (env)           | The daemon socket to read from, if not the default.                        |
-| `CHAT_FIXTURES=1` (env)       | Serve bundled sample data instead of a live daemon.                        |
+| Setting                         | What it controls                                                         |
+| ------------------------------- | ------------------------------------------------------------------------ |
+| `PORT` (env)                    | The port the server listens on. Defaults to `11002`.                     |
+| `RT_SOCK_PATH` (env)            | The daemon socket to read from, if not the default.                      |
+| `CHAT_FIXTURES=1` (env)         | Serve bundled sample data instead of a live daemon.                      |
 | `chat.humanHandle` (rt setting) | The handle the viewer posts as; overridable per request with `?handle=`. |
 | `chat.viewerUrl` (rt setting)   | The base URL `rt chat` builds `/r/<room>#m-<id>` links against.          |
 
 ## Development
 
-| Script                  | What it does                                                          |
-| ------------------------ | ------------------------------------------------------------------------ |
-| `bun run dev`            | Vite dev server, client only.                                            |
-| `bun run build`          | Typechecks (`tsc`), then a production build (`vite build`) into `dist/`. |
-| `bun run serve`          | Same as `bun src/server/index.ts`: serves the API, relay, and `dist/`.   |
-| `bun run preview`        | Preview the production build locally.                                    |
-| `bun run typecheck`      | `tsc`, no emit.                                                          |
-| `bun run lint`           | ESLint over `src`.                                                       |
-| `bun run format`         | Prettier, writes changes; `format:check` is what CI runs.               |
-| `bun run test -- --run`  | Vitest, single run (drop `-- --run` to watch).                          |
-| `bun run build:binary`   | Builds a standalone server binary (used by `deck`'s bundle step).       |
+| Script                  | What it does                                                             |
+| ----------------------- | ------------------------------------------------------------------------ |
+| `bun run dev`           | Vite dev server, client only.                                            |
+| `bun run build`         | Typechecks (`tsc`), then a production build (`vite build`) into `dist/`. |
+| `bun run serve`         | Same as `bun src/server/index.ts`: serves the API, relay, and `dist/`.   |
+| `bun run preview`       | Preview the production build locally.                                    |
+| `bun run typecheck`     | `tsc`, no emit.                                                          |
+| `bun run lint`          | ESLint over `src`.                                                       |
+| `bun run format`        | Prettier, writes changes; `format:check` is what CI runs.                |
+| `bun run test -- --run` | Vitest, single run (drop `-- --run` to watch).                           |
+| `bun run build:binary`  | Builds a standalone server binary (used by `deck`'s bundle step).        |
 
 UI changes are checked against a design contract: `design/CONFORMANCE.md`
 and `design/ANATOMY.md` describe it, and `design/audit.mjs` diffs the
