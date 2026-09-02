@@ -304,6 +304,154 @@ export async function runReadConformance(
   );
 }
 
+const METRIC_READS = [
+  'fetchMergeRequestIndex',
+  'fetchMergeRequestMetrics',
+  'fetchGroupProjects',
+  'fetchProject',
+  'fetchProjectPipelines',
+  'fetchUserEvents'
+] as const satisfies readonly ProviderMethod[];
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const isoDaysAgo = (days: number): string => new Date(Date.now() - days * DAY_MS).toISOString();
+const dateOnly = (iso: string): string => iso.slice(0, 10);
+
+/**
+ * The metric-grade reads. Read-only against the fixture project, so this
+ * block is safe to run alone (see reads-runner.ts). A provider that declares
+ * a read absent gets an absence check instead, so every method still lands
+ * in the report for every fixture.
+ */
+export async function runMetricsReadConformance(
+  fixture: ProviderFixture,
+  report: Reporter
+): Promise<void> {
+  const { provider, projectPath } = fixture;
+
+  const absent: ProviderMethod[] = [];
+  for (const method of METRIC_READS) {
+    const expectation = expectationFor(fixture.name, method);
+    if (expectation.support !== 'absent') continue;
+    absent.push(method);
+    await check(report, fixture, method, 'is absent, and its capability flag is false', async () => {
+      assert(
+        typeof (provider as unknown as Record<string, unknown>)[method] === 'undefined',
+        `${method} is declared absent but is defined`
+      );
+      if (expectation.capability) {
+        assert(
+          provider.capabilities[expectation.capability] === false,
+          `capabilities.${expectation.capability} should be false`
+        );
+      }
+    });
+  }
+  if (absent.length === METRIC_READS.length) return;
+
+  const updatedAfter = isoDaysAgo(365);
+  const now = new Date().toISOString();
+
+  await check(report, fixture, 'fetchProject', 'resolves the fixture project to its scoped id', async () => {
+    const ref = await provider.fetchProject!(projectPath);
+    assert(ref !== null, `fetchProject("${projectPath}") returned null`);
+    assert(ref.fullPath === projectPath, `expected fullPath "${projectPath}", got "${ref.fullPath}"`);
+    const expected = `${fixture.name}:${await fetchProjectId(fixture)}`;
+    assert(ref.id === expected, `expected id "${expected}", got "${ref.id}"`);
+  });
+
+  await check(report, fixture, 'fetchProject', 'returns null for a project that does not exist', async () => {
+    const ref = await provider.fetchProject!('glance-no-such-group-8b3f/glance-no-such-project-8b3f');
+    assert(ref === null, `expected null, got ${JSON.stringify(ref)}`);
+  });
+
+  await check(report, fixture, 'fetchGroupProjects', 'lists the fixture project under its group', async () => {
+    const slash = projectPath.lastIndexOf('/');
+    if (slash < 0) throw new Inconclusive(`fixture project "${projectPath}" has no group segment`);
+    const group = projectPath.slice(0, slash);
+    const paths = await provider.fetchGroupProjects!(group);
+    assert(paths.includes(projectPath), `group "${group}" listing ${paths.length} project(s) does not include "${projectPath}"`);
+  });
+
+  let indexRows: Awaited<ReturnType<NonNullable<typeof provider.fetchMergeRequestIndex>>> = [];
+  await check(report, fixture, 'fetchMergeRequestIndex', 'lists well-formed rows for the fixture project', async () => {
+    indexRows = await provider.fetchMergeRequestIndex!({ projectPaths: [projectPath], updatedAfter });
+    assert(Array.isArray(indexRows), 'expected an array');
+    if (indexRows.length === 0) throw new Inconclusive('no MRs updated in the last year; row shape is unverified');
+    const cutoff = Date.parse(updatedAfter);
+    for (const row of indexRows) {
+      assert(row.projectPath === projectPath, `row !${row.iid} names project "${row.projectPath}"`);
+      assert(Number.isInteger(row.iid) && row.iid > 0, `row has a bad iid: ${JSON.stringify(row).slice(0, 80)}`);
+      assert(Date.parse(row.updatedAt) >= cutoff, `row !${row.iid} updatedAt ${row.updatedAt} is before the bound`);
+      assert(['opened', 'merged', 'closed', 'locked'].includes(row.state), `row !${row.iid} has state "${row.state}"`);
+      assert(Array.isArray(row.labels), `row !${row.iid} labels is not an array`);
+    }
+  });
+
+  await check(report, fixture, 'fetchMergeRequestIndex', 'merged rows carry mergedAt, and a states filter narrows', async () => {
+    const merged = indexRows.filter((r) => r.state === 'merged');
+    if (merged.length === 0) throw new Inconclusive('no merged MRs in the last year; mergedAt is unverified');
+    for (const row of merged) {
+      assert(row.mergedAt !== null && !Number.isNaN(Date.parse(row.mergedAt)), `merged row !${row.iid} has mergedAt ${row.mergedAt}`);
+    }
+    const only = await provider.fetchMergeRequestIndex!({ projectPaths: [projectPath], updatedAfter, states: ['merged'] });
+    assert(only.length === merged.length, `states: ['merged'] returned ${only.length} rows, unfiltered had ${merged.length} merged`);
+    assert(only.every((r) => r.state === 'merged'), 'a states filter returned a non-merged row');
+  });
+
+  await check(report, fixture, 'fetchMergeRequestMetrics', 'reads one indexed MR and agrees with the index on labels', async () => {
+    const sample = indexRows[0];
+    if (!sample) throw new Inconclusive('no indexed MR to read metrics for');
+    const metrics = await provider.fetchMergeRequestMetrics!(projectPath, sample.iid);
+    assert(metrics !== null, `fetchMergeRequestMetrics(!${sample.iid}) returned null for an indexed MR`);
+    assert(metrics.iid === sample.iid && metrics.projectPath === projectPath, 'metrics names a different MR');
+    assert(Array.isArray(metrics.notes), 'notes is not an array');
+    for (const note of metrics.notes) {
+      assert(typeof note.system === 'boolean' && typeof note.inline === 'boolean', `note is malformed: ${JSON.stringify(note)}`);
+      assert(!Number.isNaN(Date.parse(note.createdAt)), `note createdAt "${note.createdAt}" does not parse`);
+    }
+    assert(
+      JSON.stringify([...metrics.labels].sort()) === JSON.stringify([...sample.labels].sort()),
+      `labels disagree: index ${JSON.stringify(sample.labels)}, metrics ${JSON.stringify(metrics.labels)}`
+    );
+  });
+
+  await check(report, fixture, 'fetchMergeRequestMetrics', 'returns null for an MR that does not exist', async () => {
+    const metrics = await provider.fetchMergeRequestMetrics!(projectPath, 99_999_999);
+    assert(metrics === null, `expected null, got ${JSON.stringify(metrics)?.slice(0, 80)}`);
+  });
+
+  await check(report, fixture, 'fetchProjectPipelines', 'lists pipelines in a window, filtered by the token user', async () => {
+    const all = await provider.fetchProjectPipelines!(projectPath, { updatedAfter, updatedBefore: now });
+    assert(Array.isArray(all), 'expected an array');
+    if (all.length === 0) throw new Inconclusive('no pipelines in the last year; shape and filtering are unverified');
+    for (const p of all) {
+      assert(p.id.startsWith(`${fixture.name}:pipeline:`), `pipeline id "${p.id}" is not scoped`);
+      assert(typeof p.status === 'string' && p.status.length > 0, `pipeline ${p.id} has no status`);
+      assert(p.username === null, `unfiltered listing carried username "${p.username}"`);
+    }
+    const self = await provider.validateToken();
+    const mine = await provider.fetchProjectPipelines!(projectPath, { username: self.username, updatedAfter, updatedBefore: now });
+    assert(mine.length <= all.length, 'a username filter returned more pipelines than the unfiltered listing');
+    assert(mine.every((p) => p.username === self.username), 'a filtered pipeline does not carry the filter username');
+  });
+
+  await check(report, fixture, 'fetchUserEvents', 'reads the token user\'s push events', async () => {
+    const self = await provider.validateToken();
+    const events = await provider.fetchUserEvents!(self.id, {
+      action: 'pushed',
+      after: dateOnly(isoDaysAgo(366)),
+      before: dateOnly(new Date(Date.now() + DAY_MS).toISOString())
+    });
+    assert(Array.isArray(events), 'expected an array');
+    if (events.length === 0) throw new Inconclusive('no push events in the last year for the token user');
+    for (const e of events) {
+      assert(typeof e.action === 'string' && e.action.length > 0, `event has no action: ${JSON.stringify(e)}`);
+      assert(!Number.isNaN(Date.parse(e.createdAt)), `event createdAt "${e.createdAt}" does not parse`);
+    }
+  });
+}
+
 export async function runUnsupportedConformance(
   fixture: ProviderFixture,
   report: Reporter

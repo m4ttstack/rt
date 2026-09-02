@@ -12,6 +12,7 @@ import {
   runCiConformance,
   runGitLabMutationConformance,
   runMergeConformance,
+  runMetricsReadConformance,
   runReadConformance,
   runUnsupportedConformance,
   runWriteConformance
@@ -34,6 +35,7 @@ for (const fixture of fixtures) {
   console.log(`\n=== ${fixture.name} (${fixture.projectPath}) ===\n`);
   try {
     await runReadConformance(fixture, report);
+    await runMetricsReadConformance(fixture, report);
     await runUnsupportedConformance(fixture, report);
     await runWriteConformance(fixture, report);
     // Ahead of the merge cycle, which merges into the default branch: this
