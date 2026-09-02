@@ -308,7 +308,7 @@ describe('effective-inputs route', () => {
 });
 
 describe('stage-doc route', () => {
-  it('returns the compiled doc text at the first recorded pack + sha', async () => {
+  it('shows the doc at the first recorded sha via a cwd-relative path, so a pack nested inside a larger repo resolves', async () => {
     vi.mocked(rt.getRun).mockResolvedValue({
       ok: true,
       data: baseDetail({
@@ -339,7 +339,7 @@ describe('stage-doc route', () => {
       '-C',
       '/packs/mattstack',
       'show',
-      '59b90cd:attachments/stage-provision/SKILL.md',
+      '59b90cd:./attachments/stage-provision/SKILL.md',
     ]);
   });
 

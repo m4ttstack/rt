@@ -208,11 +208,14 @@ export function mountEffectiveInputs(
       const packDir = await resolvePackDir(first.pack);
       if (!packDir) return c.json(NO_DOC, 404);
 
+      // git resolves `<rev>:<path>` from the repo root, not from `-C`'s cwd;
+      // the `./` anchors the path to the pack dir, which is a subdirectory of
+      // its repo for a team pack (teams/<team>/mattstack/packs/<pack>).
       const show = await runGit([
         '-C',
         packDir,
         'show',
-        `${first.sha}:attachments/stage-${stage}/SKILL.md`,
+        `${first.sha}:./attachments/stage-${stage}/SKILL.md`,
       ]);
       if (show.code !== 0) return c.json(NO_DOC, 404);
 
