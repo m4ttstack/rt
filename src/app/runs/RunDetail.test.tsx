@@ -14,6 +14,7 @@ const artifactGet = vi.fn();
 const seenPost = vi.fn();
 const abandonPost = vi.fn();
 const enrichPost = vi.fn();
+const linearWorkspaceGet = vi.fn();
 
 vi.mock('../api', () => ({
   client: {
@@ -27,6 +28,11 @@ vi.mock('../api', () => ({
           },
         },
         enrich: { $post: (...args: unknown[]) => enrichPost(...args) },
+      },
+      settings: {
+        'linear-workspace': {
+          $get: (...args: unknown[]) => linearWorkspaceGet(...args),
+        },
       },
       seen: {
         ':runId': { $post: (...args: unknown[]) => seenPost(...args) },
@@ -142,6 +148,11 @@ afterEach(() => {
 });
 
 beforeEach(() => {
+  linearWorkspaceGet.mockResolvedValue({
+    ok: true,
+    status: 200,
+    json: async () => ({ workspace: 'acme' }),
+  });
   enrichPost.mockResolvedValue({
     ok: true,
     status: 200,
@@ -540,7 +551,27 @@ describe('RunDetail', () => {
     expect(link).toHaveTextContent('RT-1');
   });
 
-  it('leaves the ticket id as plain text when enrichment has no ticket url', async () => {
+  it('builds a Linear url from the ticket field when enrichment is cold', async () => {
+    detailGet.mockResolvedValue(detailResponse(FIXTURE));
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+
+    renderDetail();
+
+    const link = await screen.findByTestId('ticket-link');
+    expect(link).toHaveAttribute('href', 'https://linear.app/acme/issue/RT-1');
+    expect(link).toHaveTextContent('RT-1');
+  });
+
+  it('leaves the ticket id as plain text when neither enrichment nor a workspace slug gives a url', async () => {
+    linearWorkspaceGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ workspace: null }),
+    });
     detailGet.mockResolvedValue(detailResponse(FIXTURE));
     seenPost.mockResolvedValue({
       ok: true,

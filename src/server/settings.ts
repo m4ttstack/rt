@@ -93,6 +93,15 @@ export const settings = new Hono()
     const { value } = getSetting<number>('rt.runsPruneDays');
     return c.json({ days: value }, 200);
   })
+  /** The Linear workspace slug, so the client can build an issue url for a
+      ticket the branch cache never enriched. Team-scoped and nested, so it
+      is read off the integrations object rather than given its own key. */
+  .get('/api/settings/linear-workspace', c => {
+    const { value } = getSetting<{ linear?: { workspace?: string } }>(
+      'mattstack.integrations'
+    );
+    return c.json({ workspace: value?.linear?.workspace ?? null }, 200);
+  })
   .get('/api/settings/defs', c =>
     c.json({ defs: allDefs().map(defToWire) }, 200)
   )

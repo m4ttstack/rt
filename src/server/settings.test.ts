@@ -66,6 +66,11 @@ const EXPLAIN: Record<string, ExplainRow[]> = {
 vi.mock('@mattstack/rt-client', () => ({
   getSetting: vi.fn((key: string) => {
     if (key === 'rt.runsPruneDays') return { value: 45, provenance: [] };
+    if (key === 'mattstack.integrations')
+      return {
+        value: { linear: { teamKey: 'CV', workspace: 'acme' } },
+        provenance: [],
+      };
     throw new Error(`unexpected setting key in test: ${key}`);
   }),
   allDefs: vi.fn(() => DEFS),
@@ -105,6 +110,16 @@ describe('settings api', () => {
     // whatever the resolver returns instead of a literal.
     await expect(res.json()).resolves.toEqual({ days: 45 });
     expect(rt.getSetting).toHaveBeenCalledWith('rt.runsPruneDays');
+  });
+
+  it('reads the linear workspace slug out of mattstack.integrations', async () => {
+    const res = await settings.fetch(
+      new Request('http://localhost/api/settings/linear-workspace')
+    );
+
+    expect(res.status).toBe(200);
+    await expect(res.json()).resolves.toEqual({ workspace: 'acme' });
+    expect(rt.getSetting).toHaveBeenCalledWith('mattstack.integrations');
   });
 
   it('lists defs with writability computed, not copied', async () => {

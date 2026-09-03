@@ -33,7 +33,13 @@ import { LivenessChip, livenessSpec } from './LivenessChip';
 import { mrRef } from './mrRef';
 import { repoLabel } from './repoLabel';
 import { fieldsByKey, RunContext, Timeline } from './Timeline';
-import { useMarkSeen, useRun, useRunEvents, useRunsEnrich } from './useRuns';
+import {
+  useLinearWorkspace,
+  useMarkSeen,
+  useRun,
+  useRunEvents,
+  useRunsEnrich,
+} from './useRuns';
 
 function formatLocalTime(ms: number): string {
   return new Date(ms).toLocaleTimeString();
@@ -158,6 +164,7 @@ function SummaryCard({
   const clipboard = useClipboard();
   const byKey = fieldsByKey(fields);
   const enrichQuery = useRunsEnrich(run.branch ? [run.branch] : []);
+  const workspace = useLinearWorkspace().data ?? null;
   const enrichment = run.branch ? enrichQuery.data?.[run.branch] : undefined;
 
   const values = new Map(
@@ -192,7 +199,15 @@ function SummaryCard({
   const commitsValue = values.get('commits') ?? null;
 
   const title = enrichment?.ticket?.title;
-  const ticketUrl = enrichment?.ticket?.url ?? null;
+  // Enrichment's url wins (it carries the real title slug); the workspace
+  // slug covers every ticket whose branch the board never cached, which is
+  // any prefix outside `board.ticketPrefixes`. Linear resolves the bare
+  // `/issue/<id>` form, so no title slug is needed.
+  const ticketUrl =
+    enrichment?.ticket?.url ??
+    (workspace && ticketValue
+      ? `https://linear.app/${workspace}/issue/${ticketValue}`
+      : null);
   const mrLabel = mr
     ? (mr.text ??
       `${mr.iid ? `!${mr.iid}` : 'MR'}${mr.state ? ` ${mr.state}` : ''}`)

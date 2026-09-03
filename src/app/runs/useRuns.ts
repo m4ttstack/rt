@@ -99,6 +99,23 @@ export function useRunsPruneDays() {
   });
 }
 
+/** The Linear workspace slug (team-scoped, under `mattstack.integrations`).
+    The branch cache only enriches branches the board syncs, so a ticket on
+    any other prefix has an id and no url; the slug is what lets the client
+    build one from the id alone. Null when the team has not set it. */
+export function useLinearWorkspace() {
+  return useQuery({
+    queryKey: ['settings', 'linearWorkspace'],
+    queryFn: async () => {
+      const res = await client.api.settings['linear-workspace'].$get();
+      if (!res.ok)
+        throw new Error(`linear workspace read failed: ${res.status}`);
+      const { workspace } = await res.json();
+      return workspace;
+    },
+  });
+}
+
 /** One batched POST for every visible row's branch, keyed on the
     de-duplicated, sorted branch list -- an unsorted key would treat the same
     visible set in a different order as a different query and refetch
