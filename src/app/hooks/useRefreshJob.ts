@@ -27,6 +27,12 @@ export function useRefreshJob(handlers: RefreshJobHandlers) {
   const startedForRef = useRef<RangeSelection | null>(null);
   // Seeds the poll query so its first GET waits POLL_MS (matching the old setTimeout(tick, POLL_MS)) instead of firing immediately.
   const startResultRef = useRef<RefreshResult | null>(null);
+  // Closes the gap `jobId !== null` alone can't cover: between a start() call kicking off the
+  // POST and that POST resolving into a jobId, `jobId` is still null. A second start() in that
+  // window (e.g. a window-refocus refetch re-firing the cold-cache effect while the first POST
+  // is still in flight) would overwrite jobId and orphan the first job. Set synchronously before
+  // the first await, so a re-entrant call always sees it.
+  const startInFlightRef = useRef(false);
 
   const startMutation = useMutation({
     mutationFn: async (selection: RangeSelection) => {
@@ -76,6 +82,8 @@ export function useRefreshJob(handlers: RefreshJobHandlers) {
 
   const start = useCallback(
     async (selection: RangeSelection) => {
+      if (jobId !== null || startInFlightRef.current) return;
+      startInFlightRef.current = true;
       try {
         const status = await startMutation.mutateAsync(selection);
         startedForRef.current = selection;
@@ -83,9 +91,11 @@ export function useRefreshJob(handlers: RefreshJobHandlers) {
         setJobId(status.jobId);
       } catch (e) {
         handlersRef.current.onError((e as Error).message);
+      } finally {
+        startInFlightRef.current = false;
       }
     },
-    [startMutation],
+    [jobId, startMutation],
   );
 
   const cancel = useCallback(() => {

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { MattstackShell, NotFoundPage } from "@mattstack/app-kit/app";
+import { Alert, Stack, Text } from "@mattstack/app-kit/core";
+import { Icon } from "@mattstack/app-kit/icons";
 import { RailLink } from "@mattstack/app-kit/router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
@@ -128,16 +130,16 @@ function AppShell() {
       {route.name === "not-found" && <NotFoundPage />}
 
       {route.name === "leaderboard" && (
-        <div className="mx-auto max-w-[96rem] px-6 py-8">
-          <header className="mb-5 flex items-start justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold tracking-tight text-foreground">Boxscore</h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                GitLab performance across a hand-picked set ... volume metrics are gameable, so weigh
-                them against the quality columns. See the README caveats before this becomes a scoreboard.
-              </p>
-            </div>
-          </header>
+        <Stack gap="lg" px="xl" py="xl" style={{ maxWidth: "96rem", margin: "0 auto" }}>
+          <Stack gap={2}>
+            <Text fw={700} size="xl">
+              Boxscore
+            </Text>
+            <Text size="sm" c="dimmed" style={{ maxWidth: "56rem" }}>
+              GitLab performance across a hand-picked set ... volume metrics are gameable, so weigh
+              them against the quality columns. See the README caveats before this becomes a scoreboard.
+            </Text>
+          </Stack>
 
           <Controls
             range={rangeState.range}
@@ -153,31 +155,40 @@ function AppShell() {
             data={data}
           />
 
-          {refreshJob.refreshing && <RefreshProgressBar progress={refreshJob.progress} onCancel={() => {
+          {refreshJob.refreshing && (
+            <RefreshProgressBar
+              progress={refreshJob.progress}
+              onCancel={() => {
                 // cancel() nulls the job without routing through onDone or onError, the only
                 // other paths that clear this, so a cancelled refresh would leave a Loading
                 // state with nothing running behind it.
                 setAwaitingRefresh(false);
                 refreshJob.cancel();
-              }} />}
+              }}
+            />
+          )}
 
-          <div className="mt-5">
+          <Stack gap="md">
             {error && (
-              <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-                <strong>Error:</strong> {error}
-              </div>
+              <Alert color="red" title="Error" variant="light" icon={<Icon name="warning" size={16} />}>
+                {error}
+              </Alert>
             )}
 
-            {!error && loading && <p className="text-muted-foreground">Loading…</p>}
+            {!error && loading && <Text c="dimmed">Loading…</Text>}
 
             {data && (
-              <>
+              <Stack gap="md">
                 {data.warnings.length > 0 && (
-                  <ul className="mb-4 space-y-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-700 dark:text-amber-300/90">
-                    {data.warnings.map((w, i) => (
-                      <li key={i}>⚠ {w.message}</li>
-                    ))}
-                  </ul>
+                  <Alert color="warn" variant="light" icon={<Icon name="warning" size={16} />}>
+                    <Stack gap={4}>
+                      {data.warnings.map((w, i) => (
+                        <Text key={i} size="xs">
+                          {w.message}
+                        </Text>
+                      ))}
+                    </Stack>
+                  </Alert>
                 )}
 
                 {view === "table" ? (
@@ -187,19 +198,21 @@ function AppShell() {
                 )}
 
                 {Object.keys(data.metricNotes).length > 0 && (
-                  <dl className="mt-4 space-y-1 text-xs text-muted-foreground">
+                  <Stack gap={2}>
                     {Object.entries(data.metricNotes).map(([k, v]) => (
-                      <div key={k}>
-                        <dt className="inline font-medium text-foreground/70">{k}:</dt>{" "}
-                        <dd className="inline">{v}</dd>
-                      </div>
+                      <Text key={k} size="xs" c="dimmed">
+                        <Text component="span" fw={500} c="dimmed">
+                          {k}:
+                        </Text>{" "}
+                        {v}
+                      </Text>
                     ))}
-                  </dl>
+                  </Stack>
                 )}
-              </>
+              </Stack>
             )}
-          </div>
-        </div>
+          </Stack>
+        </Stack>
       )}
     </MattstackShell>
   );
