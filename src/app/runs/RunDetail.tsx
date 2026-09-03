@@ -30,6 +30,7 @@ import { PAGE_ROW_HEIGHT } from '../chrome';
 import { CommandProvenance } from './CommandProvenance';
 import { EffectiveInputs } from './EffectiveInputs';
 import { LivenessChip, livenessSpec } from './LivenessChip';
+import { mrRef } from './mrRef';
 import { repoLabel } from './repoLabel';
 import { fieldsByKey, RunContext, Timeline } from './Timeline';
 import { useMarkSeen, useRun, useRunEvents, useRunsEnrich } from './useRuns';
@@ -164,8 +165,11 @@ function SummaryCard({
   );
   // `m` must copy what the card SHOWS: the MR column renders enrichment when
   // present, so a field/enrichment divergence would otherwise leave the kbd
-  // hint beside one URL while copying another.
-  if (enrichment?.mr?.webUrl) values.set('mr', enrichment.mr.webUrl);
+  // hint beside one URL while copying another. A field-only run already has
+  // the field value in the map from the HOTKEY_FIELDS seed above.
+  const mrField = byKey.get('mr')?.value ?? null;
+  const mr = mrRef(enrichment?.mr, mrField);
+  if (mr?.webUrl && enrichment?.mr) values.set('mr', mr.webUrl);
 
   // Independent of the click-to-copy affordances below: every hotkey writes
   // the clipboard directly, same behavior HandoffField pinned before the
@@ -188,7 +192,10 @@ function SummaryCard({
   const commitsValue = values.get('commits') ?? null;
 
   const title = enrichment?.ticket?.title;
-  const mr = enrichment?.mr;
+  const mrLabel = mr
+    ? (mr.text ??
+      `${mr.iid ? `!${mr.iid}` : 'MR'}${mr.state ? ` ${mr.state}` : ''}`)
+    : null;
 
   const showAbandon = run.attention.needs && run.attention.reason === 'stale';
   const { color: livenessColor, label: livenessLabel } = livenessSpec(run);
@@ -244,11 +251,11 @@ function SummaryCard({
                   fz={13}
                   data-testid="mr-link"
                 >
-                  !{mr.iid} {mr.state}
+                  {mrLabel}
                 </Anchor>
               ) : (
-                <Text fz={13}>
-                  !{mr.iid} {mr.state}
+                <Text fz={13} truncate style={{ minWidth: 0 }}>
+                  {mrLabel}
                 </Text>
               )
             ) : (
@@ -258,9 +265,9 @@ function SummaryCard({
             )}
             <Kbd size="xs">m</Kbd>
           </Group>
-          {mr?.pipeline?.status && (
+          {mr?.ciStatus && (
             <Text c={text.muted} fz={11}>
-              {ciStatusLabel(mr.pipeline.status)}
+              {ciStatusLabel(mr.ciStatus)}
             </Text>
           )}
         </Stack>

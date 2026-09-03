@@ -548,6 +548,62 @@ describe('RunDetail', () => {
     expect(within(card).getByText('success')).toBeInTheDocument();
   });
 
+  it('falls back to the mr field URL when enrichment has nothing for the branch', async () => {
+    detailGet.mockResolvedValue(
+      detailResponse({
+        ...FIXTURE,
+        fields: [
+          ...FIXTURE.fields,
+          {
+            key: 'mr',
+            value: 'https://gitlab.example.com/g/p/-/merge_requests/43166',
+            produced_by: 'review',
+            at: 5,
+          },
+        ],
+      })
+    );
+    seenPost.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+
+    renderDetail();
+
+    const link = await screen.findByTestId('mr-link');
+    expect(link).toHaveAttribute(
+      'href',
+      'https://gitlab.example.com/g/p/-/merge_requests/43166'
+    );
+    expect(link).toHaveTextContent('!43166');
+  });
+
+  it('still prefers enrichment when both the field and the cache answer', async () => {
+    enrichPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ 'feat/x': enrichedBranch }),
+    });
+    detailGet.mockResolvedValue(
+      detailResponse({
+        ...FIXTURE,
+        fields: [
+          ...FIXTURE.fields,
+          {
+            key: 'mr',
+            value: 'https://stale.example.com/mr/1',
+            produced_by: 'ship',
+            at: 5,
+          },
+        ],
+      })
+    );
+    seenPost.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+
+    renderDetail();
+
+    const link = await screen.findByTestId('mr-link');
+    expect(link).toHaveAttribute('href', 'https://example.com/mr/7');
+    expect(link).toHaveTextContent('!7 opened');
+  });
+
   it('shows the commits field and repoLabel under branch/worktree, and last-event recency under liveness', async () => {
     const withMoreFields: RunDetailData = {
       ...FIXTURE,
