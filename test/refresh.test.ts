@@ -210,7 +210,7 @@ describe("runRefresh: full roster (visible + hidden)", () => {
 describe("runRefresh: watermark-driven project scan", () => {
   it("uses lastScan(project) as updatedAfter, falling back to the window start", async () => {
     const store = getStore();
-    store.setLastScan("g/p1", "2026-04-15T00:00:00.000Z");
+    store.recordScan("g/p1", { from: "2026-03-01T00:00:00.000Z", at: "2026-04-15T00:00:00.000Z" });
     const { provider, calls } = makeFakeProvider();
 
     await runRefresh({
@@ -230,14 +230,30 @@ describe("runRefresh: watermark-driven project scan", () => {
     );
     expect(byProject.get("g/p1")).toBe("2026-04-15T00:00:00.000Z");
     expect(byProject.get("g/p2")).toBe(WINDOW.start);
+    // An incremental scan never raises the floor; a first scan sets it to where it started.
+    expect(store.scanFloor("g/p1")).toBe("2026-03-01T00:00:00.000Z");
+    expect(store.scanFloor("g/p2")).toBe(WINDOW.start);
+  });
+
+  it("backfills from the window start when it precedes the floor, and lowers the floor to it", async () => {
+    const store = getStore();
+    store.recordScan("g/p", { from: "2026-05-15T00:00:00.000Z", at: "2026-05-20T00:00:00.000Z" });
+    const { provider, calls } = makeFakeProvider();
+
+    await runRefresh({ store, provider, settings: settings(), env: ENV, window: WINDOW });
+
+    const scan = calls.find((c) => c.method === "fetchMergeRequestIndex")!.args[0] as FetchMergeRequestIndexOptions;
+    expect(scan.updatedAfter).toBe(WINDOW.start);
+    expect(store.scanFloor("g/p")).toBe(WINDOW.start);
+    expect(store.lastScan("g/p")).not.toBe("2026-05-20T00:00:00.000Z");
   });
 });
 
 describe("runRefresh: failed-scan invariant", () => {
   it("leaves the failed project's watermark untouched, advances the other, and warns instead of throwing", async () => {
     const store = getStore();
-    store.setLastScan("g/A", "2026-04-01T00:00:00.000Z");
-    store.setLastScan("g/B", "2026-04-01T00:00:00.000Z");
+    store.recordScan("g/A", { from: "2026-03-01T00:00:00.000Z", at: "2026-04-01T00:00:00.000Z" });
+    store.recordScan("g/B", { from: "2026-03-01T00:00:00.000Z", at: "2026-04-01T00:00:00.000Z" });
     const { provider } = makeFakeProvider({
       fetchMergeRequestIndex: async (options) => {
         if (options.projectPaths![0] === "g/A") throw new Error("boom");

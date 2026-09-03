@@ -6,10 +6,6 @@ import type { SuspectedBot } from "../shared/types.js";
 
 export type { SuspectedBot };
 
-/** Wide enough to sweep every stored row; ISO date strings sort lexicographically so this bounds indexRowsUpdatedWithin's range comparison for any real data. */
-const EPOCH = "0000-01-01T00:00:00.000Z";
-const FAR_FUTURE = "9999-12-31T23:59:59.999Z";
-
 /**
  * Scan every stored MR (index authors + metrics note authors/approvers) for usernames
  * that match built-in or extra bot patterns, excluding usernames already known as roster
@@ -24,7 +20,7 @@ export async function scanSuspectedBots(
   ];
 
   const store = getStore();
-  const indexRows = store.indexRowsUpdatedWithin(EPOCH, FAR_FUTURE);
+  const indexRows = store.allIndexRows();
   const keys = indexRows.map((r) => mrKey(r.projectPath, r.iid));
   const metricsRows = store.metricsByKeys(keys);
 

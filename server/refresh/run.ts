@@ -35,6 +35,19 @@ export interface RefreshRunOptions {
 const isAbort = (err: unknown): boolean => (err as Error).name === "AbortError";
 
 /**
+ * Where a project's index scan starts: incrementally from its watermark, unless the
+ * window reaches back past everything scanned so far, in which case from the window's
+ * start so the older range is backfilled rather than skipped. Upserts are keyed by
+ * project:iid, so re-scanning the overlap is idempotent.
+ */
+function scanFrom(store: Store, projectPath: string, windowStart: string): string {
+  const watermark = store.lastScan(projectPath);
+  const floor = store.scanFloor(projectPath);
+  if (watermark === null || floor === null) return windowStart;
+  return Date.parse(windowStart) < Date.parse(floor) ? windowStart : watermark;
+}
+
+/**
  * Spec 7.3's six-step refresh, run directly against the store. Per-item failures are
  * recorded as warnings and do not stop the run; only an abort or a total failure throws.
  */
@@ -93,11 +106,11 @@ export async function runRefresh(opts: RefreshRunOptions): Promise<LeaderboardWa
     CONCURRENCY,
     async (projectPath) => {
       signal?.throwIfAborted();
-      const updatedAfter = store.lastScan(projectPath) ?? window.start;
+      const updatedAfter = scanFrom(store, projectPath, window.start);
       try {
         const rows = await scanProject(source, projectPath, updatedAfter, { signal });
         store.upsertIndexRows(rows);
-        store.setLastScan(projectPath, scanStart);
+        store.recordScan(projectPath, { from: updatedAfter, at: scanStart });
       } catch (err) {
         if (isAbort(err)) throw err;
         warnings.push({ code: "mr_fetch_failed", message: `MRs for ${projectPath}: ${(err as Error).message}` });

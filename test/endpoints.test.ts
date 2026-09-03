@@ -14,6 +14,7 @@ const { getStore, __resetStore } = await import("../server/store/index.js");
 
 const WINDOW: TimeWindow = { start: "2026-05-01T00:00:00.000Z", end: "2026-06-01T00:00:00.000Z", key: "30d" };
 const SELECTION = { range: "30d", trend: false };
+const DAY_MS = 24 * 60 * 60 * 1000;
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
 const PROJECTS = ["acme/acme-web"];
@@ -87,14 +88,28 @@ describe("refresh endpoints", () => {
     expect(body.cached).toBe(false);
   });
 
-  it("GET /api/leaderboard?cacheOnly=1 serves a snapshot without refetching once every configured project has been scanned", async () => {
-    for (const p of PROJECTS) getStore().setLastScan(p, new Date().toISOString());
+  it("GET /api/leaderboard?cacheOnly=1 serves a snapshot without refetching once every configured project's floor reaches the window start", async () => {
+    const now = Date.now();
+    for (const p of PROJECTS) {
+      getStore().recordScan(p, { from: new Date(now - 100 * DAY_MS).toISOString(), at: new Date(now).toISOString() });
+    }
     const res = await app.request("/api/leaderboard?range=7d&cacheOnly=1");
     expect(res.status).toBe(200);
     const body = await res.json() as Record<string, unknown>;
     // A warm store means the probe must NOT report a cold cache.
     expect(body.cached).toBeUndefined();
     expect(body.hasTrend).toBe(false);
+  });
+
+  it("GET /api/leaderboard?cacheOnly=1 returns {cached:false} when the scan floor is later than the window start", async () => {
+    const now = Date.now();
+    for (const p of PROJECTS) {
+      getStore().recordScan(p, { from: new Date(now - 3 * DAY_MS).toISOString(), at: new Date(now).toISOString() });
+    }
+    const res = await app.request("/api/leaderboard?range=7d&cacheOnly=1");
+    expect(res.status).toBe(200);
+    const body = await res.json() as Record<string, unknown>;
+    expect(body.cached).toBe(false);
   });
 });
 

@@ -44,6 +44,17 @@ export interface SourceProvider {
   restRequest(method: string, path: string, body?: unknown, op?: string, io?: RequestIO): Promise<Response>;
 }
 
+type ProviderFactory = (env: Env) => GitProvider;
+
+let factory: ProviderFactory | null = null;
+
+/** Test seam. Vitest must inject; a real GitLabProvider would send requests off the machine. */
+export function __setProviderFactory(f: ProviderFactory | null): void {
+  factory = f;
+}
+
 export function makeProvider(env: Env): GitProvider {
+  if (factory) return factory(env);
+  if (process.env.VITEST) throw new Error("tests must inject a provider factory (__setProviderFactory)");
   return new GitLabProvider(env.baseUrl, env.token);
 }

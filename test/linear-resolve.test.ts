@@ -37,13 +37,23 @@ const rawFor = (id: string) => ({
  * real (unmocked) function would run and hit the network. Stubbing one level lower, at
  * fetch, exercises the real retry/error-classification path (already covered in isolation
  * by test/http-retry.test.ts) alongside resolveLinearTickets's own fallback logic.
+ *
+ * Returns the identifier list of every request, in order. Retries repeat a list verbatim,
+ * so "which queries were issued" is the set of distinct lists, not the call count.
  */
-function stubLinear(respond: (ids: string[], query: string) => Response): void {
+function stubLinear(respond: (ids: string[], query: string) => Response): string[][] {
+  const calls: string[][] = [];
   vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
     const { query } = JSON.parse(String(init?.body ?? "{}")) as { query: string };
-    return respond(idsInQuery(query), query);
+    const ids = idsInQuery(query);
+    calls.push(ids);
+    return respond(ids, query);
   });
+  return calls;
 }
+
+const distinctQueries = (calls: string[][]): string[][] =>
+  [...new Set(calls.map((ids) => ids.join(",")))].map((s) => s.split(","));
 
 /** A batch (>1 id) response that always 429s; retry-after:0 keeps the real retry loop fast. */
 const alwaysRateLimited = () => new Response("rate limited", { status: 429, headers: { "retry-after": "0" } });
@@ -60,7 +70,7 @@ describe("resolveLinearTickets resilience", () => {
   // batch must fall back to individual lookups, exactly like the unknown-identifier path.
   it("falls back to individual lookups when a known-valid batch chunk fails", async () => {
     getStore().putLinearIds([{ id: "ACME-9001", valid: true }, { id: "ACME-9002", valid: true }]);
-    stubLinear((ids) => (ids.length > 1 ? alwaysRateLimited() : okData(ids, rawFor)));
+    const calls = stubLinear((ids) => (ids.length > 1 ? alwaysRateLimited() : okData(ids, rawFor)));
 
     const warnings: LeaderboardWarning[] = [];
     const issues = await resolveLinearTickets(
@@ -70,6 +80,29 @@ describe("resolveLinearTickets resilience", () => {
     );
 
     expect(issues.map((i) => i.identifier).sort()).toEqual(["ACME-9001", "ACME-9002"]);
+    // One batch query carrying both identifiers (retried, but never re-chunked), then
+    // exactly one single-identifier fallback per identifier.
+    const queries = distinctQueries(calls);
+    expect(queries.filter((ids) => ids.length > 1)).toEqual([["ACME-9001", "ACME-9002"]]);
+    expect(calls.filter((ids) => ids.length === 1).flat().sort()).toEqual(["ACME-9001", "ACME-9002"]);
+  });
+
+  // The batch exists to avoid N per-identifier round trips: when it succeeds, nothing
+  // else may be issued.
+  it("resolves known-valid identifiers in one batch query when the batch succeeds", async () => {
+    getStore().putLinearIds([{ id: "ACME-9001", valid: true }, { id: "ACME-9002", valid: true }]);
+    const calls = stubLinear((ids) => okData(ids, rawFor));
+
+    const warnings: LeaderboardWarning[] = [];
+    const issues = await resolveLinearTickets(
+      "key",
+      [sourceMr(1, "ACME-9001"), sourceMr(2, "ACME-9002")],
+      warnings,
+    );
+
+    expect(issues.map((i) => i.identifier).sort()).toEqual(["ACME-9001", "ACME-9002"]);
+    expect(calls).toEqual([["ACME-9001", "ACME-9002"]]);
+    expect(warnings).toEqual([]);
   });
 
   it("warns when identifiers are lost even after the individual fallback", async () => {

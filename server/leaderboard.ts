@@ -8,7 +8,7 @@ import { runRefresh } from "./refresh/index.js";
 import { makeProvider } from "./source/index.js";
 import { getStore } from "./store/index.js";
 import { buildFetchResult, hasDataFor, storedIdentities } from "./store/query.js";
-import { priorWindow } from "./util/window.js";
+import { baseWindow, covers, priorWindow } from "./util/window.js";
 import type { FetchResult } from "./store/model.js";
 import type {
   LeaderboardResponse,
@@ -110,27 +110,30 @@ async function buildLeaderboard(
   const scope = resolveScope();
   const store = getStore();
   const pw = priorWindow(opts.window);
+  // Everything this request reads: the window, plus its prior when deltas are wanted.
+  const read: TimeWindow = opts.trend
+    ? { start: pw.start, end: opts.window.end, key: opts.window.key }
+    : opts.window;
+  const warnings: LeaderboardWarning[] = [];
 
   if (opts.refresh) {
-    // runRefresh scans forward from each project's watermark, so its lower bound decides
-    // how far back the store gets populated. Widen it to the prior window's start when
-    // trend is requested, or a cold start would never scan far enough back to seed it.
-    const refreshWindow: TimeWindow = opts.trend
-      ? { start: pw.start, end: opts.window.end, key: opts.window.key }
-      : opts.window;
-    await runRefresh({
+    // Spec 7.3: the refresh covers the base window (90 days, 180 with trend), so switching
+    // presets never refetches; only a range the base cannot cover is fetched as itself.
+    const base = baseWindow(opts.trend, new Date());
+    const refreshed = await runRefresh({
       store,
       provider: makeProvider(env),
       settings,
       env,
-      window: refreshWindow,
+      window: covers(base, read) ? base : read,
       signal: opts.signal,
       onProgress: withWindow("current", opts.onProgress),
     });
+    warnings.push(...refreshed);
   }
 
-  if (opts.cacheOnly && !opts.refresh && !hasDataFor(store, settings.projects)) {
-    throw new ColdCacheError(`no data for ${settings.projects.join(", ")}`);
+  if (opts.cacheOnly && !opts.refresh && !hasDataFor(store, settings.projects, read)) {
+    throw new ColdCacheError(`no data back to ${read.start} for ${settings.projects.join(", ")}`);
   }
 
   const rosterUsernames = settings.roster.map((r) => r.username);
@@ -142,7 +145,6 @@ async function buildLeaderboard(
   opts.onProgress?.({ phase: "compute", label: "Computing metrics", done: 0, total: 0, window: "current" });
 
   const who = await getCurrentUser(env.baseUrl, env.token);
-  const warnings: LeaderboardWarning[] = [];
   if (!who) {
     warnings.push({ code: "user_lookup_failed", message: "GitLab /user lookup failed; no row is highlighted as you" });
   }

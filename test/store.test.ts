@@ -63,12 +63,39 @@ describe("index rows", () => {
     expect(s.indexRowsUpdatedWithin("2026-05-02T00:00:00Z", "2026-05-20T00:00:00Z").map((r) => r.iid)).toEqual([2]);
   });
 
-  it("a scan watermark is per project and absent until set", () => {
+  it("allIndexRows sweeps every stored row regardless of updatedAt", () => {
+    const s = getStore();
+    s.clear();
+    s.upsertIndexRows([
+      row({ iid: 1, updatedAt: "1999-01-01T00:00:00Z" }),
+      row({ iid: 2, updatedAt: "2026-05-15T00:00:00Z" }),
+    ]);
+    expect(s.allIndexRows().map((r) => r.iid).sort()).toEqual([1, 2]);
+  });
+});
+
+describe("scan meta", () => {
+  it("the watermark and floor are per project and absent until a scan is recorded", () => {
     const s = getStore();
     expect(s.lastScan("g/p")).toBeNull();
-    s.setLastScan("g/p", "2026-05-03T00:00:00Z");
+    expect(s.scanFloor("g/p")).toBeNull();
+    s.recordScan("g/p", { from: "2026-04-01T00:00:00Z", at: "2026-05-03T00:00:00Z" });
     expect(s.lastScan("g/p")).toBe("2026-05-03T00:00:00Z");
+    expect(s.scanFloor("g/p")).toBe("2026-04-01T00:00:00Z");
     expect(s.lastScan("g/other")).toBeNull();
+    expect(s.scanFloor("g/other")).toBeNull();
+  });
+
+  it("a later scan advances the watermark and keeps the floor; an earlier `from` lowers the floor", () => {
+    const s = getStore();
+    s.recordScan("g/p", { from: "2026-04-01T00:00:00Z", at: "2026-05-03T00:00:00Z" });
+    s.recordScan("g/p", { from: "2026-05-03T00:00:00Z", at: "2026-05-10T00:00:00Z" });
+    expect(s.lastScan("g/p")).toBe("2026-05-10T00:00:00Z");
+    expect(s.scanFloor("g/p")).toBe("2026-04-01T00:00:00Z");
+
+    s.recordScan("g/p", { from: "2026-01-01T00:00:00Z", at: "2026-05-11T00:00:00Z" });
+    expect(s.lastScan("g/p")).toBe("2026-05-11T00:00:00Z");
+    expect(s.scanFloor("g/p")).toBe("2026-01-01T00:00:00Z");
   });
 });
 

@@ -1,17 +1,7 @@
-import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
-const FETCH_PIPELINE_DIRS = [
-  "server/pipeline",
-  "server/gitlab",
-  "server/linear",
-  "server/cache",
-  "server/source",
-  "server/store",
-  // Task 4 (not yet landed) adds this directory; listed now so the ratchet covers it
-  // the moment it exists, with no follow-up edit to this file required.
-  "server/refresh",
-];
+const FETCH_PIPELINE_DIRS = ["server/linear", "server/source", "server/store", "server/refresh"];
 
 // Matches both static `from "../metrics/x.js"` and dynamic `import("../metrics/x.js")`,
 // one or two levels up, with or without a leading server/ segment.
@@ -25,7 +15,6 @@ const METRICS_IMPORT = /["']\.\.\/(\.\.\/)?(server\/)?metrics\//;
 describe("layering", () => {
   it("the fetch pipeline never imports server/metrics", () => {
     for (const dir of FETCH_PIPELINE_DIRS) {
-      if (!existsSync(dir)) continue;
       for (const file of readdirSync(dir)) {
         if (!file.endsWith(".ts")) continue;
         const src = readFileSync(`${dir}/${file}`, "utf8");

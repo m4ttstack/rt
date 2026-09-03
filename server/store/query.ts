@@ -87,7 +87,14 @@ export function storedIdentities(store: Store, roster: readonly string[]): Recor
   return out;
 }
 
-/** The cold-store probe that replaces ColdCacheError's cache check: every configured project must have scanned at least once. */
-export function hasDataFor(store: Store, projects: readonly string[]): boolean {
-  return projects.every((p) => store.lastScan(p) !== null);
+/**
+ * The cold-store probe behind ColdCacheError: every configured project must have a scan
+ * floor at or before the window's start, or the window reads rows nothing ever fetched.
+ */
+export function hasDataFor(store: Store, projects: readonly string[], window: TimeWindow): boolean {
+  const start = Date.parse(window.start);
+  return projects.every((p) => {
+    const floor = store.scanFloor(p);
+    return floor !== null && Date.parse(floor) <= start;
+  });
 }

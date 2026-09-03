@@ -129,8 +129,15 @@ function buildStore() {
   const stmtIndexUpdatedWithin = db.query(
     "SELECT * FROM mr_index WHERE updated_at >= ? AND updated_at <= ?",
   );
+  const stmtAllIndexRows = db.query("SELECT * FROM mr_index");
   const stmtLastScan = db.query("SELECT last_scan FROM scan_meta WHERE project_path = ?");
-  const stmtSetLastScan = db.query("INSERT OR REPLACE INTO scan_meta (project_path, last_scan) VALUES (?, ?)");
+  const stmtScanFloor = db.query("SELECT first_scan FROM scan_meta WHERE project_path = ?");
+  const stmtRecordScan = db.query(
+    `INSERT INTO scan_meta (project_path, last_scan, first_scan) VALUES (?, ?, ?)
+     ON CONFLICT (project_path) DO UPDATE SET
+       last_scan = excluded.last_scan,
+       first_scan = MIN(first_scan, excluded.first_scan)`,
+  );
 
   const stmtUpsertMetrics = db.query(
     "INSERT OR REPLACE INTO mr_metrics (key, project_path, iid, data) VALUES (?, ?, ?, ?)",
@@ -194,6 +201,10 @@ function buildStore() {
       return (stmtIndexUpdatedWithin.all(startIso, endIso) as IndexRowRecord[]).map(toIndexRow);
     },
 
+    allIndexRows(): IndexRow[] {
+      return (stmtAllIndexRows.all() as IndexRowRecord[]).map(toIndexRow);
+    },
+
     indexRowsByKeys(keys: readonly string[]): IndexRow[] {
       if (keys.length === 0) return [];
       const rows = db
@@ -202,12 +213,19 @@ function buildStore() {
       return rows.map(toIndexRow);
     },
 
+    /** The incremental watermark: when the project's last successful index scan started. */
     lastScan(projectPath: string): string | null {
       const row = stmtLastScan.get(projectPath) as { last_scan: string } | null;
       return row?.last_scan ?? null;
     },
-    setLastScan(projectPath: string, iso: string): void {
-      stmtSetLastScan.run(projectPath, iso);
+    /** The scan floor: the earliest `updatedAfter` any successful scan of the project has covered. */
+    scanFloor(projectPath: string): string | null {
+      const row = stmtScanFloor.get(projectPath) as { first_scan: string } | null;
+      return row?.first_scan ?? null;
+    },
+    /** Advance the watermark to `at` and lower the floor to `from` when it reaches further back. */
+    recordScan(projectPath: string, scan: { from: string; at: string }): void {
+      stmtRecordScan.run(projectPath, scan.at, scan.from);
     },
 
     upsertMrMetrics(rows: readonly StoredMetrics[]): void {

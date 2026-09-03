@@ -7,7 +7,7 @@
  *   bun server/cli.ts --range 30d --format json   # raw response JSON
  *   bun server/cli.ts --range 30d --format validate --refresh   # run the evaluator (exit 1 on error)
  *   bun server/cli.ts --detail owen-at-acme --range 30d       # per-stat evidence for one person
- *   bun server/cli.ts --format bots                              # scan the newest cache for suspected bots
+ *   bun server/cli.ts --format bots                              # scan the whole store for suspected bots
  */
 import { readSettings } from "./config/index.js";
 import { getLeaderboard, getUserDetail } from "./leaderboard.js";
@@ -112,7 +112,7 @@ function printDetail(res: UserDetailResponse): void {
 async function printBots(): Promise<void> {
   const bots = await scanSuspectedBots(readSettings().botPatterns);
   if (bots.length === 0) {
-    console.log("no suspected bots in the newest cache file");
+    console.log("no suspected bots anywhere in the store");
     return;
   }
   for (const b of bots) console.log(`${b.username}  matched: ${b.matchedPattern}`);

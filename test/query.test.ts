@@ -291,14 +291,21 @@ describe("storedIdentities", () => {
 describe("hasDataFor", () => {
   it("is false when any configured project lacks a scan row", () => {
     const s = getStore();
-    s.setLastScan("acme/app", "2026-07-01T00:00:00.000Z");
-    expect(hasDataFor(s, ["acme/app", "acme/other"])).toBe(false);
+    s.recordScan("acme/app", { from: "2026-06-01T00:00:00.000Z", at: "2026-07-01T00:00:00.000Z" });
+    expect(hasDataFor(s, ["acme/app", "acme/other"], W_7D)).toBe(false);
   });
 
-  it("is true when every configured project has a scan row", () => {
+  it("is true when every configured project's floor is at or before the window start", () => {
     const s = getStore();
-    s.setLastScan("acme/app", "2026-07-01T00:00:00.000Z");
-    s.setLastScan("acme/other", "2026-07-02T00:00:00.000Z");
-    expect(hasDataFor(s, ["acme/app", "acme/other"])).toBe(true);
+    s.recordScan("acme/app", { from: "2026-06-01T00:00:00.000Z", at: "2026-07-01T00:00:00.000Z" });
+    s.recordScan("acme/other", { from: W_7D.start, at: "2026-07-02T00:00:00.000Z" });
+    expect(hasDataFor(s, ["acme/app", "acme/other"], W_7D)).toBe(true);
+  });
+
+  it("is false when a project has scanned but its floor is later than the window start", () => {
+    const s = getStore();
+    s.recordScan("acme/app", { from: "2026-07-10T00:00:00.000Z", at: "2026-07-15T00:00:00.000Z" });
+    expect(hasDataFor(s, ["acme/app"], W_7D)).toBe(false);
+    expect(hasDataFor(s, ["acme/app"], W_7D_PRIOR)).toBe(false);
   });
 });
