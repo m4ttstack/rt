@@ -400,11 +400,19 @@ git commit -m "add server/source: glance-backed fetchers and pure mappers"
 - Window selection matches today: the same predicate `sliceOutcome` used, i.e. an MR is in-window when `updatedAt` falls within `[start, end]`.
 - `pipelines` and `pushEvents` filter on `createdAt` within the window; push events use the same one-day widening on each side that `slice.ts:31-34` documents.
 - `linearIssues` returns only issues linked to in-window MRs eligible for discovery (`state !== "closed"`), matching `slice.ts:38-43`.
-- `approvalsAvailable` is true when any stored metrics row has a non-empty `approvedByUsernames`, false otherwise.
+- `approvalsAvailable` is the constant `true`, exactly as `fetch.ts:68` sets it today. It is a tier-capability flag
+  ("does this GitLab tier expose approvals at all"), not a per-window content check: deriving it from whether the
+  window happens to contain an approver would make a quiet week disable approval-based review attribution in
+  `cohorts.ts:121,153` and fire the "Approvals not accessible on this tier" note in `trend.ts:56` on a tier that
+  has approvals. A test pins the constant against an empty-approver window.
 - `storedIdentities` returns a `Record` keyed by username including unresolved entries.
 - `hasDataFor` is false when any configured project lacks a scan row, true when all have one.
 
-Port the fixture expectations in `test/slicing.test.ts` that pin window behavior: those characterization assertions must survive as query-layer assertions rather than being deleted with `sliceOutcome`.
+Port the fixture expectations in `test/slicing.test.ts` that pin window behavior: those characterization assertions
+must survive as query-layer assertions rather than being deleted with `sliceOutcome`. That includes its two
+end-to-end pins, which run `computeSnapshot` over the built result rather than inspecting it: a 7d window yields
+`issuesCompleted === 1` and `revertRate === 0.25` on the fixture corpus. The test file may import the metrics
+layer; only `server/**` is bound by the layering ratchet.
 
 - [ ] **Step 2: Run tests to verify they fail**
 
@@ -457,7 +465,8 @@ git commit -m "add the query layer: a window is a store query, not an envelope s
 - The eligible-for-detail set is index rows authored by the roster within the base window, plus any row whose title matches the revert pattern regardless of author.
 - Metrics are fetched only for eligible rows missing from `mr_metrics` or present with a non-merged state; a merged row already stored is not re-fetched.
 - Metrics persist in batches of 25, and a mid-run abort banks the completed batches (assert rows present after the abort rejects).
-- Progress emits the same phase strings in the same order as today: `users`, `mrs-list`, `mrs-detail`, `pipelines`, `pushes`, `linear`.
+- Progress emits the same phase strings in the same order as today: `users`, `mrs-list`, `mrs-detail`, `pipelines`, `pushes`, `linear`. The `done`/`total` arithmetic may differ where the new architecture counts different work (per-project scanning, identity freshness caching); only the strings and order are frozen.
+- **Push events stay scoped to the configured projects.** `fetch.ts:403` filters events by `projectIds.has(r.project_id)` so coding days and streaks never count pushes to unrelated repos (side projects, forks). Glance removes the need for a numeric-id lookup to make the request, but not the need for the filter: resolve each configured project once through glance's `fetchProject` (warning `project_id_failed` per failure, matching `fetch.ts:373`), and drop events whose `repositoryId` is outside that set before upserting. A test pins that a push to an unconfigured repo never reaches the store.
 - Every warning code the old pipeline could emit still emits under its equivalent condition.
 
 - [ ] **Step 2: Run tests to verify they fail**
