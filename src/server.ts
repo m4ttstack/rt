@@ -13,7 +13,7 @@ import { upsertEnvKeys } from "./env-file.ts";
 import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, channelForMR, configuredSlackChannels, projectPathFromWebUrl, reviewSkillForTab, visibleMrsFor, type BoardMR, type SyncScopeRead } from "./data.ts";
 import { GitLabProvider, ReadBackFailedError, NoteMutator, parseRepoId } from "@mattstack/glance";
 import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } from "./discussions.ts";
-import { readProjectMRs, readDiscussions, subscribe } from "@mattstack/rt-client";
+import { readProjectMRs, readDiscussions, subscribe, paneFocus } from "@mattstack/rt-client";
 import { SnapshotCache } from "./cache.ts";
 import { isLocalRequest } from "./local.ts";
 import { settingsHandler } from "@mattstack/settings-kit/server";
@@ -127,6 +127,16 @@ function kickOutbox(client: SwitchboardClient): void {
   void drainOutbox((d) => client.publish(d)).catch((err) => {
     console.error(`peer: outbox drain failed: ${err instanceof Error ? err.message : err}`);
   });
+}
+
+/** Tray-raised focus when a paneId is on file; herdr-internal tab focus otherwise. */
+export async function focusPane(state: { paneId?: string; tabId?: string }): Promise<void> {
+  if (state.paneId) {
+    const res = await paneFocus({ paneId: state.paneId });
+    if (res.ok) return;
+    console.error(`pane focus failed, falling back to tab focus: ${res.error}`);
+  }
+  if (state.tabId) await focusTab(state.tabId);
 }
 
 /** Per-MR peer state for the board payload: how peers with a review of this MR
@@ -753,7 +763,7 @@ const httpServer = Bun.serve({
           // A live review re-focuses its tab rather than re-reviewing on top of it.
           if (existing?.tabId && (existing.status === "queued" || existing.status === "reviewing")) {
             try {
-              await focusTab(existing.tabId);
+              await focusPane(existing);
               return new Response(JSON.stringify({ ok: true, focused: true }), { headers: { "content-type": "application/json" } });
             } catch {
               // tab is gone — fall through and start the re-review fresh
@@ -811,7 +821,7 @@ const httpServer = Bun.serve({
         // Dedup: a live review for this MR re-focuses its tab instead of spawning another.
         if (existing && existing.tabId && (existing.status === "queued" || existing.status === "reviewing")) {
           try {
-            await focusTab(existing.tabId);
+            await focusPane(existing);
             return new Response(JSON.stringify({ ok: true, focused: true }), { headers: { "content-type": "application/json" } });
           } catch {
             // tab is gone — fall through and start a fresh review
@@ -910,7 +920,7 @@ const httpServer = Bun.serve({
         const inFlight = new Set(["queued", "triaging", "implementing", "drafting"]);
         if (existing && existing.tabId && inFlight.has(existing.status)) {
           try {
-            await focusTab(existing.tabId);
+            await focusPane(existing);
             return new Response(JSON.stringify({ ok: true, focused: true }), { headers: { "content-type": "application/json" } });
           } catch {
             // tab is gone -- fall through and start a fresh response
@@ -974,7 +984,7 @@ const httpServer = Bun.serve({
         const inFlight = new Set(["queued", "diagnosing", "rebasing", "fixing", "watching"]);
         if (existing && existing.tabId && inFlight.has(existing.status)) {
           try {
-            await focusTab(existing.tabId);
+            await focusPane(existing);
             return new Response(JSON.stringify({ ok: true, focused: true }), { headers: { "content-type": "application/json" } });
           } catch {
             // tab is gone -- fall through and start a fresh doctor session
