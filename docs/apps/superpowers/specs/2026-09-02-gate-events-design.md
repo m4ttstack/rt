@@ -18,15 +18,16 @@ and rejected for this pass (see Rejected alternatives).
    rt events bus and blocks until a `gate answered` event arrives. Any surface
    that can emit an event can answer. The in-pane form (AskUserQuestion) stops
    being the gate.
-2. **One combined gate per review.** Today's two sequential gates (which
-   comment tiers to post, then comment vs approve) collapse into one gate
-   carrying both questions. One notification, one interruption, one transcript
-   replay per review.
+2. **One combined gate per review.** Today's two sequential gates (comment
+   tiers to post, and comment vs approve, in whichever order the current
+   skill runs them) collapse into one gate carrying both questions. One
+   notification, one interruption, one transcript replay per review.
 3. **Panes stay in the daily herdr session.** Launched visible (background
    workspace, `--no-focus`), exactly as today. Focus, peek, and the tray
    bridge all work on them unchanged.
 4. **Hot gate window, then park.** A pane waiting at a gate stays alive for a
-   grace window (default 90 minutes of gate inactivity, setting-controlled).
+   grace window (default 90 minutes of unanswered gate age,
+   setting-controlled).
    An answer inside the window continues in-session with no transcript
    replay. Past the window the board parks the review: closes the pane, keeps
    the gate open, and resumes the recorded session later with the answer as
@@ -169,7 +170,9 @@ instead of opening a URL. Swift changes confined to NotificationManager plus
 the category registration.
 
 **`pane:list` focused flag.** `paneRow` starts copying herdr's per-pane
-`focused` boolean onto `ChatPane`. One field; fixtures updated.
+`focused` boolean onto `ChatPane`. The `HerdrPane` input type in the pane
+handlers needs the field too (it currently drops it at parse); fixtures
+updated.
 
 ### board
 
@@ -182,7 +185,10 @@ agent record instead of captured late by the status-bin (the status-bin
 `--session` write stays as a harmless echo until a later cleanup).
 `config.claudeCommand` retires; account/model/effort become launch fields
 resolved from settings. The duplicate-label dedup branch maps `agent:start`'s
-"already open; focused it" error onto the existing focused-existing outcome.
+"already open; focused it" error onto the existing focused-existing outcome;
+`agent:resume` can return the same error and gets the same mapping (a parked
+resume should never hit it, since the park closed the tab, but the mapping
+costs nothing).
 
 **Gate store + UI.** The board server already subscribes to the rt WS relay;
 it adds the `event` frames for `board/gate/*` topics. Open gates live in a
@@ -198,9 +204,22 @@ signal), the board closes the pane's tab. `error` keeps the pane for
 forensics and notifies instead. Respond and doctor panes get the same done
 close; they have no gates this pass.
 
-**Park after grace.** A gate with no answer and no pane activity for
-`board.gateGraceMinutes` (default 90): the board closes the pane (the wrapper
-is mid `gate wait`; killing the pane kills the wait; the transcript is safe)
+The close mechanism is `herdr tab close <tabId>` through the board's
+existing `HerdrRunner`. rt-client has no close verb, and this pass does not
+add one: lanes 2 and 3 move launch and focus off the herdr CLI, but the
+runner is deliberately retained for this one verb (an `rt pane:close` verb
+is a candidate follow-up, not this pass).
+
+**Park after grace.** The park trigger is gate age alone: a gate still
+unanswered `board.gateGraceMinutes` (default 90) after `openedAt`. No pane
+activity signal feeds it; the wait loop keeps the pane's agent status
+pinned at `working`, so activity-based triggers cannot work. The timer is a
+sweep on the board server's existing interval loop over the gate store.
+Accepted edge: a human still discussing in-pane past the grace without
+answering gets parked under them; the transcript persists and resume
+recovers the session. When the sweep fires, the board closes the pane (the
+wrapper is mid `gate wait`; killing the pane kills the wait; the transcript
+is safe)
 and marks the gate parked. When an answer later arrives for a parked gate,
 the board resumes via `agentResume` with the wrapper slash command as the
 prompt (the same `dispatchPrompt` build as a fresh launch, full flag set),
@@ -221,8 +240,9 @@ New `gate` verb family beside `review-status`:
 
 - `<status-bin> gate open <state> --questions <json>`: mints the gate id,
   writes the gate state file, emits `board/gate/opened/<gateId>` (payload
-  assembled from review state: mrUrl, iid, agentId, paneId), prints the gate
-  id.
+  assembled from review state, carrying every field of the event contract:
+  mrUrl, iid, agentId, sessionId, paneId, tabId, questions), prints the
+  gate id.
 - `<status-bin> gate wait <state>`: checks the events journal first (the
   answer may already be persisted, which is exactly the parked-resume case)
   and returns it immediately when present; otherwise blocks on `events:wait`
@@ -250,10 +270,22 @@ answer conversationally; the skill then runs `gate answer --by pane` before
 acting.
 
 The gate change also bumps the review slot contract (`mr-review@1` to
-`mr-review@2`): posting gates leave the domain skill's ownership and become
-the status-bin gate contract, so the engine, the slot description, and any
-pack fill that implements its own posting gates are updated together through
-the compile/bump/update pipeline.
+`mr-review@2`), and the boundary at `@2` is:
+
+- The domain skill keeps: resolving the MR/ticket, the review substance,
+  writing the report, and executing the posting once handed the human's
+  decision (post the selected tiers; comment or approve).
+- The domain skill gains one output: when its review is done it reports the
+  severity levels present back to the wrapper, so the wrapper can build the
+  gate's tier options.
+- The domain skill loses: presenting gates and deciding disposition. It
+  never talks to the human about posting again.
+- The wrapper owns: lifecycle status, `gate open` (questions built from the
+  reported levels plus the fixed comment/approve pair), `gate wait`, and
+  handing the answer back to the domain skill to execute.
+
+The engine, the slot description, and any pack fill that implements its own
+posting gates are updated together through the compile/bump/update pipeline.
 
 ### console
 
@@ -294,8 +326,9 @@ run (console): click, `paneFocus`, terminal raises on the right tab.
 
 - rt daemon down: `agentStart` fails; launch surfaces the error exactly as
   today's herdr failures do. Gate events cannot flow; the wrapper's
-  `gate open` fails loudly and the skill falls back to the historical in-pane
-  AskUserQuestion gates (documented in the skill as the degraded mode).
+  `gate open` fails loudly and the skill falls back to a single in-pane
+  AskUserQuestion carrying the same combined questions (documented in the
+  skill as the degraded mode; never the old two-gate pair).
 - Tray down: `paneFocus` returns "tray unavailable"; buttons surface a toast
   (chat behavior); notifications fall back to osascript (existing notifier
   behavior) with no focus action.
