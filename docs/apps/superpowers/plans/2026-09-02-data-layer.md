@@ -20,6 +20,7 @@
 - All glance calls pass the refresh job's `AbortSignal` and rely on glance 0.24.0's built-in retry. `server/util/http.ts` survives for Linear only; no new wrapper goes around a glance call.
 - Store path `~/.mattstack/boxscore/boxscore.sqlite` (WAL), overridable by `BOXSCORE_DB` for tests. Every write is a transaction. Schema version mismatch drops and recreates every table, matching today's `mr-store.ts` strategy.
 - Tests never touch `~/.mattstack`: `vitest.config.ts` pins `BOXSCORE_DB` to a temp path the way it pins `BOXSCORE_CACHE_DIR` today, and store tests use their own file per suite.
+- **The suite runs under Bun.** `bun run test` is `bun --bun vitest run` so `bun:sqlite` is reachable, which the data layer requires. Two legacy files are excluded onto a Node run because they depend on `cache/mr-store.ts`'s in-memory fallback: `test/linear-resolve.test.ts` and `test/detail-persist.test.ts`. Task 5 deletes or repoints both, and its last step collapses the script back to a single `bun --bun vitest run`.
 - The layering ratchet in `test/layering.test.ts` must keep passing and must be extended to the new directories: `server/source`, `server/store`, and `server/refresh` may never import `server/metrics`.
 - House rules: no em dashes; comments only state constraints the code cannot show; commit after every task with a short imperative message.
 
@@ -513,11 +514,17 @@ Its Linear-ID validity cache moves from `cache/mr-store.ts` to the store's `isVa
 
 Delete the five test files whose subject is gone (`cache`, `mr-store`, `slicing`, `detail-persist`, `mapping`), having already carried `slicing`'s window characterizations into `test/query.test.ts` in Task 3. Repoint `test/endpoints.test.ts` to seed the store through its accessors instead of writing envelope files, keeping every existing assertion including the new route-absence test. Repoint `test/linear-resolve.test.ts` at the store's Linear-ID cache. Repoint `test/progress.test.ts` and `test/abort.test.ts` imports; their assertions do not change.
 
-- [ ] **Step 6: Validate**
+- [ ] **Step 6: Collapse the test script**
+
+`cache/mr-store.ts` is gone and both excluded files are deleted or repointed at the store, so `package.json`'s
+`test` script becomes a single `bun --bun vitest run` with no excludes and no second Node pass. If a repointed
+file still fails under Bun, that is a finding to report, not a reason to keep the split.
+
+- [ ] **Step 7: Validate**
 
 Run: `bun run test` and `bun run typecheck`, then `grep -rn "cache/store\|cache/mr-store\|pipeline/fetch\|server/gitlab\|util/graphql" server test --include="*.ts"` and expect no hits. Expected: green.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 ```bash
 git add -A && git commit -m "serve from the store; delete gitlab, cache, pipeline, and jobs"
