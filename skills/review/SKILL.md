@@ -115,17 +115,19 @@ remembered in the conversation.
 4. **Run the gate protocol, then mark done with the outcome.**
 
    The outcome is NOT yours to decide, and do not mark `done` autonomously.
-   This wrapper presents exactly **one** event gate carrying both questions —
-   never a "disposition gate" and a "severity gate" as two separate gates.
+   This wrapper presents exactly **one** event gate — carrying `outcome` and,
+   when findings have severity levels, `tiers` alongside it — never a
+   "disposition gate" and a "severity gate" as two separate gates.
    Never map a "clean review" to Approve on your own — a clean review just
    means Approve is the sensible pick to *offer*. This is the gate contract
    for this invocation; it supersedes any two-gate or per-skill posting-gate
    protocol you might recall from an earlier transcript or session.
 
-   - **Build the combined questions.** One `tiers` question (multi-select
-     over the severity levels the domain skill reported present, or your own
-     findings' levels on the generic no-domain-skill path) and one `outcome`
-     question (single-select, comment/approve):
+   - **Build the questions.** Always one `outcome` question (single-select,
+     comment/approve). Add a `tiers` question (multi-select over the
+     severity levels the domain skill reported present, or your own
+     findings' levels on the generic no-domain-skill path) only when at
+     least one level is present:
 
      ```json
      [
@@ -137,23 +139,35 @@ remembered in the conversation.
      `<levels present>` is a placeholder — substitute the actual level
      strings, e.g. `["critical","important","nit"]`. Don't copy it verbatim.
 
+     When no levels are present (a clean review with no findings), omit the
+     `tiers` question entirely and open the gate with `outcome` alone, so a
+     clean review is approvable in one click:
+
+     ```json
+     [{"id": "outcome", "label": "Verdict", "multi": false, "options": ["comment", "approve"]}]
+     ```
+
    - **Open the gate:**
      `<status-bin> gate open <state> --questions <json>`
    - **Wait for the answer:**
      `<status-bin> gate wait <state>`
-     Prints `{"answers": {"tiers": [...], "outcome": "..."}, "by": "...", "answeredAt": ...}`.
-     Read `answers.tiers` and `answers.outcome`.
+     Prints `{"answers": {"tiers": [...], "outcome": "..."}, "by": "...", "answeredAt": ...}` when
+     the gate carried both questions, or `{"answers": {"outcome": "..."}, "by": "...", "answeredAt": ...}`
+     when it carried `outcome` alone. Read `answers.outcome`, and `answers.tiers` when the gate
+     carried it.
    - **In-pane escape hatch.** If a human interrupts the wait and answers you
      conversationally in the pane instead of through the board, record it
      yourself before acting so the journal and any parked resume stay in
      sync: `<status-bin> gate answer <state> --answers <json> --by pane`.
    - **Degraded mode.** If `gate open` or `gate wait` exits nonzero (e.g. the
      rt daemon is down), fall back to ONE combined `AskUserQuestion` carrying
-     both the `tiers` and `outcome` questions together — never the old
-     two-gate pair — and proceed on its answers.
+     the same questions the gate would have — both `tiers` and `outcome`
+     when levels are present, `outcome` alone when they aren't — never the
+     old two-gate pair, and proceed on its answers.
    - **Act on the answer.** Hand `{tiers, outcome}` to the domain skill so it
-     can execute the posting, or post the selected findings yourself on the
-     generic no-domain-skill path.
+     can execute the posting — `tiers` is empty when the gate carried
+     `outcome` alone, since a clean review has no findings to post — or post
+     the selected findings yourself on the generic no-domain-skill path.
 
    Only after posting, mark done with the chosen outcome:
    `<status-bin> review-status <state> done "<one-line summary>" --outcome <comment|approve>`

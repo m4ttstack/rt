@@ -49,3 +49,12 @@ test("gateAnswerPayload with no questions on the gate always succeeds with empty
   const payload = gateAnswerPayload({ mrUrl: MR_URL, questions: [] }, {});
   expect(payload).toEqual({ mrUrl: MR_URL, answers: {} });
 });
+
+test("gateAnswerPayload is not blocked by a zero-option question -- a clean review with no severity levels stays answerable via outcome alone", () => {
+  const questions: GateQuestion[] = [
+    { id: "tiers", label: "Post which findings?", multi: true, options: [] },
+    { id: "outcome", label: "Verdict", multi: false, options: ["comment", "approve"] },
+  ];
+  const payload = gateAnswerPayload({ mrUrl: MR_URL, questions }, { outcome: "approve" });
+  expect(payload).toEqual({ mrUrl: MR_URL, answers: { outcome: "approve" } });
+});

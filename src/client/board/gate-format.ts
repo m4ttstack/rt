@@ -19,14 +19,19 @@ export interface GateAnswerPayload {
 /**
  * Shapes UI-collected selections into the `/gate/answer` POST body: a
  * `multi` question's selection becomes a string array, a single-select's
- * becomes a bare string. Every question on the gate is required -- the
- * moment one's selection is missing or empty, this returns null instead of
- * a partial payload, so a caller can disable submit (or skip the fetch) on
- * that alone rather than let an incomplete answer reach the server.
+ * becomes a bare string. Every question with at least one option is
+ * required -- the moment one's selection is missing or empty, this returns
+ * null instead of a partial payload, so a caller can disable submit (or
+ * skip the fetch) on that alone rather than let an incomplete answer reach
+ * the server. A zero-option question (e.g. a `tiers` question when a clean
+ * review reports no severity levels) has nothing to select, so it is
+ * excluded from the required set entirely -- otherwise a clean review's
+ * gate would have no possible answer and could never be closed.
  */
 export function gateAnswerPayload(gate: GateForAnswer, selections: GateSelections): GateAnswerPayload | null {
   const answers: GateSelections = {};
   for (const q of gate.questions) {
+    if (q.options.length === 0) continue;
     const value = selections[q.id];
     if (q.multi) {
       if (!Array.isArray(value) || value.length === 0) return null;
