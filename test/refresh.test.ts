@@ -6,11 +6,13 @@ import { join } from "node:path";
 import type {
   FetchMergeRequestIndexOptions,
   FetchMergeRequestMetricsOptions,
+  FetchProjectOptions,
   FetchProjectPipelinesOptions,
   FetchUserEventsOptions,
   MergeRequestIndexRow,
   MergeRequestMetrics,
   PipelineSummary,
+  ProjectRef,
   UserEvent,
 } from "@mattstack/glance";
 import type { RequestIO, SourceProvider, GitProvider } from "../server/source/index.js";
@@ -45,6 +47,7 @@ interface FakeOverrides {
     mrIid: number,
     options?: FetchMergeRequestMetricsOptions,
   ) => Promise<MergeRequestMetrics | null>;
+  fetchProject?: (projectPath: string, options?: FetchProjectOptions) => Promise<ProjectRef | null>;
   fetchProjectPipelines?: (projectPath: string, options: FetchProjectPipelinesOptions) => Promise<PipelineSummary[]>;
   fetchUserEvents?: (userId: string, options: FetchUserEventsOptions) => Promise<UserEvent[]>;
   restRequest?: (method: string, path: string, body?: unknown, op?: string, io?: RequestIO) => Promise<Response>;
@@ -63,6 +66,12 @@ function makeFakeProvider(overrides: FakeOverrides = {}) {
       return overrides.fetchMergeRequestMetrics
         ? await overrides.fetchMergeRequestMetrics(projectPath, mrIid, options)
         : null;
+    },
+    async fetchProject(projectPath, options) {
+      calls.push({ method: "fetchProject", args: [projectPath, options] });
+      return overrides.fetchProject
+        ? await overrides.fetchProject(projectPath, options)
+        : { id: `gitlab:${projectPath}`, fullPath: projectPath };
     },
     async fetchProjectPipelines(projectPath, options) {
       calls.push({ method: "fetchProjectPipelines", args: [projectPath, options] });
@@ -434,5 +443,67 @@ describe("runRefresh: warning codes", () => {
     });
     const warnings = await runRefresh({ store, provider, settings: settings(), env: ENV, window: WINDOW });
     expect(warnings).toContainEqual(expect.objectContaining({ code: "events_fetch_failed" }));
+  });
+});
+
+describe("runRefresh: push events stay project-scoped", () => {
+  it("stores only the push event to a configured project; the out-of-scope one is dropped", async () => {
+    const store = getStore();
+    const { provider } = makeFakeProvider({
+      restRequest: async (_m, path) => {
+        const username = new URL(path, "http://x").searchParams.get("username")!;
+        return userIdRes(1, username);
+      },
+      fetchUserEvents: async () => [
+        { action: "pushed", createdAt: "2026-05-10T00:00:00.000Z", repositoryId: "gitlab:g/p" },
+        { action: "pushed", createdAt: "2026-05-11T00:00:00.000Z", repositoryId: "gitlab:other/repo" },
+      ],
+    });
+
+    await runRefresh({ store, provider, settings: settings(), env: ENV, window: WINDOW });
+
+    const stored = store.pushEventsBetween("2026-01-01T00:00:00.000Z", "2026-12-31T00:00:00.000Z");
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({ username: "alice", repositoryId: "gitlab:g/p" });
+  });
+
+  it("emits project_id_failed when a project's fetchProject throws or resolves null, without stopping the run", async () => {
+    const store = getStore();
+    const { provider, calls } = makeFakeProvider({
+      restRequest: async (_m, path) => {
+        const username = new URL(path, "http://x").searchParams.get("username")!;
+        return userIdRes(1, username);
+      },
+      fetchProject: async (projectPath) => {
+        if (projectPath === "g/broken") throw new Error("project gone");
+        if (projectPath === "g/missing") return null;
+        return { id: `gitlab:${projectPath}`, fullPath: projectPath };
+      },
+      fetchUserEvents: async () => [
+        { action: "pushed", createdAt: "2026-05-10T00:00:00.000Z", repositoryId: "gitlab:g/ok" },
+      ],
+    });
+
+    const warnings = await runRefresh({
+      store,
+      provider,
+      settings: settings({ projects: ["g/broken", "g/missing", "g/ok"] }),
+      env: ENV,
+      window: WINDOW,
+    });
+
+    const failed = warnings.filter((w) => w.code === "project_id_failed");
+    expect(failed).toHaveLength(2);
+    expect(failed.map((w) => w.message).join("\n")).toContain("g/broken");
+    expect(failed.map((w) => w.message).join("\n")).toContain("g/missing");
+
+    const projectCalls = calls
+      .filter((c) => c.method === "fetchProject")
+      .map((c) => c.args[0]);
+    expect(projectCalls.sort()).toEqual(["g/broken", "g/missing", "g/ok"]);
+
+    const stored = store.pushEventsBetween("2026-01-01T00:00:00.000Z", "2026-12-31T00:00:00.000Z");
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({ repositoryId: "gitlab:g/ok" });
   });
 });

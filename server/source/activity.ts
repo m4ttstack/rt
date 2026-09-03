@@ -1,10 +1,19 @@
-import type { PipelineSummary, UserEvent } from "@mattstack/glance";
+import type { PipelineSummary, ProjectRef, UserEvent } from "@mattstack/glance";
 import type { TimeWindow } from "../../shared/types.js";
 import type { StoredPipeline, StoredPushEvent } from "../store/index.js";
 import type { SourceIO, SourceProvider } from "./provider.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const dateOnly = (iso: string): string => iso.slice(0, 10);
+
+/** Resolves a configured project path to its scoped id (for scoping push events). */
+export async function fetchProjectRef(
+  provider: SourceProvider,
+  projectPath: string,
+  io: SourceIO = {},
+): Promise<ProjectRef | null> {
+  return provider.fetchProject(projectPath, { signal: io.signal });
+}
 
 export function toStoredPipeline(summary: PipelineSummary, projectPath: string): StoredPipeline {
   return {

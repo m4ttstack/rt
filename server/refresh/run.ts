@@ -6,6 +6,7 @@ import { eligibleForLinearDiscovery, resolveLinearTickets } from "../linear/fetc
 import {
   fetchMetrics,
   fetchPipelinesFor,
+  fetchProjectRef,
   fetchPushesFor,
   resolveIdentity,
   scanProject,
@@ -180,6 +181,29 @@ export async function runRefresh(opts: RefreshRunOptions): Promise<LeaderboardWa
     (done, total) => report({ phase: "pipelines", label: "Fetching pipelines", done, total }),
   );
 
+  // Resolve the configured projects to their scoped ids so a push event to a repo outside
+  // this roster's projects (a side project, a fork) never enters the store: coding-days and
+  // streak metrics must only count activity here, not everywhere a roster member pushes.
+  signal?.throwIfAborted();
+  const scopedProjectIds = new Set<string>();
+  await mapLimit(settings.projects, CONCURRENCY, async (projectPath) => {
+    signal?.throwIfAborted();
+    try {
+      const ref = await fetchProjectRef(source, projectPath, { signal });
+      if (ref) {
+        scopedProjectIds.add(ref.id);
+      } else {
+        warnings.push({ code: "project_id_failed", message: `Project id for ${projectPath}: not found` });
+      }
+    } catch (err) {
+      if (isAbort(err)) throw err;
+      warnings.push({
+        code: "project_id_failed",
+        message: `Project id for ${projectPath}: ${(err as Error).message}`,
+      });
+    }
+  });
+
   signal?.throwIfAborted();
   const currentIdentities = storedIdentities(store, rosterUsernames);
   report({ phase: "pushes", label: "Fetching push events", done: 0, total: rosterUsernames.length });
@@ -194,7 +218,8 @@ export async function runRefresh(opts: RefreshRunOptions): Promise<LeaderboardWa
         // fetchUserEvents requires glance's scoped id form; resolveIdentity only carries
         // the raw GitLab numeric id, so the scope prefix is built here.
         const rows = await fetchPushesFor(source, `gitlab:user:${identity.userId}`, username, window, { signal });
-        if (rows.length > 0) store.upsertPushEvents(rows);
+        const scoped = rows.filter((r) => r.repositoryId != null && scopedProjectIds.has(r.repositoryId));
+        if (scoped.length > 0) store.upsertPushEvents(scoped);
       } catch (err) {
         if (isAbort(err)) throw err;
         warnings.push({

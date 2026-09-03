@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type {
   FetchMergeRequestIndexOptions,
   FetchMergeRequestMetricsOptions,
+  FetchProjectOptions,
   FetchProjectPipelinesOptions,
   FetchUserEventsOptions,
   MergeRequestIndexRow,
@@ -13,6 +14,7 @@ import type { RequestIO, SourceProvider } from "../server/source/provider.js";
 import {
   fetchMetrics,
   fetchPipelinesFor,
+  fetchProjectRef,
   fetchPushesFor,
   resolveIdentity,
   scanProject,
@@ -42,6 +44,10 @@ function makeFakeProvider(overrides: Partial<SourceProvider> = {}) {
       return overrides.fetchMergeRequestMetrics
         ? await overrides.fetchMergeRequestMetrics(projectPath, mrIid, options)
         : null;
+    },
+    async fetchProject(projectPath: string, options?: FetchProjectOptions) {
+      calls.push({ method: "fetchProject", args: [projectPath, options] });
+      return overrides.fetchProject ? await overrides.fetchProject(projectPath, options) : null;
     },
     async fetchProjectPipelines(projectPath: string, options: FetchProjectPipelinesOptions) {
       calls.push({ method: "fetchProjectPipelines", args: [projectPath, options] });
@@ -252,6 +258,28 @@ describe("fetchPipelinesFor", () => {
     expect(rows).toEqual([
       { id: "gitlab:pipeline:9", projectPath: "g/p", username: "ada", status: "success", createdAt: "2026-05-02T00:00:00Z" },
     ]);
+  });
+});
+
+describe("fetchProjectRef", () => {
+  it("passes the signal through and returns the provider's project ref verbatim", async () => {
+    const controller = new AbortController();
+    const { provider, calls } = makeFakeProvider({
+      fetchProject: async () => ({ id: "gitlab:42", fullPath: "g/p" }),
+    });
+
+    const ref = await fetchProjectRef(provider, "g/p", { signal: controller.signal });
+
+    expect(calls).toEqual([{ method: "fetchProject", args: ["g/p", { signal: controller.signal }] }]);
+    expect(ref).toEqual({ id: "gitlab:42", fullPath: "g/p" });
+  });
+
+  it("returns null when the provider cannot resolve the project", async () => {
+    const { provider } = makeFakeProvider({ fetchProject: async () => null });
+
+    const ref = await fetchProjectRef(provider, "g/missing");
+
+    expect(ref).toBeNull();
   });
 });
 

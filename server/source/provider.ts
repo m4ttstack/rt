@@ -2,12 +2,14 @@ import { GitLabProvider } from "@mattstack/glance";
 import type {
   FetchMergeRequestIndexOptions,
   FetchMergeRequestMetricsOptions,
+  FetchProjectOptions,
   FetchProjectPipelinesOptions,
   FetchUserEventsOptions,
   GitProvider,
   MergeRequestIndexRow,
   MergeRequestMetrics,
   PipelineSummary,
+  ProjectRef,
   UserEvent,
 } from "@mattstack/glance";
 import type { Env } from "../config/index.js";
@@ -36,6 +38,7 @@ export interface SourceProvider {
     mrIid: number,
     options?: FetchMergeRequestMetricsOptions,
   ): Promise<MergeRequestMetrics | null>;
+  fetchProject(projectPath: string, options?: FetchProjectOptions): Promise<ProjectRef | null>;
   fetchProjectPipelines(projectPath: string, options: FetchProjectPipelinesOptions): Promise<PipelineSummary[]>;
   fetchUserEvents(userId: string, options: FetchUserEventsOptions): Promise<UserEvent[]>;
   restRequest(method: string, path: string, body?: unknown, op?: string, io?: RequestIO): Promise<Response>;
