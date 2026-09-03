@@ -13,15 +13,16 @@ import { upsertEnvKeys } from "./env-file.ts";
 import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, channelForMR, configuredSlackChannels, projectPathFromWebUrl, reviewSkillForTab, visibleMrsFor, type BoardMR, type SyncScopeRead } from "./data.ts";
 import { GitLabProvider, ReadBackFailedError, NoteMutator, parseRepoId } from "@mattstack/glance";
 import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } from "./discussions.ts";
-import { readProjectMRs, readDiscussions, subscribe, eventsList, getSetting, setSetting } from "@mattstack/rt-client";
+import { readProjectMRs, readDiscussions, subscribe, eventsList, eventsEmit, getSetting, setSetting } from "@mattstack/rt-client";
 import { SnapshotCache } from "./cache.ts";
 import { isLocalRequest } from "./local.ts";
 import { settingsHandler } from "@mattstack/settings-kit/server";
 import { readReviewStates, pruneReviewStates, reviewFilePath, writeReviewState, parseReviewRequestBody, attachReviews, readReviewReport } from "./review-state.ts";
 import { readRespondStates, pruneRespondStates, respondFilePath, writeRespondState, parseRespondRequestBody, attachResponds } from "./respond-state.ts";
 import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, parseDoctorRequestBody, attachDoctors } from "./doctor-state.ts";
-import { readGateStates, pruneGateStates, attachGates } from "./gates/store.ts";
+import { readGateStates, writeGateState, gateFilePath, pruneGateStates, attachGates, type GateAnswers } from "./gates/store.ts";
 import { applyGateEvent, ensureBridgeRule, gateEventStore, type EventBridgeRule, type GateEventFrame } from "./gates/ingest.ts";
+import { answerGate, resumeParkedGateStub } from "./gates/answer.ts";
 import { readDrafts, heldDraftsByMr, attachDrafts, pruneDrafts, draftFilePath, writeDraft } from "./draft-state.ts";
 import { launchReview, launchRespond, launchDoctor, launchLegacyResume, parseLaunchNote, mrTabLabel, reopenPrompt } from "./herdr.ts";
 import { focusPane } from "./focus-pane.ts";
@@ -1235,6 +1236,43 @@ const httpServer = Bun.serve({
             });
           }
           return new Response(`gitlab update failed: ${message}`, { status: 502 });
+        }
+      }
+      case "/gate/answer": {
+        // Answer a review gate from the board UI. Validation + orchestration
+        // (event emit, gate-file merge, parked-gate resume) live in
+        // gates/answer.ts; this maps the pure result onto HTTP status codes.
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+        if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return new Response("invalid json", { status: 400 });
+        }
+        const mrUrl = (body as { mrUrl?: unknown })?.mrUrl;
+        const answers = (body as { answers?: unknown })?.answers;
+        if (typeof mrUrl !== "string" || !mrUrl || typeof answers !== "object" || answers === null || Array.isArray(answers)) {
+          return new Response("expected { mrUrl: string, answers: object }", { status: 400 });
+        }
+        const result = await answerGate(mrUrl, answers as GateAnswers, {
+          readGateStates,
+          writeGateState,
+          gateFilePath,
+          eventsEmit,
+          sseNudge,
+          resumeParkedGate: resumeParkedGateStub,
+          now: () => Date.now(),
+        });
+        switch (result.kind) {
+          case "ok":
+            return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });
+          case "not-found":
+            return new Response(`unknown MR "${mrUrl}"`, { status: 404 });
+          case "already-answered":
+            return new Response("gate already answered", { status: 409 });
+          case "invalid":
+            return new Response(result.reason, { status: 400 });
         }
       }
       case "/nudge": {
