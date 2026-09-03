@@ -153,7 +153,7 @@ function SettingRow({ def, store }: { def: ConfigDef; store: SettingsScopeState 
     control = (
       <Text size="xs" c="dimmed">
         {value === undefined ? "unset" : formatValue(value)}
-        {malformed && " — unexpected shape, edit the store file"}
+        {malformed && " (unexpected shape, edit the store file)"}
       </Text>
     );
   } else if (kind === "stringList") {
