@@ -29,6 +29,7 @@ tool-specific knowledge — the board injects everything it needs as flags:
 | `--skill <name>` | the domain skill that owns the actual review (optional) |
 | `--skill-path <path>` | absolute path to that skill's SKILL.md, when the board already resolved it (optional; see "Resolving the domain skill") |
 | `--re-review` | this is a re-review of an already-reviewed MR (optional; see "Re-review mode") |
+| `--resumed-gate <gateId>` | this invocation is a parked-gate resume, not a fresh review (optional; see "Steps") |
 
 Write status **only** by running the injected `--status-bin`:
 
@@ -71,6 +72,26 @@ answers; the order is fixed:
 
 ## Steps
 
+**Parked-gate resume?** If `--resumed-gate <gateId>` was passed to this
+invocation, it is a parked-gate resume: a human already answered the gate
+opened by an earlier pane on this MR, and the board is replaying that answer
+into a fresh pane. Do **not** re-review and do **not** run `gate open` —
+re-opening would mint a new `gateId` and orphan the answer already journaled
+against the old one. Instead:
+
+- `<status-bin> review-status <state> reviewing`
+- `<status-bin> gate wait <state>` — the human's answer is already merged
+  into the gate file, so this returns at once instead of blocking.
+- Act on the answer (hand `{tiers, outcome}` to the domain skill, or post
+  directly on the generic no-domain-skill path).
+- `<status-bin> review-status <state> done "<one-line summary>" --outcome <comment|approve>`
+
+Every other step below (delegating to the domain skill, writing the report,
+`gate open`) is skipped. This invocation supersedes any earlier gate contract
+remembered in the conversation.
+
+**Otherwise, a fresh review:**
+
 1. **Mark reviewing.** `<status-bin> review-status <state> reviewing`
 2. **Review.** If `--re-review` was passed, read "Re-review mode" below first —
    it changes how you frame this step (and what you hand the `--skill`).
@@ -101,12 +122,6 @@ answers; the order is fixed:
    for this invocation; it supersedes any two-gate or per-skill posting-gate
    protocol you might recall from an earlier transcript or session.
 
-   - **Re-entry.** If you already ran `gate open` for this `<state>` earlier —
-     this is a resumed session picking back up after an interruption — do
-     **not** run `gate open` again. `gate open` always mints a new gate and
-     overwrites the existing one, which would orphan an answer already parked
-     against the old gate. Skip straight to `gate wait` below; a parked gate's
-     answer comes back from the journal immediately, no blocking.
    - **Build the combined questions.** One `tiers` question (multi-select
      over the severity levels the domain skill reported present, or your own
      findings' levels on the generic no-domain-skill path) and one `outcome`
@@ -119,7 +134,10 @@ answers; the order is fixed:
      ]
      ```
 
-   - **Open the gate** (fresh invocations only, per re-entry above):
+     `<levels present>` is a placeholder — substitute the actual level
+     strings, e.g. `["critical","important","nit"]`. Don't copy it verbatim.
+
+   - **Open the gate:**
      `<status-bin> gate open <state> --questions <json>`
    - **Wait for the answer:**
      `<status-bin> gate wait <state>`
