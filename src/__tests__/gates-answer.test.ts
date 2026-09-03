@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { answerGate, type AnswerGateIo } from "../gates/answer.ts";
+import { answerGate, resumeParkedGate, type AnswerGateIo, type ResumeParkedGateIo } from "../gates/answer.ts";
 import type { GateAnswers, GateQuestion, GateState } from "../gates/store.ts";
+import type { AgentLaunchResult } from "../agent-launch.ts";
 
 const MR_URL = "https://gitlab.com/acme/webapp/-/merge_requests/4821";
 
@@ -159,5 +160,95 @@ describe("answerGate", () => {
     await answerGate(MR_URL, { tiers: [], outcome: "comment" }, io);
 
     expect(calls.resumeParkedGate.length).toBe(0);
+  });
+});
+
+/** Fakes for the real resumeParkedGate's sub-io (as opposed to fakeIo's plain
+    stub hook above), so these tests exercise the actual resume logic --
+    prompt building, resumeAgentPane, and id persistence -- wired in through
+    answerGate's injectable resumeParkedGate hook. */
+interface ResumeIoCalls {
+  resumeAgentPane: Array<{ agentId: string; prompt: string; workspaceLabel: string; tabLabel: string }>;
+  writeReviewState: Array<{ path: string; patch: unknown }>;
+  notify: string[];
+}
+
+function fakeResumeIo(result: Partial<AgentLaunchResult> = {}): { io: ResumeParkedGateIo; calls: ResumeIoCalls } {
+  const calls: ResumeIoCalls = { resumeAgentPane: [], writeReviewState: [], notify: [] };
+  const io: ResumeParkedGateIo = {
+    resolveLaunchSkill: () => "acme:board-review",
+    resumeAgentPane: async (opts) => {
+      calls.resumeAgentPane.push(opts);
+      return {
+        agentId: "agent-2", sessionId: "sess-2", paneId: "pane-2", tabId: "tab-2", workspaceId: "ws-2",
+        focusedExisting: false,
+        ...result,
+      };
+    },
+    writeReviewState: (path, patch) => {
+      calls.writeReviewState.push({ path, patch });
+    },
+    reviewsWorkspace: "reviews",
+    notify: (message) => {
+      calls.notify.push(message);
+    },
+  };
+  return { io, calls };
+}
+
+describe("resumeParkedGate (the real parked-gate resume, wired as answerGate's hook)", () => {
+  test("builds the /board:review prompt with --state and --resumed-gate, resumes the pane, and persists fresh ids", async () => {
+    const gate = baseGate({ status: "parked", parkedAt: 4000, agentId: "agent-1" });
+    const { io: resumeIo, calls: resumeCalls } = fakeResumeIo();
+    const { io, calls } = fakeIo(gate, 8000);
+    io.resumeParkedGate = (g) => resumeParkedGate(g, resumeIo, async () => null);
+
+    const result = await answerGate(MR_URL, { tiers: [], outcome: "comment" }, io);
+
+    expect(result).toEqual({ kind: "ok" });
+    expect(calls.writeGateState[0]!.patch.status).toBe("answered");
+
+    expect(resumeCalls.resumeAgentPane.length).toBe(1);
+    const call = resumeCalls.resumeAgentPane[0]!;
+    expect(call.agentId).toBe("agent-1");
+    expect(call.workspaceLabel).toBe("reviews");
+    expect(call.prompt).toContain("/board:review");
+    expect(call.prompt).toContain("--state");
+    expect(call.prompt).toContain("--resumed-gate gate-1");
+
+    expect(resumeCalls.writeReviewState.length).toBe(1);
+    expect(resumeCalls.writeReviewState[0]!.patch).toMatchObject({
+      status: "reviewing",
+      agentId: "agent-2",
+      paneId: "pane-2",
+      tabId: "tab-2",
+      workspaceId: "ws-2",
+    });
+    expect(resumeCalls.notify.length).toBe(0);
+  });
+
+  test("a focused-existing resume (already-open tab) does not overwrite the review state with blank ids", async () => {
+    const gate = baseGate({ status: "parked", parkedAt: 4000, agentId: "agent-1" });
+    const { io: resumeIo, calls: resumeCalls } = fakeResumeIo({
+      agentId: "", sessionId: "", paneId: "", tabId: "", workspaceId: "", focusedExisting: true,
+    });
+
+    await resumeParkedGate(gate, resumeIo, async () => null);
+
+    expect(resumeCalls.resumeAgentPane.length).toBe(1);
+    expect(resumeCalls.writeReviewState.length).toBe(0);
+  });
+
+  test("missing agentId notifies instead of resuming, and does not throw", async () => {
+    const gate = baseGate({ status: "parked", parkedAt: 4000 });
+    const { io: resumeIo, calls: resumeCalls } = fakeResumeIo();
+    const { io, calls } = fakeIo(gate, 8000);
+    io.resumeParkedGate = (g) => resumeParkedGate(g, resumeIo, async () => null);
+
+    const result = await answerGate(MR_URL, { tiers: [], outcome: "comment" }, io);
+
+    expect(result).toEqual({ kind: "ok" });
+    expect(resumeCalls.resumeAgentPane.length).toBe(0);
+    expect(resumeCalls.notify).toEqual(["parked gate answered but no agent on file; relaunch from the board"]);
   });
 });

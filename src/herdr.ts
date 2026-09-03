@@ -122,6 +122,12 @@ export interface SkillPromptOpts {
   /** Free-text instruction from the human who launched the pane, appended to
       the prompt as a trailing paragraph the wrapper skills know to honor. */
   note?: string;
+  /** Review only: the id of the parked gate this launch resumes. Present only
+      when the board answered a parked gate and is resuming the recorded
+      session -- the wrapper's re-entry rule keys on this flag to skip
+      `gate open` and go straight back into the domain skill. Absent on every
+      normal launch and on a re-review. */
+  resumedGate?: string;
 }
 
 /** The trailing paragraph a launch note becomes. The framing tells the wrapper
@@ -169,6 +175,7 @@ function dispatchArgs(o: SkillPromptOpts, skillPath?: string | null): string {
   flag("--status-bin", o.statusBin);
   flag("--report", o.reportPath);
   flag("--skill", o.skill);
+  flag("--resumed-gate", o.resumedGate);
   flag("--skill-path", skillPath);
   if (o.reReview) parts.push("--re-review");
   flag("--tier", o.tier);

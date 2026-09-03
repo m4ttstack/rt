@@ -501,6 +501,40 @@ describe("doctorPrompt tier flags", () => {
   });
 });
 
+describe("--resumed-gate flag (parked-gate resume marker)", () => {
+  test("reviewPrompt emits --resumed-gate right after --skill when set", () => {
+    const p = reviewPrompt({
+      mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: "/b/review-status.ts",
+      reportPath: "/s/1.md", skill: "myteam:review", resumedGate: "gate-42",
+    });
+    expect(p).toBe(
+      `/board:review https://x/mr/1
+  --state /s/1.json
+  --status-bin /b/review-status.ts
+  --report /s/1.md
+  --skill myteam:review
+  --resumed-gate gate-42`,
+    );
+  });
+
+  test("a normal launch (no resumedGate) omits the flag entirely", () => {
+    const p = reviewPrompt({
+      mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: "/b/review-status.ts",
+      reportPath: "/s/1.md", skill: "myteam:review",
+    });
+    expect(p).not.toContain("--resumed-gate");
+  });
+
+  test("a re-review (reReview: true, no resumedGate) also omits the flag", () => {
+    const p = reviewPrompt({
+      mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: "/b/review-status.ts",
+      reportPath: "/s/1.md", skill: "myteam:review", reReview: true,
+    });
+    expect(p).not.toContain("--resumed-gate");
+    expect(p).toContain("--re-review");
+  });
+});
+
 describe("dispatchPrompt (wrapper hop stays; --skill-path rides alongside --skill)", () => {
   const baseOpts = {
     mrUrl: "https://x/mr/1",

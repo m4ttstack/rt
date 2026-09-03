@@ -22,7 +22,7 @@ import { readRespondStates, pruneRespondStates, respondFilePath, writeRespondSta
 import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, parseDoctorRequestBody, attachDoctors } from "./doctor-state.ts";
 import { readGateStates, writeGateState, gateFilePath, pruneGateStates, attachGates, type GateAnswers } from "./gates/store.ts";
 import { applyGateEvent, ensureBridgeRule, gateEventStore, type EventBridgeRule, type GateEventFrame } from "./gates/ingest.ts";
-import { answerGate, resumeParkedGateStub } from "./gates/answer.ts";
+import { answerGate, resumeParkedGate } from "./gates/answer.ts";
 import { planSweep } from "./gates/sweep.ts";
 import { executeSweepAction, type ExecuteSweepActionIo } from "./gates/execute-sweep-action.ts";
 import { readDrafts, heldDraftsByMr, attachDrafts, pruneDrafts, draftFilePath, writeDraft } from "./draft-state.ts";
@@ -1277,7 +1277,13 @@ const httpServer = Bun.serve({
           gateFilePath,
           eventsEmit,
           sseNudge,
-          resumeParkedGate: resumeParkedGateStub,
+          resumeParkedGate: (gate) => resumeParkedGate(gate, {
+            resolveLaunchSkill: (gateMrUrl) => resolveLaunchSkill("review", gateMrUrl),
+            resumeAgentPane,
+            writeReviewState,
+            reviewsWorkspace: config.reviewsWorkspace,
+            notify: (message) => console.error(`gate resume: ${message}`),
+          }),
           now: () => Date.now(),
         });
         switch (result.kind) {

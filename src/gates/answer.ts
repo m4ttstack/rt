@@ -1,5 +1,9 @@
 import type { eventsEmit } from "@mattstack/rt-client";
 import type { GateAnswers, GateQuestion, GateState } from "./store.ts";
+import { dispatchPrompt, statusBinPath, mrTabLabel, type SkillPathResolver } from "../herdr.ts";
+import { resolveSkillPath } from "../skill-path.ts";
+import { reviewFilePath, reviewReportPath, type ReviewState, type ReviewStatus } from "../review-state.ts";
+import type { AgentLaunchResult } from "../agent-launch.ts";
 
 /** Board-UI answer path: mirrors `gateAnswer` in verbs.ts (the pane escape
     hatch) but as a pure orchestrator over injected io, so the HTTP handler
@@ -83,10 +87,72 @@ export async function answerGate(mrUrl: string, answers: GateAnswers, io: Answer
   return { kind: "ok" };
 }
 
-/** Task 19 fills in the real parked-gate resume (re-launching or resuming
-    the pane that parked). Task 13 lands this stub as the default
-    `resumeParkedGate` hook so `/gate/answer` has somewhere to call; replace
-    this function's body in place rather than rewiring the call site. */
-export function resumeParkedGateStub(gate: GateState): void {
-  console.log(`resumeParkedGate stub: gate ${gate.gateId} (${gate.mrUrl}) was parked; resume not yet implemented`);
+/** Seams the real parked-gate resume needs beyond what answerGate's own io
+    carries: launching into the review workspace and persisting the result to
+    review state, both of which require config the pure answerGate/AnswerGateIo
+    layer deliberately doesn't hold. */
+export interface ResumeParkedGateIo {
+  /** Resolve the domain skill (the board's manifest/config binding) the
+      resumed wrapper should delegate to. */
+  resolveLaunchSkill(mrUrl: string): string;
+  resumeAgentPane(opts: { agentId: string; prompt: string; workspaceLabel: string; tabLabel: string }): Promise<AgentLaunchResult>;
+  writeReviewState(path: string, patch: Partial<ReviewState> & { status: ReviewStatus }): void;
+  reviewsWorkspace: string;
+  notify(message: string): void;
+}
+
+/**
+ * The real parked-gate resume: rebuild the `/board:review` prompt with
+ * `--resumed-gate <gateId>` (the flag the wrapper's re-entry rule keys on to
+ * skip `gate open` and re-enter the domain skill directly) and resume the
+ * pane the gate parked on, persisting the fresh pane ids to review state.
+ *
+ * A parked gate always carries the agentId it parked with -- ingest.ts sets
+ * status: "parked" only on a gate that already opened a review pane. A
+ * missing agentId means that invariant broke (or the gate file was hand
+ * edited), so this degrades to a notify rather than throwing: the answer
+ * itself already succeeded and must not be undone by a resume failure.
+ */
+export async function resumeParkedGate(
+  gate: GateState,
+  io: ResumeParkedGateIo,
+  resolvePath: SkillPathResolver = resolveSkillPath,
+): Promise<void> {
+  if (!gate.agentId) {
+    io.notify("parked gate answered but no agent on file; relaunch from the board");
+    return;
+  }
+
+  const statePath = reviewFilePath(gate.mrUrl);
+  const prompt = await dispatchPrompt(
+    "board:review",
+    {
+      mrUrl: gate.mrUrl,
+      statePath,
+      statusBin: statusBinPath(),
+      reportPath: reviewReportPath(statePath),
+      skill: io.resolveLaunchSkill(gate.mrUrl),
+      resumedGate: gate.gateId,
+    },
+    resolvePath,
+  );
+
+  try {
+    const result = await io.resumeAgentPane({
+      agentId: gate.agentId,
+      prompt,
+      workspaceLabel: io.reviewsWorkspace,
+      tabLabel: mrTabLabel(gate.iid, undefined, "↺"),
+    });
+    if (result.focusedExisting) return;
+    io.writeReviewState(statePath, {
+      status: "reviewing",
+      agentId: result.agentId,
+      paneId: result.paneId,
+      tabId: result.tabId,
+      workspaceId: result.workspaceId,
+    });
+  } catch (err) {
+    console.error(`parked gate resume failed: ${err instanceof Error ? err.message : err}`);
+  }
 }
