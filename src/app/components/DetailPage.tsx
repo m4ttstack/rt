@@ -5,7 +5,7 @@ import { Icon } from "@mattstack/app-kit/icons";
 
 import type { MetricKey, UserDetailResponse } from "../../shared/types";
 import { Button } from "@/components/ui/button";
-import { fetchDetail } from "../api";
+import { useUserDetail } from "../hooks/useLeaderboard";
 import {
   COLUMNS,
   type Column,
@@ -39,25 +39,17 @@ const GROUPS = GROUP_ORDER.map((key) => {
 });
 
 export function DetailPage({ username, initialStat, range, trend }: Props) {
-  const [data, setData] = useState<UserDetailResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+  const selection = useMemo(
+    () => ({ range: range.range, start: range.start, end: range.end, trend }),
+    [range.range, range.start, range.end, trend],
+  );
+  const detailQuery = useUserDetail(username, selection);
+  const data: UserDetailResponse | null = detailQuery.data ?? null;
+  const error = detailQuery.error ? detailQuery.error.message : null;
+  const loading = detailQuery.isLoading;
 
   const validInitial = COLUMNS.some((c) => c.key === initialStat) ? (initialStat as MetricKey) : null;
   const [selected, setSelected] = useState<MetricKey>(validInitial ?? COLUMNS[0]!.key);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    fetchDetail(username, { ...range, trend })
-      .then((res) => !cancelled && setData(res))
-      .catch((e) => !cancelled && setError((e as Error).message))
-      .finally(() => !cancelled && setLoading(false));
-    return () => {
-      cancelled = true;
-    };
-  }, [username, range, trend]);
 
   useEffect(() => {
     if (validInitial) setSelected(validInitial);

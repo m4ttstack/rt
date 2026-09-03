@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { MattstackShell, NotFoundPage } from "@mattstack/app-kit/app";
 import { RailLink } from "@mattstack/app-kit/router";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
-import type { LeaderboardResponse, RefreshProgress } from "../shared/types";
-import { cancelRefresh, fetchLeaderboard, pollRefresh, startRefresh } from "./api";
+import type { LeaderboardResponse } from "../shared/types";
+import { isColdCache, type RangeSelection } from "./api";
+import { useLeaderboard } from "./hooks/useLeaderboard";
+import { useRefreshJob } from "./hooks/useRefreshJob";
 import { useAppRoute } from "./routes";
 import { Controls, type ViewMode } from "./components/Controls";
 import { DetailPage } from "./components/DetailPage";
@@ -18,7 +21,7 @@ interface RangeState {
   end?: string;
 }
 
-const POLL_MS = 750;
+const queryClient = new QueryClient();
 
 // Standalone placeholder until Task 7 wires up settings-kit.
 function SettingsPlaceholder() {
@@ -31,123 +34,71 @@ function SettingsPlaceholder() {
 }
 
 export function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <AppShell />
+    </QueryClientProvider>
+  );
+}
+
+function AppShell() {
   const [data, setData] = useState<LeaderboardResponse | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [initialLoading, setInitialLoading] = useState(false);
+  const [jobError, setJobError] = useState<string | null>(null);
   // Persisted across reloads so the last-selected window/toggles stick.
   const [rangeState, setRangeState] = usePersistentState<RangeState>("forge-range", { range: "30d" });
   const [trend, setTrend] = usePersistentState<boolean>("forge-trend", false);
   const [view, setView] = usePersistentState<ViewMode>("forge-view", "table");
   const route = useAppRoute();
 
-  // Active background refresh job (null when idle).
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [progress, setProgress] = useState<RefreshProgress | null>(null);
-  // The selection a running job was started for, so we only swap in matching results.
-  const jobSelection = useRef<{ range: string; start?: string; end?: string; trend: boolean } | null>(null);
-
-  const startJob = useCallback(
-    async (rs: RangeState, withTrend: boolean) => {
-      setError(null);
-      try {
-        const status = await startRefresh({ ...rs, trend: withTrend });
-        jobSelection.current = { ...rs, trend: withTrend };
-        setJobId(status.jobId);
-        setProgress(status.progress);
-      } catch (e) {
-        setError((e as Error).message);
-      }
-    },
-    [],
+  const selection = useMemo<RangeSelection>(
+    () => ({ range: rangeState.range, start: rangeState.start, end: rangeState.end, trend }),
+    [rangeState.range, rangeState.start, rangeState.end, trend],
   );
 
-  // Cache-first load on mount / range / trend change. Cold cache auto-starts a refresh.
-  // Cancels any in-flight job first so a stale refresh doesn't linger in the background.
+  const refreshJob = useRefreshJob({
+    onDone: (result, startedFor) => {
+      const matches =
+        startedFor.range === rangeState.range &&
+        startedFor.start === rangeState.start &&
+        startedFor.end === rangeState.end &&
+        startedFor.trend === trend;
+      if (matches) setData(result);
+    },
+    onError: setJobError,
+  });
+
+  // Cache-only probe, keyed on the selection: react-query refetches it whenever range/trend change.
+  const leaderboardQuery = useLeaderboard(selection);
+
+  // Cancels any in-flight job first so a stale refresh doesn't linger in the background once the
+  // selection moves on. All effects from one render commit before any async response can land, so
+  // this always runs ahead of anything the new probe fetch below could resolve.
   useEffect(() => {
-    if (jobId) {
-      void cancelRefresh(jobId);
-      setJobId(null);
-      setProgress(null);
+    refreshJob.cancel();
+    setJobError(null);
+    // refreshJob.cancel is intentionally excluded: it is a no-op when idle, and including it here
+    // (its identity changes with jobId) would refire this effect for job starts/stops, not just
+    // selection changes, which is the one thing this effect must run on.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selection]);
+
+  // Cold cache -> start a refresh job for the current selection. Warm cache -> that's the data.
+  useEffect(() => {
+    const result = leaderboardQuery.data;
+    if (!result) return;
+    if (isColdCache(result)) {
+      void refreshJob.start(selection);
+    } else {
+      setData(result);
     }
-
-    let cancelled = false;
-    setError(null);
-    if (!data) setInitialLoading(true);
-    fetchLeaderboard({ ...rangeState, trend, cacheOnly: true })
-      .then((res) => {
-        if (cancelled) return;
-        if ("cached" in res && res.cached === false) {
-          void startJob(rangeState, trend);
-        } else {
-          setData(res as LeaderboardResponse);
-        }
-      })
-      .catch((e: unknown) => { if (!cancelled) setError((e as Error).message); })
-      .finally(() => { if (!cancelled) setInitialLoading(false); });
-    return () => { cancelled = true; };
-    // startJob is stable (empty deps). data/jobId intentionally excluded: data is only
-    // read as a loading-spinner guard; jobId is read once for cleanup, not as a trigger.
+    // Deliberately keyed on the probe result only: `selection` is read fresh via closure, and it
+    // is already the selection that produced this exact `result` (react-query only hands back data
+    // for the query key it was fetched with).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rangeState, trend]);
+  }, [leaderboardQuery.data]);
 
-  // Poll the active job until it leaves "running".
-  useEffect(() => {
-    if (!jobId) return;
-    let stopped = false;
-    let timer: ReturnType<typeof setTimeout>;
-
-    const tick = async () => {
-      try {
-        const status = await pollRefresh(jobId);
-        if (stopped) return;
-        setProgress(status.progress);
-        if (status.status === "running") {
-          timer = setTimeout(tick, POLL_MS);
-          return;
-        }
-        // Terminal states:
-        if (status.status === "done" && status.result) {
-          const sel = jobSelection.current;
-          const matches =
-            sel &&
-            sel.range === rangeState.range &&
-            sel.start === rangeState.start &&
-            sel.end === rangeState.end &&
-            sel.trend === trend;
-          if (matches) setData(status.result);
-        } else if (status.status === "error") {
-          setError(status.error ?? "Refresh failed");
-        }
-        setJobId(null);
-        setProgress(null);
-        jobSelection.current = null;
-      } catch (e) {
-        if (stopped) return;
-        setError((e as Error).message);
-        setJobId(null);
-        setProgress(null);
-      }
-    };
-
-    timer = setTimeout(tick, POLL_MS);
-    return () => { stopped = true; clearTimeout(timer); };
-    // rangeState/trend read via closure are stale but only used for the sel match guard,
-    // which correctly rejects results that no longer match the UI. The range-change effect
-    // above cancels stale jobs so this poll won't run long on a mismatch.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [jobId]);
-
-  const onCancel = useCallback(() => {
-    if (!jobId) return;
-    void cancelRefresh(jobId);
-    // Clear local state immediately so the bar disappears without waiting for the next poll.
-    // Nulling jobId triggers the poll effect's cleanup (stopped=true + clearTimeout), so any
-    // trailing poll response is discarded; the fire-and-forget POST still aborts server-side.
-    setJobId(null);
-    setProgress(null);
-  }, [jobId]);
-
-  const refreshing = jobId !== null;
+  const error = jobError ?? (leaderboardQuery.error ? leaderboardQuery.error.message : null);
+  const initialLoading = leaderboardQuery.isFetching && !data;
 
   return (
     <MattstackShell
@@ -194,12 +145,12 @@ export function App() {
             onTrend={setTrend}
             view={view}
             onView={setView}
-            refreshing={refreshing}
-            onRefresh={() => void startJob(rangeState, trend)}
+            refreshing={refreshJob.refreshing}
+            onRefresh={() => void refreshJob.start(selection)}
             data={data}
           />
 
-          {refreshing && <RefreshProgressBar progress={progress} onCancel={onCancel} />}
+          {refreshJob.refreshing && <RefreshProgressBar progress={refreshJob.progress} onCancel={refreshJob.cancel} />}
 
           <div className="mt-5">
             {error && (
