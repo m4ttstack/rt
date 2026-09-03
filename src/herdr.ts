@@ -417,3 +417,10 @@ export type LaunchReviewOpts = LaunchPaneOpts;
 export async function focusTab(tabId: string, runner: HerdrRunner = defaultRunner): Promise<void> {
   await runner(["tab", "focus", tabId]);
 }
+
+/** Close a launched pane's tab, e.g. once its agent reports done (see
+    closeOnDone). Uses the herdr CLI runner directly -- there is no rt
+    pane:close verb this pass. */
+export async function closeTab(tabId: string, runner: HerdrRunner = defaultRunner): Promise<void> {
+  await runner(["tab", "close", tabId]);
+}

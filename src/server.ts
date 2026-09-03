@@ -24,7 +24,8 @@ import { readGateStates, writeGateState, gateFilePath, pruneGateStates, attachGa
 import { applyGateEvent, ensureBridgeRule, gateEventStore, type EventBridgeRule, type GateEventFrame } from "./gates/ingest.ts";
 import { answerGate, resumeParkedGateStub } from "./gates/answer.ts";
 import { readDrafts, heldDraftsByMr, attachDrafts, pruneDrafts, draftFilePath, writeDraft } from "./draft-state.ts";
-import { launchReview, launchRespond, launchDoctor, launchLegacyResume, parseLaunchNote, mrTabLabel, reopenPrompt } from "./herdr.ts";
+import { launchReview, launchRespond, launchDoctor, launchLegacyResume, parseLaunchNote, mrTabLabel, reopenPrompt, closeTab } from "./herdr.ts";
+import { closeOnDone, type TabIdResolver } from "./close-on-done.ts";
 import { focusPane } from "./focus-pane.ts";
 import { resumeAgentPane } from "./agent-launch.ts";
 import { launchReReview } from "./review-launch.ts";
@@ -294,6 +295,14 @@ async function readLatchDetail(mr: BoardMR): Promise<MRDetail | null> {
   if (!res.ok || !res.data) return null;
   return { discussions: res.data.discussions } as MRDetail;
 }
+
+/** The tabId a signal's launched pane is running in, from whichever of the
+    three state stores its kind owns (see closeOnDone). */
+const resolveSignalTabId: TabIdResolver = (signal) => {
+  if (signal.kind === "review") return readReviewStates().get(signal.mrUrl)?.tabId;
+  if (signal.kind === "respond") return readRespondStates().get(signal.mrUrl)?.tabId;
+  return readDoctorStates().get(signal.mrUrl)?.tabId;
+};
 
 let forceNextFetch = false;
 const cache = new SnapshotCache(async () => {
@@ -1141,6 +1150,11 @@ const httpServer = Bun.serve({
             console.error(`latch step failed for ${signal.mrUrl}: ${err instanceof Error ? err.message : err}`);
           }
         }
+        // Close the launched pane's tab once its agent reports done -- error
+        // never closes, so a failing pane stays open for forensics. Must run
+        // above the emoji early-return below: most `done` signals have no
+        // emoji and would never reach a close placed after it.
+        await closeOnDone(signal, resolveSignalTabId, (tabId) => closeTab(tabId));
         const emoji = signalEmoji(signal.kind, signal.status, config.slack.emoji, signal.outcome);
         if (!emoji) {
           return new Response(JSON.stringify({ ok: true, reacted: false }), { headers: { "content-type": "application/json" } });
