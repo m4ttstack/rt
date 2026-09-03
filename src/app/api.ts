@@ -2,29 +2,13 @@ import { hc } from "hono/client";
 import type { InferResponseType } from "hono/client";
 
 import type { AppType } from "../server/routes";
-import type { LeaderboardResponse, RefreshStatusResponse, UserDetailResponse } from "../shared/types";
 
 /** Same-origin: Vite proxies /api to the boxscore server in dev, and in production the server serves this bundle itself. */
 export const client = hc<AppType>("/");
 
-/**
- * `/api/leaderboard`, `/api/detail`, and `POST /api/refresh` all route their window
- * parsing through `windowFromQuery` in `src/server/routes.ts`, whose declared return
- * type is the bare `Response` class rather than a Hono `TypedResponse`. That widens
- * each handler's inferred schema enough that `InferResponseType` collapses to `any`
- * for these three routes (verified: `const x: InferResponseType<...> = 5` type-checks
- * with the annotation in place, and stops type-checking once it's removed). Fixing it
- * is a one-line change confined to that annotation, but src/server is out of scope for
- * this task, so these three response types are imported from the shared wire contract
- * instead of (silently) losing type safety to `any`. This is not re-deriving a DTO:
- * `LeaderboardResponse`, `UserDetailResponse`, and `RefreshStatusResponse` are the
- * server's own exported types, not hand-written duplicates.
- */
-export type LeaderboardResult = LeaderboardResponse | { cached: false };
-export type DetailResult = UserDetailResponse;
-export type RefreshResult = RefreshStatusResponse;
-
-/** The other job routes carry no `windowFromQuery` call, so inference is unaffected there. */
+export type LeaderboardResult = InferResponseType<typeof client.api.leaderboard.$get, 200>;
+export type DetailResult = InferResponseType<typeof client.api.detail.$get, 200>;
+export type RefreshResult = InferResponseType<typeof client.api.refresh.$post, 200>;
 export type CacheStats = InferResponseType<typeof client.api.cache.stats.$get, 200>;
 
 export function isColdCache(res: LeaderboardResult): res is { cached: false } {

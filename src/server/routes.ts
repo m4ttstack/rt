@@ -7,13 +7,15 @@ import { getLeaderboard, getUserDetail, UnknownUserError } from "./leaderboard.j
 import { startRefresh, getRefresh, cancelRefresh, toStatusResponse } from "./refresh/index.js";
 import { getStore } from "./store/index.js";
 import { resolveWindowArgs } from "./util/window.js";
-import type { CacheStatsResponse, TimeWindow } from "../shared/types.js";
+import type { CacheStatsResponse } from "../shared/types.js";
 
 const boolQuery = (c: Context, name: string): boolean =>
   c.req.query(name) === "1" || c.req.query(name) === "true";
 
-/** The window from query params, or the 400 response to return for bad bounds. */
-function windowFromQuery(c: Context): TimeWindow | Response {
+/** The window from query params, or the 400 response to return for bad bounds.
+    No return-type annotation: an explicit `TimeWindow | Response` union collapses
+    Hono's response-schema inference for every handler using it. */
+function windowFromQuery(c: Context) {
   try {
     return resolveWindowArgs(
       c.req.query("range"),

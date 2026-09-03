@@ -4,6 +4,7 @@ import { RailLink } from "@mattstack/app-kit/router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import type { LeaderboardResponse } from "../shared/types";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { isColdCache, type RangeSelection } from "./api";
 import { useLeaderboard } from "./hooks/useLeaderboard";
 import { useRefreshJob } from "./hooks/useRefreshJob";
@@ -36,7 +37,9 @@ function SettingsPlaceholder() {
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <AppShell />
+      <TooltipProvider>
+        <AppShell />
+      </TooltipProvider>
     </QueryClientProvider>
   );
 }
