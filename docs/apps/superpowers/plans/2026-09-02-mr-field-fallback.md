@@ -24,10 +24,12 @@
 ### Task 1: The mrRef resolver
 
 **Files:**
+
 - Create: `src/app/runs/mrRef.ts`
 - Test: `src/app/runs/mrRef.test.ts`
 
 **Interfaces:**
+
 - Consumes: `BranchEnrichment` from `@mattstack/rt-client` (`mr: { iid: number; webUrl: string | null; state: string; pipeline: { status: string } | null } | null`).
 - Produces (Task 2 relies on these exact names):
 
@@ -79,7 +81,9 @@ describe('mrRef', () => {
   });
 
   it('keeps enrichment without webUrl linkless but labeled', () => {
-    expect(mrRef({ ...enrichmentMr, webUrl: null, pipeline: null }, null)).toEqual({
+    expect(
+      mrRef({ ...enrichmentMr, webUrl: null, pipeline: null }, null)
+    ).toEqual({
       iid: '43166',
       state: 'merged',
       webUrl: null,
@@ -108,7 +112,9 @@ describe('mrRef', () => {
   });
 
   it('keeps an unrecognized URL clickable with no iid', () => {
-    expect(mrRef(undefined, 'https://gitlab.example.com/g/p/-/pipelines/9')).toMatchObject({
+    expect(
+      mrRef(undefined, 'https://gitlab.example.com/g/p/-/pipelines/9')
+    ).toMatchObject({
       iid: null,
       webUrl: 'https://gitlab.example.com/g/p/-/pipelines/9',
     });
@@ -129,9 +135,16 @@ describe('mrRef', () => {
     expect(mrRef(null, null)).toBeNull();
   });
 
+  it('treats a whitespace-only field as nothing recorded', () => {
+    expect(mrRef(undefined, '   ')).toBeNull();
+  });
+
   it('normalizes a URL with surrounding whitespace and parses iid', () => {
     expect(
-      mrRef(undefined, '  https://gitlab.example.com/g/p/-/merge_requests/43166\n')
+      mrRef(
+        undefined,
+        '  https://gitlab.example.com/g/p/-/merge_requests/43166\n'
+      )
     ).toEqual({
       iid: '43166',
       state: null,
@@ -192,6 +205,7 @@ export function mrRef(
   }
   if (!mrField) return null;
   const raw = mrField.trim();
+  if (!raw) return null;
   if (!/^https?:\/\//i.test(raw)) {
     return { iid: null, state: null, webUrl: null, ciStatus: null, text: raw };
   }
@@ -204,7 +218,7 @@ export function mrRef(
 - [ ] **Step 4: Run to verify pass**
 
 Run: `bun run test -- run src/app/runs/mrRef.test.ts`
-Expected: PASS, 9/9.
+Expected: PASS, 10/10.
 
 - [ ] **Step 5: Commit**
 
@@ -218,10 +232,12 @@ git commit -m "add runs/mrRef: enrichment-first MR resolver with mr-field URL fa
 ### Task 2: SummaryCard renders through mrRef
 
 **Files:**
+
 - Modify: `src/app/runs/RunDetail.tsx` (SummaryCard only: the `mr` const, the values-map override, the MR column JSX, the CI status line)
 - Test: `src/app/runs/RunDetail.test.tsx` (new cases; existing cases untouched)
 
 **Interfaces:**
+
 - Consumes: `mrRef`/`MrRef` from Task 1, exactly as declared there.
 - Produces: nothing later relies on.
 
@@ -321,37 +337,41 @@ if (mr?.webUrl && enrichment?.mr) values.set('mr', mr.webUrl);
 4. The MR column renders the one label both ways:
 
 ```tsx
-{mr ? (
-  mr.webUrl ? (
-    <Anchor
-      href={mr.webUrl}
-      target="_blank"
-      rel="noopener noreferrer"
-      fz={13}
-      data-testid="mr-link"
-    >
-      {mrLabel}
-    </Anchor>
+{
+  mr ? (
+    mr.webUrl ? (
+      <Anchor
+        href={mr.webUrl}
+        target="_blank"
+        rel="noopener noreferrer"
+        fz={13}
+        data-testid="mr-link"
+      >
+        {mrLabel}
+      </Anchor>
+    ) : (
+      <Text fz={13} truncate style={{ minWidth: 0 }}>
+        {mrLabel}
+      </Text>
+    )
   ) : (
-    <Text fz={13} truncate style={{ minWidth: 0 }}>
-      {mrLabel}
+    <Text c={text.dimmed} fz={13}>
+      not recorded
     </Text>
-  )
-) : (
-  <Text c={text.dimmed} fz={13}>
-    not recorded
-  </Text>
-)}
+  );
+}
 ```
 
 5. The CI line reads the resolver:
 
 ```tsx
-{mr?.ciStatus && (
-  <Text c={text.muted} fz={11}>
-    {ciStatusLabel(mr.ciStatus)}
-  </Text>
-)}
+{
+  mr?.ciStatus && (
+    <Text c={text.muted} fz={11}>
+      {ciStatusLabel(mr.ciStatus)}
+    </Text>
+  );
+}
 ```
 
 - [ ] **Step 4: Run the file, then the suite**
@@ -359,7 +379,7 @@ if (mr?.webUrl && enrichment?.mr) values.set('mr', mr.webUrl);
 Run: `bun run test -- run src/app/runs/RunDetail.test.tsx`
 Expected: PASS, new and old cases (the "not recorded" count test still sees the MR column dimmed when no field and no enrichment).
 
-Run: `bun run test -- run && bun run typecheck && bun run lint`
+Run: `bun run test -- run && bun run typecheck && bun run lint && bun run format:check`
 Expected: all green.
 
 - [ ] **Step 5: Commit**

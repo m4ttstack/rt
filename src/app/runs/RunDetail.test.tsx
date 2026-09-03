@@ -563,7 +563,11 @@ describe('RunDetail', () => {
         ],
       })
     );
-    seenPost.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
 
     renderDetail();
 
@@ -595,7 +599,11 @@ describe('RunDetail', () => {
         ],
       })
     );
-    seenPost.mockResolvedValue({ ok: true, status: 200, json: async () => ({}) });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
 
     renderDetail();
 

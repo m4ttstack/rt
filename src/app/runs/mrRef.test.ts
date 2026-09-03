@@ -21,7 +21,9 @@ describe('mrRef', () => {
   });
 
   it('keeps enrichment without webUrl linkless but labeled', () => {
-    expect(mrRef({ ...enrichmentMr, webUrl: null, pipeline: null }, null)).toEqual({
+    expect(
+      mrRef({ ...enrichmentMr, webUrl: null, pipeline: null }, null)
+    ).toEqual({
       iid: '43166',
       state: 'merged',
       webUrl: null,
@@ -50,7 +52,9 @@ describe('mrRef', () => {
   });
 
   it('keeps an unrecognized URL clickable with no iid', () => {
-    expect(mrRef(undefined, 'https://gitlab.example.com/g/p/-/pipelines/9')).toMatchObject({
+    expect(
+      mrRef(undefined, 'https://gitlab.example.com/g/p/-/pipelines/9')
+    ).toMatchObject({
       iid: null,
       webUrl: 'https://gitlab.example.com/g/p/-/pipelines/9',
     });
@@ -71,9 +75,16 @@ describe('mrRef', () => {
     expect(mrRef(null, null)).toBeNull();
   });
 
+  it('treats a whitespace-only field as nothing recorded', () => {
+    expect(mrRef(undefined, '   ')).toBeNull();
+  });
+
   it('normalizes a URL with surrounding whitespace and parses iid', () => {
     expect(
-      mrRef(undefined, '  https://gitlab.example.com/g/p/-/merge_requests/43166\n')
+      mrRef(
+        undefined,
+        '  https://gitlab.example.com/g/p/-/merge_requests/43166\n'
+      )
     ).toEqual({
       iid: '43166',
       state: null,

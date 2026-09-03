@@ -30,6 +30,7 @@ export function mrRef(
   }
   if (!mrField) return null;
   const raw = mrField.trim();
+  if (!raw) return null;
   if (!/^https?:\/\//i.test(raw)) {
     return { iid: null, state: null, webUrl: null, ciStatus: null, text: raw };
   }
