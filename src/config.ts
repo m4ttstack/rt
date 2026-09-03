@@ -110,10 +110,11 @@ export interface BoardConfig {
   doctorCwd: string;
   /** herdr workspace label doctor sessions are grouped under. */
   doctorsWorkspace: string;
-  /** Command that starts claude in every pane the board launches, e.g.
-      "cswap run 2 --share-history -- claude" to pin panes to one account.
-      Inserted verbatim (trusted operator config). Empty = plain "claude". */
-  claudeCommand: string;
+  /** cswap account, --model, and --effort every rt-agent pane the board
+      launches carries (board.agent.account/model/effort). Each field
+      absent = the daemon's own default (see agent.account/agent.model/
+      agent.effort). Replaces the retired claudeCommand. */
+  agent: { account?: string; model?: string; effort?: string };
   /** Domain skill the doctor wrapper delegates to. Empty = generic. */
   doctorSkill: string;
   /** Extra bot accounts whose general MR comments to hide (username or display
@@ -233,9 +234,6 @@ export function parseConfig(raw: string, source = "config.json"): BoardConfig {
   if (cfg.doctorsWorkspace !== undefined && typeof cfg.doctorsWorkspace !== "string") {
     throw new Error(`${source} "doctorsWorkspace" must be a string`);
   }
-  if (cfg.claudeCommand !== undefined && typeof cfg.claudeCommand !== "string") {
-    throw new Error(`${source} "claudeCommand" must be a string (a shell command that starts claude)`);
-  }
   if (cfg.doctorSkill !== undefined && typeof cfg.doctorSkill !== "string") {
     throw new Error(`${source} "doctorSkill" must be a string (a skill name)`);
   }
@@ -265,7 +263,7 @@ export function parseConfig(raw: string, source = "config.json"): BoardConfig {
     respondsWorkspace: cfg.respondsWorkspace ?? "responses",
     doctorCwd: cfg.doctorCwd ?? "",
     doctorsWorkspace: cfg.doctorsWorkspace ?? "doctors",
-    claudeCommand: cfg.claudeCommand ?? "",
+    agent: cfg.agent ?? {},
     doctorSkill: cfg.doctorSkill ?? "",
     botUsernames: (cfg.botUsernames ?? []).map((b) => b.trim()),
     rtRepos: deriveRtRepos(cfg.gitlabHost!, cfg.projects!, rtRepos),
@@ -487,7 +485,11 @@ function withBoardStoreFallback(fileConfig: BoardConfig, resolve: GetSettingFn):
     respondsWorkspace: workspaces?.responds ?? fileConfig.respondsWorkspace,
     doctorsWorkspace: workspaces?.doctors ?? fileConfig.doctorsWorkspace,
     defaultMember: storeValue("board.defaultMember", resolve) ?? fileConfig.defaultMember,
-    claudeCommand: storeValue("board.claudeCommand", resolve) ?? fileConfig.claudeCommand,
+    agent: {
+      account: storeValue("board.agent.account", resolve),
+      model: storeValue("board.agent.model", resolve),
+      effort: storeValue("board.agent.effort", resolve),
+    },
     reviewCwd: cwds?.review ?? fileConfig.reviewCwd,
     respondCwd: cwds?.respond ?? fileConfig.respondCwd,
     doctorCwd: cwds?.doctor ?? fileConfig.doctorCwd,

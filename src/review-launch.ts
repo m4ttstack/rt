@@ -23,9 +23,12 @@ export interface ReReviewCtx {
   workspaceLabel: string;
   skill: string;
   author?: string;
-  /** Command that starts claude in the pane (config.claudeCommand). Empty/absent = "claude".
-      Only honored on the legacy resume path (see launchLegacyResume). */
-  claudeCommand?: string;
+  /** cswap account, --model, and --effort forwarded to launchReview's
+      startAgentPane call (config.agent.account/model/effort). Unused on the
+      legacy resume path, which starts plain "claude". */
+  account?: string;
+  model?: string;
+  effort?: string;
   /** Operator note from the human who launched the re-review (see operatorNoteParagraph). */
   note?: string;
 }
@@ -125,7 +128,6 @@ export async function launchReReview(
         prompt,
         tabPrefix: "⟲",
         author: ctx.author,
-        claudeCommand: ctx.claudeCommand,
       });
       io.writeReviewState(statePath, { status: "reviewing", tabId, workspaceId });
       return { kind: "resumed" };
@@ -149,7 +151,9 @@ export async function launchReReview(
       skill: ctx.skill,
       reReview: true,
       author: ctx.author,
-      claudeCommand: ctx.claudeCommand,
+      account: ctx.account,
+      model: ctx.model,
+      effort: ctx.effort,
       note: ctx.note,
     });
     if (!result.focusedExisting) {

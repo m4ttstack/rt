@@ -13,7 +13,9 @@ function deps(over: Partial<TriageRunDeps> = {}): TriageRunDeps & { audit: Audit
     triage: parseTriageBlock({ enabled: true, doctorSkill: "team:doctor-api" }),
     doctorCwd: "/repo",
     doctorsWorkspace: "doctors",
-    claudeCommand: "cswap run 2 -- claude",
+    account: "matt@example.com",
+    model: "opus",
+    effort: "high",
     repoForMr: () => "acme/webapp",
     fetchOwnMrs: async () => [{ mrUrl: "https://x/mr/1", iid: 1, pipelineId: 100, pipelineState: "failed", needsRebase: false, author: "matt", sourceBranch: "feat", targetBranch: "master", isStacked: false } satisfies OwnMrFacts],
     readDoctorStates: () => new Map(),
@@ -42,7 +44,9 @@ describe("runTriage", () => {
     expect(d.launches[0].skill).toBe("team:doctor-api");
     expect(d.launches[0].fixClasses).toEqual(["retry-flake", "inherited-note-draft"]); // cleanApiRebase off by default
     expect(d.audit.some((e) => e.decision === "dispatch")).toBe(true);
-    expect(d.launches[0].claudeCommand).toBe("cswap run 2 -- claude");
+    expect(d.launches[0].account).toBe("matt@example.com");
+    expect(d.launches[0].model).toBe("opus");
+    expect(d.launches[0].effort).toBe("high");
     expect(d.memory.mrs["https://x/mr/1"]!.attemptsToday).toBe(1);
     expect(d.memory.mrs["https://x/mr/1"]!.lastHandledPipelineId).toBe(100);
   });

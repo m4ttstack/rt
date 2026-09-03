@@ -244,23 +244,16 @@ export async function dispatchPrompt(
   return withNote(`/${wrapper} ${dispatchArgs(o, skillPath)}`, o.note);
 }
 
-/** The command a pane starts claude with. config.claudeCommand replaces plain
-    "claude" verbatim (trusted operator config, e.g. a cswap wrapper that pins
-    the account); empty/absent keeps the historical behavior. */
-function claudeInvocation(claudeCommand?: string): string {
-  return claudeCommand?.trim() || "claude";
-}
-
-/** Shell command that cd's into cwd and starts claude with the given prompt. */
-export function buildPaneCommand(cwd: string, prompt: string, claudeCommand?: string): string {
-  return `cd ${shellSingleQuote(cwd)} && ${claudeInvocation(claudeCommand)} ${shellSingleQuote(prompt)}`;
+/** Shell command that cd's into cwd and starts plain claude with the given prompt. */
+export function buildPaneCommand(cwd: string, prompt: string): string {
+  return `cd ${shellSingleQuote(cwd)} && claude ${shellSingleQuote(prompt)}`;
 }
 
 /** Shell command that cd's into cwd and resumes an existing claude session. With
     no prompt, claude drops the user into the interactive continuation; with one,
     claude resumes and sends it as the first message (used by re-review). */
-export function buildResumePaneCommand(cwd: string, sessionId: string, prompt?: string, claudeCommand?: string): string {
-  const base = `cd ${shellSingleQuote(cwd)} && ${claudeInvocation(claudeCommand)} --resume ${shellSingleQuote(sessionId)}`;
+export function buildResumePaneCommand(cwd: string, sessionId: string, prompt?: string): string {
+  const base = `cd ${shellSingleQuote(cwd)} && claude --resume ${shellSingleQuote(sessionId)}`;
   return prompt ? `${base} ${shellSingleQuote(prompt)}` : base;
 }
 
@@ -275,10 +268,12 @@ export interface LaunchPaneOpts {
   statePath: string;
   /** Domain skill the launched wrapper delegates to (resolveLaunchSkill's result). */
   skill?: string;
-  /** Command that starts claude in the pane (config.claudeCommand). Empty/absent = "claude".
-      Only launchLegacyResume's HerdrRunner path still honors this -- launchReview/
-      launchRespond/launchDoctor go through startAgentPane now and ignore it. */
-  claudeCommand?: string;
+  /** cswap account, --model, and --effort forwarded to startAgentPane
+      (config.agent.account/model/effort). Absent = the daemon's own default.
+      Unused by launchLegacyResume's HerdrRunner path (plain "claude"). */
+  account?: string;
+  model?: string;
+  effort?: string;
   /** Operator note appended to the launched prompt (see operatorNoteParagraph). */
   note?: string;
   /** Review only: launch this review with the re-review framing (see reviewPrompt). */
@@ -354,7 +349,7 @@ export async function launchReview(
     note: opts.note,
   }, resolvePath);
   const tabLabel = mrTabLabel(opts.iid, opts.author, opts.reReview ? "⟲" : undefined);
-  return startAgentPane({ repo: opts.repo, cwd: opts.cwd, prompt, workspaceLabel: opts.workspaceLabel, tabLabel }, io);
+  return startAgentPane({ repo: opts.repo, cwd: opts.cwd, prompt, workspaceLabel: opts.workspaceLabel, tabLabel, account: opts.account, model: opts.model, effort: opts.effort }, io);
 }
 
 /** Start the MR-response skill in a fresh rt-agent pane under the responses workspace. */
@@ -371,7 +366,7 @@ export async function launchRespond(
     note: opts.note,
   }, resolvePath);
   const tabLabel = mrTabLabel(opts.iid, opts.author);
-  return startAgentPane({ repo: opts.repo, cwd: opts.cwd, prompt, workspaceLabel: opts.workspaceLabel, tabLabel }, io);
+  return startAgentPane({ repo: opts.repo, cwd: opts.cwd, prompt, workspaceLabel: opts.workspaceLabel, tabLabel, account: opts.account, model: opts.model, effort: opts.effort }, io);
 }
 
 /** Start the MR-doctor skill in a fresh rt-agent pane under the doctors workspace. */
@@ -391,24 +386,25 @@ export async function launchDoctor(
     note: opts.note,
   }, resolvePath);
   const tabLabel = mrTabLabel(opts.iid, opts.author);
-  return startAgentPane({ repo: opts.repo, cwd: opts.cwd, prompt, workspaceLabel: opts.workspaceLabel, tabLabel }, io);
+  return startAgentPane({ repo: opts.repo, cwd: opts.cwd, prompt, workspaceLabel: opts.workspaceLabel, tabLabel, account: opts.account, model: opts.model, effort: opts.effort }, io);
 }
 
 /** Resume a session that predates rt agent adoption (a bare claude sessionId,
     no agentId) in a new pane under the given workspace, over the HerdrRunner.
-    Ages out as panes relaunch through startAgentPane/launchReview et al -- see
-    LaunchPaneOpts.claudeCommand for the retirement note. The tab is labelled
-    with a leading glyph (default `↺`) so a resumed pane is visually distinct
-    from a fresh launch when the workspace has both. An optional `prompt` is
-    sent as the first message (re-review uses this to direct the resumed
-    session); `tabPrefix` overrides the glyph (e.g. `⟲` for a re-review resume). */
+    Ages out as panes relaunch through startAgentPane/launchReview et al --
+    starts plain "claude" (claudeCommand is retired; the rt agent path is the
+    only one that carries account/model/effort). The tab is labelled with a
+    leading glyph (default `↺`) so a resumed pane is visually distinct from a
+    fresh launch when the workspace has both. An optional `prompt` is sent as
+    the first message (re-review uses this to direct the resumed session);
+    `tabPrefix` overrides the glyph (e.g. `⟲` for a re-review resume). */
 export async function launchLegacyResume(
   opts: LaunchPaneOpts & { sessionId: string; workspaceKind: string; prompt?: string; tabPrefix?: string },
   runner: HerdrRunner = defaultRunner,
 ): Promise<{ tabId: string; workspaceId: string }> {
   return launchInWorkspace(
     opts,
-    buildResumePaneCommand(opts.cwd, opts.sessionId, opts.prompt, opts.claudeCommand),
+    buildResumePaneCommand(opts.cwd, opts.sessionId, opts.prompt),
     opts.workspaceKind,
     mrTabLabel(opts.iid, opts.author, opts.tabPrefix ?? "↺"),
     runner,

@@ -32,7 +32,7 @@ const config: BoardConfig = {
   respondsWorkspace: "responds",
   doctorCwd: "",
   doctorsWorkspace: "doctors",
-  claudeCommand: "",
+  agent: {},
   doctorSkill: "",
   botUsernames: [],
   rtRepos: {},

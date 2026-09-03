@@ -183,9 +183,11 @@ describe("launchReReview: sessionId only on file, no agentId (arm ii -- launchLe
     );
   });
 
-  test("threads claudeCommand through to the resumed pane", async () => {
-    await launchReReview(URL_A, IID, { ...CTX, claudeCommand: "cswap run 2 -- claude" }, makeIo(), noSkillPath);
-    expect(legacyResumeCalls[0]).toMatchObject({ claudeCommand: "cswap run 2 -- claude" });
+  test("account/model/effort do not reach the legacy resume pane (plain claude)", async () => {
+    await launchReReview(URL_A, IID, { ...CTX, account: "matt@example.com", model: "opus", effort: "high" }, makeIo(), noSkillPath);
+    expect(legacyResumeCalls[0]).not.toHaveProperty("account");
+    expect(legacyResumeCalls[0]).not.toHaveProperty("model");
+    expect(legacyResumeCalls[0]).not.toHaveProperty("effort");
   });
 
   test("a thrown resume leaves the review in error", async () => {
@@ -227,9 +229,9 @@ describe("launchReReview: nothing on file (arm iii -- fresh launchReview)", () =
     expect(reviewCalls[0]).toMatchObject({ note: "compare against !4700" });
   });
 
-  test("threads claudeCommand through to the fresh launch", async () => {
-    await launchReReview(URL_A, IID, { ...CTX, claudeCommand: "cswap run 2 -- claude" }, makeIo(), noSkillPath);
-    expect(reviewCalls[0]).toMatchObject({ claudeCommand: "cswap run 2 -- claude" });
+  test("threads account/model/effort through to the fresh launch", async () => {
+    await launchReReview(URL_A, IID, { ...CTX, account: "matt@example.com", model: "opus", effort: "high" }, makeIo(), noSkillPath);
+    expect(reviewCalls[0]).toMatchObject({ account: "matt@example.com", model: "opus", effort: "high" });
   });
 
   test("writes a queued state carrying the MR identity, then stamps the tab and agent", async () => {

@@ -137,7 +137,9 @@ try {
     triage,
     doctorCwd: boardConfig.doctorCwd || boardConfig.reviewCwd,
     doctorsWorkspace: boardConfig.doctorsWorkspace,
-    claudeCommand: boardConfig.claudeCommand,
+    account: boardConfig.agent.account,
+    model: boardConfig.agent.model,
+    effort: boardConfig.agent.effort,
     repoForMr: repoForMrUrl,
     // Same resolved identity fetchOwnMrs just filtered by (MAT-351 re-check).
     identity: username,
@@ -195,6 +197,9 @@ try {
           // BOARD-14: manifest binding when present, else "" (the generic wrapper) --
           // same resolution the board's own HTTP re-review launches use.
           skill: resolveLaunchSkill("review", mrUrl, boardConfig),
+          account: boardConfig.agent.account,
+          model: boardConfig.agent.model,
+          effort: boardConfig.agent.effort,
         }),
       publishOutcome: (to, payload) => enqueueOutbox(makeEnvelope(to, "nudge-outcome", payload)),
       memory,
@@ -229,7 +234,9 @@ try {
             repo: repoForMrUrl(mrUrl),
             workspaceLabel: boardConfig.reviewsWorkspace,
             skill: resolveLaunchSkill("review", mrUrl, boardConfig),
-            claudeCommand: boardConfig.claudeCommand,
+            account: boardConfig.agent.account,
+            model: boardConfig.agent.model,
+            effort: boardConfig.agent.effort,
           }),
         memory,
         cfg: triage,

@@ -73,9 +73,11 @@ export interface TriageRunDeps {
   triage: TriageConfig;
   doctorCwd: string;
   doctorsWorkspace: string;
-  /** Command that starts claude in the pane (config.claudeCommand). Empty/absent = "claude".
-      launchDoctor (rt agent path) ignores this now; only launchLegacyResume honors it. */
-  claudeCommand?: string;
+  /** cswap account, --model, and --effort forwarded to launchDoctor's
+      startAgentPane call (config.agent.account/model/effort). */
+  account?: string;
+  model?: string;
+  effort?: string;
   /** The MR's GitLab project path (e.g. "group/project"), threaded to
       launchDoctor as `repo`. */
   repoForMr(mrUrl: string): string;
@@ -204,7 +206,9 @@ export async function runTriage(deps: TriageRunDeps): Promise<{ dispatched: numb
         repo: deps.repoForMr(edge.mrUrl),
         workspaceLabel: deps.doctorsWorkspace,
         statePath,
-        claudeCommand: deps.claudeCommand,
+        account: deps.account,
+        model: deps.model,
+        effort: deps.effort,
         skill: deps.triage.doctorSkill,
         // The wrapper treats an absent tier as the historical checkout
         // (fix-and-push) behavior; "api" stays the explicit no-checkout tier.

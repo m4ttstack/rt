@@ -172,22 +172,8 @@ describe("command builders", () => {
   --report /s/1.md
   --re-review`);
   });
-  test("buildPaneCommand launches a configured claude command in place of plain claude", () => {
-    expect(buildPaneCommand("/repo dir", "do it", "cswap run 2 --share-history -- claude")).toBe(
-      "cd '/repo dir' && cswap run 2 --share-history -- claude 'do it'",
-    );
-  });
-  test("buildPaneCommand falls back to plain claude when the configured command is empty", () => {
-    expect(buildPaneCommand("/repo", "do it", "")).toBe("cd '/repo' && claude 'do it'");
-    expect(buildPaneCommand("/repo", "do it", "   ")).toBe("cd '/repo' && claude 'do it'");
-  });
   test("buildResumePaneCommand with no prompt drops into an interactive resume", () => {
     expect(buildResumePaneCommand("/repo", "sess-1")).toBe("cd '/repo' && claude --resume 'sess-1'");
-  });
-  test("buildResumePaneCommand resumes under the configured claude command", () => {
-    expect(buildResumePaneCommand("/repo", "sess-1", "hi", "cswap run 2 -- claude")).toBe(
-      "cd '/repo' && cswap run 2 -- claude --resume 'sess-1' 'hi'",
-    );
   });
   test("buildResumePaneCommand with a prompt resumes and sends it as the first message", () => {
     expect(buildResumePaneCommand("/repo", "sess-1", "re-review please")).toBe(
@@ -272,6 +258,18 @@ describe("launchReview / launchRespond / launchDoctor (rt agent)", () => {
     );
     expect(startCalls[0]!.tab).toBe("⟲ !4821 Grace Hopper");
     expect(startCalls[0]!.prompt).toContain("--re-review");
+  });
+
+  test("threads account/model/effort into the rt agent start payload", async () => {
+    const { io, startCalls } = fakeAgentIo();
+    await launchReview(
+      {
+        mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", repo: "acme/webapp", workspaceLabel: "reviews", statePath: "/s/1.json",
+        account: "matt@example.com", model: "opus", effort: "high",
+      },
+      io,
+    );
+    expect(startCalls[0]).toMatchObject({ account: "matt@example.com", model: "opus", effort: "high" });
   });
 
   test("launchRespond starts an rt agent with the respond prompt under the responses workspace", async () => {
@@ -392,25 +390,6 @@ describe("launchLegacyResume (pre-rt-agent sessionId resume, over HerdrRunner)",
     const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
     expect(runCall?.[2]).toBe("w40:p7");
     expect(runCall?.[3]).toBe("cd '/repo' && claude --resume 'sess-1'");
-  });
-
-  test("resumes under the configured claude command when set", async () => {
-    const calls: string[][] = [];
-    const runner: HerdrRunner = async (args) => {
-      calls.push(args);
-      if (args[0] === "workspace" && args[1] === "list") return WS_LIST;
-      if (args[0] === "tab" && args[1] === "create") return TAB_CREATE;
-      return JSON.stringify({ result: { type: "ok" } });
-    };
-    await launchLegacyResume(
-      {
-        mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", repo: "acme/webapp", workspaceLabel: "reviews", statePath: "/s/1.json",
-        sessionId: "sess-1", workspaceKind: "review", claudeCommand: "cswap run 2 -- claude",
-      },
-      runner,
-    );
-    const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
-    expect(runCall?.[3]).toBe("cd '/repo' && cswap run 2 -- claude --resume 'sess-1'");
   });
 
   test("sends a prompt as the first resumed message when given, under the re-review tab glyph", async () => {

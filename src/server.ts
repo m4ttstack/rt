@@ -768,7 +768,9 @@ const httpServer = Bun.serve({
             workspaceLabel: config.reviewsWorkspace,
             skill: reviewSkillForTab(config, typeof tabId === "string" ? tabId : undefined, parsed.mrUrl, resolveLaunchSkill),
             author,
-            claudeCommand: config.claudeCommand,
+            account: config.agent.account,
+            model: config.agent.model,
+            effort: config.agent.effort,
             note,
           });
           return new Response(JSON.stringify({ ok: true, reReview: true }), { headers: { "content-type": "application/json" } });
@@ -800,7 +802,7 @@ const httpServer = Bun.serve({
           const sessionId = existing?.sessionId;
           if (!sessionId) return new Response("no session id on file for this review", { status: 400 });
           void launchLegacyResume(
-            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: config.reviewCwd, repo, workspaceLabel: config.reviewsWorkspace, statePath, sessionId, workspaceKind: "review", author, claudeCommand: config.claudeCommand, prompt },
+            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: config.reviewCwd, repo, workspaceLabel: config.reviewsWorkspace, statePath, sessionId, workspaceKind: "review", author, prompt },
           )
             .then(({ tabId, workspaceId }) => writeReviewState(statePath, { status: existing?.status ?? "done", tabId, workspaceId }))
             .catch((err) => console.error(`review resume failed: ${err instanceof Error ? err.message : err}`));
@@ -827,7 +829,9 @@ const httpServer = Bun.serve({
           statePath,
           skill: reviewSkillForTab(config, typeof tabId === "string" ? tabId : undefined, parsed.mrUrl, resolveLaunchSkill),
           author,
-          claudeCommand: config.claudeCommand,
+          account: config.agent.account,
+          model: config.agent.model,
+          effort: config.agent.effort,
           note,
         })
           .then((result) => {
@@ -897,7 +901,7 @@ const httpServer = Bun.serve({
           const sessionId = existing?.sessionId;
           if (!sessionId) return new Response("no session id on file for this response", { status: 400 });
           void launchLegacyResume(
-            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: cwd, repo, workspaceLabel: config.respondsWorkspace, statePath, sessionId, workspaceKind: "respond", author, claudeCommand: config.claudeCommand, prompt },
+            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: cwd, repo, workspaceLabel: config.respondsWorkspace, statePath, sessionId, workspaceKind: "respond", author, prompt },
           )
             .then(({ tabId, workspaceId }) => writeRespondState(statePath, { status: existing?.status ?? "done", tabId, workspaceId }))
             .catch((err) => console.error(`respond resume failed: ${err instanceof Error ? err.message : err}`));
@@ -923,7 +927,9 @@ const httpServer = Bun.serve({
           statePath,
           skill: resolveLaunchSkill("respond", parsed.mrUrl),
           author,
-          claudeCommand: config.claudeCommand,
+          account: config.agent.account,
+          model: config.agent.model,
+          effort: config.agent.effort,
           note,
         })
           .then((result) => {
@@ -985,7 +991,9 @@ const httpServer = Bun.serve({
           statePath,
           skill: resolveLaunchSkill("doctor", parsed.mrUrl),
           author,
-          claudeCommand: config.claudeCommand,
+          account: config.agent.account,
+          model: config.agent.model,
+          effort: config.agent.effort,
           note,
         })
           .then((result) => {
