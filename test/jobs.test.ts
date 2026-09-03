@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { startRefresh, getRefresh, cancelRefresh, toStatusResponse, __resetJobs } from "../server/jobs/refresh.js";
+import { startRefresh, getRefresh, cancelRefresh, toStatusResponse, __resetJobs } from "../server/refresh/job.js";
 import type { LeaderboardResponse } from "../shared/types.js";
 import type { TimeWindow } from "../shared/types.js";
 
