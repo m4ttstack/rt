@@ -7,6 +7,7 @@ import { Chip, CopyButton, SelectBox } from "@mattstack/tui-kit";
 import { StatusDot } from "./StatusDot.tsx";
 import { CommentsButton, CommentsToken } from "./CommentsDrawer.tsx";
 import { BoardBadges } from "./BoardBadges.tsx";
+import { GateCard } from "./GateCard.tsx";
 import { ago, activeReviewers, cleanTitle, mrLine, statusPhrase, flattenStack } from "./format.ts";
 
 /** Plain click opens the MR in GitLab; right-click opens the row action menu
@@ -166,6 +167,7 @@ function RowView({
             </div>
             <BoardBadges mr={mr as BoardMRWithReview} now={now} ctx={ctx} className="tui-row-board" />
             <Watching mr={mr} />
+            {(mr as BoardMRWithReview).gate && <GateCard mr={mr as BoardMRWithReview} />}
             </div>
           </div>
     );
