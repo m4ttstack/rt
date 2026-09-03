@@ -1,6 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+
+import { Button, Paper, Text } from "@mattstack/app-kit/core";
+
 import type { RefreshProgress as Progress } from "../../shared/types";
 import { progressKey, stallNotice } from "../lib/progress";
+import styles from "./RefreshProgress.module.css";
 
 interface Props {
   progress: Progress | null;
@@ -9,7 +13,7 @@ interface Props {
 
 export function RefreshProgress({ progress, onCancel }: Props) {
   // The server sends a human label with every progress event; phase is the raw fallback.
-  const label = progress ? (progress.label || progress.phase) : "Starting…";
+  const label = progress ? progress.label || progress.phase : "Starting…";
   const determinate = !!progress && progress.total > 0;
   const pct = determinate ? Math.round((progress.done / progress.total) * 100) : null;
 
@@ -18,45 +22,53 @@ export function RefreshProgress({ progress, onCancel }: Props) {
   const stalled = stallNotice(useIdleMs(progressKey(progress)));
 
   return (
-    <div
-      className={`mt-4 flex items-center gap-3 rounded-lg border px-4 py-2.5 text-sm ${
-        stalled ? "border-amber-500/40 bg-amber-500/10" : "border-border bg-muted"
-      }`}
+    <Paper
+      withBorder
+      radius="md"
+      px="md"
+      py="xs"
+      mt="md"
+      data-testid="refresh-progress"
+      data-state={determinate ? "determinate" : "indeterminate"}
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 12,
+        borderColor: stalled ? "var(--mantine-color-warn-6)" : undefined,
+        backgroundColor: stalled ? "var(--mantine-color-warn-light)" : undefined,
+      }}
     >
-      <span className="font-medium text-foreground">Refreshing · {label}</span>
+      <Text size="sm" fw={600} style={{ whiteSpace: "nowrap" }}>
+        Refreshing · {label}
+      </Text>
 
       {stalled && (
-        <span className="whitespace-nowrap text-xs text-amber-700 dark:text-amber-300/90">
+        <Text size="xs" c="warn" style={{ whiteSpace: "nowrap" }}>
           {stalled}
-        </span>
+        </Text>
       )}
 
-      <div className="relative h-1.5 flex-1 overflow-hidden rounded-full bg-background">
+      <div className={styles.track} data-testid="refresh-progress-track">
         {determinate ? (
           <div
-            className={`h-full rounded-full transition-[width] duration-300 ${
-              stalled ? "animate-pulse bg-amber-500" : "bg-primary"
-            }`}
+            className={stalled ? `${styles.determinate} ${styles.determinateStalled}` : styles.determinate}
             style={{ width: `${pct}%` }}
           />
         ) : (
-          <div className="absolute inset-y-0 left-0 w-1/3 animate-pulse rounded-full bg-primary/70" />
+          <div className={styles.indeterminate} />
         )}
       </div>
 
       {determinate && (
-        <span className="tabular-nums text-xs text-muted-foreground">
+        <Text size="xs" c="dimmed" style={{ whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>
           {progress.done}/{progress.total}
-        </span>
+        </Text>
       )}
 
-      <button
-        onClick={onCancel}
-        className="rounded-md border border-border bg-background px-2.5 py-1 text-xs text-foreground hover:bg-muted"
-      >
+      <Button size="xs" variant="default" onClick={onCancel}>
         Cancel
-      </button>
-    </div>
+      </Button>
+    </Paper>
   );
 }
 

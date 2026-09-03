@@ -1,10 +1,9 @@
 import { useState } from "react";
-import { RefreshCw } from "lucide-react";
+
+import { Button, Group, Loader, SegmentedControl, Stack, Switch, Text, TextInput } from "@mattstack/app-kit/core";
+import { Icon } from "@mattstack/app-kit/icons";
 
 import type { LeaderboardResponse, RangePreset } from "../../shared/types";
-import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export type ViewMode = "table" | "cards";
 
@@ -35,14 +34,14 @@ export function Controls(props: Props) {
   const [end, setEnd] = useState(() => toDateInput(initialEnd));
 
   return (
-    <div className="flex flex-col gap-3 border-b pb-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex gap-1">
+    <Stack gap="sm" pb="md" style={{ borderBottom: "1px solid var(--mantine-color-default-border)" }}>
+      <Group gap="md" wrap="wrap" align="center">
+        <Button.Group>
           {PRESETS.map((p) => (
             <Button
               key={p}
-              size="sm"
-              variant={range === p ? "default" : "outline"}
+              size="xs"
+              variant={range === p ? "filled" : "default"}
               onClick={() => {
                 setCustomOpen(false);
                 onRange(p);
@@ -52,83 +51,77 @@ export function Controls(props: Props) {
             </Button>
           ))}
           <Button
-            size="sm"
-            variant={range === "custom" ? "default" : "outline"}
+            size="xs"
+            variant={range === "custom" ? "filled" : "default"}
             onClick={() => setCustomOpen((o) => !o)}
           >
             Custom
           </Button>
-        </div>
+        </Button.Group>
 
-        <div className="flex items-center gap-2">
-          <Switch id="trend" checked={trend} onCheckedChange={onTrend} />
-          <label htmlFor="trend" className="cursor-pointer text-sm text-muted-foreground">
-            Trend vs prior
-          </label>
-        </div>
+        <Switch label="Trend vs prior" checked={trend} onChange={(e) => onTrend(e.currentTarget.checked)} />
 
-        <Tabs value={view} onValueChange={(v) => onView(v as ViewMode)}>
-          <TabsList>
-            <TabsTrigger value="table">Table</TabsTrigger>
-            <TabsTrigger value="cards">Cards</TabsTrigger>
-          </TabsList>
-        </Tabs>
+        <SegmentedControl
+          size="xs"
+          value={view}
+          onChange={(v) => onView(v as ViewMode)}
+          data={[
+            { label: "Table", value: "table" },
+            { label: "Cards", value: "cards" },
+          ]}
+        />
 
-        <Button variant="outline" size="sm" onClick={onRefresh} disabled={refreshing} className="ml-auto">
-          <RefreshCw className={refreshing ? "animate-spin" : ""} />
+        <Button
+          variant="default"
+          size="xs"
+          ml="auto"
+          disabled={refreshing}
+          onClick={onRefresh}
+          leftSection={refreshing ? <Loader size={12} /> : <Icon name="refresh" size={14} />}
+        >
           Refresh
         </Button>
-      </div>
+      </Group>
 
       {customOpen && (
-        <div className="flex flex-wrap items-end gap-2 text-sm">
-          <label className="flex flex-col gap-1 text-muted-foreground">
-            Start
-            <input
-              type="date"
-              value={start}
-              onChange={(e) => setStart(e.target.value)}
-              className="rounded-md border bg-background px-2 py-1 text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            />
-          </label>
-          <label className="flex flex-col gap-1 text-muted-foreground">
-            End
-            <input
-              type="date"
-              value={end}
-              onChange={(e) => setEnd(e.target.value)}
-              className="rounded-md border bg-background px-2 py-1 text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
-            />
-          </label>
+        <Group gap="sm" align="flex-end">
+          <TextInput label="Start" type="date" size="xs" value={start} onTextChange={setStart} />
+          <TextInput label="End" type="date" size="xs" value={end} onTextChange={setEnd} />
           <Button
-            size="sm"
+            size="xs"
             disabled={!start || !end}
             onClick={() => onRange("custom", new Date(start).toISOString(), new Date(end).toISOString())}
           >
             Apply
           </Button>
-        </div>
+        </Group>
       )}
 
       {data && (
-        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-          <span>
+        <Group gap="lg">
+          <Text size="xs" c="dimmed" span>
             Scope:{" "}
-            <span className="text-foreground">
+            <span style={{ color: "var(--mantine-color-text)" }}>
               {data.scope.type === "group" ? data.scope.groupPath : `${data.scope.projectPaths?.length ?? 0} projects`}
             </span>
-          </span>
-          <span>
+          </Text>
+          <Text size="xs" c="dimmed" span>
             Window:{" "}
-            <span className="text-foreground">
+            <span style={{ color: "var(--mantine-color-text)" }}>
               {fmtDate(data.window.start)} → {fmtDate(data.window.end)}
             </span>
-          </span>
-          <span>{data.fromCache ? "cached" : "fresh"}</span>
-          {data.hasTrend && <span className="text-primary">trend vs {fmtDate(data.priorWindow!.start)}+</span>}
-        </div>
+          </Text>
+          <Text size="xs" c="dimmed" span>
+            {data.fromCache ? "cached" : "fresh"}
+          </Text>
+          {data.hasTrend && data.priorWindow && (
+            <Text size="xs" c="accent" span>
+              trend vs {fmtDate(data.priorWindow.start)}+
+            </Text>
+          )}
+        </Group>
       )}
-    </div>
+    </Stack>
   );
 }
 
