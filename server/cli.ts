@@ -135,6 +135,21 @@ async function main() {
     return;
   }
 
+  // A plain read never fetches, so a cold store would otherwise print an empty board that
+  // looks like a real result. Probe first and say what to run instead.
+  if (!args.refresh) {
+    try {
+      await getLeaderboard({ window, refresh: false, trend: args.trend, cacheOnly: true });
+    } catch (err) {
+      if ((err as Error).name === "ColdCacheError") {
+        console.error("No data stored for this window yet. Run again with --refresh to fetch it.");
+        process.exitCode = 1;
+        return;
+      }
+      throw err;
+    }
+  }
+
   const res = await getLeaderboard({ window, refresh: args.refresh, trend: args.trend });
 
   if (args.format === "json") {
