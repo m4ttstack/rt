@@ -22,6 +22,7 @@ import {
   type HerdrRunner,
 } from "../herdr.ts";
 import type { AgentIo } from "../agent-launch.ts";
+import { repoIdentityField } from "../config.ts";
 
 const WS_LIST = JSON.stringify({
   result: { type: "workspace_list", workspaces: [
@@ -240,6 +241,27 @@ describe("launchReview / launchRespond / launchDoctor (rt agent)", () => {
     expect(startCalls[0]!.prompt).toContain("/board:review https://x/mr/1");
     expect(startCalls[0]!.prompt).toContain("--state /s/1.json");
     expect(res).toEqual({ agentId: "agent-1", sessionId: "sess-1", paneId: "pane-1", tabId: "tab-1", workspaceId: "ws-1", focusedExisting: false });
+  });
+
+  // Regression: startAgentPane's `repo` must reach the rt agent daemon as the
+  // SERIALIZED rt identity ("remote:<encoded host/path>"), never a bare
+  // GitLab project path -- `rt agent list --repo <identity>` filters on the
+  // exact serialized string, so a bare path silently never matches. The
+  // resolution itself (repoIdentityField + gitlabHost fallback) lives at the
+  // launch call sites (server.ts, bin/triage.ts), not here -- this pins that
+  // whatever identity a caller resolves survives launchReview/Respond/Doctor
+  // and startAgentPane unmangled, so a future refactor can't silently swap
+  // it back for a bare path without a test noticing.
+  test("passes the caller-resolved repo identity through to startAgentPane verbatim, never a bare project path", async () => {
+    const { io, startCalls } = fakeAgentIo();
+    const identity = repoIdentityField("gitlab.com/acme/webapp")!;
+    await launchReview(
+      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", repo: identity, workspaceLabel: "reviews", statePath: "/s/1.json" },
+      io,
+    );
+    expect(startCalls[0]!.repo).toBe(identity);
+    expect((startCalls[0]!.repo as string).startsWith("remote:")).toBe(true);
+    expect(startCalls[0]!.repo).not.toBe("acme/webapp");
   });
 
   test("launchReview puts the author beside the id, and the re-review glyph ahead of it, in the tab label", async () => {

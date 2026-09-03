@@ -6,7 +6,7 @@ import { getClientAssets } from "./client-assets.ts";
 import styleCss from "./style.css" with { type: "text" };
 import faviconSvg from "./favicon.svg" with { type: "text" };
 import type { PullRequest, MRDetail } from "@mattstack/glance";
-import { loadConfig, loadGitLabToken, loadSlackToken, loadSwitchboardToken, loadSwitchboardAdminToken, saveMemberHidden, saveRosterMembers, saveSwitchboardUrl, saveTabs, parseConfig, CONFIG_PATH, daemonRepoField, repoIdentityField } from "./config.ts";
+import { loadConfig, loadGitLabToken, loadSlackToken, loadSwitchboardToken, loadSwitchboardAdminToken, saveMemberHidden, saveRosterMembers, saveSwitchboardUrl, saveTabs, parseConfig, CONFIG_PATH, daemonRepoField, repoIdentityField, resolveLaunchRepo } from "./config.ts";
 import { memoizeAsync } from "./memoize-async.ts";
 import { resolveBoardSkill, type BoardSkillKind } from "./manifest-bindings.ts";
 import { upsertEnvKeys } from "./env-file.ts";
@@ -748,7 +748,7 @@ const httpServer = Bun.serve({
         }
         const author = mrAuthorLabel(mr);
         const existing = readReviewStates().get(parsed.mrUrl);
-        const repo = projectPathFromWebUrl(parsed.mrUrl, config.gitlabHost) ?? "";
+        const repo = resolveLaunchRepo(mr.rtRepo, config.gitlabHost, projectPathFromWebUrl(parsed.mrUrl, config.gitlabHost) ?? "", parsed.mrUrl);
         if (reReview) {
           // A live review re-focuses its tab rather than re-reviewing on top of it.
           if (existing?.tabId && (existing.status === "queued" || existing.status === "reviewing")) {
@@ -871,7 +871,7 @@ const httpServer = Bun.serve({
         }
         const author = mrAuthorLabel(mr);
         const existing = readRespondStates().get(parsed.mrUrl);
-        const repo = projectPathFromWebUrl(parsed.mrUrl, config.gitlabHost) ?? "";
+        const repo = resolveLaunchRepo(mr.rtRepo, config.gitlabHost, projectPathFromWebUrl(parsed.mrUrl, config.gitlabHost) ?? "", parsed.mrUrl);
         if (resume) {
           const statePath = respondFilePath(parsed.mrUrl);
           // A plain reopen (no note) stays promptless and interactive -- same
@@ -964,6 +964,7 @@ const httpServer = Bun.serve({
         }
         const author = mrAuthorLabel(mr);
         const existing = readDoctorStates().get(parsed.mrUrl);
+        const repo = resolveLaunchRepo(mr.rtRepo, config.gitlabHost, projectPathFromWebUrl(parsed.mrUrl, config.gitlabHost) ?? "", parsed.mrUrl);
         const inFlight = new Set(["queued", "diagnosing", "rebasing", "fixing", "watching"]);
         if (existing && existing.tabId && inFlight.has(existing.status)) {
           try {
@@ -979,7 +980,7 @@ const httpServer = Bun.serve({
           mrUrl: parsed.mrUrl,
           iid: parsed.iid,
           cwd,
-          repo: projectPathFromWebUrl(parsed.mrUrl, config.gitlabHost) ?? "",
+          repo,
           workspaceLabel: config.doctorsWorkspace,
           statePath,
           skill: resolveLaunchSkill("doctor", parsed.mrUrl),

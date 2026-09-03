@@ -45,6 +45,21 @@ export function daemonRepoField(config: Pick<BoardConfig, "rtRepos">, projectPat
   return repoIdentityField(config.rtRepos[projectPath]);
 }
 
+/** Resolve the rt agent daemon's `repo` identity for a launch (startAgentPane's
+    `repo`, matched by `rt agent list --repo <identity>`'s exact-string
+    filter). Prefers the project's configured rtRepos value -- the same
+    resolution readDiscussions already relies on at server.ts's
+    enrichReviewerComments/readLatchDetail -- and falls back to deriving one
+    from gitlabHost plus the MR's own GitLab project path. Never blocks a
+    launch: when both attempts fail (malformed config), logs a warning and
+    returns the bare project path as a best-effort value instead of null. */
+export function resolveLaunchRepo(rtRepoOverride: string | null | undefined, gitlabHost: string, projectPath: string, mrUrl: string): string {
+  const repo = repoIdentityField(rtRepoOverride) ?? repoIdentityField(`${gitlabHost}/${projectPath}`);
+  if (repo) return repo;
+  console.warn(`launch: could not resolve an rt repo identity for ${mrUrl} (gitlabHost=${gitlabHost}, projectPath=${projectPath || "<empty>"}); launching with the bare project path`);
+  return projectPath;
+}
+
 export interface TabConfig {
   id: string;
   label: string;
