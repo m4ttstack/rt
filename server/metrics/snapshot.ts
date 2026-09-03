@@ -1,6 +1,6 @@
 import { buildCorpus, buildUserCohorts, type CohortOptions, type Corpus } from "./cohorts.js";
 import { mean, percentile, round, streaks } from "./stats.js";
-import type { FetchResult } from "../pipeline/model.js";
+import type { FetchResult } from "../store/model.js";
 import type { PipelineStatusBreakdown } from "../../shared/types.js";
 
 export interface RawDist {

@@ -1,21 +1,19 @@
-import { readdir, readFile } from "node:fs/promises";
-import { CACHE_DIR } from "./cache/store.js";
+import { readSettings } from "./config/index.js";
 import { compileBotPatterns } from "./metrics/stats.js";
+import { getStore, mrKey } from "./store/index.js";
 import { BUILTIN_BOT_PATTERNS } from "../shared/bots.js";
-import type { FetchOutcome } from "./pipeline/fetch.js";
 import type { SuspectedBot } from "../shared/types.js";
-
-/** The envelope cache/store.ts writes: a FetchOutcome under `data`. */
-interface CacheEnvelope {
-  data: FetchOutcome;
-}
 
 export type { SuspectedBot };
 
+/** Wide enough to sweep every stored row; ISO date strings sort lexicographically so this bounds indexRowsUpdatedWithin's range comparison for any real data. */
+const EPOCH = "0000-01-01T00:00:00.000Z";
+const FAR_FUTURE = "9999-12-31T23:59:59.999Z";
+
 /**
- * Scan the most recent cache file for usernames that match built-in or extra bot
- * patterns, excluding usernames that appear in the configured users list or are
- * already resolved as human identities.
+ * Scan every stored MR (index authors + metrics note authors/approvers) for usernames
+ * that match built-in or extra bot patterns, excluding usernames already known as roster
+ * members (visible or hidden).
  */
 export async function scanSuspectedBots(
   extraPatterns: string[],
@@ -25,35 +23,12 @@ export async function scanSuspectedBots(
     ...compileBotPatterns(extraPatterns),
   ];
 
-  // Find the most recent cache file.
-  let files: string[];
-  try {
-    files = (await readdir(CACHE_DIR)).filter((f) => f.endsWith(".json"));
-  } catch {
-    return [];
-  }
-  if (files.length === 0) return [];
+  const store = getStore();
+  const indexRows = store.indexRowsUpdatedWithin(EPOCH, FAR_FUTURE);
+  const keys = indexRows.map((r) => mrKey(r.projectPath, r.iid));
+  const metricsRows = store.metricsByKeys(keys);
 
-  // Filenames embed the window dates, so descending name order approximates recency.
-  files.sort().reverse();
-  let envelope: CacheEnvelope | null = null;
-  for (const f of files.slice(0, 10)) {
-    try {
-      const raw = await readFile(`${CACHE_DIR}/${f}`, "utf8");
-      const parsed = JSON.parse(raw);
-      if (parsed.data?.result?.mrs) {
-        envelope = parsed;
-        break;
-      }
-    } catch { /* try next */ }
-  }
-  if (!envelope) return [];
-
-  const { result, identities } = envelope.data;
-  const mrs = result.mrs;
-
-  // Gather all usernames from MR notes + approvals, excluding known human users.
-  const knownUsers = new Set(Object.keys(identities ?? {}));
+  const knownUsers = new Set(readSettings().roster.map((r) => r.username));
   const seen = new Set<string>();
   const matches: SuspectedBot[] = [];
 
@@ -64,9 +39,10 @@ export async function scanSuspectedBots(
     if (pat) matches.push({ username: u, matchedPattern: String(pat) });
   };
 
-  for (const mr of mrs) {
-    for (const note of mr.notes) check(note.authorUsername);
-    for (const a of mr.approvedByUsernames) check(a);
+  for (const row of indexRows) check(row.authorUsername);
+  for (const m of metricsRows) {
+    for (const note of m.notes) check(note.authorUsername);
+    for (const a of m.approvedByUsernames) check(a);
   }
 
   return matches;

@@ -9,8 +9,8 @@ function dbPath(): string {
 }
 
 /**
- * bun:sqlite is required; unlike server/cache/mr-store.ts there is no in-memory fallback
- * here, so a broken store throws instead of silently masquerading as an empty one.
+ * bun:sqlite is required; there is no in-memory fallback here, so a broken store throws
+ * instead of silently masquerading as an empty one.
  */
 function loadSqlite(): typeof import("bun:sqlite") {
   try {

@@ -14,7 +14,7 @@
     "start": "bun server/index.ts",
     "report": "bun server/cli.ts",
     "validate": "bun server/cli.ts --format validate",
-    "test": "bun --bun vitest run --exclude test/linear-resolve.test.ts --exclude test/detail-persist.test.ts && vitest run test/linear-resolve.test.ts test/detail-persist.test.ts",
+    "test": "bun --bun vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p web/tsconfig.json"
   },

@@ -2,9 +2,9 @@ import { linearRequest } from "./client.js";
 import { mapIssue } from "./map.js";
 import { mrTicketHaystack } from "./ticket.js";
 import { mapLimit } from "../util/concurrency.js";
-import { isValidLinearId, putLinearIds } from "../cache/mr-store.js";
+import { getStore } from "../store/index.js";
 import type { RawIssue } from "./raw-types.js";
-import type { NormMr, NormLinearIssue } from "../pipeline/model.js";
+import type { NormMr, NormLinearIssue } from "../store/model.js";
 import type { LeaderboardWarning, RefreshProgress } from "../../shared/types.js";
 
 /** Extract Linear identifiers from a string, e.g. "ACME-123", "ENG-456", "HUB:299". */
@@ -152,10 +152,11 @@ export async function resolveLinearTickets(
 
   // Partition by cached validity: known-valid go straight to batch query,
   // known-invalid are skipped, unknown go through the full verify flow.
+  const store = getStore();
   const knownValid: string[] = [];
   const unknown: string[] = [];
   for (const id of candidates) {
-    const cached = isValidLinearId(id);
+    const cached = store.isValidLinearId(id);
     if (cached === true) knownValid.push(id);
     else if (cached === null) unknown.push(id);
     // cached === false: skip entirely
@@ -208,7 +209,7 @@ export async function resolveLinearTickets(
       const entries = chunk
         .filter((id) => !failedSet.has(id))
         .map((id) => ({ id, valid: !!result[`_${chunk.indexOf(id)}`] }));
-      putLinearIds(entries);
+      store.putLinearIds(entries);
     }
   }
 

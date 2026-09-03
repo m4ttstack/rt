@@ -19,7 +19,7 @@ import { mapLimit } from "../util/concurrency.js";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
-/** How many fetched MR metrics to buffer before writing them to the store (mirrors pipeline/fetch.ts). */
+/** How many fetched MR metrics to buffer before writing them to the store. */
 const PERSIST_BATCH = 25;
 
 export interface RefreshRunOptions {

@@ -1,4 +1,4 @@
-import type { NormMr } from "../pipeline/model.js";
+import type { NormMr } from "../store/model.js";
 import { REVERT_TITLE_RE } from "../../shared/reverts.js";
 
 /**
