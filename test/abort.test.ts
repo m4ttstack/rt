@@ -55,7 +55,7 @@ describe("abort signal threading", () => {
     const c = new AbortController();
 
     await expect(
-      resolveLinearTickets("lin_key", [mergedMr], warnings, c.signal),
+      resolveLinearTickets("lin_key", [mergedMr], warnings, [], c.signal),
     ).rejects.toMatchObject({ name: "AbortError" });
     // Cancellation must not degrade to a warning + [].
     expect(warnings).toEqual([]);

@@ -251,7 +251,14 @@ export async function runRefresh(opts: RefreshRunOptions): Promise<LeaderboardWa
   const ticketSources = buildFetchResult(store, window, rosterUsernames).mrs.filter(
     (m) => eligibleKeySet.has(mrKey(m.projectPath, m.iid)) && eligibleForLinearDiscovery(m),
   );
-  const linearIssues = await resolveLinearTickets(env.linearApiKey, ticketSources, warnings, signal, report);
+  const linearIssues = await resolveLinearTickets(
+    env.linearApiKey,
+    ticketSources,
+    warnings,
+    rosterUsernames,
+    signal,
+    report,
+  );
   // resolveLinearTickets returns [] when Linear is unconfigured or there are no source MRs;
   // upsertLinearIssues([]) is a no-op transaction, so this never clobbers previously stored issues.
   store.upsertLinearIssues(linearIssues);

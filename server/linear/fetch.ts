@@ -4,7 +4,7 @@ import { mrTicketHaystack } from "./ticket.js";
 import { mapLimit } from "../util/concurrency.js";
 import { getStore } from "../store/index.js";
 import type { RawIssue } from "./raw-types.js";
-import type { NormMr, NormLinearIssue } from "../store/model.js";
+import type { MrState, NormMr, NormLinearIssue } from "../store/model.js";
 import type { LeaderboardWarning, RefreshProgress } from "../../shared/types.js";
 
 /** Extract Linear identifiers from a string, e.g. "ACME-123", "ENG-456", "HUB:299". */
@@ -45,6 +45,52 @@ interface VerifyOutcome {
 const CHUNK_SIZE = 100;
 
 const LINEAR_CONCURRENCY = 6;
+
+/** One linked MR's identity plus the fields the credit rule needs. */
+interface TicketMr {
+  iid: number;
+  projectPath: string;
+  authorUsername: string;
+  state: MrState;
+  createdAt: string;
+  mergedAt: string | null;
+}
+
+/**
+ * Among MRs tied on `timeOf`, the lower (projectPath, iid) pair wins: an arbitrary but
+ * deterministic order, independent of scan order.
+ */
+function earliestMr<T extends { projectPath: string; iid: number }>(
+  mrs: readonly T[],
+  timeOf: (m: T) => string,
+): T {
+  return mrs.reduce((best, m) => {
+    const delta = Date.parse(timeOf(m)) - Date.parse(timeOf(best));
+    if (delta !== 0) return delta < 0 ? m : best;
+    if (m.projectPath !== best.projectPath) return m.projectPath < best.projectPath ? m : best;
+    return m.iid < best.iid ? m : best;
+  });
+}
+
+/**
+ * Credit a ticket to a person from its linked MRs. Merged work is the only thing that
+ * proves someone finished it, so it always outranks anything still open; among merged
+ * MRs, a roster author is preferred over an outside contributor whose branch happened
+ * to also reference the ticket, and ties resolve to whichever merged earliest. With
+ * nothing merged yet, only an uncontested single author is safe to credit -- several
+ * candidates with nothing shipped is a guess, not an attribution.
+ */
+function creditedAuthor(mrs: readonly TicketMr[], roster: ReadonlySet<string>): string | null {
+  const merged = mrs.filter((m) => m.state === "merged" && m.mergedAt);
+  if (merged.length > 0) {
+    const rosterMerged = merged.filter((m) => roster.has(m.authorUsername));
+    const pool = rosterMerged.length > 0 ? rosterMerged : merged;
+    return earliestMr(pool, (m) => m.mergedAt!).authorUsername;
+  }
+  const authors = new Set(mrs.map((m) => m.authorUsername));
+  if (authors.size !== 1) return null;
+  return earliestMr(mrs, (m) => m.createdAt).authorUsername;
+}
 
 /**
  * Verify a chunk of identifiers against Linear. On a batch error (one bad identifier
@@ -121,14 +167,16 @@ export async function resolveLinearTickets(
   apiKey: string | undefined,
   sourceMrs: readonly NormMr[],
   warnings: LeaderboardWarning[],
+  roster: readonly string[] | ReadonlySet<string> = [],
   signal?: AbortSignal,
   onProgress?: (p: Omit<RefreshProgress, "window">) => void,
 ): Promise<NormLinearIssue[]> {
   if (!apiKey || sourceMrs.length === 0) return [];
 
+  const rosterSet = roster instanceof Set ? roster : new Set(roster);
+
   interface TicketRef {
-    authors: Set<string>;
-    mrs: { iid: number; projectPath: string }[];
+    mrs: TicketMr[];
   }
   const ticketMap = new Map<string, TicketRef>();
   for (const mr of sourceMrs) {
@@ -136,10 +184,16 @@ export async function resolveLinearTickets(
     for (const id of ids) {
       const normalized = id.toUpperCase().replace(":", "-");
       if (!mr.authorUsername) continue;
-      const ref = ticketMap.get(normalized) ?? { authors: new Set(), mrs: [] };
-      ref.authors.add(mr.authorUsername);
+      const ref = ticketMap.get(normalized) ?? { mrs: [] };
       if (!ref.mrs.some((m) => m.iid === mr.iid && m.projectPath === mr.projectPath)) {
-        ref.mrs.push({ iid: mr.iid, projectPath: mr.projectPath });
+        ref.mrs.push({
+          iid: mr.iid,
+          projectPath: mr.projectPath,
+          authorUsername: mr.authorUsername,
+          state: mr.state,
+          createdAt: mr.createdAt,
+          mergedAt: mr.mergedAt,
+        });
       }
       ticketMap.set(normalized, ref);
     }
@@ -171,8 +225,8 @@ export async function resolveLinearTickets(
       const identifier = chunk[idx];
       if (!identifier) continue;
       const ref = ticketMap.get(identifier);
-      const author = ref?.authors.values().next().value ?? null;
-      const linkedMrs = ref?.mrs ?? [];
+      const author = ref ? creditedAuthor(ref.mrs, rosterSet) : null;
+      const linkedMrs = (ref?.mrs ?? []).map(({ iid, projectPath }) => ({ iid, projectPath }));
       issues.push(mapIssue(raw, author, linkedMrs));
     }
   };
