@@ -167,7 +167,7 @@ export async function resolveLinearTickets(
   apiKey: string | undefined,
   sourceMrs: readonly NormMr[],
   warnings: LeaderboardWarning[],
-  roster: readonly string[] | ReadonlySet<string> = [],
+  roster: readonly string[] | ReadonlySet<string>,
   signal?: AbortSignal,
   onProgress?: (p: Omit<RefreshProgress, "window">) => void,
 ): Promise<NormLinearIssue[]> {

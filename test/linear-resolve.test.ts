@@ -78,6 +78,7 @@ describe("resolveLinearTickets resilience", () => {
       "key",
       [sourceMr(1, "ACME-9001"), sourceMr(2, "ACME-9002")],
       warnings,
+      [],
     );
 
     expect(issues.map((i) => i.identifier).sort()).toEqual(["ACME-9001", "ACME-9002"]);
@@ -99,6 +100,7 @@ describe("resolveLinearTickets resilience", () => {
       "key",
       [sourceMr(1, "ACME-9001"), sourceMr(2, "ACME-9002")],
       warnings,
+      [],
     );
 
     expect(issues.map((i) => i.identifier).sort()).toEqual(["ACME-9001", "ACME-9002"]);
@@ -111,7 +113,7 @@ describe("resolveLinearTickets resilience", () => {
     stubLinear(alwaysRateLimited);
 
     const warnings: LeaderboardWarning[] = [];
-    const issues = await resolveLinearTickets("key", [sourceMr(1, "ACME-9010")], warnings);
+    const issues = await resolveLinearTickets("key", [sourceMr(1, "ACME-9010")], warnings, []);
 
     expect(issues).toEqual([]);
     expect(warnings.some((w) => w.code === "linear_partial")).toBe(true);
@@ -123,7 +125,7 @@ describe("resolveLinearTickets resilience", () => {
     stubLinear(alwaysRateLimited);
 
     const warnings: LeaderboardWarning[] = [];
-    await resolveLinearTickets("key", [sourceMr(1, "ACME-9020")], warnings);
+    await resolveLinearTickets("key", [sourceMr(1, "ACME-9020")], warnings, []);
 
     expect(getStore().isValidLinearId("ACME-9020")).toBeNull();
   });
@@ -135,7 +137,7 @@ describe("resolveLinearTickets resilience", () => {
     stubLinear(() => Response.json({ errors: [{ message: "Linear errors: Entity not found: Issue" }] }));
 
     const warnings: LeaderboardWarning[] = [];
-    const issues = await resolveLinearTickets("key", [sourceMr(1, "ACME-9040")], warnings);
+    const issues = await resolveLinearTickets("key", [sourceMr(1, "ACME-9040")], warnings, []);
 
     expect(issues).toEqual([]);
     expect(getStore().isValidLinearId("ACME-9040")).toBe(false);
@@ -146,7 +148,7 @@ describe("resolveLinearTickets resilience", () => {
     stubLinear((ids) => okData(ids, (id) => (id === "ACME-9030" ? rawFor(id) : null)));
 
     const warnings: LeaderboardWarning[] = [];
-    await resolveLinearTickets("key", [sourceMr(1, "ACME-9030"), sourceMr(2, "ACME-9031")], warnings);
+    await resolveLinearTickets("key", [sourceMr(1, "ACME-9030"), sourceMr(2, "ACME-9031")], warnings, []);
 
     expect(getStore().isValidLinearId("ACME-9030")).toBe(true);
     expect(getStore().isValidLinearId("ACME-9031")).toBe(false);
