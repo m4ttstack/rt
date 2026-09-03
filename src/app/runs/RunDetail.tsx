@@ -192,6 +192,7 @@ function SummaryCard({
   const commitsValue = values.get('commits') ?? null;
 
   const title = enrichment?.ticket?.title;
+  const ticketUrl = enrichment?.ticket?.url ?? null;
   const mrLabel = mr
     ? (mr.text ??
       `${mr.iid ? `!${mr.iid}` : 'MR'}${mr.state ? ` ${mr.state}` : ''}`)
@@ -214,9 +215,29 @@ function SummaryCard({
     >
       <Group justify="space-between" align="flex-start" wrap="nowrap">
         <Group gap={6} wrap="nowrap" style={{ minWidth: 0 }}>
-          <Text fw={700} fz={18} c={text.highContrast('accent')}>
-            {ticketValue ?? run.id}
-          </Text>
+          {/* The accent color alone reads as a link while being inert text,
+              so the ticket carries a real underline and the external-link
+              glyph whenever enrichment knows its url. */}
+          {ticketValue && ticketUrl ? (
+            <Anchor
+              href={ticketUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              fw={700}
+              fz={18}
+              underline="always"
+              data-testid="ticket-link"
+            >
+              <Group gap={4} wrap="nowrap" component="span">
+                {ticketValue}
+                <Icons.externalLink size={14} />
+              </Group>
+            </Anchor>
+          ) : (
+            <Text fw={700} fz={18} c={text.highContrast('accent')}>
+              {ticketValue ?? run.id}
+            </Text>
+          )}
           <Kbd size="xs">t</Kbd>
           {title && (
             <Text fz={16} fw={500} truncate style={{ minWidth: 0 }}>

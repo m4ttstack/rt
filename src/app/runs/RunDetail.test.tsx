@@ -518,6 +518,43 @@ describe('RunDetail', () => {
     );
   });
 
+  it('links the ticket id to its Linear url, opening in a new tab', async () => {
+    enrichPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ 'feat/x': enrichedBranch }),
+    });
+    detailGet.mockResolvedValue(detailResponse(FIXTURE));
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+
+    renderDetail();
+
+    const link = await screen.findByTestId('ticket-link');
+    expect(link).toHaveAttribute('href', 'https://linear.app/acme/issue/RT-1');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    expect(link).toHaveTextContent('RT-1');
+  });
+
+  it('leaves the ticket id as plain text when enrichment has no ticket url', async () => {
+    detailGet.mockResolvedValue(detailResponse(FIXTURE));
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+
+    renderDetail();
+
+    const card = await screen.findByTestId('summary-card');
+    expect(within(card).getByText('RT-1')).toBeInTheDocument();
+    expect(screen.queryByTestId('ticket-link')).not.toBeInTheDocument();
+  });
+
   it('renders the enriched ticket title and links the MR iid+state to its webUrl, with CI status below', async () => {
     enrichPost.mockResolvedValue({
       ok: true,
