@@ -363,6 +363,13 @@ still needs beyond the canvas:
   MRs, not a prerequisite: sub-project 4 preserves today's behavior exactly
   by leaving the field null.
 - **GitHub implementations** of the 6.2 methods.
+- **Linear tickets marked done with no merged MR.** 65 of 567 stored issues
+  (11.5%, measured 2026-09-02) are done in Linear while their only discovered
+  linked MR is still open. That is a discovery-mechanism gap, not an
+  attribution one: the MR that shipped the work does not carry the ticket id
+  in its title, branch, or description, or the ticket closed with no tracked
+  merge at all. Quieter and larger than the contested-credit problem, since
+  nobody has reason to notice it. Needs its own investigation.
 
 ## 10. Defect and structure inventory
 
