@@ -4,6 +4,9 @@ import type {
   GitProvider,
   FetchPullRequestsOptions,
   FetchMergeRequestIndexOptions,
+  FetchMergeRequestMetricsOptions,
+  FetchGroupProjectsOptions,
+  FetchProjectOptions,
   FetchProjectPipelinesOptions,
   FetchUserEventsOptions,
   MRState,
@@ -1267,6 +1270,7 @@ export class GitLabProvider implements GitProvider {
     }
     requireInstant('fetchMergeRequestIndex', 'updatedAfter', options.updatedAfter);
 
+    const io: RequestIO = { signal: options.signal, retry: true };
     const states = options.states ?? [];
     const apiState = states.length === 1 ? states[0]! : null;
     const filterSet = states.length > 1 ? new Set<string>(states) : null;
@@ -1281,7 +1285,7 @@ export class GitLabProvider implements GitProvider {
       do {
         const vars: Record<string, unknown> = { fullPath: scope.fullPath, ua: options.updatedAfter, after };
         if (apiState !== null) vars.state = apiState;
-        const resp: MRIndexResponse = await this.runQuery<MRIndexResponse>('fetchMergeRequestIndex', query, vars);
+        const resp: MRIndexResponse = await this.runQuery<MRIndexResponse>('fetchMergeRequestIndex', query, vars, io);
         const conn = resp[scope.root]?.mergeRequests;
         if (!conn) throw new Error(`fetchMergeRequestIndex: no ${scope.root} at ${scope.fullPath}`);
         for (const n of conn.nodes) {
@@ -1300,9 +1304,14 @@ export class GitLabProvider implements GitProvider {
     return out;
   }
 
-  async fetchMergeRequestMetrics(projectPath: string, mrIid: number): Promise<MergeRequestMetrics | null> {
+  async fetchMergeRequestMetrics(
+    projectPath: string,
+    mrIid: number,
+    options?: FetchMergeRequestMetricsOptions,
+  ): Promise<MergeRequestMetrics | null> {
+    const io: RequestIO = { signal: options?.signal, retry: true };
     const vars = { fullPath: projectPath, iid: String(mrIid) };
-    const resp = await this.runQuery<MRMetricsResponse>('fetchMergeRequestMetrics', MR_METRICS_QUERY, vars);
+    const resp = await this.runQuery<MRMetricsResponse>('fetchMergeRequestMetrics', MR_METRICS_QUERY, vars, io);
     const mr = resp.project?.mergeRequest;
     if (!mr) return null;
 
@@ -1313,7 +1322,7 @@ export class GitLabProvider implements GitProvider {
     let after: string | null = mr.notes.pageInfo.hasNextPage ? mr.notes.pageInfo.endCursor : null;
     while (after) {
       const more: MRMetricsNotesResponse = await this.runQuery<MRMetricsNotesResponse>(
-        'fetchMergeRequestMetrics.notes', MR_METRICS_NOTES_QUERY, { ...vars, after },
+        'fetchMergeRequestMetrics.notes', MR_METRICS_NOTES_QUERY, { ...vars, after }, io,
       );
       const conn = more.project?.mergeRequest?.notes;
       if (!conn) {
@@ -1368,12 +1377,13 @@ export class GitLabProvider implements GitProvider {
     }
   }
 
-  async fetchGroupProjects(groupPath: string): Promise<string[]> {
+  async fetchGroupProjects(groupPath: string, options?: FetchGroupProjectsOptions): Promise<string[]> {
+    const io: RequestIO = { signal: options?.signal, retry: true };
     const out: string[] = [];
     let after: string | null = null;
     do {
       const resp: GroupProjectsResponse = await this.runQuery<GroupProjectsResponse>(
-        'fetchGroupProjects', GROUP_PROJECTS_QUERY, { fullPath: groupPath, after },
+        'fetchGroupProjects', GROUP_PROJECTS_QUERY, { fullPath: groupPath, after }, io,
       );
       const conn = resp.group?.projects;
       if (!conn) throw new Error(`fetchGroupProjects: no group at ${groupPath}`);
@@ -1387,8 +1397,9 @@ export class GitLabProvider implements GitProvider {
     return out;
   }
 
-  async fetchProject(projectPath: string): Promise<ProjectRef | null> {
-    const res = await this.restRequest('GET', `/projects/${encodeURIComponent(projectPath)}`, undefined, 'fetchProject');
+  async fetchProject(projectPath: string, options?: FetchProjectOptions): Promise<ProjectRef | null> {
+    const io: RequestIO = { signal: options?.signal, retry: true };
+    const res = await this.restRequest('GET', `/projects/${encodeURIComponent(projectPath)}`, undefined, 'fetchProject', io);
     if (res.status === 404) return null;
     if (!res.ok) throw new Error(`fetchProject: HTTP ${res.status} for ${projectPath}`);
     const body = (await res.json()) as { id: number; path_with_namespace: string };
@@ -1398,13 +1409,14 @@ export class GitLabProvider implements GitProvider {
   async fetchProjectPipelines(projectPath: string, options: FetchProjectPipelinesOptions): Promise<PipelineSummary[]> {
     requireInstant('fetchProjectPipelines', 'updatedAfter', options.updatedAfter);
     requireInstant('fetchProjectPipelines', 'updatedBefore', options.updatedBefore);
+    const io: RequestIO = { signal: options.signal, retry: true };
     const query: Record<string, string> = {};
     if (options.username) query.username = options.username;
     query.updated_after = options.updatedAfter;
     query.updated_before = options.updatedBefore;
     type RESTPipeline = { id: number; status: string; created_at: string | null };
     const raws = await this.restPages<RESTPipeline>(
-      'fetchProjectPipelines', `/projects/${encodeURIComponent(projectPath)}/pipelines`, query,
+      'fetchProjectPipelines', `/projects/${encodeURIComponent(projectPath)}/pipelines`, query, io,
     );
     return raws.map((r) => ({
       id: domainId('pipeline', r.id),
@@ -1424,10 +1436,11 @@ export class GitLabProvider implements GitProvider {
         throw new Error(`fetchUserEvents: ${field} must be a calendar date (YYYY-MM-DD), got "${value}"`);
       }
     }
+    const io: RequestIO = { signal: options.signal, retry: true };
     type RESTEvent = { action_name: string; created_at: string; project_id: number | null };
     const raws = await this.restPages<RESTEvent>(
       'fetchUserEvents', `/users/${scoped[1]}/events`,
-      { action: options.action, after: options.after, before: options.before },
+      { action: options.action, after: options.after, before: options.before }, io,
     );
     return raws.map((e) => ({
       action: e.action_name,

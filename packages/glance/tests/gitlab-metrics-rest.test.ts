@@ -11,7 +11,7 @@ afterEach(() => {
   globalThis.fetch = realFetch;
 });
 
-interface Page { status?: number; body: unknown; nextPage?: string }
+interface Page { status?: number; body: unknown; nextPage?: string; retryAfter?: string }
 
 /** Answers each fetch with the next page in order and records the URLs asked for. */
 function stubFetch(pages: Page[]): string[] {
@@ -19,9 +19,10 @@ function stubFetch(pages: Page[]): string[] {
   globalThis.fetch = (async (input: string | URL | Request) => {
     const url = typeof input === 'string' ? input : input.toString();
     urls.push(url);
-    const page = pages[urls.length - 1] ?? { body: [] };
+    const page = pages[urls.length - 1] ?? pages[pages.length - 1] ?? { body: [] };
     const headers = new Headers();
     if (page.nextPage !== undefined) headers.set('x-next-page', page.nextPage);
+    if (page.retryAfter !== undefined) headers.set('retry-after', page.retryAfter);
     return new Response(JSON.stringify(page.body), { status: page.status ?? 200, headers });
   }) as typeof fetch;
   return urls;
@@ -39,7 +40,7 @@ describe('fetchProject', () => {
   test('404 is null; any other failure throws', async () => {
     stubFetch([{ status: 404, body: { message: '404 Project Not Found' } }]);
     expect(await p().fetchProject('g/missing')).toBeNull();
-    stubFetch([{ status: 500, body: {} }]);
+    stubFetch([{ status: 500, body: {}, retryAfter: '0' }]);
     await expect(p().fetchProject('g/p')).rejects.toThrow('fetchProject: HTTP 500');
   });
 });

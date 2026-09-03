@@ -83,6 +83,9 @@ export type {
   FetchPullRequestsOptions,
   FetchPullRequestsWarning,
   FetchMergeRequestIndexOptions,
+  FetchMergeRequestMetricsOptions,
+  FetchGroupProjectsOptions,
+  FetchProjectOptions,
   FetchProjectPipelinesOptions,
   FetchUserEventsOptions,
 } from './GitProvider.ts';

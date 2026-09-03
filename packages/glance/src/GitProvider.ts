@@ -209,6 +209,8 @@ export interface FetchMergeRequestIndexOptions {
   states?: MRState[];
   /** Called after each page with the rows collected so far. */
   onPage?: (rowsSoFar: number) => void;
+  /** Cancels the walk between and during requests; an abort is surfaced as the signal's reason and never retried. */
+  signal?: AbortSignal;
 }
 
 /** Options for `fetchProjectPipelines`. */
@@ -218,6 +220,8 @@ export interface FetchProjectPipelinesOptions {
   /** ISO-8601 instants; GitLab applies both to the pipeline's `updated_at`. */
   updatedAfter: string;
   updatedBefore: string;
+  /** Cancels the walk between and during requests; an abort is surfaced as the signal's reason and never retried. */
+  signal?: AbortSignal;
 }
 
 /** Options for `fetchUserEvents`. */
@@ -231,6 +235,26 @@ export interface FetchUserEventsOptions {
    */
   after: string;
   before: string;
+  /** Cancels the walk between and during requests; an abort is surfaced as the signal's reason and never retried. */
+  signal?: AbortSignal;
+}
+
+/** Options for `fetchMergeRequestMetrics`. */
+export interface FetchMergeRequestMetricsOptions {
+  /** Cancels the walk between and during requests; an abort is surfaced as the signal's reason and never retried. */
+  signal?: AbortSignal;
+}
+
+/** Options for `fetchGroupProjects`. */
+export interface FetchGroupProjectsOptions {
+  /** Cancels the walk between and during requests; an abort is surfaced as the signal's reason and never retried. */
+  signal?: AbortSignal;
+}
+
+/** Options for `fetchProject`. */
+export interface FetchProjectOptions {
+  /** Cancels the walk between and during requests; an abort is surfaced as the signal's reason and never retried. */
+  signal?: AbortSignal;
 }
 
 /**
@@ -378,6 +402,9 @@ export interface GitProvider {
    * list a metrics consumer keeps history from, and it is what GitLab's
    * resolvers can page through without timing out on a busy monorepo.
    * Check `capabilities.canFetchMergeRequestIndex`.
+   *
+   * Bounded transient retry: up to 3 attempts per request, each under a 30s
+   * deadline. Caller cancellation via `options.signal` is never retried.
    */
   fetchMergeRequestIndex?(options: FetchMergeRequestIndexOptions): Promise<MergeRequestIndexRow[]>;
 
@@ -387,22 +414,41 @@ export interface GitProvider {
    * exhaustion) with its author, time, system flag, and whether it sits on
    * a diff line. Null when the project or MR does not exist.
    * Check `capabilities.canFetchMergeRequestMetrics`.
+   *
+   * Bounded transient retry: up to 3 attempts per request, each under a 30s
+   * deadline. Caller cancellation via `options.signal` is never retried.
    */
-  fetchMergeRequestMetrics?(projectPath: string, mrIid: number): Promise<MergeRequestMetrics | null>;
+  fetchMergeRequestMetrics?(
+    projectPath: string,
+    mrIid: number,
+    options?: FetchMergeRequestMetricsOptions,
+  ): Promise<MergeRequestMetrics | null>;
 
   /**
    * Full paths of a group's projects, subgroups included. Check
    * `capabilities.canFetchGroupProjects`. Throws when the group does not
    * exist or is not visible to the token.
+   *
+   * Bounded transient retry: up to 3 attempts per request, each under a 30s
+   * deadline. Caller cancellation via `options.signal` is never retried.
    */
-  fetchGroupProjects?(groupPath: string): Promise<string[]>;
+  fetchGroupProjects?(groupPath: string, options?: FetchGroupProjectsOptions): Promise<string[]>;
 
-  /** Resolve a "group/project" path, or null when it does not exist. Check `capabilities.canFetchProject`. */
-  fetchProject?(projectPath: string): Promise<ProjectRef | null>;
+  /**
+   * Resolve a "group/project" path, or null when it does not exist. Check
+   * `capabilities.canFetchProject`.
+   *
+   * Bounded transient retry: up to 3 attempts per request, each under a 30s
+   * deadline. Caller cancellation via `options.signal` is never retried.
+   */
+  fetchProject?(projectPath: string, options?: FetchProjectOptions): Promise<ProjectRef | null>;
 
   /**
    * A project's pipelines inside a window, optionally for one user.
    * Check `capabilities.canFetchProjectPipelines`.
+   *
+   * Bounded transient retry: up to 3 attempts per request, each under a 30s
+   * deadline. Caller cancellation via `options.signal` is never retried.
    */
   fetchProjectPipelines?(projectPath: string, options: FetchProjectPipelinesOptions): Promise<PipelineSummary[]>;
 
@@ -410,6 +456,9 @@ export interface GitProvider {
    * A user's activity feed for one action between two dates. `userId` is
    * the scoped id `UserRef.id` carries (`fetchUser` returns it).
    * Check `capabilities.canFetchUserEvents`.
+   *
+   * Bounded transient retry: up to 3 attempts per request, each under a 30s
+   * deadline. Caller cancellation via `options.signal` is never retried.
    */
   fetchUserEvents?(userId: string, options: FetchUserEventsOptions): Promise<UserEvent[]>;
 
