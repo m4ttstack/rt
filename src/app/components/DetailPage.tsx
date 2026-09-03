@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useLocation } from "wouter";
+import { Link } from "wouter";
 
 import { Alert, Badge, Button, Group, Paper, Stack, Text } from "@mattstack/app-kit/core";
 import { useSchemeColors } from "@mattstack/app-kit/hooks";
@@ -33,22 +33,14 @@ interface Props {
   trend: boolean;
 }
 
-/** Per-group rail accent, matching LeaderboardTable's Delivery (green) / Volume (muted) / Quality (accent) split. */
-const GROUP_COLOR: Record<(typeof GROUP_ORDER)[number], string> = {
-  delivery: "green",
-  volume: "dimmed",
-  quality: "accent",
-};
-
 const GROUPS = GROUP_ORDER.map((key) => {
   const meta = GROUP_META[key];
-  return { key, label: meta.hint ? `${meta.label} (${meta.hint})` : meta.label, color: GROUP_COLOR[key] };
+  return { key, label: meta.hint ? `${meta.label} (${meta.hint})` : meta.label, color: GROUP_META[key].accent };
 });
 
 const BORDER = "1px solid var(--mantine-color-default-border)";
 
 export function DetailPage({ username, initialStat, range, trend }: Props) {
-  const [, setLocation] = useLocation();
   const selection = useMemo(
     () => ({ range: range.range, start: range.start, end: range.end, trend }),
     [range.range, range.start, range.end, trend],
@@ -75,7 +67,8 @@ export function DetailPage({ username, initialStat, range, trend }: Props) {
         color="gray"
         size="xs"
         leftSection={<Icon name="arrowLeft" size={14} />}
-        onClick={() => setLocation("/")}
+        component={Link}
+        href="/"
         style={{ alignSelf: "flex-start" }}
       >
         Back to leaderboard

@@ -3,7 +3,7 @@ import { useLocation } from "wouter";
 import { Card, Group, SimpleGrid, Stack, Text } from "@mattstack/app-kit/core";
 
 import type { LeaderboardResponse, UserRow } from "../../shared/types";
-import { COLUMNS, type Column, GROUP_ORDER, deltaValue, formatValue, rankValue, sortValue } from "../columns";
+import { COLUMNS, type Column, GROUP_META, deltaValue, formatValue, rankValue, sortValue } from "../columns";
 import { DeltaBadge } from "./DeltaBadge";
 import { MetricTip } from "./MetricTip";
 import { Tooltip } from "./Tooltip";
@@ -12,13 +12,6 @@ interface Props {
   data: LeaderboardResponse;
   trend: boolean;
 }
-
-/** Per-group header accent, matching LeaderboardTable's Delivery (green) / Volume (muted) / Quality (accent) split. */
-const GROUP_COLOR: Record<(typeof GROUP_ORDER)[number], string> = {
-  delivery: "green",
-  volume: "dimmed",
-  quality: "accent",
-};
 
 export function MetricCards({ data, trend }: Props) {
   return (
@@ -29,7 +22,7 @@ export function MetricCards({ data, trend }: Props) {
             <Text size="sm" fw={600}>
               <Tooltip content={<MetricTip col={col} />}>{col.label}</Tooltip>
             </Text>
-            <Text size="10px" tt="uppercase" c={GROUP_COLOR[col.group]} style={{ letterSpacing: "0.06em" }}>
+            <Text size="10px" tt="uppercase" c={GROUP_META[col.group].accent} style={{ letterSpacing: "0.06em" }}>
               {col.group}
             </Text>
           </Group>

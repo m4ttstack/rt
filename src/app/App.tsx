@@ -153,7 +153,13 @@ function AppShell() {
             data={data}
           />
 
-          {refreshJob.refreshing && <RefreshProgressBar progress={refreshJob.progress} onCancel={refreshJob.cancel} />}
+          {refreshJob.refreshing && <RefreshProgressBar progress={refreshJob.progress} onCancel={() => {
+                // cancel() nulls the job without routing through onDone or onError, the only
+                // other paths that clear this, so a cancelled refresh would leave a Loading
+                // state with nothing running behind it.
+                setAwaitingRefresh(false);
+                refreshJob.cancel();
+              }} />}
 
           <div className="mt-5">
             {error && (

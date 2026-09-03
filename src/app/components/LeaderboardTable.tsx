@@ -25,13 +25,6 @@ interface Props {
   trend: boolean;
 }
 
-/** Per-group header accent, matching the design's Delivery (green) / Volume (muted) / Quality (accent) split. */
-const GROUP_COLOR: Record<(typeof GROUP_ORDER)[number], string> = {
-  delivery: "green",
-  volume: "dimmed",
-  quality: "accent",
-};
-
 const BORDER = "1px solid var(--mantine-color-default-border)";
 const STICKY_LEFT: CSSProperties = { position: "sticky", left: 0, zIndex: 1 };
 
@@ -77,7 +70,7 @@ export function LeaderboardTable({ data, trend }: Props) {
             const meta = GROUP_META[g];
             return (
               <Table.Th key={g} ta="left" colSpan={cols.length} style={{ borderLeft: BORDER }}>
-                <Text component="span" size="xs" fw={600} tt="uppercase" c={GROUP_COLOR[g]}>
+                <Text component="span" size="xs" fw={600} tt="uppercase" c={GROUP_META[g].accent}>
                   {meta.label}
                 </Text>
                 {meta.hint && (

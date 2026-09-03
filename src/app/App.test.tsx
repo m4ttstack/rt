@@ -1,4 +1,5 @@
 import { screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { renderWithProviders } from "@mattstack/app-kit/test-utils";
 import { describe, expect, it, vi } from "vitest";
 
@@ -36,6 +37,23 @@ describe("App: cold-cache orchestration", () => {
     expect(screen.getByText("Loading…")).toBeInTheDocument();
     expect(screen.queryByRole("table")).not.toBeInTheDocument();
     expect(start).toHaveBeenCalled();
+  });
+
+  it("clears the loading indicator when a running refresh is cancelled, rather than stranding it", async () => {
+    const user = userEvent.setup();
+    useLeaderboard.mockReturnValue({ data: { cached: false }, error: null, isFetching: false });
+    const cancel = vi.fn();
+    useRefreshJob.mockReturnValue(idleRefreshJob({ jobId: "job-1", refreshing: true, cancel }));
+
+    renderWithProviders(<App />);
+    expect(screen.getByText("Loading…")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: /cancel/i }));
+
+    // cancel() never routes through onDone or onError, so if the handler does not clear the
+    // flag itself the indicator stays up forever with nothing running behind it.
+    expect(cancel).toHaveBeenCalled();
+    expect(screen.queryByText("Loading…")).not.toBeInTheDocument();
   });
 
   it("keeps the loading indicator up once the refresh job is actually running (jobId assigned)", () => {
