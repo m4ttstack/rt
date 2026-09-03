@@ -30,8 +30,9 @@ and rejected for this pass (see Rejected alternatives).
    setting-controlled).
    An answer inside the window continues in-session with no transcript
    replay. Past the window the board parks the review: closes the pane, keeps
-   the gate open, and resumes the recorded session later with the answer as
-   the resume prompt.
+   the gate open, and resumes the recorded session later by re-invoking the wrapper
+   with `--resumed-gate <gateId>`; the answer itself travels in the gate
+   file and the journal, never in the prompt.
 5. **Launch through rt agent.** The board's hand-rolled herdr CLI launch moves
    to `agent:start` / `agent:resume` (surface `herdr`). rt mints the session
    id up front, records pane/tab/workspace ids durably, and pins the account
