@@ -8,7 +8,7 @@ import type { TimeWindow } from "../src/shared/types.js";
 const dir = mkdtempSync(join(tmpdir(), "boxscore-endpoints-"));
 process.env.BOXSCORE_DB = join(dir, "test.sqlite");
 
-const { app } = await import("../src/server/app.js");
+const { routes: app } = await import("../src/server/routes.js");
 const { startRefresh, __resetJobs } = await import("../src/server/refresh/index.js");
 const { getStore, __resetStore } = await import("../src/server/store/index.js");
 
