@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft } from "lucide-react";
+import { Link } from "wouter";
+
+import { Icon } from "@mattstack/app-kit/icons";
 
 import type { MetricKey, UserDetailResponse } from "../../shared/types";
 import { Button } from "@/components/ui/button";
@@ -14,7 +16,6 @@ import {
   rankValue,
   sortValue,
 } from "../columns";
-import { navigateHome } from "../hooks/useHashRoute";
 import { Badge } from "@/components/ui/badge";
 import { DeltaBadge } from "./DeltaBadge";
 import { EvidenceTable } from "./EvidenceTable";
@@ -68,8 +69,10 @@ export function DetailPage({ username, initialStat, range, trend }: Props) {
   return (
     <div className="mx-auto max-w-[96rem] px-6 py-8">
       <div className="mb-4 flex items-center justify-between">
-        <Button variant="ghost" size="sm" onClick={navigateHome} className="-ml-2 text-muted-foreground">
-          <ArrowLeft /> Back to leaderboard
+        <Button asChild variant="ghost" size="sm" className="-ml-2 text-muted-foreground">
+          <Link href="/">
+            <Icon name="arrowLeft" size={16} /> Back to leaderboard
+          </Link>
         </Button>
       </div>
 

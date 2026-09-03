@@ -11,16 +11,6 @@
     <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2" />
     <meta name="theme-color" content="#6366f1" />
     <title>Boxscore</title>
-    <script>
-      // Apply the saved/system theme before first paint to avoid a flash of the wrong mode.
-      (function () {
-        try {
-          var t = localStorage.getItem("forge-theme") || "system";
-          var dark = t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches);
-          document.documentElement.classList.toggle("dark", dark);
-        } catch (e) {}
-      })();
-    </script>
   </head>
   <body>
     <div id="root"></div>

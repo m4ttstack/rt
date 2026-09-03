@@ -1,6 +1,6 @@
+import { useLocation } from "wouter";
 import type { LeaderboardResponse, UserRow } from "../../shared/types";
 import { COLUMNS, type Column, GROUP_META, deltaValue, formatValue, rankValue, sortValue } from "../columns";
-import { navigateToUser } from "../hooks/useHashRoute";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { DeltaBadge } from "./DeltaBadge";
 import { MetricTip } from "./MetricTip";
@@ -34,6 +34,7 @@ export function MetricCards({ data, trend }: Props) {
 }
 
 function Ranking({ col, users, trend }: { col: Column; users: UserRow[]; trend: boolean }) {
+  const [, setLocation] = useLocation();
   // Order and position come from the server-computed rank (ties share a rank),
   // so the cards never disagree with the table or the detail rail.
   const ranked = [...users]
@@ -49,7 +50,7 @@ function Ranking({ col, users, trend }: { col: Column; users: UserRow[]; trend: 
         return (
           <li key={u.username}>
             <button
-              onClick={() => navigateToUser(u.username, col.key)}
+              onClick={() => setLocation(`/user/${encodeURIComponent(u.username)}/${encodeURIComponent(col.key)}`)}
               className={`flex w-full items-center justify-between rounded px-1 py-0.5 text-left text-sm hover:bg-muted ${
                 u.isCurrentUser ? "text-primary" : "text-foreground/90"
               }`}

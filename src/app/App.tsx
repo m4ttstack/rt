@@ -1,13 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { MattstackShell, NotFoundPage } from "@mattstack/app-kit/app";
+import { RailLink } from "@mattstack/app-kit/router";
+
 import type { LeaderboardResponse, RefreshProgress } from "../shared/types";
 import { cancelRefresh, fetchLeaderboard, pollRefresh, startRefresh } from "./api";
+import { useAppRoute } from "./routes";
 import { Controls, type ViewMode } from "./components/Controls";
 import { DetailPage } from "./components/DetailPage";
 import { LeaderboardTable } from "./components/LeaderboardTable";
 import { MetricCards } from "./components/MetricCards";
 import { RefreshProgress as RefreshProgressBar } from "./components/RefreshProgress";
-import { ThemeToggle } from "./components/ThemeToggle";
-import { useHashRoute } from "./hooks/useHashRoute";
 import { usePersistentState } from "./hooks/usePersistentState";
 
 interface RangeState {
@@ -18,7 +20,17 @@ interface RangeState {
 
 const POLL_MS = 750;
 
-export default function App() {
+// Standalone placeholder until Task 7 wires up settings-kit.
+function SettingsPlaceholder() {
+  return (
+    <div className="mx-auto max-w-[96rem] px-6 py-8">
+      <h1 className="text-2xl font-bold tracking-tight text-foreground">Settings</h1>
+      <p className="mt-1 text-sm text-muted-foreground">Coming soon.</p>
+    </div>
+  );
+}
+
+export function App() {
   const [data, setData] = useState<LeaderboardResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(false);
@@ -26,7 +38,7 @@ export default function App() {
   const [rangeState, setRangeState] = usePersistentState<RangeState>("forge-range", { range: "30d" });
   const [trend, setTrend] = usePersistentState<boolean>("forge-trend", false);
   const [view, setView] = usePersistentState<ViewMode>("forge-view", "table");
-  const route = useHashRoute();
+  const route = useAppRoute();
 
   // Active background refresh job (null when idle).
   const [jobId, setJobId] = useState<string | null>(null);
@@ -137,81 +149,98 @@ export default function App() {
 
   const refreshing = jobId !== null;
 
-  if (route.user) {
-    return (
-      <DetailPage username={route.user} initialStat={route.stat} range={rangeState} trend={trend} />
-    );
-  }
-
   return (
-    <div className="mx-auto max-w-[96rem] px-6 py-8">
-      <header className="mb-5 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Boxscore</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            GitLab performance across a hand-picked set ... volume metrics are gameable, so weigh
-            them against the quality columns. See the README caveats before this becomes a scoreboard.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <ThemeToggle />
-        </div>
-      </header>
+    <MattstackShell
+      name="boxscore"
+      appName="boxscore"
+      mark={<img src="/favicon.svg" alt="" width={30} height={30} style={{ display: "block", flex: "none" }} />}
+    >
+      <MattstackShell.Rail>
+        <RailLink icon="star" label="Leaderboard" href="/" />
+        <RailLink icon="settings" label="Settings" href="/settings" />
+      </MattstackShell.Rail>
 
-      <Controls
-        range={rangeState.range}
-        start={rangeState.start}
-        end={rangeState.end}
-        onRange={(range, start, end) => setRangeState({ range, start, end })}
-        trend={trend}
-        onTrend={setTrend}
-        view={view}
-        onView={setView}
-        refreshing={refreshing}
-        onRefresh={() => void startJob(rangeState, trend)}
-        data={data}
-      />
+      {route.name === "settings" && <SettingsPlaceholder />}
 
-      {refreshing && <RefreshProgressBar progress={progress} onCancel={onCancel} />}
+      {(route.name === "user" || route.name === "stat") && (
+        <DetailPage
+          username={route.username}
+          initialStat={route.name === "stat" ? route.stat : null}
+          range={rangeState}
+          trend={trend}
+        />
+      )}
 
-      <div className="mt-5">
-        {error && (
-          <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
-            <strong>Error:</strong> {error}
+      {route.name === "not-found" && <NotFoundPage />}
+
+      {route.name === "leaderboard" && (
+        <div className="mx-auto max-w-[96rem] px-6 py-8">
+          <header className="mb-5 flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold tracking-tight text-foreground">Boxscore</h1>
+              <p className="mt-1 text-sm text-muted-foreground">
+                GitLab performance across a hand-picked set ... volume metrics are gameable, so weigh
+                them against the quality columns. See the README caveats before this becomes a scoreboard.
+              </p>
+            </div>
+          </header>
+
+          <Controls
+            range={rangeState.range}
+            start={rangeState.start}
+            end={rangeState.end}
+            onRange={(range, start, end) => setRangeState({ range, start, end })}
+            trend={trend}
+            onTrend={setTrend}
+            view={view}
+            onView={setView}
+            refreshing={refreshing}
+            onRefresh={() => void startJob(rangeState, trend)}
+            data={data}
+          />
+
+          {refreshing && <RefreshProgressBar progress={progress} onCancel={onCancel} />}
+
+          <div className="mt-5">
+            {error && (
+              <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+                <strong>Error:</strong> {error}
+              </div>
+            )}
+
+            {!error && initialLoading && !data && <p className="text-muted-foreground">Loading…</p>}
+
+            {data && (
+              <>
+                {data.warnings.length > 0 && (
+                  <ul className="mb-4 space-y-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-700 dark:text-amber-300/90">
+                    {data.warnings.map((w, i) => (
+                      <li key={i}>⚠ {w.message}</li>
+                    ))}
+                  </ul>
+                )}
+
+                {view === "table" ? (
+                  <LeaderboardTable data={data} trend={trend} />
+                ) : (
+                  <MetricCards data={data} trend={trend} />
+                )}
+
+                {Object.keys(data.metricNotes).length > 0 && (
+                  <dl className="mt-4 space-y-1 text-xs text-muted-foreground">
+                    {Object.entries(data.metricNotes).map(([k, v]) => (
+                      <div key={k}>
+                        <dt className="inline font-medium text-foreground/70">{k}:</dt>{" "}
+                        <dd className="inline">{v}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                )}
+              </>
+            )}
           </div>
-        )}
-
-        {!error && initialLoading && !data && <p className="text-muted-foreground">Loading…</p>}
-
-        {data && (
-          <>
-            {data.warnings.length > 0 && (
-              <ul className="mb-4 space-y-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-2 text-xs text-amber-700 dark:text-amber-300/90">
-                {data.warnings.map((w, i) => (
-                  <li key={i}>⚠ {w.message}</li>
-                ))}
-              </ul>
-            )}
-
-            {view === "table" ? (
-              <LeaderboardTable data={data} trend={trend} />
-            ) : (
-              <MetricCards data={data} trend={trend} />
-            )}
-
-            {Object.keys(data.metricNotes).length > 0 && (
-              <dl className="mt-4 space-y-1 text-xs text-muted-foreground">
-                {Object.entries(data.metricNotes).map(([k, v]) => (
-                  <div key={k}>
-                    <dt className="inline font-medium text-foreground/70">{k}:</dt>{" "}
-                    <dd className="inline">{v}</dd>
-                  </div>
-                ))}
-              </dl>
-            )}
-          </>
-        )}
-      </div>
-    </div>
+        </div>
+      )}
+    </MattstackShell>
   );
 }

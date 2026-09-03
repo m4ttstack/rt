@@ -1,4 +1,5 @@
 import { useMemo, useState } from "react";
+import { useLocation } from "wouter";
 import type { LeaderboardResponse, UserRow } from "../../shared/types";
 import {
   COLUMNS,
@@ -11,7 +12,6 @@ import {
   sortValue,
 } from "../columns";
 import { DeltaBadge } from "./DeltaBadge";
-import { navigateToUser } from "../hooks/useHashRoute";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { MetricTip } from "./MetricTip";
@@ -110,11 +110,15 @@ export function LeaderboardTable({ data, trend }: Props) {
 }
 
 function Row({ row, trend, sortKey }: { row: UserRow; trend: boolean; sortKey: string }) {
+  const [, setLocation] = useLocation();
+  const goToStat = (stat: string) =>
+    setLocation(`/user/${encodeURIComponent(row.username)}/${encodeURIComponent(stat)}`);
+
   return (
     <TableRow className={`${row.isCurrentUser ? "bg-primary/10 hover:bg-primary/15" : ""} ${row.resolved ? "" : "opacity-50"}`}>
       <td className="sticky left-0 z-10 whitespace-nowrap bg-card px-3 py-2 align-middle">
         <button
-          onClick={() => navigateToUser(row.username, sortKey)}
+          onClick={() => goToStat(sortKey)}
           className="text-left hover:underline"
           title="View this person's stat details"
         >
@@ -130,7 +134,7 @@ function Row({ row, trend, sortKey }: { row: UserRow; trend: boolean; sortKey: s
         return (
           <td
             key={col.key}
-            onClick={() => navigateToUser(row.username, col.key)}
+            onClick={() => goToStat(col.key)}
             className={`cursor-pointer whitespace-nowrap px-3 py-2 text-right align-middle font-mono tabular-nums hover:bg-primary/10 ${borderL}`}
             title={`${row.name ?? row.username} · ${col.label} details`}
           >
