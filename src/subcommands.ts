@@ -12,6 +12,7 @@ const VERBS: Record<string, () => Promise<unknown>> = {
   "doctor-status": () => import("../bin/doctor-status.ts"),
   "doctor-draft": () => import("../bin/doctor-draft.ts"),
   triage: () => import("../bin/triage.ts"),
+  gate: () => import("../bin/gate.ts"),
 };
 
 export const SUBCOMMANDS = Object.keys(VERBS);
