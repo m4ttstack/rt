@@ -126,10 +126,13 @@ function buildStore() {
       (key, project_path, iid, title, state, created_at, updated_at, merged_at, author_username, source_branch, labels, scanned_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   );
+  // UPDATED_DESC, then key, is the order the GraphQL pagination produced before the
+  // store existed. Linear credits a ticket to the first author it sees among the MRs
+  // linking it, so an unordered scan would redistribute issue credit run to run.
   const stmtIndexUpdatedWithin = db.query(
-    "SELECT * FROM mr_index WHERE updated_at >= ? AND updated_at <= ?",
+    "SELECT * FROM mr_index WHERE updated_at >= ? AND updated_at <= ? ORDER BY updated_at DESC, key",
   );
-  const stmtAllIndexRows = db.query("SELECT * FROM mr_index");
+  const stmtAllIndexRows = db.query("SELECT * FROM mr_index ORDER BY updated_at DESC, key");
   const stmtLastScan = db.query("SELECT last_scan FROM scan_meta WHERE project_path = ?");
   const stmtScanFloor = db.query("SELECT first_scan FROM scan_meta WHERE project_path = ?");
   const stmtRecordScan = db.query(
