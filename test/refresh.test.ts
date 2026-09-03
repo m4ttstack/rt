@@ -273,6 +273,34 @@ describe("runRefresh: failed-scan invariant", () => {
     expect(store.lastScan("g/B")).not.toBe("2026-04-01T00:00:00.000Z");
     expect(warnings).toContainEqual(expect.objectContaining({ code: "mr_fetch_failed" }));
   });
+
+  // A backfill that throws must not lower the floor: a later read would otherwise
+  // believe the store holds history no scan ever fetched, and report it as warm.
+  it("leaves the scan floor untouched when a backfill scan fails", async () => {
+    const store = getStore();
+    // Later than WINDOW.start, so the request backfills rather than scanning incrementally.
+    const floorBefore = "2026-05-10T00:00:00.000Z";
+    store.recordScan("g/A", { from: floorBefore, at: "2026-05-20T00:00:00.000Z" });
+    const { provider, calls } = makeFakeProvider({
+      fetchMergeRequestIndex: async () => {
+        throw new Error("boom");
+      },
+    });
+
+    const warnings = await runRefresh({
+      store,
+      provider,
+      settings: settings({ projects: ["g/A"] }),
+      env: ENV,
+      window: WINDOW,
+    });
+
+    const scan = calls.find((c) => c.method === "fetchMergeRequestIndex")!.args[0] as FetchMergeRequestIndexOptions;
+    expect(scan.updatedAfter).toBe(WINDOW.start);
+    expect(Date.parse(WINDOW.start)).toBeLessThan(Date.parse(floorBefore));
+    expect(store.scanFloor("g/A")).toBe(floorBefore);
+    expect(warnings).toContainEqual(expect.objectContaining({ code: "mr_fetch_failed" }));
+  });
 });
 
 describe("runRefresh: eligible-for-detail set", () => {
