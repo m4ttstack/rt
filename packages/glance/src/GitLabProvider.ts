@@ -45,6 +45,12 @@ import { createRealtimeWatcher, type RealtimeWatcherOptions } from './RealtimeWa
 import { startEventsWatcher } from './EventsWatcher.ts';
 import type { FetchEvents, GitLabEvent } from './EventsPoller.ts';
 import { safeEmit, instrumentGitbeaker, type OnRequestHook, type RequestInfo } from './instrumentation.ts';
+import { RetryableError, asRetryable, isTransientStatus, retryAfterMs, withRetry } from './retry.ts';
+
+export interface RequestIO {
+  signal?: AbortSignal;
+  retry?: boolean;
+}
 
 // ---------------------------------------------------------------------------
 // Repository ID helpers
@@ -1344,12 +1350,12 @@ export class GitLabProvider implements GitProvider {
    * `x-next-page` (empty on the last page); a page that names itself or an
    * earlier page again would loop forever, so that throws.
    */
-  private async restPages<T>(op: string, path: string, query: Record<string, string>): Promise<T[]> {
+  private async restPages<T>(op: string, path: string, query: Record<string, string>, io?: RequestIO): Promise<T[]> {
     const out: T[] = [];
     let page = 1;
     for (;;) {
       const params = new URLSearchParams({ ...query, per_page: '100', page: String(page) });
-      const res = await this.restRequest('GET', `${path}?${params.toString()}`, undefined, op);
+      const res = await this.restRequest('GET', `${path}?${params.toString()}`, undefined, op, io);
       if (!res.ok) throw new Error(`${op}: HTTP ${res.status} for ${path} page ${page}`);
       out.push(...((await res.json()) as T[]));
       const next = res.headers.get('x-next-page');
@@ -1719,7 +1725,7 @@ export class GitLabProvider implements GitProvider {
     }
   }
 
-  async restRequest(method: string, path: string, body?: unknown, op = 'restRequest'): Promise<Response> {
+  async restRequest(method: string, path: string, body?: unknown, op = 'restRequest', io?: RequestIO): Promise<Response> {
     // GitProvider.restRequest documents the path as provider-relative, the
     // same shape a GitHub caller passes. This used to concatenate
     // baseURL + path verbatim, so every existing GitLab caller learned to
@@ -1742,21 +1748,32 @@ export class GitLabProvider implements GitProvider {
     if (body !== undefined) {
       headers['Content-Type'] = 'application/json';
     }
-    const started = performance.now();
-    const res = await fetch(url, {
-      method,
-      headers,
-      body: body !== undefined ? JSON.stringify(body) : undefined,
-    });
-    safeEmit(this.onRequest, {
-      op,
-      transport: 'rest',
-      method,
-      path,
-      durationMs: performance.now() - started,
-      status: res.status,
-    });
-    return res;
+    const bodyStr = body !== undefined ? JSON.stringify(body) : undefined;
+
+    const attempt = async (signal?: AbortSignal): Promise<Response> => {
+      const started = performance.now();
+      let res: Response;
+      try {
+        res = await fetch(url, { method, headers, body: bodyStr, signal });
+      } catch (err) {
+        throw asRetryable(err, io?.signal);
+      }
+      safeEmit(this.onRequest, {
+        op,
+        transport: 'rest',
+        method,
+        path,
+        durationMs: performance.now() - started,
+        status: res.status,
+      });
+      if (io?.retry && isTransientStatus(res.status)) {
+        throw new RetryableError(new Error(`${op}: HTTP ${res.status} for ${path}`), retryAfterMs(res));
+      }
+      return res;
+    };
+
+    if (!io) return attempt();
+    return withRetry(attempt, { signal: io.signal, attempts: io.retry ? undefined : 1 });
   }
 
   watchMR(
@@ -2359,35 +2376,50 @@ export class GitLabProvider implements GitProvider {
     return new Error(`${label} failed: ${String(err)}`);
   }
 
-  private async runQuery<T>(op: string, query: string, variables?: Record<string, unknown>): Promise<T> {
+  private async runQuery<T>(op: string, query: string, variables?: Record<string, unknown>, io?: RequestIO): Promise<T> {
     const url = `${this.baseURL}/api/graphql`;
     const body = JSON.stringify({ query, variables: variables ?? {} });
-    const started = performance.now();
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.token}`,
-      },
-      body,
-    });
-    safeEmit(this.onRequest, {
-      op,
-      transport: 'graphql',
-      method: 'POST',
-      path: '/api/graphql',
-      durationMs: performance.now() - started,
-      status: res.status,
-    });
 
-    if (!res.ok) {
-      throw new Error(`GraphQL request failed: ${res.status} ${res.statusText}`);
-    }
+    type Envelope = { data?: T; errors?: Array<{ message: string }> };
 
-    const envelope = (await res.json()) as {
-      data?: T;
-      errors?: Array<{ message: string }>;
+    const attempt = async (signal?: AbortSignal): Promise<Envelope> => {
+      const started = performance.now();
+      let res: Response;
+      try {
+        res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${this.token}`,
+          },
+          body,
+          signal,
+        });
+      } catch (err) {
+        throw asRetryable(err, io?.signal);
+      }
+      safeEmit(this.onRequest, {
+        op,
+        transport: 'graphql',
+        method: 'POST',
+        path: '/api/graphql',
+        durationMs: performance.now() - started,
+        status: res.status,
+      });
+      if (io?.retry && isTransientStatus(res.status)) {
+        throw new RetryableError(new Error(`GraphQL request failed: ${res.status} ${res.statusText}`), retryAfterMs(res));
+      }
+      if (!res.ok) {
+        throw new Error(`GraphQL request failed: ${res.status} ${res.statusText}`);
+      }
+      try {
+        return (await res.json()) as Envelope;
+      } catch (err) {
+        throw asRetryable(err, io?.signal);
+      }
     };
+
+    const envelope = io ? await withRetry(attempt, { signal: io.signal, attempts: io.retry ? undefined : 1 }) : await attempt();
 
     if (envelope.errors?.length) {
       const msg = envelope.errors.map((e) => e.message).join('; ');
