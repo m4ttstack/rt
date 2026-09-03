@@ -80,6 +80,10 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.clearAllMocks();
+  // The finished band persists its open state in sessionStorage, which jsdom
+  // shares across every test in this file -- a test that expands the band
+  // would otherwise leave the next one starting expanded.
+  sessionStorage.clear();
 });
 
 function renderBoard() {
@@ -217,6 +221,20 @@ describe('RunBoard', () => {
           name: /see all 25 finished runs in search/i,
         })
       ).toHaveAttribute('href', '/search')
+    );
+  });
+
+  it('restores the finished band expanded when the session stored it open', async () => {
+    sessionStorage.setItem('finishedOpened', 'True');
+
+    renderBoard();
+
+    await waitFor(() =>
+      expect(
+        within(screen.getByTestId('band-finished')).getByRole('link', {
+          name: 'finished-1',
+        })
+      ).toBeInTheDocument()
     );
   });
 
