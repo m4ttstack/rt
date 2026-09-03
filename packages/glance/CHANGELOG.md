@@ -1,5 +1,21 @@
 # @mattstack/glance
 
+## 0.24.0
+
+### Minor Changes
+
+- The six metric-grade reads accept `signal?: AbortSignal` (new option field on
+  the index, pipelines, and user-events option bags; new optional option bags
+  `FetchMergeRequestMetricsOptions`, `FetchGroupProjectsOptions`, and
+  `FetchProjectOptions` on the other three) and retry transient failures:
+  408/429/5xx statuses, dropped sockets, and per-attempt deadline expiry, 3
+  attempts with a 30s per-attempt deadline, Retry-After honored (capped at
+  30s), half-jittered exponential backoff. A caller abort is never retried and
+  surfaces as the signal's reason. Every other method's behavior is unchanged:
+  no signal, one attempt, exactly as before.
+- `GitLabProvider.restRequest` gains optional trailing `op` and
+  `io: { signal?, retry? }` parameters; existing calls are unaffected.
+
 ## 0.23.0
 
 ### Minor Changes
