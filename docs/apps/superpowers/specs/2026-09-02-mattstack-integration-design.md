@@ -354,7 +354,14 @@ still needs beyond the canvas:
 - **Promote `board.projects`** to a suite key and point `boxscore.projects` at it.
 - **Daemon retains merged MRs** within `projectMrsWindowDays` once glance carries `mergedAt`; boxscore then serves the recent window from `project-mrs:read` and backfills only history.
 - ~~**Retry and cancellation on the glance reads**~~ DONE, shipped in `@mattstack/glance` 0.24.0 (2026-09-02): all six metric reads take `signal?: AbortSignal` and retry 408/429/5xx, dropped sockets, and per-attempt deadline expiry (3 attempts, 30s each, Retry-After honored, caller aborts never retried), covering both the GraphQL runner and the REST page walker including the body read. Sub-project 4 therefore deletes boxscore's `server/util/http.ts` wrapper rather than keeping it around the SDK calls (section 7.1).
-- **`preparedAt` on `MergeRequestIndexRow`**, a cheap scalar, when the latency metrics start using it as the clock start.
+- **`preparedAt` on `MergeRequestIndexRow`**, a cheap scalar. Note the
+  latency metrics do not actually use it today: `cohorts.ts` reads
+  `m.preparedAt ?? m.createdAt`, but no GitLab query has ever requested the
+  field (`server/gitlab/queries.ts` MR_LIST_FIELDS omits it), so `map.ts`
+  sets it null on every MR and the fallback always fires. Adding it to
+  glance is therefore an improvement to review-latency accuracy on draft
+  MRs, not a prerequisite: sub-project 4 preserves today's behavior exactly
+  by leaving the field null.
 - **GitHub implementations** of the 6.2 methods.
 
 ## 10. Defect and structure inventory
@@ -368,6 +375,7 @@ Verified in source during this design:
 | Watermark advances on partial list failure | `server/pipeline/fetch.ts:141-153` | SP4 |
 | Clear removes sqlite but not envelopes | `server/app.ts:156`, `server/cache/mr-store.ts:190` | SP4 |
 | Envelope writes are not atomic | `server/cache/store.ts:148` | SP4 |
+| `preparedAt` never fetched, so the latency clock-start silently falls back to `createdAt` | `server/gitlab/queries.ts:13-22` vs. `server/metrics/cohorts.ts:127,141` | follow-up (section 9); SP4 preserves the behavior |
 | Notes fetched with `first: 100`, never paged | `server/gitlab/queries.ts:55` | SP3 |
 | Cwd-relative cache and settings paths | `server/cache/store.ts:11`, `server/settings.ts:5` | SP2 |
 | Real usernames and project path committed | `config.ts` | SP2 |
