@@ -10,7 +10,7 @@ import { fileURLToPath } from "node:url";
 // the board have to agree on these strings exactly.
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 const wrappers = [
-  { dir: "review", name: "board:review", slots: { review: "mr-review@1" } },
+  { dir: "review", name: "board:review", slots: { review: "mr-review@2" } },
   { dir: "respond", name: "board:respond", slots: { respond: "mr-respond@1" } },
   {
     dir: "doctor",
@@ -34,7 +34,7 @@ const fixtureSkill = (name: string, provides: string) => {
   );
   return name;
 };
-fixtureSkill("fake:review", "mr-review@1");
+fixtureSkill("fake:review", "mr-review@2");
 fixtureSkill("fake:respond", "mr-respond@1");
 fixtureSkill("fake:doctor", "mr-doctor@1");
 fixtureSkill("fake:doctor-api", "mr-doctor-api@1");
@@ -136,6 +136,6 @@ describe("wrapper skill slot resolution", () => {
     const { exitCode, out } = resolve("review", mismatchManifest);
     expect(exitCode).toBe(1);
     expect(out.errors[0].code).toBe("provides-mismatch");
-    expect(out.errors[0].message).toContain("mr-review@1");
+    expect(out.errors[0].message).toContain("mr-review@2");
   });
 });
