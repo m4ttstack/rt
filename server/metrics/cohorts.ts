@@ -1,7 +1,7 @@
 import { inWindow } from "../util/window.js";
 import { buildIgnoredMrSet, buildMetricFilters, isDoneState, matchesTeam, type MetricFilters } from "./filters.js";
 import { buildRevertedTitleSet, isReverted } from "./reverts.js";
-import type { FetchResult, NormLinearIssue, NormMr, NormNote, NormPipeline, NormPushEvent } from "../pipeline/model.js";
+import type { FetchResult, NormLinearIssue, NormMr, NormNote, NormPipeline, NormPushEvent } from "../store/model.js";
 import type { TimeWindow } from "../../shared/types.js";
 
 export interface CohortOptions {

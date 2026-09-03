@@ -1,4 +1,4 @@
-import type { NormLinearIssue } from "../pipeline/model.js";
+import type { NormLinearIssue } from "../store/model.js";
 import type { RawIssue } from "./raw-types.js";
 
 /**

@@ -12,7 +12,6 @@ export function RefreshProgress({ progress, onCancel }: Props) {
   const label = progress ? (progress.label || progress.phase) : "Starting…";
   const determinate = !!progress && progress.total > 0;
   const pct = determinate ? Math.round((progress.done / progress.total) * 100) : null;
-  const windowHint = progress?.window === "prior" ? " · trend window (2 of 2)" : "";
 
   // A single stalled request holds the count still. Without this the bar looks healthy the
   // whole time and there's no way to tell "working" from "wedged".
@@ -24,10 +23,7 @@ export function RefreshProgress({ progress, onCancel }: Props) {
         stalled ? "border-amber-500/40 bg-amber-500/10" : "border-border bg-muted"
       }`}
     >
-      <span className="font-medium text-foreground">
-        Refreshing · {label}
-        {windowHint}
-      </span>
+      <span className="font-medium text-foreground">Refreshing · {label}</span>
 
       {stalled && (
         <span className="whitespace-nowrap text-xs text-amber-700 dark:text-amber-300/90">

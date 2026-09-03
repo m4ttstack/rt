@@ -1,6 +1,6 @@
 import { mrTicketHaystack, teamTicketRegex } from "../linear/ticket.js";
 import { compileBotPatterns, isBotUsername } from "./stats.js";
-import type { NormMr } from "../pipeline/model.js";
+import type { NormMr } from "../store/model.js";
 
 /** Build a predicate that returns true for MRs matching the ignore list. */
 export function buildIgnoredMrSet(

@@ -53,7 +53,7 @@ under `gitlabToken` / `linearApiKey`, scope `extension`. Use a **read-only** Git
 
 The port comes from deck via `PORT`.
 
-Bot discovery (scanning the newest cache for suspected non-human commenters) is a CLI
+Bot discovery (scanning the store for suspected non-human commenters) is a CLI
 subcommand, not a UI page:
 
 ```bash
@@ -95,15 +95,24 @@ See `gitlab-leaderboard-spec.md` for the exact definitions.
 
 ## Notes & limitations
 
-- **GraphQL field/argument names drift by GitLab version and tier.** If a query fails,
-  the error surfaces in the response `warnings`. The single place to adjust queries is
-  [`server/gitlab/queries.ts`](server/gitlab/queries.ts) ... verify against
-  `<baseUrl>/-/graphql-explorer`.
+- **GitLab transport is owned by [`@mattstack/glance`](https://github.com/m4ttstack/glance),**
+  not this repo ... GraphQL/REST field names, pagination, and retries live there. If a
+  query fails, the error surfaces in the response `warnings`; verify field names against
+  `<baseUrl>/-/graphql-explorer` and adjust glance, not boxscore.
 - **Approvals tier fallback:** if approval data isn't accessible, "MRs reviewed" and
   "reciprocity" fall back to note-author detection, flagged in the UI metric notes.
-- **Caching:** fetch envelopes are cached under `~/.mattstack/boxscore/cache` (override with
-  `BOXSCORE_CACHE_DIR`), keyed by `(scope, window)`. The prior window (for the trend) is
-  fetched once, then cached. Use **Refresh** to bypass.
+- **One store, no cache:** every fetched MR, pipeline, and push event lands in a single
+  sqlite database at `~/.mattstack/boxscore/boxscore.sqlite` (override with `BOXSCORE_DB`).
+  There is no per-window envelope cache ... a window is a query over the store, computed
+  fresh from whatever rows currently satisfy it. That means a roster change (adding or
+  hiding a member) is reflected on the very next refresh, with no stale cache to bypass.
+  **Refresh** re-scans each configured project from its last watermark and upserts what
+  changed; a plain load re-runs the same query against what's already stored, with no
+  network call.
+- **Merged MRs are immutable.** Once an MR's metrics (diff stats, notes, approvals) are
+  stored with a `merged` state, the refresh never re-fetches them, so a comment left after
+  merge cannot retroactively move review-latency or review-depth for that MR (spec section
+  7, "edge cases"). Only non-merged rows are re-fetched on each refresh.
 - **Trend storage** is limited to "current vs. one prior window." No long-run time series.
 - **Coding days** only count push events visible to your token.
 
@@ -115,7 +124,7 @@ bun run typecheck # tsc over server + web (no `any` on the API contract)
 ```
 
 The metric layer (`server/metrics/`) is pure functions over a normalized model
-(`server/pipeline/model.ts`), so all the math is tested offline without a live GitLab.
+(`server/store/model.ts`), so all the math is tested offline without a live GitLab.
 
 ### Headless mode + the evaluator
 

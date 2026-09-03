@@ -1,4 +1,4 @@
-import type { FetchResult, NormLinearIssue, NormMr, NormNote } from "../server/pipeline/model.js";
+import type { FetchResult, NormLinearIssue, NormMr, NormNote } from "../server/store/model.js";
 import type { TimeWindow } from "../shared/types.js";
 
 export const WINDOW: TimeWindow = {

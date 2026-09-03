@@ -6,7 +6,7 @@
  */
 import { buildCorpus, buildUserCohorts, type CohortOptions } from "./cohorts.js";
 import { mean, percentile, round, streaks } from "./stats.js";
-import type { FetchResult, NormMr } from "../pipeline/model.js";
+import type { FetchResult, NormMr } from "../store/model.js";
 import type { EvidenceRow, MetricEvidence, MetricKey } from "../../shared/types.js";
 
 export interface EvidenceContext extends CohortOptions {

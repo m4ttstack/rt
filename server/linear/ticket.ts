@@ -2,7 +2,7 @@
  * Where "does this MR reference a team ticket" is defined, dependency-free so both
  * the Linear fetch layer and the metric layer share one rule.
  */
-import type { NormMr } from "../pipeline/model.js";
+import type { NormMr } from "../store/model.js";
 
 /** Build a regex that matches a Linear ticket ID for a specific team, e.g. "HUB-123" or "HUB:123". */
 export function teamTicketRegex(team: string): RegExp | null {

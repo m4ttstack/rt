@@ -1,12 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { restGetOne } from "../server/gitlab/rest.js";
-import { gqlRequest } from "../server/gitlab/graphql.js";
+import { withRetry } from "../server/util/http.js";
 import { resolveLinearTickets } from "../server/linear/fetch.js";
 import { mr } from "./fixtures.js";
-import type { Env } from "../server/config/index.js";
 import type { LeaderboardWarning } from "../shared/types.js";
 
-const ENV: Env = { baseUrl: "https://gl.example", token: "tkn" };
 afterEach(() => vi.unstubAllGlobals());
 
 const mergedMr = mr({
@@ -19,14 +16,16 @@ const mergedMr = mr({
 });
 
 describe("abort signal threading", () => {
-  it("forwards a signal to fetch for REST that the caller's abort still trips", async () => {
+  // withRetry is the one place every remaining HTTP transport (linear/client.ts) gets its
+  // abort-signal handling from.
+  it("forwards a signal to fetch that the caller's abort still trips", async () => {
     const inits: RequestInit[] = [];
     vi.stubGlobal("fetch", async (_url: string, init: RequestInit) => {
       inits.push(init);
       return new Response("[]", { status: 200 });
     });
     const c = new AbortController();
-    await restGetOne(ENV, "/users", { username: "x" }, c.signal);
+    await withRetry((signal) => fetch("https://example.test", { signal }), { signal: c.signal });
 
     // Not the caller's signal itself: each attempt combines it with that attempt's deadline,
     // so a stalled socket ends without waiting on the job-level abort. Cancellation must
@@ -38,18 +37,14 @@ describe("abort signal threading", () => {
     expect(passed!.aborted).toBe(true);
   });
 
-  it("rethrows an AbortError instead of wrapping it (REST)", async () => {
-    vi.stubGlobal("fetch", async () => {
-      const e = new Error("aborted"); e.name = "AbortError"; throw e;
-    });
-    await expect(restGetOne(ENV, "/users", {})).rejects.toMatchObject({ name: "AbortError" });
-  });
-
-  it("rethrows an AbortError instead of wrapping it (GraphQL)", async () => {
-    vi.stubGlobal("fetch", async () => {
-      const e = new Error("aborted"); e.name = "AbortError"; throw e;
-    });
-    await expect(gqlRequest(ENV, "query { x }", {})).rejects.toMatchObject({ name: "AbortError" });
+  it("rethrows an AbortError instead of wrapping it", async () => {
+    await expect(
+      withRetry(() => {
+        const e = new Error("aborted");
+        e.name = "AbortError";
+        throw e;
+      }),
+    ).rejects.toMatchObject({ name: "AbortError" });
   });
 
   it("propagates an AbortError from resolveLinearTickets instead of swallowing it", async () => {
@@ -60,7 +55,7 @@ describe("abort signal threading", () => {
     const c = new AbortController();
 
     await expect(
-      resolveLinearTickets("lin_key", [mergedMr], warnings, c.signal),
+      resolveLinearTickets("lin_key", [mergedMr], warnings, [], c.signal),
     ).rejects.toMatchObject({ name: "AbortError" });
     // Cancellation must not degrade to a warning + [].
     expect(warnings).toEqual([]);

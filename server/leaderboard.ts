@@ -1,16 +1,25 @@
-import { cacheKey, readCache, readCoveringCache, writeCache } from "./cache/store.js";
-import { CONCURRENCY, ConfigError, readSettings, type Env } from "./config/index.js";
+import { ConfigError, readSettings, type Env } from "./config/index.js";
 import { readSecrets } from "./config/secrets.js";
 import { getCurrentUser } from "./config/current-user.js";
 import { buildUserEvidence } from "./metrics/evidence.js";
 import { computeSnapshot, type Snapshot } from "./metrics/snapshot.js";
 import { buildResponse, type BuildContext } from "./metrics/trend.js";
-import { fetchAll, type FetchOutcome } from "./pipeline/fetch.js";
+import { runRefresh } from "./refresh/index.js";
+import { makeProvider } from "./source/index.js";
+import { getStore } from "./store/index.js";
+import { buildFetchResult, hasDataFor, storedIdentities } from "./store/query.js";
 import { baseWindow, covers, priorWindow } from "./util/window.js";
-import { sliceOutcome } from "./pipeline/slice.js";
-import type { LeaderboardResponse, RefreshProgress, Scope, TimeWindow, UserDetailResponse } from "../shared/types.js";
+import type { FetchResult } from "./store/model.js";
+import type {
+  LeaderboardResponse,
+  LeaderboardWarning,
+  RefreshProgress,
+  Scope,
+  TimeWindow,
+  UserDetailResponse,
+} from "../shared/types.js";
 
-/** Thrown by loadOrFetch when cacheOnly is set and the window has no cached envelope. */
+/** Thrown by getLeaderboard when cacheOnly is set and the store has never been populated. */
 export class ColdCacheError extends Error {
   override readonly name = "ColdCacheError";
 }
@@ -18,11 +27,11 @@ export class ColdCacheError extends Error {
 export interface LeaderboardOptions {
   window: TimeWindow;
   refresh: boolean;
-  /** When false, the prior window is not fetched (faster) and no deltas are produced. */
+  /** When false, the prior window is not computed and no deltas are produced. */
   trend: boolean;
   signal?: AbortSignal;
   onProgress?: (p: RefreshProgress) => void;
-  /** When true, never fetch: a cache miss throws ColdCacheError instead of hitting the network. */
+  /** When true, never fetch: a cold store throws ColdCacheError instead of hitting the network. */
   cacheOnly?: boolean;
 }
 
@@ -71,57 +80,6 @@ function resolveScope(): Scope {
   return { type: "projects", projectPaths: projects };
 }
 
-/**
- * Load the wide base envelope (fetching if needed) and slice `window` out of it.
- *
- * Windows that don't fit inside the base -- custom ranges wider than 90/180 days -- fall
- * back to fetching that window directly, which is what every window used to do.
- */
-async function loadOrFetch(
-  env: Env,
-  scope: Scope,
-  window: TimeWindow,
-  trend: boolean,
-  refresh: boolean,
-  cacheOnly: boolean,
-  signal?: AbortSignal,
-  onProgress?: (p: Omit<RefreshProgress, "window">) => void,
-): Promise<{ outcome: FetchOutcome; fromCache: boolean }> {
-  const base = baseWindow(trend, new Date());
-  const target = covers(base, window) ? base : window;
-  const key = cacheKey(scope, target);
-
-  if (!refresh) {
-    const cached = await readCache<FetchOutcome>(key);
-    if (cached) {
-      return { outcome: sliceOutcome(cached.data, window), fromCache: true };
-    }
-    // The base window ends at "now", so its key rolls at UTC midnight and the envelope
-    // fetched hours ago stops being reachable by exact key while still holding a superset
-    // of what's being asked for. Slice that rather than refetch 90 days for the edge.
-    //
-    // Deliberately not re-written under `key`: a fresh savedAt would let one fetch be
-    // reused off its own copy indefinitely, and the data would never refresh at all.
-    const covering = await readCoveringCache<FetchOutcome>(scope, target);
-    if (covering) {
-      return { outcome: sliceOutcome(covering.data, window), fromCache: true };
-    }
-    if (cacheOnly) throw new ColdCacheError(`no cache for ${key}`);
-  }
-
-  const outcome = await fetchAll({
-    env,
-    scope,
-    window: target,
-    users: readSettings().users,
-    concurrency: CONCURRENCY,
-    signal,
-    onProgress,
-  });
-  await writeCache(key, outcome);
-  return { outcome: sliceOutcome(outcome, window), fromCache: false };
-}
-
 /** The settings-derived options shared by snapshot and evidence computation. */
 function metricOptionsFromSettings() {
   const s = readSettings();
@@ -136,43 +94,53 @@ function metricOptionsFromSettings() {
   };
 }
 
-const snapshotFor = (outcome: FetchOutcome, window: TimeWindow): Snapshot =>
-  computeSnapshot(outcome.result, { window, ...metricOptionsFromSettings() });
+const snapshotFor = (result: FetchResult, window: TimeWindow): Snapshot =>
+  computeSnapshot(result, { window, ...metricOptionsFromSettings() });
 
 /**
- * Shared core: fetch (cached) -> compute current + prior snapshots -> ranked response.
- * Returns the current FetchOutcome too, so the detail endpoint can build evidence from the
- * same raw data without a second cache read.
+ * Shared core: refresh the store when asked -> read current + prior windows straight from
+ * it -> compute snapshots -> ranked response. Returns the current FetchResult too, so the
+ * detail endpoint can build evidence from the same data without a second store read.
  */
 async function buildLeaderboard(
   opts: LeaderboardOptions,
-): Promise<{ response: LeaderboardResponse; current: FetchOutcome; env: Env }> {
+): Promise<{ response: LeaderboardResponse; current: FetchResult; env: Env }> {
   const env = await resolveEnv();
+  const settings = readSettings();
   const scope = resolveScope();
+  const store = getStore();
   const pw = priorWindow(opts.window);
+  // Everything this request reads: the window, plus its prior when deltas are wanted.
+  const read: TimeWindow = opts.trend
+    ? { start: pw.start, end: opts.window.end, key: opts.window.key }
+    : opts.window;
+  const warnings: LeaderboardWarning[] = [];
 
-  const current = await loadOrFetch(env, scope, opts.window, opts.trend, opts.refresh, opts.cacheOnly ?? false, opts.signal, withWindow("current", opts.onProgress));
-  const warnings = [...current.outcome.warnings];
-
-  // Prior window drives the self-vs-self trend. Only fetched when requested (it doubles
-  // the work). Compute once, then it's cached. A failure must not break the current view.
-  let priorSnapshot: Snapshot | null = null;
-  if (opts.trend) {
-    try {
-      const prior = await loadOrFetch(env, scope, pw, opts.trend, false, opts.cacheOnly ?? false, opts.signal, withWindow("prior", opts.onProgress));
-      priorSnapshot = snapshotFor(prior.outcome, pw);
-    } catch (err) {
-      if ((err as Error).name === "AbortError") throw err;
-      // A cold prior window is a cold cache, not a degraded trend: let it propagate so the
-      // probe reports {cached:false} and the client starts the job that fetches it. Swallowing
-      // it here returns a "successful" response, so the prior window would never be fetched.
-      if (err instanceof ColdCacheError) throw err;
-      warnings.push({
-        code: "trend_unavailable",
-        message: `Prior-window data unavailable, deltas hidden: ${(err as Error).message}`,
-      });
-    }
+  if (opts.refresh) {
+    // Spec 7.3: the refresh covers the base window (90 days, 180 with trend), so switching
+    // presets never refetches; only a range the base cannot cover is fetched as itself.
+    const base = baseWindow(opts.trend, new Date());
+    const refreshed = await runRefresh({
+      store,
+      provider: makeProvider(env),
+      settings,
+      env,
+      window: covers(base, read) ? base : read,
+      signal: opts.signal,
+      onProgress: withWindow("current", opts.onProgress),
+    });
+    warnings.push(...refreshed);
   }
+
+  if (opts.cacheOnly && !opts.refresh && !hasDataFor(store, settings.projects, read)) {
+    throw new ColdCacheError(`no data back to ${read.start} for ${settings.projects.join(", ")}`);
+  }
+
+  const rosterUsernames = settings.roster.map((r) => r.username);
+  const current = buildFetchResult(store, opts.window, rosterUsernames);
+  const priorSnapshot: Snapshot | null = opts.trend
+    ? snapshotFor(buildFetchResult(store, pw, rosterUsernames), pw)
+    : null;
 
   opts.onProgress?.({ phase: "compute", label: "Computing metrics", done: 0, total: 0, window: "current" });
 
@@ -188,26 +156,27 @@ async function buildLeaderboard(
     baseUrl: env.baseUrl,
     currentUser: who?.username ?? "",
     generatedAt: new Date().toISOString(),
-    fromCache: current.fromCache,
-    identities: current.outcome.identities,
+    // No refresh ran on this request: everything served came from data already in the store.
+    fromCache: !opts.refresh,
+    identities: storedIdentities(store, rosterUsernames),
     warnings,
   };
 
   return {
-    response: buildResponse(snapshotFor(current.outcome, opts.window), priorSnapshot, ctx),
-    current: current.outcome,
+    response: buildResponse(snapshotFor(current, opts.window), priorSnapshot, ctx),
+    current,
     env,
   };
 }
 
-/** Orchestrator: fetch (cached) -> compute current + prior snapshots -> build response with trend. */
+/** Orchestrator: refresh (when asked) -> read current + prior from the store -> build response with trend. */
 export async function getLeaderboard(opts: LeaderboardOptions): Promise<LeaderboardResponse> {
   return (await buildLeaderboard(opts)).response;
 }
 
 /**
  * Per-person drill-down: the same ranked row the leaderboard shows (value + rank + delta for
- * the rail) plus per-metric evidence built from the same cached raw data.
+ * the rail) plus per-metric evidence built from the same store data.
  */
 export async function getUserDetail(opts: DetailOptions): Promise<UserDetailResponse> {
   const { response, current, env } = await buildLeaderboard(opts);
@@ -217,7 +186,7 @@ export async function getUserDetail(opts: DetailOptions): Promise<UserDetailResp
   }
 
   const { users: _users, ...evidenceOpts } = metricOptionsFromSettings();
-  const evidence = buildUserEvidence(current.result, opts.user, {
+  const evidence = buildUserEvidence(current, opts.user, {
     window: opts.window,
     baseUrl: env.baseUrl,
     ...evidenceOpts,

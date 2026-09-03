@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { buildCorpus, buildUserCohorts } from "../server/metrics/cohorts.js";
 import { buildUserEvidence } from "../server/metrics/evidence.js";
 import { computeSnapshot } from "../server/metrics/snapshot.js";
-import type { FetchResult } from "../server/pipeline/model.js";
+import type { FetchResult } from "../server/store/model.js";
 import { FETCH, USERS, WINDOW } from "./fixtures.js";
 
 const SIZE_BAND = { tooSmall: 10, tooLarge: 400 };

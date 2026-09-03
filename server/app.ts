@@ -3,8 +3,8 @@ import type { Context } from "hono";
 
 import { ConfigError, readSettings } from "./config/index.js";
 import { getLeaderboard, getUserDetail, UnknownUserError } from "./leaderboard.js";
-import { startRefresh, getRefresh, cancelRefresh, toStatusResponse } from "./jobs/refresh.js";
-import { clearMrStore, mrStoreSize, linearIdStats, mrListCacheSize } from "./cache/mr-store.js";
+import { startRefresh, getRefresh, cancelRefresh, toStatusResponse } from "./refresh/index.js";
+import { getStore } from "./store/index.js";
 import { resolveWindowArgs } from "./util/window.js";
 import type { CacheStatsResponse, TimeWindow } from "../shared/types.js";
 
@@ -99,15 +99,17 @@ app.post("/api/refresh/:id/cancel", (c) => {
 });
 
 app.get("/api/cache/stats", async (c) => {
+  const store = getStore();
+  const counts = store.counts();
   const stats: CacheStatsResponse = {
-    mrDetails: await mrStoreSize(),
-    mrList: await mrListCacheSize(),
-    linearIds: await linearIdStats(),
+    mrDetails: counts.mrMetrics,
+    mrList: counts.mrIndex,
+    linearIds: store.linearIdStats(),
   };
   return c.json(stats);
 });
 
 app.post("/api/cache/clear", async (c) => {
-  await clearMrStore();
+  getStore().clear();
   return c.json({ cleared: true });
 });

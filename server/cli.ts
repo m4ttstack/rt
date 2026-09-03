@@ -7,7 +7,7 @@
  *   bun server/cli.ts --range 30d --format json   # raw response JSON
  *   bun server/cli.ts --range 30d --format validate --refresh   # run the evaluator (exit 1 on error)
  *   bun server/cli.ts --detail owen-at-acme --range 30d       # per-stat evidence for one person
- *   bun server/cli.ts --format bots                              # scan the newest cache for suspected bots
+ *   bun server/cli.ts --format bots                              # scan the whole store for suspected bots
  */
 import { readSettings } from "./config/index.js";
 import { getLeaderboard, getUserDetail } from "./leaderboard.js";
@@ -112,7 +112,7 @@ function printDetail(res: UserDetailResponse): void {
 async function printBots(): Promise<void> {
   const bots = await scanSuspectedBots(readSettings().botPatterns);
   if (bots.length === 0) {
-    console.log("no suspected bots in the newest cache file");
+    console.log("no suspected bots anywhere in the store");
     return;
   }
   for (const b of bots) console.log(`${b.username}  matched: ${b.matchedPattern}`);
@@ -133,6 +133,21 @@ async function main() {
     if (args.format === "json") console.log(JSON.stringify(detail, null, 2));
     else printDetail(detail);
     return;
+  }
+
+  // A plain read never fetches, so a cold store would otherwise print an empty board that
+  // looks like a real result. Probe first and say what to run instead.
+  if (!args.refresh) {
+    try {
+      await getLeaderboard({ window, refresh: false, trend: args.trend, cacheOnly: true });
+    } catch (err) {
+      if ((err as Error).name === "ColdCacheError") {
+        console.error("No data stored for this window yet. Run again with --refresh to fetch it.");
+        process.exitCode = 1;
+        return;
+      }
+      throw err;
+    }
   }
 
   const res = await getLeaderboard({ window, refresh: args.refresh, trend: args.trend });
