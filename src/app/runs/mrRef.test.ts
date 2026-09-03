@@ -70,4 +70,23 @@ describe('mrRef', () => {
     expect(mrRef(undefined, null)).toBeNull();
     expect(mrRef(null, null)).toBeNull();
   });
+
+  it('normalizes a URL with surrounding whitespace and parses iid', () => {
+    expect(
+      mrRef(undefined, '  https://gitlab.example.com/g/p/-/merge_requests/43166\n')
+    ).toEqual({
+      iid: '43166',
+      state: null,
+      webUrl: 'https://gitlab.example.com/g/p/-/merge_requests/43166',
+      ciStatus: null,
+      text: null,
+    });
+  });
+
+  it('handles uppercase scheme URLs', () => {
+    expect(mrRef(undefined, 'HTTPS://github.com/o/r/pull/456')).toMatchObject({
+      iid: '456',
+      webUrl: 'HTTPS://github.com/o/r/pull/456',
+    });
+  });
 });

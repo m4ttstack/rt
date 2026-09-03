@@ -29,10 +29,11 @@ export function mrRef(
     };
   }
   if (!mrField) return null;
-  if (!/^https?:\/\//.test(mrField)) {
-    return { iid: null, state: null, webUrl: null, ciStatus: null, text: mrField };
+  const raw = mrField.trim();
+  if (!/^https?:\/\//i.test(raw)) {
+    return { iid: null, state: null, webUrl: null, ciStatus: null, text: raw };
   }
   const iid =
-    mrField.match(/\/(?:merge_requests|pull)\/(\d+)(?:[/?#]|$)/)?.[1] ?? null;
-  return { iid, state: null, webUrl: mrField, ciStatus: null, text: null };
+    raw.match(/\/(?:merge_requests|pull)\/(\d+)(?:[/?#]|$)/)?.[1] ?? null;
+  return { iid, state: null, webUrl: raw, ciStatus: null, text: null };
 }

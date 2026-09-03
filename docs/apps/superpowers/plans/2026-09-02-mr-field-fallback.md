@@ -128,6 +128,25 @@ describe('mrRef', () => {
     expect(mrRef(undefined, null)).toBeNull();
     expect(mrRef(null, null)).toBeNull();
   });
+
+  it('normalizes a URL with surrounding whitespace and parses iid', () => {
+    expect(
+      mrRef(undefined, '  https://gitlab.example.com/g/p/-/merge_requests/43166\n')
+    ).toEqual({
+      iid: '43166',
+      state: null,
+      webUrl: 'https://gitlab.example.com/g/p/-/merge_requests/43166',
+      ciStatus: null,
+      text: null,
+    });
+  });
+
+  it('handles uppercase scheme URLs', () => {
+    expect(mrRef(undefined, 'HTTPS://github.com/o/r/pull/456')).toMatchObject({
+      iid: '456',
+      webUrl: 'HTTPS://github.com/o/r/pull/456',
+    });
+  });
 });
 ```
 
@@ -172,19 +191,20 @@ export function mrRef(
     };
   }
   if (!mrField) return null;
-  if (!/^https?:\/\//.test(mrField)) {
-    return { iid: null, state: null, webUrl: null, ciStatus: null, text: mrField };
+  const raw = mrField.trim();
+  if (!/^https?:\/\//i.test(raw)) {
+    return { iid: null, state: null, webUrl: null, ciStatus: null, text: raw };
   }
   const iid =
-    mrField.match(/\/(?:merge_requests|pull)\/(\d+)(?:[/?#]|$)/)?.[1] ?? null;
-  return { iid, state: null, webUrl: mrField, ciStatus: null, text: null };
+    raw.match(/\/(?:merge_requests|pull)\/(\d+)(?:[/?#]|$)/)?.[1] ?? null;
+  return { iid, state: null, webUrl: raw, ciStatus: null, text: null };
 }
 ```
 
 - [ ] **Step 4: Run to verify pass**
 
 Run: `bun run test -- run src/app/runs/mrRef.test.ts`
-Expected: PASS, 7/7.
+Expected: PASS, 9/9.
 
 - [ ] **Step 5: Commit**
 
