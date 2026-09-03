@@ -211,7 +211,8 @@ runner is deliberately retained for this one verb (an `rt pane:close` verb
 is a candidate follow-up, not this pass).
 
 **Park after grace.** The park trigger is gate age alone: a gate still
-unanswered `board.gateGraceMinutes` (default 90) after `openedAt`. No pane
+unanswered `board.gateGraceMinutes` (default 90, registered per the
+settings conventions) after `openedAt`. No pane
 activity signal feeds it; the wait loop keeps the pane's agent status
 pinned at `working`, so activity-based triggers cannot work. The timer is a
 sweep on the board server's existing interval loop over the gate store.
@@ -260,8 +261,8 @@ owns the contract, symmetrically with review-status today.
 
 `board:review` replaces its two sequential posting gates with one combined
 gate: write the report, `gate open` with both questions, `gate wait`, then
-act on the combined answer (post the selected tiers; comment or approve) and
-mark done. The wrapper gains a line telling a resumed session that the
+hand the answer back to the domain skill to post (or post itself on the
+generic no-domain-skill path) and mark done. The wrapper gains a line telling a resumed session that the
 current invocation supersedes any earlier gate contract remembered in the
 transcript. A parked-gate resume needs no special branch: the re-invoked
 wrapper reaches `gate wait` and the journal answers immediately. The in-pane
