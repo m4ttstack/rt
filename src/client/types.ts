@@ -3,6 +3,7 @@ import type { BoardMR } from "../data.ts";
 import type { SlackTemplates } from "../template.ts";
 import type { RespondStatus } from "../respond-outcome.ts";
 import type { TabConfig } from "../config.ts";
+import type { GateRow } from "../gates/store.ts";
 
 export interface RosterMember {
   username: string;
@@ -44,6 +45,7 @@ export type BoardMRWithReview = BoardMR & {
   peerReviews?: PeerReviewInfo[];
   sentNudge?: SentNudgeInfo;
   nudges?: InboundNudgeInfo[];
+  gate: GateRow | null;
 };
 
 export interface BoardData {

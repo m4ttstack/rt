@@ -13,13 +13,15 @@ import { upsertEnvKeys } from "./env-file.ts";
 import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, channelForMR, configuredSlackChannels, projectPathFromWebUrl, reviewSkillForTab, visibleMrsFor, type BoardMR, type SyncScopeRead } from "./data.ts";
 import { GitLabProvider, ReadBackFailedError, NoteMutator, parseRepoId } from "@mattstack/glance";
 import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } from "./discussions.ts";
-import { readProjectMRs, readDiscussions, subscribe } from "@mattstack/rt-client";
+import { readProjectMRs, readDiscussions, subscribe, eventsList, getSetting, setSetting } from "@mattstack/rt-client";
 import { SnapshotCache } from "./cache.ts";
 import { isLocalRequest } from "./local.ts";
 import { settingsHandler } from "@mattstack/settings-kit/server";
 import { readReviewStates, pruneReviewStates, reviewFilePath, writeReviewState, parseReviewRequestBody, attachReviews, readReviewReport } from "./review-state.ts";
 import { readRespondStates, pruneRespondStates, respondFilePath, writeRespondState, parseRespondRequestBody, attachResponds } from "./respond-state.ts";
 import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, parseDoctorRequestBody, attachDoctors } from "./doctor-state.ts";
+import { readGateStates, pruneGateStates, attachGates } from "./gates/store.ts";
+import { applyGateEvent, ensureBridgeRule, gateEventStore, type EventBridgeRule, type GateEventFrame } from "./gates/ingest.ts";
 import { readDrafts, heldDraftsByMr, attachDrafts, pruneDrafts, draftFilePath, writeDraft } from "./draft-state.ts";
 import { launchReview, launchRespond, launchDoctor, launchLegacyResume, parseLaunchNote, mrTabLabel, reopenPrompt } from "./herdr.ts";
 import { focusPane } from "./focus-pane.ts";
@@ -519,7 +521,10 @@ const httpServer = Bun.serve({
           const withState = attachPeerState(
             attachDrafts(
               attachSlack(
-                attachDoctors(attachResponds(attachReviews(mrs, readReviewStates()), readRespondStates()), readDoctorStates()),
+                attachGates(
+                  attachDoctors(attachResponds(attachReviews(mrs, readReviewStates()), readRespondStates()), readDoctorStates()),
+                  readGateStates(),
+                ),
                 readSlackRefs(),
               ),
               heldDraftsByMr(readDrafts()),
@@ -555,6 +560,7 @@ const httpServer = Bun.serve({
           pruneReviewStates(onBoard);
           pruneRespondStates(onBoard);
           pruneDoctorStates(onBoard);
+          pruneGateStates(onBoard);
           pruneDrafts(onBoard);
           prunePeerReviews(onBoard);
           pruneSentNudges(onBoard);
@@ -563,6 +569,7 @@ const httpServer = Bun.serve({
         const reviews = readReviewStates();
         const responds = readRespondStates();
         const doctors = readDoctorStates();
+        const gates = readGateStates();
         const slackRefs = readSlackRefs();
         return new Response(
           JSON.stringify({
@@ -583,7 +590,10 @@ const httpServer = Bun.serve({
             })),
             mrs: attachPeerState(
               attachDrafts(
-                attachSlack(attachDoctors(attachResponds(attachReviews(visibleMrs, reviews), responds), doctors), slackRefs),
+                attachSlack(
+                  attachGates(attachDoctors(attachResponds(attachReviews(visibleMrs, reviews), responds), doctors), gates),
+                  slackRefs,
+                ),
                 heldDraftsByMr(readDrafts()),
               ),
             ),
@@ -1688,6 +1698,13 @@ setInterval(() => sseSend(sseEncoder.encode(": ping\n\n")), SSE_HEARTBEAT_MS);
 
 let relayTimer: ReturnType<typeof setTimeout> | undefined;
 const stopRelay = FIXTURE_DIR ? () => {} : subscribe((type, data) => {
+  if (type === "event") {
+    const frame = data as { topic?: unknown; payload?: unknown } | null;
+    if (typeof frame?.topic === "string" && frame.topic.startsWith("board/gate/")) {
+      applyGateEvent(gateEventStore, { topic: frame.topic, payload: frame.payload } satisfies GateEventFrame);
+      sseNudge();
+    }
+  }
   if (!RELAY_TYPES.has(type)) return;
   const repoName = (data as { repoName?: string } | null)?.repoName;
   // Relay events are keyed by the serialized identity now — compare
@@ -1702,6 +1719,49 @@ const stopRelay = FIXTURE_DIR ? () => {} : subscribe((type, data) => {
     void cache.refreshNow().then(sseNudge).catch(() => {});
   }, RELAY_COALESCE_MS);
 });
+
+// Boot reconcile: catch up on any board/gate/* events the daemon journaled
+// while this process was down. Bun.Glob's `*` never crosses `/`, and gate
+// topics have four segments (board/gate/opened/<id>), so the pattern MUST be
+// `**` -- `board/gate/*` matches nothing. Applied through the same
+// applyGateEvent as the live relay, in journal order, so a later answered
+// naturally overwrites an earlier open.
+async function reconcileGateEventsOnBoot(): Promise<void> {
+  const res = await eventsList({ pattern: "board/gate/**", limit: 500 });
+  if (!res.ok || !res.data) {
+    console.error(`gate boot reconcile: events:list failed: ${res.error ?? "unknown error"}`);
+    return;
+  }
+  for (const e of res.data.events) {
+    applyGateEvent(gateEventStore, { topic: e.topic, payload: e.payload });
+  }
+}
+if (!FIXTURE_DIR) {
+  void reconcileGateEventsOnBoot().catch((err) =>
+    console.error(`gate boot reconcile failed: ${err instanceof Error ? err.message : err}`),
+  );
+}
+
+// Bridge-rule registration: upsert this board's gate-opened rule into
+// `rt.notify.eventBridges` (merge-not-clobber -- see ensureBridgeRule), so a
+// board/gate/opened/* event raises a desktop notification once the rt daemon
+// side (gate events plan, Task 3) has registered that key. Local file reads,
+// not a daemon round trip, so this runs synchronously and cheaply; caught so
+// a stale rt-client copy without the key yet (or any other read/write
+// failure) never blocks boot -- just skip and log once.
+function readEventBridges(): EventBridgeRule[] {
+  return getSetting<EventBridgeRule[]>("rt.notify.eventBridges").value ?? [];
+}
+function writeEventBridges(next: EventBridgeRule[]): void {
+  setSetting("rt.notify.eventBridges", next, "user");
+}
+if (!FIXTURE_DIR) {
+  try {
+    ensureBridgeRule(readEventBridges, writeEventBridges);
+  } catch (err) {
+    console.error(`gate bridge-rule reconcile skipped: ${err instanceof Error ? err.message : err}`);
+  }
+}
 
 // Hot-reload config.json so adding/removing members (or any setting) takes
 // effect without a restart. Watch the directory — that survives editors that
