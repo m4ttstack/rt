@@ -185,6 +185,9 @@ export async function getUserDetail(opts: DetailOptions): Promise<UserDetailResp
     throw new UnknownUserError(`Unknown user "${opts.user}" (not in the configured set).`);
   }
 
+  // Strips `users` (the full roster) before spreading into CohortOptions, which has no such
+  // field; buildUserEvidence takes the one user to build evidence for via `opts.user` instead.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-destructure exclusion, not a real binding
   const { users: _users, ...evidenceOpts } = metricOptionsFromSettings();
   const evidence = buildUserEvidence(current, opts.user, {
     window: opts.window,

@@ -24,6 +24,29 @@ The token stays **server-side only** ... the browser never sees it.
 
 ---
 
+## Architecture
+
+- **`src/server`** is a [`@mattstack/app-server`](https://github.com/m4ttstack/app-server)
+  app: a single Hono route table (`src/server/routes.ts`, mounted as `AppType` for the
+  client's typed RPC) served through `serveMattstackApp` from `src/server/index.ts`. The
+  metric math, GitLab fetch/store layer, and CLI live under it (`metrics/`, `store/`,
+  `refresh/`, `linear/`, `cli.ts`); see "Notes & limitations" below for how that part works.
+- **`src/app`** is a [`@mattstack/app-kit`](https://github.com/m4ttstack/app-kit) app:
+  `MattstackShell` for the frame/rail, [wouter](https://github.com/molefrog/wouter) for
+  routing (`src/app/routes.ts` maps four routes ... `/`, `/user/:name`,
+  `/user/:name/:stat`, `/settings` ... to a small `AppRoute` union), and
+  [`@tanstack/react-query`](https://tanstack.com/query) for data fetching
+  (`src/app/hooks/useLeaderboard.ts`, `useUserDetail`) over a Hono RPC client
+  (`src/app/api.ts`, typed against the server's `AppType`) so query params and response
+  shapes stay compiler-checked end to end.
+- **`src/shared`** holds the wire types (`types.ts`) and metric metadata (`metrics.ts`)
+  both sides import ... the one place a metric's key, label, and formatting are defined.
+- **Settings** are not a committed config file: they live in the rt settings store and are
+  edited in-app at `/settings` (`src/app/settings/SettingsPage.tsx`), which talks to
+  `@mattstack/settings-kit`'s `useSettingKey`/`useSettingsScope` hooks against
+  `settingsHandler` mounted at `/api/settings` in `src/server/routes.ts`. `rt settings list`
+  still works for a read-only check from the terminal; see "Setup" below.
+
 ## Setup
 
 Requires [Bun](https://bun.sh) 1.1+.
@@ -32,8 +55,8 @@ Requires [Bun](https://bun.sh) 1.1+.
 bun install
 ```
 
-Configuration lives in rt settings, not in a committed file. List boxscore's current
-values with:
+Configuration lives in rt settings, not in a committed file (edit it at the app's
+`/settings` page, or read it from the terminal). List boxscore's current values with:
 
 ```bash
 rt settings list | grep boxscore
@@ -51,29 +74,28 @@ under `gitlabToken` / `linearApiKey`, scope `extension`. Use a **read-only** Git
 (`read_api` scope only, never full `api`). For a one-off run outside the daemon,
 `GITLAB_TOKEN` / `LINEAR_API_KEY` env vars still take priority.
 
-The port comes from deck via `PORT`.
+The port comes from deck via `PORT` (11005 in `mattstack.deck.json`, used as the fallback
+when `PORT` isn't set).
 
 Bot discovery (scanning the store for suspected non-human commenters) is a CLI
 subcommand, not a UI page:
 
 ```bash
-bun server/cli.ts --format bots
+bun src/server/cli.ts --format bots
 ```
 
 ## Run
 
 ```bash
-bun run dev
+bun run dev:server   # Bun/Hono API server, hot-reloading, on :11005 (or $PORT)
+bun run dev          # Vite dev server on :5173, proxying /api and /ws to it
 ```
 
-Starts the backend (default `http://localhost:8787`) and the Vite frontend
-(`http://localhost:5173`, which proxies `/api` to the backend). Open the frontend URL.
+Open the Vite URL (`http://localhost:5173`). Use the controls to change the date range,
+toggle the trend view, switch table/cards, and force a refresh ... all without restarting.
 
-Use the controls to change the date range, toggle the trend view, switch table/cards, and
-force a refresh ... all without restarting.
-
-For a production-style run: `bun run build && bun start` (the server then serves the built
-app from `web/dist`).
+For a production-style run: `bun run build && bun run serve` (the server then serves the
+built app straight out of `dist/`).
 
 ## How the metrics work (and how they're gamed)
 
@@ -118,20 +140,27 @@ See `gitlab-leaderboard-spec.md` for the exact definitions.
 
 ## Development
 
-```bash
-bun run test      # vitest ... metric math, ranking, validation, metadata (the correctness gate)
-bun run typecheck # tsc over server + web (no `any` on the API contract)
-```
+| Script               | What it does                                                              |
+| -------------------- | -------------------------------------------------------------------------- |
+| `bun run dev`        | Start the Vite dev server (`src/app`).                                     |
+| `bun run dev:server` | Start the Bun/Hono API server (`src/server`) with hot reload.              |
+| `bun run build`      | Typecheck then production build (`vite build`) into `dist/`.               |
+| `bun run serve`      | Run the production server against the built `dist/`.                      |
+| `bun run report`     | Ranked standings table from the terminal (see below).                     |
+| `bun run validate`   | Run the evaluator; exits non-zero on any ranking-integrity error.          |
+| `bun run test`       | Vitest: server tests (`test/`) plus component tests (`src/app/**`).       |
+| `bun run typecheck`  | `tsc --noEmit` over the whole tree (server, app, shared).                 |
+| `bun run lint`       | ESLint over `src`.                                                        |
 
-The metric layer (`server/metrics/`) is pure functions over a normalized model
-(`server/store/model.ts`), so all the math is tested offline without a live GitLab.
+The metric layer (`src/server/metrics/`) is pure functions over a normalized model
+(`src/server/store/model.ts`), so all the math is tested offline without a live GitLab.
 
 ### Headless mode + the evaluator
 
 The whole pipeline (fetch → compute → **classify/rank**) is decoupled from the UI: ranking
 and "who's #1" are decided server-side and travel in the JSON (`rank` per metric, `leaders`
-map), driven by one source of truth for metric metadata in `shared/metrics.ts`. The UI just
-renders. You can run and evaluate everything from the terminal:
+map), driven by one source of truth for metric metadata in `src/shared/metrics.ts`. The UI
+just renders. You can run and evaluate everything from the terminal:
 
 ```bash
 bun run report                       # ranked standings table (per-metric leaders)

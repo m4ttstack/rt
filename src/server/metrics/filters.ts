@@ -54,11 +54,17 @@ export function globToRegExp(pattern: string): RegExp {
   return new RegExp(
     "^" +
     effective
+      // \x00/\x01 are placeholder sentinels for "**/ " and "**", stashed before the
+      // literal-escaping step below (which would otherwise mangle the "*" characters)
+      // and swapped back for their regex fragments afterward. Neither byte can occur
+      // in a real glob pattern, so they round-trip safely.
       .replace(/\*\*\//g, "\x00")
       .replace(/\*\*/g, "\x01")
       .replace(/[.+^${}()|[\]\\]/g, "\\$&")
       .replace(/\*/g, "[^/]*")
+      // eslint-disable-next-line no-control-regex -- matching back the \x00 sentinel stashed above
       .replace(/\x00/g, "(.*/)?")
+      // eslint-disable-next-line no-control-regex -- matching back the \x01 sentinel stashed above
       .replace(/\x01/g, ".*") +
     "$",
     "i",
