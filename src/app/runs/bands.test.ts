@@ -75,6 +75,30 @@ describe('sortBand', () => {
     ]);
   });
 
+  it('orders the finished band newest-first: it is a log, not a worklist', () => {
+    const older = run({ id: 'older', last_event_at: 1, ended_at: 1 });
+    const newer = run({ id: 'newer', last_event_at: 100, ended_at: 100 });
+
+    expect(sortBand([older, newer], 'finished').map(r => r.id)).toEqual([
+      'newer',
+      'older',
+    ]);
+  });
+
+  it('does not sink a seen row in the finished band -- recency outranks it', () => {
+    const seenNewest = run({
+      id: 'seen',
+      last_event_at: 100,
+      ended_at: 100,
+      seen: true,
+    });
+    const unseenOlder = run({ id: 'unseen', last_event_at: 1, ended_at: 1 });
+
+    expect(
+      sortBand([seenNewest, unseenOlder], 'finished').map(r => r.id)
+    ).toEqual(['seen', 'unseen']);
+  });
+
   it('does not sink a FINISHED interactive run -- nobody is watching it any more', () => {
     const finishedTty = run({
       id: 'tty',

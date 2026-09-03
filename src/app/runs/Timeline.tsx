@@ -7,7 +7,6 @@ import {
   Stack,
   Text,
 } from '@mattstack/app-kit/core';
-import type { MantineColor } from '@mattstack/app-kit/core';
 import { useSchemeColors } from '@mattstack/app-kit/hooks';
 import { Icons } from '@mattstack/app-kit/icons';
 import type {
@@ -17,6 +16,7 @@ import type {
 } from '@mattstack/rt-client';
 
 import { FailureExcerpt } from './FailureExcerpt';
+import { STAGE_STATUS_COLOR } from './stageStatus';
 
 /** Same geometry as the Wiring spine (`WiringMap`): a 22px bullet on a 2px
     line, so the two timelines read as one object. */
@@ -112,16 +112,11 @@ function stageElapsed(stage: {
   return `${Math.floor(mins / 60)}h ${mins % 60}m`;
 }
 
-const STAGE_STATUS_COLOR: Record<string, MantineColor> = {
-  done: 'ok',
-  failed: 'bad',
-  running: 'accent',
-};
-
 function StageBullet({ status }: { status: string }) {
   if (status === 'done') return <Icons.check size={12} />;
   if (status === 'failed') return <Icons.error size={12} />;
   if (status === 'running') return <Icons.clock size={12} />;
+  if (status === 'redirected') return <Icons.undo size={12} />;
   return null;
 }
 

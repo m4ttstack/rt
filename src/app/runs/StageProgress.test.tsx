@@ -27,13 +27,14 @@ describe('StageProgress', () => {
           { name: 'implement', status: 'running' },
           { name: 'review', status: 'failed' },
           { name: 'ship', status: 'queued' },
+          { name: 'ship', status: 'redirected' },
         ]}
       />
     );
 
     const track = getByTestId('stage-progress');
     const segments = track.querySelectorAll('[data-status]');
-    expect(segments).toHaveLength(4);
+    expect(segments).toHaveLength(5);
 
     expect(segments[0]).toHaveAttribute('data-status', 'done');
     expect(segments[0]).toHaveStyle({
@@ -55,6 +56,13 @@ describe('StageProgress', () => {
     expect(segments[3]).toHaveAttribute('data-status', 'queued');
     expect(segments[3]).toHaveStyle({
       backgroundColor: staticSchemeColors.border.default,
+    });
+
+    // A stage the run redirected away from is mapped, not fallen through:
+    // abandoned work reads muted, never as a failure.
+    expect(segments[4]).toHaveAttribute('data-status', 'redirected');
+    expect(segments[4]).toHaveStyle({
+      backgroundColor: segmentColor('gray'),
     });
   });
 
