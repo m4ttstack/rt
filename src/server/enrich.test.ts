@@ -9,6 +9,10 @@ vi.mock('@mattstack/rt-client', () => ({
   abandonRun: vi.fn(async () => ({ ok: true, data: { ok: true } })),
   subscribe: vi.fn(() => () => {}),
   getSetting: vi.fn(() => ({ value: 30, provenance: [] })),
+  paneFocus: vi.fn(async () => ({
+    ok: true,
+    data: { paneId: '', focused: true },
+  })),
   serializeIdentity: (id: { kind: string; id: string }) =>
     `${id.kind}:${encodeURIComponent(id.id)}`,
   readBranchCache: vi.fn(async () => ({ ok: true, data: {} })),

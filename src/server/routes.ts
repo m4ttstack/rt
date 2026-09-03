@@ -2,6 +2,7 @@ import { Hono } from 'hono';
 
 import { mountEffectiveInputs } from './effectiveInputs';
 import { enrich } from './enrich';
+import { panes } from './panes';
 import { runs } from './runs';
 import { settings } from './settings';
 import { mountSkills } from './skills';
@@ -14,6 +15,7 @@ import { mountSkills } from './skills';
 export const routes = new Hono()
   .route('/', runs)
   .route('/', enrich)
+  .route('/', panes)
   .route('/', settings)
   .route('/', mountSkills(new Hono()))
   .route('/', mountEffectiveInputs(new Hono()));

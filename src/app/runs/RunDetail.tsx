@@ -80,6 +80,25 @@ const HOTKEY_FIELDS: HotkeyFieldSpec[] = [
   { key: 'commits', label: 'Commits', hotkey: 'c' },
 ];
 
+function FocusPaneAction({ pane }: { pane: string }) {
+  return (
+    <Button
+      size="xs"
+      variant="light"
+      leftSection={<Icons.terminal size={16} />}
+      aria-label="focus pane"
+      onClick={async () => {
+        const res = await client.api.panes[':id'].focus.$post({
+          param: { id: pane },
+        });
+        if (!res.ok) notifications.error("couldn't focus the pane");
+      }}
+    >
+      Focus pane
+    </Button>
+  );
+}
+
 function AbandonAction({ repo, runId }: { repo: string; runId: string }) {
   const queryClient = useQueryClient();
 
@@ -214,6 +233,7 @@ function SummaryCard({
     : null;
 
   const showAbandon = run.attention.needs && run.attention.reason === 'stale';
+  const showFocusPane = Boolean(run.agent && run.agent.status !== 'done');
   const { color: livenessColor, label: livenessLabel } = livenessSpec(run);
 
   return (
@@ -265,6 +285,7 @@ function SummaryCard({
               "idle" on the board and "running" here; the timeline below
               already names the current stage. */}
           <LivenessChip run={run} size="md" />
+          {showFocusPane && <FocusPaneAction pane={run.agent!.pane} />}
           {showAbandon && <AbandonAction repo={repo} runId={run.id} />}
         </Group>
       </Group>
