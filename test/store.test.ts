@@ -3,12 +3,12 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { IndexRow, StoredMetrics, StoredPipeline } from "../server/store/index.js";
+import type { IndexRow, StoredMetrics, StoredPipeline } from "../src/server/store/index.js";
 
 const dir = mkdtempSync(join(tmpdir(), "boxscore-store-"));
 process.env.BOXSCORE_DB = join(dir, "test.sqlite");
 
-const { getStore, mrKey, __resetStore } = await import("../server/store/index.js");
+const { getStore, mrKey, __resetStore } = await import("../src/server/store/index.js");
 
 afterEach(() => __resetStore());
 afterAll(() => rmSync(dir, { recursive: true, force: true }));

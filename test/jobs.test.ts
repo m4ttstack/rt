@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { startRefresh, getRefresh, cancelRefresh, toStatusResponse, __resetJobs } from "../server/refresh/job.js";
-import type { LeaderboardResponse } from "../shared/types.js";
-import type { TimeWindow } from "../shared/types.js";
+import { startRefresh, getRefresh, cancelRefresh, toStatusResponse, __resetJobs } from "../src/server/refresh/job.js";
+import type { LeaderboardResponse } from "../src/shared/types.js";
+import type { TimeWindow } from "../src/shared/types.js";
 
 const WINDOW: TimeWindow = { start: "2026-05-01T00:00:00.000Z", end: "2026-06-01T00:00:00.000Z", key: "30d" };
 const SELECTION = { range: "30d", trend: false };

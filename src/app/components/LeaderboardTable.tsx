@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { LeaderboardResponse, UserRow } from "../../../shared/types";
+import type { LeaderboardResponse, UserRow } from "../../shared/types";
 import {
   COLUMNS,
   type Column,

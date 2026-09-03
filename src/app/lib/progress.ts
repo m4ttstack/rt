@@ -1,4 +1,4 @@
-import type { RefreshProgress } from "../../../shared/types";
+import type { RefreshProgress } from "../../shared/types";
 
 /**
  * Identity of one progress reading. Two equal keys mean the refresh has not moved, which is

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { __resetCurrentUser, getCurrentUser } from "../server/config/current-user.js";
+import { __resetCurrentUser, getCurrentUser } from "../src/server/config/current-user.js";
 
 const okFetch = (body: unknown) =>
   (async () => new Response(JSON.stringify(body), { status: 200 })) as unknown as typeof fetch;

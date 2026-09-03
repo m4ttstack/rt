@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { LeaderboardResponse, RefreshProgress } from "../../shared/types";
+import type { LeaderboardResponse, RefreshProgress } from "../shared/types";
 import { cancelRefresh, fetchLeaderboard, pollRefresh, startRefresh } from "./api";
 import { Controls, type ViewMode } from "./components/Controls";
 import { DetailPage } from "./components/DetailPage";

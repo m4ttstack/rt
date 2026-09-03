@@ -1,4 +1,4 @@
-import type { LeaderboardResponse, UserRow } from "../../../shared/types";
+import type { LeaderboardResponse, UserRow } from "../../shared/types";
 import { COLUMNS, type Column, GROUP_META, deltaValue, formatValue, rankValue, sortValue } from "../columns";
 import { navigateToUser } from "../hooks/useHashRoute";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { buildQuery, startRefresh, pollRefresh, cancelRefresh } from "../web/src/api.js";
+import { buildQuery, startRefresh, pollRefresh, cancelRefresh } from "../src/app/api.js";
 
 afterEach(() => vi.unstubAllGlobals());
 

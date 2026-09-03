@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { linearRequest } from "../server/linear/client.js";
-import { RetryableError, asRetryable, isTransientStatus, retryAfterMs, withRetry } from "../server/util/http.js";
+import { linearRequest } from "../src/server/linear/client.js";
+import { RetryableError, asRetryable, isTransientStatus, retryAfterMs, withRetry } from "../src/server/util/http.js";
 
 afterEach(() => vi.unstubAllGlobals());
 

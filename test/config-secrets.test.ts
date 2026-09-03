@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { readSecrets } from "../server/config/secrets.js";
+import { readSecrets } from "../src/server/config/secrets.js";
 
 const ENV_KEYS = ["GITLAB_TOKEN", "LINEAR_API_KEY"] as const;
 const saved: Record<string, string | undefined> = {};

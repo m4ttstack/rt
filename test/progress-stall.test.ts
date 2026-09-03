@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { REQUEST_DEADLINE_MS, STALL_AFTER_MS, progressKey, stallNotice } from "../web/src/lib/progress.js";
-import type { RefreshProgress } from "../shared/types.js";
+import { REQUEST_DEADLINE_MS, STALL_AFTER_MS, progressKey, stallNotice } from "../src/app/lib/progress.js";
+import type { RefreshProgress } from "../src/shared/types.js";
 
 const at = (done: number, over: Partial<RefreshProgress> = {}): RefreshProgress => ({
   phase: "mrs-detail",

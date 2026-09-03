@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { METRICS } from "../shared/metrics.js";
+import { METRICS } from "../src/shared/metrics.js";
 import { makeMetrics } from "./builders.js";
 
 describe("metric metadata coherence", () => {

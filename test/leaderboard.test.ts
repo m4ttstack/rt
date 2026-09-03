@@ -4,16 +4,16 @@ import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import type { FetchMergeRequestIndexOptions, MergeRequestIndexRow } from "@mattstack/glance";
-import { __setSettingReader } from "../server/config/index.js";
-import type { GitProvider, SourceProvider } from "../server/source/index.js";
-import { baseWindow, customWindow, priorWindow, resolvePreset } from "../server/util/window.js";
+import { __setSettingReader } from "../src/server/config/index.js";
+import type { GitProvider, SourceProvider } from "../src/server/source/index.js";
+import { baseWindow, customWindow, priorWindow, resolvePreset } from "../src/server/util/window.js";
 
 const dir = mkdtempSync(join(tmpdir(), "boxscore-leaderboard-"));
 process.env.BOXSCORE_DB = join(dir, "test.sqlite");
 
-const { getLeaderboard, ColdCacheError } = await import("../server/leaderboard.js");
-const { getStore, __resetStore } = await import("../server/store/index.js");
-const { __setProviderFactory } = await import("../server/source/index.js");
+const { getLeaderboard, ColdCacheError } = await import("../src/server/leaderboard.js");
+const { getStore, __resetStore } = await import("../src/server/store/index.js");
+const { __setProviderFactory } = await import("../src/server/source/index.js");
 
 const PROJECT = "acme/app";
 const SETTINGS: Record<string, unknown> = {

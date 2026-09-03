@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { __setSettingReader, readSettings } from "../server/config/index.js";
+import { __setSettingReader, readSettings } from "../src/server/config/index.js";
 
 const store = (values: Record<string, unknown>) =>
   __setSettingReader(<T,>(key: string) => values[key] as T | undefined);

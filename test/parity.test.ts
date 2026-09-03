@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { buildCorpus, buildUserCohorts } from "../server/metrics/cohorts.js";
-import { buildUserEvidence } from "../server/metrics/evidence.js";
-import { computeSnapshot } from "../server/metrics/snapshot.js";
-import type { FetchResult } from "../server/store/model.js";
+import { buildCorpus, buildUserCohorts } from "../src/server/metrics/cohorts.js";
+import { buildUserEvidence } from "../src/server/metrics/evidence.js";
+import { computeSnapshot } from "../src/server/metrics/snapshot.js";
+import type { FetchResult } from "../src/server/store/model.js";
 import { FETCH, USERS, WINDOW } from "./fixtures.js";
 
 const SIZE_BAND = { tooSmall: 10, tooLarge: 400 };

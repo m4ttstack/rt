@@ -10,7 +10,7 @@ import type {
   PipelineSummary,
   UserEvent,
 } from "@mattstack/glance";
-import type { RequestIO, SourceProvider } from "../server/source/provider.js";
+import type { RequestIO, SourceProvider } from "../src/server/source/provider.js";
 import {
   fetchMetrics,
   fetchPipelinesFor,
@@ -22,8 +22,8 @@ import {
   toStoredMetrics,
   toStoredPipeline,
   toStoredPushEvent,
-} from "../server/source/index.js";
-import type { TimeWindow } from "../shared/types.js";
+} from "../src/server/source/index.js";
+import type { TimeWindow } from "../src/shared/types.js";
 
 interface Call {
   method: string;

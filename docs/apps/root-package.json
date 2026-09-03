@@ -8,15 +8,15 @@
   },
   "scripts": {
     "dev": "concurrently -n server,web -c blue,magenta \"bun run dev:server\" \"bun run dev:web\"",
-    "dev:server": "bun --watch server/index.ts",
+    "dev:server": "bun --watch src/server/index.ts",
     "dev:web": "vite",
     "build": "bun run typecheck && vite build",
-    "start": "bun server/index.ts",
-    "report": "bun server/cli.ts",
-    "validate": "bun server/cli.ts --format validate",
+    "start": "bun src/server/index.ts",
+    "report": "bun src/server/cli.ts",
+    "validate": "bun src/server/cli.ts --format validate",
     "test": "bun --bun vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p web/tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.app.json"
   },
   "dependencies": {
     "@mattstack/glance": "^0.24.0",

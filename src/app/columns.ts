@@ -13,7 +13,7 @@ import {
   metricValue,
   type MetricDescriptor,
   type MetricGroup,
-} from "../../shared/metrics";
+} from "../shared/metrics";
 
 export type Column = MetricDescriptor;
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ArrowLeft } from "lucide-react";
 
-import type { MetricKey, UserDetailResponse } from "../../../shared/types";
+import type { MetricKey, UserDetailResponse } from "../../shared/types";
 import { Button } from "@/components/ui/button";
 import { fetchDetail } from "../api";
 import {

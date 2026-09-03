@@ -3,15 +3,15 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { IndexRow, StoredMetrics } from "../server/store/index.js";
-import type { TimeWindow } from "../shared/types.js";
-import { computeSnapshot } from "../server/metrics/snapshot.js";
+import type { IndexRow, StoredMetrics } from "../src/server/store/index.js";
+import type { TimeWindow } from "../src/shared/types.js";
+import { computeSnapshot } from "../src/server/metrics/snapshot.js";
 
 const dir = mkdtempSync(join(tmpdir(), "boxscore-query-"));
 process.env.BOXSCORE_DB = join(dir, "test.sqlite");
 
-const { getStore } = await import("../server/store/index.js");
-const { buildFetchResult, storedIdentities, hasDataFor } = await import("../server/store/query.js");
+const { getStore } = await import("../src/server/store/index.js");
+const { buildFetchResult, storedIdentities, hasDataFor } = await import("../src/server/store/query.js");
 
 // getStore() is a singleton over one on-disk file, so __resetStore (which only closes and
 // reopens the handle) does not clear rows between tests -- clear() does.

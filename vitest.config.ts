@@ -1,6 +1,6 @@
 import { defineConfig } from "vitest/config";
 
-// Separate from vite.config.ts (which is rooted at web/) so tests resolve from repo root.
+// Separate from vite.config.ts (which serves the client app) so tests resolve from repo root.
 export default defineConfig({
   test: {
     include: ["test/**/*.test.ts"],

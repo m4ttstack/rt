@@ -1,4 +1,4 @@
-import type { CacheStatsResponse, LeaderboardResponse, RefreshStatusResponse, UserDetailResponse } from "../../shared/types";
+import type { CacheStatsResponse, LeaderboardResponse, RefreshStatusResponse, UserDetailResponse } from "../shared/types";
 
 export interface FetchParams {
   range: string;

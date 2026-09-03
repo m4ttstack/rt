@@ -2,15 +2,15 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { __setSettingReader } from "../server/config/index.js";
-import type { TimeWindow } from "../shared/types.js";
+import { __setSettingReader } from "../src/server/config/index.js";
+import type { TimeWindow } from "../src/shared/types.js";
 
 const dir = mkdtempSync(join(tmpdir(), "boxscore-endpoints-"));
 process.env.BOXSCORE_DB = join(dir, "test.sqlite");
 
-const { app } = await import("../server/app.js");
-const { startRefresh, __resetJobs } = await import("../server/refresh/index.js");
-const { getStore, __resetStore } = await import("../server/store/index.js");
+const { app } = await import("../src/server/app.js");
+const { startRefresh, __resetJobs } = await import("../src/server/refresh/index.js");
+const { getStore, __resetStore } = await import("../src/server/store/index.js");
 
 const WINDOW: TimeWindow = { start: "2026-05-01T00:00:00.000Z", end: "2026-06-01T00:00:00.000Z", key: "30d" };
 const SELECTION = { range: "30d", trend: false };

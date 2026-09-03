@@ -5,8 +5,8 @@ import { app } from "./app.js";
 
 // Serve the built frontend in production (bun run build && bun start).
 // In dev, Vite serves the app and proxies /api here, so dist won't exist yet.
-if (existsSync("./web/dist")) {
-  app.use("/*", serveStatic({ root: "./web/dist" }));
+if (existsSync("./dist")) {
+  app.use("/*", serveStatic({ root: "./dist" }));
 }
 
 // Boot. We intentionally do NOT validate env here so the server always starts;

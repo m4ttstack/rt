@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildIgnoredMrSet, buildMetricFilters, globToRegExp, isDoneState, matchesTeam } from "../server/metrics/filters.js";
+import { buildIgnoredMrSet, buildMetricFilters, globToRegExp, isDoneState, matchesTeam } from "../src/server/metrics/filters.js";
 import { mr } from "./fixtures.js";
 
 describe("globToRegExp", () => {

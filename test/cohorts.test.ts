@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { buildCorpus, buildUserCohorts } from "../server/metrics/cohorts.js";
+import { buildCorpus, buildUserCohorts } from "../src/server/metrics/cohorts.js";
 import { FETCH, mr, WINDOW } from "./fixtures.js";
 
 const OPTS = { window: WINDOW, sizeBand: { tooSmall: 10, tooLarge: 400 } };

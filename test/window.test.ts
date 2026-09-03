@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { baseWindow, covers, customWindow, priorWindow, resolvePreset } from "../server/util/window.js";
-import type { TimeWindow } from "../shared/types.js";
+import { baseWindow, covers, customWindow, priorWindow, resolvePreset } from "../src/server/util/window.js";
+import type { TimeWindow } from "../src/shared/types.js";
 
 const NOW = new Date("2026-07-15T00:00:00.000Z");
 const days = (w: { start: string; end: string }) =>

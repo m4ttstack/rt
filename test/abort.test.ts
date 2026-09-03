@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { withRetry } from "../server/util/http.js";
-import { resolveLinearTickets } from "../server/linear/fetch.js";
+import { withRetry } from "../src/server/util/http.js";
+import { resolveLinearTickets } from "../src/server/linear/fetch.js";
 import { mr } from "./fixtures.js";
-import type { LeaderboardWarning } from "../shared/types.js";
+import type { LeaderboardWarning } from "../src/shared/types.js";
 
 afterEach(() => vi.unstubAllGlobals());
 

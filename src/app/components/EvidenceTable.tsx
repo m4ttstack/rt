@@ -1,4 +1,4 @@
-import type { MetricEvidence } from "../../../shared/types";
+import type { MetricEvidence } from "../../shared/types";
 import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 
 /**

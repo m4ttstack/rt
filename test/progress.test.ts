@@ -3,18 +3,18 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { withWindow } from "../server/leaderboard.js";
-import type { Env } from "../server/config/index.js";
-import type { BoxscoreSettings } from "../server/config/index.js";
-import type { GitProvider, SourceProvider } from "../server/source/index.js";
-import type { RefreshProgress } from "../shared/types.js";
+import { withWindow } from "../src/server/leaderboard.js";
+import type { Env } from "../src/server/config/index.js";
+import type { BoxscoreSettings } from "../src/server/config/index.js";
+import type { GitProvider, SourceProvider } from "../src/server/source/index.js";
+import type { RefreshProgress } from "../src/shared/types.js";
 import { WINDOW } from "./fixtures.js";
 
 const dir = mkdtempSync(join(tmpdir(), "boxscore-progress-"));
 process.env.BOXSCORE_DB = join(dir, "test.sqlite");
 
-const { getStore, __resetStore } = await import("../server/store/index.js");
-const { runRefresh } = await import("../server/refresh/index.js");
+const { getStore, __resetStore } = await import("../src/server/store/index.js");
+const { runRefresh } = await import("../src/server/refresh/index.js");
 
 beforeEach(() => getStore().clear());
 afterAll(() => {

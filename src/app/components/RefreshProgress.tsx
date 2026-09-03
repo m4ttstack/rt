@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { RefreshProgress as Progress } from "../../../shared/types";
+import type { RefreshProgress as Progress } from "../../shared/types";
 import { progressKey, stallNotice } from "../lib/progress";
 
 interface Props {

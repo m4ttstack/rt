@@ -15,16 +15,16 @@ import type {
   ProjectRef,
   UserEvent,
 } from "@mattstack/glance";
-import type { RequestIO, SourceProvider, GitProvider } from "../server/source/index.js";
-import type { BoxscoreSettings, Env } from "../server/config/index.js";
-import type { LeaderboardWarning, RefreshProgress, TimeWindow } from "../shared/types.js";
+import type { RequestIO, SourceProvider, GitProvider } from "../src/server/source/index.js";
+import type { BoxscoreSettings, Env } from "../src/server/config/index.js";
+import type { LeaderboardWarning, RefreshProgress, TimeWindow } from "../src/shared/types.js";
 
 const dir = mkdtempSync(join(tmpdir(), "boxscore-refresh-"));
 process.env.BOXSCORE_DB = join(dir, "test.sqlite");
 
-const { getStore, mrKey, __resetStore } = await import("../server/store/index.js");
-const { runRefresh } = await import("../server/refresh/run.js");
-const { toIndexRow } = await import("../server/source/index.js");
+const { getStore, mrKey, __resetStore } = await import("../src/server/store/index.js");
+const { runRefresh } = await import("../src/server/refresh/run.js");
+const { toIndexRow } = await import("../src/server/source/index.js");
 
 beforeEach(() => getStore().clear());
 afterAll(() => {

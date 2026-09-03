@@ -8,8 +8,8 @@ import { existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { getSetting, rtCommand, setSetting, type SettingScope } from "@mattstack/rt-client";
-import type { RangePreset } from "../shared/types.js";
-import type { RosterEntry } from "../server/config/index.js";
+import type { RangePreset } from "../src/shared/types.js";
+import type { RosterEntry } from "../src/server/config/index.js";
 
 export type Integrations = Record<string, unknown> & {
   forge?: { host?: string };

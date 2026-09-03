@@ -3,5 +3,5 @@
   "compilerOptions": {
     "types": ["node", "bun"]
   },
-  "include": ["server/**/*.ts", "shared/**/*.ts", "config.ts", "test/**/*.ts"]
+  "include": ["src/server/**/*.ts", "src/shared/**/*.ts", "config.ts", "test/**/*.ts"]
 }

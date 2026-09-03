@@ -5,13 +5,12 @@ import tailwindcss from "@tailwindcss/vite";
 
 const BACKEND_PORT = process.env.PORT ?? "8787";
 
-// Run from the repo root (`bun run dev:web`). The app source lives in web/.
+// Run from the repo root (`bun run dev:web`). The app source lives in src/app/.
 export default defineConfig({
-  root: "web",
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      "@": fileURLToPath(new URL("./web/src", import.meta.url)),
+      "@": fileURLToPath(new URL("./src/app", import.meta.url)),
     },
   },
   server: {

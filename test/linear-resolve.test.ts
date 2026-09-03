@@ -3,11 +3,11 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { resolveLinearTickets } from "../server/linear/fetch.js";
-import { getStore, __resetStore } from "../server/store/index.js";
+import { resolveLinearTickets } from "../src/server/linear/fetch.js";
+import { getStore, __resetStore } from "../src/server/store/index.js";
 import { mr } from "./fixtures.js";
-import type { LeaderboardWarning } from "../shared/types.js";
-import type { NormMr } from "../server/store/model.js";
+import type { LeaderboardWarning } from "../src/shared/types.js";
+import type { NormMr } from "../src/server/store/model.js";
 
 const dir = mkdtempSync(join(tmpdir(), "boxscore-linear-resolve-"));
 process.env.BOXSCORE_DB = join(dir, "test.sqlite");
