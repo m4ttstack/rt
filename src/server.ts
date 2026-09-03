@@ -1278,7 +1278,7 @@ const httpServer = Bun.serve({
           eventsEmit,
           sseNudge,
           resumeParkedGate: (gate) => resumeParkedGate(gate, {
-            resolveLaunchSkill: (gateMrUrl) => resolveLaunchSkill("review", gateMrUrl),
+            resolveLaunchSkill: (gateMrUrl, gateTabId) => reviewSkillForTab(config, gateTabId, gateMrUrl, resolveLaunchSkill),
             resumeAgentPane,
             writeReviewState,
             reviewsWorkspace: config.reviewsWorkspace,

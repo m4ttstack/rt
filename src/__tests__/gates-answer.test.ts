@@ -171,12 +171,19 @@ interface ResumeIoCalls {
   resumeAgentPane: Array<{ agentId: string; prompt: string; workspaceLabel: string; tabLabel: string }>;
   writeReviewState: Array<{ path: string; patch: unknown }>;
   notify: string[];
+  resolveLaunchSkill: Array<{ mrUrl: string; tabId?: string }>;
 }
 
-function fakeResumeIo(result: Partial<AgentLaunchResult> = {}): { io: ResumeParkedGateIo; calls: ResumeIoCalls } {
-  const calls: ResumeIoCalls = { resumeAgentPane: [], writeReviewState: [], notify: [] };
+function fakeResumeIo(
+  result: Partial<AgentLaunchResult> = {},
+  resolveLaunchSkill: (mrUrl: string, tabId?: string) => string = () => "acme:board-review",
+): { io: ResumeParkedGateIo; calls: ResumeIoCalls } {
+  const calls: ResumeIoCalls = { resumeAgentPane: [], writeReviewState: [], notify: [], resolveLaunchSkill: [] };
   const io: ResumeParkedGateIo = {
-    resolveLaunchSkill: () => "acme:board-review",
+    resolveLaunchSkill: (mrUrl, tabId) => {
+      calls.resolveLaunchSkill.push({ mrUrl, tabId });
+      return resolveLaunchSkill(mrUrl, tabId);
+    },
     resumeAgentPane: async (opts) => {
       calls.resumeAgentPane.push(opts);
       return {
@@ -225,6 +232,19 @@ describe("resumeParkedGate (the real parked-gate resume, wired as answerGate's h
       workspaceId: "ws-2",
     });
     expect(resumeCalls.notify.length).toBe(0);
+  });
+
+  test("threads the gate's tabId to resolveLaunchSkill, so a tab's reviewSkill override wins over the fallback", async () => {
+    const gate = baseGate({ status: "parked", parkedAt: 4000, agentId: "agent-1", tabId: "tab-9" });
+    const { io: resumeIo, calls: resumeCalls } = fakeResumeIo({}, (mrUrl, tabId) =>
+      tabId === "tab-9" ? "acme:tab-override-review" : "acme:board-review",
+    );
+
+    await resumeParkedGate(gate, resumeIo, async () => null);
+
+    expect(resumeCalls.resolveLaunchSkill).toEqual([{ mrUrl: MR_URL, tabId: "tab-9" }]);
+    expect(resumeCalls.resumeAgentPane.length).toBe(1);
+    expect(resumeCalls.resumeAgentPane[0]!.prompt).toContain("--skill acme:tab-override-review");
   });
 
   test("a focused-existing resume (already-open tab) does not overwrite the review state with blank ids", async () => {

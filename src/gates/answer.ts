@@ -92,9 +92,11 @@ export async function answerGate(mrUrl: string, answers: GateAnswers, io: Answer
     review state, both of which require config the pure answerGate/AnswerGateIo
     layer deliberately doesn't hold. */
 export interface ResumeParkedGateIo {
-  /** Resolve the domain skill (the board's manifest/config binding) the
-      resumed wrapper should delegate to. */
-  resolveLaunchSkill(mrUrl: string): string;
+  /** Resolve the domain skill the resumed wrapper should delegate to: the
+      board tab's `reviewSkill` override when the gate's tabId names one,
+      else the manifest/config binding -- same precedence /review's fresh
+      launch and re-review paths use (reviewSkillForTab). */
+  resolveLaunchSkill(mrUrl: string, tabId?: string): string;
   resumeAgentPane(opts: { agentId: string; prompt: string; workspaceLabel: string; tabLabel: string }): Promise<AgentLaunchResult>;
   writeReviewState(path: string, patch: Partial<ReviewState> & { status: ReviewStatus }): void;
   reviewsWorkspace: string;
@@ -131,7 +133,7 @@ export async function resumeParkedGate(
       statePath,
       statusBin: statusBinPath(),
       reportPath: reviewReportPath(statePath),
-      skill: io.resolveLaunchSkill(gate.mrUrl),
+      skill: io.resolveLaunchSkill(gate.mrUrl, gate.tabId),
       resumedGate: gate.gateId,
     },
     resolvePath,
