@@ -278,8 +278,10 @@ gate: write the report, `gate open` with both questions, `gate wait`, then
 hand the answer back to the domain skill to post (or post itself on the
 generic no-domain-skill path) and mark done. The wrapper gains a line telling a resumed session that the
 current invocation supersedes any earlier gate contract remembered in the
-transcript. A parked-gate resume needs no special branch: the re-invoked
-wrapper reaches `gate wait` and the journal answers immediately. The in-pane
+transcript. A parked-gate resume DOES need a branch: the board passes
+`--resumed-gate <gateId>` and the wrapper skips straight to `gate wait`,
+since a re-invoked wrapper would otherwise re-run `gate open` and orphan
+the journaled answer. The in-pane
 escape hatch is documented in the skill: a human may interrupt the wait and
 answer conversationally; the skill then runs `gate answer --by pane` before
 acting.
