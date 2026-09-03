@@ -15,7 +15,7 @@
 - Four working trees: **board** = this worktree; **repo-tools** = `/Users/matt/Documents/GitHub/repo-tools`; **console** = `/Users/matt/Documents/GitHub/console`; team pack repos only in Task 16. Each task names its tree; run that repo's own test/typecheck commands from its root.
 - Purity gates: nothing tracked in board, repo-tools, or console may contain a real employer, project, or person name. Examples use `acme/web`.
 - No em dashes in any prose file (docs, commit messages). SKILL.md files are exempt.
-- Tests use each repo's existing idiom: injected deps/gateways, no network, no live daemon. Board: `bun test` + `bun run typecheck`. repo-tools: `bun test <file>`. Console: `bun test` in repo root.
+- Tests use each repo's existing idiom: injected deps/gateways, no network, no live daemon. Board: `bun test` + `bun run typecheck`. repo-tools: `bun test <file>`. Console runs **vitest**, not bun test: `bun run test -- --run` in the console root (its suites use `vi.mocked` and `vitest.setup.ts`).
 - Commit after every task (each task carries its commit step). Lanes land in order; within a lane, tasks in order.
 - Event topics are exactly `board/gate/opened/<gateId>` and `board/gate/answered/<gateId>`. The gate id is a UUID minted by `board gate open`.
 - Settings keys added this pass: `rt.notify.eventBridges` (repo-tools), `board.agent.account`, `board.agent.model`, `board.agent.effort`, `board.gateGraceMinutes` (board). Register each per the rt:settings skill (invoke it in the task that adds the key).
@@ -35,7 +35,7 @@
 - Consumes: herdr `session.snapshot` panes already carry `focused: boolean` (see existing fixtures in the test file at :36-43).
 - Produces: `ChatPane.focused?: boolean`; `paneRow` copies it through. Task 3's suppression check and any client may read it.
 
-- [ ] **Step 1: Write the failing test.** In `pane-handlers.test.ts`, find the existing `pane:list` test that builds a snapshot fixture with `focused` on panes. Add an assertion that the returned `ChatPane` rows carry `focused` matching the fixture (one `true`, one `false`).
+- [ ] **Step 1: Write the failing test.** In `pane-handlers.test.ts`, the snapshot fixture at :41-43 has `focused: false` on all three panes; flip `w1:p1` to `focused: true` in the fixture, then assert the returned `ChatPane` rows carry the flag through (one `true`, one `false`).
 
 ```ts
 const rows = (await handlers["pane:list"]({})).data!.panes;
@@ -53,7 +53,7 @@ expect(rows.find((p) => p.paneId === "w1:p2")?.focused).toBe(false);
 **Files:**
 - Modify: `packages/rt-client/src/client.ts` (beside `eventsHead` at :324)
 - Modify: `packages/rt-client/src/index.ts` (export list)
-- Test: `packages/rt-client/src/__tests__/events.test.ts` (new): stub the transport layer (`rtCommand`'s underlying fetch, the same seam any existing rt-client test uses; if none exists, inject via `RtClientOptions.sockPath` against a throwing path and assert the command envelope) and assert each wrapper sends the right verb name, payload, and timeout.
+- Test: `packages/rt-client/test/events.test.ts` (new; `test/` is the house location): use the existing `fakeDaemon` helper from `packages/rt-client/test/fake-daemon.ts` (`fakeDaemon({...}) -> {sock, seen, stop}`, same pattern as `test/agent-wrappers.test.ts:23-33` and `test/pane-focus.test.ts`) and assert each wrapper sends the right verb name and payload via `seen`.
 
 **Interfaces:**
 - Consumes: daemon verbs `events:emit`, `events:wait`, `events:list` already in the `Commands` catalog at `commands.ts:421-424`. Copy payload/data shapes from there verbatim; do not invent fields.
@@ -63,7 +63,7 @@ expect(rows.find((p) => p.paneId === "w1:p2")?.focused).toBe(false);
   - `eventsList(payload: Commands["events:list"]["payload"], o?: RtClientOptions)`
 
 - [ ] **Step 1: Write the wrappers** following the exact style of `eventsHead` (one `rtCommand(...)` line each, explicit `timeoutMs`; `events:wait` gets 250_000, others 10_000). Export all three from `index.ts`.
-- [ ] **Step 2: Typecheck + test.** Run the package's check (`bun test packages/rt-client` and the repo typecheck script if one exists for the package).
+- [ ] **Step 2: Build, typecheck, test.** Run `bun run build` in `packages/rt-client` first: `test/dist-freshness.test.ts` goes red on any `src/` change until dist is rebuilt. Then `bun test packages/rt-client`.
 - [ ] **Step 3: Publish.** Bump `packages/rt-client/package.json` to the next minor, publish `@mattstack/rt-client` (npm OTP flow), and note the version number in the commit body: board Tasks 5+ pin it.
 - [ ] **Step 4: Commit.** `git commit -m "rt-client: events emit/wait/list wrappers"`
 
@@ -72,7 +72,7 @@ expect(rows.find((p) => p.paneId === "w1:p2")?.focused).toBe(false);
 **Files:**
 - Create: `lib/notify-bridge.ts`
 - Modify: `lib/daemon.ts` (wire beside the existing notifier/agent-status wiring near :717-724)
-- Modify: `lib/state/notifier-store.ts` (`NotificationEvent` at :36-46 gains `paneId?: string`), `lib/state/db.ts` (table_info-guarded `ALTER TABLE notify_queue ADD COLUMN pane_id TEXT` in the unconditional-migration block near :530), `lib/notifier.ts` (`pushToTray` at :222-243 includes `paneId` in the POST body)
+- Modify: `lib/state/notifier-store.ts` (`NotificationEvent` at :36-46 gains `paneId?: string`). That is the WHOLE persistence change: `notify_queue` stores the full event as JSON in its `event` column and `pushToTray` already posts `JSON.stringify(event)`, so the field round-trips both for free. No db migration, no `pushToTray` edit.
 - Test: `lib/__tests__/notify-bridge.test.ts` (new), plus the notifier-store test file for the paneId round-trip
 
 **Interfaces:**
@@ -98,7 +98,7 @@ export function startNotifyBridge(deps: {
   - a non-matching topic and a non-"event" broadcast type both no-op;
   - a payload without `paneId` enqueues without calling `paneFocused`.
 - [ ] **Step 2: Run to verify failure.** `bun test lib/__tests__/notify-bridge.test.ts`
-- [ ] **Step 3: Implement** `startNotifyBridge` (subscribe, filter type `"event"`, match rules with `Bun.Glob`, interpolate, suppression check, enqueue; every await wrapped so a throwing dep only logs). Add `paneId` to `NotificationEvent`, the guarded column, the store round-trip, and the `pushToTray` body field.
+- [ ] **Step 3: Implement** `startNotifyBridge` (subscribe, filter type `"event"`, match rules with `Bun.Glob`, interpolate, suppression check, enqueue; every await wrapped so a throwing dep only logs). Add `paneId?: string` to `NotificationEvent`; nothing else in the persistence path changes.
 - [ ] **Step 4: Wire in `daemon.ts`:** `startNotifyBridge({...})` with `rules()` reading the `rt.notify.eventBridges` setting (JSON array; invalid entries skipped with a warn), `enqueue` the notifier queue's insert, `paneFocused` via the same herdr snapshot accessor the pane handlers use. **Invoke the rt:settings skill** to register `rt.notify.eventBridges` correctly.
 - [ ] **Step 5: Run the affected suites.** Bridge test, notifier-store tests, pane handler tests.
 - [ ] **Step 6: Commit.** `git commit -m "notifier: settings-driven event bridge with paneId and focus suppression"`
@@ -150,11 +150,12 @@ export async function startAgentPane(opts: {
   account?: string; model?: string; effort?: string;
 }, io?: AgentIo): Promise<AgentLaunchResult>
 export async function resumeAgentPane(opts: {
-  agentId: string; prompt: string; workspaceLabel: string; tabLabel: string;
+  agentId: string; prompt?: string; workspaceLabel: string; tabLabel: string;
 }, io?: AgentIo): Promise<AgentLaunchResult>
 ```
 
 - Both map an `ok:false` whose error matches `/already open; focused it/` to `{focusedExisting: true}` with empty ids; any other failure throws with the daemon's error text.
+- `prompt` is optional on resume: a promptless herdr resume drops the human into the interactive continuation (the plain "reopen session" button), exactly as `agent:resume` allows. Only headless resumes require a prompt, and this adapter never passes headless.
 
 - [ ] **Step 1: Write failing tests** with a fake `AgentIo`: success path returns the record's ids and `focusedExisting: false`; the dedup error string maps to `focusedExisting: true`; an unrelated error throws; `startAgentPane` passes `surface: "herdr"`, `workspace`, `tab`, and the account/model/effort fields through verbatim; `resumeAgentPane` passes `{id, prompt, surface: "herdr", workspace, tab}`.
 - [ ] **Step 2: Run to verify failure**, **Step 3: implement minimal**, **Step 4: run to pass** (`bun test src/__tests__/agent-launch.test.ts`), then `bun run typecheck`.
@@ -163,11 +164,15 @@ export async function resumeAgentPane(opts: {
 ### Task 6: launches and resumes go through rt agent; resume re-invokes the wrapper
 
 **Files (board):**
-- Modify: `src/herdr.ts` (delete `reReviewResumePrompt` at :261-274, `buildResumePaneCommand` at :252-255, and `launchResume`; `launchReview`/`launchRespond`/`launchDoctor` at :346-397 call `startAgentPane` instead of `launchInWorkspace`; keep `launchInWorkspace` deleted and keep `defaultRunner`, `focusTab`, and the prompt builders)
+- Modify: `src/herdr.ts`:
+  - delete `reReviewResumePrompt` at :261-274 (and only it: `buildResumePaneCommand`, `claudeInvocation`, `buildPaneCommand`, `parseTabCreate`, `parseWorkspaceCreate`, and `launchInWorkspace` all stay for the legacy path below);
+  - `launchReview`/`launchRespond`/`launchDoctor` at :346-397 call `startAgentPane` instead of `launchInWorkspace`;
+  - rename `launchResume` to `launchLegacyResume`, unchanged mechanics (`buildResumePaneCommand` + `launchInWorkspace` over the `HerdrRunner`). It serves every state that predates rt agent adoption: `sessionId` on file, no `agentId`. It ages out as panes relaunch.
 - Modify: `src/review-state.ts` (`ReviewState` gains `agentId?: string; paneId?: string`), `src/respond-state.ts` and `src/doctor-state.ts` (same two fields on their state interfaces)
-- Modify: `src/review-launch.ts` (the resume branch builds its prompt with `dispatchPrompt("board:review", {mrUrl, statePath, statusBin: statusBinPath(), reportPath: reviewReportPath(statePath), skill: ctx.skill, reReview: true, note: ctx.note})` and calls `resumeAgentPane({agentId: existing.agentId, ...})`; when `existing.agentId` is missing but `sessionId` exists, fall back to a fresh `launchReview` with `reReview: true` rather than resuming)
+- Modify: `src/review-launch.ts` resume branch: build the prompt once with `dispatchPrompt("board:review", {mrUrl, statePath, statusBin: statusBinPath(), reportPath: reviewReportPath(statePath), skill: ctx.skill, reReview: true, note: ctx.note})`; then `existing.agentId` present resumes via `resumeAgentPane({agentId, prompt, ...})`, else `existing.sessionId` present resumes via `launchLegacyResume` with the SAME prompt (`claude --resume <sessionId> '<slash command>'` carries the wrapper re-invocation fine), else falls through to the fresh `launchReview` with `reReview: true`.
+- Modify: `src/server.ts` `?resume=1` sites at :778 (review) and :847 (respond): same two-transport split, with `prompt: note ? operatorNoteParagraph(note) : undefined` (a plain reopen stays promptless and interactive; it must NOT become a re-review). The 400-when-no-session guard stays.
 - Modify: `src/server.ts` and `bin/triage.ts` call sites that pass `claudeCommand` or destructure `{tabId, workspaceId}`: they now also persist `agentId` and `paneId` from the launch result
-- Test: `src/__tests__/herdr.test.ts` adjustments, `src/__tests__/review-launch.test.ts` (rewrite the resume-path expectations: asserts the io receives the dispatchPrompt-built slash command, not the deleted paragraph)
+- Test: `src/__tests__/herdr.test.ts` adjustments, `src/__tests__/review-launch.test.ts` (rewrite the resume-path expectations: agentId states hit the agent io with the dispatchPrompt-built slash command; sessionId-only states hit the legacy runner with the same prompt; no test may reference `reReviewResumePrompt`)
 
 **Interfaces:**
 - Consumes: Task 5's `startAgentPane`/`resumeAgentPane`; existing `dispatchPrompt`, `mrTabLabel`, `reviewReportPath`.
@@ -235,10 +240,11 @@ export const panes = new Hono()
 ```
 
 - Modify: `src/server/routes.ts` (chain `.route('/', panes)`; keep handlers inline per the file's RPC-inference comment)
-- Modify: `src/app/runs/RunBoard.tsx`: in the run row's action area, render a focus button when `run.agent && run.agent.status !== 'done'`, calling the api client's `POST /api/panes/{run.agent.pane}/focus`; on a non-ok response show the app's standard error notification with "couldn't focus the pane".
-- Test: `src/server/panes.test.ts` (mirror the chat repo's `src/server/panes.test.ts:73-99` shape: 200 `{paneId, focused:true}` passthrough, 502 `{error}` on `ok:false`); `src/app/runs/RunBoard.test.tsx` gains: button renders for a run fixture with `agent: {status:'working', pane:'w1:p1'}`, absent for `agent: null` and for `status:'done'`.
+- Modify: `src/app/runs/RunRow.tsx` (the actual row component, imported by `RunBoard.tsx:24` and rendered at :150): render a focus button when `run.agent && run.agent.status !== 'done'`, calling the api client's `POST /api/panes/{run.agent.pane}/focus`; on a non-ok response show the app's standard error notification with "couldn't focus the pane". Do NOT touch `RunBoard.tsx`'s page-level `actions=` slot at :128.
+- Modify: `src/app/runs/RunDetail.tsx`: the same button, same gating, in the drawer's header action area (the spec asks for rows AND the drawer).
+- Test (vitest, `bun run test -- --run`): `src/server/panes.test.ts` (mirror the chat repo's `src/server/panes.test.ts:73-99` shape: 200 `{paneId, focused:true}` passthrough, 502 `{error}` on `ok:false`); `src/app/runs/RunRow.test.tsx` gains: button renders for a run fixture with `agent: {status:'working', pane:'w1:p1'}`, absent for `agent: null` and for `status:'done'`; `src/app/runs/RunDetail.test.tsx` (or its existing equivalent) gains the same render/absent pair.
 
-- [ ] **Step 1: failing server test**, **Step 2: verify**, **Step 3: implement route + chain**, **Step 4: failing component test**, **Step 5: implement button**, **Step 6: full console suite**, **Step 7: commit** `git commit -m "runs: focus button raises a running run's pane via rt"`.
+- [ ] **Step 1: failing server test**, **Step 2: verify**, **Step 3: implement route + chain**, **Step 4: failing component tests (RunRow, then RunDetail)**, **Step 5: implement both buttons**, **Step 6: full console suite (`bun run test -- --run`)**, **Step 7: commit** `git commit -m "runs: focus button raises a running run's pane via rt"`.
 
 ---
 
@@ -315,8 +321,8 @@ export async function gateAnswer(statePath: string, answersJson: string, by: "pa
 - Modify: `src/server.ts`: the relay subscription at :1613 additionally handles `type === "event"` frames whose `data.topic` starts with `board/gate/`: parse `opened|answered` and the gateId from the topic, apply to the gate store (opened writes the full payload; answered merges `{status: "answered", answers, answeredBy: payload.by, answeredAt}`), then `sseNudge()`. Non-gate event frames fall through to the existing RELAY_TYPES logic untouched.
 - Modify: `src/server.ts` `/data.json` handler: beside `readReviewStates()` at :562, `const gates = readGateStates()`, prune with the other prunes, and attach `gate` to each MR row (`gates.get(m.webUrl) ?? null`, shaped `{gateId, status, openedAt, questions, answers}`).
 - Modify: `src/client/types.ts`: the MR row type gains `gate: { gateId: string; status: "open" | "answered" | "parked"; openedAt: number; questions: GateQuestion[]; answers?: GateAnswers } | null`.
-- Boot reconcile: on server start, one `eventsList({ pattern: "board/gate/*" , limit: 500 })` pass applies any journaled opened/answered events newer than each stored gate file's state (answered wins over open). Extract the apply logic into `src/gates/ingest.ts` so the relay handler and the boot pass share it.
-- Create: `src/gates/ingest.ts` with `applyGateEvent(store, frame)` pure over an injected store.
+- Boot reconcile: on server start, one `eventsList({ pattern: "board/gate/**", limit: 500 })` pass applies any journaled opened/answered events newer than each stored gate file's state (answered wins over open). The pattern MUST be `**`: the bus matches with `Bun.Glob`, whose `*` does not cross `/`, and gate topics have four segments, so `board/gate/*` matches nothing. Extract the apply logic into `src/gates/ingest.ts` so the relay handler and the boot pass share it.
+- Create: `src/gates/ingest.ts` with `applyGateEvent(store, frame)` pure over an injected store. An `answered` frame carries only the gateId (in its topic and payload); ingest resolves it to a file by scanning `readGateStates()` values for the matching `gateId`, since the store is keyed by mrUrl.
 - Test: `src/__tests__/gates-ingest.test.ts` (opened creates, answered merges, answered-before-opened tolerated, malformed payload skipped with no throw, non-gate topic ignored).
 
 - [ ] **Step 1: failing ingest tests**, **Step 2: verify**, **Step 3: implement ingest + wire relay + data.json + boot pass**, **Step 4: full suite + typecheck**, **Step 5: commit** `git commit -m "server: ingest board/gate events, serve gate state on rows"`.
@@ -354,6 +360,11 @@ Content changes (the what; writing-skills governs the how):
 - Degraded mode: if `gate open` or `gate wait` fails (rt daemon down), present ONE combined AskUserQuestion carrying both questions, never the old two-gate pair, and proceed on its answers.
 - Re-review mode section is unchanged in substance; it no longer mentions posting gates beyond pointing at the gate protocol.
 
+Deployment note: `~/.claude/skills/board:review` symlinks to the CANONICAL
+checkout (`~/Documents/GitHub/board/skills/review`), not this worktree, so
+the edit goes live for launched panes only once this branch merges and the
+canonical checkout pulls. Task 20's live pass depends on that.
+
 - [ ] **Step 1: invoke superpowers:writing-skills** and follow it (baseline read, edit, verification).
 - [ ] **Step 2: Commit.** `git commit -m "skills/review: single event gate via status-bin gate verbs (mr-review@2)"`
 
@@ -379,7 +390,7 @@ export async function closeTab(tabId: string, runner: HerdrRunner = defaultRunne
 }
 ```
 
-- Modify: `src/server.ts` `/review/outcome` handler: when `signal.status === "done"`, look up the state's `tabId` and `closeTab` it (best-effort try/catch; log on failure); applies to review, respond, and doctor kinds. `error` status never closes.
+- Modify: `src/server.ts` `/review/outcome` handler: when `signal.status === "done"`, look up the state's `tabId` and `closeTab` it (best-effort try/catch; log on failure); applies to review, respond, and doctor kinds. `error` status never closes. Placement matters: the close goes beside the latch step (:1024-1055), ABOVE the `signalEmoji` early-return at :1056-1059, or most done signals never reach it.
 - Test: `src/__tests__/server-close.test.ts` for an extracted `closeOnDone(signal, states, close)` helper: done+tabId closes, done without tabId no-ops, error never closes, close throwing is swallowed.
 
 - [ ] **Step 1: failing tests**, **Step 2: verify**, **Step 3: implement + wire**, **Step 4: full suite + typecheck**, **Step 5: commit** `git commit -m "close the herdr tab when a launched pane reports done"`.
