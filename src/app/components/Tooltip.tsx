@@ -1,25 +1,27 @@
 import type { ReactNode } from "react";
 
-import {
-  Tooltip as TooltipRoot,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip as MantineTooltip } from "@mattstack/app-kit/core";
 
 /**
- * Convenience wrapper over the shadcn/Radix tooltip so existing call sites can keep the
- * simple `<Tooltip content={...}>trigger</Tooltip>` shape. Radix handles portaling and
- * positioning, so it escapes the tables' overflow clipping for free.
+ * Thin wrapper over Mantine's Tooltip so call sites keep the simple
+ * `<Tooltip content={...}>trigger</Tooltip>` shape used across the table, cards, and rail.
+ * Mantine's Tooltip needs no provider ancestor, unlike the Radix primitive this replaces.
  */
 export function Tooltip({ content, children }: { content: ReactNode; children: ReactNode }) {
   return (
-    <TooltipRoot>
-      <TooltipTrigger asChild>
-        <span className="cursor-help underline decoration-dotted decoration-muted-foreground/60 underline-offset-4 outline-none">
-          {children}
-        </span>
-      </TooltipTrigger>
-      <TooltipContent>{content}</TooltipContent>
-    </TooltipRoot>
+    <MantineTooltip label={content} multiline w={260} withArrow events={{ hover: true, focus: true, touch: false }}>
+      <span
+        tabIndex={0}
+        style={{
+          cursor: "help",
+          textDecoration: "underline dotted",
+          textUnderlineOffset: 4,
+          textDecorationColor: "var(--ui-text-dimmed)",
+          outline: "none",
+        }}
+      >
+        {children}
+      </span>
+    </MantineTooltip>
   );
 }

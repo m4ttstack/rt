@@ -2,14 +2,12 @@ import { fireEvent, screen } from "@testing-library/react";
 import { renderWithProviders } from "@mattstack/app-kit/test-utils";
 import { describe, expect, it } from "vitest";
 
-import { TooltipProvider } from "@/components/ui/tooltip";
 import { LeaderboardTable } from "./LeaderboardTable";
 import { buildMetrics, buildResponse, buildUser } from "./fixtures";
 
-// Column headers go through the shadcn/Radix Tooltip (owned by task 6b, kept as-is here), which
-// needs a TooltipProvider ancestor or reading its context throws.
+// Column headers go through Mantine's Tooltip (task 6b), which needs no provider ancestor.
 function renderTable(ui: Parameters<typeof renderWithProviders>[0]) {
-  return renderWithProviders(<TooltipProvider>{ui}</TooltipProvider>);
+  return renderWithProviders(ui);
 }
 
 function rowOrder(): string[] {

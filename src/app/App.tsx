@@ -4,7 +4,6 @@ import { RailLink } from "@mattstack/app-kit/router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 
 import type { LeaderboardResponse } from "../shared/types";
-import { TooltipProvider } from "@/components/ui/tooltip";
 import { isColdCache, type RangeSelection } from "./api";
 import { useLeaderboard } from "./hooks/useLeaderboard";
 import { useRefreshJob } from "./hooks/useRefreshJob";
@@ -37,9 +36,7 @@ function SettingsPlaceholder() {
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <AppShell />
-      </TooltipProvider>
+      <AppShell />
     </QueryClientProvider>
   );
 }
@@ -47,6 +44,12 @@ export function App() {
 function AppShell() {
   const [data, setData] = useState<LeaderboardResponse | null>(null);
   const [jobError, setJobError] = useState<string | null>(null);
+  // True from the moment a cold cache triggers a background refresh until that refresh lands
+  // (onDone/onError) or the selection changes. Covers the whole span, including the gap between
+  // deciding to refresh and refreshJob.start()'s POST actually landing (before refreshJob.refreshing
+  // flips true) -- without it the leaderboard render has no signal that data is still coming and
+  // falls through to blank once the cache-only probe itself settles.
+  const [awaitingRefresh, setAwaitingRefresh] = useState(false);
   // Persisted across reloads so the last-selected window/toggles stick.
   const [rangeState, setRangeState] = usePersistentState<RangeState>("forge-range", { range: "30d" });
   const [trend, setTrend] = usePersistentState<boolean>("forge-trend", false);
@@ -66,8 +69,12 @@ function AppShell() {
         startedFor.end === rangeState.end &&
         startedFor.trend === trend;
       if (matches) setData(result);
+      setAwaitingRefresh(false);
     },
-    onError: setJobError,
+    onError: (message) => {
+      setJobError(message);
+      setAwaitingRefresh(false);
+    },
   });
 
   // Cache-only probe, keyed on the selection: react-query refetches it whenever range/trend change.
@@ -79,6 +86,7 @@ function AppShell() {
   useEffect(() => {
     refreshJob.cancel();
     setJobError(null);
+    setAwaitingRefresh(false);
     // refreshJob.cancel is intentionally excluded: it is a no-op when idle, and including it here
     // (its identity changes with jobId) would refire this effect for job starts/stops, not just
     // selection changes, which is the one thing this effect must run on.
@@ -90,6 +98,7 @@ function AppShell() {
     const result = leaderboardQuery.data;
     if (!result) return;
     if (isColdCache(result)) {
+      setAwaitingRefresh(true);
       void refreshJob.start(selection);
     } else {
       setData(result);
@@ -101,7 +110,7 @@ function AppShell() {
   }, [leaderboardQuery.data]);
 
   const error = jobError ?? (leaderboardQuery.error ? leaderboardQuery.error.message : null);
-  const initialLoading = leaderboardQuery.isFetching && !data;
+  const loading = !data && (leaderboardQuery.isFetching || awaitingRefresh);
 
   return (
     <MattstackShell
@@ -162,7 +171,7 @@ function AppShell() {
               </div>
             )}
 
-            {!error && initialLoading && !data && <p className="text-muted-foreground">Loading…</p>}
+            {!error && loading && <p className="text-muted-foreground">Loading…</p>}
 
             {data && (
               <>

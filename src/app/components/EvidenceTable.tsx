@@ -1,61 +1,90 @@
+import { Anchor, Table, Text } from "@mattstack/app-kit/core";
+
 import type { MetricEvidence } from "../../shared/types";
-import { Table, TableBody, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+
+/** Reduced opacity for a row that exists but did not count toward the stat (e.g. a stale issue). */
+const MUTED_OPACITY = 0.4;
 
 /**
  * Renders any stat's evidence generically: the server decides the columns, rows, links, and
- * which rows are muted (present but not counted, e.g. stale issues). The first cell of a
- * linkable row becomes the deep link. The UI stays dumb ... no per-metric rendering logic.
+ * which rows are muted (present but not counted). The first cell of a linkable row becomes the
+ * deep link. The UI stays dumb ... no per-metric rendering logic.
  *
  * The wide free-text column (Title/Message/Description) wraps and absorbs the slack so the
  * table fits its container; short columns (ids, dates, counts) stay on one line.
  */
 export function EvidenceTable({ evidence }: { evidence: MetricEvidence | undefined }) {
   if (!evidence || evidence.rows.length === 0) {
-    return <p className="text-sm text-muted-foreground">{evidence?.summary ?? "No records behind this stat."}</p>;
+    return (
+      <Text size="sm" c="dimmed">
+        {evidence?.summary ?? "No records behind this stat."}
+      </Text>
+    );
   }
 
   const wrapCol = evidence.columns.findIndex((c) => /title|message|description/i.test(c));
 
   return (
-    <div className="rounded-lg border">
-      <Table>
-        <TableHeader>
-          <TableRow className="hover:bg-transparent">
-            {evidence.columns.map((c, i) => (
-              <TableHead key={c} className={`uppercase tracking-wide ${i === wrapCol ? "w-full" : ""}`}>
-                {c}
-              </TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {evidence.rows.map((row, ri) => (
-            <TableRow key={ri} className={row.muted ? "opacity-40" : ""}>
-              {row.cells.map((cell, ci) => (
-                <td
-                  key={ci}
-                  className={`px-3 py-1.5 align-top text-muted-foreground ${
-                    ci === wrapCol ? "w-full whitespace-normal break-words" : "whitespace-nowrap"
-                  }`}
-                >
-                  {ci === 0 && row.href ? (
-                    <a
-                      href={row.href}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="font-mono text-primary hover:underline"
-                    >
-                      {cell}
-                    </a>
-                  ) : (
-                    <span className={ci === 0 ? "font-mono text-foreground" : ""}>{cell}</span>
-                  )}
-                </td>
-              ))}
-            </TableRow>
+    <Table withTableBorder radius="md" verticalSpacing={6}>
+      <Table.Thead>
+        <Table.Tr>
+          {evidence.columns.map((c, i) => (
+            <Table.Th
+              key={c}
+              style={{
+                width: i === wrapCol ? "100%" : undefined,
+                whiteSpace: "nowrap",
+                textTransform: "uppercase",
+                letterSpacing: "0.04em",
+              }}
+            >
+              {c}
+            </Table.Th>
           ))}
-        </TableBody>
-      </Table>
-    </div>
+        </Table.Tr>
+      </Table.Thead>
+      <Table.Tbody>
+        {evidence.rows.map((row, ri) => (
+          <Table.Tr
+            key={ri}
+            data-testid={`evidence-row-${ri}`}
+            data-muted={row.muted ? "true" : undefined}
+            style={row.muted ? { opacity: MUTED_OPACITY } : undefined}
+          >
+            {row.cells.map((cell, ci) => (
+              <Table.Td
+                key={ci}
+                style={{
+                  verticalAlign: "top",
+                  whiteSpace: ci === wrapCol ? "normal" : "nowrap",
+                  wordBreak: ci === wrapCol ? "break-word" : undefined,
+                  color: "var(--ui-text-muted)",
+                }}
+              >
+                {ci === 0 && row.href ? (
+                  <Anchor
+                    href={row.href}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ fontFamily: "var(--mantine-font-family-monospace)" }}
+                  >
+                    {cell}
+                  </Anchor>
+                ) : (
+                  <Text
+                    component="span"
+                    size="sm"
+                    c={ci === 0 ? "var(--mantine-color-text)" : undefined}
+                    style={ci === 0 ? { fontFamily: "var(--mantine-font-family-monospace)" } : undefined}
+                  >
+                    {cell}
+                  </Text>
+                )}
+              </Table.Td>
+            ))}
+          </Table.Tr>
+        ))}
+      </Table.Tbody>
+    </Table>
   );
 }

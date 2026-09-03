@@ -1,7 +1,9 @@
 import { useLocation } from "wouter";
+
+import { Card, Group, SimpleGrid, Stack, Text } from "@mattstack/app-kit/core";
+
 import type { LeaderboardResponse, UserRow } from "../../shared/types";
-import { COLUMNS, type Column, GROUP_META, deltaValue, formatValue, rankValue, sortValue } from "../columns";
-import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { COLUMNS, type Column, GROUP_ORDER, deltaValue, formatValue, rankValue, sortValue } from "../columns";
 import { DeltaBadge } from "./DeltaBadge";
 import { MetricTip } from "./MetricTip";
 import { Tooltip } from "./Tooltip";
@@ -11,25 +13,30 @@ interface Props {
   trend: boolean;
 }
 
+/** Per-group header accent, matching LeaderboardTable's Delivery (green) / Volume (muted) / Quality (accent) split. */
+const GROUP_COLOR: Record<(typeof GROUP_ORDER)[number], string> = {
+  delivery: "green",
+  volume: "dimmed",
+  quality: "accent",
+};
+
 export function MetricCards({ data, trend }: Props) {
   return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+    <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="md">
       {COLUMNS.map((col) => (
-        <Card key={col.key}>
-          <CardHeader className="flex-row items-baseline justify-between">
-            <h3 className="text-sm font-semibold text-foreground">
+        <Card key={col.key} withBorder radius="md" padding="md" data-testid={`metric-card-${col.key}`}>
+          <Group justify="space-between" align="baseline" mb="xs">
+            <Text size="sm" fw={600}>
               <Tooltip content={<MetricTip col={col} />}>{col.label}</Tooltip>
-            </h3>
-            <span className={`text-[10px] uppercase tracking-wide ${GROUP_META[col.group].accent}`}>
+            </Text>
+            <Text size="10px" tt="uppercase" c={GROUP_COLOR[col.group]} style={{ letterSpacing: "0.06em" }}>
               {col.group}
-            </span>
-          </CardHeader>
-          <CardContent>
-            <Ranking col={col} users={data.users} trend={trend} />
-          </CardContent>
+            </Text>
+          </Group>
+          <Ranking col={col} users={data.users} trend={trend} />
         </Card>
       ))}
-    </div>
+    </SimpleGrid>
   );
 }
 
@@ -41,33 +48,56 @@ function Ranking({ col, users, trend }: { col: Column; users: UserRow[]; trend: 
     .filter((u) => u.resolved && sortValue(u.metrics, col) !== null)
     .sort((a, b) => (rankValue(a.metrics, col) ?? 99) - (rankValue(b.metrics, col) ?? 99));
 
-  if (ranked.length === 0) return <p className="text-xs text-muted-foreground">No data.</p>;
+  if (ranked.length === 0) {
+    return (
+      <Text size="xs" c="dimmed">
+        No data.
+      </Text>
+    );
+  }
 
   return (
-    <ol className="space-y-0.5">
+    <Stack gap={1}>
       {ranked.map((u) => {
         const d = trend ? deltaValue(u.metrics, col) : null;
         return (
-          <li key={u.username}>
-            <button
-              onClick={() => setLocation(`/user/${encodeURIComponent(u.username)}/${encodeURIComponent(col.key)}`)}
-              className={`flex w-full items-center justify-between rounded px-1 py-0.5 text-left text-sm hover:bg-muted ${
-                u.isCurrentUser ? "text-primary" : "text-foreground/90"
-              }`}
-              title={`${u.name ?? u.username} · ${col.label} details`}
-            >
-              <span className="flex items-center gap-2">
-                <span className="w-4 text-right text-xs text-muted-foreground">{rankValue(u.metrics, col) ?? "—"}</span>
-                <span className={u.isCurrentUser ? "font-semibold" : ""}>{u.name ?? u.username}</span>
-              </span>
-              <span className="flex items-center gap-2 font-mono tabular-nums">
-                <span>{formatValue(sortValue(u.metrics, col), col)}</span>
-                {d !== null && d !== 0 && <DeltaBadge delta={d} col={col} className="text-xs" />}
-              </span>
-            </button>
-          </li>
+          <button
+            key={u.username}
+            onClick={() => setLocation(`/user/${encodeURIComponent(u.username)}/${encodeURIComponent(col.key)}`)}
+            title={`${u.name ?? u.username} · ${col.label} details`}
+            style={{
+              display: "flex",
+              width: "100%",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 8,
+              padding: "2px 4px",
+              borderRadius: 4,
+              border: "none",
+              background: "none",
+              cursor: "pointer",
+              textAlign: "left",
+              font: "inherit",
+              color: "inherit",
+            }}
+          >
+            <Group gap={8} wrap="nowrap">
+              <Text size="xs" c="dimmed" style={{ width: 16, textAlign: "right" }}>
+                {rankValue(u.metrics, col) ?? "—"}
+              </Text>
+              <Text size="sm" fw={u.isCurrentUser ? 600 : 400} c={u.isCurrentUser ? "accent" : undefined}>
+                {u.name ?? u.username}
+              </Text>
+            </Group>
+            <Group gap={8} wrap="nowrap" style={{ fontFamily: "var(--mantine-font-family-monospace)" }}>
+              <Text component="span" size="sm" style={{ fontVariantNumeric: "tabular-nums" }}>
+                {formatValue(sortValue(u.metrics, col), col)}
+              </Text>
+              {d !== null && d !== 0 && <DeltaBadge delta={d} col={col} />}
+            </Group>
+          </button>
         );
       })}
-    </ol>
+    </Stack>
   );
 }
