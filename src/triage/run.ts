@@ -1,6 +1,7 @@
 import type { DoctorState, DoctorStatus } from "../doctor-state.ts";
 import type { LaunchPaneOpts } from "../herdr.ts";
 import { draftBinPath } from "../herdr.ts";
+import type { AgentLaunchResult } from "../agent-launch.ts";
 import type { FixClasses, TriageConfig } from "./config.ts";
 import { detectEdges, markHandled, observe, type OwnMrFacts } from "./edge.ts";
 import { chainOf } from "./stack.ts";
@@ -72,8 +73,12 @@ export interface TriageRunDeps {
   triage: TriageConfig;
   doctorCwd: string;
   doctorsWorkspace: string;
-  /** Command that starts claude in the pane (config.claudeCommand). Empty/absent = "claude". */
+  /** Command that starts claude in the pane (config.claudeCommand). Empty/absent = "claude".
+      launchDoctor (rt agent path) ignores this now; only launchLegacyResume honors it. */
   claudeCommand?: string;
+  /** The MR's GitLab project path (e.g. "group/project"), threaded to
+      launchDoctor as `repo`. */
+  repoForMr(mrUrl: string): string;
   /** Resolved GitLab token username this pipeline is dispatching as (see
       bin/triage.ts). Never config.defaultMember (2026-08-08 ruling). Used
       only to re-verify the mechanical-lint author gate (MAT-351); null
@@ -82,7 +87,7 @@ export interface TriageRunDeps {
   /** Own open MRs (token identity, drafts included), already reduced to facts. */
   fetchOwnMrs(): Promise<OwnMrFacts[]>;
   readDoctorStates(): Map<string, DoctorState>;
-  launchDoctor(opts: LaunchPaneOpts): Promise<{ tabId: string; workspaceId: string }>;
+  launchDoctor(opts: LaunchPaneOpts): Promise<AgentLaunchResult>;
   writeDoctorState(path: string, patch: Partial<DoctorState> & { status: DoctorStatus }): DoctorState;
   doctorFilePath(mrUrl: string): string;
   appendAudit(entry: AuditEntry): void;
@@ -192,10 +197,11 @@ export async function runTriage(deps: TriageRunDeps): Promise<{ dispatched: numb
     const statePath = deps.doctorFilePath(edge.mrUrl);
     deps.writeDoctorState(statePath, { mrUrl: edge.mrUrl, iid: edge.iid, status: "queued", origin: "auto" });
     try {
-      const { tabId, workspaceId } = await deps.launchDoctor({
+      const launchResult = await deps.launchDoctor({
         mrUrl: edge.mrUrl,
         iid: edge.iid,
         cwd: deps.doctorCwd,
+        repo: deps.repoForMr(edge.mrUrl),
         workspaceLabel: deps.doctorsWorkspace,
         statePath,
         claudeCommand: deps.claudeCommand,
@@ -206,7 +212,12 @@ export async function runTriage(deps: TriageRunDeps): Promise<{ dispatched: numb
         fixClasses: composeFixClasses(deps.triage.fixClasses, edge.author, deps.identity),
         draftBin: draftBinPath(),
       });
-      deps.writeDoctorState(statePath, { status: "queued", tabId, workspaceId });
+      if (!launchResult.focusedExisting) {
+        deps.writeDoctorState(statePath, {
+          status: "queued", tabId: launchResult.tabId, workspaceId: launchResult.workspaceId,
+          agentId: launchResult.agentId, paneId: launchResult.paneId,
+        });
+      }
       deps.attendants?.claim(edge.mrUrl, edge.iid, byUrl.get(edge.mrUrl)?.sourceBranch);
       result.dispatched++;
       activeAuto++;

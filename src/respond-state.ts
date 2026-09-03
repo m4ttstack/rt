@@ -22,8 +22,14 @@ export interface RespondState {
   tabId?: string;
   workspaceId?: string;
   /** Claude Code session id, captured by the status CLI. Lets the board
-      relaunch the same conversation via `claude --resume <sessionId>`. */
+      relaunch the same conversation via `claude --resume <sessionId>`
+      (see launchLegacyResume) when no agentId is on file. */
   sessionId?: string;
+  /** rt agent record id from the launch/resume result. When present, a resume
+      goes through resumeAgentPane instead of the legacy claude --resume path. */
+  agentId?: string;
+  /** rt herdr pane id the agent landed in, from the launch/resume result. */
+  paneId?: string;
   startedAt: number;
   updatedAt: number;
 }
@@ -57,6 +63,8 @@ export function writeRespondState(
     tabId: patch.tabId ?? prev.tabId,
     workspaceId: patch.workspaceId ?? prev.workspaceId,
     sessionId: patch.sessionId ?? prev.sessionId,
+    agentId: patch.agentId ?? prev.agentId,
+    paneId: patch.paneId ?? prev.paneId,
     startedAt: prev.startedAt ?? now,
     updatedAt: now,
   };

@@ -129,6 +129,7 @@ try {
     doctorCwd: boardConfig.doctorCwd || boardConfig.reviewCwd,
     doctorsWorkspace: boardConfig.doctorsWorkspace,
     claudeCommand: boardConfig.claudeCommand,
+    repoForMr: (mrUrl) => projectPathFromWebUrl(mrUrl, boardConfig.gitlabHost) ?? "",
     // Same resolved identity fetchOwnMrs just filtered by (MAT-351 re-check).
     identity: username,
     fetchOwnMrs,
@@ -180,6 +181,7 @@ try {
       launchReReview: (mrUrl, iid) =>
         launchReReview(mrUrl, iid, {
           cwd: boardConfig.reviewCwd,
+          repo: projectPathFromWebUrl(mrUrl, boardConfig.gitlabHost) ?? "",
           workspaceLabel: boardConfig.reviewsWorkspace,
           // BOARD-14: manifest binding when present, else "" (the generic wrapper) --
           // same resolution the board's own HTTP re-review launches use.
@@ -215,6 +217,7 @@ try {
         launchReReview: (mrUrl, iid) =>
           launchReReview(mrUrl, iid, {
             cwd: boardConfig.reviewCwd,
+            repo: projectPathFromWebUrl(mrUrl, boardConfig.gitlabHost) ?? "",
             workspaceLabel: boardConfig.reviewsWorkspace,
             skill: resolveLaunchSkill("review", mrUrl, boardConfig),
             claudeCommand: boardConfig.claudeCommand,

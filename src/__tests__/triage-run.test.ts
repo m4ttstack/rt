@@ -14,9 +14,13 @@ function deps(over: Partial<TriageRunDeps> = {}): TriageRunDeps & { audit: Audit
     doctorCwd: "/repo",
     doctorsWorkspace: "doctors",
     claudeCommand: "cswap run 2 -- claude",
+    repoForMr: () => "acme/webapp",
     fetchOwnMrs: async () => [{ mrUrl: "https://x/mr/1", iid: 1, pipelineId: 100, pipelineState: "failed", needsRebase: false, author: "matt", sourceBranch: "feat", targetBranch: "master", isStacked: false } satisfies OwnMrFacts],
     readDoctorStates: () => new Map(),
-    launchDoctor: async (opts) => { launches.push(opts); return { tabId: "t", workspaceId: "w" }; },
+    launchDoctor: async (opts) => {
+      launches.push(opts);
+      return { agentId: "agent-1", sessionId: "sess-1", paneId: "p", tabId: "t", workspaceId: "w", focusedExisting: false };
+    },
     writeDoctorState: (path, patch) => ({ mrUrl: patch.mrUrl ?? "", iid: patch.iid ?? 0, status: patch.status, origin: patch.origin, startedAt: 0, updatedAt: 0 }),
     doctorFilePath: (mrUrl) => `/state/${mrUrl.split("/").pop()}.json`,
     appendAudit: (e) => audit.push(e),

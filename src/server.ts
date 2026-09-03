@@ -21,7 +21,8 @@ import { readReviewStates, pruneReviewStates, reviewFilePath, writeReviewState, 
 import { readRespondStates, pruneRespondStates, respondFilePath, writeRespondState, parseRespondRequestBody, attachResponds } from "./respond-state.ts";
 import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, parseDoctorRequestBody, attachDoctors } from "./doctor-state.ts";
 import { readDrafts, heldDraftsByMr, attachDrafts, pruneDrafts, draftFilePath, writeDraft } from "./draft-state.ts";
-import { launchReview, launchRespond, launchDoctor, launchResume, focusTab, operatorNoteParagraph, parseLaunchNote } from "./herdr.ts";
+import { launchReview, launchRespond, launchDoctor, launchLegacyResume, focusTab, parseLaunchNote, mrTabLabel, reopenPrompt } from "./herdr.ts";
+import { resumeAgentPane } from "./agent-launch.ts";
 import { launchReReview } from "./review-launch.ts";
 import { readSlackRefs, attachSlack, resolveSlackRef, reactToMR, unreactFromMR, postToSlack, slackSweepTargets, sweepSlackRefs } from "./slack.ts";
 import { signalEmoji, parseAgentSignal } from "./agent-signal.ts";
@@ -747,6 +748,7 @@ const httpServer = Bun.serve({
         }
         const author = mrAuthorLabel(mr);
         const existing = readReviewStates().get(parsed.mrUrl);
+        const repo = projectPathFromWebUrl(parsed.mrUrl, config.gitlabHost) ?? "";
         if (reReview) {
           // A live review re-focuses its tab rather than re-reviewing on top of it.
           if (existing?.tabId && (existing.status === "queued" || existing.status === "reviewing")) {
@@ -762,6 +764,7 @@ const httpServer = Bun.serve({
           // reflects progress via the state file.
           void launchReReview(parsed.mrUrl, parsed.iid, {
             cwd: config.reviewCwd,
+            repo,
             workspaceLabel: config.reviewsWorkspace,
             skill: reviewSkillForTab(config, typeof tabId === "string" ? tabId : undefined, parsed.mrUrl, resolveLaunchSkill),
             author,
@@ -771,11 +774,33 @@ const httpServer = Bun.serve({
           return new Response(JSON.stringify({ ok: true, reReview: true }), { headers: { "content-type": "application/json" } });
         }
         if (resume) {
+          const statePath = reviewFilePath(parsed.mrUrl);
+          // A plain reopen (no --re-review) stays promptless and interactive --
+          // it must NEVER carry the re-review slash command (that belongs only
+          // to the /review re-review flow above). An operator note, if any, is
+          // the only thing sent as the first message.
+          const prompt = reopenPrompt(note);
+          if (existing?.agentId) {
+            void resumeAgentPane({
+              agentId: existing.agentId,
+              prompt,
+              workspaceLabel: config.reviewsWorkspace,
+              tabLabel: mrTabLabel(parsed.iid, author, "↺"),
+            })
+              .then((result) => {
+                if (result.focusedExisting) return;
+                writeReviewState(statePath, {
+                  status: existing?.status ?? "done", tabId: result.tabId, workspaceId: result.workspaceId,
+                  agentId: result.agentId, paneId: result.paneId,
+                });
+              })
+              .catch((err) => console.error(`review resume failed: ${err instanceof Error ? err.message : err}`));
+            return new Response(JSON.stringify({ ok: true, resumed: true }), { headers: { "content-type": "application/json" } });
+          }
           const sessionId = existing?.sessionId;
           if (!sessionId) return new Response("no session id on file for this review", { status: 400 });
-          const statePath = reviewFilePath(parsed.mrUrl);
-          void launchResume(
-            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: config.reviewCwd, workspaceLabel: config.reviewsWorkspace, statePath, sessionId, workspaceKind: "review", author, claudeCommand: config.claudeCommand, prompt: note && operatorNoteParagraph(note) },
+          void launchLegacyResume(
+            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: config.reviewCwd, repo, workspaceLabel: config.reviewsWorkspace, statePath, sessionId, workspaceKind: "review", author, claudeCommand: config.claudeCommand, prompt },
           )
             .then(({ tabId, workspaceId }) => writeReviewState(statePath, { status: existing?.status ?? "done", tabId, workspaceId }))
             .catch((err) => console.error(`review resume failed: ${err instanceof Error ? err.message : err}`));
@@ -797,6 +822,7 @@ const httpServer = Bun.serve({
           mrUrl: parsed.mrUrl,
           iid: parsed.iid,
           cwd: config.reviewCwd,
+          repo,
           workspaceLabel: config.reviewsWorkspace,
           statePath,
           skill: reviewSkillForTab(config, typeof tabId === "string" ? tabId : undefined, parsed.mrUrl, resolveLaunchSkill),
@@ -804,7 +830,13 @@ const httpServer = Bun.serve({
           claudeCommand: config.claudeCommand,
           note,
         })
-          .then(({ tabId, workspaceId }) => writeReviewState(statePath, { status: "queued", tabId, workspaceId }))
+          .then((result) => {
+            if (result.focusedExisting) return;
+            writeReviewState(statePath, {
+              status: "queued", tabId: result.tabId, workspaceId: result.workspaceId,
+              agentId: result.agentId, paneId: result.paneId,
+            });
+          })
           .catch((err) => {
             console.error(`review launch failed: ${err instanceof Error ? err.message : err}`);
             writeReviewState(statePath, { status: "error", message: "failed to launch review pane" });
@@ -839,12 +871,33 @@ const httpServer = Bun.serve({
         }
         const author = mrAuthorLabel(mr);
         const existing = readRespondStates().get(parsed.mrUrl);
+        const repo = projectPathFromWebUrl(parsed.mrUrl, config.gitlabHost) ?? "";
         if (resume) {
+          const statePath = respondFilePath(parsed.mrUrl);
+          // A plain reopen (no note) stays promptless and interactive -- same
+          // rule as the review resume above.
+          const prompt = reopenPrompt(note);
+          if (existing?.agentId) {
+            void resumeAgentPane({
+              agentId: existing.agentId,
+              prompt,
+              workspaceLabel: config.respondsWorkspace,
+              tabLabel: mrTabLabel(parsed.iid, author, "↺"),
+            })
+              .then((result) => {
+                if (result.focusedExisting) return;
+                writeRespondState(statePath, {
+                  status: existing?.status ?? "done", tabId: result.tabId, workspaceId: result.workspaceId,
+                  agentId: result.agentId, paneId: result.paneId,
+                });
+              })
+              .catch((err) => console.error(`respond resume failed: ${err instanceof Error ? err.message : err}`));
+            return new Response(JSON.stringify({ ok: true, resumed: true }), { headers: { "content-type": "application/json" } });
+          }
           const sessionId = existing?.sessionId;
           if (!sessionId) return new Response("no session id on file for this response", { status: 400 });
-          const statePath = respondFilePath(parsed.mrUrl);
-          void launchResume(
-            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: cwd, workspaceLabel: config.respondsWorkspace, statePath, sessionId, workspaceKind: "respond", author, claudeCommand: config.claudeCommand, prompt: note && operatorNoteParagraph(note) },
+          void launchLegacyResume(
+            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: cwd, repo, workspaceLabel: config.respondsWorkspace, statePath, sessionId, workspaceKind: "respond", author, claudeCommand: config.claudeCommand, prompt },
           )
             .then(({ tabId, workspaceId }) => writeRespondState(statePath, { status: existing?.status ?? "done", tabId, workspaceId }))
             .catch((err) => console.error(`respond resume failed: ${err instanceof Error ? err.message : err}`));
@@ -865,6 +918,7 @@ const httpServer = Bun.serve({
           mrUrl: parsed.mrUrl,
           iid: parsed.iid,
           cwd,
+          repo,
           workspaceLabel: config.respondsWorkspace,
           statePath,
           skill: resolveLaunchSkill("respond", parsed.mrUrl),
@@ -872,7 +926,13 @@ const httpServer = Bun.serve({
           claudeCommand: config.claudeCommand,
           note,
         })
-          .then(({ tabId, workspaceId }) => writeRespondState(statePath, { status: "queued", tabId, workspaceId }))
+          .then((result) => {
+            if (result.focusedExisting) return;
+            writeRespondState(statePath, {
+              status: "queued", tabId: result.tabId, workspaceId: result.workspaceId,
+              agentId: result.agentId, paneId: result.paneId,
+            });
+          })
           .catch((err) => {
             console.error(`respond launch failed: ${err instanceof Error ? err.message : err}`);
             writeRespondState(statePath, { status: "error", message: "failed to launch respond pane" });
@@ -919,6 +979,7 @@ const httpServer = Bun.serve({
           mrUrl: parsed.mrUrl,
           iid: parsed.iid,
           cwd,
+          repo: projectPathFromWebUrl(parsed.mrUrl, config.gitlabHost) ?? "",
           workspaceLabel: config.doctorsWorkspace,
           statePath,
           skill: resolveLaunchSkill("doctor", parsed.mrUrl),
@@ -926,7 +987,13 @@ const httpServer = Bun.serve({
           claudeCommand: config.claudeCommand,
           note,
         })
-          .then(({ tabId, workspaceId }) => writeDoctorState(statePath, { status: "queued", tabId, workspaceId }))
+          .then((result) => {
+            if (result.focusedExisting) return;
+            writeDoctorState(statePath, {
+              status: "queued", tabId: result.tabId, workspaceId: result.workspaceId,
+              agentId: result.agentId, paneId: result.paneId,
+            });
+          })
           .catch((err) => {
             console.error(`doctor launch failed: ${err instanceof Error ? err.message : err}`);
             writeDoctorState(statePath, { status: "error", message: "failed to launch doctor pane" });

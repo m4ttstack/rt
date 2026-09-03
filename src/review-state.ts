@@ -16,8 +16,14 @@ export interface ReviewState {
       this and drops the matching reaction on the MR's slack message. */
   outcome?: ReviewOutcome;
   /** Claude Code session id, captured by the status CLI on any write. Lets the
-      board relaunch the same conversation via `claude --resume <sessionId>`. */
+      board relaunch the same conversation via `claude --resume <sessionId>`
+      (see launchLegacyResume) when no agentId is on file. */
   sessionId?: string;
+  /** rt agent record id from the launch/resume result. When present, a resume
+      goes through resumeAgentPane instead of the legacy claude --resume path. */
+  agentId?: string;
+  /** rt herdr pane id the agent landed in, from the launch/resume result. */
+  paneId?: string;
   startedAt: number;
   updatedAt: number;
   /** Whether the agent has written its full review markdown yet. Computed at
@@ -72,6 +78,8 @@ export function writeReviewState(
     workspaceId: patch.workspaceId ?? prev.workspaceId,
     outcome: patch.outcome ?? prev.outcome,
     sessionId: patch.sessionId ?? prev.sessionId,
+    agentId: patch.agentId ?? prev.agentId,
+    paneId: patch.paneId ?? prev.paneId,
     startedAt: prev.startedAt ?? now,
     updatedAt: now,
   };
