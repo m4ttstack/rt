@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import type { IndexRow, StoredMetrics } from "../server/store/index.js";
 import type { TimeWindow } from "../shared/types.js";
+import { computeSnapshot } from "../server/metrics/snapshot.js";
 
 const dir = mkdtempSync(join(tmpdir(), "boxscore-query-"));
 process.env.BOXSCORE_DB = join(dir, "test.sqlite");
@@ -155,6 +156,31 @@ describe("buildFetchResult: window characterization (ported from test/slicing.te
     const prior = buildFetchResult(s, W_7D_PRIOR, ["alice", "bob"]);
     expect(prior.mrs.map((m) => m.iid)).not.toContain(8);
   });
+
+  // Ported from test/slicing.test.ts's "slicing preserves metric output" block, which
+  // Task 5 deletes: pins the same two numbers a native 7d query must still produce.
+  const SNAPSHOT_OPTS = {
+    users: ["alice", "bob"],
+    sizeBand: { tooSmall: 10, tooLarge: 400 },
+    doneStates: [] as string[],
+    extraBotPatterns: [] as string[],
+    excludeFilePatterns: [] as string[],
+    ignoredMrs: [] as string[],
+  };
+
+  it("a 7d query yields the same issuesCompleted the wide-outcome slice pinned", () => {
+    const s = seedWideScenario();
+    const fetched = buildFetchResult(s, W_7D, ["alice", "bob"]);
+    const snap = computeSnapshot(fetched, { window: W_7D, ...SNAPSHOT_OPTS });
+    expect(snap.byUser.alice!.issuesCompleted).toBe(1);
+  });
+
+  it("a 7d query keeps revertRate at the pinned value", () => {
+    const s = seedWideScenario();
+    const fetched = buildFetchResult(s, W_7D, ["alice", "bob"]);
+    const snap = computeSnapshot(fetched, { window: W_7D, ...SNAPSHOT_OPTS });
+    expect(snap.byUser.alice!.revertRate).toBe(0.25);
+  });
 });
 
 describe("buildFetchResult: the metrics join", () => {
@@ -230,27 +256,20 @@ describe("buildFetchResult: roster scope", () => {
 });
 
 describe("buildFetchResult: approvalsAvailable", () => {
-  it("is true when any joined metrics row has a non-empty approvedByUsernames", () => {
+  it("is the constant true even when every joined metrics row has no approvers, since it is a tier capability flag, not a window content check", () => {
     const s = getStore();
     s.upsertIndexRows([row({ iid: 1 }), row({ iid: 2 })]);
     s.upsertMrMetrics([
       metrics({ projectPath: "acme/app", iid: 1, approvedByUsernames: [] }),
-      metrics({ projectPath: "acme/app", iid: 2, approvedByUsernames: ["bob"] }),
+      metrics({ projectPath: "acme/app", iid: 2, approvedByUsernames: [] }),
     ]);
     expect(buildFetchResult(s, W_7D, ["alice", "bob"]).approvalsAvailable).toBe(true);
   });
 
-  it("is false when no joined metrics row has any approver", () => {
-    const s = getStore();
-    s.upsertIndexRows([row({ iid: 1 }), row({ iid: 2 })]);
-    s.upsertMrMetrics([metrics({ projectPath: "acme/app", iid: 1, approvedByUsernames: [] })]);
-    expect(buildFetchResult(s, W_7D, ["alice", "bob"]).approvalsAvailable).toBe(false);
-  });
-
-  it("is false when there is no metrics row at all", () => {
+  it("is true when there is no metrics row at all", () => {
     const s = getStore();
     s.upsertIndexRows([row({ iid: 1 })]);
-    expect(buildFetchResult(s, W_7D, ["alice", "bob"]).approvalsAvailable).toBe(false);
+    expect(buildFetchResult(s, W_7D, ["alice", "bob"]).approvalsAvailable).toBe(true);
   });
 });
 

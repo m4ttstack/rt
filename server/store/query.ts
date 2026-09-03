@@ -67,7 +67,10 @@ export function buildFetchResult(store: Store, window: TimeWindow, roster: reado
   const eligibleKeys = mrs.filter(eligibleForLinearDiscovery).map((m) => mrKey(m.projectPath, m.iid));
   const linearIssues = store.linearIssuesForMrKeys(eligibleKeys);
 
-  const approvalsAvailable = [...metricsByKey.values()].some((m) => m.approvedByUsernames.length > 0);
+  // A tier-capability flag (does this GitLab tier expose approvals at all), not a
+  // per-window content check. Parity with fetch.ts:68, which also hardcodes true:
+  // no code path in this repo ever sets it false.
+  const approvalsAvailable = true;
 
   return { mrs, pipelines, pushEvents, linearIssues, approvalsAvailable };
 }
