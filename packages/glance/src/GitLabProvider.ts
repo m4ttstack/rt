@@ -1769,7 +1769,7 @@ export class GitLabProvider implements GitProvider {
       try {
         res = await fetch(url, { method, headers, body: bodyStr, signal });
       } catch (err) {
-        throw asRetryable(err, io?.signal);
+        throw io ? asRetryable(err, io.signal) : err;
       }
       safeEmit(this.onRequest, {
         op,
@@ -2409,7 +2409,7 @@ export class GitLabProvider implements GitProvider {
           signal,
         });
       } catch (err) {
-        throw asRetryable(err, io?.signal);
+        throw io ? asRetryable(err, io.signal) : err;
       }
       safeEmit(this.onRequest, {
         op,
@@ -2428,7 +2428,7 @@ export class GitLabProvider implements GitProvider {
       try {
         return (await res.json()) as Envelope;
       } catch (err) {
-        throw asRetryable(err, io?.signal);
+        throw io ? asRetryable(err, io.signal) : err;
       }
     };
 

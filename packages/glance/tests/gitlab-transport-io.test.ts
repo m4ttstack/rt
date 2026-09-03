@@ -29,6 +29,17 @@ function stubFetch(hits: Hit[]): { count: () => number; signals: (AbortSignal | 
 const p = () => new GitLabProvider('https://gitlab.example', 't');
 
 describe('restRequest io', () => {
+  test('without io a fetch rejection propagates as the original error, unwrapped', async () => {
+    const boom = new TypeError('fetch failed');
+    globalThis.fetch = (async () => {
+      throw boom;
+    }) as typeof fetch;
+    await expect(p().restRequest('GET', '/projects/1')).rejects.toBe(boom);
+    await expect(
+      (p() as unknown as { runQuery: (op: string, q: string) => Promise<unknown> }).runQuery('op', 'query {}'),
+    ).rejects.toBe(boom);
+  });
+
   test('without io a 503 is returned once, not retried, with no signal', async () => {
     const s = stubFetch([{ status: 503 }]);
     const res = await p().restRequest('GET', '/projects/1');
