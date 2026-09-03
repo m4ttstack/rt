@@ -70,8 +70,9 @@ export async function readSecrets(deps: SecretsDeps = {}): Promise<SecretsResult
   const linearApiKey = process.env.LINEAR_API_KEY?.trim() || undefined;
   if (gitlabToken && linearApiKey) return { gitlabToken, linearApiKey };
 
-  // Never reach the real socket from a test that didn't inject a post fn.
-  if (process.env.VITEST && !deps.post) return { gitlabToken, linearApiKey };
+  // Never reach the real socket or the real api-token file from a test that
+  // didn't inject both deps.
+  if (process.env.VITEST && !(deps.readApiToken && deps.post)) return { gitlabToken, linearApiKey };
 
   const readApiToken = deps.readApiToken ?? defaultReadApiToken;
   const post = deps.post ?? defaultPost;

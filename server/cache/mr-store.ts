@@ -2,8 +2,8 @@ import { mkdirSync } from "node:fs";
 import { unlink } from "node:fs/promises";
 import type { NormMr } from "../pipeline/model.js";
 import type { RawMrListNode } from "../gitlab/raw-types.js";
+import { CACHE_DIR } from "./store.js";
 
-const CACHE_DIR = process.env.BOXSCORE_CACHE_DIR ?? ".cache";
 const DB_PATH = `${CACHE_DIR}/mr-details.sqlite`;
 const SCHEMA_VERSION = 3;
 

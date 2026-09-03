@@ -9,16 +9,12 @@ import { useEffect, useState } from "react";
 export interface Route {
   user: string | null;
   stat: string | null;
-  page: string | null;
 }
 
 function parseHash(): Route {
-  if (window.location.hash === "#settings") {
-    return { user: null, stat: null, page: "settings" };
-  }
   const m = window.location.hash.match(/^#\/u\/([^/?]+)(?:\?stat=([^&]+))?/);
-  if (!m) return { user: null, stat: null, page: null };
-  return { user: decodeURIComponent(m[1]!), stat: m[2] ? decodeURIComponent(m[2]) : null, page: null };
+  if (!m) return { user: null, stat: null };
+  return { user: decodeURIComponent(m[1]!), stat: m[2] ? decodeURIComponent(m[2]) : null };
 }
 
 export function useHashRoute(): Route {

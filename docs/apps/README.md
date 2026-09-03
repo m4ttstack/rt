@@ -101,8 +101,9 @@ See `gitlab-leaderboard-spec.md` for the exact definitions.
   `<baseUrl>/-/graphql-explorer`.
 - **Approvals tier fallback:** if approval data isn't accessible, "MRs reviewed" and
   "reciprocity" fall back to note-author detection, flagged in the UI metric notes.
-- **Caching:** raw fetch results are cached under `.cache/` keyed by `(scope, window)`.
-  The prior window (for the trend) is fetched once, then cached. Use **Refresh** to bypass.
+- **Caching:** fetch envelopes are cached under `~/.mattstack/boxscore/cache` (override with
+  `BOXSCORE_CACHE_DIR`), keyed by `(scope, window)`. The prior window (for the trend) is
+  fetched once, then cached. Use **Refresh** to bypass.
 - **Trend storage** is limited to "current vs. one prior window." No long-run time series.
 - **Coding days** only count push events visible to your token.
 

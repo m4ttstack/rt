@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, Settings } from "lucide-react";
+import { ArrowLeft } from "lucide-react";
 
 import type { MetricKey, UserDetailResponse } from "../../../shared/types";
 import { Button } from "@/components/ui/button";
@@ -70,14 +70,6 @@ export function DetailPage({ username, initialStat, range, trend }: Props) {
       <div className="mb-4 flex items-center justify-between">
         <Button variant="ghost" size="sm" onClick={navigateHome} className="-ml-2 text-muted-foreground">
           <ArrowLeft /> Back to leaderboard
-        </Button>
-        <Button
-          variant="outline"
-          size="icon"
-          onClick={() => { window.location.hash = "#settings"; }}
-          aria-label="Settings"
-        >
-          <Settings />
         </Button>
       </div>
 
