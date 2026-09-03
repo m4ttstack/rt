@@ -1,7 +1,11 @@
 {
-  "extends": "./tsconfig.base.json",
+  "extends": "@mattstack/app-kit/tsconfig.base.json",
   "compilerOptions": {
-    "types": ["node", "bun"]
+    "paths": {
+      "@/*": ["./src/app/*"]
+    },
+    // src/server's parameter properties need emission; this task cannot rewrite server logic to drop them.
+    "erasableSyntaxOnly": false
   },
-  "include": ["src/server/**/*.ts", "src/shared/**/*.ts", "config.ts", "test/**/*.ts"]
+  "include": ["src", "test", "vite.config.ts", "vitest.config.ts"]
 }

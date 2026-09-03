@@ -1,29 +1,12 @@
 import { fileURLToPath } from "node:url";
 import { defineConfig } from "vite";
-import react from "@vitejs/plugin-react";
-import tailwindcss from "@tailwindcss/vite";
+import { mattstackVite } from "@mattstack/app-kit/vite";
 
-const BACKEND_PORT = process.env.PORT ?? "8787";
-
-// Run from the repo root (`bun run dev:web`). The app source lives in src/app/.
+// "@/..." resolves to src/app: mattstackVite() ships no alias of its own,
+// and the existing app source (Task 6 rewrites it) still imports through it.
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  ...mattstackVite({ apiPort: 11005 }),
   resolve: {
-    alias: {
-      "@": fileURLToPath(new URL("./src/app", import.meta.url)),
-    },
-  },
-  server: {
-    port: 5173,
-    proxy: {
-      "/api": {
-        target: `http://localhost:${BACKEND_PORT}`,
-        changeOrigin: true,
-      },
-    },
-  },
-  build: {
-    outDir: "dist",
-    emptyOutDir: true,
+    alias: { "@": fileURLToPath(new URL("./src/app", import.meta.url)) },
   },
 });
