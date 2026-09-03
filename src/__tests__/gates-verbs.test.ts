@@ -137,6 +137,50 @@ describe("gateOpen", () => {
 
     expect(calls.eventsEmit.length).toBe(0);
   });
+
+  test("re-opening over a prior ANSWERED gate file clears the stale answer, and a following gateWait blocks instead of short-circuiting", async () => {
+    // Seed a prior ANSWERED gate for this MR (a previous review round).
+    writeGateState(gateFilePath(MR_URL), {
+      gateId: "gate-prior",
+      mrUrl: MR_URL,
+      iid: IID,
+      kind: "review-post",
+      status: "answered",
+      openedAt: 1000,
+      questions: QUESTIONS,
+      answers: { tiers: ["must-fix"], outcome: "comment" },
+      answeredBy: "board-ui",
+      answeredAt: 2000,
+    });
+
+    const { io: openIo } = fakeIo({ now: 9000 });
+    const gateId = await gateOpen(statePath, JSON.stringify(QUESTIONS), openIo);
+
+    const written = JSON.parse(readFileSync(gateFilePath(MR_URL), "utf8")) as GateState;
+    expect(written.gateId).toBe(gateId);
+    expect(written.status).toBe("open");
+    expect(written.answers).toBeUndefined();
+    expect(written.answeredBy).toBeUndefined();
+    expect(written.answeredAt).toBeUndefined();
+
+    // gateWait must now BLOCK (call eventsList/eventsWait) rather than
+    // short-circuit on the stale prior disposition.
+    const answerEvent: EventsBusEvent = {
+      id: 99,
+      topic: `board/gate/answered/${gateId}`,
+      payload: { gateId, answers: { tiers: [], outcome: "approve" }, by: "board-ui", answeredAt: 9500 },
+      emittedAt: 9500,
+    };
+    const { io: waitIo, calls: waitCalls } = fakeIo({
+      listResults: [{ ok: true, data: { events: [answerEvent], cursor: 1 } }],
+    });
+
+    const result = await gateWait(statePath, waitIo);
+
+    expect(waitCalls.eventsList.length).toBe(1);
+    expect(result).not.toEqual({ answers: { tiers: ["must-fix"], outcome: "comment" }, by: "board-ui", answeredAt: 2000 });
+    expect(result).toEqual({ answers: { tiers: [], outcome: "approve" }, by: "board-ui", answeredAt: 9500 });
+  });
 });
 
 describe("gateWait", () => {

@@ -64,6 +64,51 @@ describe("writeGateState merge-patch", () => {
   });
 });
 
+describe("writeGateState replace-on-new-gateId", () => {
+  test("a write with a DIFFERENT gateId over a prior ANSWERED gate REPLACES, not merges", () => {
+    const p = gateFilePath(URL_A, dir);
+    writeGateState(p, {
+      ...baseGate,
+      status: "answered",
+      answers: { q1: "yes" },
+      answeredBy: "board-ui",
+      answeredAt: 2000,
+    });
+
+    // A re-review mints a fresh gateId and writes the same partial opened
+    // payload gateOpen/applyOpened would (no answers/answeredAt/etc).
+    writeGateState(p, {
+      gateId: "gate-2",
+      mrUrl: URL_A,
+      iid: 4821,
+      kind: "review-post",
+      status: "open",
+      openedAt: 3000,
+      questions: baseGate.questions,
+    });
+
+    const state = readGateStates(dir).get(URL_A);
+    expect(state?.gateId).toBe("gate-2");
+    expect(state?.status).toBe("open");
+    expect(state?.answers).toBeUndefined();
+    expect(state?.answeredBy).toBeUndefined();
+    expect(state?.answeredAt).toBeUndefined();
+    expect(state?.parkedAt).toBeUndefined();
+  });
+
+  test("a write with the SAME gateId still MERGES, preserving unpatched fields", () => {
+    const p = gateFilePath(URL_A, dir);
+    writeGateState(p, baseGate);
+    writeGateState(p, { gateId: "gate-1", status: "answered", answeredAt: 2000, answers: { q1: "yes" }, answeredBy: "board-ui" });
+
+    const state = readGateStates(dir).get(URL_A);
+    expect(state?.status).toBe("answered");
+    expect(state?.answers).toEqual({ q1: "yes" });
+    expect(state?.mrUrl).toBe(URL_A);
+    expect(state?.questions).toEqual(baseGate.questions);
+  });
+});
+
 describe("pruneGateStates", () => {
   test("keeps on-board MRs and deletes off-board ones", () => {
     writeGateState(gateFilePath(URL_A, dir), baseGate);

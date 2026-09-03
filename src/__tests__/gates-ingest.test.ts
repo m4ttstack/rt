@@ -61,6 +61,42 @@ describe("applyGateEvent: opened", () => {
   });
 });
 
+describe("applyGateEvent: opened with a new gateId over an answered gate", () => {
+  test("resets a prior ANSWERED stored gate to open, with no stale answers", () => {
+    writeGateState(store.gateFilePath(MR_URL), {
+      gateId: "gate-prior",
+      mrUrl: MR_URL,
+      iid: IID,
+      kind: "review-post",
+      status: "answered",
+      openedAt: 500,
+      questions: QUESTIONS,
+      answers: { q1: "no" },
+      answeredBy: "board-ui",
+      answeredAt: 800,
+    });
+
+    applyGateEvent(store, {
+      topic: `board/gate/opened/${GATE_ID}`,
+      payload: {
+        gateId: GATE_ID,
+        kind: "review-post",
+        mrUrl: MR_URL,
+        iid: IID,
+        questions: QUESTIONS,
+        openedAt: 1000,
+      },
+    });
+
+    const state = store.readGateStates().get(MR_URL);
+    expect(state?.gateId).toBe(GATE_ID);
+    expect(state?.status).toBe("open");
+    expect(state?.answers).toBeUndefined();
+    expect(state?.answeredBy).toBeUndefined();
+    expect(state?.answeredAt).toBeUndefined();
+  });
+});
+
 describe("applyGateEvent: answered", () => {
   test("merges status/answers/answeredBy/answeredAt onto the matching open gate", () => {
     writeGateState(store.gateFilePath(MR_URL), {

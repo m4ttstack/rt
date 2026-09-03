@@ -38,8 +38,11 @@ export function gateFilePath(mrUrl: string, dir: string = GATE_DIR): string {
   return join(dir, `${slug}.json`);
 }
 
-/** Read-merge-write a gate state file. A new `gate open` for an MR overwrites the
-    prior gate by passing the full opened payload as the patch. */
+/** Read-merge-write a gate state file. A patch whose `gateId` differs from
+    (or whose prior file lacks) the stored `gateId` is a NEW gate for this MR
+    and REPLACES the file outright, so a re-review can never inherit a prior
+    gate's `status`/`answers`/`answeredAt`/`answeredBy`/`parkedAt`. A patch
+    with the SAME `gateId` (answer/park/sweep updates) merges as before. */
 export function writeGateState(path: string, patch: Partial<GateState> & { gateId: string }): void {
   let prev: Partial<GateState> = {};
   try {
@@ -47,7 +50,8 @@ export function writeGateState(path: string, patch: Partial<GateState> & { gateI
   } catch {
     // no prior file, or unreadable -- start fresh
   }
-  const next: GateState = { ...prev, ...patch } as GateState;
+  const isNewGate = !prev.gateId || prev.gateId !== patch.gateId;
+  const next: GateState = (isNewGate ? { ...patch } : { ...prev, ...patch }) as GateState;
   mkdirSync(join(path, ".."), { recursive: true });
   const tmp = path + ".tmp";
   writeFileSync(tmp, JSON.stringify(next, null, 2) + "\n");
