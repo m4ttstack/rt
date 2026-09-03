@@ -169,6 +169,12 @@ click (default action) calls the existing `HerdrBridge.focusPaneById(paneId)`
 instead of opening a URL. Swift changes confined to NotificationManager plus
 the category registration.
 
+**rt-client events wrappers.** The catalog has `events:emit/wait/list` but
+the client exports only `eventsHead`; the board's gate verbs and answer
+endpoint need all three, so rt-client adds `eventsEmit`, `eventsWait`
+(client timeout above the daemon's 240s cap), and `eventsList`, published as
+a minor bump the board's pin consumes.
+
 **`pane:list` focused flag.** `paneRow` starts copying herdr's per-pane
 `focused` boolean onto `ChatPane`. The `HerdrPane` input type in the pane
 handlers needs the field too (it currently drops it at parse); fixtures
