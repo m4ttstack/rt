@@ -1,6 +1,7 @@
 import {
   agentStart as rtAgentStart,
   agentResume as rtAgentResume,
+  type Commands,
 } from "@mattstack/rt-client";
 
 export interface AgentLaunchResult {
@@ -32,18 +33,17 @@ export async function startAgentPane(
 ): Promise<AgentLaunchResult> {
   const ioInstance = io || { agentStart: rtAgentStart, agentResume: rtAgentResume };
 
-  const payload: any = {
+  const payload: Commands["agent:start"]["payload"] = {
     repo: opts.repo,
     cwd: opts.cwd,
     prompt: opts.prompt,
     surface: "herdr",
     workspace: opts.workspaceLabel,
     tab: opts.tabLabel,
+    ...(opts.account !== undefined ? { account: opts.account } : {}),
+    ...(opts.model !== undefined ? { model: opts.model } : {}),
+    ...(opts.effort !== undefined ? { effort: opts.effort } : {}),
   };
-
-  if (opts.account !== undefined) payload.account = opts.account;
-  if (opts.model !== undefined) payload.model = opts.model;
-  if (opts.effort !== undefined) payload.effort = opts.effort;
 
   const response = await ioInstance.agentStart(payload);
 
@@ -87,14 +87,13 @@ export async function resumeAgentPane(
 ): Promise<AgentLaunchResult> {
   const ioInstance = io || { agentStart: rtAgentStart, agentResume: rtAgentResume };
 
-  const payload: any = {
+  const payload: Commands["agent:resume"]["payload"] = {
     id: opts.agentId,
     surface: "herdr",
     workspace: opts.workspaceLabel,
     tab: opts.tabLabel,
+    ...(opts.prompt !== undefined ? { prompt: opts.prompt } : {}),
   };
-
-  if (opts.prompt !== undefined) payload.prompt = opts.prompt;
 
   const response = await ioInstance.agentResume(payload);
 

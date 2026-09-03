@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { type AgentSurface } from "@mattstack/rt-client";
 import {
   startAgentPane,
   resumeAgentPane,
