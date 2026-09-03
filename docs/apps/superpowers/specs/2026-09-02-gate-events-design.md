@@ -324,15 +324,14 @@ run (console): click, `paneFocus`, terminal raises on the right tab.
 1. **rt lane**: `pane:list` focused flag; notifier event bridge + paneId +
    suppression; tray focus action. Publishable independently.
 2. **board launch lane**: rt agent adoption (start/resume), state fields,
-   dedup mapping, claudeCommand retirement.
+   dedup mapping, claudeCommand retirement, resume-as-reinvocation
+   (`reReviewResumePrompt` deleted; resumes carry the `dispatchPrompt` slash
+   command with the full flag set).
 3. **focus lane**: board route + button swap; console route + button.
-4. **gate lane**: status-bin gate verbs; board gate store/SSE/card/answer
-   endpoint; wrapper skill combined gate. Also `reReviewResumePrompt` in
-   board's `src/herdr.ts`: the resumed re-review's directive is hardcoded
-   board prose (not skill-governed) and currently instructs "follow the same
-   posting gates"; it must be rewritten to direct the resumed session through
-   the status-bin gate verbs, since the resumed transcript remembers the old
-   two-gate contract.
+4. **gate lane**: status-bin gate verbs (journal-first wait); board gate
+   store/SSE/card/answer endpoint; combined gate in the engine, slot
+   contract bump to `mr-review@2`, and affected pack fills, through the
+   compile/bump/update pipeline.
 5. **lifecycle lane**: auto-close on done; park-after-grace; resume-with-
    answer; boot reconcile.
 
