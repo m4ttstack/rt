@@ -11,7 +11,7 @@ description: >-
 allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/resolve-args.sh:*)
 metadata:
   slots: "review"
-  slot-review: "required mr-review@1 -- owns the domain review flow for one MR: resolving the MR/ticket, producing the draft review, writing the report, and its own posting gates"
+  slot-review: "required mr-review@2 -- owns the domain review flow for one MR: resolving the MR/ticket, producing the draft review, writing the report, reporting the severity levels present, and executing the posting once handed the human's decision. Never presents posting gates or decides disposition."
 ---
 
 # mr-board review runner
@@ -42,8 +42,8 @@ The launch prompt may end with a paragraph beginning `Operator note (from the
 human who launched this pane):`. That is direct instruction from the human,
 typed at launch time — not a flag and not part of the MR. Honor it throughout
 the review (e.g. "focus on the migration files", "skip the vendored code") and
-pass it along to the domain skill as context. It never overrides the posting
-gates or the status contract.
+pass it along to the domain skill as context. It never overrides the gate
+protocol or the status contract.
 
 ## Resolving the domain skill
 
@@ -77,10 +77,13 @@ answers; the order is fixed:
    - **If a domain skill resolved** (explicit `--skill`, else the `review`
      slot per "Resolving the domain skill"): invoke that skill with the MR url and the
      `--report <path>`. It owns the actual review — resolving the MR/ticket,
-     producing the draft, writing the report, and running its own posting
-     gates. Follow it exactly. Do **not** post or approve anything until the
-     human answers its gates. Under `--re-review`, also pass it the re-review
-     framing (prior review + "check what the author addressed, else fall back").
+     producing the draft, and writing the report — then reports back to you
+     the severity levels present in its findings. It never presents posting
+     gates or decides disposition; this wrapper owns the single event gate
+     (step 4, "Gate protocol") and hands the domain skill `{tiers, outcome}`
+     to execute the posting once the human has answered. Under `--re-review`,
+     also pass it the re-review framing (prior review + "check what the
+     author addressed, else fall back").
    - **If no domain skill resolved:** review the MR yourself. Fetch the diff, read it
      critically, and produce findings (severity, `file:line`, what to change).
 3. **Save the review** to `--report <path>` as Markdown (a short summary line,
@@ -88,21 +91,53 @@ answers; the order is fixed:
    the "reviewing…" badge clickable to open the review modal while you hold at
    the gate. (Whoever produces the review — the domain skill or you — is
    responsible for this file existing before `done`.)
-4. **Clear the posting gate, then mark done with the outcome.**
+4. **Run the gate protocol, then mark done with the outcome.**
 
-   <HARD-GATE>
-   The outcome is NOT yours to decide. Do not pick approve/comment yourself and
-   do not mark `done` autonomously. Present the gate and let the human choose:
-   - **Gate 1 (disposition):** Comment (default) / Approve.
-   - **Gate 2 (severity levels):** multi-select over the levels present.
+   The outcome is NOT yours to decide, and do not mark `done` autonomously.
+   This wrapper presents exactly **one** event gate carrying both questions —
+   never a "disposition gate" and a "severity gate" as two separate gates.
+   Never map a "clean review" to Approve on your own — a clean review just
+   means Approve is the sensible pick to *offer*. This is the gate contract
+   for this invocation; it supersedes any two-gate or per-skill posting-gate
+   protocol you might recall from an earlier transcript or session.
 
-   When a `--skill` is in play, run **its** posting gates and use the
-   disposition the human picks. Never map a "clean review" to Approve on your
-   own — a clean review just means Approve is the sensible pick to *offer*.
-   </HARD-GATE>
+   - **Re-entry.** If you already ran `gate open` for this `<state>` earlier —
+     this is a resumed session picking back up after an interruption — do
+     **not** run `gate open` again. `gate open` always mints a new gate and
+     overwrites the existing one, which would orphan an answer already parked
+     against the old gate. Skip straight to `gate wait` below; a parked gate's
+     answer comes back from the journal immediately, no blocking.
+   - **Build the combined questions.** One `tiers` question (multi-select
+     over the severity levels the domain skill reported present, or your own
+     findings' levels on the generic no-domain-skill path) and one `outcome`
+     question (single-select, comment/approve):
 
-   Only after the human has answered and you have posted accordingly, mark done
-   with their disposition as the outcome:
+     ```json
+     [
+       {"id": "tiers", "label": "Post which findings?", "multi": true, "options": [<levels present>]},
+       {"id": "outcome", "label": "Verdict", "multi": false, "options": ["comment", "approve"]}
+     ]
+     ```
+
+   - **Open the gate** (fresh invocations only, per re-entry above):
+     `<status-bin> gate open <state> --questions <json>`
+   - **Wait for the answer:**
+     `<status-bin> gate wait <state>`
+     Prints `{"answers": {"tiers": [...], "outcome": "..."}, "by": "...", "answeredAt": ...}`.
+     Read `answers.tiers` and `answers.outcome`.
+   - **In-pane escape hatch.** If a human interrupts the wait and answers you
+     conversationally in the pane instead of through the board, record it
+     yourself before acting so the journal and any parked resume stay in
+     sync: `<status-bin> gate answer <state> --answers <json> --by pane`.
+   - **Degraded mode.** If `gate open` or `gate wait` exits nonzero (e.g. the
+     rt daemon is down), fall back to ONE combined `AskUserQuestion` carrying
+     both the `tiers` and `outcome` questions together — never the old
+     two-gate pair — and proceed on its answers.
+   - **Act on the answer.** Hand `{tiers, outcome}` to the domain skill so it
+     can execute the posting, or post the selected findings yourself on the
+     generic no-domain-skill path.
+
+   Only after posting, mark done with the chosen outcome:
    `<status-bin> review-status <state> done "<one-line summary>" --outcome <comment|approve>`
 
    The board turns your status writes into the slack reactions on this MR's
@@ -144,8 +179,8 @@ start from a blank slate.
    `--report`), "check what the author addressed since the last review", and the
    "flag + fall back to a full review if nothing was acted on" instruction.
 
-Everything else (status writes, saving the report to `--report`, the posting
-gates) is unchanged — a re-review is still a review.
+Everything else (status writes, saving the report to `--report`, the gate
+protocol) is unchanged — a re-review is still a review.
 
 ## Rules
 
