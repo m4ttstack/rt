@@ -14,7 +14,7 @@
     "start": "bun server/index.ts",
     "report": "bun server/cli.ts",
     "validate": "bun server/cli.ts --format validate",
-    "test": "vitest run",
+    "test": "vitest run --exclude test/store.test.ts && bun --bun vitest run test/store.test.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p web/tsconfig.json"
   },
