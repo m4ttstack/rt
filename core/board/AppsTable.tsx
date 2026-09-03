@@ -88,16 +88,16 @@ export function AppsTable({
                 if (isDrawerClick(e)) onOpenRow(row.name);
               }}
             >
-              <Table.Cell>
+              <Table.Cell className="col-ident">
                 <SiteCell row={row} data={data} restarting={restarting} />
               </Table.Cell>
-              <Table.Cell>
+              <Table.Cell className="col-ident">
                 <PortCell row={row} data={data} />
               </Table.Cell>
               <Table.Cell>
                 <HealthCell row={row} restarting={restarting} />
               </Table.Cell>
-              <Table.Cell>
+              <Table.Cell className="col-ident">
                 <ServiceCell row={row} />
               </Table.Cell>
               <Table.Cell className="col-gap">

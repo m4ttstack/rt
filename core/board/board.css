@@ -1,13 +1,13 @@
 .board {
   width: min(100% - 2rem, 96rem);
   margin-inline: auto;
-  font-family: var(--font-mono);
+  font-family: var(--font-sans);
   color: var(--fg);
 }
-/* Body sits on --card, not --bg: this page has no graph-paper texture to
-   lean on, and its content (the apps table) isn't wrapped in its own card
-   surface the way board's rows are, so the page canvas takes the raised
-   tone instead. */
+/* Body sits on --card, not --bg: nothing wraps the apps table in a card of
+   its own, so the page IS the content surface and takes the content token
+   directly. Deck also skips the kit's canvas.css, so there is no graph-paper
+   ground here for --bg to paint. */
 body {
   margin: 0;
   background: var(--card);
@@ -187,6 +187,14 @@ body {
    table layout. */
 .col-gap {
   border-left: 14px solid transparent;
+}
+
+/* The kit's recipes carry the sans UI font; these three columns hold machine
+   identifiers (hostname, port, launchd label) rather than prose, so they take
+   mono back for the column alignment and digit legibility a dense estate list
+   is read with. */
+.col-ident {
+  font-family: var(--font-mono);
 }
 
 /* Both section tables (mattstack / your apps) are separate <table>s; a fixed
