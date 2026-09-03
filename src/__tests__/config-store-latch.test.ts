@@ -111,6 +111,18 @@ describe("loadConfigFrom: per-key store-wins fallback", () => {
     expect(cfg.gitlabHost).toBe("https://gitlab.com");
     expect(cfg.title).toBe("MRs ready for review");
   });
+
+  test("gateGraceMinutes fails open to 90 when the store key is unregistered (a resolver throw), even with no config.json value", () => {
+    const p = tmpConfig();
+    const cfg = loadConfigFrom(p, throwingResolve("unknown setting \"board.gateGraceMinutes\""));
+    expect(cfg.gateGraceMinutes).toBe(90);
+  });
+
+  test("gateGraceMinutes: store-owned value wins over config.json's", () => {
+    const p = tmpConfig({ ...base, gateGraceMinutes: 45 });
+    const cfg = loadConfigFrom(p, fakeResolve({ "board.gateGraceMinutes": 120 }));
+    expect(cfg.gateGraceMinutes).toBe(120);
+  });
 });
 
 describe("loadConfigFrom: store values get the same normalization/validation the file path gets", () => {

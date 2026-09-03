@@ -26,6 +26,7 @@ describe("parseConfig", () => {
     expect(cfg.members).toEqual([{ username: "alice", name: "Alice Ng" }, { username: "bob" }]);
     expect(cfg.title).toBe("MRs ready for review");
     expect(cfg.staleAfterDays).toBe(90);
+    expect(cfg.gateGraceMinutes).toBe(90);
     expect(cfg.ticketPrefixes).toEqual([]);
   });
 
@@ -49,6 +50,15 @@ describe("parseConfig", () => {
   test("throws when staleAfterDays is not a positive number", () => {
     expect(() => parseConfig(JSON.stringify({ ...base, staleAfterDays: 0 }))).toThrow(/staleAfterDays/);
     expect(() => parseConfig(JSON.stringify({ ...base, staleAfterDays: -5 }))).toThrow(/staleAfterDays/);
+  });
+
+  test("accepts a positive gateGraceMinutes override", () => {
+    expect(parseConfig(JSON.stringify({ ...base, gateGraceMinutes: 30 })).gateGraceMinutes).toBe(30);
+  });
+
+  test("throws when gateGraceMinutes is not a positive number", () => {
+    expect(() => parseConfig(JSON.stringify({ ...base, gateGraceMinutes: 0 }))).toThrow(/gateGraceMinutes/);
+    expect(() => parseConfig(JSON.stringify({ ...base, gateGraceMinutes: -5 }))).toThrow(/gateGraceMinutes/);
   });
 
   test("throws when members is missing or empty", () => {

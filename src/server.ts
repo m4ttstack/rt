@@ -23,6 +23,7 @@ import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, 
 import { readGateStates, writeGateState, gateFilePath, pruneGateStates, attachGates, type GateAnswers } from "./gates/store.ts";
 import { applyGateEvent, ensureBridgeRule, gateEventStore, type EventBridgeRule, type GateEventFrame } from "./gates/ingest.ts";
 import { answerGate, resumeParkedGateStub } from "./gates/answer.ts";
+import { planSweep, type SweepAction } from "./gates/sweep.ts";
 import { readDrafts, heldDraftsByMr, attachDrafts, pruneDrafts, draftFilePath, writeDraft } from "./draft-state.ts";
 import { launchReview, launchRespond, launchDoctor, launchLegacyResume, parseLaunchNote, mrTabLabel, reopenPrompt, closeTab } from "./herdr.ts";
 import { closeOnDone, type TabIdResolver } from "./close-on-done.ts";
@@ -1747,6 +1748,47 @@ function sseNudge(): void {
 // Comment frames keep quiet connections under Bun's idleTimeout and prune
 // clients that vanished without a cancel. EventSource ignores comment lines.
 setInterval(() => sseSend(sseEncoder.encode(": ping\n\n")), SSE_HEARTBEAT_MS);
+
+// ── Gate sweep: park unanswered gates, reconcile missed closes ────────────
+const GATE_SWEEP_MS = 60_000;
+
+async function executeSweepAction(action: SweepAction): Promise<void> {
+  if (action.tabId) {
+    try {
+      await closeTab(action.tabId);
+    } catch (err) {
+      console.error(`gate sweep: closeTab(${action.tabId}) failed for ${action.mrUrl}: ${err instanceof Error ? err.message : err}`);
+    }
+  }
+  if (action.kind === "park") {
+    if (!action.gateId) return;
+    writeGateState(gateFilePath(action.mrUrl), { gateId: action.gateId, status: "parked", parkedAt: Date.now() });
+    sseNudge();
+    // No wired escalation notifier fits a gate-park signal (notifyEscalation
+    // is triage/doctor-scoped and unused elsewhere); a console line is the
+    // courtesy notify here, the park write + sseNudge above is the real effect.
+    console.log(`gate sweep: parked gate ${action.gateId} for ${action.mrUrl} after ${config.gateGraceMinutes}m with no answer`);
+  } else {
+    // "" (falsy) rather than omitting the field: writeReviewState merges
+    // patch.tabId ?? prev.tabId, so leaving tabId out of the patch would
+    // keep the stale id and this action would re-fire every sweep.
+    writeReviewState(reviewFilePath(action.mrUrl), { status: "done", tabId: "" });
+    console.log(`gate sweep: closed missed-done review tab for ${action.mrUrl}`);
+  }
+}
+
+async function runGateSweep(): Promise<void> {
+  const actions = planSweep(readGateStates(), readReviewStates(), Date.now(), config.gateGraceMinutes * 60_000);
+  for (const action of actions) {
+    await executeSweepAction(action);
+  }
+}
+
+if (!FIXTURE_DIR) {
+  setInterval(() => {
+    void runGateSweep().catch((err) => console.error(`gate sweep failed: ${err instanceof Error ? err.message : err}`));
+  }, GATE_SWEEP_MS);
+}
 
 let relayTimer: ReturnType<typeof setTimeout> | undefined;
 const stopRelay = FIXTURE_DIR ? () => {} : subscribe((type, data) => {

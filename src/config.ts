@@ -91,6 +91,9 @@ export interface BoardConfig {
   defaultMember: string;
   /** Hide MRs with no activity (last update) in more than this many days. */
   staleAfterDays: number;
+  /** How long an `open` review gate waits for an answer before the sweep
+      parks it. Minutes. */
+  gateGraceMinutes: number;
   /**
    * If non-empty, only show MRs whose Linear ticket key starts with one of
    * these prefixes (e.g. ["CV"] to show only CV-#### tickets). Case-insensitive.
@@ -211,6 +214,9 @@ export function parseConfig(raw: string, source = "config.json"): BoardConfig {
   if (cfg.staleAfterDays !== undefined && (typeof cfg.staleAfterDays !== "number" || cfg.staleAfterDays <= 0)) {
     throw new Error(`${source} "staleAfterDays" must be a positive number`);
   }
+  if (cfg.gateGraceMinutes !== undefined && (typeof cfg.gateGraceMinutes !== "number" || cfg.gateGraceMinutes <= 0)) {
+    throw new Error(`${source} "gateGraceMinutes" must be a positive number`);
+  }
   if (cfg.ticketPrefixes !== undefined) {
     if (!Array.isArray(cfg.ticketPrefixes) || cfg.ticketPrefixes.some((p) => typeof p !== "string" || !p.trim())) {
       throw new Error(`${source} "ticketPrefixes" must be an array of non-empty strings`);
@@ -254,6 +260,7 @@ export function parseConfig(raw: string, source = "config.json"): BoardConfig {
     members: cfg.members!,
     defaultMember: cfg.defaultMember ?? "all",
     staleAfterDays: cfg.staleAfterDays ?? 90,
+    gateGraceMinutes: cfg.gateGraceMinutes ?? 90,
     // Normalize to uppercase so matching is case-insensitive (ticket keys are uppercased).
     ticketPrefixes: (cfg.ticketPrefixes ?? []).map((p) => p.trim().toUpperCase()),
     title: cfg.title ?? "MRs ready for review",
@@ -481,6 +488,10 @@ function withBoardStoreFallback(fileConfig: BoardConfig, resolve: GetSettingFn):
     slack: storeValue("board.slack", resolve) ?? fileConfig.slack,
     doctorSkill: storeValue("board.doctorSkill", resolve) ?? fileConfig.doctorSkill,
     staleAfterDays: storeValue("board.staleAfterDays", resolve) ?? fileConfig.staleAfterDays,
+    // The store key may be unregistered on this rt-client pin -- storeValue
+    // already catches the resolver's unknown-key throw and returns
+    // undefined, so this falls open to 90 rather than bricking config load.
+    gateGraceMinutes: storeValue("board.gateGraceMinutes", resolve) ?? fileConfig.gateGraceMinutes ?? 90,
     reviewsWorkspace: workspaces?.reviews ?? fileConfig.reviewsWorkspace,
     respondsWorkspace: workspaces?.responds ?? fileConfig.respondsWorkspace,
     doctorsWorkspace: workspaces?.doctors ?? fileConfig.doctorsWorkspace,
