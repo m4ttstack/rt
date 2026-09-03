@@ -1359,15 +1359,14 @@ export class GitLabProvider implements GitProvider {
    * `x-next-page` (empty on the last page); a page that names itself or an
    * earlier page again would loop forever, so that throws.
    */
-  private async restPages<T>(op: string, path: string, query: Record<string, string>, io?: RequestIO): Promise<T[]> {
+  private async restPages<T>(op: string, path: string, query: Record<string, string>, io: RequestIO): Promise<T[]> {
     const out: T[] = [];
     let page = 1;
     for (;;) {
       const params = new URLSearchParams({ ...query, per_page: '100', page: String(page) });
-      const res = await this.restRequest('GET', `${path}?${params.toString()}`, undefined, op, io);
-      if (!res.ok) throw new Error(`${op}: HTTP ${res.status} for ${path} page ${page}`);
-      out.push(...((await res.json()) as T[]));
-      const next = res.headers.get('x-next-page');
+      const { body, nextPage: next, status } = await this.restJson<T[]>(op, `${path}?${params.toString()}`, io);
+      if (status < 200 || status >= 300) throw new Error(`${op}: HTTP ${status} for ${path} page ${page}`);
+      out.push(...body!);
       if (!next) return out;
       const nextPage = Number(next);
       if (!Number.isInteger(nextPage) || nextPage <= page) {
@@ -1399,11 +1398,12 @@ export class GitLabProvider implements GitProvider {
 
   async fetchProject(projectPath: string, options?: FetchProjectOptions): Promise<ProjectRef | null> {
     const io: RequestIO = { signal: options?.signal, retry: true };
-    const res = await this.restRequest('GET', `/projects/${encodeURIComponent(projectPath)}`, undefined, 'fetchProject', io);
-    if (res.status === 404) return null;
-    if (!res.ok) throw new Error(`fetchProject: HTTP ${res.status} for ${projectPath}`);
-    const body = (await res.json()) as { id: number; path_with_namespace: string };
-    return { id: `gitlab:${body.id}`, fullPath: body.path_with_namespace };
+    const { body, status } = await this.restJson<{ id: number; path_with_namespace: string }>(
+      'fetchProject', `/projects/${encodeURIComponent(projectPath)}`, io,
+    );
+    if (status === 404) return null;
+    if (status < 200 || status >= 300) throw new Error(`fetchProject: HTTP ${status} for ${projectPath}`);
+    return { id: `gitlab:${body!.id}`, fullPath: body!.path_with_namespace };
   }
 
   async fetchProjectPipelines(projectPath: string, options: FetchProjectPipelinesOptions): Promise<PipelineSummary[]> {
@@ -1736,6 +1736,53 @@ export class GitLabProvider implements GitProvider {
     } catch (err) {
       throw this.legacyError('updatePullRequest', err);
     }
+  }
+
+  /**
+   * REST round-trip whose body read shares the attempt, so a stalled body trips the
+   * same deadline as stalled headers. A non-ok status is returned unparsed -- the caller
+   * knows whether that status is expected (fetchProject's 404) and must not pay for a
+   * body read it is about to discard.
+   */
+  private async restJson<T>(
+    op: string,
+    path: string,
+    io: RequestIO,
+  ): Promise<{ body: T | undefined; nextPage: string | null; status: number }> {
+    const url = `${this.baseURL}/api/v4${path}`;
+    const headers: Record<string, string> = { 'PRIVATE-TOKEN': this.token };
+
+    const attempt = async (signal?: AbortSignal): Promise<{ body: T | undefined; nextPage: string | null; status: number }> => {
+      const started = performance.now();
+      let res: Response;
+      try {
+        res = await fetch(url, { method: 'GET', headers, signal });
+      } catch (err) {
+        throw asRetryable(err, io.signal);
+      }
+      safeEmit(this.onRequest, {
+        op,
+        transport: 'rest',
+        method: 'GET',
+        path,
+        durationMs: performance.now() - started,
+        status: res.status,
+      });
+      if (io.retry && isTransientStatus(res.status)) {
+        throw new RetryableError(new Error(`${op}: HTTP ${res.status} for ${path}`), retryAfterMs(res));
+      }
+      if (!res.ok) {
+        return { body: undefined, nextPage: null, status: res.status };
+      }
+      try {
+        const parsed = (await res.json()) as T;
+        return { body: parsed, nextPage: res.headers.get('x-next-page'), status: res.status };
+      } catch (err) {
+        throw asRetryable(err, io.signal);
+      }
+    };
+
+    return withRetry(attempt, { signal: io.signal, attempts: io.retry ? undefined : 1 });
   }
 
   async restRequest(method: string, path: string, body?: unknown, op = 'restRequest', io?: RequestIO): Promise<Response> {

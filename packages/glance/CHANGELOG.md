@@ -13,8 +13,14 @@
   30s), half-jittered exponential backoff. A caller abort is never retried and
   surfaces as the signal's reason. Every other method's behavior is unchanged:
   no signal, one attempt, exactly as before.
-- `GitLabProvider.restRequest` gains optional trailing `op` and
-  `io: { signal?, retry? }` parameters; existing calls are unaffected.
+- `GitLabProvider.restRequest` gains an optional trailing `io: { signal?, retry? }`
+  parameter after the existing `op`; existing calls are unaffected.
+- The retrying REST reads (`fetchProject`, `fetchProjectPipelines`,
+  `fetchUserEvents`) now cover the body read under the same per-attempt
+  deadline as the request itself, so a stalled or dropped body is retried
+  too. An exhausted transient on one of these now surfaces as the
+  op-prefixed message (e.g. `fetchProject: HTTP 500 for /projects/g%2Fp`)
+  rather than 0.23.0's caller-formatted form.
 
 ## 0.23.0
 
