@@ -195,7 +195,7 @@ describe("gateWait", () => {
     expect(written.answeredAt).toBe(3000);
   });
 
-  test("loops one timed-out eventsWait (no events) then returns on the second call", async () => {
+  test("loops one timed-out eventsWait (no events) then returns on the second call, threading the cursor throughout", async () => {
     const gateId = "gate-looped";
     writeGateState(gateFilePath(MR_URL), {
       gateId,
@@ -212,11 +212,13 @@ describe("gateWait", () => {
       payload: { gateId, answers: { tiers: ["nit"], outcome: "comment" }, by: "board-ui", answeredAt: 4000 },
       emittedAt: 4000,
     };
+    // Non-zero cursors throughout, so a bug that drops the threaded value in
+    // favor of `undefined` (or a stray 0) cannot pass by coincidence.
     const { io, calls } = fakeIo({
-      listResults: [{ ok: true, data: { events: [], cursor: 0 } }],
+      listResults: [{ ok: true, data: { events: [], cursor: 77 } }],
       waitResults: [
-        { ok: true, data: { events: [], cursor: 0 } },
-        { ok: true, data: { events: [answerEvent], cursor: 43 } },
+        { ok: true, data: { events: [], cursor: 150 } },
+        { ok: true, data: { events: [answerEvent], cursor: 200 } },
       ],
     });
 
@@ -224,6 +226,30 @@ describe("gateWait", () => {
 
     expect(result).toEqual({ answers: { tiers: ["nit"], outcome: "comment" }, by: "board-ui", answeredAt: 4000 });
     expect(calls.eventsWait.length).toBe(2);
+    // First eventsWait seeds `after` from the eventsList cursor (77) --
+    // the race-safe handoff that keeps a parked-resume answer from being
+    // missed between the journal check and the first wait.
+    expect(calls.eventsWait[0]!.after).toBe(77);
+    // Second eventsWait re-seeds `after` from the first waitRes's own
+    // cursor (150), not the original list cursor and not undefined.
+    expect(calls.eventsWait[1]!.after).toBe(150);
+  });
+
+  test("eventsList failure fails loudly instead of silently treating the journal as empty", async () => {
+    const gateId = "gate-list-fails";
+    writeGateState(gateFilePath(MR_URL), {
+      gateId,
+      mrUrl: MR_URL,
+      iid: IID,
+      kind: "review-post",
+      status: "open",
+      openedAt: 1000,
+      questions: QUESTIONS,
+    });
+    const { io, calls } = fakeIo({ listResults: [{ ok: false, error: "daemon unreachable" }] });
+
+    await expect(gateWait(statePath, io)).rejects.toThrow(/daemon unreachable/);
+    expect(calls.eventsWait.length).toBe(0);
   });
 });
 

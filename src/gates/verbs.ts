@@ -101,8 +101,11 @@ export async function gateWait(
   const pattern = `board/gate/answered/${gate.gateId}`;
 
   const listRes = await io.eventsList({ pattern });
-  let answer = listRes.ok && listRes.data ? findAnswer(listRes.data.events, pattern) : undefined;
-  let after = listRes.ok && listRes.data ? listRes.data.cursor : undefined;
+  if (!listRes.ok || !listRes.data) {
+    throw new Error(`events:list failed: ${listRes.error ?? "unknown error"}`);
+  }
+  let answer = findAnswer(listRes.data.events, pattern);
+  let after = listRes.data.cursor;
 
   // The daemon caps a single events:wait around 240s -- loop until an answer
   // event actually arrives rather than treating a timeout as absence.
