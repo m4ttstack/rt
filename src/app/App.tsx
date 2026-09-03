@@ -14,6 +14,7 @@ import { LeaderboardTable } from "./components/LeaderboardTable";
 import { MetricCards } from "./components/MetricCards";
 import { RefreshProgress as RefreshProgressBar } from "./components/RefreshProgress";
 import { usePersistentState } from "./hooks/usePersistentState";
+import { SettingsPage } from "./settings/SettingsPage";
 
 interface RangeState {
   range: string;
@@ -22,16 +23,6 @@ interface RangeState {
 }
 
 const queryClient = new QueryClient();
-
-// Standalone placeholder until Task 7 wires up settings-kit.
-function SettingsPlaceholder() {
-  return (
-    <div className="mx-auto max-w-[96rem] px-6 py-8">
-      <h1 className="text-2xl font-bold tracking-tight text-foreground">Settings</h1>
-      <p className="mt-1 text-sm text-muted-foreground">Coming soon.</p>
-    </div>
-  );
-}
 
 export function App() {
   return (
@@ -123,7 +114,7 @@ function AppShell() {
         <RailLink icon="settings" label="Settings" href="/settings" />
       </MattstackShell.Rail>
 
-      {route.name === "settings" && <SettingsPlaceholder />}
+      {route.name === "settings" && <SettingsPage />}
 
       {(route.name === "user" || route.name === "stat") && (
         <DetailPage
