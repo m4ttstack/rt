@@ -1,4 +1,4 @@
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -549,5 +549,83 @@ describe("runRefresh: push events stay project-scoped", () => {
     const stored = store.pushEventsBetween("2026-01-01T00:00:00.000Z", "2026-12-31T00:00:00.000Z");
     expect(stored).toHaveLength(1);
     expect(stored[0]).toMatchObject({ repositoryId: "gitlab:g/ok" });
+  });
+});
+
+/** Pull the identifiers out of a buildVerifyQuery query string, alias-ordered (mirrors linear-resolve.test.ts). */
+const idsInQuery = (query: string): string[] =>
+  [...query.matchAll(/issue\(id: "([^"]+)"\)/g)].map((m) => m[1]!);
+
+/** Stub global fetch, the transport linearRequest actually calls, with a verify-query response. */
+function stubLinearVerify(): void {
+  vi.stubGlobal("fetch", async (_url: string, init?: RequestInit) => {
+    const { query } = JSON.parse(String(init?.body ?? "{}")) as { query: string };
+    const ids = idsInQuery(query);
+    return Response.json({
+      data: Object.fromEntries(
+        ids.map((id, i) => [
+          `_${i}`,
+          {
+            id: `uuid-${id}`,
+            identifier: id,
+            title: `Ticket ${id}`,
+            url: `https://linear.app/acme/issue/${id}`,
+            state: { type: "started", name: "In Progress" },
+          },
+        ]),
+      ),
+    });
+  });
+}
+
+describe("runRefresh: Linear issue persistence", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("persists resolved Linear issues so linearIssuesForMrKeys can find them", async () => {
+    const store = getStore();
+    const { provider } = makeFakeProvider({
+      fetchMergeRequestIndex: async () => [
+        indexRow({ iid: 42, title: "ACME-9001: fix the thing", state: "merged", authorUsername: "alice" }),
+      ],
+    });
+    stubLinearVerify();
+
+    await runRefresh({ store, provider, settings: settings(), env: { ...ENV, linearApiKey: "key" }, window: WINDOW });
+
+    const issues = store.linearIssuesForMrKeys([mrKey("g/p", 42)]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({
+      identifier: "ACME-9001",
+      linkedMrs: [{ iid: 42, projectPath: "g/p" }],
+    });
+  });
+
+  // resolveLinearTickets returns [] when linearApiKey is absent; upsertLinearIssues([])
+  // must be a no-op so an unconfigured run does not wipe issues an earlier run stored.
+  it("leaves previously stored Linear issues intact on a run with no linearApiKey", async () => {
+    const store = getStore();
+    store.upsertLinearIssues([
+      {
+        id: "uuid-ACME-1",
+        identifier: "ACME-1",
+        title: "Ticket",
+        url: "https://linear.app/acme/issue/ACME-1",
+        assignedUser: "alice",
+        linkedMrs: [{ iid: 42, projectPath: "g/p" }],
+        stateType: "started",
+        stateName: "In Progress",
+      },
+    ]);
+    const { provider } = makeFakeProvider({
+      fetchMergeRequestIndex: async () => [
+        indexRow({ iid: 42, title: "ACME-9001: fix the thing", state: "merged", authorUsername: "alice" }),
+      ],
+    });
+
+    await runRefresh({ store, provider, settings: settings(), env: ENV, window: WINDOW });
+
+    const issues = store.linearIssuesForMrKeys([mrKey("g/p", 42)]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({ identifier: "ACME-1" });
   });
 });
