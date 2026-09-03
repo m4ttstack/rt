@@ -13,7 +13,7 @@ import { upsertEnvKeys } from "./env-file.ts";
 import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, channelForMR, configuredSlackChannels, projectPathFromWebUrl, reviewSkillForTab, visibleMrsFor, type BoardMR, type SyncScopeRead } from "./data.ts";
 import { GitLabProvider, ReadBackFailedError, NoteMutator, parseRepoId } from "@mattstack/glance";
 import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } from "./discussions.ts";
-import { readProjectMRs, readDiscussions, subscribe, paneFocus } from "@mattstack/rt-client";
+import { readProjectMRs, readDiscussions, subscribe } from "@mattstack/rt-client";
 import { SnapshotCache } from "./cache.ts";
 import { isLocalRequest } from "./local.ts";
 import { settingsHandler } from "@mattstack/settings-kit/server";
@@ -21,7 +21,8 @@ import { readReviewStates, pruneReviewStates, reviewFilePath, writeReviewState, 
 import { readRespondStates, pruneRespondStates, respondFilePath, writeRespondState, parseRespondRequestBody, attachResponds } from "./respond-state.ts";
 import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, parseDoctorRequestBody, attachDoctors } from "./doctor-state.ts";
 import { readDrafts, heldDraftsByMr, attachDrafts, pruneDrafts, draftFilePath, writeDraft } from "./draft-state.ts";
-import { launchReview, launchRespond, launchDoctor, launchLegacyResume, focusTab, parseLaunchNote, mrTabLabel, reopenPrompt } from "./herdr.ts";
+import { launchReview, launchRespond, launchDoctor, launchLegacyResume, parseLaunchNote, mrTabLabel, reopenPrompt } from "./herdr.ts";
+import { focusPane } from "./focus-pane.ts";
 import { resumeAgentPane } from "./agent-launch.ts";
 import { launchReReview } from "./review-launch.ts";
 import { readSlackRefs, attachSlack, resolveSlackRef, reactToMR, unreactFromMR, postToSlack, slackSweepTargets, sweepSlackRefs } from "./slack.ts";
@@ -127,16 +128,6 @@ function kickOutbox(client: SwitchboardClient): void {
   void drainOutbox((d) => client.publish(d)).catch((err) => {
     console.error(`peer: outbox drain failed: ${err instanceof Error ? err.message : err}`);
   });
-}
-
-/** Tray-raised focus when a paneId is on file; herdr-internal tab focus otherwise. */
-export async function focusPane(state: { paneId?: string; tabId?: string }): Promise<void> {
-  if (state.paneId) {
-    const res = await paneFocus({ paneId: state.paneId });
-    if (res.ok) return;
-    console.error(`pane focus failed, falling back to tab focus: ${res.error}`);
-  }
-  if (state.tabId) await focusTab(state.tabId);
 }
 
 /** Per-MR peer state for the board payload: how peers with a review of this MR
