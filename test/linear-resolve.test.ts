@@ -1,16 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { resolveLinearTickets } from "../server/linear/fetch.js";
-import { linearRequest } from "../server/linear/client.js";
 import { isValidLinearId, putLinearIds } from "../server/cache/mr-store.js";
 import { mr } from "./fixtures.js";
 import type { LeaderboardWarning } from "../shared/types.js";
 
-vi.mock("../server/linear/client.js", () => ({
-  linearRequest: vi.fn(),
-}));
+// The mock instance is hoisted alongside vi.mock so the factory closes over the
+// same fn the test drives; vi.mocked() on the import does not survive Bun.
+const { mocked } = vi.hoisted(() => ({ mocked: vi.fn() }));
 
-const mocked = vi.mocked(linearRequest);
+vi.mock("../server/linear/client.js", () => ({ linearRequest: mocked }));
 
 /** Pull the identifiers out of a buildVerifyQuery query string, alias-ordered. */
 const idsInQuery = (query: string): string[] =>
