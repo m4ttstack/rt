@@ -332,10 +332,10 @@ documented limitation, not a defect, and the README says so.
 
 ## 8. Sub-project 5: UI migration
 
-Designed on 2026-09-02 and approved. The canvas is
-https://claude.ai/code/artifact/b6cec1df-5aab-42b0-aea1-d69f7c77c5dd and its
-working files live in `docs/superpowers/design/boxscore-ui/` (regenerate with
-`node build.mjs`). Five artboards: leaderboard, leaderboard mid-refresh with
+Designed on 2026-09-02 and approved. The working files are the record:
+`docs/superpowers/design/boxscore-ui/` (regenerate the artboards with
+`node build.mjs`; published canvases of this design did not persist, so no
+artifact link is kept). Five artboards: leaderboard, leaderboard mid-refresh with
 trend on, cards, person detail with evidence, settings. Inputs the plan
 still needs beyond the canvas:
 
