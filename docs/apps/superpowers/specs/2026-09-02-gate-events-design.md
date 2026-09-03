@@ -301,7 +301,12 @@ run (console): click, `paneFocus`, terminal raises on the right tab.
    dedup mapping, claudeCommand retirement.
 3. **focus lane**: board route + button swap; console route + button.
 4. **gate lane**: status-bin gate verbs; board gate store/SSE/card/answer
-   endpoint; wrapper skill combined gate.
+   endpoint; wrapper skill combined gate. Also `reReviewResumePrompt` in
+   board's `src/herdr.ts`: the resumed re-review's directive is hardcoded
+   board prose (not skill-governed) and currently instructs "follow the same
+   posting gates"; it must be rewritten to direct the resumed session through
+   the status-bin gate verbs, since the resumed transcript remembers the old
+   two-gate contract.
 5. **lifecycle lane**: auto-close on done; park-after-grace; resume-with-
    answer; boot reconcile.
 
