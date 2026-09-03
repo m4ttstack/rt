@@ -109,6 +109,7 @@ function AppShell() {
     <MattstackShell
       name="boxscore"
       appName="boxscore"
+      headerHeight={48}
       mark={<img src="/favicon.svg" alt="" width={30} height={30} style={{ display: "block", flex: "none" }} />}
     >
       <MattstackShell.Rail>
