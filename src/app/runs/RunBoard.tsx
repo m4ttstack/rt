@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Anchor,
   Collapse,
@@ -14,12 +14,7 @@ import { AnimatedChevron } from '@mattstack/app-kit/icons';
 import { Link } from 'wouter';
 
 import { PAGE_ROW_HEIGHT } from '../chrome';
-import {
-  BAND_ORDER,
-  computeBandIds,
-  type Band,
-  type BoardRun,
-} from './bands';
+import { BAND_ORDER, computeBandIds, type Band, type BoardRun } from './bands';
 import { CommandProvenance } from './CommandProvenance';
 import { RunRow } from './RunRow';
 import {
@@ -82,7 +77,16 @@ export function RunBoard() {
 
   // Finished runs are the least actionable band, and the longest -- start
   // it collapsed so the page opens on what needs attention, not history.
-  const [finishedOpened, setFinishedOpened] = useState(false);
+  const [finishedOpened, setFinishedOpened] = useState(() => {
+    return sessionStorage.getItem('finishedOpened') === 'True';
+  });
+
+  function onCollapseClick() {
+    setFinishedOpened(prev => {
+      sessionStorage.setItem('finishedOpened', !prev ? 'True' : 'False');
+      return !prev;
+    });
+  }
 
   // Computed once here (rather than inline per band below) so the same
   // capped, sorted set that gets RENDERED is also what the enrich join
@@ -172,7 +176,7 @@ export function RunBoard() {
                 {collapsible ? (
                   <UnstyledButton
                     data-testid="band-finished-toggle"
-                    onClick={() => setFinishedOpened(prev => !prev)}
+                    onClick={() => onCollapseClick()}
                     style={{ display: 'flex', alignItems: 'center', gap: 6 }}
                   >
                     <AnimatedChevron opened={opened} size={16} />
