@@ -257,7 +257,15 @@ New `gate` verb family beside `review-status`:
 The skills stay dumb: they never learn topic names or the bus; the status-bin
 owns the contract, symmetrically with review-status today.
 
-### wrapper skills (mattstack-skills; edited via rt skills compile)
+### wrapper skills (board repo `skills/`, symlinked live)
+
+Correction over an earlier draft: the wrappers are NOT mattstack-skills
+engines. They are hand-authored in the board repo (`skills/review/SKILL.md`,
+`skills/respond/`, `skills/doctor/`) and symlinked into `~/.claude/skills/`
+by `scripts/setup.ts`, so a wrapper edit is live on save with no compile
+pipeline. Only the team pack FILLS (the domain skills the manifest binds
+into the review slot) live in pack repos and go through each pack's own
+compile/bump/update pipeline.
 
 `board:review` replaces its two sequential posting gates with one combined
 gate: write the report, `gate open` with both questions, `gate wait`, then
@@ -285,8 +293,10 @@ The gate change also bumps the review slot contract (`mr-review@1` to
   reported levels plus the fixed comment/approve pair), `gate wait`, and
   handing the answer back to the domain skill to execute.
 
-The engine, the slot description, and any pack fill that implements its own
-posting gates are updated together through the compile/bump/update pipeline.
+The wrapper and its slot description are board-repo edits, live via the
+symlink. Any pack fill that implements its own posting gates is updated in
+its pack repo through that pack's compile/bump/update pipeline, as a rollout
+step alongside the wrapper change.
 
 ### console
 
@@ -363,8 +373,9 @@ run (console): click, `paneFocus`, terminal raises on the right tab.
    command with the full flag set).
 3. **focus lane**: board route + button swap; console route + button.
 4. **gate lane**: status-bin gate verbs (journal-first wait); board gate
-   store/SSE/card/answer endpoint; combined gate in the engine, slot
-   contract bump to `mr-review@2`, and affected pack fills, through the
+   store/SSE/card/answer endpoint; combined gate in the board-repo wrapper
+   with the slot contract bump to `mr-review@2` (live via symlink); affected
+   pack fills updated in their own repos through each pack's
    compile/bump/update pipeline.
 5. **lifecycle lane**: auto-close on done; park-after-grace; resume-with-
    answer; boot reconcile.
