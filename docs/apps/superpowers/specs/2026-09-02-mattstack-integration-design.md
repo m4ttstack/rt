@@ -276,9 +276,9 @@ server/
 ```
 
 `server/gitlab/` and `server/util/graphql.ts` are deleted; glance owns
-transport and pagination. `server/util/http.ts` stays: for Linear until it
-moves behind a client, and around the glance calls until the SDK gains
-retry and cancellation (section 9).
+transport and pagination. `server/util/http.ts` stays for Linear only, until
+it moves behind a client: glance 0.24.0 carries retry and cancellation, so
+the glance calls take a `signal` and need no wrapper (section 9).
 
 ### 7.2 Store
 
@@ -353,7 +353,7 @@ still needs beyond the canvas:
 - **Board reads `mattstack.roster`** behind its latch with `board.members` as fallback; retire `board.members` once both apps read the new key.
 - **Promote `board.projects`** to a suite key and point `boxscore.projects` at it.
 - **Daemon retains merged MRs** within `projectMrsWindowDays` once glance carries `mergedAt`; boxscore then serves the recent window from `project-mrs:read` and backfills only history.
-- **Retry and cancellation on the glance reads**, before sub-project 4 consumes them: an additive `signal?: AbortSignal` on the three option types and a bounded retry on 408/429/5xx inside the GraphQL runner and the REST page walker (a follow-up minor). The final review of sub-project 3 found that `runQuery` and `restRequest` are bare `fetch` calls, so today a 429 mid-walk fails the whole index and an in-flight walk cannot be cancelled. Until that lands, sub-project 4 keeps boxscore's `server/util/http.ts` retry wrapper around the SDK calls instead of deleting it (section 7.1).
+- ~~**Retry and cancellation on the glance reads**~~ DONE, shipped in `@mattstack/glance` 0.24.0 (2026-09-02): all six metric reads take `signal?: AbortSignal` and retry 408/429/5xx, dropped sockets, and per-attempt deadline expiry (3 attempts, 30s each, Retry-After honored, caller aborts never retried), covering both the GraphQL runner and the REST page walker including the body read. Sub-project 4 therefore deletes boxscore's `server/util/http.ts` wrapper rather than keeping it around the SDK calls (section 7.1).
 - **`preparedAt` on `MergeRequestIndexRow`**, a cheap scalar, when the latency metrics start using it as the clock start.
 - **GitHub implementations** of the 6.2 methods.
 
