@@ -1,7 +1,7 @@
 import { useMemo, useState, type CSSProperties } from "react";
 import { useLocation } from "wouter";
 
-import { Badge, Table, Text } from "@mattstack/app-kit/core";
+import { Badge, Paper, Table, Text } from "@mattstack/app-kit/core";
 import { useSchemeColors } from "@mattstack/app-kit/hooks";
 import { Icon } from "@mattstack/app-kit/icons";
 
@@ -17,6 +17,7 @@ import {
   sortValue,
 } from "../columns";
 import { DeltaBadge } from "./DeltaBadge";
+import styles from "./leaderboard.module.css";
 import { MetricTip } from "./MetricTip";
 import { Tooltip } from "./Tooltip";
 
@@ -58,83 +59,139 @@ export function LeaderboardTable({ data, trend }: Props) {
   };
 
   return (
-    <Table>
-      <Table.Thead>
-        <Table.Tr>
-          <Table.Th ta="left" style={{ ...STICKY_LEFT, backgroundColor: bg.level4 }}>
-            Person
-          </Table.Th>
-          {GROUP_ORDER.map((g) => {
-            const cols = COLUMNS.filter((c) => c.group === g);
-            if (cols.length === 0) return null;
-            const meta = GROUP_META[g];
-            return (
-              <Table.Th key={g} ta="left" colSpan={cols.length} style={{ borderLeft: BORDER }}>
-                <Text component="span" size="xs" fw={600} tt="uppercase" c={GROUP_META[g].accent}>
-                  {meta.label}
-                </Text>
-                {meta.hint && (
-                  <Text component="span" size="xs" c="dimmed">
-                    {" "}
-                    ({meta.hint})
-                  </Text>
-                )}
+    <Paper
+      withBorder
+      radius="md"
+      style={{ backgroundColor: bg.monochrome, overflow: "hidden" }}
+    >
+      <Table.ScrollContainer minWidth={1200}>
+        <Table headerAccent={false} highlightOnHover>
+          <Table.Thead>
+            <Table.Tr>
+              <Table.Th
+                ta="left"
+                style={{ ...STICKY_LEFT, backgroundColor: bg.monochrome }}
+              >
+                Person
               </Table.Th>
-            );
-          })}
-        </Table.Tr>
-        <Table.Tr>
-          <Table.Th ta="left" style={{ ...STICKY_LEFT, backgroundColor: bg.level4 }}>
-            Name
-          </Table.Th>
-          {COLUMNS.map((col, i) => (
-            <Table.Th
-              key={col.key}
-              ta="right"
-              style={{
-                borderLeft: i > 0 && COLUMNS[i - 1]!.group !== col.group ? BORDER : undefined,
-                color: col.key === sortKey ? "var(--mantine-color-text)" : undefined,
-              }}
-            >
-              <Tooltip content={<MetricTip col={col} />}>
-                <span data-testid={`sort-${col.key}`} style={{ cursor: "pointer" }} onClick={() => onSort(col)}>
-                  {col.label}
-                  {col.key === sortKey && (
-                    <Icon
-                      name={sortDir === "desc" ? "arrowDown" : "arrowUp"}
-                      size={11}
-                      style={{ marginLeft: 3, verticalAlign: "middle" }}
-                    />
-                  )}
-                </span>
-              </Tooltip>
-            </Table.Th>
-          ))}
-        </Table.Tr>
-      </Table.Thead>
-      <Table.Tbody>
-        {rows.map((row) => (
-          <Row key={row.username} row={row} trend={trend} sortKey={sortKey} />
-        ))}
-        {rows.length === 0 && (
-          <Table.Tr>
-            <Table.Td colSpan={COLUMNS.length + 1} ta="center" py="xl" c="dimmed">
-              No users configured, or none resolved on the instance.
-            </Table.Td>
-          </Table.Tr>
-        )}
-      </Table.Tbody>
-    </Table>
+              {GROUP_ORDER.map((g) => {
+                const cols = COLUMNS.filter((c) => c.group === g);
+                if (cols.length === 0) return null;
+                const meta = GROUP_META[g];
+                return (
+                  <Table.Th
+                    key={g}
+                    ta="left"
+                    colSpan={cols.length}
+                    style={{ borderLeft: BORDER }}
+                  >
+                    <Text
+                      component="span"
+                      size="xs"
+                      fw={600}
+                      tt="uppercase"
+                      c={GROUP_META[g].accent}
+                    >
+                      {meta.label}
+                    </Text>
+                    {meta.hint && (
+                      <Text component="span" size="xs" c="dimmed">
+                        {" "}
+                        ({meta.hint})
+                      </Text>
+                    )}
+                  </Table.Th>
+                );
+              })}
+            </Table.Tr>
+            <Table.Tr>
+              <Table.Th
+                ta="left"
+                style={{ ...STICKY_LEFT, backgroundColor: bg.monochrome }}
+              >
+                Name
+              </Table.Th>
+              {COLUMNS.map((col, i) => (
+                <Table.Th
+                  key={col.key}
+                  ta="right"
+                  style={{
+                    whiteSpace: "nowrap",
+                    borderLeft:
+                      i > 0 && COLUMNS[i - 1]!.group !== col.group
+                        ? BORDER
+                        : undefined,
+                    color:
+                      col.key === sortKey
+                        ? "var(--mantine-color-text)"
+                        : undefined,
+                  }}
+                >
+                  <Tooltip content={<MetricTip col={col} />}>
+                    <span
+                      data-testid={`sort-${col.key}`}
+                      style={{ cursor: "pointer" }}
+                      onClick={() => onSort(col)}
+                    >
+                      {col.label}
+                      {col.key === sortKey && (
+                        <Icon
+                          name={sortDir === "desc" ? "arrowDown" : "arrowUp"}
+                          size={11}
+                          style={{ marginLeft: 3, verticalAlign: "middle" }}
+                        />
+                      )}
+                    </span>
+                  </Tooltip>
+                </Table.Th>
+              ))}
+            </Table.Tr>
+          </Table.Thead>
+          <Table.Tbody>
+            {rows.map((row) => (
+              <Row
+                key={row.username}
+                row={row}
+                trend={trend}
+                sortKey={sortKey}
+              />
+            ))}
+            {rows.length === 0 && (
+              <Table.Tr>
+                <Table.Td
+                  colSpan={COLUMNS.length + 1}
+                  ta="center"
+                  py="xl"
+                  c="dimmed"
+                >
+                  No users configured, or none resolved on the instance.
+                </Table.Td>
+              </Table.Tr>
+            )}
+          </Table.Tbody>
+        </Table>
+      </Table.ScrollContainer>
+    </Paper>
   );
 }
 
-function Row({ row, trend, sortKey }: { row: UserRow; trend: boolean; sortKey: string }) {
+function Row({
+  row,
+  trend,
+  sortKey,
+}: {
+  row: UserRow;
+  trend: boolean;
+  sortKey: string;
+}) {
   const [, setLocation] = useLocation();
   const { bg } = useSchemeColors();
   const goToStat = (stat: string) =>
-    setLocation(`/user/${encodeURIComponent(row.username)}/${encodeURIComponent(stat)}`);
+    setLocation(
+      `/user/${encodeURIComponent(row.username)}/${encodeURIComponent(stat)}`,
+    );
 
-  const rowBg = row.isCurrentUser ? bg.color("accent") : undefined;
+  const rowBg = row.isCurrentUser ? bg.lightened("accent") : undefined;
 
   return (
     <Table.Tr
@@ -142,13 +199,19 @@ function Row({ row, trend, sortKey }: { row: UserRow; trend: boolean; sortKey: s
       data-current-user={row.isCurrentUser ? "true" : undefined}
       style={{ backgroundColor: rowBg, opacity: row.resolved ? 1 : 0.5 }}
     >
-      <Table.Td style={{ ...STICKY_LEFT, backgroundColor: rowBg ?? bg.level2 }}>
+      <Table.Td
+        style={{ ...STICKY_LEFT, backgroundColor: rowBg ?? bg.monochrome }}
+      >
         <button
+          className={styles.nameButton}
           onClick={() => goToStat(sortKey)}
-          style={{ textAlign: "left", background: "none", border: "none", cursor: "pointer", padding: 0, font: "inherit" }}
           title="View this person's stat details"
         >
-          <Text component="span" fw={row.isCurrentUser ? 600 : 400} c={row.isCurrentUser ? "accent" : undefined}>
+          <Text
+            component="span"
+            fw={row.isCurrentUser ? 600 : 400}
+            c={row.isCurrentUser ? "accent" : undefined}
+          >
             {row.name ?? row.username}
           </Text>
           <Text component="span" size="xs" c="dimmed" ml={4}>
@@ -177,7 +240,12 @@ function Row({ row, trend, sortKey }: { row: UserRow; trend: boolean; sortKey: s
             }}
             title={`${row.name ?? row.username} · ${col.label} details`}
           >
-            <Cell row={row} col={col} trend={trend} rank={rankValue(row.metrics, col) ?? undefined} />
+            <Cell
+              row={row}
+              col={col}
+              trend={trend}
+              rank={rankValue(row.metrics, col) ?? undefined}
+            />
           </Table.Td>
         );
       })}
@@ -215,7 +283,7 @@ function Cell({
     <span title={p90 !== null ? `p90: ${p90}h` : undefined}>
       {formatValue(v, col)}
       {row.isCurrentUser && rank !== undefined && (
-        <Badge ml={6} size="xs" variant="light" color="accent">
+        <Badge ml={6} size="xs" variant="default">
           #{rank}
         </Badge>
       )}

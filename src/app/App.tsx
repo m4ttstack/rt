@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { MattstackShell, NotFoundPage } from "@mattstack/app-kit/app";
-import { Alert, Stack, Text } from "@mattstack/app-kit/core";
+import { Alert, PageShell, Stack, Text } from "@mattstack/app-kit/core";
 import { Icon } from "@mattstack/app-kit/icons";
 import { RailLink } from "@mattstack/app-kit/router";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -10,7 +10,7 @@ import { isColdCache, type RangeSelection } from "./api";
 import { useLeaderboard } from "./hooks/useLeaderboard";
 import { useRefreshJob } from "./hooks/useRefreshJob";
 import { useAppRoute } from "./routes";
-import { Controls, type ViewMode } from "./components/Controls";
+import { Controls, ControlsMeta, type ViewMode } from "./components/Controls";
 import { DetailPage } from "./components/DetailPage";
 import { LeaderboardTable } from "./components/LeaderboardTable";
 import { MetricCards } from "./components/MetricCards";
@@ -44,13 +44,21 @@ function AppShell() {
   // falls through to blank once the cache-only probe itself settles.
   const [awaitingRefresh, setAwaitingRefresh] = useState(false);
   // Persisted across reloads so the last-selected window/toggles stick.
-  const [rangeState, setRangeState] = usePersistentState<RangeState>("forge-range", { range: "30d" });
+  const [rangeState, setRangeState] = usePersistentState<RangeState>(
+    "forge-range",
+    { range: "30d" },
+  );
   const [trend, setTrend] = usePersistentState<boolean>("forge-trend", false);
   const [view, setView] = usePersistentState<ViewMode>("forge-view", "table");
   const route = useAppRoute();
 
   const selection = useMemo<RangeSelection>(
-    () => ({ range: rangeState.range, start: rangeState.start, end: rangeState.end, trend }),
+    () => ({
+      range: rangeState.range,
+      start: rangeState.start,
+      end: rangeState.end,
+      trend,
+    }),
     [rangeState.range, rangeState.start, rangeState.end, trend],
   );
 
@@ -102,7 +110,9 @@ function AppShell() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leaderboardQuery.data]);
 
-  const error = jobError ?? (leaderboardQuery.error ? leaderboardQuery.error.message : null);
+  const error =
+    jobError ??
+    (leaderboardQuery.error ? leaderboardQuery.error.message : null);
   const loading = !data && (leaderboardQuery.isFetching || awaitingRefresh);
 
   return (
@@ -110,7 +120,15 @@ function AppShell() {
       name="boxscore"
       appName="boxscore"
       headerHeight={48}
-      mark={<img src="/favicon.svg" alt="" width={30} height={30} style={{ display: "block", flex: "none" }} />}
+      mark={
+        <img
+          src="/favicon.svg"
+          alt=""
+          width={30}
+          height={30}
+          style={{ display: "block", flex: "none" }}
+        />
+      }
     >
       <MattstackShell.Rail>
         <RailLink icon="star" label="Leaderboard" href="/" />
@@ -128,92 +146,106 @@ function AppShell() {
         />
       )}
 
-      {route.name === "not-found" && <NotFoundPage />}
+      {route.name === "not-found" && (
+        <PageShell>
+          <NotFoundPage />
+        </PageShell>
+      )}
 
       {route.name === "leaderboard" && (
-        <Stack gap="lg" px="xl" py="xl" style={{ maxWidth: "96rem", margin: "0 auto" }}>
-          <Stack gap={2}>
-            <Text fw={700} size="xl">
-              Boxscore
-            </Text>
-            <Text size="sm" c="dimmed" style={{ maxWidth: "56rem" }}>
-              GitLab performance across a hand-picked set ... volume metrics are gameable, so weigh
-              them against the quality columns. See the README caveats before this becomes a scoreboard.
-            </Text>
-          </Stack>
+        <PageShell>
+          <PageShell.Main>
+            <PageShell.Header
+              actions={
+                <Controls
+                  range={rangeState.range}
+                  start={rangeState.start}
+                  end={rangeState.end}
+                  onRange={(range, start, end) =>
+                    setRangeState({ range, start, end })
+                  }
+                  trend={trend}
+                  onTrend={setTrend}
+                  view={view}
+                  onView={setView}
+                  refreshing={refreshJob.refreshing}
+                  onRefresh={() => void refreshJob.start(selection)}
+                />
+              }
+            >
+              {data && <ControlsMeta data={data} />}
+            </PageShell.Header>
 
-          <Controls
-            range={rangeState.range}
-            start={rangeState.start}
-            end={rangeState.end}
-            onRange={(range, start, end) => setRangeState({ range, start, end })}
-            trend={trend}
-            onTrend={setTrend}
-            view={view}
-            onView={setView}
-            refreshing={refreshJob.refreshing}
-            onRefresh={() => void refreshJob.start(selection)}
-            data={data}
-          />
-
-          {refreshJob.refreshing && (
-            <RefreshProgressBar
-              progress={refreshJob.progress}
-              onCancel={() => {
-                // cancel() nulls the job without routing through onDone or onError, the only
-                // other paths that clear this, so a cancelled refresh would leave a Loading
-                // state with nothing running behind it.
-                setAwaitingRefresh(false);
-                refreshJob.cancel();
-              }}
-            />
-          )}
-
-          <Stack gap="md">
-            {error && (
-              <Alert color="red" title="Error" variant="light" icon={<Icon name="warning" size={16} />}>
-                {error}
-              </Alert>
-            )}
-
-            {!error && loading && <Text c="dimmed">Loading…</Text>}
-
-            {data && (
+            <PageShell.Content>
               <Stack gap="md">
-                {data.warnings.length > 0 && (
-                  <Alert color="warn" variant="light" icon={<Icon name="warning" size={16} />}>
-                    <Stack gap={4}>
-                      {data.warnings.map((w, i) => (
-                        <Text key={i} size="xs">
-                          {w.message}
-                        </Text>
-                      ))}
-                    </Stack>
+                {refreshJob.refreshing && (
+                  <RefreshProgressBar
+                    progress={refreshJob.progress}
+                    onCancel={() => {
+                      // cancel() nulls the job without routing through onDone or onError, the only
+                      // other paths that clear this, so a cancelled refresh would leave a Loading
+                      // state with nothing running behind it.
+                      setAwaitingRefresh(false);
+                      refreshJob.cancel();
+                    }}
+                  />
+                )}
+
+                {error && (
+                  <Alert
+                    color="red"
+                    title="Error"
+                    variant="light"
+                    icon={<Icon name="warning" size={16} />}
+                  >
+                    {error}
                   </Alert>
                 )}
 
-                {view === "table" ? (
-                  <LeaderboardTable data={data} trend={trend} />
-                ) : (
-                  <MetricCards data={data} trend={trend} />
-                )}
+                {!error && loading && <Text c="dimmed">Loading…</Text>}
 
-                {Object.keys(data.metricNotes).length > 0 && (
-                  <Stack gap={2}>
-                    {Object.entries(data.metricNotes).map(([k, v]) => (
-                      <Text key={k} size="xs" c="dimmed">
-                        <Text component="span" fw={500} c="dimmed">
-                          {k}:
-                        </Text>{" "}
-                        {v}
-                      </Text>
-                    ))}
+                {data && (
+                  <Stack gap="md">
+                    {data.warnings.length > 0 && (
+                      <Alert
+                        color="warn"
+                        variant="light"
+                        icon={<Icon name="warning" size={16} />}
+                      >
+                        <Stack gap={4}>
+                          {data.warnings.map((w, i) => (
+                            <Text key={i} size="xs">
+                              {w.message}
+                            </Text>
+                          ))}
+                        </Stack>
+                      </Alert>
+                    )}
+
+                    {view === "table" ? (
+                      <LeaderboardTable data={data} trend={trend} />
+                    ) : (
+                      <MetricCards data={data} trend={trend} />
+                    )}
+
+                    {Object.keys(data.metricNotes).length > 0 && (
+                      <Stack gap={2}>
+                        {Object.entries(data.metricNotes).map(([k, v]) => (
+                          <Text key={k} size="xs" c="dimmed">
+                            <Text component="span" fw={500} c="dimmed">
+                              {k}:
+                            </Text>{" "}
+                            {v}
+                          </Text>
+                        ))}
+                      </Stack>
+                    )}
                   </Stack>
                 )}
               </Stack>
-            )}
-          </Stack>
-        </Stack>
+            </PageShell.Content>
+          </PageShell.Main>
+        </PageShell>
       )}
     </MattstackShell>
   );

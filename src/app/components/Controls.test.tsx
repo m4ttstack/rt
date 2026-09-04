@@ -38,18 +38,26 @@ describe("Controls", () => {
     expect(onRange).not.toHaveBeenCalled();
     expect(screen.getByLabelText("Start")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Start"), { target: { value: "2026-08-01" } });
-    fireEvent.change(screen.getByLabelText("End"), { target: { value: "2026-08-31" } });
+    fireEvent.change(screen.getByLabelText("Start"), {
+      target: { value: "2026-08-01" },
+    });
+    fireEvent.change(screen.getByLabelText("End"), {
+      target: { value: "2026-08-31" },
+    });
     fireEvent.click(screen.getByRole("button", { name: "Apply" }));
 
-    expect(onRange).toHaveBeenCalledWith("custom", new Date("2026-08-01").toISOString(), new Date("2026-08-31").toISOString());
+    expect(onRange).toHaveBeenCalledWith(
+      "custom",
+      new Date("2026-08-01").toISOString(),
+      new Date("2026-08-31").toISOString(),
+    );
   });
 
-  it("toggles trend via the switch", () => {
+  it("toggles trend via the segmented control", () => {
     const onTrend = vi.fn();
     renderWithProviders(<Controls {...baseProps({ onTrend })} />);
 
-    fireEvent.click(screen.getByLabelText("Trend vs prior"));
+    fireEvent.click(screen.getByRole("radio", { name: "Trend" }));
 
     expect(onTrend).toHaveBeenCalledWith(true);
   });

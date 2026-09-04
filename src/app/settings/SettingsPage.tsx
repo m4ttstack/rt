@@ -1,8 +1,28 @@
 import { useEffect, useState } from "react";
 
-import { ActionIcon, Alert, Badge, Button, Group, Loader, NumberInput, Paper, Select, Stack, Text, TagsInput, TextInput } from "@mattstack/app-kit/core";
+import {
+  ActionIcon,
+  Alert,
+  Badge,
+  Button,
+  Group,
+  Loader,
+  NumberInput,
+  PageShell,
+  Paper,
+  Select,
+  Stack,
+  Text,
+  TagsInput,
+  TextInput,
+} from "@mattstack/app-kit/core";
 import { Icon } from "@mattstack/app-kit/icons";
-import { useSettingKey, useSettingsScope, type SettingKeyState, type SettingsScopeState } from "@mattstack/settings-kit/react";
+import {
+  useSettingKey,
+  useSettingsScope,
+  type SettingKeyState,
+  type SettingsScopeState,
+} from "@mattstack/settings-kit/react";
 
 import {
   COMPOSITE_SHAPES,
@@ -38,7 +58,11 @@ const ROW_BORDER = "1px solid var(--mantine-color-default-border)";
 
 function scopeBadge(scope: string) {
   return (
-    <Badge size="xs" variant="light" color={scope === "team" ? "purple" : "cyan"}>
+    <Badge
+      size="xs"
+      variant="light"
+      color={scope === "team" ? "purple" : "cyan"}
+    >
       {scope} store
     </Badge>
   );
@@ -61,7 +85,15 @@ function useRowSave(store: SettingsScopeState, def: ConfigDef) {
   return { busy, error, save };
 }
 
-function StringListControl({ def, value, row }: { def: ConfigDef; value: unknown; row: ReturnType<typeof useRowSave> }) {
+function StringListControl({
+  def,
+  value,
+  row,
+}: {
+  def: ConfigDef;
+  value: unknown;
+  row: ReturnType<typeof useRowSave>;
+}) {
   const list = Array.isArray(value) ? (value as string[]) : [];
   return (
     <TagsInput
@@ -97,10 +129,18 @@ function LeavesControl({
             label={path}
             size="xs"
             w={110}
-            value={type === "number" ? (typeof leaf === "number" ? leaf : "") : String(leaf ?? "")}
+            value={
+              type === "number"
+                ? typeof leaf === "number"
+                  ? leaf
+                  : ""
+                : String(leaf ?? "")
+            }
             disabled={row.busy}
             aria-label={label}
-            onChange={(v) => void row.save(setLeaf(value, path, v === "" ? undefined : v))}
+            onChange={(v) =>
+              void row.save(setLeaf(value, path, v === "" ? undefined : v))
+            }
           />
         );
       })}
@@ -108,7 +148,15 @@ function LeavesControl({
   );
 }
 
-function SelectControl({ def, value, row }: { def: ConfigDef; value: unknown; row: ReturnType<typeof useRowSave> }) {
+function SelectControl({
+  def,
+  value,
+  row,
+}: {
+  def: ConfigDef;
+  value: unknown;
+  row: ReturnType<typeof useRowSave>;
+}) {
   return (
     <Select
       data={[...selectOptions(def)]}
@@ -124,7 +172,15 @@ function SelectControl({ def, value, row }: { def: ConfigDef; value: unknown; ro
   );
 }
 
-function ScalarControl({ def, value, row }: { def: ConfigDef; value: unknown; row: ReturnType<typeof useRowSave> }) {
+function ScalarControl({
+  def,
+  value,
+  row,
+}: {
+  def: ConfigDef;
+  value: unknown;
+  row: ReturnType<typeof useRowSave>;
+}) {
   const [text, setText] = useState(value === undefined ? "" : String(value));
   useEffect(() => setText(value === undefined ? "" : String(value)), [value]);
   return (
@@ -135,18 +191,26 @@ function ScalarControl({ def, value, row }: { def: ConfigDef; value: unknown; ro
       aria-label={def.key}
       onTextChange={setText}
       onBlur={() => {
-        if (text !== (value === undefined ? "" : String(value))) void row.save(text);
+        if (text !== (value === undefined ? "" : String(value)))
+          void row.save(text);
       }}
     />
   );
 }
 
-function SettingRow({ def, store }: { def: ConfigDef; store: SettingsScopeState }) {
+function SettingRow({
+  def,
+  store,
+}: {
+  def: ConfigDef;
+  store: SettingsScopeState;
+}) {
   const kind = rowKind(def);
   const row = useRowSave(store, def);
   const value = def.effective.value;
   const shape = COMPOSITE_SHAPES[def.key];
-  const malformed = shape !== undefined && value !== undefined && !matchesShape(shape, value);
+  const malformed =
+    shape !== undefined && value !== undefined && !matchesShape(shape, value);
 
   let control;
   if (def.secret || kind === "readonly" || malformed) {
@@ -159,7 +223,9 @@ function SettingRow({ def, store }: { def: ConfigDef; store: SettingsScopeState 
   } else if (kind === "stringList") {
     control = <StringListControl def={def} value={value} row={row} />;
   } else if (kind === "leaves" && shape?.kind === "leaves") {
-    control = <LeavesControl def={def} value={value} fields={shape.fields} row={row} />;
+    control = (
+      <LeavesControl def={def} value={value} fields={shape.fields} row={row} />
+    );
   } else if (kind === "select") {
     control = <SelectControl def={def} value={value} row={row} />;
   } else {
@@ -167,7 +233,14 @@ function SettingRow({ def, store }: { def: ConfigDef; store: SettingsScopeState 
   }
 
   return (
-    <Group align="flex-start" wrap="nowrap" gap="md" p="sm" data-key={def.key} style={{ borderTop: ROW_BORDER }}>
+    <Group
+      align="flex-start"
+      wrap="nowrap"
+      gap="md"
+      p="sm"
+      data-key={def.key}
+      style={{ borderTop: ROW_BORDER }}
+    >
       <Stack gap={2} style={{ minWidth: 220, flex: "none" }}>
         <Text size="sm" fw={600}>
           {keyLabel(def.key)}
@@ -279,7 +352,11 @@ function RosterRow({ keyState }: { keyState: SettingKeyState }) {
                 </Text>
               )}
               {roster.map((m, i) => (
-                <Group key={`${m.username}-${i}`} justify="space-between" wrap="nowrap">
+                <Group
+                  key={`${m.username}-${i}`}
+                  justify="space-between"
+                  wrap="nowrap"
+                >
                   <Group gap={6} wrap="nowrap">
                     <Text size="xs">{m.username}</Text>
                     {m.name && (
@@ -317,7 +394,12 @@ function RosterRow({ keyState }: { keyState: SettingKeyState }) {
                   onTextChange={setDraftName}
                   disabled={busy}
                 />
-                <Button size="xs" variant="default" disabled={busy || !draftUsername.trim()} onClick={add}>
+                <Button
+                  size="xs"
+                  variant="default"
+                  disabled={busy || !draftUsername.trim()}
+                  onClick={add}
+                >
                   Add
                 </Button>
               </Group>
@@ -342,7 +424,15 @@ function RosterRow({ keyState }: { keyState: SettingKeyState }) {
   );
 }
 
-function Section({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
+function Section({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle: string;
+  children: React.ReactNode;
+}) {
   return (
     <Stack gap="xs">
       <Group gap="sm" align="baseline">
@@ -368,50 +458,58 @@ export function SettingsPage() {
   const userDefs = store.defs.filter((d) => d.scopes[0] === "user");
 
   return (
-    <Stack gap="xl" px="xl" py="xl" style={{ maxWidth: "72rem", margin: "0 auto" }}>
-      <Stack gap={2}>
-        <Text fw={700} size="xl">
-          Settings
-        </Text>
-        <Text size="xs" c="dimmed">
-          rt settings explain &lt;key&gt; shows the full resolution chain for any key below.
-        </Text>
+    <PageShell>
+      <Stack gap="xl">
+        <Stack gap={2}>
+          <Text fw={700} size="xl">
+            Settings
+          </Text>
+          <Text size="xs" c="dimmed">
+            rt settings explain &lt;key&gt; shows the full resolution chain for
+            any key below.
+          </Text>
+        </Stack>
+
+        {store.error && (
+          <Alert color="red" title="Could not load settings">
+            {store.error}
+          </Alert>
+        )}
+        {roster.error && (
+          <Alert color="red" title="Could not load the roster">
+            {roster.error}
+          </Alert>
+        )}
+
+        {store.loading && !store.error ? (
+          <Loader size="sm" />
+        ) : (
+          <>
+            <Section title="Team" subtitle="team store · local until pushed">
+              {!roster.loading && !roster.error && (
+                <RosterRow keyState={roster} />
+              )}
+              {teamDefs.map((def) => (
+                <SettingRow key={def.key} def={def} store={store} />
+              ))}
+            </Section>
+
+            <Section
+              title="You"
+              subtitle="user store · follows you to every machine"
+            >
+              {userDefs.map((def) => (
+                <SettingRow key={def.key} def={def} store={store} />
+              ))}
+              {userDefs.length === 0 && (
+                <Text size="xs" c="dimmed" p="sm">
+                  no user-scoped keys
+                </Text>
+              )}
+            </Section>
+          </>
+        )}
       </Stack>
-
-      {store.error && (
-        <Alert color="red" title="Could not load settings">
-          {store.error}
-        </Alert>
-      )}
-      {roster.error && (
-        <Alert color="red" title="Could not load the roster">
-          {roster.error}
-        </Alert>
-      )}
-
-      {store.loading && !store.error ? (
-        <Loader size="sm" />
-      ) : (
-        <>
-          <Section title="Team" subtitle="team store · local until pushed">
-            {!roster.loading && !roster.error && <RosterRow keyState={roster} />}
-            {teamDefs.map((def) => (
-              <SettingRow key={def.key} def={def} store={store} />
-            ))}
-          </Section>
-
-          <Section title="You" subtitle="user store · follows you to every machine">
-            {userDefs.map((def) => (
-              <SettingRow key={def.key} def={def} store={store} />
-            ))}
-            {userDefs.length === 0 && (
-              <Text size="xs" c="dimmed" p="sm">
-                no user-scoped keys
-              </Text>
-            )}
-          </Section>
-        </>
-      )}
-    </Stack>
+    </PageShell>
   );
 }
