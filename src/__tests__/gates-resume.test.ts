@@ -210,13 +210,17 @@ function fakeEventIo(opts: {
     // `handleAnsweredEvent`'s single-subject cache-miss fetch, answered from
     // `facilityRows` instead of the page list.
     gateList: async (payload) => {
+      // The facility's cursor is a resume position, never a done-signal: the
+      // final (partial) page repeats a stable non-zero cursor, and only a
+      // short page (or a cursor that stops advancing) ends the pass. A zero
+      // cursor happens only when the whole table is empty.
       if (payload.subjectPrefix === "mr:") {
         const idx = payload.cursor ?? 0;
         const gates = pages[idx] ?? [];
-        return { ok: true, data: { gates, cursor: idx + 1 < pages.length ? idx + 1 : 0 } };
+        return { ok: true, data: { gates, cursor: Math.min(idx + 1, pages.length) } };
       }
       const gates = facilityRows.filter((r) => r.subject.startsWith(payload.subjectPrefix));
-      return { ok: true, data: { gates, cursor: 0 } };
+      return { ok: true, data: { gates, cursor: facilityRows.length > 0 ? 999 : 0 } };
     },
     resolveLaunchSkill: (mrUrl, tabId) => {
       calls.resolveLaunchSkill.push({ mrUrl, tabId });
