@@ -35,6 +35,12 @@ export interface PageShellSidebarProps {
   drawerProps?: Omit<DrawerProps, 'children' | 'opened' | 'onClose'>;
   /** Hides the floating collapse control on the rail's edge. @default false */
   hideCollapseButton?: boolean;
+  /**
+   * Right-edge divider on the desktop rail, the sidebar's parallel to
+   * `Header`'s `withBorder`. Keeps the sidebar legible against the content
+   * even when both land on the same near-white surface. @default true
+   */
+  withBorder?: boolean;
 }
 
 /**
@@ -51,6 +57,7 @@ export const Sidebar = ({
   scrollAreaProps,
   drawerProps,
   hideCollapseButton = false,
+  withBorder = true,
 }: PageShellSidebarProps) => {
   useIsInPageShell('Sidebar');
 
@@ -103,6 +110,11 @@ export const Sidebar = ({
       opened={sidebarOpen}
       width={sidebarWidth}
       bg={bgProp ?? bg}
+      style={
+        withBorder
+          ? { borderInlineEnd: '1px solid var(--mantine-color-default-border)' }
+          : undefined
+      }
       trigger={
         !hideCollapseButton && (
           <ActionIcon
