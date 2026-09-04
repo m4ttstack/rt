@@ -21,6 +21,10 @@ export interface DoctorState {
   /** Who queued this doctor: the policy engine or a human click. Drives the
       board's auto marker and the auto-only concurrency cap. */
   origin?: DoctorOrigin;
+  /** rt agent record id from the launch result. */
+  agentId?: string;
+  /** rt herdr pane id the agent landed in, from the launch result. */
+  paneId?: string;
   startedAt: number;
   updatedAt: number;
 }
@@ -52,6 +56,8 @@ export function writeDoctorState(
     tabId: patch.tabId ?? prev.tabId,
     workspaceId: patch.workspaceId ?? prev.workspaceId,
     origin: patch.origin ?? prev.origin,
+    agentId: patch.agentId ?? prev.agentId,
+    paneId: patch.paneId ?? prev.paneId,
     startedAt: prev.startedAt ?? now,
     updatedAt: now,
   };

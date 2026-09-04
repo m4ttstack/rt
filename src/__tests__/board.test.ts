@@ -24,6 +24,7 @@ const config: BoardConfig = {
   members: [{ username: "alice" }, { username: "bob" }],
   defaultMember: "all",
   staleAfterDays: 90,
+  gateGraceMinutes: 90,
   ticketPrefixes: [],
   title: "Test board",
   reviewCwd: "",

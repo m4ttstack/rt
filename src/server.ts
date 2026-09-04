@@ -1,27 +1,37 @@
 import { join, dirname, basename } from "path";
-import { readFileSync, writeFileSync, mkdirSync, watch } from "fs";
+import { readFileSync, writeFileSync, mkdirSync, rmSync, watch } from "fs";
 import pkg from "../package.json";
 import { APP_ROOT, IS_COMPILED } from "./app-root.ts";
 import { getClientAssets } from "./client-assets.ts";
 import styleCss from "./style.css" with { type: "text" };
 import faviconSvg from "./favicon.svg" with { type: "text" };
 import type { PullRequest, MRDetail } from "@mattstack/glance";
-import { loadConfig, loadGitLabToken, loadSlackToken, loadSwitchboardToken, loadSwitchboardAdminToken, saveMemberHidden, saveRosterMembers, saveSwitchboardUrl, saveTabs, parseConfig, CONFIG_PATH, daemonRepoField, repoIdentityField } from "./config.ts";
+import { loadConfig, loadGitLabToken, loadSlackToken, loadSwitchboardToken, loadSwitchboardAdminToken, saveMemberHidden, saveRosterMembers, saveSwitchboardUrl, saveTabs, parseConfig, CONFIG_PATH, daemonRepoField, repoIdentityField, resolveLaunchRepo, loadAgentSettings } from "./config.ts";
 import { memoizeAsync } from "./memoize-async.ts";
 import { resolveBoardSkill, type BoardSkillKind } from "./manifest-bindings.ts";
 import { upsertEnvKeys } from "./env-file.ts";
 import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, channelForMR, configuredSlackChannels, projectPathFromWebUrl, reviewSkillForTab, visibleMrsFor, type BoardMR, type SyncScopeRead } from "./data.ts";
 import { GitLabProvider, ReadBackFailedError, NoteMutator, parseRepoId } from "@mattstack/glance";
 import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } from "./discussions.ts";
-import { readProjectMRs, readDiscussions, subscribe } from "@mattstack/rt-client";
+import { readProjectMRs, readDiscussions, subscribe, gateList, gatePark, gateClose, gateAnswer as gateAnswerFacility, getSetting, setSetting } from "@mattstack/rt-client";
 import { SnapshotCache } from "./cache.ts";
 import { isLocalRequest } from "./local.ts";
 import { settingsHandler } from "@mattstack/settings-kit/server";
 import { readReviewStates, pruneReviewStates, reviewFilePath, writeReviewState, parseReviewRequestBody, attachReviews, readReviewReport } from "./review-state.ts";
 import { readRespondStates, pruneRespondStates, respondFilePath, writeRespondState, parseRespondRequestBody, attachResponds } from "./respond-state.ts";
 import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, parseDoctorRequestBody, attachDoctors } from "./doctor-state.ts";
+import { GATE_DIR, type GateAnswers } from "./gates/store.ts";
+import { ingestRelayFrame, reconcileGatesOnBoot, ensureBridgeRule, type EventBridgeRule, type GateEventFrame } from "./gates/ingest.ts";
+import { GateCache, attachGates } from "./gates/cache.ts";
+import { answerGate } from "./gates/answer.ts";
+import { handleAnsweredEvent, bootResumePass, type GateResumeEventIo } from "./gates/resume.ts";
+import { planSweep, pruneOffBoardGates } from "./gates/sweep.ts";
+import { executeSweepAction, type ExecuteSweepActionIo } from "./gates/execute-sweep-action.ts";
 import { readDrafts, heldDraftsByMr, attachDrafts, pruneDrafts, draftFilePath, writeDraft } from "./draft-state.ts";
-import { launchReview, launchRespond, launchDoctor, launchResume, focusTab, operatorNoteParagraph, parseLaunchNote } from "./herdr.ts";
+import { launchReview, launchRespond, launchDoctor, launchLegacyResume, parseLaunchNote, mrTabLabel, reopenPrompt, closeTab } from "./herdr.ts";
+import { closeOnDone, type TabIdResolver, type TabIdClearer } from "./close-on-done.ts";
+import { focusPane } from "./focus-pane.ts";
+import { resumeAgentPane } from "./agent-launch.ts";
 import { launchReReview } from "./review-launch.ts";
 import { readSlackRefs, attachSlack, resolveSlackRef, reactToMR, unreactFromMR, postToSlack, slackSweepTargets, sweepSlackRefs } from "./slack.ts";
 import { signalEmoji, parseAgentSignal } from "./agent-signal.ts";
@@ -100,6 +110,11 @@ async function gitlab(): Promise<GitLabProvider> {
   gitlabProvider ??= new GitLabProvider(config.gitlabHost, token);
   return gitlabProvider;
 }
+
+// Daemon-backed gate rows for the board-row read (attachGates below). Fed by
+// the relay handler below (ingestRelayFrame) and the boot gateList reconcile
+// (reconcileGatesOnBoot).
+const gateCache = new GateCache();
 
 // Optional peer relay. Both a configured url and a token are required; without
 // either, peering stays unstarted and every peer feature (publish, poll,
@@ -289,6 +304,23 @@ async function readLatchDetail(mr: BoardMR): Promise<MRDetail | null> {
   if (!res.ok || !res.data) return null;
   return { discussions: res.data.discussions } as MRDetail;
 }
+
+/** The tabId a signal's launched pane is running in, from whichever of the
+    three state stores its kind owns (see closeOnDone). */
+const resolveSignalTabId: TabIdResolver = (signal) => {
+  if (signal.kind === "review") return readReviewStates().get(signal.mrUrl)?.tabId;
+  if (signal.kind === "respond") return readRespondStates().get(signal.mrUrl)?.tabId;
+  return readDoctorStates().get(signal.mrUrl)?.tabId;
+};
+
+// "" (falsy), not omitted -- writeReviewState/writeRespondState/writeDoctorState
+// all merge patch.tabId ?? prev.tabId, so leaving it out of the patch would
+// keep the stale id and the next sweep would re-fire this same close.
+const clearSignalTabId: TabIdClearer = (signal) => {
+  if (signal.kind === "review") writeReviewState(reviewFilePath(signal.mrUrl), { status: "done", tabId: "" });
+  else if (signal.kind === "respond") writeRespondState(respondFilePath(signal.mrUrl), { status: "done", tabId: "" });
+  else writeDoctorState(doctorFilePath(signal.mrUrl), { status: "done", tabId: "" });
+};
 
 let forceNextFetch = false;
 const cache = new SnapshotCache(async () => {
@@ -517,7 +549,10 @@ const httpServer = Bun.serve({
           const withState = attachPeerState(
             attachDrafts(
               attachSlack(
-                attachDoctors(attachResponds(attachReviews(mrs, readReviewStates()), readRespondStates()), readDoctorStates()),
+                attachGates(
+                  attachDoctors(attachResponds(attachReviews(mrs, readReviewStates()), readRespondStates()), readDoctorStates()),
+                  gateCache,
+                ),
                 readSlackRefs(),
               ),
               heldDraftsByMr(readDrafts()),
@@ -553,6 +588,10 @@ const httpServer = Bun.serve({
           pruneReviewStates(onBoard);
           pruneRespondStates(onBoard);
           pruneDoctorStates(onBoard);
+          // Fire-and-forget: this sits on the /data.json request path and
+          // must never block or fail the response on a slow/failed daemon call.
+          void pruneOffBoardGates(gateCache.rows(), onBoard, { gateClose, logError: (message) => console.error(message) })
+            .catch((err) => console.error(`gate prune failed: ${err instanceof Error ? err.message : err}`));
           pruneDrafts(onBoard);
           prunePeerReviews(onBoard);
           pruneSentNudges(onBoard);
@@ -581,7 +620,10 @@ const httpServer = Bun.serve({
             })),
             mrs: attachPeerState(
               attachDrafts(
-                attachSlack(attachDoctors(attachResponds(attachReviews(visibleMrs, reviews), responds), doctors), slackRefs),
+                attachSlack(
+                  attachGates(attachDoctors(attachResponds(attachReviews(visibleMrs, reviews), responds), doctors), gateCache),
+                  slackRefs,
+                ),
                 heldDraftsByMr(readDrafts()),
               ),
             ),
@@ -747,11 +789,12 @@ const httpServer = Bun.serve({
         }
         const author = mrAuthorLabel(mr);
         const existing = readReviewStates().get(parsed.mrUrl);
+        const repo = resolveLaunchRepo(mr.rtRepo, config.gitlabHost, projectPathFromWebUrl(parsed.mrUrl, config.gitlabHost) ?? "", parsed.mrUrl);
         if (reReview) {
           // A live review re-focuses its tab rather than re-reviewing on top of it.
           if (existing?.tabId && (existing.status === "queued" || existing.status === "reviewing")) {
             try {
-              await focusTab(existing.tabId);
+              await focusPane(existing);
               return new Response(JSON.stringify({ ok: true, focused: true }), { headers: { "content-type": "application/json" } });
             } catch {
               // tab is gone — fall through and start the re-review fresh
@@ -762,20 +805,44 @@ const httpServer = Bun.serve({
           // reflects progress via the state file.
           void launchReReview(parsed.mrUrl, parsed.iid, {
             cwd: config.reviewCwd,
+            repo,
             workspaceLabel: config.reviewsWorkspace,
             skill: reviewSkillForTab(config, typeof tabId === "string" ? tabId : undefined, parsed.mrUrl, resolveLaunchSkill),
             author,
+            ...loadAgentSettings(),
             claudeCommand: config.claudeCommand,
             note,
           });
           return new Response(JSON.stringify({ ok: true, reReview: true }), { headers: { "content-type": "application/json" } });
         }
         if (resume) {
+          const statePath = reviewFilePath(parsed.mrUrl);
+          // A plain reopen (no --re-review) stays promptless and interactive --
+          // it must NEVER carry the re-review slash command (that belongs only
+          // to the /review re-review flow above). An operator note, if any, is
+          // the only thing sent as the first message.
+          const prompt = reopenPrompt(note);
+          if (existing?.agentId) {
+            void resumeAgentPane({
+              agentId: existing.agentId,
+              prompt,
+              workspaceLabel: config.reviewsWorkspace,
+              tabLabel: mrTabLabel(parsed.iid, author, "↺"),
+            })
+              .then((result) => {
+                if (result.focusedExisting) return;
+                writeReviewState(statePath, {
+                  status: existing?.status ?? "done", tabId: result.tabId, workspaceId: result.workspaceId,
+                  agentId: result.agentId, paneId: result.paneId,
+                });
+              })
+              .catch((err) => console.error(`review resume failed: ${err instanceof Error ? err.message : err}`));
+            return new Response(JSON.stringify({ ok: true, resumed: true }), { headers: { "content-type": "application/json" } });
+          }
           const sessionId = existing?.sessionId;
           if (!sessionId) return new Response("no session id on file for this review", { status: 400 });
-          const statePath = reviewFilePath(parsed.mrUrl);
-          void launchResume(
-            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: config.reviewCwd, workspaceLabel: config.reviewsWorkspace, statePath, sessionId, workspaceKind: "review", author, claudeCommand: config.claudeCommand, prompt: note && operatorNoteParagraph(note) },
+          void launchLegacyResume(
+            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: config.reviewCwd, repo, workspaceLabel: config.reviewsWorkspace, statePath, sessionId, workspaceKind: "review", author, prompt, claudeCommand: config.claudeCommand },
           )
             .then(({ tabId, workspaceId }) => writeReviewState(statePath, { status: existing?.status ?? "done", tabId, workspaceId }))
             .catch((err) => console.error(`review resume failed: ${err instanceof Error ? err.message : err}`));
@@ -784,7 +851,7 @@ const httpServer = Bun.serve({
         // Dedup: a live review for this MR re-focuses its tab instead of spawning another.
         if (existing && existing.tabId && (existing.status === "queued" || existing.status === "reviewing")) {
           try {
-            await focusTab(existing.tabId);
+            await focusPane(existing);
             return new Response(JSON.stringify({ ok: true, focused: true }), { headers: { "content-type": "application/json" } });
           } catch {
             // tab is gone — fall through and start a fresh review
@@ -797,14 +864,21 @@ const httpServer = Bun.serve({
           mrUrl: parsed.mrUrl,
           iid: parsed.iid,
           cwd: config.reviewCwd,
+          repo,
           workspaceLabel: config.reviewsWorkspace,
           statePath,
           skill: reviewSkillForTab(config, typeof tabId === "string" ? tabId : undefined, parsed.mrUrl, resolveLaunchSkill),
           author,
-          claudeCommand: config.claudeCommand,
+          ...loadAgentSettings(),
           note,
         })
-          .then(({ tabId, workspaceId }) => writeReviewState(statePath, { status: "queued", tabId, workspaceId }))
+          .then((result) => {
+            if (result.focusedExisting) return;
+            writeReviewState(statePath, {
+              status: "queued", tabId: result.tabId, workspaceId: result.workspaceId,
+              agentId: result.agentId, paneId: result.paneId,
+            });
+          })
           .catch((err) => {
             console.error(`review launch failed: ${err instanceof Error ? err.message : err}`);
             writeReviewState(statePath, { status: "error", message: "failed to launch review pane" });
@@ -839,12 +913,33 @@ const httpServer = Bun.serve({
         }
         const author = mrAuthorLabel(mr);
         const existing = readRespondStates().get(parsed.mrUrl);
+        const repo = resolveLaunchRepo(mr.rtRepo, config.gitlabHost, projectPathFromWebUrl(parsed.mrUrl, config.gitlabHost) ?? "", parsed.mrUrl);
         if (resume) {
+          const statePath = respondFilePath(parsed.mrUrl);
+          // A plain reopen (no note) stays promptless and interactive -- same
+          // rule as the review resume above.
+          const prompt = reopenPrompt(note);
+          if (existing?.agentId) {
+            void resumeAgentPane({
+              agentId: existing.agentId,
+              prompt,
+              workspaceLabel: config.respondsWorkspace,
+              tabLabel: mrTabLabel(parsed.iid, author, "↺"),
+            })
+              .then((result) => {
+                if (result.focusedExisting) return;
+                writeRespondState(statePath, {
+                  status: existing?.status ?? "done", tabId: result.tabId, workspaceId: result.workspaceId,
+                  agentId: result.agentId, paneId: result.paneId,
+                });
+              })
+              .catch((err) => console.error(`respond resume failed: ${err instanceof Error ? err.message : err}`));
+            return new Response(JSON.stringify({ ok: true, resumed: true }), { headers: { "content-type": "application/json" } });
+          }
           const sessionId = existing?.sessionId;
           if (!sessionId) return new Response("no session id on file for this response", { status: 400 });
-          const statePath = respondFilePath(parsed.mrUrl);
-          void launchResume(
-            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: cwd, workspaceLabel: config.respondsWorkspace, statePath, sessionId, workspaceKind: "respond", author, claudeCommand: config.claudeCommand, prompt: note && operatorNoteParagraph(note) },
+          void launchLegacyResume(
+            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: cwd, repo, workspaceLabel: config.respondsWorkspace, statePath, sessionId, workspaceKind: "respond", author, prompt, claudeCommand: config.claudeCommand },
           )
             .then(({ tabId, workspaceId }) => writeRespondState(statePath, { status: existing?.status ?? "done", tabId, workspaceId }))
             .catch((err) => console.error(`respond resume failed: ${err instanceof Error ? err.message : err}`));
@@ -853,7 +948,7 @@ const httpServer = Bun.serve({
         const inFlight = new Set(["queued", "triaging", "implementing", "drafting"]);
         if (existing && existing.tabId && inFlight.has(existing.status)) {
           try {
-            await focusTab(existing.tabId);
+            await focusPane(existing);
             return new Response(JSON.stringify({ ok: true, focused: true }), { headers: { "content-type": "application/json" } });
           } catch {
             // tab is gone -- fall through and start a fresh response
@@ -865,14 +960,21 @@ const httpServer = Bun.serve({
           mrUrl: parsed.mrUrl,
           iid: parsed.iid,
           cwd,
+          repo,
           workspaceLabel: config.respondsWorkspace,
           statePath,
           skill: resolveLaunchSkill("respond", parsed.mrUrl),
           author,
-          claudeCommand: config.claudeCommand,
+          ...loadAgentSettings(),
           note,
         })
-          .then(({ tabId, workspaceId }) => writeRespondState(statePath, { status: "queued", tabId, workspaceId }))
+          .then((result) => {
+            if (result.focusedExisting) return;
+            writeRespondState(statePath, {
+              status: "queued", tabId: result.tabId, workspaceId: result.workspaceId,
+              agentId: result.agentId, paneId: result.paneId,
+            });
+          })
           .catch((err) => {
             console.error(`respond launch failed: ${err instanceof Error ? err.message : err}`);
             writeRespondState(statePath, { status: "error", message: "failed to launch respond pane" });
@@ -904,10 +1006,11 @@ const httpServer = Bun.serve({
         }
         const author = mrAuthorLabel(mr);
         const existing = readDoctorStates().get(parsed.mrUrl);
+        const repo = resolveLaunchRepo(mr.rtRepo, config.gitlabHost, projectPathFromWebUrl(parsed.mrUrl, config.gitlabHost) ?? "", parsed.mrUrl);
         const inFlight = new Set(["queued", "diagnosing", "rebasing", "fixing", "watching"]);
         if (existing && existing.tabId && inFlight.has(existing.status)) {
           try {
-            await focusTab(existing.tabId);
+            await focusPane(existing);
             return new Response(JSON.stringify({ ok: true, focused: true }), { headers: { "content-type": "application/json" } });
           } catch {
             // tab is gone -- fall through and start a fresh doctor session
@@ -919,14 +1022,21 @@ const httpServer = Bun.serve({
           mrUrl: parsed.mrUrl,
           iid: parsed.iid,
           cwd,
+          repo,
           workspaceLabel: config.doctorsWorkspace,
           statePath,
           skill: resolveLaunchSkill("doctor", parsed.mrUrl),
           author,
-          claudeCommand: config.claudeCommand,
+          ...loadAgentSettings(),
           note,
         })
-          .then(({ tabId, workspaceId }) => writeDoctorState(statePath, { status: "queued", tabId, workspaceId }))
+          .then((result) => {
+            if (result.focusedExisting) return;
+            writeDoctorState(statePath, {
+              status: "queued", tabId: result.tabId, workspaceId: result.workspaceId,
+              agentId: result.agentId, paneId: result.paneId,
+            });
+          })
           .catch((err) => {
             console.error(`doctor launch failed: ${err instanceof Error ? err.message : err}`);
             writeDoctorState(statePath, { status: "error", message: "failed to launch doctor pane" });
@@ -1053,6 +1163,11 @@ const httpServer = Bun.serve({
             console.error(`latch step failed for ${signal.mrUrl}: ${err instanceof Error ? err.message : err}`);
           }
         }
+        // Close the launched pane's tab once its agent reports done -- error
+        // never closes, so a failing pane stays open for forensics. Must run
+        // above the emoji early-return below: most `done` signals have no
+        // emoji and would never reach a close placed after it.
+        closeOnDone(signal, resolveSignalTabId, (tabId) => closeTab(tabId), clearSignalTabId);
         const emoji = signalEmoji(signal.kind, signal.status, config.slack.emoji, signal.outcome);
         if (!emoji) {
           return new Response(JSON.stringify({ ok: true, reacted: false }), { headers: { "content-type": "application/json" } });
@@ -1148,6 +1263,49 @@ const httpServer = Bun.serve({
             });
           }
           return new Response(`gitlab update failed: ${message}`, { status: 502 });
+        }
+      }
+      case "/gate/answer": {
+        // Answer a review gate from the board UI. The facility's gate:answer
+        // is the single CAS arbiter; this proxies it (gates/answer.ts) and
+        // maps the pure result onto HTTP status codes. Resume of a parked
+        // gate is no longer triggered here -- it hangs off the gate/answered
+        // EVENT (see gates/ingest.ts) so a console-answered gate resumes too.
+        if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
+        if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return new Response("invalid json", { status: 400 });
+        }
+        const mrUrl = (body as { mrUrl?: unknown })?.mrUrl;
+        const answers = (body as { answers?: unknown })?.answers;
+        if (typeof mrUrl !== "string" || !mrUrl || typeof answers !== "object" || answers === null || Array.isArray(answers)) {
+          return new Response("expected { mrUrl: string, answers: object }", { status: 400 });
+        }
+        const result = await answerGate(mrUrl, answers as GateAnswers, {
+          findAnswerableGateId: (gateMrUrl) => {
+            const row = gateCache.get(`mr:${gateMrUrl}`);
+            return row && (row.status === "open" || row.status === "parked") ? row.id : undefined;
+          },
+          gateAnswer: gateAnswerFacility,
+        });
+        switch (result.kind) {
+          case "ok":
+            return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });
+          case "conflict":
+            return new Response(JSON.stringify({ ok: false, conflict: true, row: result.row }), {
+              status: 409,
+              headers: { "content-type": "application/json" },
+            });
+          case "not-found":
+            return new Response(`unknown gate for MR "${mrUrl}"`, { status: 404 });
+          case "invalid":
+            return new Response(result.reason, { status: 400 });
+          case "unreachable":
+            console.error(`gate answer: daemon unreachable: ${result.reason}`);
+            return new Response("rt daemon unreachable, try again", { status: 502 });
         }
       }
       case "/nudge": {
@@ -1609,8 +1767,87 @@ function sseNudge(): void {
 // clients that vanished without a cancel. EventSource ignores comment lines.
 setInterval(() => sseSend(sseEncoder.encode(": ping\n\n")), SSE_HEARTBEAT_MS);
 
+// ── Gate sweep: park unanswered gates, reconcile missed closes ────────────
+const GATE_SWEEP_MS = 60_000;
+
+// No wired escalation notifier fits a gate-park signal (notifyEscalation is
+// triage/doctor-scoped and unused elsewhere); the console lines below are the
+// courtesy notify -- the facility's own `gate/parked` event, relayed back
+// through ingestRelayFrame, is what actually patches the cache and nudges
+// SSE clients. Built fresh per sweep (not module-level) so a reassigned
+// `config` -- e.g. after a switchboard-url save -- is picked up immediately.
+function sweepActionIo(): ExecuteSweepActionIo {
+  return {
+    gatePark,
+    closeTab,
+    writeReviewState,
+    reviewFilePath,
+    now: () => Date.now(),
+    graceMinutes: config.gateGraceMinutes,
+    log: (message) => console.log(message),
+    logError: (message) => console.error(message),
+  };
+}
+
+// Same "built fresh, not module-level" reasoning as sweepActionIo -- config
+// can be reassigned (switchboard-url save) after boot.
+function gateResumeIo(): GateResumeEventIo {
+  return {
+    gateRow: (subject) => gateCache.get(subject),
+    applyRow: (row) => gateCache.applyRow(row),
+    readReviewState: (mrUrl) => readReviewStates().get(mrUrl),
+    gateList,
+    resolveLaunchSkill: (mrUrl, tabId) => reviewSkillForTab(config, tabId, mrUrl, resolveLaunchSkill),
+    resumeAgentPane,
+    writeReviewState,
+    reviewsWorkspace: config.reviewsWorkspace,
+    notify: (message) => console.error(`gate resume: ${message}`),
+  };
+}
+
+async function runGateSweep(): Promise<void> {
+  const actions = planSweep(gateCache.rows(), readReviewStates(), Date.now(), config.gateGraceMinutes * 60_000);
+  const io = sweepActionIo();
+  for (const action of actions) {
+    await executeSweepAction(action, io);
+  }
+}
+
+if (!FIXTURE_DIR) {
+  setInterval(() => {
+    void runGateSweep().catch((err) => console.error(`gate sweep failed: ${err instanceof Error ? err.message : err}`));
+  }, GATE_SWEEP_MS);
+}
+
+// One-time migration: the board's own per-MR gate files (state/gates/) are
+// retired now that the board-row read is fully daemon-backed (GateCache).
+// Best-effort and silent on an already-clean install -- force skips the
+// not-found case rather than checking existence first.
+if (!FIXTURE_DIR) {
+  try {
+    rmSync(GATE_DIR, { recursive: true, force: true });
+  } catch (err) {
+    console.error(`gate file-store cleanup skipped: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
 let relayTimer: ReturnType<typeof setTimeout> | undefined;
 const stopRelay = FIXTURE_DIR ? () => {} : subscribe((type, data) => {
+  if (type === "event") {
+    const frame = data as { topic?: unknown; payload?: unknown } | null;
+    if (typeof frame?.topic === "string") {
+      const gateFrame = { topic: frame.topic, payload: frame.payload } satisfies GateEventFrame;
+      ingestRelayFrame(gateCache, gateFrame, sseNudge);
+      // Resume hangs off the event itself (not the board's own answer
+      // endpoint) so a gate answered from any surface -- console, in-pane,
+      // this board -- resumes the parked session the same way.
+      if (frame.topic.startsWith("gate/answered/")) {
+        void handleAnsweredEvent(gateFrame, gateResumeIo()).catch((err) =>
+          console.error(`gate answered resume failed: ${err instanceof Error ? err.message : err}`),
+        );
+      }
+    }
+  }
   if (!RELAY_TYPES.has(type)) return;
   const repoName = (data as { repoName?: string } | null)?.repoName;
   // Relay events are keyed by the serialized identity now — compare
@@ -1625,6 +1862,39 @@ const stopRelay = FIXTURE_DIR ? () => {} : subscribe((type, data) => {
     void cache.refreshNow().then(sseNudge).catch(() => {});
   }, RELAY_COALESCE_MS);
 });
+
+if (!FIXTURE_DIR) {
+  void reconcileGatesOnBoot(gateList, gateCache).catch((err) =>
+    console.error(`gate boot reconcile failed: ${err instanceof Error ? err.message : err}`),
+  );
+  // Independent of the cache reconcile above (reads the facility directly),
+  // so it needs no ordering relative to it: catches an answered-parked gate
+  // the board missed the live event for while it was down.
+  void bootResumePass(gateResumeIo()).catch((err) =>
+    console.error(`gate boot resume pass failed: ${err instanceof Error ? err.message : err}`),
+  );
+}
+
+// Bridge-rule registration: upsert this board's gate-opened rule into
+// `rt.notify.eventBridges` (merge-not-clobber -- see ensureBridgeRule), so a
+// gate/opened/* event raises a desktop notification once the rt daemon side
+// has registered that key. Local file reads, not a daemon round trip, so
+// this runs synchronously and cheaply; caught so a stale rt-client copy
+// without the key yet (or any other read/write failure) never blocks boot --
+// just skip and log once.
+function readEventBridges(): EventBridgeRule[] {
+  return getSetting<EventBridgeRule[]>("rt.notify.eventBridges").value ?? [];
+}
+function writeEventBridges(next: EventBridgeRule[]): void {
+  setSetting("rt.notify.eventBridges", next, "user");
+}
+if (!FIXTURE_DIR) {
+  try {
+    ensureBridgeRule(readEventBridges, writeEventBridges);
+  } catch (err) {
+    console.error(`gate bridge-rule reconcile skipped: ${err instanceof Error ? err.message : err}`);
+  }
+}
 
 // Hot-reload config.json so adding/removing members (or any setting) takes
 // effect without a restart. Watch the directory — that survives editors that

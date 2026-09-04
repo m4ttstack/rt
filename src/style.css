@@ -656,6 +656,34 @@ body {
    row below the branch, so they don't compete with GitLab-native flags. */
 .tui-row-board { margin-top: 5px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .tui-card-board { margin-top: 6px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* review gate card: the questions a review pane opened on this row, answered
+   inline. Its own bordered block below the badge row so a row carrying a
+   gate visibly grows rather than crowding the badges. */
+.tui-gate-card {
+  margin-top: 8px; padding: 0.7rem 0.9rem;
+  background: var(--card); border: 1px solid var(--border); border-radius: 8px;
+  display: flex; flex-direction: column; gap: 0.6rem;
+}
+.tui-gate-head { display: flex; align-items: center; gap: 8px; }
+.tui-gate-title { font: 600 0.78rem/1.4 var(--font-sans); color: var(--muted); text-transform: uppercase; letter-spacing: 0.03em; }
+.tui-gate-question { display: flex; flex-direction: column; gap: 0.3rem; }
+.tui-gate-question-label { font-size: 0.85rem; color: var(--fg); }
+.tui-gate-options { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.tui-gate-option { display: inline-flex; align-items: center; gap: 6px; }
+.tui-gate-option-label { font-size: 0.82rem; cursor: pointer; }
+.tui-gate-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
+.tui-gate-error { margin-right: auto; color: var(--dot-bad); font-size: 0.76rem; }
+.tui-gate-submit {
+  padding: 4px 12px; font: inherit; font-size: 0.85rem; cursor: pointer;
+  background: transparent; border: 1px solid var(--amber); border-radius: 6px; color: var(--amber);
+}
+.tui-gate-submit:hover:not(:disabled) { background: var(--amber); color: var(--bg); }
+.tui-gate-submit:disabled { opacity: 0.5; cursor: default; }
+.tui-gate-summary { margin: 0; display: flex; flex-direction: column; gap: 0.3rem; }
+.tui-gate-summary-row { display: flex; gap: 0.5rem; font-size: 0.85rem; }
+.tui-gate-summary-row dt { color: var(--muted); }
+.tui-gate-summary-row dd { margin: 0; color: var(--fg); }
 /* slack review-signal reactions rendered next to the review badge */
 .tui-slack-reactions { display: inline-flex; gap: 4px; align-items: center; font-size: 13px; line-height: 1; }
 .tui-slack-reaction { user-select: none; }

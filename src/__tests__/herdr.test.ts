@@ -6,15 +6,22 @@ import {
   parseWorkspaceCreate,
   reviewPrompt,
   operatorNoteParagraph,
+  reopenPrompt,
   parseLaunchNote,
-  buildPaneCommand,
   buildResumePaneCommand,
-  reReviewResumePrompt,
   mrTabLabel,
   launchReview,
-  launchResume,
+  launchRespond,
+  launchDoctor,
+  launchLegacyResume,
+  doctorPrompt,
+  draftBinPath,
+  statusBinPath,
+  dispatchPrompt,
   type HerdrRunner,
 } from "../herdr.ts";
+import type { AgentIo } from "../agent-launch.ts";
+import { repoIdentityField } from "../config.ts";
 
 const WS_LIST = JSON.stringify({
   result: { type: "workspace_list", workspaces: [
@@ -30,7 +37,7 @@ const TAB_CREATE = JSON.stringify({
 const TAB_LIST_WITH_DUP = JSON.stringify({
   result: { type: "tab_list", tabs: [
     { tab_id: "w40:t1", label: "1", workspace_id: "w40" },
-    { tab_id: "w40:t9", label: "!4821 Grace Hopper", workspace_id: "w40" },
+    { tab_id: "w40:t9", label: "↺ !4821 Grace Hopper", workspace_id: "w40" },
   ] },
 });
 const WS_CREATE = JSON.stringify({
@@ -128,6 +135,15 @@ describe("command builders", () => {
       "Operator note (from the human who launched this pane): check CI first",
     );
   });
+  test("reopenPrompt: no note leaves a plain reopen promptless (TRAP 1)", () => {
+    expect(reopenPrompt(undefined)).toBeUndefined();
+  });
+  test("reopenPrompt: a note is the WHOLE prompt -- never the re-review dispatch command (TRAP 1)", () => {
+    const p = reopenPrompt("check CI first");
+    expect(p).toBe("Operator note (from the human who launched this pane): check CI first");
+    expect(p).not.toContain("/board:review");
+    expect(p).not.toContain("--re-review");
+  });
   test("parseLaunchNote accepts absent and blank notes as undefined", () => {
     expect(parseLaunchNote({})).toEqual({ ok: true, note: undefined });
     expect(parseLaunchNote({ note: "" })).toEqual({ ok: true, note: undefined });
@@ -142,10 +158,6 @@ describe("command builders", () => {
     expect(parseLaunchNote({ note: "x".repeat(2001) })).toEqual({ ok: false, error: "note too long (max 2000 chars)" });
     expect(parseLaunchNote({ note: "x".repeat(2000) })).toEqual({ ok: true, note: "x".repeat(2000) });
   });
-  test("buildPaneCommand cds then launches claude with a single-quoted prompt", () => {
-    const cmd = buildPaneCommand("/repo dir", "/board:review https://x/mr/1 --state /s/1.json");
-    expect(cmd).toBe("cd '/repo dir' && claude '/board:review https://x/mr/1 --state /s/1.json'");
-  });
   test("reviewPrompt appends --re-review when re-reviewing", () => {
     expect(
       reviewPrompt({ mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: "/b/review-status.ts", reportPath: "/s/1.md", reReview: true }),
@@ -154,15 +166,6 @@ describe("command builders", () => {
   --status-bin /b/review-status.ts
   --report /s/1.md
   --re-review`);
-  });
-  test("buildPaneCommand launches a configured claude command in place of plain claude", () => {
-    expect(buildPaneCommand("/repo dir", "do it", "cswap run 2 --share-history --")).toBe(
-      "cd '/repo dir' && cswap run 2 --share-history -- 'do it'",
-    );
-  });
-  test("buildPaneCommand falls back to plain claude when the configured command is empty", () => {
-    expect(buildPaneCommand("/repo", "do it", "")).toBe("cd '/repo' && claude 'do it'");
-    expect(buildPaneCommand("/repo", "do it", "   ")).toBe("cd '/repo' && claude 'do it'");
   });
   test("buildResumePaneCommand with no prompt drops into an interactive resume", () => {
     expect(buildResumePaneCommand("/repo", "sess-1")).toBe("cd '/repo' && claude --resume 'sess-1'");
@@ -177,12 +180,6 @@ describe("command builders", () => {
       "cd '/repo' && claude --resume 'sess-1' 're-review please'",
     );
   });
-  test("reReviewResumePrompt tells the session it's a re-review and to fall back", () => {
-    const p = reReviewResumePrompt(4821);
-    expect(p).toContain("RE-REVIEW of !4821");
-    expect(p).toContain("no author action found since last review");
-    expect(p).toContain("fall back to a");
-  });
   test("mrTabLabel puts the author beside the id when known", () => {
     expect(mrTabLabel(4821, "Grace Hopper")).toBe("!4821 Grace Hopper");
   });
@@ -196,8 +193,183 @@ describe("command builders", () => {
   });
 });
 
-describe("launchReview", () => {
-  test("reuses an existing reviews workspace and creates a labelled tab", async () => {
+/** A fake AgentIo whose agentStart records every payload and answers with a
+    fixed AgentLaunchResult-shaped record, so launchReview/Respond/Doctor tests
+    assert on what they sent the rt agent daemon without spawning one. */
+function fakeAgentIo(): { io: AgentIo; startCalls: Array<Record<string, unknown>> } {
+  const startCalls: Array<Record<string, unknown>> = [];
+  const io: AgentIo = {
+    agentStart: async (payload) => {
+      startCalls.push(payload as unknown as Record<string, unknown>);
+      return {
+        ok: true,
+        data: {
+          id: "agent-1", repo: payload.repo, cwd: payload.cwd, provider: "test",
+          surface: "herdr" as const, sessionId: "sess-1", paneId: "pane-1",
+          tabId: "tab-1", workspaceId: "ws-1", createdAt: Date.now(),
+        },
+      };
+    },
+    agentResume: async () => { throw new Error("agentResume not used by launchReview/Respond/Doctor"); },
+  };
+  return { io, startCalls };
+}
+
+describe("launchReview / launchRespond / launchDoctor (rt agent)", () => {
+  test("launchReview starts an rt agent with repo, cwd, prompt, workspace + tab labels, and returns the launch ids", async () => {
+    const { io, startCalls } = fakeAgentIo();
+    const res = await launchReview(
+      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", repo: "acme/webapp", workspaceLabel: "reviews", statePath: "/s/1.json" },
+      io,
+    );
+    expect(startCalls).toHaveLength(1);
+    expect(startCalls[0]).toMatchObject({ repo: "acme/webapp", cwd: "/repo", workspace: "reviews", tab: "!4821", surface: "herdr" });
+    expect(startCalls[0]!.prompt).toContain("/board:review https://x/mr/1");
+    expect(startCalls[0]!.prompt).toContain("--state /s/1.json");
+    expect(res).toEqual({ agentId: "agent-1", sessionId: "sess-1", paneId: "pane-1", tabId: "tab-1", workspaceId: "ws-1", focusedExisting: false });
+  });
+
+  // Regression: startAgentPane's `repo` must reach the rt agent daemon as the
+  // SERIALIZED rt identity ("remote:<encoded host/path>"), never a bare
+  // GitLab project path -- `rt agent list --repo <identity>` filters on the
+  // exact serialized string, so a bare path silently never matches. The
+  // resolution itself (repoIdentityField + gitlabHost fallback) lives at the
+  // launch call sites (server.ts, bin/triage.ts), not here -- this pins that
+  // whatever identity a caller resolves survives launchReview/Respond/Doctor
+  // and startAgentPane unmangled, so a future refactor can't silently swap
+  // it back for a bare path without a test noticing.
+  test("passes the caller-resolved repo identity through to startAgentPane verbatim, never a bare project path", async () => {
+    const { io, startCalls } = fakeAgentIo();
+    const identity = repoIdentityField("gitlab.com/acme/webapp")!;
+    await launchReview(
+      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", repo: identity, workspaceLabel: "reviews", statePath: "/s/1.json" },
+      io,
+    );
+    expect(startCalls[0]!.repo).toBe(identity);
+    expect((startCalls[0]!.repo as string).startsWith("remote:")).toBe(true);
+    expect(startCalls[0]!.repo).not.toBe("acme/webapp");
+  });
+
+  test("launchReview puts the author beside the id, and the re-review glyph ahead of it, in the tab label", async () => {
+    const { io, startCalls } = fakeAgentIo();
+    await launchReview(
+      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", repo: "acme/webapp", workspaceLabel: "reviews", statePath: "/s/1.json", author: "Grace Hopper", reReview: true },
+      io,
+    );
+    expect(startCalls[0]!.tab).toBe("⟲ !4821 Grace Hopper");
+    expect(startCalls[0]!.prompt).toContain("--re-review");
+  });
+
+  test("threads account/model/effort into the rt agent start payload", async () => {
+    const { io, startCalls } = fakeAgentIo();
+    await launchReview(
+      {
+        mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", repo: "acme/webapp", workspaceLabel: "reviews", statePath: "/s/1.json",
+        account: "matt@example.com", model: "opus", effort: "high",
+      },
+      io,
+    );
+    expect(startCalls[0]).toMatchObject({ account: "matt@example.com", model: "opus", effort: "high" });
+  });
+
+  test("launchRespond starts an rt agent with the respond prompt under the responses workspace", async () => {
+    const { io, startCalls } = fakeAgentIo();
+    await launchRespond(
+      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", repo: "acme/webapp", workspaceLabel: "responds", statePath: "/s/1.json" },
+      io,
+    );
+    expect(startCalls[0]!.prompt).toContain("/board:respond https://x/mr/1");
+    expect(startCalls[0]).toMatchObject({ workspace: "responds", tab: "!4821" });
+  });
+
+  test("launchDoctor starts an rt agent with the doctor prompt and tier flag", async () => {
+    const { io, startCalls } = fakeAgentIo();
+    await launchDoctor(
+      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", repo: "acme/webapp", workspaceLabel: "doctors", statePath: "/s/1.json", tier: "api" },
+      io,
+    );
+    expect(startCalls[0]!.prompt).toContain("/board:doctor https://x/mr/1");
+    expect(startCalls[0]!.prompt).toContain("--tier api");
+  });
+
+  test("threads the operator note into the launched prompt", async () => {
+    const { io, startCalls } = fakeAgentIo();
+    await launchReview(
+      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", repo: "acme/webapp", workspaceLabel: "reviews", statePath: "/s/1.json", note: "skip the vendored files" },
+      io,
+    );
+    expect(startCalls[0]!.prompt).toContain("Operator note (from the human who launched this pane): skip the vendored files");
+  });
+
+  test("adds --skill-path but keeps launching the /board:review wrapper when resolution succeeds", async () => {
+    const { io, startCalls } = fakeAgentIo();
+    const resolvePath = async () => "/cache/acme/skills/board-review/SKILL.md";
+    await launchReview(
+      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", repo: "acme/webapp", workspaceLabel: "reviews", statePath: "/s/1.json", skill: "acme:board-review" },
+      io,
+      resolvePath,
+    );
+    expect(startCalls[0]!.prompt).toContain("/board:review https://x/mr/1");
+    expect(startCalls[0]!.prompt).toContain("--skill-path /cache/acme/skills/board-review/SKILL.md");
+  });
+
+  test("falls back to the slash form (no --skill-path) when resolution fails", async () => {
+    const { io, startCalls } = fakeAgentIo();
+    const resolvePath = async () => null;
+    await launchReview(
+      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", repo: "acme/webapp", workspaceLabel: "reviews", statePath: "/s/1.json", skill: "acme:board-review" },
+      io,
+      resolvePath,
+    );
+    expect(startCalls[0]!.prompt).not.toContain("--skill-path");
+  });
+
+  test("launchRespond adds --skill-path but keeps launching the /board:respond wrapper", async () => {
+    const { io, startCalls } = fakeAgentIo();
+    const resolvePath = async () => "/cache/acme/skills/board-respond/SKILL.md";
+    await launchRespond(
+      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", repo: "acme/webapp", workspaceLabel: "responds", statePath: "/s/1.json", skill: "acme:board-respond" },
+      io,
+      resolvePath,
+    );
+    expect(startCalls[0]!.prompt).toBe(
+      await dispatchPrompt("board:respond", {
+        mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: statusBinPath(), skill: "acme:board-respond",
+      }, resolvePath),
+    );
+  });
+
+  test("launchDoctor adds --skill-path but keeps launching the /board:doctor wrapper, tier intact", async () => {
+    const { io, startCalls } = fakeAgentIo();
+    const resolvePath = async () => "/cache/acme/attachments/board-doctor-api/SKILL.md";
+    await launchDoctor(
+      {
+        mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", repo: "acme/webapp", workspaceLabel: "doctors", statePath: "/s/1.json",
+        skill: "acme:board-doctor-api", tier: "api",
+      },
+      io,
+      resolvePath,
+    );
+    expect(startCalls[0]!.prompt).toContain("/board:doctor https://x/mr/1");
+    expect(startCalls[0]!.prompt).toContain("--skill-path /cache/acme/attachments/board-doctor-api/SKILL.md");
+    expect(startCalls[0]!.prompt).toContain("--tier api");
+  });
+
+  test("a focusedExisting rt-agent response maps to focusedExisting: true with empty ids (no double-launch)", async () => {
+    const io: AgentIo = {
+      agentStart: async () => ({ ok: false, error: "already open; focused it" }),
+      agentResume: async () => { throw new Error("not used"); },
+    };
+    const res = await launchReview(
+      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", repo: "acme/webapp", workspaceLabel: "reviews", statePath: "/s/1.json" },
+      io,
+    );
+    expect(res).toEqual({ agentId: "", sessionId: "", paneId: "", tabId: "", workspaceId: "", focusedExisting: true });
+  });
+});
+
+describe("launchLegacyResume (pre-rt-agent sessionId resume, over HerdrRunner)", () => {
+  test("reuses an existing workspace and creates a labelled tab, resuming under plain claude", async () => {
     const calls: string[][] = [];
     const runner: HerdrRunner = async (args) => {
       calls.push(args);
@@ -205,23 +377,22 @@ describe("launchReview", () => {
       if (args[0] === "tab" && args[1] === "create") return TAB_CREATE;
       return JSON.stringify({ result: { type: "ok" } });
     };
-    const res = await launchReview(
-      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "reviews", statePath: "/s/1.json" },
+    const res = await launchLegacyResume(
+      {
+        mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", repo: "acme/webapp", workspaceLabel: "reviews", statePath: "/s/1.json",
+        sessionId: "sess-1", workspaceKind: "review",
+      },
       runner,
     );
     expect(res).toEqual({ tabId: "w40:t3", workspaceId: "w40" });
-    // No workspace create when one already exists.
     expect(calls.some((c) => c[0] === "workspace" && c[1] === "create")).toBe(false);
-    // Tab created in the existing workspace, labelled with the iid.
-    expect(calls).toContainEqual(["tab", "create", "--workspace", "w40", "--label", "!4821", "--no-focus"]);
-    // The pane runs the review command.
+    expect(calls).toContainEqual(["tab", "create", "--workspace", "w40", "--label", "↺ !4821", "--no-focus"]);
     const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
     expect(runCall?.[2]).toBe("w40:p7");
-    expect(runCall?.[3]).toContain("claude '/board:review https://x/mr/1\n  --state /s/1.json");
-    expect(runCall?.[3]).toContain("bin/board\n  --report /s/1.md'");
+    expect(runCall?.[3]).toBe("cd '/repo' && claude --resume 'sess-1'");
   });
 
-  test("launches the pane with the configured claude command when set", async () => {
+  test("sends a prompt as the first resumed message when given, under the re-review tab glyph", async () => {
     const calls: string[][] = [];
     const runner: HerdrRunner = async (args) => {
       calls.push(args);
@@ -229,18 +400,19 @@ describe("launchReview", () => {
       if (args[0] === "tab" && args[1] === "create") return TAB_CREATE;
       return JSON.stringify({ result: { type: "ok" } });
     };
-    await launchReview(
+    await launchLegacyResume(
       {
-        mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "reviews", statePath: "/s/1.json",
-        claudeCommand: "cswap run 2 --share-history --",
+        mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", repo: "acme/webapp", workspaceLabel: "reviews", statePath: "/s/1.json",
+        sessionId: "sess-1", workspaceKind: "review", prompt: "re-review please", tabPrefix: "⟲",
       },
       runner,
     );
     const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
-    expect(runCall?.[3]).toStartWith("cd '/repo' && cswap run 2 --share-history -- '/board:review ");
+    expect(runCall?.[3]).toBe("cd '/repo' && claude --resume 'sess-1' 're-review please'");
+    expect(calls).toContainEqual(["tab", "create", "--workspace", "w40", "--label", "⟲ !4821", "--no-focus"]);
   });
 
-  test("threads the operator note into the launched prompt", async () => {
+  test("resumes under the configured claude command (the file's claudeCommand escape hatch)", async () => {
     const calls: string[][] = [];
     const runner: HerdrRunner = async (args) => {
       calls.push(args);
@@ -248,25 +420,9 @@ describe("launchReview", () => {
       if (args[0] === "tab" && args[1] === "create") return TAB_CREATE;
       return JSON.stringify({ result: { type: "ok" } });
     };
-    await launchReview(
-      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "reviews", statePath: "/s/1.json", note: "skip the vendored files" },
-      runner,
-    );
-    const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
-    expect(runCall?.[3]).toContain("Operator note (from the human who launched this pane): skip the vendored files");
-  });
-
-  test("launchResume resumes under the configured claude command when set", async () => {
-    const calls: string[][] = [];
-    const runner: HerdrRunner = async (args) => {
-      calls.push(args);
-      if (args[0] === "workspace" && args[1] === "list") return WS_LIST;
-      if (args[0] === "tab" && args[1] === "create") return TAB_CREATE;
-      return JSON.stringify({ result: { type: "ok" } });
-    };
-    await launchResume(
+    await launchLegacyResume(
       {
-        mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "reviews", statePath: "/s/1.json",
+        mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", repo: "acme/webapp", workspaceLabel: "reviews", statePath: "/s/1.json",
         sessionId: "sess-1", workspaceKind: "review", claudeCommand: "cswap run 2 --",
       },
       runner,
@@ -283,11 +439,14 @@ describe("launchReview", () => {
       if (args[0] === "tab" && args[1] === "create") return TAB_CREATE;
       return JSON.stringify({ result: { type: "ok" } });
     };
-    await launchReview(
-      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "reviews", statePath: "/s/1.json", author: "Grace Hopper" },
+    await launchLegacyResume(
+      {
+        mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", repo: "acme/webapp", workspaceLabel: "reviews", statePath: "/s/1.json",
+        sessionId: "sess-1", workspaceKind: "review", author: "Grace Hopper",
+      },
       runner,
     );
-    expect(calls).toContainEqual(["tab", "create", "--workspace", "w40", "--label", "!4821 Grace Hopper", "--no-focus"]);
+    expect(calls).toContainEqual(["tab", "create", "--workspace", "w40", "--label", "↺ !4821 Grace Hopper", "--no-focus"]);
   });
 
   test("dedup: a tab with the same label already open is focused, not duplicated", async () => {
@@ -298,8 +457,11 @@ describe("launchReview", () => {
       if (args[0] === "tab" && args[1] === "list") return TAB_LIST_WITH_DUP;
       return JSON.stringify({ result: { type: "ok" } });
     };
-    const res = await launchReview(
-      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "reviews", statePath: "/s/1.json", author: "Grace Hopper" },
+    const res = await launchLegacyResume(
+      {
+        mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", repo: "acme/webapp", workspaceLabel: "reviews", statePath: "/s/1.json",
+        sessionId: "sess-1", workspaceKind: "review", author: "Grace Hopper",
+      },
       runner,
     );
     // Returns the existing tab, does not create a new one.
@@ -310,7 +472,7 @@ describe("launchReview", () => {
     expect(calls.some((c) => c[0] === "pane" && c[1] === "run")).toBe(false);
   });
 
-  test("creates the reviews workspace when absent, reusing its initial tab (no blank tab)", async () => {
+  test("creates the workspace when absent, reusing its initial tab (no blank tab)", async () => {
     const calls: string[][] = [];
     const runner: HerdrRunner = async (args) => {
       calls.push(args);
@@ -319,8 +481,11 @@ describe("launchReview", () => {
       if (args[0] === "workspace" && args[1] === "create") return WS_CREATE;
       return JSON.stringify({ result: { type: "ok" } });
     };
-    const res = await launchReview(
-      { mrUrl: "https://x/mr/2", iid: 42, cwd: "/repo", workspaceLabel: "reviews", statePath: "/s/2.json" },
+    const res = await launchLegacyResume(
+      {
+        mrUrl: "https://x/mr/2", iid: 42, cwd: "/repo", repo: "acme/webapp", workspaceLabel: "reviews", statePath: "/s/2.json",
+        sessionId: "sess-2", workspaceKind: "review",
+      },
       runner,
     );
     // Returns the workspace's initial tab/pane, not a second one.
@@ -328,15 +493,13 @@ describe("launchReview", () => {
     expect(calls).toContainEqual(["workspace", "create", "--label", "reviews", "--no-focus"]);
     // No second tab is opened — the blank initial tab is reused, just renamed.
     expect(calls.some((c) => c[0] === "tab" && c[1] === "create")).toBe(false);
-    expect(calls).toContainEqual(["tab", "rename", "w41:t1", "!42"]);
-    // The review command runs in the initial pane.
+    expect(calls).toContainEqual(["tab", "rename", "w41:t1", "↺ !42"]);
+    // The resume command runs in the initial pane.
     const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
     expect(runCall?.[2]).toBe("w41:p1");
-    expect(runCall?.[3]).toContain("claude '/board:review https://x/mr/2\n  --state /s/2.json");
+    expect(runCall?.[3]).toBe("cd '/repo' && claude --resume 'sess-2'");
   });
 });
-
-import { doctorPrompt, draftBinPath, statusBinPath, dispatchPrompt, respondPrompt, launchRespond, launchDoctor } from "../herdr.ts";
 
 describe("doctorPrompt tier flags", () => {
   test("emits --tier, --fix-classes, and --draft-bin when given", () => {
@@ -354,6 +517,40 @@ describe("doctorPrompt tier flags", () => {
     expect(p).not.toContain("--tier");
     expect(p).not.toContain("--fix-classes");
     expect(p).not.toContain("--draft-bin");
+  });
+});
+
+describe("--resumed-gate flag (parked-gate resume marker)", () => {
+  test("reviewPrompt emits --resumed-gate right after --skill when set", () => {
+    const p = reviewPrompt({
+      mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: "/b/review-status.ts",
+      reportPath: "/s/1.md", skill: "myteam:review", resumedGate: "gate-42",
+    });
+    expect(p).toBe(
+      `/board:review https://x/mr/1
+  --state /s/1.json
+  --status-bin /b/review-status.ts
+  --report /s/1.md
+  --skill myteam:review
+  --resumed-gate gate-42`,
+    );
+  });
+
+  test("a normal launch (no resumedGate) omits the flag entirely", () => {
+    const p = reviewPrompt({
+      mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: "/b/review-status.ts",
+      reportPath: "/s/1.md", skill: "myteam:review",
+    });
+    expect(p).not.toContain("--resumed-gate");
+  });
+
+  test("a re-review (reReview: true, no resumedGate) also omits the flag", () => {
+    const p = reviewPrompt({
+      mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: "/b/review-status.ts",
+      reportPath: "/s/1.md", skill: "myteam:review", reReview: true,
+    });
+    expect(p).not.toContain("--resumed-gate");
+    expect(p).toContain("--re-review");
   });
 });
 
@@ -429,89 +626,5 @@ describe("dispatchPrompt (wrapper hop stays; --skill-path rides alongside --skil
     const resolvePath = async () => "/cache/acme/skills/board-review/SKILL.md";
     const prompt = await dispatchPrompt("board:review", { ...baseOpts, reReview: true }, resolvePath);
     expect(prompt).toContain("--skill-path /cache/acme/skills/board-review/SKILL.md\n  --re-review");
-  });
-});
-
-describe("launchReview / launchRespond / launchDoctor --skill-path wiring", () => {
-  const okRunner: HerdrRunner = async (args) => {
-    if (args[0] === "workspace" && args[1] === "list") return WS_LIST;
-    if (args[0] === "workspace" && args[1] === "create") return WS_CREATE;
-    if (args[0] === "tab" && args[1] === "create") return TAB_CREATE;
-    return JSON.stringify({ result: { type: "ok" } });
-  };
-
-  test("launchReview adds --skill-path but keeps launching the /board:review wrapper", async () => {
-    const calls: string[][] = [];
-    const runner: HerdrRunner = async (args) => {
-      calls.push(args);
-      return okRunner(args);
-    };
-    const resolvePath = async () => "/cache/acme/skills/board-review/SKILL.md";
-    await launchReview(
-      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "reviews", statePath: "/s/1.json", skill: "acme:board-review" },
-      runner,
-      resolvePath,
-    );
-    const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
-    expect(runCall?.[3]).toContain("claude '/board:review https://x/mr/1");
-    expect(runCall?.[3]).toContain("--skill-path /cache/acme/skills/board-review/SKILL.md");
-  });
-
-  test("launchReview falls back to the slash form (no --skill-path) when resolution fails", async () => {
-    const calls: string[][] = [];
-    const runner: HerdrRunner = async (args) => {
-      calls.push(args);
-      return okRunner(args);
-    };
-    const resolvePath = async () => null;
-    await launchReview(
-      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "reviews", statePath: "/s/1.json", skill: "acme:board-review" },
-      runner,
-      resolvePath,
-    );
-    const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
-    expect(runCall?.[3]).toContain("claude '/board:review https://x/mr/1");
-    expect(runCall?.[3]).not.toContain("--skill-path");
-  });
-
-  test("launchRespond adds --skill-path but keeps launching the /board:respond wrapper", async () => {
-    const calls: string[][] = [];
-    const runner: HerdrRunner = async (args) => {
-      calls.push(args);
-      return okRunner(args);
-    };
-    const resolvePath = async () => "/cache/acme/skills/board-respond/SKILL.md";
-    await launchRespond(
-      { mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "responds", statePath: "/s/1.json", skill: "acme:board-respond" },
-      runner,
-      resolvePath,
-    );
-    const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
-    expect(runCall?.[3]).toBe(
-      buildPaneCommand("/repo", await dispatchPrompt("board:respond", {
-        mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: statusBinPath(), skill: "acme:board-respond",
-      }, resolvePath)),
-    );
-  });
-
-  test("launchDoctor adds --skill-path but keeps launching the /board:doctor wrapper, tier intact", async () => {
-    const calls: string[][] = [];
-    const runner: HerdrRunner = async (args) => {
-      calls.push(args);
-      return okRunner(args);
-    };
-    const resolvePath = async () => "/cache/acme/attachments/board-doctor-api/SKILL.md";
-    await launchDoctor(
-      {
-        mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "doctors", statePath: "/s/1.json",
-        skill: "acme:board-doctor-api", tier: "api",
-      },
-      runner,
-      resolvePath,
-    );
-    const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
-    expect(runCall?.[3]).toContain("claude '/board:doctor https://x/mr/1");
-    expect(runCall?.[3]).toContain("--skill-path /cache/acme/attachments/board-doctor-api/SKILL.md");
-    expect(runCall?.[3]).toContain("--tier api");
   });
 });

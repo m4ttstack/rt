@@ -16,8 +16,24 @@ export interface ReviewState {
       this and drops the matching reaction on the MR's slack message. */
   outcome?: ReviewOutcome;
   /** Claude Code session id, captured by the status CLI on any write. Lets the
-      board relaunch the same conversation via `claude --resume <sessionId>`. */
+      board relaunch the same conversation via `claude --resume <sessionId>`
+      (see launchLegacyResume) when no agentId is on file. */
   sessionId?: string;
+  /** rt agent record id from the launch/resume result. When present, a resume
+      goes through resumeAgentPane instead of the legacy claude --resume path. */
+  agentId?: string;
+  /** rt herdr pane id the agent landed in, from the launch/resume result. */
+  paneId?: string;
+  /** Facility gate id from the most recent `gate open`, so `gate wait` /
+      `gate answer` can find it by state path alone. */
+  gateId?: string;
+  /** Id of the gate the board has already resumed a parked-then-answered
+      session for. The exactly-once dedup marker for `handleAnsweredEvent`/
+      `bootResumePass` (gates/resume.ts) -- a gate id matching this is never
+      resumed twice, whether the resume is retried by a boot pass or the
+      live event fires again. `released` can never stand in for this: it
+      stays false forever for the board's unattended gates. */
+  resumedGateId?: string;
   startedAt: number;
   updatedAt: number;
   /** Whether the agent has written its full review markdown yet. Computed at
@@ -72,6 +88,10 @@ export function writeReviewState(
     workspaceId: patch.workspaceId ?? prev.workspaceId,
     outcome: patch.outcome ?? prev.outcome,
     sessionId: patch.sessionId ?? prev.sessionId,
+    agentId: patch.agentId ?? prev.agentId,
+    paneId: patch.paneId ?? prev.paneId,
+    gateId: patch.gateId ?? prev.gateId,
+    resumedGateId: patch.resumedGateId ?? prev.resumedGateId,
     startedAt: prev.startedAt ?? now,
     updatedAt: now,
   };

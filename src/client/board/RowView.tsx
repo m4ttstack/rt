@@ -7,6 +7,7 @@ import { Chip, CopyButton, SelectBox } from "@mattstack/tui-kit";
 import { StatusDot } from "./StatusDot.tsx";
 import { CommentsButton, CommentsToken } from "./CommentsDrawer.tsx";
 import { BoardBadges } from "./BoardBadges.tsx";
+import { GateCard } from "./GateCard.tsx";
 import { ago, activeReviewers, cleanTitle, mrLine, statusPhrase, flattenStack } from "./format.ts";
 
 /** Plain click opens the MR in GitLab; right-click opens the row action menu
@@ -166,6 +167,10 @@ function RowView({
             </div>
             <BoardBadges mr={mr as BoardMRWithReview} now={now} ctx={ctx} className="tui-row-board" />
             <Watching mr={mr} />
+            {/* Keyed by gateId: the card's selections/conflict state belongs
+                to ONE gate, and a re-review mints a new id for the same MR
+                row -- remounting is what clears the stale state. */}
+            {(mr as BoardMRWithReview).gate && <GateCard key={(mr as BoardMRWithReview).gate!.gateId} mr={mr as BoardMRWithReview} />}
             </div>
           </div>
     );

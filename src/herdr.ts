@@ -3,6 +3,7 @@ import { homedir } from "os";
 import { join } from "path";
 import { reviewReportPath } from "./review-state.ts";
 import { resolveSkillPath } from "./skill-path.ts";
+import { startAgentPane, type AgentIo, type AgentLaunchResult } from "./agent-launch.ts";
 import { shellSingleQuote } from "./shell-quote.ts";
 
 export type HerdrRunner = (args: string[]) => Promise<string>;
@@ -117,12 +118,27 @@ export interface SkillPromptOpts {
   /** Free-text instruction from the human who launched the pane, appended to
       the prompt as a trailing paragraph the wrapper skills know to honor. */
   note?: string;
+  /** Review only: the id of the parked gate this launch resumes. Present only
+      when the board answered a parked gate and is resuming the recorded
+      session -- the wrapper's re-entry rule keys on this flag to skip
+      `gate open` and go straight back into the domain skill. Absent on every
+      normal launch and on a re-review. */
+  resumedGate?: string;
 }
 
 /** The trailing paragraph a launch note becomes. The framing tells the wrapper
     (and the domain skill under it) this is direct human instruction, not a flag. */
 export function operatorNoteParagraph(note: string): string {
   return `Operator note (from the human who launched this pane): ${note}`;
+}
+
+/** The prompt a plain pane reopen (`?resume=1`, no --re-review) carries:
+    undefined (promptless, interactive) unless the human attached an operator
+    note, in which case that note is the whole prompt. This must NEVER be the
+    re-review dispatch prompt -- that belongs only to the /review re-review
+    flow (see review-launch.ts's launchReReview), never to a plain reopen. */
+export function reopenPrompt(note?: string): string | undefined {
+  return note ? operatorNoteParagraph(note) : undefined;
 }
 
 const NOTE_MAX_CHARS = 2000;
@@ -155,6 +171,7 @@ function dispatchArgs(o: SkillPromptOpts, skillPath?: string | null): string {
   flag("--status-bin", o.statusBin);
   flag("--report", o.reportPath);
   flag("--skill", o.skill);
+  flag("--resumed-gate", o.resumedGate);
   flag("--skill-path", skillPath);
   if (o.reReview) parts.push("--re-review");
   flag("--tier", o.tier);
@@ -237,11 +254,6 @@ function claudeInvocation(claudeCommand?: string): string {
   return claudeCommand?.trim() || "claude";
 }
 
-/** Shell command that cd's into cwd and starts claude with the given prompt. */
-export function buildPaneCommand(cwd: string, prompt: string, claudeCommand?: string): string {
-  return `cd ${shellSingleQuote(cwd)} && ${claudeInvocation(claudeCommand)} ${shellSingleQuote(prompt)}`;
-}
-
 /** Shell command that cd's into cwd and resumes an existing claude session. With
     no prompt, claude drops the user into the interactive continuation; with one,
     claude resumes and sends it as the first message (used by re-review). */
@@ -250,34 +262,31 @@ export function buildResumePaneCommand(cwd: string, sessionId: string, prompt?: 
   return prompt ? `${base} ${shellSingleQuote(prompt)}` : base;
 }
 
-/** Directive sent into a resumed review session to re-review after the author
-    responded. The session already holds the prior review, so this points it at
-    the new activity and tells it to fall back to a full review if the author
-    hasn't acted on any feedback. */
-export function reReviewResumePrompt(iid: number): string {
-  return [
-    `This is a RE-REVIEW of !${iid}, which you already reviewed.`,
-    `The author should have responded to your feedback since then — replied to or`,
-    `resolved comment threads, and/or pushed new commits. First check whether the`,
-    `author actually acted on your prior feedback. If they did, re-review: for each`,
-    `comment you raised, was it adequately addressed, and are the new changes sound?`,
-    `If NO action has been taken on your feedback since your last review, say so`,
-    `explicitly ("no author action found since last review") and fall back to a`,
-    `normal full review of the MR. Emit status via the status-bin exactly as before`,
-    `(reviewing now, done with the human's chosen outcome at the end), and follow the`,
-    `same posting gates — do not approve or post on your own.`,
-  ].join(" ");
-}
-
 export interface LaunchPaneOpts {
   mrUrl: string;
   iid: number;
   cwd: string;
+  /** The serialized rt repo identity (`repoIdentityField`'s output,
+      `remote:<encoded host/path>`) the rt agent daemon launches into --
+      never a bare GitLab project path, which the daemon's exact-string
+      match would never find. Unused by the legacy HerdrRunner path. */
+  repo: string;
   workspaceLabel: string;
   statePath: string;
   /** Domain skill the launched wrapper delegates to (resolveLaunchSkill's result). */
   skill?: string;
-  /** Command that starts claude in the pane (config.claudeCommand). Empty/absent = "claude". */
+  /** cswap account, --model, and --effort forwarded to startAgentPane's typed
+      rt agent daemon payload (the board.agent.* settings). Absent = the
+      daemon's own default. Unused by launchLegacyResume's HerdrRunner path,
+      which honors `claudeCommand` instead (the daemon payload has no field
+      for an arbitrary shell command). */
+  account?: string;
+  model?: string;
+  effort?: string;
+  /** Verbatim claudeCommand escape hatch (config.claudeCommand), used only by
+      launchLegacyResume's HerdrRunner path -- the rt agent daemon path takes
+      account/model/effort above instead, since its typed payload can't carry
+      a raw shell command. */
   claudeCommand?: string;
   /** Operator note appended to the launched prompt (see operatorNoteParagraph). */
   note?: string;
@@ -341,9 +350,9 @@ async function launchInWorkspace(
 
 export async function launchReview(
   opts: LaunchPaneOpts,
-  runner: HerdrRunner = defaultRunner,
+  io?: AgentIo,
   resolvePath: SkillPathResolver = resolveSkillPath,
-): Promise<{ tabId: string; workspaceId: string }> {
+): Promise<AgentLaunchResult> {
   const prompt = await dispatchPrompt("board:review", {
     mrUrl: opts.mrUrl,
     statePath: opts.statePath,
@@ -354,15 +363,15 @@ export async function launchReview(
     note: opts.note,
   }, resolvePath);
   const tabLabel = mrTabLabel(opts.iid, opts.author, opts.reReview ? "⟲" : undefined);
-  return launchInWorkspace(opts, buildPaneCommand(opts.cwd, prompt, opts.claudeCommand), "review", tabLabel, runner);
+  return startAgentPane({ repo: opts.repo, cwd: opts.cwd, prompt, workspaceLabel: opts.workspaceLabel, tabLabel, account: opts.account, model: opts.model, effort: opts.effort }, io);
 }
 
-/** Start the MR-response skill in a fresh herdr tab under the responses workspace. */
+/** Start the MR-response skill in a fresh rt-agent pane under the responses workspace. */
 export async function launchRespond(
   opts: LaunchPaneOpts,
-  runner: HerdrRunner = defaultRunner,
+  io?: AgentIo,
   resolvePath: SkillPathResolver = resolveSkillPath,
-): Promise<{ tabId: string; workspaceId: string }> {
+): Promise<AgentLaunchResult> {
   const prompt = await dispatchPrompt("board:respond", {
     mrUrl: opts.mrUrl,
     statePath: opts.statePath,
@@ -370,15 +379,16 @@ export async function launchRespond(
     skill: opts.skill,
     note: opts.note,
   }, resolvePath);
-  return launchInWorkspace(opts, buildPaneCommand(opts.cwd, prompt, opts.claudeCommand), "respond", mrTabLabel(opts.iid, opts.author), runner);
+  const tabLabel = mrTabLabel(opts.iid, opts.author);
+  return startAgentPane({ repo: opts.repo, cwd: opts.cwd, prompt, workspaceLabel: opts.workspaceLabel, tabLabel, account: opts.account, model: opts.model, effort: opts.effort }, io);
 }
 
-/** Start the MR-doctor skill in a fresh herdr tab under the doctors workspace. */
+/** Start the MR-doctor skill in a fresh rt-agent pane under the doctors workspace. */
 export async function launchDoctor(
   opts: LaunchPaneOpts,
-  runner: HerdrRunner = defaultRunner,
+  io?: AgentIo,
   resolvePath: SkillPathResolver = resolveSkillPath,
-): Promise<{ tabId: string; workspaceId: string }> {
+): Promise<AgentLaunchResult> {
   const prompt = await dispatchPrompt("board:doctor", {
     mrUrl: opts.mrUrl,
     statePath: opts.statePath,
@@ -389,15 +399,22 @@ export async function launchDoctor(
     draftBin: opts.draftBin,
     note: opts.note,
   }, resolvePath);
-  return launchInWorkspace(opts, buildPaneCommand(opts.cwd, prompt, opts.claudeCommand), "doctor", mrTabLabel(opts.iid, opts.author), runner);
+  const tabLabel = mrTabLabel(opts.iid, opts.author);
+  return startAgentPane({ repo: opts.repo, cwd: opts.cwd, prompt, workspaceLabel: opts.workspaceLabel, tabLabel, account: opts.account, model: opts.model, effort: opts.effort }, io);
 }
 
-/** Resume an existing session in a new pane under the given workspace. The tab is
-    labelled with a leading glyph (default `↺`) so a resumed pane is visually
-    distinct from a fresh launch when the workspace has both. An optional `prompt`
-    is sent as the first message (re-review uses this to direct the resumed
-    session); `tabPrefix` overrides the glyph (e.g. `⟲` for a re-review resume). */
-export async function launchResume(
+/** Resume a session that predates rt agent adoption (a bare claude sessionId,
+    no agentId) in a new pane under the given workspace, over the HerdrRunner.
+    Ages out as panes relaunch through startAgentPane/launchReview et al.
+    `opts.claudeCommand` (config.claudeCommand) replaces plain "claude" verbatim,
+    same escape hatch as the historical shell-launch path; the rt agent path's
+    account/model/effort don't apply here, since this never reaches the daemon.
+    The tab is labelled with a leading glyph (default `↺`) so a resumed pane is
+    visually distinct from a fresh launch when the workspace has both. An
+    optional `prompt` is sent as the first message (re-review uses this to
+    direct the resumed session); `tabPrefix` overrides the glyph (e.g. `⟲` for
+    a re-review resume). */
+export async function launchLegacyResume(
   opts: LaunchPaneOpts & { sessionId: string; workspaceKind: string; prompt?: string; tabPrefix?: string },
   runner: HerdrRunner = defaultRunner,
 ): Promise<{ tabId: string; workspaceId: string }> {
@@ -415,4 +432,11 @@ export type LaunchReviewOpts = LaunchPaneOpts;
 
 export async function focusTab(tabId: string, runner: HerdrRunner = defaultRunner): Promise<void> {
   await runner(["tab", "focus", tabId]);
+}
+
+/** Close a launched pane's tab, e.g. once its agent reports done (see
+    closeOnDone). Uses the herdr CLI runner directly -- there is no rt
+    pane:close verb this pass. */
+export async function closeTab(tabId: string, runner: HerdrRunner = defaultRunner): Promise<void> {
+  await runner(["tab", "close", tabId]);
 }

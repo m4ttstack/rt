@@ -46,6 +46,21 @@ export function daemonRepoField(config: Pick<BoardConfig, "rtRepos">, projectPat
   return repoIdentityField(config.rtRepos[projectPath]);
 }
 
+/** Resolve the rt agent daemon's `repo` identity for a launch (startAgentPane's
+    `repo`, matched by `rt agent list --repo <identity>`'s exact-string
+    filter). Prefers the project's configured rtRepos value -- the same
+    resolution readDiscussions already relies on at server.ts's
+    enrichReviewerComments/readLatchDetail -- and falls back to deriving one
+    from gitlabHost plus the MR's own GitLab project path. Never blocks a
+    launch: when both attempts fail (malformed config), logs a warning and
+    returns the bare project path as a best-effort value instead of null. */
+export function resolveLaunchRepo(rtRepoOverride: string | null | undefined, gitlabHost: string, projectPath: string, mrUrl: string): string {
+  const repo = repoIdentityField(rtRepoOverride) ?? repoIdentityField(`${gitlabHost}/${projectPath}`);
+  if (repo) return repo;
+  console.warn(`launch: could not resolve an rt repo identity for ${mrUrl} (gitlabHost=${gitlabHost}, projectPath=${projectPath || "<empty>"}); launching with the bare project path`);
+  return projectPath;
+}
+
 export interface TabConfig {
   id: string;
   label: string;
@@ -77,6 +92,9 @@ export interface BoardConfig {
   defaultMember: string;
   /** Hide MRs with no activity (last update) in more than this many days. */
   staleAfterDays: number;
+  /** How long an `open` review gate waits for an answer before the sweep
+      parks it. Minutes. */
+  gateGraceMinutes: number;
   /**
    * If non-empty, only show MRs whose Linear ticket key starts with one of
    * these prefixes (e.g. ["CV"] to show only CV-#### tickets). Case-insensitive.
@@ -199,6 +217,9 @@ export function parseConfig(raw: string, source = "config.json"): BoardConfig {
   if (cfg.staleAfterDays !== undefined && (typeof cfg.staleAfterDays !== "number" || cfg.staleAfterDays <= 0)) {
     throw new Error(`${source} "staleAfterDays" must be a positive number`);
   }
+  if (cfg.gateGraceMinutes !== undefined && (typeof cfg.gateGraceMinutes !== "number" || cfg.gateGraceMinutes <= 0)) {
+    throw new Error(`${source} "gateGraceMinutes" must be a positive number`);
+  }
   if (cfg.ticketPrefixes !== undefined) {
     if (!Array.isArray(cfg.ticketPrefixes) || cfg.ticketPrefixes.some((p) => typeof p !== "string" || !p.trim())) {
       throw new Error(`${source} "ticketPrefixes" must be an array of non-empty strings`);
@@ -245,6 +266,7 @@ export function parseConfig(raw: string, source = "config.json"): BoardConfig {
     members: cfg.members!,
     defaultMember: cfg.defaultMember ?? "all",
     staleAfterDays: cfg.staleAfterDays ?? 90,
+    gateGraceMinutes: cfg.gateGraceMinutes ?? 90,
     // Normalize to uppercase so matching is case-insensitive (ticket keys are uppercased).
     ticketPrefixes: (cfg.ticketPrefixes ?? []).map((p) => p.trim().toUpperCase()),
     title: cfg.title ?? "MRs ready for review",
@@ -437,16 +459,24 @@ export function composeAgentCommand({ account, model, effort }: AgentSettings): 
   return [head, ...flags].join(" ");
 }
 
+/** The three board.agent.* settings read directly, typed rather than composed
+    into a shell string -- for the rt agent daemon's own launch payload
+    (startAgentPane's account/model/effort), which has no field for an
+    arbitrary command and so can't go through claudeCommand/composeAgentCommand
+    at all. Same fail-open contract as storeValue: an unregistered key or an
+    unreachable store degrades to undefined per field. */
+export function loadAgentSettings(resolve: GetSettingFn = getSetting): AgentSettings {
+  return {
+    account: storeValue<string>("board.agent.account", resolve),
+    model: storeValue<string>("board.agent.model", resolve),
+    effort: storeValue<string>("board.agent.effort", resolve),
+  };
+}
+
 /** `undefined` when the store owns none of the three, so the caller falls back
     to the file's verbatim `claudeCommand` escape hatch. */
 function agentCommand(resolve: GetSettingFn): string | undefined {
-  return (
-    composeAgentCommand({
-      account: storeValue<string>("board.agent.account", resolve),
-      model: storeValue<string>("board.agent.model", resolve),
-      effort: storeValue<string>("board.agent.effort", resolve),
-    }) || undefined
-  );
+  return composeAgentCommand(loadAgentSettings(resolve)) || undefined;
 }
 
 /**
@@ -507,6 +537,10 @@ function withBoardStoreFallback(fileConfig: BoardConfig, resolve: GetSettingFn):
     slack: storeValue("board.slack", resolve) ?? fileConfig.slack,
     doctorSkill: storeValue("board.doctorSkill", resolve) ?? fileConfig.doctorSkill,
     staleAfterDays: storeValue("board.staleAfterDays", resolve) ?? fileConfig.staleAfterDays,
+    // The store key may be unregistered on this rt-client pin -- storeValue
+    // already catches the resolver's unknown-key throw and returns
+    // undefined, so this falls open to 90 rather than bricking config load.
+    gateGraceMinutes: storeValue("board.gateGraceMinutes", resolve) ?? fileConfig.gateGraceMinutes ?? 90,
     reviewsWorkspace: workspaces?.reviews ?? fileConfig.reviewsWorkspace,
     respondsWorkspace: workspaces?.responds ?? fileConfig.respondsWorkspace,
     doctorsWorkspace: workspaces?.doctors ?? fileConfig.doctorsWorkspace,

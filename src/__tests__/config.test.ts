@@ -2,7 +2,17 @@ import { describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { daemonRepoField, parseConfig, repoIdentityField, saveSwitchboardUrl, setHiddenInRaw } from "../config.ts";
+import type { getSetting } from "@mattstack/rt-client";
+import { daemonRepoField, loadConfigFrom, parseConfig, repoIdentityField, saveSwitchboardUrl, setHiddenInRaw } from "../config.ts";
+
+type GetSettingFn = typeof getSetting;
+
+/** A resolve stand-in returning `values[key]` (or undefined for an absent
+    key), matching getSetting's shape without touching any real store --
+    same precedent as config-store-latch.test.ts's fakeResolve. */
+function fakeResolve(values: Record<string, unknown>): GetSettingFn {
+  return (<T,>(key: string) => ({ value: values[key] as T, provenance: [] })) as GetSettingFn;
+}
 
 const base = {
   gitlabHost: "https://gitlab.com",
@@ -16,6 +26,7 @@ describe("parseConfig", () => {
     expect(cfg.members).toEqual([{ username: "alice", name: "Alice Ng" }, { username: "bob" }]);
     expect(cfg.title).toBe("MRs ready for review");
     expect(cfg.staleAfterDays).toBe(90);
+    expect(cfg.gateGraceMinutes).toBe(90);
     expect(cfg.ticketPrefixes).toEqual([]);
   });
 
@@ -39,6 +50,15 @@ describe("parseConfig", () => {
   test("throws when staleAfterDays is not a positive number", () => {
     expect(() => parseConfig(JSON.stringify({ ...base, staleAfterDays: 0 }))).toThrow(/staleAfterDays/);
     expect(() => parseConfig(JSON.stringify({ ...base, staleAfterDays: -5 }))).toThrow(/staleAfterDays/);
+  });
+
+  test("accepts a positive gateGraceMinutes override", () => {
+    expect(parseConfig(JSON.stringify({ ...base, gateGraceMinutes: 30 })).gateGraceMinutes).toBe(30);
+  });
+
+  test("throws when gateGraceMinutes is not a positive number", () => {
+    expect(() => parseConfig(JSON.stringify({ ...base, gateGraceMinutes: 0 }))).toThrow(/gateGraceMinutes/);
+    expect(() => parseConfig(JSON.stringify({ ...base, gateGraceMinutes: -5 }))).toThrow(/gateGraceMinutes/);
   });
 
   test("throws when members is missing or empty", () => {

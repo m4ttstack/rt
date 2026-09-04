@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "fs";
 import { join } from "path";
 import { GitLabProvider, parseRepoId, type MRDetail } from "@mattstack/glance";
 import { readDiscussions, readProjectMRs } from "@mattstack/rt-client";
-import { loadConfig, loadGitLabToken, loadSwitchboardToken, repoIdentityField } from "../src/config.ts";
+import { loadConfig, loadGitLabToken, loadSwitchboardToken, repoIdentityField, resolveLaunchRepo, loadAgentSettings } from "../src/config.ts";
 import { buildBoard, projectPathFromWebUrl } from "../src/data.ts";
 import { doctorFilePath, readDoctorStates, writeDoctorState } from "../src/doctor-state.ts";
 import { launchDoctor } from "../src/herdr.ts";
@@ -61,6 +61,15 @@ writeFileSync(LOCK_PATH, String(process.pid));
 try {
   const boardConfig = loadConfig();
   const memory = readMemory();
+
+  // The rt agent daemon's `repo` identity for a launch, resolved the same
+  // way BoardMR.rtRepo is (config.rtRepos keyed by the MR's GitLab project
+  // path), since this pipeline works from mrUrl alone and never builds a
+  // BoardMR of its own.
+  const repoForMrUrl = (mrUrl: string): string => {
+    const projectPath = projectPathFromWebUrl(mrUrl, boardConfig.gitlabHost) ?? "";
+    return resolveLaunchRepo(boardConfig.rtRepos[projectPath] ?? null, boardConfig.gitlabHost, projectPath, mrUrl);
+  };
 
   // Own-MR identity from the GitLab token (ruling: never defaultMember),
   // cached so steady-state runs are pure socket reads.
@@ -128,7 +137,8 @@ try {
     triage,
     doctorCwd: boardConfig.doctorCwd || boardConfig.reviewCwd,
     doctorsWorkspace: boardConfig.doctorsWorkspace,
-    claudeCommand: boardConfig.claudeCommand,
+    ...loadAgentSettings(),
+    repoForMr: repoForMrUrl,
     // Same resolved identity fetchOwnMrs just filtered by (MAT-351 re-check).
     identity: username,
     fetchOwnMrs,
@@ -180,10 +190,13 @@ try {
       launchReReview: (mrUrl, iid) =>
         launchReReview(mrUrl, iid, {
           cwd: boardConfig.reviewCwd,
+          repo: repoForMrUrl(mrUrl),
           workspaceLabel: boardConfig.reviewsWorkspace,
           // BOARD-14: manifest binding when present, else "" (the generic wrapper) --
           // same resolution the board's own HTTP re-review launches use.
           skill: resolveLaunchSkill("review", mrUrl, boardConfig),
+          ...loadAgentSettings(),
+          claudeCommand: boardConfig.claudeCommand,
         }),
       publishOutcome: (to, payload) => enqueueOutbox(makeEnvelope(to, "nudge-outcome", payload)),
       memory,
@@ -215,8 +228,10 @@ try {
         launchReReview: (mrUrl, iid) =>
           launchReReview(mrUrl, iid, {
             cwd: boardConfig.reviewCwd,
+            repo: repoForMrUrl(mrUrl),
             workspaceLabel: boardConfig.reviewsWorkspace,
             skill: resolveLaunchSkill("review", mrUrl, boardConfig),
+            ...loadAgentSettings(),
             claudeCommand: boardConfig.claudeCommand,
           }),
         memory,
