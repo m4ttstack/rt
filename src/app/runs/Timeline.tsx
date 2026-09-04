@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import {
   Anchor,
   Badge,
@@ -22,6 +23,15 @@ import { STAGE_STATUS_COLOR } from './stageStatus';
     line, so the two timelines read as one object. */
 const BULLET_SIZE = 22;
 const LINE_WIDTH = 2;
+
+/**
+ * Longest record value that can still share the condensed line. Above it the
+ * whole row stacks: a non-current stage renders every record as a sibling of
+ * the stage name, so a stage carrying several long ones (`self-review`
+ * routinely carries six) splits the line into columns a few words wide and
+ * runs off the side of the panel.
+ */
+const CONDENSED_LINE_MAX = 80;
 
 /**
  * `fields`' primary key is `(run_id, key)`, written via `INSERT OR REPLACE`
@@ -153,6 +163,84 @@ function DecisionRow({ decision }: { decision: RunDecisionRow }) {
     <Text size="sm" c={text.muted}>
       decision · {decision.contract} → {decision.selection}
     </Text>
+  );
+}
+
+/**
+ * All-or-nothing, so records keep the order a stage recorded them in: one
+ * long value would squeeze its neighbours whether or not they are short.
+ */
+export function condensesToLine(
+  fields: RunFieldRow[],
+  decisions: RunDecisionRow[]
+): boolean {
+  return (
+    fields.every(field => field.value.length <= CONDENSED_LINE_MAX) &&
+    decisions.every(
+      decision =>
+        decision.contract.length + decision.selection.length <=
+        CONDENSED_LINE_MAX
+    )
+  );
+}
+
+/**
+ * A non-current stage's records, either alongside the stage name or stacked
+ * beneath it. Only `condensesToLine` decides which -- see its rule.
+ */
+function CondensedStage({
+  summary,
+  fields,
+  decisions,
+}: {
+  summary: ReactNode;
+  fields: RunFieldRow[];
+  decisions: RunDecisionRow[];
+}) {
+  const records = (
+    <>
+      {fields.map(field => (
+        <FieldRow key={field.key} field={field} />
+      ))}
+      {decisions.map(decision => (
+        <DecisionRow
+          key={`${decision.contract}-${decision.scope}-${decision.decided_at}`}
+          decision={decision}
+        />
+      ))}
+    </>
+  );
+
+  if (!condensesToLine(fields, decisions)) {
+    return (
+      <Stack
+        gap={4}
+        data-testid="timeline-stage-condensed"
+        data-layout="stacked"
+      >
+        {summary}
+        {records}
+      </Stack>
+    );
+  }
+
+  return (
+    <Group
+      gap="md"
+      // Wrap rather than divide a fixed width: short records still outrun the
+      // line at a narrow viewport, and a nowrap row answers that by shrinking
+      // every column instead of moving one down.
+      wrap="wrap"
+      // Top-align: when a field value wraps the row grows tall, and centering
+      // it would drop the stage name below the bullet. The name stays on the
+      // first line, by the check.
+      align="flex-start"
+      data-testid="timeline-stage-condensed"
+      data-layout="line"
+    >
+      {summary}
+      {records}
+    </Group>
   );
 }
 
@@ -308,26 +396,11 @@ export function Timeline({
                   isCurrent ? (
                     summary
                   ) : (
-                    <Group
-                      gap="md"
-                      wrap="nowrap"
-                      // Top-align: when a field value wraps the row grows tall,
-                      // and centering it would drop the stage name below the
-                      // bullet. The name stays on the first line, by the check.
-                      align="flex-start"
-                      data-testid="timeline-stage-condensed"
-                    >
-                      {summary}
-                      {stageFields.map(field => (
-                        <FieldRow key={field.key} field={field} />
-                      ))}
-                      {stageDecisions.map(decision => (
-                        <DecisionRow
-                          key={`${decision.contract}-${decision.scope}-${decision.decided_at}`}
-                          decision={decision}
-                        />
-                      ))}
-                    </Group>
+                    <CondensedStage
+                      summary={summary}
+                      fields={stageFields}
+                      decisions={stageDecisions}
+                    />
                   )
                 }
               >
