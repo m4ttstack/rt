@@ -17,18 +17,18 @@ import { readProjectMRs, readDiscussions, subscribe, gateList, gatePark, gateClo
 import { SnapshotCache } from "./cache.ts";
 import { isLocalRequest } from "./local.ts";
 import { settingsHandler } from "@mattstack/settings-kit/server";
-import { readReviewStates, pruneReviewStates, reviewFilePath, writeReviewState, parseReviewRequestBody, attachReviews, readReviewReport } from "./review-state.ts";
-import { readRespondStates, pruneRespondStates, respondFilePath, writeRespondState, parseRespondRequestBody, attachResponds } from "./respond-state.ts";
-import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, parseDoctorRequestBody, attachDoctors } from "./doctor-state.ts";
+import { readReviewStates, pruneReviewStates, reviewFilePath, reviewReportPath, writeReviewState, parseReviewRequestBody, attachReviews, readReviewReport, type ReviewState, type ReviewStatus } from "./review-state.ts";
+import { readRespondStates, pruneRespondStates, respondFilePath, writeRespondState, parseRespondRequestBody, attachResponds, type RespondState, type RespondStatus } from "./respond-state.ts";
+import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, parseDoctorRequestBody, attachDoctors, type DoctorState, type DoctorStatus } from "./doctor-state.ts";
 import { GATE_DIR, type GateAnswers } from "./gates/store.ts";
 import { ingestRelayFrame, reconcileGatesOnBoot, ensureBridgeRule, type EventBridgeRule, type GateEventFrame } from "./gates/ingest.ts";
 import { GateCache, attachGates } from "./gates/cache.ts";
 import { answerGate } from "./gates/answer.ts";
-import { handleAnsweredEvent, bootResumePass, type GateResumeEventIo } from "./gates/resume.ts";
+import { handleAnsweredEvent, bootResumePass, type GateResumeEventIo, type KindResumeIo } from "./gates/resume.ts";
 import { planSweep, pruneOffBoardGates } from "./gates/sweep.ts";
 import { executeSweepAction, type ExecuteSweepActionIo } from "./gates/execute-sweep-action.ts";
 import { readDrafts, heldDraftsByMr, attachDrafts, pruneDrafts, draftFilePath, writeDraft } from "./draft-state.ts";
-import { launchReview, launchRespond, launchDoctor, launchLegacyResume, parseLaunchNote, mrTabLabel, reopenPrompt, closeTab } from "./herdr.ts";
+import { launchReview, launchRespond, launchDoctor, launchLegacyResume, parseLaunchNote, mrTabLabel, reopenPrompt, closeTab, dispatchPrompt, statusBinPath } from "./herdr.ts";
 import { closeOnDone, type TabIdResolver, type TabIdClearer } from "./close-on-done.ts";
 import { focusPane } from "./focus-pane.ts";
 import { resumeAgentPane } from "./agent-launch.ts";
@@ -1793,21 +1793,67 @@ function sweepActionIo(): ExecuteSweepActionIo {
   };
 }
 
-// Same "built fresh, not module-level" reasoning as sweepActionIo -- config
-// can be reassigned (switchboard-url save) after boot.
-function gateResumeIo(): GateResumeEventIo {
+// One KindResumeIo per resumable gate kind, built fresh per sweep/resume
+// call (not module-level) since `config` can be reassigned (switchboard-url
+// save) after boot -- same reasoning as sweepActionIo.
+function reviewResumeIo(): KindResumeIo {
   return {
-    // resume.ts only resumes the "review-post" kind until W3's per-kind
-    // resume work lands (RESUMABLE_KIND in gates/resume.ts) -- hardcoding it
-    // here keeps GateResumeEventIo's subject-only signature unchanged.
-    gateRow: (subject) => gateCache.get(subject, "review-post"),
+    readState: (mrUrl) => readReviewStates().get(mrUrl),
+    writeState: (path, patch) => writeReviewState(path, patch as Partial<ReviewState> & { status: ReviewStatus }),
+    filePath: reviewFilePath,
+    resolveSkill: (mrUrl, tabId) => reviewSkillForTab(config, tabId, mrUrl, resolveLaunchSkill),
+    prompt: (mrUrl, statePath, skill, resumedGate, resolvePath) =>
+      dispatchPrompt(
+        "board:review",
+        { mrUrl, statePath, statusBin: statusBinPath(), reportPath: reviewReportPath(statePath), skill, resumedGate },
+        resolvePath,
+      ),
+    resumedStatus: "reviewing",
+    workspaceLabel: config.reviewsWorkspace,
+  };
+}
+
+function respondResumeIo(): KindResumeIo {
+  return {
+    readState: (mrUrl) => readRespondStates().get(mrUrl),
+    writeState: (path, patch) => writeRespondState(path, patch as Partial<RespondState> & { status: RespondStatus }),
+    filePath: respondFilePath,
+    resolveSkill: (mrUrl) => resolveLaunchSkill("respond", mrUrl),
+    prompt: (mrUrl, statePath, skill, resumedGate, resolvePath) =>
+      dispatchPrompt("board:respond", { mrUrl, statePath, statusBin: statusBinPath(), skill, resumedGate }, resolvePath),
+    resumedStatus: "implementing",
+    workspaceLabel: config.respondsWorkspace,
+  };
+}
+
+function doctorResumeIo(): KindResumeIo {
+  return {
+    readState: (mrUrl) => readDoctorStates().get(mrUrl),
+    writeState: (path, patch) => writeDoctorState(path, patch as Partial<DoctorState> & { status: DoctorStatus }),
+    filePath: doctorFilePath,
+    resolveSkill: (mrUrl) => resolveLaunchSkill("doctor", mrUrl),
+    prompt: (mrUrl, statePath, skill, resumedGate, resolvePath) =>
+      dispatchPrompt("board:doctor", { mrUrl, statePath, statusBin: statusBinPath(), skill, resumedGate }, resolvePath),
+    resumedStatus: "fixing",
+    workspaceLabel: config.doctorsWorkspace,
+  };
+}
+
+function gateResumeIo(): GateResumeEventIo {
+  // respond-plan and respond-post share one wrapper (board:respond) and one
+  // state file -- the same KindResumeIo record answers for both kinds.
+  const respond = respondResumeIo();
+  return {
+    resumers: {
+      "review-post": reviewResumeIo(),
+      "respond-plan": respond,
+      "respond-post": respond,
+      "doctor-escalation": doctorResumeIo(),
+    },
+    rowsForSubject: (subject) => gateCache.rowsFor(subject),
     applyRow: (row) => gateCache.applyRow(row),
-    readReviewState: (mrUrl) => readReviewStates().get(mrUrl),
     gateList,
-    resolveLaunchSkill: (mrUrl, tabId) => reviewSkillForTab(config, tabId, mrUrl, resolveLaunchSkill),
     resumeAgentPane,
-    writeReviewState,
-    reviewsWorkspace: config.reviewsWorkspace,
     notify: (message) => console.error(`gate resume: ${message}`),
   };
 }

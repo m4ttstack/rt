@@ -1,36 +1,73 @@
 import type { GateRow as FacilityGateRow } from "@mattstack/rt-client";
 import type { GateQuestion, GateState } from "./store.ts";
-import { dispatchPrompt, statusBinPath, mrTabLabel, type SkillPathResolver } from "../herdr.ts";
+import { mrTabLabel, type SkillPathResolver } from "../herdr.ts";
 import { resolveSkillPath } from "../skill-path.ts";
-import { reviewFilePath, reviewReportPath, type ReviewState, type ReviewStatus } from "../review-state.ts";
 import type { AgentLaunchResult } from "../agent-launch.ts";
 import { GATE_LIST_PAGE_LIMIT, type GateEventFrame } from "./ingest.ts";
 
-/** Seams the real parked-gate resume needs beyond what answerGate's own io
-    carries: launching into the review workspace and persisting the result to
-    review state, both of which require config the pure answerGate/AnswerGateIo
-    layer deliberately doesn't hold. */
+/** The fields any domain's lifecycle state carries in common -- the subset
+    a resume needs, regardless of which wrapper (review/respond/doctor)
+    owns the file. ReviewState/RespondState/DoctorState each satisfy this
+    once gateId/gateKind/resumedGateId are on them. */
+export interface ResumableState {
+  mrUrl: string;
+  iid: number;
+  status: string;
+  agentId?: string;
+  tabId?: string;
+  paneId?: string;
+  workspaceId?: string;
+  gateId?: string;
+  resumedGateId?: string;
+}
+
+/** Everything one resumable gate kind needs to rebuild its wrapper's
+    re-entry prompt and persist a resumed pane's ids back onto its own state
+    file. One record per kind (`review-post`, `respond-plan`, `respond-post`,
+    `doctor-escalation`) -- server.ts wires review's record to today's
+    plumbing unchanged and gives respond/doctor their own state fns and
+    workspace. A kind with no record here has no board resume wiring at all
+    (see `ResumeParkedGateIo.resumers`). */
+export interface KindResumeIo {
+  readState(mrUrl: string): ResumableState | undefined;
+  writeState(path: string, patch: Partial<ResumableState> & { status: string }): void;
+  filePath(mrUrl: string): string;
+  /** Resolve the domain skill the resumed wrapper should delegate to --
+      review honors a tab's `reviewSkill` override via `tabId`; respond/doctor
+      have no such override and ignore it. */
+  resolveSkill(mrUrl: string, tabId?: string): string;
+  /** Builds the wrapper's `--resumed-gate` re-entry prompt for this kind --
+      each domain's own `dispatchPrompt("board:<domain>", {...}, resolvePath)`
+      call, since the SkillPromptOpts fields a domain needs (e.g. review's
+      `reportPath`) differ. */
+  prompt(mrUrl: string, statePath: string, skill: string, resumedGate: string, resolvePath: SkillPathResolver): Promise<string>;
+  /** The status this kind's state settles into once its pane resumes.
+      Review has exactly one in-flight status ("reviewing"), reproduced
+      verbatim; respond/doctor each have a richer lifecycle and pick their
+      own settle point rather than have one inferred generically. */
+  resumedStatus: string;
+  workspaceLabel: string;
+}
+
+/** Seams the real parked-gate resume needs beyond one kind's own IO: which
+    kind maps to which KindResumeIo, launching into the resumed workspace,
+    and the courtesy notify when a resume can't proceed. */
 export interface ResumeParkedGateIo {
-  /** Resolve the domain skill the resumed wrapper should delegate to: the
-      board tab's `reviewSkill` override when the gate's tabId names one,
-      else the manifest/config binding -- same precedence /review's fresh
-      launch and re-review paths use (reviewSkillForTab). */
-  resolveLaunchSkill(mrUrl: string, tabId?: string): string;
+  resumers: Partial<Record<string, KindResumeIo>>;
   resumeAgentPane(opts: { agentId: string; prompt: string; workspaceLabel: string; tabLabel: string }): Promise<AgentLaunchResult>;
-  writeReviewState(path: string, patch: Partial<ReviewState> & { status: ReviewStatus }): void;
-  reviewsWorkspace: string;
   notify(message: string): void;
 }
 
 /**
- * The real parked-gate resume: rebuild the `/board:review` prompt with
- * `--resumed-gate <gateId>` (the flag the wrapper's re-entry rule keys on to
- * skip `gate open` and re-enter the domain skill directly) and resume the
- * pane the gate parked on, persisting the fresh pane ids to review state.
+ * The real parked-gate resume: rebuild the resumed kind's wrapper prompt
+ * with `--resumed-gate <gateId>` (the flag the wrapper's re-entry rule keys
+ * on to skip `gate open` and re-enter the domain skill directly) and resume
+ * the pane the gate parked on, persisting the fresh pane ids to that kind's
+ * own state file.
  *
  * A parked gate always carries the agentId it parked with -- ingest.ts sets
- * status: "parked" only on a gate that already opened a review pane. A
- * missing agentId means that invariant broke (or the gate file was hand
+ * status: "parked" only on a gate that already opened a wrapper pane. A
+ * missing agentId means that invariant broke (or the state file was hand
  * edited), so this degrades to a notify rather than throwing: the answer
  * itself already succeeded and must not be undone by a resume failure.
  *
@@ -51,26 +88,19 @@ export async function resumeParkedGate(
     return false;
   }
 
-  const statePath = reviewFilePath(gate.mrUrl);
-  const prompt = await dispatchPrompt(
-    "board:review",
-    {
-      mrUrl: gate.mrUrl,
-      statePath,
-      statusBin: statusBinPath(),
-      reportPath: reviewReportPath(statePath),
-      skill: io.resolveLaunchSkill(gate.mrUrl, gate.tabId),
-      resumedGate: gate.gateId,
-    },
-    resolvePath,
-  );
+  const kindIo = io.resumers[gate.kind];
+  if (!kindIo) throw new Error(`${gate.kind} resume not wired`);
+
+  const statePath = kindIo.filePath(gate.mrUrl);
+  const skill = kindIo.resolveSkill(gate.mrUrl, gate.tabId);
+  const prompt = await kindIo.prompt(gate.mrUrl, statePath, skill, gate.gateId, resolvePath);
 
   let result;
   try {
     result = await io.resumeAgentPane({
       agentId: gate.agentId,
       prompt,
-      workspaceLabel: io.reviewsWorkspace,
+      workspaceLabel: kindIo.workspaceLabel,
       tabLabel: mrTabLabel(gate.iid, undefined, "↺"),
     });
   } catch (err) {
@@ -79,8 +109,8 @@ export async function resumeParkedGate(
   }
   if (result.focusedExisting) return true;
   try {
-    io.writeReviewState(statePath, {
-      status: "reviewing",
+    kindIo.writeState(statePath, {
+      status: kindIo.resumedStatus,
       agentId: result.agentId,
       paneId: result.paneId,
       tabId: result.tabId,
@@ -98,17 +128,18 @@ type GateListPayload = { subjectPrefix: string; cursor?: number; limit?: number 
 type GateListResult = { ok: boolean; data?: { gates: FacilityGateRow[]; cursor: number }; error?: string };
 
 /** Seams `handleAnsweredEvent`/`bootResumePass` need beyond `resumeParkedGate`'s
-    own io: reading the (already cache-updated) facility row and the tracked
-    review state, and paging the facility's gate list for the boot pass. */
+    own io: reading the (already cache-updated) facility rows and paging the
+    facility's gate list for the boot pass. */
 export interface GateResumeEventIo extends ResumeParkedGateIo {
-  /** The board's gate cache, keyed by `mr:<mrUrl>` subject -- read AFTER the
-      triggering frame has already been applied to it. */
-  gateRow(subject: string): FacilityGateRow | undefined;
+  /** Every kind's cached row for one subject -- a subject can carry more
+      than one live kind at once (a review-post gate alongside a respond or
+      doctor one), so the caller matches by id, not by assuming a single
+      row per subject. */
+  rowsForSubject(subject: string): FacilityGateRow[];
   /** Writes a row fetched straight from the daemon into the board's cache
       (the cache-miss fallback in `handleAnsweredEvent`), so a later read of
       this subject doesn't have to refetch. */
   applyRow(row: FacilityGateRow): void;
-  readReviewState(mrUrl: string): ReviewState | undefined;
   gateList(payload: GateListPayload): Promise<GateListResult>;
 }
 
@@ -116,21 +147,15 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
 }
 
-/** Kinds this board can resume a wrapper for. `review-post` is the only one
-    W2 wires; every other kind (present or future) throws rather than being
-    silently skipped -- a resume this board can't perform must never look
-    like one that didn't need to happen. */
-const RESUMABLE_KIND = "review-post";
-
 /**
  * One answered-and-parked row, resumed by kind -- shared by the live event
  * path and the boot catch-up pass. Skips a row that was never parked (an
  * `open` gate answered directly never sets `parkedAt`, and it survives the
  * `answered` patch -- see GateCache.applyEvent) or one already resumed
- * (the `resumedGateId` dedup marker). The dedup marker is written only when
- * a pane actually resumed -- the missing-agentId notify degrade and a failed
- * dispatch both stay retryable rather than getting marked resumed forever
- * over a gate nothing resumed. Re-reads the review state after the resume
+ * (the `resumedGateId` dedup marker, tracked on that kind's own state file).
+ * A kind with no `resumers` entry (present or future) throws rather than
+ * being silently skipped -- a resume this board can't perform must never
+ * look like one that didn't need to happen. Re-reads state after the resume
  * attempt so that write can't clobber whatever status `resumeParkedGate`
  * itself just settled on.
  */
@@ -139,33 +164,32 @@ async function resumeIfMissed(row: FacilityGateRow, io: GateResumeEventIo, resol
   if (!row.subject.startsWith("mr:")) return;
   const mrUrl = row.subject.slice("mr:".length);
 
-  const review = io.readReviewState(mrUrl);
-  if (!review || review.resumedGateId === row.id) return;
-  // A row that isn't the gate this review currently tracks is history -- a
-  // re-review superseded it and a fresh gate now owns this MR's answer flow.
-  // Resuming it would re-post a stale answer into the current agent.
-  if (review.gateId !== row.id) return;
+  const kindIo = io.resumers[row.kind];
+  if (!kindIo) throw new Error(`${row.kind} resume not wired`);
 
-  if (row.kind !== RESUMABLE_KIND) {
-    throw new Error(`${row.kind} resume not wired until W3`);
-  }
+  const state = kindIo.readState(mrUrl);
+  if (!state || state.resumedGateId === row.id) return;
+  // A row that isn't the gate this state currently tracks is history -- a
+  // fresh round superseded it and a new gate now owns this MR's answer flow.
+  // Resuming it would re-post a stale answer into the current agent.
+  if (state.gateId !== row.id) return;
 
   const gate: GateState = {
     gateId: row.id,
     mrUrl,
-    iid: review.iid,
-    kind: "review-post",
+    iid: state.iid,
+    kind: row.kind,
     status: "answered",
     openedAt: row.openedAt,
     questions: row.questions as GateQuestion[],
-    agentId: review.agentId,
-    tabId: review.tabId,
+    agentId: state.agentId,
+    tabId: state.tabId,
   };
   const resumed = await resumeParkedGate(gate, io, resolvePath);
   if (!resumed) return;
 
-  const fresh = io.readReviewState(mrUrl) ?? review;
-  io.writeReviewState(reviewFilePath(mrUrl), { status: fresh.status, resumedGateId: row.id });
+  const fresh = kindIo.readState(mrUrl) ?? state;
+  kindIo.writeState(kindIo.filePath(mrUrl), { status: fresh.status, resumedGateId: row.id });
 }
 
 /** Pages `gateList({subjectPrefix})` to exhaustion looking for one gate id --
@@ -201,11 +225,12 @@ export async function handleAnsweredEvent(
   if (typeof id !== "string" || !id) return;
   if (typeof subject !== "string" || !subject.startsWith("mr:")) return;
 
-  let row = io.gateRow(subject);
-  if (!row || row.id !== id) {
+  let row = io.rowsForSubject(subject).find((r) => r.id === id);
+  if (!row) {
     // The cache doesn't have this gate (opened before the board last
-    // started) or holds a different one for this subject (stale) -- ask the
-    // daemon directly rather than stranding the resume on a cold cache.
+    // started) or none of the subject's cached kinds match this id (stale)
+    // -- ask the daemon directly rather than stranding the resume on a cold
+    // cache.
     row = await fetchGateRowById(io, subject, id);
     if (!row) return;
     io.applyRow(row);
@@ -232,8 +257,8 @@ export async function bootResumePass(
       break;
     }
     for (const row of res.data.gates) {
-      // One row this board can't resume (the not-wired-until-W3 throw) must
-      // not stop the rest of the page -- or the rest of the pass.
+      // One row this board can't resume (an unwired-kind throw) must not
+      // stop the rest of the page -- or the rest of the pass.
       try {
         await resumeIfMissed(row, io, resolvePath);
       } catch (err) {

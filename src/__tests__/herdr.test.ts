@@ -5,6 +5,7 @@ import {
   parseTabCreate,
   parseWorkspaceCreate,
   reviewPrompt,
+  respondPrompt,
   operatorNoteParagraph,
   reopenPrompt,
   parseLaunchNote,
@@ -551,6 +552,18 @@ describe("--resumed-gate flag (parked-gate resume marker)", () => {
     });
     expect(p).not.toContain("--resumed-gate");
     expect(p).toContain("--re-review");
+  });
+
+  test("respondPrompt and doctorPrompt thread --resumed-gate the same way reviewPrompt does", () => {
+    const respond = respondPrompt({
+      mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: "/b/board", skill: "myteam:respond", resumedGate: "gate-9",
+    });
+    expect(respond).toContain("--resumed-gate gate-9");
+
+    const doctor = doctorPrompt({
+      mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: "/b/board", skill: "myteam:doctor", resumedGate: "gate-9",
+    });
+    expect(doctor).toContain("--resumed-gate gate-9");
   });
 });
 

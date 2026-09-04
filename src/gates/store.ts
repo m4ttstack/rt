@@ -25,7 +25,7 @@ export interface GateState {
   gateId: string;
   mrUrl: string;
   iid: number;
-  kind: "review-post";
+  kind: string;
   status: "open" | "answered" | "parked";
   openedAt: number;
   questions: GateQuestion[];

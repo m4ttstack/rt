@@ -42,3 +42,20 @@ describe("writeRespondState counts", () => {
     expect(done.threads).toBeUndefined();
   });
 });
+
+describe("gate fields (merge-list widening)", () => {
+  test("gateId, gateKind, and resumedGateId all survive an interleaving write that doesn't mention them", () => {
+    const p = respondFilePath(URL_A, dir);
+    writeRespondState(p, { mrUrl: URL_A, iid: 4821, status: "implementing", gateId: "gate-1", gateKind: "respond-plan" }, 1000);
+    const second = writeRespondState(p, { status: "implementing", tabId: "w9:t2" }, 2000);
+    expect(second.gateId).toBe("gate-1");
+    expect(second.gateKind).toBe("respond-plan");
+
+    const third = writeRespondState(p, { status: "implementing", resumedGateId: "gate-1" }, 3000);
+    expect(third.resumedGateId).toBe("gate-1");
+    const fourth = writeRespondState(p, { status: "drafting", gateKind: "respond-post", gateId: "gate-2" }, 4000);
+    expect(fourth.resumedGateId).toBe("gate-1"); // preserved across the next gate's own open
+    expect(fourth.gateKind).toBe("respond-post");
+    expect(fourth.gateId).toBe("gate-2");
+  });
+});

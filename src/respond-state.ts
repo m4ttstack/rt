@@ -30,6 +30,16 @@ export interface RespondState {
   agentId?: string;
   /** rt herdr pane id the agent landed in, from the launch/resume result. */
   paneId?: string;
+  /** Facility gate id from the most recent `gate open`, so `gate wait` /
+      `gate answer` can find it by state path alone. */
+  gateId?: string;
+  /** The kind `gateId` was opened with ("respond-plan" or "respond-post") --
+      the wrapper's own re-entry reads this to know what a `--resumed-gate`
+      id names. */
+  gateKind?: string;
+  /** Id of the gate the board has already resumed a parked-then-answered
+      session for -- the exactly-once dedup marker (see gates/resume.ts). */
+  resumedGateId?: string;
   startedAt: number;
   updatedAt: number;
 }
@@ -65,6 +75,9 @@ export function writeRespondState(
     sessionId: patch.sessionId ?? prev.sessionId,
     agentId: patch.agentId ?? prev.agentId,
     paneId: patch.paneId ?? prev.paneId,
+    gateId: patch.gateId ?? prev.gateId,
+    gateKind: patch.gateKind ?? prev.gateKind,
+    resumedGateId: patch.resumedGateId ?? prev.resumedGateId,
     startedAt: prev.startedAt ?? now,
     updatedAt: now,
   };

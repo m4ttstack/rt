@@ -24,9 +24,10 @@ const [verb, statePath, ...rest] = process.argv.slice(2);
 
 try {
   if (verb === "open") {
+    const kind = flag(rest, "--kind");
     const questions = flag(rest, "--questions");
-    if (!statePath || !questions) throw new Error("usage: gate open <state> --questions <json>");
-    const gateId = await gateOpen(statePath, questions, io);
+    if (!statePath || !kind || !questions) throw new Error("usage: gate open <state> --kind <k> --questions <json>");
+    const gateId = await gateOpen(statePath, kind, questions, io);
     console.log(gateId);
   } else if (verb === "wait") {
     if (!statePath) throw new Error("usage: gate wait <state> [--max-ms <n>]");

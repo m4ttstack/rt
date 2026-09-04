@@ -26,8 +26,11 @@ const MR_SUBJECT_PREFIX = "mr:";
 
 /** A kind outside this map (present or future) is skipped by the sweep
     entirely -- silently, since an unrecognized kind has no lifecycle map to
-    join against and must never crash the sweep for every other row. */
-function domainForKind(kind: string): GateDomain | undefined {
+    join against and must never crash the sweep for every other row.
+    Exported: verbs.ts reuses this same kind→domain mapping to pick a
+    label prefix and a state writer for `gate open`, so the two never drift
+    against each other. */
+export function domainForKind(kind: string): GateDomain | undefined {
   if (kind === "review-post") return "review";
   if (kind === "respond-plan" || kind === "respond-post") return "respond";
   if (kind === "doctor-escalation") return "doctor";
