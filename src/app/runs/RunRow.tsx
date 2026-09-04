@@ -2,6 +2,7 @@ import { type MouseEvent } from 'react';
 import {
   ActionIcon,
   Anchor,
+  Badge,
   Group,
   Menu,
   Stack,
@@ -21,6 +22,7 @@ import type { BoardRun } from './bands';
 import { LivenessChip } from './LivenessChip';
 import { repoLabel } from './repoLabel';
 import { StageProgress } from './StageProgress';
+import { hasOpenGate, useGates } from './useGates';
 
 function formatElapsed(startedAt: number, endedAt: number | null): string {
   const ms = Math.max(0, (endedAt ?? Date.now()) - startedAt);
@@ -78,6 +80,10 @@ export function RunRow({ run, pruneDays, enrichment }: RunRowProps) {
   const queryClient = useQueryClient();
   const detailHref = `/runs/${run.repo}/${run.id}`;
   const aging = agingWarning(run, pruneDays);
+  // One shared ['gates'] cache across every row on the board (React Query
+  // dedupes by key), so calling the hook per-row costs no extra requests.
+  const gatesQuery = useGates();
+  const blocked = hasOpenGate(gatesQuery.data?.gates, run.id);
 
   const title = enrichment?.ticket?.title;
   const mr = enrichment?.mr;
@@ -211,13 +217,20 @@ export function RunRow({ run, pruneDays, enrichment }: RunRowProps) {
       </Stack>
 
       {/* Fixed width: the chip's label length varies per state, and without
-          this the stage column above lands at a different x on every row. */}
+          this the stage column above lands at a different x on every row.
+          Widened from 232 to fit the blocked badge alongside the liveness
+          chip, focus icon, and menu trigger it now shares the band with. */}
       <Group
         gap="xs"
         wrap="nowrap"
         justify="flex-end"
-        style={{ width: 232, flexShrink: 0 }}
+        style={{ width: 280, flexShrink: 0 }}
       >
+        {blocked && (
+          <Badge color="bad" variant="light" data-testid="gate-blocked-badge">
+            blocked
+          </Badge>
+        )}
         <LivenessChip run={run} />
         {run.agent && run.agent.status !== 'done' && (
           <ActionIcon

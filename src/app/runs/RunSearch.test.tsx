@@ -3,11 +3,12 @@ import type { RunSummary } from '@mattstack/rt-client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const runsGet = vi.fn();
 const seenGet = vi.fn();
 const pruneDaysGet = vi.fn();
+const gatesGet = vi.fn();
 
 vi.mock('../api', () => ({
   client: {
@@ -19,6 +20,7 @@ vi.mock('../api', () => ({
           $get: (...args: unknown[]) => pruneDaysGet(...args),
         },
       },
+      gates: { $get: (...args: unknown[]) => gatesGet(...args) },
     },
   },
 }));
@@ -74,6 +76,10 @@ function renderSearch() {
     </QueryClientProvider>
   );
 }
+
+beforeEach(() => {
+  gatesGet.mockResolvedValue(ok({ gates: [] }));
+});
 
 afterEach(() => {
   vi.clearAllMocks();

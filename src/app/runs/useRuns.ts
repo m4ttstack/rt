@@ -32,9 +32,10 @@ export function useRunList(repo?: string) {
 
 /**
  * One socket per tab. Invalidating on EVERY message is safe only because the
- * server already filtered to run-updated (see startRelays/createRelay) -- the daemon
- * multiplexes ports/status/system-processes/project-mrs through the same
- * upstream socket, and without that filter this would refetch the run list on
+ * server already filtered the upstream relay to two topics -- run-updated
+ * ('runs') and gate/* ('gates'), see src/server/index.ts's relay list --
+ * the daemon multiplexes ports/status/system-processes/project-mrs through
+ * the same upstream socket, and without that filter this would refetch on
  * every unrelated daemon tick.
  */
 export function useRunEvents() {
@@ -44,11 +45,14 @@ export function useRunEvents() {
     const url = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}/ws`;
     const socket = new WebSocket(url);
     socket.onmessage = () => {
-      // Both surfaces: ['runs'] is the board list, ['run'] every open detail.
-      // The daemon emits run-updated on every pipeline write (emit_update in
-      // pipeline-state.sh), so this is what makes the detail page live.
+      // Three surfaces: ['runs'] is the board list, ['run'] every open
+      // detail, ['gates'] the run-scoped gate rows RunRow/RunDetail render.
+      // run-updated fires on every pipeline write (emit_update in
+      // pipeline-state.sh), gate/* on every gate open/answer/park -- this is
+      // what keeps the detail page and the gate surfaces both live.
       void queryClient.invalidateQueries({ queryKey: ['runs'] });
       void queryClient.invalidateQueries({ queryKey: ['run'] });
+      void queryClient.invalidateQueries({ queryKey: ['gates'] });
     };
     return () => socket.close();
   }, [queryClient]);

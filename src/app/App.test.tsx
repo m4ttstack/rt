@@ -13,6 +13,7 @@ const detailGet = vi.fn();
 const artifactGet = vi.fn();
 const seenGet = vi.fn();
 const seenPost = vi.fn();
+const gatesGet = vi.fn();
 
 vi.mock('./api', () => ({
   client: {
@@ -30,6 +31,7 @@ vi.mock('./api', () => ({
         $get: (...args: unknown[]) => seenGet(...args),
         ':runId': { $post: (...args: unknown[]) => seenPost(...args) },
       },
+      gates: { $get: (...args: unknown[]) => gatesGet(...args) },
     },
   },
 }));
@@ -88,6 +90,7 @@ describe('App keyboard contract', () => {
     artifactGet.mockResolvedValue(ok({ lines: [], truncated: false }));
     seenGet.mockResolvedValue(ok({}));
     seenPost.mockResolvedValue(ok({}));
+    gatesGet.mockResolvedValue(ok({ gates: [] }));
 
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, 'clipboard', {

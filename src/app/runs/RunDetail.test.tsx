@@ -2,6 +2,7 @@ import { notifications } from '@mattstack/app-kit/notifications';
 import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import type {
   BranchEnrichment,
+  GateRow,
   RunDetail as RunDetailData,
   RunSummary,
 } from '@mattstack/rt-client';
@@ -17,6 +18,8 @@ const abandonPost = vi.fn();
 const enrichPost = vi.fn();
 const linearWorkspaceGet = vi.fn();
 const focusPost = vi.fn();
+const gatesGet = vi.fn();
+const answerPost = vi.fn();
 
 vi.mock('../api', () => ({
   client: {
@@ -42,6 +45,12 @@ vi.mock('../api', () => ({
       panes: {
         ':id': {
           focus: { $post: (...args: unknown[]) => focusPost(...args) },
+        },
+      },
+      gates: {
+        $get: (...args: unknown[]) => gatesGet(...args),
+        ':id': {
+          answer: { $post: (...args: unknown[]) => answerPost(...args) },
         },
       },
     },
@@ -135,6 +144,39 @@ function renderDetail() {
   );
 }
 
+function gateRow(overrides: Partial<GateRow> = {}): GateRow {
+  return {
+    id: 'g1',
+    subject: 'run:run-1',
+    kind: 'self-review',
+    questions: [
+      {
+        id: 'outcome',
+        label: 'What happened?',
+        multi: false,
+        options: ['pass', 'fail'],
+      },
+    ],
+    meta: null,
+    status: 'open',
+    answer: null,
+    openedAt: 0,
+    parkedAt: null,
+    closedAt: null,
+    closedReason: null,
+    agent: null,
+    pane: null,
+    nudge: null,
+    delivery: null,
+    released: false,
+    ...overrides,
+  };
+}
+
+function gatesResponse(gates: GateRow[]) {
+  return { ok: true, status: 200, json: async () => ({ gates }) };
+}
+
 const enrichedBranch: BranchEnrichment = {
   ticket: {
     identifier: 'RT-1',
@@ -165,6 +207,7 @@ beforeEach(() => {
     status: 200,
     json: async () => ({}),
   });
+  gatesGet.mockResolvedValue(gatesResponse([]));
 });
 
 describe('RunDetail', () => {
@@ -952,6 +995,393 @@ describe('RunDetail', () => {
       'rt runs show run-1 --repo repo-tools'
     );
     expect(screen.getByTestId('generic-error')).toBeInTheDocument();
+  });
+});
+
+describe('RunDetail: gate card', () => {
+  it('renders the gate card between the summary card and the tabs panel, plus the Answer action, for an open gate', async () => {
+    detailGet.mockResolvedValue(detailResponse(FIXTURE));
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+    gatesGet.mockResolvedValue(
+      gatesResponse([gateRow({ subject: 'run:run-1', status: 'open' })])
+    );
+
+    renderDetail();
+
+    const summaryCard = await screen.findByTestId('summary-card');
+    const gateCard = await screen.findByTestId('gate-card');
+    const panels = await screen.findByTestId('run-panels');
+    expect(
+      summaryCard.compareDocumentPosition(gateCard) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      gateCard.compareDocumentPosition(panels) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(
+      within(summaryCard).getByRole('button', { name: 'answer gate' })
+    ).toBeInTheDocument();
+  });
+
+  it('renders the gate card for a parked gate, badge included', async () => {
+    detailGet.mockResolvedValue(detailResponse(FIXTURE));
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+    gatesGet.mockResolvedValue(
+      gatesResponse([gateRow({ subject: 'run:run-1', status: 'parked' })])
+    );
+
+    renderDetail();
+
+    expect(await screen.findByTestId('gate-parked-badge')).toBeInTheDocument();
+  });
+
+  it('renders an answered gate as a read-only summary while the run is still running', async () => {
+    detailGet.mockResolvedValue(
+      detailResponse({ ...FIXTURE, run: run({ status: 'running' }) })
+    );
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+    gatesGet.mockResolvedValue(
+      gatesResponse([
+        gateRow({
+          subject: 'run:run-1',
+          status: 'answered',
+          answer: {
+            answers: { outcome: 'pass' },
+            by: 'someone',
+            answeredAt: 1,
+          },
+        }),
+      ])
+    );
+
+    renderDetail();
+
+    expect(
+      await screen.findByTestId('gate-answered-badge')
+    ).toBeInTheDocument();
+    expect(await screen.findByTestId('gate-answer-summary')).toHaveTextContent(
+      'pass'
+    );
+    // Answered isn't actionable -- no Answer affordance for it.
+    expect(
+      screen.queryByRole('button', { name: 'answer gate' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('drops an answered gate once the run itself is no longer running', async () => {
+    // FIXTURE's own run status is 'failed'.
+    detailGet.mockResolvedValue(detailResponse(FIXTURE));
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+    gatesGet.mockResolvedValue(
+      gatesResponse([
+        gateRow({
+          subject: 'run:run-1',
+          status: 'answered',
+          answer: {
+            answers: { outcome: 'pass' },
+            by: 'someone',
+            answeredAt: 1,
+          },
+        }),
+      ])
+    );
+
+    renderDetail();
+
+    await screen.findByTestId('summary-card');
+    expect(screen.queryByTestId('gate-card')).not.toBeInTheDocument();
+  });
+
+  it('shows nothing for a gate belonging to a different run', async () => {
+    detailGet.mockResolvedValue(detailResponse(FIXTURE));
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+    gatesGet.mockResolvedValue(
+      gatesResponse([
+        gateRow({ subject: 'run:some-other-run', status: 'open' }),
+      ])
+    );
+
+    renderDetail();
+
+    await screen.findByTestId('summary-card');
+    expect(screen.queryByTestId('gate-card')).not.toBeInTheDocument();
+  });
+
+  it('submits an answer with a bare {answers} body -- no mrUrl anywhere -- keyed to the gate id in the URL', async () => {
+    detailGet.mockResolvedValue(
+      detailResponse({ ...FIXTURE, run: run({ status: 'running' }) })
+    );
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+    gatesGet.mockResolvedValue(
+      gatesResponse([
+        gateRow({ id: 'g7', subject: 'run:run-1', status: 'open' }),
+      ])
+    );
+    answerPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        row: gateRow({ id: 'g7', subject: 'run:run-1', status: 'answered' }),
+      }),
+    });
+
+    renderDetail();
+
+    await userEvent.click(await screen.findByLabelText('pass'));
+    await userEvent.click(screen.getByRole('button', { name: 'submit' }));
+
+    await waitFor(() =>
+      expect(answerPost).toHaveBeenCalledWith({
+        param: { id: 'g7' },
+        json: { answers: { outcome: 'pass' } },
+      })
+    );
+  });
+
+  // Supersede only fires within the same (subject, kind) -- a `clarify` gate
+  // and a `self-review` gate can both be open on the same run at once (e.g.
+  // a stage gate opened by a wedged retry alongside an existing review
+  // gate), so this must render a card per gate, not pick one.
+  it('renders one card per active gate when different kinds are both open, most-recently-opened first', async () => {
+    detailGet.mockResolvedValue(detailResponse(FIXTURE));
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+    gatesGet.mockResolvedValue(
+      gatesResponse([
+        gateRow({
+          id: 'g-review',
+          subject: 'run:run-1',
+          kind: 'self-review',
+          status: 'open',
+          openedAt: 100,
+          questions: [
+            {
+              id: 'outcome',
+              label: 'What happened?',
+              multi: false,
+              options: ['pass', 'fail'],
+            },
+          ],
+        }),
+        gateRow({
+          id: 'g-clarify',
+          subject: 'run:run-1',
+          kind: 'clarify',
+          status: 'open',
+          openedAt: 200,
+          questions: [
+            {
+              id: 'direction',
+              label: 'Which way?',
+              multi: false,
+              options: ['left', 'right'],
+            },
+          ],
+        }),
+      ])
+    );
+
+    renderDetail();
+
+    const cards = await screen.findAllByTestId('gate-card');
+    expect(cards).toHaveLength(2);
+
+    // Most recently opened (openedAt 200, 'clarify') comes first.
+    const titles = await screen.findAllByTestId('gate-card-title');
+    expect(titles.map(t => t.textContent)).toEqual(['clarify', 'self-review']);
+
+    // Both question sets are actually reachable, not just one card's.
+    expect(within(cards[0]).getByText('Which way?')).toBeInTheDocument();
+    expect(within(cards[1]).getByText('What happened?')).toBeInTheDocument();
+  });
+
+  it('titles a card by meta.label when the opener set one, else the raw kind', async () => {
+    detailGet.mockResolvedValue(detailResponse(FIXTURE));
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+    gatesGet.mockResolvedValue(
+      gatesResponse([
+        gateRow({
+          id: 'g-labeled',
+          subject: 'run:run-1',
+          kind: 'stage-retry',
+          status: 'open',
+          meta: { label: 'Wedged retry' },
+        }),
+      ])
+    );
+
+    renderDetail();
+
+    expect(await screen.findByTestId('gate-card-title')).toHaveTextContent(
+      'Wedged retry'
+    );
+  });
+
+  it('falls back to the bare kind when meta.label is absent -- never the old hardcoded "review gate"', async () => {
+    detailGet.mockResolvedValue(detailResponse(FIXTURE));
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+    gatesGet.mockResolvedValue(
+      gatesResponse([
+        gateRow({
+          id: 'g-clarify',
+          subject: 'run:run-1',
+          kind: 'clarify',
+          status: 'open',
+        }),
+      ])
+    );
+
+    renderDetail();
+
+    const title = await screen.findByTestId('gate-card-title');
+    expect(title).toHaveTextContent('clarify');
+    expect(title).not.toHaveTextContent('review gate');
+  });
+
+  // activeGatesForRun orders by openedAt alone, so a more recently opened
+  // but already-answered (read-only) gate can sort ahead of an older
+  // still-open one -- the Answer button has to skip past it to the card
+  // that actually has a submit control.
+  it('scrolls to the first ACTIONABLE gate card, not just the first card in DOM order', async () => {
+    detailGet.mockResolvedValue(
+      detailResponse({ ...FIXTURE, run: run({ status: 'running' }) })
+    );
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+    gatesGet.mockResolvedValue(
+      gatesResponse([
+        gateRow({
+          id: 'g-answered',
+          subject: 'run:run-1',
+          status: 'answered',
+          openedAt: 300,
+          answer: {
+            answers: { outcome: 'pass' },
+            by: 'someone',
+            answeredAt: 1,
+          },
+        }),
+        gateRow({
+          id: 'g-open',
+          subject: 'run:run-1',
+          status: 'open',
+          openedAt: 100,
+        }),
+      ])
+    );
+
+    const scrollSpy = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollSpy;
+
+    try {
+      renderDetail();
+
+      const cards = await screen.findAllByTestId('gate-card');
+      expect(cards).toHaveLength(2);
+      // Most-recently-opened first: the answered one (300) sorts ahead of
+      // the open one (100) -- this is the setup that reproduces the bug.
+      expect(cards[0]).toHaveAttribute('data-actionable', 'false');
+      expect(cards[1]).toHaveAttribute('data-actionable', 'true');
+
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'answer gate' })
+      );
+
+      expect(scrollSpy).toHaveBeenCalledTimes(1);
+      expect(scrollSpy.mock.instances[0]).toBe(cards[1]);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
   });
 });
 

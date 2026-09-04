@@ -22,17 +22,19 @@ import {
 import { Icons } from '@mattstack/app-kit/icons';
 import { modals } from '@mattstack/app-kit/modals';
 import { notifications } from '@mattstack/app-kit/notifications';
-import type { RunFieldRow, RunSummary } from '@mattstack/rt-client';
+import type { GateRow, RunFieldRow, RunSummary } from '@mattstack/rt-client';
 import { useQueryClient } from '@tanstack/react-query';
 
 import { client } from '../api';
 import { PAGE_ROW_HEIGHT } from '../chrome';
 import { CommandProvenance } from './CommandProvenance';
 import { EffectiveInputs } from './EffectiveInputs';
+import { GateCard } from './GateCard';
 import { LivenessChip, livenessSpec } from './LivenessChip';
 import { mrRef } from './mrRef';
 import { repoLabel } from './repoLabel';
 import { fieldsByKey, RunContext, Timeline } from './Timeline';
+import { activeGatesForRun, useGates } from './useGates';
 import {
   useLinearWorkspace,
   useMarkSeen,
@@ -99,6 +101,33 @@ function FocusPaneAction({ pane }: { pane: string }) {
       }}
     >
       Focus pane
+    </Button>
+  );
+}
+
+/** Scrolls to the first ACTIONABLE `GateCard` rendered lower on the page,
+    rather than duplicating its submit UI up here -- same "click points at
+    the real control" affordance `SummaryStrip`'s fact links use, and
+    `scrollIntoView` is polyfilled to a no-op in tests (vitest.setup.ts).
+    `[data-actionable="true"]`, not just `[data-testid="gate-card"]`:
+    `activeGatesForRun` orders cards by `openedAt` alone, so a more recently
+    opened but already-`answered` (read-only) gate can sort ahead of an
+    older still-`open` one -- landing on that one would show no submit
+    control at all. */
+function AnswerGateAction() {
+  return (
+    <Button
+      size="xs"
+      variant="light"
+      leftSection={<Icons.questionCircle size={16} />}
+      aria-label="answer gate"
+      onClick={() =>
+        document
+          .querySelector('[data-testid="gate-card"][data-actionable="true"]')
+          ?.scrollIntoView?.({ block: 'center' })
+      }
+    >
+      Answer
     </Button>
   );
 }
@@ -178,10 +207,12 @@ function SummaryCard({
   repo,
   run,
   fields,
+  gates,
 }: {
   repo: string;
   run: RunSummary;
   fields: RunFieldRow[];
+  gates: GateRow[];
 }) {
   const { bg, border, text } = useSchemeColors();
   const clipboard = useClipboard();
@@ -238,6 +269,9 @@ function SummaryCard({
 
   const showAbandon = run.attention.needs && run.attention.reason === 'stale';
   const showFocusPane = Boolean(run.agent && run.agent.status !== 'done');
+  const showAnswerGate = gates.some(
+    g => g.status === 'open' || g.status === 'parked'
+  );
   const { color: livenessColor, label: livenessLabel } = livenessSpec(run);
 
   return (
@@ -289,6 +323,7 @@ function SummaryCard({
               "idle" on the board and "running" here; the timeline below
               already names the current stage. */}
           <LivenessChip run={run} size="md" />
+          {showAnswerGate && <AnswerGateAction />}
           {showFocusPane && <FocusPaneAction pane={run.agent!.pane} />}
           {showAbandon && <AbandonAction repo={repo} runId={run.id} />}
         </Group>
@@ -423,6 +458,12 @@ function RunDetailContent({ repo, runId }: { repo: string; runId: string }) {
   const runQuery = useRun(repo, runId);
   const { data } = runQuery;
   const markSeen = useMarkSeen();
+  const gatesQuery = useGates();
+  const gates = activeGatesForRun(
+    gatesQuery.data?.gates,
+    runId,
+    data.run.status
+  );
 
   useEffect(() => {
     markSeen.mutate(runId);
@@ -438,7 +479,15 @@ function RunDetailContent({ repo, runId }: { repo: string; runId: string }) {
         command={`rt runs show ${runId} --repo ${repoLabel(repo)}`}
         asOf={runQuery.dataUpdatedAt}
       />
-      <SummaryCard repo={repo} run={data.run} fields={data.fields} />
+      <SummaryCard
+        repo={repo}
+        run={data.run}
+        fields={data.fields}
+        gates={gates}
+      />
+      {gates.map(g => (
+        <GateCard key={g.id} gate={g} />
+      ))}
       {/* One surface, three readings of the same run: what it did, what was
           recorded around it, what it was told. Stacking them made the page
           three competing containers and buried the last one. */}
