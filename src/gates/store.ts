@@ -87,19 +87,6 @@ export interface GateRow {
   answers?: GateAnswers;
 }
 
-/** Attach each MR's gate (if any) as `gate`, always present (null when the
-    MR has none) so the client can render "no gate" without an `in` check. */
-export function attachGates<T extends { webUrl?: string | null }>(
-  mrs: T[],
-  gates: Map<string, GateState>,
-): Array<T & { gate: GateRow | null }> {
-  return mrs.map((mr) => {
-    const g = mr.webUrl ? gates.get(mr.webUrl) : undefined;
-    if (!g) return { ...mr, gate: null };
-    return { ...mr, gate: { gateId: g.gateId, status: g.status, openedAt: g.openedAt, questions: g.questions, answers: g.answers } };
-  });
-}
-
 /** Delete gate states whose MR is no longer on the board. */
 export function pruneGateStates(onBoard: Set<string>, dir: string = GATE_DIR): void {
   if (!existsSync(dir)) return;

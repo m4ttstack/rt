@@ -20,8 +20,9 @@ import { settingsHandler } from "@mattstack/settings-kit/server";
 import { readReviewStates, pruneReviewStates, reviewFilePath, writeReviewState, parseReviewRequestBody, attachReviews, readReviewReport } from "./review-state.ts";
 import { readRespondStates, pruneRespondStates, respondFilePath, writeRespondState, parseRespondRequestBody, attachResponds } from "./respond-state.ts";
 import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, parseDoctorRequestBody, attachDoctors } from "./doctor-state.ts";
-import { readGateStates, writeGateState, gateFilePath, pruneGateStates, attachGates, type GateAnswers } from "./gates/store.ts";
+import { readGateStates, writeGateState, gateFilePath, pruneGateStates, type GateAnswers } from "./gates/store.ts";
 import { applyGateEvent, ensureBridgeRule, gateEventStore, type EventBridgeRule, type GateEventFrame } from "./gates/ingest.ts";
+import { GateCache, attachGates } from "./gates/cache.ts";
 import { answerGate, resumeParkedGate } from "./gates/answer.ts";
 import { planSweep } from "./gates/sweep.ts";
 import { executeSweepAction, type ExecuteSweepActionIo } from "./gates/execute-sweep-action.ts";
@@ -108,6 +109,10 @@ async function gitlab(): Promise<GitLabProvider> {
   gitlabProvider ??= new GitLabProvider(config.gitlabHost, token);
   return gitlabProvider;
 }
+
+// Daemon-backed gate rows for the board-row read (attachGates below). Empty
+// until fed -- the relay subscription that calls applyEvent/reconcile is B4.
+const gateCache = new GateCache();
 
 // Optional peer relay. Both a configured url and a token are required; without
 // either, peering stays unstarted and every peer feature (publish, poll,
@@ -535,7 +540,7 @@ const httpServer = Bun.serve({
               attachSlack(
                 attachGates(
                   attachDoctors(attachResponds(attachReviews(mrs, readReviewStates()), readRespondStates()), readDoctorStates()),
-                  readGateStates(),
+                  gateCache,
                 ),
                 readSlackRefs(),
               ),
@@ -581,7 +586,6 @@ const httpServer = Bun.serve({
         const reviews = readReviewStates();
         const responds = readRespondStates();
         const doctors = readDoctorStates();
-        const gates = readGateStates();
         const slackRefs = readSlackRefs();
         return new Response(
           JSON.stringify({
@@ -603,7 +607,7 @@ const httpServer = Bun.serve({
             mrs: attachPeerState(
               attachDrafts(
                 attachSlack(
-                  attachGates(attachDoctors(attachResponds(attachReviews(visibleMrs, reviews), responds), doctors), gates),
+                  attachGates(attachDoctors(attachResponds(attachReviews(visibleMrs, reviews), responds), doctors), gateCache),
                   slackRefs,
                 ),
                 heldDraftsByMr(readDrafts()),
