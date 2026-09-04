@@ -11,6 +11,13 @@
 body {
   margin: 0;
   background: var(--card);
+  /* Deck skips the kit's canvas.css, so it cannot inherit the kit's body
+     rule: these two live here even if the kit grows its own copy. Without
+     them macOS subpixel-antialiases the sans UI font, and light bold text
+     knocked out of a saturated fill blooms. Headless Chromium already
+     renders greyscale, so no capture suite can catch a regression here. */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 .board-header { display: flex; justify-content: space-between; align-items: center; }
 /* Title lockup: the deck mark at full size beside the wordmark. */

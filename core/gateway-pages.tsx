@@ -10,7 +10,12 @@ import GATEWAY_CSS from "./generated/gateway.css" with { type: "text" };
 const LAYOUT_CSS = `
 :root { color-scheme: light dark; }
 * { box-sizing: border-box; }
+/* Smoothing, not cosmetics: the submit button is white bold text knocked out
+   of a saturated --accent fill, which macOS subpixel antialiasing blooms.
+   These pages have always run a system sans, so this predates the kit's sans
+   and is not inherited from it. */
 body { font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; min-height: 100vh;
+       -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale;
        margin: 0; display: grid; place-items: center; padding: 1.5rem; color: var(--fg); background: var(--bg); }
 .card { width: 100%; max-width: 360px; text-align: center; border: 1px solid var(--border);
        border-radius: 16px; background: var(--panel); padding: 2rem 1.75rem;
