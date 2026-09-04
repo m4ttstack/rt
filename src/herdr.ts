@@ -3,6 +3,7 @@ import { homedir } from "os";
 import { join } from "path";
 import { reviewReportPath } from "./review-state.ts";
 import { resolveSkillPath } from "./skill-path.ts";
+import { shellSingleQuote } from "./shell-quote.ts";
 
 export type HerdrRunner = (args: string[]) => Promise<string>;
 
@@ -69,11 +70,6 @@ export function parseWorkspaceCreate(json: string): { workspaceId: string; tabId
   } catch {
     return null;
   }
-}
-
-/** Wrap a string in single quotes for safe use in a double-and-single-quote shell command. */
-function shellSingleQuote(s: string): string {
-  return `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
 /** Absolute path to the board executable. The launched skill runs in the target

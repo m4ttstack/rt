@@ -1,6 +1,7 @@
 import { readFileSync, renameSync, writeFileSync } from "fs";
 import { join } from "path";
 import { APP_ROOT } from "./app-root.ts";
+import { shellSingleQuote } from "./shell-quote.ts";
 import { getSetting, setSetting, identityFromRemote, serializeIdentity, type RepoIdentity } from "@mattstack/rt-client";
 import { readBoardSecrets, type BoardSecretsData, type BoardSecretsDeps } from "./board-secrets.ts";
 
@@ -95,9 +96,12 @@ export interface BoardConfig {
   doctorCwd: string;
   /** herdr workspace label doctor sessions are grouped under. */
   doctorsWorkspace: string;
-  /** Command that starts claude in every pane the board launches, e.g.
-      "cswap run 2 --share-history -- claude" to pin panes to one account.
-      Inserted verbatim (trusted operator config). Empty = plain "claude". */
+  /** Command that starts claude in every pane the board launches. Normally
+      composed from the board.agent.* settings by composeAgentCommand; a
+      config.json value is the verbatim escape hatch for a wrapper those three
+      keys cannot express. Empty = plain "claude". Note the composed form ends
+      at `--`: `cswap run` launches claude itself, so the word never appears
+      after it (docs/configuration.md). */
   claudeCommand: string;
   /** Domain skill the doctor wrapper delegates to. Empty = generic. */
   doctorSkill: string;
@@ -410,6 +414,41 @@ function storeValue<T>(key: string, resolve: GetSettingFn): T | undefined {
   }
 }
 
+/** The three `board.agent.*` settings, as read off the store. */
+export type AgentSettings = { account?: string; model?: string; effort?: string };
+
+/** Build the pane's launch command from the agent settings.
+ *
+ * `cswap run <acct> --` launches Claude itself, so everything after the `--`
+ * is read as Claude's own arguments and the word `claude` must NOT appear
+ * there (docs/configuration.md). `--share-history` is not cosmetic: without
+ * it a resumed pane cannot find the transcript the review session wrote.
+ * Every interpolated value is quoted, since all three are operator strings
+ * that reach a shell. */
+export function composeAgentCommand({ account, model, effort }: AgentSettings): string {
+  const acct = account?.trim();
+  const mdl = model?.trim();
+  const eff = effort?.trim();
+  if (!acct && !mdl && !eff) return "";
+  const head = acct ? `cswap run ${shellSingleQuote(acct)} --share-history --` : "claude";
+  const flags: string[] = [];
+  if (mdl) flags.push("--model", shellSingleQuote(mdl));
+  if (eff) flags.push("--effort", shellSingleQuote(eff));
+  return [head, ...flags].join(" ");
+}
+
+/** `undefined` when the store owns none of the three, so the caller falls back
+    to the file's verbatim `claudeCommand` escape hatch. */
+function agentCommand(resolve: GetSettingFn): string | undefined {
+  return (
+    composeAgentCommand({
+      account: storeValue<string>("board.agent.account", resolve),
+      model: storeValue<string>("board.agent.model", resolve),
+      effort: storeValue<string>("board.agent.effort", resolve),
+    }) || undefined
+  );
+}
+
 /**
  * Transition fallback (board settings migration): layers every board.* store
  * key over `fileConfig`, per key. A key the store doesn't yet own falls back
@@ -472,7 +511,7 @@ function withBoardStoreFallback(fileConfig: BoardConfig, resolve: GetSettingFn):
     respondsWorkspace: workspaces?.responds ?? fileConfig.respondsWorkspace,
     doctorsWorkspace: workspaces?.doctors ?? fileConfig.doctorsWorkspace,
     defaultMember: storeValue("board.defaultMember", resolve) ?? fileConfig.defaultMember,
-    claudeCommand: storeValue("board.claudeCommand", resolve) ?? fileConfig.claudeCommand,
+    claudeCommand: agentCommand(resolve) ?? fileConfig.claudeCommand,
     reviewCwd: cwds?.review ?? fileConfig.reviewCwd,
     respondCwd: cwds?.respond ?? fileConfig.respondCwd,
     doctorCwd: cwds?.doctor ?? fileConfig.doctorCwd,

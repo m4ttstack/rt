@@ -156,8 +156,8 @@ describe("command builders", () => {
   --re-review`);
   });
   test("buildPaneCommand launches a configured claude command in place of plain claude", () => {
-    expect(buildPaneCommand("/repo dir", "do it", "cswap run 2 --share-history -- claude")).toBe(
-      "cd '/repo dir' && cswap run 2 --share-history -- claude 'do it'",
+    expect(buildPaneCommand("/repo dir", "do it", "cswap run 2 --share-history --")).toBe(
+      "cd '/repo dir' && cswap run 2 --share-history -- 'do it'",
     );
   });
   test("buildPaneCommand falls back to plain claude when the configured command is empty", () => {
@@ -168,8 +168,8 @@ describe("command builders", () => {
     expect(buildResumePaneCommand("/repo", "sess-1")).toBe("cd '/repo' && claude --resume 'sess-1'");
   });
   test("buildResumePaneCommand resumes under the configured claude command", () => {
-    expect(buildResumePaneCommand("/repo", "sess-1", "hi", "cswap run 2 -- claude")).toBe(
-      "cd '/repo' && cswap run 2 -- claude --resume 'sess-1' 'hi'",
+    expect(buildResumePaneCommand("/repo", "sess-1", "hi", "cswap run 2 --")).toBe(
+      "cd '/repo' && cswap run 2 -- --resume 'sess-1' 'hi'",
     );
   });
   test("buildResumePaneCommand with a prompt resumes and sends it as the first message", () => {
@@ -232,12 +232,12 @@ describe("launchReview", () => {
     await launchReview(
       {
         mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "reviews", statePath: "/s/1.json",
-        claudeCommand: "cswap run 2 --share-history -- claude",
+        claudeCommand: "cswap run 2 --share-history --",
       },
       runner,
     );
     const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
-    expect(runCall?.[3]).toStartWith("cd '/repo' && cswap run 2 --share-history -- claude '/board:review ");
+    expect(runCall?.[3]).toStartWith("cd '/repo' && cswap run 2 --share-history -- '/board:review ");
   });
 
   test("threads the operator note into the launched prompt", async () => {
@@ -267,12 +267,12 @@ describe("launchReview", () => {
     await launchResume(
       {
         mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", workspaceLabel: "reviews", statePath: "/s/1.json",
-        sessionId: "sess-1", workspaceKind: "review", claudeCommand: "cswap run 2 -- claude",
+        sessionId: "sess-1", workspaceKind: "review", claudeCommand: "cswap run 2 --",
       },
       runner,
     );
     const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
-    expect(runCall?.[3]).toBe("cd '/repo' && cswap run 2 -- claude --resume 'sess-1'");
+    expect(runCall?.[3]).toBe("cd '/repo' && cswap run 2 -- --resume 'sess-1'");
   });
 
   test("puts the MR author beside the id in the tab label when given", async () => {

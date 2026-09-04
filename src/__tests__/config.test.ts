@@ -79,8 +79,8 @@ describe("parseConfig", () => {
 
   test("claudeCommand defaults empty, accepts a string, rejects non-strings", () => {
     expect(parseConfig(JSON.stringify(base)).claudeCommand).toBe("");
-    expect(parseConfig(JSON.stringify({ ...base, claudeCommand: "cswap run 2 -- claude" })).claudeCommand).toBe(
-      "cswap run 2 -- claude",
+    expect(parseConfig(JSON.stringify({ ...base, claudeCommand: "cswap run 2 --" })).claudeCommand).toBe(
+      "cswap run 2 --",
     );
     expect(() => parseConfig(JSON.stringify({ ...base, claudeCommand: 2 }))).toThrow(/claudeCommand/);
   });

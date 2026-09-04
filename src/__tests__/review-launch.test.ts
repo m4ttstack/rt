@@ -92,8 +92,8 @@ describe("launchReReview: prior session on file", () => {
   });
 
   test("threads claudeCommand through to the resumed pane", async () => {
-    await launchReReview(URL_A, IID, { ...CTX, claudeCommand: "cswap run 2 -- claude" }, makeIo());
-    expect(resumeCalls[0]).toMatchObject({ claudeCommand: "cswap run 2 -- claude" });
+    await launchReReview(URL_A, IID, { ...CTX, claudeCommand: "cswap run 2 --" }, makeIo());
+    expect(resumeCalls[0]).toMatchObject({ claudeCommand: "cswap run 2 --" });
   });
 
   test("a thrown resume leaves the review in error", async () => {
@@ -134,8 +134,8 @@ describe("launchReReview: nothing on file", () => {
   });
 
   test("threads claudeCommand through to the fresh launch", async () => {
-    await launchReReview(URL_A, IID, { ...CTX, claudeCommand: "cswap run 2 -- claude" }, makeIo());
-    expect(reviewCalls[0]).toMatchObject({ claudeCommand: "cswap run 2 -- claude" });
+    await launchReReview(URL_A, IID, { ...CTX, claudeCommand: "cswap run 2 --" }, makeIo());
+    expect(reviewCalls[0]).toMatchObject({ claudeCommand: "cswap run 2 --" });
   });
 
   test("writes a queued state carrying the MR identity, then stamps the tab", async () => {
