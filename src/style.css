@@ -18,14 +18,16 @@
    ─────────────────────────────────────────────────────────────────── */
 
 /* ── header ───────────────────────────────────────────────────────── */
-/* A quieter wash than the framed panels: the header is a zone, not a card,
-   so it gets a thinner mix and the soft border -- enough to lift the title
-   and controls off the page grid without competing with the MR groups. */
+/* The header is a zone, not a card, so it takes --chrome and the soft border
+   rather than a card's fill. Flat, not a mix: --chrome sits BELOW --bg on the
+   near-white ramp, so an alpha wash reads as an arbitrary tint rather than the
+   lift it was under the old grey ground. The sidebar and tab strip paint the
+   same flat --chrome, which is what makes the three read as one frame. */
 .tui-header {
   display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap;
   margin-bottom: 1.6rem; padding: 0.7rem 3rem 0.7rem 0.9rem;
   border: 1px solid var(--border-soft); border-radius: 8px;
-  background: color-mix(in srgb, var(--chrome) 55%, transparent);
+  background: var(--chrome);
   position: relative;
 }
 /* Cross-app switcher: pinned to the header card's top-right corner via
@@ -380,7 +382,7 @@
 .tui-sidebar {
   display: flex; flex-direction: column; gap: 2px; position: sticky; top: 20px;
   padding: 8px; border: 1px solid var(--border); border-radius: 8px;
-  background: color-mix(in srgb, var(--chrome) 88%, transparent);
+  background: var(--chrome);
 }
 /* Roster header: the All row plus a manage-roster gear beside it. */
 .tui-side-head { display: flex; gap: 4px; align-items: stretch; }
@@ -875,7 +877,7 @@
 .tui-tab {
   padding: 7px 14px; border: 0; border-bottom: 2px solid transparent;
   margin-bottom: -1px; border-radius: 6px 6px 0 0;
-  background: color-mix(in srgb, var(--chrome) 88%, transparent);
+  background: var(--chrome);
   color: var(--muted); font: inherit; font-size: 13px; cursor: pointer;
   transition: color 150ms ease, border-color 150ms ease, background 150ms ease;
 }
