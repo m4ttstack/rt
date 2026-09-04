@@ -131,6 +131,81 @@ describe('Timeline', () => {
     ).not.toBeInTheDocument();
   });
 
+  it('keeps a condensed row on one line while every record on it is short', () => {
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+
+    renderTimeline({ currentStage: null });
+
+    const provisionStage = screen.getByTestId('timeline-stage-provision-1');
+    expect(
+      within(provisionStage).getByTestId('timeline-stage-condensed')
+    ).toHaveAttribute('data-layout', 'line');
+  });
+
+  it('stacks a condensed row whose records are too long to share a line', () => {
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+
+    renderTimeline({
+      currentStage: null,
+      fields: [
+        { key: 'ticket', value: 'RT-1', produced_by: 'provision', at: 1 },
+        {
+          key: 'extra.ripple',
+          value: 'x'.repeat(300),
+          produced_by: 'provision',
+          at: 2,
+        },
+      ],
+      decisions: [],
+    });
+
+    const provisionStage = screen.getByTestId('timeline-stage-provision-1');
+    const condensed = within(provisionStage).getByTestId(
+      'timeline-stage-condensed'
+    );
+    expect(condensed).toHaveAttribute('data-layout', 'stacked');
+    expect(within(condensed).getByTestId('field-ticket')).toBeInTheDocument();
+    expect(
+      within(condensed).getByTestId('field-extra.ripple')
+    ).toBeInTheDocument();
+  });
+
+  it('stacks a condensed row whose decision selection is too long to share a line', () => {
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+
+    renderTimeline({
+      currentStage: null,
+      fields: [],
+      decisions: [
+        {
+          contract: 'gate@1',
+          scope: 'run',
+          selection: `{"note":"${'y'.repeat(200)}"}`,
+          decided_by: 'provision',
+          decided_at: 3,
+        },
+      ],
+    });
+
+    expect(
+      within(screen.getByTestId('timeline-stage-provision-1')).getByTestId(
+        'timeline-stage-condensed'
+      )
+    ).toHaveAttribute('data-layout', 'stacked');
+  });
+
   it('keeps the current stage expanded inside an accent-tinted block, with its failure detail intact', async () => {
     artifactGet.mockResolvedValue({
       ok: true,
