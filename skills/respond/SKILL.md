@@ -25,7 +25,7 @@ MRs and report status back to the board via a state file. This wrapper carries
 | `<mrUrl>` (positional) | your merge request whose feedback to process |
 | `--state <path>` | lifecycle status file the board polls |
 | `--status-bin <path>` | absolute path to the board's status-writer CLI |
-| `--report <path>` | where the fill saves the adjudication table and drafted/finalized replies; the board shows it and a resumed pane posts from it |
+| `--report <path>` | where the fill saves the adjudication table and drafted/finalized replies; a resumed pane posts from it |
 | `--skill <name>` | the domain skill that owns the actual work (optional) |
 | `--skill-path <path>` | absolute path to that skill's SKILL.md, when the board already resolved it (optional; see "Resolving the domain skill") |
 | `--resumed-gate <gateId>` | this invocation is a parked-gate resume, not a fresh run (optional; see "Steps") |
@@ -108,7 +108,7 @@ old one. Instead:
   re-adjudicate and never re-implement from scratch:
   - `respond-plan` → implement from the report's decided plan: the wait's
     `{plan: <answers>}` select among the report's threads. Hand the report
-    and those answers to the domain skill exactly as step 4 would have. When
+    and those answers to the domain skill exactly as step 5 would have. When
     it's back to finalized replies, update the report with them, emit
     `drafting`, then run Gate 2 **fresh** (open it, wait, hand `{post: ...}`
     down) exactly as steps 5-6 describe below.
@@ -147,7 +147,10 @@ conversation.
 3. **Save the report and emit `drafting`.** Before Gate 1 opens, `--report
    <path>` must hold the verdict table + per-thread draft replies as
    Markdown — a resumed pane has no other way to recover them once this
-   pane's session ends. (Whoever produces the adjudication — the domain
+   pane's session ends. Every row carries its thread id VERBATIM as the
+   row key — the same `<threadId>` the gate's `reply:<threadId>` /
+   `fix:<threadId>` / `skip:<threadId>` option strings use — so a resumed
+   pane can mechanically join the wait's answers back to the report's rows. (Whoever produces the adjudication — the domain
    skill or you — is responsible for this file existing before Gate 1
    opens.) Then: `<status-bin> respond-status <state> drafting`
 4. **Gate 1 — plan.** Build one multi-select question per group of up to 8

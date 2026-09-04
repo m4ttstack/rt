@@ -127,7 +127,10 @@ export function pruneRespondStates(keepUrls: ReadonlySet<string>, dir: string = 
     } catch {
       continue;
     }
-    if (mrUrl && !keepUrls.has(mrUrl)) rmSync(path, { force: true });
+    if (mrUrl && !keepUrls.has(mrUrl)) {
+      rmSync(path, { force: true });
+      rmSync(respondReportPath(path), { force: true });
+    }
   }
 }
 
