@@ -1,84 +1,82 @@
 import { describe, expect, test } from "bun:test";
 import { executeSweepAction, type ExecuteSweepActionIo } from "../gates/execute-sweep-action.ts";
-import type { GateState } from "../gates/store.ts";
 import type { SweepAction } from "../gates/sweep.ts";
 
 const MR_URL = "https://gitlab.com/acme/webapp/-/merge_requests/4821";
 
-function baseGate(overrides: Partial<GateState> = {}): GateState {
-  return {
-    gateId: "gate-1",
-    mrUrl: MR_URL,
-    iid: 4821,
-    kind: "review-post",
-    status: "open",
-    openedAt: 1000,
-    questions: [],
-    ...overrides,
-  };
-}
-
-function makeIo(gate: GateState | undefined): ExecuteSweepActionIo & {
+function makeIo(parkResult: { ok: true } | { ok: false; error: string }): ExecuteSweepActionIo & {
+  calls: string[];
   closed: string[];
-  gateWrites: Array<Partial<GateState> & { gateId: string }>;
   reviewWrites: unknown[];
+  logs: string[];
 } {
+  const calls: string[] = [];
   const closed: string[] = [];
-  const gateWrites: Array<Partial<GateState> & { gateId: string }> = [];
   const reviewWrites: unknown[] = [];
+  const logs: string[] = [];
   return {
+    calls,
     closed,
-    gateWrites,
     reviewWrites,
-    closeTab: async (tabId: string) => { closed.push(tabId); },
-    readGateStates: () => (gate ? new Map([[gate.mrUrl, gate]]) : new Map()),
-    writeGateState: (_path, patch) => { gateWrites.push(patch); },
-    gateFilePath: (mrUrl) => `/gates/${mrUrl}.json`,
+    logs,
+    gatePark: async (payload) => {
+      calls.push(`gatePark(${payload.id})`);
+      return parkResult.ok
+        ? { ok: true, data: { ok: true as const } }
+        : { ok: false, error: parkResult.error };
+    },
+    closeTab: async (tabId: string) => {
+      calls.push(`closeTab(${tabId})`);
+      closed.push(tabId);
+    },
     writeReviewState: (_path, patch) => { reviewWrites.push(patch); },
     reviewFilePath: (mrUrl) => `/reviews/${mrUrl}.json`,
-    sseNudge: () => {},
     now: () => 5000,
     graceMinutes: 90,
-    log: () => {},
-    logError: () => {},
+    log: (message) => { logs.push(message); },
+    logError: (message) => { logs.push(message); },
   };
 }
 
 describe("executeSweepAction", () => {
-  test("park action closes the tab and writes parked when the gate is still open at execution time", async () => {
-    const io = makeIo(baseGate({ status: "open" }));
+  test("park action calls gatePark before closeTab, and logs on success", async () => {
+    const io = makeIo({ ok: true });
     const action: SweepAction = { kind: "park", mrUrl: MR_URL, tabId: "tab-1", gateId: "gate-1" };
     await executeSweepAction(action, io);
+    expect(io.calls).toEqual(["gatePark(gate-1)", "closeTab(tab-1)"]);
     expect(io.closed).toEqual(["tab-1"]);
-    expect(io.gateWrites).toEqual([{ gateId: "gate-1", status: "parked", parkedAt: 5000 }]);
+    expect(io.logs).toHaveLength(1);
+    expect(io.logs[0]).toContain("gate-1");
   });
 
-  test("park action is skipped entirely when the gate has already been answered by execution time (TOCTOU)", async () => {
-    const io = makeIo(baseGate({ status: "answered" }));
-    const action: SweepAction = { kind: "park", mrUrl: MR_URL, tabId: "tab-1", gateId: "gate-1" };
+  test("park action with no tabId calls gatePark but never closeTab", async () => {
+    const io = makeIo({ ok: true });
+    const action: SweepAction = { kind: "park", mrUrl: MR_URL, gateId: "gate-1" };
     await executeSweepAction(action, io);
+    expect(io.calls).toEqual(["gatePark(gate-1)"]);
     expect(io.closed).toEqual([]);
-    expect(io.gateWrites).toEqual([]);
   });
 
-  test("park action is skipped when the gate is already parked by execution time", async () => {
-    const io = makeIo(baseGate({ status: "parked" }));
+  test("park action skips closeTab and logs once when gatePark reports not-open", async () => {
+    const io = makeIo({ ok: false, error: "not-open" });
     const action: SweepAction = { kind: "park", mrUrl: MR_URL, tabId: "tab-1", gateId: "gate-1" };
     await executeSweepAction(action, io);
+    expect(io.calls).toEqual(["gatePark(gate-1)"]);
     expect(io.closed).toEqual([]);
-    expect(io.gateWrites).toEqual([]);
+    expect(io.logs).toHaveLength(1);
+    expect(io.logs[0]).toContain("not-open");
   });
 
-  test("park action is skipped when the gate has vanished from disk by execution time", async () => {
-    const io = makeIo(undefined);
-    const action: SweepAction = { kind: "park", mrUrl: MR_URL, tabId: "tab-1", gateId: "gate-1" };
+  test("park action with no gateId is a no-op", async () => {
+    const io = makeIo({ ok: true });
+    const action: SweepAction = { kind: "park", mrUrl: MR_URL, tabId: "tab-1" };
     await executeSweepAction(action, io);
+    expect(io.calls).toEqual([]);
     expect(io.closed).toEqual([]);
-    expect(io.gateWrites).toEqual([]);
   });
 
   test("close-missed-done action always closes the tab and writes done, no gate re-read guard", async () => {
-    const io = makeIo(undefined);
+    const io = makeIo({ ok: true });
     const action: SweepAction = { kind: "close-missed-done", mrUrl: MR_URL, tabId: "tab-2" };
     await executeSweepAction(action, io);
     expect(io.closed).toEqual(["tab-2"]);

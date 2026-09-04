@@ -13,19 +13,19 @@ import { upsertEnvKeys } from "./env-file.ts";
 import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, channelForMR, configuredSlackChannels, projectPathFromWebUrl, reviewSkillForTab, visibleMrsFor, type BoardMR, type SyncScopeRead } from "./data.ts";
 import { GitLabProvider, ReadBackFailedError, NoteMutator, parseRepoId } from "@mattstack/glance";
 import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } from "./discussions.ts";
-import { readProjectMRs, readDiscussions, subscribe, eventsEmit, gateList, gateAnswer as gateAnswerFacility, getSetting, setSetting } from "@mattstack/rt-client";
+import { readProjectMRs, readDiscussions, subscribe, eventsEmit, gateList, gatePark, gateClose, gateAnswer as gateAnswerFacility, getSetting, setSetting } from "@mattstack/rt-client";
 import { SnapshotCache } from "./cache.ts";
 import { isLocalRequest } from "./local.ts";
 import { settingsHandler } from "@mattstack/settings-kit/server";
 import { readReviewStates, pruneReviewStates, reviewFilePath, writeReviewState, parseReviewRequestBody, attachReviews, readReviewReport } from "./review-state.ts";
 import { readRespondStates, pruneRespondStates, respondFilePath, writeRespondState, parseRespondRequestBody, attachResponds } from "./respond-state.ts";
 import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, parseDoctorRequestBody, attachDoctors } from "./doctor-state.ts";
-import { readGateStates, writeGateState, gateFilePath, pruneGateStates, GATE_DIR, type GateAnswers } from "./gates/store.ts";
+import { GATE_DIR, type GateAnswers } from "./gates/store.ts";
 import { ingestRelayFrame, reconcileGatesOnBoot, ensureBridgeRule, type EventBridgeRule, type GateEventFrame } from "./gates/ingest.ts";
 import { GateCache, attachGates } from "./gates/cache.ts";
 import { answerGate } from "./gates/answer.ts";
 import { handleAnsweredEvent, bootResumePass, type GateResumeEventIo } from "./gates/resume.ts";
-import { planSweep } from "./gates/sweep.ts";
+import { planSweep, pruneOffBoardGates } from "./gates/sweep.ts";
 import { executeSweepAction, type ExecuteSweepActionIo } from "./gates/execute-sweep-action.ts";
 import { readDrafts, heldDraftsByMr, attachDrafts, pruneDrafts, draftFilePath, writeDraft } from "./draft-state.ts";
 import { launchReview, launchRespond, launchDoctor, launchLegacyResume, parseLaunchNote, mrTabLabel, reopenPrompt, closeTab } from "./herdr.ts";
@@ -579,7 +579,10 @@ const httpServer = Bun.serve({
           pruneReviewStates(onBoard);
           pruneRespondStates(onBoard);
           pruneDoctorStates(onBoard);
-          pruneGateStates(onBoard);
+          // Fire-and-forget: this sits on the /data.json request path and
+          // must never block or fail the response on a slow/failed daemon call.
+          void pruneOffBoardGates(gateCache.rows(), onBoard, { gateClose, logError: (message) => console.error(message) })
+            .catch((err) => console.error(`gate prune failed: ${err instanceof Error ? err.message : err}`));
           pruneDrafts(onBoard);
           prunePeerReviews(onBoard);
           pruneSentNudges(onBoard);
@@ -1757,18 +1760,16 @@ const GATE_SWEEP_MS = 60_000;
 
 // No wired escalation notifier fits a gate-park signal (notifyEscalation is
 // triage/doctor-scoped and unused elsewhere); the console lines below are the
-// courtesy notify, the park write + sseNudge inside executeSweepAction are
-// the real effect. Built fresh per sweep (not module-level) so a reassigned
+// courtesy notify -- the facility's own `gate/parked` event, relayed back
+// through ingestRelayFrame, is what actually patches the cache and nudges
+// SSE clients. Built fresh per sweep (not module-level) so a reassigned
 // `config` -- e.g. after a switchboard-url save -- is picked up immediately.
 function sweepActionIo(): ExecuteSweepActionIo {
   return {
+    gatePark,
     closeTab,
-    readGateStates,
-    writeGateState,
-    gateFilePath,
     writeReviewState,
     reviewFilePath,
-    sseNudge,
     now: () => Date.now(),
     graceMinutes: config.gateGraceMinutes,
     log: (message) => console.log(message),
@@ -1792,7 +1793,7 @@ function gateResumeIo(): GateResumeEventIo {
 }
 
 async function runGateSweep(): Promise<void> {
-  const actions = planSweep(readGateStates(), readReviewStates(), Date.now(), config.gateGraceMinutes * 60_000);
+  const actions = planSweep(gateCache.rows(), readReviewStates(), Date.now(), config.gateGraceMinutes * 60_000);
   const io = sweepActionIo();
   for (const action of actions) {
     await executeSweepAction(action, io);
