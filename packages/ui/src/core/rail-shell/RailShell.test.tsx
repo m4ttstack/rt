@@ -60,10 +60,10 @@ test('mobile toggle opens the rail at its slim width above a click-to-close over
 
   fireEvent.click(screen.getByRole('button', { name: 'Toggle navigation' }));
 
-  // The navbar keeps the slim rail width (68px = 4.25rem) instead of
+  // The navbar keeps the slim rail width (56px = 3.5rem) instead of
   // Mantine's full-width mobile navbar default.
-  expect(navbar(container).style.width).toContain('4.25rem');
-  expect(navbar(container).style.maxWidth).toContain('4.25rem');
+  expect(navbar(container).style.width).toContain('3.5rem');
+  expect(navbar(container).style.maxWidth).toContain('3.5rem');
 
   // The z-index dance: navbar and header ride above the 999 overlay.
   expect(navbar(container).getAttribute('style')).toContain(
@@ -103,10 +103,10 @@ test('desktop renders neither the mobile toggle nor the overlay', () => {
   expect(screen.queryByTestId('rail-overlay')).toBeNull();
   // The slim width caps are unconditional -- they are what keeps the
   // mobile stylesheet's 100% width from ever applying.
-  expect(navbar(container).style.width).toContain('4.25rem');
+  expect(navbar(container).style.width).toContain('3.5rem');
 });
 
-test('railWidth overrides replace the default 68px geometry', () => {
+test('railWidth overrides replace the default 56px geometry', () => {
   const { container } = renderWithProviders(
     <ShellHarness railWidth={80} railWidthExpanded={300} />
   );
@@ -218,7 +218,7 @@ test('on mobile the rail opens expanded (useRailState expand-then-open)', () => 
   // toggle was never touched).
   fireEvent.click(screen.getByTestId('rail-overlay'));
   expect(screen.queryByTestId('rail-overlay')).toBeNull();
-  expect(navbar(container).style.width).toContain('4.25rem');
+  expect(navbar(container).style.width).toContain('3.5rem');
   expect(screen.getByText('Inventory').hasAttribute('data-expanded')).toBe(
     false
   );

@@ -63,7 +63,7 @@ const RailEntryInner = /* @__PURE__ */ forwardRef<
             size="lg"
             c={disabled && !active ? 'dimmed' : undefined}
           >
-            <Icon name={icon} size={20} />
+            <Icon name={icon} size={18} />
           </ActionIcon>
           <Text
             size="sm"

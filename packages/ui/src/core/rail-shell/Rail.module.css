@@ -4,8 +4,8 @@
  * keep the pieces inside it steady and symmetric:
  *
  * - .railEntryRow pins every entry to a fixed left-aligned icon column at
- *   the slim rail's centered x (rail 68 - stack padding 8x2 = 52 content;
- *   (52 - 34px icon button) / 2 = 9px), so icons never shift while the
+ *   the slim rail's centered x (rail 56 - stack padding 8x2 = 40 content;
+ *   (40 - 34px icon button) / 2 = 3px), so icons never shift while the
  *   width animates in either direction.
  * - .railLabel stays mounted in both states and transitions opacity and
  *   offset, so labels fade in on expand and fade out on collapse with the
@@ -17,7 +17,7 @@
 }
 
 .railEntryRow {
-  padding-left: 9px;
+  padding-left: 3px;
   overflow: hidden;
 }
 

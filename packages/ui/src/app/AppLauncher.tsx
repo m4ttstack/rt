@@ -95,11 +95,11 @@ export function AppLauncher({ currentApp, deckBase }: AppLauncherProps) {
       <Popover.Target>
         <ActionIcon
           variant="subtle"
-          size="xl"
+          size={40}
           aria-label="Apps"
           onClick={handlers.toggle}
         >
-          <MattstackMark size={34} />
+          <MattstackMark size={30} />
         </ActionIcon>
       </Popover.Target>
       <Popover.Dropdown>

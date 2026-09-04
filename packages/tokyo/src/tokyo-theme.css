@@ -39,9 +39,19 @@
    The declarations live in the per-scheme blocks below, one each, which
    tokyo-theme.test.ts checks by name -- so this note sits outside them. */
 :root[data-mantine-color-scheme='light'] {
-  --tk-bg: #e1e2e7;
-  --tk-panel: #eff0f5;
-  --tk-card: #f6f6fa;
+  /* Light surface ramp, Supabase model: a near-white canvas, a subtle grey chrome
+     frame, and true-white content. Contrast rides text and element borders on the
+     light ground, not surface-to-surface fill. --tk-chrome is the frame grey (app
+     rail/nav); it is deliberately kept OUT of the bg/panel/card elevation ladder so
+     that ladder stays ordered (bg < panel < card) AND near-white -- panel is the
+     raised content surface, not the chrome. Without the split, panel had to be both
+     and the ladder inverted (--bg ended up lighter than --panel). The chrome
+     retarget below maps rail/nav onto --tk-chrome and PageShell header/sidebar +
+     content onto card. */
+  --tk-chrome: #f3f4f7;
+  --tk-bg: #f7f8fa;
+  --tk-panel: #fbfbfc;
+  --tk-card: #ffffff;
   --tk-border: #c8cad6;
   --tk-border-soft: #d5d7e2;
   --tk-fg: #111;
@@ -69,6 +79,9 @@
 }
 
 :root[data-mantine-color-scheme='dark'] {
+  /* Dark never inverted (bg < panel < card already), so --tk-chrome equals the
+     panel rung: the rail/nav frame reads as a step up from the near-black page. */
+  --tk-chrome: #232a47;
   --tk-bg: #16161e;
   --tk-panel: #232a47;
   --tk-card: #2c3352;
@@ -141,13 +154,14 @@
  * canonical shade, which fails contrast for LINK TEXT on a pale ground. The
  * darker `--tk-accent-text` is applied there instead.
  *
- * These six do NOT take effect, and the app renders Mantine's value instead.
- * Four diverge in LIGHT only, landing correctly in dark by that same dark-ramp
- * remap: `body`, `dimmed`, `placeholder`, `default`. Two diverge in BOTH:
+ * These do NOT take effect, and the app renders Mantine's value instead.
+ * Three diverge in LIGHT only, landing correctly in dark by that same dark-ramp
+ * remap: `body`, `placeholder`, `default`. Two diverge in BOTH:
  * `default-hover`, `default-color`. They are kept because scheme-scoping them
  * is a design change rather than a repair -- `body` and `default` would
  * repaint every Modal, Popover and Drawer in light from #fff to the Tokyo
- * panel.
+ * panel. `dimmed` was in this set but is a genuine repair (the raw --tk-muted
+ * fails AA as text), so it is scheme-scoped below onto --tk-muted-text.
  *
  * `error` was the only one that both diverged AND failed contrast, and it is
  * scheme-scoped below. Anything added here needs the same check: put it in a
@@ -156,7 +170,6 @@
 :root {
   --mantine-color-body: var(--ui-bg-1);
   --mantine-color-text: var(--tk-fg);
-  --mantine-color-dimmed: var(--tk-muted);
   --mantine-color-placeholder: var(--tk-muted);
 
   --mantine-color-default: var(--tk-panel);
@@ -166,15 +179,18 @@
 }
 
 /*
- * Mantine declares this in its own `[data-mantine-color-scheme]` blocks, which
+ * Mantine declares these in its own `[data-mantine-color-scheme]` blocks, which
  * outrank the bare `:root` above -- scoping the override per scheme is what
- * makes it win, and `--tk-red` already varies by scheme so one grouped
- * selector covers both. Without this, dark falls back to `red-8`: a deep
- * #b92739 that fails contrast on `--tk-panel`.
+ * makes it win, and `--tk-red`/`--tk-muted-text` already vary by scheme so one
+ * grouped selector covers both. Without the error line, dark falls back to
+ * `red-8` (#b92739, fails contrast on `--tk-panel`); without the dimmed line,
+ * muted TEXT renders Mantine's `gray-6`, too light on the pale ramp -- the AA
+ * muted-text role is what body and hint copy should read.
  */
 :root[data-mantine-color-scheme='light'],
 :root[data-mantine-color-scheme='dark'] {
   --mantine-color-error: var(--tk-red);
+  --mantine-color-dimmed: var(--tk-muted-text);
 }
 
 /*
@@ -255,24 +271,26 @@ body {
 }
 
 /*
- * The chrome ladder, one rung per surface: the app's rail and site header
- * sit on the page surface, PageShell's sidebar and header a rung up on the
- * panel surface, and whatever the route paints inside content (cards,
- * panels) a rung above that. Every kit consumer lays out the same way by
- * importing this file; without it the kit puts rail, header and sidebar
- * on one surface and the chrome reads flat.
+ * The chrome ladder, Supabase model: the app's rail and site header sit on the
+ * CHROME surface (--tk-chrome, the grey frame around the app), PageShell's own
+ * sidebar and header on the CARD surface (white), and the route's content is the
+ * near-white canvas (--tk-bg, gridded above). Chrome is its own token so the
+ * bg/panel/card elevation ladder stays ordered (bg < panel < card) -- panel is the
+ * raised content surface, not the frame. Every kit consumer lays out the same way
+ * by importing this file; without it the kit puts rail, header and sidebar on one
+ * surface and the chrome reads flat.
  *
  * `!important` for the same reason as the grid above: the kit sets these
  * backgrounds as inline styles.
  */
 .mantine-AppShell-header,
 .mantine-AppShell-navbar {
-  background-color: var(--tk-bg) !important;
+  background-color: var(--tk-chrome) !important;
 }
 
 #page-shell-header,
 #page-shell-sidebar {
-  background-color: var(--tk-panel) !important;
+  background-color: var(--tk-card) !important;
 }
 
 /*

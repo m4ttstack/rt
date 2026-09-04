@@ -71,7 +71,7 @@ export function Rail({
           >
             <Icon
               name="panelLeftOpen"
-              size={20}
+              size={18}
               className={
                 expanded
                   ? `${classes.railTriggerIcon} ${classes.railTriggerIconFlipped}`

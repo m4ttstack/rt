@@ -17,7 +17,7 @@ import { AppLauncher } from './AppLauncher';
 import { ColorSchemeControl } from './ColorSchemeControl';
 import { ShellRailContext } from './shell-context';
 
-export const MATTSTACK_HEADER_HEIGHT = 64;
+export const MATTSTACK_HEADER_HEIGHT = 48;
 
 function RailSlot({ children }: { children: ReactNode }) {
   return <>{children}</>;
