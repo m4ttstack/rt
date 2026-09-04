@@ -26,6 +26,22 @@ export interface GateVerbIo {
     kill it mid-block, so the wrapper only ever sees clean results. */
 export const GATE_WAIT_MAX_MS = 90_000;
 
+/** Parses `--max-ms` from a wait invocation's argv. Absent -> undefined
+    (the default window applies). Present, it must carry a finite positive
+    number: a NaN or non-positive window would make the deadline unreachable
+    and the wait loop unbounded again. */
+export function parseWaitMaxMs(argv: string[]): number | undefined {
+  const eq = argv.find((a) => a.startsWith("--max-ms="));
+  const present = eq !== undefined || argv.includes("--max-ms");
+  if (!present) return undefined;
+  const raw = eq ? eq.slice("--max-ms=".length) : argv[argv.indexOf("--max-ms") + 1];
+  const n = Number(raw);
+  if (raw === undefined || raw === "" || !Number.isFinite(n) || n <= 0) {
+    throw new Error("--max-ms requires a finite positive number of milliseconds");
+  }
+  return n;
+}
+
 function readReviewState(statePath: string): ReviewState {
   return JSON.parse(readFileSync(statePath, "utf8")) as ReviewState;
 }
@@ -74,13 +90,15 @@ export async function gateWait(
   const deadline = io.now() + maxMs;
 
   for (;;) {
-    const res = await io.gateWait({ id: review.gateId });
+    // The remaining budget rides into the facility wait itself (`waitMs`),
+    // so a single long-poll can never overshoot the window -- the deadline
+    // is enforced inside the poll, not just between polls.
+    const remaining = deadline - io.now();
+    if (remaining <= 0) return { status: "pending" };
+    const res = await io.gateWait({ id: review.gateId, waitMs: remaining });
     if (!res.ok || !res.data) throw new Error(`gate:wait failed: ${res.error ?? "unknown error"}`);
 
-    if (res.data.status === "timeout") {
-      if (io.now() >= deadline) return { status: "pending" };
-      continue;
-    }
+    if (res.data.status === "timeout") continue;
     if (res.data.status === "closed") {
       throw new Error(`gate ${review.gateId} closed (${res.data.row.closedReason ?? "unknown reason"}) before being answered`);
     }

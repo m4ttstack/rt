@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { gateOpen, gateWait, gateAnswer, type GateVerbIo } from "../gates/verbs.ts";
+import { gateOpen, gateWait, gateAnswer, parseWaitMaxMs, type GateVerbIo } from "../gates/verbs.ts";
 import { statusBinPath } from "../herdr.ts";
 import type { ReviewState } from "../review-state.ts";
 import type { Commands, GateRow, RtResponse } from "@mattstack/rt-client";
@@ -261,6 +261,9 @@ describe("gateWait", () => {
     expect(result).toEqual({ status: "pending" });
     // 40s + 40s < 90s deadline, third call crosses it: exactly 3 re-entries.
     expect(calls.gateWait.length).toBe(3);
+    // The remaining budget rides into each facility poll, so a single
+    // long-poll can never overshoot the window.
+    expect(calls.gateWait.map((p) => p.waitMs)).toEqual([90_000, 50_000, 10_000]);
   });
 
   test("a custom max window bounds the wait", async () => {
@@ -274,6 +277,16 @@ describe("gateWait", () => {
 
     expect(result).toEqual({ status: "pending" });
     expect(calls.gateWait.length).toBe(1);
+    expect(calls.gateWait[0]!.waitMs).toBe(25_000);
+  });
+
+  test("parseWaitMaxMs: absent defaults, valid parses, junk and bare flags reject", () => {
+    expect(parseWaitMaxMs([])).toBeUndefined();
+    expect(parseWaitMaxMs(["--max-ms", "30000"])).toBe(30_000);
+    expect(parseWaitMaxMs(["--max-ms=45000"])).toBe(45_000);
+    for (const argv of [["--max-ms", "abc"], ["--max-ms", "Infinity"], ["--max-ms", "-5"], ["--max-ms", "0"], ["--max-ms"], ["--max-ms="]]) {
+      expect(() => parseWaitMaxMs(argv)).toThrow("finite positive");
+    }
   });
 
   test("a closed gate surfaces as a clean terminal error instead of hanging", async () => {

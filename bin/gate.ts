@@ -3,7 +3,7 @@ import {
   gateWait as facilityGateWait,
   gateAnswer as facilityGateAnswer,
 } from "@mattstack/rt-client";
-import { gateAnswer, gateOpen, gateWait, type GateVerbIo } from "../src/gates/verbs.ts";
+import { gateAnswer, gateOpen, gateWait, parseWaitMaxMs, type GateVerbIo } from "../src/gates/verbs.ts";
 
 const io: GateVerbIo = {
   gateOpen: facilityGateOpen,
@@ -30,8 +30,7 @@ try {
     console.log(gateId);
   } else if (verb === "wait") {
     if (!statePath) throw new Error("usage: gate wait <state> [--max-ms <n>]");
-    const maxMs = flag(rest, "--max-ms");
-    const result = await gateWait(statePath, io, maxMs ? Number(maxMs) : undefined);
+    const result = await gateWait(statePath, io, parseWaitMaxMs(rest));
     // "pending" is its own line so the caller re-runs; an answered result
     // keeps the historical shape (no status field) the wrapper parses.
     if (result.status === "pending") {
