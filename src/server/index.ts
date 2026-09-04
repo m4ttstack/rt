@@ -8,7 +8,10 @@ await serveMattstackApp({
   version: pkg.version,
   routes,
   port: 11011,
-  relay: [{ match: t => t === 'run-updated', topic: 'runs' }],
+  relay: [
+    { match: t => t === 'run-updated', topic: 'runs' },
+    { match: t => t.startsWith('gate/'), topic: 'gates' },
+  ],
   // `as string` keeps TS from resolving the gitignored, build-time-only
   // manifest; `bun build --compile` still sees the literal and embeds it.
   embedded: () => import('./embedded/manifest' as string),

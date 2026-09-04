@@ -16,6 +16,8 @@ vi.mock('@mattstack/rt-client', () => ({
   serializeIdentity: (id: { kind: string; id: string }) =>
     `${id.kind}:${encodeURIComponent(id.id)}`,
   readBranchCache: vi.fn(async () => ({ ok: true, data: {} })),
+  gateList: vi.fn(async () => ({ ok: true, data: { gates: [], cursor: 0 } })),
+  gateAnswer: vi.fn(async () => ({ ok: false, error: 'not-found' })),
 }));
 
 const { routes } = await import('./routes');
