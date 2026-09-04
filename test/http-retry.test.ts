@@ -1,11 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { gqlRequest } from "../server/gitlab/graphql.js";
-import { restGetOne } from "../server/gitlab/rest.js";
-import { RetryableError, asRetryable, isTransientStatus, retryAfterMs, withRetry } from "../server/util/http.js";
-import type { Env } from "../server/env.js";
+import { linearRequest } from "../src/server/linear/client.js";
+import { RetryableError, asRetryable, isTransientStatus, retryAfterMs, withRetry } from "../src/server/util/http.js";
 
-const ENV: Env = { baseUrl: "https://gl.example", token: "tkn", port: 0 };
 afterEach(() => vi.unstubAllGlobals());
 
 /** A run body that only ever settles when its attempt signal fires, exactly as fetch would. */
@@ -84,30 +81,7 @@ describe("transient classification", () => {
   });
 });
 
-describe("REST transport", () => {
-  it("retries a transient 502 and returns the retry's body", async () => {
-    let calls = 0;
-    vi.stubGlobal("fetch", async () => {
-      calls += 1;
-      return calls === 1
-        ? new Response("bad gateway", { status: 502 })
-        : new Response(JSON.stringify([{ id: 7 }]), { status: 200 });
-    });
-
-    await expect(restGetOne<{ id: number }[]>(ENV, "/users", {})).resolves.toEqual([{ id: 7 }]);
-    expect(calls).toBe(2);
-  });
-
-  it("does not retry a 404 ... a missing resource stays missing", async () => {
-    let calls = 0;
-    vi.stubGlobal("fetch", async () => { calls += 1; return new Response("nope", { status: 404 }); });
-
-    await expect(restGetOne(ENV, "/users", {})).rejects.toThrow(/REST HTTP 404/);
-    expect(calls).toBe(1);
-  });
-});
-
-describe("GraphQL transport", () => {
+describe("GraphQL transport (Linear)", () => {
   it("retries a dropped connection and succeeds on the next attempt", async () => {
     let calls = 0;
     vi.stubGlobal("fetch", async () => {
@@ -116,7 +90,7 @@ describe("GraphQL transport", () => {
       return new Response(JSON.stringify({ data: { ok: true } }), { status: 200 });
     });
 
-    await expect(gqlRequest(ENV, "query { ok }", {})).resolves.toEqual({ ok: true });
+    await expect(linearRequest("key", "query { ok }", {})).resolves.toEqual({ ok: true });
     expect(calls).toBe(2);
   });
 
@@ -127,7 +101,28 @@ describe("GraphQL transport", () => {
       return new Response(JSON.stringify({ errors: [{ message: "no field x" }] }), { status: 200 });
     });
 
-    await expect(gqlRequest(ENV, "query { x }", {})).rejects.toThrow(/no field x/);
+    await expect(linearRequest("key", "query { x }", {})).rejects.toThrow(/no field x/);
+    expect(calls).toBe(1);
+  });
+
+  it("retries a transient 502 and returns the retry's body", async () => {
+    let calls = 0;
+    vi.stubGlobal("fetch", async () => {
+      calls += 1;
+      return calls === 1
+        ? new Response("bad gateway", { status: 502 })
+        : new Response(JSON.stringify({ data: { ok: true } }), { status: 200 });
+    });
+
+    await expect(linearRequest("key", "query { ok }", {})).resolves.toEqual({ ok: true });
+    expect(calls).toBe(2);
+  });
+
+  it("does not retry a 404 ... a missing resource stays missing", async () => {
+    let calls = 0;
+    vi.stubGlobal("fetch", async () => { calls += 1; return new Response("nope", { status: 404 }); });
+
+    await expect(linearRequest("key", "query { ok }", {})).rejects.toThrow(/Linear HTTP 404/);
     expect(calls).toBe(1);
   });
 });

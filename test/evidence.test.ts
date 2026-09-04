@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { buildUserEvidence, type EvidenceContext } from "../server/metrics/evidence.js";
-import { computeSnapshot } from "../server/metrics/snapshot.js";
+import { buildUserEvidence, type EvidenceContext } from "../src/server/metrics/evidence.js";
+import { computeSnapshot } from "../src/server/metrics/snapshot.js";
 import { FETCH, USERS, WINDOW } from "./fixtures.js";
-import type { FetchResult, NormLinearIssue } from "../server/pipeline/model.js";
+import type { FetchResult, NormLinearIssue } from "../src/server/store/model.js";
 
 const SIZE_BAND = { tooSmall: 10, tooLarge: 400 };
 const CTX: EvidenceContext = {

@@ -13,3 +13,6 @@ dist/
 
 # Per-user settings (overrides config.ts). Never committed.
 settings.json
+
+# Session worktrees (EnterWorktree). Never committed.
+.claude/worktrees/

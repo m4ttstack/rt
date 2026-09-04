@@ -1,0 +1,63 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "title": "Leaderboard",
+      "x": 0,
+      "y": 0,
+      "w": 1440,
+      "h": 900
+    },
+    {
+      "file": "Refreshing.dc.html",
+      "title": "Leaderboard · refreshing, trend on",
+      "x": 1540,
+      "y": 0,
+      "w": 1440,
+      "h": 900
+    },
+    {
+      "file": "Cards.dc.html",
+      "title": "Cards view · trend on",
+      "x": 0,
+      "y": 1040,
+      "w": 1440,
+      "h": 1180
+    },
+    {
+      "file": "Detail.dc.html",
+      "title": "Person detail · evidence",
+      "x": 1540,
+      "y": 1040,
+      "w": 1440,
+      "h": 900
+    },
+    {
+      "file": "Settings.dc.html",
+      "title": "Settings",
+      "x": 1540,
+      "y": 2080,
+      "w": 1440,
+      "h": 1280
+    }
+  ],
+  "annotations": [
+    {
+      "id": "brief",
+      "x": 0,
+      "y": -170,
+      "w": 520,
+      "text": "Boxscore on app-kit. Matched: Tokyo Day/Night tokens, JetBrains Mono 13.5px, console's 48px header + 40px page row, 68px rail, 6px radii, Mantine table spacing.\nEach artboard has a Dark tweak. Metric values are sample data; the roster is the live acme-web one plus boxscore's two extras."
+    },
+    {
+      "id": "settings-note",
+      "x": 0,
+      "y": 2320,
+      "w": 520,
+      "text": "Settings: sections mirror the scopes in the spec (team, user, read-only suite values). Roster is the featured composite because it is the shared key.\nEdits go through settings-kit; team values are local until committed and pushed, so the section header says so."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}

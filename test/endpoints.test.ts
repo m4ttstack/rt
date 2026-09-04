@@ -1,32 +1,40 @@
-import { unlink } from "node:fs/promises";
-import { afterEach, beforeAll, describe, expect, it } from "vitest";
-import { app } from "../server/app.js";
-import { config } from "../config.js";
-import { CACHE_DIR, cacheKey, writeCache } from "../server/cache/store.js";
-import { startRefresh, __resetJobs } from "../server/jobs/refresh.js";
-import { baseWindow, customWindow } from "../server/util/window.js";
-import type { FetchOutcome } from "../server/pipeline/fetch.js";
-import type { Scope, TimeWindow } from "../shared/types.js";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { __setSettingReader } from "../src/server/config/index.js";
+import type { TimeWindow } from "../src/shared/types.js";
+
+const dir = mkdtempSync(join(tmpdir(), "boxscore-endpoints-"));
+process.env.BOXSCORE_DB = join(dir, "test.sqlite");
+
+const { routes: app } = await import("../src/server/routes.js");
+const { startRefresh, __resetJobs } = await import("../src/server/refresh/index.js");
+const { getStore, __resetStore } = await import("../src/server/store/index.js");
 
 const WINDOW: TimeWindow = { start: "2026-05-01T00:00:00.000Z", end: "2026-06-01T00:00:00.000Z", key: "30d" };
 const SELECTION = { range: "30d", trend: false };
+const DAY_MS = 24 * 60 * 60 * 1000;
 const flush = () => new Promise((r) => setTimeout(r, 0));
 
-/** The scope resolveScope() derives from config (groupPath is empty -> projects scope). */
-const TEST_SCOPE: Scope = { type: "projects", projectPaths: config.projectPaths ?? [] };
-
-/** A cacheable but empty outcome, so a warmed window computes an empty snapshot. */
-const EMPTY_OUTCOME: FetchOutcome = {
-  result: { mrs: [], pipelines: [], pushEvents: [], linearIssues: [], approvalsAvailable: true },
-  identities: {},
-  warnings: [],
+const PROJECTS = ["acme/acme-web"];
+const SETTINGS: Record<string, unknown> = {
+  "boxscore.projects": PROJECTS,
+  "mattstack.roster": [{ username: "m4ttheweric", name: "Matthew Goodwin" }],
+  "mattstack.integrations": { forge: { host: "gl.example" } },
 };
 
 beforeAll(() => {
-  // getLeaderboard calls getEnv(); give it a valid-looking env so it reaches cache logic.
-  process.env.GITLAB_BASE_URL = "https://gl.example";
+  __setSettingReader(<T,>(k: string) => SETTINGS[k] as T | undefined);
+  // resolveEnv() reads GITLAB_TOKEN through the env-first secrets seam.
   process.env.GITLAB_TOKEN = "test-token";
 });
+afterAll(() => {
+  __setSettingReader(null);
+  __resetStore();
+  rmSync(dir, { recursive: true, force: true });
+});
+beforeEach(() => getStore().clear());
 afterEach(() => __resetJobs());
 
 describe("refresh endpoints", () => {
@@ -60,7 +68,7 @@ describe("refresh endpoints", () => {
     expect(res.status).toBe(400);
   });
 
-  it("GET /api/leaderboard?cacheOnly=1 returns {cached:false} on a cold cache", async () => {
+  it("GET /api/leaderboard?cacheOnly=1 returns {cached:false} on a cold store", async () => {
     const res = await app.request(
       "/api/leaderboard?range=custom&start=2019-01-01T00:00:00.000Z&end=2019-01-08T00:00:00.000Z&cacheOnly=1",
     );
@@ -69,59 +77,45 @@ describe("refresh endpoints", () => {
     expect(body.cached).toBe(false);
   });
 
-  // A trend probe needs BOTH windows. When only the current one is warm, the probe must
-  // report a cold cache so the client auto-starts the job that fetches the prior window.
-  // Swallowing the prior's ColdCacheError into a warning instead returns a "successful"
-  // response with hasTrend=false, and the prior window is then never fetched at all.
-  it("GET /api/leaderboard?cacheOnly=1&trend=1 returns {cached:false} when only the current window is cached", async () => {
-    const start = "2019-03-01T00:00:00.000Z";
-    const end = "2019-03-08T00:00:00.000Z";
-    const key = cacheKey(TEST_SCOPE, customWindow(start, end));
-    // Warm ONLY the current window; its prior (2019-02-22..2019-03-01) stays cold.
-    await writeCache(key, EMPTY_OUTCOME);
-    try {
-      const res = await app.request(
-        `/api/leaderboard?range=custom&start=${start}&end=${end}&trend=1&cacheOnly=1`,
-      );
-      expect(res.status).toBe(200);
-      const body = await res.json() as Record<string, unknown>;
-      expect(body.cached).toBe(false);
-    } finally {
-      await unlink(`${CACHE_DIR}/${key}.json`).catch(() => {});
-    }
+  // The trend flag must not bypass the cold-store check: a probe still needs to know the
+  // store has ever been populated before either window's snapshot can mean anything.
+  it("GET /api/leaderboard?cacheOnly=1&trend=1 returns {cached:false} on a cold store", async () => {
+    const res = await app.request(
+      "/api/leaderboard?range=custom&start=2019-03-01T00:00:00.000Z&end=2019-03-08T00:00:00.000Z&trend=1&cacheOnly=1",
+    );
+    expect(res.status).toBe(200);
+    const body = await res.json() as Record<string, unknown>;
+    expect(body.cached).toBe(false);
   });
 
-  it("serves a preset from a warm base envelope without refetching", async () => {
-    const now = new Date();
-    const base = baseWindow(false, now);
-    const key = cacheKey(TEST_SCOPE, base);
-    await writeCache(key, EMPTY_OUTCOME);
-    try {
-      const res = await app.request("/api/leaderboard?range=7d&cacheOnly=1");
-      expect(res.status).toBe(200);
-      const body = await res.json() as Record<string, unknown>;
-      // A warm base means the 7d probe must NOT report a cold cache.
-      expect(body.cached).toBeUndefined();
-      expect(body.hasTrend).toBe(false);
-    } finally {
-      await unlink(`${CACHE_DIR}/${key}.json`).catch(() => {});
+  it("GET /api/leaderboard?cacheOnly=1 serves a snapshot without refetching once every configured project's floor reaches the window start", async () => {
+    const now = Date.now();
+    for (const p of PROJECTS) {
+      getStore().recordScan(p, { from: new Date(now - 100 * DAY_MS).toISOString(), at: new Date(now).toISOString() });
     }
+    const res = await app.request("/api/leaderboard?range=7d&cacheOnly=1");
+    expect(res.status).toBe(200);
+    const body = await res.json() as Record<string, unknown>;
+    // A warm store means the probe must NOT report a cold cache.
+    expect(body.cached).toBeUndefined();
+    expect(body.hasTrend).toBe(false);
   });
 
-  it("falls back to a direct fetch for a custom range wider than the base", async () => {
-    const start = "2026-03-01T00:00:00.000Z";
-    const end = "2026-07-07T00:00:00.000Z";
-    const key = cacheKey(TEST_SCOPE, customWindow(start, end));
-    // 128 days: wider than the 90d base, so it must key on itself, not on the base.
-    await writeCache(key, EMPTY_OUTCOME);
-    try {
-      const res = await app.request(
-        `/api/leaderboard?range=custom&start=${start}&end=${end}&cacheOnly=1`,
-      );
-      const body = await res.json() as Record<string, unknown>;
-      expect(body.cached).toBeUndefined();
-    } finally {
-      await unlink(`${CACHE_DIR}/${key}.json`).catch(() => {});
+  it("GET /api/leaderboard?cacheOnly=1 returns {cached:false} when the scan floor is later than the window start", async () => {
+    const now = Date.now();
+    for (const p of PROJECTS) {
+      getStore().recordScan(p, { from: new Date(now - 3 * DAY_MS).toISOString(), at: new Date(now).toISOString() });
     }
+    const res = await app.request("/api/leaderboard?range=7d&cacheOnly=1");
+    expect(res.status).toBe(200);
+    const body = await res.json() as Record<string, unknown>;
+    expect(body.cached).toBe(false);
+  });
+});
+
+describe("deleted routes", () => {
+  it("the settings API is gone", async () => {
+    expect((await app.request("/api/settings")).status).toBe(404);
+    expect((await app.request("/api/settings/linear-states")).status).toBe(404);
   });
 });

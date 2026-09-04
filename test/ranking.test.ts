@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { applyRankings } from "../server/metrics/ranking.js";
-import { metricByKey, metricRank } from "../shared/metrics.js";
+import { applyRankings } from "../src/server/metrics/ranking.js";
+import { metricByKey, metricRank } from "../src/shared/metrics.js";
 import { makeMetrics, makeUser } from "./builders.js";
-import type { UserRow } from "../shared/types.js";
+import type { UserRow } from "../src/shared/types.js";
 
 const rankOf = (u: UserRow, key: Parameters<typeof metricByKey>[0]) =>
   metricRank(u.metrics, metricByKey(key)!);

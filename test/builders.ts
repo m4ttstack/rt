@@ -4,7 +4,7 @@ import type {
   MetricValue,
   UserMetrics,
   UserRow,
-} from "../shared/types.js";
+} from "../src/shared/types.js";
 
 const mv = (value: number): MetricValue => ({ value, delta: null, rank: null });
 const dv = (p50: number | null): DistributionValue => ({ p50, p90: p50, deltaP50: null, rank: null });

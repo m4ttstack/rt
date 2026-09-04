@@ -1,12 +1,56 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchAll } from "../server/pipeline/fetch.js";
-import { withWindow } from "../server/leaderboard.js";
-import type { Env } from "../server/env.js";
-import type { RefreshProgress } from "../shared/types.js";
+import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+import { withWindow } from "../src/server/leaderboard.js";
+import type { Env } from "../src/server/config/index.js";
+import type { BoxscoreSettings } from "../src/server/config/index.js";
+import type { GitProvider, SourceProvider } from "../src/server/source/index.js";
+import type { RefreshProgress } from "../src/shared/types.js";
 import { WINDOW } from "./fixtures.js";
 
-const ENV: Env = { baseUrl: "https://gl.example", token: "tkn", port: 0 };
-afterEach(() => vi.unstubAllGlobals());
+const dir = mkdtempSync(join(tmpdir(), "boxscore-progress-"));
+process.env.BOXSCORE_DB = join(dir, "test.sqlite");
+
+const { getStore, __resetStore } = await import("../src/server/store/index.js");
+const { runRefresh } = await import("../src/server/refresh/index.js");
+
+beforeEach(() => getStore().clear());
+afterAll(() => {
+  __resetStore();
+  rmSync(dir, { recursive: true, force: true });
+});
+
+const ENV: Env = { baseUrl: "https://gl.example", token: "tkn" };
+
+const SETTINGS: BoxscoreSettings = {
+  projects: ["org/app"],
+  roster: [{ username: "alice" }],
+  hiddenMembers: [],
+  users: ["alice"],
+  linearTeam: "",
+  doneStates: [],
+  sizeBand: { tooSmall: 10, tooLarge: 400 },
+  excludeFilePatterns: [],
+  ignoredMrs: [],
+  botPatterns: [],
+  defaultRange: "30d",
+  baseUrl: ENV.baseUrl,
+};
+
+/** A hand-rolled fake, not a mock library: minimal stand-in for the real GitLab provider. */
+function makeFakeProvider(): GitProvider {
+  const provider: SourceProvider = {
+    async fetchMergeRequestIndex() { return []; },
+    async fetchMergeRequestMetrics() { return null; },
+    async fetchProject(projectPath) { return { id: `gitlab:${projectPath}`, fullPath: projectPath }; },
+    async fetchProjectPipelines() { return []; },
+    async fetchUserEvents() { return []; },
+    async restRequest() { return new Response("[]", { status: 200 }); },
+  };
+  return provider as unknown as GitProvider;
+}
 
 describe("withWindow", () => {
   it("stamps the window onto each progress event", () => {
@@ -23,24 +67,15 @@ describe("withWindow", () => {
   });
 });
 
-describe("fetchAll progress emission", () => {
+describe("runRefresh progress emission", () => {
   it("emits the users and mrs-list phases", async () => {
-    vi.stubGlobal("fetch", async (url: string) => {
-      if (url.includes("/api/graphql")) {
-        return new Response(
-          JSON.stringify({ data: { project: { mergeRequests: { nodes: [], pageInfo: { hasNextPage: false, endCursor: null } } } } }),
-          { status: 200 },
-        );
-      }
-      return new Response("[]", { status: 200 }); // REST /users etc.
-    });
     const phases = new Set<string>();
-    await fetchAll({
+    await runRefresh({
+      store: getStore(),
+      provider: makeFakeProvider(),
+      settings: SETTINGS,
       env: ENV,
-      scope: { type: "projects", projectPaths: ["org/app"] },
       window: WINDOW,
-      users: ["alice"],
-      concurrency: 2,
       onProgress: (p) => phases.add(p.phase),
     });
     expect(phases.has("users")).toBe(true);

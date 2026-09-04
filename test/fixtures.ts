@@ -1,5 +1,5 @@
-import type { FetchResult, NormLinearIssue, NormMr, NormNote } from "../server/pipeline/model.js";
-import type { TimeWindow } from "../shared/types.js";
+import type { FetchResult, NormLinearIssue, NormMr, NormNote } from "../src/server/store/model.js";
+import type { TimeWindow } from "../src/shared/types.js";
 
 export const WINDOW: TimeWindow = {
   start: "2026-05-01T00:00:00.000Z",

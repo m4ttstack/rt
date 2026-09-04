@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { eligibleForLinearDiscovery } from "../server/linear/fetch.js";
-import { mapIssue } from "../server/linear/map.js";
-import { computeSnapshot } from "../server/metrics/snapshot.js";
-import type { RawIssue } from "../server/linear/raw-types.js";
+import { eligibleForLinearDiscovery } from "../src/server/linear/fetch.js";
+import { mapIssue } from "../src/server/linear/map.js";
+import { computeSnapshot } from "../src/server/metrics/snapshot.js";
+import type { RawIssue } from "../src/server/linear/raw-types.js";
 import { FETCH, USERS, WINDOW, mr } from "./fixtures.js";
 
 const SIZE_BAND = { tooSmall: 10, tooLarge: 400 };

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { applyRankings } from "../server/metrics/ranking.js";
-import { validateLeaderboard } from "../server/metrics/validate.js";
+import { applyRankings } from "../src/server/metrics/ranking.js";
+import { validateLeaderboard } from "../src/server/metrics/validate.js";
 import { makeMetrics, makeResponse, makeUser } from "./builders.js";
-import type { LeaderboardResponse } from "../shared/types.js";
+import type { LeaderboardResponse } from "../src/shared/types.js";
 
 /** A well-formed, ranked response (the happy path the evaluator should pass). */
 function validResponse(): LeaderboardResponse {

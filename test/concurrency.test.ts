@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mapLimit } from "../server/util/concurrency.js";
+import { mapLimit } from "../src/server/util/concurrency.js";
 
 describe("mapLimit", () => {
   it("preserves result order regardless of completion order", async () => {
