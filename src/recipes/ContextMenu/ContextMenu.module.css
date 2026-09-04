@@ -25,7 +25,7 @@
 
   .label {
     padding: var(--spacing-px5) var(--spacing-px8) var(--spacing-px6);
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: var(--font-size-px11);
     color: var(--muted);
     border-bottom: 1px solid var(--border-soft);
@@ -65,7 +65,7 @@
   }
 
   .hint {
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: var(--font-size-px10);
     color: var(--muted);
   }

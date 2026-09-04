@@ -48,7 +48,7 @@ export const TUI_DARK_COLORS = {
   purple: { "500": "#bb9af7" },
   cyan: { "500": "#7dcfff" },
   gray: { fg: "#e3e7f6", muted: "#7e86ad" },
-  surface: { bg: "#16161e", panel: "#232a47", card: "#2c3352" },
+  surface: { bg: "#16161e", panel: "#232a47", card: "#2c3352", chrome: "#232a47" },
   line: {
     border: "#3b4261",
     soft: "#313853",
@@ -71,7 +71,7 @@ export const tuiTheme = createTheme({
       purple: { "500": "#7847bd" },
       cyan: { "500": "#007197" },
       gray: { fg: "#111", muted: "#8990b3" },
-      surface: { bg: "#e1e2e7", panel: "#eff0f5", card: "#f6f6fa" },
+      surface: { bg: "#f7f8fa", panel: "#fbfbfc", card: "#ffffff", chrome: "#f3f4f7" },
       line: {
         border: "#c8cad6",
         soft: "#d5d7e2",
@@ -170,18 +170,17 @@ export const tuiTheme = createTheme({
       px12: "12px",
       px13: "13px",
     },
-    // Both slots are vendored JetBrains Mono, not census parity: the kit leads
-    // its consumers on font, so this is a deliberate, one-directional
-    // departure -- see test/theme.test.ts's font block. `sans` naming a
-    // monospace family is intentional rather than an oversight; the slot stays
-    // so consumers keep one stable token name either way.
-    // One variable woff2 under assets/fonts/ covers weights 100-800; the
-    // @font-face rule pointing at it is appended to src/generated/theme.css by
-    // scripts/append-font-faces.ts, run as the second half of the `codegen`
-    // script.
+    // `sans` carries UI/body text in the system sans; `mono` stays vendored
+    // JetBrains Mono for code, tabular numbers, and data tables. (Both slots
+    // were monospace, which was fatiguing for long-form UI prose -- see
+    // test/theme.test.ts's font block.)
+    // One variable woff2 under assets/fonts/ covers weights 100-800 for the
+    // mono face; the @font-face rule pointing at it is appended to
+    // src/generated/theme.css by scripts/append-font-faces.ts, run as the
+    // second half of the `codegen` script.
     fontFamily: {
       mono: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
-      sans: '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+      sans: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif',
     },
     lineHeight: { base: "1.55" },
     shadow: {
@@ -208,6 +207,7 @@ export const tuiTheme = createTheme({
       canvas: "colors.surface.bg",
       panel: "colors.surface.panel",
       card: "colors.surface.card",
+      chrome: "colors.surface.chrome",
       // Every distinct `color-mix()` expression in mr-board's stylesheet,
       // carried as RAW strings (validateRef only checks dotted-identifier
       // refs, so these pass through and emitCss writes them verbatim).

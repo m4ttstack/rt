@@ -19,9 +19,10 @@
     --color-line-soft: light-dark(#d5d7e2, #313853);
     --color-purple-500: light-dark(#7847bd, #bb9af7);
     --color-red-500: light-dark(#f52a65, #f7768e);
-    --color-surface-bg: light-dark(#e1e2e7, #16161e);
-    --color-surface-card: light-dark(#f6f6fa, #2c3352);
-    --color-surface-panel: light-dark(#eff0f5, #232a47);
+    --color-surface-bg: light-dark(#f7f8fa, #16161e);
+    --color-surface-card: light-dark(#ffffff, #2c3352);
+    --color-surface-chrome: light-dark(#f3f4f7, #232a47);
+    --color-surface-panel: light-dark(#fbfbfc, #232a47);
     --radius-lg: 8px;
     --radius-md: 6px;
     --radius-pill: 999px;
@@ -90,7 +91,7 @@
     --font-size-xxl: 1.15rem;
     --font-size-xxs: 0.55rem;
     --font-family-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    --font-family-sans: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --font-family-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     --line-height-base: 1.55;
     --shadow-drawer: -6px 0 32px rgba(0, 0, 0, 0.3);
     --shadow-drawer-left: 4px 0 28px rgba(0, 0, 0, 0.3);
@@ -108,6 +109,7 @@
     --text-primary: var(--color-gray-fg);
     --surface-canvas: var(--color-surface-bg);
     --surface-card: var(--color-surface-card);
+    --surface-chrome: var(--color-surface-chrome);
     --surface-panel: var(--color-surface-panel);
     --surface-wash-accent-14: color-mix(in srgb, var(--accent) 14%, transparent);
     --surface-wash-accent-16: color-mix(in srgb, var(--accent) 16%, transparent);
@@ -130,6 +132,7 @@
     --bg: var(--surface-canvas);
     --panel: var(--surface-panel);
     --card: var(--surface-card);
+    --chrome: var(--surface-chrome);
     --fg: var(--text-primary);
     --muted: var(--text-muted);
     --border: var(--border-default);

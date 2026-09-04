@@ -44,6 +44,7 @@ const aliases: CssVariablesResolver = () => ({
     "--bg": "var(--surface-canvas)",
     "--panel": "var(--surface-panel)",
     "--card": "var(--surface-card)",
+    "--chrome": "var(--surface-chrome)",
     "--fg": "var(--text-primary)",
     "--muted": "var(--text-muted)",
     "--border": "var(--border-default)",

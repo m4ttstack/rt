@@ -26,7 +26,7 @@
        `document.body` gives no such guarantee (a consumer may not have set
        a body font at all), so the card states its own rather than gambling
        on inheritance across a portal boundary. */
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: var(--font-size-rem74);
     line-height: 1.5;
     text-align: left;

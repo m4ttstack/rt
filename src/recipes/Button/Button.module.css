@@ -11,7 +11,7 @@
     align-items: center;
     justify-content: center;
     gap: var(--spacing-xs);
-    font-family: var(--font-mono);
+    font-family: var(--font-sans);
     font-size: var(--font-size-sm);
     line-height: var(--line-height-base);
     /* Uniform box model across variants: border-WIDTH always reserved, so

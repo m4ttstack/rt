@@ -184,7 +184,16 @@ test("the census tables are the shape this suite expects", () => {
 // are a deliberate, one-directional departure from the census (the kit leads
 // its consumers on font, not the reverse). See the "fonts" block further down
 // for their own coverage.
-const LIGHT_COLORS = [...LIGHT].filter(([name]) => SLOT[name]!.kind === "color");
+//
+// `--bg`/`--panel`/`--card` are excluded from the LIGHT sweep for the same
+// reason: the split-chrome ruling retuned the light surface ramp away from
+// mr-board's census snapshot. Dark is untouched by the ruling, so the DARK
+// sweep below still holds these three to census parity. See the "surface
+// ramp" block further down for their own coverage.
+const SURFACE_RAMP_RULING = new Set(["--bg", "--panel", "--card"]);
+const LIGHT_COLORS = [...LIGHT].filter(
+  ([name]) => SLOT[name]!.kind === "color" && !SURFACE_RAMP_RULING.has(name),
+);
 
 test.each(LIGHT_COLORS)(
   "light %s carries the census value verbatim, in the theme and through the generated CSS",
@@ -217,16 +226,18 @@ test("light and dark differ everywhere the census says they differ", () => {
 });
 
 // ── fonts ───────────────────────────────────────────────────────────────
-// Both slots are a deliberate departure from census parity (see the
-// LIGHT_COLORS filter above): the kit ships vendored JetBrains Mono for each.
+// A deliberate departure from census parity (see the LIGHT_COLORS filter
+// above): `mono` ships vendored JetBrains Mono; `sans` carries UI/body text in
+// the system sans stack (an all-monospace body was fatiguing for long prose).
 
 const JETBRAINS_STACK = '"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
+const SYSTEM_SANS_STACK = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 
-test("both font slots are the vendored JetBrains Mono stack", () => {
+test("mono is the vendored JetBrains Mono stack, sans is the system sans", () => {
   expect(tuiTheme.tokens.fontFamily!.mono).toBe(JETBRAINS_STACK);
-  expect(tuiTheme.tokens.fontFamily!.sans).toBe(JETBRAINS_STACK);
+  expect(tuiTheme.tokens.fontFamily!.sans).toBe(SYSTEM_SANS_STACK);
   expect(resolve("--font-mono", "light")).toBe(JETBRAINS_STACK);
-  expect(resolve("--font-sans", "light")).toBe(JETBRAINS_STACK);
+  expect(resolve("--font-sans", "light")).toBe(SYSTEM_SANS_STACK);
 });
 
 test("the variable woff2 is declared as one @font-face spanning the whole weight axis", () => {
@@ -242,6 +253,28 @@ test("the variable woff2 is declared as one @font-face spanning the whole weight
 
 test("--font-numeric aliases to tabular-nums", () => {
   expect(css).toContain("--font-numeric: tabular-nums;");
+});
+
+// ── surface ramp ────────────────────────────────────────────────────────
+// A departure from census parity (see the LIGHT_COLORS filter above): the
+// split-chrome ruling retuned the light bg/panel/card ramp to conform to
+// app-kit's, and added `chrome` as a wholly new surface slot the census
+// (mr-board's stylesheet at generation time) never had.
+
+test("the light surface ramp carries the split-chrome ruling's values, ordered bg < panel < card", () => {
+  expect(tuiTheme.tokens.colors.surface!.bg).toBe("#f7f8fa");
+  expect(tuiTheme.tokens.colors.surface!.panel).toBe("#fbfbfc");
+  expect(tuiTheme.tokens.colors.surface!.card).toBe("#ffffff");
+  expect(resolve("--bg", "light")).toBe("#f7f8fa");
+  expect(resolve("--panel", "light")).toBe("#fbfbfc");
+  expect(resolve("--card", "light")).toBe("#ffffff");
+});
+
+test("chrome carries the ruling's value in both schemes", () => {
+  expect(tuiTheme.tokens.colors.surface!.chrome).toBe("#f3f4f7");
+  expect(tuiTheme.dark!.colors!.surface!.chrome).toBe("#232a47");
+  expect(resolve("--chrome", "light")).toBe("#f3f4f7");
+  expect(resolve("--chrome", "dark")).toBe("#232a47");
 });
 
 // Bun's CSS bundler inlines a `url()`-referenced asset under this file's
@@ -262,7 +295,7 @@ test("the vendored woff2 stays under Bun's CSS asset-inlining threshold", () => 
 });
 
 test("generated css exposes the alias contract with verbatim values reachable", () => {
-  for (const alias of ["--bg:", "--panel:", "--card:", "--fg:", "--muted:", "--border:", "--border-soft:", "--accent:", "--green:", "--red:", "--amber:", "--purple:", "--cyan:", "--grid-line:", "--dot-ok:", "--dot-warn:", "--dot-bad:", "--font-mono:", "--font-sans:", "--font-numeric:"]) {
+  for (const alias of ["--bg:", "--panel:", "--card:", "--chrome:", "--fg:", "--muted:", "--border:", "--border-soft:", "--accent:", "--green:", "--red:", "--amber:", "--purple:", "--cyan:", "--grid-line:", "--dot-ok:", "--dot-warn:", "--dot-bad:", "--font-mono:", "--font-sans:", "--font-numeric:"]) {
     expect(css).toContain(alias);
   }
   expect(css).toContain("#2e7de9"); // light accent, verbatim

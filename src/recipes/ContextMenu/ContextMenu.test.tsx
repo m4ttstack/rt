@@ -349,11 +349,11 @@ describe("ContextMenu (browser)", () => {
     expect(getComputedStyle(item).display).toBe("flex");
     expect(getComputedStyle(item).justifyContent).toBe("space-between");
 
-    // `.tui-menu-sep`'s 1px rule, and `.tui-menu-label`'s mono face.
+    // `.tui-menu-sep`'s 1px rule, and `.tui-menu-label`'s sans face.
     const sep = partsIn(screen.container, CONTEXTMENU_PARTS.separator)[0] as HTMLElement;
     expect(getComputedStyle(sep).height).toBe("1px");
     const label = partsIn(screen.container, CONTEXTMENU_PARTS.label)[0] as HTMLElement;
-    expect(getComputedStyle(label).fontFamily).toContain("JetBrains Mono");
+    expect(getComputedStyle(label).fontFamily).toContain("-apple-system");
   });
 
   it("the item's declared width is an OUTER measure, so it never overflows the menu", async () => {
