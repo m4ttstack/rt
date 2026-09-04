@@ -107,13 +107,14 @@ old one. Instead:
   no other way to recover once the pane that produced them is gone. Never
   re-adjudicate and never re-implement from scratch:
   - `respond-plan` → implement from the report's decided plan: the wait's
-    `{plan: <answers>}` select among the report's threads. Hand the report
+    `{plan: <answers>, by: <by>}` select among the report's threads. Hand the report
     and those answers to the domain skill exactly as step 5 would have. When
     it's back to finalized replies, update the report with them, emit
     `drafting`, then run Gate 2 **fresh** (open it, wait, hand `{post: ...}`
     down) exactly as steps 5-6 describe below.
   - `respond-post` → execute posting FROM THE REPORT's finalized replies plus
-    the wait's `{post: <answers>}`, never re-adjudicating or re-implementing.
+    the wait's `{post: <answers>, by: <by>}`, never re-adjudicating or
+    re-implementing.
     Hand both to the domain skill exactly as step 6 would have.
 - `<status-bin> respond-status <state> done "<one-line summary>" --posted <n> --threads <n>`
 
