@@ -27,6 +27,7 @@ import { answerGate } from "./gates/answer.ts";
 import { handleAnsweredEvent, bootResumePass, type GateResumeEventIo, type KindResumeIo } from "./gates/resume.ts";
 import { planSweep, pruneOffBoardGates } from "./gates/sweep.ts";
 import { executeSweepAction, type ExecuteSweepActionIo } from "./gates/execute-sweep-action.ts";
+import { migrateLegacySessions } from "./gates/legacy-session-migration.ts";
 import { readDrafts, heldDraftsByMr, attachDrafts, pruneDrafts, draftFilePath, writeDraft } from "./draft-state.ts";
 import { launchReview, launchRespond, launchDoctor, launchLegacyResume, parseLaunchNote, mrTabLabel, reopenPrompt, closeTab, dispatchPrompt, statusBinPath } from "./herdr.ts";
 import { closeOnDone, type TabIdResolver, type TabIdClearer } from "./close-on-done.ts";
@@ -1882,6 +1883,19 @@ if (!FIXTURE_DIR) {
     rmSync(GATE_DIR, { recursive: true, force: true });
   } catch (err) {
     console.error(`gate file-store cleanup skipped: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
+// One-shot migration: review/respond states that predate rt agent adoption
+// still carry a bare Claude sessionId with no agentId on file, so a resume
+// would fall back to the dead `claude --resume` path instead of the
+// facility's agent-pane resume. Best-effort and silent on a clean install.
+if (!FIXTURE_DIR) {
+  try {
+    migrateLegacySessions("review", readReviewStates(), reviewFilePath, writeReviewState, (m) => console.log(m));
+    migrateLegacySessions("respond", readRespondStates(), respondFilePath, writeRespondState, (m) => console.log(m));
+  } catch (err) {
+    console.error(`legacy session migration skipped: ${err instanceof Error ? err.message : err}`);
   }
 }
 
