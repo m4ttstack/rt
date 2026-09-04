@@ -157,16 +157,17 @@ remembered in the conversation.
      the gate carried both questions, or `{"answers": {"outcome": "..."}, "by": "...", "answeredAt": ...}`
      when it carried `outcome` alone. Read `answers.outcome`, and `answers.tiers` when the gate
      carried it. The gate and any answer are persisted daemon state, so the wait survives a
-     daemon restart: if `gate wait` exits nonzero and the error is not the closed message below,
-     it was a transient failure — just re-run it. Re-entering the wait can never lose an answer
-     already recorded.
-   - **Closed gate.** If `gate wait` instead fails with
-     `gate <id> closed (<reason>)`, the decision site itself was abandoned —
-     superseded by a re-review, abandoned, or pruned when the MR left the
-     board. End cleanly: say so in the pane and stop. Do not invent an
-     answer, do not mark `done`, and do not write `error` either — when the
-     reason is a re-review superseding this gate, a fresh pane already owns
-     this MR's state file, and a late write here would stomp it.
+     daemon restart: if `gate wait` exits nonzero with any error other than the closed message
+     or the terminal errors below, it was a transient failure — just re-run it. Re-entering the
+     wait can never lose an answer already recorded.
+   - **Closed or missing gate.** If `gate wait` fails with `gate <id> closed (<reason>)`, the
+     decision site itself was abandoned — superseded by a re-review, abandoned, or pruned when
+     the MR left the board. A `not-found` error or `no gate open for <url>` mean the same thing
+     from a different angle: the gate this pane was tracking no longer exists to wait on. All
+     three are terminal, not transient — do not re-run any of them. End cleanly: say so in the
+     pane and stop. Do not invent an answer, do not mark `done`, and do not write `error` either
+     — when the reason is a re-review superseding this gate, a fresh pane already owns this MR's
+     state file, and a late write here would stomp it.
    - **In-pane escape hatch.** If a human interrupts the wait and answers you
      conversationally in the pane instead of through the board, record it so
      any parked resume stays in sync:
@@ -190,8 +191,9 @@ remembered in the conversation.
      levels are present, `outcome` alone when they aren't — never the old
      two-gate pair, and proceed on its answers. A failing `gate wait` is not
      itself degradation — per "Wait for the answer" above, re-run it; only
-     if it keeps failing (and never with the closed message) fall back to
-     the same combined `AskUserQuestion`, and tell the human why.
+     if it keeps failing, and never with the closed message or the terminal
+     errors above (those end cleanly per "Closed or missing gate" instead),
+     fall back to the same combined `AskUserQuestion`, and tell the human why.
    - **Act on the answer.** Hand `{tiers, outcome}` to the domain skill so it
      can execute the posting — `tiers` is empty when the gate carried
      `outcome` alone, since a clean review has no findings to post — or post
@@ -245,9 +247,9 @@ protocol) is unchanged — a re-review is still a review.
 ## Rules
 
 - Always write `reviewing` before starting and a terminal `done`/`error` when
-  finished, so the board badge never gets stuck — except a closed gate (see
-  "Closed gate" above): end without either, since a fresh pane may already
-  own the state file.
+  finished, so the board badge never gets stuck — except a closed or missing
+  gate (see "Closed or missing gate" above): end without either, since a
+  fresh pane may already own the state file.
 - The state, status-bin, and report paths are absolute and given to you. Write
   status only via `--status-bin`, and the review Markdown only to `--report`.
   Always save the report before marking `done`.
