@@ -153,13 +153,21 @@ remembered in the conversation.
      `<status-bin> gate open <state> --questions <json>`
    - **Wait for the answer:**
      `<status-bin> gate wait <state>`
-     Prints `{"answers": {"tiers": [...], "outcome": "..."}, "by": "...", "answeredAt": ...}` when
-     the gate carried both questions, or `{"answers": {"outcome": "..."}, "by": "...", "answeredAt": ...}`
-     when it carried `outcome` alone. Read `answers.outcome`, and `answers.tiers` when the gate
-     carried it. The gate and any answer are persisted daemon state, so the wait survives a
-     daemon restart: if `gate wait` exits nonzero with any error other than the closed message
-     or the terminal errors below, it was a transient failure — just re-run it. Re-entering the
-     wait can never lose an answer already recorded.
+     Each invocation waits for a bounded window and always exits on its own,
+     printing exactly one line:
+     - `{"status": "pending"}` — the window elapsed with no answer yet. Run
+       the same command again, and keep re-running it until one of the other
+       results arrives. This loop IS the wait; every re-run resumes exactly
+       where the last left off, because the gate and any answer are
+       persisted daemon state.
+     - `{"answers": {"tiers": [...], "outcome": "..."}, "by": "...", "answeredAt": ...}` when
+       the gate carried both questions, or `{"answers": {"outcome": "..."}, "by": "...", "answeredAt": ...}`
+       when it carried `outcome` alone. Read `answers.outcome`, and `answers.tiers` when the gate
+       carried it.
+     A nonzero exit with any error other than the closed message or the
+     terminal errors below is a transient failure (a daemon restart, say) —
+     re-run it like a pending. Re-entering the wait can never lose an answer
+     already recorded.
    - **Closed or missing gate.** If `gate wait` fails with `gate <id> closed (<reason>)`, the
      decision site itself was abandoned — superseded by a re-review, abandoned, or pruned when
      the MR left the board. A `not-found` error or `no gate open for <url>` mean the same thing

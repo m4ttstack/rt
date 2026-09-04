@@ -9,6 +9,7 @@ const io: GateVerbIo = {
   gateOpen: facilityGateOpen,
   gateWait: facilityGateWait,
   gateAnswer: facilityGateAnswer,
+  now: () => Date.now(),
 };
 
 /** Reads a `--flag value` pair out of argv; `--flag=value` also works. */
@@ -28,9 +29,16 @@ try {
     const gateId = await gateOpen(statePath, questions, io);
     console.log(gateId);
   } else if (verb === "wait") {
-    if (!statePath) throw new Error("usage: gate wait <state>");
-    const result = await gateWait(statePath, io);
-    console.log(JSON.stringify(result));
+    if (!statePath) throw new Error("usage: gate wait <state> [--max-ms <n>]");
+    const maxMs = flag(rest, "--max-ms");
+    const result = await gateWait(statePath, io, maxMs ? Number(maxMs) : undefined);
+    // "pending" is its own line so the caller re-runs; an answered result
+    // keeps the historical shape (no status field) the wrapper parses.
+    if (result.status === "pending") {
+      console.log(JSON.stringify({ status: "pending" }));
+    } else {
+      console.log(JSON.stringify({ answers: result.answers, by: result.by, answeredAt: result.answeredAt }));
+    }
   } else if (verb === "answer") {
     const answers = flag(rest, "--answers");
     const by = flag(rest, "--by");

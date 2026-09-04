@@ -48,17 +48,22 @@ function fakeIo(overrides: {
   openResult?: RtResponse<Commands["gate:open"]["data"]>;
   waitResults?: Array<RtResponse<Commands["gate:wait"]["data"]>>;
   answerResult?: RtResponse<Commands["gate:answer"]["data"]>;
+  /** Advances the fake clock by this much per gateWait call (0 = frozen). */
+  msPerWait?: number;
 } = {}): { io: GateVerbIo; calls: FakeIoCalls } {
   const calls: FakeIoCalls = { gateOpen: [], gateWait: [], gateAnswer: [] };
   const waitResults = overrides.waitResults ?? [];
   let waitIdx = 0;
+  let clock = 0;
   const io: GateVerbIo = {
+    now: () => clock,
     gateOpen: async (payload) => {
       calls.gateOpen.push(payload);
       return overrides.openResult ?? { ok: true, data: { id: "gate-1", supersededId: null } };
     },
     gateWait: async (payload) => {
       calls.gateWait.push(payload);
+      clock += overrides.msPerWait ?? 0;
       const res = waitResults[Math.min(waitIdx, waitResults.length - 1)]!;
       waitIdx++;
       return res;
@@ -175,7 +180,7 @@ describe("gateOpen", () => {
     const result = await gateWait(statePath, waitIo);
 
     expect(waitCalls.gateWait[0]!.id).toBe("gate-survives");
-    expect(result).toEqual({ answers: { tiers: ["nit"], outcome: "comment" }, by: "board-ui", answeredAt: 9000 });
+    expect(result).toEqual({ status: "answered", answers: { tiers: ["nit"], outcome: "comment" }, by: "board-ui", answeredAt: 9000 });
   });
 });
 
@@ -196,7 +201,7 @@ describe("gateWait", () => {
 
     const result = await gateWait(statePath, io);
 
-    expect(result).toEqual({ answers: { tiers: [], outcome: "approve" }, by: "board-ui", answeredAt: 3000 });
+    expect(result).toEqual({ status: "answered", answers: { tiers: [], outcome: "approve" }, by: "board-ui", answeredAt: 3000 });
     expect(calls.gateWait.length).toBe(1);
     expect(calls.gateWait[0]!.id).toBe("gate-42");
   });
@@ -217,7 +222,7 @@ describe("gateWait", () => {
 
     const result = await gateWait(statePath, io);
 
-    expect(result).toEqual({ answers: { tiers: ["must-fix"], outcome: "comment" }, by: "board-ui", answeredAt: 2000 });
+    expect(result).toEqual({ status: "answered", answers: { tiers: ["must-fix"], outcome: "comment" }, by: "board-ui", answeredAt: 2000 });
     expect(calls.gateWait.length).toBe(1);
   });
 
@@ -239,9 +244,36 @@ describe("gateWait", () => {
 
     const result = await gateWait(statePath, io);
 
-    expect(result).toEqual({ answers: { tiers: ["nit"], outcome: "comment" }, by: "board-ui", answeredAt: 4000 });
+    expect(result).toEqual({ status: "answered", answers: { tiers: ["nit"], outcome: "comment" }, by: "board-ui", answeredAt: 4000 });
     expect(calls.gateWait.length).toBe(3);
     expect(calls.gateWait.every((p) => p.id === "gate-looped")).toBe(true);
+  });
+
+  test("timeouts past the bounded window return pending instead of looping forever", async () => {
+    writeState({ gateId: "gate-slow" });
+    const { io, calls } = fakeIo({
+      waitResults: [{ ok: true, data: { status: "timeout" } }],
+      msPerWait: 40_000,
+    });
+
+    const result = await gateWait(statePath, io, 90_000);
+
+    expect(result).toEqual({ status: "pending" });
+    // 40s + 40s < 90s deadline, third call crosses it: exactly 3 re-entries.
+    expect(calls.gateWait.length).toBe(3);
+  });
+
+  test("a custom max window bounds the wait", async () => {
+    writeState({ gateId: "gate-quick-window" });
+    const { io, calls } = fakeIo({
+      waitResults: [{ ok: true, data: { status: "timeout" } }],
+      msPerWait: 30_000,
+    });
+
+    const result = await gateWait(statePath, io, 25_000);
+
+    expect(result).toEqual({ status: "pending" });
+    expect(calls.gateWait.length).toBe(1);
   });
 
   test("a closed gate surfaces as a clean terminal error instead of hanging", async () => {
