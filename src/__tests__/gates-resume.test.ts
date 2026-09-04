@@ -264,6 +264,28 @@ describe("handleAnsweredEvent", () => {
     expect(dedupWrite).toBeDefined();
   });
 
+  test("a failed pane dispatch does not mark the dedup, and the next event retries", async () => {
+    const row = facilityRow();
+    const { io, calls } = fakeEventIo({ rows: [row] });
+    const realResume = io.resumeAgentPane;
+    let failNext = true;
+    io.resumeAgentPane = async (opts) => {
+      if (failNext) {
+        failNext = false;
+        throw new Error("rt daemon unreachable");
+      }
+      return realResume(opts);
+    };
+    const frame: GateEventFrame = { topic: `gate/answered/${GATE_ID}`, payload: { id: GATE_ID, subject: SUBJECT } };
+
+    await expect(handleAnsweredEvent(frame, io, noSkillLookup)).resolves.toBeUndefined();
+    expect(calls.writeReviewState.length).toBe(0);
+
+    await handleAnsweredEvent(frame, io, noSkillLookup);
+    expect(calls.resumeAgentPane.length).toBe(1);
+    expect(calls.writeReviewState.some((c) => (c.patch as { resumedGateId?: string }).resumedGateId === GATE_ID)).toBe(true);
+  });
+
   test("an open (never-parked) gate answered does not resume", async () => {
     const row = facilityRow({ parkedAt: null });
     const { io, calls } = fakeEventIo({ rows: [row] });

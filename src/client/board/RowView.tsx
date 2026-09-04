@@ -167,7 +167,10 @@ function RowView({
             </div>
             <BoardBadges mr={mr as BoardMRWithReview} now={now} ctx={ctx} className="tui-row-board" />
             <Watching mr={mr} />
-            {(mr as BoardMRWithReview).gate && <GateCard mr={mr as BoardMRWithReview} />}
+            {/* Keyed by gateId: the card's selections/conflict state belongs
+                to ONE gate, and a re-review mints a new id for the same MR
+                row -- remounting is what clears the stale state. */}
+            {(mr as BoardMRWithReview).gate && <GateCard key={(mr as BoardMRWithReview).gate!.gateId} mr={mr as BoardMRWithReview} />}
             </div>
           </div>
     );

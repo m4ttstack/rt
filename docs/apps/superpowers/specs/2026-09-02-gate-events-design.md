@@ -1,5 +1,7 @@
 # Gate events: review gates on the rt bus, focus everywhere, panes that clean up
 
+> **SUPERSEDED (2026-09-04):** the gate event contract below was replaced by the rt daemon gate facility (spec: rt repo `docs/superpowers/specs/2026-09-03-gate-facility-design.md`; board plan: `docs/superpowers/plans/2026-09-04-gate-facility-w2.md`). This document is history.
+
 > Goal: a review's human gate becomes an event any surface can answer (board UI,
 > the pane, a notification), launched panes become rt agents with durable
 > identity, focus buttons land in the board and the console, and panes stop

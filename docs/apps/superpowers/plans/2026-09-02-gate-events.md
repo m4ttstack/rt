@@ -1,5 +1,7 @@
 # Gate Events Implementation Plan
 
+> **SUPERSEDED (2026-09-04):** the gate mechanics below (board/gate/* topics, board-owned gate files) were replaced by the rt daemon gate facility before this branch merged. The binding plan is `docs/superpowers/plans/2026-09-04-gate-facility-w2.md`; this document is history.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Review gates become events on the rt bus answerable from any surface, board launches move to rt agent, focus buttons land in board and console, and panes auto-close at completion and park after an unanswered gate goes quiet.

@@ -266,8 +266,10 @@ export interface LaunchPaneOpts {
   mrUrl: string;
   iid: number;
   cwd: string;
-  /** The MR's GitLab project path (e.g. "group/project") -- the `repo` the
-      rt agent daemon launches into. Unused by the legacy HerdrRunner path. */
+  /** The serialized rt repo identity (`repoIdentityField`'s output,
+      `remote:<encoded host/path>`) the rt agent daemon launches into --
+      never a bare GitLab project path, which the daemon's exact-string
+      match would never find. Unused by the legacy HerdrRunner path. */
   repo: string;
   workspaceLabel: string;
   statePath: string;

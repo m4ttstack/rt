@@ -78,8 +78,9 @@ export interface TriageRunDeps {
   account?: string;
   model?: string;
   effort?: string;
-  /** The MR's GitLab project path (e.g. "group/project"), threaded to
-      launchDoctor as `repo`. */
+  /** Returns the serialized rt repo identity (`repoIdentityField`'s output)
+      for this MR, threaded to launchDoctor as `repo` -- never a bare GitLab
+      project path. */
   repoForMr(mrUrl: string): string;
   /** Resolved GitLab token username this pipeline is dispatching as (see
       bin/triage.ts). Never config.defaultMember (2026-08-08 ruling). Used

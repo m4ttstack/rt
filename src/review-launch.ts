@@ -17,8 +17,8 @@ export type ReReviewLaunch =
 /** The launch settings a re-review needs from the board's config. */
 export interface ReReviewCtx {
   cwd: string;
-  /** The MR's GitLab project path (e.g. "group/project"), threaded to
-      startAgentPane as `repo`. */
+  /** The serialized rt repo identity (`repoIdentityField`'s output), threaded
+      to startAgentPane as `repo` -- never a bare GitLab project path. */
   repo: string;
   workspaceLabel: string;
   skill: string;

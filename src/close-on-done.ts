@@ -10,25 +10,22 @@ export type TabIdResolver = (signal: AgentSignal) => string | undefined;
 export type TabIdClearer = (signal: AgentSignal) => void;
 
 /** Close the herdr tab a launched pane reports done from. `error` never
-    closes -- a failing pane is kept open for forensics. Best-effort: a
-    throw from `close` never reaches the caller, since a close failure must
-    not break the status-report handler this is wired beside. `clearTabId`
-    runs even when `close` throws -- a close failure usually means the tab
-    is already gone, and either way the stale tabId must not linger to
-    re-trigger a sweep's own close action. */
-export async function closeOnDone(
+    closes -- a failing pane is kept open for forensics. The tabId is cleared
+    FIRST and the close itself is detached (fired, never awaited): the caller
+    is the /agent/status handler, and a hung herdr close must not stall that
+    request; a close that then fails just leaves a tab for the human, while
+    the cleared tabId already guarantees no sweep re-fires on it. */
+export function closeOnDone(
   signal: AgentSignal,
   resolveTabId: TabIdResolver,
   close: (tabId: string) => Promise<void>,
   clearTabId: TabIdClearer,
-): Promise<void> {
+): void {
   if (signal.status !== "done") return;
   const tabId = resolveTabId(signal);
   if (!tabId) return;
-  try {
-    await close(tabId);
-  } catch (err) {
-    console.error(`tab close failed for ${signal.mrUrl}: ${err instanceof Error ? err.message : err}`);
-  }
   clearTabId(signal);
+  void close(tabId).catch((err) => {
+    console.error(`tab close failed for ${signal.mrUrl}: ${err instanceof Error ? err.message : err}`);
+  });
 }

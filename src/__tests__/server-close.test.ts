@@ -52,19 +52,24 @@ describe("closeOnDone", () => {
     expect(cleared).toEqual([]);
   });
 
-  test("a throw from close is swallowed, and the tabId is still cleared -- a close failure usually means the tab is already gone", async () => {
+  test("a rejecting close is detached and swallowed; the tabId clears immediately, before the close settles", async () => {
     const cleared: AgentSignal[] = [];
-    await expect(
-      closeOnDone(
-        signal("done"),
-        () => "tab-1",
-        async () => {
-          throw new Error("herdr tab close failed");
-        },
-        (s) => cleared.push(s),
-      ),
-    ).resolves.toBeUndefined();
+    let closeStarted = false;
+    closeOnDone(
+      signal("done"),
+      () => "tab-1",
+      async () => {
+        closeStarted = true;
+        throw new Error("herdr tab close failed");
+      },
+      (s) => cleared.push(s),
+    );
+    // Synchronous return: the caller (the /agent/status handler) is never
+    // blocked on the close, and the tabId is already cleared.
     expect(cleared).toHaveLength(1);
+    expect(closeStarted).toBe(true);
+    // Let the detached rejection settle -- it must be swallowed, not unhandled.
+    await new Promise((r) => setTimeout(r, 0));
   });
 
   test("any other in-flight status never closes or clears", async () => {

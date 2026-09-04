@@ -34,11 +34,12 @@ export interface ResumeParkedGateIo {
  * edited), so this degrades to a notify rather than throwing: the answer
  * itself already succeeded and must not be undone by a resume failure.
  *
- * Returns whether a resume was actually attempted (`resumeAgentPane` was
- * dispatched) -- false only on the missing-agentId notify branch. Callers
- * use this to decide whether the attempt is allowed to mark the gate as
- * resumed: a notify-only degrade must stay retryable once the agentId is
- * back on file, not get permanently skipped by the exactly-once dedup.
+ * Returns whether a pane actually resumed (`resumeAgentPane` returned) --
+ * false on the missing-agentId notify branch AND on a failed dispatch, so
+ * neither writes the exactly-once marker and both stay retryable (the next
+ * answered event or boot pass tries again). A failure AFTER the dispatch
+ * (persisting the fresh pane ids) still returns true: the pane exists, and
+ * a retry would launch a duplicate.
  */
 export async function resumeParkedGate(
   gate: GateState,
@@ -64,14 +65,20 @@ export async function resumeParkedGate(
     resolvePath,
   );
 
+  let result;
   try {
-    const result = await io.resumeAgentPane({
+    result = await io.resumeAgentPane({
       agentId: gate.agentId,
       prompt,
       workspaceLabel: io.reviewsWorkspace,
       tabLabel: mrTabLabel(gate.iid, undefined, "↺"),
     });
-    if (result.focusedExisting) return true;
+  } catch (err) {
+    console.error(`parked gate resume failed: ${err instanceof Error ? err.message : err}`);
+    return false;
+  }
+  if (result.focusedExisting) return true;
+  try {
     io.writeReviewState(statePath, {
       status: "reviewing",
       agentId: result.agentId,
@@ -80,7 +87,7 @@ export async function resumeParkedGate(
       workspaceId: result.workspaceId,
     });
   } catch (err) {
-    console.error(`parked gate resume failed: ${err instanceof Error ? err.message : err}`);
+    console.error(`parked gate resume: pane ids not persisted: ${err instanceof Error ? err.message : err}`);
   }
   return true;
 }
@@ -121,11 +128,11 @@ const RESUMABLE_KIND = "review-post";
  * `open` gate answered directly never sets `parkedAt`, and it survives the
  * `answered` patch -- see GateCache.applyEvent) or one already resumed
  * (the `resumedGateId` dedup marker). The dedup marker is written only when
- * `resumeParkedGate` actually attempted a resume -- its missing-agentId
- * notify degrade must stay retryable, not get marked resumed forever over a
- * gate this pass never actually resumed. Re-reads the review state after
- * the resume attempt so that write can't clobber whatever status
- * `resumeParkedGate` itself just settled on.
+ * a pane actually resumed -- the missing-agentId notify degrade and a failed
+ * dispatch both stay retryable rather than getting marked resumed forever
+ * over a gate nothing resumed. Re-reads the review state after the resume
+ * attempt so that write can't clobber whatever status `resumeParkedGate`
+ * itself just settled on.
  */
 async function resumeIfMissed(row: FacilityGateRow, io: GateResumeEventIo, resolvePath: SkillPathResolver): Promise<void> {
   if (row.status !== "answered" || row.parkedAt === null) return;

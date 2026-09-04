@@ -1167,7 +1167,7 @@ const httpServer = Bun.serve({
         // never closes, so a failing pane stays open for forensics. Must run
         // above the emoji early-return below: most `done` signals have no
         // emoji and would never reach a close placed after it.
-        await closeOnDone(signal, resolveSignalTabId, (tabId) => closeTab(tabId), clearSignalTabId);
+        closeOnDone(signal, resolveSignalTabId, (tabId) => closeTab(tabId), clearSignalTabId);
         const emoji = signalEmoji(signal.kind, signal.status, config.slack.emoji, signal.outcome);
         if (!emoji) {
           return new Response(JSON.stringify({ ok: true, reacted: false }), { headers: { "content-type": "application/json" } });
