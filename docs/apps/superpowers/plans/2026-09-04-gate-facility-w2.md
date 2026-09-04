@@ -40,7 +40,7 @@
 
 **Files (rt, noble-cedar):** merge commit; conflict resolution only.
 
-- [ ] **Step 1:** `git fetch origin && git merge origin/main` on `gate-events-rt` (122 commits behind: the facility + setup work). Expected conflicts, resolve by ADDITIVE UNION in each: `packages/rt-client/src/commands.ts` (branch adds `ChatPane.focused`; main added gate rows/types — keep both), `packages/rt-client/package.json` (branch says 0.14.0, main lower — keep 0.14.0), `packages/rt-client/src/settings/registry-defs.ts` (if `board.reReview` landed on main meanwhile, fold key counts the way the count-conflict was resolved before: union of keys, count = total).
+- [ ] **Step 1:** `git fetch origin && git merge origin/main` on `gate-events-rt` (122 commits behind: the facility + setup work). Expected conflicts, resolve by ADDITIVE UNION in each: `packages/rt-client/src/commands.ts` (branch adds `ChatPane.focused`; main added gate rows/types — keep both), `packages/rt-client/src/client.ts` (main added the gate wrappers beside the events ones — keep both), `packages/rt-client/package.json` (branch says 0.14.0, main lower — keep 0.14.0), `packages/rt-client/src/settings/registry-defs.ts` (if `board.reReview` landed on main meanwhile, fold key counts the way the count-conflict was resolved before: union of keys, count = total).
 - [ ] **Step 2:** `bun run test` + `bunx tsc --noEmit` green (rt-client dist rebuild if dist-freshness trips). rt-client's OWN suite green.
 - [ ] **Step 3:** Commit the merge; push; open the PR (base main). Body: what the branch carries (events wrappers' original home, notifier event bridges, tray pane-focus action, `board.agent.*` + `board.gateGraceMinutes` + `rt.notify.eventBridges` registry keys, `ChatPane.focused`) + that 0.14.0 was published from this branch.
 - [ ] **Step 4 (Matt gates):** coderabbit + CI green → Matt merges.
@@ -69,18 +69,19 @@ Sequential after R2 (the re-pin needs published wrappers). All tasks in deft-inl
 - Consumes: rt-client `gateOpen({subject, kind, questions, agent?, pane?})`, `gateWait({id, waitMs?})`, `gateAnswer({id, answers, by})`.
 - Produces (wrapper-facing CLI, IDENTICAL shape): `gate open <state> --questions <json>` prints nothing new; `gate wait <state>` prints `{answers, by, answeredAt}` exactly as today; `gate answer <state> --answers <json> --by pane` records the pane answer.
 
-- [ ] **Step 1: failing tests** — rework `src/__tests__/gates-verbs.test.ts`: fake rt-client wrappers injected via `GateVerbIo`; `gateOpen` calls the facility with `subject: "mr:"+mrUrl`, `kind: "review-post"`, NO nudge, and writes `{gateId}` into the review state file; `gateWait` reads the gateId and loops the facility wait (registry-first makes re-entry safe; timeout re-enters; `closed` surfaces as a clean terminal error); a CAS-lost pane answer prints the winner and exits 0.
+- [ ] **Step 1: failing tests** — rework `src/__tests__/gates-verbs.test.ts`: fake rt-client wrappers injected via `GateVerbIo`; `gateOpen` calls the facility with `subject: "mr:"+mrUrl`, `kind: "review-post"`, NO nudge, `meta: { label: "review gate !<iid>" }` (iid derived from the MR url the way the board's tab labels do — the bridge template renders this label, so without it every tray notification reads bare "review-post"), and writes `gateId` into the review state file; `gateWait` reads the gateId and loops the facility wait (registry-first makes re-entry safe; timeout re-enters; `closed` surfaces as a clean terminal error); a CAS-lost pane answer prints the winner and exits 0.
+  **gateId persistence trap (reviewer-verified):** `writeReviewState` merges an EXPLICIT field list (`src/review-state.ts:60-90`) — a field not on that list is clobbered by the next status write. Add `gateId?: string` to `ReviewState` AND the merge list, with a test interleaving `gate open` -> a `reviewing` status write -> `gate wait` proving the gateId survives.
 - [ ] **Step 2-4:** RED → implement → GREEN. The journal-cursor/eventsList plumbing DELETES (the facility wait replaced the client-side fold — the exact retirement the facility exists for).
 - [ ] **Step 5:** Full suite + typecheck; commit "gates: status-bin verbs are facility clients; wrapper contract unchanged".
 
 ### Task B3: the GateCache + store shrink
 
-- [ ] **Step 1: failing tests** — `gates-store.test.ts` reworked: `GateCache.applyRow(row)` / `applyEvent(frame)` (opened/answered/parked/closed/released payloads per the spec's Events section) / `reconcile(rows)` (gateList result replaces matching subjects); `attachGates` renders open/parked/answered-unreleased rows onto board MRs; the local gate-file read/write/prune functions DELETE (the files under `state/gates/` are no longer written; a one-time boot cleanup removes leftovers).
+- [ ] **Step 1: failing tests** — `gates-store.test.ts` reworked: `GateCache.applyRow(row)` / `applyEvent(frame)` / `reconcile(rows)` (gateList result replaces matching subjects). Event handling per payload thickness: `opened`/`answered` carry full context; `parked`/`closed`/`released` are THIN (`{id, subject, kind, ...}`) — the cache patches by id and TOLERATES an unknown id (drop the patch; the next reconcile fills the gap). `attachGates` renders open and parked rows; an answered row renders ONLY while the review state is non-terminal (not yet `done`/`error`) — NOT keyed on `released`, which stays false forever for unattended board gates (nothing nudges, nothing releases; reviewer-verified). The local gate-file read/write/prune functions DELETE (`state/gates/` no longer written; one-time boot cleanup removes leftovers).
 - [ ] **Step 2-5:** RED → implement → GREEN → suite → commit "gates: daemon-backed cache replaces local gate files".
 
 ### Task B4: ingest — subscription, reconcile, bridge retarget
 
-- [ ] **Step 1: failing tests** — `gates-ingest.test.ts` reworked: relay frames with topic `gate/**` and `payload.subject` starting `mr:` feed `GateCache.applyEvent` + SSE nudge; non-mr subjects ignored; boot reconcile = `gateList({subjectPrefix: "mr:"})` → `reconcile`; `ensureBridgeRule` writes pattern `gate/opened/*` with a template using the payload `label` + suppression keyed on payload `paneId` (upsert semantics preserved: replace the old `board/gate/opened/*` rule if present, never duplicate).
+- [ ] **Step 1: failing tests** — `gates-ingest.test.ts` reworked: relay frames with topic `gate/**` and `payload.subject` starting `mr:` feed `GateCache.applyEvent` + SSE nudge; non-mr subjects ignored; boot reconcile = `gateList({subjectPrefix: "mr:"})` paged via the cursor → `reconcile`; `ensureBridgeRule` writes pattern `gate/opened/*` with a template using the payload `label` + suppression keyed on payload `paneId` (upsert semantics preserved: replace the old `board/gate/opened/*` rule if present, never duplicate).
 - [ ] **Step 2-5:** RED → GREEN → suite → commit "gates: ingest subscribes gate/**, reconciles via gate list, retargets the bridge rule".
 
 ### Task B5: answer endpoint proxies the facility
@@ -94,7 +95,7 @@ Sequential after R2 (the re-pin needs published wrappers). All tasks in deft-inl
 - Produces: `handleAnsweredEvent(frame, io)` — when the frame's gate is one this board parked: rebuild the wrapper prompt BY KIND (`review-post` → `board:review … --resumed-gate <gateId>`; map entries for `respond-plan`/`doctor-escalation` exist and throw "not wired until W3" if hit) and `resumeAgentPane`; `bootResumePass(io)` — `gateList` for answered+parked-history gates missed while the board was down.
 - The `--resumed-gate` wrapper re-entry contract is unchanged (correctness requirement from the prior pass: never re-open on resume).
 
-- [ ] **Step 1: failing tests** — extracted from the old answer-path tests + new: console-answered parked gate resumes (the event path, NOT the endpoint); boot pass resumes an answered-while-down parked gate exactly once; missing agentId degrades to notify.
+- [ ] **Step 1: failing tests** — extracted from the old answer-path tests + new: console-answered parked gate resumes (the event path, NOT the endpoint); missing agentId degrades to notify. **Exactly-once dedup is PINNED (reviewer-verified gap):** the resume writes `resumedGateId: <gateId>` into the review state via the (B2-widened) merge list; both the event path and the boot pass skip any gate whose id equals the recorded `resumedGateId`. `released` can NEVER be the marker — unattended gates are consumed via `gate wait` and are never released. Test: two consecutive boot passes over the same answered parked gate resume exactly once; the event path after a boot-pass resume is also a no-op. Boot passes page `gateList` with the cursor (never assume one page).
 - [ ] **Step 2-5:** RED → GREEN → suite → commit "gates: parked resume rides gate/answered events, by gate kind".
 
 ### Task B7: sweep on facility rows
@@ -104,7 +105,7 @@ Sequential after R2 (the re-pin needs published wrappers). All tasks in deft-inl
 
 ### Task B8: wrapper SKILL.md to the facility protocol
 
-- [ ] **Step 1:** Rewrite `skills/review/SKILL.md`'s gate-protocol section: same verbs, plus — the wait survives daemon bounces (the CLI loop does; say nothing else changes), `closed` means the decision site was abandoned (end cleanly, no invented answer), the escape hatch's CAS loss means "proceed on the recorded answer" (the verb prints the winner), degraded mode (daemon down at OPEN time) unchanged. Slot contract stays `mr-review@2`. Update `skills-resolve` tests if wording is asserted. Load superpowers:writing-skills discipline for the prose (the controller passes this to the implementer).
+- [ ] **Step 1:** Rewrite `skills/review/SKILL.md`'s gate-protocol section: same verbs, plus — the wait survives daemon bounces (the CLI loop does; say nothing else changes), `closed` means the decision site was abandoned (end cleanly, no invented answer), the escape hatch's CAS loss means "proceed on the recorded answer" (the verb prints the winner), degraded mode (daemon down at OPEN time) unchanged. **Escape-hatch answers under strict membership:** the recorded value must be one of the question's option texts VERBATIM (the daemon rejects anything else); the human's phrasing/nuance rides the per-answer `note`. Slot contract stays `mr-review@2`. Update `skills-resolve` tests if wording is asserted. Load superpowers:writing-skills discipline for the prose (the controller passes this to the implementer).
 - [ ] **Step 2:** Suite + typecheck; commit "wrapper: gate protocol rides the facility".
 
 ### Task B9: board PR
@@ -121,7 +122,7 @@ Sequential after R2 (the re-pin needs published wrappers). All tasks in deft-inl
 **Files (mattstack-skills, own worktree/branch):**
 - `attachments/review/review/SKILL.md` — the Deliver step per the spec's skills layer: present draft + state levels in one structured line; caller-owned answers or the ONE combined fallback question; execute posting per review-posting; rt-runs decision recording at execution (`--decided-by` = the winner's `by`).
 - `attachments/review-posting/SKILL.md` — execution-only rewrite (no side door, summary scoping, empty-selection, approve-order, tacit-approval, forge-conditional, writing-style, close HARD-GATE, report-file input mode for resumes, never-asks guard).
-- `attachments/gate-protocol/SKILL.md` — NEW shared part: publish → attended (form + queued doorbell reconcile-on-touch + priming: the doorbell phrase is a verify-only signal) / unattended (publish + blocking wait; closed = abandon; escape hatch + CAS-loss rule); one atomic answer for chunked forms.
+- `attachments/gate-protocol/SKILL.md` — NEW shared part: publish → attended (form + queued doorbell reconcile-on-touch + priming: the doorbell phrase is a verify-only signal) / unattended (publish + blocking wait; closed = abandon; escape hatch + CAS-loss rule); one atomic answer for chunked forms; strict-membership rule (answer values are option texts verbatim, nuance in notes); Hold/Iterate semantics (a consumed gate is terminal — the verb opens a NEW gate when it re-asks; those options are pane-only via meta).
 - Engine version bump; `rt skills check` clean.
 
 - [ ] Steps: edits under superpowers:writing-skills discipline → compile check → commit → **Matt gates:** push + plugin update.
@@ -143,6 +144,8 @@ Sequential after R2 (the re-pin needs published wrappers). All tasks in deft-inl
 ## Lane V — W2 exit: live verification (run WITH Matt)
 
 ### Task V1: review end to end on the facility
+
+**Preconditions:** S1 + S2 pushed AND `claude plugin update` run for both packs (the wrapper resolves the @2 fill through the installed plugins); B9 board branch running (dev build or deployed per Matt); R2 published + B1 re-pin landed.
 
 - [ ] Fresh review with findings: board launches the pane (rt agent), wrapper publishes `mr:` gate via the facility, card renders from the subscription, answer on the card → the blocked wrapper wait returns → posting executes with the selected tiers → done reaction. Tray notification fires via the retargeted bridge rule.
 - [ ] Clean review: outcome-only gate, one-click approve.
