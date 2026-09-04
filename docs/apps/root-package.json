@@ -31,7 +31,8 @@
     "deploy": "bun run scripts/deploy.ts"
   },
   "dependencies": {
-    "@mattstack/rt-client": "^0.11.0",
+    "@mattstack/glance": "^0.24.0",
+    "@mattstack/rt-client": "^0.14.0",
     "@mattstack/tui-kit": "^0.2.0",
     "react": "19.2.8",
     "react-dom": "19.2.8"
