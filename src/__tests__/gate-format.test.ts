@@ -1,5 +1,5 @@
 import { test, expect } from "bun:test";
-import { gateAnswerPayload } from "../client/board/gate-format.ts";
+import { gateAnswerPayload, parseConflictResponse, unwrapGateAnswer } from "../client/board/gate-format.ts";
 import type { GateQuestion } from "../gates/store.ts";
 
 const MR_URL = "https://gitlab.com/acme/webapp/-/merge_requests/4821";
@@ -57,4 +57,34 @@ test("gateAnswerPayload is not blocked by a zero-option question -- a clean revi
   ];
   const payload = gateAnswerPayload({ mrUrl: MR_URL, questions }, { outcome: "approve" });
   expect(payload).toEqual({ mrUrl: MR_URL, answers: { outcome: "approve" } });
+});
+
+test("unwrapGateAnswer passes a bare string through unchanged", () => {
+  expect(unwrapGateAnswer("approve")).toEqual({ value: "approve" });
+});
+
+test("unwrapGateAnswer passes a bare array through unchanged", () => {
+  expect(unwrapGateAnswer(["critical", "nit"])).toEqual({ value: ["critical", "nit"] });
+});
+
+test("unwrapGateAnswer unwraps the {value, note} object form", () => {
+  expect(unwrapGateAnswer({ value: "comment", note: "approve once CI is green" })).toEqual({
+    value: "comment",
+    note: "approve once CI is green",
+  });
+});
+
+test("unwrapGateAnswer unwraps an array value inside the object form, with no note", () => {
+  expect(unwrapGateAnswer({ value: ["critical"] })).toEqual({ value: ["critical"] });
+});
+
+test("parseConflictResponse extracts the winning row's answers and by from a 409 body", () => {
+  const body = { ok: false, conflict: true, row: { answer: { answers: { outcome: "approve" }, by: "board" } } };
+  expect(parseConflictResponse(body)).toEqual({ answers: { outcome: "approve" }, by: "board" });
+});
+
+test("parseConflictResponse tolerates a missing or malformed row without throwing", () => {
+  expect(parseConflictResponse(null)).toEqual({ answers: {}, by: "" });
+  expect(parseConflictResponse({})).toEqual({ answers: {}, by: "" });
+  expect(parseConflictResponse({ row: {} })).toEqual({ answers: {}, by: "" });
 });

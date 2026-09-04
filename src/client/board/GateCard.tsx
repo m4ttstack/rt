@@ -1,8 +1,8 @@
 import { useState } from "react";
 import type { BoardMRWithReview } from "../types.ts";
 import { Chip, RadioGroup, SelectBox } from "@mattstack/tui-kit";
-import type { GateQuestion } from "../../gates/store.ts";
-import { gateAnswerPayload, type GateSelections } from "./gate-format.ts";
+import type { GateAnswers, GateQuestion } from "../../gates/store.ts";
+import { gateAnswerPayload, parseConflictResponse, unwrapGateAnswer, type GateSelections } from "./gate-format.ts";
 
 /** One question's input: a SelectBox per option for a `multi` question (a
     checkbox group -- the same toggle recipe the row's own select-box uses),
@@ -55,17 +55,23 @@ function GateQuestionField({
 
 /** The answered branch: what got chosen, read-only -- no inputs, nothing to
     resubmit. A question missing from `answers` (an older or malformed gate
-    file) shows a placeholder rather than throwing. */
-function GateAnswerSummary({ questions, answers }: { questions: GateQuestion[]; answers?: GateSelections }) {
+    file) shows a placeholder rather than throwing. A value may be the bare
+    option string/array or the wrapper's `{value, note}` note form -- unwrap
+    before rendering, or React throws on the object child. */
+function GateAnswerSummary({ questions, answers }: { questions: GateQuestion[]; answers?: GateAnswers }) {
   return (
     <dl className="tui-gate-summary">
       {questions.map((q) => {
-        const value = answers?.[q.id];
+        const raw = answers?.[q.id];
+        const { value, note } = raw !== undefined ? unwrapGateAnswer(raw) : { value: undefined, note: undefined };
         const text = Array.isArray(value) ? (value.length ? value.join(", ") : "(none)") : value || "(none)";
         return (
           <div key={q.id} className="tui-gate-summary-row">
             <dt>{q.label}</dt>
-            <dd>{text}</dd>
+            <dd>
+              {text}
+              {note && <div className="tui-gate-summary-note">{note}</div>}
+            </dd>
           </div>
         );
       })}
@@ -79,16 +85,19 @@ function GateAnswerSummary({ questions, answers }: { questions: GateQuestion[]; 
     a badge since a pane is no longer waiting on it. `answered` swaps to a
     read-only summary.
 
-    No optimistic local state on submit: the request either fails (shown
-    inline, same recover-by-retry shape as DraftModal) or succeeds and the
-    board's existing SSE-driven poll flips `mr.gate.status` on its own next
-    refresh, at which point this component re-renders into the answered
-    branch on its own. */
+    No optimistic local state on a successful submit: the request either
+    fails (shown inline, same recover-by-retry shape as DraftModal) or
+    succeeds and the board's existing SSE-driven poll flips `mr.gate.status`
+    on its own next refresh, at which point this component re-renders into
+    the answered branch on its own. A 409 is the one response rendered
+    immediately from local state -- it's not a guess, the daemon's CAS
+    already recorded someone else's answer and handed back the real winner. */
 function GateCard({ mr }: { mr: BoardMRWithReview }) {
   const gate = mr.gate;
   const [selections, setSelections] = useState<GateSelections>({});
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [conflict, setConflict] = useState<{ answers: GateAnswers; by: string } | null>(null);
   if (!gate) return null;
 
   const setAnswer = (id: string, value: string | string[]) => {
@@ -103,12 +112,20 @@ function GateCard({ mr }: { mr: BoardMRWithReview }) {
     if (!payload) return;
     setBusy(true);
     setFailed(false);
+    setConflict(null);
     try {
       const res = await fetch("/gate/answer", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
       });
+      if (res.status === 409) {
+        // An answer WAS recorded, just not this one -- the body carries the
+        // winning row, not a validation failure to retry.
+        setBusy(false);
+        setConflict(parseConflictResponse(await res.json().catch(() => null)));
+        return;
+      }
       if (!res.ok) throw new Error(String(res.status));
     } catch {
       setBusy(false);
@@ -130,7 +147,7 @@ function GateCard({ mr }: { mr: BoardMRWithReview }) {
             parked
           </Chip>
         )}
-        {answered && (
+        {(answered || conflict) && (
           <Chip intent="ok" variant="outline" uppercase data-gate="answered">
             answered
           </Chip>
@@ -138,6 +155,11 @@ function GateCard({ mr }: { mr: BoardMRWithReview }) {
       </div>
       {answered ? (
         <GateAnswerSummary questions={gate.questions} answers={gate.answers} />
+      ) : conflict ? (
+        <>
+          <div className="tui-gate-error">answered elsewhere</div>
+          <GateAnswerSummary questions={gate.questions} answers={conflict.answers} />
+        </>
       ) : (
         <>
           {gate.questions.map((q) => (

@@ -8,8 +8,19 @@ export interface GateQuestion {
   options: string[];
 }
 
-export type GateAnswers = Record<string, string | string[]>;
+/** One answer's wire value: a bare option string/array, or the `{value,
+    note}` object the wrapper's note form posts (`{"outcome": {"value":
+    "comment", "note": "..."}}`) -- the daemon stores and emits both
+    verbatim. See gate-format.ts's `unwrapGateAnswer` for the renderer. */
+export type GateAnswerValue = string | string[] | { value: string | string[]; note?: string };
 
+export type GateAnswers = Record<string, GateAnswerValue>;
+
+/** The fields `resume.ts` actually threads through a resume: the gate's own
+    identity/questions plus the launch plumbing (`agentId`, `tabId`) needed
+    to reopen the pane. Not a general gate record -- nothing here persists
+    to disk, and no answer/timestamp fields exist because resume.ts never
+    sets them (it reads answers straight off the facility row instead). */
 export interface GateState {
   gateId: string;
   mrUrl: string;
@@ -17,14 +28,8 @@ export interface GateState {
   kind: "review-post";
   status: "open" | "answered" | "parked";
   openedAt: number;
-  answeredAt?: number;
-  parkedAt?: number;
-  answers?: GateAnswers;
-  answeredBy?: "board-ui" | "pane";
   questions: GateQuestion[];
   agentId?: string;
-  sessionId?: string;
-  paneId?: string;
   tabId?: string;
 }
 

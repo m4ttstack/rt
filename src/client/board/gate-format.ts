@@ -1,4 +1,4 @@
-import type { GateQuestion } from "../../gates/store.ts";
+import type { GateAnswers, GateAnswerValue, GateQuestion } from "../../gates/store.ts";
 
 /** UI-collected picks, keyed by question id: an array for a `multi`
     question's checked options, a bare string for a single-select's radio. */
@@ -42,4 +42,41 @@ export function gateAnswerPayload(gate: GateForAnswer, selections: GateSelection
     }
   }
   return { mrUrl: gate.mrUrl, answers };
+}
+
+export interface UnwrappedGateAnswer {
+  value: string | string[];
+  note?: string;
+}
+
+/**
+ * Normalizes one answer's wire value into a uniform shape a renderer can
+ * read without its own type check: a bare option string/array passes
+ * through as `{value}`, and the wrapper's note form (`{value, note}`)
+ * unwraps to the same shape with `note` carried alongside. GateCard uses
+ * this so the object form (posted whenever a human's pane answer carries
+ * free text) renders instead of crashing React on an object child.
+ */
+export function unwrapGateAnswer(raw: GateAnswerValue): UnwrappedGateAnswer {
+  if (raw !== null && typeof raw === "object" && !Array.isArray(raw) && "value" in raw) {
+    return { value: raw.value, note: raw.note };
+  }
+  return { value: raw };
+}
+
+export interface GateAnswerConflict {
+  answers: GateAnswers;
+  by: string;
+}
+
+/**
+ * Parses the body of a 409 `/gate/answer` response (`{ok:false, conflict:true,
+ * row}`) into the winning answer GateCard renders in place of the generic
+ * retry-failure text -- a 409 means an answer WAS recorded, just not this
+ * caller's. Tolerant of a missing or malformed row: the daemon's CAS win is
+ * real even if the body somehow lost its answer, so this never throws.
+ */
+export function parseConflictResponse(body: unknown): GateAnswerConflict {
+  const row = (body as { row?: { answer?: { answers?: GateAnswers; by?: string } } } | null)?.row;
+  return { answers: row?.answer?.answers ?? {}, by: row?.answer?.by ?? "" };
 }
