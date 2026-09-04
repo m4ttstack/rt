@@ -5,6 +5,7 @@ import {
   reconcileGatesOnBoot,
   ensureBridgeRule,
   GATE_OPENED_BRIDGE_RULE,
+  GATE_LIST_PAGE_LIMIT,
   type EventBridgeRule,
   type GateCacheTarget,
   type GateReconcileTarget,
@@ -75,26 +76,40 @@ function fakeRow(id: string): FacilityGateRow {
   };
 }
 
+type FakeGateListResult = { ok: true; data: { gates: FacilityGateRow[]; cursor: number } } | { ok: false; error: string };
+type FakeGateListPayload = { subjectPrefix: string; cursor?: number; limit?: number };
+
+function manyRows(n: number, offset = 0): FacilityGateRow[] {
+  return Array.from({ length: n }, (_, i) => fakeRow(String(offset + i + 1)));
+}
+
 describe("reconcileGatesOnBoot", () => {
-  test("pages gateList by cursor and reconciles all rows gathered", async () => {
-    const calls: unknown[] = [];
-    const list = async (payload: { subjectPrefix: string; cursor?: number }) => {
+  test("pages gateList by cursor (limit 200) and reconciles all rows gathered", async () => {
+    const calls: FakeGateListPayload[] = [];
+    const page1 = manyRows(GATE_LIST_PAGE_LIMIT, 0);
+    const page2 = manyRows(3, GATE_LIST_PAGE_LIMIT);
+    // Real daemon shape: cursor is non-zero on every page, including the
+    // last, partial one -- it becomes the store's max rowid there.
+    const list = async (payload: FakeGateListPayload): Promise<FakeGateListResult> => {
       calls.push(payload);
-      if (!payload.cursor) return { ok: true, data: { gates: [fakeRow("1"), fakeRow("2")], cursor: 2 } };
-      return { ok: true, data: { gates: [fakeRow("3")], cursor: 0 } };
+      if (!payload.cursor) return { ok: true, data: { gates: page1, cursor: GATE_LIST_PAGE_LIMIT } };
+      return { ok: true, data: { gates: page2, cursor: GATE_LIST_PAGE_LIMIT + 3 } };
     };
     const reconciled: FacilityGateRow[][] = [];
     const cache: GateReconcileTarget = { reconcile: (rows) => reconciled.push(rows) };
 
     await reconcileGatesOnBoot(list, cache);
 
-    expect(calls).toEqual([{ subjectPrefix: "mr:", cursor: undefined }, { subjectPrefix: "mr:", cursor: 2 }]);
+    expect(calls).toEqual([
+      { subjectPrefix: "mr:", cursor: undefined, limit: GATE_LIST_PAGE_LIMIT },
+      { subjectPrefix: "mr:", cursor: GATE_LIST_PAGE_LIMIT, limit: GATE_LIST_PAGE_LIMIT },
+    ]);
     expect(reconciled).toHaveLength(1);
-    expect(reconciled[0]?.map((r) => r.id)).toEqual(["1", "2", "3"]);
+    expect(reconciled[0]).toHaveLength(GATE_LIST_PAGE_LIMIT + 3);
   });
 
-  test("a single page (cursor 0) reconciles once with no further calls", async () => {
-    const list = async () => ({ ok: true, data: { gates: [fakeRow("1")], cursor: 0 } });
+  test("a single partial page (fewer rows than the limit, cursor still non-zero) reconciles once with no further calls", async () => {
+    const list = async (): Promise<FakeGateListResult> => ({ ok: true, data: { gates: [fakeRow("1")], cursor: 1 } });
     const reconciled: FacilityGateRow[][] = [];
     const cache: GateReconcileTarget = { reconcile: (rows) => reconciled.push(rows) };
 
@@ -103,16 +118,36 @@ describe("reconcileGatesOnBoot", () => {
     expect(reconciled).toEqual([[fakeRow("1")]]);
   });
 
+  test("regression: a non-zero cursor on the last page never spins forever -- a repeat call with 0 rows and the same cursor terminates the loop", async () => {
+    let calls = 0;
+    const list = async (payload: FakeGateListPayload): Promise<FakeGateListResult> => {
+      calls++;
+      // A full first page, then the daemon's real "nothing more" shape: 0
+      // rows, cursor unchanged from what was just sent.
+      if (!payload.cursor) return { ok: true, data: { gates: manyRows(GATE_LIST_PAGE_LIMIT, 0), cursor: 500 } };
+      return { ok: true, data: { gates: [], cursor: 500 } };
+    };
+    const reconciled: FacilityGateRow[][] = [];
+    const cache: GateReconcileTarget = { reconcile: (rows) => reconciled.push(rows) };
+
+    await reconcileGatesOnBoot(list, cache);
+
+    expect(calls).toBe(2);
+    expect(reconciled).toHaveLength(1);
+    expect(reconciled[0]).toHaveLength(GATE_LIST_PAGE_LIMIT);
+  });
+
   test("a failed page stops paging and reconciles whatever was gathered so far", async () => {
-    const list = async (payload: { subjectPrefix: string; cursor?: number }) => {
-      if (!payload.cursor) return { ok: true, data: { gates: [fakeRow("1")], cursor: 2 } };
+    const list = async (payload: FakeGateListPayload): Promise<FakeGateListResult> => {
+      if (!payload.cursor) return { ok: true, data: { gates: manyRows(GATE_LIST_PAGE_LIMIT, 0), cursor: GATE_LIST_PAGE_LIMIT } };
       return { ok: false, error: "boom" };
     };
     const reconciled: FacilityGateRow[][] = [];
     const cache: GateReconcileTarget = { reconcile: (rows) => reconciled.push(rows) };
 
     await expect(reconcileGatesOnBoot(list, cache)).resolves.toBeUndefined();
-    expect(reconciled).toEqual([[fakeRow("1")]]);
+    expect(reconciled).toHaveLength(1);
+    expect(reconciled[0]).toHaveLength(GATE_LIST_PAGE_LIMIT);
   });
 });
 

@@ -1782,6 +1782,7 @@ function sweepActionIo(): ExecuteSweepActionIo {
 function gateResumeIo(): GateResumeEventIo {
   return {
     gateRow: (subject) => gateCache.get(subject),
+    applyRow: (row) => gateCache.applyRow(row),
     readReviewState: (mrUrl) => readReviewStates().get(mrUrl),
     gateList,
     resolveLaunchSkill: (mrUrl, tabId) => reviewSkillForTab(config, tabId, mrUrl, resolveLaunchSkill),

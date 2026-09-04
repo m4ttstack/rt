@@ -4,7 +4,7 @@ import { dispatchPrompt, statusBinPath, mrTabLabel, type SkillPathResolver } fro
 import { resolveSkillPath } from "../skill-path.ts";
 import { reviewFilePath, reviewReportPath, type ReviewState, type ReviewStatus } from "../review-state.ts";
 import type { AgentLaunchResult } from "../agent-launch.ts";
-import type { GateEventFrame } from "./ingest.ts";
+import { GATE_LIST_PAGE_LIMIT, type GateEventFrame } from "./ingest.ts";
 
 /** Seams the real parked-gate resume needs beyond what answerGate's own io
     carries: launching into the review workspace and persisting the result to
@@ -87,7 +87,7 @@ export async function resumeParkedGate(
 
 // ── Event-driven trigger: any surface's answer resumes the parked gate ────
 
-type GateListPayload = { subjectPrefix: string; cursor?: number };
+type GateListPayload = { subjectPrefix: string; cursor?: number; limit?: number };
 type GateListResult = { ok: boolean; data?: { gates: FacilityGateRow[]; cursor: number }; error?: string };
 
 /** Seams `handleAnsweredEvent`/`bootResumePass` need beyond `resumeParkedGate`'s
@@ -97,6 +97,10 @@ export interface GateResumeEventIo extends ResumeParkedGateIo {
   /** The board's gate cache, keyed by `mr:<mrUrl>` subject -- read AFTER the
       triggering frame has already been applied to it. */
   gateRow(subject: string): FacilityGateRow | undefined;
+  /** Writes a row fetched straight from the daemon into the board's cache
+      (the cache-miss fallback in `handleAnsweredEvent`), so a later read of
+      this subject doesn't have to refetch. */
+  applyRow(row: FacilityGateRow): void;
   readReviewState(mrUrl: string): ReviewState | undefined;
   gateList(payload: GateListPayload): Promise<GateListResult>;
 }
@@ -130,6 +134,10 @@ async function resumeIfMissed(row: FacilityGateRow, io: GateResumeEventIo, resol
 
   const review = io.readReviewState(mrUrl);
   if (!review || review.resumedGateId === row.id) return;
+  // A row that isn't the gate this review currently tracks is history -- a
+  // re-review superseded it and a fresh gate now owns this MR's answer flow.
+  // Resuming it would re-post a stale answer into the current agent.
+  if (review.gateId !== row.id) return;
 
   if (row.kind !== RESUMABLE_KIND) {
     throw new Error(`${row.kind} resume not wired until W3`);
@@ -153,6 +161,22 @@ async function resumeIfMissed(row: FacilityGateRow, io: GateResumeEventIo, resol
   io.writeReviewState(reviewFilePath(mrUrl), { status: fresh.status, resumedGateId: row.id });
 }
 
+/** Pages `gateList({subjectPrefix})` to exhaustion looking for one gate id --
+    the cache-miss fallback for `handleAnsweredEvent` and the shared paging
+    shape `bootResumePass` also uses. `subjectPrefix` is a full `mr:<url>`
+    subject here, not just `mr:`, so this only ever reads one MR's rows. */
+async function fetchGateRowById(io: GateResumeEventIo, subjectPrefix: string, id: string): Promise<FacilityGateRow | undefined> {
+  let cursor: number | undefined;
+  for (;;) {
+    const res = await io.gateList({ subjectPrefix, cursor, limit: GATE_LIST_PAGE_LIMIT });
+    if (!res.ok || !res.data) return undefined;
+    const match = res.data.gates.find((row) => row.id === id);
+    if (match) return match;
+    if (res.data.gates.length < GATE_LIST_PAGE_LIMIT || res.data.cursor === cursor) return undefined;
+    cursor = res.data.cursor;
+  }
+}
+
 /**
  * Live path: fed one `gate/**` bus frame after the cache has already applied
  * it (server.ts's relay handler). Only a `gate/answered/<id>` frame for an
@@ -170,8 +194,15 @@ export async function handleAnsweredEvent(
   if (typeof id !== "string" || !id) return;
   if (typeof subject !== "string" || !subject.startsWith("mr:")) return;
 
-  const row = io.gateRow(subject);
-  if (!row || row.id !== id) return;
+  let row = io.gateRow(subject);
+  if (!row || row.id !== id) {
+    // The cache doesn't have this gate (opened before the board last
+    // started) or holds a different one for this subject (stale) -- ask the
+    // daemon directly rather than stranding the resume on a cold cache.
+    row = await fetchGateRowById(io, subject, id);
+    if (!row) return;
+    io.applyRow(row);
+  }
   await resumeIfMissed(row, io, resolvePath);
 }
 
@@ -188,13 +219,21 @@ export async function bootResumePass(
 ): Promise<void> {
   let cursor: number | undefined;
   for (;;) {
-    const res = await io.gateList({ subjectPrefix: "mr:", cursor });
+    const res = await io.gateList({ subjectPrefix: "mr:", cursor, limit: GATE_LIST_PAGE_LIMIT });
     if (!res.ok || !res.data) {
       console.error(`gate boot resume pass: gate:list failed: ${res.error ?? "unknown error"}`);
       break;
     }
-    for (const row of res.data.gates) await resumeIfMissed(row, io, resolvePath);
-    if (!res.data.cursor) break;
+    for (const row of res.data.gates) {
+      // One row this board can't resume (the not-wired-until-W3 throw) must
+      // not stop the rest of the page -- or the rest of the pass.
+      try {
+        await resumeIfMissed(row, io, resolvePath);
+      } catch (err) {
+        console.error(`gate boot resume pass: resumeIfMissed(${row.id}) failed: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+    if (res.data.gates.length < GATE_LIST_PAGE_LIMIT || res.data.cursor === cursor) break;
     cursor = res.data.cursor;
   }
 }

@@ -47,26 +47,35 @@ export function ingestRelayFrame(cache: GateCacheTarget, frame: GateEventFrame, 
   notify();
 }
 
-type GateListPayload = { subjectPrefix: string; cursor?: number };
+type GateListPayload = { subjectPrefix: string; cursor?: number; limit?: number };
 type GateListResult = { ok: boolean; data?: { gates: FacilityGateRow[]; cursor: number }; error?: string };
+
+/** Page size for every `gate:list` paging loop in this module. The daemon's
+    `cursor` is a resume position, not a done-signal -- it is non-zero on
+    every page once any row exists, including the last one (it becomes the
+    store's max rowid). A short page (fewer rows than this limit) is the
+    only reliable end-of-data signal; see the paging loops below. */
+export const GATE_LIST_PAGE_LIMIT = 200;
 
 /**
  * Boot-time cache warm: pages `gateList({subjectPrefix: "mr:"})` to
- * exhaustion (a non-zero `cursor` means another page follows) and reconciles
- * every row gathered in one call, so a board that was down still opens with
- * current gates rather than an empty cache waiting on the next bus event.
+ * exhaustion and reconciles every row gathered in one call, so a board that
+ * was down still opens with current gates rather than an empty cache
+ * waiting on the next bus event.
  */
 export async function reconcileGatesOnBoot(list: (payload: GateListPayload) => Promise<GateListResult>, cache: GateReconcileTarget): Promise<void> {
   const rows: FacilityGateRow[] = [];
   let cursor: number | undefined;
   for (;;) {
-    const res = await list({ subjectPrefix: "mr:", cursor });
+    const res = await list({ subjectPrefix: "mr:", cursor, limit: GATE_LIST_PAGE_LIMIT });
     if (!res.ok || !res.data) {
       console.error(`gate boot reconcile: gate:list failed: ${res.error ?? "unknown error"}`);
       break;
     }
     rows.push(...res.data.gates);
-    if (!res.data.cursor) break;
+    // A partial page ends the pass; the repeated-cursor check is a safety
+    // net against a daemon that returns a full page with no forward progress.
+    if (res.data.gates.length < GATE_LIST_PAGE_LIMIT || res.data.cursor === cursor) break;
     cursor = res.data.cursor;
   }
   cache.reconcile(rows);
