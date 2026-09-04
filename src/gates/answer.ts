@@ -1,90 +1,55 @@
-import type { eventsEmit } from "@mattstack/rt-client";
-import type { GateAnswers, GateQuestion, GateState } from "./store.ts";
+import type { Commands, GateRow, RtResponse } from "@mattstack/rt-client";
+import type { GateAnswers, GateState } from "./store.ts";
 import { dispatchPrompt, statusBinPath, mrTabLabel, type SkillPathResolver } from "../herdr.ts";
 import { resolveSkillPath } from "../skill-path.ts";
 import { reviewFilePath, reviewReportPath, type ReviewState, type ReviewStatus } from "../review-state.ts";
 import type { AgentLaunchResult } from "../agent-launch.ts";
 
-/** Board-UI answer path: mirrors `gateAnswer` in verbs.ts (the pane escape
-    hatch) but as a pure orchestrator over injected io, so the HTTP handler
-    in server.ts stays a thin status-mapping shell and this is unit-testable
-    without touching the real gate store or events bus. */
+/** Board-UI answer path: proxies the facility's `gate:answer` (the single
+    CAS arbiter) rather than owning any state itself, so the HTTP handler in
+    server.ts stays a thin status-mapping shell and this is unit-testable
+    without touching the real gate cache or a live daemon. */
 export interface AnswerGateIo {
-  readGateStates(): Map<string, GateState>;
-  writeGateState(path: string, patch: Partial<GateState> & { gateId: string }): void;
-  gateFilePath(mrUrl: string): string;
-  eventsEmit: typeof eventsEmit;
-  sseNudge(): void;
-  resumeParkedGate(gate: GateState): void | Promise<void>;
-  now(): number;
+  /** The board's gate cache maps `mr:<mrUrl>` subjects to facility rows;
+      `gate:answer` takes an id, not a subject, so this resolves it -- and
+      only for a row still `open`/`parked`, since anything else (missing,
+      already answered, closed) has nothing left to answer here. */
+  findAnswerableGateId(mrUrl: string): string | undefined;
+  gateAnswer(payload: Commands["gate:answer"]["payload"]): Promise<RtResponse<Commands["gate:answer"]["data"]>>;
 }
 
 export type AnswerGateResult =
   | { kind: "ok" }
+  | { kind: "conflict"; row: GateRow }
   | { kind: "not-found" }
-  | { kind: "already-answered" }
   | { kind: "invalid"; reason: string };
 
-/** Every answered question id must exist on the gate, and its value shape
-    must match the question's `multi` flag (array of strings vs. a single
-    string) -- a mismatch here would otherwise write a gate file no consumer
-    (pane resume, board row) can trust to match its own `questions`. */
-function validateAnswers(questions: GateQuestion[], answers: GateAnswers): string | null {
-  const byId = new Map(questions.map((q) => [q.id, q]));
-  for (const [id, value] of Object.entries(answers)) {
-    const question = byId.get(id);
-    if (!question) return `unknown question id "${id}"`;
-    if (question.multi) {
-      if (!Array.isArray(value) || !value.every((v) => typeof v === "string")) {
-        return `question "${id}" is multi-select; expected an array of strings`;
-      }
-    } else if (typeof value !== "string") {
-      return `question "${id}" is single-select; expected a string`;
-    }
-  }
-  return null;
+/** Distinguishes the daemon's "nothing there to answer" rejections from
+    validation/strict-membership ones -- the former maps to 404, the latter
+    to 400 with the message surfaced verbatim. */
+function isMissingGateError(message: string): boolean {
+  return /not[- ]found|closed/i.test(message);
 }
 
 /**
- * Validates and applies a board-UI answer to a gate: emits the answered
- * event, merges the gate file to `status: "answered"`, and nudges SSE
- * clients. When the gate was `parked`, also invokes `resumeParkedGate` --
- * a parked gate has no pane waiting on `gateWait`, so answering it must
- * itself kick the resume rather than rely on the wrapper polling back in.
+ * Answers a gate through the facility CAS: resolves the id from the board's
+ * cache, calls `gateAnswer`, and maps the outcome. A CAS loss is `ok:true`
+ * with `conflict:true` and the winning row -- not an error, since the
+ * facility already recorded a real answer, just not this caller's. The
+ * daemon emits `gate/answered` itself on a genuine write, so there is
+ * nothing left for this path to emit or persist.
  */
 export async function answerGate(mrUrl: string, answers: GateAnswers, io: AnswerGateIo): Promise<AnswerGateResult> {
-  const gate = io.readGateStates().get(mrUrl);
-  if (!gate) return { kind: "not-found" };
-  if (gate.status === "answered") return { kind: "already-answered" };
+  const gateId = io.findAnswerableGateId(mrUrl);
+  if (!gateId) return { kind: "not-found" };
 
-  const invalidReason = validateAnswers(gate.questions, answers);
-  if (invalidReason) return { kind: "invalid", reason: invalidReason };
-
-  const wasParked = gate.status === "parked";
-  const answeredAt = io.now();
-
-  await io.eventsEmit(`board/gate/answered/${gate.gateId}`, {
-    gateId: gate.gateId,
-    answers,
-    by: "board-ui",
-    answeredAt,
-  });
-
-  io.writeGateState(io.gateFilePath(mrUrl), {
-    gateId: gate.gateId,
-    status: "answered",
-    answers,
-    answeredBy: "board-ui",
-    answeredAt,
-  });
-
-  io.sseNudge();
-
-  if (wasParked) {
-    await io.resumeParkedGate(gate);
+  const res = await io.gateAnswer({ id: gateId, answers, by: "board" });
+  if (!res.ok || !res.data) {
+    const message = res.error ?? "gate:answer failed with no error detail";
+    return isMissingGateError(message) ? { kind: "not-found" } : { kind: "invalid", reason: message };
   }
 
-  return { kind: "ok" };
+  return res.data.conflict ? { kind: "conflict", row: res.data.row } : { kind: "ok" };
 }
 
 /** Seams the real parked-gate resume needs beyond what answerGate's own io

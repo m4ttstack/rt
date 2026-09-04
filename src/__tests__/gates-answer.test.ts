@@ -1,177 +1,136 @@
 import { describe, expect, test } from "bun:test";
+import type { Commands, GateRow, RtResponse } from "@mattstack/rt-client";
 import { answerGate, resumeParkedGate, type AnswerGateIo, type ResumeParkedGateIo } from "../gates/answer.ts";
-import type { GateAnswers, GateQuestion, GateState } from "../gates/store.ts";
+import type { GateAnswers, GateState } from "../gates/store.ts";
 import type { AgentLaunchResult } from "../agent-launch.ts";
 
 const MR_URL = "https://gitlab.com/acme/webapp/-/merge_requests/4821";
+const GATE_ID = "gate-1";
 
-const QUESTIONS: GateQuestion[] = [
-  { id: "tiers", label: "Which tiers?", multi: true, options: ["nit", "must-fix"] },
-  { id: "outcome", label: "Outcome?", multi: false, options: ["comment", "approve"] },
-];
-
-function baseGate(overrides: Partial<GateState> = {}): GateState {
+function baseRow(overrides: Partial<GateRow> = {}): GateRow {
   return {
-    gateId: "gate-1",
-    mrUrl: MR_URL,
-    iid: 4821,
+    id: GATE_ID,
+    subject: `mr:${MR_URL}`,
     kind: "review-post",
+    questions: [{ id: "outcome", label: "Outcome?", multi: false, options: ["comment", "approve"] }],
+    meta: null,
     status: "open",
+    answer: null,
     openedAt: 1000,
-    questions: QUESTIONS,
+    parkedAt: null,
+    closedAt: null,
+    closedReason: null,
+    agent: null,
+    pane: null,
+    nudge: null,
+    delivery: null,
+    released: false,
     ...overrides,
   };
 }
 
+type GateAnswerPayload = Commands["gate:answer"]["payload"];
+type GateAnswerData = Commands["gate:answer"]["data"];
+
 interface FakeIoCalls {
-  eventsEmit: Array<{ topic: string; payload: unknown }>;
-  writeGateState: Array<{ path: string; patch: Partial<GateState> & { gateId: string } }>;
-  sseNudge: number;
-  resumeParkedGate: GateState[];
+  findAnswerableGateId: string[];
+  gateAnswer: GateAnswerPayload[];
 }
 
-function fakeIo(gate: GateState | undefined, now = 6000): { io: AnswerGateIo; calls: FakeIoCalls } {
-  const calls: FakeIoCalls = { eventsEmit: [], writeGateState: [], sseNudge: 0, resumeParkedGate: [] };
+/** `AnswerGateIo` carries only the cache lookup and the facility call --
+    there is no emit or resume hook left to wire, so a fake built from this
+    interface alone already proves the answer path can't reach either. */
+function fakeIo(
+  gateId: string | undefined,
+  respond: (payload: GateAnswerPayload) => RtResponse<GateAnswerData>,
+): { io: AnswerGateIo; calls: FakeIoCalls } {
+  const calls: FakeIoCalls = { findAnswerableGateId: [], gateAnswer: [] };
   const io: AnswerGateIo = {
-    readGateStates: () => (gate ? new Map([[gate.mrUrl, gate]]) : new Map()),
-    writeGateState: (path, patch) => {
-      calls.writeGateState.push({ path, patch });
+    findAnswerableGateId: (mrUrl) => {
+      calls.findAnswerableGateId.push(mrUrl);
+      return gateId;
     },
-    gateFilePath: (mrUrl: string) => `/tmp/fake-gates/${mrUrl.replace(/[^a-z0-9]/gi, "-")}.json`,
-    eventsEmit: (async (topic: string, payload?: unknown) => {
-      calls.eventsEmit.push({ topic, payload });
-      return { ok: true, data: { id: 1 } };
-    }) as AnswerGateIo["eventsEmit"],
-    sseNudge: () => {
-      calls.sseNudge++;
+    gateAnswer: async (payload) => {
+      calls.gateAnswer.push(payload);
+      return respond(payload);
     },
-    resumeParkedGate: (g: GateState) => {
-      calls.resumeParkedGate.push(g);
-    },
-    now: () => now,
   };
   return { io, calls };
 }
 
 describe("answerGate", () => {
-  test("happy path: emits board/gate/answered/<gateId> then merges the gate file", async () => {
-    const gate = baseGate();
-    const { io, calls } = fakeIo(gate, 7000);
-    const answers: GateAnswers = { tiers: ["must-fix"], outcome: "approve" };
+  test("resolves the id from the cache and proxies gateAnswer({id, answers, by: 'board'})", async () => {
+    const answers: GateAnswers = { outcome: "approve" };
+    const { io, calls } = fakeIo(GATE_ID, () => ({ ok: true, data: { row: baseRow({ status: "answered", answer: { answers, by: "board", answeredAt: 7000 } }) } }));
 
     const result = await answerGate(MR_URL, answers, io);
 
     expect(result).toEqual({ kind: "ok" });
-
-    expect(calls.eventsEmit.length).toBe(1);
-    expect(calls.eventsEmit[0]!.topic).toBe(`board/gate/answered/${gate.gateId}`);
-    expect(calls.eventsEmit[0]!.payload).toEqual({
-      gateId: gate.gateId,
-      answers,
-      by: "board-ui",
-      answeredAt: 7000,
-    });
-
-    expect(calls.writeGateState.length).toBe(1);
-    expect(calls.writeGateState[0]!.patch).toEqual({
-      gateId: gate.gateId,
-      status: "answered",
-      answers,
-      answeredBy: "board-ui",
-      answeredAt: 7000,
-    });
-
-    expect(calls.sseNudge).toBe(1);
-    expect(calls.resumeParkedGate.length).toBe(0);
+    expect(calls.findAnswerableGateId).toEqual([MR_URL]);
+    expect(calls.gateAnswer).toEqual([{ id: GATE_ID, answers, by: "board" }]);
   });
 
-  test("unknown MR returns a not-found result, no emit/merge", async () => {
-    const { io, calls } = fakeIo(undefined);
+  test("CAS conflict yields the winning row instead of an error", async () => {
+    const winner = baseRow({ status: "answered", answer: { answers: { outcome: "comment" }, by: "board", answeredAt: 6500 } });
+    const { io } = fakeIo(GATE_ID, () => ({ ok: true, data: { row: winner, conflict: true } }));
+
+    const result = await answerGate(MR_URL, { outcome: "approve" }, io);
+
+    expect(result).toEqual({ kind: "conflict", row: winner });
+  });
+
+  test("no cached open/parked gate for the MR is not-found without calling the facility", async () => {
+    const { io, calls } = fakeIo(undefined, () => {
+      throw new Error("gateAnswer should not be called");
+    });
 
     const result = await answerGate(MR_URL, { outcome: "approve" }, io);
 
     expect(result).toEqual({ kind: "not-found" });
-    expect(calls.eventsEmit.length).toBe(0);
-    expect(calls.writeGateState.length).toBe(0);
-    expect(calls.sseNudge).toBe(0);
+    expect(calls.gateAnswer.length).toBe(0);
   });
 
-  test("double answer (already answered) returns already-answered, no emit/merge", async () => {
-    const gate = baseGate({ status: "answered", answers: { outcome: "comment" }, answeredBy: "board-ui", answeredAt: 5000 });
-    const { io, calls } = fakeIo(gate);
+  test("daemon not-found/closed rejection maps to not-found", async () => {
+    const { io } = fakeIo(GATE_ID, () => ({ ok: false, error: `gate ${GATE_ID} not found` }));
 
     const result = await answerGate(MR_URL, { outcome: "approve" }, io);
 
-    expect(result).toEqual({ kind: "already-answered" });
-    expect(calls.eventsEmit.length).toBe(0);
-    expect(calls.writeGateState.length).toBe(0);
+    expect(result).toEqual({ kind: "not-found" });
   });
 
-  test("multi question answered with a bare string (wrong shape) is invalid, no emit/merge", async () => {
-    const gate = baseGate();
-    const { io, calls } = fakeIo(gate);
-
-    const result = await answerGate(MR_URL, { tiers: "must-fix", outcome: "approve" } as unknown as GateAnswers, io);
-
-    expect(result.kind).toBe("invalid");
-    expect(calls.eventsEmit.length).toBe(0);
-    expect(calls.writeGateState.length).toBe(0);
-  });
-
-  test("unknown question id is invalid, no emit/merge", async () => {
-    const gate = baseGate();
-    const { io, calls } = fakeIo(gate);
+  test("daemon strict-membership/validation rejection maps to invalid, message verbatim", async () => {
+    const message = `answers include ids outside gate ${GATE_ID}'s question set (strict membership)`;
+    const { io } = fakeIo(GATE_ID, () => ({ ok: false, error: message }));
 
     const result = await answerGate(MR_URL, { bogus: "yes" } as unknown as GateAnswers, io);
 
-    expect(result.kind).toBe("invalid");
-    expect(calls.eventsEmit.length).toBe(0);
-    expect(calls.writeGateState.length).toBe(0);
-  });
-
-  test("single question answered with an array (wrong shape) is invalid, no emit/merge", async () => {
-    const gate = baseGate();
-    const { io, calls } = fakeIo(gate);
-
-    const result = await answerGate(MR_URL, { outcome: ["approve"] } as unknown as GateAnswers, io);
-
-    expect(result.kind).toBe("invalid");
-    expect(calls.eventsEmit.length).toBe(0);
-    expect(calls.writeGateState.length).toBe(0);
-  });
-
-  test("parked gate: answering it also calls the resumeParkedGate hook", async () => {
-    const gate = baseGate({ status: "parked", parkedAt: 4000 });
-    const { io, calls } = fakeIo(gate, 8000);
-    const answers: GateAnswers = { tiers: [], outcome: "comment" };
-
-    const result = await answerGate(MR_URL, answers, io);
-
-    expect(result).toEqual({ kind: "ok" });
-    expect(calls.resumeParkedGate.length).toBe(1);
-    expect(calls.resumeParkedGate[0]).toEqual(gate);
-    expect(calls.writeGateState[0]!.patch.status).toBe("answered");
-  });
-
-  test("open (not parked) gate: resumeParkedGate is never called", async () => {
-    const gate = baseGate({ status: "open" });
-    const { io, calls } = fakeIo(gate);
-
-    await answerGate(MR_URL, { tiers: [], outcome: "comment" }, io);
-
-    expect(calls.resumeParkedGate.length).toBe(0);
+    expect(result).toEqual({ kind: "invalid", reason: message });
   });
 });
 
-/** Fakes for the real resumeParkedGate's sub-io (as opposed to fakeIo's plain
-    stub hook above), so these tests exercise the actual resume logic --
-    prompt building, resumeAgentPane, and id persistence -- wired in through
-    answerGate's injectable resumeParkedGate hook. */
+/** Fakes for the real resumeParkedGate's io, exercised directly (as opposed
+    to fakeIo's answer-path stub above) -- resumeParkedGate is no longer
+    wired off answerGate (B6 hangs it off the gate/answered event instead),
+    but the function itself stays defined and is still tested here in
+    isolation ahead of that move. */
 interface ResumeIoCalls {
   resumeAgentPane: Array<{ agentId: string; prompt: string; workspaceLabel: string; tabLabel: string }>;
   writeReviewState: Array<{ path: string; patch: unknown }>;
   notify: string[];
   resolveLaunchSkill: Array<{ mrUrl: string; tabId?: string }>;
+}
+
+function baseGate(overrides: Partial<GateState> = {}): GateState {
+  return {
+    gateId: GATE_ID,
+    mrUrl: MR_URL,
+    iid: 4821,
+    kind: "review-post",
+    status: "parked",
+    openedAt: 1000,
+    questions: [{ id: "outcome", label: "Outcome?", multi: false, options: ["comment", "approve"] }],
+    ...overrides,
+  };
 }
 
 function fakeResumeIo(
@@ -203,17 +162,12 @@ function fakeResumeIo(
   return { io, calls };
 }
 
-describe("resumeParkedGate (the real parked-gate resume, wired as answerGate's hook)", () => {
+describe("resumeParkedGate (kept defined for B6; not called from the answer path)", () => {
   test("builds the /board:review prompt with --state and --resumed-gate, resumes the pane, and persists fresh ids", async () => {
-    const gate = baseGate({ status: "parked", parkedAt: 4000, agentId: "agent-1" });
+    const gate = baseGate({ agentId: "agent-1" });
     const { io: resumeIo, calls: resumeCalls } = fakeResumeIo();
-    const { io, calls } = fakeIo(gate, 8000);
-    io.resumeParkedGate = (g) => resumeParkedGate(g, resumeIo, async () => null);
 
-    const result = await answerGate(MR_URL, { tiers: [], outcome: "comment" }, io);
-
-    expect(result).toEqual({ kind: "ok" });
-    expect(calls.writeGateState[0]!.patch.status).toBe("answered");
+    await resumeParkedGate(gate, resumeIo, async () => null);
 
     expect(resumeCalls.resumeAgentPane.length).toBe(1);
     const call = resumeCalls.resumeAgentPane[0]!;
@@ -221,7 +175,7 @@ describe("resumeParkedGate (the real parked-gate resume, wired as answerGate's h
     expect(call.workspaceLabel).toBe("reviews");
     expect(call.prompt).toContain("/board:review");
     expect(call.prompt).toContain("--state");
-    expect(call.prompt).toContain("--resumed-gate gate-1");
+    expect(call.prompt).toContain(`--resumed-gate ${GATE_ID}`);
 
     expect(resumeCalls.writeReviewState.length).toBe(1);
     expect(resumeCalls.writeReviewState[0]!.patch).toMatchObject({
@@ -235,7 +189,7 @@ describe("resumeParkedGate (the real parked-gate resume, wired as answerGate's h
   });
 
   test("threads the gate's tabId to resolveLaunchSkill, so a tab's reviewSkill override wins over the fallback", async () => {
-    const gate = baseGate({ status: "parked", parkedAt: 4000, agentId: "agent-1", tabId: "tab-9" });
+    const gate = baseGate({ agentId: "agent-1", tabId: "tab-9" });
     const { io: resumeIo, calls: resumeCalls } = fakeResumeIo({}, (mrUrl, tabId) =>
       tabId === "tab-9" ? "acme:tab-override-review" : "acme:board-review",
     );
@@ -248,7 +202,7 @@ describe("resumeParkedGate (the real parked-gate resume, wired as answerGate's h
   });
 
   test("a focused-existing resume (already-open tab) does not overwrite the review state with blank ids", async () => {
-    const gate = baseGate({ status: "parked", parkedAt: 4000, agentId: "agent-1" });
+    const gate = baseGate({ agentId: "agent-1" });
     const { io: resumeIo, calls: resumeCalls } = fakeResumeIo({
       agentId: "", sessionId: "", paneId: "", tabId: "", workspaceId: "", focusedExisting: true,
     });
@@ -260,14 +214,11 @@ describe("resumeParkedGate (the real parked-gate resume, wired as answerGate's h
   });
 
   test("missing agentId notifies instead of resuming, and does not throw", async () => {
-    const gate = baseGate({ status: "parked", parkedAt: 4000 });
+    const gate = baseGate();
     const { io: resumeIo, calls: resumeCalls } = fakeResumeIo();
-    const { io, calls } = fakeIo(gate, 8000);
-    io.resumeParkedGate = (g) => resumeParkedGate(g, resumeIo, async () => null);
 
-    const result = await answerGate(MR_URL, { tiers: [], outcome: "comment" }, io);
+    await resumeParkedGate(gate, resumeIo, async () => null);
 
-    expect(result).toEqual({ kind: "ok" });
     expect(resumeCalls.resumeAgentPane.length).toBe(0);
     expect(resumeCalls.notify).toEqual(["parked gate answered but no agent on file; relaunch from the board"]);
   });

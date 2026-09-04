@@ -13,7 +13,7 @@ import { upsertEnvKeys } from "./env-file.ts";
 import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, channelForMR, configuredSlackChannels, projectPathFromWebUrl, reviewSkillForTab, visibleMrsFor, type BoardMR, type SyncScopeRead } from "./data.ts";
 import { GitLabProvider, ReadBackFailedError, NoteMutator, parseRepoId } from "@mattstack/glance";
 import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } from "./discussions.ts";
-import { readProjectMRs, readDiscussions, subscribe, eventsEmit, gateList, getSetting, setSetting } from "@mattstack/rt-client";
+import { readProjectMRs, readDiscussions, subscribe, eventsEmit, gateList, gateAnswer as gateAnswerFacility, getSetting, setSetting } from "@mattstack/rt-client";
 import { SnapshotCache } from "./cache.ts";
 import { isLocalRequest } from "./local.ts";
 import { settingsHandler } from "@mattstack/settings-kit/server";
@@ -23,7 +23,7 @@ import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, 
 import { readGateStates, writeGateState, gateFilePath, pruneGateStates, GATE_DIR, type GateAnswers } from "./gates/store.ts";
 import { ingestRelayFrame, reconcileGatesOnBoot, ensureBridgeRule, type EventBridgeRule, type GateEventFrame } from "./gates/ingest.ts";
 import { GateCache, attachGates } from "./gates/cache.ts";
-import { answerGate, resumeParkedGate } from "./gates/answer.ts";
+import { answerGate } from "./gates/answer.ts";
 import { planSweep } from "./gates/sweep.ts";
 import { executeSweepAction, type ExecuteSweepActionIo } from "./gates/execute-sweep-action.ts";
 import { readDrafts, heldDraftsByMr, attachDrafts, pruneDrafts, draftFilePath, writeDraft } from "./draft-state.ts";
@@ -1253,9 +1253,11 @@ const httpServer = Bun.serve({
         }
       }
       case "/gate/answer": {
-        // Answer a review gate from the board UI. Validation + orchestration
-        // (event emit, gate-file merge, parked-gate resume) live in
-        // gates/answer.ts; this maps the pure result onto HTTP status codes.
+        // Answer a review gate from the board UI. The facility's gate:answer
+        // is the single CAS arbiter; this proxies it (gates/answer.ts) and
+        // maps the pure result onto HTTP status codes. Resume of a parked
+        // gate is no longer triggered here -- it hangs off the gate/answered
+        // EVENT (see gates/ingest.ts) so a console-answered gate resumes too.
         if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
         let body: unknown;
@@ -1270,27 +1272,22 @@ const httpServer = Bun.serve({
           return new Response("expected { mrUrl: string, answers: object }", { status: 400 });
         }
         const result = await answerGate(mrUrl, answers as GateAnswers, {
-          readGateStates,
-          writeGateState,
-          gateFilePath,
-          eventsEmit,
-          sseNudge,
-          resumeParkedGate: (gate) => resumeParkedGate(gate, {
-            resolveLaunchSkill: (gateMrUrl, gateTabId) => reviewSkillForTab(config, gateTabId, gateMrUrl, resolveLaunchSkill),
-            resumeAgentPane,
-            writeReviewState,
-            reviewsWorkspace: config.reviewsWorkspace,
-            notify: (message) => console.error(`gate resume: ${message}`),
-          }),
-          now: () => Date.now(),
+          findAnswerableGateId: (gateMrUrl) => {
+            const row = gateCache.get(`mr:${gateMrUrl}`);
+            return row && (row.status === "open" || row.status === "parked") ? row.id : undefined;
+          },
+          gateAnswer: gateAnswerFacility,
         });
         switch (result.kind) {
           case "ok":
             return new Response(JSON.stringify({ ok: true }), { headers: { "content-type": "application/json" } });
+          case "conflict":
+            return new Response(JSON.stringify({ ok: false, conflict: true, row: result.row }), {
+              status: 409,
+              headers: { "content-type": "application/json" },
+            });
           case "not-found":
-            return new Response(`unknown MR "${mrUrl}"`, { status: 404 });
-          case "already-answered":
-            return new Response("gate already answered", { status: 409 });
+            return new Response(`unknown gate for MR "${mrUrl}"`, { status: 404 });
           case "invalid":
             return new Response(result.reason, { status: 400 });
         }
