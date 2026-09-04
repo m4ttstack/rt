@@ -69,6 +69,21 @@
         }
       }
       /* END SYNCED RULES */
+
+      /*
+        Greyscale antialiasing. macOS defaults to subpixel rendering, which
+        optically thickens light text knocked out of a saturated fill: bold
+        11px on the accent colour blooms and loses its edges. It never showed
+        while the kit was monospace throughout; the system sans exposed it.
+
+        Local only until the kit's own body rule carries it -- console has no
+        stylesheet of its own, so there is nowhere else for this to live.
+        Delete this block once mantine-tokyo ships it.
+      */
+      body {
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
     </style>
   </head>
   <body>
