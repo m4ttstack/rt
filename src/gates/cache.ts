@@ -13,10 +13,9 @@ const GATE_TOPIC_RE = /^gate\/(opened|answered|parked|closed|released)\/([^/]+)$
 
 /**
  * In-memory cache of the board's gate rows, keyed by facility `subject`
- * (`mr:<mrUrl>`). Fed by a `gateList` reconcile (authoritative snapshot) and
- * by individual `gate/**` bus frames (low-latency deltas) -- B4 wires the
- * relay subscription that calls `applyEvent`; B3 just builds the cache and
- * points the board-row read at it, so an unfed cache renders no gates.
+ * (`mr:<mrUrl>`). Fed by a boot `gateList` reconcile (authoritative snapshot,
+ * see `reconcileGatesOnBoot` in ingest.ts) and by individual `gate/**` bus
+ * frames relayed through `ingestRelayFrame` (low-latency deltas).
  */
 export class GateCache {
   private readonly bySubject = new Map<string, FacilityGateRow>();

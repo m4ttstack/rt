@@ -1,211 +1,118 @@
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "fs";
-import { join } from "path";
-import { tmpdir } from "os";
-import { applyGateEvent, ensureBridgeRule, GATE_OPENED_BRIDGE_RULE, type GateEventStore, type EventBridgeRule } from "../gates/ingest.ts";
-import { gateFilePath, writeGateState, readGateStates, type GateQuestion } from "../gates/store.ts";
+import { describe, expect, test } from "bun:test";
+import type { GateRow as FacilityGateRow } from "@mattstack/rt-client";
+import {
+  ingestRelayFrame,
+  reconcileGatesOnBoot,
+  ensureBridgeRule,
+  GATE_OPENED_BRIDGE_RULE,
+  type EventBridgeRule,
+  type GateCacheTarget,
+  type GateReconcileTarget,
+} from "../gates/ingest.ts";
 
-const MR_URL = "https://gitlab.com/acme/webapp/-/merge_requests/4821";
-const IID = 4821;
-const GATE_ID = "gate-1";
+function fakeCache(): { target: GateCacheTarget; applied: unknown[] } {
+  const applied: unknown[] = [];
+  return { target: { applyEvent: (frame) => applied.push(frame) }, applied };
+}
 
-const QUESTIONS: GateQuestion[] = [{ id: "q1", label: "Ship it?", multi: false, options: ["yes", "no"] }];
+function fakeNotify(): { notify: () => void; calls: number } {
+  const state = { calls: 0 };
+  return { notify: () => state.calls++, calls: state.calls };
+}
 
-let dir: string;
-let store: GateEventStore;
+describe("ingestRelayFrame", () => {
+  test("a gate/** frame with an mr: subject applies to the cache and notifies", () => {
+    const { target, applied } = fakeCache();
+    let notified = 0;
+    ingestRelayFrame(target, { topic: "gate/opened/g1", payload: { subject: "mr:https://gitlab.com/acme/webapp/-/merge_requests/1" } }, () => notified++);
+    expect(applied).toHaveLength(1);
+    expect(notified).toBe(1);
+  });
 
-beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "gi-"));
-  store = {
-    readGateStates: () => readGateStates(dir),
-    writeGateState: (path, patch) => writeGateState(path, patch),
-    gateFilePath: (mrUrl) => gateFilePath(mrUrl, dir),
+  test("a gate/** frame with a non-mr: subject is ignored", () => {
+    const { target, applied } = fakeCache();
+    let notified = 0;
+    ingestRelayFrame(target, { topic: "gate/opened/g1", payload: { subject: "run:abc123" } }, () => notified++);
+    expect(applied).toHaveLength(0);
+    expect(notified).toBe(0);
+  });
+
+  test("a non-gate topic is ignored", () => {
+    const { target, applied } = fakeCache();
+    let notified = 0;
+    ingestRelayFrame(target, { topic: "project-mrs", payload: { subject: "mr:https://gitlab.com/acme/webapp/-/merge_requests/1" } }, () => notified++);
+    expect(applied).toHaveLength(0);
+    expect(notified).toBe(0);
+  });
+
+  test("a malformed payload is ignored without throwing", () => {
+    const { target, applied } = fakeCache();
+    let notified = 0;
+    expect(() => ingestRelayFrame(target, { topic: "gate/opened/g1", payload: null }, () => notified++)).not.toThrow();
+    expect(applied).toHaveLength(0);
+    expect(notified).toBe(0);
+  });
+});
+
+function fakeRow(id: string): FacilityGateRow {
+  return {
+    id,
+    subject: `mr:https://gitlab.com/acme/webapp/-/merge_requests/${id}`,
+    kind: "review-post",
+    questions: [],
+    meta: null,
+    status: "open",
+    answer: null,
+    openedAt: 1000,
+    parkedAt: null,
+    closedAt: null,
+    closedReason: null,
+    agent: null,
+    pane: null,
+    nudge: null,
+    delivery: null,
+    released: false,
   };
-});
-afterEach(() => {
-  rmSync(dir, { recursive: true, force: true });
-});
+}
 
-describe("applyGateEvent: opened", () => {
-  test("creates a new open GateState from the full payload", () => {
-    applyGateEvent(store, {
-      topic: `board/gate/opened/${GATE_ID}`,
-      payload: {
-        gateId: GATE_ID,
-        kind: "review-post",
-        mrUrl: MR_URL,
-        iid: IID,
-        agentId: "agent-1",
-        sessionId: "session-1",
-        paneId: "pane-1",
-        tabId: "tab-1",
-        questions: QUESTIONS,
-        openedAt: 1000,
-      },
-    });
+describe("reconcileGatesOnBoot", () => {
+  test("pages gateList by cursor and reconciles all rows gathered", async () => {
+    const calls: unknown[] = [];
+    const list = async (payload: { subjectPrefix: string; cursor?: number }) => {
+      calls.push(payload);
+      if (!payload.cursor) return { ok: true, data: { gates: [fakeRow("1"), fakeRow("2")], cursor: 2 } };
+      return { ok: true, data: { gates: [fakeRow("3")], cursor: 0 } };
+    };
+    const reconciled: FacilityGateRow[][] = [];
+    const cache: GateReconcileTarget = { reconcile: (rows) => reconciled.push(rows) };
 
-    const state = store.readGateStates().get(MR_URL);
-    expect(state).toEqual({
-      gateId: GATE_ID,
-      mrUrl: MR_URL,
-      iid: IID,
-      kind: "review-post",
-      status: "open",
-      openedAt: 1000,
-      questions: QUESTIONS,
-      agentId: "agent-1",
-      sessionId: "session-1",
-      paneId: "pane-1",
-      tabId: "tab-1",
-    });
-  });
-});
+    await reconcileGatesOnBoot(list, cache);
 
-describe("applyGateEvent: opened with a new gateId over an answered gate", () => {
-  test("resets a prior ANSWERED stored gate to open, with no stale answers", () => {
-    writeGateState(store.gateFilePath(MR_URL), {
-      gateId: "gate-prior",
-      mrUrl: MR_URL,
-      iid: IID,
-      kind: "review-post",
-      status: "answered",
-      openedAt: 500,
-      questions: QUESTIONS,
-      answers: { q1: "no" },
-      answeredBy: "board-ui",
-      answeredAt: 800,
-    });
-
-    applyGateEvent(store, {
-      topic: `board/gate/opened/${GATE_ID}`,
-      payload: {
-        gateId: GATE_ID,
-        kind: "review-post",
-        mrUrl: MR_URL,
-        iid: IID,
-        questions: QUESTIONS,
-        openedAt: 1000,
-      },
-    });
-
-    const state = store.readGateStates().get(MR_URL);
-    expect(state?.gateId).toBe(GATE_ID);
-    expect(state?.status).toBe("open");
-    expect(state?.answers).toBeUndefined();
-    expect(state?.answeredBy).toBeUndefined();
-    expect(state?.answeredAt).toBeUndefined();
-  });
-});
-
-describe("applyGateEvent: answered", () => {
-  test("merges status/answers/answeredBy/answeredAt onto the matching open gate", () => {
-    writeGateState(store.gateFilePath(MR_URL), {
-      gateId: GATE_ID,
-      mrUrl: MR_URL,
-      iid: IID,
-      kind: "review-post",
-      status: "open",
-      openedAt: 1000,
-      questions: QUESTIONS,
-    });
-
-    applyGateEvent(store, {
-      topic: `board/gate/answered/${GATE_ID}`,
-      payload: { gateId: GATE_ID, answers: { q1: "yes" }, by: "board-ui", answeredAt: 2000 },
-    });
-
-    const state = store.readGateStates().get(MR_URL);
-    expect(state?.status).toBe("answered");
-    expect(state?.answers).toEqual({ q1: "yes" });
-    expect(state?.answeredBy).toBe("board-ui");
-    expect(state?.answeredAt).toBe(2000);
-    // preserved from the open write
-    expect(state?.gateId).toBe(GATE_ID);
-    expect(state?.mrUrl).toBe(MR_URL);
-    expect(state?.questions).toEqual(QUESTIONS);
+    expect(calls).toEqual([{ subjectPrefix: "mr:", cursor: undefined }, { subjectPrefix: "mr:", cursor: 2 }]);
+    expect(reconciled).toHaveLength(1);
+    expect(reconciled[0]?.map((r) => r.id)).toEqual(["1", "2", "3"]);
   });
 
-  test("resolves the file by scanning for the matching gateId, not by topic/mrUrl", () => {
-    const otherUrl = "https://gitlab.com/acme/webapp/-/merge_requests/1";
-    writeGateState(store.gateFilePath(otherUrl), {
-      gateId: "gate-other",
-      mrUrl: otherUrl,
-      iid: 1,
-      kind: "review-post",
-      status: "open",
-      openedAt: 500,
-      questions: QUESTIONS,
-    });
-    writeGateState(store.gateFilePath(MR_URL), {
-      gateId: GATE_ID,
-      mrUrl: MR_URL,
-      iid: IID,
-      kind: "review-post",
-      status: "open",
-      openedAt: 1000,
-      questions: QUESTIONS,
-    });
+  test("a single page (cursor 0) reconciles once with no further calls", async () => {
+    const list = async () => ({ ok: true, data: { gates: [fakeRow("1")], cursor: 0 } });
+    const reconciled: FacilityGateRow[][] = [];
+    const cache: GateReconcileTarget = { reconcile: (rows) => reconciled.push(rows) };
 
-    applyGateEvent(store, {
-      topic: `board/gate/answered/${GATE_ID}`,
-      payload: { gateId: GATE_ID, answers: { q1: "no" }, by: "pane", answeredAt: 3000 },
-    });
+    await reconcileGatesOnBoot(list, cache);
 
-    expect(store.readGateStates().get(MR_URL)?.status).toBe("answered");
-    expect(store.readGateStates().get(otherUrl)?.status).toBe("open");
-  });
-});
-
-describe("applyGateEvent: answered-before-opened", () => {
-  test("is tolerated -- no matching open file, no throw, nothing written", () => {
-    expect(() =>
-      applyGateEvent(store, {
-        topic: `board/gate/answered/${GATE_ID}`,
-        payload: { gateId: GATE_ID, answers: { q1: "yes" }, by: "board-ui", answeredAt: 2000 },
-      }),
-    ).not.toThrow();
-    expect(store.readGateStates().size).toBe(0);
-  });
-});
-
-describe("applyGateEvent: malformed payload", () => {
-  test("a non-object payload is skipped without throwing", () => {
-    expect(() => applyGateEvent(store, { topic: `board/gate/opened/${GATE_ID}`, payload: "not an object" })).not.toThrow();
-    expect(() => applyGateEvent(store, { topic: `board/gate/opened/${GATE_ID}`, payload: null })).not.toThrow();
-    expect(store.readGateStates().size).toBe(0);
+    expect(reconciled).toEqual([[fakeRow("1")]]);
   });
 
-  test("an opened payload missing required fields is skipped without throwing", () => {
-    expect(() =>
-      applyGateEvent(store, { topic: `board/gate/opened/${GATE_ID}`, payload: { gateId: GATE_ID, mrUrl: MR_URL } }),
-    ).not.toThrow();
-    expect(store.readGateStates().size).toBe(0);
-  });
+  test("a failed page stops paging and reconciles whatever was gathered so far", async () => {
+    const list = async (payload: { subjectPrefix: string; cursor?: number }) => {
+      if (!payload.cursor) return { ok: true, data: { gates: [fakeRow("1")], cursor: 2 } };
+      return { ok: false, error: "boom" };
+    };
+    const reconciled: FacilityGateRow[][] = [];
+    const cache: GateReconcileTarget = { reconcile: (rows) => reconciled.push(rows) };
 
-  test("an answered payload with non-object answers is skipped without throwing", () => {
-    writeGateState(store.gateFilePath(MR_URL), {
-      gateId: GATE_ID,
-      mrUrl: MR_URL,
-      iid: IID,
-      kind: "review-post",
-      status: "open",
-      openedAt: 1000,
-      questions: QUESTIONS,
-    });
-    expect(() =>
-      applyGateEvent(store, { topic: `board/gate/answered/${GATE_ID}`, payload: { gateId: GATE_ID, answers: "yes" } }),
-    ).not.toThrow();
-    expect(store.readGateStates().get(MR_URL)?.status).toBe("open");
-  });
-});
-
-describe("applyGateEvent: non-gate topic", () => {
-  test("is ignored without throwing or writing", () => {
-    expect(() =>
-      applyGateEvent(store, { topic: "project-mrs", payload: { gateId: GATE_ID, mrUrl: MR_URL, iid: IID, questions: QUESTIONS, openedAt: 1 } }),
-    ).not.toThrow();
-    expect(() => applyGateEvent(store, { topic: "board/gate/opened", payload: {} })).not.toThrow();
-    expect(store.readGateStates().size).toBe(0);
+    await expect(reconcileGatesOnBoot(list, cache)).resolves.toBeUndefined();
+    expect(reconciled).toEqual([[fakeRow("1")]]);
   });
 });
 
@@ -223,20 +130,36 @@ describe("ensureBridgeRule", () => {
     };
   }
 
-  test("absent: appends the gate-opened rule", () => {
+  test("rule pattern is gate/opened/*, template renders label, no per-rule suppression field", () => {
+    expect(GATE_OPENED_BRIDGE_RULE.pattern).toBe("gate/opened/*");
+    expect(GATE_OPENED_BRIDGE_RULE.title).toContain("{label}");
+    // Suppression is payload-driven (a bridge event's own `paneId`), not a
+    // property of the rule -- the rule carries only pattern/category/title/message.
+    expect(Object.keys(GATE_OPENED_BRIDGE_RULE).sort()).toEqual(["category", "message", "pattern", "title"]);
+  });
+
+  test("neither rule present: the gate-opened rule is added", () => {
     const io = fakeIo([]);
     ensureBridgeRule(io.read, io.write);
     expect(io.writes).toHaveLength(1);
     expect(io.writes[0]).toEqual([GATE_OPENED_BRIDGE_RULE]);
   });
 
-  test("present: no-ops, no duplicate written", () => {
+  test("new-pattern rule already present: unchanged, no duplicate written", () => {
     const io = fakeIo([GATE_OPENED_BRIDGE_RULE]);
     ensureBridgeRule(io.read, io.write);
     expect(io.writes).toHaveLength(0);
   });
 
-  test("unrelated entries: preserved, gate rule appended alongside them", () => {
+  test("old board/gate/opened/* rule present: replaced with the new-pattern rule, not duplicated", () => {
+    const legacy: EventBridgeRule = { pattern: "board/gate/opened/*", category: "gate", title: "review gate: !{iid}", message: "{mrUrl}" };
+    const io = fakeIo([legacy]);
+    ensureBridgeRule(io.read, io.write);
+    expect(io.writes).toHaveLength(1);
+    expect(io.writes[0]).toEqual([GATE_OPENED_BRIDGE_RULE]);
+  });
+
+  test("unrelated entries are preserved alongside the appended rule", () => {
     const other: EventBridgeRule = { pattern: "chat/mention/*", category: "chat", title: "mention", message: "{body}" };
     const io = fakeIo([other]);
     ensureBridgeRule(io.read, io.write);

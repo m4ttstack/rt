@@ -1,5 +1,5 @@
 import { join, dirname, basename } from "path";
-import { readFileSync, writeFileSync, mkdirSync, watch } from "fs";
+import { readFileSync, writeFileSync, mkdirSync, rmSync, watch } from "fs";
 import pkg from "../package.json";
 import { APP_ROOT, IS_COMPILED } from "./app-root.ts";
 import { getClientAssets } from "./client-assets.ts";
@@ -13,15 +13,15 @@ import { upsertEnvKeys } from "./env-file.ts";
 import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, channelForMR, configuredSlackChannels, projectPathFromWebUrl, reviewSkillForTab, visibleMrsFor, type BoardMR, type SyncScopeRead } from "./data.ts";
 import { GitLabProvider, ReadBackFailedError, NoteMutator, parseRepoId } from "@mattstack/glance";
 import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } from "./discussions.ts";
-import { readProjectMRs, readDiscussions, subscribe, eventsList, eventsEmit, getSetting, setSetting } from "@mattstack/rt-client";
+import { readProjectMRs, readDiscussions, subscribe, eventsEmit, gateList, getSetting, setSetting } from "@mattstack/rt-client";
 import { SnapshotCache } from "./cache.ts";
 import { isLocalRequest } from "./local.ts";
 import { settingsHandler } from "@mattstack/settings-kit/server";
 import { readReviewStates, pruneReviewStates, reviewFilePath, writeReviewState, parseReviewRequestBody, attachReviews, readReviewReport } from "./review-state.ts";
 import { readRespondStates, pruneRespondStates, respondFilePath, writeRespondState, parseRespondRequestBody, attachResponds } from "./respond-state.ts";
 import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, parseDoctorRequestBody, attachDoctors } from "./doctor-state.ts";
-import { readGateStates, writeGateState, gateFilePath, pruneGateStates, type GateAnswers } from "./gates/store.ts";
-import { applyGateEvent, ensureBridgeRule, gateEventStore, type EventBridgeRule, type GateEventFrame } from "./gates/ingest.ts";
+import { readGateStates, writeGateState, gateFilePath, pruneGateStates, GATE_DIR, type GateAnswers } from "./gates/store.ts";
+import { ingestRelayFrame, reconcileGatesOnBoot, ensureBridgeRule, type EventBridgeRule, type GateEventFrame } from "./gates/ingest.ts";
 import { GateCache, attachGates } from "./gates/cache.ts";
 import { answerGate, resumeParkedGate } from "./gates/answer.ts";
 import { planSweep } from "./gates/sweep.ts";
@@ -110,8 +110,9 @@ async function gitlab(): Promise<GitLabProvider> {
   return gitlabProvider;
 }
 
-// Daemon-backed gate rows for the board-row read (attachGates below). Empty
-// until fed -- the relay subscription that calls applyEvent/reconcile is B4.
+// Daemon-backed gate rows for the board-row read (attachGates below). Fed by
+// the relay handler below (ingestRelayFrame) and the boot gateList reconcile
+// (reconcileGatesOnBoot).
 const gateCache = new GateCache();
 
 // Optional peer relay. Both a configured url and a token are required; without
@@ -1791,13 +1792,24 @@ if (!FIXTURE_DIR) {
   }, GATE_SWEEP_MS);
 }
 
+// One-time migration: the board's own per-MR gate files (state/gates/) are
+// retired now that the board-row read is fully daemon-backed (GateCache).
+// Best-effort and silent on an already-clean install -- force skips the
+// not-found case rather than checking existence first.
+if (!FIXTURE_DIR) {
+  try {
+    rmSync(GATE_DIR, { recursive: true, force: true });
+  } catch (err) {
+    console.error(`gate file-store cleanup skipped: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
 let relayTimer: ReturnType<typeof setTimeout> | undefined;
 const stopRelay = FIXTURE_DIR ? () => {} : subscribe((type, data) => {
   if (type === "event") {
     const frame = data as { topic?: unknown; payload?: unknown } | null;
-    if (typeof frame?.topic === "string" && frame.topic.startsWith("board/gate/")) {
-      applyGateEvent(gateEventStore, { topic: frame.topic, payload: frame.payload } satisfies GateEventFrame);
-      sseNudge();
+    if (typeof frame?.topic === "string") {
+      ingestRelayFrame(gateCache, { topic: frame.topic, payload: frame.payload } satisfies GateEventFrame, sseNudge);
     }
   }
   if (!RELAY_TYPES.has(type)) return;
@@ -1815,35 +1827,19 @@ const stopRelay = FIXTURE_DIR ? () => {} : subscribe((type, data) => {
   }, RELAY_COALESCE_MS);
 });
 
-// Boot reconcile: catch up on any board/gate/* events the daemon journaled
-// while this process was down. Bun.Glob's `*` never crosses `/`, and gate
-// topics have four segments (board/gate/opened/<id>), so the pattern MUST be
-// `**` -- `board/gate/*` matches nothing. Applied through the same
-// applyGateEvent as the live relay, in journal order, so a later answered
-// naturally overwrites an earlier open.
-async function reconcileGateEventsOnBoot(): Promise<void> {
-  const res = await eventsList({ pattern: "board/gate/**", limit: 500 });
-  if (!res.ok || !res.data) {
-    console.error(`gate boot reconcile: events:list failed: ${res.error ?? "unknown error"}`);
-    return;
-  }
-  for (const e of res.data.events) {
-    applyGateEvent(gateEventStore, { topic: e.topic, payload: e.payload });
-  }
-}
 if (!FIXTURE_DIR) {
-  void reconcileGateEventsOnBoot().catch((err) =>
+  void reconcileGatesOnBoot(gateList, gateCache).catch((err) =>
     console.error(`gate boot reconcile failed: ${err instanceof Error ? err.message : err}`),
   );
 }
 
 // Bridge-rule registration: upsert this board's gate-opened rule into
 // `rt.notify.eventBridges` (merge-not-clobber -- see ensureBridgeRule), so a
-// board/gate/opened/* event raises a desktop notification once the rt daemon
-// side (gate events plan, Task 3) has registered that key. Local file reads,
-// not a daemon round trip, so this runs synchronously and cheaply; caught so
-// a stale rt-client copy without the key yet (or any other read/write
-// failure) never blocks boot -- just skip and log once.
+// gate/opened/* event raises a desktop notification once the rt daemon side
+// has registered that key. Local file reads, not a daemon round trip, so
+// this runs synchronously and cheaply; caught so a stale rt-client copy
+// without the key yet (or any other read/write failure) never blocks boot --
+// just skip and log once.
 function readEventBridges(): EventBridgeRule[] {
   return getSetting<EventBridgeRule[]>("rt.notify.eventBridges").value ?? [];
 }
