@@ -174,9 +174,16 @@ export function GateCard({ gate }: { gate: GateRow }) {
       });
       if (res.status === 409) {
         // An answer WAS recorded, just not this one -- the body carries the
-        // winning row, not a validation failure to retry.
+        // winning row, not a validation failure to retry. Invalidate here
+        // too (not just the success path below): every other consumer of
+        // ['gates'] (RunRow's blocked badge, another open GateCard for the
+        // same run) still thinks this gate is open until they refetch, and
+        // the websocket that would normally do that for them may be
+        // delayed or dropped -- this 409 body is itself proof the row
+        // changed, so there's no reason to wait on the socket for it.
         setBusy(false);
         setConflict(parseConflictResponse(await res.json().catch(() => null)));
+        void queryClient.invalidateQueries({ queryKey: ['gates'] });
         return;
       }
       if (!res.ok) throw new Error(String(res.status));
@@ -202,6 +209,11 @@ export function GateCard({ gate }: { gate: GateRow }) {
       p="xxl"
       radius="xl"
       data-testid="gate-card"
+      // Distinguishes an open|parked card (has a submit control) from a
+      // read-only answered one for `AnswerGateAction`'s scroll target --
+      // `activeGatesForRun` sorts by `openedAt` alone, so a newer answered
+      // gate can sort ahead of an older still-open one.
+      data-actionable={actionable}
       onClick={e => e.stopPropagation()}
       style={{ border: `1px solid ${border.default}` }}
     >

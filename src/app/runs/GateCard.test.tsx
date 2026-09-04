@@ -60,11 +60,12 @@ function renderCard(gate: GateRow) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return renderWithProviders(
+  const result = renderWithProviders(
     <QueryClientProvider client={queryClient}>
       <GateCard gate={gate} />
     </QueryClientProvider>
   );
+  return { ...result, queryClient };
 }
 
 afterEach(() => {
@@ -153,6 +154,34 @@ describe('GateCard: open/actionable', () => {
     const summary = screen.getByTestId('gate-answer-summary');
     expect(within(summary).getByText('fail')).toBeInTheDocument();
     expect(within(summary).getByText('types')).toBeInTheDocument();
+  });
+
+  // A 409 means the row genuinely changed (someone else answered it), not
+  // just a local UI state to reconcile -- every other consumer of the
+  // shared ['gates'] cache (RunRow's blocked badge, a sibling GateCard for
+  // the same run) needs that refetch too, and the websocket that would
+  // normally trigger it may be delayed or dropped.
+  it('invalidates the shared gates cache on a 409 conflict, not only on success', async () => {
+    answerPost.mockResolvedValue({
+      ok: false,
+      status: 409,
+      json: async () => ({
+        row: {
+          answer: { answers: { outcome: 'fail' }, by: 'other-pane' },
+        },
+      }),
+    });
+    const { queryClient } = renderCard(gateRow());
+    queryClient.setQueryData(['gates'], { gates: [] });
+
+    await userEvent.click(screen.getByRole('radio', { name: 'pass' }));
+    await userEvent.click(screen.getByRole('checkbox', { name: 'lint' }));
+    await userEvent.click(screen.getByRole('button', { name: 'submit' }));
+
+    await screen.findByText('answered elsewhere');
+    await waitFor(() =>
+      expect(queryClient.getQueryState(['gates'])?.isInvalidated).toBe(true)
+    );
   });
 
   it('stops a click from bubbling out of the card', async () => {

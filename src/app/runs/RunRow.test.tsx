@@ -117,7 +117,7 @@ function renderRow(
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
-  return renderWithProviders(
+  const result = renderWithProviders(
     <QueryClientProvider client={queryClient}>
       <RunRow
         run={run}
@@ -125,6 +125,20 @@ function renderRow(
         enrichment={opts.enrichment}
       />
     </QueryClientProvider>
+  );
+  return { ...result, queryClient };
+}
+
+/** The row renders synchronously; `useGates`'s query is still in flight
+    right after `renderRow` returns. A negative assertion ("badge absent")
+    taken before this settles would pass trivially -- the pre-fetch initial
+    state (`gatesQuery.data === undefined`) also renders no badge, so the
+    test would prove nothing about the mocked response it just set up.
+    Waiting on the query's own status is what proves the mocked data was
+    actually applied before the absence is checked. */
+async function waitForGatesSettled(queryClient: QueryClient) {
+  await waitFor(() =>
+    expect(queryClient.getQueryState(['gates'])?.status).toBe('success')
   );
 }
 
@@ -612,9 +626,10 @@ describe('RunRow blocked badge', () => {
     expect(await screen.findByTestId('gate-blocked-badge')).toBeInTheDocument();
   });
 
-  it('stays quiet when the run has no gates at all', () => {
-    renderRow(baseRun);
+  it('stays quiet when the run has no gates at all', async () => {
+    const { queryClient } = renderRow(baseRun);
 
+    await waitForGatesSettled(queryClient);
     expect(screen.queryByTestId('gate-blocked-badge')).not.toBeInTheDocument();
   });
 
@@ -623,9 +638,9 @@ describe('RunRow blocked badge', () => {
       gatesResponse([gateRow({ subject: 'run:run-1', status: 'parked' })])
     );
 
-    renderRow(baseRun);
+    const { queryClient } = renderRow(baseRun);
 
-    await screen.findByTestId('run-row-run-1');
+    await waitForGatesSettled(queryClient);
     expect(screen.queryByTestId('gate-blocked-badge')).not.toBeInTheDocument();
   });
 
@@ -636,9 +651,9 @@ describe('RunRow blocked badge', () => {
       ])
     );
 
-    renderRow(baseRun);
+    const { queryClient } = renderRow(baseRun);
 
-    await screen.findByTestId('run-row-run-1');
+    await waitForGatesSettled(queryClient);
     expect(screen.queryByTestId('gate-blocked-badge')).not.toBeInTheDocument();
   });
 });

@@ -105,10 +105,15 @@ function FocusPaneAction({ pane }: { pane: string }) {
   );
 }
 
-/** Scrolls to the `GateCard` rendered lower on the page rather than
-    duplicating its submit UI up here -- same "click points at the real
-    control" affordance `SummaryStrip`'s fact links use, and `scrollIntoView`
-    is polyfilled to a no-op in tests (vitest.setup.ts). */
+/** Scrolls to the first ACTIONABLE `GateCard` rendered lower on the page,
+    rather than duplicating its submit UI up here -- same "click points at
+    the real control" affordance `SummaryStrip`'s fact links use, and
+    `scrollIntoView` is polyfilled to a no-op in tests (vitest.setup.ts).
+    `[data-actionable="true"]`, not just `[data-testid="gate-card"]`:
+    `activeGatesForRun` orders cards by `openedAt` alone, so a more recently
+    opened but already-`answered` (read-only) gate can sort ahead of an
+    older still-`open` one -- landing on that one would show no submit
+    control at all. */
 function AnswerGateAction() {
   return (
     <Button
@@ -118,7 +123,7 @@ function AnswerGateAction() {
       aria-label="answer gate"
       onClick={() =>
         document
-          .querySelector('[data-testid="gate-card"]')
+          .querySelector('[data-testid="gate-card"][data-actionable="true"]')
           ?.scrollIntoView?.({ block: 'center' })
       }
     >

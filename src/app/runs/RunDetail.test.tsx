@@ -1318,6 +1318,71 @@ describe('RunDetail: gate card', () => {
     expect(title).toHaveTextContent('clarify');
     expect(title).not.toHaveTextContent('review gate');
   });
+
+  // activeGatesForRun orders by openedAt alone, so a more recently opened
+  // but already-answered (read-only) gate can sort ahead of an older
+  // still-open one -- the Answer button has to skip past it to the card
+  // that actually has a submit control.
+  it('scrolls to the first ACTIONABLE gate card, not just the first card in DOM order', async () => {
+    detailGet.mockResolvedValue(
+      detailResponse({ ...FIXTURE, run: run({ status: 'running' }) })
+    );
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+    gatesGet.mockResolvedValue(
+      gatesResponse([
+        gateRow({
+          id: 'g-answered',
+          subject: 'run:run-1',
+          status: 'answered',
+          openedAt: 300,
+          answer: {
+            answers: { outcome: 'pass' },
+            by: 'someone',
+            answeredAt: 1,
+          },
+        }),
+        gateRow({
+          id: 'g-open',
+          subject: 'run:run-1',
+          status: 'open',
+          openedAt: 100,
+        }),
+      ])
+    );
+
+    const scrollSpy = vi.fn();
+    const original = Element.prototype.scrollIntoView;
+    Element.prototype.scrollIntoView = scrollSpy;
+
+    try {
+      renderDetail();
+
+      const cards = await screen.findAllByTestId('gate-card');
+      expect(cards).toHaveLength(2);
+      // Most-recently-opened first: the answered one (300) sorts ahead of
+      // the open one (100) -- this is the setup that reproduces the bug.
+      expect(cards[0]).toHaveAttribute('data-actionable', 'false');
+      expect(cards[1]).toHaveAttribute('data-actionable', 'true');
+
+      await userEvent.click(
+        await screen.findByRole('button', { name: 'answer gate' })
+      );
+
+      expect(scrollSpy).toHaveBeenCalledTimes(1);
+      expect(scrollSpy.mock.instances[0]).toBe(cards[1]);
+    } finally {
+      Element.prototype.scrollIntoView = original;
+    }
+  });
 });
 
 describe('RunDetail: chrome', () => {
