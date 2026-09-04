@@ -3,7 +3,7 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { getSetting } from "@mattstack/rt-client";
-import { composeAgentCommand, loadConfigFrom } from "../config.ts";
+import { composeAgentCommand, loadAgentSettings, loadConfigFrom } from "../config.ts";
 
 type GetSettingFn = typeof getSetting;
 
@@ -69,6 +69,28 @@ describe("composeAgentCommand", () => {
 
   test("blank and whitespace-only values are treated as unset", () => {
     expect(composeAgentCommand({ account: "", model: "  ", effort: "" })).toBe("");
+  });
+});
+
+describe("loadAgentSettings", () => {
+  test("reads account/model/effort off the store, typed and uncomposed", () => {
+    const settings = loadAgentSettings(registryOf({
+      "board.agent.account": "a@b.c",
+      "board.agent.model": "claude-opus-5",
+      "board.agent.effort": "high",
+    }));
+    expect(settings).toEqual({ account: "a@b.c", model: "claude-opus-5", effort: "high" });
+  });
+
+  test("an empty registry leaves every field undefined -- no shell composition happens here", () => {
+    expect(loadAgentSettings(registryOf({}))).toEqual({ account: undefined, model: undefined, effort: undefined });
+  });
+
+  test("a resolver that throws on every key degrades every field to undefined, not a crash", () => {
+    const throwing = (() => {
+      throw new Error("rt daemon unreachable");
+    }) as GetSettingFn;
+    expect(loadAgentSettings(throwing)).toEqual({ account: undefined, model: undefined, effort: undefined });
   });
 });
 

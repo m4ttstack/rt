@@ -459,18 +459,6 @@ export function composeAgentCommand({ account, model, effort }: AgentSettings): 
   return [head, ...flags].join(" ");
 }
 
-/** `undefined` when the store owns none of the three, so the caller falls back
-    to the file's verbatim `claudeCommand` escape hatch. */
-function agentCommand(resolve: GetSettingFn): string | undefined {
-  return (
-    composeAgentCommand({
-      account: storeValue<string>("board.agent.account", resolve),
-      model: storeValue<string>("board.agent.model", resolve),
-      effort: storeValue<string>("board.agent.effort", resolve),
-    }) || undefined
-  );
-}
-
 /** The three board.agent.* settings read directly, typed rather than composed
     into a shell string -- for the rt agent daemon's own launch payload
     (startAgentPane's account/model/effort), which has no field for an
@@ -483,6 +471,12 @@ export function loadAgentSettings(resolve: GetSettingFn = getSetting): AgentSett
     model: storeValue<string>("board.agent.model", resolve),
     effort: storeValue<string>("board.agent.effort", resolve),
   };
+}
+
+/** `undefined` when the store owns none of the three, so the caller falls back
+    to the file's verbatim `claudeCommand` escape hatch. */
+function agentCommand(resolve: GetSettingFn): string | undefined {
+  return composeAgentCommand(loadAgentSettings(resolve)) || undefined;
 }
 
 /**
