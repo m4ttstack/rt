@@ -248,15 +248,26 @@ describe("handleAnsweredEvent", () => {
     expect(calls.writeReviewState.length).toBe(0);
   });
 
-  test("missing agentId on the tracked review notifies instead of resuming, and does not throw", async () => {
+  test("missing agentId on the tracked review notifies instead of resuming, does not mark the dedup, and stays retryable once the agentId is restored", async () => {
     const row = facilityRow();
-    const { io, calls } = fakeEventIo({ rows: [row], reviews: { [MR_URL]: baseReview({ agentId: undefined }) } });
+    const { io, calls, reviews } = fakeEventIo({ rows: [row], reviews: { [MR_URL]: baseReview({ agentId: undefined }) } });
     const frame: GateEventFrame = { topic: `gate/answered/${GATE_ID}`, payload: { id: GATE_ID, subject: SUBJECT } };
 
     await expect(handleAnsweredEvent(frame, io, noSkillLookup)).resolves.toBeUndefined();
 
     expect(calls.resumeAgentPane.length).toBe(0);
     expect(calls.notify).toEqual(["parked gate answered but no agent on file; relaunch from the board"]);
+    // The notify-only degrade never resumed anything, so it must not write
+    // the resumedGateId dedup marker -- that would block this gate forever.
+    expect(calls.writeReviewState.length).toBe(0);
+
+    // Restoring the agentId (e.g. a human relaunches from the board) and
+    // re-delivering the same event now DOES resume -- proving the gate was
+    // never permanently blocked by the earlier notify-only attempt.
+    reviews.set(MR_URL, { ...reviews.get(MR_URL)!, agentId: "agent-1" });
+    await handleAnsweredEvent(frame, io, noSkillLookup);
+    expect(calls.resumeAgentPane.length).toBe(1);
+    expect(calls.writeReviewState.some((c) => (c.patch as { resumedGateId?: string }).resumedGateId === GATE_ID)).toBe(true);
   });
 
   test("a respond-plan answered frame throws the not-wired-until-W3 error rather than silently mishandling it", async () => {

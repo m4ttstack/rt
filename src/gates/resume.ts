@@ -33,15 +33,21 @@ export interface ResumeParkedGateIo {
  * missing agentId means that invariant broke (or the gate file was hand
  * edited), so this degrades to a notify rather than throwing: the answer
  * itself already succeeded and must not be undone by a resume failure.
+ *
+ * Returns whether a resume was actually attempted (`resumeAgentPane` was
+ * dispatched) -- false only on the missing-agentId notify branch. Callers
+ * use this to decide whether the attempt is allowed to mark the gate as
+ * resumed: a notify-only degrade must stay retryable once the agentId is
+ * back on file, not get permanently skipped by the exactly-once dedup.
  */
 export async function resumeParkedGate(
   gate: GateState,
   io: ResumeParkedGateIo,
   resolvePath: SkillPathResolver = resolveSkillPath,
-): Promise<void> {
+): Promise<boolean> {
   if (!gate.agentId) {
     io.notify("parked gate answered but no agent on file; relaunch from the board");
-    return;
+    return false;
   }
 
   const statePath = reviewFilePath(gate.mrUrl);
@@ -65,7 +71,7 @@ export async function resumeParkedGate(
       workspaceLabel: io.reviewsWorkspace,
       tabLabel: mrTabLabel(gate.iid, undefined, "↺"),
     });
-    if (result.focusedExisting) return;
+    if (result.focusedExisting) return true;
     io.writeReviewState(statePath, {
       status: "reviewing",
       agentId: result.agentId,
@@ -76,6 +82,7 @@ export async function resumeParkedGate(
   } catch (err) {
     console.error(`parked gate resume failed: ${err instanceof Error ? err.message : err}`);
   }
+  return true;
 }
 
 // ── Event-driven trigger: any surface's answer resumes the parked gate ────
@@ -109,8 +116,11 @@ const RESUMABLE_KIND = "review-post";
  * path and the boot catch-up pass. Skips a row that was never parked (an
  * `open` gate answered directly never sets `parkedAt`, and it survives the
  * `answered` patch -- see GateCache.applyEvent) or one already resumed
- * (the `resumedGateId` dedup marker). Re-reads the review state after the
- * resume attempt so the dedup write can't clobber whatever status
+ * (the `resumedGateId` dedup marker). The dedup marker is written only when
+ * `resumeParkedGate` actually attempted a resume -- its missing-agentId
+ * notify degrade must stay retryable, not get marked resumed forever over a
+ * gate this pass never actually resumed. Re-reads the review state after
+ * the resume attempt so that write can't clobber whatever status
  * `resumeParkedGate` itself just settled on.
  */
 async function resumeIfMissed(row: FacilityGateRow, io: GateResumeEventIo, resolvePath: SkillPathResolver): Promise<void> {
@@ -136,7 +146,8 @@ async function resumeIfMissed(row: FacilityGateRow, io: GateResumeEventIo, resol
     agentId: review.agentId,
     tabId: review.tabId,
   };
-  await resumeParkedGate(gate, io, resolvePath);
+  const resumed = await resumeParkedGate(gate, io, resolvePath);
+  if (!resumed) return;
 
   const fresh = io.readReviewState(mrUrl) ?? review;
   io.writeReviewState(reviewFilePath(mrUrl), { status: fresh.status, resumedGateId: row.id });
