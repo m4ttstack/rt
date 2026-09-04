@@ -32,6 +32,7 @@ import { sectionStatus } from "../../sections.ts";
 import { RowMenu } from "./RowMenu.tsx";
 import { ReviewModal, RespondModal } from "./ReviewModal.tsx";
 import { DraftModal } from "./DraftModal.tsx";
+import type { GateDomain } from "./gate-format.ts";
 
 declare global {
   interface Window {
@@ -255,6 +256,20 @@ export function Board() {
     optimistic: optimisticLifecycle, addToast, reload: load,
   });
   const handleDoctor = useCallback((mr: BoardMR, note?: string) => doctorAction(mr, {}, note), [doctorAction]);
+
+  // GateCard's "focus pane" escape hatch: jump into whichever domain's pane
+  // opened the gate, via the exact same launch endpoint a fresh launch from
+  // the row would use -- the server-side dedup (existing tabId + in-flight
+  // status) re-focuses that pane instead of spawning another, so this never
+  // invents a distinct focus call.
+  const handleFocusPane = useCallback(
+    (mr: BoardMR, domain: GateDomain) => {
+      if (domain === "review") handleLaunch(mr);
+      else if (domain === "respond") handleRespond(mr);
+      else handleDoctor(mr);
+    },
+    [handleLaunch, handleRespond, handleDoctor],
+  );
 
   // Resume actions: axis null means useLaunchAction's setQueued/rollback are
   // no-ops, matching today's handleResume (which never claimed a badge before
@@ -502,6 +517,7 @@ export function Board() {
     onOpenDraft: openDraft,
     draftResolved,
     onResumeRespond: handleResumeRespond,
+    onFocusPane: handleFocusPane,
     selected,
     onToggleSelect: toggleSelect,
   };
