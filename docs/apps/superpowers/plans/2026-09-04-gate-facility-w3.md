@@ -123,7 +123,7 @@ in the same call that uses them.
 
 **Files:** `attachments/pipeline/ship/SKILL.md:63-82,105-120`, `watch-ci/SKILL.md:144-157,159-167`, `work/SKILL.md:79-93,114-134,136-146,148-167`, `attachments/review/self-review/SKILL.md:141-158,106-112`, `attachments/forge/sync-open-mrs/SKILL.md:85,110`, `rebase-worktree/SKILL.md:94,115`, `checkout/SKILL.md:38`.
 
-- [ ] **Step 1:** Same verbatim-copy adoption as E2 for all 12 sites. Self-review's fix/ship gate is the V1 smoke target — its unattended branch must read exactly as the recipe's step 4. **Resume offers (ship:25-37, watch-ci:31-45, self-review:31-45, receive-review:31-45, work:98-112) are DESCOPED from publishing**: they fire before any run is chosen, attended-only by definition; they keep today's in-pane form unchanged. Leave their text alone.
+- [ ] **Step 1:** Same verbatim-copy adoption as E2 for all 15 sites. Self-review's fix/ship gate is the V1 smoke target — its unattended branch must read exactly as the recipe's step 4. **Resume offers (ship:25-37, watch-ci:31-45, self-review:31-45, receive-review:31-45, work:98-112) are DESCOPED from publishing**: they fire before any run is chosen, attended-only by definition; they keep today's in-pane form unchanged. Leave their text alone.
 - [ ] **Step 2:** certify.sh each dir; commit "standalone verbs and forge publish facility gates".
 
 ### Task E4: receive-review restructures — adjudicate and execute, never decide
