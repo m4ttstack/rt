@@ -24,6 +24,7 @@ import { readGateStates, writeGateState, gateFilePath, pruneGateStates, GATE_DIR
 import { ingestRelayFrame, reconcileGatesOnBoot, ensureBridgeRule, type EventBridgeRule, type GateEventFrame } from "./gates/ingest.ts";
 import { GateCache, attachGates } from "./gates/cache.ts";
 import { answerGate } from "./gates/answer.ts";
+import { handleAnsweredEvent, bootResumePass, type GateResumeEventIo } from "./gates/resume.ts";
 import { planSweep } from "./gates/sweep.ts";
 import { executeSweepAction, type ExecuteSweepActionIo } from "./gates/execute-sweep-action.ts";
 import { readDrafts, heldDraftsByMr, attachDrafts, pruneDrafts, draftFilePath, writeDraft } from "./draft-state.ts";
@@ -1775,6 +1776,21 @@ function sweepActionIo(): ExecuteSweepActionIo {
   };
 }
 
+// Same "built fresh, not module-level" reasoning as sweepActionIo -- config
+// can be reassigned (switchboard-url save) after boot.
+function gateResumeIo(): GateResumeEventIo {
+  return {
+    gateRow: (subject) => gateCache.get(subject),
+    readReviewState: (mrUrl) => readReviewStates().get(mrUrl),
+    gateList,
+    resolveLaunchSkill: (mrUrl, tabId) => reviewSkillForTab(config, tabId, mrUrl, resolveLaunchSkill),
+    resumeAgentPane,
+    writeReviewState,
+    reviewsWorkspace: config.reviewsWorkspace,
+    notify: (message) => console.error(`gate resume: ${message}`),
+  };
+}
+
 async function runGateSweep(): Promise<void> {
   const actions = planSweep(readGateStates(), readReviewStates(), Date.now(), config.gateGraceMinutes * 60_000);
   const io = sweepActionIo();
@@ -1806,7 +1822,16 @@ const stopRelay = FIXTURE_DIR ? () => {} : subscribe((type, data) => {
   if (type === "event") {
     const frame = data as { topic?: unknown; payload?: unknown } | null;
     if (typeof frame?.topic === "string") {
-      ingestRelayFrame(gateCache, { topic: frame.topic, payload: frame.payload } satisfies GateEventFrame, sseNudge);
+      const gateFrame = { topic: frame.topic, payload: frame.payload } satisfies GateEventFrame;
+      ingestRelayFrame(gateCache, gateFrame, sseNudge);
+      // Resume hangs off the event itself (not the board's own answer
+      // endpoint) so a gate answered from any surface -- console, in-pane,
+      // this board -- resumes the parked session the same way.
+      if (frame.topic.startsWith("gate/answered/")) {
+        void handleAnsweredEvent(gateFrame, gateResumeIo()).catch((err) =>
+          console.error(`gate answered resume failed: ${err instanceof Error ? err.message : err}`),
+        );
+      }
     }
   }
   if (!RELAY_TYPES.has(type)) return;
@@ -1827,6 +1852,12 @@ const stopRelay = FIXTURE_DIR ? () => {} : subscribe((type, data) => {
 if (!FIXTURE_DIR) {
   void reconcileGatesOnBoot(gateList, gateCache).catch((err) =>
     console.error(`gate boot reconcile failed: ${err instanceof Error ? err.message : err}`),
+  );
+  // Independent of the cache reconcile above (reads the facility directly),
+  // so it needs no ordering relative to it: catches an answered-parked gate
+  // the board missed the live event for while it was down.
+  void bootResumePass(gateResumeIo()).catch((err) =>
+    console.error(`gate boot resume pass failed: ${err instanceof Error ? err.message : err}`),
   );
 }
 

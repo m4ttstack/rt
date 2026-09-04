@@ -27,6 +27,13 @@ export interface ReviewState {
   /** Facility gate id from the most recent `gate open`, so `gate wait` /
       `gate answer` can find it by state path alone. */
   gateId?: string;
+  /** Id of the gate the board has already resumed a parked-then-answered
+      session for. The exactly-once dedup marker for `handleAnsweredEvent`/
+      `bootResumePass` (gates/resume.ts) -- a gate id matching this is never
+      resumed twice, whether the resume is retried by a boot pass or the
+      live event fires again. `released` can never stand in for this: it
+      stays false forever for the board's unattended gates. */
+  resumedGateId?: string;
   startedAt: number;
   updatedAt: number;
   /** Whether the agent has written its full review markdown yet. Computed at
@@ -84,6 +91,7 @@ export function writeReviewState(
     agentId: patch.agentId ?? prev.agentId,
     paneId: patch.paneId ?? prev.paneId,
     gateId: patch.gateId ?? prev.gateId,
+    resumedGateId: patch.resumedGateId ?? prev.resumedGateId,
     startedAt: prev.startedAt ?? now,
     updatedAt: now,
   };
