@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { respondFilePath, respondReportPath, writeRespondState, readRespondStates, pruneRespondStates } from "../respond-state.ts";
+import { respondFilePath, respondReportPath, readRespondReport, writeRespondState, readRespondStates, pruneRespondStates } from "../respond-state.ts";
 
 let dir: string;
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "rp-")); });
@@ -64,6 +64,22 @@ describe("gate fields (merge-list widening)", () => {
     expect(fourth.resumedGateId).toBe("gate-1"); // preserved across the next gate's own open
     expect(fourth.gateKind).toBe("respond-post");
     expect(fourth.gateId).toBe("gate-2");
+  });
+});
+
+describe("respond report", () => {
+  test("readRespondReport returns the saved markdown, or null when absent", () => {
+    expect(readRespondReport(URL_A, dir)).toBeNull();
+    writeFileSync(respondReportPath(respondFilePath(URL_A, dir)), "# adjudication\n\nlooks good");
+    expect(readRespondReport(URL_A, dir)).toBe("# adjudication\n\nlooks good");
+  });
+
+  test("readRespondStates flags reportReady when the sibling .md exists", () => {
+    const p = respondFilePath(URL_A, dir);
+    writeRespondState(p, { mrUrl: URL_A, iid: 4821, status: "drafting" }, 10_000);
+    expect(readRespondStates(dir).get(URL_A)?.reportReady).toBe(false);
+    writeFileSync(respondReportPath(p), "# adjudication");
+    expect(readRespondStates(dir).get(URL_A)?.reportReady).toBe(true);
   });
 });
 

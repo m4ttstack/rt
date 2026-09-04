@@ -22,7 +22,7 @@ export interface ConfigMember {
 
 export type ReviewStatus = "queued" | "reviewing" | "done" | "error";
 export interface ReviewInfo { status: ReviewStatus; message?: string; reportReady?: boolean; sessionId?: string }
-export interface RespondInfo { status: RespondStatus; message?: string; sessionId?: string; posted?: number; threads?: number }
+export interface RespondInfo { status: RespondStatus; message?: string; reportReady?: boolean; sessionId?: string; posted?: number; threads?: number }
 export type DoctorStatus = "queued" | "diagnosing" | "rebasing" | "fixing" | "watching" | "done" | "error";
 export interface DoctorInfo { status: DoctorStatus; message?: string; origin?: "auto" | "manual" }
 export interface DraftInfo { kind: string; body: string; createdAt: number }
@@ -114,6 +114,7 @@ export interface RowContext {
   slackEnabled: boolean;
   onContext: (e: MouseEvent, mr: BoardMR) => void;
   onOpenReview: (mr: BoardMRWithReview) => void;
+  onOpenRespond: (mr: BoardMRWithReview) => void;
   onOpenDraft: (mr: BoardMRWithReview, draft: DraftInfo) => void;
   draftResolved: ReadonlyMap<string, "posted" | "dismissed">;
   onResumeRespond: (mr: BoardMR, note?: string) => void;

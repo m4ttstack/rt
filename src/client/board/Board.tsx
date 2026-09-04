@@ -30,7 +30,7 @@ import { SettingsModal } from "./SettingsModal.tsx";
 import { ConfigModal } from "./ConfigModal.tsx";
 import { sectionStatus } from "../../sections.ts";
 import { RowMenu } from "./RowMenu.tsx";
-import { ReviewModal } from "./ReviewModal.tsx";
+import { ReviewModal, RespondModal } from "./ReviewModal.tsx";
 import { DraftModal } from "./DraftModal.tsx";
 
 declare global {
@@ -156,6 +156,8 @@ export function Board() {
   const [rowMenu, setRowMenu] = useState<RowMenuState | null>(null);
   // The MR whose saved review is open in the modal, if any.
   const [reviewModal, setReviewModal] = useState<BoardMRWithReview | null>(null);
+  // The MR whose saved respond adjudication is open in the modal, if any.
+  const [respondModal, setRespondModal] = useState<BoardMRWithReview | null>(null);
   // The held draft open in its drawer, if any, and the drafts already acted on
   // this session (optimistic — the next /data.json pull drops resolved drafts).
   const [draftModal, setDraftModal] = useState<{ mr: BoardMRWithReview; draft: DraftInfo } | null>(null);
@@ -496,6 +498,7 @@ export function Board() {
     slackEnabled: data.slackEnabled,
     onContext: openRowMenu,
     onOpenReview: setReviewModal,
+    onOpenRespond: setRespondModal,
     onOpenDraft: openDraft,
     draftResolved,
     onResumeRespond: handleResumeRespond,
@@ -747,6 +750,7 @@ export function Board() {
       )}
 
       {reviewModal && <ReviewModal mr={reviewModal} onClose={() => setReviewModal(null)} />}
+      {respondModal && <RespondModal mr={respondModal} onClose={() => setRespondModal(null)} />}
 
       {draftModal && (
         <DraftModal

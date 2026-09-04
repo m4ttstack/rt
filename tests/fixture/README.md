@@ -5,8 +5,8 @@ board: config from this dir, canned data endpoints, no tokens, no timers,
 no rt relay. Port 7941 (never the live board's 7930).
 
 - `config.json`: committed fixture config (this dir).
-- `data.json`, `discussions.json`, `review-report.md`, `meta.json`: the
-  canned payloads the fixture endpoints serve.
+- `data.json`, `discussions.json`, `review-report.md`, `respond-report.md`,
+  `meta.json`: the canned payloads the fixture endpoints serve.
 
 Every name, username, avatar seed, project path, branch, ticket id, URL and
 comment body here is invented. Nothing in this directory is a snapshot of a

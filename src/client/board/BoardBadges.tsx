@@ -32,7 +32,7 @@ export function BoardBadges({
   return (
     <div className={className}>
       <ReviewBadge review={mr.review} onOpen={() => ctx.onOpenReview(mr)} />
-      <RespondBadge respond={mr.respond} onResume={() => ctx.onResumeRespond(mr)} />
+      <RespondBadge respond={mr.respond} onResume={() => ctx.onResumeRespond(mr)} onOpen={() => ctx.onOpenRespond(mr)} />
       <DoctorBadge doctor={mr.doctor} />
       {(mr.peerReviews ?? []).map((p) => (
         <PeerBadge key={p.reviewer} peer={p} />
