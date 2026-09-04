@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, renameSync, mkdirSync, readdirSync, rmSync, existsSync } from "fs";
 import { join } from "path";
 import { APP_ROOT } from "./app-root.ts";
+import { draftBinPath } from "./herdr.ts";
 
 /**
  * Doctor lifecycle for MRs with mechanical breakage (CI failing, merge
@@ -25,6 +26,16 @@ export interface DoctorState {
   agentId?: string;
   /** rt herdr pane id the agent landed in, from the launch result. */
   paneId?: string;
+  /** Repair tier this doctor launched with ("api" = no-checkout; absent =
+      the historical checkout tier). A resumed pane must re-announce the
+      same tier the original dispatch forbade a worktree checkout under --
+      statusBin/draftBin are re-derivable, this and fixClasses are not. */
+  tier?: string;
+  /** Enabled fix classes this doctor launched with, composed once at
+      dispatch time (author/identity-scoped) -- carried verbatim into a
+      resumed pane's prompt rather than recomposed, since the original
+      author/identity inputs aren't on this state file. */
+  fixClasses?: string[];
   /** Facility gate id from the most recent `gate open`, so `gate wait` /
       `gate answer` can find it by state path alone. */
   gateId?: string;
@@ -68,6 +79,8 @@ export function writeDoctorState(
     origin: patch.origin ?? prev.origin,
     agentId: patch.agentId ?? prev.agentId,
     paneId: patch.paneId ?? prev.paneId,
+    tier: patch.tier ?? prev.tier,
+    fixClasses: patch.fixClasses ?? prev.fixClasses,
     gateId: patch.gateId ?? prev.gateId,
     gateKind: patch.gateKind ?? prev.gateKind,
     resumedGateId: patch.resumedGateId ?? prev.resumedGateId,
@@ -125,6 +138,17 @@ export function attachDoctors<T extends { webUrl?: string | null }>(
   doctors: Map<string, DoctorState>,
 ): Array<T & { doctor?: DoctorState }> {
   return mrs.map((mr) => (mr.webUrl && doctors.has(mr.webUrl) ? { ...mr, doctor: doctors.get(mr.webUrl) } : mr));
+}
+
+/** The tier/fixClasses/draftBin fields a resumed doctor pane's dispatch
+    needs, read back off the original launch's own state -- tier and
+    fixClasses only exist there (a resume has no author/identity to
+    recompute fixClasses from), while draftBin is re-derivable and folded
+    in here so callers need only this one call. */
+export function doctorResumeDispatchFields(
+  state: Pick<DoctorState, "tier" | "fixClasses"> | undefined,
+): { tier?: string; fixClasses?: string[]; draftBin: string } {
+  return { tier: state?.tier, fixClasses: state?.fixClasses, draftBin: draftBinPath() };
 }
 
 export function parseDoctorRequestBody(body: unknown): { mrUrl: string; iid: number } | null {

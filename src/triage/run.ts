@@ -198,7 +198,14 @@ export async function runTriage(deps: TriageRunDeps): Promise<{ dispatched: numb
     }
     // dispatch
     const statePath = deps.doctorFilePath(edge.mrUrl);
-    deps.writeDoctorState(statePath, { mrUrl: edge.mrUrl, iid: edge.iid, status: "queued", origin: "auto" });
+    // The wrapper treats an absent tier as the historical checkout
+    // (fix-and-push) behavior; "api" stays the explicit no-checkout tier.
+    // Persisted onto the state file (not just passed to launchDoctor) so a
+    // resumed pane can re-announce the same tier/fixClasses -- see
+    // DoctorState.tier.
+    const tier = deps.triage.tier === "checkout" ? undefined : "api";
+    const fixClasses = composeFixClasses(deps.triage.fixClasses, edge.author, deps.identity);
+    deps.writeDoctorState(statePath, { mrUrl: edge.mrUrl, iid: edge.iid, status: "queued", origin: "auto", tier, fixClasses });
     try {
       const launchResult = await deps.launchDoctor({
         mrUrl: edge.mrUrl,
@@ -211,10 +218,8 @@ export async function runTriage(deps: TriageRunDeps): Promise<{ dispatched: numb
         model: deps.model,
         effort: deps.effort,
         skill: deps.triage.doctorSkill,
-        // The wrapper treats an absent tier as the historical checkout
-        // (fix-and-push) behavior; "api" stays the explicit no-checkout tier.
-        tier: deps.triage.tier === "checkout" ? undefined : "api",
-        fixClasses: composeFixClasses(deps.triage.fixClasses, edge.author, deps.identity),
+        tier,
+        fixClasses,
         draftBin: draftBinPath(),
       });
       if (!launchResult.focusedExisting) {

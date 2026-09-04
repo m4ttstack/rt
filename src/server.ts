@@ -19,7 +19,7 @@ import { isLocalRequest } from "./local.ts";
 import { settingsHandler } from "@mattstack/settings-kit/server";
 import { readReviewStates, pruneReviewStates, reviewFilePath, reviewReportPath, writeReviewState, parseReviewRequestBody, attachReviews, readReviewReport, type ReviewState, type ReviewStatus } from "./review-state.ts";
 import { readRespondStates, pruneRespondStates, respondFilePath, respondReportPath, writeRespondState, parseRespondRequestBody, attachResponds, type RespondState, type RespondStatus } from "./respond-state.ts";
-import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, parseDoctorRequestBody, attachDoctors, type DoctorState, type DoctorStatus } from "./doctor-state.ts";
+import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, parseDoctorRequestBody, attachDoctors, doctorResumeDispatchFields, type DoctorState, type DoctorStatus } from "./doctor-state.ts";
 import { GATE_DIR, type GateAnswers } from "./gates/store.ts";
 import { ingestRelayFrame, reconcileGatesOnBoot, ensureBridgeRule, type EventBridgeRule, type GateEventFrame } from "./gates/ingest.ts";
 import { GateCache, attachGates } from "./gates/cache.ts";
@@ -1838,7 +1838,11 @@ function doctorResumeIo(): KindResumeIo {
     filePath: doctorFilePath,
     resolveSkill: (mrUrl) => resolveLaunchSkill("doctor", mrUrl),
     prompt: (mrUrl, statePath, skill, resumedGate, resolvePath) =>
-      dispatchPrompt("board:doctor", { mrUrl, statePath, statusBin: statusBinPath(), skill, resumedGate }, resolvePath),
+      dispatchPrompt(
+        "board:doctor",
+        { mrUrl, statePath, statusBin: statusBinPath(), skill, resumedGate, ...doctorResumeDispatchFields(readDoctorStates().get(mrUrl)) },
+        resolvePath,
+      ),
     resumedStatus: "fixing",
     workspaceLabel: config.doctorsWorkspace,
   };
