@@ -239,12 +239,17 @@ mechanics as every facility gate — self-contained here:
     the `action` answer may be the bare option string or the `{value, note}`
     object — read `value` in the object case.
 - **Degraded mode.** If `gate open` exits nonzero (the daemon was down at
-  open time), fall back to ONE `AskUserQuestion` carrying the same `action`
-  question and proceed on its answer. A failing `gate wait` is not itself
-  degradation — per "Wait for the answer" above, re-run it; only if it keeps
-  failing, and never with the closed message or the terminal errors above
-  (those end cleanly per "Closed or missing gate" instead), fall back to the
-  same `AskUserQuestion`, and tell the human why.
+  open time), do NOT present a form — doctor panes are routinely
+  auto-dispatched with no human watching, and a form in such a pane waits
+  forever without a terminal status. Degrade to the pre-gate behavior
+  instead: `<status-bin> doctor-status <state> error "<the actionable
+  escalation message this gate would have asked>"` and stop. The board (and,
+  for auto dispatches, the escalation notifier) already surface that error
+  to a human, exactly as before escalation gates existed. A failing
+  `gate wait` is not itself degradation — per "Wait for the answer" above,
+  re-run it; if it keeps failing, and never with the closed message or the
+  terminal errors above (those end cleanly per "Closed or missing gate"
+  instead), take the same error path and say why in the message.
 
 ### API tier (`--tier api`)
 

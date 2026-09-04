@@ -4,7 +4,7 @@
 
 **Goal:** Every gated decision in the mattstack pipeline, the respond and doctor flows, the console, and shepherdr rides the rt daemon's gate facility, answerable from any surface, first answer wins.
 
-**Architecture:** The engine's gate@1 decision sites adopt the shared `gate-protocol` part via one verbatim v4 recipe (publish `run:<id>` gates; attended panes keep their forms and record `--by pane`; unattended panes block in a bounded `rt gate wait` loop); the board grows respond/doctor gate kinds on a subject+kind-keyed cache with a kind-aware sweep; the console renders and answers `run:` gates over its existing WS relay; shepherdr's run-backed herd questions collapse onto the registry; the acme-web pack's fills bump to @2 with dual provides and release BEFORE the board's @2 wrappers deploy.
+**Architecture:** The engine's gate@1 decision sites adopt the shared `gate-protocol` part via one verbatim v4 recipe (publish `run:<id>` gates; attended panes keep their forms and record `--by pane`; unattended panes block in a bounded `rt gate wait` loop); the board grows respond/doctor gate kinds on a subject+kind-keyed cache with a kind-aware sweep; the console renders and answers `run:` gates over its existing WS relay; shepherdr's run-backed herd questions collapse onto the registry; the team pack's fills bump to @2 with dual provides and release BEFORE the board's @2 wrappers deploy.
 
 **Tech Stack:** rt daemon gate facility (LIVE; CLI `rt gate ...`; rt-client ≥0.15.0), Bun + TS (board), Hono + React + TanStack Query (console), compile-native skill prose (engine + pack).
 
@@ -20,7 +20,7 @@
 - The in-pane experience does not change for attended panes; unattended panes never present forms.
 - A consumed (answered) gate is terminal; re-asking opens a NEW gate. A resumed pane NEVER re-runs `gate open` for the gate it was resumed for.
 - Every option on a published gate must be executable from the wait's return on the pane side ("leave it to me in the pane" = the pane stops mechanized action and hands over; "Hold" = park the work). Pane-only `meta` markers are DESCOPED from W3 (the spec's "may mark" stays future-optional).
-- Repo purity; team names only in the acme-web pack repo and gitignored briefs. Skill edits under superpowers:writing-skills (em dashes OK in SKILL.md).
+- Repo purity; team names only in the team pack's own repo and gitignored briefs. Skill edits under superpowers:writing-skills (em dashes OK in SKILL.md).
 - Engine bumps same-commit (plugin.json, "; bump to 0.15.0"); pack per its convention. Board: full `bun test` + `bun run typecheck`. Console: `bun run test` + `typecheck` + `format:check`. Engine/pack: certify.sh touched dirs + repo-purity + `rt skills check` current.
 - gateList/gate:list paging: terminate on `gates.length < limit` OR cursor-no-progress, NEVER on falsy cursor. Daemon error mapping by exact equality only. Every new state field goes on the interface AND the writer's explicit merge list.
 
@@ -253,11 +253,11 @@ The caller-handed answers object is `{plan: {"threads-1": [...], "code-changes":
 
 ---
 
-## Lane P — pack (repo: `/Users/matt/.mattstack/teams/acme-web`, branch `gate-kinds-fills`)
+## Lane P — pack (the team pack's repo; concrete paths live in the gitignored task briefs; branch `gate-kinds-fills`)
 
 ### Task P1: respond fill → thin @2 adapter (dual provides)
 
-**Files:** `mattstack/packs/acme-web/attachments/board-respond/SKILL.md` (`provides: "mr-respond@1 mr-respond@2"`), PACK.md ledger row, recompiled `skills/` output vs engine 0.15.0 (installed post-E6; else the S2-documented `--pack-dir`/`--mattstack-dir` escape hatch, re-verified post-update).
+**Files:** the pack's respond fill SKILL.md (`provides: "mr-respond@1 mr-respond@2"`), PACK.md ledger row, recompiled `skills/` output vs engine 0.15.0 (installed post-E6; else the S2-documented `--pack-dir`/`--mattstack-dir` escape hatch, re-verified post-update).
 
 - [ ] Steps (writing-skills): the fill invokes receive-review declaring caller-owned decisions; reports the adjudication table up to the wrapper shaped so the wrapper can build E4's Gate-1 questions (quote E4's shapes verbatim from the plan); on handed `{plan}` implements; on handed `{post}` executes posting and hands the outcome back. Under an @1 wrapper: the engine's own facility gates ask (E4's fallback). Pack checks clean; @1-compat commit note.
 
