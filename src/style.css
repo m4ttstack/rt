@@ -30,13 +30,30 @@
    hue, darkening only. Dark-mode values are carried through untouched, since
    dark was never the failing scheme.
 
+   The fourth is a preference, not a failure: --fg softened from the kit's
+   #111 to #333. Both clear AAA by a distance (17.17 and 11.49 on --chrome),
+   and #333 keeps 4.25x the luminance separation from --muted, so the title
+   still sits clearly above its metadata.
+
    This is a deliberate one-file deviation from the kit's palette, not a fork
    to keep: deck, console and gitq inherit the same failing values, so it
    belongs in tui-kit. Delete this block when the kit ships it. */
 :root {
+  --color-gray-fg: light-dark(#333333, #e3e7f6);
   --color-gray-muted: light-dark(#626880, #7e86ad);
   --color-blue-500: light-dark(#2166c4, #7aa2f7);
   --color-red-500: light-dark(#c8214f, #f7768e);
+}
+
+/* The page is a system sans now, and macOS renders that with subpixel
+   antialiasing by default. Light text knocked out of a saturated fill then
+   optically gains weight and blooms -- worst on the segmented control's active
+   option, which is bold at 12px on --accent. Greyscale antialiasing thins the
+   strokes back to the weight they were drawn at. Board never needed this while
+   everything was JetBrains Mono. */
+body {
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* ── header ───────────────────────────────────────────────────────── */
