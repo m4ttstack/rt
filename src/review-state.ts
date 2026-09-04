@@ -24,6 +24,9 @@ export interface ReviewState {
   agentId?: string;
   /** rt herdr pane id the agent landed in, from the launch/resume result. */
   paneId?: string;
+  /** Facility gate id from the most recent `gate open`, so `gate wait` /
+      `gate answer` can find it by state path alone. */
+  gateId?: string;
   startedAt: number;
   updatedAt: number;
   /** Whether the agent has written its full review markdown yet. Computed at
@@ -80,6 +83,7 @@ export function writeReviewState(
     sessionId: patch.sessionId ?? prev.sessionId,
     agentId: patch.agentId ?? prev.agentId,
     paneId: patch.paneId ?? prev.paneId,
+    gateId: patch.gateId ?? prev.gateId,
     startedAt: prev.startedAt ?? now,
     updatedAt: now,
   };

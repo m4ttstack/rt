@@ -3,59 +3,71 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
 import { gateOpen, gateWait, gateAnswer, type GateVerbIo } from "../gates/verbs.ts";
-import { gateFilePath, writeGateState, type GateState, type GateQuestion } from "../gates/store.ts";
 import { statusBinPath } from "../herdr.ts";
-import type { RtResponse, Commands } from "@mattstack/rt-client";
-
-type EventsBusEvent = Commands["events:wait"]["data"]["events"][number];
+import type { ReviewState } from "../review-state.ts";
+import type { Commands, GateRow, RtResponse } from "@mattstack/rt-client";
 
 const MR_URL = "https://gitlab.com/acme/webapp/-/merge_requests/4821";
 const IID = 4821;
 
-const QUESTIONS: GateQuestion[] = [
+const QUESTIONS = [
   { id: "tiers", label: "Which tiers?", multi: true, options: ["nit", "must-fix"] },
   { id: "outcome", label: "Outcome?", multi: false, options: ["comment", "approve"] },
 ];
 
+/** Fills in every GateRow field a fixture doesn't care about, so each test
+    only spells the fields its assertions actually depend on. */
+function gateRow(overrides: Partial<GateRow> & { id: string }): GateRow {
+  return {
+    subject: `mr:${MR_URL}`,
+    kind: "review-post",
+    questions: QUESTIONS,
+    meta: null,
+    status: "open",
+    answer: null,
+    openedAt: 1000,
+    parkedAt: null,
+    closedAt: null,
+    closedReason: null,
+    agent: null,
+    pane: null,
+    nudge: null,
+    delivery: null,
+    released: false,
+    ...overrides,
+  };
+}
+
 interface FakeIoCalls {
-  eventsEmit: Array<{ topic: string; payload: unknown }>;
-  eventsList: Array<{ pattern: string; after?: number; limit?: number }>;
-  eventsWait: Array<{ pattern: string; after?: number; waitMs?: number }>;
-  eventsHead: number;
+  gateOpen: Array<Commands["gate:open"]["payload"]>;
+  gateWait: Array<Commands["gate:wait"]["payload"]>;
+  gateAnswer: Array<Commands["gate:answer"]["payload"]>;
 }
 
 function fakeIo(overrides: {
-  emitOk?: boolean;
-  listResults?: Array<RtResponse<{ events: EventsBusEvent[]; cursor: number }>>;
-  waitResults?: Array<RtResponse<{ events: EventsBusEvent[]; cursor: number }>>;
+  openResult?: RtResponse<Commands["gate:open"]["data"]>;
+  waitResults?: Array<RtResponse<Commands["gate:wait"]["data"]>>;
+  answerResult?: RtResponse<Commands["gate:answer"]["data"]>;
   now?: number;
 } = {}): { io: GateVerbIo; calls: FakeIoCalls } {
-  const calls: FakeIoCalls = { eventsEmit: [], eventsList: [], eventsWait: [], eventsHead: 0 };
-  const listResults = overrides.listResults ?? [{ ok: true, data: { events: [], cursor: 0 } }];
+  const calls: FakeIoCalls = { gateOpen: [], gateWait: [], gateAnswer: [] };
   const waitResults = overrides.waitResults ?? [];
-  let listIdx = 0;
   let waitIdx = 0;
   const io: GateVerbIo = {
-    eventsEmit: (async (topic: string, payload?: unknown) => {
-      calls.eventsEmit.push({ topic, payload });
-      return { ok: overrides.emitOk ?? true, data: { id: 1 } };
-    }) as GateVerbIo["eventsEmit"],
-    eventsList: (async (payload: { pattern: string; after?: number; limit?: number }) => {
-      calls.eventsList.push(payload);
-      const res = listResults[Math.min(listIdx, listResults.length - 1)]!;
-      listIdx++;
-      return res;
-    }) as GateVerbIo["eventsList"],
-    eventsWait: (async (payload: { pattern: string; after?: number; waitMs?: number }) => {
-      calls.eventsWait.push(payload);
+    gateOpen: async (payload) => {
+      calls.gateOpen.push(payload);
+      return overrides.openResult ?? { ok: true, data: { id: "gate-1", supersededId: null } };
+    },
+    gateWait: async (payload) => {
+      calls.gateWait.push(payload);
       const res = waitResults[Math.min(waitIdx, waitResults.length - 1)]!;
       waitIdx++;
       return res;
-    }) as GateVerbIo["eventsWait"],
-    eventsHead: (async () => {
-      calls.eventsHead++;
-      return { ok: true, data: { cursor: 0 } };
-    }) as GateVerbIo["eventsHead"],
+    },
+    gateAnswer: async (payload) => {
+      calls.gateAnswer.push(payload);
+      return overrides.answerResult ?? { ok: true, data: { row: gateRow({ id: payload.id }) } };
+    },
     now: () => overrides.now ?? 5000,
   };
   return { io, calls };
@@ -64,9 +76,7 @@ function fakeIo(overrides: {
 let dir: string;
 let statePath: string;
 
-beforeEach(() => {
-  dir = mkdtempSync(join(tmpdir(), "gv-"));
-  statePath = join(dir, "review.json");
+function writeState(patch: Partial<ReviewState> = {}): void {
   writeFileSync(
     statePath,
     JSON.stringify({
@@ -79,255 +89,228 @@ beforeEach(() => {
       tabId: "tab-1",
       startedAt: 1,
       updatedAt: 1,
+      ...patch,
     }),
   );
-  // Gate files live under the real (test-faked) GATE_DIR -- clean up after each test.
-  rmSync(gateFilePath(MR_URL), { force: true });
+}
+
+function readState(): ReviewState {
+  return JSON.parse(readFileSync(statePath, "utf8")) as ReviewState;
+}
+
+beforeEach(() => {
+  dir = mkdtempSync(join(tmpdir(), "gv-"));
+  statePath = join(dir, "review.json");
+  writeState();
 });
 
 afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
-  rmSync(gateFilePath(MR_URL), { force: true });
 });
 
 describe("gateOpen", () => {
-  test("mints a gateId, writes the gate file, and emits the full contract payload", async () => {
-    const { io, calls } = fakeIo({ now: 9000 });
+  test("calls the facility with subject mr:<url>, kind review-post, no nudge, and an !<iid> label", async () => {
+    const { io, calls } = fakeIo();
 
     const gateId = await gateOpen(statePath, JSON.stringify(QUESTIONS), io);
 
-    expect(typeof gateId).toBe("string");
-    expect(gateId.length).toBeGreaterThan(0);
-
-    expect(calls.eventsEmit.length).toBe(1);
-    expect(calls.eventsEmit[0]!.topic).toBe(`board/gate/opened/${gateId}`);
-    expect(calls.eventsEmit[0]!.payload).toEqual({
-      gateId,
-      kind: "review-post",
-      mrUrl: MR_URL,
-      iid: IID,
-      agentId: "agent-1",
-      sessionId: "session-1",
-      paneId: "pane-1",
-      tabId: "tab-1",
-      questions: QUESTIONS,
-      openedAt: 9000,
-    });
-
-    const written = JSON.parse(readFileSync(gateFilePath(MR_URL), "utf8")) as GateState;
-    expect(written).toEqual({
-      gateId,
-      mrUrl: MR_URL,
-      iid: IID,
-      kind: "review-post",
-      status: "open",
-      openedAt: 9000,
-      questions: QUESTIONS,
-      agentId: "agent-1",
-      sessionId: "session-1",
-      paneId: "pane-1",
-      tabId: "tab-1",
-    });
+    expect(gateId).toBe("gate-1");
+    expect(calls.gateOpen.length).toBe(1);
+    const payload = calls.gateOpen[0]!;
+    expect(payload.subject).toBe(`mr:${MR_URL}`);
+    expect(payload.kind).toBe("review-post");
+    expect(payload.questions).toEqual(QUESTIONS);
+    expect(payload.meta).toEqual({ label: `review gate !${IID}` });
+    expect(payload.nudge).toBeUndefined();
+    expect(payload.agent).toBeUndefined();
+    expect(payload.pane).toBeUndefined();
   });
 
-  test("malformed --questions JSON throws rather than writing or emitting", async () => {
+  test("persists the returned gateId onto review state, leaving other fields untouched", async () => {
+    const { io } = fakeIo({ openResult: { ok: true, data: { id: "gate-xyz", supersededId: null } } });
+
+    await gateOpen(statePath, JSON.stringify(QUESTIONS), io);
+
+    const state = readState();
+    expect(state.gateId).toBe("gate-xyz");
+    expect(state.mrUrl).toBe(MR_URL);
+    expect(state.status).toBe("reviewing");
+    expect(state.agentId).toBe("agent-1");
+  });
+
+  test("malformed --questions JSON throws rather than calling the facility", async () => {
     const { io, calls } = fakeIo();
 
     await expect(gateOpen(statePath, "{ not valid json", io)).rejects.toThrow();
 
-    expect(calls.eventsEmit.length).toBe(0);
+    expect(calls.gateOpen.length).toBe(0);
   });
 
-  test("re-opening over a prior ANSWERED gate file clears the stale answer, and a following gateWait blocks instead of short-circuiting", async () => {
-    // Seed a prior ANSWERED gate for this MR (a previous review round).
-    writeGateState(gateFilePath(MR_URL), {
-      gateId: "gate-prior",
-      mrUrl: MR_URL,
-      iid: IID,
-      kind: "review-post",
-      status: "answered",
-      openedAt: 1000,
-      questions: QUESTIONS,
-      answers: { tiers: ["must-fix"], outcome: "comment" },
-      answeredBy: "board-ui",
-      answeredAt: 2000,
-    });
+  test("a facility failure throws loudly instead of writing a gateId", async () => {
+    const { io } = fakeIo({ openResult: { ok: false, error: "daemon unreachable" } });
 
-    const { io: openIo } = fakeIo({ now: 9000 });
-    const gateId = await gateOpen(statePath, JSON.stringify(QUESTIONS), openIo);
+    await expect(gateOpen(statePath, JSON.stringify(QUESTIONS), io)).rejects.toThrow(/daemon unreachable/);
+    expect(readState().gateId).toBeUndefined();
+  });
 
-    const written = JSON.parse(readFileSync(gateFilePath(MR_URL), "utf8")) as GateState;
-    expect(written.gateId).toBe(gateId);
-    expect(written.status).toBe("open");
-    expect(written.answers).toBeUndefined();
-    expect(written.answeredBy).toBeUndefined();
-    expect(written.answeredAt).toBeUndefined();
+  test("gateId survives an interleaving reviewing-status write (the merge-list trap)", async () => {
+    const { io } = fakeIo({ openResult: { ok: true, data: { id: "gate-survives", supersededId: null } } });
+    const { writeReviewState } = await import("../review-state.ts");
 
-    // gateWait must now BLOCK (call eventsList/eventsWait) rather than
-    // short-circuit on the stale prior disposition.
-    const answerEvent: EventsBusEvent = {
-      id: 99,
-      topic: `board/gate/answered/${gateId}`,
-      payload: { gateId, answers: { tiers: [], outcome: "approve" }, by: "board-ui", answeredAt: 9500 },
-      emittedAt: 9500,
-    };
+    await gateOpen(statePath, JSON.stringify(QUESTIONS), io);
+    expect(readState().gateId).toBe("gate-survives");
+
+    // An unrelated status write (e.g. a resume) that doesn't mention gateId
+    // must not clobber it -- gateId has to be on writeReviewState's explicit
+    // merge-field list, not just settable by the one call that minted it.
+    writeReviewState(statePath, { status: "reviewing", paneId: "pane-2" });
+    expect(readState().gateId).toBe("gate-survives");
+
     const { io: waitIo, calls: waitCalls } = fakeIo({
-      listResults: [{ ok: true, data: { events: [answerEvent], cursor: 1 } }],
+      waitResults: [
+        {
+          ok: true,
+          data: { status: "answered", row: gateRow({ id: "gate-survives", status: "answered", answer: { answers: { tiers: ["nit"], outcome: "comment" }, by: "board-ui", answeredAt: 9000 } }) },
+        },
+      ],
     });
-
     const result = await gateWait(statePath, waitIo);
 
-    expect(waitCalls.eventsList.length).toBe(1);
-    expect(result).not.toEqual({ answers: { tiers: ["must-fix"], outcome: "comment" }, by: "board-ui", answeredAt: 2000 });
-    expect(result).toEqual({ answers: { tiers: [], outcome: "approve" }, by: "board-ui", answeredAt: 9500 });
+    expect(waitCalls.gateWait[0]!.id).toBe("gate-survives");
+    expect(result).toEqual({ answers: { tiers: ["nit"], outcome: "comment" }, by: "board-ui", answeredAt: 9000 });
   });
 });
 
 describe("gateWait", () => {
-  test("returns immediately from a pre-answered gate file, no events calls", async () => {
-    const { io, calls } = fakeIo();
-    writeGateState(gateFilePath(MR_URL), {
-      gateId: "gate-preanswered",
-      mrUrl: MR_URL,
-      iid: IID,
-      kind: "review-post",
-      status: "answered",
-      openedAt: 1000,
-      questions: QUESTIONS,
-      answers: { tiers: ["must-fix"], outcome: "comment" },
-      answeredBy: "board-ui",
-      answeredAt: 2000,
+  test("returns the answer once the facility reports answered", async () => {
+    writeState({ gateId: "gate-42" });
+    const { io, calls } = fakeIo({
+      waitResults: [
+        {
+          ok: true,
+          data: {
+            status: "answered",
+            row: gateRow({ id: "gate-42", status: "answered", answer: { answers: { tiers: [], outcome: "approve" }, by: "board-ui", answeredAt: 3000 } }),
+          },
+        },
+      ],
+    });
+
+    const result = await gateWait(statePath, io);
+
+    expect(result).toEqual({ answers: { tiers: [], outcome: "approve" }, by: "board-ui", answeredAt: 3000 });
+    expect(calls.gateWait.length).toBe(1);
+    expect(calls.gateWait[0]!.id).toBe("gate-42");
+  });
+
+  test("registry-status-first: an already-answered gate returns on the first call, no extra looping", async () => {
+    writeState({ gateId: "gate-preanswered" });
+    const { io, calls } = fakeIo({
+      waitResults: [
+        {
+          ok: true,
+          data: {
+            status: "answered",
+            row: gateRow({ id: "gate-preanswered", status: "answered", answer: { answers: { tiers: ["must-fix"], outcome: "comment" }, by: "board-ui", answeredAt: 2000 } }),
+          },
+        },
+      ],
     });
 
     const result = await gateWait(statePath, io);
 
     expect(result).toEqual({ answers: { tiers: ["must-fix"], outcome: "comment" }, by: "board-ui", answeredAt: 2000 });
-    expect(calls.eventsList.length).toBe(0);
-    expect(calls.eventsWait.length).toBe(0);
+    expect(calls.gateWait.length).toBe(1);
   });
 
-  test("returns from a journaled answer (eventsList finds it) without calling eventsWait", async () => {
-    const gateId = "gate-journaled";
-    writeGateState(gateFilePath(MR_URL), {
-      gateId,
-      mrUrl: MR_URL,
-      iid: IID,
-      kind: "review-post",
-      status: "open",
-      openedAt: 1000,
-      questions: QUESTIONS,
-    });
-    const answerEvent: EventsBusEvent = {
-      id: 42,
-      topic: `board/gate/answered/${gateId}`,
-      payload: { gateId, answers: { tiers: [], outcome: "approve" }, by: "board-ui", answeredAt: 3000 },
-      emittedAt: 3000,
-    };
-    const { io, calls } = fakeIo({ listResults: [{ ok: true, data: { events: [answerEvent], cursor: 42 } }] });
-
-    const result = await gateWait(statePath, io);
-
-    expect(result).toEqual({ answers: { tiers: [], outcome: "approve" }, by: "board-ui", answeredAt: 3000 });
-    expect(calls.eventsList.length).toBe(1);
-    expect(calls.eventsList[0]!.pattern).toBe(`board/gate/answered/${gateId}`);
-    expect(calls.eventsWait.length).toBe(0);
-
-    const written = JSON.parse(readFileSync(gateFilePath(MR_URL), "utf8")) as GateState;
-    expect(written.status).toBe("answered");
-    expect(written.answers).toEqual({ tiers: [], outcome: "approve" });
-    expect(written.answeredBy).toBe("board-ui");
-    expect(written.answeredAt).toBe(3000);
-  });
-
-  test("loops one timed-out eventsWait (no events) then returns on the second call, threading the cursor throughout", async () => {
-    const gateId = "gate-looped";
-    writeGateState(gateFilePath(MR_URL), {
-      gateId,
-      mrUrl: MR_URL,
-      iid: IID,
-      kind: "review-post",
-      status: "open",
-      openedAt: 1000,
-      questions: QUESTIONS,
-    });
-    const answerEvent: EventsBusEvent = {
-      id: 43,
-      topic: `board/gate/answered/${gateId}`,
-      payload: { gateId, answers: { tiers: ["nit"], outcome: "comment" }, by: "board-ui", answeredAt: 4000 },
-      emittedAt: 4000,
-    };
-    // Non-zero cursors throughout, so a bug that drops the threaded value in
-    // favor of `undefined` (or a stray 0) cannot pass by coincidence.
+  test("a timeout re-enters the wait until an answer lands", async () => {
+    writeState({ gateId: "gate-looped" });
     const { io, calls } = fakeIo({
-      listResults: [{ ok: true, data: { events: [], cursor: 77 } }],
       waitResults: [
-        { ok: true, data: { events: [], cursor: 150 } },
-        { ok: true, data: { events: [answerEvent], cursor: 200 } },
+        { ok: true, data: { status: "timeout" } },
+        { ok: true, data: { status: "timeout" } },
+        {
+          ok: true,
+          data: {
+            status: "answered",
+            row: gateRow({ id: "gate-looped", status: "answered", answer: { answers: { tiers: ["nit"], outcome: "comment" }, by: "board-ui", answeredAt: 4000 } }),
+          },
+        },
       ],
     });
 
     const result = await gateWait(statePath, io);
 
     expect(result).toEqual({ answers: { tiers: ["nit"], outcome: "comment" }, by: "board-ui", answeredAt: 4000 });
-    expect(calls.eventsWait.length).toBe(2);
-    // First eventsWait seeds `after` from the eventsList cursor (77) --
-    // the race-safe handoff that keeps a parked-resume answer from being
-    // missed between the journal check and the first wait.
-    expect(calls.eventsWait[0]!.after).toBe(77);
-    // Second eventsWait re-seeds `after` from the first waitRes's own
-    // cursor (150), not the original list cursor and not undefined.
-    expect(calls.eventsWait[1]!.after).toBe(150);
+    expect(calls.gateWait.length).toBe(3);
+    expect(calls.gateWait.every((p) => p.id === "gate-looped")).toBe(true);
   });
 
-  test("eventsList failure fails loudly instead of silently treating the journal as empty", async () => {
-    const gateId = "gate-list-fails";
-    writeGateState(gateFilePath(MR_URL), {
-      gateId,
-      mrUrl: MR_URL,
-      iid: IID,
-      kind: "review-post",
-      status: "open",
-      openedAt: 1000,
-      questions: QUESTIONS,
+  test("a closed gate surfaces as a clean terminal error instead of hanging", async () => {
+    writeState({ gateId: "gate-closed" });
+    const { io } = fakeIo({
+      waitResults: [
+        { ok: true, data: { status: "closed", row: gateRow({ id: "gate-closed", status: "closed", closedReason: "superseded" }) } },
+      ],
     });
-    const { io, calls } = fakeIo({ listResults: [{ ok: false, error: "daemon unreachable" }] });
+
+    await expect(gateWait(statePath, io)).rejects.toThrow(/closed/);
+  });
+
+  test("a facility failure fails loudly instead of treating it as absence", async () => {
+    writeState({ gateId: "gate-fail" });
+    const { io } = fakeIo({ waitResults: [{ ok: false, error: "daemon unreachable" }] });
 
     await expect(gateWait(statePath, io)).rejects.toThrow(/daemon unreachable/);
-    expect(calls.eventsWait.length).toBe(0);
+  });
+
+  test("no gateId on review state throws rather than waiting on nothing", async () => {
+    const { io } = fakeIo();
+
+    await expect(gateWait(statePath, io)).rejects.toThrow(/no gate open/);
   });
 });
 
 describe("gateAnswer", () => {
-  test("emits board/gate/answered/<gateId> with by: pane and updates the file", async () => {
-    const gateId = "gate-pane";
-    writeGateState(gateFilePath(MR_URL), {
-      gateId,
-      mrUrl: MR_URL,
-      iid: IID,
-      kind: "review-post",
-      status: "open",
-      openedAt: 1000,
-      questions: QUESTIONS,
+  test("calls gate:answer with by: pane and reports no conflict on a clean win", async () => {
+    writeState({ gateId: "gate-pane" });
+    const { io, calls } = fakeIo({
+      answerResult: { ok: true, data: { row: gateRow({ id: "gate-pane", status: "answered", answer: { answers: { tiers: ["must-fix"], outcome: "approve" }, by: "pane", answeredAt: 6000 } }) } },
     });
-    const { io, calls } = fakeIo({ now: 6000 });
-    const answers = { tiers: ["must-fix"], outcome: "approve" };
 
-    await gateAnswer(statePath, JSON.stringify(answers), "pane", io);
+    const result = await gateAnswer(statePath, JSON.stringify({ tiers: ["must-fix"], outcome: "approve" }), "pane", io);
 
-    expect(calls.eventsEmit.length).toBe(1);
-    expect(calls.eventsEmit[0]!.topic).toBe(`board/gate/answered/${gateId}`);
-    expect(calls.eventsEmit[0]!.payload).toEqual({ gateId, answers, by: "pane", answeredAt: 6000 });
+    expect(calls.gateAnswer.length).toBe(1);
+    expect(calls.gateAnswer[0]).toEqual({ id: "gate-pane", answers: { tiers: ["must-fix"], outcome: "approve" }, by: "pane" });
+    expect(result).toEqual({ conflict: false, answers: { tiers: ["must-fix"], outcome: "approve" }, by: "pane", answeredAt: 6000 });
+  });
 
-    const written = JSON.parse(readFileSync(gateFilePath(MR_URL), "utf8")) as GateState;
-    expect(written.status).toBe("answered");
-    expect(written.answers).toEqual(answers);
-    expect(written.answeredBy).toBe("pane");
-    expect(written.answeredAt).toBe(6000);
+  test("a CAS-lost answer reports conflict and returns the winning row's answer, not the loser's", async () => {
+    writeState({ gateId: "gate-race" });
+    const { io } = fakeIo({
+      answerResult: {
+        ok: true,
+        data: {
+          conflict: true,
+          row: gateRow({ id: "gate-race", status: "answered", answer: { answers: { tiers: [], outcome: "comment" }, by: "board-ui", answeredAt: 5500 } }),
+        },
+      },
+    });
+
+    const result = await gateAnswer(statePath, JSON.stringify({ tiers: ["must-fix"], outcome: "approve" }), "pane", io);
+
+    expect(result).toEqual({ conflict: true, answers: { tiers: [], outcome: "comment" }, by: "board-ui", answeredAt: 5500 });
+  });
+
+  test("no gateId on review state throws rather than answering nothing", async () => {
+    const { io } = fakeIo();
+
+    await expect(gateAnswer(statePath, JSON.stringify({}), "pane", io)).rejects.toThrow(/no gate open/);
   });
 });
 
 describe("bin/gate.ts malformed --questions", () => {
-  test("exits nonzero with a stderr message, without ever reaching the events bus", async () => {
+  test("exits nonzero with a stderr message, without ever reaching the facility", async () => {
     const proc = Bun.spawn([statusBinPath(), "gate", "open", statePath, "--questions", "{ not valid json"], {
       stdout: "pipe",
       stderr: "pipe",

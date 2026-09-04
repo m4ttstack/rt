@@ -1,7 +1,16 @@
-import { eventsEmit, eventsHead, eventsList, eventsWait } from "@mattstack/rt-client";
+import {
+  gateOpen as facilityGateOpen,
+  gateWait as facilityGateWait,
+  gateAnswer as facilityGateAnswer,
+} from "@mattstack/rt-client";
 import { gateAnswer, gateOpen, gateWait, type GateVerbIo } from "../src/gates/verbs.ts";
 
-const io: GateVerbIo = { eventsEmit, eventsWait, eventsList, eventsHead, now: () => Date.now() };
+const io: GateVerbIo = {
+  gateOpen: facilityGateOpen,
+  gateWait: facilityGateWait,
+  gateAnswer: facilityGateAnswer,
+  now: () => Date.now(),
+};
 
 /** Reads a `--flag value` pair out of argv; `--flag=value` also works. */
 function flag(argv: string[], name: string): string | undefined {
@@ -27,7 +36,12 @@ try {
     const answers = flag(rest, "--answers");
     const by = flag(rest, "--by");
     if (!statePath || !answers || by !== "pane") throw new Error("usage: gate answer <state> --answers <json> --by pane");
-    await gateAnswer(statePath, answers, "pane", io);
+    const result = await gateAnswer(statePath, answers, "pane", io);
+    // A CAS-lost pane answer is a defined outcome, not a failure -- print the
+    // winning row's answer so the wrapper can proceed on it, and still exit 0.
+    if (result.conflict) {
+      console.log(JSON.stringify({ answers: result.answers, by: result.by, answeredAt: result.answeredAt }));
+    }
   } else {
     throw new Error(`usage: gate <open|wait|answer> <state> ...`);
   }
