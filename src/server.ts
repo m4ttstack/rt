@@ -1266,11 +1266,14 @@ const httpServer = Bun.serve({
         }
       }
       case "/gate/answer": {
-        // Answer a review gate from the board UI. The facility's gate:answer
-        // is the single CAS arbiter; this proxies it (gates/answer.ts) and
-        // maps the pure result onto HTTP status codes. Resume of a parked
-        // gate is no longer triggered here -- it hangs off the gate/answered
-        // EVENT (see gates/ingest.ts) so a console-answered gate resumes too.
+        // Answer a gate from the board UI, addressed by its own id -- an MR
+        // can carry more than one live gate at once (review alongside
+        // respond/doctor), so a card answers exactly the gate it renders,
+        // never "whichever gate this MR has". The facility's gate:answer is
+        // the single CAS arbiter; this proxies it (gates/answer.ts) and maps
+        // the pure result onto HTTP status codes. Resume of a parked gate is
+        // no longer triggered here -- it hangs off the gate/answered EVENT
+        // (see gates/ingest.ts) so a console-answered gate resumes too.
         if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
         let body: unknown;
@@ -1279,15 +1282,15 @@ const httpServer = Bun.serve({
         } catch {
           return new Response("invalid json", { status: 400 });
         }
-        const mrUrl = (body as { mrUrl?: unknown })?.mrUrl;
+        const gateId = (body as { gateId?: unknown })?.gateId;
         const answers = (body as { answers?: unknown })?.answers;
-        if (typeof mrUrl !== "string" || !mrUrl || typeof answers !== "object" || answers === null || Array.isArray(answers)) {
-          return new Response("expected { mrUrl: string, answers: object }", { status: 400 });
+        if (typeof gateId !== "string" || !gateId || typeof answers !== "object" || answers === null || Array.isArray(answers)) {
+          return new Response("expected { gateId: string, answers: object }", { status: 400 });
         }
-        const result = await answerGate(mrUrl, answers as GateAnswers, {
-          findAnswerableGateId: (gateMrUrl) => {
-            const row = gateCache.get(`mr:${gateMrUrl}`);
-            return row && (row.status === "open" || row.status === "parked") ? row.id : undefined;
+        const result = await answerGate(gateId, answers as GateAnswers, {
+          isAnswerable: (id) => {
+            const row = gateCache.rows().find((r) => r.id === id);
+            return !!row && (row.status === "open" || row.status === "parked");
           },
           gateAnswer: gateAnswerFacility,
         });
@@ -1300,7 +1303,7 @@ const httpServer = Bun.serve({
               headers: { "content-type": "application/json" },
             });
           case "not-found":
-            return new Response(`unknown gate for MR "${mrUrl}"`, { status: 404 });
+            return new Response(`unknown gate "${gateId}"`, { status: 404 });
           case "invalid":
             return new Response(result.reason, { status: 400 });
           case "unreachable":
@@ -1780,8 +1783,9 @@ function sweepActionIo(): ExecuteSweepActionIo {
   return {
     gatePark,
     closeTab,
-    writeReviewState,
-    reviewFilePath,
+    review: { writeState: writeReviewState, filePath: reviewFilePath },
+    respond: { writeState: writeRespondState, filePath: respondFilePath },
+    doctor: { writeState: writeDoctorState, filePath: doctorFilePath },
     now: () => Date.now(),
     graceMinutes: config.gateGraceMinutes,
     log: (message) => console.log(message),
@@ -1793,7 +1797,10 @@ function sweepActionIo(): ExecuteSweepActionIo {
 // can be reassigned (switchboard-url save) after boot.
 function gateResumeIo(): GateResumeEventIo {
   return {
-    gateRow: (subject) => gateCache.get(subject),
+    // resume.ts only resumes the "review-post" kind until W3's per-kind
+    // resume work lands (RESUMABLE_KIND in gates/resume.ts) -- hardcoding it
+    // here keeps GateResumeEventIo's subject-only signature unchanged.
+    gateRow: (subject) => gateCache.get(subject, "review-post"),
     applyRow: (row) => gateCache.applyRow(row),
     readReviewState: (mrUrl) => readReviewStates().get(mrUrl),
     gateList,
@@ -1806,7 +1813,8 @@ function gateResumeIo(): GateResumeEventIo {
 }
 
 async function runGateSweep(): Promise<void> {
-  const actions = planSweep(gateCache.rows(), readReviewStates(), Date.now(), config.gateGraceMinutes * 60_000);
+  const states = { reviews: readReviewStates(), responds: readRespondStates(), doctors: readDoctorStates() };
+  const actions = planSweep(gateCache.rows(), states, Date.now(), config.gateGraceMinutes * 60_000);
   const io = sweepActionIo();
   for (const action of actions) {
     await executeSweepAction(action, io);

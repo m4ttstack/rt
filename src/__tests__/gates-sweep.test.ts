@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { planSweep, pruneOffBoardGates } from "../gates/sweep.ts";
+import { planSweep, pruneOffBoardGates, type GateSweepStates } from "../gates/sweep.ts";
 import type { GateRow } from "@mattstack/rt-client";
 import type { ReviewState } from "../review-state.ts";
+import type { RespondState } from "../respond-state.ts";
+import type { DoctorState } from "../doctor-state.ts";
 
 const MR_URL = "https://gitlab.com/acme/webapp/-/merge_requests/4821";
 const OTHER_MR_URL = "https://gitlab.com/acme/webapp/-/merge_requests/4900";
@@ -41,109 +43,190 @@ function baseReview(overrides: Partial<ReviewState> = {}): ReviewState {
   };
 }
 
+function baseRespond(overrides: Partial<RespondState> = {}): RespondState {
+  return {
+    mrUrl: MR_URL,
+    iid: 4821,
+    status: "done",
+    startedAt: NOW - 1000,
+    updatedAt: NOW - 500,
+    ...overrides,
+  };
+}
+
+function baseDoctor(overrides: Partial<DoctorState> = {}): DoctorState {
+  return {
+    mrUrl: MR_URL,
+    iid: 4821,
+    status: "done",
+    startedAt: NOW - 1000,
+    updatedAt: NOW - 500,
+    ...overrides,
+  };
+}
+
+function states(overrides: Partial<GateSweepStates> = {}): GateSweepStates {
+  return { reviews: new Map(), responds: new Map(), doctors: new Map(), ...overrides };
+}
+
 describe("planSweep", () => {
   test("a fresh open row (openedAt = now) is untouched", () => {
     const rows = [baseRow({ openedAt: NOW })];
-    const actions = planSweep(rows, new Map(), NOW, GRACE_MS);
+    const actions = planSweep(rows, states(), NOW, GRACE_MS);
     expect(actions).toEqual([]);
   });
 
-  test("an aged open row (now - openedAt >= graceMs) yields a park action, tabId joined from review state", () => {
+  test("an aged open review-post row yields a park action, tabId joined from review state", () => {
     const rows = [baseRow({ openedAt: NOW - GRACE_MS - 1 })];
-    const reviews = new Map([[MR_URL, baseReview({ status: "reviewing", tabId: "tab-1" })]]);
-    const actions = planSweep(rows, reviews, NOW, GRACE_MS);
-    expect(actions).toEqual([{ kind: "park", mrUrl: MR_URL, tabId: "tab-1", gateId: "gate-1" }]);
+    const s = states({ reviews: new Map([[MR_URL, baseReview({ status: "reviewing", tabId: "tab-1" })]]) });
+    const actions = planSweep(rows, s, NOW, GRACE_MS);
+    expect(actions).toEqual([{ kind: "park", domain: "review", mrUrl: MR_URL, tabId: "tab-1", gateId: "gate-1" }]);
   });
 
   test("boundary: exactly graceMs old parks", () => {
     const rows = [baseRow({ openedAt: NOW - GRACE_MS })];
-    const actions = planSweep(rows, new Map(), NOW, GRACE_MS);
+    const actions = planSweep(rows, states(), NOW, GRACE_MS);
     expect(actions).toHaveLength(1);
     expect(actions[0]?.kind).toBe("park");
   });
 
   test("an aged open row with no matching review state still parks, with no tabId", () => {
     const rows = [baseRow({ openedAt: NOW - GRACE_MS - 1 })];
-    const actions = planSweep(rows, new Map(), NOW, GRACE_MS);
-    expect(actions).toEqual([{ kind: "park", mrUrl: MR_URL, tabId: undefined, gateId: "gate-1" }]);
+    const actions = planSweep(rows, states(), NOW, GRACE_MS);
+    expect(actions).toEqual([{ kind: "park", domain: "review", mrUrl: MR_URL, tabId: undefined, gateId: "gate-1" }]);
   });
 
   test("an already-answered row never parks again, even when aged", () => {
     const rows = [baseRow({ status: "answered", openedAt: NOW - GRACE_MS - 1 })];
-    const actions = planSweep(rows, new Map(), NOW, GRACE_MS);
+    const actions = planSweep(rows, states(), NOW, GRACE_MS);
     expect(actions).toEqual([]);
   });
 
   test("an already-parked row never parks again, even when aged", () => {
     const rows = [baseRow({ status: "parked", openedAt: NOW - GRACE_MS - 1 })];
-    const actions = planSweep(rows, new Map(), NOW, GRACE_MS);
+    const actions = planSweep(rows, states(), NOW, GRACE_MS);
     expect(actions).toEqual([]);
   });
 
   test("an already-closed row never parks, even when aged", () => {
     const rows = [baseRow({ status: "closed", openedAt: NOW - GRACE_MS - 1 })];
-    const actions = planSweep(rows, new Map(), NOW, GRACE_MS);
+    const actions = planSweep(rows, states(), NOW, GRACE_MS);
     expect(actions).toEqual([]);
   });
 
   test("a non-mr: subject is ignored entirely", () => {
     const rows = [baseRow({ subject: "peer:some-other-thing", openedAt: NOW - GRACE_MS - 1 })];
-    const actions = planSweep(rows, new Map(), NOW, GRACE_MS);
+    const actions = planSweep(rows, states(), NOW, GRACE_MS);
+    expect(actions).toEqual([]);
+  });
+
+  test("an unrecognized kind is skipped entirely, never crashes the sweep", () => {
+    const rows = [baseRow({ kind: "some-future-kind", openedAt: NOW - GRACE_MS - 1 })];
+    const actions = planSweep(rows, states(), NOW, GRACE_MS);
     expect(actions).toEqual([]);
   });
 
   test("a done review with a tabId and no open row yields close-missed-done", () => {
-    const review = baseReview({ status: "done", tabId: "tab-2" });
-    const reviews = new Map([[MR_URL, review]]);
-    const actions = planSweep([], reviews, NOW, GRACE_MS);
-    expect(actions).toEqual([{ kind: "close-missed-done", mrUrl: MR_URL, tabId: "tab-2" }]);
+    const s = states({ reviews: new Map([[MR_URL, baseReview({ status: "done", tabId: "tab-2" })]]) });
+    const actions = planSweep([], s, NOW, GRACE_MS);
+    expect(actions).toEqual([{ kind: "close-missed-done", domain: "review", mrUrl: MR_URL, tabId: "tab-2" }]);
   });
 
-  test("a done review with a tabId but a still-open row does not close-missed-done", () => {
-    const review = baseReview({ status: "done", tabId: "tab-2" });
+  test("a done review with a tabId but a still-open review-post row does not close-missed-done", () => {
     const rows = [baseRow({ status: "open", openedAt: NOW })];
-    const actions = planSweep(rows, new Map([[MR_URL, review]]), NOW, GRACE_MS);
+    const s = states({ reviews: new Map([[MR_URL, baseReview({ status: "done", tabId: "tab-2" })]]) });
+    const actions = planSweep(rows, s, NOW, GRACE_MS);
     expect(actions).toEqual([]);
   });
 
   test("a done review with a parked (not open) row still yields close-missed-done", () => {
-    const review = baseReview({ status: "done", tabId: "tab-2" });
     const rows = [baseRow({ status: "parked", openedAt: NOW - GRACE_MS - 1 })];
-    const actions = planSweep(rows, new Map([[MR_URL, review]]), NOW, GRACE_MS);
+    const s = states({ reviews: new Map([[MR_URL, baseReview({ status: "done", tabId: "tab-2" })]]) });
+    const actions = planSweep(rows, s, NOW, GRACE_MS);
     // The parked row is aged too, but its own status is no longer "open" so it never re-parks;
     // the done review with an outstanding tabId still reconciles.
-    expect(actions).toContainEqual({ kind: "close-missed-done", mrUrl: MR_URL, tabId: "tab-2" });
+    expect(actions).toContainEqual({ kind: "close-missed-done", domain: "review", mrUrl: MR_URL, tabId: "tab-2" });
     expect(actions).toHaveLength(1);
   });
 
   test("a done review with no tabId is untouched", () => {
-    const review = baseReview({ status: "done", tabId: undefined });
-    const actions = planSweep([], new Map([[MR_URL, review]]), NOW, GRACE_MS);
+    const s = states({ reviews: new Map([[MR_URL, baseReview({ status: "done", tabId: undefined })]]) });
+    const actions = planSweep([], s, NOW, GRACE_MS);
     expect(actions).toEqual([]);
   });
 
   test("a done review with an already-cleared tabId ('', the merge-trap convention) never re-fires close-missed-done", () => {
-    const review = baseReview({ status: "done", tabId: "" });
-    const actions = planSweep([], new Map([[MR_URL, review]]), NOW, GRACE_MS);
+    const s = states({ reviews: new Map([[MR_URL, baseReview({ status: "done", tabId: "" })]]) });
+    const actions = planSweep([], s, NOW, GRACE_MS);
     expect(actions).toEqual([]);
   });
 
   test("a non-done review with a tabId is untouched", () => {
-    const review = baseReview({ status: "reviewing", tabId: "tab-3" });
-    const actions = planSweep([], new Map([[MR_URL, review]]), NOW, GRACE_MS);
+    const s = states({ reviews: new Map([[MR_URL, baseReview({ status: "reviewing", tabId: "tab-3" })]]) });
+    const actions = planSweep([], s, NOW, GRACE_MS);
     expect(actions).toEqual([]);
   });
 
   test("combines park and close-missed-done actions across different MRs", () => {
     const rows = [baseRow({ subject: `mr:${MR_URL}`, openedAt: NOW - GRACE_MS - 1 })];
-    const reviews = new Map([
-      [MR_URL, baseReview({ status: "reviewing", tabId: "tab-1" })],
-      [OTHER_MR_URL, baseReview({ mrUrl: OTHER_MR_URL, status: "done", tabId: "tab-2" })],
-    ]);
-    const actions = planSweep(rows, reviews, NOW, GRACE_MS);
-    expect(actions).toContainEqual({ kind: "park", mrUrl: MR_URL, tabId: "tab-1", gateId: "gate-1" });
-    expect(actions).toContainEqual({ kind: "close-missed-done", mrUrl: OTHER_MR_URL, tabId: "tab-2" });
+    const s = states({
+      reviews: new Map([
+        [MR_URL, baseReview({ status: "reviewing", tabId: "tab-1" })],
+        [OTHER_MR_URL, baseReview({ mrUrl: OTHER_MR_URL, status: "done", tabId: "tab-2" })],
+      ]),
+    });
+    const actions = planSweep(rows, s, NOW, GRACE_MS);
+    expect(actions).toContainEqual({ kind: "park", domain: "review", mrUrl: MR_URL, tabId: "tab-1", gateId: "gate-1" });
+    expect(actions).toContainEqual({ kind: "close-missed-done", domain: "review", mrUrl: OTHER_MR_URL, tabId: "tab-2" });
     expect(actions).toHaveLength(2);
+  });
+
+  // ── kind-aware coverage: park and close-missed-done never cross domains ──
+
+  test("an aged open doctor-escalation row parks against the doctor tab, joined from doctor state", () => {
+    const rows = [baseRow({ kind: "doctor-escalation", openedAt: NOW - GRACE_MS - 1 })];
+    const s = states({
+      reviews: new Map([[MR_URL, baseReview({ status: "reviewing", tabId: "review-tab" })]]),
+      doctors: new Map([[MR_URL, baseDoctor({ status: "fixing", tabId: "doctor-tab" })]]),
+    });
+    const actions = planSweep(rows, s, NOW, GRACE_MS);
+    expect(actions).toEqual([{ kind: "park", domain: "doctor", mrUrl: MR_URL, tabId: "doctor-tab", gateId: "gate-1" }]);
+  });
+
+  test("sweep parks an aged doctor row and closes the doctor tab, while a live review gate on the same MR survives", () => {
+    const rows = [
+      baseRow({ id: "gate-review", kind: "review-post", status: "open", openedAt: NOW }),
+      baseRow({ id: "gate-doctor", kind: "doctor-escalation", status: "open", openedAt: NOW - GRACE_MS - 1 }),
+    ];
+    const s = states({
+      reviews: new Map([[MR_URL, baseReview({ status: "reviewing", tabId: "review-tab" })]]),
+      doctors: new Map([[MR_URL, baseDoctor({ status: "fixing", tabId: "doctor-tab" })]]),
+    });
+    const actions = planSweep(rows, s, NOW, GRACE_MS);
+    expect(actions).toEqual([{ kind: "park", domain: "doctor", mrUrl: MR_URL, tabId: "doctor-tab", gateId: "gate-doctor" }]);
+  });
+
+  test("close-missed-done fires for a done review even with an open respond gate on the same MR", () => {
+    const rows = [baseRow({ id: "gate-respond", kind: "respond-plan", status: "open", openedAt: NOW })];
+    const s = states({
+      reviews: new Map([[MR_URL, baseReview({ status: "done", tabId: "review-tab" })]]),
+      responds: new Map([[MR_URL, baseRespond({ status: "triaging", tabId: "respond-tab" })]]),
+    });
+    const actions = planSweep(rows, s, NOW, GRACE_MS);
+    expect(actions).toEqual([{ kind: "close-missed-done", domain: "review", mrUrl: MR_URL, tabId: "review-tab" }]);
+  });
+
+  test("a done respond with an open respond-post row does not close-missed-done", () => {
+    const rows = [baseRow({ kind: "respond-post", status: "open", openedAt: NOW })];
+    const s = states({ responds: new Map([[MR_URL, baseRespond({ status: "done", tabId: "respond-tab" })]]) });
+    const actions = planSweep(rows, s, NOW, GRACE_MS);
+    expect(actions).toEqual([]);
+  });
+
+  test("a done doctor with a tabId and no open doctor row yields close-missed-done for the doctor domain", () => {
+    const s = states({ doctors: new Map([[MR_URL, baseDoctor({ status: "done", tabId: "doctor-tab" })]]) });
+    const actions = planSweep([], s, NOW, GRACE_MS);
+    expect(actions).toEqual([{ kind: "close-missed-done", domain: "doctor", mrUrl: MR_URL, tabId: "doctor-tab" }]);
   });
 });
 

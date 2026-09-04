@@ -6,11 +6,12 @@ import type { GateAnswers } from "./store.ts";
     server.ts stays a thin status-mapping shell and this is unit-testable
     without touching the real gate cache or a live daemon. */
 export interface AnswerGateIo {
-  /** The board's gate cache maps `mr:<mrUrl>` subjects to facility rows;
-      `gate:answer` takes an id, not a subject, so this resolves it -- and
-      only for a row still `open`/`parked`, since anything else (missing,
-      already answered, closed) has nothing left to answer here. */
-  findAnswerableGateId(mrUrl: string): string | undefined;
+  /** True when the board's gate cache still holds this id `open`/`parked` --
+      anything else (unknown id, already answered, closed) has nothing left
+      to answer here. The caller addresses the gate directly by id now (a
+      row can be one of several live on the same MR), so this is a guard
+      against a stale id, not a lookup. */
+  isAnswerable(gateId: string): boolean;
   gateAnswer(payload: Commands["gate:answer"]["payload"]): Promise<RtResponse<Commands["gate:answer"]["data"]>>;
 }
 
@@ -41,10 +42,10 @@ function isUnreachableError(message: string): boolean {
 }
 
 /**
- * Answers a gate through the facility CAS: resolves the id from the board's
- * cache, calls `gateAnswer`, and maps the outcome. A CAS loss is `ok:true`
- * with `conflict:true` and the winning row -- not an error, since the
- * facility already recorded a real answer, just not this caller's. The
+ * Answers a gate through the facility CAS: guards the id is still live in
+ * the board's cache, calls `gateAnswer`, and maps the outcome. A CAS loss is
+ * `ok:true` with `conflict:true` and the winning row -- not an error, since
+ * the facility already recorded a real answer, just not this caller's. The
  * daemon emits `gate/answered` itself on a genuine write, so there is
  * nothing left for this path to emit or persist.
  *
@@ -53,9 +54,8 @@ function isUnreachableError(message: string): boolean {
  * guards the contract anyway -- an unexpected throw is a transport failure
  * exactly like the unreachable `ok:false` shape, not a validation error.
  */
-export async function answerGate(mrUrl: string, answers: GateAnswers, io: AnswerGateIo): Promise<AnswerGateResult> {
-  const gateId = io.findAnswerableGateId(mrUrl);
-  if (!gateId) return { kind: "not-found" };
+export async function answerGate(gateId: string, answers: GateAnswers, io: AnswerGateIo): Promise<AnswerGateResult> {
+  if (!io.isAnswerable(gateId)) return { kind: "not-found" };
 
   let res: Awaited<ReturnType<AnswerGateIo["gateAnswer"]>>;
   try {

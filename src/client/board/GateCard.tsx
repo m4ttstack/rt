@@ -1,7 +1,6 @@
 import { useState } from "react";
-import type { BoardMRWithReview } from "../types.ts";
 import { Chip, RadioGroup, SelectBox } from "@mattstack/tui-kit";
-import type { GateAnswers, GateQuestion } from "../../gates/store.ts";
+import type { GateAnswers, GateQuestion, GateRow } from "../../gates/store.ts";
 import { gateAnswerPayload, parseConflictResponse, unwrapGateAnswer, type GateSelections } from "./gate-format.ts";
 
 /** One question's input: a SelectBox per option for a `multi` question (a
@@ -79,26 +78,24 @@ function GateAnswerSummary({ questions, answers }: { questions: GateQuestion[]; 
   );
 }
 
-/** Renders the review gate a review pane opened on this MR's row, when one
-    is open. `open` and `parked` are both actionable -- the same question
-    inputs and submit button render for either, `parked` additionally wears
-    a badge since a pane is no longer waiting on it. `answered` swaps to a
-    read-only summary.
+/** Renders one gate a review/respond/doctor pane opened on this MR's row.
+    `open` and `parked` are both actionable -- the same question inputs and
+    submit button render for either, `parked` additionally wears a badge
+    since a pane is no longer waiting on it. `answered` swaps to a read-only
+    summary.
 
     No optimistic local state on a successful submit: the request either
     fails (shown inline, same recover-by-retry shape as DraftModal) or
-    succeeds and the board's existing SSE-driven poll flips `mr.gate.status`
-    on its own next refresh, at which point this component re-renders into
-    the answered branch on its own. A 409 is the one response rendered
+    succeeds and the board's existing SSE-driven poll flips this gate's
+    status on its own next refresh, at which point this component re-renders
+    into the answered branch on its own. A 409 is the one response rendered
     immediately from local state -- it's not a guess, the daemon's CAS
     already recorded someone else's answer and handed back the real winner. */
-function GateCard({ mr }: { mr: BoardMRWithReview }) {
-  const gate = mr.gate;
+function GateCard({ gate }: { gate: GateRow }) {
   const [selections, setSelections] = useState<GateSelections>({});
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
   const [conflict, setConflict] = useState<{ answers: GateAnswers; by: string } | null>(null);
-  if (!gate) return null;
 
   const setAnswer = (id: string, value: string | string[]) => {
     setSelections((prev) => ({ ...prev, [id]: value }));
@@ -106,7 +103,7 @@ function GateCard({ mr }: { mr: BoardMRWithReview }) {
 
   const answered = gate.status === "answered";
   const actionable = gate.status === "open" || gate.status === "parked";
-  const payload = actionable && mr.webUrl ? gateAnswerPayload({ mrUrl: mr.webUrl, questions: gate.questions }, selections) : null;
+  const payload = actionable ? gateAnswerPayload({ gateId: gate.gateId, questions: gate.questions }, selections) : null;
 
   const submit = async () => {
     if (!payload) return;
@@ -141,7 +138,7 @@ function GateCard({ mr }: { mr: BoardMRWithReview }) {
     // otherwise bubble to the row's onRowClick and open the MR in GitLab.
     <div className="tui-gate-card" onClick={(e) => e.stopPropagation()}>
       <div className="tui-gate-head">
-        <span className="tui-gate-title">review gate</span>
+        <span className="tui-gate-title">{gate.label}</span>
         {gate.status === "parked" && (
           <Chip intent="warn" variant="outline" uppercase data-gate="parked">
             parked

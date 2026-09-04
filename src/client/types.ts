@@ -45,7 +45,7 @@ export type BoardMRWithReview = BoardMR & {
   peerReviews?: PeerReviewInfo[];
   sentNudge?: SentNudgeInfo;
   nudges?: InboundNudgeInfo[];
-  gate: GateRow | null;
+  gates: GateRow[];
 };
 
 export interface BoardData {

@@ -2,6 +2,8 @@ import type { GateRow as FacilityGateRow } from "@mattstack/rt-client";
 import type { GateEventFrame } from "./ingest.ts";
 import type { GateAnswers, GateQuestion, GateRow } from "./store.ts";
 import type { ReviewStatus } from "../review-state.ts";
+import type { RespondStatus } from "../respond-state.ts";
+import type { DoctorStatus } from "../doctor-state.ts";
 
 function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === "object" && v !== null;
@@ -11,40 +13,55 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 // `board/gate/opened|answered/<id>` bridge topic (see gates/ingest.ts).
 const GATE_TOPIC_RE = /^gate\/(opened|answered|parked|closed|released)\/([^/]+)$/;
 
+/** Composite key: a subject can now carry more than one live gate at once
+    (review-post alongside a respond/doctor kind), so `subject` alone would
+    clobber one kind with another -- see gates-cache.test.ts's two-kinds-one-
+    subject coverage. */
+function cacheKey(subject: string, kind: string): string {
+  return `${subject}::${kind}`;
+}
+
 /**
  * In-memory cache of the board's gate rows, keyed by facility `subject`
- * (`mr:<mrUrl>`). Fed by a boot `gateList` reconcile (authoritative snapshot,
- * see `reconcileGatesOnBoot` in ingest.ts) and by individual `gate/**` bus
- * frames relayed through `ingestRelayFrame` (low-latency deltas).
+ * (`mr:<mrUrl>`) AND `kind`. Fed by a boot `gateList` reconcile (authoritative
+ * snapshot, see `reconcileGatesOnBoot` in ingest.ts) and by individual
+ * `gate/**` bus frames relayed through `ingestRelayFrame` (low-latency deltas).
  */
 export class GateCache {
-  private readonly bySubject = new Map<string, FacilityGateRow>();
+  private readonly byKey = new Map<string, FacilityGateRow>();
 
-  /** Set/replace one row wholesale, keyed by its subject. */
+  /** Set/replace one row wholesale, keyed by its subject+kind. */
   applyRow(row: FacilityGateRow): void {
-    this.bySubject.set(row.subject, row);
+    this.byKey.set(cacheKey(row.subject, row.kind), row);
   }
 
-  /** `gateList`'s result is authoritative for every subject it names; a
-      subject absent from `rows` is left as-is (not deleted) -- it just
-      means this reconcile's scope didn't cover it. */
+  /** `gateList`'s result is authoritative for every subject+kind it names; a
+      pair absent from `rows` is left as-is (not deleted) -- it just means
+      this reconcile's scope didn't cover it. */
   reconcile(rows: FacilityGateRow[]): void {
     for (const row of rows) this.applyRow(row);
   }
 
-  get(subject: string): FacilityGateRow | undefined {
-    return this.bySubject.get(subject);
+  /** One subject's row for one kind, or undefined when that kind has no live
+      row on this subject right now. */
+  get(subject: string, kind: string): FacilityGateRow | undefined {
+    return this.byKey.get(cacheKey(subject, kind));
+  }
+
+  /** Every kind's row for one subject, in no particular order. */
+  rowsFor(subject: string): FacilityGateRow[] {
+    return this.rows().filter((row) => row.subject === subject);
   }
 
   rows(): FacilityGateRow[] {
-    return [...this.bySubject.values()];
+    return [...this.byKey.values()];
   }
 
   /** Applies one `gate/**` bus frame. `opened` carries everything needed to
       build a row from scratch, so it upserts (also how a re-review's fresh
-      id replaces a stale answered row for the same subject). Every other
-      kind only patches a row the cache already has -- their payloads are
-      thinner than a full row, and a frame for an id the cache never saw
+      id replaces a stale answered row for the same subject+kind). Every
+      other kind only patches a row the cache already has -- their payloads
+      are thinner than a full row, and a frame for an id the cache never saw
       (an unknown gate, or a reconcile the cache hasn't caught up to yet) is
       dropped silently rather than fabricated; the next `reconcile` fills it. */
   applyEvent(frame: GateEventFrame): void {
@@ -90,8 +107,11 @@ export class GateCache {
     });
   }
 
+  /** Thin patches (answered/parked/closed/released) carry only an id --
+      finding the row by id (not subject+kind) is what keeps this correct
+      regardless of how the row is keyed. */
   private findById(id: string): FacilityGateRow | undefined {
-    for (const row of this.bySubject.values()) {
+    for (const row of this.byKey.values()) {
       if (row.id === id) return row;
     }
     return undefined;
@@ -136,43 +156,64 @@ function isClosedReason(v: unknown): v is FacilityGateRow["closedReason"] {
   return v === "abandoned" || v === "superseded" || v === "pruned";
 }
 
-function isTerminalReview(status: ReviewStatus | undefined): boolean {
+function isTerminal(status: string | undefined): boolean {
   return status === "done" || status === "error";
 }
 
-/** Attach each MR's cached gate row (if any) as `gate`, always present (null
-    when there's nothing to show) so the client can render "no gate" without
-    an `in` check. An ANSWERED row is scoped to a NON-TERMINAL review state --
-    never to `released`, which stays false forever for the board's
-    unattended, nudge-less gates and would otherwise badge every finished
-    review "answered" permanently. A CLOSED row never renders (its lifecycle
-    already ended). */
-export function attachGates<T extends { webUrl?: string | null; review?: { status: ReviewStatus } }>(
+type GateHost = {
+  review?: { status: ReviewStatus };
+  respond?: { status: RespondStatus };
+  doctor?: { status: DoctorStatus };
+};
+
+/** Which lifecycle state an answered row of this kind is scoped to. Unknown
+    kinds fall back to the review state -- the only default that existed
+    before kinds shipped, kept as a safe catch-all rather than never
+    expiring. */
+function isAnsweredRowTerminal(kind: string, mr: GateHost): boolean {
+  if (kind === "respond-plan" || kind === "respond-post") return isTerminal(mr.respond?.status);
+  if (kind === "doctor-escalation") return isTerminal(mr.doctor?.status);
+  return isTerminal(mr.review?.status);
+}
+
+/** Attach each MR's cached gate rows (if any) as `gates`, always an array
+    (empty when there's nothing to show) so the client can render "no gates"
+    without an `in` check. An ANSWERED row is scoped to its OWN KIND's
+    non-terminal state -- never to `released`, which stays false forever for
+    the board's unattended, nudge-less gates and would otherwise badge every
+    finished run "answered" permanently. A CLOSED row never renders (its
+    lifecycle already ended). */
+export function attachGates<T extends { webUrl?: string | null } & GateHost>(
   mrs: T[],
   cache: GateCache,
-): Array<T & { gate: GateRow | null }> {
+): Array<T & { gates: GateRow[] }> {
   return mrs.map((mr) => {
-    const row = mr.webUrl ? cache.get(`mr:${mr.webUrl}`) : undefined;
-    if (!row) return { ...mr, gate: null };
-
-    switch (row.status) {
-      case "open":
-      case "parked":
-        return { ...mr, gate: { gateId: row.id, status: row.status, openedAt: row.openedAt, questions: row.questions as GateQuestion[] } };
-      case "answered":
-        if (isTerminalReview(mr.review?.status)) return { ...mr, gate: null };
-        return {
-          ...mr,
-          gate: {
-            gateId: row.id,
-            status: "answered",
-            openedAt: row.openedAt,
-            questions: row.questions as GateQuestion[],
-            answers: row.answer?.answers as GateAnswers | undefined,
-          },
-        };
-      default:
-        return { ...mr, gate: null };
+    if (!mr.webUrl) return { ...mr, gates: [] };
+    const rows = cache.rowsFor(`mr:${mr.webUrl}`);
+    const gates: GateRow[] = [];
+    for (const row of rows) {
+      const label = typeof row.meta?.label === "string" ? row.meta.label : row.kind;
+      if (row.status === "open" || row.status === "parked") {
+        gates.push({
+          gateId: row.id,
+          kind: row.kind,
+          label,
+          status: row.status,
+          openedAt: row.openedAt,
+          questions: row.questions as GateQuestion[],
+        });
+      } else if (row.status === "answered" && !isAnsweredRowTerminal(row.kind, mr)) {
+        gates.push({
+          gateId: row.id,
+          kind: row.kind,
+          label,
+          status: "answered",
+          openedAt: row.openedAt,
+          questions: row.questions as GateQuestion[],
+          answers: row.answer?.answers as GateAnswers | undefined,
+        });
+      }
     }
+    return { ...mr, gates };
   });
 }

@@ -41,9 +41,14 @@ export const GATE_DIR = join(APP_ROOT, "state", "gates");
 
 /** The gate fields a board row carries -- a subset of `GateState`, leaving
     out the launch-plumbing fields (`agentId`, `sessionId`, `paneId`,
-    `tabId`) that only the wrapper/verbs side needs. */
+    `tabId`) that only the wrapper/verbs side needs. `kind` and `label` let
+    the client tell multiple co-live gates on one MR apart (review-post,
+    respond-plan, respond-post, doctor-escalation); `label` is the facility
+    row's `meta.label` when set, else `kind` itself. */
 export interface GateRow {
   gateId: string;
+  kind: string;
+  label: string;
   status: GateState["status"];
   openedAt: number;
   questions: GateQuestion[];

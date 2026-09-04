@@ -29,10 +29,10 @@ function row(overrides: Partial<FacilityGateRow> = {}): FacilityGateRow {
 }
 
 describe("GateCache.applyRow / reconcile", () => {
-  test("applyRow sets a row, retrievable by subject", () => {
+  test("applyRow sets a row, retrievable by subject+kind", () => {
     const cache = new GateCache();
     cache.applyRow(row());
-    expect(cache.get(SUBJECT_A)?.id).toBe("gate-1");
+    expect(cache.get(SUBJECT_A, "review-post")?.id).toBe("gate-1");
   });
 
   test("reconcile replaces matching subjects and leaves others alone", () => {
@@ -42,9 +42,32 @@ describe("GateCache.applyRow / reconcile", () => {
 
     cache.reconcile([row({ subject: SUBJECT_A, status: "answered", answer: { answers: { q1: "yes" }, by: "board-ui", answeredAt: 2000 } })]);
 
-    expect(cache.get(SUBJECT_A)?.status).toBe("answered");
+    expect(cache.get(SUBJECT_A, "review-post")?.status).toBe("answered");
     // SUBJECT_B wasn't in the reconcile list -- untouched.
-    expect(cache.get(SUBJECT_B)?.status).toBe("parked");
+    expect(cache.get(SUBJECT_B, "review-post")?.status).toBe("parked");
+  });
+
+  test("two kinds on the same subject coexist without clobbering each other", () => {
+    const cache = new GateCache();
+    cache.applyRow(row({ subject: SUBJECT_A, kind: "review-post", id: "gate-review", status: "open" }));
+    cache.applyRow(row({ subject: SUBJECT_A, kind: "respond-plan", id: "gate-respond", status: "answered" }));
+
+    expect(cache.get(SUBJECT_A, "review-post")?.id).toBe("gate-review");
+    expect(cache.get(SUBJECT_A, "review-post")?.status).toBe("open");
+    expect(cache.get(SUBJECT_A, "respond-plan")?.id).toBe("gate-respond");
+    expect(cache.get(SUBJECT_A, "respond-plan")?.status).toBe("answered");
+    expect(cache.rowsFor(SUBJECT_A).map((r) => r.id).sort()).toEqual(["gate-respond", "gate-review"]);
+  });
+
+  test("rowsFor returns only the given subject's rows", () => {
+    const cache = new GateCache();
+    cache.applyRow(row({ subject: SUBJECT_A, kind: "review-post", id: "gate-1" }));
+    cache.applyRow(row({ subject: SUBJECT_A, kind: "doctor-escalation", id: "gate-2" }));
+    cache.applyRow(row({ subject: SUBJECT_B, kind: "review-post", id: "gate-3" }));
+
+    expect(cache.rowsFor(SUBJECT_A).map((r) => r.id).sort()).toEqual(["gate-1", "gate-2"]);
+    expect(cache.rowsFor(SUBJECT_B).map((r) => r.id)).toEqual(["gate-3"]);
+    expect(cache.rowsFor("mr:nothing-here")).toEqual([]);
   });
 });
 
@@ -64,7 +87,7 @@ describe("GateCache.applyEvent", () => {
         paneId: "pane-9",
       },
     });
-    const cached = cache.get(SUBJECT_A);
+    const cached = cache.get(SUBJECT_A, "review-post");
     expect(cached?.id).toBe("gate-9");
     expect(cached?.status).toBe("open");
     // Never on the wire -- the cache stamps receipt time instead.
@@ -74,7 +97,7 @@ describe("GateCache.applyEvent", () => {
     expect(cached?.questions).toEqual([{ id: "q1", label: "Ship it?", multi: false, options: ["yes", "no"] }]);
   });
 
-  test("opened frame for an already-cached subject replaces it wholesale (re-review)", () => {
+  test("opened frame for an already-cached subject+kind replaces it wholesale (re-review)", () => {
     const cache = new GateCache();
     cache.applyRow(row({ status: "answered", answer: { answers: { q1: "yes" }, by: "board-ui", answeredAt: 2000 } }));
 
@@ -83,10 +106,24 @@ describe("GateCache.applyEvent", () => {
       payload: { id: "gate-2", subject: SUBJECT_A, kind: "review-post", questions: [], meta: null },
     });
 
-    const cached = cache.get(SUBJECT_A);
+    const cached = cache.get(SUBJECT_A, "review-post");
     expect(cached?.id).toBe("gate-2");
     expect(cached?.status).toBe("open");
     expect(cached?.answer).toBeNull();
+  });
+
+  test("opened frame for a different kind on the same subject adds a second row, not a replace", () => {
+    const cache = new GateCache();
+    cache.applyRow(row({ subject: SUBJECT_A, kind: "review-post", id: "gate-review" }));
+
+    cache.applyEvent({
+      topic: "gate/opened/gate-respond",
+      payload: { id: "gate-respond", subject: SUBJECT_A, kind: "respond-plan", questions: [], meta: null },
+    });
+
+    expect(cache.get(SUBJECT_A, "review-post")?.id).toBe("gate-review");
+    expect(cache.get(SUBJECT_A, "respond-plan")?.id).toBe("gate-respond");
+    expect(cache.rowsFor(SUBJECT_A)).toHaveLength(2);
   });
 
   test("answered frame (full context) patches an existing row by id, reading paneId", () => {
@@ -98,11 +135,26 @@ describe("GateCache.applyEvent", () => {
       payload: { id: "gate-1", subject: SUBJECT_A, kind: "review-post", answers: { q1: "yes" }, by: "pane", paneId: "pane-1" },
     });
 
-    const cached = cache.get(SUBJECT_A);
+    const cached = cache.get(SUBJECT_A, "review-post");
     expect(cached?.status).toBe("answered");
     expect(cached?.answer?.answers).toEqual({ q1: "yes" });
     expect(cached?.answer?.by).toBe("pane");
     expect(cached?.pane).toBe("pane-1");
+  });
+
+  test("a thin patch finds its row by id even when another kind shares the subject", () => {
+    const cache = new GateCache();
+    cache.applyRow(row({ subject: SUBJECT_A, kind: "review-post", id: "gate-review", status: "open" }));
+    cache.applyRow(row({ subject: SUBJECT_A, kind: "respond-plan", id: "gate-respond", status: "open" }));
+
+    cache.applyEvent({
+      topic: "gate/parked/gate-respond",
+      payload: { id: "gate-respond", subject: SUBJECT_A, kind: "respond-plan" },
+    });
+
+    expect(cache.get(SUBJECT_A, "respond-plan")?.status).toBe("parked");
+    // The review row, a different kind on the same subject, is untouched.
+    expect(cache.get(SUBJECT_A, "review-post")?.status).toBe("open");
   });
 
   test.each(["parked", "released"] as const)("%s frame (thin) patches an existing row by id", (kind) => {
@@ -114,7 +166,7 @@ describe("GateCache.applyEvent", () => {
       payload: { id: "gate-1", subject: SUBJECT_A, kind: "review-post" },
     });
 
-    const cached = cache.get(SUBJECT_A)!;
+    const cached = cache.get(SUBJECT_A, "review-post")!;
     if (kind === "parked") expect(cached.status).toBe("parked");
     if (kind === "released") expect(cached.released).toBe(true);
   });
@@ -128,7 +180,7 @@ describe("GateCache.applyEvent", () => {
       payload: { id: "gate-1", subject: SUBJECT_A, kind: "review-post", reason: "abandoned" },
     });
 
-    const cached = cache.get(SUBJECT_A)!;
+    const cached = cache.get(SUBJECT_A, "review-post")!;
     expect(cached.status).toBe("closed");
     expect(cached.closedReason).toBe("abandoned");
   });
@@ -140,7 +192,7 @@ describe("GateCache.applyEvent", () => {
       expect(() =>
         cache.applyEvent({ topic: `gate/${kind}/ghost`, payload: { id: "ghost", subject: SUBJECT_A, kind: "review-post" } }),
       ).not.toThrow();
-      expect(cache.get(SUBJECT_A)).toBeUndefined();
+      expect(cache.get(SUBJECT_A, "review-post")).toBeUndefined();
       expect(cache.rows()).toEqual([]);
     },
   );
@@ -160,81 +212,92 @@ describe("GateCache.applyEvent", () => {
 });
 
 describe("attachGates", () => {
-  test("an open row renders as the open affordance", () => {
+  test("an open row renders as the open affordance, carrying kind and label", () => {
     const cache = new GateCache();
-    cache.applyRow(row({ status: "open" }));
+    cache.applyRow(row({ status: "open", meta: { label: "review gate !4821" } }));
     const [mr] = attachGates([{ webUrl: "https://gitlab.com/acme/webapp/-/merge_requests/4821" }], cache);
-    expect(mr!.gate).toEqual({
-      gateId: "gate-1",
-      status: "open",
-      openedAt: 1000,
-      questions: [{ id: "q1", label: "Ship it?", multi: false, options: ["yes", "no"] }],
-      answers: undefined,
-    });
+    expect(mr!.gates).toEqual([
+      {
+        gateId: "gate-1",
+        kind: "review-post",
+        label: "review gate !4821",
+        status: "open",
+        openedAt: 1000,
+        questions: [{ id: "q1", label: "Ship it?", multi: false, options: ["yes", "no"] }],
+        answers: undefined,
+      },
+    ]);
+  });
+
+  test("a row with no meta.label falls back to kind as the label", () => {
+    const cache = new GateCache();
+    cache.applyRow(row({ status: "open", meta: null }));
+    const [mr] = attachGates([{ webUrl: "https://gitlab.com/acme/webapp/-/merge_requests/4821" }], cache);
+    expect(mr!.gates[0]?.label).toBe("review-post");
   });
 
   test("a parked row renders as the parked affordance", () => {
     const cache = new GateCache();
     cache.applyRow(row({ status: "parked" }));
     const [mr] = attachGates([{ webUrl: "https://gitlab.com/acme/webapp/-/merge_requests/4821" }], cache);
-    expect(mr!.gate?.status).toBe("parked");
+    expect(mr!.gates[0]?.status).toBe("parked");
   });
 
-  test("an answered row renders while the MR's review state is non-terminal", () => {
+  test("an answered review-post row renders while the MR's review state is non-terminal", () => {
     const cache = new GateCache();
     cache.applyRow(row({ status: "answered", answer: { answers: { q1: "yes" }, by: "board-ui", answeredAt: 2000 } }));
     const [mr] = attachGates(
       [{ webUrl: "https://gitlab.com/acme/webapp/-/merge_requests/4821", review: { status: "reviewing" as const } }],
       cache,
     );
-    expect(mr!.gate?.status).toBe("answered");
-    expect(mr!.gate?.answers).toEqual({ q1: "yes" });
+    expect(mr!.gates[0]?.status).toBe("answered");
+    expect(mr!.gates[0]?.answers).toEqual({ q1: "yes" });
   });
 
-  test("an answered row does NOT render once review state is done (never keyed on released)", () => {
+  test("an answered review-post row does NOT render once review state is done (never keyed on released)", () => {
     const cache = new GateCache();
     cache.applyRow(row({ status: "answered", released: false, answer: { answers: { q1: "yes" }, by: "board-ui", answeredAt: 2000 } }));
     const [mr] = attachGates(
       [{ webUrl: "https://gitlab.com/acme/webapp/-/merge_requests/4821", review: { status: "done" as const } }],
       cache,
     );
-    expect(mr!.gate).toBeNull();
+    expect(mr!.gates).toEqual([]);
   });
 
-  test("an answered row does NOT render once review state is error", () => {
+  test("an answered review-post row does NOT render once review state is error", () => {
     const cache = new GateCache();
     cache.applyRow(row({ status: "answered", answer: { answers: { q1: "yes" }, by: "board-ui", answeredAt: 2000 } }));
     const [mr] = attachGates(
       [{ webUrl: "https://gitlab.com/acme/webapp/-/merge_requests/4821", review: { status: "error" as const } }],
       cache,
     );
-    expect(mr!.gate).toBeNull();
+    expect(mr!.gates).toEqual([]);
   });
 
   test("an answered row with no review state at all still renders (non-terminal by default)", () => {
     const cache = new GateCache();
     cache.applyRow(row({ status: "answered", answer: { answers: { q1: "yes" }, by: "board-ui", answeredAt: 2000 } }));
     const [mr] = attachGates([{ webUrl: "https://gitlab.com/acme/webapp/-/merge_requests/4821" }], cache);
-    expect(mr!.gate?.status).toBe("answered");
+    expect(mr!.gates[0]?.status).toBe("answered");
   });
 
   test("a closed row never renders", () => {
     const cache = new GateCache();
     cache.applyRow(row({ status: "closed", closedAt: 3000, closedReason: "abandoned" }));
     const [mr] = attachGates([{ webUrl: "https://gitlab.com/acme/webapp/-/merge_requests/4821" }], cache);
-    expect(mr!.gate).toBeNull();
+    expect(mr!.gates).toEqual([]);
   });
 
-  test("an MR with no cached gate gets gate: null", () => {
+  test("an MR with no cached gate gets an empty gates array", () => {
     const cache = new GateCache();
     const [mr] = attachGates([{ webUrl: "https://gitlab.com/acme/webapp/-/merge_requests/9999" }], cache);
-    expect(mr!.gate).toBeNull();
+    expect(mr!.gates).toEqual([]);
   });
 
-  test("an MR with no webUrl gets gate: null without throwing", () => {
+  test("an MR with no webUrl gets an empty gates array without throwing", () => {
     const cache = new GateCache();
     const [mr] = attachGates([{ webUrl: null }], cache);
-    expect(mr!.gate).toBeNull();
+    expect(mr!.gates).toEqual([]);
   });
 
   test("empty cache renders no gates for any MR (nothing fed yet)", () => {
@@ -243,6 +306,73 @@ describe("attachGates", () => {
       [{ webUrl: "https://gitlab.com/acme/webapp/-/merge_requests/1" }, { webUrl: "https://gitlab.com/acme/webapp/-/merge_requests/2" }],
       cache,
     );
-    expect(mrs.every((m) => m.gate === null)).toBe(true);
+    expect(mrs.every((m) => m.gates.length === 0)).toBe(true);
+  });
+
+  describe("two kinds coexisting on one MR", () => {
+    const WEB_URL = "https://gitlab.com/acme/webapp/-/merge_requests/4821";
+    const SUBJECT = `mr:${WEB_URL}`;
+
+    test("a done review with a live respond gate: review card gone, respond card present", () => {
+      const cache = new GateCache();
+      cache.applyRow(
+        row({
+          subject: SUBJECT,
+          kind: "review-post",
+          id: "gate-review",
+          status: "answered",
+          answer: { answers: { outcome: "approve" }, by: "board-ui", answeredAt: 2000 },
+        }),
+      );
+      cache.applyRow(row({ subject: SUBJECT, kind: "respond-plan", id: "gate-respond", status: "open" }));
+
+      const [mr] = attachGates(
+        [{ webUrl: WEB_URL, review: { status: "done" as const }, respond: { status: "triaging" as const } }],
+        cache,
+      );
+
+      const kinds = mr!.gates.map((g) => g.kind);
+      expect(kinds).not.toContain("review-post");
+      expect(kinds).toContain("respond-plan");
+      expect(mr!.gates).toHaveLength(1);
+    });
+
+    test("an answered respond-post row renders while respond is non-terminal, hides once respond is done", () => {
+      const cache = new GateCache();
+      cache.applyRow(
+        row({
+          subject: SUBJECT,
+          kind: "respond-post",
+          id: "gate-respond",
+          status: "answered",
+          answer: { answers: { outcome: "posted" }, by: "board-ui", answeredAt: 2000 },
+        }),
+      );
+
+      const [stillGoing] = attachGates([{ webUrl: WEB_URL, respond: { status: "drafting" as const } }], cache);
+      expect(stillGoing!.gates).toHaveLength(1);
+
+      const [done] = attachGates([{ webUrl: WEB_URL, respond: { status: "done" as const } }], cache);
+      expect(done!.gates).toEqual([]);
+    });
+
+    test("an answered doctor-escalation row renders while doctor is non-terminal, hides once doctor errors", () => {
+      const cache = new GateCache();
+      cache.applyRow(
+        row({
+          subject: SUBJECT,
+          kind: "doctor-escalation",
+          id: "gate-doctor",
+          status: "answered",
+          answer: { answers: { outcome: "hold" }, by: "board-ui", answeredAt: 2000 },
+        }),
+      );
+
+      const [stillGoing] = attachGates([{ webUrl: WEB_URL, doctor: { status: "watching" as const } }], cache);
+      expect(stillGoing!.gates).toHaveLength(1);
+
+      const [errored] = attachGates([{ webUrl: WEB_URL, doctor: { status: "error" as const } }], cache);
+      expect(errored!.gates).toEqual([]);
+    });
   });
 });

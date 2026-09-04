@@ -32,22 +32,22 @@ type GateAnswerPayload = Commands["gate:answer"]["payload"];
 type GateAnswerData = Commands["gate:answer"]["data"];
 
 interface FakeIoCalls {
-  findAnswerableGateId: string[];
+  isAnswerable: string[];
   gateAnswer: GateAnswerPayload[];
 }
 
-/** `AnswerGateIo` carries only the cache lookup and the facility call --
+/** `AnswerGateIo` carries only the answerable guard and the facility call --
     there is no emit or resume hook left to wire, so a fake built from this
     interface alone already proves the answer path can't reach either. */
 function fakeIo(
-  gateId: string | undefined,
+  answerable: boolean,
   respond: (payload: GateAnswerPayload) => RtResponse<GateAnswerData>,
 ): { io: AnswerGateIo; calls: FakeIoCalls } {
-  const calls: FakeIoCalls = { findAnswerableGateId: [], gateAnswer: [] };
+  const calls: FakeIoCalls = { isAnswerable: [], gateAnswer: [] };
   const io: AnswerGateIo = {
-    findAnswerableGateId: (mrUrl) => {
-      calls.findAnswerableGateId.push(mrUrl);
-      return gateId;
+    isAnswerable: (gateId) => {
+      calls.isAnswerable.push(gateId);
+      return answerable;
     },
     gateAnswer: async (payload) => {
       calls.gateAnswer.push(payload);
@@ -58,89 +58,89 @@ function fakeIo(
 }
 
 describe("answerGate", () => {
-  test("resolves the id from the cache and proxies gateAnswer({id, answers, by: 'board'})", async () => {
+  test("resolves by gate id and proxies gateAnswer({id, answers, by: 'board'})", async () => {
     const answers: GateAnswers = { outcome: "approve" };
-    const { io, calls } = fakeIo(GATE_ID, () => ({ ok: true, data: { row: baseRow({ status: "answered", answer: { answers, by: "board", answeredAt: 7000 } }) } }));
+    const { io, calls } = fakeIo(true, () => ({ ok: true, data: { row: baseRow({ status: "answered", answer: { answers, by: "board", answeredAt: 7000 } }) } }));
 
-    const result = await answerGate(MR_URL, answers, io);
+    const result = await answerGate(GATE_ID, answers, io);
 
     expect(result).toEqual({ kind: "ok" });
-    expect(calls.findAnswerableGateId).toEqual([MR_URL]);
+    expect(calls.isAnswerable).toEqual([GATE_ID]);
     expect(calls.gateAnswer).toEqual([{ id: GATE_ID, answers, by: "board" }]);
   });
 
   test("CAS conflict yields the winning row instead of an error", async () => {
     const winner = baseRow({ status: "answered", answer: { answers: { outcome: "comment" }, by: "board", answeredAt: 6500 } });
-    const { io } = fakeIo(GATE_ID, () => ({ ok: true, data: { row: winner, conflict: true } }));
+    const { io } = fakeIo(true, () => ({ ok: true, data: { row: winner, conflict: true } }));
 
-    const result = await answerGate(MR_URL, { outcome: "approve" }, io);
+    const result = await answerGate(GATE_ID, { outcome: "approve" }, io);
 
     expect(result).toEqual({ kind: "conflict", row: winner });
   });
 
-  test("no cached open/parked gate for the MR is not-found without calling the facility", async () => {
-    const { io, calls } = fakeIo(undefined, () => {
+  test("an id the cache doesn't hold open/parked is not-found without calling the facility", async () => {
+    const { io, calls } = fakeIo(false, () => {
       throw new Error("gateAnswer should not be called");
     });
 
-    const result = await answerGate(MR_URL, { outcome: "approve" }, io);
+    const result = await answerGate(GATE_ID, { outcome: "approve" }, io);
 
     expect(result).toEqual({ kind: "not-found" });
     expect(calls.gateAnswer.length).toBe(0);
   });
 
   test("daemon 'not-found' rejection maps to not-found", async () => {
-    const { io } = fakeIo(GATE_ID, () => ({ ok: false, error: "not-found" }));
+    const { io } = fakeIo(true, () => ({ ok: false, error: "not-found" }));
 
-    const result = await answerGate(MR_URL, { outcome: "approve" }, io);
+    const result = await answerGate(GATE_ID, { outcome: "approve" }, io);
 
     expect(result).toEqual({ kind: "not-found" });
   });
 
   test("daemon 'closed' rejection maps to not-found", async () => {
-    const { io } = fakeIo(GATE_ID, () => ({ ok: false, error: "closed" }));
+    const { io } = fakeIo(true, () => ({ ok: false, error: "closed" }));
 
-    const result = await answerGate(MR_URL, { outcome: "approve" }, io);
+    const result = await answerGate(GATE_ID, { outcome: "approve" }, io);
 
     expect(result).toEqual({ kind: "not-found" });
   });
 
   test("daemon strict-membership/validation rejection maps to invalid, message verbatim", async () => {
     const message = `answers include ids outside gate ${GATE_ID}'s question set (strict membership)`;
-    const { io } = fakeIo(GATE_ID, () => ({ ok: false, error: message }));
+    const { io } = fakeIo(true, () => ({ ok: false, error: message }));
 
-    const result = await answerGate(MR_URL, { bogus: "yes" } as unknown as GateAnswers, io);
+    const result = await answerGate(GATE_ID, { bogus: "yes" } as unknown as GateAnswers, io);
 
     expect(result).toEqual({ kind: "invalid", reason: message });
   });
 
   test("a validation message that merely echoes the word 'closed' (e.g. an invalid option value) stays 400, not 404", async () => {
     const message = `answer for "outcome" is not one of its options: "closed"`;
-    const { io } = fakeIo(GATE_ID, () => ({ ok: false, error: message }));
+    const { io } = fakeIo(true, () => ({ ok: false, error: message }));
 
-    const result = await answerGate(MR_URL, { outcome: "closed" } as unknown as GateAnswers, io);
+    const result = await answerGate(GATE_ID, { outcome: "closed" } as unknown as GateAnswers, io);
 
     expect(result).toEqual({ kind: "invalid", reason: message });
   });
 
   test("gateAnswer rejecting (e.g. a network failure) maps to unreachable, not invalid", async () => {
     const io: AnswerGateIo = {
-      findAnswerableGateId: () => GATE_ID,
+      isAnswerable: () => true,
       gateAnswer: async () => {
         throw new Error("connect ECONNREFUSED");
       },
     };
 
-    const result = await answerGate(MR_URL, { outcome: "approve" }, io);
+    const result = await answerGate(GATE_ID, { outcome: "approve" }, io);
 
     expect(result).toEqual({ kind: "unreachable", reason: "connect ECONNREFUSED" });
   });
 
   test("the rt-client transport's own daemon-unreachable ok:false response maps to unreachable, not invalid", async () => {
     const message = "rt daemon unreachable at /tmp/rt.sock: connect ECONNREFUSED";
-    const { io } = fakeIo(GATE_ID, () => ({ ok: false, error: message }));
+    const { io } = fakeIo(true, () => ({ ok: false, error: message }));
 
-    const result = await answerGate(MR_URL, { outcome: "approve" }, io);
+    const result = await answerGate(GATE_ID, { outcome: "approve" }, io);
 
     expect(result).toEqual({ kind: "unreachable", reason: message });
   });
