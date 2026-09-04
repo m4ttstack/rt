@@ -18,6 +18,28 @@ export interface GateVerbIo {
   gateOpen(payload: Commands["gate:open"]["payload"]): Promise<RtResponse<Commands["gate:open"]["data"]>>;
   gateWait(payload: Commands["gate:wait"]["payload"]): Promise<RtResponse<Commands["gate:wait"]["data"]>>;
   gateAnswer(payload: Commands["gate:answer"]["payload"]): Promise<RtResponse<Commands["gate:answer"]["data"]>>;
+  now(): number;
+}
+
+/** Under the shell tool's own kill timeout (120s default) with margin: a
+    `gate wait` invocation must always exit on its own before the tool can
+    kill it mid-block, so the wrapper only ever sees clean results. */
+export const GATE_WAIT_MAX_MS = 90_000;
+
+/** Parses `--max-ms` from a wait invocation's argv. Absent -> undefined
+    (the default window applies). Present, it must carry a finite positive
+    number: a NaN or non-positive window would make the deadline unreachable
+    and the wait loop unbounded again. */
+export function parseWaitMaxMs(argv: string[]): number | undefined {
+  const eq = argv.find((a) => a.startsWith("--max-ms="));
+  const present = eq !== undefined || argv.includes("--max-ms");
+  if (!present) return undefined;
+  const raw = eq ? eq.slice("--max-ms=".length) : argv[argv.indexOf("--max-ms") + 1];
+  const n = Number(raw);
+  if (raw === undefined || raw === "" || !Number.isFinite(n) || n <= 0) {
+    throw new Error("--max-ms requires a finite positive number of milliseconds");
+  }
+  return n;
 }
 
 function readReviewState(statePath: string): ReviewState {
@@ -46,20 +68,34 @@ export async function gateOpen(statePath: string, questionsJson: string, io: Gat
   return res.data.id;
 }
 
+export type GateWaitResult =
+  | { status: "answered"; answers: GateAnswers; by: string; answeredAt: number }
+  | { status: "pending" };
+
 /** Registry-status-first: the facility's own `gate:wait` returns immediately
     on an already-answered/closed gate, so a re-entering wrapper (crash,
     resume) never re-blocks on a decision that already landed. A `timeout`
-    re-enters the wait; `closed` (superseded, abandoned, pruned) surfaces as
-    a clean terminal error instead of hanging forever. */
+    re-enters the wait until `maxMs` has elapsed, then returns `pending` --
+    a bounded invocation exits cleanly before the caller's shell tool can
+    kill the process mid-wait, and the answer is registry state, so a
+    re-run resumes exactly where this one left off. `closed` (superseded,
+    abandoned, pruned) surfaces as a clean terminal error. */
 export async function gateWait(
   statePath: string,
   io: GateVerbIo,
-): Promise<{ answers: GateAnswers; by: string; answeredAt: number }> {
+  maxMs: number = GATE_WAIT_MAX_MS,
+): Promise<GateWaitResult> {
   const review = readReviewState(statePath);
   if (!review.gateId) throw new Error(`no gate open for ${review.mrUrl}`);
+  const deadline = io.now() + maxMs;
 
   for (;;) {
-    const res = await io.gateWait({ id: review.gateId });
+    // The remaining budget rides into the facility wait itself (`waitMs`),
+    // so a single long-poll can never overshoot the window -- the deadline
+    // is enforced inside the poll, not just between polls.
+    const remaining = deadline - io.now();
+    if (remaining <= 0) return { status: "pending" };
+    const res = await io.gateWait({ id: review.gateId, waitMs: remaining });
     if (!res.ok || !res.data) throw new Error(`gate:wait failed: ${res.error ?? "unknown error"}`);
 
     if (res.data.status === "timeout") continue;
@@ -69,7 +105,7 @@ export async function gateWait(
 
     const answer = res.data.row.answer;
     if (!answer) throw new Error(`gate ${review.gateId} reported answered with no answer on the row`);
-    return { answers: answer.answers as GateAnswers, by: answer.by, answeredAt: answer.answeredAt };
+    return { status: "answered", answers: answer.answers as GateAnswers, by: answer.by, answeredAt: answer.answeredAt };
   }
 }
 
