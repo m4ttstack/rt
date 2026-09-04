@@ -1,7 +1,16 @@
 import { useState } from "react";
 import { Chip, RadioGroup, SelectBox } from "@mattstack/tui-kit";
 import type { GateAnswers, GateQuestion, GateRow } from "../../gates/store.ts";
-import { gateAnswerPayload, parseConflictResponse, unwrapGateAnswer, type GateSelections } from "./gate-format.ts";
+import { gateAnswerPayload, parseConflictResponse, unwrapGateAnswer, formatGateOption, type GateSelections } from "./gate-format.ts";
+
+/** An option string as it should read on screen -- the verb prominent, a
+    long id token truncated, the full string kept in `title` for anyone who
+    hovers. Shared by the question inputs and the answered summary so the
+    same option always reads the same way in both places. */
+function GateOptionText({ option }: { option: string }) {
+  const { text, title } = formatGateOption(option);
+  return <span title={title}>{text}</span>;
+}
 
 /** One question's input: a SelectBox per option for a `multi` question (a
     checkbox group -- the same toggle recipe the row's own select-box uses),
@@ -31,7 +40,7 @@ function GateQuestionField({
             <div key={opt} className="tui-gate-option">
               <SelectBox checked={picked.has(opt)} onToggle={() => toggle(opt)} aria-label={opt} />
               <span className="tui-gate-option-label" onClick={() => toggle(opt)}>
-                {opt}
+                <GateOptionText option={opt} />
               </span>
             </div>
           ))}
@@ -46,7 +55,7 @@ function GateQuestionField({
         name={question.id}
         value={typeof value === "string" ? value : ""}
         onChange={(v) => onChange(question.id, v)}
-        options={question.options.map((opt) => ({ value: opt, label: opt }))}
+        options={question.options.map((opt) => ({ value: opt, label: <GateOptionText option={opt} /> }))}
       />
     </div>
   );
@@ -63,7 +72,18 @@ function GateAnswerSummary({ questions, answers }: { questions: GateQuestion[]; 
       {questions.map((q) => {
         const raw = answers?.[q.id];
         const { value, note } = raw !== undefined ? unwrapGateAnswer(raw) : { value: undefined, note: undefined };
-        const text = Array.isArray(value) ? (value.length ? value.join(", ") : "(none)") : value || "(none)";
+        const text = Array.isArray(value)
+          ? value.length
+            ? value.map((v, i) => (
+                <span key={v}>
+                  {i > 0 && ", "}
+                  <GateOptionText option={v} />
+                </span>
+              ))
+            : "(none)"
+          : value
+            ? <GateOptionText option={value} />
+            : "(none)";
         return (
           <div key={q.id} className="tui-gate-summary-row">
             <dt>{q.label}</dt>

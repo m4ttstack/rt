@@ -1,5 +1,5 @@
-import { test, expect } from "bun:test";
-import { gateAnswerPayload, parseConflictResponse, unwrapGateAnswer } from "../client/board/gate-format.ts";
+import { describe, test, expect } from "bun:test";
+import { gateAnswerPayload, parseConflictResponse, unwrapGateAnswer, formatGateOption } from "../client/board/gate-format.ts";
 import type { GateQuestion } from "../gates/store.ts";
 
 const GATE_ID = "gate-1";
@@ -87,4 +87,27 @@ test("parseConflictResponse tolerates a missing or malformed row without throwin
   expect(parseConflictResponse(null)).toEqual({ answers: {}, by: "" });
   expect(parseConflictResponse({})).toEqual({ answers: {}, by: "" });
   expect(parseConflictResponse({ row: {} })).toEqual({ answers: {}, by: "" });
+});
+
+describe("formatGateOption", () => {
+  test("compacts a verb:longtoken option, carrying the full string as title", () => {
+    expect(formatGateOption("fix:7080da2fcf93c1a2")).toEqual({ text: "fix · 7080da2f", title: "fix:7080da2fcf93c1a2" });
+    expect(formatGateOption("reply:a1b2c3d4e5f60718")).toEqual({ text: "reply · a1b2c3d4", title: "reply:a1b2c3d4e5f60718" });
+  });
+
+  test("leaves a bare word untouched, no title", () => {
+    expect(formatGateOption("approve")).toEqual({ text: "approve" });
+    expect(formatGateOption("comment")).toEqual({ text: "comment" });
+  });
+
+  test("leaves a verb:value pair untouched when the value is under 12 characters", () => {
+    expect(formatGateOption("skip:abc")).toEqual({ text: "skip:abc" });
+    expect(formatGateOption("resolve-addressed")).toEqual({ text: "resolve-addressed" });
+  });
+
+  test("gateAnswerPayload still carries the verbatim option string, never the display form", () => {
+    const questions: GateQuestion[] = [{ id: "threads-1", label: "t", multi: true, options: ["fix:7080da2fcf93c1a2"] }];
+    const payload = gateAnswerPayload({ gateId: GATE_ID, questions }, { "threads-1": ["fix:7080da2fcf93c1a2"] });
+    expect(payload).toEqual({ gateId: GATE_ID, answers: { "threads-1": ["fix:7080da2fcf93c1a2"] } });
+  });
 });
