@@ -26,9 +26,12 @@ export type AnswerGateResult =
 
 /** Distinguishes the daemon's "nothing there to answer" rejections from
     validation/strict-membership ones -- the former maps to 404, the latter
-    to 400 with the message surfaced verbatim. */
+    to 400 with the message surfaced verbatim. Exact equality, not a
+    substring/regex test: a strict-membership message can legitimately echo
+    an option value like "closed" (e.g. an invalid answer naming a "closed"
+    option), which a substring match would misroute to 404. */
 function isMissingGateError(message: string): boolean {
-  return /not[- ]found|closed/i.test(message);
+  return message === "not-found" || message === "closed";
 }
 
 /**

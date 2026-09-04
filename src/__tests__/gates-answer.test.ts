@@ -90,8 +90,16 @@ describe("answerGate", () => {
     expect(calls.gateAnswer.length).toBe(0);
   });
 
-  test("daemon not-found/closed rejection maps to not-found", async () => {
-    const { io } = fakeIo(GATE_ID, () => ({ ok: false, error: `gate ${GATE_ID} not found` }));
+  test("daemon 'not-found' rejection maps to not-found", async () => {
+    const { io } = fakeIo(GATE_ID, () => ({ ok: false, error: "not-found" }));
+
+    const result = await answerGate(MR_URL, { outcome: "approve" }, io);
+
+    expect(result).toEqual({ kind: "not-found" });
+  });
+
+  test("daemon 'closed' rejection maps to not-found", async () => {
+    const { io } = fakeIo(GATE_ID, () => ({ ok: false, error: "closed" }));
 
     const result = await answerGate(MR_URL, { outcome: "approve" }, io);
 
@@ -106,13 +114,22 @@ describe("answerGate", () => {
 
     expect(result).toEqual({ kind: "invalid", reason: message });
   });
+
+  test("a validation message that merely echoes the word 'closed' (e.g. an invalid option value) stays 400, not 404", async () => {
+    const message = `answer for "outcome" is not one of its options: "closed"`;
+    const { io } = fakeIo(GATE_ID, () => ({ ok: false, error: message }));
+
+    const result = await answerGate(MR_URL, { outcome: "closed" } as unknown as GateAnswers, io);
+
+    expect(result).toEqual({ kind: "invalid", reason: message });
+  });
 });
 
 /** Fakes for the real resumeParkedGate's io, exercised directly (as opposed
     to fakeIo's answer-path stub above) -- resumeParkedGate is no longer
-    wired off answerGate (B6 hangs it off the gate/answered event instead),
-    but the function itself stays defined and is still tested here in
-    isolation ahead of that move. */
+    wired off answerGate; a parked-gate resume now hangs off the
+    gate/answered event instead, so the function itself stays defined and
+    is still tested here in isolation ahead of that rewiring. */
 interface ResumeIoCalls {
   resumeAgentPane: Array<{ agentId: string; prompt: string; workspaceLabel: string; tabLabel: string }>;
   writeReviewState: Array<{ path: string; patch: unknown }>;
@@ -162,7 +179,7 @@ function fakeResumeIo(
   return { io, calls };
 }
 
-describe("resumeParkedGate (kept defined for B6; not called from the answer path)", () => {
+describe("resumeParkedGate (not called from the answer path; relocated to the event-driven resume)", () => {
   test("builds the /board:review prompt with --state and --resumed-gate, resumes the pane, and persists fresh ids", async () => {
     const gate = baseGate({ agentId: "agent-1" });
     const { io: resumeIo, calls: resumeCalls } = fakeResumeIo();
