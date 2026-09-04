@@ -21,7 +21,7 @@ const MR_SUBJECT_PREFIX = "mr:";
  *   `parked` and `closed` rows are exempt so a row never re-parks once it
  *   has moved past `open`. The row carries no tabId (that's launch
  *   plumbing the facility doesn't track) -- it's joined from the matching
- *   review state, same join B6's resume path uses.
+ *   review state, the same join the resume path uses.
  * - `close-missed-done`: a `done` review that still carries a `tabId` with
  *   no `open` row standing over the same MR -- the server missed the
  *   `/review/outcome` call that would normally have closed that tab (a
