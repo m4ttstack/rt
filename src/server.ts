@@ -380,9 +380,9 @@ const shell = `<!doctype html>
   mq.addEventListener("change", applyTheme);
   window.__applyTheme = applyTheme;
 </script>
-<!-- No webfont link: the kit vendors JetBrains Mono for both font slots and
-     Bun inlines it into /app.css as a data URI, so the board renders its own
-     face with no external request and no flash of a fallback. -->
+<!-- No webfont link: the UI font is a system stack, and the kit's JetBrains
+     Mono (still carried by the mono-pinned surfaces) is inlined into /app.css
+     as a data URI. Neither slot costs an external request or a fallback flash. -->
 <link rel="stylesheet" href="/app.css">
 <link rel="stylesheet" href="/style.css">
 </head>

@@ -22,7 +22,7 @@
     "@mattstack/glance": "^0.21.0",
     "@mattstack/rt-client": "^0.11.1",
     "@mattstack/settings-kit": "^0.1.3",
-    "@mattstack/tui-kit": "^0.1.1",
+    "@mattstack/tui-kit": "^0.2.0",
     "invadrs": "^0.2.0",
     "pngjs": "^7.0.0",
     "react": "19.2.7",
