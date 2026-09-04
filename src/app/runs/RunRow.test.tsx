@@ -1,3 +1,4 @@
+import { notifications } from '@mattstack/app-kit/notifications';
 import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import type { BranchEnrichment } from '@mattstack/rt-client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -463,6 +464,21 @@ describe('RunRow focus button', () => {
       status: 502,
       json: async () => ({ error: 'no such pane' }),
     });
+    renderRow({
+      ...baseRun,
+      agent: { status: 'working', pane: 'w1:p1' },
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'focus pane' }));
+
+    await screen.findByText("couldn't focus the pane");
+  });
+
+  it('shows the same notification when the focus request rejects outright', async () => {
+    // The notifications store is module-global, so the previous test's toast
+    // would make the text query ambiguous without a clean slate.
+    notifications.clean();
+    focusPost.mockRejectedValueOnce(new Error('network down'));
     renderRow({
       ...baseRun,
       agent: { status: 'working', pane: 'w1:p1' },

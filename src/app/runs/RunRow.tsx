@@ -127,10 +127,14 @@ export function RunRow({ run, pruneDays, enrichment }: RunRowProps) {
   }
 
   async function handleFocusPane(pane: string) {
-    const res = await client.api.panes[':id'].focus.$post({
-      param: { id: pane },
-    });
-    if (!res.ok) notifications.error("couldn't focus the pane");
+    try {
+      const res = await client.api.panes[':id'].focus.$post({
+        param: { id: pane },
+      });
+      if (!res.ok) notifications.error("couldn't focus the pane");
+    } catch {
+      notifications.error("couldn't focus the pane");
+    }
   }
 
   return (

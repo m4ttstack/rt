@@ -1,3 +1,4 @@
+import { notifications } from '@mattstack/app-kit/notifications';
 import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import type {
   BranchEnrichment,
@@ -517,6 +518,40 @@ describe('RunDetail', () => {
     );
 
     expect(focusPost).toHaveBeenCalledWith({ param: { id: 'w1:p1' } });
+    await screen.findByText("couldn't focus the pane");
+  });
+
+  it('surfaces the same failure when the focus request rejects outright', async () => {
+    // The notifications store is module-global, so the previous test's toast
+    // would make the text query ambiguous without a clean slate.
+    notifications.clean();
+    detailGet.mockResolvedValue(
+      detailResponse({
+        ...FIXTURE,
+        run: run({
+          status: 'running',
+          agent: { status: 'working', pane: 'w1:p1' },
+        }),
+      })
+    );
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+    focusPost.mockRejectedValueOnce(new Error('network down'));
+
+    renderDetail();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'focus pane' })
+    );
+
     await screen.findByText("couldn't focus the pane");
   });
 

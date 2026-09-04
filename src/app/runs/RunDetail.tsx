@@ -88,10 +88,14 @@ function FocusPaneAction({ pane }: { pane: string }) {
       leftSection={<Icons.terminal size={16} />}
       aria-label="focus pane"
       onClick={async () => {
-        const res = await client.api.panes[':id'].focus.$post({
-          param: { id: pane },
-        });
-        if (!res.ok) notifications.error("couldn't focus the pane");
+        try {
+          const res = await client.api.panes[':id'].focus.$post({
+            param: { id: pane },
+          });
+          if (!res.ok) notifications.error("couldn't focus the pane");
+        } catch {
+          notifications.error("couldn't focus the pane");
+        }
       }}
     >
       Focus pane
