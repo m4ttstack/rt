@@ -680,6 +680,11 @@ body {
 }
 .tui-gate-submit:hover:not(:disabled) { background: var(--amber); color: var(--bg); }
 .tui-gate-submit:disabled { opacity: 0.5; cursor: default; }
+.tui-gate-focus {
+  padding: 4px 12px; font: inherit; font-size: 0.85rem; cursor: pointer;
+  background: transparent; border: 1px solid var(--border); border-radius: 6px; color: var(--muted);
+}
+.tui-gate-focus:hover { border-color: var(--muted); color: var(--fg); }
 .tui-gate-summary { margin: 0; display: flex; flex-direction: column; gap: 0.3rem; }
 .tui-gate-summary-row { display: flex; gap: 0.5rem; font-size: 0.85rem; }
 .tui-gate-summary-row dt { color: var(--muted); }

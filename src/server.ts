@@ -18,7 +18,7 @@ import { SnapshotCache } from "./cache.ts";
 import { isLocalRequest } from "./local.ts";
 import { settingsHandler } from "@mattstack/settings-kit/server";
 import { readReviewStates, pruneReviewStates, reviewFilePath, reviewReportPath, writeReviewState, parseReviewRequestBody, attachReviews, readReviewReport, type ReviewState, type ReviewStatus } from "./review-state.ts";
-import { readRespondStates, pruneRespondStates, respondFilePath, respondReportPath, writeRespondState, parseRespondRequestBody, attachResponds, type RespondState, type RespondStatus } from "./respond-state.ts";
+import { readRespondStates, pruneRespondStates, respondFilePath, respondReportPath, writeRespondState, parseRespondRequestBody, attachResponds, readRespondReport, type RespondState, type RespondStatus } from "./respond-state.ts";
 import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, parseDoctorRequestBody, attachDoctors, doctorResumeDispatchFields, type DoctorState, type DoctorStatus } from "./doctor-state.ts";
 import { GATE_DIR, type GateAnswers } from "./gates/store.ts";
 import { ingestRelayFrame, reconcileGatesOnBoot, ensureBridgeRule, type EventBridgeRule, type GateEventFrame } from "./gates/ingest.ts";
@@ -448,6 +448,8 @@ const httpServer = Bun.serve({
           return new Response(readFileSync(fixtureFile("discussions.json"), "utf8"), { headers: { "content-type": "application/json" } });
         case "/review/report":
           return new Response(readFileSync(fixtureFile("review-report.md"), "utf8"), { headers: { "content-type": "text/markdown" } });
+        case "/respond/report":
+          return new Response(readFileSync(fixtureFile("respond-report.md"), "utf8"), { headers: { "content-type": "text/markdown" } });
         case "/peer/boards":
           return new Response(JSON.stringify({ boards: [] }), { headers: { "content-type": "application/json" } });
         case "/member": {
@@ -1466,6 +1468,15 @@ const httpServer = Bun.serve({
         if (!mrUrl) return new Response("expected ?mr=<url>", { status: 400 });
         const report = readReviewReport(mrUrl);
         if (report === null) return new Response("no review yet", { status: 404 });
+        return new Response(report, { headers: { "content-type": "text/markdown; charset=utf-8" } });
+      }
+      case "/respond/report": {
+        // The fill's written adjudication markdown for one MR -- same
+        // read-only, tunnel-available shape as /review/report above.
+        const mrUrl = new URL(req.url).searchParams.get("mr");
+        if (!mrUrl) return new Response("expected ?mr=<url>", { status: 400 });
+        const report = readRespondReport(mrUrl);
+        if (report === null) return new Response("no respond report yet", { status: 404 });
         return new Response(report, { headers: { "content-type": "text/markdown; charset=utf-8" } });
       }
       case "/slack/resolve": {

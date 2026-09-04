@@ -236,6 +236,9 @@ function RowMenu({
       {mrx.review?.reportReady && (
         <ContextMenu.Item label="view review" onClick={run(() => ctx.onOpenReview(mrx))} />
       )}
+      {mrx.respond?.reportReady && (
+        <ContextMenu.Item label="view respond" onClick={run(() => ctx.onOpenRespond(mrx))} />
+      )}
       <ContextMenu.Item label="open in gitlab" onClick={run(() => mr.webUrl && window.open(mr.webUrl, "_blank", "noopener"))} />
       <ContextMenu.Item label="copy for slack" onClick={run(() => onCopy(mr))} />
 

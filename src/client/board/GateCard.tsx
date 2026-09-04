@@ -1,7 +1,25 @@
 import { useState } from "react";
 import { Chip, RadioGroup, SelectBox } from "@mattstack/tui-kit";
 import type { GateAnswers, GateQuestion, GateRow } from "../../gates/store.ts";
-import { gateAnswerPayload, parseConflictResponse, unwrapGateAnswer, type GateSelections } from "./gate-format.ts";
+import type { BoardMRWithReview } from "../types.ts";
+import {
+  gateAnswerPayload,
+  parseConflictResponse,
+  unwrapGateAnswer,
+  formatGateOption,
+  gateFocusDomain,
+  type GateSelections,
+  type GateDomain,
+} from "./gate-format.ts";
+
+/** An option string as it should read on screen -- the verb prominent, a
+    long id token truncated, the full string kept in `title` for anyone who
+    hovers. Shared by the question inputs and the answered summary so the
+    same option always reads the same way in both places. */
+function GateOptionText({ option }: { option: string }) {
+  const { text, title } = formatGateOption(option);
+  return <span title={title}>{text}</span>;
+}
 
 /** One question's input: a SelectBox per option for a `multi` question (a
     checkbox group -- the same toggle recipe the row's own select-box uses),
@@ -31,7 +49,7 @@ function GateQuestionField({
             <div key={opt} className="tui-gate-option">
               <SelectBox checked={picked.has(opt)} onToggle={() => toggle(opt)} aria-label={opt} />
               <span className="tui-gate-option-label" onClick={() => toggle(opt)}>
-                {opt}
+                <GateOptionText option={opt} />
               </span>
             </div>
           ))}
@@ -46,7 +64,7 @@ function GateQuestionField({
         name={question.id}
         value={typeof value === "string" ? value : ""}
         onChange={(v) => onChange(question.id, v)}
-        options={question.options.map((opt) => ({ value: opt, label: opt }))}
+        options={question.options.map((opt) => ({ value: opt, label: <GateOptionText option={opt} /> }))}
       />
     </div>
   );
@@ -63,7 +81,18 @@ function GateAnswerSummary({ questions, answers }: { questions: GateQuestion[]; 
       {questions.map((q) => {
         const raw = answers?.[q.id];
         const { value, note } = raw !== undefined ? unwrapGateAnswer(raw) : { value: undefined, note: undefined };
-        const text = Array.isArray(value) ? (value.length ? value.join(", ") : "(none)") : value || "(none)";
+        const text = Array.isArray(value)
+          ? value.length
+            ? value.map((v, i) => (
+                <span key={v}>
+                  {i > 0 && ", "}
+                  <GateOptionText option={v} />
+                </span>
+              ))
+            : "(none)"
+          : value
+            ? <GateOptionText option={value} />
+            : "(none)";
         return (
           <div key={q.id} className="tui-gate-summary-row">
             <dt>{q.label}</dt>
@@ -90,8 +119,23 @@ function GateAnswerSummary({ questions, answers }: { questions: GateQuestion[]; 
     status on its own next refresh, at which point this component re-renders
     into the answered branch on its own. A 409 is the one response rendered
     immediately from local state -- it's not a guess, the daemon's CAS
-    already recorded someone else's answer and handed back the real winner. */
-function GateCard({ gate }: { gate: GateRow }) {
+    already recorded someone else's answer and handed back the real winner.
+
+    `onFocusPane` is the escape hatch for a wait with no form left to answer:
+    the pane behind this gate is parked on a facility `gate wait`, and
+    jumping into it lets a human answer conversationally instead (the
+    wrapper's `--by pane` path, arbitrated by the daemon's CAS same as a
+    submit here). `mr` supplies the domain's own tabId so the button only
+    ever shows while a pane is actually still around to jump into. */
+function GateCard({
+  gate,
+  mr,
+  onFocusPane,
+}: {
+  gate: GateRow;
+  mr: BoardMRWithReview;
+  onFocusPane: (mr: BoardMRWithReview, domain: GateDomain) => void;
+}) {
   const [selections, setSelections] = useState<GateSelections>({});
   const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
@@ -104,6 +148,7 @@ function GateCard({ gate }: { gate: GateRow }) {
   const answered = gate.status === "answered";
   const actionable = gate.status === "open" || gate.status === "parked";
   const payload = actionable ? gateAnswerPayload({ gateId: gate.gateId, questions: gate.questions }, selections) : null;
+  const focusDomain = actionable ? gateFocusDomain(gate.kind, mr) : null;
 
   const submit = async () => {
     if (!payload) return;
@@ -164,6 +209,16 @@ function GateCard({ gate }: { gate: GateRow }) {
           ))}
           <div className="tui-gate-actions">
             {failed && <span className="tui-gate-error">submit failed... nothing was sent, try again</span>}
+            {focusDomain && (
+              <button
+                type="button"
+                className="tui-gate-focus"
+                title="jump into the pane -- it's waiting at this gate and can take a conversational answer instead"
+                onClick={() => onFocusPane(mr, focusDomain)}
+              >
+                focus pane
+              </button>
+            )}
             <button className="tui-gate-submit" disabled={!payload || busy} onClick={submit}>
               {busy ? "submitting…" : "submit"}
             </button>

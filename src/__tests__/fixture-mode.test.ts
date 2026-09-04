@@ -24,6 +24,7 @@ writeFileSync(join(dir, "data.json"), JSON.stringify({
 }));
 writeFileSync(join(dir, "discussions.json"), JSON.stringify({ threads: [], comments: [] }));
 writeFileSync(join(dir, "review-report.md"), "# canned review\n");
+writeFileSync(join(dir, "respond-report.md"), "# canned respond report\n");
 
 const PORT = 47942; // test's own port, not even the fixture default (7942 collides with an unrelated local service on this machine)
 const proc = Bun.spawn(["bun", "run", join(import.meta.dir, "..", "server.ts")], {
@@ -51,6 +52,8 @@ test("fixture mode serves canned endpoints and refuses POSTs", async () => {
   expect((await disc.json() as { threads: unknown[] }).threads).toEqual([]);
   const report = await fetch(`http://127.0.0.1:${PORT}/review/report?mr=x`);
   expect(await report.text()).toContain("canned review");
+  const respondReport = await fetch(`http://127.0.0.1:${PORT}/respond/report?mr=x`);
+  expect(await respondReport.text()).toContain("canned respond report");
   const boards = await fetch(`http://127.0.0.1:${PORT}/peer/boards`);
   expect(await boards.json()).toEqual({ boards: [] });
   const member = await fetch(`http://127.0.0.1:${PORT}/member?u=matt`);

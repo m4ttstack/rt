@@ -173,7 +173,7 @@ function RowView({
                 cards can render at once (e.g. a live respond gate alongside
                 a still-open review gate). */}
             {((mr as BoardMRWithReview).gates ?? []).map((gate) => (
-              <GateCard key={gate.gateId} gate={gate} />
+              <GateCard key={gate.gateId} gate={gate} mr={mr as BoardMRWithReview} onFocusPane={ctx.onFocusPane} />
             ))}
             </div>
           </div>

@@ -30,8 +30,9 @@ import { SettingsModal } from "./SettingsModal.tsx";
 import { ConfigModal } from "./ConfigModal.tsx";
 import { sectionStatus } from "../../sections.ts";
 import { RowMenu } from "./RowMenu.tsx";
-import { ReviewModal } from "./ReviewModal.tsx";
+import { ReviewModal, RespondModal } from "./ReviewModal.tsx";
 import { DraftModal } from "./DraftModal.tsx";
+import type { GateDomain } from "./gate-format.ts";
 
 declare global {
   interface Window {
@@ -156,6 +157,8 @@ export function Board() {
   const [rowMenu, setRowMenu] = useState<RowMenuState | null>(null);
   // The MR whose saved review is open in the modal, if any.
   const [reviewModal, setReviewModal] = useState<BoardMRWithReview | null>(null);
+  // The MR whose saved respond adjudication is open in the modal, if any.
+  const [respondModal, setRespondModal] = useState<BoardMRWithReview | null>(null);
   // The held draft open in its drawer, if any, and the drafts already acted on
   // this session (optimistic — the next /data.json pull drops resolved drafts).
   const [draftModal, setDraftModal] = useState<{ mr: BoardMRWithReview; draft: DraftInfo } | null>(null);
@@ -253,6 +256,20 @@ export function Board() {
     optimistic: optimisticLifecycle, addToast, reload: load,
   });
   const handleDoctor = useCallback((mr: BoardMR, note?: string) => doctorAction(mr, {}, note), [doctorAction]);
+
+  // GateCard's "focus pane" escape hatch: jump into whichever domain's pane
+  // opened the gate, via the exact same launch endpoint a fresh launch from
+  // the row would use -- the server-side dedup (existing tabId + in-flight
+  // status) re-focuses that pane instead of spawning another, so this never
+  // invents a distinct focus call.
+  const handleFocusPane = useCallback(
+    (mr: BoardMR, domain: GateDomain) => {
+      if (domain === "review") handleLaunch(mr);
+      else if (domain === "respond") handleRespond(mr);
+      else handleDoctor(mr);
+    },
+    [handleLaunch, handleRespond, handleDoctor],
+  );
 
   // Resume actions: axis null means useLaunchAction's setQueued/rollback are
   // no-ops, matching today's handleResume (which never claimed a badge before
@@ -496,9 +513,11 @@ export function Board() {
     slackEnabled: data.slackEnabled,
     onContext: openRowMenu,
     onOpenReview: setReviewModal,
+    onOpenRespond: setRespondModal,
     onOpenDraft: openDraft,
     draftResolved,
     onResumeRespond: handleResumeRespond,
+    onFocusPane: handleFocusPane,
     selected,
     onToggleSelect: toggleSelect,
   };
@@ -747,6 +766,7 @@ export function Board() {
       )}
 
       {reviewModal && <ReviewModal mr={reviewModal} onClose={() => setReviewModal(null)} />}
+      {respondModal && <RespondModal mr={respondModal} onClose={() => setRespondModal(null)} />}
 
       {draftModal && (
         <DraftModal

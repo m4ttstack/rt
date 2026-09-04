@@ -4,6 +4,7 @@ import type { SlackTemplates } from "../template.ts";
 import type { RespondStatus } from "../respond-outcome.ts";
 import type { TabConfig } from "../config.ts";
 import type { GateRow } from "../gates/store.ts";
+import type { GateDomain } from "./board/gate-format.ts";
 
 export interface RosterMember {
   username: string;
@@ -21,10 +22,10 @@ export interface ConfigMember {
 }
 
 export type ReviewStatus = "queued" | "reviewing" | "done" | "error";
-export interface ReviewInfo { status: ReviewStatus; message?: string; reportReady?: boolean; sessionId?: string }
-export interface RespondInfo { status: RespondStatus; message?: string; sessionId?: string; posted?: number; threads?: number }
+export interface ReviewInfo { status: ReviewStatus; message?: string; reportReady?: boolean; sessionId?: string; tabId?: string }
+export interface RespondInfo { status: RespondStatus; message?: string; reportReady?: boolean; sessionId?: string; posted?: number; threads?: number; tabId?: string }
 export type DoctorStatus = "queued" | "diagnosing" | "rebasing" | "fixing" | "watching" | "done" | "error";
-export interface DoctorInfo { status: DoctorStatus; message?: string; origin?: "auto" | "manual" }
+export interface DoctorInfo { status: DoctorStatus; message?: string; origin?: "auto" | "manual"; tabId?: string }
 export interface DraftInfo { kind: string; body: string; createdAt: number }
 export interface SlackInfo { status: "found" | "notfound"; permalink?: string; reactions: string[]; posted: boolean }
 /** How a peer's board says their review of one of our MRs is going. `status`
@@ -114,9 +115,14 @@ export interface RowContext {
   slackEnabled: boolean;
   onContext: (e: MouseEvent, mr: BoardMR) => void;
   onOpenReview: (mr: BoardMRWithReview) => void;
+  onOpenRespond: (mr: BoardMRWithReview) => void;
   onOpenDraft: (mr: BoardMRWithReview, draft: DraftInfo) => void;
   draftResolved: ReadonlyMap<string, "posted" | "dismissed">;
   onResumeRespond: (mr: BoardMR, note?: string) => void;
+  /** Jumps into the pane behind a gate's own domain (review/respond/doctor) --
+      the same dedup-and-focus path launching that domain again already takes
+      (see GateCard's "focus pane" button), not a distinct endpoint. */
+  onFocusPane: (mr: BoardMRWithReview, domain: GateDomain) => void;
   selected: ReadonlySet<string>;
   onToggleSelect: (webUrl: string) => void;
 }

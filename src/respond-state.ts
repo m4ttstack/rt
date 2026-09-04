@@ -42,6 +42,11 @@ export interface RespondState {
   resumedGateId?: string;
   startedAt: number;
   updatedAt: number;
+  /** Whether the fill has written its adjudication (verdict table + drafted
+      replies) yet. Computed at read time from the sibling report file; never
+      persisted to the state JSON. See ReviewState's own reportReady, which
+      this mirrors byte-for-byte. */
+  reportReady?: boolean;
 }
 
 export const RESPOND_DIR = join(APP_ROOT, "state", "responds");
@@ -50,6 +55,16 @@ export const RESPOND_DIR = join(APP_ROOT, "state", "responds");
 export function respondFilePath(mrUrl: string, dir: string = RESPOND_DIR): string {
   const slug = mrUrl.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 200);
   return join(dir, `${slug}.json`);
+}
+
+/** The written adjudication markdown for an MR, or null if the fill hasn't
+    saved one yet. See readReviewReport, which this mirrors byte-for-byte. */
+export function readRespondReport(mrUrl: string, dir: string = RESPOND_DIR): string | null {
+  try {
+    return readFileSync(respondReportPath(respondFilePath(mrUrl, dir)), "utf8");
+  } catch {
+    return null;
+  }
 }
 
 /** Sibling markdown file holding the fill's adjudication table and
@@ -109,7 +124,10 @@ export function readRespondStates(dir: string = RESPOND_DIR): Map<string, Respon
     } catch {
       continue;
     }
-    if (state.mrUrl) out.set(state.mrUrl, state);
+    if (state.mrUrl) {
+      state.reportReady = existsSync(respondReportPath(path));
+      out.set(state.mrUrl, state);
+    }
   }
   return out;
 }

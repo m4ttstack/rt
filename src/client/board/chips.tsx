@@ -123,7 +123,7 @@ const RESPOND_PULSING = new Set<RespondCell>(["triaging", "implementing", "draft
     without needing a distinct component style. A terminal `done` is keyed on
     the derived outcome rather than the status, because `done` alone cannot tell
     a posted run from drafts left waiting. */
-function RespondBadge({ respond, onResume }: { respond?: RespondInfo; onResume?: () => void }) {
+function RespondBadge({ respond, onResume, onOpen }: { respond?: RespondInfo; onResume?: () => void; onOpen?: () => void }) {
   if (!respond) return null;
   const outcome = respond.status === "done" ? respondOutcome(respond.posted, respond.threads) : null;
   // Repeating the `=== "done"` test rather than branching on `outcome` is what
@@ -143,10 +143,22 @@ function RespondBadge({ respond, onResume }: { respond?: RespondInfo; onResume?:
     "data-respond": cell,
   };
   // Unposted replies mean a pane is still parked at the posting gate holding
-  // them, so the badge doubles as the way back into it.
+  // them, so the badge doubles as the way back into it. Takes priority over
+  // reportReady below: a stuck run needs resuming more than its adjudication
+  // needs reading, and the report stays reachable from the row menu either way.
   if (outcome && respondNeedsAttention(outcome) && respond.sessionId && onResume) {
     return (
       <Chip as="button" {...look} title={`${title} (click to resume and finish posting)`} onClick={onResume}>
+        {label} ↗
+      </Chip>
+    );
+  }
+  // Once the fill has saved its adjudication, the badge becomes a button
+  // that opens it -- same "reportReady flips the badge into a link" pattern
+  // as ReviewBadge above, so a gate's respond context is one click away.
+  if (respond.reportReady && onOpen) {
+    return (
+      <Chip as="button" {...look} title={`${title} — click to read the adjudication`} onClick={onOpen}>
         {label} ↗
       </Chip>
     );

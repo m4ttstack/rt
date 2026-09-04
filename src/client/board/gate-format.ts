@@ -1,5 +1,22 @@
 import type { GateAnswers, GateAnswerValue, GateQuestion } from "../../gates/store.ts";
 
+/** Which board lifecycle a gate kind belongs to. Deliberately re-declared
+    rather than imported from gates/sweep.ts's own domainForKind: that
+    module's type imports reach doctor-state.ts, which imports herdr.ts for
+    real (Bun.spawn and friends) -- pulling it into this client program
+    would both break the browser build (server-only fs/child_process code
+    has no business in it) and fail typecheck (the client tsconfig carries
+    no Bun globals). Kept in sync with GATE_KINDS/domainForKind by the
+    gate-format test suite exercising the same kind strings. */
+export type GateDomain = "review" | "respond" | "doctor";
+
+function domainForKind(kind: string): GateDomain | undefined {
+  if (kind === "review-post") return "review";
+  if (kind === "respond-plan" || kind === "respond-post") return "respond";
+  if (kind === "doctor-escalation") return "doctor";
+  return undefined;
+}
+
 /** UI-collected picks, keyed by question id: an array for a `multi`
     question's checked options, a bare string for a single-select's radio. */
 export type GateSelections = Record<string, string | string[]>;
@@ -79,4 +96,62 @@ export interface GateAnswerConflict {
 export function parseConflictResponse(body: unknown): GateAnswerConflict {
   const row = (body as { row?: { answer?: { answers?: GateAnswers; by?: string } } } | null)?.row;
   return { answers: row?.answer?.answers ?? {}, by: row?.answer?.by ?? "" };
+}
+
+export interface GateOptionDisplay {
+  /** What to render. */
+  text: string;
+  /** The full option string, when it differs from `text` -- callers put this
+      in a `title` attr so the truncated form stays inspectable. */
+  title?: string;
+}
+
+/** A `<verb>:<token>` option whose token is long enough to be a real id
+    (thread hash, gate id, ...) rather than a short human word like
+    "addressed". Only these get compacted -- see formatGateOption. */
+const VERB_TOKEN_OPTION = /^([a-z][a-z-]*):(.{12,})$/;
+
+/**
+ * Display-only transform for one gate option string. `formatGateOption`
+ * NEVER changes what gets submitted -- GateQuestionField and
+ * GateAnswerSummary both render `text` but keep passing the original
+ * `option`/`value` string to onChange/gateAnswerPayload, so a `reply:<id>`
+ * option answers with the id verbatim no matter how it displays.
+ *
+ * A `verb:longtoken` option (e.g. `fix:7080da2fcf93c1a2`, a thread id the
+ * respond gate can't shorten without breaking the reply/fix/skip join back
+ * to the report) renders as the verb plus the token's first 8 characters,
+ * with the full string carried in `title`. Everything else -- a bare word
+ * like "approve"/"comment", or a `verb:value` pair whose value reads as a
+ * short human word rather than an id -- renders unchanged.
+ */
+export function formatGateOption(option: string): GateOptionDisplay {
+  const m = VERB_TOKEN_OPTION.exec(option);
+  if (!m) return { text: option };
+  const [, verb, token] = m;
+  return { text: `${verb} · ${token!.slice(0, 8)}`, title: option };
+}
+
+/** A domain's own pane reference, as attached to a board MR (`mr.review` /
+    `mr.respond` / `mr.doctor`) -- the one field GateCard's focus button
+    needs to know a pane is still around to jump into. */
+export interface DomainPaneRef {
+  tabId?: string;
+}
+
+/**
+ * Which domain (if any) a gate card's "focus pane" button should jump into.
+ * A gate kind always maps to exactly one domain (domainForKind); the button
+ * only renders when THAT domain's own state still carries a tabId -- a
+ * park/open gate's pane is still around, a closed or never-launched one is
+ * not, and a live tabId in a DIFFERENT domain must never be offered (a
+ * respond gate never jumps into a review pane).
+ */
+export function gateFocusDomain(
+  kind: string,
+  panes: { review?: DomainPaneRef; respond?: DomainPaneRef; doctor?: DomainPaneRef },
+): GateDomain | null {
+  const domain = domainForKind(kind);
+  if (!domain) return null;
+  return panes[domain]?.tabId ? domain : null;
 }
