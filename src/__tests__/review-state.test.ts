@@ -40,6 +40,14 @@ describe("writeReviewState", () => {
     expect(second.mrUrl).toBe(URL_A);           // preserved
     expect(second.status).toBe("reviewing");
   });
+
+  test("gateKind survives an interleaving write that doesn't mention it (merge-list widening)", () => {
+    const p = reviewFilePath(URL_A, dir);
+    writeReviewState(p, { mrUrl: URL_A, iid: 4821, status: "reviewing", gateId: "gate-1", gateKind: "review-post" }, 1000);
+    const second = writeReviewState(p, { status: "reviewing", paneId: "pane-2" }, 2000);
+    expect(second.gateId).toBe("gate-1");
+    expect(second.gateKind).toBe("review-post");
+  });
 });
 
 describe("readReviewStates", () => {

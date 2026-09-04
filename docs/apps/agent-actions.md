@@ -93,10 +93,10 @@ Slots and contracts:
 
 | wrapper | slot | contract |
 |---|---|---|
-| `board:review` | `review` | `mr-review@1` |
-| `board:respond` | `respond` | `mr-respond@1` |
-| `board:doctor` | `doctor` | `mr-doctor@1` (the checkout tier) |
-| `board:doctor` | `doctor-api` | `mr-doctor-api@1` (the `--tier api` no-checkout tier) |
+| `board:review` | `review` | `mr-review@2` |
+| `board:respond` | `respond` | `mr-respond@2` |
+| `board:doctor` | `doctor` | `mr-doctor@2` (the checkout tier) |
+| `board:doctor` | `doctor-api` | `mr-doctor-api@2` (the `--tier api` no-checkout tier) |
 
 A bound skill must declare the matching contract in its `metadata.provides`.
 

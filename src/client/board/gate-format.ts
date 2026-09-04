@@ -4,15 +4,15 @@ import type { GateAnswers, GateAnswerValue, GateQuestion } from "../../gates/sto
     question's checked options, a bare string for a single-select's radio. */
 export type GateSelections = Record<string, string | string[]>;
 
-/** The subset of a gate GateCard needs to shape a payload: where to post the
-    answer, and which questions must be answered. */
+/** The subset of a gate GateCard needs to shape a payload: which gate the
+    answer addresses, and which questions must be answered. */
 export interface GateForAnswer {
-  mrUrl: string;
+  gateId: string;
   questions: GateQuestion[];
 }
 
 export interface GateAnswerPayload {
-  mrUrl: string;
+  gateId: string;
   answers: GateSelections;
 }
 
@@ -41,7 +41,7 @@ export function gateAnswerPayload(gate: GateForAnswer, selections: GateSelection
       answers[q.id] = value;
     }
   }
-  return { mrUrl: gate.mrUrl, answers };
+  return { gateId: gate.gateId, answers };
 }
 
 export interface UnwrappedGateAnswer {

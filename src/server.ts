@@ -17,18 +17,19 @@ import { readProjectMRs, readDiscussions, subscribe, gateList, gatePark, gateClo
 import { SnapshotCache } from "./cache.ts";
 import { isLocalRequest } from "./local.ts";
 import { settingsHandler } from "@mattstack/settings-kit/server";
-import { readReviewStates, pruneReviewStates, reviewFilePath, writeReviewState, parseReviewRequestBody, attachReviews, readReviewReport } from "./review-state.ts";
-import { readRespondStates, pruneRespondStates, respondFilePath, writeRespondState, parseRespondRequestBody, attachResponds } from "./respond-state.ts";
-import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, parseDoctorRequestBody, attachDoctors } from "./doctor-state.ts";
+import { readReviewStates, pruneReviewStates, reviewFilePath, reviewReportPath, writeReviewState, parseReviewRequestBody, attachReviews, readReviewReport, type ReviewState, type ReviewStatus } from "./review-state.ts";
+import { readRespondStates, pruneRespondStates, respondFilePath, respondReportPath, writeRespondState, parseRespondRequestBody, attachResponds, type RespondState, type RespondStatus } from "./respond-state.ts";
+import { readDoctorStates, pruneDoctorStates, doctorFilePath, writeDoctorState, parseDoctorRequestBody, attachDoctors, doctorResumeDispatchFields, type DoctorState, type DoctorStatus } from "./doctor-state.ts";
 import { GATE_DIR, type GateAnswers } from "./gates/store.ts";
 import { ingestRelayFrame, reconcileGatesOnBoot, ensureBridgeRule, type EventBridgeRule, type GateEventFrame } from "./gates/ingest.ts";
 import { GateCache, attachGates } from "./gates/cache.ts";
 import { answerGate } from "./gates/answer.ts";
-import { handleAnsweredEvent, bootResumePass, type GateResumeEventIo } from "./gates/resume.ts";
+import { handleAnsweredEvent, bootResumePass, buildResumers, type GateResumeEventIo, type KindResumeIo } from "./gates/resume.ts";
 import { planSweep, pruneOffBoardGates } from "./gates/sweep.ts";
 import { executeSweepAction, type ExecuteSweepActionIo } from "./gates/execute-sweep-action.ts";
+import { migrateLegacySessions } from "./gates/legacy-session-migration.ts";
 import { readDrafts, heldDraftsByMr, attachDrafts, pruneDrafts, draftFilePath, writeDraft } from "./draft-state.ts";
-import { launchReview, launchRespond, launchDoctor, launchLegacyResume, parseLaunchNote, mrTabLabel, reopenPrompt, closeTab } from "./herdr.ts";
+import { launchReview, launchRespond, launchDoctor, launchLegacyResume, parseLaunchNote, mrTabLabel, reopenPrompt, closeTab, dispatchPrompt, statusBinPath } from "./herdr.ts";
 import { closeOnDone, type TabIdResolver, type TabIdClearer } from "./close-on-done.ts";
 import { focusPane } from "./focus-pane.ts";
 import { resumeAgentPane } from "./agent-launch.ts";
@@ -1266,11 +1267,14 @@ const httpServer = Bun.serve({
         }
       }
       case "/gate/answer": {
-        // Answer a review gate from the board UI. The facility's gate:answer
-        // is the single CAS arbiter; this proxies it (gates/answer.ts) and
-        // maps the pure result onto HTTP status codes. Resume of a parked
-        // gate is no longer triggered here -- it hangs off the gate/answered
-        // EVENT (see gates/ingest.ts) so a console-answered gate resumes too.
+        // Answer a gate from the board UI, addressed by its own id -- an MR
+        // can carry more than one live gate at once (review alongside
+        // respond/doctor), so a card answers exactly the gate it renders,
+        // never "whichever gate this MR has". The facility's gate:answer is
+        // the single CAS arbiter; this proxies it (gates/answer.ts) and maps
+        // the pure result onto HTTP status codes. Resume of a parked gate is
+        // no longer triggered here -- it hangs off the gate/answered EVENT
+        // (see gates/ingest.ts) so a console-answered gate resumes too.
         if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
         if (!isLocalRequest(req)) return new Response("forbidden", { status: 403 });
         let body: unknown;
@@ -1279,15 +1283,15 @@ const httpServer = Bun.serve({
         } catch {
           return new Response("invalid json", { status: 400 });
         }
-        const mrUrl = (body as { mrUrl?: unknown })?.mrUrl;
+        const gateId = (body as { gateId?: unknown })?.gateId;
         const answers = (body as { answers?: unknown })?.answers;
-        if (typeof mrUrl !== "string" || !mrUrl || typeof answers !== "object" || answers === null || Array.isArray(answers)) {
-          return new Response("expected { mrUrl: string, answers: object }", { status: 400 });
+        if (typeof gateId !== "string" || !gateId || typeof answers !== "object" || answers === null || Array.isArray(answers)) {
+          return new Response("expected { gateId: string, answers: object }", { status: 400 });
         }
-        const result = await answerGate(mrUrl, answers as GateAnswers, {
-          findAnswerableGateId: (gateMrUrl) => {
-            const row = gateCache.get(`mr:${gateMrUrl}`);
-            return row && (row.status === "open" || row.status === "parked") ? row.id : undefined;
+        const result = await answerGate(gateId, answers as GateAnswers, {
+          isAnswerable: (id) => {
+            const row = gateCache.rows().find((r) => r.id === id);
+            return !!row && (row.status === "open" || row.status === "parked");
           },
           gateAnswer: gateAnswerFacility,
         });
@@ -1300,7 +1304,7 @@ const httpServer = Bun.serve({
               headers: { "content-type": "application/json" },
             });
           case "not-found":
-            return new Response(`unknown gate for MR "${mrUrl}"`, { status: 404 });
+            return new Response(`unknown gate "${gateId}"`, { status: 404 });
           case "invalid":
             return new Response(result.reason, { status: 400 });
           case "unreachable":
@@ -1780,8 +1784,9 @@ function sweepActionIo(): ExecuteSweepActionIo {
   return {
     gatePark,
     closeTab,
-    writeReviewState,
-    reviewFilePath,
+    review: { writeState: writeReviewState, filePath: reviewFilePath },
+    respond: { writeState: writeRespondState, filePath: respondFilePath },
+    doctor: { writeState: writeDoctorState, filePath: doctorFilePath },
     now: () => Date.now(),
     graceMinutes: config.gateGraceMinutes,
     log: (message) => console.log(message),
@@ -1789,24 +1794,77 @@ function sweepActionIo(): ExecuteSweepActionIo {
   };
 }
 
-// Same "built fresh, not module-level" reasoning as sweepActionIo -- config
-// can be reassigned (switchboard-url save) after boot.
-function gateResumeIo(): GateResumeEventIo {
+// One KindResumeIo per resumable gate kind, built fresh per sweep/resume
+// call (not module-level) since `config` can be reassigned (switchboard-url
+// save) after boot -- same reasoning as sweepActionIo.
+function reviewResumeIo(): KindResumeIo {
   return {
-    gateRow: (subject) => gateCache.get(subject),
+    readState: (mrUrl) => readReviewStates().get(mrUrl),
+    writeState: (path, patch) => writeReviewState(path, patch as Partial<ReviewState> & { status: ReviewStatus }),
+    filePath: reviewFilePath,
+    resolveSkill: (mrUrl, tabId) => reviewSkillForTab(config, tabId, mrUrl, resolveLaunchSkill),
+    prompt: (mrUrl, statePath, skill, resumedGate, resolvePath) =>
+      dispatchPrompt(
+        "board:review",
+        { mrUrl, statePath, statusBin: statusBinPath(), reportPath: reviewReportPath(statePath), skill, resumedGate },
+        resolvePath,
+      ),
+    resumedStatus: "reviewing",
+    workspaceLabel: config.reviewsWorkspace,
+  };
+}
+
+function respondResumeIo(): KindResumeIo {
+  return {
+    readState: (mrUrl) => readRespondStates().get(mrUrl),
+    writeState: (path, patch) => writeRespondState(path, patch as Partial<RespondState> & { status: RespondStatus }),
+    filePath: respondFilePath,
+    resolveSkill: (mrUrl) => resolveLaunchSkill("respond", mrUrl),
+    prompt: (mrUrl, statePath, skill, resumedGate, resolvePath) =>
+      dispatchPrompt(
+        "board:respond",
+        { mrUrl, statePath, statusBin: statusBinPath(), reportPath: respondReportPath(statePath), skill, resumedGate },
+        resolvePath,
+      ),
+    resumedStatus: "implementing",
+    workspaceLabel: config.respondsWorkspace,
+  };
+}
+
+function doctorResumeIo(): KindResumeIo {
+  return {
+    readState: (mrUrl) => readDoctorStates().get(mrUrl),
+    writeState: (path, patch) => writeDoctorState(path, patch as Partial<DoctorState> & { status: DoctorStatus }),
+    filePath: doctorFilePath,
+    resolveSkill: (mrUrl) => resolveLaunchSkill("doctor", mrUrl),
+    prompt: (mrUrl, statePath, skill, resumedGate, resolvePath) =>
+      dispatchPrompt(
+        "board:doctor",
+        { mrUrl, statePath, statusBin: statusBinPath(), skill, resumedGate, ...doctorResumeDispatchFields(readDoctorStates().get(mrUrl)) },
+        resolvePath,
+      ),
+    resumedStatus: "fixing",
+    workspaceLabel: config.doctorsWorkspace,
+  };
+}
+
+function gateResumeIo(): GateResumeEventIo {
+  // respond-plan and respond-post share one wrapper (board:respond) and one
+  // state file -- the same KindResumeIo record answers for both kinds.
+  const respond = respondResumeIo();
+  return {
+    resumers: buildResumers({ review: reviewResumeIo(), respond, doctor: doctorResumeIo() }),
+    rowsForSubject: (subject) => gateCache.rowsFor(subject),
     applyRow: (row) => gateCache.applyRow(row),
-    readReviewState: (mrUrl) => readReviewStates().get(mrUrl),
     gateList,
-    resolveLaunchSkill: (mrUrl, tabId) => reviewSkillForTab(config, tabId, mrUrl, resolveLaunchSkill),
     resumeAgentPane,
-    writeReviewState,
-    reviewsWorkspace: config.reviewsWorkspace,
     notify: (message) => console.error(`gate resume: ${message}`),
   };
 }
 
 async function runGateSweep(): Promise<void> {
-  const actions = planSweep(gateCache.rows(), readReviewStates(), Date.now(), config.gateGraceMinutes * 60_000);
+  const states = { reviews: readReviewStates(), responds: readRespondStates(), doctors: readDoctorStates() };
+  const actions = planSweep(gateCache.rows(), states, Date.now(), config.gateGraceMinutes * 60_000);
   const io = sweepActionIo();
   for (const action of actions) {
     await executeSweepAction(action, io);
@@ -1828,6 +1886,19 @@ if (!FIXTURE_DIR) {
     rmSync(GATE_DIR, { recursive: true, force: true });
   } catch (err) {
     console.error(`gate file-store cleanup skipped: ${err instanceof Error ? err.message : err}`);
+  }
+}
+
+// One-shot migration: review/respond states that predate rt agent adoption
+// still carry a bare Claude sessionId with no agentId on file, so a resume
+// would fall back to the dead `claude --resume` path instead of the
+// facility's agent-pane resume. Best-effort and silent on a clean install.
+if (!FIXTURE_DIR) {
+  try {
+    migrateLegacySessions("review", readReviewStates(), reviewFilePath, writeReviewState, (m) => console.log(m));
+    migrateLegacySessions("respond", readRespondStates(), respondFilePath, writeRespondState, (m) => console.log(m));
+  } catch (err) {
+    console.error(`legacy session migration skipped: ${err instanceof Error ? err.message : err}`);
   }
 }
 

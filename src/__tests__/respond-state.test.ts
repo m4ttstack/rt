@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { respondFilePath, writeRespondState, readRespondStates } from "../respond-state.ts";
+import { respondFilePath, respondReportPath, writeRespondState, readRespondStates, pruneRespondStates } from "../respond-state.ts";
 
 let dir: string;
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "rp-")); });
@@ -40,5 +40,46 @@ describe("writeRespondState counts", () => {
     const done = writeRespondState(p, { mrUrl: URL_A, iid: 4821, status: "done" }, 1000);
     expect(done.posted).toBeUndefined();
     expect(done.threads).toBeUndefined();
+  });
+});
+
+describe("respondReportPath", () => {
+  test("swaps the .json state suffix for .md, same slug convention as reviewReportPath", () => {
+    expect(respondReportPath(respondFilePath(URL_A, dir))).toBe(respondFilePath(URL_A, dir).replace(/\.json$/, ".md"));
+    expect(respondReportPath("/s/1.json")).toBe("/s/1.md");
+  });
+});
+
+describe("gate fields (merge-list widening)", () => {
+  test("gateId, gateKind, and resumedGateId all survive an interleaving write that doesn't mention them", () => {
+    const p = respondFilePath(URL_A, dir);
+    writeRespondState(p, { mrUrl: URL_A, iid: 4821, status: "implementing", gateId: "gate-1", gateKind: "respond-plan" }, 1000);
+    const second = writeRespondState(p, { status: "implementing", tabId: "w9:t2" }, 2000);
+    expect(second.gateId).toBe("gate-1");
+    expect(second.gateKind).toBe("respond-plan");
+
+    const third = writeRespondState(p, { status: "implementing", resumedGateId: "gate-1" }, 3000);
+    expect(third.resumedGateId).toBe("gate-1");
+    const fourth = writeRespondState(p, { status: "drafting", gateKind: "respond-post", gateId: "gate-2" }, 4000);
+    expect(fourth.resumedGateId).toBe("gate-1"); // preserved across the next gate's own open
+    expect(fourth.gateKind).toBe("respond-post");
+    expect(fourth.gateId).toBe("gate-2");
+  });
+});
+
+describe("pruneRespondStates", () => {
+  const OTHER = "https://gitlab.com/acme/webapp/-/merge_requests/1";
+  test("deletes an off-board state's sibling report with it", () => {
+    writeRespondState(respondFilePath(URL_A, dir), { mrUrl: URL_A, iid: 4821, status: "done" });
+    writeFileSync(respondReportPath(respondFilePath(URL_A, dir)), "# adjudication A");
+    writeRespondState(respondFilePath(OTHER, dir), { mrUrl: OTHER, iid: 1, status: "done" });
+    writeFileSync(respondReportPath(respondFilePath(OTHER, dir)), "# adjudication OTHER");
+
+    pruneRespondStates(new Set([URL_A]), dir);
+
+    expect(existsSync(respondFilePath(URL_A, dir))).toBe(true);
+    expect(existsSync(respondReportPath(respondFilePath(URL_A, dir)))).toBe(true);
+    expect(existsSync(respondFilePath(OTHER, dir))).toBe(false);
+    expect(existsSync(respondReportPath(respondFilePath(OTHER, dir)))).toBe(false);
   });
 });

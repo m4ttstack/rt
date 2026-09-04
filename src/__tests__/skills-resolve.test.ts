@@ -11,11 +11,11 @@ import { fileURLToPath } from "node:url";
 const repoRoot = fileURLToPath(new URL("../..", import.meta.url));
 const wrappers = [
   { dir: "review", name: "board:review", slots: { review: "mr-review@2" } },
-  { dir: "respond", name: "board:respond", slots: { respond: "mr-respond@1" } },
+  { dir: "respond", name: "board:respond", slots: { respond: "mr-respond@2" } },
   {
     dir: "doctor",
     name: "board:doctor",
-    slots: { doctor: "mr-doctor@1", "doctor-api": "mr-doctor-api@1" },
+    slots: { doctor: "mr-doctor@2", "doctor-api": "mr-doctor-api@2" },
   },
 ] as const;
 
@@ -35,9 +35,9 @@ const fixtureSkill = (name: string, provides: string) => {
   return name;
 };
 fixtureSkill("fake:review", "mr-review@2");
-fixtureSkill("fake:respond", "mr-respond@1");
-fixtureSkill("fake:doctor", "mr-doctor@1");
-fixtureSkill("fake:doctor-api", "mr-doctor-api@1");
+fixtureSkill("fake:respond", "mr-respond@2");
+fixtureSkill("fake:doctor", "mr-doctor@2");
+fixtureSkill("fake:doctor-api", "mr-doctor-api@2");
 fixtureSkill("fake:wrong-contract", "review-domain@1");
 
 const boundManifest = join(fix, "bound.jsonc");

@@ -4,27 +4,23 @@ import {
   resumeParkedGate,
   handleAnsweredEvent,
   bootResumePass,
+  buildResumers,
   type ResumeParkedGateIo,
   type GateResumeEventIo,
+  type KindResumeIo,
+  type ResumableState,
 } from "../gates/resume.ts";
+import { GATE_KINDS } from "../gates/sweep.ts";
 import type { GateState } from "../gates/store.ts";
 import type { AgentLaunchResult } from "../agent-launch.ts";
-import { reviewFilePath, type ReviewState } from "../review-state.ts";
+import { reviewFilePath } from "../review-state.ts";
+import { respondFilePath } from "../respond-state.ts";
+import { doctorFilePath } from "../doctor-state.ts";
 import { GATE_LIST_PAGE_LIMIT, type GateEventFrame } from "../gates/ingest.ts";
 
 const MR_URL = "https://gitlab.com/acme/webapp/-/merge_requests/4821";
 const GATE_ID = "gate-1";
 const SUBJECT = `mr:${MR_URL}`;
-
-// ── resumeParkedGate (moved from gates-answer.test.ts unchanged) ──────────
-
-interface ResumeIoCalls {
-  resumeAgentPane: Array<{ agentId: string; prompt: string; workspaceLabel: string; tabLabel: string }>;
-  writeReviewState: Array<{ path: string; patch: unknown }>;
-  notify: string[];
-  resolveLaunchSkill: Array<{ mrUrl: string; tabId?: string }>;
-  applyRow: FacilityGateRow[];
-}
 
 function baseGate(overrides: Partial<GateState> = {}): GateState {
   return {
@@ -39,16 +35,73 @@ function baseGate(overrides: Partial<GateState> = {}): GateState {
   };
 }
 
-function fakeResumeIo(
-  result: Partial<AgentLaunchResult> = {},
-  resolveLaunchSkill: (mrUrl: string, tabId?: string) => string = () => "acme:board-review",
-): { io: ResumeParkedGateIo; calls: ResumeIoCalls } {
-  const calls: ResumeIoCalls = { resumeAgentPane: [], writeReviewState: [], notify: [], resolveLaunchSkill: [], applyRow: [] };
-  const io: ResumeParkedGateIo = {
-    resolveLaunchSkill: (mrUrl, tabId) => {
-      calls.resolveLaunchSkill.push({ mrUrl, tabId });
-      return resolveLaunchSkill(mrUrl, tabId);
+// ── Per-domain KindResumeIo fixtures ───────────────────────────────────────
+// Each domain owns its own in-memory state map, its own deterministic
+// filePath, and its own wrapper name -- proof that resume rebuilds the
+// right wrapper/state file per kind, not just per hardcoded review wiring.
+
+interface DomainCalls {
+  writeState: Array<{ path: string; patch: Partial<ResumableState> & { status: string } }>;
+  resolveSkill: Array<{ mrUrl: string; tabId?: string }>;
+}
+
+function makeKindIo(opts: {
+  wrapper: string;
+  workspaceLabel: string;
+  resumedStatus: string;
+  filePath: (mrUrl: string) => string;
+  states: Map<string, ResumableState>;
+}): { io: KindResumeIo; calls: DomainCalls } {
+  const calls: DomainCalls = { writeState: [], resolveSkill: [] };
+  const pathToMrUrl = new Map([...opts.states.keys()].map((mrUrl) => [opts.filePath(mrUrl), mrUrl]));
+  const io: KindResumeIo = {
+    readState: (mrUrl) => opts.states.get(mrUrl),
+    writeState: (path, patch) => {
+      calls.writeState.push({ path, patch });
+      const mrUrl = pathToMrUrl.get(path);
+      if (!mrUrl) return;
+      const prev = opts.states.get(mrUrl);
+      if (prev) opts.states.set(mrUrl, { ...prev, ...patch });
     },
+    filePath: opts.filePath,
+    resolveSkill: (mrUrl, tabId) => {
+      calls.resolveSkill.push({ mrUrl, tabId });
+      return `acme:${opts.wrapper}`;
+    },
+    prompt: async (mrUrl, statePath, skill, resumedGate) =>
+      `/board:${opts.wrapper} ${mrUrl}\n  --state ${statePath}\n  --skill ${skill}\n  --resumed-gate ${resumedGate}`,
+    resumedStatus: opts.resumedStatus,
+    workspaceLabel: opts.workspaceLabel,
+  };
+  return { io, calls };
+}
+
+function baseReview(overrides: Partial<ResumableState> = {}): ResumableState {
+  return {
+    mrUrl: MR_URL,
+    iid: 4821,
+    status: "reviewing",
+    agentId: "agent-1",
+    // Matches facilityRow()'s default id -- the domain's own `gate open`
+    // already stamped this before any resume path ever reads it. A test
+    // exercising a different (or stale) row id overrides this explicitly.
+    gateId: GATE_ID,
+    ...overrides,
+  };
+}
+
+interface ResumeIoCalls {
+  resumeAgentPane: Array<{ agentId: string; prompt: string; workspaceLabel: string; tabLabel: string }>;
+  notify: string[];
+}
+
+function fakeResumeIo(
+  resumers: Partial<Record<string, KindResumeIo>>,
+  result: Partial<AgentLaunchResult> = {},
+): { io: ResumeParkedGateIo; calls: ResumeIoCalls } {
+  const calls: ResumeIoCalls = { resumeAgentPane: [], notify: [] };
+  const io: ResumeParkedGateIo = {
+    resumers,
     resumeAgentPane: async (opts) => {
       calls.resumeAgentPane.push(opts);
       return {
@@ -57,10 +110,6 @@ function fakeResumeIo(
         ...result,
       };
     },
-    writeReviewState: (path, patch) => {
-      calls.writeReviewState.push({ path, patch });
-    },
-    reviewsWorkspace: "reviews",
     notify: (message) => {
       calls.notify.push(message);
     },
@@ -69,9 +118,13 @@ function fakeResumeIo(
 }
 
 describe("resumeParkedGate", () => {
-  test("builds the /board:review prompt with --state and --resumed-gate, resumes the pane, and persists fresh ids", async () => {
+  test("review-post: builds the /board:review prompt with --state and --resumed-gate, resumes the pane, and persists fresh ids", async () => {
+    const states = new Map([[MR_URL, baseReview()]]);
+    const { io: reviewIo, calls: reviewCalls } = makeKindIo({
+      wrapper: "review", workspaceLabel: "reviews", resumedStatus: "reviewing", filePath: reviewFilePath, states,
+    });
     const gate = baseGate({ agentId: "agent-1" });
-    const { io: resumeIo, calls: resumeCalls } = fakeResumeIo();
+    const { io: resumeIo, calls: resumeCalls } = fakeResumeIo({ "review-post": reviewIo });
 
     await resumeParkedGate(gate, resumeIo, async () => null);
 
@@ -83,8 +136,8 @@ describe("resumeParkedGate", () => {
     expect(call.prompt).toContain("--state");
     expect(call.prompt).toContain(`--resumed-gate ${GATE_ID}`);
 
-    expect(resumeCalls.writeReviewState.length).toBe(1);
-    expect(resumeCalls.writeReviewState[0]!.patch).toMatchObject({
+    expect(reviewCalls.writeState.length).toBe(1);
+    expect(reviewCalls.writeState[0]!.patch).toMatchObject({
       status: "reviewing",
       agentId: "agent-2",
       paneId: "pane-2",
@@ -94,39 +147,87 @@ describe("resumeParkedGate", () => {
     expect(resumeCalls.notify.length).toBe(0);
   });
 
-  test("threads the gate's tabId to resolveLaunchSkill, so a tab's reviewSkill override wins over the fallback", async () => {
+  test("respond-plan: rebuilds the /board:respond prompt against respond's own state file and workspace, settling into 'implementing'", async () => {
+    const states = new Map([[MR_URL, baseReview({ agentId: "agent-1" })]]);
+    const { io: respondIo, calls: respondCalls } = makeKindIo({
+      wrapper: "respond", workspaceLabel: "responds", resumedStatus: "implementing", filePath: respondFilePath, states,
+    });
+    const gate = baseGate({ agentId: "agent-1", kind: "respond-plan" });
+    const { io: resumeIo, calls: resumeCalls } = fakeResumeIo({ "respond-plan": respondIo });
+
+    await resumeParkedGate(gate, resumeIo, async () => null);
+
+    expect(resumeCalls.resumeAgentPane[0]!.workspaceLabel).toBe("responds");
+    expect(resumeCalls.resumeAgentPane[0]!.prompt).toContain("/board:respond");
+    expect(resumeCalls.resumeAgentPane[0]!.prompt).toContain(`--resumed-gate ${GATE_ID}`);
+    expect(respondCalls.writeState[0]!.patch).toMatchObject({ status: "implementing", agentId: "agent-2" });
+  });
+
+  test("doctor-escalation: rebuilds the /board:doctor prompt against doctor's own state file and workspace, settling into 'fixing'", async () => {
+    const states = new Map([[MR_URL, baseReview({ agentId: "agent-1" })]]);
+    const { io: doctorIo, calls: doctorCalls } = makeKindIo({
+      wrapper: "doctor", workspaceLabel: "doctors", resumedStatus: "fixing", filePath: doctorFilePath, states,
+    });
+    const gate = baseGate({ agentId: "agent-1", kind: "doctor-escalation" });
+    const { io: resumeIo, calls: resumeCalls } = fakeResumeIo({ "doctor-escalation": doctorIo });
+
+    await resumeParkedGate(gate, resumeIo, async () => null);
+
+    expect(resumeCalls.resumeAgentPane[0]!.workspaceLabel).toBe("doctors");
+    expect(resumeCalls.resumeAgentPane[0]!.prompt).toContain("/board:doctor");
+    expect(resumeCalls.resumeAgentPane[0]!.prompt).toContain(`--resumed-gate ${GATE_ID}`);
+    expect(doctorCalls.writeState[0]!.patch).toMatchObject({ status: "fixing", agentId: "agent-2" });
+  });
+
+  test("threads the gate's tabId to resolveSkill", async () => {
+    const states = new Map([[MR_URL, baseReview()]]);
+    const { io: reviewIo, calls: reviewCalls } = makeKindIo({
+      wrapper: "review", workspaceLabel: "reviews", resumedStatus: "reviewing", filePath: reviewFilePath, states,
+    });
     const gate = baseGate({ agentId: "agent-1", tabId: "tab-9" });
-    const { io: resumeIo, calls: resumeCalls } = fakeResumeIo({}, (mrUrl, tabId) =>
-      tabId === "tab-9" ? "acme:tab-override-review" : "acme:board-review",
+    const { io: resumeIo } = fakeResumeIo({ "review-post": reviewIo });
+
+    await resumeParkedGate(gate, resumeIo, async () => null);
+
+    expect(reviewCalls.resolveSkill).toEqual([{ mrUrl: MR_URL, tabId: "tab-9" }]);
+  });
+
+  test("a focused-existing resume (already-open tab) does not overwrite state with blank ids", async () => {
+    const states = new Map([[MR_URL, baseReview()]]);
+    const { io: reviewIo, calls: reviewCalls } = makeKindIo({
+      wrapper: "review", workspaceLabel: "reviews", resumedStatus: "reviewing", filePath: reviewFilePath, states,
+    });
+    const gate = baseGate({ agentId: "agent-1" });
+    const { io: resumeIo, calls: resumeCalls } = fakeResumeIo(
+      { "review-post": reviewIo },
+      { agentId: "", sessionId: "", paneId: "", tabId: "", workspaceId: "", focusedExisting: true },
     );
 
     await resumeParkedGate(gate, resumeIo, async () => null);
 
-    expect(resumeCalls.resolveLaunchSkill).toEqual([{ mrUrl: MR_URL, tabId: "tab-9" }]);
     expect(resumeCalls.resumeAgentPane.length).toBe(1);
-    expect(resumeCalls.resumeAgentPane[0]!.prompt).toContain("--skill acme:tab-override-review");
-  });
-
-  test("a focused-existing resume (already-open tab) does not overwrite the review state with blank ids", async () => {
-    const gate = baseGate({ agentId: "agent-1" });
-    const { io: resumeIo, calls: resumeCalls } = fakeResumeIo({
-      agentId: "", sessionId: "", paneId: "", tabId: "", workspaceId: "", focusedExisting: true,
-    });
-
-    await resumeParkedGate(gate, resumeIo, async () => null);
-
-    expect(resumeCalls.resumeAgentPane.length).toBe(1);
-    expect(resumeCalls.writeReviewState.length).toBe(0);
+    expect(reviewCalls.writeState.length).toBe(0);
   });
 
   test("missing agentId notifies instead of resuming, and does not throw", async () => {
+    const states = new Map([[MR_URL, baseReview()]]);
+    const { io: reviewIo } = makeKindIo({
+      wrapper: "review", workspaceLabel: "reviews", resumedStatus: "reviewing", filePath: reviewFilePath, states,
+    });
     const gate = baseGate();
-    const { io: resumeIo, calls: resumeCalls } = fakeResumeIo();
+    const { io: resumeIo, calls: resumeCalls } = fakeResumeIo({ "review-post": reviewIo });
 
     await resumeParkedGate(gate, resumeIo, async () => null);
 
     expect(resumeCalls.resumeAgentPane.length).toBe(0);
     expect(resumeCalls.notify).toEqual(["parked gate answered but no agent on file; relaunch from the board"]);
+  });
+
+  test("a kind with no resumers entry throws rather than silently no-oping", async () => {
+    const gate = baseGate({ agentId: "agent-1", kind: "mystery-kind" });
+    const { io: resumeIo } = fakeResumeIo({});
+
+    await expect(resumeParkedGate(gate, resumeIo, async () => null)).rejects.toThrow("mystery-kind resume not wired");
   });
 });
 
@@ -154,54 +255,61 @@ function facilityRow(overrides: Partial<FacilityGateRow> = {}): FacilityGateRow 
   };
 }
 
-function baseReview(overrides: Partial<ReviewState> = {}): ReviewState {
-  return {
-    mrUrl: MR_URL,
-    iid: 4821,
-    status: "reviewing",
-    agentId: "agent-1",
-    // Matches facilityRow()'s default id -- the review's own `gate open`
-    // already stamped this before any resume path ever reads it. A test
-    // exercising a different (or stale) row id overrides this explicitly.
-    gateId: GATE_ID,
-    startedAt: 1000,
-    updatedAt: 1000,
-    ...overrides,
-  };
+interface EventCalls extends ResumeIoCalls {
+  applyRow: FacilityGateRow[];
 }
 
-/** In-memory fake standing in for the cache row, the review-state file, and
-    a paged `gate:list` -- stateful (writeReviewState mutates the same map
-    readReviewState reads from) so the exactly-once dedup is exercised the
-    same way the real file-backed round trip would exercise it. */
+/** In-memory fake standing in for the cache rows, the three domains' state
+    files, and a paged `gate:list` -- stateful (writeState mutates the same
+    map readState reads from) so the exactly-once dedup is exercised the same
+    way the real file-backed round trip would exercise it. */
 function fakeEventIo(opts: {
   rows?: FacilityGateRow[];
   /** Rows the daemon "actually has", for `handleAnsweredEvent`'s cache-miss
-      fallback fetch (`gateList({subjectPrefix: <exact subject>})`) -- kept
-      separate from `rows` (the cache's own content) so a test can model a
-      row the cache never saw. Defaults to `rows`, so most tests (where the
-      cache already has everything) need not set it. */
+      fallback fetch -- kept separate from `rows` (the cache's own content)
+      so a test can model a row the cache never saw. Defaults to `rows`. */
   facilityRows?: FacilityGateRow[];
-  reviews?: Record<string, ReviewState>;
+  review?: Record<string, ResumableState>;
+  respond?: Record<string, ResumableState>;
+  doctor?: Record<string, ResumableState>;
   pages?: FacilityGateRow[][];
   resumeResult?: Partial<AgentLaunchResult>;
-} = {}): { io: GateResumeEventIo; calls: ResumeIoCalls; reviews: Map<string, ReviewState> } {
-  const rowsBySubject = new Map((opts.rows ?? []).map((r) => [r.subject, r]));
+} = {}): {
+  io: GateResumeEventIo;
+  calls: EventCalls;
+  review: Map<string, ResumableState>;
+  respond: Map<string, ResumableState>;
+  doctor: Map<string, ResumableState>;
+} {
+  const rowsBySubject = new Map<string, FacilityGateRow[]>();
+  for (const r of opts.rows ?? []) {
+    rowsBySubject.set(r.subject, [...(rowsBySubject.get(r.subject) ?? []), r]);
+  }
   const facilityRows = opts.facilityRows ?? opts.rows ?? [];
-  const reviews = new Map(Object.entries(opts.reviews ?? { [MR_URL]: baseReview() }));
-  // reviewFilePath is a pure deterministic slug, so the fake can invert it
-  // back to the mrUrl each write targets without guessing at the string.
-  const mrUrlByPath = new Map([...reviews.keys()].map((mrUrl) => [reviewFilePath(mrUrl), mrUrl]));
-  const calls: ResumeIoCalls = { resumeAgentPane: [], writeReviewState: [], notify: [], resolveLaunchSkill: [], applyRow: [] };
+  const review = new Map(Object.entries(opts.review ?? { [MR_URL]: baseReview() }));
+  const respond = new Map(Object.entries(opts.respond ?? {}));
+  const doctor = new Map(Object.entries(opts.doctor ?? {}));
+
+  const calls: EventCalls = { resumeAgentPane: [], notify: [], applyRow: [] };
+
+  const { io: reviewIo } = makeKindIo({ wrapper: "review", workspaceLabel: "reviews", resumedStatus: "reviewing", filePath: reviewFilePath, states: review });
+  const { io: respondIo } = makeKindIo({ wrapper: "respond", workspaceLabel: "responds", resumedStatus: "implementing", filePath: respondFilePath, states: respond });
+  const { io: doctorIo } = makeKindIo({ wrapper: "doctor", workspaceLabel: "doctors", resumedStatus: "fixing", filePath: doctorFilePath, states: doctor });
+
   const pages = opts.pages ?? [];
 
   const io: GateResumeEventIo = {
-    gateRow: (subject) => rowsBySubject.get(subject),
+    resumers: {
+      "review-post": reviewIo,
+      "respond-plan": respondIo,
+      "respond-post": respondIo,
+      "doctor-escalation": doctorIo,
+    },
+    rowsForSubject: (subject) => rowsBySubject.get(subject) ?? [],
     applyRow: (row) => {
       calls.applyRow.push(row);
-      rowsBySubject.set(row.subject, row);
+      rowsBySubject.set(row.subject, [...(rowsBySubject.get(row.subject) ?? []).filter((r) => r.id !== row.id), row]);
     },
-    readReviewState: (mrUrl) => reviews.get(mrUrl),
     // Cursor-addressed, not an external running index, so a fresh
     // bootResumePass call re-pages from the start -- exactly like the real
     // facility's gate:list, and the only way a second pass's dedup no-op is
@@ -210,10 +318,6 @@ function fakeEventIo(opts: {
     // `handleAnsweredEvent`'s single-subject cache-miss fetch, answered from
     // `facilityRows` instead of the page list.
     gateList: async (payload) => {
-      // The facility's cursor is a resume position, never a done-signal: the
-      // final (partial) page repeats a stable non-zero cursor, and only a
-      // short page (or a cursor that stops advancing) ends the pass. A zero
-      // cursor happens only when the whole table is empty.
       if (payload.subjectPrefix === "mr:") {
         const idx = payload.cursor ?? 0;
         const gates = pages[idx] ?? [];
@@ -221,10 +325,6 @@ function fakeEventIo(opts: {
       }
       const gates = facilityRows.filter((r) => r.subject.startsWith(payload.subjectPrefix));
       return { ok: true, data: { gates, cursor: facilityRows.length > 0 ? 999 : 0 } };
-    },
-    resolveLaunchSkill: (mrUrl, tabId) => {
-      calls.resolveLaunchSkill.push({ mrUrl, tabId });
-      return "acme:board-review";
     },
     resumeAgentPane: async (opts2) => {
       calls.resumeAgentPane.push(opts2);
@@ -234,39 +334,64 @@ function fakeEventIo(opts: {
         ...opts.resumeResult,
       };
     },
-    writeReviewState: (path, patch) => {
-      calls.writeReviewState.push({ path, patch });
-      const mrUrl = mrUrlByPath.get(path) ?? MR_URL;
-      const prev = reviews.get(mrUrl) ?? baseReview({ mrUrl });
-      reviews.set(mrUrl, { ...prev, ...patch } as ReviewState);
-    },
-    reviewsWorkspace: "reviews",
     notify: (message) => {
       calls.notify.push(message);
     },
   };
-  return { io, calls, reviews };
+  return { io, calls, review, respond, doctor };
 }
 
 const noSkillLookup = async () => null;
 
 describe("handleAnsweredEvent", () => {
-  test("a console-answered (non-board-endpoint) parked gate resumes through the event path", async () => {
+  test("a console-answered (non-board-endpoint) parked review-post gate resumes through the event path", async () => {
     const row = facilityRow();
-    const { io, calls } = fakeEventIo({ rows: [row] });
+    const { io, calls, review } = fakeEventIo({ rows: [row] });
     const frame: GateEventFrame = { topic: `gate/answered/${GATE_ID}`, payload: { id: GATE_ID, subject: SUBJECT, answers: { outcome: "approve" }, by: "console", answeredAt: 9000 } };
 
     await handleAnsweredEvent(frame, io, noSkillLookup);
 
     expect(calls.resumeAgentPane.length).toBe(1);
     expect(calls.resumeAgentPane[0]!.agentId).toBe("agent-1");
-    const dedupWrite = calls.writeReviewState.find((c) => (c.patch as { resumedGateId?: string }).resumedGateId === GATE_ID);
-    expect(dedupWrite).toBeDefined();
+    expect(review.get(MR_URL)?.resumedGateId).toBe(GATE_ID);
+  });
+
+  test("a respond-plan answered+parked gate resumes through the event path, and the dedup marker lands on RESPOND state, not review state", async () => {
+    const row = facilityRow({ kind: "respond-plan" });
+    const { io, calls, review, respond } = fakeEventIo({
+      rows: [row],
+      review: {},
+      respond: { [MR_URL]: baseReview({ status: "implementing" }) },
+    });
+    const frame: GateEventFrame = { topic: `gate/answered/${GATE_ID}`, payload: { id: GATE_ID, subject: SUBJECT } };
+
+    await handleAnsweredEvent(frame, io, noSkillLookup);
+
+    expect(calls.resumeAgentPane.length).toBe(1);
+    expect(calls.resumeAgentPane[0]!.prompt).toContain("/board:respond");
+    expect(respond.get(MR_URL)?.resumedGateId).toBe(GATE_ID);
+    expect(review.get(MR_URL)).toBeUndefined();
+  });
+
+  test("a doctor-escalation answered+parked gate resumes through the event path against doctor state", async () => {
+    const row = facilityRow({ kind: "doctor-escalation" });
+    const { io, calls, doctor } = fakeEventIo({
+      rows: [row],
+      review: {},
+      doctor: { [MR_URL]: baseReview({ status: "fixing" }) },
+    });
+    const frame: GateEventFrame = { topic: `gate/answered/${GATE_ID}`, payload: { id: GATE_ID, subject: SUBJECT } };
+
+    await handleAnsweredEvent(frame, io, noSkillLookup);
+
+    expect(calls.resumeAgentPane.length).toBe(1);
+    expect(calls.resumeAgentPane[0]!.prompt).toContain("/board:doctor");
+    expect(doctor.get(MR_URL)?.resumedGateId).toBe(GATE_ID);
   });
 
   test("a failed pane dispatch does not mark the dedup, and the next event retries", async () => {
     const row = facilityRow();
-    const { io, calls } = fakeEventIo({ rows: [row] });
+    const { io, calls, review } = fakeEventIo({ rows: [row] });
     const realResume = io.resumeAgentPane;
     let failNext = true;
     io.resumeAgentPane = async (opts) => {
@@ -279,11 +404,11 @@ describe("handleAnsweredEvent", () => {
     const frame: GateEventFrame = { topic: `gate/answered/${GATE_ID}`, payload: { id: GATE_ID, subject: SUBJECT } };
 
     await expect(handleAnsweredEvent(frame, io, noSkillLookup)).resolves.toBeUndefined();
-    expect(calls.writeReviewState.length).toBe(0);
+    expect(review.get(MR_URL)?.resumedGateId).toBeUndefined();
 
     await handleAnsweredEvent(frame, io, noSkillLookup);
     expect(calls.resumeAgentPane.length).toBe(1);
-    expect(calls.writeReviewState.some((c) => (c.patch as { resumedGateId?: string }).resumedGateId === GATE_ID)).toBe(true);
+    expect(review.get(MR_URL)?.resumedGateId).toBe(GATE_ID);
   });
 
   test("an open (never-parked) gate answered does not resume", async () => {
@@ -294,47 +419,32 @@ describe("handleAnsweredEvent", () => {
     await handleAnsweredEvent(frame, io, noSkillLookup);
 
     expect(calls.resumeAgentPane.length).toBe(0);
-    expect(calls.writeReviewState.length).toBe(0);
   });
 
-  test("missing agentId on the tracked review notifies instead of resuming, does not mark the dedup, and stays retryable once the agentId is restored", async () => {
+  test("missing agentId on the tracked state notifies instead of resuming, does not mark the dedup, and stays retryable once the agentId is restored", async () => {
     const row = facilityRow();
-    const { io, calls, reviews } = fakeEventIo({ rows: [row], reviews: { [MR_URL]: baseReview({ agentId: undefined }) } });
+    const { io, calls, review } = fakeEventIo({ rows: [row], review: { [MR_URL]: baseReview({ agentId: undefined }) } });
     const frame: GateEventFrame = { topic: `gate/answered/${GATE_ID}`, payload: { id: GATE_ID, subject: SUBJECT } };
 
     await expect(handleAnsweredEvent(frame, io, noSkillLookup)).resolves.toBeUndefined();
 
     expect(calls.resumeAgentPane.length).toBe(0);
     expect(calls.notify).toEqual(["parked gate answered but no agent on file; relaunch from the board"]);
-    // The notify-only degrade never resumed anything, so it must not write
-    // the resumedGateId dedup marker -- that would block this gate forever.
-    expect(calls.writeReviewState.length).toBe(0);
+    expect(review.get(MR_URL)?.resumedGateId).toBeUndefined();
 
-    // Restoring the agentId (e.g. a human relaunches from the board) and
-    // re-delivering the same event now DOES resume -- proving the gate was
-    // never permanently blocked by the earlier notify-only attempt.
-    reviews.set(MR_URL, { ...reviews.get(MR_URL)!, agentId: "agent-1" });
+    review.set(MR_URL, { ...review.get(MR_URL)!, agentId: "agent-1" });
     await handleAnsweredEvent(frame, io, noSkillLookup);
     expect(calls.resumeAgentPane.length).toBe(1);
-    expect(calls.writeReviewState.some((c) => (c.patch as { resumedGateId?: string }).resumedGateId === GATE_ID)).toBe(true);
+    expect(review.get(MR_URL)?.resumedGateId).toBe(GATE_ID);
   });
 
-  test("a respond-plan answered frame throws the not-wired-until-W3 error rather than silently mishandling it", async () => {
-    const row = facilityRow({ kind: "respond-plan" });
+  test("an unwired kind throws rather than silently mishandling it", async () => {
+    const row = facilityRow({ kind: "mystery-kind" });
     const { io, calls } = fakeEventIo({ rows: [row] });
     const frame: GateEventFrame = { topic: `gate/answered/${GATE_ID}`, payload: { id: GATE_ID, subject: SUBJECT } };
 
-    await expect(handleAnsweredEvent(frame, io, noSkillLookup)).rejects.toThrow("respond-plan resume not wired until W3");
+    await expect(handleAnsweredEvent(frame, io, noSkillLookup)).rejects.toThrow("mystery-kind resume not wired");
     expect(calls.resumeAgentPane.length).toBe(0);
-    expect(calls.writeReviewState.length).toBe(0);
-  });
-
-  test("a doctor-escalation answered frame throws the not-wired-until-W3 error", async () => {
-    const row = facilityRow({ kind: "doctor-escalation" });
-    const { io } = fakeEventIo({ rows: [row] });
-    const frame: GateEventFrame = { topic: `gate/answered/${GATE_ID}`, payload: { id: GATE_ID, subject: SUBJECT } };
-
-    await expect(handleAnsweredEvent(frame, io, noSkillLookup)).rejects.toThrow("doctor-escalation resume not wired until W3");
   });
 
   test("a non-answered topic is a no-op", async () => {
@@ -360,7 +470,7 @@ describe("exactly-once dedup across boot passes and the event path", () => {
     expect(calls.resumeAgentPane.length).toBe(1); // still one -- the second pass no-ops
 
     const frame: GateEventFrame = { topic: `gate/answered/${GATE_ID}`, payload: { id: GATE_ID, subject: SUBJECT } };
-    io.gateRow = () => row;
+    io.rowsForSubject = () => [row];
     await handleAnsweredEvent(frame, io, noSkillLookup);
     expect(calls.resumeAgentPane.length).toBe(1); // event after the boot-pass resume also no-ops
   });
@@ -379,7 +489,7 @@ describe("bootResumePass", () => {
     );
     const { io, calls } = fakeEventIo({
       pages: [[rowA, ...filler], [rowB]],
-      reviews: { [MR_URL]: baseReview(), [mrUrlB]: baseReview({ mrUrl: mrUrlB, iid: 9001, agentId: "agent-9", gateId: "gate-2" }) },
+      review: { [MR_URL]: baseReview(), [mrUrlB]: baseReview({ mrUrl: mrUrlB, iid: 9001, agentId: "agent-9", gateId: "gate-2" }) },
     });
 
     await bootResumePass(io, noSkillLookup);
@@ -389,7 +499,7 @@ describe("bootResumePass", () => {
   });
 
   test("regression: a non-zero cursor on the last page never spins forever -- a repeat call with 0 rows and the same cursor terminates the pass", async () => {
-    const { io, calls } = fakeEventIo({ reviews: { [MR_URL]: baseReview() } });
+    const { io, calls } = fakeEventIo({ review: { [MR_URL]: baseReview() } });
     let callCount = 0;
     io.gateList = async (payload) => {
       callCount++;
@@ -404,13 +514,13 @@ describe("bootResumePass", () => {
     expect(calls.resumeAgentPane.length).toBe(0);
   });
 
-  test("a not-wired-until-W3 throw for one row doesn't stop later rows in the same page from resuming (per-row isolation)", async () => {
+  test("an unwired-kind throw for one row doesn't stop later rows in the same page from resuming (per-row isolation)", async () => {
     const mrUrlB = "https://gitlab.com/acme/webapp/-/merge_requests/9002";
-    const throwing = facilityRow({ id: "gate-throws", kind: "respond-plan" });
+    const throwing = facilityRow({ id: "gate-throws", kind: "mystery-kind" });
     const rowB = facilityRow({ id: "gate-2", subject: `mr:${mrUrlB}` });
     const { io, calls } = fakeEventIo({
       pages: [[throwing, rowB]],
-      reviews: {
+      review: {
         [MR_URL]: baseReview({ gateId: "gate-throws" }),
         [mrUrlB]: baseReview({ mrUrl: mrUrlB, iid: 9002, agentId: "agent-9", gateId: "gate-2" }),
       },
@@ -422,19 +532,33 @@ describe("bootResumePass", () => {
     expect(calls.resumeAgentPane[0]!.agentId).toBe("agent-9");
   });
 
-  test("resumes only the review-tracked gate id; a stale answered+parked row left over from an earlier review on the same MR is skipped", async () => {
+  test("resumes only the state-tracked gate id (review domain); a stale answered+parked row left over from an earlier round on the same MR is skipped", async () => {
     const rowOld = facilityRow({ id: "gate-old" });
     const rowCurrent = facilityRow({ id: "gate-current" });
-    const { io, calls } = fakeEventIo({
+    const { io, calls, review } = fakeEventIo({
       pages: [[rowOld, rowCurrent]],
-      reviews: { [MR_URL]: baseReview({ gateId: "gate-current" }) },
+      review: { [MR_URL]: baseReview({ gateId: "gate-current" }) },
     });
 
     await bootResumePass(io, noSkillLookup);
 
     expect(calls.resumeAgentPane.length).toBe(1);
-    expect(calls.writeReviewState.some((c) => (c.patch as { resumedGateId?: string }).resumedGateId === "gate-current")).toBe(true);
-    expect(calls.writeReviewState.some((c) => (c.patch as { resumedGateId?: string }).resumedGateId === "gate-old")).toBe(false);
+    expect(review.get(MR_URL)?.resumedGateId).toBe("gate-current");
+  });
+
+  test("resumes only the state-tracked gate id -- the guard generalizes to a non-review domain (respond)", async () => {
+    const rowOld = facilityRow({ id: "gate-old", kind: "respond-plan" });
+    const rowCurrent = facilityRow({ id: "gate-current", kind: "respond-plan" });
+    const { io, calls, respond } = fakeEventIo({
+      pages: [[rowOld, rowCurrent]],
+      review: {},
+      respond: { [MR_URL]: baseReview({ gateId: "gate-current" }) },
+    });
+
+    await bootResumePass(io, noSkillLookup);
+
+    expect(calls.resumeAgentPane.length).toBe(1);
+    expect(respond.get(MR_URL)?.resumedGateId).toBe("gate-current");
   });
 });
 
@@ -450,7 +574,7 @@ describe("handleAnsweredEvent cache-miss fallback", () => {
     expect(calls.applyRow.map((r) => r.id)).toEqual([GATE_ID]);
   });
 
-  test("an answered frame whose id differs from the cache's row for that subject is a no-op when the daemon has nothing matching either", async () => {
+  test("an answered frame whose id differs from every cached row for that subject is a no-op when the daemon has nothing matching either", async () => {
     const cachedRow = facilityRow({ id: "gate-cached" });
     const { io, calls } = fakeEventIo({ rows: [cachedRow] });
     const frame: GateEventFrame = { topic: "gate/answered/gate-other", payload: { id: "gate-other", subject: SUBJECT } };
@@ -460,13 +584,63 @@ describe("handleAnsweredEvent cache-miss fallback", () => {
     expect(calls.resumeAgentPane.length).toBe(0);
   });
 
-  test("resumes only the review-tracked gate id even on the live event path -- a stale answered+parked frame is a no-op", async () => {
+  test("resumes only the state-tracked gate id even on the live event path -- a stale answered+parked frame is a no-op", async () => {
     const rowOld = facilityRow({ id: "gate-old" });
-    const { io, calls } = fakeEventIo({ rows: [rowOld], reviews: { [MR_URL]: baseReview({ gateId: "gate-current" }) } });
+    const { io, calls } = fakeEventIo({ rows: [rowOld], review: { [MR_URL]: baseReview({ gateId: "gate-current" }) } });
     const frame: GateEventFrame = { topic: "gate/answered/gate-old", payload: { id: "gate-old", subject: SUBJECT } };
 
     await handleAnsweredEvent(frame, io, noSkillLookup);
 
     expect(calls.resumeAgentPane.length).toBe(0);
+  });
+});
+
+describe("buildResumers", () => {
+  // Proof that dropping a kind from the real wiring (server.ts's
+  // gateResumeIo) fails a test instead of the whole suite passing silently
+  // -- buildResumers is generated from GATE_KINDS, so this test only needs
+  // to walk that same list rather than hardcode the kind names itself.
+  function stubKindIo(label: string): KindResumeIo {
+    return {
+      readState: () => undefined,
+      writeState: () => {},
+      filePath: () => label,
+      resolveSkill: () => label,
+      prompt: async () => label,
+      resumedStatus: label,
+      workspaceLabel: label,
+    };
+  }
+
+  test("every known gate kind resolves to a resumer", () => {
+    const review = stubKindIo("review");
+    const respond = stubKindIo("respond");
+    const doctor = stubKindIo("doctor");
+    const resumers = buildResumers({ review, respond, doctor });
+
+    for (const kind of GATE_KINDS) {
+      expect(resumers[kind]).toBeDefined();
+    }
+  });
+
+  test("routes each kind to the domain domainForKind maps it to", () => {
+    const review = stubKindIo("review");
+    const respond = stubKindIo("respond");
+    const doctor = stubKindIo("doctor");
+    const resumers = buildResumers({ review, respond, doctor });
+
+    expect(resumers["review-post"]).toBe(review);
+    expect(resumers["respond-plan"]).toBe(respond);
+    expect(resumers["respond-post"]).toBe(respond);
+    expect(resumers["doctor-escalation"]).toBe(doctor);
+  });
+
+  test("an unknown kind has no resumer", () => {
+    const review = stubKindIo("review");
+    const respond = stubKindIo("respond");
+    const doctor = stubKindIo("doctor");
+    const resumers = buildResumers({ review, respond, doctor });
+
+    expect(resumers["never-registered"]).toBeUndefined();
   });
 });

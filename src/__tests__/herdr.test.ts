@@ -5,6 +5,7 @@ import {
   parseTabCreate,
   parseWorkspaceCreate,
   reviewPrompt,
+  respondPrompt,
   operatorNoteParagraph,
   reopenPrompt,
   parseLaunchNote,
@@ -85,6 +86,23 @@ describe("command builders", () => {
   --state /s/1.json
   --status-bin /b/review-status.ts
   --report /s/1.md`);
+  });
+  test("respondPrompt injects status-bin, report and skill flags, same as reviewPrompt", () => {
+    expect(
+      respondPrompt({
+        mrUrl: "https://x/mr/1",
+        statePath: "/s/1.json",
+        statusBin: "/b/board",
+        reportPath: "/s/1.md",
+        skill: "myteam:respond",
+      }),
+    ).toBe(
+      `/board:respond https://x/mr/1
+  --state /s/1.json
+  --status-bin /b/board
+  --report /s/1.md
+  --skill myteam:respond`,
+    );
   });
   test("a stale channel option can no longer put --channel in the prompt", () => {
     // channel is no longer on SkillPromptOpts; this simulates a stale caller
@@ -279,6 +297,7 @@ describe("launchReview / launchRespond / launchDoctor (rt agent)", () => {
       io,
     );
     expect(startCalls[0]!.prompt).toContain("/board:respond https://x/mr/1");
+    expect(startCalls[0]!.prompt).toContain("--report /s/1.md");
     expect(startCalls[0]).toMatchObject({ workspace: "responds", tab: "!4821" });
   });
 
@@ -334,7 +353,7 @@ describe("launchReview / launchRespond / launchDoctor (rt agent)", () => {
     );
     expect(startCalls[0]!.prompt).toBe(
       await dispatchPrompt("board:respond", {
-        mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: statusBinPath(), skill: "acme:board-respond",
+        mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: statusBinPath(), reportPath: "/s/1.md", skill: "acme:board-respond",
       }, resolvePath),
     );
   });
@@ -551,6 +570,36 @@ describe("--resumed-gate flag (parked-gate resume marker)", () => {
     });
     expect(p).not.toContain("--resumed-gate");
     expect(p).toContain("--re-review");
+  });
+
+  test("respondPrompt and doctorPrompt thread --resumed-gate the same way reviewPrompt does", () => {
+    const respond = respondPrompt({
+      mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: "/b/board", skill: "myteam:respond", resumedGate: "gate-9",
+    });
+    expect(respond).toContain("--resumed-gate gate-9");
+
+    const doctor = doctorPrompt({
+      mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: "/b/board", skill: "myteam:doctor", resumedGate: "gate-9",
+    });
+    expect(doctor).toContain("--resumed-gate gate-9");
+  });
+
+  // Pins the shape respondResumeIo (server.ts) builds on a parked-gate resume:
+  // --report threaded alongside --resumed-gate, so a resumed respond pane
+  // reads the persisted adjudication/drafts, not just which gate answered.
+  test("respondPrompt carries --report and --resumed-gate together, as the resume prompt builder does", () => {
+    const p = respondPrompt({
+      mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: "/b/board",
+      reportPath: "/s/1.md", skill: "myteam:respond", resumedGate: "gate-9",
+    });
+    expect(p).toBe(
+      `/board:respond https://x/mr/1
+  --state /s/1.json
+  --status-bin /b/board
+  --report /s/1.md
+  --skill myteam:respond
+  --resumed-gate gate-9`,
+    );
   });
 });
 

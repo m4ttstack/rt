@@ -30,6 +30,16 @@ export interface RespondState {
   agentId?: string;
   /** rt herdr pane id the agent landed in, from the launch/resume result. */
   paneId?: string;
+  /** Facility gate id from the most recent `gate open`, so `gate wait` /
+      `gate answer` can find it by state path alone. */
+  gateId?: string;
+  /** The kind `gateId` was opened with ("respond-plan" or "respond-post") --
+      the wrapper's own re-entry reads this to know what a `--resumed-gate`
+      id names. */
+  gateKind?: string;
+  /** Id of the gate the board has already resumed a parked-then-answered
+      session for -- the exactly-once dedup marker (see gates/resume.ts). */
+  resumedGateId?: string;
   startedAt: number;
   updatedAt: number;
 }
@@ -40,6 +50,15 @@ export const RESPOND_DIR = join(APP_ROOT, "state", "responds");
 export function respondFilePath(mrUrl: string, dir: string = RESPOND_DIR): string {
   const slug = mrUrl.replace(/[^a-zA-Z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 200);
   return join(dir, `${slug}.json`);
+}
+
+/** Sibling markdown file holding the fill's adjudication table and
+    drafted/finalized replies, derived from the state file path so the
+    server and the respond wrapper resolve the same location without
+    passing it around. See reviewReportPath (review-state.ts), which this
+    mirrors byte-for-byte. */
+export function respondReportPath(statePath: string): string {
+  return statePath.replace(/\.json$/, "") + ".md";
 }
 
 export function writeRespondState(
@@ -65,6 +84,9 @@ export function writeRespondState(
     sessionId: patch.sessionId ?? prev.sessionId,
     agentId: patch.agentId ?? prev.agentId,
     paneId: patch.paneId ?? prev.paneId,
+    gateId: patch.gateId ?? prev.gateId,
+    gateKind: patch.gateKind ?? prev.gateKind,
+    resumedGateId: patch.resumedGateId ?? prev.resumedGateId,
     startedAt: prev.startedAt ?? now,
     updatedAt: now,
   };
@@ -105,7 +127,10 @@ export function pruneRespondStates(keepUrls: ReadonlySet<string>, dir: string = 
     } catch {
       continue;
     }
-    if (mrUrl && !keepUrls.has(mrUrl)) rmSync(path, { force: true });
+    if (mrUrl && !keepUrls.has(mrUrl)) {
+      rmSync(path, { force: true });
+      rmSync(respondReportPath(path), { force: true });
+    }
   }
 }
 

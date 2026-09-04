@@ -150,7 +150,7 @@ remembered in the conversation.
      ```
 
    - **Open the gate:**
-     `<status-bin> gate open <state> --questions <json>`
+     `<status-bin> gate open <state> --kind review-post --questions <json>`
    - **Wait for the answer:**
      `<status-bin> gate wait <state>`
      Each invocation waits for a bounded window and always exits on its own,

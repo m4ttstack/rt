@@ -5,6 +5,8 @@ import { tmpdir } from "os";
 import { gateOpen, gateWait, gateAnswer, parseWaitMaxMs, type GateVerbIo } from "../gates/verbs.ts";
 import { statusBinPath } from "../herdr.ts";
 import type { ReviewState } from "../review-state.ts";
+import type { RespondState } from "../respond-state.ts";
+import type { DoctorState } from "../doctor-state.ts";
 import type { Commands, GateRow, RtResponse } from "@mattstack/rt-client";
 
 const MR_URL = "https://gitlab.com/acme/webapp/-/merge_requests/4821";
@@ -115,7 +117,7 @@ describe("gateOpen", () => {
   test("calls the facility with subject mr:<url>, kind review-post, no nudge, and an !<iid> label", async () => {
     const { io, calls } = fakeIo();
 
-    const gateId = await gateOpen(statePath, JSON.stringify(QUESTIONS), io);
+    const gateId = await gateOpen(statePath, "review-post", JSON.stringify(QUESTIONS), io);
 
     expect(gateId).toBe("gate-1");
     expect(calls.gateOpen.length).toBe(1);
@@ -129,13 +131,14 @@ describe("gateOpen", () => {
     expect(payload.pane).toBeUndefined();
   });
 
-  test("persists the returned gateId onto review state, leaving other fields untouched", async () => {
+  test("persists the returned gateId and gateKind onto review state, leaving other fields untouched", async () => {
     const { io } = fakeIo({ openResult: { ok: true, data: { id: "gate-xyz", supersededId: null } } });
 
-    await gateOpen(statePath, JSON.stringify(QUESTIONS), io);
+    await gateOpen(statePath, "review-post", JSON.stringify(QUESTIONS), io);
 
     const state = readState();
     expect(state.gateId).toBe("gate-xyz");
+    expect(state.gateKind).toBe("review-post");
     expect(state.mrUrl).toBe(MR_URL);
     expect(state.status).toBe("reviewing");
     expect(state.agentId).toBe("agent-1");
@@ -144,7 +147,15 @@ describe("gateOpen", () => {
   test("malformed --questions JSON throws rather than calling the facility", async () => {
     const { io, calls } = fakeIo();
 
-    await expect(gateOpen(statePath, "{ not valid json", io)).rejects.toThrow();
+    await expect(gateOpen(statePath, "review-post", "{ not valid json", io)).rejects.toThrow();
+
+    expect(calls.gateOpen.length).toBe(0);
+  });
+
+  test("an unrecognized kind throws rather than calling the facility", async () => {
+    const { io, calls } = fakeIo();
+
+    await expect(gateOpen(statePath, "mystery-kind", JSON.stringify(QUESTIONS), io)).rejects.toThrow(/unrecognized kind/);
 
     expect(calls.gateOpen.length).toBe(0);
   });
@@ -152,7 +163,7 @@ describe("gateOpen", () => {
   test("a facility failure throws loudly instead of writing a gateId", async () => {
     const { io } = fakeIo({ openResult: { ok: false, error: "daemon unreachable" } });
 
-    await expect(gateOpen(statePath, JSON.stringify(QUESTIONS), io)).rejects.toThrow(/daemon unreachable/);
+    await expect(gateOpen(statePath, "review-post", JSON.stringify(QUESTIONS), io)).rejects.toThrow(/daemon unreachable/);
     expect(readState().gateId).toBeUndefined();
   });
 
@@ -160,7 +171,7 @@ describe("gateOpen", () => {
     const { io } = fakeIo({ openResult: { ok: true, data: { id: "gate-survives", supersededId: null } } });
     const { writeReviewState } = await import("../review-state.ts");
 
-    await gateOpen(statePath, JSON.stringify(QUESTIONS), io);
+    await gateOpen(statePath, "review-post", JSON.stringify(QUESTIONS), io);
     expect(readState().gateId).toBe("gate-survives");
 
     // An unrelated status write (e.g. a resume) that doesn't mention gateId
@@ -181,6 +192,49 @@ describe("gateOpen", () => {
 
     expect(waitCalls.gateWait[0]!.id).toBe("gate-survives");
     expect(result).toEqual({ status: "answered", answers: { tiers: ["nit"], outcome: "comment" }, by: "board-ui", answeredAt: 9000 });
+  });
+});
+
+describe("gateOpen: label and writer by kind's domain", () => {
+  test("a respond-plan open labels 'respond gate !<iid>' and persists gateId/gateKind onto respond state", async () => {
+    const respondPath = join(dir, "respond.json");
+    writeFileSync(
+      respondPath,
+      JSON.stringify({ mrUrl: MR_URL, iid: IID, status: "implementing", agentId: "agent-1", startedAt: 1, updatedAt: 1 }),
+    );
+    const { io, calls } = fakeIo({ openResult: { ok: true, data: { id: "gate-respond", supersededId: null } } });
+
+    const gateId = await gateOpen(respondPath, "respond-plan", JSON.stringify(QUESTIONS), io);
+
+    expect(gateId).toBe("gate-respond");
+    expect(calls.gateOpen[0]!.meta).toEqual({ label: `respond gate !${IID}` });
+    const respondState = JSON.parse(readFileSync(respondPath, "utf8")) as RespondState;
+    expect(respondState.gateId).toBe("gate-respond");
+    expect(respondState.gateKind).toBe("respond-plan");
+    expect(respondState.status).toBe("implementing");
+    // The respond-only fields on the file before this open must survive the
+    // write untouched -- proof gateOpen went through writeRespondState's own
+    // merge list, not a review-shaped one that would silently drop them.
+    expect(respondState.agentId).toBe("agent-1");
+  });
+
+  test("a doctor-escalation open labels 'doctor gate !<iid>' and persists gateId/gateKind onto doctor state", async () => {
+    const doctorPath = join(dir, "doctor.json");
+    writeFileSync(
+      doctorPath,
+      JSON.stringify({ mrUrl: MR_URL, iid: IID, status: "fixing", origin: "manual", startedAt: 1, updatedAt: 1 }),
+    );
+    const { io, calls } = fakeIo({ openResult: { ok: true, data: { id: "gate-doctor", supersededId: null } } });
+
+    const gateId = await gateOpen(doctorPath, "doctor-escalation", JSON.stringify(QUESTIONS), io);
+
+    expect(gateId).toBe("gate-doctor");
+    expect(calls.gateOpen[0]!.meta).toEqual({ label: `doctor gate !${IID}` });
+    const doctorState = JSON.parse(readFileSync(doctorPath, "utf8")) as DoctorState;
+    expect(doctorState.gateId).toBe("gate-doctor");
+    expect(doctorState.gateKind).toBe("doctor-escalation");
+    expect(doctorState.status).toBe("fixing");
+    expect(doctorState.origin).toBe("manual");
   });
 });
 
@@ -354,13 +408,27 @@ describe("gateAnswer", () => {
 
 describe("bin/gate.ts malformed --questions", () => {
   test("exits nonzero with a stderr message, without ever reaching the facility", async () => {
-    const proc = Bun.spawn([statusBinPath(), "gate", "open", statePath, "--questions", "{ not valid json"], {
-      stdout: "pipe",
-      stderr: "pipe",
-    });
+    const proc = Bun.spawn(
+      [statusBinPath(), "gate", "open", statePath, "--kind", "review-post", "--questions", "{ not valid json"],
+      { stdout: "pipe", stderr: "pipe" },
+    );
     const code = await proc.exited;
     expect(code).not.toBe(0);
     const stderr = await new Response(proc.stderr).text();
     expect(stderr.length).toBeGreaterThan(0);
+  });
+});
+
+describe("bin/gate.ts missing --kind", () => {
+  test("exits nonzero with a usage message, without ever reaching the facility", async () => {
+    const proc = Bun.spawn(
+      [statusBinPath(), "gate", "open", statePath, "--questions", JSON.stringify(QUESTIONS)],
+      { stdout: "pipe", stderr: "pipe" },
+    );
+    const code = await proc.exited;
+    expect(code).not.toBe(0);
+    const stderr = await new Response(proc.stderr).text();
+    expect(stderr).toContain("usage: gate open");
+    expect(stderr).toContain("--kind");
   });
 });

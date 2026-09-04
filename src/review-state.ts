@@ -27,6 +27,9 @@ export interface ReviewState {
   /** Facility gate id from the most recent `gate open`, so `gate wait` /
       `gate answer` can find it by state path alone. */
   gateId?: string;
+  /** The kind `gateId` was opened with (e.g. "review-post") -- the wrapper's
+      own re-entry reads this to know what a `--resumed-gate` id names. */
+  gateKind?: string;
   /** Id of the gate the board has already resumed a parked-then-answered
       session for. The exactly-once dedup marker for `handleAnsweredEvent`/
       `bootResumePass` (gates/resume.ts) -- a gate id matching this is never
@@ -91,6 +94,7 @@ export function writeReviewState(
     agentId: patch.agentId ?? prev.agentId,
     paneId: patch.paneId ?? prev.paneId,
     gateId: patch.gateId ?? prev.gateId,
+    gateKind: patch.gateKind ?? prev.gateKind,
     resumedGateId: patch.resumedGateId ?? prev.resumedGateId,
     startedAt: prev.startedAt ?? now,
     updatedAt: now,
