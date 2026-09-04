@@ -122,6 +122,12 @@ describe("planSweep", () => {
     expect(actions).toEqual([]);
   });
 
+  test("a done review with an already-cleared tabId ('', the merge-trap convention) never re-fires close-missed-done", () => {
+    const review = baseReview({ status: "done", tabId: "" });
+    const actions = planSweep([], new Map([[MR_URL, review]]), NOW, GRACE_MS);
+    expect(actions).toEqual([]);
+  });
+
   test("a non-done review with a tabId is untouched", () => {
     const review = baseReview({ status: "reviewing", tabId: "tab-3" });
     const actions = planSweep([], new Map([[MR_URL, review]]), NOW, GRACE_MS);

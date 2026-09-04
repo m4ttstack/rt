@@ -9,7 +9,6 @@ const io: GateVerbIo = {
   gateOpen: facilityGateOpen,
   gateWait: facilityGateWait,
   gateAnswer: facilityGateAnswer,
-  now: () => Date.now(),
 };
 
 /** Reads a `--flag value` pair out of argv; `--flag=value` also works. */

@@ -254,11 +254,6 @@ function claudeInvocation(claudeCommand?: string): string {
   return claudeCommand?.trim() || "claude";
 }
 
-/** Shell command that cd's into cwd and starts claude with the given prompt. */
-export function buildPaneCommand(cwd: string, prompt: string, claudeCommand?: string): string {
-  return `cd ${shellSingleQuote(cwd)} && ${claudeInvocation(claudeCommand)} ${shellSingleQuote(prompt)}`;
-}
-
 /** Shell command that cd's into cwd and resumes an existing claude session. With
     no prompt, claude drops the user into the interactive continuation; with one,
     claude resumes and sends it as the first message (used by re-review). */

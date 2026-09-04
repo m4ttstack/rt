@@ -48,7 +48,6 @@ function fakeIo(overrides: {
   openResult?: RtResponse<Commands["gate:open"]["data"]>;
   waitResults?: Array<RtResponse<Commands["gate:wait"]["data"]>>;
   answerResult?: RtResponse<Commands["gate:answer"]["data"]>;
-  now?: number;
 } = {}): { io: GateVerbIo; calls: FakeIoCalls } {
   const calls: FakeIoCalls = { gateOpen: [], gateWait: [], gateAnswer: [] };
   const waitResults = overrides.waitResults ?? [];
@@ -68,7 +67,6 @@ function fakeIo(overrides: {
       calls.gateAnswer.push(payload);
       return overrides.answerResult ?? { ok: true, data: { row: gateRow({ id: payload.id }) } };
     },
-    now: () => overrides.now ?? 5000,
   };
   return { io, calls };
 }

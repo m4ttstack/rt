@@ -18,7 +18,8 @@ export type AnswerGateResult =
   | { kind: "ok" }
   | { kind: "conflict"; row: GateRow }
   | { kind: "not-found" }
-  | { kind: "invalid"; reason: string };
+  | { kind: "invalid"; reason: string }
+  | { kind: "unreachable"; reason: string };
 
 /** Distinguishes the daemon's "nothing there to answer" rejections from
     validation/strict-membership ones -- the former maps to 404, the latter
@@ -30,6 +31,15 @@ function isMissingGateError(message: string): boolean {
   return message === "not-found" || message === "closed";
 }
 
+/** The rt-client transport's own error-shape prefix (see rtCommand's catch)
+    for a failed socket connection -- distinct from a daemon-issued
+    validation rejection, which never carries this text. */
+const UNREACHABLE_PREFIX = "rt daemon unreachable";
+
+function isUnreachableError(message: string): boolean {
+  return message.startsWith(UNREACHABLE_PREFIX);
+}
+
 /**
  * Answers a gate through the facility CAS: resolves the id from the board's
  * cache, calls `gateAnswer`, and maps the outcome. A CAS loss is `ok:true`
@@ -37,15 +47,27 @@ function isMissingGateError(message: string): boolean {
  * facility already recorded a real answer, just not this caller's. The
  * daemon emits `gate/answered` itself on a genuine write, so there is
  * nothing left for this path to emit or persist.
+ *
+ * `gateAnswer` itself never rejects in production (the rt-client transport
+ * catches connection failures into `{ok:false}`), but the try/catch here
+ * guards the contract anyway -- an unexpected throw is a transport failure
+ * exactly like the unreachable `ok:false` shape, not a validation error.
  */
 export async function answerGate(mrUrl: string, answers: GateAnswers, io: AnswerGateIo): Promise<AnswerGateResult> {
   const gateId = io.findAnswerableGateId(mrUrl);
   if (!gateId) return { kind: "not-found" };
 
-  const res = await io.gateAnswer({ id: gateId, answers, by: "board" });
+  let res: Awaited<ReturnType<AnswerGateIo["gateAnswer"]>>;
+  try {
+    res = await io.gateAnswer({ id: gateId, answers, by: "board" });
+  } catch (err) {
+    return { kind: "unreachable", reason: err instanceof Error ? err.message : String(err) };
+  }
   if (!res.ok || !res.data) {
     const message = res.error ?? "gate:answer failed with no error detail";
-    return isMissingGateError(message) ? { kind: "not-found" } : { kind: "invalid", reason: message };
+    if (isMissingGateError(message)) return { kind: "not-found" };
+    if (isUnreachableError(message)) return { kind: "unreachable", reason: message };
+    return { kind: "invalid", reason: message };
   }
 
   return res.data.conflict ? { kind: "conflict", row: res.data.row } : { kind: "ok" };

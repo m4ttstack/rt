@@ -122,4 +122,26 @@ describe("answerGate", () => {
 
     expect(result).toEqual({ kind: "invalid", reason: message });
   });
+
+  test("gateAnswer rejecting (e.g. a network failure) maps to unreachable, not invalid", async () => {
+    const io: AnswerGateIo = {
+      findAnswerableGateId: () => GATE_ID,
+      gateAnswer: async () => {
+        throw new Error("connect ECONNREFUSED");
+      },
+    };
+
+    const result = await answerGate(MR_URL, { outcome: "approve" }, io);
+
+    expect(result).toEqual({ kind: "unreachable", reason: "connect ECONNREFUSED" });
+  });
+
+  test("the rt-client transport's own daemon-unreachable ok:false response maps to unreachable, not invalid", async () => {
+    const message = "rt daemon unreachable at /tmp/rt.sock: connect ECONNREFUSED";
+    const { io } = fakeIo(GATE_ID, () => ({ ok: false, error: message }));
+
+    const result = await answerGate(MR_URL, { outcome: "approve" }, io);
+
+    expect(result).toEqual({ kind: "unreachable", reason: message });
+  });
 });

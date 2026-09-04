@@ -8,7 +8,6 @@ import {
   operatorNoteParagraph,
   reopenPrompt,
   parseLaunchNote,
-  buildPaneCommand,
   buildResumePaneCommand,
   mrTabLabel,
   launchReview,
@@ -159,10 +158,6 @@ describe("command builders", () => {
     expect(parseLaunchNote({ note: "x".repeat(2001) })).toEqual({ ok: false, error: "note too long (max 2000 chars)" });
     expect(parseLaunchNote({ note: "x".repeat(2000) })).toEqual({ ok: true, note: "x".repeat(2000) });
   });
-  test("buildPaneCommand cds then launches claude with a single-quoted prompt", () => {
-    const cmd = buildPaneCommand("/repo dir", "/board:review https://x/mr/1 --state /s/1.json");
-    expect(cmd).toBe("cd '/repo dir' && claude '/board:review https://x/mr/1 --state /s/1.json'");
-  });
   test("reviewPrompt appends --re-review when re-reviewing", () => {
     expect(
       reviewPrompt({ mrUrl: "https://x/mr/1", statePath: "/s/1.json", statusBin: "/b/review-status.ts", reportPath: "/s/1.md", reReview: true }),
@@ -171,15 +166,6 @@ describe("command builders", () => {
   --status-bin /b/review-status.ts
   --report /s/1.md
   --re-review`);
-  });
-  test("buildPaneCommand launches a configured claude command in place of plain claude", () => {
-    expect(buildPaneCommand("/repo dir", "do it", "cswap run 2 --share-history --")).toBe(
-      "cd '/repo dir' && cswap run 2 --share-history -- 'do it'",
-    );
-  });
-  test("buildPaneCommand falls back to plain claude when the configured command is empty", () => {
-    expect(buildPaneCommand("/repo", "do it", "")).toBe("cd '/repo' && claude 'do it'");
-    expect(buildPaneCommand("/repo", "do it", "   ")).toBe("cd '/repo' && claude 'do it'");
   });
   test("buildResumePaneCommand with no prompt drops into an interactive resume", () => {
     expect(buildResumePaneCommand("/repo", "sess-1")).toBe("cd '/repo' && claude --resume 'sess-1'");

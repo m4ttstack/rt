@@ -13,7 +13,7 @@ import { upsertEnvKeys } from "./env-file.ts";
 import { aggregateSyncScope, boardDemand, buildBoard, buildRoster, channelForMR, configuredSlackChannels, projectPathFromWebUrl, reviewSkillForTab, visibleMrsFor, type BoardMR, type SyncScopeRead } from "./data.ts";
 import { GitLabProvider, ReadBackFailedError, NoteMutator, parseRepoId } from "@mattstack/glance";
 import { summarizeDiscussions, threadStatusCounts, unresolvedReviewerCount } from "./discussions.ts";
-import { readProjectMRs, readDiscussions, subscribe, eventsEmit, gateList, gatePark, gateClose, gateAnswer as gateAnswerFacility, getSetting, setSetting } from "@mattstack/rt-client";
+import { readProjectMRs, readDiscussions, subscribe, gateList, gatePark, gateClose, gateAnswer as gateAnswerFacility, getSetting, setSetting } from "@mattstack/rt-client";
 import { SnapshotCache } from "./cache.ts";
 import { isLocalRequest } from "./local.ts";
 import { settingsHandler } from "@mattstack/settings-kit/server";
@@ -29,7 +29,7 @@ import { planSweep, pruneOffBoardGates } from "./gates/sweep.ts";
 import { executeSweepAction, type ExecuteSweepActionIo } from "./gates/execute-sweep-action.ts";
 import { readDrafts, heldDraftsByMr, attachDrafts, pruneDrafts, draftFilePath, writeDraft } from "./draft-state.ts";
 import { launchReview, launchRespond, launchDoctor, launchLegacyResume, parseLaunchNote, mrTabLabel, reopenPrompt, closeTab } from "./herdr.ts";
-import { closeOnDone, type TabIdResolver } from "./close-on-done.ts";
+import { closeOnDone, type TabIdResolver, type TabIdClearer } from "./close-on-done.ts";
 import { focusPane } from "./focus-pane.ts";
 import { resumeAgentPane } from "./agent-launch.ts";
 import { launchReReview } from "./review-launch.ts";
@@ -311,6 +311,15 @@ const resolveSignalTabId: TabIdResolver = (signal) => {
   if (signal.kind === "review") return readReviewStates().get(signal.mrUrl)?.tabId;
   if (signal.kind === "respond") return readRespondStates().get(signal.mrUrl)?.tabId;
   return readDoctorStates().get(signal.mrUrl)?.tabId;
+};
+
+// "" (falsy), not omitted -- writeReviewState/writeRespondState/writeDoctorState
+// all merge patch.tabId ?? prev.tabId, so leaving it out of the patch would
+// keep the stale id and the next sweep would re-fire this same close.
+const clearSignalTabId: TabIdClearer = (signal) => {
+  if (signal.kind === "review") writeReviewState(reviewFilePath(signal.mrUrl), { status: "done", tabId: "" });
+  else if (signal.kind === "respond") writeRespondState(respondFilePath(signal.mrUrl), { status: "done", tabId: "" });
+  else writeDoctorState(doctorFilePath(signal.mrUrl), { status: "done", tabId: "" });
 };
 
 let forceNextFetch = false;
@@ -1158,7 +1167,7 @@ const httpServer = Bun.serve({
         // never closes, so a failing pane stays open for forensics. Must run
         // above the emoji early-return below: most `done` signals have no
         // emoji and would never reach a close placed after it.
-        await closeOnDone(signal, resolveSignalTabId, (tabId) => closeTab(tabId));
+        await closeOnDone(signal, resolveSignalTabId, (tabId) => closeTab(tabId), clearSignalTabId);
         const emoji = signalEmoji(signal.kind, signal.status, config.slack.emoji, signal.outcome);
         if (!emoji) {
           return new Response(JSON.stringify({ ok: true, reacted: false }), { headers: { "content-type": "application/json" } });
@@ -1294,6 +1303,9 @@ const httpServer = Bun.serve({
             return new Response(`unknown gate for MR "${mrUrl}"`, { status: 404 });
           case "invalid":
             return new Response(result.reason, { status: 400 });
+          case "unreachable":
+            console.error(`gate answer: daemon unreachable: ${result.reason}`);
+            return new Response("rt daemon unreachable, try again", { status: 502 });
         }
       }
       case "/nudge": {
