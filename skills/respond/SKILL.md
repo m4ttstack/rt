@@ -5,7 +5,7 @@ description: >-
   on your OWN MR in a fresh herdr pane. Emits lifecycle status to a state file
   the board reads, then delegates the actual work to the skill named by --skill.
   Invoked as "/board:respond <mrUrl> --state <path> --status-bin
-  <path> [--skill <name>]". When no --skill is given, the domain skill is
+  <path> [--report <path>] [--skill <name>]". When no --skill is given, the domain skill is
   resolved from the respond slot binding in .mattstack/skills.jsonc. Not for
   manual use.
 allowed-tools: Bash(${CLAUDE_SKILL_DIR}/scripts/resolve-args.sh:*)
@@ -25,6 +25,7 @@ MRs and report status back to the board via a state file. This wrapper carries
 | `<mrUrl>` (positional) | your merge request whose feedback to process |
 | `--state <path>` | lifecycle status file the board polls |
 | `--status-bin <path>` | absolute path to the board's status-writer CLI |
+| `--report <path>` | where the fill saves the adjudication table and drafted/finalized replies; the board shows it and a resumed pane posts from it |
 | `--skill <name>` | the domain skill that owns the actual work (optional) |
 | `--skill-path <path>` | absolute path to that skill's SKILL.md, when the board already resolved it (optional; see "Resolving the domain skill") |
 | `--resumed-gate <gateId>` | this invocation is a parked-gate resume, not a fresh run (optional; see "Steps") |
@@ -101,13 +102,19 @@ old one. Instead:
 - `<status-bin> gate wait <state>` — the verb is registry-status-first, so on
   an already-answered gate it returns the recorded answer at once instead of
   blocking.
-- **Act on the answer, by `gateKind`:**
-  - `respond-plan` → hand `{plan: <answers>}` to the domain skill exactly as
-    step 4 would have. It implements the decided fixes. When it's back to
-    finalized replies, emit `drafting`, then run Gate 2 **fresh** (open it,
-    wait, hand `{post: ...}` down) exactly as steps 5-6 describe below.
-  - `respond-post` → hand `{post: <answers>}` to the domain skill exactly as
-    step 6 would have. It executes posting from the existing draft.
+- **Act on the answer, by `gateKind`.** Read `--report <path>` first — it
+  holds the adjudication table and drafted/finalized replies a fresh pane has
+  no other way to recover once the pane that produced them is gone. Never
+  re-adjudicate and never re-implement from scratch:
+  - `respond-plan` → implement from the report's decided plan: the wait's
+    `{plan: <answers>}` select among the report's threads. Hand the report
+    and those answers to the domain skill exactly as step 4 would have. When
+    it's back to finalized replies, update the report with them, emit
+    `drafting`, then run Gate 2 **fresh** (open it, wait, hand `{post: ...}`
+    down) exactly as steps 5-6 describe below.
+  - `respond-post` → execute posting FROM THE REPORT's finalized replies plus
+    the wait's `{post: <answers>}`, never re-adjudicating or re-implementing.
+    Hand both to the domain skill exactly as step 6 would have.
 - `<status-bin> respond-status <state> done "<one-line summary>" --posted <n> --threads <n>`
 
 Every other step below (delegating to the domain skill for adjudication,
@@ -121,9 +128,10 @@ conversation.
 2. **Adjudicate.**
    - **If a domain skill resolved** (explicit `--skill`, else the `respond`
      slot per "Resolving the domain skill"): delegate to that skill with the
-     MR url. It owns the real work — resolving the MR/ticket, fetching
-     unresolved human threads, adjudicating each one, and drafting replies
-     and proposed fixes — then reports back to you the adjudication: a
+     MR url and the `--report <path>`. It owns the real work — resolving the
+     MR/ticket, fetching unresolved human threads, adjudicating each one, and
+     drafting replies and proposed fixes — then reports back to you the
+     adjudication: a
      verdict table (one row per thread, with its recommended reply/fix/skip
      and grouped in batches of at most 8) plus whether it is proposing code
      changes. It never presents a gate or decides what gets implemented or
@@ -136,8 +144,12 @@ conversation.
    - **Zero unresolved threads?** Skip straight to step 7:
      `done "no unresolved threads" --posted 0 --threads 0`. That is not an
      error condition, and neither gate opens.
-3. **Emit `drafting`** when the verdict table + per-thread draft replies are on
-   screen: `<status-bin> respond-status <state> drafting`
+3. **Save the report and emit `drafting`.** Before Gate 1 opens, `--report
+   <path>` must hold the verdict table + per-thread draft replies as
+   Markdown — a resumed pane has no other way to recover them once this
+   pane's session ends. (Whoever produces the adjudication — the domain
+   skill or you — is responsible for this file existing before Gate 1
+   opens.) Then: `<status-bin> respond-status <state> drafting`
 4. **Gate 1 — plan.** Build one multi-select question per group of up to 8
    threads, plus one `code-changes` question, per the shape below (the group
    labels/ids are `threads-1`, `threads-9`, ... by starting index; substitute
@@ -160,11 +172,15 @@ conversation.
    on it yourself on the generic no-domain-skill path). If `code-changes`
    came back `approve`, emit `implementing`
    (`<status-bin> respond-status <state> implementing`) before touching code,
-   implement the decided fixes one at a time, verified, then emit `drafting`
-   again once finalized replies are ready. If it came back `revise`, there is
+   implement the decided fixes one at a time, verified, then update
+   `--report <path>` with the finalized replies (each fixed thread's reply
+   text now reads e.g. `"Fixed: file:line"`) and emit `drafting` again —
+   before Gate 2 opens, the report must hold what will actually be posted,
+   not the earlier draft. If `code-changes` came back `revise`, there is
    nothing to implement this round — let the domain skill revise the
    proposal; if it reports a fresh adjudication table, treat that as a new
-   round of step 3-4 (a new `respond-plan` gate, same shape).
+   round of step 3-4 (a new `respond-plan` gate, same shape, and the report
+   update from step 3 applies again).
 6. **Gate 2 — post.** Build the post questions from the finalized replies:
 
    ```json
@@ -259,8 +275,10 @@ gate follows it independently:
   so the board badge never gets stuck — except a closed or missing gate (see
   "Closed or missing gate" above): end without either, since a fresh pane may
   already own the state file. The board owns `queued`; you own the middle.
-- The state and status-bin paths are absolute and given to you. Only write
-  status via `--status-bin`; never touch the state file directly.
+- The state, status-bin, and report paths are absolute and given to you. Only
+  write status via `--status-bin`, and drafted/finalized replies only to
+  `--report`. Always save the report before Gate 1 opens, and update it with
+  finalized replies before Gate 2 opens. Never touch the state file directly.
 - Both gates are non-negotiable. Never implement fixes or post replies
   without the human's explicit answer at the relevant gate, even to hurry
   the badge to `done`. `done` follows the human's Gate 2 pick, not your own

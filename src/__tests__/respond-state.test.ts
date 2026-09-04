@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { mkdtempSync, rmSync } from "fs";
 import { join } from "path";
 import { tmpdir } from "os";
-import { respondFilePath, writeRespondState, readRespondStates } from "../respond-state.ts";
+import { respondFilePath, respondReportPath, writeRespondState, readRespondStates } from "../respond-state.ts";
 
 let dir: string;
 beforeEach(() => { dir = mkdtempSync(join(tmpdir(), "rp-")); });
@@ -40,6 +40,13 @@ describe("writeRespondState counts", () => {
     const done = writeRespondState(p, { mrUrl: URL_A, iid: 4821, status: "done" }, 1000);
     expect(done.posted).toBeUndefined();
     expect(done.threads).toBeUndefined();
+  });
+});
+
+describe("respondReportPath", () => {
+  test("swaps the .json state suffix for .md, same slug convention as reviewReportPath", () => {
+    expect(respondReportPath(respondFilePath(URL_A, dir))).toBe(respondFilePath(URL_A, dir).replace(/\.json$/, ".md"));
+    expect(respondReportPath("/s/1.json")).toBe("/s/1.md");
   });
 });
 

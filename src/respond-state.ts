@@ -52,6 +52,15 @@ export function respondFilePath(mrUrl: string, dir: string = RESPOND_DIR): strin
   return join(dir, `${slug}.json`);
 }
 
+/** Sibling markdown file holding the fill's adjudication table and
+    drafted/finalized replies, derived from the state file path so the
+    server and the respond wrapper resolve the same location without
+    passing it around. See reviewReportPath (review-state.ts), which this
+    mirrors byte-for-byte. */
+export function respondReportPath(statePath: string): string {
+  return statePath.replace(/\.json$/, "") + ".md";
+}
+
 export function writeRespondState(
   path: string,
   patch: Partial<RespondState> & { status: RespondStatus },

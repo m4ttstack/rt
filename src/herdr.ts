@@ -2,6 +2,7 @@
 import { homedir } from "os";
 import { join } from "path";
 import { reviewReportPath } from "./review-state.ts";
+import { respondReportPath } from "./respond-state.ts";
 import { resolveSkillPath } from "./skill-path.ts";
 import { startAgentPane, type AgentIo, type AgentLaunchResult } from "./agent-launch.ts";
 import { shellSingleQuote } from "./shell-quote.ts";
@@ -102,7 +103,9 @@ export interface SkillPromptOpts {
   /** Domain skill the generic wrapper delegates to, e.g. "myteam:review".
       Omitted when unconfigured — the wrapper then reviews generically on its own. */
   skill?: string;
-  /** Review only: absolute path the wrapper writes the full review markdown to. */
+  /** Review/respond only: absolute path the wrapper (or its domain skill)
+      writes to -- review's full markdown; respond's adjudication table and
+      drafted/finalized replies (see respondReportPath). */
   reportPath?: string;
   /** Review only: this is a re-review of an already-reviewed MR. The wrapper
       reads any prior review at reportPath, frames the pass as a re-review, and
@@ -376,6 +379,7 @@ export async function launchRespond(
     mrUrl: opts.mrUrl,
     statePath: opts.statePath,
     statusBin: statusBinPath(),
+    reportPath: respondReportPath(opts.statePath),
     skill: opts.skill,
     note: opts.note,
   }, resolvePath);
