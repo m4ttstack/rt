@@ -17,6 +17,28 @@
    rules on any conflict -- nothing here needs `!important` to win.
    ─────────────────────────────────────────────────────────────────── */
 
+/* ── contrast overrides: TEMPORARY, upstream to tui-kit ───────────────
+   The kit's light text colours fail WCAG AA against the near-white ramp.
+   Measured against --chrome #f3f4f7, the surface most board text sits on:
+
+     --muted  #8990b3  2.85:1   fails AA and even the 3:1 large-text bar,
+                                on 11-13px text. Board's most-used token.
+     --accent #2e7de9  3.65:1   fails AA for normal text
+     --red    #f52a65  3.53:1   fails AA for normal text
+
+   The values below clear 4.5:1 with margin (5.01 / 5.08 / 5.04) and keep the
+   hue, darkening only. Dark-mode values are carried through untouched, since
+   dark was never the failing scheme.
+
+   This is a deliberate one-file deviation from the kit's palette, not a fork
+   to keep: deck, console and gitq inherit the same failing values, so it
+   belongs in tui-kit. Delete this block when the kit ships it. */
+:root {
+  --color-gray-muted: light-dark(#626880, #7e86ad);
+  --color-blue-500: light-dark(#2166c4, #7aa2f7);
+  --color-red-500: light-dark(#c8214f, #f7768e);
+}
+
 /* ── header ───────────────────────────────────────────────────────── */
 /* The header is a zone, not a card, so it takes --chrome and the soft border
    rather than a card's fill. Flat, not a mix: --chrome sits BELOW --bg on the
@@ -162,7 +184,10 @@
   content: "❯"; position: absolute; left: 0.45rem; top: 0.5rem; color: var(--accent);
 }
 .tui-row-1 { display: flex; align-items: baseline; gap: 0.55rem; min-width: 0; }
-.tui-title { font-weight: 200; font-size: 0.75rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 500, not the 200 this carried under JetBrains Mono. Mono stays sturdy that
+   light; a system sans at 200 renders spindly, so the title was reading
+   thinner than the metadata line beneath it. */
+.tui-title { font-weight: 500; font-size: 0.75rem; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tui-row-2 { display: flex; align-items: center; gap: 0.55rem; color: var(--muted); font-size: 0.6rem; margin-top: 0.15rem; }
 .tui-branch { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tui-arrow { color: var(--muted); opacity: 0.7; }
@@ -244,7 +269,7 @@
   padding: 0.9rem 1rem 0.5rem; position: sticky; top: 0; background: var(--panel); z-index: 1;
 }
 .tui-cd-title { font-weight: 600; font-size: 0.92rem; line-height: 1.4; min-width: 0; }
-.tui-cd-iid { color: var(--muted); font-family: var(--font-mono); font-weight: 400; }
+.tui-cd-iid { color: var(--muted); font-family: var(--font-sans); font-weight: 400; }
 .tui-cd-open {
   color: var(--accent); font-size: 0.76rem; text-decoration: none;
   padding: 0 1rem 0.7rem; border-bottom: 1px solid var(--border-soft);
@@ -380,7 +405,7 @@
    inferred from the MRs in view). */
 .tui-side-note {
   margin: 0 0 4px; padding: 0 4px;
-  color: var(--muted); font-size: 11px; font-family: var(--font-mono);
+  color: var(--muted); font-size: 11px; font-family: var(--font-sans);
 }
 .tui-main { min-width: 0; }
 /* The roster gets the same framed-panel backdrop as the MR groups -- bare
@@ -412,7 +437,7 @@
    keeps its two-item space-between layout instead of the flag floating
    mid-row on its own. */
 .tui-side-right { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
-.tui-side-count { color: var(--muted); font-family: var(--font-mono); font-size: 0.85em; }
+.tui-side-count { color: var(--muted); font-family: var(--font-sans); font-size: 0.85em; }
 .tui-side-empty { opacity: 0.45; }
 
 /* ── mobile: burger + drawer ──────────────────────────────────────── */
@@ -490,7 +515,7 @@
   accent-color: var(--dot-ok); margin: 0;
 }
 .tui-check-box:disabled { cursor: default; }
-.tui-modal-count { flex-shrink: 0; color: var(--muted); font-family: var(--font-mono); font-size: 0.85em; }
+.tui-modal-count { flex-shrink: 0; color: var(--muted); font-family: var(--font-sans); font-size: 0.85em; }
 /* right side of a roster row: the peering affordance, then the MR count */
 .tui-modal-right { display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0; }
 
@@ -774,7 +799,7 @@
 }
 .tui-menu-note:focus { outline: none; border-color: var(--accent); }
 .tui-menu-note::placeholder { color: var(--muted); opacity: 0.8; }
-.tui-menu-note-hint { font-family: var(--font-mono); font-size: 10px; color: var(--muted); padding: 6px 3px 2px; }
+.tui-menu-note-hint { font-family: var(--font-sans); font-size: 10px; color: var(--muted); padding: 6px 3px 2px; }
 /* Trailing nodes a slack-mark item hands the shell: the set mark, and the
    in-flight spinner that replaces it while the reaction is being written. */
 .tui-menu-check { color: var(--dot-ok); font-size: 12px; }
@@ -823,7 +848,7 @@
 @media (prefers-reduced-motion: reduce) {
   .tui-disclosure, .tui-disclosure-chevron { transition: none; }
 }
-.tui-config-keyname { font-weight: 600; font-family: var(--font-mono); font-size: 0.84rem; }
+.tui-config-keyname { font-weight: 600; font-family: var(--font-sans); font-size: 0.84rem; }
 .tui-config-badge {
   margin-left: auto; color: var(--muted); font-size: 0.66rem; white-space: nowrap;
   text-transform: uppercase; letter-spacing: 0.05em;
@@ -835,7 +860,7 @@
   display: inline-flex; align-items: center; justify-content: center;
   width: 15px; height: 15px; padding: 0; border-radius: 50%;
   border: 1px solid var(--muted); background: none; color: var(--muted);
-  font: 600 10px/1 var(--font-mono); cursor: help;
+  font: 600 10px/1 var(--font-sans); cursor: help;
 }
 .tui-info:hover, .tui-info:focus-visible { color: var(--fg); border-color: var(--fg); }
 .tui-info-card {
@@ -853,16 +878,16 @@
 .tui-config-status { min-width: 4.5em; color: var(--dot-ok); font-size: 0.72rem; white-space: nowrap; }
 .tui-config-status.busy { color: var(--muted); }
 .tui-config-error { margin: 4px 0 0; color: var(--red, #d66); font-size: 0.78rem; }
-.tui-config-value { font-family: var(--font-mono); font-size: 0.78rem; color: var(--muted); word-break: break-all; }
+.tui-config-value { font-family: var(--font-sans); font-size: 0.78rem; color: var(--muted); word-break: break-all; }
 .tui-config-flag { margin-left: 6px; color: var(--amber); font-family: var(--font-sans); font-size: 0.72rem; }
 .tui-config-link { background: none; border: none; padding: 0; color: var(--accent); cursor: pointer; font: inherit; font-size: 0.78rem; }
 .tui-config-leaves { display: grid; grid-template-columns: max-content 1fr; gap: 4px 10px; align-items: center; flex: 1; }
 .tui-config-leaf { display: contents; }
-.tui-config-leaf-label { font-family: var(--font-mono); font-size: 0.76rem; color: var(--muted); }
+.tui-config-leaf-label { font-family: var(--font-sans); font-size: 0.76rem; color: var(--muted); }
 .tui-config-chips { display: flex; flex-wrap: wrap; gap: 5px; align-items: center; flex: 1; }
 .tui-config-chip {
   display: inline-flex; align-items: center; gap: 5px; padding: 1px 7px;
-  font-family: var(--font-mono); font-size: 0.76rem;
+  font-family: var(--font-sans); font-size: 0.76rem;
   background: var(--card); border: 1px solid var(--border); border-radius: 999px;
 }
 .tui-config-chip button { background: none; border: none; padding: 0; color: var(--muted); cursor: pointer; font: inherit; line-height: 1; }
@@ -909,7 +934,7 @@
 }
 .tui-roster-item { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 2px 4px; }
 .tui-roster-who { display: inline-flex; align-items: baseline; gap: 6px; min-width: 0; font-size: 13px; }
-.tui-roster-handle { color: var(--muted); font-family: var(--font-mono); font-size: 11px; }
+.tui-roster-handle { color: var(--muted); font-family: var(--font-sans); font-size: 11px; }
 .tui-roster-out { color: var(--muted); font-size: 11px; }
 .tui-roster-add { display: flex; gap: 6px; }
 .tui-roster-add .tui-modal-input { flex: 1; min-width: 0; }
@@ -933,7 +958,7 @@
 .tui-tabs-item-head .tui-invite-input { flex: 1; min-width: 0; font-size: 14px; }
 .tui-tabs-fields { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 14px; align-items: center; }
 .tui-tabs-field { display: contents; }
-.tui-tabs-field > span { color: var(--muted); font-family: var(--font-mono); font-size: 11px; white-space: nowrap; }
+.tui-tabs-field > span { color: var(--muted); font-family: var(--font-sans); font-size: 11px; white-space: nowrap; }
 .tui-tabs-field .tui-invite-input { width: 100%; max-width: 420px; min-width: 0; }
 .tui-tabs-check { display: flex; grid-column: 2; align-items: center; gap: 8px; }
 .tui-tabs-fields > .tui-modal-error { grid-column: 2; margin: -4px 0 0; }
