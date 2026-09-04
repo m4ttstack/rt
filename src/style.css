@@ -30,6 +30,13 @@
   background: var(--chrome);
   position: relative;
 }
+/* One surface, not a patchwork. The MR groups are the kit's Panel recipe,
+   which paints its own near-white fill; on this ramp that landed between --bg
+   and --card and read as a third grey next to the header and sidebar. This
+   file is unlayered, so it outranks the recipe's @layer soribashi rule without
+   !important. */
+[data-part="panel"] { background: var(--chrome); }
+
 /* Cross-app switcher: pinned to the header card's top-right corner via
    absolute positioning, since `.tui-header` wraps (`flex-wrap: wrap`) --
    on the real board the controls row wraps below the title, so a flex
@@ -881,8 +888,11 @@
   color: var(--muted); font: inherit; font-size: 13px; cursor: pointer;
   transition: color 150ms ease, border-color 150ms ease, background 150ms ease;
 }
-.tui-tab:hover { color: var(--fg); background: var(--card); }
-.tui-tab.active { color: var(--fg); background: var(--card); border-bottom-color: var(--accent, var(--fg)); }
+/* Resting, hover and active all share the strip's --chrome. The active tab is
+   marked by the accent underline and --fg text, not by a lighter fill: a white
+   active tab against a --chrome strip was the loudest seam on the page. */
+.tui-tab:hover { color: var(--fg); }
+.tui-tab.active { color: var(--fg); border-bottom-color: var(--accent, var(--fg)); }
 .tui-tabs .tui-chip { margin-left: auto; }
 @media (prefers-reduced-motion: reduce) { .tui-tab { transition: none; } }
 
