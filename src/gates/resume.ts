@@ -4,6 +4,7 @@ import { mrTabLabel, type SkillPathResolver } from "../herdr.ts";
 import { resolveSkillPath } from "../skill-path.ts";
 import type { AgentLaunchResult } from "../agent-launch.ts";
 import { GATE_LIST_PAGE_LIMIT, type GateEventFrame } from "./ingest.ts";
+import { domainForKind, GATE_KINDS, type GateDomain } from "./sweep.ts";
 
 /** The fields any domain's lifecycle state carries in common -- the subset
     a resume needs, regardless of which wrapper (review/respond/doctor)
@@ -56,6 +57,22 @@ export interface ResumeParkedGateIo {
   resumers: Partial<Record<string, KindResumeIo>>;
   resumeAgentPane(opts: { agentId: string; prompt: string; workspaceLabel: string; tabLabel: string }): Promise<AgentLaunchResult>;
   notify(message: string): void;
+}
+
+/** Builds the `resumers` map server.ts's gateResumeIo hands to
+    ResumeParkedGateIo, one entry per GATE_KINDS member rather than a
+    hand-maintained object literal -- a kind added to GATE_KINDS with no
+    matching entry here comes out `undefined` instead of just missing from
+    a literal, which is what lets the wiring test in
+    gates-resume.test.ts catch a dropped kind instead of the whole suite
+    passing silently. */
+export function buildResumers(byDomain: Record<GateDomain, KindResumeIo>): Partial<Record<string, KindResumeIo>> {
+  const resumers: Partial<Record<string, KindResumeIo>> = {};
+  for (const kind of GATE_KINDS) {
+    const domain = domainForKind(kind);
+    resumers[kind] = domain ? byDomain[domain] : undefined;
+  }
+  return resumers;
 }
 
 /**

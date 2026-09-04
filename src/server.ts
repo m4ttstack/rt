@@ -24,7 +24,7 @@ import { GATE_DIR, type GateAnswers } from "./gates/store.ts";
 import { ingestRelayFrame, reconcileGatesOnBoot, ensureBridgeRule, type EventBridgeRule, type GateEventFrame } from "./gates/ingest.ts";
 import { GateCache, attachGates } from "./gates/cache.ts";
 import { answerGate } from "./gates/answer.ts";
-import { handleAnsweredEvent, bootResumePass, type GateResumeEventIo, type KindResumeIo } from "./gates/resume.ts";
+import { handleAnsweredEvent, bootResumePass, buildResumers, type GateResumeEventIo, type KindResumeIo } from "./gates/resume.ts";
 import { planSweep, pruneOffBoardGates } from "./gates/sweep.ts";
 import { executeSweepAction, type ExecuteSweepActionIo } from "./gates/execute-sweep-action.ts";
 import { migrateLegacySessions } from "./gates/legacy-session-migration.ts";
@@ -1853,12 +1853,7 @@ function gateResumeIo(): GateResumeEventIo {
   // state file -- the same KindResumeIo record answers for both kinds.
   const respond = respondResumeIo();
   return {
-    resumers: {
-      "review-post": reviewResumeIo(),
-      "respond-plan": respond,
-      "respond-post": respond,
-      "doctor-escalation": doctorResumeIo(),
-    },
+    resumers: buildResumers({ review: reviewResumeIo(), respond, doctor: doctorResumeIo() }),
     rowsForSubject: (subject) => gateCache.rowsFor(subject),
     applyRow: (row) => gateCache.applyRow(row),
     gateList,

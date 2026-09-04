@@ -172,7 +172,7 @@ function RowView({
                 row -- remounting is what clears the stale state. Multiple
                 cards can render at once (e.g. a live respond gate alongside
                 a still-open review gate). */}
-            {(mr as BoardMRWithReview).gates.map((gate) => (
+            {((mr as BoardMRWithReview).gates ?? []).map((gate) => (
               <GateCard key={gate.gateId} gate={gate} />
             ))}
             </div>

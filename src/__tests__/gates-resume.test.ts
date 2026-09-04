@@ -4,11 +4,13 @@ import {
   resumeParkedGate,
   handleAnsweredEvent,
   bootResumePass,
+  buildResumers,
   type ResumeParkedGateIo,
   type GateResumeEventIo,
   type KindResumeIo,
   type ResumableState,
 } from "../gates/resume.ts";
+import { GATE_KINDS } from "../gates/sweep.ts";
 import type { GateState } from "../gates/store.ts";
 import type { AgentLaunchResult } from "../agent-launch.ts";
 import { reviewFilePath } from "../review-state.ts";
@@ -590,5 +592,55 @@ describe("handleAnsweredEvent cache-miss fallback", () => {
     await handleAnsweredEvent(frame, io, noSkillLookup);
 
     expect(calls.resumeAgentPane.length).toBe(0);
+  });
+});
+
+describe("buildResumers", () => {
+  // Proof that dropping a kind from the real wiring (server.ts's
+  // gateResumeIo) fails a test instead of the whole suite passing silently
+  // -- buildResumers is generated from GATE_KINDS, so this test only needs
+  // to walk that same list rather than hardcode the kind names itself.
+  function stubKindIo(label: string): KindResumeIo {
+    return {
+      readState: () => undefined,
+      writeState: () => {},
+      filePath: () => label,
+      resolveSkill: () => label,
+      prompt: async () => label,
+      resumedStatus: label,
+      workspaceLabel: label,
+    };
+  }
+
+  test("every known gate kind resolves to a resumer", () => {
+    const review = stubKindIo("review");
+    const respond = stubKindIo("respond");
+    const doctor = stubKindIo("doctor");
+    const resumers = buildResumers({ review, respond, doctor });
+
+    for (const kind of GATE_KINDS) {
+      expect(resumers[kind]).toBeDefined();
+    }
+  });
+
+  test("routes each kind to the domain domainForKind maps it to", () => {
+    const review = stubKindIo("review");
+    const respond = stubKindIo("respond");
+    const doctor = stubKindIo("doctor");
+    const resumers = buildResumers({ review, respond, doctor });
+
+    expect(resumers["review-post"]).toBe(review);
+    expect(resumers["respond-plan"]).toBe(respond);
+    expect(resumers["respond-post"]).toBe(respond);
+    expect(resumers["doctor-escalation"]).toBe(doctor);
+  });
+
+  test("an unknown kind has no resumer", () => {
+    const review = stubKindIo("review");
+    const respond = stubKindIo("respond");
+    const doctor = stubKindIo("doctor");
+    const resumers = buildResumers({ review, respond, doctor });
+
+    expect(resumers["never-registered"]).toBeUndefined();
   });
 });

@@ -171,8 +171,10 @@ conversation.
    - **Open the gate:**
      `<status-bin> gate open <state> --kind respond-plan --questions <json>`
    - **Wait for the answer:** run the wait/gate-protocol below.
-5. **Act on the plan.** Hand `{plan: <answers>}` to the domain skill (or act
-   on it yourself on the generic no-domain-skill path). If `code-changes`
+5. **Act on the plan.** Hand `{plan: <answers>, by: <by>}` to the domain
+   skill (or act on it yourself on the generic no-domain-skill path) —
+   `by` is the wait's own decider field, so the domain skill's decision
+   record names who actually decided instead of guessing. If `code-changes`
    came back `approve`, emit `implementing`
    (`<status-bin> respond-status <state> implementing`) before touching code,
    implement the decided fixes one at a time, verified, then update
@@ -196,9 +198,11 @@ conversation.
    - **Open the gate:**
      `<status-bin> gate open <state> --kind respond-post --questions <json>`
    - **Wait for the answer:** run the wait/gate-protocol below.
-   - **Act on the answer.** Hand `{post: <answers>}` to the domain skill so it
-     can execute the posting, or post the selected replies yourself on the
-     generic no-domain-skill path.
+   - **Act on the answer.** Hand `{post: <answers>, by: <by>}` to the domain
+     skill so it can execute the posting, or post the selected replies
+     yourself on the generic no-domain-skill path — `by` is the wait's own
+     decider field, so the domain skill's decision record names who actually
+     decided instead of guessing.
 7. **Mark done, with the counts.** After the run wraps, report what actually
    happened to the replies:
    `<status-bin> respond-status <state> done "<one-line summary>" --posted <n> --threads <n>`

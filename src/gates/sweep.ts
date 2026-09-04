@@ -24,6 +24,12 @@ export interface GateSweepStates {
 
 const MR_SUBJECT_PREFIX = "mr:";
 
+/** Every gate kind the board knows, kept beside domainForKind so the two
+    can never drift apart -- resume.ts's buildResumers walks this list to
+    build the resumers map, so a kind added here with no matching resumer
+    fails that wiring test instead of silently resuming as unwired. */
+export const GATE_KINDS = ["review-post", "respond-plan", "respond-post", "doctor-escalation"] as const;
+
 /** A kind outside this map (present or future) is skipped by the sweep
     entirely -- silently, since an unrecognized kind has no lifecycle map to
     join against and must never crash the sweep for every other row.
