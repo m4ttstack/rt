@@ -1,3 +1,4 @@
+import { notifications } from '@mattstack/app-kit/notifications';
 import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import type {
   BranchEnrichment,
@@ -15,6 +16,7 @@ const seenPost = vi.fn();
 const abandonPost = vi.fn();
 const enrichPost = vi.fn();
 const linearWorkspaceGet = vi.fn();
+const focusPost = vi.fn();
 
 vi.mock('../api', () => ({
   client: {
@@ -36,6 +38,11 @@ vi.mock('../api', () => ({
       },
       seen: {
         ':runId': { $post: (...args: unknown[]) => seenPost(...args) },
+      },
+      panes: {
+        ':id': {
+          focus: { $post: (...args: unknown[]) => focusPost(...args) },
+        },
       },
     },
   },
@@ -398,6 +405,154 @@ describe('RunDetail', () => {
     expect(
       await screen.findByRole('button', { name: 'Mark abandoned' })
     ).toBeInTheDocument();
+  });
+
+  it('shows a focus-pane button for a run with a working agent', async () => {
+    detailGet.mockResolvedValue(
+      detailResponse({
+        ...FIXTURE,
+        run: run({
+          status: 'running',
+          agent: { status: 'working', pane: 'w1:p1' },
+        }),
+      })
+    );
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+
+    renderDetail();
+
+    expect(
+      await screen.findByRole('button', { name: 'focus pane' })
+    ).toBeInTheDocument();
+  });
+
+  it('has no focus-pane button when the run has no agent', async () => {
+    detailGet.mockResolvedValue(detailResponse(FIXTURE));
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+
+    renderDetail();
+
+    await screen.findByTestId('summary-card');
+    expect(
+      screen.queryByRole('button', { name: 'focus pane' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('has no focus-pane button once the run is done', async () => {
+    detailGet.mockResolvedValue(
+      detailResponse({
+        ...FIXTURE,
+        run: run({
+          status: 'done',
+          agent: { status: 'done', pane: 'w1:p1' },
+        }),
+      })
+    );
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+
+    renderDetail();
+
+    await screen.findByTestId('summary-card');
+    expect(
+      screen.queryByRole('button', { name: 'focus pane' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('raises the attributed pane via the typed client, and surfaces a failure', async () => {
+    detailGet.mockResolvedValue(
+      detailResponse({
+        ...FIXTURE,
+        run: run({
+          status: 'running',
+          agent: { status: 'working', pane: 'w1:p1' },
+        }),
+      })
+    );
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+    focusPost.mockResolvedValueOnce({
+      ok: false,
+      status: 502,
+      json: async () => ({ error: 'no such pane' }),
+    });
+
+    renderDetail();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'focus pane' })
+    );
+
+    expect(focusPost).toHaveBeenCalledWith({ param: { id: 'w1:p1' } });
+    await screen.findByText("couldn't focus the pane");
+  });
+
+  it('surfaces the same failure when the focus request rejects outright', async () => {
+    // The notifications store is module-global, so the previous test's toast
+    // would make the text query ambiguous without a clean slate.
+    notifications.clean();
+    detailGet.mockResolvedValue(
+      detailResponse({
+        ...FIXTURE,
+        run: run({
+          status: 'running',
+          agent: { status: 'working', pane: 'w1:p1' },
+        }),
+      })
+    );
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+    focusPost.mockRejectedValueOnce(new Error('network down'));
+
+    renderDetail();
+
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'focus pane' })
+    );
+
+    await screen.findByText("couldn't focus the pane");
   });
 
   it('copies the ticket to the clipboard on its single-key hotkey', async () => {

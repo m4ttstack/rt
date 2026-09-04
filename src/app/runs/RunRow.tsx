@@ -126,6 +126,17 @@ export function RunRow({ run, pruneDays, enrichment }: RunRowProps) {
     window.open(ticketUrl, '_blank', 'noopener');
   }
 
+  async function handleFocusPane(pane: string) {
+    try {
+      const res = await client.api.panes[':id'].focus.$post({
+        param: { id: pane },
+      });
+      if (!res.ok) notifications.error("couldn't focus the pane");
+    } catch {
+      notifications.error("couldn't focus the pane");
+    }
+  }
+
   return (
     <Group
       data-testid={`run-row-${run.id}`}
@@ -208,6 +219,19 @@ export function RunRow({ run, pruneDays, enrichment }: RunRowProps) {
         style={{ width: 232, flexShrink: 0 }}
       >
         <LivenessChip run={run} />
+        {run.agent && run.agent.status !== 'done' && (
+          <ActionIcon
+            variant="subtle"
+            color="gray"
+            aria-label="focus pane"
+            onClick={event => {
+              event.stopPropagation();
+              void handleFocusPane(run.agent!.pane);
+            }}
+          >
+            <Icons.terminal size={16} />
+          </ActionIcon>
+        )}
         <Menu position="bottom-end">
           <Menu.Target>
             <ActionIcon

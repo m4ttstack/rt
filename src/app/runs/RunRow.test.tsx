@@ -1,3 +1,4 @@
+import { notifications } from '@mattstack/app-kit/notifications';
 import { renderWithProviders } from '@mattstack/app-kit/test-utils';
 import type { BranchEnrichment } from '@mattstack/rt-client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -8,6 +9,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { BoardRun } from './bands';
 
 const detailGet = vi.fn();
+const focusPost = vi.fn();
 
 vi.mock('../api', () => ({
   client: {
@@ -17,6 +19,11 @@ vi.mock('../api', () => ({
           ':runId': {
             $get: (...args: unknown[]) => detailGet(...args),
           },
+        },
+      },
+      panes: {
+        ':id': {
+          focus: { $post: (...args: unknown[]) => focusPost(...args) },
         },
       },
     },
@@ -401,6 +408,101 @@ describe('RunRow menu actions', () => {
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(2));
 
     expect(detailGet).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('RunRow focus button', () => {
+  it('renders for a working run with an attributed pane', () => {
+    renderRow({
+      ...baseRun,
+      agent: { status: 'working', pane: 'w1:p1' },
+    });
+
+    expect(
+      screen.getByRole('button', { name: 'focus pane' })
+    ).toBeInTheDocument();
+  });
+
+  it('is absent when the run has no agent', () => {
+    renderRow({ ...baseRun, agent: null });
+
+    expect(
+      screen.queryByRole('button', { name: 'focus pane' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('is absent once the run is done', () => {
+    renderRow({
+      ...baseRun,
+      agent: { status: 'done', pane: 'w1:p1' },
+    });
+
+    expect(
+      screen.queryByRole('button', { name: 'focus pane' })
+    ).not.toBeInTheDocument();
+  });
+
+  it('raises the attributed pane via the typed client', async () => {
+    focusPost.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ paneId: 'w1:p1', focused: true }),
+    });
+    renderRow({
+      ...baseRun,
+      agent: { status: 'working', pane: 'w1:p1' },
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'focus pane' }));
+
+    expect(focusPost).toHaveBeenCalledWith({ param: { id: 'w1:p1' } });
+  });
+
+  it('shows an error notification when the focus request fails', async () => {
+    focusPost.mockResolvedValueOnce({
+      ok: false,
+      status: 502,
+      json: async () => ({ error: 'no such pane' }),
+    });
+    renderRow({
+      ...baseRun,
+      agent: { status: 'working', pane: 'w1:p1' },
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'focus pane' }));
+
+    await screen.findByText("couldn't focus the pane");
+  });
+
+  it('shows the same notification when the focus request rejects outright', async () => {
+    // The notifications store is module-global, so the previous test's toast
+    // would make the text query ambiguous without a clean slate.
+    notifications.clean();
+    focusPost.mockRejectedValueOnce(new Error('network down'));
+    renderRow({
+      ...baseRun,
+      agent: { status: 'working', pane: 'w1:p1' },
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'focus pane' }));
+
+    await screen.findByText("couldn't focus the pane");
+  });
+
+  it('does not also navigate the row when the focus button is clicked', async () => {
+    focusPost.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ paneId: 'w1:p1', focused: true }),
+    });
+    renderRow({
+      ...baseRun,
+      agent: { status: 'working', pane: 'w1:p1' },
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'focus pane' }));
+
+    expect(window.location.pathname).toBe('/');
   });
 });
 

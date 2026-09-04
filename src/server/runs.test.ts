@@ -4,16 +4,21 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// `subscribe` and `getSetting` must be in this factory even though these
-// tests never call them: the websocket relay and the settings sub-app both
-// share `@mattstack/rt-client`, and every named export either one uses must
-// be present here or vitest throws "No `X` export is defined on the mock".
+// `subscribe`, `getSetting` and `paneFocus` must be in this factory even
+// though these tests never call them: the websocket relay, the settings
+// sub-app, and the panes sub-app all share `@mattstack/rt-client`, and every
+// named export any of them uses must be present here or vitest throws
+// "No `X` export is defined on the mock".
 vi.mock('@mattstack/rt-client', () => ({
   listRuns: vi.fn(async () => ({ ok: true, data: { runs: [] } })),
   getRun: vi.fn(async () => ({ ok: false, error: 'no such run' })),
   abandonRun: vi.fn(async () => ({ ok: true, data: { ok: true } })),
   subscribe: vi.fn(() => () => {}),
   getSetting: vi.fn(() => ({ value: 30, provenance: [] })),
+  paneFocus: vi.fn(async () => ({
+    ok: true,
+    data: { paneId: '', focused: true },
+  })),
   // Real implementation, not a stub: runs.ts's canonicalRepo re-serializes
   // the identity Hono's param() decode corrupted, and the test asserts the
   // exact round-tripped wire form.
