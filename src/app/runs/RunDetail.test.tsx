@@ -1192,6 +1192,132 @@ describe('RunDetail: gate card', () => {
       })
     );
   });
+
+  // Supersede only fires within the same (subject, kind) -- a `clarify` gate
+  // and a `self-review` gate can both be open on the same run at once (e.g.
+  // a stage gate opened by a wedged retry alongside an existing review
+  // gate), so this must render a card per gate, not pick one.
+  it('renders one card per active gate when different kinds are both open, most-recently-opened first', async () => {
+    detailGet.mockResolvedValue(detailResponse(FIXTURE));
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+    gatesGet.mockResolvedValue(
+      gatesResponse([
+        gateRow({
+          id: 'g-review',
+          subject: 'run:run-1',
+          kind: 'self-review',
+          status: 'open',
+          openedAt: 100,
+          questions: [
+            {
+              id: 'outcome',
+              label: 'What happened?',
+              multi: false,
+              options: ['pass', 'fail'],
+            },
+          ],
+        }),
+        gateRow({
+          id: 'g-clarify',
+          subject: 'run:run-1',
+          kind: 'clarify',
+          status: 'open',
+          openedAt: 200,
+          questions: [
+            {
+              id: 'direction',
+              label: 'Which way?',
+              multi: false,
+              options: ['left', 'right'],
+            },
+          ],
+        }),
+      ])
+    );
+
+    renderDetail();
+
+    const cards = await screen.findAllByTestId('gate-card');
+    expect(cards).toHaveLength(2);
+
+    // Most recently opened (openedAt 200, 'clarify') comes first.
+    const titles = await screen.findAllByTestId('gate-card-title');
+    expect(titles.map(t => t.textContent)).toEqual(['clarify', 'self-review']);
+
+    // Both question sets are actually reachable, not just one card's.
+    expect(within(cards[0]).getByText('Which way?')).toBeInTheDocument();
+    expect(within(cards[1]).getByText('What happened?')).toBeInTheDocument();
+  });
+
+  it('titles a card by meta.label when the opener set one, else the raw kind', async () => {
+    detailGet.mockResolvedValue(detailResponse(FIXTURE));
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+    gatesGet.mockResolvedValue(
+      gatesResponse([
+        gateRow({
+          id: 'g-labeled',
+          subject: 'run:run-1',
+          kind: 'stage-retry',
+          status: 'open',
+          meta: { label: 'Wedged retry' },
+        }),
+      ])
+    );
+
+    renderDetail();
+
+    expect(await screen.findByTestId('gate-card-title')).toHaveTextContent(
+      'Wedged retry'
+    );
+  });
+
+  it('falls back to the bare kind when meta.label is absent -- never the old hardcoded "review gate"', async () => {
+    detailGet.mockResolvedValue(detailResponse(FIXTURE));
+    artifactGet.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ lines: [], truncated: false }),
+    });
+    seenPost.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({}),
+    });
+    gatesGet.mockResolvedValue(
+      gatesResponse([
+        gateRow({
+          id: 'g-clarify',
+          subject: 'run:run-1',
+          kind: 'clarify',
+          status: 'open',
+        }),
+      ])
+    );
+
+    renderDetail();
+
+    const title = await screen.findByTestId('gate-card-title');
+    expect(title).toHaveTextContent('clarify');
+    expect(title).not.toHaveTextContent('review gate');
+  });
 });
 
 describe('RunDetail: chrome', () => {

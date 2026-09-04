@@ -174,6 +174,38 @@ describe('GateCard: open/actionable', () => {
   });
 });
 
+describe('GateCard: title', () => {
+  it('titles the card by the gate kind, not a hardcoded "review gate"', () => {
+    renderCard(gateRow({ kind: 'self-review' }));
+
+    const title = screen.getByTestId('gate-card-title');
+    expect(title).toHaveTextContent('self-review');
+    expect(title).not.toHaveTextContent('review gate');
+  });
+
+  it('titles a non-review kind by its own name too', () => {
+    renderCard(gateRow({ kind: 'clarify' }));
+
+    expect(screen.getByTestId('gate-card-title')).toHaveTextContent('clarify');
+  });
+
+  it('prefers meta.label over the raw kind when the opener set one', () => {
+    renderCard(
+      gateRow({ kind: 'stage-retry', meta: { label: 'Wedged retry' } })
+    );
+
+    expect(screen.getByTestId('gate-card-title')).toHaveTextContent(
+      'Wedged retry'
+    );
+  });
+
+  it('falls back to the kind when meta has no string label', () => {
+    renderCard(gateRow({ kind: 'clarify', meta: { label: 42 } }));
+
+    expect(screen.getByTestId('gate-card-title')).toHaveTextContent('clarify');
+  });
+});
+
 describe('GateCard: parked', () => {
   it('still renders the questions and wears a parked badge', () => {
     renderCard(gateRow({ status: 'parked' }));

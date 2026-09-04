@@ -33,32 +33,31 @@ export function hasOpenGate(
 }
 
 /**
- * The one gate RunDetail's card should render for this run, or `undefined`
- * when nothing belongs there. `open`/`parked` are always actionable and win
- * outright. Failing that, an `answered` gate still renders as a read-only
- * summary as long as the run itself is still `running` -- the run's own
- * liveness is the scoping window, not a time-based one, so a re-opened gate
- * on the same run never gets stuck behind a stale answered one and an
- * answered gate on a run that has since finished quietly stops rendering.
- * Multiple non-open/parked rows can exist for one run (a consumed gate is
- * terminal; re-asking opens a new one) -- the most recently opened one is
- * the one that matters.
+ * Every gate RunDetail's page should render for this run, most recently
+ * opened first. Supersede only fires within the same (subject, kind) --
+ * different-kind gates (a `clarify` alongside a `self-review`, say) can be
+ * open on one run at once, so this is a list, not a pick-one: every
+ * `open`/`parked` gate is always actionable and included, and an `answered`
+ * one is included too as long as the run itself is still `running` -- the
+ * run's own liveness is the scoping window, not a time-based one, so a
+ * re-opened gate on the same (subject, kind) never gets stuck behind a
+ * stale answered one, and an answered gate on a run that has since finished
+ * quietly stops rendering.
  */
-export function activeGateForRun(
+export function activeGatesForRun(
   gates: GateRow[] | undefined,
-  run: { id: string; status: string }
-): GateRow | undefined {
-  if (!gates) return undefined;
-  const subject = `run:${run.id}`;
-  const matches = gates.filter(g => g.subject === subject);
-
-  const openOrParked = matches.find(
-    g => g.status === 'open' || g.status === 'parked'
-  );
-  if (openOrParked) return openOrParked;
-
-  if (run.status !== 'running') return undefined;
-  return matches
-    .filter(g => g.status === 'answered')
-    .sort((a, b) => b.openedAt - a.openedAt)[0];
+  runId: string,
+  runStatus: string
+): GateRow[] {
+  if (!gates) return [];
+  const subject = `run:${runId}`;
+  return gates
+    .filter(
+      g =>
+        g.subject === subject &&
+        (g.status === 'open' ||
+          g.status === 'parked' ||
+          (g.status === 'answered' && runStatus === 'running'))
+    )
+    .sort((a, b) => b.openedAt - a.openedAt);
 }

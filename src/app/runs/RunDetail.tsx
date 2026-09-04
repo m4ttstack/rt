@@ -34,7 +34,7 @@ import { LivenessChip, livenessSpec } from './LivenessChip';
 import { mrRef } from './mrRef';
 import { repoLabel } from './repoLabel';
 import { fieldsByKey, RunContext, Timeline } from './Timeline';
-import { activeGateForRun, useGates } from './useGates';
+import { activeGatesForRun, useGates } from './useGates';
 import {
   useLinearWorkspace,
   useMarkSeen,
@@ -202,12 +202,12 @@ function SummaryCard({
   repo,
   run,
   fields,
-  gate,
+  gates,
 }: {
   repo: string;
   run: RunSummary;
   fields: RunFieldRow[];
-  gate?: GateRow;
+  gates: GateRow[];
 }) {
   const { bg, border, text } = useSchemeColors();
   const clipboard = useClipboard();
@@ -264,7 +264,9 @@ function SummaryCard({
 
   const showAbandon = run.attention.needs && run.attention.reason === 'stale';
   const showFocusPane = Boolean(run.agent && run.agent.status !== 'done');
-  const showAnswerGate = gate?.status === 'open' || gate?.status === 'parked';
+  const showAnswerGate = gates.some(
+    g => g.status === 'open' || g.status === 'parked'
+  );
   const { color: livenessColor, label: livenessLabel } = livenessSpec(run);
 
   return (
@@ -452,7 +454,11 @@ function RunDetailContent({ repo, runId }: { repo: string; runId: string }) {
   const { data } = runQuery;
   const markSeen = useMarkSeen();
   const gatesQuery = useGates();
-  const gate = activeGateForRun(gatesQuery.data?.gates, data.run);
+  const gates = activeGatesForRun(
+    gatesQuery.data?.gates,
+    runId,
+    data.run.status
+  );
 
   useEffect(() => {
     markSeen.mutate(runId);
@@ -472,9 +478,11 @@ function RunDetailContent({ repo, runId }: { repo: string; runId: string }) {
         repo={repo}
         run={data.run}
         fields={data.fields}
-        gate={gate}
+        gates={gates}
       />
-      {gate && <GateCard gate={gate} />}
+      {gates.map(g => (
+        <GateCard key={g.id} gate={g} />
+      ))}
       {/* One surface, three readings of the same run: what it did, what was
           recorded around it, what it was told. Stacking them made the page
           three competing containers and buried the last one. */}

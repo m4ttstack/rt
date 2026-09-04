@@ -120,11 +120,21 @@ function GateAnswerSummary({
   );
 }
 
-/** Renders the gate a pane opened on this run, when one belongs on the page
-    (see `activeGateForRun` in `useGates.ts` for which one that is). `open`
-    and `parked` are both actionable -- the same question inputs and submit
-    button render for either, `parked` additionally wears a badge since a
-    pane is no longer waiting on it. `answered` swaps to a read-only summary.
+/** The card's own identity, not a hardcoded "review gate" -- a `clarify`
+    gate and a `self-review` gate can both be open on the same run at once
+    (supersede only fires within the same subject+kind), so the title is
+    what tells them apart. `meta.label` wins when the opener set one;
+    otherwise the raw `kind` string. */
+function gateTitle(gate: GateRow): string {
+  return typeof gate.meta?.label === 'string' ? gate.meta.label : gate.kind;
+}
+
+/** Renders one gate a pane opened on this run (RunDetail renders one of
+    these per active gate -- see `activeGatesForRun` in `useGates.ts` for
+    which ones those are). `open` and `parked` are both actionable -- the
+    same question inputs and submit button render for either, `parked`
+    additionally wears a badge since a pane is no longer waiting on it.
+    `answered` swaps to a read-only summary.
 
     No optimistic local state on a successful submit: the request either
     fails (shown inline, same recover-by-retry shape as the abandon prompt)
@@ -180,9 +190,13 @@ export function GateCard({ gate }: { gate: GateRow }) {
   };
 
   return (
-    // Clicks anywhere in here (a radio's own <label>, a checkbox's text)
-    // aren't inside an `a`/`button` closest() would catch, so they'd
-    // otherwise bubble to the row's own onClick and navigate away.
+    // GateCard renders directly in RunDetail's content stack -- unlike
+    // board's original (embedded in a clickable MR row), there is no
+    // onRowClick here to escape. Kept anyway as cheap insurance: a radio's
+    // own <label> or a checkbox's text is not inside an `a`/`button`
+    // closest() would catch, so a future caller that DOES nest this inside
+    // something clickable (a card list, say) gets the same protection for
+    // free.
     <Paper
       bg={bg.level2}
       p="xxl"
@@ -193,8 +207,14 @@ export function GateCard({ gate }: { gate: GateRow }) {
     >
       <Stack gap="md">
         <Group justify="space-between">
-          <Text fw={700} fz={13} tt="uppercase" c="dimmed">
-            review gate
+          <Text
+            fw={700}
+            fz={13}
+            tt="uppercase"
+            c="dimmed"
+            data-testid="gate-card-title"
+          >
+            {gateTitle(gate)}
           </Text>
           <Group gap="xs">
             {gate.status === 'parked' && (
