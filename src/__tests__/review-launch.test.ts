@@ -190,6 +190,11 @@ describe("launchReReview: sessionId only on file, no agentId (arm ii -- launchLe
     expect(legacyResumeCalls[0]).not.toHaveProperty("effort");
   });
 
+  test("threads claudeCommand through to the legacy resume pane", async () => {
+    await launchReReview(URL_A, IID, { ...CTX, claudeCommand: "cswap run 2 --" }, makeIo(), noSkillPath);
+    expect(legacyResumeCalls[0]).toMatchObject({ claudeCommand: "cswap run 2 --" });
+  });
+
   test("a thrown resume leaves the review in error", async () => {
     const io = makeIo({ launchLegacyResume: async () => { throw new Error("herdr: no workspace"); } });
 

@@ -6,7 +6,7 @@ import { getClientAssets } from "./client-assets.ts";
 import styleCss from "./style.css" with { type: "text" };
 import faviconSvg from "./favicon.svg" with { type: "text" };
 import type { PullRequest, MRDetail } from "@mattstack/glance";
-import { loadConfig, loadGitLabToken, loadSlackToken, loadSwitchboardToken, loadSwitchboardAdminToken, saveMemberHidden, saveRosterMembers, saveSwitchboardUrl, saveTabs, parseConfig, CONFIG_PATH, daemonRepoField, repoIdentityField, resolveLaunchRepo } from "./config.ts";
+import { loadConfig, loadGitLabToken, loadSlackToken, loadSwitchboardToken, loadSwitchboardAdminToken, saveMemberHidden, saveRosterMembers, saveSwitchboardUrl, saveTabs, parseConfig, CONFIG_PATH, daemonRepoField, repoIdentityField, resolveLaunchRepo, loadAgentSettings } from "./config.ts";
 import { memoizeAsync } from "./memoize-async.ts";
 import { resolveBoardSkill, type BoardSkillKind } from "./manifest-bindings.ts";
 import { upsertEnvKeys } from "./env-file.ts";
@@ -396,9 +396,9 @@ const shell = `<!doctype html>
   mq.addEventListener("change", applyTheme);
   window.__applyTheme = applyTheme;
 </script>
-<!-- No webfont link: the kit vendors JetBrains Mono for both font slots and
-     Bun inlines it into /app.css as a data URI, so the board renders its own
-     face with no external request and no flash of a fallback. -->
+<!-- No webfont link: the UI font is a system stack, and the kit's JetBrains
+     Mono (still carried by the mono-pinned surfaces) is inlined into /app.css
+     as a data URI. Neither slot costs an external request or a fallback flash. -->
 <link rel="stylesheet" href="/app.css">
 <link rel="stylesheet" href="/style.css">
 </head>
@@ -791,9 +791,8 @@ const httpServer = Bun.serve({
             workspaceLabel: config.reviewsWorkspace,
             skill: reviewSkillForTab(config, typeof tabId === "string" ? tabId : undefined, parsed.mrUrl, resolveLaunchSkill),
             author,
-            account: config.agent.account,
-            model: config.agent.model,
-            effort: config.agent.effort,
+            ...loadAgentSettings(),
+            claudeCommand: config.claudeCommand,
             note,
           });
           return new Response(JSON.stringify({ ok: true, reReview: true }), { headers: { "content-type": "application/json" } });
@@ -825,7 +824,7 @@ const httpServer = Bun.serve({
           const sessionId = existing?.sessionId;
           if (!sessionId) return new Response("no session id on file for this review", { status: 400 });
           void launchLegacyResume(
-            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: config.reviewCwd, repo, workspaceLabel: config.reviewsWorkspace, statePath, sessionId, workspaceKind: "review", author, prompt },
+            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: config.reviewCwd, repo, workspaceLabel: config.reviewsWorkspace, statePath, sessionId, workspaceKind: "review", author, prompt, claudeCommand: config.claudeCommand },
           )
             .then(({ tabId, workspaceId }) => writeReviewState(statePath, { status: existing?.status ?? "done", tabId, workspaceId }))
             .catch((err) => console.error(`review resume failed: ${err instanceof Error ? err.message : err}`));
@@ -852,9 +851,7 @@ const httpServer = Bun.serve({
           statePath,
           skill: reviewSkillForTab(config, typeof tabId === "string" ? tabId : undefined, parsed.mrUrl, resolveLaunchSkill),
           author,
-          account: config.agent.account,
-          model: config.agent.model,
-          effort: config.agent.effort,
+          ...loadAgentSettings(),
           note,
         })
           .then((result) => {
@@ -924,7 +921,7 @@ const httpServer = Bun.serve({
           const sessionId = existing?.sessionId;
           if (!sessionId) return new Response("no session id on file for this response", { status: 400 });
           void launchLegacyResume(
-            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: cwd, repo, workspaceLabel: config.respondsWorkspace, statePath, sessionId, workspaceKind: "respond", author, prompt },
+            { mrUrl: parsed.mrUrl, iid: parsed.iid, cwd: cwd, repo, workspaceLabel: config.respondsWorkspace, statePath, sessionId, workspaceKind: "respond", author, prompt, claudeCommand: config.claudeCommand },
           )
             .then(({ tabId, workspaceId }) => writeRespondState(statePath, { status: existing?.status ?? "done", tabId, workspaceId }))
             .catch((err) => console.error(`respond resume failed: ${err instanceof Error ? err.message : err}`));
@@ -950,9 +947,7 @@ const httpServer = Bun.serve({
           statePath,
           skill: resolveLaunchSkill("respond", parsed.mrUrl),
           author,
-          account: config.agent.account,
-          model: config.agent.model,
-          effort: config.agent.effort,
+          ...loadAgentSettings(),
           note,
         })
           .then((result) => {
@@ -1014,9 +1009,7 @@ const httpServer = Bun.serve({
           statePath,
           skill: resolveLaunchSkill("doctor", parsed.mrUrl),
           author,
-          account: config.agent.account,
-          model: config.agent.model,
-          effort: config.agent.effort,
+          ...loadAgentSettings(),
           note,
         })
           .then((result) => {

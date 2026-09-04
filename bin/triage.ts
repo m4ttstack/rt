@@ -5,7 +5,7 @@ import { existsSync, mkdirSync, rmSync, statSync, writeFileSync } from "fs";
 import { join } from "path";
 import { GitLabProvider, parseRepoId, type MRDetail } from "@mattstack/glance";
 import { readDiscussions, readProjectMRs } from "@mattstack/rt-client";
-import { loadConfig, loadGitLabToken, loadSwitchboardToken, repoIdentityField, resolveLaunchRepo } from "../src/config.ts";
+import { loadConfig, loadGitLabToken, loadSwitchboardToken, repoIdentityField, resolveLaunchRepo, loadAgentSettings } from "../src/config.ts";
 import { buildBoard, projectPathFromWebUrl } from "../src/data.ts";
 import { doctorFilePath, readDoctorStates, writeDoctorState } from "../src/doctor-state.ts";
 import { launchDoctor } from "../src/herdr.ts";
@@ -137,9 +137,7 @@ try {
     triage,
     doctorCwd: boardConfig.doctorCwd || boardConfig.reviewCwd,
     doctorsWorkspace: boardConfig.doctorsWorkspace,
-    account: boardConfig.agent.account,
-    model: boardConfig.agent.model,
-    effort: boardConfig.agent.effort,
+    ...loadAgentSettings(),
     repoForMr: repoForMrUrl,
     // Same resolved identity fetchOwnMrs just filtered by (MAT-351 re-check).
     identity: username,
@@ -197,9 +195,8 @@ try {
           // BOARD-14: manifest binding when present, else "" (the generic wrapper) --
           // same resolution the board's own HTTP re-review launches use.
           skill: resolveLaunchSkill("review", mrUrl, boardConfig),
-          account: boardConfig.agent.account,
-          model: boardConfig.agent.model,
-          effort: boardConfig.agent.effort,
+          ...loadAgentSettings(),
+          claudeCommand: boardConfig.claudeCommand,
         }),
       publishOutcome: (to, payload) => enqueueOutbox(makeEnvelope(to, "nudge-outcome", payload)),
       memory,
@@ -234,9 +231,8 @@ try {
             repo: repoForMrUrl(mrUrl),
             workspaceLabel: boardConfig.reviewsWorkspace,
             skill: resolveLaunchSkill("review", mrUrl, boardConfig),
-            account: boardConfig.agent.account,
-            model: boardConfig.agent.model,
-            effort: boardConfig.agent.effort,
+            ...loadAgentSettings(),
+            claudeCommand: boardConfig.claudeCommand,
           }),
         memory,
         cfg: triage,

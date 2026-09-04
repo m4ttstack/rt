@@ -24,11 +24,15 @@ export interface ReReviewCtx {
   skill: string;
   author?: string;
   /** cswap account, --model, and --effort forwarded to launchReview's
-      startAgentPane call (config.agent.account/model/effort). Unused on the
-      legacy resume path, which starts plain "claude". */
+      startAgentPane call (the board.agent.* settings). Unused on the legacy
+      resume path, which takes claudeCommand below instead. */
   account?: string;
   model?: string;
   effort?: string;
+  /** Verbatim claudeCommand escape hatch (config.claudeCommand), forwarded to
+      the legacy resume path only -- the rt agent daemon path above has no
+      field for an arbitrary shell command, so it uses account/model/effort. */
+  claudeCommand?: string;
   /** Operator note from the human who launched the re-review (see operatorNoteParagraph). */
   note?: string;
 }
@@ -128,6 +132,7 @@ export async function launchReReview(
         prompt,
         tabPrefix: "⟲",
         author: ctx.author,
+        claudeCommand: ctx.claudeCommand,
       });
       io.writeReviewState(statePath, { status: "reviewing", tabId, workspaceId });
       return { kind: "resumed" };

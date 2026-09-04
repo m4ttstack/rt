@@ -74,7 +74,7 @@ export interface TriageRunDeps {
   doctorCwd: string;
   doctorsWorkspace: string;
   /** cswap account, --model, and --effort forwarded to launchDoctor's
-      startAgentPane call (config.agent.account/model/effort). */
+      startAgentPane call (the board.agent.* settings). */
   account?: string;
   model?: string;
   effort?: string;

@@ -42,7 +42,7 @@ install, or seed the team store once and point everyone at it.
 | `respondsWorkspace` | herdr workspace label responses are grouped under (default `responses`) |
 | `doctorsWorkspace` | herdr workspace label doctor sessions are grouped under (default `doctors`) |
 | `doctorSkill` | domain skill the doctor wrapper delegates to, e.g. `acme:doctor`. Empty means the wrapper repairs generically. A repo's `skills.jsonc` binding overrides it when present |
-| `claudeCommand` | command that starts Claude in every pane the board launches, inserted verbatim with the prompt or resume flags appended after it. Empty means plain `claude` |
+| `claudeCommand` | verbatim override for the command that starts Claude in every pane, with the prompt or resume flags appended after it. Normally unset: the board composes this from the `board.agent.*` settings. See below |
 | `slack` | review channel, post templates, sweep interval, and signal emoji. See [Slack integration](slack.md) |
 | `switchboard` | `{ "url": "..." }` for peer boards. See [peer boards](peer-boards.md) |
 | `triage` | reviewer-side automation block. See [agent actions](agent-actions.md#reviewer-side-automation) |
@@ -50,11 +50,36 @@ install, or seed the team store once and point everyone at it.
 
 ### `claudeCommand`
 
-The value is inserted verbatim, so it must be a command that starts Claude
-itself. For example, `cswap run 2 --share-history -- --model opus` pins panes
-to one account: `cswap run` launches Claude, so everything after its `--` is
-read as Claude's own arguments. Do not write `claude` there, and keep
-`--share-history` so resume can find the transcripts.
+Normally you do not set this. The board composes the launch command from three
+settings, each of which the board reads from the rt settings store:
+
+| Setting | Effect |
+| --- | --- |
+| `board.agent.account` | cswap account the panes launch under. Unset uses the default Claude profile |
+| `board.agent.model` | value for Claude's `--model`. Unset omits the flag |
+| `board.agent.effort` | value for Claude's `--effort`. Unset omits the flag |
+
+```sh
+rt settings set board.agent.account someone@example.com
+rt settings set board.agent.model claude-opus-5
+rt settings set board.agent.effort high
+```
+
+With all three set the board runs
+`cswap run 'someone@example.com' --share-history -- --model 'claude-opus-5' --effort 'high'`,
+then appends the prompt or the resume flags. `cswap run` launches Claude
+itself, so everything after its `--` is read as Claude's own arguments and the
+word `claude` never appears there. `--share-history` is not cosmetic: without
+it a resumed pane cannot find the transcript the review session wrote.
+
+A `claudeCommand` in `config.json` overrides all three and is inserted
+verbatim. Keep it for a wrapper the three settings cannot express; it must
+obey the same two rules above.
+
+Before rt-client 0.14.0 this was a single `board.claudeCommand` setting holding
+the whole command. That key is retired. A store that still carries it is
+ignored, so move the value into the three keys above or the panes fall back to
+plain `claude`.
 
 ## Tabs
 

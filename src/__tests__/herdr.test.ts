@@ -172,8 +172,22 @@ describe("command builders", () => {
   --report /s/1.md
   --re-review`);
   });
+  test("buildPaneCommand launches a configured claude command in place of plain claude", () => {
+    expect(buildPaneCommand("/repo dir", "do it", "cswap run 2 --share-history --")).toBe(
+      "cd '/repo dir' && cswap run 2 --share-history -- 'do it'",
+    );
+  });
+  test("buildPaneCommand falls back to plain claude when the configured command is empty", () => {
+    expect(buildPaneCommand("/repo", "do it", "")).toBe("cd '/repo' && claude 'do it'");
+    expect(buildPaneCommand("/repo", "do it", "   ")).toBe("cd '/repo' && claude 'do it'");
+  });
   test("buildResumePaneCommand with no prompt drops into an interactive resume", () => {
     expect(buildResumePaneCommand("/repo", "sess-1")).toBe("cd '/repo' && claude --resume 'sess-1'");
+  });
+  test("buildResumePaneCommand resumes under the configured claude command", () => {
+    expect(buildResumePaneCommand("/repo", "sess-1", "hi", "cswap run 2 --")).toBe(
+      "cd '/repo' && cswap run 2 -- --resume 'sess-1' 'hi'",
+    );
   });
   test("buildResumePaneCommand with a prompt resumes and sends it as the first message", () => {
     expect(buildResumePaneCommand("/repo", "sess-1", "re-review please")).toBe(
@@ -410,6 +424,25 @@ describe("launchLegacyResume (pre-rt-agent sessionId resume, over HerdrRunner)",
     const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
     expect(runCall?.[3]).toBe("cd '/repo' && claude --resume 'sess-1' 're-review please'");
     expect(calls).toContainEqual(["tab", "create", "--workspace", "w40", "--label", "⟲ !4821", "--no-focus"]);
+  });
+
+  test("resumes under the configured claude command (the file's claudeCommand escape hatch)", async () => {
+    const calls: string[][] = [];
+    const runner: HerdrRunner = async (args) => {
+      calls.push(args);
+      if (args[0] === "workspace" && args[1] === "list") return WS_LIST;
+      if (args[0] === "tab" && args[1] === "create") return TAB_CREATE;
+      return JSON.stringify({ result: { type: "ok" } });
+    };
+    await launchLegacyResume(
+      {
+        mrUrl: "https://x/mr/1", iid: 4821, cwd: "/repo", repo: "acme/webapp", workspaceLabel: "reviews", statePath: "/s/1.json",
+        sessionId: "sess-1", workspaceKind: "review", claudeCommand: "cswap run 2 --",
+      },
+      runner,
+    );
+    const runCall = calls.find((c) => c[0] === "pane" && c[1] === "run");
+    expect(runCall?.[3]).toBe("cd '/repo' && cswap run 2 -- --resume 'sess-1'");
   });
 
   test("puts the MR author beside the id in the tab label when given", async () => {

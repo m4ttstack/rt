@@ -97,13 +97,12 @@ describe("parseConfig", () => {
     expect(() => parseConfig(JSON.stringify({ ...base, members: [{ username: "alice", hidden: "yes" }] }))).toThrow(/hidden/);
   });
 
-  test("claudeCommand is gone from the parsed config shape", () => {
-    const cfg = parseConfig(JSON.stringify({ ...base, claudeCommand: "cswap run 2 -- claude" })) as unknown as Record<string, unknown>;
-    expect(cfg.claudeCommand).toBeUndefined();
-  });
-
-  test("agent defaults to an empty object with no config.json field", () => {
-    expect(parseConfig(JSON.stringify(base)).agent).toEqual({});
+  test("claudeCommand defaults empty, accepts a string, rejects non-strings", () => {
+    expect(parseConfig(JSON.stringify(base)).claudeCommand).toBe("");
+    expect(parseConfig(JSON.stringify({ ...base, claudeCommand: "cswap run 2 --" })).claudeCommand).toBe(
+      "cswap run 2 --",
+    );
+    expect(() => parseConfig(JSON.stringify({ ...base, claudeCommand: 2 }))).toThrow(/claudeCommand/);
   });
 
   test("reviewCwd defaults empty; reviewsWorkspace defaults to 'reviews'", () => {
@@ -155,36 +154,6 @@ describe("parseConfig", () => {
     for (const key of ["port", "host", "reviewSkill", "respondSkill", "teamClone"]) {
       expect(cfg[key]).toBeUndefined();
     }
-  });
-});
-
-describe("loadConfigFrom: board.agent.* replaces claudeCommand", () => {
-  function tmpConfig(body: Record<string, unknown> = base): string {
-    const p = join(mkdtempSync(join(tmpdir(), "config-agent-")), "config.json");
-    writeFileSync(p, JSON.stringify(body, null, 2) + "\n");
-    return p;
-  }
-
-  test("account/model/effort resolve from the settings store", () => {
-    const p = tmpConfig();
-    const cfg = loadConfigFrom(p, fakeResolve({
-      "board.agent.account": "matt@example.com",
-      "board.agent.model": "opus",
-      "board.agent.effort": "high",
-    }));
-    expect(cfg.agent).toEqual({ account: "matt@example.com", model: "opus", effort: "high" });
-  });
-
-  test("account/model/effort default to undefined with nothing in the store", () => {
-    const p = tmpConfig();
-    const cfg = loadConfigFrom(p, fakeResolve({}));
-    expect(cfg.agent).toEqual({ account: undefined, model: undefined, effort: undefined });
-  });
-
-  test("claudeCommand is gone from the loaded config even when config.json still carries it", () => {
-    const p = tmpConfig({ ...base, claudeCommand: "cswap run 2 -- claude" });
-    const cfg = loadConfigFrom(p, fakeResolve({})) as unknown as Record<string, unknown>;
-    expect(cfg.claudeCommand).toBeUndefined();
   });
 });
 
