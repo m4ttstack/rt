@@ -49,8 +49,9 @@ describe("GateCache.applyRow / reconcile", () => {
 });
 
 describe("GateCache.applyEvent", () => {
-  test("opened frame creates a fresh row from full context", () => {
+  test("opened frame creates a fresh row from full context (paneId, not pane; no openedAt on the wire)", () => {
     const cache = new GateCache();
+    const before = Date.now();
     cache.applyEvent({
       topic: "gate/opened/gate-9",
       payload: {
@@ -59,13 +60,17 @@ describe("GateCache.applyEvent", () => {
         kind: "review-post",
         questions: [{ id: "q1", label: "Ship it?", multi: false, options: ["yes", "no"] }],
         meta: { label: "review gate !4821" },
-        openedAt: 5000,
+        agent: "acme-bot",
+        paneId: "pane-9",
       },
     });
     const cached = cache.get(SUBJECT_A);
     expect(cached?.id).toBe("gate-9");
     expect(cached?.status).toBe("open");
-    expect(cached?.openedAt).toBe(5000);
+    // Never on the wire -- the cache stamps receipt time instead.
+    expect(cached?.openedAt).toBeGreaterThanOrEqual(before);
+    expect(cached?.agent).toBe("acme-bot");
+    expect(cached?.pane).toBe("pane-9");
     expect(cached?.questions).toEqual([{ id: "q1", label: "Ship it?", multi: false, options: ["yes", "no"] }]);
   });
 
@@ -75,7 +80,7 @@ describe("GateCache.applyEvent", () => {
 
     cache.applyEvent({
       topic: "gate/opened/gate-2",
-      payload: { id: "gate-2", subject: SUBJECT_A, kind: "review-post", questions: [], meta: null, openedAt: 9000 },
+      payload: { id: "gate-2", subject: SUBJECT_A, kind: "review-post", questions: [], meta: null },
     });
 
     const cached = cache.get(SUBJECT_A);
@@ -84,7 +89,7 @@ describe("GateCache.applyEvent", () => {
     expect(cached?.answer).toBeNull();
   });
 
-  test("answered frame (full context) patches an existing row by id", () => {
+  test("answered frame (full context) patches an existing row by id, reading paneId", () => {
     const cache = new GateCache();
     cache.applyRow(row());
 
@@ -97,9 +102,10 @@ describe("GateCache.applyEvent", () => {
     expect(cached?.status).toBe("answered");
     expect(cached?.answer?.answers).toEqual({ q1: "yes" });
     expect(cached?.answer?.by).toBe("pane");
+    expect(cached?.pane).toBe("pane-1");
   });
 
-  test.each(["parked", "closed", "released"] as const)("%s frame (thin) patches an existing row by id", (kind) => {
+  test.each(["parked", "released"] as const)("%s frame (thin) patches an existing row by id", (kind) => {
     const cache = new GateCache();
     cache.applyRow(row());
 
@@ -110,8 +116,21 @@ describe("GateCache.applyEvent", () => {
 
     const cached = cache.get(SUBJECT_A)!;
     if (kind === "parked") expect(cached.status).toBe("parked");
-    if (kind === "closed") expect(cached.status).toBe("closed");
     if (kind === "released") expect(cached.released).toBe(true);
+  });
+
+  test("closed frame patches an existing row by id, reading reason (not closedReason)", () => {
+    const cache = new GateCache();
+    cache.applyRow(row());
+
+    cache.applyEvent({
+      topic: "gate/closed/gate-1",
+      payload: { id: "gate-1", subject: SUBJECT_A, kind: "review-post", reason: "abandoned" },
+    });
+
+    const cached = cache.get(SUBJECT_A)!;
+    expect(cached.status).toBe("closed");
+    expect(cached.closedReason).toBe("abandoned");
   });
 
   test.each(["answered", "parked", "closed", "released"] as const)(

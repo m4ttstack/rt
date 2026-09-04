@@ -62,7 +62,7 @@ export class GateCache {
   }
 
   private applyOpened(payload: Record<string, unknown>): void {
-    const { id, subject, questions, meta, openedAt } = payload;
+    const { id, subject, questions, meta } = payload;
     if (typeof id !== "string" || !id) return;
     if (typeof subject !== "string" || !subject) return;
     if (!Array.isArray(questions)) return;
@@ -75,12 +75,15 @@ export class GateCache {
       meta: isRecord(meta) ? meta : null,
       status: "open",
       answer: null,
-      openedAt: typeof openedAt === "number" ? openedAt : Date.now(),
+      // The daemon's opened event carries no openedAt (handlers/gate.ts's
+      // eventPayload doesn't emit one) -- receipt time is the closest
+      // approximation the cache can make.
+      openedAt: Date.now(),
       parkedAt: null,
       closedAt: null,
       closedReason: null,
       agent: typeof payload.agent === "string" ? payload.agent : null,
-      pane: typeof payload.pane === "string" ? payload.pane : null,
+      pane: typeof payload.paneId === "string" ? payload.paneId : null,
       nudge: null,
       delivery: null,
       released: false,
@@ -101,7 +104,7 @@ export class GateCache {
     if (!existing) return; // unknown id: drop silently, next reconcile fills it
 
     if (kind === "answered") {
-      const { answers, by, answeredAt } = payload;
+      const { answers, by } = payload;
       if (!isRecord(answers)) return;
       this.applyRow({
         ...existing,
@@ -109,22 +112,19 @@ export class GateCache {
         answer: {
           answers: answers as NonNullable<FacilityGateRow["answer"]>["answers"],
           by: typeof by === "string" ? by : "",
-          answeredAt: typeof answeredAt === "number" ? answeredAt : Date.now(),
+          // Not on the wire event either -- see the opened-frame note above.
+          answeredAt: Date.now(),
         },
         pane: typeof payload.paneId === "string" ? payload.paneId : existing.pane,
       });
     } else if (kind === "parked") {
-      this.applyRow({
-        ...existing,
-        status: "parked",
-        parkedAt: typeof payload.parkedAt === "number" ? payload.parkedAt : Date.now(),
-      });
+      this.applyRow({ ...existing, status: "parked", parkedAt: Date.now() });
     } else if (kind === "closed") {
       this.applyRow({
         ...existing,
         status: "closed",
-        closedAt: typeof payload.closedAt === "number" ? payload.closedAt : Date.now(),
-        closedReason: isClosedReason(payload.closedReason) ? payload.closedReason : existing.closedReason,
+        closedAt: Date.now(),
+        closedReason: isClosedReason(payload.reason) ? payload.reason : existing.closedReason,
       });
     } else {
       this.applyRow({ ...existing, released: true });
